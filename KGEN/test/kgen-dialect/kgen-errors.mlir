@@ -1085,3 +1085,19 @@ kgen.generator @iterate<next: (index) -> index, cond: (index) -> i1>() {
     kgen.return %0 : index
   }
 }
+
+// -----
+
+kgen.generator @get_list_element() {
+  // expected-error @below {{custom op 'kgen.param.constant' expected a list type for 'get_list_element'}}
+  %0 = kgen.param.constant = <get_list_element(:i32 0, 0)>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @get_list_element() {
+  // expected-error @below {{custom op 'kgen.param.constant' 'get_list_element' result should match list element type}}
+  %0 = kgen.param.constant: i32 = <get_list_element(:list<index[1]> [0], 0)>
+  kgen.return
+}

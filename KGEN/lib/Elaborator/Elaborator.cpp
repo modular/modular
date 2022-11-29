@@ -590,9 +590,11 @@ private:
                                       ParamDeclArrayAttr decls,
                                       ArrayRef<ParamBindAttr> paramValues);
 
-  /// Process a `kgen.iterate` operation
+  /// Process a `kgen.iterate` operation.
   LogicalResult processIterateOp(IterateOp op);
 
+  /// Process a generic operation that does not fit into one of the above types.
+  /// Substitute parameters in the operation's attributes and types.
   LogicalResult processGenericOp(Operation *op);
 
   /// This is maintains global information about the file we're generating
@@ -1356,6 +1358,30 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
   return success();
 }
 
+/// Evaluate a concrete signature-type expression with the given input
+/// parameters. Only expression functions are supported at the moment.
+static LogicalResult
+evaluateExpressionFunction(ParameterRewriter &rewriter, Location loc,
+                           SymbolTable *symtab, Attribute func,
+                           ArrayRef<TypedAttr> params,
+                           SmallVectorImpl<TypedAttr> &results) {
+  results.clear();
+  auto exprFunc = dyn_cast<ExprFuncAttr>(func);
+  if (!exprFunc)
+    return rewriter.error(
+        loc, "only expression functions can be compile-time evaluated");
+  ParameterEvaluator funcEvaluator(symtab);
+  for (auto [param, value] : llvm::zip(exprFunc.getInputs(), params))
+    funcEvaluator.setParameterValue(param, value);
+  for (TypedAttr expr : exprFunc.getExprs()) {
+    ErrorOr<Attribute> result = funcEvaluator.concretizeParameterExpr(expr);
+    if (result.isError())
+      return rewriter.error(loc, result.takeError());
+    results.push_back(result.takeValue());
+  }
+  return mlir::success();
+}
+
 LogicalResult ParameterRewriter::processIterateOp(IterateOp op) {
   // Prepare the iteration.
   auto region = cast<RegionOpenBodyOp>(op.getBody().front().front());
@@ -1379,25 +1405,6 @@ LogicalResult ParameterRewriter::processIterateOp(IterateOp op) {
     params.push_back(value.takeValue());
   }
 
-  auto evalFunc = [&](Attribute func, ArrayRef<TypedAttr> params,
-                      SmallVectorImpl<TypedAttr> &results) {
-    results.clear();
-    auto exprFunc = dyn_cast<ExprFuncAttr>(func);
-    if (!exprFunc)
-      return error(op.getLoc(),
-                   "only expression functions can be compile-time evaluated");
-    ParameterEvaluator funcEvaluator(symtab);
-    for (auto [param, value] : llvm::zip(exprFunc.getInputs(), params))
-      funcEvaluator.setParameterValue(param, value);
-    for (TypedAttr expr : exprFunc.getExprs()) {
-      ErrorOr<Attribute> result = funcEvaluator.concretizeParameterExpr(expr);
-      if (result.isError())
-        return error(op.getLoc(), result.takeError());
-      results.push_back(result.takeValue());
-    }
-    return mlir::success();
-  };
-
   SmallVector<TypedAttr, 1> condResult;
   ReturnOp returnOp = region.getReturnOp();
   auto noReturnExprs = ParameterExprArrayAttr::get(op.getContext(), {});
@@ -1405,7 +1412,8 @@ LogicalResult ParameterRewriter::processIterateOp(IterateOp op) {
   mlir::IRRewriter b{OpBuilder(op)};
   while (true) {
     // Evaluate the condition. If it's false, stop looping.
-    if (failed(evalFunc(cond.get(), params, condResult)))
+    if (failed(evaluateExpressionFunction(*this, op.getLoc(), symtab,
+                                          cond.get(), params, condResult)))
       return failure();
     if (!cast<BoolAttr>(condResult.front()).getValue())
       break;
@@ -1463,7 +1471,8 @@ LogicalResult ParameterRewriter::processIterateOp(IterateOp op) {
     clonedReturn->erase();
 
     // Evaluate the next parameter values.
-    if (failed(evalFunc(next.get(), params, params)))
+    if (failed(evaluateExpressionFunction(*this, op.getLoc(), symtab,
+                                          next.get(), params, params)))
       return failure();
   }
 

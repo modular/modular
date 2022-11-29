@@ -972,23 +972,22 @@ def ListGetOp : KGENOp<"list.get", [Pure, TypesMatchWith<"list element type",
 }
 
 //===----------------------------------------------------------------------===//
-// ListMakeOp
+// ListCreateOp
 //===----------------------------------------------------------------------===//
 
-def ListMakeOp : KGENOp<"list.make", [Pure, TypesMatchWith<"list element type",
-    "result", "operands",
-    "ParamRefType::get($_self.cast<ListType>().getElementType())",
-    "typeRangeMatches">]> {
+def ListCreateOp : KGENOp<"list.create", [Pure,
+    TypesMatchWith<"list element type", "result", "operands",
+      "ParamRefType::get($_self.cast<ListType>().getElementType())",
+      "typeRangeMatches">]> {
   let summary = "Form a list.";
   let description = [{
-    The `kgen.list.make` operation forms a list using the provided operands.
+    The `kgen.list.create` operation forms a list using the provided operands.
 
     Example:
 
     ```mlir
-    %0 = kgen.list.make(%arg0, %arg1) : <index[2]>
+    %0 = kgen.list.create(%arg0, %arg1) : <index[2]>
     ```
-
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands);

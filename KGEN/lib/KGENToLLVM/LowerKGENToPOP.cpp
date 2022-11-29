@@ -335,11 +335,11 @@ struct ExpandListGetOp : public mlir::OpRewritePattern<ListGetOp> {
   }
 };
 
-/// make(%l0, %l1) -> %l0, %l1
-struct ExpandListMakeOp : public mlir::OpRewritePattern<ListMakeOp> {
-  ExpandListMakeOp(MLIRContext *ctx) : OpRewritePattern(ctx, /*benefit=*/2) {}
+/// create(%l0, %l1) -> %l0, %l1
+struct ExpandListCreateOp : public mlir::OpRewritePattern<ListCreateOp> {
+  ExpandListCreateOp(MLIRContext *ctx) : OpRewritePattern(ctx, /*benefit=*/2) {}
 
-  LogicalResult matchAndRewrite(ListMakeOp op,
+  LogicalResult matchAndRewrite(ListCreateOp op,
                                 PatternRewriter &b) const override {
     b.replaceOp(op, materializeListSourceConversion(
                         b, op.getLoc(), op.getOperands(), op.getType()));
@@ -836,7 +836,7 @@ void LowerKGENToPOPPass::runOnOperation() {
   config.maxIterations = mlir::GreedyRewriteConfig::kNoIterationLimit;
   RewritePatternSet patterns(&getContext());
   patterns
-      .insert<ExpandListConstantOp, ExpandListGetOp, ExpandListMakeOp,
+      .insert<ExpandListConstantOp, ExpandListGetOp, ExpandListCreateOp,
               ExpandListIterateOp, ExpandStructConstructOp, ExpandStructGetOp,
               ExpandStructReplaceOp, ExpandStructGEPOp, ExpandListStore,
               ExpandListLoad, ExpandListDebugValue, ExpandGenericOperation>(

@@ -1498,14 +1498,14 @@ LogicalResult ListGetOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// ListMakeOp
+// ListCreateOp
 //===----------------------------------------------------------------------===//
 
 static bool typeRangeMatches(Type type, TypeRange range) {
   return llvm::all_of(range, [&](Type e) { return type == e; });
 }
 
-LogicalResult ListMakeOp::verify() {
+LogicalResult ListCreateOp::verify() {
   if (getResult().getType().getLength() !=
       Builder(getContext()).getIndexAttr(getNumOperands()))
     return emitOpError("expected result list to have ")
