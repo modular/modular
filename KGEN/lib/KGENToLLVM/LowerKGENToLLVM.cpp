@@ -152,9 +152,14 @@ struct ConvertKGENCall : public mlir::ConvertOpToLLVMPattern<CallOp> {
         return emitError(op.getLoc(), "failed to convert call result type");
     }
 
+    auto flatSymbol = dyn_cast<FlatSymbolRefAttr>(op.getCalleeAttr());
+    if (!flatSymbol)
+      return emitError(op.getLoc(),
+                       "cannot lower call to nested symbol to LLVM");
+
     // Create the LLVM call operation.
     auto llvmCall = rewriter.create<LLVM::CallOp>(
-        op.getLoc(), types, op.getCalleeAttr(), adaptor.getOperands());
+        op.getLoc(), types, flatSymbol, adaptor.getOperands());
 
     // Unpack the struct if necessary.
     SmallVector<Value> results;
