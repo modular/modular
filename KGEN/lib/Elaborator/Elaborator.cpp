@@ -239,8 +239,10 @@ public:
   ParseResult collectInterfaces();
 
   /// Return the operation that defines the specified symbol.
-  Operation *lookupCallee(FlatSymbolRefAttr symbolRef) {
-    return symtab.lookup(symbolRef.getAttr());
+  Operation *lookupCallee(SymbolRefAttr symbolRef) {
+    assert(isa<FlatSymbolRefAttr>(symbolRef) &&
+           "Elaborator doesn't support nested symbols");
+    return symtab.lookup(symbolRef.getRootReference());
   }
 
   /// Return all instantiations of the specified declaration (a func,
@@ -557,7 +559,7 @@ private:
   }
   LogicalResult processGeneratorUserImpl(
       Operation *user, ArrayRef<ParamDeclAttr> decls,
-      ArrayRef<ParamBindAttr> paramValues, FlatSymbolRefAttr calleeAttr,
+      ArrayRef<ParamBindAttr> paramValues, SymbolRefAttr calleeAttr,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters,
       bool isInlinedCall);
   void
@@ -979,7 +981,7 @@ FailureOr<std::pair<ArrayAttr, bool>> ParameterRewriter::resolveCallInputParams(
 
 LogicalResult ParameterRewriter::processGeneratorUserImpl(
     Operation *user, ArrayRef<ParamDeclAttr> decls,
-    ArrayRef<ParamBindAttr> paramValues, FlatSymbolRefAttr calleeAttr,
+    ArrayRef<ParamBindAttr> paramValues, SymbolRefAttr calleeAttr,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters,
     bool isInlinedCall) {
   // Evaluate any input parameters.
@@ -1575,7 +1577,10 @@ static void printParameterValue(TypedAttr value, llvm::raw_ostream &os) {
     // something if these get too verbose.
     os << typeConstant.getValue();
   } else if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
-    os << symbolConstant.getName().getValue();
+    if (auto flat = dyn_cast<FlatSymbolRefAttr>(symbolConstant.getSymbol()))
+      os << flat.getValue();
+    else
+      os << symbolConstant.getSymbol();
   } else if (auto stringConstant = dyn_cast<StringAttr>(value)) {
     os << stringConstant.strref();
   } else if (auto listConstant = dyn_cast<ListAttr>(value)) {
@@ -1988,7 +1993,7 @@ ParseResult RecursionChecker::checkRecursively(Operation *op) {
   // declaration to see what they call.
   bool failed = false;
   op->walk([&](Operation *op) {
-    FlatSymbolRefAttr calleeAttr;
+    SymbolRefAttr calleeAttr;
     if (auto call = dyn_cast<CallOp>(op)) {
       calleeAttr = call.getCalleeAttr();
     } else if (auto addressof = dyn_cast<AddressOfOp>(op)) {

@@ -407,7 +407,7 @@ CallableValue ExprNode::emitCallable(ExprEmitter &emitter,
 // CallableValue Implementation
 //===----------------------------------------------------------------------===//
 
-LITSymbolConstantAttr
+SymbolConstantAttr
 DirectCallable::getBoundConstantAttr(ExprEmitter &emitter) const {
   SignatureType resultType = type;
 
@@ -425,7 +425,7 @@ DirectCallable::getBoundConstantAttr(ExprEmitter &emitter) const {
       return {};
   }
 
-  return LITSymbolConstantAttr::get(symbol, bindings, resultType);
+  return SymbolConstantAttr::get(symbol, bindings, resultType);
 }
 
 /// Get a symbol for a direct reference to the specified function in its
@@ -534,8 +534,7 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
   // an indirect call.
   PointerUnion<Attribute, Value> callee;
   if (calleeVal.direct) {
-    LITSymbolConstantAttr symbol =
-        calleeVal.direct->getBoundConstantAttr(emitter);
+    SymbolConstantAttr symbol = calleeVal.direct->getBoundConstantAttr(emitter);
     if (!symbol)
       return {};
 
@@ -622,7 +621,7 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
     // FIXME: Move result type inference into CallOp/CallIndirectOp.
     resultVal = emitter.builder
                     ->create<CallParamOp>(
-                        loc, resultTypes, cast<LITSymbolConstantAttr>(target),
+                        loc, resultTypes, cast<SymbolConstantAttr>(target),
                         /*inputParams*/ ArrayRef<ParamBindAttr>(),
                         /*resultParams*/ ArrayRef<ParamDeclAttr>(),
                         /*operands*/ valueArguments)

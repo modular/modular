@@ -611,19 +611,20 @@ static LogicalResult lowerLITStructDecl(LITStructDeclOp litStructDecl,
 /// lowering, the symbol tree will be flat. Concatenate all nested symbol
 /// references in symbol constants.
 static void renameSymbolReferences(Operation *op) {
-  auto trimSymbolConstant = [](Attribute attr) -> Attribute {
-    if (auto symbolCst = dyn_cast<LITSymbolConstantAttr>(attr)) {
-      SymbolRefAttr symRef = symbolCst.getSymbolRef();
-      SmallString<64> qualifiedName(symRef.getRootReference().getValue().str());
-      for (FlatSymbolRefAttr symRefAttr : symRef.getNestedReferences()) {
-        qualifiedName.append("::");
-        qualifiedName.append(symRefAttr.getValue());
-      }
-      return SymbolConstantAttr::get(
-          FlatSymbolRefAttr::get(attr.getContext(), qualifiedName),
-          symbolCst.getParamValues(), symbolCst.getType());
+  auto trimSymbolConstant = [](SymbolConstantAttr attr) -> Attribute {
+    // If this attribute is already flat, there is nothing to do.
+    if (isa<FlatSymbolRefAttr>(attr.getSymbol()))
+      return attr;
+
+    SymbolRefAttr symRef = attr.getSymbol();
+    SmallString<64> qualifiedName(symRef.getRootReference().getValue().str());
+    for (FlatSymbolRefAttr symRefAttr : symRef.getNestedReferences()) {
+      qualifiedName.append("::");
+      qualifiedName.append(symRefAttr.getValue());
     }
-    return attr;
+    return SymbolConstantAttr::get(
+        FlatSymbolRefAttr::get(attr.getContext(), qualifiedName),
+        attr.getParamValues(), attr.getType());
   };
   auto trimInType = [&](Type type) {
     if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type))

@@ -160,7 +160,7 @@ struct DirectCallable {
   /// Perform subsitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
   /// returning null.
-  LITSymbolConstantAttr getBoundConstantAttr(ExprEmitter &emitter) const;
+  SymbolConstantAttr getBoundConstantAttr(ExprEmitter &emitter) const;
 };
 
 /// This class is returned by the emitCallable hooks on AST expressions, which

@@ -90,8 +90,8 @@ lit.func @main(%a: !kgen.declref<@A>, %b: !kgen.declref<@B>) {
 
 // CHECK-LABEL: lit.struct.decl @A<N>
 lit.struct.decl @A<N> {
-  // CHECK-NEXT: lit.func @"A::foo"<M>
-  lit.func @"A::foo"<M>(%self: !kgen.declref<@A<N = N>>) -> index {
+  // CHECK-NEXT: lit.func @foo<M>
+  lit.func @foo<M>(%self: !kgen.declref<@A<N = N>>) -> index {
     %0 = kgen.param.constant = <add(N, M)>
     kgen.return %0 : index
   }

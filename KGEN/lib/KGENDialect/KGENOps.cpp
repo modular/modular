@@ -493,7 +493,7 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   }
 
   auto module = KGENModule::from(*this, symbolTable);
-  auto func = module.lookup<KGENDeclInterface>(evaluator.getName());
+  auto func = module.lookup<KGENDeclInterface>(evaluator.getSymbol());
   if (!func)
     return emitOpError("evaluator ")
            << evaluator.getSymbol() << " does not refer to a KGEN declaration";
@@ -519,7 +519,7 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   if (!defaultImpl)
     return success();
 
-  func = module.lookup<KGENDeclInterface>(defaultImpl.getName());
+  func = module.lookup<KGENDeclInterface>(defaultImpl.getSymbol());
   if (!func)
     return emitOpError("defaultImpl ")
            << defaultImpl.getSymbol()
@@ -1408,7 +1408,7 @@ static std::pair<StructDeclOp, ParameterEvaluator>
 lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
                  DeclRefType ref) {
   auto module = KGENModule::from(user, symbolTable);
-  auto structDecl = module.lookup<StructDeclOp>(ref.getName());
+  auto structDecl = module.lookup<StructDeclOp>(ref.getSymbol());
   // Currently, this is impossible to fail because the symbol use was verified
   // by the parameter verifier.
   assert(structDecl && "expected a struct declaration");

@@ -479,7 +479,7 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
     return;
 
   // Build the signature of the referenced symbol.
-  SymbolRefAttr symbol = symbolConstant.getSymbolRef();
+  SymbolRefAttr symbol = symbolConstant.getSymbol();
   auto lookupDecl = [&](Operation *root, auto name) -> KGENDeclInterface {
     if (auto decl = dyn_cast_or_null<KGENDeclInterface>(
             symbolTable->lookupSymbolIn(root, name)))
