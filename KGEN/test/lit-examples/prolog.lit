@@ -453,3 +453,48 @@ struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
   fn fma(self, multiplier: SIMD[size, type], accumulator: SIMD[size, type]) -> SIMD[size, type]:
     return SIMD[size, type](__mlir_op.`pop.fma`(self.value, multiplier.value,
                                              accumulator.value))
+
+#===------------------------------------------------------------------------===#
+# Error
+#===------------------------------------------------------------------------===#
+
+struct StringRef:
+    var data: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`
+    var size: __mlir_type.`index`
+
+struct Error:
+    var msg: StringRef
+
+    fn __new__(msg: StringRef) -> Error:
+        var result: Error
+        result.msg = msg
+        return result
+
+struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
+    var value: __mlir_type.`!pop.variant<@Error, #lit<placeholder !kgen.mlirtype>>`[type]
+
+    fn __new__(value: __mlir_type.`!pop.variant<@Error, #lit<placeholder !kgen.mlirtype>>`[type]) -> ErrorOr[type]:
+        var result: ErrorOr[type]
+        result.value = value
+        return result
+
+    @staticmethod
+    fn fromError(err: Error) -> ErrorOr[type]:
+        var result: ErrorOr[type]
+        result.value = __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, #lit<placeholder !kgen.mlirtype>>`[type]](err)
+        return result
+
+    @staticmethod
+    fn fromValue(value: __mlir_type.`!kgen.paramref<#lit<placeholder !kgen.mlirtype>>`[type]) -> ErrorOr[type]:
+        var result: ErrorOr[type]
+        result.value = __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, #lit<placeholder !kgen.mlirtype>>`[type]](value)
+        return result
+
+    fn __bool__(self: ErrorOr[type]) -> Bool:
+        return Bool.false() if Bool(__mlir_op.`pop.variant.is`[testType: __mlir_attr.`!kgen.declref<@Error>`](self.value)) else Bool.true()
+
+    fn getValue(self: ErrorOr[type]) -> __mlir_type.`!kgen.paramref<#lit<placeholder !kgen.mlirtype>>`[type]:
+        return __mlir_op.`pop.variant.get`[_type: __mlir_type.`!kgen.paramref<#lit<placeholder !kgen.mlirtype>>`[type]](self.value)
+
+    fn getError(self: ErrorOr[type]) -> Error:
+        return __mlir_op.`pop.variant.get`[_type: Error](self.value)
