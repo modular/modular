@@ -6,6 +6,7 @@
 
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "LLCL/Runtime/Algorithms.h"
+#include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/Support/SHA256.h"
 
@@ -23,70 +24,6 @@ std::string TransformCacheKey::hashKey(TransformCacheKey::KeyTy key) {
   std::array<uint8_t, 32> hash = llvm::SHA256::hash(
       llvm::makeArrayRef((const uint8_t *)key.begin(), key.size()));
   return {hash.begin(), hash.end()};
-}
-
-/// The symbol start code is a single 0xff byte - in unicode this prefix
-/// indicates a special code point so it should almost always result in an
-/// unknown code point (and therefore be distinguishable).
-static constexpr char kSymbolStartCode = (char)0xff;
-
-/// Because MLIR hides the implementation details of how things are
-/// parsed/printed, if we want to print it in a way we can recover it we have to
-/// do it ourselves. This writes a RegionHashArrayAttr in a simple binary format
-/// that is very similar to BEF.
-static void printParseableRegionHashes(RegionHashArrayAttr hashes,
-                                       WriteableBufferRef buf) {
-  uint16_t numHashes = hashes.size();
-  buf->write((char *)&numHashes, sizeof(uint16_t));
-
-  for (auto hash : hashes) {
-    buf->write(hash.getHash().begin(), hash.getHash().size());
-    uint16_t numSymbols = hash.getSymbols().size();
-    buf->write((char *)&numSymbols, sizeof(uint16_t));
-    for (auto sym : hash.getSymbols()) {
-      buf->write(kSymbolStartCode);
-      *buf << sym;
-    }
-  }
-}
-
-/// Perform the inverse of the operation above - parse the region hashes out of
-/// the buffer and return a new RegionHashArrayAttr.
-static FailureOr<RegionHashArrayAttr>
-parseRegionHashes(BufferRef buf, MLIRContext *ctx, Location loc) {
-  StringRef buffer = buf->getBuffer();
-  uint16_t numHashes = *((const uint16_t *)buffer.begin());
-  buffer = buffer.drop_front(sizeof(uint16_t));
-  SmallVector<RegionHashAttr> hashes;
-  for (uint16_t i = 0; i < numHashes; ++i) {
-    // Consume the hash.
-    StringRef hashBytes = buffer.take_front(32);
-    buffer = buffer.drop_front(32);
-    // Consume the number of symbols.
-    uint16_t numSymbols = *((const uint16_t *)buffer.begin());
-    buffer = buffer.drop_front(sizeof(uint16_t));
-    SmallVector<SymbolRefAttr> syms;
-    for (uint16_t s = 0; s < numSymbols; ++s) {
-      if (buffer.front() != kSymbolStartCode)
-        return mlir::emitError(loc)
-               << "corrupted symbol, did not start with the start code";
-
-      // Consume the symbol.
-      auto [symbol, b] = buffer.split(kSymbolStartCode);
-      if (b.empty())
-        return mlir::emitError(loc)
-               << "could not split binary field on the symbol start code, "
-                  "corrupted input detected";
-
-      buffer = b;
-      syms.push_back(SymbolRefAttr::get(ctx, symbol));
-    }
-    // Now we can build the hash.
-    hashes.push_back(RegionHashAttr::get(ctx, hashBytes, syms));
-  }
-
-  // Return the full array.
-  return RegionHashArrayAttr::get(ctx, hashes);
 }
 
 /// Do a transform that can be cached. The transform must be named, see the
@@ -222,11 +159,10 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
     // Once deflation has gone through, we can get the new region hash and
     // store it in the cache.
     auto out = AsyncValueRef<LogicalResult>::allocate(chain.getRuntime());
-    deflate.andThen([op, buf = buf.copy(), out = out.copy(),
+    deflate.andThen([op, buf = std::move(buf), out = out.copy(),
                      deflate = deflate.copy()]() mutable {
       // Get the new region hashes and stuff them in the
-      // cache. This rewrites the mapping hash(pipeline,
-      // inputRegionHashes) -> resultRegionHashes.
+      // cache.
       auto resultRegionHashes =
           op->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
       if (!resultRegionHashes) {
@@ -234,8 +170,9 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
                     << "could not find region hashes");
         return;
       }
-      // Print them in a way we can parse them.
-      printParseableRegionHashes(resultRegionHashes, std::move(buf));
+      *buf << resultRegionHashes;
+      // TODO: This currently requires a null terminator (MLIR bug #58964)
+      buf->write((char)0);
       out.emplace(success());
     });
     return out;
@@ -261,16 +198,18 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
 
       // We found the value in the cache, handle that.
       BufferRef buf = foundOr->takeValue();
-      auto newHashesOr =
-          parseRegionHashes(buf.copy(), op->getContext(), op->getLoc());
-      if (failed(newHashesOr)) {
-        out.emplace(CacheFindResult::error("failed to parse region hashes"));
-        return;
-      }
+      // TODO: We have to drop the null terminator, the underlying memory needs
+      //       it but the StringRef shouldn't have it (MLIR bug #58964).
+      StringRef attrStr = buf->getBuffer().drop_back();
+      Attribute newHashes = mlir::parseAttribute(attrStr, op->getContext());
+      if (!newHashes || !isa<RegionHashArrayAttr>(newHashes))
+        return out.emplace(
+            CacheFindResult::error("failed to parse region hashes"));
 
       // Otherwise, replace the region hash array attr on the target, and
       // we're done.
-      op->setAttr(getRegionHashAttrName(), *newHashesOr);
+      op->setAttr(getRegionHashAttrName(),
+                  cast<RegionHashArrayAttr>(newHashes));
       // Forward the BufferRef because we found something in the cache.
       out.emplace(CacheFindResult::value(std::move(buf)));
     });

@@ -75,7 +75,7 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
 
     // And finally, attribute values.
     op->getAttrDictionary().walkSubAttrs([&](Attribute attr) {
-      if (isa<SymbolRefAttr>(attr))
+      if (isa<SymbolRefAttr, ConstantHashAttr, RegionHashAttr>(attr))
         return;
       hashTypeOrAttr(attr);
     });
@@ -95,6 +95,7 @@ static AsyncValueRef<LogicalResult>
 cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
                   BlobCache<M::Cache::RegionCacheKey> &cache) {
   SmallVector<SymbolRefAttr> symbolReferences;
+  SmallVector<ConstantHashAttr> hashReferences;
   SmallVector<SymbolIndexAttr> refs;
 
   // Now we walk the symbol and collect all symbol references.
@@ -102,27 +103,41 @@ cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
     op->getAttrDictionary().walkSubAttrs([&](Attribute attr) {
       if (auto symbolRef = dyn_cast<SymbolRefAttr>(attr))
         symbolReferences.push_back(symbolRef);
+      if (auto hash = dyn_cast<ConstantHashAttr>(attr))
+        hashReferences.push_back(hash);
     });
   });
 
   // Create a unique set of symbol references while maintaining the order.
-  llvm::SetVector<SymbolRefAttr> uniqueRefs(symbolReferences.begin(),
-                                            symbolReferences.end());
+  llvm::SetVector<SymbolRefAttr> uniqueSymbolRefs(symbolReferences.begin(),
+                                                  symbolReferences.end());
+  llvm::SetVector<ConstantHashAttr> uniqueHashRefs(hashReferences.begin(),
+                                                   hashReferences.end());
 
   // Now we'll take the uniqued list of symbols we have and replace attributes
   // with the appropriate SymbolIndexAttr.
   auto replaceSymbolRef = [&](SymbolRefAttr symRef) {
-    auto found = llvm::find(uniqueRefs, symRef);
-    assert(found != uniqueRefs.end());
+    auto found = llvm::find(uniqueSymbolRefs, symRef);
+    assert(found != uniqueSymbolRefs.end());
     return builder.getAttr<SymbolIndexAttr>(
-        std::distance(uniqueRefs.begin(), found));
+        std::distance(uniqueSymbolRefs.begin(), found));
   };
 
-  // Walk all the ops and replace their symbol refs with symbol indices.
+  auto replaceHashRef = [&](ConstantHashAttr hashRef) {
+    auto found = llvm::find(uniqueHashRefs, hashRef);
+    assert(found != uniqueHashRefs.end());
+    return builder.getAttr<HashIndexAttr>(
+        std::distance(uniqueHashRefs.begin(), found));
+  };
+
+  // Walk all the ops and replace their symbol refs with symbol indices, and
+  // their hash refs with hash indices.
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](SymbolRefAttr symbolRefAttr) {
     return replaceSymbolRef(symbolRefAttr);
   });
+  replacer.addReplacement(
+      [&](ConstantHashAttr hashAttr) { return replaceHashRef(hashAttr); });
 
   r.walk([&](Operation *op) { replacer.replaceElementsIn(op); });
 
@@ -155,8 +170,11 @@ cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
       hashVec = SmallVector<RegionHashAttr>(hashes.begin(), hashes.end());
 
     hashVec.push_back(builder.getAttr<RegionHashAttr>(
-        **hashOr, llvm::makeArrayRef<SymbolRefAttr>(&*uniqueRefs.begin(),
-                                                    uniqueRefs.size())));
+        **hashOr,
+        llvm::makeArrayRef<SymbolRefAttr>(&*uniqueSymbolRefs.begin(),
+                                          uniqueSymbolRefs.size()),
+        llvm::makeArrayRef<ConstantHashAttr>(&*uniqueHashRefs.begin(),
+                                             uniqueHashRefs.size())));
     symbol->setAttr(getRegionHashAttrName(),
                     builder.getAttr<RegionHashArrayAttr>(hashVec));
 
@@ -236,10 +254,13 @@ inflateRegion(Region *r, RegionHashAttr regionHash,
     ContainerOp container = cast<ContainerOp>(b.front());
     r->takeBody(container.getBodyRegion());
 
-    // Finish up by replacing symbols with their original names.
+    // Finish up by replacing symbols/hashes with their original attrs.
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement([&](SymbolIndexAttr symRef) {
       return regionHash.getSymbols()[symRef.getIndex()];
+    });
+    replacer.addReplacement([&](HashIndexAttr hashRef) {
+      return regionHash.getHashes()[hashRef.getIndex()];
     });
     r->walk([&](Operation *op) { replacer.replaceElementsIn(op); });
     out.emplace(success());
