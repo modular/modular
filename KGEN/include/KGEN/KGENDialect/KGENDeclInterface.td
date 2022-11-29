@@ -38,6 +38,12 @@ def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
                                 $_op.getFunctionType());
     }]>,
 
+    InterfaceMethod<[{
+      Return the parameter + SSA value signature including contextual parameters.
+    }], "SignatureType", "getFullSignature", (ins), [{}], [{
+      return KGEN::getFullSignature($_op);
+    }]>,
+
     // Normal arguments and results.
     InterfaceMethod<[{
       Return the FunctionType for input/result SSA values.

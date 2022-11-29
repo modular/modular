@@ -1378,3 +1378,33 @@ LogicalResult KGEN::verifyDeclMatchesInterface(
       originatorName, originatorDecl.getSignature(), originatorDecl.getLoc(),
       interfaceName, interfaceDecl.getSignature(), interfaceDecl.getLoc());
 }
+
+/// If the specified operation is non-null and contains parameters, collect them
+/// into the specified array.
+static void collectContextParameters(Operation *op,
+                                     SmallVector<ParamDeclAttr> &params) {
+  auto decl = dyn_cast_or_null<KGENDeclInterface>(op);
+  if (!decl)
+    return;
+  collectContextParameters(op->getParentOp(), params);
+  llvm::append_range(params, decl.getInputParamDecls());
+}
+
+/// Return the full signature of this declaration, including parameters from
+/// enclosing struct declarations.
+SignatureType KGEN::getFullSignature(KGENDeclInterface decl) {
+  auto signature = decl.getSignature();
+
+  // Collect contextual params, if there are none, the full signature is the
+  // same as the local signature.
+  SmallVector<ParamDeclAttr> inputParams;
+  collectContextParameters(decl.getOperation()->getParentOp(), inputParams);
+  if (inputParams.empty())
+    return signature;
+
+  llvm::append_range(inputParams, signature.getInputParams());
+
+  return SignatureType::get(
+      ParamDeclArrayAttr::get(signature.getContext(), inputParams),
+      signature.getResultParamTypes(), signature.getValues());
+}

@@ -16,10 +16,16 @@
 #include "Support/ForwardDecls.h"
 
 namespace M::KGEN {
+class KGENDeclInterface;
 class ParamBindAttr;
 class ParamBindArrayAttr;
 class ParamDeclArrayAttr;
 class TypeArrayAttr;
+
+/// Return the full signature of this declaration, including parameters from
+/// enclosing struct declarations.
+SignatureType getFullSignature(KGENDeclInterface decl);
+
 } // namespace M::KGEN
 
 #define GET_TYPEDEF_CLASSES
