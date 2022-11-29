@@ -392,18 +392,12 @@ ParseResult POP::parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr) {
   {
     StringAttr ref;
     if (succeeded(p.parseOptionalSymbolName(ref))) {
-      // TODO: LITDeclRefType will eventually need @X::@Y::@Z.
+      // TODO: DeclRefType will eventually need @X::@Y::@Z.
       FailureOr<ParamBindArrayAttr> paramValues;
       if (parseOptionalParamBindSpec(p, paramValues))
         return failure();
 
-      Type result;
-      // LITDeclRefType has a trailing ? to indicate they aren't fully bound.
-      if (succeeded(p.parseOptionalQuestion()))
-        result = LITDeclRefType::get(FlatSymbolRefAttr::get(ref), *paramValues);
-      else
-        result = DeclRefType::get(FlatSymbolRefAttr::get(ref), *paramValues);
-
+      Type result = DeclRefType::get(FlatSymbolRefAttr::get(ref), *paramValues);
       typeExpr = TypeConstantAttr::get(result);
       return success();
     }
@@ -468,11 +462,6 @@ void POP::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
       .Case([&](DeclRefType ref) {
         p << ref.getSymbol();
         printOptionalParamBindSpec(p, ref.getParamValues());
-      })
-      .Case([&](LITDeclRefType ref) {
-        p << ref.getSymbol();
-        printOptionalParamBindSpec(p, ref.getParamValues());
-        p << "?";
       })
       .Case([&](DTypeType) { p << DTypeType::getMnemonic(); })
       .Default([&](auto) { printTypeParamValue(p, typeExpr); });

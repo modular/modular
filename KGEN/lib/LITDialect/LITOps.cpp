@@ -168,7 +168,7 @@ SignatureType LITFuncOp::getFullSignature() {
 // LITStructCreateOp
 //===----------------------------------------------------------------------===//
 
-static LITStructDeclOp lookupStructDecl(LITDeclRefType refType, Operation *op,
+static LITStructDeclOp lookupStructDecl(DeclRefType refType, Operation *op,
                                         SymbolTableCollection &symbolTable) {
   auto module = KGENModule::from(op, symbolTable);
   auto structDecl = module.lookup<LITStructDeclOp>(refType.getSymbol());
@@ -177,8 +177,7 @@ static LITStructDeclOp lookupStructDecl(LITDeclRefType refType, Operation *op,
   return structDecl;
 }
 
-static ParameterEvaluator
-getEvaluatorForBoundStructType(LITDeclRefType refType) {
+static ParameterEvaluator getEvaluatorForBoundStructType(DeclRefType refType) {
   ParameterEvaluator evaluator;
   // Remap the type of the field based on any bound parameter types from the
   // base reference.
@@ -190,7 +189,7 @@ getEvaluatorForBoundStructType(LITDeclRefType refType) {
 /// Given a struct type with bound parameters and a field decl within it,
 /// calculate and return the correct type for the field given substitutions.
 static Type getReboundFieldType(ParameterEvaluator &evaluator,
-                                LITDeclRefType structType, VarDeclOp field) {
+                                DeclRefType structType, VarDeclOp field) {
   // Ensure the field comes from the struct type in question.
   assert(structType.getSymbol().getRootReference() ==
          cast<LITStructDeclOp>(field->getParentOp()).getNameAttr());
@@ -242,7 +241,7 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
 
 static LogicalResult
 verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
-                         LITDeclRefType ref, StringAttr fieldName, Type type) {
+                         DeclRefType ref, StringAttr fieldName, Type type) {
   LITStructDeclOp structDecl = lookupStructDecl(ref, op, symbolTable);
   auto evaluator = getEvaluatorForBoundStructType(ref);
 
@@ -266,7 +265,7 @@ LITStructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   TypedAttr refExpr = getContainer().getType().getElementType();
   return verifyStructFieldAndType(
       symbolTable, *this,
-      cast<LITDeclRefType>(cast<TypeConstantAttr>(refExpr).getValue()),
+      cast<DeclRefType>(cast<TypeConstantAttr>(refExpr).getValue()),
       getFieldAttr(),
       ParamRefType::get(getResult().getType().getElementType()));
 }
@@ -276,7 +275,7 @@ void LITStructGEPOp::build(OpBuilder &builder, OperationState &result,
   TypedAttr refExpr =
       cast<POP::PointerType>(structBasePtr.getType()).getElementType();
   auto structType =
-      cast<LITDeclRefType>(cast<TypeConstantAttr>(refExpr).getValue());
+      cast<DeclRefType>(cast<TypeConstantAttr>(refExpr).getValue());
 
   auto evaluator = getEvaluatorForBoundStructType(structType);
   auto resultType = getReboundFieldType(evaluator, structType, field);
@@ -292,13 +291,13 @@ LogicalResult
 LITStructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   Type structType = getStructVal().getType();
   return verifyStructFieldAndType(symbolTable, *this,
-                                  cast<LITDeclRefType>(structType),
-                                  getFieldAttr(), getResult().getType());
+                                  cast<DeclRefType>(structType), getFieldAttr(),
+                                  getResult().getType());
 }
 
 void LITStructExtractOp::build(OpBuilder &builder, OperationState &result,
                                Value structBasePtr, VarDeclOp field) {
-  auto structType = cast<LITDeclRefType>(structBasePtr.getType());
+  auto structType = cast<DeclRefType>(structBasePtr.getType());
   auto evaluator = getEvaluatorForBoundStructType(structType);
   build(builder, result, getReboundFieldType(evaluator, structType, field),
         field.getNameAttr(), structBasePtr);

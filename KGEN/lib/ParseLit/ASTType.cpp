@@ -25,7 +25,7 @@ using namespace M::KGEN::LIT;
 //===----------------------------------------------------------------------===//
 
 ASTDecl *ASTType::getDecl(LitSharedState &shared) const {
-  if (auto declRef = dyn_cast<LITDeclRefType>(mlirType))
+  if (auto declRef = dyn_cast<DeclRefType>(mlirType))
     return &shared.getDeclForSymbol(declRef.getSymbol());
   return nullptr;
 }
@@ -34,7 +34,7 @@ ASTDecl *ASTType::getDecl(LitSharedState &shared) const {
 /// on this reference to the type.  Note that this is potentially a partial
 /// binding set - incomplete bindings (missing bindings) are valid.
 ArrayRef<ParamBindAttr> ASTType::getParamBindings() const {
-  if (auto declRef = dyn_cast<LITDeclRefType>(mlirType))
+  if (auto declRef = dyn_cast<DeclRefType>(mlirType))
     return declRef.getParamValues().getValue();
   return {};
 }
@@ -51,7 +51,7 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
     return os << "<<NULL ASTTYPE>>";
 
   auto type = astType.mlirType;
-  if (auto declRef = dyn_cast<LITDeclRefType>(type)) {
+  if (auto declRef = dyn_cast<DeclRefType>(type)) {
     // TODO: Could include name scope information.
     os << declRef.getSymbol().getRootReference().str();
 
