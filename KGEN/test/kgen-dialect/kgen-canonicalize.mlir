@@ -136,3 +136,14 @@ kgen.generator @partial_apply_of_partial_apply(%fn: !kgen.signature<[], [], (ind
   // CHECK-NEXT: return %0
   kgen.return %1 : !kgen.signature<[], [], () -> index>
 }
+
+kgen.generator @call_with_bound<A>() {
+  kgen.return
+}
+
+// CHECK-LABEL: @call_param_bound_symbol
+kgen.generator @call_param_bound_symbol() {
+  // CHECK-NEXT: kgen.call @call_with_bound<A = 1>() : () -> ()
+  kgen.call_param[() -> (): @call_with_bound<A = 1>]()
+  kgen.return
+}
