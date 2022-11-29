@@ -832,9 +832,16 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
                                         PatternRewriter &rewriter) {
   // If the condition is a known symbol, then replace this with a kgen.call.
   if (auto calleeSymbol = dyn_cast<SymbolConstantAttr>(op.getCallee())) {
-    rewriter.replaceOpWithNewOp<CallOp>(
-        op, op.getResultTypes(), calleeSymbol.getSymbol().getLeafReference(),
-        op.getParamValues(), op.getParamDecls(), op.getOperands());
+    if (calleeSymbol.getParamValues().empty()) {
+      rewriter.replaceOpWithNewOp<CallOp>(
+          op, op.getResultTypes(), calleeSymbol.getSymbol().getLeafReference(),
+          op.getParamValues(), op.getParamDecls(), op.getOperands());
+    } else {
+      rewriter.replaceOpWithNewOp<CallOp>(
+          op, op.getResultTypes(), calleeSymbol.getSymbol().getLeafReference(),
+          calleeSymbol.getParamValues().getValue(), ArrayRef<ParamDeclAttr>(),
+          op.getOperands());
+    }
     return success();
   }
 
