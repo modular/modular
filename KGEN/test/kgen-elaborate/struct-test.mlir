@@ -2,7 +2,7 @@
 
 kgen.struct.decl @FooStruct<T:type> {
   // expected-note @below {{previously declared as "x" here}}
-  x : !pop.pointer<T>
+  kgen.struct.field x : !pop.pointer<T>
 }
 
 kgen.generator.interface @wrapInFoo<T:type>(!pop.pointer<T>)

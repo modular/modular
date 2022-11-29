@@ -36,7 +36,7 @@ kgen.generator.interface @wrapInFoo<T:type>(!pop.pointer<T>) -> !kgen.declref<@F
 
 // CHECK-LABEL: @FooStruct
 kgen.struct.decl @FooStruct<T:type> {
-  x : !pop.pointer<T>
+  kgen.struct.field x : !pop.pointer<T>
 }
 
 // CHECK-LABEL: kgen.func @useStruct

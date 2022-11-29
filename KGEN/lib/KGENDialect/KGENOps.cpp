@@ -1348,43 +1348,6 @@ StructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return ParameterDeclsAndUses().calculateAndVerify(*this, symbolTable);
 }
 
-/// Parse a special syntax for the struct fields.
-/// field ::= identifier `:` type
-static ParseResult parseStructFields(OpAsmParser &p, Region &fields) {
-  if (p.parseLBrace())
-    return failure();
-  Block *body = new Block;
-  fields.push_back(body);
-  OpBuilder b(p.getContext());
-  b.setInsertionPointToStart(body);
-  while (p.parseOptionalRBrace()) {
-    OperationState field(p.getEncodedSourceLoc(p.getCurrentLocation()),
-                         StructFieldOp::getOperationName());
-    if (StructFieldOp::parse(p, field))
-      return failure();
-
-    Optional<Location> fieldLoc = field.location;
-    if (p.parseOptionalLocationSpecifier(fieldLoc))
-      return failure();
-    field.location = *fieldLoc;
-
-    b.create(field);
-  }
-  return success();
-}
-
-static void printStructFields(OpAsmPrinter &p, Operation *op, Region &fields) {
-  p << '{';
-  p.printNewline();
-  for (Operation &field : fields.front()) {
-    p << "  ";
-    cast<StructFieldOp>(field).print(p);
-    p.printOptionalLocationSpecifier(field.getLoc());
-    p.printNewline();
-  }
-  p << '}';
-}
-
 //===----------------------------------------------------------------------===//
 // StructFieldOp
 //===----------------------------------------------------------------------===//

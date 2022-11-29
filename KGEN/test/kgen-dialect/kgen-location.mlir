@@ -3,8 +3,7 @@
 
 // COM: Check that location info is correctly propagated for sugared ops.
 
-// CHECK-DAG: #[[LOC1:.*]] = loc("im_a_region")
-// CHECK-DAG: #[[LOC2:.*]] = loc("im_a_field")
+// CHECK: #[[LOC1:.*]] = loc("im_a_region")
 
 kgen.generator @signature_call<fn: () -> ()>() {
   kgen.return
@@ -26,7 +25,9 @@ kgen.generator @call_with_region() {
 
 // CHECK-LABEL: kgen.struct.decl @Struct
 kgen.struct.decl @Struct {
-  // CHECK-NEXT: x : i32 loc(#[[LOC2]])
+  // CHECK-NEXT: kgen.struct.field x : i32 loc(#[[LOC2:.*]])
   // NDEBUG-NOT: loc(#{{.*}})
-  x : i32 loc("im_a_field") // kgen.struct.field
+  kgen.struct.field x : i32 loc("im_a_field")
 }
+
+// CHECK: #[[LOC2]] = loc("im_a_field")

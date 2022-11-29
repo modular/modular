@@ -733,7 +733,7 @@ def RebindOp : KGENOp<"rebind"> {
 
 def StructDeclOp : KGENOp<"struct.decl", [HasParent<"mlir::ModuleOp">, Symbol,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-    DeclareOpInterfaceMethods<KGENDeclInterface>, NoTerminator]> {
+    DeclareOpInterfaceMethods<KGENDeclInterface>, SingleBlock, NoTerminator]> {
   let summary = "Struct declaration.";
   let description = [{
     The `kgen.struct.decl` operation is a top-level operation used to declare
@@ -745,9 +745,9 @@ def StructDeclOp : KGENOp<"struct.decl", [HasParent<"mlir::ModuleOp">, Symbol,
 
     ```mlir
     kgen.struct.decl @Buffer<size, dtype: dtype> {
-      size : index
-      ptr : !pop.pointer<scalar<dtype>>
-      dtype : !kgen.dtype
+      kgen.struct.field size : index
+      kgen.struct.field ptr : !pop.pointer<scalar<dtype>>
+      kgen.struct.field dtype : !kgen.dtype
     }
     ```
 
@@ -770,8 +770,8 @@ def StructDeclOp : KGENOp<"struct.decl", [HasParent<"mlir::ModuleOp">, Symbol,
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
     $sym_name `` custom<OptionalParameterSpec>($paramDecls, $resultParamTypes)
-    custom<StructFields>($fields)
-    attr-dict
+    attr-dict-with-keyword
+    $fields
   }];
 
   let extraClassDeclaration = [{
@@ -803,7 +803,7 @@ def StructFieldOp : KGENOp<"struct.field", [HasParent<"StructDeclOp">]> {
   }];
 
   let arguments = (ins StrAttr:$name, TypeAttr:$type);
-  let assemblyFormat = "`` custom<KeywordAsString>($name) attr-dict `:` $type";
+  let assemblyFormat = "custom<KeywordAsString>($name) attr-dict `:` $type";
 }
 
 //===----------------------------------------------------------------------===//

@@ -617,10 +617,10 @@ kgen.generator @target_params<t0: i1, t1: i1>()
 
 kgen.struct.decl @StructDuplicate {
   // expected-note @below {{see previous declaration here}}
-  x : i32
-  y : i32
+  kgen.struct.field x : i32
+  kgen.struct.field y : i32
   // expected-error @below {{duplicate struct field "x"}}
-  x : i32
+  kgen.struct.field x : i32
 }
 
 // -----
@@ -643,7 +643,7 @@ kgen.generator.interface @InvalidTypeParamValue<a, c>() ->
 // -----
 
 kgen.struct.decl @Bar<a: type> {
-  x : !pop.array<32, a>
+  kgen.struct.field x : !pop.array<32, a>
 }
 
 kgen.generator @invalid_field_type<c: type>(%a: !kgen.paramref<c>) {
@@ -665,7 +665,7 @@ kgen.generator @invalid_field_name(%a: index, %container: !kgen.declref<@Bar>) {
 // -----
 
 kgen.struct.decl @Bar {
-  a : i32
+  kgen.struct.field a : i32
 }
 
 kgen.generator @invalid_field_name(%a: index, %container: !kgen.declref<@Bar>) {
