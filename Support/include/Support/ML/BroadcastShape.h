@@ -47,6 +47,9 @@ limitations under the License.
 
 namespace M {
 
+/// Safely multiplies dimensions taking into account dynamic shapes.
+int64_t multiplySymDims(int64_t dim1, int64_t dim2);
+
 /// Computes the shape of the output tensor given the shape of the two input
 /// tensor shapes. This follows the NumPy broadcasting rules]
 /// (https://docs.scipy.org/doc/numpy/user/basics.broadcasting.html#general-broadcasting-rules).
@@ -74,12 +77,12 @@ public:
 
   /// Constructs all helper shapes, following the aforementioned rules.
   ///
-  /// If "fewerDimsOptimization" is set to true (the default), the
-  /// implementation tries to reduce intermediate dimensions needed to be more
-  /// efficient. This is transparent to the caller. If false, all intermediate
-  /// shapes have the same number of dimensions as the larger of the two inputs.
+  /// If "fewerDimsOptimization" is set to true, the implementation tries to
+  /// reduce intermediate dimensions needed to be more efficient. This is
+  /// transparent to the caller. If false, all intermediate shapes have the same
+  /// number of dimensions as the larger of the two inputs.
   explicit BCastList(ArrayRef<ArrayRef<int64_t>>,
-                     bool fewerDimsOptimization = true);
+                     bool fewerDimsOptimization = false);
 
   ~BCastList() = default;
 
@@ -150,16 +153,16 @@ class BroadcastShape : public BCastList<2> {
 public:
   /// Constructs all helper shapes, following the aforementioned rules.
   ///
-  /// If "fewerDimsOptimization" is set to true (the default), the
-  /// implementation tries to reduce intermediate dimensions needed to be more
-  /// efficient. This is transparent to the caller.
+  /// If "fewerDimsOptimization" is set to true, the implementation tries to
+  /// reduce intermediate dimensions needed to be more efficient. This is
+  /// transparent to the caller.
   ///
   /// If false, all intermediate shapes have the same number of dimensions as
   /// the larger of the two inputs.
   using Vec = SmallVector<int64_t, 4>;
 
   BroadcastShape(ArrayRef<int64_t> x, ArrayRef<int64_t> y,
-                 bool fewerDimsOptimization = true);
+                 bool fewerDimsOptimization = false);
 
   ~BroadcastShape() = default;
 

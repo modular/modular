@@ -39,7 +39,6 @@ limitations under the License.
 #define SUPPORT_ML_MATMULBROADCAST_H
 
 #include "Support/ML/BroadcastShape.h"
-#include "Support/ML/TensorShape.h"
 
 namespace M {
 
@@ -52,7 +51,8 @@ class MatMulBroadcast {
 public:
   using Vec = BroadcastShape::Vec;
 
-  MatMulBroadcast(ArrayRef<int64_t> x, ArrayRef<int64_t> y);
+  MatMulBroadcast(ArrayRef<int64_t> x, ArrayRef<int64_t> y,
+                  bool fewerDimsOptimization = false);
 
   bool isValid() const {
     return !broadcastingRequired || (batchBCast && batchBCast->isValid());
@@ -69,13 +69,17 @@ public:
   /// getOutputBatchSize(). To compute the i'th batch output, a binary
   /// matmul-like operation should use the `getXBatchIndices()[i]`th batch index
   /// of `x`. Note: Returns an empty vector if broadcasting is not required.
-  /// Callers should only use this when isBroadcastingRequired() returns true.
+  /// When getXBatchSize() indicates a dynamic shape or if fewerDimsOptimization
+  /// is false, this should not be used. Otherwise, callers should only use this
+  /// when isBroadcastingRequired() returns true.
   ArrayRef<int64_t> getXBatchIndices() const { return xBatchIndices; }
 
   /// Returns the mapping from the flattened output batch indices to y's
   /// flattened batch indices. Similar to getXBatchIndices(). Note: Returns an
-  /// empty vector if broadcasting is not required. Callers should only use this
-  /// when isBroadcastingRequired() returns true.
+  /// empty vector if broadcasting is not required. When getYBatchSize()
+  /// indicates a dynamic shape or if fewerDimsOptimization is false, this
+  /// should not be used. Otherwise, callers should only use this when
+  /// isBroadcastingRequired() returns true.
   ArrayRef<int64_t> getYBatchIndices() const { return yBatchIndices; }
 
 private:
