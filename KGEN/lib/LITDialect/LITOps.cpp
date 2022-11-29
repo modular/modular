@@ -134,36 +134,6 @@ void LITFuncOp::build(OpBuilder &builder, OperationState &result,
   result.regions[0]->push_back(new Block());
 }
 
-/// If the specified operation is non-null and contains parameters, collect them
-/// into the specified array.
-static void collectContextParameters(Operation *op,
-                                     SmallVector<ParamDeclAttr> &params) {
-  auto decl = dyn_cast_or_null<KGENDeclInterface>(op);
-  if (!decl)
-    return;
-  collectContextParameters(op->getParentOp(), params);
-  llvm::append_range(params, decl.getInputParamDecls());
-}
-
-/// Return the full signature of this method, including parameters from
-/// enclosing struct declarations.
-SignatureType LITFuncOp::getFullSignature() {
-  auto signature = getSignature();
-
-  // Collect contextual params, if there are none, the full signature is the
-  // same as the local signature.
-  SmallVector<ParamDeclAttr> inputParams;
-  collectContextParameters(getOperation()->getParentOp(), inputParams);
-  if (inputParams.empty())
-    return signature;
-
-  llvm::append_range(inputParams, signature.getInputParams());
-
-  return SignatureType::get(
-      ParamDeclArrayAttr::get(signature.getContext(), inputParams),
-      signature.getResultParamTypes(), signature.getValues());
-}
-
 //===----------------------------------------------------------------------===//
 // LITStructCreateOp
 //===----------------------------------------------------------------------===//
