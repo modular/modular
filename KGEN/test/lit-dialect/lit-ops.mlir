@@ -73,6 +73,8 @@ lit.struct.decl @B {
   lit.func @foo(%self: !kgen.declref<@B>, %a: !kgen.declref<@A>) {
     // CHECK-NEXT: call_param[(!kgen.declref<@A>) -> (): @A::@foo]
     kgen.call_param[(!kgen.declref<@A>) -> (): @A::@foo](%a)
+
+    kgen.call @A::@foo(%a) : (!kgen.declref<@A>) -> ()
     kgen.return
   }
 }

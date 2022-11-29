@@ -77,7 +77,8 @@ static void sliceDependencies(Operation *op, mlir::SymbolTable &sliceSymtab,
     // Extract references to functions. Mark copied functions as module private
     // and recurse.
     llvm::TypeSwitch<Operation *>(op).Case<CallOp, AddressOfOp>([&](auto op) {
-      Operation *symbol = extractDependency(op.getCalleeAttr().getAttr());
+      Operation *symbol =
+          extractDependency(op.getCalleeAttr().getRootReference());
       if (auto func = dyn_cast_if_present<FuncOp>(symbol))
         sliceDependencies(func, sliceSymtab, symtab);
     });

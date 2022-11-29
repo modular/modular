@@ -256,7 +256,7 @@ def CallOp : KGENOp<"call", [KGENCallOpInterface,
   }];
 
   let arguments =
-   (ins FlatSymbolRefAttr:$callee, ParamBindArrayAttr:$paramValues,
+   (ins SymbolRefAttr:$callee, ParamBindArrayAttr:$paramValues,
         ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);

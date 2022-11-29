@@ -265,7 +265,8 @@ void PruneImpossibleVariantsPass::runOnOperation() {
   // Go rewrite all the callsites where variants results are known to be a
   // particular type.
   for (CallOp call : calls) {
-    auto it = rewrites.find(call.getCalleeAttr().getAttr());
+    // FIXME(Issue#5471): This probably isn't correct for scoped symbols.
+    auto it = rewrites.find(call.getCalleeAttr().getRootReference());
     if (it == rewrites.end())
       continue;
     OpBuilder b(&getContext());
