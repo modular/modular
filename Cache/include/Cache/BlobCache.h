@@ -118,6 +118,9 @@ public:
   /// delegates.
   LLCL::AsyncValueRef<CacheFindResult> find(BufferRef keyHash);
 
+  /// Clear out this backend and its delegates.
+  LLCL::AsyncValueRef<ErrorOrSuccess> clear();
+
   /// Overwrite the current delegate.
   void setDelegate(std::unique_ptr<BlobCacheBackend> &&d) {
     delegate = std::move(d);
@@ -136,6 +139,11 @@ protected:
   /// Subclasses should use this to provide the implementation of getting an
   /// item from storage.
   virtual CacheFindResult findImpl(StringRef keyHash) const = 0;
+  /// Subclasses should use this to provide the implementation of clearing the
+  /// cache. Subclasses may choose not to provide this, for example, a cloud
+  /// storage backend may not wish to actually clear all its storage. Backends
+  /// are advised to kick off a clear operation asynchronously.
+  virtual ErrorOrSuccess clearImpl() { return success(); }
 
   /// Create a ready AsyncValueRef. This is just nice sugar to clean up the
   /// callsites when we return an AsyncValueRef that's ready to go, such as
@@ -220,6 +228,8 @@ public:
     auto hash = Buffer::get(KeyInfo::hashKey(key));
     return backendList->find(std::move(hash));
   }
+
+  LLCL::AsyncValueRef<ErrorOrSuccess> clear() { return backendList->clear(); }
 
 private:
   LLCL::Runtime &runtime;
