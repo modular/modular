@@ -494,22 +494,9 @@ static void lowerLITVarDecl(LITFuncOp func) {
   });
 }
 
-/// Lower a lit.struct.gep to kgen.struct.gep.
-static void lowerLITStructGEP(LITFuncOp func) {
-  func.walk([&](LITStructGEPOp gepOp) -> void {
-    OpBuilder b(gepOp);
-    Value kgenGepOP =
-        b.create<StructGEPOp>(gepOp.getLoc(), gepOp.getType(), gepOp.getField(),
-                              gepOp.getContainer());
-    gepOp.replaceAllUsesWith(kgenGepOP);
-    gepOp->erase();
-  });
-}
-
 /// Lower an lit.func to kgen.generator.
 static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
   lowerLITVarDecl(gen);
-  lowerLITStructGEP(gen);
   OpBuilder b(gen);
 
   // Is a LITFuncOp with empy body representing an interface?
