@@ -451,6 +451,12 @@ kgen.generator @target_host<t0: target>()
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @target_has_feature<t0: target>()
+kgen.generator @target_has_feature<t0: target>()
+  constraints <[target_has_feature(t0, "avx"), "must support avx!"]> {
+  kgen.return
+}
+
 // REGION TYPES
 // CHECK-LABEL: kgen.generator @region_params<
 kgen.generator @region_params
