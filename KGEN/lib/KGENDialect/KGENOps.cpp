@@ -1375,23 +1375,24 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
 // StructCreateOp
 //===----------------------------------------------------------------------===//
 
+static ParameterEvaluator getEvaluatorForBoundStructType(DeclRefType refType) {
+  ParameterEvaluator evaluator;
+  for (ParamBindAttr bind : refType.getParamValues())
+    evaluator.setParameterValue(bind.getDecl(), bind.getValue());
+  return evaluator;
+}
+
 /// Lookup the declaration for the struct. When checking field types, we can't
 /// directly compare operation types to the struct field types because they are
 /// parameterized under different domains. We have to rebind them.
-static std::pair<StructDeclOp, ParameterEvaluator>
-lookupStructDecl(SymbolTableCollection &symbolTable, Operation *user,
-                 DeclRefType ref) {
+static StructDeclOp lookupStructDecl(SymbolTableCollection &symbolTable,
+                                     Operation *user, DeclRefType ref) {
   auto module = KGENModule::from(user, symbolTable);
   auto structDecl = module.lookup<StructDeclOp>(ref.getSymbol());
   // Currently, this is impossible to fail because the symbol use was verified
   // by the parameter verifier.
   assert(structDecl && "expected a struct declaration");
-
-  ParameterEvaluator evaluator;
-  for (ParamBindAttr bind : ref.getParamValues())
-    evaluator.setParameterValue(bind.getDecl(), bind.getValue());
-
-  return std::make_pair(structDecl, std::move(evaluator));
+  return structDecl;
 }
 
 /// Verify the reference struct type.
@@ -1399,8 +1400,8 @@ LogicalResult
 StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Verify the types of the fields in the operands match those in the
   // struct declaration.
-  auto [structDecl, evaluator] =
-      lookupStructDecl(symbolTable, *this, getType());
+  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(getType());
+  StructDeclOp structDecl = lookupStructDecl(symbolTable, *this, getType());
   for (auto [fieldDecl, operand, i] :
        llvm::zip(structDecl.getFieldDecls(), getOperands(),
                  llvm::seq<unsigned>(0, getNumOperands()))) {
@@ -1421,8 +1422,8 @@ StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
 LogicalResult
 StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  auto [structDecl, evaluator] =
-      lookupStructDecl(symbolTable, *this, getType());
+  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(getType());
+  StructDeclOp structDecl = lookupStructDecl(symbolTable, *this, getType());
 
   for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
     if (fieldDecl.getName() != getFieldAttr())
@@ -1446,7 +1447,8 @@ StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 static LogicalResult
 verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
                          DeclRefType ref, StringAttr fieldName, Type type) {
-  auto [structDecl, evaluator] = lookupStructDecl(symbolTable, op, ref);
+  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(ref);
+  StructDeclOp structDecl = lookupStructDecl(symbolTable, op, ref);
 
   for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
     if (fieldDecl.getName() != fieldName)
@@ -1469,6 +1471,14 @@ StructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
                                   getFieldAttr(), getValue().getType());
 }
 
+void StructExtractOp::build(OpBuilder &builder, OperationState &result,
+                            Value structBase, StructFieldOp field) {
+  auto structType = cast<DeclRefType>(structBase.getType());
+  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(structType);
+  build(builder, result, evaluator.getReboundType(field.getType()),
+        field.getNameAttr(), structBase);
+}
+
 //===----------------------------------------------------------------------===//
 // StructGEPOp
 //===----------------------------------------------------------------------===//
@@ -1481,6 +1491,19 @@ StructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
       cast<DeclRefType>(cast<TypeConstantAttr>(refExpr).getValue()),
       getFieldAttr(),
       ParamRefType::get(getResult().getType().getElementType()));
+}
+
+void StructGEPOp::build(OpBuilder &builder, OperationState &result,
+                        Value structBasePtr, StructFieldOp field) {
+  TypedAttr refExpr =
+      cast<POP::PointerType>(structBasePtr.getType()).getElementType();
+  auto structType =
+      cast<DeclRefType>(cast<TypeConstantAttr>(refExpr).getValue());
+
+  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(structType);
+  build(builder, result,
+        POP::PointerType::get(evaluator.getReboundType(field.getType())),
+        field.getNameAttr(), structBasePtr);
 }
 
 //===----------------------------------------------------------------------===//

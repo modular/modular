@@ -90,8 +90,8 @@ fn simpleMath(a: Int, b: Int) -> Int:
 
 # CHECK-LABEL: kgen.struct.decl @Pair<dt: !kgen.declref<@DType>> {
 struct Pair[dt: DType]:
- # CHECK: %a = lit.var.decl "a" : <@OurSIMD<size = 42, dt: !kgen.declref<@DType> = dt>>
- # CHECK: %b = lit.var.decl "b" : <@Int>
+ # CHECK: kgen.struct.field a : !kgen.declref<@OurSIMD<size = 42, dt: !kgen.declref<@DType> = dt>>
+ # CHECK: kgen.struct.field b : !kgen.declref<@Int>
   var a : OurSIMD[42, dt]
   var b : Int
 
@@ -180,7 +180,7 @@ fn byval_byref_function(a: Int, &b: Int):
 fn lvaluesAndRValues() -> __mlir_type.index:
   # CHECK: [[FOUR:%.*]] = index.constant 4
   # CHECK: [[INT:%.*]] = kgen.call @Int::@__new__([[FOUR]])
-  # CHECK: [[VALUE:%.*]] = lit.struct.extract [[INT]][value] : index from <@Int>
+  # CHECK: [[VALUE:%.*]] = kgen.struct.extract [[INT]][value] : index from
   # CHECK: kgen.return [[VALUE]] : index
   return Int(4).value
 

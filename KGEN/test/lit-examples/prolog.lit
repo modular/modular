@@ -23,7 +23,7 @@ struct Bool:
   var value : __mlir_type.i1
 
   fn __new__(value: __mlir_type.i1) -> Bool:
-    return __mlir_op.`lit.struct.create`[_type: Bool](value)
+    return __mlir_op.`kgen.struct.create`[_type: Bool](value)
 
 
   fn __bool__(self: Bool) -> Bool:
@@ -49,14 +49,14 @@ struct Bool:
 
 # CHECK-LABEL: kgen.struct.decl @Int {
 struct Int:
-  # CHECK-NEXT: %value = lit.var.decl "value" : <index>
+  # CHECK-NEXT: kgen.struct.field value : index
   var value : __mlir_type.index
 
-  # CHECK-LABEL: lit.func @__new__(%value_0: index) -> !kgen.declref<@Int> attributes {isStatic} {
+  # CHECK-LABEL: lit.func @__new__(%value: index) -> !kgen.declref<@Int> attributes {isStatic} {
   fn __new__(value: __mlir_type.index) -> Int:
-    # CHECK: %0 = lit.struct.create(%value_0) : (index) -> !kgen.declref<@Int>
+    # CHECK: %0 = kgen.struct.create(%value) : (index) -> !kgen.declref<@Int>
     # CHECK: kgen.return %0
-    return __mlir_op.`lit.struct.create`[_type: Int](value)
+    return __mlir_op.`kgen.struct.create`[_type: Int](value)
 
   # CHECK-LABEL: lit.func @__lt__
   fn __lt__(self, rhs: Int) -> Bool:
@@ -95,8 +95,8 @@ struct Int:
 
   # CHECK-LABEL: lit.func @__add__(%self: !kgen.declref<@Int>, %rhs: !kgen.declref<@Int>) -> !kgen.declref<@Int> {
   fn __add__(self, rhs: Int) -> Int:
-    # CHECK: %0 = lit.struct.extract %self[value]
-    # CHECK: %1 = lit.struct.extract %rhs[value]
+    # CHECK: %0 = kgen.struct.extract %self[value]
+    # CHECK: %1 = kgen.struct.extract %rhs[value]
     # CHECK: %2 = index.add %0, %1
     # CHECK: %3 = kgen.call @Int::@__new__(%2) : (index) -> !kgen.declref<@Int>
     # CHECK: kgen.return %3
@@ -313,7 +313,7 @@ struct DType:
   var value : __mlir_type.`!kgen.dtype`
 
   fn __new__(value: __mlir_type.`!kgen.dtype`) -> DType:
-    return __mlir_op.`lit.struct.create`[_type: DType](value)
+    return __mlir_op.`kgen.struct.create`[_type: DType](value)
 
   # TODO: This should be something like:
   # @static var f32 = DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
@@ -342,14 +342,14 @@ struct Scalar[type: DType]:
 
 # CHECK-LABEL: kgen.struct.decl @SIMD<size, type: dtype> {
 struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
-  # CHECK: %value = lit.var.decl "value" : <simd<size, type>>
+  # CHECK: kgen.struct.field value : !pop.simd<size, type>
   var value: __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[size, type]
 
-  # CHECK-LABEL:  lit.func @__new__(%value_0: !pop.simd<size, type>) -> !kgen.declref<@SIMD<size = size, type: dtype = type>> attributes {isStatic}
+  # CHECK-LABEL:  lit.func @__new__(%value: !pop.simd<size, type>) -> !kgen.declref<@SIMD<size = size, type: dtype = type>> attributes {isStatic}
   fn __new__(value: __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[size, type]) -> SIMD[size, type]:
-    # CHECK: %0 = lit.struct.create(%value_0) : (!pop.simd<size, type>) -> !kgen.declref<@SIMD<size = size, type: dtype = type>>
+    # CHECK: %0 = kgen.struct.create(%value) : (!pop.simd<size, type>) -> !kgen.declref<@SIMD<size = size, type: dtype = type>>
     # CHECK: kgen.return %0
-    return __mlir_op.`lit.struct.create`[_type: SIMD[size, type]](value)
+    return __mlir_op.`kgen.struct.create`[_type: SIMD[size, type]](value)
 
   # FIXME: These should be merged into __new__ when we support overloading.
   @staticmethod
@@ -358,12 +358,12 @@ struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     var pop = __mlir_op.`pop.cast_from_builtin`[_type: __mlir_type.`!pop.scalar<f64>`](value)
     var popCast = __mlir_op.`pop.cast`[_type: __mlir_type.`!pop.simd<1, #lit<placeholder !kgen.dtype>>`[type]](pop)
     var result = __mlir_op.`pop.simd.splat`[_type: __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[size, type]](popCast)
-    return __mlir_op.`lit.struct.create`[_type: SIMD[size, type]](result)
+    return __mlir_op.`kgen.struct.create`[_type: SIMD[size, type]](result)
 
   # CHECK-LABEL: lit.func @__add__(%self: !kgen.declref<@SIMD<size = size, type: dtype = type>>,
   fn __add__(self, rhs: SIMD[size, type]) -> SIMD[size, type]:
-    # CHECK: %0 = lit.struct.extract %self[value] : !pop.simd<size, type> from <@SIMD<size = size, type: dtype = type>>
-    # CHECK: %1 = lit.struct.extract %rhs[value] : !pop.simd<size, type> from <@SIMD<size = size, type: dtype = type>>
+    # CHECK: %0 = kgen.struct.extract %self[value] : !pop.simd<size, type> from
+    # CHECK: %1 = kgen.struct.extract %rhs[value] : !pop.simd<size, type> from
     # CHECK: %2 = pop.add %0, %1 : !pop.simd<size, type>
     # CHECK: %3 = kgen.call @SIMD::@__new__<size = size, type: dtype = type>(%2) : (!pop.simd<size, type>) -> !kgen.declref<@SIMD<size = size, type: dtype = type>>
     # CHECK: kgen.return %3 : !kgen.declref<@SIMD<size = size, type: dtype = type>>
