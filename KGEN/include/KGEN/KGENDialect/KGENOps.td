@@ -272,6 +272,10 @@ def CallOp : KGENOp<"call", [KGENCallOpInterface,
                    "ArrayRef<ParamBindAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams,
                    "ValueRange":$operands)>,
+    OpBuilder<(ins "TypeRange":$resultTypes, "SymbolRefAttr":$callee,
+                   "ArrayRef<ParamBindAttr>":$inputParams,
+                   "ArrayRef<ParamDeclAttr>":$resultParams,
+                   "ValueRange":$operands)>,
   ];
 
   let hasRegionVerifier = 1;
