@@ -13,6 +13,7 @@
 #include "ASTType.h"
 #include "IRValues.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LitDecls.h"
@@ -116,7 +117,7 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
 
   // Add an empty struct with the specified name to the resolver.
   auto addEmptyStructDecl = [&](StringRef name, ASTDecl *&decl) {
-    auto structOp = b.create<LITStructDeclOp>(loc, b.getStringAttr(name));
+    auto structOp = b.create<StructDeclOp>(loc, b.getStringAttr(name));
     decl = &resolver.addDecl(structOp, structOp.getNameAttr(), &builtinsDecl,
                              LitLexerCursor(), LitLexerCursor(), 0);
     decl->setResolvedType(decl->computeSelfTypeForStruct(*this));

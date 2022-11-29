@@ -47,7 +47,7 @@ struct Bool:
 # Int
 #===------------------------------------------------------------------------===#
 
-# CHECK-LABEL: lit.struct.decl @Int {
+# CHECK-LABEL: kgen.struct.decl @Int {
 struct Int:
   # CHECK-NEXT: %value = lit.var.decl "value" : <index>
   var value : __mlir_type.index
@@ -202,7 +202,7 @@ struct Int:
 # parameters are fully working, and we have typealiases.
 #
 
-# CHECK-LABEL: lit.struct.decl @F32 {
+# CHECK-LABEL: kgen.struct.decl @F32 {
 struct F32:
   var value : __mlir_type.`!pop.scalar<f32>`
 
@@ -340,7 +340,7 @@ struct Scalar[type: DType]:
 # SIMD
 #===------------------------------------------------------------------------===#
 
-# CHECK-LABEL: lit.struct.decl @SIMD<size, type: dtype> {
+# CHECK-LABEL: kgen.struct.decl @SIMD<size, type: dtype> {
 struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
   # CHECK: %value = lit.var.decl "value" : <simd<size, type>>
   var value: __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[size, type]

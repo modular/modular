@@ -177,7 +177,7 @@ lit.func @impl3() implements @itf {
 
 // -----
 
-lit.struct.decl @A<b, c> { // expected-note {{@A declared here}}
+kgen.struct.decl @A<b, c> { // expected-note {{@A declared here}}
  %x = lit.var.decl "x" : <index>
 }
 

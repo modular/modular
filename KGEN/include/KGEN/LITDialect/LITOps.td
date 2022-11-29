@@ -78,48 +78,6 @@ let description = [{
 }
 
 //===----------------------------------------------------------------------===//
-// LITStructDeclOp
-//===----------------------------------------------------------------------===//
-
-def LITStructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
-                  DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                  DeclareOpInterfaceMethods<KGENDeclInterface>, SingleBlock,
-                  NoTerminator]> {
-  let summary = "Struct declaration.";
-  let description = [{
-    The `lit.struct.decl` operation represents a Lightning struct declaration.
-    This models the syntactic structure, which can contain functions and other
-    things just like Lightning source.
-  }];
-
-  let arguments = (ins SymbolNameAttr:$sym_name, ParamDeclArrayAttr:$paramDecls,
-                       // Needed for KGENDeclInterface. Always empty.
-                       KTypeArrayAttr:$resultParamTypes);
-  let regions = (region SizedRegion<1>:$fields);
-  let assemblyFormat = [{
-    $sym_name `` custom<OptionalParameterSpec>($paramDecls, $resultParamTypes)
-    attr-dict-with-keyword
-    $fields
-  }];
-
-  let extraClassDeclaration = [{
-    /// Get the field declarations.
-    auto getFieldDecls() { return getFields().getOps<VarDeclOp>(); }
-    auto field_begin() { return getFieldDecls().begin(); }
-    auto field_end() { return getFieldDecls().end(); }
-  }];
-
-  let builders = [
-    // Create a struct with a region but no body block. The caller must create
-    // it and fill it in.
-    OpBuilder<(ins "StringAttr":$name)>,
-  ];
-
-  let hasVerifier = 1;
-}
-
-
-//===----------------------------------------------------------------------===//
 // LITStructCreateOp
 //===----------------------------------------------------------------------===//
 

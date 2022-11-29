@@ -51,7 +51,7 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
   if (!op)
     return {};
 
-  if (auto structOp = dyn_cast<LITStructDeclOp>(op)) {
+  if (auto structOp = dyn_cast<StructDeclOp>(op)) {
     // TODO: Support nested/local structs.
     return FlatSymbolRefAttr::get(structOp.getNameAttr());
   }
@@ -62,7 +62,7 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
     // forms a properly flattened reference by unwinding the RHS if it isn't
     // flat.
     SymbolRefAttr symbolRef = FlatSymbolRefAttr::get(fnOp.getNameAttr());
-    if (auto parentStruct = dyn_cast<LITStructDeclOp>(*getParentDecl()))
+    if (auto parentStruct = dyn_cast<StructDeclOp>(*getParentDecl()))
       symbolRef = SymbolRefAttr::get(parentStruct.getNameAttr(),
                                      cast<FlatSymbolRefAttr>(symbolRef));
     return symbolRef;
@@ -73,7 +73,7 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
 
 /// Given an MLIR op for a struct declaration, return the self type.
 ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
-  auto structOp = cast<LITStructDeclOp>(*this);
+  auto structOp = cast<StructDeclOp>(*this);
 
   SmallVector<ParamBindAttr> parameters;
   for (auto decl : structOp.getParamDecls()) {
@@ -224,7 +224,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
+        .Case<LITFuncOp, StructDeclOp, VarDeclOp>([&](auto op) {
           LitLexer lexer(sharedState, decl.getCursor());
 
           // Resolve the signature: on a parse error, we note that the decl
@@ -247,7 +247,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       howResolved == DeclResolvedness::fullyResolved) {
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LITFuncOp, LITStructDeclOp, VarDeclOp>([&](auto op) {
+        .Case<LITFuncOp, StructDeclOp, VarDeclOp>([&](auto op) {
           // Parse the body of the declaration from the correct point.
           LitLexer lexer(sharedState, decl.getCursor());
           if (resolveBody(op, lexer, decl))
@@ -430,7 +430,7 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, LITFuncOp op,
   // otherwise return a null type.
   ASTType selfType;
   if (auto *parentDecl = decl.getParentDecl())
-    if (isa<LITStructDeclOp>(*parentDecl)) {
+    if (isa<StructDeclOp>(*parentDecl)) {
       // If this is a method, the signature for the enclosing type must be
       // resolved.
       (void)shared.declResolver->resolve(*parentDecl,
@@ -491,7 +491,7 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, LITFuncOp op,
     // Ignore methods without special handling.
     break;
   case SpecialFunctionKind::kInit:
-    if (isa<LITStructDeclOp>(*decl.getParentDecl()))
+    if (isa<StructDeclOp>(*decl.getParentDecl()))
       return op->emitError(
           "__init__ is not allowed on structs, use __new__ instead");
     // __init__ on classes must return NoneType.
@@ -542,7 +542,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
   // These are /in/ our current scope because we do not want name conflicts with
   // them and they are instance (not type-level) values.
   // TODO: Generalize this to support nested structs and functions.
-  if (auto structDecl = dyn_cast<LITStructDeclOp>(*decl.getParentDecl())) {
+  if (auto structDecl = dyn_cast<StructDeclOp>(*decl.getParentDecl())) {
     for (auto param : structDecl.getParamDecls()) {
       auto paramRef = ParamDeclRefAttr::get(param.getName(), param.getType());
       addFullyResolvedDecl(MValue(paramRef), param.getName(),
@@ -796,7 +796,7 @@ ParseResult DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer,
 /// structdef ::=
 ///   [decorators] "struct" identifier [meta_signature] ":" suite
 ///
-LogicalResult DeclResolver::resolveSignature(LITStructDeclOp structOp,
+LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
 
@@ -817,7 +817,7 @@ LogicalResult DeclResolver::resolveSignature(LITStructDeclOp structOp,
   return success();
 }
 
-ParseResult DeclResolver::resolveBody(LITStructDeclOp structOp, LitLexer &lexer,
+ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
                                       ASTDecl &decl) {
   return LitParserBase::parseSuite(decl, lexer);
 }

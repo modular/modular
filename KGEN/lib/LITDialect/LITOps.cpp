@@ -138,10 +138,10 @@ void LITFuncOp::build(OpBuilder &builder, OperationState &result,
 // LITStructCreateOp
 //===----------------------------------------------------------------------===//
 
-static LITStructDeclOp lookupStructDecl(DeclRefType refType, Operation *op,
-                                        SymbolTableCollection &symbolTable) {
+static StructDeclOp lookupStructDecl(DeclRefType refType, Operation *op,
+                                     SymbolTableCollection &symbolTable) {
   auto module = KGENModule::from(op, symbolTable);
-  auto structDecl = module.lookup<LITStructDeclOp>(refType.getSymbol());
+  auto structDecl = module.lookup<StructDeclOp>(refType.getSymbol());
   if (!structDecl)
     op->emitOpError("expected a struct declaration");
   return structDecl;
@@ -162,14 +162,14 @@ static Type getReboundFieldType(ParameterEvaluator &evaluator,
                                 DeclRefType structType, VarDeclOp field) {
   // Ensure the field comes from the struct type in question.
   assert(structType.getSymbol().getRootReference() ==
-         cast<LITStructDeclOp>(field->getParentOp()).getNameAttr());
+         cast<StructDeclOp>(field->getParentOp()).getNameAttr());
   return evaluator.getReboundType(field.getType().getResolvedElementType());
 }
 
 /// Verify the reference struct type.
 LogicalResult
 LITStructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  LITStructDeclOp structDecl = lookupStructDecl(getType(), *this, symbolTable);
+  StructDeclOp structDecl = lookupStructDecl(getType(), *this, symbolTable);
   auto evaluator = getEvaluatorForBoundStructType(getType());
   if (!structDecl)
     return failure();
@@ -212,10 +212,10 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
 static LogicalResult
 verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
                          DeclRefType ref, StringAttr fieldName, Type type) {
-  LITStructDeclOp structDecl = lookupStructDecl(ref, op, symbolTable);
+  StructDeclOp structDecl = lookupStructDecl(ref, op, symbolTable);
   auto evaluator = getEvaluatorForBoundStructType(ref);
 
-  for (VarDeclOp fieldDecl : structDecl.getFieldDecls()) {
+  for (VarDeclOp fieldDecl : structDecl.getFields().getOps<VarDeclOp>()) {
     if (fieldDecl.getName() != fieldName)
       continue;
     Type reboundType = getReboundFieldType(evaluator, ref, fieldDecl);
@@ -271,41 +271,6 @@ void LITStructExtractOp::build(OpBuilder &builder, OperationState &result,
   auto evaluator = getEvaluatorForBoundStructType(structType);
   build(builder, result, getReboundFieldType(evaluator, structType, field),
         field.getNameAttr(), structBasePtr);
-}
-
-//===----------------------------------------------------------------------===//
-// LITStructDeclOp
-//===----------------------------------------------------------------------===//
-
-/// Struct declarations aren't functions.
-FunctionType LITStructDeclOp::getFunctionType() {
-  llvm_unreachable("structs don't have function types");
-}
-
-/// Verify that the body has no arguments and that the declaration has no result
-/// types.
-LogicalResult LITStructDeclOp::verify() {
-  if (getFields().getNumArguments())
-    return emitOpError("expected declaration body to have no arguments");
-
-  if (!getResultParamTypes().empty())
-    return emitOpError("unexpected result parameters");
-
-  return success();
-}
-
-/// Verify parameter uses.
-LogicalResult
-LITStructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  return ParameterDeclsAndUses().calculateAndVerify(*this, symbolTable);
-}
-
-void LITStructDeclOp::build(OpBuilder &builder, OperationState &result,
-                            StringAttr name) {
-  auto context = builder.getContext();
-  build(builder, result, name, ParamDeclArrayAttr::get(context, {}),
-        TypeArrayAttr::get(context, {}));
-  result.regions[0]->push_back(new Block());
 }
 
 //===----------------------------------------------------------------------===//
