@@ -155,12 +155,6 @@ private:
   std::unique_ptr<BlobCacheBackend> delegate = nullptr;
 };
 
-namespace Detail {
-/// Finalize the key hash (provided by the user via the KeyInfo) for use by the
-/// BlobCache.
-std::string finalizeBlobKeyHash(StringRef hash);
-} // namespace Detail
-
 /// This is the thing that users will interact with. It holds onto the list of
 /// backends and calls into them, but its primary responsibility is to hash the
 /// keys passed in to normalize the way we try to access the storage backends.
@@ -197,8 +191,8 @@ public:
   /// discarded.
   LLCL::AsyncValueRef<ErrorOr<std::string>> insert(KeyTy key, BufferRef obj) {
     std::string keyHash = KeyInfo::hashKey(key);
-    auto insertAsync = backendList->insert(
-        Buffer::get(finalizeKeyHash(keyHash)), std::move(obj));
+    auto insertAsync =
+        backendList->insert(Buffer::get(keyHash), std::move(obj));
 
     // Allocate a space for the output.
     auto out = LLCL::AsyncValueRef<ErrorOr<std::string>>::allocate(runtime);
@@ -217,26 +211,17 @@ public:
 
   /// Check if any of the provided backends have the item.
   LLCL::AsyncValueRef<bool> contains(KeyTy key) const {
-    auto hash = Buffer::get(buildFullKeyHash(key));
+    auto hash = Buffer::get(KeyInfo::hashKey(key));
     return backendList->contains(std::move(hash));
   }
 
   /// Get the item from any of the provided backends.
   LLCL::AsyncValueRef<CacheFindResult> find(KeyTy key) {
-    auto hash = Buffer::get(buildFullKeyHash(key));
+    auto hash = Buffer::get(KeyInfo::hashKey(key));
     return backendList->find(std::move(hash));
   }
 
 private:
-  /// Finalize the user provided key hash for use by the backends.
-  std::string finalizeKeyHash(StringRef hash) const {
-    return Detail::finalizeBlobKeyHash(hash);
-  }
-  /// Build the full key hash for the given key value.
-  std::string buildFullKeyHash(KeyTy key) const {
-    return finalizeKeyHash(KeyInfo::hashKey(key));
-  }
-
   LLCL::Runtime &runtime;
 
   std::unique_ptr<BlobCacheBackend> backendList;
