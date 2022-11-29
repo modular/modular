@@ -22,19 +22,12 @@ static void printBase64(AsmPrinter &printer, StringRef hash) {
 /// Parse the base64 hash string and store it into the attr.
 static ParseResult parseBase64(AsmParser &parser,
                                FailureOr<std::string> &hash) {
-  std::string str;
-  if (parser.parseString(&str))
-    return failure();
-
   // Decode the base64 bytes. Hashes are often 256 bits (32 bytes) so we can use
   // this as a reasonable default.
   std::vector<char> outBytes;
   outBytes.reserve(32);
-  if (auto err = llvm::decodeBase64(str, outBytes)) {
-    return mlir::emitError(
-        parser.getEncodedSourceLoc(parser.getCurrentLocation()),
-        toString(std::move(err)));
-  }
+  if (parser.parseBase64Bytes(&outBytes))
+    return failure();
 
   // Hashes are almost always <= 64 bytes, so this copy is (while not ideal) not
   // too bad.
