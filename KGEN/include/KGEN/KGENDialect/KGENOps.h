@@ -44,11 +44,6 @@ public:
     return {op->getParentOfType<ModuleOp>(), symbolTable};
   }
 
-  /// Lookup the given symbol in the module.
-  template <typename OpT>
-  OpT lookup(StringAttr name) {
-    return dyn_cast_or_null<OpT>(symbolTable.lookupSymbolIn(module, name));
-  }
   template <typename OpT>
   OpT lookup(SymbolRefAttr symbol) {
     return dyn_cast_or_null<OpT>(symbolTable.lookupSymbolIn(module, symbol));

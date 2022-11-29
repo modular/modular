@@ -427,50 +427,7 @@ def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant"> {
     formation - when this happens, the result type is non-parametric.
   }];
 
-  let parameters = (ins "FlatSymbolRefAttr":$symbolRef,
-                        "ParamBindArrayAttr":$paramValues,
-                        AttributeSelfTypeParameter<"", "KGEN::SignatureType">:$type);
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$symbol,
-                                        "KGEN::SignatureType":$type), [{
-      auto *context = symbol.getContext();
-      return get(context, symbol, ParamBindArrayAttr::get(context, {}), type);
-    }]>,
-    AttrBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$symbol,
-                                        "ParamBindArrayAttr":$paramValues,
-                                        "KGEN::SignatureType":$type), [{
-      return get(symbol.getContext(), symbol, paramValues, type);
-    }]>,
-  ];
-
-  let assemblyFormat =
-     "`<` $symbolRef custom<OptionalParamBindSpec>($paramValues) `>`";
-
-  let extraClassDeclaration = [{
-    /// Get the symbol name.
-    StringAttr getName() { return getSymbol().getAttr(); }
-
-    /// Get the symbol constant as a flat reference.
-    FlatSymbolRefAttr getSymbol() {
-      return llvm::cast<FlatSymbolRefAttr>(getSymbolRef());
-    }
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// LITSymbolConstantAttr
-//===----------------------------------------------------------------------===//
-
-def LITSymbolConstantAttr : ExprAttr<"LITSymbolConstant", "lit.symbol.constant"> {
-  let summary = "Possibly-nested function reference";
-  let description = [{
-    This is a value of !kgen.signature type, which refers to a lit.func with
-    a possibly-nested symbol.  This may optionally bind the input parameter
-    values at time of formation.
-  }];
-
-  let parameters = (ins "SymbolRefAttr":$symbolRef,
+  let parameters = (ins "SymbolRefAttr":$symbol,
                         "ParamBindArrayAttr":$paramValues,
                         AttributeSelfTypeParameter<"", "KGEN::SignatureType">:$type);
 
@@ -488,7 +445,7 @@ def LITSymbolConstantAttr : ExprAttr<"LITSymbolConstant", "lit.symbol.constant">
   ];
 
   let assemblyFormat =
-     "`<` $symbolRef custom<OptionalParamBindSpec>($paramValues) `>`";
+     "`<` $symbol custom<OptionalParamBindSpec>($paramValues) `>`";
 }
 
 //===----------------------------------------------------------------------===//

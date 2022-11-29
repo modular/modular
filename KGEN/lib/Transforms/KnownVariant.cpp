@@ -192,12 +192,12 @@ void PruneImpossibleVariantsPass::runOnOperation() {
     return signalPassFailure();
 
   // Functions referred by symbol parameters cannot be rewritten.
-  DenseSet<StringAttr> refd;
+  DenseSet<SymbolRefAttr> refd;
   std::vector<CallOp> calls;
   getOperation()->walk([&](Operation *op) {
     op->getAttrDictionary().walkSubAttrs([&](Attribute attr) {
       if (auto symbol = dyn_cast<SymbolConstantAttr>(attr))
-        refd.insert(symbol.getName());
+        refd.insert(symbol.getSymbol());
     });
 
     // Replace `pop.variant.is` ops on variants with known types with constants.
@@ -231,7 +231,7 @@ void PruneImpossibleVariantsPass::runOnOperation() {
     } else {
       name = cast<FuncOp>(op).getSymNameAttr();
     }
-    if (refd.contains(name))
+    if (refd.contains(FlatSymbolRefAttr::get(name)))
       continue;
 
     auto func = cast<mlir::FunctionOpInterface>(op);

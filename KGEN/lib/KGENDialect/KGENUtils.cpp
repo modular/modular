@@ -738,21 +738,12 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     if (p.parseAttribute(attr, type))
       return failure();
 
-    if (auto symbol = dyn_cast<FlatSymbolRefAttr>(attr)) {
-      // Parse any trailing parameter bindings.
-      FailureOr<ParamBindArrayAttr> paramValues;
-      if (parseOptionalParamBindSpec(p, paramValues))
-        return failure();
-      value = SymbolConstantAttr::get(symbol, paramValues.value(), sigType);
-      return success();
-    }
-
     if (auto symbol = dyn_cast<SymbolRefAttr>(attr)) {
       // Parse any trailing parameter bindings.
       FailureOr<ParamBindArrayAttr> paramValues;
       if (parseOptionalParamBindSpec(p, paramValues))
         return failure();
-      value = LITSymbolConstantAttr::get(symbol, paramValues.value(), sigType);
+      value = SymbolConstantAttr::get(symbol, paramValues.value(), sigType);
       return success();
     }
 
@@ -880,14 +871,7 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
 
   // Symbol constants print as just the symbol followed by parameter bindings.
   if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
-    os << symbolConstant.getSymbolRef();
-    printOptionalParamBindSpec(symbolConstant.getParamValues(), os);
-    return;
-  }
-
-  // Symbol constants print as just the symbol followed by parameter bindings.
-  if (auto symbolConstant = dyn_cast<LITSymbolConstantAttr>(value)) {
-    os << symbolConstant.getSymbolRef();
+    os << symbolConstant.getSymbol();
     printOptionalParamBindSpec(symbolConstant.getParamValues(), os);
     return;
   }
