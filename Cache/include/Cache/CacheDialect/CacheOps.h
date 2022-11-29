@@ -8,6 +8,7 @@
 #define CACHE_CACHEDIALECT_CACHEOPS_H
 
 #include "Cache/BlobCache.h"
+#include "Cache/Buffer.h"
 #include "Cache/CacheDialect/CacheAttrs.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
@@ -15,9 +16,25 @@
 #include "mlir/IR/SymbolTable.h"
 
 namespace M::Cache {
-/// The Cache dialect stores the region of an op - this defines the cache key.
-/// It can be a region (indicating that we need to hash the region) or a string
-/// (indicating that we already know the hash).
+/// The Cache dialect can store a large constant - this struct defines the cache
+/// key. It can be an Attribute (indicating that we should hash the data itself)
+/// or a string (indicating we already know the hash).
+struct DataCacheKey {
+  using KeyTy = std::variant<Attribute, StringRef>;
+  static std::string hashKey(KeyTy key);
+};
+
+LLCL::AsyncValueRef<LogicalResult>
+deflateConstant(Operation *constant, BlobCache<DataCacheKey> &cache,
+                LLCL::AsyncValueRef<LogicalResult> chain);
+
+LLCL::AsyncValueRef<LogicalResult>
+inflateConstant(Operation *constant, BlobCache<DataCacheKey> &cache,
+                LLCL::AsyncValueRef<LogicalResult> chain);
+
+/// The Cache dialect can store the region of an op - this struct defines the
+/// cache key. It can be a region (indicating that we need to hash the region)
+/// or a string (indicating that we already know the hash).
 struct RegionCacheKey {
   using KeyTy = std::variant<Region *, StringRef>;
   static std::string hashKey(KeyTy key);

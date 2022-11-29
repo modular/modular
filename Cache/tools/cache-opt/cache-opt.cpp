@@ -9,6 +9,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
@@ -18,7 +19,8 @@ using namespace LLCL;
 
 int main(int argc, char **argv) {
   DialectRegistry registry;
-  registry.insert<mlir::func::FuncDialect, Cache::CacheDialect>();
+  registry.insert<mlir::arith::ArithDialect, mlir::func::FuncDialect,
+                  Cache::CacheDialect>();
   mlir::registerCanonicalizer();
 
   Runtime runtime(createLeakCheckAllocator(createMallocAllocator()),
