@@ -13,6 +13,7 @@ add_modular_tool(cache-opt
   MCache
   MSupport
   MLIRFuncDialect
+  MLIRArithDialect
   MLIROptLib
   MLIRTransforms
   )

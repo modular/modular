@@ -11,8 +11,10 @@
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
 #include "llvm/ADT/SetVector.h"
@@ -21,6 +23,155 @@
 using namespace M;
 using namespace Cache;
 using namespace LLCL;
+
+//===----------------------------------------------------------------------===//
+// Caching data
+//===----------------------------------------------------------------------===//
+
+std::string DataCacheKey::hashKey(DataCacheKey::KeyTy key) {
+  if (std::holds_alternative<StringRef>(key))
+    return std::get<StringRef>(key).str();
+
+  Attribute attr = std::get<Attribute>(key);
+
+  llvm::SHA256 sha;
+  sha.init();
+
+  // If we have a resource, try to avoid copying the data while hashing it.
+  if (auto resource = dyn_cast<DenseResourceElementsAttr>(attr)) {
+    DenseResourceElementsHandle resourceHandle = resource.getRawHandle();
+    // Casting char to uint8_t is pretty safe - both are byte types.
+    if (resourceHandle.getBlob())
+      sha.update(resourceHandle.getBlob()->getDataAs<uint8_t>());
+  } else {
+    // Hash a generic attr.
+    llvm::SmallString<64> tmp;
+    llvm::raw_svector_ostream stringStream(tmp);
+    stringStream << attr;
+    sha.update(stringStream.str());
+  }
+
+  auto hash = sha.final();
+  return {hash.begin(), hash.end()};
+}
+
+LLCL::AsyncValueRef<LogicalResult>
+Cache::deflateConstant(Operation *constant, BlobCache<DataCacheKey> &cache,
+                       LLCL::AsyncValueRef<LogicalResult> chain) {
+  auto out = AsyncValueRef<LogicalResult>::allocate(chain.getRuntime());
+  // Hang the actual deflation off the input chain. This will allow users to not
+  // worry about sequencing w.r.t. this operation, they can just pass in the
+  // chain.
+  chain.andThen([constant, &cache, out = out.copy(), chain = chain.copy()] {
+    if (failed(*chain))
+      return out.emplace(failure());
+
+    // Use the replacer strategy to replace "large" attributes with the hashed
+    // version.
+    mlir::AttrTypeReplacer replacer;
+    // For now, we only care about DenseResourceElementsAttr because that's how
+    // we handle large attributes.
+    replacer.addReplacement(
+        [&](DenseResourceElementsAttr resourceAttr) -> Attribute {
+          mlir::AsmResourceBlob *blob = resourceAttr.getRawHandle().getBlob();
+          // If the blob isn't there, we shouldn't try caching nothing.
+          if (!blob)
+            return nullptr;
+
+          BufferRef resourceData = Buffer::get(
+              StringRef(blob->getData().data(), blob->getData().size()));
+          // Insert the data into the cache.
+          auto hashOr = cache.insert(resourceAttr, std::move(resourceData));
+          // This is not great - we have to make this sync because MLIR doesn't
+          // really have a good way to handle async here.
+          await(hashOr);
+
+          // Create a builder so we can create attrs easier.
+          OpBuilder builder(constant);
+
+          NamedAttrList additionalAttrs;
+          additionalAttrs.set(
+              "align", builder.getIntegerAttr(builder.getType<IntegerType>(
+                                                  64, IntegerType::Unsigned),
+                                              blob->getDataAlignment()));
+          additionalAttrs.set(
+              "name",
+              builder.getStringAttr(resourceAttr.getRawHandle().getKey()));
+
+          auto newAttr = ConstantHashAttr::get(
+              resourceAttr.getContext(), resourceAttr.getType(), **hashOr,
+              additionalAttrs.getDictionary(resourceAttr.getContext()));
+          return newAttr;
+        });
+
+    // Do the replacement now.
+    replacer.replaceElementsIn(constant);
+    out.emplace(success());
+  });
+
+  return out;
+}
+
+LLCL::AsyncValueRef<LogicalResult>
+Cache::inflateConstant(Operation *constant, BlobCache<DataCacheKey> &cache,
+                       LLCL::AsyncValueRef<LogicalResult> chain) {
+  auto out = AsyncValueRef<LogicalResult>::allocate(chain.getRuntime());
+  // Hang the actual deflation off the input chain. This will allow users to not
+  // worry about sequencing w.r.t. this operation, they can just pass in the
+  // chain.
+  chain.andThen([constant, &cache, out = out.copy(), chain = chain.copy()] {
+    if (failed(*chain))
+      return out.emplace(failure());
+
+    // Use the replacer strategy to replace "large" attributes with the hashed
+    // version.
+    mlir::AttrTypeReplacer replacer;
+    // For now, we only care about DenseResourceElementsAttr because that's how
+    // we handle large attributes.
+    replacer.addReplacement([&](ConstantHashAttr cacheAttr) -> Attribute {
+      // Find the data in the cache.
+      auto found = cache.find(cacheAttr.getHash());
+      await(found);
+      if (found->isError()) {
+        out.emplace(mlir::emitError(constant->getLoc()) << found->getError());
+        return nullptr;
+      }
+      if (!found->hasValue()) {
+        out.emplace(mlir::emitError(constant->getLoc())
+                    << "could not find object with hash: " << cacheAttr);
+        return nullptr;
+      }
+
+      // Pull out any attributes we might need.
+      DictionaryAttr additional = cacheAttr.getAdditionalData();
+      IntegerAttr alignAttr = cast<IntegerAttr>(additional.get("align"));
+      StringAttr name = cast<StringAttr>(additional.get("name"));
+
+      // The cache owns the data, so in theory we could rely on a cache dialect
+      // resource to keep a reference to the data alive as long as the dialect
+      // is alive - that would avoid this copy.
+      BufferRef buf = found->takeValue();
+      auto blob = mlir::HeapAsmResourceBlob::allocateAndCopy(
+          ArrayRef<char>(buf->getBufferStart(), buf->getBufferSize()),
+          alignAttr.getUInt());
+
+      auto resourceManager = DenseResourceElementsHandle::getManagerInterface(
+          constant->getContext());
+
+      // Return the new DenseResourceElementsAttr.
+      auto newAttr = DenseResourceElementsAttr::get(
+          cacheAttr.getType(),
+          resourceManager.insert(name.getValue(), std::move(blob)));
+      return newAttr;
+    });
+
+    // Do the replacement now.
+    replacer.replaceElementsIn(constant);
+    out.emplace(success());
+  });
+
+  return out;
+}
 
 //===----------------------------------------------------------------------===//
 // Caching regions
