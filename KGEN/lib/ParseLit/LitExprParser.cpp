@@ -356,6 +356,14 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     result = alloc<IntLiteralNode>(getToken().getSpelling());
     consumeToken(LitToken::integer);
     break;
+  case LitToken::kw_False:
+    result = alloc<BoolLiteralNode>(getToken().getLoc(), false);
+    consumeToken(LitToken::kw_False);
+    break;
+  case LitToken::kw_True:
+    result = alloc<BoolLiteralNode>(getToken().getLoc(), true);
+    consumeToken(LitToken::kw_True);
+    break;
   case LitToken::float_num: // primary -> literal -> floatnumber
     result = alloc<FloatLiteralNode>(getToken().getSpelling());
     consumeToken(LitToken::float_num);
