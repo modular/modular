@@ -335,6 +335,9 @@ kgen.generator @param_canonicalize<p1, p2>() {
   // CHECK: = <2>
   kgen.param.constant = <get_list_element(:list<index[2]> [1, 2], 1)>
 
+  // CHECK: = <get_list_element(:list<index[1]> [1], 1)>
+  kgen.param.constant = <get_list_element(:list<index[1]> [1], 1)>
+
   kgen.return
 }
 

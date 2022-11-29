@@ -1058,8 +1058,8 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   // All operands must have the same type.  The result type is usually the
   // same as the operands, but is i1 for comparisons (overridden below).
   auto resultType = operandsIn.front().getType();
-  assert(opcode == POC::GetListElement || opcode == POC::BindSignature ||
-         opcode == POC::Apply ||
+  assert(llvm::is_contained(
+             {POC::GetListElement, POC::BindSignature, POC::Apply}, opcode) ||
          llvm::all_of(operandsIn.drop_front(),
                       [&](auto op) { return op.getType() == resultType; }));
 

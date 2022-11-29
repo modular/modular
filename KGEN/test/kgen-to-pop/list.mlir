@@ -220,9 +220,9 @@ kgen.func @list_get_op(%list: !kgen.list<index[3]>) -> index {
   kgen.return %0 : index
 }
 
-// CHECK-LABEL: @list_make_op
-kgen.func @list_make_op(%arg0: index, %arg1: index) -> !kgen.list<index[2]> {
-  %list = kgen.list.make(%arg0, %arg1) : <index[2]>
+// CHECK-LABEL: @list_create_op
+kgen.func @list_create_op(%arg0: index, %arg1: index) -> !kgen.list<index[2]> {
+  %list = kgen.list.create(%arg0, %arg1) : <index[2]>
   // CHECK-NEXT: return %arg0, %arg1 : index, index
   kgen.return %list : !kgen.list<index[2]>
 }
