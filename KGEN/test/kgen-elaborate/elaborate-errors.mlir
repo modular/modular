@@ -11,7 +11,7 @@ kgen.include "struct-test.mlir"
 
 kgen.struct.decl @FooStruct<T:type> {
   // expected-error @below {{struct @FooStruct field #0 redeclared with different name "y"}}
-  y : !kgen.paramref<T>
+  kgen.struct.field y : !kgen.paramref<T>
 }
 
 // -----

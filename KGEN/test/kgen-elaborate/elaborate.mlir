@@ -602,16 +602,16 @@ kgen.generator @parametric_addressof() {
 // -----
 
 kgen.struct.decl @Int20 {
-  value : i20
+  kgen.struct.field value : i20
 }
 
 kgen.struct.decl @Int40 {
-  value : i40
+  kgen.struct.field value : i40
 }
 
 kgen.struct.decl @Pair<T1: type, T2: type> {
-  first : !kgen.paramref<T1>
-  second : !kgen.paramref<T2>
+  kgen.struct.field first : !kgen.paramref<T1>
+  kgen.struct.field second : !kgen.paramref<T2>
 }
 
 // CHECK-LABEL: @"struct_sizeof

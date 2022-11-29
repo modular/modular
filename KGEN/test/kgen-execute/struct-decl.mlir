@@ -1,7 +1,7 @@
 // RUN: kgen-execute %s -execute -func="use_struct:f32()" | FileCheck %s
 
 kgen.struct.decl @FooStruct<T:type> {
-  value : !kgen.paramref<T>
+  kgen.struct.field value : !kgen.paramref<T>
 }
 
 kgen.func @use_struct() -> f32 {

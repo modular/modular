@@ -2,7 +2,7 @@
 
 // CHECK-NOT: kgen.struct.decl
 kgen.struct.decl @SmallVector<N, T: type> {
-  data: !pop.array<N, T>
+  kgen.struct.field data: !pop.array<N, T>
 }
 
 !size2 = !kgen.declref<@SmallVector<N = 2, T:type = !pop.simd<4, f32>>>
@@ -22,13 +22,13 @@ kgen.func @two_vectors(
 
 // CHECK-NOT: kgen.struct.decl
 kgen.struct.decl @Box<T: type> {
-  value: !kgen.paramref<T>
+  kgen.struct.field value: !kgen.paramref<T>
 }
 
 // CHECK-NOT: kgen.struct.decl
 kgen.struct.decl @Pair<T1: type, T2: type> {
-  first: !kgen.paramref<T1>
-  second: !kgen.paramref<T2>
+  kgen.struct.field first: !kgen.paramref<T1>
+  kgen.struct.field second: !kgen.paramref<T2>
 }
 
 // CHECK-LABEL: @make_box
@@ -71,13 +71,13 @@ kgen.func @struct_gep(%pair: !pop.pointer<!i8Pair>) -> !pop.pointer<i8> {
 }
 
 kgen.struct.decl @NestedA<T: type> {
-  v: !kgen.paramref<T>
+  kgen.struct.field v: !kgen.paramref<T>
 }
 kgen.struct.decl @NestedB<t: dtype> {
-  a: !kgen.declref<@NestedA<T:type = !pop.simd<1, t>>>
+  kgen.struct.field a: !kgen.declref<@NestedA<T:type = !pop.simd<1, t>>>
 }
 kgen.struct.decl @NestedC {
-  b: !kgen.declref<@NestedB<t:dtype = f32>>
+  kgen.struct.field b: !kgen.declref<@NestedB<t:dtype = f32>>
 }
 
 // CHECK-LABEL: @use_nested
