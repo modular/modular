@@ -419,7 +419,8 @@ def DTypeConstantAttr : ExprAttr<"DTypeConstant", "dtype.constant"> {
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
 
-def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant"> {
+def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant",
+    [SubElementAttrInterface]> {
   let summary = "kgen.func or kgen.generator reference";
   let description = [{
     This is a value of !kgen.signature type, which refers to a func or
