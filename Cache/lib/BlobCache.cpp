@@ -84,7 +84,7 @@ struct InMemoryBackend : public BlobCacheBackend {
 
   ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) override {
     // Store the item in this cache.
-    cache[keyHash] = obj->getBuffer().str();
+    cache[keyHash] = std::move(obj);
     return success();
   }
 
@@ -98,10 +98,10 @@ struct InMemoryBackend : public BlobCacheBackend {
       return CacheFindResult::notInCache();
 
     // Create a memory buffer that holds this same data.
-    return CacheFindResult::value(Buffer::get((*found).second));
+    return CacheFindResult::value((*found).second.copy());
   }
 
-  llvm::StringMap<std::string> cache;
+  llvm::StringMap<BufferRef> cache;
 };
 } // namespace
 
