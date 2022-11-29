@@ -34,8 +34,8 @@ fn erf_scalar_taylor[type: DType](x: Scalar[type]) -> Scalar[type]:
 
 # CHECK-LABEL: lit.func @fma_f32
 fn fma_f32(x: F32, y: F32, z: F32) -> F32:
-# CHECK: %0 = kgen.call_param[(!kgen.declref<@F32>, !kgen.declref<@F32>) -> !kgen.declref<@F32>: @F32::@__mul__](%x, %y)
-# CHECK: %1 = kgen.call_param[(!kgen.declref<@F32>, !kgen.declref<@F32>) -> !kgen.declref<@F32>: @F32::@__add__](%0, %z)
+# CHECK: %0 = kgen.call @F32::@__mul__(%x, %y)
+# CHECK: %1 = kgen.call @F32::@__add__(%0, %z)
 # CHECK: kgen.return %1
   return x*y+z
 

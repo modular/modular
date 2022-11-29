@@ -98,7 +98,7 @@ struct Int:
     # CHECK: %0 = lit.struct.extract %self[value]
     # CHECK: %1 = lit.struct.extract %rhs[value]
     # CHECK: %2 = index.add %0, %1
-    # CHECK: %3 = kgen.call_param[(index) -> !kgen.declref<@Int>: @Int::@__new__](%2)
+    # CHECK: %3 = kgen.call @Int::@__new__(%2) : (index) -> !kgen.declref<@Int>
     # CHECK: kgen.return %3
     return Int(__mlir_op.`index.add`(self.value, rhs.value))
   # CHECK: }
@@ -143,7 +143,7 @@ struct Int:
   # CHECK-LABEL: lit.func @__iadd__(%self: !pop.pointer<@Int>, %rhs: !kgen.declref<@Int>) -> !kgen.declref<@Int> {
   fn __iadd__(&self, rhs: Int) -> Int:
     # CHECK: %0 = pop.load %self : !pop.pointer<@Int>
-    # CHECK: %1 = kgen.call_param[(!kgen.declref<@Int>, !kgen.declref<@Int>) -> !kgen.declref<@Int>: @Int::@__add__](%0, %rhs)
+    # CHECK: %1 = kgen.call @Int::@__add__(%0, %rhs) : (!kgen.declref<@Int>, !kgen.declref<@Int>) -> !kgen.declref<@Int>
     # CHECK: pop.store %1, %self
     self = self + rhs
     # CHECK: %2 = pop.load %self
@@ -365,7 +365,7 @@ struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     # CHECK: %0 = lit.struct.extract %self[value] : !pop.simd<size, type> from <@SIMD<size = size, type: dtype = type>>
     # CHECK: %1 = lit.struct.extract %rhs[value] : !pop.simd<size, type> from <@SIMD<size = size, type: dtype = type>>
     # CHECK: %2 = pop.add %0, %1 : !pop.simd<size, type>
-    # CHECK: %3 = kgen.call_param[(!pop.simd<size, type>) -> !kgen.declref<@SIMD<size = size, type: dtype = type>>: @SIMD::@__new__<size = size, type: dtype = type>](%2)
+    # CHECK: %3 = kgen.call @SIMD::@__new__<size = size, type: dtype = type>(%2) : (!pop.simd<size, type>) -> !kgen.declref<@SIMD<size = size, type: dtype = type>>
     # CHECK: kgen.return %3 : !kgen.declref<@SIMD<size = size, type: dtype = type>>
     return SIMD[size, type](__mlir_op.`pop.add`(self.value, rhs.value))
 

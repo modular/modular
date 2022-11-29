@@ -729,7 +729,7 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // Check the parameters and operands align with the requirements of the
   // callee's signature.
-  if (verifyCallAndCallee(*this, getSignature(), callee.getSignature(),
+  if (verifyCallAndCallee(*this, getSignature(), callee.getFullSignature(),
                           getParamValuesAttr(), callee->getLoc()))
     return failure();
 
@@ -751,13 +751,20 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 void CallOp::build(OpBuilder &builder, OperationState &state,
+                   TypeRange resultTypes, SymbolRefAttr callee,
+                   ArrayRef<ParamBindAttr> inputParams,
+                   ArrayRef<ParamDeclAttr> resultParams, ValueRange operands) {
+  build(builder, state, resultTypes, callee,
+        builder.getAttr<ParamBindArrayAttr>(inputParams),
+        builder.getAttr<ParamDeclArrayAttr>(resultParams), operands,
+        /*numRegions=*/0);
+}
+void CallOp::build(OpBuilder &builder, OperationState &state,
                    TypeRange resultTypes, StringAttr callee,
                    ArrayRef<ParamBindAttr> inputParams,
                    ArrayRef<ParamDeclAttr> resultParams, ValueRange operands) {
   build(builder, state, resultTypes, FlatSymbolRefAttr::get(callee),
-        builder.getAttr<ParamBindArrayAttr>(inputParams),
-        builder.getAttr<ParamDeclArrayAttr>(resultParams), operands,
-        /*numRegions=*/0);
+        inputParams, resultParams, operands);
 }
 
 OperandRange CallOp::getArgOperands() { return getOperands(); }

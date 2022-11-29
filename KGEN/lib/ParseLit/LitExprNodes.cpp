@@ -614,18 +614,18 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
   // a kgen.call_param.
   Value resultVal;
   auto loc = emitter.translateLocation(callLoc);
+  // FIXME: Move result type inference into CallOp/CallIndirectOp.
   auto resultTypes = calleeSig.getValues().getResults();
   if (auto target = dyn_cast<Attribute>(callee)) {
-    // TODO: Change this into a lit.call that accepts a non-flat symbol.
-
-    // FIXME: Move result type inference into CallOp/CallIndirectOp.
-    resultVal = emitter.builder
-                    ->create<CallParamOp>(
-                        loc, resultTypes, cast<SymbolConstantAttr>(target),
-                        /*inputParams*/ ArrayRef<ParamBindAttr>(),
-                        /*resultParams*/ ArrayRef<ParamDeclAttr>(),
-                        /*operands*/ valueArguments)
-                    .getResult(0);
+    // TODO(Issue #5473): CallOp should take a SymbolConstantAttr.
+    resultVal =
+        emitter.builder
+            ->create<CallOp>(
+                loc, resultTypes, cast<SymbolConstantAttr>(target).getSymbol(),
+                cast<SymbolConstantAttr>(target).getParamValues().getValue(),
+                /*resultParams*/ ArrayRef<ParamDeclAttr>(),
+                /*operands*/ valueArguments)
+            .getResult(0);
   } else {
     // Otherwise emit calls to SSA values with call_indirect.
     auto calleeDRVal = cast<Value>(callee);
