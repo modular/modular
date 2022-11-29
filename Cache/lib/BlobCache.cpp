@@ -68,6 +68,15 @@ AsyncValueRef<CacheFindResult> BlobCacheBackend::find(BufferRef keyHash) {
   return createReady(CacheFindResult::value(std::move(item)));
 }
 
+LLCL::AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::clear() {
+  if (auto err = clearImpl())
+    return LLCL::AsyncValueRef<ErrorOrSuccess>::createReady(runtime,
+                                                            err.takeError());
+  if (delegate)
+    return delegate->clear();
+  return LLCL::AsyncValueRef<ErrorOrSuccess>::createReady(runtime, success());
+}
+
 //===----------------------------------------------------------------------===//
 // InMemoryBackend
 //===----------------------------------------------------------------------===//
@@ -95,6 +104,11 @@ struct InMemoryBackend : public BlobCacheBackend {
 
     // Create a memory buffer that holds this same data.
     return CacheFindResult::value((*found).second.copy());
+  }
+
+  ErrorOrSuccess clearImpl() override {
+    cache.clear();
+    return success();
   }
 
   llvm::StringMap<BufferRef> cache;
@@ -223,6 +237,15 @@ struct FilesystemBackend : public BlobCacheBackend {
     return CacheFindResult::value(std::move(*bufOr));
   }
 
+  ErrorOrSuccess clearImpl() override {
+    std::error_code ec;
+    std::filesystem::remove_all(basePath, ec);
+    if (ec)
+      return Error(ec.message());
+
+    return success();
+  }
+
   std::filesystem::path getAbsolutePathForKey(StringRef keyHash) const {
     std::filesystem::path filepath(basePath);
     filepath /= llvm::encodeBase64(keyHash);
@@ -277,7 +300,7 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
       if (!ec && std::filesystem::is_directory(dirEntry, ec) &&
           dirEntry.parent_path() == base &&
           dirEntry.filename() != MODULAR_VERSION_STRING)
-        std::filesystem::remove(dirEntry, ec);
+        std::filesystem::remove_all(dirEntry, ec);
     }
   }
 

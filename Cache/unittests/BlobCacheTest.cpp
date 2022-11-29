@@ -110,6 +110,48 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
   });
 }
 
+TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
+  // Get an uninitialized buffer. We don't care what's in this, as long as it
+  // goes in and comes out the same.
+  auto zerosDataBuf = WriteableBuffer::get();
+  zerosDataBuf->write(0);
+  BufferRef zerosBuf = std::move(zerosDataBuf);
+
+  auto insertOr = cache.insert("zeros", zerosBuf.copy());
+  insertOr.andThen([this, insertOr = insertOr.copy()] {
+    EXPECT_FALSE(insertOr->isError()) << insertOr->getError() << '\n';
+    EXPECT_FALSE(insertOr->takeValue().empty())
+        << "expected to receive the hash key\v";
+
+    auto contains = cache.contains("zeros");
+    contains.andThen([contains = contains.copy()] {
+      EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
+    });
+  });
+
+  auto zerosOr = cache.find("zeros");
+  zerosOr.andThen([zerosOr = zerosOr.copy(), zerosBuf = zerosBuf.copy()] {
+    EXPECT_TRUE(zerosOr->hasValue()) << zerosOr->getError();
+    BufferRef outZeros = zerosOr->takeValue();
+    ASSERT_TRUE(outZeros->getBufferSize() == zerosBuf->getBufferSize())
+        << "output buffer size did not match input buffer size\n";
+    EXPECT_TRUE(outZeros->getBuffer() == StringRef(zerosBuf->getBufferStart(),
+                                                   zerosBuf->getBufferSize()))
+        << "buffer returned did not match the buffer inputted\n";
+  });
+
+  auto clearOr = cache.clear();
+  clearOr.andThen([clearOr = clearOr.copy(), this] {
+    EXPECT_FALSE(failed(*clearOr)) << clearOr->getError() << "\n";
+
+    auto contains = cache.contains("zeros");
+    contains.andThen([contains = contains.copy()] {
+      EXPECT_FALSE(*contains)
+          << "expected not to have item named 'zeros' after the clear\n";
+    });
+  });
+}
+
 TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
   // Get an uninitialized buffer. We don't care what's in this, as long as it
   // goes in and comes out the same.
