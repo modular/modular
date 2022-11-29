@@ -146,12 +146,12 @@ def LITStructCreateOp : LITOp<"struct.create", [Pure,
 
     %0 = kgen.struct.create(%a, %b, %c) :
       (!pop.scalar<type>, !pop.scalar<f32>, !pop.simd<2, type>)
-      -> !kgen.litdeclref<@MyStruct<T: dtype = type>>
+      -> !kgen.declref<@MyStruct<T: dtype = type>>
     ```
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands);
-  let results = (outs LITDeclRefType:$result);
+  let results = (outs DeclRefType:$result);
   let assemblyFormat = [{
     `(` operands `)` attr-dict `:` functional-type(operands, results)
   }];
@@ -168,7 +168,7 @@ def LITStructExtractOp : LITOp<"struct.extract", [Pure,
     The `lit.struct.extract` operation extracts a field from a struct by name.
   }];
 
-  let arguments = (ins StrAttr:$field, LITDeclRefType:$structVal);
+  let arguments = (ins StrAttr:$field, DeclRefType:$structVal);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
     $structVal `[` custom<KeywordAsString>($field) `]` attr-dict `:`
@@ -193,7 +193,7 @@ def LITStructGEPOp : LITOp<"struct.gep", [Pure,
     name from a parametric struct.
   }];
 
-  let arguments = (ins StrAttr:$field, PointerOf<LITDeclRefType>:$container);
+  let arguments = (ins StrAttr:$field, PointerOf<DeclRefType>:$container);
   let results = (outs POP_PointerType:$result);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`

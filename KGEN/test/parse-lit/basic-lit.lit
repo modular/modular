@@ -4,7 +4,7 @@ __include "../lit-examples/prolog.lit"
 
 # CHECK: module {
 
-# CHECK-LABEL: lit.struct.decl @OurSIMD<size, dt: !kgen.litdeclref<@DType>> {
+# CHECK-LABEL: lit.struct.decl @OurSIMD<size, dt: !kgen.declref<@DType>> {
 struct OurSIMD[size: __mlir_type.index, dt: DType]:
   pass
 
@@ -18,9 +18,9 @@ fn take_3index(a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index)
   return a
 
 # CHECK-LABEL: lit.func @fancy_signature
-# CHECK-SAME: <dt: !kgen.litdeclref<@DType>, size>
-# CHECK-SAME: (%x: !kgen.litdeclref<@OurSIMD<size = size, dt: !kgen.litdeclref<@DType> = dt>>,
-# CHECK-SAME:  %exp: !kgen.litdeclref<@OurSIMD<size = size, dt: !kgen.litdeclref<@DType> = dt>>) -> index {
+# CHECK-SAME: <dt: !kgen.declref<@DType>, size>
+# CHECK-SAME: (%x: !kgen.declref<@OurSIMD<size = size, dt: !kgen.declref<@DType> = dt>>,
+# CHECK-SAME:  %exp: !kgen.declref<@OurSIMD<size = size, dt: !kgen.declref<@DType> = dt>>) -> index {
 fn fancy_signature[dt: DType, size: __mlir_type.index]
   (x: OurSIMD[size, dt], exp: (OurSIMD)[size, dt]) -> __mlir_type.index:
 
@@ -46,7 +46,7 @@ struct EmptyStruct:
   # No body
 # CHECK-NEXT: }
 
-# CHECK-LABEL: lit.struct.decl @OneLineStruct<size: !kgen.litdeclref<@Int>> {
+# CHECK-LABEL: lit.struct.decl @OneLineStruct<size: !kgen.declref<@Int>> {
 struct OneLineStruct[size: Int]: pass; pass
 # CHECK-NEXT: }
 
@@ -56,46 +56,46 @@ struct StructExample:
     var result : StructExample
     return result
 
-  # CHECK: lit.func @static(%x: !kgen.litdeclref<@Int>) -> !lit.none attributes {isStatic} {
+  # CHECK: lit.func @static(%x: !kgen.declref<@Int>) -> !lit.none attributes {isStatic} {
   @staticmethod
   fn static(x: Int):
     # CHECK: %0 = index.constant 4
-    # CHECK: %1 = kgen.call_param[(index) -> !kgen.litdeclref<@Int>: @Int::@__new__](%0)
-    # CHECK: %2 = kgen.call_param[(!kgen.litdeclref<@Int>) -> !lit.none: @StructExample::@static](%1)
+    # CHECK: %1 = kgen.call_param[(index) -> !kgen.declref<@Int>: @Int::@__new__](%0)
+    # CHECK: %2 = kgen.call_param[(!kgen.declref<@Int>) -> !lit.none: @StructExample::@static](%1)
     StructExample.static(Int(4))
     pass
 
-  # CHECK: lit.func @mutatingMethod(%self: !pop.pointer<@StructExample?>) -> !lit.none
+  # CHECK: lit.func @mutatingMethod(%self: !pop.pointer<@StructExample>) -> !lit.none
   fn mutatingMethod(&self):
 
 # CHECK: }
 # CHECK-NEXT: }
 
-# CHECK: lit.func @callStatic(%a: !kgen.litdeclref<@Int>) -> !lit.none
+# CHECK: lit.func @callStatic(%a: !kgen.declref<@Int>) -> !lit.none
 fn callStatic(a: Int):
-  # CHECK: kgen.call_param[(!kgen.litdeclref<@Int>) -> !lit.none: @StructExample::@static](%a)
+  # CHECK: kgen.call_param[(!kgen.declref<@Int>) -> !lit.none: @StructExample::@static](%a)
   StructExample.static(a)
 
-  # CHECK: kgen.call_param[() -> !kgen.litdeclref<@StructExample>: @StructExample::@__new__]()
-  # CHECK: kgen.call_param[(!kgen.litdeclref<@Int>) -> !lit.none: @StructExample::@static](%a)
+  # CHECK: kgen.call_param[() -> !kgen.declref<@StructExample>: @StructExample::@__new__]()
+  # CHECK: kgen.call_param[(!kgen.declref<@Int>) -> !lit.none: @StructExample::@static](%a)
   StructExample().static(a)
 
 # CHECK-LABEL: lit.func @simpleMath
 fn simpleMath(a: Int, b: Int) -> Int:
-  # CHECK: %0 = kgen.call_param[(!kgen.litdeclref<@Int>, !kgen.litdeclref<@Int>) -> !kgen.litdeclref<@Int>: @Int::@__mul__](%b, %a)
-  # CHECK: %1 = kgen.call_param[(!kgen.litdeclref<@Int>, !kgen.litdeclref<@Int>) -> !kgen.litdeclref<@Int>: @Int::@__add__](%a, %0)
-  # CHECK: kgen.return %1 : !kgen.litdeclref<@Int>
+  # CHECK: %0 = kgen.call_param[(!kgen.declref<@Int>, !kgen.declref<@Int>) -> !kgen.declref<@Int>: @Int::@__mul__](%b, %a)
+  # CHECK: %1 = kgen.call_param[(!kgen.declref<@Int>, !kgen.declref<@Int>) -> !kgen.declref<@Int>: @Int::@__add__](%a, %0)
+  # CHECK: kgen.return %1 : !kgen.declref<@Int>
   return a+b*a
 
 
-# CHECK-LABEL: lit.struct.decl @Pair<dt: !kgen.litdeclref<@DType>> {
+# CHECK-LABEL: lit.struct.decl @Pair<dt: !kgen.declref<@DType>> {
 struct Pair[dt: DType]:
- # CHECK: %a = lit.var.decl "a" : <@OurSIMD<size = 42, dt: !kgen.litdeclref<@DType> = dt>?>
- # CHECK: %b = lit.var.decl "b" : <@Int?>
+ # CHECK: %a = lit.var.decl "a" : <@OurSIMD<size = 42, dt: !kgen.declref<@DType> = dt>>
+ # CHECK: %b = lit.var.decl "b" : <@Int>
   var a : OurSIMD[42, dt]
   var b : Int
 
-  # CHECK: lit.func @__new__() -> !kgen.litdeclref<@Pair<dt: !kgen.litdeclref<@DType> = dt>> attributes {isStatic}
+  # CHECK: lit.func @__new__() -> !kgen.declref<@Pair<dt: !kgen.declref<@DType> = dt>> attributes {isStatic}
   fn __new__() -> Pair[dt]:
     var result : Pair[dt]
     # TODO: Fill this in.
@@ -111,8 +111,8 @@ def var_decls():
   # CHECK: %y = lit.var.decl "y"
   var y : Int
   y = y #+1
-  # CHECK: [[TMP:%.*]] = pop.load %y : !pop.pointer<@Int?>
-  # CHECK: pop.store [[TMP]], %y : !pop.pointer<@Int?>
+  # CHECK: [[TMP:%.*]] = pop.load %y : !pop.pointer<@Int>
+  # CHECK: pop.store [[TMP]], %y : !pop.pointer<@Int>
 
   # CHECK: %z = lit.var.decl "z" : <index>
   # CHECK-NEXT: [[TMP:%.*]] = pop.load %x : !pop.pointer<index>
@@ -134,36 +134,36 @@ def patterns():
 
 fn generic_fn[a: DType, b: __mlir_type.index, c: __mlir_type.`!kgen.mlirtype`](d : __mlir_type.index):
 
-# CHECK: @call_generic<dt: !kgen.litdeclref<@DType>>()
+# CHECK: @call_generic<dt: !kgen.declref<@DType>>()
 fn call_generic[dt: DType]():
   # CHECK: %0 = index.constant 57
-  # CHECK: kgen.call_param[(index) -> !lit.none: @generic_fn<a: !kgen.litdeclref<@DType> = dt, b = 42, c: type = !kgen.litdeclref<@DType>>](%0)
+  # CHECK: kgen.call_param[(index) -> !lit.none: @generic_fn<a: !kgen.declref<@DType> = dt, b = 42, c: type = !kgen.declref<@DType>>](%0)
   generic_fn[dt, 42, DType](57)
 
   # CHECK: [[TMP:%.*]] = index.constant 57
-  # CHECK: kgen.call_param[(index) -> !lit.none: @generic_fn<a: !kgen.litdeclref<@DType> = dt, b = 13, c: type = !kgen.litdeclref<@OurSIMD<size = 4, dt: !kgen.litdeclref<@DType> = dt>>>]([[TMP]])
+  # CHECK: kgen.call_param[(index) -> !lit.none: @generic_fn<a: !kgen.declref<@DType> = dt, b = 13, c: type = !kgen.declref<@OurSIMD<size = 4, dt: !kgen.declref<@DType> = dt>>>]([[TMP]])
   generic_fn[dt, 13, OurSIMD[4, dt]](57)
 
 @interface
-#CHECK: lit.func @func_interface0<type: !kgen.litdeclref<@DType>>(%x: index) -> index attributes {isInterface} {
+#CHECK: lit.func @func_interface0<type: !kgen.declref<@DType>>(%x: index) -> index attributes {isInterface} {
 fn func_interface0[type: DType](x: __mlir_type.index) -> __mlir_type.index:
 
 @interface
-#CHECK: lit.func @func_interface1<type: !kgen.litdeclref<@DType>>(%x: index) -> index attributes {isInterface} {
+#CHECK: lit.func @func_interface1<type: !kgen.declref<@DType>>(%x: index) -> index attributes {isInterface} {
 fn func_interface1[type: DType](x: __mlir_type.index) -> __mlir_type.index: pass
 
 @interface
-#CHECK: lit.func @func_interface2<type: !kgen.litdeclref<@DType>>(%x: index) -> index attributes {isInterface} {
+#CHECK: lit.func @func_interface2<type: !kgen.declref<@DType>>(%x: index) -> index attributes {isInterface} {
 fn func_interface2[type: DType](x: __mlir_type.index) -> __mlir_type.index:
   ...
 
 @implements(func_interface2)
-#CHECK: lit.func @func_impl<type: !kgen.litdeclref<@DType>>(%x: index) -> index
+#CHECK: lit.func @func_impl<type: !kgen.declref<@DType>>(%x: index) -> index
 #CHECK:    implements @func_interface2 {
 fn func_impl[type: DType](x: __mlir_type.index) -> __mlir_type.index:
   return x
 
-# CHECK: lit.func @byval_byref_function(%a: !kgen.litdeclref<@Int>, %b: !pop.pointer<@Int?>) -> !lit.none
+# CHECK: lit.func @byval_byref_function(%a: !kgen.declref<@Int>, %b: !pop.pointer<@Int>) -> !lit.none
 fn byval_byref_function(a: Int, &b: Int):
   # CHECK-NEXT: pop.store %a, %b
   b = a
@@ -172,19 +172,19 @@ fn byval_byref_function(a: Int, &b: Int):
   var x : Int
   # This needs to load 'b' to pass it by value for the first arg, but pass its
   # address in directly for the second.
-  # CHECK: %0 = pop.load %b : !pop.pointer<@Int?>
-  # CHECK: %1 = kgen.call_param[(!kgen.litdeclref<@Int>, !pop.pointer<@Int?>) -> !lit.none: @byval_byref_function](%0, %b)
+  # CHECK: %0 = pop.load %b : !pop.pointer<@Int>
+  # CHECK: %1 = kgen.call_param[(!kgen.declref<@Int>, !pop.pointer<@Int>) -> !lit.none: @byval_byref_function](%0, %b)
   byval_byref_function(b, b)
 
 # CHECK: lit.func @lvaluesAndRValues()
 fn lvaluesAndRValues() -> __mlir_type.index:
   # CHECK: [[FOUR:%.*]] = index.constant 4
-  # CHECK: [[INT:%.*]] = kgen.call_param[(index) -> !kgen.litdeclref<@Int>: @Int::@__new__]([[FOUR]])
+  # CHECK: [[INT:%.*]] = kgen.call_param[(index) -> !kgen.declref<@Int>: @Int::@__new__]([[FOUR]])
   # CHECK: [[VALUE:%.*]] = lit.struct.extract [[INT]][value] : index from <@Int>
   # CHECK: kgen.return [[VALUE]] : index
   return Int(4).value
 
-# CHECK: lit.func @defTests({{.*}}, %untyped: !kgen.litdeclref<@object>)
+# CHECK: lit.func @defTests({{.*}}, %untyped: !kgen.declref<@object>)
 def defTests(a: Int, b: Int, untyped):
   # CHECK: [[TMP:%.*]] = pop.load %b_1
   # CHECK-NEXT: pop.store [[TMP]], %a_0
@@ -241,9 +241,9 @@ fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
   # Test calls to methods and operators on parameterized type.
   a.fma(a, a)
   b.fma(b, b)
-  # CHECK: kgen.call_param[(!kgen.litdeclref<@SIMD<size = 1, type: dtype = f64>>, !kgen.litdeclref<@SIMD<size = 1, type: dtype = f64>>) -> !kgen.litdeclref<@SIMD<size = 1, type: dtype = f64>>: @SIMD::@__add__<size = 1, type: dtype = f64>](%a, %a)
+  # CHECK: kgen.call_param[(!kgen.declref<@SIMD<size = 1, type: dtype = f64>>, !kgen.declref<@SIMD<size = 1, type: dtype = f64>>) -> !kgen.declref<@SIMD<size = 1, type: dtype = f64>>: @SIMD::@__add__<size = 1, type: dtype = f64>](%a, %a)
   var x = a+a
-  # CHECK: kgen.call_param[(!kgen.litdeclref<@SIMD<size = 1, type: dtype = si32>>, !kgen.litdeclref<@SIMD<size = 1, type: dtype = si32>>) -> !kgen.litdeclref<@SIMD<size = 1, type: dtype = si32>>: @SIMD::@__add__<size = 1, type: dtype = si32>](%b, %b)
+  # CHECK: kgen.call_param[(!kgen.declref<@SIMD<size = 1, type: dtype = si32>>, !kgen.declref<@SIMD<size = 1, type: dtype = si32>>) -> !kgen.declref<@SIMD<size = 1, type: dtype = si32>>: @SIMD::@__add__<size = 1, type: dtype = si32>](%b, %b)
   var y = b+b
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<A>
@@ -252,17 +252,17 @@ struct TestParamStruct[A: __mlir_type.index]:
     var result: TestParamStruct[A]
     return result
 
-  # CHECK: lit.func @method<B>(%self: !kgen.litdeclref<@TestParamStruct<A = A>>, %other: !kgen.litdeclref<@TestParamStruct<A = add(A, B)>>) -> !lit.none {
+  # CHECK: lit.func @method<B>(%self: !kgen.declref<@TestParamStruct<A = A>>, %other: !kgen.declref<@TestParamStruct<A = add(A, B)>>) -> !lit.none {
   fn method[B: __mlir_type.index](self: TestParamStruct[A], other: TestParamStruct[A+B]):
     pass
 
 # Test that we support partially bound parameters.
 fn testTestParamStruct(a: TestParamStruct[4]):
-  # CHECK: %arg11 = lit.var.decl "arg11" : <@TestParamStruct<A = 11>?>
-  # CHECK: %0 = kgen.call_param[() -> !kgen.litdeclref<@TestParamStruct<A = 11>>: @TestParamStruct::@__new__<A = 11>]()
-  # CHECK: pop.store %0, %arg11 : !pop.pointer<@TestParamStruct<A = 11>?>
+  # CHECK: %arg11 = lit.var.decl "arg11" : <@TestParamStruct<A = 11>>
+  # CHECK: %0 = kgen.call_param[() -> !kgen.declref<@TestParamStruct<A = 11>>: @TestParamStruct::@__new__<A = 11>]()
+  # CHECK: pop.store %0, %arg11 : !pop.pointer<@TestParamStruct<A = 11>>
   var arg11 = TestParamStruct[11]()
 
-  # CHECK: %1 = pop.load %arg11 : !pop.pointer<@TestParamStruct<A = 11>?>
-  # CHECK: %2 = kgen.call_param[(!kgen.litdeclref<@TestParamStruct<A = 4>>, !kgen.litdeclref<@TestParamStruct<A = 11>>) -> !lit.none: @TestParamStruct::@method<A = 4, B = 7>](%a, %1)
+  # CHECK: %1 = pop.load %arg11 : !pop.pointer<@TestParamStruct<A = 11>>
+  # CHECK: %2 = kgen.call_param[(!kgen.declref<@TestParamStruct<A = 4>>, !kgen.declref<@TestParamStruct<A = 11>>) -> !lit.none: @TestParamStruct::@method<A = 4, B = 7>](%a, %1)
   a.method[7](arg11)

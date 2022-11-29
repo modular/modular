@@ -211,37 +211,18 @@ Optional<int64_t> DTypeType::getTypeAlign(TargetInfoAttr target) const {
 // DeclRefType
 //===----------------------------------------------------------------------===//
 
-DeclRefType DeclRefType::get(FlatSymbolRefAttr name,
+DeclRefType DeclRefType::get(SymbolRefAttr name,
                              ParamBindArrayAttr paramValues) {
   return get(name.getContext(), name, paramValues);
 }
 
-DeclRefType DeclRefType::get(FlatSymbolRefAttr name,
+DeclRefType DeclRefType::get(SymbolRefAttr name,
                              ArrayRef<ParamBindAttr> paramValues) {
   return get(name.getContext(), name,
              ParamBindArrayAttr::get(name.getContext(), paramValues));
 }
 
-DeclRefType DeclRefType::get(FlatSymbolRefAttr name) {
-  return get(name, ArrayRef<ParamBindAttr>());
-}
-
-//===----------------------------------------------------------------------===//
-// LITDeclRefType
-//===----------------------------------------------------------------------===//
-
-LITDeclRefType LITDeclRefType::get(SymbolRefAttr name,
-                                   ParamBindArrayAttr paramValues) {
-  return get(name.getContext(), name, paramValues);
-}
-
-LITDeclRefType LITDeclRefType::get(SymbolRefAttr name,
-                                   ArrayRef<ParamBindAttr> paramValues) {
-  return get(name.getContext(), name,
-             ParamBindArrayAttr::get(name.getContext(), paramValues));
-}
-
-LITDeclRefType LITDeclRefType::get(SymbolRefAttr name) {
+DeclRefType DeclRefType::get(SymbolRefAttr name) {
   return get(name, ArrayRef<ParamBindAttr>());
 }
 

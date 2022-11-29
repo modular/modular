@@ -358,7 +358,7 @@ emitCallableDeclMember(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
 
   // If this is a type declaration, return it as a type.
   if (isa<LITStructDeclOp>(*decl))
-    return {{MValue(LITDeclRefType::get(decl->getSymbolRef())), node}};
+    return {{MValue(DeclRefType::get(decl->getSymbolRef())), node}};
 
   emitter.emitError(node->getLoc(), "use of declaration \"")
       << memberName << "\" as a value isn't supported yet";
@@ -1054,10 +1054,8 @@ AnyValue SliceNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
 
 /// Given a value of type type, substitute parameters into the type, producing
 /// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
-static CallableValue
-substituteParametersIntoUserDefinedType(LITDeclRefType declRef,
-                                        const SubscriptNode &subscript,
-                                        ExprEmitter &emitter) {
+static CallableValue substituteParametersIntoUserDefinedType(
+    DeclRefType declRef, const SubscriptNode &subscript, ExprEmitter &emitter) {
   // If already parameterized, give up.
   // TODO: Why not allow multiple partial type applications?
   if (!declRef.getParamValues().empty()) {
@@ -1108,7 +1106,7 @@ substituteParametersIntoUserDefinedType(LITDeclRefType declRef,
   }
 
   // Ok, we succeeded at reparameterizing the type.
-  return {{MValue(LITDeclRefType::get(typeDecl.getSymbolRef(), paramBindings)),
+  return {{MValue(DeclRefType::get(typeDecl.getSymbolRef(), paramBindings)),
            &subscript}};
 }
 
@@ -1256,7 +1254,7 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   // If the sub-value is an unbound Type, try binding things to it!
   if (auto typeValue = subValue.baseVal.ir.getIfTypeValue()) {
     // Handle user-defined types.
-    if (auto declRef = dyn_cast<LITDeclRefType>(typeValue))
+    if (auto declRef = dyn_cast<DeclRefType>(typeValue))
       return substituteParametersIntoUserDefinedType(declRef, *this, emitter);
 
     // Handle __mlir_type types.

@@ -85,7 +85,7 @@ ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
 
   // Methods on structs (but not classes) take the struct implicitly by
   // pointer so they can use and mutate it.
-  return LITDeclRefType::get(getSymbolRef(), parameters);
+  return DeclRefType::get(getSymbolRef(), parameters);
 }
 
 //===----------------------------------------------------------------------===//

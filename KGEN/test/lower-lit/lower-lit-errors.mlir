@@ -177,18 +177,17 @@ lit.func @impl3() implements @itf {
 
 // -----
 
-lit.struct.decl @A<b, c> {
+lit.struct.decl @A<b, c> { // expected-note {{@A declared here}}
  %x = lit.var.decl "x" : <index>
 }
 
-// expected-error @+1 {{'A' expected parameter c of type 'index' but use bound "e" of type 'index'}}
-lit.func @bad_litdeclref0(%x: !kgen.litdeclref<@A<b = 10, e = 11>>) -> !lit.none {
+// expected-error @+1 {{!kgen.declref symbol use input parameter #1 has name "e" but @A expected name "c"}}
+lit.func @bad_litdeclref0(%x: !kgen.declref<@A<b = 10, e = 11>>) -> !lit.none {
   %0 = kgen.param.constant: !lit.none = <#lit.none>
   kgen.return %0 : !lit.none
 }
 
-// expected-error @+1 {{'A' expected 2 parameters but found 1}}
-lit.func @bad_litdeclref1(%x: !kgen.litdeclref<@A<b = 10>>) -> !lit.none {
+lit.func @bad_litdeclref1(%x: !kgen.declref<@A<b = 10>>) -> !lit.none {
   %0 = kgen.param.constant: !lit.none = <#lit.none>
   kgen.return %0 : !lit.none
 }

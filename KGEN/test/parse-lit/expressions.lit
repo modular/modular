@@ -6,7 +6,7 @@ __include "../lit-examples/prolog.lit"
 
 fn noop():
 
-# CHECK-LABEL: lit.func @precedence_associativity(%a: !kgen.litdeclref<@Int>) -> !lit.none
+# CHECK-LABEL: lit.func @precedence_associativity(%a: !kgen.declref<@Int>) -> !lit.none
 fn precedence_associativity(a: Int):
   # CHECK-NEXT: %z = lit.var.decl "z"
   var z: Int = Int(0)
@@ -84,7 +84,7 @@ struct M:
   fn __matmul__(self, rhs: M) -> M:
     return M(0)
 
-# CHECK-LABEL: lit.func @precedence_matmul(%z: !kgen.litdeclref<@M>) -> !kgen.litdeclref<@M>
+# CHECK-LABEL: lit.func @precedence_matmul(%z: !kgen.declref<@M>) -> !kgen.declref<@M>
 fn precedence_matmul(z: M) -> M:
   # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} 3
   # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call_param{{.*}} @M::@__new__](%[[THREE]])
@@ -93,10 +93,10 @@ fn precedence_matmul(z: M) -> M:
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call_param{{.*}} @M::@__neg__](%[[INT_TWO]])
   # CHECK-NEXT:  %[[MATMUL:.*]] = kgen.call_param{{.*}}@M::@__matmul__](%[[INT_THREE]], %[[NEG]])
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call_param{{.*}} @M::@__add__](%z, %[[MATMUL]])
-  # CHECK-NEXT:  kgen.return %[[ADD]] : !kgen.litdeclref<@M>
+  # CHECK-NEXT:  kgen.return %[[ADD]] : !kgen.declref<@M>
   return z + M(3) @ -M(2)
 
-# CHECK-LABEL: lit.func @precedence_bitwise(%a: !kgen.litdeclref<@Int>, %b: !kgen.litdeclref<@Int>, %c: !kgen.litdeclref<@Int>) -> !kgen.litdeclref<@Int> {
+# CHECK-LABEL: lit.func @precedence_bitwise(%a: !kgen.declref<@Int>, %b: !kgen.declref<@Int>, %c: !kgen.declref<@Int>) -> !kgen.declref<@Int> {
 fn precedence_bitwise(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %[[TWO:.*]] = {{.*}} 2
   # CHECK-NEXT: %[[INT_TWO:.*]] = kgen.call_param{{.*}} @Int::@__new__](%[[TWO]])
@@ -144,7 +144,7 @@ fn comparisons(a: Int, b: Int):
 # COM:   # CHECK-NEXT: store %[[OR]], %tmp
 # COM:   tmp = a == b and not c or d
 
-# CHECK-LABEL: lit.func @do_math(%a: !kgen.litdeclref<@Int>, %b: !kgen.litdeclref<@Int>, %c: !kgen.litdeclref<@Int>) -> !kgen.litdeclref<@Int> {
+# CHECK-LABEL: lit.func @do_math(%a: !kgen.declref<@Int>, %b: !kgen.declref<@Int>, %c: !kgen.declref<@Int>) -> !kgen.declref<@Int> {
 fn do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %z = lit.var.decl "z"
   var z : Int
@@ -189,9 +189,9 @@ fn listValues() -> __mlir_type.index:
   var b = []
   return a
 
-# CHECK-LABEL: lit.func @test_if_cond(%cond: !kgen.litdeclref<@Bool>) -> !lit.none
+# CHECK-LABEL: lit.func @test_if_cond(%cond: !kgen.declref<@Bool>) -> !lit.none
 def test_if_cond(cond: Bool):
-    # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@Int?>
+    # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@Int>
     # CHECK-NEXT: %[[COND:.*]] = pop.load %cond_0
     # CHECK-NEXT: %[[BOOL:.*]] = kgen.call_param{{.*}} @Bool::@__bool__](%[[COND]])
     # CHECK-NEXT: %[[LIT_BOOL:.*]] = kgen.call_param{{.*}} @Bool::@__lit_bool](%[[BOOL]])
