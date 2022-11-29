@@ -56,6 +56,22 @@ struct FloatLiteralNode final : public ExprNode {
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
 
+struct BoolLiteralNode final : public ExprNode {
+  BoolLiteralNode(SMLoc loc, bool value)
+      : ExprNode(kBoolLiteral), loc(loc), value(value) {}
+
+  const SMLoc loc;
+  const bool value;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kBoolLiteral;
+  }
+
+  SMLoc getLoc() const override { return loc; }
+  llvm::SMRange getRange() const override { return {getLoc(), getLoc()}; }
+  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+};
+
 struct StringLiteralNode final : public ExprNode {
   StringLiteralNode(StringRef spelling)
       : ExprNode(kStringLiteral), spelling(spelling) {}

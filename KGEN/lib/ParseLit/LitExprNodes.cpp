@@ -732,6 +732,11 @@ AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter,
   return AnyValue(attr);
 }
 
+AnyValue BoolLiteralNode::emitIR(ExprEmitter &emitter,
+                                 ASTType contextualType) const {
+  return AnyValue(BoolAttr::get(emitter.getContext(), value));
+}
+
 AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter,
                                    ASTType contextualType) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);

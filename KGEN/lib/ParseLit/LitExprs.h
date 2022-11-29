@@ -53,6 +53,7 @@ public:
   enum Kind {
     kIntLiteral,    // 42
     kFloatLiteral,  // 1.1
+    kBoolLiteral,   // False
     kStringLiteral, // "Hello"
     kNoneLiteral,   // None
     kDeclRef,       // x
