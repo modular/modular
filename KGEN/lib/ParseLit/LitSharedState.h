@@ -97,7 +97,7 @@ public:
   }
 
   /// Add magic things to the builtins decl when parsing starts.
-  void addBuiltinTypes(ASTDecl &builtinsDecl, llvm::SMLoc smLoc);
+  void addBuiltinTypes(ASTDecl &builtinsDecl);
 
 private:
   /// This is used for memory that lives as long as the global parser does.

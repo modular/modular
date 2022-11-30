@@ -311,8 +311,8 @@ ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
     auto varDecl =
         OpBuilder(varDeclCursor)
             .create<VarDeclOp>(translateLocation(loc), declIRType, nameAttr);
-    lookupResult =
-        &shared.declResolver->addFullyResolvedDecl(varDecl, nameAttr, &scope);
+    lookupResult = &shared.declResolver->addFullyResolvedDecl(varDecl, loc,
+                                                              nameAttr, &scope);
   }
 
   // If the lookup succeeded, make sure the signature for the referenced decl

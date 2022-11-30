@@ -70,9 +70,6 @@ public:
     return getSharedState().translateLocation(loc);
   }
 
-  /// Return the location for the current token.
-  Location getTokenLocation() { return translateLocation(getToken().getLoc()); }
-
   //===--------------------------------------------------------------------===//
   // Token Parsing
   //===--------------------------------------------------------------------===//

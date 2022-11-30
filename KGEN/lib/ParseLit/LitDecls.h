@@ -55,22 +55,19 @@ public:
   void resolveAll(llvm::SMLoc loc);
 
   /// Add a new declaration that needs to be resolved.
-  ASTDecl &addDecl(Operation *decl, StringAttr name, ASTDecl *parentDecl,
-                   LitLexerCursor cursor, LitLexerCursor endCursor,
-                   ssize_t indentation);
+  ASTDecl &addDecl(Operation *decl, llvm::SMLoc loc, StringAttr name,
+                   ASTDecl *parentDecl, LitLexerCursor cursor,
+                   LitLexerCursor endCursor, ssize_t indentation);
 
   /// Add a declaration that is already fully resolved.
-  ASTDecl &addFullyResolvedDecl(Operation *decl, StringAttr name,
-                                ASTDecl *parentDecl);
+  ASTDecl &addFullyResolvedDecl(Operation *decl, llvm::SMLoc loc,
+                                StringAttr name, ASTDecl *parentDecl);
 
   /// Add a declaration that is already fully resolved.
   ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringAttr name,
-                                Location loc, ASTDecl *parentDecl);
+                                llvm::SMLoc loc, ASTDecl *parentDecl);
   ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringRef name,
-                                Location loc, ASTDecl *parentDecl) {
-    return addFullyResolvedDecl(declVal, StringAttr::get(getContext(), name),
-                                loc, parentDecl);
-  }
+                                llvm::SMLoc loc, ASTDecl *parentDecl);
 
   /// Resolve the specified declaration to at least the specified level of
   /// resolution, performing incremental type checking as appropriate.
@@ -87,7 +84,7 @@ public:
   }
 
 private:
-  ASTDecl &addDecl(DeclIRValue decl, Location loc, StringAttr name,
+  ASTDecl &addDecl(DeclIRValue decl, llvm::SMLoc loc, StringAttr name,
                    ASTDecl *parentDecl, LitLexerCursor cursor,
                    LitLexerCursor endCursor, ssize_t indentation);
 

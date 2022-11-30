@@ -37,7 +37,7 @@ namespace M::KGEN::LIT {
 /// notices a declaration but does not parse its body until it is demanded.
 class ASTDecl {
 public:
-  MLIRContext *getContext() const { return loc.getContext(); }
+  MLIRContext *getContext() const;
 
   /// Return the Module, StructDecl, Func, or ParamDecl that this scope
   /// corresponds to.
@@ -54,7 +54,7 @@ public:
   /// If the IRValue is an Operation*, return it, otherwise return null.
   Operation *getIfOperation() const { return dyn_cast<Operation *>(irValue); }
 
-  Location getLoc() const { return loc; }
+  llvm::SMLoc getLoc() const { return loc; }
   ASTDecl *getParentDecl() const { return parentDecl; }
 
   /// Return the indentation of the introducer token or -1 if it wasn't on the
@@ -142,7 +142,7 @@ public:
 private:
   friend class DeclResolver;
   friend class LitSharedState;
-  ASTDecl(DeclIRValue irValue, Location loc, ASTDecl *parentDecl,
+  ASTDecl(DeclIRValue irValue, llvm::SMLoc loc, ASTDecl *parentDecl,
           LitLexerCursor cursor, LitLexerCursor endCursor, ssize_t indentation)
       : irValue(irValue), loc(loc), parentDecl(std::move(parentDecl)),
         cursor(cursor), endCursorState(endCursor.getState()),
@@ -154,7 +154,7 @@ private:
 
   /// This is the source location of the declaration, used for diagnostics and
   /// debug information.
-  Location loc;
+  llvm::SMLoc loc;
 
   /// For a type declaration like a struct, this is the type of 'self' in a
   /// member.  This is only valid after signature resolution.
