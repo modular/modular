@@ -33,6 +33,8 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
     BlobCache<TransformCacheKey> &transformCache,
     LLCL::AsyncValueRef<LogicalResult> chain, StringRef transformName,
     TransformFn transformFn, CacheAccessFn cacheAccessFn) {
+  AsyncValue::registerType<CacheFindResult>();
+
   // Write the transform name to the key buffer immediately - we can't worry
   // about things getting deallocated.
   WriteableBufferRef writeableKeyBuffer = WriteableBuffer::get();
@@ -54,13 +56,9 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
       return;
     }
 
-    // Construct the key buffer for communicating with the transform cache.
-    auto targetRegionHashes =
-        target->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
-
-    // Write the target region hashes into the key buffer and get a read-only
-    // ref to it.
-    *writeableKeyBuffer << targetRegionHashes;
+    // Basically we just want to key off the deflated op, so write the target op
+    // into the key buffer and get a read-only ref to it.
+    target->print(*writeableKeyBuffer);
     BufferRef keyBuffer = std::move(writeableKeyBuffer);
 
     // Try to find the key in the cache. The cache hit function should chain off
