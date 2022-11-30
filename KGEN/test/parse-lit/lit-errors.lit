@@ -87,7 +87,7 @@ var globalvar : __mlir_type.index
 def err():
   var y : globalvar  # expected-error {{expected a type}}
 
-struct Rec[param:
+struct Rec[param: # expected-note {{previously used here}}
                 Rec  # expected-error {{recursive reference to declaration}}
            ]:
   pass

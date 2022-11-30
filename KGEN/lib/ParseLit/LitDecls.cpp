@@ -208,12 +208,14 @@ ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal, StringRef name,
 }
 
 /// Resolve all of the declarations that are visible.
-void DeclResolver::resolveAll(SMLoc loc) {
+void DeclResolver::resolveAll() {
   // We can do this in any order, but choose to use the order they are
   // discovered so diagnostics are mostly top-down.  Resolving declarations
   // may cause more entries to be added to this list.
-  for (size_t i = 0; i != parsedDeclList.size(); ++i)
-    (void)resolve(*parsedDeclList[i], DeclResolvedness::fullyResolved, loc);
+  for (size_t i = 0; i != parsedDeclList.size(); ++i) {
+    (void)resolve(*parsedDeclList[i], DeclResolvedness::fullyResolved,
+                  parsedDeclList[i]->getLoc());
+  }
 }
 
 /// Resolve the specified declaration to at least the specified level of
@@ -232,8 +234,11 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
   // If we are currently name binding this operation, we found a cycle, reject
   // it with an error.
-  if (!declsCurrentlyProcessing.insert(&decl).second) {
-    emitError(loc, "recursive reference to declaration");
+  if (!declsCurrentlyProcessing.insert({&decl, loc}).second) {
+    emitError(loc, "recursive reference to declaration")
+            .attachNote(
+                sharedState.translateLocation(declsCurrentlyProcessing[&decl]))
+        << "previously used here";
     return failure();
   }
 
