@@ -182,8 +182,10 @@ LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
   // All the operand types must match except for 'bind_signature' and 'apply'.
-  if (opcode != POC::GetListElement && opcode != POC::BindSignature &&
-      opcode != POC::Apply && !llvm::all_of(operands, [&](auto operand) {
+  if (!llvm::is_contained({POC::GetListElement, POC::BindSignature, POC::Apply,
+                           POC::TargetHasFeature},
+                          opcode) &&
+      !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
       }))
     return emitError() << "operand type mismatch";
@@ -242,11 +244,23 @@ LogicalResult ParamOperatorAttr::verify(
     if (operands.size() != 2)
       return emitError() << "target_supports must have two operands";
     if (!type.isInteger(1))
-      return emitError() << "target_supports return i1";
+      return emitError() << "target_supports returns i1";
     // TargetSupports only work on target types.
     if (!operands[0].getType().isa<TargetType>() ||
         !operands[1].getType().isa<TargetType>())
       return emitError() << "target_supports only allowed on target types";
+    break;
+  case POC::TargetHasFeature:
+    if (operands.size() != 2)
+      return emitError() << "target_has_feature must have two operands";
+    if (!type.isInteger(1))
+      return emitError() << "target_has_feature returns i1";
+    if (!operands[0].getType().isa<TargetType>())
+      return emitError()
+             << "target_has_feature operand 0 must be a target type";
+    if (!operands[1].getType().isa<StringType>())
+      return emitError()
+             << "target_has_feature operand 1 must be a string type";
     break;
   case POC::In:
     if (operands.empty())
@@ -842,9 +856,18 @@ static Attribute simplifyTargetSupports(SmallVectorImpl<TypedAttr> &operands) {
   // TargetAttrInfos are the same.
   if (operands[0].isa<TargetInfoAttr>() && operands[1].isa<TargetInfoAttr>()) {
     bool targetsAreSame = (operands[0] == operands[1]);
-    return IntegerAttr::get(
-        IntegerType::get(operands[0].getContext(), targetsAreSame),
-        IntegerType::Signless);
+    return IntegerAttr::get(IntegerType::get(operands[0].getContext(), 1),
+                            targetsAreSame);
+  }
+  return {};
+}
+
+static Attribute simplifyHasFeature(SmallVectorImpl<TypedAttr> &operands) {
+  if (operands[0].isa<TargetInfoAttr>() && operands[1].isa<StringAttr>()) {
+    StringRef feature = cast<StringAttr>(operands[1]).getValue();
+    bool hasFeature = cast<TargetInfoAttr>(operands[0]).hasFeature(feature);
+    return IntegerAttr::get(IntegerType::get(operands[0].getContext(), 1),
+                            hasFeature);
   }
   return {};
 }
@@ -1058,8 +1081,9 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   // All operands must have the same type.  The result type is usually the
   // same as the operands, but is i1 for comparisons (overridden below).
   auto resultType = operandsIn.front().getType();
-  assert(llvm::is_contained(
-             {POC::GetListElement, POC::BindSignature, POC::Apply}, opcode) ||
+  assert(llvm::is_contained({POC::GetListElement, POC::BindSignature,
+                             POC::Apply, POC::TargetHasFeature},
+                            opcode) ||
          llvm::all_of(operandsIn.drop_front(),
                       [&](auto op) { return op.getType() == resultType; }));
 
@@ -1114,6 +1138,10 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     break;
   case POC::TargetSupports:
     result = simplifyTargetSupports(operands);
+    resultType = IntegerType::get(context, 1);
+    break;
+  case POC::TargetHasFeature:
+    result = simplifyHasFeature(operands);
     resultType = IntegerType::get(context, 1);
     break;
   case POC::In:
@@ -1522,7 +1550,8 @@ TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
   // Get the host features.
   if (llvm::sys::getHostCPUFeatures(hostFeatures))
     for (auto &f : hostFeatures)
-      features.AddFeature(f.first(), f.second);
+      if (f.second) // add feature if it's enabled
+        features.AddFeature(f.first(), f.second);
 
   // Return a TargetInfoAttr built for the host.
   return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu,

@@ -41,20 +41,21 @@ def POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
 
   // Target comparisons.
   I32EnumAttrCase<"TargetSupports", 14, "target_supports">,
+  I32EnumAttrCase<"TargetHasFeature", 15, "target_has_feature">,
 
   // Complex variadic operations.
-  I32EnumAttrCase<"In", 15, "in">,
+  I32EnumAttrCase<"In", 16, "in">,
 
 
   // Unary type expressions.
-  I32EnumAttrCase<"GetDType",   16, "get_dtype">,
-  I32EnumAttrCase<"GetSizeOf",  17, "get_sizeof">,
-  I32EnumAttrCase<"GetAlignOf", 18, "get_alignof">,
-  I32EnumAttrCase<"GetListElement", 19, "get_list_element">,
+  I32EnumAttrCase<"GetDType",   17, "get_dtype">,
+  I32EnumAttrCase<"GetSizeOf",  18, "get_sizeof">,
+  I32EnumAttrCase<"GetAlignOf", 19, "get_alignof">,
+  I32EnumAttrCase<"GetListElement", 20, "get_list_element">,
 
   // Signature processing.
-  I32EnumAttrCase<"BindSignature", 20, "bind_signature">,
-  I32EnumAttrCase<"Apply", 21, "apply">
+  I32EnumAttrCase<"BindSignature", 21, "bind_signature">,
+  I32EnumAttrCase<"Apply", 22, "apply">
 
   // TODO: Can add concat_string, etc as needed.
 ]>;

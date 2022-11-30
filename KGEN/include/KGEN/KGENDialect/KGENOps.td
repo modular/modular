@@ -763,7 +763,7 @@ def StructDeclOp : KGENOp<"struct.decl", [Symbol, SymbolTable,
 
     ```mlir
     kgen.struct.decl @SmallString<size>
-        constraints [<le(size, 8), "string must be small">] {
+        constraints <[le(size, 8), "string must be small"]> {
       data : !pop.array<size, scalar<si8>>
     }
     ```
