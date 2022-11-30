@@ -551,6 +551,11 @@ def ConstraintArrayAttr
 //===----------------------------------------------------------------------===//
 
 def TargetInfoAttr : ExprAttr<"TargetInfo", "target"> {
+  let parameters = (ins "llvm::Triple":$triple,
+                        StringRefParameter<"">:$cpu,
+                        StringRefParameter<"">:$features,
+                        "int64_t":$pointerSize,
+                        AttributeSelfTypeParameter<"">:$type);
   let summary = "kgen target";
   let description = [{
     An attribute representing a target of type !kgen.target. It contains the
@@ -581,12 +586,6 @@ def TargetInfoAttr : ExprAttr<"TargetInfo", "target"> {
     ```
   }];
 
-  let parameters = (ins "llvm::Triple":$triple,
-                        StringRefParameter<"">:$cpu,
-                        StringRefParameter<"">:$features,
-                        "int64_t":$pointerSize,
-                        AttributeSelfTypeParameter<"">:$type);
-
   let hasCustomAssemblyFormat = 1;
 
   let extraClassDeclaration = [{
@@ -598,10 +597,6 @@ def TargetInfoAttr : ExprAttr<"TargetInfo", "target"> {
 
     std::string getTripleStr() const {
       return getTriple().normalize();
-    }
-
-    bool hasFeature(StringRef feature) const {
-      return getFeatures().contains(feature);
     }
 
     static TargetInfoAttr getForHost(::mlir::MLIRContext *ctx);
