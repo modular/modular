@@ -32,6 +32,17 @@ using namespace M::KGEN::LIT;
 // ASTDecl
 //===----------------------------------------------------------------------===//
 
+MLIRContext *ASTDecl::getContext() const {
+  if (auto *op = getIfOperation())
+    return op->getContext();
+  if (auto mv = dyn_cast<MValue>(getIRValue()))
+    return mv.get().getContext();
+  if (auto dr = dyn_cast<DRValue>(getIRValue()))
+    return dr.getContext();
+
+  return cast<LValue>(getIRValue()).getContext();
+}
+
 /// If this is an RValue, return it otherwise return null.
 RValue ASTDecl::getIfRValue() const {
   // Meta value.
@@ -122,10 +133,9 @@ ASTDecl &LitSharedState::getDeclForSymbol(SymbolRefAttr symbol) {
 }
 
 /// Add a new declaration that needs to be resolved.
-ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, Location loc,
-                               StringAttr name, ASTDecl *parentDecl,
-                               LitLexerCursor cursor, LitLexerCursor endCursor,
-                               ssize_t indentation) {
+ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
+                               ASTDecl *parentDecl, LitLexerCursor cursor,
+                               LitLexerCursor endCursor, ssize_t indentation) {
   ASTDecl *decl = sharedState.allocPersistent<ASTDecl>(
       irValue, loc, parentDecl, cursor, endCursor, indentation);
   parsedDeclList.push_back(decl);
@@ -151,7 +161,8 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, Location loc,
     auto diag =
         sharedState.emitError(decl->getLoc(), "invalid redefinition of ")
         << name;
-    diag.attachNote(existing->getLoc()) << "previous definition here";
+    diag.attachNote(sharedState.translateLocation(existing->getLoc()))
+        << "previous definition here";
 
     // Mark the existing decl and this one as erroneous so uses of either
     // don't create confusing errors.
@@ -163,29 +174,37 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, Location loc,
 }
 
 /// Add a new declaration that needs to be resolved.
-ASTDecl &DeclResolver::addDecl(Operation *op, StringAttr name,
+ASTDecl &DeclResolver::addDecl(Operation *op, SMLoc loc, StringAttr name,
                                ASTDecl *parentDecl, LitLexerCursor cursor,
                                LitLexerCursor endCursor, ssize_t indentation) {
-  return addDecl(op, op->getLoc(), name, parentDecl, cursor, endCursor,
+  return addDecl(DeclIRValue(op), loc, name, parentDecl, cursor, endCursor,
                  indentation);
 }
 
-ASTDecl &DeclResolver::addFullyResolvedDecl(Operation *op, StringAttr name,
+ASTDecl &DeclResolver::addFullyResolvedDecl(Operation *op, SMLoc loc,
+                                            StringAttr name,
                                             ASTDecl *parentDecl) {
   auto &decl =
-      addDecl(op, name, parentDecl, LitLexerCursor(), LitLexerCursor(), 0);
+      addDecl(op, loc, name, parentDecl, LitLexerCursor(), LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
   return decl;
 }
 
 /// Add a declaration that is already fully resolved.
 ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal,
-                                            StringAttr name, Location loc,
+                                            StringAttr name, SMLoc loc,
                                             ASTDecl *parentDecl) {
   auto &decl = addDecl(declVal, loc, name, parentDecl, LitLexerCursor(),
                        LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
   return decl;
+}
+
+ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal, StringRef name,
+                                            llvm::SMLoc loc,
+                                            ASTDecl *parentDecl) {
+  return addFullyResolvedDecl(declVal, StringAttr::get(getContext(), name), loc,
+                              parentDecl);
 }
 
 /// Resolve all of the declarations that are visible.
@@ -207,11 +226,14 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     return success(!decl.hasReferenceError);
   }
 
+  auto emitError = [&](SMLoc loc, const Twine &message) -> InFlightDiagnostic {
+    return mlir::emitError(sharedState.translateLocation(loc), message);
+  };
+
   // If we are currently name binding this operation, we found a cycle, reject
   // it with an error.
   if (!declsCurrentlyProcessing.insert(&decl).second) {
-    emitError(sharedState.translateLocation(loc),
-              "recursive reference to declaration");
+    emitError(loc, "recursive reference to declaration");
     return failure();
   }
 
@@ -289,14 +311,14 @@ namespace {
 /// meta_param_list   ::= identifier_opt_type ("," identifier_opt_type)
 struct ParsedMetaSignature {
   SmallVector<ParamDeclAttr> inputDecls;
-  std::vector<Location> inputLocs;
+  std::vector<SMLoc> inputLocs;
 
   ParseResult parseOptionalMetaSignature(LitParserBase &p, ASTDecl &decl) {
     if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
       return success();
 
     auto parseMetaParameter = [&]() -> ParseResult {
-      inputLocs.push_back(p.getTokenLocation());
+      inputLocs.push_back(p.getToken().getLoc());
 
       StringAttr name;
       if (p.parseIdentifier(name, "expected parameter name")) {
@@ -350,8 +372,6 @@ struct ParsedParam {
   ExprNode *initValue = nullptr;
 
   ParseResult parse(LitParserBase &p, ASTDecl &declScope) {
-    loc = p.getToken().getLoc();
-
     // TODO: Implement support for variadic parameter markers:
     // Python's parameter grammar embeds checking for `/` and `*` and `**` into
     // the grammar, we can just check for it using ad-hoc logic for simplicity,
@@ -363,6 +383,8 @@ struct ParsedParam {
     // Handle & for by-ref arguments.
     if (p.consumeIf(LitToken::amp))
       isByRef = true;
+
+    loc = p.getToken().getLoc();
 
     if (p.parseIdentifier(name, "expected parameter name"))
       // TODO: Scan ahead for better recovery.
@@ -543,10 +565,10 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
   // them and they are instance (not type-level) values.
   // TODO: Generalize this to support nested structs and functions.
   if (auto structDecl = dyn_cast<StructDeclOp>(*decl.getParentDecl())) {
+    auto parentLoc = decl.getParentDecl()->getLoc();
     for (auto param : structDecl.getParamDecls()) {
       auto paramRef = ParamDeclRefAttr::get(param.getName(), param.getType());
-      addFullyResolvedDecl(MValue(paramRef), param.getName(),
-                           structDecl->getLoc(), &decl);
+      addFullyResolvedDecl(MValue(paramRef), param.getName(), parentLoc, &decl);
     }
   }
 
@@ -652,20 +674,20 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
     // are modeled with the IR-level POP::PointerType.
     if (isa<POP::PointerType>(arg.getType())) {
       // Arguments passed by-reference can be directly used.
-      addFullyResolvedDecl(LValue(arg), param.name, arg.getLoc(), &decl);
+      addFullyResolvedDecl(LValue(arg), param.name, param.loc, &decl);
       continue;
     }
 
     // If this was passed by-value, then it becomes an rvalue in a `fn`.
     if (!funcOp.getIsDef()) {
-      addFullyResolvedDecl(DRValue(arg), param.name, arg.getLoc(), &decl);
+      addFullyResolvedDecl(DRValue(arg), param.name, param.loc, &decl);
       continue;
     }
 
     // In a `def`, we create a mutable var.decl lvalue to allow reassignment.
     auto type = POP::PointerType::get(arg.getType());
     auto varDecl = builder.create<VarDeclOp>(arg.getLoc(), type, param.name);
-    addFullyResolvedDecl(varDecl, param.name, &decl);
+    addFullyResolvedDecl(varDecl, param.loc, param.name, &decl);
     builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
                                  /*alignment*/ None);
   }
@@ -681,16 +703,15 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
   // Check to see if we have a kgen.return at the end of function.  If not,
   // complain or add one implicitly if we have no results.
   Block *bodyBlock = defOp.getBody();
-  auto loc = decl.getLoc();
   bool isInterface = defOp.getIsInterface();
 
   if (isInterface) {
     if (!bodyBlock->empty())
-      emitError(loc, "interfaces must have no body");
+      emitError(defOp.getLoc(), "interfaces must have no body");
     return success();
   }
   if (bodyBlock->empty() || !isa<ReturnOp>(bodyBlock->back())) {
-    auto loc = decl.getLoc();
+    auto loc = defOp.getLoc();
     if (isa<KGEN::NoneType>(defOp.getResultType()) &&
         defOp.getResultParamTypes().empty()) {
       auto b = OpBuilder::atBlockEnd(bodyBlock);

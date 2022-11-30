@@ -46,7 +46,7 @@ struct LitStmtParser : public LitParserBase {
     // Create the varDeclCursor with an arbitrary op.  We delete it on
     // destruction of this statement parser.
     varDeclCursor = builder.create<mlir::index::ConstantOp>(
-        containingDecl.getLoc(), 1234567);
+        mlir::UnknownLoc::get(getContext()), 1234567);
   }
 
   ~LitStmtParser() {
@@ -672,15 +672,15 @@ ParseResult LitStmtParser::parseDefFnStmt(ArrayRef<ExprNode *> decorators,
   auto startCursor = getLexer().getCursor();
   skipUntilIndentation(curIndent);
 
-  getDeclResolver().addDecl(funcDecl, baseName, &containingDecl, startCursor,
-                            getLexer().getCursor(), curIndent);
+  getDeclResolver().addDecl(funcDecl, loc, baseName, &containingDecl,
+                            startCursor, getLexer().getCursor(), curIndent);
   return success();
 }
 
 ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
                                             size_t stmtIndent) {
-  auto loc = getTokenLocation();
-  consumeToken(LitToken::kw_var);
+  auto smLoc = consumeToken(LitToken::kw_var).getLoc();
+  auto loc = translateLocation(smLoc);
   StringAttr name;
   if (parseIdentifier(name, "expected name for 'var' declaration"))
     return failure();
@@ -711,7 +711,7 @@ ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(declOp, name, &containingDecl, startCursor,
+  getDeclResolver().addDecl(declOp, smLoc, name, &containingDecl, startCursor,
                             getLexer().getCursor(), stmtIndent);
 
   return success();
@@ -719,8 +719,8 @@ ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
 
 ParseResult LitStmtParser::parseAliasDeclStmt(ArrayRef<ExprNode *> decorators,
                                               size_t stmtIndent) {
-  auto loc = getTokenLocation();
-  consumeToken(LitToken::kw_alias);
+  auto smLoc = consumeToken(LitToken::kw_alias).getLoc();
+  auto loc = translateLocation(smLoc);
   StringAttr name;
   if (parseIdentifier(name, "expected name for 'alias' declaration"))
     return failure();
@@ -743,7 +743,7 @@ ParseResult LitStmtParser::parseAliasDeclStmt(ArrayRef<ExprNode *> decorators,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(declOp, name, &containingDecl, startCursor,
+  getDeclResolver().addDecl(declOp, smLoc, name, &containingDecl, startCursor,
                             getLexer().getCursor(), stmtIndent);
   return success();
 }
@@ -754,10 +754,9 @@ ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
   if (isa<StructDeclOp>(containingDecl))
     emitError("nested struct not supported here");
 
-  auto loc = getTokenLocation();
-
   // TODO: Add support for decorators.
-  consumeToken(LitToken::kw_struct);
+  auto smLoc = consumeToken(LitToken::kw_struct).getLoc();
+  auto loc = translateLocation(smLoc);
 
   StringAttr nameAttr;
   if (parseIdentifier(nameAttr, "expected struct name"))
@@ -776,8 +775,8 @@ ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(newStruct, nameAttr, &containingDecl, startCursor,
-                            getLexer().getCursor(), curIndent);
+  getDeclResolver().addDecl(newStruct, smLoc, nameAttr, &containingDecl,
+                            startCursor, getLexer().getCursor(), curIndent);
 
   return success();
 }

@@ -102,7 +102,7 @@ ASTType LitSharedState::getObjectType() const {
 }
 
 /// Add declarations for magic things to the builtins decl.
-void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
+void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   auto &resolver = *declResolver;
 
   // Add a declarations for builtin types.
@@ -113,12 +113,13 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl, SMLoc smLoc) {
   impl->typeCheckErrorType = TypeCheckErrorType::get(context);
 
   auto b = builtinsDecl.getDeclEndBuilder();
-  auto loc = builtinsDecl.getLoc();
+  auto loc = translateLocation(builtinsDecl.getLoc());
 
   // Add an empty struct with the specified name to the resolver.
   auto addEmptyStructDecl = [&](StringRef name, ASTDecl *&decl) {
     auto structOp = b.create<StructDeclOp>(loc, b.getStringAttr(name));
-    decl = &resolver.addDecl(structOp, structOp.getNameAttr(), &builtinsDecl,
+    decl = &resolver.addDecl(structOp, builtinsDecl.getLoc(),
+                             structOp.getNameAttr(), &builtinsDecl,
                              LitLexerCursor(), LitLexerCursor(), 0);
     decl->setSelfType(decl->computeSelfTypeForStruct(*this));
     decl->resolvedness = DeclResolvedness::fullyResolved;
