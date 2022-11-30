@@ -319,10 +319,8 @@ cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
   // Keeping references is safe here because all the memory is owned by the
   // MLIRContext, which is guaranteed to live longer than any of this.
   hashOr.andThen([&, hashOr = hashOr.copy(), out = out.copy()] {
-    if (failed(*hashOr)) {
-      out.emplace(mlir::emitError(r.getLoc()) << hashOr->getError());
-      return;
-    }
+    if (failed(*hashOr))
+      return out.emplace(mlir::emitError(r.getLoc()) << hashOr->getError());
 
     SmallVector<RegionHashAttr> hashVec;
     // If we already have some hashes, we have to append to the end of that
@@ -416,7 +414,7 @@ inflateRegion(Region *r, RegionHashAttr regionHash,
     if (failed(mlir::readBytecodeFile(
             *bytecode, &b,
             mlir::ParserConfig(r->getContext(), /*verifyAfterParse=*/false))))
-      out.emplace(failure());
+      return out.emplace(failure());
 
     // Get the container and take its body.
     ContainerOp container = cast<ContainerOp>(b.front());
@@ -448,7 +446,7 @@ M::Cache::inflateOp(Operation *cached, BlobCache<RegionCacheKey> &cache,
         cached->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
     // If the op doesn't have any region hashes on it, we're done.
     if (!hashes)
-      return;
+      return out.emplace(success());
 
     // Fill in the regions on the operation.
     SmallVector<AnyAsyncValueRef> results;
