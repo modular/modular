@@ -97,29 +97,29 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
       WriteableBufferRef writeableTransformResult = WriteableBuffer::get();
       auto xform = transformFn(target, writeableTransformResult.copy(),
                                std::move(inflate));
-      BufferRef transformResult = std::move(writeableTransformResult);
 
       // Re-deflate the target op.
       auto deflate = deflateOp(target, regionCache, std::move(xform));
 
       // Insert the transform result into the cache.
-      deflate.andThen([target, &transformCache, out = out.copy(),
-                       keyBuffer = std::move(keyBuffer),
-                       deflate = deflate.copy(),
-                       transformResult = std::move(transformResult)]() mutable {
-        auto hashOr = transformCache.insert(keyBuffer->getBuffer(),
-                                            std::move(transformResult));
-        hashOr.andThen([&, hashOr = hashOr.copy(), out = out.copy()] {
-          if (failed(*hashOr)) {
-            out.emplace(mlir::emitError(target->getLoc())
-                        << hashOr->getError());
-            return;
-          }
+      deflate.andThen(
+          [target, &transformCache, out = out.copy(),
+           keyBuffer = std::move(keyBuffer), deflate = deflate.copy(),
+           transformResult = std::move(writeableTransformResult)]() mutable {
+            // Only at this point (so the transform has finished, and deflate
+            // has too) should we change the transform result ref to be
+            // read-only.
+            auto hashOr = transformCache.insert(keyBuffer->getBuffer(),
+                                                std::move(transformResult));
+            hashOr.andThen([&, hashOr = hashOr.copy(), out = out.copy()] {
+              if (failed(*hashOr))
+                return out.emplace(mlir::emitError(target->getLoc())
+                                   << hashOr->getError());
 
-          // Finally done, return success.
-          out.emplace(success());
-        });
-      });
+              // Finally done, return success.
+              out.emplace(success());
+            });
+          });
     });
   });
 
