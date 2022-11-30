@@ -181,6 +181,9 @@ LogicalResult verifyParamDeclsMatch(
     Location originatorLoc, const char *targetName,
     ArrayRef<ParamDeclAttr> targetParamDecls, Location targetLoc);
 
+/// Check that the op has exactly one block in its region, or it's been cached.
+LogicalResult verifyOneBlockOrCached(Operation *op);
+
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_KGENUTILS_H

@@ -26,6 +26,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 // FIXME: KGENDialect should not depend on POPDialect.
+#include "Cache/CacheDialect/CacheOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 
 using namespace M;
@@ -340,6 +341,8 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return verifyDeclMatchesInterface("generator", *this, "interface", interface);
 }
 
+LogicalResult GeneratorOp::verify() { return verifyOneBlockOrCached(*this); }
+
 Region *GeneratorOp::getCallableRegion() { return &getBodyRegion(); }
 
 ArrayRef<Type> GeneratorOp::getCallableResults() {
@@ -410,6 +413,8 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   }
   return success();
 }
+
+LogicalResult FuncOp::verify() { return verifyOneBlockOrCached(*this); }
 
 Region *FuncOp::getCallableRegion() { return &getBodyRegion(); }
 

@@ -10,6 +10,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "Cache/CacheDialect/CacheOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDeclInterface.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -1407,4 +1408,20 @@ SignatureType KGEN::getFullSignature(KGENDeclInterface decl) {
   return SignatureType::get(
       ParamDeclArrayAttr::get(signature.getContext(), inputParams),
       signature.getResultParamTypes(), signature.getValues());
+}
+
+/// Verify that the provided operation has exactly one block in its body region,
+/// or that region was cached.
+LogicalResult KGEN::verifyOneBlockOrCached(Operation *op) {
+  size_t numBlocks = op->getRegion(0).getBlocks().size();
+  if (numBlocks == 0) {
+    if (!op->hasAttr(Cache::getRegionHashAttrName()))
+      return op->emitError()
+             << "must have a body region or it must be elided into the cache";
+  }
+
+  if (numBlocks > 1)
+    return op->emitError() << "does not support > 1 block in its body";
+
+  return success();
 }
