@@ -47,16 +47,6 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} 3
   # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call @Int::@__new__(%[[THREE]])
-  # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} 2
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call @Int::@__new__(%[[TWO]])
-  # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @Int::@__neg__(%[[INT_TWO]])
-  # CHECK-NEXT:  %[[MOD:.*]] = kgen.call @Int::@__mod__(%[[INT_THREE]], %[[NEG]])
-  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @Int::@__add__(%[[Z]], %[[MOD]])
-  # CHECK-NEXT:  pop.store %[[ADD]], %z
-  z = z + Int(3) % -Int(2)
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
-  # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} 3
-  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call @Int::@__new__(%[[THREE]])
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @Int::@__add__(%[[Z]], %[[INT_THREE]])
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} 2
   # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call @Int::@__new__(%[[TWO]])

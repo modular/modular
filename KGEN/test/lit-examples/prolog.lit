@@ -113,28 +113,52 @@ struct Int:
   #  return Int(rhs.value)      # TODO: Implement this
 
   fn __floordiv__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Implement this
+    return Int(__mlir_op.`index.floordivs`(self.value, rhs.value))
 
-  fn __mod__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Implement this
+  #fn __mod__(self, rhs: Int) -> Int:
+  #  TODO: use floored reminder as in Python
+  #  ex. 1 // -2 = -1
+  #      1 %  -2 = -1
+  #  index.rems returns 1 (truncated division)
+  #  So we need to adjust the result as follows
+  # var r = Int(__mlir_op.`index.rems`(self.value, rhs.value))
+  # if (r > Int(0) and rhs < Int(0)) or (r < Int(0) and rhs > Int(0)):
+  #   r += rhs
+  # return r
+  # return Int(rhs.value)      # TODO: Implement this
 
   fn __pow__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Implement this
+    var res = Int(1)
+    var n = rhs
+    if n < Int(0):
+      # Not defined for integers, this should raise an
+      # exception.
+      res = Int(0)
+    while n > Int(0):
+        res *= self
+        n -= Int(1)
+    return res
 
   fn __lshift__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Implement this
+      if rhs < Int(0):
+        # this should raise an exception.
+        return Int(0)
+    return Int(__mlir_op.`index.shl`(self.value, rhs.value))
 
   fn __rshift__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Implement this
+      if rhs < Int(0):
+        # this should raise an exception.
+        return Int(0)
+    return Int(__mlir_op.`index.shrs`(self.value, rhs.value))
 
   fn __and__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Implement this (index.and doesn't exist!)
+    return Int(__mlir_op.`index.and`(self.value, rhs.value))
 
   fn __xor__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Implement this (index.xor doesn't exist!)
+    return Int(__mlir_op.`index.xor`(self.value, rhs.value))
 
   fn __or__(self, rhs: Int) -> Int:
-    return Int(rhs.value)      # TODO: Implement this (index.or doesn't exist!)
+    return Int(__mlir_op.`index.or`(self.value, rhs.value))
 
   #===----------------------------------------------------------------------===#
   # In place operations.
@@ -158,6 +182,7 @@ struct Int:
     self = self * rhs
     return self
 
+  # TODO: Since / returns a F32 this cannot be done inplace
   #fn __itruediv__(&self, rhs: Int) -> Int:
   #  self = self / rhs
   #  return self
@@ -166,9 +191,9 @@ struct Int:
     self = self // rhs
     return self
 
-  fn __imod__(&self, rhs: Int) -> Int:
-    self = self % rhs
-    return self
+  #fn __imod__(&self, rhs: Int) -> Int:
+  #  self = self % rhs
+  #  return self
 
   fn __ipow__(&self, rhs: Int) -> Int:
     self = self ** rhs
