@@ -45,7 +45,7 @@ def FuncOp
                        TypeAttrOf<FunctionType>:$function_type,
                        ParamDeclArrayAttr:$paramDecls,
                        KTypeArrayAttr:$resultParamTypes);
-  let regions = (region SizedRegion<1>:$bodyRegion);
+  let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
     using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<FuncOp>::getBody;
@@ -59,6 +59,7 @@ def FuncOp
   }];
 
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 
   let builders = [
     // Create a func with a region but no body block.  The caller must create
@@ -89,7 +90,7 @@ def GeneratorOp
                        KTypeArrayAttr:$resultParamTypes,
                        ConstraintArrayAttr:$constraints,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
-  let regions = (region SizedRegion<1>:$bodyRegion);
+  let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
     using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<GeneratorOp>::getBody;
@@ -103,6 +104,7 @@ def GeneratorOp
   }];
 
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
