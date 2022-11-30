@@ -61,11 +61,14 @@ class LoweringCacheCollection {
 public:
   explicit LoweringCacheCollection(LLCL::Runtime &runtime, StringRef basePath)
       : llvm(Cache::getDefaultBackendChain(
-            runtime,
-            (std::filesystem::path(basePath.str()) / "llvm").string())),
-        composite(Cache::getDefaultBackendChain(
-            runtime,
-            (std::filesystem::path(basePath.str()) / "composite").string())) {}
+                 runtime,
+                 (std::filesystem::path(basePath.str()) / "llvm").string())
+                 .takeValue()),
+        composite(
+            Cache::getDefaultBackendChain(
+                runtime,
+                (std::filesystem::path(basePath.str()) / "composite").string())
+                .takeValue()) {}
 
   LLVMCache &getLLVM() { return llvm; }
   CompositeObjectCache &getComposite() { return composite; }
