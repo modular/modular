@@ -256,6 +256,18 @@ struct TestParamStruct[A: __mlir_type.index]:
   fn method[B: __mlir_type.index](self: TestParamStruct[A], other: TestParamStruct[A+B]):
     pass
 
+  # CHECK-LABEL: lit.func @aliases{{.*}}%x: !kgen.declref<@TestParamStruct<A = TypeLevelAlias>>
+  fn aliases(self, x: TestParamStruct[TypeLevelAlias]):
+    # CHECK: kgen.param.declare B = <add(mul(A, A), 1)>
+    alias B = A*A+1
+    # CHECK: kgen.param.declare C = <mul(A, B)>
+    alias C = B*A
+    # CHECK: %temp = lit.var.decl "temp" : <@TestParamStruct<A = C>>
+    var temp: TestParamStruct[C]
+
+  # CHECK: kgen.param.declare TypeLevelAlias = <mul(A, A)>
+  alias TypeLevelAlias = A*A
+
 # Test that we support partially bound parameters.
 fn testTestParamStruct(a: TestParamStruct[4]):
   # CHECK: %arg11 = lit.var.decl "arg11" : <@TestParamStruct<A = 11>>

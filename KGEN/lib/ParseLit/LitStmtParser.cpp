@@ -15,6 +15,7 @@
 #include "LitParserBase.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -85,6 +86,8 @@ struct LitStmtParser : public LitParserBase {
                               size_t curIndent);
   ParseResult parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
                                size_t stmtIndent);
+  ParseResult parseAliasDeclStmt(ArrayRef<ExprNode *> decorators,
+                                 size_t stmtIndent);
 
 private:
   /// This is declaration / scope that we're parsing into.
@@ -172,6 +175,7 @@ ParseResult LitStmtParser::parseStmts(size_t minIndent) {
 ///
 /// simple_stmt ::= expression_stmt
 ///               | assert_stmt [TODO]
+///               | alias_decl_stmt
 ///               | var_decl_stmt
 ///               | assignment_stmt
 ///               | augmented_assignment_stmt
@@ -233,6 +237,8 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
       return parseStructStmt(decorators, stmtIndent);
     case LitToken::kw_var:
       return parseVarDeclStmt(decorators, stmtIndent);
+    case LitToken::kw_alias:
+      return parseAliasDeclStmt(decorators, stmtIndent);
 
     default:
       return emitError("unknown decorated statement");
@@ -252,6 +258,8 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     return success();
   case LitToken::kw_var:
     return parseVarDeclStmt(/*decorators=*/{}, stmtIndent);
+  case LitToken::kw_alias:
+    return parseAliasDeclStmt(/*decorators=*/{}, stmtIndent);
   case LitToken::kw_return:
     return parseReturnStmt(stmtIndent);
   case LitToken::kw_continue:
@@ -706,6 +714,37 @@ ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
   getDeclResolver().addDecl(declOp, name, &containingDecl, startCursor,
                             getLexer().getCursor(), stmtIndent);
 
+  return success();
+}
+
+ParseResult LitStmtParser::parseAliasDeclStmt(ArrayRef<ExprNode *> decorators,
+                                              size_t stmtIndent) {
+  auto loc = getTokenLocation();
+  consumeToken(LitToken::kw_alias);
+  StringAttr name;
+  if (parseIdentifier(name, "expected name for 'alias' declaration"))
+    return failure();
+
+  // Before parsing the rest of the alias, the is unresolved and value is
+  // UnresolvedAliasValueAttr.
+  auto type = UnresolvedType::get(getContext());
+  auto value = UnresolvedAliasValueAttr::get(type);
+  auto declOp = builder.create<ParamDeclareOp>(
+      loc, ParamDeclAttr::get(name, type), value);
+
+  // Process any decorators we will eventually want when they come up.
+  if (!decorators.empty())
+    emitError(decorators[0]->getLoc(), "no alias decorators supported yet");
+
+  // Skip the body of this definition: go to a token the starts a line at the
+  // same indent level (or less) as the current definition.
+  auto startCursor = getLexer().getCursor();
+  skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
+
+  // Remember that we parsed this declaration so we can finish type checking it
+  // when it gets referenced.
+  getDeclResolver().addDecl(declOp, name, &containingDecl, startCursor,
+                            getLexer().getCursor(), stmtIndent);
   return success();
 }
 

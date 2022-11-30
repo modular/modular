@@ -23,6 +23,7 @@ class StructDeclOp;
 class StructFieldOp;
 class ParamBindArrayAttr;
 class ParamDeclAttr;
+class ParamDeclareOp;
 class VarDeclOp;
 } // namespace M::KGEN
 
@@ -107,6 +108,9 @@ private:
 
   LogicalResult resolveSignature(VarDeclOp op, LitLexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(VarDeclOp op, LitLexer &lexer, ASTDecl &decl);
+  LogicalResult resolveSignature(ParamDeclareOp op, LitLexer &lexer,
+                                 ASTDecl &decl);
+  ParseResult resolveBody(ParamDeclareOp op, LitLexer &lexer, ASTDecl &decl);
 
 private:
   /// This is shared state across the whole parser.

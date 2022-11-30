@@ -589,6 +589,9 @@ def ParamDeclareOp : KGENOp<"param.declare", []> {
   let extraClassDeclaration = [{
     /// Return the single parameter declaration as a well typed attribute.
     ParamDeclAttr getParamDecl();
+    StringAttr getName() { return getParamDecl().getName(); }
+    Type getType() { return getParamDecl().getType(); }
+    void setParamDecl(ParamDeclAttr decl);
   }];
 }
 

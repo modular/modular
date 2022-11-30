@@ -222,7 +222,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LITFuncOp, StructDeclOp, StructFieldOp, VarDeclOp>([&](auto op) {
+        .Case<LITFuncOp, StructDeclOp, StructFieldOp, VarDeclOp,
+              ParamDeclareOp>([&](auto op) {
           LitLexer lexer(sharedState, decl.getCursor());
 
           // Resolve the signature: on a parse error, we note that the decl
@@ -245,7 +246,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       howResolved == DeclResolvedness::fullyResolved) {
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LITFuncOp, StructDeclOp, StructFieldOp, VarDeclOp>([&](auto op) {
+        .Case<LITFuncOp, StructDeclOp, StructFieldOp, VarDeclOp,
+              ParamDeclareOp>([&](auto op) {
           // Parse the body of the declaration from the correct point.
           LitLexer lexer(sharedState, decl.getCursor());
           if (resolveBody(op, lexer, decl))
@@ -772,6 +774,73 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
 }
 
 ParseResult DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer,
+                                      ASTDecl &decl) {
+  // Nothing to do for a var decl, we parse everything as part of its
+  // signature. We could move to parsing an initializer expression lazily when
+  // a type is present if there were a reason to do that (e.g. more laziness
+  // desired) in the future.
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Alias Decl implementation
+//===----------------------------------------------------------------------===//
+
+/// alias_decl_stmt ::= "alias" identifier ":" expression ["=" expression]
+///                   | "alias" identifier "=" expression
+///
+LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
+                                             LitLexer &lexer, ASTDecl &decl) {
+  LitParserBase p(lexer);
+  ASTType type;
+  // Parse the type if present.
+  if (p.consumeIf(LitToken::colon)) {
+    if (p.parseType(type, decl, decl.getIndentation()))
+      return failure();
+  }
+
+  // Parse the initializer if present.
+  ExprNode *initValue = nullptr;
+  if (p.consumeIf(LitToken::equal)) {
+    if (p.parseExpression(initValue, decl.getIndentation()))
+      return failure();
+
+    ASTDecl &parentDecl = *decl.getParentDecl();
+    ExprEmitter emitter(sharedState, parentDecl, /*builder*/ {},
+                        /*varDeclCursor*/ nullptr);
+
+    auto rhsValue = emitter.emitMValue(initValue, "xxx constant hot");
+    if (!rhsValue)
+      return failure();
+
+    // If we had a declared type, coerce the expression value to it.
+    // TODO(implicit conversions etc).
+    if (!type) {
+      // Infer the type since we lack a declared type (`var x = 42`)
+      type = rhsValue.getType();
+    } else if (!type.isEqualCanon(rhsValue.getType())) {
+      p.emitError(initValue->getLoc(), "initializer has type ")
+          << ASTType(rhsValue.getType()) << " but declared type is " << type;
+      return failure();
+    }
+
+    // Remember the value.
+    paramDeclOp.setValueAttr(rhsValue.get());
+  } else {
+    // If there was neither a type or initializer, reject the var.
+    if (!type) {
+      p.emitError(paramDeclOp.getLoc(),
+                  "declaration must have either a type or an initializer");
+      return failure();
+    }
+  }
+
+  // Regardless of whether we have a type of value initializer, update the type.
+  paramDeclOp.setParamDecl(ParamDeclAttr::get(paramDeclOp.getName(), type));
+  return success();
+}
+
+ParseResult DeclResolver::resolveBody(ParamDeclareOp op, LitLexer &lexer,
                                       ASTDecl &decl) {
   // Nothing to do for a var decl, we parse everything as part of its
   // signature. We could move to parsing an initializer expression lazily when

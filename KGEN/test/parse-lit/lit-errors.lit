@@ -349,6 +349,7 @@ struct Parameterized[p1: __mlir_type.index]:
   fn method[B: __mlir_type.index](self, other: Parameterized[p1+B]):
     pass
 
+
 # Test that we support partially bound parameters and diagnose incorrect uses
 # of parameters.
 fn testTestParamStruct(a: Parameterized[4]):
@@ -363,3 +364,13 @@ fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
   var x = a+a
   var y = b+b
   var z = b+a # expected-error {{value of type 'SIMD[1, f64]' cannot be converted to expected type 'SIMD[2, si32]'}}
+
+fn method(variable: Int):
+  # expected-error @+1 {{declaration must have either a type or an initializer}}
+  alias MissingInit
+
+  # expected-error @+1 {{context only permits a meta value, not a dynamic one}}
+  alias NotConstant = variable*2
+
+  # TODO: Should reject as not initialized.
+  alias NotInitialized : __mlir_type.index
