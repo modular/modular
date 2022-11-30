@@ -48,7 +48,6 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
   passManagerBuilder.OptLevel = targetMachine.getOptLevel();
 
   // Set up the pass manager and populate it.
-  targetMachine.adjustPassManager(passManagerBuilder);
   passManagerBuilder.populateModulePassManager(
       llvm::cast<llvm::PassManagerBase>(passManager));
 
