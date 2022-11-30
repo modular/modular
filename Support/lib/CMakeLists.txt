@@ -11,6 +11,7 @@ add_subdirectory(HLCFToLLVM)
 add_subdirectory(MDialect)
 add_subdirectory(ML)
 add_subdirectory(Compiler)
+add_subdirectory(Telemetry)
 
 add_modular_library(MSupport
   AlignedAlloc.cpp
