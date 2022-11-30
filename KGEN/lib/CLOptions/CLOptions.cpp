@@ -33,6 +33,14 @@ CommandLineFunc::verifyFuncSignature(mlir::FunctionType funcType) const {
                    mlir::debugString(funcType) + ", but got " + signature);
     }
     return M::success();
+  } else if (signature == "index()") {
+    if (funcType.getNumInputs() != 0 || funcType.getNumResults() != 1 ||
+        !funcType.getResult(0).isa<IndexType>()) {
+      return Error("command-line specified signature does not match the IR "
+                   "signature, expected " +
+                   mlir::debugString(funcType) + ", but got " + signature);
+    }
+    return M::success();
   } else if (signature == "f32(f32)") {
     if (funcType.getNumInputs() != 1 || funcType.getNumResults() != 1 ||
         !funcType.getResult(0).isa<Float32Type>() ||
@@ -55,6 +63,10 @@ CommandLineFunc::executeAndPrint(KGEN::CompiledFunc &compiledFunc) const {
   if (signature == "f32()") {
     printf("--- '%s' returned %f\n", name.c_str(),
            compiledFunc.invoke<float>());
+    return M::success();
+  } else if (signature == "index()") {
+    printf("--- '%s' returned %ld\n", name.c_str(),
+           compiledFunc.invoke<ssize_t>());
     return M::success();
   } else if (signature == "()") {
     compiledFunc.invoke<void>();

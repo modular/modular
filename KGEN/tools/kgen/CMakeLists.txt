@@ -18,6 +18,7 @@ add_modular_tool(kgen
   KGENElaborator
   KGENTransforms
   ZAPDialect
+  ParseLit
   LowerLIT
   LowerZAPToPOP
   POPDialect
