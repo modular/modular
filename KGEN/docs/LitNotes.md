@@ -44,7 +44,8 @@ In addition to specific differences, we support the following extensions:
 
 4) `var` definitions for local variables and instance properties in structs:
    We support implicit local variable definitions, but allow them to be
-   optionally explicitly declared as well.
+   optionally explicitly declared as well.  We support the `alias` keyword for
+   definition named parameters.
 
 5) In addition to loosely typed `def` statements, we support a more strict `fn`
    statement, described below.

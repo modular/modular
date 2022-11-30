@@ -141,6 +141,10 @@ ParamDeclAttr ParamDeclareOp::getParamDecl() {
   return *getParamDecls().begin();
 }
 
+void ParamDeclareOp::setParamDecl(ParamDeclAttr decl) {
+  setParamDeclsAttr(ParamDeclArrayAttr::get(decl.getContext(), decl));
+}
+
 //===----------------------------------------------------------------------===//
 // ParamSearchOp
 //===----------------------------------------------------------------------===//

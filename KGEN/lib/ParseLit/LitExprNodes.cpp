@@ -73,6 +73,11 @@ DRValue ExprEmitter::emitDRValue(RValue rep, SMLoc loc) {
   // index.constant or as a parameter expression.
   auto attr = rep.getIfMValue().get();
 
+  if (!builder) {
+    emitError(loc, "context only permits a meta value, not a dynamic one");
+    return {};
+  }
+
   auto location = translateLocation(loc);
   // Materialize index integer constants as a special case.
   if (auto intAttr = dyn_cast<IntegerAttr>(attr))
@@ -349,6 +354,11 @@ emitCallableDeclMember(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
   // Functions form an address.
   if (isa<LITFuncOp>(*decl))
     return CallableValue(node->getLoc(), *decl, bindings);
+
+  // Parameters form an meta-value.
+  if (auto param = dyn_cast<ParamDeclareOp>(*decl))
+    return {{MValue(ParamDeclRefAttr::get(param.getName(), param.getType())),
+             node}};
 
   // RValue's and LValues always resolve to their known value.
   if (auto rvalue = decl->getIfRValue())
@@ -746,8 +756,8 @@ AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter,
 
 AnyValue NoneLiteralNode::emitIR(ExprEmitter &emitter,
                                  ASTType contextualType) const {
-  auto noneMLIRType = KGEN::NoneType::get(emitter.getContext());
-  return MValue(NoneAttr::get(emitter.getContext(), noneMLIRType));
+  // auto noneMLIRType = KGEN::NoneType::get(emitter.getContext());
+  return MValue(NoneAttr::get(emitter.getContext()));
 }
 
 AnyValue DeclRefNode::emitIR(ExprEmitter &emitter,

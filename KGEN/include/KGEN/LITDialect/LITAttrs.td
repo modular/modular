@@ -72,6 +72,29 @@ def NoneAttr : LITAttr<"None", "none", [TypedAttrInterface]> {
 
   let parameters = (ins AttributeSelfTypeParameter<"">:$type);
   let assemblyFormat = "";
+
+  let builders = [AttrBuilder<(ins), [{
+    return get(context, NoneType::get(context));
+  }]>];
 }
+
+//===----------------------------------------------------------------------===//
+// UnresolvedAliasValueAttr
+//===----------------------------------------------------------------------===//
+
+def UnresolvedAliasValueAttr
+  : LITAttr<"UnresolvedAliasValue", "unresolved.alias", [TypedAttrInterface]> {
+  let summary = "The value of an 'alias' before it is bound to a value";
+
+  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "Type":$type), [{
+      return get(type.getContext(), type);
+    }]>,
+  ];
+}
+
 
 #endif // KGEN_LITDIALECT_LITATTRS_TD
