@@ -268,7 +268,7 @@ M::Cache::getFilesystemBackend(LLCL::Runtime &runtime,
   return std::make_unique<FilesystemBackend>(runtime, basePath);
 }
 
-std::unique_ptr<BlobCacheBackend>
+ErrorOr<std::unique_ptr<BlobCacheBackend>>
 M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
                                  const std::filesystem::path &basePath) {
   auto backend = getInMemoryBackend(runtime);
@@ -277,10 +277,8 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
   std::error_code ec;
   std::filesystem::path derived = std::filesystem::absolute(
       llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH").value_or("."), ec);
-  if (ec) {
-    llvm::errs() << ec.message();
-    return nullptr;
-  }
+  if (ec)
+    return Error(ec.message());
 
   std::filesystem::path base = basePath;
   if (!base.is_absolute())
@@ -294,10 +292,11 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
     // version.
     for (const std::filesystem::path &dirEntry :
          std::filesystem::directory_iterator{base}) {
-      // It must be a directory, the parent must be `base` and the directory
-      // 'filename' must not match MODULAR_VERSION_STRING in order for it to be
-      // deleted.
-      if (!ec && std::filesystem::is_directory(dirEntry, ec) &&
+      // The directory entry must exist, be a directory, the parent must be
+      // `base` and the directory 'filename' must not match
+      // MODULAR_VERSION_STRING in order for it to be deleted.
+      if (!ec && std::filesystem::exists(dirEntry) &&
+          std::filesystem::is_directory(dirEntry, ec) &&
           dirEntry.parent_path() == base &&
           dirEntry.filename() != MODULAR_VERSION_STRING)
         std::filesystem::remove_all(dirEntry, ec);
@@ -305,8 +304,9 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
   }
 
   if (ec) {
-    llvm::errs() << ec.message();
-    return nullptr;
+    return Error(
+        ec.message() +
+        " while trying to erase old files given base path: " + base.string());
   }
 
   base = base / MODULAR_VERSION_STRING;

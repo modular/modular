@@ -249,7 +249,7 @@ getFilesystemBackend(LLCL::Runtime &runtime,
 /// Returns a chain of pre-setup backends that represent the default chain,
 /// inMemory->filesystem. The `basePath` is passed to getFilesystemBackend
 /// directly.
-std::unique_ptr<BlobCacheBackend>
+ErrorOr<std::unique_ptr<BlobCacheBackend>>
 getDefaultBackendChain(LLCL::Runtime &runtime,
                        const std::filesystem::path &basePath = "");
 } // namespace M::Cache

@@ -38,7 +38,7 @@ protected:
   BlobCacheTest()
       : runtime(createLeakCheckAllocator(createMallocAllocator()),
                 createSingleThreadWorkQueue()),
-        cache(getDefaultBackendChain(runtime, "")) {}
+        cache(getDefaultBackendChain(runtime, "CacheTest").takeValue()) {}
 };
 
 } // namespace
@@ -164,7 +164,8 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
   ASSERT_FALSE(failed(*err)) << err->getError() << '\n';
 
   // Reset the cache so that we are forced to look it up from the file system.
-  BlobCache<StringKeyInfo> fsCache(getDefaultBackendChain(runtime, ""));
+  BlobCache<StringKeyInfo> fsCache(
+      getDefaultBackendChain(runtime, "CacheTest").takeValue());
 
   // Check that the cache holds the new item, and it's the same data as before.
   auto zerosOr = fsCache.find("zeros");

@@ -62,9 +62,13 @@ TEST(CachedTransformTest, CacheHits) {
   // Register the LogicalResult type.
   AsyncValue::registerType<LogicalResult>();
 
-  BlobCache<RegionCacheKey> regionCache(getDefaultBackendChain(runtime, ""));
+  auto regionBackendChainOr = getDefaultBackendChain(runtime, "region");
+  EXPECT_FALSE(failed(regionBackendChainOr));
+  BlobCache<RegionCacheKey> regionCache(regionBackendChainOr.takeValue());
+  auto transformBackendChainOr = getDefaultBackendChain(runtime, "region");
+  EXPECT_FALSE(failed(transformBackendChainOr));
   BlobCache<TransformCacheKey> transformCache(
-      getDefaultBackendChain(runtime, ""));
+      transformBackendChainOr.takeValue());
 
   DialectRegistry registry;
   registry.insert<mlir::func::FuncDialect, Cache::CacheDialect>();
