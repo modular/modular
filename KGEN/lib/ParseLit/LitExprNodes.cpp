@@ -391,6 +391,7 @@ static CallableValue emitInitializerCallable(ASTType calledType,
   if (failed(emitter.shared.declResolver->resolve(
           *calledDecl, DeclResolvedness::fullyResolved, node->getLoc())))
     return {};
+
   return emitCallableDeclMember(*calledDecl, calledType.getParamBindings(),
                                 "__new__", node, emitter);
 }
@@ -838,6 +839,11 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
         << ASTType(baseVal.getType());
     return {};
   }
+
+  // Ensure the type specified is fully resolved, so all its members are known.
+  if (failed(emitter.shared.declResolver->resolve(
+          *typeDecl, DeclResolvedness::fullyResolved, getLoc())))
+    return {};
 
   // Find the member being accessed.
   ASTDecl *memberDecl = emitter.lookupDecl(
