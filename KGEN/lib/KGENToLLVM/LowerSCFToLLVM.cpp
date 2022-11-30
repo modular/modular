@@ -146,7 +146,7 @@ ConvertSCFForOp::matchAndRewrite(scf::ForOp op, scf::ForOpAdaptor adaptor,
   Operation *terminator = lastBodyBlock->getTerminator();
   rewriter.setInsertionPointToEnd(lastBodyBlock);
   Value step = adaptor.getStep();
-  Value stepped = rewriter.create<LLVM::AddOp>(loc, iv, step);
+  Value stepped = rewriter.create<LLVM::AddOp>(terminator->getLoc(), iv, step);
 
   SmallVector<Value> loopCarried;
   loopCarried.push_back(stepped);
@@ -154,8 +154,8 @@ ConvertSCFForOp::matchAndRewrite(scf::ForOp op, scf::ForOpAdaptor adaptor,
           rewriter.getRemappedValues(terminator->getOperands(), loopCarried)))
     return failure();
 
-  rewriter.create<LLVM::BrOp>(loc, loopCarried, conditionBlock);
-  rewriter.eraseOp(terminator);
+  rewriter.replaceOpWithNewOp<LLVM::BrOp>(terminator, loopCarried,
+                                          conditionBlock);
 
   // Compute loop bounds before branching to the condition.
   rewriter.setInsertionPointToEnd(initBlock);
@@ -232,8 +232,8 @@ ConvertSCFIfOp::matchAndRewrite(scf::IfOp op, scf::IfOpAdaptor adaptor,
   if (failed(rewriter.getRemappedValues(thenTerminator->getOperands(),
                                         thenTerminatorOperands)))
     return failure();
-  rewriter.create<LLVM::BrOp>(loc, thenTerminatorOperands, continueBlock);
-  rewriter.eraseOp(thenTerminator);
+  rewriter.replaceOpWithNewOp<LLVM::BrOp>(
+      thenTerminator, thenTerminatorOperands, continueBlock);
   rewriter.inlineRegionBefore(thenRegion, continueBlock);
 
   // Move blocks from the "else" region (if present) to the region containing
@@ -249,8 +249,8 @@ ConvertSCFIfOp::matchAndRewrite(scf::IfOp op, scf::IfOpAdaptor adaptor,
     if (failed(rewriter.getRemappedValues(elseTerminator->getOperands(),
                                           elseTerminatorOperands)))
       return failure();
-    rewriter.create<LLVM::BrOp>(loc, elseTerminatorOperands, continueBlock);
-    rewriter.eraseOp(elseTerminator);
+    rewriter.replaceOpWithNewOp<LLVM::BrOp>(
+        elseTerminator, elseTerminatorOperands, continueBlock);
     rewriter.inlineRegionBefore(elseRegion, continueBlock);
   }
 
