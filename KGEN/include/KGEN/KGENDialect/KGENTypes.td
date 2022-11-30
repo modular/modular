@@ -177,8 +177,6 @@ def SignatureType
       return get(inputParams.getContext(), inputParams, resultParamTypes,
                  values);
     }]>,
-    TypeBuilderWithInferredContext<(ins
-        "ParamDeclArrayAttr":$resultParams, "FunctionType":$values)>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>,
     TypeBuilderWithInferredContext<(ins "FunctionType":$values)>
   ];

@@ -23,12 +23,11 @@ def KGENCallOpInterface : OpInterface<"KGENCallOpInterface"> {
       return FunctionType::get($_op->getContext(), $_op->getOperandTypes(),
                                $_op->getResultTypes());
     }]>,
+
     InterfaceMethod<[{
-      Get the signature type of the callee.
-    }], "SignatureType", "getSignature", (ins), [{}], [{
-      return SignatureType::get($_op.getParamDeclsAttr(),
-                                $_op.getFunctionType());
-    }]>,
+      Get the parameters declared by the call.
+    }], "ParamDeclArrayAttr", "getParamDeclsAttr", (ins), [{}]>,
+
     InterfaceMethod<[{
       Get the bound region bodies of this operation.
     }], "iterator_range<CallRegionBodyIterator>", "getRegionBodies", (ins),

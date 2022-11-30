@@ -682,6 +682,20 @@ static void printCallRegions(OpAsmPrinter &p, Operation *op,
 // AddressOfOp
 //===----------------------------------------------------------------------===//
 
+/// Given a 'call-like' operation, get the effective signature that the call
+/// expects from the callee.
+static SignatureType getCallSignature(KGENCallOpInterface op) {
+  SmallVector<Type> resultParamTypes;
+  resultParamTypes.reserve(op.getParamDeclsAttr().size());
+  for (ParamDeclAttr resultParam : op.getParamDeclsAttr())
+    resultParamTypes.push_back(resultParam.getType());
+
+  auto *context = op.getContext();
+  return SignatureType::get(ParamDeclArrayAttr::get(context, {}),
+                            TypeArrayAttr::get(context, resultParamTypes),
+                            op.getFunctionType());
+}
+
 LogicalResult
 AddressOfOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   auto module = KGENModule::from(*this, symbolTable);
@@ -692,7 +706,7 @@ AddressOfOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // Check the parameters and operands align with the requirements of the
   // callee's signature.
-  if (verifyCallAndCallee(*this, getSignature(), callee.getSignature(),
+  if (verifyCallAndCallee(*this, getCallSignature(*this), callee.getSignature(),
                           getParamValuesAttr(), callee->getLoc()))
     return failure();
 
@@ -738,8 +752,9 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // Check the parameters and operands align with the requirements of the
   // callee's signature.
-  if (verifyCallAndCallee(*this, getSignature(), callee.getFullSignature(),
-                          getParamValuesAttr(), callee->getLoc()))
+  if (verifyCallAndCallee(*this, getCallSignature(*this),
+                          callee.getFullSignature(), getParamValuesAttr(),
+                          callee->getLoc()))
     return failure();
 
   // Ok, the call looks good.  Next, make sure that calls within a
@@ -878,8 +893,9 @@ LogicalResult CallParamOp::verifyRegions() {
   // Check the parameters and operands align with the requirements of the
   // callee's signature.
   auto calleeSignature = cast<SignatureType>(getCallee().getType());
-  if (failed(verifyCallAndCallee(*this, getSignature(), calleeSignature,
-                                 getParamValuesAttr(), getLoc())))
+  if (failed(verifyCallAndCallee(*this, getCallSignature(*this),
+                                 calleeSignature, getParamValuesAttr(),
+                                 getLoc())))
     return failure();
 
   // Verify the region signatures match region parameter signatures.
@@ -899,8 +915,9 @@ LogicalResult InlinedCallOp::verifyRegions() {
   // Check the parameters and operands align with the requirements of the
   // callee's signature.
   auto calleeSignature = cast<SignatureType>(getCallee().getType());
-  if (failed(verifyCallAndCallee(*this, getSignature(), calleeSignature,
-                                 getParamValuesAttr(), getLoc())))
+  if (failed(verifyCallAndCallee(*this, getCallSignature(*this),
+                                 calleeSignature, getParamValuesAttr(),
+                                 getLoc())))
     return failure();
 
   // Verify the region signatures match region parameter signatures.
