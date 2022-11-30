@@ -16,7 +16,7 @@
 // NESTED-LABEL: @trivial
 // NESTED-SAME: attributes {region_hashes = #cache<regions[
 // COM: First the hash of the region itself.
-// NESTED-SAME:   "TsbaqAeb7ZQ8x9+PDp+mPqRyrd3zDBwh13XmtdReoU8="
+// NESTED-SAME:   "VAQK1DADYruYer3jq9rlAN6ep38MH85W6To90WwZRVY="
 // COM: Next, the symbols referred-to inside the region
 // NESTED-SAME:   symbols = [@external]
 // COM: Next, the hashes inside (from the deflated constant).
@@ -25,9 +25,9 @@
 func.func private @external()
 
 func.func private @trivial() -> tensor<4xf64> {
-  %0 = arith.constant dense_resource<aconstant> : tensor<4xf64>
-  call @external() : () -> ()
-  return %0 : tensor<4xf64>
+  %0 = arith.constant dense_resource<aconstant> : tensor<4xf64> loc("foo":0:0)
+  call @external() : () -> () loc("foo":1:0)
+  return %0 : tensor<4xf64> loc("foo":2:0)
 }
 
 {-#
