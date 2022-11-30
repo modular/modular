@@ -13,11 +13,8 @@ include_directories(${LLCL_INCLUDE_DIR})
 set(LLCL_INCLUDE_DIR ${LLCL_BINARY_DIR}/include)
 include_directories(${LLCL_INCLUDE_DIR})
 
-#add_subdirectory(include/LLCL)
-#add_subdirectory(integration_test)
 add_subdirectory(lib/Support)
 add_subdirectory(lib/Runtime)
-#add_subdirectory(tools)
 
 # Because of the absence of the test directory, we need to add a custom target
 # which mimics the target it would have created.
