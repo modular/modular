@@ -6,6 +6,10 @@
 
 include(AddOpenTelemetry)
 
+if(${DISABLE_ALL_EXTERNAL})
+  return()
+endif()
+
 add_modular_library(MSupportTelemetry
   Context.cpp
 )
