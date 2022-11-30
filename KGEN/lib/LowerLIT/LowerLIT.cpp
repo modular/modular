@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -605,13 +606,19 @@ static void renameSymbolReferences(Operation *op) {
       op, /*replaceAttrs=*/true, /*replaceLocs=*/false, /*replaceTypes=*/true);
 }
 
-namespace {
-// Convenience wrapper instead of a std::pair.
-struct NameAndType {
-  StringAttr name;
-  Type type;
-};
-} // namespace
+static void lowerNone(Operation *op) {
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([](KGEN::NoneType type) {
+    return KGEN::ListType::get(mlir::IntegerType::get(type.getContext(), 0), 0);
+  });
+  replacer.addReplacement([](KGEN::NoneAttr attr) {
+    return KGEN::ListAttr::get(
+        attr.getContext(), {},
+        KGEN::ListType::get(mlir::IntegerType::get(attr.getContext(), 0), 0));
+  });
+  replacer.recursivelyReplaceElementsIn(
+      op, /*replaceAttrs=*/true, /*replaceLocs=*/false, /*replaceTypes=*/true);
+}
 
 //===----------------------------------------------------------------------===//
 // Pass boilerplate.
@@ -635,6 +642,7 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
       }
     }
     renameSymbolReferences(module);
+    lowerNone(module);
   }
 };
 

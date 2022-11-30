@@ -14,6 +14,13 @@ fn assertParam[condVal: __mlir_type.i1]():
                                 cond: condVal,
                                 message: "param assertion failed"]()
 
+fn printF32(x: F32):
+  var f64 = __mlir_op.`pop.cast`[_type: __mlir_type.`!pop.scalar<f64>`](x.value)
+  __mlir_op.`zap.print`[_type: [], fmt: "%f\n"](f64)
+
+fn printInt(x: Int):
+  __mlir_op.`zap.print`[_type: [], fmt: "%ld\n"](x.value)
+
 
 #===------------------------------------------------------------------------===#
 # Bool

@@ -54,8 +54,6 @@ struct LitStmtParser : public LitParserBase {
     varDeclCursor->erase();
   }
 
-  ParseResult parseFile(ModuleOp module);
-
   const ASTDecl &getDecl() const { return containingDecl; }
   OpBuilder &getBuilder() { return builder; }
 
@@ -571,6 +569,8 @@ struct FnAttributes {
   bool isInterface = false;
   // This is set by @implementedInterface(x).
   FlatSymbolRefAttr implementedInterface;
+  // This is set to true by @export.
+  bool isExported = false;
 
   void processDecorator(ExprNode *decorator, LitStmtParser &parser);
 };
@@ -584,6 +584,8 @@ void FnAttributes::processDecorator(ExprNode *decorator,
       isStatic = true;
     else if (declRef->spelling == "interface")
       isInterface = true;
+    else if (declRef->spelling == "export")
+      isExported = true;
     else
       parser.emitError(decorator->getLoc(), "unsupported decorator: ")
           << declRef->spelling;
@@ -653,6 +655,15 @@ ParseResult LitStmtParser::parseDefFnStmt(ArrayRef<ExprNode *> decorators,
 
   if (attrs.isInterface && isMethod)
     emitError(loc, "interfaces cannot be nested inside a struct");
+
+  if (attrs.isExported) {
+    if (isMethod)
+      emitError(loc, "methods cannot be exported");
+    else
+      builder.create<ExportOp>(translateLocation(loc),
+                               ArrayAttr::get(containingDecl.getContext(),
+                                              {FlatSymbolRefAttr::get(name)}));
+  }
 
   auto funcDecl = builder.create<LITFuncOp>(translateLocation(loc), name);
   if (attrs.isInterface)

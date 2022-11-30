@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
+#include "KGEN/ParseLit.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
@@ -211,7 +212,11 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   CompilationOptions compilationOptions = clOptions.getCompilationOptions();
   OwningOpRef<ModuleOp> theModule;
-  if (compilationOptions.debugLevel && !compilationOptions.debugAtLevel)
+  auto inputFileName = llvm::StringRef(clOptions.inputFilename.getValue());
+  mlir::TimingScope ts;
+  if (inputFileName.ends_with(".lit"))
+    theModule = importLitFile(mgr, ctx, ts);
+  else if (compilationOptions.debugLevel && !compilationOptions.debugAtLevel)
     theModule = DebugInfo::parseSourceFileWithDebugInfo(
         mgr, ctx, compilationOptions.getDIEmissionKind());
   else
