@@ -36,7 +36,8 @@ bool CompiledFrameworkLabel::isValidOpName(StringRef opName) {
 }
 
 bool CompiledFrameworkLabel::isValidFrameworkName(StringRef frameworkName) {
-  return frameworkName == "tfl";
+  // TODO: "mop" isn't really a framework
+  return frameworkName == "tfl" || frameworkName == "mop";
 }
 
 CompiledFrameworkLabel
