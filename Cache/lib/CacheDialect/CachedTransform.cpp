@@ -31,14 +31,9 @@ std::string TransformCacheKey::hashKey(TransformCacheKey::KeyTy key) {
 LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
     Operation *target, BlobCache<RegionCacheKey> &regionCache,
     BlobCache<TransformCacheKey> &transformCache,
-    LLCL::AsyncValueRef<LogicalResult> chain, StringRef transformName,
+    LLCL::AsyncValueRef<LogicalResult> chain, WriteableBufferRef transformKey,
     TransformFn transformFn, CacheAccessFn cacheAccessFn) {
   AsyncValue::registerType<CacheFindResult>();
-
-  // Write the transform name to the key buffer immediately - we can't worry
-  // about things getting deallocated.
-  WriteableBufferRef writeableKeyBuffer = WriteableBuffer::get();
-  *writeableKeyBuffer << transformName;
 
   // Allocate an output variable for the overall success/failure of this
   // function.
@@ -47,8 +42,8 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
   // sequenced on `chain` here.
   auto deflate = deflateOp(target, regionCache, std::move(chain));
   deflate.andThen([target, &regionCache, &transformCache,
-                   writeableKeyBuffer = std::move(writeableKeyBuffer),
-                   transformFn, cacheAccessFn, out = out.copy(),
+                   writeableKeyBuffer = std::move(transformKey), transformFn,
+                   cacheAccessFn, out = out.copy(),
                    deflate = deflate.copy()]() mutable {
     // If we failed to deflate, then there's not much we can do.
     if (failed(*deflate)) {
@@ -131,9 +126,8 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
     Operation *target, BlobCache<RegionCacheKey> &regionCache,
     BlobCache<TransformCacheKey> &transformCache,
     LLCL::AsyncValueRef<LogicalResult> chain, mlir::PassManager &pm) {
-  std::string pipeline;
-  llvm::raw_string_ostream stream(pipeline);
-  pm.printAsTextualPipeline(stream);
+  auto keyBuf = WriteableBuffer::get();
+  pm.printAsTextualPipeline(*keyBuf);
 
   // Callback that runs the pass manager and puts the correct region hash attr
   // on the op.
@@ -215,5 +209,5 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
   };
 
   return cachedTransform(target, regionCache, transformCache, std::move(chain),
-                         stream.str(), runTransform, onCacheHit);
+                         std::move(keyBuf), runTransform, onCacheHit);
 }

@@ -94,7 +94,7 @@ using CacheAccessFn = llvm::function_ref<LLCL::AsyncValueRef<CacheFindResult>(
     Operation *, LLCL::AsyncValueRef<CacheFindResult>)>;
 
 /// Run the specified transform on the target operation. The transform must have
-/// a name of some kind that can be associated with the operation. The semantics
+/// a key of some kind that can be associated with the operation. The semantics
 /// of `cachedTransform` are that it will combine the input IR with the name of
 /// the transform to map to a cached result. The granularity of the result is a
 /// region on the operation `target`. This function manifests its result as an
@@ -105,7 +105,7 @@ LLCL::AsyncValueRef<LogicalResult>
 cachedTransform(Operation *target, BlobCache<RegionCacheKey> &regionCache,
                 BlobCache<TransformCacheKey> &transformCache,
                 LLCL::AsyncValueRef<LogicalResult> chain,
-                StringRef transformName, TransformFn transformFn,
+                WriteableBufferRef transformKey, TransformFn transformFn,
                 CacheAccessFn cacheAccessFn);
 
 /// Run the specified passes over the target operation (i.e. ModulePasses over a
