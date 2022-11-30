@@ -1,7 +1,16 @@
-# RUN: kgen-translate -import-lit -verify-diagnostics %s
+# RUN: kgen-translate -import-lit -verify-diagnostics -split-input-file %s
 
 struct Crash1[XXX: __mlir_type.index]:
   fn __new__(a: __mlir_type.f32)
 
   # expected-error @+1 {{expected ':' in function definition}}
   fn f():
+
+// -----
+
+# Forward reference needs to get resolved.
+fn printF32(x: F32):
+  __mlir_op.`zap.print`[_type: [], fmt: "%f\n"](x.value)
+
+struct F32:
+  var value : __mlir_type.`!pop.scalar<f32>`
