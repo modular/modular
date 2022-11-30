@@ -204,17 +204,6 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
     sha256.update(stringStream.str());
   };
 
-  // Because the location includes the whole path to the file, we have to just
-  // hash the filename (no path), line, and column.
-  auto hashLocation = [&](Location loc) {
-    if (auto fileLoc = dyn_cast<FileLineColLoc>(loc)) {
-      std::filesystem::path p(fileLoc.getFilename().str());
-      sha256.update(p.filename().string());
-      sha256.update(fileLoc.getLine());
-      sha256.update(fileLoc.getColumn());
-    }
-  };
-
   for (auto arg : r->getArgumentTypes())
     hashTypeOrAttr(arg);
 
@@ -223,7 +212,7 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
     sha256.update(op->getName().getStringRef());
 
     // Hash the op's location
-    hashLocation(op->getLoc());
+    hashTypeOrAttr(op->getLoc());
 
     // Add operand and result types.
     for (Type t : op->getOperandTypes())
