@@ -248,7 +248,11 @@ struct FilesystemBackend : public BlobCacheBackend {
 
   std::filesystem::path getAbsolutePathForKey(StringRef keyHash) const {
     std::filesystem::path filepath(basePath);
-    filepath /= llvm::encodeBase64(keyHash);
+    std::string encodedHash = llvm::encodeBase64(keyHash);
+    std::replace_if(
+        encodedHash.begin(), encodedHash.end(), [](char c) { return c == '/'; },
+        '_');
+    filepath /= encodedHash;
 
     return std::filesystem::absolute(filepath);
   }
