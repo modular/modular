@@ -52,7 +52,7 @@ public:
 
   /// Resolve all of the declarations that are visible, processing the entire
   /// translation unit.
-  void resolveAll(llvm::SMLoc loc);
+  void resolveAll();
 
   /// Add a new declaration that needs to be resolved.
   ASTDecl &addDecl(Operation *decl, llvm::SMLoc loc, StringAttr name,
@@ -123,7 +123,7 @@ private:
   /// Name binding is an recursive process in the general case.  This keeps
   /// track of the declarations currently being name bound so we can diagnose
   /// cyclic dependencies.
-  DenseSet<ASTDecl *> declsCurrentlyProcessing;
+  DenseMap<ASTDecl *, llvm::SMLoc> declsCurrentlyProcessing;
 
   DeclResolver(const DeclResolver &) = delete;
   DeclResolver &operator=(const DeclResolver &) = delete;

@@ -18,6 +18,7 @@
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/ZAPDialect/ZAPDialect.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -43,7 +44,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
 
   context->loadDialect<HLCF::HLCFDialect, POP::POPDialect, LITDialect,
-                       mlir::index::IndexDialect, KGENDialect,
+                       mlir::index::IndexDialect, KGENDialect, ZAP::ZAPDialect,
                        mlir::scf::SCFDialect>();
 
   // This is the result module we are parsing into.
@@ -78,7 +79,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
 
   // With the top-level of the file parsed, we can now go ahead and resolve all
   // of the deferred declarations.
-  sharedState.declResolver->resolveAll(startSMLoc);
+  sharedState.declResolver->resolveAll();
 
   // We fail either if we have a non-recoverable parse error, or if we emitted
   // an error and then recovered.  In either case, the IR will not be valid and
