@@ -83,6 +83,9 @@ ExecutionEngine::create(const CompilationOptions &options) {
           return std::make_unique<llvm::SectionMemoryManager>();
         });
 
+    if (options.debugLevel == CompilationOptions::kNoDebug)
+      return objectLayer;
+
     // Register JIT event listeners if they are enabled.
     if (ee.gdbListener)
       objectLayer->registerJITEventListener(*ee.gdbListener);
