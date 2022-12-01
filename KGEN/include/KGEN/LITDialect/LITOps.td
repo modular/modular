@@ -9,6 +9,8 @@
 //===----------------------------------------------------------------------===//
 
 include "KGEN/LITDialect/LITDialect.td"
+include "KGEN/LITDialect/LITTypes.td"
+include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/KGENDialect/KGENDeclInterface.td"
 include "KGEN/KGENDialect/KGENEnums.td"
 include "KGEN/POPDialect/POPTypes.td"
@@ -203,6 +205,22 @@ def LITTryYieldOp : LITOp<"try.yield", [Pure, Terminator,
     The `lit.try.yield` operation is used as a terminator to `lit.try` regions.
   }];
   let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// LITTryRaiseOp
+//===----------------------------------------------------------------------===//
+
+def LITTryRaiseOp : LITOp<"try.raise", [Terminator,
+    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
+  let summary = "Try block raise an error.";
+  let description = [{
+    The `lit.try.raise` operation is used within a `lit.try` try region to
+    propagate an error to the except region.
+  }];
+
+  let arguments = (ins DeclRefType:$error);
+  let assemblyFormat = "$error attr-dict `:` type($error)";
 }
 
 //===----------------------------------------------------------------------===//

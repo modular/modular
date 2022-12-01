@@ -210,6 +210,19 @@ void LITTryYieldOp::getBranchTargets(
 }
 
 //===----------------------------------------------------------------------===//
+// LITTryRaiseOp
+//===----------------------------------------------------------------------===//
+
+bool LITTryRaiseOp::isParentNode(Operation *op) { return isa<LITTryOp>(op); }
+
+void LITTryRaiseOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == 1);
+  targets.emplace_back(1, (*this)->getOperands());
+}
+
+//===----------------------------------------------------------------------===//
 // VarDeclOp
 //===----------------------------------------------------------------------===//
 

@@ -86,3 +86,26 @@ fn propagateErrorInTry():
         # CHECK-NEXT: lit.try.yield
     except:
         pass
+
+# CHECK-LABEL: lit.func @raiseError
+def raiseErrorInDef(err: Error):
+    # CHECK: %[[ERR:.*]] = lit.raise_error %{{.*}}
+    # CHECK-NEXT: kgen.return %[[ERR]]
+    raise err
+
+# CHECK-LABEL: lit.func @raiseErrorInIf
+def raiseErrorInIf(cond: Bool, err: Error):
+    # CHECK: hlcf.if
+    if cond:
+        # CHECK: %[[ERR:.*]] = lit.raise_error %{{.*}}
+        # CHECK-NEXT: hlcf.return %[[ERR]]
+        raise err
+
+# CHECK-LABEL: lit.func @raiseErrorInTry
+fn raiseErrorInTry(err: Error):
+    # CHECK: lit.try
+    try:
+        # CHECK-NEXT: lit.try.raise %err
+        raise err
+    except:
+        pass
