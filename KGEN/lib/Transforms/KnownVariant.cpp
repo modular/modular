@@ -8,10 +8,7 @@
 #include "KGEN/KGENPasses.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "Support/LLVMCompilerForwardDecls.h"
-#include "mlir/Analysis/DataFlow/ConstantPropagationAnalysis.h"
-#include "mlir/Analysis/DataFlow/DeadCodeAnalysis.h"
-#include "mlir/Analysis/DataFlow/SparseAnalysis.h"
+#include "Support/HLCFDialect/Analysis/DataFlow.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -77,7 +74,7 @@ struct KnownVariantAnalysis : public SparseDataFlowAnalysis<VariantState> {
 };
 
 /// Subclass DeadCodeAnalysis to inject our transfer function.
-struct VariantAwareDeadCodeAnalysis : public DeadCodeAnalysis {
+struct VariantAwareDeadCodeAnalysis : public HLCF::DeadCodeAnalysis {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(VariantAwareDeadCodeAnalysis);
 
   using DeadCodeAnalysis::DeadCodeAnalysis;
@@ -114,7 +111,7 @@ struct VariantAwareDeadCodeAnalysis : public DeadCodeAnalysis {
 };
 
 /// Subclass SparseConstantPropagation to inject our transfer function.
-struct ConstantPropagation : public SparseConstantPropagation {
+struct ConstantPropagation : public HLCF::SparseConstantPropagation {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ConstantPropagation);
 
   using SparseConstantPropagation::SparseConstantPropagation;
@@ -161,8 +158,9 @@ struct PruneImpossibleVariantsPass
 
 void PruneImpossibleVariantsPass::runOnOperation() {
   mlir::DataFlowSolver solver;
-  solver.load<VariantAwareDeadCodeAnalysis>();
-  solver.load<KnownVariantAnalysis>();
+  solver.load<VariantAwareDeadCodeAnalysis>(getAnalysisManager());
+  solver
+      .load<HLCF::SparseDataFlowAnalysis<VariantState, KnownVariantAnalysis>>();
   solver.load<ConstantPropagation>();
 
   // Compute the string attributes once.
@@ -236,28 +234,65 @@ void PruneImpossibleVariantsPass::runOnOperation() {
 
     auto func = cast<mlir::FunctionOpInterface>(op);
 
-    // Rewrite results.
-    auto ret = cast<ReturnOp>(func.getFunctionBody().front().getTerminator());
+    // Reduce the known variant types across all returns.
+    SmallVector<Operation *> returns;
+    func.walk([&](Operation *op) {
+      if (isa<ReturnOp, HLCF::ReturnOp>(op))
+        returns.push_back(op);
+    });
+
+    SmallVector<Optional<VariantTypes>> types;
+    for (auto [i, type] : llvm::enumerate(func.getResultTypes())) {
+      if (!isa<VariantType>(type)) {
+        types.push_back(None);
+        continue;
+      }
+      // Merge the known variant types across all reachable returns.
+      VariantTypes merged;
+      for (Operation *ret : returns) {
+        // Ignore the return if its parent block is dead.
+        if (!solver.lookupState<Executable>(ret->getBlock())->isLive())
+          continue;
+        bool reachable = true;
+        // Determine if the return is reachable.
+        for (Operation &op :
+             llvm::reverse(ret->getBlock()->without_terminator())) {
+          if (!isa<mlir::CallOpInterface, mlir::RegionBranchOpInterface>(op) &&
+              !op.hasTrait<mlir::OpTrait::ControlFlowNode>())
+            continue;
+          auto *preds = solver.lookupState<PredecessorState>(&op);
+          reachable = preds && (!preds->allPredecessorsKnown() ||
+                                !preds->getKnownPredecessors().empty());
+          break;
+        }
+        // If the return is reachable, merge in its state.
+        if (reachable) {
+          auto *state = solver.lookupState<VariantState>(ret->getOperand(i));
+          merged = VariantTypes::join(merged, state->getValue());
+        }
+      }
+      types.push_back(std::move(merged));
+    }
+
+    // Rewrite all variant operands of returns known to be a particular type.
     SmallVector<std::pair<unsigned, Type>> resultRewrites;
-    for (OpOperand &operand : ret->getOpOperands()) {
-      if (!operand.get().getType().isa<VariantType>())
+    for (auto [idx, type] : llvm::enumerate(types)) {
+      if (!type || type->knownTypes.size() != 1)
         continue;
-      // If the variant is known to be a single type, fold away the variant.
-      auto *state = solver.lookupState<VariantState>(operand.get());
-      if (!state || state->getValue().knownTypes.size() != 1)
-        continue;
-      OpBuilder b(ret);
-      Type knownType = state->getValue().knownTypes.front();
-      Value result =
-          b.create<VariantGetOp>(ret.getLoc(), knownType, operand.get());
-      operand.set(result);
-      resultRewrites.emplace_back(operand.getOperandNumber(), knownType);
+      Type knownType = type->knownTypes.front();
+      resultRewrites.emplace_back(idx, knownType);
+      for (Operation *ret : returns) {
+        OpBuilder b(ret);
+        Value result = b.create<VariantGetOp>(ret->getLoc(), knownType,
+                                              ret->getOperand(idx));
+        ret->setOperand(idx, result);
+      }
     }
 
     if (!resultRewrites.empty()) {
       // Rewrite the function type.
       func.setType(FunctionType::get(&getContext(), func.getArgumentTypes(),
-                                     ret.getOperandTypes()));
+                                     returns.front()->getOperandTypes()));
       rewrites.try_emplace(name, std::move(resultRewrites));
     }
   }

@@ -246,3 +246,41 @@ kgen.generator @second_callsite(%a: i32) {
 }
 
 kgen.export [@first_callsite, @second_callsite]
+
+// -----
+
+// CHECK-LABEL: @multiple_returns
+// CHECK-SAME: -> i32
+kgen.generator @multiple_returns(%a: i32, %b: i64) -> !pop.variant<i32, i64> {
+  %0 = pop.variant.create %a : i32 -> !pop.variant<i32, i64>
+  %1 = hlcf.loop (%arg0 = %0 : !pop.variant<i32, i64>) -> !pop.variant<i32, i64> {
+    %2 = pop.variant.is i32, %arg0 : !pop.variant<i32, i64>
+    // CHECK: hlcf.if
+    hlcf.if %2 {
+      // CHECK-NEXT: %[[RES:.*]] = pop.variant.get %arg2 : !pop.variant<i32, i64> as i32
+      // CHECK-NEXT: hlcf.return %[[RES]]
+      hlcf.return %arg0 : !pop.variant<i32, i64>
+    } else {
+      hlcf.yield
+    }
+    // COM: This is valid because the code is dead.
+    // CHECK: %[[I64:.*]] = pop.variant.create %arg1 : i64 ->
+    // CHECK-NEXT: %[[I32:.*]] = pop.variant.get %[[I64]] : !pop.variant<i32, i64> as i32
+    // CHECK-NEXT: hlcf.return %[[I32]]
+    %3 = pop.variant.create %b : i64 -> !pop.variant<i32, i64>
+    hlcf.return %3 : !pop.variant<i32, i64>
+  }
+  // CHECK: %[[RES:.*]] = pop.variant.get %1 : !pop.variant<i32, i64> as i32
+  // CHECK-NEXT: kgen.return %[[RES]]
+  kgen.return %1 : !pop.variant<i32, i64>
+}
+
+// CHECK-LABEL: @call_it
+kgen.generator @call_it(%a: i32, %b: i64) {
+  // CHECK: kgen.call @multiple_returns
+  // CHECK-SAME: (i32, i64) -> i32
+  %0 = kgen.call @multiple_returns(%a, %b) : (i32, i64) -> !pop.variant<i32, i64>
+  kgen.return
+}
+
+kgen.export [@call_it]
