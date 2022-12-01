@@ -225,6 +225,11 @@ static FunctionType expandListsInFunc(FunctionType funcType) {
                            expandInList(funcType.getResults()));
 }
 
+/// Convert a list type to an array type of the same length.
+static POP::ArrayType convertListToArrayType(ListType list) {
+  return POP::ArrayType::get(list.getLength(), list.getElementType());
+}
+
 /// Expand or rewrite list element types.
 static Type expandListsInType(Type type) {
   auto flattenFirst = [](Type type) {
@@ -245,7 +250,7 @@ static Type expandListsInType(Type type) {
   type = flattenFirst(type);
 
   if (auto list = dyn_cast<ListType>(type))
-    return POP::ArrayType::get(list.getLength(), list.getElementType());
+    return convertListToArrayType(list);
 
   auto itf = dyn_cast<mlir::SubElementTypeInterface>(type);
   if (!itf)
@@ -254,7 +259,7 @@ static Type expandListsInType(Type type) {
     if (isa<POP::StructType, FunctionType>(type))
       return flattenFirst(type);
     if (auto list = dyn_cast<ListType>(type))
-      return POP::ArrayType::get(list.getLength(), list.getElementType());
+      return convertListToArrayType(list);
     return type;
   });
 }
@@ -544,9 +549,7 @@ struct ExpandStructGEPOp : public mlir::OpRewritePattern<POP::StructGEPOp> {
                                                   b.getIndexAttr(index));
       // Bitcast it to ptr<array<N, T>>.
       Value listPtr = b.create<POP::PointerBitcastOp>(
-          op.getLoc(),
-          POP::PointerType::get(
-              POP::ArrayType::get(list.getLength(), list.getElementType())),
+          op.getLoc(), POP::PointerType::get(convertListToArrayType(list)),
           startPtr);
       b.replaceOp(op, materializeConversion(b, listPtr, op.getType()));
     } else {
@@ -570,8 +573,7 @@ struct ExpandListLoad : public mlir::OpRewritePattern<POP::LoadOp> {
     if (!list)
       return failure();
 
-    Type arrPtrType = POP::PointerType::get(
-        POP::ArrayType::get(list.getLength(), list.getElementType()));
+    Type arrPtrType = POP::PointerType::get(convertListToArrayType(list));
     Value arrPtr = materializeConversion(b, op.getPtr(), arrPtrType);
     Value elPtr = b.create<POP::PointerBitcastOp>(
         op.getLoc(), POP::PointerType::get(list.getElementType()), arrPtr);
@@ -602,8 +604,7 @@ struct ExpandListStore : public mlir::OpRewritePattern<POP::StoreOp> {
     if (!list)
       return failure();
 
-    Type arrPtrType = POP::PointerType::get(
-        POP::ArrayType::get(list.getLength(), list.getElementType()));
+    Type arrPtrType = POP::PointerType::get(convertListToArrayType(list));
     Value arrPtr = materializeConversion(b, op.getPtr(), arrPtrType);
     Value elPtr = b.create<POP::PointerBitcastOp>(
         op.getLoc(), POP::PointerType::get(list.getElementType()), arrPtr);
@@ -619,13 +620,73 @@ struct ExpandListStore : public mlir::OpRewritePattern<POP::StoreOp> {
   }
 };
 
+/// Convert lists elements of a variant to arrays.
+static POP::VariantType convertVariantType(POP::VariantType variant) {
+  SmallVector<TypedAttr> types;
+  for (TypedAttr type : variant.getTypes()) {
+    if (auto list =
+            dyn_cast<ListType>(cast<ConcreteTypeConstantAttr>(type).getValue()))
+      types.push_back(
+          ConcreteTypeConstantAttr::get(convertListToArrayType(list)));
+    else
+      types.push_back(type);
+  }
+  return POP::VariantType::get(variant.getContext(), types);
+}
+
+/// Expand `pop.variant.get` to a series of `pop.array.get`.
+struct ExpandVariantGet : public mlir::OpRewritePattern<POP::VariantGetOp> {
+  ExpandVariantGet(MLIRContext *ctx) : OpRewritePattern(ctx, /*benefit=*/2) {}
+
+  LogicalResult matchAndRewrite(POP::VariantGetOp op,
+                                PatternRewriter &b) const override {
+    auto list = dyn_cast<ListType>(op.getType());
+    if (!list)
+      return failure();
+    Value variant = materializeConversion(
+        b, op.getVariant(), convertVariantType(op.getVariant().getType()));
+    Value arr = b.create<POP::VariantGetOp>(
+        op.getLoc(), convertListToArrayType(list), variant);
+    SmallVector<Value> results;
+    int64_t length = *list.getResolvedLength();
+    results.reserve(length);
+    for (int64_t i = 0; i < length; ++i)
+      results.push_back(b.create<POP::ArrayGetOp>(op.getLoc(), arr, i));
+    b.replaceOp(op,
+                materializeListSourceConversion(b, op.getLoc(), results, list));
+    return success();
+  }
+};
+
+/// Expand `pop.variant.create` to `pop.array.create`.
+struct ExpandVariantCreate
+    : public mlir::OpRewritePattern<POP::VariantCreateOp> {
+  ExpandVariantCreate(MLIRContext *ctx)
+      : OpRewritePattern(ctx, /*benefit=*/2) {}
+
+  LogicalResult matchAndRewrite(POP::VariantCreateOp op,
+                                PatternRewriter &b) const override {
+    auto list = dyn_cast<ListType>(op.getOperand().getType());
+    if (!list)
+      return failure();
+
+    ValueRange elements = materializeListDestConversion(b, op.getOperand());
+    Value arr = b.create<POP::ArrayCreateOp>(
+        op.getLoc(), convertListToArrayType(list), elements);
+    Value variant = b.create<POP::VariantCreateOp>(
+        op.getLoc(), convertVariantType(op.getType()), arr);
+    b.replaceOp(op, materializeConversion(b, variant, op.getType()));
+    return success();
+  }
+};
+
 /// Expand lists in a debuginfo.value. Lists don't have a runtime
 /// representation, but we use an array for the purposes of showing the
 /// debuginfo.
 struct ExpandListDebugValue
     : public mlir::OpRewritePattern<DebugInfo::ValueOp> {
   ExpandListDebugValue(MLIRContext *ctx)
-      : OpRewritePattern<DebugInfo::ValueOp>(ctx, /*benefit=*/2) {}
+      : OpRewritePattern(ctx, /*benefit=*/2) {}
 
   LogicalResult matchAndRewrite(DebugInfo::ValueOp op,
                                 PatternRewriter &b) const override {
@@ -839,8 +900,8 @@ void LowerKGENToPOPPass::runOnOperation() {
       .insert<ExpandListConstantOp, ExpandListGetOp, ExpandListCreateOp,
               ExpandListIterateOp, ExpandStructConstructOp, ExpandStructGetOp,
               ExpandStructReplaceOp, ExpandStructGEPOp, ExpandListStore,
-              ExpandListLoad, ExpandListDebugValue, ExpandGenericOperation>(
-          &getContext());
+              ExpandListLoad, ExpandVariantGet, ExpandVariantCreate,
+              ExpandListDebugValue, ExpandGenericOperation>(&getContext());
   (void)mlir::applyPatternsAndFoldGreedily(getOperation(), std::move(patterns),
                                            config);
 

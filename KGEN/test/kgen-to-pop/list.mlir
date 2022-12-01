@@ -226,3 +226,38 @@ kgen.func @list_create_op(%arg0: index, %arg1: index) -> !kgen.list<index[2]> {
   // CHECK-NEXT: return %arg0, %arg1 : index, index
   kgen.return %list : !kgen.list<index[2]>
 }
+
+// CHECK-LABEL: @variant_of_list
+kgen.func @variant_of_list(%list: !kgen.list<index[2]>, %var: !pop.variant<i1, !kgen.list<index[2]>>) -> (!kgen.list<index[2]>, !pop.variant<i1, !kgen.list<index[2]>>) {
+  // CHECK-NEXT: %[[ARR:.*]] = pop.array.create [%arg0, %arg1] : !pop.array<2, index>
+  // CHECK-NEXT: %[[VAR:.*]] = pop.variant.create %[[ARR]] : !pop.array<2, index> -> !pop.variant<i1, array<2, index>>
+  %0 = pop.variant.create %list : !kgen.list<index[2]> -> !pop.variant<i1, !kgen.list<index[2]>>
+  // CHECK-NEXT: %[[ARR:.*]] = pop.variant.get %arg2 : !pop.variant<i1, array<2, index>> as !pop.array<2, index>
+  // CHECK-NEXT: %[[L0:.*]] = pop.array.get %[[ARR]][0]
+  // CHECK-NEXT: %[[L1:.*]] = pop.array.get %[[ARR]][1]
+  %1 = pop.variant.get %var : !pop.variant<i1, !kgen.list<index[2]>> as !kgen.list<index[2]>
+  // CHECK-NEXT: return %[[L0]], %[[L1]], %[[VAR]]
+  kgen.return %1, %0 : !kgen.list<index[2]>, !pop.variant<i1, !kgen.list<index[2]>>
+}
+
+// CHECK-LABEL: @variant_of_empty_list
+kgen.func @variant_of_empty_list(%list: !kgen.list<i0[0]>, %var: !pop.variant<i1, !kgen.list<i0[0]>>) -> (!kgen.list<i0[0]>, !pop.variant<i1, !kgen.list<i0[0]>>) {
+  // CHECK-NEXT: %[[ARR:.*]] = pop.array.create [] : !pop.array<0, i0>
+  // CHECK-NEXT: %[[VAR:.*]] = pop.variant.create %[[ARR]] : !pop.array<0, i0> -> !pop.variant<i1, array<0, i0>>
+  %0 = pop.variant.create %list : !kgen.list<i0[0]> -> !pop.variant<i1, !kgen.list<i0[0]>>
+  %1 = pop.variant.get %var : !pop.variant<i1, !kgen.list<i0[0]>> as !kgen.list<i0[0]>
+  // CHECK-NEXT: return %[[VAR]]
+  kgen.return %1, %0 : !kgen.list<i0[0]>, !pop.variant<i1, !kgen.list<i0[0]>>
+}
+
+// CHECK-LABEL: @two_lists_in_variant
+kgen.func @two_lists_in_variant(%list: !kgen.list<i1[1]>, %var: !pop.variant<!kgen.list<i1[1]>, !kgen.list<i2[1]>>) -> (!kgen.list<i2[1]>, !pop.variant<!kgen.list<i1[1]>, !kgen.list<i2[1]>>) {
+  // CHECK-NEXT: %[[ARR:.*]] = pop.array.create [%arg0] : !pop.array<1, i1>
+  // CHECK-NEXT: %[[VAR:.*]] = pop.variant.create %[[ARR]] : !pop.array<1, i1> -> !pop.variant<array<1, i1>, array<1, i2>>
+  %0 = pop.variant.create %list : !kgen.list<i1[1]> -> !pop.variant<!kgen.list<i1[1]>, !kgen.list<i2[1]>>
+  // CHECK-NEXT: %[[ARR:.*]] = pop.variant.get %arg1 : !pop.variant<array<1, i1>, array<1, i2>> as !pop.array<1, i2>
+  // CHECK-NEXT: %[[L0:.*]] = pop.array.get %[[ARR]][0]
+  %1 = pop.variant.get %var : !pop.variant<!kgen.list<i1[1]>, !kgen.list<i2[1]>> as !kgen.list<i2[1]>
+  // CHECK-NEXT: return %[[L0]], %[[VAR]]
+  kgen.return %1, %0 : !kgen.list<i2[1]>, !pop.variant<!kgen.list<i1[1]>, !kgen.list<i2[1]>>
+}

@@ -640,8 +640,8 @@ static void lowerAttributesAndTypes(Operation *op) {
     return FlatSymbolRefAttr::get(symRef.getContext(), qualifiedName);
   });
 
-  // Lower `!lit.none` to `list<i0[0]>`, which will eventually become nothing.
-  auto emptyList = ListType::get(IntegerType::get(op->getContext(), 0), 0);
+  // Lower `!lit.none` to `list<i1[0]>`, which will eventually become nothing.
+  auto emptyList = ListType::get(IntegerType::get(op->getContext(), 1), 0);
   replacer.addReplacement([&](KGEN::NoneType type) { return emptyList; });
   // Lower `#lit.none` to `[]`.
   replacer.addReplacement([&](NoneAttr attr) {
