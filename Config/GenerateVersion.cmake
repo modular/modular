@@ -32,9 +32,12 @@ file(APPEND "${version_inc}.tmp"
   "/* Revision sha */\n"
   "#define MODULAR_VERSION_REVISION \"${MODULAR_VERSION_REVISION}\"\n\n"
 
+  "/* Build type */\n"
+  "#define MODULAR_BUILD_TYPE \"${MODULAR_BUILD_TYPE}\"\n\n"
+
   "/* Version string */\n"
-  "#define MODULAR_VERSION_STRING \"${MODULAR_VERSION_MAJOR}.${MODULAR_VERSION_MINOR}.${MODULAR_VERSION_PATCH}-${MODULAR_VERSION_REVISION}\"\n"
-)
+  "#define MODULAR_VERSION_STRING \"${MODULAR_VERSION_MAJOR}.${MODULAR_VERSION_MINOR}.${MODULAR_VERSION_PATCH}-${MODULAR_VERSION_REVISION}-${MODULAR_BUILD_TYPE}\"\n"
+  )
 
 # Copy the file only if it has changed.
 execute_process(COMMAND ${CMAKE_COMMAND} -E copy_if_different

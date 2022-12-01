@@ -25,7 +25,8 @@ add_custom_command(OUTPUT "${version_inc}"
                            "-DMODULAR_VERSION_MAJOR=${MODULAR_VERSION_MAJOR}"
                            "-DMODULAR_VERSION_MINOR=${MODULAR_VERSION_MINOR}"
                            "-DMODULAR_VERSION_PATCH=${MODULAR_VERSION_PATCH}"
-                           -P "${generate_version_script}")
+  "-DMODULAR_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
+  -P "${generate_version_script}")
 
 # Mark the generated header as being generated.
 set_source_files_properties("${version_inc}"
