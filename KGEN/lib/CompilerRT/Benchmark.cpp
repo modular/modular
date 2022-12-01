@@ -4,9 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Support/AlignedAlloc.h"
+#include "Support/MathExtras.h"
 #include "Support/MicroBenchmark.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 
 using namespace M;
@@ -197,4 +200,100 @@ extern "C" ssize_t KGEN_CompilerRT_SelectFastestFunction(
       });
 
   return best->funcIdx;
+}
+
+// This is the data distribution we're going to use for tuning memset.
+// It is represented as a string of size-weight pairs,  separated by ';'.
+// Elements in the pair are separated by ':'.
+static constexpr llvm::StringLiteral KGEN_MEMSET_DATA_HIST = "18:10;15:30";
+
+static SmallVector<std::pair<ssize_t, ssize_t>>
+parseMemsetDataHistogramString() {
+  SmallVector<std::pair<ssize_t, ssize_t>> result;
+
+  for (auto size_count_pair : llvm::split(KGEN_MEMSET_DATA_HIST, ";")) {
+    ssize_t size, count;
+    SmallVector<StringRef> substrings(llvm::split(size_count_pair, ":"));
+    llvm::to_integer(substrings[0], size);
+    llvm::to_integer(substrings[1], count);
+    result.push_back({size, count});
+  }
+
+  return result;
+}
+
+// This is an ad-hoc harness for benchmarking memset implementations.
+// We use it for tuning memset implementation for very small sizes (<32 bytes)
+// and because of that we need to ensure that the harness introduces as little
+// overhead as possible. Ideally we should be using the standard
+// KGEN_CompilerRT_Benchmark function for this, but currently it seems that the
+// overhead of having OpaqueFunction is too high for this use case.
+
+// TODO: eventually we still should use that function to avoid code duplication.
+static constexpr size_t ITER = 10'000;
+static constexpr size_t SAMPLES = 20;
+
+using memset_ty = void(uint8_t *, uint8_t, ssize_t);
+
+uint64_t measureScore(memset_ty *fn, ssize_t size) {
+  void *ptr = M::alignedAlloc(kPreferredMemoryAlignment, size);
+
+  std::vector<uint64_t> samples;
+
+  for (unsigned i = 0; i < SAMPLES; i++) {
+
+    std::chrono::steady_clock::time_point tic =
+        std::chrono::steady_clock::now();
+
+    for (size_t j = 0; j < ITER; j++)
+      (fn)((uint8_t *)ptr, 0, size);
+
+    std::chrono::steady_clock::time_point toc =
+        std::chrono::steady_clock::now();
+    uint64_t interval =
+        std::chrono::duration_cast<std::chrono::microseconds>(toc - tic)
+            .count();
+    samples.push_back(interval);
+  }
+  M::alignedFree(ptr);
+
+  // Return median
+  std::sort(samples.begin(), samples.end());
+  uint64_t res = median(samples);
+  return res;
+}
+
+// Benchmark the given memset implementation on the given distribution of input
+// data.
+uint64_t
+benchMemsetFn(void (*fn)(uint8_t *, uint8_t, ssize_t),
+              const SmallVector<std::pair<ssize_t, ssize_t>> &inputSpec) {
+  uint64_t result = 0;
+  for (size_t i = 0; i < inputSpec.size(); i++) {
+    auto size = inputSpec[i].first;
+    auto weight = inputSpec[i].second;
+
+    uint64_t score = measureScore(fn, size);
+    result += score * weight;
+  }
+  return result;
+}
+
+extern "C" ssize_t KGEN_CompilerRT_SelectFastestMemset(memset_ty **fns,
+                                                       ssize_t num) {
+  // Make it static to avoid parsing the string every time
+  static SmallVector<std::pair<ssize_t, ssize_t>> v =
+      parseMemsetDataHistogramString();
+  SmallVector<int> scores;
+  for (ssize_t fn_idx = 0; fn_idx < num; fn_idx++) {
+    auto fn = fns[fn_idx];
+    int score = benchMemsetFn(fn, v);
+    scores.push_back(score);
+  }
+  ssize_t best_idx = 0;
+  for (ssize_t fn_idx = 1; fn_idx < num; fn_idx++) {
+    if (scores[fn_idx] < scores[best_idx])
+      best_idx = fn_idx;
+  }
+  return best_idx;
 }
