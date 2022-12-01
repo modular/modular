@@ -83,9 +83,9 @@ kgen.struct.decl @A {
    %x = lit.var.decl "x" : <index>
  }
 
-// CHECK: kgen.generator @rhslitdeclref_no_params(%arg0: !kgen.declref<@A>) -> !kgen.list<i0[0]> {
+// CHECK: kgen.generator @rhslitdeclref_no_params(%arg0: !kgen.declref<@A>) -> !kgen.list<i1[0]> {
  lit.func @rhslitdeclref_no_params(%x: !kgen.declref<@A>) -> !lit.none {
-  // CHECK: kgen.param.constant: list<i0[0]> = <[]>
+  // CHECK: kgen.param.constant: list<i1[0]> = <[]>
    %0 = kgen.param.constant: !lit.none = <#lit.none>
    kgen.return %0 : !lit.none
  }
@@ -95,9 +95,9 @@ kgen.struct.decl @A {
 kgen.struct.decl @A<b, c> {
   %x = lit.var.decl "x" : <index>
 }
-// CHECK: kgen.generator @rhslitdeclref_params(%arg0: !kgen.declref<@A<b = 10, c = 11>>) -> !kgen.list<i0[0]> {
+// CHECK: kgen.generator @rhslitdeclref_params(%arg0: !kgen.declref<@A<b = 10, c = 11>>) -> !kgen.list<i1[0]> {
 lit.func @rhslitdeclref_params(%x: !kgen.declref<@A<b = 10, c = 11>>) -> !lit.none {
-  // CHECK: kgen.param.constant: list<i0[0]> = <[]>
+  // CHECK: kgen.param.constant: list<i1[0]> = <[]>
   %0 = kgen.param.constant: !lit.none = <#lit.none>
   kgen.return %0 : !lit.none
 }
