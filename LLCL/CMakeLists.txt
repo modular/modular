@@ -15,6 +15,7 @@ include_directories(${LLCL_INCLUDE_DIR})
 
 add_subdirectory(lib/Support)
 add_subdirectory(lib/Runtime)
+add_subdirectory(lib/CompilerSupport)
 
 # Because of the absence of the test directory, we need to add a custom target
 # which mimics the target it would have created.
