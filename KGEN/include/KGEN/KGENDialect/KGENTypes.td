@@ -190,6 +190,10 @@ def SignatureType
     /// parameters are defined within the signature.
     ErrorOrSuccess checkSelfContained();
 
+    /// Helper to return the value input and result types.
+    ArrayRef<Type> getValueInputs();
+    ArrayRef<Type> getValueResults();
+
     /// Return a signature with the specified parameter bindings substituted
     /// into it as happens in a call.  The types specified in the parameter
     /// bindings affects the type signature of the value input and outputs, and

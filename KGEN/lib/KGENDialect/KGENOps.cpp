@@ -821,10 +821,8 @@ static ParseResult parseCallParamCallee(OpAsmParser &p, TypedAttr &value,
   if (!substitutedSignature)
     return failure();
 
-  llvm::append_range(operandTypes,
-                     substitutedSignature.getValues().getInputs());
-  llvm::append_range(resultTypes,
-                     substitutedSignature.getValues().getResults());
+  llvm::append_range(operandTypes, substitutedSignature.getValueInputs());
+  llvm::append_range(resultTypes, substitutedSignature.getValueResults());
   return success();
 }
 
@@ -1101,7 +1099,7 @@ static Type computePartialApplyResultType(Optional<Location> loc,
 
   DenseSet<int64_t> seenInputs;
   seenInputs.reserve(boundInputs.size());
-  ArrayRef<Type> argumentTypes = origSignature.getValues().getInputs();
+  ArrayRef<Type> argumentTypes = origSignature.getValueInputs();
   SmallVector<Type> newInputTypes;
   unsigned lastIdx = 0;
   for (auto [input, index] : llvm::zip(inputs, boundInputs)) {
@@ -1123,7 +1121,7 @@ static Type computePartialApplyResultType(Optional<Location> loc,
 
   auto resultFnType =
       FunctionType::get(origSignature.getContext(), newInputTypes,
-                        origSignature.getValues().getResults());
+                        origSignature.getValueResults());
   return SignatureType::get(origSignature.getInputParams(),
                             origSignature.getResultParamTypes(), resultFnType);
 }

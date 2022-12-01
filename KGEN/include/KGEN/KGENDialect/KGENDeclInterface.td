@@ -60,17 +60,17 @@ def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
     InterfaceMethod<[{
       Returns the argument types of this declaration.
     }], "ArrayRef<Type>", "getArgumentTypes", (ins), [{
-      return $_op.getSignature().getValues().getInputs();
+      return $_op.getSignature().getValueInputs();
     }], [{
-      return $_op.getSignature().getValues().getInputs();
+      return $_op.getSignature().getValueInputs();
     }]>,
 
     InterfaceMethod<[{
       Returns the result types of this declaration.
     }], "ArrayRef<Type>", "getResultTypes", (ins), [{
-      return $_op.getSignature().getValues().getResults();
+      return $_op.getSignature().getValueResults();
     }], [{
-      return $_op.getSignature().getValues().getResults();
+      return $_op.getSignature().getValueResults();
     }]>,
 
     /// Parameters.

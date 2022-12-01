@@ -1372,7 +1372,7 @@ static ParseResult parseExprFunc(AsmParser &p,
 
   // Parse the inputs and expression using the types from the signature type.
   SmallVector<ParamDeclAttr> inputDecls;
-  ArrayRef<Type> inputTypes = type.getValues().getInputs();
+  ArrayRef<Type> inputTypes = type.getValueInputs();
   auto typeIt = inputTypes.begin(), typeE = inputTypes.end();
   auto parseInput = [&]() -> ParseResult {
     if (typeIt == typeE)
@@ -1391,7 +1391,7 @@ static ParseResult parseExprFunc(AsmParser &p,
     return failure();
 
   SmallVector<TypedAttr> exprVals;
-  ArrayRef<Type> resultTypes = type.getValues().getResults();
+  ArrayRef<Type> resultTypes = type.getValueResults();
   auto resultIt = resultTypes.begin(), resultE = resultTypes.end();
   auto parseExpr = [&]() -> ParseResult {
     if (resultIt == resultE)
@@ -1439,9 +1439,8 @@ LogicalResult ExprFuncAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   if (exprs.size() != type.getValues().getNumResults())
     return emitError() << "has " << exprs.size() << " expressions but expected "
                        << type.getValues().getNumResults();
-  for (auto [idx, expr, type] :
-       llvm::zip(llvm::seq<unsigned>(0, exprs.size()), exprs,
-                 type.getValues().getResults())) {
+  for (auto [idx, expr, type] : llvm::zip(llvm::seq<unsigned>(0, exprs.size()),
+                                          exprs, type.getValueResults())) {
     if (expr.getType() != type) {
       return emitError() << "expected expression result #" << idx
                          << " type to be " << type << " but got "
@@ -1452,8 +1451,7 @@ LogicalResult ExprFuncAttr::verify(function_ref<InFlightDiagnostic()> emitError,
     return emitError() << "input parameters do not match signature";
   if (inputs.size() != type.getValues().getNumInputs())
     return emitError() << "wrong number of inputs";
-  for (auto [input, sigInputType] :
-       llvm::zip(inputs, type.getValues().getInputs()))
+  for (auto [input, sigInputType] : llvm::zip(inputs, type.getValueInputs()))
     if (input.getType() != sigInputType)
       return emitError() << "input types do not match";
 

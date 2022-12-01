@@ -167,10 +167,9 @@ SignatureType SignatureType::getSpecializedSignature(
 
   // Remap the value types.
   SmallVector<Type> inputTypes, resultTypes;
-  llvm::append_range(inputTypes,
-                     llvm::map_range(getValues().getInputs(), remapType));
+  llvm::append_range(inputTypes, llvm::map_range(getValueInputs(), remapType));
   llvm::append_range(resultTypes,
-                     llvm::map_range(getValues().getResults(), remapType));
+                     llvm::map_range(getValueResults(), remapType));
 
   return SignatureType::get(
       ParamDeclArrayAttr::get(getContext(), {}),
@@ -182,6 +181,13 @@ SignatureType SignatureType::getSpecializedSignature(
     ParamBindArrayAttr inputParams,
     llvm::function_ref<mlir::InFlightDiagnostic()> emitErrorFn) {
   return getSpecializedSignature(inputParams.getValue(), emitErrorFn);
+}
+
+ArrayRef<Type> SignatureType::getValueInputs() {
+  return getValues().getInputs();
+}
+ArrayRef<Type> SignatureType::getValueResults() {
+  return getValues().getResults();
 }
 
 //===----------------------------------------------------------------------===//

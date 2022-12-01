@@ -293,9 +293,8 @@ void PruneImpossibleVariantsPass::runOnOperation() {
       auto itf = cast<KGENDeclInterface>(op);
       auto sig = itf.getSignature();
       // Rewrite the function type.
-      auto fnType =
-          FunctionType::get(&getContext(), sig.getValues().getInputs(),
-                            returns.front()->getOperandTypes());
+      auto fnType = FunctionType::get(&getContext(), sig.getValueInputs(),
+                                      returns.front()->getOperandTypes());
       itf.setSignature(SignatureType::get(sig.getInputParams(),
                                           sig.getResultParamTypes(), fnType));
       rewrites.try_emplace(name, std::move(resultRewrites));
