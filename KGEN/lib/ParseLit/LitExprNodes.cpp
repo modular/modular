@@ -174,6 +174,9 @@ static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
     emitter.shared.emitError(loc, "invalid MLIR attribute: ") << errorMsg;
     return {};
   }
+
+  // Check to see if the
+
   return result;
 }
 
@@ -1191,7 +1194,7 @@ substituteParametersIntoMLIRType(Type type, const SubscriptNode &subscript,
       return {};
     }
 
-    auto placeholder = dyn_cast<PlaceholderAttr>(attr);
+    auto placeholder = dyn_cast<LITPlaceholderAttr>(attr);
     if (!placeholder || nextIdx >= subscript.indices.size()) {
       newAttrs.push_back(attr);
       continue;
@@ -1204,7 +1207,7 @@ substituteParametersIntoMLIRType(Type type, const SubscriptNode &subscript,
       return {};
 
     // TODO: Support conversions.
-    auto expectedType = cast<PlaceholderAttr>(attr).getType();
+    auto expectedType = cast<LITPlaceholderAttr>(attr).getType();
     if (newVal.getType() != expectedType) {
       emitter.emitError(indexVal->getLoc(), "parameter of type ")
           << ASTType(newVal.getType())

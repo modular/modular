@@ -660,6 +660,12 @@ static Attribute simplifyXor(SmallVectorImpl<TypedAttr> &operands) {
 
 /// Duplicate the operands in-place for ops like `min` and `max`.
 static void deduplicateOperands(SmallVectorImpl<TypedAttr> &operands) {
+  // If any of the operands is a placeholder, do not change the list.
+  if (std::any_of(operands.begin(), operands.end(), [](auto attr) -> bool {
+        return isa<LITPlaceholderAttr>(attr);
+      }))
+    return;
+
   llvm::SetVector<TypedAttr, SmallVector<TypedAttr>, SmallPtrSet<Attribute, 4>>
       uniqueOperands;
   uniqueOperands.insert(operands.begin(), operands.end());

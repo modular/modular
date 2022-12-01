@@ -41,26 +41,6 @@ def UnboundMLIROperationAttr
 }
 
 //===----------------------------------------------------------------------===//
-// PlaceholderAttr
-//===----------------------------------------------------------------------===//
-
-def PlaceholderAttr : LITAttr<"Placeholder", "placeholder",
-                              [TypedAttrInterface]> {
-  let summary = "Used for parameterized MLIR types/attrs before substitution";
-  let description = [{
-    This attribute is used at the lit language level to represent MLIR types
-    that will have parameters substituted into them, e.g.
-    `!pop.simd<4, #lit.placeholder>` or
-    `!pop.simd<#lit.placeholder, #lit.placeholder>`.
-
-    This must be substituted before lowering from LIT.
-  }];
-
-  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
-  let assemblyFormat = "$type";
-}
-
-//===----------------------------------------------------------------------===//
 // NoneAttr
 //===----------------------------------------------------------------------===//
 
