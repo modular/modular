@@ -10,6 +10,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Elaborator.h"
+#include "Cache/BlobCache.h"
+#include "Cache/CacheDialect/CacheOps.h"
+#include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/KGENDialect/ElaboratorOpInterface.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -18,6 +21,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENPasses.h"
+#include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "SelectFastestFunction.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -27,11 +31,14 @@
 #include "Support/ML/DType.h"
 #include "Support/STLExtras.h"
 #include "Support/TimeProfiler.h"
+#include "mlir/Bytecode/BytecodeReader.h"
+#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
+#include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
@@ -229,8 +236,11 @@ class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
   Elaborator(SymbolTable &symtab, LLCL::Runtime &runtime,
+             Cache::BlobCache<Cache::RegionCacheKey> &regionCache,
+             Cache::BlobCache<Cache::TransformCacheKey> &transformCache,
              bool enableSearch = false)
-      : symtab(symtab), runtime(runtime),
+      : symtab(symtab), runtime(runtime), regionCache(regionCache),
+        transformCache(transformCache),
         regionOwner(ModuleOp::create(symtab.getOp()->getLoc())),
         enableSearch(enableSearch) {}
 
@@ -377,6 +387,9 @@ private:
   /// This provides a runtime reference for the Elaborator and all its
   /// functionality.
   LLCL::Runtime &runtime;
+
+  Cache::BlobCache<Cache::RegionCacheKey> &regionCache;
+  Cache::BlobCache<Cache::TransformCacheKey> &transformCache;
 
   /// This collects all of the generator implementations of generator
   /// interfaces, across both the primary module and the library.
@@ -1788,6 +1801,15 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
 
 /// Specialize a generator interface with the specified input parameters and
 /// return the generated func.
+///
+/// If search is enabled and required (i.e. more than one successful candidate
+/// is generated) then the process of "given a list of functions and a way to
+/// evaluate them, which is best" is cached. The cache stores the symbol name of
+/// the fastest function, which we can then use to shortcut the search process
+/// and truncate the result vector to contain only the fastest one as found by a
+/// previous run. The search key is comprised of the inputs to search because if
+/// any of the implementations change, a new one is added, one is removed, the
+/// evaluator changes, or the target changes, we need to redo search.
 SmallVector<ElaboratedGeneratorOrCalleeError>
 Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
                                 bool inlined) {
@@ -1859,22 +1881,141 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   if (!evaluator || inlined)
     return result;
 
+  auto keyBuf = Cache::WriteableBuffer::get();
+
   // Pull out the elaboration results that succeeded to provide to the search
-  // inputs.
+  // inputs. We also write the bytecode for each input into the key.
   SmallVector<FuncOp> searchInputs;
-  for (const auto &r : result)
+  for (const auto &r : result) {
     searchInputs.push_back(std::get<ElaboratedGenerator>(r).func);
+    mlir::writeBytecodeToFile(searchInputs.back(), *keyBuf);
+  }
 
+  // Part of the key is the evaluation function.
   auto evalFunc = cast<FuncOp>(lookupCallee(evaluator.getSymbol()));
+  mlir::writeBytecodeToFile(evalFunc, *keyBuf);
 
-  ErrorOr<size_t> bestSpecializationIdxOr =
-      evaluateSpecializations(evalFunc, symtab, runtime, searchInputs);
-  if (failed(bestSpecializationIdxOr))
-    return {
-        reportCalleeExpansionError(itf, bestSpecializationIdxOr.getError())};
+  // And finally, the target.
+  // TODO(#5584): This needs to use the target we're compiling *for*, not the
+  //              host.
+  *keyBuf << TargetInfoAttr::getForHost(itf->getContext());
 
-  // Find the fastest one and return just that one.
-  return {std::move(result[*bestSpecializationIdxOr])};
+  // Alright - we want to do search now.
+  LLCL::AsyncValue::registerTypes<LogicalResult>();
+
+  // This provides the implementation of search. This is the part we actually
+  // care about caching because it's the most expensive part.
+  auto doSpecialization = [this, evalFunc, searchInputs,
+                           &result](Operation *itfOp,
+                                    Cache::WriteableBufferRef toCache,
+                                    LLCL::AsyncValueRef<LogicalResult> chain) {
+    auto out = LLCL::AsyncValueRef<LogicalResult>::allocate(runtime);
+    chain.andThen([this, evalFunc, searchInputs, &result, itfOp,
+                   chain = chain.copy(), out = out.copy(),
+                   toCache = std::move(toCache)]() mutable {
+      auto itf = cast<GeneratorInterfaceOp>(itfOp);
+
+      ErrorOr<size_t> bestSpecializationIdxOr =
+          evaluateSpecializations(evalFunc, symtab, runtime, searchInputs);
+      if (failed(bestSpecializationIdxOr)) {
+        result = {reportCalleeExpansionError(
+            itf, bestSpecializationIdxOr.getError())};
+        return out.emplace(failure());
+      }
+
+      // Find the fastest one and return just that one.
+      result = {std::move(result[*bestSpecializationIdxOr])};
+
+      // Finally, cache the result.
+      FuncOp resultFunc = std::get<ElaboratedGenerator>(result.front()).func;
+      auto deflate = Cache::deflateOp(resultFunc, regionCache, chain.copy());
+      deflate.andThen([out = out.copy(), toCache = std::move(toCache),
+                       resultFunc]() mutable {
+        // Write the result function to the cache.
+        *toCache << resultFunc.getName();
+        return out.emplace(success());
+      });
+    });
+    return out;
+  };
+
+  auto onCacheAccess =
+      [this, &result](Operation *itfOp,
+                      LLCL::AsyncValueRef<Cache::CacheFindResult> cacheResult) {
+        auto out =
+            LLCL::AsyncValueRef<Cache::CacheFindResult>::allocate(runtime);
+        cacheResult.andThen([&result, cacheResult = cacheResult.copy(),
+                             out = out.copy(), itfOp] {
+          if (cacheResult->isError() || !cacheResult->hasValue())
+            return out.emplace(std::move(*cacheResult));
+
+          // We have a cache hit! Pull the func out of the cache and place it
+          // into the result vector.
+          Cache::BufferRef funcName = cacheResult->takeValue();
+          StringAttr fastestFuncName =
+              StringAttr::get(itfOp->getContext(), funcName->getBuffer());
+
+          // Find the fastest function by name.
+          auto fastest = llvm::find_if(
+              result, [&](ElaboratedGeneratorOrCalleeError genOr) {
+                if (std::holds_alternative<ElaboratedGenerator>(genOr))
+                  if (std::get<ElaboratedGenerator>(genOr).func.getNameAttr() ==
+                      fastestFuncName)
+                    return true;
+                return false;
+              });
+          if (fastest == result.end())
+            return out.emplace(Cache::CacheFindResult::error(
+                "could not find " + fastestFuncName.getValue()));
+
+          result = {*fastest};
+          return out.emplace(
+              Cache::CacheFindResult::value(std::move(funcName)));
+        });
+        return out;
+      };
+
+  // Run the transform with the functions we just defined.
+  auto xform = Cache::cachedTransform(
+      itf, regionCache, transformCache,
+      LLCL::AsyncValueRef<LogicalResult>::createReady(runtime, success()),
+      std::move(keyBuf), doSpecialization, onCacheAccess);
+
+  // Finally, re-inflate the result for now cause the rest of the elaborator
+  // won't know what to do with it.
+  auto out = LLCL::AsyncValueRef<LogicalResult>::allocate(runtime);
+  xform.andThen([this, result, xform = xform.copy(), out = out.copy()] {
+    // If there are no results we want, then we're done.
+    if (llvm::all_of(result, [](auto r) {
+          return std::holds_alternative<CalleeExpansionError>(r);
+        }))
+      return out.emplace(failure());
+
+    // Inflate each result - the rest of the elaborator can't handle this yet.
+    SmallVector<LLCL::AnyAsyncValueRef> inflateResults;
+    for (auto r : result) {
+      if (std::holds_alternative<ElaboratedGenerator>(r)) {
+        inflateResults.push_back(Cache::inflateOp(
+            std::get<ElaboratedGenerator>(r).func, regionCache, xform.copy()));
+      }
+    }
+
+    // Once all the results that worked have been inflated, then we're done.
+    andThenMoving(
+        inflateResults,
+        [out = out.copy()](MutableArrayRef<LLCL::AnyAsyncValueRef> rs) {
+          for (auto &ref : rs)
+            if (failed(ref->get<LogicalResult>()))
+              return out.emplace(failure());
+
+          out.emplace(success());
+        });
+  });
+  // Wait for inflation to complete - the rest of the elaborator is not async
+  // yet.
+  LLCL::await(out);
+
+  return result;
 }
 
 /// Return all instantiations of the specified declaration (a  generator or
@@ -2123,7 +2264,23 @@ LogicalResult M::elaborateGenerators(SymbolTable &symtab,
                                      bool enableSearch) {
   TimeTraceScope<> traceScope("elaborate-generators");
   auto primary = cast<ModuleOp>(symtab.getOp());
-  Elaborator elaborator(symtab, runtime, enableSearch);
+
+  auto regionCacheBackendOr =
+      Cache::getDefaultBackendChain(runtime, ".kgen_cache/region");
+  if (failed(regionCacheBackendOr))
+    return primary->emitError() << regionCacheBackendOr.getError();
+  auto transformCacheBackendOr =
+      Cache::getDefaultBackendChain(runtime, ".kgen_cache/transform");
+  if (failed(transformCacheBackendOr))
+    return primary->emitError() << transformCacheBackendOr.getError();
+
+  Cache::BlobCache<Cache::RegionCacheKey> regionCache(
+      regionCacheBackendOr.takeValue());
+  Cache::BlobCache<Cache::TransformCacheKey> transformCache(
+      transformCacheBackendOr.takeValue());
+
+  Elaborator elaborator(symtab, runtime, regionCache, transformCache,
+                        enableSearch);
 
   // Scan the primary and library module to collect all the interfaces,
   // verifying that any common interfaces are the same.

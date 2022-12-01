@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Cache/CacheDialect/CacheDialect.h"
 #include "EmitFuncHeader.h"
 #include "KGEN/CLOptions.h"
 #include "KGEN/CompilerRT.h"
@@ -14,6 +15,7 @@
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/ParseLit.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
@@ -33,7 +35,6 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/ToolOutputFile.h"
 
-#include "LLCL/Runtime/Runtime.h"
 #include <filesystem>
 
 using namespace M;
@@ -198,8 +199,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
-  registry.insert<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
-                  index::IndexDialect, LLVM::LLVMDialect, scf::SCFDialect>();
+  registry.insert<DebugInfo::DebugInfoDialect, Cache::CacheDialect,
+                  HLCF::HLCFDialect, index::IndexDialect, LLVM::LLVMDialect,
+                  scf::SCFDialect>();
 
   mlir::registerLLVMDialectTranslation(registry);
 
