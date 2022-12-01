@@ -24,6 +24,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
 using namespace M;
@@ -42,19 +43,31 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
   module.setDataLayout(targetMachine.createDataLayout());
 
   llvm::legacy::PassManager passManager;
+  llvm::legacy::FunctionPassManager functionPassManager(&module);
   llvm::PassManagerBuilder passManagerBuilder;
 
   // Set up the pass manager builder to populate the passes we want.
   passManagerBuilder.OptLevel = targetMachine.getOptLevel();
 
+  if (targetMachine.getOptLevel())
+    passManagerBuilder.Inliner =
+        llvm::createFunctionInliningPass(targetMachine.getOptLevel(), 0, false);
+
   // Set up the pass manager and populate it.
-  passManagerBuilder.populateModulePassManager(
-      llvm::cast<llvm::PassManagerBase>(passManager));
+  passManagerBuilder.populateFunctionPassManager(functionPassManager);
+  passManagerBuilder.populateModulePassManager(passManager);
+
+  functionPassManager.doInitialization();
+  functionPassManager.doFinalization();
 
   // Add passes to emit an object file.
   targetMachine.addPassesToEmitFile(passManager, objStream, nullptr,
                                     llvm::CGFT_ObjectFile);
+
   // Run the pass manager to compile the module.
+  for (auto &fun : module)
+    functionPassManager.run(fun);
+
   passManager.run(module);
 
   return success();
