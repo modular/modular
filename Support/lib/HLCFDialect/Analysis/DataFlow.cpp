@@ -57,7 +57,9 @@ LogicalResult HLCF::DeadCodeAnalysis::visit(mlir::ProgramPoint point) {
             Operation *term = block.getTerminator();
             if (!isa<ControlFlowTerminator>(term))
               continue;
-            ++termId;
+            bool isReturn = term->hasTrait<mlir::OpTrait::ReturnLike>();
+            termId += !isReturn;
+
             // If the block is not live, ignore it.
             if (!getOrCreateFor<Executable>(point, &block)->isLive())
               continue;
@@ -80,7 +82,7 @@ LogicalResult HLCF::DeadCodeAnalysis::visit(mlir::ProgramPoint point) {
               continue;
 
             // Process returns.
-            if (isa<ReturnOp>(term)) {
+            if (isReturn) {
               auto func = term->getParentOfType<mlir::CallableOpInterface>();
               auto *callsites = getOrCreateFor<PredecessorState>(point, func);
               for (Operation *predecessor : callsites->getKnownPredecessors()) {
