@@ -142,7 +142,7 @@ lit.func @try_op(%err: !kgen.declref<@Error>, %int: !kgen.declref<@Int>) -> !kge
     // CHECK: %[[VAL:.*]] = lit.unwrap_or_propagate %{{.*}} : <!kgen.declref<@Int>>
     %value = lit.unwrap_or_propagate %result : <!kgen.declref<@Int>>
     // CHECK: return %[[VAL]] : !kgen.declref<@Int>
-    kgen.return %value : !kgen.declref<@Int>
+    hlcf.return %value : !kgen.declref<@Int>
   // CHECK-NEXT: } except (%{{.*}}: !kgen.declref<@Error>) {
   } except (%exception: !kgen.declref<@Error>) {
     // CHECK-NEXT: lit.try.yield
@@ -154,4 +154,37 @@ lit.func @try_op(%err: !kgen.declref<@Error>, %int: !kgen.declref<@Int>) -> !kge
   // CHECK-NEXT: }
   }
   kgen.return %int : !kgen.declref<@Int>
+}
+
+// CHECK-LABEL: @try_in_loop
+lit.func @try_in_loop(%cond: i1) {
+  // CHECK-NEXT: hlcf.loop
+  hlcf.loop {
+    // CHECK-NEXT: lit.try
+    lit.try {
+      // CHECK-NEXT: hlcf.if
+      hlcf.if %cond {
+        // CHECK-NEXT: hlcf.break
+        hlcf.break
+      // CHECK-NEXT: else
+      } else {
+        // CHECK-NEXT: hlcf.yield
+        hlcf.yield
+      }
+      // CHECK: lit.try.yield
+      lit.try.yield
+    // CHECK-NEXT: except
+    } except (%arg0: !kgen.declref<@Error>) {
+      // CHECK-NEXT: hlcf.break
+      hlcf.break
+    // CHECK-NEXT: else
+    } else {
+      // CHECK-NEXT: lit.try.yield
+      lit.try.yield
+    }
+    // CHECK: hlcf.continue
+    hlcf.continue
+  }
+  // CHECK: kgen.return
+  kgen.return
 }

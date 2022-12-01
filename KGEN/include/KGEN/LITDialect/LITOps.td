@@ -12,6 +12,7 @@ include "KGEN/LITDialect/LITDialect.td"
 include "KGEN/KGENDialect/KGENDeclInterface.td"
 include "KGEN/KGENDialect/KGENEnums.td"
 include "KGEN/POPDialect/POPTypes.td"
+include "Support/HLCFDialect/HLCFInterfaces.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
@@ -156,7 +157,8 @@ def LITUnwrapOrPropagateOp : LITOp<"unwrap_or_propagate", [
 // LITTryOp
 //===----------------------------------------------------------------------===//
 
-def LITTryOp : LITOp<"try", [RecursivelySpeculatable, RecursiveMemoryEffects]> {
+def LITTryOp : LITOp<"try", [RecursivelySpeculatable, RecursiveMemoryEffects,
+    DeclareOpInterfaceMethods<ControlFlowNode>]> {
   let summary = "A try-except-else block.";
   let description = [{
     The `lit.try` operation represents a try-except-else statement. When inside
@@ -195,7 +197,7 @@ def LITTryOp : LITOp<"try", [RecursivelySpeculatable, RecursiveMemoryEffects]> {
 //===----------------------------------------------------------------------===//
 
 def LITTryYieldOp : LITOp<"try.yield", [Pure, Terminator,
-    HasParent<"LITTryOp">]> {
+    HasParent<"LITTryOp">, DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let summary = "Try block terminator.";
   let description = [{
     The `lit.try.yield` operation is used as a terminator to `lit.try` regions.

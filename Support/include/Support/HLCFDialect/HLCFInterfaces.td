@@ -26,7 +26,7 @@ def ControlFlowNode : OpInterface<"ControlFlowNode"> {
       operation.
     }], "void", "getEntryTargets",
       (ins "ArrayRef<Attribute>":$operands,
-           "SmallVectorImpl<ControlFlowTarget> &":$targets)>,
+           "SmallVectorImpl<HLCF::ControlFlowTarget> &":$targets)>,
     InterfaceMethod<[{
       Return the range of values that should be mapped onto incoming values. By
       default, this returns
@@ -58,7 +58,7 @@ def ControlFlowTerminator : OpInterface<"ControlFlowTerminator"> {
       `None`.
     }], "void", "getBranchTargets",
       (ins "ArrayRef<Attribute>":$operands,
-           "SmallVectorImpl<ControlFlowTarget> &":$targets)>
+           "SmallVectorImpl<HLCF::ControlFlowTarget> &":$targets)>
   ];
 
   let verify = [{ return verifyControlFlowTerminator($_op); }];
