@@ -4,6 +4,11 @@ __include "../lit-examples/prolog.lit"
 
 # CHECK: module {
 
+# CHECK-LABEL: lit.func @paramArith<x>(%y: index) -> !lit.none {
+fn paramArith[x: __mlir_type.index](y : __mlir_type.index):
+  # CHECK: kgen.call @assertParam<condVal: i1 = eq(x, -99)>
+  assertParam[x == -100+1]()
+
 # CHECK-LABEL: kgen.struct.decl @OurSIMD<size, dt: !kgen.declref<@DType>> {
 struct OurSIMD[size: __mlir_type.index, dt: DType]:
   pass
