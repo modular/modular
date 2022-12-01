@@ -1513,18 +1513,64 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
       emitter.emitError(getLoc(), "expecting parameter values as operands");
       return {};
     }
-    POC opcode;
+    uint32_t opcode;
+    bool needsInvert = false;
     switch (kind) {
     default:
       llvm_unreachable("unknown binary operator");
     case kAdd:
-      opcode = POC::Add;
+      opcode = (uint32_t)POC::Add;
       break;
     case kMul:
-      opcode = POC::Mul;
+      opcode = (uint32_t)POC::Mul;
+      break;
+    case kBitwiseAnd:
+      opcode = (uint32_t)POC::And;
+      break;
+    case kBitwiseOr:
+      opcode = (uint32_t)POC::Or;
+      break;
+    case kBitwiseXor:
+      opcode = (uint32_t)POC::Xor;
+      break;
+    case kLeftShift:
+      opcode = (uint32_t)POC::Shl;
+      break;
+    case kRightShift:
+      opcode = (uint32_t)POC::Shr;
+      break;
+    case kFloorDiv:
+      opcode = (uint32_t)POC::Div;
+      break;
+    case kModulo:
+      opcode = (uint32_t)POC::Mod;
+      break;
+    case kCmpEqual:
+      opcode = (uint32_t)POC::EQ;
+      break;
+    case kCmpNotEqual:
+      opcode = (uint32_t)POC::EQ;
+      needsInvert = true;
+      break;
+    case kCmpGreaterEqual:
+      opcode = (uint32_t)POC::LT;
+      needsInvert = true;
+      break;
+    case kCmpGreater:
+      opcode = (uint32_t)POC::LE;
+      needsInvert = true;
+      break;
+    case kCmpLess:
+      opcode = (uint32_t)POC::LT;
+      break;
+    case kCmpLessEqual:
+      opcode = (uint32_t)POC::LE;
       break;
     }
-    return ParamOperatorAttr::get(opcode, lhsParam, rhsParam);
+    auto value = ParamOperatorAttr::get((POC)opcode, lhsParam, rhsParam);
+    if (needsInvert)
+      value = ParamOperatorAttr::getNot(value);
+    return value;
   }
 
   assert(specialFnKind != SpecialFunctionKind::kNormal);
@@ -1542,6 +1588,25 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
 
   // If this operator maps onto a special function, attempt to lower it.
   auto specialFnKind = getOpSpecialFunctions(kind);
+
+  if (exprRep.getType().isIndex()) {
+    auto exprParam =
+        emitter.emitMValue(subExpr, "expecting parameter values as operands");
+    if (!exprParam) {
+      emitter.emitError(getLoc(), "expecting parameter values as operands");
+      return {};
+    }
+    switch (kind) {
+    default:
+      llvm_unreachable("unknown binary operator");
+    case ExprNode::kUnaryMinus: {
+      IntegerAttr minusOne = emitter.builder->getIndexAttr(-1);
+      return ParamOperatorAttr::get(POC::Mul, exprParam, minusOne);
+    }
+    case ExprNode::kUnaryPlus:
+      return exprParam;
+    }
+  }
 
   assert(specialFnKind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
