@@ -15,6 +15,7 @@ add_modular_tool(support-dialect-opt
   MDialect
   MSupport
   MLIRFuncDialect
+  MLIRIndexDialect
   MLIROptLib
   MLIRTransforms
   )

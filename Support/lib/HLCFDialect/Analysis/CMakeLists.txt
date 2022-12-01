@@ -6,6 +6,7 @@
 
 add_modular_library(HLCFAnalysis
   ControlFlowTree.cpp
+  DataFlow.cpp
 
   LINK_LIBS PUBLIC
   MLIRIR
