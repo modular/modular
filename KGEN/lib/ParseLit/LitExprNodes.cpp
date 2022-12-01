@@ -468,7 +468,7 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
 
   // Otherwise, we have a base symbol for an instance method /and/ a self
   // value to apply to it.  Partially apply it to form a result closure.
-  Type firstArgIRType = directSymbolAttr.getType().getValues().getInputs()[0];
+  Type firstArgIRType = directSymbolAttr.getType().getValueInputs()[0];
   Value firstArgValue;
   if (isa<POP::PointerType>(firstArgIRType)) {
     LValue baseLV = baseVal.ir.getIfLValue();
@@ -594,7 +594,7 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
   // Emit all the arguments.
   SmallVector<Value> valueArguments;
   for (auto [argAnyValueAndExpr, expectedType] :
-       llvm::zip(operands, calleeSig.getValues().getInputs())) {
+       llvm::zip(operands, calleeSig.getValueInputs())) {
     // If the callee takes the operand as a by-ref argument, we require an
     // lvalue.
     Value argVal;
@@ -641,7 +641,7 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
   Value resultVal;
   auto loc = emitter.translateLocation(callLoc);
   // FIXME: Move result type inference into CallOp/CallIndirectOp.
-  auto resultTypes = calleeSig.getValues().getResults();
+  auto resultTypes = calleeSig.getValueResults();
   if (auto target = dyn_cast<Attribute>(callee)) {
     // TODO(Issue #5473): CallOp should take a SymbolConstantAttr.
     resultVal =
