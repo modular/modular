@@ -64,6 +64,32 @@ def LITNoneType : LITType<"None", "none"> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// RaisesOrType
+//===----------------------------------------------------------------------===//
+
+def LITRaisesOrType : LITType<"RaisesOr", "raises_or"> {
+  let summary = "This type marks a callable that can raise exceptions.";
+  let description = [{
+    The `!lit.raises_or` type can be used as the top-level result type of a
+    callable to indicate that the callable can raise an exception.
+
+    Example:
+
+    ```mlir
+    !lit.raises_or<!kgen.declref<@Int>>
+    ```
+  }];
+
+  let parameters = (ins "Type":$type);
+  let assemblyFormat = "`<` $type `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$type), [{
+      return get(type.getContext(), type);
+    }]>
+  ];
+}
 
 //===----------------------------------------------------------------------===//
 // Types for magic declarations.

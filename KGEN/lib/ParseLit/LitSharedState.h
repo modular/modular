@@ -49,7 +49,7 @@ public:
   /// Given the symbol for a lit declaration, return the ASTDecl that
   /// corresponds to it.  This doesn't allow null symbols, so it always
   /// succeeds.
-  ASTDecl &getDeclForSymbol(SymbolRefAttr symbol);
+  ASTDecl &getDeclForSymbol(SymbolRefAttr symbol) const;
 
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTType getTypeCheckErrorType() const;
@@ -59,6 +59,9 @@ public:
 
   /// This is the decl for the builtin lit.object struct type.
   ASTType getObjectType() const;
+
+  /// This is the decl for the error or type.
+  ASTType getErrorOrType(ASTType valueType) const;
 
   /// This is set to true if an error occurred at any point processing the file.
   bool errorOccurred = false;

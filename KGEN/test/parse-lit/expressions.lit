@@ -179,7 +179,7 @@ fn listValues() -> __mlir_type.index:
   var b = []
   return a
 
-# CHECK-LABEL: lit.func @test_if_cond(%cond: !kgen.declref<@Bool>) -> !lit.none
+# CHECK-LABEL: lit.func @test_if_cond(%cond: !kgen.declref<@Bool>)
 def test_if_cond(cond: Bool):
     # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@Int>
     # CHECK-NEXT: %[[COND:.*]] = pop.load %cond_0

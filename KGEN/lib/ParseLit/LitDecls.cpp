@@ -128,7 +128,7 @@ DeclResolver::~DeclResolver() {
 /// Given the symbol for a lit declaration, return the ASTDecl that
 /// corresponds to it.  This doesn't allow null symbols, so it always
 /// succeeds.
-ASTDecl &LitSharedState::getDeclForSymbol(SymbolRefAttr symbol) {
+ASTDecl &LitSharedState::getDeclForSymbol(SymbolRefAttr symbol) const {
   return declResolver->getDeclForSymbol(symbol);
 }
 
@@ -605,6 +605,11 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
     resultType = sharedState.getNoneType();
   }
 
+  // If the method can raise an exception, wrap the result type in a variant
+  // with the error type.
+  if (funcOp.getRaises())
+    resultType = sharedState.getErrorOrType(resultType);
+
   if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
     return failure();
 
@@ -700,6 +705,13 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
   return success();
 }
 
+/// Return true if the result type is nominally a none type.
+static bool isNoneResultType(Type type) {
+  if (auto raises = dyn_cast<RaisesOrType>(type))
+    type = raises.getType();
+  return isa<KGEN::NoneType>(type);
+}
+
 ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
                                       ASTDecl &decl) {
   if (LitParserBase::parseSuite(decl, lexer))
@@ -717,12 +729,14 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
   }
   if (bodyBlock->empty() || !isa<ReturnOp>(bodyBlock->back())) {
     auto loc = defOp.getLoc();
-    if (isa<KGEN::NoneType>(defOp.getResultType()) &&
+    if (isNoneResultType(defOp.getResultType()) &&
         defOp.getResultParamTypes().empty()) {
       auto b = OpBuilder::atBlockEnd(bodyBlock);
 
-      auto noneAttr = b.getAttr<NoneAttr>(defOp.getResultType());
-      Value noneVal = b.create<ParamConstantOp>(loc, noneAttr);
+      Value noneVal =
+          b.create<ParamConstantOp>(loc, NoneAttr::get(getContext()));
+      if (auto raises = dyn_cast<RaisesOrType>(defOp.getResultType()))
+        noneVal = b.create<LITFormValueOp>(loc, raises, noneVal);
       b.create<ReturnOp>(loc, ArrayRef<TypedAttr>(), noneVal);
     } else if (!sharedState.errorOccurred) {
       Location endLoc = bodyBlock->empty() ? loc : bodyBlock->back().getLoc();

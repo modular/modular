@@ -101,6 +101,10 @@ ASTType LitSharedState::getObjectType() const {
   return impl->objectDecl->getSelfType();
 }
 
+ASTType LitSharedState::getErrorOrType(ASTType valueType) const {
+  return RaisesOrType::get(valueType);
+}
+
 /// Add declarations for magic things to the builtins decl.
 void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   auto &resolver = *declResolver;

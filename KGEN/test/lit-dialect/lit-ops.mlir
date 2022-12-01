@@ -111,3 +111,23 @@ lit.func @main(%a: !kgen.declref<@A<N = 1>>) {
 // CHECK-LABEL: kgen.struct.decl @NoFields {
 // CHECK-NEXT: }
 kgen.struct.decl @NoFields {}
+
+// COM: Types from the standard library.
+kgen.struct.decl @Error {}
+kgen.struct.decl @Int {}
+
+// CHECK-LABEL: @raises_error
+lit.func @raises_error(%raise: i1, %err: !kgen.declref<@Error>, %value: !kgen.declref<@Int>) -> !lit.raises_or<!kgen.declref<@Int>> {
+  hlcf.if %raise {
+    // CHECK: %[[ERR:.*]] = lit.raise_error %err : <@Error> -> <!kgen.declref<@Int>>
+    %result = lit.raise_error %err : <@Error> -> <!kgen.declref<@Int>>
+    // CHECK: hlcf.return %[[ERR]]
+    hlcf.return %result : !lit.raises_or<!kgen.declref<@Int>>
+  } else {
+    hlcf.yield
+  }
+  // CHECK: %[[VALUE:.*]] = lit.form_value %value : <!kgen.declref<@Int>>
+  %result = lit.form_value %value : <!kgen.declref<@Int>>
+  // CHECK: kgen.return %[[VALUE]]
+  kgen.return %result : !lit.raises_or<!kgen.declref<@Int>>
+}

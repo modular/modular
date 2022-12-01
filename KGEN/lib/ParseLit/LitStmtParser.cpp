@@ -289,6 +289,14 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
 // Simple statements.
 //===----------------------------------------------------------------------===//
 
+/// Return the nearest parent operation of the block of the given kind.
+template <typename OpT>
+static OpT getBlockParentOfType(Block *block) {
+  if (auto op = dyn_cast<OpT>(block->getParentOp()))
+    return op;
+  return block->getParentOp()->getParentOfType<OpT>();
+}
+
 /// return_stmt ::= "return" [expression_list]
 ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   auto loc = consumeToken(LitToken::kw_return).getLoc();
@@ -334,6 +342,16 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     return success();
   }
 
+  // If the enclosing method raises, implicitly wrap the result in a variant.
+  Location returnLoc = translateLocation(loc);
+  if (getBlockParentOfType<LITFuncOp>(builder.getInsertionBlock())
+          .getRaises()) {
+    operandValues[0] = builder.create<LITFormValueOp>(
+        returnLoc,
+        getSharedState().getErrorOrType(operandValues[0].getType()).mlirType,
+        operandValues[0]);
+  }
+
   if (operandValues[0].getType() != decl.getResultTypes()[0]) {
     emitError(loc, "returned value has type ")
         << ASTType(operandValues[0].getType()) << " but 'def' expected "
@@ -343,10 +361,9 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
 
   if (isa<LITFuncOp>(builder.getInsertionBlock()->getParentOp())) {
     // TODO: Support result parameters.
-    builder.create<ReturnOp>(translateLocation(loc), ArrayRef<TypedAttr>(),
-                             operandValues);
+    builder.create<ReturnOp>(returnLoc, ArrayRef<TypedAttr>(), operandValues);
   } else {
-    builder.create<HLCF::ReturnOp>(translateLocation(loc), operandValues);
+    builder.create<HLCF::ReturnOp>(returnLoc, operandValues);
   }
   // Split the block here. Subsequent statements are dead code.
   builder.setInsertionPointToStart(
@@ -363,8 +380,7 @@ ParseResult LitStmtParser::parseBreakOrContinueStmt(LitToken::Kind kind,
   Block *block = builder.getInsertionBlock();
 
   // Ensure the break statement is being parsed within a loop context.
-  if (!isa<HLCF::LoopOp>(block->getParentOp()) &&
-      !block->getParentOp()->getParentOfType<HLCF::LoopOp>()) {
+  if (!getBlockParentOfType<HLCF::LoopOp>(block)) {
     emitError(loc, "'" + name + "' not inside a loop");
     return success();
   }
@@ -565,9 +581,11 @@ namespace {
 struct FnAttributes {
   /// This is set to true by @staticmethod.
   bool isStatic = false;
-  // This is set to true by @interface.
+  /// This is set to true by @interface.
   bool isInterface = false;
-  // This is set by @implementedInterface(x).
+  /// This is set to true by @raises.
+  bool raises = false;
+  /// This is set by @implementedInterface(x).
   FlatSymbolRefAttr implementedInterface;
   // This is set to true by @export.
   bool isExported = false;
@@ -586,6 +604,8 @@ void FnAttributes::processDecorator(ExprNode *decorator,
       isInterface = true;
     else if (declRef->spelling == "export")
       isExported = true;
+    else if (declRef->spelling == "raises")
+      raises = true;
     else
       parser.emitError(decorator->getLoc(), "unsupported decorator: ")
           << declRef->spelling;
@@ -667,16 +687,22 @@ ParseResult LitStmtParser::parseDefFnStmt(ArrayRef<ExprNode *> decorators,
 
   auto funcDecl = builder.create<LITFuncOp>(translateLocation(loc), name);
   if (attrs.isInterface)
-    funcDecl.setIsInterfaceAttr(mlir::UnitAttr::get(getContext()));
+    funcDecl.setIsInterface(true);
   if (attrs.implementedInterface)
     funcDecl.setImplementsAttr(attrs.implementedInterface);
   if (attrs.isStatic)
-    funcDecl.setIsStaticAttr(mlir::UnitAttr::get(getContext()));
+    funcDecl.setIsStatic(true);
 
   // Remember if this was declared as a 'def' or 'fn' because this affects
   // certain downstream behavior.
-  if (isDef)
-    funcDecl.setIsDefAttr(mlir::UnitAttr::get(getContext()));
+  if (isDef) {
+    funcDecl.setIsDef(true);
+    // Defs always raise.
+    if (attrs.raises)
+      emitError(loc, "methods defined with 'def' always raise");
+  }
+  if (isDef || attrs.raises)
+    funcDecl.setRaises(true);
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.

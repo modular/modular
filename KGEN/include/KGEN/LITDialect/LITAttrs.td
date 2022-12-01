@@ -96,5 +96,4 @@ def UnresolvedAliasValueAttr
   ];
 }
 
-
 #endif // KGEN_LITDIALECT_LITATTRS_TD

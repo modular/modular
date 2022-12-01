@@ -44,10 +44,10 @@ return 32 # expected-error {{cannot return from this context}}
 def tuple_return():
   return 32, 17 # expected-error {{tuple return not supported yet}}
 
-def missing_ret_val() -> __mlir_type.index:
+fn missing_ret_val() -> __mlir_type.index:
   return # expected-error {{returned value has type 'None' but 'def' expected '__mlir_type.index'}}
 
-def ret_type_mismatch() -> __mlir_type.index:
+fn ret_type_mismatch() -> __mlir_type.index:
   return 4.0 # expected-error {{returned value has type '__mlir_type.f64' but 'def' expected '__mlir_type.index'}}
 
 def meta_param_then_param_redef[
@@ -126,8 +126,8 @@ def OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' requires 
 def WeirdMetaParams(a: Thing[1, 1.5]):
   pass
 
-def voidReturningFn(): pass
-def badCall():
+fn voidReturningFn(): pass
+fn badCall():
   # expected-error @+1 {{value of type 'None' cannot be converted to expected type 'NotBoolConvertible'}}
   test_bool_context(voidReturningFn())
 
@@ -235,7 +235,7 @@ def func_impl4(x: __mlir_type.index) -> __mlir_type.index:
 
 
 struct LValuesRvalues:
-  def __new__() -> LValuesRvalues:
+  fn __new__() -> LValuesRvalues:
     var result : LValuesRvalues
     return result
 

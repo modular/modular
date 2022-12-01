@@ -28,10 +28,12 @@ __include "../lit-examples/prolog.lit"
 # CHECK-NEXT:    }
 # CHECK-NEXT:    hlcf.continue
 # CHECK-NEXT:  }
-# CHECK-NEXT:  pop.load
 # CHECK-NEXT:  kgen.return
 # CHECK-NEXT:  }
-def test_while(a: Bool, b: Bool) -> Bool:
+fn test_while(a: Bool, b: Bool) -> Bool:
+    var inside_a: Int
+    var inside_b: Int
+    var inside_else: Int
     while a:
         inside_a = Int(0)
         if b:
@@ -53,7 +55,7 @@ def test_while(a: Bool, b: Bool) -> Bool:
 # CHECK-NEXT:   [[NONE:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
 # CHECK-NEXT:   kgen.return [[NONE]]
 # CHECK-NEXT: }
-def test_simple(a: Bool):
+fn test_simple(a: Bool):
     while a:
         pass
 
