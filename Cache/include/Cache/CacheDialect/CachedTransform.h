@@ -31,6 +31,12 @@ struct TransformCacheKey {
   static std::string hashKey(KeyTy key);
 };
 
+/// This function is what we use to allocate an output object for returning from
+/// CachedTransform. Since we don't always know what the output type is, the
+/// user has to provide this callback to allow us to allocate a concrete output
+/// object.
+using AllocFn = llvm::function_ref<LLCL::AnyAsyncValueRef()>;
+
 /// The most basic function that takes a target operation and transforms it -
 /// returning success or failure. The function can write the result of the
 /// transform to the provided WriteableBufferRef - there is a cachedTransform
@@ -41,20 +47,20 @@ struct TransformCacheKey {
 ///
 /// For example:
 ///   auto runTransform = [](Operation *op, WriteableBufferRef buf,
-///                          AsyncValueRef<LogicalResult> chain)
-///     -> AsyncValueRef<LogicalResult> {
+///                          AnyAsyncValueRef chain)
+///     -> AsyncValueRef<Chain> {
 ///    auto xform = doAsyncTransform(op, buf, std::move(chain));
 ///    // Allocate a space to put the result of the pass manager. We'll chain
 ///    // off that for the deflation.
-///    auto result = AsyncValueRef<LogicalResult>::allocate(chain.getRuntime());
+///    auto result = AsyncValueRef<Chain>::allocate(chain.getRuntime());
 ///    xform.andThen([&]() mutable {
 ///      result.emplace(doSyncTransform(op, buf));
 ///    });
 ///
 ///    return result;
 ///  };
-using TransformFn = llvm::function_ref<LLCL::AsyncValueRef<LogicalResult>(
-    Operation *, WriteableBufferRef, LLCL::AsyncValueRef<LogicalResult>)>;
+using TransformFn = llvm::function_ref<LLCL::AnyAsyncValueRef(
+    Operation *, WriteableBufferRef, LLCL::AnyAsyncValueRef)>;
 
 /// This is the function that's called on a cache access. It provides the user
 /// with the Operation pointer (still deflated) and CacheFindResult for the
@@ -96,14 +102,17 @@ using CacheAccessFn = llvm::function_ref<LLCL::AsyncValueRef<CacheFindResult>(
 /// a key of some kind that can be associated with the operation. The semantics
 /// of `cachedTransform` are that it will combine the input IR with the name of
 /// the transform to map to a cached result. If deflation/inflation is desired,
-/// the user should either deflate before calling this funciton, or
+/// the user should either deflate before calling this function, or
 /// deflate/inflate as part of the provided transform. See the PassManager
 /// overload below for an example.
-LLCL::AsyncValueRef<LogicalResult>
+///
+/// When the transform is run, the result AnyAsyncValueRef is resolved to the
+/// result of the transform. If the transform is *not* run, then the result
+/// AnyAsyncValueRef simply contains a Chain.
+LLCL::AnyAsyncValueRef
 cachedTransform(Operation *target, BlobCache<TransformCacheKey> &transformCache,
-                LLCL::AsyncValueRef<LogicalResult> chain,
-                WriteableBufferRef transformKey, TransformFn transformFn,
-                CacheAccessFn cacheAccessFn);
+                LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
+                TransformFn transformFn, CacheAccessFn cacheAccessFn);
 
 /// Run the specified passes over the target operation (i.e. ModulePasses over a
 /// ModuleOp). If the target operation and pass pipeline result in a cache hit,
@@ -113,11 +122,10 @@ cachedTransform(Operation *target, BlobCache<TransformCacheKey> &transformCache,
 /// update to the RegionHashArrayAttr on `target` - it will update the region
 /// hashes from the old versions (pre-transform) to the new versions (transform
 /// applied).
-LLCL::AsyncValueRef<LogicalResult>
+LLCL::AnyAsyncValueRef
 cachedTransform(Operation *target, BlobCache<RegionCacheKey> &regionCache,
                 BlobCache<TransformCacheKey> &transformCache,
-                LLCL::AsyncValueRef<LogicalResult> chain,
-                mlir::PassManager &pm);
+                LLCL::AnyAsyncValueRef chain, mlir::PassManager &pm);
 } // namespace M::Cache
 
 #endif // CACHE_CACHEDTRANSFORM_H

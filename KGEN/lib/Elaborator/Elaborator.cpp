@@ -21,6 +21,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENPasses.h"
+#include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "SelectFastestFunction.h"
@@ -1915,11 +1916,11 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   auto doSpecialization = [this, evalFunc, searchInputs,
                            &result](Operation *itfOp,
                                     Cache::WriteableBufferRef toCache,
-                                    LLCL::AsyncValueRef<LogicalResult> chain) {
-    auto out = LLCL::AsyncValueRef<LogicalResult>::allocate(runtime);
-    chain.andThen([this, evalFunc, searchInputs, &result, itfOp,
-                   chain = chain.copy(), out = out.copy(),
-                   toCache = std::move(toCache)]() mutable {
+                                    AnyAsyncValueRef chain) {
+    auto out = LLCL::AsyncValueRef<Chain>::allocate(runtime);
+    chain->andThen([this, evalFunc, searchInputs, &result, itfOp,
+                    chain = chain.copy(), out = out.copy(),
+                    toCache = std::move(toCache)]() mutable {
       auto itf = cast<GeneratorInterfaceOp>(itfOp);
 
       ErrorOr<size_t> bestSpecializationIdxOr =
@@ -1928,7 +1929,9 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
         result = {reportCalleeExpansionError(
             itf, bestSpecializationIdxOr.getError())};
         *toCache << kFailureTag;
-        return out.emplace(failure());
+        return out.setToError(EncodedDiagnostic{
+            bestSpecializationIdxOr.takeError(),
+            LLCL::MLIRLocationDecoder::getEncodedLocation(itf->getLoc())});
       }
 
       // Find the fastest one and return just that one.
@@ -1937,7 +1940,7 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
       // Finally, cache the result.
       FuncOp resultFunc = std::get<ElaboratedGenerator>(result.front()).func;
       *toCache << resultFunc.getName();
-      return out.emplace(success());
+      return out.emplace();
     });
     return out;
   };

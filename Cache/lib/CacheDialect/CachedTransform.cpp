@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CacheDialect/CachedTransform.h"
+#include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -29,10 +30,11 @@ std::string TransformCacheKey::hashKey(TransformCacheKey::KeyTy key) {
 
 /// Do a transform that can be cached. The transform must be named, see the
 /// PassManager overload for an example.
-LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
-    Operation *target, BlobCache<TransformCacheKey> &transformCache,
-    LLCL::AsyncValueRef<LogicalResult> chain, WriteableBufferRef transformKey,
-    TransformFn transformFn, CacheAccessFn cacheAccessFn) {
+LLCL::AnyAsyncValueRef
+Cache::cachedTransform(Operation *target,
+                       BlobCache<TransformCacheKey> &transformCache,
+                       AnyAsyncValueRef chain, WriteableBufferRef transformKey,
+                       TransformFn transformFn, CacheAccessFn cacheAccessFn) {
   AsyncValue::registerType<CacheFindResult>();
 
   mlir::writeBytecodeToFile(target, *transformKey);
@@ -40,37 +42,47 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
 
   // Try to find the key in the cache. The cache hit function should chain off
   // that and do the right for the cache state.
-  auto foundOr = transformCache.find(keyBuffer->getBuffer());
+
+  auto foundOr = LLCL::AsyncValueRef<CacheFindResult>::allocate(
+      transformCache.getRuntime());
+  chain->andThen([foundOr = foundOr.copy(), keyBuffer = keyBuffer.copy(),
+                  &transformCache] {
+    auto f = transformCache.find(keyBuffer->getBuffer());
+    f.andThen([f = f.copy(), foundOr = foundOr.copy()] {
+      foundOr.emplace(std::move(*f));
+    });
+  });
+
   auto cacheHit = cacheAccessFn(target, std::move(foundOr));
 
   // Allocate an output variable for the overall success/failure of this
   // function.
-  auto out =
-      AsyncValueRef<LogicalResult>::allocate(transformCache.getRuntime());
+  AnyAsyncValueRef out = AsyncValue::createIndirect(cacheHit.getRuntime());
 
   // Sequence actually doing the transform off the cache hit result.
   cacheHit.andThen([target, &transformCache, transformFn,
                     /*passthrough*/ keyBuffer = std::move(keyBuffer),
                     out = out.copy(), cacheHit = cacheHit.copy()]() mutable {
     // If there was an error, nothing we can do.
-    if (cacheHit->isError())
-      return out.emplace(target->emitError() << cacheHit->getError());
+    if (cacheHit->isError()) {
+      return out->setToError(
+          getMLIRDiagnostic(cacheHit->takeError(), target->getLoc()));
+    }
 
     // Cache hit, we're done!
     if (cacheHit->hasValue())
-      return out.emplace(success());
+      return out->emplaceIndirect<Chain>();
 
     // No error but no cache hit.
 
     // Run the transform.
     WriteableBufferRef writeableTransformResult = WriteableBuffer::get();
     auto xform = transformFn(target, writeableTransformResult.copy(),
-                             LLCL::AsyncValueRef<LogicalResult>::createReady(
-                                 cacheHit.getRuntime(), success()));
+                             std::move(cacheHit));
 
     // Insert the transform result into the cache.
-    xform.andThen(
-        [target, &transformCache, out = out.copy(),
+    xform->andThen(
+        [target, &transformCache, out = out.copy(), xform = xform.copy(),
          keyBuffer = std::move(keyBuffer),
          transformResult = std::move(writeableTransformResult)]() mutable {
           // Only at this point (so the transform has finished) should we change
@@ -79,10 +91,10 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
                                               std::move(transformResult));
           hashOr.andThen([&, hashOr = hashOr.copy(), out = out.copy()] {
             if (failed(*hashOr))
-              return out.emplace(target->emitError() << hashOr->getError());
+              return out->setToError(
+                  getMLIRDiagnostic(hashOr->takeError(), target->getLoc()));
 
-            // Finally done, return success.
-            out.emplace(success());
+            return out->resolveIndirect(std::move(xform));
           });
         });
   });
@@ -91,35 +103,40 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
 }
 
 /// Run a pass manager's passes as a cached transform.
-LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
-    Operation *target, BlobCache<RegionCacheKey> &regionCache,
-    BlobCache<TransformCacheKey> &transformCache,
-    LLCL::AsyncValueRef<LogicalResult> chain, mlir::PassManager &pm) {
+AnyAsyncValueRef
+Cache::cachedTransform(Operation *target,
+                       BlobCache<RegionCacheKey> &regionCache,
+                       BlobCache<TransformCacheKey> &transformCache,
+                       AnyAsyncValueRef chain, mlir::PassManager &pm) {
   auto keyBuf = WriteableBuffer::get();
   pm.printAsTextualPipeline(*keyBuf);
 
   // Callback that runs the pass manager and puts the correct region hash attr
   // on the op.
   auto runTransform =
-      [&pm, &regionCache](
-          Operation *op, WriteableBufferRef buf,
-          AsyncValueRef<LogicalResult> chain) -> AsyncValueRef<LogicalResult> {
+      [&pm, &regionCache](Operation *op, WriteableBufferRef buf,
+                          AnyAsyncValueRef chain) -> AsyncValueRef<Chain> {
     // Allocate a space to put the result of the pass manager. We'll chain
     // off that for the deflation.
-    auto pmResult = AsyncValueRef<LogicalResult>::allocate(chain.getRuntime());
-    chain.andThen(
+    auto pmResult = AsyncValueRef<Chain>::allocate(chain->getRuntime());
+    chain->andThen(
         [op, &pm, chain = chain.copy(), pmResult = pmResult.copy()]() mutable {
-          if (failed(*chain) || failed(pm.run(op)))
-            return pmResult.emplace(failure());
+          if (chain->isError())
+            pmResult.setToError(chain->takeDiagnostic());
 
-          pmResult.emplace(success());
+          if (failed(pm.run(op))) {
+            return pmResult.setToError(getMLIRDiagnostic(
+                Error("failed to run the pass manager"), op->getLoc()));
+          }
+
+          pmResult.emplace();
         });
 
     // Hang the deflation off the pass manager result chain.
     auto deflate = deflateOp(op, regionCache, std::move(pmResult));
     // Once deflation has gone through, we can get the new region hash and
     // store it in the cache.
-    auto out = AsyncValueRef<LogicalResult>::allocate(chain.getRuntime());
+    auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
     deflate.andThen([op, buf = std::move(buf), out = out.copy(),
                      deflate = deflate.copy()]() mutable {
       // Get the new region hashes and stuff them in the
@@ -127,14 +144,13 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
       auto resultRegionHashes =
           op->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
       if (!resultRegionHashes) {
-        out.emplace(mlir::emitError(op->getLoc())
-                    << "could not find region hashes");
-        return;
+        return out.setToError(getMLIRDiagnostic(
+            Error("could not find region hashes"), op->getLoc()));
       }
       *buf << resultRegionHashes;
       // TODO: This currently requires a null terminator (MLIR bug #58964)
       buf->write((char)0);
-      out.emplace(success());
+      out.emplace();
     });
     return out;
   };
@@ -146,16 +162,12 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
     auto out = AsyncValueRef<CacheFindResult>::allocate(foundOr.getRuntime());
     foundOr.andThen([op, out = out.copy(), foundOr = foundOr.copy()] {
       // If it's an error, return the error.
-      if (foundOr->isError()) {
-        out.emplace(CacheFindResult::error(foundOr->takeError()));
-        return;
-      }
+      if (foundOr->isError())
+        return out.emplace(CacheFindResult::error(foundOr->takeError()));
 
       // Nothing in the cache, say that.
-      if (!foundOr->hasValue()) {
-        out.emplace(CacheFindResult::notInCache());
-        return;
-      }
+      if (!foundOr->hasValue())
+        return out.emplace(CacheFindResult::notInCache());
 
       // We found the value in the cache, handle that.
       BufferRef buf = foundOr->takeValue();

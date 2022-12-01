@@ -31,7 +31,7 @@ public:
   void dropRef() const override;
 };
 
-// Given an Error and an mlir::Location, we can create an EncodedDiagnostic.
+/// Given an Error and an mlir::Location, we can create an EncodedDiagnostic.
 EncodedDiagnostic getMLIRDiagnostic(Error e, mlir::Location loc);
 
 } // namespace M::LLCL

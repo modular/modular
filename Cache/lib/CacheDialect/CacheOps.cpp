@@ -7,6 +7,7 @@
 #include "Cache/CacheDialect/CacheOps.h"
 #include "Cache/CacheDialect/CacheAttrs.h"
 #include "Cache/CacheDialect/CacheDialect.h"
+#include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -56,16 +57,16 @@ std::string DataCacheKey::hashKey(DataCacheKey::KeyTy key) {
   return {hash.begin(), hash.end()};
 }
 
-LLCL::AsyncValueRef<LogicalResult>
-Cache::deflateConstant(Operation *constant, BlobCache<DataCacheKey> &cache,
-                       LLCL::AsyncValueRef<LogicalResult> chain) {
-  auto out = AsyncValueRef<LogicalResult>::allocate(chain.getRuntime());
+AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
+                                            BlobCache<DataCacheKey> &cache,
+                                            AnyAsyncValueRef chain) {
+  auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
   // Hang the actual deflation off the input chain. This will allow users to not
   // worry about sequencing w.r.t. this operation, they can just pass in the
   // chain.
-  chain.andThen([constant, &cache, out = out.copy(), chain = chain.copy()] {
-    if (failed(*chain))
-      return out.emplace(failure());
+  chain->andThen([constant, &cache, out = out.copy(), chain = chain.copy()] {
+    if (chain->isError())
+      return out.setToError(chain->takeDiagnostic());
 
     // Use the replacer strategy to replace "large" attributes with the hashed
     // version.
@@ -107,22 +108,22 @@ Cache::deflateConstant(Operation *constant, BlobCache<DataCacheKey> &cache,
 
     // Do the replacement now.
     replacer.replaceElementsIn(constant);
-    out.emplace(success());
+    out.emplace();
   });
 
   return out;
 }
 
-LLCL::AsyncValueRef<LogicalResult>
-Cache::inflateConstant(Operation *constant, BlobCache<DataCacheKey> &cache,
-                       LLCL::AsyncValueRef<LogicalResult> chain) {
-  auto out = AsyncValueRef<LogicalResult>::allocate(chain.getRuntime());
+AsyncValueRef<Chain> Cache::inflateConstant(Operation *constant,
+                                            BlobCache<DataCacheKey> &cache,
+                                            AnyAsyncValueRef chain) {
+  auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
   // Hang the actual deflation off the input chain. This will allow users to not
   // worry about sequencing w.r.t. this operation, they can just pass in the
   // chain.
-  chain.andThen([constant, &cache, out = out.copy(), chain = chain.copy()] {
-    if (failed(*chain))
-      return out.emplace(failure());
+  chain->andThen([constant, &cache, out = out.copy(), chain = chain.copy()] {
+    if (chain->isError())
+      return out.setToError(chain->takeDiagnostic());
 
     // Use the replacer strategy to replace "large" attributes with the hashed
     // version.
@@ -134,20 +135,22 @@ Cache::inflateConstant(Operation *constant, BlobCache<DataCacheKey> &cache,
       // recoverable. In theory we could continue to append errors, but that
       // could result in an error explosion so this is the safe option for now.
       // We can always re-evaluate.
-      if (out.getPointer()->isReady() && failed(*out))
+      if (out.getPointer()->isReady() && out.isError())
         return nullptr;
 
       // Find the data in the cache.
       auto found = cache.find(cacheAttr.getHash());
       await(found);
       if (found->isError()) {
-        out.emplace(mlir::emitError(constant->getLoc()) << found->getError());
+        out.setToError(
+            getMLIRDiagnostic(found->takeError(), constant->getLoc()));
         return nullptr;
       }
       if (!found->hasValue()) {
-        out.emplace(mlir::emitError(constant->getLoc())
-                    << "hash '" << llvm::encodeBase64(cacheAttr.getHash())
-                    << "' could not be found in the cache");
+        out.setToError(getMLIRDiagnostic(
+            Error("hash '" + llvm::encodeBase64(cacheAttr.getHash()) +
+                  "' could not be found in the cache"),
+            constant->getLoc()));
         return nullptr;
       }
 
@@ -179,7 +182,7 @@ Cache::inflateConstant(Operation *constant, BlobCache<DataCacheKey> &cache,
     // If out has not been set to failure (or something else), then set it to
     // success.
     if (!out.getPointer()->isReady())
-      out.emplace(success());
+      out.emplace();
   });
 
   return out;
@@ -243,7 +246,7 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
 ///  - Unique the references and assign them indices.
 ///  - Replace symbol uses with `cache.symbol_ref`
 ///  - Cache the region.
-static AsyncValueRef<LogicalResult>
+static AsyncValueRef<Chain>
 cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
                   BlobCache<M::Cache::RegionCacheKey> &cache) {
   SmallVector<SymbolRefAttr> symbolReferences;
@@ -304,12 +307,13 @@ cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
 
   // Store it.
   auto hashOr = cache.insert(&container.getBodyRegion(), std::move(bytecode));
-  auto out = AsyncValueRef<LogicalResult>::allocate(hashOr.getRuntime());
+  auto out = AsyncValueRef<Chain>::allocate(hashOr.getRuntime());
   // Keeping references is safe here because all the memory is owned by the
   // MLIRContext, which is guaranteed to live longer than any of this.
   hashOr.andThen([&, hashOr = hashOr.copy(), out = out.copy()] {
-    if (failed(*hashOr))
-      return out.emplace(mlir::emitError(r.getLoc()) << hashOr->getError());
+    if (failed(*hashOr)) {
+      return out.setToError(getMLIRDiagnostic(hashOr->takeError(), r.getLoc()));
+    }
 
     SmallVector<RegionHashAttr> hashVec;
     // If we already have some hashes, we have to append to the end of that
@@ -331,28 +335,26 @@ cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
     // Finally, erase the container.
     container.erase();
 
-    out.emplace(success());
+    out.emplace();
   });
 
   return out;
 }
 
-AsyncValueRef<LogicalResult>
-M::Cache::deflateOp(Operation *symbol, BlobCache<RegionCacheKey> &cache,
-                    AsyncValueRef<LogicalResult> chain) {
-  auto out = AsyncValueRef<LogicalResult>::allocate(chain.getRuntime());
-  // Hang the actual deflation off the input chain. This will allow users to not
-  // worry about sequencing w.r.t. this operation, they can just pass in the
-  // chain.
-  chain.andThen([symbol, &cache, out = out.copy(), chain = chain.copy()] {
-    if (failed(*chain)) {
-      out.emplace(failure());
-      return;
-    }
+AsyncValueRef<Chain> M::Cache::deflateOp(Operation *symbol,
+                                         BlobCache<RegionCacheKey> &cache,
+                                         AnyAsyncValueRef chain) {
+  auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
+  // Hang the actual deflation off the input chain. This will allow users to
+  // not worry about sequencing w.r.t. this operation, they can just pass in
+  // the chain.
+  chain->andThen([symbol, &cache, out = out.copy(), chain = chain.copy()] {
+    if (chain->isError())
+      return out.setToError(chain->takeDiagnostic());
 
     // If the op is already deflated, we're done!
     if (symbol->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName())) {
-      out.emplace(success());
+      out.emplace();
       return;
     }
 
@@ -365,10 +367,10 @@ M::Cache::deflateOp(Operation *symbol, BlobCache<RegionCacheKey> &cache,
     andThenMoving(results,
                   [out = out.copy()](MutableArrayRef<AnyAsyncValueRef> values) {
                     for (auto &v : values)
-                      if (failed(v->get<LogicalResult>()))
-                        return out.emplace(failure());
+                      if (v->isError())
+                        return out.setToError(v->takeDiagnostic());
 
-                    out.emplace(success());
+                    out.emplace();
                   });
   });
 
@@ -376,19 +378,21 @@ M::Cache::deflateOp(Operation *symbol, BlobCache<RegionCacheKey> &cache,
 }
 
 /// Inflate a single region from `regionHash` and have `r` take its body.
-static AsyncValueRef<LogicalResult>
-inflateRegion(Region *r, RegionHashAttr regionHash,
-              BlobCache<RegionCacheKey> &cache) {
-  auto out = AsyncValueRef<LogicalResult>::allocate(cache.getRuntime());
+static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
+                                          BlobCache<RegionCacheKey> &cache) {
+  auto out = AsyncValueRef<Chain>::allocate(cache.getRuntime());
 
   auto foundOr = cache.find(regionHash.getHash());
   foundOr.andThen([r, regionHash, foundOr = foundOr.copy(), out = out.copy()] {
-    if (foundOr->isError())
-      return out.emplace(mlir::emitError(r->getLoc()) << foundOr->getError());
+    if (foundOr->isError()) {
+      return out.setToError(
+          getMLIRDiagnostic(foundOr->takeError(), r->getLoc()));
+    }
     if (!foundOr->hasValue()) {
-      return out.emplace(mlir::emitError(r->getLoc())
-                         << "hash '" << llvm::encodeBase64(regionHash.getHash())
-                         << "' could not be found in the cache");
+      return out.setToError(getMLIRDiagnostic(
+          Error("hash '" + llvm::encodeBase64(regionHash.getHash()) +
+                "' could not be found in the cache"),
+          r->getLoc()));
     }
 
     // Parse the bytecode for the region.
@@ -402,8 +406,11 @@ inflateRegion(Region *r, RegionHashAttr regionHash,
     Block b;
     if (failed(mlir::readBytecodeFile(
             *bytecode, &b,
-            mlir::ParserConfig(r->getContext(), /*verifyAfterParse=*/false))))
-      return out.emplace(failure());
+            mlir::ParserConfig(r->getContext(),
+                               /*verifyAfterParse=*/false)))) {
+      return out.setToError(getMLIRDiagnostic(
+          Error("reading bytecode file failed"), r->getLoc()));
+    }
 
     // Get the container and take its body.
     ContainerOp container = cast<ContainerOp>(b.front());
@@ -418,42 +425,45 @@ inflateRegion(Region *r, RegionHashAttr regionHash,
       return regionHash.getHashes()[hashRef.getIndex()];
     });
     r->walk([&](Operation *op) { replacer.replaceElementsIn(op); });
-    out.emplace(success());
+    out.emplace();
   });
 
   return out;
 }
 
-AsyncValueRef<LogicalResult>
-M::Cache::inflateOp(Operation *cached, BlobCache<RegionCacheKey> &cache,
-                    AsyncValueRef<LogicalResult> chain) {
-  auto out = AsyncValueRef<LogicalResult>::allocate(cache.getRuntime());
+AsyncValueRef<Chain> M::Cache::inflateOp(Operation *cached,
+                                         BlobCache<RegionCacheKey> &cache,
+                                         AnyAsyncValueRef chain) {
+  auto out = AsyncValueRef<Chain>::allocate(cache.getRuntime());
 
   // Hang the inflation off the input chain.
-  chain.andThen([cached, &cache, chain = chain.copy(), out = out.copy()] {
+  chain->andThen([cached, &cache, chain = chain.copy(), out = out.copy()] {
+    if (chain->isError())
+      return out.setToError(chain->takeDiagnostic());
+
     auto hashes =
         cached->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
     // If the op doesn't have any region hashes on it, we're done.
     if (!hashes)
-      return out.emplace(success());
+      return out.emplace();
 
     // Fill in the regions on the operation.
     SmallVector<AnyAsyncValueRef> results;
     for (auto [regionHash, region] : llvm::zip(hashes, cached->getRegions()))
       results.push_back(inflateRegion(&region, regionHash, cache));
 
-    // Once all the regions are cached, remove the region hash attr and resolve
-    // success/failure.
+    // Once all the regions are cached, remove the region hash attr and
+    // resolve success/failure.
     andThenMoving(results, [cached, out = out.copy()](
                                MutableArrayRef<AnyAsyncValueRef> values) {
       for (auto &v : values)
-        if (failed(v->get<LogicalResult>()))
-          return out.emplace(failure());
+        if (v->isError())
+          return out.setToError(v->takeDiagnostic());
 
       // Remove the region hash attr.
       cached->removeAttr(getRegionHashAttrName());
       // Done!
-      out.emplace(success());
+      out.emplace();
     });
   });
 

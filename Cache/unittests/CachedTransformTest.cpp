@@ -93,7 +93,7 @@ TEST(CachedTransformTest, CacheHits) {
   // We have to inflate the func now.
   auto inflate = inflateOp(*module1, regionCache, std::move(xform));
   await(inflate);
-  EXPECT_TRUE(succeeded(*inflate));
+  EXPECT_FALSE(inflate.isError());
   auto func = module1->lookupSymbol<func::FuncOp>("someFunc");
   auto returnOp =
       cast<func::ReturnOp>(func.getFunctionBody().front().getTerminator());
@@ -114,7 +114,7 @@ TEST(CachedTransformTest, CacheHits) {
   // We have to inflate the func now.
   inflate = inflateOp(*module2, regionCache, std::move(xform));
   await(inflate);
-  EXPECT_TRUE(succeeded(*inflate));
+  EXPECT_FALSE(inflate.isError());
   auto func2 = module2->lookupSymbol<func::FuncOp>("someFunc");
   returnOp =
       cast<func::ReturnOp>(func2.getFunctionBody().front().getTerminator());
@@ -130,7 +130,7 @@ TEST(CachedTransformTest, CacheHits) {
   // We have to inflate the func now to check the result...
   inflate = inflateOp(*module2, regionCache, std::move(xform));
   await(inflate);
-  EXPECT_TRUE(succeeded(*inflate));
+  EXPECT_FALSE(inflate.isError());
   func2 = module2->lookupSymbol<func::FuncOp>("someFunc");
   returnOp =
       cast<func::ReturnOp>(func2.getFunctionBody().front().getTerminator());

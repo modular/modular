@@ -10,6 +10,7 @@
 #include "Cache/BlobCache.h"
 #include "Cache/Buffer.h"
 #include "Cache/CacheDialect/CacheAttrs.h"
+#include "LLCL/Support/Chain.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "mlir/IR/OpDefinition.h"
@@ -24,13 +25,13 @@ struct DataCacheKey {
   static std::string hashKey(KeyTy key);
 };
 
-LLCL::AsyncValueRef<LogicalResult>
-deflateConstant(Operation *constant, BlobCache<DataCacheKey> &cache,
-                LLCL::AsyncValueRef<LogicalResult> chain);
+LLCL::AsyncValueRef<LLCL::Chain> deflateConstant(Operation *constant,
+                                                 BlobCache<DataCacheKey> &cache,
+                                                 LLCL::AnyAsyncValueRef chain);
 
-LLCL::AsyncValueRef<LogicalResult>
-inflateConstant(Operation *constant, BlobCache<DataCacheKey> &cache,
-                LLCL::AsyncValueRef<LogicalResult> chain);
+LLCL::AsyncValueRef<LLCL::Chain> inflateConstant(Operation *constant,
+                                                 BlobCache<DataCacheKey> &cache,
+                                                 LLCL::AnyAsyncValueRef chain);
 
 /// The Cache dialect can store the region of an op - this struct defines the
 /// cache key. It can be a region (indicating that we need to hash the region)
@@ -47,18 +48,18 @@ inline llvm::StringLiteral getRegionHashAttrName() { return "region_hashes"; }
 /// and storing it in the cache. If the operation is already deflated this is a
 /// no-op. The deflation is implemented as an `andThen` on `chain` - this is to
 /// simplify calling code which is also likely async.
-LLCL::AsyncValueRef<LogicalResult>
-deflateOp(Operation *symbol, BlobCache<RegionCacheKey> &cache,
-          LLCL::AsyncValueRef<LogicalResult> chain);
+LLCL::AsyncValueRef<LLCL::Chain> deflateOp(Operation *symbol,
+                                           BlobCache<RegionCacheKey> &cache,
+                                           LLCL::AnyAsyncValueRef chain);
 
 /// This function allows the user to inflate a cached op into its original
 /// form by pulling the regions attached to it from the cache and re-attaching
 /// them to the op. If the op is not deflated, this is a no-op. The inflation is
 /// implemented as an `andThen` on `chain` - this is to simplify calling code
 /// which is also likely async.
-LLCL::AsyncValueRef<LogicalResult>
-inflateOp(Operation *cached, BlobCache<RegionCacheKey> &cache,
-          LLCL::AsyncValueRef<LogicalResult> chain);
+LLCL::AsyncValueRef<LLCL::Chain> inflateOp(Operation *cached,
+                                           BlobCache<RegionCacheKey> &cache,
+                                           LLCL::AnyAsyncValueRef chain);
 } // namespace M::Cache
 
 //===----------------------------------------------------------------------===//
