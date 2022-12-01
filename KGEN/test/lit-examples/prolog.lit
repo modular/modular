@@ -375,10 +375,10 @@ struct Scalar[type: DType]:
 # CHECK-LABEL: kgen.struct.decl @SIMD<size, type: dtype> {
 struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
   # CHECK: kgen.struct.field value : !pop.simd<size, type>
-  var value: __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[size, type]
+  var value: __mlir_type.`!pop.simd<#kgen<litplaceholder index>, #kgen<litplaceholder !kgen.dtype>>`[size, type]
 
   # CHECK-LABEL:  lit.func @__new__(%value: !pop.simd<size, type>) -> !kgen.declref<@SIMD<size = size, type: dtype = type>> attributes {isStatic}
-  fn __new__(value: __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[size, type]) -> SIMD[size, type]:
+  fn __new__(value: __mlir_type.`!pop.simd<#kgen<litplaceholder index>, #kgen<litplaceholder !kgen.dtype>>`[size, type]) -> SIMD[size, type]:
     # CHECK: %0 = kgen.struct.create(%value) : (!pop.simd<size, type>) -> !kgen.declref<@SIMD<size = size, type: dtype = type>>
     # CHECK: kgen.return %0
     return __mlir_op.`kgen.struct.create`[_type: SIMD[size, type]](value)
@@ -388,8 +388,8 @@ struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
   fn getFP(value: __mlir_type.f64) -> SIMD[size, type]:
     # TODO: should be 'let' declarations to reduce IR size.
     var pop = __mlir_op.`pop.cast_from_builtin`[_type: __mlir_type.`!pop.scalar<f64>`](value)
-    var popCast = __mlir_op.`pop.cast`[_type: __mlir_type.`!pop.simd<1, #lit<placeholder !kgen.dtype>>`[type]](pop)
-    var result = __mlir_op.`pop.simd.splat`[_type: __mlir_type.`!pop.simd<#lit<placeholder index>, #lit<placeholder !kgen.dtype>>`[size, type]](popCast)
+    var popCast = __mlir_op.`pop.cast`[_type: __mlir_type.`!pop.simd<1, #kgen<litplaceholder !kgen.dtype>>`[type]](pop)
+    var result = __mlir_op.`pop.simd.splat`[_type: __mlir_type.`!pop.simd<#kgen<litplaceholder index>, #kgen<litplaceholder !kgen.dtype>>`[size, type]](popCast)
     return __mlir_op.`kgen.struct.create`[_type: SIMD[size, type]](result)
 
   # CHECK-LABEL: lit.func @__add__(%self: !kgen.declref<@SIMD<size = size, type: dtype = type>>,
@@ -415,7 +415,7 @@ struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
   # fn __pow__(self, rhs: F32) -> F32: # TODO: Implement this
 
 #  @staticmethod
-#  fn _getBool(value: __mlir_type.`!pop.simd<#lit<placeholder index>, bool>`[size])
+#  fn _getBool(value: __mlir_type.`!pop.simd<#kgen<litplaceholder index>, bool>`[size])
 #     -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:#
 #    return Bool(__mlir_op.`pop.cast_to_builtin`[_type: __mlir_type.i1](tmp))
 
@@ -503,9 +503,9 @@ struct Error:
         return result
 
 struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
-    var value: __mlir_type.`!pop.variant<@Error, #lit<placeholder !kgen.mlirtype>>`[type]
+    var value: __mlir_type.`!pop.variant<@Error, #kgen<litplaceholder !kgen.mlirtype>>`[type]
 
-    fn __new__(value: __mlir_type.`!pop.variant<@Error, #lit<placeholder !kgen.mlirtype>>`[type]) -> ErrorOr[type]:
+    fn __new__(value: __mlir_type.`!pop.variant<@Error, #kgen<litplaceholder !kgen.mlirtype>>`[type]) -> ErrorOr[type]:
         var result: ErrorOr[type]
         result.value = value
         return result
@@ -513,20 +513,20 @@ struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
     @staticmethod
     fn fromError(err: Error) -> ErrorOr[type]:
         var result: ErrorOr[type]
-        result.value = __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, #lit<placeholder !kgen.mlirtype>>`[type]](err)
+        result.value = __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, #kgen<litplaceholder !kgen.mlirtype>>`[type]](err)
         return result
 
     @staticmethod
-    fn fromValue(value: __mlir_type.`!kgen.paramref<#lit<placeholder !kgen.mlirtype>>`[type]) -> ErrorOr[type]:
+    fn fromValue(value: __mlir_type.`!kgen.paramref<#kgen<litplaceholder !kgen.mlirtype>>`[type]) -> ErrorOr[type]:
         var result: ErrorOr[type]
-        result.value = __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, #lit<placeholder !kgen.mlirtype>>`[type]](value)
+        result.value = __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, #kgen<litplaceholder !kgen.mlirtype>>`[type]](value)
         return result
 
     fn __bool__(self: ErrorOr[type]) -> Bool:
         return Bool.false() if Bool(__mlir_op.`pop.variant.is`[testType: __mlir_attr.`!kgen.declref<@Error>`](self.value)) else Bool.true()
 
-    fn getValue(self: ErrorOr[type]) -> __mlir_type.`!kgen.paramref<#lit<placeholder !kgen.mlirtype>>`[type]:
-        return __mlir_op.`pop.variant.get`[_type: __mlir_type.`!kgen.paramref<#lit<placeholder !kgen.mlirtype>>`[type]](self.value)
+    fn getValue(self: ErrorOr[type]) -> __mlir_type.`!kgen.paramref<#kgen<litplaceholder !kgen.mlirtype>>`[type]:
+        return __mlir_op.`pop.variant.get`[_type: __mlir_type.`!kgen.paramref<#kgen<litplaceholder !kgen.mlirtype>>`[type]](self.value)
 
     fn getError(self: ErrorOr[type]) -> Error:
         return __mlir_op.`pop.variant.get`[_type: Error](self.value)
