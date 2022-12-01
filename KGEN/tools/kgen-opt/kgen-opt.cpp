@@ -8,6 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Cache/CacheDialect/CacheDialect.h"
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENPasses.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -30,9 +31,9 @@ int main(int argc, char **argv) {
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
-  registry.insert<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
-                  mlir::index::IndexDialect, mlir::LLVM::LLVMDialect,
-                  mlir::scf::SCFDialect>();
+  registry.insert<DebugInfo::DebugInfoDialect, Cache::CacheDialect,
+                  HLCF::HLCFDialect, mlir::index::IndexDialect,
+                  mlir::LLVM::LLVMDialect, mlir::scf::SCFDialect>();
   // The elaborator requires LLVM lowering to run the generated functions.
   mlir::registerLLVMDialectTranslation(registry);
 

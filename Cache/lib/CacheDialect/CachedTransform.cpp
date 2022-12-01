@@ -65,16 +65,12 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
                       /*passthrough*/ keyBuffer = std::move(keyBuffer),
                       out = out.copy(), cacheHit = cacheHit.copy()]() mutable {
       // If there was an error, nothing we can do.
-      if (cacheHit->isError()) {
-        out.emplace(mlir::emitError(target->getLoc()) << cacheHit->getError());
-        return;
-      }
+      if (cacheHit->isError())
+        return out.emplace(target->emitError() << cacheHit->getError());
 
       // Cache hit, we're done!
-      if (cacheHit->hasValue()) {
-        out.emplace(success());
-        return;
-      }
+      if (cacheHit->hasValue())
+        return out.emplace(success());
 
       // No error but no cache hit.
 
