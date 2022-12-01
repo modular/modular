@@ -219,7 +219,7 @@ def LITTryRaiseOp : LITOp<"try.raise", [Terminator,
     propagate an error to the except region.
   }];
 
-  let arguments = (ins DeclRefType:$error);
+  let arguments = (ins AnyTypeOf<[DeclRefType, POP_StructType]>:$error);
   let assemblyFormat = "$error attr-dict `:` type($error)";
 }
 

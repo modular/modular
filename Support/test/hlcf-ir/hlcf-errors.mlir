@@ -8,17 +8,6 @@ func.func @hlcf_parent_op() {
 
 // -----
 
-func.func @hlcf_terminator_op() {
-  // expected-error @below {{'hlcf.loop' op expected terminator without successors to be a control-flow terminator but got 'foo.terminator'}}
-  hlcf.loop {
-    // expected-note @below {{see invalid terminator here}}
-    "foo.terminator"() : () -> ()
-  }
-  return
-}
-
-// -----
-
 func.func @loop_args() {
   // expected-error @below {{'hlcf.loop' op operand types do not match body region argument types}}
   "hlcf.loop"() ({

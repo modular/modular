@@ -166,18 +166,8 @@ LogicalResult ControlFlowConverter::lowerTerminator(ControlFlowTerminator term,
   }
 
   // Rewrite the terminator.
-  if (isa<ReturnOp>(term)) {
-    if (term->getNumOperands() <= 1) {
-      b.replaceOpWithNewOp<LLVM::ReturnOp>(term, results);
-      return success();
-    }
-    Type packType = typeConverter.packFunctionResults(term->getOperandTypes());
-    Value pack = b.create<LLVM::UndefOp>(term->getLoc(), packType);
-    for (auto [idx, value] : llvm::enumerate(results))
-      pack = b.create<LLVM::InsertValueOp>(term->getLoc(), pack, value, idx);
-    b.replaceOpWithNewOp<LLVM::ReturnOp>(term, pack);
-    return success();
-  }
+  if (isa<ReturnOp>(term))
+    return lowerReturnOperationToLLVM(term, results, b, typeConverter);
 
   assert(termId < tree.targets.size() && "malformed tree");
   auto &[nodeId, target] = tree.targets[termId];
@@ -222,6 +212,31 @@ HLCF::lowerControlFlowToLLVM(Operation *op, mlir::AnalysisManager mgr,
     if (failed(lowerControlFlowTree(root, tree, typeConverter)))
       return failure();
   }
+  return success();
+}
+
+LogicalResult
+HLCF::lowerReturnOperationToLLVM(Operation *op, ValueRange operands,
+                                 mlir::RewriterBase &rewriter,
+                                 mlir::LLVMTypeConverter &typeConverter) {
+  // If the results don't need to be packed, create the LLVM return.
+  if (op->getNumOperands() <= 1) {
+    rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, TypeRange(), operands);
+    return success();
+  }
+
+  // Pack the function results in a struct.
+  Type type = typeConverter.packFunctionResults(op->getOperandTypes());
+  if (!type)
+    return emitError(op->getLoc(), "failed to convert return types");
+  Value result = rewriter.create<LLVM::UndefOp>(op->getLoc(), type);
+  for (auto &it : llvm::enumerate(operands)) {
+    result = rewriter.create<LLVM::InsertValueOp>(op->getLoc(), result,
+                                                  it.value(), it.index());
+  }
+
+  // Create the LLVM return.
+  rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, result);
   return success();
 }
 

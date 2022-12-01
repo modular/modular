@@ -10,6 +10,7 @@
 include "Support/HLCFDialect/HLCFDialect.td"
 include "Support/HLCFDialect/HLCFInterfaces.td"
 include "mlir/IR/OpBase.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 //===----------------------------------------------------------------------===//
@@ -261,7 +262,7 @@ def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure, HasParent<"IfOp">]> {
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-def HLCF_ReturnOp : HLCFTerminatorOp<"return"> {
+def HLCF_ReturnOp : HLCFTerminatorOp<"return", [ReturnLike]> {
   let summary = "function return operation";
   let description = [{
     The `hlcf.return` operation is a control-flow operation that transfers
@@ -288,6 +289,8 @@ def HLCF_ReturnOp : HLCFTerminatorOp<"return"> {
     control-flow edge from this operation will always escape the parent
     operation; it can never be nested directly below functions.
   }];
+
+  let hasVerifier = 1;
 }
 
 #endif // HLCFOPS_TD

@@ -18,6 +18,7 @@
 namespace mlir {
 class AnalysisManager;
 class LLVMTypeConverter;
+class RewriterBase;
 } // namespace mlir
 
 namespace M::HLCF {
@@ -25,6 +26,12 @@ namespace M::HLCF {
 /// LLVM, given the top-level analysis manager.
 LogicalResult lowerControlFlowToLLVM(Operation *op, mlir::AnalysisManager mgr,
                                      mlir::LLVMTypeConverter &typeConverter);
+
+/// Lower a return-like operation to LLVM, packing the results if necessary.
+LogicalResult
+lowerReturnOperationToLLVM(Operation *op, ValueRange operands,
+                           mlir::RewriterBase &rewriter,
+                           mlir::LLVMTypeConverter &typeConverter);
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations

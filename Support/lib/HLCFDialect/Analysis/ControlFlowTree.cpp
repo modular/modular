@@ -26,7 +26,7 @@ void ControlFlowTree::buildTree(ControlFlowNode node, unsigned &nodeId,
   for (Region &region : node->getRegions()) {
     for (Block &block : region) {
       auto terminator = dyn_cast<ControlFlowTerminator>(block.getTerminator());
-      if (!terminator || isa<ReturnOp>(terminator))
+      if (!terminator || terminator->hasTrait<mlir::OpTrait::ReturnLike>())
         continue;
 
       Optional<unsigned> nodeId;

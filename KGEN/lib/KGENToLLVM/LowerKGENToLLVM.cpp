@@ -13,6 +13,8 @@
 #include "LLVMLoweringUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
+#include "Support/HLCFDialect/HLCFOps.h"
+#include "Support/HLCFToLLVM/HLCFToLLVM.h"
 #include "Support/ML/DType.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -190,26 +192,24 @@ struct ConvertKGENReturn : public mlir::ConvertOpToLLVMPattern<ReturnOp> {
   LogicalResult
   matchAndRewrite(ReturnOp op, ReturnOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    // If the results don't need to be packed, create the LLVM return.
-    if (op.getNumOperands() <= 1) {
-      rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, TypeRange(),
-                                                  adaptor.getOperands());
-      return success();
-    }
+    return HLCF::lowerReturnOperationToLLVM(op, adaptor.getOperands(), rewriter,
+                                            *getTypeConverter());
+  }
+};
 
-    // Pack the function results in a struct.
-    Type type = getTypeConverter()->packFunctionResults(op.getOperandTypes());
-    if (!type)
-      return emitError(op.getLoc(), "failed to convert return types");
-    Value result = rewriter.create<LLVM::UndefOp>(op.getLoc(), type);
-    for (auto &it : llvm::enumerate(adaptor.getOperands())) {
-      result = rewriter.create<LLVM::InsertValueOp>(op.getLoc(), result,
-                                                    it.value(), it.index());
-    }
+//===----------------------------------------------------------------------===//
+// ConvertHLCFReturn
+//===----------------------------------------------------------------------===//
 
-    // Create the LLVM return.
-    rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, result);
-    return success();
+/// Convert `hlcf.return` here as well to maintain correctness.
+struct ConvertHLCFReturn : public mlir::ConvertOpToLLVMPattern<HLCF::ReturnOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(HLCF::ReturnOp op, HLCF::ReturnOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    return HLCF::lowerReturnOperationToLLVM(op, adaptor.getOperands(), rewriter,
+                                            *getTypeConverter());
   }
 };
 
@@ -261,7 +261,8 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENExternFunc,
       ConvertKGENExternVariable,
       ConvertKGENParamConstant,
-      ConvertKGENReturn
+      ConvertKGENReturn,
+      ConvertHLCFReturn
       // clang-format on
       >(typeConverter);
   // Just remove ExportOps.
@@ -375,7 +376,9 @@ static void rewriteCallingConventionInPlace(LLVM::LLVMFuncOp func) {
   // Flatten the results if necessary at all the return points.
   if (auto structTy = dyn_cast<LLVM::LLVMStructType>(resultTy)) {
     resultTy = LLVM::LLVMVoidType::get(func.getContext());
-    for (auto ret : llvm::make_early_inc_range(func.getOps<LLVM::ReturnOp>())) {
+    SmallVector<LLVM::ReturnOp> returns;
+    func.walk([&](LLVM::ReturnOp ret) { returns.push_back(ret); });
+    for (LLVM::ReturnOp ret : returns) {
       ImplicitLocOpBuilder b(ret.getLoc(), ret);
       unsigned idx = 0;
       flattenResultStruct(b, structTy, ret.getOperand(0), results, idx);

@@ -172,6 +172,35 @@ void ReturnOp::getBranchTargets(ArrayRef<Attribute> operands,
   targets.emplace_back(None, getOperands());
 }
 
+/// Verify two type ranges match between a return operation and a function.
+static LogicalResult verifyReturnTypes(TypeRange lhs, TypeRange rhs,
+                                       Operation *op, Operation *parent) {
+  if (lhs.size() != rhs.size()) {
+    return (op->emitOpError("specifies ")
+            << lhs.size() << " results but surrounding function expects "
+            << rhs.size())
+               .attachNote(parent->getLoc())
+           << "see function here";
+  }
+  for (auto [idx, lhsType, rhsType] :
+       llvm::zip(llvm::seq<unsigned>(0, lhs.size()), lhs, rhs)) {
+    if (lhsType == rhsType)
+      continue;
+    return (op->emitOpError("operand #")
+            << idx << " type " << lhsType
+            << " does not match expected result type " << rhsType)
+               .attachNote(parent->getLoc())
+           << "see function here";
+  }
+  return success();
+}
+
+LogicalResult ReturnOp::verify() {
+  auto function = (*this)->getParentOfType<mlir::FunctionOpInterface>();
+  return verifyReturnTypes(getOperandTypes(), function.getResultTypes(), *this,
+                           function);
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

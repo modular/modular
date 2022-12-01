@@ -44,29 +44,6 @@ private:
 };
 } // namespace
 
-/// Verify two type ranges match between a return operation and a function.
-static LogicalResult verifyReturnTypes(TypeRange lhs, TypeRange rhs,
-                                       Operation *op, Operation *parent) {
-  if (lhs.size() != rhs.size()) {
-    return (op->emitOpError("specifies ")
-            << lhs.size() << " results but surrounding function expects "
-            << rhs.size())
-               .attachNote(parent->getLoc())
-           << "see function here";
-  }
-  for (auto [idx, lhsType, rhsType] :
-       llvm::zip(llvm::seq<unsigned>(0, lhs.size()), lhs, rhs)) {
-    if (lhsType == rhsType)
-      continue;
-    return (op->emitOpError("operand #")
-            << idx << " type " << lhsType
-            << " does not match expected result type " << rhsType)
-               .attachNote(parent->getLoc())
-           << "see function here";
-  }
-  return success();
-}
-
 /// Verify two type ranges match along a control-flow edge.
 static LogicalResult verifyTypesAlongEdge(TypeRange lhs, TypeRange rhs,
                                           Operation *op, Operation *parent,
@@ -107,19 +84,13 @@ ControlFlowVerifier::findNearestParentFor(ControlFlowTerminator op) {
 
 LogicalResult ControlFlowVerifier::verifyTerminator(ControlFlowTerminator op) {
   // Returns are modelled differently. Handle them here.
-  if (isa<ReturnOp>(op)) {
-    auto function = dyn_cast<mlir::FunctionOpInterface>(root);
-    if (!function) {
+  if (op->hasTrait<mlir::OpTrait::ReturnLike>()) {
+    if (!isa<mlir::FunctionOpInterface>(root)) {
       return op->emitOpError("is not nested within a function")
                  .attachNote(root->getLoc())
              << "see control-flow root here";
     }
-    // FIXME: LLVM functions with no results return `LLVMVoidType`. Let
-    // verifications fall through here so that HLCF lowerings can be composed.
-    if (function->getName().getStringRef() == "llvm.func")
-      return success();
-    return verifyReturnTypes(op->getOperandTypes(), function.getResultTypes(),
-                             op, function);
+    return success();
   }
 
   ControlFlowNode parent = findNearestParentFor(op);
@@ -179,25 +150,14 @@ LogicalResult ControlFlowVerifier::verifyIfRoot(Operation *op) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult HLCF::verifyControlFlowNode(ControlFlowNode op) {
-  // Verify that all immediate terminators without successors are HLCF
-  // terminators.
+  // Verify that there are no empty regions or blocks.
   for (Region &region : op->getRegions()) {
     if (region.empty())
       return op->emitOpError("unexpected empty region #")
              << region.getRegionNumber();
-    for (Block &block : region) {
+    for (Block &block : region)
       if (block.empty())
         return op->emitOpError("unexpected empty block");
-      Operation *terminator = block.getTerminator();
-      if (!terminator->getNumSuccessors() &&
-          !isa<ControlFlowTerminator>(terminator)) {
-        return (op->emitOpError("expected terminator without successors to be "
-                                "a control-flow terminator but got '")
-                << terminator->getName() << "'")
-                   .attachNote(terminator->getLoc())
-               << "see invalid terminator here";
-      }
-    }
   }
 
   // If this operation is a root, verify the tree starting from here.
