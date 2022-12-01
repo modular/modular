@@ -15,7 +15,7 @@
 #include "KGEN/KGENDialect/KGENDeclInterface.h"
 #include "KGEN/LITDialect/LITDialect.h"
 #include "KGEN/LITDialect/LITTypes.h"
-#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/HLCFDialect/HLCFInterfaces.h"
 #include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"

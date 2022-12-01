@@ -164,8 +164,53 @@ LogicalResult LITTryOp::verify() {
   return success();
 }
 
+void LITTryOp::getEntryTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.empty());
+  targets.emplace_back(0);
+}
+
+ValueRange LITTryOp::getEntryArguments(Optional<unsigned> target) {
+  if (!target)
+    return {};
+  return getRegion(*target).getArguments();
+}
+
 //===----------------------------------------------------------------------===//
-// TableGen generated logic.
+// LITTryYieldOp
+//===----------------------------------------------------------------------===//
+
+bool LITTryYieldOp::isParentNode(Operation *op) { return isa<LITTryOp>(op); }
+
+void LITTryYieldOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  Region *region = (*this)->getParentRegion();
+  // Figure out which region this yield is in.
+  if (!isa<LITTryOp>(region->getParentOp()))
+    region = region->getParentRegion();
+
+  // The region indices of the try operation.
+  enum { TRY, EXCEPT, ELSE };
+  switch (region->getRegionNumber()) {
+  case TRY:
+    // Yield from the 'try' region branches to the 'else' region.
+    targets.emplace_back(ELSE);
+    break;
+  case EXCEPT:
+  case ELSE:
+    // Yield from either the 'except' or 'else' regions branches back to the
+    // parent operation.
+    targets.emplace_back(None);
+    break;
+  default:
+    llvm_unreachable("unknown lit.try region");
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// VarDeclOp
 //===----------------------------------------------------------------------===//
 
 void VarDeclOp::getAsmResultNames(

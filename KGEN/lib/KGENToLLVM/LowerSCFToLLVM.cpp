@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENPasses.h"
-
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
@@ -15,6 +14,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/RegionUtils.h"
 
 using namespace M;
 using namespace KGEN;
@@ -502,6 +502,22 @@ struct LowerSCFToLLVMPass
 } // namespace
 
 void LowerSCFToLLVMPass::runOnOperation() {
+  // Set LLVM lowering options.
+  mlir::LowerToLLVMOptions options(&getContext());
+  if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
+    options.overrideIndexBitwidth(indexBitwidth);
+  POPToLLVMTypeConverter typeConverter(getOperation()->getLoc(), options);
+
+  // Run HLCF lowerings.
+  if (failed(HLCF::lowerControlFlowToLLVM(getOperation(), getAnalysisManager(),
+                                          typeConverter)))
+    return signalPassFailure();
+
+  // Erase unreachable blocks that might arise during HLCF lowering or else
+  // dialect conversion will complain.
+  mlir::IRRewriter rewriter(&getContext());
+  (void)mlir::eraseUnreachableBlocks(rewriter, getOperation()->getRegions());
+
   // Configure dialect conversion.
   mlir::ConversionTarget target(getContext());
 
@@ -514,17 +530,6 @@ void LowerSCFToLLVMPass::runOnOperation() {
 
   target.addLegalDialect<mlir::LLVM::LLVMDialect>();
   target.addLegalOp<mlir::UnrealizedConversionCastOp>();
-
-  // Set LLVM lowering options.
-  mlir::LowerToLLVMOptions options(&getContext());
-  if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
-    options.overrideIndexBitwidth(indexBitwidth);
-  POPToLLVMTypeConverter typeConverter(getOperation()->getLoc(), options);
-
-  // Run HLCF lowerings.
-  if (failed(HLCF::lowerControlFlowToLLVM(getOperation(), getAnalysisManager(),
-                                          typeConverter)))
-    return signalPassFailure();
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
