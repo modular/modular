@@ -87,7 +87,7 @@ ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
   auto structOp = cast<StructDeclOp>(*this);
 
   SmallVector<ParamBindAttr> parameters;
-  for (auto decl : structOp.getParamDecls()) {
+  for (auto decl : structOp.getInputParamDecls()) {
     // We're using the parameter from the type declaration scope in the
     // parameter binding list.
     TypedAttr ref = ParamDeclRefAttr::get(decl.getName(), decl.getType());
@@ -571,7 +571,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
   // TODO: Generalize this to support nested structs and functions.
   if (auto structDecl = dyn_cast<StructDeclOp>(*decl.getParentDecl())) {
     auto parentLoc = decl.getParentDecl()->getLoc();
-    for (auto param : structDecl.getParamDecls()) {
+    for (auto param : structDecl.getInputParamDecls()) {
       auto paramRef = ParamDeclRefAttr::get(param.getName(), param.getType());
       addFullyResolvedDecl(MValue(paramRef), param.getName(), parentLoc, &decl);
     }
@@ -649,9 +649,10 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
 
   auto builder = decl.getDeclEndBuilder();
   funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(paramNames));
-  funcOp.setType(builder.getFunctionType(paramTypes, {resultType.mlirType}));
-  funcOp.setParamDeclsAttr(
-      builder.getAttr<ParamDeclArrayAttr>(metaSignature.inputDecls));
+  funcOp.setSignature(SignatureType::get(
+      builder.getAttr<ParamDeclArrayAttr>(metaSignature.inputDecls),
+      builder.getAttr<TypeArrayAttr>(/*TODO: result params*/ ArrayRef<Type>()),
+      builder.getFunctionType(paramTypes, {resultType.mlirType})));
   funcOp.getBody()->addArguments(paramTypes, paramLocs);
 
   if (FlatSymbolRefAttr implementsAttr = funcOp.getImplementsAttr()) {
@@ -905,8 +906,12 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
     return failure();
 
-  structOp.setParamDeclsAttr(
-      ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls));
+  structOp.setSignature(SignatureType::get(
+      ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls),
+      // Never has result params.
+      TypeArrayAttr::get(getContext(), {}),
+      // No value arguments.
+      FunctionType::get(getContext(), {}, {})));
 
   // Add the meta parameters to the struct's symbol table.
   metaSignature.addToScope(sharedState, decl);

@@ -178,7 +178,11 @@ def SignatureType
                  values);
     }]>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>,
-    TypeBuilderWithInferredContext<(ins "FunctionType":$values)>
+    TypeBuilderWithInferredContext<(ins "FunctionType":$values)>,
+    TypeBuilderWithInferredContext<(ins "ParamDeclArrayAttr":$inputParams), [{
+       return get(inputParams, TypeArrayAttr::get(inputParams.getContext(), {}),
+        FunctionType::get(inputParams.getContext(), {}, {}));
+     }]>
   ];
 
   let extraClassDeclaration = [{

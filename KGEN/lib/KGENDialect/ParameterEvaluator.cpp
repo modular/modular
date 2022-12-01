@@ -222,7 +222,7 @@ LogicalResult KGEN::evaluateConstraints(
   // Otherwise, we have constraints to evaluate.  Bind each of the input
   // parameter names.
   ParameterEvaluator evaluator(&symtab);
-  auto inputParamDecls = decl.getParamDeclsAttr();
+  auto inputParamDecls = decl.getInputParamDeclsAttr();
   assert(inputParamDecls.size() == inputParamValues.size() &&
          "incorrect number of input parameters");
   for (auto [paramDecl, value] : llvm::zip(inputParamDecls, inputParamValues))

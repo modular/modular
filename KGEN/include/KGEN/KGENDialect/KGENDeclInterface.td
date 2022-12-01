@@ -32,37 +32,74 @@ def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
 
     InterfaceMethod<[{
       Return the parameter + SSA value signature.
-    }], "SignatureType", "getSignature", (ins), [{}], [{
-      return SignatureType::get($_op.getParamDeclsAttr(),
-                                $_op.getResultParamTypesAttr(),
-                                $_op.getFunctionType());
-    }]>,
+    }], "SignatureType", "getSignature", (ins)>,
+    InterfaceMethod<[{
+      Change the signature for this declaration.  Note that this is dangerous!
+    }], "void", "setSignature", (ins "SignatureType":$type)>,
 
     InterfaceMethod<[{
       Return the parameter + SSA value signature including contextual parameters.
-    }], "SignatureType", "getFullSignature", (ins), [{}], [{
+    }], "SignatureType", "getFullSignature", (ins), [{
+      return KGEN::getFullSignature($_op);
+    }], [{
       return KGEN::getFullSignature($_op);
     }]>,
 
     // Normal arguments and results.
     InterfaceMethod<[{
       Return the FunctionType for input/result SSA values.
-    }], "mlir::FunctionType", "getFunctionType">,
+    }], "mlir::FunctionType", "getFunctionType", (ins), [{}], [{
+      return $_op.getSignature().getValues();
+    }]>,
+    InterfaceMethod<[{
+      Return the FunctionType as an attribute for input/result SSA values.
+    }], "mlir::TypeAttr", "getFunctionTypeAttr", (ins), [{}], [{
+      return TypeAttr::get($_op.getFunctionType());
+    }]>,
+
+    InterfaceMethod<[{
+      Returns the argument types of this declaration.
+    }], "ArrayRef<Type>", "getArgumentTypes", (ins), [{
+      return $_op.getSignature().getValues().getInputs();
+    }], [{
+      return $_op.getSignature().getValues().getInputs();
+    }]>,
+
+    InterfaceMethod<[{
+      Returns the result types of this declaration.
+    }], "ArrayRef<Type>", "getResultTypes", (ins), [{
+      return $_op.getSignature().getValues().getResults();
+    }], [{
+      return $_op.getSignature().getValues().getResults();
+    }]>,
 
     /// Parameters.
     InterfaceMethod<[{
       Return the input parameter declarations live in the decl body.
-    }], "ParamDeclArrayAttr", "getParamDeclsAttr">,
+    }], "ParamDeclArrayAttr", "getInputParamDeclsAttr", (ins), [{
+      return $_op.getSignature().getInputParams();
+    }], [{
+      return $_op.getSignature().getInputParams();
+    }]>,
     InterfaceMethod<[{
       Return the result parameter declarations returned from the decl body.
-    }], "TypeArrayAttr", "getResultParamTypesAttr">,
+    }], "TypeArrayAttr", "getResultParamTypesAttr", (ins),
+      "return $_op.getSignature().getResultParamTypes();",
+      "return $_op.getSignature().getResultParamTypes();"
+    >,
     InterfaceMethod<[{
       Return the list of input parameters.
     }], "ArrayRef<ParamDeclAttr>", "getInputParamDecls", (ins),
-        "return getParamDecls($_op);", "return getParamDecls($_op);">,
+        "return $_op.getInputParamDeclsAttr().getValue();",
+        "return $_op.getInputParamDeclsAttr().getValue();"
+    >,
     InterfaceMethod<[{
       Return the list of output parameter types.
-    }], "ArrayRef<Type>", "getResultParamTypes">,
+    }], "ArrayRef<Type>", "getResultParamTypes", (ins), [{
+      return $_op.getResultParamTypesAttr().getValue();
+    }], [{
+      return $_op.getResultParamTypesAttr().getValue();
+    }]>,
 
     /// Constraints.
     InterfaceMethod<[{

@@ -89,7 +89,7 @@ LogicalResult SignatureUnifier::verifyInputParameters() {
   // The lit.func may have additional input parameters that are
   // disallowed, and may be missing parameters.  We may have inferred some or
   // all of the missing parameters, but if not, we need to reject.
-  ArrayRef<ParamDeclAttr> inputParamDecls = generatorOp.getParamDecls();
+  ArrayRef<ParamDeclAttr> inputParamDecls = generatorOp.getInputParamDecls();
   SmallPtrSet<Attribute, 8> inputParams(inputParamDecls.begin(),
                                         inputParamDecls.end());
   // Add the parameter decls that were inferred.
@@ -103,7 +103,7 @@ LogicalResult SignatureUnifier::verifyInputParameters() {
   // Ok, now that we have all the input parameters, validate that they match up.
   // We do this by checking the set for everything that should be there and
   // deleting them as we go.  By the end, the set should be empty.
-  for (ParamDeclAttr itfParam : interfaceOp.getParamDecls()) {
+  for (ParamDeclAttr itfParam : interfaceOp.getInputParamDecls()) {
     // In the normal case, the
     if (inputParams.erase(itfParam))
       continue;
@@ -141,7 +141,9 @@ LogicalResult SignatureUnifier::verifyInputParameters() {
 
   // Finally after all this checking, we know the generator has the same
   // input parameters as the interface so we can just take it directly!
-  generatorOp.setParamDeclsAttr(interfaceOp.getParamDeclsAttr());
+  generatorOp.setSignature(SignatureType::get(
+      interfaceOp.getInputParamDeclsAttr(),
+      generatorOp.getResultParamTypesAttr(), generatorOp.getFunctionType()));
   return success();
 }
 
@@ -408,8 +410,7 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     auto thunk = b.create<GeneratorOp>(
         b.getStringAttr(gen.getSymName() + "_thunk"),
         // Take the signature from the interface.
-        itf.getFunctionTypeAttr(), itf.getParamDeclsAttr(),
-        itf.getResultParamTypesAttr(),
+        itf.getSignatureAttr(),
         // Take the constraints from the generator.
         gen.getConstraintsAttr(), gen.getImplementsAttr());
     // The thunk implements the interface, not the original generator.
@@ -503,8 +504,7 @@ static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
   // Is a LITFuncOp with empy body representing an interface?
   if (gen.getIsInterface()) {
     auto result = b.create<GeneratorInterfaceOp>(
-        gen.getLoc(), gen.getSymNameAttr(), gen.getFunctionTypeAttr(),
-        gen.getParamDeclsAttr(), gen.getResultParamTypesAttr(),
+        gen.getLoc(), gen.getSymNameAttr(), gen.getSignatureAttr(),
         gen.getConstraintsAttr(), nullptr, nullptr);
     // Move over the symbol.
     symbolTable.erase(gen);
@@ -513,8 +513,7 @@ static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
   }
   // Directly lower since these operations are exactly identical right now.
   auto result = b.create<GeneratorOp>(
-      gen.getLoc(), gen.getSymNameAttr(), gen.getFunctionTypeAttr(),
-      gen.getParamDeclsAttr(), gen.getResultParamTypesAttr(),
+      gen.getLoc(), gen.getSymNameAttr(), gen.getSignatureAttr(),
       gen.getConstraintsAttr(), gen.getImplementsAttr());
 
   // Move over the body.
@@ -576,11 +575,13 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
 
     // Prepend the parameters from the struct decl.
     SmallVector<ParamDeclAttr> paramDecls;
-    paramDecls.reserve(structDecl.getParamDecls().size() +
-                       func.getParamDecls().size());
-    llvm::append_range(paramDecls, structDecl.getParamDecls());
-    llvm::append_range(paramDecls, func.getParamDecls());
-    func.setParamDecls(paramDecls);
+    paramDecls.reserve(structDecl.getInputParamDecls().size() +
+                       func.getInputParamDecls().size());
+    llvm::append_range(paramDecls, structDecl.getInputParamDecls());
+    llvm::append_range(paramDecls, func.getInputParamDecls());
+    func.setSignature(SignatureType::get(
+        ParamDeclArrayAttr::get(structDecl.getContext(), paramDecls),
+        func.getResultParamTypesAttr(), func.getFunctionType()));
 
     // Lower renamed function as usual.
     if (failed(lowerLITFunc(func, symbolTable)))

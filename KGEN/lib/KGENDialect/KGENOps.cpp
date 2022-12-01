@@ -217,7 +217,7 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   KGENDeclInterface parent = op->getParentOfType<KGENDeclInterface>();
   if (parent) {
     collectParameterReferences(cond, parameterRefs);
-    ArrayRef<ParamDeclAttr> generatorInputParams = getParamDecls(parent);
+    ArrayRef<ParamDeclAttr> generatorInputParams = parent.getInputParamDecls();
 
     // Check to see if the parameters referenced by the condition are all
     // defined by the generator.  If so, we can fold this into the constraint
@@ -353,13 +353,6 @@ ArrayRef<Type> GeneratorOp::getCallableResults() {
 // FuncOp
 //===----------------------------------------------------------------------===//
 
-/// Create a func with no body block.  The caller must create it and fill
-/// it in.
-void FuncOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
-                   FunctionType signature, ArrayRef<Type> resultParamTypes) {
-  build(builder, result, name, signature, {}, resultParamTypes);
-}
-
 ReturnOp FuncOp::getReturnOp() {
   return cast<ReturnOp>(getBody()->getTerminator());
 }
@@ -383,7 +376,7 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return failure();
 
   // kgen.func's are not allowed to have input parameter lists.
-  if (!getParamDecls().empty())
+  if (!getInputParamDecls().empty())
     return emitError(
         "kgen.func only allows output parameters, not input parameters");
 
@@ -605,10 +598,7 @@ static LogicalResult verifyRegionSignatures(Operation *theCall,
       return theCall->emitOpError("expected region #")
              << it.index() << " to contain only a `kgen.region.body` op";
 
-    auto regionSignature = SignatureType::get(body.getParamDeclsAttr(),
-                                              body.getResultParamTypesAttr(),
-                                              body.getFunctionType());
-    if (failed(verifyDeclSignaturesMatch("region", regionSignature,
+    if (failed(verifyDeclSignaturesMatch("region", body.getSignature(),
                                          body.getLoc(), "parameter",
                                          paramSignature, theCall->getLoc())))
       return failure();
@@ -922,7 +912,6 @@ LogicalResult InlinedCallOp::verifyRegions() {
 
   // Verify the region signatures match region parameter signatures.
   return verifyRegionSignatures<RegionOpenBodyOp>(*this, getParamValuesAttr());
-  return success();
 }
 
 static ParseResult parseInPlaceCallRegions(
@@ -945,18 +934,52 @@ ReturnOp RegionBodyOp::getReturnOp() {
   return cast<ReturnOp>(getBody()->getTerminator());
 }
 
+/// Synthesize a SignatureType for the specified body and params, looking at the
+/// return at the bottom of the region.  This returns null on malformed IR this
+/// returns null.
+static SignatureType getSignatureFromBody(ParamDeclArrayAttr inputParamDecls,
+                                          TypeArrayAttr resultParamTypes,
+                                          Region &body) {
+  if (body.empty() || body.front().empty() ||
+      !isa<ReturnOp>(body.front().back()))
+    return {};
+  auto bodyFn = FunctionType::get(
+      inputParamDecls.getContext(), body.front().getArgumentTypes(),
+      body.front().getTerminator()->getOperandTypes());
+  return SignatureType::get(inputParamDecls, resultParamTypes, bodyFn);
+}
+
 /// Parse a single-block isolated from above region.
-static ParseResult parseRegionBody(OpAsmParser &p, Region &body) {
+static ParseResult parseRegionBody(OpAsmParser &p, TypeAttr &signature,
+                                   ConstraintArrayAttr &constraints,
+                                   Region &body) {
   SmallVector<OpAsmParser::Argument> args;
-  if (p.parseArgumentList(args, AsmParser::Delimiter::Paren,
+  ParamDeclArrayAttr inputParamDecls;
+  TypeArrayAttr resultParamTypes;
+  llvm::SMLoc bodyLoc;
+  if (parseOptionalParameterSpec(p, inputParamDecls, resultParamTypes) ||
+      parseOptionalConstraints(p, constraints) ||
+      p.parseArgumentList(args, AsmParser::Delimiter::Paren,
                           /*allowType=*/true) ||
-      p.parseRegion(body, args))
+      p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
     return failure();
+
+  // Form the Signature.
+  auto sig = getSignatureFromBody(inputParamDecls, resultParamTypes, body);
+  if (!sig)
+    return p.emitError(bodyLoc, "body region didn't have a kgen.return op?");
+  signature = TypeAttr::get(sig);
   return success();
 }
 
 /// Print a single-block isolated from above region.
-static void printRegionBody(OpAsmPrinter &p, Operation *op, Region &body) {
+static void printRegionBody(OpAsmPrinter &p, Operation *op, TypeAttr signature,
+                            ConstraintArrayAttr constraints, Region &body) {
+  auto sig = cast<SignatureType>(signature.getValue());
+
+  printOptionalParameterSpec(sig.getInputParams(), sig.getResultParamTypes(),
+                             p.getStream());
+  printOptionalConstraints(p, op, constraints);
   p << '(';
   llvm::interleaveComma(body.getArguments(), p,
                         [&](BlockArgument arg) { p.printRegionArgument(arg); });
@@ -964,14 +987,12 @@ static void printRegionBody(OpAsmPrinter &p, Operation *op, Region &body) {
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
-/// Derive the region's function type from its arguments and result types.
-FunctionType RegionBodyOp::getFunctionType() {
-  Block *body = getBody();
-  return FunctionType::get(getContext(), body->getArgumentTypes(),
-                           body->getTerminator()->getOperandTypes());
-}
-
 LogicalResult RegionBodyOp::verifyRegions() {
+  auto bodyFn =
+      FunctionType::get(getContext(), getBody()->getArgumentTypes(),
+                        getBody()->getTerminator()->getOperandTypes());
+  if (getFunctionType() != bodyFn)
+    return emitOpError("signature mismatches body");
   return getReturnOp().checkArgumentTypes(getResultParamTypes(), None);
 }
 
@@ -983,12 +1004,13 @@ ReturnOp RegionOpenBodyOp::getReturnOp() {
   return cast<ReturnOp>(getBody()->getTerminator());
 }
 
-FunctionType RegionOpenBodyOp::getFunctionType() {
-  return FunctionType::get(getContext(), getBodyRegion().getArgumentTypes(),
-                           getReturnOp().getOperandTypes());
-}
-
 LogicalResult RegionOpenBodyOp::verifyRegions() {
+  auto bodyFn =
+      FunctionType::get(getContext(), getBodyRegion().getArgumentTypes(),
+                        getReturnOp().getOperandTypes());
+  if (getFunctionType() != bodyFn)
+    return emitOpError("signature mismatches body");
+
   return getReturnOp().checkArgumentTypes(getResultParamTypes(), None);
 }
 
@@ -1337,19 +1359,14 @@ OpFoldResult RebindOp::fold(ArrayRef<Attribute> operands) {
 // StructDeclOp
 //===----------------------------------------------------------------------===//
 
-/// Struct declarations aren't functions.
-FunctionType StructDeclOp::getFunctionType() {
-  llvm_unreachable("structs don't have function types");
-}
-
 /// Verify that the body has no arguments and that the declaration has no result
 /// types.
 LogicalResult StructDeclOp::verify() {
+  if (getSignature() != SignatureType::get(getInputParamDeclsAttr()))
+    return emitOpError("signature mismatches body");
+
   if (getFields().getNumArguments())
     return emitOpError("expected declaration body to have no arguments");
-
-  if (!getResultParamTypes().empty())
-    return emitOpError("unexpected result parameters");
 
   return success();
 }
@@ -1380,8 +1397,8 @@ StructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 void StructDeclOp::build(OpBuilder &builder, OperationState &result,
                          StringAttr name) {
   auto context = builder.getContext();
-  build(builder, result, name, ParamDeclArrayAttr::get(context, {}),
-        TypeArrayAttr::get(context, {}));
+  build(builder, result, name,
+        SignatureType::get(ParamDeclArrayAttr::get(context, {})));
   result.regions[0]->push_back(new Block());
 }
 
@@ -1774,16 +1791,24 @@ parseIterate(OpAsmParser &p,
   }
 
   Region regionBody;
-  Optional<Location> regionBodyLoc =
-      p.getEncodedSourceLoc(p.getCurrentLocation());
+  auto textualBodyLoc = p.getCurrentLocation();
+  Optional<Location> regionBodyLoc = p.getEncodedSourceLoc(textualBodyLoc);
   if (p.parseRegion(regionBody, bodyArgs) ||
       p.parseOptionalLocationSpecifier(regionBodyLoc))
     return failure();
   body.push_back(new Block);
   OpBuilder b(p.getContext());
   b.setInsertionPointToStart(&body.front());
-  auto bodyOp = b.create<RegionOpenBodyOp>(
-      *regionBodyLoc, params, ArrayRef<Type>(), ArrayRef<ConstraintAttr>());
+
+  auto signatureType = getSignatureFromBody(
+      b.getAttr<ParamDeclArrayAttr>(params),
+      b.getAttr<TypeArrayAttr>(ArrayRef<Type>()), regionBody);
+  if (!signatureType)
+    return p.emitError(textualBodyLoc,
+                       "body region didn't have a kgen.return op?");
+
+  auto bodyOp = b.create<RegionOpenBodyOp>(*regionBodyLoc, signatureType,
+                                           ArrayRef<ConstraintAttr>());
   bodyOp.getBodyRegion().takeBody(regionBody);
 
   init = ParameterExprArrayAttr::get(p.getContext(), initVals);
@@ -1795,10 +1820,11 @@ static void printIterate(OpAsmPrinter &p, Operation *op, ValueRange arguments,
                          TypedAttr next, TypedAttr cond, Region &body) {
   p << '(';
   auto bodyOp = cast<RegionOpenBodyOp>(body.front().front());
-  llvm::interleaveComma(bodyOp.getParamDecls(), p, [&](ParamDeclAttr param) {
-    printParamName(p, param.getName());
-    printColonTypeOrIndex(p.getStream(), param.getType());
-  });
+  llvm::interleaveComma(bodyOp.getInputParamDecls(), p,
+                        [&](ParamDeclAttr param) {
+                          printParamName(p, param.getName());
+                          printColonTypeOrIndex(p.getStream(), param.getType());
+                        });
   p << ") in [(";
   llvm::interleaveComma(init, p, [&](TypedAttr initVal) {
     printParamValue(initVal, p.getStream());
@@ -1827,11 +1853,11 @@ LogicalResult IterateOp::verifyRegions() {
   if (!body || body != &getBody().front().front())
     return emitOpError("expected a single open region body");
 
-  unsigned numParams = body.getParamDecls().size();
+  unsigned numParams = body.getInputParamDecls().size();
   if (numParams != getInit().size())
     return emitOpError("expected ") << numParams << " init values";
   SmallVector<Type> paramTypes;
-  for (auto [init, param] : llvm::zip(getInit(), body.getParamDecls())) {
+  for (auto [init, param] : llvm::zip(getInit(), body.getInputParamDecls())) {
     if (init.getType() != param.getType())
       return emitOpError("init types do not match parameter types");
     paramTypes.push_back(init.getType());

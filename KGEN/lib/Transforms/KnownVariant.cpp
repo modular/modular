@@ -290,9 +290,14 @@ void PruneImpossibleVariantsPass::runOnOperation() {
     }
 
     if (!resultRewrites.empty()) {
+      auto itf = cast<KGENDeclInterface>(op);
+      auto sig = itf.getSignature();
       // Rewrite the function type.
-      func.setType(FunctionType::get(&getContext(), func.getArgumentTypes(),
-                                     returns.front()->getOperandTypes()));
+      auto fnType =
+          FunctionType::get(&getContext(), sig.getValues().getInputs(),
+                            returns.front()->getOperandTypes());
+      itf.setSignature(SignatureType::get(sig.getInputParams(),
+                                          sig.getResultParamTypes(), fnType));
       rewrites.try_emplace(name, std::move(resultRewrites));
     }
   }

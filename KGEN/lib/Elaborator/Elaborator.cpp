@@ -290,7 +290,11 @@ public:
     ParameterExprArrayAttr &values = resultParams[func];
     assert(!values && "results for function already bound");
     values = func.getReturnOp().getParametersAttr();
-    func.setResultParamTypes({});
+
+    // Set a new signature that drops the result parameter type list.
+    func.setSignature(SignatureType::get(
+        func.getInputParamDeclsAttr(),
+        TypeArrayAttr::get(func.getContext(), {}), func.getFunctionType()));
     func.getReturnOp().setParameters({});
   }
 
@@ -1436,7 +1440,7 @@ LogicalResult ParameterRewriter::processIterateOp(IterateOp op) {
     ParameterEvaluator &evaluator = evaluators.emplace_back(evaluators.back());
 
     // Bind the current parameter values.
-    for (auto [decl, value] : llvm::zip(region.getParamDecls(), params))
+    for (auto [decl, value] : llvm::zip(region.getInputParamDecls(), params))
       evaluator.setOrOverwriteParameterValue(decl, value);
 
     // Clone the region inline.
@@ -1625,7 +1629,7 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
   llvm::raw_string_ostream os(result);
   os << generator.getName();
 
-  auto inputParamDecls = generator.getParamDeclsAttr();
+  auto inputParamDecls = generator.getInputParamDeclsAttr();
   for (auto [inputDecl, value] : llvm::zip(inputParamDecls, inputParamValues)) {
     os << ',' << inputDecl.getName().str() << '=';
     printParameterValue(value, os);
@@ -1718,7 +1722,9 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   OpBuilder b(generator);
   auto newFunc = b.create<FuncOp>(
       generator.getLoc(), mangleParameterValues(generator, inputParamValues),
-      generator.getFunctionType(), generator.getResultParamTypes());
+      SignatureType::get(ParamDeclArrayAttr::get(generator.getContext(), {}),
+                         generator.getResultParamTypesAttr(),
+                         generator.getFunctionType()));
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.

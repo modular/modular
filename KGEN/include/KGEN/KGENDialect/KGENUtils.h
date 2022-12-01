@@ -105,15 +105,14 @@ void printParamDecls(ParamDeclArrayAttr decls, raw_ostream &os);
 ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result);
 
 /// Parse and print a parameter specification on a generator or region type.
+ParseResult parseOptionalParameterSpec(AsmParser &parser, TypeAttr &type);
 ParseResult parseOptionalParameterSpec(AsmParser &parser,
                                        ParamDeclArrayAttr &inputParamDecls,
                                        TypeArrayAttr &resultParamTypes);
+void printOptionalParameterSpec(AsmPrinter &p, Operation *op, TypeAttr type);
 void printOptionalParameterSpec(ParamDeclArrayAttr inputParamDecls,
                                 TypeArrayAttr resultParamTypes,
                                 raw_ostream &os);
-void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
-                                ParamDeclArrayAttr paramDecls,
-                                TypeArrayAttr resultParamTypes);
 
 /// Parse and print a constraint specification if present.
 ParseResult parseOptionalConstraints(OpAsmParser &p,
