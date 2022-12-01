@@ -374,3 +374,9 @@ fn method(variable: Int):
 
   # TODO: Should reject as not initialized.
   alias NotInitialized : __mlir_type.index
+
+def raisingMethod():
+    pass
+
+fn callRaisingMethod():
+    raisingMethod() # expected-error {{cannot call raising method within an 'fn' that does not raise}}

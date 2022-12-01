@@ -131,3 +131,27 @@ lit.func @raises_error(%raise: i1, %err: !kgen.declref<@Error>, %value: !kgen.de
   // CHECK: kgen.return %[[VALUE]]
   kgen.return %result : !lit.raises_or<!kgen.declref<@Int>>
 }
+
+// CHECK-LABEL: @try_op
+lit.func @try_op(%err: !kgen.declref<@Error>, %int: !kgen.declref<@Int>) -> !kgen.declref<@Int> {
+  // CHECK-NEXT: lit.try
+  lit.try {
+    %raise = kgen.param.constant: i1 = <1>
+    %result = kgen.call @raises_error(%raise, %err, %int)
+      : (i1, !kgen.declref<@Error>, !kgen.declref<@Int>) -> !lit.raises_or<!kgen.declref<@Int>>
+    // CHECK: %[[VAL:.*]] = lit.unwrap_or_propagate %{{.*}} : <!kgen.declref<@Int>>
+    %value = lit.unwrap_or_propagate %result : <!kgen.declref<@Int>>
+    // CHECK: return %[[VAL]] : !kgen.declref<@Int>
+    kgen.return %value : !kgen.declref<@Int>
+  // CHECK-NEXT: } except (%{{.*}}: !kgen.declref<@Error>) {
+  } except (%exception: !kgen.declref<@Error>) {
+    // CHECK-NEXT: lit.try.yield
+    lit.try.yield
+  // CHECK-NEXT: } else {
+  } else {
+    // CHECK-NEXT: lit.try.yield
+    lit.try.yield
+  // CHECK-NEXT: }
+  }
+  kgen.return %int : !kgen.declref<@Int>
+}

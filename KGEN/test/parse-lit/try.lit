@@ -1,0 +1,88 @@
+# RUN: kgen-translate %s -import-lit | FileCheck %s
+
+__include "../lit-examples/prolog.lit"
+
+# CHECK-LABEL: lit.func @simpleTryExcept
+fn simpleTryExcept():
+    var a: Int
+    # CHECK: lit.try
+    try:
+        # CHECK: pop.store
+        a = Int(0)
+        # CHECK-NEXT: lit.try.yield
+    # CHECK-NEXT: except (%{{.*}}: !kgen.declref<@Error>)
+    except:
+        # CHECK-NEXT: lit.try.yield
+        pass
+    # CHECK-NEXT: else
+    # CHECK-NEXT: lit.try.yield
+    # CHECK: kgen.return
+
+# CHECK-LABEL: lit.func @tryExceptElse
+fn tryExceptElse():
+    var a: Int
+    # CHECK: lit.try
+    try:
+        pass
+    except:
+        pass
+    # CHECK: else
+    else:
+        # CHECK: pop.store
+        a = Int(0)
+        # CHECK-NEXT: lit.try.yield
+
+fn eatError(err: Error):
+    pass
+
+# CHECK-LABEL: lit.func @tryExceptArg
+fn tryExceptArg():
+    try:
+        pass
+    # CHECK: except (%arg0: !kgen.declref<@Error>)
+    except err:
+        # CHECK-NEXT: kgen.call @eatError(%arg0)
+        eatError(err)
+
+# CHECK-LABEL: lit.func @tryExceptArgDef
+def tryExceptArgDef():
+    try:
+        pass
+    # CHECK: except (%arg0: !kgen.declref<@Error>)
+    except err:
+        # CHECK-NEXT: lit.var.decl "err" : <@Error>
+        # CHECK: %[[ERRVAL:.*]] = pop.load
+        # CHECK: eatError(%[[ERRVAL]])
+        eatError(err)
+
+def maybeRaises() -> Int:
+    return Int(0)
+
+# CHECK-LABEL: lit.func @propagateErrorInDef
+def propagateErrorInDef():
+    # CHECK: %[[MAYBE_ERR:.*]] = kgen.call @maybeRaises
+    # CHECK-NEXT: %[[VALUE:.*]] = lit.unwrap_or_propagate %[[MAYBE_ERR]]
+    # CHECK-NEXT: pop.store %[[VALUE]], %a
+    a = maybeRaises()
+
+# CHECK-LABEL: lit.func @propagateErrorInRaisingFn
+@raises
+fn propagateErrorInRaisingFn():
+    var a: Int
+    # CHECK: %[[MAYBE_ERR:.*]] = kgen.call @maybeRaises
+    # CHECK-NEXT: %[[VALUE:.*]] = lit.unwrap_or_propagate %[[MAYBE_ERR]]
+    # CHECK-NEXT: pop.store %[[VALUE]], %a
+    a = maybeRaises()
+
+# CHECK-LABEL: lit.func @propagateErrorInTry
+fn propagateErrorInTry():
+    var a: Int
+    # CHECK: lit.try
+    try:
+        # CHECK: %[[MAYBE_ERR:.*]] = kgen.call @maybeRaises
+        # CHECK-NEXT: %[[VALUE:.*]] = lit.unwrap_or_propagate %[[MAYBE_ERR]]
+        # CHECK-NEXT: pop.store %[[VALUE]], %a
+        a = maybeRaises()
+        # CHECK-NEXT: lit.try.yield
+    except:
+        pass

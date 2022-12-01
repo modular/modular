@@ -34,6 +34,8 @@ public:
   ASTType typeCheckErrorType;
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType noneType;
+  /// This is the decl for the builtin error type.
+  ASTType errorType;
 
   // These should move the standard library and be looked up from there on
   // demand.
@@ -96,6 +98,7 @@ ASTType LitSharedState::getTypeCheckErrorType() const {
   return impl->typeCheckErrorType;
 }
 ASTType LitSharedState::getNoneType() const { return impl->noneType; }
+ASTType LitSharedState::getErrorType() const { return impl->errorType; }
 
 ASTType LitSharedState::getObjectType() const {
   return impl->objectDecl->getSelfType();
@@ -112,9 +115,13 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   // Add a declarations for builtin types.
   impl->noneType = KGEN::NoneType::get(context);
 
-  // Make the error type.  Anything that references this will
+  // Make the type check error type.  Anything that references this will
   // considering it erroneous and already declared as such.
   impl->typeCheckErrorType = TypeCheckErrorType::get(context);
+
+  // The builtin error type always references the library `Error` type.
+  impl->errorType =
+      DeclRefType::get(FlatSymbolRefAttr::get(getContext(), "Error"));
 
   auto b = builtinsDecl.getDeclEndBuilder();
   auto loc = translateLocation(builtinsDecl.getLoc());

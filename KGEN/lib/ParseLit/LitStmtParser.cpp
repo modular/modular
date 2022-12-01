@@ -71,6 +71,7 @@ struct LitStmtParser : public LitParserBase {
   // Compound statements.
   ParseResult parseIfStmt(size_t curIndent);
   ParseResult parseWhileStmt(size_t curIndent);
+  ParseResult parseTryStmt(size_t curIndent);
 
   // Simple statements.
   ParseResult parseReturnStmt(size_t returnIndent);
@@ -209,6 +210,9 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
   case LitToken::kw_while:
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseWhileStmt(stmtIndent);
+  case LitToken::kw_try:
+    rejectSimpleStmt();
+    return parseTryStmt(stmtIndent);
   case LitToken::kw_def:
   case LitToken::kw_fn:
     rejectSimpleStmt(); // Not a simple_stmt.
@@ -469,6 +473,79 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
         parseSuite(curIndent))
       return failure();
   }
+  return success();
+}
+
+/// try_stmt ::= "try" ":" suite "except" [identifier] ":" suite
+///              ["else" suite]
+ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
+  auto func = getBlockParentOfType<LITFuncOp>(builder.getInsertionBlock());
+  Location tryLoc = translateLocation(consumeToken(LitToken::kw_try).getLoc());
+
+  // Restore the builder to its current insertion point after parsing.
+  llvm::SaveAndRestore<OpBuilder> builderSaver(builder);
+  auto tryOp = builder.create<LITTryOp>(tryLoc);
+  if (parseToken(LitToken::colon, "expected ':' after 'try'"))
+    return failure();
+
+  // Parse the try suite.
+  builder.createBlock(&tryOp.getTryRegion());
+  if (parseSuite(curIndent))
+    return failure();
+  builder.create<LITTryYieldOp>(translateLocation(getToken().getLoc()));
+
+  SMLoc errValLoc;
+  if (parseToken(LitToken::kw_except, "expected 'except' after try block",
+                 &errValLoc))
+    return failure();
+
+  // Parse an optional identifier to bind the error.
+  StringAttr errName;
+  if (getToken().is(LitToken::identifier)) {
+    LitToken idTok = consumeToken(LitToken::identifier);
+    errName = StringAttr::get(getContext(), idTok.getSpelling());
+    errValLoc = idTok.getLoc();
+  }
+
+  if (parseToken(LitToken::colon, "expected ':' after 'except'"))
+    return failure();
+  Block *exceptBlock = builder.createBlock(&tryOp.getExceptRegion());
+  Value errVal = exceptBlock->addArgument(getSharedState().getErrorType(),
+                                          translateLocation(errValLoc));
+
+  // If an identifier was declared for the error value, add a declaration that
+  // references it.
+  if (errName) {
+    if (func.getIsDef()) {
+      // If we are parsing inside a 'def', create a mutable LValue to allow
+      // reassignment.
+      auto varDecl = builder.create<VarDeclOp>(
+          errVal.getLoc(), POP::PointerType::get(errVal.getType()), errName);
+      getDeclResolver().addFullyResolvedDecl(varDecl, errValLoc, errName,
+                                             &containingDecl);
+      builder.create<POP::StoreOp>(errVal.getLoc(), errVal, varDecl,
+                                   /*alignment=*/None);
+    } else {
+      // If we are parsing inside an 'fn', the error declaration is an RValue.
+      getDeclResolver().addFullyResolvedDecl(DRValue(errVal), errName,
+                                             errValLoc, &containingDecl);
+    }
+  }
+
+  // Parse the except suite.
+  if (parseSuite(curIndent))
+    return failure();
+  builder.create<LITTryYieldOp>(translateLocation(getToken().getLoc()));
+
+  // Parse the else suite if present. Otherwise, leave it as empty.
+  builder.createBlock(&tryOp.getElseRegion());
+  if (consumeIf(LitToken::kw_else)) {
+    if (parseToken(LitToken::colon, "expected ':' after 'else'") ||
+        parseSuite(curIndent))
+      return failure();
+  }
+  builder.create<LITTryYieldOp>(translateLocation(getToken().getLoc()));
+
   return success();
 }
 

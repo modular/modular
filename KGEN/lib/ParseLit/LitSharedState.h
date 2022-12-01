@@ -57,6 +57,9 @@ public:
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType getNoneType() const;
 
+  /// This is the decl for the builtin error type.
+  ASTType getErrorType() const;
+
   /// This is the decl for the builtin lit.object struct type.
   ASTType getObjectType() const;
 

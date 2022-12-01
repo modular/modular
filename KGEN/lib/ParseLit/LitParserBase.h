@@ -116,8 +116,10 @@ public:
   }
 
   /// Consume the specified token if present and return success.  On failure,
-  /// output a diagnostic and return failure.
-  ParseResult parseToken(LitToken::Kind expectedToken, const Twine &message);
+  /// output a diagnostic and return failure. If `loc` is set, it is populated
+  /// with the source location of the token.
+  ParseResult parseToken(LitToken::Kind expectedToken, const Twine &message,
+                         SMLoc *loc = nullptr);
 
   /// Consume an identifier token, binding its name into the specified result
   /// string attribute.
