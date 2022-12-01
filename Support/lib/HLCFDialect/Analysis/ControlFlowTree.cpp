@@ -18,6 +18,7 @@ ControlFlowTree::ControlFlowTree(Operation *op) {
 
 void ControlFlowTree::buildTree(Operation *node, unsigned &nodeId,
                                 SmallVectorImpl<unsigned> &loopIds) {
+  ops.push_back(node);
   auto loop = dyn_cast<LoopOp>(node);
   if (loop)
     loopIds.push_back(nodeId);
