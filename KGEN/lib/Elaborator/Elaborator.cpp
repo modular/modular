@@ -1906,6 +1906,10 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   // Alright - we want to do search now.
   LLCL::AsyncValue::registerTypes<LogicalResult>();
 
+  // Add a way to express failure in the cache. We have to write *something*,
+  // otherwise writing a file to disk behaves quite strangely.
+  static constexpr llvm::StringLiteral kFailureTag = "SEARCH_FAILED";
+
   // This provides the implementation of search. This is the part we actually
   // care about caching because it's the most expensive part.
   auto doSpecialization = [this, evalFunc, searchInputs,
@@ -1923,6 +1927,7 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
       if (failed(bestSpecializationIdxOr)) {
         result = {reportCalleeExpansionError(
             itf, bestSpecializationIdxOr.getError())};
+        *toCache << kFailureTag;
         return out.emplace(failure());
       }
 
@@ -1950,6 +1955,13 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
           // We have a cache hit! Pull the func out of the cache and place it
           // into the result vector.
           Cache::BufferRef funcName = cacheResult->takeValue();
+          // The thing may have failed with an expansion error. If so, then
+          // report that we didn't find anything in the cache, and we need to
+          // re-run the transform.
+          if (funcName->getBuffer().take_front(kFailureTag.size()) ==
+              kFailureTag)
+            return out.emplace(Cache::CacheFindResult::notInCache());
+
           StringAttr fastestFuncName =
               StringAttr::get(itfOp->getContext(), funcName->getBuffer());
 
