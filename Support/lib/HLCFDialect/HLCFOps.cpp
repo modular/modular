@@ -14,171 +14,6 @@ using namespace M;
 using namespace HLCF;
 
 //===----------------------------------------------------------------------===//
-// Control-Flow Verification
-//===----------------------------------------------------------------------===//
-
-namespace {
-/// This object contains context about control-flow trees and uses that to
-/// verify them. Keep a stack of control-flow scopes as we walk the tree and
-/// verify that each terminator has a valid parent somewhere up the stack and
-/// check that the return types match.
-class ControlFlowVerifier {
-public:
-  explicit ControlFlowVerifier(Operation *root) : root(root) {}
-
-  /// Verify the control-flow tree from this operation if it is a root node.
-  static LogicalResult verifyIfRoot(Operation *op);
-
-private:
-  /// The root of the control-flow tree.
-  Operation *root;
-
-  /// The current stack of control-flow scopes. We only need to track loops
-  /// since yield terminators are structurally required to have if parents.
-  SmallVector<LoopOp> scopes;
-
-  /// Verify a terminator.
-  LogicalResult verifyTerminator(Operation *op);
-
-  /// Verify a node.
-  LogicalResult verifyNode(Operation *op);
-};
-} // namespace
-
-/// Verify two type ranges match.
-static LogicalResult verifyTypes(TypeRange lhs, TypeRange rhs, Operation *op,
-                                 Operation *parent, StringRef kind,
-                                 StringRef node) {
-  if (lhs.size() != rhs.size()) {
-    return (op->emitOpError("specifies ")
-            << lhs.size() << ' ' << kind << "s but surrounding " << node
-            << " expects " << rhs.size())
-               .attachNote(parent->getLoc())
-           << "see " << node << " here";
-  }
-  for (auto [idx, lhsType, rhsType] :
-       llvm::zip(llvm::seq<unsigned>(0, lhs.size()), lhs, rhs)) {
-    if (lhsType == rhsType)
-      continue;
-    return (op->emitOpError("operand #")
-            << idx << " type " << lhsType << " does not match expected " << kind
-            << " type " << rhsType)
-               .attachNote(parent->getLoc())
-           << "see " << node << " here";
-  }
-  return success();
-}
-
-LogicalResult ControlFlowVerifier::verifyTerminator(Operation *op) {
-  if (isa<ReturnOp>(op)) {
-    auto function = dyn_cast<mlir::FunctionOpInterface>(root);
-    if (!function) {
-      return op->emitOpError("is not nested within a function")
-                 .attachNote(root->getLoc())
-             << "see control-flow root here";
-    }
-    // FIXME: LLVM functions with no results return `LLVMVoidType`. Let
-    // verifications fall through here so that HLCF lowerings can be composed.
-    if (function->getName().getStringRef() == "llvm.func")
-      return success();
-    return verifyTypes(op->getOperandTypes(), function.getResultTypes(), op,
-                       function, "return value", "function");
-  }
-
-  if (isa<YieldOp>(op)) {
-    // The parent must be an if.
-    return verifyTypes(op->getOperandTypes(),
-                       op->getParentOp()->getResultTypes(), op,
-                       op->getParentOp(), "result", "if");
-  }
-
-  assert((isa<BreakOp, ContinueOp>(op)));
-  if (scopes.empty()) {
-    return op->emitOpError("is not nested within an 'hlcf.loop' operation")
-               .attachNote(root->getLoc())
-           << "see control-flow root here";
-  }
-  if (isa<BreakOp>(op))
-    return verifyTypes(op->getOperandTypes(), scopes.back().getResultTypes(),
-                       op, scopes.back(), "result", "loop");
-  return verifyTypes(op->getOperandTypes(), scopes.back().getOperandTypes(), op,
-                     scopes.back(), "argument", "loop");
-}
-
-LogicalResult ControlFlowVerifier::verifyNode(Operation *op) {
-  // Push a loop scoe if this node defines a new one.
-  auto loop = dyn_cast<LoopOp>(op);
-  if (loop)
-    scopes.push_back(loop);
-
-  for (Region &region : op->getRegions()) {
-    for (Block &block : region) {
-      if (block.getTerminator()->hasTrait<OpTrait::ControlFlowTerminator>() &&
-          failed(verifyTerminator(block.getTerminator())))
-        return failure();
-      for (Operation &op : block.without_terminator())
-        if (op.hasTrait<OpTrait::ControlFlowNode>() && failed(verifyNode(&op)))
-          return failure();
-    }
-  }
-
-  // Pop a loop scope if this node defines one.
-  if (loop)
-    scopes.pop_back();
-  return success();
-}
-
-LogicalResult ControlFlowVerifier::verifyIfRoot(Operation *op) {
-  // Verify the operation if is a root operation or if it is the root of a
-  // subtree rooted at a function.
-  Operation *root;
-  if (isa<mlir::FunctionOpInterface>(op->getParentOp()))
-    root = op->getParentOp();
-  else if (!op->getParentOp()->hasTrait<OpTrait::ControlFlowNode>())
-    root = op;
-  else
-    return success();
-  return ControlFlowVerifier(root).verifyNode(op);
-}
-
-//===----------------------------------------------------------------------===//
-// Operation Traits
-//===----------------------------------------------------------------------===//
-
-LogicalResult HLCF::verifyControlFlowNode(Operation *op) {
-  // Verify that all immediate terminators without successors are HLCF
-  // terminators.
-  for (Region &region : op->getRegions()) {
-    for (Block &block : region) {
-      Operation *terminator = block.getTerminator();
-      if (!terminator->getNumSuccessors() &&
-          !terminator->hasTrait<OpTrait::ControlFlowTerminator>()) {
-        return (op->emitOpError("expected terminator without successors to be "
-                                "a control-flow terminator but got '")
-                << terminator->getName() << "'")
-                   .attachNote(terminator->getLoc())
-               << "see invalid terminator here";
-      }
-    }
-  }
-
-  // If this operation is a root, verify the tree starting from here.
-  return ControlFlowVerifier::verifyIfRoot(op);
-}
-
-LogicalResult HLCF::verifyControlFlowTerminator(Operation *op) {
-  // Verify that the terminator's parent is an HLCF operation.
-  Operation *parent = op->getParentOp();
-  if (parent->hasTrait<OpTrait::ControlFlowNode>())
-    return success();
-  return (op->emitOpError("expected parent operation to be a control-flow "
-                          "operation but got '")
-          << parent->getName() << "'")
-             .attachNote(parent->getLoc())
-         << "see invalid parent here";
-}
-
-//===----------------------------------------------------------------------===//
 // LoopOp
 //===----------------------------------------------------------------------===//
 
@@ -237,6 +72,54 @@ LogicalResult LoopOp::verify() {
   return success();
 }
 
+void LoopOp::getEntryTargets(ArrayRef<Attribute> operands,
+                             SmallVectorImpl<ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  targets.emplace_back(0, getOperands());
+}
+
+ValueRange LoopOp::getEntryArguments(Optional<unsigned> target) {
+  if (!target)
+    return getResults();
+  assert(*target == 0);
+  return getBody().getArguments();
+}
+
+//===----------------------------------------------------------------------===//
+// IfOp
+//===----------------------------------------------------------------------===//
+
+void IfOp::getEntryTargets(ArrayRef<Attribute> operands,
+                           SmallVectorImpl<ControlFlowTarget> &targets) {
+  assert(operands.size() == 1);
+  if (auto cond = dyn_cast_or_null<BoolAttr>(operands.front())) {
+    targets.emplace_back(cond.getValue() ? 0 : 1);
+  } else {
+    targets.emplace_back(0);
+    targets.emplace_back(1);
+  }
+}
+
+ValueRange IfOp::getEntryArguments(Optional<unsigned> target) {
+  if (!target)
+    return getResults();
+  assert(*target == 0 || *target == 1);
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// ContinueOp
+//===----------------------------------------------------------------------===//
+
+bool ContinueOp::isParentNode(Operation *op) { return isa<LoopOp>(op); }
+
+void ContinueOp::getBranchTargets(ArrayRef<Attribute> operands,
+                                  SmallVectorImpl<ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  // Branch to the beginning of the body region.
+  targets.emplace_back(0, getOperands());
+}
+
 //===----------------------------------------------------------------------===//
 // BreakOp
 //===----------------------------------------------------------------------===//
@@ -251,6 +134,42 @@ mlir::Speculation::Speculatability BreakOp::getSpeculatability() {
   return isa<LoopOp>((*this)->getParentOp())
              ? mlir::Speculation::Speculatable
              : mlir::Speculation::NotSpeculatable;
+}
+
+bool BreakOp::isParentNode(Operation *op) { return isa<LoopOp>(op); }
+
+void BreakOp::getBranchTargets(ArrayRef<Attribute> operands,
+                               SmallVectorImpl<ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  // Branch to after the loop operation.
+  targets.emplace_back(None, getOperands());
+}
+
+//===----------------------------------------------------------------------===//
+// YieldOp
+//===----------------------------------------------------------------------===//
+
+bool YieldOp::isParentNode(Operation *op) { return isa<IfOp>(op); }
+
+void YieldOp::getBranchTargets(ArrayRef<Attribute> operands,
+                               SmallVectorImpl<ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  // Branch to after the if operation.
+  targets.emplace_back(None, getOperands());
+}
+
+//===----------------------------------------------------------------------===//
+// ReturnOp
+//===----------------------------------------------------------------------===//
+
+bool ReturnOp::isParentNode(Operation *op) {
+  return isa<mlir::FunctionOpInterface>(op);
+}
+
+void ReturnOp::getBranchTargets(ArrayRef<Attribute> operands,
+                                SmallVectorImpl<ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  targets.emplace_back(None, getOperands());
 }
 
 //===----------------------------------------------------------------------===//

@@ -257,8 +257,8 @@ void PruneImpossibleVariantsPass::runOnOperation() {
         // Determine if the return is reachable.
         for (Operation &op :
              llvm::reverse(ret->getBlock()->without_terminator())) {
-          if (!isa<mlir::CallOpInterface, mlir::RegionBranchOpInterface>(op) &&
-              !op.hasTrait<mlir::OpTrait::ControlFlowNode>())
+          if (!isa<mlir::CallOpInterface, mlir::RegionBranchOpInterface,
+                   HLCF::ControlFlowNode>(op))
             continue;
           auto *preds = solver.lookupState<PredecessorState>(&op);
           reachable = preds && (!preds->allPredecessorsKnown() ||

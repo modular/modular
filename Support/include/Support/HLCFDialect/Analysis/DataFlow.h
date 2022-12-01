@@ -40,7 +40,7 @@ public:
 
   void visitOperation(Operation *op, ArrayRef<const StateT *> operandLattices,
                       ArrayRef<StateT *> resultLattices) override {
-    if (!op->hasTrait<mlir::OpTrait::ControlFlowNode>())
+    if (!isa<ControlFlowNode>(op))
       return AnalysisT::visitOperation(op, operandLattices, resultLattices);
     auto *preds =
         this->template getOrCreateFor<mlir::dataflow::PredecessorState>(op, op);
