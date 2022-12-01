@@ -604,6 +604,10 @@ def TargetInfoAttr : ExprAttr<"TargetInfo", "target"> {
       return getFeatures().contains(feature);
     }
 
+    bool isArch(StringRef arch) const {
+      return getCpu().equals(arch);
+    }
+
     static TargetInfoAttr getForHost(::mlir::MLIRContext *ctx);
   }];
 }
