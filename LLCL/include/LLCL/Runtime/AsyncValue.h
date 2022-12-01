@@ -279,6 +279,9 @@ public:
   /// Return true if reference count is 1.
   bool isUnique() const { return refcount.load() == 1; }
 
+  /// Returns the current reference count.
+  size_t getRefCount() const { return refcount.load(); }
+
   /// Return true if we tracking of live AsyncValue instances is enabled.
   static constexpr bool isAllocationTrackingEnabled() {
 #ifdef MODULAR_DEBUG
