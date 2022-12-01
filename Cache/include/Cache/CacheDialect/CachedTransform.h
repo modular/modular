@@ -35,10 +35,9 @@ struct TransformCacheKey {
 /// returning success or failure. The function can write the result of the
 /// transform to the provided WriteableBufferRef - there is a cachedTransform
 /// overload for IR to IR transformations. The Operation provided to the
-/// TransformFn is pre-inflated by the caller and deflated after the call so the
-/// function itself doesn't have to worry about inflating/deflating the op. The
-/// transform function may deflate the operation itself if desired. The
-/// operation should chain itself on the provided AsyncValueRef.
+/// TransformFn is NOT pre-inflated by the caller - that is the responsibility
+/// of the TransformFn if so desired. The transform should chain itself on the
+/// provided AsyncValueRef.
 ///
 /// For example:
 ///   auto runTransform = [](Operation *op, WriteableBufferRef buf,
@@ -96,14 +95,12 @@ using CacheAccessFn = llvm::function_ref<LLCL::AsyncValueRef<CacheFindResult>(
 /// Run the specified transform on the target operation. The transform must have
 /// a key of some kind that can be associated with the operation. The semantics
 /// of `cachedTransform` are that it will combine the input IR with the name of
-/// the transform to map to a cached result. The granularity of the result is a
-/// region on the operation `target`. This function manifests its result as an
-/// update to the RegionHashArrayAttr on `target` - it will update the region
-/// hashes from the old versions (pre-transform) to the new versions (transform
-/// applied).
+/// the transform to map to a cached result. If deflation/inflation is desired,
+/// the user should either deflate before calling this funciton, or
+/// deflate/inflate as part of the provided transform. See the PassManager
+/// overload below for an example.
 LLCL::AsyncValueRef<LogicalResult>
-cachedTransform(Operation *target, BlobCache<RegionCacheKey> &regionCache,
-                BlobCache<TransformCacheKey> &transformCache,
+cachedTransform(Operation *target, BlobCache<TransformCacheKey> &transformCache,
                 LLCL::AsyncValueRef<LogicalResult> chain,
                 WriteableBufferRef transformKey, TransformFn transformFn,
                 CacheAccessFn cacheAccessFn);
@@ -111,7 +108,11 @@ cachedTransform(Operation *target, BlobCache<RegionCacheKey> &regionCache,
 /// Run the specified passes over the target operation (i.e. ModulePasses over a
 /// ModuleOp). If the target operation and pass pipeline result in a cache hit,
 /// that cache hit will simply replace the operation's region hash attribute
-/// with the updated region hash attribute.
+/// with the updated region hash attribute. The granularity of the result is a
+/// region on the operation `target`. This function manifests its result as an
+/// update to the RegionHashArrayAttr on `target` - it will update the region
+/// hashes from the old versions (pre-transform) to the new versions (transform
+/// applied).
 LLCL::AsyncValueRef<LogicalResult>
 cachedTransform(Operation *target, BlobCache<RegionCacheKey> &regionCache,
                 BlobCache<TransformCacheKey> &transformCache,

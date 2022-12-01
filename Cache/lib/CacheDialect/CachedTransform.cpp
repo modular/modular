@@ -7,6 +7,7 @@
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "mlir/AsmParser/AsmParser.h"
+#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/Support/SHA256.h"
 
@@ -29,89 +30,61 @@ std::string TransformCacheKey::hashKey(TransformCacheKey::KeyTy key) {
 /// Do a transform that can be cached. The transform must be named, see the
 /// PassManager overload for an example.
 LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
-    Operation *target, BlobCache<RegionCacheKey> &regionCache,
-    BlobCache<TransformCacheKey> &transformCache,
+    Operation *target, BlobCache<TransformCacheKey> &transformCache,
     LLCL::AsyncValueRef<LogicalResult> chain, WriteableBufferRef transformKey,
     TransformFn transformFn, CacheAccessFn cacheAccessFn) {
   AsyncValue::registerType<CacheFindResult>();
 
+  mlir::writeBytecodeToFile(target, *transformKey);
+  BufferRef keyBuffer = std::move(transformKey);
+
+  // Try to find the key in the cache. The cache hit function should chain off
+  // that and do the right for the cache state.
+  auto foundOr = transformCache.find(keyBuffer->getBuffer());
+  auto cacheHit = cacheAccessFn(target, std::move(foundOr));
+
   // Allocate an output variable for the overall success/failure of this
   // function.
-  auto out = AsyncValueRef<LogicalResult>::allocate(regionCache.getRuntime());
-  // Create the cache key by caching the target op's inputs. `deflate` is
-  // sequenced on `chain` here.
-  auto deflate = deflateOp(target, regionCache, std::move(chain));
-  deflate.andThen([target, &regionCache, &transformCache,
-                   writeableKeyBuffer = std::move(transformKey), transformFn,
-                   cacheAccessFn, out = out.copy(),
-                   deflate = deflate.copy()]() mutable {
-    // If we failed to deflate, then there's not much we can do.
-    if (failed(*deflate)) {
-      out.emplace(failure());
-      return;
-    }
+  auto out =
+      AsyncValueRef<LogicalResult>::allocate(transformCache.getRuntime());
 
-    // Basically we just want to key off the deflated op, so write the target op
-    // into the key buffer and get a read-only ref to it.
-    target->print(*writeableKeyBuffer);
-    BufferRef keyBuffer = std::move(writeableKeyBuffer);
+  // Sequence actually doing the transform off the cache hit result.
+  cacheHit.andThen([target, &transformCache, transformFn,
+                    /*passthrough*/ keyBuffer = std::move(keyBuffer),
+                    out = out.copy(), cacheHit = cacheHit.copy()]() mutable {
+    // If there was an error, nothing we can do.
+    if (cacheHit->isError())
+      return out.emplace(target->emitError() << cacheHit->getError());
 
-    // Try to find the key in the cache. The cache hit function should chain off
-    // that and do the right for the cache state.
-    auto foundOr = transformCache.find(keyBuffer->getBuffer());
-    auto cacheHit = cacheAccessFn(target, std::move(foundOr));
-    // Sequence actually doing the transform off the cache hit result.
-    cacheHit.andThen([target, &regionCache, &transformCache, transformFn,
-                      /*passthrough*/ keyBuffer = std::move(keyBuffer),
-                      out = out.copy(), cacheHit = cacheHit.copy()]() mutable {
-      // If there was an error, nothing we can do.
-      if (cacheHit->isError())
-        return out.emplace(target->emitError() << cacheHit->getError());
+    // Cache hit, we're done!
+    if (cacheHit->hasValue())
+      return out.emplace(success());
 
-      // Cache hit, we're done!
-      if (cacheHit->hasValue())
-        return out.emplace(success());
+    // No error but no cache hit.
 
-      // No error but no cache hit.
+    // Run the transform.
+    WriteableBufferRef writeableTransformResult = WriteableBuffer::get();
+    auto xform = transformFn(target, writeableTransformResult.copy(),
+                             LLCL::AsyncValueRef<LogicalResult>::createReady(
+                                 cacheHit.getRuntime(), success()));
 
-      // Now we do the transform on the inflated operation. This is so
-      // that we don't have to change the MLIR pass manager or anything
-      // - the CacheHitFn provides a way to avoid inflating/deflating
-      // ops when there's a cache hit.
+    // Insert the transform result into the cache.
+    xform.andThen(
+        [target, &transformCache, out = out.copy(),
+         keyBuffer = std::move(keyBuffer),
+         transformResult = std::move(writeableTransformResult)]() mutable {
+          // Only at this point (so the transform has finished) should we change
+          // the transform result ref to be read-only.
+          auto hashOr = transformCache.insert(keyBuffer->getBuffer(),
+                                              std::move(transformResult));
+          hashOr.andThen([&, hashOr = hashOr.copy(), out = out.copy()] {
+            if (failed(*hashOr))
+              return out.emplace(target->emitError() << hashOr->getError());
 
-      // First re-inflate the target op.
-      auto inflate = inflateOp(target, regionCache,
-                               AsyncValueRef<LogicalResult>::createReady(
-                                   cacheHit.getRuntime(), success()));
-
-      // Run the transform.
-      WriteableBufferRef writeableTransformResult = WriteableBuffer::get();
-      auto xform = transformFn(target, writeableTransformResult.copy(),
-                               std::move(inflate));
-
-      // Re-deflate the target op.
-      auto deflate = deflateOp(target, regionCache, std::move(xform));
-
-      // Insert the transform result into the cache.
-      deflate.andThen(
-          [target, &transformCache, out = out.copy(),
-           keyBuffer = std::move(keyBuffer), deflate = deflate.copy(),
-           transformResult = std::move(writeableTransformResult)]() mutable {
-            // Only at this point (so the transform has finished, and deflate
-            // has too) should we change the transform result ref to be
-            // read-only.
-            auto hashOr = transformCache.insert(keyBuffer->getBuffer(),
-                                                std::move(transformResult));
-            hashOr.andThen([&, hashOr = hashOr.copy(), out = out.copy()] {
-              if (failed(*hashOr))
-                return out.emplace(mlir::emitError(target->getLoc())
-                                   << hashOr->getError());
-
-              // Finally done, return success.
-              out.emplace(success());
-            });
+            // Finally done, return success.
+            out.emplace(success());
           });
-    });
+        });
   });
 
   return out;
@@ -204,6 +177,6 @@ LLCL::AsyncValueRef<LogicalResult> Cache::cachedTransform(
     return out;
   };
 
-  return cachedTransform(target, regionCache, transformCache, std::move(chain),
+  return cachedTransform(target, transformCache, std::move(chain),
                          std::move(keyBuf), runTransform, onCacheHit);
 }
