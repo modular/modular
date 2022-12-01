@@ -55,14 +55,15 @@ public:
         continue;
 
       results.push_back(
-          deflateOp(&op, cache,
-                    AsyncValueRef<LogicalResult>::createReady(*rt, success())));
+          deflateOp(&op, cache, AsyncValueRef<Chain>::createReady(*rt)));
     }
 
     await(results);
     for (auto &r : results)
-      if (failed(r->get<LogicalResult>()))
+      if (r->isError()) {
+        getOperation()->emitError() << r->getDiagnostic().getMessage();
         signalPassFailure();
+      }
   }
 
 private:
@@ -110,14 +111,15 @@ public:
         continue;
 
       results.push_back(
-          inflateOp(&sym, cache,
-                    AsyncValueRef<LogicalResult>::createReady(*rt, success())));
+          inflateOp(&sym, cache, AsyncValueRef<Chain>::createReady(*rt)));
     }
 
     await(results);
     for (auto &r : results)
-      if (failed(r->get<LogicalResult>()))
+      if (r->isError()) {
+        getOperation()->emitError() << r->getDiagnostic().getMessage();
         signalPassFailure();
+      }
   }
 
 private:
@@ -163,15 +165,16 @@ public:
     SmallVector<AnyAsyncValueRef> results;
     getOperation().walk([&](Operation *op) {
       if (op->hasTrait<OpTrait::ConstantLike>())
-        results.push_back(deflateConstant(
-            op, cache,
-            AsyncValueRef<LogicalResult>::createReady(*rt, success())));
+        results.push_back(
+            deflateConstant(op, cache, AsyncValueRef<Chain>::createReady(*rt)));
     });
 
     await(results);
     for (auto &r : results)
-      if (failed(r->get<LogicalResult>()))
+      if (r->isError()) {
+        getOperation()->emitError() << r->getDiagnostic().getMessage();
         signalPassFailure();
+      }
   }
 
 private:
@@ -218,15 +221,16 @@ public:
     SmallVector<AnyAsyncValueRef> results;
     getOperation().walk([&](Operation *op) {
       if (op->hasTrait<OpTrait::ConstantLike>())
-        results.push_back(inflateConstant(
-            op, cache,
-            AsyncValueRef<LogicalResult>::createReady(*rt, success())));
+        results.push_back(
+            inflateConstant(op, cache, AsyncValueRef<Chain>::createReady(*rt)));
     });
 
     await(results);
     for (auto &r : results)
-      if (failed(r->get<LogicalResult>()))
+      if (r->isError()) {
+        getOperation()->emitError() << r->getDiagnostic().getMessage();
         signalPassFailure();
+      }
   }
 
 private:

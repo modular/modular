@@ -17,7 +17,7 @@ add_modular_dialect_library(CacheDialect
 
   LINK_LIBS PUBLIC
   LLCLRuntime
-  LLCLSupport
+  LLCLCompilerSupport
   MCache
   MSupport
   MLIRBytecodeReader
