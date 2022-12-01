@@ -4,18 +4,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/KGENPasses.h"
-
 #include "ConstraintSet.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 
 using namespace M;
@@ -485,20 +486,54 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
   return success();
 }
 
-/// Lower a lit.var.decl to pop.stack_allocation.
-static void lowerLITVarDecl(LITFuncOp func) {
-  func.walk([&](KGEN::VarDeclOp varDecl) -> void {
-    OpBuilder b(varDecl);
-    Value stackAlloc = b.create<POP::StackAllocationOp>(varDecl.getLoc(),
-                                                        varDecl.getType(), 1);
-    varDecl.replaceAllUsesWith(stackAlloc);
-    varDecl->erase();
+static void lowerLITOps(LITFuncOp func) {
+  auto errType =
+      DeclRefType::get(FlatSymbolRefAttr::get(func.getContext(), "Error"));
+
+  func.walk([&](Operation *op) {
+    mlir::IRRewriter b{OpBuilder(op)};
+    if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
+      // Lower a lit.var.decl to pop.stack_allocation.
+      b.replaceOpWithNewOp<POP::StackAllocationOp>(varDecl, varDecl.getType(),
+                                                   1);
+    } else if (auto raise = dyn_cast<LITRaiseErrorOp>(op)) {
+      // Lower a lit.raise_error to pop.variant.create.
+      b.replaceOpWithNewOp<POP::VariantCreateOp>(raise, func.getResultType(),
+                                                 raise.getError());
+    } else if (auto form = dyn_cast<LITFormValueOp>(op)) {
+      // Lower a lit.form_value to a pop.variant.create.
+      b.replaceOpWithNewOp<POP::VariantCreateOp>(form, func.getResultType(),
+                                                 form.getValue());
+    } else if (auto unwrap = dyn_cast<LITUnwrapOrPropagateOp>(op)) {
+      // Lower a lit.unwrap_or_propagate to a conditional.
+      Location loc = op->getLoc();
+      Type type = unwrap.getValue().getType().getType();
+      Value isValue = b.create<POP::VariantIsOp>(loc, unwrap.getValue(), type);
+      auto ifOp = b.create<HLCF::IfOp>(unwrap.getLoc(), type, isValue);
+
+      b.createBlock(&ifOp.getThenRegion());
+      Value value = b.create<POP::VariantGetOp>(loc, type, unwrap.getValue());
+      b.create<HLCF::YieldOp>(loc, value);
+
+      b.createBlock(&ifOp.getElseRegion());
+      Value err = b.create<POP::VariantGetOp>(loc, errType, unwrap.getValue());
+      if (auto tryOp = ifOp->getParentOfType<LITTryOp>();
+          tryOp && tryOp.getTryRegion().findAncestorOpInRegion(*ifOp)) {
+        b.create<LITTryRaiseOp>(unwrap.getLoc(), err);
+      } else {
+        Value wrapped =
+            b.create<POP::VariantCreateOp>(loc, func.getResultType(), err);
+        b.create<HLCF::ReturnOp>(loc, wrapped);
+      }
+
+      b.replaceOp(unwrap, ifOp.getResults());
+    }
   });
 }
 
 /// Lower an lit.func to kgen.generator.
 static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
-  lowerLITVarDecl(gen);
+  lowerLITOps(gen);
   OpBuilder b(gen);
 
   // Is a LITFuncOp with empy body representing an interface?
@@ -526,8 +561,8 @@ static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
   gen = LITFuncOp(); // The line above also erases 'gen'.
   symbolTable.insert(result);
 
-  // If the generator implemented an interface, infer additional constraints and
-  // check the signature.
+  // If the generator implemented an interface, infer additional constraints
+  // and check the signature.
   GeneratorInterfaceOp itf;
   if (auto interfaceName = result.getImplements()) {
     if (!interfaceName)
@@ -590,11 +625,12 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
   return success();
 }
 
-/// Member functions are reference with nested symbol references. After
-/// lowering, the symbol tree will be flat. Concatenate all nested symbol
-/// references in symbol constants.
-static void renameSymbolReferences(Operation *op) {
+static void lowerAttributesAndTypes(Operation *op) {
   mlir::AttrTypeReplacer replacer;
+
+  // Member functions are reference with nested symbol references. After
+  // lowering, the symbol tree will be flat. Concatenate all nested symbol
+  // references in symbol constants.
   replacer.addReplacement([](SymbolRefAttr symRef) {
     SmallString<64> qualifiedName(symRef.getRootReference().getValue().str());
     for (FlatSymbolRefAttr symRefAttr : symRef.getNestedReferences()) {
@@ -603,22 +639,25 @@ static void renameSymbolReferences(Operation *op) {
     }
     return FlatSymbolRefAttr::get(symRef.getContext(), qualifiedName);
   });
-  replacer.recursivelyReplaceElementsIn(
-      op, /*replaceAttrs=*/true, /*replaceLocs=*/false, /*replaceTypes=*/true);
-}
 
-static void lowerNone(Operation *op) {
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([](KGEN::NoneType type) {
-    return KGEN::ListType::get(mlir::IntegerType::get(type.getContext(), 0), 0);
+  // Lower `!lit.none` to `list<i0[0]>`, which will eventually become nothing.
+  auto emptyList = ListType::get(IntegerType::get(op->getContext(), 0), 0);
+  replacer.addReplacement([&](KGEN::NoneType type) { return emptyList; });
+  // Lower `#lit.none` to `[]`.
+  replacer.addReplacement([&](NoneAttr attr) {
+    return ListAttr::get(attr.getContext(), {}, emptyList);
   });
-  replacer.addReplacement([](KGEN::NoneAttr attr) {
-    return KGEN::ListAttr::get(
-        attr.getContext(), {},
-        KGEN::ListType::get(mlir::IntegerType::get(attr.getContext(), 0), 0));
+
+  // Lower `!lit.raises_or` to `!pop.variant`.
+  auto errType =
+      DeclRefType::get(FlatSymbolRefAttr::get(op->getContext(), "Error"));
+  replacer.addReplacement([&](RaisesOrType type) {
+    return POP::VariantType::get({errType, type.getType()});
   });
-  replacer.recursivelyReplaceElementsIn(
-      op, /*replaceAttrs=*/true, /*replaceLocs=*/false, /*replaceTypes=*/true);
+
+  replacer.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
+                                        /*replaceLocs=*/false,
+                                        /*replaceTypes=*/true);
 }
 
 //===----------------------------------------------------------------------===//
@@ -626,11 +665,10 @@ static void lowerNone(Operation *op) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-
 struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
   void runOnOperation() override {
-    // TODO: This has to be a module pass because this mutates the body of the
-    // module, but we could trivially parallelize this within the pass.
+    // TODO: This has to be a module pass because this mutates the body of
+    // the module, but we could trivially parallelize this within the pass.
     ModuleOp module = getOperation();
     SymbolTable symbolTable(module);
     for (auto &op : llvm::make_early_inc_range(module.getOps())) {
@@ -642,8 +680,7 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
           return signalPassFailure();
       }
     }
-    renameSymbolReferences(module);
-    lowerNone(module);
+    lowerAttributesAndTypes(module);
   }
 };
 
