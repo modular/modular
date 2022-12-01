@@ -344,10 +344,10 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
   topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
     // Defer nested parameter scopes. If the nested scope is parametrically
     // isolated from above, skip it.
-    auto nestedDecl = dyn_cast<KGENDeclInterface>(bodyOp);
-    if (nestedDecl && nestedDecl != topLevelOp) {
-      if (!nestedDecl.isIsolatedFromAbove())
-        parameters.nestedDecls.push_back(nestedDecl);
+    auto bodyDeclInterface = dyn_cast<KGENDeclInterface>(bodyOp);
+    if (bodyDeclInterface && bodyDeclInterface != topLevelOp) {
+      if (!bodyDeclInterface.isIsolatedFromAbove())
+        parameters.nestedDecls.push_back(bodyDeclInterface);
       return WalkResult::skip();
     }
 
@@ -374,6 +374,17 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
           return WalkResult::advance();
         }
       }
+    }
+
+    // If this is a KGENDeclInterface, the declared parameters are stored in the
+    // signature.
+    if (bodyDeclInterface) {
+      if (!paramDeclsAttr)
+        paramDeclsAttr = bodyDeclInterface.getInputParamDeclsAttr();
+      collectUsesFromAttr(bodyDeclInterface.getInputParamDeclsAttr(), uses,
+                          hasConstExpr);
+      collectUsesFromTypes(bodyDeclInterface.getFunctionType(), uses,
+                           hasConstExpr);
     }
 
     // Check the types of results to find any parameters embedded in their
@@ -567,11 +578,11 @@ void DeclParameterVerifier::verifyRefType(DeclRefType refType) {
   // We have to specialize the type's parameter decls.
   ParameterEvaluator evaluator;
   for (auto [value, decl] :
-       llvm::zip(refType.getParamValues(), decl.getParamDeclsAttr()))
+       llvm::zip(refType.getParamValues(), decl.getInputParamDeclsAttr()))
     evaluator.setParameterValue(decl, value.getValue());
   SmallVector<ParamDeclAttr> specializedDecls;
   specializedDecls.reserve(refType.getParamValues().size());
-  for (ParamDeclAttr decl : decl.getParamDeclsAttr())
+  for (ParamDeclAttr decl : decl.getInputParamDeclsAttr())
     specializedDecls.push_back(
         cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl)));
 

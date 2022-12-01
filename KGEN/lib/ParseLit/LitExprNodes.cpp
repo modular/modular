@@ -1119,7 +1119,7 @@ static CallableValue substituteParametersIntoUserDefinedType(
     return {};
   }
 
-  auto numParams = structOp.getParamDecls().size();
+  auto numParams = structOp.getInputParamDecls().size();
   if (numParams != subscript.indices.size()) {
     emitter.emitError(subscript.getLoc(), "")
         << ASTType(declRef) << " requires " << numParams << " meta parameter"
@@ -1131,7 +1131,7 @@ static CallableValue substituteParametersIntoUserDefinedType(
   // Emit each of the indices as parameter expressions.
   SmallVector<ParamBindAttr> paramBindings;
   for (auto [indexExpr, decl] :
-       llvm::zip(subscript.indices, structOp.getParamDecls())) {
+       llvm::zip(subscript.indices, structOp.getInputParamDecls())) {
     // TODO: Slice syntax is the obvious way to support named parameter
     // arguments.
     auto indexVal = emitter.emitMValue(

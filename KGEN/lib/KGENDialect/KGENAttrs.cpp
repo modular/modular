@@ -1464,6 +1464,8 @@ ArrayRef<ParamDeclAttr> KGEN::getParamDecls(Operation *op) {
   if (auto paramDeclsArray =
           op->getAttrOfType<ParamDeclArrayAttr>("paramDecls"))
     return paramDeclsArray.getValue();
+  if (auto declItf = dyn_cast<KGENDeclInterface>(op))
+    return declItf.getInputParamDecls();
   return {};
 }
 

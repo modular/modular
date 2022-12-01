@@ -552,7 +552,7 @@ kgen.generator @signature_taking_callee<fn: <size>() -> ()>() {
 
 kgen.generator @call_region() {
   kgen.call @signature_taking_callee<fn: <size>() -> () = region>() : () -> ()
-  // expected-error @below {{expects a non-empty block}}
+  // expected-error @below {{body region didn't have a kgen.return op?}}
   fn<size>(%arg0: i32) {}
   kgen.return
 }
@@ -575,7 +575,7 @@ kgen.generator @call_region() {
 
 // -----
 
-// expected-error @below {{unexpected result parameters}}
+// expected-error @below {{signature mismatches body}}
 kgen.struct.decl @StructReturns<() -> dtype> {
 }
 
@@ -585,7 +585,8 @@ kgen.struct.decl @StructReturns<() -> dtype> {
 "kgen.struct.decl"() ({
 ^bb0(%arg0: i32):
 }) {sym_name = "StructArgs", constraints = #kgen<constraints[]>,
-    paramDecls = #kgen<param.decls[]>, resultParamTypes = #kgen<type.array[]>} : () -> ()
+    signature = !kgen.signature<[], [], () -> ()>
+    } : () -> ()
 
 // -----
 

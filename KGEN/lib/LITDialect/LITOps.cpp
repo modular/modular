@@ -125,10 +125,10 @@ void LITFuncOp::build(OpBuilder &builder, OperationState &result,
   // representation.  This makes sure that the error case doesn't break
   // invariants (that functions always have a single result).
   auto errorType = builder.getType<TypeCheckErrorType>();
-  auto functionType = builder.getFunctionType(ArrayRef<Type>(), {errorType});
+  auto signatureType =
+      SignatureType::get(context, ArrayRef<Type>(), {errorType});
   build(builder, result, name, StringArrayAttr::get(context, {}),
-        TypeAttr::get(functionType), ParamDeclArrayAttr::get(context, {}),
-        TypeArrayAttr::get(context, {}), ConstraintArrayAttr::get(context, {}),
+        TypeAttr::get(signatureType), ConstraintArrayAttr::get(context, {}),
         /*isStatic=*/mlir::UnitAttr(), /*isInterface=*/mlir::UnitAttr(),
         /*isDef=*/mlir::UnitAttr(), /*raises=*/mlir::UnitAttr(),
         /*implements=*/FlatSymbolRefAttr());

@@ -48,9 +48,7 @@ let description = [{
   /// implementation of the specified generator.interface.
   let arguments = (ins SymbolNameAttr:$sym_name,
                        KStringArrayAttr:$valueParamNames,
-                       TypeAttrOf<FunctionType>:$function_type,
-                       ParamDeclArrayAttr:$paramDecls,
-                       KTypeArrayAttr:$resultParamTypes,
+                       TypeAttrOf<SignatureType>:$signature,
                        ConstraintArrayAttr:$constraints,
                        UnitAttr:$isStatic,
                        UnitAttr:$isInterface,
@@ -60,11 +58,11 @@ let description = [{
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
+    using KGENDeclInterfaceTrait::getFunctionType;
+    using KGENDeclInterfaceTrait::getFunctionTypeAttr;
+
     Block *getBody() { return &getFunctionBody().back(); }
     ReturnOp getReturnOp();
-
-    ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
-    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
 
     /// Returns the result type, which is guaranteed to be present.
     Type getResultType() { return getFunctionType().getResults()[0]; }

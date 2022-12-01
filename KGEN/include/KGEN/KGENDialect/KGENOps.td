@@ -42,31 +42,19 @@ def FuncOp
   let summary = "concrete function definition";
 
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<FunctionType>:$function_type,
-                       ParamDeclArrayAttr:$paramDecls,
-                       KTypeArrayAttr:$resultParamTypes);
+                       TypeAttrOf<SignatureType>:$signature);
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
     using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<FuncOp>::getBody;
+    using KGENDeclInterfaceTrait::getFunctionType;
+    using KGENDeclInterfaceTrait::getFunctionTypeAttr;
+
     ReturnOp getReturnOp();
-
-    /// Returns the argument types of this invokable.
-    ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
-
-    /// Returns the result types of this invokable.
-    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
   }];
 
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
-
-  let builders = [
-    // Create a func with a region but no body block.  The caller must create
-    // it and fill it in.
-    OpBuilder<(ins "StringAttr":$name, "FunctionType":$signature,
-                   "ArrayRef<Type>":$resultParamTypes)>
-  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -85,22 +73,17 @@ def GeneratorOp
   /// If the `implements` attribute is present then this generator is an
   /// implementation of the specified generator.interface.
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<FunctionType>:$function_type,
-                       ParamDeclArrayAttr:$paramDecls,
-                       KTypeArrayAttr:$resultParamTypes,
+                       TypeAttrOf<SignatureType>:$signature,
                        ConstraintArrayAttr:$constraints,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
     using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<GeneratorOp>::getBody;
+    using KGENDeclInterfaceTrait::getFunctionType;
+    using KGENDeclInterfaceTrait::getFunctionTypeAttr;
+
     ReturnOp getReturnOp();
-
-    /// Returns the argument types of this invokable.
-    ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
-
-    /// Returns the result types of this invokable.
-    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
   }];
 
   let hasCustomAssemblyFormat = 1;
@@ -125,9 +108,7 @@ def GeneratorInterfaceOp : KGENOp<"generator.interface", [
   /// `paramDecls` and the `numInputParameters` field indicates which are input
   /// and which are result parameters.
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<FunctionType>:$function_type,
-                       ParamDeclArrayAttr:$paramDecls,
-                       KTypeArrayAttr:$resultParamTypes,
+                       TypeAttrOf<SignatureType>:$signature,
                        ConstraintArrayAttr:$constraints,
                        OptionalAttr<SymbolConstantAttr>:$evaluator,
                        OptionalAttr<SymbolConstantAttr>:$defaultImpl);
@@ -136,15 +117,13 @@ def GeneratorInterfaceOp : KGENOp<"generator.interface", [
   // region.  We are "declaration like" though, so ours never has a block.
   let regions = (region SizedRegion<0>:$body);
 
-  let extraClassDeclaration = [{
-    /// Returns the argument types of this invokable.
-    ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
-
-    /// Returns the result types of this invokable.
-    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
-  }];
-
   let hasCustomAssemblyFormat = 1;
+
+  let extraClassDeclaration = [{
+    using KGENDeclInterfaceTrait::getFunctionType;
+    using KGENDeclInterfaceTrait::getFunctionTypeAttr;
+
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -401,16 +380,13 @@ class RegionBodyBaseOp<string mnemonic, list<Trait> traits = []>
     SingleBlockImplicitTerminator<"ReturnOp">,
     DeclareOpInterfaceMethods<KGENDeclInterface, [
       "isIsolatedFromAbove", "notifyKnownIsolatedFromAbove"]>] # traits> {
-  let arguments = (ins ParamDeclArrayAttr:$paramDecls,
-                       KTypeArrayAttr:$resultParamTypes,
+  let arguments = (ins TypeAttrOf<SignatureType>:$signature,
                        ConstraintArrayAttr:$constraints,
                        UnitAttr:$isolated);
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    `` custom<OptionalParameterSpec>($paramDecls, $resultParamTypes)
-    `` custom<OptionalConstraints>($constraints)
-    `` custom<RegionBody>($bodyRegion) attr-dict
+    `` custom<RegionBody>($signature, $constraints, $bodyRegion) attr-dict
   }];
 
   let extraClassDeclaration = [{
@@ -769,12 +745,11 @@ def StructDeclOp : KGENOp<"struct.decl", [Symbol, SymbolTable,
     ```
   }];
 
-  let arguments = (ins SymbolNameAttr:$sym_name, ParamDeclArrayAttr:$paramDecls,
-                       // Needed for KGENDeclInterface. Always empty.
-                       KTypeArrayAttr:$resultParamTypes);
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<SignatureType>:$signature);
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
-    $sym_name `` custom<OptionalParameterSpec>($paramDecls, $resultParamTypes)
+    $sym_name `` custom<OptionalParameterSpec>($signature)
     attr-dict-with-keyword
     $fields
   }];
