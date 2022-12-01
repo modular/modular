@@ -294,16 +294,16 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
       std::filesystem::is_directory(base, ec)) {
     // Iterate the base path and remove directories that don't match the current
     // version.
-    for (const std::filesystem::path &dirEntry :
-         std::filesystem::directory_iterator{base}) {
+    for (const auto &dirEntry : std::filesystem::directory_iterator{base}) {
       // The directory entry must exist, be a directory, the parent must be
       // `base` and the directory 'filename' must not match
       // MODULAR_VERSION_STRING in order for it to be deleted.
-      if (!ec && std::filesystem::exists(dirEntry) &&
-          std::filesystem::is_directory(dirEntry, ec) &&
-          dirEntry.parent_path() == base &&
-          dirEntry.filename() != MODULAR_VERSION_STRING)
+      if (std::filesystem::exists(dirEntry.path()) &&
+          std::filesystem::is_directory(dirEntry.path(), ec) &&
+          dirEntry.path().parent_path() == base &&
+          dirEntry.path().filename() != MODULAR_VERSION_STRING) {
         std::filesystem::remove_all(dirEntry, ec);
+      }
     }
   }
 
