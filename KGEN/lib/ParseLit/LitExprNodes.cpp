@@ -1158,6 +1158,62 @@ static CallableValue substituteParametersIntoUserDefinedType(
            &subscript}};
 }
 
+/// Given a set of decomposed types and attributes from an MLIR attribute or
+/// type, calculate the post-substitution set of types and attributes that
+/// should be used to rebuild the entity.  On failure, this emits an error and
+/// returns failure.
+static LogicalResult performPlaceholderSubstitution(
+    ArrayRef<PointerUnion<Type, Attribute>> params,
+    SmallVectorImpl<Attribute> &newAttrs, SmallVectorImpl<Type> &newTypes,
+    const SubscriptNode &subscript, ExprEmitter &emitter) {
+  unsigned nextIdx = 0;
+  for (auto &elt : params) {
+    if (auto type = dyn_cast<Type>(elt)) {
+      // Types aren't replacable with attributes.
+      newTypes.push_back(type);
+      continue;
+    }
+
+    auto attr = dyn_cast<Attribute>(elt);
+    if (!attr) {
+      emitter.emitError(subscript.getLoc(),
+                        "MLIR substitution has unknown parameter: ")
+          << attr;
+      return failure();
+    }
+
+    auto placeholder = dyn_cast<LITPlaceholderAttr>(attr);
+    if (!placeholder || nextIdx >= subscript.indices.size()) {
+      newAttrs.push_back(attr);
+      continue;
+    }
+
+    ExprNode *indexVal = subscript.indices[nextIdx++];
+    TypedAttr newVal = emitter.emitMValue(
+        indexVal, "expected meta value in type substitution list");
+    if (!newVal)
+      return failure();
+
+    // TODO: Support conversions.
+    auto expectedType = cast<LITPlaceholderAttr>(attr).getType();
+    if (newVal.getType() != expectedType) {
+      emitter.emitError(indexVal->getLoc(), "parameter of type ")
+          << ASTType(newVal.getType())
+          << " cannot be converted to expected type " << ASTType(expectedType);
+      return failure();
+    }
+    newAttrs.push_back(newVal);
+  }
+
+  // Reject extraneous subscript indices.
+  if (nextIdx != subscript.indices.size()) {
+    emitter.emitError(subscript.indices[nextIdx]->getLoc(),
+                      "unused parameter substitution");
+    return failure();
+  }
+  return success();
+}
+
 /// Given a value of type type, substitute parameters into the type, producing
 /// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
 static CallableValue
@@ -1176,54 +1232,11 @@ substituteParametersIntoMLIRType(Type type, const SubscriptNode &subscript,
                                [&](Type type) { params.push_back(type); });
 
   // Figure out the replacements.
-  unsigned nextIdx = 0;
   SmallVector<Attribute> newAttrs;
   SmallVector<Type> newTypes;
-
-  for (auto &elt : params) {
-    if (auto type = dyn_cast<Type>(elt)) {
-      // Types aren't replacable with attributes.
-      newTypes.push_back(type);
-      continue;
-    }
-
-    auto attr = dyn_cast<Attribute>(elt);
-    if (!attr) {
-      emitter.emitError(subscript.getLoc(), "MLIR type ")
-          << ASTType(type) << " has unknown parameter";
-      return {};
-    }
-
-    auto placeholder = dyn_cast<LITPlaceholderAttr>(attr);
-    if (!placeholder || nextIdx >= subscript.indices.size()) {
-      newAttrs.push_back(attr);
-      continue;
-    }
-
-    ExprNode *indexVal = subscript.indices[nextIdx++];
-    TypedAttr newVal = emitter.emitMValue(
-        indexVal, "expected meta value in type substitution list");
-    if (!newVal)
-      return {};
-
-    // TODO: Support conversions.
-    auto expectedType = cast<LITPlaceholderAttr>(attr).getType();
-    if (newVal.getType() != expectedType) {
-      emitter.emitError(indexVal->getLoc(), "parameter of type ")
-          << ASTType(newVal.getType())
-          << " cannot be converted to expected type " << ASTType(expectedType);
-      return {};
-    }
-    newAttrs.push_back(newVal);
-  }
-
-  // Reject extraneous subscript indices.
-  if (nextIdx != subscript.indices.size()) {
-    emitter.emitError(subscript.indices[nextIdx]->getLoc(),
-                      "unused parameter when substituting into MLIR type ")
-        << ASTType(type);
+  if (failed(performPlaceholderSubstitution(params, newAttrs, newTypes,
+                                            subscript, emitter)))
     return {};
-  }
 
   // Rewrite the type with the substitutions.
   Type result = itf.replaceImmediateSubElements(newAttrs, newTypes);
@@ -1234,6 +1247,50 @@ substituteParametersIntoMLIRType(Type type, const SubscriptNode &subscript,
     return {};
   }
   return CallableValue({result, &subscript});
+}
+
+/// Given an MValue that is being subscripted with a type that cannot be
+/// subscripted, check to see if it contains placeholder attributes, and if so
+/// substitute new values in for them.  If not, it is not an error, just
+/// silently return null.
+static TypedAttr substituteParametersIntoMLIRAttr(
+    TypedAttr origAttr, const SubscriptNode &subscript, ExprEmitter &emitter) {
+
+  // We can only replace placeholders in iterable attributes.
+  auto itf = dyn_cast_or_null<mlir::SubElementAttrInterface>(origAttr);
+  if (!itf)
+    return {};
+
+  // Collect all the attributes and types out of this type.
+  SmallVector<PointerUnion<Type, Attribute>> params;
+  bool havePlaceholder = false;
+  itf.walkImmediateSubElements(
+      [&](Attribute attr) {
+        havePlaceholder |= isa<LITPlaceholderAttr>(attr);
+        params.push_back(attr);
+      },
+      [&](Type type) { params.push_back(type); });
+
+  // If there are no placeholders in the attribute, then we're done.
+  if (!havePlaceholder)
+    return {};
+
+  // Figure out the replacements.
+  SmallVector<Attribute> newAttrs;
+  SmallVector<Type> newTypes;
+  if (failed(performPlaceholderSubstitution(params, newAttrs, newTypes,
+                                            subscript, emitter)))
+    return {};
+
+  // Rewrite the type with the substitutions.
+  Attribute result = itf.replaceImmediateSubElements(newAttrs, newTypes);
+  if (!result || !isa<TypedAttr>(result)) {
+    emitter.emitError(subscript.getLoc(),
+                      "failed to substitute parameters into ")
+        << origAttr;
+    return {};
+  }
+  return cast<TypedAttr>(result);
 }
 
 AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
@@ -1314,6 +1371,10 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
       return {
           {bindAttributesToMLIROperatorCall(*this, unboundOperator, emitter),
            this}};
+
+    if (auto boundAttr =
+            substituteParametersIntoMLIRAttr(mValue.get(), *this, emitter))
+      return {{MValue(boundAttr), this}};
   }
 
   // Emit each of the index values to generate error messages.
