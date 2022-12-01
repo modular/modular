@@ -14,44 +14,38 @@ using namespace HLCF;
 using namespace mlir::dataflow;
 
 LogicalResult HLCF::DeadCodeAnalysis::visit(mlir::ProgramPoint point) {
-  auto *op = point.dyn_cast<Operation *>();
-  if (!op || !op->hasTrait<mlir::OpTrait::ControlFlowNode>())
+  auto node = dyn_cast_or_null<ControlFlowNode>(point.dyn_cast<Operation *>());
+  if (!node)
     return mlir::dataflow::DeadCodeAnalysis::visit(point);
 
-  auto markLive = [&](Region &region, ValueRange values = {}) {
-    auto *executable = getOrCreate<Executable>(&region.front());
-    propagateIfChanged(executable, executable->setToLive());
-    auto *pred = getOrCreate<PredecessorState>(&region.front());
-    propagateIfChanged(pred, pred->join(op, values));
-  };
-
-  // Set the liveness of the entry blocks of each region.
-  if (auto loopOp = dyn_cast<LoopOp>(op)) {
-    // The loop body is always live.
-    markLive(loopOp.getBody(), loopOp.getOperands());
-  } else {
-    auto ifOp = cast<IfOp>(op);
-    // Check the constant value of the condition.
-    auto *cv = getOrCreateFor<Lattice<ConstantValue>>(point, ifOp.getCond());
-    if (!cv->getValue().isUninitialized()) {
-      Attribute value = cv->getValue().getConstantValue();
-      if (!value) {
-        // The condition value is unknown. Mark both regions as live.
-        markLive(ifOp.getThenRegion());
-        markLive(ifOp.getElseRegion());
-      } else {
-        // The condition value is known. Mark the appropriate region as live.
-        markLive(cast<BoolAttr>(value).getValue() ? ifOp.getThenRegion()
-                                                  : ifOp.getElseRegion());
-      }
+  SmallVector<Attribute> operands;
+  for (Value operand : node->getOperands()) {
+    auto *cv = getOrCreate<Lattice<ConstantValue>>(operand);
+    cv->useDefSubscribe(this);
+    if (cv->getValue().isUninitialized())
+      return success();
+    operands.push_back(cv->getValue().getConstantValue());
+  }
+  SmallVector<ControlFlowTarget> targets;
+  node.getEntryTargets(operands, targets);
+  for (const ControlFlowTarget &target : targets) {
+    PredecessorState *pred;
+    if (target.index) {
+      Block *entry = &node->getRegion(*target.index).front();
+      auto *exec = getOrCreate<Executable>(entry);
+      propagateIfChanged(exec, exec->setToLive());
+      pred = getOrCreate<PredecessorState>(entry);
+    } else {
+      pred = getOrCreate<PredecessorState>(node);
     }
+    propagateIfChanged(pred, pred->join(node, target.inputs));
   }
 
-  // Only perform analysis from the root node.
-  if (op->getParentOp()->hasTrait<mlir::OpTrait::ControlFlowNode>())
+  // Only perform tree analysis from the root node.
+  if (isa<ControlFlowNode>(node->getParentOp()))
     return success();
 
-  auto &tree = mgr.nest(op).getAnalysis<ControlFlowTree>();
+  auto &tree = mgr.nest(node).getAnalysis<ControlFlowTree>();
 
   // FIXME: ControlFlowTree is optimized for fast lookups when traversing in
   // DFS, but that means we have to redo the traversal whenever analysis
@@ -61,7 +55,7 @@ LogicalResult HLCF::DeadCodeAnalysis::visit(mlir::ProgramPoint point) {
         for (Region &region : op->getRegions()) {
           for (Block &block : region) {
             Operation *term = block.getTerminator();
-            if (!term->hasTrait<mlir::OpTrait::ControlFlowTerminator>())
+            if (!isa<ControlFlowTerminator>(term))
               continue;
             ++termId;
             // If the block is not live, ignore it.
@@ -72,9 +66,8 @@ LogicalResult HLCF::DeadCodeAnalysis::visit(mlir::ProgramPoint point) {
             // the nearest operation with non-CFG control-flow.
             bool reachable = true;
             for (Operation &op : llvm::reverse(block.without_terminator())) {
-              if (!isa<mlir::CallOpInterface, mlir::RegionBranchOpInterface>(
-                      op) &&
-                  !op.hasTrait<mlir::OpTrait::ControlFlowNode>())
+              if (!isa<mlir::CallOpInterface, mlir::RegionBranchOpInterface,
+                       ControlFlowNode>(op))
                 continue;
               // If the operation is known to have no predecsesors, the
               // terminator is not reachable.
@@ -86,6 +79,7 @@ LogicalResult HLCF::DeadCodeAnalysis::visit(mlir::ProgramPoint point) {
             if (!reachable)
               continue;
 
+            // Process returns.
             if (isa<ReturnOp>(term)) {
               auto func = term->getParentOfType<mlir::CallableOpInterface>();
               auto *callsites = getOrCreateFor<PredecessorState>(point, func);
@@ -96,32 +90,31 @@ LogicalResult HLCF::DeadCodeAnalysis::visit(mlir::ProgramPoint point) {
               continue;
             }
 
-            auto [targetId, after] = tree.targets[termId - 1];
-            Operation *target = tree.ops[targetId];
-            PredecessorState *pred;
-            if (after) {
-              // If the terminator branches to after an operation, make this
-              // terminator a predecessor of that operation.
-              pred = getOrCreate<PredecessorState>(target);
-            } else {
-              // If the terminator branches to the entry block of an operation,
-              // make this terminator a predecessor of that block.
-              pred = getOrCreate<PredecessorState>(
-                  &cast<LoopOp>(target).getBody().front());
+            // Process all other kinds of terminators.
+            auto [targetId, targets] = tree.targets[termId - 1];
+            ControlFlowNode node = tree.ops[targetId];
+            for (const ControlFlowTarget &target : targets) {
+              PredecessorState *pred;
+              if (target.index) {
+                pred = getOrCreate<PredecessorState>(
+                    &node->getRegion(*target.index).front());
+              } else {
+                pred = getOrCreate<PredecessorState>(node);
+              }
+              propagateIfChanged(pred, pred->join(term, target.inputs));
             }
-            propagateIfChanged(pred, pred->join(term, term->getOperands()));
           }
         }
         for (Region &region : op->getRegions()) {
           for (Block &block : region) {
             for (Operation &op : block.without_terminator())
-              if (op.hasTrait<mlir::OpTrait::ControlFlowNode>())
+              if (isa<ControlFlowNode>(op))
                 visitNode(&op, termId);
           }
         }
       };
 
   unsigned termId = 0;
-  visitNode(op, termId);
+  visitNode(node, termId);
   return success();
 }

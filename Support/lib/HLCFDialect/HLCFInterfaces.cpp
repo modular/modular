@@ -1,0 +1,223 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "Support/HLCFDialect/HLCFOps.h"
+#include "mlir/IR/FunctionInterfaces.h"
+
+using namespace M;
+using namespace HLCF;
+
+//===----------------------------------------------------------------------===//
+// Control-Flow Verification
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This object contains context about control-flow trees and uses that to
+/// verify them. Keep a stack of control-flow scopes as we walk the tree and
+/// verify that each terminator has a valid parent somewhere up the stack and
+/// check that the return types match.
+class ControlFlowVerifier {
+public:
+  explicit ControlFlowVerifier(Operation *root) : root(root) {}
+
+  /// Verify the control-flow tree from this operation if it is a root node.
+  static LogicalResult verifyIfRoot(Operation *op);
+
+private:
+  /// Verify a terminator.
+  LogicalResult verifyTerminator(ControlFlowTerminator op);
+
+  /// Verify a node.
+  LogicalResult verifyNode(ControlFlowNode op);
+
+  /// Return the nearest operation that is a valid parent for the terminator.
+  ControlFlowNode findNearestParentFor(ControlFlowTerminator op);
+
+  /// The root of the control-flow tree.
+  Operation *root;
+
+  /// The current stack of control-flow scopes.
+  SmallVector<ControlFlowNode> scopes;
+};
+} // namespace
+
+/// Verify two type ranges match between a return operation and a function.
+static LogicalResult verifyReturnTypes(TypeRange lhs, TypeRange rhs,
+                                       Operation *op, Operation *parent) {
+  if (lhs.size() != rhs.size()) {
+    return (op->emitOpError("specifies ")
+            << lhs.size() << " results but surrounding function expects "
+            << rhs.size())
+               .attachNote(parent->getLoc())
+           << "see function here";
+  }
+  for (auto [idx, lhsType, rhsType] :
+       llvm::zip(llvm::seq<unsigned>(0, lhs.size()), lhs, rhs)) {
+    if (lhsType == rhsType)
+      continue;
+    return (op->emitOpError("operand #")
+            << idx << " type " << lhsType
+            << " does not match expected result type " << rhsType)
+               .attachNote(parent->getLoc())
+           << "see function here";
+  }
+  return success();
+}
+
+/// Verify two type ranges match along a control-flow edge.
+static LogicalResult verifyTypesAlongEdge(TypeRange lhs, TypeRange rhs,
+                                          Operation *op, Operation *parent,
+                                          ControlFlowTarget target) {
+  auto attachEdgeNote = [&](InFlightDiagnostic diag) {
+    diag << " along control-flow edge from here";
+    if (target.index)
+      diag.attachNote(parent->getRegion(*target.index).front().front().getLoc())
+          << "to beginning of region #" << *target.index << " here";
+    else
+      diag.attachNote(parent->getLoc()) << "to end of parent operation here";
+    return failure();
+  };
+
+  if (lhs.size() != rhs.size()) {
+    return attachEdgeNote(op->emitOpError("specifies ")
+                          << lhs.size() << " branch inputs but target expected "
+                          << rhs.size());
+  }
+  for (auto [idx, lhsType, rhsType] :
+       llvm::zip(llvm::seq<unsigned>(0, lhs.size()), lhs, rhs)) {
+    if (lhsType == rhsType)
+      continue;
+    return attachEdgeNote(op->emitOpError("branch input #")
+                          << idx << " has type " << lhsType
+                          << " but target expected " << rhsType);
+  }
+  return success();
+}
+
+ControlFlowNode
+ControlFlowVerifier::findNearestParentFor(ControlFlowTerminator op) {
+  for (ControlFlowNode node : llvm::reverse(scopes))
+    if (op.isParentNode(node))
+      return node;
+  return nullptr;
+}
+
+LogicalResult ControlFlowVerifier::verifyTerminator(ControlFlowTerminator op) {
+  // Returns are modelled differently. Handle them here.
+  if (isa<ReturnOp>(op)) {
+    auto function = dyn_cast<mlir::FunctionOpInterface>(root);
+    if (!function) {
+      return op->emitOpError("is not nested within a function")
+                 .attachNote(root->getLoc())
+             << "see control-flow root here";
+    }
+    // FIXME: LLVM functions with no results return `LLVMVoidType`. Let
+    // verifications fall through here so that HLCF lowerings can be composed.
+    if (function->getName().getStringRef() == "llvm.func")
+      return success();
+    return verifyReturnTypes(op->getOperandTypes(), function.getResultTypes(),
+                             op, function);
+  }
+
+  ControlFlowNode parent = findNearestParentFor(op);
+  if (!parent) {
+    return op->emitOpError("is not nested within a suitable parent operation")
+               .attachNote(root->getLoc())
+           << "see control-flow root here";
+  }
+  SmallVector<ControlFlowTarget, 1> targets;
+  op.getBranchTargets(SmallVector<Attribute>(op->getNumOperands(), {}),
+                      targets);
+
+  for (const ControlFlowTarget &target : targets) {
+    ValueRange args = parent.getEntryArguments(target.index);
+    if (failed(verifyTypesAlongEdge(target.inputs.getTypes(), args.getTypes(),
+                                    op, parent, target)))
+      return failure();
+  }
+  return success();
+}
+
+LogicalResult ControlFlowVerifier::verifyNode(ControlFlowNode op) {
+  scopes.push_back(op);
+
+  for (Region &region : op->getRegions()) {
+    for (Block &block : region) {
+      if (auto terminator =
+              dyn_cast<ControlFlowTerminator>(block.getTerminator()))
+        if (failed(verifyTerminator(terminator)))
+          return failure();
+      for (Operation &op : block.without_terminator())
+        if (auto node = dyn_cast<ControlFlowNode>(&op))
+          if (failed(verifyNode(node)))
+            return failure();
+    }
+  }
+
+  scopes.pop_back();
+  return success();
+}
+
+LogicalResult ControlFlowVerifier::verifyIfRoot(Operation *op) {
+  // Verify the operation if is a root operation or if it is the root of a
+  // subtree rooted at a function.
+  Operation *root;
+  if (isa<mlir::FunctionOpInterface>(op->getParentOp()))
+    root = op->getParentOp();
+  else if (!isa<ControlFlowNode>(op->getParentOp()))
+    root = op;
+  else
+    return success();
+  return ControlFlowVerifier(root).verifyNode(op);
+}
+
+//===----------------------------------------------------------------------===//
+// Interface Verifiers
+//===----------------------------------------------------------------------===//
+
+LogicalResult HLCF::verifyControlFlowNode(ControlFlowNode op) {
+  // Verify that all immediate terminators without successors are HLCF
+  // terminators.
+  for (Region &region : op->getRegions()) {
+    if (region.empty())
+      return op->emitOpError("unexpected empty region #")
+             << region.getRegionNumber();
+    for (Block &block : region) {
+      if (block.empty())
+        return op->emitOpError("unexpected empty block");
+      Operation *terminator = block.getTerminator();
+      if (!terminator->getNumSuccessors() &&
+          !isa<ControlFlowTerminator>(terminator)) {
+        return (op->emitOpError("expected terminator without successors to be "
+                                "a control-flow terminator but got '")
+                << terminator->getName() << "'")
+                   .attachNote(terminator->getLoc())
+               << "see invalid terminator here";
+      }
+    }
+  }
+
+  // If this operation is a root, verify the tree starting from here.
+  return ControlFlowVerifier::verifyIfRoot(op);
+}
+
+LogicalResult HLCF::verifyControlFlowTerminator(ControlFlowTerminator op) {
+  // Verify that the terminator's parent is an HLCF operation.
+  Operation *parent = op->getParentOp();
+  if (isa<ControlFlowNode>(parent))
+    return success();
+  return (op->emitOpError("expected parent operation to be a control-flow "
+                          "operation but got '")
+          << parent->getName() << "'")
+             .attachNote(parent->getLoc())
+         << "see invalid parent here";
+}
+
+//===----------------------------------------------------------------------===//
+// ODS-Generated Definitions
+//===----------------------------------------------------------------------===//
+
+#include "Support/HLCFDialect/HLCFInterfaces.cpp.inc"

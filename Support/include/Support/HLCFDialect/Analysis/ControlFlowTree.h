@@ -7,7 +7,7 @@
 #ifndef SUPPORT_HLCFDIALECT_ANALYSIS_CONTROLFLOWTREE_H
 #define SUPPORT_HLCFDIALECT_ANALYSIS_CONTROLFLOWTREE_H
 
-#include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/HLCFDialect/HLCFInterfaces.h"
 #include "llvm/ADT/SmallVector.h"
 
 namespace M::HLCF {
@@ -20,16 +20,16 @@ public:
 
   /// A map of operation ID to the operation. The ID is the depth-first visit
   /// order of the operation.
-  SmallVector<Operation *> ops;
+  SmallVector<ControlFlowNode> ops;
 
   /// A map of terminators to their branch target and a flag indicating whether
   /// the target is before or after the operation.
-  SmallVector<std::pair<unsigned, bool>> targets;
+  SmallVector<std::pair<unsigned, SmallVector<ControlFlowTarget, 1>>> targets;
 
 private:
   /// Build the control-flow relations.
-  void buildTree(Operation *node, unsigned &nodeId,
-                 SmallVectorImpl<unsigned> &loopIds);
+  void buildTree(ControlFlowNode node, unsigned &nodeId,
+                 SmallVectorImpl<unsigned> &nodeIds);
 };
 } // namespace M::HLCF
 

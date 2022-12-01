@@ -48,7 +48,7 @@ func.func @return_not_in_func(%arg0: i1) {
 // expected-note @below {{see function here}}
 func.func @return_mismatch_result_count(%arg0: i32) {
   hlcf.loop {
-    // expected-error @below {{'hlcf.return' op specifies 1 return values but surrounding function expects 0}}
+    // expected-error @below {{'hlcf.return' op specifies 1 results but surrounding function expects 0}}
     hlcf.return %arg0 : i32
   }
 }
@@ -58,7 +58,7 @@ func.func @return_mismatch_result_count(%arg0: i32) {
 // expected-note @below {{see function here}}
 func.func @return_mismatch_result_count(%arg0: i32) -> i64 {
   hlcf.loop {
-    // expected-error @below {{'hlcf.return' op operand #0 type 'i32' does not match expected return value type 'i64'}}
+    // expected-error @below {{'hlcf.return' op operand #0 type 'i32' does not match expected result type 'i64'}}
     hlcf.return %arg0 : i32
   }
 }
@@ -66,9 +66,9 @@ func.func @return_mismatch_result_count(%arg0: i32) -> i64 {
 // -----
 
 func.func @yield_mismatch(%arg0: i1, %arg1 : i32) {
-  // expected-note @below {{see if here}}
+  // expected-note @below {{to end of parent operation here}}
   %0 = hlcf.if %arg0 -> i64 {
-    // expected-error @below {{'hlcf.yield' op operand #0 type 'i32' does not match expected result type 'i64'}}
+    // expected-error @below {{'hlcf.yield' op branch input #0 has type 'i32' but target expected 'i64' along control-flow edge from here}}
     hlcf.yield %arg1 : i32
   } else {
     hlcf.return
@@ -82,7 +82,7 @@ func.func @break_no_loop(%arg0: i1) {
   hlcf.if %arg0 {
     hlcf.return
   } else {
-    // expected-error @below {{'hlcf.break' op is not nested within an 'hlcf.loop' operation}}
+    // expected-error @below {{'hlcf.break' op is not nested within a suitable parent operation}}
     hlcf.break
   }
 }
@@ -90,9 +90,9 @@ func.func @break_no_loop(%arg0: i1) {
 // -----
 
 func.func @break_wrong_types(%arg0: i32) {
-  // expected-note @below {{see loop here}}
+  // expected-note @below {{to end of parent operation here}}
   %0 = hlcf.loop () -> i64 {
-    // expected-error @below {{'hlcf.break' op operand #0 type 'i32' does not match expected result type 'i64'}}
+    // expected-error @below {{'hlcf.break' op branch input #0 has type 'i32' but target expected 'i64' along control-flow edge from here}}
     hlcf.break %arg0 : i32
   }
 }
@@ -100,9 +100,9 @@ func.func @break_wrong_types(%arg0: i32) {
 // -----
 
 func.func @continue_wrong_types(%arg0: i32, %arg1 : i64) {
-  // expected-note @below {{see loop here}}
   hlcf.loop (%0 = %arg0 : i32) -> () {
-    // expected-error @below {{'hlcf.continue' op operand #0 type 'i64' does not match expected argument type 'i32'}}
+    // expected-error @below {{'hlcf.continue' op branch input #0 has type 'i64' but target expected 'i32' along control-flow edge from here}}
+    // expected-note @below {{to beginning of region #0 here}}
     hlcf.continue %arg1 : i64
   }
 }

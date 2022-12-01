@@ -8,21 +8,9 @@
 #define HLCFOPS_TD
 
 include "Support/HLCFDialect/HLCFDialect.td"
+include "Support/HLCFDialect/HLCFInterfaces.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-
-//===----------------------------------------------------------------------===//
-// Operation Traits
-//===----------------------------------------------------------------------===//
-
-/// This trait marks control-flow operations whose regions form nodes in an HLCF
-/// control-flow tree.
-def HLCF_ControlFlowNode : NativeOpTrait<"ControlFlowNode">;
-
-/// This trait marks operations that terminate HLCF control-flow regions.
-def HLCF_ControlFlowTermiantor : NativeOpTrait<"ControlFlowTerminator"> {
-  let dependentTraits = [Terminator];
-}
 
 //===----------------------------------------------------------------------===//
 // Operation Base Classes
@@ -33,12 +21,14 @@ class HLCFOp<string mnemonic, list<Trait> traits = []> :
     Op<HLCFDialect, mnemonic, traits>;
 
 /// Base class for HLCF control-flow operations.
-class HLCFParentOp<string mnemonic> : HLCFOp<mnemonic, [HLCF_ControlFlowNode,
-    RecursiveMemoryEffects, RecursivelySpeculatable]>;
+class HLCFParentOp<string mnemonic> : HLCFOp<mnemonic, [
+    RecursiveMemoryEffects, RecursivelySpeculatable,
+    DeclareOpInterfaceMethods<ControlFlowNode>]>;
 
 /// Base class for HLCF terminator operations.
 class HLCFTerminatorOp<string mnemonic, list<Trait> traits = []> :
-    HLCFOp<mnemonic, traits # [Terminator, HLCF_ControlFlowTermiantor]> {
+    HLCFOp<mnemonic, traits #
+           [Terminator, DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let arguments = (ins Variadic<AnyType>:$operands);
   let assemblyFormat = "$operands attr-dict (`:` type($operands)^)?";
   let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];

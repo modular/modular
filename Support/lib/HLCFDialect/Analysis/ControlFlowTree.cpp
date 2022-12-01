@@ -12,41 +12,46 @@ using namespace HLCF;
 
 ControlFlowTree::ControlFlowTree(Operation *op) {
   unsigned nodeId = 0;
-  SmallVector<unsigned> loopIds;
-  buildTree(op, nodeId, loopIds);
+  SmallVector<unsigned> nodeIds;
+  buildTree(cast<ControlFlowNode>(op), nodeId, nodeIds);
 }
 
-void ControlFlowTree::buildTree(Operation *node, unsigned &nodeId,
-                                SmallVectorImpl<unsigned> &loopIds) {
+void ControlFlowTree::buildTree(ControlFlowNode node, unsigned &nodeId,
+                                SmallVectorImpl<unsigned> &nodeIds) {
   ops.push_back(node);
-  auto loop = dyn_cast<LoopOp>(node);
-  if (loop)
-    loopIds.push_back(nodeId);
+  nodeIds.push_back(nodeId);
 
   // Process the immediate terminators and then the nested nodes. This order has
   // to be mirrored in the rewrite walk.
   for (Region &region : node->getRegions()) {
     for (Block &block : region) {
-      Operation *terminator = block.getTerminator();
-      if (!terminator->hasTrait<OpTrait::ControlFlowTerminator>())
+      auto terminator = dyn_cast<ControlFlowTerminator>(block.getTerminator());
+      if (!terminator || isa<ReturnOp>(terminator))
         continue;
-      if (isa<YieldOp>(terminator))
-        targets.emplace_back(nodeId, true);
-      else if (isa<BreakOp>(terminator))
-        targets.emplace_back(loopIds.back(), true);
-      else if (isa<ContinueOp>(terminator))
-        targets.emplace_back(loopIds.back(), false);
+
+      Optional<unsigned> nodeId;
+      for (unsigned id : llvm::reverse(nodeIds)) {
+        if (terminator.isParentNode(ops[id])) {
+          nodeId = id;
+          break;
+        }
+      }
+      assert(nodeId);
+
+      SmallVector<ControlFlowTarget, 1> branchTargets;
+      terminator.getBranchTargets(
+          SmallVector<Attribute>(terminator->getNumOperands()), branchTargets);
+      targets.emplace_back(*nodeId, std::move(branchTargets));
     }
   }
   for (Region &region : node->getRegions()) {
     for (Operation &op : region.getOps()) {
-      if (!op.hasTrait<OpTrait::ControlFlowNode>())
+      if (!isa<ControlFlowNode>(op))
         continue;
       ++nodeId;
-      buildTree(&op, nodeId, loopIds);
+      buildTree(&op, nodeId, nodeIds);
     }
   }
 
-  if (loop)
-    loopIds.pop_back();
+  nodeIds.pop_back();
 }
