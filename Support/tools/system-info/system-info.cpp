@@ -93,7 +93,7 @@ int main(int argc, char **argv) {
     break;
   }
   case QuerySystemProperty::L2CacheSize: {
-    auto val = getHostCPUCacheSize(1);
+    auto val = getHostCPUCacheSize(2);
     if (val.isError()) {
       os << "Error: " << val.getError();
       return EXIT_SUCCESS;
