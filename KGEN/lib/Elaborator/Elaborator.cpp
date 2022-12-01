@@ -236,11 +236,9 @@ class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
   Elaborator(SymbolTable &symtab, LLCL::Runtime &runtime,
-             Cache::BlobCache<Cache::RegionCacheKey> &regionCache,
              Cache::BlobCache<Cache::TransformCacheKey> &transformCache,
              bool enableSearch = false)
-      : symtab(symtab), runtime(runtime), regionCache(regionCache),
-        transformCache(transformCache),
+      : symtab(symtab), runtime(runtime), transformCache(transformCache),
         regionOwner(ModuleOp::create(symtab.getOp()->getLoc())),
         enableSearch(enableSearch) {}
 
@@ -388,7 +386,6 @@ private:
   /// functionality.
   LLCL::Runtime &runtime;
 
-  Cache::BlobCache<Cache::RegionCacheKey> &regionCache;
   Cache::BlobCache<Cache::TransformCacheKey> &transformCache;
 
   /// This collects all of the generator implementations of generator
@@ -1928,13 +1925,8 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
 
       // Finally, cache the result.
       FuncOp resultFunc = std::get<ElaboratedGenerator>(result.front()).func;
-      auto deflate = Cache::deflateOp(resultFunc, regionCache, chain.copy());
-      deflate.andThen([out = out.copy(), toCache = std::move(toCache),
-                       resultFunc]() mutable {
-        // Write the result function to the cache.
-        *toCache << resultFunc.getName();
-        return out.emplace(success());
-      });
+      *toCache << resultFunc.getName();
+      return out.emplace(success());
     });
     return out;
   };
@@ -1977,43 +1969,13 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
 
   // Run the transform with the functions we just defined.
   auto xform = Cache::cachedTransform(
-      itf, regionCache, transformCache,
+      itf, transformCache,
       LLCL::AsyncValueRef<LogicalResult>::createReady(runtime, success()),
       std::move(keyBuf), doSpecialization, onCacheAccess);
 
-  // Finally, re-inflate the result for now cause the rest of the elaborator
-  // won't know what to do with it.
-  auto out = LLCL::AsyncValueRef<LogicalResult>::allocate(runtime);
-  xform.andThen([this, result, xform = xform.copy(), out = out.copy()] {
-    // If there are no results we want, then we're done.
-    if (llvm::all_of(result, [](auto r) {
-          return std::holds_alternative<CalleeExpansionError>(r);
-        }))
-      return out.emplace(failure());
-
-    // Inflate each result - the rest of the elaborator can't handle this yet.
-    SmallVector<LLCL::AnyAsyncValueRef> inflateResults;
-    for (auto r : result) {
-      if (std::holds_alternative<ElaboratedGenerator>(r)) {
-        inflateResults.push_back(Cache::inflateOp(
-            std::get<ElaboratedGenerator>(r).func, regionCache, xform.copy()));
-      }
-    }
-
-    // Once all the results that worked have been inflated, then we're done.
-    andThenMoving(
-        inflateResults,
-        [out = out.copy()](MutableArrayRef<LLCL::AnyAsyncValueRef> rs) {
-          for (auto &ref : rs)
-            if (failed(ref->get<LogicalResult>()))
-              return out.emplace(failure());
-
-          out.emplace(success());
-        });
-  });
-  // Wait for inflation to complete - the rest of the elaborator is not async
-  // yet.
-  LLCL::await(out);
+  // Wait for the transform to complete - the rest of the elaborator is not
+  // async yet.
+  LLCL::await(xform);
 
   return result;
 }
@@ -2265,22 +2227,15 @@ LogicalResult M::elaborateGenerators(SymbolTable &symtab,
   TimeTraceScope<> traceScope("elaborate-generators");
   auto primary = cast<ModuleOp>(symtab.getOp());
 
-  auto regionCacheBackendOr =
-      Cache::getDefaultBackendChain(runtime, ".kgen_cache/region");
-  if (failed(regionCacheBackendOr))
-    return primary->emitError() << regionCacheBackendOr.getError();
   auto transformCacheBackendOr =
       Cache::getDefaultBackendChain(runtime, ".kgen_cache/transform");
   if (failed(transformCacheBackendOr))
     return primary->emitError() << transformCacheBackendOr.getError();
 
-  Cache::BlobCache<Cache::RegionCacheKey> regionCache(
-      regionCacheBackendOr.takeValue());
   Cache::BlobCache<Cache::TransformCacheKey> transformCache(
       transformCacheBackendOr.takeValue());
 
-  Elaborator elaborator(symtab, runtime, regionCache, transformCache,
-                        enableSearch);
+  Elaborator elaborator(symtab, runtime, transformCache, enableSearch);
 
   // Scan the primary and library module to collect all the interfaces,
   // verifying that any common interfaces are the same.
