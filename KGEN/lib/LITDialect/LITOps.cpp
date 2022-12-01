@@ -136,6 +136,35 @@ void LITFuncOp::build(OpBuilder &builder, OperationState &result,
 }
 
 //===----------------------------------------------------------------------===//
+// LITTryOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseExceptRegion(OpAsmParser &p, Region &region) {
+  OpAsmParser::Argument arg;
+  if (p.parseLParen() || p.parseArgument(arg, /*allowType=*/true) ||
+      p.parseRParen() || p.parseRegion(region, arg))
+    return failure();
+  return success();
+}
+
+static void printExceptRegion(OpAsmPrinter &p, Operation *op, Region &region) {
+  p << '(';
+  p.printRegionArgument(region.getArgument(0));
+  p << ") ";
+  p.printRegion(region, /*printEntryBlockArgs=*/false);
+}
+
+LogicalResult LITTryOp::verify() {
+  if (getTryRegion().getNumArguments() != 0)
+    return emitOpError("expected try region to have zero arguments");
+  if (getExceptRegion().getNumArguments() != 1)
+    return emitOpError("expected except region to have one arguments");
+  if (getElseRegion().getNumArguments() != 0)
+    return emitOpError("expected else region to have zero arguments");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 

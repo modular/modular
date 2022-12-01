@@ -26,7 +26,9 @@ InFlightDiagnostic LitParserBase::emitError(SMLoc loc, const Twine &message) {
 /// Consume the specified token if present and return success.  On failure,
 /// output a diagnostic and return failure.
 ParseResult LitParserBase::parseToken(LitToken::Kind expectedToken,
-                                      const Twine &message) {
+                                      const Twine &message, SMLoc *loc) {
+  if (loc)
+    *loc = getToken().getLoc();
   if (consumeIf(expectedToken))
     return success();
   return emitError(message);

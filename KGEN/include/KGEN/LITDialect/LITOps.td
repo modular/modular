@@ -129,6 +129,83 @@ def LITFormValueOp : LITOp<"form_value", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// LITUnwrapOrPropagateOp
+//===----------------------------------------------------------------------===//
+
+def LITUnwrapOrPropagateOp : LITOp<"unwrap_or_propagate", [
+    TypesMatchWith<"value type", "value", "result",
+                   "cast<RaisesOrType>($_self).getType()">]> {
+  let summary = "Unwrap a value or propagate an error.";
+  let description = [{
+    The `lit.unwrap_or_propagate` operation takes a `!lit.raises_or` value and
+    returns the unwrapped value if it is not an error and propagates the error
+    if it is one.
+
+    Example:
+
+    ```mlir
+    %value = lit.unwrap_or_propagate %maybeErr : <!kgen.declref<@Int>>
+    ```
+  }];
+
+  let arguments = (ins LITRaisesOrType:$value);
+  let results = (outs AnyType:$result);
+
+  let assemblyFormat = "$value attr-dict `:` type($value)";
+}
+
+//===----------------------------------------------------------------------===//
+// LITTryOp
+//===----------------------------------------------------------------------===//
+
+def LITTryOp : LITOp<"try", [RecursivelySpeculatable, RecursiveMemoryEffects]> {
+  let summary = "A try-except-else block.";
+  let description = [{
+    The `lit.try` operation represents a try-except-else statement. When inside
+    the 'try' region, any implicitly propagated errors interrupt execution and
+    branch to the 'except' region. If the 'try' region completes execution
+    without any exceptions, control-flow branches to the 'else' region.
+
+    Example:
+
+    ```mlir
+    lit.try {
+      %0 = kgen.call @maybeRaises() : () -> !lit.raises_or<!kgen.declref<@Int>>
+      %1 = lit.unwrap_or_propagate %0 : <!kgen.declref<@Int>>
+      lit.try.yield
+    } except (%err: !kgen.declref<@Error>) {
+      lit.try.yield
+    } else {
+      lit.try.yield
+    }
+    ```
+  }];
+
+  let regions = (region MinSizedRegion<1>:$tryRegion,
+                        MinSizedRegion<1>:$exceptRegion,
+                        MinSizedRegion<1>:$elseRegion);
+  let assemblyFormat = [{
+    $tryRegion `except` custom<ExceptRegion>($exceptRegion) `else` $elseRegion
+    attr-dict
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// LITTryYieldOp
+//===----------------------------------------------------------------------===//
+
+def LITTryYieldOp : LITOp<"try.yield", [Pure, Terminator,
+    HasParent<"LITTryOp">]> {
+  let summary = "Try block terminator.";
+  let description = [{
+    The `lit.try.yield` operation is used as a terminator to `lit.try` regions.
+  }];
+  let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // VarDeclOp
 //===----------------------------------------------------------------------===//
 

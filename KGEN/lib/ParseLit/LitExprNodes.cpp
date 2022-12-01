@@ -512,6 +512,18 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
 // IR Emission helpers
 //===----------------------------------------------------------------------===//
 
+/// Returns true if the insertion context is valid for implicit error
+/// propagation.
+static bool isValidErrorContext(Block *block) {
+  for (Operation *op = block->getParentOp(); op; op = op->getParentOp()) {
+    if (isa<LITTryOp>(op))
+      return true;
+    if (auto func = dyn_cast<LITFuncOp>(op))
+      return func.getRaises();
+  }
+  return false;
+}
+
 /// Emit a function call to the specified callee with the specified operand
 /// values.
 static AnyValue emitFunctionCall(CallableValue calleeVal,
@@ -644,6 +656,18 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
                     ->create<CallIndirectOp>(loc, resultTypes, calleeDRVal,
                                              /*operands*/ valueArguments)
                     .getResult(0);
+  }
+
+  // If the callee can raise an error, try to unwrap it.
+  if (auto raises = dyn_cast<RaisesOrType>(resultVal.getType())) {
+    if (!isValidErrorContext(emitter.builder->getInsertionBlock())) {
+      emitter.emitError(
+          callLoc,
+          "cannot call raising method within an 'fn' that does not raise");
+      return {};
+    }
+    resultVal = emitter.builder->create<LITUnwrapOrPropagateOp>(
+        loc, raises.getType(), resultVal);
   }
 
   // Value returning call returns its result.
