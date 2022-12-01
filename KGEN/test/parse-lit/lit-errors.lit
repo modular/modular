@@ -380,3 +380,9 @@ def raisingMethod():
 
 fn callRaisingMethod():
     raisingMethod() # expected-error {{cannot call raising method within an 'fn' that does not raise}}
+
+fn cannotReRaise():
+    raise # expected-error {{no contextual exception to reraise}}
+
+fn cannotRaise(err: Error):
+    raise err # expected-error {{cannot raise error inside method that does not raise}}

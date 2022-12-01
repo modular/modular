@@ -75,6 +75,7 @@ struct LitStmtParser : public LitParserBase {
 
   // Simple statements.
   ParseResult parseReturnStmt(size_t returnIndent);
+  ParseResult parseRaiseStmt(size_t raiseIndent);
   ParseResult parseBreakOrContinueStmt(LitToken::Kind kind, StringRef name,
                                        StringRef opName);
 
@@ -264,6 +265,8 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     return parseAliasDeclStmt(/*decorators=*/{}, stmtIndent);
   case LitToken::kw_return:
     return parseReturnStmt(stmtIndent);
+  case LitToken::kw_raise:
+    return parseRaiseStmt(stmtIndent);
   case LitToken::kw_continue:
     return parseBreakOrContinueStmt(LitToken::kw_continue, "continue",
                                     HLCF::ContinueOp::getOperationName());
@@ -372,6 +375,57 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // Split the block here. Subsequent statements are dead code.
   builder.setInsertionPointToStart(
       builder.getInsertionBlock()->splitBlock(builder.getInsertionPoint()));
+  return success();
+}
+
+ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
+  auto loc = consumeToken(LitToken::kw_raise).getLoc();
+  Block *block = builder.getInsertionBlock();
+  auto tryOp = getBlockParentOfType<LITTryOp>(block);
+
+  Value errorVal;
+  bool inTry;
+  if (!getToken().getIndentation().has_value()) {
+    // If there is an error expression, parse and emit it.
+    ExprNode *errorExpr;
+    if (parseExpression(errorExpr, raiseIndent))
+      return failure();
+    errorVal = getExprEmitter().emitDRValue(errorExpr);
+
+    // Determine whether we are raising an error inside a 'try'.
+    inTry = tryOp && tryOp.getTryRegion().findAncestorBlockInRegion(*block);
+  } else {
+    // Otherwise, a plain 'raise' refers to the exception currently being
+    // handled, only if nested inside an 'except'.
+    if (!tryOp || tryOp.getExceptRegion().findAncestorBlockInRegion(*block)) {
+      emitError(loc, "no contextual exception to reraise");
+      return success();
+    }
+    errorVal = tryOp.getExceptRegion().getArgument(0);
+    inTry = false;
+  }
+
+  // If we are raising inside a 'try', just emit a branch to the except region.
+  Location raiseLoc = translateLocation(loc);
+  if (inTry) {
+    builder.create<LITTryRaiseOp>(raiseLoc, errorVal);
+  } else {
+    // Wrap the error and propagate it.
+    auto func = getBlockParentOfType<LITFuncOp>(block);
+    if (!func.getRaises()) {
+      emitError(loc, "cannot raise error inside method that does not raise");
+      return success();
+    }
+    Value wrappedErr = builder.create<LITRaiseErrorOp>(
+        raiseLoc, func.getResultType(), errorVal);
+    if (func == block->getParentOp())
+      builder.create<ReturnOp>(raiseLoc, ArrayRef<TypedAttr>(), wrappedErr);
+    else
+      builder.create<HLCF::ReturnOp>(raiseLoc, wrappedErr);
+  }
+  // Split the block here. Subsequent statements are dead code.
+  builder.setInsertionPointToStart(
+      block->splitBlock(builder.getInsertionPoint()));
   return success();
 }
 
