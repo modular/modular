@@ -323,7 +323,10 @@ def POP_VariantType : POPType<"Variant", "variant",
   let assemblyFormat = "`<` custom<ArrayOfPrettyTypes>($types) `>`";
   let skipDefaultBuilders = 1;
 
-  let builders = [TypeBuilder<(ins "ArrayRef<TypedAttr>":$types)>];
+  let builders = [
+    TypeBuilder<(ins "ArrayRef<TypedAttr>":$types)>,
+    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$types)>
+  ];
 
   let extraClassDeclaration = [{
     /// Returns the index of the type in the variant type list. If the type is

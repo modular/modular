@@ -55,6 +55,7 @@ let description = [{
                        UnitAttr:$isStatic,
                        UnitAttr:$isInterface,
                        UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
+                       UnitAttr:$raises,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
   let regions = (region AnyRegion:$bodyRegion);
 
@@ -75,6 +76,56 @@ let description = [{
   ];
 
   let hasCustomAssemblyFormat = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// LITRaiseErrorOp
+//===----------------------------------------------------------------------===//
+
+def LITRaiseErrorOp : LITOp<"raise_error", [Pure]> {
+  let summary = "Form an error value.";
+  let description = [{
+    The `lit.raise_error` operation wraps a `Error` (library type) in a
+    `!lit.raises_or` value that can be returned from a method that is marked as
+    raising.
+
+    Example:
+
+    ```mlir
+    %result = lit.raise_error %err : <@Error> -> <!kgen.declref<@Int>>
+    ```
+  }];
+
+  let arguments = (ins DeclRefType:$error);
+  let results = (outs LITRaisesOrType:$result);
+
+  let assemblyFormat = "$error attr-dict `:` type($error) `->` type($result)";
+}
+
+//===----------------------------------------------------------------------===//
+// LITFormValueOp
+//===----------------------------------------------------------------------===//
+
+def LITFormValueOp : LITOp<"form_value", [Pure,
+    TypesMatchWith<"value type", "result", "value",
+                   "cast<RaisesOrType>($_self).getType()">]> {
+  let summary = "Wrap a valid method result.";
+  let description = [{
+    The `lit.form_value` operation takes a valid method result value and wraps
+    it in a `!lit.raises_or` value that can be returned from a method that is
+    marked as raising.
+
+    Example:
+
+    ```mlir
+    %result = lit.form_value %value : <!kgen.declref<@Int>>
+    ```
+  }];
+
+  let arguments = (ins AnyType:$value);
+  let results = (outs LITRaisesOrType:$result);
+
+  let assemblyFormat = "$value attr-dict `:` type($result)";
 }
 
 //===----------------------------------------------------------------------===//

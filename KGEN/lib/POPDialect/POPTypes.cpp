@@ -325,6 +325,14 @@ VariantType VariantType::get(MLIRContext *ctx, ArrayRef<TypedAttr> types) {
   return Base::get(ctx, canonicalizeVariantTypes(types));
 }
 
+VariantType VariantType::get(ArrayRef<Type> types) {
+  assert(!types.empty());
+  SmallVector<TypedAttr> typeExprs;
+  for (Type type : types)
+    typeExprs.push_back(TypeConstantAttr::get(type));
+  return get(types.front().getContext(), typeExprs);
+}
+
 Optional<int64_t> VariantType::getTypeIndex(Type type) const {
   for (auto &variantType : llvm::enumerate(getTypes()))
     if (ParamRefType::get(variantType.value()) == type)

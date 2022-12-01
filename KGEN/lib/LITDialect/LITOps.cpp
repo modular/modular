@@ -130,7 +130,8 @@ void LITFuncOp::build(OpBuilder &builder, OperationState &result,
         TypeAttr::get(functionType), ParamDeclArrayAttr::get(context, {}),
         TypeArrayAttr::get(context, {}), ConstraintArrayAttr::get(context, {}),
         /*isStatic=*/mlir::UnitAttr(), /*isInterface=*/mlir::UnitAttr(),
-        /*isDef=*/mlir::UnitAttr(), /*implements=*/FlatSymbolRefAttr());
+        /*isDef=*/mlir::UnitAttr(), /*raises=*/mlir::UnitAttr(),
+        /*implements=*/FlatSymbolRefAttr());
   result.regions[0]->push_back(new Block());
 }
 
