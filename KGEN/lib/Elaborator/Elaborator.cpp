@@ -25,6 +25,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "SelectFastestFunction.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/ErrorOr.h"

@@ -5,7 +5,6 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_mlir_library(KGENElaborator
-  BetterCloning.cpp
   Elaborator.cpp
   IncludeResolution.cpp
   SelectFastestFunction.cpp

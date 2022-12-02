@@ -3,13 +3,8 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
-//
-// This file implements logic to clone an operation and keep track of the
-// operation mappings.
-//
-//===----------------------------------------------------------------------===//
 
-#include "KGEN/Elaborator.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/Operation.h"
 
