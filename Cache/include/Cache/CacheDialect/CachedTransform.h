@@ -83,11 +83,11 @@ namespace Detail {
 /// These three detectors check for the ErrorOr-style APIs we care about for the
 /// templated version of `cachedTransform` below.
 template <typename T>
-using HasIsError = decltype(std::declval<T>.isError());
+using HasIsError = decltype(std::declval<T>().isError());
 template <typename T>
-using HasTakeError = decltype(std::declval<T>.takeError());
+using HasTakeError = decltype(std::declval<T>().takeError());
 template <typename T>
-using HasTakeValue = decltype(std::declval<T>.takeValue());
+using HasTakeValue = decltype(std::declval<T>().takeValue());
 
 /// Given a CacheHitFn-like callable, get the result type.
 template <typename CacheHitFnT>
