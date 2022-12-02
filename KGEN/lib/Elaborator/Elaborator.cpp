@@ -2290,9 +2290,14 @@ LogicalResult M::elaborateGenerators(SymbolTable &symtab,
 
     /// Non viable funcs or inlined funcs will be left with an invalid body.
     /// Remove them at the end of elaboration.
-    if (auto func = dyn_cast<FuncOp>(op))
-      if (elaborator.shouldRemoveFunc(func))
-        purgeAndErase(func);
+    if (auto func = dyn_cast<FuncOp>(op)) {
+      if (elaborator.shouldRemoveFunc(func)) {
+        // Operations may have uses in inlined functions, which are invalid.
+        // Drop all defined value uses before erasing the function.
+        func->dropAllDefinedValueUses();
+        func->erase();
+      }
+    }
   }
 
   // Perform any renaming at the end.  We cannot use the
