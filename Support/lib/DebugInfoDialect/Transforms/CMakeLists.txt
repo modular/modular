@@ -6,6 +6,7 @@
 
 add_mlir_library(DebugInfoTransforms
   Conversion.cpp
+  DebugInfoStrip.cpp
   SyntheticDebugInfoBuilder.cpp
 
   DEPENDS

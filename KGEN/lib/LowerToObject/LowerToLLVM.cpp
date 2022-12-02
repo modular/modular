@@ -8,6 +8,7 @@
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "Support/STLExtras.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -41,6 +42,11 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx) {
 std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   mlir::PassManager pm(module->getContext());
+
+  // If we aren't generating debug information, make sure it's been stripped.
+  if (options.debugLevel == CompilationOptions::kNoDebug)
+    pm.addPass(DebugInfo::createDebugInfoStrip());
+
   LowerToLLVMOptions llvmOptions(options.getDIEmissionKind(),
                                  options.debugAtLevel);
   pm.addPass(createLowerZAPToPOP());

@@ -42,14 +42,6 @@ parseSourceFileWithDebugInfo(llvm::SourceMgr &sourceMgr,
 LogicalResult snapshotDebugInfo(Operation *op, StringRef filename = "",
                                 EmissionKind emissionKind = EmissionKind::Full);
 
-//===----------------------------------------------------------------------===//
-// ODS-Generated Declarations
-//===----------------------------------------------------------------------===//
-
-#define GEN_PASS_DECL_DEBUGINFOSNAPSHOT
-#define GEN_PASS_REGISTRATION
-#include "Support/DebugInfoDialect/Transforms/Passes.h.inc"
-
 } // namespace M::DebugInfo
 
 #endif // SUPPORT_DEBUGINFODIALECT_TRANSFORMS_SNAPSHOTDEBUGINFO_H
