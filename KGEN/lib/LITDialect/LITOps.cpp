@@ -53,6 +53,16 @@ void LITFuncOp::getAsmBlockArgumentNames(
     setNameFn(arg, name);
 }
 
+Region *LITFuncOp::getCallableRegion() {
+  // If the body is empty, return null to indicate that this is an "external"
+  // callable.
+  if (getBody()->empty())
+    return nullptr;
+  return &getBodyRegion();
+}
+
+ArrayRef<Type> LITFuncOp::getCallableResults() { return getResultTypes(); }
+
 LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Check that the number of argument labels matches the number of argument
   // types.

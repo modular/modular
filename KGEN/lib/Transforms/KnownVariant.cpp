@@ -163,28 +163,37 @@ void PruneImpossibleVariantsPass::runOnOperation() {
       .load<HLCF::SparseDataFlowAnalysis<VariantState, KnownVariantAnalysis>>();
   solver.load<ConstantPropagation>();
 
-  // Compute the string attributes once.
-  Builder b(&getContext());
-  StringAttr symVisibilityAttrName =
-      b.getStringAttr(SymbolTable::getVisibilityAttrName());
-  StringAttr publicAttr = b.getStringAttr("public");
-  StringAttr privateAttr = b.getStringAttr("private");
-
-  SmallPtrSet<StringAttr, 5> exportedSymbols;
+  // Find the exported symbols. Mark these are public and all others as private
+  // so the dead code analysis understands them correctly.
+  SmallPtrSet<StringAttr, 4> exportedSymbols;
   for (auto e : getOperation().getOps<ExportOp>())
     for (auto sym : e.getExports().getAsRange<FlatSymbolRefAttr>())
       exportedSymbols.insert(sym.getAttr());
 
-  std::vector<Operation *> funcOrGenerator;
-  for (Operation &op : getOperation().getOps()) {
-    TypeSwitch<Operation *>(&op).Case<FuncOp, GeneratorOp>([&](auto funcOrGen) {
-      if (exportedSymbols.contains(funcOrGen.getSymNameAttr()))
-        op.setAttr(symVisibilityAttrName, publicAttr);
-      else
-        op.setAttr(symVisibilityAttrName, privateAttr);
-      funcOrGenerator.push_back(funcOrGen);
-    });
-  }
+  std::vector<std::pair<SymbolRefAttr, mlir::SymbolOpInterface>> funcs;
+  getOperation().walk([&](mlir::FunctionOpInterface func) {
+    auto symbol = cast<mlir::SymbolOpInterface>(*func);
+
+    // Build the full symbol reference.
+    Operation *op = symbol;
+    SmallVector<FlatSymbolRefAttr, 2> refs;
+    while (!isa<ModuleOp>(op)) {
+      refs.push_back(FlatSymbolRefAttr::get(
+          cast<mlir::SymbolOpInterface>(op).getNameAttr()));
+      op = op->getParentOp();
+    }
+
+    // Set the visibility appropriately.
+    symbol.setVisibility(exportedSymbols.contains(refs.front().getAttr())
+                             ? SymbolTable::Visibility::Public
+                             : SymbolTable::Visibility::Private);
+    funcs.emplace_back(
+        SymbolRefAttr::get(
+            refs.back().getAttr(),
+            llvm::makeArrayRef(llvm::to_vector<2>(llvm::reverse(refs)))
+                .drop_front()),
+        func);
+  });
 
   if (failed(solver.initializeAndRun(getOperation())))
     return signalPassFailure();
@@ -217,19 +226,19 @@ void PruneImpossibleVariantsPass::runOnOperation() {
 
   // Rewrite the signatures of operations that return variants that are known to
   // be a particular type.
-  DenseMap<StringAttr, SmallVector<std::pair<unsigned, Type>>> rewrites;
-  for (Operation *op : funcOrGenerator) {
-    op->removeAttr(symVisibilityAttrName);
-    StringAttr name;
-    if (auto gen = dyn_cast<GeneratorOp>(op)) {
-      // Don't rewrite generators implementing interfaces.
-      if (gen.getImplements())
-        continue;
-      name = gen.getSymNameAttr();
-    } else {
-      name = cast<FuncOp>(op).getSymNameAttr();
-    }
-    if (refd.contains(FlatSymbolRefAttr::get(name)))
+  DenseMap<SymbolRefAttr, SmallVector<std::pair<unsigned, Type>>> rewrites;
+  auto implementsAttrName = StringAttr::get(&getContext(), "implements");
+  for (auto [name, symbol] : funcs) {
+    // Clear the visibility attribute by setting the visibility to public, which
+    // is the default error.
+    symbol.setVisibility(SymbolTable::Visibility::Public);
+    Operation *op = symbol;
+
+    // Don't rewrite generators implementing interfaces.
+    if (op->hasAttr(implementsAttrName))
+      continue;
+
+    if (refd.contains(name))
       continue;
 
     auto func = cast<mlir::FunctionOpInterface>(op);
@@ -304,8 +313,7 @@ void PruneImpossibleVariantsPass::runOnOperation() {
   // Go rewrite all the callsites where variants results are known to be a
   // particular type.
   for (CallOp call : calls) {
-    // FIXME(Issue#5471): This probably isn't correct for scoped symbols.
-    auto it = rewrites.find(call.getCalleeAttr().getRootReference());
+    auto it = rewrites.find(call.getCalleeAttr());
     if (it == rewrites.end())
       continue;
     OpBuilder b(&getContext());
