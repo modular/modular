@@ -1178,3 +1178,29 @@ kgen.generator @do_it(%arg0: index) {
   kgen.call @expand_iterate<U0 = 0, V0 = 2>(%arg0) : (index) -> index
   kgen.return
 }
+
+// -----
+
+// CHECK-NOT: call_it_nested
+kgen.generator @call_it_nested<fn: <fn: (index) -> index>(index) -> index>(%arg0: index) -> index {
+  %1 = kgen.inlined_call[<fn: (index) -> index>(index) -> index: fn]<fn: (index) -> index = region>(%arg0)
+  fn(%arg1: index) {
+    %0 = index.add %arg0, %arg1
+    kgen.return %0 : index
+  }
+  kgen.return %1 : index
+}
+
+// CHECK-LABEL: @call_nested
+kgen.generator @call_nested(%arg0: index) -> index {
+  // CHECK-NEXT: %0 = index.constant 1
+  // CHECK-NEXT: %1 = index.add %arg0, %0
+  %0 = kgen.inlined_call[<fn: <fn: (index) -> index>(index) -> index>(index) -> index: @call_it_nested]<fn: <fn: (index) -> index>(index) -> index = region>(%arg0)
+  fn<fn: (index) -> index>(%arg1: index) {
+    %1 = index.constant 1
+    %2 = kgen.inlined_call[(index) -> index: fn](%1)
+    kgen.return %2 : index
+  }
+  // CHECK-NEXT: return %1
+  kgen.return %0 : index
+}

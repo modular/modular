@@ -140,10 +140,6 @@ cloneOperation(Operation *original, BlockAndValueMapping &mapper,
   return newOp;
 }
 
-/// This is like `Operation::clone`, but instead of just keeping track of the
-/// block and value mapping for the copy, it also keeps track of the
-/// operation<->operation mapping.  This matters because not all operations have
-/// results.
 Operation *M::cloneOperation(Operation *original, BlockAndValueMapping &mapper,
                              DenseMap<Operation *, Operation *> &operationMap) {
   return ::cloneOperation(original, mapper, operationMap, CloneOptions::all());
