@@ -118,7 +118,8 @@ OwningOpRef<ModuleOp> ObjectCompiler::produceStandaloneModule() {
 
     // Clone the func into this new module. We don't want to remove it from
     // the current module.
-    sliceSymtab.insert(func.clone());
+    if (!sliceSymtab.lookup(sym))
+      sliceSymtab.insert(func.clone());
   }
 
   return singleModule;
