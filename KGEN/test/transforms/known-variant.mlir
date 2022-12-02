@@ -284,3 +284,56 @@ kgen.generator @call_it(%a: i32, %b: i64) {
 }
 
 kgen.export [@call_it]
+
+// -----
+
+// CHECK-LABEL: lit.func @func
+// CHECK-SAME: -> i32
+lit.func @func(%arg0: i32) -> !pop.variant<i32, i64> {
+  %0 = pop.variant.create %arg0 : i32 -> !pop.variant<i32, i64>
+  kgen.return %0 : !pop.variant<i32, i64>
+}
+
+kgen.export [@func]
+
+// -----
+
+kgen.generator.interface @iface(%arg0: i32) -> !pop.variant<i32, i64>
+
+// CHECK-LABEL: lit.func @do_not_rewrite
+// CHECK-SAME: -> !pop.variant<i32, i64>
+lit.func @do_not_rewrite(%arg0: i32) -> !pop.variant<i32, i64> implements @iface {
+  %0 = pop.variant.create %arg0 : i32 -> !pop.variant<i32, i64>
+  kgen.return %0 : !pop.variant<i32, i64>
+}
+
+kgen.export [@do_not_rewrite]
+
+// -----
+
+// CHECK-LABEL: kgen.struct.decl @Struct
+kgen.struct.decl @Struct {
+  // CHECK-LABEL: lit.func @Unreachable
+  // CHECK-SAME: -> !pop.variant<i32, i64>
+  lit.func @Unreachable(%arg0: i32) -> !pop.variant<i32, i64> {
+    %0 = pop.variant.create %arg0 : i32 -> !pop.variant<i32, i64>
+    kgen.return %0 : !pop.variant<i32, i64>
+  }
+  // CHECK-LABEL: lit.func @Nested
+  // CHECK-SAME: -> i32
+  lit.func @Nested(%arg0: i32) -> !pop.variant<i32, i64> {
+    %0 = pop.variant.create %arg0 : i32 -> !pop.variant<i32, i64>
+    // CHECK: %1 = pop.variant.get
+    // CHECK: return %1
+    kgen.return %0 : !pop.variant<i32, i64>
+  }
+}
+
+// CHECK-LABEL: lit.func @main
+lit.func @main(%arg0: i32) {
+  // CHECK: kgen.call @Struct::@Nested(%arg0) : (i32) -> i32
+  %0 = kgen.call @Struct::@Nested(%arg0) : (i32) -> !pop.variant<i32, i64>
+  kgen.return
+}
+
+kgen.export [@main]

@@ -18,6 +18,7 @@ include "Support/HLCFDialect/HLCFInterfaces.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
+include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -32,6 +33,7 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
 def LITFuncOp
   : LITOp<"func", [FunctionOpInterface, Symbol, IsolatedFromAbove,
                    NoTerminator,
+                   DeclareOpInterfaceMethods<CallableOpInterface>,
                    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
                    DeclareOpInterfaceMethods<KGENDeclInterface>,
                    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>]> {
