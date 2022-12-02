@@ -11,6 +11,7 @@
 #include "Support/MDialect/MTypes.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
+#include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/BuiltinTypes.h"
 
 //===----------------------------------------------------------------------===//
@@ -166,6 +167,12 @@ public:
 /// other kind of attribute. This should be the only place where the splatness
 /// and bitpacked-ness of the attribute are handled.
 Attribute convertDenseElements(Attribute attr);
+
+/// Build an attribute to store the given tensor data. Depending on the amount
+/// of data, this might be inlined or stored in a resource blob.
+ElementsAttr
+getAttrForTensorData(ShapedType type, StringRef bufferName, ArrayRef<char> data,
+                     DenseResourceElementsHandleManager &resourceManager);
 
 } // namespace M
 

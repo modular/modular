@@ -5,9 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MDialect/MAttrs.h"
+#include "Support/Compiler/MLIRDenseAttrStorage.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/DialectResourceBlobManager.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -489,6 +491,29 @@ Attribute M::convertDenseElements(Attribute attr) {
   }
   auto values = llvm::to_vector(denseElements.getValues<APInt>());
   return IntArrayElementsAttr::get(denseElements.getType(), values);
+}
+
+ElementsAttr
+M::getAttrForTensorData(ShapedType type, StringRef bufferName,
+                        ArrayRef<char> data,
+                        DenseResourceElementsHandleManager &resourceManager) {
+  size_t elementByteAlign =
+      llvm::divideCeil(type.getElementTypeBitWidth(), CHAR_BIT);
+
+  // When loading in a tensor, we make a distinction between the case where
+  // the data is "small" and when it is "large". "large" data is stored as a
+  // resource blob, while "small" data is stored inline in the context.
+  if (!shouldUseOutOfLineAttrStorage(type.getNumElements()))
+    return ArrayElementsAttr::get(
+        {reinterpret_cast<const uint8_t *>(data.data()), data.size()}, type);
+
+  // TODO: In many cases we should be able to use `UnmanagedAsmResourceBlob`
+  // here and avoid all allocations. In these cases we need to ensure the
+  // incoming buffer doesn't die before the generated MLIR.
+  auto blob =
+      mlir::HeapAsmResourceBlob::allocateAndCopy(data, elementByteAlign);
+  return DenseResourceElementsAttr::get(
+      type, resourceManager.insert(bufferName, std::move(blob)));
 }
 
 //===----------------------------------------------------------------------===//
