@@ -479,7 +479,7 @@ Attribute M::convertDenseElements(Attribute attr) {
 
     // Replicate the splat.
     std::vector<uint8_t> replicated(data.size() * denseElements.size(), 0);
-    for (unsigned i = 0; i < denseElements.size(); ++i)
+    for (unsigned i = 0, e = denseElements.size(); i < e; ++i)
       memcpy(replicated.data() + i * data.size(), data.data(), data.size());
     return ArrayElementsAttr::get(replicated, denseElements.getType());
   }
