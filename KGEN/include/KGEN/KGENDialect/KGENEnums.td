@@ -49,16 +49,13 @@ def POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
 
 
   // Unary type expressions.
-  I32EnumAttrCase<"GetDType",   18, "get_dtype">,
-  I32EnumAttrCase<"GetSizeOf",  19, "get_sizeof">,
-  I32EnumAttrCase<"GetAlignOf", 20, "get_alignof">,
-  I32EnumAttrCase<"GetListElement", 21, "get_list_element">,
+  I32EnumAttrCase<"GetSizeOf", 18, "get_sizeof">,
+  I32EnumAttrCase<"GetAlignOf", 19, "get_alignof">,
+  I32EnumAttrCase<"GetListElement", 20, "get_list_element">,
 
   // Signature processing.
-  I32EnumAttrCase<"BindSignature", 22, "bind_signature">,
-  I32EnumAttrCase<"Apply", 23, "apply">
-
-  // TODO: Can add concat_string, etc as needed.
+  I32EnumAttrCase<"BindSignature", 21, "bind_signature">,
+  I32EnumAttrCase<"Apply", 22, "apply">
 ]>;
 }
 

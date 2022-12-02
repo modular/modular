@@ -240,7 +240,7 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
     return success();
   }
 
-  auto checkDType = [&](DTypeInterface type) -> LogicalResult {
+  auto checkDType = [&](SIMDType type) -> LogicalResult {
     Type valueType = mlir::getElementTypeOrSelf(value);
     if (auto dtype = dyn_cast<DTypeConstantAttr>(type.getDType()))
       if (!dtype.isConvertibleFrom(valueType))
@@ -267,9 +267,8 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
                        "constant of unspecified size");
     }
     // Only scalar arrays can be created.
-    if (isSIMDSizeOneType(array.getResolvedElementType())) {
-      return checkDType(array.getResolvedElementType().cast<DTypeInterface>());
-    }
+    if (isSIMDSizeOneType(array.getResolvedElementType()))
+      return checkDType(array.getResolvedElementType().cast<SIMDType>());
     return emitError("array constant must have scalar elements");
   }
 
@@ -277,7 +276,7 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
   auto simd = type.cast<SIMDType>();
   // If the attribute is scalar, we only need to check its dtype.
   if (value.isa<IntegerAttr, FloatAttr, ParamDeclRefAttr, ParamOperatorAttr>())
-    return checkDType(simd.cast<DTypeInterface>());
+    return checkDType(simd);
 
   // The attribute is array, and its size needs to match the simd size.
   Optional<int64_t> size = simd.getResolvedSize();
@@ -291,14 +290,16 @@ verifyConstant(function_ref<InFlightDiagnostic(StringRef)> emitError,
   auto vtype = dyn_cast<VectorType>(elements.getType());
   if (!vtype || vtype.getRank() != 1 || vtype.getShape().front() != *size)
     return emitError("expected attribute type to be vector<") << *size << "xT>";
-  return checkDType(simd.cast<DTypeInterface>());
+  return checkDType(simd);
 }
 
 ErrorOrSuccess ConstantOp::finalizeElaboration() {
-  UNWRAP_ERROR(
-      value, reifyConstant(getValue(),
-                           *getType().cast<DTypeInterface>().getResolvedDType(),
-                           getType()));
+  auto simd = dyn_cast<SIMDType>(getType());
+  if (!simd)
+    simd = cast<SIMDType>(
+        cast<POP::ArrayType>(getType()).getResolvedElementType());
+  UNWRAP_ERROR(value,
+               reifyConstant(getValue(), *simd.getResolvedDType(), getType()));
   setValueAttr(value);
   return success();
 }
@@ -349,13 +350,8 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   if (inputs.size() != 1 || outputs.size() != 1)
     return false;
 
-  // The input and output must be either both scalar or both SIMD. And so,
-  // implement the DTypeInterface.
-  auto inputType = dyn_cast<DTypeInterface>(inputs.front());
-  auto outputType = dyn_cast<DTypeInterface>(outputs.front());
-
-  if (!inputType || !outputType)
-    return true;
+  auto inputType = cast<SIMDType>(inputs.front());
+  auto outputType = cast<SIMDType>(outputs.front());
 
   // First, check the input and output types must be of the same kind.
   // TODO: In theory we can support casting a scalar type to a vector type (e.g.
@@ -416,12 +412,8 @@ OpFoldResult CastOp::fold(ArrayRef<Attribute> operands) {
 }
 
 LogicalResult CastOp::verify() {
-  auto inputType = getInput().getType().cast<DTypeInterface>();
-  auto outputType = getOutput().getType().cast<DTypeInterface>();
-  if (auto inputSimd = dyn_cast<SIMDType>(inputType);
-      inputSimd && inputSimd.getSize() != outputType.cast<SIMDType>().getSize())
+  if (getInput().getType().getSize() != getOutput().getType().getSize())
     return emitOpError("cannot cast between SIMD types of different sizes");
-
   return success();
 }
 
@@ -761,13 +753,11 @@ void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
 
 ErrorOrSuccess GlobalConstantOp::finalizeElaboration() {
   Type type = getType().getResolvedElementType();
-  DType dtype;
-  if (auto array = dyn_cast<ArrayType>(type))
-    dtype = *array.getResolvedElementType().cast<SIMDType>().getResolvedDType();
-  else
-    dtype = *type.cast<DTypeInterface>().getResolvedDType();
-
-  UNWRAP_ERROR(value, reifyConstant(getValue(), dtype, type));
+  auto simd = dyn_cast<SIMDType>(type);
+  if (!simd)
+    simd = cast<SIMDType>(cast<POP::ArrayType>(type).getResolvedElementType());
+  UNWRAP_ERROR(value,
+               reifyConstant(getValue(), *simd.getResolvedDType(), type));
   setValueAttr(value);
   return success();
 }
@@ -792,8 +782,8 @@ static bool isPointerToAddressCastCompatible(TypeRange inputs,
 
   // The input and output must be either both scalar or both SIMD. And so,
   // implement the DTypeInterface.
-  auto pointerDType = dyn_cast<DTypeInterface>(pointerType);
-  auto addressDType = dyn_cast<DTypeInterface>(addressType);
+  auto pointerDType = dyn_cast<SIMDType>(pointerType);
+  auto addressDType = dyn_cast<SIMDType>(addressType);
 
   // If the address type does not implement the dtype interface, then the lhs
   // must be a pointer or address type and the rhs must be an index type.
@@ -816,11 +806,11 @@ static bool isPointerToAddressCastCompatible(TypeRange inputs,
   if (!pointerDType)
     return false;
 
-  auto isUnboundOrIndexDType = [](DTypeInterface type) {
+  auto isUnboundOrIndexDType = [](SIMDType type) {
     Optional<KGENDType> dtype = type.getResolvedDType();
     return !dtype || dtype->isIndex();
   };
-  auto isUnboundOrAddressDType = [](DTypeInterface type) {
+  auto isUnboundOrAddressDType = [](SIMDType type) {
     Optional<KGENDType> dtype = type.getResolvedDType();
     return !dtype || dtype->isAddress();
   };

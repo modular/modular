@@ -1837,8 +1837,7 @@ def POP_MemsetOp : POPOp<"memset"> {
   }];
 
   let arguments = (ins Arg<POP_PointerType, "", [MemWrite]>:$dest,
-                       UI8SIMDSizeOne:$value,
-                       Index:$size,
+                       UI8Scalar:$value, Index:$size,
                        OptionalAttr<UnitAttr>:$isVolatile);
 
   let assemblyFormat = [{

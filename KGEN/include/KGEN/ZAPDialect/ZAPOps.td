@@ -475,6 +475,8 @@ def POP_GlobalStringOp : ZAPOp<"global_string", [Pure]> {
 // DebugAssertOp
 //===----------------------------------------------------------------------===//
 
+def ScalarBool : AllOfType<[BoolSIMD, ScalarType], "!pop.scalar<bool>">;
+
 def ZAP_DebugAssertOp : ZAPOp<"debug_assert"> {
   let summary = "asserts that the boolean value is true";
   let description = [{
@@ -495,7 +497,7 @@ def ZAP_DebugAssertOp : ZAPOp<"debug_assert"> {
     TODO: This Op should be removed in production builds.
   }];
 
-  let arguments = (ins BoolSIMDSizeOne:$cond, StrAttr:$msg);
+  let arguments = (ins ScalarBool:$cond, StrAttr:$msg);
 
   let assemblyFormat = "$cond `,` $msg attr-dict `:` type($cond)";
 }

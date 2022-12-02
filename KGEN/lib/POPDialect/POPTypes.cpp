@@ -182,6 +182,12 @@ LogicalResult SIMDType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
+Optional<KGENDType> SIMDType::getResolvedDType() const {
+  if (auto dtypeAttr = llvm::dyn_cast<DTypeConstantAttr>(getDType()))
+    return dtypeAttr.getDType();
+  return {};
+}
+
 Optional<int64_t> SIMDType::getResolvedSize() const {
   if (auto intAttr = llvm::dyn_cast<IntegerAttr>(getSize()))
     return intAttr.getInt();

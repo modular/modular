@@ -81,65 +81,56 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant: i1 = <ne(:dtype type, f32)>
   %21 = kgen.param.constant: i1 = <xor(eq(:dtype type, f32), 1)>
 
-  // CHECK: = kgen.param.constant: dtype = <get_dtype(mlirType)>
-  %22 = kgen.param.constant: dtype = <get_dtype(mlirType)>
-
-  // CHECK: = kgen.param.constant: dtype = <get_dtype(mlirType)>
-  %23 = kgen.param.constant: dtype = <get_dtype(!pop.scalar<get_dtype(mlirType)>)>
-
-  // CHECK: = kgen.param.constant: dtype = <f32>
-  %24 = kgen.param.constant: dtype = <get_dtype(!pop.scalar<f32>)>
-
   // CHECK: = kgen.param.constant: i1 = <1>
-  %25 = kgen.param.constant: i1 = <le(5, 9)>
+  %22 = kgen.param.constant: i1 = <le(5, 9)>
 
   // CHECK: = kgen.param.constant = <get_sizeof(mlirType)>
-  %26 = kgen.param.constant = <get_sizeof(mlirType)>
+  %23 = kgen.param.constant = <get_sizeof(mlirType)>
 
   // CHECK: = kgen.param.constant = <get_alignof(mlirType)>
-  %27 = kgen.param.constant = <get_alignof(mlirType)>
+  %24 = kgen.param.constant = <get_alignof(mlirType)>
 
   // CHECK: = kgen.param.constant = <max(p1, 2)>
-  %28 = kgen.param.constant = <max(p1, 2)>
+  %25 = kgen.param.constant = <max(p1, 2)>
 
   // CHECK: = kgen.param.constant = <4>
-  %29 = kgen.param.constant = <max(-2, 4)>
+  %26 = kgen.param.constant = <max(-2, 4)>
 
   // CHECK: = kgen.param.constant = <max(p1, p2, 5)>
-  %30 = kgen.param.constant = <max(4, p1, p2, 5, p1, p2)>
+  %27 = kgen.param.constant = <max(4, p1, p2, 5, p1, p2)>
 
   // CHECK: = kgen.param.constant = <min(p1, 2)>
-  %31 = kgen.param.constant = <min(p1, 2)>
+  %28 = kgen.param.constant = <min(p1, 2)>
 
   // CHECK: = kgen.param.constant = <-2>
-  %32 = kgen.param.constant = <min(-2, 4)>
+  %29 = kgen.param.constant = <min(-2, 4)>
 
   // CHECK: = kgen.param.constant = <min(p1, p2, 4)>
-  %33 = kgen.param.constant = <min(4, p1, p2, 5, p1, p2)>
+  %30 = kgen.param.constant = <min(4, p1, p2, 5, p1, p2)>
 
   // CHECK: = kgen.param.constant = <-4>
-  %34 = kgen.param.constant = <neg(4)>
+  %31 = kgen.param.constant = <neg(4)>
 
   // CHECK: = kgen.param.constant = <-6>
-  %35 = kgen.param.constant = <neg(add(2, 4))>
+  %32 = kgen.param.constant = <neg(add(2, 4))>
 
   // CHECK: = kgen.param.constant = <mul(p1, -1)>
-  %36 = kgen.param.constant = <neg(p1)>
+  %33 = kgen.param.constant = <neg(p1)>
 
   // CHECK: = kgen.param.constant = <add(mul(p2, -1), p1)>
-  %37 = kgen.param.constant = <sub(p1, p2)>
+  %34 = kgen.param.constant = <sub(p1, p2)>
 
   // CHECK: = kgen.param.constant = <5>
-  %38 = kgen.param.constant = <sub(9, 4)>
+  %35 = kgen.param.constant = <sub(9, 4)>
 
   // CHECK: = kgen.param.constant: i1 = <1>
-  %39 = kgen.param.constant : i1 = <eq(:i1 int1, int1)>
+  %36 = kgen.param.constant : i1 = <eq(:i1 int1, int1)>
 
   // CHECK: = kgen.param.constant: i1 = <eq(:i1 int1, int2)>
-  %40 = kgen.param.constant : i1 = <eq(:i1 int1, int2)>
+  %37 = kgen.param.constant : i1 = <eq(:i1 int1, int2)>
 
   // CHECK: = kgen.param.constant = <apply(:(index) -> index fn, p1)>
-  %41 = kgen.param.constant = <apply(:(index) -> index fn, p1)>
+  %38 = kgen.param.constant = <apply(:(index) -> index fn, p1)>
 
   kgen.return
 }

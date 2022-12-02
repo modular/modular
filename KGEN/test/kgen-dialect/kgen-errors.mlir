@@ -90,26 +90,6 @@ kgen.generator @dtype_params() {
 
 // -----
 
-// expected-error @below {{operator requires one operand}}
-"someop"() {a = #kgen.param.expr<get_dtype, 1, 2>} : () -> ()
-
-// -----
-
-// expected-error @below {{operand should be a !kgen.mlirtype}}
-"someop"() {a = #kgen.param.expr<get_dtype, 1>} : () -> ()
-
-// -----
-
-// expected-error @below {{should return a !kgen.dtype}}
-"someop"() {a = #kgen.param.expr<get_dtype, #kgen.concretetype.constant<i32> : !kgen.mlirtype> : !kgen.mlirtype} : () -> ()
-
-// -----
-
-// expected-error @below {{does not implement DTypeInterface}}
-"someop"() {a = #kgen.param.expr<get_dtype, #kgen.concretetype.constant<!foo<>>> : !kgen.dtype} : () -> ()
-
-// -----
-
 // expected-error @below {{'get_sizeof' operator requires one operand}}
 "someop"() {a = #kgen.param.expr<get_sizeof, 1, 2>} : () -> ()
 
