@@ -92,6 +92,16 @@ using HasTakeValue = decltype(std::declval<T>().takeValue());
 /// Given a CacheHitFn-like callable, get the result type.
 template <typename CacheHitFnT>
 using ResultT = std::invoke_result_t<CacheHitFnT, Operation *, BufferRef>;
+
+/// Package up detection of member functions of ErrorOr.
+template <typename CacheHitFnT>
+constexpr bool ReturnsErrorOrLike =
+    llvm::is_detected<Detail::HasIsError,
+                      Detail::ResultT<CacheHitFnT>>::value &&
+    llvm::is_detected<Detail::HasTakeError,
+                      Detail::ResultT<CacheHitFnT>>::value &&
+    llvm::is_detected<Detail::HasTakeValue,
+                      Detail::ResultT<CacheHitFnT>>::value;
 } // namespace Detail
 
 /// This provides a templated version of `cachedTransform` that provides a sync
@@ -101,12 +111,7 @@ using ResultT = std::invoke_result_t<CacheHitFnT, Operation *, BufferRef>;
 template <typename CacheHitFnT>
 std::enable_if_t<!std::is_convertible_v<Detail::ResultT<CacheHitFnT>,
                                         LLCL::AnyAsyncValueRef> &&
-                     llvm::is_detected<Detail::HasIsError,
-                                       Detail::ResultT<CacheHitFnT>>::value &&
-                     llvm::is_detected<Detail::HasTakeError,
-                                       Detail::ResultT<CacheHitFnT>>::value &&
-                     llvm::is_detected<Detail::HasTakeValue,
-                                       Detail::ResultT<CacheHitFnT>>::value,
+                     Detail::ReturnsErrorOrLike<CacheHitFnT>,
                  LLCL::AnyAsyncValueRef>
 cachedTransform(Operation *target, BlobCache<TransformCacheKey> &transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
@@ -139,7 +144,8 @@ cachedTransform(Operation *target, BlobCache<TransformCacheKey> &transformCache,
 /// the result type.
 template <typename CacheHitFnT>
 std::enable_if_t<!std::is_convertible_v<Detail::ResultT<CacheHitFnT>,
-                                        LLCL::AnyAsyncValueRef>,
+                                        LLCL::AnyAsyncValueRef> &&
+                     !Detail::ReturnsErrorOrLike<CacheHitFnT>,
                  LLCL::AnyAsyncValueRef>
 cachedTransform(Operation *target, BlobCache<TransformCacheKey> &transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
