@@ -33,6 +33,48 @@ using namespace KGEN;
 #define DEBUG_TYPE "lower-to-object"
 
 //===----------------------------------------------------------------------===//
+// ObjectCompiler
+//===----------------------------------------------------------------------===//
+
+/// Given a module operation, return its exported symbols.
+static DenseSet<StringAttr> getExportedSymbols(ModuleOp module) {
+  DenseSet<StringAttr> exportedSymbols;
+  for (auto e : module.getOps<ExportOp>())
+    for (auto sym : e.getExports().getAsRange<FlatSymbolRefAttr>())
+      exportedSymbols.insert(sym.getAttr());
+  return exportedSymbols;
+}
+
+ErrorOr<ObjectCompiler>
+ObjectCompiler::create(LLCL::Runtime &runtime, StringRef basePath,
+                       ModuleOp module, const CompilationOptions &options) {
+  return create(runtime, basePath, module, getExportedSymbols(module), options);
+}
+
+ErrorOr<ObjectCompiler>
+ObjectCompiler::create(LLCL::Runtime &runtime, StringRef basePath,
+                       ModuleOp module, DenseSet<StringAttr> exports,
+                       const CompilationOptions &options) {
+  auto transformCache = Cache::getDefaultBackendChain(
+      runtime, (std::filesystem::path(basePath.str()) / "transform").string());
+  if (failed(transformCache))
+    return transformCache.takeError();
+  return ObjectCompiler(runtime, module, std::move(exports),
+                        std::move(*transformCache), options);
+}
+
+ObjectCompiler::ObjectCompiler(
+    LLCL::Runtime &runtime, ModuleOp module, DenseSet<StringAttr> exports,
+    std::unique_ptr<Cache::BlobCacheBackend> transformCache,
+    const CompilationOptions &options)
+    : transformCache(std::move(transformCache)), runtime(runtime),
+      module(module), symtab(module), exportedSymbols(std::move(exports)),
+      options(options) {
+  // Register types used during async compilation.
+  LLCL::AsyncValue::registerTypes<Cache::BufferRef>();
+}
+
+//===----------------------------------------------------------------------===//
 // compileLLVMToObject
 //===----------------------------------------------------------------------===//
 

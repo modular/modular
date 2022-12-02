@@ -71,6 +71,24 @@ struct CompilationOptions {
     llvm_unreachable("unhandled debug level");
   }
 
+  /// Print the compilation options to the given stream.
+  void print(raw_ostream &os) const {
+    os << "CompilationOptions { optimizationLevel: " << optimizationLevel;
+    if (debugLevel != kNoDebug) {
+      os << ", debugLevel: "
+         << (debugLevel == kLineTablesOnly ? "line-tables" : "full");
+    }
+    if (debugAtLevel) {
+      os << ", debugAtLevel: ";
+      switch (*debugAtLevel) {
+      case kDebugAtLLVM:
+        os << "llvm";
+        break;
+      }
+    }
+    os << " }";
+  }
+
   unsigned optimizationLevel : 2;
   DebugInfoLevel debugLevel = kNoDebug;
   Optional<DebugAtLevel> debugAtLevel;

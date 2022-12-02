@@ -264,15 +264,18 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       clOptions.cmd == Command::kElaborate)
     return emitModuleIR(*theModule, clOptions);
 
-  ObjectCompiler compiler(runtime, ".kgen_cache", *theModule,
-                          compilationOptions);
+  auto compiler = ObjectCompiler::create(runtime, ".kgen_cache", *theModule,
+                                         compilationOptions);
+  if (failed(compiler)) {
+    return failure(clOptions.reportError(
+        Twine("could not create object compiler: ") + compiler.getError()));
+  }
 
   TargetInfoAttr attr = TargetInfoAttr::getForHost(ctx);
 
   // This produces a standalone object for all the objects we requested.
-  auto standaloneOr = compiler.produceStandaloneObject(
-      attr,
-      /*isJIT=*/clOptions.cmd == Command::kExecute);
+  auto standaloneOr = compiler->produceStandaloneObject(
+      attr, /*isJIT=*/clOptions.cmd == Command::kExecute);
   if (failed(standaloneOr) && !clOptions.ignoreFailures)
     return failure();
   Cache::BufferRef standaloneObject = std::move(*standaloneOr);
@@ -291,7 +294,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     std::string headerFilename =
         std::filesystem::path(objPath).replace_extension(".h").string();
 
-    return emitHeader(compiler, headerFilename);
+    return emitHeader(*compiler, headerFilename);
   }
 
   // Now we can load it into the JIT - we're definitely executing the thing.
