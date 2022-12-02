@@ -10,6 +10,7 @@
 #include "Cache/BlobCache.h"
 #include "Cache/Buffer.h"
 #include "Cache/CacheDialect/CacheOps.h"
+#include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 
 namespace mlir {
@@ -30,12 +31,6 @@ struct TransformCacheKey {
   using KeyTy = StringRef;
   static std::string hashKey(KeyTy key);
 };
-
-/// This function is what we use to allocate an output object for returning from
-/// CachedTransform. Since we don't always know what the output type is, the
-/// user has to provide this callback to allow us to allocate a concrete output
-/// object.
-using AllocFn = llvm::function_ref<LLCL::AnyAsyncValueRef()>;
 
 /// The most basic function that takes a target operation and transforms it -
 /// returning success or failure. The function can write the result of the
@@ -83,6 +78,83 @@ LLCL::AnyAsyncValueRef
 cachedTransform(Operation *target, BlobCache<TransformCacheKey> &transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                 TransformFn transformFn, CacheHitFn cacheHitFn);
+
+namespace Detail {
+/// These three detectors check for the ErrorOr-style APIs we care about for the
+/// templated version of `cachedTransform` below.
+template <typename T>
+using HasIsError = decltype(std::declval<T>.isError());
+template <typename T>
+using HasTakeError = decltype(std::declval<T>.takeError());
+template <typename T>
+using HasTakeValue = decltype(std::declval<T>.takeValue());
+
+/// Given a CacheHitFn-like callable, get the result type.
+template <typename CacheHitFnT>
+using ResultT = std::invoke_result_t<CacheHitFnT, Operation *, BufferRef>;
+} // namespace Detail
+
+/// This provides a templated version of `cachedTransform` that provides a sync
+/// API for the cache hit function. The only restriction is that the cache hit
+/// function must return something like an ErrorOr<T> so we can propagate
+/// failures properly.
+template <typename CacheHitFnT>
+std::enable_if_t<!std::is_convertible_v<Detail::ResultT<CacheHitFnT>,
+                                        LLCL::AnyAsyncValueRef> &&
+                     llvm::is_detected<Detail::HasIsError,
+                                       Detail::ResultT<CacheHitFnT>>::value &&
+                     llvm::is_detected<Detail::HasTakeError,
+                                       Detail::ResultT<CacheHitFnT>>::value &&
+                     llvm::is_detected<Detail::HasTakeValue,
+                                       Detail::ResultT<CacheHitFnT>>::value,
+                 LLCL::AnyAsyncValueRef>
+cachedTransform(Operation *target, BlobCache<TransformCacheKey> &transformCache,
+                LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
+                TransformFn transformFn, CacheHitFnT cacheHitFn) {
+  auto onCacheHit = [target, cacheHitFn, &transformCache](Operation *op,
+                                                          BufferRef buf) {
+    // Allocate space for the result.
+    auto result = LLCL::AsyncValueRef<Detail::ResultT<CacheHitFnT>>::allocate(
+        transformCache.getRuntime());
+
+    // Call the provided function and act accordingly.
+    auto resultOr = cacheHitFn(op, std::move(buf));
+    if (resultOr.isError())
+      result.setToError(
+          LLCL::getMLIRDiagnostic(resultOr.takeError(), target->getLoc()));
+    else
+      result.emplace(resultOr.takeValue());
+
+    // Return the async value result.
+    return result;
+  };
+
+  return cachedTransform(target, transformCache, std::move(chain),
+                         std::move(transformKey), transformFn, onCacheHit);
+}
+
+/// This provides a templated version of `cachedTransform` that provides a sync
+/// API for the cache hit function. This propagates the result as an
+/// AsyncValueRef<T> directly, without unwrapping anything that may be inside
+/// the result type.
+template <typename CacheHitFnT>
+std::enable_if_t<!std::is_convertible_v<Detail::ResultT<CacheHitFnT>,
+                                        LLCL::AnyAsyncValueRef>,
+                 LLCL::AnyAsyncValueRef>
+cachedTransform(Operation *target, BlobCache<TransformCacheKey> &transformCache,
+                LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
+                TransformFn transformFn, CacheHitFnT cacheHitFn) {
+  auto onCacheHit = [cacheHitFn, &transformCache](Operation *op,
+                                                  BufferRef buf) {
+    auto result = LLCL::AsyncValueRef<Detail::ResultT<CacheHitFnT>>::allocate(
+        transformCache.getRuntime());
+    result.emplace(cacheHitFn(op, std::move(buf)));
+    return result;
+  };
+
+  return cachedTransform(target, transformCache, std::move(chain),
+                         std::move(transformKey), transformFn, onCacheHit);
+}
 
 /// Run the specified passes over the target operation (i.e. ModulePasses over a
 /// ModuleOp). If the target operation and pass pipeline result in a cache hit,
