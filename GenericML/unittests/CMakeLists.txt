@@ -14,12 +14,12 @@ add_modular_unittest(
   TEST_NAME
   GenericMLTests
 
-  MOPContextTest.cpp
+  MGPContextTest.cpp
   TensorTest.cpp
 
   LINK_LIBS PRIVATE
   GenericMLSupport
   LLCLRuntime
-  MOP
+  MGP
   MSupportML
 )

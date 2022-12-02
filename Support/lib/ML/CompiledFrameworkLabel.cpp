@@ -13,7 +13,7 @@ const char *CompiledFrameworkLabel::getAsOpNameOrNull() const {
   case kTensorFlowModel:
     return "tfp.model";
   case kTFLiteModel:
-    return "mop.model";
+    return "mgp.model";
   case kFauxModel:
     return "faux.testcase";
   default:
@@ -31,13 +31,13 @@ const char *CompiledFrameworkLabel::getAsFrameworkNameOrNull() const {
 }
 
 bool CompiledFrameworkLabel::isValidOpName(StringRef opName) {
-  return opName == "tfp.model" || opName == "mop.model" ||
+  return opName == "tfp.model" || opName == "mgp.model" ||
          opName == "faux.testcase";
 }
 
 bool CompiledFrameworkLabel::isValidFrameworkName(StringRef frameworkName) {
-  // TODO: "mop" isn't really a framework
-  return frameworkName == "tfl" || frameworkName == "mop";
+  // TODO: "mgp" isn't really a framework
+  return frameworkName == "tfl" || frameworkName == "mgp";
 }
 
 CompiledFrameworkLabel
@@ -47,7 +47,7 @@ CompiledFrameworkLabel::getLabelForOpName(StringRef opName,
     return CompiledFrameworkLabel{kTensorFlowModel};
   if (opName == "faux.testcase")
     return CompiledFrameworkLabel{kFauxModel};
-  if (opName == "mop.model") {
+  if (opName == "mgp.model") {
     if (frameworkName == "tfl")
       return CompiledFrameworkLabel{kTFLiteModel};
   }
