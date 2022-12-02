@@ -19,7 +19,7 @@ enum class SpecialFunctionKind : uint8_t {
   // zero so it can be used as a false condition in an if.
   kNormal = 0,
 
-#define SF(ENUM, NAME, NUMOPERANDS, FLAGS) ENUM,
+#define SF(ENUM, NAME, NUMGPERANDS, FLAGS) ENUM,
 #include "SpecialFunctions.def"
 };
 

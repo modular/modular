@@ -14,8 +14,8 @@
 #endif
 
 // SF should be defined like this:
-//     SF(ENUM, NAME, NUMOPERANDS, FLAGS)
-// Where numoperands is the number of operands required (when not -1).
+//     SF(ENUM, NAME, NUMGPERANDS, FLAGS)
+// Where numgperands is the number of operands required (when not -1).
 
 SF(kNew, "__new__", -1, kImplicitlyStaticMethod)
 SF(kInit, "__init__", -1, kInstMethod)

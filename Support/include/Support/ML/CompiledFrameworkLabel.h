@@ -28,7 +28,7 @@ namespace M {
 /// since most frameworks have multiple source representations.
 ///
 /// In MLIR the top-level 'model' op determines the framework, currently by
-/// a mixture of op name and, for mop.model, 'frameworkName' string attribute.
+/// a mixture of op name and, for mgp.model, 'frameworkName' string attribute.
 ///
 /// In BEF the top-level invokable can be decoded to recover the op name
 /// and (if needed) frameworkName attribute to match MLIR.
