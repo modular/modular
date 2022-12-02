@@ -34,7 +34,7 @@ LLCL::AnyAsyncValueRef
 Cache::cachedTransform(Operation *target,
                        BlobCache<TransformCacheKey> &transformCache,
                        AnyAsyncValueRef chain, WriteableBufferRef transformKey,
-                       TransformFn transformFn, CacheAccessFn cacheAccessFn) {
+                       TransformFn transformFn, CacheHitFn cacheHitFn) {
   AsyncValue::registerType<CacheFindResult>();
 
   mlir::writeBytecodeToFile(target, *transformKey);
@@ -53,40 +53,35 @@ Cache::cachedTransform(Operation *target,
     });
   });
 
-  auto cacheHit = cacheAccessFn(target, std::move(foundOr));
+  // Allocate space for the output.
+  AnyAsyncValueRef out =
+      AsyncValue::createIndirect(transformCache.getRuntime());
+  foundOr.andThen([out = out.copy(), foundOr = foundOr.copy(), target,
+                   &transformCache, transformFn,
+                   keyBuffer = std::move(keyBuffer), cacheHitFn]() mutable {
+    if (foundOr.isError())
+      return out->setToError(foundOr.getPointer()->takeDiagnostic());
 
-  // Allocate an output variable for the overall success/failure of this
-  // function.
-  AnyAsyncValueRef out = AsyncValue::createIndirect(cacheHit.getRuntime());
-
-  // Sequence actually doing the transform off the cache hit result.
-  cacheHit.andThen([target, &transformCache, transformFn,
-                    /*passthrough*/ keyBuffer = std::move(keyBuffer),
-                    out = out.copy(), cacheHit = cacheHit.copy()]() mutable {
-    // If there was an error, nothing we can do.
-    if (cacheHit->isError()) {
-      return out->setToError(
-          getMLIRDiagnostic(cacheHit->takeError(), target->getLoc()));
-    }
-
-    // Cache hit, we're done!
-    if (cacheHit->hasValue())
-      return out->emplaceIndirect<Chain>();
+    if (foundOr->hasValue())
+      return out->resolveIndirect(cacheHitFn(target, foundOr->takeValue()));
 
     // No error but no cache hit.
 
     // Run the transform.
     WriteableBufferRef writeableTransformResult = WriteableBuffer::get();
     auto xform = transformFn(target, writeableTransformResult.copy(),
-                             std::move(cacheHit));
+                             std::move(foundOr));
 
     // Insert the transform result into the cache.
     xform->andThen(
         [target, &transformCache, out = out.copy(), xform = xform.copy(),
          keyBuffer = std::move(keyBuffer),
          transformResult = std::move(writeableTransformResult)]() mutable {
-          // Only at this point (so the transform has finished) should we change
-          // the transform result ref to be read-only.
+          if (xform->isError())
+            return out->setToError(xform->takeDiagnostic());
+
+          // Only at this point (so the transform has finished successfully)
+          // should we change the transform result ref to be read-only.
           auto hashOr = transformCache.insert(keyBuffer->getBuffer(),
                                               std::move(transformResult));
           hashOr.andThen([&, hashOr = hashOr.copy(), out = out.copy()] {
@@ -157,36 +152,22 @@ Cache::cachedTransform(Operation *target,
 
   // Callback that on a cache hit reads the region hashes out of the cache and
   // places them on the operation.
-  auto onCacheHit = [](Operation *op, AsyncValueRef<CacheFindResult> foundOr)
-      -> AsyncValueRef<CacheFindResult> {
-    auto out = AsyncValueRef<CacheFindResult>::allocate(foundOr.getRuntime());
-    foundOr.andThen([op, out = out.copy(), foundOr = foundOr.copy()] {
-      // If it's an error, return the error.
-      if (foundOr->isError())
-        return out.emplace(CacheFindResult::error(foundOr->takeError()));
+  auto onCacheHit =
+      [&transformCache](Operation *op,
+                        BufferRef regionHashes) -> AnyAsyncValueRef {
+    // TODO: This currently requires a null terminator (MLIR bug #58964)
+    StringRef attrStr = regionHashes->getBuffer().drop_back();
+    Attribute newHashes = mlir::parseAttribute(attrStr, op->getContext());
+    if (!newHashes || !isa<RegionHashArrayAttr>(newHashes))
+      return AsyncValue::createError(
+          transformCache.getRuntime(),
+          getMLIRDiagnostic(Error("failed to parse the region hashes"),
+                            op->getLoc()));
 
-      // Nothing in the cache, say that.
-      if (!foundOr->hasValue())
-        return out.emplace(CacheFindResult::notInCache());
-
-      // We found the value in the cache, handle that.
-      BufferRef buf = foundOr->takeValue();
-      // TODO: We have to drop the null terminator, the underlying memory needs
-      //       it but the StringRef shouldn't have it (MLIR bug #58964).
-      StringRef attrStr = buf->getBuffer().drop_back();
-      Attribute newHashes = mlir::parseAttribute(attrStr, op->getContext());
-      if (!newHashes || !isa<RegionHashArrayAttr>(newHashes))
-        return out.emplace(
-            CacheFindResult::error("failed to parse region hashes"));
-
-      // Otherwise, replace the region hash array attr on the target, and
-      // we're done.
-      op->setAttr(getRegionHashAttrName(),
-                  cast<RegionHashArrayAttr>(newHashes));
-      // Forward the BufferRef because we found something in the cache.
-      out.emplace(CacheFindResult::value(std::move(buf)));
-    });
-    return out;
+    // Otherwise, replace the region hash array attr on the target, and
+    // we're done.
+    op->setAttr(getRegionHashAttrName(), cast<RegionHashArrayAttr>(newHashes));
+    return AsyncValueRef<Chain>::createReady(transformCache.getRuntime());
   };
 
   return cachedTransform(target, transformCache, std::move(chain),

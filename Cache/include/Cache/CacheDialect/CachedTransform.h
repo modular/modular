@@ -62,41 +62,11 @@ using AllocFn = llvm::function_ref<LLCL::AnyAsyncValueRef()>;
 using TransformFn = llvm::function_ref<LLCL::AnyAsyncValueRef(
     Operation *, WriteableBufferRef, LLCL::AnyAsyncValueRef)>;
 
-/// This is the function that's called on a cache access. It provides the user
-/// with the Operation pointer (still deflated) and CacheFindResult for the
-/// requested lookup. The function is called irrespective of cache hit or not,
-/// so the function must properly propagate the input CacheFindResult. The
-/// function should chain itself on the provided AsyncValueRef.
-///
-/// For example:
-///   auto onCacheHit = [](Operation *op,
-///                        AsyncValueRef<CacheFindResult> foundOr)
-///      -> AsyncValueRef<CacheFindResult> {
-///    auto out =
-///    AsyncValueRef<CacheFindResult>::allocate(foundOr.getRuntime());
-///    foundOr.andThen([] {
-///      // If it's an error, return the error.
-///      if (foundOr->isError()) {
-///        out.emplace(CacheFindResult::error(foundOr->takeError()));
-///        return;
-///      }
-///
-///      // Nothing in the cache, say that.
-///      if (!foundOr->hasValue()) {
-///        out.emplace(CacheFindResult::notInCache());
-///        return;
-///      }
-///
-///      // We found the value in the cache, handle that.
-///      handleCacheHit(foundOr->takeValue());
-///
-///      // Forward the BufferRef because we found something in the cache.
-///      out.emplace(CacheFindResult::value(std::move(buf)));
-///    });
-///    return out;
-///  };
-using CacheAccessFn = llvm::function_ref<LLCL::AsyncValueRef<CacheFindResult>(
-    Operation *, LLCL::AsyncValueRef<CacheFindResult>)>;
+/// This is the function that's called on a cache hit. It provides the user
+/// with the Operation pointer and the buffer that was in the cache for the
+/// requested lookup.
+using CacheHitFn =
+    llvm::function_ref<LLCL::AnyAsyncValueRef(Operation *, BufferRef)>;
 
 /// Run the specified transform on the target operation. The transform must have
 /// a key of some kind that can be associated with the operation. The semantics
@@ -112,7 +82,7 @@ using CacheAccessFn = llvm::function_ref<LLCL::AsyncValueRef<CacheFindResult>(
 LLCL::AnyAsyncValueRef
 cachedTransform(Operation *target, BlobCache<TransformCacheKey> &transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
-                TransformFn transformFn, CacheAccessFn cacheAccessFn);
+                TransformFn transformFn, CacheHitFn cacheHitFn);
 
 /// Run the specified passes over the target operation (i.e. ModulePasses over a
 /// ModuleOp). If the target operation and pass pipeline result in a cache hit,
