@@ -177,6 +177,20 @@ kgen.generator @impl() {
 
 // -----
 
+// CHECK-LABEL: @"reify_array,dtype=f32"
+kgen.generator @reify_array<dtype: dtype>() -> !pop.array<1, scalar<dtype>> {
+  // CHECK-NEXT: pop.constant(#M.dense_array<1.{{0+}}e+00> : !M.array<1xf32>)
+  %0 = pop.constant(#M.dense_array<1> : !M.array<1xi32>) : !pop.array<1, scalar<dtype>>
+  kgen.return %0 : !pop.array<1, scalar<dtype>>
+}
+
+kgen.generator @impl() {
+  %0 = kgen.call @reify_array<dtype: dtype = f32>() : () -> !pop.array<1, scalar<f32>>
+  kgen.return
+}
+
+// -----
+
 // CHECK-LABEL: @"array_constant
 kgen.generator @array_constant<dtype: dtype>() {
   // CHECK: pop.global_constant(#M.dense_array<1.{{0+}}e+00, 2.{{0+}}e+00> : !M.array<2xf32>) : !pop.array<2, scalar<f32>>

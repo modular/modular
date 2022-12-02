@@ -267,19 +267,6 @@ LogicalResult ParamOperatorAttr::verify(
     if (!type.isInteger(1))
       return emitError() << "comparisons return i1";
     break;
-  case POC::GetDType:
-    if (operands.size() != 1)
-      return emitError() << "'get_dtype' operator requires one operand";
-    if (!operands[0].getType().isa<MLIRTypeType>())
-      return emitError() << "'get_dtype' operand should be a !kgen.mlirtype";
-    if (!type.isa<DTypeType>())
-      return emitError() << "'get_dtype' should return a !kgen.dtype";
-    if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(operands[0])) {
-      if (!typeCst.getValue().isa<DTypeInterface>())
-        return emitError() << "'get_dtype' constant type operand does not "
-                              "implement DTypeInterface";
-    }
-    break;
   case POC::GetSizeOf:
     if (operands.size() != 1)
       return emitError() << "'get_sizeof' operator requires one operand";
@@ -938,14 +925,6 @@ static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
   return ParamOperatorAttr::get(POC::In, newOperands);
 }
 
-/// Simplifies a `get_dtype` operator. Try to narrow the operand to a type
-/// constant. If it does, the type must implement `DTypeInterface`.
-static Attribute simplifyGetDType(SmallVectorImpl<TypedAttr> &operands) {
-  if (auto typeCst = dyn_cast<TypeConstantAttr>(operands.front()))
-    return typeCst.getValue().cast<DTypeInterface>().getDType();
-  return {};
-}
-
 /// Simplifies a `get_sizeof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
 static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands) {
@@ -1165,10 +1144,6 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   case POC::In:
     result = simplifyIn(operands);
     resultType = IntegerType::get(context, 1);
-    break;
-  case POC::GetDType:
-    result = simplifyGetDType(operands);
-    resultType = DTypeType::get(context);
     break;
   case POC::GetSizeOf:
     result = simplifyGetSizeOf(operands);

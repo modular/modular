@@ -119,18 +119,3 @@ kgen.func @not_si8_array() {
   %0 = "zap.global_string"() {value = "foobar"} : () -> (!pop.simd<1, si8>)
   kgen.return
 }
-
-// -----
-
-kgen.func @zap_assert(%a : !pop.simd<1, si32>, %b : !pop.simd<8, bool>) {
-  // expected-error @below {{operand #0 must be !pop.simd<1, bool>}}
-  zap.debug_assert %a, "my message" : !pop.simd<1, si32>
-  kgen.return
-}
-// -----
-
-kgen.func @zap_assert(%a : !pop.simd<1, si32>, %b : !pop.simd<8, bool>) {
-  // expected-error @below {{operand #0 must be !pop.simd<1, bool>}}
-  zap.debug_assert %b, "my message" : !pop.simd<8, bool>
-  kgen.return
-}

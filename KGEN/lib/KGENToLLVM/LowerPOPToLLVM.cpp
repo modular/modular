@@ -50,8 +50,7 @@ struct OneToOneFloatOrIntConversion : public mlir::ConvertOpToLLVMPattern<Op> {
   LogicalResult
   matchAndRewrite(Op op, typename Op::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    KGENDType dtype =
-        *op.getType().template cast<DTypeInterface>().getResolvedDType();
+    KGENDType dtype = *op.getType().getResolvedDType();
     Type type = this->getTypeConverter()->convertType(op.getType());
 
     if (dtype.isInt() || dtype.isIndex()) {
@@ -81,7 +80,7 @@ struct ConvertPOPNeg : public mlir::ConvertOpToLLVMPattern<NegOp> {
   LogicalResult
   matchAndRewrite(NegOp op, NegOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
+    KGENDType dtype = *op.getType().getResolvedDType();
     if (dtype.isInt()) {
       Type type = adaptor.getOperand().getType();
       Value zero;
@@ -109,7 +108,7 @@ struct ConvertPOPAbs : public mlir::ConvertOpToLLVMPattern<AbsOp> {
   LogicalResult
   matchAndRewrite(AbsOp op, AbsOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
+    KGENDType dtype = *op.getType().getResolvedDType();
     if (dtype.isUInt() || dtype.isIndex()) {
       rewriter.replaceOp(op, adaptor.getOperand());
     } else if (dtype.isSInt()) {
@@ -137,7 +136,7 @@ struct ConvertPOPShr : public mlir::ConvertOpToLLVMPattern<ShrOp> {
   LogicalResult
   matchAndRewrite(ShrOp op, ShrOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
+    KGENDType dtype = *op.getType().getResolvedDType();
     if (dtype.isSInt() || dtype.isIndex())
       rewriter.replaceOpWithNewOp<LLVM::AShrOp>(op, adaptor.getLhs(),
                                                 adaptor.getRhs());
@@ -160,7 +159,7 @@ struct ConvertPOPFMA : public mlir::ConvertOpToLLVMPattern<FMAOp> {
   LogicalResult
   matchAndRewrite(FMAOp op, FMAOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
+    KGENDType dtype = *op.getType().getResolvedDType();
     if (dtype.isInt() || dtype.isIndex()) {
       auto lhs = rewriter.create<LLVM::MulOp>(op.getLoc(), adaptor.getA(),
                                               adaptor.getB());
@@ -183,8 +182,7 @@ public:
   LogicalResult
   matchAndRewrite(CmpOp op, CmpOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    KGENDType dtype =
-        *op.getLhs().getType().cast<DTypeInterface>().getResolvedDType();
+    KGENDType dtype = *op.getLhs().getType().getResolvedDType();
     if (dtype.isBool() || dtype.isInt() || dtype.isIndex()) {
       rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(
           op, getICmpPredicate(op.getPred(), dtype.isSInt()), adaptor.getLhs(),
@@ -257,10 +255,8 @@ struct ConvertPOPCast : public mlir::ConvertOpToLLVMPattern<CastOp> {
   LogicalResult
   matchAndRewrite(CastOp op, CastOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    KGENDType inDType =
-        *op.getInput().getType().cast<DTypeInterface>().getResolvedDType();
-    KGENDType outDType =
-        *op.getOutput().getType().cast<DTypeInterface>().getResolvedDType();
+    KGENDType inDType = *op.getInput().getType().getResolvedDType();
+    KGENDType outDType = *op.getOutput().getType().getResolvedDType();
 
     int64_t inByteCount = getDTypeSizeInBytes(inDType);
     int64_t outByteCount = getDTypeSizeInBytes(outDType);
@@ -608,7 +604,7 @@ struct ConvertPOPSIMDReduceAdd
       rewriter.replaceOp(op, adaptor.getOperand());
       return success();
     }
-    KGENDType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
+    KGENDType dtype = *op.getType().getResolvedDType();
     Type eltType =
         adaptor.getOperand().getType().cast<VectorType>().getElementType();
     if (dtype.isInt() || dtype.isIndex()) {
@@ -643,7 +639,7 @@ struct ConvertPOPSIMDReduceMul
       rewriter.replaceOp(op, adaptor.getOperand());
       return success();
     }
-    KGENDType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
+    KGENDType dtype = *op.getType().getResolvedDType();
     Type eltType =
         adaptor.getOperand().getType().cast<VectorType>().getElementType();
     if (dtype.isInt() || dtype.isIndex()) {
@@ -678,7 +674,7 @@ struct ConvertPOPSIMDReduceMax
       rewriter.replaceOp(op, adaptor.getOperand());
       return success();
     }
-    KGENDType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
+    KGENDType dtype = *op.getType().getResolvedDType();
     Type type = getTypeConverter()->convertType(op.getType());
     if (dtype.isFloat()) {
       rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fmax>(
@@ -712,7 +708,7 @@ struct ConvertPOPSIMDReduceMin
       rewriter.replaceOp(op, adaptor.getOperand());
       return success();
     }
-    KGENDType dtype = *op.getType().cast<DTypeInterface>().getResolvedDType();
+    KGENDType dtype = *op.getType().getResolvedDType();
     Type type = getTypeConverter()->convertType(op.getType());
     if (dtype.isFloat()) {
       rewriter.replaceOpWithNewOp<LLVM::vector_reduce_fmin>(

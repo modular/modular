@@ -141,7 +141,7 @@ class PointerOf<Type type> : ConfinedType<POP_PointerType,
 // SIMDType
 //===----------------------------------------------------------------------===//
 
-def POP_SIMDType : POPType<"SIMD", "simd", [DTypeInterface]> {
+def POP_SIMDType : POPType<"SIMD", "simd"> {
   let summary = "parameterized SIMD vector type";
   let description = [{
     This type is parameterized with a size and a !kgen.dtype type.
@@ -161,6 +161,8 @@ def POP_SIMDType : POPType<"SIMD", "simd", [DTypeInterface]> {
   ];
 
   let extraClassDeclaration = [{
+    /// Try to narrow the dtype expression of the SIMD type to a value.
+    Optional<KGENDType> getResolvedDType() const;
     /// Try to narrow the size expression of the SIMD type to an integer.
     Optional<int64_t> getResolvedSize() const;
   }];
@@ -169,49 +171,86 @@ def POP_SIMDType : POPType<"SIMD", "simd", [DTypeInterface]> {
 //===----------------------------------------------------------------------===//
 // TypeConstraints
 
-def BoolSIMD : AllOfType<[POP_SIMDType, BoolDType], "!pop.simd<N, bool>">;
+/// A DType constraint.
+class DTypeConstraint<string value> {
+  string pred = value;
+}
 
-def UnboundSIMD : AllOfType<[POP_SIMDType, UnboundDType], "!pop.simd<N, invalid>">;
+class AndDType<list<DTypeConstraint> preds> :
+    DTypeConstraint<"(" # !interleave(!foreach(p, preds, p.pred), " && ") # ")">;
+class OrDType<list<DTypeConstraint> preds> :
+    DTypeConstraint<"(" # !interleave(!foreach(p, preds, p.pred), " || ") # ")">;
 
-def IndexSIMD : AllOfType<[POP_SIMDType, IndexDType], "!pop.simd<N, index>">;
+def BoundDType : DTypeConstraint<"$_self">;
+def UnboundDType : DTypeConstraint<"!$_self">;
+def BoolDType : DTypeConstraint<"$_self->isBool()">;
+def IndexDType : DTypeConstraint<"$_self->isIndex()">;
+def IntDType : DTypeConstraint<"$_self->isInt()">;
+def SIntDType : DTypeConstraint<"$_self->isSInt()">;
+def FloatDType : DTypeConstraint<"$_self->isFloat()">;
+def UI8DType : DTypeConstraint<"*$_self == KGENDType::ui8">;
+def AddressDType : DTypeConstraint<"$_self->isAddress()">;
+def ArithmeticDType : DTypeConstraint<"$_self->isArithmetic()">;
 
-def IntegerSIMD : AllOfType<[POP_SIMDType, IntegerDType],
-                            "!pop.simd<N, integral>">;
+class BoundAnd<DTypeConstraint pred> : AndDType<[BoundDType, pred]>;
+class UnboundOr<DTypeConstraint pred> : OrDType<[UnboundDType, pred]>;
 
-def FloatSIMD : AllOfType<[POP_SIMDType, FloatDType],
-                            "!pop.simd<N, float>">;
+/// A SIMD type whose dtype conforms to a constraint.
+class SIMDOfDType<DTypeConstraint constraint, string desc> :
+  ConfinedType<POP_SIMDType,
+    [CPred<!subst("$_self", "$_self.cast<POP::SIMDType>().getResolvedDType()",
+                 constraint.pred)>], desc>;
 
-def AddressSIMD : AllOfType<[POP_SIMDType, AddressDType],
-                             "!pop.simd<N, address>">;
+def BoolSIMD : SIMDOfDType<BoundAnd<BoolDType>, "!pop.simd<N, bool>">;
+def UnboundSIMD : SIMDOfDType<UnboundDType, "!pop.simd<N, invalid>">;
+def IndexSIMD : SIMDOfDType<BoundAnd<IndexDType>, "!pop.simd<N, index>">;
+def IntegerSIMD : SIMDOfDType<BoundAnd<IntDType>, "!pop.simd<N, integral>">;
+def FloatSIMD : SIMDOfDType<BoundAnd<FloatDType>, "!pop.simd<N, float>">;
+def AddressSIMD : SIMDOfDType<BoundAnd<AddressDType>, "!pop.simd<N, address>">;
 
-def UnboundOrIndexSIMDOrIndex : AnyTypeOf<[Index, IndexSIMD, UnboundSIMD]>;
-
-def UnboundOrIntegerSIMD : AllOfType<[POP_SIMDType, IntegerOrUnboundDType],
+def UnboundOrIntegerSIMD : SIMDOfDType<UnboundOr<IntDType>,
     "whose element type is either unbound or an integral dtype">;
-def UnboundOrSignedSIMD : AllOfType<[POP_SIMDType, UnboundOrSignedDType],
+def UnboundOrSignedSIMD : SIMDOfDType<UnboundOr<OrDType<[SIntDType, FloatDType]>>,
     "whose element type is either unbound or of signed dtype">;
-def UnboundOrFloatSIMD : AllOfType<[POP_SIMDType, FloatOrUnboundDType],
+def UnboundOrFloatSIMD : SIMDOfDType<UnboundOr<FloatDType>,
     "whose element type is either unbound or a floating-point dtype">;
-def UnboundOrBoolOrIndexOrIntegerSIMD : AllOfType<
-    [POP_SIMDType, IndexOrIntegerOrBoolOrUnboundDType],
+def UnboundOrBoolOrIndexOrIntegerSIMD : SIMDOfDType<
+    UnboundOr<OrDType<[IndexDType, IntDType, BoolDType]>>,
     "whose element type is either unbound, or integer, or bool">;
-def UnboudOrIndexOrIntegerSIMD : AllOfType<[
-    POP_SIMDType, UnboundOrIndexOrIntegerDType],
+def UnboudOrIndexOrIntegerSIMD : SIMDOfDType<
+    UnboundOr<OrDType<[IndexDType, IntDType]>>,
     "whose element type is either unbound, index, or integral dtype">;
-def UnboudOrIndexOrArithmeticSIMD : AllOfType<[
-    POP_SIMDType, UnboundOrIndexOrArithmeticDType],
+def UnboudOrIndexOrArithmeticSIMD : SIMDOfDType<
+    UnboundOr<OrDType<[IndexDType, ArithmeticDType]>>,
     "whose element type is either unbound, index, or arithmetic dtype">;
 
-class SIMDDType<string name> :
-    StrFunc<"$" # name # ".getType().cast<POP::SIMDType>().getDType()">;
+/// A "scalar" type is a SIMD of size 1.
+def ScalarType : ConfinedType<POP_SIMDType,
+    [CPred<"$_self.cast<POP::SIMDType>().getResolvedSize() && "
+           "*$_self.cast<POP::SIMDType>().getResolvedSize() == 1">],
+    "SIMD with size 1">;
 
-class SIMDSize<string name> :
-    StrFunc<"$" # name # ".getType().cast<POP::SIMDType>().getResolvedSize()">;
+/// A scalar type whose dtype conforms to a constraint.
+class ScalarOfDType<DTypeConstraint constraint, string desc> :
+  AllOfType<[SIMDOfDType<constraint, desc>, ScalarType], desc>;
+
+def UI8Scalar : ScalarOfDType<BoundAnd<UI8DType>, "!pop.simd<1, ui8>">,
+    BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get($_builder.getContext(), KGENDType::ui8))">;
+
+def UnboundOrPointerOrSIMDAddressType : AnyTypeOf<
+    [POP_PointerType, AddressSIMD, UnboundSIMD]>;
+def UnboundOrIndexSIMDOrIndex : AnyTypeOf<[Index, IndexSIMD, UnboundSIMD]>;
+
+//===----------------------------------------------------------------------===//
+// Type Constraint Traits
 
 // Matches if Value has size=1 and same dtype as Operand
 class SIMDSizeOneOfSameDType<string operand, string value> : TypesMatchWith<
     value # " type matches dtype of the " # operand # " operand", operand,
-    value, "POP::SIMDType::get(1, $_self.cast<DTypeInterface>().getDType())">;
+    value, "POP::SIMDType::get(1, $_self.cast<SIMDType>().getDType())">;
+
+class SIMDSize<string name> :
+    StrFunc<"$" # name # ".getType().cast<POP::SIMDType>().getResolvedSize()">;
 
 class SIMDOfSameSize<string lhs, string rhs> :
   AllMatchSameOperatorTrait<[lhs, rhs], SIMDSize<"_self">.result, "size">;
@@ -225,21 +264,6 @@ class BoolSIMDOfSameSize<string operand, string value> : TypesMatchWith<
     value # " type matches simd type of the " # operand # " operand", operand,
     value, "POP::SIMDType::get($_self.cast<SIMDType>().getSize(), "
     "DTypeConstantAttr::get($_self.getContext(), KGENDType::kBool))">;
-
-def SIMDSizeOne : ConfinedType<POP_SIMDType,
-    [CPred<"$_self.cast<POP::SIMDType>().getResolvedSize() && "
-           "*$_self.cast<POP::SIMDType>().getResolvedSize() == 1">],
-    "SIMD with size 1">;
-
-def BoolSIMDSizeOne : AllOfType<[BoolSIMD, SIMDSizeOne], "!pop.simd<1, bool>">;
-
-def UI8SIMDSizeOne : AllOfType<[SIMDSizeOne, UI8DType], "!pop.simd<1, ui8>">,
-                     BuildableType<"POP::SIMDType::get(1, "
-                              "DTypeConstantAttr::get($_builder.getContext(), "
-                              "KGENDType::ui8))">;
-
-def UnboundOrPointerOrSIMDAddressType : AnyTypeOf<[
-    POP_PointerType, AddressSIMD, UnboundDType]>;
 
 //===----------------------------------------------------------------------===//
 // StructType
