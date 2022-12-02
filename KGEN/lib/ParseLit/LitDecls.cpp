@@ -414,7 +414,7 @@ SpecialFunctionKind SpecialFunctionInfo::getKind(StringRef name) {
   if (name.size() < 5 || !name.startswith("__") || !name.endswith("__"))
     return SpecialFunctionKind::kNormal;
 
-#define SF(ENUM, NAME, NUMGPERANDS, FLAGS)                                     \
+#define SF(ENUM, NAME, NUMOPERANDS, FLAGS)                                     \
   if (name == NAME)                                                            \
     return SpecialFunctionKind::ENUM;
 #include "SpecialFunctions.def"
@@ -428,8 +428,8 @@ SpecialFunctionKind SpecialFunctionInfo::getKind(StringRef name) {
 const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
   static const SpecialFunctionInfo infos[] = {
       {nullptr, SpecialFunctionKind::kNormal, /*numOperands=*/-1, /*flags=*/0},
-#define SF(ENUM, NAME, NUMGPERANDS, FLAGS)                                     \
-  {NAME, SpecialFunctionKind::ENUM, (NUMGPERANDS), (FLAGS)},
+#define SF(ENUM, NAME, NUMOPERANDS, FLAGS)                                     \
+  {NAME, SpecialFunctionKind::ENUM, (NUMOPERANDS), (FLAGS)},
 #include "SpecialFunctions.def"
   };
 
