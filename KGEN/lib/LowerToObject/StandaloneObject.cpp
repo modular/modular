@@ -165,11 +165,9 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
       }
       output.emplace(buf.copy());
     });
-    return std::move(output);
+    return output;
   };
-  auto onCacheHit = [this](Operation *op, BufferRef buf) {
-    return LLCL::AsyncValueRef<BufferRef>::createReady(runtime, buf.copy());
-  };
+  auto onCacheHit = [](Operation *op, BufferRef buf) { return buf.copy(); };
 
   WriteableBufferRef produceStandaloneObjectKey = WriteableBuffer::get();
   options.print(*produceStandaloneObjectKey << "produceStandaloneObject(");
@@ -183,6 +181,6 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
   await(output);
 
   if (output->isError())
-    return ErrorOr<BufferRef>(std::move(output->takeDiagnostic().getMessage()));
+    return {std::move(output->takeDiagnostic().getMessage())};
   return {std::move(output->get<BufferRef>())};
 }

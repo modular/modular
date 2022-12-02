@@ -152,22 +152,18 @@ Cache::cachedTransform(Operation *target,
 
   // Callback that on a cache hit reads the region hashes out of the cache and
   // places them on the operation.
-  auto onCacheHit =
-      [&transformCache](Operation *op,
-                        BufferRef regionHashes) -> AnyAsyncValueRef {
+  auto onCacheHit = [](Operation *op,
+                       BufferRef regionHashes) -> ErrorOrSuccess {
     // TODO: This currently requires a null terminator (MLIR bug #58964)
     StringRef attrStr = regionHashes->getBuffer().drop_back();
     Attribute newHashes = mlir::parseAttribute(attrStr, op->getContext());
     if (!newHashes || !isa<RegionHashArrayAttr>(newHashes))
-      return AsyncValue::createError(
-          transformCache.getRuntime(),
-          getMLIRDiagnostic(Error("failed to parse the region hashes"),
-                            op->getLoc()));
+      return Error("failed to parse the region hashes");
 
     // Otherwise, replace the region hash array attr on the target, and
     // we're done.
     op->setAttr(getRegionHashAttrName(), cast<RegionHashArrayAttr>(newHashes));
-    return AsyncValueRef<Chain>::createReady(transformCache.getRuntime());
+    return success();
   };
 
   return cachedTransform(target, transformCache, std::move(chain),
