@@ -35,13 +35,6 @@ LogicalResult elaborateGenerators(SymbolTable &symtab, LLCL::Runtime &runtime,
                                   ArrayRef<KGEN::GeneratorOp> generators,
                                   bool enableSearch = false);
 
-/// This is like `Operation::clone`, but instead of just keeping track of the
-/// block and value mapping for the copy, it also keeps track of the
-/// operation<->operation mapping.  This matters because not all operations have
-/// results.
-Operation *cloneOperation(Operation *original, BlockAndValueMapping &mapper,
-                          DenseMap<Operation *, Operation *> &operationMap);
-
 } // namespace M
 
 #endif // KGEN_ELABORATOR_H
