@@ -846,11 +846,11 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
   if (auto calleeSymbol = dyn_cast<SymbolConstantAttr>(op.getCallee())) {
     if (calleeSymbol.getParamValues().empty()) {
       rewriter.replaceOpWithNewOp<CallOp>(
-          op, op.getResultTypes(), calleeSymbol.getSymbol().getLeafReference(),
+          op, op.getResultTypes(), calleeSymbol.getSymbol(),
           op.getParamValues(), op.getParamDecls(), op.getOperands());
     } else {
       rewriter.replaceOpWithNewOp<CallOp>(
-          op, op.getResultTypes(), calleeSymbol.getSymbol().getLeafReference(),
+          op, op.getResultTypes(), calleeSymbol.getSymbol(),
           calleeSymbol.getParamValues().getValue(), ArrayRef<ParamDeclAttr>(),
           op.getOperands());
     }

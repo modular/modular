@@ -147,3 +147,18 @@ kgen.generator @call_param_bound_symbol() {
   kgen.call_param[() -> (): @call_with_bound<A = 1>]()
   kgen.return
 }
+
+// -----
+
+kgen.struct.decl @Struct {
+  lit.func @Nested() {
+    kgen.return
+  }
+}
+
+// CHECK-LABEL: @callNested
+kgen.generator @callNested() {
+  // CHECK-NEXT: kgen.call @Struct::@Nested
+  kgen.call_param[() -> (): @Struct::@Nested]()
+  kgen.return
+}
