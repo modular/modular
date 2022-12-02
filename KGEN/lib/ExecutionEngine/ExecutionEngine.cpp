@@ -144,8 +144,11 @@ M::ErrorOrSuccess ExecutionEngine::add(LLCL::Runtime &runtime, ModuleOp module,
   for (auto e : exports)
     exportedSymbols.insert(e.getSymNameAttr());
 
-  compiler = std::make_unique<ObjectCompiler>(
-      runtime, ".kgen_cache", module, std::move(exportedSymbols), options);
+  auto compilerOr = ObjectCompiler::create(runtime, ".kgen_cache", module,
+                                           std::move(exportedSymbols), options);
+  if (failed(compilerOr))
+    return compilerOr.takeError();
+  compiler = std::make_unique<ObjectCompiler>(std::move(*compilerOr));
 
   // Produce a standalone object for all the exports.
   auto objOr = compiler->produceStandaloneObject(

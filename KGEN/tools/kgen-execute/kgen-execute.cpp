@@ -61,14 +61,17 @@ struct ProcessBuffer {
     if (!module)
       return failure(clOptions.reportError("could not parse input file"));
 
-    KGEN::ObjectCompiler compiler(runtime, ".kgen_cache", *module,
-                                  compilationOptions);
+    auto compiler = KGEN::ObjectCompiler::create(runtime, ".kgen_cache",
+                                                 *module, compilationOptions);
+    if (failed(compiler))
+      return failure(clOptions.reportError("could not create compiler: " +
+                                           Twine(compiler.getError())));
 
     // Lower the input to an object.
     KGEN::TargetInfoAttr attr = KGEN::TargetInfoAttr::getForHost(ctx);
 
     // Produce a single standalone .o
-    auto standaloneOr = compiler.produceStandaloneObject(
+    auto standaloneOr = compiler->produceStandaloneObject(
         attr,
         /*isJIT=*/clOptions.cmd == Command::kExecute);
     if (failed(standaloneOr))
@@ -78,7 +81,7 @@ struct ProcessBuffer {
     if (clOptions.cmd == Command::kEmit)
       return clOptions.emitObject(standaloneObject->getBuffer());
 
-    SymbolTable &symtab = compiler.getSymbolTable();
+    SymbolTable &symtab = compiler->getSymbolTable();
     auto lookupFunc = [&](StringRef funcName) -> ErrorOr<KGEN::FuncOp> {
       auto func = symtab.lookup<KGEN::FuncOp>(funcName);
       if (!func)

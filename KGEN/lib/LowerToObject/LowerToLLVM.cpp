@@ -29,124 +29,27 @@ using namespace Cache;
 using namespace LLCL;
 
 //===----------------------------------------------------------------------===//
-// Hashers
-//===----------------------------------------------------------------------===//
-
-/// The hash consists of the OperationName, the input types, the output types,
-/// and the attributes.
-static llvm::hash_code hashNoRegionOperation(Operation *op) {
-  auto hashTypeOrAttr = [&](auto t) {
-    llvm::SmallString<64> tmp;
-    llvm::raw_svector_ostream stringStream(tmp);
-    stringStream << t;
-    return llvm::hash_value(stringStream.str());
-  };
-
-  llvm::hash_code opHash = llvm::hash_value(op->getName().getStringRef());
-
-  for (Type t : op->getOperandTypes())
-    opHash = llvm::hash_combine(opHash, hashTypeOrAttr(t));
-  for (Type t : op->getResultTypes())
-    opHash = llvm::hash_combine(opHash, hashTypeOrAttr(t));
-
-  for (auto attr : op->getAttrs())
-    opHash = llvm::hash_combine(opHash, attr.getName().getValue(),
-                                hashTypeOrAttr(attr.getValue()));
-
-  return opHash;
-}
-
-/// The hash consists of the symbol name, the signature and any attrs on the op,
-/// and the body.
-static std::string hashOpWithRegions(Operation *f) {
-  llvm::hash_code opHash = 0;
-  // Hash the body of the operation.
-  f->walk([&](Operation *op) {
-    opHash = llvm::hash_combine(opHash, hashNoRegionOperation(op));
-  });
-  return std::to_string(size_t(opHash));
-}
-
-//===----------------------------------------------------------------------===//
-// LLVMCacheKeyInfo implementation
-//===----------------------------------------------------------------------===//
-
-std::string LLVMCacheKeyInfo::hashKey(ModuleOp key) {
-  return hashOpWithRegions(key);
-}
-
-//===----------------------------------------------------------------------===//
-// CompositeObjectCacheKeyInfo implementation
-//===----------------------------------------------------------------------===//
-
-std::string CompositeObjectCacheKeyInfo::hashKey(ModuleOp key) {
-  return hashOpWithRegions(key);
-}
-
-//===----------------------------------------------------------------------===//
-// lowerToLLVM implementation
-//===----------------------------------------------------------------------===//
-
-static LogicalResult
-convertToLLVM(ModuleOp module, const CompilationOptions &compilationOptions) {
-  mlir::PassManager pm(module.getContext());
-  LowerToLLVMOptions options(compilationOptions.getDIEmissionKind(),
-                             compilationOptions.debugAtLevel);
-  pm.addPass(createLowerZAPToPOP());
-  buildLowerToLLVMPipeline(pm, options);
-  return pm.run(module);
-}
-
-//===----------------------------------------------------------------------===//
 // lowerAllFuncsToLLVM
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<llvm::Module>
-ObjectCompiler::lowerKGENToLLVM(ModuleOp module, llvm::LLVMContext &ctx) {
-  if (failed(convertToLLVM(module, options)))
-    return nullptr;
-
-  // Turn the thing into an LLVM module.
-  return mlir::translateModuleToLLVMIR(module, ctx);
+ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx) {
+  OwningOpRef<ModuleOp> module = produceStandaloneModule();
+  return lowerAllFuncsToLLVM(ctx, *module);
 }
 
 std::unique_ptr<llvm::Module>
-ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx) {
-  OwningOpRef<ModuleOp> singleModule = produceStandaloneModule();
-  auto foundModule = caches.getLLVM().find(*singleModule);
-  // TODO: this is making an async process sync - fix this!
-  LLCL::await(foundModule);
-  if (foundModule->hasValue()) {
-    BufferRef moduleBuf = foundModule->takeValue();
-    // Get the composite module.
-    std::unique_ptr<llvm::MemoryBuffer> mbuf =
-        llvm::MemoryBuffer::getMemBuffer(moduleBuf->getBuffer());
-    auto llvmModuleOr = llvm::parseBitcodeFile(*mbuf, ctx);
-    if (auto err = llvmModuleOr.takeError()) {
-      mlir::emitError(singleModule->getLoc()) << toString(std::move(err));
-      return nullptr;
-    }
-    std::unique_ptr<llvm::Module> llvmModule = std::move(*llvmModuleOr);
-    return llvmModule;
-  }
-
-  auto llvmModule = lowerKGENToLLVM(*singleModule, ctx);
-  if (!llvmModule)
+ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
+  mlir::PassManager pm(module->getContext());
+  LowerToLLVMOptions llvmOptions(options.getDIEmissionKind(),
+                                 options.debugAtLevel);
+  pm.addPass(createLowerZAPToPOP());
+  buildLowerToLLVMPipeline(pm, llvmOptions);
+  if (failed(pm.run(module)))
     return nullptr;
 
-  WriteableBufferRef stream = WriteableBuffer::get();
-  llvm::WriteBitcodeToFile(*llvmModule, *stream);
-
-  // Get the memory buffer and write it into the cache.
-  auto keyOr = caches.getLLVM().insert(*singleModule, std::move(stream));
-  // TODO: this is making an async process sync - fix this!
-  LLCL::await(keyOr);
-  if (failed(*keyOr)) {
-    mlir::emitError(singleModule->getLoc()) << keyOr->getError();
-    return nullptr;
-  }
-
-  return llvmModule;
+  // Translate the operation into an LLVM module.
+  return mlir::translateModuleToLLVMIR(module, ctx);
 }
 
 //===----------------------------------------------------------------------===//
@@ -178,12 +81,17 @@ void EmitLLVMPass::runOnOperation() {
       createSingleThreadWorkQueue());
 
   // TODO: Populate compilation options from pass options.
-  ObjectCompiler compiler(*rt, ".kgen_cache", getOperation(),
-                          CompilationOptions());
+  auto compiler = ObjectCompiler::create(*rt, ".kgen_cache", getOperation(),
+                                         CompilationOptions());
+  if (failed(compiler)) {
+    getOperation()->emitError()
+        << "failed to create object compiler: " << compiler.getError();
+    return signalPassFailure();
+  }
 
   // Lower all functions to LLVM.
   llvm::LLVMContext ctx;
-  auto llvmModule = compiler.lowerAllFuncsToLLVM(ctx);
+  auto llvmModule = compiler->lowerAllFuncsToLLVM(ctx);
   if (!llvmModule)
     return signalPassFailure();
 

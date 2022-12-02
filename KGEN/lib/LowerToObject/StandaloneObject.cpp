@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LowerToObject.h"
+#include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LowerToObjectImpl.h"
 #include "Support/TempFile.h"
@@ -127,45 +128,60 @@ OwningOpRef<ModuleOp> ObjectCompiler::produceStandaloneModule() {
 // produceStandaloneObject
 //===----------------------------------------------------------------------===//
 
-FailureOr<BufferRef>
+ErrorOr<BufferRef>
 ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
   TimeTraceScope<> traceScope("produce-standalone-object");
-  Location loc = module.getLoc();
+
+  // Perform a cache aware transformation to translate the module to an object
+  // file.
+  llvm::LLVMContext ctx;
+  auto runTransformation = [&](Operation *op, WriteableBufferRef buf,
+                               LLCL::AnyAsyncValueRef chain) {
+    auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
+    chain->andThen([this, op, target, isJIT, &ctx, output = output.copy(),
+                    buf = buf.copy()] {
+      auto llvmModule = lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
+      if (!llvmModule) {
+        return output.setToError(LLCL::getMLIRDiagnostic(
+            "failed to lower module to LLVM IR for object compilation",
+            op->getLoc()));
+      }
+
+      // Create the target machine.
+      auto machineOr = createTargetMachine(target, options, isJIT);
+      if (failed(machineOr)) {
+        return output.setToError(
+            LLCL::getMLIRDiagnostic(machineOr.takeError(), op->getLoc()));
+      }
+
+      // Set the data layout on the module.
+      llvmModule->setDataLayout((*machineOr)->createDataLayout());
+
+      // Lower the LLVM to an object file.
+      if (failed(compileLLVMToObject(*llvmModule, **machineOr, *buf))) {
+        return output.setToError(LLCL::getMLIRDiagnostic(
+            "failed to lower LLVM IR to object file", op->getLoc()));
+      }
+      output.emplace(buf.copy());
+    });
+    return std::move(output);
+  };
+  auto onCacheHit = [this](Operation *op, BufferRef buf) {
+    return LLCL::AsyncValueRef<BufferRef>::createReady(runtime, buf.copy());
+  };
+
+  WriteableBufferRef produceStandaloneObjectKey = WriteableBuffer::get();
+  options.print(*produceStandaloneObjectKey << "produceStandaloneObject(");
+  *produceStandaloneObjectKey << ")";
 
   OwningOpRef<ModuleOp> slicedModule = produceStandaloneModule();
+  auto output = cachedTransform(
+      *slicedModule, transformCache,
+      LLCL::AsyncValueRef<Chain>::createReady(runtime),
+      std::move(produceStandaloneObjectKey), runTransformation, onCacheHit);
+  await(output);
 
-  // Create the target machine.
-  auto machineOr = createTargetMachine(target, options, isJIT);
-  if (failed(machineOr))
-    return emitError(loc) << machineOr.getError();
-
-  auto objOr = getCaches().getComposite().find(*slicedModule);
-  // TODO: this is making an async process sync - fix this!
-  LLCL::await(objOr);
-  if (objOr->hasValue())
-    return objOr->takeValue();
-
-  // Lower everything to LLVM.
-  llvm::LLVMContext ctx;
-  std::unique_ptr<llvm::Module> llvmModule =
-      lowerKGENToLLVM(*slicedModule, ctx);
-  if (!llvmModule)
-    return failure();
-
-  // Set the data layout on the module.
-  llvmModule->setDataLayout((*machineOr)->createDataLayout());
-
-  WriteableBufferRef objBuf = WriteableBuffer::get();
-  if (failed(compileLLVMToObject(*llvmModule, **machineOr, *objBuf)))
-    return failure();
-
-  // Insert the compiled object into the cache.
-  auto err = getCaches().getComposite().insert(*slicedModule, objBuf.copy());
-  // TODO: this is making an async process sync - fix this!
-  LLCL::await(err);
-  if (err->isError())
-    return mlir::emitError(loc) << err->getError();
-
-  // Return the object itself.
-  return {std::move(objBuf)};
+  if (output->isError())
+    return ErrorOr<BufferRef>(std::move(output->takeDiagnostic().getMessage()));
+  return {std::move(output->get<BufferRef>())};
 }
