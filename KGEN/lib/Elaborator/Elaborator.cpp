@@ -2292,7 +2292,7 @@ LogicalResult M::elaborateGenerators(SymbolTable &symtab,
     /// Remove them at the end of elaboration.
     if (auto func = dyn_cast<FuncOp>(op))
       if (elaborator.shouldRemoveFunc(func))
-        func->erase();
+        purgeAndErase(func);
   }
 
   // Perform any renaming at the end.  We cannot use the
