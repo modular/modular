@@ -8,7 +8,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
-#include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
+#include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/AsmParser/AsmParserState.h"
 #include "mlir/Bytecode/BytecodeReader.h"

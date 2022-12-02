@@ -6,7 +6,7 @@
 
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
-#include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
+#include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "Support/HLCFDialect/Analysis/DataFlow.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "Support/HLCFToLLVM/HLCFToLLVM.h"
