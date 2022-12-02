@@ -10,43 +10,24 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Elaborator.h"
-#include "Cache/BlobCache.h"
-#include "Cache/CacheDialect/CacheOps.h"
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/KGENDialect/ElaboratorOpInterface.h"
-#include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
-#include "KGEN/KGENDialect/KGENTypes.h"
-#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENPasses.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
-#include "LLCL/Runtime/Runtime.h"
 #include "SelectFastestFunction.h"
 #include "Support/Compiler/OperationUtils.h"
-#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
-#include "Support/ErrorOr.h"
-#include "Support/LLVMCompilerForwardDecls.h"
-#include "Support/ML/DType.h"
 #include "Support/STLExtras.h"
-#include "Support/TimeProfiler.h"
-#include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BlockAndValueMapping.h"
-#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Verifier.h"
-#include "mlir/Parser/Parser.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/ScopeExit.h"
-#include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
-#include <numeric>
-#include <variant>
 
 using namespace M;
 using namespace KGEN;
