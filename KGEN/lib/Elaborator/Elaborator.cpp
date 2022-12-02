@@ -1905,19 +1905,17 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   *keyBuf << TargetInfoAttr::getForHost(itf->getContext());
 
   // Alright - we want to do search now.
-  LLCL::AsyncValue::registerTypes<LogicalResult>();
-
-  // Add a way to express failure in the cache. We have to write *something*,
-  // otherwise writing a file to disk behaves quite strangely.
-  static constexpr llvm::StringLiteral kFailureTag = "SEARCH_FAILED";
+  LLCL::AsyncValue::registerTypes<
+      SmallVector<ElaboratedGeneratorOrCalleeError>>();
 
   // This provides the implementation of search. This is the part we actually
   // care about caching because it's the most expensive part.
   auto doSpecialization = [this, evalFunc, searchInputs,
-                           &result](Operation *itfOp,
-                                    Cache::WriteableBufferRef toCache,
-                                    AnyAsyncValueRef chain) {
-    auto out = LLCL::AsyncValueRef<Chain>::allocate(runtime);
+                           result](Operation *itfOp,
+                                   Cache::WriteableBufferRef toCache,
+                                   AnyAsyncValueRef chain) {
+    auto out = LLCL::AsyncValueRef<
+        SmallVector<ElaboratedGeneratorOrCalleeError>>::allocate(runtime);
     chain->andThen([this, evalFunc, searchInputs, &result, itfOp,
                     chain = chain.copy(), out = out.copy(),
                     toCache = std::move(toCache)]() mutable {
@@ -1926,77 +1924,63 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
       ErrorOr<size_t> bestSpecializationIdxOr =
           evaluateSpecializations(evalFunc, symtab, runtime, searchInputs);
       if (failed(bestSpecializationIdxOr)) {
-        result = {reportCalleeExpansionError(
-            itf, bestSpecializationIdxOr.getError())};
-        *toCache << kFailureTag;
-        return out.setToError(EncodedDiagnostic{
-            bestSpecializationIdxOr.takeError(),
-            LLCL::MLIRLocationDecoder::getEncodedLocation(itf->getLoc())});
+        return out.emplace(SmallVector<ElaboratedGeneratorOrCalleeError>{
+            reportCalleeExpansionError(itf,
+                                       bestSpecializationIdxOr.getError())});
       }
 
       // Find the fastest one and return just that one.
-      result = {std::move(result[*bestSpecializationIdxOr])};
+      ElaboratedGeneratorOrCalleeError bestResult =
+          result[*bestSpecializationIdxOr];
 
       // Finally, cache the result.
-      FuncOp resultFunc = std::get<ElaboratedGenerator>(result.front()).func;
+      FuncOp resultFunc = std::get<ElaboratedGenerator>(bestResult).func;
       *toCache << resultFunc.getName();
-      return out.emplace();
+      return out.emplace(
+          SmallVector<ElaboratedGeneratorOrCalleeError>{std::move(bestResult)});
     });
     return out;
   };
 
-  auto onCacheAccess =
-      [this, &result](Operation *itfOp,
-                      LLCL::AsyncValueRef<Cache::CacheFindResult> cacheResult) {
-        auto out =
-            LLCL::AsyncValueRef<Cache::CacheFindResult>::allocate(runtime);
-        cacheResult.andThen([&result, cacheResult = cacheResult.copy(),
-                             out = out.copy(), itfOp] {
-          if (cacheResult->isError() || !cacheResult->hasValue())
-            return out.emplace(std::move(*cacheResult));
+  auto onCacheHit =
+      [this, result](Operation *itfOp,
+                     Cache::BufferRef cacheContents) -> AnyAsyncValueRef {
+    auto out = LLCL::AsyncValueRef<
+        SmallVector<ElaboratedGeneratorOrCalleeError>>::allocate(runtime);
+    StringAttr fastestFuncName =
+        StringAttr::get(itfOp->getContext(), cacheContents->getBuffer());
 
-          // We have a cache hit! Pull the func out of the cache and place it
-          // into the result vector.
-          Cache::BufferRef funcName = cacheResult->takeValue();
-          // The thing may have failed with an expansion error. If so, then
-          // report that we didn't find anything in the cache, and we need to
-          // re-run the transform.
-          if (funcName->getBuffer().take_front(kFailureTag.size()) ==
-              kFailureTag)
-            return out.emplace(Cache::CacheFindResult::notInCache());
-
-          StringAttr fastestFuncName =
-              StringAttr::get(itfOp->getContext(), funcName->getBuffer());
-
-          // Find the fastest function by name.
-          auto fastest = llvm::find_if(
-              result, [&](ElaboratedGeneratorOrCalleeError genOr) {
-                if (std::holds_alternative<ElaboratedGenerator>(genOr))
-                  if (std::get<ElaboratedGenerator>(genOr).func.getNameAttr() ==
-                      fastestFuncName)
-                    return true;
-                return false;
-              });
-          if (fastest == result.end())
-            return out.emplace(Cache::CacheFindResult::error(
-                "could not find " + fastestFuncName.getValue()));
-
-          result = {*fastest};
-          return out.emplace(
-              Cache::CacheFindResult::value(std::move(funcName)));
+    // Find the fastest function by name.
+    auto fastest =
+        llvm::find_if(result, [&](ElaboratedGeneratorOrCalleeError genOr) {
+          if (std::holds_alternative<ElaboratedGenerator>(genOr))
+            if (std::get<ElaboratedGenerator>(genOr).func.getNameAttr() ==
+                fastestFuncName)
+              return true;
+          return false;
         });
-        return out;
-      };
+    if (fastest == result.end()) {
+      out.setToError(LLCL::getMLIRDiagnostic(
+          Error("could not find " + fastestFuncName.getValue()),
+          itfOp->getLoc()));
+    } else {
+      out.emplace(SmallVector<ElaboratedGeneratorOrCalleeError>{*fastest});
+    }
+
+    return out;
+  };
 
   // Run the transform with the functions we just defined.
   auto xform = Cache::cachedTransform(
-      itf, transformCache,
-      LLCL::AsyncValueRef<LogicalResult>::createReady(runtime, success()),
-      std::move(keyBuf), doSpecialization, onCacheAccess);
+      itf, transformCache, LLCL::AsyncValueRef<Chain>::createReady(runtime),
+      std::move(keyBuf), doSpecialization, onCacheHit);
 
-  // Wait for the transform to complete - the rest of the elaborator is not
-  // async yet.
   LLCL::await(xform);
+  if (xform->isError())
+    result = {reportCalleeExpansionError(
+        itf, xform->getDiagnostic().getMessage().get())};
+  else
+    result = xform->get<SmallVector<ElaboratedGeneratorOrCalleeError>>();
 
   return result;
 }
