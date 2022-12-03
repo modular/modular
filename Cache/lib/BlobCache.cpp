@@ -293,69 +293,18 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
   if (!base.empty() && std::filesystem::exists(base, ec) &&
       std::filesystem::is_directory(base, ec)) {
 
-    bool erased = false;
-    auto invalidateDirs = [base, &ec, &erased] {
-      // If we've already erased the stuff we care about, there's nothing to do
-      // here.
-      if (erased)
-        return;
-
-      // Iterate the base path and remove directories that don't match the
-      // current version.
-      for (const auto &dirEntry : std::filesystem::directory_iterator{base}) {
-        // The directory entry must exist, be a directory, the parent must be
-        // `base` and the directory 'filename' must not match
-        // MODULAR_VERSION_STRING in order for it to be deleted.
-        if (std::filesystem::is_directory(dirEntry.path(), ec) &&
-            dirEntry.path().parent_path() == base &&
-            dirEntry.path().filename() != MODULAR_VERSION_STRING) {
-          std::filesystem::remove_all(dirEntry, ec);
-        }
-      }
-      erased = true;
-    };
-
-    std::filesystem::path lockFilePath = base / ".lock";
-
-    while (!erased) {
-      llvm::LockFileManager lockManager(lockFilePath.string());
-      switch (lockManager) {
-      case llvm::LockFileManager::LFS_Error:
-        return Error("unable to take lock file for '" + lockFilePath.string() +
-                     "': " + lockManager.getErrorMessage());
-      case llvm::LockFileManager::LFS_Owned:
-        // We got the lock - erase the directories.
-        invalidateDirs();
-        break;
-      case llvm::LockFileManager::LFS_Shared:
-        // Another process is touching the file, so they would have erased the
-        // dirs.
-        break;
-      }
-
-      // Wait for the other process to finish touching the file.
-      switch (lockManager.waitForUnlock()) {
-      case llvm::LockFileManager::Res_Success:
-        // We now have the lock file, so invalidate the cache. This won't do
-        // anything if the directory is already empty.
-        invalidateDirs();
-        break;
-      case llvm::LockFileManager::Res_OwnerDied:
-        // The owner died, try again to take the file.
-        continue;
-      case llvm::LockFileManager::Res_Timeout:
-        // We timed out when trying to acquire the lock for the file.
-        // TODO: We could try again, but the default timeout is 1.5 minutes.
-        return Error("timed out waiting for lock file for '" +
-                     lockFilePath.string() + "'");
+    // Iterate the base path and remove directories that don't match the
+    // current version.
+    for (const auto &dirEntry : std::filesystem::directory_iterator{base}) {
+      // The directory entry must exist, be a directory, the parent must be
+      // `base` and the directory 'filename' must not match
+      // MODULAR_VERSION_STRING in order for it to be deleted.
+      if (std::filesystem::is_directory(dirEntry.path(), ec) &&
+          dirEntry.path().parent_path() == base &&
+          dirEntry.path().filename() != MODULAR_VERSION_STRING) {
+        std::filesystem::remove_all(dirEntry, ec);
       }
     }
-  }
-
-  if (ec) {
-    return Error(
-        ec.message() +
-        " while trying to erase old files given base path: " + base.string());
   }
 
   base = base / MODULAR_VERSION_STRING;
