@@ -164,12 +164,15 @@ def AddressOfOp : KGENOp<"addressof", [
 
   let arguments = (ins FlatSymbolRefAttr:$callee,
                        ParamBindArrayAttr:$paramValues,
-                       ParamDeclArrayAttr:$paramDecls);
+                       ParamDeclArrayAttr:$paramDecls,
+                       DenseI8ArrayAttr:$conventions);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
   let results = (outs FunctionType:$result);
   let assemblyFormat = [{
     $callee `` custom<CallOpParams>($paramValues, $paramDecls) attr-dict `:`
-    type($result) custom<CallRegions>($regions, ref($paramValues))
+    type($result)
+    custom<AddressOfOptionalConventions>($conventions, ref(type($result)))
+    custom<CallRegions>($regions, ref($paramValues))
   }];
 
   let hasRegionVerifier = 1;
@@ -177,7 +180,8 @@ def AddressOfOp : KGENOp<"addressof", [
   let builders = [
     OpBuilder<(ins "Type":$type, "StringAttr":$callee,
                    "ArrayRef<ParamBindAttr>":$inputParams,
-                   "ArrayRef<ParamDeclAttr>":$resultParams)>
+                   "ArrayRef<ParamDeclAttr>":$resultParams,
+                   "mlir::DenseI8ArrayAttr":$conventions)>
   ];
 }
 
@@ -238,12 +242,14 @@ def CallOp : KGENOp<"call", [KGENCallOpInterface,
 
   let arguments =
    (ins SymbolRefAttr:$callee, ParamBindArrayAttr:$paramValues,
-        ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands);
+        ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands,
+        DenseI8ArrayAttr:$conventions);
   let results = (outs Variadic<AnyType>);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
 
   let assemblyFormat = [{
-    $callee `` custom<CallOpParams>($paramValues, $paramDecls) `(` $operands `)`
+    $callee `` custom<CallOpParams>($paramValues, $paramDecls)
+    `` custom<OperandsAndOptionalConventions>($operands, $conventions)
     attr-dict `:` functional-type($operands, results)
     custom<CallRegions>($regions, ref($paramValues))
   }];
@@ -252,11 +258,13 @@ def CallOp : KGENOp<"call", [KGENCallOpInterface,
     OpBuilder<(ins "TypeRange":$resultTypes, "StringAttr":$callee,
                    "ArrayRef<ParamBindAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams,
-                   "ValueRange":$operands)>,
+                   "ValueRange":$operands,
+                   "mlir::DenseI8ArrayAttr":$conventions)>,
     OpBuilder<(ins "TypeRange":$resultTypes, "SymbolRefAttr":$callee,
                    "ArrayRef<ParamBindAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams,
-                   "ValueRange":$operands)>,
+                   "ValueRange":$operands,
+                   "mlir::DenseI8ArrayAttr":$conventions)>,
   ];
 
   let hasRegionVerifier = 1;
@@ -303,14 +311,15 @@ def CallParamOp : KGENOp<"call_param", [KGENCallOpInterface]> {
   let arguments =
    (ins AttrOfType<SignatureType>:$callee,
         ParamBindArrayAttr:$paramValues,
-        ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands);
+        ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands,
+        DenseI8ArrayAttr:$conventions);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
 
   let assemblyFormat = [{
     `` custom<CallParamCallee>($callee, $paramValues, $paramDecls,
                             type($operands), type($results))
-    `(` $operands `)` attr-dict
+    `` custom<OperandsAndOptionalConventions>($operands, $conventions) attr-dict
     custom<CallRegions>($regions, ref($paramValues))
   }];
 
@@ -318,7 +327,8 @@ def CallParamOp : KGENOp<"call_param", [KGENCallOpInterface]> {
     OpBuilder<(ins "TypeRange":$resultTypes, "TypedAttr":$callee,
                    "ArrayRef<ParamBindAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams,
-                   "ValueRange":$operands)>,
+                   "ValueRange":$operands,
+                   "mlir::DenseI8ArrayAttr":$conventions)>,
   ];
 
   let hasCanonicalizeMethod = 1;
@@ -356,15 +366,15 @@ def InlinedCallOp : KGENOp<"inlined_call", [KGENCallOpInterface]> {
     AttrOfType<SignatureType>:$callee,
     ParamBindArrayAttr:$paramValues,
     ParamDeclArrayAttr:$paramDecls,
-    Variadic<AnyType>:$operands
+    Variadic<AnyType>:$operands,
+    DenseI8ArrayAttr:$conventions
   );
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
   let assemblyFormat = [{
     `` custom<CallParamCallee>($callee, $paramValues, $paramDecls,
                                type($operands), type($results))
-    `(` $operands `)`
-    attr-dict
+    `` custom<OperandsAndOptionalConventions>($operands, $conventions) attr-dict
     custom<InPlaceCallRegions>($regions, ref($paramValues))
   }];
 

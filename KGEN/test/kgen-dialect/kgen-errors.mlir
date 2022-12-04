@@ -1099,3 +1099,20 @@ kgen.generator @generatorWithTooManyConventions(
 kgen.func @bad(%byval: i32) conventions<none, byref> {
   kgen.return
 }
+
+
+// -----
+
+// expected-note @+1 {{callee declared here}}
+kgen.func @callee(%byval: !pop.pointer<i32>) conventions<none, byref> {
+  kgen.return
+}
+
+kgen.func @caller(%arg: !pop.pointer<i32>) {
+  // Ok
+  kgen.call @callee(%arg) conventions<byref> : (!pop.pointer<i32>) -> ()
+
+  // expected-error @+1 {{caller conventions are array<i8: 0, 0> but callee expected array<i8: 0, 1>}}
+  kgen.call @callee(%arg) : (!pop.pointer<i32>) -> ()
+  kgen.return
+}

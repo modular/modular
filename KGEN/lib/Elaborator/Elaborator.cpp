@@ -1095,13 +1095,14 @@ void ParameterRewriter::completeGeneratorUserProcessing(
   if (isa<CallOp, CallParamOp>(user)) {
     b.replaceOpWithNewOp<CallOp>(user, resultTypes, newCalleeFunc.getNameAttr(),
                                  ArrayRef<ParamBindAttr>(),
-                                 ArrayRef<ParamDeclAttr>(),
-                                 user->getOperands());
+                                 ArrayRef<ParamDeclAttr>(), user->getOperands(),
+                                 newCalleeFunc.getConventions());
 
   } else if (isa<AddressOfOp>(user)) {
     b.replaceOpWithNewOp<AddressOfOp>(
         user, resultTypes.front(), newCalleeFunc.getNameAttr(),
-        ArrayRef<ParamBindAttr>(), ArrayRef<ParamDeclAttr>());
+        ArrayRef<ParamBindAttr>(), ArrayRef<ParamDeclAttr>(),
+        newCalleeFunc.getConventions());
 
   } else if (isa<InlinedCallOp>(user)) {
     // Inline the callee.

@@ -672,6 +672,22 @@ static void printCallRegions(OpAsmPrinter &p, Operation *op,
 // AddressOfOp
 //===----------------------------------------------------------------------===//
 
+static ParseResult
+parseAddressOfOptionalConventions(OpAsmParser &p, DenseI8ArrayAttr &conventions,
+                                  Type fnType) {
+
+  if (parseOptionalConventions(p, conventions,
+                               cast<FunctionType>(fnType).getInputs().size()))
+    return failure();
+  return success();
+}
+
+static void printAddressOfOptionalConventions(OpAsmPrinter &p, Operation *op,
+                                              DenseI8ArrayAttr conventions,
+                                              Type fnType) {
+  printOptionalConventions(p.getStream(), conventions);
+}
+
 /// Given a 'call-like' operation, get the effective signature that the call
 /// expects from the callee.
 static SignatureType getCallSignature(KGENCallOpInterface op) {
@@ -680,12 +696,10 @@ static SignatureType getCallSignature(KGENCallOpInterface op) {
   for (ParamDeclAttr resultParam : op.getParamDeclsAttr())
     resultParamTypes.push_back(resultParam.getType());
 
-  DenseI8ArrayAttr conventions; // FIXME: Need conventions on a call.
-
   auto *context = op.getContext();
   return SignatureType::get(ParamDeclArrayAttr::get(context, {}),
                             TypeArrayAttr::get(context, resultParamTypes),
-                            op.getFunctionType(), conventions);
+                            op.getFunctionType(), op.getConventionsAttr());
 }
 
 LogicalResult
@@ -725,15 +739,33 @@ FunctionType AddressOfOp::getFunctionType() { return getType(); }
 
 void AddressOfOp::build(OpBuilder &b, OperationState &state, Type type,
                         StringAttr callee, ArrayRef<ParamBindAttr> inputParams,
-                        ArrayRef<ParamDeclAttr> resultParams) {
+                        ArrayRef<ParamDeclAttr> resultParams,
+                        DenseI8ArrayAttr conventions) {
   build(b, state, type, FlatSymbolRefAttr::get(callee),
         b.getAttr<ParamBindArrayAttr>(inputParams),
-        b.getAttr<ParamDeclArrayAttr>(resultParams), 0);
+        b.getAttr<ParamDeclArrayAttr>(resultParams), conventions, 0);
 }
 
 //===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
+
+static ParseResult parseOperandsAndOptionalConventions(
+    OpAsmParser &p, SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
+    DenseI8ArrayAttr &conventions) {
+
+  if (p.parseLParen() || p.parseOperandList(operands) || p.parseRParen() ||
+      parseOptionalConventions(p, conventions, operands.size()))
+    return failure();
+  return success();
+}
+
+static void printOperandsAndOptionalConventions(OpAsmPrinter &p, Operation *op,
+                                                ValueRange operands,
+                                                DenseI8ArrayAttr conventions) {
+  p << '(' << operands << ')';
+  printOptionalConventions(p.getStream(), conventions);
+}
 
 LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   auto module = KGENModule::from(*this, symbolTable);
@@ -769,18 +801,21 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 void CallOp::build(OpBuilder &builder, OperationState &state,
                    TypeRange resultTypes, SymbolRefAttr callee,
                    ArrayRef<ParamBindAttr> inputParams,
-                   ArrayRef<ParamDeclAttr> resultParams, ValueRange operands) {
+                   ArrayRef<ParamDeclAttr> resultParams, ValueRange operands,
+                   DenseI8ArrayAttr conventions) {
   build(builder, state, resultTypes, callee,
         builder.getAttr<ParamBindArrayAttr>(inputParams),
         builder.getAttr<ParamDeclArrayAttr>(resultParams), operands,
+        conventions,
         /*numRegions=*/0);
 }
 void CallOp::build(OpBuilder &builder, OperationState &state,
                    TypeRange resultTypes, StringAttr callee,
                    ArrayRef<ParamBindAttr> inputParams,
-                   ArrayRef<ParamDeclAttr> resultParams, ValueRange operands) {
+                   ArrayRef<ParamDeclAttr> resultParams, ValueRange operands,
+                   DenseI8ArrayAttr conventions) {
   build(builder, state, resultTypes, FlatSymbolRefAttr::get(callee),
-        inputParams, resultParams, operands);
+        inputParams, resultParams, operands, conventions);
 }
 
 OperandRange CallOp::getArgOperands() { return getOperands(); }
@@ -849,12 +884,13 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
     if (calleeSymbol.getParamValues().empty()) {
       rewriter.replaceOpWithNewOp<CallOp>(
           op, op.getResultTypes(), calleeSymbol.getSymbol(),
-          op.getParamValues(), op.getParamDecls(), op.getOperands());
+          op.getParamValues(), op.getParamDecls(), op.getOperands(),
+          op.getConventionsAttr());
     } else {
       rewriter.replaceOpWithNewOp<CallOp>(
           op, op.getResultTypes(), calleeSymbol.getSymbol(),
           calleeSymbol.getParamValues().getValue(), ArrayRef<ParamDeclAttr>(),
-          op.getOperands());
+          op.getOperands(), op.getConventionsAttr());
     }
     return success();
   }
@@ -866,10 +902,11 @@ void CallParamOp::build(OpBuilder &builder, OperationState &state,
                         TypeRange resultTypes, TypedAttr callee,
                         ArrayRef<ParamBindAttr> inputParams,
                         ArrayRef<ParamDeclAttr> resultParams,
-                        ValueRange operands) {
+                        ValueRange operands, DenseI8ArrayAttr conventions) {
   build(builder, state, resultTypes, callee,
         builder.getAttr<ParamBindArrayAttr>(inputParams),
         builder.getAttr<ParamDeclArrayAttr>(resultParams), operands,
+        conventions,
         /*numRegions=*/0);
 }
 
@@ -1057,7 +1094,8 @@ LogicalResult CallIndirectOp::canonicalize(CallIndirectOp op,
   if (auto constant = dyn_cast_or_null<ParamConstantOp>(calleeOp)) {
     rewriter.replaceOpWithNewOp<CallParamOp>(
         op, op.getResultTypes(), constant.getValue(), ArrayRef<ParamBindAttr>(),
-        ArrayRef<ParamDeclAttr>(), op.getInputs());
+        ArrayRef<ParamDeclAttr>(), op.getInputs(),
+        op.getCallee().getType().getConventions());
     return success();
   }
 
