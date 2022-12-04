@@ -21,6 +21,10 @@
 
 // Forward declarations of classes to be imported in to the M namespace.
 namespace mlir {
+namespace detail {
+template <typename T>
+class DenseArrayAttrImpl;
+}
 class ArrayAttr;
 class AsmParser;
 class AsmPrinter;
@@ -38,6 +42,7 @@ class ConversionPatternRewriter;
 class ConversionTarget;
 class DenseElementsAttr;
 class DenseIntElementsAttr;
+using DenseI8ArrayAttr = detail::DenseArrayAttrImpl<int8_t>;
 class DenseResourceElementsAttr;
 template <typename T>
 struct DialectResourceBlobHandle;
@@ -153,6 +158,7 @@ using mlir::ConversionPatternRewriter;
 using mlir::ConversionTarget;
 using mlir::DefaultTypeStorage;
 using mlir::DenseElementsAttr;
+using mlir::DenseI8ArrayAttr;
 using mlir::DenseIntElementsAttr;
 using mlir::DenseResourceElementsAttr;
 using DenseResourceElementsHandle =

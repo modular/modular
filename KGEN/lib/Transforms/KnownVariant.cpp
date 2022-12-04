@@ -304,8 +304,7 @@ void PruneImpossibleVariantsPass::runOnOperation() {
       // Rewrite the function type.
       auto fnType = FunctionType::get(&getContext(), sig.getValueInputs(),
                                       returns.front()->getOperandTypes());
-      itf.setSignature(SignatureType::get(sig.getInputParams(),
-                                          sig.getResultParamTypes(), fnType));
+      itf.setSignature(sig.getWithValuesReplaced(fnType));
       rewrites.try_emplace(name, std::move(resultRewrites));
     }
   }

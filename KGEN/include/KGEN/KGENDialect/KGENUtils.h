@@ -114,6 +114,13 @@ void printOptionalParameterSpec(ParamDeclArrayAttr inputParamDecls,
                                 TypeArrayAttr resultParamTypes,
                                 raw_ostream &os);
 
+/// Parse and print a function convention specification if present.
+ParseResult parseOptionalConventions(AsmParser &p,
+                                     mlir::DenseI8ArrayAttr &conventions,
+                                     size_t numValueInputs);
+void printOptionalConventions(raw_ostream &os,
+                              mlir::DenseI8ArrayAttr conventions);
+
 /// Parse and print a constraint specification if present.
 ParseResult parseOptionalConstraints(OpAsmParser &p,
                                      ConstraintArrayAttr &constraints);

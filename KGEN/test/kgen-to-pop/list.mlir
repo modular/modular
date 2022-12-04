@@ -261,3 +261,9 @@ kgen.func @two_lists_in_variant(%list: !kgen.list<i1[1]>, %var: !pop.variant<!kg
   // CHECK-NEXT: return %[[L0]], %[[VAR]]
   kgen.return %1, %0 : !kgen.list<i2[1]>, !pop.variant<!kgen.list<i1[1]>, !kgen.list<i2[1]>>
 }
+
+// CHECK-LABEL: kgen.func @conventions({{.*}} conventions<byval, byval, byref> {
+kgen.func @conventions(%arg0: !kgen.list<index[2]>, %arg1: !pop.pointer<i32>)
+conventions<byval, byref> {
+  kgen.return
+}

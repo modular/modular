@@ -144,7 +144,8 @@ LogicalResult SignatureUnifier::verifyInputParameters() {
   // input parameters as the interface so we can just take it directly!
   generatorOp.setSignature(SignatureType::get(
       interfaceOp.getInputParamDeclsAttr(),
-      generatorOp.getResultParamTypesAttr(), generatorOp.getFunctionType()));
+      generatorOp.getResultParamTypesAttr(), generatorOp.getFunctionType(),
+      generatorOp.getConventions()));
   return success();
 }
 
@@ -614,9 +615,11 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
                        func.getInputParamDecls().size());
     llvm::append_range(paramDecls, structDecl.getInputParamDecls());
     llvm::append_range(paramDecls, func.getInputParamDecls());
+    // FIXME: Structs shouldn't have signatures.
     func.setSignature(SignatureType::get(
         ParamDeclArrayAttr::get(structDecl.getContext(), paramDecls),
-        func.getResultParamTypesAttr(), func.getFunctionType()));
+        func.getResultParamTypesAttr(), func.getFunctionType(),
+        /*no conventions:*/ {}));
 
     // Lower renamed function as usual.
     if (failed(lowerLITFunc(func, symbolTable)))

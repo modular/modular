@@ -45,6 +45,13 @@ def KGENDeclInterface : OpInterface<"KGENDeclInterface"> {
       return KGEN::getFullSignature($_op);
     }]>,
 
+    // FnEffects and ValueParameter Conventions.
+    InterfaceMethod<[{
+      Return the function and value argument conventions.
+    }], "mlir::DenseI8ArrayAttr", "getConventions", (ins), [{}], [{
+      return $_op.getSignature().getConventions();
+    }]>,
+
     // Normal arguments and results.
     InterfaceMethod<[{
       Return the FunctionType for input/result SSA values.

@@ -1082,3 +1082,20 @@ kgen.generator @get_list_element() {
   %0 = kgen.param.constant: i32 = <get_list_element(:list<index[1]> [0], 0)>
   kgen.return
 }
+
+// -----
+
+kgen.generator @generatorWithTooManyConventions(
+  %byval: !pop.pointer<i32>
+  // expected-error @+1 {{too many parameter conventions specified, function has 1 value input}}
+  ) conventions<none, byval, byref> {
+  kgen.return
+}
+
+
+// -----
+
+// expected-error @+1 {{argument #0 must have pointer type to have byref convention}}
+kgen.func @bad(%byval: i32) conventions<none, byref> {
+  kgen.return
+}

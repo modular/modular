@@ -14,6 +14,9 @@
 #include "mlir/IR/Types.h"
 #include "llvm/ADT/TypeSwitch.h"
 
+// FIXME(5742): KGENDialect should not depend on POPDialect.
+#include "KGEN/POPDialect/POPTypes.h"
+
 using namespace M;
 using namespace KGEN;
 
@@ -88,9 +91,30 @@ Type ListType::getResolvedElementType() const {
 // SignatureType
 //===----------------------------------------------------------------------===//
 
+SignatureType SignatureType::get(ParamDeclArrayAttr inputParams,
+                                 TypeArrayAttr resultParamTypes,
+                                 FunctionType values,
+                                 DenseI8ArrayAttr conventions) {
+  auto *context = values.getContext();
+  if (!inputParams)
+    inputParams = ParamDeclArrayAttr::get(context, {});
+  if (!resultParamTypes)
+    resultParamTypes = TypeArrayAttr::get(context, {});
+  if (!conventions) {
+    // Default valueConventions to zero.
+    SmallVector<int8_t> elements(values.getInputs().size() + 1, 0);
+    conventions = DenseI8ArrayAttr::get(context, elements);
+  } else {
+    assert(conventions.asArrayRef().size() == values.getInputs().size() + 1 &&
+           "incorrect number of conventions specified in SignatureType::get");
+  }
+
+  return get(context, inputParams, resultParamTypes, values, conventions);
+}
+
 SignatureType SignatureType::get(FunctionType values) {
   return get(ParamDeclArrayAttr::get(values.getContext(), {}),
-             TypeArrayAttr::get(values.getContext(), {}), values);
+             TypeArrayAttr::get(values.getContext(), {}), values, {});
 }
 
 SignatureType SignatureType::get(MLIRContext *ctx, TypeRange inputs,
@@ -174,7 +198,8 @@ SignatureType SignatureType::getSpecializedSignature(
   return SignatureType::get(
       ParamDeclArrayAttr::get(getContext(), {}),
       TypeArrayAttr::get(getContext(), newParamResultTypes),
-      FunctionType::get(getContext(), inputTypes, resultTypes));
+      FunctionType::get(getContext(), inputTypes, resultTypes),
+      getConventions());
 }
 
 SignatureType SignatureType::getSpecializedSignature(
@@ -188,6 +213,56 @@ ArrayRef<Type> SignatureType::getValueInputs() {
 }
 ArrayRef<Type> SignatureType::getValueResults() {
   return getValues().getResults();
+}
+
+/// Return this signature type with the value signature replaced.
+SignatureType SignatureType::getWithValuesReplaced(FunctionType fnType) {
+  return SignatureType::get(getInputParams(), getResultParamTypes(), fnType,
+                            getConventions());
+}
+
+static ParseResult
+parseValuesAndOptionalConventions(AsmParser &p,
+                                  FailureOr<FunctionType> &valueFnSpec,
+                                  FailureOr<DenseI8ArrayAttr> &conventions) {
+  FunctionType funcType;
+  DenseI8ArrayAttr conv;
+  if (p.parseType(funcType) ||
+      parseOptionalConventions(p, conv, funcType.getInputs().size()))
+    return failure();
+  valueFnSpec = funcType;
+  conventions = conv;
+  return success();
+}
+
+static void printValuesAndOptionalConventions(AsmPrinter &p,
+                                              FunctionType valueFnSpec,
+                                              DenseI8ArrayAttr conventions) {
+  p << ' ' << valueFnSpec;
+  printOptionalConventions(p.getStream(), conventions);
+}
+
+LogicalResult
+SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
+                      ParamDeclArrayAttr inputParams,
+                      TypeArrayAttr resultParamTypes, FunctionType values,
+                      DenseI8ArrayAttr conventions) {
+  // Check we have the right number of conventions.
+  if (conventions.asArrayRef().size() != values.getInputs().size() + 1)
+    return emitError() << "incorrect # of conventions specified";
+
+  // Check that any by-ref arguments are pointer type.
+  size_t argNo = 0;
+  for (auto [argTy, conv] :
+       llvm::zip(values.getInputs(), conventions.asArrayRef().drop_front())) {
+    if (conv == int8_t(ValueParamConvention::ByRef))
+      if (!llvm::isa<POP::PointerType>(argTy))
+        return emitError()
+               << "argument #" << argNo
+               << " must have pointer type to have byref convention";
+    ++argNo;
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
