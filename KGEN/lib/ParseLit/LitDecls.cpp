@@ -369,9 +369,8 @@ namespace {
 ///
 struct ParsedParam {
   SMLoc loc;
-  // True if this is a `&` byref argument. TODO: Expand this to being an enum so
-  // we can do move semantics etc.
-  bool isByRef = false;
+  // Specify argument passing convention, e.g. byval/byref etc.
+  ValueInputConvention convention = ValueInputConvention::ByVal;
   StringAttr name;
   ASTType type;
   ExprNode *initValue = nullptr;
@@ -387,7 +386,7 @@ struct ParsedParam {
 
     // Handle & for by-ref arguments.
     if (p.consumeIf(LitToken::amp))
-      isByRef = true;
+      convention = ValueInputConvention::ByRef;
 
     loc = p.getToken().getLoc();
 
@@ -481,7 +480,7 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, LITFuncOp op,
     // If there are no parameters, install an implicit by-val self parameter.
     if (params.empty()) {
       params.push_back({decl.getCursor().getToken().getLoc(),
-                        /*isByRef=*/false,
+                        ValueInputConvention::ByVal,
                         StringAttr::get(shared.getContext(), "self"), selfType,
                         /*initPtr*/ nullptr});
     }
@@ -495,7 +494,8 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, LITFuncOp op,
 
   // Check other invariants based on method flags.
   if (fnInfo.flags & SpecialFunctionInfo::kInstMethod) {
-    bool isByRef = fnInfo.isByRefSelfInstMethod();
+    auto convent = fnInfo.isByRefSelfInstMethod() ? ValueInputConvention::ByRef
+                                                  : ValueInputConvention::ByVal;
     if (!selfType)
       return op->emitError("special function must be a method");
     if (isStatic)
@@ -503,9 +503,10 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, LITFuncOp op,
 
     // TODO: Instead of enforcing byref is specified correctly, we could reject
     // invalid explicit settings and default it correctly.
-    if (isByRef != params[0].isByRef)
+    if (convent != params[0].convention)
       return op->emitError("self parameter must ")
-             << (isByRef ? "" : "not ") << "be passed by reference";
+             << (convent == ValueInputConvention::ByRef ? "" : "not ")
+             << "be passed by reference";
   }
 
   // Verify the operand count lines up.
@@ -628,6 +629,10 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
     }
   }
 
+  // Handle function effects.
+  SmallVector<int8_t> conventions;
+  conventions.push_back(int8_t(FnEffects::None)); // TODO: Throws/Async.
+
   SmallVector<Location> paramLocs;
   SmallVector<StringAttr> paramNames;
   SmallVector<Type> paramTypes;
@@ -638,8 +643,10 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
     // Install the correct MLIR Type, which is the MLIR projection of the AST
     // type with any convention changes applied.
     Type mlirType = param.type;
-    if (param.isByRef)
+    if (param.convention == ValueInputConvention::ByRef)
       mlirType = POP::PointerType::get(mlirType);
+
+    conventions.push_back(int8_t(param.convention));
     paramTypes.push_back(mlirType);
 
     // TODO: add support for default parameter expressions.
@@ -654,7 +661,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
       builder.getAttr<TypeArrayAttr>(
           /*TODO: result params*/ ArrayRef<Type>()),
       builder.getFunctionType(paramTypes, {resultType.mlirType}),
-      /*TODO Actually set conventions!: conventions=*/{}));
+      builder.getAttr<DenseI8ArrayAttr>(conventions)));
   funcOp.getBody()->addArguments(paramTypes, paramLocs);
 
   if (FlatSymbolRefAttr implementsAttr = funcOp.getImplementsAttr()) {
@@ -680,16 +687,16 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
 
   // Set up the body of the def, creating declarations for the value
   // parameters and adding them to the symbol table.
-  for (auto [arg, param] :
-       llvm::zip(funcOp.getBody()->getArguments(), params)) {
-    // We need to know what parameter convention that argument is passed
-    // with, e.g. by-value, by-ref, by-transfer, etc.  By-reference arguments
-    // are modeled with the IR-level POP::PointerType.
-    if (isa<POP::PointerType>(arg.getType())) {
-      // Arguments passed by-reference can be directly used.
+  for (auto [arg, param, convention] :
+       llvm::zip(funcOp.getBody()->getArguments(), params,
+                 ArrayRef<int8_t>(conventions).drop_front())) {
+    // Arguments passed by-reference can be directly used.
+    if (ValueInputConvention(convention) == ValueInputConvention::ByRef) {
       addFullyResolvedDecl(LValue(arg), param.name, param.loc, &decl);
       continue;
     }
+    assert(ValueInputConvention(convention) == ValueInputConvention::ByVal &&
+           "Unknown convention");
 
     // If this was passed by-value, then it becomes an rvalue in a `fn`.
     if (!funcOp.getIsDef()) {

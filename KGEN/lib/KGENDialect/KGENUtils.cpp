@@ -1051,11 +1051,11 @@ ParseResult KGEN::parseOptionalConventions(AsmParser &p,
              << numValueInputs << " value input parameter(s)";
     }
 
-    ValueParamConvention value;
+    ValueInputConvention value;
     if (succeeded(p.parseOptionalKeyword("byval"))) {
-      value = ValueParamConvention::ByVal;
+      value = ValueInputConvention::ByVal;
     } else if (succeeded(p.parseOptionalKeyword("byref"))) {
-      value = ValueParamConvention::ByRef;
+      value = ValueInputConvention::ByRef;
     } else {
       return p.emitError(p.getCurrentLocation(),
                          "expected value parameter convention specifier");
@@ -1108,11 +1108,11 @@ void KGEN::printOptionalConventions(raw_ostream &os,
   while (!elts.empty()) {
     if (needComma)
       os << ", ";
-    switch (ValueParamConvention(elts.front())) {
-    case ValueParamConvention::ByVal:
+    switch (ValueInputConvention(elts.front())) {
+    case ValueInputConvention::ByVal:
       os << "byval";
       break;
-    case ValueParamConvention::ByRef:
+    case ValueInputConvention::ByRef:
       os << "byref";
       break;
     }

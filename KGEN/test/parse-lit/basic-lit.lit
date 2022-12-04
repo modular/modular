@@ -288,3 +288,9 @@ fn testTestParamStruct(a: TestParamStruct[4]):
   # CHECK: %1 = pop.load %arg11 : !pop.pointer<@TestParamStruct<A = 11>>
   # CHECK: %2 = kgen.call @TestParamStruct::@method<A = 4, B = 7>(%a, %1) : (!kgen.declref<@TestParamStruct<A = 4>>, !kgen.declref<@TestParamStruct<A = 11>>) -> !lit.none
   a.method[7](arg11)
+
+
+# CHECK-LABEL: lit.func @testPointerArgs(%ptr: !pop.pointer<si32>) -> si32 {
+fn testPointerArgs(ptr: __mlir_type.`!pop.pointer<si32>`) -> __mlir_type.si32:
+  # CHECK-NEXT: %0 = pop.load %ptr : !pop.pointer<si32>
+  return __mlir_op.`pop.load`[_type: __mlir_type.si32](ptr)
