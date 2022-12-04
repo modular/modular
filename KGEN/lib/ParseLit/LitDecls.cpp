@@ -363,9 +363,11 @@ struct ParsedMetaSignature {
 namespace {
 /// Parsing support for a function value (not meta) parameter:
 ///
-/// value_param_list  ::= value_param ("," value_param)*
-/// value_param       ::= value_parammarker identifier_opt_type ["=" expression]
-/// value_parammarker ::= "/" | "*" | "**" | "&"
+/// value_param_list   ::= value_param ("," value_param)*
+/// value_param        ::= value_parammarker identifier_opt_type
+///                        value_parampostfix ["=" expression]
+/// value_parammarker  ::= "/" | "*" | "**"
+/// value_parampostfix ::= "&"
 ///
 struct ParsedParam {
   SMLoc loc;
@@ -384,15 +386,15 @@ struct ParsedParam {
     //   2) They are specified in that order.
     //   3) These do not permit default arguments.
 
-    // Handle & for by-ref arguments.
-    if (p.consumeIf(LitToken::amp))
-      convention = ValueInputConvention::ByRef;
-
     loc = p.getToken().getLoc();
 
     if (p.parseIdentifier(name, "expected parameter name"))
       // TODO: Scan ahead for better recovery.
       return failure();
+
+    // Handle & for by-ref arguments.
+    if (p.consumeIf(LitToken::amp))
+      convention = ValueInputConvention::ByRef;
 
     if (p.consumeIf(LitToken::colon)) {
       if (p.parseType(type, declScope, None))

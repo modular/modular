@@ -174,7 +174,7 @@ struct WrongType:
 struct WrongSelfType[a: Int]:
   # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]'}}
   def badMethod(self: Int): pass
-  def goodMethod(&self: WrongSelfType[a]): pass
+  def goodMethod(self&: WrongSelfType[a]): pass
 
 
 @interface
@@ -240,8 +240,8 @@ struct LValuesRvalues:
     return result
 
   def normalMethod(self):
-  def mutatingMethod(&self):
-  def takesByRef(self, &x: LValuesRvalues):
+  def mutatingMethod(self&):
+  def takesByRef(self, x&: LValuesRvalues):
 
 def testLValuesRvalues():
   # Test with lvalues

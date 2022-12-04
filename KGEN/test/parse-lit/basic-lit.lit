@@ -71,7 +71,7 @@ struct StructExample:
     pass
 
   # CHECK: lit.func @mutatingMethod(%self: !pop.pointer<@StructExample>) -> !lit.none
-  fn mutatingMethod(&self):
+  fn mutatingMethod(self&):
 
 # CHECK: }
 # CHECK-NEXT: }
@@ -169,7 +169,7 @@ fn func_impl[type: DType](x: __mlir_type.index) -> __mlir_type.index:
   return x
 
 # CHECK: lit.func @byval_byref_function(%a: !kgen.declref<@Int>, %b: !pop.pointer<@Int>) -> !lit.none
-fn byval_byref_function(a: Int, &b: Int):
+fn byval_byref_function(a: Int, b&: Int):
   # CHECK-NEXT: pop.store %a, %b
   b = a
 
@@ -242,7 +242,7 @@ fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`] ():
 # CHECK-LABEL: lit.func @testSIMD(
 fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: SIMD[1, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-            &ref: SIMD[1, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
+            ref&: SIMD[1, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
   # CHECK: %field1 = lit.var.decl "field1" : <scalar<f64>>
   var field1 = a.value
   # CHECK: %field2 = lit.var.decl "field2" : <scalar<si32>>

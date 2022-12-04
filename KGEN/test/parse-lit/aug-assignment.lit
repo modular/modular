@@ -7,7 +7,7 @@ struct M:
   fn __new__(value: __mlir_type.index) -> M:
     return M(0)
 
-  fn __imatmul__(&self, rhs: M) -> M:
+  fn __imatmul__(self&, rhs: M) -> M:
     return M(0)
 
 def basic_assignments(a: Int, b: Int, c: M, d: M):
