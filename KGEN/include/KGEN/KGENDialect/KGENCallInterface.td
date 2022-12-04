@@ -29,6 +29,14 @@ def KGENCallOpInterface : OpInterface<"KGENCallOpInterface"> {
     }], "ParamDeclArrayAttr", "getParamDeclsAttr", (ins), [{}]>,
 
     InterfaceMethod<[{
+      Get the FnEffects and parameters conventions of the callee.
+    }], "mlir::DenseI8ArrayAttr", "getConventionsAttr", (ins), [{}]>,
+
+    InterfaceMethod<[{
+      Get the FnEffects and parameters conventions of the callee.
+    }], "ArrayRef<int8_t>", "getConventions", (ins), [{}]>,
+
+    InterfaceMethod<[{
       Get the bound region bodies of this operation.
     }], "iterator_range<CallRegionBodyIterator>", "getRegionBodies", (ins),
     [{}], [{

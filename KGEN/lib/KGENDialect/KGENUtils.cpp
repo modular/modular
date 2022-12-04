@@ -1529,6 +1529,19 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
                           originatorName, originatorLoc, targetName, targetLoc,
                           "result", "type"))
     return failure();
+
+  // Check the conventions match up.
+  if (originatorSignature.getConventions() !=
+      targetSignature.getConventions()) {
+    auto diag = emitError(originatorLoc, originatorName)
+                << " conventions are " << originatorSignature.getConventions()
+                << " but " << targetName << " expected "
+                << targetSignature.getConventions();
+    if (originatorLoc != targetLoc)
+      diag.attachNote(targetLoc) << targetName << " declared here";
+    return failure();
+  }
+
   return success();
 }
 
