@@ -174,7 +174,7 @@ struct Int:
   # CHECK-LABEL: lit.func @__iadd__(
   # CHECK-SAME: %self: !pop.pointer<@Int>, %rhs: !kgen.declref<@Int>) -> !kgen.declref<@Int>
   # CHECK-SAME: conventions<byref> {
-  fn __iadd__(&self, rhs: Int) -> Int:
+  fn __iadd__(self&, rhs: Int) -> Int:
     # CHECK: %0 = pop.load %self : !pop.pointer<@Int>
     # CHECK: %1 = kgen.call @Int::@__add__(%0, %rhs) : (!kgen.declref<@Int>, !kgen.declref<@Int>) -> !kgen.declref<@Int>
     # CHECK: pop.store %1, %self
@@ -183,48 +183,48 @@ struct Int:
     # CHECK: kgen.return %2
     return self
 
-  fn __isub__(&self, rhs: Int) -> Int:
+  fn __isub__(self&, rhs: Int) -> Int:
     self = self - rhs
     return self
 
-  fn __imul__(&self, rhs: Int) -> Int:
+  fn __imul__(self&, rhs: Int) -> Int:
     self = self * rhs
     return self
 
   # TODO: Since / returns a F32 this cannot be done inplace
-  #fn __itruediv__(&self, rhs: Int) -> Int:
+  #fn __itruediv__(self&, rhs: Int) -> Int:
   #  self = self / rhs
   #  return self
 
-  fn __ifloordiv__(&self, rhs: Int) -> Int:
+  fn __ifloordiv__(self&, rhs: Int) -> Int:
     self = self // rhs
     return self
 
-  #fn __imod__(&self, rhs: Int) -> Int:
+  #fn __imod__(self&, rhs: Int) -> Int:
   #  self = self % rhs
   #  return self
 
-  fn __ipow__(&self, rhs: Int) -> Int:
+  fn __ipow__(self&, rhs: Int) -> Int:
     self = self ** rhs
     return self
 
-  fn __ilshift__(&self, rhs: Int) -> Int:
+  fn __ilshift__(self&, rhs: Int) -> Int:
     self = self << rhs
     return self
 
-  fn __irshift__(&self, rhs: Int) -> Int:
+  fn __irshift__(self&, rhs: Int) -> Int:
     self = self >> rhs
     return self
 
-  fn __iand__(&self, rhs: Int) -> Int:
+  fn __iand__(self&, rhs: Int) -> Int:
     self = self & rhs
     return self
 
-  fn __ixor__(&self, rhs: Int) -> Int:
+  fn __ixor__(self&, rhs: Int) -> Int:
     self = self ^ rhs
     return self
 
-  fn __ior__(&self, rhs: Int) -> Int:
+  fn __ior__(self&, rhs: Int) -> Int:
     self = self | rhs
     return self
 
@@ -310,31 +310,31 @@ struct F32:
   # In place operations.
   #===----------------------------------------------------------------------===#
 
-  fn __iadd__(&self, rhs: F32) -> F32:
+  fn __iadd__(self&, rhs: F32) -> F32:
     self = self + rhs
     return self
 
-  fn __isub__(&self, rhs: F32) -> F32:
+  fn __isub__(self&, rhs: F32) -> F32:
     self = self - rhs
     return self
 
-  fn __imul__(&self, rhs: F32) -> F32:
+  fn __imul__(self&, rhs: F32) -> F32:
     self = self * rhs
     return self
 
-  fn __itruediv__(&self, rhs: F32) -> F32:
+  fn __itruediv__(self&, rhs: F32) -> F32:
     self = self / rhs
     return self
 
-  #fn __ifloordiv__(&self, rhs: F32) -> F32:
+  #fn __ifloordiv__(self&, rhs: F32) -> F32:
   #  self = self.__floordiv__(rhs)
   #  return self
 
-  #fn __imod__(&self, rhs: F32) -> F32:
+  #fn __imod__(self&, rhs: F32) -> F32:
   #  self = self.__mod__(rhs)
   #  return self
 
-  #fn __ipow__(&self, rhs: F32) -> F32:
+  #fn __ipow__(self&, rhs: F32) -> F32:
   #  self = self.__pow__(rhs)
   #  return self
 
@@ -455,31 +455,31 @@ struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
   # In place operations.
   #===----------------------------------------------------------------------===#
 
-  fn __iadd__(&self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+  fn __iadd__(self&, rhs: SIMD[size, type]) -> SIMD[size, type]:
     self = self + rhs
     return self
 
-  fn __isub__(&self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+  fn __isub__(self&, rhs: SIMD[size, type]) -> SIMD[size, type]:
     self = self - rhs
     return self
 
-  fn __imul__(&self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+  fn __imul__(self&, rhs: SIMD[size, type]) -> SIMD[size, type]:
     self = self * rhs
     return self
 
-  fn __itruediv__(&self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+  fn __itruediv__(self&, rhs: SIMD[size, type]) -> SIMD[size, type]:
     self = self / rhs
     return self
 
-  #fn __ifloordiv__(&self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+  #fn __ifloordiv__(self&, rhs: SIMD[size, type]) -> SIMD[size, type]:
   #  self = self // rhs
   #  return self
 
-  #fn __imod__(&self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+  #fn __imod__(self&, rhs: SIMD[size, type]) -> SIMD[size, type]:
   #  self = self.__mod__(rhs)
   #  return self
 
-  #fn __ipow__(&self, rhs: SIMD[size, type]) -> SIMD[size, type]:
+  #fn __ipow__(self&, rhs: SIMD[size, type]) -> SIMD[size, type]:
   #  self = self.__pow__(rhs)
   #  return self
 
