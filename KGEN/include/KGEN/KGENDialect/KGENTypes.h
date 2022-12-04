@@ -36,7 +36,7 @@ enum class FnEffects : uint8_t {
 
 /// This describes the encoding of the value parameter conventions in a
 /// SignatureType.
-enum class ValueParamConvention : uint8_t {
+enum class ValueInputConvention : uint8_t {
   ByVal = 0,
   ByRef = 1,
 };

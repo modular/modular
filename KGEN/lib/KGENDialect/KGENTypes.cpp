@@ -255,7 +255,7 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   size_t argNo = 0;
   for (auto [argTy, conv] :
        llvm::zip(values.getInputs(), conventions.asArrayRef().drop_front())) {
-    if (conv == int8_t(ValueParamConvention::ByRef))
+    if (conv == int8_t(ValueInputConvention::ByRef))
       if (!llvm::isa<POP::PointerType>(argTy))
         return emitError()
                << "argument #" << argNo

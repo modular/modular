@@ -166,7 +166,7 @@ def SignatureType
 
     The first element of the conventions array specifies the FnConventions for
     the function and every additional element corresponds to a value input
-    argument, indicating the ValueParamConvention parameter conventions.  When
+    argument, indicating the ValueInputConvention parameter conventions.  When
     all elements are zero, it isn't printed in the textual MLIR format.
   }];
 
@@ -209,6 +209,11 @@ def SignatureType
     // TODO: It is unfortunate that DenseArrayAttr doesn't support uint8_t.
     ArrayRef<int8_t> getValueInputConventions() {
       return getConventions().asArrayRef().drop_front();
+    }
+
+    /// Return the convention for the specified value input parameter.
+    ValueInputConvention getInputConvention(size_t inputNo) {
+      return ValueInputConvention(getValueInputConventions()[inputNo]);
     }
 
     /// Return a signature with the specified parameter bindings substituted

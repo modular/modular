@@ -547,6 +547,7 @@ static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
     symbolTable.insert(result);
     return success();
   }
+
   // Directly lower since these operations are exactly identical right now.
   auto result = b.create<GeneratorOp>(
       gen.getLoc(), gen.getSymNameAttr(), gen.getSignatureAttr(),
@@ -615,11 +616,11 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
                        func.getInputParamDecls().size());
     llvm::append_range(paramDecls, structDecl.getInputParamDecls());
     llvm::append_range(paramDecls, func.getInputParamDecls());
-    // FIXME: Structs shouldn't have signatures.
+
     func.setSignature(SignatureType::get(
         ParamDeclArrayAttr::get(structDecl.getContext(), paramDecls),
         func.getResultParamTypesAttr(), func.getFunctionType(),
-        /*no conventions:*/ {}));
+        func.getConventions()));
 
     // Lower renamed function as usual.
     if (failed(lowerLITFunc(func, symbolTable)))

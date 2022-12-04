@@ -468,9 +468,11 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
 
   // Otherwise, we have a base symbol for an instance method /and/ a self
   // value to apply to it.  Partially apply it to form a result closure.
-  Type firstArgIRType = directSymbolAttr.getType().getValueInputs()[0];
+  SignatureType calleeSignature = directSymbolAttr.getType();
+  Type firstArgIRType = calleeSignature.getValueInputs()[0];
   Value firstArgValue;
-  if (isa<POP::PointerType>(firstArgIRType)) {
+  switch (calleeSignature.getInputConvention(0)) {
+  case ValueInputConvention::ByRef: {
     LValue baseLV = baseVal.ir.getIfLValue();
     if (!baseLV) {
       emitter.emitError(loc,
@@ -487,12 +489,15 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
     // independently anyway, it must always be canonicalized into another
     // call.
     firstArgValue = baseLV;
-  } else {
+    break;
+  }
+  case ValueInputConvention::ByVal:
     // Otherwise we can have either an lvalue or rvalue, but we need to
     // convert to an rvalue if we have an lvalue.
     firstArgValue = emitter.emitDRValue(baseVal.ir, loc);
     if (!firstArgValue)
       return {};
+    break;
   }
 
   assert(firstArgIRType == firstArgValue.getType() &&
@@ -593,12 +598,14 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
 
   // Emit all the arguments.
   SmallVector<Value> valueArguments;
-  for (auto [argAnyValueAndExpr, expectedType] :
-       llvm::zip(operands, calleeSig.getValueInputs())) {
+  for (auto [argAnyValueAndExpr, expectedType, convention] :
+       llvm::zip(operands, calleeSig.getValueInputs(),
+                 calleeSig.getValueInputConventions())) {
     // If the callee takes the operand as a by-ref argument, we require an
     // lvalue.
     Value argVal;
-    if (isa<POP::PointerType>(expectedType)) {
+    switch (ValueInputConvention(convention)) {
+    case ValueInputConvention::ByRef:
       argVal = argAnyValueAndExpr.ir.getIfLValue();
       if (!argVal) {
         if (isMethodInvocation && valueArguments.empty()) {
@@ -612,14 +619,15 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
         }
         return {};
       }
-    } else {
+      break;
+    case ValueInputConvention::ByVal:
       // Otherwise, we pass as an r-value.
       argVal = emitter.emitDRValue(argAnyValueAndExpr.ir,
                                    argAnyValueAndExpr.expr->getLoc());
+      if (!argVal)
+        return {};
+      break;
     }
-
-    if (!argVal)
-      return {};
 
     // TODO: Handle implicit conversions.
     if (!ASTType(argVal.getType()).isEqualCanon(expectedType)) {
