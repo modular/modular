@@ -524,7 +524,7 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
     declSignature = SignatureType::get(
         ParamDeclArrayAttr::get(decl.getContext(), inputParams),
         TypeArrayAttr::get(decl.getContext(), resultParamTypes),
-        decl.getFunctionType());
+        decl.getFunctionType(), decl.getSignature().getConventions());
   }
 
   // If this SymbolConstant binds the parameters for the symbol, then remap its
@@ -543,7 +543,8 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
     // them anymore.
     declSignature =
         SignatureType::get(ParamDeclArrayAttr::get(result.getContext(), {}),
-                           result.getResultParamTypes(), result.getValues());
+                           result.getResultParamTypes(), result.getValues(),
+                           result.getConventions());
   }
 
   auto symbolSignature = symbolConstant.getType();

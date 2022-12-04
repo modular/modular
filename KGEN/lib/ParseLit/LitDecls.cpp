@@ -651,8 +651,10 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
   funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(paramNames));
   funcOp.setSignature(SignatureType::get(
       builder.getAttr<ParamDeclArrayAttr>(metaSignature.inputDecls),
-      builder.getAttr<TypeArrayAttr>(/*TODO: result params*/ ArrayRef<Type>()),
-      builder.getFunctionType(paramTypes, {resultType.mlirType})));
+      builder.getAttr<TypeArrayAttr>(
+          /*TODO: result params*/ ArrayRef<Type>()),
+      builder.getFunctionType(paramTypes, {resultType.mlirType}),
+      /*TODO Actually set conventions!: conventions=*/{}));
   funcOp.getBody()->addArguments(paramTypes, paramLocs);
 
   if (FlatSymbolRefAttr implementsAttr = funcOp.getImplementsAttr()) {
@@ -906,12 +908,13 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
     return failure();
 
+  // FIXME: it doesn't make sense for struct decls to have signatures.
   structOp.setSignature(SignatureType::get(
       ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls),
-      // Never has result params.
-      TypeArrayAttr::get(getContext(), {}),
+      /*Never has result params=*/{},
       // No value arguments.
-      FunctionType::get(getContext(), {}, {})));
+      FunctionType::get(getContext(), {}, {}),
+      /*No conventions*/ {}));
 
   // Add the meta parameters to the struct's symbol table.
   metaSignature.addToScope(sharedState, decl);

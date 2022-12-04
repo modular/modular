@@ -162,26 +162,34 @@ def SignatureType
   let description = [{
     This type describes the signature for a parameterized declaration, which
     can have input/output parameters as well as input/output value arguments
-    and results.  This is used for region parameters, among other things.
+    and results.
+
+    The first element of the conventions array specifies the FnConventions for
+    the function and every additional element corresponds to a value input
+    argument, indicating the ValueParamConvention parameter conventions.  When
+    all elements are zero, it isn't printed in the textual MLIR format.
   }];
 
   let parameters = (ins "ParamDeclArrayAttr":$inputParams,
                         "TypeArrayAttr":$resultParamTypes,
-                        "mlir::FunctionType":$values);
-  let assemblyFormat = "`<` $inputParams `,` $resultParamTypes `,` $values `>`";
+                        "mlir::FunctionType":$values,
+                        "mlir::DenseI8ArrayAttr":$conventions);
+  let assemblyFormat = [{
+    `<` $inputParams `,` $resultParamTypes `,`
+    custom<ValuesAndOptionalConventions>($values, $conventions) `>`
+  }];
 
   let builders = [
+    /// This builder allows everything other than the function type to be null.
     TypeBuilderWithInferredContext<(ins
         "ParamDeclArrayAttr":$inputParams, "TypeArrayAttr":$resultParamTypes,
-        "FunctionType":$values), [{
-      return get(inputParams.getContext(), inputParams, resultParamTypes,
-                 values);
-    }]>,
+        "FunctionType":$values, "mlir::DenseI8ArrayAttr":$conventions)>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>,
     TypeBuilderWithInferredContext<(ins "FunctionType":$values)>,
     TypeBuilderWithInferredContext<(ins "ParamDeclArrayAttr":$inputParams), [{
-       return get(inputParams, TypeArrayAttr::get(inputParams.getContext(), {}),
-        FunctionType::get(inputParams.getContext(), {}, {}));
+      // Only used for Structs, which shouldn't be using signatures!
+      return get(inputParams, {},
+                 FunctionType::get(inputParams.getContext(), {}, {}), {});
      }]>
   ];
 
@@ -193,6 +201,15 @@ def SignatureType
     /// Helper to return the value input and result types.
     ArrayRef<Type> getValueInputs();
     ArrayRef<Type> getValueResults();
+
+    FnEffects getFnEffects() {
+      return static_cast<FnEffects>(getConventions()[0]);
+    }
+
+    // TODO: It is unfortunate that DenseArrayAttr doesn't support uint8_t.
+    ArrayRef<int8_t> getValueInputConventions() {
+      return getConventions().asArrayRef().drop_front();
+    }
 
     /// Return a signature with the specified parameter bindings substituted
     /// into it as happens in a call.  The types specified in the parameter
@@ -207,7 +224,12 @@ def SignatureType
     SignatureType
     getSpecializedSignature(ParamBindArrayAttr inputParams,
       llvm::function_ref<mlir::InFlightDiagnostic()> emitErrorFn);
+
+    /// Return this signature type with the value signature replaced.
+    SignatureType getWithValuesReplaced(FunctionType fnType);
   }];
+
+  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//

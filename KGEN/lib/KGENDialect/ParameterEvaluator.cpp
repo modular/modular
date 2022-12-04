@@ -87,7 +87,7 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
     result = paramValues[declRef.getName()];
     assert(result && "Verifier should check that all parameters are defined");
   } else if (isa<ExprFuncAttr>(attr)) {
-    // Expresion functions are isolated from above, so don't collect from them.
+    // Expression functions are isolated from above, so don't collect from them.
   } else if (auto itf = dyn_cast<mlir::SubElementAttrInterface>(attr)) {
     SmallVector<Attribute> newAttrs;
     SmallVector<Type> newTypes;

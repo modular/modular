@@ -277,7 +277,8 @@ public:
     // Set a new signature that drops the result parameter type list.
     func.setSignature(SignatureType::get(
         func.getInputParamDeclsAttr(),
-        TypeArrayAttr::get(func.getContext(), {}), func.getFunctionType()));
+        /*clear resultParams=*/TypeArrayAttr::get(func.getContext(), {}),
+        func.getFunctionType(), func.getConventions()));
     func.getReturnOp().setParameters({});
   }
 
@@ -1707,7 +1708,8 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
       generator.getLoc(), mangleParameterValues(generator, inputParamValues),
       SignatureType::get(ParamDeclArrayAttr::get(generator.getContext(), {}),
                          generator.getResultParamTypesAttr(),
-                         generator.getFunctionType()));
+                         generator.getFunctionType(),
+                         generator.getConventions()));
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.

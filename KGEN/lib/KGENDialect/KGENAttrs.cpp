@@ -138,7 +138,8 @@ verifyBindSignature(ArrayRef<TypedAttr> operands,
   // as part of the signature.  These are now fully bound, so we don't need them
   // anymore.
   return SignatureType::get(ParamDeclArrayAttr::get(result.getContext(), {}),
-                            result.getResultParamTypes(), result.getValues());
+                            result.getResultParamTypes(), result.getValues(),
+                            result.getConventions());
 }
 
 static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,

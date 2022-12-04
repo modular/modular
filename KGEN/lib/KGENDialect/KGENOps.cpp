@@ -25,7 +25,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 
-// FIXME: KGENDialect should not depend on POPDialect.
+// FIXME(5742): KGENDialect should not depend on POPDialect.
 #include "Cache/CacheDialect/CacheOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 
@@ -680,10 +680,12 @@ static SignatureType getCallSignature(KGENCallOpInterface op) {
   for (ParamDeclAttr resultParam : op.getParamDeclsAttr())
     resultParamTypes.push_back(resultParam.getType());
 
+  DenseI8ArrayAttr conventions; // FIXME: Need conventions on a call.
+
   auto *context = op.getContext();
   return SignatureType::get(ParamDeclArrayAttr::get(context, {}),
                             TypeArrayAttr::get(context, resultParamTypes),
-                            op.getFunctionType());
+                            op.getFunctionType(), conventions);
 }
 
 LogicalResult
@@ -937,6 +939,7 @@ ReturnOp RegionBodyOp::getReturnOp() {
 /// returns null.
 static SignatureType getSignatureFromBody(ParamDeclArrayAttr inputParamDecls,
                                           TypeArrayAttr resultParamTypes,
+                                          DenseI8ArrayAttr conventions,
                                           Region &body) {
   if (body.empty() || body.front().empty() ||
       !isa<ReturnOp>(body.front().back()))
@@ -944,7 +947,8 @@ static SignatureType getSignatureFromBody(ParamDeclArrayAttr inputParamDecls,
   auto bodyFn = FunctionType::get(
       inputParamDecls.getContext(), body.front().getArgumentTypes(),
       body.front().getTerminator()->getOperandTypes());
-  return SignatureType::get(inputParamDecls, resultParamTypes, bodyFn);
+  return SignatureType::get(inputParamDecls, resultParamTypes, bodyFn,
+                            conventions);
 }
 
 /// Parse a single-block isolated from above region.
@@ -954,16 +958,19 @@ static ParseResult parseRegionBody(OpAsmParser &p, TypeAttr &signature,
   SmallVector<OpAsmParser::Argument> args;
   ParamDeclArrayAttr inputParamDecls;
   TypeArrayAttr resultParamTypes;
+  DenseI8ArrayAttr conventions;
   llvm::SMLoc bodyLoc;
   if (parseOptionalParameterSpec(p, inputParamDecls, resultParamTypes) ||
       parseOptionalConstraints(p, constraints) ||
       p.parseArgumentList(args, AsmParser::Delimiter::Paren,
                           /*allowType=*/true) ||
+      parseOptionalConventions(p, conventions, args.size()) ||
       p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
     return failure();
 
   // Form the Signature.
-  auto sig = getSignatureFromBody(inputParamDecls, resultParamTypes, body);
+  auto sig = getSignatureFromBody(inputParamDecls, resultParamTypes,
+                                  conventions, body);
   if (!sig)
     return p.emitError(bodyLoc, "body region didn't have a kgen.return op?");
   signature = TypeAttr::get(sig);
@@ -982,6 +989,7 @@ static void printRegionBody(OpAsmPrinter &p, Operation *op, TypeAttr signature,
   llvm::interleaveComma(body.getArguments(), p,
                         [&](BlockArgument arg) { p.printRegionArgument(arg); });
   p << ") ";
+  printOptionalConventions(p.getStream(), sig.getConventions());
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
@@ -1119,11 +1127,20 @@ static Type computePartialApplyResultType(Optional<Location> loc,
 
   assert(newInputTypes.size() == argumentTypes.size() - boundInputs.size());
 
-  auto resultFnType =
-      FunctionType::get(origSignature.getContext(), newInputTypes,
-                        origSignature.getValueResults());
+  MLIRContext *context = origSignature.getContext();
+  auto resultFnType = FunctionType::get(context, newInputTypes,
+                                        origSignature.getValueResults());
+
+  // Bring over the function effect and the right number of param results.
+  SmallVector<int8_t> newConventions;
+  newConventions.push_back(origSignature.getConventions()[0]);
+  llvm::append_range(newConventions,
+                     origSignature.getConventions().asArrayRef().take_back(
+                         newInputTypes.size()));
+
   return SignatureType::get(origSignature.getInputParams(),
-                            origSignature.getResultParamTypes(), resultFnType);
+                            origSignature.getResultParamTypes(), resultFnType,
+                            DenseI8ArrayAttr::get(context, newConventions));
 }
 
 LogicalResult PartialApplyOp::inferReturnTypes(
@@ -1798,9 +1815,11 @@ parseIterate(OpAsmParser &p,
   OpBuilder b(p.getContext());
   b.setInsertionPointToStart(&body.front());
 
+  // TODO: Does this beast need to support conventions?
+  DenseI8ArrayAttr conventions;
   auto signatureType = getSignatureFromBody(
       b.getAttr<ParamDeclArrayAttr>(params),
-      b.getAttr<TypeArrayAttr>(ArrayRef<Type>()), regionBody);
+      b.getAttr<TypeArrayAttr>(ArrayRef<Type>()), conventions, regionBody);
   if (!signatureType)
     return p.emitError(textualBodyLoc,
                        "body region didn't have a kgen.return op?");
