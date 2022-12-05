@@ -38,9 +38,11 @@ struct CompilationOptions {
 
   CompilationOptions(unsigned optimizationLevel = 3,
                      DebugInfoLevel debugLevel = kNoDebug,
-                     Optional<DebugAtLevel> debugAtLevel = llvm::None)
+                     Optional<DebugAtLevel> debugAtLevel = llvm::None,
+                     bool enableXRayInstrumentation = false)
       : optimizationLevel(optimizationLevel), debugLevel(debugLevel),
-        debugAtLevel(debugAtLevel) {}
+        debugAtLevel(debugAtLevel),
+        enableXRayInstrumentation(enableXRayInstrumentation) {}
 
   /// Return the corresponding codegen optimization level for the current option
   /// set.
@@ -86,12 +88,15 @@ struct CompilationOptions {
         break;
       }
     }
+    if (enableXRayInstrumentation)
+      os << ", enableXRayInstrumentation";
     os << " }";
   }
 
   unsigned optimizationLevel : 2;
   DebugInfoLevel debugLevel = kNoDebug;
   Optional<DebugAtLevel> debugAtLevel;
+  bool enableXRayInstrumentation = false;
 };
 } // namespace M::KGEN
 

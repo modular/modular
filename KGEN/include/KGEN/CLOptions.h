@@ -102,6 +102,11 @@ public:
       cl::values(clEnumValN(KGEN::CompilationOptions::kDebugAtLLVM, "llvm",
                             "Generate debug info for the LLVM level."))};
 
+  cl::opt<bool> enableXRayInstrumentation{
+      "xray-instrument",
+      cl::desc("Enable XRay instrumentation for the generated code."),
+      cl::init(false)};
+
   /// Return a compilation options object based on the command line options.
   KGEN::CompilationOptions getCompilationOptions() const {
     // Grab the optimization level. For now use an aggressive default.
@@ -117,7 +122,8 @@ public:
     Optional<KGEN::CompilationOptions::DebugAtLevel> debugAt;
     if (debugAtLevel.getNumOccurrences())
       debugAt = debugAtLevel;
-    return KGEN::CompilationOptions{optLevel, debugInfoLevel, debugAt};
+    return KGEN::CompilationOptions(optLevel, debugInfoLevel, debugAt,
+                                    enableXRayInstrumentation);
   }
 
   Optional<CommandLineFunc> shouldExecuteFunc(StringRef func) const {
