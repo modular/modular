@@ -509,8 +509,9 @@ void LowerSCFToLLVMPass::runOnOperation() {
   POPToLLVMTypeConverter typeConverter(getOperation()->getLoc(), options);
 
   // Run HLCF lowerings.
-  if (failed(HLCF::lowerControlFlowToLLVM(getOperation(), getAnalysisManager(),
-                                          typeConverter)))
+  if (failed(HLCF::lowerControlFlowToLLVM(
+          getOperation(), getAnalysis<HLCF::ControlFlowTreeAnalysis>(),
+          typeConverter)))
     return signalPassFailure();
 
   // Erase unreachable blocks that might arise during HLCF lowering or else

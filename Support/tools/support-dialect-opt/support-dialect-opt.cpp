@@ -30,7 +30,8 @@ struct TestDataFlowPass
 
   void runOnOperation() override {
     mlir::DataFlowSolver solver;
-    solver.load<HLCF::DeadCodeAnalysis>(getAnalysisManager());
+    solver.load<HLCF::DeadCodeAnalysis>(
+        getAnalysis<HLCF::ControlFlowTreeAnalysis>());
     solver.load<HLCF::SparseConstantPropagation>();
     if (failed(solver.initializeAndRun(getOperation())))
       return signalPassFailure();

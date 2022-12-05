@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/HLCFToLLVM/HLCFToLLVM.h"
-#include "Support/HLCFDialect/Analysis/ControlFlowTree.h"
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -28,7 +27,7 @@ namespace {
 /// between terminators and their branch targets and then start lowering the
 /// operations.
 struct ControlFlowConverter {
-  explicit ControlFlowConverter(MLIRContext *ctx, ControlFlowTree &tree,
+  explicit ControlFlowConverter(MLIRContext *ctx, const ControlFlowTree &tree,
                                 mlir::LLVMTypeConverter &typeConverter)
       : b(ctx), tree(tree), typeConverter(typeConverter) {}
 
@@ -42,7 +41,7 @@ struct ControlFlowConverter {
   mlir::IRRewriter b;
 
   /// The control flow tree analysis.
-  ControlFlowTree &tree;
+  const ControlFlowTree &tree;
 
   /// The type converter to use to convert result and argument types.
   mlir::LLVMTypeConverter &typeConverter;
@@ -184,7 +183,7 @@ LogicalResult ControlFlowConverter::lowerTerminator(ControlFlowTerminator term,
 
 /// Lower a single control-flow tree.
 static LogicalResult
-lowerControlFlowTree(Operation *root, ControlFlowTree &tree,
+lowerControlFlowTree(Operation *root, const ControlFlowTree &tree,
                      mlir::LLVMTypeConverter &typeConverter) {
   assert(!isa<ControlFlowNode>(root->getParentOp()));
   ControlFlowConverter converter(root->getContext(), tree, typeConverter);
@@ -197,7 +196,7 @@ lowerControlFlowTree(Operation *root, ControlFlowTree &tree,
 }
 
 LogicalResult
-HLCF::lowerControlFlowToLLVM(Operation *op, mlir::AnalysisManager mgr,
+HLCF::lowerControlFlowToLLVM(Operation *op, ControlFlowTreeAnalysis &analysis,
                              mlir::LLVMTypeConverter &typeConverter) {
   // Collect all the roots first since the lowering will break the walk order.
   SmallVector<Operation *> roots;
@@ -207,8 +206,7 @@ HLCF::lowerControlFlowToLLVM(Operation *op, mlir::AnalysisManager mgr,
   });
 
   for (Operation *root : roots) {
-    mlir::AnalysisManager nestedMgr = mgr.nest(root);
-    auto &tree = nestedMgr.getAnalysis<ControlFlowTree>();
+    const ControlFlowTree &tree = analysis.getOrCreate(root);
     if (failed(lowerControlFlowTree(root, tree, typeConverter)))
       return failure();
   }
@@ -262,7 +260,8 @@ struct LowerHLCFToLLVMPass
     // This is a test pass. Use the default index width.
     mlir::LLVMTypeConverter typeConverter(&getContext());
     if (failed(HLCF::lowerControlFlowToLLVM(
-            getOperation(), getAnalysisManager(), typeConverter)))
+            getOperation(), getAnalysis<ControlFlowTreeAnalysis>(),
+            typeConverter)))
       return signalPassFailure();
   }
 };

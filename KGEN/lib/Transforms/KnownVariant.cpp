@@ -158,7 +158,8 @@ struct PruneImpossibleVariantsPass
 
 void PruneImpossibleVariantsPass::runOnOperation() {
   mlir::DataFlowSolver solver;
-  solver.load<VariantAwareDeadCodeAnalysis>(getAnalysisManager());
+  solver.load<VariantAwareDeadCodeAnalysis>(
+      getAnalysis<HLCF::ControlFlowTreeAnalysis>());
   solver
       .load<HLCF::SparseDataFlowAnalysis<VariantState, KnownVariantAnalysis>>();
   solver.load<ConstantPropagation>();
