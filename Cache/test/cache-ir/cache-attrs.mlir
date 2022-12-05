@@ -42,12 +42,6 @@ func.func private @afunc()
                             symbols=[@afunc] hashes=[#cache.constant_hash<"ZTA5YjE2ODExNDQ0NDAxYjM1Yzk0MDgxZWU4YzgyYTc2MWJjZDNjZmQ3MjYwY2YwNjNlM2ZlYzUyMGY1ZjVlOQo=" : tensor<1234x1234xf32>>]>
 } : () -> ()
 
-// CHECK-LABEL: symbol.ref
-// CHECK-SAME: #cache.symbol_index<123348>
-"symbol.ref"() {
-  attr = #cache.symbol_index<123348>
-} : () -> ()
-
 // CHECK-LABEL: hash.ref
 // CHECK-SAME: #cache.hash_index<12338>
 "hash.ref"() {

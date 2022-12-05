@@ -251,7 +251,7 @@ cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
                   BlobCache<M::Cache::RegionCacheKey> &cache) {
   SmallVector<SymbolRefAttr> symbolReferences;
   SmallVector<ConstantHashAttr> hashReferences;
-  SmallVector<SymbolIndexAttr> refs;
+  SmallVector<SymbolRefAttr> refs;
 
   // Now we walk the symbol and collect all symbol references.
   r.walk([&](Operation *op) {
@@ -270,12 +270,12 @@ cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
                                                    hashReferences.end());
 
   // Now we'll take the uniqued list of symbols we have and replace attributes
-  // with the appropriate SymbolIndexAttr.
+  // with the appropriate (renamed) SymbolRefAttr.
   auto replaceSymbolRef = [&](SymbolRefAttr symRef) {
     auto found = llvm::find(uniqueSymbolRefs, symRef);
     assert(found != uniqueSymbolRefs.end());
-    return builder.getAttr<SymbolIndexAttr>(
-        std::distance(uniqueSymbolRefs.begin(), found));
+    return builder.getAttr<SymbolRefAttr>(builder.getStringAttr(
+        std::to_string(std::distance(uniqueSymbolRefs.begin(), found))));
   };
 
   auto replaceHashRef = [&](ConstantHashAttr hashRef) {
@@ -418,8 +418,11 @@ static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
 
     // Finish up by replacing symbols/hashes with their original attrs.
     mlir::AttrTypeReplacer replacer;
-    replacer.addReplacement([&](SymbolIndexAttr symRef) {
-      return regionHash.getSymbols()[symRef.getIndex()];
+    replacer.addReplacement([&](SymbolRefAttr symRef) -> SymbolRefAttr {
+      size_t index;
+      bool err = symRef.getLeafReference().getValue().getAsInteger(10, index);
+      assert(!err && "Must have parsed the symbol ref as an integer!");
+      return regionHash.getSymbols()[index];
     });
     replacer.addReplacement([&](HashIndexAttr hashRef) {
       return regionHash.getHashes()[hashRef.getIndex()];
