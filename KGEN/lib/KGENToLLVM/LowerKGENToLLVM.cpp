@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
+#include "Support/Compiler/SymbolTableAnalysis.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/HLCFDialect/HLCFOps.h"
@@ -400,7 +401,7 @@ static void rewriteCallingConventionInPlace(LLVM::LLVMFuncOp func) {
 
 /// Break up argument and result structs in-place for the given top-level
 /// funcs and emit C wrappers for specific non-top-level funcs.
-static LogicalResult emitWrappers(ModuleOp theModule,
+static LogicalResult emitWrappers(ModuleOp theModule, SymbolTable &symtab,
                                   ArrayRef<std::string> topLevelFuncs) {
   // Ensure that top-level funcs do not have callsites.
   llvm::StringMap<LLVM::CallOp> callsites;
@@ -410,7 +411,6 @@ static LogicalResult emitWrappers(ModuleOp theModule,
         callsites.try_emplace(*callee, call);
 
   // Break up structs in-place in the specific top-level funcs.
-  SymbolTable symtab(theModule);
   for (StringRef funcName : topLevelFuncs) {
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(funcName);
     if (!func)
@@ -489,7 +489,8 @@ void LowerKGENToLLVMPass::runOnOperation() {
     return signalPassFailure();
 
   // Fix up the linkage for the exported symbols.
-  SymbolTable symtab(theModule);
+  SymbolTable &symtab =
+      getAnalysis<SymbolTableAnalysis>().getTopLevelSymbolTable();
   for (FlatSymbolRefAttr sym : publicSymbols) {
     // Have to add the public symbols to the topLevelFuncs list.
     topLevelFuncs.push_back(sym.getValue().str());
@@ -500,7 +501,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   }
 
   // Break up structs in top-level funcs exposed to C.
-  if (failed(emitWrappers(theModule, topLevelFuncs)))
+  if (failed(emitWrappers(theModule, symtab, topLevelFuncs)))
     return signalPassFailure();
 
   // Convert the debug info within the IR.

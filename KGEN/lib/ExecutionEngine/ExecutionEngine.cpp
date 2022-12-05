@@ -136,7 +136,8 @@ ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 /// Add the given module to the execution engine. This slices all public funcs
 /// out of the module with their dependencies to generate self-contained object
 /// files.
-M::ErrorOrSuccess ExecutionEngine::add(LLCL::Runtime &runtime, ModuleOp module,
+M::ErrorOrSuccess ExecutionEngine::add(LLCL::Runtime &runtime,
+                                       SymbolTable &symtab,
                                        ArrayRef<FuncOp> exports,
                                        StringRef libName) {
   // Create the set of symbols to export.
@@ -144,7 +145,7 @@ M::ErrorOrSuccess ExecutionEngine::add(LLCL::Runtime &runtime, ModuleOp module,
   for (auto e : exports)
     exportedSymbols.insert(e.getSymNameAttr());
 
-  auto compilerOr = ObjectCompiler::create(runtime, ".kgen_cache", module,
+  auto compilerOr = ObjectCompiler::create(runtime, ".kgen_cache", symtab,
                                            std::move(exportedSymbols), options);
   if (failed(compilerOr))
     return compilerOr.takeError();
@@ -152,7 +153,7 @@ M::ErrorOrSuccess ExecutionEngine::add(LLCL::Runtime &runtime, ModuleOp module,
 
   // Produce a standalone object for all the exports.
   auto objOr = compiler->produceStandaloneObject(
-      TargetInfoAttr::getForHost(module->getContext()), true);
+      TargetInfoAttr::getForHost(symtab.getOp()->getContext()), true);
   if (failed(objOr))
     return Error("failed to produce standalone object");
 

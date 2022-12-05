@@ -37,8 +37,8 @@ using namespace Cache;
 
 /// Slice the dependencies of an operation out of the existing module into the
 /// self-contained slice module.
-static void sliceDependencies(Operation *op, mlir::SymbolTable &sliceSymtab,
-                              const mlir::SymbolTable &symtab) {
+static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
+                              const SymbolTable &symtab) {
   // Extract a dependency from the IR parent module and place it into the slice
   // module if it does not already exist. If a symbol was copied, return it.
   auto extractDependency = [&](StringAttr name) -> Operation * {
@@ -90,10 +90,10 @@ static void sliceDependencies(Operation *op, mlir::SymbolTable &sliceSymtab,
 OwningOpRef<ModuleOp> ObjectCompiler::produceStandaloneModule() {
   // Create a new module for these funcs. This will go away at the end
   // of this function.
-  mlir::OwningOpRef<mlir::ModuleOp> singleModule =
-      mlir::ModuleOp::create(module->getLoc());
+  OwningOpRef<ModuleOp> singleModule = ModuleOp::create(module->getLoc());
 
-  mlir::SymbolTable sliceSymtab(*singleModule);
+  // Create a new symbol table for the sliced module.
+  SymbolTable sliceSymtab(*singleModule);
 
   // Re-export exported functions.
   auto builder = OpBuilder::atBlockBegin(singleModule->getBody());

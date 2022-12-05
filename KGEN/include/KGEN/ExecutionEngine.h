@@ -79,7 +79,7 @@ public:
   /// Add an MLIR module to the execution engine. This will perform slicing for
   /// every func and generate self-contained libraries. Uses `libName` as the
   /// name for the JITDylib to avoid ODR violations.
-  ErrorOrSuccess add(LLCL::Runtime &runtime, ModuleOp module,
+  ErrorOrSuccess add(LLCL::Runtime &runtime, SymbolTable &symtab,
                      ArrayRef<FuncOp> exports, StringRef libName);
 
   /// Add an object to the JIT.

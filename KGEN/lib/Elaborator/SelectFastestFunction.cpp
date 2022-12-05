@@ -28,8 +28,8 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
   // We only want the funcs passed-in and the evaluator to be code-generated.
   SmallVector<FuncOp> funcsToCompile(specializations);
   funcsToCompile.push_back(evaluator);
-  if (auto err = engine.add(runtime, cast<ModuleOp>(symtab.getOp()),
-                            funcsToCompile, "evaluateSpecializations"))
+  if (auto err = engine.add(runtime, symtab, funcsToCompile,
+                            "evaluateSpecializations"))
     return err.takeError();
 
   // Get pointers to all the candidates.

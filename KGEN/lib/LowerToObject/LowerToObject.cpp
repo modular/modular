@@ -47,29 +47,30 @@ static DenseSet<StringAttr> getExportedSymbols(ModuleOp module) {
 
 ErrorOr<ObjectCompiler>
 ObjectCompiler::create(LLCL::Runtime &runtime, StringRef basePath,
-                       ModuleOp module, const CompilationOptions &options) {
-  return create(runtime, basePath, module, getExportedSymbols(module), options);
+                       SymbolTable &symtab, const CompilationOptions &options) {
+  return create(runtime, basePath, symtab,
+                getExportedSymbols(cast<ModuleOp>(symtab.getOp())), options);
 }
 
 ErrorOr<ObjectCompiler>
 ObjectCompiler::create(LLCL::Runtime &runtime, StringRef basePath,
-                       ModuleOp module, DenseSet<StringAttr> exports,
+                       SymbolTable &symtab, DenseSet<StringAttr> exports,
                        const CompilationOptions &options) {
   auto transformCache = Cache::getDefaultBackendChain(
       runtime, (std::filesystem::path(basePath.str()) / "transform").string());
   if (failed(transformCache))
     return transformCache.takeError();
-  return ObjectCompiler(runtime, module, std::move(exports),
+  return ObjectCompiler(runtime, symtab, std::move(exports),
                         std::move(*transformCache), options);
 }
 
 ObjectCompiler::ObjectCompiler(
-    LLCL::Runtime &runtime, ModuleOp module, DenseSet<StringAttr> exports,
+    LLCL::Runtime &runtime, SymbolTable &symtab, DenseSet<StringAttr> exports,
     std::unique_ptr<Cache::BlobCacheBackend> transformCache,
     const CompilationOptions &options)
     : transformCache(std::move(transformCache)), runtime(runtime),
-      module(module), symtab(module), exportedSymbols(std::move(exports)),
-      options(options) {
+      module(cast<ModuleOp>(symtab.getOp())), symtab(symtab),
+      exportedSymbols(std::move(exports)), options(options) {
   // Register types used during async compilation.
   LLCL::AsyncValue::registerTypes<Cache::BufferRef>();
 }

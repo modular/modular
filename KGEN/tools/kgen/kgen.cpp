@@ -264,7 +264,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       clOptions.cmd == Command::kElaborate)
     return emitModuleIR(*theModule, clOptions);
 
-  auto compiler = ObjectCompiler::create(runtime, ".kgen_cache", *theModule,
+  SymbolTable symtab(*theModule);
+  auto compiler = ObjectCompiler::create(runtime, ".kgen_cache", symtab,
                                          compilationOptions);
   if (failed(compiler)) {
     return failure(clOptions.reportError(
