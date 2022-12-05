@@ -73,5 +73,5 @@ TEST(KGENInvokeTest, testinvokeWithTensor) {
   EXPECT_EQ(KGEN::invoke([](void *ptr0, ssize_t, ssize_t shape[5], uint8_t,
                             size_t val) { return val; },
                          std::forward<Tensor>(tensor), 42),
-            42);
+            42u);
 }
