@@ -46,6 +46,11 @@ public:
   ErrorOr<Cache::BufferRef> produceStandaloneObject(TargetInfoAttr target,
                                                     bool isJIT);
 
+  /// Slices the call graph for all exported symbols to produce a standalone
+  /// assembly file. The assembly output is written to the provided stream.
+  ErrorOrSuccess produceStandaloneAssembly(TargetInfoAttr target,
+                                           llvm::raw_pwrite_stream &os);
+
   /// Writes function declarations for all exported symbols.
   LogicalResult produceFunctionDecls(raw_ostream &os);
 

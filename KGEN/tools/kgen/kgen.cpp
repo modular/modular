@@ -273,6 +273,35 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   TargetInfoAttr attr = TargetInfoAttr::getForHost(ctx);
 
+  // Handle LLVM output.
+  if (clOptions.cmd == Command::kEmitLLVM) {
+    llvm::LLVMContext ctx;
+    auto llvmModule = compiler->lowerAllFuncsToLLVM(ctx);
+    if (!llvmModule)
+      return failure();
+    auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false);
+    if (!outFile)
+      return failure();
+
+    llvmModule->print(outFile->os(), nullptr);
+    outFile->keep();
+    return mlir::success();
+  }
+
+  // Handle assembly output.
+  if (clOptions.cmd == Command::kEmitAssembly) {
+    auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false);
+    if (!outFile)
+      return failure();
+
+    auto standaloneOr =
+        compiler->produceStandaloneAssembly(attr, outFile->os());
+    if (failed(standaloneOr))
+      return failure();
+    outFile->keep();
+    return mlir::success();
+  }
+
   // This produces a standalone object for all the objects we requested.
   auto standaloneOr = compiler->produceStandaloneObject(
       attr, /*isJIT=*/clOptions.cmd == Command::kExecute);
@@ -341,6 +370,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       switch (clOptions.cmd) {
       case Command::kGenLibraryFile:
       case Command::kElaborate:
+      case Command::kEmitLLVM:
+      case Command::kEmitAssembly:
       case Command::kEmit:
         break;
       case Command::kExecute: {

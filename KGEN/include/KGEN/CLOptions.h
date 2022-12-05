@@ -23,6 +23,8 @@ class ExecutionEngine;
 enum class Command {
   kGenLibraryFile,
   kElaborate,
+  kEmitLLVM,
+  kEmitAssembly,
   kEmit,
   kExecute,
 };
@@ -69,6 +71,11 @@ public:
           clEnumValN(Command::kGenLibraryFile, "gen-lib",
                      "Generate a distributable library file."),
           clEnumValN(Command::kElaborate, "elaborate", "Elaborate the input."),
+          clEnumValN(Command::kEmitLLVM, "emit-llvm", "Emit funcs as LLVM IR."),
+          clEnumValN(Command::kEmitAssembly, "emit-asm",
+                     "Emit the funcs as assembly."),
+          clEnumValN(Command::kEmitAssembly, "S",
+                     "Emit the funcs as assembly (alias for emit-asm)."),
           clEnumValN(Command::kEmit, "emit", "Emit funcs as object files."),
           clEnumValN(Command::kExecute, "execute", "Execute funcs.")),
       llvm::cl::Required};

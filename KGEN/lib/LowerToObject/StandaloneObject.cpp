@@ -184,3 +184,33 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
     return {std::move(output->takeDiagnostic().getMessage())};
   return {std::move(output->get<BufferRef>())};
 }
+
+//===----------------------------------------------------------------------===//
+// produceStandaloneAssembly
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess
+ObjectCompiler::produceStandaloneAssembly(TargetInfoAttr target,
+                                          llvm::raw_pwrite_stream &os) {
+  TimeTraceScope<> traceScope("produce-standalone-assembly");
+
+  OwningOpRef<ModuleOp> slicedModule = produceStandaloneModule();
+  llvm::LLVMContext ctx;
+  auto llvmModule = lowerAllFuncsToLLVM(ctx, *slicedModule);
+  if (!llvmModule)
+    return Error("failed to lower module to LLVM IR");
+
+  auto machineOr = createTargetMachine(target, options, /*isJIT=*/false);
+  if (failed(machineOr))
+    return machineOr.takeError();
+
+  // Set the data layout on the module.
+  llvmModule->setDataLayout((*machineOr)->createDataLayout());
+
+  // Emit the assembly.
+  if (failed(compileLLVMToObject(*llvmModule, **machineOr, os,
+                                 /*emitAssembly=*/true))) {
+    return Error("failed to lower LLVM IR to assembly");
+  }
+  return success();
+}

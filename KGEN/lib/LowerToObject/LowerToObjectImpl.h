@@ -28,7 +28,8 @@ createTargetMachine(TargetInfoAttr targetInfo,
 /// Compile the given LLVM module to an object file and write it to objStream.
 LogicalResult compileLLVMToObject(llvm::Module &module,
                                   llvm::TargetMachine &targetMachine,
-                                  llvm::raw_pwrite_stream &objStream);
+                                  llvm::raw_pwrite_stream &objStream,
+                                  bool emitAssembly = false);
 } // namespace M::KGEN
 
 #endif // LOWERTOOBJECTIMPL_H
