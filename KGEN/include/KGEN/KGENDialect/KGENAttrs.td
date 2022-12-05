@@ -585,16 +585,14 @@ def TargetInfoAttr : ExprAttr<"TargetInfo", "target"> {
                         StringRefParameter<"">:$cpu,
                         StringRefParameter<"">:$features,
                         "int64_t":$pointerSize,
+                        "int64_t":$SIMDBitWidth,
                         AttributeSelfTypeParameter<"">:$type);
 
   let hasCustomAssemblyFormat = 1;
 
   let extraClassDeclaration = [{
     /// Provides a stable hash function for use as part of a cache key.
-    llvm::hash_code hash() const {
-      return llvm::hash_combine(getTripleStr(), getCpu(), getFeatures(),
-                                getPointerSize());
-    }
+    llvm::hash_code hash() const;
 
     std::string getTripleStr() const {
       return getTriple().normalize();
@@ -608,7 +606,7 @@ def TargetInfoAttr : ExprAttr<"TargetInfo", "target"> {
       return getCpu().equals(arch);
     }
 
-    static TargetInfoAttr getForHost(::mlir::MLIRContext *ctx);
+    static TargetInfoAttr getForHost(MLIRContext *ctx);
   }];
 }
 

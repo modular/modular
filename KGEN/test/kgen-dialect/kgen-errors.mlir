@@ -90,33 +90,33 @@ kgen.generator @dtype_params() {
 
 // -----
 
-// expected-error @below {{'get_sizeof' operator requires one operand}}
-"someop"() {a = #kgen.param.expr<get_sizeof, 1, 2>} : () -> ()
+// expected-error @below {{'get_sizeof' operator requires two operands}}
+"someop"() {a = #kgen.param.expr<get_sizeof, 1>} : () -> ()
 
 // -----
 
-// expected-error @below {{'get_sizeof' operand should be a !kgen.mlirtype}}
-"someop"() {a = #kgen.param.expr<get_sizeof, 1> : !kgen.dtype} : () -> ()
+// expected-error @below {{'get_sizeof' operand 0 should be a !kgen.mlirtype}}
+"someop"() {a = #kgen.param.expr<get_sizeof, 1, 2> : !kgen.dtype} : () -> ()
 
 // -----
 
 // expected-error @below {{'get_sizeof' should return an index}}
-"someop"() {a = #kgen.param.expr<get_sizeof, #kgen.concretetype.constant<i32>> : !kgen.dtype} : () -> ()
+"someop"() {a = #kgen.param.expr<get_sizeof, #kgen.concretetype.constant<i32>, #kgen.target<host>> : !kgen.dtype} : () -> ()
 
 // -----
 
-// expected-error @below {{'get_alignof' operator requires one operand}}
-"someop"() {a = #kgen.param.expr<get_alignof, 1, 2>} : () -> ()
+// expected-error @below {{'get_alignof' operator requires two operands}}
+"someop"() {a = #kgen.param.expr<get_alignof, 1>} : () -> ()
 
 // -----
 
-// expected-error @below {{'get_alignof' operand should be a !kgen.mlirtype}}
-"someop"() {a = #kgen.param.expr<get_alignof, 1> : !kgen.dtype} : () -> ()
+// expected-error @below {{'get_alignof' operand 0 should be a !kgen.mlirtype}}
+"someop"() {a = #kgen.param.expr<get_alignof, 1, 2> : !kgen.dtype} : () -> ()
 
 // -----
 
 // expected-error @below {{'get_alignof' should return an index}}
-"someop"() {a = #kgen.param.expr<get_alignof, #kgen.concretetype.constant<i32>> : !kgen.dtype} : () -> ()
+"someop"() {a = #kgen.param.expr<get_alignof, #kgen.concretetype.constant<i32>, #kgen.target<host>> : !kgen.dtype} : () -> ()
 
 // -----
 

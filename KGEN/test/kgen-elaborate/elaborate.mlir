@@ -617,13 +617,13 @@ kgen.struct.decl @Pair<T1: type, T2: type> {
 // CHECK-LABEL: @"struct_sizeof
 kgen.generator @struct_sizeof<T1: type, T2: type>() {
   // CHECK-NEXT: <4>
-  %0 = kgen.param.constant = <get_alignof(!kgen.declref<@Int20>)>
+  %0 = kgen.param.constant = <get_alignof(!kgen.declref<@Int20>, #kgen.target<host>)>
   // CHECK-NEXT: <4>
-  %1 = kgen.param.constant = <get_sizeof(!kgen.declref<@Int20>)>
+  %1 = kgen.param.constant = <get_sizeof(!kgen.declref<@Int20>, #kgen.target<host>)>
   // CHECK-NEXT: <8>
-  %2 = kgen.param.constant = <get_alignof(!kgen.declref<@Pair<T1: type = T1, T2: type = T2>>)>
+  %2 = kgen.param.constant = <get_alignof(!kgen.declref<@Pair<T1: type = T1, T2: type = T2>>, #kgen.target<host>)>
   // CHECK-NEXT: <16>
-  %3 = kgen.param.constant = <get_sizeof(!kgen.declref<@Pair<T1: type = T1, T2: type = T2>>)>
+  %3 = kgen.param.constant = <get_sizeof(!kgen.declref<@Pair<T1: type = T1, T2: type = T2>>, #kgen.target<host>)>
   kgen.return
 }
 

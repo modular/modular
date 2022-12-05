@@ -12,15 +12,17 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/Compiler/MLIRDType.h"
+#include "Support/Host.h"
+#include "Support/SIMD.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/StringSwitch.h"
+#include "llvm/ADT/Triple.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Support/Host.h"
-
-#include "llvm/ADT/Triple.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -184,7 +186,9 @@ LogicalResult ParamOperatorAttr::verify(
     ArrayRef<TypedAttr> operands, Type type) {
   // All the operand types must match except for 'bind_signature' and 'apply'.
   if (!llvm::is_contained({POC::GetListElement, POC::BindSignature, POC::Apply,
-                           POC::TargetHasFeature, POC::TargetIsArch},
+                           POC::TargetHasFeature, POC::TargetIsArch,
+                           POC::TargetGetField, POC::GetSizeOf,
+                           POC::GetAlignOf},
                           opcode) &&
       !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
@@ -262,6 +266,14 @@ LogicalResult ParamOperatorAttr::verify(
     if (!operands[1].getType().isa<StringType>())
       return emitError() << "target comparison operand 1 must be a string type";
     break;
+  case POC::TargetGetField:
+    if (operands.size() != 2)
+      return emitError() << "target_get_field must have two operands";
+    if (!operands[0].getType().isa<TargetType>())
+      return emitError() << "target_get_field operand 0 must be a target type";
+    if (!operands[1].getType().isa<StringType>())
+      return emitError() << "target_get_field operand 1 must be a string type";
+    break;
   case POC::In:
     if (operands.empty())
       return emitError() << "operator requires at least one operand";
@@ -269,18 +281,23 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "comparisons return i1";
     break;
   case POC::GetSizeOf:
-    if (operands.size() != 1)
-      return emitError() << "'get_sizeof' operator requires one operand";
+    if (operands.size() != 2)
+      return emitError() << "'get_sizeof' operator requires two operands";
     if (!operands.front().getType().isa<MLIRTypeType>())
-      return emitError() << "'get_sizeof' operand should be a !kgen.mlirtype";
+      return emitError() << "'get_sizeof' operand 0 should be a !kgen.mlirtype";
+    if (!operands[1].getType().isa<TargetType>())
+      return emitError() << "'get_sizeof' operand 1 should be a !kgen.target";
     if (!type.isa<IndexType>())
       return emitError() << "'get_sizeof' should return an index";
     break;
   case POC::GetAlignOf:
-    if (operands.size() != 1)
-      return emitError() << "'get_alignof' operator requires one operand";
+    if (operands.size() != 2)
+      return emitError() << "'get_alignof' operator requires two operands";
     if (!llvm::isa<MLIRTypeType>(operands.front().getType()))
-      return emitError() << "'get_alignof' operand should be a !kgen.mlirtype";
+      return emitError()
+             << "'get_alignof' operand 0 should be a !kgen.mlirtype";
+    if (!operands[1].getType().isa<TargetType>())
+      return emitError() << "'get_alignof' operand 1 should be a !kgen.target";
     if (!type.isa<IndexType>())
       return emitError() << "'get_alignof' should return an index";
     break;
@@ -873,6 +890,28 @@ static Attribute simplifyIsArch(SmallVectorImpl<TypedAttr> &operands) {
                           isArch);
 }
 
+static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands) {
+  if (!operands[0].isa<TargetInfoAttr>() || !operands[1].isa<StringAttr>())
+    return {};
+  TargetInfoAttr target = cast<TargetInfoAttr>(operands[0]);
+  StringRef fieldStr = cast<StringAttr>(operands[1]).getValue();
+  auto ctx = operands[0].getContext();
+  auto indexType = IndexType::get(ctx);
+  Attribute attr =
+      llvm::StringSwitch<Attribute>(fieldStr)
+          .Case("pointer_size",
+                IntegerAttr::get(indexType, target.getPointerSize()))
+          .Case("simd_bit_width",
+                IntegerAttr::get(indexType, target.getSIMDBitWidth()))
+          .Default(nullptr);
+  if (!attr) {
+    mlir::emitError(UnknownLoc::get(ctx))
+        << "Field passed into target_get_field is not valid, got " << fieldStr;
+    return {};
+  }
+  return attr;
+}
+
 /// Simplifies an `in` (also `in(:dtype`) operator.  We know the all the
 /// operands have the same type.
 static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
@@ -933,8 +972,11 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands) {
   auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(operands.front());
   if (!typeCst)
     return {};
-  Optional<int64_t> size = DataLayoutInterface::getTypeSizeInBytes(
-      TargetInfoAttr::getForHost(typeCst.getContext()), typeCst.getValue());
+  auto targetInfo = dyn_cast<TargetInfoAttr>(operands[1]);
+  if (!targetInfo)
+    return {};
+  Optional<int64_t> size =
+      DataLayoutInterface::getTypeSizeInBytes(targetInfo, typeCst.getValue());
   if (!size)
     return {};
   return Builder(typeCst.getContext()).getIndexAttr(*size);
@@ -947,8 +989,11 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands) {
   auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(operands.front());
   if (!typeCst)
     return {};
-  Optional<int64_t> size = DataLayoutInterface::getTypeAlignInBytes(
-      TargetInfoAttr::getForHost(typeCst.getContext()), typeCst.getValue());
+  auto targetInfo = dyn_cast<TargetInfoAttr>(operands[1]);
+  if (!targetInfo)
+    return {};
+  Optional<int64_t> size =
+      DataLayoutInterface::getTypeAlignInBytes(targetInfo, typeCst.getValue());
   if (!size)
     return {};
   return Builder(typeCst.getContext()).getIndexAttr(*size);
@@ -1076,7 +1121,8 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   auto resultType = operandsIn.front().getType();
   assert(
       llvm::is_contained({POC::GetListElement, POC::BindSignature, POC::Apply,
-                          POC::TargetHasFeature, POC::TargetIsArch},
+                          POC::TargetHasFeature, POC::TargetIsArch,
+                          POC::TargetGetField, POC::GetSizeOf, POC::GetAlignOf},
                          opcode) ||
       llvm::all_of(operandsIn.drop_front(),
                    [&](auto op) { return op.getType() == resultType; }));
@@ -1141,6 +1187,10 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   case POC::TargetIsArch:
     result = simplifyIsArch(operands);
     resultType = IntegerType::get(context, 1);
+    break;
+  case POC::TargetGetField:
+    result = simplifyTargetGetField(operands);
+    resultType = IndexType::get(context);
     break;
   case POC::In:
     result = simplifyIn(operands);
@@ -1494,9 +1544,16 @@ Type ParameterizedTypeConstantAttr::getValue() const {
   return getImpl()->value;
 }
 
+llvm::hash_code TargetInfoAttr::hash() const {
+  return llvm::hash_combine(getTripleStr(), getCpu(), getFeatures(),
+                            getPointerSize(), getSIMDBitWidth());
+}
+
 void TargetInfoAttr::print(mlir::AsmPrinter &odsPrinter) const {
-  odsPrinter << "<\"" << getTripleStr() << "\", \"" << getCpu() << "\", \""
-             << getFeatures() << "\", " << getPointerSize() << '>';
+  odsPrinter << "<triple=\"" << getTripleStr() << "\", cpu=\"" << getCpu()
+             << "\", features=\"" << getFeatures()
+             << "\", pointer_size=" << getPointerSize()
+             << ", simd_bit_width=" << getSIMDBitWidth() << '>';
 }
 
 // TargetInfoAttr is either
@@ -1514,23 +1571,48 @@ mlir::Attribute TargetInfoAttr::parse(mlir::AsmParser &parser,
     return TargetInfoAttr::getForHost(parser.getContext());
   }
 
-  // #kgen.target<"triple", "cpu", "features", ptrSize>
+  // #kgen.target<"triple", "cpu", "features", ptrSize, simdWidth>
   std::string tripleStr;
   std::string cpuStr;
   std::string featuresStr;
   int64_t pointerSize;
+  int64_t simdWidth;
 
-  if (parser.parseString(&tripleStr) || parser.parseComma() ||
-      parser.parseString(&cpuStr) || parser.parseComma() ||
-      parser.parseString(&featuresStr) || parser.parseComma() ||
-      parser.parseInteger(pointerSize) || parser.parseGreater())
+  if (succeeded(parser.parseOptionalKeyword("triple")))
+    parser.parseEqual();
+
+  if (parser.parseString(&tripleStr) || parser.parseComma())
+    return {};
+
+  if (succeeded(parser.parseOptionalKeyword("cpu")))
+    parser.parseEqual();
+
+  if (parser.parseString(&cpuStr) || parser.parseComma())
+    return {};
+
+  if (succeeded(parser.parseOptionalKeyword("features")))
+    parser.parseEqual();
+
+  if (parser.parseString(&featuresStr) || parser.parseComma())
+    return {};
+
+  if (succeeded(parser.parseOptionalKeyword("pointer_size")))
+    parser.parseEqual();
+
+  if (parser.parseInteger(pointerSize) || parser.parseComma())
+    return {};
+
+  if (succeeded(parser.parseOptionalKeyword("simd_bit_width")))
+    parser.parseEqual();
+
+  if (parser.parseInteger(simdWidth) || parser.parseGreater())
     return {};
 
   llvm::Triple triple(tripleStr);
 
   mlir::MLIRContext *ctx = parser.getContext();
   return TargetInfoAttr::get(ctx, triple, cpuStr, featuresStr, pointerSize,
-                             TargetType::get(ctx));
+                             simdWidth, TargetType::get(ctx));
 }
 
 TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
@@ -1547,8 +1629,8 @@ TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
       if (f.second) // add feature if it's enabled
         features.AddFeature(f.first(), f.second);
 
-  // Return a TargetInfoAttr built for the host.
+  //  Return a TargetInfoAttr built for the host.
   return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu,
                              features.getString(), sizeof(ssize_t),
-                             TargetType::get(ctx));
+                             kPreferredSIMDBitWidth, TargetType::get(ctx));
 }

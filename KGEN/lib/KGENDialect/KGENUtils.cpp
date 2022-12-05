@@ -539,13 +539,23 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     return success();
   case (uint32_t)POC::TargetHasFeature:
   case (uint32_t)POC::TargetIsArch:
-    // Parse TargetHasFeature & TargetIsArch -- the first operand is a
-    // TargetType, the second a StringType.
+  case (uint32_t)POC::TargetGetField:
+    // Parse TargetHasFeature, TargetIsArch & TargetGetField -- the first
+    // operand is a TargetType, the second a StringType.
     if (parseParamValue(p, operands.emplace_back(),
                         TargetType::get(p.getContext())) ||
         p.parseComma() ||
         parseParamValue(p, operands.emplace_back(),
                         StringType::get(p.getContext())))
+      return failure();
+    return success();
+  case (uint32_t)POC::GetSizeOf:
+  case (uint32_t)POC::GetAlignOf:
+    if (parseParamValue(p, operands.emplace_back(),
+                        MLIRTypeType::get(p.getContext())) ||
+        p.parseComma() ||
+        parseParamValue(p, operands.emplace_back(),
+                        TargetType::get(p.getContext())))
       return failure();
     return success();
   // Parse each operand with a type.  TODO: We could do better here by using
@@ -699,11 +709,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
         // result is always `i1`.
         operandType = p.getBuilder().getIndexType();
         break;
-      case (uint32_t)POC::GetSizeOf:
-      case (uint32_t)POC::GetAlignOf:
-        // The `get_sizeof` and `get_alignof` operand is always an MLIR type.
-        operandType = MLIRTypeType::get(p.getContext());
-        break;
       case (uint32_t)POC::TargetSupports:
         operandType = TargetType::get(p.getContext());
         break;
@@ -850,9 +855,8 @@ static void printOperatorOperands(raw_ostream &os, POC opcode,
                                   ArrayRef<TypedAttr> operands) {
   // If this is a comparison and the elements are not index type, print the
   // type explicitly.
-  if (llvm::is_contained({POC::In, POC::EQ, POC::LT, POC::LE,
-                          POC::TargetSupports, POC::TargetHasFeature},
-                         opcode))
+  if (llvm::is_contained(
+          {POC::In, POC::EQ, POC::LT, POC::LE, POC::TargetSupports}, opcode))
     printColonTypeOrIndexPrefix(os, operands[0].getType());
 
   switch (opcode) {
