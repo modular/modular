@@ -148,6 +148,7 @@ function(add_kgen_kernel target)
     -d ${object_file_name_rel}.d
     -O${KGEN_OPTIMIZATION_LEVEL}
     -debug-level=${KGEN_DEBUG_LEVEL}
+    $<$<BOOL:${MODULAR_ENABLE_XRAY}>:-xray-instrument>
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPFILE ${CMAKE_CURRENT_BINARY_DIR}/${object_file_name}.d

@@ -33,6 +33,21 @@ using namespace LLCL;
 // lowerAllFuncsToLLVM
 //===----------------------------------------------------------------------===//
 
+/// If requested, attach XRay instrumentation to the given module.
+/// TODO: Eventually we should explore attaching this information at a higher
+/// level of the stack.
+static void attachXRayAttributes(llvm::Module &module,
+                                 const CompilationOptions &options) {
+  if (!options.enableXRayInstrumentation)
+    return;
+
+  for (llvm::Function &f : module.functions()) {
+    if (f.isDeclaration())
+      continue;
+    f.addFnAttr("function-instrument", "xray-always");
+  }
+}
+
 std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx) {
   OwningOpRef<ModuleOp> module = produceStandaloneModule();
@@ -55,7 +70,14 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
     return nullptr;
 
   // Translate the operation into an LLVM module.
-  return mlir::translateModuleToLLVMIR(module, ctx);
+  std::unique_ptr<llvm::Module> llvmModule =
+      mlir::translateModuleToLLVMIR(module, ctx);
+  if (!llvmModule)
+    return nullptr;
+
+  // Attach any necessary instrumentation to the module.
+  attachXRayAttributes(*llvmModule, options);
+  return llvmModule;
 }
 
 //===----------------------------------------------------------------------===//
