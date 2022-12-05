@@ -60,15 +60,16 @@ kgen.generator @use_Itf2two() {
 
 kgen.generator.interface @genItf3<x>()
 
-// expected-note @+2 {{back to this declaration}}
-// expected-error @+1 {{declaration involved in recursive elaboration cycle}}
+// expected-note @+1 {{elaborator expansion is 129 levels deep - infinite recursion?}}
 kgen.generator @genItf3_impl<x>() implements @genItf3 {
-  // expected-note @+1 {{through this call}}
+  // expected-note @+1 {{call expansion failed}}
   kgen.call @genItf3<x = 7>() : () -> ()
   kgen.return
 }
 
+// expected-error @+1 {{no viable implementations found}}
 kgen.generator @use_Itf3two() {
+  // expected-note @+1 {{call expansion failed}}
   kgen.call @genItf3<x = 2>() : () -> ()
   kgen.return
 }
@@ -166,16 +167,14 @@ kgen.generator @test_region_constraints() {
 
 // -----
 
-// expected-error @below {{declaration involved in recursive elaboration cycle}}
-// expected-note @below {{back to this declaration}}
+// expected-note @below {{elaborator expansion is 129 levels deep - infinite recursion?}}
+// expected-error @below {{no viable implementations found}}
 kgen.generator @recursiveEvaluator(%funcs: !pop.pointer<() -> index>, %size: index) -> index {
-  // expected-note @below {{through this call}}
   %0 = kgen.call @itf() : () -> index
   kgen.return %0 : index
 }
 
-// expected-note @below {{to this declaration}}
-// expected-note @below {{through this call}}
+// expected-note @below {{call expansion failed}}
 kgen.generator.interface @itf() -> index
   evaluator (!pop.pointer<() -> index>, index) -> index = @recursiveEvaluator
 
