@@ -1,0 +1,11 @@
+// RUN: kgen %s -emit-llvm | FileCheck %s
+
+// Check that we generate the LLVM properly.
+// CHECK: define float @exp_f32(float %0)
+// CHECK-NEXT: ret float %0
+
+kgen.generator @exp_f32(%arg: f32) -> f32 {
+  kgen.return %arg : f32
+}
+
+kgen.export [@exp_f32]

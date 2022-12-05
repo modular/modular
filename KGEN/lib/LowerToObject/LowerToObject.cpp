@@ -80,7 +80,8 @@ ObjectCompiler::ObjectCompiler(
 
 LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
                                         llvm::TargetMachine &targetMachine,
-                                        llvm::raw_pwrite_stream &objStream) {
+                                        llvm::raw_pwrite_stream &objStream,
+                                        bool emitAssembly) {
   TimeTraceScope<> traceScope("compile-llvm-to-object", module.getName());
   module.setDataLayout(targetMachine.createDataLayout());
 
@@ -104,7 +105,8 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
 
   // Add passes to emit an object file.
   targetMachine.addPassesToEmitFile(passManager, objStream, nullptr,
-                                    llvm::CGFT_ObjectFile);
+                                    emitAssembly ? llvm::CGFT_AssemblyFile
+                                                 : llvm::CGFT_ObjectFile);
 
   // Run the pass manager to compile the module.
   for (auto &fun : module)

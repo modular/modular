@@ -107,6 +107,8 @@ struct ProcessBuffer {
       switch (clOptions.cmd) {
       case Command::kGenLibraryFile:
       case Command::kElaborate:
+      case Command::kEmitLLVM:
+      case Command::kEmitAssembly:
       case Command::kEmit:
         break;
       case Command::kExecute: {
