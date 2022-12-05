@@ -20,12 +20,13 @@
 
 using namespace M;
 using namespace KGEN;
+using namespace LIT;
 
 //===----------------------------------------------------------------------===//
-// LITFuncOp
+// FuncOp
 //===----------------------------------------------------------------------===//
 
-ReturnOp LITFuncOp::getReturnOp() {
+ReturnOp LIT::FuncOp::getReturnOp() {
   // Tolerate malformed IR because this is used by the printer.
   Block *body = getBody();
   if (body && !body->empty())
@@ -34,15 +35,15 @@ ReturnOp LITFuncOp::getReturnOp() {
 }
 
 /// Parses a LIT Generator.
-ParseResult LITFuncOp::parse(OpAsmParser &parser, OperationState &result) {
+ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::litfunc);
 }
 
-// Print the LITFuncOp using the shared printing logic.
-void LITFuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
+// Print the LIT::FuncOp using the shared printing logic.
+void LIT::FuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
 // Name the arguments of the region with the valueParamNames.
-void LITFuncOp::getAsmBlockArgumentNames(
+void LIT::FuncOp::getAsmBlockArgumentNames(
     Region &body, llvm::function_ref<void(Value, StringRef)> setNameFn) {
   // Set a name for each argument.
   if (body.empty())
@@ -53,7 +54,7 @@ void LITFuncOp::getAsmBlockArgumentNames(
     setNameFn(arg, name);
 }
 
-Region *LITFuncOp::getCallableRegion() {
+Region *LIT::FuncOp::getCallableRegion() {
   // If the body is empty, return null to indicate that this is an "external"
   // callable.
   if (getBody()->empty())
@@ -61,9 +62,10 @@ Region *LITFuncOp::getCallableRegion() {
   return &getBodyRegion();
 }
 
-ArrayRef<Type> LITFuncOp::getCallableResults() { return getResultTypes(); }
+ArrayRef<Type> LIT::FuncOp::getCallableResults() { return getResultTypes(); }
 
-LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+LogicalResult
+LIT::FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Check that the number of argument labels matches the number of argument
   // types.
   if (getValueParamNames().size() != getFunctionType().getNumInputs())
@@ -109,7 +111,7 @@ LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Check that the callee attribute was specified.
   auto module = KGENModule::from(*this, symbolTable);
   auto interface = module.lookup<GeneratorInterfaceOp>(interfaceSym);
-  auto funcInterface = module.lookup<LITFuncOp>(interfaceSym);
+  auto funcInterface = module.lookup<LIT::FuncOp>(interfaceSym);
   if (!interface && (!funcInterface || !funcInterface.getIsInterface()))
     return emitError() << "'" << interfaceSym.getValue()
                        << "' does not reference a generator interface";
@@ -126,8 +128,8 @@ LogicalResult LITFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return success();
 }
 
-void LITFuncOp::build(OpBuilder &builder, OperationState &result,
-                      StringAttr name) {
+void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
+                        StringAttr name) {
   auto context = builder.getContext();
 
   // Before resolution, we treat the function as having type ()->Error,
@@ -164,7 +166,7 @@ static void printExceptRegion(OpAsmPrinter &p, Operation *op, Region &region) {
   p.printRegion(region, /*printEntryBlockArgs=*/false);
 }
 
-LogicalResult LITTryOp::verify() {
+LogicalResult TryOp::verify() {
   if (getTryRegion().getNumArguments() != 0)
     return emitOpError("expected try region to have zero arguments");
   if (getExceptRegion().getNumArguments() != 1)
@@ -174,31 +176,30 @@ LogicalResult LITTryOp::verify() {
   return success();
 }
 
-void LITTryOp::getEntryTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+void TryOp::getEntryTargets(ArrayRef<Attribute> operands,
+                            SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.empty());
   targets.emplace_back(0);
 }
 
-ValueRange LITTryOp::getEntryArguments(Optional<unsigned> target) {
+ValueRange TryOp::getEntryArguments(Optional<unsigned> target) {
   if (!target)
     return {};
   return getRegion(*target).getArguments();
 }
 
 //===----------------------------------------------------------------------===//
-// LITTryYieldOp
+// TryYieldOp
 //===----------------------------------------------------------------------===//
 
-bool LITTryYieldOp::isParentNode(Operation *op) { return isa<LITTryOp>(op); }
+bool TryYieldOp::isParentNode(Operation *op) { return isa<TryOp>(op); }
 
-void LITTryYieldOp::getBranchTargets(
+void TryYieldOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   Region *region = (*this)->getParentRegion();
   // Figure out which region this yield is in.
-  if (!isa<LITTryOp>(region->getParentOp()))
+  if (!isa<TryOp>(region->getParentOp()))
     region = region->getParentRegion();
 
   // The region indices of the try operation.
@@ -220,12 +221,12 @@ void LITTryYieldOp::getBranchTargets(
 }
 
 //===----------------------------------------------------------------------===//
-// LITTryRaiseOp
+// TryRaiseOp
 //===----------------------------------------------------------------------===//
 
-bool LITTryRaiseOp::isParentNode(Operation *op) { return isa<LITTryOp>(op); }
+bool TryRaiseOp::isParentNode(Operation *op) { return isa<TryOp>(op); }
 
-void LITTryRaiseOp::getBranchTargets(
+void TryRaiseOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.size() == 1);

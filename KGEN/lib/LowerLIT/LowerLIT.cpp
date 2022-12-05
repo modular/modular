@@ -22,6 +22,7 @@
 
 using namespace M;
 using namespace KGEN;
+using namespace LIT;
 
 namespace M::KGEN {
 #define GEN_PASS_DEF_LOWERLIT
@@ -488,25 +489,25 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
   return success();
 }
 
-static void lowerLITOps(LITFuncOp func) {
+static void lowerLITOps(LIT::FuncOp func) {
   auto errType =
       DeclRefType::get(FlatSymbolRefAttr::get(func.getContext(), "Error"));
 
   func.walk([&](Operation *op) {
     mlir::IRRewriter b{OpBuilder(op)};
-    if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
+    if (auto varDecl = dyn_cast<LIT::VarDeclOp>(op)) {
       // Lower a lit.var.decl to pop.stack_allocation.
       b.replaceOpWithNewOp<POP::StackAllocationOp>(varDecl, varDecl.getType(),
                                                    1);
-    } else if (auto raise = dyn_cast<LITRaiseErrorOp>(op)) {
+    } else if (auto raise = dyn_cast<LIT::RaiseErrorOp>(op)) {
       // Lower a lit.raise_error to pop.variant.create.
       b.replaceOpWithNewOp<POP::VariantCreateOp>(raise, func.getResultType(),
                                                  raise.getError());
-    } else if (auto form = dyn_cast<LITFormValueOp>(op)) {
+    } else if (auto form = dyn_cast<FormValueOp>(op)) {
       // Lower a lit.form_value to a pop.variant.create.
       b.replaceOpWithNewOp<POP::VariantCreateOp>(form, func.getResultType(),
                                                  form.getValue());
-    } else if (auto unwrap = dyn_cast<LITUnwrapOrPropagateOp>(op)) {
+    } else if (auto unwrap = dyn_cast<UnwrapOrPropagateOp>(op)) {
       // Lower a lit.unwrap_or_propagate to a conditional.
       Location loc = op->getLoc();
       Type type = unwrap.getValue().getType().getType();
@@ -519,9 +520,9 @@ static void lowerLITOps(LITFuncOp func) {
 
       b.createBlock(&ifOp.getElseRegion());
       Value err = b.create<POP::VariantGetOp>(loc, errType, unwrap.getValue());
-      if (auto tryOp = ifOp->getParentOfType<LITTryOp>();
+      if (auto tryOp = ifOp->getParentOfType<TryOp>();
           tryOp && tryOp.getTryRegion().findAncestorOpInRegion(*ifOp)) {
-        b.create<LITTryRaiseOp>(unwrap.getLoc(), err);
+        b.create<TryRaiseOp>(unwrap.getLoc(), err);
       } else {
         Value wrapped =
             b.create<POP::VariantCreateOp>(loc, func.getResultType(), err);
@@ -534,7 +535,7 @@ static void lowerLITOps(LITFuncOp func) {
 }
 
 /// Lower an lit.func to kgen.generator.
-static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
+static LogicalResult lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable) {
   lowerLITOps(gen);
   OpBuilder b(gen);
 
@@ -561,7 +562,7 @@ static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
 
   // Move over the symbol.
   symbolTable.erase(gen);
-  gen = LITFuncOp(); // The line above also erases 'gen'.
+  gen = LIT::FuncOp(); // The line above also erases 'gen'.
   symbolTable.insert(result);
 
   // If the generator implemented an interface, infer additional constraints
@@ -584,13 +585,13 @@ static LogicalResult lowerLITFunc(LITFuncOp gen, SymbolTable &symbolTable) {
 /// Lower nested structures in kgen.struct.decl away.
 static LogicalResult lowerStructDecl(StructDeclOp structDecl,
                                      SymbolTable &symbolTable) {
-  SmallVector<VarDeclOp> opsToErase;
+  SmallVector<LIT::VarDeclOp> opsToErase;
   for (Operation &member : llvm::make_early_inc_range(
            structDecl.getFields().front().getOperations())) {
     if (isa<KGEN::StructFieldOp>(member))
       continue; // Already lowered field.
 
-    if (auto varDecl = dyn_cast<KGEN::VarDeclOp>(member)) {
+    if (auto varDecl = dyn_cast<LIT::VarDeclOp>(member)) {
       Type elemType = ParamRefType::get(varDecl.getType().getElementType());
       OpBuilder b(&member);
       b.create<KGEN::StructFieldOp>(member.getLoc(), varDecl.getName(),
@@ -599,7 +600,7 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
       continue;
     }
 
-    auto func = dyn_cast<KGEN::LITFuncOp>(member);
+    auto func = dyn_cast<LIT::FuncOp>(member);
     if (!func)
       return member.emitError("unsupported op in lit lowering");
     // Move and rename the function from a field position inside the struct
@@ -647,16 +648,16 @@ static void lowerAttributesAndTypes(Operation *op) {
 
   // Lower `!lit.none` to `list<i1[0]>`, which will eventually become nothing.
   auto emptyList = ListType::get(IntegerType::get(op->getContext(), 1), 0);
-  replacer.addReplacement([&](KGEN::NoneType type) { return emptyList; });
+  replacer.addReplacement([&](KGEN::LIT::NoneType type) { return emptyList; });
   // Lower `#lit.none` to `[]`.
-  replacer.addReplacement([&](NoneAttr attr) {
+  replacer.addReplacement([&](LIT::NoneAttr attr) {
     return ListAttr::get(attr.getContext(), {}, emptyList);
   });
 
   // Lower `!lit.raises_or` to `!pop.variant`.
   auto errType =
       DeclRefType::get(FlatSymbolRefAttr::get(op->getContext(), "Error"));
-  replacer.addReplacement([&](RaisesOrType type) {
+  replacer.addReplacement([&](LIT::RaisesOrType type) {
     return POP::VariantType::get({errType, type.getType()});
   });
 
@@ -678,7 +679,7 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
     SymbolTable &symbolTable =
         getAnalysis<SymbolTableAnalysis>().getTopLevelSymbolTable();
     for (auto &op : llvm::make_early_inc_range(module.getOps())) {
-      if (auto func = dyn_cast<KGEN::LITFuncOp>(op)) {
+      if (auto func = dyn_cast<LIT::FuncOp>(op)) {
         if (failed(lowerLITFunc(func, symbolTable)))
           return signalPassFailure();
       } else if (auto structDecl = dyn_cast<KGEN::StructDeclOp>(op)) {

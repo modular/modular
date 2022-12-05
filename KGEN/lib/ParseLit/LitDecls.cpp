@@ -67,7 +67,7 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
     return FlatSymbolRefAttr::get(structOp.getNameAttr());
   }
 
-  if (auto fnOp = dyn_cast<LITFuncOp>(op)) {
+  if (auto fnOp = dyn_cast<LIT::FuncOp>(op)) {
     // TODO: Support multiple levels of nesting.  This should be recursive, and
     // SymbolRefAttr should support a get(FlatSymbol, SymbolRef) helper that
     // forms a properly flattened reference by unwinding the RHS if it isn't
@@ -249,7 +249,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LITFuncOp, StructDeclOp, StructFieldOp, VarDeclOp,
+        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, VarDeclOp,
               ParamDeclareOp>([&](auto op) {
           LitLexer lexer(sharedState, decl.getCursor());
 
@@ -273,7 +273,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       howResolved == DeclResolvedness::fullyResolved) {
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LITFuncOp, StructDeclOp, StructFieldOp, VarDeclOp,
+        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, VarDeclOp,
               ParamDeclareOp>([&](auto op) {
           // Parse the body of the declaration from the correct point.
           LitLexer lexer(sharedState, decl.getCursor());
@@ -445,7 +445,7 @@ const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
 ///
 /// This returns failure after emitting an error when a type checking problem
 /// is detected.
-static ParseResult checkFunctionSignature(ASTDecl &decl, LITFuncOp op,
+static ParseResult checkFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
                                           ParsedMetaSignature &metaSignature,
                                           SmallVector<ParsedParam> &params,
                                           ASTType &resultType,
@@ -557,8 +557,8 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, LITFuncOp op,
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
 ///              "(" [value_param_list] ")" ["->" expression] ":" suite
 ///
-LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
-                                             ASTDecl &decl) {
+LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
+                                             LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
 
   ParsedMetaSignature metaSignature;
@@ -669,7 +669,7 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
     StringRef interfaceName = implementsAttr.getAttr().getValue();
     if (ASTDecl *interfaceDecl = decl.lookup(implementsAttr.getAttr())) {
       if (auto funcInterface =
-              dyn_cast_or_null<LITFuncOp>(interfaceDecl->getIfOperation());
+              dyn_cast_or_null<LIT::FuncOp>(interfaceDecl->getIfOperation());
           !funcInterface || !funcInterface.getIsInterface())
         p.emitError(funcOp->getLoc(), "not an interface: ") << interfaceName;
 
@@ -720,10 +720,10 @@ LogicalResult DeclResolver::resolveSignature(LITFuncOp funcOp, LitLexer &lexer,
 static bool isNoneResultType(Type type) {
   if (auto raises = dyn_cast<RaisesOrType>(type))
     type = raises.getType();
-  return isa<KGEN::NoneType>(type);
+  return isa<KGEN::LIT::NoneType>(type);
 }
 
-ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
+ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,
                                       ASTDecl &decl) {
   if (LitParserBase::parseSuite(decl, lexer))
     return failure();
@@ -747,7 +747,7 @@ ParseResult DeclResolver::resolveBody(LITFuncOp defOp, LitLexer &lexer,
       Value noneVal =
           b.create<ParamConstantOp>(loc, NoneAttr::get(getContext()));
       if (auto raises = dyn_cast<RaisesOrType>(defOp.getResultType()))
-        noneVal = b.create<LITFormValueOp>(loc, raises, noneVal);
+        noneVal = b.create<FormValueOp>(loc, raises, noneVal);
       b.create<ReturnOp>(loc, ArrayRef<TypedAttr>(), noneVal);
     } else if (!sharedState.errorOccurred) {
       Location endLoc = bodyBlock->empty() ? loc : bodyBlock->back().getLoc();

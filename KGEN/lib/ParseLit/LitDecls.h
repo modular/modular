@@ -18,21 +18,21 @@
 #include "llvm/ADT/DenseSet.h"
 
 namespace M::KGEN {
-class LITFuncOp;
 class StructDeclOp;
 class StructFieldOp;
 class ParamBindArrayAttr;
 class ParamDeclAttr;
 class ParamDeclareOp;
-class VarDeclOp;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
+class ASTDecl;
+class FuncOp;
 class LitLexer;
 class LitLexerCursor;
 class LitParserBase;
 class LitSharedState;
-class ASTDecl;
+class VarDeclOp;
 
 //===----------------------------------------------------------------------===//
 // DeclResolver
@@ -92,8 +92,9 @@ private:
   /// check the signature for the operation.  On parse failure, these should
   /// return a failure, which will cause the driver to mark the decl as invalid
   /// for further references.
-  LogicalResult resolveSignature(LITFuncOp op, LitLexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(LITFuncOp op, LitLexer &lexer, ASTDecl &decl);
+  LogicalResult resolveSignature(LIT::FuncOp op, LitLexer &lexer,
+                                 ASTDecl &decl);
+  ParseResult resolveBody(LIT::FuncOp op, LitLexer &lexer, ASTDecl &decl);
 
   LogicalResult resolveSignature(StructDeclOp op, LitLexer &lexer,
                                  ASTDecl &decl);
