@@ -240,7 +240,7 @@ public:
   /// generator, or interface) with the specified input parameter values.
   ArrayRef<ElaboratedGeneratorOrCalleeError>
   getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
-                       bool inlined = false);
+                       size_t expansionDepth, bool inlined = false);
 
   /// Insert a variant of an existing func into the primary file.
   void insertFuncVariant(FuncOp existing, FuncOp newFunc);
@@ -346,17 +346,20 @@ private:
   /// SourceModule indicates which module in the included library this
   /// originally came from (likely not the primary module).
   SmallVector<ElaboratedGeneratorOrCalleeError>
-  specializeFunc(FuncOp func, ModuleOp sourceModule, bool inlined);
+  specializeFunc(FuncOp func, ModuleOp sourceModule, size_t expansionDepth,
+                 bool inlined);
 
   /// Specialize a generator with the specified input parameters and return
   /// the generated func.
   SmallVector<ElaboratedGeneratorOrCalleeError>
-  specializeGenerator(DeclAndInputParamsPair declAndInputParams, bool inlined);
+  specializeGenerator(DeclAndInputParamsPair declAndInputParams,
+                      size_t expansionDepth, bool inlined);
 
   /// Specialize a generator interface with the specified input parameters and
   /// return the generated func.
   SmallVector<ElaboratedGeneratorOrCalleeError>
-  specializeInterface(DeclAndInputParamsPair declAndInputParams, bool inlined);
+  specializeInterface(DeclAndInputParamsPair declAndInputParams,
+                      size_t expansionDepth, bool inlined);
 
   /// Report an error given an interface and an error string - just reduces
   /// boilerplate around CalleeExpansionError creation.
@@ -466,10 +469,11 @@ namespace {
 class ParameterRewriter {
 public:
   ParameterRewriter(Elaborator &elaborator, FuncOp func, SymbolTable &symtab,
-                    ArrayRef<Operation *> opsToRewrite, bool inlinedCallee)
+                    ArrayRef<Operation *> opsToRewrite, bool inlinedCallee,
+                    size_t expansionDepth)
       : elaborator(elaborator), symtab(&symtab),
         sourceModule(cast<ModuleOp>(symtab.getOp())), elaboratedGenerator(func),
-        inlinedCallee(inlinedCallee) {
+        inlinedCallee(inlinedCallee), expansionDepth(expansionDepth) {
     nextCallRegionID = 0;
     evaluators.push_back(ParameterEvaluator(&symtab));
     commandWorklist.reserve(opsToRewrite.size());
@@ -631,6 +635,10 @@ private:
 
   /// A flag to indicate whether the elaborated function will be inlined.
   bool inlinedCallee;
+
+  /// This is the depth of this expansion, which is used to cut off overly deep
+  /// recursive evaluations.
+  size_t expansionDepth;
 };
 } // namespace
 
@@ -653,7 +661,8 @@ ParameterRewriter::ParameterRewriter(
       elaboratedGenerator(existing.elaboratedGenerator),
       evaluators(existing.evaluators),
       nextCallRegionID(existing.nextCallRegionID),
-      inlinedCallee(existing.inlinedCallee) {
+      inlinedCallee(existing.inlinedCallee),
+      expansionDepth(existing.expansionDepth) {
   // Remap the func operation.
   elaboratedGenerator.func =
       cast<FuncOp>(operationMap[existing.elaboratedGenerator.func]);
@@ -676,6 +685,13 @@ ParameterRewriter::ParameterRewriter(
 /// Work the `opsToRewrite` worklist.
 LogicalResult ParameterRewriter::rewriteOps(
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriterWorklist) {
+
+  // FIXME: Make this magic number configurable.
+  if (expansionDepth >= 128)
+    return error(elaboratedGenerator.func.getLoc(),
+                 "elaborator expansion is " + Twine(expansionDepth) +
+                     " levels deep - infinite recursion?");
+
   // We use a worklist for this so cloned versions of ParameterRewriter can
   // be created and known where to pick up from.
   while (!commandWorklist.empty()) {
@@ -1023,7 +1039,8 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
   // Otherwise, this is our first use of this.  Ask the global elaborator for
   // the full set of candidates.
   ArrayRef<ElaboratedGeneratorOrCalleeError> newCalleesRef =
-      elaborator.getAllInstantiations(calleeDeclAndInputParams, inlineCallee);
+      elaborator.getAllInstantiations(calleeDeclAndInputParams,
+                                      expansionDepth + 1, inlineCallee);
 
   // Copy the list of funcs instead of referring to the cache entry to avoid
   // iterator invalidation problems.
@@ -1626,7 +1643,8 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
 /// instantiation of that body.  funcs do not have parameters, but they can
 /// invoke interfaces etc which can cause them to produce multiple variants.
 SmallVector<ElaboratedGeneratorOrCalleeError>
-Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule, bool inlined) {
+Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
+                           size_t expansionDepth, bool inlined) {
   // Get a partial ordering of parameter definitions and uses that is listed
   // "top down" in our evaluation order.
   ParameterDeclsAndUses uses;
@@ -1646,7 +1664,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule, bool inlined) {
   // invalidation.
   SmallVector<std::unique_ptr<ParameterRewriter>> rewriterWorklist;
   rewriterWorklist.emplace_back(new ParameterRewriter(
-      *this, func, symtab, std::move(opsToRewrite), inlined));
+      *this, func, symtab, std::move(opsToRewrite), inlined, expansionDepth));
 
   // Extract the debug info from the function, if it's present.
   auto oldFuncSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func);
@@ -1694,7 +1712,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule, bool inlined) {
 /// the result attributes.
 SmallVector<ElaboratedGeneratorOrCalleeError>
 Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
-                                bool inlined) {
+                                size_t expansionDepth, bool inlined) {
   auto generator = cast<GeneratorOp>(declAndInputParams.first);
 
   ArrayRef<Attribute> inputParamValues = declAndInputParams.second.getValue();
@@ -1731,7 +1749,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   // Now that we have a new synthesized generic func, run the rewriter
   // over it to specialize its body.
   auto sourceModule = generator->getParentOfType<ModuleOp>();
-  auto result = specializeFunc(newFunc, sourceModule, inlined);
+  auto result = specializeFunc(newFunc, sourceModule, expansionDepth, inlined);
 
   // If the generator had no parameters, then we want to reuse the same name as
   // the original generator.  We can't do that when we are building the concrete
@@ -1801,7 +1819,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
 /// evaluator changes, or the target changes, we need to redo search.
 SmallVector<ElaboratedGeneratorOrCalleeError>
 Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
-                                bool inlined) {
+                                size_t expansionDepth, bool inlined) {
   auto itf = cast<GeneratorInterfaceOp>(declAndInputParams.first);
   SmallVector<ElaboratedGeneratorOrCalleeError> result;
 
@@ -1824,8 +1842,8 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
     assert(defaultImplCallee != nullptr && "expected defaultImpl to exist");
     // The default impl must be a generator.
     GeneratorOp gen = cast<GeneratorOp>(defaultImplCallee);
-    auto funcs =
-        getAllInstantiations({gen, declAndInputParams.second}, inlined);
+    auto funcs = getAllInstantiations({gen, declAndInputParams.second},
+                                      expansionDepth + 1, inlined);
     result.append(funcs.begin(), funcs.end());
     return result;
   }
@@ -1833,8 +1851,8 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   for (GeneratorOp gen : interfaceImpls) {
     // Make sure to go through getAllInstantiations so generators are cached
     // and any constraints on the generator itself are validated.
-    auto funcs =
-        getAllInstantiations({gen, declAndInputParams.second}, inlined);
+    auto funcs = getAllInstantiations({gen, declAndInputParams.second},
+                                      expansionDepth + 1, inlined);
     result.append(funcs.begin(), funcs.end());
   }
 
@@ -1974,7 +1992,7 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
 /// interface) with the specified input parameter values.
 ArrayRef<ElaboratedGeneratorOrCalleeError>
 Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
-                                 bool inlined) {
+                                 size_t expansionDepth, bool inlined) {
   // Check the global cache of instantiations so we only ever instantiate a
   // generator once.
   auto cacheIt = generatedFuncs.find(declAndInputParams);
@@ -2000,9 +2018,11 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
     bindResultParameters(func);
     newCallees.emplace_back(ElaboratedGenerator(func));
   } else if (isa<GeneratorOp>(decl)) {
-    newCallees = specializeGenerator(declAndInputParams, inlined);
+    newCallees =
+        specializeGenerator(declAndInputParams, expansionDepth + 1, inlined);
   } else if (isa<GeneratorInterfaceOp>(decl)) {
-    newCallees = specializeInterface(declAndInputParams, inlined);
+    newCallees =
+        specializeInterface(declAndInputParams, expansionDepth + 1, inlined);
   } else {
     (void)localError(decl->getLoc(), "call to an unknown kind of declaration");
   }
@@ -2043,114 +2063,6 @@ ParseResult Elaborator::collectInterfaces() {
     if (op.getName().getStringRef() == "lit.func")
       return op.emitError("unlowered lit.func discovered in KGEN elaborator");
   }
-  return success();
-}
-
-namespace {
-class RecursionChecker {
-public:
-  RecursionChecker(Elaborator &elaborator) : elaborator(elaborator) {}
-  ParseResult verify(ArrayRef<GeneratorOp> primaryGenerators);
-
-private:
-  ParseResult checkRecursively(Operation *op);
-
-  Elaborator &elaborator;
-  llvm::SetVector<Operation *> callStack;
-  std::vector<Operation *> callStackCalls;
-  SmallPtrSet<Operation *, 8> alreadyCheckedOps;
-};
-} // namespace
-
-/// Check the specified operation and its call-tree by visiting callees in
-/// depth-first order.  If we report errors the call-graph, and keep track of
-/// known-ok operators to avoid redundant work.
-ParseResult RecursionChecker::checkRecursively(Operation *op) {
-  // If we've already verified that this operator and all its callees are ok,
-  // then we're already done.
-  if (alreadyCheckedOps.count(op))
-    return success();
-
-  // If this op is in the call stack for our depth first traversal, then we've
-  // found a cycle, reject it.  Otherwise add it to our call stack
-  if (!callStack.insert(op)) {
-    assert(callStack.size() == callStackCalls.size());
-    size_t i = 0, e = callStack.size();
-    // Skip over any leading stack that isn't part of the cycle.
-    while (callStack[i] != op)
-      ++i;
-    // Report
-    auto diag =
-        op->emitError("declaration involved in recursive elaboration cycle");
-    diag.attachNote(callStackCalls[i]->getLoc()) << "through this call";
-    for (++i; i != e; ++i) {
-      diag.attachNote(callStack[i]->getLoc()) << "to this declaration";
-      diag.attachNote(callStackCalls[i]->getLoc()) << "through this call";
-    }
-    diag.attachNote(op->getLoc()) << "back to this declaration";
-    return failure();
-  }
-
-  // Okay, we haven't seen this before, check all the calls in the body of the
-  // declaration to see what they call.
-  bool failed = false;
-  op->walk([&](Operation *op) {
-    SymbolRefAttr calleeAttr;
-    if (auto call = dyn_cast<CallOp>(op)) {
-      calleeAttr = call.getCalleeAttr();
-    } else if (auto addressof = dyn_cast<AddressOfOp>(op)) {
-      calleeAttr = addressof.getCalleeAttr();
-    } else if (auto itf = dyn_cast<GeneratorInterfaceOp>(op)) {
-      if (SymbolConstantAttr evaluator = itf.getEvaluatorAttr())
-        calleeAttr = evaluator.getSymbol();
-      else
-        return;
-    } else {
-      return;
-    }
-
-    auto callee = elaborator.lookupCallee(calleeAttr);
-    assert(callee && "couldn't resolve callee?");
-    callStackCalls.push_back(op);
-    if (isa<FuncOp, GeneratorOp>(callee)) {
-      // For direct calls, we immediately check the callee.
-      if (checkRecursively(callee))
-        failed = true;
-    } else if (auto itf = dyn_cast<GeneratorInterfaceOp>(callee)) {
-      // Check that interface evaluator doesn't lead to a cycle.
-      if (checkRecursively(itf))
-        failed = true;
-
-      // For generator interfaces, we resolve to all the implementations.
-      for (auto gen : elaborator.getGeneratorsImplementing(itf)) {
-        // Make sure we keep track of the current module we're scanning.
-        // TODO: This recursively checks all code in the imported libraries.
-        // Will this be needed when these are individually checked on their own?
-        if (checkRecursively(gen))
-          failed = true;
-      }
-    } else {
-      op->emitError("unknown callee in elaboration");
-      failed = true;
-    }
-    callStackCalls.pop_back();
-  });
-
-  if (failed)
-    return failure();
-
-  callStack.pop_back();
-
-  // Okay, we're successful!  Remember that we don't need to process this again.
-  alreadyCheckedOps.insert(op);
-  return success();
-}
-
-ParseResult RecursionChecker::verify(ArrayRef<GeneratorOp> primaryGenerators) {
-  // Check all the operations at the top level of the primary module.
-  for (GeneratorOp gen : primaryGenerators)
-    if (checkRecursively(gen))
-      return failure();
   return success();
 }
 
@@ -2232,11 +2144,6 @@ LogicalResult M::elaborateGenerators(SymbolTable &symtab,
   if (elaborator.collectInterfaces())
     return failure();
 
-  // Check the generator call graph to reject any recursion.
-  RecursionChecker checker(elaborator);
-  if (failed(checker.verify(primaryGenerators)))
-    return failure();
-
   auto emptyInputParamKey = ArrayAttr::get(primary.getContext(), {});
 
   // Elaborate the bodies of all generators without input parameters in the
@@ -2249,7 +2156,7 @@ LogicalResult M::elaborateGenerators(SymbolTable &symtab,
 
     // Elaborate the generator into concrete versions.
     ArrayRef<ElaboratedGeneratorOrCalleeError> results =
-        elaborator.getAllInstantiations({generatorRoot, emptyInputParamKey});
+        elaborator.getAllInstantiations({generatorRoot, emptyInputParamKey}, 0);
 
     // If the generator failed to expand into /anything/ then emit an error.
     // Note that the func will have been deleted.

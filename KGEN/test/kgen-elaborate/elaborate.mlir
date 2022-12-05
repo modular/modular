@@ -1204,3 +1204,54 @@ kgen.generator @call_nested(%arg0: index) -> index {
   // CHECK-NEXT: return %1
   kgen.return %0 : index
 }
+
+// -----
+
+//===----------------------------------------------------------------------===//
+// Recursion Test
+//===----------------------------------------------------------------------===//
+//
+// This shows that we properly support recursive expansion.
+//
+
+kgen.generator.interface @genItf3<x>()
+
+kgen.generator @genItf3_impl0<x>()
+  constraints <[eq(x, 0), "x must be zero"]> implements @genItf3 {
+  "impl0"() {attr=#kgen.param.decl.ref<"x"> : index}: () -> ()
+  kgen.return
+}
+
+kgen.generator @genItf3_impl1<x>()
+  constraints <[ne(x, 0), "x must not be zero"]> implements @genItf3 {
+  "impl1"() {attr=#kgen.param.decl.ref<"x"> : index} : () -> ()
+  // Use inlined_call to make FileCheck easier.
+  kgen.inlined_call[<x>()->(): @genItf3]<x = sub(x, 1)>()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @"genItf3_impl1,x=4"() {
+// CHECK-NEXT:   "impl1"() {attr = 4 : index} : () -> ()
+// CHECK-NEXT:   "impl1"() {attr = 3 : index} : () -> ()
+// CHECK-NEXT:   "impl1"() {attr = 2 : index} : () -> ()
+// CHECK-NEXT:   "impl1"() {attr = 1 : index} : () -> ()
+// CHECK-NEXT:   "impl0"() {attr = 0 : index} : () -> ()
+// CHECK-NEXT:   kgen.return
+// CHECK-NEXT: }
+
+// CHECK-LABEL: kgen.func @"genItf3_impl1,x=2"() {
+// CHECK-NEXT:    "impl1"() {attr = 2 : index} : () -> ()
+// CHECK-NEXT:    "impl1"() {attr = 1 : index} : () -> ()
+// CHECK-NEXT:    "impl0"() {attr = 0 : index} : () -> ()
+// CHECK-NEXT:    kgen.return
+// CHECK-NEXT:  }
+
+// CHECK-LABEL:   kgen.func @use_Itf3() {
+// CHECK-NEXT:      kgen.call @"genItf3_impl1,x=4"() : () -> ()
+// CHECK-NEXT:      kgen.call @"genItf3_impl1,x=2"() : () -> ()
+// CHECK-NEXT:      kgen.return
+kgen.generator @use_Itf3() {
+  kgen.call @genItf3<x = 4>() : () -> ()
+  kgen.call @genItf3<x = 2>() : () -> ()
+  kgen.return
+}

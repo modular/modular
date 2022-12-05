@@ -385,7 +385,6 @@ struct ParsedParam {
     //   1) Only one /, *, and ** parameter may exist in the parameter list.
     //   2) They are specified in that order.
     //   3) These do not permit default arguments.
-
     loc = p.getToken().getLoc();
 
     if (p.parseIdentifier(name, "expected parameter name"))
