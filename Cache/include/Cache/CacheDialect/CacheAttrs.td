@@ -104,26 +104,6 @@ class Cache_ParametrizedIndexAttrBase<string attrName, string mnemonic>
 }
 
 //===----------------------------------------------------------------------===//
-// SymbolIndexAttr
-//===----------------------------------------------------------------------===//
-
-def Cache_SymbolIndexAttr
-  : Cache_ParametrizedIndexAttrBase<"SymbolIndex", "symbol_index"> {
-  let summary = "A symbol reference.";
-  let description = [{
-    This attribute is a index into the list of symbols on the RegionHashAttr.
-    It's used to reference one of the symbols in that list by a replacement for
-    call-like ops in order to orthogonalize the cache and the call graph.
-
-    For example:
-    ```mlir
-    /// Operations won't necessarily verify when this attribute is used!
-    func.call {callee=#cache.symbol_index<1234>}
-    ```
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // HashIndexAttr
 //===----------------------------------------------------------------------===//
 
