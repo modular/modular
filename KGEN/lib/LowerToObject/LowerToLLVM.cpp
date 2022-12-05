@@ -8,6 +8,7 @@
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/Compiler/SymbolTableAnalysis.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "Support/STLExtras.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -109,8 +110,10 @@ void EmitLLVMPass::runOnOperation() {
       createSingleThreadWorkQueue());
 
   // TODO: Populate compilation options from pass options.
-  auto compiler = ObjectCompiler::create(*rt, ".kgen_cache", getOperation(),
-                                         CompilationOptions());
+  auto compiler = ObjectCompiler::create(
+      *rt, ".kgen_cache",
+      getAnalysis<SymbolTableAnalysis>().getTopLevelSymbolTable(),
+      CompilationOptions());
   if (failed(compiler)) {
     getOperation()->emitError()
         << "failed to create object compiler: " << compiler.getError();

@@ -11,9 +11,11 @@
 #include <filesystem>
 
 namespace M {
+class SymbolTableAnalysis;
+
 namespace LLCL {
 class Runtime;
-}
+} // namespace LLCL
 
 namespace KGEN {
 class GeneratorOp;
@@ -31,7 +33,8 @@ resolveIncludes(SymbolTable &symtab,
 /// Elaborate generators in the specified module, incorporating implementation
 /// logic from the specified library.  On error, diagnostics are emitted and the
 /// primary file isn't completely lowered.
-LogicalResult elaborateGenerators(SymbolTable &symtab, LLCL::Runtime &runtime,
+LogicalResult elaborateGenerators(SymbolTableAnalysis &symtab,
+                                  LLCL::Runtime &runtime,
                                   ArrayRef<KGEN::GeneratorOp> generators,
                                   bool enableSearch = false);
 

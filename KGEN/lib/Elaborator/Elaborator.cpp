@@ -19,6 +19,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "SelectFastestFunction.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/Compiler/SymbolTableAnalysis.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/STLExtras.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -218,11 +219,11 @@ namespace {
 class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
-  Elaborator(SymbolTable &symtab, LLCL::Runtime &runtime,
+  Elaborator(SymbolTableAnalysis &analysis, LLCL::Runtime &runtime,
              Cache::BlobCache<Cache::TransformCacheKey> &transformCache,
              bool enableSearch = false)
-      : symtab(symtab), runtime(runtime), transformCache(transformCache),
-        regionOwner(ModuleOp::create(symtab.getOp()->getLoc())),
+      : analysis(analysis), runtime(runtime), transformCache(transformCache),
+        regionOwner(ModuleOp::create(analysis.getModule().getLoc())),
         enableSearch(enableSearch) {}
 
   /// Scan the primary and library module to collect all the interfaces,
@@ -233,7 +234,8 @@ public:
   Operation *lookupCallee(SymbolRefAttr symbolRef) {
     assert(isa<FlatSymbolRefAttr>(symbolRef) &&
            "Elaborator doesn't support nested symbols");
-    return symtab.lookup(symbolRef.getRootReference());
+    return analysis.getTopLevelSymbolTable().lookup(
+        symbolRef.getRootReference());
   }
 
   /// Return all instantiations of the specified declaration (a func,
@@ -370,8 +372,8 @@ private:
   };
 
 private:
-  /// This symbol table allows efficient lookups across the module.
-  SymbolTable &symtab;
+  /// This symbol table analysis allows efficient lookups across the module.
+  SymbolTableAnalysis &analysis;
 
   /// This provides a runtime reference for the Elaborator and all its
   /// functionality.
@@ -428,7 +430,7 @@ private:
 /// Insert a variant of an existing func into the primary file.
 void Elaborator::insertFuncVariant(FuncOp existing, FuncOp newFunc) {
   auto insertPt = Block::iterator(existing.getOperation());
-  symtab.insert(newFunc, ++insertPt);
+  analysis.getTopLevelSymbolTable().insert(newFunc, ++insertPt);
 }
 
 //===----------------------------------------------------------------------===//
@@ -468,14 +470,17 @@ namespace {
 /// returned.
 class ParameterRewriter {
 public:
-  ParameterRewriter(Elaborator &elaborator, FuncOp func, SymbolTable &symtab,
+  ParameterRewriter(Elaborator &elaborator, FuncOp func,
+                    SymbolTableAnalysis &analysis,
                     ArrayRef<Operation *> opsToRewrite, bool inlinedCallee,
                     size_t expansionDepth)
-      : elaborator(elaborator), symtab(&symtab),
-        sourceModule(cast<ModuleOp>(symtab.getOp())), elaboratedGenerator(func),
-        inlinedCallee(inlinedCallee), expansionDepth(expansionDepth) {
+      : elaborator(elaborator), analysis(&analysis),
+        sourceModule(cast<ModuleOp>(analysis.getModule())),
+        elaboratedGenerator(func), inlinedCallee(inlinedCallee),
+        expansionDepth(expansionDepth) {
     nextCallRegionID = 0;
-    evaluators.push_back(ParameterEvaluator(&symtab));
+    evaluators.push_back(
+        ParameterEvaluator(&analysis.getTopLevelSymbolTable()));
     commandWorklist.reserve(opsToRewrite.size());
     llvm::append_range(commandWorklist, opsToRewrite);
   }
@@ -603,8 +608,9 @@ private:
   /// into.
   Elaborator &elaborator;
 
-  /// The symbol table for lookups.
-  SymbolTable *symtab;
+  /// The symbol table analysis for lookups. Make this a pointer so the class
+  /// can be copied.
+  SymbolTableAnalysis *analysis;
 
   /// This indicates which module this func originally came from (e.g. one of
   /// the imported files).  This is important to know so we can correctly
@@ -656,7 +662,7 @@ ParameterRewriter::~ParameterRewriter() {
 ParameterRewriter::ParameterRewriter(
     const ParameterRewriter &existing,
     DenseMap<Operation *, Operation *> &operationMap)
-    : elaborator(existing.elaborator), symtab(existing.symtab),
+    : elaborator(existing.elaborator), analysis(existing.analysis),
       sourceModule(existing.sourceModule),
       elaboratedGenerator(existing.elaboratedGenerator),
       evaluators(existing.evaluators),
@@ -781,15 +787,10 @@ LogicalResult ParameterRewriter::rewriteOps(
         return success();
       });
 
-  // Verify the function and invoke its symbol user verifier.
-  SymbolTableCollection collection;
-  // Avoid recomputing the symbol table.
-  SymbolTable &localSymtab = collection.getSymbolTable(func->getParentOp());
-  localSymtab = std::move(*symtab);
-  auto cleanup =
-      llvm::make_scope_exit([&] { *symtab = std::move(localSymtab); });
+  // Verify the function and invoke the symbol user verifier on all its
+  // contained ops to verify parameter references.
   auto verifySymbolUses = [&](mlir::SymbolUserOpInterface user) -> WalkResult {
-    return user.verifySymbolUses(collection);
+    return user.verifySymbolUses(analysis->getSymbolTables());
   };
   if (failed(verify(func)) || func.walk(verifySymbolUses).wasInterrupted())
     return error(*verificationLoc,
@@ -961,8 +962,8 @@ FailureOr<std::pair<ArrayAttr, bool>> ParameterRewriter::resolveCallInputParams(
       // a lexically identical body.  This would reduce some redundant
       // specialization.
       Elaborator::RegionBody regionBody{
-          body,
-          ParameterEvaluator(symtab, getEvaluator().getParameterValues())};
+          body, ParameterEvaluator(&analysis->getTopLevelSymbolTable(),
+                                   getEvaluator().getParameterValues())};
       inlineCallee |= !regionBody.isIsolatedFromAbove();
       elaborator.addRegionReference(regionRefAttr, std::move(regionBody));
       boundInputParams.push_back(regionRefAttr);
@@ -1428,7 +1429,8 @@ LogicalResult ParameterRewriter::processIterateOp(IterateOp op) {
   mlir::IRRewriter b{OpBuilder(op)};
   while (true) {
     // Evaluate the condition. If it's false, stop looping.
-    if (failed(evaluateExpressionFunction(*this, op.getLoc(), symtab,
+    if (failed(evaluateExpressionFunction(*this, op.getLoc(),
+                                          &analysis->getTopLevelSymbolTable(),
                                           cond.get(), params, condResult)))
       return failure();
     if (!cast<BoolAttr>(condResult.front()).getValue())
@@ -1487,7 +1489,8 @@ LogicalResult ParameterRewriter::processIterateOp(IterateOp op) {
     clonedReturn->erase();
 
     // Evaluate the next parameter values.
-    if (failed(evaluateExpressionFunction(*this, op.getLoc(), symtab,
+    if (failed(evaluateExpressionFunction(*this, op.getLoc(),
+                                          &analysis->getTopLevelSymbolTable(),
                                           next.get(), params, params)))
       return failure();
   }
@@ -1664,7 +1667,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
   // invalidation.
   SmallVector<std::unique_ptr<ParameterRewriter>> rewriterWorklist;
   rewriterWorklist.emplace_back(new ParameterRewriter(
-      *this, func, symtab, std::move(opsToRewrite), inlined, expansionDepth));
+      *this, func, analysis, std::move(opsToRewrite), inlined, expansionDepth));
 
   // Extract the debug info from the function, if it's present.
   auto oldFuncSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func);
@@ -1732,7 +1735,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
-  symtab.insert(newFunc);
+  analysis.getTopLevelSymbolTable().insert(newFunc);
 
   // Clone the body of the generator over.
   BlockAndValueMapping mapper;
@@ -1924,8 +1927,8 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
                     toCache = std::move(toCache)]() mutable {
       auto itf = cast<GeneratorInterfaceOp>(itfOp);
 
-      ErrorOr<size_t> bestSpecializationIdxOr =
-          evaluateSpecializations(evalFunc, symtab, runtime, searchInputs);
+      ErrorOr<size_t> bestSpecializationIdxOr = evaluateSpecializations(
+          evalFunc, analysis.getTopLevelSymbolTable(), runtime, searchInputs);
       if (failed(bestSpecializationIdxOr)) {
         return out.emplace(SmallVector<ElaboratedGeneratorOrCalleeError>{
             reportCalleeExpansionError(itf,
@@ -2010,7 +2013,8 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
   // Evaluate any constraints for this declaration to see if this is a viable
   // expansion.  If not, the expansion fails.
   if (failed(evaluateConstraints(decl, declAndInputParams.second.getValue(),
-                                 localError, symtab))) {
+                                 localError,
+                                 analysis.getTopLevelSymbolTable()))) {
     /* nothing */
   } else if (auto func = dyn_cast<FuncOp>(decl)) {
     // Nothing to do here. Just bind the result parameters and return the
@@ -2045,7 +2049,7 @@ ParseResult Elaborator::collectInterfaces() {
 
   // Scan the specified module collecting all the generators that implement an
   // interface and checking the interfaces between library files line up.
-  for (Operation &op : cast<ModuleOp>(symtab.getOp()).getOps()) {
+  for (Operation &op : analysis.getModule().getOps()) {
     // Collect interfaces.
     if (auto itf = dyn_cast<GeneratorInterfaceOp>(op)) {
       if (auto [it, inserted] =
@@ -2122,12 +2126,12 @@ static void emitElaborationError(InFlightDiagnostic &diag,
 
 /// Elaborate generators in the specified module, incorporating implementation
 /// logic from the specified library.
-LogicalResult M::elaborateGenerators(SymbolTable &symtab,
+LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
                                      LLCL::Runtime &runtime,
                                      ArrayRef<GeneratorOp> primaryGenerators,
                                      bool enableSearch) {
   TimeTraceScope<> traceScope("elaborate-generators");
-  auto primary = cast<ModuleOp>(symtab.getOp());
+  ModuleOp primary = analysis.getModule();
 
   auto transformCacheBackendOr =
       Cache::getDefaultBackendChain(runtime, ".kgen_cache/transform");
@@ -2137,7 +2141,7 @@ LogicalResult M::elaborateGenerators(SymbolTable &symtab,
   Cache::BlobCache<Cache::TransformCacheKey> transformCache(
       transformCacheBackendOr.takeValue());
 
-  Elaborator elaborator(symtab, runtime, transformCache, enableSearch);
+  Elaborator elaborator(analysis, runtime, transformCache, enableSearch);
 
   // Scan the primary and library module to collect all the interfaces,
   // verifying that any common interfaces are the same.
@@ -2274,11 +2278,12 @@ struct ElaborateGeneratorsPass
       if (gen.getInputParamDecls().empty())
         primaryGenerators.push_back(gen);
 
-    SymbolTable symtab(theModule);
-    if (failed(resolveIncludes(symtab, paths, includedFiles)))
+    auto &analysis = getAnalysis<SymbolTableAnalysis>();
+    if (failed(resolveIncludes(analysis.getTopLevelSymbolTable(), paths,
+                               includedFiles)))
       return signalPassFailure();
 
-    if (failed(elaborateGenerators(symtab, *rt, primaryGenerators,
+    if (failed(elaborateGenerators(analysis, *rt, primaryGenerators,
                                    shouldDoSearch)))
       return signalPassFailure();
   }
@@ -2294,15 +2299,13 @@ struct ResolveIncludesPass
   using ResolveIncludesBase::ResolveIncludesBase;
 
   void runOnOperation() override {
-    ModuleOp theModule = getOperation();
-
     SmallVector<std::filesystem::path> paths;
     for (const auto &p : searchPaths)
       paths.push_back(p);
     paths.push_back(std::filesystem::path("."));
 
-    SymbolTable symtab(theModule);
-    if (failed(resolveIncludes(symtab, paths)))
+    auto &analysis = getAnalysis<SymbolTableAnalysis>();
+    if (failed(resolveIncludes(analysis.getTopLevelSymbolTable(), paths)))
       return signalPassFailure();
   }
 };

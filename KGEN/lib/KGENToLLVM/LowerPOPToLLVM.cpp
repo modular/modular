@@ -12,6 +12,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
+#include "Support/Compiler/SymbolTableAnalysis.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/MDialect/MAttrs.h"
@@ -1617,7 +1618,8 @@ struct LowerGlobalPOPToLLVMPass
 
 void LowerGlobalPOPToLLVMPass::runOnOperation() {
   ModuleOp theModule = getOperation();
-  SymbolTable symtab(theModule);
+  SymbolTable &symtab =
+      getAnalysis<SymbolTableAnalysis>().getTopLevelSymbolTable();
 
   // Configure dialect conversion.
   mlir::ConversionTarget target(getContext());

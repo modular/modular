@@ -13,6 +13,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/Compiler/SymbolTableAnalysis.h"
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -674,7 +675,8 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
     // TODO: This has to be a module pass because this mutates the body of
     // the module, but we could trivially parallelize this within the pass.
     ModuleOp module = getOperation();
-    SymbolTable symbolTable(module);
+    SymbolTable &symbolTable =
+        getAnalysis<SymbolTableAnalysis>().getTopLevelSymbolTable();
     for (auto &op : llvm::make_early_inc_range(module.getOps())) {
       if (auto func = dyn_cast<KGEN::LITFuncOp>(op)) {
         if (failed(lowerLITFunc(func, symbolTable)))

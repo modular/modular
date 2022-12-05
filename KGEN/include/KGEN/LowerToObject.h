@@ -28,12 +28,12 @@ class ObjectCompiler {
 public:
   /// Construct an ObjectCompiler that infers the exports from the module.
   static ErrorOr<ObjectCompiler> create(LLCL::Runtime &runtime,
-                                        StringRef basePath, ModuleOp module,
+                                        StringRef basePath, SymbolTable &symtab,
                                         const CompilationOptions &options);
 
   /// Construct an ObjectCompiler with a specific set of exports.
   static ErrorOr<ObjectCompiler> create(LLCL::Runtime &runtime,
-                                        StringRef basePath, ModuleOp module,
+                                        StringRef basePath, SymbolTable &symtab,
                                         DenseSet<StringAttr> exports,
                                         const CompilationOptions &options);
 
@@ -54,9 +54,6 @@ public:
   /// Writes function declarations for all exported symbols.
   LogicalResult produceFunctionDecls(raw_ostream &os);
 
-  /// Get access to the symbol table the compiler holds.
-  mlir::SymbolTable &getSymbolTable() { return symtab; }
-
   /// Get access to the module held by the compiler.
   ModuleOp getModule() { return module; }
 
@@ -68,7 +65,7 @@ public:
 
 private:
   /// Construct an ObjectCompiler with a specific set of exports.
-  ObjectCompiler(LLCL::Runtime &runtime, ModuleOp module,
+  ObjectCompiler(LLCL::Runtime &runtime, SymbolTable &symtab,
                  DenseSet<StringAttr> exports,
                  std::unique_ptr<Cache::BlobCacheBackend> transformCache,
                  const CompilationOptions &options);
@@ -92,7 +89,7 @@ private:
   ModuleOp module;
 
   /// This is a symbol table we maintain for easy lookups.
-  SymbolTable symtab;
+  SymbolTable &symtab;
 
   /// This is a list of exported symbol names so we don't constantly recompute
   /// it.
