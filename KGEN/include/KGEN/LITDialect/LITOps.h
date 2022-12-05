@@ -23,12 +23,15 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
 namespace M::KGEN {
-class NoneType;
 class ReturnOp;
 
 namespace POP {
 class PointerType;
-}
+} // namespace POP
+
+namespace LIT {
+class NoneType;
+} // namespace LIT
 } // namespace M::KGEN
 
 #define GET_OP_CLASSES

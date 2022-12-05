@@ -338,7 +338,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   }
 
   // Check the result values match expected types.
-  LITFuncOp decl = dyn_cast<LITFuncOp>(containingDecl);
+  LIT::FuncOp decl = dyn_cast<LIT::FuncOp>(containingDecl);
   if (!decl) {
     emitError(loc, "cannot return from this context");
     return success();
@@ -351,9 +351,9 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
 
   // If the enclosing method raises, implicitly wrap the result in a variant.
   Location returnLoc = translateLocation(loc);
-  if (getBlockParentOfType<LITFuncOp>(builder.getInsertionBlock())
+  if (getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock())
           .getRaises()) {
-    operandValues[0] = builder.create<LITFormValueOp>(
+    operandValues[0] = builder.create<FormValueOp>(
         returnLoc,
         getSharedState().getErrorOrType(operandValues[0].getType()).mlirType,
         operandValues[0]);
@@ -366,7 +366,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     return success();
   }
 
-  if (isa<LITFuncOp>(builder.getInsertionBlock()->getParentOp())) {
+  if (isa<LIT::FuncOp>(builder.getInsertionBlock()->getParentOp())) {
     // TODO: Support result parameters.
     builder.create<ReturnOp>(returnLoc, ArrayRef<TypedAttr>(), operandValues);
   } else {
@@ -381,7 +381,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
 ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
   auto loc = consumeToken(LitToken::kw_raise).getLoc();
   Block *block = builder.getInsertionBlock();
-  auto tryOp = getBlockParentOfType<LITTryOp>(block);
+  auto tryOp = getBlockParentOfType<TryOp>(block);
 
   Value errorVal;
   bool inTry;
@@ -408,16 +408,16 @@ ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
   // If we are raising inside a 'try', just emit a branch to the except region.
   Location raiseLoc = translateLocation(loc);
   if (inTry) {
-    builder.create<LITTryRaiseOp>(raiseLoc, errorVal);
+    builder.create<TryRaiseOp>(raiseLoc, errorVal);
   } else {
     // Wrap the error and propagate it.
-    auto func = getBlockParentOfType<LITFuncOp>(block);
+    auto func = getBlockParentOfType<LIT::FuncOp>(block);
     if (!func.getRaises()) {
       emitError(loc, "cannot raise error inside method that does not raise");
       return success();
     }
-    Value wrappedErr = builder.create<LITRaiseErrorOp>(
-        raiseLoc, func.getResultType(), errorVal);
+    Value wrappedErr =
+        builder.create<RaiseErrorOp>(raiseLoc, func.getResultType(), errorVal);
     if (func == block->getParentOp())
       builder.create<ReturnOp>(raiseLoc, ArrayRef<TypedAttr>(), wrappedErr);
     else
@@ -533,12 +533,12 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
 /// try_stmt ::= "try" ":" suite "except" [identifier] ":" suite
 ///              ["else" suite]
 ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
-  auto func = getBlockParentOfType<LITFuncOp>(builder.getInsertionBlock());
+  auto func = getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock());
   Location tryLoc = translateLocation(consumeToken(LitToken::kw_try).getLoc());
 
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore<OpBuilder> builderSaver(builder);
-  auto tryOp = builder.create<LITTryOp>(tryLoc);
+  auto tryOp = builder.create<TryOp>(tryLoc);
   if (parseToken(LitToken::colon, "expected ':' after 'try'"))
     return failure();
 
@@ -546,7 +546,7 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
   builder.createBlock(&tryOp.getTryRegion());
   if (parseSuite(curIndent))
     return failure();
-  builder.create<LITTryYieldOp>(translateLocation(getToken().getLoc()));
+  builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
 
   SMLoc errValLoc;
   if (parseToken(LitToken::kw_except, "expected 'except' after try block",
@@ -589,7 +589,7 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
   // Parse the except suite.
   if (parseSuite(curIndent))
     return failure();
-  builder.create<LITTryYieldOp>(translateLocation(getToken().getLoc()));
+  builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
 
   // Parse the else suite if present. Otherwise, leave it as empty.
   builder.createBlock(&tryOp.getElseRegion());
@@ -598,7 +598,7 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
         parseSuite(curIndent))
       return failure();
   }
-  builder.create<LITTryYieldOp>(translateLocation(getToken().getLoc()));
+  builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
 
   return success();
 }
@@ -816,7 +816,7 @@ ParseResult LitStmtParser::parseDefFnStmt(ArrayRef<ExprNode *> decorators,
                                               {FlatSymbolRefAttr::get(name)}));
   }
 
-  auto funcDecl = builder.create<LITFuncOp>(translateLocation(loc), name);
+  auto funcDecl = builder.create<LIT::FuncOp>(translateLocation(loc), name);
   if (attrs.isInterface)
     funcDecl.setIsInterface(true);
   if (attrs.implementedInterface)

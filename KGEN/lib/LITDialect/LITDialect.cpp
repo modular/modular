@@ -20,6 +20,7 @@
 
 using namespace M;
 using namespace KGEN;
+using namespace LIT;
 
 //===----------------------------------------------------------------------===//
 // Dialect specification.

@@ -22,7 +22,7 @@ def LITDialect : Dialect {
     abstractions that lower to the `kgen` dialect.
   }];
 
-  let cppNamespace = "::M::KGEN";
+  let cppNamespace = "::M::KGEN::LIT";
   let dependentDialects = ["::M::KGEN::KGENDialect"];
   let useDefaultTypePrinterParser = 1;
   let useDefaultAttributePrinterParser = 1;

@@ -24,7 +24,7 @@ class LITType<string name, string typeMnemonic, list<Trait> traits = []>
 // TypeCheckErrorType
 //===----------------------------------------------------------------------===//
 
-def TypeCheckErrorType : LITType<"TypeCheckError", "typecheckerror"> {
+def LIT_TypeCheckErrorType : LITType<"TypeCheckError", "typecheckerror"> {
   let summary = "Type used for values and decls that can't be type checked";
   let description = [{
     This type is assigned to values and declarations when their signature cannot
@@ -39,7 +39,7 @@ def TypeCheckErrorType : LITType<"TypeCheckError", "typecheckerror"> {
 // UnresolvedType
 //===----------------------------------------------------------------------===//
 
-def UnresolvedType : LITType<"Unresolved", "unresolved"> {
+def LIT_UnresolvedType : LITType<"Unresolved", "unresolved"> {
   let summary = "Type placeholder used during parsing";
   let description = [{
     Declarations are parsed with a multiphase approach where the declaration
@@ -55,7 +55,7 @@ def UnresolvedType : LITType<"Unresolved", "unresolved"> {
 // NoneType
 //===----------------------------------------------------------------------===//
 
-def LITNoneType : LITType<"None", "none"> {
+def LIT_NoneType : LITType<"None", "none"> {
   let summary = "Type used for 'void' function results";
   let description = [{
     This type is nominal static type of the 'None' keyword, which is the result
@@ -68,7 +68,7 @@ def LITNoneType : LITType<"None", "none"> {
 // RaisesOrType
 //===----------------------------------------------------------------------===//
 
-def LITRaisesOrType : LITType<"RaisesOr", "raises_or"> {
+def LIT_RaisesOrType : LITType<"RaisesOr", "raises_or"> {
   let summary = "This type marks a callable that can raise exceptions.";
   let description = [{
     The `!lit.raises_or` type can be used as the top-level result type of a
@@ -95,11 +95,11 @@ def LITRaisesOrType : LITType<"RaisesOr", "raises_or"> {
 // Types for magic declarations.
 //===----------------------------------------------------------------------===//
 
-def MagicMLIRAttrType : LITType<"MagicMLIRAttr", "magic.__mlir_attr"> {
+def LIT_MagicMLIRAttrType : LITType<"MagicMLIRAttr", "magic.__mlir_attr"> {
   let summary = "Type of the __mlir_attr declaration";
 }
 
-def MagicMLIROpType : LITType<"MagicMLIROp", "magic.__mlir_op"> {
+def LIT_MagicMLIROpType : LITType<"MagicMLIROp", "magic.__mlir_op"> {
   let summary = "Type of the __mlir_op declaration";
 }
 

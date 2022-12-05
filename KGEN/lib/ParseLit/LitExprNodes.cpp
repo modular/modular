@@ -139,7 +139,7 @@ ASTType ExprEmitter::emitType(const ExprNode *node) {
   // If we emitted a NoneAttr then convert it to a NoneType.  This is a
   // special case because "None" is both a value and a type, and defaults to a
   // value.
-  if (isa<KGEN::NoneAttr>(value.get()))
+  if (isa<KGEN::LIT::NoneAttr>(value.get()))
     return shared.getNoneType();
 
   emitError(node->getLoc(), "expected a type, not a value");
@@ -355,7 +355,7 @@ emitCallableDeclMember(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
     return {{AnyValue(LValue(var.getResult())), node}};
 
   // Functions form an address.
-  if (isa<LITFuncOp>(*decl))
+  if (isa<LIT::FuncOp>(*decl))
     return CallableValue(node->getLoc(), *decl, bindings);
 
   // Parameters form an meta-value.
@@ -447,7 +447,7 @@ DirectCallable::getBoundConstantAttr(ExprEmitter &emitter) const {
 CallableValue::CallableValue(SMLoc loc, ASTDecl &fnDecl,
                              ArrayRef<ParamBindAttr> bindings)
     : CallableValue(loc, fnDecl.getSymbolRef(),
-                    cast<LITFuncOp>(fnDecl).getFullSignature(), bindings) {}
+                    cast<LIT::FuncOp>(fnDecl).getFullSignature(), bindings) {}
 
 /// Emit this as a flattened RValue or LValue.  This returns null on failure.
 AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
@@ -524,9 +524,9 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
 /// propagation.
 static bool isValidErrorContext(Block *block) {
   for (Operation *op = block->getParentOp(); op; op = op->getParentOp()) {
-    if (isa<LITTryOp>(op))
+    if (isa<TryOp>(op))
       return true;
-    if (auto func = dyn_cast<LITFuncOp>(op))
+    if (auto func = dyn_cast<LIT::FuncOp>(op))
       return func.getRaises();
   }
   return false;
@@ -677,7 +677,7 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
           "cannot call raising method within an 'fn' that does not raise");
       return {};
     }
-    resultVal = emitter.builder->create<LITUnwrapOrPropagateOp>(
+    resultVal = emitter.builder->create<UnwrapOrPropagateOp>(
         loc, raises.getType(), resultVal);
   }
 
@@ -889,7 +889,7 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
     return {};
 
   // Handle method references.
-  if (auto fnOp = dyn_cast<LITFuncOp>(*memberDecl)) {
+  if (auto fnOp = dyn_cast<LIT::FuncOp>(*memberDecl)) {
     // Get a symbol for the underlying function.
     CallableValue fnRef(getLoc(), *memberDecl, baseRVType.getParamBindings());
 
@@ -1037,7 +1037,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
   // If we succeeded and have no types, then install a None type.
   if (resultOp->getNumResults() == 0) {
-    auto noneMLIRType = KGEN::NoneType::get(emitter.getContext());
+    auto noneMLIRType = KGEN::LIT::NoneType::get(emitter.getContext());
     return MValue(NoneAttr::get(emitter.getContext(), noneMLIRType));
   }
 
@@ -1531,7 +1531,7 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     // implicit declarations of variables.  In `fn` and top level, we do not.
     ASTType lhsContextualType;
     if (auto funcContext =
-            dyn_cast_or_null<LITFuncOp>(emitter.declScope.getIfOperation())) {
+            dyn_cast_or_null<LIT::FuncOp>(emitter.declScope.getIfOperation())) {
       if (funcContext.getIsDef())
         lhsContextualType = rhsRep.getType();
     }

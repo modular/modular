@@ -22,7 +22,7 @@ namespace M {
 // Add all the MLIR dialects to the provided registry.
 inline void registerAllKGENDialects(DialectRegistry &registry) {
   registry.insert<KGEN::KGENDialect>();
-  registry.insert<KGEN::LITDialect>();
+  registry.insert<KGEN::LIT::LITDialect>();
   registry.insert<KGEN::POP::POPDialect>();
   registry.insert<KGEN::ZAP::ZAPDialect>();
   registry.insert<MDialect>();

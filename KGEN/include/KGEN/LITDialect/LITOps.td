@@ -30,7 +30,7 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
 // LITFuncOp
 //===----------------------------------------------------------------------===//
 
-def LITFuncOp
+def LIT_FuncOp
   : LITOp<"func", [FunctionOpInterface, Symbol, IsolatedFromAbove,
                    NoTerminator,
                    DeclareOpInterfaceMethods<CallableOpInterface>,
@@ -82,10 +82,10 @@ let description = [{
 }
 
 //===----------------------------------------------------------------------===//
-// LITRaiseErrorOp
+// RaiseErrorOp
 //===----------------------------------------------------------------------===//
 
-def LITRaiseErrorOp : LITOp<"raise_error", [Pure]> {
+def LIT_RaiseErrorOp : LITOp<"raise_error", [Pure]> {
   let summary = "Form an error value.";
   let description = [{
     The `lit.raise_error` operation wraps a `Error` (library type) in a
@@ -100,16 +100,16 @@ def LITRaiseErrorOp : LITOp<"raise_error", [Pure]> {
   }];
 
   let arguments = (ins DeclRefType:$error);
-  let results = (outs LITRaisesOrType:$result);
+  let results = (outs LIT_RaisesOrType:$result);
 
   let assemblyFormat = "$error attr-dict `:` type($error) `->` type($result)";
 }
 
 //===----------------------------------------------------------------------===//
-// LITFormValueOp
+// FormValueOp
 //===----------------------------------------------------------------------===//
 
-def LITFormValueOp : LITOp<"form_value", [Pure,
+def LIT_FormValueOp : LITOp<"form_value", [Pure,
     TypesMatchWith<"value type", "result", "value",
                    "cast<RaisesOrType>($_self).getType()">]> {
   let summary = "Wrap a valid method result.";
@@ -126,16 +126,16 @@ def LITFormValueOp : LITOp<"form_value", [Pure,
   }];
 
   let arguments = (ins AnyType:$value);
-  let results = (outs LITRaisesOrType:$result);
+  let results = (outs LIT_RaisesOrType:$result);
 
   let assemblyFormat = "$value attr-dict `:` type($result)";
 }
 
 //===----------------------------------------------------------------------===//
-// LITUnwrapOrPropagateOp
+// UnwrapOrPropagateOp
 //===----------------------------------------------------------------------===//
 
-def LITUnwrapOrPropagateOp : LITOp<"unwrap_or_propagate", [
+def LIT_UnwrapOrPropagateOp : LITOp<"unwrap_or_propagate", [
     TypesMatchWith<"value type", "value", "result",
                    "cast<RaisesOrType>($_self).getType()">]> {
   let summary = "Unwrap a value or propagate an error.";
@@ -151,17 +151,17 @@ def LITUnwrapOrPropagateOp : LITOp<"unwrap_or_propagate", [
     ```
   }];
 
-  let arguments = (ins LITRaisesOrType:$value);
+  let arguments = (ins LIT_RaisesOrType:$value);
   let results = (outs AnyType:$result);
 
   let assemblyFormat = "$value attr-dict `:` type($value)";
 }
 
 //===----------------------------------------------------------------------===//
-// LITTryOp
+// TryOp
 //===----------------------------------------------------------------------===//
 
-def LITTryOp : LITOp<"try", [RecursivelySpeculatable, RecursiveMemoryEffects,
+def LIT_TryOp : LITOp<"try", [RecursivelySpeculatable, RecursiveMemoryEffects,
     DeclareOpInterfaceMethods<ControlFlowNode>]> {
   let summary = "A try-except-else block.";
   let description = [{
@@ -197,11 +197,11 @@ def LITTryOp : LITOp<"try", [RecursivelySpeculatable, RecursiveMemoryEffects,
 }
 
 //===----------------------------------------------------------------------===//
-// LITTryYieldOp
+// TryYieldOp
 //===----------------------------------------------------------------------===//
 
-def LITTryYieldOp : LITOp<"try.yield", [Pure, Terminator,
-    HasParent<"LITTryOp">, DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
+def LIT_TryYieldOp : LITOp<"try.yield", [Pure, Terminator,
+    HasParent<"TryOp">, DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let summary = "Try block terminator.";
   let description = [{
     The `lit.try.yield` operation is used as a terminator to `lit.try` regions.
@@ -210,10 +210,10 @@ def LITTryYieldOp : LITOp<"try.yield", [Pure, Terminator,
 }
 
 //===----------------------------------------------------------------------===//
-// LITTryRaiseOp
+// TryRaiseOp
 //===----------------------------------------------------------------------===//
 
-def LITTryRaiseOp : LITOp<"try.raise", [Terminator,
+def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
     DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let summary = "Try block raise an error.";
   let description = [{
@@ -229,7 +229,7 @@ def LITTryRaiseOp : LITOp<"try.raise", [Terminator,
 // VarDeclOp
 //===----------------------------------------------------------------------===//
 
-def VarDeclOp : LITOp<"var.decl",
+def LIT_VarDeclOp : LITOp<"var.decl",
          [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
   let summary = "Local variable declaration for Lightning";
 

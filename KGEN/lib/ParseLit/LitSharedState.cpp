@@ -113,7 +113,7 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   auto &resolver = *declResolver;
 
   // Add a declarations for builtin types.
-  impl->noneType = KGEN::NoneType::get(context);
+  impl->noneType = KGEN::LIT::NoneType::get(context);
 
   // Make the type check error type.  Anything that references this will
   // considering it erroneous and already declared as such.
