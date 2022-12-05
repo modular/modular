@@ -8,6 +8,7 @@
 #define SUPPORT_HLCFDIALECT_ANALYSIS_CONTROLFLOWTREE_H
 
 #include "Support/HLCFDialect/HLCFInterfaces.h"
+#include "mlir/Pass/AnalysisManager.h"
 #include "llvm/ADT/SmallVector.h"
 
 namespace M::HLCF {
@@ -30,6 +31,35 @@ private:
   /// Build the control-flow relations.
   void buildTree(ControlFlowNode node, unsigned &nodeId,
                  SmallVectorImpl<unsigned> &nodeIds);
+};
+
+/// This analysis contains cached control-flow tree analyses mapped by root
+/// operation. This class ensures that nested analyses are preserved across
+/// passes that may change parent operations of root operations, such as
+/// rewriting `kgen.func` to `llvm.func`. The analysis is always assumed to be
+/// preserved unless indicated otherwise. The analysis should be invalidated
+/// when ControlFlowNode operations are deleted, inserted, or modified.
+class ControlFlowTreeAnalysis {
+public:
+  ControlFlowTreeAnalysis(Operation *) {}
+
+  /// Get the control-flow tree analysis for the given node, creating it if it
+  /// has not already been computed.
+  const ControlFlowTree &getOrCreate(ControlFlowNode node) {
+    auto it = analyses.find(node);
+    if (it != analyses.end())
+      return it->second;
+    return analyses.try_emplace(node, ControlFlowTree(node)).first->second;
+  }
+
+  /// Never automatically invalidate the analysis.
+  bool isInvalidated(const mlir::AnalysisManager::PreservedAnalyses &pa) {
+    return false;
+  }
+
+private:
+  /// This is the map of root operation to its control-flow tree analysis.
+  DenseMap<Operation *, ControlFlowTree> analyses;
 };
 } // namespace M::HLCF
 

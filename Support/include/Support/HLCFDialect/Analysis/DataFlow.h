@@ -7,28 +7,28 @@
 #ifndef SUPPORT_HLCFDIALECT_ANALYSIS_DATAFLOW_H
 #define SUPPORT_HLCFDIALECT_ANALYSIS_DATAFLOW_H
 
+#include "Support/HLCFDialect/Analysis/ControlFlowTree.h"
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/Analysis/DataFlow/ConstantPropagationAnalysis.h"
 #include "mlir/Analysis/DataFlow/DeadCodeAnalysis.h"
-#include "mlir/Pass/AnalysisManager.h"
 
 namespace M::HLCF {
 /// Subclass the basic dead code analysis to inject a transfer function for HLCF
 /// operations.
 class DeadCodeAnalysis : public mlir::dataflow::DeadCodeAnalysis {
 public:
-  DeadCodeAnalysis(mlir::DataFlowSolver &solver, mlir::AnalysisManager mgr)
-      : mlir::dataflow::DeadCodeAnalysis(solver), mgr(mgr) {}
+  DeadCodeAnalysis(mlir::DataFlowSolver &solver,
+                   ControlFlowTreeAnalysis &analysis)
+      : mlir::dataflow::DeadCodeAnalysis(solver), analysis(analysis) {}
 
   LogicalResult visit(mlir::ProgramPoint point) override;
 
 private:
   /// Dead code analysis on HLCF ops requires control-flow tree analysis on root
-  /// operations. This is the analysis manager to use to get or create cached
-  /// analysis.
-  mlir::AnalysisManager mgr;
+  /// operations. This analysis contains cached analyses for root operations.
+  ControlFlowTreeAnalysis &analysis;
 };
 
 /// Subclass the basic sparse dataflow analysis to inject a transfer function

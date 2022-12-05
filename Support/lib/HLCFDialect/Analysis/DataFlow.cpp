@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/HLCFDialect/Analysis/DataFlow.h"
-#include "Support/HLCFDialect/Analysis/ControlFlowTree.h"
 #include "mlir/Analysis/DataFlow/ConstantPropagationAnalysis.h"
 #include "mlir/Interfaces/CallInterfaces.h"
 
@@ -45,7 +44,7 @@ LogicalResult HLCF::DeadCodeAnalysis::visit(mlir::ProgramPoint point) {
   if (isa<ControlFlowNode>(node->getParentOp()))
     return success();
 
-  auto &tree = mgr.nest(node).getAnalysis<ControlFlowTree>();
+  const ControlFlowTree &tree = analysis.getOrCreate(node);
 
   // FIXME: ControlFlowTree is optimized for fast lookups when traversing in
   // DFS, but that means we have to redo the traversal whenever analysis
