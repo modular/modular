@@ -18,23 +18,23 @@ def KGENCallOpInterface : OpInterface<"KGENCallOpInterface"> {
 
   let methods = [
     InterfaceMethod<[{
+      Get the callee expression of the call operation.
+    }], "TypedAttr", "getCallee">,
+
+    InterfaceMethod<[{
+      Get the signature type of the callee.
+    }], "SignatureType", "getSignature", (ins), [{}], [{
+      return cast<SignatureType>($_op.getCallee().getType());
+    }]>,
+    InterfaceMethod<[{
       Get the function type of the callee.
     }], "FunctionType", "getFunctionType", (ins), [{}], [{
-      return FunctionType::get($_op->getContext(), $_op->getOperandTypes(),
-                               $_op->getResultTypes());
+      return $_op.getSignature().getValues();
     }]>,
 
     InterfaceMethod<[{
       Get the parameters declared by the call.
-    }], "ParamDeclArrayAttr", "getParamDeclsAttr", (ins), [{}]>,
-
-    InterfaceMethod<[{
-      Get the FnEffects and parameters conventions of the callee.
-    }], "DenseI8ArrayAttr", "getConventionsAttr", (ins), [{}]>,
-
-    InterfaceMethod<[{
-      Get the FnEffects and parameters conventions of the callee.
-    }], "ArrayRef<int8_t>", "getConventions", (ins), [{}]>,
+    }], "ParamDeclArrayAttr", "getParamDeclsAttr">,
 
     InterfaceMethod<[{
       Get the bound region bodies of this operation.

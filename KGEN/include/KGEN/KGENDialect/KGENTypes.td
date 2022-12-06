@@ -172,7 +172,7 @@ def SignatureType
 
   let parameters = (ins "ParamDeclArrayAttr":$inputParams,
                         "TypeArrayAttr":$resultParamTypes,
-                        "mlir::FunctionType":$values,
+                        "FunctionType":$values,
                         "DenseI8ArrayAttr":$conventions);
   let assemblyFormat = [{
     `<` $inputParams `,` $resultParamTypes `,`
@@ -182,8 +182,11 @@ def SignatureType
   let builders = [
     /// This builder allows everything other than the function type to be null.
     TypeBuilderWithInferredContext<(ins
-        "ParamDeclArrayAttr":$inputParams, "TypeArrayAttr":$resultParamTypes,
-        "FunctionType":$values, "DenseI8ArrayAttr":$conventions)>,
+      "ParamDeclArrayAttr":$inputParams, "TypeArrayAttr":$resultParamTypes,
+      "FunctionType":$values, "DenseI8ArrayAttr":$conventions)>,
+    TypeBuilderWithInferredContext<(ins
+      "ParamBindArrayAttr":$inputParams, "ParamDeclArrayAttr":$resultParams,
+      "FunctionType":$values, "DenseI8ArrayAttr":$conventions)>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>,
     TypeBuilderWithInferredContext<(ins "FunctionType":$values)>,
     TypeBuilderWithInferredContext<(ins "ParamDeclArrayAttr":$inputParams), [{
@@ -232,6 +235,9 @@ def SignatureType
 
     /// Return this signature type with the value signature replaced.
     SignatureType getWithValuesReplaced(FunctionType fnType);
+
+    /// Return this signature with the input parameters dropped.
+    SignatureType dropParamValues();
   }];
 
   let genVerifyDecl = 1;

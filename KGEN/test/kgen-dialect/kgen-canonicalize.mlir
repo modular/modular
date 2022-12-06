@@ -69,10 +69,16 @@ kgen.func @trivial(%arg0: si32) -> si32 {
   kgen.return %arg0 : si32
 }
 
+kgen.generator @trivial_param<A>(%arg0: si32) -> si32 {
+  kgen.return %arg0 : si32
+}
+
 // CHECK-LABEL: kgen.generator @call_param_canonicalize
 kgen.generator @call_param_canonicalize(%arg0: si32) -> si32 {
   // CHECK: %0 = kgen.call @trivial(%arg0) : (si32) -> si32
   %0 = kgen.call_param[(si32) -> si32: @trivial](%arg0)
+  // CHECK: %1 = kgen.call @trivial_param<A = 1>(%arg0)
+  %1 = kgen.call_param[<A>(si32) -> si32: @trivial_param]<A = 1>(%arg0)
   kgen.return %0: si32
 }
 

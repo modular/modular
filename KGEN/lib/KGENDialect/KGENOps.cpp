@@ -329,9 +329,8 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return success();
 
   // Check that the callee attribute was specified.
-  auto module = (*this)->getParentOfType<ModuleOp>();
-  auto interface = dyn_cast_if_present<GeneratorInterfaceOp>(
-      symbolTable.lookupSymbolIn(module, interfaceSym));
+  auto module = KGENModule::from(*this, symbolTable);
+  auto interface = module.lookup<GeneratorInterfaceOp>(interfaceSym);
   if (!interface)
     return emitError() << "'" << interfaceSym
                        << "' does not reference a generator interface";
@@ -496,9 +495,6 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   auto module = KGENModule::from(*this, symbolTable);
   auto func = module.lookup<KGENDeclInterface>(evaluator.getSymbol());
-  if (!func)
-    return emitOpError("evaluator ")
-           << evaluator.getSymbol() << " does not refer to a KGEN declaration";
 
   auto index = IndexType::get(getContext());
   auto evaluatorType = FunctionType::get(
@@ -521,13 +517,8 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   if (!defaultImpl)
     return success();
 
-  func = module.lookup<KGENDeclInterface>(defaultImpl.getSymbol());
+  func = module.lookup<GeneratorOp>(defaultImpl.getSymbol());
   if (!func)
-    return emitOpError("defaultImpl ")
-           << defaultImpl.getSymbol()
-           << " does not refer to a KGEN declaration";
-
-  if (!isa<GeneratorOp>(func))
     return emitOpError("defaultImpl ")
            << defaultImpl.getSymbol() << " must be a generator";
 
@@ -554,24 +545,6 @@ ArrayRef<Type> GeneratorInterfaceOp::getCallableResults() {
 //===----------------------------------------------------------------------===//
 // Common CallOp / CallParamOp logic
 //===----------------------------------------------------------------------===//
-
-/// Verify invariants for a CallOp or CallParamOp with a callee of a known
-/// signature.
-static ParseResult verifyCallAndCallee(Operation *theCall,
-                                       SignatureType callerSignature,
-                                       SignatureType calleeSignature,
-                                       ParamBindArrayAttr callerInputParams,
-                                       Location calleeLoc) {
-  // Get the substituted signature based on the input parameters specified.
-  auto emitErrorFn = [&]() { return theCall->emitError(); };
-  calleeSignature =
-      calleeSignature.getSpecializedSignature(callerInputParams, emitErrorFn);
-  if (!calleeSignature)
-    return failure();
-
-  return verifyDeclSignaturesMatch("caller", callerSignature, theCall->getLoc(),
-                                   "callee", calleeSignature, calleeLoc);
-}
 
 /// Verify that regions used as signature parameters match in signature.
 template <typename RegionBodyT>
@@ -658,8 +631,23 @@ static void printCallRegionBodies(OpAsmPrinter &p, mlir::RegionRange regions,
 static ParseResult
 parseCallRegions(OpAsmParser &p,
                  SmallVectorImpl<std::unique_ptr<::mlir::Region>> &result,
+                 SymbolConstantAttr callee) {
+  return parseCallRegionBodies<RegionBodyOp>(p, result,
+                                             callee.getParamValues());
+}
+
+static ParseResult
+parseCallRegions(OpAsmParser &p,
+                 SmallVectorImpl<std::unique_ptr<::mlir::Region>> &result,
                  ParamBindArrayAttr paramValues) {
   return parseCallRegionBodies<RegionBodyOp>(p, result, paramValues);
+}
+
+static void printCallRegions(OpAsmPrinter &p, Operation *op,
+                             mlir::RegionRange regions,
+                             SymbolConstantAttr callee) {
+  return printCallRegionBodies<RegionBodyOp>(p, regions,
+                                             callee.getParamValues());
 }
 
 static void printCallRegions(OpAsmPrinter &p, Operation *op,
@@ -672,53 +660,40 @@ static void printCallRegions(OpAsmPrinter &p, Operation *op,
 // AddressOfOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult
-parseAddressOfOptionalConventions(OpAsmParser &p, DenseI8ArrayAttr &conventions,
-                                  Type fnType) {
-
-  if (parseOptionalConventions(p, conventions,
-                               cast<FunctionType>(fnType).getInputs().size()))
+static ParseResult parseAddressOfOp(OpAsmParser &p,
+                                    SymbolConstantAttr &calleeCst,
+                                    ParamDeclArrayAttr &paramDecls,
+                                    Type &resultType) {
+  SymbolRefAttr callee;
+  ParamBindArrayAttr paramValues;
+  DenseI8ArrayAttr conventions;
+  FunctionType result;
+  if (p.parseAttribute(callee) ||
+      parseCallOpParams(p, paramValues, paramDecls) ||
+      p.parseColonType(result) ||
+      parseOptionalConventions(p, conventions, result.getNumInputs()))
     return failure();
+  calleeCst = SymbolConstantAttr::get(
+      callee, paramValues,
+      SignatureType::get(ParamBindArrayAttr::get(p.getContext(), {}),
+                         paramDecls, result, conventions));
+  resultType = result;
   return success();
 }
 
-static void printAddressOfOptionalConventions(OpAsmPrinter &p, Operation *op,
-                                              DenseI8ArrayAttr conventions,
-                                              Type fnType) {
-  printOptionalConventions(p.getStream(), conventions);
-}
-
-/// Given a 'call-like' operation, get the effective signature that the call
-/// expects from the callee.
-static SignatureType getCallSignature(KGENCallOpInterface op) {
-  SmallVector<Type> resultParamTypes;
-  resultParamTypes.reserve(op.getParamDeclsAttr().size());
-  for (ParamDeclAttr resultParam : op.getParamDeclsAttr())
-    resultParamTypes.push_back(resultParam.getType());
-
-  auto *context = op.getContext();
-  return SignatureType::get(ParamDeclArrayAttr::get(context, {}),
-                            TypeArrayAttr::get(context, resultParamTypes),
-                            op.getFunctionType(), op.getConventionsAttr());
+static void printAddressOfOp(OpAsmPrinter &p, Operation *op,
+                             SymbolConstantAttr calleeCst,
+                             ParamDeclArrayAttr paramDecls, Type resultType) {
+  p << calleeCst.getSymbol();
+  printCallOpParams(p, op, calleeCst.getParamValues(), paramDecls);
+  p << " : " << resultType;
 }
 
 LogicalResult
 AddressOfOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  auto module = KGENModule::from(*this, symbolTable);
-  auto callee = module.lookup<KGENDeclInterface>(getCalleeAttr());
-  if (!callee)
-    return emitOpError() << getCalleeAttr()
-                         << " does not reference a valid callee";
-
-  // Check the parameters and operands align with the requirements of the
-  // callee's signature.
-  if (verifyCallAndCallee(*this, getCallSignature(*this), callee.getSignature(),
-                          getParamValuesAttr(), callee->getLoc()))
-    return failure();
-
   // Make sure we don't reference a generator with input parameters inside a
   // `kgen.func`.
-  if (!getParamValues().empty()) {
+  if (!getCallee().getParamValues().empty()) {
     if (auto funcParent = getOperation()->getParentOfType<FuncOp>()) {
       auto diag = emitError() << "cannot reference generator with input "
                                  "arguments from concrete kgen.func";
@@ -732,60 +707,66 @@ AddressOfOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 LogicalResult AddressOfOp::verifyRegions() {
-  return verifyRegionSignatures<RegionBodyOp>(*this, getParamValuesAttr());
+  return verifyRegionSignatures<RegionBodyOp>(*this,
+                                              getCallee().getParamValues());
 }
 
 FunctionType AddressOfOp::getFunctionType() { return getType(); }
 
 void AddressOfOp::build(OpBuilder &b, OperationState &state, Type type,
-                        StringAttr callee, ArrayRef<ParamBindAttr> inputParams,
-                        ArrayRef<ParamDeclAttr> resultParams,
-                        DenseI8ArrayAttr conventions) {
-  build(b, state, type, FlatSymbolRefAttr::get(callee),
-        b.getAttr<ParamBindArrayAttr>(inputParams),
-        b.getAttr<ParamDeclArrayAttr>(resultParams), conventions, 0);
+                        SymbolConstantAttr callee,
+                        ArrayRef<ParamDeclAttr> resultParams) {
+  build(b, state, type, callee, b.getAttr<ParamDeclArrayAttr>(resultParams),
+        /*numRegions=*/0);
 }
 
 //===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseOperandsAndOptionalConventions(
-    OpAsmParser &p, SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
-    DenseI8ArrayAttr &conventions) {
-
-  if (p.parseLParen() || p.parseOperandList(operands) || p.parseRParen() ||
-      parseOptionalConventions(p, conventions, operands.size()))
+static ParseResult
+parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
+            ParamDeclArrayAttr &paramDecls,
+            SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
+            SmallVectorImpl<Type> &operandTypes,
+            SmallVectorImpl<Type> &resultTypes) {
+  SymbolRefAttr callee;
+  ParamBindArrayAttr paramValues;
+  DenseI8ArrayAttr conventions;
+  FunctionType result;
+  if (p.parseAttribute(callee) ||
+      parseCallOpParams(p, paramValues, paramDecls) ||
+      p.parseOperandList(operands, AsmParser::Delimiter::Paren) ||
+      parseOptionalConventions(p, conventions, operands.size()) ||
+      p.parseColonType(result))
     return failure();
+  calleeCst = SymbolConstantAttr::get(
+      callee, paramValues,
+      SignatureType::get(ParamBindArrayAttr::get(p.getContext(), {}),
+                         paramDecls, result, conventions));
+  llvm::append_range(operandTypes, result.getInputs());
+  llvm::append_range(resultTypes, result.getResults());
   return success();
 }
 
-static void printOperandsAndOptionalConventions(OpAsmPrinter &p, Operation *op,
-                                                ValueRange operands,
-                                                DenseI8ArrayAttr conventions) {
-  p << '(' << operands << ')';
-  printOptionalConventions(p.getStream(), conventions);
+static void printCallOp(OpAsmPrinter &p, Operation *op,
+                        SymbolConstantAttr calleeCst,
+                        ParamDeclArrayAttr paramDecls, ValueRange operands,
+                        TypeRange operandTypes, TypeRange resultTypes) {
+  p << calleeCst.getSymbol();
+  printCallOpParams(p, op, calleeCst.getParamValues(), paramDecls);
+  p << '(';
+  p.printOperands(operands);
+  p << ") : ";
+  p.printFunctionalType(operandTypes, resultTypes);
 }
 
 LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  auto module = KGENModule::from(*this, symbolTable);
-  auto callee = module.lookup<KGENDeclInterface>(getCalleeAttr());
-  if (!callee)
-    return emitError() << "'" << getCalleeAttr()
-                       << "' does not reference a valid callee";
-
-  // Check the parameters and operands align with the requirements of the
-  // callee's signature.
-  if (verifyCallAndCallee(*this, getCallSignature(*this),
-                          callee.getFullSignature(), getParamValuesAttr(),
-                          callee->getLoc()))
-    return failure();
-
   // Ok, the call looks good.  Next, make sure that calls within a
   // kgen.func do not pass input arguments.  Input arguments are invalid to a
   // func, so it must be a generator or generator interface, and these will
   // not be elaborated unless they have zero input arguments.
-  if (!getParamValues().empty()) {
+  if (!getCallee().getParamValues().empty()) {
     if (auto funcParent = getOperation()->getParentOfType<FuncOp>()) {
       auto diag = emitError() << "cannot call generator with input arguments "
                                  "from concrete kgen.func";
@@ -799,34 +780,23 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 void CallOp::build(OpBuilder &builder, OperationState &state,
-                   TypeRange resultTypes, SymbolRefAttr callee,
-                   ArrayRef<ParamBindAttr> inputParams,
-                   ArrayRef<ParamDeclAttr> resultParams, ValueRange operands,
-                   DenseI8ArrayAttr conventions) {
+                   TypeRange resultTypes, SymbolConstantAttr callee,
+                   ValueRange operands, ArrayRef<ParamDeclAttr> resultParams) {
   build(builder, state, resultTypes, callee,
-        builder.getAttr<ParamBindArrayAttr>(inputParams),
         builder.getAttr<ParamDeclArrayAttr>(resultParams), operands,
-        conventions,
         /*numRegions=*/0);
-}
-void CallOp::build(OpBuilder &builder, OperationState &state,
-                   TypeRange resultTypes, StringAttr callee,
-                   ArrayRef<ParamBindAttr> inputParams,
-                   ArrayRef<ParamDeclAttr> resultParams, ValueRange operands,
-                   DenseI8ArrayAttr conventions) {
-  build(builder, state, resultTypes, FlatSymbolRefAttr::get(callee),
-        inputParams, resultParams, operands, conventions);
 }
 
 OperandRange CallOp::getArgOperands() { return getOperands(); }
 
 mlir::CallInterfaceCallable CallOp::getCallableForCallee() {
-  return getCalleeAttr();
+  return getCalleeSymbol();
 }
 
 LogicalResult CallOp::verifyRegions() {
   // Verify the region signatures match region parameter signatures.
-  return verifyRegionSignatures<RegionBodyOp>(*this, getParamValuesAttr());
+  return verifyRegionSignatures<RegionBodyOp>(*this,
+                                              getCallee().getParamValues());
 }
 
 //===----------------------------------------------------------------------===//
@@ -880,17 +850,16 @@ static void printCallParamCallee(OpAsmPrinter &p, Operation *op,
 LogicalResult CallParamOp::canonicalize(CallParamOp op,
                                         PatternRewriter &rewriter) {
   // If the condition is a known symbol, then replace this with a kgen.call.
-  if (auto calleeSymbol = dyn_cast<SymbolConstantAttr>(op.getCallee())) {
-    if (calleeSymbol.getParamValues().empty()) {
+  if (auto callee = dyn_cast<SymbolConstantAttr>(op.getCallee())) {
+    if (callee.getParamValues().empty()) {
       rewriter.replaceOpWithNewOp<CallOp>(
-          op, op.getResultTypes(), calleeSymbol.getSymbol(),
-          op.getParamValues(), op.getParamDecls(), op.getOperands(),
-          op.getConventionsAttr());
+          op, op.getResultTypes(),
+          SymbolConstantAttr::get(callee.getSymbol(), op.getParamValuesAttr(),
+                                  callee.getType().dropParamValues()),
+          op.getOperands(), op.getParamDecls());
     } else {
-      rewriter.replaceOpWithNewOp<CallOp>(
-          op, op.getResultTypes(), calleeSymbol.getSymbol(),
-          calleeSymbol.getParamValues().getValue(), ArrayRef<ParamDeclAttr>(),
-          op.getOperands(), op.getConventionsAttr());
+      rewriter.replaceOpWithNewOp<CallOp>(op, op.getResultTypes(), callee,
+                                          op.getOperands(), op.getParamDecls());
     }
     return success();
   }
@@ -902,11 +871,10 @@ void CallParamOp::build(OpBuilder &builder, OperationState &state,
                         TypeRange resultTypes, TypedAttr callee,
                         ArrayRef<ParamBindAttr> inputParams,
                         ArrayRef<ParamDeclAttr> resultParams,
-                        ValueRange operands, DenseI8ArrayAttr conventions) {
+                        ValueRange operands) {
   build(builder, state, resultTypes, callee,
         builder.getAttr<ParamBindArrayAttr>(inputParams),
         builder.getAttr<ParamDeclArrayAttr>(resultParams), operands,
-        conventions,
         /*numRegions=*/0);
 }
 
@@ -916,14 +884,6 @@ LogicalResult CallParamOp::verifyRegions() {
   if (!parent || isa<FuncOp>(parent))
     return emitError(
         "kgen.call_param is only allowed in generators pre-elaboration");
-
-  // Check the parameters and operands align with the requirements of the
-  // callee's signature.
-  auto calleeSignature = cast<SignatureType>(getCallee().getType());
-  if (failed(verifyCallAndCallee(*this, getCallSignature(*this),
-                                 calleeSignature, getParamValuesAttr(),
-                                 getLoc())))
-    return failure();
 
   // Verify the region signatures match region parameter signatures.
   return verifyRegionSignatures<RegionBodyOp>(*this, getParamValuesAttr());
@@ -938,14 +898,6 @@ LogicalResult InlinedCallOp::verifyRegions() {
       getOperation()->getParentOfType<KGENDeclInterface>();
   if (!parent || isa<FuncOp>(parent))
     return emitOpError("is only allowed in generators pre-elaboration");
-
-  // Check the parameters and operands align with the requirements of the
-  // callee's signature.
-  auto calleeSignature = cast<SignatureType>(getCallee().getType());
-  if (failed(verifyCallAndCallee(*this, getCallSignature(*this),
-                                 calleeSignature, getParamValuesAttr(),
-                                 getLoc())))
-    return failure();
 
   // Verify the region signatures match region parameter signatures.
   return verifyRegionSignatures<RegionOpenBodyOp>(*this, getParamValuesAttr());
@@ -1094,8 +1046,7 @@ LogicalResult CallIndirectOp::canonicalize(CallIndirectOp op,
   if (auto constant = dyn_cast_or_null<ParamConstantOp>(calleeOp)) {
     rewriter.replaceOpWithNewOp<CallParamOp>(
         op, op.getResultTypes(), constant.getValue(), ArrayRef<ParamBindAttr>(),
-        ArrayRef<ParamDeclAttr>(), op.getInputs(),
-        op.getCallee().getType().getConventions());
+        ArrayRef<ParamDeclAttr>(), op.getInputs());
     return success();
   }
 

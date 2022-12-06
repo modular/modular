@@ -560,9 +560,9 @@ private:
   LogicalResult processGeneratorUser(
       OpT user,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
-    return processGeneratorUserImpl(user, user.getParamDecls(),
-                                    user.getParamValues(), user.getCalleeAttr(),
-                                    rewriters, /*isInlinedCall=*/false);
+    return processGeneratorUserImpl(
+        user, user.getParamDecls(), user.getParamValues(),
+        user.getCalleeSymbol(), rewriters, /*isInlinedCall=*/false);
   }
   LogicalResult processGeneratorUserImpl(
       Operation *user, ArrayRef<ParamDeclAttr> decls,
@@ -1111,16 +1111,19 @@ void ParameterRewriter::completeGeneratorUserProcessing(
   // the old one.
   mlir::IRRewriter b{OpBuilder(user)};
   if (isa<CallOp, CallParamOp>(user)) {
-    b.replaceOpWithNewOp<CallOp>(user, resultTypes, newCalleeFunc.getNameAttr(),
-                                 ArrayRef<ParamBindAttr>(),
-                                 ArrayRef<ParamDeclAttr>(), user->getOperands(),
-                                 newCalleeFunc.getConventions());
+    b.replaceOpWithNewOp<CallOp>(
+        user, resultTypes,
+        SymbolConstantAttr::get(
+            FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
+            newCalleeFunc.getSignature()),
+        user->getOperands());
 
   } else if (isa<AddressOfOp>(user)) {
     b.replaceOpWithNewOp<AddressOfOp>(
-        user, resultTypes.front(), newCalleeFunc.getNameAttr(),
-        ArrayRef<ParamBindAttr>(), ArrayRef<ParamDeclAttr>(),
-        newCalleeFunc.getConventions());
+        user, resultTypes.front(),
+        SymbolConstantAttr::get(
+            FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
+            newCalleeFunc.getSignature()));
 
   } else if (isa<InlinedCallOp>(user)) {
     // Inline the callee.
@@ -2228,9 +2231,12 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
 
     // If this is a reference to a function that got renamed, update its target.
     TypeSwitch<Operation *>(op).Case<CallOp, AddressOfOp>([&](auto op) {
-      auto it = funcsToRename.find(op.getCalleeAttr().getLeafReference());
+      SymbolConstantAttr callee = op.getCallee();
+      auto it = funcsToRename.find(
+          cast<FlatSymbolRefAttr>(callee.getSymbol()).getAttr());
       if (it != funcsToRename.end())
-        op.setCalleeAttr(FlatSymbolRefAttr::get(it->second));
+        op.setCalleeAttr(SymbolConstantAttr::get(
+            FlatSymbolRefAttr::get(it->second), callee.getType()));
     });
   });
 
