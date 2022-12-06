@@ -233,8 +233,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Set up the pass pipeline.
   mlir::PassManager pm(ctx);
   pm.addPass(createLowerLIT());
-  pm.addPass(createPruneImpossibleVariants());
-
   pm.addPass(mlir::createCanonicalizerPass());
 
   // Set up the runtime.
@@ -246,6 +244,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     pm.addPass(createElaborateGenerators(
         includedFiles, runtime,
         {clOptions.searchPaths, clOptions.enableSearch}));
+    pm.addPass(createPruneImpossibleVariants());
   }
 
   // Run the pass manager.

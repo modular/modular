@@ -227,7 +227,8 @@ def PruneImpossibleVariants: Pass<"prune-impossible-variants",
 
     The pass folds `pop.variant.is` operations to constants when the operand is
     known to be or not to be the queried type and rewrites function signatures
-    that contain variants of known types to those types. This pass is meant to
-    be run pre-elaboration.
+    that contain variants of known types to those types.
+
+    This pass must run post-elaboration.
   }];
 }
