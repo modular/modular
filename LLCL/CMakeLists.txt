@@ -20,4 +20,3 @@ add_subdirectory(lib/CompilerSupport)
 # Because of the absence of the test directory, we need to add a custom target
 # which mimics the target it would have created.
 add_custom_target(check-llcl)
-add_subdirectory(unittests)
