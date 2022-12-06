@@ -1100,14 +1100,12 @@ kgen.generator @generatorWithTooManyConventions(
   kgen.return
 }
 
-
 // -----
 
 // expected-error @+1 {{argument #0 must have pointer type to have byref convention}}
 kgen.func @bad(%byval: i32) conventions<none, byref> {
   kgen.return
 }
-
 
 // -----
 
@@ -1122,5 +1120,13 @@ kgen.func @caller(%arg: !pop.pointer<i32>) {
 
   // expected-error @+1 {{symbol use conventions are array<i8: 0, 0> but @callee expected array<i8: 0, 1>}}
   kgen.call @callee(%arg) : (!pop.pointer<i32>) -> ()
+  kgen.return
+}
+
+// -----
+
+kgen.generator @target_params2<t0: target>()
+ // expected-error @below {{expected '='}}
+  constraints <[target_supports(:target t0, #kgen.target<triple"triple", "cpu", "features", 3, 4>), "must support target!!"]> {
   kgen.return
 }
