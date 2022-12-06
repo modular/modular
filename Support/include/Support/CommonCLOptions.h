@@ -90,21 +90,25 @@ public:
                                      cl::desc("<input file>"), cl::init("-")};
 
   // Specify the alignment for a given binary file.
-  cl::opt<llvm::Align> inputFileAlignment{
-      "input-file-alignment", cl::desc("Alignment for opening input file"),
-      cl::init(llvm::Align(64))};
+  cl::opt<int> inputFileAlignment{"input-file-alignment",
+                                  cl::desc("Alignment for opening input file")};
 
   /// Open the filename specified on the command line and return a memory
   /// buffer, or an error message on failure.
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> openInputFile() {
-    return CLOptionsBase::openInputFileAligned(inputFilename,
-                                               inputFileAlignment);
+  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
+  openInputFile(Optional<llvm::Align> align = llvm::None) {
+    align = (inputFileAlignment != 0) ? llvm::Align(inputFileAlignment) : align;
+    return CLOptionsBase::openInputFileAligned(
+        inputFilename, align.value_or(defaultAlignment));
   }
 
   /// The common case for all our driver-like tools is to fail early with an
   /// exit error status.  This takes care of that bit of boilerplate.
-  std::unique_ptr<llvm::MemoryBuffer> openInputFileOrExit() {
-    auto errorOrInputFile = openInputFile();
+  /// Takes an optional alignment with priority:
+  /// CLI alignment > align argument > default alignment.
+  std::unique_ptr<llvm::MemoryBuffer>
+  openInputFileOrExit(Optional<llvm::Align> align = llvm::None) {
+    auto errorOrInputFile = openInputFile(align);
     if (failed(errorOrInputFile))
       exit(reportError(Twine(errorOrInputFile.getError())));
     return errorOrInputFile.takeValue();
@@ -194,6 +198,11 @@ public:
   /// Determine an intermediate file with extension `ext` and open it.
   std::unique_ptr<llvm::ToolOutputFile>
   getIntermediateFile(StringRef inputName, StringRef ext) const;
+
+private:
+  /// Default alignment for input files.
+  /// Used only when both client code and CLI do not specify alignment.
+  static constexpr llvm::Align defaultAlignment = llvm::Align::Constant<64>();
 };
 
 } // namespace M

@@ -43,6 +43,8 @@
 
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/Support/Alignment.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Process.h"
 
 #include <cstdint>
 #include <limits>
@@ -187,14 +189,34 @@ inline size_t rawSizeToRuntimeSizeOrDefault(uint64_t rawSize,
   return static_cast<size_t>(rawSize);
 }
 
-/// Returns true if align in optional form is valid.
-inline bool isValidOptAlign(Optional<uint64_t> optAlign) {
-  return !optAlign || llvm::isPowerOf2_64(*optAlign);
+/// Maximum specifiable alignment attribute.
+/// TODO(5815): change this to make BEF file creation compatible across
+/// host/target systems with different page sizes.
+inline llvm::Align maxAttributeAlignment() {
+  return llvm::Align(llvm::sys::Process::getPageSizeEstimate());
+}
+
+/// Allocates a MemoryBuffer with the maximum attribute alignment and
+/// initializes it from the provided iterator.
+inline std::unique_ptr<llvm::MemoryBuffer>
+createAndCopyToAlignedBuffer(const char *BufStart, const char *BufEnd) {
+  auto alignedMemBuffer = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(
+      std::distance(BufStart, BufEnd), /*BufferName=*/"",
+      /*Alignment=*/maxAttributeAlignment());
+  std::copy(BufStart, BufEnd, alignedMemBuffer->getBufferStart());
+  return std::move(alignedMemBuffer);
 }
 
 /// Returns true if align in raw form is valid.
 inline bool isValidRawAlign(uint64_t rawAlign) {
-  return rawAlign == kUnknownSize || llvm::isPowerOf2_64(rawAlign);
+  return rawAlign == kUnknownSize ||
+         (llvm::isPowerOf2_64(rawAlign) &&
+          (rawAlign <= maxAttributeAlignment().value()));
+}
+
+/// Returns true if align in optional form is valid.
+inline bool isValidOptAlign(Optional<uint64_t> optAlign) {
+  return !optAlign || isValidRawAlign(*optAlign);
 }
 
 /// Translates align in optional form to it's llvm::MaybeAlign
