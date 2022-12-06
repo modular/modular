@@ -181,7 +181,7 @@ def AddressOfOp : KGENOp<"addressof", [
     OpBuilder<(ins "Type":$type, "StringAttr":$callee,
                    "ArrayRef<ParamBindAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams,
-                   "mlir::DenseI8ArrayAttr":$conventions)>
+                   "DenseI8ArrayAttr":$conventions)>
   ];
 }
 
@@ -259,12 +259,12 @@ def CallOp : KGENOp<"call", [KGENCallOpInterface,
                    "ArrayRef<ParamBindAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams,
                    "ValueRange":$operands,
-                   "mlir::DenseI8ArrayAttr":$conventions)>,
+                   "DenseI8ArrayAttr":$conventions)>,
     OpBuilder<(ins "TypeRange":$resultTypes, "SymbolRefAttr":$callee,
                    "ArrayRef<ParamBindAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams,
                    "ValueRange":$operands,
-                   "mlir::DenseI8ArrayAttr":$conventions)>,
+                   "DenseI8ArrayAttr":$conventions)>,
   ];
 
   let hasRegionVerifier = 1;
@@ -328,7 +328,7 @@ def CallParamOp : KGENOp<"call_param", [KGENCallOpInterface]> {
                    "ArrayRef<ParamBindAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams,
                    "ValueRange":$operands,
-                   "mlir::DenseI8ArrayAttr":$conventions)>,
+                   "DenseI8ArrayAttr":$conventions)>,
   ];
 
   let hasCanonicalizeMethod = 1;

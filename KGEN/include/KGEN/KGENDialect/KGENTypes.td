@@ -173,7 +173,7 @@ def SignatureType
   let parameters = (ins "ParamDeclArrayAttr":$inputParams,
                         "TypeArrayAttr":$resultParamTypes,
                         "mlir::FunctionType":$values,
-                        "mlir::DenseI8ArrayAttr":$conventions);
+                        "DenseI8ArrayAttr":$conventions);
   let assemblyFormat = [{
     `<` $inputParams `,` $resultParamTypes `,`
     custom<ValuesAndOptionalConventions>($values, $conventions) `>`
@@ -183,7 +183,7 @@ def SignatureType
     /// This builder allows everything other than the function type to be null.
     TypeBuilderWithInferredContext<(ins
         "ParamDeclArrayAttr":$inputParams, "TypeArrayAttr":$resultParamTypes,
-        "FunctionType":$values, "mlir::DenseI8ArrayAttr":$conventions)>,
+        "FunctionType":$values, "DenseI8ArrayAttr":$conventions)>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>,
     TypeBuilderWithInferredContext<(ins "FunctionType":$values)>,
     TypeBuilderWithInferredContext<(ins "ParamDeclArrayAttr":$inputParams), [{
