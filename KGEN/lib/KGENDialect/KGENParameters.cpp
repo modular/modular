@@ -496,8 +496,8 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
             symbolTable->lookupSymbolIn(root, name)))
       return decl;
     hadError = true;
-    emitError(curLocationCollecting.value(), "'")
-        << symbol << "' does not reference a KGEN declaration";
+    emitError(curLocationCollecting.value())
+        << symbol << " does not reference a KGEN declaration";
     return nullptr;
   };
 

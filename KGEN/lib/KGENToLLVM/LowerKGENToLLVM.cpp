@@ -6,6 +6,7 @@
 
 #include "KGEN/KGENPasses.h"
 
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -130,8 +131,8 @@ struct ConvertKGENAddressOf : public mlir::ConvertOpToLLVMPattern<AddressOfOp> {
     Type funcPtrType = getTypeConverter()->convertType(op.getType());
     if (!funcPtrType)
       return op.emitError("failed to convert function type");
-    rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(op, funcPtrType,
-                                                   op.getCalleeAttr());
+    rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(
+        op, funcPtrType, cast<FlatSymbolRefAttr>(op.getCalleeSymbol()));
     return success();
   }
 };
@@ -155,7 +156,7 @@ struct ConvertKGENCall : public mlir::ConvertOpToLLVMPattern<CallOp> {
         return emitError(op.getLoc(), "failed to convert call result type");
     }
 
-    auto flatSymbol = dyn_cast<FlatSymbolRefAttr>(op.getCalleeAttr());
+    auto flatSymbol = dyn_cast<FlatSymbolRefAttr>(op.getCalleeSymbol());
     if (!flatSymbol)
       return emitError(op.getLoc(),
                        "cannot lower call to nested symbol to LLVM");

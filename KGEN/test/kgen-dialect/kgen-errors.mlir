@@ -128,17 +128,22 @@ kgen.generator @scalar_params_verbose<n : ui32>(%x : !pop.array<n, scalar<invali
 
 // -----
 
-// expected-error @+1 {{'@undefined' does not reference a valid callee}}
-kgen.call @undefined() : () -> ()
+kgen.func @entry() {
+  // expected-error @below {{@undefined does not reference a KGEN declaration}}
+  kgen.call @undefined() : () -> ()
+  kgen.return
+}
 
 // -----
 
 kgen.generator @g1(%x : i32) {
-  // expected-error @+1 {{caller has 1 argument but callee expects 0}}
+  // expected-error @below {{symbol use has 1 argument but @g2 expects 0}}
   kgen.call @g2(%x) : (i32) -> ()
   kgen.return
 }
-kgen.generator @g2<>() { // expected-note {{callee declared here}}
+
+// expected-note @below {{@g2 declared here}}
+kgen.generator @g2<>() {
   kgen.return
 }
 
@@ -162,25 +167,26 @@ kgen.generator @g2<()>() {
 
 // -----
 
+// expected-note @below {{@only_returns declared here}}
 kgen.generator @only_returns<p1 -> index>() {
   kgen.return<p1>
 }
 
 kgen.func @test_only_returns() {
-  // expected-error @+1 {{caller has 0 input parameters but callee expects 1}}
+  // expected-error @below {{symbol use has 0 input parameters but @only_returns expects 1}}
   kgen.call @only_returns<()->p2>() : () -> ()
   kgen.return
 }
 
 // -----
 
-// expected-note @+1 {{callee declared here}}
+// expected-note @below {{@only_returns declared here}}
 kgen.generator @only_returns<() -> i4>() {
   kgen.return <:i4 2>
 }
 
 kgen.func @test_only_returns() {
-  // expected-error @+1 {{caller result parameter #0 has type 'index' but callee expected type 'i4'}}
+  // expected-error @below {{symbol use result parameter #0 has type 'index' but @only_returns expected type 'i4'}}
   kgen.call @only_returns<()->p2>() : () -> ()
   kgen.return
 }
@@ -192,20 +198,20 @@ kgen.generator @fn<p2>() {
 }
 
 kgen.func @input_param_name() {
-  // expected-error @+1 {{caller input parameter #0 has name "p1" but callee expected name "p2"}}
+  // expected-error @below {{caller input parameter #0 has name "p1" but callee expected name "p2"}}
   kgen.call @fn<p1 = 42>() : () -> ()
   kgen.return
 }
 
 // -----
 
-// expected-note @+1 {{callee declared here}}
+// expected-note @below {{@fn declared here}}
 kgen.generator @fn(%a: i1) -> i1 {
   kgen.return %a : i1
 }
 
 kgen.func @result_type(%a: i1) {
-  // expected-error @+1 {{caller result #0 has type 'f32' but callee expected type 'i1'}}
+  // expected-error @below {{symbol use result #0 has type 'f32' but @fn expected type 'i1'}}
   kgen.call @fn(%a) : (i1) -> f32
   kgen.return
 }
@@ -307,13 +313,13 @@ kgen.generator.interface @badTypes<ty1 : dtype>(%a : !pop.scalar<ty2>)
 
 // -----
 
-// expected-note @+1 {{callee declared here}}
+// expected-note @below {{@callee declared here}}
 kgen.generator @callee<type: dtype>(%x: !pop.scalar<type>) {
   kgen.return
 }
 
 kgen.generator @caller<type : dtype>(%arg0: !pop.scalar<type>) {
-  // expected-error @+1 {{caller argument #0 has type '!pop.scalar<type>' but callee expected type '!pop.scalar<f64>'}}
+  // expected-error @below {{symbol use argument #0 has type '!pop.scalar<type>' but @callee expected type '!pop.scalar<f64>'}}
   kgen.call @callee<type: dtype = f64>(%arg0) : (!pop.scalar<type>) -> ()
   kgen.return
 }
@@ -396,7 +402,7 @@ kgen.generator @takeFn<fn: () -> ()>() {
   kgen.return
 }
 kgen.generator @test() {
-  // expected-error @+1 {{'@missing' does not reference a KGEN declaration}}
+  // expected-error @+1 {{@missing does not reference a KGEN declaration}}
   kgen.call @takeFn<fn: ()->() = @missing>() : () -> ()
   kgen.return
 }
@@ -408,13 +414,14 @@ kgen.generator @takeUnary
   kgen.return
 }
 
-// expected-note @+1 {{@unary declared here}}
+// expected-note @below {{@unary declared here}}
 kgen.func @unary(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
   kgen.return %arg0 : !pop.scalar<f32>
 }
 
 kgen.generator @test1() {
-  // expected-error @+1 {{symbol use argument #0 has type '!pop.scalar<si32>' but @unary expected type '!pop.scalar<f32>'}}
+  // expected-error @below {{symbol use argument #0 has type '!pop.scalar<si32>' but @unary expected type '!pop.scalar<f32>'}}
+  // expected-error @below {{caller input parameter #0 has type '!kgen.signature<[], [], (!pop.scalar<si32>) -> !pop.scalar<si32>>' but callee expected type '!kgen.signature<[dt : !kgen.dtype], [], (!pop.scalar<dt>) -> !pop.scalar<dt>>'}}
   kgen.call @takeUnary<
      unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @unary>() : () -> ()
   kgen.return
@@ -427,13 +434,14 @@ kgen.generator @takeUnary
   kgen.return
 }
 
-// expected-note @+1 {{@unary2 declared here}}
+// expected-note @below {{@unary2 declared here}}
 kgen.generator @unary2<dt: dtype>(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
   kgen.return %arg0 : !pop.scalar<si32>
 }
 
 kgen.generator @test2() {
-  // expected-error @+1 {{symbol use has 0 input parameters but @unary2 expects 1}}
+  // expected-error @below {{caller input parameter #0 has type '!kgen.signature<[], [], (!pop.scalar<si32>) -> !pop.scalar<si32>>' but callee expected type '!kgen.signature<[dt : !kgen.dtype], [], (!pop.scalar<dt>) -> !pop.scalar<dt>>'}}
+  // expected-error @below {{symbol use has 0 input parameters but @unary2 expects 1}}
   kgen.call @takeUnary<
      unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @unary2>() : () -> ()
   kgen.return
@@ -459,7 +467,7 @@ kgen.generator @call_param<fn: <ty: type>()->()>() {
 // -----
 
 kgen.generator @call_param<fn: <ty: type>()->()>() {
-  // expected-error @+1 {{caller input parameter #0 has type 'index' but callee expected name '!kgen.mlirtype'}}
+  // expected-error @below {{custom op 'kgen.call_param' caller input parameter #0 has type 'index' but callee expected type '!kgen.mlirtype'}}
   kgen.call_param[<ty: type>()->(): fn]<ty = 42>()
   kgen.return
 }
@@ -670,20 +678,20 @@ kgen.generator @give_it_B<C>() {
 // -----
 
 kgen.func @addressof_invalid_callee() {
-  // expected-error @below {{'kgen.addressof' op @does_not_exist does not reference a valid callee}}
+  // expected-error @below {{@does_not_exist does not reference a KGEN declaration}}
   %0 = kgen.addressof @does_not_exist : () -> ()
   kgen.return
 }
 
 // -----
 
-// expected-note @below {{callee declared here}}
+// expected-note @below {{@nullary declared here}}
 kgen.func @nullary() {
   kgen.return
 }
 
 kgen.func @addressof_mismatched_signature() {
-  // expected-error @below {{caller has 1 argument but callee expects 0}}
+  // expected-error @below {{symbol use has 1 argument but @nullary expects 0}}
   %0 = kgen.addressof @nullary : (index) -> ()
   kgen.return
 }
@@ -701,7 +709,7 @@ kgen.func @addressof_parametric_in_func() {
 
 // -----
 
-// expected-error @below {{'@evaluator' does not reference a KGEN declaration}}
+// expected-error @below {{@evaluator does not reference a KGEN declaration}}
 kgen.generator.interface @evaluateMe(index) -> index
   evaluator (!pop.pointer<(index) -> index>, index) -> index = @evaluator<N=4>
 
@@ -775,7 +783,7 @@ kgen.generator @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %size: ind
   kgen.return %0 : index
 }
 
-// expected-error @below {{'@doesNotExist' does not reference a KGEN declaration}}
+// expected-error @below {{@doesNotExist does not reference a KGEN declaration}}
 kgen.generator.interface @pickFirst()
   evaluator (!pop.pointer<() -> ()>, index) -> index = @simpleEvaluator<N=0, FN:type=()->()>
   defaultImpl () -> () = @doesNotExist
@@ -1112,7 +1120,7 @@ kgen.func @caller(%arg: !pop.pointer<i32>) {
   // Ok
   kgen.call @callee(%arg) conventions<byref> : (!pop.pointer<i32>) -> ()
 
-  // expected-error @+1 {{caller conventions are array<i8: 0, 0> but callee expected array<i8: 0, 1>}}
+  // expected-error @+1 {{symbol use conventions are array<i8: 0, 0> but @callee expected array<i8: 0, 1>}}
   kgen.call @callee(%arg) : (!pop.pointer<i32>) -> ()
   kgen.return
 }

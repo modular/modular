@@ -651,14 +651,10 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
   // FIXME: Move result type inference into CallOp/CallIndirectOp.
   auto resultTypes = calleeSig.getValueResults();
   if (auto target = dyn_cast<Attribute>(callee)) {
-    // TODO(Issue #5473): CallOp should take a SymbolConstantAttr.
     resultVal =
         emitter.builder
-            ->create<CallOp>(
-                loc, resultTypes, cast<SymbolConstantAttr>(target).getSymbol(),
-                cast<SymbolConstantAttr>(target).getParamValues().getValue(),
-                /*resultParams*/ ArrayRef<ParamDeclAttr>(),
-                /*operands*/ valueArguments, calleeSig.getConventions())
+            ->create<CallOp>(loc, resultTypes, cast<SymbolConstantAttr>(target),
+                             valueArguments)
             .getResult(0);
   } else {
     // Otherwise emit calls to SSA values with call_indirect.

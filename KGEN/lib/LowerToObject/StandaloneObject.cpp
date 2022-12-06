@@ -79,7 +79,7 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
     // and recurse.
     llvm::TypeSwitch<Operation *>(op).Case<CallOp, AddressOfOp>([&](auto op) {
       Operation *symbol =
-          extractDependency(op.getCalleeAttr().getRootReference());
+          extractDependency(op.getCalleeSymbol().getRootReference());
       if (auto func = dyn_cast_if_present<FuncOp>(symbol))
         sliceDependencies(func, sliceSymtab, symtab);
     });

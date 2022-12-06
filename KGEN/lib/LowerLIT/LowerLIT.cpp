@@ -469,8 +469,12 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
     // Create the call.
     b.setLoc(gen.getLoc());
     auto callOp = b.create<CallOp>(
-        gen.getResultTypes(), FlatSymbolRefAttr::get(gen.getNameAttr()),
-        callInputParams, callResultParams, castedArgs, gen.getConventions());
+        gen.getResultTypes(),
+        SymbolConstantAttr::get(
+            FlatSymbolRefAttr::get(gen.getNameAttr()),
+            ParamBindArrayAttr::get(gen.getContext(), callInputParams),
+            gen.getSignature().dropParamValues()),
+        castedArgs, callResultParams);
 
     // Create any rebind's for the results.
     SmallVector<Value> results;

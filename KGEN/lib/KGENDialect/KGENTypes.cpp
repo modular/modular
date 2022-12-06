@@ -109,9 +109,23 @@ SignatureType SignatureType::get(ParamDeclArrayAttr inputParams,
   return get(context, inputParams, resultParamTypes, values, conventions);
 }
 
+SignatureType SignatureType::get(ParamBindArrayAttr inputParams,
+                                 ParamDeclArrayAttr resultParams,
+                                 FunctionType values,
+                                 DenseI8ArrayAttr conventions) {
+  SmallVector<ParamDeclAttr> inputParamDecls;
+  SmallVector<Type> resultParamTypes;
+  for (ParamBindAttr inputParam : inputParams)
+    inputParamDecls.push_back(inputParam.getDecl());
+  for (ParamDeclAttr resultParam : resultParams)
+    resultParamTypes.push_back(resultParam.getType());
+  return get(ParamDeclArrayAttr::get(values.getContext(), inputParamDecls),
+             TypeArrayAttr::get(values.getContext(), resultParamTypes), values,
+             conventions);
+}
+
 SignatureType SignatureType::get(FunctionType values) {
-  return get(ParamDeclArrayAttr::get(values.getContext(), {}),
-             TypeArrayAttr::get(values.getContext(), {}), values, {});
+  return get(ParamDeclArrayAttr(), {}, values, {});
 }
 
 SignatureType SignatureType::get(MLIRContext *ctx, TypeRange inputs,
@@ -172,7 +186,7 @@ SignatureType SignatureType::getSpecializedSignature(
     auto remappedDeclType = evaluator.getReboundType(decl.getType());
     if (bind.getType() != remappedDeclType) {
       emitErrorFn() << "caller input parameter #" << paramNo << " has type "
-                    << bind.getType() << " but callee expected name "
+                    << bind.getType() << " but callee expected type "
                     << decl.getType();
       return SignatureType();
     }
@@ -216,6 +230,11 @@ ArrayRef<Type> SignatureType::getValueResults() {
 SignatureType SignatureType::getWithValuesReplaced(FunctionType fnType) {
   return SignatureType::get(getInputParams(), getResultParamTypes(), fnType,
                             getConventions());
+}
+
+SignatureType SignatureType::dropParamValues() {
+  return get(ParamDeclArrayAttr::get(getContext(), {}), getResultParamTypes(),
+             getValues(), getConventions());
 }
 
 static ParseResult

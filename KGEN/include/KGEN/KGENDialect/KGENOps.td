@@ -162,27 +162,31 @@ def AddressOfOp : KGENOp<"addressof", [
     ```
   }];
 
-  let arguments = (ins FlatSymbolRefAttr:$callee,
-                       ParamBindArrayAttr:$paramValues,
-                       ParamDeclArrayAttr:$paramDecls,
-                       DenseI8ArrayAttr:$conventions);
+  let arguments = (ins SymbolConstantAttr:$callee,
+                       ParamDeclArrayAttr:$paramDecls);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
   let results = (outs FunctionType:$result);
   let assemblyFormat = [{
-    $callee `` custom<CallOpParams>($paramValues, $paramDecls) attr-dict `:`
-    type($result)
-    custom<AddressOfOptionalConventions>($conventions, ref(type($result)))
-    custom<CallRegions>($regions, ref($paramValues))
+    custom<AddressOfOp>($callee, $paramDecls, type($result))
+    attr-dict
+    custom<CallRegions>($regions, ref($callee))
+  }];
+
+  let builders = [
+    OpBuilder<(ins "Type":$type, "SymbolConstantAttr":$callee,
+                   CArg<"ArrayRef<ParamDeclAttr>", "{}">:$resultParams)>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Return the symbol reference to the callee.
+    SymbolRefAttr getCalleeSymbol() { return getCallee().getSymbol(); };
+    /// Return the bound input parameter values.
+    ArrayRef<ParamBindAttr> getParamValues() {
+      return getCallee().getParamValues().getValue();
+    }
   }];
 
   let hasRegionVerifier = 1;
-
-  let builders = [
-    OpBuilder<(ins "Type":$type, "StringAttr":$callee,
-                   "ArrayRef<ParamBindAttr>":$inputParams,
-                   "ArrayRef<ParamDeclAttr>":$resultParams,
-                   "DenseI8ArrayAttr":$conventions)>
-  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -240,32 +244,34 @@ def CallOp : KGENOp<"call", [KGENCallOpInterface,
     ```
   }];
 
-  let arguments =
-   (ins SymbolRefAttr:$callee, ParamBindArrayAttr:$paramValues,
-        ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands,
-        DenseI8ArrayAttr:$conventions);
-  let results = (outs Variadic<AnyType>);
+  let arguments = (ins
+    SymbolConstantAttr:$callee,
+    ParamDeclArrayAttr:$paramDecls,
+    Variadic<AnyType>:$operands
+  );
+  let results = (outs Variadic<AnyType>:$results);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
 
   let assemblyFormat = [{
-    $callee `` custom<CallOpParams>($paramValues, $paramDecls)
-    `` custom<OperandsAndOptionalConventions>($operands, $conventions)
-    attr-dict `:` functional-type($operands, results)
-    custom<CallRegions>($regions, ref($paramValues))
+    custom<CallOp>($callee, $paramDecls, $operands,
+                   type($operands), type($results)) attr-dict
+    custom<CallRegions>($regions, ref($callee))
   }];
 
   let builders = [
-    OpBuilder<(ins "TypeRange":$resultTypes, "StringAttr":$callee,
-                   "ArrayRef<ParamBindAttr>":$inputParams,
-                   "ArrayRef<ParamDeclAttr>":$resultParams,
+    OpBuilder<(ins "TypeRange":$resultTypes, "SymbolConstantAttr":$callee,
                    "ValueRange":$operands,
-                   "DenseI8ArrayAttr":$conventions)>,
-    OpBuilder<(ins "TypeRange":$resultTypes, "SymbolRefAttr":$callee,
-                   "ArrayRef<ParamBindAttr>":$inputParams,
-                   "ArrayRef<ParamDeclAttr>":$resultParams,
-                   "ValueRange":$operands,
-                   "DenseI8ArrayAttr":$conventions)>,
+                   CArg<"ArrayRef<ParamDeclAttr>", "{}">:$resultParams)>
   ];
+
+  let extraClassDeclaration = [{
+    /// Return the symbol reference to the callee.
+    SymbolRefAttr getCalleeSymbol() { return getCallee().getSymbol(); };
+    /// Return the bound input parameter values.
+    ArrayRef<ParamBindAttr> getParamValues() {
+      return getCallee().getParamValues().getValue();
+    }
+  }];
 
   let hasRegionVerifier = 1;
 }
@@ -308,18 +314,18 @@ def CallParamOp : KGENOp<"call_param", [KGENCallOpInterface]> {
     ```
   }];
 
-  let arguments =
-   (ins AttrOfType<SignatureType>:$callee,
-        ParamBindArrayAttr:$paramValues,
-        ParamDeclArrayAttr:$paramDecls, Variadic<AnyType>:$operands,
-        DenseI8ArrayAttr:$conventions);
+  let arguments = (ins
+    AttrOfType<SignatureType>:$callee,
+    ParamBindArrayAttr:$paramValues,
+    ParamDeclArrayAttr:$paramDecls,
+    Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
 
   let assemblyFormat = [{
     `` custom<CallParamCallee>($callee, $paramValues, $paramDecls,
                             type($operands), type($results))
-    `` custom<OperandsAndOptionalConventions>($operands, $conventions) attr-dict
+    `(` $operands `)` attr-dict
     custom<CallRegions>($regions, ref($paramValues))
   }];
 
@@ -327,8 +333,7 @@ def CallParamOp : KGENOp<"call_param", [KGENCallOpInterface]> {
     OpBuilder<(ins "TypeRange":$resultTypes, "TypedAttr":$callee,
                    "ArrayRef<ParamBindAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams,
-                   "ValueRange":$operands,
-                   "DenseI8ArrayAttr":$conventions)>,
+                   "ValueRange":$operands)>
   ];
 
   let hasCanonicalizeMethod = 1;
@@ -366,15 +371,14 @@ def InlinedCallOp : KGENOp<"inlined_call", [KGENCallOpInterface]> {
     AttrOfType<SignatureType>:$callee,
     ParamBindArrayAttr:$paramValues,
     ParamDeclArrayAttr:$paramDecls,
-    Variadic<AnyType>:$operands,
-    DenseI8ArrayAttr:$conventions
+    Variadic<AnyType>:$operands
   );
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
   let assemblyFormat = [{
     `` custom<CallParamCallee>($callee, $paramValues, $paramDecls,
                                type($operands), type($results))
-    `` custom<OperandsAndOptionalConventions>($operands, $conventions) attr-dict
+    `(` $operands `)` attr-dict
     custom<InPlaceCallRegions>($regions, ref($paramValues))
   }];
 

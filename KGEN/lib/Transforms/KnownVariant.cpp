@@ -192,7 +192,8 @@ void PruneImpossibleVariantsPass::runOnOperation() {
       if (auto symbol = dyn_cast<SymbolConstantAttr>(constant.getValue()))
         refd.insert(cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
     } else if (auto addressOf = dyn_cast<AddressOfOp>(op)) {
-      refd.insert(addressOf.getCalleeAttr().getAttr());
+      refd.insert(
+          cast<FlatSymbolRefAttr>(addressOf.getCalleeSymbol()).getAttr());
 
       // Replace `pop.variant.is` ops on variants with known types with
       // constants.
@@ -295,12 +296,15 @@ void PruneImpossibleVariantsPass::runOnOperation() {
   // Go rewrite all the callsites where variants results are known to be a
   // particular type.
   for (CallOp call : calls) {
+    SymbolConstantAttr callee = call.getCallee();
     auto it =
-        rewrites.find(cast<FlatSymbolRefAttr>(call.getCallee()).getAttr());
+        rewrites.find(cast<FlatSymbolRefAttr>(callee.getSymbol()).getAttr());
     if (it == rewrites.end())
       continue;
     OpBuilder b(&getContext());
     b.setInsertionPointAfter(call);
+    // Update the result types in the signature.
+    SmallVector<Type> types(call.getCallee().getType().getValueResults());
     // Wrap rewritten results and change their type.
     for (auto [idx, type] : it->second) {
       OpResult result = call->getOpResult(idx);
@@ -308,6 +312,11 @@ void PruneImpossibleVariantsPass::runOnOperation() {
           b.create<VariantCreateOp>(call.getLoc(), result.getType(), result);
       result.replaceAllUsesExcept(create.getResult(), create);
       result.setType(type);
+      types[idx] = type;
     }
+    call.setCalleeAttr(SymbolConstantAttr::get(
+        callee.getSymbol(),
+        SignatureType::get(call.getContext(), callee.getType().getValueInputs(),
+                           types)));
   }
 }
