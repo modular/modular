@@ -392,7 +392,7 @@ struct ConvertPOPVariantVisit
     SmallVector<Block *> successors;
     successors.reserve(op.getNumRegions());
     for (auto [caseType, region] : llvm::zip(op.getCases(), op.getRegions())) {
-      Block *block = &region->front();
+      Block *block = &region.front();
 
       // Load the content and replace the region argument with it.
       rewriter.setInsertionPointToStart(block);
@@ -401,14 +401,14 @@ struct ConvertPOPVariantVisit
           op.getLoc(), LLVM::LLVMPointerType::get(type), contentPtr);
       Value value = rewriter.create<LLVM::LoadOp>(op.getLoc(), valuePtr);
       rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), byteCount, contentPtr);
-      region->getArgument(0).replaceAllUsesWith(value);
-      region->eraseArgument(0);
+      region.getArgument(0).replaceAllUsesWith(value);
+      region.eraseArgument(0);
 
       // Inline the region.
       if (failed(rewriteYield(block)))
         return failure();
       successors.push_back(block);
-      rewriter.inlineRegionBefore(*region, continueBlock);
+      rewriter.inlineRegionBefore(region, continueBlock);
     }
 
     // Handle the trailing default region if present.
@@ -417,14 +417,14 @@ struct ConvertPOPVariantVisit
     for (Type caseType : op.getCases())
       caseValues.push_back(*op.getVariant().getType().getTypeIndex(caseType));
     if (op.getCases().size() != op.getNumRegions()) {
-      Block *block = &op.getRegions().back()->front();
+      Block *block = &op.getRegions().back().front();
       // Insert a lifetime end marker on this control path.
       rewriter.setInsertionPointToStart(block);
       rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), byteCount, contentPtr);
       if (failed(rewriteYield(block)))
         return failure();
       successors.push_back(block);
-      rewriter.inlineRegionBefore(*op.getRegions().back(), continueBlock);
+      rewriter.inlineRegionBefore(op.getRegions().back(), continueBlock);
     } else {
       caseValues.pop_back();
     }

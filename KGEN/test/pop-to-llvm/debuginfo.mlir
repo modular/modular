@@ -2,14 +2,10 @@
 
 // Test proper handling of debug types.
 
-// CHECK-DAG: ![[SCALAR:.*]] = !debuginfo.basic<bool {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_boolean}>
 !scalarTest = !pop.scalar<bool>
-
-// CHECK-DAG: ![[SIMD_ELT_TYPE:.*]] = !debuginfo.basic<ui32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_unsigned}>
-// CHECK-DAG: ![[SIMD:.*]] = !debuginfo.vector<8 x ![[SIMD_ELT_TYPE]]> 
 !simdTest = !pop.simd<8, ui32>
 
-// CHECK-DAG: !debuginfo.subroutine<(![[SCALAR]], ![[SIMD]])
+// CHECK-DAG: !debuginfo.subroutine<(!debuginfo.basic<bool {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_boolean}>, !debuginfo.vector<8 x !debuginfo.basic<ui32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_unsigned}>>)
 !test = !debuginfo.subroutine<(!debuginfo.unresolved<!scalarTest>, !debuginfo.unresolved<!simdTest>) -> (): DW_CC_normal>
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">

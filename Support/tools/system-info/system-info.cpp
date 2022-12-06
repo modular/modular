@@ -10,6 +10,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Host.h"
+#include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace M;
@@ -78,7 +79,7 @@ int main(int argc, char **argv) {
     break;
   }
   case QuerySystemProperty::CoreCount:
-    os << sys::getHostNumPhysicalCores();
+    os << get_physical_cores();
     break;
   case QuerySystemProperty::SIMDBitWidth:
     os << kPreferredSIMDBitWidth;

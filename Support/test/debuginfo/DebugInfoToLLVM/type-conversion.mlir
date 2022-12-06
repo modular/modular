@@ -3,16 +3,16 @@
 // CHECK-DAG: #[[BASIC:.*]] = #llvm.di_basic_type<tag = DW_TAG_base_type, name = "f32", sizeInBits = 32, encoding = DW_ATE_float>
 !f32Type = !debuginfo.basic<f32 { sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_float }>
 
-// CHECK-DAG: #[[ARRAY:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "", line = 0, baseType = #[[BASIC]], sizeInBits = 320, alignInBits = 0, elements = #llvm.di_subrange<count = 10 : i64>>
+// CHECK-DAG: #[[ARRAY:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "", baseType = #[[BASIC]], sizeInBits = 320, elements = #llvm.di_subrange<count = 10 : i64>>
 !arrayType = !debuginfo.array<10 x !f32Type>
 
-// CHECK-DAG: #[[MEMBER:.*]] = #llvm.di_derived_type<tag = DW_TAG_member, name = "x", baseType = #[[BASIC]], sizeInBits = 32, alignInBits = 32, offsetInBits = 0>
+// CHECK-DAG: #[[MEMBER:.*]] = #llvm.di_derived_type<tag = DW_TAG_member, name = "x", baseType = #[[BASIC]], sizeInBits = 32, alignInBits = 32>
 !memberType = !debuginfo.member<x: !f32Type>
 
-// CHECK-DAG: #[[PTR:.*]] = #llvm.di_derived_type<tag = DW_TAG_pointer_type, baseType = #[[BASIC]], sizeInBits = 64, alignInBits = 64, offsetInBits = 0>
+// CHECK-DAG: #[[PTR:.*]] = #llvm.di_derived_type<tag = DW_TAG_pointer_type, baseType = #[[BASIC]], sizeInBits = 64, alignInBits = 64>
 !pointerType = !debuginfo.ptr<!f32Type {sizeInBits = 64, alignInBits = 64}>
 
-// CHECK-DAG: #[[STRUCT:.*]] = #llvm.di_composite_type<tag = DW_TAG_structure_type, name = "Foo", line = 0, sizeInBits = 32, alignInBits = 32, elements = #[[MEMBER]]>
+// CHECK-DAG: #[[STRUCT:.*]] = #llvm.di_composite_type<tag = DW_TAG_structure_type, name = "Foo", sizeInBits = 32, alignInBits = 32, elements = #[[MEMBER]]>
 !structType = !debuginfo.struct<"Foo"(!memberType)>
 
 // CHECK-DAG: #[[UNRESOLVED:.*]] = #llvm.di_basic_type<tag = DW_TAG_base_type, name = "i64", sizeInBits = 64, encoding = DW_ATE_unsigned>
@@ -21,7 +21,7 @@
 // CHECK-DAG: #[[UNSPECIFIED:.*]] =  #llvm.di_basic_type<tag = DW_TAG_unspecified_type, name = "void">
 !unspecifiedType = !debuginfo.unspecified<"void">
 
-// CHECK-DAG: #[[VECTOR:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "", line = 0, baseType = #[[BASIC]], flags = Vector, sizeInBits = 320, alignInBits = 0, elements = #llvm.di_subrange<count = 10 : i64>>
+// CHECK-DAG: #[[VECTOR:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "", baseType = #[[BASIC]], flags = Vector, sizeInBits = 320, elements = #llvm.di_subrange<count = 10 : i64>>
 !vectorType = !debuginfo.vector<10 x !f32Type>
 
 // CHECK: #[[SUBROUTINE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, resultType = #[[BASIC]], argumentTypes = #[[ARRAY]], #[[PTR]], #[[STRUCT]], #[[UNRESOLVED]], #[[UNSPECIFIED]], #[[VECTOR]]>
