@@ -1578,38 +1578,30 @@ mlir::Attribute TargetInfoAttr::parse(mlir::AsmParser &parser,
   int64_t pointerSize;
   int64_t simdWidth;
 
-  if (succeeded(parser.parseOptionalKeyword("triple")))
-    parser.parseEqual();
+  auto parseOptionalKeywordEqual = [&](StringRef word) -> ParseResult {
+    if (succeeded(parser.parseOptionalKeyword(word)))
+      return parser.parseEqual();
+    return success();
+  };
 
-  if (parser.parseString(&tripleStr) || parser.parseComma())
-    return {};
-
-  if (succeeded(parser.parseOptionalKeyword("cpu")))
-    parser.parseEqual();
-
-  if (parser.parseString(&cpuStr) || parser.parseComma())
-    return {};
-
-  if (succeeded(parser.parseOptionalKeyword("features")))
-    parser.parseEqual();
-
-  if (parser.parseString(&featuresStr) || parser.parseComma())
-    return {};
-
-  if (succeeded(parser.parseOptionalKeyword("pointer_size")))
-    parser.parseEqual();
-
-  if (parser.parseInteger(pointerSize) || parser.parseComma())
-    return {};
-
-  if (succeeded(parser.parseOptionalKeyword("simd_bit_width")))
-    parser.parseEqual();
-
-  if (parser.parseInteger(simdWidth) || parser.parseGreater())
+  // Parse target triple.
+  if (parseOptionalKeywordEqual("triple") || parser.parseString(&tripleStr) ||
+      parser.parseComma() ||
+      // CPU
+      parseOptionalKeywordEqual("cpu") || parser.parseString(&cpuStr) ||
+      parser.parseComma() ||
+      // Features
+      parseOptionalKeywordEqual("features") ||
+      parser.parseString(&featuresStr) || parser.parseComma() ||
+      // Pointer Size
+      parseOptionalKeywordEqual("pointer_size") ||
+      parser.parseInteger(pointerSize) || parser.parseComma() ||
+      // SIMD Width
+      parseOptionalKeywordEqual("simd_bit_width") ||
+      parser.parseInteger(simdWidth) || parser.parseGreater())
     return {};
 
   llvm::Triple triple(tripleStr);
-
   mlir::MLIRContext *ctx = parser.getContext();
   return TargetInfoAttr::get(ctx, triple, cpuStr, featuresStr, pointerSize,
                              simdWidth, TargetType::get(ctx));
