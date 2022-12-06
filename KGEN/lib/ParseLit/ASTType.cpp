@@ -63,7 +63,7 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
       });
       os << ']';
     }
-  } else if (isa<KGEN::LIT::NoneType>(type)) {
+  } else if (isa<LIT::NoneType>(type)) {
     os << "None";
   } else {
     os << "__mlir_type." << type;
