@@ -64,9 +64,9 @@ struct StructExample:
   # CHECK: lit.func @static(%x: !kgen.declref<@Int>) -> !lit.none attributes {isStatic} {
   @staticmethod
   fn static(x: Int):
-    # CHECK: %0 = index.constant 4
-    # CHECK: %1 = kgen.call @Int::@__new__(%0) : (index) -> !kgen.declref<@Int>
-    # CHECK: %2 = kgen.call @StructExample::@static(%1) : (!kgen.declref<@Int>) -> !lit.none
+    # CHECK: %idx4 = index.constant 4
+    # CHECK: %0 = kgen.call @Int::@__new__(%idx4) : (index) -> !kgen.declref<@Int>
+    # CHECK: %1 = kgen.call @StructExample::@static(%0) : (!kgen.declref<@Int>) -> !lit.none
     StructExample.static(Int(4))
     pass
 
@@ -141,8 +141,8 @@ fn generic_fn[a: DType, b: __mlir_type.index, c: __mlir_type.`!kgen.mlirtype`](d
 
 # CHECK: @call_generic<dt: !kgen.declref<@DType>>()
 fn call_generic[dt: DType]():
-  # CHECK: %0 = index.constant 57
-  # CHECK: kgen.call @generic_fn<a: !kgen.declref<@DType> = dt, b = 42, c: type = !kgen.declref<@DType>>(%0)
+  # CHECK: %idx57 = index.constant 57
+  # CHECK: kgen.call @generic_fn<a: !kgen.declref<@DType> = dt, b = 42, c: type = !kgen.declref<@DType>>(%idx57)
   generic_fn[dt, 42, DType](57)
 
   # CHECK: [[TMP:%.*]] = index.constant 57

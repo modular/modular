@@ -163,7 +163,7 @@ AsyncValueRef<Chain> Cache::inflateConstant(Operation *constant,
       // resource to keep a reference to the data alive as long as the dialect
       // is alive - that would avoid this copy.
       BufferRef buf = found->takeValue();
-      auto blob = mlir::HeapAsmResourceBlob::allocateAndCopy(
+      auto blob = mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
           ArrayRef<char>(buf->getBufferStart(), buf->getBufferSize()),
           alignAttr.getUInt());
 

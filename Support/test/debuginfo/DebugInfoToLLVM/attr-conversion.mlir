@@ -62,7 +62,6 @@
 // CHECK-SAME:   name = "foo",
 // CHECK-SAME:   file = #[[FILE]],
 // CHECK-SAME:   line = 10,
-// CHECK-SAME:   arg = 0,
 // CHECK-SAME:   alignInBits = 32,
 // CHECK-SAME:   type = #[[VAR_TYPE]]
 // CHECK-SAME: >
@@ -79,4 +78,3 @@ func.func @foo(%arg: i32) {
   debuginfo.value #local_variable = %arg : i32
   return
 }
-

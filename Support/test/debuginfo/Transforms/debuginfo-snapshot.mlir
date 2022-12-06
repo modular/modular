@@ -3,22 +3,18 @@
 // CHECK-DAG: #[[FILE:.*]] = #debuginfo.file<"{{.*}}" in "{{.*}}">
 // CHECK-DAG: #[[CU:.*]] = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #[[FILE]], producer = "MLIR", isOptimized = true, emissionKind = Full>
 
-// CHECK-DAG: ![[I1:.*]] = !debuginfo.basic<i1 {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_unsigned}>
-// CHECK-DAG: ![[I32:.*]] = !debuginfo.basic<i32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_unsigned}>
+// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #[[CU]], scope = #[[FILE]], name = "foo", linkageName = "foo", file = #[[FILE]], line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : !debuginfo.subroutine<(!debuginfo.basic<i32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_unsigned}>, !debuginfo.basic<i1 {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_unsigned}>) -> (!debuginfo.basic<i32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_unsigned}>): DW_CC_normal>
 
-// CHECK-DAG: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(![[I32]], ![[I1]]) -> (![[I32]]): DW_CC_normal>
-// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #[[CU]], scope = #[[FILE]], name = "foo", linkageName = "foo", file = #[[FILE]], line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
+// CHECK-DAG: #[[ARG1_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "arg0", file = #[[FILE]], line = {{.*}}, arg = 1> : !debuginfo.basic<i32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_unsigned}>
+// CHECK-DAG: #[[ARG2_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "arg1", file = #[[FILE]], line = {{.*}}, arg = 2> : !debuginfo.basic<i1 {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_unsigned}>
 
-// CHECK-DAG: #[[ARG1_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "arg0", file = #[[FILE]], line = {{.*}}, arg = 1> : ![[I32]]
-// CHECK-DAG: #[[ARG2_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "arg1", file = #[[FILE]], line = {{.*}}, arg = 2> : ![[I1]]
+// CHECK-DAG: #[[BB_ARG_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "0", file = #[[FILE]], line = {{.*}}, arg = 0> : !debuginfo.basic<i32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_unsigned}>
 
-// CHECK-DAG: #[[BB_ARG_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "0", file = #[[FILE]], line = {{.*}}, arg = 0> : ![[I32]]
+// CHECK-DAG: #[[OP_VALUES_VAR_0:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "1#0", file = #[[FILE]], line = {{.*}}, arg = 0> : !debuginfo.basic<i32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_unsigned}>
+// CHECK-DAG: #[[OP_VALUES_VAR_1:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "1#1", file = #[[FILE]], line = {{.*}}, arg = 0> : !debuginfo.basic<i32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_unsigned}>
+// CHECK-DAG: #[[OP_VALUES_VAR_2:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "1#2", file = #[[FILE]], line = {{.*}}, arg = 0> : !debuginfo.basic<i32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_unsigned}>
 
-// CHECK-DAG: #[[OP_VALUES_VAR_0:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "1#0", file = #[[FILE]], line = {{.*}}, arg = 0> : ![[I32]]
-// CHECK-DAG: #[[OP_VALUES_VAR_1:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "1#1", file = #[[FILE]], line = {{.*}}, arg = 0> : ![[I32]]
-// CHECK-DAG: #[[OP_VALUES_VAR_2:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "1#2", file = #[[FILE]], line = {{.*}}, arg = 0> : ![[I32]]
-
-// CHECK-DAG: #[[BB_ARG2_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "2", file = #[[FILE]], line = {{.*}}, arg = 0> : ![[I32]]
+// CHECK-DAG: #[[BB_ARG2_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "2", file = #[[FILE]], line = {{.*}}, arg = 0> : !debuginfo.basic<i32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_unsigned}>
 
 // CHECK-LABEL: func.func @foo(
 // CHECK-SAME:   %[[ARG1:.*]]: i32

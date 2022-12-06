@@ -901,33 +901,32 @@ LogicalResult VariantVisitOp::verify() {
                                       << " regions plus a default region when "
                                          "not all case types are present";
     }
-    if (getRegions().back()->getNumArguments())
+    if (getRegions().back().getNumArguments())
       return emitOpError("expected default region to have zero arguments");
   }
-  for (Region *region : getRegions()) {
-    Operation *terminator = region->front().getTerminator();
+  for (Region &region : getRegions()) {
+    Operation *terminator = region.front().getTerminator();
     auto yield = dyn_cast<YieldOp>(terminator);
     if (!yield) {
-      return (emitOpError("region #") << region->getRegionNumber()
-                                      << " expected `pop.yield` terminator")
+      return (emitOpError("region #")
+              << region.getRegionNumber() << " expected `pop.yield` terminator")
                  .attachNote(terminator->getLoc())
              << "see invalid terminator here";
     }
     if (yield.getOperandTypes() != getResultTypes()) {
       return (emitOpError("operand types of region #")
-              << region->getRegionNumber()
-              << " yield do not match result types")
+              << region.getRegionNumber() << " yield do not match result types")
                  .attachNote(yield.getLoc())
              << "see terminator here";
     }
   }
   for (auto [type, region] : llvm::zip(getCases(), getRegions())) {
-    if (region->getNumArguments() != 1)
+    if (region.getNumArguments() != 1)
       return emitOpError("expected region #")
-             << region->getRegionNumber() << " to have one argument";
-    if (region->getArgumentTypes().front() != type)
+             << region.getRegionNumber() << " to have one argument";
+    if (region.getArgumentTypes().front() != type)
       return emitOpError("expected region #")
-             << region->getRegionNumber() << " argument type to be " << type;
+             << region.getRegionNumber() << " argument type to be " << type;
   }
   return success();
 }
@@ -938,7 +937,7 @@ bool VariantVisitOp::hasDefaultRegion() {
 
 Region *VariantVisitOp::getDefaultRegion() {
   assert(hasDefaultRegion());
-  return getRegions().back();
+  return &getRegions().back();
 }
 
 //===----------------------------------------------------------------------===//
@@ -966,8 +965,8 @@ void VariantVisitOp::getSuccessorRegions(
 
   // The known variant type of the operand can be used to narrow the successor
   // regions of the parent op to just one, but we can't do that here.
-  for (Region *region : getRegions())
-    successors.emplace_back(region, region->getArguments());
+  for (Region &region : getRegions())
+    successors.emplace_back(&region, region.getArguments());
 }
 
 OperandRange
