@@ -30,7 +30,7 @@ def KGENCallOpInterface : OpInterface<"KGENCallOpInterface"> {
 
     InterfaceMethod<[{
       Get the FnEffects and parameters conventions of the callee.
-    }], "mlir::DenseI8ArrayAttr", "getConventionsAttr", (ins), [{}]>,
+    }], "DenseI8ArrayAttr", "getConventionsAttr", (ins), [{}]>,
 
     InterfaceMethod<[{
       Get the FnEffects and parameters conventions of the callee.

@@ -104,9 +104,6 @@ SignatureType SignatureType::get(ParamDeclArrayAttr inputParams,
     // Default valueConventions to zero.
     SmallVector<int8_t> elements(values.getInputs().size() + 1, 0);
     conventions = DenseI8ArrayAttr::get(context, elements);
-  } else {
-    assert(conventions.asArrayRef().size() == values.getInputs().size() + 1 &&
-           "incorrect number of conventions specified in SignatureType::get");
   }
 
   return get(context, inputParams, resultParamTypes, values, conventions);
