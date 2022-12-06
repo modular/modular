@@ -495,7 +495,7 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
 
   // We will be moving the builder into sub-regions that are created, make sure
   // we end up after it when this is done.
-  llvm::SaveAndRestore<OpBuilder> builderSaver(builder);
+  llvm::SaveAndRestore builderSaver(builder);
 
   auto loopOp = builder.create<HLCF::LoopOp>(whileLoc);
   Block *body = builder.createBlock(&loopOp.getBody());
@@ -537,7 +537,7 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
   Location tryLoc = translateLocation(consumeToken(LitToken::kw_try).getLoc());
 
   // Restore the builder to its current insertion point after parsing.
-  llvm::SaveAndRestore<OpBuilder> builderSaver(builder);
+  llvm::SaveAndRestore builderSaver(builder);
   auto tryOp = builder.create<TryOp>(tryLoc);
   if (parseToken(LitToken::colon, "expected ':' after 'try'"))
     return failure();
@@ -611,7 +611,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
 
   // We will be moving the builder into sub-regions that are created, make sure
   // we end up after it when this is done.
-  llvm::SaveAndRestore<OpBuilder> builderSaver(builder);
+  llvm::SaveAndRestore builderSaver(builder);
 
   ExprNode *condExp = nullptr;
   Value cond;
