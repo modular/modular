@@ -171,45 +171,32 @@ void PruneImpossibleVariantsPass::runOnOperation() {
     for (auto sym : e.getExports().getAsRange<FlatSymbolRefAttr>())
       exportedSymbols.insert(sym.getAttr());
 
-  std::vector<std::pair<SymbolRefAttr, mlir::SymbolOpInterface>> funcs;
-  getOperation().walk([&](mlir::FunctionOpInterface func) {
-    auto symbol = cast<mlir::SymbolOpInterface>(*func);
-
-    // Build the full symbol reference.
-    Operation *op = symbol;
-    SmallVector<FlatSymbolRefAttr, 2> refs;
-    while (!isa<ModuleOp>(op)) {
-      refs.push_back(FlatSymbolRefAttr::get(
-          cast<mlir::SymbolOpInterface>(op).getNameAttr()));
-      op = op->getParentOp();
-    }
-
+  std::vector<FuncOp> funcs;
+  for (auto func : getOperation().getOps<FuncOp>()) {
     // Set the visibility appropriately.
-    symbol.setVisibility(exportedSymbols.contains(refs.front().getAttr())
-                             ? SymbolTable::Visibility::Public
-                             : SymbolTable::Visibility::Private);
-    funcs.emplace_back(
-        SymbolRefAttr::get(
-            refs.back().getAttr(),
-            llvm::makeArrayRef(llvm::to_vector<2>(llvm::reverse(refs)))
-                .drop_front()),
-        func);
-  });
+    func.setVisibility(exportedSymbols.contains(func.getSymNameAttr())
+                           ? SymbolTable::Visibility::Public
+                           : SymbolTable::Visibility::Private);
+    funcs.push_back(func);
+  }
 
   if (failed(solver.initializeAndRun(getOperation())))
     return signalPassFailure();
 
-  // Functions referred by symbol parameters cannot be rewritten.
-  DenseSet<SymbolRefAttr> refd;
+  DenseSet<StringAttr> refd;
   std::vector<CallOp> calls;
   getOperation()->walk([&](Operation *op) {
-    op->getAttrDictionary().walkSubAttrs([&](Attribute attr) {
-      if (auto symbol = dyn_cast<SymbolConstantAttr>(attr))
-        refd.insert(symbol.getSymbol());
-    });
+    // Functions indirectly referenced as either a parameter constant or address
+    // of callee cannot be rewritten.
+    if (auto constant = dyn_cast<ParamConstantOp>(op)) {
+      if (auto symbol = dyn_cast<SymbolConstantAttr>(constant.getValue()))
+        refd.insert(cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
+    } else if (auto addressOf = dyn_cast<AddressOfOp>(op)) {
+      refd.insert(addressOf.getCalleeAttr().getAttr());
 
-    // Replace `pop.variant.is` ops on variants with known types with constants.
-    if (auto is = dyn_cast<VariantIsOp>(op)) {
+      // Replace `pop.variant.is` ops on variants with known types with
+      // constants.
+    } else if (auto is = dyn_cast<VariantIsOp>(op)) {
       auto *cv = solver.lookupState<Lattice<ConstantValue>>(is.getResult());
       if (!cv || cv->getValue().isUninitialized() ||
           !cv->getValue().getConstantValue())
@@ -219,30 +206,26 @@ void PruneImpossibleVariantsPass::runOnOperation() {
           is.getLoc(), cv->getValue().getConstantValue());
       is.replaceAllUsesWith(value);
       is->erase();
+
+      // Otherwise, if it is a call, save the call op for rewrites later.
     } else if (auto call = dyn_cast<CallOp>(op)) {
-      // Save the call op for rewrites later.
       calls.push_back(call);
     }
   });
 
   // Rewrite the signatures of operations that return variants that are known to
   // be a particular type.
-  DenseMap<SymbolRefAttr, SmallVector<std::pair<unsigned, Type>>> rewrites;
-  auto implementsAttrName = StringAttr::get(&getContext(), "implements");
-  for (auto [name, symbol] : funcs) {
+  DenseMap<StringAttr, SmallVector<std::pair<unsigned, Type>>> rewrites;
+  for (FuncOp func : funcs) {
     // Clear the visibility attribute by setting the visibility to public, which
     // is the default error.
-    symbol.setVisibility(SymbolTable::Visibility::Public);
-    Operation *op = symbol;
+    func.setVisibility(SymbolTable::Visibility::Public);
 
-    // Don't rewrite generators implementing interfaces.
-    if (op->hasAttr(implementsAttrName))
+    // Don't rewrite functions indirectly referenced or which are exported,
+    // since this changes the signature of the function.
+    if (refd.contains(func.getSymNameAttr()) ||
+        exportedSymbols.contains(func.getSymNameAttr()))
       continue;
-
-    if (refd.contains(name))
-      continue;
-
-    auto func = cast<mlir::FunctionOpInterface>(op);
 
     // Reduce the known variant types across all returns.
     SmallVector<Operation *> returns;
@@ -300,20 +283,20 @@ void PruneImpossibleVariantsPass::runOnOperation() {
     }
 
     if (!resultRewrites.empty()) {
-      auto itf = cast<KGENDeclInterface>(op);
-      auto sig = itf.getSignature();
+      SignatureType sig = func.getSignature();
       // Rewrite the function type.
       auto fnType = FunctionType::get(&getContext(), sig.getValueInputs(),
                                       returns.front()->getOperandTypes());
-      itf.setSignature(sig.getWithValuesReplaced(fnType));
-      rewrites.try_emplace(name, std::move(resultRewrites));
+      func.setSignature(sig.getWithValuesReplaced(fnType));
+      rewrites.try_emplace(func.getSymNameAttr(), std::move(resultRewrites));
     }
   }
 
   // Go rewrite all the callsites where variants results are known to be a
   // particular type.
   for (CallOp call : calls) {
-    auto it = rewrites.find(call.getCalleeAttr());
+    auto it =
+        rewrites.find(cast<FlatSymbolRefAttr>(call.getCallee()).getAttr());
     if (it == rewrites.end())
       continue;
     OpBuilder b(&getContext());
