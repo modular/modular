@@ -720,7 +720,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 static bool isNoneResultType(Type type) {
   if (auto raises = dyn_cast<RaisesOrType>(type))
     type = raises.getType();
-  return isa<KGEN::LIT::NoneType>(type);
+  return isa<LIT::NoneType>(type);
 }
 
 ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,

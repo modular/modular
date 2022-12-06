@@ -139,7 +139,7 @@ ASTType ExprEmitter::emitType(const ExprNode *node) {
   // If we emitted a NoneAttr then convert it to a NoneType.  This is a
   // special case because "None" is both a value and a type, and defaults to a
   // value.
-  if (isa<KGEN::LIT::NoneAttr>(value.get()))
+  if (isa<NoneAttr>(value.get()))
     return shared.getNoneType();
 
   emitError(node->getLoc(), "expected a type, not a value");
@@ -1033,7 +1033,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
   // If we succeeded and have no types, then install a None type.
   if (resultOp->getNumResults() == 0) {
-    auto noneMLIRType = KGEN::LIT::NoneType::get(emitter.getContext());
+    auto noneMLIRType = LIT::NoneType::get(emitter.getContext());
     return MValue(NoneAttr::get(emitter.getContext(), noneMLIRType));
   }
 
