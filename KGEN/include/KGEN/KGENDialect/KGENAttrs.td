@@ -183,7 +183,8 @@ def ListAttr : ExprAttr<"List", "list", [SubElementAttrInterface]> {
 //===----------------------------------------------------------------------===//
 
 def ParamCallRegionRefAttr
-   : ExprAttr<"ParamCallRegionRef", "param.call.region.ref"> {
+   : ExprAttr<"ParamCallRegionRef", "param.call.region.ref",
+              [SubElementAttrInterface]> {
   let summary =
     "A marker indicating a signature value is specified by a call region";
   let parameters = (ins AttributeSelfTypeParameter<"", "SignatureType">:$type);
@@ -204,7 +205,8 @@ def ParamCallRegionRefAttr
 /// This attribute models a reference to a named parameter.  The type of the
 /// ParamDeclRefAttr must always be the same as the type of the parameter being
 /// referenced.
-def ParamDeclRefAttr : ExprAttr<"ParamDeclRef", "param.decl.ref"> {
+def ParamDeclRefAttr
+   : ExprAttr<"ParamDeclRef", "param.decl.ref", [SubElementAttrInterface]> {
   let summary = "A reference to a parameter value.";
   let parameters = (ins "::mlir::StringAttr":$name,
                         AttributeSelfTypeParameter<"">:$type);
