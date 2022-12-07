@@ -32,17 +32,16 @@ AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::insert(BufferRef keyHash,
     if (auto err = thisRef->insertImpl(keyHash->getBuffer(), obj.copy()))
       return result.emplace(err.takeError());
 
-    if (thisRef->delegate) {
-      auto insert = thisRef->delegate->insert(keyHash.copy(), obj.copy());
-      insert.andThen([thisRef = thisRef.copy(), result = result.copy(),
-                      insert = insert.copy()] {
-        if (failed(*insert))
-          return result.emplace(insert->takeError());
-        result.emplace(success());
-      });
-    } else {
+    if (!thisRef->delegate)
       return result.emplace(success());
-    }
+
+    auto insert = thisRef->delegate->insert(keyHash.copy(), obj.copy());
+    insert.andThen([thisRef = thisRef.copy(), result = result.copy(),
+                    insert = insert.copy()] {
+      if (failed(*insert))
+        return result.emplace(insert->takeError());
+      result.emplace(success());
+    });
   });
   return result;
 }
@@ -54,14 +53,13 @@ AsyncValueRef<bool> BlobCacheBackend::contains(BufferRef keyHash) {
     if (thisRef->containsImpl(keyHash->getBuffer()))
       return result.emplace(true);
 
-    if (thisRef->delegate) {
-      auto contains = thisRef->delegate->contains(keyHash.copy());
-      contains.andThen(
-          [thisRef = thisRef.copy(), result = result.copy(),
-           contains = contains.copy()] { return result.emplace(*contains); });
-    } else {
+    if (!thisRef->delegate)
       return result.emplace(false);
-    }
+
+    auto contains = thisRef->delegate->contains(keyHash.copy());
+    contains.andThen(
+        [thisRef = thisRef.copy(), result = result.copy(),
+         contains = contains.copy()] { return result.emplace(*contains); });
   });
   return result;
 }
@@ -109,17 +107,16 @@ AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::clear() {
     if (auto err = thisRef->clearImpl())
       return result.emplace(err.takeError());
 
-    if (thisRef->delegate) {
-      auto clear = thisRef->delegate->clear();
-      clear.andThen([thisRef = thisRef.copy(), result = result.copy(),
-                     clear = clear.copy()] {
-        if (failed(*clear))
-          return result.emplace(clear->takeError());
-        result.emplace(success());
-      });
-    } else {
+    if (!thisRef->delegate)
       return result.emplace(success());
-    }
+
+    auto clear = thisRef->delegate->clear();
+    clear.andThen([thisRef = thisRef.copy(), result = result.copy(),
+                   clear = clear.copy()] {
+      if (failed(*clear))
+        return result.emplace(clear->takeError());
+      result.emplace(success());
+    });
   });
   return result;
 }
