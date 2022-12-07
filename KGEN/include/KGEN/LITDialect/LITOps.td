@@ -35,7 +35,7 @@ def LIT_FuncOp
                    NoTerminator,
                    DeclareOpInterfaceMethods<CallableOpInterface>,
                    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                   DeclareOpInterfaceMethods<KGENDeclInterface>,
+                   DeclareOpInterfaceMethods<KGEN_DeclInterface>,
                    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>]> {
   let summary = "High level generator definition";
 
@@ -52,8 +52,8 @@ let description = [{
   /// If the `implements` attribute is present then this generator is an
   /// implementation of the specified generator.interface.
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       KStringArrayAttr:$valueParamNames,
-                       TypeAttrOf<SignatureType>:$signature,
+                       KGEN_StringArrayAtrr:$valueParamNames,
+                       TypeAttrOf<KGEN_SignatureType>:$signature,
                        ConstraintArrayAttr:$constraints,
                        UnitAttr:$isStatic,
                        UnitAttr:$isInterface,
@@ -99,7 +99,7 @@ def LIT_RaiseErrorOp : LITOp<"raise_error", [Pure]> {
     ```
   }];
 
-  let arguments = (ins DeclRefType:$error);
+  let arguments = (ins KGEN_DeclRefType:$error);
   let results = (outs LIT_RaisesOrType:$result);
 
   let assemblyFormat = "$error attr-dict `:` type($error) `->` type($result)";
@@ -221,7 +221,7 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
     propagate an error to the except region.
   }];
 
-  let arguments = (ins AnyTypeOf<[DeclRefType, POP_StructType]>:$error);
+  let arguments = (ins AnyTypeOf<[KGEN_DeclRefType, POP_StructType]>:$error);
   let assemblyFormat = "$error attr-dict `:` type($error)";
 }
 

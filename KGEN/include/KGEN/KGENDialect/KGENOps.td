@@ -32,17 +32,17 @@ class KGENOp<string mnemonic, list<Trait> traits = []> :
 // FuncOp
 //===----------------------------------------------------------------------===//
 
-def FuncOp
+def KGEN_FuncOp
   : KGENOp<"func", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
                     Symbol, IsolatedFromAbove,
                     SingleBlockImplicitTerminator<"ReturnOp">,
                     DeclareOpInterfaceMethods<CallableOpInterface>,
                     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                    DeclareOpInterfaceMethods<KGENDeclInterface>]> {
+                    DeclareOpInterfaceMethods<KGEN_DeclInterface>]> {
   let summary = "concrete function definition";
 
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<SignatureType>:$signature);
+                       TypeAttrOf<KGEN_SignatureType>:$signature);
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
@@ -61,19 +61,19 @@ def FuncOp
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 
-def GeneratorOp
+def KGEN_GeneratorOp
   : KGENOp<"generator", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
                          Symbol, IsolatedFromAbove,
                          SingleBlockImplicitTerminator<"ReturnOp">,
                          DeclareOpInterfaceMethods<CallableOpInterface>,
                          DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                         DeclareOpInterfaceMethods<KGENDeclInterface>]> {
+                         DeclareOpInterfaceMethods<KGEN_DeclInterface>]> {
   let summary = "Function generator definition";
 
   /// If the `implements` attribute is present then this generator is an
   /// implementation of the specified generator.interface.
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<SignatureType>:$signature,
+                       TypeAttrOf<KGEN_SignatureType>:$signature,
                        ConstraintArrayAttr:$constraints,
                        OptionalAttr<FlatSymbolRefAttr>:$implements);
   let regions = (region AnyRegion:$bodyRegion);
@@ -94,13 +94,13 @@ def GeneratorOp
 // GeneratorInterfaceOp
 //===----------------------------------------------------------------------===//
 
-def GeneratorInterfaceOp : KGENOp<"generator.interface", [
+def KGEN_GeneratorInterfaceOp : KGENOp<"generator.interface", [
     HasParent<"mlir::ModuleOp">,
     FunctionOpInterface,
     Symbol,
     IsolatedFromAbove,
     DeclareOpInterfaceMethods<CallableOpInterface>,
-    DeclareOpInterfaceMethods<KGENDeclInterface>,
+    DeclareOpInterfaceMethods<KGEN_DeclInterface>,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Generator interface definition";
 
@@ -108,10 +108,10 @@ def GeneratorInterfaceOp : KGENOp<"generator.interface", [
   /// `paramDecls` and the `numInputParameters` field indicates which are input
   /// and which are result parameters.
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<SignatureType>:$signature,
+                       TypeAttrOf<KGEN_SignatureType>:$signature,
                        ConstraintArrayAttr:$constraints,
-                       OptionalAttr<SymbolConstantAttr>:$evaluator,
-                       OptionalAttr<SymbolConstantAttr>:$defaultImpl);
+                       OptionalAttr<KGEN_SymbolConstantAttr>:$evaluator,
+                       OptionalAttr<KGEN_SymbolConstantAttr>:$defaultImpl);
 
   // We want to work with the FunctionOpInterface, which always requires a body
   // region.  We are "declaration like" though, so ours never has a block.
@@ -130,9 +130,9 @@ def GeneratorInterfaceOp : KGENOp<"generator.interface", [
 // AddressOf
 //===----------------------------------------------------------------------===//
 
-def AddressOfOp : KGENOp<"addressof", [
+def KGEN_AddressOfOp : KGENOp<"addressof", [
     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-    DeclareOpInterfaceMethods<KGENCallOpInterface, ["getFunctionType"]>]> {
+    DeclareOpInterfaceMethods<KGEN_CallOpInterface, ["getFunctionType"]>]> {
   let summary = "Get the address of a function.";
   let description = [{
     The `kgen.addressof` operation references a parametric function and returns
@@ -162,8 +162,8 @@ def AddressOfOp : KGENOp<"addressof", [
     ```
   }];
 
-  let arguments = (ins SymbolConstantAttr:$callee,
-                       ParamDeclArrayAttr:$paramDecls);
+  let arguments = (ins KGEN_SymbolConstantAttr:$callee,
+                       KGEN_ParamDeclArrayAttr:$paramDecls);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
   let results = (outs FunctionType:$result);
   let assemblyFormat = [{
@@ -193,7 +193,7 @@ def AddressOfOp : KGENOp<"addressof", [
 // CallOp
 //===----------------------------------------------------------------------===//
 
-def CallOp : KGENOp<"call", [KGENCallOpInterface,
+def KGEN_CallOp : KGENOp<"call", [KGEN_CallOpInterface,
     DeclareOpInterfaceMethods<CallOpInterface>,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Call a func, generator, or generator interface";
@@ -245,8 +245,8 @@ def CallOp : KGENOp<"call", [KGENCallOpInterface,
   }];
 
   let arguments = (ins
-    SymbolConstantAttr:$callee,
-    ParamDeclArrayAttr:$paramDecls,
+    KGEN_SymbolConstantAttr:$callee,
+    KGEN_ParamDeclArrayAttr:$paramDecls,
     Variadic<AnyType>:$operands
   );
   let results = (outs Variadic<AnyType>:$results);
@@ -282,7 +282,7 @@ def CallOp : KGENOp<"call", [KGENCallOpInterface,
 
 // NOTE: This cannot be a CallOpInterface, because the callee is not a
 // SymbolRefAttr, it is a different kind of attribute.
-def CallParamOp : KGENOp<"call_param", [KGENCallOpInterface]> {
+def KGEN_CallParamOp : KGENOp<"call_param", [KGEN_CallOpInterface]> {
   let summary = "Call declaration specified by a parameter expression";
   let description = [{
     The `kgen.call_param` operation invokes a parametric callee. The callee is
@@ -315,9 +315,9 @@ def CallParamOp : KGENOp<"call_param", [KGENCallOpInterface]> {
   }];
 
   let arguments = (ins
-    AttrOfType<SignatureType>:$callee,
+    AttrOfType<KGEN_SignatureType>:$callee,
     ParamBindArrayAttr:$paramValues,
-    ParamDeclArrayAttr:$paramDecls,
+    KGEN_ParamDeclArrayAttr:$paramDecls,
     Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
@@ -344,7 +344,7 @@ def CallParamOp : KGENOp<"call_param", [KGENCallOpInterface]> {
 // InlinedCallOp
 //===----------------------------------------------------------------------===//
 
-def InlinedCallOp : KGENOp<"inlined_call", [KGENCallOpInterface]> {
+def KGEN_InlinedCallOp : KGENOp<"inlined_call", [KGEN_CallOpInterface]> {
   let summary = "Parametric call that allows implicit capture.";
   let description = [{
     The `kgen.inlined_call` operation is a parametric call similar to
@@ -368,9 +368,9 @@ def InlinedCallOp : KGENOp<"inlined_call", [KGENCallOpInterface]> {
   }];
 
   let arguments = (ins
-    AttrOfType<SignatureType>:$callee,
+    AttrOfType<KGEN_SignatureType>:$callee,
     ParamBindArrayAttr:$paramValues,
-    ParamDeclArrayAttr:$paramDecls,
+    KGEN_ParamDeclArrayAttr:$paramDecls,
     Variadic<AnyType>:$operands
   );
   let results = (outs Variadic<AnyType>:$results);
@@ -392,9 +392,9 @@ def InlinedCallOp : KGENOp<"inlined_call", [KGENCallOpInterface]> {
 class RegionBodyBaseOp<string mnemonic, list<Trait> traits = []>
   : KGENOp<mnemonic, [Terminator,
     SingleBlockImplicitTerminator<"ReturnOp">,
-    DeclareOpInterfaceMethods<KGENDeclInterface, [
+    DeclareOpInterfaceMethods<KGEN_DeclInterface, [
       "isIsolatedFromAbove", "notifyKnownIsolatedFromAbove"]>] # traits> {
-  let arguments = (ins TypeAttrOf<SignatureType>:$signature,
+  let arguments = (ins TypeAttrOf<KGEN_SignatureType>:$signature,
                        ConstraintArrayAttr:$constraints,
                        UnitAttr:$isolated);
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -419,7 +419,7 @@ class RegionBodyBaseOp<string mnemonic, list<Trait> traits = []>
 // RegionBodyOp
 //===----------------------------------------------------------------------===//
 
-def RegionBodyOp : RegionBodyBaseOp<"region.body",
+def KGEN_RegionBodyOp : RegionBodyBaseOp<"region.body",
     [IsolatedFromAbove,
      ParentOneOf<["AddressOfOp", "CallOp", "CallParamOp"]>]> {
   let summary = "Define an isolated from above region parameter body.";
@@ -445,7 +445,7 @@ def RegionBodyOp : RegionBodyBaseOp<"region.body",
 // RegionOpenBodyOp
 //===----------------------------------------------------------------------===//
 
-def RegionOpenBodyOp : RegionBodyBaseOp<"region.open_body",
+def KGEN_RegionOpenBodyOp : RegionBodyBaseOp<"region.open_body",
     [ParentOneOf<["InlinedCallOp", "IterateOp"]>]> {
   let summary = "Define a region parameter body.";
   let description = [{
@@ -471,7 +471,7 @@ def RegionOpenBodyOp : RegionBodyBaseOp<"region.open_body",
 // CallIndirectOp
 //===----------------------------------------------------------------------===//
 
-def CallIndirectOp : KGENOp<"call_indirect"> {
+def KGEN_CallIndirectOp : KGENOp<"call_indirect"> {
   let summary = "call a signature-typed value";
   let description = [{
     The `kgen.call_indirect` operation takes an SSA value of `!kgen.signature`
@@ -486,7 +486,7 @@ def CallIndirectOp : KGENOp<"call_indirect"> {
     ```
   }];
 
-  let arguments = (ins SignatureType:$callee, Variadic<AnyType>:$inputs);
+  let arguments = (ins KGEN_SignatureType:$callee, Variadic<AnyType>:$inputs);
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
     $callee `(` $inputs `)` attr-dict `:` functional-type($inputs, $results)
@@ -502,7 +502,7 @@ def CallIndirectOp : KGENOp<"call_indirect"> {
 // PartialApplyOp
 //===----------------------------------------------------------------------===//
 
-def PartialApplyOp : KGENOp<"partial_apply",
+def KGEN_PartialApplyOp : KGENOp<"partial_apply",
       [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "partially apply arguments to a callable";
   let description = [{
@@ -526,9 +526,9 @@ def PartialApplyOp : KGENOp<"partial_apply",
     has two fewer arguments.
   }];
 
-  let arguments = (ins SignatureType:$callee, Variadic<AnyType>:$inputs,
+  let arguments = (ins KGEN_SignatureType:$callee, Variadic<AnyType>:$inputs,
                        DenseI64ArrayAttr:$boundInputs);
-  let results = (outs SignatureType:$result);
+  let results = (outs KGEN_SignatureType:$result);
   let assemblyFormat = [{
     $callee `` custom<BoundInputs>($inputs, $boundInputs, type($inputs),
                                    type($result), type($callee)) attr-dict
@@ -542,7 +542,7 @@ def PartialApplyOp : KGENOp<"partial_apply",
 // ParamConstantOp
 //===----------------------------------------------------------------------===//
 
-def ParamConstantOp : KGENOp<"param.constant",
+def KGEN_ParamConstantOp : KGENOp<"param.constant",
                              [FirstAttrDerivedResultType, Pure,
                               ConstantLike]> {
   let summary = [{
@@ -564,7 +564,7 @@ def ParamConstantOp : KGENOp<"param.constant",
 // ParamDeclareOp
 //===----------------------------------------------------------------------===//
 
-def ParamDeclareOp : KGENOp<"param.declare", []> {
+def KGEN_ParamDeclareOp : KGENOp<"param.declare", []> {
   let summary = [{
     Declare a new parameter with a value.
   }];
@@ -591,14 +591,14 @@ def ParamDeclareOp : KGENOp<"param.declare", []> {
 // ParamSearchOp
 //===----------------------------------------------------------------------===//
 
-def ParamSearchOp : KGENOp<"param.search", []> {
+def KGEN_ParamSearchOp : KGENOp<"param.search", []> {
   let summary = [{
     Declare a new parameter that gets one out of a set of values at elaboration
     time.
   }];
 
   let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls,
-                       ParameterExprArrayAttr:$values);
+                       KGEN_ParameterExprArrayAttr:$values);
   let assemblyFormat =
      "custom<ParamSearchOpValue>($paramDecls, $values) attr-dict";
 
@@ -612,7 +612,7 @@ def ParamSearchOp : KGENOp<"param.search", []> {
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-def ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
+def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
   let summary = "return operation for kgen declarations";
   let description = [{
     The `kgen.return` operation specifies the returned values and output
@@ -631,7 +631,7 @@ def ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
     ```
   }];
 
-  let arguments = (ins ParameterExprArrayAttr:$parameters,
+  let arguments = (ins KGEN_ParameterExprArrayAttr:$parameters,
                        Variadic<AnyType>:$operands);
   let assemblyFormat = [{
     `` custom<ParameterValues>($parameters) attr-dict
@@ -650,7 +650,7 @@ def ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
 // ParamAssertOp
 //===----------------------------------------------------------------------===//
 
-def ParamAssertOp : KGENOp<"param.assert", []> {
+def KGEN_ParamAssertOp : KGENOp<"param.assert", []> {
   let summary = "check a parameter expression at elaboration time";
   let description = [{
     The `kgen.param.assert` operation ensures that a parameter expression is
@@ -669,7 +669,7 @@ def ParamAssertOp : KGENOp<"param.assert", []> {
 // IncludeOp
 //===----------------------------------------------------------------------===//
 
-def IncludeOp : KGENOp<"include", []> {
+def KGEN_IncludeOp : KGENOp<"include", []> {
   let summary = "include an external file";
   let description = [{
     The `kgen.include` operation includes an external file and makes all the
@@ -688,7 +688,7 @@ def IncludeOp : KGENOp<"include", []> {
 // RebindOp
 //===----------------------------------------------------------------------===//
 
-def RebindOp : KGENOp<"rebind"> {
+def KGEN_RebindOp : KGENOp<"rebind"> {
   let summary = "rebind parametric types";
   let description = [{
     The `kgen.rebind` operation rebinds values with parametric types into other
@@ -726,9 +726,9 @@ def RebindOp : KGENOp<"rebind"> {
 // StructDeclOp
 //===----------------------------------------------------------------------===//
 
-def StructDeclOp : KGENOp<"struct.decl", [Symbol, SymbolTable,
+def KGEN_StructDeclOp : KGENOp<"struct.decl", [Symbol, SymbolTable,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-    DeclareOpInterfaceMethods<KGENDeclInterface>, SingleBlock, NoTerminator]> {
+    DeclareOpInterfaceMethods<KGEN_DeclInterface>, SingleBlock, NoTerminator]> {
   let summary = "Struct declaration.";
   let description = [{
     The `kgen.struct.decl` operation is a top-level operation used to declare
@@ -760,7 +760,7 @@ def StructDeclOp : KGENOp<"struct.decl", [Symbol, SymbolTable,
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<SignatureType>:$signature);
+                       TypeAttrOf<KGEN_SignatureType>:$signature);
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
     $sym_name `` custom<OptionalParameterSpec>($signature)
@@ -789,7 +789,7 @@ def StructDeclOp : KGENOp<"struct.decl", [Symbol, SymbolTable,
 // StructFieldOp
 //===----------------------------------------------------------------------===//
 
-def StructFieldOp : KGENOp<"struct.field", [HasParent<"StructDeclOp">]> {
+def KGEN_StructFieldOp : KGENOp<"struct.field", [HasParent<"StructDeclOp">]> {
   let summary = "Struct field declaration.";
   let description = [{
     The `kgen.struct.field` operations declares a named struct field and type.
@@ -810,7 +810,7 @@ def StructFieldOp : KGENOp<"struct.field", [HasParent<"StructDeclOp">]> {
 // StructCreateOp
 //===----------------------------------------------------------------------===//
 
-def StructCreateOp : KGENOp<"struct.create", [Pure,
+def KGEN_StructCreateOp : KGENOp<"struct.create", [Pure,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Create a parametric struct.";
   let description = [{
@@ -834,7 +834,7 @@ def StructCreateOp : KGENOp<"struct.create", [Pure,
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands);
-  let results = (outs DeclRefType:$result);
+  let results = (outs KGEN_DeclRefType:$result);
   let assemblyFormat = [{
     `(` operands `)` attr-dict `:` functional-type(operands, results)
   }];
@@ -844,7 +844,7 @@ def StructCreateOp : KGENOp<"struct.create", [Pure,
 // StructInsertOp
 //===----------------------------------------------------------------------===//
 
-def StructInsertOp : KGENOp<"struct.insert", [Pure,
+def KGEN_StructInsertOp : KGENOp<"struct.insert", [Pure,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
     AllTypesMatch<["container", "result"]>]> {
   let summary = "Insert a value into a struct.";
@@ -865,8 +865,8 @@ def StructInsertOp : KGENOp<"struct.insert", [Pure,
     ```
   }];
 
-  let arguments = (ins StrAttr:$field, AnyType:$value, DeclRefType:$container);
-  let results = (outs DeclRefType:$result);
+  let arguments = (ins StrAttr:$field, AnyType:$value, KGEN_DeclRefType:$container);
+  let results = (outs KGEN_DeclRefType:$result);
   let assemblyFormat = [{
     $value `,` $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
     type($value) `into` qualified(type($container))
@@ -877,7 +877,7 @@ def StructInsertOp : KGENOp<"struct.insert", [Pure,
 // StructExtractOp
 //===----------------------------------------------------------------------===//
 
-def StructExtractOp : KGENOp<"struct.extract", [Pure,
+def KGEN_StructExtractOp : KGENOp<"struct.extract", [Pure,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Extract a value from a struct.";
   let description = [{
@@ -896,7 +896,7 @@ def StructExtractOp : KGENOp<"struct.extract", [Pure,
     ```
   }];
 
-  let arguments = (ins StrAttr:$field, DeclRefType:$container);
+  let arguments = (ins StrAttr:$field, KGEN_DeclRefType:$container);
   let results = (outs AnyType:$value);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
@@ -913,7 +913,7 @@ def StructExtractOp : KGENOp<"struct.extract", [Pure,
 // StructGEPOp
 //===----------------------------------------------------------------------===//
 
-def StructGEPOp : KGENOp<"struct.gep", [Pure,
+def KGEN_StructGEPOp : KGENOp<"struct.gep", [Pure,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Get a pointer to a struct field.";
   let description = [{
@@ -932,7 +932,7 @@ def StructGEPOp : KGENOp<"struct.gep", [Pure,
     ```
   }];
 
-  let arguments = (ins StrAttr:$field, PointerOf<DeclRefType>:$container);
+  let arguments = (ins StrAttr:$field, PointerOf<KGEN_DeclRefType>:$container);
   let results = (outs POP_PointerType:$result);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
@@ -950,7 +950,7 @@ def StructGEPOp : KGENOp<"struct.gep", [Pure,
 // ListGetOp
 //===----------------------------------------------------------------------===//
 
-def ListGetOp : KGENOp<"list.get", [Pure, TypesMatchWith<"list element type",
+def KGEN_ListGetOp : KGENOp<"list.get", [Pure, TypesMatchWith<"list element type",
     "list", "result",
     "ParamRefType::get($_self.cast<ListType>().getElementType())">]> {
   let summary = "Get a list element.";
@@ -966,7 +966,7 @@ def ListGetOp : KGENOp<"list.get", [Pure, TypesMatchWith<"list element type",
     ```
   }];
 
-  let arguments = (ins ListType:$list, AttrOfType<Index>:$index);
+  let arguments = (ins KGEN_ListType:$list, AttrOfType<Index>:$index);
   let results = (outs AnyType:$result);
 
   let assemblyFormat = [{
@@ -980,7 +980,7 @@ def ListGetOp : KGENOp<"list.get", [Pure, TypesMatchWith<"list element type",
 // ListCreateOp
 //===----------------------------------------------------------------------===//
 
-def ListCreateOp : KGENOp<"list.create", [Pure,
+def KGEN_ListCreateOp : KGENOp<"list.create", [Pure,
     TypesMatchWith<"list element type", "result", "operands",
       "ParamRefType::get($_self.cast<ListType>().getElementType())",
       "typeRangeMatches">]> {
@@ -996,7 +996,7 @@ def ListCreateOp : KGENOp<"list.create", [Pure,
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands);
-  let results = (outs ListType:$result);
+  let results = (outs KGEN_ListType:$result);
   let assemblyFormat = [{
     `(` operands `)` attr-dict `:` type($result)
   }];
@@ -1008,7 +1008,7 @@ def ListCreateOp : KGENOp<"list.create", [Pure,
 // ListIterateOp
 //===----------------------------------------------------------------------===//
 
-def ListIterateOp : KGENOp<"list.iterate", [
+def KGEN_ListIterateOp : KGENOp<"list.iterate", [
     RecursivelySpeculatable, RecursiveMemoryEffects,
     AllTypesMatch<["arguments", "results"]>]> {
   let summary = "Bounded iteration over a list.";
@@ -1051,8 +1051,8 @@ def ListIterateOp : KGENOp<"list.iterate", [
     ```
   }];
 
-  let arguments = (ins ListType:$list, Variadic<AnyType>:$arguments,
-                       ParameterExprArrayAttr:$init, AffineMapAttr:$map);
+  let arguments = (ins KGEN_ListType:$list, Variadic<AnyType>:$arguments,
+                       KGEN_ParameterExprArrayAttr:$init, AffineMapAttr:$map);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$body);
   let assemblyFormat = [{
@@ -1068,7 +1068,7 @@ def ListIterateOp : KGENOp<"list.iterate", [
 // ListYieldOp
 //===----------------------------------------------------------------------===//
 
-def ListYieldOp : KGENOp<"list.yield", [Pure, Terminator,
+def KGEN_ListYieldOp : KGENOp<"list.yield", [Pure, Terminator,
     HasParent<"ListIterateOp">]> {
   let summary = "Terminator for list iterate.";
   let description = [{
@@ -1087,7 +1087,7 @@ def ListYieldOp : KGENOp<"list.yield", [Pure, Terminator,
 // IterateOp
 //===----------------------------------------------------------------------===//
 
-def IterateOp : KGENOp<"iterate", [
+def KGEN_IterateOp : KGENOp<"iterate", [
     RecursivelySpeculatable, RecursiveMemoryEffects,
     AllTypesMatch<["arguments", "results"]>]> {
   let summary = "Bounded iteration.";
@@ -1137,10 +1137,10 @@ def IterateOp : KGENOp<"iterate", [
   }];
 
   let arguments = (ins Variadic<AnyType>:$arguments,
-                       ParameterExprArrayAttr:$init,
-                       AttrOfType<SignatureType>:$next,
-                       AttrOfType<SignatureType>:$cond,
-                       DefaultValuedAttr<ParamDeclArrayAttr,
+                       KGEN_ParameterExprArrayAttr:$init,
+                       AttrOfType<KGEN_SignatureType>:$next,
+                       AttrOfType<KGEN_SignatureType>:$cond,
+                       DefaultValuedAttr<KGEN_ParamDeclArrayAttr,
                                          "None">:$paramDecls);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$body);
@@ -1157,7 +1157,7 @@ def IterateOp : KGENOp<"iterate", [
 // ExportOp
 //===----------------------------------------------------------------------===//
 
-def ExportOp : KGENOp<"export", [
+def KGEN_ExportOp : KGENOp<"export", [
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Declare a list of exported symbols.";
   let description = [{
@@ -1180,7 +1180,7 @@ def ExportOp : KGENOp<"export", [
 // ExternFuncOp
 //===----------------------------------------------------------------------===//
 
-def ExternFuncOp : KGENOp<"extern.func", [DeclareOpInterfaceMethods<Symbol>]> {
+def KGEN_ExternFuncOp : KGENOp<"extern.func", [DeclareOpInterfaceMethods<Symbol>]> {
   let summary = "Declare an external function.";
   let description = [{
     The `kgen.extern.func` operation provides a signature for an external function.
@@ -1202,7 +1202,7 @@ def ExternFuncOp : KGENOp<"extern.func", [DeclareOpInterfaceMethods<Symbol>]> {
 // ExternVariableOp
 //===----------------------------------------------------------------------===//
 
-def ExternVariableOp : KGENOp<"extern.variable",
+def KGEN_ExternVariableOp : KGENOp<"extern.variable",
     [DeclareOpInterfaceMethods<Symbol>]> {
   let summary = "Declare an external variable.";
   let description = [{

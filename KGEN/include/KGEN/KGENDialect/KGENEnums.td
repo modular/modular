@@ -18,7 +18,7 @@ include "mlir/IR/EnumAttr.td"
 let cppNamespace = "M::KGEN" in {
 
 /// This defines the Parameter Operator Code enum attribute.
-def POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
+def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   /// Fully associative variadic expressions.
   I32EnumAttrCase<"Add", 0, "add">,
   I32EnumAttrCase<"Mul", 1, "mul">,
@@ -64,7 +64,7 @@ def POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
 //===----------------------------------------------------------------------===//
 
 /// This defines the Input Generation Kind enum attribute.
-def InputGenKindAttr : I32EnumAttr<"InputGenKind", "Input Generation Kind", [
+def KGEN_InputGenKindAttr : I32EnumAttr<"InputGenKind", "Input Generation Kind", [
   I32EnumAttrCase<"Zeros", 0, "zeros">,
   I32EnumAttrCase<"Ones", 1, "ones">,
   I32EnumAttrCase<"Random", 2, "random">,

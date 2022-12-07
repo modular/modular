@@ -16,7 +16,7 @@ include "mlir/IR/SubElementInterfaces.td"
 class POPType<string typeName, string typeMnemonic, list<Trait> traits = []>
   : TypeDef<POPDialect, typeName,
             [DeclareTypeInterfaceMethods<SubElementTypeInterface>,
-             DeclareTypeInterfaceMethods<DataLayoutInterface>] # traits> {
+             DeclareTypeInterfaceMethods<KGEN_DataLayoutInterface>] # traits> {
   let mnemonic = typeMnemonic;
 }
 
