@@ -70,7 +70,7 @@ ParamBindAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
     return success();
 
   return emitError() << "value has incorrect type, expected " << decl.getType()
-                     << " but have " << value.getType();
+                     << " but got " << value.getType();
 }
 
 //===----------------------------------------------------------------------===//
