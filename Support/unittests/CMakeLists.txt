@@ -19,7 +19,6 @@ add_modular_unittest(
   HMACTest.cpp
   MathExtras.cpp
   MicroBenchmarkTest.cpp
-  SIMDTest.cpp
   TimeProfilerTest.cpp
 
   LINK_LIBS PRIVATE
