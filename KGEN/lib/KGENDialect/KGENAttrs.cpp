@@ -66,9 +66,11 @@ void KGENDialect::registerAttributes() {
 LogicalResult
 ParamBindAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
                       ParamDeclAttr decl, TypedAttr value) {
-  if (decl.getType() != value.getType())
-    return emitError() << "decl has incorrect type";
-  return success();
+  if (decl.getType() == value.getType())
+    return success();
+
+  return emitError() << "value has incorrect type, expected " << decl.getType()
+                     << " but have " << value.getType();
 }
 
 //===----------------------------------------------------------------------===//
