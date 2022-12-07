@@ -2184,15 +2184,17 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
   // Deflate every op in the primary module. They'll be inflated at
   // specialization time.
   SmallVector<AnyAsyncValueRef> deflates;
-  for (auto gen : primary.getOps<GeneratorOp>())
+  for (auto gen : primary.getOps<GeneratorOp>()) {
     asyncMap.mapChained(gen, [&](auto ch) {
       return Cache::deflateOp(gen, regionCache.copy(), std::move(ch));
     });
+  }
 
-  for (auto func : primary.getOps<FuncOp>())
+  for (auto func : primary.getOps<FuncOp>()) {
     asyncMap.mapChained(func, [&](auto ch) {
       return Cache::deflateOp(func, regionCache.copy(), std::move(ch));
     });
+  }
 
   Elaborator elaborator(analysis, runtime, asyncMap, transformCache.copy(),
                         regionCache.copy(), enableSearch);
