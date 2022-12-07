@@ -28,7 +28,7 @@ class KGENAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 
 /// The base class of all parameter expression attributes. Expression attributes
 /// are all typed attributes.
-class ExprAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
+class KGEN_ExprAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
     : KGENAttr<attrName, attrMnemonic, [TypedAttrInterface] # traits>;
 
 //===----------------------------------------------------------------------===//
@@ -36,7 +36,7 @@ class ExprAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 //===----------------------------------------------------------------------===//
 
 /// Declaration of a named parameter.
-def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl", [
+def KGEN_ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl", [
     SubElementAttrInterface
   ]> {
   let summary = "Parameter declaration";
@@ -66,7 +66,8 @@ def ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl", [
 
 /// An array attribute of other attributes. This one supports sub-element
 /// interface.
-class ArrayOfAttrsAttr<string attrName, string attrMnemonic, string eltName>
+class KGEN_ArrayOfAttrsAttr<string attrName, string attrMnemonic,
+                            string eltName>
     : ArrayOfAttr<KGENDialect, attrName, attrMnemonic, eltName,
                   [SubElementAttrInterface]>;
 
@@ -74,15 +75,15 @@ class ArrayOfAttrsAttr<string attrName, string attrMnemonic, string eltName>
 // ParameterExprArrayAttr
 //===----------------------------------------------------------------------===//
 
-def ParameterExprArrayAttr : ArrayOfAttrsAttr<"ParameterExprArray", "exprs",
-                                              "TypedAttr">;
+def KGEN_ParameterExprArrayAttr
+    : KGEN_ArrayOfAttrsAttr<"ParameterExprArray", "exprs", "TypedAttr">;
 
 //===----------------------------------------------------------------------===//
-// KStringArrayAttr
+// StringArrayAttr
 //===----------------------------------------------------------------------===//
 
-def KStringArrayAttr : ArrayOfAttr<KGENDialect, "StringArray", "strings",
-                                   "StringAttr">;
+def KGEN_StringArrayAtrr
+    : ArrayOfAttr<KGENDialect, "StringArray", "strings", "StringAttr">;
 
 //===----------------------------------------------------------------------===//
 // ParamDeclArrayAttr
@@ -90,26 +91,26 @@ def KStringArrayAttr : ArrayOfAttr<KGENDialect, "StringArray", "strings",
 
 /// An array of ParamDeclAttr's typically used on a kgen.generator and other
 /// ops that define parameters.
-def ParamDeclArrayAttr
-    : ArrayOfAttrsAttr<"ParamDeclArray", "param.decls", "ParamDeclAttr">;
+def KGEN_ParamDeclArrayAttr
+    : KGEN_ArrayOfAttrsAttr<"ParamDeclArray", "param.decls", "ParamDeclAttr">;
 
 /// An array of ParamDeclAttr of size 1.
 def ParamDeclSize1ArrayAttr
-  : ConfinedAttr<ParamDeclArrayAttr, [AttrConstraint<
+  : ConfinedAttr<KGEN_ParamDeclArrayAttr, [AttrConstraint<
       CPred<"$_self.cast<ParamDeclArrayAttr>().getValue().size() == 1">,
       "single parameter declaration"
     >]>;
 
 //===----------------------------------------------------------------------===//
-// KTypeArrayAttr
+// TypeArrayAttr
 //===----------------------------------------------------------------------===//
 
 // This is an array of type objects, stored in a dense representation that can
 /// be turned into an ArrayRef.
-/// NOTE: We have to define this as KTypeArrayAttr because ODS squats on the
+/// NOTE: We have to define this as TypeArrayAttr because ODS squats on the
 /// `TypeArrayAttr` name with something different.
-def KTypeArrayAttr
-    : ArrayOfAttrsAttr<"TypeArray", "type.array", "Type">;
+def KGEN_TypeArrayAttr
+    : KGEN_ArrayOfAttrsAttr<"TypeArray", "type.array", "Type">;
 
 //===----------------------------------------------------------------------===//
 // ParamBindAttr
@@ -118,7 +119,7 @@ def KTypeArrayAttr
 /// This attribute binds a concrete value to a named parameter, for example a
 /// kgen.return uses it to bind returned parameters the the enclosing generators
 /// parameter declarations.
-def ParamBindAttr : KGENAttr<"ParamBind", "param.bind", [
+def KGEN_ParamBindAttr : KGENAttr<"ParamBind", "param.bind", [
     DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
   let summary = "Bind a value to a parameter declaration.";
   let parameters = (ins "ParamDeclAttr":$decl, "TypedAttr":$value);
@@ -150,13 +151,13 @@ def ParamBindAttr : KGENAttr<"ParamBind", "param.bind", [
 
 /// An array of ParamBindAttr's.
 def ParamBindArrayAttr
-    : ArrayOfAttrsAttr<"ParamBindArray", "param.binds", "ParamBindAttr">;
+    : KGEN_ArrayOfAttrsAttr<"ParamBindArray", "param.binds", "ParamBindAttr">;
 
 //===----------------------------------------------------------------------===//
 // ListAttr
 //===----------------------------------------------------------------------===//
 
-def ListAttr : ExprAttr<"List", "list", [SubElementAttrInterface]> {
+def KGEN_ListAttr : KGEN_ExprAttr<"List", "list", [SubElementAttrInterface]> {
   let summary = "homogenous list attribute";
   let description = [{
     The `#kgen.list` attribute contains a variable number of attributes of the
@@ -179,12 +180,12 @@ def ListAttr : ExprAttr<"List", "list", [SubElementAttrInterface]> {
 }
 
 //===----------------------------------------------------------------------===//
-// ParamRegionRefAttr
+// KGEN_ParamRegionRefAttr
 //===----------------------------------------------------------------------===//
 
-def ParamCallRegionRefAttr
-   : ExprAttr<"ParamCallRegionRef", "param.call.region.ref",
-              [SubElementAttrInterface]> {
+def KGEN_ParamCallRegionRefAttr
+   : KGEN_ExprAttr<"ParamCallRegionRef", "param.call.region.ref",
+                   [SubElementAttrInterface]> {
   let summary =
     "A marker indicating a signature value is specified by a call region";
   let parameters = (ins AttributeSelfTypeParameter<"", "SignatureType">:$type);
@@ -205,8 +206,9 @@ def ParamCallRegionRefAttr
 /// This attribute models a reference to a named parameter.  The type of the
 /// ParamDeclRefAttr must always be the same as the type of the parameter being
 /// referenced.
-def ParamDeclRefAttr
-   : ExprAttr<"ParamDeclRef", "param.decl.ref", [SubElementAttrInterface]> {
+def KGEN_ParamDeclRefAttr
+   : KGEN_ExprAttr<"ParamDeclRef", "param.decl.ref",
+                   [SubElementAttrInterface]> {
   let summary = "A reference to a parameter value.";
   let parameters = (ins "::mlir::StringAttr":$name,
                         AttributeSelfTypeParameter<"">:$type);
@@ -240,7 +242,7 @@ def ParamDeclRefAttr
 // The design of these operators assumes signful types like si64, and the fully
 // associative operations are take arbitrary arity, also to make
 // canonicalization simpler.
-def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr", [
+def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
     DeclareAttrInterfaceMethods<SubElementAttrInterface, [
       "walkImmediateSubElements", "replaceImmediateSubElements"
     ]
@@ -298,8 +300,8 @@ def ParamOperatorAttr : ExprAttr<"ParamOperator", "param.expr", [
 // ConcreteTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-def ConcreteTypeConstantAttr
-  : ExprAttr<"ConcreteTypeConstant", "concretetype.constant", [
+def KGEN_ConcreteTypeConstantAttr
+  : KGEN_ExprAttr<"ConcreteTypeConstant", "concretetype.constant", [
     SubElementAttrInterface
   ]> {
   let summary = "Constant !kgen.type MLIR type without parameter references";
@@ -333,7 +335,8 @@ def ConcreteTypeConstantAttr
 // UnknownAttr
 //===----------------------------------------------------------------------===//
 
-def UnknownAttr : ExprAttr<"Unknown", "unknown", [SubElementAttrInterface]> {
+def KGEN_UnknownAttr
+    : KGEN_ExprAttr<"Unknown", "unknown", [SubElementAttrInterface]> {
   let summary = "An unknown parameter value.";
   let description = [{
     The `#kgen.unknown` attribute represents an unknown parameter value. It is
@@ -356,9 +359,10 @@ def UnknownAttr : ExprAttr<"Unknown", "unknown", [SubElementAttrInterface]> {
 /// This represents a parameter whose value is an MLIR type.  It is like
 /// `TypeAttr` (an attribute referring to a type) but is a `TypedAttr` that
 /// refers to an MLIR type and has 'kgen.type' itself.
-def ParameterizedTypeConstantAttr
-  : ExprAttr<"ParameterizedTypeConstant", "parameterizedtype.constant",  [
-    DeclareAttrInterfaceMethods<SubElementAttrInterface, ["replaceImmediateSubElements"]>
+def KGEN_ParameterizedTypeConstantAttr
+  : KGEN_ExprAttr<"ParameterizedTypeConstant", "parameterizedtype.constant",  [
+    DeclareAttrInterfaceMethods<SubElementAttrInterface,
+    ["replaceImmediateSubElements"]>
   ]> {
   let summary = "Constant !kgen.type MLIR type with parameter references";
   let description = [{
@@ -372,7 +376,7 @@ def ParameterizedTypeConstantAttr
 
   // Inherit from a base class and re-use ConcreteTypeConstantAttr's storage.
   let cppBaseClassName = "TypeConstantAttr";
-  let storageClass = ConcreteTypeConstantAttr.storageClass;
+  let storageClass = KGEN_ConcreteTypeConstantAttr.storageClass;
   let genStorageClass = 0;
 
   let parameters = (ins
@@ -394,7 +398,7 @@ def ParameterizedTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
 /// This is a value of !kgen.dtype with a constant value from 0...255.
-def DTypeConstantAttr : ExprAttr<"DTypeConstant", "dtype.constant"> {
+def KGEN_DTypeConstantAttr : KGEN_ExprAttr<"DTypeConstant", "dtype.constant"> {
   let summary = "Constant !kgen.dtype value";
   let description = [{
     This is constant value for a dtype, whose elements correspond to DType.
@@ -421,8 +425,9 @@ def DTypeConstantAttr : ExprAttr<"DTypeConstant", "dtype.constant"> {
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
 
-def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant",
-    [SubElementAttrInterface]> {
+def KGEN_SymbolConstantAttr
+    : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
+                    [SubElementAttrInterface]> {
   let summary = "kgen.func or kgen.generator reference";
   let description = [{
     This is a value of !kgen.signature type, which refers to a func or
@@ -455,7 +460,7 @@ def SymbolConstantAttr : ExprAttr<"SymbolConstant", "symbol.constant",
 // ExprFuncAttr
 //===----------------------------------------------------------------------===//
 
-def ExprFuncAttr : ExprAttr<"ExprFunc", "expr.func",
+def KGEN_ExprFuncAttr : KGEN_ExprAttr<"ExprFunc", "expr.func",
     [SubElementAttrInterface]> {
   let summary = "constant expression function";
   let description = [{
@@ -514,7 +519,7 @@ def ExprFuncAttr : ExprAttr<"ExprFunc", "expr.func",
 // ConstraintAttr
 //===----------------------------------------------------------------------===//
 
-def ConstraintAttr : KGENAttr<"Constraint", "constraint", [
+def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint", [
     SubElementAttrInterface
   ]> {
   let summary = "kgen constraint";
@@ -546,13 +551,13 @@ def ConstraintAttr : KGENAttr<"Constraint", "constraint", [
 
 /// An array of ConstraintAttr's.
 def ConstraintArrayAttr
-    : ArrayOfAttrsAttr<"ConstraintArray", "constraints", "ConstraintAttr">;
+    : KGEN_ArrayOfAttrsAttr<"ConstraintArray", "constraints", "ConstraintAttr">;
 
 //===----------------------------------------------------------------------===//
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
 
-def TargetInfoAttr : ExprAttr<"TargetInfo", "target"> {
+def KGEN_TargetInfoAttr : KGEN_ExprAttr<"TargetInfo", "target"> {
   let summary = "kgen target";
   let description = [{
     An attribute representing a target of type !kgen.target. It contains the
@@ -616,7 +621,8 @@ def TargetInfoAttr : ExprAttr<"TargetInfo", "target"> {
 // LITPlaceholderAttr
 //===----------------------------------------------------------------------===//
 
-def LITPlaceholderAttr : ExprAttr<"LITPlaceholder", "litplaceholder"> {
+def KGEN_LITPlaceholderAttr
+    : KGEN_ExprAttr<"LITPlaceholder", "litplaceholder"> {
   let summary = "Used for parameterized MLIR types/attrs before substitution";
   let description = [{
     This attribute is used at the lit language level to represent MLIR types

@@ -99,7 +99,7 @@ def POP_ConstantOp : POPOp<"constant", [ConstantLike, Pure,
     ```
   }];
   let arguments = (ins TypedAttrInterface:$value);
-  let results = (outs AnyTypeOf<[ParamRefType, POP_SIMDType,
+  let results = (outs AnyTypeOf<[KGEN_ParamRefType, POP_SIMDType,
                                  POP_ArrayType]>:$result);
 
   let extraClassDeclaration = [{
@@ -659,9 +659,9 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
     ```
   }];
 
-  let arguments = (ins AnyTypeOf<[ParamRefType, POP_PointerType,
+  let arguments = (ins AnyTypeOf<[KGEN_ParamRefType, POP_PointerType,
                                   FunctionType]>:$input);
-  let results = (outs AnyTypeOf<[ParamRefType, POP_PointerType,
+  let results = (outs AnyTypeOf<[KGEN_ParamRefType, POP_PointerType,
                                  FunctionType]>:$output);
   let assemblyFormat = [{
     $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
@@ -1590,7 +1590,7 @@ def POP_VariantVisitOp : POPOp<"variant.visit", [RecursiveMemoryEffects,
     ```
   }];
 
-  let arguments = (ins POP_VariantType:$variant, KTypeArrayAttr:$cases);
+  let arguments = (ins POP_VariantType:$variant, KGEN_TypeArrayAttr:$cases);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
 

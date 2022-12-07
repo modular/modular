@@ -56,7 +56,7 @@ def ZAP_NDBufferConstructOp : ZAPOp<"ndbuffer.construct", [Pure,
   }];
 
   let arguments = (ins POP_PointerType:$ptr, Variadic<Index>:$shape,
-                       Optional<DTypeType>:$dType);
+                       Optional<KGEN_DTypeType>:$dType);
   let results = (outs ZAP_NDBufferType:$result);
   let assemblyFormat = [{
     $ptr (`[` $shape^ `]`)? (`of` $dType^)? attr-dict `:`
@@ -274,7 +274,7 @@ def ZAP_NDBufferDTypeOp : ZAPOp<"ndbuffer.dtype", [Pure]> {
   }];
 
   let arguments = (ins ZAP_NDBufferType:$nDBuffer);
-  let results = (outs DTypeType:$result);
+  let results = (outs KGEN_DTypeType:$result);
   let assemblyFormat = "$nDBuffer attr-dict `:` qualified(type($nDBuffer))";
 
   let hasFolder = 1;

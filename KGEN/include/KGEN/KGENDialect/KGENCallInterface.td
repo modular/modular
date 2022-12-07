@@ -9,7 +9,7 @@
 
 include "mlir/IR/OpBase.td"
 
-def KGENCallOpInterface : OpInterface<"KGENCallOpInterface"> {
+def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
   let description = [{
     This interface represents a call to a parametric KGEN declaration: either a
     function, generator, or interface.

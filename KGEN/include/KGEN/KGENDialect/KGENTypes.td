@@ -26,7 +26,7 @@ class KGENType<string name, string typeMnemonic, list<Trait> traits = []>
 // ParamRefType
 //===----------------------------------------------------------------------===//
 
-def ParamRefType : KGENType<"ParamRef", "paramref", [
+def KGEN_ParamRefType : KGENType<"ParamRef", "paramref", [
     DeclareTypeInterfaceMethods<SubElementTypeInterface, ["replaceImmediateSubElements"]>
   ]> {
   let summary = "Type specified by a parameter expression";
@@ -56,7 +56,7 @@ def ParamRefType : KGENType<"ParamRef", "paramref", [
 // MLIRTypeType
 //===----------------------------------------------------------------------===//
 
-def MLIRTypeType : KGENType<"MLIRType", "mlirtype"> {
+def KGEN_MLIRTypeType : KGENType<"MLIRType", "mlirtype"> {
   let summary = "Arbitrary MLIR type";
   let description = [{
     This kgen type represents an arbitrary MLIR type, used for parameterizing
@@ -71,8 +71,8 @@ def MLIRTypeType : KGENType<"MLIRType", "mlirtype"> {
 // DTypeType
 //===----------------------------------------------------------------------===//
 
-def DTypeType : KGENType<"DType", "dtype", [
-    DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+def KGEN_DTypeType : KGENType<"DType", "dtype", [
+    DeclareTypeInterfaceMethods<KGEN_DataLayoutInterface>]> {
   let summary = "8-bit integer DType type";
   let description = [{
     This type corresponds to the DType runtime class, representing an
@@ -84,7 +84,7 @@ def DTypeType : KGENType<"DType", "dtype", [
 // StringType
 //===----------------------------------------------------------------------===//
 
-def StringType : KGENType<"String", "string"> {
+def KGEN_StringType : KGENType<"String", "string"> {
   let summary = "String type for parameters";
   let description = [{
     This kgen type represents an string value, used for parameterizing
@@ -99,7 +99,7 @@ def StringType : KGENType<"String", "string"> {
 // ListType
 //===----------------------------------------------------------------------===//
 
-def ListType : KGENType<"List", "list", [SubElementTypeInterface]> {
+def KGEN_ListType : KGENType<"List", "list", [SubElementTypeInterface]> {
   let summary = "homogenous list type";
   let description = [{
     The `!kgen.list` type represents a homogenous sized list. The list type is
@@ -152,10 +152,10 @@ def ListType : KGENType<"List", "list", [SubElementTypeInterface]> {
 }
 
 //===----------------------------------------------------------------------===//
-// SignatureType
+// KGEN_SignatureType
 //===----------------------------------------------------------------------===//
 
-def SignatureType
+def KGEN_SignatureType
   : KGENType<"Signature", "signature",
              [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
   let summary = "The signature for a parameterized declaration";
@@ -247,7 +247,7 @@ def SignatureType
 // DeclRefType
 //===----------------------------------------------------------------------===//
 
-def DeclRefType : KGENType<"DeclRef", "declref",
+def KGEN_DeclRefType : KGENType<"DeclRef", "declref",
     [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
   let summary = "Reference to a type declaration.";
   let description = [{
@@ -286,7 +286,7 @@ def DeclRefType : KGENType<"DeclRef", "declref",
 // TargetType
 //===----------------------------------------------------------------------===//
 
-def TargetType : KGENType<"Target", "target"> {
+def KGEN_TargetType : KGENType<"Target", "target"> {
   let summary = "The type of a target.";
   let description = [{
     A `!kgen.target` is the type of a target. It is used for parameterizing

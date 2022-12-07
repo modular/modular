@@ -13,7 +13,7 @@ include "mlir/IR/OpBase.td"
 // DataLayoutInterface
 //===----------------------------------------------------------------------===//
 
-def DataLayoutInterface : TypeInterface<"DataLayoutInterface"> {
+def KGEN_DataLayoutInterface : TypeInterface<"DataLayoutInterface"> {
   let description = [{
     This interface is used to query the size and layout of types.
   }];
