@@ -67,7 +67,7 @@ private:
   /// Construct an ObjectCompiler with a specific set of exports.
   ObjectCompiler(LLCL::Runtime &runtime, SymbolTable &symtab,
                  DenseSet<StringAttr> exports,
-                 std::unique_ptr<Cache::BlobCacheBackend> transformCache,
+                 LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
                  const CompilationOptions &options);
 
   /// Produce a standalone MLIR module by slicing out the dependencies of the
@@ -80,7 +80,7 @@ private:
                                                     ModuleOp module);
 
   /// The caches needed for compilation.
-  Cache::BlobCache<Cache::TransformCacheKey> transformCache;
+  LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
 
   /// The async runtime to use during lowering.
   LLCL::Runtime &runtime;

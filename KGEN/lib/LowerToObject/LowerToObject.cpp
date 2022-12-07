@@ -66,10 +66,11 @@ ObjectCompiler::create(LLCL::Runtime &runtime, StringRef basePath,
 
 ObjectCompiler::ObjectCompiler(
     LLCL::Runtime &runtime, SymbolTable &symtab, DenseSet<StringAttr> exports,
-    std::unique_ptr<Cache::BlobCacheBackend> transformCache,
+    LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
     const CompilationOptions &options)
-    : transformCache(std::move(transformCache)), runtime(runtime),
-      module(cast<ModuleOp>(symtab.getOp())), symtab(symtab),
+    : transformCache(
+          decltype(this->transformCache)::create(std::move(transformCache))),
+      runtime(runtime), module(cast<ModuleOp>(symtab.getOp())), symtab(symtab),
       exportedSymbols(std::move(exports)), options(options) {
   // Register types used during async compilation.
   LLCL::AsyncValue::registerTypes<Cache::BufferRef>();

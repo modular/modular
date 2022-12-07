@@ -175,7 +175,7 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
 
   OwningOpRef<ModuleOp> slicedModule = produceStandaloneModule();
   auto output = cachedTransform(
-      *slicedModule, transformCache,
+      *slicedModule, transformCache.copy(),
       LLCL::AsyncValueRef<Chain>::createReady(runtime),
       std::move(produceStandaloneObjectKey), runTransformation, onCacheHit);
   await(output);
