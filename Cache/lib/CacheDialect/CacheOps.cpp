@@ -254,13 +254,21 @@ cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
   SmallVector<SymbolRefAttr> refs;
 
   // Now we walk the symbol and collect all symbol references.
+  auto collectRefs = [&](Attribute attr) {
+    if (auto symbolRef = dyn_cast<SymbolRefAttr>(attr))
+      symbolReferences.push_back(symbolRef);
+    if (auto hash = dyn_cast<ConstantHashAttr>(attr))
+      hashReferences.push_back(hash);
+  };
+
   r.walk([&](Operation *op) {
-    op->getAttrDictionary().walkSubAttrs([&](Attribute attr) {
-      if (auto symbolRef = dyn_cast<SymbolRefAttr>(attr))
-        symbolReferences.push_back(symbolRef);
-      if (auto hash = dyn_cast<ConstantHashAttr>(attr))
-        hashReferences.push_back(hash);
-    });
+    op->getAttrDictionary().walkSubAttrs(collectRefs);
+    for (auto t : op->getOperandTypes())
+      if (auto subElements = dyn_cast<mlir::SubElementTypeInterface>(t))
+        subElements.walkSubAttrs(collectRefs);
+    for (auto t : op->getResultTypes())
+      if (auto subElements = dyn_cast<mlir::SubElementTypeInterface>(t))
+        subElements.walkSubAttrs(collectRefs);
   });
 
   // Create a unique set of symbol references while maintaining the order.
@@ -272,6 +280,7 @@ cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
   // Now we'll take the uniqued list of symbols we have and replace attributes
   // with the appropriate (renamed) SymbolRefAttr.
   auto replaceSymbolRef = [&](SymbolRefAttr symRef) {
+    symRef.dump();
     auto found = llvm::find(uniqueSymbolRefs, symRef);
     assert(found != uniqueSymbolRefs.end());
     return builder.getAttr<SymbolRefAttr>(builder.getStringAttr(
@@ -288,13 +297,13 @@ cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
   // Walk all the ops and replace their symbol refs with symbol indices, and
   // their hash refs with hash indices.
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](SymbolRefAttr symbolRefAttr) {
-    return replaceSymbolRef(symbolRefAttr);
-  });
-  replacer.addReplacement(
-      [&](ConstantHashAttr hashAttr) { return replaceHashRef(hashAttr); });
+  replacer.addReplacement(replaceSymbolRef);
+  replacer.addReplacement(replaceHashRef);
 
-  r.walk([&](Operation *op) { replacer.replaceElementsIn(op); });
+  r.walk([&](Operation *op) {
+    replacer.replaceElementsIn(op, /*replaceAttrs=*/true, /*replaceLocs=*/false,
+                               /*replaceTypes=*/true);
+  });
 
   // Finally, we can store the region. Create an op to hang it off of so we
   // can cache it.
@@ -427,7 +436,10 @@ static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
     replacer.addReplacement([&](HashIndexAttr hashRef) {
       return regionHash.getHashes()[hashRef.getIndex()];
     });
-    r->walk([&](Operation *op) { replacer.replaceElementsIn(op); });
+    r->walk([&](Operation *op) {
+      replacer.replaceElementsIn(op, /*replaceAttrs=*/true,
+                                 /*replaceLocs=*/false, /*replaceTypes=*/true);
+    });
     out.emplace();
   });
 
