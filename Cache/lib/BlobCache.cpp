@@ -26,55 +26,102 @@ using namespace LLCL;
 
 AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::insert(BufferRef keyHash,
                                                        BufferRef obj) {
-  if (auto err = insertImpl(keyHash->getBuffer(), obj.copy()))
-    return createReady<ErrorOrSuccess>(err.takeError());
+  auto result = AsyncValueRef<ErrorOrSuccess>::allocate(runtime);
+  addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
+                    obj = obj.copy(), result = result.copy()]() {
+    if (auto err = thisRef->insertImpl(keyHash->getBuffer(), obj.copy()))
+      return result.emplace(err.takeError());
 
-  if (delegate)
-    return delegate->insert(std::move(keyHash), std::move(obj));
-
-  return createReady<ErrorOrSuccess>(success());
+    if (thisRef->delegate) {
+      auto insert = thisRef->delegate->insert(keyHash.copy(), obj.copy());
+      insert.andThen([thisRef = thisRef.copy(), result = result.copy(),
+                      insert = insert.copy()] {
+        if (failed(*insert))
+          return result.emplace(insert->takeError());
+        result.emplace(success());
+      });
+    } else {
+      return result.emplace(success());
+    }
+  });
+  return result;
 }
 
 AsyncValueRef<bool> BlobCacheBackend::contains(BufferRef keyHash) {
-  if (containsImpl(keyHash->getBuffer()))
-    return createReady(true);
-  if (delegate)
-    return delegate->contains(std::move(keyHash));
-  return createReady(false);
+  auto result = AsyncValueRef<bool>::allocate(runtime);
+  addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
+                    result = result.copy()]() {
+    if (thisRef->containsImpl(keyHash->getBuffer()))
+      return result.emplace(true);
+
+    if (thisRef->delegate) {
+      auto contains = thisRef->delegate->contains(keyHash.copy());
+      contains.andThen(
+          [thisRef = thisRef.copy(), result = result.copy(),
+           contains = contains.copy()] { return result.emplace(*contains); });
+    } else {
+      return result.emplace(false);
+    }
+  });
+  return result;
 }
 
 AsyncValueRef<CacheFindResult> BlobCacheBackend::find(BufferRef keyHash) {
-  if (containsImpl(keyHash->getBuffer()))
-    return createReady(this->findImpl(keyHash->getBuffer()));
+  auto result = AsyncValueRef<CacheFindResult>::allocate(runtime);
+  addTask(
+      runtime,
+      [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
+       result = result.copy()]() -> void {
+        if (thisRef->containsImpl(keyHash->getBuffer()))
+          return result.emplace(thisRef->findImpl(keyHash->getBuffer()));
 
-  if (!delegate)
-    return createReady(CacheFindResult::notInCache());
+        if (!thisRef->delegate)
+          return result.emplace(CacheFindResult::notInCache());
 
-  auto itemOr = delegate->find(keyHash.copy());
-  if (itemOr->isError())
-    return createReady(CacheFindResult::error(itemOr->takeError()));
+        auto itemOr = thisRef->delegate->find(keyHash.copy());
+        itemOr.andThen([thisRef = thisRef.copy(), keyHash = keyHash.copy(),
+                        result = result.copy(), itemOr = itemOr.copy()]() {
+          if (itemOr->isError())
+            return result.emplace(CacheFindResult::error(itemOr->takeError()));
 
-  // Delegate doesn't have it either!
-  if (!itemOr->hasValue())
-    return createReady(CacheFindResult::notInCache());
+          // Delegate doesn't have it either!
+          if (!itemOr->hasValue())
+            return result.emplace(CacheFindResult::notInCache());
 
-  BufferRef item = itemOr->takeValue();
+          BufferRef item = itemOr->takeValue();
 
-  // Store the item in our cache level so we can get a cache hit later.
-  if (auto err = insertImpl(keyHash->getBuffer(), item.copy()))
-    return createReady(CacheFindResult::error(err.takeError()));
+          // Store the item in our cache level so we can get a cache hit
+          // later.
+          if (auto err = thisRef->insertImpl(keyHash->getBuffer(), item.copy()))
+            return result.emplace(CacheFindResult::error(err.takeError()));
 
-  // Return the item.
-  return createReady(CacheFindResult::value(std::move(item)));
+          // Return the item.
+          return result.emplace(CacheFindResult::value(std::move(item)));
+        });
+      });
+
+  return result;
 }
 
-LLCL::AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::clear() {
-  if (auto err = clearImpl())
-    return LLCL::AsyncValueRef<ErrorOrSuccess>::createReady(runtime,
-                                                            err.takeError());
-  if (delegate)
-    return delegate->clear();
-  return LLCL::AsyncValueRef<ErrorOrSuccess>::createReady(runtime, success());
+AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::clear() {
+  auto result = AsyncValueRef<ErrorOrSuccess>::allocate(runtime);
+  addTask(runtime, [thisRef = copyRCRef(this), result = result.copy()]() {
+    if (auto err = thisRef->clearImpl())
+      return result.emplace(err.takeError());
+
+    if (thisRef->delegate) {
+      auto clear = thisRef->delegate->clear();
+      clear.andThen([thisRef = thisRef.copy(), result = result.copy(),
+                     clear = clear.copy()] {
+        if (failed(*clear))
+          return result.emplace(clear->takeError());
+        result.emplace(success());
+      });
+    } else {
+      return result.emplace(success());
+    }
+  });
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -115,9 +162,9 @@ struct InMemoryBackend : public BlobCacheBackend {
 };
 } // namespace
 
-std::unique_ptr<BlobCacheBackend>
+LLCL::RCRef<BlobCacheBackend>
 M::Cache::getInMemoryBackend(LLCL::Runtime &runtime) {
-  return std::make_unique<InMemoryBackend>(runtime);
+  return LLCL::RCRef<InMemoryBackend>::create(runtime);
 }
 
 //===----------------------------------------------------------------------===//
@@ -266,13 +313,13 @@ struct FilesystemBackend : public BlobCacheBackend {
 };
 } // namespace
 
-std::unique_ptr<BlobCacheBackend>
+LLCL::RCRef<BlobCacheBackend>
 M::Cache::getFilesystemBackend(LLCL::Runtime &runtime,
                                const std::filesystem::path &basePath) {
-  return std::make_unique<FilesystemBackend>(runtime, basePath);
+  return RCRef<FilesystemBackend>::create(runtime, basePath);
 }
 
-ErrorOr<std::unique_ptr<BlobCacheBackend>>
+ErrorOr<LLCL::RCRef<BlobCacheBackend>>
 M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
                                  const std::filesystem::path &basePath) {
   auto backend = getInMemoryBackend(runtime);

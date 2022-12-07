@@ -30,9 +30,9 @@ std::string TransformCacheKey::hashKey(TransformCacheKey::KeyTy key) {
 
 /// Do a transform that can be cached. The transform must be named, see the
 /// PassManager overload for an example.
-LLCL::AnyAsyncValueRef
+AnyAsyncValueRef
 Cache::cachedTransform(Operation *target,
-                       BlobCache<TransformCacheKey> &transformCache,
+                       RCRef<BlobCache<TransformCacheKey>> transformCache,
                        AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                        TransformFn transformFn, CacheHitFn cacheHitFn) {
   AsyncValue::registerType<CacheFindResult>();
@@ -43,11 +43,11 @@ Cache::cachedTransform(Operation *target,
   // Try to find the key in the cache. The cache hit function should chain off
   // that and do the right for the cache state.
 
-  auto foundOr = LLCL::AsyncValueRef<CacheFindResult>::allocate(
-      transformCache.getRuntime());
+  auto foundOr =
+      AsyncValueRef<CacheFindResult>::allocate(transformCache->getRuntime());
   chain->andThen([foundOr = foundOr.copy(), keyBuffer = keyBuffer.copy(),
-                  &transformCache] {
-    auto f = transformCache.find(keyBuffer->getBuffer());
+                  transformCache = transformCache.copy()] {
+    auto f = transformCache->find(keyBuffer->getBuffer());
     f.andThen([f = f.copy(), foundOr = foundOr.copy()] {
       foundOr.emplace(std::move(*f));
     });
@@ -55,10 +55,12 @@ Cache::cachedTransform(Operation *target,
 
   // Allocate space for the output.
   AnyAsyncValueRef out =
-      AsyncValue::createIndirect(transformCache.getRuntime());
+      AsyncValue::createIndirect(transformCache->getRuntime());
   foundOr.andThen([out = out.copy(), foundOr = foundOr.copy(), target,
-                   &transformCache, transformFn,
-                   keyBuffer = std::move(keyBuffer), cacheHitFn]() mutable {
+                   transformCache = transformCache.copy(),
+                   transformFn = std::move(transformFn),
+                   keyBuffer = std::move(keyBuffer),
+                   cacheHitFn = std::move(cacheHitFn)]() mutable {
     if (foundOr.isError())
       return out->setToError(foundOr.getPointer()->takeDiagnostic());
 
@@ -74,22 +76,23 @@ Cache::cachedTransform(Operation *target,
 
     // Insert the transform result into the cache.
     xform->andThen(
-        [target, &transformCache, out = out.copy(), xform = xform.copy(),
-         keyBuffer = std::move(keyBuffer),
+        [target, transformCache = transformCache.copy(), out = out.copy(),
+         xform = xform.copy(), keyBuffer = std::move(keyBuffer),
          transformResult = std::move(writeableTransformResult)]() mutable {
           if (xform->isError())
             return out->setToError(xform->takeDiagnostic());
 
           // Only at this point (so the transform has finished successfully)
           // should we change the transform result ref to be read-only.
-          auto hashOr = transformCache.insert(keyBuffer->getBuffer(),
-                                              std::move(transformResult));
-          hashOr.andThen([&, hashOr = hashOr.copy(), out = out.copy()] {
+          auto hashOr = transformCache->insert(keyBuffer->getBuffer(),
+                                               std::move(transformResult));
+          hashOr.andThen([target, hashOr = hashOr.copy(), out = out.copy(),
+                          xform = xform.copy()] {
             if (failed(*hashOr))
               return out->setToError(
                   getMLIRDiagnostic(hashOr->takeError(), target->getLoc()));
 
-            return out->resolveIndirect(std::move(xform));
+            return out->resolveIndirect(xform.copy());
           });
         });
   });
@@ -100,16 +103,16 @@ Cache::cachedTransform(Operation *target,
 /// Run a pass manager's passes as a cached transform.
 AnyAsyncValueRef
 Cache::cachedTransform(Operation *target,
-                       BlobCache<RegionCacheKey> &regionCache,
-                       BlobCache<TransformCacheKey> &transformCache,
+                       RCRef<BlobCache<RegionCacheKey>> regionCache,
+                       RCRef<BlobCache<TransformCacheKey>> transformCache,
                        AnyAsyncValueRef chain, mlir::PassManager &pm) {
   auto keyBuf = WriteableBuffer::get();
   pm.printAsTextualPipeline(*keyBuf);
 
   // Callback that runs the pass manager and puts the correct region hash attr
   // on the op.
-  auto runTransform =
-      [&pm, &regionCache](Operation *op, WriteableBufferRef buf,
+  auto runTransform = [&pm, regionCache = regionCache.copy()](
+                          Operation *op, WriteableBufferRef buf,
                           AnyAsyncValueRef chain) -> AsyncValueRef<Chain> {
     // Allocate a space to put the result of the pass manager. We'll chain
     // off that for the deflation.
@@ -128,7 +131,7 @@ Cache::cachedTransform(Operation *target,
         });
 
     // Hang the deflation off the pass manager result chain.
-    auto deflate = deflateOp(op, regionCache, std::move(pmResult));
+    auto deflate = deflateOp(op, regionCache.copy(), std::move(pmResult));
     // Once deflation has gone through, we can get the new region hash and
     // store it in the cache.
     auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
@@ -166,6 +169,7 @@ Cache::cachedTransform(Operation *target,
     return success();
   };
 
-  return cachedTransform(target, transformCache, std::move(chain),
-                         std::move(keyBuf), runTransform, onCacheHit);
+  return cachedTransform(target, std::move(transformCache), std::move(chain),
+                         std::move(keyBuf), std::move(runTransform),
+                         std::move(onCacheHit));
 }

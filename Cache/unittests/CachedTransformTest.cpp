@@ -64,10 +64,11 @@ TEST(CachedTransformTest, CacheHits) {
 
   auto regionBackendChainOr = getDefaultBackendChain(runtime, "region");
   EXPECT_FALSE(failed(regionBackendChainOr));
-  BlobCache<RegionCacheKey> regionCache(regionBackendChainOr.takeValue());
+  auto regionCache = RCRef<BlobCache<RegionCacheKey>>::create(
+      regionBackendChainOr.takeValue());
   auto transformBackendChainOr = getDefaultBackendChain(runtime, "region");
   EXPECT_FALSE(failed(transformBackendChainOr));
-  BlobCache<TransformCacheKey> transformCache(
+  auto transformCache = RCRef<BlobCache<TransformCacheKey>>::create(
       transformBackendChainOr.takeValue());
 
   DialectRegistry registry;
@@ -88,10 +89,11 @@ TEST(CachedTransformTest, CacheHits) {
   mlir::OwningOpRef<ModuleOp> module1 =
       mlir::parseSourceString<ModuleOp>(mlirString, ParserConfig{&ctx});
   // Do the transform. This will deflate the module.
-  auto xform = cachedTransform(*module1, regionCache, transformCache,
-                               std::move(readyChain), pm);
+  auto xform =
+      cachedTransform(*module1, regionCache.copy(), transformCache.copy(),
+                      std::move(readyChain), pm);
   // We have to inflate the func now.
-  auto inflate = inflateOp(*module1, regionCache, std::move(xform));
+  auto inflate = inflateOp(*module1, regionCache.copy(), std::move(xform));
   await(inflate);
   EXPECT_FALSE(inflate.isError());
   auto func = module1->lookupSymbol<func::FuncOp>("someFunc");
@@ -109,10 +111,10 @@ TEST(CachedTransformTest, CacheHits) {
   // the way we can confirm we got a cache hit without changing the key. The
   // pass should not run and therefore this code should not assert.
   actuallyRun = false;
-  xform = cachedTransform(*module2, regionCache, transformCache,
+  xform = cachedTransform(*module2, regionCache.copy(), transformCache.copy(),
                           std::move(inflate), pm);
   // We have to inflate the func now.
-  inflate = inflateOp(*module2, regionCache, std::move(xform));
+  inflate = inflateOp(*module2, regionCache.copy(), std::move(xform));
   await(inflate);
   EXPECT_FALSE(inflate.isError());
   auto func2 = module2->lookupSymbol<func::FuncOp>("someFunc");
@@ -125,10 +127,10 @@ TEST(CachedTransformTest, CacheHits) {
   // Now the IR has changed, re-run the pass. In this case, it should remove the
   // attribute.
   actuallyRun = true;
-  xform = cachedTransform(*module2, regionCache, transformCache,
+  xform = cachedTransform(*module2, regionCache.copy(), transformCache.copy(),
                           std::move(inflate), pm);
   // We have to inflate the func now to check the result...
-  inflate = inflateOp(*module2, regionCache, std::move(xform));
+  inflate = inflateOp(*module2, regionCache.copy(), std::move(xform));
   await(inflate);
   EXPECT_FALSE(inflate.isError());
   func2 = module2->lookupSymbol<func::FuncOp>("someFunc");

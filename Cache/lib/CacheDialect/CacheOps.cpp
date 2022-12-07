@@ -13,11 +13,8 @@
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinDialect.h"
-#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
-#include "mlir/IR/FunctionInterfaces.h"
-#include "mlir/IR/OpImplementation.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/Support/Base64.h"
 #include "llvm/Support/SHA256.h"
@@ -57,14 +54,16 @@ std::string DataCacheKey::hashKey(DataCacheKey::KeyTy key) {
   return {hash.begin(), hash.end()};
 }
 
-AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
-                                            BlobCache<DataCacheKey> &cache,
-                                            AnyAsyncValueRef chain) {
+AsyncValueRef<Chain>
+Cache::deflateConstant(Operation *constant,
+                       RCRef<BlobCache<DataCacheKey>> cache,
+                       AnyAsyncValueRef chain) {
   auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
   // Hang the actual deflation off the input chain. This will allow users to not
   // worry about sequencing w.r.t. this operation, they can just pass in the
   // chain.
-  chain->andThen([constant, &cache, out = out.copy(), chain = chain.copy()] {
+  chain->andThen([constant, cache = cache.copy(), out = out.copy(),
+                  chain = chain.copy()] {
     if (chain->isError())
       return out.setToError(chain->takeDiagnostic());
 
@@ -83,7 +82,7 @@ AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
           BufferRef resourceData = Buffer::get(
               StringRef(blob->getData().data(), blob->getData().size()));
           // Insert the data into the cache.
-          auto hashOr = cache.insert(resourceAttr, std::move(resourceData));
+          auto hashOr = cache->insert(resourceAttr, std::move(resourceData));
           // This is not great - we have to make this sync because MLIR doesn't
           // really have a good way to handle async here.
           await(hashOr);
@@ -114,14 +113,16 @@ AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
   return out;
 }
 
-AsyncValueRef<Chain> Cache::inflateConstant(Operation *constant,
-                                            BlobCache<DataCacheKey> &cache,
-                                            AnyAsyncValueRef chain) {
+AsyncValueRef<Chain>
+Cache::inflateConstant(Operation *constant,
+                       RCRef<BlobCache<DataCacheKey>> cache,
+                       AnyAsyncValueRef chain) {
   auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
   // Hang the actual deflation off the input chain. This will allow users to not
   // worry about sequencing w.r.t. this operation, they can just pass in the
   // chain.
-  chain->andThen([constant, &cache, out = out.copy(), chain = chain.copy()] {
+  chain->andThen([constant, cache = cache.copy(), out = out.copy(),
+                  chain = chain.copy()] {
     if (chain->isError())
       return out.setToError(chain->takeDiagnostic());
 
@@ -139,7 +140,7 @@ AsyncValueRef<Chain> Cache::inflateConstant(Operation *constant,
         return nullptr;
 
       // Find the data in the cache.
-      auto found = cache.find(cacheAttr.getHash());
+      auto found = cache->find(cacheAttr.getHash());
       await(found);
       if (found->isError()) {
         out.setToError(
@@ -247,8 +248,9 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
 ///  - Replace symbol uses with `cache.symbol_ref`
 ///  - Cache the region.
 static AsyncValueRef<Chain>
-cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
-                  BlobCache<M::Cache::RegionCacheKey> &cache) {
+cacheSingleRegion(Region &r, Operation *symbol,
+                  RCRef<BlobCache<M::Cache::RegionCacheKey>> cache) {
+  OpBuilder builder(symbol);
   SmallVector<SymbolRefAttr> symbolReferences;
   SmallVector<ConstantHashAttr> hashReferences;
   SmallVector<SymbolRefAttr> refs;
@@ -280,7 +282,6 @@ cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
   // Now we'll take the uniqued list of symbols we have and replace attributes
   // with the appropriate (renamed) SymbolRefAttr.
   auto replaceSymbolRef = [&](SymbolRefAttr symRef) {
-    symRef.dump();
     auto found = llvm::find(uniqueSymbolRefs, symRef);
     assert(found != uniqueSymbolRefs.end());
     return builder.getAttr<SymbolRefAttr>(builder.getStringAttr(
@@ -315,11 +316,17 @@ cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
   mlir::writeBytecodeToFile(container, *bytecode);
 
   // Store it.
-  auto hashOr = cache.insert(&container.getBodyRegion(), std::move(bytecode));
+  auto hashOr = cache->insert(&container.getBodyRegion(), std::move(bytecode));
   auto out = AsyncValueRef<Chain>::allocate(hashOr.getRuntime());
   // Keeping references is safe here because all the memory is owned by the
   // MLIRContext, which is guaranteed to live longer than any of this.
-  hashOr.andThen([&, hashOr = hashOr.copy(), out = out.copy()] {
+  hashOr.andThen([&r, symbol, container,
+                  uniqueSymbolRefs = std::move(uniqueSymbolRefs),
+                  uniqueHashRefs = std::move(uniqueHashRefs),
+                  hashOr = hashOr.copy(), out = out.copy()]() mutable {
+    // Create a new builder because this may run well after the rest of this
+    // function.
+    OpBuilder builder(symbol);
     if (failed(*hashOr)) {
       return out.setToError(getMLIRDiagnostic(hashOr->takeError(), r.getLoc()));
     }
@@ -351,13 +358,14 @@ cacheSingleRegion(Region &r, OpBuilder &builder, Operation *symbol,
 }
 
 AsyncValueRef<Chain> M::Cache::deflateOp(Operation *symbol,
-                                         BlobCache<RegionCacheKey> &cache,
+                                         RCRef<BlobCache<RegionCacheKey>> cache,
                                          AnyAsyncValueRef chain) {
   auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
   // Hang the actual deflation off the input chain. This will allow users to
   // not worry about sequencing w.r.t. this operation, they can just pass in
   // the chain.
-  chain->andThen([symbol, &cache, out = out.copy(), chain = chain.copy()] {
+  chain->andThen([symbol, cache = cache.copy(), out = out.copy(),
+                  chain = chain.copy()] {
     if (chain->isError())
       return out.setToError(chain->takeDiagnostic());
 
@@ -367,11 +375,10 @@ AsyncValueRef<Chain> M::Cache::deflateOp(Operation *symbol,
       return;
     }
 
-    OpBuilder builder(symbol);
     SmallVector<AnyAsyncValueRef> results;
     results.reserve(symbol->getNumRegions());
     for (Region &r : symbol->getRegions())
-      results.push_back(cacheSingleRegion(r, builder, symbol, cache));
+      results.push_back(cacheSingleRegion(r, symbol, cache.copy()));
 
     andThenMoving(results,
                   [out = out.copy()](MutableArrayRef<AnyAsyncValueRef> values) {
@@ -387,11 +394,12 @@ AsyncValueRef<Chain> M::Cache::deflateOp(Operation *symbol,
 }
 
 /// Inflate a single region from `regionHash` and have `r` take its body.
-static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
-                                          BlobCache<RegionCacheKey> &cache) {
-  auto out = AsyncValueRef<Chain>::allocate(cache.getRuntime());
+static AsyncValueRef<Chain>
+inflateRegion(Region *r, RegionHashAttr regionHash,
+              RCRef<BlobCache<RegionCacheKey>> cache) {
+  auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
 
-  auto foundOr = cache.find(regionHash.getHash());
+  auto foundOr = cache->find(regionHash.getHash());
   foundOr.andThen([r, regionHash, foundOr = foundOr.copy(), out = out.copy()] {
     if (foundOr->isError()) {
       return out.setToError(
@@ -447,12 +455,13 @@ static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
 }
 
 AsyncValueRef<Chain> M::Cache::inflateOp(Operation *cached,
-                                         BlobCache<RegionCacheKey> &cache,
+                                         RCRef<BlobCache<RegionCacheKey>> cache,
                                          AnyAsyncValueRef chain) {
-  auto out = AsyncValueRef<Chain>::allocate(cache.getRuntime());
+  auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
 
   // Hang the inflation off the input chain.
-  chain->andThen([cached, &cache, chain = chain.copy(), out = out.copy()] {
+  chain->andThen([cached, cache = cache.copy(), chain = chain.copy(),
+                  out = out.copy()] {
     if (chain->isError())
       return out.setToError(chain->takeDiagnostic());
 
@@ -465,7 +474,7 @@ AsyncValueRef<Chain> M::Cache::inflateOp(Operation *cached,
     // Fill in the regions on the operation.
     SmallVector<AnyAsyncValueRef> results;
     for (auto [regionHash, region] : llvm::zip(hashes, cached->getRegions()))
-      results.push_back(inflateRegion(&region, regionHash, cache));
+      results.push_back(inflateRegion(&region, regionHash, cache.copy()));
 
     // Once all the regions are cached, remove the region hash attr and
     // resolve success/failure.

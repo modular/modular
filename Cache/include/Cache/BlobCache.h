@@ -93,7 +93,7 @@ private:
 ///
 /// Conceptually, the backends form a linked-list that's sorted in priority
 /// order that the BlobCache below will use to find an item.
-class BlobCacheBackend {
+class BlobCacheBackend : public LLCL::ReferenceCounted<BlobCacheBackend> {
 public:
   /// Construct a BlobCacheBackend from an LLCL runtime.
   BlobCacheBackend(LLCL::Runtime &runtime) : runtime(runtime) {
@@ -122,9 +122,7 @@ public:
   LLCL::AsyncValueRef<ErrorOrSuccess> clear();
 
   /// Overwrite the current delegate.
-  void setDelegate(std::unique_ptr<BlobCacheBackend> &&d) {
-    delegate = std::move(d);
-  }
+  void setDelegate(LLCL::RCRef<BlobCacheBackend> d) { delegate = std::move(d); }
 
 protected:
   /// NOTE: The asynchrony of the cache backend is handled by the
@@ -160,7 +158,7 @@ private:
   /// The next backend in the list. The public APIs handle nullptr here
   /// correctly, and the protected APIs (for the subclasses) should ignore the
   /// presence of this delegate entirely.
-  std::unique_ptr<BlobCacheBackend> delegate = nullptr;
+  LLCL::RCRef<BlobCacheBackend> delegate;
 };
 
 /// This is the thing that users will interact with. It holds onto the list of
@@ -178,9 +176,9 @@ private:
 ///   }
 ///
 template <typename KeyInfo>
-class BlobCache {
+class BlobCache : public LLCL::ReferenceCounted<BlobCache<KeyInfo>> {
 public:
-  explicit BlobCache(std::unique_ptr<BlobCacheBackend> &&backendList)
+  explicit BlobCache(LLCL::RCRef<BlobCacheBackend> backendList)
       : runtime(backendList->getRuntime()),
         backendList(std::move(backendList)) {
     // Only one additional type we need registered on top of the ones provided
@@ -234,22 +232,22 @@ public:
 private:
   LLCL::Runtime &runtime;
 
-  std::unique_ptr<BlobCacheBackend> backendList;
+  LLCL::RCRef<BlobCacheBackend> backendList;
 };
 
 /// Returns an in-memory implementation of the BlobCacheBackend.
-std::unique_ptr<BlobCacheBackend> getInMemoryBackend(LLCL::Runtime &runtime);
+LLCL::RCRef<BlobCacheBackend> getInMemoryBackend(LLCL::Runtime &runtime);
 
 /// Returns a filesystem-based implementation of the BlobCacheBackend. If the
 /// base path is not specified, then the backend will use the CWD.
-std::unique_ptr<BlobCacheBackend>
+LLCL::RCRef<BlobCacheBackend>
 getFilesystemBackend(LLCL::Runtime &runtime,
                      const std::filesystem::path &basePath = "");
 
 /// Returns a chain of pre-setup backends that represent the default chain,
 /// inMemory->filesystem. The `basePath` is passed to getFilesystemBackend
 /// directly.
-ErrorOr<std::unique_ptr<BlobCacheBackend>>
+ErrorOr<LLCL::RCRef<BlobCacheBackend>>
 getDefaultBackendChain(LLCL::Runtime &runtime,
                        const std::filesystem::path &basePath = "");
 } // namespace M::Cache

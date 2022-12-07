@@ -220,13 +220,15 @@ namespace {
 class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
-  Elaborator(SymbolTableAnalysis &analysis, LLCL::Runtime &runtime,
-             LLCL::AsyncSideEffectMap &map,
-             Cache::BlobCache<Cache::TransformCacheKey> &transformCache,
-             Cache::BlobCache<Cache::RegionCacheKey> &regionCache,
-             bool enableSearch = false)
+  Elaborator(
+      SymbolTableAnalysis &analysis, LLCL::Runtime &runtime,
+      LLCL::AsyncSideEffectMap &map,
+      LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache,
+      LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache,
+      bool enableSearch = false)
       : analysis(analysis), runtime(runtime), asyncMap(map),
-        transformCache(transformCache), regionCache(regionCache),
+        transformCache(std::move(transformCache)),
+        regionCache(std::move(regionCache)),
         regionOwner(ModuleOp::create(analysis.getModule().getLoc())),
         enableSearch(enableSearch) {}
 
@@ -279,7 +281,7 @@ public:
     // Make sure the function is inflated - this is a fast no-op if the function
     // has not been deflated.
     asyncMap.mapChained(func, [&](auto ch) {
-      return Cache::inflateOp(func, regionCache, std::move(ch));
+      return Cache::inflateOp(func, regionCache.copy(), std::move(ch));
     });
     asyncMap.await(func);
 
@@ -396,8 +398,8 @@ private:
   LLCL::AsyncSideEffectMap &asyncMap;
 
   /// These are the caches the Elaborator will use to run its operations.
-  Cache::BlobCache<Cache::TransformCacheKey> &transformCache;
-  Cache::BlobCache<Cache::RegionCacheKey> &regionCache;
+  LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
+  LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache;
 
   /// This collects all of the generator implementations of generator
   /// interfaces, across both the primary module and the library.
@@ -1760,7 +1762,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
 
   // Make sure this generator is inflated.
   asyncMap.mapChained(generator, [&](auto ch) {
-    return Cache::inflateOp(generator, regionCache, std::move(ch));
+    return Cache::inflateOp(generator, regionCache.copy(), std::move(ch));
   });
   asyncMap.await(generator);
 
@@ -2004,9 +2006,10 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   };
 
   // Run the transform with the functions we just defined.
-  auto xform = Cache::cachedTransform(
-      itf, transformCache, LLCL::AsyncValueRef<Chain>::createReady(runtime),
-      std::move(keyBuf), doSpecialization, onCacheHit);
+  auto xform =
+      Cache::cachedTransform(itf, transformCache.copy(),
+                             LLCL::AsyncValueRef<Chain>::createReady(runtime),
+                             std::move(keyBuf), doSpecialization, onCacheHit);
 
   LLCL::await(xform);
   if (xform->isError())
@@ -2154,13 +2157,13 @@ static void emitElaborationError(InFlightDiagnostic &diag,
 /// Elaborate generators in the specified module, incorporating implementation
 /// logic from the specified library.
 LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
-                                     LLCL::AsyncSideEffectMap &asyncMap,
+                                     LLCL::Runtime &runtime,
                                      ArrayRef<GeneratorOp> primaryGenerators,
                                      bool enableSearch) {
   TimeTraceScope<> traceScope("elaborate-generators");
   ModuleOp primary = analysis.getModule();
 
-  LLCL::Runtime &runtime = asyncMap.getRuntime();
+  LLCL::AsyncSideEffectMap asyncMap(runtime);
 
   auto transformCacheBackendOr =
       Cache::getDefaultBackendChain(runtime, ".kgen_cache/transform");
@@ -2171,26 +2174,28 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
   if (failed(regionCacheBackendOr))
     return primary->emitError() << regionCacheBackendOr.getError();
 
-  Cache::BlobCache<Cache::TransformCacheKey> transformCache(
-      transformCacheBackendOr.takeValue());
-  Cache::BlobCache<Cache::RegionCacheKey> regionCache(
-      regionCacheBackendOr.takeValue());
+  auto transformCache =
+      LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>>::create(
+          transformCacheBackendOr.takeValue());
+  auto regionCache =
+      LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>>::create(
+          regionCacheBackendOr.takeValue());
 
   // Deflate every op in the primary module. They'll be inflated at
   // specialization time.
   SmallVector<AnyAsyncValueRef> deflates;
   for (auto gen : primary.getOps<GeneratorOp>())
     asyncMap.mapChained(gen, [&](auto ch) {
-      return Cache::deflateOp(gen, regionCache, std::move(ch));
+      return Cache::deflateOp(gen, regionCache.copy(), std::move(ch));
     });
 
   for (auto func : primary.getOps<FuncOp>())
     asyncMap.mapChained(func, [&](auto ch) {
-      return Cache::deflateOp(func, regionCache, std::move(ch));
+      return Cache::deflateOp(func, regionCache.copy(), std::move(ch));
     });
 
-  Elaborator elaborator(analysis, runtime, asyncMap, transformCache,
-                        regionCache, enableSearch);
+  Elaborator elaborator(analysis, runtime, asyncMap, transformCache.copy(),
+                        regionCache.copy(), enableSearch);
 
   // Scan the primary and library module to collect all the interfaces,
   // verifying that any common interfaces are the same.
@@ -2262,8 +2267,8 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
       } else {
         // Make sure all funcs are inflated at the end of this, even if they
         // didn't participate in elaboration.
-        asyncMap.map(
-            func, Cache::inflateOp(func, regionCache, asyncMap.getChain(func)));
+        asyncMap.map(func, Cache::inflateOp(func, regionCache.copy(),
+                                            asyncMap.getChain(func)));
       }
     }
   }
@@ -2291,6 +2296,9 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
     });
   });
 
+  // Await all async values. The rest of the elaborator can't handle asynchrony
+  // yet.
+  asyncMap.awaitAll();
   return success();
 }
 
@@ -2340,14 +2348,9 @@ struct ElaborateGeneratorsPass
                                includedFiles)))
       return signalPassFailure();
 
-    LLCL::AsyncSideEffectMap asyncMap(*rt);
-
-    if (failed(elaborateGenerators(analysis, asyncMap, primaryGenerators,
+    if (failed(elaborateGenerators(analysis, *rt, primaryGenerators,
                                    shouldDoSearch)))
       return signalPassFailure();
-
-    // Await all async values.
-    asyncMap.awaitAll();
   }
 
   /// An optional set of included files that were found during processing.

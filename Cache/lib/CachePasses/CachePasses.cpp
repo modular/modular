@@ -46,7 +46,7 @@ public:
         createSingleThreadWorkQueue());
 
     // Bring up the cache.
-    BlobCache<RegionCacheKey> cache(
+    auto cache = RCRef<BlobCache<RegionCacheKey>>::create(
         getFilesystemBackend(*rt, std::filesystem::path(cacheDir.getValue())));
     // Deflate each symbol.
     SmallVector<AnyAsyncValueRef> results;
@@ -55,7 +55,7 @@ public:
         continue;
 
       results.push_back(
-          deflateOp(&op, cache, AsyncValueRef<Chain>::createReady(*rt)));
+          deflateOp(&op, cache.copy(), AsyncValueRef<Chain>::createReady(*rt)));
     }
 
     await(results);
@@ -102,7 +102,7 @@ public:
         createSingleThreadWorkQueue());
 
     // Bring up the cache.
-    BlobCache<RegionCacheKey> cache(
+    auto cache = RCRef<BlobCache<RegionCacheKey>>::create(
         getFilesystemBackend(*rt, std::filesystem::path(cacheDir.getValue())));
     // Inflate each deflated op.
     SmallVector<AnyAsyncValueRef> results;
@@ -110,8 +110,8 @@ public:
       if (!sym.hasAttr(getRegionHashAttrName()))
         continue;
 
-      results.push_back(
-          inflateOp(&sym, cache, AsyncValueRef<Chain>::createReady(*rt)));
+      results.push_back(inflateOp(&sym, cache.copy(),
+                                  AsyncValueRef<Chain>::createReady(*rt)));
     }
 
     await(results);
@@ -159,14 +159,14 @@ public:
         createSingleThreadWorkQueue());
 
     // Bring up the cache.
-    BlobCache<DataCacheKey> cache(
+    auto cache = RCRef<BlobCache<DataCacheKey>>::create(
         getFilesystemBackend(*rt, std::filesystem::path(cacheDir.getValue())));
     // Deflate each constant.
     SmallVector<AnyAsyncValueRef> results;
     getOperation().walk([&](Operation *op) {
       if (op->hasTrait<OpTrait::ConstantLike>())
-        results.push_back(
-            deflateConstant(op, cache, AsyncValueRef<Chain>::createReady(*rt)));
+        results.push_back(deflateConstant(
+            op, cache.copy(), AsyncValueRef<Chain>::createReady(*rt)));
     });
 
     await(results);
@@ -215,14 +215,14 @@ public:
         createSingleThreadWorkQueue());
 
     // Bring up the cache.
-    BlobCache<DataCacheKey> cache(
+    auto cache = RCRef<BlobCache<DataCacheKey>>::create(
         getFilesystemBackend(*rt, std::filesystem::path(cacheDir.getValue())));
     // Inflate each constant.
     SmallVector<AnyAsyncValueRef> results;
     getOperation().walk([&](Operation *op) {
       if (op->hasTrait<OpTrait::ConstantLike>())
-        results.push_back(
-            inflateConstant(op, cache, AsyncValueRef<Chain>::createReady(*rt)));
+        results.push_back(inflateConstant(
+            op, cache.copy(), AsyncValueRef<Chain>::createReady(*rt)));
     });
 
     await(results);

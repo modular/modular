@@ -14,7 +14,7 @@ namespace M {
 class SymbolTableAnalysis;
 
 namespace LLCL {
-class AsyncSideEffectMap;
+class Runtime;
 } // namespace LLCL
 
 namespace KGEN {
@@ -34,7 +34,7 @@ resolveIncludes(SymbolTable &symtab,
 /// logic from the specified library.  On error, diagnostics are emitted and the
 /// primary file isn't completely lowered.
 LogicalResult elaborateGenerators(SymbolTableAnalysis &symtab,
-                                  LLCL::AsyncSideEffectMap &asyncMap,
+                                  LLCL::Runtime &runtime,
                                   ArrayRef<KGEN::GeneratorOp> generators,
                                   bool enableSearch = false);
 

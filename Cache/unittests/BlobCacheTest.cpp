@@ -9,8 +9,8 @@
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
+#include "LLCL/Support/RCRef.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SHA256.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -34,17 +34,18 @@ struct StringKeyInfo {
 class BlobCacheTest : public testing::Test {
 protected:
   LLCL::Runtime runtime;
-  BlobCache<StringKeyInfo> cache;
+  LLCL::RCRef<BlobCache<StringKeyInfo>> cache;
   BlobCacheTest()
       : runtime(createLeakCheckAllocator(createMallocAllocator()),
                 createSingleThreadWorkQueue()),
-        cache(getDefaultBackendChain(runtime, "CacheTest").takeValue()) {}
+        cache(LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
+            getDefaultBackendChain(runtime, "CacheTest").takeValue())) {}
 };
 
 } // namespace
 
 TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
-  auto contains = cache.contains("does not exist");
+  auto contains = cache->contains("does not exist");
   contains.andThen([contains = contains.copy()] {
     EXPECT_FALSE(*contains)
         << "expected not to have item named 'does not exist'\n";
@@ -52,7 +53,7 @@ TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
 }
 
 TEST_F(BlobCacheTest, FindShouldNotReturnErrorForNonexistantItem) {
-  auto dneOr = cache.find("does not exist");
+  auto dneOr = cache->find("does not exist");
   dneOr.andThen([dneOr = dneOr.copy()] {
     EXPECT_FALSE(dneOr->hasValue() && !dneOr->isError())
         << "expected not to have item named 'does not exist'\n";
@@ -66,13 +67,13 @@ TEST_F(BlobCacheTest, ContainItemWhenInserted) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  auto insertOr = cache.insert("zeros", std::move(zerosBuf));
-  insertOr.andThen([this, insertOr = insertOr.copy()] {
+  auto insertOr = cache->insert("zeros", std::move(zerosBuf));
+  insertOr.andThen([cache = cache.copy(), insertOr = insertOr.copy()] {
     EXPECT_FALSE(insertOr->isError()) << insertOr->getError() << '\n';
     EXPECT_FALSE(insertOr->takeValue().empty())
         << "expected to receive the hash key\v";
 
-    auto contains = cache.contains("zeros");
+    auto contains = cache->contains("zeros");
     contains.andThen([contains = contains.copy()] {
       EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
     });
@@ -86,19 +87,19 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  auto insertOr = cache.insert("zeros", zerosBuf.copy());
-  insertOr.andThen([this, insertOr = insertOr.copy()] {
+  auto insertOr = cache->insert("zeros", zerosBuf.copy());
+  insertOr.andThen([cache = cache.copy(), insertOr = insertOr.copy()] {
     EXPECT_FALSE(insertOr->isError()) << insertOr->getError() << '\n';
     EXPECT_FALSE(insertOr->takeValue().empty())
         << "expected to receive the hash key\v";
 
-    auto contains = cache.contains("zeros");
+    auto contains = cache->contains("zeros");
     contains.andThen([contains = contains.copy()] {
       EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
     });
   });
 
-  auto zerosOr = cache.find("zeros");
+  auto zerosOr = cache->find("zeros");
   zerosOr.andThen([zerosOr = zerosOr.copy(), zerosBuf = zerosBuf.copy()] {
     EXPECT_TRUE(zerosOr->hasValue()) << zerosOr->getError();
     BufferRef outZeros = zerosOr->takeValue();
@@ -117,19 +118,19 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  auto insertOr = cache.insert("zeros", zerosBuf.copy());
-  insertOr.andThen([this, insertOr = insertOr.copy()] {
+  auto insertOr = cache->insert("zeros", zerosBuf.copy());
+  insertOr.andThen([cache = cache.copy(), insertOr = insertOr.copy()] {
     EXPECT_FALSE(insertOr->isError()) << insertOr->getError() << '\n';
     EXPECT_FALSE(insertOr->takeValue().empty())
         << "expected to receive the hash key\v";
 
-    auto contains = cache.contains("zeros");
+    auto contains = cache->contains("zeros");
     contains.andThen([contains = contains.copy()] {
       EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
     });
   });
 
-  auto zerosOr = cache.find("zeros");
+  auto zerosOr = cache->find("zeros");
   zerosOr.andThen([zerosOr = zerosOr.copy(), zerosBuf = zerosBuf.copy()] {
     EXPECT_TRUE(zerosOr->hasValue()) << zerosOr->getError();
     BufferRef outZeros = zerosOr->takeValue();
@@ -139,12 +140,16 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
                                                    zerosBuf->getBufferSize()))
         << "buffer returned did not match the buffer inputted\n";
   });
+  // We have to sequence the clear *after* all the other work has been done. Use
+  // await to make this more readable.
+  await(insertOr);
+  await(zerosOr);
 
-  auto clearOr = cache.clear();
-  clearOr.andThen([clearOr = clearOr.copy(), this] {
+  auto clearOr = cache->clear();
+  clearOr.andThen([clearOr = clearOr.copy(), cache = cache.copy()] {
     EXPECT_FALSE(failed(*clearOr)) << clearOr->getError() << "\n";
 
-    auto contains = cache.contains("zeros");
+    auto contains = cache->contains("zeros");
     contains.andThen([contains = contains.copy()] {
       EXPECT_FALSE(*contains)
           << "expected not to have item named 'zeros' after the clear\n";
@@ -159,16 +164,16 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  auto err = cache.insert("zeros", zerosBuf.copy());
+  auto err = cache->insert("zeros", zerosBuf.copy());
   await(err);
   ASSERT_FALSE(failed(*err)) << err->getError() << '\n';
 
   // Reset the cache so that we are forced to look it up from the file system.
-  BlobCache<StringKeyInfo> fsCache(
+  auto fsCache = LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
       getDefaultBackendChain(runtime, "CacheTest").takeValue());
 
   // Check that the cache holds the new item, and it's the same data as before.
-  auto zerosOr = fsCache.find("zeros");
+  auto zerosOr = fsCache->find("zeros");
   await(zerosOr);
   EXPECT_TRUE(zerosOr->hasValue()) << zerosOr->getError();
 
