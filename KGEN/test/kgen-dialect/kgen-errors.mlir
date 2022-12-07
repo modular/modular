@@ -410,7 +410,7 @@ kgen.generator @test() {
 // -----
 
 kgen.generator @takeUnary
-  <unaryFn: <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt>>() {
+  <unaryFn: (!pop.scalar<si32>) -> !pop.scalar<si32>>() {
   kgen.return
 }
 
@@ -421,7 +421,6 @@ kgen.func @unary(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
 
 kgen.generator @test1() {
   // expected-error @below {{symbol use argument #0 has type '!pop.scalar<si32>' but @unary expected type '!pop.scalar<f32>'}}
-  // expected-error @below {{caller input parameter #0 has type '!kgen.signature<[], [], (!pop.scalar<si32>) -> !pop.scalar<si32>>' but callee expected type '!kgen.signature<[dt : !kgen.dtype], [], (!pop.scalar<dt>) -> !pop.scalar<dt>>'}}
   kgen.call @takeUnary<
      unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @unary>() : () -> ()
   kgen.return
@@ -430,7 +429,7 @@ kgen.generator @test1() {
 // -----
 
 kgen.generator @takeUnary
-  <unaryFn: <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt>>() {
+  <unaryFn: (!pop.scalar<si32>) -> !pop.scalar<si32>>() {
   kgen.return
 }
 
@@ -440,7 +439,6 @@ kgen.generator @unary2<dt: dtype>(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32>
 }
 
 kgen.generator @test2() {
-  // expected-error @below {{caller input parameter #0 has type '!kgen.signature<[], [], (!pop.scalar<si32>) -> !pop.scalar<si32>>' but callee expected type '!kgen.signature<[dt : !kgen.dtype], [], (!pop.scalar<dt>) -> !pop.scalar<dt>>'}}
   // expected-error @below {{symbol use has 0 input parameters but @unary2 expects 1}}
   kgen.call @takeUnary<
      unaryFn : (!pop.scalar<si32>) -> !pop.scalar<si32> = @unary2>() : () -> ()
