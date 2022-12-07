@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(LLCLCompilerSupport
+  AsyncSideEffectMap.cpp
   MLIRLocationDecoder.cpp
 
   LINK_LIBS PUBLIC
