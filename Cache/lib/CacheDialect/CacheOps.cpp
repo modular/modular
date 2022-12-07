@@ -259,7 +259,7 @@ cacheSingleRegion(Region &r, Operation *symbol,
   auto collectRefs = [&](Attribute attr) {
     if (auto symbolRef = dyn_cast<SymbolRefAttr>(attr))
       symbolReferences.push_back(symbolRef);
-    if (auto hash = dyn_cast<ConstantHashAttr>(attr))
+    else if (auto hash = dyn_cast<ConstantHashAttr>(attr))
       hashReferences.push_back(hash);
   };
 
@@ -302,7 +302,7 @@ cacheSingleRegion(Region &r, Operation *symbol,
   replacer.addReplacement(replaceHashRef);
 
   r.walk([&](Operation *op) {
-    replacer.replaceElementsIn(op, /*replaceAttrs=*/true, /*replaceLocs=*/false,
+    replacer.replaceElementsIn(op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
                                /*replaceTypes=*/true);
   });
 
@@ -446,7 +446,7 @@ inflateRegion(Region *r, RegionHashAttr regionHash,
     });
     r->walk([&](Operation *op) {
       replacer.replaceElementsIn(op, /*replaceAttrs=*/true,
-                                 /*replaceLocs=*/false, /*replaceTypes=*/true);
+                                 /*replaceLocs=*/true, /*replaceTypes=*/true);
     });
     out.emplace();
   });
