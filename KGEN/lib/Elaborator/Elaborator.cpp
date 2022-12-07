@@ -15,6 +15,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENPasses.h"
+#include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "SelectFastestFunction.h"
@@ -220,9 +221,12 @@ class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
   Elaborator(SymbolTableAnalysis &analysis, LLCL::Runtime &runtime,
+             LLCL::AsyncSideEffectMap &map,
              Cache::BlobCache<Cache::TransformCacheKey> &transformCache,
+             Cache::BlobCache<Cache::RegionCacheKey> &regionCache,
              bool enableSearch = false)
-      : analysis(analysis), runtime(runtime), transformCache(transformCache),
+      : analysis(analysis), runtime(runtime), asyncMap(map),
+        transformCache(transformCache), regionCache(regionCache),
         regionOwner(ModuleOp::create(analysis.getModule().getLoc())),
         enableSearch(enableSearch) {}
 
@@ -272,6 +276,13 @@ public:
   /// Bind the result parameters of a fully-specialized function and clear them
   /// from the function.
   void bindResultParameters(FuncOp func) {
+    // Make sure the function is inflated - this is a fast no-op if the function
+    // has not been deflated.
+    asyncMap.mapChained(func, [&](auto ch) {
+      return Cache::inflateOp(func, regionCache, std::move(ch));
+    });
+    asyncMap.await(func);
+
     ParameterExprArrayAttr &values = resultParams[func];
     assert(!values && "results for function already bound");
     values = func.getReturnOp().getParametersAttr();
@@ -379,7 +390,14 @@ private:
   /// functionality.
   LLCL::Runtime &runtime;
 
+  /// This gives us a map of operation -> in-flight side effect. This is
+  /// important because we do async mutations on the IR and we may need await
+  /// those mutations to materialize.
+  LLCL::AsyncSideEffectMap &asyncMap;
+
+  /// These are the caches the Elaborator will use to run its operations.
   Cache::BlobCache<Cache::TransformCacheKey> &transformCache;
+  Cache::BlobCache<Cache::RegionCacheKey> &regionCache;
 
   /// This collects all of the generator implementations of generator
   /// interfaces, across both the primary module and the library.
@@ -1740,6 +1758,12 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   // but it will also auto-rename the symbol for us in the case of conflicts.
   analysis.getTopLevelSymbolTable().insert(newFunc);
 
+  // Make sure this generator is inflated.
+  asyncMap.mapChained(generator, [&](auto ch) {
+    return Cache::inflateOp(generator, regionCache, std::move(ch));
+  });
+  asyncMap.await(generator);
+
   // Clone the body of the generator over.
   BlockAndValueMapping mapper;
   generator.getBodyRegion().cloneInto(&newFunc.getBodyRegion(), mapper);
@@ -2130,21 +2154,43 @@ static void emitElaborationError(InFlightDiagnostic &diag,
 /// Elaborate generators in the specified module, incorporating implementation
 /// logic from the specified library.
 LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
-                                     LLCL::Runtime &runtime,
+                                     LLCL::AsyncSideEffectMap &asyncMap,
                                      ArrayRef<GeneratorOp> primaryGenerators,
                                      bool enableSearch) {
   TimeTraceScope<> traceScope("elaborate-generators");
   ModuleOp primary = analysis.getModule();
 
+  LLCL::Runtime &runtime = asyncMap.getRuntime();
+
   auto transformCacheBackendOr =
       Cache::getDefaultBackendChain(runtime, ".kgen_cache/transform");
   if (failed(transformCacheBackendOr))
     return primary->emitError() << transformCacheBackendOr.getError();
+  auto regionCacheBackendOr =
+      Cache::getDefaultBackendChain(runtime, ".kgen_cache/region");
+  if (failed(regionCacheBackendOr))
+    return primary->emitError() << regionCacheBackendOr.getError();
 
   Cache::BlobCache<Cache::TransformCacheKey> transformCache(
       transformCacheBackendOr.takeValue());
+  Cache::BlobCache<Cache::RegionCacheKey> regionCache(
+      regionCacheBackendOr.takeValue());
 
-  Elaborator elaborator(analysis, runtime, transformCache, enableSearch);
+  // Deflate every op in the primary module. They'll be inflated at
+  // specialization time.
+  SmallVector<AnyAsyncValueRef> deflates;
+  for (auto gen : primary.getOps<GeneratorOp>())
+    asyncMap.mapChained(gen, [&](auto ch) {
+      return Cache::deflateOp(gen, regionCache, std::move(ch));
+    });
+
+  for (auto func : primary.getOps<FuncOp>())
+    asyncMap.mapChained(func, [&](auto ch) {
+      return Cache::deflateOp(func, regionCache, std::move(ch));
+    });
+
+  Elaborator elaborator(analysis, runtime, asyncMap, transformCache,
+                        regionCache, enableSearch);
 
   // Scan the primary and library module to collect all the interfaces,
   // verifying that any common interfaces are the same.
@@ -2213,6 +2259,11 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
         // Drop all defined value uses before erasing the function.
         func->dropAllDefinedValueUses();
         func->erase();
+      } else {
+        // Make sure all funcs are inflated at the end of this, even if they
+        // didn't participate in elaboration.
+        asyncMap.map(
+            func, Cache::inflateOp(func, regionCache, asyncMap.getChain(func)));
       }
     }
   }
@@ -2289,9 +2340,14 @@ struct ElaborateGeneratorsPass
                                includedFiles)))
       return signalPassFailure();
 
-    if (failed(elaborateGenerators(analysis, *rt, primaryGenerators,
+    LLCL::AsyncSideEffectMap asyncMap(*rt);
+
+    if (failed(elaborateGenerators(analysis, asyncMap, primaryGenerators,
                                    shouldDoSearch)))
       return signalPassFailure();
+
+    // Await all async values.
+    asyncMap.awaitAll();
   }
 
   /// An optional set of included files that were found during processing.

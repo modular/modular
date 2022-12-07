@@ -55,7 +55,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> index>(%arg0: si32) -> si32 
   %2 = kgen.param.constant: f32 = <val>
 
   // Silly op so we know when something used this.
-  "genA op"() { value = #kgen.param.decl.ref<"size"> : index} : () -> !pop.scalar<type>
+  "genA.op"() { value = #kgen.param.decl.ref<"size"> : index} : () -> !pop.scalar<type>
 
   kgen.return<mul(size, 2)> %arg0 : si32
 }
@@ -64,7 +64,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> index>(%arg0: si32) -> si32 
 // CHECK-NEXT:   %[[V0:.*]] = kgen.param.constant  = <46>
 // CHECK-NEXT:   %[[V1:.*]] = kgen.param.constant: dtype = <f32>
 // CHECK-NEXT:   %[[V2:.*]] = kgen.param.constant: f32 = <2.000000e+00>
-// CHECK-NEXT:   %[[V3:.*]] = "genA op"() {value = 42 : index} : () -> !pop.scalar<f32>
+// CHECK-NEXT:   %[[V3:.*]] = "genA.op"() {value = 42 : index} : () -> !pop.scalar<f32>
 // CHECK-NEXT:   kgen.return %[[ARG0]] : si32
 // CHECK-NEXT: }
 
@@ -73,7 +73,7 @@ kgen.generator @genA<size, type: dtype, val: f32 -> index>(%arg0: si32) -> si32 
 // CHECK-NEXT:    %[[V0:.*]] = kgen.param.constant  = <23>
 // CHECK-NEXT:    %[[V1:.*]] = kgen.param.constant: dtype = <si8>
 // CHECK-NEXT:    %[[V2:.*]] = kgen.param.constant: f32 = <1.500000e+00>
-// CHECK-NEXT:    %[[V3:.*]] = "genA op"() {value = 19 : index} : () -> !pop.scalar<si8>
+// CHECK-NEXT:    %[[V3:.*]] = "genA.op"() {value = 19 : index} : () -> !pop.scalar<si8>
 // CHECK-NEXT:    kgen.return %[[ARG0]] : si32
 // CHECK-NEXT:  }
 
@@ -124,23 +124,23 @@ kgen.generator.interface @genItf<x -> index>(si32) -> si32
 
 // CHECK-LABEL: kgen.func @"genItf_impl1,x=42"
 // CHECK-SAME: %[[ARG0:.*]]: si32
-// CHECK-NEXT:   "genItf_impl1"() {value = 42 : index} : () -> ()
+// CHECK-NEXT:   "genItf.impl1"() {value = 42 : index} : () -> ()
 // CHECK-NEXT:   kgen.return %[[ARG0]] : si32
 // CHECK-NEXT: }
 kgen.generator @genItf_impl1<x -> index>(%arg0: si32) -> si32
   implements @genItf {
-  "genItf_impl1"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
+  "genItf.impl1"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
   kgen.return<add(x, 1)> %arg0 : si32
 }
 
 // CHECK-LABEL: kgen.func @"genItf_impl2,x=42"
 // CHECK-SAME: %[[ARG0:.*]]: si32
-// CHECK-NEXT:   "genItf_impl2"() {value = 42 : index} : () -> ()
+// CHECK-NEXT:   "genItf.impl2"() {value = 42 : index} : () -> ()
 // CHECK-NEXT:   kgen.return %[[ARG0]] : si32
 // CHECK-NEXT: }
 kgen.generator @genItf_impl2<x -> index>(%arg0: si32) -> si32
   implements @genItf {
-  "genItf_impl2"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
+  "genItf.impl2"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
   kgen.return<mul(x, 2)> %arg0 : si32
 }
 
@@ -180,23 +180,23 @@ kgen.generator.interface @genItf2<x>()
 
 // CHECK-NOT: kgen.func @"genItf2_impl0,x=1"() {
 // CHECK-LABEL: kgen.func @"genItf2_impl0,x=0"() {
-// CHECK-NEXT:   "impl0"() : () -> ()
+// CHECK-NEXT:   "impl.0"() : () -> ()
 // CHECK-NEXT:   kgen.return
 // CHECK-NOT: kgen.func @"genItf2_impl0,x=1"() {
 kgen.generator @genItf2_impl0<x>()
   constraints <[eq(x, 0), "x must be zero"]> implements @genItf2 {
-  "impl0"() : () -> ()
+  "impl.0"() : () -> ()
   kgen.return
 }
 
 // CHECK-NOT: kgen.func @"genItf2_impl1,x=0"()
 // CHECK-LABEL: kgen.func @"genItf2_impl1,x=1"() {
-// CHECK-NEXT:   "impl1"() : () -> ()
+// CHECK-NEXT:   "impl.1"() : () -> ()
 // CHECK-NEXT:   kgen.return
 // CHECK-NOT: kgen.func @"genItf2_impl1,x=0"()
 kgen.generator @genItf2_impl1<x>()
   constraints <[eq(x, 1), "x must be 1"]> implements @genItf2 {
-  "impl1"() : () -> ()
+  "impl.1"() : () -> ()
   kgen.return
 }
 
@@ -224,7 +224,7 @@ kgen.generator.interface @genItf3<ty: dtype>()
 // This implementation is fine.
 // CHECK-LABEL: kgen.func @"genItf3_impl0,ty=f32"() {
 kgen.generator @genItf3_impl0<ty: dtype>() implements @genItf3 {
-  "impl0"() : () -> ()
+  "impl.0"() : () -> ()
   kgen.return
 }
 
@@ -361,8 +361,8 @@ kgen.generator @parametricTypes(%arg0: !pop.scalar<ui64>, %arg1: !pop.simd<2, f3
   kgen.param.declare dt: dtype = <ui32>
   kgen.param.declare ty1: type = <!pop.scalar<dt>>
 
-  // CHECK-NEXT:   "impl0"() : () -> !pop.scalar<ui32>
-  "impl0"() : () -> !kgen.paramref<ty1>
+  // CHECK-NEXT:   "impl.0"() : () -> !pop.scalar<ui32>
+  "impl.0"() : () -> !kgen.paramref<ty1>
 
   // CHECK-NEXT: = kgen.call @"parametricAdd,sz=1,dt=ui64"
   // CHECK-SAME: (%[[ARG0:.*]], %[[ARG0:.*]]) : (!pop.scalar<ui64>, !pop.scalar<ui64>) -> !pop.scalar<ui64>
@@ -530,11 +530,11 @@ kgen.generator @test_region_insanity() {
 
 // CHECK-LABEL: kgen.func @"parametricBinOp,ty=!pop.scalar<f32>"
 // CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32>, %[[ARG1:.*]]: !pop.scalar<f32>) -> !pop.scalar<f32> {
-// CHECK-NEXT: %[[V0:.*]] = "custom_op"(%[[ARG0]], %[[ARG1]]) : (!pop.scalar<f32>, !pop.scalar<f32>) -> !pop.scalar<f32>
+// CHECK-NEXT: %[[V0:.*]] = "custom.op"(%[[ARG0]], %[[ARG1]]) : (!pop.scalar<f32>, !pop.scalar<f32>) -> !pop.scalar<f32>
 // CHECK-NEXT: kgen.return %[[V0]] : !pop.scalar<f32>
 kgen.generator @parametricBinOp<ty: type>
   (%a: !kgen.paramref<ty>, %b: !kgen.paramref<ty>) -> !kgen.paramref<ty> {
-  %res = "custom_op" (%a, %b) : (!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>
+  %res = "custom.op" (%a, %b) : (!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>
   kgen.return %res : !kgen.paramref<ty>
 }
 
@@ -1218,31 +1218,31 @@ kgen.generator.interface @genItf3<x>()
 
 kgen.generator @genItf3_impl0<x>()
   constraints <[eq(x, 0), "x must be zero"]> implements @genItf3 {
-  "impl0"() {attr=#kgen.param.decl.ref<"x"> : index}: () -> ()
+  "impl.0"() {attr=#kgen.param.decl.ref<"x"> : index}: () -> ()
   kgen.return
 }
 
 kgen.generator @genItf3_impl1<x>()
   constraints <[ne(x, 0), "x must not be zero"]> implements @genItf3 {
-  "impl1"() {attr=#kgen.param.decl.ref<"x"> : index} : () -> ()
+  "impl.1"() {attr=#kgen.param.decl.ref<"x"> : index} : () -> ()
   // Use inlined_call to make FileCheck easier.
   kgen.inlined_call[<x>()->(): @genItf3]<x = sub(x, 1)>()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @"genItf3_impl1,x=4"() {
-// CHECK-NEXT:   "impl1"() {attr = 4 : index} : () -> ()
-// CHECK-NEXT:   "impl1"() {attr = 3 : index} : () -> ()
-// CHECK-NEXT:   "impl1"() {attr = 2 : index} : () -> ()
-// CHECK-NEXT:   "impl1"() {attr = 1 : index} : () -> ()
-// CHECK-NEXT:   "impl0"() {attr = 0 : index} : () -> ()
+// CHECK-NEXT:   "impl.1"() {attr = 4 : index} : () -> ()
+// CHECK-NEXT:   "impl.1"() {attr = 3 : index} : () -> ()
+// CHECK-NEXT:   "impl.1"() {attr = 2 : index} : () -> ()
+// CHECK-NEXT:   "impl.1"() {attr = 1 : index} : () -> ()
+// CHECK-NEXT:   "impl.0"() {attr = 0 : index} : () -> ()
 // CHECK-NEXT:   kgen.return
 // CHECK-NEXT: }
 
 // CHECK-LABEL: kgen.func @"genItf3_impl1,x=2"() {
-// CHECK-NEXT:    "impl1"() {attr = 2 : index} : () -> ()
-// CHECK-NEXT:    "impl1"() {attr = 1 : index} : () -> ()
-// CHECK-NEXT:    "impl0"() {attr = 0 : index} : () -> ()
+// CHECK-NEXT:    "impl.1"() {attr = 2 : index} : () -> ()
+// CHECK-NEXT:    "impl.1"() {attr = 1 : index} : () -> ()
+// CHECK-NEXT:    "impl.0"() {attr = 0 : index} : () -> ()
 // CHECK-NEXT:    kgen.return
 // CHECK-NEXT:  }
 
