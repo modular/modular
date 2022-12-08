@@ -11,6 +11,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include <limits>
 
 using namespace M;
 using namespace std::chrono_literals;
@@ -32,7 +33,8 @@ struct OpaqueFunction {
 /// This function takes a nullary function and benchmarks it using the
 /// micrbenchmarking framework. It returns the mean runtime of the function in
 /// nanoseconds.
-extern "C" double KGEN_CompilerRT_Benchmark(OpaqueFunction func) {
+extern "C" double KGEN_CompilerRT_Benchmark(double fastestDuration,
+                                            OpaqueFunction func) {
   MicroBenchmark benchmark("kgen benchmark function",
                            [func](MicroBenchmark::State &state) {
                              for (auto _ : state)
@@ -47,7 +49,17 @@ extern "C" double KGEN_CompilerRT_Benchmark(OpaqueFunction func) {
   runOptions.minRuntime = 100ms;
 #endif // MODULAR_DEBUG
 
-  (void)benchmark.run(runOptions);
+  // Terminate the benchmark if it takes longer than twice the fastest duration.
+  // TODO: Backup the choice of 2x with some data.
+  runOptions.epilogueFunction = [=](MicroBenchmark::State &state) {
+    if (state.getDuration().count() >= 2 * fastestDuration)
+      state.reportError("benchmark took too long");
+  };
+
+  // If the benchmark fails, return the maximum double value as the duration.
+  if (ErrorOrSuccess err = benchmark.run(runOptions))
+    return std::numeric_limits<double>::max();
+
   return benchmark.measurement(
       MicroBenchmark::ReportMetric::kTrimmedMeanLatency,
       MicroBenchmark::TimeUnit::kNanoseconds);
