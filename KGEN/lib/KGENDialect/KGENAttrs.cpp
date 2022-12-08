@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/Host.h"
 #include "Support/SIMD.h"
@@ -665,20 +666,6 @@ static Attribute simplifyXor(SmallVectorImpl<TypedAttr> &operands) {
       /*identityCst*/ [](auto cst) { return cst.isZero(); });
 }
 
-/// Duplicate the operands in-place for ops like `min` and `max`.
-static void deduplicateOperands(SmallVectorImpl<TypedAttr> &operands) {
-  // If any of the operands is a placeholder, do not change the list.
-  if (std::any_of(operands.begin(), operands.end(), [](auto attr) -> bool {
-        return isa<LITPlaceholderAttr>(attr);
-      }))
-    return;
-
-  llvm::SetVector<TypedAttr, SmallVector<TypedAttr>, SmallPtrSet<Attribute, 4>>
-      uniqueOperands;
-  uniqueOperands.insert(operands.begin(), operands.end());
-  operands = uniqueOperands.takeVector();
-}
-
 /// Returns true if the integer is at its max value.
 static bool intIsMaxValue(Type type, const APInt &value) {
   return isSignedIntType(type) ? value.isMaxSignedValue() : value.isMaxValue();
@@ -690,7 +677,6 @@ static bool intIsMinValue(Type type, const APInt &value) {
 }
 
 static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
-  deduplicateOperands(operands);
   Type type = operands.front().getType();
   return simplifyAssocOp(
       POC::Max, operands, llvm::APIntOps::umax, llvm::APIntOps::smax,
@@ -699,7 +685,6 @@ static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
 }
 
 static Attribute simplifyMin(SmallVectorImpl<TypedAttr> &operands) {
-  deduplicateOperands(operands);
   Type type = operands.front().getType();
   return simplifyAssocOp(
       POC::Min, operands, llvm::APIntOps::umin, llvm::APIntOps::smin,

@@ -1186,7 +1186,7 @@ static LogicalResult performPlaceholderSubstitution(
       return failure();
     }
 
-    auto placeholder = dyn_cast<LITPlaceholderAttr>(attr);
+    auto placeholder = dyn_cast<PlaceholderAttr>(attr);
     if (!placeholder || nextIdx >= subscript.indices.size()) {
       newAttrs.push_back(attr);
       continue;
@@ -1199,7 +1199,7 @@ static LogicalResult performPlaceholderSubstitution(
       return failure();
 
     // TODO: Support conversions.
-    auto expectedType = cast<LITPlaceholderAttr>(attr).getType();
+    auto expectedType = cast<PlaceholderAttr>(attr).getType();
     if (newVal.getType() != expectedType) {
       emitter.emitError(indexVal->getLoc(), "parameter of type ")
           << ASTType(newVal.getType())
@@ -1270,7 +1270,7 @@ static TypedAttr substituteParametersIntoMLIRAttr(
   bool havePlaceholder = false;
   itf.walkImmediateSubElements(
       [&](Attribute attr) {
-        havePlaceholder |= isa<LITPlaceholderAttr>(attr);
+        havePlaceholder |= isa<PlaceholderAttr>(attr);
         params.push_back(attr);
       },
       [&](Type type) { params.push_back(type); });

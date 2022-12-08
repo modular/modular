@@ -97,7 +97,7 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant = <4>
   %26 = kgen.param.constant = <max(-2, 4)>
 
-  // CHECK: = kgen.param.constant = <max(p1, p2, 5)>
+  // CHECK: = kgen.param.constant = <max(p1, p1, p2, p2, 5)>
   %27 = kgen.param.constant = <max(4, p1, p2, 5, p1, p2)>
 
   // CHECK: = kgen.param.constant = <min(p1, 2)>
@@ -106,7 +106,7 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant = <-2>
   %29 = kgen.param.constant = <min(-2, 4)>
 
-  // CHECK: = kgen.param.constant = <min(p1, p2, 4)>
+  // CHECK: = kgen.param.constant = <min(p1, p1, p2, p2, 4)>
   %30 = kgen.param.constant = <min(4, p1, p2, 5, p1, p2)>
 
   // CHECK: = kgen.param.constant = <-4>

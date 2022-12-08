@@ -223,7 +223,7 @@ fn mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2) -> __mlir_type.inde
   var i1Cast = __mlir_op.`index.castu`[_type: __mlir_type.i1](idxConstant)
 
   # CHECK: kgen.param.declare new_lower = <max(a, 42)>
-  alias new_lower = __mlir_attr.`#kgen.param.expr<max, #kgen<litplaceholder index>, #kgen<litplaceholder index>> : index`[a, 42]
+  alias new_lower = __mlir_attr.`#kgen.param.expr<max, #lit.placeholder : index, #lit.placeholder : index> : index`[a, 42]
 
   # CHECK: [[TMP1:%.*]] = kgen.param.constant = <new_lower>
   # CHECK: [[TMP2:%.*]] = index.constant 1
@@ -234,9 +234,9 @@ fn mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2) -> __mlir_type.inde
 # CHECK-LABEL: lit.func @mlirTypesAndAttrs
 fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`] ():
   # CHECK: %a = lit.var.decl "a" : <scalar<dtype>>
-  var a : __mlir_type.`!pop.scalar<#kgen<litplaceholder !kgen.dtype>>`[dtype]
+  var a : __mlir_type.`!pop.scalar<#lit.placeholder : !kgen.dtype>`[dtype]
   # CHECK: %b = lit.var.decl "b" : <simd<4, dtype>>
-  var b : __mlir_type.`!pop.simd<#kgen<litplaceholder index>, #kgen<litplaceholder !kgen.dtype>>`[4, dtype]
+  var b : __mlir_type.`!pop.simd<#lit.placeholder: index, #lit.placeholder : !kgen.dtype>`[4, dtype]
 
 
 # CHECK-LABEL: lit.func @testSIMD(
