@@ -391,8 +391,8 @@ protected:
   void runWaitersAndDeallocate(WaiterListNode *list, size_t numEntriesValid);
   void andThenOutOfLine(Waiter waiter, WaitersAndState oldValue);
   void destroyWithRefCountZero();
-  State notifyReady(State newState, llvm::Optional<Waiter> &extraWaiter);
-  void removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter);
+  State notifyReady(State newState, std::optional<Waiter> &extraWaiter);
+  void removeAnyInlineWaiter(std::optional<Waiter> &inlineWaiter);
   Waiter *getInlineWaiterPointer();
 
   /// Invoke a single waiter immediately.
@@ -749,7 +749,7 @@ inline void AsyncValue::emplace(Args &&...args) {
   assert(getTypeID<T>() == typeID && "Incorrect accessor");
 
   // Take any inline waiters out of the payload area so we can construct it.
-  llvm::Optional<Waiter> inlineWaiter;
+  std::optional<Waiter> inlineWaiter;
   removeAnyInlineWaiter(inlineWaiter);
 
   // Initialize the payload.

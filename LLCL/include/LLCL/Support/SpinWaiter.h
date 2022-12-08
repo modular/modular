@@ -130,8 +130,7 @@ private:
   std::chrono::nanoseconds busyWaitTime;
 
   /// This is the time we should stop busy waiting.
-  llvm::Optional<std::chrono::high_resolution_clock::time_point>
-      busyWaitEndTime;
+  std::optional<std::chrono::high_resolution_clock::time_point> busyWaitEndTime;
 };
 
 } // namespace M::LLCL
