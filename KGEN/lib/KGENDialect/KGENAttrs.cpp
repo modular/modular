@@ -1337,9 +1337,8 @@ bool DTypeConstantAttr::isConvertibleTo(Type type) {
 bool DTypeConstantAttr::isConvertibleFrom(Type type) {
   KGENDType dtype = getDType();
 
-  // Bool can only be `i1`.
   if (dtype.isBool())
-    return type.isSignlessInteger(1);
+    return llvm::isa<IntegerType>(type);
 
   // Signless integers cannot be converted.
   if (type.isSignlessInteger() && !dtype.isIndex())

@@ -60,21 +60,6 @@ kgen.generator @impl() {
 
 // -----
 
-kgen.generator @invalid_bool<type: dtype>() -> !pop.simd<1, type> {
-  // expected-note @below {{cannot coerce i32 value to bool}}
-  %0 = pop.constant(1 : i32) : !pop.simd<1, type>
-  kgen.return %0 : !pop.simd<1, type>
-}
-
-// expected-error @below {{no viable implementations}}
-kgen.generator @impl() {
-  // expected-note @below {{call expansion failed}}
-  %0 = kgen.call @invalid_bool<type: dtype = bool>() : () -> !pop.simd<1, bool>
-  kgen.return
-}
-
-// -----
-
 kgen.generator @inexact_int<type: dtype>() -> !pop.simd<1, type> {
   // expected-note @below {{only exact integer floats can be converted to integers}}
   %0 = pop.constant(1.2) : !pop.simd<1, type>

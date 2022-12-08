@@ -63,9 +63,9 @@ bool M::hasEquivalentFloatType(DType dtype) {
 }
 
 IntegerType M::getEquivalentIntegerType(MLIRContext *ctx, DType dtype) {
-  if (!dtype.isInt())
+  if (!dtype.isInt() && !dtype.isBool())
     return {}; // null denotes failure
-  return IntegerType::get(ctx, dtype.getWidthInBits(),
+  return IntegerType::get(ctx, dtype.isBool() ? 1 : dtype.getWidthInBits(),
                           dtype.isSInt() ? IntegerType::Signed
                                          : IntegerType::Unsigned);
 }
