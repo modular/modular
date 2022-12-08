@@ -62,11 +62,13 @@ TEST(CachedTransformTest, CacheHits) {
   // Register the LogicalResult type.
   AsyncValue::registerType<LogicalResult>();
 
-  auto regionBackendChainOr = getDefaultBackendChain(runtime, "region");
+  auto regionBackendChainOr =
+      getDefaultBackendChain(runtime, "CacheTest/region");
   EXPECT_FALSE(failed(regionBackendChainOr));
   auto regionCache = RCRef<BlobCache<RegionCacheKey>>::create(
       regionBackendChainOr.takeValue());
-  auto transformBackendChainOr = getDefaultBackendChain(runtime, "region");
+  auto transformBackendChainOr =
+      getDefaultBackendChain(runtime, "CacheTest/xform");
   EXPECT_FALSE(failed(transformBackendChainOr));
   auto transformCache = RCRef<BlobCache<TransformCacheKey>>::create(
       transformBackendChainOr.takeValue());
