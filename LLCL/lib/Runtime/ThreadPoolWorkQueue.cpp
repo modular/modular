@@ -20,7 +20,6 @@
 
 using namespace M::LLCL;
 using llvm::ArrayRef;
-using llvm::Optional;
 
 /// This value is set to a number for workqueue threads.  Foreign threads always
 /// have index #0.
@@ -131,7 +130,7 @@ struct WorkQueueThread {
   Semaphore sema;
 
   // We do not construct this for element #0.
-  Optional<std::thread> thread;
+  std::optional<std::thread> thread;
 
   /// Create a `WorkQueueThread` from a sync state reference and a reference to
   /// a task list. This also starts the std::thread, so the sync state and task

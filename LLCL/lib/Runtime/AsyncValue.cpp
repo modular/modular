@@ -92,7 +92,7 @@ void AsyncValue::destroyWithRefCountZero() {
 /// any inline waiters will be moved out to the `inlineWaiter` argument, and
 /// the payload/error area is uninitialized.
 ///
-void AsyncValue::removeAnyInlineWaiter(llvm::Optional<Waiter> &inlineWaiter) {
+void AsyncValue::removeAnyInlineWaiter(std::optional<Waiter> &inlineWaiter) {
   WaitersAndState oldValue = loadWaitersAndState();
   SpinWaiter<> spinWaiter;
   while (1) { // This loop allows us to 'continue' to retry or `return` to exit.
@@ -406,7 +406,7 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
 /// Transition to a ready state and notify all waiters about this.  This
 /// returns the old state.
 AsyncValue::State AsyncValue::notifyReady(State newState,
-                                          llvm::Optional<Waiter> &extraWaiter) {
+                                          std::optional<Waiter> &extraWaiter) {
   assert((newState == State::kAvailable || newState == State::kError) &&
          "new state isn't a ready state!");
 
@@ -462,7 +462,7 @@ void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
     return;
   }
 
-  llvm::Optional<Waiter> inlineWaiter;
+  std::optional<Waiter> inlineWaiter;
   removeAnyInlineWaiter(inlineWaiter);
 
   auto *concrete = static_cast<Detail::SomeConcreteAsyncValue *>(this);
@@ -508,7 +508,7 @@ void AsyncValue::resolveIndirect(AnyAsyncValueRef newValue) {
     // Resolve the type of the contained value.
     typeID = newValue->typeID;
 
-    llvm::Optional<Waiter> inlineWaiter;
+    std::optional<Waiter> inlineWaiter;
     removeAnyInlineWaiter(inlineWaiter);
 
     new (&thisIndirect->value) AnyAsyncValueRef(std::move(newValue));
