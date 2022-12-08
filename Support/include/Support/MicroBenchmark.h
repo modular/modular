@@ -99,7 +99,8 @@ struct MicroBenchmark {
     };
     inline Iterator begin() { return Iterator(this); }
     inline Iterator end() { return Iterator(); }
-    size_t getBatchSize() { return batchSize; }
+    std::chrono::nanoseconds getDuration() const { return duration; }
+    size_t getBatchSize() const { return batchSize; }
     void reportError(const Error &err) { error = err.copy(); }
     inline bool hasError() const { return error.isError(); }
 
@@ -107,6 +108,7 @@ struct MicroBenchmark {
     friend struct MicroBenchmark;
     State(size_t batchSize) : batchSize(batchSize) {}
     size_t batchSize;
+    std::chrono::nanoseconds duration = std::chrono::nanoseconds::zero();
     ErrorOrSuccess error;
 
     ErrorOrSuccess takeError() { return std::move(error); }
@@ -146,12 +148,14 @@ struct MicroBenchmark {
     /// at least the minRuntime specified.
     std::chrono::milliseconds minRuntime = std::chrono::seconds(2);
     /// The prologue function to be called before each batch iteration of the
-    /// benchmarkFunction. The prologue function is not accounted for in the
-    /// timing.
+    /// benchmarkFunction. If the prologue function returns an error via the
+    /// state, then the benchmark loop is terminated. The prologue function is
+    /// not accounted for in the timing.
     std::function<void(State &)> prologueFunction{nullptr};
     /// The epilogue function to be called after each batch iteration of the
-    /// benchmarkFunction. The epilogue function is not accounted for in the
-    /// timing.
+    /// benchmarkFunction. If the epilogue function returns an error via the
+    /// state, then the benchmark loop is terminated.  The epilogue function is
+    /// not accounted for in the timing.
     std::function<void(State &)> epilogueFunction{nullptr};
     /// The maximum number of iterations to run for each benchmark. We assume
     /// that the function will reach the minimum runtime of the benchmark with
