@@ -36,8 +36,8 @@ AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::insert(BufferRef keyHash,
       return result.emplace(success());
 
     auto insert = thisRef->delegate->insert(keyHash.copy(), obj.copy());
-    insert.andThen([thisRef = thisRef.copy(), result = result.copy(),
-                    insert = insert.copy()] {
+    insert.andThenSync([thisRef = thisRef.copy(), result = result.copy(),
+                        insert = insert.copy()] {
       if (failed(*insert))
         return result.emplace(insert->takeError());
       result.emplace(success());
@@ -57,7 +57,7 @@ AsyncValueRef<bool> BlobCacheBackend::contains(BufferRef keyHash) {
       return result.emplace(false);
 
     auto contains = thisRef->delegate->contains(keyHash.copy());
-    contains.andThen(
+    contains.andThenSync(
         [thisRef = thisRef.copy(), result = result.copy(),
          contains = contains.copy()] { return result.emplace(*contains); });
   });
@@ -77,8 +77,8 @@ AsyncValueRef<CacheFindResult> BlobCacheBackend::find(BufferRef keyHash) {
           return result.emplace(CacheFindResult::notInCache());
 
         auto itemOr = thisRef->delegate->find(keyHash.copy());
-        itemOr.andThen([thisRef = thisRef.copy(), keyHash = keyHash.copy(),
-                        result = result.copy(), itemOr = itemOr.copy()]() {
+        itemOr.andThenSync([thisRef = thisRef.copy(), keyHash = keyHash.copy(),
+                            result = result.copy(), itemOr = itemOr.copy()]() {
           if (itemOr->isError())
             return result.emplace(CacheFindResult::error(itemOr->takeError()));
 
@@ -111,8 +111,8 @@ AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::clear() {
       return result.emplace(success());
 
     auto clear = thisRef->delegate->clear();
-    clear.andThen([thisRef = thisRef.copy(), result = result.copy(),
-                   clear = clear.copy()] {
+    clear.andThenSync([thisRef = thisRef.copy(), result = result.copy(),
+                       clear = clear.copy()] {
       if (failed(*clear))
         return result.emplace(clear->takeError());
       result.emplace(success());

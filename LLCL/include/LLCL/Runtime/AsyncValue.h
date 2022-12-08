@@ -121,7 +121,7 @@ public:
   /// Call the specified closure if the value is ready.  Otherwise, add it
   /// to the waiter list and calls it when the value becomes ready.
   template <typename WaiterT>
-  auto andThen(WaiterT &&waiter) -> decltype(waiter(), void());
+  auto andThenSync(WaiterT &&waiter) -> decltype(waiter(), void());
 
   /// Call the specified closure if the value is ready.  Otherwise, add it
   /// to the waiter list and calls it when the value becomes ready.  This
@@ -129,7 +129,7 @@ public:
   /// `const AnyAsyncValueRef &`.  This eliminates the need to capture the
   /// receiver in the closure and reduces reference count traffic.
   template <typename WaiterT>
-  auto andThen(WaiterT &&waiter)
+  auto andThenSync(WaiterT &&waiter)
       -> decltype(waiter(AnyAsyncValueRef()), void());
 
   /// Return the stored value as type T.
@@ -711,10 +711,10 @@ inline void AsyncValue::dropRef(uint16_t count) {
 /// Call the specified closure if the value is ready.  Otherwise, add it
 /// to the waiter list and calls it when the value becomes ready.
 template <typename WaiterT>
-inline auto AsyncValue::andThen(WaiterT &&waiter)
+inline auto AsyncValue::andThenSync(WaiterT &&waiter)
     -> decltype(waiter(), void()) {
-  andThen([waiter = std::forward<WaiterT>(waiter)](
-              const AnyAsyncValueRef &) mutable { return waiter(); });
+  andThenSync([waiter = std::forward<WaiterT>(waiter)](
+                  const AnyAsyncValueRef &) mutable { return waiter(); });
 }
 
 /// Call the specified closure if the value is ready.  Otherwise, add it
@@ -723,9 +723,9 @@ inline auto AsyncValue::andThen(WaiterT &&waiter)
 /// `const AnyAsyncValueRef &`.  This eliminates the need to capture the
 /// receiver in the closure and reduces reference count traffic.
 template <typename WaiterT>
-inline auto AsyncValue::andThen(WaiterT &&waiter)
+inline auto AsyncValue::andThenSync(WaiterT &&waiter)
     -> decltype(waiter(AnyAsyncValueRef()), void()) {
-  // Clients generally want to use andThen without them each having to check
+  // Clients generally want to use andThenSync without them each having to check
   // to see if the value is present. Check for them, and immediately run the
   // lambda if it is already here.
   auto waitersAndStateValue = loadWaitersAndState();

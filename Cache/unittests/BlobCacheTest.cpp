@@ -46,7 +46,7 @@ protected:
 
 TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
   auto contains = cache->contains("does not exist");
-  contains.andThen([contains = contains.copy()] {
+  contains.andThenSync([contains = contains.copy()] {
     EXPECT_FALSE(*contains)
         << "expected not to have item named 'does not exist'\n";
   });
@@ -54,7 +54,7 @@ TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
 
 TEST_F(BlobCacheTest, FindShouldNotReturnErrorForNonexistantItem) {
   auto dneOr = cache->find("does not exist");
-  dneOr.andThen([dneOr = dneOr.copy()] {
+  dneOr.andThenSync([dneOr = dneOr.copy()] {
     EXPECT_FALSE(dneOr->hasValue() && !dneOr->isError())
         << "expected not to have item named 'does not exist'\n";
   });
@@ -68,13 +68,13 @@ TEST_F(BlobCacheTest, ContainItemWhenInserted) {
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
   auto insertOr = cache->insert("zeros", std::move(zerosBuf));
-  insertOr.andThen([cache = cache.copy(), insertOr = insertOr.copy()] {
+  insertOr.andThenSync([cache = cache.copy(), insertOr = insertOr.copy()] {
     EXPECT_FALSE(insertOr->isError()) << insertOr->getError() << '\n';
     EXPECT_FALSE(insertOr->takeValue().empty())
         << "expected to receive the hash key\v";
 
     auto contains = cache->contains("zeros");
-    contains.andThen([contains = contains.copy()] {
+    contains.andThenSync([contains = contains.copy()] {
       EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
     });
   });
@@ -88,19 +88,19 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
   auto insertOr = cache->insert("zeros", zerosBuf.copy());
-  insertOr.andThen([cache = cache.copy(), insertOr = insertOr.copy()] {
+  insertOr.andThenSync([cache = cache.copy(), insertOr = insertOr.copy()] {
     EXPECT_FALSE(insertOr->isError()) << insertOr->getError() << '\n';
     EXPECT_FALSE(insertOr->takeValue().empty())
         << "expected to receive the hash key\v";
 
     auto contains = cache->contains("zeros");
-    contains.andThen([contains = contains.copy()] {
+    contains.andThenSync([contains = contains.copy()] {
       EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
     });
   });
 
   auto zerosOr = cache->find("zeros");
-  zerosOr.andThen([zerosOr = zerosOr.copy(), zerosBuf = zerosBuf.copy()] {
+  zerosOr.andThenSync([zerosOr = zerosOr.copy(), zerosBuf = zerosBuf.copy()] {
     EXPECT_TRUE(zerosOr->hasValue()) << zerosOr->getError();
     BufferRef outZeros = zerosOr->takeValue();
     ASSERT_TRUE(outZeros->getBufferSize() == zerosBuf->getBufferSize())
@@ -119,19 +119,19 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
   auto insertOr = cache->insert("zeros", zerosBuf.copy());
-  insertOr.andThen([cache = cache.copy(), insertOr = insertOr.copy()] {
+  insertOr.andThenSync([cache = cache.copy(), insertOr = insertOr.copy()] {
     EXPECT_FALSE(insertOr->isError()) << insertOr->getError() << '\n';
     EXPECT_FALSE(insertOr->takeValue().empty())
         << "expected to receive the hash key\v";
 
     auto contains = cache->contains("zeros");
-    contains.andThen([contains = contains.copy()] {
+    contains.andThenSync([contains = contains.copy()] {
       EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
     });
   });
 
   auto zerosOr = cache->find("zeros");
-  zerosOr.andThen([zerosOr = zerosOr.copy(), zerosBuf = zerosBuf.copy()] {
+  zerosOr.andThenSync([zerosOr = zerosOr.copy(), zerosBuf = zerosBuf.copy()] {
     EXPECT_TRUE(zerosOr->hasValue()) << zerosOr->getError();
     BufferRef outZeros = zerosOr->takeValue();
     ASSERT_TRUE(outZeros->getBufferSize() == zerosBuf->getBufferSize())
@@ -146,11 +146,11 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
   await(zerosOr);
 
   auto clearOr = cache->clear();
-  clearOr.andThen([clearOr = clearOr.copy(), cache = cache.copy()] {
+  clearOr.andThenSync([clearOr = clearOr.copy(), cache = cache.copy()] {
     EXPECT_FALSE(failed(*clearOr)) << clearOr->getError() << "\n";
 
     auto contains = cache->contains("zeros");
-    contains.andThen([contains = contains.copy()] {
+    contains.andThenSync([contains = contains.copy()] {
       EXPECT_FALSE(*contains)
           << "expected not to have item named 'zeros' after the clear\n";
     });

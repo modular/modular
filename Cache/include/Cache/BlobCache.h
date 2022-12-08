@@ -202,8 +202,8 @@ public:
 
     // Allocate a space for the output.
     auto out = LLCL::AsyncValueRef<ErrorOr<std::string>>::allocate(runtime);
-    insertAsync.andThen([keyHash = std::move(keyHash), out = out.copy(),
-                         insertAsync = insertAsync.copy()] {
+    insertAsync.andThenSync([keyHash = std::move(keyHash), out = out.copy(),
+                             insertAsync = insertAsync.copy()] {
       // If insertion failed, propagate the error. Otherwise, hand over the key
       // hash.
       if (insertAsync->isError())

@@ -11,7 +11,7 @@ types like `AsyncValueRef<T>`.
 [std::future](https://en.cppreference.com/w/cpp/thread/future), except that
 `AsyncValue` does not let callers wait/block until the value becomes available.
 Instead, the caller enqueues a closure that uses the value with
-`AsyncValue::andThen`. `AsyncValue::emplace` will run any enqueued closures when
+`AsyncValue::andThenSync`. `AsyncValue::emplace` will run any enqueued closures when
 the value becomes available. This approach is similar to
 [continuation passing](https://en.wikipedia.org/wiki/Continuation-passing_style).
 
@@ -31,7 +31,7 @@ An `AsyncValue` will eventually resolve to hold a value of some C++ type, but
 this is dynamic and can happen after construction.  The `AsyncValue` type itself
 is therefore type-erased: users can manipulate an `AnyAsyncValueRef` without
 knowing what type it will ultimately contain.  For example, you can enqueue a
-closure with `AsyncValue::andThen()` without knowing the actual type that will
+closure with `AsyncValue::andThenSync()` without knowing the actual type that will
 ultimately be contained in the `AsyncValue`. Type information is only needed
 when *accessing* the contained data, for example with `AsyncValue::get<T>()` or
 `AsyncValue::emplace<T>()`.
@@ -65,22 +65,22 @@ with `Runtime&`.
 The consequence of this is that having an `AsyncValue` at hand gives you access
 to the `Runtime&` that you need.
 
-## Chaining work together with `andThen`
+## Chaining work together with `andThenSync`
 
 One of the most common things to do when building a series of asynchronous
 computations is to enqueue work that occurs when a value becomes available.
-`AsyncValue` makes this very easy through the `andThen` method:
+`AsyncValue` makes this very easy through the `andThenSync` method:
 
 ```c++
 void printWhenReady(AnyAsyncValueRef input) {
-  input->andThen([]() {
+  input->andThenSync([]() {
     // This prints whenever `input` becomes ready.
     printf("input is ready!");
   });
 }
 ```
 
-If the `AsyncValue` is already ready when the `andThen` is executed, then the
+If the `AsyncValue` is already ready when the `andThenSync` is executed, then the
 lambda is immediately executed.  Otherwise it is enqueued and run when the value
 becomes available.
 
@@ -97,7 +97,7 @@ void addToTableWhenReady(AsyncValueRef<int32_t> input,
   // Watch out for order of evaluation, std::move will corrupt our `input`
   // argument.
   AsyncValue *inputPtr = input.getPointer();
-  inputPtr->andThen([input = std::move(input),
+  inputPtr->andThenSync([input = std::move(input),
                      tablePtr = std::move(tablePtr)]() {
     tablePtr->addValue(input.get());
   });
@@ -106,14 +106,14 @@ void addToTableWhenReady(AsyncValueRef<int32_t> input,
 
 This is extremely handy for capturing and working with values, but you'll note
 that there is a footgun here due to C++'s lack of order of evaluation rules.  We
-can't just use `input->andThen([input = std::move(input), ...` because the
+can't just use `input->andThenSync([input = std::move(input), ...` because the
 compiler might evaluate the `std::move` before the load of input for the base
 expression.
 
-Another downside of this style of `andThen` is that it is capturing a pointer to
+Another downside of this style of `andThenSync` is that it is capturing a pointer to
 the value being waited on.  This can increase the size of the lambda and
 increase the chances of an out-of-line representation for the function.  To
-address both of these problems, you can use a form of `andThen` that gets passed
+address both of these problems, you can use a form of `andThenSync` that gets passed
 in a reference to the value when it is available.  The same thing as above can
 be expressed as:
 
@@ -123,7 +123,7 @@ be expressed as:
 void addToTableWhenReady(AsyncValueRef<int32_t> input,
                          RCRef<TableOfValues> tablePtr) {
   // Note that use of `input.` vs `input->`:
-  input.andThen([tablePtr = std::move(tablePtr)]
+  input.andThenSync([tablePtr = std::move(tablePtr)]
                 (const AsyncValueRef<int32_t> &input) {
     tablePtr->addValue(input.get());
   });
@@ -149,7 +149,7 @@ cannot transition an `AsyncValue` back out of a ready state.
 
 **"Unconstructed":** An `AsyncValue` in unconstructed state is obtained from the
 `AsyncValue::allocate<T>` or `AsyncValueRef<T>::allocate` static method.  In
-this state, any `andThen` requests are queued up until the value transitions
+this state, any `andThenSync` requests are queued up until the value transitions
 into a ready state.
 
 **"Unconstructed (with inline waiter)":** An `AsyncValue` in unconstructed state
@@ -157,7 +157,7 @@ works exactly like an `kUnconstructed` one, but has its first waiter held in the
 payload field.  Clients of `AsyncValue` will never have to worry about this.
 
 **"Value Available":** This is the state that most `AsyncValue`s achieve where
-they hold a completed C++ value and where all `andThen` waiters are notified.
+they hold a completed C++ value and where all `andThenSync` waiters are notified.
 You can directly create an `AsyncValue` in this state with
 `AsyncValue::createReady<T>` or `AsyncValueRef<T>::createReady`,
 but most cases will create one in unconstructed and transition to this state
@@ -188,7 +188,7 @@ AnyAsyncValueRef genericAsyncDouble(AnyAsyncValueRef input) {
   // Must create this value before knowing what type `input` is.
   AnyAsyncValueRef result = AsyncValue::createIndirect(input->getRuntime());
 
-  input.andThen([result = result.copy()](const AnyAsyncValueRef &input) {
+  input.andThenSync([result = result.copy()](const AnyAsyncValueRef &input) {
     AnyAsyncValueRef newVal;
     if (input.isType<int32_t>())
       newVal = AsyncValue::createReady<T>(input.get<int32_t>()*2);

@@ -62,8 +62,8 @@ Cache::deflateConstant(Operation *constant,
   // Hang the actual deflation off the input chain. This will allow users to not
   // worry about sequencing w.r.t. this operation, they can just pass in the
   // chain.
-  chain->andThen([constant, cache = cache.copy(), out = out.copy(),
-                  chain = chain.copy()] {
+  chain->andThenSync([constant, cache = cache.copy(), out = out.copy(),
+                      chain = chain.copy()] {
     if (chain->isError())
       return out.setToError(chain->takeDiagnostic());
 
@@ -121,8 +121,8 @@ Cache::inflateConstant(Operation *constant,
   // Hang the actual deflation off the input chain. This will allow users to not
   // worry about sequencing w.r.t. this operation, they can just pass in the
   // chain.
-  chain->andThen([constant, cache = cache.copy(), out = out.copy(),
-                  chain = chain.copy()] {
+  chain->andThenSync([constant, cache = cache.copy(), out = out.copy(),
+                      chain = chain.copy()] {
     if (chain->isError())
       return out.setToError(chain->takeDiagnostic());
 
@@ -320,10 +320,10 @@ cacheSingleRegion(Region &r, Operation *symbol,
   auto out = AsyncValueRef<Chain>::allocate(hashOr.getRuntime());
   // Keeping references is safe here because all the memory is owned by the
   // MLIRContext, which is guaranteed to live longer than any of this.
-  hashOr.andThen([&r, symbol, container,
-                  uniqueSymbolRefs = std::move(uniqueSymbolRefs),
-                  uniqueHashRefs = std::move(uniqueHashRefs),
-                  hashOr = hashOr.copy(), out = out.copy()]() mutable {
+  hashOr.andThenSync([&r, symbol, container,
+                      uniqueSymbolRefs = std::move(uniqueSymbolRefs),
+                      uniqueHashRefs = std::move(uniqueHashRefs),
+                      hashOr = hashOr.copy(), out = out.copy()]() mutable {
     // Create a new builder because this may run well after the rest of this
     // function.
     OpBuilder builder(symbol);
@@ -364,8 +364,8 @@ AsyncValueRef<Chain> M::Cache::deflateOp(Operation *symbol,
   // Hang the actual deflation off the input chain. This will allow users to
   // not worry about sequencing w.r.t. this operation, they can just pass in
   // the chain.
-  chain->andThen([symbol, cache = cache.copy(), out = out.copy(),
-                  chain = chain.copy()] {
+  chain->andThenSync([symbol, cache = cache.copy(), out = out.copy(),
+                      chain = chain.copy()] {
     if (chain->isError())
       return out.setToError(chain->takeDiagnostic());
 
@@ -380,14 +380,14 @@ AsyncValueRef<Chain> M::Cache::deflateOp(Operation *symbol,
     for (Region &r : symbol->getRegions())
       results.push_back(cacheSingleRegion(r, symbol, cache.copy()));
 
-    andThenMoving(results,
-                  [out = out.copy()](MutableArrayRef<AnyAsyncValueRef> values) {
-                    for (auto &v : values)
-                      if (v->isError())
-                        return out.setToError(v->takeDiagnostic());
+    andThenSyncMoving(
+        results, [out = out.copy()](MutableArrayRef<AnyAsyncValueRef> values) {
+          for (auto &v : values)
+            if (v->isError())
+              return out.setToError(v->takeDiagnostic());
 
-                    out.emplace();
-                  });
+          out.emplace();
+        });
   });
 
   return out;
@@ -400,7 +400,8 @@ inflateRegion(Region *r, RegionHashAttr regionHash,
   auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
 
   auto foundOr = cache->find(regionHash.getHash());
-  foundOr.andThen([r, regionHash, foundOr = foundOr.copy(), out = out.copy()] {
+  foundOr.andThenSync([r, regionHash, foundOr = foundOr.copy(),
+                       out = out.copy()] {
     if (foundOr->isError()) {
       return out.setToError(
           getMLIRDiagnostic(foundOr->takeError(), r->getLoc()));
@@ -460,8 +461,8 @@ AsyncValueRef<Chain> M::Cache::inflateOp(Operation *cached,
   auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
 
   // Hang the inflation off the input chain.
-  chain->andThen([cached, cache = cache.copy(), chain = chain.copy(),
-                  out = out.copy()] {
+  chain->andThenSync([cached, cache = cache.copy(), chain = chain.copy(),
+                      out = out.copy()] {
     if (chain->isError())
       return out.setToError(chain->takeDiagnostic());
 
@@ -478,8 +479,8 @@ AsyncValueRef<Chain> M::Cache::inflateOp(Operation *cached,
 
     // Once all the regions are cached, remove the region hash attr and
     // resolve success/failure.
-    andThenMoving(results, [cached, out = out.copy()](
-                               MutableArrayRef<AnyAsyncValueRef> values) {
+    andThenSyncMoving(results, [cached, out = out.copy()](
+                                   MutableArrayRef<AnyAsyncValueRef> values) {
       for (auto &v : values)
         if (v->isError())
           return out.setToError(v->takeDiagnostic());
