@@ -80,8 +80,12 @@ ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
       State st(batchSize);
 
       // Run the prologue function if it exists.
-      if (options.prologueFunction)
+      if (options.prologueFunction) {
         std::invoke(options.prologueFunction, st);
+        // The user reported an error, so terminate the benchmark run.
+        if (st.hasError())
+          return st.takeError();
+      }
 
       // Start the timers and execute the body.
       auto tic = clock_type::now();
@@ -92,6 +96,16 @@ ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
       // Stop the timers.
       auto toc = clock_type::now();
 
+      // Compute the duration of the batch along with the time it takes to
+      // perform a single run of the function to measure.
+      batchDuration =
+          std::chrono::duration_cast<std::chrono::nanoseconds>(toc - tic);
+      duration = batchDuration / batchSize;
+
+      // Store the current duration in the state. This allows the user-passed in
+      // epilogue function to query the duration.
+      st.duration = duration;
+
       // Run the epilogue function if it exists.
       if (options.epilogueFunction)
         std::invoke(options.epilogueFunction, st);
@@ -100,12 +114,6 @@ ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
       // error.
       if (st.hasError())
         return st.takeError();
-
-      // Compute the duration of the batch along with the time it takes to
-      // perform a single run of the function to measure.
-      batchDuration =
-          std::chrono::duration_cast<std::chrono::nanoseconds>(toc - tic);
-      duration = batchDuration / batchSize;
 
       if (isWarmupPhase) {
         // We only run the warmup phase once, so we toggle the flag so that
