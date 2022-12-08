@@ -103,9 +103,9 @@ void AsyncValue::removeAnyInlineWaiter(std::optional<Waiter> &inlineWaiter) {
     case State::kUnconstructed: {
       assert(oldValue.getPointer() == nullptr &&
              "how'd we get out of line waiters without an inline waiter?");
-      // We need to avoid races with other threads "andThen'ing" the async value
-      // which would try to set up an inline waiter.  We do this by moving our
-      // state to kUnconstructed4ValidOOLWaiterSlots because any andThen
+      // We need to avoid races with other threads "andThenSync'ing" the async
+      // value which would try to set up an inline waiter.  We do this by moving
+      // our state to kUnconstructed4ValidOOLWaiterSlots because any andThenSync
       // would put the waiter on the waiter list if we get to that state.  We
       // have to be careful though because we might not successfully get to that
       // state!
@@ -294,8 +294,8 @@ static unsigned getNumWaitersValid(AsyncValue::State state) {
          int(AsyncValue::State::kUnconstructed1ValidOOLWaiterSlots) + 1;
 }
 
-/// This is the out-of-line portion of the `AsyncValue::andThen` method which is
-/// invoked when the value appears to be non-ready.
+/// This is the out-of-line portion of the `AsyncValue::andThenSync` method
+/// which is invoked when the value appears to be non-ready.
 ///
 /// If the value is available or becomes available, this calls the closure
 /// immediately. Otherwise, the add the waiter closure to the waiter list where
@@ -523,7 +523,7 @@ void AsyncValue::resolveIndirect(AnyAsyncValueRef newValue) {
 
   // Otherwise, the new value is still unresolved.  That's ok, we'll just wait
   // until it becomes ready and then try again.
-  newValue->andThen(
+  newValue->andThenSync(
       [this2 = copyRCRef(this)](const AnyAsyncValueRef &newValue) mutable {
         this2->resolveIndirect(newValue.copy());
       });

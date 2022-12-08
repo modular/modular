@@ -60,16 +60,16 @@ inline static void await(const AsyncValueRef<T> &value) {
 }
 
 //===----------------------------------------------------------------------===//
-// 'andThen' for multiple values with heterogenous types.
+// 'andThenSync' for multiple values with heterogenous types.
 //===----------------------------------------------------------------------===//
 
-/// This version of andThen takes a tuple of values to wait on, and passes the
-/// elements into the completion handler as individual values.  It can be used
-/// like this:
+/// This version of andThenSync takes a tuple of values to wait on, and passes
+/// the elements into the completion handler as individual values.  It can be
+/// used like this:
 ///
 /// void example(AsyncValueRef<int32_t> lhs, AsyncValueRef<int32_t> rhs) {
 ///   ...
-///   andThen(std::make_tuple(std::move(lhs), std::move(rhs)),
+///   andThenSync(std::make_tuple(std::move(lhs), std::move(rhs)),
 ///           [... any captures...](AsyncValueRef<int32_t> lhs,
 ///                                 AsyncValueRef<int32_t> rhs) {
 ///     ... stuff that uses lhs/rhs ...
@@ -77,8 +77,8 @@ inline static void await(const AsyncValueRef<T> &value) {
 /// }
 ///
 template <typename CompletionFn, typename... ValueTys>
-inline static void andThen(std::tuple<ValueTys...> values,
-                           CompletionFn completionFn) {
+inline static void andThenSync(std::tuple<ValueTys...> values,
+                               CompletionFn completionFn) {
   struct AndThenState {
     /// This is the number of values we're waiting on.  When this drops to zero,
     /// the completion handler is run.
@@ -101,7 +101,7 @@ inline static void andThen(std::tuple<ValueTys...> values,
 
   // This function is invoked on every async value to wait for it to complete.
   auto processAsyncValue = [&](AsyncValue *value) -> int {
-    value->andThen([state]() {
+    value->andThenSync([state]() {
       // Once that is done we can decrement the count and trigger completion
       // when the last element is done.
       if (--state->numElementsLeft != 0)
@@ -129,21 +129,21 @@ inline static void andThen(std::tuple<ValueTys...> values,
 }
 
 //===----------------------------------------------------------------------===//
-// 'andThen' for an array of values
+// 'andThenSync' for an array of values
 //===----------------------------------------------------------------------===//
 
 template <typename ArrayRefType, typename CompletionFn, typename CopyOrMoveFn>
-inline static void andThenArrayImpl(ArrayRefType values,
-                                    CompletionFn completionFn,
-                                    CopyOrMoveFn copyOrMoveFn) {
+inline static void andThenSyncArrayImpl(ArrayRefType values,
+                                        CompletionFn completionFn,
+                                        CopyOrMoveFn copyOrMoveFn) {
   // Avoid malloc overhead for trivial cases.
   if (values.empty()) {
     completionFn(values);
     return;
   }
   if (values.size() == 1) {
-    values[0]->andThen([completionFn = std::move(completionFn)](
-                           const AnyAsyncValueRef &value) mutable {
+    values[0]->andThenSync([completionFn = std::move(completionFn)](
+                               const AnyAsyncValueRef &value) mutable {
       AnyAsyncValueRef mutableValue = value.copy();
       completionFn(mutableValue);
     });
@@ -175,7 +175,7 @@ inline static void andThenArrayImpl(ArrayRefType values,
   // the last one.
   for (auto &v : values) {
     state->values.push_back(copyOrMoveFn(v));
-    state->values.back()->andThen([state]() {
+    state->values.back()->andThenSync([state]() {
       // Once that is done we can decrement the count and trigger completion
       // when the last element is done.
       if (--state->numElementsLeft != 0)
@@ -190,14 +190,14 @@ inline static void andThenArrayImpl(ArrayRefType values,
   }
 }
 
-/// This version of andThen takes an array of homogenous AsyncValue references
-/// to wait on, and passes the elements into the completion handler as
-/// an ArrayRef.  It can be used like this:
+/// This version of andThenSync takes an array of homogenous AsyncValue
+/// references to wait on, and passes the elements into the completion handler
+/// as an ArrayRef.  It can be used like this:
 ///
 /// void example() {
 ///   AsyncValueRef<int32_t> elements[4] = { ... };
 ///   ...
-///   andThenCopying(elements,
+///   andThenSyncCopying(elements,
 ///     [... any captures...](MutableArrayRef<AsyncValueRef<int32_t>> elts) {
 ///     ... stuff that uses elts ...
 ///   });
@@ -207,22 +207,22 @@ inline static void andThenArrayImpl(ArrayRefType values,
 /// input array.
 ///
 template <typename CompletionFn>
-inline static void andThenCopying(llvm::ArrayRef<AnyAsyncValueRef> values,
-                                  CompletionFn completionFn) {
-  andThenArrayImpl(values, std::move(completionFn),
-                   [](const AnyAsyncValueRef &ref) -> AnyAsyncValueRef {
-                     return ref.copy();
-                   });
+inline static void andThenSyncCopying(llvm::ArrayRef<AnyAsyncValueRef> values,
+                                      CompletionFn completionFn) {
+  andThenSyncArrayImpl(values, std::move(completionFn),
+                       [](const AnyAsyncValueRef &ref) -> AnyAsyncValueRef {
+                         return ref.copy();
+                       });
 }
 
-/// This version of andThen takes an array of homogenous AsyncValue references
-/// to wait on, and passes the elements into the completion handler as
-/// an ArrayRef.  It can be used like this:
+/// This version of andThenSync takes an array of homogenous AsyncValue
+/// references to wait on, and passes the elements into the completion handler
+/// as an ArrayRef.  It can be used like this:
 ///
 /// void example() {
 ///   AsyncValueRef<int32_t> elements[4] = { ... };
 ///   ...
-///   andThenMoving(elements,
+///   andThenSyncMoving(elements,
 ///     [... any captures...](MutableArrayRef<AsyncValueRef<int32_t>> elts) {
 ///     ... stuff that uses elts ...
 ///   });
@@ -232,9 +232,10 @@ inline static void andThenCopying(llvm::ArrayRef<AnyAsyncValueRef> values,
 /// the array passed in.
 ///
 template <typename CompletionFn>
-inline static void andThenMoving(llvm::MutableArrayRef<AnyAsyncValueRef> values,
-                                 CompletionFn completionFn) {
-  andThenArrayImpl(
+inline static void
+andThenSyncMoving(llvm::MutableArrayRef<AnyAsyncValueRef> values,
+                  CompletionFn completionFn) {
+  andThenSyncArrayImpl(
       values, std::move(completionFn),
       [](AnyAsyncValueRef &ref) -> AnyAsyncValueRef { return std::move(ref); });
 }
@@ -368,7 +369,7 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
 /// work: all of the elements are processed on the Runtime's WorkQueue.
 ///
 /// When all of the elements have finished, the `readyChain` is completed,
-/// unblocking any computation `andThen`d on it.
+/// unblocking any computation `andThenSync`d on it.
 ///
 template <typename... CaptureTys, typename ElementFn>
 static inline void
@@ -414,7 +415,7 @@ parallelForEachNFinishing(Runtime &runtime, size_t totalCount,
 /// work: all of the elements are processed on the Runtime's WorkQueue.
 ///
 /// When all of the elements have finished, the chain result is marked as ready.
-/// provides a convenient way to chain together work with `.andThen` on the
+/// provides a convenient way to chain together work with `.andThenSync` on the
 /// chain.
 ///
 template <typename... CaptureTys, typename ElementFn>

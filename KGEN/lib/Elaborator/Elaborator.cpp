@@ -1951,9 +1951,9 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
                                    AnyAsyncValueRef chain) {
     auto out = LLCL::AsyncValueRef<
         SmallVector<ElaboratedGeneratorOrCalleeError>>::allocate(runtime);
-    chain->andThen([this, evalFunc, searchInputs, &result, itfOp,
-                    chain = chain.copy(), out = out.copy(),
-                    toCache = std::move(toCache)]() mutable {
+    chain->andThenSync([this, evalFunc, searchInputs, &result, itfOp,
+                        chain = chain.copy(), out = out.copy(),
+                        toCache = std::move(toCache)]() mutable {
       auto itf = cast<GeneratorInterfaceOp>(itfOp);
 
       ErrorOr<size_t> bestSpecializationIdxOr = evaluateSpecializations(

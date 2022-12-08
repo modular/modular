@@ -45,10 +45,10 @@ Cache::cachedTransform(Operation *target,
 
   auto foundOr =
       AsyncValueRef<CacheFindResult>::allocate(transformCache->getRuntime());
-  chain->andThen([foundOr = foundOr.copy(), keyBuffer = keyBuffer.copy(),
-                  transformCache = transformCache.copy()] {
+  chain->andThenSync([foundOr = foundOr.copy(), keyBuffer = keyBuffer.copy(),
+                      transformCache = transformCache.copy()] {
     auto f = transformCache->find(keyBuffer->getBuffer());
-    f.andThen([f = f.copy(), foundOr = foundOr.copy()] {
+    f.andThenSync([f = f.copy(), foundOr = foundOr.copy()] {
       foundOr.emplace(std::move(*f));
     });
   });
@@ -56,11 +56,11 @@ Cache::cachedTransform(Operation *target,
   // Allocate space for the output.
   AnyAsyncValueRef out =
       AsyncValue::createIndirect(transformCache->getRuntime());
-  foundOr.andThen([out = out.copy(), foundOr = foundOr.copy(), target,
-                   transformCache = transformCache.copy(),
-                   transformFn = std::move(transformFn),
-                   keyBuffer = std::move(keyBuffer),
-                   cacheHitFn = std::move(cacheHitFn)]() mutable {
+  foundOr.andThenSync([out = out.copy(), foundOr = foundOr.copy(), target,
+                       transformCache = transformCache.copy(),
+                       transformFn = std::move(transformFn),
+                       keyBuffer = std::move(keyBuffer),
+                       cacheHitFn = std::move(cacheHitFn)]() mutable {
     if (foundOr.isError())
       return out->setToError(foundOr.getPointer()->takeDiagnostic());
 
@@ -75,7 +75,7 @@ Cache::cachedTransform(Operation *target,
                              std::move(foundOr));
 
     // Insert the transform result into the cache.
-    xform->andThen(
+    xform->andThenSync(
         [target, transformCache = transformCache.copy(), out = out.copy(),
          xform = xform.copy(), keyBuffer = std::move(keyBuffer),
          transformResult = std::move(writeableTransformResult)]() mutable {
@@ -86,8 +86,8 @@ Cache::cachedTransform(Operation *target,
           // should we change the transform result ref to be read-only.
           auto hashOr = transformCache->insert(keyBuffer->getBuffer(),
                                                std::move(transformResult));
-          hashOr.andThen([target, hashOr = hashOr.copy(), out = out.copy(),
-                          xform = xform.copy()] {
+          hashOr.andThenSync([target, hashOr = hashOr.copy(), out = out.copy(),
+                              xform = xform.copy()] {
             if (failed(*hashOr))
               return out->setToError(
                   getMLIRDiagnostic(hashOr->takeError(), target->getLoc()));
@@ -117,7 +117,7 @@ Cache::cachedTransform(Operation *target,
     // Allocate a space to put the result of the pass manager. We'll chain
     // off that for the deflation.
     auto pmResult = AsyncValueRef<Chain>::allocate(chain->getRuntime());
-    chain->andThen(
+    chain->andThenSync(
         [op, &pm, chain = chain.copy(), pmResult = pmResult.copy()]() mutable {
           if (chain->isError())
             pmResult.setToError(chain->takeDiagnostic());
@@ -135,8 +135,8 @@ Cache::cachedTransform(Operation *target,
     // Once deflation has gone through, we can get the new region hash and
     // store it in the cache.
     auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
-    deflate.andThen([op, buf = std::move(buf), out = out.copy(),
-                     deflate = deflate.copy()]() mutable {
+    deflate.andThenSync([op, buf = std::move(buf), out = out.copy(),
+                         deflate = deflate.copy()]() mutable {
       // Get the new region hashes and stuff them in the
       // cache.
       auto resultRegionHashes =

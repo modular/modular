@@ -208,7 +208,7 @@ auto xform = cachedTransform(*module1, regionCache, transformCache,
 // chained off the transform AsyncValue - we can't inflate before the transform
 // has completed.
 auto inflate = inflateOp(*module1, regionCache, std::move(xform));
-inflate.andThen([]() {
+inflate.andThenSync([]() {
   // Do something with the inflated + transformed module.
 });
 ```

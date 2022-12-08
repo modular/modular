@@ -48,7 +48,7 @@ struct TransformCacheKey {
 ///    // Allocate a space to put the result of the pass manager. We'll chain
 ///    // off that for the deflation.
 ///    auto result = AsyncValueRef<Chain>::allocate(chain.getRuntime());
-///    xform.andThen([&]() mutable {
+///    xform.andThenSync([&]() mutable {
 ///      result.emplace(doSyncTransform(op, buf));
 ///    });
 ///

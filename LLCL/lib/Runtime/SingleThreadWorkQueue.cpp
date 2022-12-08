@@ -51,7 +51,7 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
 
   // As each value becomes available, we can decrement our counts.
   for (auto &value : values)
-    value->andThen([&numRemaining]() { --numRemaining; });
+    value->andThenSync([&numRemaining]() { --numRemaining; });
 
   if (numRemaining == 0)
     return;

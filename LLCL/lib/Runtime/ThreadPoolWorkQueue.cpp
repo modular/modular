@@ -60,8 +60,8 @@ struct SharedThreadState {
   /// cache line as suspendedThreads.
   AlignedAtomic<uint64_t> suspendedThreads;
 
-  /// When a worker is about to go to sleep, it calls this method so andThen can
-  /// know to wake it up when more work materializes.
+  /// When a worker is about to go to sleep, it calls this method so andThenSync
+  /// can know to wake it up when more work materializes.
   void markSuspended(unsigned workerID) {
     // TODO: Does this need to be sequentially consistent?
     suspendedThreads.fetch_or(UINT64_C(1) << workerID,
@@ -348,7 +348,7 @@ void ThreadPoolWorkQueue::shutdown() {
 
   // Mark no threads as suspended, even though they may not have woken up,
   // cleared their own bit and exited yet.  This ensures that any in-flight
-  // andThen calls won't try to wake these threads as we start joining and
+  // andThenSync calls won't try to wake these threads as we start joining and
   // tearing them down.
   sharedState.suspendedThreads.store(0);
 
@@ -398,14 +398,14 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   // we signal the semaphore for this worker to make sure to wake it up if it
   // fell asleep.
   for (auto &value : values)
-    value->andThen([&numRemaining, thisWorker, this]() {
-      TIME_PROFILER_SCOPE(3, "await andThen");
+    value->andThenSync([&numRemaining, thisWorker, this]() {
+      TIME_PROFILER_SCOPE(3, "await andThenSync");
       // Decremenet the count of async values that we're waiting on.
       // TODO: This can probably use more relaxed memory consistency!
       if (numRemaining.fetch_sub(1, std::memory_order_seq_cst) != 1)
         return;
 
-      // Get the thread ID of the thread running the andThen, for tracing.
+      // Get the thread ID of the thread running the andThenSync, for tracing.
       auto workerID = workerIDInTLS;
       (void)workerID;
 
