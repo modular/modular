@@ -228,6 +228,59 @@ kgen.generator @reify_i1() {
 
 // -----
 
+// CHECK-LABEL: @"int_to_bool
+kgen.generator @int_to_bool<DT:dtype>() -> !pop.scalar<DT> {
+  //CHECK: pop.constant(#M.dense_array<true> : vector<1xui1>) : !pop.scalar<bool>
+  %0 = pop.constant(1:si32) : !pop.scalar<DT>
+  kgen.return %0 : !pop.scalar<DT>
+}
+
+kgen.generator @impl() {
+  %0 = kgen.call @int_to_bool<DT:dtype=bool>() : () -> !pop.scalar<bool>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @"float_to_bool
+kgen.generator @float_to_bool<DT:dtype>() -> !pop.scalar<DT> {
+  //CHECK: pop.constant(#M.dense_array<false> : vector<1xui1>) : !pop.scalar<bool>
+  %0 = pop.constant(0.0:f32) : !pop.scalar<DT>
+  kgen.return %0 : !pop.scalar<DT>
+}
+
+kgen.generator @impl() {
+  %0 = kgen.call @float_to_bool<DT:dtype=bool>() : () -> !pop.scalar<bool>
+  kgen.return
+}
+// -----
+
+// CHECK-LABEL: @"int_to_bool_vec
+kgen.generator @int_to_bool_vec<type: dtype>() -> !pop.simd<4, type> {
+  // CHECK: pop.constant(#M.dense_array<true, false, false, true> : vector<4xui1>) : !pop.simd<4, bool>
+  %0 = pop.constant(#M.dense_array<1, 0, -0, -3> : vector<4xsi32>) : !pop.simd<4, type>
+  kgen.return %0 : !pop.simd<4, type>
+}
+
+kgen.generator @impl() {
+  %0 = kgen.call @int_to_bool_vec<type: dtype = bool>() : () -> !pop.simd<4, bool>
+  kgen.return
+}
+// -----
+
+// CHECK-LABEL: @"float_to_bool_vec
+kgen.generator @float_to_bool_vec<type: dtype>() -> !pop.simd<4, type> {
+  // CHECK: pop.constant(#M.dense_array<true, false, true, true> : vector<4xui1>) : !pop.simd<4, bool>
+  %0 = pop.constant(#M.dense_array<1.0, 0.0, 4.13, -3.125> : vector<4xf32>) : !pop.simd<4, type>
+  kgen.return %0 : !pop.simd<4, type>
+}
+
+kgen.generator @impl() {
+  %0 = kgen.call @float_to_bool_vec<type: dtype = bool>() : () -> !pop.simd<4, bool>
+  kgen.return
+}
+// -----
+
 // CHECK-LABEL: @"materializeConstant,C=2.5
 kgen.generator @materializeConstant<C: f32>() -> !pop.scalar<f32> {
   // CHECK-NEXT: pop.constant(#M.dense_array<2.5{{.*}}> : vector<1xf32>)

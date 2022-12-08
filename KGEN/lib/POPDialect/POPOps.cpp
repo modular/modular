@@ -22,6 +22,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/TypeUtilities.h"
 #include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -40,7 +41,8 @@ static ErrorOr<APSInt> reifyIntToInt(const APInt &value, IntegerType type,
                                      KGENDType dtype) {
   // Integer to integer conversion. Check that this isn't converting between
   // signed or unsigned integers.
-  if (!type.isSignlessInteger() && type.isSignedInteger() != dtype.isSInt()) {
+  if (!dtype.isBool() && !type.isSignlessInteger() &&
+      type.isSignedInteger() != dtype.isSInt()) {
     std::string errorMessage;
     llvm::raw_string_ostream os(errorMessage);
     os << "cannot change signfulness when converting from " << type << " to "
@@ -49,10 +51,13 @@ static ErrorOr<APSInt> reifyIntToInt(const APInt &value, IntegerType type,
   }
 
   // Truncate or extend the value depending on the result width.
-  APSInt origInt(value, dtype.isUInt());
+  // If casting to a bool, do c-style downcast on value first
+  APSInt origInt(dtype.isBool() ? APInt(1, value.getBoolValue()) : value,
+                 dtype.isUInt() || dtype.isBool());
   APSInt intValue =
-      origInt.extOrTrunc(dtype.isIndex() ? IndexType::kInternalStorageBitWidth
-                                         : dtype.getWidthInBits());
+      origInt.extOrTrunc(dtype.isIndex()  ? IndexType::kInternalStorageBitWidth
+                         : dtype.isBool() ? 1
+                                          : dtype.getWidthInBits());
   if (intValue.extOrTrunc(origInt.getBitWidth()) != origInt)
     return Error("integer constant does not fit into " + dtype.getAsString());
 
@@ -79,14 +84,19 @@ static ErrorOr<APFloat> reifyIntToFloat(const APInt &value, IntegerType type,
 
 /// Reify a float to an integer.
 static ErrorOr<APSInt> reifyFloatToInt(const APFloat &value, DType dtype) {
+  // If casting to a bool, do c-style downcast on value first
+  APFloat newValue = value;
+  if (dtype.isBool())
+    newValue = value.isZero() ? APFloat(0.0) : APFloat(1.0);
   // Float to integer conversion. Only exact integers can be converted.
-  if (!value.isInteger())
+  if (!newValue.isInteger())
     return Error("only exact integer floats can be converted to integers");
 
   // Convert the float to an integer.
-  APSInt apInt(dtype.getWidthInBits(), dtype.isUInt());
+  APSInt apInt(dtype.isBool() ? 1 : dtype.getWidthInBits(),
+               dtype.isUInt() || dtype.isBool());
   bool exact;
-  value.convertToInteger(apInt, APFloat::rmTowardZero, &exact);
+  newValue.convertToInteger(apInt, APFloat::rmTowardZero, &exact);
   assert(exact && "expected an exact integer");
   return apInt;
 }
@@ -109,11 +119,6 @@ static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, KGENDType dtype) {
         !dtype.isBool())
       return Error("cannot coerce constant value to " + dtype.getAsString());
 
-    if (dtype.isBool() && type.getWidth() != 1) {
-      return Error("cannot coerce i" + Twine(type.getWidth()) +
-                   " value to bool");
-    }
-
     if (dtype.isBool() || dtype.isInt() || dtype.isIndex()) {
       UNWRAP_ERROR(intValue, reifyIntToInt(value.getValue(), type, dtype));
       return IntegerAttr::get(attr.getContext(), intValue);
@@ -128,7 +133,7 @@ static ErrorOr<TypedAttr> reifyOneAttribute(Attribute attr, KGENDType dtype) {
   }
 
   auto value = attr.cast<FloatAttr>();
-  if (dtype.isInt()) {
+  if (dtype.isInt() || dtype.isBool()) {
     UNWRAP_ERROR(apInt, reifyFloatToInt(value.getValue(), dtype));
     return IntegerAttr::get(attr.getContext(), apInt);
   }
@@ -190,7 +195,7 @@ static ErrorOr<TypedAttr> reifyConstant(TypedAttr attr, DType dtype,
   // If the value is an elements attribute, reify each element according to the
   // result dtype.
   if (auto fpValues = dyn_cast<FloatArrayElementsAttr>(attr)) {
-    if (dtype.isInt()) {
+    if (dtype.isInt() || dtype.isBool()) {
       return reifyArray<IntArrayElementsAttr>(
           fpValues,
           [&](const APFloat &val) { return reifyFloatToInt(val, dtype); },
@@ -208,7 +213,7 @@ static ErrorOr<TypedAttr> reifyConstant(TypedAttr attr, DType dtype,
 
   auto intValues = attr.cast<IntArrayElementsAttr>();
   IntegerType intType = intValues.getElementType().cast<IntegerType>();
-  if (dtype.isInt()) {
+  if (dtype.isInt() || dtype.isBool()) {
     return reifyArray<IntArrayElementsAttr>(
         intValues,
         [&](const APInt &val) { return reifyIntToInt(val, intType, dtype); },
