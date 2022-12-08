@@ -17,7 +17,7 @@ include "mlir/IR/BuiltinAttributeInterfaces.td"
 
 /// An attribute in the LIT dialect.
 class LITAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
-    : AttrDef<LITDialect, attrName, traits> {
+    : AttrDef<LITDialect, attrName, [TypedAttrInterface] # traits> {
   let mnemonic = attrMnemonic;
 }
 
@@ -26,8 +26,7 @@ class LITAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 //===----------------------------------------------------------------------===//
 
 def UnboundMLIROperationAttr
-  : LITAttr<"UnboundMLIROperation", "unbound_mlir_operation",
-            [TypedAttrInterface]> {
+  : LITAttr<"UnboundMLIROperation", "unbound_mlir_operation"> {
   let summary = "An unbound mlir operation";
   let description = [{
     This attribute is used by the Lit parser as a reference to an MLIR
@@ -44,7 +43,7 @@ def UnboundMLIROperationAttr
 // NoneAttr
 //===----------------------------------------------------------------------===//
 
-def NoneAttr : LITAttr<"None", "none", [TypedAttrInterface]> {
+def NoneAttr : LITAttr<"None", "none"> {
   let summary = "A None value";
   let description = [{
     This attribute represents None values.
@@ -63,7 +62,7 @@ def NoneAttr : LITAttr<"None", "none", [TypedAttrInterface]> {
 //===----------------------------------------------------------------------===//
 
 def UnresolvedAliasValueAttr
-  : LITAttr<"UnresolvedAliasValue", "unresolved.alias", [TypedAttrInterface]> {
+  : LITAttr<"UnresolvedAliasValue", "unresolved.alias"> {
   let summary = "The value of an 'alias' before it is bound to a value";
 
   let parameters = (ins AttributeSelfTypeParameter<"">:$type);
@@ -74,6 +73,25 @@ def UnresolvedAliasValueAttr
       return get(type.getContext(), type);
     }]>,
   ];
+}
+
+//===----------------------------------------------------------------------===//
+// PlaceholderAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_PlaceholderAttr : LITAttr<"Placeholder", "placeholder"> {
+  let summary = "Used for parameterized MLIR types/attrs before substitution";
+  let description = [{
+    This attribute is used at the lit language level to represent MLIR types
+    that will have parameters substituted into them, e.g.
+    `!pop.simd<4, #lit.placeholder>` or
+    `!pop.simd<#lit.placeholder, #lit.placeholder>`.
+
+    This must be substituted before lowering from LIT.
+  }];
+
+  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "";
 }
 
 #endif // KGEN_LITDIALECT_LITATTRS_TD

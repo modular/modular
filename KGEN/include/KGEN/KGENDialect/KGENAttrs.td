@@ -617,25 +617,4 @@ def KGEN_TargetInfoAttr : KGEN_ExprAttr<"TargetInfo", "target"> {
   }];
 }
 
-//===----------------------------------------------------------------------===//
-// LITPlaceholderAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_LITPlaceholderAttr
-    : KGEN_ExprAttr<"LITPlaceholder", "litplaceholder"> {
-  let summary = "Used for parameterized MLIR types/attrs before substitution";
-  let description = [{
-    This attribute is used at the lit language level to represent MLIR types
-    that will have parameters substituted into them, e.g.
-    `!pop.simd<4, #kgen.litplaceholder>` or
-    `!pop.simd<#kgen.litplaceholder, #kgen.litplaceholder>`.
-
-    This must be substituted before lowering from LIT.
-  }];
-
-  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
-  let assemblyFormat = "$type";
-}
-
-
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

@@ -320,10 +320,10 @@ fn expr_errors():
   __mlir_attr.`#index<cmp_predicate eq>`
 
   # expected-error @+1 {{parameter of type '__mlir_type.index' cannot be converted to expected type '__mlir_type.!kgen.dtype'}}
-  var a : __mlir_type.`!pop.scalar<#kgen<litplaceholder !kgen.dtype>>`[1]
+  var a : __mlir_type.`!pop.scalar<#lit.placeholder : !kgen.dtype>`[1]
 
   # expected-error @+1 {{unused parameter substitution}}
-  var b : __mlir_type.`!pop.simd<#kgen<litplaceholder index>, f32>`[4, 57]
+  var b : __mlir_type.`!pop.simd<#lit.placeholder : index, f32>`[4, 57]
 
 
 fn slice_expression(a: Int):
