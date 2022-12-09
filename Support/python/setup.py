@@ -44,7 +44,7 @@ setup(
             "pytest-cov",
         ],
         "dev": [
-            "black>=22.3.0",
+            "black>=22.12.0",
             "isort>=5.10.1",
             "flake8>=3.9",
             "pyright>=1.1.255",
