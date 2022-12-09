@@ -31,6 +31,12 @@ ParseResult LitParserBase::parseToken(LitToken::Kind expectedToken,
     *loc = getToken().getLoc();
   if (consumeIf(expectedToken))
     return success();
+
+  // If the current token is on a new line, report the error on the end of the
+  // previous line, this is probably where the punctuation was omitted.
+  if (getToken().getIndentation().has_value())
+    return emitError(lexer.findEndOfPreviousLine(getToken().getLoc()), message);
+
   return emitError(message);
 }
 

@@ -130,6 +130,11 @@ public:
     return emitError(getToken().getSpelling().data(), message);
   }
 
+  /// Given a location that is at the start of a line, scan backwards to find
+  /// the end of the last line that contains a token, or start of the source
+  /// buffer if there is none.
+  SMLoc findEndOfPreviousLine(SMLoc loc) const;
+
 private:
   LitToken lexTokenImpl();
 
@@ -170,6 +175,8 @@ public:
   LitLexerCursor() : state(nullptr), curToken(LitToken::eof, StringRef(), 0) {}
   LitLexerCursor(const LitLexer &lexer)
       : state(lexer.curPtr), curToken(lexer.getToken()) {}
+  LitLexerCursor(const char *curPtr, const LitToken &tok)
+      : state(curPtr), curToken(tok) {}
   LitLexerCursor(const LitLexerCursor &cursor) = default;
   LitLexerCursor &operator=(const LitLexerCursor &cursor) = default;
 

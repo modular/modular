@@ -742,3 +742,44 @@ APInt LitLexer::getIntegerLiteralValue(StringRef spelling) {
   (void)failed;
   return result;
 }
+
+//===----------------------------------------------------------------------===//
+// Support methods
+//===----------------------------------------------------------------------===//
+
+/// Given a location that is at the start of a line, scan backwards to find
+/// the end of the last line that contains a token, or start of the source
+/// buffer if there is none.
+SMLoc LitLexer::findEndOfPreviousLine(SMLoc loc) const {
+  // To find the end of the previous line, we repeatedly segment the buffer into
+  // chunks from the current position to the start of the current line and scan
+  // it to see if it contains any tokens.  If not, we keep going, if so we use
+  // the end of the last token.
+  auto locOffset = size_t(loc.getPointer() - curBuffer.data());
+  assert(locOffset <= curBuffer.size() && "loc not in current buffer!");
+  // Truncate whole buffer to this segment.
+  StringRef buffer(curBuffer.data(), locOffset);
+
+  while (1) {
+    auto nextNewLine = buffer.find_last_of("\n\r");
+    // If we ran out of lines to check, we must be at the start of the buffer.
+    // Give up.
+    if (nextNewLine == StringRef::npos)
+      return loc;
+
+    // Scan from the start of the line to the current position.
+    auto *lineStart = curBuffer.data() + nextNewLine;
+    LitLexerCursor cursor(lineStart,
+                          {LitToken::plus, StringRef(lineStart, 0), 0});
+    LitLexer tmpLexer(sharedState, cursor);
+    tmpLexer.lexToken();
+
+    // If the token is on this line, then there was at least one token on this
+    // line.  Report the error at the end of the line.
+    if (tmpLexer.getToken().getLoc().getPointer() < buffer.end())
+      return SMLoc::getFromPointer(buffer.end());
+
+    // Otherwise, drop the newline and anything after it and try again.
+    buffer = buffer.take_front(nextNewLine);
+  }
+}

@@ -394,3 +394,8 @@ fn badRef(val&: Int):
   var x = F32(1.0)
   # TODO(QoI): expected-error @+1 {{l-value of type 'F32' cannot be converted to reference to expected type #kgen.concretetype.constant<!kgen.declref<@Int>> : !kgen.mlirtype}}
   badRef(x)
+
+fn missingColon()  # expected-error {{expected ':' in function definition}}
+  # Don't get confused by comments or blank lines!
+
+  var x = 1
