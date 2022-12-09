@@ -281,53 +281,27 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 }
 
 /// Perform a name lookup in the specified scope and return the named
-/// declaration.  This emits an error and returns null on error.
-ASTDecl *
-ExprEmitter::lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
-                        std::function<void(InFlightDiagnostic)> errorFn,
-                        ASTType implicitDeclType) {
+/// declaration as a LookupResult.
+auto ExprEmitter::lookupAndResolveDecl(StringRef name, SMLoc loc,
+                                       ASTDecl &scope) -> LookupResult {
 
   // Look up the name.
   auto nameAttr = StringAttr::get(getContext(), name);
-  ASTDecl *lookupResult = scope.lookup(nameAttr);
-
-  // Handle the case where lookup fails.
-  if (!lookupResult) {
-    // If there is a contextual type available then this is an implicit variable
-    // definition, otherwise it is an error.  There will never be a contextual
-    // type in a `fn`, only a `def`.
-    if (!implicitDeclType || !varDeclCursor) {
-      errorFn(emitError(loc, ""));
-      return nullptr;
-    }
-
-    // Otherwise, introduce a new lit.var.decl node whose type matches the
-    // implicitDeclType.
-    //
-    // TODO(autopromotions): turn infinite integers into concrete ones as
-    // needed.
-    Type declIRType = POP::PointerType::get(implicitDeclType);
-
-    // Use this builder to place any VarDeclOps. In Python there is only one
-    // scope per function and all variables belong to that scope, so builders
-    // should reflect that.
-    auto varDecl =
-        OpBuilder(varDeclCursor)
-            .create<VarDeclOp>(translateLocation(loc), declIRType, nameAttr);
-    lookupResult = &shared.declResolver->addFullyResolvedDecl(varDecl, loc,
-                                                              nameAttr, &scope);
-  }
+  ASTDecl *result = scope.lookup(nameAttr);
+  // If nothing was found, return a failure.
+  if (!result)
+    return {LookupResult::kFailure, nullptr};
 
   // If the lookup succeeded, make sure the signature for the referenced decl
   // is understood.
-  auto resolveResult = shared.declResolver->resolve(
-      *lookupResult, DeclResolvedness::signatureResolved, loc);
+  if (failed(shared.declResolver->resolve(
+          *result, DeclResolvedness::signatureResolved, loc))) {
+    // If the decl was erroneous somehow, then don't form a reference to it, the
+    // error has already been diagnosed.
+    return {LookupResult::kErroneous, nullptr};
+  }
 
-  // If the decl was erroneous somehow, then don't form a reference to it, the
-  // error has already been diagnosed.
-  if (failed(resolveResult))
-    return nullptr;
-  return lookupResult;
+  return {LookupResult::kSuccess, result};
 }
 
 /// Given an ASTType 'containingType', look up a named member of it and return
@@ -336,19 +310,46 @@ static CallableValue
 emitCallableDeclMember(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
                        StringRef memberName, const ExprNode *node,
                        ExprEmitter &emitter, ASTType contextualType = {}) {
-  ASTDecl *decl = emitter.lookupDecl(
-      memberName, node->getLoc(), container,
-      [&](InFlightDiagnostic diag) {
-        if (auto structDecl = dyn_cast<StructDeclOp>(container)) {
-          diag << structDecl.getName() << " has no '" << memberName
-               << "' member";
-        } else {
-          diag << "use of unknown declaration \"" << memberName << '"';
-        }
-      },
-      contextualType);
-  if (!decl)
+  // Perform a lookup of the specified decl in the current container.
+  ExprEmitter::LookupResult lookup =
+      emitter.lookupAndResolveDecl(memberName, node->getLoc(), container);
+
+  // If that lookup failed, but we can synthesize a variable declaration in this
+  // scope, do that.  We can only do this if there is a contextual type
+  // available and an insertion point.  Note that there will never be a
+  /// contextual type in a `fn`, only a `def`.
+  if (lookup.kind == ExprEmitter::LookupResult::kFailure && contextualType &&
+      emitter.varDeclCursor) {
+    // Introduce a new lit.var.decl node whose type matches the
+    // implicitDeclType.
+    // TODO(autopromotions): turn infinite integers into concrete ones as
+    // needed.
+    Type declIRType = POP::PointerType::get(contextualType);
+
+    // Use this builder to place any VarDeclOps. In Python there is only one
+    // scope per function and all variables belong to that scope, so builders
+    // should reflect that.
+    auto loc = emitter.translateLocation(node->getLoc());
+    auto nameAttr = StringAttr::get(loc.getContext(), memberName);
+    auto varDecl = OpBuilder(emitter.varDeclCursor)
+                       .create<VarDeclOp>(loc, declIRType, nameAttr);
+    auto *decl = &emitter.shared.declResolver->addFullyResolvedDecl(
+        varDecl, node->getLoc(), nameAttr, &container);
+    lookup = {ExprEmitter::LookupResult::kSuccess, decl};
+  }
+
+  if (!lookup.result) {
+    if (lookup.kind == ExprEmitter::LookupResult::kFailure) {
+      auto diag = emitter.emitError(node->getLoc());
+      if (auto structDecl = dyn_cast<StructDeclOp>(container))
+        diag << structDecl.getName() << " has no '" << memberName << "' member";
+      else
+        diag << "use of unknown declaration \"" << memberName << '"';
+    }
     return {};
+  }
+
+  ASTDecl *decl = lookup.result;
 
   // Variable references resolve to an lvalue addressing the variable.
   if (auto var = dyn_cast<VarDeclOp>(*decl))
@@ -917,12 +918,18 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
     return {};
 
   // Find the member being accessed.
-  ASTDecl *memberDecl = emitter.lookupDecl(
-      attrSpelling, getLoc(), *typeDecl, [&](InFlightDiagnostic diag) {
-        diag << "object has no attribute '" << attrSpelling << "'";
-      });
-  if (!memberDecl)
+  ExprEmitter::LookupResult lookup =
+      emitter.lookupAndResolveDecl(attrSpelling, getLoc(), *typeDecl);
+  if (!lookup.result) {
+    // If the error hasn't been diagnosed, handle it now.
+    if (lookup.kind == ExprEmitter::LookupResult::kFailure)
+      emitter.emitError(getLoc(), "object has no attribute '")
+          << attrSpelling << "'";
+
     return {};
+  }
+
+  ASTDecl *memberDecl = lookup.result;
 
   // Handle method references.
   if (auto fnOp = dyn_cast<LIT::FuncOp>(*memberDecl)) {
