@@ -520,6 +520,34 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
 // IR Emission helpers
 //===----------------------------------------------------------------------===//
 
+/// Convert the specified MLIR value (which may be an RValue or LValue) to the
+/// expected type.  On error, this diagnoses it and returns null.
+///
+static Value getDRValueAsExpectedType(Value value, const ExprNode *expr,
+                                      ASTType expectedType,
+                                      ExprEmitter &emitter) {
+  // If the type is already an exact match, then we are done.
+  if (ASTType(value.getType()).isEqualCanon(expectedType))
+    return value;
+
+  // Check to see if we can invoke an __new__ method to convert it.
+  // TODO: refactor all of this to support tentative conversions, enabling
+  // overload checking.
+  //
+  // TODO(QoI): Failure should produce something like this:
+  //   emitter.emitError(expr->getLoc(), "value of type ")
+  //       << ASTType(value.getType())<<" cannot be converted to expected type "
+  //       << expectedType;
+  ASTExprAnd<AnyValue> newArg = {DRValue(value), expr};
+  auto result = emitter.emitSpecialMethodCall(
+      expectedType, SpecialFunctionKind::kNew, newArg, expr->getLoc());
+  if (!result)
+    return {};
+
+  // Make sure the result is a DRValue.
+  return emitter.emitDRValue(result, expr->getLoc());
+}
+
 /// Returns true if the insertion context is valid for implicit error
 /// propagation.
 static bool isValidErrorContext(Block *block) {
@@ -601,6 +629,7 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
   for (auto [argAnyValueAndExpr, expectedType, convention] :
        llvm::zip(operands, calleeSig.getValueInputs(),
                  calleeSig.getValueInputConventions())) {
+    auto argLoc = argAnyValueAndExpr.expr->getLoc();
     // If the callee takes the operand as a by-ref argument, we require an
     // lvalue.
     Value argVal;
@@ -609,33 +638,44 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
       argVal = argAnyValueAndExpr.ir.getIfLValue();
       if (!argVal) {
         if (isMethodInvocation && valueArguments.empty()) {
-          emitter.emitError(argAnyValueAndExpr.expr->getLoc(),
+          emitter.emitError(argLoc,
                             "invalid use of mutating method on rvalue of type ")
               << ASTType(argAnyValueAndExpr.ir.getType());
         } else {
           emitter.emitError(
-              argAnyValueAndExpr.expr->getLoc(),
+              argLoc,
               "operand must be mutable in order to pass as a by-ref argument");
         }
         return {};
       }
+
+      // If we have an lvalue of the wrong type, diagnose the error prettily.
+      if (!ASTType(argVal.getType()).isEqualCanon(ASTType(expectedType))) {
+        auto argRVType = argAnyValueAndExpr.ir.getRValueType();
+        emitter.emitError(argLoc, "l-value of type ")
+            << argRVType
+            << " cannot be converted to reference to expected type "
+            // TODO(QoI): Types are not attributes.
+            << cast<POP::PointerType>(expectedType).getElementType();
+        return {};
+      }
+
       break;
     case ValueInputConvention::ByVal:
       // Otherwise, we pass as an r-value.
-      argVal = emitter.emitDRValue(argAnyValueAndExpr.ir,
-                                   argAnyValueAndExpr.expr->getLoc());
+      argVal = emitter.emitDRValue(argAnyValueAndExpr.ir, argLoc);
+      if (!argVal)
+        return {};
+
+      // Convert the argument to the expected type if needed, or diagnose if
+      // incompatible.
+      argVal = getDRValueAsExpectedType(argVal, argAnyValueAndExpr.expr,
+                                        expectedType, emitter);
       if (!argVal)
         return {};
       break;
     }
 
-    // TODO: Handle implicit conversions.
-    if (!ASTType(argVal.getType()).isEqualCanon(expectedType)) {
-      emitter.emitError(argAnyValueAndExpr.expr->getLoc(), "value of type ")
-          << ASTType(argVal.getType())
-          << " cannot be converted to expected type " << ASTType(expectedType);
-      return {};
-    }
     valueArguments.push_back(argVal);
   }
 
