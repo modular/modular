@@ -7,7 +7,7 @@
 #ifndef LLCL_SUPPORT_SPINWAITER_H
 #define LLCL_SUPPORT_SPINWAITER_H
 
-#include "llvm/ADT/Optional.h"
+#include <optional>
 
 #include <chrono>
 #include <thread>
