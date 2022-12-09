@@ -64,7 +64,7 @@ private:
   CacheFindResult(BufferRef value) : valueOr(std::move(value)) {}
   /// Construct the CacheFindResult with nothing - this puts it in the "not in
   /// cache" state.
-  CacheFindResult() : valueOr(llvm::None) {}
+  CacheFindResult() : valueOr(std::nullopt) {}
 
   /// Provide a safe getter. This is private because we want the user to
   /// explicitly take ownership of the value rather than leaving it sitting in
@@ -80,9 +80,9 @@ private:
 
   /// This can be an error, "not in cache", or it can have a value. Error is
   /// indicated by having an error, while "not in cache" is indicated by
-  /// llvm::None in the Optional, but no error in the ErrorOr. A value is
-  /// indicated by having a value in the Optional *and* no error in the ErrorOr.
-  ErrorOr<Optional<BufferRef>> valueOr;
+  /// std::nullopt in the optional, but no error in the ErrorOr. A value is
+  /// indicated by having a value in the optional *and* no error in the ErrorOr.
+  ErrorOr<std::optional<BufferRef>> valueOr;
 };
 
 /// This class is the backend interface for a BlobCache. The backend contains a
