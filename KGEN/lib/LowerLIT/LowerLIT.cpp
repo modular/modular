@@ -625,7 +625,7 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
 
     func.setSignature(SignatureType::get(
         ParamDeclArrayAttr::get(structDecl.getContext(), paramDecls),
-        func.getResultParamTypesAttr(), func.getFunctionType(),
+        func.getResultParamTypesAttr(), func.getSignature().getValues(),
         func.getConventions()));
 
     // Lower renamed function as usual.

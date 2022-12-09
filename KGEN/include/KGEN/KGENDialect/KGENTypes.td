@@ -155,9 +155,8 @@ def KGEN_ListType : KGENType<"List", "list", [SubElementTypeInterface]> {
 // KGEN_SignatureType
 //===----------------------------------------------------------------------===//
 
-def KGEN_SignatureType
-  : KGENType<"Signature", "signature",
-             [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
+def KGEN_SignatureType : KGENType<"Signature", "signature",
+    [SubElementTypeInterface]> {
   let summary = "The signature for a parameterized declaration";
   let description = [{
     This type describes the signature for a parameterized declaration, which
@@ -188,19 +187,10 @@ def KGEN_SignatureType
       "ParamBindArrayAttr":$inputParams, "ParamDeclArrayAttr":$resultParams,
       "FunctionType":$values, "DenseI8ArrayAttr":$conventions)>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>,
-    TypeBuilderWithInferredContext<(ins "FunctionType":$values)>,
-    TypeBuilderWithInferredContext<(ins "ParamDeclArrayAttr":$inputParams), [{
-      // Only used for Structs, which shouldn't be using signatures!
-      return get(inputParams, {},
-                 FunctionType::get(inputParams.getContext(), {}, {}), {});
-     }]>
+    TypeBuilderWithInferredContext<(ins "FunctionType":$values)>
   ];
 
   let extraClassDeclaration = [{
-    /// Verify that this SignatureType is self-contained, all referenced
-    /// parameters are defined within the signature.
-    ErrorOrSuccess checkSelfContained();
-
     /// Helper to return the value input and result types.
     ArrayRef<Type> getValueInputs();
     ArrayRef<Type> getValueResults();

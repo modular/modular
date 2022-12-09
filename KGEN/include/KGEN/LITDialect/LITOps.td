@@ -30,13 +30,12 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
 // LITFuncOp
 //===----------------------------------------------------------------------===//
 
-def LIT_FuncOp
-  : LITOp<"func", [FunctionOpInterface, Symbol, IsolatedFromAbove,
-                   NoTerminator,
-                   DeclareOpInterfaceMethods<CallableOpInterface>,
-                   DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                   DeclareOpInterfaceMethods<KGEN_DeclInterface>,
-                   DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>]> {
+def LIT_FuncOp : LITOp<"func", [
+    FunctionOpInterface, Symbol, IsolatedFromAbove, NoTerminator,
+    DeclareOpInterfaceMethods<CallableOpInterface>,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
+    DeclInterface, FuncInterface]> {
   let summary = "High level generator definition";
 
 let description = [{
@@ -63,8 +62,8 @@ let description = [{
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
-    using KGENDeclInterfaceTrait::getFunctionType;
-    using KGENDeclInterfaceTrait::getFunctionTypeAttr;
+    using FuncInterfaceTrait::getFunctionType;
+    using FuncInterfaceTrait::getFunctionTypeAttr;
 
     Block *getBody() { return &getFunctionBody().back(); }
     ReturnOp getReturnOp();

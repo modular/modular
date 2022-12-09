@@ -916,13 +916,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
     return failure();
 
-  // FIXME: it doesn't make sense for struct decls to have signatures.
-  structOp.setSignature(SignatureType::get(
-      ParamDeclArrayAttr::get(getContext(), metaSignature.inputDecls),
-      /*Never has result params=*/{},
-      // No value arguments.
-      FunctionType::get(getContext(), {}, {}),
-      /*No conventions*/ {}));
+  structOp.setInputParamDecls(metaSignature.inputDecls);
 
   // Add the meta parameters to the struct's symbol table.
   metaSignature.addToScope(sharedState, decl);

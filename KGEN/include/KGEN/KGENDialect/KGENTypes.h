@@ -16,7 +16,7 @@
 #include "Support/ForwardDecls.h"
 
 namespace M::KGEN {
-class KGENDeclInterface;
+class FuncInterface;
 class ParamBindAttr;
 class ParamBindArrayAttr;
 class ParamDeclArrayAttr;
@@ -24,7 +24,7 @@ class TypeArrayAttr;
 
 /// Return the full signature of this declaration, including parameters from
 /// enclosing struct declarations.
-SignatureType getFullSignature(KGENDeclInterface decl);
+SignatureType getFullSignature(FuncInterface decl);
 
 /// This describes the encoding of the first element of the convention specifier
 /// in a SignatureType.

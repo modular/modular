@@ -21,6 +21,7 @@
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/SymbolTable.h"
 #include "llvm/ADT/SCCIterator.h"
+#include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
 
@@ -48,6 +49,10 @@ public:
                             bool &hasConstExpr);
 
 private:
+  void collectUsesFromTypesImpl(Type type,
+                                SmallVectorImpl<ParamDeclRefAttr> &uses,
+                                bool &hasConstExpr);
+
   /// The first time we encounter a SymbolConstantAttr, check to see if the
   /// declaration it refers to agrees with the value and parameter
   /// specification.
@@ -56,6 +61,13 @@ private:
   /// When we encounter a DeclRefType, check that its parameter bindings match
   /// the parameter declarations on the type declaration.
   virtual void verifyRefType(DeclRefType typeDef) {}
+
+  /// Verify a use of a parameter declared in a nested scope.
+  virtual void verifyNestedParameterUse(ParamDeclAttr decl,
+                                        ParamDeclRefAttr use) {}
+
+  /// Report that a nested parameter declaration is a duplicate.
+  virtual void reportDuplicateNestedDecl(ParamDeclAttr decl) {}
 
   /// Attributes and types are memoized and exist in tree structures with reuse:
   /// naively scanning them can lead to exponential compile time behavior.  As
@@ -128,18 +140,27 @@ void ParameterCollector::collectUsesFromAttr(
   }
 }
 
-/// Scan the specified type and its recursive uses, diagnosing incorrect
-/// parameter declarations and collecting parameter uses.
 void ParameterCollector::collectUsesFromTypes(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr) {
-  // Signature types with input parameters are effectively "isolated from above"
-  // in that they may have their own local parameter declarations that are used
-  // in their type signature, but they cannot "capture" parameters from the
-  // enclosing context. As such, they are always considered "parameterless".
-  if (auto signature = dyn_cast_if_present<SignatureType>(type))
-    if (!signature.getInputParams().empty())
-      return;
+  // Signature types define nested parameters.
+  if (auto sig = dyn_cast<SignatureType>(type)) {
+    SmallPtrSet<StringAttr, 4> nestedParams;
+    for (ParamDeclAttr inputParam : sig.getInputParams())
+      if (!nestedParams.insert(inputParam.getName()).second)
+        return reportDuplicateNestedDecl(inputParam);
+    SmallVector<ParamDeclRefAttr> nestedUses;
+    collectUsesFromTypesImpl(type, nestedUses, hasConstExpr);
+    // Filter the nested uses and determine which belong to the higher scope.
+    for (ParamDeclRefAttr nestedUse : nestedUses)
+      if (!nestedParams.contains(nestedUse.getName()))
+        uses.push_back(nestedUse);
+    return;
+  }
+  return collectUsesFromTypesImpl(type, uses, hasConstExpr);
+}
 
+void ParameterCollector::collectUsesFromTypesImpl(
+    Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr) {
   // Ignore types we have already scanned.
   if (!type)
     return;
@@ -176,66 +197,6 @@ void ParameterCollector::collectUsesFromTypes(
     parameterLessTypes.try_emplace(type, hasNestedConstExpr);
     hasConstExpr |= hasNestedConstExpr;
   }
-}
-
-//===----------------------------------------------------------------------===//
-// SignatureType Verification
-//===----------------------------------------------------------------------===//
-
-ErrorOrSuccess SignatureType::checkSelfContained() {
-  // Check the input parameters for conflicts.
-  SmallDenseMap<StringAttr, Type> paramsMap;
-  for (auto inputParam : getInputParams()) {
-    auto &entry = paramsMap[inputParam.getName()];
-    if (entry)
-      return Error("signature parameter \"" + inputParam.getName().strref() +
-                   "\" redefined");
-    entry = inputParam.getType();
-  }
-
-  // If the signature has no input parameters, then it isn't "isolated" within
-  // itself, it may use contextual types.  The normal parameter scanner will
-  // handle it.
-  if (getInputParams().empty())
-    return success();
-
-  // Otherwise, we need to check that any input/output value types only use
-  // parameters defined in the signature itself.
-  bool hadSymbolConstantReferences = false;
-  struct SignatureTypeCollector : public ParameterCollector {
-    SignatureTypeCollector(bool &hadSymbolConstantReferences)
-        : hadSymbolConstantReferences(hadSymbolConstantReferences) {}
-    void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) override {
-      hadSymbolConstantReferences = true;
-    }
-    bool &hadSymbolConstantReferences;
-  } parameterCollector(hadSymbolConstantReferences);
-
-  // Collect all the parameter references from the function type in the
-  // signature.
-  SmallVector<ParamDeclRefAttr> uses;
-  bool hasConstExpr;
-  parameterCollector.collectUsesFromTypes(getValues(), uses, hasConstExpr);
-
-  // Reject any SymbolConstantAttr's, they cannot exist in a signature.  This
-  // structurally cannot exist, but this is defensive code in case something
-  // changes in the future.
-  if (hadSymbolConstantReferences)
-    return Error("signature type cannot use an @symbol reference");
-
-  // Check that each of the uses is to a defined input parameter.
-  for (ParamDeclRefAttr use : uses) {
-    auto &entry = paramsMap[use.getName()];
-    if (!entry)
-      return Error("\"" + use.getName().strref() +
-                   "\" parameter not defined in signature");
-    if (entry != use.getType())
-      return Error("use of \"" + use.getName().strref() +
-                   "\" with incorrect type in signature");
-  }
-
-  // Otherwise we succeed.
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -277,7 +238,7 @@ LogicalResult ExprFuncAttr::checkSelfContained(
 
 namespace {
 struct DeclParameterVerifier final : public ParameterCollector {
-  DeclParameterVerifier(KGENDeclInterface topLevelOp,
+  DeclParameterVerifier(DeclInterface topLevelOp,
                         ParameterDeclsAndUses &parameters,
                         SymbolTableCollection *symbolTable)
       : topLevelOp(topLevelOp), parameters(parameters),
@@ -309,8 +270,13 @@ struct DeclParameterVerifier final : public ParameterCollector {
 
   void verifyRefType(DeclRefType typeDef) override;
 
+  void verifyNestedParameterUse(ParamDeclAttr decl,
+                                ParamDeclRefAttr use) override;
+
+  void reportDuplicateNestedDecl(ParamDeclAttr decl) override;
+
   /// This is the top level declaration that we're analyzing.
-  KGENDeclInterface topLevelOp;
+  DeclInterface topLevelOp;
 
   /// This is the parameter information that we're building.
   ParameterDeclsAndUses &parameters;
@@ -344,7 +310,7 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
   topLevelOp->walk<mlir::WalkOrder::PreOrder>([&](Operation *bodyOp) {
     // Defer nested parameter scopes. If the nested scope is parametrically
     // isolated from above, skip it.
-    auto bodyDeclInterface = dyn_cast<KGENDeclInterface>(bodyOp);
+    auto bodyDeclInterface = dyn_cast<DeclInterface>(bodyOp);
     if (bodyDeclInterface && bodyDeclInterface != topLevelOp) {
       if (!bodyDeclInterface.isIsolatedFromAbove())
         parameters.nestedDecls.push_back(bodyDeclInterface);
@@ -376,16 +342,10 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
       }
     }
 
-    // If this is a KGENDeclInterface, the declared parameters are stored in the
+    // If this is a DeclInterface, the declared parameters are stored in the
     // signature.
-    if (bodyDeclInterface) {
-      if (!paramDeclsAttr)
-        paramDeclsAttr = bodyDeclInterface.getInputParamDeclsAttr();
-      collectUsesFromAttr(bodyDeclInterface.getInputParamDeclsAttr(), uses,
-                          hasConstExpr);
-      collectUsesFromTypes(bodyDeclInterface.getFunctionType(), uses,
-                           hasConstExpr);
-    }
+    if (bodyDeclInterface)
+      paramDeclsAttr = bodyDeclInterface.getInputParamDeclsAttr();
 
     // Check the types of results to find any parameters embedded in their
     // types.  We don't have to check operands because they are always checked
@@ -422,7 +382,7 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
       // We cannot have any redefinitions of parameters in this scope.
       auto &[op, decl] = parameters.decls[param.getName()];
       if (op && (op == topLevelOp ||
-                 op->getParentOfType<KGENDeclInterface>() == topLevelOp)) {
+                 op->getParentOfType<DeclInterface>() == topLevelOp)) {
         auto diag = bodyOp->emitError("redeclaration of parameter ")
                     << param.getName();
         diag.attachNote(op->getLoc()) << "previous declaration here";
@@ -491,8 +451,8 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
 
   // Build the signature of the referenced symbol.
   SymbolRefAttr symbol = symbolConstant.getSymbol();
-  auto lookupDecl = [&](Operation *root, auto name) -> KGENDeclInterface {
-    if (auto decl = dyn_cast_or_null<KGENDeclInterface>(
+  auto lookupDecl = [&](Operation *root, auto name) -> DeclInterface {
+    if (auto decl = dyn_cast_or_null<DeclInterface>(
             symbolTable->lookupSymbolIn(root, name)))
       return decl;
     hadError = true;
@@ -501,31 +461,35 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
     return nullptr;
   };
 
-  // The symbol reference may refer to a nested symbol, in which case we build
-  // the signature by concatenating the parameter signature down to the leaf
-  // symbol.
-  KGENDeclInterface decl = lookupDecl(module, symbol.getRootReference());
+  // Lookup the root declaration.
+  DeclInterface decl = lookupDecl(module, symbol.getRootReference());
   if (!decl)
     return;
 
-  SignatureType declSignature;
-  if (isa<FlatSymbolRefAttr>(symbol)) {
-    declSignature = decl.getSignature();
-  } else {
-    SmallVector<ParamDeclAttr> inputParams(decl.getInputParamDecls());
-    SmallVector<Type> resultParamTypes(decl.getResultParamTypes());
-    for (FlatSymbolRefAttr nestedRef : symbol.getNestedReferences()) {
-      decl = lookupDecl(decl, nestedRef.getAttr());
-      if (!decl)
-        return;
-      llvm::append_range(inputParams, decl.getInputParamDecls());
-      llvm::append_range(resultParamTypes, decl.getResultParamTypes());
-    }
-    declSignature = SignatureType::get(
-        ParamDeclArrayAttr::get(decl.getContext(), inputParams),
-        TypeArrayAttr::get(decl.getContext(), resultParamTypes),
-        decl.getFunctionType(), decl.getSignature().getConventions());
+  // The symbol reference may refer to a nested symbol, in which case we build
+  // the signature by concatenating the parameter signature down to the leaf
+  // symbol.
+  SmallVector<ParamDeclAttr> inputParams(
+      decl.getInputParamDeclsAttr().getValue());
+  for (FlatSymbolRefAttr nestedRef : symbol.getNestedReferences()) {
+    decl = lookupDecl(decl, nestedRef.getAttr());
+    if (!decl)
+      return;
+    llvm::append_range(inputParams, decl.getInputParamDeclsAttr());
   }
+
+  // The leaf symbol must refer to a function.
+  auto func = dyn_cast<FuncInterface>(*decl);
+  if (!func) {
+    hadError = true;
+    emitError(curLocationCollecting.value())
+        << symbol << " does not reference a function";
+    return;
+  }
+  auto declSignature = SignatureType::get(
+      ParamDeclArrayAttr::get(decl.getContext(), inputParams),
+      TypeArrayAttr::get(decl.getContext(), func.getResultParamTypes()),
+      func.getSignature().getValues(), func.getConventions());
 
   // If this SymbolConstant binds the parameters for the symbol, then remap its
   // signature to include the substitutions.
@@ -567,7 +531,7 @@ void DeclParameterVerifier::verifyRefType(DeclRefType refType) {
   if (!symbolTable)
     return;
 
-  auto decl = dyn_cast_or_null<KGENDeclInterface>(
+  auto decl = dyn_cast_or_null<DeclInterface>(
       symbolTable->lookupSymbolIn(module, refType.getName()));
   if (!decl) {
     hadError = true;
@@ -597,6 +561,23 @@ void DeclParameterVerifier::verifyRefType(DeclRefType refType) {
           curLocationCollecting.value(), paramName.c_str(), specializedDecls,
           decl.getLoc())))
     hadError = true;
+}
+
+void DeclParameterVerifier::verifyNestedParameterUse(ParamDeclAttr decl,
+                                                     ParamDeclRefAttr use) {
+  if (decl.getType() == use.getType())
+    return;
+  (mlir::emitError(curLocationCollecting.value(), "use of nested parameter ")
+   << decl.getName() << " with incorrect type " << use.getType())
+          .attachNote()
+      << "parameter defined with type " << decl.getType();
+  hadError = true;
+}
+
+void DeclParameterVerifier::reportDuplicateNestedDecl(ParamDeclAttr decl) {
+  mlir::emitError(curLocationCollecting.value(), "nested parameter ")
+      << decl.getName() << " redefined";
+  hadError = true;
 }
 
 //===----------------------------------------------------------------------===//
@@ -868,9 +849,9 @@ LogicalResult DeclParameterVerifier::checkAndReorderParameterUseDefGraph() {
 
 /// Collect information about the parameter definitions and uses in the
 /// specified operation.  This assumes the IR is in a valid state.
-DenseMap<KGENDeclInterface, ParameterDeclsAndUses>
-ParameterDeclsAndUses::calculate(KGENDeclInterface op) {
-  FailureOr<DenseMap<KGENDeclInterface, ParameterDeclsAndUses>> result =
+DenseMap<DeclInterface, ParameterDeclsAndUses>
+ParameterDeclsAndUses::calculate(DeclInterface op) {
+  FailureOr<DenseMap<DeclInterface, ParameterDeclsAndUses>> result =
       calculateAndPotentiallyVerify(op, nullptr);
   assert(succeeded(result) && "IR should be legal here!");
   return std::move(*result);
@@ -880,7 +861,7 @@ ParameterDeclsAndUses::calculate(KGENDeclInterface op) {
 /// verifiers for these operations.  If a problem is detected, this emits an
 /// error and returns failure.
 LogicalResult
-ParameterDeclsAndUses::calculateAndVerify(KGENDeclInterface op,
+ParameterDeclsAndUses::calculateAndVerify(DeclInterface op,
                                           SymbolTableCollection &symbolTables) {
   return calculateAndPotentiallyVerify(op, &symbolTables);
 }
@@ -891,9 +872,9 @@ ParameterDeclsAndUses::calculateAndVerify(KGENDeclInterface op,
 /// If the SymbolTableCollection is non-null, check deep invariants for a
 /// func/generator decl body, used by the verifiers for these operations.  If a
 /// problem is detected, this emits an error and returns failure.
-FailureOr<DenseMap<KGENDeclInterface, ParameterDeclsAndUses>>
+FailureOr<DenseMap<DeclInterface, ParameterDeclsAndUses>>
 ParameterDeclsAndUses::calculateAndPotentiallyVerify(
-    KGENDeclInterface topLevelOp, SymbolTableCollection *symbolTable) {
+    DeclInterface topLevelOp, SymbolTableCollection *symbolTable) {
   DeclParameterVerifier verifier(topLevelOp, *this, symbolTable);
 
   // Start by doing a pass over the operation and all the operations in its
@@ -904,15 +885,15 @@ ParameterDeclsAndUses::calculateAndPotentiallyVerify(
       failed(verifier.checkParameterUses()))
     return failure();
 
-  DenseMap<KGENDeclInterface, ParameterDeclsAndUses> nestedDeclUses;
+  DenseMap<DeclInterface, ParameterDeclsAndUses> nestedDeclUses;
   DenseSet<KGENCallOpInterface> calls;
-  for (KGENDeclInterface nestedDecl : nestedDecls) {
+  for (DeclInterface nestedDecl : nestedDecls) {
     // Fold the current declarations into the nested scope.
     ParameterDeclsAndUses &nested = nestedDeclUses[nestedDecl];
     nested.decls = decls;
 
     // Recurse into the scope.
-    FailureOr<DenseMap<KGENDeclInterface, ParameterDeclsAndUses>> result =
+    FailureOr<DenseMap<DeclInterface, ParameterDeclsAndUses>> result =
         nested.calculateAndPotentiallyVerify(nestedDecl, symbolTable);
     if (failed(result))
       return failure();
@@ -931,7 +912,7 @@ ParameterDeclsAndUses::calculateAndPotentiallyVerify(
 
   llvm::SetVector<ParamDeclRefAttr, SmallVector<ParamDeclRefAttr>> callUses;
   for (KGENCallOpInterface call : calls) {
-    for (KGENDeclInterface nestedDecl : call.getRegionBodies()) {
+    for (DeclInterface nestedDecl : call.getRegionBodies()) {
       const ParameterDeclsAndUses &uses =
           nestedDeclUses.find(nestedDecl)->second;
       // Only add references to parameters defined at or above this scope.

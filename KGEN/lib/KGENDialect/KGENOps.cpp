@@ -214,10 +214,11 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   // signature of the generator.  If so, we can fold it into the constraint
   // list.
   SmallVector<ParamDeclRefAttr> parameterRefs;
-  KGENDeclInterface parent = op->getParentOfType<KGENDeclInterface>();
+  auto parent = op->getParentOfType<DeclInterface>();
   if (parent) {
     collectParameterReferences(cond, parameterRefs);
-    ArrayRef<ParamDeclAttr> generatorInputParams = parent.getInputParamDecls();
+    ArrayRef<ParamDeclAttr> generatorInputParams =
+        parent.getInputParamDeclsAttr().getValue();
 
     // Check to see if the parameters referenced by the condition are all
     // defined by the generator.  If so, we can fold this into the constraint
@@ -231,8 +232,7 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
       SmallVector<ConstraintAttr> constraints(parent.getConstraints());
       constraints.push_back(
           ConstraintAttr::get(cond, op.getMessageAttr(), op.getLoc()));
-      parent.setConstraintsAttr(
-          rewriter.getAttr<ConstraintArrayAttr>(constraints));
+      parent.setConstraints(constraints);
       op.erase();
       return success();
     }
@@ -494,7 +494,7 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   }
 
   auto module = KGENModule::from(*this, symbolTable);
-  auto func = module.lookup<KGENDeclInterface>(evaluator.getSymbol());
+  auto func = module.lookup<FuncInterface>(evaluator.getSymbol());
 
   auto index = IndexType::get(getContext());
   auto evaluatorType = FunctionType::get(
@@ -879,8 +879,7 @@ void CallParamOp::build(OpBuilder &builder, OperationState &state,
 }
 
 LogicalResult CallParamOp::verifyRegions() {
-  KGENDeclInterface parent =
-      getOperation()->getParentOfType<KGENDeclInterface>();
+  auto parent = getOperation()->getParentOfType<FuncInterface>();
   if (!parent || isa<FuncOp>(parent))
     return emitError(
         "kgen.call_param is only allowed in generators pre-elaboration");
@@ -894,8 +893,7 @@ LogicalResult CallParamOp::verifyRegions() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult InlinedCallOp::verifyRegions() {
-  KGENDeclInterface parent =
-      getOperation()->getParentOfType<KGENDeclInterface>();
+  auto parent = getOperation()->getParentOfType<FuncInterface>();
   if (!parent || isa<FuncOp>(parent))
     return emitOpError("is only allowed in generators pre-elaboration");
 
@@ -1363,15 +1361,10 @@ OpFoldResult RebindOp::fold(ArrayRef<Attribute> operands) {
 // StructDeclOp
 //===----------------------------------------------------------------------===//
 
-/// Verify that the body has no arguments and that the declaration has no result
-/// types.
+/// Verify that the body has no arguments.
 LogicalResult StructDeclOp::verify() {
-  if (getSignature() != SignatureType::get(getInputParamDeclsAttr()))
-    return emitOpError("signature mismatches body");
-
   if (getFields().getNumArguments())
     return emitOpError("expected declaration body to have no arguments");
-
   return success();
 }
 
@@ -1401,8 +1394,7 @@ StructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 void StructDeclOp::build(OpBuilder &builder, OperationState &result,
                          StringAttr name) {
   auto context = builder.getContext();
-  build(builder, result, name,
-        SignatureType::get(ParamDeclArrayAttr::get(context, {})));
+  build(builder, result, name, ParamDeclArrayAttr::get(context, {}));
   result.regions[0]->push_back(new Block());
 }
 
@@ -1894,7 +1886,7 @@ LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Just ensure we're exporting symbols we can see.
   auto module = KGENModule::from(*this, symbolTable);
   for (auto e : getExports().getAsRange<FlatSymbolRefAttr>()) {
-    if (!module.lookup<KGENDeclInterface>(e))
+    if (!module.lookup<FuncInterface>(e))
       return emitOpError("could not find referenced symbol '") << e << "'";
   }
 

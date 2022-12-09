@@ -41,7 +41,7 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
     }], "iterator_range<CallRegionBodyIterator>", "getRegionBodies", (ins),
     [{}], [{
       return llvm::map_range($_op->getRegions(), +[](Region &region) {
-        return cast<KGENDeclInterface>(region.front().front());
+        return cast<DeclInterface>(region.front().front());
       });
     }]>,
     InterfaceMethod<[{

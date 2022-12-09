@@ -97,17 +97,10 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
       [&](ParamDeclArrayAttr inputParams, TypeArrayAttr resultParamTypes,
           FunctionType valuesType,
           DenseI8ArrayAttr conventions) -> LogicalResult {
-    auto sigTy = SignatureType::get(inputParams, resultParamTypes, valuesType,
-                                    conventions);
-
-    // Signature types can fail to parse when they reference parameters that
-    // are not defined in their input list.  Handle this by reporting the error
-    // correctly through the parser and returning a failure.
-    auto isSelfContained = sigTy.checkSelfContained();
-    if (isSelfContained.isError())
-      return parser.emitError(typeLoc, isSelfContained.takeError().get());
-    type = sigTy;
-    return success();
+    type = SignatureType::getChecked([&] { return parser.emitError(typeLoc); },
+                                     parser.getContext(), inputParams,
+                                     resultParamTypes, valuesType, conventions);
+    return success(!!type);
   };
 
   if (succeeded(parser.parseOptionalLess())) {
@@ -373,17 +366,15 @@ KGEN::parseOptionalParameterSpec(AsmParser &parser,
 }
 
 /// Parse a parameter specification as a SignatureType.
-ParseResult KGEN::parseOptionalParameterSpec(AsmParser &parser,
-                                             TypeAttr &result) {
-  ParamDeclArrayAttr inputParamDecls;
+ParseResult
+KGEN::parseOptionalParameterSpec(AsmParser &parser,
+                                 ParamDeclArrayAttr &inputParamDecls) {
   TypeArrayAttr resultParamTypes;
+  llvm::SMLoc loc = parser.getCurrentLocation();
   if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamTypes))
     return failure();
-
-  auto sig =
-      SignatureType::get(inputParamDecls, resultParamTypes,
-                         FunctionType::get(parser.getContext(), {}, {}), {});
-  result = TypeAttr::get(sig);
+  if (!resultParamTypes.empty())
+    return parser.emitError(loc, "expected no result parameters");
   return success();
 }
 
@@ -406,14 +397,9 @@ void KGEN::printOptionalParameterSpec(ParamDeclArrayAttr inputParamDecls,
 }
 
 void KGEN::printOptionalParameterSpec(AsmPrinter &p, Operation *op,
-                                      TypeAttr type) {
-  auto sig = dyn_cast<SignatureType>(type.getValue());
-  if (!sig) {
-    p << "<<INVALID: " << type << ">";
-    return;
-  }
-  printOptionalParameterSpec(sig.getInputParams(), sig.getResultParamTypes(),
-                             p.getStream());
+                                      ParamDeclArrayAttr inputParamDecls) {
+  printOptionalParameterSpec(
+      inputParamDecls, TypeArrayAttr::get(op->getContext(), {}), p.getStream());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1166,8 +1152,8 @@ ParseResult KGEN::parseOptionalConstraints(OpAsmParser &parser,
 
 /// Print a constraint list for a generator or interface.
 void KGEN::printOptionalConstraints(OpAsmPrinter &p, Operation *op,
-                                    ConstraintArrayAttr constraints) {
-  if (!constraints || constraints.empty())
+                                    ArrayRef<ConstraintAttr> constraints) {
+  if (constraints.empty())
     return;
 
   p.printNewline();
@@ -1180,6 +1166,11 @@ void KGEN::printOptionalConstraints(OpAsmPrinter &p, Operation *op,
     constraint.print(p);
   });
   p << ">";
+}
+
+void KGEN::printOptionalConstraints(OpAsmPrinter &p, Operation *op,
+                                    ConstraintArrayAttr constraints) {
+  return printOptionalConstraints(p, op, constraints.getValue());
 }
 
 /// Parse either a kgen.generator or kgen.func declaration, depending on what
@@ -1304,21 +1295,18 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   return success();
 }
 
-void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
+void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
   using namespace mlir::function_interface_impl;
 
-  // TODO: KGENDeclInterface should inherit from FunctionOpInterface.
-  auto opDecl = cast<KGENDeclInterface>((Operation *)op);
+  auto func = cast<mlir::FunctionOpInterface>(*op);
 
   // Print the operation and the function name.
-  auto funcName =
-      op->getAttrOfType<StringAttr>(SymbolTable::getSymbolAttrName())
-          .getValue();
+  StringRef funcName = func.getName();
   p << ' ';
 
   p.printSymbolName(funcName);
-  printOptionalParameterSpec(opDecl.getInputParamDeclsAttr(),
-                             opDecl.getResultParamTypesAttr(), p.getStream());
+  printOptionalParameterSpec(op.getInputParamDeclsAttr(),
+                             op.getResultParamTypesAttr(), p.getStream());
 
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   ArrayRef<Type> resultTypes = op.getResultTypes();
@@ -1336,8 +1324,8 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
 
   printFunctionAttributes(p, op, argTypes.size(), resultTypes.size(),
                           ignoredAttrNames);
-  printOptionalConventions(p.getStream(), opDecl.getConventions());
-  printOptionalConstraints(p, opDecl, opDecl.getConstraintsAttr());
+  printOptionalConventions(p.getStream(), op.getConventions());
+  printOptionalConstraints(p, func, cast<DeclInterface>(*op).getConstraints());
 
   // If this is a generator implementing a generator.interface, include the
   // symbol for the generator interface.
@@ -1348,10 +1336,8 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op) {
   }
 
   p << ' ';
-  if (!op.getFunctionBody().empty()) {
-    p.printRegion(op.getFunctionBody(), /*printEntryBlockArgs=*/false,
-                  /*printBlockTerminators=*/true);
-  }
+  if (!func.isExternal())
+    p.printRegion(func.getFunctionBody(), /*printEntryBlockArgs=*/false);
 }
 
 /// Parse a parameter binding list if present.
@@ -1572,7 +1558,7 @@ LogicalResult KGEN::verifyParamDeclsMatch(
 /// Check that the specified generator/interfaces matches signature information
 /// with the other interface.
 LogicalResult KGEN::verifyDeclMatchesInterface(
-    const char *originatorName, KGENDeclInterface originatorDecl,
+    const char *originatorName, FuncInterface originatorDecl,
     const char *interfaceName, GeneratorInterfaceOp interfaceDecl) {
 
   return verifyDeclSignaturesMatch(
@@ -1584,17 +1570,17 @@ LogicalResult KGEN::verifyDeclMatchesInterface(
 /// into the specified array.
 static void collectContextParameters(Operation *op,
                                      SmallVector<ParamDeclAttr> &params) {
-  auto decl = dyn_cast_or_null<KGENDeclInterface>(op);
+  auto decl = dyn_cast_or_null<DeclInterface>(op);
   if (!decl)
     return;
   collectContextParameters(op->getParentOp(), params);
-  llvm::append_range(params, decl.getInputParamDecls());
+  llvm::append_range(params, decl.getInputParamDeclsAttr());
 }
 
 /// Return the full signature of this declaration, including parameters from
 /// enclosing struct declarations.
-SignatureType KGEN::getFullSignature(KGENDeclInterface decl) {
-  auto signature = decl.getSignature();
+SignatureType KGEN::getFullSignature(FuncInterface decl) {
+  SignatureType signature = decl.getSignature();
 
   // Collect contextual params, if there are none, the full signature is the
   // same as the local signature.

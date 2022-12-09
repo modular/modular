@@ -30,7 +30,7 @@ struct KGENDialectFoldInterface : public mlir::DialectFoldInterface {
   /// parameters declarations to find the highest scope a constant could be
   /// hoisted into, but that is expensive to do.
   bool shouldMaterializeInto(Region *region) const override {
-    return isa<KGENDeclInterface>(region->getParentOp());
+    return isa<DeclInterface>(region->getParentOp());
   }
 };
 } // namespace

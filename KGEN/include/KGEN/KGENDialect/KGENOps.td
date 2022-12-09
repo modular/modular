@@ -38,7 +38,7 @@ def KGEN_FuncOp
                     SingleBlockImplicitTerminator<"ReturnOp">,
                     DeclareOpInterfaceMethods<CallableOpInterface>,
                     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                    DeclareOpInterfaceMethods<KGEN_DeclInterface>]> {
+                    DeclInterface, FuncInterface]> {
   let summary = "concrete function definition";
 
   let arguments = (ins SymbolNameAttr:$sym_name,
@@ -47,8 +47,8 @@ def KGEN_FuncOp
 
   let extraClassDeclaration = [{
     using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<FuncOp>::getBody;
-    using KGENDeclInterfaceTrait::getFunctionType;
-    using KGENDeclInterfaceTrait::getFunctionTypeAttr;
+    using FuncInterfaceTrait::getFunctionType;
+    using FuncInterfaceTrait::getFunctionTypeAttr;
 
     ReturnOp getReturnOp();
   }];
@@ -67,7 +67,7 @@ def KGEN_GeneratorOp
                          SingleBlockImplicitTerminator<"ReturnOp">,
                          DeclareOpInterfaceMethods<CallableOpInterface>,
                          DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                         DeclareOpInterfaceMethods<KGEN_DeclInterface>]> {
+                         DeclInterface, FuncInterface]> {
   let summary = "Function generator definition";
 
   /// If the `implements` attribute is present then this generator is an
@@ -80,8 +80,8 @@ def KGEN_GeneratorOp
 
   let extraClassDeclaration = [{
     using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<GeneratorOp>::getBody;
-    using KGENDeclInterfaceTrait::getFunctionType;
-    using KGENDeclInterfaceTrait::getFunctionTypeAttr;
+    using FuncInterfaceTrait::getFunctionType;
+    using FuncInterfaceTrait::getFunctionTypeAttr;
 
     ReturnOp getReturnOp();
   }];
@@ -100,8 +100,8 @@ def KGEN_GeneratorInterfaceOp : KGENOp<"generator.interface", [
     Symbol,
     IsolatedFromAbove,
     DeclareOpInterfaceMethods<CallableOpInterface>,
-    DeclareOpInterfaceMethods<KGEN_DeclInterface>,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+    DeclInterface, FuncInterface]> {
   let summary = "Generator interface definition";
 
   /// input and result parameters are stored in a single flat array named
@@ -120,9 +120,8 @@ def KGEN_GeneratorInterfaceOp : KGENOp<"generator.interface", [
   let hasCustomAssemblyFormat = 1;
 
   let extraClassDeclaration = [{
-    using KGENDeclInterfaceTrait::getFunctionType;
-    using KGENDeclInterfaceTrait::getFunctionTypeAttr;
-
+    using FuncInterfaceTrait::getFunctionType;
+    using FuncInterfaceTrait::getFunctionTypeAttr;
   }];
 }
 
@@ -392,8 +391,7 @@ def KGEN_InlinedCallOp : KGENOp<"inlined_call", [KGEN_CallOpInterface]> {
 class RegionBodyBaseOp<string mnemonic, list<Trait> traits = []>
   : KGENOp<mnemonic, [Terminator,
     SingleBlockImplicitTerminator<"ReturnOp">,
-    DeclareOpInterfaceMethods<KGEN_DeclInterface, [
-      "isIsolatedFromAbove", "notifyKnownIsolatedFromAbove"]>] # traits> {
+    DeclInterface, FuncInterface] # traits> {
   let arguments = (ins TypeAttrOf<KGEN_SignatureType>:$signature,
                        ConstraintArrayAttr:$constraints,
                        UnitAttr:$isolated);
@@ -406,10 +404,9 @@ class RegionBodyBaseOp<string mnemonic, list<Trait> traits = []>
   let extraClassDeclaration = [{
     /// Get the terminator.
     ReturnOp getReturnOp();
-  }];
-  let extraClassDefinition = [{
-    bool $cppClass::isIsolatedFromAbove() { return getIsolated(); }
-    void $cppClass::notifyKnownIsolatedFromAbove() { setIsolated(true); }
+
+    bool isIsolatedFromAbove() { return getIsolated(); }
+    void notifyKnownIsolatedFromAbove() { setIsolated(true); }
   }];
 
   let hasRegionVerifier = 1;
@@ -727,8 +724,8 @@ def KGEN_RebindOp : KGENOp<"rebind"> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructDeclOp : KGENOp<"struct.decl", [Symbol, SymbolTable,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-    DeclareOpInterfaceMethods<KGEN_DeclInterface>, SingleBlock, NoTerminator]> {
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>, DeclInterface,
+    SingleBlock, NoTerminator]> {
   let summary = "Struct declaration.";
   let description = [{
     The `kgen.struct.decl` operation is a top-level operation used to declare
@@ -760,10 +757,10 @@ def KGEN_StructDeclOp : KGENOp<"struct.decl", [Symbol, SymbolTable,
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<KGEN_SignatureType>:$signature);
+                       KGEN_ParamDeclArrayAttr:$inputParamDecls);
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
-    $sym_name `` custom<OptionalParameterSpec>($signature)
+    $sym_name `` custom<OptionalParameterSpec>($inputParamDecls)
     attr-dict-with-keyword
     $fields
   }];
