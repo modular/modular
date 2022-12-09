@@ -49,7 +49,7 @@ inline llvm::StringLiteral getRegionHashAttrName() { return "region_hashes"; }
 /// no-op. The deflation is implemented as an `andThenSync` on `chain` - this is
 /// to simplify calling code which is also likely async.
 LLCL::AsyncValueRef<LLCL::Chain>
-deflateOp(Operation *symbol, LLCL::RCRef<BlobCache<RegionCacheKey>> cache,
+deflateOp(Operation *op, LLCL::RCRef<BlobCache<RegionCacheKey>> cache,
           LLCL::AnyAsyncValueRef chain);
 
 /// This function allows the user to inflate a cached op into its original
