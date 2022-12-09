@@ -243,14 +243,15 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
 }
 
 /// Walk a region and:
-///  - Collect all symbol references from all operations in that region.
+///  - Collect all symbol/constant references from all operations in that
+///  region.
 ///  - Unique the references and assign them indices.
-///  - Replace symbol uses with `cache.symbol_ref`
+///  - Replace their uses with indices.
 ///  - Cache the region.
 static AsyncValueRef<Chain>
-cacheSingleRegion(Region &r, Operation *symbol,
+cacheSingleRegion(Region &r, Operation *op,
                   RCRef<BlobCache<M::Cache::RegionCacheKey>> cache) {
-  OpBuilder builder(symbol);
+  OpBuilder builder(op);
   SmallVector<SymbolRefAttr> symbolReferences;
   SmallVector<ConstantHashAttr> hashReferences;
   SmallVector<SymbolRefAttr> refs;
@@ -320,13 +321,13 @@ cacheSingleRegion(Region &r, Operation *symbol,
   auto out = AsyncValueRef<Chain>::allocate(hashOr.getRuntime());
   // Keeping references is safe here because all the memory is owned by the
   // MLIRContext, which is guaranteed to live longer than any of this.
-  hashOr.andThenSync([&r, symbol, container,
+  hashOr.andThenSync([&r, op, container,
                       uniqueSymbolRefs = std::move(uniqueSymbolRefs),
                       uniqueHashRefs = std::move(uniqueHashRefs),
                       hashOr = hashOr.copy(), out = out.copy()]() mutable {
     // Create a new builder because this may run well after the rest of this
     // function.
-    OpBuilder builder(symbol);
+    OpBuilder builder(op);
     if (failed(*hashOr)) {
       return out.setToError(getMLIRDiagnostic(hashOr->takeError(), r.getLoc()));
     }
@@ -335,7 +336,7 @@ cacheSingleRegion(Region &r, Operation *symbol,
     // If we already have some hashes, we have to append to the end of that
     // array.
     auto hashes =
-        symbol->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
+        op->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
     if (hashes)
       hashVec = SmallVector<RegionHashAttr>(hashes.begin(), hashes.end());
 
@@ -345,8 +346,9 @@ cacheSingleRegion(Region &r, Operation *symbol,
                                           uniqueSymbolRefs.size()),
         llvm::makeArrayRef<ConstantHashAttr>(&*uniqueHashRefs.begin(),
                                              uniqueHashRefs.size())));
-    symbol->setAttr(getRegionHashAttrName(),
-                    builder.getAttr<RegionHashArrayAttr>(hashVec));
+
+    auto hashVecAttr = builder.getAttr<RegionHashArrayAttr>(hashVec);
+    op->setAttr(getRegionHashAttrName(), hashVecAttr);
 
     // Finally, erase the container.
     container.erase();
@@ -357,28 +359,28 @@ cacheSingleRegion(Region &r, Operation *symbol,
   return out;
 }
 
-AsyncValueRef<Chain> M::Cache::deflateOp(Operation *symbol,
+AsyncValueRef<Chain> M::Cache::deflateOp(Operation *op,
                                          RCRef<BlobCache<RegionCacheKey>> cache,
                                          AnyAsyncValueRef chain) {
   auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
   // Hang the actual deflation off the input chain. This will allow users to
   // not worry about sequencing w.r.t. this operation, they can just pass in
   // the chain.
-  chain->andThenSync([symbol, cache = cache.copy(), out = out.copy(),
+  chain->andThenSync([op, cache = cache.copy(), out = out.copy(),
                       chain = chain.copy()] {
     if (chain->isError())
       return out.setToError(chain->takeDiagnostic());
 
     // If the op is already deflated, we're done!
-    if (symbol->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName())) {
+    if (op->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName())) {
       out.emplace();
       return;
     }
 
     SmallVector<AnyAsyncValueRef> results;
-    results.reserve(symbol->getNumRegions());
-    for (Region &r : symbol->getRegions())
-      results.push_back(cacheSingleRegion(r, symbol, cache.copy()));
+    results.reserve(op->getNumRegions());
+    for (Region &r : op->getRegions())
+      results.push_back(cacheSingleRegion(r, op, cache.copy()));
 
     andThenSyncMoving(
         results, [out = out.copy()](MutableArrayRef<AnyAsyncValueRef> values) {
