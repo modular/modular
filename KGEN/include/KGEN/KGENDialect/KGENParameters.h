@@ -27,14 +27,13 @@ public:
   /// specified operation.  This assumes the IR is in a valid state. Returns the
   /// declarations and uses for the top-level operation and those of any nested
   /// scopes.
-  DenseMap<KGENDeclInterface, ParameterDeclsAndUses>
-  calculate(KGENDeclInterface op);
+  DenseMap<DeclInterface, ParameterDeclsAndUses> calculate(DeclInterface op);
 
   /// Check deep invariants for a func/generator decl body, used by the
   /// verifiers for these operations.  If a problem is detected, this emits an
   /// error and returns failure. Return the declarations and uses for the
   /// top-level operation.
-  LogicalResult calculateAndVerify(KGENDeclInterface op,
+  LogicalResult calculateAndVerify(DeclInterface op,
                                    SymbolTableCollection &symbolTables);
 
   /// This defines the operation and the ParamDeclAttr inside of it that defines
@@ -65,14 +64,14 @@ public:
   SmallVector<Operation *> constExprOps;
 
   /// Keep track of any nested parameter scopes encountered.
-  SmallVector<KGENDeclInterface> nestedDecls;
+  SmallVector<DeclInterface> nestedDecls;
 
   /// Keep track of uses of parameters that were defined in a higher scope.
   SmallPtrSet<ParamDeclRefAttr, 8> usesFromAbove;
 
 private:
-  FailureOr<DenseMap<KGENDeclInterface, ParameterDeclsAndUses>>
-  calculateAndPotentiallyVerify(KGENDeclInterface op,
+  FailureOr<DenseMap<DeclInterface, ParameterDeclsAndUses>>
+  calculateAndPotentiallyVerify(DeclInterface op,
                                 SymbolTableCollection *symbolTable);
 };
 } // namespace M::KGEN

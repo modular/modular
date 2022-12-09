@@ -120,8 +120,8 @@ kgen.generator @dtype_params() {
 
 // -----
 
-// expected-note @+2 {{parameter defined with type 'ui32'}}
-// expected-error @+1 {{reference to parameter "n" with incorrect type 'index'}}
+// expected-error @below {{reference to parameter "n" with incorrect type 'index'}}
+// expected-note @below {{parameter defined with type 'ui32'}}
 kgen.generator @scalar_params_verbose<n : ui32>(%x : !pop.array<n, scalar<invalid>>) {
   kgen.return
 }
@@ -308,7 +308,7 @@ kgen.generator.interface @constrained<width, height>()
 
 // -----
 
-// expected-error @+1 {{invalid use of parameter with no declaration "ty2"}}
+// expected-error @below {{'kgen.generator.interface' op invalid use of parameter with no declaration "ty2"}}
 kgen.generator.interface @badTypes<ty1 : dtype>(%a : !pop.scalar<ty2>)
 
 // -----
@@ -488,27 +488,20 @@ kgen.generator @takeFn<unaryFn: <abc>()->()>() {
   kgen.return
 }
 
-// expected-note @+1 {{@thing declared here}}
+// expected-note @below {{@thing declared here}}
 kgen.generator @thing<dt>() {
   kgen.return
 }
 
 kgen.generator @test2() {
-  // expected-error @+1 {{symbol use input parameter #0 has name "abc" but @thing expected name "dt"}}
+  // expected-error @below {{symbol use input parameter #0 has name "abc" but @thing expected name "dt"}}
   kgen.call @takeFn<unaryFn : <abc>()->() = @thing>() : () -> ()
   kgen.return
 }
 
 // -----
 
-// expected-error @+1 {{"ty" parameter not defined in signature}}
-kgen.generator @test<ty: type, p : <x>(!kgen.paramref<ty>)->()>() {
-  kgen.return
-}
-
-// -----
-
-// expected-error @+1 {{signature parameter "x" redefined}}
+// expected-error @below {{nested parameter "x" redefined}}
 kgen.generator @test<ty: type, p : <x,x>()->()>
 () {
   kgen.return
@@ -561,9 +554,8 @@ kgen.generator @call_region() {
 
 // -----
 
-// expected-error @below {{signature mismatches body}}
-kgen.struct.decl @StructReturns<() -> dtype> {
-}
+// expected-error @below {{custom op 'kgen.struct.decl' expected no result parameters}}
+kgen.struct.decl @StructReturns<() -> dtype> {}
 
 // -----
 
@@ -571,7 +563,7 @@ kgen.struct.decl @StructReturns<() -> dtype> {
 "kgen.struct.decl"() ({
 ^bb0(%arg0: i32):
 }) {sym_name = "StructArgs", constraints = #kgen<constraints[]>,
-    signature = !kgen.signature<[], [], () -> ()>
+    inputParamDecls = #kgen<param.decls[]>
     } : () -> ()
 
 // -----
@@ -604,9 +596,8 @@ kgen.struct.decl @StructDuplicate {
 
 kgen.struct.decl @SomeType<v, b> {}
 
-// expected-error @below {{invalid use of parameter with no declaration "c"}}
-kgen.generator.interface @InvalidTypeParamValue<a>() ->
-    !kgen.declref<@SomeType<v = a, b = c>>
+// expected-error @below {{'kgen.generator.interface' op invalid use of parameter with no declaration "c"}}
+kgen.generator.interface @InvalidTypeParamValue<a>() -> !kgen.declref<@SomeType<v = a, b = c>>
 
 // -----
 

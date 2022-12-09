@@ -15,7 +15,8 @@ class Error;
 } // namespace M
 
 namespace M::KGEN {
-class KGENDeclInterface;
+class DeclInterface;
+class FuncInterface;
 
 //===----------------------------------------------------------------------===//
 // Helper methods for inspecting possibly-parameterized attributes and types.
@@ -46,7 +47,7 @@ bool isParameterizedType(Type type);
 /// This typedef represents a generator declaration + a set of input
 /// parameters that provide a complete binding for something that can be
 /// resolved.
-using DeclAndInputParamsPair = std::pair<KGENDeclInterface, ArrayAttr>;
+using DeclAndInputParamsPair = std::pair<FuncInterface, ArrayAttr>;
 
 /// This class keeps a set of defined parameter values and is used to evaluate
 /// and simplify parameter expressions based on those values.
@@ -120,7 +121,7 @@ private:
 /// constraints against inputParamValues. If the constraints are met, return
 /// success, otherwise return why they aren't.
 LogicalResult
-evaluateConstraints(ConstraintArrayAttr constraints,
+evaluateConstraints(ArrayRef<ConstraintAttr> constraints,
                     ParameterEvaluator &evaluator,
                     function_ref<LogicalResult(Location, Error)> emitError);
 
@@ -128,8 +129,7 @@ evaluateConstraints(ConstraintArrayAttr constraints,
 /// constraints against inputParamValues. If the constraints are met, return
 /// success, otherwise return why they aren't.
 LogicalResult
-evaluateConstraints(KGENDeclInterface decl,
-                    ArrayRef<Attribute> inputParamValues,
+evaluateConstraints(DeclInterface decl, ArrayRef<Attribute> inputParamValues,
                     function_ref<LogicalResult(Location, Error)> emitError,
                     SymbolTable &symtab);
 

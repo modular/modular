@@ -16,18 +16,15 @@
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/Types.h"
 
-namespace mlir {
-class FunctionOpInterface;
-}
-
 namespace M::KGEN {
+class ConstraintAttr;
 class ConstraintArrayAttr;
 class ParamBindArrayAttr;
 class ParamDeclAttr;
 class GeneratorInterfaceOp;
 class ParamBindArrayAttr;
 class ParamDeclArrayAttr;
-class KGENDeclInterface;
+class FuncInterface;
 class TypeArrayAttr;
 class SignatureType;
 
@@ -105,11 +102,13 @@ void printParamDecls(ParamDeclArrayAttr decls, raw_ostream &os);
 ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result);
 
 /// Parse and print a parameter specification on a generator or region type.
-ParseResult parseOptionalParameterSpec(AsmParser &parser, TypeAttr &type);
+ParseResult parseOptionalParameterSpec(AsmParser &parser,
+                                       ParamDeclArrayAttr &inputParamDecls);
 ParseResult parseOptionalParameterSpec(AsmParser &parser,
                                        ParamDeclArrayAttr &inputParamDecls,
                                        TypeArrayAttr &resultParamTypes);
-void printOptionalParameterSpec(AsmPrinter &p, Operation *op, TypeAttr type);
+void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
+                                ParamDeclArrayAttr inputParamDecls);
 void printOptionalParameterSpec(ParamDeclArrayAttr inputParamDecls,
                                 TypeArrayAttr resultParamTypes,
                                 raw_ostream &os);
@@ -123,6 +122,9 @@ void printOptionalConventions(raw_ostream &os, DenseI8ArrayAttr conventions);
 /// Parse and print a constraint specification if present.
 ParseResult parseOptionalConstraints(OpAsmParser &p,
                                      ConstraintArrayAttr &constraints);
+// FIXME: Remove this when next LLVM integrate lands.
+void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
+                              ArrayRef<ConstraintAttr> constraints);
 void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
                               ConstraintArrayAttr constraints);
 
@@ -162,12 +164,12 @@ enum class GeneratorOrFuncKind {
 /// operators.
 ParseResult parseGeneratorOrFunc(OpAsmParser &parser, OperationState &result,
                                  GeneratorOrFuncKind opKind);
-void printGeneratorOrFunc(OpAsmPrinter &p, mlir::FunctionOpInterface op);
+void printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op);
 
 /// Check that the specified generator/interfaces matches signature
 /// information with the other interface.
 LogicalResult verifyDeclMatchesInterface(const char *originatorName,
-                                         KGENDeclInterface originatorDecl,
+                                         FuncInterface originatorDecl,
                                          const char *interfaceName,
                                          GeneratorInterfaceOp interfaceDecl);
 

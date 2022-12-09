@@ -178,7 +178,7 @@ void ParameterEvaluator::dump() const {
 /// constraints against inputParamValues.  If the constraints are met, return
 /// success, otherwise return why they aren't.
 LogicalResult KGEN::evaluateConstraints(
-    ConstraintArrayAttr constraints, ParameterEvaluator &evaluator,
+    ArrayRef<ConstraintAttr> constraints, ParameterEvaluator &evaluator,
     function_ref<LogicalResult(Location, Error)> emitError) {
   // Each constraint must be foldable, and must fold to true.
   for (ConstraintAttr constraint : constraints) {
@@ -211,18 +211,19 @@ LogicalResult KGEN::evaluateConstraints(
 /// constraints against inputParamValues.  If the constraints are met, return
 /// success, otherwise return why they aren't.
 LogicalResult KGEN::evaluateConstraints(
-    KGENDeclInterface decl, ArrayRef<Attribute> inputParamValues,
+    DeclInterface decl, ArrayRef<Attribute> inputParamValues,
     function_ref<LogicalResult(Location, Error)> emitError,
     SymbolTable &symtab) {
   // If there are no constraints, we are trivially done.
-  ConstraintArrayAttr constraints = decl.getConstraintsAttr();
-  if (!constraints || constraints.empty())
+  ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
+  if (constraints.empty())
     return success();
 
   // Otherwise, we have constraints to evaluate.  Bind each of the input
   // parameter names.
   ParameterEvaluator evaluator(&symtab);
-  auto inputParamDecls = decl.getInputParamDeclsAttr();
+  ArrayRef<ParamDeclAttr> inputParamDecls =
+      decl.getInputParamDeclsAttr().getValue();
   assert(inputParamDecls.size() == inputParamValues.size() &&
          "incorrect number of input parameters");
   for (auto [paramDecl, value] : llvm::zip(inputParamDecls, inputParamValues))

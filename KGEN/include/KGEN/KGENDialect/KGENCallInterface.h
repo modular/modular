@@ -17,7 +17,7 @@
 namespace M::KGEN {
 /// Iterator type for iterating call operation region body operations.
 using CallRegionBodyIterator =
-    llvm::mapped_iterator<Region *, KGENDeclInterface (*)(Region &)>;
+    llvm::mapped_iterator<Region *, DeclInterface (*)(Region &)>;
 } // namespace M::KGEN
 
 #include "KGEN/KGENDialect/KGENCallInterface.h.inc"

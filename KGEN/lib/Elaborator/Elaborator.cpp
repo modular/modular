@@ -307,7 +307,7 @@ public:
   /// This struct contains a region body and the parameter context at its
   /// original parent operation.
   struct RegionBody {
-    KGENDeclInterface body;
+    FuncInterface body;
     ParameterEvaluator evaluator;
 
     /// Return true if the body is isolated from above.
@@ -335,7 +335,7 @@ public:
   /// a set of nested parameter scopes. The uses can be looked up later when
   /// elaboration recurses into those nested scopes.
   void takeNestedParameterUses(
-      DenseMap<KGENDeclInterface, ParameterDeclsAndUses> &&nestedUses) {
+      DenseMap<DeclInterface, ParameterDeclsAndUses> &&nestedUses) {
     for (auto entry : nestedUses) {
       auto [_, inserted] = nestedParamDeclsAndUses.try_emplace(
           entry.first, std::move(entry.second));
@@ -347,7 +347,7 @@ public:
   /// nested scope. Due to nested scopes getting cloned, nested scopes will
   /// only hit the cache at best every other depth. Still, it covers the most
   /// common case of depth 1.
-  const ParameterDeclsAndUses *lookupNestedUses(KGENDeclInterface decl) {
+  const ParameterDeclsAndUses *lookupNestedUses(DeclInterface decl) {
     auto it = nestedParamDeclsAndUses.find(decl);
     return it == nestedParamDeclsAndUses.end() ? nullptr : &it->second;
   }
@@ -428,7 +428,7 @@ private:
 
   /// This map contains the parameter declarations and uses for nested
   /// parameter scopes (region bodies).
-  DenseMap<KGENDeclInterface, ParameterDeclsAndUses> nestedParamDeclsAndUses;
+  DenseMap<DeclInterface, ParameterDeclsAndUses> nestedParamDeclsAndUses;
 
   /// This map keeps track of the first func that a generator with no
   /// parameters expanded into.  We rename it to have the same symbol as the
@@ -973,7 +973,7 @@ FailureOr<std::pair<ArrayAttr, bool>> ParameterRewriter::resolveCallInputParams(
       // references to it get correctly resolved.
       assert(region.hasOneBlock());
       Block &regionBlock = *region.begin();
-      auto body = cast<KGENDeclInterface>(&regionBlock.front());
+      auto body = cast<FuncInterface>(&regionBlock.front());
       // Remove the RegionBodyOp from the call's region, and hand ownership of
       // it to the elaborator.
       body->remove();
@@ -1030,8 +1030,8 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
 
   // Instantiate the callee into one or more FuncOp's, depending on what the
   // callee is.
-  auto callee = dyn_cast_if_present<KGENDeclInterface>(
-      elaborator.lookupCallee(calleeAttr));
+  auto callee =
+      dyn_cast_if_present<FuncInterface>(elaborator.lookupCallee(calleeAttr));
   if (!callee)
     return error(user->getLoc(), Twine("could not find callee '") +
                                      calleeAttr.getLeafReference().strref() +
@@ -1284,7 +1284,7 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
   assert(regionName.getType().isa<SignatureType>() && "not a region reference");
   const Elaborator::RegionBody &regionBody =
       elaborator.getRegionReferenced(regionName);
-  KGENDeclInterface region = regionBody.body;
+  FuncInterface region = regionBody.body;
 
   // Compute the binding of input parameters to concrete values.
   FailureOr<std::pair<ArrayAttr, bool>> result =
@@ -1324,8 +1324,8 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
   // Evaluate any constraints for this declaration to see if this is a viable
   // expansion.  If not, the expansion fails. Only isolated regions have
   // constraints.
-  if (failed(evaluateConstraints(region.getConstraintsAttr(), evaluator,
-                                 emitEvaluateConstraintsError)))
+  if (failed(evaluateConstraints(cast<DeclInterface>(*region).getConstraints(),
+                                 evaluator, emitEvaluateConstraintsError)))
     return failure();
 
   // We process the call to the region by cloning its body inline, replacing
@@ -1351,7 +1351,8 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
   // Lookup all the parameter decls and uses in the body of region, we will
   // visit all of them as the evaluator continues processing the ops we just
   // cloned over.
-  const ParameterDeclsAndUses *uses = elaborator.lookupNestedUses(region);
+  const ParameterDeclsAndUses *uses =
+      elaborator.lookupNestedUses(cast<DeclInterface>(*region));
   // If we didn't get a cache hit, recompute the uses.
   Optional<ParameterDeclsAndUses> recomputedUses;
   if (!uses) {
@@ -1365,7 +1366,8 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
                                ParamDeclAttr::get(
                                    name, cast<TypedAttr>(value).getType())));
     }
-    elaborator.takeNestedParameterUses(recomputedUses->calculate(region));
+    elaborator.takeNestedParameterUses(
+        recomputedUses->calculate(cast<DeclInterface>(*region)));
   }
 
   // Add the parameter-using operations we cloned over from the region to
