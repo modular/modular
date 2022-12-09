@@ -278,16 +278,24 @@ public:
   /// returned, along with an erroneous AST type.
   ASTType emitType(const ExprNode *node);
 
+  /// This is the result of lookupDecl.
+  struct LookupResult {
+    enum {
+      kSuccess,   //<- Lookup succeeded and result is non-null.
+      kFailure,   //<- Lookup failed to find something of this name.
+      kErroneous, //<- Lookup found an error, but it is already diagnosed.
+    } kind;
+
+    /// When the kind is kSuccess, this is non-null and is the result of lookup.
+    ASTDecl *result;
+  };
+
   /// Perform a name lookup in the current scope and return the named
-  /// declaration.  This emits an error and returns null on error.  When
-  /// 'implicitDeclType' is non-null, a name lookup failure will insert a new
-  /// variable declaration in the scope.
-  ASTDecl *lookupDecl(StringRef name, SMLoc loc, ASTDecl &scope,
-                      std::function<void(InFlightDiagnostic)> errorFn,
-                      ASTType implicitDeclType = {});
+  /// declaration as a LookupResult.
+  LookupResult lookupAndResolveDecl(StringRef name, SMLoc loc, ASTDecl &scope);
 
   /// Emit an error through the parser's logic.
-  InFlightDiagnostic emitError(SMLoc loc, const Twine &twine) const {
+  InFlightDiagnostic emitError(SMLoc loc, const Twine &twine = "") const {
     return shared.emitError(loc, twine);
   }
 
