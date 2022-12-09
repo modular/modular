@@ -128,7 +128,8 @@ def WeirdMetaParams(a: Thing[1, 1.5]):
 
 fn voidReturningFn(): pass
 fn badCall():
-  # expected-error @+1 {{value of type 'None' cannot be converted to expected type 'NotBoolConvertible'}}
+  # TODO(QoI): value of type 'None' cannot be converted to expected type 'NotBoolConvertible'
+  # expected-error @+1 {{'NotBoolConvertible' does not implement the "__new__" special method}}
   test_bool_context(voidReturningFn())
 
 
@@ -354,7 +355,8 @@ struct Parameterized[p1: __mlir_type.index]:
 # of parameters.
 fn testTestParamStruct(a: Parameterized[4]):
   a.method[7](Parameterized[11]())
-  # expected-error @+1 {{value of type 'Parameterized[12]' cannot be converted to expected type 'Parameterized[11]'}}
+  # TODO(QoI): {{value of type 'Parameterized[12]' cannot be converted to expected type 'Parameterized[11]'}}
+  # expected-error @+1 {{callee expects 0 arguments}}
   a.method[7](Parameterized[12]())
   a.method[2](Parameterized[6]())
   a.method[2, 7] # expected-error {{too many parameters bound, signature expects 2 parameter values}}
@@ -363,7 +365,8 @@ fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: SIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
   var x = a+a
   var y = b+b
-  var z = b+a # expected-error {{value of type 'SIMD[1, f64]' cannot be converted to expected type 'SIMD[2, si32]'}}
+  # TODO(QoI): {{value of type 'SIMD[1, f64]' cannot be converted to expected type 'SIMD[2, si32]'}}
+  var z = b+a  # expected-error {{'__mlir_type.!pop.simd<2, si32>' does not implement the "__new__" special method}}
 
 fn method(variable: Int):
   # expected-error @+1 {{declaration must have either a type or an initializer}}
@@ -386,3 +389,8 @@ fn cannotReRaise():
 
 fn cannotRaise(err: Error):
     raise err # expected-error {{cannot raise error inside method that does not raise}}
+
+fn badRef(val&: Int):
+  var x = F32(1.0)
+  # TODO(QoI): expected-error @+1 {{l-value of type 'F32' cannot be converted to reference to expected type #kgen.concretetype.constant<!kgen.declref<@Int>> : !kgen.mlirtype}}
+  badRef(x)

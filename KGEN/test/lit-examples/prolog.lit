@@ -98,7 +98,7 @@ struct Int:
     return Int(__mlir_op.`index.sub`(0, self.value))
 
   fn __invert__(self) -> Int:
-    return self ^ -Int(1)
+    return self ^ -1
 
   # CHECK-LABEL: lit.func @__add__(%self: !kgen.declref<@Int>, %rhs: !kgen.declref<@Int>) -> !kgen.declref<@Int> {
   fn __add__(self, rhs: Int) -> Int:
