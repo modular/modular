@@ -315,28 +315,24 @@ namespace {
 /// meta_signature    ::= "[" [meta_param_list] "]"
 /// meta_param_list   ::= identifier_opt_type ("," identifier_opt_type)
 struct ParsedMetaSignature {
-  SmallVector<ParamDeclAttr> inputDecls;
-  std::vector<SMLoc> inputLocs;
+  // Each parameter consists of a name, type as an expression, and location.
+  SmallVector<std::tuple<StringAttr, ExprNode *, SMLoc>> parsedInputs;
+  SmallVector<ParamDeclAttr> paramDecls;
 
   ParseResult parseOptionalMetaSignature(LitParserBase &p, ASTDecl &decl) {
     if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
       return success();
 
     auto parseMetaParameter = [&]() -> ParseResult {
-      inputLocs.push_back(p.getToken().getLoc());
-
+      auto loc = p.getToken().getLoc();
       StringAttr name;
-      if (p.parseIdentifier(name, "expected parameter name")) {
-        // TODO: Scan ahead for better recovery.
-        return failure();
-      }
-
-      ASTType paramType;
-      if (p.parseToken(LitToken::colon,
+      ExprNode *typeExpr;
+      if (p.parseIdentifier(name, "expected parameter name") ||
+          p.parseToken(LitToken::colon,
                        "meta parameters always require a type") ||
-          p.parseType(paramType, decl, None))
+          p.parseExpression(typeExpr, None))
         return failure();
-      inputDecls.push_back(ParamDeclAttr::get(name, paramType));
+      parsedInputs.push_back({name, typeExpr, loc});
       return success();
     };
 
@@ -350,11 +346,18 @@ struct ParsedMetaSignature {
   /// specified scope for the declaration, so name lookup will find them.
   void addToScope(LitSharedState &sharedState, ASTDecl &decl) {
     auto &declResolver = *sharedState.declResolver;
-    for (auto [paramDecl, loc] : llvm::zip(inputDecls, inputLocs)) {
-      auto paramRef =
-          ParamDeclRefAttr::get(paramDecl.getName(), paramDecl.getType());
-      declResolver.addFullyResolvedDecl(MValue(paramRef), paramDecl.getName(),
-                                        loc, &decl);
+    ExprEmitter typeEmitter(sharedState, decl, None, nullptr);
+
+    for (auto [name, typeExpr, loc] : parsedInputs) {
+      // TODO: Refactor this.
+      Type type = typeEmitter.emitType(typeExpr);
+      // FIXME: If the type was an error we can install an erroneous decl?
+      if (!type)
+        continue;
+
+      auto paramRef = ParamDeclRefAttr::get(name, type);
+      declResolver.addFullyResolvedDecl(MValue(paramRef), name, loc, &decl);
+      paramDecls.push_back(ParamDeclAttr::get(name, type));
     }
   }
 };
@@ -374,7 +377,7 @@ struct ParsedArgument {
   // Specify argument passing convention, e.g. byval/byref etc.
   ValueInputConvention convention = ValueInputConvention::ByVal;
   StringAttr name;
-  ASTType type;
+  ExprNode *typeExpr;
   ExprNode *initValue = nullptr;
 
   ParseResult parse(LitParserBase &p, ASTDecl &declScope) {
@@ -396,7 +399,7 @@ struct ParsedArgument {
       convention = ValueInputConvention::ByRef;
 
     if (p.consumeIf(LitToken::colon)) {
-      if (p.parseType(type, declScope, None))
+      if (p.parseExpression(typeExpr, None))
         return failure();
     }
     if (p.consumeIf(LitToken::equal)) {
@@ -443,23 +446,26 @@ const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
 /// declared), checking of method self requirements, inference of default object
 /// argument types and enforcement of other invariants.
 ///
-/// This returns failure after emitting an error when a type checking problem
+/// This fills in argTypes with the resolved types of arguments, on either
+/// success or error.
+///
+/// This returns failure (after emitting an error) when a type checking problem
 /// is detected.
-static ParseResult checkFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
-                                          ParsedMetaSignature &metaSignature,
-                                          SmallVector<ParsedArgument> &args,
-                                          ASTType &resultType,
-                                          LitSharedState &shared) {
+static ParseResult resolveFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
+                                            ParsedMetaSignature &metaSignature,
+                                            SmallVector<ParsedArgument> &args,
+                                            SmallVectorImpl<Type> &argTypes,
+                                            ASTType &resultType,
+                                            LitSharedState &shared) {
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(op.getName());
-  bool isStatic = op.getIsStatic();
 
   // If this definition is a struct/class member, return the self type
   // otherwise return a null type.
   ASTType selfType;
   if (auto *parentDecl = decl.getParentDecl())
     if (isa<StructDeclOp>(*parentDecl)) {
-      // If this is a method, the signature for the enclosing type must be
-      // resolved.
+      //  If this is a method, the signature for the enclosing type must be
+      //  resolved.
       (void)shared.declResolver->resolve(*parentDecl,
                                          DeclResolvedness::signatureResolved,
                                          decl.getCursor().getToken().getLoc());
@@ -468,30 +474,70 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
     }
 
   // __new__ and similar methods are implicitly static.
-  if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod) {
-    if (!selfType)
-      return op->emitError("special function must be a method");
-
+  if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
     op.setIsStaticAttr(mlir::UnitAttr::get(shared.getContext()));
-    isStatic = true;
-  }
 
   // If this is an instance method, enforce that self is declared correctly.
-  if (selfType && !isStatic) {
-    // If there are no parameters, install an implicit by-val self parameter.
+  if (selfType && !op.getIsStatic()) {
+    // If there are no arguments, install an implicit by-val self argument.
     if (args.empty()) {
-      args.push_back({decl.getCursor().getToken().getLoc(),
-                      ValueInputConvention::ByVal,
-                      StringAttr::get(shared.getContext(), "self"), selfType,
-                      /*initPtr*/ nullptr});
+      // FIXME: This isn't correct, Python allows these as 'static' methods that
+      // don't take a self parameter, e.g.:
+      // class C:
+      //   def f(): print("hello")
+      // C.f()
+      args.push_back(
+          {decl.getCursor().getToken().getLoc(), ValueInputConvention::ByVal,
+           StringAttr::get(shared.getContext(), "self"), /*typeExpr*/ nullptr,
+           /*initPtr*/ nullptr});
+    }
+  }
+
+  // Type check all arguments, figuring out a type to use for them (incl
+  // possibly an error type).
+  ExprEmitter argEmitter(shared, decl, None, nullptr);
+  for (auto &arg : args) {
+    ASTType type;
+    if (arg.typeExpr) {
+      // This returns a TypeCheckErrorType on error, no extra check is needed.
+      type = argEmitter.emitType(arg.typeExpr);
+    } else if (&arg == &args[0] && selfType && !op.getIsStatic()) {
+      // We can always default 'self' in a method.
+      type = selfType;
+    } else if (op.getIsDef()) {
+      // If we are in a 'def', we infer object type for Python compatibility.
+      type = shared.getObjectType();
+    } else {
+      // In an 'fn' we report an error.
+      op->emitError("'fn' parameter type must be specified");
+      type = shared.getTypeCheckErrorType();
     }
 
-    // Check that the first method has the right type.
-    if (!args[0].type)
-      args[0].type = selfType;
-    else if (!args[0].type.isEqualCanon(selfType))
-      return op->emitError("'self' argument must have type ") << selfType;
+    // Apply any conventions requested.
+    if (arg.convention == ValueInputConvention::ByRef)
+      type = POP::PointerType::get(type);
+
+    // TODO: add support for default parameter expressions.
+    if (arg.initValue)
+      argEmitter.emitError(arg.loc, "TODO: No default values yet");
+
+    argTypes.push_back(type);
   }
+
+  // Check that the 'self' argument of a method was specified correctly.
+  if (selfType && !op.getIsStatic() && !argTypes.empty()) {
+    auto adjustedSelf = selfType;
+    if (args[0].convention == ValueInputConvention::ByRef)
+      adjustedSelf = POP::PointerType::get(adjustedSelf);
+
+    if (!ASTType(argTypes[0]).isEqualCanon(adjustedSelf))
+      op->emitError("'self' argument must have type ") << selfType;
+  }
+
+  // Verify that implicitly static methods are declared as methods.
+  if ((fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod) &&
+      !selfType)
+    return op->emitError("special function must be a method");
 
   // Check other invariants based on method flags.
   if (fnInfo.flags & SpecialFunctionInfo::kInstMethod) {
@@ -499,13 +545,13 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
                                                   : ValueInputConvention::ByVal;
     if (!selfType)
       return op->emitError("special function must be a method");
-    if (isStatic)
+    if (op.getIsStatic())
       return op->emitError("special method may not be a static method");
 
     // TODO: Instead of enforcing byref is specified correctly, we could reject
     // invalid explicit settings and default it correctly.
     if (convent != args[0].convention)
-      return op->emitError("self parameter must ")
+      return op->emitError("self argument must ")
              << (convent == ValueInputConvention::ByRef ? "" : "not ")
              << "be passed by reference";
   }
@@ -534,21 +580,6 @@ static ParseResult checkFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
     if (!resultType.isEqualCanon(selfType))
       return op->emitError("result type must be ") << selfType;
     break;
-  }
-
-  // Handle any parameters that are still missing a type.
-  // TODO(default args): Get the type from the default arg when present.
-  for (auto &arg : args) {
-    if (!arg.type) {
-      // If we are in a 'def', we infer object type for Python compatibility, in
-      // an 'fn' we report an error.
-      if (op.getIsDef()) {
-        arg.type = shared.getObjectType();
-      } else {
-        op->emitError("'fn' parameter type must be specified");
-        arg.type = shared.getTypeCheckErrorType();
-      }
-    }
   }
 
   return success();
@@ -619,53 +650,35 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
   // Verify that methods and functions like __add__ have the right signature,
   // and adjust them if there are implicit declarations.
-  if (checkFunctionSignature(decl, funcOp, metaSignature, args, resultType,
-                             sharedState)) {
+  SmallVector<Type> argTypes;
+  if (resolveFunctionSignature(decl, funcOp, metaSignature, args, argTypes,
+                               resultType, sharedState)) {
     // If the function wasn't type checked correctly, uses of it may be
     // broken.
     decl.hasReferenceError = true;
-
-    // Set any unspecifies argument types to error type.
-    for (auto &arg : args) {
-      if (!arg.type)
-        arg.type = sharedState.getTypeCheckErrorType();
-    }
   }
 
   // Handle function effects.
   SmallVector<int8_t> conventions;
   conventions.push_back(int8_t(FnEffects::None)); // TODO: Throws/Async.
 
-  SmallVector<Location> paramLocs;
-  SmallVector<StringAttr> paramNames;
-  SmallVector<Type> paramTypes;
+  SmallVector<Location> argLocs;
+  SmallVector<StringAttr> argNames;
   for (auto &arg : args) {
-    paramLocs.push_back(p.translateLocation(arg.loc));
-    paramNames.push_back(arg.name);
-
-    // Install the correct MLIR Type, which is the MLIR projection of the AST
-    // type with any convention changes applied.
-    Type mlirType = arg.type;
-    if (arg.convention == ValueInputConvention::ByRef)
-      mlirType = POP::PointerType::get(mlirType);
-
+    argLocs.push_back(p.translateLocation(arg.loc));
+    argNames.push_back(arg.name);
     conventions.push_back(int8_t(arg.convention));
-    paramTypes.push_back(mlirType);
-
-    // TODO: add support for default parameter expressions.
-    if (arg.initValue)
-      p.emitError(arg.loc, "TODO: No default values yet");
   }
 
   auto builder = decl.getDeclEndBuilder();
-  funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(paramNames));
+  funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(argNames));
   funcOp.setSignature(SignatureType::get(
-      builder.getAttr<ParamDeclArrayAttr>(metaSignature.inputDecls),
+      builder.getAttr<ParamDeclArrayAttr>(metaSignature.paramDecls),
       builder.getAttr<TypeArrayAttr>(
           /*TODO: result params*/ ArrayRef<Type>()),
-      builder.getFunctionType(paramTypes, {resultType.mlirType}),
+      builder.getFunctionType(argTypes, {resultType.mlirType}),
       builder.getAttr<DenseI8ArrayAttr>(conventions)));
-  funcOp.getBody()->addArguments(paramTypes, paramLocs);
+  funcOp.getBody()->addArguments(argTypes, argLocs);
 
   if (FlatSymbolRefAttr implementsAttr = funcOp.getImplementsAttr()) {
     StringRef interfaceName = implementsAttr.getAttr().getValue();
@@ -690,28 +703,29 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
   // Set up the body of the def, creating declarations for the value
   // parameters and adding them to the symbol table.
-  for (auto [arg, param, convention] :
-       llvm::zip(funcOp.getBody()->getArguments(), args,
-                 ArrayRef<int8_t>(conventions).drop_front())) {
+  for (auto [bbArg, parsedArg] :
+       llvm::zip(funcOp.getBody()->getArguments(), args)) {
     // Arguments passed by-reference can be directly used.
-    if (ValueInputConvention(convention) == ValueInputConvention::ByRef) {
-      addFullyResolvedDecl(LValue(arg), param.name, param.loc, &decl);
+    if (parsedArg.convention == ValueInputConvention::ByRef) {
+      addFullyResolvedDecl(LValue(bbArg), parsedArg.name, parsedArg.loc, &decl);
       continue;
     }
-    assert(ValueInputConvention(convention) == ValueInputConvention::ByVal &&
+    assert(parsedArg.convention == ValueInputConvention::ByVal &&
            "Unknown convention");
 
     // If this was passed by-value, then it becomes an rvalue in a `fn`.
     if (!funcOp.getIsDef()) {
-      addFullyResolvedDecl(DRValue(arg), param.name, param.loc, &decl);
+      addFullyResolvedDecl(DRValue(bbArg), parsedArg.name, parsedArg.loc,
+                           &decl);
       continue;
     }
 
     // In a `def`, we create a mutable var.decl lvalue to allow reassignment.
-    auto type = POP::PointerType::get(arg.getType());
-    auto varDecl = builder.create<VarDeclOp>(arg.getLoc(), type, param.name);
-    addFullyResolvedDecl(varDecl, param.loc, param.name, &decl);
-    builder.create<POP::StoreOp>(arg.getLoc(), arg, varDecl,
+    auto type = POP::PointerType::get(bbArg.getType());
+    auto varDecl =
+        builder.create<VarDeclOp>(bbArg.getLoc(), type, parsedArg.name);
+    addFullyResolvedDecl(varDecl, parsedArg.loc, parsedArg.name, &decl);
+    builder.create<POP::StoreOp>(bbArg.getLoc(), bbArg, varDecl,
                                  /*alignment*/ None);
   }
 
@@ -918,10 +932,10 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
     return failure();
 
-  structOp.setInputParamDecls(metaSignature.inputDecls);
-
   // Add the meta parameters to the struct's symbol table.
   metaSignature.addToScope(sharedState, decl);
+
+  structOp.setInputParamDecls(metaSignature.paramDecls);
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
