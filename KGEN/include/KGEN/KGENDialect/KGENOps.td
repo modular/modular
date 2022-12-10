@@ -97,8 +97,8 @@ def KGEN_GeneratorInterfaceOp : KGENOp<"generator.interface", [
     HasParent<"mlir::ModuleOp">,
     DeclareOpInterfaceMethods<CallableOpInterface>,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-    FunctionOpInterface, Symbol, IsolatedFromAbove, DeclInterface,
-    FuncInterface, KGEN_CallOpInterface]> {
+    KGEN_CallOpInterface, FunctionOpInterface, Symbol, IsolatedFromAbove,
+    DeclInterface, FuncInterface]> {
   let summary = "Generator interface definition";
 
   /// input and result parameters are stored in a single flat array named
@@ -126,9 +126,7 @@ def KGEN_GeneratorInterfaceOp : KGENOp<"generator.interface", [
 // AddressOf
 //===----------------------------------------------------------------------===//
 
-def KGEN_AddressOfOp : KGENOp<"addressof", [
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-    DeclareOpInterfaceMethods<KGEN_CallOpInterface, ["getFunctionType"]>]> {
+def KGEN_AddressOfOp : KGENOp<"addressof", [KGEN_CallOpInterface]> {
   let summary = "Get the address of a function.";
   let description = [{
     The `kgen.addressof` operation references a parametric function and returns
@@ -181,8 +179,6 @@ def KGEN_AddressOfOp : KGENOp<"addressof", [
       return getCallee().getParamValues().getValue();
     }
   }];
-
-  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -190,8 +186,7 @@ def KGEN_AddressOfOp : KGENOp<"addressof", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_CallOp : KGENOp<"call", [KGEN_CallOpInterface,
-    DeclareOpInterfaceMethods<CallOpInterface>,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+    DeclareOpInterfaceMethods<CallOpInterface>]> {
   let summary = "Call a func, generator, or generator interface";
   let description = [{
     The `kgen.call` operation invokes a parametric function. The callee must be
@@ -268,8 +263,6 @@ def KGEN_CallOp : KGENOp<"call", [KGEN_CallOpInterface,
       return getCallee().getParamValues().getValue();
     }
   }];
-
-  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -332,8 +325,11 @@ def KGEN_CallParamOp : KGENOp<"call_param", [KGEN_CallOpInterface]> {
                    "ValueRange":$operands)>
   ];
 
+  let extraClassDeclaration = [{
+    bool isAllowedInFunc() { return false; }
+  }];
+
   let hasCanonicalizeMethod = 1;
-  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -378,7 +374,9 @@ def KGEN_InlinedCallOp : KGENOp<"inlined_call", [KGEN_CallOpInterface]> {
     custom<InPlaceCallRegions>($regions, ref($paramValues))
   }];
 
-  let hasRegionVerifier = 1;
+  let extraClassDeclaration = [{
+    bool isAllowedInFunc() { return false; }
+  }];
 }
 
 //===----------------------------------------------------------------------===//

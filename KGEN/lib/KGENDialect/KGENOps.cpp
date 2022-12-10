@@ -545,39 +545,6 @@ ArrayRef<Type> GeneratorInterfaceOp::getCallableResults() {
 // Common CallOp / CallParamOp logic
 //===----------------------------------------------------------------------===//
 
-/// Verify that regions used as signature parameters match in signature.
-template <typename RegionBodyT>
-static LogicalResult verifyRegionSignatures(Operation *theCall,
-                                            ParamBindArrayAttr values) {
-  auto regionValues = llvm::make_filter_range(values, [](ParamBindAttr value) {
-    return value.getValue().isa<ParamCallRegionRefAttr>();
-  });
-
-  size_t numRegionParams =
-      std::distance(regionValues.begin(), regionValues.end());
-  if (numRegionParams != theCall->getNumRegions())
-    return theCall->emitOpError("expected ")
-           << numRegionParams << " body regions but has "
-           << theCall->getNumRegions();
-
-  // Ensure each region parameter matches up in order with the regions.
-  for (auto &it : llvm::enumerate(regionValues)) {
-    auto paramSignature =
-        it.value().getValue().getType().template cast<SignatureType>();
-    Region &region = theCall->getRegion(it.index());
-    auto body = cast<RegionBodyT>(region.front().getTerminator());
-    if (region.front().getOperations().size() != 1)
-      return theCall->emitOpError("expected region #")
-             << it.index() << " to contain only a `kgen.region.body` op";
-
-    if (failed(verifyDeclSignaturesMatch("region", body.getSignature(),
-                                         body.getLoc(), "parameter",
-                                         paramSignature, theCall->getLoc())))
-      return failure();
-  }
-  return success();
-}
-
 template <typename BodyOpT>
 static ParseResult
 parseCallRegionBodies(OpAsmParser &p,
@@ -688,28 +655,6 @@ static void printAddressOfOp(OpAsmPrinter &p, Operation *op,
   p << " : " << resultType;
 }
 
-LogicalResult
-AddressOfOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  // Make sure we don't reference a generator with input parameters inside a
-  // `kgen.func`.
-  if (!getCallee().getParamValues().empty()) {
-    if (auto funcParent = getOperation()->getParentOfType<FuncOp>()) {
-      auto diag = emitError() << "cannot reference generator with input "
-                                 "arguments from concrete kgen.func";
-      diag.attachNote(funcParent->getLoc())
-          << "within kgen.func '" << funcParent.getName() << "'";
-      return failure();
-    }
-  }
-
-  return success();
-}
-
-LogicalResult AddressOfOp::verifyRegions() {
-  return verifyRegionSignatures<RegionBodyOp>(*this,
-                                              getCallee().getParamValues());
-}
-
 void AddressOfOp::build(OpBuilder &b, OperationState &state, Type type,
                         SymbolConstantAttr callee,
                         ArrayRef<ParamDeclAttr> resultParams) {
@@ -758,24 +703,6 @@ static void printCallOp(OpAsmPrinter &p, Operation *op,
   p.printFunctionalType(operandTypes, resultTypes);
 }
 
-LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  // Ok, the call looks good.  Next, make sure that calls within a
-  // kgen.func do not pass input arguments.  Input arguments are invalid to a
-  // func, so it must be a generator or generator interface, and these will
-  // not be elaborated unless they have zero input arguments.
-  if (!getCallee().getParamValues().empty()) {
-    if (auto funcParent = getOperation()->getParentOfType<FuncOp>()) {
-      auto diag = emitError() << "cannot call generator with input arguments "
-                                 "from concrete kgen.func";
-      diag.attachNote(funcParent->getLoc())
-          << "within kgen.func '" << funcParent.getName() << "'";
-      return failure();
-    }
-  }
-
-  return success();
-}
-
 void CallOp::build(OpBuilder &builder, OperationState &state,
                    TypeRange resultTypes, SymbolConstantAttr callee,
                    ValueRange operands, ArrayRef<ParamDeclAttr> resultParams) {
@@ -788,12 +715,6 @@ OperandRange CallOp::getArgOperands() { return getOperands(); }
 
 mlir::CallInterfaceCallable CallOp::getCallableForCallee() {
   return getCalleeSymbol();
-}
-
-LogicalResult CallOp::verifyRegions() {
-  // Verify the region signatures match region parameter signatures.
-  return verifyRegionSignatures<RegionBodyOp>(*this,
-                                              getCallee().getParamValues());
 }
 
 //===----------------------------------------------------------------------===//
@@ -875,28 +796,9 @@ void CallParamOp::build(OpBuilder &builder, OperationState &state,
         /*numRegions=*/0);
 }
 
-LogicalResult CallParamOp::verifyRegions() {
-  auto parent = getOperation()->getParentOfType<FuncInterface>();
-  if (!parent || isa<FuncOp>(parent))
-    return emitError(
-        "kgen.call_param is only allowed in generators pre-elaboration");
-
-  // Verify the region signatures match region parameter signatures.
-  return verifyRegionSignatures<RegionBodyOp>(*this, getParamValuesAttr());
-}
-
 //===----------------------------------------------------------------------===//
 // InlinedCallOp
 //===----------------------------------------------------------------------===//
-
-LogicalResult InlinedCallOp::verifyRegions() {
-  auto parent = getOperation()->getParentOfType<FuncInterface>();
-  if (!parent || isa<FuncOp>(parent))
-    return emitOpError("is only allowed in generators pre-elaboration");
-
-  // Verify the region signatures match region parameter signatures.
-  return verifyRegionSignatures<RegionOpenBodyOp>(*this, getParamValuesAttr());
-}
 
 static ParseResult parseInPlaceCallRegions(
     OpAsmParser &p, SmallVectorImpl<std::unique_ptr<::mlir::Region>> &result,
@@ -1891,13 +1793,8 @@ LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 //===----------------------------------------------------------------------===//
-// TableGen generated logic.
+// ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
-// Provide the autogenerated implementation guts for the Op classes.
 #define GET_OP_CLASSES
 #include "KGEN/KGENDialect/KGEN.cpp.inc"
-
-// Generated interface definitions.
-#include "KGEN/KGENDialect/ElaboratorOpInterface.cpp.inc"
-#include "KGEN/KGENDialect/KGENInterfaces.cpp.inc"
