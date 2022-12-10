@@ -290,7 +290,7 @@ auto ExprEmitter::lookupAndResolveDecl(StringRef name, SMLoc loc,
   ASTDecl *result = scope.lookup(nameAttr);
   // If nothing was found, return a failure.
   if (!result)
-    return {LookupResult::kFailure, nullptr};
+    return LookupResult::getFailure();
 
   // If the lookup succeeded, make sure the signature for the referenced decl
   // is understood.
@@ -298,10 +298,10 @@ auto ExprEmitter::lookupAndResolveDecl(StringRef name, SMLoc loc,
           *result, DeclResolvedness::signatureResolved, loc))) {
     // If the decl was erroneous somehow, then don't form a reference to it, the
     // error has already been diagnosed.
-    return {LookupResult::kErroneous, nullptr};
+    return LookupResult::getErroneous();
   }
 
-  return {LookupResult::kSuccess, result};
+  return LookupResult::getSuccess(result);
 }
 
 /// Given an ASTType 'containingType', look up a named member of it and return
@@ -317,8 +317,7 @@ emitCallableDeclMember(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a contextual type
   // available and an insertion point.
-  if (lookup.kind == ExprEmitter::LookupResult::kFailure && contextualType &&
-      emitter.varDeclCursor) {
+  if (lookup.isFailure() && contextualType && emitter.varDeclCursor) {
     // Introduce a new lit.var.decl node whose type matches the
     // implicitDeclType.
     // TODO(autopromotions): turn infinite integers into concrete ones as
@@ -365,11 +364,12 @@ emitCallableDeclMember(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
     // subsequent uses find this one.
     auto *decl = &emitter.shared.declResolver->addFullyResolvedDecl(
         varDecl, node->getLoc(), nameAttr, &container);
-    lookup = {ExprEmitter::LookupResult::kSuccess, decl};
+    lookup = ExprEmitter::LookupResult::getSuccess(decl);
   }
 
-  if (!lookup.result) {
-    if (lookup.kind == ExprEmitter::LookupResult::kFailure) {
+  ASTDecl *decl = lookup.getIfSuccess();
+  if (!decl) {
+    if (lookup.isFailure()) {
       auto diag = emitter.emitError(node->getLoc());
       if (auto structDecl = dyn_cast<StructDeclOp>(container))
         diag << structDecl.getName() << " has no '" << memberName << "' member";
@@ -378,8 +378,6 @@ emitCallableDeclMember(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
     }
     return {};
   }
-
-  ASTDecl *decl = lookup.result;
 
   // Variable references resolve to an lvalue addressing the variable.
   if (auto var = dyn_cast<VarDeclOp>(*decl))
@@ -772,24 +770,23 @@ AnyValue
 ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
                                    ArrayRef<ASTExprAnd<AnyValue>> operands,
                                    SMLoc callLoc) {
-
+  // Look up the special function based on the SpecialFunctionKind.
   auto specialFnInfo = SpecialFunctionInfo::get(kind);
-  // Look up the special function on the expr type.
   auto nameAttr = StringAttr::get(getContext(), specialFnInfo.name);
-  ASTDecl *lookupResult = nullptr;
+
+  auto lookupResult = LookupResult::getFailure();
   if (auto *decl = type.getDecl(shared))
-    lookupResult = decl->lookup(nameAttr);
-  if (!lookupResult) {
-    emitError(callLoc, "") << type << " does not implement the " << nameAttr
-                           << " special method";
+    lookupResult = lookupAndResolveDecl(specialFnInfo.name, callLoc, *decl);
+
+  ASTDecl *resultDecl = lookupResult.getIfSuccess();
+  if (!resultDecl) {
+    if (lookupResult.isFailure())
+      emitError(callLoc, "") << type << " does not implement the " << nameAttr
+                             << " special method";
     return {};
   }
 
-  // Make sure the signature is resolved.
-  if (failed(shared.declResolver->resolve(
-          *lookupResult, DeclResolvedness::signatureResolved, callLoc)))
-    return {};
-  CallableValue callee(callLoc, *lookupResult, type.getParamBindings());
+  CallableValue callee(callLoc, *resultDecl, type.getParamBindings());
   return emitFunctionCall(callee, operands, callLoc, *this);
 }
 
@@ -950,16 +947,15 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
   // Find the member being accessed.
   ExprEmitter::LookupResult lookup =
       emitter.lookupAndResolveDecl(attrSpelling, getLoc(), *typeDecl);
-  if (!lookup.result) {
+  ASTDecl *memberDecl = lookup.getIfSuccess();
+  if (!memberDecl) {
     // If the error hasn't been diagnosed, handle it now.
-    if (lookup.kind == ExprEmitter::LookupResult::kFailure)
+    if (lookup.isFailure())
       emitter.emitError(getLoc(), "object has no attribute '")
           << attrSpelling << "'";
 
     return {};
   }
-
-  ASTDecl *memberDecl = lookup.result;
 
   // Handle method references.
   if (auto fnOp = dyn_cast<LIT::FuncOp>(*memberDecl)) {

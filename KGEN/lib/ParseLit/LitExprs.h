@@ -279,15 +279,24 @@ public:
   ASTType emitType(const ExprNode *node);
 
   /// This is the result of lookupDecl.
-  struct LookupResult {
-    enum {
+  class LookupResult {
+    enum Kind {
       kSuccess,   //<- Lookup succeeded and result is non-null.
       kFailure,   //<- Lookup failed to find something of this name.
       kErroneous, //<- Lookup found an error, but it is already diagnosed.
     } kind;
-
     /// When the kind is kSuccess, this is non-null and is the result of lookup.
     ASTDecl *result;
+    LookupResult(Kind kind, ASTDecl *result) : kind(kind), result(result) {}
+
+  public:
+    static LookupResult getSuccess(ASTDecl *decl) { return {kSuccess, decl}; }
+    static LookupResult getFailure() { return {kFailure, nullptr}; }
+    static LookupResult getErroneous() { return {kErroneous, nullptr}; }
+
+    ASTDecl *getIfSuccess() const { return result; }
+    bool isFailure() const { return kind == kFailure; }
+    bool isErroneous() const { return kind == kErroneous; }
   };
 
   /// Perform a name lookup in the current scope and return the named
