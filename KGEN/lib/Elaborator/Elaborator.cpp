@@ -30,6 +30,9 @@
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Debug.h"
+
+#define DEBUG_TYPE "elaborator"
 
 using namespace M;
 using namespace KGEN;
@@ -273,6 +276,13 @@ public:
   const DenseMap<GeneratorOp, FuncOp> &
   getFirstConcreteFuncForGenerator() const {
     return firstConcreteFuncForGenerator;
+  }
+
+  size_t generatedFuncsMapSize() const {
+    size_t r = 0;
+    for (const auto &kv : generatedFuncs)
+      r += kv.second.size();
+    return r;
   }
 
   /// Bind the result parameters of a fully-specialized function and clear them
@@ -843,6 +853,11 @@ LogicalResult ParameterRewriter::processParamSearchOp(
   std::string errors;
   Attribute firstValid;
   DenseSet<Attribute> seenValues;
+  LLVM_DEBUG({
+    llvm::dbgs() << "Encountered ParamSearchOp with "
+                 << std::to_string(op.getValues().size())
+                 << " options: " << op.getValuesAttr() << "\n";
+  });
   for (Attribute candidate : op.getValues()) {
     // Simplify the input expressions.
     auto errorOrValue = getEvaluator().concretizeParameterExpr(candidate);
@@ -1661,6 +1676,10 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
 SmallVector<ElaboratedGeneratorOrCalleeError>
 Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
                            size_t expansionDepth, bool inlined) {
+  LLVM_DEBUG({
+    llvm::dbgs() << std::string(expansionDepth, ' ') << "specializeFunc "
+                 << func.getName() << "\n";
+  });
   // Get a partial ordering of parameter definitions and uses that is listed
   // "top down" in our evaluation order.
   ParameterDeclsAndUses uses;
@@ -1688,6 +1707,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
   // Rewriting funcs may generate other func clones.  If so, rewrite them,
   // until we converge.
   SmallVector<ElaboratedGeneratorOrCalleeError> results;
+  size_t counter = 0;
   while (!rewriterWorklist.empty()) {
     std::unique_ptr<ParameterRewriter> rewriter =
         rewriterWorklist.pop_back_val();
@@ -1699,14 +1719,24 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
       ElaboratedGenerator result = rewriter->takeElaboratedGenerator();
       bindResultParameters(result.func);
       results.push_back(std::move(result));
+      counter++;
 
     } else {
+      LLVM_DEBUG({
+        llvm::dbgs() << std::string(expansionDepth, ' ')
+                     << "elaboration failed for " << func.getName() << "\n";
+      });
       // If elaborating the func fails, then remember the diagnostic (in case
       // we need to explain why elaboration fails) and remove the broken husk of
       // a func that didn't make it.
       results.push_back(rewriter->takeDiagnosticAndEraseFunc());
     }
   }
+  LLVM_DEBUG({
+    llvm::dbgs() << std::string(expansionDepth, ' ') << "specializeFunc "
+                 << func.getName() << " produced " << std::to_string(counter)
+                 << " results\n";
+  });
 
   // If we had a subprogram, update uses with the newly elaborated subprogram.
   if (oldFuncSp) {
@@ -1730,6 +1760,10 @@ SmallVector<ElaboratedGeneratorOrCalleeError>
 Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
                                 size_t expansionDepth, bool inlined) {
   auto generator = cast<GeneratorOp>(declAndInputParams.first);
+  LLVM_DEBUG({
+    llvm::dbgs() << std::string(expansionDepth, ' ') << "specializeGenerator "
+                 << generator.getNameAttr() << "\n";
+  });
 
   ArrayRef<Attribute> inputParamValues = declAndInputParams.second.getValue();
   auto inputParamDecls = generator.getInputParamDecls();
@@ -1843,11 +1877,20 @@ SmallVector<ElaboratedGeneratorOrCalleeError>
 Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
                                 size_t expansionDepth, bool inlined) {
   auto itf = cast<GeneratorInterfaceOp>(declAndInputParams.first);
+  LLVM_DEBUG({
+    llvm::dbgs() << std::string(expansionDepth, ' ') << "specializeInterface "
+                 << itf.getName() << "\n";
+  });
   SmallVector<ElaboratedGeneratorOrCalleeError> result;
 
   // An interface is an abstraction over multiple generators.  Invoke each of
   // them, collecting the results together into a single result.
   ArrayRef<GeneratorOp> interfaceImpls = getGeneratorsImplementing(itf);
+  LLVM_DEBUG({
+    llvm::dbgs() << std::string(expansionDepth, ' ')
+                 << std::to_string(interfaceImpls.size())
+                 << " implementations found\n";
+  });
   if (interfaceImpls.empty()) {
     // If we found no implementations, report that problem at the call site as
     // a single diagnostic.
@@ -1875,6 +1918,11 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
     // and any constraints on the generator itself are validated.
     auto funcs = getAllInstantiations({gen, declAndInputParams.second},
                                       expansionDepth + 1, inlined);
+    LLVM_DEBUG({
+      llvm::dbgs() << std::string(expansionDepth, ' ') << gen.getNameAttr()
+                   << " produced " << std::to_string(funcs.size())
+                   << " candidates for " << itf.getName() << "\n";
+    });
     result.append(funcs.begin(), funcs.end());
   }
 
@@ -1899,6 +1947,14 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
 
   // Truncate the result vector to contain only the successful implementations.
   result.erase(newEnd, result.end());
+  LLVM_DEBUG({
+    llvm::dbgs() << std::string(expansionDepth, ' ') << "Number of results for "
+                 << itf.getName() << ": " << std::to_string(result.size())
+                 << "\n";
+    llvm::dbgs() << std::string(expansionDepth, ' ')
+                 << "Total number of generated funcs: "
+                 << std::to_string(generatedFuncsMapSize()) << "\n";
+  });
 
   // If we don't want to do search, we're done.
   if (!enableSearch)
@@ -2032,19 +2088,33 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
 
   // Evaluate any constraints for this declaration to see if this is a viable
   // expansion.  If not, the expansion fails.
+  LLVM_DEBUG({
+    llvm::dbgs() << std::string(expansionDepth, ' ')
+                 << "getAllInstantiations: ";
+  });
   if (failed(evaluateConstraints(decl, declAndInputParams.second.getValue(),
                                  localError,
                                  analysis.getTopLevelSymbolTable()))) {
+    LLVM_DEBUG({ llvm::dbgs() << "evaluateConstraints failed\n"; });
     /* nothing */
   } else if (auto func = dyn_cast<FuncOp>(decl)) {
     // Nothing to do here. Just bind the result parameters and return the
     // function.
+    LLVM_DEBUG({ llvm::dbgs() << "Func: " << func->getName() << "\n"; });
     bindResultParameters(func);
     newCallees.emplace_back(ElaboratedGenerator(func));
   } else if (isa<GeneratorOp>(decl)) {
+    LLVM_DEBUG({
+      llvm::dbgs() << "Generator: " << cast<GeneratorOp>(decl).getNameAttr()
+                   << "\n";
+    });
     newCallees =
         specializeGenerator(declAndInputParams, expansionDepth + 1, inlined);
   } else if (isa<GeneratorInterfaceOp>(decl)) {
+    LLVM_DEBUG({
+      llvm::dbgs() << "GenInterface: "
+                   << cast<GeneratorInterfaceOp>(decl).getNameAttr() << "\n";
+    });
     newCallees =
         specializeInterface(declAndInputParams, expansionDepth + 1, inlined);
   } else {
@@ -2150,6 +2220,11 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
                                      LLCL::Runtime &runtime,
                                      ArrayRef<GeneratorOp> primaryGenerators,
                                      bool enableSearch) {
+  LLVM_DEBUG({
+    llvm::dbgs() << "Elaborating top level generators:\n";
+    for (auto generator : primaryGenerators)
+      llvm::dbgs() << " * " << generator.getNameAttr() << "\n";
+  });
   TimeTraceScope<> traceScope("elaborate-generators");
   ModuleOp primary = analysis.getModule();
 
@@ -2202,6 +2277,7 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
   // TODO: When we have access control, we can limit this to just the publicly
   // exposed ones.
   bool didFail = false;
+  [[maybe_unused]] size_t candidatesNumber = 0;
   for (GeneratorOp generatorRoot : primaryGenerators) {
 
     // Elaborate the generator into concrete versions.
@@ -2223,6 +2299,16 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
       emitElaborationError(diag, errors, /*indentDepth=*/2);
       didFail = true;
     }
+
+    LLVM_DEBUG({
+      size_t newCandidatesNumber =
+          elaborator.getFirstConcreteFuncForGenerator().size();
+      llvm::dbgs() << "Finished processing " << generatorRoot.getNameAttr()
+                   << ", generated "
+                   << std::to_string(newCandidatesNumber - candidatesNumber)
+                   << " results.\n";
+      candidatesNumber = newCandidatesNumber;
+    });
   }
 
   // If we failed to expand any funcs, propagate that failure.
