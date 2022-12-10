@@ -62,9 +62,6 @@ let description = [{
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
-    using FuncInterfaceTrait::getFunctionType;
-    using FuncInterfaceTrait::getFunctionTypeAttr;
-
     Block *getBody() { return &getFunctionBody().back(); }
     ReturnOp getReturnOp();
 

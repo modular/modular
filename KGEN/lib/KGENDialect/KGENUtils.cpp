@@ -1262,10 +1262,6 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   }
   result.attributes.append(parsedAttributes);
 
-  // Add the attributes to the function arguments.
-  assert(resultAttrs.size() == resultTypes.size());
-  addArgAndResultAttrs(builder, result, entryArgs, resultAttrs);
-
   // Parse the required function body.
   auto *region = result.addRegion();
 
@@ -1310,7 +1306,7 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
 
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   ArrayRef<Type> resultTypes = op.getResultTypes();
-  printFunctionSignature(p, op, argTypes, /*isVariadic=*/false, resultTypes);
+  printFunctionSignature(p, func, argTypes, /*isVariadic=*/false, resultTypes);
 
   SmallVector<StringRef> ignoredAttrNames(
       GeneratorOp::getAttributeNames().begin(),
@@ -1322,8 +1318,7 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
   // Don't print the default_impl in kgen.generator.interface.
   ignoredAttrNames.push_back(StringRef("defaultImpl"));
 
-  printFunctionAttributes(p, op, argTypes.size(), resultTypes.size(),
-                          ignoredAttrNames);
+  printFunctionAttributes(p, op, ignoredAttrNames);
   printOptionalConventions(p.getStream(), op.getConventions());
   printOptionalConstraints(p, func, cast<DeclInterface>(*op).getConstraints());
 

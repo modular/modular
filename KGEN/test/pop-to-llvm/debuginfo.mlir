@@ -5,7 +5,10 @@
 !scalarTest = !pop.scalar<bool>
 !simdTest = !pop.simd<8, ui32>
 
-// CHECK-DAG: !debuginfo.subroutine<(!debuginfo.basic<bool {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_boolean}>, !debuginfo.vector<8 x !debuginfo.basic<ui32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_unsigned}>>)
+// CHECK-DAG: !basic = !debuginfo.basic<bool {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_boolean}>
+// CHECK-DAG: !basic1 = !debuginfo.basic<ui32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_unsigned}>
+// CHECK-DAG: !vector = !debuginfo.vector<8 x !basic1>
+// CHECK-DAG: !debuginfo.subroutine<(!basic, !vector) -> (): DW_CC_normal>
 !test = !debuginfo.subroutine<(!debuginfo.unresolved<!scalarTest>, !debuginfo.unresolved<!simdTest>) -> (): DW_CC_normal>
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">

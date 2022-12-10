@@ -80,17 +80,11 @@ def FuncInterface : OpInterface<"FuncInterface"> {
     InterfaceMethod<[{
       Return the function's parameter and SSA value signature.
     }], "SignatureType", "getSignature", (ins)>,
+    InterfaceMethod<[{
+      Set the function's parameter and SSA value signature.
+    }], "void", "setSignature", (ins "SignatureType":$sig)>,
   ];
 
-  // FIXME: Remove this when FunctionOpInterface cleanup lands.
-  let extraTraitClassDeclaration = [{
-    /// Return the `FunctionType` for input/result SSA values.
-    FunctionType getFunctionType() { return $_op.getSignature().getValues(); }
-    /// Return the `FunctionType` attribute for input/result SSA values.
-    TypeAttr getFunctionTypeAttr() { return
-      TypeAttr::get($_op.getSignature().getValues());
-    }
-  }];
   let extraSharedClassDeclaration = [{
     /// Return the function's signature including contextual parameters from
     /// higher scopes.
@@ -128,6 +122,30 @@ def FuncInterface : OpInterface<"FuncInterface"> {
     /// Return the list of output parameter types.
     ArrayRef<Type> getResultParamTypes() {
       return getResultParamTypesAttr().getValue();
+    }
+
+    /// Return the `FunctionType` for input/result SSA values.
+    FunctionType getFunctionType() {
+      return $_op.getSignature().getValues();
+    }
+
+    //===------------------------------------------------------------------===//
+    // FunctionOpInterface Implementation
+    //===------------------------------------------------------------------===//
+
+    TypeAttr getFunctionTypeAttr() { return TypeAttr::get(getFunctionType()); }
+    void setFunctionTypeAttr(TypeAttr type) {
+      llvm_unreachable("can't opaquely set the function type");
+    }
+    ArrayAttr getArgAttrsAttr() { return {}; }
+    ArrayAttr getResAttrsAttr() { return {}; }
+    Attribute removeArgAttrsAttr() { llvm_unreachable("no argument attrs"); }
+    Attribute removeResAttrsAttr() { llvm_unreachable("no result attrs"); }
+    void setArgAttrsAttr(ArrayAttr attrs) {
+      llvm_unreachable("no argument attrs");
+    }
+    void setResAttrsAttr(ArrayAttr attrs) {
+      llvm_unreachable("no result attrs");
     }
   }];
 

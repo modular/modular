@@ -39,7 +39,7 @@ def M_ArrayType : MType<"Array", "array",
   }];
 
   let parameters = (ins "int64_t":$size, "Type":$elementType);
-  let assemblyFormat = "`<` custom<SizeX>($size) $elementType `>`";
+  let assemblyFormat = "`<` custom<SizeX>($size) `` $elementType `>`";
   let genVerifyDecl = 1;
 
   let builders = [
