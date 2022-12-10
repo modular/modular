@@ -11,7 +11,6 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ElaboratorOpInterface.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/KGENDialect/KGENCallInterface.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -710,8 +709,6 @@ LogicalResult AddressOfOp::verifyRegions() {
   return verifyRegionSignatures<RegionBodyOp>(*this,
                                               getCallee().getParamValues());
 }
-
-FunctionType AddressOfOp::getFunctionType() { return getType(); }
 
 void AddressOfOp::build(OpBuilder &b, OperationState &state, Type type,
                         SymbolConstantAttr callee,
@@ -1903,5 +1900,4 @@ LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
 // Generated interface definitions.
 #include "KGEN/KGENDialect/ElaboratorOpInterface.cpp.inc"
-#include "KGEN/KGENDialect/KGENCallInterface.cpp.inc"
-#include "KGEN/KGENDialect/KGENDeclInterface.cpp.inc"
+#include "KGEN/KGENDialect/KGENInterfaces.cpp.inc"

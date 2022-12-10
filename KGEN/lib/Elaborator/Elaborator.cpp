@@ -572,7 +572,8 @@ private:
   /// an array of bound input constants and a flag indicating whether the
   /// instantiated callee will always be inlined.
   FailureOr<std::pair<ArrayAttr, bool>>
-  resolveCallInputParams(Operation *call, ArrayRef<ParamBindAttr> inputValues,
+  resolveCallInputParams(KGENCallOpInterface call,
+                         ArrayRef<ParamBindAttr> inputValues,
                          bool isInlinedCall);
 
   /// Process either a `kgen.addressof` op or a `kgen.call` op.
@@ -585,17 +586,17 @@ private:
         user.getCalleeSymbol(), rewriters, /*isInlinedCall=*/false);
   }
   LogicalResult processGeneratorUserImpl(
-      Operation *user, ArrayRef<ParamDeclAttr> decls,
+      KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
       ArrayRef<ParamBindAttr> paramValues, SymbolRefAttr calleeAttr,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters,
       bool isInlinedCall);
   void
-  completeGeneratorUserProcessing(Operation *user,
+  completeGeneratorUserProcessing(KGENCallOpInterface user,
                                   ArrayRef<ParamDeclAttr> decls,
                                   DeclAndInputParamsPair calleeAndInputParams,
                                   const ElaboratedGenerator &newCallee);
   void spawnNewFuncClone(
-      Operation *user, ArrayRef<ParamDeclAttr> decls,
+      KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
       DeclAndInputParamsPair calleeAndInputParams,
       const ElaboratedGenerator &callee,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
@@ -948,19 +949,17 @@ LogicalResult ParameterRewriter::processParamAssertOp(ParamAssertOp op) {
 /// Resolve all of input parameters present at the specified call site to
 /// concrete constants. This reports the error and returns null on failure,
 /// and returns an array of bound input parameters on success.
-FailureOr<std::pair<ArrayAttr, bool>> ParameterRewriter::resolveCallInputParams(
-    Operation *call, ArrayRef<ParamBindAttr> inputValues, bool isInlinedCall) {
-  // The region to use for the next "region" input parameter.
-  size_t nextRegionInThisCall = 0;
-
+FailureOr<std::pair<ArrayAttr, bool>>
+ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
+                                          ArrayRef<ParamBindAttr> inputValues,
+                                          bool isInlinedCall) {
   SmallVector<Attribute> boundInputParams;
   bool inlineCallee = false;
+  auto regionBodyIt = call.getRegionBodies().begin();
   for (ParamBindAttr param : inputValues) {
     // If this is a region reference, form a binding to the region provided by
     // the call.
     if (auto regionRef = dyn_cast<ParamCallRegionRefAttr>(param.getValue())) {
-      Region &region = call->getRegion(nextRegionInThisCall++);
-
       // Give this reference a unique name, and make a RegionReferenceAttr with
       // the name and SignatureType.
       auto regionRefAttr =
@@ -968,12 +967,7 @@ FailureOr<std::pair<ArrayAttr, bool>> ParameterRewriter::resolveCallInputParams(
                                        "_region_" + Twine(nextCallRegionID++),
                                    regionRef.getType());
 
-      // The region in question should only have a single RegionBodyOp
-      // operation.  Take it out and hand ownership to the elaborator so
-      // references to it get correctly resolved.
-      assert(region.hasOneBlock());
-      Block &regionBlock = *region.begin();
-      auto body = cast<FuncInterface>(&regionBlock.front());
+      auto body = cast<FuncInterface>(**regionBodyIt++);
       // Remove the RegionBodyOp from the call's region, and hand ownership of
       // it to the elaborator.
       body->remove();
@@ -1017,7 +1011,7 @@ FailureOr<std::pair<ArrayAttr, bool>> ParameterRewriter::resolveCallInputParams(
 }
 
 LogicalResult ParameterRewriter::processGeneratorUserImpl(
-    Operation *user, ArrayRef<ParamDeclAttr> decls,
+    KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
     ArrayRef<ParamBindAttr> paramValues, SymbolRefAttr calleeAttr,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters,
     bool isInlinedCall) {
@@ -1086,7 +1080,7 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
     // If this is the first viable candidates, then we will pursue it locally.
     if (!thisCallee.func) {
       thisCallee = calleeCandidate;
-    } else if (auto itf = dyn_cast<GeneratorInterfaceOp>(user)) {
+    } else if (auto itf = dyn_cast<GeneratorInterfaceOp>(*user)) {
       // Prohibit interface evaluators from having multiple implementations.
       return error(itf.getLoc(),
                    Twine("interface @") + itf.getSymName() +
@@ -1113,7 +1107,7 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
 }
 
 void ParameterRewriter::completeGeneratorUserProcessing(
-    Operation *user, ArrayRef<ParamDeclAttr> decls,
+    KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
     DeclAndInputParamsPair calleeAndInputParams,
     const ElaboratedGenerator &newCallee) {
   // Add a binding to remember that we resolved this call to this candidate,
@@ -1183,7 +1177,7 @@ void ParameterRewriter::completeGeneratorUserProcessing(
 /// to different callees.  This spawns a new rewriter with the specified call
 /// resolving to the specified callee.
 void ParameterRewriter::spawnNewFuncClone(
-    Operation *user, ArrayRef<ParamDeclAttr> decls,
+    KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
     DeclAndInputParamsPair calleeAndInputParams,
     const ElaboratedGenerator &callee,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {

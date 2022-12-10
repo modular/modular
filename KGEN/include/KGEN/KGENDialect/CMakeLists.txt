@@ -8,8 +8,7 @@
 add_mlir_dialect(KGEN kgen)
 add_modular_doc(KGEN -gen-dialect-doc KGENDialect KGEN/docs/ -dialect=kgen)
 
-add_mlir_interface(KGENDeclInterface)
-add_mlir_interface(KGENCallInterface)
+add_mlir_interface(KGENInterfaces)
 add_mlir_interface(ElaboratorOpInterface)
 
 set(LLVM_TARGET_DEFINITIONS KGEN.td)

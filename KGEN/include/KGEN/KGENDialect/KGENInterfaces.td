@@ -134,4 +134,36 @@ def FuncInterface : OpInterface<"FuncInterface"> {
   let dependentTraits = [DeclInterface];
 }
 
+def KGEN_ParamDeclInterface : OpInterface<"ParamDeclInterface"> {
+  let description = [{
+    This interface denotes an operation that defines parameters within the
+    current parameter scope.
+  }];
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Return the list of parameters declared by this operation within the
+      current scope.
+    }], "ArrayRef<ParamDeclAttr>", "getParamDecls">
+  ];
+}
+
+def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
+  let description = [{
+    This interface represents a call to a parametric KGEN declaration: either a
+    function, generator, or interface.
+  }];
+  let cppNamespace = "::M::KGEN";
+
+  let extraSharedClassDeclaration = [{
+    /// Get the bound region bodies of this operation.
+    iterator_range<CallRegionBodyIterator> getRegionBodies() {
+      return llvm::map_range($_op->getRegions(), +[](Region &region) {
+        return cast<DeclInterface>(region.front().front());
+      });
+    }
+  }];
+}
+
 #endif // KGEN_KGENDIALECT_KGENDECLINTERFACE_TD

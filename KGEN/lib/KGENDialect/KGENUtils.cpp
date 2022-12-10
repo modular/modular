@@ -12,7 +12,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "Cache/CacheDialect/CacheOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/KGENDialect/KGENDeclInterface.h"
+#include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/ML/DType.h"

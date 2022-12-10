@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "KGEN/KGENDialect/KGENDeclInterface.h"
+#include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "Support/ErrorOr.h"
 #include "mlir/IR/BuiltinTypes.h"
