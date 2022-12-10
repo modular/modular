@@ -263,7 +263,7 @@ def testLValuesRvalues():
 # Test differences between fn and def.
 fn testFn(a: Int, b): # expected-error {{'fn' parameter type must be specified}}
   a = a  # expected-error {{cannot assign to immutable expression}}
-  c = a  # expected-error {{use of unknown declaration "c"}}
+  c = a  # expected-error {{use of unknown declaration "c", `fn` declarations require explicit variable declarations}}
 
 
 fn testMLIR():
