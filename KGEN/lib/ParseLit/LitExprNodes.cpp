@@ -333,6 +333,23 @@ emitCallableDeclMember(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
     auto nameAttr = StringAttr::get(loc.getContext(), memberName);
     auto varDecl = OpBuilder(emitter.varDeclCursor)
                        .create<VarDeclOp>(loc, declIRType, nameAttr);
+
+    // If the unresolved name is `_`, then we have a discard pattern.  Python
+    // supports this by just implicitly declaring a variable named _ and
+    // allowing rewrites, but we cannot take this approach because each discard
+    // could have a different type.  Handle this specially by not inserting the
+    // `_` variable into the name table, so we'll get a new instance on every
+    // use.
+    if (memberName == "_") {
+      // Move it right before the use, like a var decl, instead of leaving it at
+      // the entrypoint of the function.  It won't get reused.
+      varDecl->moveBefore(emitter.builder->getInsertionBlock(),
+                          emitter.builder->getInsertionPoint());
+      return {{AnyValue(LValue(varDecl.getResult())), node}};
+    }
+
+    // In a normal implicit declaration, we add it to the name table so
+    // subsequent uses find this one.
     auto *decl = &emitter.shared.declResolver->addFullyResolvedDecl(
         varDecl, node->getLoc(), nameAttr, &container);
     lookup = {ExprEmitter::LookupResult::kSuccess, decl};
