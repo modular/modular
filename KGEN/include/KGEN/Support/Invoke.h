@@ -41,7 +41,9 @@ constexpr auto destructure_kgen_arguments(TensorShapeStorageType &shapeStorage,
     TensorShapeArrayType shape{0};
     std::copy(tensorShape.begin(), tensorShape.begin() + rank, shape.begin());
     shapeStorage.emplace_back(shape);
-    return std::tuple{arg.getPointer(), rank,
+    // NOTE: Currently cannot distinguish between input and output args,
+    // so all buffers are extracted as mutable.
+    return std::tuple{arg.getMutableBuffer(), rank,
                       reinterpret_cast<ssize_t *>(shapeStorage.back().data()),
                       arg.getEltType().getValue()};
   } else if constexpr (is_arrayref_v<T>) {
