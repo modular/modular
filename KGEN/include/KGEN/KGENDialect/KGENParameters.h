@@ -13,7 +13,7 @@
 #define KGEN_KGENPARAMETERS_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/KGENDialect/KGENDeclInterface.h"
+#include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "llvm/ADT/SmallPtrSet.h"
 
 namespace M::KGEN {

@@ -10,7 +10,7 @@
 
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/KGENDialect/KGENDeclInterface.h"
+#include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"

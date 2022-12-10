@@ -9,10 +9,9 @@
 //===----------------------------------------------------------------------===//
 
 include "KGEN/KGENDialect/KGENAttrs.td"
-include "KGEN/KGENDialect/KGENCallInterface.td"
-include "KGEN/KGENDialect/KGENDeclInterface.td"
 include "KGEN/KGENDialect/KGENDialect.td"
 include "KGEN/KGENDialect/KGENEnums.td"
+include "KGEN/KGENDialect/KGENInterfaces.td"
 include "KGEN/KGENDialect/KGENTypes.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
@@ -96,12 +95,10 @@ def KGEN_GeneratorOp
 
 def KGEN_GeneratorInterfaceOp : KGENOp<"generator.interface", [
     HasParent<"mlir::ModuleOp">,
-    FunctionOpInterface,
-    Symbol,
-    IsolatedFromAbove,
     DeclareOpInterfaceMethods<CallableOpInterface>,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-    DeclInterface, FuncInterface]> {
+    FunctionOpInterface, Symbol, IsolatedFromAbove, DeclInterface,
+    FuncInterface, KGEN_CallOpInterface]> {
   let summary = "Generator interface definition";
 
   /// input and result parameters are stored in a single flat array named
