@@ -509,8 +509,7 @@ public:
         elaboratedGenerator(func), inlinedCallee(inlinedCallee),
         expansionDepth(expansionDepth) {
     nextCallRegionID = 0;
-    evaluators.push_back(
-        ParameterEvaluator(&analysis.getTopLevelSymbolTable()));
+    evaluators.emplace_back(&analysis.getTopLevelSymbolTable());
     commandWorklist.reserve(opsToRewrite.size());
     llvm::append_range(commandWorklist, opsToRewrite);
   }
@@ -1048,12 +1047,22 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
 
   // If the callee is an interface that provides an evaluator, resolve the
   // evaluator first.
-  if (auto itf = dyn_cast<GeneratorInterfaceOp>(*callee))
-    if (SymbolConstantAttr evaluator = itf.getEvaluatorAttr())
-      if (failed(processGeneratorUserImpl(
-              itf, {}, evaluator.getParamValues().getValue(),
-              evaluator.getSymbol(), rewriters, /*isInlinedCall=*/false)))
-        return failure();
+  if (auto itf = dyn_cast<GeneratorInterfaceOp>(*callee)) {
+    if (SymbolConstantAttr evaluator = itf.getEvaluatorAttr()) {
+      if (!analysis->getTopLevelSymbolTable().lookup<FuncOp>(
+              cast<FlatSymbolRefAttr>(evaluator.getSymbol()).getAttr())) {
+        evaluators.emplace_back(&analysis->getTopLevelSymbolTable());
+        for (auto [bind, value] : llvm::zip(paramValues, inputParamKey))
+          evaluators.back().setParameterValue(bind.getDecl(), value);
+        if (failed(processGeneratorUserImpl(
+                itf, {}, evaluator.getParamValues().getValue(),
+                evaluator.getSymbol(), rewriters,
+                /*isInlinedCall=*/false)))
+          return failure();
+        evaluators.pop_back();
+      }
+    }
+  }
 
   DeclAndInputParamsPair calleeDeclAndInputParams{callee, inputParamKey};
 

@@ -60,3 +60,31 @@ kgen.generator @test() {
   kgen.call @pickSecond() : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.generator @pick<T: type, N>(%fns: !pop.pointer<(!kgen.paramref<T>) -> !kgen.paramref<T>>, %size: index) -> index {
+  %0 = kgen.param.constant = <N>
+  kgen.return %0 : index
+}
+
+kgen.generator.interface @paramItf<T: type>(!kgen.paramref<T>) -> !kgen.paramref<T>
+  evaluator (!pop.pointer<(!kgen.paramref<T>) -> !kgen.paramref<T>>, index) -> index = @pick<T: type = T, N = 1>
+
+kgen.generator @impl1<T: type>(%val: !kgen.paramref<T>) -> !kgen.paramref<T>
+    implements @paramItf {
+  kgen.return %val : !kgen.paramref<T>
+}
+
+// CHECK-LABEL: kgen.func @"impl2,T=index"
+kgen.generator @impl2<T: type>(%val: !kgen.paramref<T>) -> !kgen.paramref<T>
+    implements @paramItf {
+  kgen.return %val : !kgen.paramref<T>
+}
+
+// CHECK-LABEL: kgen.func @entry
+kgen.generator @entry(%val: index) {
+  // CHECK-NEXT: kgen.call @"impl2,T=index"
+  %0 = kgen.call @paramItf<T: type = index>(%val) : (index) -> index
+  kgen.return
+}
