@@ -531,7 +531,7 @@ kgen.generator @signature_taking_callee<fn: <size>() -> ()>() {
 
 kgen.generator @call_region() {
   kgen.call @signature_taking_callee<fn: <size>() -> () = region>() : () -> ()
-  // expected-error @below {{body region didn't have a kgen.return op?}}
+  // expected-error @below {{'kgen.region.body' op expects a non-empty block}}
   fn<size>(%arg0: i32) {}
   kgen.return
 }
@@ -1082,30 +1082,21 @@ kgen.generator @get_list_element() {
 
 // -----
 
-kgen.generator @generatorWithTooManyConventions(
-  %byval: !pop.pointer<i32>
-  // expected-error @+1 {{too many parameter conventions specified, function has 1 value input}}
-  ) conventions<none, byval, byref> {
-  kgen.return
-}
-
-// -----
-
 // expected-error @+1 {{argument #0 must have pointer type to have byref convention}}
-kgen.func @bad(%byval: i32) conventions<none, byref> {
+kgen.func @bad(%byval: i32 byref) {
   kgen.return
 }
 
 // -----
 
 // expected-note @+1 {{callee declared here}}
-kgen.func @callee(%byval: !pop.pointer<i32>) conventions<none, byref> {
+kgen.func @callee(%byval: !pop.pointer<i32> byref) {
   kgen.return
 }
 
 kgen.func @caller(%arg: !pop.pointer<i32>) {
   // Ok
-  kgen.call @callee(%arg) conventions<none, byref> : (!pop.pointer<i32>) -> ()
+  kgen.call @callee(%arg) : (!pop.pointer<i32> byref) -> ()
 
   // expected-error @+1 {{symbol use conventions are array<i8: 0, 0> but @callee expected array<i8: 0, 1>}}
   kgen.call @callee(%arg) : (!pop.pointer<i32>) -> ()

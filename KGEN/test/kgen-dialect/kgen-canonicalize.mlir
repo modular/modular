@@ -105,7 +105,7 @@ kgen.generator @hoist_constant() {
   // CHECK-NEXT: inlined_call
   kgen.inlined_call[<fn: <N>()->index>() -> (): @callee]<fn: <N>()->index = region>()
   // CHECK-NEXT: fn<N>
-  fn<N>() {
+  fn<N>() -> index {
     // CHECK-NEXT: kgen.param.constant = <N>
     %0 = kgen.param.constant = <N>
     kgen.return %0 : index

@@ -633,12 +633,12 @@ static ParseResult parseAddressOfOp(OpAsmParser &p,
   SymbolRefAttr callee;
   ParamBindArrayAttr paramValues;
   DenseI8ArrayAttr conventions;
-  FunctionType result;
+  SmallVector<Type> inputs, outputs;
   if (p.parseAttribute(callee) ||
-      parseCallOpParams(p, paramValues, paramDecls) ||
-      p.parseColonType(result) ||
-      parseOptionalConventions(p, conventions, result.getNumInputs()))
+      parseCallOpParams(p, paramValues, paramDecls) || p.parseColon() ||
+      parseTypesWithConventions(p, inputs, outputs, conventions))
     return failure();
+  FunctionType result = p.getBuilder().getFunctionType(inputs, outputs);
   calleeCst = SymbolConstantAttr::get(
       callee, paramValues,
       SignatureType::get(ParamBindArrayAttr::get(p.getContext(), {}),
@@ -652,7 +652,10 @@ static void printAddressOfOp(OpAsmPrinter &p, Operation *op,
                              ParamDeclArrayAttr paramDecls, Type resultType) {
   p << calleeCst.getSymbol();
   printCallOpParams(p, op, calleeCst.getParamValues(), paramDecls);
-  p << " : " << resultType;
+  p << " : ";
+  printTypesWithConventions(p.getStream(), calleeCst.getType().getValueInputs(),
+                            calleeCst.getType().getValueResults(),
+                            calleeCst.getType().getConventions());
 }
 
 void AddressOfOp::build(OpBuilder &b, OperationState &state, Type type,
@@ -675,19 +678,18 @@ parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
   SymbolRefAttr callee;
   ParamBindArrayAttr paramValues;
   DenseI8ArrayAttr conventions;
-  FunctionType result;
   if (p.parseAttribute(callee) ||
       parseCallOpParams(p, paramValues, paramDecls) ||
       p.parseOperandList(operands, AsmParser::Delimiter::Paren) ||
-      parseOptionalConventions(p, conventions, operands.size()) ||
-      p.parseColonType(result))
+      p.parseColon() ||
+      parseTypesWithConventions(p, operandTypes, resultTypes, conventions))
     return failure();
   calleeCst = SymbolConstantAttr::get(
       callee, paramValues,
-      SignatureType::get(ParamBindArrayAttr::get(p.getContext(), {}),
-                         paramDecls, result, conventions));
-  llvm::append_range(operandTypes, result.getInputs());
-  llvm::append_range(resultTypes, result.getResults());
+      SignatureType::get(
+          ParamBindArrayAttr::get(p.getContext(), {}), paramDecls,
+          p.getBuilder().getFunctionType(operandTypes, resultTypes),
+          conventions));
   return success();
 }
 
@@ -845,21 +847,21 @@ static ParseResult parseRegionBody(OpAsmParser &p, TypeAttr &signature,
   ParamDeclArrayAttr inputParamDecls;
   TypeArrayAttr resultParamTypes;
   DenseI8ArrayAttr conventions;
+  SmallVector<Type> resultTypes;
   llvm::SMLoc bodyLoc;
   if (parseOptionalParameterSpec(p, inputParamDecls, resultParamTypes) ||
       parseOptionalConstraints(p, constraints) ||
-      p.parseArgumentList(args, AsmParser::Delimiter::Paren,
-                          /*allowType=*/true) ||
-      parseOptionalConventions(p, conventions, args.size()) ||
+      parseFunctionSignature(p, args, resultTypes, conventions) ||
       p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
     return failure();
 
   // Form the Signature.
-  auto sig = getSignatureFromBody(inputParamDecls, resultParamTypes,
-                                  conventions, body);
-  if (!sig)
-    return p.emitError(bodyLoc, "body region didn't have a kgen.return op?");
-  signature = TypeAttr::get(sig);
+  SmallVector<Type> argTypes;
+  for (const OpAsmParser::Argument &arg : args)
+    argTypes.push_back(arg.type);
+  signature = TypeAttr::get(SignatureType::get(
+      inputParamDecls, resultParamTypes,
+      p.getBuilder().getFunctionType(argTypes, resultTypes), conventions));
   return success();
 }
 
@@ -871,11 +873,9 @@ static void printRegionBody(OpAsmPrinter &p, Operation *op, TypeAttr signature,
   printOptionalParameterSpec(sig.getInputParams(), sig.getResultParamTypes(),
                              p.getStream());
   printOptionalConstraints(p, op, constraints);
-  p << '(';
-  llvm::interleaveComma(body.getArguments(), p,
-                        [&](BlockArgument arg) { p.printRegionArgument(arg); });
-  p << ") ";
-  printOptionalConventions(p.getStream(), sig.getConventions());
+  printFunctionSignature(p, body, sig.getValueInputs(), sig.getValueResults(),
+                         sig.getConventions());
+  p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
