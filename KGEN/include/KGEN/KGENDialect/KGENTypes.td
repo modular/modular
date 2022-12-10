@@ -254,7 +254,7 @@ def KGEN_DeclRefType : KGENType<"DeclRef", "declref",
   let parameters = (ins "SymbolRefAttr":$symbol,
                         "ParamBindArrayAttr":$paramValues);
   let assemblyFormat = [{
-    `<` $symbol custom<OptionalParamBindSpec>($paramValues) `>`
+    `<` $symbol `` custom<OptionalParamBindSpec>($paramValues) `>`
   }];
 
   let builders = [

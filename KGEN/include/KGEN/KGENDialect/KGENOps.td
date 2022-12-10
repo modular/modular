@@ -46,8 +46,6 @@ def KGEN_FuncOp
 
   let extraClassDeclaration = [{
     using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<FuncOp>::getBody;
-    using FuncInterfaceTrait::getFunctionType;
-    using FuncInterfaceTrait::getFunctionTypeAttr;
 
     ReturnOp getReturnOp();
   }];
@@ -79,8 +77,6 @@ def KGEN_GeneratorOp
 
   let extraClassDeclaration = [{
     using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<GeneratorOp>::getBody;
-    using FuncInterfaceTrait::getFunctionType;
-    using FuncInterfaceTrait::getFunctionTypeAttr;
 
     ReturnOp getReturnOp();
   }];
@@ -115,11 +111,6 @@ def KGEN_GeneratorInterfaceOp : KGENOp<"generator.interface", [
   let regions = (region SizedRegion<0>:$body);
 
   let hasCustomAssemblyFormat = 1;
-
-  let extraClassDeclaration = [{
-    using FuncInterfaceTrait::getFunctionType;
-    using FuncInterfaceTrait::getFunctionTypeAttr;
-  }];
 }
 
 //===----------------------------------------------------------------------===//

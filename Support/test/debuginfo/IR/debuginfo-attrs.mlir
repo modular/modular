@@ -1,5 +1,7 @@
 // RUN: support-dialect-opt %s | support-dialect-opt | FileCheck %s
 
+// CHECK: ![[SUBROUTINE:.*]] = !debuginfo.subroutine<() -> (): DW_CC_normal>
+// CHECK: ![[UNRESOLVED:.*]] = !debuginfo.unresolved<index>
 // CHECK: #[[FILE:.*]] = #debuginfo.file<"foo.c" in "/mlir/">
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 
@@ -27,7 +29,7 @@
 // CHECK-SAME:   line = 10,
 // CHECK-SAME:   scopeLine = 10,
 // CHECK-SAME:   subprogramFlags = Definition
-// CHECK-SAME: > : !debuginfo.subroutine<() -> (): DW_CC_normal>
+// CHECK-SAME: > : ![[SUBROUTINE]]
 #subprogram = #debuginfo.subprogram<
   compileUnit = #compile_unit,
   scope = #file,
@@ -59,7 +61,7 @@
 // CHECK-SAME:   line = 10,
 // CHECK-SAME:   arg = 0,
 // CHECK-SAME:   alignInBits = 32
-// CHECK-SAME: > : !debuginfo.unresolved<index>
+// CHECK-SAME: > : ![[UNRESOLVED]]
 #local_variable = #debuginfo.local_variable<
   scope = #lex_block,
   name = "foo",

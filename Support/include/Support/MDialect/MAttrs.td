@@ -53,7 +53,7 @@ def M_PrimitivesArrayAttr : MAttr<"PrimitiveArray", "primitives_array"> {
 
   let parameters = (ins M_PrimitivesArrayData:$data, "Type":$elementType);
   let assemblyFormat = [{
-    `<` $elementType custom<PrimitiveArray>($data, ref($elementType)) `>`
+    `<` $elementType `` custom<PrimitiveArray>($data, ref($elementType)) `>`
   }];
   let genVerifyDecl = 1;
 

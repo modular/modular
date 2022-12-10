@@ -50,7 +50,7 @@ def KGEN_ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl", [
   /// asmsyntax defaults to `index`.
   let parameters = (ins "StringAttr":$name, "Type":$type);
 
-  let assemblyFormat = "custom<ParamName>($name) `:` $type";
+  let assemblyFormat = "`` custom<ParamName>($name) `:` $type";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "StringAttr":$name, "Type":$type),
@@ -538,7 +538,7 @@ def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint", [
 
   let assemblyFormat = [{
     `[` custom<ParamValue>($expr, "$_builder.getI1Type()") `,` $message
-    custom<ConstraintLoc>($loc) `]`
+    `` custom<ConstraintLoc>($loc) `]`
   }];
 
   let builders = [
