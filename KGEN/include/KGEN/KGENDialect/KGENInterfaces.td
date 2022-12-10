@@ -134,27 +134,27 @@ def FuncInterface : OpInterface<"FuncInterface"> {
   let dependentTraits = [DeclInterface];
 }
 
-def KGEN_ParamDeclInterface : OpInterface<"ParamDeclInterface"> {
-  let description = [{
-    This interface denotes an operation that defines parameters within the
-    current parameter scope.
-  }];
-  let cppNamespace = "::M::KGEN";
-
-  let methods = [
-    InterfaceMethod<[{
-      Return the list of parameters declared by this operation within the
-      current scope.
-    }], "ArrayRef<ParamDeclAttr>", "getParamDecls">
-  ];
-}
-
 def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
   let description = [{
     This interface represents a call to a parametric KGEN declaration: either a
     function, generator, or interface.
   }];
   let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Get the parameter expression of the operation's callee.
+    }], "TypedAttr", "getCallee", (ins), [{}], [{ return nullptr; }]>,
+    InterfaceMethod<[{
+      Get the values of the parameters passed to the callee's input parameters.
+    }], "ArrayRef<ParamBindAttr>", "getParamValues", (ins), [{}],
+    [{ return {}; }]>,
+    InterfaceMethod<[{
+      Returns whether this call flavour is allowed to exist post-elaboration as
+      a child of a `kgen.func` operation. If so, its callee's signature must
+      have no input and output parameters.
+    }], "bool", "isAllowedInFunc", (ins), [{}], [{ return true; }]>
+  ];
 
   let extraSharedClassDeclaration = [{
     /// Get the bound region bodies of this operation.
@@ -164,6 +164,9 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
       });
     }
   }];
+
+  let verify = [{ return impl::verifyCallOp($_op); }];
+  let verifyWithRegions = 1;
 }
 
 #endif // KGEN_KGENDIALECT_KGENDECLINTERFACE_TD

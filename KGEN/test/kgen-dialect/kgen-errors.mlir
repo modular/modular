@@ -197,7 +197,7 @@ kgen.generator @fn<p2>() {
   kgen.return
 }
 
-kgen.func @input_param_name() {
+kgen.generator @input_param_name() {
   // expected-error @below {{caller input parameter #0 has name "p1" but callee expected name "p2"}}
   kgen.call @fn<p1 = 42>() : () -> ()
   kgen.return
@@ -268,7 +268,7 @@ kgen.generator @bad<barf>() implements @itf {
 kgen.generator.interface @take_and_return<p1 -> index>()
 
 // expected-error @+1 {{invalid cyclic reference between operations defining and using parameters}}
-kgen.func @self_cyclic() {
+kgen.generator @self_cyclic() {
   // Uses r1 and defines r1
   kgen.call @take_and_return<p1 = r1 -> r1>() : () -> ()
   // expected-note @-1 {{this operation uses parameter "r1", which is defined by itself}}
@@ -280,7 +280,7 @@ kgen.func @self_cyclic() {
 kgen.generator.interface @take_and_return<p1 -> index>()
 
 // expected-error @+1 {{invalid cyclic reference between operations defining and using parameters}}
-kgen.func @mutually_recursive() {
+kgen.generator @mutually_recursive() {
   // Uses r2 and defines r1
   kgen.call @take_and_return<p1 = r2 -> r1>() : () -> ()
   // expected-note @-1 {{this operation uses parameter "r2", which is defined by the first operation}}
@@ -346,15 +346,15 @@ kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
 kgen.generator @hasInputParam<param>() {
   kgen.return
 }
-kgen.generator @hasResultParam<() -> index>() {
+kgen.generator @nothing<() -> index>() {
   kgen.return<42>
 }
 
-kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
+kgen.func @test() {  // expected-note {{within 'kgen.func' @test}}
   // ok
   kgen.call @hasResultParam<() -> result>() : () -> ()
 
-  // expected-error@+1 {{cannot call generator with input arguments from concrete kgen.func}}
+  // expected-error@+1 {{cannot reference generator with input parameters from within a concrete 'kgen.func'}}
   kgen.call @hasInputParam<param = 42>() : () -> ()
 
   kgen.return
@@ -477,7 +477,7 @@ kgen.func @trivial(%arg0: si32) -> si32 {
 }
 
 kgen.func @call_param_in_func(%arg0: si32) -> si32 {
-  // expected-error @+1 {{kgen.call_param is only allowed in generators pre-elaboration}}
+  // expected-error @below {{'kgen.call_param' op is only allowed in generators pre-elaboration}}
   %0 = kgen.call_param[(si32) -> si32: @trivial](%arg0)
   kgen.return %0: si32
 }
@@ -689,9 +689,9 @@ kgen.func @addressof_mismatched_signature() {
 
 kgen.generator.interface @generator<size>()
 
-// expected-note @below {{within kgen.func 'addressof_parametric_in_func'}}
+// expected-note @below {{within 'kgen.func' @addressof_parametric_in_func}}
 kgen.func @addressof_parametric_in_func() {
-  // expected-error @below {{cannot reference generator with input arguments from concrete kgen.func}}
+  // expected-error @below {{'kgen.addressof' op cannot reference generator with input parameters from within a concrete 'kgen.func'}}
   %0 = kgen.addressof @generator<size = 1> : () -> ()
   kgen.return
 }
