@@ -1534,12 +1534,6 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   SmallVector<NamedAttribute> newAttrs;
   bool changedAttrs = false;
   for (const NamedAttribute &namedAttr : op->getAttrs()) {
-    // Preserve but ignore the 'paramDecls' attribute on FuncOp.
-    if (namedAttr.getName() == "paramDecls") {
-      newAttrs.push_back(namedAttr);
-      continue;
-    }
-
     newAttrs.push_back(NamedAttribute(
         namedAttr.getName(),
         getEvaluator().getReboundAttribute(namedAttr.getValue())));
