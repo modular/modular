@@ -1005,32 +1005,22 @@ ParseResult KGEN::parseOptionalConventions(AsmParser &p,
   // The first element in the list is always the function convention, and it has
   // different elements than the parameter conventions.
   auto parseFnEffect = [&]() -> ParseResult {
-    FnEffects value = FnEffects::None;
-    bool hadOne = true;
-    if (succeeded(p.parseOptionalKeyword("none"))) {
-      value = FnEffects::None;
-      // TODO: "throws".
-    } else {
-      hadOne = false;
-    }
-    elements.push_back(int8_t(value));
-
-    // TODO: If we had an effect, check for others in a bitmask, e.g.
-    // `throw+async`.  We always want to add the first default value even if
-    // there isn't an effect.
-    if (!hadOne)
+    std::string str;
+    if (p.parseKeywordOrString(&str))
       return failure();
-
-    return success();
+    llvm::SMLoc loc = p.getCurrentLocation();
+    if (Optional<FnEffects> effect = symbolizeFnEffects(str)) {
+      elements.push_back(static_cast<int8_t>(*effect));
+      return success();
+    }
+    return p.emitError(loc, "expected 'none' or 'throws'");
   };
 
   auto parseConvention = [&]() -> ParseResult {
     // If this is the first convention we parse, check to see if it is a
     // function convention.
-    if (elements.empty()) {
-      if (succeeded(parseFnEffect()))
-        return success();
-    }
+    if (elements.empty())
+      return parseFnEffect();
 
     // Otherwise, must be a parameter convention.
     // Detect excess convention specifiers.
@@ -1041,17 +1031,16 @@ ParseResult KGEN::parseOptionalConventions(AsmParser &p,
              << numValueInputs << " value input parameter(s)";
     }
 
-    ValueInputConvention value;
-    if (succeeded(p.parseOptionalKeyword("byval"))) {
-      value = ValueInputConvention::ByVal;
-    } else if (succeeded(p.parseOptionalKeyword("byref"))) {
-      value = ValueInputConvention::ByRef;
-    } else {
-      return p.emitError(p.getCurrentLocation(),
-                         "expected value parameter convention specifier");
+    std::string str;
+    if (p.parseKeywordOrString(&str))
+      return failure();
+    llvm::SMLoc loc = p.getCurrentLocation();
+    if (Optional<ValueInputConvention> effect =
+            symbolizeValueInputConvention(str)) {
+      elements.push_back(static_cast<int8_t>(*effect));
+      return success();
     }
-    elements.push_back(int8_t(value));
-    return success();
+    return p.emitError(loc, "expected 'byval' or 'byref'");
   };
 
   // Always have a function effect, but only have value parameter effects with a
@@ -1085,30 +1074,13 @@ void KGEN::printOptionalConventions(raw_ostream &os,
     elts = elts.drop_back();
 
   os << " conventions<";
+  os << stringifyFnEffects(static_cast<FnEffects>(elts.front()));
 
-  // If the function convention is non-default, print it.
-  bool needComma = false;
-  if (elts.front() != int8_t(FnEffects::None)) {
-    llvm_unreachable("TODO: Implement function effect printing");
-    needComma = true;
-  }
   elts = elts.drop_front();
-
-  // Print all the parameter effects.
-  while (!elts.empty()) {
-    if (needComma)
-      os << ", ";
-    switch (ValueInputConvention(elts.front())) {
-    case ValueInputConvention::ByVal:
-      os << "byval";
-      break;
-    case ValueInputConvention::ByRef:
-      os << "byref";
-      break;
-    }
-
-    needComma = true;
-    elts = elts.drop_front();
+  for (int8_t effect : elts) {
+    os << ", ";
+    os << stringifyValueInputConvention(
+        static_cast<ValueInputConvention>(effect));
   }
   os << ">";
 }
