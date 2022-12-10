@@ -128,13 +128,28 @@ def var_decls():
   # CHECK-NEXT: pop.store [[TMP]], %z
 
 
+# CHECK-LABEL: lit.func @patterns()
 def patterns():
+  # CHECK: %z2 = lit.var.decl "z2" : <index>
+
   (((z2))) = 42  # Paren patterns
   # CHECK: [[TMP:%.*]] = index.constant 42
   # CHECK: pop.store [[TMP]], %z2
 
   var someInt : Int
   (someInt) += someInt
+  # CHECK: %someInt = lit.var.decl "someInt" : <@Int>
+  # CHECK:  %0 = pop.load %someInt : !pop.pointer<@Int>
+  # CHECK:  %1 = kgen.call @Int::@__iadd__(%someInt, %0)
+
+  # Discard pattern with different types.
+  (_) = someInt
+  # CHECK: %_ = lit.var.decl "_" : <@Int>
+  # CHECK: pop.store {{.*}}, %_ : !pop.pointer<@Int>
+
+  (_) = 1.0
+  # CHECK: %__0 = lit.var.decl "_" : <f64>
+  # CHECK: pop.store {{.*}}, %__0 : !pop.pointer<f64>
 
 
 fn generic_fn[a: DType, b: __mlir_type.index, c: __mlir_type.`!kgen.mlirtype`](d : __mlir_type.index):
