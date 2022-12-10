@@ -14,7 +14,7 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
-#include "mlir/IR/Types.h"
+#include "mlir/IR/OpImplementation.h"
 
 namespace M::KGEN {
 class ConstraintAttr;
@@ -113,11 +113,23 @@ void printOptionalParameterSpec(ParamDeclArrayAttr inputParamDecls,
                                 TypeArrayAttr resultParamTypes,
                                 raw_ostream &os);
 
-/// Parse and print a function convention specification if present.
-ParseResult parseOptionalConventions(AsmParser &p,
-                                     DenseI8ArrayAttr &conventions,
-                                     size_t numValueInputs);
-void printOptionalConventions(raw_ostream &os, DenseI8ArrayAttr conventions);
+/// Parse and print an operand and result type list with conventions.
+ParseResult parseTypesWithConventions(AsmParser &p,
+                                      SmallVectorImpl<Type> &operandTypes,
+                                      SmallVectorImpl<Type> &resultTypes,
+                                      DenseI8ArrayAttr &conventions);
+void printTypesWithConventions(raw_ostream &os, TypeRange operandTypes,
+                               TypeRange resultTypes,
+                               DenseI8ArrayAttr conventions);
+
+/// Parse and print a function signature with optional conventions.
+ParseResult parseFunctionSignature(OpAsmParser &p,
+                                   SmallVectorImpl<OpAsmParser::Argument> &args,
+                                   SmallVectorImpl<Type> &resultTypes,
+                                   DenseI8ArrayAttr &conventions);
+void printFunctionSignature(OpAsmPrinter &p, Region &region, TypeRange argTypes,
+                            TypeRange resultTypes,
+                            DenseI8ArrayAttr conventions);
 
 /// Parse and print a constraint specification if present.
 ParseResult parseOptionalConstraints(OpAsmParser &p,

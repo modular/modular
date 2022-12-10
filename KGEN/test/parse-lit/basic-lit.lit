@@ -70,7 +70,7 @@ struct StructExample:
     StructExample.static(Int(4))
     pass
 
-  # CHECK: lit.func @mutatingMethod(%self: !pop.pointer<@StructExample>) -> !lit.none
+  # CHECK: lit.func @mutatingMethod(%self: !pop.pointer<@StructExample> byref) -> !lit.none
   fn mutatingMethod(self&):
 
 # CHECK: }
@@ -184,7 +184,7 @@ fn func_interface2[type: DType](x: __mlir_type.index) -> __mlir_type.index:
 fn func_impl[type: DType](x: __mlir_type.index) -> __mlir_type.index:
   return x
 
-# CHECK: lit.func @byval_byref_function(%a: !kgen.declref<@Int>, %b: !pop.pointer<@Int>) -> !lit.none
+# CHECK: lit.func @byval_byref_function(%a: !kgen.declref<@Int>, %b: !pop.pointer<@Int> byref) -> !lit.none
 fn byval_byref_function(a: Int, b&: Int):
   # CHECK-NEXT: pop.store %a, %b
   b = a

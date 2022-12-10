@@ -104,7 +104,7 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
   };
 
   if (succeeded(parser.parseOptionalLess())) {
-    // signature for values and parameters.
+    // Signature for values and parameters.
     ParamDeclArrayAttr inputParams;
     TypeArrayAttr resultParamTypes;
     if (succeeded(parser.parseOptionalGreater())) {
@@ -114,14 +114,13 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
                parser.parseGreater()) {
       return failure();
     }
-    FunctionType valuesType;
+    SmallVector<Type> inputs, outputs;
     DenseI8ArrayAttr conventions;
-    if (parser.parseType(valuesType) ||
-        parseOptionalConventions(parser, conventions,
-                                 valuesType.getInputs().size()))
+    if (parseTypesWithConventions(parser, inputs, outputs, conventions))
       return failure();
-    return returnSignatureType(inputParams, resultParamTypes, valuesType,
-                               conventions);
+    return returnSignatureType(
+        inputParams, resultParamTypes,
+        parser.getBuilder().getFunctionType(inputs, outputs), conventions);
   }
 
   if (failed(parser.parseType(type)))
@@ -130,16 +129,14 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
   // We accept function type syntax as sugar for a SignatureType without
   // parameters.
   if (auto valuesType = dyn_cast<FunctionType>(type)) {
-    DenseI8ArrayAttr conventions;
-    if (parseOptionalConventions(parser, conventions,
-                                 valuesType.getInputs().size()))
-      return failure();
-
-    // Default to empty input/result parameters.
+    // Default to empty input/result parameters and no conventions.
     auto noInputParams = ParamDeclArrayAttr::get(parser.getContext(), {});
     auto noResultParams = TypeArrayAttr::get(parser.getContext(), {});
-    return returnSignatureType(noInputParams, noResultParams, valuesType,
-                               conventions);
+    return returnSignatureType(
+        noInputParams, noResultParams, valuesType,
+        DenseI8ArrayAttr::get(
+            parser.getContext(),
+            SmallVector<int8_t>(valuesType.getNumInputs() + 1)));
   }
 
   return success();
@@ -163,18 +160,25 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
     printParamValue(list.getLength(), os);
     os << "]>";
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
-    // If there are no parameters, print a SignatureType as a function type to
-    // keep things concise.
+    // If there are no parameters and no effects, print a SignatureType as a
+    // function type to keep things concise.
     if (signature.getInputParams().empty() &&
         signature.getResultParamTypes().empty()) {
-      os << signature.getValues();
-      printOptionalConventions(os, signature.getConventions());
-    } else { // Otherwise print it as "p1, p2 -> r3, () -> ())"
-      printOptionalParameterSpec(signature.getInputParams(),
-                                 signature.getResultParamTypes(), os);
-      os << signature.getValues();
-      printOptionalConventions(os, signature.getConventions());
+      if (llvm::all_of(signature.getConventions().asArrayRef(),
+                       [](int8_t effect) { return !effect; })) {
+        os << signature.getValues();
+        return;
+      }
+      // If there are effects but no parameters, print "<>" to disambiguate the
+      // syntax.
+      os << "<>";
     }
+    // Otherwise print it as "p1, p2 -> r3, () -> ())"
+    printOptionalParameterSpec(signature.getInputParams(),
+                               signature.getResultParamTypes(), os);
+    printTypesWithConventions(os, signature.getValueInputs(),
+                              signature.getValueResults(),
+                              signature.getConventions());
   } else {
     os << type;
   }
@@ -985,104 +989,136 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
 // Logic shared between funcs, generators, and generator interfaces
 //===----------------------------------------------------------------------===//
 
-/// Parse and print a function convention specification if present.
-/// convention-spec ::= `conventions` `<` ... `>`.
-///
-/// The numValueInputs field specifies the number of value inputs that are
-/// expected by the function signature.
-ParseResult KGEN::parseOptionalConventions(AsmParser &p,
-                                           DenseI8ArrayAttr &conventions,
-                                           size_t numValueInputs) {
-  SmallVector<int8_t> elements;
-
-  // If 'convention' is missing, the specifier stays a default value.
-  if (failed(p.parseOptionalKeyword("conventions"))) {
-    elements.resize(numValueInputs + 1);
-    conventions = DenseI8ArrayAttr::get(p.getContext(), elements);
+/// Parse an argument or type list with optional conventions.
+static ParseResult
+parseElementsWithConventions(AsmParser &p, function_ref<ParseResult()> parseElt,
+                             DenseI8ArrayAttr &conventions) {
+  // Parse an element list with input effects.
+  SmallVector<int8_t> elts;
+  auto parseArg = [&]() -> ParseResult {
+    if (parseElt())
+      return failure();
+    StringRef effectStr;
+    llvm::SMLoc loc = p.getCurrentLocation();
+    if (succeeded(p.parseOptionalKeyword(&effectStr))) {
+      if (Optional<ValueInputConvention> effect =
+              symbolizeValueInputConvention(effectStr))
+        elts.push_back(static_cast<int8_t>(*effect));
+      else
+        return p.emitError(loc, "expected 'byval' or 'byref' for input effect");
+    } else {
+      elts.push_back(static_cast<int8_t>(ValueInputConvention::ByVal));
+    }
     return success();
-  }
-
-  // The first element in the list is always the function convention, and it has
-  // different elements than the parameter conventions.
-  auto parseFnEffect = [&]() -> ParseResult {
-    std::string str;
-    if (p.parseKeywordOrString(&str))
-      return failure();
-    llvm::SMLoc loc = p.getCurrentLocation();
-    if (Optional<FnEffects> effect = symbolizeFnEffects(str)) {
-      elements.push_back(static_cast<int8_t>(*effect));
-      return success();
-    }
-    return p.emitError(loc, "expected 'none' or 'throws'");
   };
-
-  auto parseConvention = [&]() -> ParseResult {
-    // If this is the first convention we parse, check to see if it is a
-    // function convention.
-    if (elements.empty())
-      return parseFnEffect();
-
-    // Otherwise, must be a parameter convention.
-    // Detect excess convention specifiers.
-    if (elements.size() == numValueInputs + 1) {
-      return p.emitError(
-                 p.getCurrentLocation(),
-                 "too many parameter conventions specified, function has ")
-             << numValueInputs << " value input parameter(s)";
-    }
-
-    std::string str;
-    if (p.parseKeywordOrString(&str))
-      return failure();
-    llvm::SMLoc loc = p.getCurrentLocation();
-    if (Optional<ValueInputConvention> effect =
-            symbolizeValueInputConvention(str)) {
-      elements.push_back(static_cast<int8_t>(*effect));
-      return success();
-    }
-    return p.emitError(loc, "expected 'byval' or 'byref'");
-  };
-
-  // Always have a function effect, but only have value parameter effects with a
-  // colon.
-  if (p.parseCommaSeparatedList(AsmParser::Delimiter::LessGreater,
-                                parseConvention))
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::Paren, parseArg))
     return failure();
 
-  // If we had too few conventions, the missing ones default to zero.  It is
-  // common to have a byref argument for the first arg, but for the rest to by
-  // by-value, and this de-clutters the IR dump a bit.
-  if (elements.size() < numValueInputs + 1)
-    elements.resize(numValueInputs + 1);
+  // Parse the function effects. Check for each case to disambiguate the syntax
+  // for interfaces.
+  auto effect = FnEffects::None;
+  if (succeeded(p.parseOptionalKeyword("throws"))) {
+    effect = FnEffects::Throws;
+  } else if (succeeded(p.parseOptionalKeyword("none"))) {
+  }
+  elts.insert(elts.begin(), static_cast<int8_t>(effect));
 
-  conventions = DenseI8ArrayAttr::get(p.getContext(), elements);
+  conventions = DenseI8ArrayAttr::get(p.getContext(), elts);
   return success();
 }
 
-void KGEN::printOptionalConventions(raw_ostream &os,
-                                    DenseI8ArrayAttr conventions) {
-  auto elts = conventions.asArrayRef();
-  // If the convention spec is all zeros, don't print it.  This is the default.
-  if (std::all_of(elts.begin(), elts.end(), [](auto elt) { return elt == 0; }))
+/// Print an argument or type list with optional conventions.
+static void printElementsWithConventions(raw_ostream &os,
+                                         function_ref<void(unsigned)> printElt,
+                                         DenseI8ArrayAttr conventions) {
+  os << '(';
+  llvm::interleaveComma(
+      llvm::enumerate(conventions.asArrayRef().drop_front()), os, [&](auto it) {
+        printElt(it.index());
+        if (it.value())
+          os << ' '
+             << stringifyValueInputConvention(
+                    static_cast<ValueInputConvention>(it.value()));
+      });
+  os << ')';
+
+  // Print the function effects.
+  if (conventions[0])
+    os << ' ' << stringifyFnEffects(static_cast<FnEffects>(conventions[0]));
+}
+
+ParseResult KGEN::parseFunctionSignature(
+    OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
+    SmallVectorImpl<Type> &resultTypes, DenseI8ArrayAttr &conventions) {
+  // Parse the argument list with input effects.
+  auto parseArg = [&]() -> ParseResult {
+    OptionalParseResult result =
+        p.parseOptionalArgument(args.emplace_back(), /*allowType=*/true);
+    if (result.has_value())
+      return *result;
+    return p.parseType(args.back().type);
+  };
+
+  if (parseElementsWithConventions(p, parseArg, conventions) ||
+      p.parseOptionalArrowTypeList(resultTypes))
+    return failure();
+  return success();
+}
+
+void KGEN::printFunctionSignature(OpAsmPrinter &p, Region &region,
+                                  TypeRange argTypes, TypeRange resultTypes,
+                                  DenseI8ArrayAttr conventions) {
+  // Print the function arguments.
+  auto printElt = [&](unsigned i) {
+    if (region.empty())
+      p << argTypes[i];
+    else
+      p.printRegionArgument(region.getArgument(i));
+  };
+  printElementsWithConventions(p.getStream(), printElt, conventions);
+
+  // Print the function results.
+  if (resultTypes.empty())
     return;
-
-  // Zero elements are very common at the end of the list, so we don't print
-  // them if they are zero.  It is common to have a byref argument for the first
-  // arg, but for the rest to by by-value, and this de-clutters the IR dump a
-  // bit.
-  while (elts.back() == 0)
-    elts = elts.drop_back();
-
-  os << " conventions<";
-  os << stringifyFnEffects(static_cast<FnEffects>(elts.front()));
-
-  elts = elts.drop_front();
-  for (int8_t effect : elts) {
-    os << ", ";
-    os << stringifyValueInputConvention(
-        static_cast<ValueInputConvention>(effect));
+  p << " -> ";
+  if (resultTypes.size() == 1 && !isa<FunctionType>(resultTypes.front())) {
+    p << resultTypes.front();
+    return;
   }
-  os << ">";
+  p << '(';
+  llvm::interleaveComma(resultTypes, p);
+  p << ')';
+}
+
+ParseResult KGEN::parseTypesWithConventions(AsmParser &p,
+                                            SmallVectorImpl<Type> &operandTypes,
+                                            SmallVectorImpl<Type> &resultTypes,
+                                            DenseI8ArrayAttr &conventions) {
+  auto parseElt = [&] { return p.parseType(operandTypes.emplace_back()); };
+  if (parseElementsWithConventions(p, parseElt, conventions) || p.parseArrow())
+    return failure();
+  if (failed(p.parseOptionalLParen()))
+    return p.parseType(resultTypes.emplace_back());
+  if (succeeded(p.parseOptionalRParen()))
+    return success();
+  if (p.parseTypeList(resultTypes) || p.parseRParen())
+    return failure();
+  return success();
+}
+
+void KGEN::printTypesWithConventions(raw_ostream &os, TypeRange operandTypes,
+                                     TypeRange resultTypes,
+                                     DenseI8ArrayAttr conventions) {
+  auto printElt = [&](unsigned i) { os << operandTypes[i]; };
+  printElementsWithConventions(os, printElt, conventions);
+  os << " -> ";
+  if (resultTypes.size() == 1 && !isa<FunctionType>(resultTypes.front())) {
+    os << resultTypes.front();
+    return;
+  }
+  os << '(';
+  llvm::interleaveComma(resultTypes, os);
+  os << ')';
 }
 
 /// Parse a constraint specification if present.
@@ -1150,8 +1186,6 @@ void KGEN::printOptionalConstraints(OpAsmPrinter &p, Operation *op,
 ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
                                        OperationState &result,
                                        GeneratorOrFuncKind opKind) {
-  using namespace mlir::function_interface_impl;
-
   SmallVector<OpAsmParser::Argument> entryArgs;
   SmallVector<DictionaryAttr> resultAttrs;
   SmallVector<Type> resultTypes;
@@ -1164,14 +1198,11 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
     return failure();
 
   // Parse the function signature.
-  bool isVariadic = false;
   ParamDeclArrayAttr inputParamDecls;
   TypeArrayAttr resultParamTypes;
   DenseI8ArrayAttr conventions;
   if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamTypes) ||
-      parseFunctionSignature(parser, /*allowVariadic=*/false, entryArgs,
-                             isVariadic, resultTypes, resultAttrs) ||
-      ::parseOptionalConventions(parser, conventions, entryArgs.size()) ||
+      parseFunctionSignature(parser, entryArgs, resultTypes, conventions) ||
       ::parseOptionalConstraints(parser, result, opKind))
     return failure();
 
@@ -1242,8 +1273,7 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
     return success();
 
   llvm::SMLoc loc = parser.getCurrentLocation();
-  if (parser.parseRegion(*region, entryArgs,
-                         /*enableNameShadowing=*/false))
+  if (parser.parseRegion(*region, entryArgs, /*enableNameShadowing=*/true))
     return failure();
 
   if (region->empty()) {
@@ -1277,21 +1307,20 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
                              op.getResultParamTypesAttr(), p.getStream());
 
   ArrayRef<Type> argTypes = op.getArgumentTypes();
-  ArrayRef<Type> resultTypes = op.getResultTypes();
-  printFunctionSignature(p, func, argTypes, /*isVariadic=*/false, resultTypes);
+  printFunctionSignature(p, func.getFunctionBody(), argTypes,
+                         op.getResultTypes(), op.getConventions());
 
   SmallVector<StringRef> ignoredAttrNames(
       GeneratorOp::getAttributeNames().begin(),
       GeneratorOp::getAttributeNames().end());
   // Don't print valueParamNames in lit.func.
-  ignoredAttrNames.push_back(StringRef("valueParamNames"));
+  ignoredAttrNames.push_back("valueParamNames");
   // Don't print evaluator in kgen.generator.interface.
-  ignoredAttrNames.push_back(StringRef("evaluator"));
+  ignoredAttrNames.push_back("evaluator");
   // Don't print the default_impl in kgen.generator.interface.
-  ignoredAttrNames.push_back(StringRef("defaultImpl"));
+  ignoredAttrNames.push_back("defaultImpl");
 
   printFunctionAttributes(p, op, ignoredAttrNames);
-  printOptionalConventions(p.getStream(), op.getConventions());
   printOptionalConstraints(p, func, cast<DeclInterface>(*op).getConstraints());
 
   // If this is a generator implementing a generator.interface, include the

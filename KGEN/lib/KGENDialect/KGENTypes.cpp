@@ -241,12 +241,11 @@ static ParseResult
 parseValuesAndOptionalConventions(AsmParser &p,
                                   FailureOr<FunctionType> &valueFnSpec,
                                   FailureOr<DenseI8ArrayAttr> &conventions) {
-  FunctionType funcType;
+  SmallVector<Type> inputs, outputs;
   DenseI8ArrayAttr conv;
-  if (p.parseType(funcType) ||
-      parseOptionalConventions(p, conv, funcType.getInputs().size()))
+  if (parseTypesWithConventions(p, inputs, outputs, conv))
     return failure();
-  valueFnSpec = funcType;
+  valueFnSpec = p.getBuilder().getFunctionType(inputs, outputs);
   conventions = conv;
   return success();
 }
@@ -254,8 +253,9 @@ parseValuesAndOptionalConventions(AsmParser &p,
 static void printValuesAndOptionalConventions(AsmPrinter &p,
                                               FunctionType valueFnSpec,
                                               DenseI8ArrayAttr conventions) {
-  p << ' ' << valueFnSpec;
-  printOptionalConventions(p.getStream(), conventions);
+  p << ' ';
+  printTypesWithConventions(p.getStream(), valueFnSpec.getInputs(),
+                            valueFnSpec.getResults(), conventions);
 }
 
 LogicalResult

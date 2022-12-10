@@ -185,7 +185,7 @@ kgen.generator @top() -> index{
   %0 = index.constant 0
   // expected-note @below {{call expansion failed}}
   %1 = kgen.inlined_call[<fn: ()->index>() -> index: @mid]<fn: ()->index = region>()
-  fn() {
+  fn() -> index {
     kgen.return %0 : index
   }
   kgen.return %1 : index
