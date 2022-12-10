@@ -162,8 +162,10 @@ def BadDecorator(): pass
 @staticmethod # expected-error @+1 {{only methods on structs may be declared static}}
 def StaticMethod(): pass
 
-# expected-error @+1 {{special function must be a method}}
+# expected-error @+1 {{special function must have 2 operands}}
 def __add__(): pass
+# expected-error @+1 {{special function must be a method}}
+def __sub__(self, a): pass
 
 struct WrongType:
   # expected-error @+1 {{__init__ is not allowed on structs, use __new__ instead}}
@@ -176,6 +178,9 @@ struct WrongSelfType[a: Int]:
   # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]'}}
   def badMethod(self: Int): pass
   def goodMethod(self&: WrongSelfType[a]): pass
+
+  # expected-error @+1 {{special function must have 2 operands}}
+  def __add__(): pass
 
 
 @interface
