@@ -464,34 +464,15 @@ static ParseResult resolveFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
   ASTType selfType;
   if (auto *parentDecl = decl.getParentDecl())
     if (isa<StructDeclOp>(*parentDecl)) {
-      //  If this is a method, the signature for the enclosing type must be
-      //  resolved.
-      (void)shared.declResolver->resolve(*parentDecl,
-                                         DeclResolvedness::signatureResolved,
-                                         decl.getCursor().getToken().getLoc());
-      // The self type is stored as the resolved type.
+      //  The parent decl must be fully resolved in order to resolve any members
+      //  of it.
+      assert(parentDecl->resolvedness == DeclResolvedness::fullyResolved);
       selfType = parentDecl->getSelfType();
     }
 
   // __new__ and similar methods are implicitly static.
   if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
     op.setIsStaticAttr(mlir::UnitAttr::get(shared.getContext()));
-
-  // If this is an instance method, enforce that self is declared correctly.
-  if (selfType && !op.getIsStatic()) {
-    // If there are no arguments, install an implicit by-val self argument.
-    if (args.empty()) {
-      // FIXME: This isn't correct, Python allows these as 'static' methods that
-      // don't take a self parameter, e.g.:
-      // class C:
-      //   def f(): print("hello")
-      // C.f()
-      args.push_back(
-          {decl.getCursor().getToken().getLoc(), ValueInputConvention::ByVal,
-           StringAttr::get(shared.getContext(), "self"), /*typeExpr*/ nullptr,
-           /*initPtr*/ nullptr});
-    }
-  }
 
   // Type check all arguments, figuring out a type to use for them (incl
   // possibly an error type).
@@ -539,6 +520,11 @@ static ParseResult resolveFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
       !selfType)
     return op->emitError("special function must be a method");
 
+  // Verify the operand count lines up.
+  if (fnInfo.numOperands != -1 && size_t(fnInfo.numOperands) != args.size())
+    return op->emitError("special function must have ")
+           << fnInfo.numOperands << " operand" << plural(fnInfo.numOperands);
+
   // Check other invariants based on method flags.
   if (fnInfo.flags & SpecialFunctionInfo::kInstMethod) {
     auto convent = fnInfo.isByRefSelfInstMethod() ? ValueInputConvention::ByRef
@@ -547,19 +533,16 @@ static ParseResult resolveFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
       return op->emitError("special function must be a method");
     if (op.getIsStatic())
       return op->emitError("special method may not be a static method");
+    if (args.empty())
+      return op->emitError("self argument must be present in instance method");
 
-    // TODO: Instead of enforcing byref is specified correctly, we could reject
-    // invalid explicit settings and default it correctly.
+    // TODO: Instead of enforcing byref is specified correctly, we
+    // could reject invalid explicit settings and default it correctly.
     if (convent != args[0].convention)
       return op->emitError("self argument must ")
              << (convent == ValueInputConvention::ByRef ? "" : "not ")
              << "be passed by reference";
   }
-
-  // Verify the operand count lines up.
-  if (fnInfo.numOperands != -1 && size_t(fnInfo.numOperands) != args.size())
-    return op->emitError("special function must have ")
-           << fnInfo.numOperands << " operand" << plural(fnInfo.numOperands);
 
   switch (fnInfo.kind) {
   default:
@@ -659,11 +642,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   }
 
   // Handle function effects.
-  SmallVector<int8_t> conventions;
-  conventions.push_back(int8_t(FnEffects::None)); // TODO: Throws/Async.
-
   SmallVector<Location> argLocs;
   SmallVector<StringAttr> argNames;
+  SmallVector<int8_t> conventions;
+  conventions.push_back(int8_t(FnEffects::None)); // TODO: Throws/Async.
   for (auto &arg : args) {
     argLocs.push_back(p.translateLocation(arg.loc));
     argNames.push_back(arg.name);
