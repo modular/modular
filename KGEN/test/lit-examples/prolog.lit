@@ -173,7 +173,7 @@ struct Int:
 
   # CHECK-LABEL: lit.func @__iadd__(
   # CHECK-SAME: %self: !pop.pointer<@Int>, %rhs: !kgen.declref<@Int>) -> !kgen.declref<@Int>
-  # CHECK-SAME: conventions<byref> {
+  # CHECK-SAME: conventions<none, byref> {
   fn __iadd__(self&, rhs: Int) -> Int:
     # CHECK: %0 = pop.load %self : !pop.pointer<@Int>
     # CHECK: %1 = kgen.call @Int::@__add__(%0, %rhs) : (!kgen.declref<@Int>, !kgen.declref<@Int>) -> !kgen.declref<@Int>

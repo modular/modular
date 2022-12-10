@@ -73,4 +73,27 @@ def KGEN_InputGenKindAttr : I32EnumAttr<"InputGenKind", "Input Generation Kind",
   let genSpecializedAttr = 0;
 }
 
+//===----------------------------------------------------------------------===//
+// Conventions
+//===----------------------------------------------------------------------===//
+
+/// This describes the encoding of the value parameter conventions in a
+/// SignatureType.
+def KGEN_ValueInputConvention : I8BitEnumAttr<"ValueInputConvention",
+    "Function value input convention", [
+  I8BitEnumAttrCaseNone<"ByVal", "byval">,
+  I8BitEnumAttrCaseBit<"ByRef", 0, "byref">
+]> {
+  let cppNamespace = "M::KGEN";
+}
+
+/// This describes the encoding of the function effects in a SignatureType.
+def KGEN_FnEffects : I8BitEnumAttr<"FnEffects", "Function effects", [
+  I8BitEnumAttrCaseNone<"None", "none">,
+  I8BitEnumAttrCaseBit<"Throws", 0, "throws">,
+  // I8BitEnumAttrCaseBit<"Async", 1, "async">,
+]> {
+  let cppNamespace = "M::KGEN";
+}
+
 #endif // KGENENUMS_TD
