@@ -316,8 +316,7 @@ emitCallableDeclMember(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
 
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a contextual type
-  // available and an insertion point.  Note that there will never be a
-  /// contextual type in a `fn`, only a `def`.
+  // available and an insertion point.
   if (lookup.kind == ExprEmitter::LookupResult::kFailure && contextualType &&
       emitter.varDeclCursor) {
     // Introduce a new lit.var.decl node whose type matches the
@@ -346,6 +345,20 @@ emitCallableDeclMember(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
       varDecl->moveBefore(emitter.builder->getInsertionBlock(),
                           emitter.builder->getInsertionPoint());
       return {{AnyValue(LValue(varDecl.getResult())), node}};
+    }
+
+    // By policy in order to produce a more predictable programming model,
+    // implicit declarations of variables are only allowed in `def` contexts,
+    // not in `fn`, structs, or top level.  We could re-evaluate this in the
+    // future if we'd like.
+    auto funcContext =
+        dyn_cast_or_null<LIT::FuncOp>(emitter.declScope.getIfOperation());
+    if (!funcContext || !funcContext.getIsDef()) {
+      auto diag = emitter.emitError(node->getLoc())
+                  << "use of unknown declaration \"" << memberName << '"';
+      if (funcContext)
+        diag << ", `fn` declarations require explicit variable declarations";
+      return {};
     }
 
     // In a normal implicit declaration, we add it to the name table so
@@ -1587,17 +1600,9 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     if (!rhsRep)
       return {};
 
-    // If this variable is being declared in a `def` definition, then we allow
-    // implicit declarations of variables.  In `fn` and top level, we do not.
-    ASTType lhsContextualType;
-    if (auto funcContext =
-            dyn_cast_or_null<LIT::FuncOp>(emitter.declScope.getIfOperation())) {
-      if (funcContext.getIsDef())
-        lhsContextualType = rhsRep.getType();
-    }
-
-    // Emit the LHS pattern as an lvalue.
-    auto lhsLV = emitter.emitLValue(lhs, lhsContextualType,
+    // Emit the LHS pattern as an lvalue.  Pass in the RHS's type as the
+    // contextual type in case we need to implicitly declare a variable.
+    auto lhsLV = emitter.emitLValue(lhs, rhsRep.getType(),
                                     "cannot assign to immutable expression");
     if (!lhsLV)
       return {};

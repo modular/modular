@@ -129,8 +129,9 @@ def var_decls():
 
 
 # CHECK-LABEL: lit.func @patterns()
-def patterns():
+fn patterns():
   # CHECK: %z2 = lit.var.decl "z2" : <index>
+  var z2: __mlir_type.index
 
   (((z2))) = 42  # Paren patterns
   # CHECK: [[TMP:%.*]] = index.constant 42
