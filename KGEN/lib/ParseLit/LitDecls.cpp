@@ -387,7 +387,7 @@ struct ParsedMetaSignature {
     // each other.
     for (ASTDecl *paramDecl : parsedInputs) {
       (void)resolver.resolve(*paramDecl, DeclResolvedness::fullyResolved,
-                             decl.getLoc());
+                             paramDecl->getLoc());
       auto resolvedParam =
           cast<ParamDeclRefAttr>(cast<MValue>(paramDecl->getIRValue()).get());
       result.push_back(

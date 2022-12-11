@@ -93,8 +93,8 @@ struct Rec[param: # expected-note {{previously used here}}
   pass
 
 struct ParametricOnInt[a: Int]:
-fn Rec2[ # expected-note {{previously used here}}
-  a: ParametricOnInt[b],
+fn Rec2[
+  a: ParametricOnInt[b], # expected-note {{previously used here}}
   b: ParametricOnInt[a]](): # expected-error {{recursive reference to declaration}}
   pass
 
