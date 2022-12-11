@@ -667,10 +667,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  // TODO: Move after argument parsing.
-  SmallVector<ParamDeclAttr> inputParamDecls =
-      metaSignature.getResolvedInputParamDecls(*this);
-
   if (!p.consumeIf(LitToken::r_paren)) {
     if (p.parseCommaSeparatedList(
             [&]() {
@@ -682,26 +678,34 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   }
 
   // Parse the result type if present.
-
-  // TODO: This will be one difference between a def and fn: no result type on
-  // a def should default to returning a (default initialized) Object, whereas
-  // a fn can return void.  We can provide a guaranteed optimization to remove
-  // it though.
-  ASTType resultType;
+  ExprNode *resultTypeExpr = nullptr;
   if (p.consumeIf(LitToken::minus_greater)) {
-    if (p.parseType(resultType, decl, None))
+    if (p.parseExpression(resultTypeExpr, None))
       return failure();
-  } else {
+  }
+  if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
+    return failure();
+
+  // Now that the full signature has been parsed, resolve the meta signature,
+  // arguments types, and result type.
+  SmallVector<ParamDeclAttr> inputParamDecls =
+      metaSignature.getResolvedInputParamDecls(*this);
+
+  ASTType resultType;
+  if (!resultTypeExpr) {
+    // TODO: This will be one difference between a def and fn: no result type on
+    // a def should default to returning a (default initialized) Object, whereas
+    // a fn can return void.
     resultType = sharedState.getNoneType();
+  } else {
+    resultType =
+        ExprEmitter(sharedState, decl, None, nullptr).emitType(resultTypeExpr);
   }
 
   // If the method can raise an exception, wrap the result type in a variant
   // with the error type.
   if (funcOp.getRaises())
     resultType = sharedState.getErrorOrType(resultType);
-
-  if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
-    return failure();
 
   // Verify that methods and functions like __add__ have the right signature,
   // and adjust them if there are implicit declarations.
