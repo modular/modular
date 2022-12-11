@@ -28,6 +28,23 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+namespace llvm {
+// Allow (dynamic)casting ASTDecl to ParamDeclRefAttr
+template <>
+struct CastInfo<ParamDeclRefAttr, LIT::ASTDecl>
+    : public NullableValueCastFailed<ParamDeclRefAttr>,
+      public DefaultDoCastIfPossible<ParamDeclRefAttr, ASTDecl &,
+                                     CastInfo<ParamDeclRefAttr, ASTDecl>> {
+  static bool isPossible(ASTDecl &decl) {
+    auto mValue = dyn_cast<MValue>(decl.getIRValue());
+    return mValue && isa<ParamDeclRefAttr>(mValue.get());
+  }
+  static ParamDeclRefAttr doCast(ASTDecl &decl) {
+    return cast<ParamDeclRefAttr>(cast<MValue>(decl.getIRValue()).get());
+  }
+};
+} // namespace llvm
+
 //===----------------------------------------------------------------------===//
 // ASTDecl
 //===----------------------------------------------------------------------===//
@@ -239,6 +256,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             .attachNote(
                 sharedState.translateLocation(declsCurrentlyProcessing[&decl]))
         << "previously used here";
+    decl.hasReferenceError = true;
     return failure();
   }
 
@@ -250,7 +268,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
         .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, VarDeclOp,
-              ParamDeclareOp>([&](auto op) {
+              ParamDeclareOp, ParamDeclRefAttr>([&](auto op) {
           LitLexer lexer(sharedState, decl.getCursor());
 
           // Resolve the signature: on a parse error, we note that the decl
@@ -274,7 +292,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
         .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, VarDeclOp,
-              ParamDeclareOp>([&](auto op) {
+              ParamDeclareOp, ParamDeclRefAttr>([&](auto op) {
           // Parse the body of the declaration from the correct point.
           LitLexer lexer(sharedState, decl.getCursor());
           if (resolveBody(op, lexer, decl))
@@ -307,7 +325,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 }
 
 //===----------------------------------------------------------------------===//
-// Function Decl implementation
+// Meta signature implementation
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -315,24 +333,42 @@ namespace {
 /// meta_signature    ::= "[" [meta_param_list] "]"
 /// meta_param_list   ::= identifier_opt_type ("," identifier_opt_type)
 struct ParsedMetaSignature {
-  // Each parameter consists of a name, type as an expression, and location.
-  SmallVector<std::tuple<StringAttr, ExprNode *, SMLoc>> parsedInputs;
-  SmallVector<ParamDeclAttr> paramDecls;
+  /// This is the function or struct that we're parsing the meta signature for.
+  ASTDecl &decl;
+  /// These are the parsed input parameters.
+  SmallVector<ASTDecl *> parsedInputs;
 
-  ParseResult parseOptionalMetaSignature(LitParserBase &p, ASTDecl &decl) {
+  ParsedMetaSignature(ASTDecl &decl) : decl(decl) {}
+
+  /// If this declaration has a parameter signature, parse it and install the
+  /// prototypes into the
+  ParseResult parseOptionalMetaSignature(LitParserBase &p) {
     if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
       return success();
+
+    auto &declResolver = p.getDeclResolver();
 
     auto parseMetaParameter = [&]() -> ParseResult {
       auto loc = p.getToken().getLoc();
       StringAttr name;
-      ExprNode *typeExpr;
+      LitLexerCursor typeStartCursor, typeEndCursor;
+      ExprNode *typeExpr; // Unused, because we reparse this.
       if (p.parseIdentifier(name, "expected parameter name") ||
           p.parseToken(LitToken::colon,
                        "meta parameters always require a type") ||
-          p.parseExpression(typeExpr, None))
+          p.getCursor(typeStartCursor) || p.parseExpression(typeExpr, None) ||
+          p.getCursor(typeEndCursor))
         return failure();
-      parsedInputs.push_back({name, typeExpr, loc});
+
+      // Even though we parsed the type expression, we cannot just bind it.  It
+      // could have forward references to other parameters, and the declaration
+      // we're parsing into isn't fully resolved yet.  Instead, add the decls
+      // with unresolved values.
+      auto tmpDecl =
+          ParamDeclRefAttr::get(name, UnresolvedType::get(p.getContext()));
+      ASTDecl &paramDecl = declResolver.addDecl(
+          MValue(tmpDecl), loc, name, &decl, typeStartCursor, typeEndCursor, 0);
+      parsedInputs.push_back(&paramDecl);
       return success();
     };
 
@@ -342,26 +378,58 @@ struct ParsedMetaSignature {
     return success();
   }
 
-  /// Add ASTDecl objects for each declared parameter and insert them into the
-  /// specified scope for the declaration, so name lookup will find them.
-  void addToScope(LitSharedState &sharedState, ASTDecl &decl) {
-    auto &declResolver = *sharedState.declResolver;
-    ExprEmitter typeEmitter(sharedState, decl, None, nullptr);
-
-    for (auto [name, typeExpr, loc] : parsedInputs) {
-      // TODO: Refactor this.
-      Type type = typeEmitter.emitType(typeExpr);
-      // FIXME: If the type was an error we can install an erroneous decl?
-      if (!type)
-        continue;
-
-      auto paramRef = ParamDeclRefAttr::get(name, type);
-      declResolver.addFullyResolvedDecl(MValue(paramRef), name, loc, &decl);
-      paramDecls.push_back(ParamDeclAttr::get(name, type));
+  /// Given a parsed parameter signature, resolve the types of each of them,
+  /// which can of course be recursively referenced.
+  SmallVector<ParamDeclAttr>
+  getResolvedInputParamDecls(DeclResolver &resolver) {
+    SmallVector<ParamDeclAttr> result;
+    // Force resolve all of the declarations, which could be recursive w.r.t.
+    // each other.
+    for (ASTDecl *paramDecl : parsedInputs) {
+      (void)resolver.resolve(*paramDecl, DeclResolvedness::fullyResolved,
+                             decl.getLoc());
+      auto resolvedParam =
+          cast<ParamDeclRefAttr>(cast<MValue>(paramDecl->getIRValue()).get());
+      result.push_back(
+          ParamDeclAttr::get(resolvedParam.getName(), resolvedParam.getType()));
     }
+
+    return result;
   }
 };
 } // namespace
+
+//===----------------------------------------------------------------------===//
+// Meta Parameter Decl implementation
+//===----------------------------------------------------------------------===//
+
+LogicalResult DeclResolver::resolveSignature(ParamDeclRefAttr paramDeclRef,
+                                             LitLexer &lexer, ASTDecl &decl) {
+  LitParserBase p(lexer);
+  ExprNode *typeExpr;
+  if (p.parseExpression(typeExpr, None))
+    return failure(); // Should never happen, we already checked this.
+
+  // Emit the type.
+  ExprEmitter emitter(sharedState, *decl.getParentDecl(), /*builder*/ {},
+                      /*varDeclCursor*/ nullptr);
+  // This always succeeds, reporting an error and returning erroneous on
+  // failure.
+  Type type = emitter.emitType(typeExpr);
+
+  // Update the value to the newly resolved type.
+  decl.irValue = MValue(ParamDeclRefAttr::get(paramDeclRef.getName(), type));
+  return success(!isa<TypeCheckErrorType>(type));
+}
+
+ParseResult DeclResolver::resolveBody(ParamDeclRefAttr paramDeclRef,
+                                      LitLexer &lexer, ASTDecl &decl) {
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Function Decl implementation
+//===----------------------------------------------------------------------===//
 
 namespace {
 /// Parsing support for a function argument:
@@ -452,7 +520,6 @@ const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
 /// This returns failure (after emitting an error) when a type checking problem
 /// is detected.
 static ParseResult resolveFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
-                                            ParsedMetaSignature &metaSignature,
                                             SmallVector<ParsedArgument> &args,
                                             SmallVectorImpl<Type> &argTypes,
                                             ASTType &resultType,
@@ -575,12 +642,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
 
-  ParsedMetaSignature metaSignature;
-  SmallVector<ParsedArgument> args;
-  if (metaSignature.parseOptionalMetaSignature(p, decl) ||
-      p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
-    return failure();
-
   // Add meta parameters from an enclosing declaration to the symbol table.
   // These are /in/ our current scope because we do not want name conflicts with
   // them and they are instance (not type-level) values.
@@ -593,11 +654,22 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     }
   }
 
-  // Add the meta parameters to the symbol table.  We add all of these after
-  // generic signature parsing so types used in the signature list resolve to
-  // enclosing scopes, and we add them before the value signature list so the
-  // types and parameters can resolve to the bound values.
-  metaSignature.addToScope(sharedState, decl);
+  // Parse declared meta parameters and add them to the current scope.
+  ParsedMetaSignature metaSignature(decl);
+  SmallVector<ParsedArgument> args;
+
+  if (metaSignature.parseOptionalMetaSignature(p) ||
+      p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
+    return failure();
+
+  // Add the meta parameters to the symbol table, and resolve their types.  We
+  // add all of these after generic signature parsing so types used in the
+  // signature list resolve to enclosing scopes, and we add them before the
+  // value signature list so the types and parameters can resolve to the bound
+  // values.
+  // TODO: Move after argument parsing.
+  SmallVector<ParamDeclAttr> inputParamDecls =
+      metaSignature.getResolvedInputParamDecls(*this);
 
   if (!p.consumeIf(LitToken::r_paren)) {
     if (p.parseCommaSeparatedList(
@@ -634,8 +706,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // Verify that methods and functions like __add__ have the right signature,
   // and adjust them if there are implicit declarations.
   SmallVector<Type> argTypes;
-  if (resolveFunctionSignature(decl, funcOp, metaSignature, args, argTypes,
-                               resultType, sharedState)) {
+  if (resolveFunctionSignature(decl, funcOp, args, argTypes, resultType,
+                               sharedState)) {
     // If the function wasn't type checked correctly, uses of it may be
     // broken.
     decl.hasReferenceError = true;
@@ -655,7 +727,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   auto builder = decl.getDeclEndBuilder();
   funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(argNames));
   funcOp.setSignature(SignatureType::get(
-      builder.getAttr<ParamDeclArrayAttr>(metaSignature.paramDecls),
+      builder.getAttr<ParamDeclArrayAttr>(inputParamDecls),
       builder.getAttr<TypeArrayAttr>(
           /*TODO: result params*/ ArrayRef<Type>()),
       builder.getFunctionType(argTypes, {resultType.mlirType}),
@@ -858,7 +930,8 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
     ExprEmitter emitter(sharedState, parentDecl, /*builder*/ {},
                         /*varDeclCursor*/ nullptr);
 
-    auto rhsValue = emitter.emitMValue(initValue, "xxx constant hot");
+    auto rhsValue =
+        emitter.emitMValue(initValue, "expected meta parameter value");
     if (!rhsValue)
       return failure();
 
@@ -909,15 +982,16 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
 
-  ParsedMetaSignature metaSignature;
-  if (metaSignature.parseOptionalMetaSignature(p, decl) ||
+  ParsedMetaSignature metaSignature(decl);
+  if (metaSignature.parseOptionalMetaSignature(p) ||
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
     return failure();
 
-  // Add the meta parameters to the struct's symbol table.
-  metaSignature.addToScope(sharedState, decl);
+  // Resolve the meta parameters and get their decls.
+  SmallVector<ParamDeclAttr> inputParamDecls =
+      metaSignature.getResolvedInputParamDecls(*this);
 
-  structOp.setInputParamDecls(metaSignature.paramDecls);
+  structOp.setInputParamDecls(inputParamDecls);
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.

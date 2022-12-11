@@ -50,7 +50,7 @@ fn missing_ret_val() -> __mlir_type.index:
 fn ret_type_mismatch() -> __mlir_type.index:
   return 4.0 # expected-error {{returned value has type '__mlir_type.f64' but 'def' expected '__mlir_type.index'}}
 
-def meta_param_then_param_redef[
+fn meta_param_then_param_redef[
       dt: __mlir_type.index # expected-note {{previous definition here}}
     ](dt: __mlir_type.index):    # expected-error {{invalid redefinition of "dt"}}
   pass
@@ -91,6 +91,13 @@ struct Rec[param: # expected-note {{previously used here}}
                 Rec  # expected-error {{recursive reference to declaration}}
            ]:
   pass
+
+struct ParametricOnInt[a: Int]:
+fn Rec2[ # expected-note {{previously used here}}
+  a: ParametricOnInt[b],
+  b: ParametricOnInt[a]](): # expected-error {{recursive reference to declaration}}
+  pass
+
 
 def missing_type_on_var_decl():
   var abc :

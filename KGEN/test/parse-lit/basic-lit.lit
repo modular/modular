@@ -55,6 +55,17 @@ struct EmptyStruct:
 struct OneLineStruct[size: Int]: pass; pass
 # CHECK-NEXT: }
 
+# Show that forward references of parameter names can be correctly resolved.
+#
+# CHECK-LABEL: lit.func @paramResolution<
+# CHECK-SAME: size1: !kgen.declref<@Int>,
+# CHECK-SAME: a: !kgen.declref<@OneLineStruct<size: !kgen.declref<@Int> = size1>>,
+# CHECK-SAME: b: !kgen.declref<@OneLineStruct<size: !kgen.declref<@Int> = size2>>,
+# CHECK-SAME:  size2: !kgen.declref<@Int>>()
+fn paramResolution[size1: Int, a: OneLineStruct[size1],
+                   b: OneLineStruct[size2], size2: Int]():
+  pass
+
 # CHECK-LABEL: kgen.struct.decl @StructExample {
 struct StructExample:
   fn __new__() -> StructExample:
@@ -91,7 +102,6 @@ fn simpleMath(a: Int, b: Int) -> Int:
   # CHECK: %1 = kgen.call @Int::@__add__(%a, %0)
   # CHECK: kgen.return %1 : !kgen.declref<@Int>
   return a+b*a
-
 
 # CHECK-LABEL: kgen.struct.decl @Pair<dt: !kgen.declref<@DType>> {
 struct Pair[dt: DType]:
