@@ -70,6 +70,20 @@ public:
     return getSharedState().translateLocation(loc);
   }
 
+  /// Capture the location of the current token in a convenient way that can be
+  /// used in parsing pipelines.
+  ParseResult getLocation(SMLoc &result) {
+    result = getToken().getLoc();
+    return success();
+  }
+
+  /// This returns the current lexor cursor and succeeds, so it can be used in a
+  /// parser pipeline.
+  ParseResult getCursor(LitLexerCursor &cursor) const {
+    cursor = lexer.getCursor();
+    return success();
+  }
+
   //===--------------------------------------------------------------------===//
   // Token Parsing
   //===--------------------------------------------------------------------===//
@@ -106,13 +120,6 @@ public:
     assert(consumedToken.is(kind) && "consumed an unexpected token");
     consumeToken();
     return consumedToken;
-  }
-
-  /// Capture the location of the current token in a convenient way that can be
-  /// used in parsing pipelines.
-  ParseResult getLocation(SMLoc &result) {
-    result = getToken().getLoc();
-    return success();
   }
 
   /// Consume the specified token if present and return success.  On failure,

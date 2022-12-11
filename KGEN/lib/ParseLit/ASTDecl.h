@@ -206,6 +206,7 @@ struct CastInfo<T, const M::KGEN::LIT::ASTDecl>
     : public ConstStrippingForwardingCast<T, const M::KGEN::LIT::ASTDecl,
                                           CastInfo<T, M::KGEN::LIT::ASTDecl>> {
 };
+
 } // namespace llvm
 
 #endif // LIT_DECL_AST_H
