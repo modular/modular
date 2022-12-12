@@ -22,7 +22,7 @@ lit.func @return_raise_or(%cond: i1, %err: !kgen.declref<@Error>) -> !pop.varian
 }
 
 // CHECK-LABEL: @unwrap_or_propagate
-lit.func @unwrap_or_propagate(%cond: i1, %err: !kgen.declref<@Error>) -> !pop.variant<@Error, index> {
+lit.func @unwrap_or_propagate(%cond: i1, %err: !kgen.declref<@Error>) throws -> !pop.variant<@Error, index> {
   // CHECK: %[[WRAPPED:.*]] = kgen.call @return_raise_or
   // CHECK-SAME: -> !pop.variant<@Error, !kgen.list<i1[0]>>
   %0 = kgen.call @return_raise_or(%cond, %err) : (i1, !kgen.declref<@Error>) -> !pop.variant<@Error, !lit.none>

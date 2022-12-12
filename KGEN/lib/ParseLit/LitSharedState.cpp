@@ -110,21 +110,20 @@ ASTType LitSharedState::getErrorOrType(ASTType valueType) const {
 
 /// Add declarations for magic things to the builtins decl.
 void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
-  auto &resolver = *declResolver;
+  DeclResolver &resolver = *declResolver;
 
   // Add a declarations for builtin types.
-  impl->noneType = KGEN::LIT::NoneType::get(context);
+  impl->noneType = LIT::NoneType::get(context);
 
   // Make the type check error type.  Anything that references this will
   // considering it erroneous and already declared as such.
   impl->typeCheckErrorType = TypeCheckErrorType::get(context);
 
   // The builtin error type always references the library `Error` type.
-  impl->errorType =
-      DeclRefType::get(FlatSymbolRefAttr::get(getContext(), "Error"));
+  impl->errorType = LIT::getLibraryErrorType(context);
 
-  auto b = builtinsDecl.getDeclEndBuilder();
-  auto loc = translateLocation(builtinsDecl.getLoc());
+  OpBuilder b = builtinsDecl.getDeclEndBuilder();
+  Location loc = translateLocation(builtinsDecl.getLoc());
 
   // Add an empty struct with the specified name to the resolver.
   auto addEmptyStructDecl = [&](StringRef name, ASTDecl *&decl) {

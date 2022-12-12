@@ -1009,3 +1009,18 @@ kgen.generator @target_params2<t0: target>()
 kgen.func @conventions(%arg0: !pop.pointer<index> byref) {
   kgen.return
 }
+
+// -----
+
+// expected-error @below {{custom op 'kgen.generator' a function that throws should have 1 result}}
+kgen.generator @throws() throws {
+  kgen.return
+}
+
+// -----
+
+// expected-error @below {{custom op 'kgen.generator' a function that throws should return a variant of two types}}
+kgen.generator @throws() throws -> index {
+  %0 = index.constant 0
+  kgen.return %0 : index
+}

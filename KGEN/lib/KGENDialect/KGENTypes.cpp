@@ -278,6 +278,17 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                          << " must have pointer type to have byref convention";
     ++argNo;
   }
+
+  // If the function throws an error, make sure the result type is a variant of
+  // two types.
+  if (conventions.getFnEffects() == FnEffects::Throws) {
+    if (values.getNumResults() != 1)
+      return emitError() << "a function that throws should have 1 result";
+    auto errorOrType = llvm::dyn_cast<POP::VariantType>(values.getResult(0));
+    if (!errorOrType || errorOrType.getTypes().size() != 2)
+      return emitError()
+             << "a function that throws should return a variant of two types";
+  }
   return success();
 }
 

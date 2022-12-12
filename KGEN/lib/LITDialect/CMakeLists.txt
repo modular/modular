@@ -6,6 +6,7 @@
 
 add_modular_dialect_library(LITDialect
   LITDialect.cpp
+  LITTypes.cpp
   LITOps.cpp
 
   ADDITIONAL_HEADER_DIRS
