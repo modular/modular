@@ -229,7 +229,7 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   if (parent) {
     collectParameterReferences(cond, parameterRefs);
     ArrayRef<ParamDeclAttr> generatorInputParams =
-        parent.getInputParamDeclsAttr().getValue();
+        parent.getInputParamDeclsAttr();
 
     // Check to see if the parameters referenced by the condition are all
     // defined by the generator.  If so, we can fold this into the constraint
