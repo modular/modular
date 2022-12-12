@@ -743,22 +743,23 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // Handle function effects.
   SmallVector<Location> argLocs;
   SmallVector<StringAttr> argNames;
-  SmallVector<int8_t> conventions;
-  conventions.push_back(int8_t(FnEffects::None)); // TODO: Throws/Async.
-  for (auto &arg : args) {
+  SmallVector<ValueInputConvention> inputConventions;
+  for (const ParsedArgument &arg : args) {
     argLocs.push_back(p.translateLocation(arg.loc));
     argNames.push_back(arg.name);
-    conventions.push_back(int8_t(arg.convention));
+    inputConventions.push_back(arg.convention);
   }
 
-  auto builder = decl.getDeclEndBuilder();
+  OpBuilder builder = decl.getDeclEndBuilder();
   funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(argNames));
   funcOp.setSignature(SignatureType::get(
       builder.getAttr<ParamDeclArrayAttr>(inputParamDecls),
       builder.getAttr<TypeArrayAttr>(
           /*TODO: result params*/ ArrayRef<Type>()),
       builder.getFunctionType(argTypes, {resultType.mlirType}),
-      builder.getAttr<DenseI8ArrayAttr>(conventions)));
+      builder.getAttr<ConventionsAttr>(inputConventions,
+                                       funcOp.getRaises() ? FnEffects::Throws
+                                                          : FnEffects::None)));
   funcOp.getBody()->addArguments(argTypes, argLocs);
 
   if (FlatSymbolRefAttr implementsAttr = funcOp.getImplementsAttr()) {

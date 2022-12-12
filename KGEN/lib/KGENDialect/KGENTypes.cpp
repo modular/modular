@@ -94,7 +94,7 @@ Type ListType::getResolvedElementType() const {
 SignatureType SignatureType::get(ParamDeclArrayAttr inputParams,
                                  TypeArrayAttr resultParamTypes,
                                  FunctionType values,
-                                 DenseI8ArrayAttr conventions) {
+                                 ConventionsAttr conventions) {
   auto *context = values.getContext();
   if (!inputParams)
     inputParams = ParamDeclArrayAttr::get(context, {});
@@ -102,8 +102,9 @@ SignatureType SignatureType::get(ParamDeclArrayAttr inputParams,
     resultParamTypes = TypeArrayAttr::get(context, {});
   if (!conventions) {
     // Default valueConventions to zero.
-    SmallVector<int8_t> elements(values.getInputs().size() + 1, 0);
-    conventions = DenseI8ArrayAttr::get(context, elements);
+    conventions = ConventionsAttr::get(
+        context, SmallVector<ValueInputConvention>(values.getNumInputs()),
+        FnEffects::None);
   }
 
   return get(context, inputParams, resultParamTypes, values, conventions);
@@ -112,7 +113,7 @@ SignatureType SignatureType::get(ParamDeclArrayAttr inputParams,
 SignatureType SignatureType::get(ParamBindArrayAttr inputParams,
                                  ParamDeclArrayAttr resultParams,
                                  FunctionType values,
-                                 DenseI8ArrayAttr conventions) {
+                                 ConventionsAttr conventions) {
   SmallVector<ParamDeclAttr> inputParamDecls;
   SmallVector<Type> resultParamTypes;
   for (ParamBindAttr inputParam : inputParams)
@@ -240,9 +241,9 @@ SignatureType SignatureType::dropParamValues() {
 static ParseResult
 parseValuesAndOptionalConventions(AsmParser &p,
                                   FailureOr<FunctionType> &valueFnSpec,
-                                  FailureOr<DenseI8ArrayAttr> &conventions) {
+                                  FailureOr<ConventionsAttr> &conventions) {
   SmallVector<Type> inputs, outputs;
-  DenseI8ArrayAttr conv;
+  ConventionsAttr conv;
   if (parseTypesWithConventions(p, inputs, outputs, conv))
     return failure();
   valueFnSpec = p.getBuilder().getFunctionType(inputs, outputs);
@@ -252,7 +253,7 @@ parseValuesAndOptionalConventions(AsmParser &p,
 
 static void printValuesAndOptionalConventions(AsmPrinter &p,
                                               FunctionType valueFnSpec,
-                                              DenseI8ArrayAttr conventions) {
+                                              ConventionsAttr conventions) {
   p << ' ';
   printTypesWithConventions(p.getStream(), valueFnSpec.getInputs(),
                             valueFnSpec.getResults(), conventions);
@@ -262,20 +263,19 @@ LogicalResult
 SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                       ParamDeclArrayAttr inputParams,
                       TypeArrayAttr resultParamTypes, FunctionType values,
-                      DenseI8ArrayAttr conventions) {
+                      ConventionsAttr conventions) {
   // Check we have the right number of conventions.
-  if (conventions.asArrayRef().size() != values.getInputs().size() + 1)
-    return emitError() << "incorrect # of conventions specified";
+  if (conventions.getInputConventions().size() != values.getInputs().size())
+    return emitError() << "incorrect # of input conventions specified";
 
   // Check that any by-ref arguments are pointer type.
   size_t argNo = 0;
   for (auto [argTy, conv] :
-       llvm::zip(values.getInputs(), conventions.asArrayRef().drop_front())) {
-    if (conv == int8_t(ValueInputConvention::ByRef))
-      if (!llvm::isa<POP::PointerType>(argTy))
-        return emitError()
-               << "argument #" << argNo
-               << " must have pointer type to have byref convention";
+       llvm::zip(values.getInputs(), conventions.getInputConventions())) {
+    if (conv == ValueInputConvention::ByRef &&
+        !llvm::isa<POP::PointerType>(argTy))
+      return emitError() << "argument #" << argNo
+                         << " must have pointer type to have byref convention";
     ++argNo;
   }
   return success();

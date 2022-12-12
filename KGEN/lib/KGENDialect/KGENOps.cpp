@@ -644,7 +644,7 @@ static ParseResult parseAddressOfOp(OpAsmParser &p,
                                     Type &resultType) {
   SymbolRefAttr callee;
   ParamBindArrayAttr paramValues;
-  DenseI8ArrayAttr conventions;
+  ConventionsAttr conventions;
   SmallVector<Type> inputs, outputs;
   if (p.parseAttribute(callee) ||
       parseCallOpParams(p, paramValues, paramDecls) || p.parseColon() ||
@@ -689,7 +689,7 @@ parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
             SmallVectorImpl<Type> &resultTypes) {
   SymbolRefAttr callee;
   ParamBindArrayAttr paramValues;
-  DenseI8ArrayAttr conventions;
+  ConventionsAttr conventions;
   if (p.parseAttribute(callee) ||
       parseCallOpParams(p, paramValues, paramDecls) ||
       p.parseOperandList(operands, AsmParser::Delimiter::Paren) ||
@@ -839,7 +839,7 @@ ReturnOp RegionBodyOp::getReturnOp() {
 /// returns null.
 static SignatureType getSignatureFromBody(ParamDeclArrayAttr inputParamDecls,
                                           TypeArrayAttr resultParamTypes,
-                                          DenseI8ArrayAttr conventions,
+                                          ConventionsAttr conventions,
                                           Region &body) {
   if (body.empty() || body.front().empty() ||
       !isa<ReturnOp>(body.front().back()))
@@ -858,7 +858,7 @@ static ParseResult parseRegionBody(OpAsmParser &p, TypeAttr &signature,
   SmallVector<OpAsmParser::Argument> args;
   ParamDeclArrayAttr inputParamDecls;
   TypeArrayAttr resultParamTypes;
-  DenseI8ArrayAttr conventions;
+  ConventionsAttr conventions;
   SmallVector<Type> resultTypes;
   llvm::SMLoc bodyLoc;
   if (parseOptionalParameterSpec(p, inputParamDecls, resultParamTypes) ||
@@ -1007,6 +1007,7 @@ static Type computePartialApplyResultType(Optional<Location> loc,
   seenInputs.reserve(boundInputs.size());
   ArrayRef<Type> argumentTypes = origSignature.getValueInputs();
   SmallVector<Type> newInputTypes;
+  SmallVector<ValueInputConvention> newInputConventions;
   unsigned lastIdx = 0;
   for (auto [input, index] : llvm::zip(inputs, boundInputs)) {
     if (index >= static_cast<int64_t>(argumentTypes.size()))
@@ -1017,11 +1018,17 @@ static Type computePartialApplyResultType(Optional<Location> loc,
       return emitError("input bound to argument #" + Twine(index) +
                        " is incorrect");
     // Pick the types of arguments that aren't bound.
-    while (lastIdx++ < index)
+    while (lastIdx++ < index) {
       newInputTypes.push_back(argumentTypes[lastIdx - 1]);
+      newInputConventions.push_back(
+          origSignature.getValueInputConventions()[lastIdx - 1]);
+    }
   }
-  for (; lastIdx < argumentTypes.size(); ++lastIdx)
+  for (; lastIdx < argumentTypes.size(); ++lastIdx) {
     newInputTypes.push_back(argumentTypes[lastIdx]);
+    newInputConventions.push_back(
+        origSignature.getValueInputConventions()[lastIdx]);
+  }
 
   assert(newInputTypes.size() == argumentTypes.size() - boundInputs.size());
 
@@ -1029,16 +1036,10 @@ static Type computePartialApplyResultType(Optional<Location> loc,
   auto resultFnType = FunctionType::get(context, newInputTypes,
                                         origSignature.getValueResults());
 
-  // Bring over the function effect and the right number of param results.
-  SmallVector<int8_t> newConventions;
-  newConventions.push_back(origSignature.getConventions()[0]);
-  llvm::append_range(newConventions,
-                     origSignature.getConventions().asArrayRef().take_back(
-                         newInputTypes.size()));
-
   return SignatureType::get(origSignature.getInputParams(),
                             origSignature.getResultParamTypes(), resultFnType,
-                            DenseI8ArrayAttr::get(context, newConventions));
+                            ConventionsAttr::get(context, newInputConventions,
+                                                 origSignature.getFnEffects()));
 }
 
 LogicalResult PartialApplyOp::inferReturnTypes(
@@ -1708,7 +1709,7 @@ parseIterate(OpAsmParser &p,
   b.setInsertionPointToStart(&body.front());
 
   // TODO: Does this beast need to support conventions?
-  DenseI8ArrayAttr conventions;
+  ConventionsAttr conventions;
   auto signatureType = getSignatureFromBody(
       b.getAttr<ParamDeclArrayAttr>(params),
       b.getAttr<TypeArrayAttr>(ArrayRef<Type>()), conventions, regionBody);

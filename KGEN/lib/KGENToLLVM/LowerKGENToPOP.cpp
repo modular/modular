@@ -210,10 +210,11 @@ expandListsInStruct(POP::StructType structType, int64_t index = 0) {
 /// Given a type range, expand any members and return the expanded result.  If
 /// the conventions pointer is non-null, it is a parallel array that is expanded
 /// in place following the parameter convention approach.
-static SmallVector<Type> expandInList(TypeRange types,
-                                      SmallVector<int8_t> *conventions) {
+static SmallVector<Type>
+expandInList(TypeRange types,
+             SmallVectorImpl<ValueInputConvention> *conventions) {
   SmallVector<Type> results;
-  size_t nextConventionElt = 1; // Elt #0 is FnEffects.
+  size_t nextConventionElt = 0;
   for (Type type : types) {
     auto list = dyn_cast<ListType>(type);
     if (!list) {
@@ -239,8 +240,9 @@ static SmallVector<Type> expandInList(TypeRange types,
 }
 
 /// Expand lists in a function type.
-static FunctionType expandListsInFunc(FunctionType funcType,
-                                      SmallVector<int8_t> *conventions) {
+static FunctionType
+expandListsInFunc(FunctionType funcType,
+                  SmallVectorImpl<ValueInputConvention> *conventions) {
   return FunctionType::get(
       funcType.getContext(), expandInList(funcType.getInputs(), conventions),
       expandInList(funcType.getResults(),
@@ -249,7 +251,8 @@ static FunctionType expandListsInFunc(FunctionType funcType,
 
 /// Expand lists in a function type.
 static SignatureType expandListsInSignature(SignatureType sigType) {
-  SmallVector<int8_t> conventions(sigType.getConventions().asArrayRef());
+  SmallVector<ValueInputConvention> conventions(
+      sigType.getValueInputConventions());
   auto newFn = expandListsInFunc(sigType.getValues(), &conventions);
   if (newFn == sigType.getValues())
     return sigType;
@@ -257,7 +260,8 @@ static SignatureType expandListsInSignature(SignatureType sigType) {
   // TODO: Could expand the meta parameter types as well.
   return SignatureType::get(
       sigType.getInputParams(), sigType.getResultParamTypes(), newFn,
-      DenseI8ArrayAttr::get(sigType.getContext(), conventions));
+      ConventionsAttr::get(sigType.getContext(), conventions,
+                           sigType.getFnEffects()));
 }
 
 /// Convert a list type to an array type of the same length.

@@ -554,6 +554,34 @@ def ConstraintArrayAttr
     : KGEN_ArrayOfAttrsAttr<"ConstraintArray", "constraints", "ConstraintAttr">;
 
 //===----------------------------------------------------------------------===//
+// ConventionsAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_ConventionsAttr : KGENAttr<"Conventions", "conventions"> {
+  let summary = "Function call conventions attribute.";
+  let description = [{
+    The `#kgen.conventions` attribute contains information about function
+    calling conventions. It determines whether function arguments are
+    pass-by-value or pass-by-reference and the effects of the function itself:
+    none or throws.
+
+    Example:
+
+    ```mlir
+    #kgen.conventions<[byval, byref], throws>
+    ```
+  }];
+
+  let parameters = (ins
+    OptionalArrayRefParameter<"ValueInputConvention">:$inputConventions,
+    "FnEffects":$fnEffects
+  );
+  let assemblyFormat = [{
+    `<` `[` (`]`) : ($inputConventions^ `]`)? `,` $fnEffects `>`
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
 
