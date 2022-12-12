@@ -79,56 +79,6 @@ let description = [{
 }
 
 //===----------------------------------------------------------------------===//
-// RaiseErrorOp
-//===----------------------------------------------------------------------===//
-
-def LIT_RaiseErrorOp : LITOp<"raise_error", [Pure]> {
-  let summary = "Form an error value.";
-  let description = [{
-    The `lit.raise_error` operation wraps a `Error` (library type) in a
-    `!lit.raises_or` value that can be returned from a method that is marked as
-    raising.
-
-    Example:
-
-    ```mlir
-    %result = lit.raise_error %err : <@Error> -> <!kgen.declref<@Int>>
-    ```
-  }];
-
-  let arguments = (ins KGEN_DeclRefType:$error);
-  let results = (outs LIT_RaisesOrType:$result);
-
-  let assemblyFormat = "$error attr-dict `:` type($error) `->` type($result)";
-}
-
-//===----------------------------------------------------------------------===//
-// FormValueOp
-//===----------------------------------------------------------------------===//
-
-def LIT_FormValueOp : LITOp<"form_value", [Pure,
-    TypesMatchWith<"value type", "result", "value",
-                   "cast<RaisesOrType>($_self).getType()">]> {
-  let summary = "Wrap a valid method result.";
-  let description = [{
-    The `lit.form_value` operation takes a valid method result value and wraps
-    it in a `!lit.raises_or` value that can be returned from a method that is
-    marked as raising.
-
-    Example:
-
-    ```mlir
-    %result = lit.form_value %value : <!kgen.declref<@Int>>
-    ```
-  }];
-
-  let arguments = (ins AnyType:$value);
-  let results = (outs LIT_RaisesOrType:$result);
-
-  let assemblyFormat = "$value attr-dict `:` type($result)";
-}
-
-//===----------------------------------------------------------------------===//
 // UnwrapOrPropagateOp
 //===----------------------------------------------------------------------===//
 
