@@ -673,6 +673,13 @@ static Attribute simplifyXor(SmallVectorImpl<TypedAttr> &operands) {
       /*identityCst*/ [](auto cst) { return cst.isZero(); });
 }
 
+/// Duplicate the operands in-place for ops like `min` and `max`.
+static void deduplicateOperands(SmallVectorImpl<TypedAttr> &operands) {
+  llvm::SetVector<TypedAttr, SmallVector<TypedAttr>, SmallPtrSet<Attribute, 4>>
+      uniqueOperands(operands.begin(), operands.end());
+  operands = uniqueOperands.takeVector();
+}
+
 /// Returns true if the integer is at its max value.
 static bool intIsMaxValue(Type type, const APInt &value) {
   return isSignedIntType(type) ? value.isMaxSignedValue() : value.isMaxValue();
@@ -684,6 +691,7 @@ static bool intIsMinValue(Type type, const APInt &value) {
 }
 
 static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
+  deduplicateOperands(operands);
   Type type = operands.front().getType();
   return simplifyAssocOp(
       POC::Max, operands, llvm::APIntOps::umax, llvm::APIntOps::smax,
@@ -692,6 +700,7 @@ static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
 }
 
 static Attribute simplifyMin(SmallVectorImpl<TypedAttr> &operands) {
+  deduplicateOperands(operands);
   Type type = operands.front().getType();
   return simplifyAssocOp(
       POC::Min, operands, llvm::APIntOps::umin, llvm::APIntOps::smin,
