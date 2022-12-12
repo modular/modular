@@ -1479,10 +1479,10 @@ LogicalResult ExprFuncAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 /// operation has it, or an empty array otherwise.
 ArrayRef<ParamDeclAttr> KGEN::getParamDecls(Operation *op) {
   if (auto declItf = dyn_cast<DeclInterface>(op))
-    return declItf.getInputParamDeclsAttr().getValue();
+    return declItf.getInputParamDeclsAttr();
   if (auto paramDeclsArray =
           op->getAttrOfType<ParamDeclArrayAttr>("paramDecls"))
-    return paramDeclsArray.getValue();
+    return paramDeclsArray;
   return {};
 }
 
