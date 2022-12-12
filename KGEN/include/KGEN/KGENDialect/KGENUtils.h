@@ -12,22 +12,14 @@
 #ifndef KGEN_KGENDIALECT_KGENUTILS_H
 #define KGEN_KGENDIALECT_KGENUTILS_H
 
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
 
 namespace M::KGEN {
-class ConstraintAttr;
-class ConstraintArrayAttr;
-class ConventionsAttr;
-class ParamBindArrayAttr;
-class ParamDeclAttr;
-class GeneratorInterfaceOp;
-class ParamBindArrayAttr;
-class ParamDeclArrayAttr;
 class FuncInterface;
-class TypeArrayAttr;
-class SignatureType;
+class GeneratorInterfaceOp;
 
 /// Return the string form for an attribute value that is printed in a <>
 /// context in the .mlir file.
@@ -129,7 +121,8 @@ ParseResult parseFunctionSignature(OpAsmParser &p,
                                    SmallVectorImpl<Type> &resultTypes,
                                    ConventionsAttr &conventions);
 void printFunctionSignature(OpAsmPrinter &p, Region &region, TypeRange argTypes,
-                            TypeRange resultTypes, ConventionsAttr conventions);
+                            TypeRange resultTypes, ConventionsAttr conventions,
+                            StringArrayAttr valueParamNames = {});
 
 /// Parse and print a constraint specification if present.
 ParseResult parseOptionalConstraints(OpAsmParser &p,
