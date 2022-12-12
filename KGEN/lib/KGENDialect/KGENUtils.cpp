@@ -1272,6 +1272,11 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   if (opKind == GeneratorOrFuncKind::interface)
     return success();
 
+  // If this is cached, no body block is allowed.
+  Attribute cached = parsedAttributes.get(Cache::getRegionHashAttrName());
+  if (cached)
+    return success();
+
   llvm::SMLoc loc = parser.getCurrentLocation();
   if (parser.parseRegion(*region, entryArgs, /*enableNameShadowing=*/true))
     return failure();

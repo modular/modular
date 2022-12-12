@@ -32,6 +32,18 @@ using namespace M;
 using namespace KGEN;
 using mlir::TypedValue;
 
+/// This checks the arguments of the return op against the result parameters and
+/// the result types iff the body of the op has not been cached.
+template <typename T>
+static LogicalResult checkReturnArguments(T op) {
+  // If we have a return op, then we can check the argument types. Otherwise, we
+  // just don't have the return op.
+  if (ReturnOp r = op.getReturnOp())
+    return r.checkArgumentTypes(op.getResultParamTypes(),
+                                {op.getResultTypes()});
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // custom<ParamConstantOpValue>
 //===----------------------------------------------------------------------===//
@@ -299,7 +311,8 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
 //===----------------------------------------------------------------------===//
 
 ReturnOp GeneratorOp::getReturnOp() {
-  return cast<ReturnOp>(getBody()->getTerminator());
+  return getBodyRegion().empty() ? nullptr
+                                 : cast<ReturnOp>(getBody()->getTerminator());
 }
 
 /// Parses a KGEN Generator.
@@ -312,8 +325,7 @@ void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
 LogicalResult
 GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  if (failed(getReturnOp().checkArgumentTypes(getResultParamTypes(),
-                                              {getResultTypes()})))
+  if (failed(checkReturnArguments(*this)))
     return failure();
 
   // See if the parameter definitions and uses within the generator are
@@ -352,7 +364,8 @@ ArrayRef<Type> GeneratorOp::getCallableResults() {
 //===----------------------------------------------------------------------===//
 
 ReturnOp FuncOp::getReturnOp() {
-  return cast<ReturnOp>(getBody()->getTerminator());
+  return getBodyRegion().empty() ? nullptr
+                                 : cast<ReturnOp>(getBody()->getTerminator());
 }
 
 /// Parses a concrete KGEN func.
@@ -369,8 +382,7 @@ ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &result) {
 void FuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
 LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  if (failed(getReturnOp().checkArgumentTypes(getResultParamTypes(),
-                                              {getResultTypes()})))
+  if (failed(checkReturnArguments(*this)))
     return failure();
 
   // kgen.func's are not allowed to have input parameter lists.
