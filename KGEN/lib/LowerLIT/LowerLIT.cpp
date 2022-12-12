@@ -503,14 +503,6 @@ static void lowerLITOps(LIT::FuncOp func) {
       // Lower a lit.var.decl to pop.stack_allocation.
       b.replaceOpWithNewOp<POP::StackAllocationOp>(varDecl, varDecl.getType(),
                                                    1);
-    } else if (auto raise = dyn_cast<LIT::RaiseErrorOp>(op)) {
-      // Lower a lit.raise_error to pop.variant.create.
-      b.replaceOpWithNewOp<POP::VariantCreateOp>(raise, func.getResultType(),
-                                                 raise.getError());
-    } else if (auto form = dyn_cast<FormValueOp>(op)) {
-      // Lower a lit.form_value to a pop.variant.create.
-      b.replaceOpWithNewOp<POP::VariantCreateOp>(form, func.getResultType(),
-                                                 form.getValue());
     } else if (auto unwrap = dyn_cast<UnwrapOrPropagateOp>(op)) {
       // Lower a lit.unwrap_or_propagate to a conditional.
       Location loc = op->getLoc();
