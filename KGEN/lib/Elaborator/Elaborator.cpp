@@ -627,9 +627,6 @@ private:
                                       ParamDeclArrayAttr decls,
                                       ArrayRef<ParamBindAttr> paramValues);
 
-  /// Process a `kgen.iterate` operation.
-  LogicalResult processIterateOp(IterateOp op);
-
   /// Process a generic operation that does not fit into one of the above types.
   /// Substitute parameters in the operation's attributes and types.
   LogicalResult processGenericOp(Operation *op);
@@ -754,8 +751,6 @@ LogicalResult ParameterRewriter::rewriteOps(
         result = processCallParamOp(call, rewriterWorklist);
       else if (auto call = dyn_cast<InlinedCallOp>(op))
         result = processInlinedCallOp(call, rewriterWorklist);
-      else if (auto it = dyn_cast<IterateOp>(op))
-        result = processIterateOp(it);
       else
         result = processGenericOp(op);
 
@@ -1415,130 +1410,6 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
   // it.
   call->getResults().replaceAllUsesWith(newResults);
   call->erase();
-  return success();
-}
-
-/// Evaluate a concrete signature-type expression with the given input
-/// parameters. Only expression functions are supported at the moment.
-static LogicalResult
-evaluateExpressionFunction(ParameterRewriter &rewriter, Location loc,
-                           SymbolTable *symtab, Attribute func,
-                           ArrayRef<TypedAttr> params,
-                           SmallVectorImpl<TypedAttr> &results) {
-  results.clear();
-  auto exprFunc = dyn_cast<ExprFuncAttr>(func);
-  if (!exprFunc)
-    return rewriter.error(
-        loc, "only expression functions can be compile-time evaluated");
-  ParameterEvaluator funcEvaluator(symtab);
-  for (auto [param, value] : llvm::zip(exprFunc.getInputs(), params))
-    funcEvaluator.setParameterValue(param, value);
-  for (TypedAttr expr : exprFunc.getExprs()) {
-    ErrorOr<Attribute> result = funcEvaluator.concretizeParameterExpr(expr);
-    if (result.isError())
-      return rewriter.error(loc, result.takeError());
-    results.push_back(result.takeValue());
-  }
-  return mlir::success();
-}
-
-LogicalResult ParameterRewriter::processIterateOp(IterateOp op) {
-  // Prepare the iteration.
-  auto region = cast<RegionOpenBodyOp>(op.getBody().front().front());
-  SmallVector<Value> ivs = llvm::to_vector(op.getArguments());
-  ArrayRef<BlockArgument> ivArgs = region.getBody()->getArguments();
-
-  ErrorOr<Attribute> cond =
-      getEvaluator().concretizeParameterExpr(op.getCond());
-  if (cond.isError())
-    return error(op.getLoc(), cond.takeError());
-  ErrorOr<Attribute> next =
-      getEvaluator().concretizeParameterExpr(op.getNext());
-  if (next.isError())
-    return error(op.getLoc(), next.takeError());
-  SmallVector<TypedAttr> params;
-  params.reserve(op.getInit().size());
-  for (TypedAttr init : op.getInit()) {
-    ErrorOr<Attribute> value = getEvaluator().concretizeParameterExpr(init);
-    if (value.isError())
-      return error(op.getLoc(), value.takeError());
-    params.push_back(value.takeValue());
-  }
-
-  SmallVector<TypedAttr, 1> condResult;
-  ReturnOp returnOp = region.getReturnOp();
-  auto noReturnExprs = ParameterExprArrayAttr::get(op.getContext(), {});
-  auto noReturnDecls = ParamDeclArrayAttr::get(op.getContext(), {});
-  mlir::IRRewriter b{OpBuilder(op)};
-  while (true) {
-    // Evaluate the condition. If it's false, stop looping.
-    if (failed(evaluateExpressionFunction(*this, op.getLoc(),
-                                          &analysis->getTopLevelSymbolTable(),
-                                          cond.get(), params, condResult)))
-      return failure();
-    if (!cast<BoolAttr>(condResult.front()).getValue())
-      break;
-
-    // The iterate region does not have result parameters, but push a region
-    // return to indicate to the rewriter to pop a parameter scope. Copy the
-    // current evaluator into a nested evaluator.
-    commandWorklist.push_back(new RegionReturn{op.getLoc(), returnOp.getLoc(),
-                                               noReturnExprs, noReturnDecls});
-    ParameterEvaluator &evaluator = evaluators.emplace_back(evaluators.back());
-
-    // Bind the current parameter values.
-    for (auto [decl, value] : llvm::zip(region.getInputParamDecls(), params))
-      evaluator.setOrOverwriteParameterValue(decl, value);
-
-    // Clone the region inline.
-    BlockAndValueMapping bv;
-    DenseMap<Operation *, Operation *> opMap;
-    for (auto [ivArg, ivValue] : llvm::zip(ivArgs, ivs))
-      bv.map(ivArg, ivValue);
-
-    for (Operation &op : *region.getBody())
-      b.insert(cloneOperation(&op, bv, opMap));
-
-    const ParameterDeclsAndUses *uses = elaborator.lookupNestedUses(region);
-    Optional<ParameterDeclsAndUses> recomputedUses;
-    if (!uses) {
-      recomputedUses.emplace();
-      uses = &recomputedUses.value();
-      // Fold the current parameter scope into the declarations. Make the
-      // region's parent the virtual root.
-      for (auto [name, value] : evaluator.getParameterValues()) {
-        recomputedUses->decls.try_emplace(
-            name, std::make_pair(region->getParentOp(),
-                                 ParamDeclAttr::get(
-                                     name, cast<TypedAttr>(value).getType())));
-      }
-      elaborator.takeNestedParameterUses(recomputedUses->calculate(region));
-    }
-
-    auto remapOp = [&](Operation *op) {
-      if (op == region || op == returnOp)
-        return;
-      commandWorklist.push_back(opMap[op]);
-      assert(commandWorklist.back() &&
-             "operation wasn't cloned over correctly?");
-    };
-    for (Operation *op : uses->constExprOps)
-      remapOp(op);
-    for (auto &[op, _] : llvm::reverse(uses->usersAndDeclarers))
-      remapOp(op);
-
-    auto clonedReturn = cast<ReturnOp>(opMap[returnOp]);
-    ivs = llvm::to_vector(clonedReturn.getOperands());
-    clonedReturn->erase();
-
-    // Evaluate the next parameter values.
-    if (failed(evaluateExpressionFunction(*this, op.getLoc(),
-                                          &analysis->getTopLevelSymbolTable(),
-                                          next.get(), params, params)))
-      return failure();
-  }
-
-  b.replaceOp(op, ivs);
   return success();
 }
 
