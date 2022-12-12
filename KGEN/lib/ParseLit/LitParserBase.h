@@ -205,8 +205,6 @@ public:
   /// Parse an expression, allowing `=`, and `+=`.
   ParseResult parseExpressionOrAssignmentStmt(ExprNode *&expr,
                                               Optional<size_t> stmtIndent);
-  ParseResult parseType(ASTType &result, ASTDecl &declScope,
-                        Optional<size_t> stmtIndent);
 
   /// Return an expression node for None at the specified location.
   ExprNode *getNoneExpr(SMLoc loc);

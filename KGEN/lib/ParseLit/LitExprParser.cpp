@@ -599,16 +599,6 @@ LitParserBase::parseExpressionOrAssignmentStmt(ExprNode *&result,
       .parseExpression(result, Precedence::kAssignStmt);
 }
 
-ParseResult LitParserBase::parseType(ASTType &result, ASTDecl &declScope,
-                                     Optional<size_t> stmtIndent) {
-  ExprNode *expr = nullptr;
-  if (parseExpression(expr, stmtIndent))
-    return failure();
-  result =
-      ExprEmitter(getSharedState(), declScope, None, nullptr).emitType(expr);
-  return success();
-}
-
 /// Return an expression node for None at the specified location.
 ExprNode *LitParserBase::getNoneExpr(SMLoc loc) {
   return ExprParser(getLexer(), 0).getNoneExpr(loc);

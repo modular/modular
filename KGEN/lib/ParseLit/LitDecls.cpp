@@ -46,6 +46,18 @@ struct CastInfo<ParamDeclRefAttr, LIT::ASTDecl>
 };
 } // namespace llvm
 
+/// Parse an expression and immediately resolve it to a type.  This returns
+/// failure on parse error.
+static ParseResult parseType(LitParserBase &p, ASTType &result,
+                             ASTDecl &declScope, Optional<size_t> stmtIndent) {
+  ExprNode *expr = nullptr;
+  if (p.parseExpression(expr, stmtIndent))
+    return failure();
+  result =
+      ExprEmitter(p.getSharedState(), declScope, None, nullptr).emitType(expr);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ASTDecl
 //===----------------------------------------------------------------------===//
@@ -856,7 +868,7 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
   ASTType type;
   // Parse the type if present.
   if (p.consumeIf(LitToken::colon)) {
-    if (p.parseType(type, *decl.getParentDecl(), decl.getIndentation()))
+    if (parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
     varOp.getResult().setType(POP::PointerType::get(type));
   }
@@ -931,7 +943,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
   ASTType type;
   // Parse the type if present.
   if (p.consumeIf(LitToken::colon)) {
-    if (p.parseType(type, *decl.getParentDecl(), decl.getIndentation()))
+    if (parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
   }
 
@@ -1032,7 +1044,7 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
   ASTType type;
   // Parse the type if present.
   if (p.consumeIf(LitToken::colon)) {
-    if (p.parseType(type, *decl.getParentDecl(), decl.getIndentation()))
+    if (parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
     fieldOp.setType(type);
   } else {
