@@ -23,6 +23,7 @@
 #include "SpecialFunctions.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -385,6 +386,15 @@ struct ParsedMetaSignature {
     SmallVector<ParamDeclAttr> result;
     // Force resolve all of the declarations, which could be recursive w.r.t.
     // each other.
+
+    // Mark the decl container as 'fully resolved' temporarily to facilitate
+    // this, so it doesn't attempt to get resolved again.
+    // FIXME(5975): This is a hack and shouldn't be needed.  The problem is that
+    // parameters should be accessible before the body is, and we have no way to
+    // express this currently.
+    assert(decl.resolvedness == DeclResolvedness::unparsed);
+    llvm::SaveAndRestore X(decl.resolvedness, DeclResolvedness::fullyResolved);
+
     for (ASTDecl *paramDecl : parsedInputs) {
       (void)resolver.resolve(*paramDecl, DeclResolvedness::fullyResolved,
                              paramDecl->getLoc());
@@ -526,8 +536,11 @@ static ParseResult resolveFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
                                             LitSharedState &shared) {
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(op.getName());
 
-  // If this definition is a struct/class member, return the self type
-  // otherwise return a null type.
+  // __new__ and similar methods are implicitly static.
+  if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
+    op.setIsStaticAttr(mlir::UnitAttr::get(shared.getContext()));
+
+  // If this definition is a struct/class member, compute the self type.
   ASTType selfType;
   if (auto *parentDecl = decl.getParentDecl())
     if (isa<StructDeclOp>(*parentDecl)) {
@@ -536,10 +549,6 @@ static ParseResult resolveFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
       assert(parentDecl->resolvedness == DeclResolvedness::fullyResolved);
       selfType = parentDecl->getSelfType();
     }
-
-  // __new__ and similar methods are implicitly static.
-  if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
-    op.setIsStaticAttr(mlir::UnitAttr::get(shared.getContext()));
 
   // Type check all arguments, figuring out a type to use for them (incl
   // possibly an error type).
@@ -717,6 +726,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     decl.hasReferenceError = true;
   }
 
+  // Finally now that the full signature has been resolved, build our IR.
+
   // Handle function effects.
   SmallVector<Location> argLocs;
   SmallVector<StringAttr> argNames;
@@ -845,7 +856,7 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
   ASTType type;
   // Parse the type if present.
   if (p.consumeIf(LitToken::colon)) {
-    if (p.parseType(type, decl, decl.getIndentation()))
+    if (p.parseType(type, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
     varOp.getResult().setType(POP::PointerType::get(type));
   }
@@ -920,7 +931,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
   ASTType type;
   // Parse the type if present.
   if (p.consumeIf(LitToken::colon)) {
-    if (p.parseType(type, decl, decl.getIndentation()))
+    if (p.parseType(type, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
   }
 
@@ -1021,7 +1032,7 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
   ASTType type;
   // Parse the type if present.
   if (p.consumeIf(LitToken::colon)) {
-    if (p.parseType(type, decl, decl.getIndentation()))
+    if (p.parseType(type, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
     fieldOp.setType(type);
   } else {
