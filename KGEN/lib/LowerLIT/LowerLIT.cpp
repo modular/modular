@@ -506,7 +506,7 @@ static void lowerLITOps(LIT::FuncOp func) {
     } else if (auto unwrap = dyn_cast<UnwrapOrPropagateOp>(op)) {
       // Lower a lit.unwrap_or_propagate to a conditional.
       Location loc = op->getLoc();
-      Type type = ParamRefType::get(unwrap.getValue().getType().getTypes()[1]);
+      Type type = unwrap.getType();
       Value isValue = b.create<POP::VariantIsOp>(loc, unwrap.getValue(), type);
       auto ifOp = b.create<HLCF::IfOp>(unwrap.getLoc(), type, isValue);
 

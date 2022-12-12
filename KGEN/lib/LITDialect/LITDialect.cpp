@@ -29,9 +29,6 @@ using namespace LIT;
 // Pull in the dialect definition.
 #include "KGEN/LITDialect/LITDialect.cpp.inc"
 
-#define GET_TYPEDEF_CLASSES
-#include "KGEN/LITDialect/LITTypes.cpp.inc"
-
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/LITDialect/LITAttrs.cpp.inc"
 

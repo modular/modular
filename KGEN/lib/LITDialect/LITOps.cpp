@@ -144,7 +144,23 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
 }
 
 //===----------------------------------------------------------------------===//
-// LITTryOp
+// UnwrapOrPropagateOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult UnwrapOrPropagateOp::verify() {
+  if ((*this)->getParentOfType<TryOp>())
+    return success();
+  auto func = (*this)->getParentOfType<LIT::FuncOp>();
+  if (!func)
+    return emitOpError() << "must be contained in a `lit.func`";
+  if (func.getConventions().getFnEffects() != FnEffects::Throws)
+    return emitOpError()
+           << "cannot propagate error in a function that does not throw";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// TryOp
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseExceptRegion(OpAsmParser &p, Region &region) {

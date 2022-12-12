@@ -82,9 +82,13 @@ let description = [{
 // UnwrapOrPropagateOp
 //===----------------------------------------------------------------------===//
 
+def LIT_OrVariant : ConfinedType<POP_VariantType,
+    [CPred<"cast<POP::VariantType>($_self).getTypes().size() == 2">],
+    "variant with 2 subtypes", "POP::VariantType">;
+
 def LIT_UnwrapOrPropagateOp : LITOp<"unwrap_or_propagate", [
     TypesMatchWith<"value type", "value", "result",
-                   "ParamRefType::get(cast<POP::VariantType>($_self).getTypes()[1])">]> {
+                   "cast<POP::VariantType>($_self).getType(1)">]> {
   let summary = "Unwrap a value or propagate an error.";
   let description = [{
     The `lit.unwrap_or_propagate` operation takes a `!lit.raises_or` value and
@@ -98,10 +102,12 @@ def LIT_UnwrapOrPropagateOp : LITOp<"unwrap_or_propagate", [
     ```
   }];
 
-  let arguments = (ins POP_VariantType:$value);
+  let arguments = (ins LIT_OrVariant:$value);
   let results = (outs AnyType:$result);
 
   let assemblyFormat = "$value attr-dict `:` type($value)";
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
