@@ -31,8 +31,7 @@ std::string TransformCacheKey::hashKey(TransformCacheKey::KeyTy key) {
 /// Do a transform that can be cached. The transform must be named, see the
 /// PassManager overload for an example.
 AnyAsyncValueRef
-Cache::cachedTransform(Operation *target,
-                       RCRef<BlobCache<TransformCacheKey>> transformCache,
+Cache::cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
                        AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                        TransformFn transformFn, CacheHitFn cacheHitFn) {
   AsyncValue::registerType<CacheFindResult>();
@@ -101,11 +100,11 @@ Cache::cachedTransform(Operation *target,
 }
 
 /// Run a pass manager's passes as a cached transform.
-AnyAsyncValueRef
-Cache::cachedTransform(Operation *target,
-                       RCRef<BlobCache<RegionCacheKey>> regionCache,
-                       RCRef<BlobCache<TransformCacheKey>> transformCache,
-                       AnyAsyncValueRef chain, mlir::PassManager &pm) {
+AnyAsyncValueRef Cache::cachedTransform(Operation *target,
+                                        RCRef<RegionCache> regionCache,
+                                        RCRef<TransformCache> transformCache,
+                                        AnyAsyncValueRef chain,
+                                        mlir::PassManager &pm) {
   auto keyBuf = WriteableBuffer::get();
   pm.printAsTextualPipeline(*keyBuf);
 

@@ -54,10 +54,9 @@ std::string DataCacheKey::hashKey(DataCacheKey::KeyTy key) {
   return {hash.begin(), hash.end()};
 }
 
-AsyncValueRef<Chain>
-Cache::deflateConstant(Operation *constant,
-                       RCRef<BlobCache<DataCacheKey>> cache,
-                       AnyAsyncValueRef chain) {
+AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
+                                            RCRef<DataCache> cache,
+                                            AnyAsyncValueRef chain) {
   auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
   // Hang the actual deflation off the input chain. This will allow users to not
   // worry about sequencing w.r.t. this operation, they can just pass in the
@@ -113,10 +112,9 @@ Cache::deflateConstant(Operation *constant,
   return out;
 }
 
-AsyncValueRef<Chain>
-Cache::inflateConstant(Operation *constant,
-                       RCRef<BlobCache<DataCacheKey>> cache,
-                       AnyAsyncValueRef chain) {
+AsyncValueRef<Chain> Cache::inflateConstant(Operation *constant,
+                                            RCRef<DataCache> cache,
+                                            AnyAsyncValueRef chain) {
   auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
   // Hang the actual deflation off the input chain. This will allow users to not
   // worry about sequencing w.r.t. this operation, they can just pass in the
@@ -248,9 +246,8 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
 ///  - Unique the references and assign them indices.
 ///  - Replace their uses with indices.
 ///  - Cache the region.
-static AsyncValueRef<Chain>
-cacheSingleRegion(Region &r, Operation *op,
-                  RCRef<BlobCache<M::Cache::RegionCacheKey>> cache) {
+static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
+                                              RCRef<RegionCache> cache) {
   OpBuilder builder(op);
   SmallVector<SymbolRefAttr> symbolReferences;
   SmallVector<ConstantHashAttr> hashReferences;
@@ -360,7 +357,7 @@ cacheSingleRegion(Region &r, Operation *op,
 }
 
 AsyncValueRef<Chain> M::Cache::deflateOp(Operation *op,
-                                         RCRef<BlobCache<RegionCacheKey>> cache,
+                                         RCRef<RegionCache> cache,
                                          AnyAsyncValueRef chain) {
   auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
   // Hang the actual deflation off the input chain. This will allow users to
@@ -396,9 +393,8 @@ AsyncValueRef<Chain> M::Cache::deflateOp(Operation *op,
 }
 
 /// Inflate a single region from `regionHash` and have `r` take its body.
-static AsyncValueRef<Chain>
-inflateRegion(Region *r, RegionHashAttr regionHash,
-              RCRef<BlobCache<RegionCacheKey>> cache) {
+static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
+                                          RCRef<RegionCache> cache) {
   auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
 
   auto foundOr = cache->find(regionHash.getHash());
@@ -458,7 +454,7 @@ inflateRegion(Region *r, RegionHashAttr regionHash,
 }
 
 AsyncValueRef<Chain> M::Cache::inflateOp(Operation *cached,
-                                         RCRef<BlobCache<RegionCacheKey>> cache,
+                                         RCRef<RegionCache> cache,
                                          AnyAsyncValueRef chain) {
   auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
 

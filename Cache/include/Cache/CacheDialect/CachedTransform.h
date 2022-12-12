@@ -32,6 +32,9 @@ struct TransformCacheKey {
   static std::string hashKey(KeyTy key);
 };
 
+/// Convenience typedef to reduce typing.
+using TransformCache = BlobCache<TransformCacheKey>;
+
 /// The most basic function that takes a target operation and transforms it -
 /// returning success or failure. The function can write the result of the
 /// transform to the provided WriteableBufferRef - there is a cachedTransform
@@ -75,8 +78,7 @@ using CacheHitFn =
 /// result of the transform. If the transform is *not* run, then the result
 /// AnyAsyncValueRef simply contains a Chain.
 LLCL::AnyAsyncValueRef
-cachedTransform(Operation *target,
-                LLCL::RCRef<BlobCache<TransformCacheKey>> transformCache,
+cachedTransform(Operation *target, LLCL::RCRef<TransformCache> transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                 TransformFn transformFn, CacheHitFn cacheHitFn);
 
@@ -114,8 +116,7 @@ std::enable_if_t<!std::is_convertible_v<Detail::ResultT<CacheHitFnT>,
                                         LLCL::AnyAsyncValueRef> &&
                      Detail::ReturnsErrorOrLike<CacheHitFnT>,
                  LLCL::AnyAsyncValueRef>
-cachedTransform(Operation *target,
-                LLCL::RCRef<BlobCache<TransformCacheKey>> transformCache,
+cachedTransform(Operation *target, LLCL::RCRef<TransformCache> transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                 TransformFn transformFn, CacheHitFnT cacheHitFn) {
   // Get the runtime pointer to hand to the closure.
@@ -154,8 +155,7 @@ std::enable_if_t<!std::is_convertible_v<Detail::ResultT<CacheHitFnT>,
                                         LLCL::AnyAsyncValueRef> &&
                      !Detail::ReturnsErrorOrLike<CacheHitFnT>,
                  LLCL::AnyAsyncValueRef>
-cachedTransform(Operation *target,
-                LLCL::RCRef<BlobCache<TransformCacheKey>> transformCache,
+cachedTransform(Operation *target, LLCL::RCRef<TransformCache> transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                 TransformFn transformFn, CacheHitFnT cacheHitFn) {
   // Get the runtime pointer to hand to the closure.
@@ -184,9 +184,8 @@ cachedTransform(Operation *target,
 /// hashes from the old versions (pre-transform) to the new versions (transform
 /// applied).
 LLCL::AnyAsyncValueRef
-cachedTransform(Operation *target,
-                LLCL::RCRef<BlobCache<RegionCacheKey>> regionCache,
-                LLCL::RCRef<BlobCache<TransformCacheKey>> transformCache,
+cachedTransform(Operation *target, LLCL::RCRef<RegionCache> regionCache,
+                LLCL::RCRef<TransformCache> transformCache,
                 LLCL::AnyAsyncValueRef chain, mlir::PassManager &pm);
 } // namespace M::Cache
 
