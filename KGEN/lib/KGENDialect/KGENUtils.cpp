@@ -134,10 +134,7 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
     auto noResultParams = TypeArrayAttr::get(parser.getContext(), {});
     return returnSignatureType(
         noInputParams, noResultParams, valuesType,
-        ConventionsAttr::get(
-            parser.getContext(),
-            SmallVector<ValueInputConvention>(valuesType.getNumInputs()),
-            FnEffects::None));
+        ConventionsAttr::get(parser.getContext(), valuesType.getNumInputs()));
   }
 
   return success();
@@ -165,11 +162,7 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
     // function type to keep things concise.
     if (signature.getInputParams().empty() &&
         signature.getResultParamTypes().empty()) {
-      if (llvm::all_of(signature.getValueInputConventions(),
-                       [](ValueInputConvention inputConvention) {
-                         return inputConvention == ValueInputConvention::ByVal;
-                       }) &&
-          signature.getFnEffects() == FnEffects::None) {
+      if (signature.getConventions().isDefault()) {
         os << signature.getValues();
         return;
       }

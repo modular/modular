@@ -665,6 +665,12 @@ static void lowerAttributesAndTypes(Operation *op) {
     return POP::VariantType::get({errType, type.getType()});
   });
 
+  // Remove all function conventions.
+  replacer.addReplacement([](ConventionsAttr conventions) {
+    return ConventionsAttr::get(conventions.getContext(),
+                                conventions.getInputConventions().size());
+  });
+
   replacer.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
                                         /*replaceLocs=*/false,
                                         /*replaceTypes=*/true);
