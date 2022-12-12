@@ -87,11 +87,18 @@ def LIT_PlaceholderAttr : LITAttr<"Placeholder", "placeholder"> {
     `!pop.simd<4, #lit.placeholder>` or
     `!pop.simd<#lit.placeholder, #lit.placeholder>`.
 
+    Placeholders also have indexes to differentiate them from one another. The
+    index defaults to 0.
+    Indexes can be specified like this:
+    `!pop.simd<4, #lit.placeholder<0>>` or
+    `!pop.simd<#lit.placeholder<0>, #lit.placeholder<1>>`.
+
     This must be substituted before lowering from LIT.
   }];
 
-  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
-  let assemblyFormat = "";
+  let parameters = (ins DefaultValuedParameter<"int", "0">:$index,
+                        AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "( `<` $index^ `>`)?";
 }
 
 #endif // KGEN_LITDIALECT_LITATTRS_TD

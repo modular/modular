@@ -404,27 +404,33 @@ static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
   if (lhs.isa<ParamDeclRefAttr>())
     return false;
 
-  // The only thing left are nested expressions.
-  auto lhsExpr = lhs.cast<ParamOperatorAttr>(),
-       rhsExpr = rhs.cast<ParamOperatorAttr>();
-  // Sort by the string form of the opcode, e.g. add, .. mul,... then xor.
-  if (lhsExpr.getOpcode() != rhsExpr.getOpcode())
-    return stringifyPOC(lhsExpr.getOpcode()) <
-           stringifyPOC(rhsExpr.getOpcode());
+  // The only thing left are nested expressions and lit placeholders, which
+  // we don't want to sort.
+  if (lhs.isa<ParamOperatorAttr>() && rhs.isa<ParamOperatorAttr>()) {
+    auto lhsExpr = lhs.cast<ParamOperatorAttr>(),
+         rhsExpr = rhs.cast<ParamOperatorAttr>();
 
-  // If they are the same opcode, then sort by arity: more complex to the left.
-  ArrayRef<TypedAttr> lhsOperands = lhsExpr.getOperands(),
-                      rhsOperands = rhsExpr.getOperands();
-  if (lhsOperands.size() != rhsOperands.size())
-    return lhsOperands.size() > rhsOperands.size();
+    // Sort by the string form of the opcode, e.g. add, .. mul,... then xor.
+    if (lhsExpr.getOpcode() != rhsExpr.getOpcode())
+      return stringifyPOC(lhsExpr.getOpcode()) <
+             stringifyPOC(rhsExpr.getOpcode());
 
-  // We know the two subexpressions are different (they'd otherwise be pointer
-  // equivalent) so just go compare all of the elements.
-  for (size_t i = 0, e = lhsOperands.size(); i != e; ++i) {
-    if (paramExprOperandSortPredicate(lhsOperands[i], rhsOperands[i]))
-      return true;
-    if (paramExprOperandSortPredicate(rhsOperands[i], lhsOperands[i]))
-      return false;
+    // If they are the same opcode, then sort by arity: more complex to the
+    // left.
+    ArrayRef<TypedAttr> lhsOperands = lhsExpr.getOperands(),
+                        rhsOperands = rhsExpr.getOperands();
+    if (lhsOperands.size() != rhsOperands.size())
+      return lhsOperands.size() > rhsOperands.size();
+
+    // We know the two subexpressions are different (they'd otherwise be pointer
+    // equivalent) so just go compare all of the elements.
+    for (size_t i = 0, e = lhsOperands.size(); i != e; ++i) {
+      if (paramExprOperandSortPredicate(lhsOperands[i], rhsOperands[i]))
+        return true;
+      if (paramExprOperandSortPredicate(rhsOperands[i], lhsOperands[i]))
+        return false;
+    }
+    return false;
   }
 
   return false;
