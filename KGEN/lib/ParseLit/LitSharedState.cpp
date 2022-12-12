@@ -105,7 +105,7 @@ ASTType LitSharedState::getObjectType() const {
 }
 
 ASTType LitSharedState::getErrorOrType(ASTType valueType) const {
-  return RaisesOrType::get(valueType);
+  return POP::VariantType::get({getErrorType(), valueType});
 }
 
 /// Add declarations for magic things to the builtins decl.

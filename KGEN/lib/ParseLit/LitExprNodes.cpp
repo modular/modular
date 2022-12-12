@@ -738,7 +738,7 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
   }
 
   // If the callee can raise an error, try to unwrap it.
-  if (auto raises = dyn_cast<RaisesOrType>(resultVal.getType())) {
+  if (calleeSig.getFnEffects() == FnEffects::Throws) {
     if (!isValidErrorContext(emitter.builder->getInsertionBlock())) {
       emitter.emitError(
           callLoc,
@@ -746,7 +746,7 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
       return {};
     }
     resultVal = emitter.builder->create<UnwrapOrPropagateOp>(
-        loc, raises.getType(), resultVal);
+        loc, cast<POP::VariantType>(resultVal.getType()).getType(1), resultVal);
   }
 
   // Value returning call returns its result.

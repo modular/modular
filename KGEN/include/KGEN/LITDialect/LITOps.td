@@ -134,7 +134,7 @@ def LIT_FormValueOp : LITOp<"form_value", [Pure,
 
 def LIT_UnwrapOrPropagateOp : LITOp<"unwrap_or_propagate", [
     TypesMatchWith<"value type", "value", "result",
-                   "cast<RaisesOrType>($_self).getType()">]> {
+                   "ParamRefType::get(cast<POP::VariantType>($_self).getTypes()[1])">]> {
   let summary = "Unwrap a value or propagate an error.";
   let description = [{
     The `lit.unwrap_or_propagate` operation takes a `!lit.raises_or` value and
@@ -144,11 +144,11 @@ def LIT_UnwrapOrPropagateOp : LITOp<"unwrap_or_propagate", [
     Example:
 
     ```mlir
-    %value = lit.unwrap_or_propagate %maybeErr : <!kgen.declref<@Int>>
+    %value = lit.unwrap_or_propagate %maybeErr : <@Error, @Int>
     ```
   }];
 
-  let arguments = (ins LIT_RaisesOrType:$value);
+  let arguments = (ins POP_VariantType:$value);
   let results = (outs AnyType:$result);
 
   let assemblyFormat = "$value attr-dict `:` type($value)";

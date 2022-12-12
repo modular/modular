@@ -89,7 +89,7 @@ fn propagateErrorInTry():
 
 # CHECK-LABEL: lit.func @raiseError
 def raiseErrorInDef(err: Error):
-    # CHECK: %[[ERR:.*]] = lit.raise_error %{{.*}}
+    # CHECK: %[[ERR:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
     # CHECK-NEXT: kgen.return %[[ERR]]
     raise err
 
@@ -97,7 +97,7 @@ def raiseErrorInDef(err: Error):
 def raiseErrorInIf(cond: Bool, err: Error):
     # CHECK: hlcf.if
     if cond:
-        # CHECK: %[[ERR:.*]] = lit.raise_error %{{.*}}
+        # CHECK: %[[ERR:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
         # CHECK-NEXT: hlcf.return %[[ERR]]
         raise err
 
