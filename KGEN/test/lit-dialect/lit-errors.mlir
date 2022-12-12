@@ -6,3 +6,6 @@ kgen.struct.decl @SomeStruct {
 }
 
 // -----
+
+// expected-error @below {{custom op 'lit.func' arguments requires SSA names}}
+lit.func @no_names(index) {isInterface}

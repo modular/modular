@@ -834,8 +834,11 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,
   if (isInterface) {
     if (!bodyBlock->empty())
       emitError(defOp.getLoc(), "interfaces must have no body");
+    // Drop the body block so the function becomes external.
+    bodyBlock->erase();
     return success();
   }
+
   if (bodyBlock->empty() || !isa<ReturnOp>(bodyBlock->back())) {
     auto loc = defOp.getLoc();
     if (isNoneResultType(defOp.getResultType()) &&

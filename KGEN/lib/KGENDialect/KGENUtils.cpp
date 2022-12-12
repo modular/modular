@@ -11,7 +11,6 @@
 
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "Cache/CacheDialect/CacheOps.h"
-#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
@@ -1062,11 +1061,13 @@ ParseResult KGEN::parseFunctionSignature(
 
 void KGEN::printFunctionSignature(OpAsmPrinter &p, Region &region,
                                   TypeRange argTypes, TypeRange resultTypes,
-                                  ConventionsAttr conventions) {
+                                  ConventionsAttr conventions,
+                                  StringArrayAttr valueParamNames) {
   // Print the function arguments.
   auto printElt = [&](unsigned i) {
     if (region.empty())
-      p << argTypes[i];
+      p << (valueParamNames ? "%" + valueParamNames[i].getValue() + ": " : "")
+        << argTypes[i];
     else
       p.printRegionArgument(region.getArgument(i));
   };
@@ -1184,7 +1185,7 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   SmallVector<OpAsmParser::Argument> entryArgs;
   SmallVector<DictionaryAttr> resultAttrs;
   SmallVector<Type> resultTypes;
-  auto &builder = parser.getBuilder();
+  Builder &builder = parser.getBuilder();
 
   // Parse the name as a symbol.
   StringAttr nameAttr;
@@ -1196,7 +1197,9 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   ParamDeclArrayAttr inputParamDecls;
   TypeArrayAttr resultParamTypes;
   ConventionsAttr conventions;
+  llvm::SMLoc sigLoc;
   if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamTypes) ||
+      parser.getCurrentLocation(&sigLoc) ||
       parseFunctionSignature(parser, entryArgs, resultTypes, conventions) ||
       ::parseOptionalConstraints(parser, result, opKind))
     return failure();
@@ -1217,9 +1220,10 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   // If this is a litfunc, handle keyword argument names.
   if (opKind == GeneratorOrFuncKind::litfunc) {
     SmallVector<StringAttr> names;
-    for (auto &arg : entryArgs) {
+    for (OpAsmParser::Argument &arg : entryArgs) {
       StringRef spelling;
-      assert(arg.ssaName.name.size() >= 2 && "Should have % and one letter");
+      if (arg.ssaName.name.size() < 2)
+        return parser.emitError(sigLoc, "arguments requires SSA names");
       if (isdigit(arg.ssaName.name[1])) // %42 -> no name.
         spelling = "";
       else
@@ -1261,36 +1265,18 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   result.attributes.append(parsedAttributes);
 
   // Parse the required function body.
-  auto *region = result.addRegion();
+  Region *region = result.addRegion();
 
   // If this is a generator interface, no body block is allowed.
-  if (opKind == GeneratorOrFuncKind::interface)
+  if (opKind == GeneratorOrFuncKind::interface ||
+      dyn_cast_or_null<mlir::UnitAttr>(parsedAttributes.get("isInterface")))
     return success();
 
   // If this is cached, no body block is allowed.
-  Attribute cached = parsedAttributes.get(Cache::getRegionHashAttrName());
-  if (cached)
+  if (parsedAttributes.get(Cache::getRegionHashAttrName()))
     return success();
 
-  llvm::SMLoc loc = parser.getCurrentLocation();
-  if (parser.parseRegion(*region, entryArgs, /*enableNameShadowing=*/true))
-    return failure();
-
-  if (region->empty()) {
-    if (opKind != GeneratorOrFuncKind::litfunc)
-      return parser.emitError(loc, "expected non-empty function body");
-    region->push_back(new Block());
-  }
-
-  // Function body was parsed, make sure it's not empty.
-  Attribute isInterface = parsedAttributes.get("isInterface");
-  Block &body = region->back();
-  if (!isInterface && body.empty())
-    return parser.emitError(loc, "expected non-empty function body");
-  if (isInterface && !body.empty())
-    return parser.emitError(loc, "expected empty function body");
-
-  return success();
+  return parser.parseRegion(*region, entryArgs, /*enableNameShadowing=*/true);
 }
 
 void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
@@ -1308,7 +1294,8 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
 
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   printFunctionSignature(p, func.getFunctionBody(), argTypes,
-                         op.getResultTypes(), op.getConventions());
+                         op.getResultTypes(), op.getConventions(),
+                         op->getAttrOfType<StringArrayAttr>("valueParamNames"));
 
   SmallVector<StringRef> ignoredAttrNames(
       GeneratorOp::getAttributeNames().begin(),
@@ -1499,8 +1486,8 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
 
   /// Verify that a list of parameter declarations from a generator or func
   /// matches those of an interface.  This produces an error diagnostic and
-  /// returns failure when a problem is detected, or returns true if everything
-  /// is ok.
+  /// returns failure when a problem is detected, or returns true if
+  /// everything is ok.
   if (failed(verifyParamDeclsMatch(
           originatorName, originatorParamDecls.getValue(), originatorLoc,
           targetName, targetParamDecls.getValue(), targetLoc)) ||
@@ -1551,8 +1538,8 @@ LogicalResult KGEN::verifyParamDeclsMatch(
   return success();
 }
 
-/// Check that the specified generator/interfaces matches signature information
-/// with the other interface.
+/// Check that the specified generator/interfaces matches signature
+/// information with the other interface.
 LogicalResult KGEN::verifyDeclMatchesInterface(
     const char *originatorName, FuncInterface originatorDecl,
     const char *interfaceName, GeneratorInterfaceOp interfaceDecl) {
@@ -1562,8 +1549,8 @@ LogicalResult KGEN::verifyDeclMatchesInterface(
       interfaceName, interfaceDecl.getSignature(), interfaceDecl.getLoc());
 }
 
-/// If the specified operation is non-null and contains parameters, collect them
-/// into the specified array.
+/// If the specified operation is non-null and contains parameters, collect
+/// them into the specified array.
 static void collectContextParameters(Operation *op,
                                      SmallVector<ParamDeclAttr> &params) {
   auto decl = dyn_cast_or_null<DeclInterface>(op);
@@ -1593,8 +1580,8 @@ SignatureType KGEN::getFullSignature(FuncInterface decl) {
       signature.getConventions());
 }
 
-/// Verify that the provided operation has exactly one block in its body region,
-/// or that region was cached.
+/// Verify that the provided operation has exactly one block in its body
+/// region, or that region was cached.
 LogicalResult KGEN::verifyOneBlockOrCached(Operation *op) {
   size_t numBlocks = op->getRegion(0).getBlocks().size();
   if (numBlocks == 0) {
