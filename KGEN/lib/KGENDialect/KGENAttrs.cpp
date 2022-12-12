@@ -249,15 +249,15 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "relational comparisons only allowed on index or "
                             "integer values";
     break;
-  case POC::TargetSupports:
+  case POC::TargetEq:
     if (operands.size() != 2)
-      return emitError() << "target_supports must have two operands";
+      return emitError() << "target_eq must have two operands";
     if (!type.isInteger(1))
-      return emitError() << "target_supports returns i1";
-    // TargetSupports only work on target types.
+      return emitError() << "target_eq returns i1";
+    // TargetEq only work on target types.
     if (!operands[0].getType().isa<TargetType>() ||
         !operands[1].getType().isa<TargetType>())
-      return emitError() << "target_supports only allowed on target types";
+      return emitError() << "target_eq only allowed on target types";
     break;
   case POC::TargetHasFeature:
   case POC::TargetIsArch:
@@ -864,8 +864,8 @@ simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
       [](auto a, auto b) { return a.sle(b); });
 }
 
-static Attribute simplifyTargetSupports(SmallVectorImpl<TypedAttr> &operands) {
-  // TODO: Make simplifyTargetSupports more granular than just checking that the
+static Attribute simplifyTargetEq(SmallVectorImpl<TypedAttr> &operands) {
+  // TODO: Make simplifyTargetEq more granular than just checking that the
   // TargetAttrInfos are the same.
   if (operands[0].isa<TargetInfoAttr>() && operands[1].isa<TargetInfoAttr>()) {
     bool targetsAreSame = (operands[0] == operands[1]);
@@ -1179,8 +1179,8 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     result = simplifyRelationalCompare(opcode, operands);
     resultType = IntegerType::get(context, 1);
     break;
-  case POC::TargetSupports:
-    result = simplifyTargetSupports(operands);
+  case POC::TargetEq:
+    result = simplifyTargetEq(operands);
     resultType = IntegerType::get(context, 1);
     break;
   case POC::TargetHasFeature:

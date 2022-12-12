@@ -40,7 +40,7 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"LE", 13, "le">,
 
   // Target comparisons & utilities.
-  I32EnumAttrCase<"TargetSupports", 14, "target_supports">,
+  I32EnumAttrCase<"TargetEq", 14, "target_eq">,
   I32EnumAttrCase<"TargetHasFeature", 15, "target_has_feature">,
   I32EnumAttrCase<"TargetIsArch", 16, "target_is_arch">,
   I32EnumAttrCase<"TargetGetField", 17, "target_get_field">,

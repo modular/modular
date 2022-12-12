@@ -611,13 +611,13 @@ def KGEN_TargetInfoAttr : KGEN_ExprAttr<"TargetInfo", "target"> {
 
     ```mlir
     kgen.generator @target_host<t0: target>()
-      constraints <[target_supports(:target #kgen.target<host>, t0),
+      constraints <[target_eq(:target #kgen.target<host>, t0),
                                     "Must support the target!"]> {
       kgen.return
     }
 
     kgen.generator @target_host<t0: target>()
-      constraints <[target_supports(:target
+      constraints <[target_eq(:target
         #kgen.target<"triple", "cpu", "features", ptrSize>,
         t0), "Must support the target!"]> {
       kgen.return
