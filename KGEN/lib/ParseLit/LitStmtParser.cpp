@@ -353,9 +353,9 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   Location returnLoc = translateLocation(loc);
   if (getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock())
           .getRaises()) {
-    operandValues[0] = builder.create<FormValueOp>(
+    operandValues[0] = builder.create<POP::VariantCreateOp>(
         returnLoc,
-        getSharedState().getErrorOrType(operandValues[0].getType()).mlirType,
+        Type(getSharedState().getErrorOrType(operandValues[0].getType())),
         operandValues[0]);
   }
 
@@ -416,8 +416,8 @@ ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
       emitError(loc, "cannot raise error inside method that does not raise");
       return success();
     }
-    Value wrappedErr =
-        builder.create<RaiseErrorOp>(raiseLoc, func.getResultType(), errorVal);
+    Value wrappedErr = builder.create<POP::VariantCreateOp>(
+        raiseLoc, func.getResultType(), errorVal);
     if (func == block->getParentOp())
       builder.create<ReturnOp>(raiseLoc, ArrayRef<TypedAttr>(), wrappedErr);
     else

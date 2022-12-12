@@ -1,5 +1,7 @@
 # RUN: kgen-translate -import-lit %s | FileCheck %s
 
+struct Error:
+
 # CHECK-LABEL: @tmp
 def tmp():
     a = 5             # CHECK: 5

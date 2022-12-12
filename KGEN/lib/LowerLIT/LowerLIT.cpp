@@ -514,7 +514,7 @@ static void lowerLITOps(LIT::FuncOp func) {
     } else if (auto unwrap = dyn_cast<UnwrapOrPropagateOp>(op)) {
       // Lower a lit.unwrap_or_propagate to a conditional.
       Location loc = op->getLoc();
-      Type type = unwrap.getValue().getType().getType();
+      Type type = ParamRefType::get(unwrap.getValue().getType().getTypes()[1]);
       Value isValue = b.create<POP::VariantIsOp>(loc, unwrap.getValue(), type);
       auto ifOp = b.create<HLCF::IfOp>(unwrap.getLoc(), type, isValue);
 
@@ -656,13 +656,6 @@ static void lowerAttributesAndTypes(Operation *op) {
   // Lower `#lit.none` to `[]`.
   replacer.addReplacement([&](LIT::NoneAttr attr) {
     return ListAttr::get(attr.getContext(), {}, emptyList);
-  });
-
-  // Lower `!lit.raises_or` to `!pop.variant`.
-  auto errType =
-      DeclRefType::get(FlatSymbolRefAttr::get(op->getContext(), "Error"));
-  replacer.addReplacement([&](LIT::RaisesOrType type) {
-    return POP::VariantType::get({errType, type.getType()});
   });
 
   // Remove all function conventions.

@@ -815,9 +815,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 }
 
 /// Return true if the result type is nominally a none type.
-static bool isNoneResultType(Type type) {
-  if (auto raises = dyn_cast<RaisesOrType>(type))
-    type = raises.getType();
+static bool isNoneResultType(LIT::FuncOp defOp) {
+  Type type = defOp.getResultType();
+  if (defOp.getConventions().getFnEffects() == FnEffects::Throws)
+    type = cast<POP::VariantType>(type).getType(1);
   return isa<LIT::NoneType>(type);
 }
 
@@ -841,14 +842,14 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,
 
   if (bodyBlock->empty() || !isa<ReturnOp>(bodyBlock->back())) {
     auto loc = defOp.getLoc();
-    if (isNoneResultType(defOp.getResultType()) &&
-        defOp.getResultParamTypes().empty()) {
+    if (isNoneResultType(defOp) && defOp.getResultParamTypes().empty()) {
       auto b = OpBuilder::atBlockEnd(bodyBlock);
 
       Value noneVal =
           b.create<ParamConstantOp>(loc, NoneAttr::get(getContext()));
-      if (auto raises = dyn_cast<RaisesOrType>(defOp.getResultType()))
-        noneVal = b.create<FormValueOp>(loc, raises, noneVal);
+      if (defOp.getConventions().getFnEffects() == FnEffects::Throws)
+        noneVal =
+            b.create<POP::VariantCreateOp>(loc, defOp.getResultType(), noneVal);
       b.create<ReturnOp>(loc, ArrayRef<TypedAttr>(), noneVal);
     } else if (!sharedState.errorOccurred) {
       Location endLoc = bodyBlock->empty() ? loc : bodyBlock->back().getLoc();

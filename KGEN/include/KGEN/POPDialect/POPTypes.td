@@ -359,6 +359,9 @@ def POP_VariantType : POPType<"Variant", "variant",
 
     /// Get the element types as parameterized types.
     SmallVector<Type> getParameterizedElementTypes() const;
+
+    /// Get an element type as a parameterized type.
+    Type getType(unsigned index);
   }];
 }
 

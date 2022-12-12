@@ -354,6 +354,10 @@ SmallVector<Type> VariantType::getParameterizedElementTypes() const {
   return types;
 }
 
+Type VariantType::getType(unsigned index) {
+  return ParamRefType::get(getTypes()[index]);
+}
+
 Optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
   // FIXME: Implement this.
   llvm_unreachable("TODO: unimplemented");

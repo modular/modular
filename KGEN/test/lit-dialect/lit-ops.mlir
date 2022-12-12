@@ -117,19 +117,19 @@ kgen.struct.decl @Error {}
 kgen.struct.decl @Int {}
 
 // CHECK-LABEL: @raises_error
-lit.func @raises_error(%raise: i1, %err: !kgen.declref<@Error>, %value: !kgen.declref<@Int>) -> !lit.raises_or<!kgen.declref<@Int>> {
+lit.func @raises_error(%raise: i1, %err: !kgen.declref<@Error>, %value: !kgen.declref<@Int>) -> !pop.variant<@Error, @Int> {
   hlcf.if %raise {
-    // CHECK: %[[ERR:.*]] = lit.raise_error %err : <@Error> -> <!kgen.declref<@Int>>
-    %result = lit.raise_error %err : <@Error> -> <!kgen.declref<@Int>>
+    // CHECK: %[[ERR:.*]] = pop.variant.create %err
+    %result = pop.variant.create %err : !kgen.declref<@Error> -> !pop.variant<@Error, @Int>
     // CHECK: hlcf.return %[[ERR]]
-    hlcf.return %result : !lit.raises_or<!kgen.declref<@Int>>
+    hlcf.return %result : !pop.variant<@Error, @Int>
   } else {
     hlcf.yield
   }
-  // CHECK: %[[VALUE:.*]] = lit.form_value %value : <!kgen.declref<@Int>>
-  %result = lit.form_value %value : <!kgen.declref<@Int>>
+  // CHECK: %[[VALUE:.*]] = pop.variant.create %value
+  %result = pop.variant.create %value : !kgen.declref<@Int> -> !pop.variant<@Error, @Int>
   // CHECK: kgen.return %[[VALUE]]
-  kgen.return %result : !lit.raises_or<!kgen.declref<@Int>>
+  kgen.return %result : !pop.variant<@Error, @Int>
 }
 
 // CHECK-LABEL: @try_op
@@ -138,9 +138,9 @@ lit.func @try_op(%err: !kgen.declref<@Error>, %int: !kgen.declref<@Int>) -> !kge
   lit.try {
     %raise = kgen.param.constant: i1 = <1>
     %result = kgen.call @raises_error(%raise, %err, %int)
-      : (i1, !kgen.declref<@Error>, !kgen.declref<@Int>) -> !lit.raises_or<!kgen.declref<@Int>>
-    // CHECK: %[[VAL:.*]] = lit.unwrap_or_propagate %{{.*}} : <!kgen.declref<@Int>>
-    %value = lit.unwrap_or_propagate %result : <!kgen.declref<@Int>>
+      : (i1, !kgen.declref<@Error>, !kgen.declref<@Int>) -> !pop.variant<@Error, @Int>
+    // CHECK: %[[VAL:.*]] = lit.unwrap_or_propagate %{{.*}} : <@Error, @Int>
+    %value = lit.unwrap_or_propagate %result : <@Error, @Int>
     // CHECK: return %[[VAL]] : !kgen.declref<@Int>
     hlcf.return %value : !kgen.declref<@Int>
   // CHECK-NEXT: } except (%{{.*}}: !kgen.declref<@Error>) {
