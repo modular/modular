@@ -91,7 +91,7 @@ def FuncInterface : OpInterface<"FuncInterface"> {
     SignatureType getFullSignature() { return KGEN::getFullSignature($_op); }
 
     /// Return the function and value argument conventions.
-    DenseI8ArrayAttr getConventions() {
+    ConventionsAttr getConventions() {
       return $_op.getSignature().getConventions();
     }
 

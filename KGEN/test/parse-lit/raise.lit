@@ -2,20 +2,20 @@
 
 __include "../lit-examples/prolog.lit"
 
-# CHECK-LABEL: lit.func @defAlwaysRaises() -> !lit.raises_or<!kgen.declref<@Int>> attributes {isDef, raises}
+# CHECK-LABEL: lit.func @defAlwaysRaises() throws -> !lit.raises_or<!kgen.declref<@Int>> attributes {isDef, raises}
 def defAlwaysRaises() -> Int:
     # CHECK: %[[RESULT:.*]] = lit.form_value %{{.*}} : <!kgen.declref<@Int>>
     # CHECK-NEXT: kgen.return %[[RESULT]]
     return Int(0)
 
-# CHECK-LABEL: lit.func @fnThatRaises() -> !lit.raises_or<!kgen.declref<@Int>> attributes {raises}
+# CHECK-LABEL: lit.func @fnThatRaises() throws -> !lit.raises_or<!kgen.declref<@Int>> attributes {raises}
 @raises
 fn fnThatRaises() -> Int:
     # CHECK: %[[RESULT:.*]] = lit.form_value %{{.*}} : <!kgen.declref<@Int>>
     # CHECK-NEXT: kgen.return %[[RESULT]]
     return Int(0)
 
-# CHECK-LABEL: lit.func @raisesReturnsNone() -> !lit.raises_or<!lit.none>
+# CHECK-LABEL: lit.func @raisesReturnsNone() throws -> !lit.raises_or<!lit.none>
 @raises
 fn raisesReturnsNone():
     # CHECK: %0 = kgen.param.constant: !lit.none = <#lit.none>

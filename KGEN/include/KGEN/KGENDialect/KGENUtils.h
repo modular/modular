@@ -19,6 +19,7 @@
 namespace M::KGEN {
 class ConstraintAttr;
 class ConstraintArrayAttr;
+class ConventionsAttr;
 class ParamBindArrayAttr;
 class ParamDeclAttr;
 class GeneratorInterfaceOp;
@@ -117,19 +118,18 @@ void printOptionalParameterSpec(ParamDeclArrayAttr inputParamDecls,
 ParseResult parseTypesWithConventions(AsmParser &p,
                                       SmallVectorImpl<Type> &operandTypes,
                                       SmallVectorImpl<Type> &resultTypes,
-                                      DenseI8ArrayAttr &conventions);
+                                      ConventionsAttr &conventions);
 void printTypesWithConventions(raw_ostream &os, TypeRange operandTypes,
                                TypeRange resultTypes,
-                               DenseI8ArrayAttr conventions);
+                               ConventionsAttr conventions);
 
 /// Parse and print a function signature with optional conventions.
 ParseResult parseFunctionSignature(OpAsmParser &p,
                                    SmallVectorImpl<OpAsmParser::Argument> &args,
                                    SmallVectorImpl<Type> &resultTypes,
-                                   DenseI8ArrayAttr &conventions);
+                                   ConventionsAttr &conventions);
 void printFunctionSignature(OpAsmPrinter &p, Region &region, TypeRange argTypes,
-                            TypeRange resultTypes,
-                            DenseI8ArrayAttr conventions);
+                            TypeRange resultTypes, ConventionsAttr conventions);
 
 /// Parse and print a constraint specification if present.
 ParseResult parseOptionalConstraints(OpAsmParser &p,

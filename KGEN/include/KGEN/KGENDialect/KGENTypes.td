@@ -172,7 +172,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature",
   let parameters = (ins "ParamDeclArrayAttr":$inputParams,
                         "TypeArrayAttr":$resultParamTypes,
                         "FunctionType":$values,
-                        "DenseI8ArrayAttr":$conventions);
+                        "ConventionsAttr":$conventions);
   let assemblyFormat = [{
     `<` $inputParams `,` $resultParamTypes `,`
     custom<ValuesAndOptionalConventions>($values, $conventions) `>`
@@ -182,10 +182,10 @@ def KGEN_SignatureType : KGENType<"Signature", "signature",
     /// This builder allows everything other than the function type to be null.
     TypeBuilderWithInferredContext<(ins
       "ParamDeclArrayAttr":$inputParams, "TypeArrayAttr":$resultParamTypes,
-      "FunctionType":$values, "DenseI8ArrayAttr":$conventions)>,
+      "FunctionType":$values, "ConventionsAttr":$conventions)>,
     TypeBuilderWithInferredContext<(ins
       "ParamBindArrayAttr":$inputParams, "ParamDeclArrayAttr":$resultParams,
-      "FunctionType":$values, "DenseI8ArrayAttr":$conventions)>,
+      "FunctionType":$values, "ConventionsAttr":$conventions)>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>,
     TypeBuilderWithInferredContext<(ins "FunctionType":$values)>
   ];
@@ -196,12 +196,11 @@ def KGEN_SignatureType : KGENType<"Signature", "signature",
     ArrayRef<Type> getValueResults();
 
     FnEffects getFnEffects() {
-      return static_cast<FnEffects>(getConventions()[0]);
+      return getConventions().getFnEffects();
     }
 
-    // TODO: It is unfortunate that DenseArrayAttr doesn't support uint8_t.
-    ArrayRef<int8_t> getValueInputConventions() {
-      return getConventions().asArrayRef().drop_front();
+    ArrayRef<ValueInputConvention> getValueInputConventions() {
+      return getConventions().getInputConventions();
     }
 
     /// Return the convention for the specified value input parameter.

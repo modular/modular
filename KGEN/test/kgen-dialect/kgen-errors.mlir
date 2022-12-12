@@ -1098,7 +1098,7 @@ kgen.func @caller(%arg: !pop.pointer<i32>) {
   // Ok
   kgen.call @callee(%arg) : (!pop.pointer<i32> byref) -> ()
 
-  // expected-error @+1 {{symbol use conventions are array<i8: 0, 0> but @callee expected array<i8: 0, 1>}}
+  // expected-error @+1 {{symbol use conventions are #kgen.conventions<[byval], none> but @callee expected #kgen.conventions<[byref], none>}}
   kgen.call @callee(%arg) : (!pop.pointer<i32>) -> ()
   kgen.return
 }
