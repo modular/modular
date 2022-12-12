@@ -2337,9 +2337,10 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
 
   // On success, we remove generators and generator interfaces from the file
   // to clean it up.
+  SymbolTable &symtab = analysis.getTopLevelSymbolTable();
   for (Operation &op : llvm::make_early_inc_range(primary.getOps())) {
     if (isa<GeneratorOp, GeneratorInterfaceOp>(op)) {
-      op.erase();
+      symtab.erase(&op);
       continue;
     }
 
@@ -2350,7 +2351,7 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
         // Operations may have uses in inlined functions, which are invalid.
         // Drop all defined value uses before erasing the function.
         func->dropAllDefinedValueUses();
-        func->erase();
+        symtab.erase(func);
       } else {
         // Make sure all funcs are inflated at the end of this, even if they
         // didn't participate in elaboration.
@@ -2367,8 +2368,14 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
     // If this is a func being renamed, rename it.
     if (auto func = dyn_cast<FuncOp>(op)) {
       auto it = funcsToRename.find(func.getNameAttr());
-      if (it != funcsToRename.end())
+      if (it != funcsToRename.end()) {
+        // Keep the symbol table up-to-date.
+        symtab.remove(func);
         func.setSymNameAttr(it->second);
+        Block::iterator insertPt(func->getNextNode());
+        func->remove();
+        symtab.insert(func, insertPt);
+      }
       return;
     }
 

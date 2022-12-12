@@ -1,4 +1,4 @@
-// RUN: kgen-opt -lower-to-llvm %s | FileCheck %s
+// RUN: kgen-opt -elaborate-generators -lower-to-llvm %s | FileCheck %s
 
 // CHECK-LABEL: llvm.func internal @e2e_lower
 // CHECK-NOT: unrealized_conversion_cast
@@ -13,6 +13,12 @@ kgen.func @e2e_lower(%a: !pop.simd<1, f32>, %b: !pop.simd<1, f32>, %cond: i1) ->
     scf.yield %a : !pop.simd<1, f32>
   }
   kgen.return %r : !pop.simd<1, f32>
+}
+
+kgen.export [@exported]
+// CHECK: llvm.func @exported
+kgen.generator @exported() {
+  kgen.return
 }
 
 // CHECK: llvm.func @foo
