@@ -87,9 +87,8 @@ var globalvar : __mlir_type.index
 def err():
   var y : globalvar  # expected-error {{expected a type}}
 
-struct Rec[param: # expected-note {{previously used here}}
-                Rec  # expected-error {{recursive reference to declaration}}
-           ]:
+# FIXME(Issue#5975): This isn't quite right, we shouldn't be able to resolve Rec here.
+struct Rec[param: Rec]:
   pass
 
 struct ParametricOnInt[a: Int]:

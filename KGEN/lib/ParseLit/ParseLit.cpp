@@ -65,6 +65,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
       *module, startSMLoc, StringAttr(), nullptr, lexer.getCursor(),
       lexer.getCursor(), -1);
   sharedState.addBuiltinTypes(builtinsDecl);
+  builtinsDecl.resolvedness = DeclResolvedness::fullyResolved;
 
   // Create the module scope which will contain all things we parse.  These
   // shadow the builtins module during name lookup.

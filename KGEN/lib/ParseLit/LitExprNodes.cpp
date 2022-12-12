@@ -285,9 +285,17 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 auto ExprEmitter::lookupAndResolveDecl(StringRef name, SMLoc loc,
                                        ASTDecl &scope) -> LookupResult {
 
+  // Ensure the context is fully resolved, so all its members are known.  It
+  // would be bad to look something up in a scope without all members known.
+  // FIXME(Issue#5975): FuncOp shouldn't be special cased.
+  if (!isa<FuncOp>(scope)) {
+    if (failed(shared.declResolver->resolve(
+            scope, DeclResolvedness::fullyResolved, loc)))
+      return LookupResult::getErroneous();
+  }
+
   // Look up the name.
-  auto nameAttr = StringAttr::get(getContext(), name);
-  ASTDecl *result = scope.lookup(nameAttr);
+  ASTDecl *result = scope.lookup(name);
   // If nothing was found, return a failure.
   if (!result)
     return LookupResult::getFailure();
@@ -418,11 +426,6 @@ static CallableValue emitInitializerCallable(ASTType calledType,
         << calledType;
     return {};
   }
-
-  // Ensure the type specified is fully resolved, so all its members are known.
-  if (failed(emitter.shared.declResolver->resolve(
-          *calledDecl, DeclResolvedness::fullyResolved, node->getLoc())))
-    return {};
 
   return emitCallableDeclMember(*calledDecl, calledType.getParamBindings(),
                                 "__new__", node, emitter);
@@ -938,11 +941,6 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
         << ASTType(baseVal.getType());
     return {};
   }
-
-  // Ensure the type specified is fully resolved, so all its members are known.
-  if (failed(emitter.shared.declResolver->resolve(
-          *typeDecl, DeclResolvedness::fullyResolved, getLoc())))
-    return {};
 
   // Find the member being accessed.
   ExprEmitter::LookupResult lookup =

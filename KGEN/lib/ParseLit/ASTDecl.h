@@ -107,6 +107,10 @@ public:
 
   /// Look up a name in this declaration's scope only: return null on failure.
   ASTDecl *lookupInCurrentScope(StringAttr name) {
+    assert((resolvedness == DeclResolvedness::fullyResolved ||
+            // FIXME(Issue#5975): FuncOp shouldn't be special cased.
+            isa<FuncOp>(*this)) &&
+           "cannot perform lookup in a decl that isn't fully resolved");
     auto it = declsInScope.find(name);
     if (it != declsInScope.end())
       return it->second;
@@ -123,6 +127,10 @@ public:
       curScope = curScope->parentDecl;
     }
     return nullptr;
+  }
+
+  ASTDecl *lookup(StringRef name) {
+    return lookup(StringAttr::get(getContext(), name));
   }
 
   //===--------------------------------------------------------------------===//
