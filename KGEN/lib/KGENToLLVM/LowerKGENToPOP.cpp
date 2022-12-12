@@ -207,61 +207,29 @@ expandListsInStruct(POP::StructType structType, int64_t index = 0) {
   return {POP::StructType::get(structType.getContext(), newTypes), newIndex};
 }
 
-/// Given a type range, expand any members and return the expanded result.  If
-/// the conventions pointer is non-null, it is a parallel array that is expanded
-/// in place following the parameter convention approach.
-static SmallVector<Type>
-expandInList(TypeRange types,
-             SmallVectorImpl<ValueInputConvention> *conventions) {
+/// Given a type range, expand any members and return the expanded result.
+static SmallVector<Type> expandInList(TypeRange types) {
   SmallVector<Type> results;
-  size_t nextConventionElt = 0;
   for (Type type : types) {
-    auto list = dyn_cast<ListType>(type);
-    if (!list) {
+    if (auto list = dyn_cast<ListType>(type))
+      results.append(*list.getResolvedLength(), list.getResolvedElementType());
+    else
       results.push_back(type);
-      ++nextConventionElt;
-      continue;
-    }
-
-    // If we have a list, expand it and update conventions as needed.
-    size_t listLen = *list.getResolvedLength();
-    results.append(listLen, list.getResolvedElementType());
-    if (conventions) {
-      auto it = conventions->begin() + nextConventionElt;
-      if (listLen == 0)
-        conventions->erase(it);
-      else if (listLen != 1)
-        // Duplicate any convention.
-        conventions->insert(it, listLen - 1, *it);
-      nextConventionElt += listLen;
-    }
   }
   return results;
 }
 
 /// Expand lists in a function type.
-static FunctionType
-expandListsInFunc(FunctionType funcType,
-                  SmallVectorImpl<ValueInputConvention> *conventions) {
-  return FunctionType::get(
-      funcType.getContext(), expandInList(funcType.getInputs(), conventions),
-      expandInList(funcType.getResults(),
-                   /*conventions applies to the inputs*/ nullptr));
-}
-
-/// Expand lists in a function type.
 static SignatureType expandListsInSignature(SignatureType sigType) {
-  SmallVector<ValueInputConvention> conventions(
-      sigType.getValueInputConventions());
-  auto newFn = expandListsInFunc(sigType.getValues(), &conventions);
+  auto newFn = FunctionType::get(sigType.getContext(),
+                                 expandInList(sigType.getValueInputs()),
+                                 expandInList(sigType.getValueResults()));
   if (newFn == sigType.getValues())
     return sigType;
 
-  // TODO: Could expand the meta parameter types as well.
   return SignatureType::get(
       sigType.getInputParams(), sigType.getResultParamTypes(), newFn,
-      ConventionsAttr::get(sigType.getContext(), conventions,
-                           sigType.getFnEffects()));
+      ConventionsAttr::get(sigType.getContext(), newFn.getNumInputs()));
 }
 
 /// Convert a list type to an array type of the same length.
@@ -276,8 +244,6 @@ static Type expandListsInType(Type type) {
     while (true) {
       if (auto structType = dyn_cast<POP::StructType>(type))
         nextType = expandListsInStruct(structType).first;
-      else if (auto funcType = dyn_cast<FunctionType>(type))
-        nextType = expandListsInFunc(funcType, /*conventions*/ nullptr);
       else if (auto sigType = dyn_cast<SignatureType>(type))
         nextType = expandListsInSignature(sigType);
       else

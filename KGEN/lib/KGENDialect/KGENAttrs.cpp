@@ -1511,25 +1511,25 @@ static void printConstraintLoc(AsmPrinter &printer, Location loc) {
 }
 
 //===----------------------------------------------------------------------===//
-// ODS-Generated Definitions
+// ConventionsAttr
 //===----------------------------------------------------------------------===//
 
-#define GET_ATTRDEF_CLASSES
-#include "KGEN/KGENDialect/KGENAttrs.cpp.inc"
-
-//===----------------------------------------------------------------------===//
-// Attribute Implementation
-//===----------------------------------------------------------------------===//
-
-Type TypeConstantAttr::getValue() const {
-  return static_cast<detail::ConcreteTypeConstantAttrStorage *>(impl)->value;
+ConventionsAttr ConventionsAttr::get(MLIRContext *ctx, unsigned numInputs) {
+  return get(ctx, SmallVector<ValueInputConvention>(numInputs),
+             FnEffects::None);
 }
 
-Type ParameterizedTypeConstantAttr::getType() const { return getImpl()->type; }
-
-Type ParameterizedTypeConstantAttr::getValue() const {
-  return getImpl()->value;
+bool ConventionsAttr::isDefault() {
+  return getFnEffects() == FnEffects::None &&
+         llvm::all_of(getInputConventions(),
+                      [](ValueInputConvention inputConv) {
+                        return inputConv == ValueInputConvention::ByVal;
+                      });
 }
+
+//===----------------------------------------------------------------------===//
+// TargetInfoAttr
+//===----------------------------------------------------------------------===//
 
 llvm::hash_code TargetInfoAttr::hash() const {
   return llvm::hash_combine(getTripleStr(), getCpu(), getFeatures(),
@@ -1612,4 +1612,25 @@ TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
   return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu,
                              features.getString(), sizeof(ssize_t),
                              kPreferredSIMDBitWidth, TargetType::get(ctx));
+}
+
+//===----------------------------------------------------------------------===//
+// ODS-Generated Definitions
+//===----------------------------------------------------------------------===//
+
+#define GET_ATTRDEF_CLASSES
+#include "KGEN/KGENDialect/KGENAttrs.cpp.inc"
+
+//===----------------------------------------------------------------------===//
+// Attribute Implementation
+//===----------------------------------------------------------------------===//
+
+Type TypeConstantAttr::getValue() const {
+  return static_cast<detail::ConcreteTypeConstantAttrStorage *>(impl)->value;
+}
+
+Type ParameterizedTypeConstantAttr::getType() const { return getImpl()->type; }
+
+Type ParameterizedTypeConstantAttr::getValue() const {
+  return getImpl()->value;
 }
