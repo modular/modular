@@ -423,23 +423,23 @@ kgen.generator @string_params<a: string, b: string>()
 // TARGET TYPES
 // CHECK-LABEL: kgen.generator @target_params<t0: target, t1: target>()
 kgen.generator @target_params<t0: target, t1: target>()
-  // CHECK: constraints <[target_supports(:target t0, t1),
-  constraints <[target_supports(:target t0, t1), "must support target!!"]> {
+  // CHECK: constraints <[target_eq(:target t0, t1),
+  constraints <[target_eq(:target t0, t1), "must support target!!"]> {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @target_params2<t0: target>()
 kgen.generator @target_params2<t0: target>()
-  // CHECK: constraints <[target_supports(:target t0, #kgen.target<triple="triple", cpu="cpu", features="features", pointer_size=3, simd_bit_width=4>),
-  constraints <[target_supports(:target t0, #kgen.target<"triple", "cpu", "features", 3, 4>), "must support target!!"]> {
+  // CHECK: constraints <[target_eq(:target t0, #kgen.target<triple="triple", cpu="cpu", features="features", pointer_size=3, simd_bit_width=4>),
+  constraints <[target_eq(:target t0, #kgen.target<"triple", "cpu", "features", 3, 4>), "must support target!!"]> {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @target_host<t0: target>()
 kgen.generator @target_host<t0: target>()
-  // COM: constraints <[target_supports(:target #kgen.target<"x86_64-unknown-linux-gnu", "znver3", "-avx512pf,...">, t0),
-  // CHECK: constraints <[target_supports(:target #kgen.target<
-  constraints <[target_supports(:target #kgen.target<host>, t0), "must support target!!"]> {
+  // COM: constraints <[target_eq(:target #kgen.target<"x86_64-unknown-linux-gnu", "znver3", "-avx512pf,...">, t0),
+  // CHECK: constraints <[target_eq(:target #kgen.target<
+  constraints <[target_eq(:target #kgen.target<host>, t0), "must support target!!"]> {
   kgen.return
 }
 

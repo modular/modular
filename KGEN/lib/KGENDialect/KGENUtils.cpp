@@ -695,7 +695,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
         // result is always `i1`.
         operandType = p.getBuilder().getIndexType();
         break;
-      case (uint32_t)POC::TargetSupports:
+      case (uint32_t)POC::TargetEq:
         operandType = TargetType::get(p.getContext());
         break;
       default:
@@ -841,8 +841,8 @@ static void printOperatorOperands(raw_ostream &os, POC opcode,
                                   ArrayRef<TypedAttr> operands) {
   // If this is a comparison and the elements are not index type, print the
   // type explicitly.
-  if (llvm::is_contained(
-          {POC::In, POC::EQ, POC::LT, POC::LE, POC::TargetSupports}, opcode))
+  if (llvm::is_contained({POC::In, POC::EQ, POC::LT, POC::LE, POC::TargetEq},
+                         opcode))
     printColonTypeOrIndexPrefix(os, operands[0].getType());
 
   switch (opcode) {
