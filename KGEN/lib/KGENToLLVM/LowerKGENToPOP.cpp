@@ -359,88 +359,6 @@ struct ExpandListCreateOp : public mlir::OpRewritePattern<ListCreateOp> {
   }
 };
 
-/// ```
-/// for (%e0, ...) in dot(map^i(I0), %list) do IV(i+1) = f(%e0, ..., IV(i))
-/// ```
-///
-/// becomes
-///
-/// ```
-/// IV1 = f(%list[map^0(I0)], IV0),
-/// IV2 = f(%list[map^1(I0)], IV1),
-/// ...
-/// ```
-struct ExpandListIterateOp : public mlir::OpRewritePattern<ListIterateOp> {
-  ExpandListIterateOp(MLIRContext *ctx)
-      : OpRewritePattern(ctx, /*benefit=*/2) {}
-
-  /// Hash a compound index.
-  struct HashLoopIndex : public llvm::DenseMapInfo<SmallVector<int64_t>> {
-    static SmallVector<int64_t> getEmptyKey() { return {-1}; }
-    static SmallVector<int64_t> getTombstoneKey() { return {-2}; }
-    static unsigned getHashValue(ArrayRef<int64_t> value) {
-      return llvm::hash_combine_range(value.begin(), value.end());
-    }
-    static bool isEqual(ArrayRef<int64_t> lhs, ArrayRef<int64_t> rhs) {
-      return lhs == rhs;
-    }
-  };
-
-  LogicalResult matchAndRewrite(ListIterateOp op,
-                                PatternRewriter &b) const override {
-    ValueRange elements = materializeListDestConversion(b, op.getList());
-    SmallVector<Value> inductionVars = llvm::to_vector(op.getArguments());
-    SmallVector<int64_t> index;
-    index.reserve(op.getInit().size());
-    for (TypedAttr init : op.getInit())
-      index.push_back(cast<IntegerAttr>(init).getInt());
-    mlir::AffineMap map = op.getMap();
-    int64_t length = *op.getList().getType().getResolvedLength();
-
-    // Keep a set of the visited indices that are in-bounds. An index indicates
-    // an exit condition if it was already seen (which means the sequence
-    // loops), or if any of the values are out-of-bounds.
-    DenseSet<SmallVector<int64_t>, HashLoopIndex> seenIndices;
-    auto indexIndicatesExit = [&seenIndices,
-                               length](const SmallVector<int64_t> &index) {
-      if (llvm::any_of(index,
-                       [length](int64_t i) { return i < 0 || i >= length; }))
-        return true;
-      return !seenIndices.insert(index).second;
-    };
-
-    // Start unrolling the loop body.
-    ArrayRef<BlockArgument> listArgs =
-        op.getBody().getArguments().slice(0, index.size());
-    ArrayRef<BlockArgument> ivArgs =
-        op.getBody().getArguments().slice(listArgs.size());
-    while (!indexIndicatesExit(index)) {
-      BlockAndValueMapping bv;
-      // Map the list values.
-      for (auto [i, listArg] : llvm::zip(index, listArgs))
-        bv.map(listArg, elements[i]);
-      for (auto [iv, ivArg] : llvm::zip(inductionVars, ivArgs))
-        bv.map(ivArg, iv);
-
-      // Clone the body with the remapped arguments.
-      for (Operation &loopOp : op.getBody().front().without_terminator())
-        b.clone(loopOp, bv);
-
-      // Assign the next induction variables and update the list.
-      auto yield = cast<ListYieldOp>(op.getBody().front().getTerminator());
-      inductionVars.clear();
-      for (Value value : yield.getOperands())
-        inductionVars.push_back(bv.lookup(value));
-      index = map.compose(index);
-    }
-
-    // Replace the results of the operation with the last values of the
-    // induction variables.
-    b.replaceOp(op, inductionVars);
-    return success();
-  }
-};
-
 /// construct(%a, %list, %b) -> construct(%a, %l0, %l1, %l2, %b).
 struct ExpandStructConstructOp
     : public mlir::OpRewritePattern<POP::StructConstructOp> {
@@ -903,12 +821,11 @@ void LowerKGENToPOPPass::runOnOperation() {
   mlir::GreedyRewriteConfig config;
   config.maxIterations = mlir::GreedyRewriteConfig::kNoIterationLimit;
   RewritePatternSet patterns(&getContext());
-  patterns
-      .insert<ExpandListConstantOp, ExpandListGetOp, ExpandListCreateOp,
-              ExpandListIterateOp, ExpandStructConstructOp, ExpandStructGetOp,
-              ExpandStructReplaceOp, ExpandStructGEPOp, ExpandListStore,
-              ExpandListLoad, ExpandVariantGet, ExpandVariantCreate,
-              ExpandListDebugValue, ExpandGenericOperation>(&getContext());
+  patterns.insert<ExpandListConstantOp, ExpandListGetOp, ExpandListCreateOp,
+                  ExpandStructConstructOp, ExpandStructGetOp,
+                  ExpandStructReplaceOp, ExpandStructGEPOp, ExpandListStore,
+                  ExpandListLoad, ExpandVariantGet, ExpandVariantCreate,
+                  ExpandListDebugValue, ExpandGenericOperation>(&getContext());
   (void)mlir::applyPatternsAndFoldGreedily(getOperation(), std::move(patterns),
                                            config);
 
