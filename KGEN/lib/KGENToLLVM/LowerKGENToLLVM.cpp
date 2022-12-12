@@ -30,11 +30,29 @@ namespace LLVM = mlir::LLVM;
 namespace {
 
 //===----------------------------------------------------------------------===//
+// ConvertSymbolOpToLLVM
+//===----------------------------------------------------------------------===//
+
+/// This pattern is used to rewrite symbol operations while keeping the symbol
+/// table up-to-date.
+template <typename OpT>
+class ConvertSymbolOpToLLVM : public mlir::ConvertOpToLLVMPattern<OpT> {
+public:
+  ConvertSymbolOpToLLVM(mlir::LLVMTypeConverter &typeConverter,
+                        SymbolTable &symtab)
+      : mlir::ConvertOpToLLVMPattern<OpT>(typeConverter), symtab(symtab) {}
+
+protected:
+  /// The symbol table.
+  SymbolTable &symtab;
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertKGENFunc
 //===----------------------------------------------------------------------===//
 
-struct ConvertKGENFunc : public mlir::ConvertOpToLLVMPattern<FuncOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
+  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
 
   LogicalResult
   matchAndRewrite(FuncOp func, FuncOpAdaptor adaptor,
@@ -57,7 +75,11 @@ struct ConvertKGENFunc : public mlir::ConvertOpToLLVMPattern<FuncOp> {
     (void)rewriter.convertRegionTypes(&funcOp.getBody(), *getTypeConverter());
 
     // Remove the function.
+    symtab.remove(func);
     rewriter.eraseOp(func);
+    Block::iterator insertPt(func->getNextNode());
+    funcOp->remove();
+    symtab.insert(funcOp, insertPt);
     return success();
   }
 };
@@ -67,9 +89,8 @@ struct ConvertKGENFunc : public mlir::ConvertOpToLLVMPattern<FuncOp> {
 //===----------------------------------------------------------------------===//
 
 /// Convert `kgen.extern.func` to an extern `llvm.func`.
-struct ConvertKGENExternFunc
-    : public mlir::ConvertOpToLLVMPattern<ExternFuncOp> {
-  using mlir::ConvertOpToLLVMPattern<ExternFuncOp>::ConvertOpToLLVMPattern;
+struct ConvertKGENExternFunc : public ConvertSymbolOpToLLVM<ExternFuncOp> {
+  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
 
   LogicalResult
   matchAndRewrite(ExternFuncOp op, typename ExternFuncOp::Adaptor adaptor,
@@ -84,8 +105,12 @@ struct ConvertKGENExternFunc
       return emitError(op.getLoc(), "failed to convert func signature");
 
     // Replace it with an LLVM function that has no body.
-    rewriter.replaceOpWithNewOp<LLVM::LLVMFuncOp>(
+    symtab.remove(op);
+    auto funcOp = rewriter.replaceOpWithNewOp<LLVM::LLVMFuncOp>(
         op, op.getNameAttr(), funcType, LLVM::Linkage::External);
+    Block::iterator insertPt(funcOp->getNextNode());
+    funcOp->remove();
+    symtab.insert(funcOp, insertPt);
 
     return success();
   }
@@ -97,8 +122,8 @@ struct ConvertKGENExternFunc
 
 /// Convert `kgen.extern.variable` to an extern global variable.
 struct ConvertKGENExternVariable
-    : public mlir::ConvertOpToLLVMPattern<ExternVariableOp> {
-  using mlir::ConvertOpToLLVMPattern<ExternVariableOp>::ConvertOpToLLVMPattern;
+    : public ConvertSymbolOpToLLVM<ExternVariableOp> {
+  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
 
   LogicalResult
   matchAndRewrite(ExternVariableOp op,
@@ -110,9 +135,13 @@ struct ConvertKGENExternVariable
       return emitError(op.getLoc(), "failed to convert variable type");
 
     // Replace it with an LLVM global variable.
-    rewriter.replaceOpWithNewOp<LLVM::GlobalOp>(
+    symtab.remove(op);
+    auto globalOp = rewriter.replaceOpWithNewOp<LLVM::GlobalOp>(
         op, llvmType, false, LLVM::Linkage::External, op.getName(),
         /*value=*/nullptr);
+    Block::iterator insertPt(globalOp->getNextNode());
+    globalOp->remove();
+    symtab.insert(globalOp, insertPt);
 
     return success();
   }
@@ -254,19 +283,24 @@ static LogicalResult removeExportOps(ExportOp exportOp,
 }
 
 static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
-                                       mlir::RewritePatternSet &patterns) {
+                                       mlir::RewritePatternSet &patterns,
+                                       SymbolTable &symtab) {
   patterns.insert<
       // clang-format off
       ConvertKGENAddressOf,
       ConvertKGENCall,
-      ConvertKGENFunc,
-      ConvertKGENExternFunc,
-      ConvertKGENExternVariable,
       ConvertKGENParamConstant,
       ConvertKGENReturn,
       ConvertHLCFReturn
       // clang-format on
       >(typeConverter);
+  patterns.insert<
+      // clang-format off
+      ConvertKGENFunc,
+      ConvertKGENExternFunc,
+      ConvertKGENExternVariable
+      // clang-format on
+      >(typeConverter, symtab);
   // Just remove ExportOps.
   patterns.add(removeExportOps);
 }
@@ -480,7 +514,9 @@ void LowerKGENToLLVMPass::runOnOperation() {
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
-  populateKGENToLLVMPatterns(typeConverter, patterns);
+  SymbolTable symtab =
+      getAnalysis<SymbolTableAnalysis>().getTopLevelSymbolTable();
+  populateKGENToLLVMPatterns(typeConverter, patterns, symtab);
   DebugInfo::populateTypeConversionPatterns(patterns, typeConverter);
   target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
       [&](Operation *op) { return typeConverter.isLegal(op); });
@@ -490,8 +526,6 @@ void LowerKGENToLLVMPass::runOnOperation() {
     return signalPassFailure();
 
   // Fix up the linkage for the exported symbols.
-  SymbolTable &symtab =
-      getAnalysis<SymbolTableAnalysis>().getTopLevelSymbolTable();
   for (FlatSymbolRefAttr sym : publicSymbols) {
     // Have to add the public symbols to the topLevelFuncs list.
     topLevelFuncs.push_back(sym.getValue().str());
