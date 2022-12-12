@@ -38,9 +38,9 @@ template <typename T>
 static LogicalResult checkReturnArguments(T op) {
   // If we have a return op, then we can check the argument types. Otherwise, we
   // just don't have the return op.
-  if (ReturnOp r = op.getReturnOp())
-    return r.checkArgumentTypes(op.getResultParamTypes(),
-                                {op.getResultTypes()});
+  if (ReturnOp returnOp = op.getReturnOp())
+    return returnOp.checkArgumentTypes(op.getResultParamTypes(),
+                                       {op.getResultTypes()});
   return success();
 }
 
@@ -325,9 +325,6 @@ void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
 LogicalResult
 GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  if (failed(checkReturnArguments(*this)))
-    return failure();
-
   // See if the parameter definitions and uses within the generator are
   // structured correctly.
   if (failed(ParameterDeclsAndUses().calculateAndVerify(*this, symbolTable)))
@@ -351,7 +348,12 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return verifyDeclMatchesInterface("generator", *this, "interface", interface);
 }
 
-LogicalResult GeneratorOp::verify() { return verifyOneBlockOrCached(*this); }
+LogicalResult GeneratorOp::verify() {
+  if (failed(checkReturnArguments(*this)))
+    return failure();
+
+  return verifyOneBlockOrCached(*this);
+}
 
 Region *GeneratorOp::getCallableRegion() { return &getBodyRegion(); }
 
@@ -382,14 +384,6 @@ ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &result) {
 void FuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
 LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  if (failed(checkReturnArguments(*this)))
-    return failure();
-
-  // kgen.func's are not allowed to have input parameter lists.
-  if (!getInputParamDecls().empty())
-    return emitError(
-        "kgen.func only allows output parameters, not input parameters");
-
   // See if the parameter definitions and uses within the func are
   // structured correctly.
   ParameterDeclsAndUses paramInfo;
@@ -417,7 +411,19 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return success();
 }
 
-LogicalResult FuncOp::verify() { return verifyOneBlockOrCached(*this); }
+LogicalResult FuncOp::verify() {
+  if (failed(checkReturnArguments(*this)))
+    return failure();
+
+  // kgen.func's are not allowed to have input parameter lists.
+  if (!getInputParamDecls().empty())
+    return emitOpError("only allows output parameters, not input parameters");
+
+  if (!getConventions().isDefault())
+    return emitOpError("can only have default conventions");
+
+  return verifyOneBlockOrCached(*this);
+}
 
 Region *FuncOp::getCallableRegion() { return &getBodyRegion(); }
 
