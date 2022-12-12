@@ -424,7 +424,7 @@ kgen.func @struct_gep_type(%a: !pop.pointer<struct<i32>>) {
 
 // -----
 
-kgen.func @parametric_global_constant<T:type>() {
+kgen.generator @parametric_global_constant<T:type>() {
   // expected-error @below {{'pop.global_constant' op array constant must have scalar elements}}
   %0 = pop.global_constant(#M.dense_array<0> : !M.array<1xi32>) : !pop.array<1, T>
   kgen.return

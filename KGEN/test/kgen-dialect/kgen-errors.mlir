@@ -149,7 +149,7 @@ kgen.generator @g2<>() {
 
 // -----
 
-// expected-error @+1 {{kgen.func only allows output parameters, not input parameters}}
+// expected-error @+1 {{'kgen.func' op only allows output parameters, not input parameters}}
 kgen.func @bad_param<x>() {
   kgen.return
 }
@@ -982,11 +982,11 @@ kgen.func @bad(%byval: i32 byref) {
 // -----
 
 // expected-note @+1 {{callee declared here}}
-kgen.func @callee(%byval: !pop.pointer<i32> byref) {
+kgen.generator @callee(%byval: !pop.pointer<i32> byref) {
   kgen.return
 }
 
-kgen.func @caller(%arg: !pop.pointer<i32>) {
+kgen.generator @caller(%arg: !pop.pointer<i32>) {
   // Ok
   kgen.call @callee(%arg) : (!pop.pointer<i32> byref) -> ()
 
@@ -1000,5 +1000,12 @@ kgen.func @caller(%arg: !pop.pointer<i32>) {
 kgen.generator @target_params2<t0: target>()
  // expected-error @below {{expected '='}}
   constraints <[target_supports(:target t0, #kgen.target<triple"triple", "cpu", "features", 3, 4>), "must support target!!"]> {
+  kgen.return
+}
+
+// -----
+
+// expected-error @below {{'kgen.func' op can only have default conventions}}
+kgen.func @conventions(%arg0: !pop.pointer<index> byref) {
   kgen.return
 }
