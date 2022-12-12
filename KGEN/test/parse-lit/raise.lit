@@ -22,3 +22,8 @@ fn raisesReturnsNone():
     # CHECK-NEXT: %1 = pop.variant.create %0
     # CHECK-NEXT: kgen.return %1
     pass
+
+# COM: We can return an variant of error and index in a non-throwing function.
+# CHECK-LABEL: lit.func @raisesReturnsVariant() -> !pop.variant<@Error, index>
+fn raisesReturnsVariant() -> __mlir_type.`!pop.variant<@Error, index>`:
+    return __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, index>`](1)
