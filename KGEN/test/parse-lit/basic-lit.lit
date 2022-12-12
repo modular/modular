@@ -249,7 +249,7 @@ fn mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2) -> __mlir_type.inde
   var i1Cast = __mlir_op.`index.castu`[_type: __mlir_type.i1](idxConstant)
 
   # CHECK: kgen.param.declare new_lower = <max(a, 42)>
-  alias new_lower = __mlir_attr.`#kgen.param.expr<max, #lit.placeholder : index, #lit.placeholder : index> : index`[a, 42]
+  alias new_lower = __mlir_attr.`#kgen.param.expr<max, #lit.placeholder<0> : index, #lit.placeholder<1> : index> : index`[a, 42]
 
   # CHECK: [[TMP1:%.*]] = kgen.param.constant = <new_lower>
   # CHECK: [[TMP2:%.*]] = index.constant 1
