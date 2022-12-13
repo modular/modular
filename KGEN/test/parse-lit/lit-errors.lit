@@ -134,8 +134,7 @@ def WeirdMetaParams(a: Thing[1, 1.5]):
 
 fn voidReturningFn(): pass
 fn badCall():
-  # TODO(QoI): value of type 'None' cannot be converted to expected type 'NotBoolConvertible'
-  # expected-error @+1 {{'NotBoolConvertible' does not implement the "__new__" special method}}
+  # expected-error @+1 {{value of type 'None' cannot be converted to expected type 'NotBoolConvertible'}}
   test_bool_context(voidReturningFn())
 
 
@@ -376,8 +375,7 @@ fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: SIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
   var x = a+a
   var y = b+b
-  # TODO(QoI): {{value of type 'SIMD[1, f64]' cannot be converted to expected type 'SIMD[2, si32]'}}
-  var z = b+a  # expected-error {{'__mlir_type.!pop.simd<2, si32>' does not implement the "__new__" special method}}
+  var z = b+a  # expected-error {{value of type 'SIMD[1, f64]' cannot be converted to expected type '__mlir_type.!pop.simd<2, si32>'}}
 
 fn method(variable: Int):
   # expected-error @+1 {{declaration must have either a type or an initializer}}

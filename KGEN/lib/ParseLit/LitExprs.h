@@ -303,6 +303,9 @@ public:
   /// declaration as a LookupResult.
   LookupResult lookupAndResolveDecl(StringRef name, SMLoc loc, ASTDecl &scope);
 
+  /// Perform a name lookup for a member in the specified type.
+  LookupResult lookupAndResolveDecl(StringRef name, SMLoc loc, ASTType scope);
+
   /// Emit an error through the parser's logic.
   InFlightDiagnostic emitError(SMLoc loc, const Twine &twine = "") const {
     return shared.emitError(loc, twine);

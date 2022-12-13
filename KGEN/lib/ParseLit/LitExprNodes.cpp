@@ -312,12 +312,20 @@ auto ExprEmitter::lookupAndResolveDecl(StringRef name, SMLoc loc,
   return LookupResult::getSuccess(result);
 }
 
+/// Perform a name lookup for a member in the specified type.
+auto ExprEmitter::lookupAndResolveDecl(StringRef name, SMLoc loc, ASTType scope)
+    -> LookupResult {
+  if (auto *decl = scope.getDecl(shared))
+    return lookupAndResolveDecl(name, loc, *decl);
+  return LookupResult::getFailure();
+}
+
 /// Given an ASTType 'containingType', look up a named member of it and return
 /// the reference to its symbol as an RValue.
 static CallableValue
-emitCallableDeclMember(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
-                       StringRef memberName, const ExprNode *node,
-                       ExprEmitter &emitter, ASTType contextualType = {}) {
+emitDeclMemberAsCallable(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
+                         StringRef memberName, const ExprNode *node,
+                         ExprEmitter &emitter, ASTType contextualType = {}) {
   // Perform a lookup of the specified decl in the current container.
   ExprEmitter::LookupResult lookup =
       emitter.lookupAndResolveDecl(memberName, node->getLoc(), container);
@@ -427,8 +435,8 @@ static CallableValue emitInitializerCallable(ASTType calledType,
     return {};
   }
 
-  return emitCallableDeclMember(*calledDecl, calledType.getParamBindings(),
-                                "__new__", node, emitter);
+  return emitDeclMemberAsCallable(*calledDecl, calledType.getParamBindings(),
+                                  "__new__", node, emitter);
 }
 
 //===----------------------------------------------------------------------===//
@@ -552,6 +560,11 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
 // IR Emission helpers
 //===----------------------------------------------------------------------===//
 
+// FIXME: Move to ExprEmitter method.
+static AnyValue emitFunctionCall(CallableValue calleeVal,
+                                 ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                 SMLoc callLoc, ExprEmitter &emitter);
+
 /// Convert the specified MLIR value (which may be an RValue or LValue) to the
 /// expected type.  On error, this diagnoses it and returns null.
 ///
@@ -563,16 +576,22 @@ static Value getDRValueAsExpectedType(Value value, const ExprNode *expr,
     return value;
 
   // Check to see if we can invoke an __new__ method to convert it.
-  // TODO: refactor all of this to support tentative conversions, enabling
-  // overload checking.
-  //
-  // TODO(QoI): Failure should produce something like this:
-  //   emitter.emitError(expr->getLoc(), "value of type ")
-  //       << ASTType(value.getType())<<" cannot be converted to expected type "
-  //       << expectedType;
+  auto lookupResult =
+      emitter.lookupAndResolveDecl("__new__", expr->getLoc(), expectedType);
+  ASTDecl *resultDecl = lookupResult.getIfSuccess();
+  if (!resultDecl) {
+    if (lookupResult.isFailure()) {
+      emitter.emitError(expr->getLoc(), "value of type ")
+          << ASTType(value.getType())
+          << " cannot be converted to expected type " << expectedType;
+    }
+    return {};
+  }
+
+  CallableValue callee(expr->getLoc(), *resultDecl,
+                       expectedType.getParamBindings());
   ASTExprAnd<AnyValue> newArg = {DRValue(value), expr};
-  auto result = emitter.emitSpecialMethodCall(
-      expectedType, SpecialFunctionKind::kNew, newArg, expr->getLoc());
+  auto result = emitFunctionCall(callee, newArg, expr->getLoc(), emitter);
   if (!result)
     return {};
 
@@ -777,10 +796,7 @@ ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
   auto specialFnInfo = SpecialFunctionInfo::get(kind);
   auto nameAttr = StringAttr::get(getContext(), specialFnInfo.name);
 
-  auto lookupResult = LookupResult::getFailure();
-  if (auto *decl = type.getDecl(shared))
-    lookupResult = lookupAndResolveDecl(specialFnInfo.name, callLoc, *decl);
-
+  auto lookupResult = lookupAndResolveDecl(specialFnInfo.name, callLoc, type);
   ASTDecl *resultDecl = lookupResult.getIfSuccess();
   if (!resultDecl) {
     if (lookupResult.isFailure())
@@ -872,8 +888,8 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter,
 /// and return a null value.
 CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
                                         ASTType contextualType) const {
-  return emitCallableDeclMember(emitter.declScope, /*no param bindings*/ {},
-                                spelling, this, emitter, contextualType);
+  return emitDeclMemberAsCallable(emitter.declScope, /*no param bindings*/ {},
+                                  spelling, this, emitter, contextualType);
 }
 
 /// Emit an expression 'x.y' where x is known to be a Type value.
@@ -904,8 +920,8 @@ static CallableValue emitTypeAttributeRef(ASTType baseType,
   }
 
   // Normal member reference.
-  return emitCallableDeclMember(*typeDecl, baseType.getParamBindings(),
-                                attrSpelling, node, emitter);
+  return emitDeclMemberAsCallable(*typeDecl, baseType.getParamBindings(),
+                                  attrSpelling, node, emitter);
 }
 
 AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
@@ -1753,6 +1769,8 @@ AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
   if (!cond)
     return {};
 
+  // First we use the __bool__ method to convert the user defined type to
+  // something that is a Bool or other type that implements __lit_bool.
   SMLoc condLoc = condExpr->getLoc();
   ASTExprAnd<AnyValue> argValue = {cond, condExpr};
   AnyValue boolCall = emitter.emitSpecialMethodCall(
@@ -1760,6 +1778,7 @@ AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
   if (!boolCall)
     return {};
 
+  // Then we use __lit_bool to convert to an i1 value.
   AnyValue litBoolCall = emitter.emitSpecialMethodCall(
       boolCall.getType(), SpecialFunctionKind::kLitBool, {{boolCall, condExpr}},
       condLoc);
