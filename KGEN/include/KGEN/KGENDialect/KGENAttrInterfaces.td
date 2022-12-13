@@ -25,12 +25,17 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
   let methods = [
     InterfaceMethod<[{
       Returns whether the attribute can be considered a simple constant.
-    }], "bool", "isSimpleConstant">,
+    }], "bool", "isConstant">,
     InterfaceMethod<[{
       Compare this parameter attribute with another attribute that may not be of
       the same kind, returning true if this parameter should be considered
       "less" than the other attribute.
-    }], "bool", "compare", (ins "Attribute":$rhs)>,
+
+      Parameters are sorted between those that are simple constants and those
+      that aren't, meaning that if `lhs` is a simple constant, then `rhs` will
+      also be a simple constant, and if `lhs` is not a simple constant, then
+      `rhs` won't be either.
+    }], "bool", "isLessThan", (ins "Attribute":$rhs)>,
   ];
 
   let extraClassDeclaration = [{
@@ -38,6 +43,10 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
     /// parameter is a constant if it contains no nested expressions that have
     /// not been evaluated.
     static bool isSimpleConstant(Attribute attr);
+
+    /// Compare two parameter constants, returning true if the `lhs` parameter
+    /// should be considered "less" than the `rhs` parameter.
+    static bool compare(Attribute lhs, Attribute rhs);
   }];
 }
 

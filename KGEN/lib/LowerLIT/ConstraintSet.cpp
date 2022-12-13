@@ -23,7 +23,7 @@ LogicalResult ConstraintSet::addConstraint(ConstraintAttr constraint) {
     if (oper.getOpcode() == POC::EQ) {
       if (auto param = dyn_cast<ParamDeclRefAttr>(oper.getOperand(0))) {
         // 'param == 42' is equality comparable.
-        if (isSimpleConstant(oper.getOperand(1))) {
+        if (ParameterAttr::isSimpleConstant(oper.getOperand(1))) {
           auto value = PointwiseValue::getSingleValue(
               oper.getOperand(1), constraint.getMessage(), constraint.getLoc());
           return addPointwiseParamConstraint(param, value);
@@ -39,7 +39,8 @@ LogicalResult ConstraintSet::addConstraint(ConstraintAttr constraint) {
     } else if (oper.getOpcode() == POC::In) {
       // 'param in {1,2,3}' is equality comparable.
       if (auto param = dyn_cast<ParamDeclRefAttr>(oper.getOperand(0))) {
-        if (llvm::all_of(oper.getOperands().drop_front(), isSimpleConstant)) {
+        if (llvm::all_of(oper.getOperands().drop_front(),
+                         ParameterAttr::isSimpleConstant)) {
           auto value = PointwiseValue::getInSetValue(
               oper.getOperands().drop_front(), constraint.getMessage(),
               constraint.getLoc());
@@ -176,7 +177,7 @@ PointwiseValue::getAsConstraintSpec(ParamDeclRefAttr param) const {
     llvm::append_range(operands, valueArray);
     expr = ParamOperatorAttr::get(POC::In, operands);
   } else {
-    assert(isEquivalence() || isSimpleConstant(value));
+    assert(isEquivalence() || ParameterAttr::isSimpleConstant(value));
     // We add pointwise equality constraints and equivalence constraints with
     // equals.
     expr = ParamOperatorAttr::get(POC::EQ, param, value);

@@ -161,6 +161,51 @@ LogicalResult ListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
+/// A list constant is simple if its type and elements are fully-resolved.
+bool ListAttr::isConstant() const {
+  return !isParameterizedType(getType()) &&
+         llvm::all_of(getValues(), [](TypedAttr attr) {
+           return ParameterAttr::isSimpleConstant(attr);
+         });
+}
+
+/// It isn't important to sort list attributes.
+bool ListAttr::isLessThan(Attribute rhs) const { return false; }
+
+//===----------------------------------------------------------------------===//
+// UnknownAttr
+//===----------------------------------------------------------------------===//
+
+bool UnknownAttr::isConstant() const { return true; }
+
+/// Any attribute that isn't unknown is less than an unknown attribute.
+bool UnknownAttr::isLessThan(Attribute rhs) const { return false; }
+
+//===----------------------------------------------------------------------===//
+// ParamCallRegionRefAttr
+//===----------------------------------------------------------------------===//
+
+/// This attribute refers to a region, which might be parameterized.
+bool ParamCallRegionRefAttr::isConstant() const { return false; }
+
+/// No meaningful sort order for region references.
+bool ParamCallRegionRefAttr::isLessThan(Attribute rhs) const { return false; }
+
+//===----------------------------------------------------------------------===//
+// ParamDeclRefAttr
+//===----------------------------------------------------------------------===//
+
+/// A parameter reference forms the basis of a non-constant parameter attribute.
+bool ParamDeclRefAttr::isConstant() const { return false; }
+
+/// Sort the parameter references by name.
+bool ParamDeclRefAttr::isLessThan(Attribute rhs) const {
+  if (auto ref = llvm::dyn_cast<ParamDeclRefAttr>(rhs))
+    return getName().getValue() < ref.getName().getValue();
+  // Otherwise, named parameters are always to the right.
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // TypeConstantAttr
 //===----------------------------------------------------------------------===//
@@ -192,6 +237,12 @@ ConcreteTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
+/// Always a constant by definition.
+bool ConcreteTypeConstantAttr::isConstant() const { return true; }
+
+/// No meaningful sort order for types.
+bool ConcreteTypeConstantAttr::isLessThan(Attribute rhs) const { return false; }
+
 //===----------------------------------------------------------------------===//
 // ParameterizedTypeConstantAttr
 //===----------------------------------------------------------------------===//
@@ -217,6 +268,14 @@ LogicalResult ParameterizedTypeConstantAttr::verify(
   if (!attrType.isa<MLIRTypeType>())
     return emitError() << "expected type to be !kgen.mlirtype";
   return success();
+}
+
+/// Always not a constant by definition.
+bool ParameterizedTypeConstantAttr::isConstant() const { return false; }
+
+/// No meaningful sort order for types.
+bool ParameterizedTypeConstantAttr::isLessThan(Attribute rhs) const {
+  return false;
 }
 
 //===----------------------------------------------------------------------===//
@@ -296,6 +355,16 @@ bool DTypeConstantAttr::isConvertibleFrom(Type type) {
     return dtype.isFloat() && areEquivalentFloatTypes(dtype, fpType);
 
   return false;
+}
+
+/// Always a constant by definition.
+bool DTypeConstantAttr::isConstant() const { return true; }
+
+/// Sort by dtype value.
+bool DTypeConstantAttr::isLessThan(Attribute rhs) const {
+  if (auto dtype = llvm::dyn_cast<DTypeConstantAttr>(rhs))
+    return getDType().getValue() < dtype.getDType().getValue();
+  return true;
 }
 
 //===----------------------------------------------------------------------===//
@@ -402,6 +471,24 @@ LogicalResult ExprFuncAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return checkSelfContained(emitError, paramDecls, inputs, exprs);
 }
 
+/// The expression function is a simple constant if it has no parameters.
+bool ExprFuncAttr::isConstant() const {
+  return !isParameterizedType(getType()) && getParamDecls().empty();
+}
+
+/// No meaningful sort order for expression functions.
+bool ExprFuncAttr::isLessThan(Attribute rhs) const { return false; }
+
+//===----------------------------------------------------------------------===//
+// SymbolConstantAttr
+//===----------------------------------------------------------------------===//
+
+/// Always a constant by definition.
+bool SymbolConstantAttr::isConstant() const { return true; }
+
+/// No meaningful sort order.
+bool SymbolConstantAttr::isLessThan(Attribute rhs) const { return false; }
+
 //===----------------------------------------------------------------------===//
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
@@ -490,10 +577,17 @@ TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
 }
 
 namespace llvm {
+/// Provide the ability to hash triples for attribute uniquing.
 inline hash_code hash_value(llvm::Triple triple) {
   return hash_value(triple.normalize());
 }
 } // namespace llvm
+
+/// Always a constant.
+bool TargetInfoAttr::isConstant() const { return true; }
+
+/// No meaningful sort order.
+bool TargetInfoAttr::isLessThan(Attribute rhs) const { return false; }
 
 //===----------------------------------------------------------------------===//
 // ParamOperatorAttr
@@ -736,96 +830,6 @@ static ParamOperatorAttr dyn_castPE(POC opcode, Attribute value) {
   return {};
 }
 
-/// This implements a < comparison for two operands to an associative operation
-/// imposing an ordering upon them.
-///
-/// The ordering provided puts more complex things to the start of the list,
-/// from left to right:
-///    expressions :: decl.refs :: constant
-///
-static bool paramExprOperandSortPredicate(Attribute lhs, Attribute rhs) {
-  // Simplify the code below - we never have to care about exactly equal values.
-  if (lhs == rhs)
-    return false;
-
-  // There is no meaningful sort order for arbitrary types.
-  if (isa<TypeConstantAttr>(lhs))
-    return false;
-
-  // All non-constant expressions are "less than" a constant, since they appear
-  // on the right. We handle all simple constants consistently here: they can
-  // never occur in the same expression since they have different types.
-  if (isSimpleConstant(rhs)) {
-    // Everything that isn't ? is less than ?.
-    if (isa<UnknownAttr>(rhs))
-      return !isa<UnknownAttr>(lhs);
-    // It isn't useful to sort function and list constants (yet).
-    if (isa<ExprFuncAttr, ListAttr>(rhs))
-      return false;
-
-    if (auto intRhs = dyn_cast<IntegerAttr>(rhs)) {
-      auto intLhs = dyn_cast<IntegerAttr>(lhs);
-      return !intLhs || intLhs.getValue().slt(intRhs.getValue());
-    }
-    if (auto dtypeRhs = dyn_cast<DTypeConstantAttr>(rhs)) {
-      auto dtypeLhs = dyn_cast<DTypeConstantAttr>(lhs);
-      return !dtypeLhs ||
-             dtypeLhs.getDType().getValue() < dtypeRhs.getDType().getValue();
-    }
-    if (auto strRhs = dyn_cast<StringAttr>(rhs)) {
-      auto strLhs = dyn_cast<StringAttr>(lhs);
-      return !strLhs || strLhs.getValue() < strRhs.getValue();
-    }
-    auto fltRhs = cast<FloatAttr>(rhs);
-    auto fltLhs = dyn_cast<FloatAttr>(lhs);
-    return !fltLhs || fltLhs.getValue() < fltRhs.getValue();
-  }
-  if (isSimpleConstant(lhs))
-    return false;
-
-  // Next up are named parameters.
-  if (auto rhsParam = dyn_cast<ParamDeclRefAttr>(rhs)) {
-    // Parameters are sorted lexically w.r.t. each other.
-    if (auto lhsParam = dyn_cast<ParamDeclRefAttr>(lhs))
-      return lhsParam.getName().getValue() < rhsParam.getName().getValue();
-    // They otherwise appear on the right of other things.
-    return true;
-  }
-  if (lhs.isa<ParamDeclRefAttr>())
-    return false;
-
-  // The only thing left are nested expressions and lit placeholders, which
-  // we don't want to sort.
-  if (lhs.isa<ParamOperatorAttr>() && rhs.isa<ParamOperatorAttr>()) {
-    auto lhsExpr = lhs.cast<ParamOperatorAttr>(),
-         rhsExpr = rhs.cast<ParamOperatorAttr>();
-
-    // Sort by the string form of the opcode, e.g. add, .. mul,... then xor.
-    if (lhsExpr.getOpcode() != rhsExpr.getOpcode())
-      return stringifyPOC(lhsExpr.getOpcode()) <
-             stringifyPOC(rhsExpr.getOpcode());
-
-    // If they are the same opcode, then sort by arity: more complex to the
-    // left.
-    ArrayRef<TypedAttr> lhsOperands = lhsExpr.getOperands(),
-                        rhsOperands = rhsExpr.getOperands();
-    if (lhsOperands.size() != rhsOperands.size())
-      return lhsOperands.size() > rhsOperands.size();
-
-    // We know the two subexpressions are different (they'd otherwise be pointer
-    // equivalent) so just go compare all of the elements.
-    for (size_t i = 0, e = lhsOperands.size(); i != e; ++i) {
-      if (paramExprOperandSortPredicate(lhsOperands[i], rhsOperands[i]))
-        return true;
-      if (paramExprOperandSortPredicate(rhsOperands[i], lhsOperands[i]))
-        return false;
-    }
-    return false;
-  }
-
-  return false;
-}
-
 /// Treat `index` and signed integers as signed. Treat signless and unsigned
 /// integers as unsigned.
 static bool isSignedIntType(Type type) {
@@ -909,7 +913,7 @@ static Attribute simplifyAssocOp(
   // Impose an ordering on the operands, pushing subexpressions to the left and
   // constants to the right, with ParamRefs in the middle - but predictably
   // ordered w.r.t. each other.
-  llvm::stable_sort(operands, paramExprOperandSortPredicate);
+  llvm::stable_sort(operands, ParameterAttr::compare);
 
   // Merge any constants, they will appear at the back of the operand list now.
   if (operands.back().isa<IntegerAttr>()) {
@@ -1149,7 +1153,8 @@ static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
 
   // Otherwise, we can use pointer equality for the attributes we support that
   // are known to have agreeable widths.
-  if (isSimpleConstant(lhs) && isSimpleConstant(rhs))
+  if (ParameterAttr::isSimpleConstant(lhs) &&
+      ParameterAttr::isSimpleConstant(rhs))
     return BoolAttr::get(rhs.getContext(), lhs == rhs);
 
   // Otherwise can't fold something like "x == y".
@@ -1209,7 +1214,7 @@ static Attribute simplifyMod(SmallVectorImpl<TypedAttr> &operands) {
 static Attribute simplifyEQ(SmallVectorImpl<TypedAttr> &operands) {
   // Make sure parameters are ordered correctly, which also matters if they
   // don't fold.
-  llvm::stable_sort(operands, paramExprOperandSortPredicate);
+  llvm::stable_sort(operands, ParameterAttr::compare);
 
   return foldEquality(operands[0], operands[1]);
 }
@@ -1345,7 +1350,7 @@ static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
     return b.getBoolAttr(false);
 
   // Sort and unique the trailing operands.
-  llvm::stable_sort(trailing, paramExprOperandSortPredicate);
+  llvm::stable_sort(trailing, ParameterAttr::compare);
   SmallVector<TypedAttr> newOperands;
   newOperands.reserve(operands.size());
   newOperands.push_back(lhs);
@@ -1429,7 +1434,7 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
     ParameterEvaluator evaluator;
     for (auto [param, value] :
          llvm::zip(exprFunc.getParamDecls(), operands.drop_front())) {
-      if (!isSimpleConstant(value))
+      if (!ParameterAttr::isSimpleConstant(value))
         return {};
       evaluator.setParameterValue(param, value);
     }
@@ -1634,6 +1639,39 @@ ParamOperatorAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
       return {};
   }
   return ParamOperatorAttr::get(getOpcode(), castedAttrs);
+}
+
+/// Parameter operators are the basis of parameter expressions and are never
+/// simple constants.
+bool ParamOperatorAttr::isConstant() const { return false; }
+
+/// Sort operators by opcode, then number of operands, then recursively sort by
+/// operand values.
+bool ParamOperatorAttr::isLessThan(Attribute rhs) const {
+  auto op = llvm::dyn_cast<ParamOperatorAttr>(rhs);
+  // Expressions are always to the left of non-expressions.
+  if (!op)
+    return true;
+
+  // Sort by string value of the opcode.
+  if (getOpcode() != op.getOpcode())
+    return stringifyPOC(getOpcode()) < stringifyPOC(op.getOpcode());
+
+  // If they are the same opcode, sort by arity. More complex expressions are to
+  // the left.
+  if (getNumOperands() != op.getNumOperands())
+    return getNumOperands() > op.getNumOperands();
+
+  // We know the two subexpressions are different (they'd otherwise be pointer
+  // equivalent) so just go compare all of the elements.
+  for (auto [lhs, rhs] : llvm::zip(getOperands(), op.getOperands())) {
+    if (ParameterAttr::compare(lhs, rhs))
+      return true;
+    if (ParameterAttr::compare(rhs, lhs))
+      return false;
+  }
+
+  llvm_unreachable("unexpected equal parameter expressions");
 }
 
 //===----------------------------------------------------------------------===//

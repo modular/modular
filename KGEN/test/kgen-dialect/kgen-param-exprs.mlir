@@ -320,7 +320,7 @@ kgen.generator @param_canonicalize<p1, p2>() {
   kgen.param.declare fn3: () -> index = <#kgen.expr.func<() -> 1>>
   kgen.param.declare compareFns: i1 = <eq(:() -> index fn3, #kgen.expr.func<() -> 0>)>
 
-  // CHECK: <eq(:list<index[2]> [1, 2], list)>
+  // CHECK: <eq(:list<index[2]> list, [1, 2])>
   kgen.param.declare list: list<index[2]> = <[3, 4]>
   kgen.param.declare compareLists: i1 = <eq(:list<index[2]> [1, 2], list)>
 

@@ -32,7 +32,8 @@ class KGENAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 class KGEN_ExprAttr<string attrName, string attrMnemonic,
                     list<Trait> traits = []>
     : KGENAttr<attrName, attrMnemonic,
-               [TypedAttrInterface, SubElementAttrInterface] # traits>;
+               [TypedAttrInterface, SubElementAttrInterface,
+                DeclareAttrInterfaceMethods<ParameterAttrInterface>] # traits>;
 
 //===----------------------------------------------------------------------===//
 // ArrayOfAttrsAttr
@@ -631,10 +632,10 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
   let genVerifyDecl = 1;  // Generate getChecked/verify.
 
   let extraClassDeclaration = [{
-    size_t getNumOperands() {
+    size_t getNumOperands() const {
       return getOperands().size();
     }
-    TypedAttr getOperand(size_t i) {
+    TypedAttr getOperand(size_t i) const {
       return getOperands()[i];
     }
 

@@ -28,9 +28,8 @@ class PointwiseValue {
 public:
   static PointwiseValue getSingleValue(Attribute value, StringAttr message,
                                        Location loc) {
-    assert(isSimpleConstant(value) &&
-           "cannot get equality constraint with non-constant "
-           "value");
+    assert(ParameterAttr::isSimpleConstant(value) &&
+           "cannot get equality constraint with non-constant value");
     return PointwiseValue{value, message, loc};
   }
 
@@ -54,7 +53,7 @@ public:
   ConstraintAttr getAsConstraintSpec(ParamDeclRefAttr param) const;
 
   /// Return true if this marks equality to a simple constant.
-  bool isEquality() const { return isSimpleConstant(value); }
+  bool isEquality() const { return ParameterAttr::isSimpleConstant(value); }
 
   /// Return true if the parameter is known to be within a set of values.
   bool isInSetValue() const { return value.isa<ArrayAttr>(); }

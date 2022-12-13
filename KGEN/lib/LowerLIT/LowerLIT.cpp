@@ -205,7 +205,7 @@ ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
   if (auto decl = dyn_cast<ParamDeclRefAttr>(itfParam)) {
     // If one of these is a parameter, and one is concrete, then that infers a
     // value for the parameter.
-    if (isSimpleConstant(genParam))
+    if (ParameterAttr::isSimpleConstant(genParam))
       return addEqualityConstraintFn(decl, genParam);
     // If the other is a parameter, then that infers an equivalence constraint.
     if (auto genDecl = dyn_cast<ParamDeclRefAttr>(genParam))
