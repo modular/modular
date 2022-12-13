@@ -25,6 +25,12 @@ mlir_tablegen(KGENEnumAttrs.cpp.inc -gen-attrdef-defs -attrdefs-dialect=kgen)
 add_public_tablegen_target(MLIRKGENEnumsIncGen)
 add_dependencies(MLIRKGENIncGen MLIRKGENEnumsIncGen)
 
+set(LLVM_TARGET_DEFINITIONS KGENAttrInterfaces.td)
+mlir_tablegen(KGENAttrInterfaces.h.inc -gen-attr-interface-decls)
+mlir_tablegen(KGENAttrInterfaces.cpp.inc -gen-attr-interface-defs)
+add_public_tablegen_target(MLIRKGENAttrInterfacesIncGen)
+add_dependencies(MLIRKGENIncGen MLIRKGENAttrInterfacesIncGen)
+
 set(LLVM_TARGET_DEFINITIONS KGENTypeInterfaces.td)
 mlir_tablegen(KGENTypeInterfaces.h.inc -gen-type-interface-decls)
 mlir_tablegen(KGENTypeInterfaces.cpp.inc -gen-type-interface-defs)
