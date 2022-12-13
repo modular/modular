@@ -62,6 +62,21 @@ void KGENDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
+// Parameter Helper Functions
+//===----------------------------------------------------------------------===//
+
+/// Return the `paramDecls` array of ParamDeclAttr values if the specified
+/// operation has it, or an empty array otherwise.
+ArrayRef<ParamDeclAttr> KGEN::getParamDecls(Operation *op) {
+  if (auto declItf = dyn_cast<DeclInterface>(op))
+    return declItf.getInputParamDeclsAttr();
+  if (auto paramDeclsArray =
+          op->getAttrOfType<ParamDeclArrayAttr>("paramDecls"))
+    return paramDeclsArray;
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
 // ParamBindAttr
 //===----------------------------------------------------------------------===//
 
@@ -73,6 +88,47 @@ ParamBindAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
 
   return emitError() << "value has incorrect type, expected " << decl.getType()
                      << " but got " << value.getType();
+}
+
+//===----------------------------------------------------------------------===//
+// ConstraintAttr
+//===----------------------------------------------------------------------===//
+
+/// Parse an optional location or use the current location of the parser.
+static ParseResult parseConstraintLoc(AsmParser &parser,
+                                      FailureOr<Location> &loc) {
+  if (succeeded(parser.parseOptionalComma())) {
+    mlir::LocationAttr locAttr;
+    if (parser.parseAttribute(locAttr))
+      return failure();
+    loc.emplace(locAttr);
+  } else {
+    loc = parser.getEncodedSourceLoc(parser.getCurrentLocation());
+  }
+  return success();
+}
+
+/// Always print the location.
+static void printConstraintLoc(AsmPrinter &printer, Location loc) {
+  printer << ", ";
+  printer.printAttribute(loc);
+}
+
+//===----------------------------------------------------------------------===//
+// ConventionsAttr
+//===----------------------------------------------------------------------===//
+
+ConventionsAttr ConventionsAttr::get(MLIRContext *ctx, unsigned numInputs) {
+  return get(ctx, SmallVector<ValueInputConvention>(numInputs),
+             FnEffects::None);
+}
+
+bool ConventionsAttr::isDefault() {
+  return getFnEffects() == FnEffects::None &&
+         llvm::all_of(getInputConventions(),
+                      [](ValueInputConvention inputConv) {
+                        return inputConv == ValueInputConvention::ByVal;
+                      });
 }
 
 //===----------------------------------------------------------------------===//
@@ -104,6 +160,340 @@ LogicalResult ListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   }
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// TypeConstantAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr TypeConstantAttr::get(Type value) {
+  return ParameterizedTypeConstantAttr::get(value);
+}
+
+bool TypeConstantAttr::classof(Attribute attr) {
+  return attr.isa<ConcreteTypeConstantAttr, ParameterizedTypeConstantAttr>();
+}
+
+//===----------------------------------------------------------------------===//
+// ConcreteTypeConstantAttr
+//===----------------------------------------------------------------------===//
+
+ConcreteTypeConstantAttr ConcreteTypeConstantAttr::get(Type type) {
+  auto *ctx = type.getContext();
+  assert(!isParameterizedType(type) &&
+         "Cannot create a ConcreteTypeConstantAttr with parameterized type");
+  return Base::get(ctx, type, MLIRTypeType::get(ctx));
+}
+
+LogicalResult
+ConcreteTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                 Type type, Type attrType) {
+  if (!attrType.isa<MLIRTypeType>())
+    return emitError() << "expected type to be !kgen.mlirtype";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ParameterizedTypeConstantAttr
+//===----------------------------------------------------------------------===//
+
+Attribute ParameterizedTypeConstantAttr::replaceImmediateSubElements(
+    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
+  // NOTE: This will automatically convert to ConcreteTypeConstantAttr if the
+  // subtype is non-parametric.
+  return get(replTypes[0]);
+}
+
+TypedAttr ParameterizedTypeConstantAttr::get(Type type) {
+  auto *ctx = type.getContext();
+  auto typeType = MLIRTypeType::get(ctx);
+
+  if (isParameterizedType(type))
+    return Base::get(ctx, type, typeType);
+  return ConcreteTypeConstantAttr::Base::get(ctx, type, typeType);
+}
+
+LogicalResult ParameterizedTypeConstantAttr::verify(
+    function_ref<InFlightDiagnostic()> emitError, Type type, Type attrType) {
+  if (!attrType.isa<MLIRTypeType>())
+    return emitError() << "expected type to be !kgen.mlirtype";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// DTypeConstantAttr
+//===----------------------------------------------------------------------===//
+
+DTypeConstantAttr DTypeConstantAttr::get(MLIRContext *ctx, KGENDType dtype) {
+  return get(ctx, dtype, DTypeType::get(ctx));
+}
+
+LogicalResult
+DTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                          KGENDType dtype, Type type) {
+  if (!type || !type.isa<DTypeType>())
+    return emitError() << "kgen.dtype.constant requires !kgen.dtype type";
+  return success();
+}
+
+bool DTypeConstantAttr::isConvertibleTo(Type type) {
+  KGENDType dtype = getDType();
+
+  // Bool can only be `i1`.
+  if (dtype.isBool())
+    return type.isSignlessInteger(1);
+
+  // Index DType can only be the mlir `index` type.
+  if (dtype.isIndex())
+    return type.isIndex();
+
+  // Integer dtypes can be converted to MLIR integers of the same width and
+  // un-opposing signedness; signed integer dtypes can be converted to signless
+  // and signed MLIR integer types but not unsigned.
+  if (dtype.isInt()) {
+    auto intType = llvm::dyn_cast<IntegerType>(type);
+    if (!intType || intType.getWidth() != dtype.getWidthInBits())
+      return false;
+    return intType.isSignless() || intType.isSigned() == dtype.isSInt();
+  }
+
+  // Floating point dtypes can be converted to equivalent MLIR float types.
+  if (dtype.isFloat()) {
+    if (auto fpType = llvm::dyn_cast<FloatType>(type))
+      return areEquivalentFloatTypes(dtype, fpType);
+    return false;
+  }
+
+  return false;
+}
+
+bool DTypeConstantAttr::isConvertibleFrom(Type type) {
+  KGENDType dtype = getDType();
+
+  if (dtype.isBool())
+    return llvm::isa<IntegerType>(type);
+
+  // Signless integers cannot be converted.
+  if (type.isSignlessInteger() && !dtype.isIndex())
+    return false;
+
+  // Index dtypes can be converted if the type is an IndexType.
+  if (dtype.isIndex() && type.isa<IndexType>())
+    return true;
+
+  if (auto intType = llvm::dyn_cast<IntegerType>(type)) {
+    if (dtype.isIndex())
+      return true;
+    // Integers can be converted to dtypes of the same width and signedness.
+    if (dtype.isInt() && dtype.getWidthInBits() == intType.getWidth() &&
+        dtype.isSInt() == intType.isSigned())
+      return true;
+    // Otherwise, we risk loosing bits, so we conservatively disallow.
+    return false;
+  }
+
+  // Floating point types can be converted to equivalent dtypes.
+  if (auto fpType = llvm::dyn_cast<FloatType>(type))
+    return dtype.isFloat() && areEquivalentFloatTypes(dtype, fpType);
+
+  return false;
+}
+
+//===----------------------------------------------------------------------===//
+// ExprFuncAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseExprFunc(AsmParser &p,
+                                 FailureOr<ParamDeclArrayAttr> &paramDecls,
+                                 FailureOr<ParamDeclArrayAttr> &inputs,
+                                 FailureOr<ParameterExprArrayAttr> &exprs,
+                                 SignatureType type) {
+  if (!type.getResultParamTypes().empty())
+    return p.emitError(p.getCurrentLocation())
+           << "cannot have result parameters";
+
+  // We can infer the input parameters from the signature.
+  paramDecls = type.getInputParams();
+
+  // Parse the inputs and expression using the types from the signature type.
+  SmallVector<ParamDeclAttr> inputDecls;
+  ArrayRef<Type> inputTypes = type.getValueInputs();
+  auto typeIt = inputTypes.begin(), typeE = inputTypes.end();
+  auto parseInput = [&]() -> ParseResult {
+    if (typeIt == typeE)
+      return p.emitError(p.getCurrentLocation(), "too many input declarations");
+    StringAttr name;
+    if (parseParamName(p, name))
+      return failure();
+    inputDecls.push_back(ParamDeclAttr::get(name, *typeIt++));
+    return success();
+  };
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::Paren, parseInput))
+    return failure();
+  if (typeIt != typeE)
+    return p.emitError(p.getCurrentLocation(), "not enough input declarations");
+  if (p.parseArrow())
+    return failure();
+
+  SmallVector<TypedAttr> exprVals;
+  ArrayRef<Type> resultTypes = type.getValueResults();
+  auto resultIt = resultTypes.begin(), resultE = resultTypes.end();
+  auto parseExpr = [&]() -> ParseResult {
+    if (resultIt == resultE)
+      return p.emitError(p.getCurrentLocation(), "too many result expressions");
+    return parseParamValue(p, exprVals.emplace_back(), *resultIt++);
+  };
+  if (p.parseOptionalLParen()) {
+    if (failed(parseExpr()))
+      return failure();
+  } else {
+    if (p.parseOptionalRParen())
+      if (p.parseCommaSeparatedList(parseExpr) || p.parseRParen())
+        return failure();
+  }
+  if (resultIt != resultE)
+    return p.emitError(p.getCurrentLocation(), "not enough result expressions");
+
+  inputs = ParamDeclArrayAttr::get(p.getContext(), inputDecls);
+  exprs = ParameterExprArrayAttr::get(p.getContext(), exprVals);
+  return success();
+}
+
+static void printExprFunc(AsmPrinter &p, ParamDeclArrayAttr paramDecls,
+                          ParamDeclArrayAttr inputs,
+                          ParameterExprArrayAttr exprs, SignatureType type) {
+  p << '(';
+  llvm::interleaveComma(
+      inputs, p, [&](ParamDeclAttr input) { p << input.getName().getValue(); });
+  p << ") -> ";
+  if (exprs.size() != 1)
+    p << '(';
+  llvm::interleaveComma(
+      exprs, p, [&](TypedAttr expr) { printParamValue(expr, p.getStream()); });
+  if (exprs.size() != 1)
+    p << ')';
+}
+
+LogicalResult ExprFuncAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                   ParamDeclArrayAttr paramDecls,
+                                   ParamDeclArrayAttr inputs,
+                                   ParameterExprArrayAttr exprs,
+                                   SignatureType type) {
+  if (!type.getResultParamTypes().empty())
+    return emitError() << "cannot have result parameters";
+  if (exprs.size() != type.getValues().getNumResults())
+    return emitError() << "has " << exprs.size() << " expressions but expected "
+                       << type.getValues().getNumResults();
+  for (auto [idx, expr, type] : llvm::zip(llvm::seq<unsigned>(0, exprs.size()),
+                                          exprs, type.getValueResults())) {
+    if (expr.getType() != type) {
+      return emitError() << "expected expression result #" << idx
+                         << " type to be " << type << " but got "
+                         << expr.getType();
+    }
+  }
+  if (paramDecls != type.getInputParams())
+    return emitError() << "input parameters do not match signature";
+  if (inputs.size() != type.getValues().getNumInputs())
+    return emitError() << "wrong number of inputs";
+  for (auto [input, sigInputType] : llvm::zip(inputs, type.getValueInputs()))
+    if (input.getType() != sigInputType)
+      return emitError() << "input types do not match";
+
+  return checkSelfContained(emitError, paramDecls, inputs, exprs);
+}
+
+//===----------------------------------------------------------------------===//
+// TargetInfoAttr
+//===----------------------------------------------------------------------===//
+
+llvm::hash_code TargetInfoAttr::hash() const {
+  return llvm::hash_combine(getTripleStr(), getCpu(), getFeatures(),
+                            getPointerSize(), getSIMDBitWidth());
+}
+
+void TargetInfoAttr::print(mlir::AsmPrinter &odsPrinter) const {
+  odsPrinter << "<triple=\"" << getTripleStr() << "\", cpu=\"" << getCpu()
+             << "\", features=\"" << getFeatures()
+             << "\", pointer_size=" << getPointerSize()
+             << ", simd_bit_width=" << getSIMDBitWidth() << '>';
+}
+
+// TargetInfoAttr is either
+// #kgen.target<"triple", "cpu", "features", "pointerSize">
+// or #kgen.target<host>
+mlir::Attribute TargetInfoAttr::parse(mlir::AsmParser &parser,
+                                      mlir::Type odsType) {
+  if (parser.parseLess())
+    return {};
+
+  // #kgen.target<host>
+  if (succeeded(parser.parseOptionalKeyword("host"))) {
+    if (parser.parseGreater())
+      return {};
+    return TargetInfoAttr::getForHost(parser.getContext());
+  }
+
+  // #kgen.target<"triple", "cpu", "features", ptrSize, simdWidth>
+  std::string tripleStr;
+  std::string cpuStr;
+  std::string featuresStr;
+  int64_t pointerSize;
+  int64_t simdWidth;
+
+  auto parseOptionalKeywordEqual = [&](StringRef word) -> ParseResult {
+    if (succeeded(parser.parseOptionalKeyword(word)))
+      return parser.parseEqual();
+    return success();
+  };
+
+  // Parse target triple.
+  if (parseOptionalKeywordEqual("triple") || parser.parseString(&tripleStr) ||
+      parser.parseComma() ||
+      // CPU
+      parseOptionalKeywordEqual("cpu") || parser.parseString(&cpuStr) ||
+      parser.parseComma() ||
+      // Features
+      parseOptionalKeywordEqual("features") ||
+      parser.parseString(&featuresStr) || parser.parseComma() ||
+      // Pointer Size
+      parseOptionalKeywordEqual("pointer_size") ||
+      parser.parseInteger(pointerSize) || parser.parseComma() ||
+      // SIMD Width
+      parseOptionalKeywordEqual("simd_bit_width") ||
+      parser.parseInteger(simdWidth) || parser.parseGreater())
+    return {};
+
+  llvm::Triple triple(tripleStr);
+  mlir::MLIRContext *ctx = parser.getContext();
+  return TargetInfoAttr::get(ctx, triple, cpuStr, featuresStr, pointerSize,
+                             simdWidth, TargetType::get(ctx));
+}
+
+TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
+  auto targetTriple = llvm::sys::getDefaultTargetTriple();
+
+  // Get the host CPU and set up to get the features.
+  std::string cpu(llvm::sys::getHostCPUName());
+  llvm::SubtargetFeatures features;
+  llvm::StringMap<bool> hostFeatures;
+
+  // Get the host features.
+  if (llvm::sys::getHostCPUFeatures(hostFeatures))
+    for (auto &f : hostFeatures)
+      if (f.second) // add feature if it's enabled
+        features.AddFeature(f.first(), f.second);
+
+  //  Return a TargetInfoAttr built for the host.
+  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu,
+                             features.getString(), sizeof(ssize_t),
+                             kPreferredSIMDBitWidth, TargetType::get(ctx));
+}
+
+namespace llvm {
+inline hash_code hash_value(llvm::Triple triple) {
+  return hash_value(triple.normalize());
+}
+} // namespace llvm
 
 //===----------------------------------------------------------------------===//
 // ParamOperatorAttr
@@ -1245,396 +1635,6 @@ ParamOperatorAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
   }
   return ParamOperatorAttr::get(getOpcode(), castedAttrs);
 }
-
-//===----------------------------------------------------------------------===//
-// TypeConstantAttr
-//===----------------------------------------------------------------------===//
-
-TypedAttr TypeConstantAttr::get(Type value) {
-  return ParameterizedTypeConstantAttr::get(value);
-}
-
-bool TypeConstantAttr::classof(Attribute attr) {
-  return attr.isa<ConcreteTypeConstantAttr, ParameterizedTypeConstantAttr>();
-}
-
-//===----------------------------------------------------------------------===//
-// ConcreteTypeConstantAttr
-//===----------------------------------------------------------------------===//
-
-ConcreteTypeConstantAttr ConcreteTypeConstantAttr::get(Type type) {
-  auto *ctx = type.getContext();
-  assert(!isParameterizedType(type) &&
-         "Cannot create a ConcreteTypeConstantAttr with parameterized type");
-  return Base::get(ctx, type, MLIRTypeType::get(ctx));
-}
-
-LogicalResult
-ConcreteTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                 Type type, Type attrType) {
-  if (!attrType.isa<MLIRTypeType>())
-    return emitError() << "expected type to be !kgen.mlirtype";
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// ParameterizedTypeConstantAttr
-//===----------------------------------------------------------------------===//
-
-Attribute ParameterizedTypeConstantAttr::replaceImmediateSubElements(
-    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
-  // NOTE: This will automatically convert to ConcreteTypeConstantAttr if the
-  // subtype is non-parametric.
-  return get(replTypes[0]);
-}
-
-TypedAttr ParameterizedTypeConstantAttr::get(Type type) {
-  auto *ctx = type.getContext();
-  auto typeType = MLIRTypeType::get(ctx);
-
-  if (isParameterizedType(type))
-    return Base::get(ctx, type, typeType);
-  return ConcreteTypeConstantAttr::Base::get(ctx, type, typeType);
-}
-
-LogicalResult ParameterizedTypeConstantAttr::verify(
-    function_ref<InFlightDiagnostic()> emitError, Type type, Type attrType) {
-  if (!attrType.isa<MLIRTypeType>())
-    return emitError() << "expected type to be !kgen.mlirtype";
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// DTypeConstantAttr
-//===----------------------------------------------------------------------===//
-
-DTypeConstantAttr DTypeConstantAttr::get(MLIRContext *ctx, KGENDType dtype) {
-  return get(ctx, dtype, DTypeType::get(ctx));
-}
-
-LogicalResult
-DTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                          KGENDType dtype, Type type) {
-  if (!type || !type.isa<DTypeType>())
-    return emitError() << "kgen.dtype.constant requires !kgen.dtype type";
-  return success();
-}
-
-bool DTypeConstantAttr::isConvertibleTo(Type type) {
-  KGENDType dtype = getDType();
-
-  // Bool can only be `i1`.
-  if (dtype.isBool())
-    return type.isSignlessInteger(1);
-
-  // Index DType can only be the mlir `index` type.
-  if (dtype.isIndex())
-    return type.isIndex();
-
-  // Integer dtypes can be converted to MLIR integers of the same width and
-  // un-opposing signedness; signed integer dtypes can be converted to signless
-  // and signed MLIR integer types but not unsigned.
-  if (dtype.isInt()) {
-    auto intType = llvm::dyn_cast<IntegerType>(type);
-    if (!intType || intType.getWidth() != dtype.getWidthInBits())
-      return false;
-    return intType.isSignless() || intType.isSigned() == dtype.isSInt();
-  }
-
-  // Floating point dtypes can be converted to equivalent MLIR float types.
-  if (dtype.isFloat()) {
-    if (auto fpType = llvm::dyn_cast<FloatType>(type))
-      return areEquivalentFloatTypes(dtype, fpType);
-    return false;
-  }
-
-  return false;
-}
-
-bool DTypeConstantAttr::isConvertibleFrom(Type type) {
-  KGENDType dtype = getDType();
-
-  if (dtype.isBool())
-    return llvm::isa<IntegerType>(type);
-
-  // Signless integers cannot be converted.
-  if (type.isSignlessInteger() && !dtype.isIndex())
-    return false;
-
-  // Index dtypes can be converted if the type is an IndexType.
-  if (dtype.isIndex() && type.isa<IndexType>())
-    return true;
-
-  if (auto intType = llvm::dyn_cast<IntegerType>(type)) {
-    if (dtype.isIndex())
-      return true;
-    // Integers can be converted to dtypes of the same width and signedness.
-    if (dtype.isInt() && dtype.getWidthInBits() == intType.getWidth() &&
-        dtype.isSInt() == intType.isSigned())
-      return true;
-    // Otherwise, we risk loosing bits, so we conservatively disallow.
-    return false;
-  }
-
-  // Floating point types can be converted to equivalent dtypes.
-  if (auto fpType = llvm::dyn_cast<FloatType>(type))
-    return dtype.isFloat() && areEquivalentFloatTypes(dtype, fpType);
-
-  return false;
-}
-
-//===----------------------------------------------------------------------===//
-// ExprFuncAttr
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseExprFunc(AsmParser &p,
-                                 FailureOr<ParamDeclArrayAttr> &paramDecls,
-                                 FailureOr<ParamDeclArrayAttr> &inputs,
-                                 FailureOr<ParameterExprArrayAttr> &exprs,
-                                 SignatureType type) {
-  if (!type.getResultParamTypes().empty())
-    return p.emitError(p.getCurrentLocation())
-           << "cannot have result parameters";
-
-  // We can infer the input parameters from the signature.
-  paramDecls = type.getInputParams();
-
-  // Parse the inputs and expression using the types from the signature type.
-  SmallVector<ParamDeclAttr> inputDecls;
-  ArrayRef<Type> inputTypes = type.getValueInputs();
-  auto typeIt = inputTypes.begin(), typeE = inputTypes.end();
-  auto parseInput = [&]() -> ParseResult {
-    if (typeIt == typeE)
-      return p.emitError(p.getCurrentLocation(), "too many input declarations");
-    StringAttr name;
-    if (parseParamName(p, name))
-      return failure();
-    inputDecls.push_back(ParamDeclAttr::get(name, *typeIt++));
-    return success();
-  };
-  if (p.parseCommaSeparatedList(AsmParser::Delimiter::Paren, parseInput))
-    return failure();
-  if (typeIt != typeE)
-    return p.emitError(p.getCurrentLocation(), "not enough input declarations");
-  if (p.parseArrow())
-    return failure();
-
-  SmallVector<TypedAttr> exprVals;
-  ArrayRef<Type> resultTypes = type.getValueResults();
-  auto resultIt = resultTypes.begin(), resultE = resultTypes.end();
-  auto parseExpr = [&]() -> ParseResult {
-    if (resultIt == resultE)
-      return p.emitError(p.getCurrentLocation(), "too many result expressions");
-    return parseParamValue(p, exprVals.emplace_back(), *resultIt++);
-  };
-  if (p.parseOptionalLParen()) {
-    if (failed(parseExpr()))
-      return failure();
-  } else {
-    if (p.parseOptionalRParen())
-      if (p.parseCommaSeparatedList(parseExpr) || p.parseRParen())
-        return failure();
-  }
-  if (resultIt != resultE)
-    return p.emitError(p.getCurrentLocation(), "not enough result expressions");
-
-  inputs = ParamDeclArrayAttr::get(p.getContext(), inputDecls);
-  exprs = ParameterExprArrayAttr::get(p.getContext(), exprVals);
-  return success();
-}
-
-static void printExprFunc(AsmPrinter &p, ParamDeclArrayAttr paramDecls,
-                          ParamDeclArrayAttr inputs,
-                          ParameterExprArrayAttr exprs, SignatureType type) {
-  p << '(';
-  llvm::interleaveComma(
-      inputs, p, [&](ParamDeclAttr input) { p << input.getName().getValue(); });
-  p << ") -> ";
-  if (exprs.size() != 1)
-    p << '(';
-  llvm::interleaveComma(
-      exprs, p, [&](TypedAttr expr) { printParamValue(expr, p.getStream()); });
-  if (exprs.size() != 1)
-    p << ')';
-}
-
-LogicalResult ExprFuncAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                   ParamDeclArrayAttr paramDecls,
-                                   ParamDeclArrayAttr inputs,
-                                   ParameterExprArrayAttr exprs,
-                                   SignatureType type) {
-  if (!type.getResultParamTypes().empty())
-    return emitError() << "cannot have result parameters";
-  if (exprs.size() != type.getValues().getNumResults())
-    return emitError() << "has " << exprs.size() << " expressions but expected "
-                       << type.getValues().getNumResults();
-  for (auto [idx, expr, type] : llvm::zip(llvm::seq<unsigned>(0, exprs.size()),
-                                          exprs, type.getValueResults())) {
-    if (expr.getType() != type) {
-      return emitError() << "expected expression result #" << idx
-                         << " type to be " << type << " but got "
-                         << expr.getType();
-    }
-  }
-  if (paramDecls != type.getInputParams())
-    return emitError() << "input parameters do not match signature";
-  if (inputs.size() != type.getValues().getNumInputs())
-    return emitError() << "wrong number of inputs";
-  for (auto [input, sigInputType] : llvm::zip(inputs, type.getValueInputs()))
-    if (input.getType() != sigInputType)
-      return emitError() << "input types do not match";
-
-  return checkSelfContained(emitError, paramDecls, inputs, exprs);
-}
-
-//===----------------------------------------------------------------------===//
-// Parameter Helper Functions
-//===----------------------------------------------------------------------===//
-
-/// Return the `paramDecls` array of ParamDeclAttr values if the specified
-/// operation has it, or an empty array otherwise.
-ArrayRef<ParamDeclAttr> KGEN::getParamDecls(Operation *op) {
-  if (auto declItf = dyn_cast<DeclInterface>(op))
-    return declItf.getInputParamDeclsAttr();
-  if (auto paramDeclsArray =
-          op->getAttrOfType<ParamDeclArrayAttr>("paramDecls"))
-    return paramDeclsArray;
-  return {};
-}
-
-//===----------------------------------------------------------------------===//
-// ConstraintAttr
-//===----------------------------------------------------------------------===//
-
-/// Parse an optional location or use the current location of the parser.
-static ParseResult parseConstraintLoc(AsmParser &parser,
-                                      FailureOr<Location> &loc) {
-  if (succeeded(parser.parseOptionalComma())) {
-    mlir::LocationAttr locAttr;
-    if (parser.parseAttribute(locAttr))
-      return failure();
-    loc.emplace(locAttr);
-  } else {
-    loc = parser.getEncodedSourceLoc(parser.getCurrentLocation());
-  }
-  return success();
-}
-
-/// Always print the location.
-static void printConstraintLoc(AsmPrinter &printer, Location loc) {
-  printer << ", ";
-  printer.printAttribute(loc);
-}
-
-//===----------------------------------------------------------------------===//
-// ConventionsAttr
-//===----------------------------------------------------------------------===//
-
-ConventionsAttr ConventionsAttr::get(MLIRContext *ctx, unsigned numInputs) {
-  return get(ctx, SmallVector<ValueInputConvention>(numInputs),
-             FnEffects::None);
-}
-
-bool ConventionsAttr::isDefault() {
-  return getFnEffects() == FnEffects::None &&
-         llvm::all_of(getInputConventions(),
-                      [](ValueInputConvention inputConv) {
-                        return inputConv == ValueInputConvention::ByVal;
-                      });
-}
-
-//===----------------------------------------------------------------------===//
-// TargetInfoAttr
-//===----------------------------------------------------------------------===//
-
-llvm::hash_code TargetInfoAttr::hash() const {
-  return llvm::hash_combine(getTripleStr(), getCpu(), getFeatures(),
-                            getPointerSize(), getSIMDBitWidth());
-}
-
-void TargetInfoAttr::print(mlir::AsmPrinter &odsPrinter) const {
-  odsPrinter << "<triple=\"" << getTripleStr() << "\", cpu=\"" << getCpu()
-             << "\", features=\"" << getFeatures()
-             << "\", pointer_size=" << getPointerSize()
-             << ", simd_bit_width=" << getSIMDBitWidth() << '>';
-}
-
-// TargetInfoAttr is either
-// #kgen.target<"triple", "cpu", "features", "pointerSize">
-// or #kgen.target<host>
-mlir::Attribute TargetInfoAttr::parse(mlir::AsmParser &parser,
-                                      mlir::Type odsType) {
-  if (parser.parseLess())
-    return {};
-
-  // #kgen.target<host>
-  if (succeeded(parser.parseOptionalKeyword("host"))) {
-    if (parser.parseGreater())
-      return {};
-    return TargetInfoAttr::getForHost(parser.getContext());
-  }
-
-  // #kgen.target<"triple", "cpu", "features", ptrSize, simdWidth>
-  std::string tripleStr;
-  std::string cpuStr;
-  std::string featuresStr;
-  int64_t pointerSize;
-  int64_t simdWidth;
-
-  auto parseOptionalKeywordEqual = [&](StringRef word) -> ParseResult {
-    if (succeeded(parser.parseOptionalKeyword(word)))
-      return parser.parseEqual();
-    return success();
-  };
-
-  // Parse target triple.
-  if (parseOptionalKeywordEqual("triple") || parser.parseString(&tripleStr) ||
-      parser.parseComma() ||
-      // CPU
-      parseOptionalKeywordEqual("cpu") || parser.parseString(&cpuStr) ||
-      parser.parseComma() ||
-      // Features
-      parseOptionalKeywordEqual("features") ||
-      parser.parseString(&featuresStr) || parser.parseComma() ||
-      // Pointer Size
-      parseOptionalKeywordEqual("pointer_size") ||
-      parser.parseInteger(pointerSize) || parser.parseComma() ||
-      // SIMD Width
-      parseOptionalKeywordEqual("simd_bit_width") ||
-      parser.parseInteger(simdWidth) || parser.parseGreater())
-    return {};
-
-  llvm::Triple triple(tripleStr);
-  mlir::MLIRContext *ctx = parser.getContext();
-  return TargetInfoAttr::get(ctx, triple, cpuStr, featuresStr, pointerSize,
-                             simdWidth, TargetType::get(ctx));
-}
-
-TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
-  auto targetTriple = llvm::sys::getDefaultTargetTriple();
-
-  // Get the host CPU and set up to get the features.
-  std::string cpu(llvm::sys::getHostCPUName());
-  llvm::SubtargetFeatures features;
-  llvm::StringMap<bool> hostFeatures;
-
-  // Get the host features.
-  if (llvm::sys::getHostCPUFeatures(hostFeatures))
-    for (auto &f : hostFeatures)
-      if (f.second) // add feature if it's enabled
-        features.AddFeature(f.first(), f.second);
-
-  //  Return a TargetInfoAttr built for the host.
-  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu,
-                             features.getString(), sizeof(ssize_t),
-                             kPreferredSIMDBitWidth, TargetType::get(ctx));
-}
-
-namespace llvm {
-inline hash_code hash_value(llvm::Triple triple) {
-  return hash_value(triple.normalize());
-}
-} // namespace llvm
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
