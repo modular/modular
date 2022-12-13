@@ -11,6 +11,7 @@
 #ifndef KGEN_KGENDIALECT_KGENATTRS_TD
 #define KGEN_KGENDIALECT_KGENATTRS_TD
 
+include "KGEN/KGENDialect/KGENAttrInterfaces.td"
 include "KGEN/KGENDialect/KGENDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
@@ -28,8 +29,10 @@ class KGENAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 
 /// The base class of all parameter expression attributes. Expression attributes
 /// are all typed attributes.
-class KGEN_ExprAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
-    : KGENAttr<attrName, attrMnemonic, [TypedAttrInterface] # traits>;
+class KGEN_ExprAttr<string attrName, string attrMnemonic,
+                    list<Trait> traits = []>
+    : KGENAttr<attrName, attrMnemonic,
+               [TypedAttrInterface, ParameterAttrInterface] # traits>;
 
 //===----------------------------------------------------------------------===//
 // ParamDeclAttr

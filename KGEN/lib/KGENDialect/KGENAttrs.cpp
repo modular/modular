@@ -1280,6 +1280,7 @@ ConcreteTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 //===----------------------------------------------------------------------===//
 // ParameterizedTypeConstantAttr
 //===----------------------------------------------------------------------===//
+
 Attribute ParameterizedTypeConstantAttr::replaceImmediateSubElements(
     ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
   // NOTE: This will automatically convert to ConcreteTypeConstantAttr if the
@@ -1628,6 +1629,12 @@ TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
                              features.getString(), sizeof(ssize_t),
                              kPreferredSIMDBitWidth, TargetType::get(ctx));
 }
+
+namespace llvm {
+inline hash_code hash_value(llvm::Triple triple) {
+  return hash_value(triple.normalize());
+}
+} // namespace llvm
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions

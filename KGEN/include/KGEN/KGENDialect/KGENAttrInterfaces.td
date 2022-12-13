@@ -13,7 +13,7 @@ include "mlir/IR/OpBase.td"
 // ParameterAttr
 //===----------------------------------------------------------------------===//
 
-def ParameterAttr : AttrInterface<"ParameterAttr"> {
+def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
   let description = [{
     Any attribute that implements `TypedAttr` can be used as a parameter
     attribute in KGEN, but this interface allows parameter attributes to plug
@@ -25,11 +25,12 @@ def ParameterAttr : AttrInterface<"ParameterAttr"> {
   let methods = [
     InterfaceMethod<[{
       Returns whether the attribute can be considered a simple constant.
-    }], "bool", "isSimpleConstant", (ins), [{}], [{ return true; }]>,
+    }], "bool", "isSimpleConstant">,
     InterfaceMethod<[{
-      Compare this parameter attribute with another attribute of the same kind,
-      returning true if this parameter should be considered "less".
-    }], "bool", "compare", (ins "Attribute":$rhs), [{}], [{ return false; }]>,
+      Compare this parameter attribute with another attribute that may not be of
+      the same kind, returning true if this parameter should be considered
+      "less" than the other attribute.
+    }], "bool", "compare", (ins "Attribute":$rhs)>,
   ];
 
   let extraClassDeclaration = [{

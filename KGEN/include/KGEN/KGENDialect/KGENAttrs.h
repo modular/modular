@@ -13,21 +13,13 @@
 #ifndef KGEN_KGENDIALECT_KGENATTRS_H
 #define KGEN_KGENDIALECT_KGENATTRS_H
 
+#include "KGEN/KGENDialect/KGENAttrInterfaces.h"
 #include "KGEN/KGENDialect/KGENDType.h"
-#include "Support/ForwardDecls.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Triple.h"
-
-namespace llvm {
-
-inline hash_code hash_value(llvm::Triple triple) {
-  return hash_value(triple.normalize());
-}
-
-} // namespace llvm
 
 namespace M::KGEN {
 class ListType;
