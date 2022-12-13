@@ -304,7 +304,8 @@ def KGEN_ParamCallRegionRefAttr : KGEN_ExprAttr<"ParamCallRegionRef",
 /// This attribute models a reference to a named parameter.  The type of the
 /// ParamDeclRefAttr must always be the same as the type of the parameter being
 /// referenced.
-def KGEN_ParamDeclRefAttr : KGEN_ExprAttr<"ParamDeclRef", "param.decl.ref"> {
+def KGEN_ParamDeclRefAttr : KGEN_ExprAttr<"ParamDeclRef", "param.decl.ref",
+    [DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>]> {
   let summary = "A reference to a parameter value.";
   let parameters = (ins "::mlir::StringAttr":$name,
                         AttributeSelfTypeParameter<"">:$type);
@@ -400,7 +401,8 @@ def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
 //===----------------------------------------------------------------------===//
 
 /// This is a value of !kgen.dtype with a constant value from 0...255.
-def KGEN_DTypeConstantAttr : KGEN_ExprAttr<"DTypeConstant", "dtype.constant"> {
+def KGEN_DTypeConstantAttr : KGEN_ExprAttr<"DTypeConstant", "dtype.constant",
+    [DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>]> {
   let summary = "Constant !kgen.dtype value";
   let description = [{
     This is constant value for a dtype, whose elements correspond to DType.
@@ -599,8 +601,8 @@ def KGEN_TargetInfoAttr : KGEN_ExprAttr<"TargetInfo", "target"> {
 def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
     DeclareAttrInterfaceMethods<SubElementAttrInterface, [
       "walkImmediateSubElements", "replaceImmediateSubElements"
-    ]
-  >]> {
+    ]>,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>]> {
   let summary = "Parameter expression";
   let parameters = (ins "POC":$opcode,
                         ArrayRefParameter<"TypedAttr">:$operands,

@@ -169,17 +169,11 @@ bool ListAttr::isConstant() const {
          });
 }
 
-/// It isn't important to sort list attributes.
-bool ListAttr::isLessThan(Attribute rhs) const { return false; }
-
 //===----------------------------------------------------------------------===//
 // UnknownAttr
 //===----------------------------------------------------------------------===//
 
 bool UnknownAttr::isConstant() const { return true; }
-
-/// Any attribute that isn't unknown is less than an unknown attribute.
-bool UnknownAttr::isLessThan(Attribute rhs) const { return false; }
 
 //===----------------------------------------------------------------------===//
 // ParamCallRegionRefAttr
@@ -187,9 +181,6 @@ bool UnknownAttr::isLessThan(Attribute rhs) const { return false; }
 
 /// This attribute refers to a region, which might be parameterized.
 bool ParamCallRegionRefAttr::isConstant() const { return false; }
-
-/// No meaningful sort order for region references.
-bool ParamCallRegionRefAttr::isLessThan(Attribute rhs) const { return false; }
 
 //===----------------------------------------------------------------------===//
 // ParamDeclRefAttr
@@ -240,9 +231,6 @@ ConcreteTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 /// Always a constant by definition.
 bool ConcreteTypeConstantAttr::isConstant() const { return true; }
 
-/// No meaningful sort order for types.
-bool ConcreteTypeConstantAttr::isLessThan(Attribute rhs) const { return false; }
-
 //===----------------------------------------------------------------------===//
 // ParameterizedTypeConstantAttr
 //===----------------------------------------------------------------------===//
@@ -272,11 +260,6 @@ LogicalResult ParameterizedTypeConstantAttr::verify(
 
 /// Always not a constant by definition.
 bool ParameterizedTypeConstantAttr::isConstant() const { return false; }
-
-/// No meaningful sort order for types.
-bool ParameterizedTypeConstantAttr::isLessThan(Attribute rhs) const {
-  return false;
-}
 
 //===----------------------------------------------------------------------===//
 // DTypeConstantAttr
@@ -476,18 +459,12 @@ bool ExprFuncAttr::isConstant() const {
   return !isParameterizedType(getType()) && getParamDecls().empty();
 }
 
-/// No meaningful sort order for expression functions.
-bool ExprFuncAttr::isLessThan(Attribute rhs) const { return false; }
-
 //===----------------------------------------------------------------------===//
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
 
 /// Always a constant by definition.
 bool SymbolConstantAttr::isConstant() const { return true; }
-
-/// No meaningful sort order.
-bool SymbolConstantAttr::isLessThan(Attribute rhs) const { return false; }
 
 //===----------------------------------------------------------------------===//
 // TargetInfoAttr
@@ -585,9 +562,6 @@ inline hash_code hash_value(llvm::Triple triple) {
 
 /// Always a constant.
 bool TargetInfoAttr::isConstant() const { return true; }
-
-/// No meaningful sort order.
-bool TargetInfoAttr::isLessThan(Attribute rhs) const { return false; }
 
 //===----------------------------------------------------------------------===//
 // ParamOperatorAttr
