@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_dialect_library(KGENDialect
+  KGENAttrInterfaces.cpp
   KGENAttrs.cpp
   KGENDialect.cpp
   KGENInterfaces.cpp

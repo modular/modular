@@ -1,0 +1,19 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef KGEN_KGENDIALECT_KGENATTRINTERFACES_H
+#define KGEN_KGENDIALECT_KGENATTRINTERFACES_H
+
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/Attributes.h"
+
+//===----------------------------------------------------------------------===//
+// ODS-Generated Declarations
+//===----------------------------------------------------------------------===//
+
+#include "KGEN/KGENDialect/KGENAttrInterfaces.h.inc"
+
+#endif // KGEN_KGENDIALECT_KGENATTRINTERFACES_H
