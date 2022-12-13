@@ -295,6 +295,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
         .Default([&](auto attr) {
           emitError(decl.getLoc(),
                     "do not know how to resolve the signature of this decl!");
+          decl.hasReferenceError = true;
         });
     decl.resolvedness = DeclResolvedness::signatureResolved;
   }
