@@ -206,6 +206,9 @@ public:
 
 class ExprEmitter {
 public:
+  //===--------------------------------------------------------------------===//
+  // General Emitter State.
+
   /// This is the shared state for the parser overall.
   LitSharedState &shared;
 
@@ -217,8 +220,7 @@ public:
   /// It is mutable to support expressions that require internal control flow.
   Optional<OpBuilder> builder;
 
-  /// When non-null, implicitly declared variables are added above this
-  /// location.
+  /// When non-null, implicitly declared variables are added above this op.
   Operation *varDeclCursor;
 
   ExprEmitter(LitSharedState &shared, ASTDecl &declScope,
@@ -227,6 +229,9 @@ public:
         varDeclCursor(varDeclCursor) {}
 
   MLIRContext *getContext() const { return shared.context; }
+
+  //===--------------------------------------------------------------------===//
+  // Emission helpers for various value classifications.
 
   /// This helper emits the specified value rep as an RValue.
   RValue emitRValue(const ExprNode *node) {
@@ -251,13 +256,6 @@ public:
     return emitDRValue(node->emitIR(*this), node->getLoc());
   }
 
-  /// This helper emits a method call to a special function (`kind`) on `type`
-  /// with the provided `operands`. This emits an error if the special function
-  /// is not implemented by the type and returns null.
-  AnyValue emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
-                                 ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                 SMLoc callLoc);
-
   /// This helper emits the specified expression as a meta value, diagnosing the
   /// problem if the expression is only valid as a runtime value (using the
   /// specified message).  This returns null if emission fails.
@@ -277,6 +275,9 @@ public:
   /// expression is erroneous, it is diagnosed and a TypeCheckErrorType is
   /// returned, along with an erroneous AST type.
   ASTType emitType(const ExprNode *node);
+
+  //===--------------------------------------------------------------------===//
+  // Name Lookup
 
   /// This is the result of lookupDecl.
   class LookupResult {
@@ -305,6 +306,27 @@ public:
 
   /// Perform a name lookup for a member in the specified type.
   LookupResult lookupAndResolveDecl(StringRef name, SMLoc loc, ASTType scope);
+
+  //===--------------------------------------------------------------------===//
+  // Function Calls
+
+  /// Emit a function call to the specified callee with the specified operand
+  /// values.
+  AnyValue emitFunctionCall(CallableValue calleeVal,
+                            ArrayRef<ASTExprAnd<AnyValue>> operands,
+                            SMLoc callLoc);
+
+  /// This helper emits a method call to a special function (`kind`) on `type`
+  /// with the provided `operands`. This emits an error if the special function
+  /// is not implemented by the type and returns null.
+  AnyValue emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
+                                 ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                 SMLoc callLoc);
+
+  /// Convert the specified DRValue to the expected type, invoking implicit
+  /// conversions if necessary.  On error, this diagnoses it and returns null.
+  DRValue getAsExpectedType(DRValue value, const ExprNode *expr,
+                            ASTType expectedType);
 
   /// Emit an error through the parser's logic.
   InFlightDiagnostic emitError(SMLoc loc, const Twine &twine = "") const {
