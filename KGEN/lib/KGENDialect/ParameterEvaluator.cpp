@@ -24,7 +24,7 @@ void KGEN::collectParameterReferences(Attribute attr,
                                       SmallVector<ParamDeclRefAttr> &results) {
   // We know that simple constants (including concrete type constants) don't
   // have parameter references in them. Walk over them.
-  if (!attr || isSimpleConstant(attr))
+  if (!attr || ParameterAttr::isSimpleConstant(attr))
     return;
 
   if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr)) {
@@ -145,7 +145,7 @@ ErrorOr<Attribute> ParameterEvaluator::concretizeParameterExpr(Attribute expr) {
 
   // If we can fold this to a simple constant result, do.
   auto result = getReboundAttribute(expr);
-  if (isSimpleConstant(result))
+  if (ParameterAttr::isSimpleConstant(result))
     return result;
 
   // If this was an unfoldable operator expression, error.  This can happen for

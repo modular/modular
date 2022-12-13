@@ -79,19 +79,6 @@ namespace M::KGEN {
 /// Return the `paramDecls` array of ParamDeclAttr values if the specified
 /// operation has it, or an empty array otherwise.
 ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
-
-/// We expect all parameter expressions to simplify down to concrete constants
-/// after elaboration.  We don't want anything left as a ParamOperatorAttr or
-/// ParamDeclRefAttr or ParameterizedTypeConstantAttr.
-inline bool isSimpleConstant(Attribute attr) {
-  if (auto list = dyn_cast<ListAttr>(attr))
-    return llvm::all_of(list.getValues(), isSimpleConstant);
-  if (auto expr = dyn_cast<ExprFuncAttr>(attr))
-    return expr.getParamDecls().empty();
-  return attr
-      .isa<UnknownAttr, FloatAttr, IntegerAttr, StringAttr, DTypeConstantAttr,
-           ConcreteTypeConstantAttr, SymbolConstantAttr>();
-}
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_H
