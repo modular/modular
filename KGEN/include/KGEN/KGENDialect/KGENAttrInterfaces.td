@@ -35,7 +35,7 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
       that aren't, meaning that if `lhs` is a simple constant, then `rhs` will
       also be a simple constant, and if `lhs` is not a simple constant, then
       `rhs` won't be either.
-    }], "bool", "isLessThan", (ins "Attribute":$rhs)>,
+    }], "bool", "isLessThan", (ins "Attribute":$rhs), [{}], [{ return false; }]>,
   ];
 
   let extraClassDeclaration = [{
