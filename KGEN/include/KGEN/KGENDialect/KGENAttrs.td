@@ -31,7 +31,8 @@ class KGENAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 /// are all typed attributes.
 class KGEN_ExprAttr<string attrName, string attrMnemonic,
                     list<Trait> traits = []>
-    : KGENAttr<attrName, attrMnemonic, [TypedAttrInterface] # traits>;
+    : KGENAttr<attrName, attrMnemonic,
+               [TypedAttrInterface, SubElementAttrInterface] # traits>;
 
 //===----------------------------------------------------------------------===//
 // ArrayOfAttrsAttr
@@ -234,7 +235,7 @@ def KGEN_ConventionsAttr : KGENAttr<"Conventions", "conventions"> {
 // ListAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_ListAttr : KGEN_ExprAttr<"List", "list", [SubElementAttrInterface]> {
+def KGEN_ListAttr : KGEN_ExprAttr<"List", "list"> {
   let summary = "homogenous list attribute";
   let description = [{
     The `#kgen.list` attribute contains a variable number of attributes of the
@@ -260,8 +261,7 @@ def KGEN_ListAttr : KGEN_ExprAttr<"List", "list", [SubElementAttrInterface]> {
 // UnknownAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_UnknownAttr : KGEN_ExprAttr<"Unknown", "unknown",
-    [SubElementAttrInterface]> {
+def KGEN_UnknownAttr : KGEN_ExprAttr<"Unknown", "unknown"> {
   let summary = "An unknown parameter value.";
   let description = [{
     The `#kgen.unknown` attribute represents an unknown parameter value. It is
@@ -282,7 +282,7 @@ def KGEN_UnknownAttr : KGEN_ExprAttr<"Unknown", "unknown",
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamCallRegionRefAttr : KGEN_ExprAttr<"ParamCallRegionRef",
-    "param.call.region.ref", [SubElementAttrInterface]> {
+    "param.call.region.ref"> {
   let summary =
     "A marker indicating a signature value is specified by a call region";
   let parameters = (ins AttributeSelfTypeParameter<"", "SignatureType">:$type);
@@ -303,8 +303,7 @@ def KGEN_ParamCallRegionRefAttr : KGEN_ExprAttr<"ParamCallRegionRef",
 /// This attribute models a reference to a named parameter.  The type of the
 /// ParamDeclRefAttr must always be the same as the type of the parameter being
 /// referenced.
-def KGEN_ParamDeclRefAttr : KGEN_ExprAttr<"ParamDeclRef", "param.decl.ref",
-    [SubElementAttrInterface]> {
+def KGEN_ParamDeclRefAttr : KGEN_ExprAttr<"ParamDeclRef", "param.decl.ref"> {
   let summary = "A reference to a parameter value.";
   let parameters = (ins "::mlir::StringAttr":$name,
                         AttributeSelfTypeParameter<"">:$type);
@@ -327,7 +326,7 @@ def KGEN_ParamDeclRefAttr : KGEN_ExprAttr<"ParamDeclRef", "param.decl.ref",
 //===----------------------------------------------------------------------===//
 
 def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
-    "concretetype.constant", [SubElementAttrInterface]> {
+    "concretetype.constant"> {
   let summary = "Constant !kgen.type MLIR type without parameter references";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
@@ -428,8 +427,8 @@ def KGEN_DTypeConstantAttr : KGEN_ExprAttr<"DTypeConstant", "dtype.constant"> {
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
-    [SubElementAttrInterface]> {
+def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant",
+    "symbol.constant"> {
   let summary = "kgen.func or kgen.generator reference";
   let description = [{
     This is a value of !kgen.signature type, which refers to a func or
@@ -462,8 +461,7 @@ def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
 // ExprFuncAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_ExprFuncAttr : KGEN_ExprAttr<"ExprFunc", "expr.func",
-    [SubElementAttrInterface]> {
+def KGEN_ExprFuncAttr : KGEN_ExprAttr<"ExprFunc", "expr.func"> {
   let summary = "constant expression function";
   let description = [{
     A `#kgen.expr.func` attribute is a meta-function defined entirely with
