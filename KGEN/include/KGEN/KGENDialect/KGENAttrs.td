@@ -31,8 +31,43 @@ class KGENAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 /// are all typed attributes.
 class KGEN_ExprAttr<string attrName, string attrMnemonic,
                     list<Trait> traits = []>
-    : KGENAttr<attrName, attrMnemonic,
-               [TypedAttrInterface, ParameterAttrInterface] # traits>;
+    : KGENAttr<attrName, attrMnemonic, [TypedAttrInterface] # traits>;
+
+//===----------------------------------------------------------------------===//
+// ArrayOfAttrsAttr
+//===----------------------------------------------------------------------===//
+
+/// An array attribute of other attributes. This one supports sub-element
+/// interface.
+class KGEN_ArrayOfAttrsAttr<string attrName, string attrMnemonic,
+                            string eltName>
+    : ArrayOfAttr<KGENDialect, attrName, attrMnemonic, eltName,
+                  [SubElementAttrInterface]>;
+
+//===----------------------------------------------------------------------===//
+// ParameterExprArrayAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParameterExprArrayAttr
+    : KGEN_ArrayOfAttrsAttr<"ParameterExprArray", "exprs", "TypedAttr">;
+
+//===----------------------------------------------------------------------===//
+// StringArrayAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_StringArrayAtrr
+    : ArrayOfAttr<KGENDialect, "StringArray", "strings", "StringAttr">;
+
+//===----------------------------------------------------------------------===//
+// TypeArrayAttr
+//===----------------------------------------------------------------------===//
+
+// This is an array of type objects, stored in a dense representation that can
+/// be turned into an ArrayRef.
+/// NOTE: We have to define this as TypeArrayAttr because ODS squats on the
+/// `TypeArrayAttr` name with something different.
+def KGEN_TypeArrayAttr
+    : KGEN_ArrayOfAttrsAttr<"TypeArray", "type.array", "Type">;
 
 //===----------------------------------------------------------------------===//
 // ParamDeclAttr
@@ -64,31 +99,6 @@ def KGEN_ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl", [
 }
 
 //===----------------------------------------------------------------------===//
-// ArrayOfAttrsAttr
-//===----------------------------------------------------------------------===//
-
-/// An array attribute of other attributes. This one supports sub-element
-/// interface.
-class KGEN_ArrayOfAttrsAttr<string attrName, string attrMnemonic,
-                            string eltName>
-    : ArrayOfAttr<KGENDialect, attrName, attrMnemonic, eltName,
-                  [SubElementAttrInterface]>;
-
-//===----------------------------------------------------------------------===//
-// ParameterExprArrayAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParameterExprArrayAttr
-    : KGEN_ArrayOfAttrsAttr<"ParameterExprArray", "exprs", "TypedAttr">;
-
-//===----------------------------------------------------------------------===//
-// StringArrayAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_StringArrayAtrr
-    : ArrayOfAttr<KGENDialect, "StringArray", "strings", "StringAttr">;
-
-//===----------------------------------------------------------------------===//
 // ParamDeclArrayAttr
 //===----------------------------------------------------------------------===//
 
@@ -103,17 +113,6 @@ def ParamDeclSize1ArrayAttr
       CPred<"$_self.cast<ParamDeclArrayAttr>().getValue().size() == 1">,
       "single parameter declaration"
     >]>;
-
-//===----------------------------------------------------------------------===//
-// TypeArrayAttr
-//===----------------------------------------------------------------------===//
-
-// This is an array of type objects, stored in a dense representation that can
-/// be turned into an ArrayRef.
-/// NOTE: We have to define this as TypeArrayAttr because ODS squats on the
-/// `TypeArrayAttr` name with something different.
-def KGEN_TypeArrayAttr
-    : KGEN_ArrayOfAttrsAttr<"TypeArray", "type.array", "Type">;
 
 //===----------------------------------------------------------------------===//
 // ParamBindAttr
@@ -157,6 +156,81 @@ def ParamBindArrayAttr
     : KGEN_ArrayOfAttrsAttr<"ParamBindArray", "param.binds", "ParamBindAttr">;
 
 //===----------------------------------------------------------------------===//
+// ConstraintAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint", [
+    SubElementAttrInterface
+  ]> {
+  let summary = "kgen constraint";
+  let description = [{
+    A constraint attribute represents a constraint on a generator or
+    generator interface. It consists of a boolean parameter expression that must
+    evaluate to true for the constraint to be satisfied, a message/description,
+    and an MLIR location for emitting diagnostics.
+
+    When unspecified in a `.mlir` file, the location defaults to the textual
+    location of the attribute.
+  }];
+
+  let parameters = (ins "TypedAttr":$expr, "StringAttr":$message,
+                        "Location":$loc);
+
+  let assemblyFormat = [{
+    `[` custom<ParamValue>($expr, "$_builder.getI1Type()") `,` $message
+    `` custom<ConstraintLoc>($loc) `]`
+  }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+        "TypedAttr":$expr, "StringAttr":$message, "Location":$loc), [{
+      return $_get(expr.getContext(), expr, message, loc);
+    }]>
+  ];
+}
+
+/// An array of ConstraintAttr's.
+def ConstraintArrayAttr
+    : KGEN_ArrayOfAttrsAttr<"ConstraintArray", "constraints", "ConstraintAttr">;
+
+//===----------------------------------------------------------------------===//
+// ConventionsAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_ConventionsAttr : KGENAttr<"Conventions", "conventions"> {
+  let summary = "Function call conventions attribute.";
+  let description = [{
+    The `#kgen.conventions` attribute contains information about function
+    calling conventions. It determines whether function arguments are
+    pass-by-value or pass-by-reference and the effects of the function itself:
+    none or throws.
+
+    Example:
+
+    ```mlir
+    #kgen.conventions<[byval, byref], throws>
+    ```
+  }];
+
+  let parameters = (ins
+    OptionalArrayRefParameter<"ValueInputConvention">:$inputConventions,
+    "FnEffects":$fnEffects
+  );
+  let assemblyFormat = [{
+    `<` `[` (`]`) : ($inputConventions^ `]`)? `,` $fnEffects `>`
+  }];
+
+  /// This builder returns the default conventions.
+  let builders = [AttrBuilder<(ins "unsigned":$numInputs)>];
+
+  let extraClassDeclaration = [{
+    /// Returns true if all the input conventions are pass-by-value and there
+    /// are no function effects.
+    bool isDefault();
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ListAttr
 //===----------------------------------------------------------------------===//
 
@@ -183,12 +257,32 @@ def KGEN_ListAttr : KGEN_ExprAttr<"List", "list", [SubElementAttrInterface]> {
 }
 
 //===----------------------------------------------------------------------===//
-// KGEN_ParamRegionRefAttr
+// UnknownAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamCallRegionRefAttr
-   : KGEN_ExprAttr<"ParamCallRegionRef", "param.call.region.ref",
-                   [SubElementAttrInterface]> {
+def KGEN_UnknownAttr : KGEN_ExprAttr<"Unknown", "unknown",
+    [SubElementAttrInterface]> {
+  let summary = "An unknown parameter value.";
+  let description = [{
+    The `#kgen.unknown` attribute represents an unknown parameter value. It is
+    a special placeholder that represents a parameter that may only be known
+    dynamically.
+  }];
+
+  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "";
+
+  let builders = [TypeBuilderWithInferredContext<(ins "Type":$type), [{
+    return get(type.getContext(), type);
+  }]>];
+}
+
+//===----------------------------------------------------------------------===//
+// ParamCallRegionRefAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParamCallRegionRefAttr : KGEN_ExprAttr<"ParamCallRegionRef",
+    "param.call.region.ref", [SubElementAttrInterface]> {
   let summary =
     "A marker indicating a signature value is specified by a call region";
   let parameters = (ins AttributeSelfTypeParameter<"", "SignatureType">:$type);
@@ -209,9 +303,8 @@ def KGEN_ParamCallRegionRefAttr
 /// This attribute models a reference to a named parameter.  The type of the
 /// ParamDeclRefAttr must always be the same as the type of the parameter being
 /// referenced.
-def KGEN_ParamDeclRefAttr
-   : KGEN_ExprAttr<"ParamDeclRef", "param.decl.ref",
-                   [SubElementAttrInterface]> {
+def KGEN_ParamDeclRefAttr : KGEN_ExprAttr<"ParamDeclRef", "param.decl.ref",
+    [SubElementAttrInterface]> {
   let summary = "A reference to a parameter value.";
   let parameters = (ins "::mlir::StringAttr":$name,
                         AttributeSelfTypeParameter<"">:$type);
@@ -230,83 +323,11 @@ def KGEN_ParamDeclRefAttr
 }
 
 //===----------------------------------------------------------------------===//
-// ParamOperatorAttr
-//===----------------------------------------------------------------------===//
-
-// ParamOperatorAttr forms the core of the expression grammar for parameter
-// expressions.  Its operators have been designed so that expression building
-// force a deterministic canonical form on expression trees.  This ensures that
-// `(x+1)*4` and `(x*4)+4` canonicalize into the same pointer value.
-//
-// For this reason, we should never have unary negate or subtract. `(x-y)` is
-// modeled as `(x+-y)` => `(x + -1*y)`.  The ParamOperatorAttr class does
-// provide convenience methods for these aggregate operations.
-//
-// The design of these operators assumes signful types like si64, and the fully
-// associative operations are take arbitrary arity, also to make
-// canonicalization simpler.
-def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
-    DeclareAttrInterfaceMethods<SubElementAttrInterface, [
-      "walkImmediateSubElements", "replaceImmediateSubElements"
-    ]
-  >]> {
-  let summary = "Parameter expression";
-  let parameters = (ins "POC":$opcode,
-                        ArrayRefParameter<"TypedAttr">:$operands,
-                        AttributeSelfTypeParameter<"">:$type);
-
-  let skipDefaultBuilders = 1;
-  let builders = [
-    // Override the default builder used by the generated parser.
-    AttrBuilder<(ins
-      "POC":$opcode, "llvm::ArrayRef<TypedAttr>":$operands,
-      "mlir::Type":$type
-    ), "", "TypedAttr">,
-
-    // Build a parameter expression.  This automatically canonicalizes and
-    // folds, so it may not necessarily return a ParamOperatorAttr.
-    AttrBuilderWithInferredContext<(ins
-      "POC":$opcode, "llvm::ArrayRef<TypedAttr>":$operands
-    ), "", "TypedAttr">,
-
-    // Build a binary parameter expression for convenience.
-    AttrBuilderWithInferredContext<(ins "POC":$opcode, "TypedAttr":$lhs,
-                                        "TypedAttr":$rhs), [{
-      TypedAttr operands[] = { lhs, rhs };
-      return get(opcode, operands);
-    }], "TypedAttr">
-  ];
-
-  let assemblyFormat = "`<` $opcode `,` $operands `>`";
-  let genVerifyDecl = 1;  // Generate getChecked/verify.
-
-  let extraClassDeclaration = [{
-    size_t getNumOperands() {
-      return getOperands().size();
-    }
-    TypedAttr getOperand(size_t i) {
-      return getOperands()[i];
-    }
-
-    /// Return (ne x, y) which is the same as (not (eq x, y)).
-    static TypedAttr getNE(TypedAttr lhs, TypedAttr rhs) {
-      return getNot(get(POC::EQ, lhs, rhs));
-    }
-
-    /// Return (not x) which is the same as (xor x, true).  The `operand` value
-    /// must have type `i1`.
-    static TypedAttr getNot(TypedAttr operand);
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // ConcreteTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_ConcreteTypeConstantAttr
-  : KGEN_ExprAttr<"ConcreteTypeConstant", "concretetype.constant", [
-    SubElementAttrInterface
-  ]> {
+def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
+    "concretetype.constant", [SubElementAttrInterface]> {
   let summary = "Constant !kgen.type MLIR type without parameter references";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
@@ -335,38 +356,16 @@ def KGEN_ConcreteTypeConstantAttr
 }
 
 //===----------------------------------------------------------------------===//
-// UnknownAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_UnknownAttr
-    : KGEN_ExprAttr<"Unknown", "unknown", [SubElementAttrInterface]> {
-  let summary = "An unknown parameter value.";
-  let description = [{
-    The `#kgen.unknown` attribute represents an unknown parameter value. It is
-    a special placeholder that represents a parameter that may only be known
-    dynamically.
-  }];
-
-  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
-  let assemblyFormat = "";
-
-  let builders = [TypeBuilderWithInferredContext<(ins "Type":$type), [{
-    return get(type.getContext(), type);
-  }]>];
-}
-
-//===----------------------------------------------------------------------===//
 // ParameterizedTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
 /// This represents a parameter whose value is an MLIR type.  It is like
 /// `TypeAttr` (an attribute referring to a type) but is a `TypedAttr` that
 /// refers to an MLIR type and has 'kgen.type' itself.
-def KGEN_ParameterizedTypeConstantAttr
-  : KGEN_ExprAttr<"ParameterizedTypeConstant", "parameterizedtype.constant",  [
-    DeclareAttrInterfaceMethods<SubElementAttrInterface,
-    ["replaceImmediateSubElements"]>
-  ]> {
+def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
+    "ParameterizedTypeConstant", "parameterizedtype.constant",
+    [DeclareAttrInterfaceMethods<SubElementAttrInterface,
+                                 ["replaceImmediateSubElements"]>]> {
   let summary = "Constant !kgen.type MLIR type with parameter references";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
@@ -409,7 +408,8 @@ def KGEN_DTypeConstantAttr : KGEN_ExprAttr<"DTypeConstant", "dtype.constant"> {
 
   /// The value of a DTypeConstantAttr is always signless i8 constant value
   /// and the type is always !kgen.dtype.
-  let parameters = (ins "KGENDType":$dType, AttributeSelfTypeParameter<"">:$type);
+  let parameters = (ins "KGENDType":$dType,
+                        AttributeSelfTypeParameter<"">:$type);
 
   let builders = [AttrBuilder<(ins "KGENDType":$dtype)>];
 
@@ -428,9 +428,8 @@ def KGEN_DTypeConstantAttr : KGEN_ExprAttr<"DTypeConstant", "dtype.constant"> {
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_SymbolConstantAttr
-    : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
-                    [SubElementAttrInterface]> {
+def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
+    [SubElementAttrInterface]> {
   let summary = "kgen.func or kgen.generator reference";
   let description = [{
     This is a value of !kgen.signature type, which refers to a func or
@@ -440,7 +439,7 @@ def KGEN_SymbolConstantAttr
 
   let parameters = (ins "SymbolRefAttr":$symbol,
                         "ParamBindArrayAttr":$paramValues,
-                        AttributeSelfTypeParameter<"", "KGEN::SignatureType">:$type);
+                        AttributeSelfTypeParameter<"", "SignatureType">:$type);
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
@@ -519,81 +518,6 @@ def KGEN_ExprFuncAttr : KGEN_ExprAttr<"ExprFunc", "expr.func",
 }
 
 //===----------------------------------------------------------------------===//
-// ConstraintAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint", [
-    SubElementAttrInterface
-  ]> {
-  let summary = "kgen constraint";
-  let description = [{
-    A constraint attribute represents a constraint on a generator or
-    generator interface. It consists of a boolean parameter expression that must
-    evaluate to true for the constraint to be satisfied, a message/description,
-    and an MLIR location for emitting diagnostics.
-
-    When unspecified in a `.mlir` file, the location defaults to the textual
-    location of the attribute.
-  }];
-
-  let parameters = (ins "TypedAttr":$expr, "StringAttr":$message,
-                        "Location":$loc);
-
-  let assemblyFormat = [{
-    `[` custom<ParamValue>($expr, "$_builder.getI1Type()") `,` $message
-    `` custom<ConstraintLoc>($loc) `]`
-  }];
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins
-        "TypedAttr":$expr, "StringAttr":$message, "Location":$loc), [{
-      return $_get(expr.getContext(), expr, message, loc);
-    }]>
-  ];
-}
-
-/// An array of ConstraintAttr's.
-def ConstraintArrayAttr
-    : KGEN_ArrayOfAttrsAttr<"ConstraintArray", "constraints", "ConstraintAttr">;
-
-//===----------------------------------------------------------------------===//
-// ConventionsAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_ConventionsAttr : KGENAttr<"Conventions", "conventions"> {
-  let summary = "Function call conventions attribute.";
-  let description = [{
-    The `#kgen.conventions` attribute contains information about function
-    calling conventions. It determines whether function arguments are
-    pass-by-value or pass-by-reference and the effects of the function itself:
-    none or throws.
-
-    Example:
-
-    ```mlir
-    #kgen.conventions<[byval, byref], throws>
-    ```
-  }];
-
-  let parameters = (ins
-    OptionalArrayRefParameter<"ValueInputConvention">:$inputConventions,
-    "FnEffects":$fnEffects
-  );
-  let assemblyFormat = [{
-    `<` `[` (`]`) : ($inputConventions^ `]`)? `,` $fnEffects `>`
-  }];
-
-  /// This builder returns the default conventions.
-  let builders = [AttrBuilder<(ins "unsigned":$numInputs)>];
-
-  let extraClassDeclaration = [{
-    /// Returns true if all the input conventions are pass-by-value and there
-    /// are no function effects.
-    bool isDefault();
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
 
@@ -654,6 +578,76 @@ def KGEN_TargetInfoAttr : KGEN_ExprAttr<"TargetInfo", "target"> {
     }
 
     static TargetInfoAttr getForHost(MLIRContext *ctx);
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// ParamOperatorAttr
+//===----------------------------------------------------------------------===//
+
+// ParamOperatorAttr forms the core of the expression grammar for parameter
+// expressions.  Its operators have been designed so that expression building
+// force a deterministic canonical form on expression trees.  This ensures that
+// `(x+1)*4` and `(x*4)+4` canonicalize into the same pointer value.
+//
+// For this reason, we should never have unary negate or subtract. `(x-y)` is
+// modeled as `(x+-y)` => `(x + -1*y)`.  The ParamOperatorAttr class does
+// provide convenience methods for these aggregate operations.
+//
+// The design of these operators assumes signful types like si64, and the fully
+// associative operations are take arbitrary arity, also to make
+// canonicalization simpler.
+def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
+    DeclareAttrInterfaceMethods<SubElementAttrInterface, [
+      "walkImmediateSubElements", "replaceImmediateSubElements"
+    ]
+  >]> {
+  let summary = "Parameter expression";
+  let parameters = (ins "POC":$opcode,
+                        ArrayRefParameter<"TypedAttr">:$operands,
+                        AttributeSelfTypeParameter<"">:$type);
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser.
+    AttrBuilder<(ins
+      "POC":$opcode, "llvm::ArrayRef<TypedAttr>":$operands,
+      "mlir::Type":$type
+    ), "", "TypedAttr">,
+
+    // Build a parameter expression.  This automatically canonicalizes and
+    // folds, so it may not necessarily return a ParamOperatorAttr.
+    AttrBuilderWithInferredContext<(ins
+      "POC":$opcode, "llvm::ArrayRef<TypedAttr>":$operands
+    ), "", "TypedAttr">,
+
+    // Build a binary parameter expression for convenience.
+    AttrBuilderWithInferredContext<(ins "POC":$opcode, "TypedAttr":$lhs,
+                                        "TypedAttr":$rhs), [{
+      TypedAttr operands[] = { lhs, rhs };
+      return get(opcode, operands);
+    }], "TypedAttr">
+  ];
+
+  let assemblyFormat = "`<` $opcode `,` $operands `>`";
+  let genVerifyDecl = 1;  // Generate getChecked/verify.
+
+  let extraClassDeclaration = [{
+    size_t getNumOperands() {
+      return getOperands().size();
+    }
+    TypedAttr getOperand(size_t i) {
+      return getOperands()[i];
+    }
+
+    /// Return (ne x, y) which is the same as (not (eq x, y)).
+    static TypedAttr getNE(TypedAttr lhs, TypedAttr rhs) {
+      return getNot(get(POC::EQ, lhs, rhs));
+    }
+
+    /// Return (not x) which is the same as (xor x, true).  The `operand` value
+    /// must have type `i1`.
+    static TypedAttr getNot(TypedAttr operand);
   }];
 }
 
