@@ -560,28 +560,21 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
 // IR Emission helpers
 //===----------------------------------------------------------------------===//
 
-// FIXME: Move to ExprEmitter method.
-static AnyValue emitFunctionCall(CallableValue calleeVal,
-                                 ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                 SMLoc callLoc, ExprEmitter &emitter);
-
-/// Convert the specified MLIR value (which may be an RValue or LValue) to the
-/// expected type.  On error, this diagnoses it and returns null.
-///
-static Value getDRValueAsExpectedType(Value value, const ExprNode *expr,
-                                      ASTType expectedType,
-                                      ExprEmitter &emitter) {
+/// Convert the specified DRValue to the expected type, invoking implicit
+/// conversions if necessary.  On error, this diagnoses it and returns null.
+DRValue ExprEmitter::getAsExpectedType(DRValue value, const ExprNode *expr,
+                                       ASTType expectedType) {
   // If the type is already an exact match, then we are done.
   if (ASTType(value.getType()).isEqualCanon(expectedType))
     return value;
 
   // Check to see if we can invoke an __new__ method to convert it.
   auto lookupResult =
-      emitter.lookupAndResolveDecl("__new__", expr->getLoc(), expectedType);
+      lookupAndResolveDecl("__new__", expr->getLoc(), expectedType);
   ASTDecl *resultDecl = lookupResult.getIfSuccess();
   if (!resultDecl) {
     if (lookupResult.isFailure()) {
-      emitter.emitError(expr->getLoc(), "value of type ")
+      emitError(expr->getLoc(), "value of type ")
           << ASTType(value.getType())
           << " cannot be converted to expected type " << expectedType;
     }
@@ -591,12 +584,12 @@ static Value getDRValueAsExpectedType(Value value, const ExprNode *expr,
   CallableValue callee(expr->getLoc(), *resultDecl,
                        expectedType.getParamBindings());
   ASTExprAnd<AnyValue> newArg = {DRValue(value), expr};
-  auto result = emitFunctionCall(callee, newArg, expr->getLoc(), emitter);
+  auto result = emitFunctionCall(callee, newArg, expr->getLoc());
   if (!result)
     return {};
 
   // Make sure the result is a DRValue.
-  return emitter.emitDRValue(result, expr->getLoc());
+  return emitDRValue(result, expr->getLoc());
 }
 
 /// Returns true if the insertion context is valid for implicit error
@@ -613,9 +606,9 @@ static bool isValidErrorContext(Block *block) {
 
 /// Emit a function call to the specified callee with the specified operand
 /// values.
-static AnyValue emitFunctionCall(CallableValue calleeVal,
-                                 ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                 SMLoc callLoc, ExprEmitter &emitter) {
+AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
+                                       ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                       SMLoc callLoc) {
   if (!calleeVal)
     return {};
 
@@ -633,7 +626,7 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
   }
 
   auto emitError = [&](const Twine &message) {
-    return emitter.emitError(callLoc, message);
+    return this->emitError(callLoc, message);
   };
 
   // Figure out the type of the function to call, which is either symbol or a
@@ -644,7 +637,7 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
   // an indirect call.
   PointerUnion<Attribute, Value> callee;
   if (calleeVal.direct) {
-    SymbolConstantAttr symbol = calleeVal.direct->getBoundConstantAttr(emitter);
+    SymbolConstantAttr symbol = calleeVal.direct->getBoundConstantAttr(*this);
     if (!symbol)
       return {};
 
@@ -653,7 +646,7 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
   } else {
     // Otherwise we have an indirect call, emit the callee value as a DRValue so
     // we can call it with call_indirect.
-    auto calleeDRVal = emitter.emitDRValue(calleeVal.baseVal.ir, callLoc);
+    auto calleeDRVal = emitDRValue(calleeVal.baseVal.ir, callLoc);
     if (!calleeDRVal)
       return {};
 
@@ -689,11 +682,11 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
       argVal = argAnyValueAndExpr.ir.getIfLValue();
       if (!argVal) {
         if (isMethodInvocation && valueArguments.empty()) {
-          emitter.emitError(argLoc,
-                            "invalid use of mutating method on rvalue of type ")
+          this->emitError(argLoc,
+                          "invalid use of mutating method on rvalue of type ")
               << ASTType(argAnyValueAndExpr.ir.getType());
         } else {
-          emitter.emitError(
+          this->emitError(
               argLoc,
               "operand must be mutable in order to pass as a by-ref argument");
         }
@@ -703,7 +696,7 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
       // If we have an lvalue of the wrong type, diagnose the error prettily.
       if (!ASTType(argVal.getType()).isEqualCanon(ASTType(expectedType))) {
         auto argRVType = argAnyValueAndExpr.ir.getRValueType();
-        emitter.emitError(argLoc, "l-value of type ")
+        this->emitError(argLoc, "l-value of type ")
             << argRVType
             << " cannot be converted to reference to expected type "
             // TODO(QoI): Types are not attributes.
@@ -714,14 +707,13 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
       break;
     case ValueInputConvention::ByVal:
       // Otherwise, we pass as an r-value.
-      argVal = emitter.emitDRValue(argAnyValueAndExpr.ir, argLoc);
+      argVal = emitDRValue(argAnyValueAndExpr.ir, argLoc);
       if (!argVal)
         return {};
 
       // Convert the argument to the expected type if needed, or diagnose if
       // incompatible.
-      argVal = getDRValueAsExpectedType(argVal, argAnyValueAndExpr.expr,
-                                        expectedType, emitter);
+      argVal = getAsExpectedType(argVal, argAnyValueAndExpr.expr, expectedType);
       if (!argVal)
         return {};
       break;
@@ -730,7 +722,7 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
     valueArguments.push_back(argVal);
   }
 
-  if (!emitter.builder) {
+  if (!builder) {
     emitError("TODO: cannot call function in parameter context");
     return {};
   }
@@ -738,19 +730,19 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
   // If this is a call to something representable as an attribute, we can use
   // a kgen.call_param.
   Value resultVal;
-  auto loc = emitter.translateLocation(callLoc);
+  auto loc = translateLocation(callLoc);
   // FIXME: Move result type inference into CallOp/CallIndirectOp.
   auto resultTypes = calleeSig.getValueResults();
   if (auto target = dyn_cast<Attribute>(callee)) {
     resultVal =
-        emitter.builder
+        builder
             ->create<CallOp>(loc, resultTypes, cast<SymbolConstantAttr>(target),
                              valueArguments)
             .getResult(0);
   } else {
     // Otherwise emit calls to SSA values with call_indirect.
     auto calleeDRVal = cast<Value>(callee);
-    resultVal = emitter.builder
+    resultVal = builder
                     ->create<CallIndirectOp>(loc, resultTypes, calleeDRVal,
                                              /*operands*/ valueArguments)
                     .getResult(0);
@@ -758,31 +750,18 @@ static AnyValue emitFunctionCall(CallableValue calleeVal,
 
   // If the callee can raise an error, try to unwrap it.
   if (calleeSig.getFnEffects() == FnEffects::Throws) {
-    if (!isValidErrorContext(emitter.builder->getInsertionBlock())) {
-      emitter.emitError(
+    if (!isValidErrorContext(builder->getInsertionBlock())) {
+      this->emitError(
           callLoc,
           "cannot call raising method within an 'fn' that does not raise");
       return {};
     }
-    resultVal = emitter.builder->create<UnwrapOrPropagateOp>(
+    resultVal = builder->create<UnwrapOrPropagateOp>(
         loc, cast<POP::VariantType>(resultVal.getType()).getType(1), resultVal);
   }
 
   // Value returning call returns its result.
   return DRValue(resultVal);
-}
-
-/// Emit a function call for a call node with the specified operands.
-static AnyValue emitFunctionCall(const CallNode &call,
-                                 const CallableValue &calleeVal,
-                                 ExprEmitter &emitter) {
-  SmallVector<ASTExprAnd<AnyValue>> operands;
-  for (ExprNode *arg : call.args) {
-    operands.push_back({arg->emitIR(emitter), arg});
-    if (!operands.back())
-      return {};
-  }
-  return emitFunctionCall(calleeVal, operands, call.getLoc(), emitter);
 }
 
 /// This helper emits a method call to a special function (`kind`) on `type`
@@ -806,7 +785,7 @@ ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
   }
 
   CallableValue callee(callLoc, *resultDecl, type.getParamBindings());
-  return emitFunctionCall(callee, operands, callLoc, *this);
+  return emitFunctionCall(callee, operands, callLoc);
 }
 
 /// This uses the MLIR parser to turn the specified MLIR type name into an MLIR
@@ -1183,7 +1162,14 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     if (ASTType calledType = calleeVal.baseVal.ir.getIfTypeValue())
       calleeVal = emitInitializerCallable(calledType, this, emitter);
 
-  return emitFunctionCall(*this, calleeVal, emitter);
+  /// Emit a function call for a call node with the specified operands.
+  SmallVector<ASTExprAnd<AnyValue>> operands;
+  for (ExprNode *arg : args) {
+    operands.push_back({arg->emitIR(emitter), arg});
+    if (!operands.back())
+      return {};
+  }
+  return emitter.emitFunctionCall(calleeVal, operands, getLoc());
 }
 
 AnyValue SliceNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
