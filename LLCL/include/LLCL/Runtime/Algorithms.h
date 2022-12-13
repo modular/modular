@@ -100,7 +100,7 @@ inline static void andThenSync(std::tuple<ValueTys...> values,
                                 std::forward<decltype(values)>(values)};
 
   // This function is invoked on every async value to wait for it to complete.
-  auto processAsyncValue = [&](AsyncValue *value) -> int {
+  auto processAsyncValue = [&](AsyncValue *value) {
     value->andThenSync([state]() {
       // Once that is done we can decrement the count and trigger completion
       // when the last element is done.
@@ -113,19 +113,11 @@ inline static void andThenSync(std::tuple<ValueTys...> values,
       // All uses of the state are done, so we can deallocate it.
       delete state;
     });
-
-    // Return an int just so the using make_tuple creates a tuple with trivial
-    // element types.
-    return 0;
   };
 
-  // This magical incantation invokes `processAsyncValue` on each element of the
-  // tuple.
-  std::apply(
-      [&](auto &...elt) {
-        (void)std::make_tuple(processAsyncValue(elt.getPointer())...);
-      },
-      state->values);
+  // Invoke `processAsyncValue` on each value in state
+  std::apply([&](auto &...elt) { (processAsyncValue(elt.getPointer()), ...); },
+             state->values);
 }
 
 //===----------------------------------------------------------------------===//
