@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -49,8 +50,8 @@ class DebugInfoBuilder {
 public:
   DebugInfoBuilder(MLIRContext *context, mlir::AsmParserState &asmState,
                    llvm::SourceMgr &sourceMgr, EmissionKind emissionKind)
-      : builder(context), asmState(asmState), sourceMgr(sourceMgr),
-        emissionKind(emissionKind) {
+      : builder(context), dibuilder(context), asmState(asmState),
+        sourceMgr(sourceMgr), emissionKind(emissionKind) {
     // Build the main file descriptor.
     StringRef filename = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())
                              ->getBufferIdentifier();
@@ -61,16 +62,13 @@ public:
   void build(Operation *op);
 
 private:
-  DISubprogramAttr buildDebugInfo(DICompileUnitAttr compileUnit,
-                                  mlir::FunctionOpInterface op);
-  void buildDebugInfo(DILocalScopeAttr scope, Region *region);
-  void buildDebugInfo(DILocalScopeAttr scope, Block *block,
-                      bool isFunctionEntryBlock = false);
-  void buildDebugInfo(Operation *op, DILocalScopeAttr scope);
+  DIBuilder::ScopeGuard buildDebugInfo(mlir::FunctionOpInterface op);
+  void buildDebugInfo(Region *region);
+  void buildDebugInfo(Block *block, bool isFunctionEntryBlock = false);
+  void buildDebugInfo(Operation *op);
 
   /// Build debug information of a local variable for the given value.
-  DILocalVariableAttr buildLocalVariable(DILocalScopeAttr scope,
-                                         const Twine &name, unsigned line,
+  DILocalVariableAttr buildLocalVariable(const Twine &name, unsigned line,
                                          Value value, unsigned argNo = 0);
 
   /// Build a file attribute for the given filename.
@@ -87,6 +85,9 @@ private:
 
   /// A builder used to simplify attribute/type creation.
   Builder builder;
+
+  /// A builder used for generating the debug info constructs.
+  DIBuilder dibuilder;
 
   /// The asm parser state used to resolve the source information for the given
   /// IR.
@@ -109,16 +110,17 @@ private:
 void DebugInfoBuilder::build(Operation *op) {
   if (emissionKind == EmissionKind::None)
     return;
+  auto fileGuard = dibuilder.pushScopeGuard(fileAttr);
 
   // Attach compile unit information to `op`.
-  auto topLevelScope = DICompileUnitAttr::get(
-      llvm::dwarf::SourceLanguage::DW_LANG_C, fileAttr, /*producer=*/"MLIR",
-      /*isOptimized=*/true, EmissionKind::Full);
+  dibuilder.initializeCompileUnit(llvm::dwarf::SourceLanguage::DW_LANG_C,
+                                  fileAttr, /*producer=*/"MLIR",
+                                  /*isOptimized=*/true, EmissionKind::Full);
 
   // Populate debug information for operations nested under `op`.
   op->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     if (auto funcOp = dyn_cast<mlir::FunctionOpInterface>(op)) {
-      DILocalScopeAttr scope = buildDebugInfo(topLevelScope, funcOp);
+      auto scopeGuard = buildDebugInfo(funcOp);
       if (funcOp.isExternal())
         return WalkResult::skip();
 
@@ -131,18 +133,17 @@ void DebugInfoBuilder::build(Operation *op) {
       if (body.empty())
         return WalkResult::skip();
 
-      buildDebugInfo(scope, &body.front(), /*isFunctionEntryBlock=*/true);
+      buildDebugInfo(&body.front(), /*isFunctionEntryBlock=*/true);
       for (Block &block : llvm::drop_begin(body))
-        buildDebugInfo(scope, &block);
+        buildDebugInfo(&block);
       return WalkResult::skip();
     }
     return WalkResult::advance();
   });
 }
 
-DISubprogramAttr
-DebugInfoBuilder::buildDebugInfo(DICompileUnitAttr compileUnit,
-                                 mlir::FunctionOpInterface op) {
+DIBuilder::ScopeGuard
+DebugInfoBuilder::buildDebugInfo(mlir::FunctionOpInterface op) {
   // Build debug information for the type of the function.
   SmallVector<DIType> resultTypes, argumentTypes;
   for (Type type : op.getResultTypes())
@@ -160,29 +161,26 @@ DebugInfoBuilder::buildDebugInfo(DICompileUnitAttr compileUnit,
     // TODO: Add enum support for `|=`.
     spFlags = SubprogramFlags::Optimized | SubprogramFlags::Definition;
   }
-  auto subprogram =
-      DISubprogramAttr::get(compileUnit, fileAttr, name, name, fileAttr, line,
-                            line, spFlags, subroutineType);
-
-  op->setLoc(builder.getFusedLoc(op->getLoc(), subprogram));
-  return subprogram;
+  auto spGuard = dibuilder.pushSubprogram(name, name, fileAttr, line, line,
+                                          spFlags, subroutineType);
+  op->setLoc(dibuilder.createScopedLoc(op->getLoc()));
+  return spGuard;
 }
 
-void DebugInfoBuilder::buildDebugInfo(DILocalScopeAttr scope, Region *region) {
+void DebugInfoBuilder::buildDebugInfo(Region *region) {
   if (region->empty())
     return;
 
   // Push a new lexical scope for this region.
   auto [line, column] = extractLineColumn(&region->front());
-  scope = DILexicalBlockAttr::get(scope, fileAttr, line, column);
+  auto scopeGuard = dibuilder.pushLexicalBlock(fileAttr, line, column);
 
   // Recursively build debug information for all blocks within the region.
   for (Block &block : *region)
-    buildDebugInfo(scope, &block);
+    buildDebugInfo(&block);
 }
 
-void DebugInfoBuilder::buildDebugInfo(DILocalScopeAttr scope, Block *block,
-                                      bool isFunctionEntryBlock) {
+void DebugInfoBuilder::buildDebugInfo(Block *block, bool isFunctionEntryBlock) {
   // Add debug information for the arguments.
   if (const mlir::AsmParserState::BlockDefinition *blockDef =
           asmState.getBlockDef(block)) {
@@ -196,10 +194,9 @@ void DebugInfoBuilder::buildDebugInfo(DILocalScopeAttr scope, Block *block,
       Optional<StringRef> name = getNameFromLoc(argInfo.loc);
       if (!name)
         continue;
-      blockBuilder.create<ValueOp>(arg.getLoc(), arg,
-                                   buildLocalVariable(scope, *name,
-                                                      extractLine(argInfo.loc),
-                                                      arg, argNo));
+      blockBuilder.create<ValueOp>(
+          arg.getLoc(), arg,
+          buildLocalVariable(*name, extractLine(argInfo.loc), arg, argNo));
     }
   } else {
     // TODO: Add artificial information for arguments of implicit blocks?
@@ -207,15 +204,15 @@ void DebugInfoBuilder::buildDebugInfo(DILocalScopeAttr scope, Block *block,
 
   // Add debug information for the operations.
   for (Operation &op : *block)
-    buildDebugInfo(&op, scope);
+    buildDebugInfo(&op);
 }
 
-void DebugInfoBuilder::buildDebugInfo(Operation *op, DILocalScopeAttr scope) {
-  op->setLoc(builder.getFusedLoc(op->getLoc(), scope));
+void DebugInfoBuilder::buildDebugInfo(Operation *op) {
+  op->setLoc(dibuilder.createScopedLoc(op->getLoc()));
 
   // Traverse into regions of this operation.
   for (auto &region : op->getRegions())
-    buildDebugInfo(scope, &region);
+    buildDebugInfo(&region);
 
   // Check for results to this operation.
   auto opResults = op->getResults();
@@ -242,9 +239,9 @@ void DebugInfoBuilder::buildDebugInfo(Operation *op, DILocalScopeAttr scope) {
       for (int it : llvm::seq(startIt, nextIt)) {
         blockBuilder.create<ValueOp>(
             op->getLoc(), opResults[it],
-            buildLocalVariable(
-                scope, isSingleResult ? *name : (*name + "#" + Twine(it)), line,
-                opResults[it]));
+            buildLocalVariable(isSingleResult ? *name
+                                              : (*name + "#" + Twine(it)),
+                               line, opResults[it]));
       }
     }
     return;
@@ -256,13 +253,12 @@ void DebugInfoBuilder::buildDebugInfo(Operation *op, DILocalScopeAttr scope) {
   // operation has an actual debug location that is useful to us.
 }
 
-DILocalVariableAttr DebugInfoBuilder::buildLocalVariable(DILocalScopeAttr scope,
-                                                         const Twine &name,
+DILocalVariableAttr DebugInfoBuilder::buildLocalVariable(const Twine &name,
                                                          unsigned line,
                                                          Value value,
                                                          unsigned argNo) {
-  return DILocalVariableAttr::get(
-      scope, name.str(), fileAttr, line, argNo, /*alignInBits=*/0,
+  return dibuilder.createLocalVariable(
+      name.str(), fileAttr, line, argNo, /*alignInBits=*/0,
       typeConverter.convertDebugType(value.getType()));
 }
 
@@ -292,7 +288,7 @@ DIFileAttr DebugInfoBuilder::buildFile(StringRef filename) {
       filename = fileBuf;
     }
   }
-  return builder.getAttr<DIFileAttr>(filename, directory);
+  return dibuilder.createFile(filename, directory);
 }
 
 std::pair<unsigned, unsigned>
