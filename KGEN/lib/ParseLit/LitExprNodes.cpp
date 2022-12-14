@@ -1112,83 +1112,21 @@ AnyValue ListExprNode::emitIR(ExprEmitter &emitter,
 }
 
 /// Given an operator, return the SpecialFunction that implements it.
-/// TODO: Expand this to support multiple results, e.g. add/radd.
-static SpecialFunctionKind getOpSpecialFunctions(ExprNode::Kind kind) {
-  switch (kind) {
-  default:
-    // TODO: Add support for more of these.
-    return SpecialFunctionKind::kNormal;
-  case ExprNode::Kind::kUnaryPlus:
-    return SpecialFunctionKind::kPos;
-  case ExprNode::Kind::kUnaryMinus:
-    return SpecialFunctionKind::kNeg;
-  case ExprNode::Kind::kUnaryTilde:
-    return SpecialFunctionKind::kInvert;
-  case ExprNode::kAdd:
-    return SpecialFunctionKind::kAdd;
-  case ExprNode::kSub:
-    return SpecialFunctionKind::kSub;
-  case ExprNode::kMul:
-    return SpecialFunctionKind::kMul;
-  case ExprNode::kMatrixMul:
-    return SpecialFunctionKind::kMatmul;
-  case ExprNode::kDiv:
-    return SpecialFunctionKind::kTrueDiv;
-  case ExprNode::kModulo:
-    return SpecialFunctionKind::kMod;
-  case ExprNode::kBitwiseAnd:
-    return SpecialFunctionKind::kAnd;
-  case ExprNode::kBitwiseOr:
-    return SpecialFunctionKind::kOr;
-  case ExprNode::kBitwiseXor:
-    return SpecialFunctionKind::kXor;
-  case ExprNode::kLeftShift:
-    return SpecialFunctionKind::kLshift;
-  case ExprNode::kRightShift:
-    return SpecialFunctionKind::kRshift;
-  case ExprNode::kExp:
-    return SpecialFunctionKind::kPow;
-  case ExprNode::kFloorDiv:
-    return SpecialFunctionKind::kFloorDiv;
-  case ExprNode::kCmpLess:
-    return SpecialFunctionKind::kCmpLess;
-  case ExprNode::kCmpLessEqual:
-    return SpecialFunctionKind::kCmpLessEqual;
-  case ExprNode::kCmpEqual:
-    return SpecialFunctionKind::kCmpEqual;
-  case ExprNode::kCmpNotEqual:
-    return SpecialFunctionKind::kCmpNotEqual;
-  case ExprNode::kCmpGreater:
-    return SpecialFunctionKind::kCmpGreater;
-  case ExprNode::kCmpGreaterEqual:
-    return SpecialFunctionKind::kCmpGreaterEqual;
-  case ExprNode::kPlusAssign:
-    return SpecialFunctionKind::kIAdd;
-  case ExprNode::kMinusAssign:
-    return SpecialFunctionKind::kISub;
-  case ExprNode::kMulAssign:
-    return SpecialFunctionKind::kIMul;
-  case ExprNode::kMatMulAssign:
-    return SpecialFunctionKind::kIMatmul;
-  case ExprNode::kDivAssign:
-    return SpecialFunctionKind::kITrueDiv;
-  case ExprNode::kModuloAssign:
-    return SpecialFunctionKind::kIMod;
-  case ExprNode::kBitwiseAndAssign:
-    return SpecialFunctionKind::kIAnd;
-  case ExprNode::kBitwiseOrAssign:
-    return SpecialFunctionKind::kIOr;
-  case ExprNode::kBitwiseXorAssign:
-    return SpecialFunctionKind::kIXor;
-  case ExprNode::kLeftShiftAssign:
-    return SpecialFunctionKind::kILshift;
-  case ExprNode::kRightShiftAssign:
-    return SpecialFunctionKind::kIRshift;
-  case ExprNode::kExpAssign:
-    return SpecialFunctionKind::kIPow;
-  case ExprNode::kFloorDivAssign:
-    return SpecialFunctionKind::kIFloorDiv;
-  }
+static SpecialFunctionKind getOpSpecialFunctions(ExprNode::Kind kind,
+                                                 bool isReversed) {
+
+  // Use an if chain to find the right match.  We can't use switch here because
+  // multiple special functions may implement the same kind, e.g. __add__ and
+  // __radd__ special methods both implement kAdd.
+#define SF(ENUM, NAME, NUMOPERANDS, EXPRNODE, FLAGS)                           \
+  if (kind == ExprNode::Kind::EXPRNODE &&                                      \
+      SpecialFunctionInfo::get(SpecialFunctionKind::ENUM).isReversed() ==      \
+          isReversed)                                                          \
+    return SpecialFunctionKind::ENUM;                                          \
+  else
+#include "SpecialFunctions.def"
+  // If everything fails we should return "normal".
+  return SpecialFunctionKind::kNormal;
 }
 
 AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
@@ -1245,9 +1183,6 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     lhsRep = lhsLV;
   }
 
-  // If this operator maps onto a special function, attempt to lower it.
-  auto specialFnKind = getOpSpecialFunctions(kind);
-
   // FIXME: We currently hack in index type support as transition to proper
   // expression support.
   if (lhsRep.getType().isIndex() && rhsRep.getType().isIndex()) {
@@ -1272,46 +1207,46 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     case kMul:
       opcode = (uint32_t)POC::Mul;
       break;
-    case kBitwiseAnd:
+    case kAnd:
       opcode = (uint32_t)POC::And;
       break;
-    case kBitwiseOr:
+    case kOr:
       opcode = (uint32_t)POC::Or;
       break;
-    case kBitwiseXor:
+    case kXor:
       opcode = (uint32_t)POC::Xor;
       break;
-    case kLeftShift:
+    case kLShift:
       opcode = (uint32_t)POC::Shl;
       break;
-    case kRightShift:
+    case kRShift:
       opcode = (uint32_t)POC::Shr;
       break;
     case kFloorDiv:
       opcode = (uint32_t)POC::Div;
       break;
-    case kModulo:
+    case kMod:
       opcode = (uint32_t)POC::Mod;
       break;
-    case kCmpEqual:
+    case kCmpEQ:
       opcode = (uint32_t)POC::EQ;
       break;
-    case kCmpNotEqual:
+    case kCmpNE:
       opcode = (uint32_t)POC::EQ;
       needsInvert = true;
       break;
-    case kCmpGreaterEqual:
+    case kCmpGE:
       opcode = (uint32_t)POC::LT;
       needsInvert = true;
       break;
-    case kCmpGreater:
+    case kCmpGT:
       opcode = (uint32_t)POC::LE;
       needsInvert = true;
       break;
-    case kCmpLess:
+    case kCmpLT:
       opcode = (uint32_t)POC::LT;
       break;
-    case kCmpLessEqual:
+    case kCmpLE:
       opcode = (uint32_t)POC::LE;
       break;
     }
@@ -1321,6 +1256,8 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     return value;
   }
 
+  // If this operator maps onto a special function, attempt to lower it.
+  auto specialFnKind = getOpSpecialFunctions(kind, /*isReversed=*/false);
   assert(specialFnKind != SpecialFunctionKind::kNormal);
   // TODO: Add support for radd, looking up on the RHS.
   ASTExprAnd<AnyValue> argValues[] = {{lhsRep, lhs}, {rhsRep, rhs}};
@@ -1333,9 +1270,6 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
   auto exprRep = subExpr->emitIR(emitter);
   if (!exprRep)
     return {};
-
-  // If this operator maps onto a special function, attempt to lower it.
-  auto specialFnKind = getOpSpecialFunctions(kind);
 
   if (exprRep.getType().isIndex()) {
     auto exprParam =
@@ -1356,6 +1290,8 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
     }
   }
 
+  // If this operator maps onto a special function, attempt to lower it.
+  auto specialFnKind = getOpSpecialFunctions(kind, /*isReversed=*/false);
   assert(specialFnKind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
