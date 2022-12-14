@@ -16,7 +16,7 @@
 #ifndef LIT_EXPR_NODES_H
 #define LIT_EXPR_NODES_H
 
-#include "LitExprs.h"
+#include "LitExprNode.h"
 namespace M::KGEN {
 class SignatureType;
 }
