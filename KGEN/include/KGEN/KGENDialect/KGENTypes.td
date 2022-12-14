@@ -152,7 +152,7 @@ def KGEN_ListType : KGENType<"List", "list", [SubElementTypeInterface]> {
 }
 
 //===----------------------------------------------------------------------===//
-// KGEN_SignatureType
+// SignatureType
 //===----------------------------------------------------------------------===//
 
 def KGEN_SignatureType : KGENType<"Signature", "signature",
@@ -227,6 +227,9 @@ def KGEN_SignatureType : KGENType<"Signature", "signature",
 
     /// Return this signature with the input parameters dropped.
     SignatureType dropParamValues();
+
+    /// Returns true if the signature is a concrete callable.
+    bool isConcrete();
   }];
 
   let genVerifyDecl = 1;

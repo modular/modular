@@ -109,28 +109,96 @@ static ErrorOr<int64_t> computeSizeof(SymbolTable &symtab,
   return *size;
 }
 
+//===----------------------------------------------------------------------===//
+// IR Interpreter
+//===----------------------------------------------------------------------===//
+
+static ErrorOr<TypedAttr> evaluateFunction(FuncOp func,
+                                           ArrayRef<TypedAttr> inputs) {
+  DenseMap<Value, Attribute> values;
+  // Map the function argument values.
+  for (auto [arg, input] : llvm::zip(func.getArguments(), inputs))
+    values.try_emplace(arg, input);
+
+  std::string errMsg("IR interpreter failed: ");
+  llvm::raw_string_ostream err(errMsg);
+
+  // "Interpret" the IR by calling operation folders.
+  SmallVector<Attribute> operands;
+  SmallVector<OpFoldResult> results;
+  for (Operation &op : func.getBody()->without_terminator()) {
+    operands.clear();
+    for (Value operand : op.getOperands())
+      operands.push_back(values.lookup(operand));
+    if (failed(op.fold(operands, results))) {
+      // FIXME: We need to report the location error, but the elaborator isn't
+      // set up to attach "notes" the elaboration diagnostics.
+      err << "could not fold operation " << op.getName() << '(';
+      llvm::interleaveComma(operands, err);
+      err << ") in function @" << func.getName();
+      return Error(err.str());
+    }
+    for (auto [result, output] : llvm::zip(results, op.getResults())) {
+      auto value = result.dyn_cast<Attribute>();
+      if (!value) {
+        err << "folder for operation " << op.getName()
+            << " did not return a constant value, in function @"
+            << func.getName();
+        return Error(err.str());
+      }
+      values.try_emplace(output, value);
+    }
+  }
+
+  // Extract the result.
+  assert(func.getNumResults() == 1);
+  Attribute result = values.lookup(func.getReturnOp().getOperand(0));
+  if (auto expr = dyn_cast<TypedAttr>(result))
+    return expr;
+  err << "function @" << func.getName()
+      << " result is not a parameter expression";
+  return Error(err.str());
+}
+
+//===----------------------------------------------------------------------===//
+// Parameter Evaluator
+//===----------------------------------------------------------------------===//
+
 ErrorOr<TypedAttr>
 ParameterEvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
   // Try to narrow this operator to an expression we can evaluate. We only need
   // to emit an error during the evaluation attempt.
-  if (op.getOpcode() != POC::GetSizeOf && op.getOpcode() != POC::GetAlignOf)
-    return {op};
-  auto typeCst = dyn_cast<TypeConstantAttr>(op.getOperand(0));
-  if (!typeCst)
-    return {op};
-  auto ref = dyn_cast<DeclRefType>(typeCst.getValue());
-  if (!ref)
-    return {op};
-  auto target = dyn_cast<TargetInfoAttr>(op.getOperand(1));
-  if (!target)
-    return {op};
+  if (op.getOpcode() == POC::GetSizeOf || op.getOpcode() == POC::GetAlignOf) {
+    auto typeCst = dyn_cast<TypeConstantAttr>(op.getOperand(0));
+    auto target = dyn_cast<TargetInfoAttr>(op.getOperand(1));
+    if (!typeCst || !target)
+      return {op};
+    auto ref = dyn_cast<DeclRefType>(typeCst.getValue());
+    if (!ref)
+      return {op};
 
-  ErrorOr<int64_t> indexResult = 0;
-  if (op.getOpcode() == POC::GetSizeOf)
-    indexResult = computeStructSizeof(*symtab, target, ref);
-  else
-    indexResult = computeStructAlignof(*symtab, target, ref);
-  if (indexResult.isError())
-    return indexResult.takeError();
-  return {Builder(op.getContext()).getIndexAttr(*indexResult)};
+    ErrorOr<int64_t> indexResult = 0;
+    if (op.getOpcode() == POC::GetSizeOf)
+      indexResult = computeStructSizeof(*symtab, target, ref);
+    else
+      indexResult = computeStructAlignof(*symtab, target, ref);
+    if (indexResult.isError())
+      return indexResult.takeError();
+    return {Builder(op.getContext()).getIndexAttr(*indexResult)};
+  }
+
+  if (op.getOpcode() == POC::Apply) {
+    auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
+    if (!symbol || !symbol.getType().isConcrete())
+      return {op};
+    ArrayRef<TypedAttr> operands = op.getOperands().drop_front();
+    if (!llvm::all_of(operands, ParameterAttr::isSimpleConstant))
+      return {op};
+    if (auto ref = dyn_cast<FlatSymbolRefAttr>(symbol.getSymbol()))
+      if (auto func = symtab->lookup<FuncOp>(ref.getAttr()))
+        return evaluateFunction(func, operands);
+    return {op};
+  }
+
+  return {op};
 }

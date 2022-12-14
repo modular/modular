@@ -238,6 +238,11 @@ SignatureType SignatureType::dropParamValues() {
              getValues(), getConventions());
 }
 
+bool SignatureType::isConcrete() {
+  return getConventions().isDefault() && getInputParams().empty() &&
+         getResultParamTypes().empty();
+}
+
 static ParseResult
 parseValuesAndOptionalConventions(AsmParser &p,
                                   FailureOr<FunctionType> &valueFnSpec,

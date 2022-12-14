@@ -1458,8 +1458,6 @@ static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
     return evaluator.getReboundAttribute(exprFunc.getExprs().front());
   }
 
-  // TODO: handle symbol constants by interpreting the callee.
-
   return {};
 }
 
