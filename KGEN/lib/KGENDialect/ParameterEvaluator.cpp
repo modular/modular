@@ -70,9 +70,7 @@ bool KGEN::isParameterizedType(Type type) {
 //===----------------------------------------------------------------------===//
 
 /// Get the specified attribute with any nested parameter expressions rewritten.
-Attribute
-ParameterEvaluator::getReboundAttribute(Attribute attr,
-                                        function_ref<void(Error)> emitError) {
+Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   // These are common leaf attributes that we know are never parameterized.
   if (!attr || attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
                         DTypeConstantAttr>())
@@ -94,33 +92,22 @@ ParameterEvaluator::getReboundAttribute(Attribute attr,
     SmallVector<Attribute> newAttrs;
     SmallVector<Type> newTypes;
     itf.walkImmediateSubElements(
-        [&](Attribute attr) {
-          newAttrs.push_back(getReboundAttribute(attr, emitError));
-        },
-        [&](Type type) {
-          newTypes.push_back(getReboundType(type, emitError));
-        });
+        [&](Attribute attr) { newAttrs.push_back(getReboundAttribute(attr)); },
+        [&](Type type) { newTypes.push_back(getReboundType(type)); });
     result = itf.replaceImmediateSubElements(newAttrs, newTypes);
   }
 
   // If an operator persisted, try to simplify it with the symbol table.
-  if (symtab && isa<ParamOperatorAttr>(result)) {
-    ErrorOr<TypedAttr> expr =
-        evaluateSymbolicExpression(cast<ParamOperatorAttr>(result));
-    if (expr.isError()) {
-      if (emitError)
-        emitError(expr.takeError());
-    } else {
-      result = expr.takeValue();
-    }
-  }
+  if (auto op = dyn_cast<ParamOperatorAttr>(result))
+    if (FailureOr<TypedAttr> expr = evaluateSymbolicExpression(op);
+        succeeded(expr))
+      result = *expr;
 
   return rewrittenAttrs[attr] = result;
 }
 
 /// Get the specified type with any nested parameter expressions rewritten.
-Type ParameterEvaluator::getReboundType(Type type,
-                                        function_ref<void(Error)> emitError) {
+Type ParameterEvaluator::getReboundType(Type type) {
   // If we've already processed this type, just reuse the memoized result.
   auto iter = rewrittenTypes.find(type);
   if (iter != rewrittenTypes.end())
@@ -140,43 +127,14 @@ Type ParameterEvaluator::getReboundType(Type type,
 
       itf.walkImmediateSubElements(
           [&](Attribute attr) {
-            newAttrs.push_back(getReboundAttribute(attr, emitError));
+            newAttrs.push_back(getReboundAttribute(attr));
           },
-          [&](Type type) {
-            newTypes.push_back(getReboundType(type, emitError));
-          });
+          [&](Type type) { newTypes.push_back(getReboundType(type)); });
       result = itf.replaceImmediateSubElements(newAttrs, newTypes);
     }
   }
 
   return rewrittenTypes[type] = result;
-}
-
-/// Given a generic parameter expression, simplify it by folding the
-/// expression according to known parameter values.  This returns an error if
-/// the expression cannot be folded for one reason or another.
-ErrorOr<Attribute> ParameterEvaluator::concretizeParameterExpr(Attribute expr) {
-  assert(symtab && "must have a symbol table to concretize expressions");
-
-  // If we can fold this to a simple constant result, do.
-  Optional<Error> evalError;
-  auto result =
-      getReboundAttribute(expr, [&](Error err) { evalError = std::move(err); });
-  if (ParameterAttr::isSimpleConstant(result))
-    return result;
-
-  // If this was an unfoldable operator expression, error.  This can happen for
-  // things like 'index' arithmetic that has target-specific results.
-  if (auto oper = dyn_cast<ParamOperatorAttr>(result)) {
-    // Check if we have an error from evaluating symbolic expressions.
-    if (evalError)
-      return std::move(*evalError);
-
-    return Error("could not simplify operator " + getParamAsString(result));
-  }
-
-  // Otherwise, we don't know how to simplify this attribute, it's an error.
-  return Error("unknown expression to fold: " + getParamAsString(result));
 }
 
 //===----------------------------------------------------------------------===//
@@ -190,65 +148,4 @@ void ParameterEvaluator::dump() const {
   os << "ParameterEvaluator: \n";
   for (auto [name, value] : paramValues)
     os << "  " << name << " = " << value << "\n";
-}
-
-//===----------------------------------------------------------------------===//
-// evaluateConstraints implementation.
-//===----------------------------------------------------------------------===//
-
-/// Given a generator or interface declaration operation, evaluate any
-/// constraints against inputParamValues.  If the constraints are met, return
-/// success, otherwise return why they aren't.
-LogicalResult KGEN::evaluateConstraints(
-    ArrayRef<ConstraintAttr> constraints, ParameterEvaluator &evaluator,
-    function_ref<LogicalResult(Location, Error)> emitError) {
-  // Each constraint must be foldable, and must fold to true.
-  for (ConstraintAttr constraint : constraints) {
-    ErrorOr<Attribute> result =
-        evaluator.concretizeParameterExpr(constraint.getExpr());
-    if (failed(result)) {
-      return emitError(constraint.getLoc(), "constraint evaluation failure: " +
-                                                Twine(result.getError()));
-    }
-
-    auto resultInt = dyn_cast<IntegerAttr>(result.takeValue());
-    if (!resultInt || resultInt.getValue().getBitWidth() != 1) {
-      return emitError(constraint.getLoc(),
-                       "constraint evaluation didn't return true or false");
-    }
-
-    // If this failed, indicate why.
-    if (resultInt.getValue().isZero()) {
-      return emitError(constraint.getLoc(),
-                       "constraint failed: " +
-                           constraint.getMessage().getValue());
-    }
-  }
-
-  // If we made it this far, then everything folded to true.
-  return success();
-}
-
-/// Given a generator or interface declaration operation, evaluate any
-/// constraints against inputParamValues.  If the constraints are met, return
-/// success, otherwise return why they aren't.
-LogicalResult KGEN::evaluateConstraints(
-    DeclInterface decl, ArrayRef<Attribute> inputParamValues,
-    function_ref<LogicalResult(Location, Error)> emitError,
-    SymbolTable &symtab) {
-  // If there are no constraints, we are trivially done.
-  ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
-  if (constraints.empty())
-    return success();
-
-  // Otherwise, we have constraints to evaluate.  Bind each of the input
-  // parameter names.
-  ParameterEvaluator evaluator(&symtab);
-  ArrayRef<ParamDeclAttr> inputParamDecls = decl.getInputParamDeclsAttr();
-  assert(inputParamDecls.size() == inputParamValues.size() &&
-         "incorrect number of input parameters");
-  for (auto [paramDecl, value] : llvm::zip(inputParamDecls, inputParamValues))
-    evaluator.setParameterValue(paramDecl, value);
-
-  return evaluateConstraints(constraints, evaluator, std::move(emitError));
 }

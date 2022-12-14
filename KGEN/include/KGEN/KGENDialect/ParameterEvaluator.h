@@ -9,6 +9,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "Support/ForwardDecls.h"
+#include "llvm/ADT/DenseMap.h"
 
 namespace M {
 class Error;
@@ -53,12 +54,12 @@ using DeclAndInputParamsPair = std::pair<FuncInterface, ArrayAttr>;
 /// and simplify parameter expressions based on those values.
 class ParameterEvaluator {
 public:
-  ParameterEvaluator(SymbolTable *symtab = nullptr) : symtab(symtab) {}
+  virtual ~ParameterEvaluator() = default;
 
   /// Instantiate a new parameter evaluator with the given parameter values.
-  explicit ParameterEvaluator(SymbolTable *symtab,
-                              DenseMap<StringAttr, Attribute> paramValues)
-      : symtab(symtab), paramValues(std::move(paramValues)) {}
+  ParameterEvaluator(DenseMap<StringAttr, Attribute> paramValues =
+                         DenseMap<StringAttr, Attribute>())
+      : paramValues(std::move(paramValues)) {}
 
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
@@ -80,30 +81,26 @@ public:
     return paramValues;
   }
 
-  /// Given a generic parameter expression, substitute known values for
-  /// parameters into it and fold it down to a simple constant.  This returns an
-  /// error if a simple constant cannot be produced (e.g. because there is some
-  /// dependence on target information that isn't available).
-  ErrorOr<Attribute> concretizeParameterExpr(Attribute expr);
-
   /// Get the specified type with any nested parameter expressions rewritten.
-  Type getReboundType(Type type, function_ref<void(Error)> emitError = {});
+  Type getReboundType(Type type);
 
   /// Get the specified attribute with any nested parameter expressions
   /// rewritten.  The substituted attributes are not necessarily fully folded:
   /// for that use concretizeParameterExpr.
-  Attribute getReboundAttribute(Attribute attr,
-                                function_ref<void(Error)> emitError = {});
+  Attribute getReboundAttribute(Attribute attr);
 
+  /// Evaluate a potentially symbolic expression. This hook should be overridden
+  /// to process symbol expressions using some global state, including a symbol
+  /// table.
+  virtual FailureOr<TypedAttr>
+  evaluateSymbolicExpression(ParamOperatorAttr op) {
+    return failure();
+  }
+
+  /// Dump the parameter evaluator state.
   void dump() const;
 
 private:
-  /// Evaluate a potentially symbolic expression.
-  ErrorOr<TypedAttr> evaluateSymbolicExpression(ParamOperatorAttr op);
-
-  /// A symbol table to lookup type declarations.
-  SymbolTable *symtab;
-
   /// These are the bound parameter values, captured in simplified form.
   DenseMap<StringAttr, Attribute> paramValues;
 
@@ -113,27 +110,6 @@ private:
   DenseMap<Attribute, Attribute> rewrittenAttrs;
   DenseMap<Type, Type> rewrittenTypes;
 };
-
-//===----------------------------------------------------------------------===//
-// evaluateConstraints implementation.
-//===----------------------------------------------------------------------===//
-
-/// Given a generator or interface declaration operation, evaluate any
-/// constraints against inputParamValues. If the constraints are met, return
-/// success, otherwise return why they aren't.
-LogicalResult
-evaluateConstraints(ArrayRef<ConstraintAttr> constraints,
-                    ParameterEvaluator &evaluator,
-                    function_ref<LogicalResult(Location, Error)> emitError);
-
-/// Given a generator or interface declaration operation, evaluate any
-/// constraints against inputParamValues. If the constraints are met, return
-/// success, otherwise return why they aren't.
-LogicalResult
-evaluateConstraints(DeclInterface decl, ArrayRef<Attribute> inputParamValues,
-                    function_ref<LogicalResult(Location, Error)> emitError,
-                    SymbolTable &symtab);
-
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_PARAMETEREVALUATOR_H

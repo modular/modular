@@ -34,7 +34,7 @@ kgen.generator.interface @genItf2<x>()
 
 // expected-note @below {{failed to expand this declaration}}
 kgen.generator @genItf2_impl0<x>()
-// expected-note @+1 {{constraint failed: x must be zarooo}}
+// expected-note @below {{constraint failed: x must be zarooo}}
   constraints <[eq(x, 0), "x must be zarooo"]> implements @genItf2 {
   "impl0"() : () -> ()
   kgen.return

@@ -8,6 +8,7 @@ add_modular_mlir_library(KGENElaborator
   Elaborator.cpp
   IncludeResolution.cpp
   SelectFastestFunction.cpp
+  SymbolicExpressions.cpp
 
   LINK_LIBS PUBLIC
   DebugInfoDialect

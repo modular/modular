@@ -13,7 +13,6 @@
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/KGENDialect/ElaboratorOpInterface.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
-#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENPasses.h"
 #include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
@@ -23,6 +22,7 @@
 #include "Support/Compiler/SymbolTableAnalysis.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/STLExtras.h"
+#include "SymbolicExpressions.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/PatternMatch.h"
@@ -318,7 +318,7 @@ public:
   /// original parent operation.
   struct RegionBody {
     FuncInterface body;
-    ParameterEvaluator evaluator;
+    IREvaluator evaluator;
 
     /// Return true if the body is isolated from above.
     bool isIsolatedFromAbove() const {
@@ -331,14 +331,14 @@ public:
   /// elaborator takes ownership of the body by hooking it up to a module as
   /// its virtual root.
   void addRegionReference(RegionReferenceAttr attr, RegionBody regionBody) {
-    regionsReferenced[attr] = std::move(regionBody);
+    regionsReferenced.try_emplace(attr, std::move(regionBody));
     regionOwner->push_back(regionBody.body);
   }
 
   /// Get a reference region by name. The referenced region can be isolated
   /// from above or not isolated from above.
   const RegionBody &getRegionReferenced(RegionReferenceAttr attr) {
-    return regionsReferenced[attr];
+    return regionsReferenced.find(attr)->second;
   }
 
   /// Have the elaborator take the nested parameter declarations and uses for
@@ -493,6 +493,20 @@ struct RegionReturn {
 /// this keeps each entry in the worklist one pointer.
 using RewriterCommandType = llvm::PointerUnion<Operation *, RegionReturn *>;
 
+/// Convert an EvalDiagnostic to ElaborationDiagnostic.
+/// FIXME: Unify the two into an "error tree" data structure.
+static ElaborationDiagnostic
+convertEvalErrorToElaborationError(Location loc, EvalError error) {
+  if (error.notes.empty())
+    return {loc, std::move(error.error)};
+  SmallVector<CalleeExpansionError> causes;
+  causes.push_back({loc, {loc, std::move(error.error)}});
+  for (EvalDiagnostic &note : error.notes)
+    causes.push_back({note.first, convertEvalErrorToElaborationError(
+                                      note.first, std::move(note.second))});
+  return {loc, causes};
+}
+
 namespace {
 /// This class keeps a set of defined parameter values and is used to evaluate
 /// and simplify operations in a func based on those values.  If an error
@@ -523,7 +537,7 @@ public:
 
   /// Return the evaluator currently being used for our rewrite.  This is the
   /// top of the stack of evaluators we track.
-  ParameterEvaluator &getEvaluator() {
+  IREvaluator &getEvaluator() {
     assert(!evaluators.empty());
     return evaluators.back();
   }
@@ -545,11 +559,19 @@ public:
   /// may not even verify correctly, it will be removed later.
   CalleeExpansionError takeDiagnosticAndEraseFunc();
 
-  /// Generate a error expanding this generator.  The location specified is
+  /// Generate an error expanding this generator.  The location specified is
   /// the operation with the problem, and the message is the problem with it.
   LogicalResult error(Location loc, Error message) {
     assert(!diagnostic.has_value() && "Already emitted an error");
     diagnostic = ElaborationDiagnostic(loc, std::move(message));
+    return failure();
+  }
+
+  /// Generate an error expanding this generator that occurred while
+  /// concretizing a parameter expression.
+  LogicalResult error(Location loc, EvalError error) {
+    assert(!diagnostic.has_value() && "Already emitted an error");
+    diagnostic = convertEvalErrorToElaborationError(loc, std::move(error));
     return failure();
   }
 
@@ -599,12 +621,12 @@ private:
       ArrayRef<ParamBindAttr> paramValues, SymbolRefAttr calleeAttr,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters,
       bool isInlinedCall);
-  void
+  LogicalResult
   completeGeneratorUserProcessing(KGENCallOpInterface user,
                                   ArrayRef<ParamDeclAttr> decls,
                                   DeclAndInputParamsPair calleeAndInputParams,
                                   const ElaboratedGenerator &newCallee);
-  void spawnNewFuncClone(
+  LogicalResult spawnNewFuncClone(
       KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
       DeclAndInputParamsPair calleeAndInputParams,
       const ElaboratedGenerator &callee,
@@ -655,7 +677,7 @@ private:
   /// The current evaluator is always at the back() of the list.  Having a
   /// stack of evaluators allows us to maintain scoped parameters when
   /// processing regions.
-  SmallVector<ParameterEvaluator, 2> evaluators;
+  SmallVector<IREvaluator, 2> evaluators;
 
   /// These are the commands that still need to get performed before this func
   /// has been fully evaluated.  These are mostly operations that need to be
@@ -768,10 +790,11 @@ LogicalResult ParameterRewriter::rewriteOps(
     // scope.
     SmallVector<Attribute> returnedParams;
     for (TypedAttr expr : rr->returnedParamExprs) {
-      auto value = getEvaluator().concretizeParameterExpr(expr);
-      if (value.isError())
-        return error(rr->returnLoc, value.takeError());
-      returnedParams.push_back(value.takeValue());
+      std::variant<EvalError, Attribute> value =
+          getEvaluator().concretizeParameterExpr(expr);
+      if (std::holds_alternative<EvalError>(value))
+        return error(rr->returnLoc, std::move(std::get<EvalError>(value)));
+      returnedParams.push_back(std::get<Attribute>(value));
     }
     // Next, pop the evaluator for the now-returned region.
     assert(evaluators.size() > 1 && "Don't have excess evaluators to pop!");
@@ -826,13 +849,14 @@ LogicalResult ParameterRewriter::rewriteOps(
 
 LogicalResult ParameterRewriter::processParamDeclareOp(ParamDeclareOp op) {
   // Simplify the input expression.
-  auto errorOrValue = getEvaluator().concretizeParameterExpr(op.getValue());
-  if (errorOrValue.isError())
-    return error(op->getLoc(), errorOrValue.takeError());
+  std::variant<EvalError, Attribute> errorOrValue =
+      getEvaluator().concretizeParameterExpr(op.getValue());
+  if (std::holds_alternative<EvalError>(errorOrValue))
+    return error(op->getLoc(), std::move(std::get<EvalError>(errorOrValue)));
 
   // Bind it to the parameter declaration it is setting.
-  getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(),
-                                              errorOrValue.takeValue());
+  getEvaluator().setOrOverwriteParameterValue(
+      op.getParamDecl(), std::get<Attribute>(errorOrValue));
 
   // The kgen.param.declare operation serves no other purpose: remove it.
   op->erase();
@@ -844,7 +868,7 @@ LogicalResult ParameterRewriter::processParamSearchOp(
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Loop over all the possible candidates that we will search over, spawning
   // N-1 possibilities to explore.
-  std::string errors;
+  std::vector<EvalDiagnostic> errors;
   Attribute firstValid;
   DenseSet<Attribute> seenValues;
   LLVM_DEBUG({
@@ -854,15 +878,15 @@ LogicalResult ParameterRewriter::processParamSearchOp(
   });
   for (Attribute candidate : op.getValues()) {
     // Simplify the input expressions.
-    auto errorOrValue = getEvaluator().concretizeParameterExpr(candidate);
-    if (errorOrValue.isError()) {
-      if (!errors.empty())
-        errors += ", ";
-      errors += errorOrValue.takeError().get();
+    std::variant<EvalError, Attribute> errorOrValue =
+        getEvaluator().concretizeParameterExpr(candidate);
+    if (std::holds_alternative<EvalError>(errorOrValue)) {
+      errors.emplace_back(op.getLoc(),
+                          std::move(std::get<EvalError>(errorOrValue)));
       continue;
     }
 
-    Attribute value = errorOrValue.get();
+    auto value = std::get<Attribute>(errorOrValue);
 
     // If we've already seen this concrete value before, ignore the duplicate.
     if (!seenValues.insert(value).second)
@@ -885,7 +909,9 @@ LogicalResult ParameterRewriter::processParamSearchOp(
   if (!firstValid) {
     if (errors.empty())
       return error(op->getLoc(), "no values to search over");
-    return error(op->getLoc(), Error(errors));
+    EvalError err("failed to concretize any search parameters");
+    err.notes = std::move(errors);
+    return error(op->getLoc(), std::move(err));
   }
 
   completeParamSearchOpProcessing(op, firstValid);
@@ -927,28 +953,35 @@ LogicalResult ParameterRewriter::processParamConstantOp(ParamConstantOp op) {
   // ParamConstantOp projects a parameter expression into an SSA value.  We can
   // eventually lower this into lower level operators in the target set, but
   // for now we just simplify their operand.
-  auto errorOrValue = getEvaluator().concretizeParameterExpr(op.getValue());
-  if (errorOrValue.isError())
-    return error(op->getLoc(), errorOrValue.takeError());
+  std::variant<EvalError, Attribute> errorOrValue =
+      getEvaluator().concretizeParameterExpr(op.getValue());
+  if (std::holds_alternative<EvalError>(errorOrValue))
+    return error(op.getLoc(), std::move(std::get<EvalError>(errorOrValue)));
 
-  op.getResult().setType(getEvaluator().getReboundType(op.getType()));
-  op.setValueAttr(errorOrValue.takeValue());
+  std::variant<EvalError, Type> errorOrType =
+      getEvaluator().concretizeParameterExpr(op.getType());
+  if (std::holds_alternative<EvalError>(errorOrType))
+    return error(op.getLoc(), std::move(std::get<EvalError>(errorOrType)));
+
+  op.getResult().setType(std::get<Type>(errorOrType));
+  op.setValueAttr(std::get<Attribute>(errorOrValue));
   return success();
 }
 
 LogicalResult ParameterRewriter::processParamAssertOp(ParamAssertOp op) {
   // Check the condition expression.
-  auto errorOrValue = getEvaluator().concretizeParameterExpr(op.getCond());
-  if (errorOrValue.isError())
-    return error(op->getLoc(), errorOrValue.takeError());
+  std::variant<EvalError, Attribute> errorOrValue =
+      getEvaluator().concretizeParameterExpr(op.getCond());
+  if (std::holds_alternative<EvalError>(errorOrValue))
+    return error(op.getLoc(), std::move(std::get<EvalError>(errorOrValue)));
 
-  auto resultInt = dyn_cast<IntegerAttr>(errorOrValue.get());
+  auto resultInt = dyn_cast<IntegerAttr>(std::get<Attribute>(errorOrValue));
   if (!resultInt || resultInt.getValue().getBitWidth() != 1)
-    return error(op->getLoc(),
+    return error(op.getLoc(),
                  "constraint evaluation didn't return true or false");
   // If the constraint evaluated to zero then the assert fails.
   if (resultInt.getValue().isZero())
-    return error(op->getLoc(), "constraint failed: " + op.getMessage());
+    return error(op.getLoc(), "constraint failed: " + op.getMessage());
 
   // The kgen.param.assert op serves no further purpose, so we can remove it.
   op->erase();
@@ -985,8 +1018,8 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
       // a lexically identical body.  This would reduce some redundant
       // specialization.
       Elaborator::RegionBody regionBody{
-          body, ParameterEvaluator(&analysis->getTopLevelSymbolTable(),
-                                   getEvaluator().getParameterValues())};
+          body, IREvaluator(&analysis->getTopLevelSymbolTable(),
+                            getEvaluator().getParameterValues())};
       inlineCallee |= !regionBody.isIsolatedFromAbove();
       elaborator.addRegionReference(regionRefAttr, std::move(regionBody));
       boundInputParams.push_back(regionRefAttr);
@@ -995,12 +1028,13 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
 
     // Otherwise fold the parameter expression in this context to a simple
     // constant.
-    auto value = getEvaluator().concretizeParameterExpr(param.getValue());
-    if (value.isError())
-      return error(call->getLoc(), value.takeError());
+    std::variant<EvalError, Attribute> value =
+        getEvaluator().concretizeParameterExpr(param.getValue());
+    if (std::holds_alternative<EvalError>(value))
+      return error(call->getLoc(), std::move(std::get<EvalError>(value)));
 
     // Check if we have a reference to a non-isolated region.
-    auto regionRef = dyn_cast<RegionReferenceAttr>(value.get());
+    auto regionRef = dyn_cast<RegionReferenceAttr>(std::get<Attribute>(value));
     if (regionRef &&
         !elaborator.getRegionReferenced(regionRef).isIsolatedFromAbove()) {
       // Only the callees of inlined calls can be regions not isolated from
@@ -1013,7 +1047,7 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
       inlineCallee = true;
     }
 
-    boundInputParams.push_back(value.takeValue());
+    boundInputParams.push_back(std::get<Attribute>(value));
   }
   return std::make_pair(ArrayAttr::get(call->getContext(), boundInputParams),
                         inlineCallee);
@@ -1065,9 +1099,8 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
   // consistent callee.
   if (FuncOp callee =
           elaboratedGenerator.getBinding(calleeDeclAndInputParams)) {
-    completeGeneratorUserProcessing(user, decls, calleeDeclAndInputParams,
-                                    ElaboratedGenerator(callee));
-    return success();
+    return completeGeneratorUserProcessing(
+        user, decls, calleeDeclAndInputParams, ElaboratedGenerator(callee));
   }
 
   // Otherwise, this is our first use of this.  Ask the global elaborator for
@@ -1106,8 +1139,9 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
                        " evaluator must resolve to a single implementation");
     } else {
       // All other callees gets spawned as sub-evaluators.
-      spawnNewFuncClone(user, decls, calleeDeclAndInputParams, calleeCandidate,
-                        rewriters);
+      if (failed(spawnNewFuncClone(user, decls, calleeDeclAndInputParams,
+                                   calleeCandidate, rewriters)))
+        return failure();
     }
   }
 
@@ -1120,12 +1154,11 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
   }
 
   // Finally, we can handle the first viable one as our continued progress here.
-  completeGeneratorUserProcessing(user, decls, calleeDeclAndInputParams,
-                                  thisCallee);
-  return success();
+  return completeGeneratorUserProcessing(user, decls, calleeDeclAndInputParams,
+                                         thisCallee);
 }
 
-void ParameterRewriter::completeGeneratorUserProcessing(
+LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
     KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
     DeclAndInputParamsPair calleeAndInputParams,
     const ElaboratedGenerator &newCallee) {
@@ -1137,8 +1170,13 @@ void ParameterRewriter::completeGeneratorUserProcessing(
 
   // Resolve any bound result types.
   SmallVector<Type> resultTypes;
-  for (auto result : user->getResultTypes())
-    resultTypes.push_back(getEvaluator().getReboundType(result));
+  for (Type result : user->getResultTypes()) {
+    std::variant<EvalError, Type> errorOrType =
+        getEvaluator().concretizeParameterExpr(result);
+    if (std::holds_alternative<EvalError>(errorOrType))
+      return error(user->getLoc(), std::move(std::get<EvalError>(errorOrType)));
+    resultTypes.push_back(std::get<Type>(errorOrType));
+  }
 
   // Now that we resolved the call to a new thing, build a new call to replace
   // the old one.
@@ -1188,6 +1226,8 @@ void ParameterRewriter::completeGeneratorUserProcessing(
   for (auto [decl, bindValue] :
        llvm::zip(decls, elaborator.lookupResultParameters(newCallee.func)))
     getEvaluator().setOrOverwriteParameterValue(decl, bindValue);
+
+  return success();
 }
 
 /// Sometimes when we expand a call, we find that there are multiple viable
@@ -1195,7 +1235,7 @@ void ParameterRewriter::completeGeneratorUserProcessing(
 /// rewriters with state copied from the current one, but which resolve the call
 /// to different callees.  This spawns a new rewriter with the specified call
 /// resolving to the specified callee.
-void ParameterRewriter::spawnNewFuncClone(
+LogicalResult ParameterRewriter::spawnNewFuncClone(
     KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
     DeclAndInputParamsPair calleeAndInputParams,
     const ElaboratedGenerator &callee,
@@ -1231,21 +1271,23 @@ void ParameterRewriter::spawnNewFuncClone(
   // Change the future of this func by resolving the call in the new func to
   // the specifed callee.
   Operation *newUser = operationMap[user];
-  newRewriter->completeGeneratorUserProcessing(newUser, decls,
-                                               calleeAndInputParams, callee);
+  return newRewriter->completeGeneratorUserProcessing(
+      newUser, decls, calleeAndInputParams, callee);
 }
 
 LogicalResult ParameterRewriter::processCallParamOp(
     CallParamOp call,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Simplify the callee expression.
-  auto errorOrValue = getEvaluator().concretizeParameterExpr(call.getCallee());
-  if (errorOrValue.isError())
-    return error(call->getLoc(), errorOrValue.takeError());
+  std::variant<EvalError, Attribute> errorOrValue =
+      getEvaluator().concretizeParameterExpr(call.getCallee());
+  if (std::holds_alternative<EvalError>(errorOrValue))
+    return error(call->getLoc(), std::move(std::get<EvalError>(errorOrValue)));
 
   // If the parameter expression is resolved to a symbol, then treat this like a
   // direct call.
-  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(errorOrValue.get())) {
+  auto value = std::get<Attribute>(errorOrValue);
+  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(value)) {
     // If there are no bound parameters on the call, use the one on the
     // CallParam.  TODO: Remove.
     if (symbolCst.getParamValues().empty())
@@ -1260,7 +1302,7 @@ LogicalResult ParameterRewriter::processCallParamOp(
 
   // Otherwise, the only other case we support is a call to a region, which is
   // marked with a StringAttr value that has signature type.
-  auto regionName = errorOrValue.get().cast<RegionReferenceAttr>();
+  auto regionName = value.cast<RegionReferenceAttr>();
   return processRegionCallImpl(call, regionName, call.getParamDeclsAttr(),
                                call.getParamValues());
 }
@@ -1269,17 +1311,19 @@ LogicalResult ParameterRewriter::processInlinedCallOp(
     InlinedCallOp call,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Simplify the callee expression.
-  auto callee = getEvaluator().concretizeParameterExpr(call.getCallee());
-  if (callee.isError())
-    return error(call->getLoc(), callee.takeError());
+  std::variant<EvalError, Attribute> errorOrCallee =
+      getEvaluator().concretizeParameterExpr(call.getCallee());
+  if (std::holds_alternative<EvalError>(errorOrCallee))
+    return error(call->getLoc(), std::move(std::get<EvalError>(errorOrCallee)));
 
   // If the parameter expression is resolved to a region, then it is inlined
   // anyways.
-  if (auto regionName = dyn_cast<RegionReferenceAttr>(callee.get()))
+  auto callee = std::get<Attribute>(errorOrCallee);
+  if (auto regionName = dyn_cast<RegionReferenceAttr>(callee))
     return processRegionCallImpl(call, regionName, call.getParamDeclsAttr(),
                                  call.getParamValues());
 
-  auto symbolCst = cast<SymbolConstantAttr>(callee.get());
+  auto symbolCst = cast<SymbolConstantAttr>(callee);
   // If there are no bound parameters on the call, use the one on the
   // CallParam.  TODO: Remove.
   if (symbolCst.getParamValues().empty())
@@ -1317,11 +1361,11 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
 
   // Nested regions will have a different parameter namespace than the caller
   // context: names will mean different things inside the region than they did
-  // in the caller.  To handle this, we push a ParameterEvaluator scope that
+  // in the caller.  To handle this, we push a IREvaluator scope that
   // represents the bindings within the region body and set the region return to
   // restore back to the previous scope when operations from the region have
   // finished their processing.
-  ParameterEvaluator &evaluator = evaluators.emplace_back(regionBody.evaluator);
+  IREvaluator &evaluator = evaluators.emplace_back(regionBody.evaluator);
 
   // Add bindings for each of the input parameters to the new scope we just
   // pushed, so they are properly bound when the rewriter continues processing
@@ -1330,16 +1374,13 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
        llvm::zip(region.getInputParamDecls(), inputParamKey))
     evaluator.setOrOverwriteParameterValue(decl, value);
 
-  auto emitEvaluateConstraintsError = [&](Location loc, Error message) {
-    return error(loc, std::move(message));
-  };
-
   // Evaluate any constraints for this declaration to see if this is a viable
   // expansion.  If not, the expansion fails. Only isolated regions have
   // constraints.
-  if (failed(evaluateConstraints(cast<DeclInterface>(*region).getConstraints(),
-                                 evaluator, emitEvaluateConstraintsError)))
-    return failure();
+  Optional<EvalDiagnostic> err = evaluateConstraints(
+      cast<DeclInterface>(*region).getConstraints(), evaluator);
+  if (err)
+    return error(err->first, std::move(err->second));
 
   // We process the call to the region by cloning its body inline, replacing
   // the call with the newly substituted operations.  While doing this, we
@@ -1429,9 +1470,13 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   SmallVector<NamedAttribute> newAttrs;
   bool changedAttrs = false;
   for (const NamedAttribute &namedAttr : op->getAttrs()) {
-    newAttrs.push_back(NamedAttribute(
-        namedAttr.getName(),
-        getEvaluator().getReboundAttribute(namedAttr.getValue())));
+    std::variant<EvalError, Attribute> value =
+        getEvaluator().concretizeParameterExpr(namedAttr.getValue(),
+                                               /*allowUnknown=*/true);
+    if (std::holds_alternative<EvalError>(value))
+      return error(op->getLoc(), std::move(std::get<EvalError>(value)));
+
+    newAttrs.emplace_back(namedAttr.getName(), std::get<Attribute>(value));
     changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
   }
   if (changedAttrs)
@@ -1440,23 +1485,39 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   // If this operation has a subprogram scope, update the location. The
   // subprogram may reference parameters within its types.
   if (DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(op)) {
-    op->setLoc(
-        cast<Location>(getEvaluator().getReboundAttribute(op->getLoc())));
+    std::variant<EvalError, Attribute> value =
+        getEvaluator().concretizeParameterExpr(op->getLoc(),
+                                               /*allowUnknown=*/true);
+    if (std::holds_alternative<EvalError>(value))
+      return error(op->getLoc(), std::move(std::get<EvalError>(value)));
+    op->setLoc(cast<Location>(std::get<Attribute>(value)));
   }
 
   // Check the types of results to find any parameters embedded in their
   // types.  We don't have to check operands because they are always checked
   // when being defined.
-  for (OpResult result : op->getResults())
-    result.setType(getEvaluator().getReboundType(result.getType()));
+  for (OpResult result : op->getResults()) {
+    std::variant<EvalError, Type> value =
+        getEvaluator().concretizeParameterExpr(result.getType());
+    if (std::holds_alternative<EvalError>(value))
+      return error(op->getLoc(), std::move(std::get<EvalError>(value)));
+    result.setType(std::get<Type>(value));
+  }
 
   // Scan the region list if present.  The walker will automatically recurse
   // for us, but we have to check the block arguments.
   if (op->getNumRegions()) { // Microoptimization: getRegions() is slow.
-    for (auto &region : op->getRegions())
-      for (auto &block : region)
-        for (Value arg : block.getArguments())
-          arg.setType(getEvaluator().getReboundType(arg.getType()));
+    for (Region &region : op->getRegions()) {
+      for (Block &block : region) {
+        for (Value arg : block.getArguments()) {
+          std::variant<EvalError, Type> value =
+              getEvaluator().concretizeParameterExpr(arg.getType());
+          if (std::holds_alternative<EvalError>(value))
+            return error(op->getLoc(), std::move(std::get<EvalError>(value)));
+          arg.setType(std::get<Type>(value));
+        }
+      }
+    }
   }
 
   // If the op implements the elaborator interface, indicate it as resolved.
@@ -1972,11 +2033,14 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
     llvm::dbgs() << std::string(expansionDepth, ' ')
                  << "getAllInstantiations: ";
   });
-  if (failed(evaluateConstraints(decl, declAndInputParams.second.getValue(),
-                                 localError,
-                                 analysis.getTopLevelSymbolTable()))) {
+  Optional<EvalDiagnostic> err =
+      evaluateConstraints(decl, declAndInputParams.second.getValue(),
+                          analysis.getTopLevelSymbolTable());
+  if (err) {
     LLVM_DEBUG({ llvm::dbgs() << "evaluateConstraints failed\n"; });
-    /* nothing */
+    newCallees.push_back(CalleeExpansionError(
+        decl->getLoc(), convertEvalErrorToElaborationError(
+                            err->first, std::move(err->second))));
   } else if (auto func = dyn_cast<FuncOp>(decl)) {
     // Nothing to do here. Just bind the result parameters and return the
     // function.
