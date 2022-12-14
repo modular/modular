@@ -1,0 +1,15 @@
+# RUN: kgen-translate -import-lit -import-lit-debug-level=full -mlir-print-debuginfo %s | FileCheck %s
+
+__include "../lit-examples/prolog.lit"
+
+# CHECK: ![[INT_TYPE:.*]] = !debuginfo.unresolved<!kgen.declref<@Int>>
+# CHECK: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(![[INT_TYPE]], ![[INT_TYPE]]) -> (![[INT_TYPE]]): DW_CC_normal>
+# CHECK: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power", file = #{{.*}}, line = 12, scopeLine = 12, subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
+# CHECK: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = 12, arg = 1> : ![[INT_TYPE]]
+# CHECK: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = 12, arg = 2> : ![[INT_TYPE]]
+
+# CHECK-LABEL: lit.func @power(
+fn power(lhs: Int, rhs: Int) -> Int:
+  # CHECK: debuginfo.value #[[LHS_VAR]] = %lhs
+  # CHECK: debuginfo.value #[[RHS_VAR]] = %rhs
+  return lhs

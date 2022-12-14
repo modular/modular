@@ -53,7 +53,7 @@ struct ProcessBuffer {
 
     // Open the input file.
     OwningOpRef<ModuleOp> module;
-    if (compilationOptions.debugLevel && !compilationOptions.debugAtLevel)
+    if (compilationOptions.getDebugInfoLevelForInput())
       module = DebugInfo::parseSourceFileWithDebugInfo(
           sourceMgr, ctx, compilationOptions.getDIEmissionKind());
     else

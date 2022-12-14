@@ -21,6 +21,7 @@ add_modular_conversion_library(ParseLit
   MLIRKGENPasses
 
   LINK_LIBS PUBLIC
+  DebugInfoDialect
   HLCFDialect
   LITDialect
   KGENDialect

@@ -11,6 +11,7 @@
 #include "KGEN/ParseLit.h"
 
 #include "ASTDecl.h"
+#include "KGEN/CompilationOptions.h"
 #include "LitDecls.h"
 #include "LitLexer.h"
 #include "LitParserBase.h"
@@ -19,6 +20,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/ZAPDialect/ZAPDialect.h"
+#include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -38,14 +40,15 @@ using llvm::SourceMgr;
 //===----------------------------------------------------------------------===//
 
 // Parse the specified .lit file into the specified MLIR context.
-OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
-                                             MLIRContext *context,
-                                             mlir::TimingScope &ts) {
+OwningOpRef<mlir::ModuleOp>
+M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
+                 mlir::TimingScope &ts,
+                 const KGEN::CompilationOptions &options) {
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
 
-  context->loadDialect<HLCF::HLCFDialect, POP::POPDialect, LITDialect,
-                       mlir::index::IndexDialect, KGENDialect, ZAP::ZAPDialect,
-                       mlir::scf::SCFDialect>();
+  context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
+                       POP::POPDialect, LITDialect, mlir::index::IndexDialect,
+                       KGENDialect, ZAP::ZAPDialect, mlir::scf::SCFDialect>();
 
   // This is the result module we are parsing into.
   auto fileLoc =
@@ -53,7 +56,7 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
                           /*column=*/0);
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(fileLoc));
 
-  LitSharedState sharedState(sourceMgr, context);
+  LitSharedState sharedState(sourceMgr, context, options);
   LitLexer lexer(sharedState, sourceBuf);
   auto startSMLoc = lexer.getToken().getLoc();
 
@@ -72,6 +75,11 @@ OwningOpRef<mlir::ModuleOp> M::importLitFile(SourceMgr &sourceMgr,
   ASTDecl &fileScope = sharedState.declResolver->addDecl(
       *module, startSMLoc, StringAttr(), &builtinsDecl, lexer.getCursor(),
       lexer.getCursor(), -1);
+
+  // If we are emitting debug info, create a file entry for this file.
+  DebugInfo::DIBuilder::ScopeGuard fileGuard;
+  if (sharedState.diBuilder)
+    fileGuard = sharedState.diBuilder->pushFile(fileLoc.getFilename(), "/");
 
   // Parse the file.
   /// file ::= statements

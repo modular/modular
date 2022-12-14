@@ -17,11 +17,14 @@ class TimingScope;
 }
 
 namespace M {
+namespace KGEN {
+struct CompilationOptions;
+} // namespace KGEN
 
 /// Parse a single .lit file and return the MLIR module for it.
 OwningOpRef<ModuleOp> importLitFile(llvm::SourceMgr &sourceMgr,
-                                    MLIRContext *context,
-                                    mlir::TimingScope &ts);
+                                    MLIRContext *context, mlir::TimingScope &ts,
+                                    const KGEN::CompilationOptions &options);
 
 } // namespace M
 

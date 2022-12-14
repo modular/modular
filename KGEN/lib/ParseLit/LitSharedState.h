@@ -12,12 +12,17 @@
 #ifndef LIT_SHARED_STATE_H
 #define LIT_SHARED_STATE_H
 
+#include "KGEN/CompilationOptions.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
 namespace llvm {
 class SourceMgr;
 }
+
+namespace M::DebugInfo {
+class DIBuilder;
+} // namespace M::DebugInfo
 
 namespace M::KGEN {
 class ParamDeclAttr;
@@ -35,12 +40,15 @@ inline const char *plural(size_t value) { return value == 1 ? "" : "s"; }
 /// which are always shared across them.
 class LitSharedState {
 public:
-  LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context);
+  LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+                 const CompilationOptions &options);
   ~LitSharedState();
 
   llvm::SourceMgr &sourceMgr;
   MLIRContext *const context;
   std::unique_ptr<DeclResolver> declResolver;
+  const CompilationOptions &options;
+  std::unique_ptr<DebugInfo::DIBuilder> diBuilder;
 
   const mlir::StringAttr bufferNameIdentifier;
 

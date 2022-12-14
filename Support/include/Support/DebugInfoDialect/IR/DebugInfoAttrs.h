@@ -64,9 +64,9 @@ namespace M::DebugInfo {
 DIScopeAttr extractScope(Location loc);
 /// Extract the debug info scope from the location of the given operation.
 DIScopeAttr extractScope(Operation *op);
-template <typename ScopeAttrT>
-ScopeAttrT extractScope(Operation *op) {
-  return dyn_cast_or_null<ScopeAttrT>(extractScope(op));
+template <typename ScopeAttrT, typename T>
+ScopeAttrT extractScope(T value) {
+  return dyn_cast_or_null<ScopeAttrT>(extractScope(value));
 }
 
 /// This class represents an attribute/type replacer with proper defaults for

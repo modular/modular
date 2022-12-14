@@ -73,6 +73,11 @@ struct CompilationOptions {
     llvm_unreachable("unhandled debug level");
   }
 
+  /// Return the debug info level to use when parsing an input file.
+  DebugInfoLevel getDebugInfoLevelForInput() const {
+    return debugAtLevel ? kNoDebug : debugLevel;
+  }
+
   /// Print the compilation options to the given stream.
   void print(raw_ostream &os) const {
     os << "CompilationOptions { optimizationLevel: " << optimizationLevel;

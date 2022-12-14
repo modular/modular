@@ -20,6 +20,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
@@ -66,6 +67,7 @@ struct LitStmtParser : public LitParserBase {
   }
 
   ParseResult parseSuite(ssize_t curIndent);
+  ParseResult parseLocalScopeSuite(ssize_t curIndent);
   ParseResult parseStmts(size_t minIndent);
   ParseResult parseStmt(bool isSimpleStmt, size_t curIndent);
 
@@ -134,6 +136,24 @@ ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
            !getToken().getIndentation().has_value());
 
   return success();
+}
+ParseResult LitStmtParser::parseLocalScopeSuite(ssize_t curIndent) {
+  // If we are generating debug info, push a local scope for the suite.
+  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+  if (getSharedState().diBuilder) {
+    SMLoc curLoc = getToken().getLoc();
+    auto &sourceMgr = getSharedState().sourceMgr;
+    unsigned bufferID = sourceMgr.FindBufferContainingLoc(curLoc);
+    auto [line, column] = sourceMgr.getLineAndColumn(curLoc, bufferID);
+
+    scopeGuard = getSharedState().diBuilder->pushLexicalBlock(
+        getSharedState().diBuilder->createFile(
+            sourceMgr.getMemoryBuffer(bufferID)->getBufferIdentifier(), "/"),
+        line, column);
+  }
+
+  // Forward to the normal suite parse method.
+  return parseSuite(curIndent);
 }
 
 /// statements ::= statement+
@@ -490,7 +510,7 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
 
   // Create the body.
   builder.setInsertionPointAfter(condOp);
-  if (failed(parseSuite(curIndent)))
+  if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
   builder.create<HLCF::ContinueOp>(whileLoc);
 
@@ -500,7 +520,7 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
       consumeIf(LitToken::kw_else)) {
     builder.setInsertionPointToStart(exit);
     if (parseToken(LitToken::colon, "expected ':' after else") ||
-        parseSuite(curIndent))
+        parseLocalScopeSuite(curIndent))
       return failure();
   }
   return success();
@@ -520,7 +540,7 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
 
   // Parse the try suite.
   builder.createBlock(&tryOp.getTryRegion());
-  if (parseSuite(curIndent))
+  if (parseLocalScopeSuite(curIndent))
     return failure();
   builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
 
@@ -563,7 +583,7 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
   }
 
   // Parse the except suite.
-  if (parseSuite(curIndent))
+  if (parseLocalScopeSuite(curIndent))
     return failure();
   builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
 
@@ -571,7 +591,7 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
   builder.createBlock(&tryOp.getElseRegion());
   if (consumeIf(LitToken::kw_else)) {
     if (parseToken(LitToken::colon, "expected ':' after 'else'") ||
-        parseSuite(curIndent))
+        parseLocalScopeSuite(curIndent))
       return failure();
   }
   builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
@@ -601,7 +621,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
   // Create the 'if' and parse the body into its "then" region.
   auto ifOp = builder.create<HLCF::IfOp>(ifLoc, cond);
   builder.createBlock(&ifOp.getThenRegion());
-  if (failed(parseSuite(curIndent)))
+  if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
   builder.create<HLCF::YieldOp>(ifLoc);
 
@@ -621,7 +641,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
     ifOp = builder.create<HLCF::IfOp>(elifLoc, cond);
     builder.create<HLCF::YieldOp>(elifLoc);
     builder.createBlock(&ifOp.getThenRegion());
-    if (failed(parseSuite(curIndent)))
+    if (failed(parseLocalScopeSuite(curIndent)))
       return failure();
     builder.create<HLCF::YieldOp>(ifLoc);
   }
@@ -632,7 +652,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
       consumeIf(LitToken::kw_else)) {
     if (parseToken(LitToken::colon, "expected ':' after else"))
       return failure();
-    if (failed(parseSuite(curIndent)))
+    if (failed(parseLocalScopeSuite(curIndent)))
       return failure();
   }
   builder.create<HLCF::YieldOp>(ifLoc);
@@ -673,6 +693,11 @@ ParseResult LitStmtParser::parseIncludeHack() {
     emitError(includeLoc, "could not find file '") << path << "'";
     return success(); // Parse success, semantic failure.
   }
+
+  // Push a scope for this new file.
+  DebugInfo::DIBuilder::ScopeGuard fileGuard;
+  if (getSharedState().diBuilder)
+    fileGuard = getSharedState().diBuilder->pushFile(fullPath, "/");
 
   // Now that we have a MemoryBuffer, we can lex it, and therefore parse it.
   // do so.
