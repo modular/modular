@@ -27,7 +27,7 @@
 #include "llvm/Support/Host.h"
 
 using namespace M;
-using namespace M::KGEN;
+using namespace KGEN;
 
 // Provide implementations for the enums we use.
 #include "KGEN/KGENDialect/KGENEnums.cpp.inc"
@@ -555,7 +555,7 @@ TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
 
 namespace llvm {
 /// Provide the ability to hash triples for attribute uniquing.
-inline hash_code hash_value(llvm::Triple triple) {
+inline hash_code hash_value(const llvm::Triple &triple) {
   return hash_value(triple.normalize());
 }
 } // namespace llvm

@@ -7,7 +7,9 @@
 #ifndef KGEN_POPDIALECT_POPATTRS_TD
 #define KGEN_POPDIALECT_POPATTRS_TD
 
+include "KGEN/KGENDialect/KGENAttrInterfaces.td"
 include "KGEN/POPDialect/POPDialect.td"
+include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/SubElementInterfaces.td"
 
@@ -19,6 +21,15 @@ class POP_Enum<string name, string summary, list<I32EnumAttrCase> cases> :
 
 class POP_EnumCase<string sym, int val, string str = sym> :
   I32EnumAttrCase<sym, val, str>;
+
+class POP_Attr<string attrName, string attrMnemonic, list<Trait> traits = []>
+    : AttrDef<POPDialect, attrName, traits> {
+  let mnemonic = attrMnemonic;
+}
+
+//===----------------------------------------------------------------------===//
+// CmpPredicate
+//===----------------------------------------------------------------------===//
 
 def POP_CmpPredicate : POP_Enum<
     "CmpPredicate", "pop.cmp comparison predicate", [
@@ -32,6 +43,10 @@ def POP_CmpPredicate : POP_Enum<
 
 def POP_CmpPredicateAttr : EnumAttr<POPDialect, POP_CmpPredicate, "cmp_pred">;
 
+//===----------------------------------------------------------------------===//
+// PrefetchTag
+//===----------------------------------------------------------------------===//
+
 def POP_PrefetchTag : POP_Enum<
     "PrefetchTag",
     "indicate pop.prefetch purpose and cache destination", [
@@ -41,6 +56,10 @@ def POP_PrefetchTag : POP_Enum<
     ]>;
 
 def POP_PrefetchTagAttr : EnumAttr<POPDialect, POP_PrefetchTag, "prefetch_tag">;
+
+//===----------------------------------------------------------------------===//
+// PrefetchLocality
+//===----------------------------------------------------------------------===//
 
 def POP_PrefetchLocality : POP_Enum<
     "PrefetchLocality",
@@ -57,6 +76,36 @@ def POP_PrefetchLocalityAttr :
     // Remove the leading space so we can define format like
     //  `(NoLocality, ReadDCache)` in prefetch op.
     let assemblyFormat = "`` $value";
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDAttr
+//===----------------------------------------------------------------------===//
+
+def POP_SIMDAttr : POP_Attr<"SIMD", "simd", [TypedAttrInterface,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+  let summary = "A SIMD vector attribute.";
+  let description = [{
+    The `#pop.simd` attribute represents a constant SIMD vector value. It
+    contains `N` values of a particular dtype. Only integer, floating point, and
+    bool dtypes are supported.
+
+    Example:
+
+    ```mlir
+    #pop.simd<1, 2> : !pop.simd<2, si32>
+    #pop.simd<1.5, 2.5> : !pop.simd<2, f64>
+    #pop.simd<true, false> : !pop.simd<2, bool>
+    ```
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"DTypeValue">:$values,
+                        AttributeSelfTypeParameter<"", "SIMDType">:$type);
+  let assemblyFormat = [{
+    `<` (`>`) : (custom<DTypeValues>($values, ref($type))^ `>`)?
+  }];
+
+  let genVerifyDecl = 1;
 }
 
 #endif // KGEN_POPDIALECT_POPATTRS_TD
