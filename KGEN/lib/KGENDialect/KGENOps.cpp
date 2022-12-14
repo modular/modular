@@ -720,7 +720,8 @@ static void printCallOp(OpAsmPrinter &p, Operation *op,
   p << '(';
   p.printOperands(operands);
   p << ") : ";
-  p.printFunctionalType(operandTypes, resultTypes);
+  printTypesWithConventions(p.getStream(), operandTypes, resultTypes,
+                            calleeCst.getType().getConventions());
 }
 
 void CallOp::build(OpBuilder &builder, OperationState &state,
