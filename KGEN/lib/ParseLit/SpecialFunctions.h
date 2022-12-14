@@ -19,7 +19,7 @@ enum class SpecialFunctionKind : uint8_t {
   // zero so it can be used as a false condition in an if.
   kNormal = 0,
 
-#define SF(ENUM, NAME, NUMOPERANDS, FLAGS) ENUM,
+#define SF(ENUM, NAME, NUMOPERANDS, EXPRNODE, FLAGS) ENUM,
 #include "SpecialFunctions.def"
 };
 
@@ -45,11 +45,17 @@ struct SpecialFunctionInfo {
     /// On a method of struct, the self must be passed ByRef.  This is true for
     /// in-place operators like += / __iadd__.  This implies an instance method.
     kByRefSelfInstMethod = (1 << 2) | kInstMethod,
+
+    /// This is true when this represents a "reversed" operator like __radd__.
+    kReversedOperator = 1 << 3,
   };
 
   bool isByRefSelfInstMethod() const {
     return (flags & kByRefSelfInstMethod) == kByRefSelfInstMethod;
   }
+
+  /// Return true if this is a reversed operator.
+  bool isReversed() const { return (flags & kReversedOperator) != 0; }
 
   /// Return a record that describes special functions like __init__.  The
   /// kind field identifies it.

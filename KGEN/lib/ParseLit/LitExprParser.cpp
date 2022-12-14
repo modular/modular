@@ -46,9 +46,9 @@ enum class Precedence {
   kBoolAnd,    // infix: and
   kBoolNot,    // prefix: not
   kComparison, // infix: in, not in, is, is not, <, <=, >, >=, !=, ==
-  kBitwiseOr,  // infix: |
-  kBitwiseXor, // infix: ^
-  kBitwiseAnd, // infix: &
+  kOr,         // infix: |
+  kXor,        // infix: ^
+  kAnd,        // infix: &
   kShift,      // infix: <<, >>
   kSum,        // infix: +, -
   kTerm,       // infix: *, @, /, //, %
@@ -157,31 +157,31 @@ struct InfixInfo {
     case LitToken::equal:
       return {Precedence::kLowestExpr, ExprNode::kAssign, false};
     case LitToken::plus_equal:
-      return {Precedence::kLowestExpr, ExprNode::kPlusAssign, false};
+      return {Precedence::kLowestExpr, ExprNode::kIAdd, false};
     case LitToken::minus_equal:
-      return {Precedence::kLowestExpr, ExprNode::kMinusAssign, false};
+      return {Precedence::kLowestExpr, ExprNode::kISub, false};
     case LitToken::star_equal:
-      return {Precedence::kLowestExpr, ExprNode::kMulAssign, false};
+      return {Precedence::kLowestExpr, ExprNode::kIMul, false};
     case LitToken::at_equal:
-      return {Precedence::kLowestExpr, ExprNode::kMatMulAssign, false};
+      return {Precedence::kLowestExpr, ExprNode::kIMatMul, false};
     case LitToken::slash_equal:
-      return {Precedence::kLowestExpr, ExprNode::kDivAssign, false};
+      return {Precedence::kLowestExpr, ExprNode::kITrueDiv, false};
     case LitToken::percent_equal:
-      return {Precedence::kLowestExpr, ExprNode::kModuloAssign, false};
+      return {Precedence::kLowestExpr, ExprNode::kIMod, false};
     case LitToken::amp_equal:
-      return {Precedence::kLowestExpr, ExprNode::kBitwiseAndAssign, false};
+      return {Precedence::kLowestExpr, ExprNode::kIAnd, false};
     case LitToken::pipe_equal:
-      return {Precedence::kLowestExpr, ExprNode::kBitwiseOrAssign, false};
+      return {Precedence::kLowestExpr, ExprNode::kIOr, false};
     case LitToken::circumflex_equal:
-      return {Precedence::kLowestExpr, ExprNode::kBitwiseXorAssign, false};
+      return {Precedence::kLowestExpr, ExprNode::kIXor, false};
     case LitToken::less_less_equal:
-      return {Precedence::kLowestExpr, ExprNode::kLeftShiftAssign, false};
+      return {Precedence::kLowestExpr, ExprNode::kILShift, false};
     case LitToken::right_right_equal:
-      return {Precedence::kLowestExpr, ExprNode::kRightShiftAssign, false};
+      return {Precedence::kLowestExpr, ExprNode::kIRShift, false};
     case LitToken::star_star_equal:
-      return {Precedence::kLowestExpr, ExprNode::kExpAssign, false};
+      return {Precedence::kLowestExpr, ExprNode::kIPow, false};
     case LitToken::slash_slash_equal:
-      return {Precedence::kLowestExpr, ExprNode::kFloorDivAssign, false};
+      return {Precedence::kLowestExpr, ExprNode::kIFloorDiv, false};
     case LitToken::plus:
       return {Precedence::kSum, ExprNode::kAdd, false};
     case LitToken::minus:
@@ -189,13 +189,13 @@ struct InfixInfo {
     case LitToken::star:
       return {Precedence::kTerm, ExprNode::kMul, false};
     case LitToken::at:
-      return {Precedence::kTerm, ExprNode::kMatrixMul, false};
+      return {Precedence::kTerm, ExprNode::kMatMul, false};
     case LitToken::slash:
-      return {Precedence::kTerm, ExprNode::kDiv, false};
+      return {Precedence::kTerm, ExprNode::kTrueDiv, false};
     case LitToken::slash_slash:
       return {Precedence::kTerm, ExprNode::kFloorDiv, false};
     case LitToken::percent:
-      return {Precedence::kTerm, ExprNode::kModulo, false};
+      return {Precedence::kTerm, ExprNode::kMod, false};
     case LitToken::kw_or:
       return {Precedence::kBoolOr, ExprNode::kBoolOr, false};
     case LitToken::kw_and:
@@ -207,31 +207,31 @@ struct InfixInfo {
     case LitToken::kw_is:
       return {Precedence::kComparison, ExprNode::kCmpIs, false};
     case LitToken::less:
-      return {Precedence::kComparison, ExprNode::kCmpLess, false};
+      return {Precedence::kComparison, ExprNode::kCmpLT, false};
     case LitToken::less_equal:
-      return {Precedence::kComparison, ExprNode::kCmpLessEqual, false};
+      return {Precedence::kComparison, ExprNode::kCmpLE, false};
     case LitToken::greater:
-      return {Precedence::kComparison, ExprNode::kCmpGreater, false};
+      return {Precedence::kComparison, ExprNode::kCmpGT, false};
     case LitToken::greater_equal:
-      return {Precedence::kComparison, ExprNode::kCmpGreaterEqual, false};
+      return {Precedence::kComparison, ExprNode::kCmpGE, false};
     case LitToken::exclaim_equal:
-      return {Precedence::kComparison, ExprNode::kCmpNotEqual, false};
+      return {Precedence::kComparison, ExprNode::kCmpNE, false};
     case LitToken::equal_equal:
-      return {Precedence::kComparison, ExprNode::kCmpEqual, false};
+      return {Precedence::kComparison, ExprNode::kCmpEQ, false};
     case LitToken::pipe:
-      return {Precedence::kBitwiseOr, ExprNode::kBitwiseOr, false};
+      return {Precedence::kOr, ExprNode::kOr, false};
     case LitToken::circumflex:
-      return {Precedence::kBitwiseXor, ExprNode::kBitwiseXor, false};
+      return {Precedence::kXor, ExprNode::kXor, false};
     case LitToken::amp:
-      return {Precedence::kBitwiseAnd, ExprNode::kBitwiseAnd, false};
+      return {Precedence::kAnd, ExprNode::kAnd, false};
     case LitToken::less_less:
-      return {Precedence::kShift, ExprNode::kLeftShift, false};
+      return {Precedence::kShift, ExprNode::kLShift, false};
     case LitToken::right_right:
-      return {Precedence::kShift, ExprNode::kRightShift, false};
+      return {Precedence::kShift, ExprNode::kRShift, false};
     case LitToken::kw_if:
       return {Precedence::kIfElse, ExprNode::kIfElse, false};
     case LitToken::star_star:
-      return {Precedence::kPower, ExprNode::kExp, true};
+      return {Precedence::kPower, ExprNode::kPow, true};
     }
   }
 };
