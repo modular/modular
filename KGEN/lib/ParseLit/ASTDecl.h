@@ -20,7 +20,7 @@
 namespace M::KGEN {
 class ParamDeclAttr;
 class DeclRefType;
-}
+} // namespace M::KGEN
 
 namespace M::KGEN::LIT {
 
@@ -66,6 +66,10 @@ public:
   /// be on the def token.  After processing the signature, this will be after
   /// the colon.
   LitLexerCursor &getCursor() { return cursor; }
+
+  /// This cursor, if present, holds the location of the first decorator for
+  /// this declaration.
+  const LitLexerCursor &getDecoratorsCursor() { return decoratorsCursor; }
 
   /// Return true if the end of the speculatively scanned decl matches the
   /// specified cursor.
@@ -151,10 +155,11 @@ private:
   friend class DeclResolver;
   friend class LitSharedState;
   ASTDecl(DeclIRValue irValue, llvm::SMLoc loc, ASTDecl *parentDecl,
-          LitLexerCursor cursor, LitLexerCursor endCursor, ssize_t indentation)
+          LitLexerCursor decoratorsCursor, LitLexerCursor cursor,
+          LitLexerCursor endCursor, ssize_t indentation)
       : irValue(irValue), loc(loc), parentDecl(std::move(parentDecl)),
         cursor(cursor), endCursorState(endCursor.getState()),
-        indentation(indentation) {}
+        decoratorsCursor(decoratorsCursor), indentation(indentation) {}
   ASTDecl(const ASTDecl &) = delete;
   ASTDecl &operator=(const ASTDecl &) = delete;
 
@@ -182,6 +187,10 @@ private:
   /// declaration.  This is used to make sure that bits of a declaration are not
   /// skipped in the early parse and not processes in the later parse.
   const char *endCursorState;
+
+  /// This cursor, if present, holds the location of the first decorator for
+  /// this declaration.
+  LitLexerCursor decoratorsCursor;
 
   /// This is the indentation level of the introducer keyword, useful for
   /// parsing the body of the declaration.  If the declaration was not at the
