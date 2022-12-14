@@ -60,25 +60,13 @@ inline static void await(const AsyncValueRef<T> &value) {
 }
 
 //===----------------------------------------------------------------------===//
-// 'andThenSync' for multiple values with heterogenous types.
+// 'andThenSync/Async' for multiple values with heterogenous types.
 //===----------------------------------------------------------------------===//
 
-/// This version of andThenSync takes a tuple of values to wait on, and passes
-/// the elements into the completion handler as individual values.  It can be
-/// used like this:
-///
-/// void example(AsyncValueRef<int32_t> lhs, AsyncValueRef<int32_t> rhs) {
-///   ...
-///   andThenSync(std::make_tuple(std::move(lhs), std::move(rhs)),
-///           [... any captures...](AsyncValueRef<int32_t> lhs,
-///                                 AsyncValueRef<int32_t> rhs) {
-///     ... stuff that uses lhs/rhs ...
-///   });
-/// }
-///
-template <typename CompletionFn, typename... ValueTys>
-inline static void andThenSync(std::tuple<ValueTys...> values,
-                               CompletionFn completionFn) {
+namespace Detail {
+template <bool IsAsync, typename CompletionFn, typename... ValueTys>
+inline static void andThenImpl(std::tuple<ValueTys...> &&values,
+                               CompletionFn &&completionFn) {
   struct AndThenState {
     /// This is the number of values we're waiting on.  When this drops to zero,
     /// the completion handler is run.
@@ -101,17 +89,27 @@ inline static void andThenSync(std::tuple<ValueTys...> values,
 
   // This function is invoked on every async value to wait for it to complete.
   auto processAsyncValue = [&](AsyncValue *value) {
-    value->andThenSync([state]() {
+    WorkQueue *asyncWorkQueue = nullptr;
+    if constexpr (IsAsync)
+      asyncWorkQueue = value->getRuntime()->getWorkQueue();
+    value->andThenSync([state, asyncWorkQueue]() {
       // Once that is done we can decrement the count and trigger completion
       // when the last element is done.
       if (--state->numElementsLeft != 0)
         return;
 
-      // Invoke the completion function, since we're done.
-      std::apply(state->completionFn, std::move(state->values));
+      auto handler = [state]() {
+        // Invoke the completion function, since we're done.
+        std::apply(state->completionFn, std::move(state->values));
 
-      // All uses of the state are done, so we can deallocate it.
-      delete state;
+        // All uses of the state are done, so we can deallocate it.
+        delete state;
+      };
+
+      if (asyncWorkQueue)
+        asyncWorkQueue->addTask(handler);
+      else
+        handler();
     });
   };
 
@@ -119,26 +117,64 @@ inline static void andThenSync(std::tuple<ValueTys...> values,
   std::apply([&](auto &...elt) { (processAsyncValue(elt.getPointer()), ...); },
              state->values);
 }
+} // namespace Detail
+
+/// This version of andThen takes a tuple of values to wait on, and passes the
+/// elements into the completion handler as individual values.  It can be used
+/// like this:
+///
+/// void example(AsyncValueRef<int32_t> lhs, AsyncValueRef<int32_t> rhs) {
+///   ...
+///   andThenSync(std::make_tuple(std::move(lhs), std::move(rhs)),
+///           [... any captures...](AsyncValueRef<int32_t> lhs,
+///                                 AsyncValueRef<int32_t> rhs) {
+///     ... stuff that uses lhs/rhs ...
+///   });
+/// }
+///
+/// The "Sync" version runs the completion handler as soon as the last value is
+/// fulfilled by the thread that fulfills the value. The "Async" version adds
+/// the completion handler to the work queue when all the async values are
+/// fulfilled.
+
+template <typename CompletionFn, typename... ValueTys>
+inline static void andThenSync(std::tuple<ValueTys...> &&values,
+                               CompletionFn &&completionFn) {
+  Detail::andThenImpl</*IsAsync=*/false>(
+      std::forward<decltype(values)>(values),
+      std::forward<CompletionFn>(completionFn));
+}
+
+template <typename CompletionFn, typename... ValueTys>
+inline static void andThenAsync(std::tuple<ValueTys...> &&values,
+                                CompletionFn &&completionFn) {
+  Detail::andThenImpl</*IsAsync=*/true>(
+      std::forward<decltype(values)>(values),
+      std::forward<CompletionFn>(completionFn));
+}
 
 //===----------------------------------------------------------------------===//
-// 'andThenSync' for an array of values
+// 'andThenSync/Async' for an array of values
 //===----------------------------------------------------------------------===//
 
-template <typename ArrayRefType, typename CompletionFn, typename CopyOrMoveFn>
-inline static void andThenSyncArrayImpl(ArrayRefType values,
-                                        CompletionFn completionFn,
-                                        CopyOrMoveFn copyOrMoveFn) {
+namespace Detail {
+template <bool IsAsync, typename ArrayRefType, typename CompletionFn,
+          typename CopyOrMoveFn>
+inline static void andThenArrayImpl(ArrayRefType values,
+                                    CompletionFn &&completionFn,
+                                    CopyOrMoveFn &&copyOrMoveFn) {
   // Avoid malloc overhead for trivial cases.
   if (values.empty()) {
     completionFn(values);
     return;
   }
   if (values.size() == 1) {
-    values[0]->andThenSync([completionFn = std::move(completionFn)](
-                               const AnyAsyncValueRef &value) mutable {
-      AnyAsyncValueRef mutableValue = value.copy();
-      completionFn(mutableValue);
-    });
+    values[0]->template andThen<IsAsync>(
+        [completionFn = std::forward<CompletionFn>(completionFn)](
+            const AnyAsyncValueRef &value) mutable {
+          AnyAsyncValueRef mutableValue = value.copy();
+          completionFn(mutableValue);
+        });
     return;
   }
 
@@ -165,26 +201,39 @@ inline static void andThenSyncArrayImpl(ArrayRefType values,
 
   // For each value, wait for completion and then run the completion function on
   // the last one.
+  WorkQueue *asyncWorkQueue = nullptr;
+  if constexpr (IsAsync)
+    asyncWorkQueue = values[0]->getRuntime()->getWorkQueue();
   for (auto &v : values) {
     state->values.push_back(copyOrMoveFn(v));
-    state->values.back()->andThenSync([state]() {
+    state->values.back()->andThenSync([state, asyncWorkQueue]() {
       // Once that is done we can decrement the count and trigger completion
       // when the last element is done.
       if (--state->numElementsLeft != 0)
         return;
 
-      // Invoke the completion function, since we're done.
-      state->completionFn(state->values);
+      auto handler = [state]() {
+        // Invoke the completion function, since we're done.
+        state->completionFn(state->values);
 
-      // All uses of the state are done, so we can deallocate it.
-      delete state;
+        // All uses of the state are done, so we can deallocate it.
+        delete state;
+      };
+
+      if constexpr (IsAsync)
+        asyncWorkQueue->addTask(handler);
+      else {
+        (void)(asyncWorkQueue); // To suppress "-Wunused-lambda-capture"
+        handler();
+      }
     });
   }
 }
+} // namespace Detail
 
-/// This version of andThenSync takes an array of homogenous AsyncValue
-/// references to wait on, and passes the elements into the completion handler
-/// as an ArrayRef.  It can be used like this:
+/// This version of andThen takes an array of homogenous AsyncValue references
+/// to wait on, and passes the elements into the completion handler as an
+/// ArrayRef.  It can be used like this:
 ///
 /// void example() {
 ///   AsyncValueRef<int32_t> elements[4] = { ... };
@@ -195,40 +244,49 @@ inline static void andThenSyncArrayImpl(ArrayRefType values,
 ///   });
 /// }
 ///
-/// This is the "copying" form because it doesn't move the AsyncValue's from the
-/// input array.
-///
+/// There are "copying" version and "moving" versions, as well as the "sync" and
+/// "async" versions.  The "copying" version doesn't move the AsyncValue's from
+/// the input array, while the "moving" version destructively takes the
+/// elements out of the array passed in.  The "Sync" version runs the
+/// completion handler as soon as the last value is fullied by the thread that
+/// fulfills the value, while he "Async" version adds the completion handler to
+/// the work queue when all the async values are fulfilled.
+
 template <typename CompletionFn>
 inline static void andThenSyncCopying(llvm::ArrayRef<AnyAsyncValueRef> values,
-                                      CompletionFn completionFn) {
-  andThenSyncArrayImpl(values, std::move(completionFn),
-                       [](const AnyAsyncValueRef &ref) -> AnyAsyncValueRef {
-                         return ref.copy();
-                       });
+                                      CompletionFn &&completionFn) {
+  Detail::andThenArrayImpl</*IsAsync=*/false>(
+      values, std::forward<CompletionFn>(completionFn),
+      [](const AnyAsyncValueRef &ref) -> AnyAsyncValueRef {
+        return ref.copy();
+      });
 }
 
-/// This version of andThenSync takes an array of homogenous AsyncValue
-/// references to wait on, and passes the elements into the completion handler
-/// as an ArrayRef.  It can be used like this:
-///
-/// void example() {
-///   AsyncValueRef<int32_t> elements[4] = { ... };
-///   ...
-///   andThenSyncMoving(elements,
-///     [... any captures...](MutableArrayRef<AsyncValueRef<int32_t>> elts) {
-///     ... stuff that uses elts ...
-///   });
-/// }
-///
-/// This is the "moving" form because it destructively takes the elements out of
-/// the array passed in.
-///
+template <typename CompletionFn>
+inline static void andThenAsyncCopying(llvm::ArrayRef<AnyAsyncValueRef> values,
+                                       CompletionFn &&completionFn) {
+  Detail::andThenArrayImpl</*IsAsync=*/true>(
+      values, std::forward<CompletionFn>(completionFn),
+      [](const AnyAsyncValueRef &ref) -> AnyAsyncValueRef {
+        return ref.copy();
+      });
+}
+
 template <typename CompletionFn>
 inline static void
 andThenSyncMoving(llvm::MutableArrayRef<AnyAsyncValueRef> values,
-                  CompletionFn completionFn) {
-  andThenSyncArrayImpl(
-      values, std::move(completionFn),
+                  CompletionFn &&completionFn) {
+  Detail::andThenArrayImpl</*IsAsync=*/false>(
+      values, std::forward<CompletionFn>(completionFn),
+      [](AnyAsyncValueRef &ref) -> AnyAsyncValueRef { return std::move(ref); });
+}
+
+template <typename CompletionFn>
+inline static void
+andThenAsyncMoving(llvm::MutableArrayRef<AnyAsyncValueRef> values,
+                   CompletionFn &&completionFn) {
+  Detail::andThenArrayImpl</*IsAsync=*/true>(
+      values, std::forward<CompletionFn>(completionFn),
       [](AnyAsyncValueRef &ref) -> AnyAsyncValueRef { return std::move(ref); });
 }
 

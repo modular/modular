@@ -118,19 +118,33 @@ public:
   /// Return the `Runtime` instance this is part of.
   CompactRuntimePtr getRuntime() const { return runtime; }
 
-  /// Call the specified closure if the value is ready.  Otherwise, add it
-  /// to the waiter list and calls it when the value becomes ready.
-  template <typename WaiterT>
-  auto andThenSync(WaiterT &&waiter) -> decltype(waiter(), void());
+  /// If `IsAsync`, add the specific closure to the work queue for asynchronous
+  /// execution if the value is ready, or add the registration logic to
+  /// the waiter list and adds the closure to the work queue when the async
+  /// value becomes ready. If `IsAsync` is false, call the specified closure if
+  /// the value is ready.  Otherwise, add it to the waiter list and calls it
+  /// when the value becomes ready.
+  template <bool IsAsync, typename WaiterT>
+  auto andThen(WaiterT &&waiter) -> decltype(waiter(), void());
 
-  /// Call the specified closure if the value is ready.  Otherwise, add it
-  /// to the waiter list and calls it when the value becomes ready.  This
-  /// overload passes the current value back into the closure as a
+  /// This overload passes the current value back into the closure as a
   /// `const AnyAsyncValueRef &`.  This eliminates the need to capture the
   /// receiver in the closure and reduces reference count traffic.
-  template <typename WaiterT>
-  auto andThenSync(WaiterT &&waiter)
+  template <bool IsAsync, typename WaiterT>
+  auto andThen(WaiterT &&waiter)
       -> decltype(waiter(AnyAsyncValueRef()), void());
+
+  /// This is same as `andThen` with `IsAsync=false`.
+  template <typename WaiterT>
+  void andThenSync(WaiterT &&waiter) {
+    andThen</*IsAsync=*/false>(std::forward<WaiterT>(waiter));
+  }
+
+  /// This is same as `andThen` with `IsAsync=true`.
+  template <typename WaiterT>
+  void andThenAsync(WaiterT &&waiter) {
+    andThen</*IsAsync=*/true>(std::forward<WaiterT>(waiter));
+  }
 
   /// Return the stored value as type T.
   ///
@@ -390,6 +404,7 @@ protected:
   LogicalResult moveState(WaitersAndState &oldValue, State newState);
   void runWaitersAndDeallocate(WaiterListNode *list, size_t numEntriesValid);
   void andThenOutOfLine(Waiter waiter, WaitersAndState oldValue);
+  void andThenAsyncOutOfLine(Waiter waiter);
   void destroyWithRefCountZero();
   State notifyReady(State newState, std::optional<Waiter> &extraWaiter);
   void removeAnyInlineWaiter(std::optional<Waiter> &inlineWaiter);
@@ -708,35 +723,31 @@ inline void AsyncValue::dropRef(uint16_t count) {
     destroyWithRefCountZero();
 }
 
-/// Call the specified closure if the value is ready.  Otherwise, add it
-/// to the waiter list and calls it when the value becomes ready.
-template <typename WaiterT>
-inline auto AsyncValue::andThenSync(WaiterT &&waiter)
-    -> decltype(waiter(), void()) {
-  andThenSync([waiter = std::forward<WaiterT>(waiter)](
-                  const AnyAsyncValueRef &) mutable { return waiter(); });
+template <bool IsAsync, typename WaiterT>
+auto AsyncValue::andThen(WaiterT &&waiter) -> decltype(waiter(), void()) {
+  andThen<IsAsync>([waiter = std::forward<WaiterT>(waiter)](
+                       const AnyAsyncValueRef &) mutable { return waiter(); });
 }
 
-/// Call the specified closure if the value is ready.  Otherwise, add it
-/// to the waiter list and calls it when the value becomes ready.  This
-/// overload passes the current value back into the closure as a
-/// `const AnyAsyncValueRef &`.  This eliminates the need to capture the
-/// receiver in the closure and reduces reference count traffic.
-template <typename WaiterT>
-inline auto AsyncValue::andThenSync(WaiterT &&waiter)
+template <bool IsAsync, typename WaiterT>
+auto AsyncValue::andThen(WaiterT &&waiter)
     -> decltype(waiter(AnyAsyncValueRef()), void()) {
-  // Clients generally want to use andThenSync without them each having to check
-  // to see if the value is present. Check for them, and immediately run the
-  // lambda if it is already here.
-  auto waitersAndStateValue = loadWaitersAndState();
-  if (isReady(waitersAndStateValue.getInt())) {
-    assert(waitersAndStateValue.getPointer() == nullptr &&
-           "cannot have waiter nodes when ready");
-    runOneWaiter(std::forward<WaiterT>(waiter));
-    return;
-  }
+  if constexpr (IsAsync)
+    andThenAsyncOutOfLine(std::forward<WaiterT>(waiter));
+  else {
+    // Clients generally want to use andThenSync without them each having to
+    // check to see if the value is present. Check for them, and immediately run
+    // the lambda if it is already here.
+    auto waitersAndStateValue = loadWaitersAndState();
+    if (isReady(waitersAndStateValue.getInt())) {
+      assert(waitersAndStateValue.getPointer() == nullptr &&
+             "cannot have waiter nodes when ready");
+      runOneWaiter(std::forward<WaiterT>(waiter));
+      return;
+    }
 
-  andThenOutOfLine(std::forward<WaiterT>(waiter), waitersAndStateValue);
+    andThenOutOfLine(std::forward<WaiterT>(waiter), waitersAndStateValue);
+  }
 }
 
 /// Construct the payload of the AsyncValue in place and change its state to
