@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_dialect_library(DebugInfoDialect
+  DIBuilder.cpp
   DebugInfoAttrs.cpp
   DebugInfoDialect.cpp
   DebugInfoOps.cpp
