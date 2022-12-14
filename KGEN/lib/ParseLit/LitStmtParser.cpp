@@ -13,7 +13,6 @@
 #include "LitExprNodes.h"
 #include "LitLexer.h"
 #include "LitParserBase.h"
-#include "SpecialFunctions.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
@@ -458,31 +457,6 @@ ParseResult LitStmtParser::parseBreakOrContinueStmt(LitToken::Kind kind,
 // Compound statements.
 //===----------------------------------------------------------------------===//
 
-static ParseResult emitExprAsCondition(ExprNode *condExp, Value &condValue,
-                                       LitStmtParser &parser) {
-  // TODO(parameters): If the condition is a meta value, don't emit dead code
-  // to test it.
-  auto exprEmitter = parser.getExprEmitter();
-  DRValue cond = exprEmitter.emitDRValue(condExp);
-  if (!cond)
-    return failure();
-
-  SMLoc condLoc = condExp->getLoc();
-  AnyValue boolCall = exprEmitter.emitSpecialMethodCall(
-      cond.getType(), SpecialFunctionKind::kBool, {{cond, condExp}}, condLoc);
-  if (!boolCall)
-    return failure();
-
-  AnyValue litBoolCall = exprEmitter.emitSpecialMethodCall(
-      boolCall.getType(), SpecialFunctionKind::kLitBool, {{boolCall, condExp}},
-      condLoc);
-  if (!litBoolCall || !litBoolCall.getIfDRValue())
-    return failure();
-
-  condValue = static_cast<Value>(litBoolCall.getIfDRValue());
-  return success();
-}
-
 /// while_stmt ::=  "while" assignment_expression ":" suite
 ///                 ["else" ":" suite]
 ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
@@ -502,8 +476,8 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
   Block *body = builder.createBlock(&loopOp.getBody());
   builder = OpBuilder::atBlockEnd(body);
 
-  Value condVal;
-  if (emitExprAsCondition(condExp, condVal, *this))
+  Value condVal = getExprEmitter().emitConditionValueAsI1(condExp);
+  if (!condVal)
     return success(); // IRGen error already emitted; parse succeeded!
 
   // Generate the while condition check.
@@ -615,12 +589,12 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
   llvm::SaveAndRestore builderSaver(builder);
 
   ExprNode *condExp = nullptr;
-  Value cond;
   if (parseExpression(condExp, None) ||
       parseToken(LitToken::colon, "expected ':' after 'if' expression"))
     return failure();
 
-  if (emitExprAsCondition(condExp, cond, *this))
+  Value cond = getExprEmitter().emitConditionValueAsI1(condExp);
+  if (!cond)
     return success();
 
   // Create the 'if' and parse the body into its "then" region.
@@ -640,7 +614,8 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
       return failure();
 
     builder.createBlock(&ifOp.getElseRegion());
-    if (emitExprAsCondition(condExp, cond, *this))
+    cond = getExprEmitter().emitConditionValueAsI1(condExp);
+    if (!cond)
       return success();
     ifOp = builder.create<HLCF::IfOp>(elifLoc, cond);
     builder.create<HLCF::YieldOp>(elifLoc);

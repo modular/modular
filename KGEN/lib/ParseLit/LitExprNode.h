@@ -23,7 +23,6 @@ class ASTDecl;
 class CallableValue;
 class ExprEmitter;
 class ExprNode;
-class AnyValue;
 
 template <typename ValueType>
 struct ASTExprAnd {
