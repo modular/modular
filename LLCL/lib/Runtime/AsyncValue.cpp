@@ -478,6 +478,24 @@ void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
   (void)oldState;
 }
 
+//===--------------------------------------------------------------------===//
+// Waiter registration logic
+//===--------------------------------------------------------------------===//
+
+/// Add the specific closure to the work queue for asynchronous execution if
+/// the value is ready. Otherwise, add the registration logic to the waiter
+/// list and adds the closure to the work queue when the async value becomes
+/// ready.
+void AsyncValue::andThenAsyncOutOfLine(Waiter waiter) {
+  andThenSync(
+      [waiter = std::move(waiter)](const AnyAsyncValueRef &ref) mutable {
+        ref->getRuntime()->getWorkQueue()->addTask(
+            [waiter = std::move(waiter), ref = ref.copy()]() mutable {
+              waiter(ref);
+            });
+      });
+}
+
 //===----------------------------------------------------------------------===//
 // IndirectAsyncValue implementation logic
 //===----------------------------------------------------------------------===//
