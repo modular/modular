@@ -19,7 +19,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "LitExprs.h"
+#include "LitExprEmitter.h"
 #include "LitSharedState.h"
 #include "SpecialFunctions.h"
 #include "mlir/AsmParser/AsmParser.h"
