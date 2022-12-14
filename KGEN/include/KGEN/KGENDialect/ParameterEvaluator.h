@@ -87,18 +87,19 @@ public:
   ErrorOr<Attribute> concretizeParameterExpr(Attribute expr);
 
   /// Get the specified type with any nested parameter expressions rewritten.
-  Type getReboundType(Type type);
+  Type getReboundType(Type type, function_ref<void(Error)> emitError = {});
 
   /// Get the specified attribute with any nested parameter expressions
   /// rewritten.  The substituted attributes are not necessarily fully folded:
   /// for that use concretizeParameterExpr.
-  Attribute getReboundAttribute(Attribute attr);
+  Attribute getReboundAttribute(Attribute attr,
+                                function_ref<void(Error)> emitError = {});
 
   void dump() const;
 
 private:
   /// Evaluate a potentially symbolic expression.
-  Optional<TypedAttr> evaluateSymbolicExpression(ParamOperatorAttr op);
+  ErrorOr<TypedAttr> evaluateSymbolicExpression(ParamOperatorAttr op);
 
   /// A symbol table to lookup type declarations.
   SymbolTable *symtab;

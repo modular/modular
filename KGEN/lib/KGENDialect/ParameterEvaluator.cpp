@@ -70,7 +70,9 @@ bool KGEN::isParameterizedType(Type type) {
 //===----------------------------------------------------------------------===//
 
 /// Get the specified attribute with any nested parameter expressions rewritten.
-Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
+Attribute
+ParameterEvaluator::getReboundAttribute(Attribute attr,
+                                        function_ref<void(Error)> emitError) {
   // These are common leaf attributes that we know are never parameterized.
   if (!attr || attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
                         DTypeConstantAttr>())
@@ -92,22 +94,33 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
     SmallVector<Attribute> newAttrs;
     SmallVector<Type> newTypes;
     itf.walkImmediateSubElements(
-        [&](Attribute attr) { newAttrs.push_back(getReboundAttribute(attr)); },
-        [&](Type type) { newTypes.push_back(getReboundType(type)); });
+        [&](Attribute attr) {
+          newAttrs.push_back(getReboundAttribute(attr, emitError));
+        },
+        [&](Type type) {
+          newTypes.push_back(getReboundType(type, emitError));
+        });
     result = itf.replaceImmediateSubElements(newAttrs, newTypes);
   }
 
   // If an operator persisted, try to simplify it with the symbol table.
-  if (symtab && isa<ParamOperatorAttr>(result))
-    if (Optional<TypedAttr> expr =
-            evaluateSymbolicExpression(cast<ParamOperatorAttr>(result)))
-      result = *expr;
+  if (symtab && isa<ParamOperatorAttr>(result)) {
+    ErrorOr<TypedAttr> expr =
+        evaluateSymbolicExpression(cast<ParamOperatorAttr>(result));
+    if (expr.isError()) {
+      if (emitError)
+        emitError(expr.takeError());
+    } else {
+      result = expr.takeValue();
+    }
+  }
 
   return rewrittenAttrs[attr] = result;
 }
 
 /// Get the specified type with any nested parameter expressions rewritten.
-Type ParameterEvaluator::getReboundType(Type type) {
+Type ParameterEvaluator::getReboundType(Type type,
+                                        function_ref<void(Error)> emitError) {
   // If we've already processed this type, just reuse the memoized result.
   auto iter = rewrittenTypes.find(type);
   if (iter != rewrittenTypes.end())
@@ -127,9 +140,11 @@ Type ParameterEvaluator::getReboundType(Type type) {
 
       itf.walkImmediateSubElements(
           [&](Attribute attr) {
-            newAttrs.push_back(getReboundAttribute(attr));
+            newAttrs.push_back(getReboundAttribute(attr, emitError));
           },
-          [&](Type type) { newTypes.push_back(getReboundType(type)); });
+          [&](Type type) {
+            newTypes.push_back(getReboundType(type, emitError));
+          });
       result = itf.replaceImmediateSubElements(newAttrs, newTypes);
     }
   }
@@ -144,14 +159,21 @@ ErrorOr<Attribute> ParameterEvaluator::concretizeParameterExpr(Attribute expr) {
   assert(symtab && "must have a symbol table to concretize expressions");
 
   // If we can fold this to a simple constant result, do.
-  auto result = getReboundAttribute(expr);
+  Optional<Error> evalError;
+  auto result =
+      getReboundAttribute(expr, [&](Error err) { evalError = std::move(err); });
   if (ParameterAttr::isSimpleConstant(result))
     return result;
 
   // If this was an unfoldable operator expression, error.  This can happen for
   // things like 'index' arithmetic that has target-specific results.
-  if (auto oper = dyn_cast<ParamOperatorAttr>(result))
+  if (auto oper = dyn_cast<ParamOperatorAttr>(result)) {
+    // Check if we have an error from evaluating symbolic expressions.
+    if (evalError)
+      return std::move(*evalError);
+
     return Error("could not simplify operator " + getParamAsString(result));
+  }
 
   // Otherwise, we don't know how to simplify this attribute, it's an error.
   return Error("unknown expression to fold: " + getParamAsString(result));
