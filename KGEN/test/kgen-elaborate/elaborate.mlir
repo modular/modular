@@ -1233,3 +1233,18 @@ kgen.generator @use_Itf3() {
   kgen.call @genItf3<x = 2>() : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.func @fma(%arg0: index, %arg1: index, %arg2: index) -> index {
+  %0 = index.mul %arg1, %arg2
+  %1 = index.add %0, %arg0
+  kgen.return %1 : index
+}
+
+// CHECK-LABEL: kgen.func @constexpr_fma
+kgen.generator @constexpr_fma() -> index {
+  // CHECK-NEXT: kgen.param.constant = <7>
+  %0 = kgen.param.constant = <apply(:(index, index, index) -> index @fma, 1, 2, 3)>
+  kgen.return %0 : index
+}

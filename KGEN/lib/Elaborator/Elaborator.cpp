@@ -10,11 +10,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Elaborator.h"
-#include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/KGENDialect/ElaboratorOpInterface.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENPasses.h"
-#include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "SelectFastestFunction.h"
@@ -394,7 +392,13 @@ private:
         itf->getLoc(), ElaborationDiagnostic(itf->getLoc(), Error(err)));
   };
 
-private:
+  /// Instantiate a new evaluator with the given parameters.
+  IREvaluator createEvaluator(DenseMap<StringAttr, Attribute> values =
+                                  DenseMap<StringAttr, Attribute>()) {
+    return {analysis.getTopLevelSymbolTable(), asyncMap, regionCache.copy(),
+            transformCache.copy(), std::move(values)};
+  }
+
   /// This symbol table analysis allows efficient lookups across the module.
   SymbolTableAnalysis &analysis;
 
@@ -454,6 +458,9 @@ private:
   /// Enable search during interface elaboration. This defaults to `false`
   /// because we want search to be opt-in.
   bool enableSearch = false;
+
+  /// Let parameter rewriters access the internal fields of the elaborator.
+  friend class ParameterRewriter;
 };
 } // namespace
 
@@ -515,15 +522,14 @@ namespace {
 class ParameterRewriter {
 public:
   ParameterRewriter(Elaborator &elaborator, FuncOp func,
-                    SymbolTableAnalysis &analysis,
                     ArrayRef<Operation *> opsToRewrite, bool inlinedCallee,
                     size_t expansionDepth)
-      : elaborator(elaborator), analysis(&analysis),
-        sourceModule(cast<ModuleOp>(analysis.getModule())),
+      : elaborator(elaborator),
+        sourceModule(cast<ModuleOp>(elaborator.analysis.getModule())),
         elaboratedGenerator(func), inlinedCallee(inlinedCallee),
         expansionDepth(expansionDepth) {
     nextCallRegionID = 0;
-    evaluators.emplace_back(&analysis.getTopLevelSymbolTable());
+    evaluators.push_back(elaborator.createEvaluator());
     commandWorklist.reserve(opsToRewrite.size());
     llvm::append_range(commandWorklist, opsToRewrite);
   }
@@ -657,10 +663,6 @@ private:
   /// into.
   Elaborator &elaborator;
 
-  /// The symbol table analysis for lookups. Make this a pointer so the class
-  /// can be copied.
-  SymbolTableAnalysis *analysis;
-
   /// This indicates which module this func originally came from (e.g. one of
   /// the imported files).  This is important to know so we can correctly
   /// resolve callee symbols.
@@ -711,8 +713,7 @@ ParameterRewriter::~ParameterRewriter() {
 ParameterRewriter::ParameterRewriter(
     const ParameterRewriter &existing,
     DenseMap<Operation *, Operation *> &operationMap)
-    : elaborator(existing.elaborator), analysis(existing.analysis),
-      sourceModule(existing.sourceModule),
+    : elaborator(existing.elaborator), sourceModule(existing.sourceModule),
       elaboratedGenerator(existing.elaboratedGenerator),
       evaluators(existing.evaluators),
       nextCallRegionID(existing.nextCallRegionID),
@@ -838,7 +839,7 @@ LogicalResult ParameterRewriter::rewriteOps(
   // Verify the function and invoke the symbol user verifier on all its
   // contained ops to verify parameter references.
   auto verifySymbolUses = [&](mlir::SymbolUserOpInterface user) -> WalkResult {
-    return user.verifySymbolUses(analysis->getSymbolTables());
+    return user.verifySymbolUses(elaborator.analysis.getSymbolTables());
   };
   if (failed(verify(func)) || func.walk(verifySymbolUses).wasInterrupted())
     return error(*verificationLoc,
@@ -1018,8 +1019,8 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
       // a lexically identical body.  This would reduce some redundant
       // specialization.
       Elaborator::RegionBody regionBody{
-          body, IREvaluator(&analysis->getTopLevelSymbolTable(),
-                            getEvaluator().getParameterValues())};
+          body,
+          elaborator.createEvaluator(getEvaluator().getParameterValues())};
       inlineCallee |= !regionBody.isIsolatedFromAbove();
       elaborator.addRegionReference(regionRefAttr, std::move(regionBody));
       boundInputParams.push_back(regionRefAttr);
@@ -1078,9 +1079,9 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
   // evaluator first.
   if (auto itf = dyn_cast<GeneratorInterfaceOp>(*callee)) {
     if (SymbolConstantAttr evaluator = itf.getEvaluatorAttr()) {
-      if (!analysis->getTopLevelSymbolTable().lookup<FuncOp>(
+      if (!elaborator.analysis.getTopLevelSymbolTable().lookup<FuncOp>(
               cast<FlatSymbolRefAttr>(evaluator.getSymbol()).getAttr())) {
-        evaluators.emplace_back(&analysis->getTopLevelSymbolTable());
+        evaluators.push_back(elaborator.createEvaluator());
         for (auto [bind, value] : llvm::zip(paramValues, inputParamKey))
           evaluators.back().setParameterValue(bind.getDecl(), value);
         if (failed(processGeneratorUserImpl(
@@ -1640,7 +1641,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
   // invalidation.
   SmallVector<std::unique_ptr<ParameterRewriter>> rewriterWorklist;
   rewriterWorklist.emplace_back(new ParameterRewriter(
-      *this, func, analysis, std::move(opsToRewrite), inlined, expansionDepth));
+      *this, func, std::move(opsToRewrite), inlined, expansionDepth));
 
   // Extract the debug info from the function, if it's present.
   auto oldFuncSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func);
@@ -2033,9 +2034,9 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
     llvm::dbgs() << std::string(expansionDepth, ' ')
                  << "getAllInstantiations: ";
   });
-  Optional<EvalDiagnostic> err =
-      evaluateConstraints(decl, declAndInputParams.second.getValue(),
-                          analysis.getTopLevelSymbolTable());
+  IREvaluator evaluator = createEvaluator();
+  Optional<EvalDiagnostic> err = evaluateConstraints(
+      decl, declAndInputParams.second.getValue(), evaluator);
   if (err) {
     LLVM_DEBUG({ llvm::dbgs() << "evaluateConstraints failed\n"; });
     newCallees.push_back(CalleeExpansionError(
