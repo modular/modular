@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-generators="search-path=%S" -verify-diagnostics -o /dev/null -split-input-file -allow-unregistered-dialect
+// RUN: kgen-opt %s -elaborate-generators="search-path=%S" -verify-diagnostics -split-input-file -allow-unregistered-dialect
 
 kgen.include "library-test.mlir"
 
@@ -200,4 +200,17 @@ kgen.generator @mid<fn: ()->index>() -> index {
 kgen.generator @bot<fn: ()->index>() -> index {
   %0 = kgen.call_param[()->index: fn]()
   kgen.return %0 : index
+}
+
+// -----
+
+kgen.struct.decl @Unknown {
+  kgen.struct.field value : !opaque<"type">
+}
+
+// expected-error @below {{no viable implementations found}}
+kgen.generator @sizeof_unknown() {
+  // expected-note @below {{could not compute alignment of type !opaque<"type">}}
+  %0 = kgen.param.constant = <get_sizeof(!kgen.declref<@Unknown>, #kgen.target<host>)>
+  kgen.return
 }
