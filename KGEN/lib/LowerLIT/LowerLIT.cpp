@@ -14,6 +14,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/SymbolTableAnalysis.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -497,12 +498,39 @@ static void lowerLITOps(LIT::FuncOp func) {
   auto errType =
       DeclRefType::get(FlatSymbolRefAttr::get(func.getContext(), "Error"));
 
+  // Check if we are building debug info for source variables.
+  auto funcSpAttr = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func);
+  bool buildingDebugVars =
+      funcSpAttr && funcSpAttr.getCompileUnit().getEmissionKind() ==
+                        DebugInfo::EmissionKind::Full;
   func.walk([&](Operation *op) {
     mlir::IRRewriter b{OpBuilder(op)};
     if (auto varDecl = dyn_cast<LIT::VarDeclOp>(op)) {
+      StringAttr varName = varDecl.getNameAttr();
+      auto varType = varDecl.getType();
+
       // Lower a lit.var.decl to pop.stack_allocation.
-      b.replaceOpWithNewOp<POP::StackAllocationOp>(varDecl, varDecl.getType(),
-                                                   1);
+      auto allocOp =
+          b.replaceOpWithNewOp<POP::StackAllocationOp>(varDecl, varType, 1);
+
+      // Build information for this variable if necessary.
+      if (buildingDebugVars) {
+        Location loc = allocOp.getLoc();
+        auto fileLoc = loc->findInstanceOf<FileLineColLoc>();
+        auto varScope =
+            DebugInfo::extractScope<DebugInfo::DILocalScopeAttr>(loc);
+        if (fileLoc && varScope) {
+          auto varAttr = DebugInfo::DILocalVariableAttr::get(
+              varScope, varName, funcSpAttr.getFile(), fileLoc.getLine(),
+              /*arg=*/0, /*alignInBits=*/0,
+              DebugInfo::DIUnresolvedMLIRType::get(varType));
+
+          // TODO: Mark the value op as describing the "address" of the
+          // variable, instead of claiming to describe the variable itself.
+          OpBuilder(allocOp->getNextNode())
+              .create<DebugInfo::ValueOp>(loc, allocOp, varAttr);
+        }
+      }
     } else if (auto unwrap = dyn_cast<UnwrapOrPropagateOp>(op)) {
       // Lower a lit.unwrap_or_propagate to a conditional.
       Location loc = op->getLoc();
@@ -620,6 +648,23 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
         func.getResultParamTypesAttr(), func.getSignature().getValues(),
         func.getConventions()));
 
+    // If this function has a subprogram attached, update its information to
+    // account for the new name.
+    if (auto oldSpAttr =
+            DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func)) {
+      auto newSpAttr = DebugInfo::DISubprogramAttr::get(
+          oldSpAttr.getContext(), oldSpAttr.getCompileUnit(),
+          oldSpAttr.getScope(), oldSpAttr.getName(), genOpNewName,
+          oldSpAttr.getFile(), oldSpAttr.getLine(), oldSpAttr.getScopeLine(),
+          oldSpAttr.getSubprogramFlags(), oldSpAttr.getType());
+
+      DebugInfo::DIAttrTypeReplacer replacer;
+      replacer.addReplacement([&](DebugInfo::DISubprogramAttr attr) {
+        return attr == oldSpAttr ? newSpAttr : attr;
+      });
+      replacer.recursivelyReplaceElementsIn(func);
+    }
+
     // Lower renamed function as usual.
     if (failed(lowerLITFunc(func, symbolTable)))
       return failure();
@@ -656,9 +701,8 @@ static void lowerAttributesAndTypes(Operation *op) {
                                 conventions.getInputConventions().size());
   });
 
-  replacer.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
-                                        /*replaceLocs=*/false,
-                                        /*replaceTypes=*/true);
+  replacer.recursivelyReplaceElementsIn(
+      op, /*replaceAttrs=*/true, /*replaceLocs=*/true, /*replaceTypes=*/true);
 }
 
 //===----------------------------------------------------------------------===//

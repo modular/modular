@@ -217,8 +217,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   auto inputFileName = llvm::StringRef(clOptions.inputFilename.getValue());
   mlir::TimingScope ts;
   if (inputFileName.ends_with(".lit"))
-    theModule = importLitFile(mgr, ctx, ts);
-  else if (compilationOptions.debugLevel && !compilationOptions.debugAtLevel)
+    theModule = importLitFile(mgr, ctx, ts, compilationOptions);
+  else if (compilationOptions.getDebugInfoLevelForInput())
     theModule = DebugInfo::parseSourceFileWithDebugInfo(
         mgr, ctx, compilationOptions.getDIEmissionKind());
   else

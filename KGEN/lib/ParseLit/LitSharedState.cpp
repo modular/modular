@@ -17,8 +17,10 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LitDecls.h"
+#include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/IR/Location.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/SourceMgr.h"
 
 using namespace M;
@@ -56,12 +58,26 @@ static StringAttr getBufferNameIdentifier(const SourceMgr &sourceMgr,
   return StringAttr::get(context, bufferName);
 }
 
-LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context)
+LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+                               const CompilationOptions &options)
     : sourceMgr(sourceMgr), context(context),
-      declResolver(std::make_unique<DeclResolver>(*this)),
+      declResolver(std::make_unique<DeclResolver>(*this)), options(options),
       bufferNameIdentifier(getBufferNameIdentifier(
           sourceMgr, sourceMgr.getMainFileID(), context)),
-      impl(std::make_unique<Impl>()) {}
+      impl(std::make_unique<Impl>()) {
+  if (options.getDebugInfoLevelForInput()) {
+    diBuilder = std::make_unique<DebugInfo::DIBuilder>(context);
+
+    // TODO: Dwarf technically has a language for python, but it's not really
+    // what we want here AFAICT (our compilation model isn't the same as
+    // python's). Figure out what we actually want here (though C works well
+    // enough for now).
+    diBuilder->initializeCompileUnit(
+        llvm::dwarf::DW_LANG_C,
+        diBuilder->createFile(bufferNameIdentifier, "/"), "Lit",
+        /*isOptimized=*/true, options.getDIEmissionKind());
+  }
+}
 
 LitSharedState::~LitSharedState() { declResolver.reset(); }
 
@@ -90,8 +106,9 @@ Location LitSharedState::translateLocation(SMLoc loc) const {
   else
     bufferName = getBufferNameIdentifier(sourceMgr, bufferID, getContext());
 
-  return FileLineColLoc::get(bufferName, lineAndColumn.first,
-                             lineAndColumn.second);
+  auto fileLoc = FileLineColLoc::get(bufferName, lineAndColumn.first,
+                                     lineAndColumn.second);
+  return diBuilder ? diBuilder->createScopedLoc(fileLoc) : fileLoc;
 }
 
 ASTType LitSharedState::getTypeCheckErrorType() const {

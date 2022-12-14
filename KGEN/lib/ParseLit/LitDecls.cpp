@@ -22,6 +22,8 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LitSharedState.h"
 #include "SpecialFunctions.h"
+#include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -742,6 +744,40 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
   // Finally now that the full signature has been resolved, build our IR.
 
+  // Generate a debug subprogram for this function.
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (auto &diBuilder = sharedState.diBuilder) {
+    FileLineColLoc fileLineCol =
+        funcOp.getLoc()->findInstanceOf<FileLineColLoc>();
+
+    // Compute the subprogram flags.
+    /// If we have any optimizations, mark the subprogram as optimized.
+    DebugInfo::SubprogramFlags spFlags =
+        sharedState.options.optimizationLevel
+            ? DebugInfo::SubprogramFlags::Optimized
+            : DebugInfo::SubprogramFlags::None;
+    /// If the function has a body, treat it as a definition.
+    if (!funcOp.isExternal())
+      spFlags = spFlags | DebugInfo::SubprogramFlags::Definition;
+
+    // Use unresolved types now for simplicity, these will get resolved during
+    // compilation.
+    auto mapUnresolvedType = [](Type type) -> DebugInfo::DIType {
+      return DebugInfo::DIUnresolvedMLIRType::get(type);
+    };
+    auto type = DebugInfo::DISubroutineType::get(
+        getContext(),
+        llvm::to_vector(llvm::map_range(argTypes, mapUnresolvedType)),
+        mapUnresolvedType(resultType.mlirType));
+
+    // TODO: When we have mangled names, we'll want to the base name here.
+    StringRef name = funcOp.getName();
+    diScopeGuard = diBuilder->pushSubprogram(
+        name, name, diBuilder->createFile(fileLineCol), fileLineCol.getLine(),
+        fileLineCol.getLine(), spFlags, type);
+    funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
+  }
+
   // Handle function effects.
   SmallVector<Location> argLocs;
   SmallVector<StringAttr> argNames;
@@ -785,12 +821,28 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   if (funcOp.getIsInterface())
     return success();
 
+  // Functor used to build the debug info for an argument.
+  auto buildArgDIInfo = [&](Value argVal, StringRef name, unsigned argIdx) {
+    auto &diBuilder = sharedState.diBuilder;
+    if (!diBuilder ||
+        sharedState.options.debugLevel != CompilationOptions::kFullDebugInfo)
+      return;
+    auto bbArgLoc = argVal.getLoc()->findInstanceOf<FileLineColLoc>();
+
+    auto varAttr = diBuilder->createLocalVariable(
+        name, diBuilder->createFile(bbArgLoc), bbArgLoc.getLine(), argIdx + 1,
+        /*alignInBits=*/0,
+        DebugInfo::DIUnresolvedMLIRType::get(argVal.getType()));
+    builder.create<DebugInfo::ValueOp>(argVal.getLoc(), argVal, varAttr);
+  };
+
   // Set up the body of the def, creating declarations for the value
   // parameters and adding them to the symbol table.
   for (auto [bbArg, parsedArg] :
        llvm::zip(funcOp.getBody()->getArguments(), args)) {
     // Arguments passed by-reference can be directly used.
     if (parsedArg.convention == ValueInputConvention::ByRef) {
+      buildArgDIInfo(bbArg, parsedArg.name, bbArg.getArgNumber());
       addFullyResolvedDecl(LValue(bbArg), parsedArg.name, parsedArg.loc, &decl);
       continue;
     }
@@ -799,6 +851,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
     // If this was passed by-value, then it becomes an rvalue in a `fn`.
     if (!funcOp.getIsDef()) {
+      buildArgDIInfo(bbArg, parsedArg.name, bbArg.getArgNumber());
       addFullyResolvedDecl(DRValue(bbArg), parsedArg.name, parsedArg.loc,
                            &decl);
       continue;
@@ -826,6 +879,13 @@ static bool isNoneResultType(LIT::FuncOp defOp) {
 
 ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,
                                       ASTDecl &decl) {
+  // Push the debug scope for this function if necessary so that nested
+  // operations have proper debug info.
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (auto spAttr = DebugInfo::extractScope(defOp))
+    diScopeGuard = sharedState.diBuilder->pushScopeGuard(spAttr);
+
+  // Resolve the body of the decl.
   if (LitParserBase::parseSuite(decl, lexer))
     return failure();
 

@@ -33,6 +33,7 @@ def DIEmissionKind : I64EnumAttr<
 // DISubprogramFlags
 //===----------------------------------------------------------------------===//
 
+def DISPNone           : I32BitEnumAttrCaseNone<"None">;
 def DISPVirtual        : I32BitEnumAttrCaseBit<"Virtual", 0>;
 def DISPPureVirtual    : I32BitEnumAttrCaseBit<"PureVirtual", 1>;
 def DISPLocalToUnit    : I32BitEnumAttrCaseBit<"LocalToUnit", 2>;
@@ -48,6 +49,7 @@ def DISPObjCDirect     : I32BitEnumAttrCaseBit<"ObjCDirect", 11>;
 def DISubprogramFlags : I32BitEnumAttr<
     "SubprogramFlags",
     "Subprogram specific flags", [
+      DISPNone,
       DISPVirtual,
       DISPPureVirtual,
       DISPLocalToUnit,
