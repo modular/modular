@@ -44,6 +44,15 @@ public:
 
   MLIRContext *getContext() const { return shared.context; }
 
+  /// Emit an error through the parser's logic.
+  InFlightDiagnostic emitError(SMLoc loc, const Twine &twine = "") const {
+    return shared.emitError(loc, twine);
+  }
+
+  /// Translate an SMLoc into an MLIR Location.
+  Location translateLocation(SMLoc loc) const {
+    return shared.translateLocation(loc);
+  }
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 
@@ -142,15 +151,10 @@ public:
   DRValue getAsExpectedType(DRValue value, const ExprNode *expr,
                             ASTType expectedType);
 
-  /// Emit an error through the parser's logic.
-  InFlightDiagnostic emitError(SMLoc loc, const Twine &twine = "") const {
-    return shared.emitError(loc, twine);
-  }
-
-  /// Translate an SMLoc into an MLIR Location.
-  Location translateLocation(SMLoc loc) const {
-    return shared.translateLocation(loc);
-  }
+  /// Emit the specified expression as a condition, converting it to an MLIR I1
+  /// value that we can test directly.  This reports and error and returns null
+  /// on error.
+  DRValue emitConditionValueAsI1(ExprNode *condExpr);
 };
 
 } // namespace M::KGEN::LIT

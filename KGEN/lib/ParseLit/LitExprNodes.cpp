@@ -439,6 +439,30 @@ static CallableValue emitInitializerCallable(ASTType calledType,
                                   "__new__", node, emitter);
 }
 
+/// Emit the specified expression as a condition, converting it to an MLIR I1
+/// value that we can test directly.  This reports and error and returns null on
+/// error.
+DRValue ExprEmitter::emitConditionValueAsI1(ExprNode *condExpr) {
+  RValue cond = emitRValue(condExpr);
+  if (!cond)
+    return {};
+
+  // First we use the __bool__ method to convert the user defined type to
+  // something that is a Bool or other type that implements __lit_bool.
+  SMLoc condLoc = condExpr->getLoc();
+  ASTExprAnd<AnyValue> argValue = {cond, condExpr};
+  AnyValue boolCall = emitSpecialMethodCall(
+      cond.getType(), SpecialFunctionKind::kBool, argValue, condLoc);
+  if (!boolCall)
+    return {};
+
+  // Then we use __lit_bool to convert to an i1 value.
+  AnyValue litBoolCall =
+      emitSpecialMethodCall(boolCall.getType(), SpecialFunctionKind::kLitBool,
+                            {{boolCall, condExpr}}, condLoc);
+  return DRValue(emitDRValue(litBoolCall, condLoc));
+}
+
 //===----------------------------------------------------------------------===//
 // ExprNode Implementation
 //===----------------------------------------------------------------------===//
@@ -1751,24 +1775,7 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
 
 AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
                               ASTType contextualType) const {
-  DRValue cond = emitter.emitDRValue(condExpr);
-  if (!cond)
-    return {};
-
-  // First we use the __bool__ method to convert the user defined type to
-  // something that is a Bool or other type that implements __lit_bool.
-  SMLoc condLoc = condExpr->getLoc();
-  ASTExprAnd<AnyValue> argValue = {cond, condExpr};
-  AnyValue boolCall = emitter.emitSpecialMethodCall(
-      cond.getType(), SpecialFunctionKind::kBool, argValue, condLoc);
-  if (!boolCall)
-    return {};
-
-  // Then we use __lit_bool to convert to an i1 value.
-  AnyValue litBoolCall = emitter.emitSpecialMethodCall(
-      boolCall.getType(), SpecialFunctionKind::kLitBool, {{boolCall, condExpr}},
-      condLoc);
-  Value condValue = emitter.emitDRValue(litBoolCall, condLoc);
+  auto condValue = emitter.emitConditionValueAsI1(condExpr);
   if (!condValue)
     return {};
 
