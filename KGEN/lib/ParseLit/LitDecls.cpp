@@ -293,7 +293,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
           decl.getCursor() = lexer.getCursor();
         })
         .Case([&](ModuleOp op) { /*Nothing*/ })
-        .Default([&](auto attr) {
+        .Default([&](auto &attr) {
           emitError(decl.getLoc(),
                     "do not know how to resolve the signature of this decl!");
           decl.hasReferenceError = true;
@@ -327,7 +327,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
           }
         })
         .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
-        .Default([&](auto attr) {
+        .Default([&](auto &attr) {
           emitError(decl.getLoc(),
                     "do not know how to resolve the body of this decl!");
         });

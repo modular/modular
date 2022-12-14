@@ -155,6 +155,8 @@ private:
       : irValue(irValue), loc(loc), parentDecl(std::move(parentDecl)),
         cursor(cursor), endCursorState(endCursor.getState()),
         indentation(indentation) {}
+  ASTDecl(const ASTDecl &) = delete;
+  ASTDecl &operator=(const ASTDecl &) = delete;
 
 private:
   /// This is the MLIR declaration that this scope corresponds to.
