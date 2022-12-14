@@ -6,6 +6,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrInterfaces.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 
 using namespace M;
 using namespace KGEN;
@@ -18,6 +19,10 @@ bool ParameterAttr::isSimpleConstant(Attribute attr) {
   // Check for simple builtin-in constants.
   if (attr.isa<FloatAttr, IntegerAttr, StringAttr>())
     return true;
+
+  // FIXME: Ops that trigger this path should use ConcreteTypeConstantAttr.
+  if (auto type = llvm::dyn_cast<TypeAttr>(attr))
+    return !isParameterizedType(type.getValue());
 
   // Check for an interface.
   if (auto itf = llvm::dyn_cast<ParameterAttr>(attr))

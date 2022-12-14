@@ -4,10 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "SymbolicExpressions.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -23,7 +25,7 @@ using namespace KGEN;
 /// Lookup the struct declaration and rebind it.
 static std::pair<StructDeclOp, ParameterEvaluator>
 lookupStructDecl(SymbolTable &symtab, DeclRefType type) {
-  ParameterEvaluator evaluator(&symtab);
+  ParameterEvaluator evaluator;
   for (ParamBindAttr bind : type.getParamValues())
     evaluator.setParameterValue(bind.getDecl(), bind.getValue());
   auto decl = symtab.lookup<StructDeclOp>(type.getName());
@@ -113,8 +115,8 @@ static ErrorOr<int64_t> computeSizeof(SymbolTable &symtab,
 // IR Interpreter
 //===----------------------------------------------------------------------===//
 
-static ErrorOr<TypedAttr> evaluateFunction(FuncOp func,
-                                           ArrayRef<TypedAttr> inputs) {
+static std::variant<EvalError, TypedAttr>
+evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   DenseMap<Value, Attribute> values;
   // Map the function argument values.
   for (auto [arg, input] : llvm::zip(func.getArguments(), inputs))
@@ -161,44 +163,162 @@ static ErrorOr<TypedAttr> evaluateFunction(FuncOp func,
 }
 
 //===----------------------------------------------------------------------===//
-// Parameter Evaluator
+// EvalError
 //===----------------------------------------------------------------------===//
 
-ErrorOr<TypedAttr>
-ParameterEvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
+EvalError::EvalError(Error error, Location loc, EvalError causes)
+    : error(std::move(error)) {
+  notes.emplace_back(loc, std::move(causes.error));
+  for (auto &[loc, err] : causes.notes)
+    notes.emplace_back(loc, std::move(err));
+}
+
+//===----------------------------------------------------------------------===//
+// IR Evaluator
+//===----------------------------------------------------------------------===//
+
+FailureOr<TypedAttr>
+IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
   // Try to narrow this operator to an expression we can evaluate. We only need
   // to emit an error during the evaluation attempt.
   if (op.getOpcode() == POC::GetSizeOf || op.getOpcode() == POC::GetAlignOf) {
     auto typeCst = dyn_cast<TypeConstantAttr>(op.getOperand(0));
     auto target = dyn_cast<TargetInfoAttr>(op.getOperand(1));
     if (!typeCst || !target)
-      return {op};
+      return failure();
     auto ref = dyn_cast<DeclRefType>(typeCst.getValue());
     if (!ref)
-      return {op};
+      return failure();
 
     ErrorOr<int64_t> indexResult = 0;
     if (op.getOpcode() == POC::GetSizeOf)
       indexResult = computeStructSizeof(*symtab, target, ref);
     else
       indexResult = computeStructAlignof(*symtab, target, ref);
-    if (indexResult.isError())
-      return indexResult.takeError();
+
+    if (indexResult.isError()) {
+      emitError(indexResult.takeError());
+      return failure();
+    }
     return {Builder(op.getContext()).getIndexAttr(*indexResult)};
   }
 
   if (op.getOpcode() == POC::Apply) {
     auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
     if (!symbol || !symbol.getType().isConcrete())
-      return {op};
+      return failure();
     ArrayRef<TypedAttr> operands = op.getOperands().drop_front();
-    if (!llvm::all_of(operands, ParameterAttr::isSimpleConstant))
-      return {op};
-    if (auto ref = dyn_cast<FlatSymbolRefAttr>(symbol.getSymbol()))
-      if (auto func = symtab->lookup<FuncOp>(ref.getAttr()))
-        return evaluateFunction(func, operands);
-    return {op};
+    auto ref = dyn_cast<FlatSymbolRefAttr>(symbol.getSymbol());
+    if (!llvm::all_of(operands, ParameterAttr::isSimpleConstant) || !ref)
+      return failure();
+    auto func = symtab->lookup<FuncOp>(ref.getAttr());
+    if (!func)
+      return failure();
+
+    std::variant<EvalError, TypedAttr> result =
+        evaluateFunction(func, operands);
+    if (std::holds_alternative<TypedAttr>(result))
+      return std::get<TypedAttr>(result);
+    emitError(std::move(std::get<EvalError>(result)));
+    return failure();
   }
 
-  return {op};
+  return failure();
+}
+
+/// Given a generic parameter expression, simplify it by folding the
+/// expression according to known parameter values.  This returns an error if
+/// the expression cannot be folded for one reason or another.
+std::variant<EvalError, Attribute>
+IREvaluator::concretizeParameterExpr(Attribute expr, bool allowUnknown) {
+  Optional<EvalError> error;
+  emitError = [&](EvalError err) { error = std::move(err); };
+  Attribute result = getReboundAttribute(expr);
+  if (error)
+    return std::move(*error);
+
+  // If we can fold this to a simple constant result, do.
+  if (ParameterAttr::isSimpleConstant(result))
+    return result;
+
+  // If this was an unfoldable operator expression, error.  This can happen for
+  // things like 'index' arithmetic that has target-specific results.
+  if (auto oper = dyn_cast<ParamOperatorAttr>(result))
+    return Error("could not simplify operator " + getParamAsString(result));
+  if (allowUnknown)
+    return result;
+
+  // Otherwise, we don't know how to simplify this attribute, it's an error.
+  return Error("unknown expression to fold: " + getParamAsString(result));
+}
+
+std::variant<EvalError, Type> IREvaluator::concretizeParameterExpr(Type expr) {
+  Optional<EvalError> error;
+  emitError = [&](EvalError err) { error = std::move(err); };
+  Type result = getReboundType(expr);
+  if (error)
+    return std::move(*error);
+
+  if (isa<ConcreteTypeConstantAttr>(TypeConstantAttr::get(result)))
+    return result;
+  return Error("could not simplify type: " +
+               getParamAsString(TypeConstantAttr::get(result)));
+}
+
+//===----------------------------------------------------------------------===//
+// evaluateConstraints implementation.
+//===----------------------------------------------------------------------===//
+
+/// Given a generator or interface declaration operation, evaluate any
+/// constraints against inputParamValues.  If the constraints are met, return
+/// success, otherwise return why they aren't.
+Optional<EvalDiagnostic>
+KGEN::evaluateConstraints(ArrayRef<ConstraintAttr> constraints,
+                          IREvaluator &evaluator) {
+  // Each constraint must be foldable, and must fold to true.
+  for (ConstraintAttr constraint : constraints) {
+    Location loc = constraint.getLoc();
+    std::variant<EvalError, Attribute> result =
+        evaluator.concretizeParameterExpr(constraint.getExpr());
+    if (std::holds_alternative<EvalError>(result))
+      return {{loc, EvalError("constraint evaluation failure: ", loc,
+                              std::move(std::get<EvalError>(result)))}};
+
+    auto resultInt = dyn_cast<IntegerAttr>(std::get<Attribute>(result));
+    if (!resultInt || resultInt.getValue().getBitWidth() != 1)
+      return {{loc,
+               EvalError("constraint evaluation didn't return true or false")}};
+
+    // If this failed, indicate why.
+    if (resultInt.getValue().isZero())
+      return {{loc, EvalError("constraint failed: " +
+                              constraint.getMessage().getValue())}};
+  }
+
+  // If we made it this far, then everything folded to true.
+  return {};
+}
+
+/// Given a generator or interface declaration operation, evaluate any
+/// constraints against inputParamValues.  If the constraints are met, return
+/// success, otherwise return why they aren't.
+Optional<EvalDiagnostic>
+KGEN::evaluateConstraints(DeclInterface decl,
+                          ArrayRef<Attribute> inputParamValues,
+                          SymbolTable &symtab) {
+  // If there are no constraints, we are trivially done.
+  ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
+  if (constraints.empty())
+    return {};
+
+  // Otherwise, we have constraints to evaluate.  Bind each of the input
+  // parameter names.
+  IREvaluator evaluator(&symtab);
+  ArrayRef<ParamDeclAttr> inputParamDecls = decl.getInputParamDeclsAttr();
+  assert(inputParamDecls.size() == inputParamValues.size() &&
+         "incorrect number of input parameters");
+  for (auto [paramDecl, value] : llvm::zip(inputParamDecls, inputParamValues))
+    evaluator.setParameterValue(paramDecl, value);
+
+  return evaluateConstraints(constraints, evaluator);
 }
