@@ -12,6 +12,7 @@
 #include "ASTDecl.h"
 #include "IRValues.h"
 #include "LitExprEmitter.h"
+#include "LitExprNodes.h"
 #include "LitLexer.h"
 #include "LitParserBase.h"
 
@@ -167,10 +168,13 @@ ASTDecl &LitSharedState::getDeclForSymbol(SymbolRefAttr symbol) const {
 
 /// Add a new declaration that needs to be resolved.
 ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
-                               ASTDecl *parentDecl, LitLexerCursor cursor,
-                               LitLexerCursor endCursor, ssize_t indentation) {
-  ASTDecl *decl = sharedState.allocPersistent<ASTDecl>(
-      irValue, loc, parentDecl, cursor, endCursor, indentation);
+                               ASTDecl *parentDecl,
+                               LitLexerCursor decoratorsCursor,
+                               LitLexerCursor cursor, LitLexerCursor endCursor,
+                               ssize_t indentation) {
+  ASTDecl *decl = sharedState.allocPersistent<ASTDecl>(irValue, loc, parentDecl,
+                                                       decoratorsCursor, cursor,
+                                                       endCursor, indentation);
   parsedDeclList.push_back(decl);
 
   // If this has a parent and a name, insert it into the parents name table so
@@ -208,17 +212,19 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
 
 /// Add a new declaration that needs to be resolved.
 ASTDecl &DeclResolver::addDecl(Operation *op, SMLoc loc, StringAttr name,
-                               ASTDecl *parentDecl, LitLexerCursor cursor,
-                               LitLexerCursor endCursor, ssize_t indentation) {
-  return addDecl(DeclIRValue(op), loc, name, parentDecl, cursor, endCursor,
-                 indentation);
+                               ASTDecl *parentDecl,
+                               LitLexerCursor decoratorsCursor,
+                               LitLexerCursor cursor, LitLexerCursor endCursor,
+                               ssize_t indentation) {
+  return addDecl(DeclIRValue(op), loc, name, parentDecl, decoratorsCursor,
+                 cursor, endCursor, indentation);
 }
 
 ASTDecl &DeclResolver::addFullyResolvedDecl(Operation *op, SMLoc loc,
                                             StringAttr name,
                                             ASTDecl *parentDecl) {
-  auto &decl =
-      addDecl(op, loc, name, parentDecl, LitLexerCursor(), LitLexerCursor(), 0);
+  auto &decl = addDecl(op, loc, name, parentDecl, LitLexerCursor(),
+                       LitLexerCursor(), LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
   return decl;
 }
@@ -228,7 +234,7 @@ ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal,
                                             StringAttr name, SMLoc loc,
                                             ASTDecl *parentDecl) {
   auto &decl = addDecl(declVal, loc, name, parentDecl, LitLexerCursor(),
-                       LitLexerCursor(), 0);
+                       LitLexerCursor(), LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
   return decl;
 }
@@ -384,7 +390,8 @@ struct ParsedMetaSignature {
       auto tmpDecl =
           ParamDeclRefAttr::get(name, UnresolvedType::get(p.getContext()));
       ASTDecl &paramDecl = declResolver.addDecl(
-          MValue(tmpDecl), loc, name, &decl, typeStartCursor, typeEndCursor, 0);
+          MValue(tmpDecl), loc, name, &decl, LitLexerCursor(), typeStartCursor,
+          typeEndCursor, 0);
       parsedInputs.push_back(&paramDecl);
       return success();
     };
@@ -660,11 +667,144 @@ static ParseResult resolveFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
   return success();
 }
 
+namespace {
+struct FnDecorators {
+  /// This is set to true by @staticmethod.
+  bool isStatic = false;
+  /// This is set to true by @interface.
+  bool isInterface = false;
+  /// This is set to true by @raises.
+  bool raises = false;
+  /// This is set by @implementedInterface(x).
+  FlatSymbolRefAttr implementedInterface;
+  // This is set to true by @export.
+  bool isExported = false;
+
+  void processDecorator(ExprNode *decorator, LitParserBase &parser);
+};
+} // namespace
+
+// Process a function decorator.
+void FnDecorators::processDecorator(ExprNode *decorator,
+                                    LitParserBase &parser) {
+  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+    if (declRef->spelling == "staticmethod")
+      isStatic = true;
+    else if (declRef->spelling == "interface")
+      isInterface = true;
+    else if (declRef->spelling == "export")
+      isExported = true;
+    else if (declRef->spelling == "raises")
+      raises = true;
+    else
+      parser.emitError(decorator->getLoc(), "unsupported decorator: ")
+          << declRef->spelling;
+    return;
+  }
+
+  // `x()` forms.
+  if (auto callNode = dyn_cast<CallNode>(decorator)) {
+    auto declRef = dyn_cast<DeclRefNode>(callNode->callee);
+    if (!declRef || declRef->spelling != "implements") {
+      parser.emitError(decorator->getLoc(), "unsupported decorator");
+      return;
+    }
+    if (callNode->args.size() != 1 ||
+        !isa<DeclRefNode>(callNode->args.front())) {
+      parser.emitError(
+          decorator->getLoc(),
+          "@implements decorator must specify one interface by name");
+      return;
+    }
+    if (implementedInterface) {
+      parser.emitError(decorator->getLoc(),
+                       "only one @implements decorator is allowed");
+      return;
+    }
+
+    // FIXME: This is incorrect. This should do name lookup on the specified
+    // name and use getSymbolRef() on the returned ASTDecl, rather than forming
+    // it directly.  There is no reason to force interfaces to be top-level.
+    StringRef interfaceName =
+        cast<DeclRefNode>(callNode->args.front())->spelling;
+    implementedInterface =
+        FlatSymbolRefAttr::get(parser.getContext(), interfaceName);
+    return;
+  }
+
+  parser.emitError(decorator->getLoc(), "unsupported decorator");
+}
+
+ParseResult DeclResolver::processDecorators(LIT::FuncOp funcOp, ASTDecl &decl) {
+  // If no decorators were found bail out.
+  if (!decl.getDecoratorsCursor().getState())
+    return success();
+
+  LitLexer lexer(sharedState, decl.getDecoratorsCursor());
+  LitParserBase p(lexer);
+  Location loc = funcOp.getLoc();
+  // Process any decorators we will eventually want when they come up.
+  FnDecorators attrs;
+
+  ExprNode *decoratorNode;
+  // The lexer is reset to getDecoratorsCursor() so the next token must be `@`.
+  p.consumeToken(LitToken::at);
+  do {
+    if (p.parseExpression(decoratorNode,
+                          decl.getParentDecl()->getIndentation()))
+      return failure();
+    attrs.processDecorator(decoratorNode, p);
+  } while (p.consumeIf(LitToken::at));
+
+  // Is this a method?
+  bool isMethod = isa<StructDeclOp>(*decl.getParentDecl());
+
+  if (attrs.isStatic && !isMethod) {
+    p.emitError(loc, "only methods on structs may be declared static");
+    attrs.isStatic = false;
+  }
+
+  if (attrs.isInterface && attrs.implementedInterface)
+    p.emitError(loc, "interfaces cannot implement other interfaces");
+
+  if (attrs.isInterface && isMethod)
+    p.emitError(loc, "interfaces cannot be nested inside a struct");
+
+  if (attrs.isExported) {
+    if (isMethod)
+      p.emitError(loc, "methods cannot be exported");
+    else {
+      ASTDecl *containingDecl = decl.getParentDecl();
+      containingDecl->getDeclEndBuilder().create<ExportOp>(
+          loc, ArrayAttr::get(containingDecl->getContext(),
+                              {FlatSymbolRefAttr::get(funcOp.getNameAttr())}));
+    }
+  }
+
+  if (attrs.isInterface)
+    funcOp.setIsInterface(true);
+  if (attrs.implementedInterface)
+    funcOp.setImplementsAttr(attrs.implementedInterface);
+  if (attrs.isStatic)
+    funcOp.setIsStatic(true);
+
+  // Remember if this was declared as a 'def' or 'fn' because this affects
+  // certain downstream behavior.
+  if (funcOp.getIsDef() && attrs.raises)
+    p.emitError(loc, "methods defined with 'def' always raise");
+
+  if (funcOp.getIsDef() || attrs.raises)
+    funcOp.setRaises(true);
+  return success();
+}
+
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
 ///              "(" [value_param_list] ")" ["->" expression] ":" suite
 ///
 LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
                                              LitLexer &lexer, ASTDecl &decl) {
+  if (processDecorators(funcOp, decl))
+    return failure();
   LitParserBase p(lexer);
 
   // Add meta parameters from an enclosing declaration to the symbol table.
@@ -865,7 +1005,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     builder.create<POP::StoreOp>(bbArg.getLoc(), bbArg, varDecl,
                                  /*alignment*/ None);
   }
-
   return success();
 }
 
@@ -931,6 +1070,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,
 ///
 LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
                                              ASTDecl &decl) {
+  if (decl.getDecoratorsCursor().getState())
+    emitError(varOp.getLoc(), "no var decorators supported yet");
   LitParserBase p(lexer);
   ASTType type;
   // Parse the type if present.
@@ -1006,6 +1147,8 @@ ParseResult DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer,
 ///
 LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
                                              LitLexer &lexer, ASTDecl &decl) {
+  if (decl.getDecoratorsCursor().getState())
+    emitError(paramDeclOp.getLoc(), "no alias decorators supported yet");
   LitParserBase p(lexer);
   ASTType type;
   // Parse the type if present.
@@ -1074,6 +1217,9 @@ ParseResult DeclResolver::resolveBody(ParamDeclareOp op, LitLexer &lexer,
 ///
 LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                              LitLexer &lexer, ASTDecl &decl) {
+  if (decl.getDecoratorsCursor().getState())
+    emitError(structOp.getLoc(), "no struct decorators supported yet");
+
   LitParserBase p(lexer);
 
   ParsedMetaSignature metaSignature(decl);

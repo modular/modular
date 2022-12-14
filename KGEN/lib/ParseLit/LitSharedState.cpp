@@ -145,9 +145,9 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   // Add an empty struct with the specified name to the resolver.
   auto addEmptyStructDecl = [&](StringRef name, ASTDecl *&decl) {
     auto structOp = b.create<StructDeclOp>(loc, b.getStringAttr(name));
-    decl = &resolver.addDecl(structOp, builtinsDecl.getLoc(),
-                             structOp.getNameAttr(), &builtinsDecl,
-                             LitLexerCursor(), LitLexerCursor(), 0);
+    decl = &resolver.addDecl(
+        structOp, builtinsDecl.getLoc(), structOp.getNameAttr(), &builtinsDecl,
+        LitLexerCursor(), LitLexerCursor(), LitLexerCursor(), 0);
     decl->setSelfType(decl->computeSelfTypeForStruct(*this));
     decl->resolvedness = DeclResolvedness::fullyResolved;
   };

@@ -57,11 +57,13 @@ public:
 
   /// Add a new declaration that needs to be resolved.
   ASTDecl &addDecl(Operation *decl, llvm::SMLoc loc, StringAttr name,
-                   ASTDecl *parentDecl, LitLexerCursor cursor,
-                   LitLexerCursor endCursor, ssize_t indentation);
+                   ASTDecl *parentDecl, LitLexerCursor decoratorsCursor,
+                   LitLexerCursor cursor, LitLexerCursor endCursor,
+                   ssize_t indentation);
   ASTDecl &addDecl(DeclIRValue decl, llvm::SMLoc loc, StringAttr name,
-                   ASTDecl *parentDecl, LitLexerCursor cursor,
-                   LitLexerCursor endCursor, ssize_t indentation);
+                   ASTDecl *parentDecl, LitLexerCursor decoratorsCursor,
+                   LitLexerCursor cursor, LitLexerCursor endCursor,
+                   ssize_t indentation);
 
   /// Add a declaration that is already fully resolved.
   ASTDecl &addFullyResolvedDecl(Operation *decl, llvm::SMLoc loc,
@@ -115,6 +117,8 @@ private:
   ParseResult resolveBody(ParamDeclareOp op, LitLexer &lexer, ASTDecl &decl);
 
 private:
+  ParseResult processDecorators(LIT::FuncOp funcOp, ASTDecl &decl);
+
   /// This is shared state across the whole parser.
   LitSharedState &sharedState;
 

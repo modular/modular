@@ -65,16 +65,16 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
   // https://docs.python.org/3/library/functions.html#built-in-funcs
   // https://docs.python.org/3/reference/executionmodel.html#naming-and-binding
   ASTDecl &builtinsDecl = sharedState.declResolver->addDecl(
-      *module, startSMLoc, StringAttr(), nullptr, lexer.getCursor(),
-      lexer.getCursor(), -1);
+      *module, startSMLoc, StringAttr(), nullptr, LitLexerCursor(),
+      lexer.getCursor(), lexer.getCursor(), -1);
   sharedState.addBuiltinTypes(builtinsDecl);
   builtinsDecl.resolvedness = DeclResolvedness::fullyResolved;
 
   // Create the module scope which will contain all things we parse.  These
   // shadow the builtins module during name lookup.
   ASTDecl &fileScope = sharedState.declResolver->addDecl(
-      *module, startSMLoc, StringAttr(), &builtinsDecl, lexer.getCursor(),
-      lexer.getCursor(), -1);
+      *module, startSMLoc, StringAttr(), &builtinsDecl, LitLexerCursor(),
+      lexer.getCursor(), lexer.getCursor(), -1);
 
   // If we are emitting debug info, create a file entry for this file.
   DebugInfo::DIBuilder::ScopeGuard fileGuard;

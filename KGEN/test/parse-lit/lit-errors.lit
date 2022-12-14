@@ -155,10 +155,11 @@ struct Issue4181IndentWeirdness[dt: DType]:
     def f():
       pass
 
-@decorator # expected-error {{no struct decorators supported yet}}
+@decorator
+# expected-error @+1 {{no struct decorators supported yet}}
 struct DecoratedStruct:
 
-@decorator # expected-error {{no var decorators supported yet}}
+@decorator # expected-error @+1 {{no var decorators supported yet}}
 var DecoratedVar: Int
 
 @invalidDec # expected-error {{unsupported decorator: invalidDec}}

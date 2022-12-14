@@ -84,12 +84,12 @@ struct LitStmtParser : public LitParserBase {
 
   // Declarations.
   ParseResult parseIncludeHack();
-  ParseResult parseDefFnStmt(ArrayRef<ExprNode *> decorators, size_t curIndent);
-  ParseResult parseStructStmt(ArrayRef<ExprNode *> decorators,
+  ParseResult parseDefFnStmt(LitLexerCursor decoratorsCursor, size_t curIndent);
+  ParseResult parseStructStmt(LitLexerCursor decoratorsCursor,
                               size_t curIndent);
-  ParseResult parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
+  ParseResult parseVarDeclStmt(LitLexerCursor decoratorsCursor,
                                size_t stmtIndent);
-  ParseResult parseAliasDeclStmt(ArrayRef<ExprNode *> decorators,
+  ParseResult parseAliasDeclStmt(LitLexerCursor decoratorsCursor,
                                  size_t stmtIndent);
 
 private:
@@ -221,7 +221,7 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
       emitError() << "'" << getToken().getSpelling()
                   << "' statement must be on its own line";
   };
-
+  LitLexerCursor startDecoratorsCursor;
   switch (getToken().getKind()) {
     //===------------------------------------------------------------------===//
     // Compound statements.
@@ -244,25 +244,24 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     return parseStructStmt(/*decorators=*/{}, stmtIndent);
 
   case LitToken::at: {
-    SmallVector<ExprNode *> decorators;
+    startDecoratorsCursor = getLexer().getCursor();
     consumeToken(LitToken::at);
     do {
-      if (parseExpression(decorators.emplace_back(), stmtIndent))
-        return failure();
+      skipUntilIndentation(stmtIndent);
     } while (consumeIf(LitToken::at));
 
     switch (getToken().getKind()) {
     case LitToken::kw_def:
     case LitToken::kw_fn:
       rejectSimpleStmt(); // Not a simple_stmt.
-      return parseDefFnStmt(decorators, stmtIndent);
+      return parseDefFnStmt(startDecoratorsCursor, stmtIndent);
     case LitToken::kw_struct:
       rejectSimpleStmt(); // Not a simple_stmt.
-      return parseStructStmt(decorators, stmtIndent);
+      return parseStructStmt(startDecoratorsCursor, stmtIndent);
     case LitToken::kw_var:
-      return parseVarDeclStmt(decorators, stmtIndent);
+      return parseVarDeclStmt(startDecoratorsCursor, stmtIndent);
     case LitToken::kw_alias:
-      return parseAliasDeclStmt(decorators, stmtIndent);
+      return parseAliasDeclStmt(startDecoratorsCursor, stmtIndent);
 
     default:
       return emitError("unknown decorated statement");
@@ -281,9 +280,9 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     consumeToken();
     return success();
   case LitToken::kw_var:
-    return parseVarDeclStmt(/*decorators=*/{}, stmtIndent);
+    return parseVarDeclStmt(LitLexerCursor(), stmtIndent);
   case LitToken::kw_alias:
-    return parseAliasDeclStmt(/*decorators=*/{}, stmtIndent);
+    return parseAliasDeclStmt(LitLexerCursor(), stmtIndent);
   case LitToken::kw_return:
     return parseReturnStmt(stmtIndent);
   case LitToken::kw_raise:
@@ -710,73 +709,7 @@ ParseResult LitStmtParser::parseIncludeHack() {
 // Definition statements
 //===----------------------------------------------------------------------===//
 
-namespace {
-struct FnAttributes {
-  /// This is set to true by @staticmethod.
-  bool isStatic = false;
-  /// This is set to true by @interface.
-  bool isInterface = false;
-  /// This is set to true by @raises.
-  bool raises = false;
-  /// This is set by @implementedInterface(x).
-  FlatSymbolRefAttr implementedInterface;
-  // This is set to true by @export.
-  bool isExported = false;
-
-  void processDecorator(ExprNode *decorator, LitStmtParser &parser);
-};
-} // namespace
-
-// Process a function decorator.
-void FnAttributes::processDecorator(ExprNode *decorator,
-                                    LitStmtParser &parser) {
-  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-    if (declRef->spelling == "staticmethod")
-      isStatic = true;
-    else if (declRef->spelling == "interface")
-      isInterface = true;
-    else if (declRef->spelling == "export")
-      isExported = true;
-    else if (declRef->spelling == "raises")
-      raises = true;
-    else
-      parser.emitError(decorator->getLoc(), "unsupported decorator: ")
-          << declRef->spelling;
-    return;
-  }
-
-  // `x()` forms.
-  if (auto callNode = dyn_cast<CallNode>(decorator)) {
-    auto declRef = dyn_cast<DeclRefNode>(callNode->callee);
-    if (!declRef || declRef->spelling != "implements") {
-      parser.emitError(decorator->getLoc(), "unsupported decorator");
-      return;
-    }
-    if (callNode->args.size() != 1 ||
-        !isa<DeclRefNode>(callNode->args.front())) {
-      parser.emitError(
-          decorator->getLoc(),
-          "@implements decorator must specify one interface by name");
-      return;
-    }
-    if (implementedInterface)
-      parser.emitError(decorator->getLoc(),
-                       "only one @implements decorator is allowed");
-
-    // FIXME: This is incorrect. This should do name lookup on the specified
-    // name and use getSymbolRef() on the returned ASTDecl, rather than forming
-    // it directly.  There is no reason to force interfaces to be top-level.
-    StringRef interfaceName =
-        cast<DeclRefNode>(callNode->args.front())->spelling;
-    implementedInterface =
-        FlatSymbolRefAttr::get(parser.getContext(), interfaceName);
-    return;
-  }
-
-  parser.emitError(decorator->getLoc(), "unsupported decorator");
-}
-
-ParseResult LitStmtParser::parseDefFnStmt(ArrayRef<ExprNode *> decorators,
+ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor decoratorsCursor,
                                           size_t curIndent) {
   // isDef is true when introduced by the 'def' keywords instead of 'fn'.
   bool isDef = getToken().is(LitToken::kw_def);
@@ -787,67 +720,23 @@ ParseResult LitStmtParser::parseDefFnStmt(ArrayRef<ExprNode *> decorators,
   if (parseIdentifier(name, "expected function name"))
     return failure();
 
-  // Process any decorators we will eventually want when they come up.
-  FnAttributes attrs;
-  for (ExprNode *decorator : decorators)
-    attrs.processDecorator(decorator, *this);
-
-  // Is this a method?
-  bool isMethod = false;
-  StringAttr baseName = name; // Save the unmangled name.
-  if (auto structDecl = dyn_cast<StructDeclOp>(containingDecl))
-    isMethod = true;
-
-  if (attrs.isStatic && !isMethod) {
-    emitError(loc, "only methods on structs may be declared static");
-    attrs.isStatic = false;
-  }
-
-  if (attrs.isInterface && attrs.implementedInterface)
-    emitError(loc, "interfaces cannot implement other interfaces");
-
-  if (attrs.isInterface && isMethod)
-    emitError(loc, "interfaces cannot be nested inside a struct");
-
-  if (attrs.isExported) {
-    if (isMethod)
-      emitError(loc, "methods cannot be exported");
-    else
-      builder.create<ExportOp>(translateLocation(loc),
-                               ArrayAttr::get(containingDecl.getContext(),
-                                              {FlatSymbolRefAttr::get(name)}));
-  }
-
-  auto funcDecl = builder.create<LIT::FuncOp>(translateLocation(loc), name);
-  if (attrs.isInterface)
-    funcDecl.setIsInterface(true);
-  if (attrs.implementedInterface)
-    funcDecl.setImplementsAttr(attrs.implementedInterface);
-  if (attrs.isStatic)
-    funcDecl.setIsStatic(true);
-
-  // Remember if this was declared as a 'def' or 'fn' because this affects
-  // certain downstream behavior.
-  if (isDef) {
-    funcDecl.setIsDef(true);
-    // Defs always raise.
-    if (attrs.raises)
-      emitError(loc, "methods defined with 'def' always raise");
-  }
-  if (isDef || attrs.raises)
-    funcDecl.setRaises(true);
-
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
   auto startCursor = getLexer().getCursor();
   skipUntilIndentation(curIndent);
 
-  getDeclResolver().addDecl(funcDecl, loc, baseName, &containingDecl,
-                            startCursor, getLexer().getCursor(), curIndent);
+  auto funcDecl = builder.create<LIT::FuncOp>(translateLocation(loc), name);
+  if (isDef) {
+    funcDecl.setIsDef(true);
+    funcDecl.setRaises(true);
+  }
+  getDeclResolver().addDecl(funcDecl, loc, name, &containingDecl,
+                            decoratorsCursor, startCursor,
+                            getLexer().getCursor(), curIndent);
   return success();
 }
 
-ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
+ParseResult LitStmtParser::parseVarDeclStmt(LitLexerCursor decoratorsCursor,
                                             size_t stmtIndent) {
   auto smLoc = consumeToken(LitToken::kw_var).getLoc();
   auto loc = translateLocation(smLoc);
@@ -870,10 +759,6 @@ ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
     declOp = builder.create<VarDeclOp>(loc, varType, name);
   }
 
-  // Process any decorators we will eventually want when they come up.
-  if (!decorators.empty())
-    emitError(decorators[0]->getLoc(), "no var decorators supported yet");
-
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
   auto startCursor = getLexer().getCursor();
@@ -881,13 +766,14 @@ ParseResult LitStmtParser::parseVarDeclStmt(ArrayRef<ExprNode *> decorators,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(declOp, smLoc, name, &containingDecl, startCursor,
+  getDeclResolver().addDecl(declOp, smLoc, name, &containingDecl,
+                            decoratorsCursor, startCursor,
                             getLexer().getCursor(), stmtIndent);
 
   return success();
 }
 
-ParseResult LitStmtParser::parseAliasDeclStmt(ArrayRef<ExprNode *> decorators,
+ParseResult LitStmtParser::parseAliasDeclStmt(LitLexerCursor decoratorsCursor,
                                               size_t stmtIndent) {
   auto smLoc = consumeToken(LitToken::kw_alias).getLoc();
   auto loc = translateLocation(smLoc);
@@ -902,10 +788,6 @@ ParseResult LitStmtParser::parseAliasDeclStmt(ArrayRef<ExprNode *> decorators,
   auto declOp = builder.create<ParamDeclareOp>(
       loc, ParamDeclAttr::get(name, type), value);
 
-  // Process any decorators we will eventually want when they come up.
-  if (!decorators.empty())
-    emitError(decorators[0]->getLoc(), "no alias decorators supported yet");
-
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
   auto startCursor = getLexer().getCursor();
@@ -913,12 +795,13 @@ ParseResult LitStmtParser::parseAliasDeclStmt(ArrayRef<ExprNode *> decorators,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(declOp, smLoc, name, &containingDecl, startCursor,
+  getDeclResolver().addDecl(declOp, smLoc, name, &containingDecl,
+                            decoratorsCursor, startCursor,
                             getLexer().getCursor(), stmtIndent);
   return success();
 }
 
-ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
+ParseResult LitStmtParser::parseStructStmt(LitLexerCursor decoratorsCursor,
                                            size_t curIndent) {
   // We don't support structs in structs (yet?).
   if (isa<StructDeclOp>(containingDecl))
@@ -934,10 +817,6 @@ ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
 
   auto newStruct = builder.create<StructDeclOp>(loc, nameAttr);
 
-  // Process any decorators we will eventually want when they come up.
-  if (!decorators.empty())
-    emitError(decorators[0]->getLoc(), "no struct decorators supported yet");
-
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
   auto startCursor = getLexer().getCursor();
@@ -946,7 +825,8 @@ ParseResult LitStmtParser::parseStructStmt(ArrayRef<ExprNode *> decorators,
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
   getDeclResolver().addDecl(newStruct, smLoc, nameAttr, &containingDecl,
-                            startCursor, getLexer().getCursor(), curIndent);
+                            decoratorsCursor, startCursor,
+                            getLexer().getCursor(), curIndent);
 
   return success();
 }
