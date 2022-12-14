@@ -11,6 +11,7 @@
 #include "LitDecls.h"
 #include "ASTDecl.h"
 #include "IRValues.h"
+#include "LitExprEmitter.h"
 #include "LitLexer.h"
 #include "LitParserBase.h"
 

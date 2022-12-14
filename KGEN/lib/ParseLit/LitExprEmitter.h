@@ -3,11 +3,6 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
-//
-// This file defines the ExprNode base class and support classes used for
-// emission.
-//
-//===----------------------------------------------------------------------===//
 
 #ifndef LIT_EXPREMITTER_H
 #define LIT_EXPREMITTER_H
@@ -18,6 +13,8 @@
 namespace M::KGEN::LIT {
 enum class SpecialFunctionKind : uint8_t;
 
+/// This class is the main driver for expression emission, providing helper
+/// functions used by the individual node emission hooks.
 class ExprEmitter {
 public:
   //===--------------------------------------------------------------------===//

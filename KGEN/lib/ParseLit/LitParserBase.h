@@ -12,7 +12,6 @@
 #ifndef LIT_PARSER_BASE_H
 #define LIT_PARSER_BASE_H
 
-#include "LitExprs.h"
 #include "LitLexer.h"
 #include "mlir/IR/Diagnostics.h"
 

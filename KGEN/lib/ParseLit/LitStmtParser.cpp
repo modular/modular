@@ -10,6 +10,7 @@
 
 #include "ASTDecl.h"
 #include "LitDecls.h"
+#include "LitExprEmitter.h"
 #include "LitExprNodes.h"
 #include "LitLexer.h"
 #include "LitParserBase.h"
