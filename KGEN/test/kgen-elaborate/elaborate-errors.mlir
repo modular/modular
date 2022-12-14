@@ -214,3 +214,26 @@ kgen.generator @sizeof_unknown() {
   %0 = kgen.param.constant = <get_sizeof(!kgen.declref<@Unknown>, #kgen.target<host>)>
   kgen.return
 }
+
+// -----
+
+// FIXME: Error handling needs to be cleaned up to emit fewer spurious notes.
+
+// expected-note @below {{failed to expand this declaration}}
+// expected-note @below {{call expansion failed}}
+// expected-note @below {{failed to interpret function @cant_interpret}}
+kgen.func @cant_interpret(%arg0: index) -> index {
+  // expected-note @below {{failed to expand this declaration}}
+  // expected-note @below {{failed to fold operation some.op(1 : index)}}
+  %0 = "some.op"(%arg0) : (index) -> index
+  kgen.return %0 : index
+}
+
+// expected-error @below {{no viable implementations found}}
+kgen.generator @interp_func() {
+  // expected-note @below {{call expansion failed}}
+  // expected-note @below {{failed to expand this declaration}}
+  // expected-note @below {{failed to evaluate 'apply'}}
+  %0 = kgen.param.constant = <apply(:(index) -> index @cant_interpret, 1)>
+  kgen.return
+}

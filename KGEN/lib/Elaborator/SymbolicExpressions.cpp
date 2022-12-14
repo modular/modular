@@ -115,38 +115,61 @@ static ErrorOr<int64_t> computeSizeof(SymbolTable &symtab,
 // IR Interpreter
 //===----------------------------------------------------------------------===//
 
-static std::variant<EvalError, TypedAttr>
-evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
+/// Report an error with folding an operation.
+static EvalError reportFoldError(FuncOp func, Operation &op,
+                                 ArrayRef<Attribute> operands,
+                                 const Twine &prefix,
+                                 const Twine &suffix = "") {
+  EvalError error("failed to interpret function @" + func.getName());
+  std::string note;
+  llvm::raw_string_ostream os(note);
+  os << prefix << op.getName() << '(';
+  llvm::interleaveComma(operands, os);
+  os << ')' << suffix;
+  error.notes.emplace_back(op.getLoc(), Error(os.str()));
+  return error;
+}
+
+std::variant<EvalError, TypedAttr>
+IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
+  // Make sure the function is inflated.
+  asyncMap.mapChained(func, [&](LLCL::AnyAsyncValueRef ch) {
+    return Cache::inflateOp(func, regionCache.copy(), std::move(ch));
+  });
+  asyncMap.await(func);
+
   DenseMap<Value, Attribute> values;
   // Map the function argument values.
   for (auto [arg, input] : llvm::zip(func.getArguments(), inputs))
     values.try_emplace(arg, input);
 
-  std::string errMsg("IR interpreter failed: ");
-  llvm::raw_string_ostream err(errMsg);
+  // This is the top-level error that will be returned if one occurs.
+  EvalError error("failed to evaluate 'apply'");
+  auto reportError = [&](EvalError note) {
+    error.notes.emplace_back(func.getLoc(), std::move(note));
+    return std::move(error);
+  };
 
   // "Interpret" the IR by calling operation folders.
   SmallVector<Attribute> operands;
   SmallVector<OpFoldResult> results;
   for (Operation &op : func.getBody()->without_terminator()) {
     operands.clear();
+    results.clear();
     for (Value operand : op.getOperands())
       operands.push_back(values.lookup(operand));
-    if (failed(op.fold(operands, results))) {
-      // FIXME: We need to report the location error, but the elaborator isn't
-      // set up to attach "notes" the elaboration diagnostics.
-      err << "could not fold operation " << op.getName() << '(';
-      llvm::interleaveComma(operands, err);
-      err << ") in function @" << func.getName();
-      return Error(err.str());
-    }
-    for (auto [result, output] : llvm::zip(results, op.getResults())) {
+    if (failed(op.fold(operands, results)))
+      return reportError(
+          reportFoldError(func, op, operands, "failed to fold operation "));
+
+    for (auto [i, result, output] :
+         llvm::zip(llvm::seq<unsigned>(0, op.getNumResults()), results,
+                   op.getResults())) {
       auto value = result.dyn_cast<Attribute>();
       if (!value) {
-        err << "folder for operation " << op.getName()
-            << " did not return a constant value, in function @"
-            << func.getName();
-        return Error(err.str());
+        return reportFoldError(func, op, operands, "operation folder ",
+                               " did not return a value for result #" +
+                                   Twine(i));
       }
       values.try_emplace(output, value);
     }
@@ -157,9 +180,9 @@ evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   Attribute result = values.lookup(func.getReturnOp().getOperand(0));
   if (auto expr = dyn_cast<TypedAttr>(result))
     return expr;
-  err << "function @" << func.getName()
-      << " result is not a parameter expression";
-  return Error(err.str());
+
+  return reportError(Error("function @" + func.getName() +
+                           " result is not a parameter expression"));
 }
 
 //===----------------------------------------------------------------------===//
@@ -192,9 +215,9 @@ IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
 
     ErrorOr<int64_t> indexResult = 0;
     if (op.getOpcode() == POC::GetSizeOf)
-      indexResult = computeStructSizeof(*symtab, target, ref);
+      indexResult = computeStructSizeof(symtab, target, ref);
     else
-      indexResult = computeStructAlignof(*symtab, target, ref);
+      indexResult = computeStructAlignof(symtab, target, ref);
 
     if (indexResult.isError()) {
       emitError(indexResult.takeError());
@@ -211,7 +234,7 @@ IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
     auto ref = dyn_cast<FlatSymbolRefAttr>(symbol.getSymbol());
     if (!llvm::all_of(operands, ParameterAttr::isSimpleConstant) || !ref)
       return failure();
-    auto func = symtab->lookup<FuncOp>(ref.getAttr());
+    auto func = symtab.lookup<FuncOp>(ref.getAttr());
     if (!func)
       return failure();
 
@@ -305,7 +328,7 @@ KGEN::evaluateConstraints(ArrayRef<ConstraintAttr> constraints,
 Optional<EvalDiagnostic>
 KGEN::evaluateConstraints(DeclInterface decl,
                           ArrayRef<Attribute> inputParamValues,
-                          SymbolTable &symtab) {
+                          IREvaluator &evaluator) {
   // If there are no constraints, we are trivially done.
   ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
   if (constraints.empty())
@@ -313,7 +336,6 @@ KGEN::evaluateConstraints(DeclInterface decl,
 
   // Otherwise, we have constraints to evaluate.  Bind each of the input
   // parameter names.
-  IREvaluator evaluator(&symtab);
   ArrayRef<ParamDeclAttr> inputParamDecls = decl.getInputParamDeclsAttr();
   assert(inputParamDecls.size() == inputParamValues.size() &&
          "incorrect number of input parameters");
