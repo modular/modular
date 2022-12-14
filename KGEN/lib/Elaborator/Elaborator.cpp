@@ -36,59 +36,6 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
-// ElaborationDiagnostic class definition
-//===----------------------------------------------------------------------===//
-
-class ElaborationDiagnostic;
-
-/// This class models the location of a declaration that failed to expand along
-/// with the reason why it failed.
-using CalleeExpansionError = std::pair<Location, ElaborationDiagnostic>;
-
-/// This class represents the reason that a  generator could not be elaborated.
-/// It is either a local problem in the generator (e.g. an operator defining a
-/// parameter that is unknown) or it is a call to another set of generators that
-/// had problems expanding.
-class ElaborationDiagnostic {
-public:
-  ElaborationDiagnostic(Location failureLoc, Error error)
-      : failureLoc(failureLoc), payload(std::string(error.get())) {}
-  ElaborationDiagnostic(Location failureLoc,
-                        ArrayRef<CalleeExpansionError> calleeErrors)
-      : failureLoc(failureLoc), payload(calleeErrors.vec()) {}
-
-  bool operator==(const ElaborationDiagnostic &diag) const {
-    return failureLoc == diag.failureLoc && payload == diag.payload;
-  }
-
-  /// This is the location within the declaration of the failure, e.g. of the
-  /// call or other operator with a problem.
-  Location getFailureLoc() const { return failureLoc; }
-
-  bool isLocalError() const {
-    return std::holds_alternative<std::string>(payload);
-  }
-  bool isCalleeError() const { return !isLocalError(); }
-
-  StringRef getLocalMessage() const { return std::get<std::string>(payload); }
-  MutableArrayRef<CalleeExpansionError> getCalleeErrors() {
-    return std::get<std::vector<CalleeExpansionError>>(payload);
-  }
-
-private:
-  /// This is the location within the declaration of the failure, e.g. of the
-  /// call or other operator with a problem.
-  Location failureLoc;
-
-  /// The problem is either:
-  ///   1) a local issue represented as an error on an operation.
-  ///   2) a transitive issue where expansion of a call failed (the main
-  ///      location) due to callees where something inside the callee failed to
-  ///      expand.  Each callee has a location of the decl itself + the problem.
-  std::variant<std::string, std::vector<CalleeExpansionError>> payload;
-};
-
-//===----------------------------------------------------------------------===//
 // ElaboratedGenerator class definition
 //===----------------------------------------------------------------------===//
 
@@ -180,9 +127,6 @@ void ElaboratedGenerator::addBinding(DeclAndInputParamsPair declAndInputParams,
     addOneBinding(binding.first, binding.second);
 }
 
-using ElaboratedGeneratorOrCalleeError =
-    std::variant<ElaboratedGenerator, CalleeExpansionError>;
-
 //===----------------------------------------------------------------------===//
 // RegionReferenceAttr
 //===----------------------------------------------------------------------===//
@@ -247,7 +191,7 @@ public:
 
   /// Return all instantiations of the specified declaration (a func,
   /// generator, or interface) with the specified input parameter values.
-  ArrayRef<ElaboratedGeneratorOrCalleeError>
+  ArrayRef<ErrorTreeOr<ElaboratedGenerator>>
   getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
                        size_t expansionDepth, bool inlined = false);
 
@@ -368,28 +312,27 @@ private:
   ///
   /// SourceModule indicates which module in the included library this
   /// originally came from (likely not the primary module).
-  SmallVector<ElaboratedGeneratorOrCalleeError>
+  SmallVector<ErrorTreeOr<ElaboratedGenerator>>
   specializeFunc(FuncOp func, ModuleOp sourceModule, size_t expansionDepth,
                  bool inlined);
 
   /// Specialize a generator with the specified input parameters and return
   /// the generated func.
-  SmallVector<ElaboratedGeneratorOrCalleeError>
+  SmallVector<ErrorTreeOr<ElaboratedGenerator>>
   specializeGenerator(DeclAndInputParamsPair declAndInputParams,
                       size_t expansionDepth, bool inlined);
 
   /// Specialize a generator interface with the specified input parameters and
   /// return the generated func.
-  SmallVector<ElaboratedGeneratorOrCalleeError>
+  SmallVector<ErrorTreeOr<ElaboratedGenerator>>
   specializeInterface(DeclAndInputParamsPair declAndInputParams,
                       size_t expansionDepth, bool inlined);
 
   /// Report an error given an interface and an error string - just reduces
   /// boilerplate around CalleeExpansionError creation.
-  ElaboratedGeneratorOrCalleeError
+  ErrorTreeOr<ElaboratedGenerator>
   reportCalleeExpansionError(GeneratorInterfaceOp itf, Twine err) {
-    return CalleeExpansionError(
-        itf->getLoc(), ElaborationDiagnostic(itf->getLoc(), Error(err)));
+    return ErrorTree(itf.getLoc(), err);
   };
 
   /// Instantiate a new evaluator with the given parameters.
@@ -427,7 +370,7 @@ private:
   /// generator/interface and input parameters, the result are all-possible
   /// funcs that could be generated from this.
   DenseMap<DeclAndInputParamsPair,
-           SmallVector<ElaboratedGeneratorOrCalleeError>>
+           SmallVector<ErrorTreeOr<ElaboratedGenerator>>>
       generatedFuncs;
 
   /// This is keeps track of a mapping from named regions (which get pulled
@@ -500,20 +443,6 @@ struct RegionReturn {
 /// this keeps each entry in the worklist one pointer.
 using RewriterCommandType = llvm::PointerUnion<Operation *, RegionReturn *>;
 
-/// Convert an EvalDiagnostic to ElaborationDiagnostic.
-/// FIXME: Unify the two into an "error tree" data structure.
-static ElaborationDiagnostic
-convertEvalErrorToElaborationError(Location loc, EvalError error) {
-  if (error.notes.empty())
-    return {loc, std::move(error.error)};
-  SmallVector<CalleeExpansionError> causes;
-  causes.push_back({loc, {loc, std::move(error.error)}});
-  for (EvalDiagnostic &note : error.notes)
-    causes.push_back({note.first, convertEvalErrorToElaborationError(
-                                      note.first, std::move(note.second))});
-  return {loc, causes};
-}
-
 namespace {
 /// This class keeps a set of defined parameter values and is used to evaluate
 /// and simplify operations in a func based on those values.  If an error
@@ -563,21 +492,21 @@ public:
   /// If elaboration of this func fails, then the client can get the error
   /// out.  This also deallocates the body of the dead husk of the func which
   /// may not even verify correctly, it will be removed later.
-  CalleeExpansionError takeDiagnosticAndEraseFunc();
+  ErrorTree takeDiagnosticAndEraseFunc();
 
   /// Generate an error expanding this generator.  The location specified is
   /// the operation with the problem, and the message is the problem with it.
   LogicalResult error(Location loc, Error message) {
     assert(!diagnostic.has_value() && "Already emitted an error");
-    diagnostic = ElaborationDiagnostic(loc, std::move(message));
+    diagnostic = ErrorTree(loc, std::move(message));
     return failure();
   }
 
   /// Generate an error expanding this generator that occurred while
   /// concretizing a parameter expression.
-  LogicalResult error(Location loc, EvalError error) {
+  LogicalResult error(ErrorTree error) {
     assert(!diagnostic.has_value() && "Already emitted an error");
-    diagnostic = convertEvalErrorToElaborationError(loc, std::move(error));
+    diagnostic.emplace(std::move(error));
     return failure();
   }
 
@@ -586,9 +515,10 @@ public:
   /// includes the location of the declaration that failed to expand along
   /// with why it failed.
   LogicalResult errorCalling(Location callLoc,
-                             ArrayRef<CalleeExpansionError> calleeErrors) {
+                             MutableArrayRef<ErrorTree> calleeErrors) {
     assert(!diagnostic.has_value() && "Already emitted an error");
-    diagnostic = ElaborationDiagnostic(callLoc, calleeErrors);
+    diagnostic.emplace(
+        ErrorTree(callLoc, "call expansion failed", calleeErrors));
     return failure();
   }
 
@@ -673,7 +603,7 @@ private:
 
   /// This is the diagnostic explaining the expansion failure if something
   /// goes wrong.
-  Optional<ElaborationDiagnostic> diagnostic;
+  Optional<ErrorTree> diagnostic;
 
   /// This is a stack of evaluators to use to process parameter expressions.
   /// The current evaluator is always at the back() of the list.  Having a
@@ -791,11 +721,11 @@ LogicalResult ParameterRewriter::rewriteOps(
     // scope.
     SmallVector<Attribute> returnedParams;
     for (TypedAttr expr : rr->returnedParamExprs) {
-      std::variant<EvalError, Attribute> value =
-          getEvaluator().concretizeParameterExpr(expr);
-      if (std::holds_alternative<EvalError>(value))
-        return error(rr->returnLoc, std::move(std::get<EvalError>(value)));
-      returnedParams.push_back(std::get<Attribute>(value));
+      ErrorTreeOr<Attribute> value =
+          getEvaluator().concretizeParameterExpr(rr->returnLoc, expr);
+      if (value.isError())
+        return error(value.takeError());
+      returnedParams.push_back(value.takeValue());
     }
     // Next, pop the evaluator for the now-returned region.
     assert(evaluators.size() > 1 && "Don't have excess evaluators to pop!");
@@ -850,14 +780,14 @@ LogicalResult ParameterRewriter::rewriteOps(
 
 LogicalResult ParameterRewriter::processParamDeclareOp(ParamDeclareOp op) {
   // Simplify the input expression.
-  std::variant<EvalError, Attribute> errorOrValue =
-      getEvaluator().concretizeParameterExpr(op.getValue());
-  if (std::holds_alternative<EvalError>(errorOrValue))
-    return error(op->getLoc(), std::move(std::get<EvalError>(errorOrValue)));
+  ErrorTreeOr<Attribute> value =
+      getEvaluator().concretizeParameterExpr(op.getLoc(), op.getValue());
+  if (value.isError())
+    return error(value.takeError());
 
   // Bind it to the parameter declaration it is setting.
-  getEvaluator().setOrOverwriteParameterValue(
-      op.getParamDecl(), std::get<Attribute>(errorOrValue));
+  getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(),
+                                              value.getValue());
 
   // The kgen.param.declare operation serves no other purpose: remove it.
   op->erase();
@@ -869,7 +799,7 @@ LogicalResult ParameterRewriter::processParamSearchOp(
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Loop over all the possible candidates that we will search over, spawning
   // N-1 possibilities to explore.
-  std::vector<EvalDiagnostic> errors;
+  std::vector<ErrorTree> errors;
   Attribute firstValid;
   DenseSet<Attribute> seenValues;
   LLVM_DEBUG({
@@ -879,15 +809,14 @@ LogicalResult ParameterRewriter::processParamSearchOp(
   });
   for (Attribute candidate : op.getValues()) {
     // Simplify the input expressions.
-    std::variant<EvalError, Attribute> errorOrValue =
-        getEvaluator().concretizeParameterExpr(candidate);
-    if (std::holds_alternative<EvalError>(errorOrValue)) {
-      errors.emplace_back(op.getLoc(),
-                          std::move(std::get<EvalError>(errorOrValue)));
+    ErrorTreeOr<Attribute> errorOrValue =
+        getEvaluator().concretizeParameterExpr(op.getLoc(), candidate);
+    if (errorOrValue.isError()) {
+      errors.push_back(errorOrValue.takeError());
       continue;
     }
 
-    auto value = std::get<Attribute>(errorOrValue);
+    Attribute value = errorOrValue.takeValue();
 
     // If we've already seen this concrete value before, ignore the duplicate.
     if (!seenValues.insert(value).second)
@@ -909,10 +838,9 @@ LogicalResult ParameterRewriter::processParamSearchOp(
   // If all the expansions failed, then this call fails overall.
   if (!firstValid) {
     if (errors.empty())
-      return error(op->getLoc(), "no values to search over");
-    EvalError err("failed to concretize any search parameters");
-    err.notes = std::move(errors);
-    return error(op->getLoc(), std::move(err));
+      return error(op.getLoc(), "no values to search over");
+    return error(ErrorTree(
+        op.getLoc(), "failed to concretize any search parameters", errors));
   }
 
   completeParamSearchOpProcessing(op, firstValid);
@@ -954,29 +882,29 @@ LogicalResult ParameterRewriter::processParamConstantOp(ParamConstantOp op) {
   // ParamConstantOp projects a parameter expression into an SSA value.  We can
   // eventually lower this into lower level operators in the target set, but
   // for now we just simplify their operand.
-  std::variant<EvalError, Attribute> errorOrValue =
-      getEvaluator().concretizeParameterExpr(op.getValue());
-  if (std::holds_alternative<EvalError>(errorOrValue))
-    return error(op.getLoc(), std::move(std::get<EvalError>(errorOrValue)));
+  ErrorTreeOr<Attribute> value =
+      getEvaluator().concretizeParameterExpr(op.getLoc(), op.getValue());
+  if (value.isError())
+    return error(value.takeError());
 
-  std::variant<EvalError, Type> errorOrType =
-      getEvaluator().concretizeParameterExpr(op.getType());
-  if (std::holds_alternative<EvalError>(errorOrType))
-    return error(op.getLoc(), std::move(std::get<EvalError>(errorOrType)));
+  ErrorTreeOr<Type> type =
+      getEvaluator().concretizeParameterExpr(op.getLoc(), op.getType());
+  if (type.isError())
+    return error(type.takeError());
 
-  op.getResult().setType(std::get<Type>(errorOrType));
-  op.setValueAttr(std::get<Attribute>(errorOrValue));
+  op.getResult().setType(type.takeValue());
+  op.setValueAttr(value.getValue());
   return success();
 }
 
 LogicalResult ParameterRewriter::processParamAssertOp(ParamAssertOp op) {
   // Check the condition expression.
-  std::variant<EvalError, Attribute> errorOrValue =
-      getEvaluator().concretizeParameterExpr(op.getCond());
-  if (std::holds_alternative<EvalError>(errorOrValue))
-    return error(op.getLoc(), std::move(std::get<EvalError>(errorOrValue)));
+  ErrorTreeOr<Attribute> value =
+      getEvaluator().concretizeParameterExpr(op.getLoc(), op.getCond());
+  if (value.isError())
+    return error(value.takeError());
 
-  auto resultInt = dyn_cast<IntegerAttr>(std::get<Attribute>(errorOrValue));
+  auto resultInt = dyn_cast<IntegerAttr>(value.takeValue());
   if (!resultInt || resultInt.getValue().getBitWidth() != 1)
     return error(op.getLoc(),
                  "constraint evaluation didn't return true or false");
@@ -1029,13 +957,13 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
 
     // Otherwise fold the parameter expression in this context to a simple
     // constant.
-    std::variant<EvalError, Attribute> value =
-        getEvaluator().concretizeParameterExpr(param.getValue());
-    if (std::holds_alternative<EvalError>(value))
-      return error(call->getLoc(), std::move(std::get<EvalError>(value)));
+    ErrorTreeOr<Attribute> value =
+        getEvaluator().concretizeParameterExpr(call.getLoc(), param.getValue());
+    if (value.isError())
+      return error(value.takeError());
 
     // Check if we have a reference to a non-isolated region.
-    auto regionRef = dyn_cast<RegionReferenceAttr>(std::get<Attribute>(value));
+    auto regionRef = dyn_cast<RegionReferenceAttr>(*value);
     if (regionRef &&
         !elaborator.getRegionReferenced(regionRef).isIsolatedFromAbove()) {
       // Only the callees of inlined calls can be regions not isolated from
@@ -1048,7 +976,7 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
       inlineCallee = true;
     }
 
-    boundInputParams.push_back(std::get<Attribute>(value));
+    boundInputParams.push_back(*value);
   }
   return std::make_pair(ArrayAttr::get(call->getContext(), boundInputParams),
                         inlineCallee);
@@ -1106,27 +1034,27 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
 
   // Otherwise, this is our first use of this.  Ask the global elaborator for
   // the full set of candidates.
-  ArrayRef<ElaboratedGeneratorOrCalleeError> newCalleesRef =
+  ArrayRef<ErrorTreeOr<ElaboratedGenerator>> newCalleesRef =
       elaborator.getAllInstantiations(calleeDeclAndInputParams,
                                       expansionDepth + 1, inlineCallee);
 
   // Copy the list of funcs instead of referring to the cache entry to avoid
   // iterator invalidation problems.
-  SmallVector<ElaboratedGeneratorOrCalleeError> newCallees(
-      newCalleesRef.begin(), newCalleesRef.end());
+  SmallVector<ErrorTreeOr<ElaboratedGenerator>> newCallees;
+  for (const ErrorTreeOr<ElaboratedGenerator> &newCallee : newCalleesRef)
+    newCallees.push_back(newCallee.copy());
 
   // If we found more than one callee to produce then we need to spawn
   // multiple versions of the func we are currently constructing, each
   // which get a different callee.
   ElaboratedGenerator thisCallee(/*func=*/nullptr);
-  for (const ElaboratedGeneratorOrCalleeError &candidate : newCallees) {
+  for (const ErrorTreeOr<ElaboratedGenerator> &candidate : newCallees) {
     // Ignore erroneous callees.
-    if (std::holds_alternative<CalleeExpansionError>(candidate))
+    if (candidate.isError())
       continue;
     // Ignore the candidate if the elaborated func is inconsistent with our
     // current bindings.
-    const ElaboratedGenerator &calleeCandidate =
-        std::get<ElaboratedGenerator>(candidate);
+    const ElaboratedGenerator &calleeCandidate = candidate.getValue();
     if (!calleeCandidate.isConsistentWith(elaboratedGenerator))
       continue;
 
@@ -1148,9 +1076,9 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
 
   // If all the expansions failed, then this call fails overall.
   if (!thisCallee.func) {
-    SmallVector<CalleeExpansionError> errors;
-    for (const auto &value : newCallees)
-      errors.push_back(std::get<CalleeExpansionError>(value));
+    SmallVector<ErrorTree> errors;
+    for (ErrorTreeOr<ElaboratedGenerator> &value : newCallees)
+      errors.push_back(value.takeError());
     return errorCalling(user->getLoc(), errors);
   }
 
@@ -1172,11 +1100,11 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
   // Resolve any bound result types.
   SmallVector<Type> resultTypes;
   for (Type result : user->getResultTypes()) {
-    std::variant<EvalError, Type> errorOrType =
-        getEvaluator().concretizeParameterExpr(result);
-    if (std::holds_alternative<EvalError>(errorOrType))
-      return error(user->getLoc(), std::move(std::get<EvalError>(errorOrType)));
-    resultTypes.push_back(std::get<Type>(errorOrType));
+    ErrorTreeOr<Type> type =
+        getEvaluator().concretizeParameterExpr(user.getLoc(), result);
+    if (type.isError())
+      return error(type.takeError());
+    resultTypes.push_back(type.takeValue());
   }
 
   // Now that we resolved the call to a new thing, build a new call to replace
@@ -1280,15 +1208,14 @@ LogicalResult ParameterRewriter::processCallParamOp(
     CallParamOp call,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Simplify the callee expression.
-  std::variant<EvalError, Attribute> errorOrValue =
-      getEvaluator().concretizeParameterExpr(call.getCallee());
-  if (std::holds_alternative<EvalError>(errorOrValue))
-    return error(call->getLoc(), std::move(std::get<EvalError>(errorOrValue)));
+  ErrorTreeOr<Attribute> value =
+      getEvaluator().concretizeParameterExpr(call.getLoc(), call.getCallee());
+  if (value.isError())
+    return error(value.takeError());
 
   // If the parameter expression is resolved to a symbol, then treat this like a
   // direct call.
-  auto value = std::get<Attribute>(errorOrValue);
-  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(value)) {
+  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(*value)) {
     // If there are no bound parameters on the call, use the one on the
     // CallParam.  TODO: Remove.
     if (symbolCst.getParamValues().empty())
@@ -1303,7 +1230,7 @@ LogicalResult ParameterRewriter::processCallParamOp(
 
   // Otherwise, the only other case we support is a call to a region, which is
   // marked with a StringAttr value that has signature type.
-  auto regionName = value.cast<RegionReferenceAttr>();
+  auto regionName = cast<RegionReferenceAttr>(*value);
   return processRegionCallImpl(call, regionName, call.getParamDeclsAttr(),
                                call.getParamValues());
 }
@@ -1312,19 +1239,18 @@ LogicalResult ParameterRewriter::processInlinedCallOp(
     InlinedCallOp call,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Simplify the callee expression.
-  std::variant<EvalError, Attribute> errorOrCallee =
-      getEvaluator().concretizeParameterExpr(call.getCallee());
-  if (std::holds_alternative<EvalError>(errorOrCallee))
-    return error(call->getLoc(), std::move(std::get<EvalError>(errorOrCallee)));
+  ErrorTreeOr<Attribute> callee =
+      getEvaluator().concretizeParameterExpr(call.getLoc(), call.getCallee());
+  if (callee.isError())
+    return error(callee.takeError());
 
   // If the parameter expression is resolved to a region, then it is inlined
   // anyways.
-  auto callee = std::get<Attribute>(errorOrCallee);
-  if (auto regionName = dyn_cast<RegionReferenceAttr>(callee))
+  if (auto regionName = dyn_cast<RegionReferenceAttr>(*callee))
     return processRegionCallImpl(call, regionName, call.getParamDeclsAttr(),
                                  call.getParamValues());
 
-  auto symbolCst = cast<SymbolConstantAttr>(callee);
+  auto symbolCst = cast<SymbolConstantAttr>(*callee);
   // If there are no bound parameters on the call, use the one on the
   // CallParam.  TODO: Remove.
   if (symbolCst.getParamValues().empty())
@@ -1378,10 +1304,10 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
   // Evaluate any constraints for this declaration to see if this is a viable
   // expansion.  If not, the expansion fails. Only isolated regions have
   // constraints.
-  Optional<EvalDiagnostic> err = evaluateConstraints(
+  Optional<ErrorTree> err = evaluateConstraints(
       cast<DeclInterface>(*region).getConstraints(), evaluator);
   if (err)
-    return error(err->first, std::move(err->second));
+    return error(std::move(*err));
 
   // We process the call to the region by cloning its body inline, replacing
   // the call with the newly substituted operations.  While doing this, we
@@ -1471,13 +1397,12 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   SmallVector<NamedAttribute> newAttrs;
   bool changedAttrs = false;
   for (const NamedAttribute &namedAttr : op->getAttrs()) {
-    std::variant<EvalError, Attribute> value =
-        getEvaluator().concretizeParameterExpr(namedAttr.getValue(),
-                                               /*allowUnknown=*/true);
-    if (std::holds_alternative<EvalError>(value))
-      return error(op->getLoc(), std::move(std::get<EvalError>(value)));
+    ErrorTreeOr<Attribute> value = getEvaluator().concretizeParameterExpr(
+        op->getLoc(), namedAttr.getValue(), /*allowUnknown=*/true);
+    if (value.isError())
+      return error(value.takeError());
 
-    newAttrs.emplace_back(namedAttr.getName(), std::get<Attribute>(value));
+    newAttrs.emplace_back(namedAttr.getName(), value.takeValue());
     changedAttrs |= namedAttr.getValue() != newAttrs.back().getValue();
   }
   if (changedAttrs)
@@ -1486,23 +1411,22 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   // If this operation has a subprogram scope, update the location. The
   // subprogram may reference parameters within its types.
   if (DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(op)) {
-    std::variant<EvalError, Attribute> value =
-        getEvaluator().concretizeParameterExpr(op->getLoc(),
-                                               /*allowUnknown=*/true);
-    if (std::holds_alternative<EvalError>(value))
-      return error(op->getLoc(), std::move(std::get<EvalError>(value)));
-    op->setLoc(cast<Location>(std::get<Attribute>(value)));
+    ErrorTreeOr<Attribute> value = getEvaluator().concretizeParameterExpr(
+        op->getLoc(), op->getLoc(), /*allowUnknown=*/true);
+    if (value.isError())
+      return error(value.takeError());
+    op->setLoc(cast<Location>(value.takeValue()));
   }
 
   // Check the types of results to find any parameters embedded in their
   // types.  We don't have to check operands because they are always checked
   // when being defined.
   for (OpResult result : op->getResults()) {
-    std::variant<EvalError, Type> value =
-        getEvaluator().concretizeParameterExpr(result.getType());
-    if (std::holds_alternative<EvalError>(value))
-      return error(op->getLoc(), std::move(std::get<EvalError>(value)));
-    result.setType(std::get<Type>(value));
+    ErrorTreeOr<Type> type =
+        getEvaluator().concretizeParameterExpr(op->getLoc(), result.getType());
+    if (type.isError())
+      return error(type.takeError());
+    result.setType(type.takeValue());
   }
 
   // Scan the region list if present.  The walker will automatically recurse
@@ -1511,11 +1435,11 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
     for (Region &region : op->getRegions()) {
       for (Block &block : region) {
         for (Value arg : block.getArguments()) {
-          std::variant<EvalError, Type> value =
-              getEvaluator().concretizeParameterExpr(arg.getType());
-          if (std::holds_alternative<EvalError>(value))
-            return error(op->getLoc(), std::move(std::get<EvalError>(value)));
-          arg.setType(std::get<Type>(value));
+          ErrorTreeOr<Type> type = getEvaluator().concretizeParameterExpr(
+              op->getLoc(), arg.getType());
+          if (type.isError())
+            return error(type.takeError());
+          arg.setType(type.takeValue());
         }
       }
     }
@@ -1534,15 +1458,14 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
 /// If elaboration of this func fails, then the client can get the error
 /// out.  This also deallocates the body of the dead husk of the func which
 /// may not even verify correctly, it will be removed later.
-CalleeExpansionError ParameterRewriter::takeDiagnosticAndEraseFunc() {
+ErrorTree ParameterRewriter::takeDiagnosticAndEraseFunc() {
   assert(diagnostic.has_value() &&
          "cannot get diagnostic when none was generated");
   // The generator is not viable so we need to delete it.  This op can appear
   // in various maps though, so instead of actually deleting it, we just
   // mark it for removal later.
   elaborator.markFuncForRemoval(elaboratedGenerator.func);
-  auto error = CalleeExpansionError(elaboratedGenerator.func->getLoc(),
-                                    std::move(diagnostic.value()));
+  ErrorTree error = std::move(*diagnostic);
 
   // Check to see if the error occurs in the scope of a call_param to a region.
   // If so, make sure to add the nested call to the expansion path.
@@ -1550,8 +1473,7 @@ CalleeExpansionError ParameterRewriter::takeDiagnosticAndEraseFunc() {
     RegionReturn *rr = dyn_cast<RegionReturn *>(command);
     if (!rr)
       continue;
-    error = CalleeExpansionError(rr->callLoc,
-                                 ElaborationDiagnostic(rr->callLoc, error));
+    error = ErrorTree(rr->callLoc, "call expansion failed", std::move(error));
   }
 
   return error;
@@ -1615,7 +1537,7 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
 /// Specialize a func body, generating one variant of each viable
 /// instantiation of that body.  funcs do not have parameters, but they can
 /// invoke interfaces etc which can cause them to produce multiple variants.
-SmallVector<ElaboratedGeneratorOrCalleeError>
+SmallVector<ErrorTreeOr<ElaboratedGenerator>>
 Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
                            size_t expansionDepth, bool inlined) {
   LLVM_DEBUG({
@@ -1648,7 +1570,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
 
   // Rewriting funcs may generate other func clones.  If so, rewrite them,
   // until we converge.
-  SmallVector<ElaboratedGeneratorOrCalleeError> results;
+  SmallVector<ErrorTreeOr<ElaboratedGenerator>> results;
   size_t counter = 0;
   while (!rewriterWorklist.empty()) {
     std::unique_ptr<ParameterRewriter> rewriter =
@@ -1698,7 +1620,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
 /// Specialize a generator with the specified input parameters and return the
 /// symbol name to use for the result, along with an array of ParamBindAttrs for
 /// the result attributes.
-SmallVector<ElaboratedGeneratorOrCalleeError>
+SmallVector<ErrorTreeOr<ElaboratedGenerator>>
 Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
                                 size_t expansionDepth, bool inlined) {
   auto generator = cast<GeneratorOp>(declAndInputParams.first);
@@ -1761,9 +1683,9 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   FuncOp firstSuccessfulImpl;
   if (inputParamValues.empty()) {
     for (auto &candidate : result) {
-      if (std::holds_alternative<ElaboratedGenerator>(candidate)) {
-        auto it = firstConcreteFuncForGenerator.insert(
-            {generator, std::get<ElaboratedGenerator>(candidate).func});
+      if (candidate) {
+        auto it =
+            firstConcreteFuncForGenerator.insert({generator, candidate->func});
         firstSuccessfulImpl = it.first->second;
         break;
       }
@@ -1774,9 +1696,9 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   // elaborated instantiations.
   if (DebugInfo::extractScope(generator)) {
     for (auto &candidate : result) {
-      if (!std::holds_alternative<ElaboratedGenerator>(candidate))
+      if (!candidate)
         continue;
-      FuncOp elabFunc = std::get<ElaboratedGenerator>(candidate).func;
+      FuncOp elabFunc = candidate->func;
 
       // If this function was the first successful instantiation, it will get to
       // inherit the original name of the generator (i.e., nothing to do here).
@@ -1815,7 +1737,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
 /// previous run. The search key is comprised of the inputs to search because if
 /// any of the implementations change, a new one is added, one is removed, the
 /// evaluator changes, or the target changes, we need to redo search.
-SmallVector<ElaboratedGeneratorOrCalleeError>
+SmallVector<ErrorTreeOr<ElaboratedGenerator>>
 Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
                                 size_t expansionDepth, bool inlined) {
   auto itf = cast<GeneratorInterfaceOp>(declAndInputParams.first);
@@ -1823,7 +1745,7 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
     llvm::dbgs() << std::string(expansionDepth, ' ') << "specializeInterface "
                  << itf.getName() << "\n";
   });
-  SmallVector<ElaboratedGeneratorOrCalleeError> result;
+  SmallVector<ErrorTreeOr<ElaboratedGenerator>> result;
 
   // An interface is an abstraction over multiple generators.  Invoke each of
   // them, collecting the results together into a single result.
@@ -1851,39 +1773,53 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
     GeneratorOp gen = cast<GeneratorOp>(defaultImplCallee);
     auto funcs = getAllInstantiations({gen, declAndInputParams.second},
                                       expansionDepth + 1, inlined);
-    result.append(funcs.begin(), funcs.end());
+    for (auto &func : funcs)
+      result.push_back(func.copy());
     return result;
   }
 
   for (GeneratorOp gen : interfaceImpls) {
     // Make sure to go through getAllInstantiations so generators are cached
     // and any constraints on the generator itself are validated.
-    auto funcs = getAllInstantiations({gen, declAndInputParams.second},
-                                      expansionDepth + 1, inlined);
+    ArrayRef<ErrorTreeOr<ElaboratedGenerator>> funcs = getAllInstantiations(
+        {gen, declAndInputParams.second}, expansionDepth + 1, inlined);
     LLVM_DEBUG({
       llvm::dbgs() << std::string(expansionDepth, ' ') << gen.getNameAttr()
                    << " produced " << std::to_string(funcs.size())
                    << " candidates for " << itf.getName() << "\n";
     });
-    result.append(funcs.begin(), funcs.end());
+
+    // If there are multiple implementations that failed to expand, group their
+    // errors together so we can report them as an umbrella.
+    if (interfaceImpls.size() > 1) {
+      SmallVector<ErrorTree> errors;
+      for (const ErrorTreeOr<ElaboratedGenerator> &func : funcs) {
+        if (func.isError())
+          errors.push_back(func.getError().copy());
+        else
+          result.push_back(func.getValue());
+      }
+      result.push_back(
+          ErrorTree(gen.getLoc(), "failed to expand this declaration", errors));
+    } else {
+      for (const ErrorTreeOr<ElaboratedGenerator> &func : funcs)
+        result.push_back(func.copy());
+    }
   }
 
   // If all the results are expansion errors, return them to the caller which
   // will cause elaboration to fail.
-  if (llvm::all_of(result, [](ElaboratedGeneratorOrCalleeError kOr) {
-        return std::holds_alternative<CalleeExpansionError>(kOr);
-      }))
+  auto isError = [](const auto &kOr) { return kOr.isError(); };
+  if (llvm::all_of(result, isError))
     return result;
 
   // Move the expansion errors to the end of the vector.
-  auto newEnd =
-      llvm::remove_if(result, [&](ElaboratedGeneratorOrCalleeError funcOr) {
-        return std::holds_alternative<CalleeExpansionError>(funcOr);
-      });
-
+  auto newEnd = llvm::remove_if(result, isError);
   // Only one successful elaboration, we don't have to search, just return it.
-  if (newEnd == result.begin() + 1)
-    return {*result.begin()};
+  if (newEnd == result.begin() + 1) {
+    result.erase(result.begin() + 1, result.end());
+    return result;
+  }
 
   SymbolConstantAttr evaluator = itf.getEvaluatorAttr();
 
@@ -1891,16 +1827,17 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   result.erase(newEnd, result.end());
   LLVM_DEBUG({
     llvm::dbgs() << std::string(expansionDepth, ' ') << "Number of results for "
-                 << itf.getName() << ": " << std::to_string(result.size())
-                 << "\n";
+                 << itf.getName() << ": " << result.size() << "\n";
     llvm::dbgs() << std::string(expansionDepth, ' ')
                  << "Total number of generated funcs: "
-                 << std::to_string(generatedFuncsMapSize()) << "\n";
+                 << generatedFuncsMapSize() << "\n";
   });
 
   // If we don't want to do search, we're done.
-  if (!enableSearch)
-    return {*result.begin()};
+  if (!enableSearch) {
+    result.erase(result.begin() + 1, result.end());
+    return result;
+  }
 
   // If there is no evaluator, return the full vector of instantiations. If the
   // interface is being inlined, we can't benchmark the instantiations because
@@ -1908,13 +1845,18 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   if (!evaluator || inlined)
     return result;
 
+  // Store the valid implementations.
+  SmallVector<ElaboratedGenerator> candidates;
+  for (ErrorTreeOr<ElaboratedGenerator> &candidate : result)
+    candidates.push_back(candidate.takeValue());
+
   auto keyBuf = Cache::WriteableBuffer::get();
 
   // Pull out the elaboration results that succeeded to provide to the search
   // inputs. We also write the bytecode for each input into the key.
   SmallVector<FuncOp> searchInputs;
   for (const auto &r : result) {
-    searchInputs.push_back(std::get<ElaboratedGenerator>(r).func);
+    searchInputs.push_back(r->func);
     mlir::writeBytecodeToFile(searchInputs.back(), *keyBuf);
   }
 
@@ -1928,18 +1870,17 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   *keyBuf << TargetInfoAttr::getForHost(itf->getContext());
 
   // Alright - we want to do search now.
-  LLCL::AsyncValue::registerTypes<
-      SmallVector<ElaboratedGeneratorOrCalleeError>>();
+  LLCL::AsyncValue::registerTypes<ErrorTreeOr<ElaboratedGenerator>>();
 
   // This provides the implementation of search. This is the part we actually
   // care about caching because it's the most expensive part.
   auto doSpecialization = [this, evalFunc, searchInputs,
-                           result](Operation *itfOp,
-                                   Cache::WriteableBufferRef toCache,
-                                   AnyAsyncValueRef chain) {
-    auto out = LLCL::AsyncValueRef<
-        SmallVector<ElaboratedGeneratorOrCalleeError>>::allocate(runtime);
-    chain->andThenSync([this, evalFunc, searchInputs, &result, itfOp,
+                           candidates](Operation *itfOp,
+                                       Cache::WriteableBufferRef toCache,
+                                       AnyAsyncValueRef chain) {
+    auto out = LLCL::AsyncValueRef<ErrorTreeOr<ElaboratedGenerator>>::allocate(
+        runtime);
+    chain->andThenSync([this, evalFunc, searchInputs, &candidates, itfOp,
                         chain = chain.copy(), out = out.copy(),
                         toCache = std::move(toCache)]() mutable {
       auto itf = cast<GeneratorInterfaceOp>(itfOp);
@@ -1947,47 +1888,40 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
       ErrorOr<size_t> bestSpecializationIdxOr = evaluateSpecializations(
           evalFunc, analysis.getTopLevelSymbolTable(), runtime, searchInputs);
       if (failed(bestSpecializationIdxOr)) {
-        return out.emplace(SmallVector<ElaboratedGeneratorOrCalleeError>{
-            reportCalleeExpansionError(itf,
-                                       bestSpecializationIdxOr.getError())});
+        return out.emplace(reportCalleeExpansionError(
+            itf, bestSpecializationIdxOr.getError()));
       }
 
       // Find the fastest one and return just that one.
-      ElaboratedGeneratorOrCalleeError bestResult =
-          result[*bestSpecializationIdxOr];
+      const ElaboratedGenerator &bestResult =
+          candidates[*bestSpecializationIdxOr];
 
       // Finally, cache the result.
-      FuncOp resultFunc = std::get<ElaboratedGenerator>(bestResult).func;
+      FuncOp resultFunc = bestResult.func;
       *toCache << resultFunc.getName();
-      return out.emplace(
-          SmallVector<ElaboratedGeneratorOrCalleeError>{std::move(bestResult)});
+      return out.emplace(std::move(bestResult));
     });
     return out;
   };
 
   auto onCacheHit =
-      [this, result](Operation *itfOp,
-                     Cache::BufferRef cacheContents) -> AnyAsyncValueRef {
-    auto out = LLCL::AsyncValueRef<
-        SmallVector<ElaboratedGeneratorOrCalleeError>>::allocate(runtime);
+      [this, candidates](Operation *itfOp,
+                         Cache::BufferRef cacheContents) -> AnyAsyncValueRef {
+    auto out = LLCL::AsyncValueRef<ErrorTreeOr<ElaboratedGenerator>>::allocate(
+        runtime);
     StringAttr fastestFuncName =
         StringAttr::get(itfOp->getContext(), cacheContents->getBuffer());
 
     // Find the fastest function by name.
-    auto fastest =
-        llvm::find_if(result, [&](ElaboratedGeneratorOrCalleeError genOr) {
-          if (std::holds_alternative<ElaboratedGenerator>(genOr))
-            if (std::get<ElaboratedGenerator>(genOr).func.getNameAttr() ==
-                fastestFuncName)
-              return true;
-          return false;
-        });
-    if (fastest == result.end()) {
+    auto fastest = llvm::find_if(candidates, [&](ElaboratedGenerator gen) {
+      return gen.func.getNameAttr() == fastestFuncName;
+    });
+    if (fastest == candidates.end()) {
       out.setToError(LLCL::getMLIRDiagnostic(
           Error("could not find " + fastestFuncName.getValue()),
           itfOp->getLoc()));
     } else {
-      out.emplace(SmallVector<ElaboratedGeneratorOrCalleeError>{*fastest});
+      out.emplace(*fastest);
     }
 
     return out;
@@ -2000,18 +1934,18 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
                              std::move(keyBuf), doSpecialization, onCacheHit);
 
   LLCL::await(xform);
+  result.clear();
   if (xform->isError())
-    result = {reportCalleeExpansionError(
-        itf, xform->getDiagnostic().getMessage().get())};
+    result.push_back(reportCalleeExpansionError(
+        itf, xform->getDiagnostic().getMessage().get()));
   else
-    result = xform->get<SmallVector<ElaboratedGeneratorOrCalleeError>>();
-
+    result.push_back(std::move(xform->get<ErrorTreeOr<ElaboratedGenerator>>()));
   return result;
 }
 
 /// Return all instantiations of the specified declaration (a  generator or
 /// interface) with the specified input parameter values.
-ArrayRef<ElaboratedGeneratorOrCalleeError>
+ArrayRef<ErrorTreeOr<ElaboratedGenerator>>
 Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
                                  size_t expansionDepth, bool inlined) {
   // Check the global cache of instantiations so we only ever instantiate a
@@ -2021,11 +1955,9 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
     return cacheIt->second;
 
   Operation *decl = declAndInputParams.first;
-  SmallVector<ElaboratedGeneratorOrCalleeError> newCallees;
-  auto localError = [&](Location loc, Error err) {
-    newCallees.push_back(CalleeExpansionError(
-        decl->getLoc(), ElaborationDiagnostic(loc, std::move(err))));
-    return failure();
+  SmallVector<ErrorTreeOr<ElaboratedGenerator>> newCallees;
+  auto localError = [&](ErrorTree err) {
+    newCallees.push_back(std::move(err));
   };
 
   // Evaluate any constraints for this declaration to see if this is a viable
@@ -2035,13 +1967,11 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
                  << "getAllInstantiations: ";
   });
   IREvaluator evaluator = createEvaluator();
-  Optional<EvalDiagnostic> err = evaluateConstraints(
+  Optional<ErrorTree> err = evaluateConstraints(
       decl, declAndInputParams.second.getValue(), evaluator);
   if (err) {
     LLVM_DEBUG({ llvm::dbgs() << "evaluateConstraints failed\n"; });
-    newCallees.push_back(CalleeExpansionError(
-        decl->getLoc(), convertEvalErrorToElaborationError(
-                            err->first, std::move(err->second))));
+    localError(std::move(*err));
   } else if (auto func = dyn_cast<FuncOp>(decl)) {
     // Nothing to do here. Just bind the result parameters and return the
     // function.
@@ -2063,7 +1993,7 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
     newCallees =
         specializeInterface(declAndInputParams, expansionDepth + 1, inlined);
   } else {
-    (void)localError(decl->getLoc(), "call to an unknown kind of declaration");
+    localError({decl->getLoc(), "call to an unknown kind of declaration"});
   }
 
   return generatedFuncs[declAndInputParams] = std::move(newCallees);
@@ -2103,60 +2033,6 @@ ParseResult Elaborator::collectInterfaces() {
       return op.emitError("unlowered lit.func discovered in KGEN elaborator");
   }
   return success();
-}
-
-/// When a top-level generator failed to elaborate, this is used to recursively
-/// emit a tree of notes indicating why the elaboration tree failed.
-static void emitElaborationError(InFlightDiagnostic &diag,
-                                 MutableArrayRef<CalleeExpansionError> errors,
-                                 unsigned indentDepth) {
-  assert(!errors.empty());
-
-  // This is true when we have multiple decls that a call resolved to, e.g. due
-  // to an interface.
-  bool haveMultipleDecls = false;
-  std::string spaces(indentDepth, ' ');
-
-  // Start by grouping the errors by declaration, emitting each one in turn.
-  // Iteratively partition out things by declaration.
-  while (!errors.empty()) {
-    auto declLoc = errors[0].first;
-    auto split =
-        std::partition(errors.begin(), errors.end(),
-                       [&](auto &elt) -> bool { return elt.first == declLoc; });
-    haveMultipleDecls |= split != errors.end();
-
-    // Process the batch.
-    MutableArrayRef<CalleeExpansionError> batch =
-        errors.take_front(split - errors.begin());
-
-    // If there is one error in this batch, or if they are all at the same point
-    // and are the same problem, collapse them together.  These forks must have
-    // been different earlier in their elaboration but fail for the same reason.
-    if (llvm::all_equal(batch))
-      batch = batch.take_front();
-
-    // If there are multiple alternative declarations in batches, emit a header
-    // that groups each batch.
-    if (haveMultipleDecls)
-      diag.attachNote(declLoc) << spaces << "failed to expand this declaration";
-
-    for (auto &error : batch) {
-      ElaborationDiagnostic &elabError = error.second;
-      if (elabError.isLocalError()) {
-        diag.attachNote(elabError.getFailureLoc())
-            << spaces << "  " << elabError.getLocalMessage();
-      } else {
-        diag.attachNote(elabError.getFailureLoc())
-            << spaces << "  call expansion failed";
-        emitElaborationError(diag, elabError.getCalleeErrors(),
-                             indentDepth + 4);
-      }
-    }
-
-    // Drop all the processed elements.
-    errors = errors.drop_front(split - errors.begin());
-  }
 }
 
 /// Elaborate generators in the specified module, incorporating implementation
@@ -2226,22 +2102,20 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
   for (GeneratorOp generatorRoot : primaryGenerators) {
 
     // Elaborate the generator into concrete versions.
-    ArrayRef<ElaboratedGeneratorOrCalleeError> results =
+    ArrayRef<ErrorTreeOr<ElaboratedGenerator>> results =
         elaborator.getAllInstantiations({generatorRoot, emptyInputParamKey}, 0);
 
     // If the generator failed to expand into /anything/ then emit an error.
     // Note that the func will have been deleted.
-    if (llvm::all_of(
-            results,
-            [](const ElaboratedGeneratorOrCalleeError &result) -> bool {
-              return std::holds_alternative<CalleeExpansionError>(result);
-            })) {
+    if (llvm::all_of(results,
+                     [](const ErrorTreeOr<ElaboratedGenerator> &result)
+                         -> bool { return !result; })) {
       // Collect the errors together.
-      SmallVector<CalleeExpansionError> errors;
-      for (const auto &value : results)
-        errors.push_back(std::get<CalleeExpansionError>(value));
-      auto diag = emitError(errors[0].first, "no viable implementations found");
-      emitElaborationError(diag, errors, /*indentDepth=*/2);
+      ErrorTree error(generatorRoot.getLoc(),
+                      "no viable implementations found");
+      for (const ErrorTreeOr<ElaboratedGenerator> &value : results)
+        error.addCause(value.getError().copy());
+      error.emit([&](Location loc) { return emitError(loc); });
       didFail = true;
     }
 

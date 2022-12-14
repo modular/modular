@@ -116,21 +116,21 @@ static ErrorOr<int64_t> computeSizeof(SymbolTable &symtab,
 //===----------------------------------------------------------------------===//
 
 /// Report an error with folding an operation.
-static EvalError reportFoldError(FuncOp func, Operation &op,
+static ErrorTree reportFoldError(FuncOp func, Operation &op,
                                  ArrayRef<Attribute> operands,
                                  const Twine &prefix,
                                  const Twine &suffix = "") {
-  EvalError error("failed to interpret function @" + func.getName());
+  ErrorTree error(func.getLoc(),
+                  "failed to interpret function @" + func.getName());
   std::string note;
   llvm::raw_string_ostream os(note);
   os << prefix << op.getName() << '(';
   llvm::interleaveComma(operands, os);
   os << ')' << suffix;
-  error.notes.emplace_back(op.getLoc(), Error(os.str()));
-  return error;
+  return std::move(error.addCause(op.getLoc(), Error(os.str())));
 }
 
-std::variant<EvalError, TypedAttr>
+ErrorTreeOr<TypedAttr>
 IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   // Make sure the function is inflated.
   asyncMap.mapChained(func, [&](LLCL::AnyAsyncValueRef ch) {
@@ -144,11 +144,7 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
     values.try_emplace(arg, input);
 
   // This is the top-level error that will be returned if one occurs.
-  EvalError error("failed to evaluate 'apply'");
-  auto reportError = [&](EvalError note) {
-    error.notes.emplace_back(func.getLoc(), std::move(note));
-    return std::move(error);
-  };
+  ErrorTree error(*errorLoc, "failed to evaluate 'apply'");
 
   // "Interpret" the IR by calling operation folders.
   SmallVector<Attribute> operands;
@@ -159,17 +155,17 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
     for (Value operand : op.getOperands())
       operands.push_back(values.lookup(operand));
     if (failed(op.fold(operands, results)))
-      return reportError(
-          reportFoldError(func, op, operands, "failed to fold operation "));
+      return std::move(error.addCause(
+          reportFoldError(func, op, operands, "failed to fold operation ")));
 
     for (auto [i, result, output] :
          llvm::zip(llvm::seq<unsigned>(0, op.getNumResults()), results,
                    op.getResults())) {
       auto value = result.dyn_cast<Attribute>();
       if (!value) {
-        return reportFoldError(func, op, operands, "operation folder ",
-                               " did not return a value for result #" +
-                                   Twine(i));
+        return std::move(error.addCause(reportFoldError(
+            func, op, operands, "operation folder ",
+            " did not return a value for result #" + Twine(i))));
       }
       values.try_emplace(output, value);
     }
@@ -181,23 +177,56 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   if (auto expr = dyn_cast<TypedAttr>(result))
     return expr;
 
-  return reportError(Error("function @" + func.getName() +
-                           " result is not a parameter expression"));
+  return std::move(error.addCause(
+      func.getLoc(), Error("function @" + func.getName() +
+                           " result is not a parameter expression")));
 }
 
 //===----------------------------------------------------------------------===//
-// EvalError
+// ErrorTree
 //===----------------------------------------------------------------------===//
 
-EvalError::EvalError(Error error, Location loc, EvalError causes)
-    : error(std::move(error)) {
-  notes.emplace_back(loc, std::move(causes.error));
-  for (auto &[loc, err] : causes.notes)
-    notes.emplace_back(loc, std::move(err));
+ErrorTree::ErrorTree(Location loc, Error error, ErrorTree causes)
+    : loc(loc), error(std::move(error)) {
+  addCause(std::move(causes));
 }
 
-//===----------------------------------------------------------------------===//
-// IR Evaluator
+ErrorTree::ErrorTree(Location loc, Error error,
+                     MutableArrayRef<ErrorTree> causes)
+    : loc(loc), error(std::move(error)) {
+  addCauses(causes);
+}
+
+ErrorTree ErrorTree::copy() const {
+  ErrorTree copy(loc, error.copy());
+  copy.causes.reserve(causes.size());
+  for (const ErrorTree &cause : causes)
+    copy.causes.push_back(cause.copy());
+  return copy;
+}
+
+void ErrorTree::emit(
+    function_ref<InFlightDiagnostic(Location)> emitError) const {
+  // Emit the main error.
+  InFlightDiagnostic diag = emitError(loc) << getMessage();
+  // Emit the causes
+  emit(diag, causes, /*indentDepth=*/2);
+}
+
+void ErrorTree::emit(InFlightDiagnostic &diag, ArrayRef<ErrorTree> errors,
+                     unsigned indentDepth) {
+  if (errors.empty())
+    return;
+
+  std::string spaces(indentDepth, ' ');
+  for (const ErrorTree &err : errors) {
+    diag.attachNote(err.loc) << spaces << err.getMessage();
+    emit(diag, err.causes, indentDepth + 2);
+  }
+}
+
+//=----------------------------------------------------------------------===//
+// R Evaluator
 //===----------------------------------------------------------------------===//
 
 FailureOr<TypedAttr>
@@ -220,7 +249,7 @@ IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
       indexResult = computeStructAlignof(symtab, target, ref);
 
     if (indexResult.isError()) {
-      emitError(indexResult.takeError());
+      emitError({*errorLoc, indexResult.takeError()});
       return failure();
     }
     return {Builder(op.getContext()).getIndexAttr(*indexResult)};
@@ -238,11 +267,10 @@ IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
     if (!func)
       return failure();
 
-    std::variant<EvalError, TypedAttr> result =
-        evaluateFunction(func, operands);
-    if (std::holds_alternative<TypedAttr>(result))
-      return std::get<TypedAttr>(result);
-    emitError(std::move(std::get<EvalError>(result)));
+    ErrorTreeOr<TypedAttr> result = evaluateFunction(func, operands);
+    if (TypedAttr value = result.tryGetValue())
+      return value;
+    emitError(result.takeError());
     return failure();
   }
 
@@ -252,10 +280,14 @@ IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
 /// Given a generic parameter expression, simplify it by folding the
 /// expression according to known parameter values.  This returns an error if
 /// the expression cannot be folded for one reason or another.
-std::variant<EvalError, Attribute>
-IREvaluator::concretizeParameterExpr(Attribute expr, bool allowUnknown) {
-  Optional<EvalError> error;
-  emitError = [&](EvalError err) { error = std::move(err); };
+ErrorTreeOr<Attribute> IREvaluator::concretizeParameterExpr(Location loc,
+                                                            Attribute expr,
+                                                            bool allowUnknown) {
+  // FIXME: Refactor ParameterEvaluator for better error propagation.
+  errorLoc = loc;
+  Optional<ErrorTree> error;
+  emitError = [&](ErrorTree err) { error = std::move(err); };
+
   Attribute result = getReboundAttribute(expr);
   if (error)
     return std::move(*error);
@@ -267,25 +299,31 @@ IREvaluator::concretizeParameterExpr(Attribute expr, bool allowUnknown) {
   // If this was an unfoldable operator expression, error.  This can happen for
   // things like 'index' arithmetic that has target-specific results.
   if (auto oper = dyn_cast<ParamOperatorAttr>(result))
-    return Error("could not simplify operator " + getParamAsString(result));
+    return ErrorTree(loc,
+                     "could not simplify operator " + getParamAsString(result));
   if (allowUnknown)
     return result;
 
   // Otherwise, we don't know how to simplify this attribute, it's an error.
-  return Error("unknown expression to fold: " + getParamAsString(result));
+  return ErrorTree(loc,
+                   "unknown expression to fold: " + getParamAsString(result));
 }
 
-std::variant<EvalError, Type> IREvaluator::concretizeParameterExpr(Type expr) {
-  Optional<EvalError> error;
-  emitError = [&](EvalError err) { error = std::move(err); };
+ErrorTreeOr<Type> IREvaluator::concretizeParameterExpr(Location loc,
+                                                       Type expr) {
+  // FIXME: Refactor ParameterEvaluator for better error propagation.
+  errorLoc = loc;
+  Optional<ErrorTree> error;
+  emitError = [&](ErrorTree err) { error = std::move(err); };
+
   Type result = getReboundType(expr);
   if (error)
     return std::move(*error);
 
   if (isa<ConcreteTypeConstantAttr>(TypeConstantAttr::get(result)))
     return result;
-  return Error("could not simplify type: " +
-               getParamAsString(TypeConstantAttr::get(result)));
+  return ErrorTree(loc, Error("could not simplify type: " +
+                              getParamAsString(TypeConstantAttr::get(result))));
 }
 
 //===----------------------------------------------------------------------===//
@@ -295,27 +333,27 @@ std::variant<EvalError, Type> IREvaluator::concretizeParameterExpr(Type expr) {
 /// Given a generator or interface declaration operation, evaluate any
 /// constraints against inputParamValues.  If the constraints are met, return
 /// success, otherwise return why they aren't.
-Optional<EvalDiagnostic>
+Optional<ErrorTree>
 KGEN::evaluateConstraints(ArrayRef<ConstraintAttr> constraints,
                           IREvaluator &evaluator) {
   // Each constraint must be foldable, and must fold to true.
   for (ConstraintAttr constraint : constraints) {
     Location loc = constraint.getLoc();
-    std::variant<EvalError, Attribute> result =
-        evaluator.concretizeParameterExpr(constraint.getExpr());
-    if (std::holds_alternative<EvalError>(result))
-      return {{loc, EvalError("constraint evaluation failure: ", loc,
-                              std::move(std::get<EvalError>(result)))}};
+    ErrorTreeOr<Attribute> result =
+        evaluator.concretizeParameterExpr(loc, constraint.getExpr());
+    if (!result)
+      return ErrorTree(loc, "constraint evaluation failure",
+                       result.takeError());
 
-    auto resultInt = dyn_cast<IntegerAttr>(std::get<Attribute>(result));
+    auto resultInt = dyn_cast<IntegerAttr>(result.takeValue());
     if (!resultInt || resultInt.getValue().getBitWidth() != 1)
-      return {{loc,
-               EvalError("constraint evaluation didn't return true or false")}};
+      return ErrorTree(loc,
+                       "constraint evaluation didn't return true or false");
 
     // If this failed, indicate why.
     if (resultInt.getValue().isZero())
-      return {{loc, EvalError("constraint failed: " +
-                              constraint.getMessage().getValue())}};
+      return ErrorTree(loc, "constraint failed: " +
+                                constraint.getMessage().getValue());
   }
 
   // If we made it this far, then everything folded to true.
@@ -325,7 +363,7 @@ KGEN::evaluateConstraints(ArrayRef<ConstraintAttr> constraints,
 /// Given a generator or interface declaration operation, evaluate any
 /// constraints against inputParamValues.  If the constraints are met, return
 /// success, otherwise return why they aren't.
-Optional<EvalDiagnostic>
+Optional<ErrorTree>
 KGEN::evaluateConstraints(DeclInterface decl,
                           ArrayRef<Attribute> inputParamValues,
                           IREvaluator &evaluator) {
