@@ -117,8 +117,6 @@ private:
   ParseResult resolveBody(ParamDeclareOp op, LitLexer &lexer, ASTDecl &decl);
 
 private:
-  ParseResult processDecorators(LIT::FuncOp funcOp, ASTDecl &decl);
-
   /// This is shared state across the whole parser.
   LitSharedState &sharedState;
 

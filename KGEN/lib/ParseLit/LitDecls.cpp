@@ -677,6 +677,8 @@ struct FnDecorators {
   bool isExported = false;
 
   void processDecorator(ExprNode *decorator, LitParserBase &parser);
+  void applyEarly(ASTDecl &decl, LitSharedState &shared);
+  void applyLate(ASTDecl &decl, LitSharedState &shared);
 };
 } // namespace
 
@@ -731,44 +733,49 @@ void FnDecorators::processDecorator(ExprNode *decorator,
   parser.emitError(decorator->getLoc(), "unsupported decorator");
 }
 
-ParseResult DeclResolver::processDecorators(LIT::FuncOp funcOp, ASTDecl &decl) {
-  // If no decorators were found bail out.
-  if (!decl.getDecoratorsCursor().getState())
-    return success();
-
-  LitLexer lexer(sharedState, decl.getDecoratorsCursor());
-  LitParserBase p(lexer);
+void FnDecorators::applyEarly(ASTDecl &decl, LitSharedState &shared) {
+  LIT::FuncOp funcOp = cast<LIT::FuncOp>(decl);
   Location loc = funcOp.getLoc();
-  // Process any decorators we will eventually want when they come up.
-  FnDecorators attrs;
-
-  ExprNode *decoratorNode;
-  // The lexer is reset to getDecoratorsCursor() so the next token must be `@`.
-  p.consumeToken(LitToken::at);
-  do {
-    if (p.parseExpression(decoratorNode,
-                          decl.getParentDecl()->getIndentation()))
-      return failure();
-    attrs.processDecorator(decoratorNode, p);
-  } while (p.consumeIf(LitToken::at));
 
   // Is this a method?
   bool isMethod = isa<StructDeclOp>(*decl.getParentDecl());
-
-  if (attrs.isStatic && !isMethod) {
-    p.emitError(loc, "only methods on structs may be declared static");
-    attrs.isStatic = false;
+  if (isStatic && !isMethod) {
+    shared.emitError(loc, "only methods on structs may be declared static");
+    isStatic = false;
   }
 
-  if (attrs.isInterface && attrs.implementedInterface)
-    p.emitError(loc, "interfaces cannot implement other interfaces");
+  if (isInterface && implementedInterface)
+    shared.emitError(loc, "interfaces cannot implement other interfaces");
 
-  if (attrs.isInterface && isMethod)
-    p.emitError(loc, "interfaces cannot be nested inside a struct");
+  if (isInterface && isMethod)
+    shared.emitError(loc, "interfaces cannot be nested inside a struct");
 
-  if (attrs.isExported) {
+  if (isInterface)
+    funcOp.setIsInterface(true);
+  if (implementedInterface)
+    funcOp.setImplementsAttr(implementedInterface);
+  if (isStatic)
+    funcOp.setIsStatic(true);
+
+  // Remember if this was declared as a 'def' or 'fn' because this affects
+  // certain downstream behavior.
+  if (funcOp.getIsDef() && raises)
+    shared.emitError(loc, "methods defined with 'def' always raise");
+
+  if (funcOp.getIsDef() || raises)
+    funcOp.setRaises(true);
+}
+
+/// This method is used to apply decorators to the function after it is
+/// resolved.
+void FnDecorators::applyLate(ASTDecl &decl, LitSharedState &shared) {
+  LIT::FuncOp funcOp = cast<LIT::FuncOp>(decl);
+  Location loc = funcOp.getLoc();
+  bool isMethod = isa<StructDeclOp>(*decl.getParentDecl());
+
+  if (isExported) {
     if (isMethod)
-      p.emitError(loc, "methods cannot be exported");
+      shared.emitError(loc, "methods cannot be exported");
     else {
       ASTDecl *containingDecl = decl.getParentDecl();
       containingDecl->getDeclEndBuilder().create<ExportOp>(
@@ -776,22 +783,6 @@ ParseResult DeclResolver::processDecorators(LIT::FuncOp funcOp, ASTDecl &decl) {
                               {FlatSymbolRefAttr::get(funcOp.getNameAttr())}));
     }
   }
-
-  if (attrs.isInterface)
-    funcOp.setIsInterface(true);
-  if (attrs.implementedInterface)
-    funcOp.setImplementsAttr(attrs.implementedInterface);
-  if (attrs.isStatic)
-    funcOp.setIsStatic(true);
-
-  // Remember if this was declared as a 'def' or 'fn' because this affects
-  // certain downstream behavior.
-  if (funcOp.getIsDef() && attrs.raises)
-    p.emitError(loc, "methods defined with 'def' always raise");
-
-  if (funcOp.getIsDef() || attrs.raises)
-    funcOp.setRaises(true);
-  return success();
 }
 
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
@@ -799,8 +790,25 @@ ParseResult DeclResolver::processDecorators(LIT::FuncOp funcOp, ASTDecl &decl) {
 ///
 LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
                                              LitLexer &lexer, ASTDecl &decl) {
-  if (processDecorators(funcOp, decl))
-    return failure();
+  FnDecorators decorators;
+
+  // Apply any decorators that are present.
+  if (decl.getDecoratorsCursor().getState()) {
+    LitLexer lexer(sharedState, decl.getDecoratorsCursor());
+    LitParserBase p(lexer);
+    p.consumeToken(LitToken::at);
+    do {
+      ExprNode *decoratorNode;
+      if (p.parseExpression(decoratorNode,
+                            decl.getParentDecl()->getIndentation()))
+        return failure();
+      decorators.processDecorator(decoratorNode, p);
+    } while (p.consumeIf(LitToken::at));
+
+    // Okay, apply them now.
+    decorators.applyEarly(decl, sharedState);
+  }
+
   LitParserBase p(lexer);
 
   // Add meta parameters from an enclosing declaration to the symbol table.
@@ -936,6 +944,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
                                                           : FnEffects::None)));
   funcOp.getBody()->addArguments(argTypes, argLocs);
 
+  // Now that the function is set up, apply any late decorators.
+  // TODO: Move implements logic and everything else into this. Decorators
+  // should run after the function signature is type checked.
+  decorators.applyLate(decl, sharedState);
+
   if (FlatSymbolRefAttr implementsAttr = funcOp.getImplementsAttr()) {
     StringRef interfaceName = implementsAttr.getAttr().getValue();
     if (ASTDecl *interfaceDecl = decl.lookup(implementsAttr.getAttr())) {
@@ -954,6 +967,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     }
   }
 
+  // Interfaces don't have anything else to do.
   if (funcOp.getIsInterface())
     return success();
 
