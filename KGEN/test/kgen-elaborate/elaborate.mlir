@@ -699,11 +699,11 @@ kgen.generator @mid<fn: <fn: ()->index>() -> index, N>() -> (index, index) {
   // CHECK: return %[[C0]], %[[ADD]]
   %c0 = index.constant 0
   %c1 = index.constant 1
-  %1 = kgen.inlined_call[<fn: ()->index>() -> index: fn]<fn: ()->index = region>()
+  %1 = kgen.call_param[<fn: ()->index>() -> index: fn]<fn: ()->index = region>()
   fn() -> index {
     kgen.return %c0 : index
   }
-  %2 = kgen.inlined_call[<fn: ()->index>() -> index: fn]<fn: ()->index = region>()
+  %2 = kgen.call_param[<fn: ()->index>() -> index: fn]<fn: ()->index = region>()
   fn() -> index {
     %3 = kgen.param.constant = <N>
     %5 = index.add %c1, %3
@@ -729,8 +729,7 @@ kgen.generator @outermost() -> index{
 kgen.generator @middle<outer:<fn:()->index>()->index>() -> index{
   // CHECK: %[[X:.*]] = index.constant 1
   %x = index.constant 1
-  %1 = kgen.inlined_call[<fn:()->index, outer:<fn:()->index>()->index>()->index : @inner]
-                        <fn: () -> index = region, outer:<fn:()->index>()->index = outer>()
+  %1 = kgen.call @inner <fn: () -> index = region, outer:<fn:()->index>()->index = outer>() : () -> index
   fn() -> index {
     kgen.return %x : index
   }
@@ -750,7 +749,7 @@ kgen.generator @inner<fn: ()->index, outer:<fn:()->index>()->index>() -> index {
 // CHECK-LABEL: @inlined_region_return
 kgen.generator @inlined_region_return() {
   // CHECK: kgen.param.constant = <2>
-  kgen.inlined_call[<fn: <()->index>()->()>()->(): @wants_region_return]<fn: <()->index>()->() = region>()
+  kgen.call @wants_region_return<fn: <()->index>()->() = region>() : () -> ()
   fn<()->index>() {
     kgen.return<2>
   }
@@ -792,7 +791,7 @@ kgen.generator @two_instances<fn: ()->index>() -> index {
 kgen.generator @inline_call_two_instances(%arg0: index) -> index {
   // CHECK-NEXT: kgen.call @iface1
   // CHECK-NEXT: index.add %0, %arg0
-  %0 = kgen.inlined_call[<fn: ()->index>() -> index: @two_instances]<fn: ()->index = region>()
+  %0 = kgen.call @two_instances<fn: ()->index = region>() : () -> index
   fn() -> index {
     kgen.return %arg0 : index
   }
@@ -824,7 +823,7 @@ kgen.generator @iface2<fn: ()->index>() -> index implements @iface {
 // CHECK-LABEL: kgen.func @inline_call_interface
 kgen.generator @inline_call_interface(%arg0: index) -> index {
   // CHECK: index.add %idx0, %arg0
-  %0 = kgen.inlined_call[<fn: ()->index>()->index: @iface]<fn: ()->index = region>()
+  %0 = kgen.call @iface<fn: ()->index = region>() : () -> index
   fn() -> index {
     kgen.return %arg0: index
   }
@@ -1006,27 +1005,10 @@ kgen.generator @top() {
 
 // -----
 
-// CHECK-LABEL: kgen.func @passArgument
-kgen.generator @passArgument(%arg0: index) -> index {
-  // CHECK: return %arg0
-  kgen.return %arg0 : index
-}
-
-// CHECK-LABEL: kgen.func @doIt
-kgen.generator @doIt() -> index {
-  // CHECK: %idx2 = index.constant 2
-  %idx2 = index.constant 2
-  %1 = kgen.inlined_call[(index) -> index: @passArgument](%idx2)
-  // CHECK: return %idx2 : index
-  kgen.return %idx2 : index
-}
-
-// -----
-
 // CHECK-LABEL: kgen.func @passNonIsolatedRegion
-// CHECK-NEXT: kgen.return
 kgen.generator @passNonIsolatedRegion() {
-  kgen.inlined_call[<fn: () -> ()>() -> (): @callARegion]<fn: () -> () = region>()
+  // CHECK-NEXT: kgen.call @"callARegion,fn=passNonIsolatedRegion
+  kgen.call @callARegion<fn: () -> () = region>() : () -> ()
   fn() {
     kgen.return
   }
@@ -1034,7 +1016,7 @@ kgen.generator @passNonIsolatedRegion() {
 }
 
 kgen.generator @callARegion<fn: () -> ()>() {
-  kgen.inlined_call[<fn: () -> ()>() -> (): @noReallyCallIt]<fn: () -> () = fn>()
+  kgen.call @noReallyCallIt<fn: () -> () = fn>() : () -> ()
   kgen.return
 }
 
@@ -1141,24 +1123,26 @@ kgen.generator @check() {
 
 // -----
 
-// CHECK-NOT: call_it_nested
+// CHECK-LABEL: kgen.func @"call_it_nested
 kgen.generator @call_it_nested<fn: <fn: (index) -> index>(index) -> index>(%arg0: index) -> index {
-  %1 = kgen.inlined_call[<fn: (index) -> index>(index) -> index: fn]<fn: (index) -> index = region>(%arg0)
+  // CHECK-NEXT: %idx1 = index.constant 1
+  // CHECK-NEXT: %0 = index.add %arg0, %idx1
+  %1 = kgen.call_param[<fn: (index) -> index>(index) -> index: fn]<fn: (index) -> index = region>(%arg0)
   fn(%arg1: index) -> index {
     %0 = index.add %arg0, %arg1
     kgen.return %0 : index
   }
+  // CHECK-NEXT: kgen.return %0
   kgen.return %1 : index
 }
 
 // CHECK-LABEL: @call_nested
 kgen.generator @call_nested(%arg0: index) -> index {
-  // CHECK-NEXT: %idx1 = index.constant 1
-  // CHECK-NEXT: %0 = index.add %arg0, %idx1
-  %0 = kgen.inlined_call[<fn: <fn: (index) -> index>(index) -> index>(index) -> index: @call_it_nested]<fn: <fn: (index) -> index>(index) -> index = region>(%arg0)
+  // CHECK-NEXT: %0 = kgen.call @"call_it_nested{{.*}}(%arg0)
+  %0 = kgen.call @call_it_nested<fn: <fn: (index) -> index>(index) -> index = region>(%arg0) : (index) -> index
   fn<fn: (index) -> index>(%arg1: index) -> index {
     %1 = index.constant 1
-    %2 = kgen.inlined_call[(index) -> index: fn](%1)
+    %2 = kgen.call_param[(index) -> index: fn](%1)
     kgen.return %2 : index
   }
   // CHECK-NEXT: return %0
@@ -1185,7 +1169,7 @@ kgen.generator @genItf3_impl0<x>()
 kgen.generator @genItf3_impl1<x>()
   constraints <[ne(x, 0), "x must not be zero"]> implements @genItf3 {
   "impl.1"() {attr=#kgen.param.decl.ref<"x"> : index} : () -> ()
-  kgen.inlined_call[<x>()->(): @genItf3]<x = sub(x, 1)>()
+  kgen.call @genItf3<x = sub(x, 1)>() : () -> ()
   kgen.return
 }
 

@@ -18,6 +18,9 @@ namespace M {
 Operation *cloneOperation(Operation *original, BlockAndValueMapping &mapper,
                           DenseMap<Operation *, Operation *> &operationMap);
 
+/// Given an operation, determine whether any nested operations use values
+/// captured from above.
+bool operationIsIsolatedFromAbove(Operation *op);
 } // namespace M
 
 #endif // SUPPORT_COMPILER_OPERATIONUTILS_H

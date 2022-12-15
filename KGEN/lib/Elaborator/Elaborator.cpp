@@ -259,13 +259,9 @@ public:
   /// This struct contains a region body and the parameter context at its
   /// original parent operation.
   struct RegionBody {
-    FuncInterface body;
+    RegionBodyOp body;
     IREvaluator evaluator;
-
-    /// Return true if the body is isolated from above.
-    bool isIsolatedFromAbove() const {
-      return body->hasTrait<OpTrait::IsIsolatedFromAbove>();
-    }
+    bool isolated;
   };
 
   /// These methods provide access to the `regionsReferenced` dictionary. This
@@ -570,11 +566,6 @@ private:
       CallParamOp call,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriter);
 
-  /// Process a `kgen.inlined_call` operation by inlining the callee.
-  LogicalResult processInlinedCallOp(
-      InlinedCallOp call,
-      SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
-
   /// Process a call to a region.
   LogicalResult processRegionCallImpl(KGENCallOpInterface call,
                                       RegionReferenceAttr regionName,
@@ -702,8 +693,6 @@ LogicalResult ParameterRewriter::rewriteOps(
         result = processGeneratorUser(call, rewriterWorklist);
       else if (auto call = dyn_cast<CallParamOp>(op))
         result = processCallParamOp(call, rewriterWorklist);
-      else if (auto call = dyn_cast<InlinedCallOp>(op))
-        result = processInlinedCallOp(call, rewriterWorklist);
       else
         result = processGenericOp(op);
 
@@ -937,7 +926,10 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
                                        "_region_" + Twine(nextCallRegionID++),
                                    regionRef.getType());
 
-      auto body = cast<FuncInterface>(**regionBodyIt++);
+      auto body = cast<RegionBodyOp>(**regionBodyIt++);
+      // Determine whether the body isolated from unhooking it from its parent.
+      bool isolated = operationIsIsolatedFromAbove(body);
+
       // Remove the RegionBodyOp from the call's region, and hand ownership of
       // it to the elaborator.
       body->remove();
@@ -946,9 +938,9 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
       // a lexically identical body.  This would reduce some redundant
       // specialization.
       Elaborator::RegionBody regionBody{
-          body,
-          elaborator.createEvaluator(getEvaluator().getParameterValues())};
-      inlineCallee |= !regionBody.isIsolatedFromAbove();
+          body, elaborator.createEvaluator(getEvaluator().getParameterValues()),
+          isolated};
+      inlineCallee |= !regionBody.isolated;
       elaborator.addRegionReference(regionRefAttr, std::move(regionBody));
       boundInputParams.push_back(regionRefAttr);
       continue;
@@ -964,8 +956,7 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
     // If we have a reference to a non-isolated region, indicate that the callee
     // will always be inlined.
     auto regionRef = dyn_cast<RegionReferenceAttr>(*value);
-    if (regionRef &&
-        !elaborator.getRegionReferenced(regionRef).isIsolatedFromAbove())
+    if (regionRef && !elaborator.getRegionReferenced(regionRef).isolated)
       inlineCallee = true;
 
     boundInputParams.push_back(*value);
@@ -1104,7 +1095,7 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
   // Now that we resolved the call to a new thing, build a new call to replace
   // the old one.
   mlir::IRRewriter b{OpBuilder(user)};
-  if (isa<CallOp, CallParamOp, InlinedCallOp>(user)) {
+  if (isa<CallOp, CallParamOp>(user)) {
     if (!inlineCallee) {
       b.replaceOpWithNewOp<CallOp>(
           user, resultTypes,
@@ -1177,7 +1168,7 @@ LogicalResult ParameterRewriter::spawnNewFuncClone(
   // we need to remap any values that escaped to the cloned function.
   auto isNonIsolatedRegionRef = [&](Attribute attr) {
     if (auto regionRef = dyn_cast<RegionReferenceAttr>(attr))
-      return !elaborator.getRegionReferenced(regionRef).isIsolatedFromAbove();
+      return !elaborator.getRegionReferenced(regionRef).isolated;
     return false;
   };
   if (llvm::any_of(calleeAndInputParams.second, isNonIsolatedRegionRef)) {
@@ -1230,35 +1221,6 @@ LogicalResult ParameterRewriter::processCallParamOp(
   auto regionName = cast<RegionReferenceAttr>(*value);
   return processRegionCallImpl(call, regionName, call.getParamDeclsAttr(),
                                call.getParamValues());
-}
-
-LogicalResult ParameterRewriter::processInlinedCallOp(
-    InlinedCallOp call,
-    SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
-  // Simplify the callee expression.
-  ErrorTreeOr<Attribute> callee =
-      getEvaluator().concretizeParameterExpr(call.getLoc(), call.getCallee());
-  if (callee.isError())
-    return error(callee.takeError());
-
-  // If the parameter expression is resolved to a region, then it is inlined
-  // anyways.
-  if (auto regionName = dyn_cast<RegionReferenceAttr>(*callee))
-    return processRegionCallImpl(call, regionName, call.getParamDeclsAttr(),
-                                 call.getParamValues());
-
-  auto symbolCst = cast<SymbolConstantAttr>(*callee);
-  // If there are no bound parameters on the call, use the one on the
-  // CallParam.  TODO: Remove.
-  if (symbolCst.getParamValues().empty())
-    return processGeneratorUserImpl(
-        call,
-        SymbolConstantAttr::get(symbolCst.getSymbol(),
-                                call.getParamValuesAttr(),
-                                symbolCst.getType().dropParamValues()),
-        call.getParamDecls(), rewriters);
-  return processGeneratorUserImpl(call, symbolCst, call.getParamDecls(),
-                                  rewriters);
 }
 
 LogicalResult ParameterRewriter::processRegionCallImpl(

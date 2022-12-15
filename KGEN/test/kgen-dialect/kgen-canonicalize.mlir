@@ -102,8 +102,8 @@ kgen.generator @callee<fn: <N>()->index>() {
 
 // CHECK-LABEL: @hoist_constant
 kgen.generator @hoist_constant() {
-  // CHECK-NEXT: inlined_call
-  kgen.inlined_call[<fn: <N>()->index>() -> (): @callee]<fn: <N>()->index = region>()
+  // CHECK-NEXT: call
+  kgen.call @callee<fn: <N>()->index = region>() : () -> ()
   // CHECK-NEXT: fn<N>
   fn<N>() -> index {
     // CHECK-NEXT: kgen.param.constant = <N>
@@ -166,5 +166,22 @@ kgen.struct.decl @Struct {
 kgen.generator @callNested() {
   // CHECK-NEXT: kgen.call @Struct::@Nested
   kgen.call_param[() -> (): @Struct::@Nested]()
+  kgen.return
+}
+
+// -----
+
+kgen.generator @takeBody<fn: () -> ()>() {
+  kgen.return
+}
+
+// CHECK-LABEL: @callParamWithBody
+kgen.generator @callParamWithBody() {
+  // CHECK-NEXT: kgen.call @takeBody<fn: () -> () = region>
+  // CHECK-NEXT: fn() {
+  kgen.call_param[<fn: () -> ()>() -> (): @takeBody]<fn: () -> () = region>()
+  fn() {
+    kgen.return
+  }
   kgen.return
 }
