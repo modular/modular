@@ -269,13 +269,24 @@
         },
         {
           "name": "storage.type.class.python",
-          "match": "\\b(?<!\\.)(class)\\b"
+          "match": "\\b(?<!\\.)(class|struct)\\b"
         },
         {
           "match": "(?x)\n  ^\\s*(\n    case | match\n  )(?=\\s*([-+\\w\\d(\\[{'\":#]|$))\\b\n",
           "captures": {
             "1": {
               "name": "keyword.control.flow.python"
+            }
+          }
+        },
+        {
+          "match": "\\b(var|let) \\s*([[:alpha:]_]\\w*)\\b",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.declaration.python"
+            },
+            "2": {
+              "name": "variable.other.python"
             }
           }
         }
@@ -981,6 +992,10 @@
               "include": "#expression"
             }
           ]
+        },
+        {
+          "match": "\\b(__include)\\b",
+          "name": "keyword.control.import.python"
         }
       ]
     },
@@ -988,7 +1003,7 @@
       "patterns": [
         {
           "name": "meta.class.python",
-          "begin": "(?x)\n  \\s*(class)\\s+\n    (?=\n      [[:alpha:]_]\\w* \\s* (:|\\()\n    )\n",
+          "begin": "(?x)\n  \\s*(class|struct)\\s+\n    (?=\n      [[:alpha:]_]\\w* \\s* (:|\\()\n    )\n",
           "end": "(:)",
           "beginCaptures": {
             "1": {
@@ -1249,7 +1264,7 @@
     },
     "function-declaration": {
       "name": "meta.function.python",
-      "begin": "(?x)\n  \\s*\n  (?:\\b(async) \\s+)? \\b(def)\\s+\n    (?=\n      [[:alpha:]_][[:word:]]* \\s* \\(\n    )\n",
+      "begin": "(?x)\n  \\s*\n  (?:\\b(async) \\s+)? \\b(def|fn)\\s+\n    (?=\n      [[:alpha:]_][[:word:]]* \\s* [\\(\\[]\n    )\n",
       "end": "(:|(?=[#'\"\\n]))",
       "beginCaptures": {
         "1": {
@@ -1270,6 +1285,9 @@
         },
         {
           "include": "#parameters"
+        },
+        {
+          "include": "#meta_parameters"
         },
         {
           "include": "#line-continuation"
@@ -1347,6 +1365,48 @@
         },
         {
           "include": "#annotated-parameter"
+        }
+      ]
+    },
+    "meta_parameters": {
+      "name": "meta.function.parameters.python",
+      "begin": "(\\[)",
+      "end": "(\\])",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.parameters.begin.python"
+        }
+      },
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.parameters.end.python"
+        }
+      },
+      "patterns": [
+        {
+          "begin": "(?x)\n  \\b\n  ([[:alpha:]_]\\w*) \\s* (:)\n",
+          "end": "(,)|(?=\\])",
+          "beginCaptures": {
+            "1": {
+              "name": "variable.parameter.function.language.python"
+            },
+            "2": {
+              "name": "punctuation.separator.annotation.python"
+            }
+          },
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.separator.parameters.python"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#expression"
+            }
+          ]
+        },
+        {
+          "include": "#comments"
         }
       ]
     },
@@ -1719,7 +1779,7 @@
     },
     "builtin-types": {
       "name": "support.type.python",
-      "match": "(?x)\n  (?<!\\.) \\b(\n    bool | bytearray | bytes | classmethod | complex | dict\n    | float | frozenset | int | list | object | property\n    | set | slice | staticmethod | str | tuple | type\n\n    (?# Although 'super' is not a type, it's related to types,\n        and is special enough to be highlighted differently from\n        other built-ins)\n    | super\n  )\\b\n"
+      "match": "(?x)\n  (?<!\\.) \\b(\n    __mlir_attr | __mlir_op | __mlir_type | bool | bytearray | bytes | classmethod | complex | dict\n    | float | frozenset | int | list | object | property\n    | set | slice | staticmethod | str | tuple | type\n\n    (?# Although 'super' is not a type, it's related to types,\n        and is special enough to be highlighted differently from\n        other built-ins)\n    | super\n  )\\b\n"
     },
     "magic-function-names": {
       "comment": "these methods have magic interpretation by python and are generally called\nindirectly through syntactic constructs\n",
@@ -1732,7 +1792,7 @@
     },
     "magic-variable-names": {
       "comment": "magic variables which a class/module may have.",
-      "match": "(?x)\n  \\b(\n    __(?:\n      all | annotations | bases | builtins | class\n      | closure | code | debug | defaults | dict | doc | file | func\n      | globals | kwdefaults | match_args | members | metaclass | methods\n      | module | mro | mro_entries | name | qualname | post_init | self\n      | signature | slots | subclasses | version | weakref | wrapped\n      | classcell | spec | path | package | future | traceback\n    )__\n  )\\b\n",
+      "match": "(?x)\n  \\b(\n    __(?:\n      all | annotations | bases | builtins | class\n      | struct\n      | closure | code | debug | defaults | dict | doc | file | func\n      | globals | kwdefaults | match_args | members | metaclass | methods\n      | module | mro | mro_entries | name | qualname | post_init | self\n      | signature | slots | subclasses | version | weakref | wrapped\n      | classcell | spec | path | package | future | traceback\n    )__\n  )\\b\n",
       "captures": {
         "1": {
           "name": "support.variable.magic.python"
@@ -1750,7 +1810,7 @@
       ]
     },
     "illegal-names": {
-      "match": "(?x)\n  \\b(?:\n    (\n      and | assert | async | await | break | class | continue | def\n      | del | elif | else | except | finally | for | from | global\n      | if | in | is | (?<=\\.)lambda | lambda(?=\\s*[\\.=])\n      | nonlocal | not | or | pass | raise | return | try | while | with\n      | yield\n    ) | (\n      as | import\n    )\n  )\\b\n",
+      "match": "(?x)\n  \\b(?:\n    (\n      and | assert | async | await | break | class | struct | continue | def\n       | fn\n      | del | elif | else | except | finally | for | from | global\n      | if | in | is | (?<=\\.)lambda | lambda(?=\\s*[\\.=])\n      | nonlocal | not | or | pass | raise | return | try | while | with\n      | yield\n    ) | (\n      as | import\n    )\n  )\\b\n",
       "captures": {
         "1": {
           "name": "keyword.control.flow.python"
@@ -1776,14 +1836,9 @@
       "match": "\\.\\.\\."
     },
     "backticks": {
-      "name": "invalid.deprecated.backtick.python",
+      "name": "string.quoted.single.python",
       "begin": "\\`",
-      "end": "(?:\\`|(?<!\\\\)(\\n))",
-      "patterns": [
-        {
-          "include": "#expression"
-        }
-      ]
+      "end": "(?:\\`|(?<!\\\\)(\\n))"
     },
     "illegal-operator": {
       "patterns": [
