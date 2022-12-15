@@ -200,8 +200,7 @@ def bad_interface_with_body1(x: __mlir_type.index) -> __mlir_type.index:
   return 0
 
 struct NoNestedInterface:
-  @interface
-  # expected-error @+1 {{interfaces cannot be nested inside a struct}}
+  @interface   # expected-error {{interfaces cannot be nested inside a struct}}
   def foo(self) -> __mlir_type.index:
 
 @interface
@@ -209,8 +208,7 @@ def good_interface(x: __mlir_type.index) -> __mlir_type.index:
   ...
 
 @implements(good_interface)
-@interface
-# expected-error @+2 {{interfaces cannot implement other interfaces}}
+@interface # expected-error {{interfaces cannot implement other interfaces}}
 # expected-error @+1 {{interfaces must have no body}}
 def incompatible_decorators(x: __mlir_type.index) -> __mlir_type.index:
   return 1

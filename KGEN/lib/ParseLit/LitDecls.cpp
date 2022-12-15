@@ -468,10 +468,10 @@ static SmallVector<ExprNode *> parseDecorators(ASTDecl &decl,
 }
 
 static void rejectDecorators(ArrayRef<ExprNode *> decoratorExprs, ASTDecl &decl,
-                             LitParserBase &p) {
+                             LitSharedState &shared) {
   if (!decoratorExprs.empty())
-    p.emitError(decoratorExprs[0]->getLoc(),
-                "decorators not supported on this statement");
+    shared.emitError(decoratorExprs[0]->getLoc(),
+                     "decorators not supported on this statement");
 }
 
 //===----------------------------------------------------------------------===//
@@ -618,15 +618,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   // Check any special function information.
 
   // __new__ and similar methods are implicitly static.
-  if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod) {
-    // Verify that implicitly static methods are declared as methods.
-    if (!selfType) {
-      emitError("special function must be a method");
-
-    } else {
-      funcOp.setIsStaticAttr(mlir::UnitAttr::get(shared.getContext()));
-    }
-  }
+  if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
+    funcOp.setIsStatic(true);
 
   // Check that the 'self' argument of a method was specified correctly.
   if (selfType && !funcOp.getIsStatic()) {
@@ -638,6 +631,11 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       emitErrorLoc(args[0].loc, "'self' argument must have type ")
           << selfType << " but actually has type " << ASTType(argTypes[0]);
     }
+  }
+
+  if (funcOp.getIsStatic() && !selfType) {
+    emitError("only methods on structs may be declared static");
+    funcOp.setIsStatic(false);
   }
 
   // Verify the operand count lines up.
@@ -702,123 +700,134 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
 namespace {
 struct FnDecorators {
-  /// This is set to true by @staticmethod.
-  bool isStatic = false;
-  /// This is set to true by @interface.
-  bool isInterface = false;
-  /// This is set to true by @raises.
-  bool raises = false;
-  /// This is set by @implementedInterface(x).
-  FlatSymbolRefAttr implementedInterface;
-  // This is set to true by @export.
-  bool isExported = false;
+  FnDecorators(ASTDecl &decl, LitSharedState &shared)
+      : decl(decl), shared(shared), funcOp(cast<LIT::FuncOp>(decl)),
+        isMethod(isa<StructDeclOp>(*decl.getParentDecl())) {}
 
-  void processDecorator(ExprNode *decorator, LitParserBase &parser);
-  void applyEarly(ASTDecl &decl, LitSharedState &shared);
-  void applyLate(ASTDecl &decl, LitSharedState &shared);
+  void apply(SmallVector<ExprNode *> &decoratorExprs);
+  void applyLate(SmallVector<ExprNode *> &decoratorExprs);
+
+private:
+  void applyInterface(SMLoc loc);
+  void applyRaises(SMLoc loc);
+  void applyImplements(const CallNode &callNode);
+  void applyLateExport();
+
+  ASTDecl &decl;
+  LitSharedState &shared;
+  LIT::FuncOp funcOp;
+  const bool isMethod;
 };
 } // namespace
 
-// Process a function decorator.
-void FnDecorators::processDecorator(ExprNode *decorator,
-                                    LitParserBase &parser) {
-  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-    if (declRef->spelling == "staticmethod")
-      isStatic = true;
-    else if (declRef->spelling == "interface")
-      isInterface = true;
-    else if (declRef->spelling == "export")
-      isExported = true;
-    else if (declRef->spelling == "raises")
-      raises = true;
-    else
-      parser.emitError(decorator->getLoc(), "unsupported decorator: ")
-          << declRef->spelling;
+void FnDecorators::applyInterface(SMLoc loc) {
+  if (isMethod) {
+    shared.emitError(loc, "interfaces cannot be nested inside a struct");
     return;
   }
 
-  // `x()` forms.
-  if (auto callNode = dyn_cast<CallNode>(decorator)) {
-    auto declRef = dyn_cast<DeclRefNode>(callNode->callee);
-    if (!declRef || declRef->spelling != "implements") {
-      parser.emitError(decorator->getLoc(), "unsupported decorator");
-      return;
-    }
-    if (callNode->args.size() != 1 ||
-        !isa<DeclRefNode>(callNode->args.front())) {
-      parser.emitError(
-          decorator->getLoc(),
-          "@implements decorator must specify one interface by name");
-      return;
-    }
-    if (implementedInterface) {
-      parser.emitError(decorator->getLoc(),
-                       "only one @implements decorator is allowed");
-      return;
-    }
-
-    // FIXME: This is incorrect. This should do name lookup on the specified
-    // name and use getSymbolRef() on the returned ASTDecl, rather than forming
-    // it directly.  There is no reason to force interfaces to be top-level.
-    StringRef interfaceName =
-        cast<DeclRefNode>(callNode->args.front())->spelling;
-    implementedInterface =
-        FlatSymbolRefAttr::get(parser.getContext(), interfaceName);
-    return;
-  }
-
-  parser.emitError(decorator->getLoc(), "unsupported decorator");
-}
-
-void FnDecorators::applyEarly(ASTDecl &decl, LitSharedState &shared) {
-  LIT::FuncOp funcOp = cast<LIT::FuncOp>(decl);
-  Location loc = funcOp.getLoc();
-
-  // Is this a method?
-  bool isMethod = isa<StructDeclOp>(*decl.getParentDecl());
-  if (isStatic && !isMethod) {
-    shared.emitError(loc, "only methods on structs may be declared static");
-    isStatic = false;
-  }
-
-  if (isInterface && implementedInterface)
+  if (funcOp.getImplementsAttr())
     shared.emitError(loc, "interfaces cannot implement other interfaces");
 
-  if (isInterface && isMethod)
-    shared.emitError(loc, "interfaces cannot be nested inside a struct");
+  funcOp.setIsInterface(true);
+}
 
-  if (isInterface)
-    funcOp.setIsInterface(true);
-  if (implementedInterface)
-    funcOp.setImplementsAttr(implementedInterface);
-  if (isStatic)
-    funcOp.setIsStatic(true);
-
-  // Remember if this was declared as a 'def' or 'fn' because this affects
-  // certain downstream behavior.
-  if (funcOp.getIsDef() && raises)
+void FnDecorators::applyRaises(SMLoc loc) {
+  if (funcOp.getIsDef())
     shared.emitError(loc, "methods defined with 'def' always raise");
-
-  if (funcOp.getIsDef() || raises)
+  else
     funcOp.setRaises(true);
 }
 
-/// This method is used to apply decorators to the function after it is
-/// resolved.
-void FnDecorators::applyLate(ASTDecl &decl, LitSharedState &shared) {
-  LIT::FuncOp funcOp = cast<LIT::FuncOp>(decl);
-  Location loc = funcOp.getLoc();
-  bool isMethod = isa<StructDeclOp>(*decl.getParentDecl());
+// @implements interface.
+void FnDecorators::applyImplements(const CallNode &callNode) {
+  if (funcOp.getImplementsAttr()) {
+    shared.emitError(callNode.getLoc(),
+                     "only one @implements decorator is allowed");
+    return;
+  }
 
-  if (isExported) {
-    if (isMethod)
-      shared.emitError(loc, "methods cannot be exported");
-    else {
-      ASTDecl *containingDecl = decl.getParentDecl();
-      containingDecl->getDeclEndBuilder().create<ExportOp>(
-          loc, ArrayAttr::get(containingDecl->getContext(),
-                              {FlatSymbolRefAttr::get(funcOp.getNameAttr())}));
+  if (callNode.args.size() != 1 || !isa<DeclRefNode>(callNode.args.front())) {
+    shared.emitError(
+        callNode.getLoc(),
+        "@implements decorator must specify one interface by name");
+    return;
+  }
+
+  // FIXME: This is incorrect. This should do name lookup on the specified
+  // name and use getSymbolRef() on the returned ASTDecl, rather than
+  // forming it directly.  There is no reason to force interfaces to be
+  // top-level, and this will break mangling.
+  StringRef interfaceName = cast<DeclRefNode>(callNode.args.front())->spelling;
+  funcOp.setImplementsAttr(
+      FlatSymbolRefAttr::get(shared.getContext(), interfaceName));
+}
+
+// Apply all signature decorators.
+void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
+  SmallVector<ExprNode *> unprocessed;
+  for (ExprNode *decorator : decoratorExprs) {
+    bool processedIt = false;
+
+    // Process all the decorators we know about.
+    if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+      processedIt = true;
+      if (declRef->spelling == "staticmethod")
+        funcOp.setIsStatic(true);
+      else if (declRef->spelling == "interface")
+        applyInterface(declRef->getLoc());
+      else if (declRef->spelling == "raises")
+        applyRaises(declRef->getLoc());
+      else
+        processedIt = false;
     }
+
+    // `x()` forms.
+    if (auto callNode = dyn_cast<CallNode>(decorator)) {
+      if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
+        processedIt = true;
+        if (declRef->spelling == "implements")
+          applyImplements(*callNode);
+        else
+          processedIt = false;
+      }
+    }
+
+    if (!processedIt)
+      unprocessed.push_back(decorator);
+  }
+  decoratorExprs = unprocessed;
+}
+
+void FnDecorators::applyLateExport() {
+  if (isMethod) {
+    shared.emitError(funcOp.getLoc(), "methods cannot be exported");
+    return;
+  }
+
+  ASTDecl *containingDecl = decl.getParentDecl();
+  auto builder = containingDecl->getDeclEndBuilder();
+  builder.create<ExportOp>(
+      funcOp.getLoc(),
+      ArrayAttr::get(funcOp.getContext(),
+                     {FlatSymbolRefAttr::get(funcOp.getNameAttr())}));
+}
+
+void FnDecorators::applyLate(SmallVector<ExprNode *> &decoratorExprs) {
+  // Scan through and process decorator expressions that are in the late pass.
+  for (ExprNode *decorator : decoratorExprs) {
+    // Process all the decorators we know about.
+    if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+      if (declRef->spelling == "export") {
+        applyLateExport();
+        continue;
+      }
+
+      shared.emitError(decorator->getLoc(), "unsupported decorator: ")
+          << declRef->spelling;
+      continue;
+    }
+    shared.emitError(decorator->getLoc(), "unsupported decorator");
   }
 }
 
@@ -829,12 +838,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
   SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
-
-  // Okay, apply them now.
-  FnDecorators decorators;
-  for (auto *expr : decoratorExprs)
-    decorators.processDecorator(expr, p);
-
   assert(p.getToken().isAny(LitToken::kw_def, LitToken::kw_fn) &&
          "not a function definition?");
   p.consumeToken();
@@ -922,7 +925,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
   // Now that we have figured out the lexical structure, allow decorators to
   // take a crack at the signature.
-  decorators.applyEarly(decl, sharedState);
+  // Okay, apply them now.
+  FnDecorators(decl, sharedState).apply(decoratorExprs);
 
   // Now that all the structural properties are determined, perform any
   // name-binding specific checks over the declaration.  This happens after
@@ -936,8 +940,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // Set the symbol to the mangled name.
   funcOp.setName(name);
 
-  // TODO: Handle the export attribute somehow else.
-  decorators.applyLate(decl, sharedState);
+  // TODO: Handle the export attribute somehow else.  It should be a 'body
+  // decorator' that is handled after the decl is fully resolved.
+  FnDecorators(decl, sharedState).applyLate(decoratorExprs);
 
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -1186,7 +1191,7 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
     return failure();
   }
 
-  rejectDecorators(decoratorExprs, decl, p);
+  rejectDecorators(decoratorExprs, decl, sharedState);
   return success();
 }
 
@@ -1264,7 +1269,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
   // Regardless of whether we have a type of value initializer, update the type.
   paramDeclOp.setParamDecl(ParamDeclAttr::get(paramDeclOp.getName(), type));
 
-  rejectDecorators(decoratorExprs, decl, p);
+  rejectDecorators(decoratorExprs, decl, sharedState);
   return success();
 }
 
@@ -1307,7 +1312,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
   decl.setSelfType(decl.computeSelfTypeForStruct(sharedState));
-  rejectDecorators(decoratorExprs, decl, p);
+  rejectDecorators(decoratorExprs, decl, sharedState);
   return success();
 }
 
@@ -1340,7 +1345,7 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
     return failure();
 
   fieldOp.setType(type);
-  rejectDecorators(decoratorExprs, decl, p);
+  rejectDecorators(decoratorExprs, decl, sharedState);
   return success();
 }
 
