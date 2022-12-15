@@ -84,13 +84,10 @@ struct LitStmtParser : public LitParserBase {
 
   // Declarations.
   ParseResult parseIncludeHack();
-  ParseResult parseDefFnStmt(LitLexerCursor decoratorsCursor, size_t curIndent);
-  ParseResult parseStructStmt(LitLexerCursor decoratorsCursor,
-                              size_t curIndent);
-  ParseResult parseVarDeclStmt(LitLexerCursor decoratorsCursor,
-                               size_t stmtIndent);
-  ParseResult parseAliasDeclStmt(LitLexerCursor decoratorsCursor,
-                                 size_t stmtIndent);
+  ParseResult parseDefFnStmt(LitLexerCursor startCursor, size_t curIndent);
+  ParseResult parseStructStmt(LitLexerCursor startCursor, size_t curIndent);
+  ParseResult parseVarDeclStmt(LitLexerCursor startCursor, size_t stmtIndent);
+  ParseResult parseAliasDeclStmt(LitLexerCursor startCursor, size_t stmtIndent);
 
 private:
   /// This is declaration / scope that we're parsing into.
@@ -214,64 +211,62 @@ ParseResult LitStmtParser::parseStmts(size_t minIndent) {
 ///               | nonlocal_stmtParseResult [TODO]
 ///
 ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
+  // This is the cursor for the start of the declaration, that will be used in
+  // the signature resolution phase.
+  LitLexerCursor startCursor = getLexer().getCursor();
+
+  // This emits an error message if we parsed a decorator, because this
+  // statement doesn't support them.
+  auto rejectDecorator = [&]() {
+    if (startCursor.getState() == getLexer().getCursor().getState())
+      return;
+    emitError() << "'" << getToken().getSpelling()
+                << "' statement does not allow decorators";
+  };
+
   // This lambda is used to generate an error when a compound statement is used
   // in a scenario that expects simple statements.
   auto rejectSimpleStmt = [&]() {
-    if (isSimpleStmt)
-      emitError() << "'" << getToken().getSpelling()
-                  << "' statement must be on its own line";
+    if (!isSimpleStmt)
+      return;
+    emitError() << "'" << getToken().getSpelling()
+                << "' statement must be on its own line";
   };
-  LitLexerCursor startDecoratorsCursor;
+
+  // Skip over any decorators that are present.  These will be reparsed during
+  // signature resolution phase of a declaration.
+  while (consumeIf(LitToken::at))
+    skipUntilIndentation(stmtIndent);
+
   switch (getToken().getKind()) {
     //===------------------------------------------------------------------===//
     // Compound statements.
     //===------------------------------------------------------------------===//
   case LitToken::kw_if:
+    rejectDecorator();  // Decorators not allowed.
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseIfStmt(stmtIndent);
   case LitToken::kw_while:
+    rejectDecorator();  // Decorators not allowed.
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseWhileStmt(stmtIndent);
   case LitToken::kw_try:
+    rejectDecorator(); // Decorators not allowed.
     rejectSimpleStmt();
     return parseTryStmt(stmtIndent);
   case LitToken::kw_def:
   case LitToken::kw_fn:
     rejectSimpleStmt(); // Not a simple_stmt.
-    return parseDefFnStmt(/*decorators=*/{}, stmtIndent);
+    return parseDefFnStmt(startCursor, stmtIndent);
   case LitToken::kw_struct:
     rejectSimpleStmt(); // Not a simple_stmt.
-    return parseStructStmt(/*decorators=*/{}, stmtIndent);
-
-  case LitToken::at: {
-    startDecoratorsCursor = getLexer().getCursor();
-    consumeToken(LitToken::at);
-    do {
-      skipUntilIndentation(stmtIndent);
-    } while (consumeIf(LitToken::at));
-
-    switch (getToken().getKind()) {
-    case LitToken::kw_def:
-    case LitToken::kw_fn:
-      rejectSimpleStmt(); // Not a simple_stmt.
-      return parseDefFnStmt(startDecoratorsCursor, stmtIndent);
-    case LitToken::kw_struct:
-      rejectSimpleStmt(); // Not a simple_stmt.
-      return parseStructStmt(startDecoratorsCursor, stmtIndent);
-    case LitToken::kw_var:
-      return parseVarDeclStmt(startDecoratorsCursor, stmtIndent);
-    case LitToken::kw_alias:
-      return parseAliasDeclStmt(startDecoratorsCursor, stmtIndent);
-
-    default:
-      return emitError("unknown decorated statement");
-    }
-  }
+    return parseStructStmt(startCursor, stmtIndent);
 
     //===------------------------------------------------------------------===//
     // Simple statements.
     //===------------------------------------------------------------------===//
   case LitToken::kw___include:
+    rejectDecorator(); // Decorators not allowed.
     return parseIncludeHack();
 
   case LitToken::kw_pass:
@@ -280,17 +275,21 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     consumeToken();
     return success();
   case LitToken::kw_var:
-    return parseVarDeclStmt(LitLexerCursor(), stmtIndent);
+    return parseVarDeclStmt(startCursor, stmtIndent);
   case LitToken::kw_alias:
-    return parseAliasDeclStmt(LitLexerCursor(), stmtIndent);
+    return parseAliasDeclStmt(startCursor, stmtIndent);
   case LitToken::kw_return:
+    rejectDecorator(); // Decorators not allowed.
     return parseReturnStmt(stmtIndent);
   case LitToken::kw_raise:
+    rejectDecorator(); // Decorators not allowed.
     return parseRaiseStmt(stmtIndent);
   case LitToken::kw_continue:
+    rejectDecorator(); // Decorators not allowed.
     return parseBreakOrContinueStmt(LitToken::kw_continue, "continue",
                                     HLCF::ContinueOp::getOperationName());
   case LitToken::kw_break:
+    rejectDecorator(); // Decorators not allowed.
     return parseBreakOrContinueStmt(LitToken::kw_break, "break",
                                     HLCF::BreakOp::getOperationName());
   default:
@@ -299,8 +298,10 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
 
   // Otherwise, we must have a statement that starts with the expression
   // grammar.
-  if (isa<StructDeclOp>(containingDecl))
+  if (isa<StructDeclOp>(containingDecl)) {
+    // TODO: Support type-level meta programs.
     emitError("invalid expression in this context");
+  }
 
   // Parse a single expression, an assignment stmt, or augmented assignment
   // statement.
@@ -709,14 +710,12 @@ ParseResult LitStmtParser::parseIncludeHack() {
 // Definition statements
 //===----------------------------------------------------------------------===//
 
-ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor decoratorsCursor,
+ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor startCursor,
                                           size_t curIndent) {
   // isDef is true when introduced by the 'def' keywords instead of 'fn'.
   bool isDef = getToken().is(LitToken::kw_def);
   SMLoc loc = getToken().getLoc();
   consumeToken();
-
-  auto startCursor = getLexer().getCursor();
 
   StringAttr baseName;
   if (parseIdentifier(baseName, "expected function name"))
@@ -732,12 +731,11 @@ ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor decoratorsCursor,
     funcDecl.setRaises(true);
   }
   getDeclResolver().addDecl(funcDecl, loc, baseName, &containingDecl,
-                            decoratorsCursor, startCursor,
-                            getLexer().getCursor(), curIndent);
+                            startCursor, getLexer().getCursor(), curIndent);
   return success();
 }
 
-ParseResult LitStmtParser::parseVarDeclStmt(LitLexerCursor decoratorsCursor,
+ParseResult LitStmtParser::parseVarDeclStmt(LitLexerCursor startCursor,
                                             size_t stmtIndent) {
   auto smLoc = consumeToken(LitToken::kw_var).getLoc();
   auto loc = translateLocation(smLoc);
@@ -762,19 +760,17 @@ ParseResult LitStmtParser::parseVarDeclStmt(LitLexerCursor decoratorsCursor,
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
-  auto startCursor = getLexer().getCursor();
   skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(declOp, smLoc, name, &containingDecl,
-                            decoratorsCursor, startCursor,
+  getDeclResolver().addDecl(declOp, smLoc, name, &containingDecl, startCursor,
                             getLexer().getCursor(), stmtIndent);
 
   return success();
 }
 
-ParseResult LitStmtParser::parseAliasDeclStmt(LitLexerCursor decoratorsCursor,
+ParseResult LitStmtParser::parseAliasDeclStmt(LitLexerCursor startCursor,
                                               size_t stmtIndent) {
   auto smLoc = consumeToken(LitToken::kw_alias).getLoc();
   auto loc = translateLocation(smLoc);
@@ -791,24 +787,21 @@ ParseResult LitStmtParser::parseAliasDeclStmt(LitLexerCursor decoratorsCursor,
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
-  auto startCursor = getLexer().getCursor();
   skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(declOp, smLoc, name, &containingDecl,
-                            decoratorsCursor, startCursor,
+  getDeclResolver().addDecl(declOp, smLoc, name, &containingDecl, startCursor,
                             getLexer().getCursor(), stmtIndent);
   return success();
 }
 
-ParseResult LitStmtParser::parseStructStmt(LitLexerCursor decoratorsCursor,
+ParseResult LitStmtParser::parseStructStmt(LitLexerCursor startCursor,
                                            size_t curIndent) {
   // We don't support structs in structs (yet?).
   if (isa<StructDeclOp>(containingDecl))
     emitError("nested struct not supported here");
 
-  // TODO: Add support for decorators.
   auto smLoc = consumeToken(LitToken::kw_struct).getLoc();
   auto loc = translateLocation(smLoc);
 
@@ -820,14 +813,12 @@ ParseResult LitStmtParser::parseStructStmt(LitLexerCursor decoratorsCursor,
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
-  auto startCursor = getLexer().getCursor();
   skipUntilIndentation(curIndent);
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
   getDeclResolver().addDecl(newStruct, smLoc, nameAttr, &containingDecl,
-                            decoratorsCursor, startCursor,
-                            getLexer().getCursor(), curIndent);
+                            startCursor, getLexer().getCursor(), curIndent);
 
   return success();
 }

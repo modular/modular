@@ -161,13 +161,10 @@ DeclResolver::~DeclResolver() {
 
 /// Add a new declaration that needs to be resolved.
 ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
-                               ASTDecl *parentDecl,
-                               LitLexerCursor decoratorsCursor,
-                               LitLexerCursor cursor, LitLexerCursor endCursor,
-                               ssize_t indentation) {
-  ASTDecl *decl = sharedState.allocPersistent<ASTDecl>(irValue, loc, parentDecl,
-                                                       decoratorsCursor, cursor,
-                                                       endCursor, indentation);
+                               ASTDecl *parentDecl, LitLexerCursor cursor,
+                               LitLexerCursor endCursor, ssize_t indentation) {
+  ASTDecl *decl = sharedState.allocPersistent<ASTDecl>(
+      irValue, loc, parentDecl, cursor, endCursor, indentation);
   parsedDeclList.push_back(decl);
 
   // If this has a parent and a name, insert it into the parents name table so
@@ -208,19 +205,17 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
 
 /// Add a new declaration that needs to be resolved.
 ASTDecl &DeclResolver::addDecl(Operation *op, SMLoc loc, StringAttr name,
-                               ASTDecl *parentDecl,
-                               LitLexerCursor decoratorsCursor,
-                               LitLexerCursor cursor, LitLexerCursor endCursor,
-                               ssize_t indentation) {
-  return addDecl(DeclIRValue(op), loc, name, parentDecl, decoratorsCursor,
-                 cursor, endCursor, indentation);
+                               ASTDecl *parentDecl, LitLexerCursor cursor,
+                               LitLexerCursor endCursor, ssize_t indentation) {
+  return addDecl(DeclIRValue(op), loc, name, parentDecl, cursor, endCursor,
+                 indentation);
 }
 
 ASTDecl &DeclResolver::addFullyResolvedDecl(Operation *op, SMLoc loc,
                                             StringAttr name,
                                             ASTDecl *parentDecl) {
-  auto &decl = addDecl(op, loc, name, parentDecl, LitLexerCursor(),
-                       LitLexerCursor(), LitLexerCursor(), 0);
+  auto &decl =
+      addDecl(op, loc, name, parentDecl, LitLexerCursor(), LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
   return decl;
 }
@@ -230,7 +225,7 @@ ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal,
                                             StringAttr name, SMLoc loc,
                                             ASTDecl *parentDecl) {
   auto &decl = addDecl(declVal, loc, name, parentDecl, LitLexerCursor(),
-                       LitLexerCursor(), LitLexerCursor(), 0);
+                       LitLexerCursor(), 0);
   decl.resolvedness = DeclResolvedness::fullyResolved;
   return decl;
 }
@@ -386,8 +381,7 @@ struct ParsedMetaSignature {
       auto tmpDecl =
           ParamDeclRefAttr::get(name, UnresolvedType::get(p.getContext()));
       ASTDecl &paramDecl = declResolver.addDecl(
-          MValue(tmpDecl), loc, name, &decl, LitLexerCursor(), typeStartCursor,
-          typeEndCursor, 0);
+          MValue(tmpDecl), loc, name, &decl, typeStartCursor, typeEndCursor, 0);
       parsedInputs.push_back(&paramDecl);
       return success();
     };
@@ -454,6 +448,30 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclRefAttr paramDeclRef,
 ParseResult DeclResolver::resolveBody(ParamDeclRefAttr paramDeclRef,
                                       LitLexer &lexer, ASTDecl &decl) {
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Decorator support logic
+//===----------------------------------------------------------------------===//
+
+static SmallVector<ExprNode *> parseDecorators(ASTDecl &decl,
+                                               LitParserBase &p) {
+  SmallVector<ExprNode *> result;
+  while (p.consumeIf(LitToken::at)) {
+    ExprNode *decoratorExpr;
+    if (p.parseExpression(decoratorExpr,
+                          decl.getParentDecl()->getIndentation()))
+      break;
+    result.push_back(decoratorExpr);
+  }
+  return result;
+}
+
+static void rejectDecorators(ArrayRef<ExprNode *> decoratorExprs, ASTDecl &decl,
+                             LitParserBase &p) {
+  if (!decoratorExprs.empty())
+    p.emitError(decoratorExprs[0]->getLoc(),
+                "decorators not supported on this statement");
 }
 
 //===----------------------------------------------------------------------===//
@@ -791,26 +809,18 @@ void FnDecorators::applyLate(ASTDecl &decl, LitSharedState &shared) {
 ///
 LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
                                              LitLexer &lexer, ASTDecl &decl) {
-  FnDecorators decorators;
-
-  // Apply any decorators that are present.
-  if (decl.getDecoratorsCursor().getState()) {
-    LitLexer lexer(sharedState, decl.getDecoratorsCursor());
-    LitParserBase p(lexer);
-    p.consumeToken(LitToken::at);
-    do {
-      ExprNode *decoratorNode;
-      if (p.parseExpression(decoratorNode,
-                            decl.getParentDecl()->getIndentation()))
-        return failure();
-      decorators.processDecorator(decoratorNode, p);
-    } while (p.consumeIf(LitToken::at));
-
-    // Okay, apply them now.
-    decorators.applyEarly(decl, sharedState);
-  }
-
   LitParserBase p(lexer);
+  SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
+
+  // Okay, apply them now.
+  FnDecorators decorators;
+  for (auto *expr : decoratorExprs)
+    decorators.processDecorator(expr, p);
+  decorators.applyEarly(decl, sharedState);
+
+  assert(p.getToken().isAny(LitToken::kw_def, LitToken::kw_fn) &&
+         "not a function definition?");
+  p.consumeToken();
 
   StringAttr name;
   if (p.parseIdentifier(name, "expected function name"))
@@ -1088,12 +1098,16 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,
 ///
 LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
                                              ASTDecl &decl) {
-  if (decl.getDecoratorsCursor().getState())
-    emitError(varOp.getLoc(), "no var decorators supported yet");
   LitParserBase p(lexer);
+  SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
+
   ASTType type;
   // Parse the type if present.
-  if (p.consumeIf(LitToken::colon)) {
+  if (p.parseToken(LitToken::kw_var,
+                   "internal error: checked by stmt parser") ||
+      p.parseToken(LitToken::identifier,
+                   "internal error: checked by stmt parser") ||
+      p.consumeIf(LitToken::colon)) {
     if (parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
     varOp.getResult().setType(POP::PointerType::get(type));
@@ -1144,6 +1158,7 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
     return failure();
   }
 
+  rejectDecorators(decoratorExprs, decl, p);
   return success();
 }
 
@@ -1165,11 +1180,17 @@ ParseResult DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer,
 ///
 LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
                                              LitLexer &lexer, ASTDecl &decl) {
-  if (decl.getDecoratorsCursor().getState())
-    emitError(paramDeclOp.getLoc(), "no alias decorators supported yet");
   LitParserBase p(lexer);
+  SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
+
   ASTType type;
   // Parse the type if present.
+  if (p.parseToken(LitToken::kw_alias,
+                   "internal error: checked by stmt parser") ||
+      p.parseToken(LitToken::identifier,
+                   "internal error: checked by stmt parser"))
+    return failure();
+
   if (p.consumeIf(LitToken::colon)) {
     if (parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
@@ -1214,6 +1235,8 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
 
   // Regardless of whether we have a type of value initializer, update the type.
   paramDeclOp.setParamDecl(ParamDeclAttr::get(paramDeclOp.getName(), type));
+
+  rejectDecorators(decoratorExprs, decl, p);
   return success();
 }
 
@@ -1235,13 +1258,16 @@ ParseResult DeclResolver::resolveBody(ParamDeclareOp op, LitLexer &lexer,
 ///
 LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                              LitLexer &lexer, ASTDecl &decl) {
-  if (decl.getDecoratorsCursor().getState())
-    emitError(structOp.getLoc(), "no struct decorators supported yet");
-
   LitParserBase p(lexer);
+  SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
+  rejectDecorators(decoratorExprs, decl, p);
 
   ParsedMetaSignature metaSignature(decl);
-  if (metaSignature.parseOptionalMetaSignature(p) ||
+  if (p.parseToken(LitToken::kw_struct,
+                   "internal error: checked by stmt parser") ||
+      p.parseToken(LitToken::identifier,
+                   "internal error: checked by stmt parser") ||
+      metaSignature.parseOptionalMetaSignature(p) ||
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
     return failure();
 
@@ -1272,17 +1298,21 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
 LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
+  SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
+  rejectDecorators(decoratorExprs, decl, p);
+
   ASTType type;
   // Parse the type if present.
-  if (p.consumeIf(LitToken::colon)) {
-    if (parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
-      return failure();
-    fieldOp.setType(type);
-  } else {
-    p.emitError(fieldOp.getLoc(), "struct field declaration must have a type");
+  if (p.parseToken(LitToken::kw_var,
+                   "internal error: checked by stmt parser") ||
+      p.parseToken(LitToken::identifier,
+                   "internal error: checked by stmt parser") ||
+      p.parseToken(LitToken::colon,
+                   "struct field declaration must have a type") ||
+      parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
     return failure();
-  }
 
+  fieldOp.setType(type);
   return success();
 }
 
