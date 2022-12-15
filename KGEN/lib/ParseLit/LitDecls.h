@@ -57,13 +57,11 @@ public:
 
   /// Add a new declaration that needs to be resolved.
   ASTDecl &addDecl(Operation *decl, llvm::SMLoc loc, StringAttr baseName,
-                   ASTDecl *parentDecl, LitLexerCursor decoratorsCursor,
-                   LitLexerCursor cursor, LitLexerCursor endCursor,
-                   ssize_t indentation);
+                   ASTDecl *parentDecl, LitLexerCursor cursor,
+                   LitLexerCursor endCursor, ssize_t indentation);
   ASTDecl &addDecl(DeclIRValue decl, llvm::SMLoc loc, StringAttr baseName,
-                   ASTDecl *parentDecl, LitLexerCursor decoratorsCursor,
-                   LitLexerCursor cursor, LitLexerCursor endCursor,
-                   ssize_t indentation);
+                   ASTDecl *parentDecl, LitLexerCursor cursor,
+                   LitLexerCursor endCursor, ssize_t indentation);
 
   /// Add a declaration that is already fully resolved.
   ASTDecl &addFullyResolvedDecl(Operation *decl, llvm::SMLoc loc,

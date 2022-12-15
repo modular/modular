@@ -67,10 +67,6 @@ public:
   /// the colon.
   LitLexerCursor &getCursor() { return cursor; }
 
-  /// This cursor, if present, holds the location of the first decorator for
-  /// this declaration.
-  const LitLexerCursor &getDecoratorsCursor() { return decoratorsCursor; }
-
   /// Return true if the end of the speculatively scanned decl matches the
   /// specified cursor.
   bool isMatchingEndCursor(const LitLexerCursor &cursor) const {
@@ -155,11 +151,10 @@ private:
   friend class DeclResolver;
   friend class LitSharedState;
   ASTDecl(DeclIRValue irValue, llvm::SMLoc loc, ASTDecl *parentDecl,
-          LitLexerCursor decoratorsCursor, LitLexerCursor cursor,
-          LitLexerCursor endCursor, ssize_t indentation)
+          LitLexerCursor cursor, LitLexerCursor endCursor, ssize_t indentation)
       : irValue(irValue), loc(loc), parentDecl(std::move(parentDecl)),
         cursor(cursor), endCursorState(endCursor.getState()),
-        decoratorsCursor(decoratorsCursor), indentation(indentation) {}
+        indentation(indentation) {}
   ASTDecl(const ASTDecl &) = delete;
   ASTDecl &operator=(const ASTDecl &) = delete;
 
@@ -187,10 +182,6 @@ private:
   /// declaration.  This is used to make sure that bits of a declaration are not
   /// skipped in the early parse and not processes in the later parse.
   const char *endCursorState;
-
-  /// This cursor, if present, holds the location of the first decorator for
-  /// this declaration.
-  LitLexerCursor decoratorsCursor;
 
   /// This is the indentation level of the introducer keyword, useful for
   /// parsing the body of the declaration.  If the declaration was not at the
