@@ -1023,24 +1023,6 @@ kgen.generator @doIt() -> index {
 
 // -----
 
-// CHECK-LABEL: kgen.func @"inlineButDontDelete,N=1"
-kgen.generator @inlineButDontDelete<N>() {
-  // CHECK-NEXT: kgen.param.constant = <1>
-  %0 = kgen.param.constant = <N>
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.func @callAndInlineCall
-kgen.generator @callAndInlineCall() {
-  // CHECK-NEXT: kgen.param.constant = <1>
-  kgen.inlined_call[<N>() -> (): @inlineButDontDelete]<N = 1>()
-  // CHECK-NEXT: kgen.call @"inlineButDontDelete,N=1"
-  kgen.call @inlineButDontDelete<N = 1>() : () -> ()
-  kgen.return
-}
-
-// -----
-
 // CHECK-LABEL: kgen.func @passNonIsolatedRegion
 // CHECK-NEXT: kgen.return
 kgen.generator @passNonIsolatedRegion() {
@@ -1203,26 +1185,28 @@ kgen.generator @genItf3_impl0<x>()
 kgen.generator @genItf3_impl1<x>()
   constraints <[ne(x, 0), "x must not be zero"]> implements @genItf3 {
   "impl.1"() {attr=#kgen.param.decl.ref<"x"> : index} : () -> ()
-  // Use inlined_call to make FileCheck easier.
   kgen.inlined_call[<x>()->(): @genItf3]<x = sub(x, 1)>()
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @"genItf3_impl1,x=4"() {
-// CHECK-NEXT:   "impl.1"() {attr = 4 : index} : () -> ()
-// CHECK-NEXT:   "impl.1"() {attr = 3 : index} : () -> ()
-// CHECK-NEXT:   "impl.1"() {attr = 2 : index} : () -> ()
-// CHECK-NEXT:   "impl.1"() {attr = 1 : index} : () -> ()
-// CHECK-NEXT:   "impl.0"() {attr = 0 : index} : () -> ()
-// CHECK-NEXT:   kgen.return
-// CHECK-NEXT: }
+// CHECK-LABEL: kgen.func @"genItf3_impl0,x=0"()
+// CHECK-NEXT:   "impl.0"() {attr = 0 : index}
 
-// CHECK-LABEL: kgen.func @"genItf3_impl1,x=2"() {
-// CHECK-NEXT:    "impl.1"() {attr = 2 : index} : () -> ()
-// CHECK-NEXT:    "impl.1"() {attr = 1 : index} : () -> ()
-// CHECK-NEXT:    "impl.0"() {attr = 0 : index} : () -> ()
-// CHECK-NEXT:    kgen.return
-// CHECK-NEXT:  }
+// CHECK-LABEL: kgen.func @"genItf3_impl1,x=4"()
+// CHECK-NEXT:   "impl.1"() {attr = 4 : index}
+// CHECK-NEXT:   kgen.call @"genItf3_impl1,x=3"()
+
+// CHECK-LABEL: kgen.func @"genItf3_impl1,x=3"()
+// CHECK-NEXT:   "impl.1"() {attr = 3 : index}
+// CHECK-NEXT:   kgen.call @"genItf3_impl1,x=2"()
+
+// CHECK-LABEL: kgen.func @"genItf3_impl1,x=2"()
+// CHECK-NEXT:   "impl.1"() {attr = 2 : index}
+// CHECK-NEXT:   kgen.call @"genItf3_impl1,x=1"()
+
+// CHECK-LABEL: kgen.func @"genItf3_impl1,x=1"()
+// CHECK-NEXT:   "impl.1"() {attr = 1 : index}
+// CHECK-NEXT:   kgen.call @"genItf3_impl0,x=0"()
 
 // CHECK-LABEL:   kgen.func @use_Itf3() {
 // CHECK-NEXT:      kgen.call @"genItf3_impl1,x=4"() : () -> ()
