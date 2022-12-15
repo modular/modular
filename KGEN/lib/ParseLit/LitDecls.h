@@ -56,23 +56,23 @@ public:
   void resolveAll();
 
   /// Add a new declaration that needs to be resolved.
-  ASTDecl &addDecl(Operation *decl, llvm::SMLoc loc, StringAttr name,
+  ASTDecl &addDecl(Operation *decl, llvm::SMLoc loc, StringAttr baseName,
                    ASTDecl *parentDecl, LitLexerCursor decoratorsCursor,
                    LitLexerCursor cursor, LitLexerCursor endCursor,
                    ssize_t indentation);
-  ASTDecl &addDecl(DeclIRValue decl, llvm::SMLoc loc, StringAttr name,
+  ASTDecl &addDecl(DeclIRValue decl, llvm::SMLoc loc, StringAttr baseName,
                    ASTDecl *parentDecl, LitLexerCursor decoratorsCursor,
                    LitLexerCursor cursor, LitLexerCursor endCursor,
                    ssize_t indentation);
 
   /// Add a declaration that is already fully resolved.
   ASTDecl &addFullyResolvedDecl(Operation *decl, llvm::SMLoc loc,
-                                StringAttr name, ASTDecl *parentDecl);
+                                StringAttr baseName, ASTDecl *parentDecl);
 
   /// Add a declaration that is already fully resolved.
-  ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringAttr name,
+  ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringAttr baseName,
                                 llvm::SMLoc loc, ASTDecl *parentDecl);
-  ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringRef name,
+  ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringRef baseName,
                                 llvm::SMLoc loc, ASTDecl *parentDecl);
 
   /// Resolve the specified declaration to at least the specified level of

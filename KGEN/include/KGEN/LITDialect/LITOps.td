@@ -71,7 +71,7 @@ let description = [{
 
   let builders = [
     // Create a func with a region and a body block.
-    OpBuilder<(ins "StringAttr":$name)>,
+    OpBuilder<(ins)>,
   ];
 
   let hasCustomAssemblyFormat = 1;
