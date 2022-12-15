@@ -124,8 +124,7 @@ LIT::FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return success();
 }
 
-void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
-                        StringAttr name) {
+void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   auto context = builder.getContext();
 
   // Before resolution, we treat the function as having type ()->Error,
@@ -135,8 +134,12 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
   auto errorType = builder.getType<TypeCheckErrorType>();
   auto signatureType =
       SignatureType::get(context, ArrayRef<Type>(), {errorType});
-  build(builder, result, name, StringArrayAttr::get(context, {}),
-        TypeAttr::get(signatureType), ConstraintArrayAttr::get(context, {}),
+  // FIXME(LLVM Issue #59529): We use a weird name here because symbols "cannot"
+  // be empty even when invalid.  They crash printSymbolReference: file
+  // AsmPrinter.cpp, line 2050.
+  build(builder, result, StringAttr::get(context, "\x01"),
+        StringArrayAttr::get(context, {}), TypeAttr::get(signatureType),
+        ConstraintArrayAttr::get(context, {}),
         /*isStatic=*/mlir::UnitAttr(), /*isInterface=*/mlir::UnitAttr(),
         /*isDef=*/mlir::UnitAttr(), /*raises=*/mlir::UnitAttr(),
         /*implements=*/FlatSymbolRefAttr());

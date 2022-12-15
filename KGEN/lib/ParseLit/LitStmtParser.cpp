@@ -716,21 +716,22 @@ ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor decoratorsCursor,
   SMLoc loc = getToken().getLoc();
   consumeToken();
 
-  StringAttr name;
-  if (parseIdentifier(name, "expected function name"))
+  auto startCursor = getLexer().getCursor();
+
+  StringAttr baseName;
+  if (parseIdentifier(baseName, "expected function name"))
     return failure();
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
-  auto startCursor = getLexer().getCursor();
   skipUntilIndentation(curIndent);
 
-  auto funcDecl = builder.create<LIT::FuncOp>(translateLocation(loc), name);
+  auto funcDecl = builder.create<LIT::FuncOp>(translateLocation(loc));
   if (isDef) {
     funcDecl.setIsDef(true);
     funcDecl.setRaises(true);
   }
-  getDeclResolver().addDecl(funcDecl, loc, name, &containingDecl,
+  getDeclResolver().addDecl(funcDecl, loc, baseName, &containingDecl,
                             decoratorsCursor, startCursor,
                             getLexer().getCursor(), curIndent);
   return success();

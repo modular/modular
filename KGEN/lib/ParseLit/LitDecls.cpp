@@ -549,11 +549,12 @@ const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
 /// This returns failure (after emitting an error) when a type checking problem
 /// is detected.
 static ParseResult resolveFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
+                                            StringAttr &name,
                                             SmallVector<ParsedArgument> &args,
                                             SmallVectorImpl<Type> &argTypes,
                                             ASTType &resultType,
                                             LitSharedState &shared) {
-  SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(op.getName());
+  SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(name);
 
   // __new__ and similar methods are implicitly static.
   if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
@@ -811,6 +812,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
   LitParserBase p(lexer);
 
+  StringAttr name;
+  if (p.parseIdentifier(name, "expected function name"))
+    return failure();
+
   // Add meta parameters from an enclosing declaration to the symbol table.
   // These are /in/ our current scope because we do not want name conflicts with
   // them and they are instance (not type-level) values.
@@ -879,7 +884,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // Verify that methods and functions like __add__ have the right signature,
   // and adjust them if there are implicit declarations.
   SmallVector<Type> argTypes;
-  if (resolveFunctionSignature(decl, funcOp, args, argTypes, resultType,
+  if (resolveFunctionSignature(decl, funcOp, name, args, argTypes, resultType,
                                sharedState)) {
     // If the function wasn't type checked correctly, uses of it may be
     // broken.
@@ -887,6 +892,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   }
 
   // Finally now that the full signature has been resolved, build our IR.
+
+  // Set the symbol.
+  funcOp.setName(name);
 
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
