@@ -768,6 +768,21 @@ void FnDecorators::applyImplements(const CallNode &callNode) {
           << interfaceName << "'";
     return;
   }
+
+  // Okay, if we found an interface we're implementing, check that it makes
+  // sense.
+  auto funcInterface =
+      dyn_cast_or_null<LIT::FuncOp>(interfaceDecl->getIfOperation());
+  if (!funcInterface || !funcInterface.getIsInterface()) {
+    auto diag = shared.emitError(callNode.getLoc(), "'")
+                << interfaceName << "' is not a kgen interface";
+    diag.attachNote(shared.translateLocation(interfaceDecl->getLoc()))
+        << "'" << interfaceName << "' declared here";
+  }
+
+  // FIXME: This needs to type check the signature here, not defer to
+  // lowering.  This also needs to resolve the interface.
+
   // TODO: Allow nested symbols.
   auto symbol = dyn_cast<FlatSymbolRefAttr>(interfaceDecl->getSymbolRef());
   if (!symbol) {
@@ -1014,24 +1029,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
                                        funcOp.getRaises() ? FnEffects::Throws
                                                           : FnEffects::None)));
   funcOp.getBody()->addArguments(argTypes, argLocs);
-
-  if (FlatSymbolRefAttr implementsAttr = funcOp.getImplementsAttr()) {
-    StringRef interfaceName = implementsAttr.getAttr().getValue();
-    if (ASTDecl *interfaceDecl = decl.lookup(implementsAttr.getAttr())) {
-      if (auto funcInterface =
-              dyn_cast_or_null<LIT::FuncOp>(interfaceDecl->getIfOperation());
-          !funcInterface || !funcInterface.getIsInterface())
-        p.emitError(funcOp->getLoc(), "not an interface: ") << interfaceName;
-
-      // FIXME: This needs to type check the signature here, not defer to
-      // lowering.  This also needs to resolve the interface.
-    } else {
-      p.emitError(funcOp->getLoc(),
-                  "this function implements an unknown interface: ")
-          << interfaceName;
-      funcOp.setImplements(llvm::None);
-    }
-  }
 
   // Interfaces don't have anything else to do.
   if (funcOp.getIsInterface())
