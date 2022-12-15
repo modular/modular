@@ -806,7 +806,8 @@ static CallableValue substituteParametersIntoUserDefinedType(
     return {};
   }
 
-  ASTDecl &typeDecl = emitter.shared.getDeclForSymbol(declRef.getSymbol());
+  ASTDecl &typeDecl =
+      emitter.shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
   auto structOp = dyn_cast<StructDeclOp>(typeDecl);
   if (!structOp) {
     emitter.emitError(subscript.getLoc(), "unknown parameterized type ")

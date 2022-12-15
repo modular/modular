@@ -159,13 +159,6 @@ DeclResolver::~DeclResolver() {
     decl->~ASTDecl();
 }
 
-/// Given the symbol for a lit declaration, return the ASTDecl that
-/// corresponds to it.  This doesn't allow null symbols, so it always
-/// succeeds.
-ASTDecl &LitSharedState::getDeclForSymbol(SymbolRefAttr symbol) const {
-  return declResolver->getDeclForSymbol(symbol);
-}
-
 /// Add a new declaration that needs to be resolved.
 ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
                                ASTDecl *parentDecl,
@@ -187,11 +180,14 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
   // Remember the named decl in the symbol table so it can be looked up.
   auto [it, inserted] = parentDecl->declsInScope.insert({name, decl});
   if (inserted) {
-    // If the decl also has a symbol, remember it, so we can look up decls by
-    // symbol.
+    // If the decl is a type or alias that has a symbol, remember it.  This
+    // allows us to look up decls by symbol when referenced as types.
     if (SymbolRefAttr symbol = decl->getSymbolRef()) {
-      assert(!declForSymbol.count(symbol) && "Symbol redefinition/collision");
-      declForSymbol[symbol] = decl;
+      if (isa<StructDeclOp>(*decl) || isa<ParamDeclareOp>(*decl)) {
+        assert(!declForTypeSymbol.count(symbol) &&
+               "Symbol redefinition/collision");
+        declForTypeSymbol[symbol] = decl;
+      }
     }
   } else {
     ASTDecl *existing = it->second;
