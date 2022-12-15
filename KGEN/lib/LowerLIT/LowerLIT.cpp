@@ -475,7 +475,7 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
             FlatSymbolRefAttr::get(gen.getNameAttr()),
             ParamBindArrayAttr::get(gen.getContext(), callInputParams),
             gen.getSignature().dropParamValues()),
-        castedArgs, callResultParams);
+        callResultParams, castedArgs);
 
     // Create any rebind's for the results.
     SmallVector<Value> results;

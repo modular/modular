@@ -133,35 +133,14 @@ def KGEN_AddressOfOp : KGENOp<"addressof", [KGEN_CallOpInterface]> {
     // of the selected implemented of the interface post-elaboration.
     %0 = kgen.addressof @foo<size = 5> : (index) -> index
     ```
-
-    The operation accepts region parameters like `kgen.call`.
-
-    Example:
-
-    ```mlir
-    kgen.generator.interface @foo<fn: () -> ()>()
-
-    %0 = kgen.addressof @foo<fn: () -> () = region> : () -> ()
-    fn() {
-      kgen.return
-    }
-    ```
   }];
 
   let arguments = (ins KGEN_SymbolConstantAttr:$callee,
                        KGEN_ParamDeclArrayAttr:$paramDecls);
-  let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
   let results = (outs FunctionType:$result);
   let assemblyFormat = [{
-    custom<AddressOfOp>($callee, $paramDecls, type($result))
-    attr-dict
-    custom<CallRegions>($regions, ref($callee))
+    custom<AddressOfOp>($callee, $paramDecls, type($result)) attr-dict
   }];
-
-  let builders = [
-    OpBuilder<(ins "Type":$type, "SymbolConstantAttr":$callee,
-                   CArg<"ArrayRef<ParamDeclAttr>", "{}">:$resultParams)>
-  ];
 
   let extraClassDeclaration = [{
     /// Return the symbol reference to the callee.
@@ -210,21 +189,6 @@ def KGEN_CallOp : KGENOp<"call", [KGEN_CallOpInterface,
 
     kgen.call @add2<N = 2 -> NPlus2>() : () -> ()
     ```
-
-    Region parameters can be specified using a special region binding attribute
-    to indicate that a parameter's value is one of the operation's regions. The
-    regions must be isolated from above.
-
-    Example:
-
-    ```mlir
-    kgen.generator.interface @passRegion<fn: <N>(index) -> index>()
-
-    kgen.call @passRegion<fn: <N>(index) = region>() : () -> ()
-    fn<N>(%arg0: index) {
-      kgen.return %arg0 : index
-    }
-    ```
   }];
 
   let arguments = (ins
@@ -233,19 +197,11 @@ def KGEN_CallOp : KGENOp<"call", [KGEN_CallOpInterface,
     Variadic<AnyType>:$operands
   );
   let results = (outs Variadic<AnyType>:$results);
-  let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
 
   let assemblyFormat = [{
-    custom<CallOp>($callee, $paramDecls, $operands,
-                   type($operands), type($results)) attr-dict
-    custom<CallRegions>($regions, ref($callee))
+    custom<CallOp>($callee, $paramDecls, $operands, type($operands),
+                   type($results)) attr-dict
   }];
-
-  let builders = [
-    OpBuilder<(ins "TypeRange":$resultTypes, "SymbolConstantAttr":$callee,
-                   "ValueRange":$operands,
-                   CArg<"ArrayRef<ParamDeclAttr>", "{}">:$resultParams)>
-  ];
 
   let extraClassDeclaration = [{
     /// Return the symbol reference to the callee.
@@ -280,19 +236,6 @@ def KGEN_CallParamOp : KGENOp<"call_param", [KGEN_CallOpInterface]> {
     // Parameter reference callee.
     %1 = kgen.call_param[<N>() -> index: foo]<N = 4>()
     ```
-
-    The operation can bind regions as parameters as well, but they must be
-    isolated from above.
-
-    ```mlir
-    kgen.call_param[<fn: <N>(index) -> index>(index) -> (): callee]<
-      fn: <N>(index) -> index = region>(%arg0)
-    fn<N>(%arg0: index) {
-      %0 = kgen.param.constant = <N>
-      %1 = index.add %0, %arg0
-      kgen.return %1 : index
-    }
-    ```
   }];
 
   let arguments = (ins
@@ -301,62 +244,18 @@ def KGEN_CallParamOp : KGENOp<"call_param", [KGEN_CallOpInterface]> {
     KGEN_ParamDeclArrayAttr:$paramDecls,
     Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>:$results);
-  let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
 
   let assemblyFormat = [{
     `` custom<CallParamCallee>($callee, $paramValues, $paramDecls,
                             type($operands), type($results))
     `(` $operands `)` attr-dict
-    custom<CallRegions>($regions, ref($paramValues))
   }];
-
-  let builders = [
-    OpBuilder<(ins "TypeRange":$resultTypes, "TypedAttr":$callee,
-                   "ArrayRef<ParamBindAttr>":$inputParams,
-                   "ArrayRef<ParamDeclAttr>":$resultParams,
-                   "ValueRange":$operands)>
-  ];
 
   let extraClassDeclaration = [{
     bool isAllowedInFunc() { return false; }
   }];
 
   let hasCanonicalizeMethod = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// RegionBodyOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_RegionBodyOp : KGENOp<"region.body", [Terminator, DeclInterface,
-    FuncInterface, SingleBlockImplicitTerminator<"ReturnOp">,
-    ParentOneOf<["AddressOfOp", "CallOp", "CallParamOp", "ParamDeclareRegionOp"]>]> {
-  let summary = "Define a region parameter body.";
-  let description = [{
-    The `kgen.region.body` operation defines the contents of a region parameter.
-    It is used in conjunction with `kgen.param.declare.region` to define a
-    region parameter. See that operation for more details.
-    ```
-  }];
-
-  let arguments = (ins TypeAttrOf<KGEN_SignatureType>:$signature,
-                       ConstraintArrayAttr:$constraints,
-                       UnitAttr:$isolated);
-  let regions = (region SizedRegion<1>:$bodyRegion);
-
-  let assemblyFormat = [{
-    custom<RegionBody>($signature, $constraints, $bodyRegion) attr-dict
-  }];
-
-  let extraClassDeclaration = [{
-    /// Get the terminator.
-    ReturnOp getReturnOp();
-
-    bool isIsolatedFromAbove() { return getIsolated(); }
-    void notifyKnownIsolatedFromAbove() { setIsolated(true); }
-  }];
-
-  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -535,6 +434,37 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region",
   let assemblyFormat = [{
     custom<RegionDeclaration>($paramDecls, type($result), $body) attr-dict
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// RegionBodyOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_RegionBodyOp : KGENOp<"region.body", [Terminator, DeclInterface,
+    FuncInterface, SingleBlockImplicitTerminator<"ReturnOp">,
+    ParentOneOf<["ParamDeclareRegionOp"]>]> {
+  let summary = "Define a region parameter body.";
+  let description = [{
+    The `kgen.region.body` operation defines the contents of a region parameter.
+    It is used in conjunction with `kgen.param.declare.region` to define a
+    region parameter. See that operation for more details.
+  }];
+
+  let arguments = (ins TypeAttrOf<KGEN_SignatureType>:$signature,
+                       ConstraintArrayAttr:$constraints,
+                       UnitAttr:$isolated);
+  let regions = (region SizedRegion<1>:$bodyRegion);
+
+  let assemblyFormat = [{
+    custom<RegionBody>($signature, $constraints, $bodyRegion) attr-dict
+  }];
+
+  let extraClassDeclaration = [{
+    bool isIsolatedFromAbove() { return getIsolated(); }
+    void notifyKnownIsolatedFromAbove() { setIsolated(true); }
+  }];
+
+  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

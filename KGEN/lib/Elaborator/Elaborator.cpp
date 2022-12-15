@@ -945,40 +945,8 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
                                           ArrayRef<ParamBindAttr> inputValues) {
   SmallVector<Attribute> boundInputParams;
   bool inlineCallee = false;
-  auto regionBodyIt = call.getRegionBodies().begin();
   for (ParamBindAttr param : inputValues) {
-    // If this is a region reference, form a binding to the region provided by
-    // the call.
-    if (auto regionRef = dyn_cast<ParamCallRegionRefAttr>(param.getValue())) {
-      // Give this reference a unique name, and make a RegionReferenceAttr with
-      // the name and SignatureType.
-      auto regionRefAttr =
-          RegionReferenceAttr::get(elaboratedGenerator.func.getName() +
-                                       "_region_" + Twine(nextRegionID++),
-                                   regionRef.getType());
-
-      auto body = cast<RegionBodyOp>(**regionBodyIt++);
-      // Determine whether the body isolated from unhooking it from its parent.
-      bool isolated = operationIsIsolatedFromAbove(body);
-
-      // Remove the RegionBodyOp from the call's region, and hand ownership of
-      // it to the elaborator.
-      body->remove();
-
-      // TODO: We could do some content hashing to avoid making a new name for
-      // a lexically identical body.  This would reduce some redundant
-      // specialization.
-      Elaborator::RegionBody regionBody{
-          body, elaborator.createEvaluator(getEvaluator().getParameterValues()),
-          isolated};
-      inlineCallee |= !regionBody.isolated;
-      elaborator.addRegionReference(regionRefAttr, std::move(regionBody));
-      boundInputParams.push_back(regionRefAttr);
-      continue;
-    }
-
-    // Otherwise fold the parameter expression in this context to a simple
-    // constant.
+    // Fold the parameter expression in this context to a simple constant.
     ErrorTreeOr<Attribute> value =
         getEvaluator().concretizeParameterExpr(call.getLoc(), param.getValue());
     if (value.isError())
@@ -1133,7 +1101,7 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
           SymbolConstantAttr::get(
               FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
               newCalleeFunc.getSignature()),
-          user->getOperands());
+          ArrayRef<ParamDeclAttr>(), user->getOperands());
     } else {
       // Inline the callee.
       BlockAndValueMapping bv;
@@ -1158,7 +1126,8 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
         user, resultTypes.front(),
         SymbolConstantAttr::get(
             FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
-            newCalleeFunc.getSignature()));
+            newCalleeFunc.getSignature()),
+        ArrayRef<ParamDeclAttr>());
 
   } else {
     // Update the interface in-place.

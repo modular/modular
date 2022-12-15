@@ -598,70 +598,6 @@ ArrayRef<Type> GeneratorInterfaceOp::getCallableResults() {
 }
 
 //===----------------------------------------------------------------------===//
-// Common CallOp / CallParamOp logic
-//===----------------------------------------------------------------------===//
-
-static ParseResult
-parseCallRegions(OpAsmParser &p,
-                 SmallVectorImpl<std::unique_ptr<Region>> &result,
-                 ParamBindArrayAttr paramValues) {
-  // We expect one region for each ParamCallRegionRefAttr.
-  auto binds = llvm::make_filter_range(paramValues, [](ParamBindAttr bind) {
-    return bind.getValue().isa<ParamCallRegionRefAttr>();
-  });
-
-  auto parseFn = [&](ParamBindAttr bind) -> ParseResult {
-    // Parse the region body operation in-line.
-    OperationState regionBody(p.getEncodedSourceLoc(p.getCurrentLocation()),
-                              RegionBodyOp::getOperationName());
-    Optional<Location> bodyLoc = regionBody.location;
-    if (p.parseKeyword(bind.getName(), " region name") ||
-        RegionBodyOp::parse(p, regionBody) ||
-        p.parseOptionalLocationSpecifier(bodyLoc))
-      return failure();
-    regionBody.location = *bodyLoc;
-
-    // Create a single-block body with only the region body operation.
-    auto *body = new Block;
-    body->push_back(Operation::create(regionBody));
-    auto region = std::make_unique<Region>();
-    region->push_back(body);
-    result.push_back(std::move(region));
-    return success();
-  };
-  return failableInterleave(binds, parseFn, [&] { return p.parseComma(); });
-}
-
-static void printCallRegions(OpAsmPrinter &p, Operation *op,
-                             RegionRange regions,
-                             ParamBindArrayAttr paramValues) {
-  auto binds = llvm::make_filter_range(paramValues, [](ParamBindAttr bind) {
-    return bind.getValue().isa<ParamCallRegionRefAttr>();
-  });
-
-  auto printFn = [&](auto &bind) {
-    p.printNewline();
-    p << bind.value().getName().strref();
-    Operation *body = regions[bind.index()]->front().getTerminator();
-    cast<RegionBodyOp>(body).print(p);
-    p.printOptionalLocationSpecifier(body->getLoc());
-  };
-  llvm::interleave(llvm::enumerate(binds), p, printFn, ",");
-}
-
-static ParseResult
-parseCallRegions(OpAsmParser &p,
-                 SmallVectorImpl<std::unique_ptr<Region>> &result,
-                 SymbolConstantAttr callee) {
-  return parseCallRegions(p, result, callee.getParamValues());
-}
-
-static void printCallRegions(OpAsmPrinter &p, Operation *op,
-                             RegionRange regions, SymbolConstantAttr callee) {
-  return printCallRegions(p, op, regions, callee.getParamValues());
-}
-
-//===----------------------------------------------------------------------===//
 // AddressOfOp
 //===----------------------------------------------------------------------===//
 
@@ -695,13 +631,6 @@ static void printAddressOfOp(OpAsmPrinter &p, Operation *op,
   printTypesWithConventions(p.getStream(), calleeCst.getType().getValueInputs(),
                             calleeCst.getType().getValueResults(),
                             calleeCst.getType().getConventions());
-}
-
-void AddressOfOp::build(OpBuilder &b, OperationState &state, Type type,
-                        SymbolConstantAttr callee,
-                        ArrayRef<ParamDeclAttr> resultParams) {
-  build(b, state, type, callee, b.getAttr<ParamDeclArrayAttr>(resultParams),
-        /*numRegions=*/0);
 }
 
 //===----------------------------------------------------------------------===//
@@ -743,14 +672,6 @@ static void printCallOp(OpAsmPrinter &p, Operation *op,
   p << ") : ";
   printTypesWithConventions(p.getStream(), operandTypes, resultTypes,
                             calleeCst.getType().getConventions());
-}
-
-void CallOp::build(OpBuilder &builder, OperationState &state,
-                   TypeRange resultTypes, SymbolConstantAttr callee,
-                   ValueRange operands, ArrayRef<ParamDeclAttr> resultParams) {
-  build(builder, state, resultTypes, callee,
-        builder.getAttr<ParamDeclArrayAttr>(resultParams), operands,
-        /*numRegions=*/0);
 }
 
 OperandRange CallOp::getArgOperands() { return getOperands(); }
@@ -825,36 +746,14 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
                               op.getResultTypes())));
   }
 
-  auto call = rewriter.create<CallOp>(op.getLoc(), op.getResultTypes(), callee,
-                                      op.getParamDecls(), op.getOperands(),
-                                      op.getNumRegions());
-
-  // Move all the regions over.
-  for (unsigned i = 0; i < op.getNumRegions(); ++i)
-    call.getRegion(i).takeBody(op.getRegion(i));
-  rewriter.replaceOp(op, call.getResults());
-
+  rewriter.replaceOpWithNewOp<CallOp>(op, op.getResultTypes(), callee,
+                                      op.getParamDecls(), op.getOperands());
   return success();
-}
-
-void CallParamOp::build(OpBuilder &builder, OperationState &state,
-                        TypeRange resultTypes, TypedAttr callee,
-                        ArrayRef<ParamBindAttr> inputParams,
-                        ArrayRef<ParamDeclAttr> resultParams,
-                        ValueRange operands) {
-  build(builder, state, resultTypes, callee,
-        builder.getAttr<ParamBindArrayAttr>(inputParams),
-        builder.getAttr<ParamDeclArrayAttr>(resultParams), operands,
-        /*numRegions=*/0);
 }
 
 //===----------------------------------------------------------------------===//
 // RegionBodyOp / custom<RegionBody>
 //===----------------------------------------------------------------------===//
-
-ReturnOp RegionBodyOp::getReturnOp() {
-  return cast<ReturnOp>(getBody()->getTerminator());
-}
 
 /// Parse a single-block isolated from above region.
 static ParseResult parseRegionBody(OpAsmParser &p, TypeAttr &signature,
@@ -897,8 +796,9 @@ static void printRegionBody(OpAsmPrinter &p, Operation *op, TypeAttr signature,
 }
 
 LogicalResult RegionBodyOp::verifyRegions() {
-  if (failed(getReturnOp().checkArgumentTypes(
-          getResultParamTypes(), {getSignature().getValueResults()})))
+  if (failed(cast<ReturnOp>(getBody()->getTerminator())
+                 .checkArgumentTypes(getResultParamTypes(),
+                                     {getSignature().getValueResults()})))
     return failure();
   if (getBody()->getArgumentTypes() != getSignature().getValueInputs())
     return emitOpError("signature mismatches body");

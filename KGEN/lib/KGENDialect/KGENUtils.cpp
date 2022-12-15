@@ -482,8 +482,7 @@ void KGEN::printParamName(StringRef name, raw_ostream &os) {
   // If this will conflict with a reserved keyword then we need a '*' prefix and
   // double quotes.
   bool needsQuotes = succeeded(DType::getFromString(name)) ||
-                     !isLegalMLIRIdentifier(name) || isMLIRBuiltinType(name) ||
-                     name == "region";
+                     !isLegalMLIRIdentifier(name) || isMLIRBuiltinType(name);
   if (needsQuotes)
     os << "*\"";
   os << name;
@@ -644,14 +643,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
             p.getEncodedSourceLoc(loc), p.getContext(), dtype.value(), type);
         return success(value != Attribute());
       }
-    }
-
-    /// The region keyword is a token that specifies that a signature value will
-    /// be provided by a region on a kgen.call{_param} operation.
-    if (keyword == "region" && type.isa<SignatureType>()) {
-      value = ParamCallRegionRefAttr::get(p.getContext(),
-                                          cast<SignatureType>(type));
-      return success();
     }
 
     // A bareword or string with no trailing `(` must be a parameter reference.
@@ -913,12 +904,6 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
   if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
     os << symbolConstant.getSymbol();
     printOptionalParamBindSpec(symbolConstant.getParamValues(), os);
-    return;
-  }
-
-  // A ParamCallRegionRefAttr is always printed as "region" in an argument list.
-  if (value.isa<ParamCallRegionRefAttr>()) {
-    os << "region";
     return;
   }
 
