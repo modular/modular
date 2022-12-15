@@ -232,3 +232,61 @@ def PruneImpossibleVariants: Pass<"prune-impossible-variants",
     This pass must run post-elaboration.
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// Mem2Reg
+//===----------------------------------------------------------------------===//
+
+def Mem2Reg : Pass<"mem-2-reg"> {
+  let summary = "Optimization pass that promotes memory to registers";
+  let description = [{
+    The `mem-2-reg` pass does memory elision over POP dialect operations by
+    promoting values that live in stack memory, denoted by
+    `pop.stack_allocation`, to register values, when all uses of the value by
+    loads and stores are visible.
+
+    This pass can run both before and after elaboration, but it can only analyze
+    stack allocations with concrete sizes, and it can only run before
+    control-flow lowering, since it does not work on CFGs.
+
+    This pass is very basic and only elides stack allocations if all stores are
+    in the same scope. It can replace loads spanning multiple regions though.
+
+    Example:
+
+    ```mlir
+    %0 = pop.stack_allocation 1 x index
+    pop.store %arg0, %0 : !pop.pointer<index>
+    %1 = pop.load %0 : !pop.pointer<index>
+    kgen.return %1 : index
+    ```
+
+    Will become:
+
+    ```mlir
+    kgen.return %arg0 : index
+    ```
+
+    However, stores within a nested region will not be elided (yet).
+
+    ```mlir
+    %0 = pop.stack_allocation 1 x index
+    hlcf.if %arg2 {
+      pop.store %arg0, %0 : !pop.pointer<index>
+    } else {
+      pop.store %arg1, %0 : !pop.pointer<index>
+    }
+    %1 = pop.load %0 : !pop.pointer<index>
+    kgen.return %1 : index
+    ```
+  }];
+
+  let statistics = [
+    Statistic<"numAllocsElided", "num-allocs-elided",
+              "the number of variables moved from memory to registers">,
+    Statistic<"numLoadsElided", "num-loads-elided",
+              "the number of loads elided">,
+    Statistic<"numStoresElided", "num-stores-elided",
+              "the number of stores elided">,
+  ];
+}

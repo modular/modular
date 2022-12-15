@@ -234,6 +234,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   mlir::PassManager pm(ctx);
   pm.addPass(createLowerLIT());
   pm.addPass(mlir::createCanonicalizerPass());
+  pm.addNestedPass<GeneratorOp>(createMem2Reg());
 
   // Set up the runtime.
   LLCL::Runtime runtime(
