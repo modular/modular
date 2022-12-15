@@ -20,10 +20,16 @@
     "vscode:prepublish": "tsc -p ./",
     "compile": "tsc -watch -p ./",
     "format": "clang-format -i --glob=\"{src,test}/*.ts\"",
-    "package": "vsce package"
+    "package": "vsce package --out ./out/vscode-lit.vsix"
   },
   "devDependencies": {
-    "@types/vscode": "~1.74.0"
+    "@vscode/vsce": "^2.7.0",
+    "@types/vscode": "~1.74.0",
+    "typescript": "^4.6.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/modularml/modular.git"
   },
   "contributes": {
     "languages": [
