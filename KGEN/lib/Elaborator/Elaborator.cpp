@@ -585,6 +585,10 @@ private:
   /// Substitute parameters in the operation's attributes and types.
   LogicalResult processGenericOp(Operation *op);
 
+  /// Operations may reference parameters within types in their locations.
+  /// Process them by rewriting their locations.
+  LogicalResult processLocation(Operation *op);
+
   /// This is maintains global information about the file we're generating
   /// into.
   Elaborator &elaborator;
@@ -1272,6 +1276,9 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
     return failure();
   auto [inputParamKey, _] = *result;
 
+  if (failed(processLocation(call)))
+    return failure();
+
   auto theRegionReturnOp =
       cast<ReturnOp>(region->getRegion(0).front().getTerminator());
 
@@ -1403,15 +1410,8 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   if (changedAttrs)
     op->setAttrs(newAttrs);
 
-  // If this operation has a subprogram scope, update the location. The
-  // subprogram may reference parameters within its types.
-  if (DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(op)) {
-    ErrorTreeOr<Attribute> value = getEvaluator().concretizeParameterExpr(
-        op->getLoc(), op->getLoc(), /*allowUnknown=*/true);
-    if (value.isError())
-      return error(value.takeError());
-    op->setLoc(cast<Location>(value.takeValue()));
-  }
+  if (failed(processLocation(op)))
+    return failure();
 
   // Check the types of results to find any parameters embedded in their
   // types.  We don't have to check operands because they are always checked
@@ -1447,6 +1447,15 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
       return error(op->getLoc(), result.takeError());
   }
 
+  return success();
+}
+
+LogicalResult ParameterRewriter::processLocation(Operation *op) {
+  ErrorTreeOr<Attribute> value = getEvaluator().concretizeParameterExpr(
+      op->getLoc(), op->getLoc(), /*allowUnknown=*/true);
+  if (value.isError())
+    return error(value.takeError());
+  op->setLoc(cast<Location>(value.takeValue()));
   return success();
 }
 
