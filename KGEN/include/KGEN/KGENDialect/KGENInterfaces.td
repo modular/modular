@@ -44,9 +44,10 @@ def DeclInterface : OpInterface<"DeclInterface"> {
     }], "void", "notifyKnownIsolatedFromAbove", (ins), [{}], [{ }]>,
 
     InterfaceMethod<[{
-      Return the parameters declared at this parameter scope. The
-      `DeclInterface` is allowed to have a circular reference to these
-      parameters only.
+      Return the parameters declared at this parameter scope. These parameters
+      are visible to the operations at or below the parameter scope defined by
+      this operation. The `DeclInterface` is allowed to have a circular
+      reference to these parameters only.
     }], "ParamDeclArrayAttr", "getInputParamDeclsAttr">,
 
     InterfaceMethod<[{
@@ -80,9 +81,6 @@ def FuncInterface : OpInterface<"FuncInterface"> {
     InterfaceMethod<[{
       Return the function's parameter and SSA value signature.
     }], "SignatureType", "getSignature", (ins)>,
-    InterfaceMethod<[{
-      Set the function's parameter and SSA value signature.
-    }], "void", "setSignature", (ins "SignatureType":$sig)>,
   ];
 
   let extraSharedClassDeclaration = [{

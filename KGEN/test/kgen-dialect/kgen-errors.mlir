@@ -294,6 +294,32 @@ kgen.generator @mutually_recursive() {
 
 // -----
 
+// expected-error @below {{invalid cyclic reference between operations defining and using parameters}}
+kgen.generator @use_itself() {
+  // expected-note @below {{this operation uses parameter "F", which is defined by itself}}
+  kgen.param.declare.region F = (){
+    kgen.call_param[() -> (): F]()
+    kgen.return
+  }
+  kgen.return
+}
+
+// -----
+
+// expected-error @below {{invalid cyclic reference between operations defining and using parameters}}
+kgen.generator @region_cycle() {
+  // expected-note @below {{this operation uses parameter "N", which is defined by the first operation}}
+  kgen.param.declare.region F = () -> index {
+    %0 = kgen.param.constant = <N>
+    kgen.return %0 : index
+  }
+  // expected-note @below {{this operation uses parameter "F", which is defined by:}}
+  kgen.param.declare N = <apply(:() -> index F)>
+  kgen.return
+}
+
+// -----
+
 // expected-error @+1 {{invalid use of parameter with no declaration "he1ght"}}
 kgen.generator @constrained<width, height>()
   constraints <[eq(width, 42), "thing"], [eq(he1ght, 42), "other"]> {
@@ -525,35 +551,6 @@ kgen.func @rebind(%a: !pop.scalar<f32>) {
 
 // -----
 
-kgen.generator @signature_taking_callee<fn: <size>() -> ()>() {
-  kgen.return
-}
-
-kgen.generator @call_region() {
-  kgen.call @signature_taking_callee<fn: <size>() -> () = region>() : () -> ()
-  // expected-error @below {{'kgen.region.body' op expects a non-empty block}}
-  fn<size>(%arg0: i32) {}
-  kgen.return
-}
-
-// -----
-
-kgen.generator @signature_taking_callee<fn: <size>() -> ()>() {
-  kgen.return
-}
-
-kgen.generator @call_region() {
-  // expected-note @below {{parameter declared here}}
-  kgen.call @signature_taking_callee<fn: <size>() -> () = region>() : () -> ()
-  // expected-error @below {{region has 1 argument but parameter expects 0}}
-  fn<size>(%arg0: i32) {
-    kgen.return
-  }
-  kgen.return
-}
-
-// -----
-
 // expected-error @below {{custom op 'kgen.struct.decl' expected no result parameters}}
 kgen.struct.decl @StructReturns<() -> dtype> {}
 
@@ -714,13 +711,8 @@ kgen.generator.interface @evaluateMe(index) -> index
 
 // -----
 
-kgen.generator @foo<fn: () -> ()>() {
-  kgen.return
-}
-
 kgen.generator @bar<F>() {
-  kgen.call @foo<fn: () -> () = region>() : () -> ()
-  fn() {
+  kgen.param.declare.region fn = () {
     // expected-error @below {{'kgen.param.constant' op invalid use of parameter with no declaration "Q"}}
     %0 = kgen.param.constant = <Q>
     kgen.return
@@ -730,32 +722,8 @@ kgen.generator @bar<F>() {
 
 // -----
 
-kgen.generator @foo<fn: ()->() -> index>() {
-  kgen.return<10>
-}
-
-// expected-error @below {{invalid cyclic reference between operations defining and using parameters}}
-kgen.generator @baz<F>() {
-  // expected-note @below {{this operation uses parameter "B", which is defined by the first operation}}
-  kgen.call @foo<fn:()->()=region -> kValue>() : ()->()
-  fn() {
-    %1 = kgen.param.constant = <B>
-    kgen.return
-  }
-  // expected-note @below {{this operation uses parameter "kValue", which is defined by:}}
-  kgen.param.declare B = <add(F, kValue)>
-  kgen.return
-}
-
-// -----
-
-kgen.generator @callMe<fn: ()->()>() {
-  kgen.return
-}
-
 kgen.generator @doIt<SomeParam>() {
-  kgen.call @callMe<fn: ()->() = region>() : () -> ()
-  fn() {
+  kgen.param.declare.region fn = () {
     // expected-error @below {{'kgen.param.constant' op reference to parameter "SomeParam" with incorrect type 'index'}}
     %0 = kgen.param.constant = <SomeParam>
     // expected-note @below {{parameter defined with type '!kgen.dtype'}}
@@ -1023,4 +991,20 @@ kgen.generator @throws() throws {
 kgen.generator @throws() throws -> index {
   %0 = index.constant 0
   kgen.return %0 : index
+}
+
+// -----
+
+// COM: Make sure these don't crash and emit an error gracefully.
+
+kgen.generator @no_return() {
+  // expected-error @below {{block with no terminator}}
+  kgen.param.declare A = <1>
+}
+
+// -----
+
+kgen.func @no_return() {
+  // expected-error @below {{block with no terminator}}
+  kgen.param.declare A = <1>
 }

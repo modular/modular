@@ -317,7 +317,6 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
       return WalkResult::skip();
     }
 
-    ParamDeclArrayAttr paramDeclsAttr;
     SmallVector<ParamDeclRefAttr> uses;
     bool hasConstExpr = false;
 
@@ -325,27 +324,16 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
 
     // Scan all the attributes and types to look for uses of parameters.  We let
     // the walker scan the region hierarchy.
-    for (const NamedAttribute &namedAttr : bodyOp->getAttrs()) {
-      // Scan the attribute tree looking or parameter uses.
+    for (const NamedAttribute &namedAttr : bodyOp->getAttrs())
       collectUsesFromAttr(namedAttr.getValue(), uses, hasConstExpr);
-
-      // We handle the `paramDecls` attribute specially, remember it for
-      // below.
-      if (namedAttr.getName().strref() == "paramDecls") {
-        paramDeclsAttr = dyn_cast<ParamDeclArrayAttr>(namedAttr.getValue());
-        if (!paramDeclsAttr) {
-          bodyOp->emitError("paramDecls attribute should be an array ")
-              << namedAttr.getValue();
-          hadError = true;
-          return WalkResult::advance();
-        }
-      }
-    }
 
     // If this is a DeclInterface, the declared parameters are stored in the
     // signature.
+    ParamDeclArrayAttr paramDeclsAttr;
     if (bodyDeclInterface)
       paramDeclsAttr = bodyDeclInterface.getInputParamDeclsAttr();
+    else
+      paramDeclsAttr = bodyOp->getAttrOfType<ParamDeclArrayAttr>("paramDecls");
 
     // Check the types of results to find any parameters embedded in their
     // types.  We don't have to check operands because they are always checked
@@ -387,7 +375,7 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
                     << param.getName();
         diag.attachNote(op->getLoc()) << "previous declaration here";
         hadError = true;
-        return WalkResult::advance();
+        continue;
       }
 
       std::tie(op, decl) = {bodyOp, param};
@@ -901,29 +889,19 @@ ParameterDeclsAndUses::calculateAndPotentiallyVerify(
     for (auto &[decl, uses] : *result)
       nestedDeclUses.insert({decl, std::move(uses)});
 
-    // Nested scopes can be region bodies owned by a call op. The regions are
-    // evaluated before the result of the call, so we need to prevent cycles
-    // wherein operations in region bodies use the result parameters of the
-    // enclosing call. Do this by making the enclosing call implicitly a user of
-    // all parameters used by nested scopes.
-    if (auto call = dyn_cast<KGENCallOpInterface>(nestedDecl->getParentOp()))
-      calls.insert(call);
-  }
-
-  llvm::SetVector<ParamDeclRefAttr, SmallVector<ParamDeclRefAttr>> callUses;
-  for (KGENCallOpInterface call : calls) {
-    for (DeclInterface nestedDecl : call.getRegionBodies()) {
-      const ParameterDeclsAndUses &uses =
-          nestedDeclUses.find(nestedDecl)->second;
-      // Only add references to parameters defined at or above this scope.
-      for (ParamDeclRefAttr use : uses.usesFromAbove)
-        callUses.insert(use);
+    // Nested scopes can use parameters defined from above. To ensure the graph
+    // is ordered correctly and to catch cycles wherein a region uses a
+    // parameter defined by its parent operation, make the parent operation a
+    // use of all nested parameters used within the region.
+    if (isa<ParamDeclareRegionOp>(nestedDecl->getParentOp())) {
       // If there were no uses from above, notify the nested declaration that
       // it is isolated. Do not do this during verification.
-      if (!symbolTable && uses.usesFromAbove.empty())
+      if (!symbolTable && nested.usesFromAbove.empty())
         nestedDecl.notifyKnownIsolatedFromAbove();
+      llvm::append_range(
+          verifier.getUsesForOperation(nestedDecl->getParentOp()),
+          nested.usesFromAbove);
     }
-    verifier.getUsesForOperation(call) = callUses.takeVector();
   }
 
   // Verify that there are no cycles in the graph.

@@ -52,6 +52,7 @@ def KGEN_FuncOp
 
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
+  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -82,7 +83,7 @@ def KGEN_GeneratorOp
   }];
 
   let hasCustomAssemblyFormat = 1;
-  let hasVerifier = 1;
+  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -329,36 +330,12 @@ def KGEN_CallParamOp : KGENOp<"call_param", [KGEN_CallOpInterface]> {
 
 def KGEN_RegionBodyOp : KGENOp<"region.body", [Terminator, DeclInterface,
     FuncInterface, SingleBlockImplicitTerminator<"ReturnOp">,
-    ParentOneOf<["AddressOfOp", "CallOp", "CallParamOp"]>]> {
+    ParentOneOf<["AddressOfOp", "CallOp", "CallParamOp", "ParamDeclareRegionOp"]>]> {
   let summary = "Define a region parameter body.";
   let description = [{
-    The `kgen.region.body` operation defines a region parameter. It is used by
-    `kgen.addressof`, `kgen.call`, and `kgen.call_param` to specify region
-    parameters. The operation defines a parameter signature with input and
-    output parameters for the callable body and constraints over them.
-
-    Example:
-
-    ```mlir
-    kgen.call @foreach<fn: (index) -> index = region>() : () -> ()
-    fn(%arg1: index) {
-      kgen.return %arg1 : index
-    }
-    ```
-
-    The specified region can capture values from above. A call instantiated
-    with a region parameter that is not isolated from above will be inlined by
-    the elaborator.
-
-    Example:
-
-    ```mlir
-    %0 = index.constant 0
-    %1 = kgen.call @foo<fn: () -> index = region>()
-    fn() {
-      // Return a captured value.
-      kgen.return %0 : index
-    }
+    The `kgen.region.body` operation defines the contents of a region parameter.
+    It is used in conjunction with `kgen.param.declare.region` to define a
+    region parameter. See that operation for more details.
     ```
   }];
 
@@ -368,7 +345,7 @@ def KGEN_RegionBodyOp : KGENOp<"region.body", [Terminator, DeclInterface,
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    `` custom<RegionBody>($signature, $constraints, $bodyRegion) attr-dict
+    custom<RegionBody>($signature, $constraints, $bodyRegion) attr-dict
   }];
 
   let extraClassDeclaration = [{
@@ -479,7 +456,7 @@ def KGEN_ParamConstantOp : KGENOp<"param.constant",
 // ParamDeclareOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamDeclareOp : KGENOp<"param.declare", []> {
+def KGEN_ParamDeclareOp : KGENOp<"param.declare"> {
   let summary = [{
     Declare a new parameter with a value.
   }];
@@ -503,10 +480,68 @@ def KGEN_ParamDeclareOp : KGENOp<"param.declare", []> {
 }
 
 //===----------------------------------------------------------------------===//
+// ParamDeclareRegion
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region",
+    [SingleBlockImplicitTerminator<"RegionBodyOp">]> {
+  let summary = "declare a region parameter";
+  let description = [{
+    The `kgen.param.declare.region` operation declares a signature-type
+    parameter whose value is an MLIR region (a closure). The region can be
+    isolated from above, in which case it is treated by the elaborator as a
+    stateless closure and inlined at wherever it ends up being called. The
+    region can also capture values from above, in which case the elaborator
+    treats it as a stateful closure and processes it by inlining every call that
+    forwards this parameter down to all callsites.
+
+    Parameters defined by a `kgen.param.declare.region` that are not isolated
+    from above can only be used by function calls. They cannot be used, for
+    example, by `kgen.addressof`.
+
+    Example:
+
+    ```mlir
+    kgen.param.declare.region AddIt = <N>(%arg0: index) -> index {
+      %0 = kgen.param.constant = <N>
+      %1 = index.add %0, %arg0
+      kgen.return %1 : index
+    }
+    ```
+
+    The declared region can also define constraints and result parameters.
+
+    Example:
+
+    ```mlir
+    kgen.param.declare.region LessThan2 = <N -> index>()
+        constraints <[lt(N, 2), "must be less than 2"]> {
+      kgen.return<add(N, 2)>
+    }
+    ```
+
+    The operations carry an extra bit `isolated` to indicate that they are
+    parametrically isolated from above.
+
+    Note: this operation carries a single `RegionBodyOp` since operations cannot
+    both define parameters in the current scope while declaring a new scope at
+    the same time: it is not possible to check redeclarations at the same scope.
+  }];
+
+  let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls);
+  let results = (outs KGEN_SignatureType:$result);
+  let regions = (region SizedRegion<1>:$body);
+
+  let assemblyFormat = [{
+    custom<RegionDeclaration>($paramDecls, type($result), $body) attr-dict
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ParamSearchOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamSearchOp : KGENOp<"param.search", []> {
+def KGEN_ParamSearchOp : KGENOp<"param.search"> {
   let summary = [{
     Declare a new parameter that gets one out of a set of values at elaboration
     time.

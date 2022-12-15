@@ -148,20 +148,20 @@ lit.func @genItf2_impl0<x>() implements @genItf2 {
 
 
 kgen.generator @call_with_42<fn: <value>()->()>() {
-  // expected-note @+1 {{call expansion failed}}
+  // expected-note @below {{call expansion failed}}
   kgen.call_param[<value>()->(): fn]<value = 42>()
   kgen.return
 }
 
-// expected-error @+1 {{no viable implementations found}}
+// expected-error @below {{no viable implementations found}}
 kgen.generator @test_region_constraints() {
-  // expected-note @+1 {{call expansion failed}}
-  kgen.call @call_with_42<fn: <value>()->() = region>() : () -> ()
-    fn<value>
-    // expected-note @+1 {{constraint failed: I insist index be twelve}}
-    constraints<[eq(value, 12), "I insist index be twelve"]>() {
-      kgen.return
-    }
+  kgen.param.declare.region fn = <value>()
+      // expected-note @below {{constraint failed: I insist index be twelve}}
+      constraints<[eq(value, 12), "I insist index be twelve"]> {
+    kgen.return
+  }
+  // expected-note @below {{call expansion failed}}
+  kgen.call @call_with_42<fn: <value>()->() = fn>() : () -> ()
   kgen.return
 }
 
