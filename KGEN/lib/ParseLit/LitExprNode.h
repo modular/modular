@@ -62,12 +62,12 @@ public:
     kListExprNode,  // [x, y]
 
     // Unary expressions.
-    kUnaryMinus,
-    kUnaryPlus,
-    kUnaryTilde,
-    kUnaryAmp,
-    kFirstUnaryOp = kUnaryMinus,
-    klastUnaryOp = kUnaryAmp,
+    kNeg,     // -x
+    kPos,     // +x
+    kInvert,  // ~x
+    kBoolNot, // not x
+    kFirstUnaryOp = kNeg,
+    klastUnaryOp = kBoolNot,
 
     // Binary expressions.
     kAdd,
@@ -79,7 +79,6 @@ public:
     kMod,
     kBoolOr,
     kBoolAnd,
-    kBoolNot,
     kCmpIn,
     kCmpNotIn,
     kCmpIs,

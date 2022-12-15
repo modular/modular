@@ -99,6 +99,7 @@ fn precedence_bitwise(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: kgen.return %[[OR]]
   return a * Int(2) & b | Int(4) ^ c
 
+# CHECK-LABEL: @"comparisons
 fn comparisons(a: Int, b: Int):
    var res: Bool
    # CHECK: kgen.call @Int::@"__lt__{{.*}}(%a, %b)
@@ -113,6 +114,18 @@ fn comparisons(a: Int, b: Int):
    res = a == b
    # CHECK: kgen.call @Int::@"__ne__{{.*}}(%a, %b)
    res = a != b
+
+# CHECK-LABEL: @"unary
+fn unary(a: Bool, b: Int):
+  # CHECK: %0 = kgen.call @Bool::@"__bool__(Bool)"(%a)
+  # CHECK: %1 = kgen.call @Bool::@"__invert__(Bool)"(%0)
+  _ = not a
+
+  # CHECK: [[EQ:%.*]] = kgen.call @Int::@"__eq__(Int,Int)"
+  # CHECK: [[BOOL:%.*]] = kgen.call @Bool::@"__bool__(Bool)"([[EQ]])
+  # CHECK:  = kgen.call @Bool::@"__invert__(Bool)"([[BOOL]])
+  _ = not b == 0
+
 
 # COM: TODO: Rewrite this test once we support boolean expressions
 # COM: # CHECK-LABEL: lit.func @"precedence_comparison
