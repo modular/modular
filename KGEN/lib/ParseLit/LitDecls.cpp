@@ -555,28 +555,55 @@ const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
   return infos[unsigned(kind)];
 }
 
-/// Perform type checking for a function signature that has just been parsed
-/// but that has not been installed into the specified decl.  This allows
-/// magic behavior (like __new__ being static, self getting implicitly
-/// declared), checking of method self requirements, inference of default object
-/// argument types and enforcement of other invariants.
+/// Now that all the structural properties are determined, perform any
+/// name-binding specific checks over the declaration.  This happens after
+/// decorator processing because that is how defs work in Python.  This also
+/// fills in any implicitly declared types, performs name mangling, and sets up
+/// the signature correctly.
 ///
-/// This fills in argTypes with the resolved types of arguments, on either
-/// success or error.
+/// This allows magic behavior (like __new__ being static, checking of method
+/// self requirements and enforcement of other invariants.
 ///
 /// This returns failure (after emitting an error) when a type checking problem
 /// is detected.
-static ParseResult resolveFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
-                                            StringAttr &name,
-                                            SmallVector<ParsedArgument> &args,
-                                            SmallVectorImpl<Type> &argTypes,
-                                            ASTType &resultType,
-                                            LitSharedState &shared) {
+static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
+                                      StringAttr &name,
+                                      SmallVector<ParsedArgument> &args,
+                                      MutableArrayRef<Type> argTypes,
+                                      ASTType &resultType,
+                                      LitSharedState &shared) {
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(name);
 
-  // __new__ and similar methods are implicitly static.
-  if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
-    op.setIsStaticAttr(mlir::UnitAttr::get(shared.getContext()));
+  // On any semantic error we mark the declaration erroneous - so references to
+  // it don't type check, and we clear our special function information.  This
+  // reduces cascade errors.
+  auto emitErrorLoc = [&](SMLoc loc, const Twine &message) {
+    fnInfo = SpecialFunctionInfo();
+    decl.hasReferenceError = true;
+    return shared.emitError(loc, message);
+  };
+  auto emitError = [&](const Twine &message) {
+    fnInfo = SpecialFunctionInfo();
+    decl.hasReferenceError = true;
+    return shared.emitError(funcOp.getLoc(), message);
+  };
+
+  // Fill in any missing arguments or diagnose missing ones in fn's.
+  for (auto [arg, type] : llvm::zip(args, argTypes)) {
+    if (!type) {
+      if (funcOp.getIsDef()) {
+        // If we are in a 'def', we infer object type for Python compatibility.
+        type = shared.getObjectType();
+      } else {
+        // In an 'fn' we report an error.
+        emitErrorLoc(arg.loc, "'fn' parameter type must be specified");
+        type = shared.getTypeCheckErrorType();
+      }
+    }
+    // TODO: add support for default parameter expressions.
+    if (arg.initValue)
+      shared.emitError(arg.loc, "TODO: No default values yet");
+  }
 
   // If this definition is a struct/class member, compute the self type.
   ASTType selfType;
@@ -588,74 +615,50 @@ static ParseResult resolveFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
       selfType = parentDecl->getSelfType();
     }
 
-  // Type check all arguments, figuring out a type to use for them (incl
-  // possibly an error type).
-  ExprEmitter argEmitter(shared, decl, None, nullptr);
-  for (auto &arg : args) {
-    ASTType type;
-    if (arg.typeExpr) {
-      // This returns a TypeCheckErrorType on error, no extra check is needed.
-      type = argEmitter.emitType(arg.typeExpr);
-    } else if (&arg == &args[0] && selfType && !op.getIsStatic()) {
-      // We can always default 'self' in a method.
-      type = selfType;
-    } else if (op.getIsDef()) {
-      // If we are in a 'def', we infer object type for Python compatibility.
-      type = shared.getObjectType();
+  // Check any special function information.
+
+  // __new__ and similar methods are implicitly static.
+  if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod) {
+    // Verify that implicitly static methods are declared as methods.
+    if (!selfType) {
+      emitError("special function must be a method");
+
     } else {
-      // In an 'fn' we report an error.
-      op->emitError("'fn' parameter type must be specified");
-      type = shared.getTypeCheckErrorType();
+      funcOp.setIsStaticAttr(mlir::UnitAttr::get(shared.getContext()));
     }
-
-    // Apply any conventions requested.
-    if (arg.convention == ValueInputConvention::ByRef)
-      type = POP::PointerType::get(type);
-
-    // TODO: add support for default parameter expressions.
-    if (arg.initValue)
-      argEmitter.emitError(arg.loc, "TODO: No default values yet");
-
-    argTypes.push_back(type);
   }
 
   // Check that the 'self' argument of a method was specified correctly.
-  if (selfType && !op.getIsStatic() && !argTypes.empty()) {
-    auto adjustedSelf = selfType;
-    if (args[0].convention == ValueInputConvention::ByRef)
-      adjustedSelf = POP::PointerType::get(adjustedSelf);
-
-    if (!ASTType(argTypes[0]).isEqualCanon(adjustedSelf))
-      op->emitError("'self' argument must have type ") << selfType;
+  if (selfType && !funcOp.getIsStatic()) {
+    if (argTypes.empty()) {
+      // TODO: We can/should relax this for 'def' declarations in the future,
+      // they should be able to implicit ignore arguments like Python does.
+      emitError("self argument must be present in instance method");
+    } else if (!ASTType(argTypes[0]).isEqualCanon(selfType)) {
+      emitErrorLoc(args[0].loc, "'self' argument must have type ")
+          << selfType << " but actually has type " << ASTType(argTypes[0]);
+    }
   }
 
-  // Verify that implicitly static methods are declared as methods.
-  if ((fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod) &&
-      !selfType)
-    return op->emitError("special function must be a method");
-
   // Verify the operand count lines up.
-  if (fnInfo.numOperands != -1 && size_t(fnInfo.numOperands) != args.size())
-    return op->emitError("special function must have ")
-           << fnInfo.numOperands << " operand" << plural(fnInfo.numOperands);
+  if (fnInfo.numOperands != -1 && size_t(fnInfo.numOperands) != args.size()) {
+    auto numOperands = fnInfo.numOperands;
+    emitError("special function must have ")
+        << numOperands << " operand" << plural(numOperands);
+  }
 
   // Check other invariants based on method flags.
   if (fnInfo.flags & SpecialFunctionInfo::kInstMethod) {
     auto convent = fnInfo.isByRefSelfInstMethod() ? ValueInputConvention::ByRef
                                                   : ValueInputConvention::ByVal;
     if (!selfType)
-      return op->emitError("special function must be a method");
-    if (op.getIsStatic())
-      return op->emitError("special method may not be a static method");
-    if (args.empty())
-      return op->emitError("self argument must be present in instance method");
-
-    // TODO: Instead of enforcing byref is specified correctly, we
-    // could reject invalid explicit settings and default it correctly.
-    if (convent != args[0].convention)
-      return op->emitError("self argument must ")
-             << (convent == ValueInputConvention::ByRef ? "" : "not ")
-             << "be passed by reference";
+      emitError("special function must be a method");
+    else if (funcOp.getIsStatic())
+      emitError("special method may not be a static method");
+    else if (convent != args[0].convention)
+      emitErrorLoc(args[0].loc, "self argument must ")
+          << (convent == ValueInputConvention::ByRef ? "" : "not ")
+          << "be passed by reference";
   }
 
   switch (fnInfo.kind) {
@@ -663,23 +666,38 @@ static ParseResult resolveFunctionSignature(ASTDecl &decl, LIT::FuncOp op,
     // Ignore methods without special handling.
     break;
   case SpecialFunctionKind::kInit:
-    if (isa<StructDeclOp>(*decl.getParentDecl()))
-      return op->emitError(
-          "__init__ is not allowed on structs, use __new__ instead");
-    // __init__ on classes must return NoneType.
-    if (!resultType.isEqualCanon(shared.getNoneType()))
-      return op->emitError("__init__ result type must be elided (or None)");
+    if (isa<StructDeclOp>(*decl.getParentDecl())) {
+      emitError("__init__ is not allowed on structs, use __new__ instead");
+      // __init__ on classes must return NoneType.
+    } else if (!resultType.isEqualCanon(shared.getNoneType())) {
+      emitError("__init__ result type must be elided (or None)");
+    }
     break;
 
   case SpecialFunctionKind::kNew:
     // __new__ must return containing type.
     // TODO: We could allow omitting result type and default it.
     if (!resultType.isEqualCanon(selfType))
-      return op->emitError("result type must be ") << selfType;
+      emitError("result type must be ") << selfType;
     break;
   }
 
-  return success();
+  // TODO: Mangle 'name'.
+
+  // Finally, after all semantic checks are done, update the types to reflect
+  // ABI information form the calling convention.
+
+  // Now that all the types and signature information have been resolved,
+  // compute the final MLIR types, mixing in conventions etc.
+  for (auto [arg, argType] : llvm::zip(args, argTypes)) {
+    if (arg.convention == ValueInputConvention::ByRef)
+      argType = POP::PointerType::get(argType);
+  }
+
+  // If the method can raise an exception, wrap the result type in a variant
+  // with the error type.
+  if (funcOp.getRaises())
+    resultType = shared.getErrorOrType(resultType);
 }
 
 namespace {
@@ -816,7 +834,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   FnDecorators decorators;
   for (auto *expr : decoratorExprs)
     decorators.processDecorator(expr, p);
-  decorators.applyEarly(decl, sharedState);
 
   assert(p.getToken().isAny(LitToken::kw_def, LitToken::kw_fn) &&
          "not a function definition?");
@@ -875,36 +892,52 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   SmallVector<ParamDeclAttr> inputParamDecls =
       metaSignature.getResolvedInputParamDecls(*this);
 
-  ASTType resultType;
-  if (!resultTypeExpr) {
-    // TODO: This will be one difference between a def and fn: no result type on
-    // a def should default to returning a (default initialized) Object, whereas
-    // a fn can return void.
-    resultType = sharedState.getNoneType();
-  } else {
-    resultType =
-        ExprEmitter(sharedState, decl, None, nullptr).emitType(resultTypeExpr);
-  }
-
-  // If the method can raise an exception, wrap the result type in a variant
-  // with the error type.
-  if (funcOp.getRaises())
-    resultType = sharedState.getErrorOrType(resultType);
-
-  // Verify that methods and functions like __add__ have the right signature,
-  // and adjust them if there are implicit declarations.
+  // Resolve the result type and any argument types that are present, leaving
+  // any unspecified types null.
   SmallVector<Type> argTypes;
-  if (resolveFunctionSignature(decl, funcOp, name, args, argTypes, resultType,
-                               sharedState)) {
-    // If the function wasn't type checked correctly, uses of it may be
-    // broken.
-    decl.hasReferenceError = true;
+  ExprEmitter typeEmitter(sharedState, decl, None, nullptr);
+  for (auto &arg : args) {
+    // This returns a TypeCheckErrorType on error, no extra check is needed.
+    ASTType type =
+        arg.typeExpr ? typeEmitter.emitType(arg.typeExpr) : ASTType();
+
+    // If this is a 'self' argument in a fn that is a method, default to a self
+    // type.  TODO: Should we do this, or default to object in a 'def'?
+    if (!type && arg.name == "self" &&
+        isa<StructDeclOp>(*decl.getParentDecl())) {
+      assert(decl.getParentDecl()->resolvedness ==
+             DeclResolvedness::fullyResolved);
+      type = decl.getParentDecl()->getSelfType();
+    }
+    argTypes.push_back(type);
   }
+
+  ASTType resultType =
+      resultTypeExpr ? typeEmitter.emitType(resultTypeExpr) : ASTType();
+  if (!resultType) {
+    // TODO: We shouldn't default this to none for 'def's.  This should default
+    // to object type.  Our return checker is currently a lame duck.
+    resultType = sharedState.getNoneType();
+  }
+
+  // Now that we have figured out the lexical structure, allow decorators to
+  // take a crack at the signature.
+  decorators.applyEarly(decl, sharedState);
+
+  // Now that all the structural properties are determined, perform any
+  // name-binding specific checks over the declaration.  This happens after
+  // decorator processing because that is how defs work in Python.  This also
+  // fills in any implicitly declared types.
+  verifyFunctionNameBinding(decl, funcOp, name, args, argTypes, resultType,
+                            sharedState);
 
   // Finally now that the full signature has been resolved, build our IR.
 
-  // Set the symbol.
+  // Set the symbol to the mangled name.
   funcOp.setName(name);
+
+  // TODO: Handle the export attribute somehow else.
+  decorators.applyLate(decl, sharedState);
 
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -961,11 +994,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
                                        funcOp.getRaises() ? FnEffects::Throws
                                                           : FnEffects::None)));
   funcOp.getBody()->addArguments(argTypes, argLocs);
-
-  // Now that the function is set up, apply any late decorators.
-  // TODO: Move implements logic and everything else into this. Decorators
-  // should run after the function signature is type checked.
-  decorators.applyLate(decl, sharedState);
 
   if (FlatSymbolRefAttr implementsAttr = funcOp.getImplementsAttr()) {
     StringRef interfaceName = implementsAttr.getAttr().getValue();
@@ -1260,7 +1288,6 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
   SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
-  rejectDecorators(decoratorExprs, decl, p);
 
   ParsedMetaSignature metaSignature(decl);
   if (p.parseToken(LitToken::kw_struct,
@@ -1280,6 +1307,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
   decl.setSelfType(decl.computeSelfTypeForStruct(sharedState));
+  rejectDecorators(decoratorExprs, decl, p);
   return success();
 }
 
@@ -1299,7 +1327,6 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
   SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
-  rejectDecorators(decoratorExprs, decl, p);
 
   ASTType type;
   // Parse the type if present.
@@ -1313,6 +1340,7 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
     return failure();
 
   fieldOp.setType(type);
+  rejectDecorators(decoratorExprs, decl, p);
   return success();
 }
 

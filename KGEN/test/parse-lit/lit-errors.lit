@@ -61,7 +61,7 @@ def param_redef(x: __mlir_type.index, x: __mlir_type.index):
   pass
 
 # expected-error @+1 {{'def' statement must be on its own line}}
-struct Struct: def foo(): pass
+struct Struct: def foo(self): pass
 
 struct ReturnFromStruct:
   # expected-error @+1 {{cannot return from this context}}
@@ -185,7 +185,7 @@ struct WrongSelfType[a: Int]:
   def goodMethod(self&: WrongSelfType[a]): pass
 
   # expected-error @+1 {{special function must have 2 operands}}
-  def __add__(): pass
+  def __add__(self): pass
 
 
 @interface
@@ -284,7 +284,7 @@ __include "non-existant-file.lit" # expected-error {{could not find file 'non-ex
 
 struct SpecialFunctions:
   # expected-error @+1 {{special function must have 2 operands}}
-  fn __add__():
+  fn __add__(self):
 
   # expected-error @+1 {{self argument must be passed by reference}}
   fn __iadd__(a: SpecialFunctions, b: SpecialFunctions) -> SpecialFunctions:
@@ -347,11 +347,11 @@ fn slice_expression(a: Int):
 # expected-note @+1 {{previous definition here}}
 struct Parameterized[p1: __mlir_type.index]:
   # expected-error @+1 {{invalid redefinition of "p1"}}
-  fn a[p1: Int]():  # Cannot shadow parameter names.
+  fn a[p1: Int](self):  # Cannot shadow parameter names.
 
   # expected-error @+2 {{invalid redefinition of "p2"}}
   # expected-note @+1 {{previous definition here}}
-  fn b[p2: Int, p2: Int, p3: Int]():  # Cannot shadow parameter names.
+  fn b[p2: Int, p2: Int, p3: Int](self):  # Cannot shadow parameter names.
 
   fn __new__() -> Parameterized[p1]:
     var result: Parameterized[p1]
