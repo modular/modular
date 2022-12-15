@@ -229,8 +229,7 @@ def func_impl1(x: __mlir_type.index) -> __mlir_type.index:
 def func_impl2(x: __mlir_type.index) -> __mlir_type.index:
   return x
 
-@implements(xyz)
-# expected-error @+1 {{this function implements an unknown interface: xyz}}
+@implements(xyz)  # expected-error {{unable to resolve interface named 'xyz'}}
 def func_impl3(x: __mlir_type.index) -> __mlir_type.index:
   return x
 
