@@ -335,7 +335,7 @@ ParseResult KGEN::parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result) {
 }
 
 /// Print a comma separated parameter declaration list.
-void KGEN::printParamDecls(ParamDeclArrayAttr decls, raw_ostream &os) {
+void KGEN::printParamDecls(ArrayRef<ParamDeclAttr> decls, raw_ostream &os) {
   if (decls.empty()) {
     os << "()";
   } else {
@@ -1356,7 +1356,8 @@ ParseResult KGEN::parseParamBinds(AsmParser &p,
   return success();
 }
 
-void KGEN::printParamBinds(ParamBindArrayAttr paramBinds, raw_ostream &os) {
+void KGEN::printParamBinds(ArrayRef<ParamBindAttr> paramBinds,
+                           raw_ostream &os) {
   if (paramBinds.empty()) {
     os << "()";
   } else {
@@ -1368,7 +1369,7 @@ void KGEN::printParamBinds(ParamBindArrayAttr paramBinds, raw_ostream &os) {
   }
 }
 
-void KGEN::printParamBinds(AsmPrinter &p, ParamBindArrayAttr paramBinds) {
+void KGEN::printParamBinds(AsmPrinter &p, ArrayRef<ParamBindAttr> paramBinds) {
   printParamBinds(paramBinds, p.getStream());
 }
 

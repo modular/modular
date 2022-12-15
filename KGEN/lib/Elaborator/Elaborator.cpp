@@ -548,13 +548,13 @@ private:
   LogicalResult processGeneratorUser(
       OpT user,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
-    return processGeneratorUserImpl(
-        user, user.getParamDecls(), user.getParamValues(),
-        user.getCalleeSymbol(), rewriters, /*isInlinedCall=*/false);
+    return processGeneratorUserImpl(user, user.getCallee(),
+                                    user.getParamDecls(), rewriters,
+                                    /*isInlinedCall=*/false);
   }
   LogicalResult processGeneratorUserImpl(
-      KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
-      ArrayRef<ParamBindAttr> paramValues, SymbolRefAttr calleeAttr,
+      KGENCallOpInterface user, SymbolConstantAttr callee,
+      ArrayRef<ParamDeclAttr> decls,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters,
       bool isInlinedCall);
   LogicalResult
@@ -983,46 +983,44 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
 }
 
 LogicalResult ParameterRewriter::processGeneratorUserImpl(
-    KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
-    ArrayRef<ParamBindAttr> paramValues, SymbolRefAttr calleeAttr,
+    KGENCallOpInterface user, SymbolConstantAttr callee,
+    ArrayRef<ParamDeclAttr> decls,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters,
     bool isInlinedCall) {
   // Evaluate any input parameters.
   FailureOr<std::pair<ArrayAttr, bool>> result =
-      resolveCallInputParams(user, paramValues, isInlinedCall);
+      resolveCallInputParams(user, callee.getParamValues(), isInlinedCall);
   if (failed(result))
     return failure();
   auto [inputParamKey, inlineCallee] = *result;
 
   // Instantiate the callee into one or more FuncOp's, depending on what the
   // callee is.
-  auto callee =
-      dyn_cast_if_present<FuncInterface>(elaborator.lookupCallee(calleeAttr));
-  if (!callee)
+  auto ref = cast<FlatSymbolRefAttr>(callee.getSymbol());
+  auto func = dyn_cast_if_present<FuncInterface>(elaborator.lookupCallee(ref));
+  if (!func)
     return error(user->getLoc(), Twine("could not find callee '") +
-                                     calleeAttr.getLeafReference().strref() +
-                                     "'");
+                                     ref.getAttr().strref() + "'");
 
   // If the callee is an interface that provides an evaluator, resolve the
   // evaluator first.
-  if (auto itf = dyn_cast<GeneratorInterfaceOp>(*callee)) {
+  if (auto itf = dyn_cast<GeneratorInterfaceOp>(*func)) {
     if (SymbolConstantAttr evaluator = itf.getEvaluatorAttr()) {
       if (!elaborator.analysis.getTopLevelSymbolTable().lookup<FuncOp>(
               cast<FlatSymbolRefAttr>(evaluator.getSymbol()).getAttr())) {
         evaluators.push_back(elaborator.createEvaluator());
-        for (auto [bind, value] : llvm::zip(paramValues, inputParamKey))
+        for (auto [bind, value] :
+             llvm::zip(callee.getParamValues(), inputParamKey))
           evaluators.back().setParameterValue(bind.getDecl(), value);
-        if (failed(processGeneratorUserImpl(
-                itf, {}, evaluator.getParamValues().getValue(),
-                evaluator.getSymbol(), rewriters,
-                /*isInlinedCall=*/false)))
+        if (failed(processGeneratorUserImpl(itf, evaluator, {}, rewriters,
+                                            /*isInlinedCall=*/false)))
           return failure();
         evaluators.pop_back();
       }
     }
   }
 
-  DeclAndInputParamsPair calleeDeclAndInputParams{callee, inputParamKey};
+  DeclAndInputParamsPair calleeDeclAndInputParams{func, inputParamKey};
 
   // If we already have a binding for this decl/inputParam set, then reuse the
   // consistent callee.
@@ -1220,12 +1218,14 @@ LogicalResult ParameterRewriter::processCallParamOp(
     // CallParam.  TODO: Remove.
     if (symbolCst.getParamValues().empty())
       return processGeneratorUserImpl(
-          call, call.getParamDecls(), call.getParamValues(),
-          symbolCst.getSymbol(), rewriters, /*isInlinedCall=*/false);
+          call,
+          SymbolConstantAttr::get(symbolCst.getSymbol(),
+                                  call.getParamValuesAttr(),
+                                  symbolCst.getType().dropParamValues()),
+          call.getParamDecls(), rewriters, /*isInlinedCall=*/false);
     // Otherwise use the ones from the symbol.
-    return processGeneratorUserImpl(
-        call, call.getParamDecls(), symbolCst.getParamValues().getValue(),
-        symbolCst.getSymbol(), rewriters, /*isInlinedCall=*/false);
+    return processGeneratorUserImpl(call, symbolCst, call.getParamDecls(),
+                                    rewriters, /*isInlinedCall=*/false);
   }
 
   // Otherwise, the only other case we support is a call to a region, which is
@@ -1255,11 +1255,13 @@ LogicalResult ParameterRewriter::processInlinedCallOp(
   // CallParam.  TODO: Remove.
   if (symbolCst.getParamValues().empty())
     return processGeneratorUserImpl(
-        call, call.getParamDecls(), call.getParamValues(),
-        symbolCst.getSymbol(), rewriters, /*isInlinedCall=*/true);
-  return processGeneratorUserImpl(
-      call, call.getParamDecls(), symbolCst.getParamValues().getValue(),
-      symbolCst.getSymbol(), rewriters, /*isInlinedCall=*/true);
+        call,
+        SymbolConstantAttr::get(symbolCst.getSymbol(),
+                                call.getParamValuesAttr(),
+                                symbolCst.getType().dropParamValues()),
+        call.getParamDecls(), rewriters, /*isInlinedCall=*/true);
+  return processGeneratorUserImpl(call, symbolCst, call.getParamDecls(),
+                                  rewriters, /*isInlinedCall=*/true);
 }
 
 LogicalResult ParameterRewriter::processRegionCallImpl(

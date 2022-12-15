@@ -91,7 +91,7 @@ void printParamDecl(AsmPrinter &p, ParamDeclAttr decl);
 
 /// Parse and print ParamDeclArrayAttr as a canonical list of comma separated
 /// information.
-void printParamDecls(ParamDeclArrayAttr decls, raw_ostream &os);
+void printParamDecls(ArrayRef<ParamDeclAttr> decls, raw_ostream &os);
 ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result);
 
 /// Parse and print a parameter specification on a generator or region type.
@@ -135,8 +135,8 @@ void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
 
 /// Parse and print a parameter binding list if present.
 ParseResult parseParamBinds(AsmParser &p, ParamBindArrayAttr &paramBinds);
-void printParamBinds(AsmPrinter &p, ParamBindArrayAttr paramBinds);
-void printParamBinds(ParamBindArrayAttr paramBinds, raw_ostream &os);
+void printParamBinds(AsmPrinter &p, ArrayRef<ParamBindAttr> paramBinds);
+void printParamBinds(ArrayRef<ParamBindAttr> paramBinds, raw_ostream &os);
 
 /// Parse a list of parameter bindings without result parameters in <>'s
 ParseResult
