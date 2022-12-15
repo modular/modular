@@ -754,13 +754,28 @@ void FnDecorators::applyImplements(const CallNode &callNode) {
     return;
   }
 
-  // FIXME: This is incorrect. This should do name lookup on the specified
-  // name and use getSymbolRef() on the returned ASTDecl, rather than
-  // forming it directly.  There is no reason to force interfaces to be
-  // top-level, and this will break mangling.
+  // Perform a name lookup to find the right symbol.
   StringRef interfaceName = cast<DeclRefNode>(callNode.args.front())->spelling;
-  funcOp.setImplementsAttr(
-      FlatSymbolRefAttr::get(shared.getContext(), interfaceName));
+  ExprEmitter emitter(shared, decl, {}, {});
+  auto result =
+      emitter.lookupAndResolveDecl(interfaceName, callNode.getLoc(), decl);
+
+  // Reject the code if the interface wasn't found.
+  auto *interfaceDecl = result.getIfSuccess();
+  if (!interfaceDecl) {
+    if (result.isFailure())
+      shared.emitError(callNode.getLoc(), "unable to resolve interface named '")
+          << interfaceName << "'";
+    return;
+  }
+  // TODO: Allow nested symbols.
+  auto symbol = dyn_cast<FlatSymbolRefAttr>(interfaceDecl->getSymbolRef());
+  if (!symbol) {
+    shared.emitError(callNode.getLoc(), "unable to reference nested symbol");
+    return;
+  }
+
+  funcOp.setImplementsAttr(symbol);
 }
 
 // Apply all signature decorators.
