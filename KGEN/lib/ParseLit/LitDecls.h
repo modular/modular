@@ -80,12 +80,12 @@ public:
   LogicalResult resolve(ASTDecl &decl, DeclResolvedness howResolved,
                         llvm::SMLoc loc);
 
-  /// Given the symbol for a lit declaration, return the ASTDecl that
+  /// Given the symbol for a lit type declaration, return the ASTDecl that
   /// corresponds to it.  This doesn't allow null symbols, so it always
   /// succeeds.
-  ASTDecl &getDeclForSymbol(SymbolRefAttr symbol) const {
-    auto it = declForSymbol.find(symbol);
-    assert(it != declForSymbol.end() && "Unknown decl symbol!");
+  ASTDecl &getDeclForTypeSymbol(SymbolRefAttr symbol) const {
+    auto it = declForTypeSymbol.find(symbol);
+    assert(it != declForTypeSymbol.end() && "Unknown decl symbol!");
     return *it->second;
   }
 
@@ -122,9 +122,10 @@ private:
   /// This is shared state across the whole parser.
   LitSharedState &sharedState;
 
-  /// This map tracks the ASTDecl for every MLIR declaration with a symbol. This
-  /// includes type declarations, functions etc.
-  DenseMap<SymbolRefAttr, ASTDecl *> declForSymbol;
+  /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.
+  /// This does not include functions, only things that may be referred to by a
+  /// DeclRefType: StructTypes, aliases, etc.
+  DenseMap<SymbolRefAttr, ASTDecl *> declForTypeSymbol;
 
   /// This array holds all of the parsed declarations in a deterministic order.
   std::vector<ASTDecl *> parsedDeclList;

@@ -26,7 +26,7 @@ using namespace M::KGEN::LIT;
 
 ASTDecl *ASTType::getDecl(LitSharedState &shared) const {
   if (auto declRef = dyn_cast<DeclRefType>(mlirType))
-    return &shared.getDeclForSymbol(declRef.getSymbol());
+    return &shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
   return nullptr;
 }
 
