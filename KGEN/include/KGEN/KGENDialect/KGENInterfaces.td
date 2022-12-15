@@ -172,15 +172,6 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
     }], "bool", "isAllowedInFunc", (ins), [{}], [{ return true; }]>
   ];
 
-  let extraSharedClassDeclaration = [{
-    /// Get the bound region bodies of this operation.
-    iterator_range<CallRegionBodyIterator> getRegionBodies() {
-      return llvm::map_range($_op->getRegions(), +[](Region &region) {
-        return cast<DeclInterface>(region.front().front());
-      });
-    }
-  }];
-
   let verify = [{ return impl::verifyCallOp($_op); }];
   let verifyWithRegions = 1;
 }

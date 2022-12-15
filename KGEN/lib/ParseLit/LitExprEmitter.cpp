@@ -328,7 +328,7 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
     resultVal =
         builder
             ->create<CallOp>(loc, resultTypes, cast<SymbolConstantAttr>(target),
-                             valueArguments)
+                             ArrayRef<ParamDeclAttr>(), valueArguments)
             .getResult(0);
   } else {
     // Otherwise emit calls to SSA values with call_indirect.

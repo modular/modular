@@ -279,25 +279,6 @@ def KGEN_UnknownAttr : KGEN_ExprAttr<"Unknown", "unknown"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ParamCallRegionRefAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParamCallRegionRefAttr : KGEN_ExprAttr<"ParamCallRegionRef",
-    "param.call.region.ref"> {
-  let summary =
-    "A marker indicating a signature value is specified by a call region";
-  let parameters = (ins AttributeSelfTypeParameter<"", "SignatureType">:$type);
-
-  let assemblyFormat = "";
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "SignatureType":$type), [{
-      return get(type.getContext(), type);
-    }]>
-  ];
-}
-
-//===----------------------------------------------------------------------===//
 // ParamDeclRefAttr
 //===----------------------------------------------------------------------===//
 

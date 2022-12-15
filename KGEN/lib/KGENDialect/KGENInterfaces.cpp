@@ -17,37 +17,6 @@ using namespace KGEN;
 // Verification
 //===----------------------------------------------------------------------===//
 
-/// Verify that regions used as signature parameters match in the signature.
-static LogicalResult verifyRegionSignatures(KGENCallOpInterface op) {
-  auto regionValues =
-      llvm::make_filter_range(op.getParamValues(), [](ParamBindAttr value) {
-        return value.getValue().isa<ParamCallRegionRefAttr>();
-      });
-
-  size_t numRegionParams =
-      std::distance(regionValues.begin(), regionValues.end());
-  if (numRegionParams != op->getNumRegions())
-    return op->emitOpError("expected ")
-           << numRegionParams << " body regions but has "
-           << op->getNumRegions();
-
-  // Ensure each region parameter matches up in order with the regions.
-  for (auto [idx, bind] : llvm::enumerate(regionValues)) {
-    auto paramSignature = cast<SignatureType>(bind.getValue().getType());
-    Region &region = op->getRegion(idx);
-    auto body = cast<FuncInterface>(region.front().getTerminator());
-    if (region.front().getOperations().size() != 1)
-      return op->emitOpError("expected region #")
-             << idx << " to contain only a `kgen.region.body` op";
-
-    if (failed(verifyDeclSignaturesMatch("region", body.getSignature(),
-                                         body.getLoc(), "parameter",
-                                         paramSignature, op.getLoc())))
-      return failure();
-  }
-  return success();
-}
-
 LogicalResult impl::verifyCallOp(KGENCallOpInterface op) {
   if (!op.getCallee())
     return success();
@@ -65,7 +34,7 @@ LogicalResult impl::verifyCallOp(KGENCallOpInterface op) {
   if (!op.isAllowedInFunc() && func)
     return op.emitOpError("is only allowed in generators pre-elaboration");
 
-  return verifyRegionSignatures(op);
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

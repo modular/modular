@@ -176,13 +176,6 @@ bool ListAttr::isConstant() const {
 bool UnknownAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
-// ParamCallRegionRefAttr
-//===----------------------------------------------------------------------===//
-
-/// This attribute refers to a region, which might be parameterized.
-bool ParamCallRegionRefAttr::isConstant() const { return false; }
-
-//===----------------------------------------------------------------------===//
 // ParamDeclRefAttr
 //===----------------------------------------------------------------------===//
 
