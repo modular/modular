@@ -1282,21 +1282,34 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
     switch (kind) {
     default:
       llvm_unreachable("unknown binary operator");
-    case ExprNode::kUnaryMinus: {
+    case ExprNode::kNeg: {
       IntegerAttr minusOne = emitter.builder->getIndexAttr(-1);
       return ParamOperatorAttr::get(POC::Mul, exprParam, minusOne);
     }
-    case ExprNode::kUnaryPlus:
+    case ExprNode::kPos:
       return exprParam;
     }
   }
 
+  ASTExprAnd<AnyValue> argValue = {exprRep, subExpr};
+  Kind kindToEmit = kind;
+
+  // Handle special cases that don't correspond to special function, "not x".
+  if (kindToEmit == kBoolNot) {
+    // Turn this into a call to __bool__.
+    argValue.ir = emitter.emitSpecialMethodCall(
+        exprRep.getType(), SpecialFunctionKind::kBool, argValue, getLoc());
+    if (!argValue.ir)
+      return {};
+    // Now that we know we bool-ized the expression, invert it with ~.
+    kindToEmit = kInvert;
+  }
+
   // If this operator maps onto a special function, attempt to lower it.
-  auto specialFnKind = getOpSpecialFunctions(kind, /*isReversed=*/false);
+  auto specialFnKind = getOpSpecialFunctions(kindToEmit, /*isReversed=*/false);
   assert(specialFnKind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
-  ASTExprAnd<AnyValue> argValue = {exprRep, subExpr};
   return emitter.emitSpecialMethodCall(exprRep.getType(), specialFnKind,
                                        argValue, getLoc());
 }

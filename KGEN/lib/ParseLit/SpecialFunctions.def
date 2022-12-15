@@ -30,9 +30,9 @@ SF(kBool,    "__bool__"  ,  1, kInvalid, kInstMethod)
 SF(kLitBool, "__lit_bool",  1, kInvalid, kInstMethod)
 
 // Unary arithmetic operators.
-SF(kNeg,     "__neg__"   ,  1, kUnaryMinus, kInstMethod)
-SF(kPos,     "__pos__"   ,  1, kUnaryPlus, kInstMethod)
-SF(kInvert,  "__invert__",  1, kUnaryTilde, kInstMethod)
+SF(kNeg,     "__neg__"   ,  1, kNeg,    kInstMethod)
+SF(kPos,     "__pos__"   ,  1, kPos,    kInstMethod)
+SF(kInvert,  "__invert__",  1, kInvert, kInstMethod)
 
 // Normal comparison operators.
 SF(kCmpLT, "__lt__", 2, kCmpLT, kInstMethod)

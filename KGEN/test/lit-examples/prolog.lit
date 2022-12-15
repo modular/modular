@@ -33,22 +33,34 @@ struct Bool:
     return __mlir_op.`kgen.struct.create`[_type: Bool](value)
 
 
-  fn __bool__(self: Bool) -> Bool:
+  fn __bool__(self) -> Bool:
      return self
 
   # This method is a special hook used by the compiler to test boolean objects
   # in control flow conditions.  It should be implemented by Bool but not other
   # general boolean convertible types (they should implement __bool__ instead).
-  fn __lit_bool(self: Bool) -> __mlir_type.i1:
-     return self.value
+  fn __lit_bool(self) -> __mlir_type.i1:
+    return self.value
 
+  # CHECK: lit.func @"true()"()
+  # CHECK:   %0 = kgen.param.constant: i1 = <1>
+  # CHECK:   %1 = kgen.call @Bool::@"__new__(__mlir_type.i1)"(%0)
   @staticmethod
   fn true() -> Bool:
-    return Bool(__mlir_op.`index.castu`[_type: __mlir_type.i1](1))
+     return Bool(__mlir_op.`index.bool.constant`[
+        _type: __mlir_type.i1, value: __mlir_attr.`1: i1`]())
 
   @staticmethod
   fn false() -> Bool:
-    return Bool(__mlir_op.`index.castu`[_type: __mlir_type.i1](0))
+     return Bool(__mlir_op.`index.bool.constant`[
+        _type: __mlir_type.i1, value: __mlir_attr.`1: i1`]())
+
+  fn __invert__(self) -> Bool:
+    return Bool.false() if self else Bool.true()
+
+  # TODO: fn __and__(self, rhs: Bool) -> Bool:
+  # TODO: fn __xor__(self, rhs: Bool) -> Bool:
+  # TODO: fn __or__(self, rhs: Bool) -> Bool:
 
 #===------------------------------------------------------------------------===#
 # Int

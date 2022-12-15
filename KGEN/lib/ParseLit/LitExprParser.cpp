@@ -300,13 +300,11 @@ static ExprNode::Kind getUnaryOpKind(LitToken::Kind tokKind) {
   case LitToken::kw_not:
     return ExprNode::kBoolNot;
   case LitToken::plus:
-    return ExprNode::kUnaryPlus;
+    return ExprNode::kPos;
   case LitToken::minus:
-    return ExprNode::kUnaryMinus;
+    return ExprNode::kNeg;
   case LitToken::tilde:
-    return ExprNode::kUnaryTilde;
-  case LitToken::amp:
-    return ExprNode::kUnaryAmp;
+    return ExprNode::kInvert;
   }
 }
 
@@ -336,8 +334,7 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
   case LitToken::plus:
   case LitToken::minus:
   case LitToken::tilde:
-  case LitToken::kw_not:
-  case LitToken::amp: { // u_expr
+  case LitToken::kw_not: { // u_expr
     auto unaryLoc = consumeToken().getLoc();
     ExprNode *expr;
     Precedence precedence = Precedence::kFactor;
