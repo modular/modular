@@ -453,7 +453,7 @@ public:
         sourceModule(cast<ModuleOp>(elaborator.analysis.getModule())),
         elaboratedGenerator(func), inlinedCallee(inlinedCallee),
         expansionDepth(expansionDepth) {
-    nextCallRegionID = 0;
+    nextRegionID = 0;
     evaluators.push_back(elaborator.createEvaluator());
     commandWorklist.reserve(opsToRewrite.size());
     llvm::append_range(commandWorklist, opsToRewrite);
@@ -520,6 +520,7 @@ public:
 
 private:
   LogicalResult processParamDeclareOp(ParamDeclareOp op);
+  LogicalResult processParamDeclareRegionOp(ParamDeclareRegionOp op);
   LogicalResult processParamSearchOp(
       ParamSearchOp op,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
@@ -607,9 +608,9 @@ private:
   /// rewritten.
   SmallVector<RewriterCommandType> commandWorklist;
 
-  /// This is a counter that gives each region attached to a kgen.call a
-  /// unique number (and therefore, unique name).
-  unsigned nextCallRegionID;
+  /// This is a counter that gives each declared region parameter a unique
+  /// number (and therefore, unique name).
+  unsigned nextRegionID;
 
   /// A flag to indicate whether the elaborated function will be inlined.
   bool inlinedCallee;
@@ -636,8 +637,7 @@ ParameterRewriter::ParameterRewriter(
     DenseMap<Operation *, Operation *> &operationMap)
     : elaborator(existing.elaborator), sourceModule(existing.sourceModule),
       elaboratedGenerator(existing.elaboratedGenerator),
-      evaluators(existing.evaluators),
-      nextCallRegionID(existing.nextCallRegionID),
+      evaluators(existing.evaluators), nextRegionID(existing.nextRegionID),
       inlinedCallee(existing.inlinedCallee),
       expansionDepth(existing.expansionDepth) {
   // Remap the func operation.
@@ -679,8 +679,10 @@ LogicalResult ParameterRewriter::rewriteOps(
       LogicalResult result = success();
       // Process an operation that needs to be rewritten/lowered based on the
       // context of the parameter values we know are defined.
-      if (auto bind = dyn_cast<ParamDeclareOp>(op))
-        result = processParamDeclareOp(bind);
+      if (auto declare = dyn_cast<ParamDeclareOp>(op))
+        result = processParamDeclareOp(declare);
+      else if (auto declare = dyn_cast<ParamDeclareRegionOp>(op))
+        result = processParamDeclareRegionOp(declare);
       else if (auto value = dyn_cast<ParamSearchOp>(op))
         result = processParamSearchOp(value, rewriterWorklist);
       else if (auto value = dyn_cast<ParamConstantOp>(op))
@@ -779,6 +781,35 @@ LogicalResult ParameterRewriter::processParamDeclareOp(ParamDeclareOp op) {
                                               value.getValue());
 
   // The kgen.param.declare operation serves no other purpose: remove it.
+  op->erase();
+  return success();
+}
+
+LogicalResult
+ParameterRewriter::processParamDeclareRegionOp(ParamDeclareRegionOp op) {
+  // Give this reference a unique name, and make a RegionReferenceAttr with
+  // the name and SignatureType.
+  auto ref = RegionReferenceAttr::get(elaboratedGenerator.func.getName() +
+                                          "_region_" + Twine(nextRegionID++),
+                                      op.getType());
+
+  // Determine whether the body isolated before unhooking it from its parent.
+  auto body = cast<RegionBodyOp>(op.getBody().front().front());
+  bool isolated = operationIsIsolatedFromAbove(body);
+  // Remove the RegionBodyOp from the call's region, and hand ownership of
+  // it to the elaborator.
+  body->remove();
+
+  // TODO: We could do some content hashing to avoid making a new name for
+  // a lexically identical body.  This would reduce some redundant
+  // specialization.
+  elaborator.addRegionReference(
+      ref,
+      {body, elaborator.createEvaluator(getEvaluator().getParameterValues()),
+       isolated});
+
+  // Bind the parameter value to the region reference.
+  getEvaluator().setOrOverwriteParameterValue(op.getParamDecls().front(), ref);
   op->erase();
   return success();
 }
@@ -923,7 +954,7 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
       // the name and SignatureType.
       auto regionRefAttr =
           RegionReferenceAttr::get(elaboratedGenerator.func.getName() +
-                                       "_region_" + Twine(nextCallRegionID++),
+                                       "_region_" + Twine(nextRegionID++),
                                    regionRef.getType());
 
       auto body = cast<RegionBodyOp>(**regionBodyIt++);

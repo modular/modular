@@ -5,19 +5,13 @@
 
 // CHECK: #[[LOC1:.*]] = loc("im_a_region")
 
-kgen.generator @signature_call<fn: () -> ()>() {
-  kgen.return
-}
-
 // CHECK-LABEL: @call_with_region
 kgen.generator @call_with_region() {
-  // CHECK: kgen.call @signature_call
-  kgen.call @signature_call<fn: () -> () = region>() : () -> ()
-  // CHECK-NEXT: fn()
+  // CHECK-NEXT: kgen.param.declare.region fn = () {
   // CHECK-NEXT: kgen.return
   // CHECK-NEXT: } loc(#[[LOC1]])
   // NDEBUG-NOT: loc(#{{.*}})
-  fn() { // kgen.region.body
+  kgen.param.declare.region fn = () {
     kgen.return
   } loc("im_a_region")
   kgen.return

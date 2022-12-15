@@ -158,6 +158,44 @@ void ParamDeclareOp::setParamDecl(ParamDeclAttr decl) {
 }
 
 //===----------------------------------------------------------------------===//
+// ParamDeclareRegionOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseRegionDeclaration(OpAsmParser &p,
+                                          ParamDeclArrayAttr &paramDecls,
+                                          Type &signature, Region &body) {
+  StringAttr paramName;
+  if (parseParamName(p, paramName) || p.parseEqual())
+    return failure();
+
+  OperationState regionBody(p.getEncodedSourceLoc(p.getCurrentLocation()),
+                            RegionBodyOp::getOperationName());
+  Optional<Location> bodyLoc = regionBody.location;
+  if (RegionBodyOp::parse(p, regionBody) ||
+      p.parseOptionalLocationSpecifier(bodyLoc))
+    return failure();
+  regionBody.location = *bodyLoc;
+  auto bodyOp = cast<RegionBodyOp>(Operation::create(regionBody));
+  body.push_back(new Block);
+  body.front().push_back(bodyOp);
+
+  signature = bodyOp.getSignature();
+  paramDecls = ParamDeclArrayAttr::get(
+      p.getContext(), ParamDeclAttr::get(paramName, signature));
+  return success();
+}
+
+static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
+                                   ParamDeclArrayAttr paramDecls,
+                                   SignatureType signature, Region &region) {
+  printParamName(p, paramDecls.front().getName());
+  p << " =";
+  auto body = cast<RegionBodyOp>(region.front().front());
+  body.print(p);
+  p.printOptionalLocationSpecifier(body.getLoc());
+}
+
+//===----------------------------------------------------------------------===//
 // ParamSearchOp
 //===----------------------------------------------------------------------===//
 
@@ -348,11 +386,10 @@ GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return verifyDeclMatchesInterface("generator", *this, "interface", interface);
 }
 
-LogicalResult GeneratorOp::verify() {
-  if (failed(checkReturnArguments(*this)))
+LogicalResult GeneratorOp::verifyRegions() {
+  if (failed(verifyOneBlockOrCached(*this)))
     return failure();
-
-  return verifyOneBlockOrCached(*this);
+  return checkReturnArguments(*this);
 }
 
 Region *GeneratorOp::getCallableRegion() { return &getBodyRegion(); }
@@ -412,17 +449,18 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 LogicalResult FuncOp::verify() {
-  if (failed(checkReturnArguments(*this)))
-    return failure();
-
   // kgen.func's are not allowed to have input parameter lists.
   if (!getInputParamDecls().empty())
     return emitOpError("only allows output parameters, not input parameters");
-
   if (!getConventions().isDefault())
     return emitOpError("can only have default conventions");
+  return success();
+}
 
-  return verifyOneBlockOrCached(*this);
+LogicalResult FuncOp::verifyRegions() {
+  if (failed(verifyOneBlockOrCached(*this)))
+    return failure();
+  return checkReturnArguments(*this);
 }
 
 Region *FuncOp::getCallableRegion() { return &getBodyRegion(); }
@@ -829,8 +867,8 @@ static ParseResult parseRegionBody(OpAsmParser &p, TypeAttr &signature,
   SmallVector<Type> resultTypes;
   llvm::SMLoc bodyLoc;
   if (parseOptionalParameterSpec(p, inputParamDecls, resultParamTypes) ||
-      parseOptionalConstraints(p, constraints) ||
       parseFunctionSignature(p, args, resultTypes, conventions) ||
+      parseOptionalConstraints(p, constraints) ||
       p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
     return failure();
 
@@ -851,20 +889,20 @@ static void printRegionBody(OpAsmPrinter &p, Operation *op, TypeAttr signature,
 
   printOptionalParameterSpec(sig.getInputParams(), sig.getResultParamTypes(),
                              p.getStream());
-  printOptionalConstraints(p, op, constraints);
   printFunctionSignature(p, body, sig.getValueInputs(), sig.getValueResults(),
                          sig.getConventions());
+  printOptionalConstraints(p, op, constraints);
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
 LogicalResult RegionBodyOp::verifyRegions() {
-  auto bodyFn =
-      FunctionType::get(getContext(), getBody()->getArgumentTypes(),
-                        getBody()->getTerminator()->getOperandTypes());
-  if (getFunctionType() != bodyFn)
+  if (failed(getReturnOp().checkArgumentTypes(
+          getResultParamTypes(), {getSignature().getValueResults()})))
+    return failure();
+  if (getBody()->getArgumentTypes() != getSignature().getValueInputs())
     return emitOpError("signature mismatches body");
-  return getReturnOp().checkArgumentTypes(getResultParamTypes(), None);
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
