@@ -2,20 +2,20 @@
 
 __include "../lit-examples/prolog.lit"
 
-# CHECK-LABEL: lit.func @defAlwaysRaises() throws -> !pop.variant<@Error, @Int> attributes {isDef, raises}
+# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@Error, @Int> attributes {isDef, raises}
 def defAlwaysRaises() -> Int:
     # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@Int> -> !pop.variant<@Error, @Int>
     # CHECK-NEXT: kgen.return %[[RESULT]]
     return Int(0)
 
-# CHECK-LABEL: lit.func @fnThatRaises() throws -> !pop.variant<@Error, @Int> attributes {raises}
+# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<@Error, @Int> attributes {raises}
 @raises
 fn fnThatRaises() -> Int:
     # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@Int> -> !pop.variant<@Error, @Int>
     # CHECK-NEXT: kgen.return %[[RESULT]]
     return Int(0)
 
-# CHECK-LABEL: lit.func @raisesReturnsNone() throws -> !pop.variant<@Error, !lit.none>
+# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<@Error, !lit.none>
 @raises
 fn raisesReturnsNone():
     # CHECK: %0 = kgen.param.constant: !lit.none = <#lit.none>
@@ -24,6 +24,6 @@ fn raisesReturnsNone():
     pass
 
 # COM: We can return an variant of error and index in a non-throwing function.
-# CHECK-LABEL: lit.func @raisesReturnsVariant() -> !pop.variant<@Error, index>
+# CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<@Error, index>
 fn raisesReturnsVariant() -> __mlir_type.`!pop.variant<@Error, index>`:
     return __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, index>`](1)

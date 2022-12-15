@@ -2,7 +2,7 @@
 
 __include "../lit-examples/prolog.lit"
 
-# CHECK-LABEL: lit.func @test_if(%a: !kgen.declref<@Bool>, %b: !kgen.declref<@Bool>, %c: !kgen.declref<@Bool>) -> !kgen.declref<@Bool>
+# CHECK-LABEL: lit.func @"test_if
 fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
   # CHECK:          hlcf.if
   if a:
@@ -32,10 +32,10 @@ fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
   return a
 
 
-# CHECK-LABEL: lit.func @test_if_nested(%a: !kgen.declref<@Bool>, %b: !kgen.declref<@Bool>, %c: !kgen.declref<@Bool>) -> !kgen.declref<@Bool> {
+# CHECK-LABEL: lit.func @"test_if_nested
 fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
-  #CHECK-NEXT:   %[[BOOL:.*]] = kgen.call @Bool::@__bool__(%a)
-  #CHECK-NEXT:   %[[LIT_BOOL:.*]]  = kgen.call @Bool::@__lit_bool(%[[BOOL]])
+  #CHECK-NEXT:   %[[BOOL:.*]] = kgen.call @Bool::@"__bool__{{.*}}(%a)
+  #CHECK-NEXT:   %[[LIT_BOOL:.*]]  = kgen.call @Bool::@"__lit_bool{{.*}}(%[[BOOL]])
   # CHECK-NEXT:              hlcf.if %[[LIT_BOOL]]
   if a:
     # CHECK-NEXT: %inside_a = lit.var.decl "inside_a"
