@@ -233,11 +233,10 @@ def func_impl2(x: __mlir_type.index) -> __mlir_type.index:
 def func_impl3(x: __mlir_type.index) -> __mlir_type.index:
   return x
 
-struct struct_bar:
+struct struct_bar: # expected-note {{'struct_bar' declared here}}
   pass
 
-@implements(struct_bar)
-# expected-error @+1 {{not an interface: struct_bar}}
+@implements(struct_bar)  # expected-error {{'struct_bar' is not a kgen interface}}
 def func_impl4(x: __mlir_type.index) -> __mlir_type.index:
   return x
 
