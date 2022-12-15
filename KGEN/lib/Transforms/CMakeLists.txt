@@ -6,6 +6,7 @@
 
 add_modular_conversion_library(KGENTransforms
   KnownVariant.cpp
+  Mem2Reg.cpp
 
   LINK_LIBS PUBLIC
   KGENDialect
