@@ -1,0 +1,63 @@
+{
+  "name": "vscode-lit",
+  "displayName": "Lit",
+  "description": "Lit Language Extension",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "LIT"
+  ],
+  "activationEvents": [
+    "onLanguage:lit"
+  ],
+  "main": "./out/extension",
+  "scripts": {
+    "vscode:prepublish": "tsc -p ./",
+    "compile": "tsc -watch -p ./",
+    "format": "clang-format -i --glob=\"{src,test}/*.ts\"",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "~1.74.0"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "lit",
+        "aliases": [
+          "lit"
+        ],
+        "extensions": [
+          ".lit"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "lit-injection"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "lit",
+        "scopeName": "source.lit",
+        "path": "./syntaxes/lit.syntax.json"
+      },
+      {
+        "language": "lit-injection",
+        "scopeName": "markdown.lit.codeblock",
+        "path": "./syntaxes/markdown.syntax.json",
+        "injectTo": [
+          "text.html.markdown"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.block.lit": "lit"
+        }
+      }
+    ]
+  }
+}
