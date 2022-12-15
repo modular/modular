@@ -6,7 +6,7 @@
 
 #include "Support/Compiler/OperationUtils.h"
 #include "mlir/IR/BlockAndValueMapping.h"
-#include "mlir/IR/Operation.h"
+#include "mlir/IR/OpDefinition.h"
 
 using namespace M;
 using CloneOptions = mlir::Operation::CloneOptions;
@@ -143,4 +143,34 @@ cloneOperation(Operation *original, BlockAndValueMapping &mapper,
 Operation *M::cloneOperation(Operation *original, BlockAndValueMapping &mapper,
                              DenseMap<Operation *, Operation *> &operationMap) {
   return ::cloneOperation(original, mapper, operationMap, CloneOptions::all());
+}
+
+bool M::operationIsIsolatedFromAbove(Operation *op) {
+  bool result = true;
+  op->walk<mlir::WalkOrder::PreOrder>([&](Operation *nested) {
+    // Skip over isolated operations. There's nothing to check in them.
+    if (nested->hasTrait<mlir::OpTrait::IsIsolatedFromAbove>())
+      return WalkResult::skip();
+
+    for (Value operand : nested->getOperands()) {
+      if (Operation *defOp = operand.getDefiningOp()) {
+        // If the top-level operation does not contain the defining op, this
+        // value is captured from above.
+        if (!op->isAncestor(defOp)) {
+          result = false;
+          return WalkResult::interrupt();
+        }
+      } else {
+        Block *parent = cast<BlockArgument>(operand).getParentBlock();
+        // If the defining block contains the top-level operation, the block
+        // argument is captured from above.
+        if (parent->findAncestorOpInBlock(*op)) {
+          result = false;
+          return WalkResult::interrupt();
+        }
+      }
+    }
+    return WalkResult::advance();
+  });
+  return result;
 }
