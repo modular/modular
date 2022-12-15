@@ -540,8 +540,7 @@ private:
   /// instantiated callee will always be inlined.
   FailureOr<std::pair<ArrayAttr, bool>>
   resolveCallInputParams(KGENCallOpInterface call,
-                         ArrayRef<ParamBindAttr> inputValues,
-                         bool isInlinedCall);
+                         ArrayRef<ParamBindAttr> inputValues);
 
   /// Process either a `kgen.addressof` op or a `kgen.call` op.
   template <typename OpT>
@@ -549,23 +548,20 @@ private:
       OpT user,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
     return processGeneratorUserImpl(user, user.getCallee(),
-                                    user.getParamDecls(), rewriters,
-                                    /*isInlinedCall=*/false);
+                                    user.getParamDecls(), rewriters);
   }
   LogicalResult processGeneratorUserImpl(
       KGENCallOpInterface user, SymbolConstantAttr callee,
       ArrayRef<ParamDeclAttr> decls,
-      SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters,
-      bool isInlinedCall);
-  LogicalResult
-  completeGeneratorUserProcessing(KGENCallOpInterface user,
-                                  ArrayRef<ParamDeclAttr> decls,
-                                  DeclAndInputParamsPair calleeAndInputParams,
-                                  const ElaboratedGenerator &newCallee);
+      SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
+  LogicalResult completeGeneratorUserProcessing(
+      KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
+      DeclAndInputParamsPair calleeAndInputParams,
+      const ElaboratedGenerator &newCallee, bool inlineCallee);
   LogicalResult spawnNewFuncClone(
       KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
       DeclAndInputParamsPair calleeAndInputParams,
-      const ElaboratedGenerator &callee,
+      const ElaboratedGenerator &callee, bool inlineCallee,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
 
   /// Process a `kgen.call_param` operation by inlining region callees and
@@ -922,8 +918,7 @@ LogicalResult ParameterRewriter::processParamAssertOp(ParamAssertOp op) {
 /// and returns an array of bound input parameters on success.
 FailureOr<std::pair<ArrayAttr, bool>>
 ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
-                                          ArrayRef<ParamBindAttr> inputValues,
-                                          bool isInlinedCall) {
+                                          ArrayRef<ParamBindAttr> inputValues) {
   SmallVector<Attribute> boundInputParams;
   bool inlineCallee = false;
   auto regionBodyIt = call.getRegionBodies().begin();
@@ -962,19 +957,12 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
     if (value.isError())
       return error(value.takeError());
 
-    // Check if we have a reference to a non-isolated region.
+    // If we have a reference to a non-isolated region, indicate that the callee
+    // will always be inlined.
     auto regionRef = dyn_cast<RegionReferenceAttr>(*value);
     if (regionRef &&
-        !elaborator.getRegionReferenced(regionRef).isIsolatedFromAbove()) {
-      // Only the callees of inlined calls can be regions not isolated from
-      // above.
-      if (!isInlinedCall)
-        return error(
-            call->getLoc(),
-            "non-inlined call to symbol instantiated with non-isolated region");
-      // Indicate that the callee will always be inlined.
+        !elaborator.getRegionReferenced(regionRef).isIsolatedFromAbove())
       inlineCallee = true;
-    }
 
     boundInputParams.push_back(*value);
   }
@@ -985,14 +973,18 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
 LogicalResult ParameterRewriter::processGeneratorUserImpl(
     KGENCallOpInterface user, SymbolConstantAttr callee,
     ArrayRef<ParamDeclAttr> decls,
-    SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters,
-    bool isInlinedCall) {
+    SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Evaluate any input parameters.
   FailureOr<std::pair<ArrayAttr, bool>> result =
-      resolveCallInputParams(user, callee.getParamValues(), isInlinedCall);
+      resolveCallInputParams(user, callee.getParamValues());
   if (failed(result))
     return failure();
   auto [inputParamKey, inlineCallee] = *result;
+
+  // Prevent `kgen.addressof` from referencing a function that will be inilned.
+  if (inlineCallee && isa<AddressOfOp>(user))
+    return error(user.getLoc(),
+                 "cannot take the address of a function that will be inlined");
 
   // Instantiate the callee into one or more FuncOp's, depending on what the
   // callee is.
@@ -1012,8 +1004,7 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
         for (auto [bind, value] :
              llvm::zip(callee.getParamValues(), inputParamKey))
           evaluators.back().setParameterValue(bind.getDecl(), value);
-        if (failed(processGeneratorUserImpl(itf, evaluator, {}, rewriters,
-                                            /*isInlinedCall=*/false)))
+        if (failed(processGeneratorUserImpl(itf, evaluator, {}, rewriters)))
           return failure();
         evaluators.pop_back();
       }
@@ -1027,7 +1018,8 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
   if (FuncOp callee =
           elaboratedGenerator.getBinding(calleeDeclAndInputParams)) {
     return completeGeneratorUserProcessing(
-        user, decls, calleeDeclAndInputParams, ElaboratedGenerator(callee));
+        user, decls, calleeDeclAndInputParams, ElaboratedGenerator(callee),
+        inlineCallee);
   }
 
   // Otherwise, this is our first use of this.  Ask the global elaborator for
@@ -1067,7 +1059,7 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
     } else {
       // All other callees gets spawned as sub-evaluators.
       if (failed(spawnNewFuncClone(user, decls, calleeDeclAndInputParams,
-                                   calleeCandidate, rewriters)))
+                                   calleeCandidate, inlineCallee, rewriters)))
         return failure();
     }
   }
@@ -1082,13 +1074,13 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
 
   // Finally, we can handle the first viable one as our continued progress here.
   return completeGeneratorUserProcessing(user, decls, calleeDeclAndInputParams,
-                                         thisCallee);
+                                         thisCallee, inlineCallee);
 }
 
 LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
     KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
     DeclAndInputParamsPair calleeAndInputParams,
-    const ElaboratedGenerator &newCallee) {
+    const ElaboratedGenerator &newCallee, bool inlineCallee) {
   // Add a binding to remember that we resolved this call to this candidate,
   // and merge any bindings from it into our set.
   elaboratedGenerator.addBinding(calleeAndInputParams, newCallee);
@@ -1108,13 +1100,32 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
   // Now that we resolved the call to a new thing, build a new call to replace
   // the old one.
   mlir::IRRewriter b{OpBuilder(user)};
-  if (isa<CallOp, CallParamOp>(user)) {
-    b.replaceOpWithNewOp<CallOp>(
-        user, resultTypes,
-        SymbolConstantAttr::get(
-            FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
-            newCalleeFunc.getSignature()),
-        user->getOperands());
+  if (isa<CallOp, CallParamOp, InlinedCallOp>(user)) {
+    if (!inlineCallee) {
+      b.replaceOpWithNewOp<CallOp>(
+          user, resultTypes,
+          SymbolConstantAttr::get(
+              FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
+              newCalleeFunc.getSignature()),
+          user->getOperands());
+    } else {
+      // Inline the callee.
+      BlockAndValueMapping bv;
+      for (auto [operand, argument] :
+           llvm::zip(newCalleeFunc.getArguments(), user->getOperands()))
+        bv.map(operand, argument);
+
+      for (Operation &op : newCalleeFunc.getBody()->without_terminator()) {
+        Operation *cloned = b.clone(op, bv);
+        cloned->walk([&](Operation *op) {
+          op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), user->getLoc()));
+        });
+      }
+      Operation *terminator =
+          b.clone(*newCalleeFunc.getBody()->getTerminator(), bv);
+      b.replaceOp(user, terminator->getOperands());
+      terminator->erase();
+    }
 
   } else if (isa<AddressOfOp>(user)) {
     b.replaceOpWithNewOp<AddressOfOp>(
@@ -1122,24 +1133,6 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
         SymbolConstantAttr::get(
             FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
             newCalleeFunc.getSignature()));
-
-  } else if (isa<InlinedCallOp>(user)) {
-    // Inline the callee.
-    BlockAndValueMapping bv;
-    for (auto [operand, argument] :
-         llvm::zip(newCalleeFunc.getArguments(), user->getOperands()))
-      bv.map(operand, argument);
-
-    for (Operation &op : newCalleeFunc.getBody()->without_terminator()) {
-      Operation *cloned = b.clone(op, bv);
-      cloned->walk([&](Operation *op) {
-        op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), user->getLoc()));
-      });
-    }
-    Operation *terminator =
-        b.clone(*newCalleeFunc.getBody()->getTerminator(), bv);
-    b.replaceOp(user, terminator->getOperands());
-    terminator->erase();
 
   } else {
     // Update the interface in-place.
@@ -1165,7 +1158,7 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
 LogicalResult ParameterRewriter::spawnNewFuncClone(
     KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
     DeclAndInputParamsPair calleeAndInputParams,
-    const ElaboratedGenerator &callee,
+    const ElaboratedGenerator &callee, bool inlineCallee,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Start by cloning the current WIP func to a new copy of it.
   BlockAndValueMapping blocksAndValues;
@@ -1199,7 +1192,7 @@ LogicalResult ParameterRewriter::spawnNewFuncClone(
   // the specifed callee.
   Operation *newUser = operationMap[user];
   return newRewriter->completeGeneratorUserProcessing(
-      newUser, decls, calleeAndInputParams, callee);
+      newUser, decls, calleeAndInputParams, callee, inlineCallee);
 }
 
 LogicalResult ParameterRewriter::processCallParamOp(
@@ -1222,10 +1215,10 @@ LogicalResult ParameterRewriter::processCallParamOp(
           SymbolConstantAttr::get(symbolCst.getSymbol(),
                                   call.getParamValuesAttr(),
                                   symbolCst.getType().dropParamValues()),
-          call.getParamDecls(), rewriters, /*isInlinedCall=*/false);
+          call.getParamDecls(), rewriters);
     // Otherwise use the ones from the symbol.
     return processGeneratorUserImpl(call, symbolCst, call.getParamDecls(),
-                                    rewriters, /*isInlinedCall=*/false);
+                                    rewriters);
   }
 
   // Otherwise, the only other case we support is a call to a region, which is
@@ -1259,9 +1252,9 @@ LogicalResult ParameterRewriter::processInlinedCallOp(
         SymbolConstantAttr::get(symbolCst.getSymbol(),
                                 call.getParamValuesAttr(),
                                 symbolCst.getType().dropParamValues()),
-        call.getParamDecls(), rewriters, /*isInlinedCall=*/true);
+        call.getParamDecls(), rewriters);
   return processGeneratorUserImpl(call, symbolCst, call.getParamDecls(),
-                                  rewriters, /*isInlinedCall=*/true);
+                                  rewriters);
 }
 
 LogicalResult ParameterRewriter::processRegionCallImpl(
@@ -1274,7 +1267,7 @@ LogicalResult ParameterRewriter::processRegionCallImpl(
 
   // Compute the binding of input parameters to concrete values.
   FailureOr<std::pair<ArrayAttr, bool>> result =
-      resolveCallInputParams(call, paramValues, /*isInlinedCall=*/true);
+      resolveCallInputParams(call, paramValues);
   if (failed(result))
     return failure();
   auto [inputParamKey, _] = *result;
