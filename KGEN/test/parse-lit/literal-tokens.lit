@@ -2,7 +2,7 @@
 
 struct Error:
 
-# CHECK-LABEL: @tmp
+# CHECK-LABEL: lit.func @"tmp
 def tmp():
     a = 5             # CHECK: 5
     a = 55            # CHECK: 55

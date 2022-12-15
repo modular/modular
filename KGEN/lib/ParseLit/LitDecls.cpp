@@ -680,7 +680,21 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     break;
   }
 
-  // TODO: Mangle 'name'.
+  // Mangle 'name', ensuring that overloaded methods get unique symbol names.
+  SmallString<64> mangledName(name.getValue().begin(), name.getValue().end());
+  mangledName += '(';
+  llvm::interleave(
+      llvm::zip(args, argTypes),
+      [&](auto argAndArgType) {
+        auto [arg, argType] = argAndArgType;
+        mangledName += ASTType(argType).getAsString();
+        if (arg.convention == ValueInputConvention::ByRef)
+          mangledName += '&';
+      },
+      [&]() { mangledName += ","; });
+  mangledName += ')';
+
+  name = StringAttr::get(funcOp.getContext(), mangledName);
 
   // Finally, after all semantic checks are done, update the types to reflect
   // ABI information form the calling convention.
