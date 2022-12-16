@@ -1,0 +1,11 @@
+# RUN: kgen-translate %s -import-lit | FileCheck %s
+
+__include "../lit-examples/prolog.lit"
+
+##===----------------------------------------------------------------------===##
+# pass
+
+# CHECK-LABEL: lit.func @"pass()
+def `pass`():
+  pass
+  # CHECK-NEXT : kgen.return
