@@ -7,6 +7,8 @@
 #
 #===------------------------------------------------------------------------===#
 
+__include "../../../Kernels/lit-stdlib/Bool.lit"
+
 # CHECK-LABEL: assertParam
 fn assertParam[condVal: __mlir_type.i1]():
 # CHECK: kgen.param.assert <condVal>, "param assertion failed"
@@ -20,47 +22,6 @@ fn printF32(x: F32):
 
 fn printInt(x: Int):
   __mlir_op.`zap.print`[_type: [], fmt: "%ld\n"](x.value)
-
-
-#===------------------------------------------------------------------------===#
-# Bool
-#===------------------------------------------------------------------------===#
-
-struct Bool:
-  var value : __mlir_type.i1
-
-  fn __new__(value: __mlir_type.i1) -> Bool:
-    return __mlir_op.`kgen.struct.create`[_type: Bool](value)
-
-
-  fn __bool__(self) -> Bool:
-     return self
-
-  # This method is a special hook used by the compiler to test boolean objects
-  # in control flow conditions.  It should be implemented by Bool but not other
-  # general boolean convertible types (they should implement __bool__ instead).
-  fn __lit_bool(self) -> __mlir_type.i1:
-    return self.value
-
-  # CHECK: lit.func @"true()"()
-  # CHECK:   %0 = kgen.param.constant: i1 = <1>
-  # CHECK:   %1 = kgen.call @Bool::@"__new__(__mlir_type.i1)"(%0)
-  @staticmethod
-  fn true() -> Bool:
-     return Bool(__mlir_op.`index.bool.constant`[
-        _type: __mlir_type.i1, value: __mlir_attr.`1: i1`]())
-
-  @staticmethod
-  fn false() -> Bool:
-     return Bool(__mlir_op.`index.bool.constant`[
-        _type: __mlir_type.i1, value: __mlir_attr.`1: i1`]())
-
-  fn __invert__(self) -> Bool:
-    return Bool.false() if self else Bool.true()
-
-  # TODO: fn __and__(self, rhs: Bool) -> Bool:
-  # TODO: fn __xor__(self, rhs: Bool) -> Bool:
-  # TODO: fn __or__(self, rhs: Bool) -> Bool:
 
 #===------------------------------------------------------------------------===#
 # Int
@@ -80,27 +41,27 @@ struct Int:
   # CHECK-LABEL: lit.func @"__lt__
   fn __lt__(self, rhs: Int) -> Bool:
     # CHECK: = index.cmp slt(%0, %1)
-    return Bool(__mlir_op.`index.cmp`[pred:
+    return Bool._cast_from_builtin(__mlir_op.`index.cmp`[pred:
                 __mlir_attr.`#index<cmp_predicate slt>`](self.value, rhs.value))
 
   fn __le__(self, rhs: Int) -> Bool:
-    return Bool(__mlir_op.`index.cmp`[pred:
+    return Bool._cast_from_builtin(__mlir_op.`index.cmp`[pred:
                 __mlir_attr.`#index<cmp_predicate sle>`](self.value, rhs.value))
 
   fn __eq__(self, rhs: Int) -> Bool:
-    return Bool(__mlir_op.`index.cmp`[pred:
+    return Bool._cast_from_builtin(__mlir_op.`index.cmp`[pred:
                 __mlir_attr.`#index<cmp_predicate eq>`](self.value, rhs.value))
 
   fn __ne__(self, rhs: Int) -> Bool:
-    return Bool(__mlir_op.`index.cmp`[pred:
+    return Bool._cast_from_builtin(__mlir_op.`index.cmp`[pred:
                 __mlir_attr.`#index<cmp_predicate ne>`](self.value, rhs.value))
 
   fn __gt__(self, rhs: Int) -> Bool:
-    return Bool(__mlir_op.`index.cmp`[pred:
+    return Bool._cast_from_builtin(__mlir_op.`index.cmp`[pred:
                 __mlir_attr.`#index<cmp_predicate sgt>`](self.value, rhs.value))
 
   fn __ge__(self, rhs: Int) -> Bool:
-    return Bool(__mlir_op.`index.cmp`[pred:
+    return Bool._cast_from_builtin(__mlir_op.`index.cmp`[pred:
                 __mlir_attr.`#index<cmp_predicate sge>`](self.value, rhs.value))
 
   fn __pos__(self) -> Int:
@@ -159,15 +120,15 @@ struct Int:
     return res
 
   fn __lshift__(self, rhs: Int) -> Int:
-      if rhs < Int(0):
-        # this should raise an exception.
-        return Int(0)
+    if rhs < Int(0):
+      # this should raise an exception.
+      return Int(0)
     return Int(__mlir_op.`index.shl`(self.value, rhs.value))
 
   fn __rshift__(self, rhs: Int) -> Int:
-      if rhs < Int(0):
-        # this should raise an exception.
-        return Int(0)
+    if rhs < Int(0):
+      # this should raise an exception.
+      return Int(0)
     return Int(__mlir_op.`index.shrs`(self.value, rhs.value))
 
   fn __and__(self, rhs: Int) -> Int:
@@ -265,32 +226,28 @@ struct F32:
     result.value = value
     return result
 
-  @staticmethod
-  fn _getBool(value: __mlir_type.`!pop.scalar<bool>`) -> Bool:
-    return Bool(__mlir_op.`pop.cast_to_builtin`[_type: __mlir_type.i1](value))
-
   fn __lt__(self, rhs: F32) -> Bool:
-    return _getBool(__mlir_op.`pop.cmp`[pred:
+    return Bool(__mlir_op.`pop.cmp`[pred:
                       __mlir_attr.`#pop<cmp_pred lt>`](self.value, rhs.value))
 
   fn __le__(self, rhs: F32) -> Bool:
-    return _getBool(__mlir_op.`pop.cmp`[pred:
+    return Bool(__mlir_op.`pop.cmp`[pred:
                       __mlir_attr.`#pop<cmp_pred le>`](self.value, rhs.value))
 
   fn __eq__(self, rhs: F32) -> Bool:
-    return _getBool(__mlir_op.`pop.cmp`[pred:
+    return Bool(__mlir_op.`pop.cmp`[pred:
                        __mlir_attr.`#pop<cmp_pred eq>`](self.value, rhs.value))
 
   fn __ne__(self, rhs: F32) -> Bool:
-    return _getBool(__mlir_op.`pop.cmp`[pred:
+    return Bool(__mlir_op.`pop.cmp`[pred:
                       __mlir_attr.`#pop<cmp_pred ne>`](self.value, rhs.value))
 
   fn __gt__(self, rhs: F32) -> Bool:
-    return _getBool(__mlir_op.`pop.cmp`[pred:
+    return Bool(__mlir_op.`pop.cmp`[pred:
                       __mlir_attr.`#pop<cmp_pred gt>`](self.value, rhs.value))
 
   fn __ge__(self, rhs: F32) -> Bool:
-    return _getBool(__mlir_op.`pop.cmp`[pred:
+    return Bool(__mlir_op.`pop.cmp`[pred:
                       __mlir_attr.`#pop<cmp_pred ge>`](self.value, rhs.value))
 
   fn __pos__(self) -> F32:
@@ -536,7 +493,7 @@ struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
         return result
 
     fn __bool__(self: ErrorOr[type]) -> Bool:
-        return Bool.false() if Bool(__mlir_op.`pop.variant.is`[testType: __mlir_attr.`!kgen.declref<@Error>`](self.value)) else Bool.true()
+        return Bool.false() if Bool._cast_from_builtin(__mlir_op.`pop.variant.is`[testType: __mlir_attr.`!kgen.declref<@Error>`](self.value)) else Bool.true()
 
     fn getValue(self: ErrorOr[type]) -> __mlir_type.`!kgen.paramref<#lit.placeholder : !kgen.mlirtype>>`[type]:
         return __mlir_op.`pop.variant.get`[_type: __mlir_type.`!kgen.paramref<#lit.placeholder : !kgen.mlirtype>>`[type]](self.value)
