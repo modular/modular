@@ -1135,7 +1135,10 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   RValue rhsRep;
 
   // We generally emit the LHS before the RHS, but need to do special things
-  // for an assignment statement.
+  // for short-circuiting and assignment statements.
+  if (kind == kBoolAnd || kind == kBoolOr) // `x and y`, `x or y`
+    return emitAndOr(emitter);
+
   if (!isAssignmentStmt()) {
     auto lhsRV = emitter.emitRValue(lhs);
     lhsRep = lhsRV;
@@ -1266,6 +1269,86 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
                                        argValues, getLoc());
 }
 
+/// This method emits the `x and y`, `x or y` operators.  These are interesting
+/// in Python:
+///
+///   "Note that neither `and` nor `or` restrict the value and type they return
+///   to False and True, but rather return the last evaluated argument. This is
+///   sometimes useful, e.g., if `s` is a string that should be replaced by a
+///   default value if it is empty, the expression `s or 'foo'` yields the
+///   desired value.
+///
+/// Unlike Python, we have static types that could disagree.  Our policy on this
+/// is to either return the pre-Bool'ified value when their types agree, or to
+/// return the common Bool type if they don't.
+///
+/// TODO(subtyping): With subtypes, we can find intersection types, e.g. a
+/// common superclass.
+///
+AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
+  Location ifLoc = emitter.translateLocation(getLoc());
+
+  if (!emitter.builder) {
+    emitter.emitError(getLoc(), "cannot emit operation in this context");
+    return {};
+  }
+
+  // Emit the LHS value and capture the result of calling __bool__ in case we
+  // need it.
+  AnyValue lhsBool;
+  DRValue lhsRV = emitter.emitDRValue(lhs);
+  auto lhsI1Value = emitter.emitConditionValueAsI1({lhsRV, lhs}, lhsBool);
+  if (!lhsI1Value)
+    return {};
+
+  auto ifOp = emitter.builder->create<scf::IfOp>(
+      ifLoc, TypeRange{lhsBool.getType()}, lhsI1Value, /*withElse=*/true);
+
+  OpBuilder trueBuilder = ifOp.getThenBodyBuilder();
+  OpBuilder falseBuilder = ifOp.getElseBodyBuilder();
+  if (kind == kBoolOr) // and/or just treat the bool differently.
+    std::swap(trueBuilder, falseBuilder);
+
+  emitter.builder = trueBuilder;
+  DRValue rhsRV = emitter.emitDRValue(rhs);
+  if (!rhsRV)
+    return {};
+
+  // Now that we know lhsRV and rhsRV we can tell if they have common types.
+  // If so, we use that as the result of the 'if'.
+  if (ASTType(lhsRV.getType()).isEqualCanon(rhsRV.getType())) {
+    emitter.builder->create<scf::YieldOp>(ifLoc, rhsRV);
+    // Emit the false side.
+    emitter.builder = falseBuilder;
+    emitter.builder->create<scf::YieldOp>(ifLoc, lhsRV);
+    ifOp->getResult(0).setType(lhsRV.getType());
+  } else {
+    // Otherwise, check to see if their boolean versions are compatible.
+    auto rhsBool = emitter.emitSpecialMethodCall(rhsRV.getType(),
+                                                 SpecialFunctionKind::kBool,
+                                                 {{rhsRV, rhs}}, rhs->getLoc());
+    if (!ASTType(lhsBool.getType()).isEqualCanon(rhsBool.getType())) {
+      emitter.emitError(getLoc(), "cannot find common type between ")
+          << ASTType(lhsRV.getType()) << " and " << ASTType(rhsRV.getType());
+      return {};
+    }
+    auto rhsBoolDRVal = emitter.emitDRValue(rhsBool, rhs->getLoc());
+    if (!rhsBoolDRVal)
+      return {};
+    emitter.builder->create<scf::YieldOp>(ifLoc, rhsBoolDRVal);
+    // Emit the false side.
+    emitter.builder = falseBuilder;
+    auto lhsBoolDRVal = emitter.emitDRValue(lhsBool, lhs->getLoc());
+    if (!lhsBoolDRVal)
+      return {};
+    emitter.builder->create<scf::YieldOp>(ifLoc, lhsBoolDRVal);
+    ifOp->getResult(0).setType(lhsBool.getType());
+  }
+
+  emitter.builder->setInsertionPointAfter(ifOp);
+  return DRValue(ifOp.getResult(0));
+}
+
 AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
                              ASTType contextualType) const {
   auto exprRep = subExpr->emitIR(emitter);
@@ -1310,7 +1393,7 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
   assert(specialFnKind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
-  return emitter.emitSpecialMethodCall(exprRep.getType(), specialFnKind,
+  return emitter.emitSpecialMethodCall(argValue.ir.getType(), specialFnKind,
                                        argValue, getLoc());
 }
 
@@ -1320,12 +1403,16 @@ AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
   if (!condValue)
     return {};
 
-  Type dummyType = mlir::IndexType::get(emitter.getContext());
+  if (!emitter.builder) {
+    emitter.emitError(getLoc(), "cannot emit operation in this context");
+    return {};
+  }
+
   Location ifLoc = emitter.translateLocation(getLoc());
   // At this point we don't know the type of trueExpr / falseExpr, use
-  // a dummy one.
-  auto ifOp = emitter.builder->create<scf::IfOp>(ifLoc, TypeRange{dummyType},
-                                                 condValue, /*withElse=*/true);
+  // a dummy one and fix it later.
+  auto ifOp = emitter.builder->create<scf::IfOp>(
+      ifLoc, TypeRange{condValue.getType()}, condValue, /*withElse=*/true);
   emitter.builder = ifOp.getThenBodyBuilder();
   DRValue trueVal = emitter.emitDRValue(trueExpr);
   if (!trueVal)
@@ -1337,6 +1424,9 @@ AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
     return {};
   emitter.builder->create<scf::YieldOp>(ifLoc, falseVal);
   emitter.builder->setInsertionPointAfter(ifOp);
+
+  /// TODO(subtyping): With subtypes, we can find intersection types, e.g. a
+  /// common superclass.
   if (!ASTType(trueVal.getType()).isEqualCanon(falseVal.getType())) {
     emitter.emitError(
         getLoc(), "the types of a conditional expression must be compatible:  ")

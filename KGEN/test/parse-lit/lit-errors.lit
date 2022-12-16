@@ -404,3 +404,9 @@ fn missingColon()  # expected-error {{expected ':' in function definition}}
   # Don't get confused by comments or blank lines!
 
   var x = 1
+
+struct WeirdBoolish:
+  fn __bool__(self) -> Int: return Int(0)
+
+fn badAnd(a: Bool, b: WeirdBoolish):
+  _ = a and b # expected-error {{cannot find common type between 'Bool' and 'WeirdBoolish'}}

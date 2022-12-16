@@ -152,6 +152,13 @@ public:
   /// value that we can test directly.  This reports and error and returns null
   /// on error.
   DRValue emitConditionValueAsI1(ExprNode *condExpr);
+
+  /// Emit the specified expression as a condition, converting it to an MLIR I1
+  /// value that we can test directly, and also returning the intermediate
+  /// result of calling `__bool__` (which is typically a Bool or object type,
+  /// but not guaranteed).  This reports and error and returns null on error.
+  DRValue emitConditionValueAsI1(ASTExprAnd<AnyValue> expr,
+                                 AnyValue &boolResult);
 };
 
 } // namespace M::KGEN::LIT

@@ -295,6 +295,9 @@ struct BinOpNode final : public ExprNode {
   }
 
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+
+private:
+  AnyValue emitAndOr(ExprEmitter &emitter) const;
 };
 
 struct UnaryOpNode final : public ExprNode {

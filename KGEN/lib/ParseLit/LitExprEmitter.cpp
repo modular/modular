@@ -412,25 +412,37 @@ DRValue ExprEmitter::getAsExpectedType(DRValue value, const ExprNode *expr,
 }
 
 /// Emit the specified expression as a condition, converting it to an MLIR I1
-/// value that we can test directly.  This reports and error and returns null on
-/// error.
-DRValue ExprEmitter::emitConditionValueAsI1(ExprNode *condExpr) {
-  RValue cond = emitRValue(condExpr);
-  if (!cond)
+/// value that we can test directly, and also returning the intermediate
+/// result of calling `__bool__` (which is typically a Bool or object type, but
+/// not guaranteed).  This reports and error and returns null on error.
+DRValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
+                                            AnyValue &boolResult) {
+  if (!value.ir)
     return {};
+
+  // TODO: We could look for the presence of a __lit_bool method and avoid a
+  // redundant call to __bool__ for Bool types.
 
   // First we use the __bool__ method to convert the user defined type to
   // something that is a Bool or other type that implements __lit_bool.
-  SMLoc condLoc = condExpr->getLoc();
-  ASTExprAnd<AnyValue> argValue = {cond, condExpr};
-  AnyValue boolCall = emitSpecialMethodCall(
-      cond.getType(), SpecialFunctionKind::kBool, argValue, condLoc);
-  if (!boolCall)
+  SMLoc valueLoc = value.expr->getLoc();
+  boolResult =
+      emitSpecialMethodCall(value.ir.getType(), SpecialFunctionKind::kBool,
+                            {{value.ir, value.expr}}, valueLoc);
+  if (!boolResult)
     return {};
 
   // Then we use __lit_bool to convert to an i1 value.
   AnyValue litBoolCall =
-      emitSpecialMethodCall(boolCall.getType(), SpecialFunctionKind::kLitBool,
-                            {{boolCall, condExpr}}, condLoc);
-  return DRValue(emitDRValue(litBoolCall, condLoc));
+      emitSpecialMethodCall(boolResult.getType(), SpecialFunctionKind::kLitBool,
+                            {{boolResult, value.expr}}, valueLoc);
+  return DRValue(emitDRValue(litBoolCall, valueLoc));
+}
+
+/// Emit the specified expression as a condition, converting it to an MLIR I1
+/// value that we can test directly.  This reports and error and returns null on
+/// error.
+DRValue ExprEmitter::emitConditionValueAsI1(ExprNode *condExpr) {
+  AnyValue boolTmp; // we don't care about the intermediate Bool value.
+  return emitConditionValueAsI1({emitRValue(condExpr), condExpr}, boolTmp);
 }
