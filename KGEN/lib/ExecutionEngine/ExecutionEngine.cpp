@@ -50,7 +50,7 @@ createHostTargetMachine(const CompilationOptions &options) {
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
       targetTriple, cpu, features.getString(), /*Options=*/{},
-      /*RM=*/llvm::Reloc::Model::PIC_, /*CM=*/None,
+      /*RM=*/llvm::Reloc::Model::PIC_, /*CM=*/std::nullopt,
       /*OL=*/options.getCodeGenOptLevel(), /*JIT=*/true));
   if (!machine)
     return Error("unable to create target machine");

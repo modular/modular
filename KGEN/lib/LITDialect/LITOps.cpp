@@ -228,7 +228,7 @@ void TryYieldOp::getBranchTargets(
   case ELSE:
     // Yield from either the 'except' or 'else' regions branches back to the
     // parent operation.
-    targets.emplace_back(None);
+    targets.emplace_back(std::nullopt);
     break;
   default:
     llvm_unreachable("unknown lit.try region");

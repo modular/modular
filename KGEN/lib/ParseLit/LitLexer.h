@@ -41,7 +41,7 @@ public:
   /// Return the indentation of this token.
   Optional<size_t> getIndentation() const {
     if (indentation == -1)
-      return None;
+      return std::nullopt;
     return size_t(indentation);
   }
 

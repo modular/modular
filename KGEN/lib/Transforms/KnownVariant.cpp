@@ -238,7 +238,7 @@ void PruneImpossibleVariantsPass::runOnOperation() {
     SmallVector<Optional<VariantTypes>> types;
     for (auto [i, type] : llvm::enumerate(func.getResultTypes())) {
       if (!isa<VariantType>(type)) {
-        types.push_back(None);
+        types.push_back(std::nullopt);
         continue;
       }
       // Merge the known variant types across all reachable returns.

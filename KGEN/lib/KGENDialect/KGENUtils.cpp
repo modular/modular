@@ -183,7 +183,7 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
 static OptionalParseResult parseOptionalColonType(AsmParser &parser,
                                                   Type &type) {
   if (failed(parser.parseOptionalColon()))
-    return None;
+    return std::nullopt;
   return OptionalParseResult(parseKGENType(parser, type));
 }
 

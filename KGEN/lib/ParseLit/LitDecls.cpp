@@ -57,8 +57,8 @@ static ParseResult parseType(LitParserBase &p, ASTType &result,
   ExprNode *expr = nullptr;
   if (p.parseExpression(expr, stmtIndent))
     return failure();
-  result =
-      ExprEmitter(p.getSharedState(), declScope, None, nullptr).emitType(expr);
+  result = ExprEmitter(p.getSharedState(), declScope, std::nullopt, nullptr)
+               .emitType(expr);
   return success();
 }
 
@@ -370,7 +370,8 @@ struct ParsedMetaSignature {
       if (p.parseIdentifier(name, "expected parameter name") ||
           p.parseToken(LitToken::colon,
                        "meta parameters always require a type") ||
-          p.getCursor(typeStartCursor) || p.parseExpression(typeExpr, None) ||
+          p.getCursor(typeStartCursor) ||
+          p.parseExpression(typeExpr, std::nullopt) ||
           p.getCursor(typeEndCursor))
         return failure();
 
@@ -430,7 +431,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclRefAttr paramDeclRef,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
   ExprNode *typeExpr;
-  if (p.parseExpression(typeExpr, None))
+  if (p.parseExpression(typeExpr, std::nullopt))
     return failure(); // Should never happen, we already checked this.
 
   // Emit the type.
@@ -514,11 +515,11 @@ struct ParsedArgument {
       convention = ValueInputConvention::ByRef;
 
     if (p.consumeIf(LitToken::colon)) {
-      if (p.parseExpression(typeExpr, None))
+      if (p.parseExpression(typeExpr, std::nullopt))
         return failure();
     }
     if (p.consumeIf(LitToken::equal)) {
-      if (p.parseExpression(initValue, None))
+      if (p.parseExpression(initValue, std::nullopt))
         return failure();
     }
     return success();
@@ -928,7 +929,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // Parse the result type if present.
   ExprNode *resultTypeExpr = nullptr;
   if (p.consumeIf(LitToken::minus_greater)) {
-    if (p.parseExpression(resultTypeExpr, None))
+    if (p.parseExpression(resultTypeExpr, std::nullopt))
       return failure();
   }
   if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
@@ -942,7 +943,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // Resolve the result type and any argument types that are present, leaving
   // any unspecified types null.
   SmallVector<Type> argTypes;
-  ExprEmitter typeEmitter(sharedState, decl, None, nullptr);
+  ExprEmitter typeEmitter(sharedState, decl, std::nullopt, nullptr);
   for (auto &arg : args) {
     // This returns a TypeCheckErrorType on error, no extra check is needed.
     ASTType type =
@@ -1090,7 +1091,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
         builder.create<VarDeclOp>(bbArg.getLoc(), type, parsedArg.name);
     addFullyResolvedDecl(varDecl, parsedArg.loc, parsedArg.name, &decl);
     builder.create<POP::StoreOp>(bbArg.getLoc(), bbArg, varDecl,
-                                 /*alignment*/ None);
+                                 /*alignment=*/std::nullopt);
   }
   return success();
 }
@@ -1207,7 +1208,7 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
     // The types line up, do a store.
     auto loc = sharedState.translateLocation(initValue->getLoc());
     builder.create<POP::StoreOp>(loc, rhsValue, varOp,
-                                 /*alignment*/ None);
+                                 /*alignment=*/std::nullopt);
   }
 
   // If there was neither a type or initializer, reject the var.

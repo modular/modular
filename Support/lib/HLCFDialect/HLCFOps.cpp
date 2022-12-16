@@ -142,7 +142,7 @@ void BreakOp::getBranchTargets(ArrayRef<Attribute> operands,
                                SmallVectorImpl<ControlFlowTarget> &targets) {
   assert(operands.size() == getNumOperands());
   // Branch to after the loop operation.
-  targets.emplace_back(None, getOperands());
+  targets.emplace_back(std::nullopt, getOperands());
 }
 
 //===----------------------------------------------------------------------===//
@@ -155,7 +155,7 @@ void YieldOp::getBranchTargets(ArrayRef<Attribute> operands,
                                SmallVectorImpl<ControlFlowTarget> &targets) {
   assert(operands.size() == getNumOperands());
   // Branch to after the if operation.
-  targets.emplace_back(None, getOperands());
+  targets.emplace_back(std::nullopt, getOperands());
 }
 
 //===----------------------------------------------------------------------===//
@@ -169,7 +169,7 @@ bool ReturnOp::isParentNode(Operation *op) {
 void ReturnOp::getBranchTargets(ArrayRef<Attribute> operands,
                                 SmallVectorImpl<ControlFlowTarget> &targets) {
   assert(operands.size() == getNumOperands());
-  targets.emplace_back(None, getOperands());
+  targets.emplace_back(std::nullopt, getOperands());
 }
 
 /// Verify two type ranges match between a return operation and a function.

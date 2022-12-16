@@ -147,7 +147,7 @@ KGEN::createTargetMachine(TargetInfoAttr targetInfo,
       targetInfo.getTripleStr(), targetInfo.getCpu(), targetInfo.getFeatures(),
       /*Options=*/{},
       /*RM=*/llvm::Reloc::Model::PIC_,
-      /*CM=*/None, /*OL=*/options.getCodeGenOptLevel(), /*JIT=*/isJIT));
+      /*CM=*/std::nullopt, /*OL=*/options.getCodeGenOptLevel(), /*JIT=*/isJIT));
   if (!machine)
     return Error("unable to create target machine");
 

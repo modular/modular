@@ -32,7 +32,7 @@ using namespace M::DebugInfo;
 /// Try to extract a value name from the given source location.
 static Optional<StringRef> getNameFromLoc(llvm::SMRange loc) {
   if (!loc.isValid())
-    return llvm::None;
+    return std::nullopt;
 
   StringRef name(loc.Start.getPointer(),
                  loc.End.getPointer() - loc.Start.getPointer());

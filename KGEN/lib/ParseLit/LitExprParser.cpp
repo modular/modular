@@ -470,7 +470,7 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
   // TODO: Handle comprehension arguments, stars, etc.
   if (!consumeIf(LitToken::r_paren, &rparenLoc)) {
     // Expressions continue maximally because we are within ()'s.
-    llvm::SaveAndRestore<Optional<size_t>> X(stmtIndent, None);
+    llvm::SaveAndRestore<Optional<size_t>> X(stmtIndent, std::nullopt);
     if (parseExpressionList(args, LitToken::r_paren) ||
         getLocation(rparenLoc) ||
         parseToken(LitToken::r_paren, "expected ')' in call argument list")) {
@@ -494,7 +494,7 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
 ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
                                              SMLoc lsquareLoc) {
   // Expressions continue maximally because we are within []'s.
-  llvm::SaveAndRestore<Optional<size_t>> X(stmtIndent, None);
+  llvm::SaveAndRestore<Optional<size_t>> X(stmtIndent, std::nullopt);
 
   SmallVector<ExprNode *> indices;
 

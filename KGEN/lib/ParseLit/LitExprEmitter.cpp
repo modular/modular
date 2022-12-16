@@ -48,7 +48,7 @@ RValue ExprEmitter::emitRValue(AnyValue rep, SMLoc loc) {
   }
 
   return DRValue(builder->create<POP::LoadOp>(translateLocation(loc), pointer,
-                                              /*alignment*/ None));
+                                              /*alignment=*/std::nullopt));
 }
 
 DRValue ExprEmitter::emitDRValue(RValue rep, SMLoc loc) {

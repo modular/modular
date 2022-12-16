@@ -184,7 +184,7 @@ def DebugInfo_DIStructType : DIType<"DIStruct", "struct"> {
   );
   let builders = [
     TypeBuilderWithInferredContext<(ins
-      "StringAttr":$name, CArg<"ArrayRef<DIMemberType>", "llvm::None">:$members
+      "StringAttr":$name, CArg<"ArrayRef<DIMemberType>", "std::nullopt">:$members
     ), [{
       return $_get(name.getContext(), name, members);
     }]>
@@ -251,7 +251,7 @@ def DebugInfo_DIUnresolvedMLIRType : DIType<
     example, some types, such as `index`, do not have a proper representation
     defined until a certain stage of lowering. Allow unresolved types within
     the debug info type system allows for progressively lowering of debug
-    information alongside the IR it represents. 
+    information alongside the IR it represents.
 
     Example:
 
