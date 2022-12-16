@@ -887,8 +887,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
          "not a function definition?");
   p.consumeToken();
 
-  StringAttr name;
-  if (p.parseIdentifier(name, "expected function name"))
+  StringAttr baseName;
+  if (p.parseIdentifier(baseName, "expected function name"))
     return failure();
 
   // Add meta parameters from an enclosing declaration to the symbol table.
@@ -977,6 +977,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // name-binding specific checks over the declaration.  This happens after
   // decorator processing because that is how defs work in Python.  This also
   // fills in any implicitly declared types.
+  StringAttr name = baseName;
   verifyFunctionNameBinding(decl, funcOp, name, args, argTypes, resultType,
                             sharedState);
 
@@ -1014,12 +1015,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
         getContext(),
         llvm::to_vector(llvm::map_range(argTypes, mapUnresolvedType)),
         mapUnresolvedType(resultType.mlirType));
-
-    // TODO: When we have mangled names, we'll want to the base name here.
-    StringRef name = funcOp.getName();
     diScopeGuard = diBuilder->pushSubprogram(
-        name, name, diBuilder->createFile(fileLineCol), fileLineCol.getLine(),
-        fileLineCol.getLine(), spFlags, type);
+        baseName, name, diBuilder->createFile(fileLineCol),
+        fileLineCol.getLine(), fileLineCol.getLine(), spFlags, type);
     funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
   }
 
