@@ -55,7 +55,7 @@ struct OneToOneFloatOrIntConversion : public mlir::ConvertOpToLLVMPattern<Op> {
     Type type = this->getTypeConverter()->convertType(op.getType());
 
     if (dtype.isInt() || dtype.isIndex()) {
-      if (std::is_same_v<SIntOp, UIntOp> || dtype.isSInt())
+      if (std::is_same_v<SIntOp, UIntOp> || dtype.isSInt() || dtype.isIndex())
         rewriter.replaceOpWithNewOp<SIntOp>(op, type, adaptor.getOperands(),
                                             op->getAttrs());
       else
@@ -1331,6 +1331,8 @@ using ConvertPOPMul =
     OneToOneFloatOrIntConversion<MulOp, LLVM::FMulOp, LLVM::MulOp>;
 using ConvertPOPDiv = OneToOneFloatOrIntConversion<DivOp, LLVM::FDivOp,
                                                    LLVM::SDivOp, LLVM::UDivOp>;
+using ConvertPOPRem = OneToOneFloatOrIntConversion<RemOp, LLVM::FRemOp,
+                                                   LLVM::SRemOp, LLVM::URemOp>;
 using ConvertPOPCeil =
     mlir::OneToOneConvertToLLVMPattern<CeilOp, LLVM::FCeilOp>;
 using ConvertPOPMax = OneToOneFloatOrIntConversion<MaxOp, LLVM::MaxNumOp,
@@ -1396,6 +1398,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPPointerBitcast,
       ConvertPOPPointerToIndex,
       ConvertPOPPrefetch,
+      ConvertPOPRem,
       ConvertPOPSelect,
       ConvertPOPShl,
       ConvertPOPShr,

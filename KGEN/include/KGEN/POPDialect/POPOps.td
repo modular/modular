@@ -292,6 +292,25 @@ def POP_DivOp : POP_ArithmeticBinaryOp<"div"> {
 }
 
 //===----------------------------------------------------------------------===//
+// RemOp
+//===----------------------------------------------------------------------===//
+
+def POP_RemOp : POP_ArithmeticBinaryOp<"rem"> {
+  let summary = "remainder";
+  let description = [{
+    The `pop.rem` operation takes two `!pop.scalar` or `!pop.simd` types and
+    returns their remainder. The operand and result types must be the same.
+
+    Example:
+
+    ```mlir
+    %c = pop.rem %a, %b : !pop.scalar<type>
+    %c = pop.rem %a, %b : !pop.simd<size, type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // MaxOp
 //===----------------------------------------------------------------------===//
 
