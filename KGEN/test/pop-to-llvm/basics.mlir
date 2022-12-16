@@ -173,7 +173,7 @@ kgen.func @max(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>) -> !pop.scala
 
 // CHECK-LABEL: @max
 kgen.func @max(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<index>) -> !pop.scalar<index> {
-  // CHECK: llvm.intr.umax
+  // CHECK: llvm.intr.smax
   %0 = pop.max %arg0, %arg1 : !pop.scalar<index>
   kgen.return %0 : !pop.scalar<index>
 }
@@ -239,6 +239,30 @@ kgen.func @div(%arg0: !pop.scalar<si32>,
   // CHECK: llvm.fdiv
   %2 = pop.div %arg2, %arg2 : !pop.scalar<f32>
   kgen.return %0, %1, %2 : !pop.scalar<si32>,!pop.scalar<ui32>,!pop.scalar<f32>
+}
+
+// -----
+// CHECK-LABEL: @rem
+kgen.func @rem(%arg0: !pop.scalar<si32>,
+               %arg1: !pop.scalar<ui32>,
+               %arg2: !pop.scalar<index>,
+               %arg3: !pop.scalar<f32>) -> (
+                  !pop.scalar<si32>,
+                  !pop.scalar<ui32>,
+                  !pop.scalar<index>,
+                  !pop.scalar<f32>) {
+  // CHECK: llvm.srem
+  %0 = pop.rem %arg0, %arg0 : !pop.scalar<si32>
+  // CHECK: llvm.urem
+  %1 = pop.rem %arg1, %arg1 : !pop.scalar<ui32>
+  // CHECK: llvm.srem
+  %2 = pop.rem %arg2, %arg2 : !pop.scalar<index>
+  // CHECK: llvm.frem
+  %3 = pop.rem %arg3, %arg3 : !pop.scalar<f32>
+  kgen.return %0, %1, %2, %3 : !pop.scalar<si32>,
+                               !pop.scalar<ui32>,
+                               !pop.scalar<index>,
+                               !pop.scalar<f32>
 }
 
 // -----
