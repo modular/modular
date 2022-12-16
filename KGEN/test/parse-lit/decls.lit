@@ -1,0 +1,72 @@
+# RUN: kgen-translate %s -import-lit | FileCheck %s
+
+__include "../lit-examples/prolog.lit"
+
+##===----------------------------------------------------------------------===##
+# var
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL:  lit.func @"var_decls()
+def var_decls():
+  # CHECK: %x = lit.var.decl "x"
+  x = 123
+  # CHECK: %y = lit.var.decl "y"
+  var y : Int
+
+  # CHECK: [[Y:%.*]] = pop.load %y : !pop.pointer<@Int>
+  # CHECK: %idx1 = index.constant 1
+  # CHECK: [[ONE:%.*]] = kgen.call @Int::@"__new__(__mlir_type.index)"(%idx1)
+  # CHECK: [[ADD:%.*]] = kgen.call @Int::@"__add__(Int,Int)"([[Y]], [[ONE]])
+  # CHECK: pop.store [[ADD]], %y : !pop.pointer<@Int>
+  y = y + 1
+
+  # CHECK: %z = lit.var.decl "z" : <index>
+  # CHECK-NEXT: [[TMP:%.*]] = pop.load %x : !pop.pointer<index>
+  # CHECK-NEXT: pop.store [[TMP]], %z
+  var z = x
+  z = 42
+  # CHECK-NEXT: [[TMP:%.*]] = index.constant 42
+  # CHECK-NEXT: pop.store [[TMP]], %z
+
+##===----------------------------------------------------------------------===##
+# fn/def
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.func @"empty_def()"() -> !lit.none {
+# CHECK: %0 = kgen.param.constant: !lit.none = <#lit.none>
+# CHECK: kgen.return %0 : !lit.none
+fn empty_def():
+  # Pass isn't required.
+
+
+##===----------------------------------------------------------------------===##
+# @raises decorator.
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@Error, @Int> attributes {isDef, raises}
+def defAlwaysRaises() -> Int:
+    # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@Int> -> !pop.variant<@Error, @Int>
+    # CHECK-NEXT: kgen.return %[[RESULT]]
+    return Int(0)
+
+# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<@Error, @Int> attributes {raises}
+@raises
+fn fnThatRaises() -> Int:
+    # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@Int> -> !pop.variant<@Error, @Int>
+    # CHECK-NEXT: kgen.return %[[RESULT]]
+    return Int(0)
+
+# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<@Error, !lit.none>
+@raises
+fn raisesReturnsNone():
+    # CHECK: %0 = kgen.param.constant: !lit.none = <#lit.none>
+    # CHECK-NEXT: %1 = pop.variant.create %0
+    # CHECK-NEXT: kgen.return %1
+    pass
+
+# COM: We can return an variant of error and index in a non-throwing function.
+# CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<@Error, index>
+fn raisesReturnsVariant() -> __mlir_type.`!pop.variant<@Error, index>`:
+    return __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, index>`](1)
+
+##===----------------------------------------------------------------------===##

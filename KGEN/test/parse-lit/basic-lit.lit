@@ -13,12 +13,6 @@ fn paramArith[x: __mlir_type.index](y : __mlir_type.index):
 struct OurSIMD[size: __mlir_type.index, dt: DType]:
   pass
 
-# CHECK-LABEL: lit.func @"empty_def()"() -> !lit.none {
-# CHECK: %0 = kgen.param.constant: !lit.none = <#lit.none>
-# CHECK: kgen.return %0 : !lit.none
-fn empty_def():
-  # Pass isn't required.
-
 fn take_3index(a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index) -> __mlir_type.index:
   return a
 
@@ -41,10 +35,6 @@ fn fancy_signature[dt: DType, size: __mlir_type.index]
   # CHECK: kgen.return %[[TMP]] : index
   return size+42
 
-# CHECK-LABEL: lit.func @"noop()
-def noop():
-  pass
-  # CHECK-NEXT : kgen.return
 
 # CHECK-LABEL: kgen.struct.decl @EmptyStruct {
 struct EmptyStruct:
@@ -96,13 +86,6 @@ fn callStatic(a: Int):
   # CHECK: kgen.call @StructExample::@"static{{.*}}(%a) : (!kgen.declref<@Int>) -> !lit.none
   StructExample().static(a)
 
-# CHECK-LABEL: lit.func @"simpleMath
-fn simpleMath(a: Int, b: Int) -> Int:
-  # CHECK: %0 = kgen.call @Int::@"__mul__{{.*}}(%b, %a)
-  # CHECK: %1 = kgen.call @Int::@"__add__{{.*}}(%a, %0)
-  # CHECK: kgen.return %1 : !kgen.declref<@Int>
-  return a+b*a
-
 # CHECK-LABEL: kgen.struct.decl @Pair<dt: !kgen.declref<@DType>> {
 struct Pair[dt: DType]:
  # CHECK: kgen.struct.field a : !kgen.declref<@OurSIMD<size = 42, dt: !kgen.declref<@DType> = dt>>
@@ -118,24 +101,6 @@ struct Pair[dt: DType]:
   # CHECK: }
 
 # CHECK: }
-
-# CHECK-LABEL:  lit.func @"var_decls()
-def var_decls():
-  # CHECK: %x = lit.var.decl "x"
-  x = 123
-  # CHECK: %y = lit.var.decl "y"
-  var y : Int
-  y = y #+1
-  # CHECK: [[TMP:%.*]] = pop.load %y : !pop.pointer<@Int>
-  # CHECK: pop.store [[TMP]], %y : !pop.pointer<@Int>
-
-  # CHECK: %z = lit.var.decl "z" : <index>
-  # CHECK-NEXT: [[TMP:%.*]] = pop.load %x : !pop.pointer<index>
-  # CHECK-NEXT: pop.store [[TMP]], %z
-  var z = x
-  z = 42
-  # CHECK-NEXT: [[TMP:%.*]] = index.constant 42
-  # CHECK-NEXT: pop.store [[TMP]], %z
 
 
 # CHECK-LABEL: lit.func @"patterns()
