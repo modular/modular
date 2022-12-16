@@ -4,7 +4,7 @@ __include "../lit-examples/prolog.lit"
 
 # CHECK: ![[INT_TYPE:.*]] = !debuginfo.unresolved<!kgen.declref<@Int>>
 # CHECK: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(![[INT_TYPE]], ![[INT_TYPE]]) -> (![[INT_TYPE]]): DW_CC_normal>
-# CHECK: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power(Int,Int)", linkageName = "power(Int,Int)", file = #{{.*}}, line = 12, scopeLine = 12, subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
+# CHECK: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power(Int,Int)", file = #{{.*}}, line = 12, scopeLine = 12, subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
 # CHECK: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = 12, arg = 1> : ![[INT_TYPE]]
 # CHECK: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = 12, arg = 2> : ![[INT_TYPE]]
 
