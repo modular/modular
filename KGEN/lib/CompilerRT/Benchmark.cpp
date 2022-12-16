@@ -217,7 +217,7 @@ extern "C" ssize_t KGEN_CompilerRT_SelectFastestFunction(
 // This is the data distribution we're going to use for tuning memset.
 // It is represented as a string of size-weight pairs,  separated by ';'.
 // Elements in the pair are separated by ':'.
-static constexpr llvm::StringLiteral KGEN_MEMSET_DATA_HIST = "18:10;15:30";
+static constexpr llvm::StringLiteral KGEN_MEMSET_DATA_HIST = "3:100;1:30;10:30";
 
 static SmallVector<std::pair<ssize_t, ssize_t>>
 parseMemsetDataHistogramString() {
