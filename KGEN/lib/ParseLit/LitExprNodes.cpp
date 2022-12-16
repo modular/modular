@@ -1176,7 +1176,7 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
       // the destination.  If things didn't work, just drop this on the floor.
       emitter.builder->create<POP::StoreOp>(emitter.translateLocation(getLoc()),
                                             rv, lhsLV,
-                                            /*alignment*/ None);
+                                            /*alignment=*/std::nullopt);
       return rv;
     }
 

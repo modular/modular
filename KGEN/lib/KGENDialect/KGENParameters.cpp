@@ -352,7 +352,7 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
     }
 
     // We're done collecting from this operation.
-    curLocationCollecting = None;
+    curLocationCollecting = std::nullopt;
 
     // If this operation had any parameter uses or decls, remember them.
     if (!uses.empty() || paramDeclsAttr) {

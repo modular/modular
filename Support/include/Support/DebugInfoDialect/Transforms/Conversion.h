@@ -35,7 +35,7 @@ public:
     replacer.addReplacement([conversion = std::forward<FnT>(conversion)](
                                 Type type) -> Optional<Type> {
       if (isa<DIType>(type))
-        return llvm::None;
+        return std::nullopt;
       return conversion(type);
     });
   }

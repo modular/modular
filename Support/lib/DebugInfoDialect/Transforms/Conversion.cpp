@@ -35,7 +35,7 @@ DebugInfoTypeConverter::DebugInfoTypeConverter() {
   replacer.addReplacement(
       [&](Type type) -> Optional<std::pair<Type, WalkResult>> {
         if (isa<DIType>(type))
-          return llvm::None;
+          return std::nullopt;
         return std::pair<Type, WalkResult>(DIUnresolvedMLIRType::get(type),
                                            WalkResult::skip());
       });
@@ -78,12 +78,12 @@ void DebugInfoTypeConverter::addUnresolvedConverter(TypeConverter &converter) {
   replacer.addReplacement(
       [&](Type type) -> Optional<std::pair<Type, WalkResult>> {
         if (isa<DIType>(type))
-          return llvm::None;
+          return std::nullopt;
 
         // Update the type using the provided converter.
         Type result = converter.convertType(type);
         if (!result || result == type)
-          return llvm::None;
+          return std::nullopt;
 
         // If we succeeded, generate debug info for the new type.
         return std::pair<Type, WalkResult>(replacer.replace(result),

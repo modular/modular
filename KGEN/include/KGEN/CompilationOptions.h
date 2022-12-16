@@ -38,7 +38,7 @@ struct CompilationOptions {
 
   CompilationOptions(unsigned optimizationLevel = 3,
                      DebugInfoLevel debugLevel = kNoDebug,
-                     Optional<DebugAtLevel> debugAtLevel = llvm::None,
+                     Optional<DebugAtLevel> debugAtLevel = std::nullopt,
                      bool enableXRayInstrumentation = false)
       : optimizationLevel(optimizationLevel), debugLevel(debugLevel),
         debugAtLevel(debugAtLevel),

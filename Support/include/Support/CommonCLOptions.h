@@ -96,7 +96,7 @@ public:
   /// Open the filename specified on the command line and return a memory
   /// buffer, or an error message on failure.
   ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
-  openInputFile(Optional<llvm::Align> align = llvm::None) {
+  openInputFile(Optional<llvm::Align> align = std::nullopt) {
     align = (inputFileAlignment != 0) ? llvm::Align(inputFileAlignment) : align;
     return CLOptionsBase::openInputFileAligned(
         inputFilename, align.value_or(defaultAlignment));
@@ -107,7 +107,7 @@ public:
   /// Takes an optional alignment with priority:
   /// CLI alignment > align argument > default alignment.
   std::unique_ptr<llvm::MemoryBuffer>
-  openInputFileOrExit(Optional<llvm::Align> align = llvm::None) {
+  openInputFileOrExit(Optional<llvm::Align> align = std::nullopt) {
     auto errorOrInputFile = openInputFile(align);
     if (failed(errorOrInputFile))
       exit(reportError(Twine(errorOrInputFile.getError())));

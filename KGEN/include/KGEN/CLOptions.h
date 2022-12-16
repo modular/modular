@@ -130,7 +130,7 @@ public:
     auto found = llvm::find_if(
         funcs, [&](const CommandLineFunc &ek) { return ek.name == func; });
     if (found == funcs.end())
-      return None;
+      return std::nullopt;
     return *found;
   }
 

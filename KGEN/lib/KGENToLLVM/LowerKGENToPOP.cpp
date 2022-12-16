@@ -787,7 +787,7 @@ void LowerKGENToPOPPass::runOnOperation() {
     Type newType = structLowerer.substituteTypes(type);
     if (newType != type)
       return debugTypeConverter.convertDebugType(newType);
-    return llvm::None;
+    return std::nullopt;
   });
   debugTypeConverter.addConversion([&](DeclRefType type) -> DebugInfo::DIType {
     return structLowerer.buildDebugInfoForStructRef(type, debugTypeConverter);
@@ -795,7 +795,7 @@ void LowerKGENToPOPPass::runOnOperation() {
   debugTypeConverter.addConversion([&](ListType type) -> Optional<Type> {
     Type elementType = type.getResolvedElementType();
     if (!elementType)
-      return llvm::None;
+      return std::nullopt;
 
     // Treat a list as an array for the sake of debugging.
     return DebugInfo::DIArrayType::get(

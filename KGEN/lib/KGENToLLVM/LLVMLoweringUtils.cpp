@@ -265,13 +265,13 @@ POPToLLVMDebugInfoTypeConverter::POPToLLVMDebugInfoTypeConverter(
     Optional<KGENDType> dtype = type.getResolvedDType();
     Optional<int64_t> size = type.getResolvedSize();
     if (!dtype || !size)
-      return llvm::None;
+      return std::nullopt;
 
     // Get the base debug type from the dtype.
     DebugInfo::DIType baseType = buildDebugTypeFromDType(
         type.getContext(), dtype->getValue(), converter.getIndexTypeBitwidth());
     if (!baseType)
-      return llvm::None;
+      return std::nullopt;
 
     // Single element SIMD becomes a scalar, multi-element become vectors.
     if (*size == 1)

@@ -338,9 +338,9 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
                             /*hadTrailingSep=*/nullptr))
       return failure();
   } else {
-    // If there was no returned value, then default to "return None".  This
-    // allows type inference to uniformly support all the things that the None
-    // literal coerces to (e.g. an Optional type).
+    // If there was no returned value, then default to "return std::nullopt".
+    // This allows type inference to uniformly support all the things that the
+    // None literal coerces to (e.g. an Optional type).
     operandExprs.push_back(getNoneExpr(loc));
   }
 
@@ -485,7 +485,7 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
       translateLocation(consumeToken(LitToken::kw_while).getLoc());
 
   ExprNode *condExp = nullptr;
-  if (parseExpression(condExp, None) ||
+  if (parseExpression(condExp, std::nullopt) ||
       parseToken(LitToken::colon, "expected ':' after expression"))
     return failure();
 
@@ -574,7 +574,7 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
       getDeclResolver().addFullyResolvedDecl(varDecl, errValLoc, errName,
                                              &containingDecl);
       builder.create<POP::StoreOp>(errVal.getLoc(), errVal, varDecl,
-                                   /*alignment=*/None);
+                                   /*alignment=*/std::nullopt);
     } else {
       // If we are parsing inside an 'fn', the error declaration is an RValue.
       getDeclResolver().addFullyResolvedDecl(DRValue(errVal), errName,
@@ -610,7 +610,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
   llvm::SaveAndRestore builderSaver(builder);
 
   ExprNode *condExp = nullptr;
-  if (parseExpression(condExp, None) ||
+  if (parseExpression(condExp, std::nullopt) ||
       parseToken(LitToken::colon, "expected ':' after 'if' expression"))
     return failure();
 
@@ -630,7 +630,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
          getToken().getIndentation().value() >= curIndent) {
     Location elifLoc =
         translateLocation(consumeToken(LitToken::kw_elif).getLoc());
-    if (parseExpression(condExp, None) ||
+    if (parseExpression(condExp, std::nullopt) ||
         parseToken(LitToken::colon, "expected ':' after 'elif' expression"))
       return failure();
 
