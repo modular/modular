@@ -115,8 +115,11 @@ fn comparisons(a: Int, b: Int):
    # CHECK: kgen.call @Int::@"__ne__{{.*}}(%a, %b)
    res = a != b
 
+struct Boolish:
+  fn __bool__(self) -> Bool: return Bool.true()
+
 # CHECK-LABEL: @"unary
-fn unary(a: Bool, b: Int):
+fn unary(a: Bool, b: Int, c: Boolish):
   # CHECK: %0 = kgen.call @Bool::@"__bool__(Bool)"(%a)
   # CHECK: %1 = kgen.call @Bool::@"__invert__(Bool)"(%0)
   _ = not a
@@ -126,6 +129,47 @@ fn unary(a: Bool, b: Int):
   # CHECK:  = kgen.call @Bool::@"__invert__(Bool)"([[BOOL]])
   _ = not b == 0
 
+  # CHECK: [[BOOL:%.*]] = kgen.call @Boolish::@"__bool__(Boolish)"(%c)
+  # CHECK:  = kgen.call @Bool::@"__invert__(Bool)"([[BOOL]])
+  _ = not c
+
+# CHECK-LABEL: lit.func @"andOr
+fn andOr(a: Boolish, b: Boolish, x: Bool):
+  # Short circuiting AND returns second operand when the first is false-y, first
+  # otherwise.
+
+  # CHECK: %0 = kgen.call @Boolish::@"__bool__(Boolish)"(%a)
+  # CHECK: %1 = kgen.call @Bool::@"__lit_bool(Bool)"(%0)
+  # CHECK: %2 = scf.if %1 -> (!kgen.declref<@Boolish>) {
+  # CHECK:   scf.yield %b
+  # CHECK: } else {
+  # CHECK:   scf.yield %a
+  # CHECK: }
+  _ = a and b
+
+  # Short circuiting OR returns first operand when it is true-y, second
+  # otherwise.
+
+  # CHECK: %3 = kgen.call @Boolish::@"__bool__(Boolish)"(%a)
+  # CHECK: %4 = kgen.call @Bool::@"__lit_bool(Bool)"(%3)
+  # CHECK: %5 = scf.if %4 -> (!kgen.declref<@Boolish>) {
+  # CHECK:   scf.yield %a
+  # CHECK: } else {
+  # CHECK:   scf.yield %b
+  # CHECK: }
+  _ = a or b
+
+  # Testing two different logic'y types returns the common bool type if present.
+
+  # CHECK: %6 = kgen.call @Boolish::@"__bool__(Boolish)"(%a)
+  # CHECK: %7 = kgen.call @Bool::@"__lit_bool(Bool)"(%6)
+  # CHECK: %8 = scf.if %7 -> (!kgen.declref<@Bool>) {
+  # CHECK:   scf.yield %6
+  # CHECK: } else {
+  # CHECK:   %10 = kgen.call @Bool::@"__bool__(Bool)"(%x)
+  # CHECK:   scf.yield %10
+  # CHECK: }
+   _ = a or x
 
 # COM: TODO: Rewrite this test once we support boolean expressions
 # COM: # CHECK-LABEL: lit.func @"precedence_comparison
