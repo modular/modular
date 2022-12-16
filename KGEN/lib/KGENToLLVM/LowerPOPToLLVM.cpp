@@ -82,7 +82,7 @@ struct ConvertPOPNeg : public mlir::ConvertOpToLLVMPattern<NegOp> {
   matchAndRewrite(NegOp op, NegOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     KGENDType dtype = *op.getType().getResolvedDType();
-    if (dtype.isInt()) {
+    if (dtype.isInt() || dtype.isIndex()) {
       Type type = adaptor.getOperand().getType();
       Value zero;
       if (auto vec = dyn_cast<VectorType>(type))

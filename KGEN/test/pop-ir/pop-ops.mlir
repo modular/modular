@@ -75,11 +75,16 @@ kgen.func @pop_abs(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
 }
 
 // CHECK-LABEL: kgen.func @pop_neg
-// CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32>) -> !pop.scalar<f32> {
-kgen.func @pop_neg(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: %[[V0:.*]] = pop.neg %[[ARG0]] : !pop.scalar<f32>
+// CHECK-SAME: %[[ARG0:.*]]: !pop.scalar<f32>
+// CHECK-SAME: %[[ARG1:.*]]: !pop.scalar<index>
+kgen.func @pop_neg(%arg0: !pop.scalar<f32>,
+                   %arg1: !pop.scalar<index>) -> (!pop.scalar<f32>,
+                                                  !pop.scalar<index>) {
+  // CHECK: pop.neg %[[ARG0]] : !pop.scalar<f32>
   %0 = pop.neg %arg0 : !pop.scalar<f32>
-  kgen.return %0 : !pop.scalar<f32>
+  // CHECK: pop.neg %[[ARG1]] : !pop.scalar<index>
+  %1 = pop.neg %arg1 : !pop.scalar<index>
+  kgen.return %0, %1 : !pop.scalar<f32>, !pop.scalar<index>
 }
 
 // CHECK-LABEL: kgen.func @pop_ceil

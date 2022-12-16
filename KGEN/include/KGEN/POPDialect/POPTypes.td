@@ -214,6 +214,9 @@ def UnboundOrSignedSIMD : SIMDOfDType<UnboundOr<OrDType<[SIntDType, FloatDType]>
     "whose element type is either unbound or of signed dtype">;
 def UnboundOrFloatSIMD : SIMDOfDType<UnboundOr<FloatDType>,
     "whose element type is either unbound or a floating-point dtype">;
+def UnboundOrIndexOrSignedSIMD : SIMDOfDType<UnboundOr<OrDType<
+                                          [SIntDType, IndexDType, FloatDType]>>,
+    "whose element type is either unbound, index, or of signed dtype">;
 def UnboundOrBoolOrIndexOrIntegerSIMD : SIMDOfDType<
     UnboundOr<OrDType<[IndexDType, IntDType, BoolDType]>>,
     "whose element type is either unbound, or integer, or bool">;
