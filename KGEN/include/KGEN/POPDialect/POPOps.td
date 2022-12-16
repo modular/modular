@@ -167,8 +167,8 @@ def POP_NegOp : POP_ArithmeticUnaryOp<"neg"> {
     %b = pop.neg %a : !pop.simd<size, type>
     ```
   }];
-  let arguments = (ins UnboundOrSignedSIMD:$operand);
-  let results = (outs UnboundOrSignedSIMD:$result);
+  let arguments = (ins UnboundOrIndexOrSignedSIMD:$operand);
+  let results = (outs UnboundOrIndexOrSignedSIMD:$result);
 }
 
 //===----------------------------------------------------------------------===//

@@ -56,6 +56,19 @@ kgen.func @neg(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
   kgen.return %0 : !pop.scalar<si32>
 }
 
+
+// -----
+
+// CHECK-LABEL: @neg
+// CHECK-SAME: %[[ARG0:.*]]:
+kgen.func @neg(%arg0: !pop.scalar<index>) -> !pop.scalar<index> {
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
+  // CHECK: %[[LHS:.*]] = llvm.mlir.constant(0 :
+  // CHECK: llvm.sub %[[LHS]], %[[RHS]]
+  %0 = pop.neg %arg0 : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+
 // -----
 
 // CHECK-LABEL: @ceil
