@@ -188,7 +188,7 @@ SignatureType SignatureType::getSpecializedSignature(
     if (bind.getType() != remappedDeclType) {
       emitErrorFn() << "caller input parameter #" << paramNo << " has type "
                     << bind.getType() << " but callee expected type "
-                    << decl.getType();
+                    << remappedDeclType;
       return SignatureType();
     }
 

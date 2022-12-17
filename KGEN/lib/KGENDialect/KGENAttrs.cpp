@@ -604,10 +604,7 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
   if (operands.empty())
     return emitError() << "'apply' expected a function parameter";
 
-  auto signature = dyn_cast<SignatureType>(operands.front().getType());
-  if (!signature)
-    return emitError() << "first operand of 'apply' must have signature type";
-
+  auto signature = cast<SignatureType>(operands.front().getType());
   if (!signature.getResultParamTypes().empty() ||
       !signature.getInputParams().empty())
     return emitError() << "'apply' function cannot be parametric";
@@ -618,20 +615,6 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
   if (func.getResult(0) != type)
     return emitError() << "'apply' function result type must be " << type
                        << " but got " << func.getResult(0);
-
-  operands = operands.drop_front();
-  if (operands.size() != func.getNumInputs())
-    return emitError() << "'apply' function expected " << func.getNumInputs()
-                       << " inputs but got " << operands.size();
-
-  for (auto [idx, type, input] :
-       llvm::zip(llvm::seq<unsigned>(0, operands.size()), func.getInputs(),
-                 operands)) {
-    if (type != input.getType())
-      return emitError() << "'apply' input #" << idx << " is "
-                         << input.getType() << " but function expected "
-                         << type;
-  }
 
   return success();
 }

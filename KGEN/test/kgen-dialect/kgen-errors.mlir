@@ -885,7 +885,7 @@ kgen.func @list_index_out_of_bounds(%list : !kgen.list<index[0]>) {
 // -----
 
 kgen.generator @apply_error() {
-  // expected-error @below {{custom op 'kgen.param.declare' expected a signature type for operator}}
+  // expected-error @below {{custom op 'kgen.param.declare' expected a signature type for 'apply'}}
   kgen.param.declare fn = <apply(5, 5)>
 }
 
@@ -912,16 +912,9 @@ kgen.generator @apply_error<fn: () -> ()>() {
 
 // -----
 
-kgen.generator @apply_error<fn: () -> index>() {
-  // expected-error @below {{custom op 'kgen.param.declare' 'apply' function expected 0 inputs but got 1}}
-  kgen.param.declare fn = <apply(:() -> index fn, 1)>
-}
-
-// -----
-
-kgen.generator @apply_error<fn: (index) -> index>() {
-  // expected-error @below {{custom op 'kgen.param.declare' 'apply' input #0 is '!kgen.dtype' but function expected 'index'}}
-  kgen.param.declare fn = <apply(:(index) -> index fn, :dtype f32)>
+kgen.generator @apply_error<fn: () -> ()>() {
+  // expected-error @below {{custom op 'kgen.param.declare' 'apply' function result type must be 'index' but got '!kgen.dtype'}}
+  kgen.param.declare fn = <apply(:() -> (!kgen.dtype) fn)>
 }
 
 // -----

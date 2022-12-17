@@ -661,7 +661,7 @@ kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
   // Show we can bind a generic signature to a concrete one.
   kgen.param.declare boundFn: ()->index =
     <bind_signature(:<ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> @takeFnContextualType,
-                    :type index, :()->index @sillyFn)>
+                    index, @sillyFn)>
 
   // CHECK-NEXT: %0 = kgen.call @"takeFnContextualType,ty=index,fn=sillyFn"()
   %0 = kgen.call_param[()->index: boundFn]()
@@ -670,7 +670,7 @@ kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
 
   kgen.param.declare boundFn2: ()->index =
     <bind_signature(:<ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> fn,
-                    :type index, :()->index @sillyFn)>
+                    index, @sillyFn)>
 
   // CHECK-NEXT: %1 = kgen.call @"takeFnContextualType,ty=index,fn=sillyFn"()
   %1 = kgen.call_param[()->index: boundFn2]()
