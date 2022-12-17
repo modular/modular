@@ -428,11 +428,10 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region",
   }];
 
   let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls);
-  let results = (outs KGEN_SignatureType:$result);
   let regions = (region SizedRegion<1>:$body);
 
   let assemblyFormat = [{
-    custom<RegionDeclaration>($paramDecls, type($result), $body) attr-dict
+    custom<RegionDeclaration>($paramDecls, $body) attr-dict
   }];
 }
 
