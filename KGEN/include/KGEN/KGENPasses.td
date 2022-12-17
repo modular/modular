@@ -58,13 +58,14 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
   let summary = "Lower the `kgen` dialect to the `llvm` dialect.";
   let description = [{
     This pass performs a conversion from the fully-elaborated and specified
-    kgen.func ops and kgen types to the corresponding LLVM-dialect
+    `kgen.func` ops and kgen types to the corresponding LLVM-dialect
     structures/types/ops.
 
-    Set `c-call` to the names of top-level funcs for which to convert to
-    C-compatible calling conventions. This breaks up argument and results
-    structs in-place and converts arrays to be pass-by-reference. If any of the
-    specified funcs have callsites in the module, the pass fails.
+    Functions marked as exported by a `kgen.export` operation are marked as
+    external. All other functions are marked as internal linkage. For exported
+    functions, wrapper functions are generated with C-compatible calling
+    conventions. This breaks up argument and results structs in-place and
+    converts arrays to be pass-by-reference.
 
     For example, consider the following function that accepts and returns a
     buffer:
@@ -74,10 +75,10 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
         -> !llvm.struct<(i64, ptr<f32>)>
     ```
 
-    The resulting signature will be:
+    The resulting wrapper's signature will be:
 
     ```mlir
-    llvm.func @slice(%a_0: i64, %a_1: !llvm.ptr<f32>, %i: !llvm.ptr<i64>,
+    llvm.func @slice_c(%a_0: i64, %a_1: !llvm.ptr<f32>, %i: !llvm.ptr<i64>,
                      %res_0: !llvm.ptr<i64>, %res_1: !llvm.ptr<ptr<f32>>)
     ```
   }];
@@ -88,9 +89,7 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
   let options = [
     Option<"indexBitwidth", "index-bitwidth", "unsigned",
            /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
-           "Bitwidth of the index type, 0 to use size of machine word">,
-    ListOption<"topLevelFuncs", "c-call", "std::string",
-               "top-level funcs to make callable from C">
+           "Bitwidth of the index type, 0 to use size of machine word">
   ];
 }
 

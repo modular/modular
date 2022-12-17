@@ -9,6 +9,6 @@
 
 TEST(KGENKernelTest, testArrayArgument) {
   int32_t values[4] = {11, 22, 33, 44};
-  int32_t result = array_index(values);
+  int32_t result = array_index_c(values);
   EXPECT_EQ(result, values[2]);
 }

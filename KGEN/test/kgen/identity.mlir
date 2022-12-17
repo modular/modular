@@ -7,4 +7,4 @@ kgen.func @identity(%arg0: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
 
 kgen.export [@identity]
 
-// CHECK: extern float[4] identity(float[4]);
+// CHECK: extern float[4] identity_c(float[4]);
