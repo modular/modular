@@ -383,32 +383,6 @@ void Elaborator::insertFuncVariant(FuncOp existing, FuncOp newFunc) {
 // Elaborator Algorithm for one func implementation
 //===----------------------------------------------------------------------===//
 
-/// The worklist in ParameterRewriter contains commands that may either be an
-/// operation to rewrite or a "RegionReturn" command that instructs it to
-/// evaluate any returned parameter expressions, pop its evaluator stack, and
-/// bind the returned parameters to a set of paramdecls in the callers context.
-struct RegionReturn {
-  /// This is the location of the call to the parameter region.
-  Location callLoc;
-
-  /// This is the location of the return from the region that binds the
-  /// parameters.
-  Location returnLoc;
-
-  /// This is a set of parameter expressions to evaluate as part of the return,
-  /// taken from the ReturnOp's parameters list.
-  ParameterExprArrayAttr returnedParamExprs;
-
-  /// This is the set of declarations bound by the returned expressions when the
-  /// call is popped off the evaluator stack.
-  ParamDeclArrayAttr callerParamDecls;
-};
-
-/// Commands are either operations to process or RegionReturn commands.  The
-/// RegionReturn commands are heap allocated so they occupy a single word:
-/// this keeps each entry in the worklist one pointer.
-using RewriterCommandType = llvm::PointerUnion<Operation *, RegionReturn *>;
-
 namespace {
 /// This class keeps a set of defined parameter values and is used to evaluate
 /// and simplify operations in a func based on those values.  If an error
@@ -417,33 +391,23 @@ namespace {
 class ParameterRewriter {
 public:
   ParameterRewriter(Elaborator &elaborator, FuncOp func, EvalContext &evalCtx,
-                    ArrayRef<Operation *> opsToRewrite, size_t expansionDepth)
+                    SmallVector<Operation *> opsToRewrite,
+                    size_t expansionDepth)
       : elaborator(elaborator),
         sourceModule(cast<ModuleOp>(elaborator.analysis.getModule())),
-        elaboratedGenerator(func), inlinedCallee(evalCtx.transitivelyInlined),
-        expansionDepth(expansionDepth) {
-    nextRegionID = 0;
-    evaluators.push_back(std::move(evalCtx.evaluator));
-    commandWorklist.reserve(opsToRewrite.size());
-    llvm::append_range(commandWorklist, opsToRewrite);
-  }
+        elaboratedGenerator(func), evaluator(std::move(evalCtx.evaluator)),
+        opWorklist(std::move(opsToRewrite)), nextRegionID(0),
+        inlinedCallee(evalCtx.transitivelyInlined),
+        expansionDepth(expansionDepth) {}
 
   /// Create a clone of this rewriter, but refer with a clone of the func.
   /// This uses operationMap to remap our state onto the newly created func.
   ParameterRewriter(const ParameterRewriter &existing,
                     DenseMap<Operation *, Operation *> &operationMap);
   ParameterRewriter(const ParameterRewriter &) = delete;
-  ~ParameterRewriter();
 
-  /// Return the evaluator currently being used for our rewrite.  This is the
-  /// top of the stack of evaluators we track.
-  IREvaluator &getEvaluator() {
-    assert(!evaluators.empty());
-    return evaluators.back();
-  }
-
-  /// Process all the `commandWorklist`, simplifying this func.  If new
-  /// variants of this func are necessary, they are added to rewriterWorklist.
+  /// Process all the `opWorklist`, simplifying this func.  If new variants of
+  /// this func are necessary, they are added to rewriterWorklist.
   LogicalResult rewriteOps(
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriterWorklist);
 
@@ -560,16 +524,13 @@ private:
   /// goes wrong.
   Optional<ErrorTree> diagnostic;
 
-  /// This is a stack of evaluators to use to process parameter expressions.
-  /// The current evaluator is always at the back() of the list.  Having a
-  /// stack of evaluators allows us to maintain scoped parameters when
-  /// processing regions.
-  SmallVector<IREvaluator, 2> evaluators;
+  /// The evaluator to use.
+  IREvaluator evaluator;
 
   /// These are the commands that still need to get performed before this func
   /// has been fully evaluated.  These are mostly operations that need to be
   /// rewritten.
-  SmallVector<RewriterCommandType> commandWorklist;
+  SmallVector<Operation *> opWorklist;
 
   /// This is a counter that gives each declared region parameter a unique
   /// number (and therefore, unique name).
@@ -584,15 +545,6 @@ private:
 };
 } // namespace
 
-ParameterRewriter::~ParameterRewriter() {
-  // If a ParameterRewriter is aborted without completion, we need to make sure
-  // to deallocate any RegionReturn nodes in the commandWorklist.
-  for (RewriterCommandType command : commandWorklist)
-    if (RegionReturn *rr = dyn_cast<RegionReturn *>(command))
-      delete rr;
-  commandWorklist.clear();
-}
-
 /// Create a clone of this rewriter, but refer with a clone of the func.
 /// This uses operationMap to remap our state onto the newly created func.
 ParameterRewriter::ParameterRewriter(
@@ -600,7 +552,7 @@ ParameterRewriter::ParameterRewriter(
     DenseMap<Operation *, Operation *> &operationMap)
     : elaborator(existing.elaborator), sourceModule(existing.sourceModule),
       elaboratedGenerator(existing.elaboratedGenerator),
-      evaluators(existing.evaluators), nextRegionID(existing.nextRegionID),
+      evaluator(existing.evaluator), nextRegionID(existing.nextRegionID),
       inlinedCallee(existing.inlinedCallee),
       expansionDepth(existing.expansionDepth) {
   // Remap the func operation.
@@ -609,16 +561,10 @@ ParameterRewriter::ParameterRewriter(
   assert(elaboratedGenerator.func && "didn't remap func correctly");
 
   // Remap the operation in the command worklist.
-  commandWorklist.reserve(existing.commandWorklist.size());
-  for (RewriterCommandType command : existing.commandWorklist) {
-    if (Operation *op = dyn_cast<Operation *>(command)) {
-      commandWorklist.push_back(operationMap[op]);
-      assert(commandWorklist.back() && "didn't clone operation correctly?");
-    } else {
-      RegionReturn *rr = cast<RegionReturn *>(command);
-      // Copy RegionReturn commands to a unique pointer.
-      commandWorklist.push_back(new RegionReturn(*rr));
-    }
+  opWorklist.reserve(existing.opWorklist.size());
+  for (Operation *op : existing.opWorklist) {
+    opWorklist.push_back(operationMap[op]);
+    assert(opWorklist.back() && "didn't clone operation correctly?");
   }
 }
 
@@ -634,61 +580,35 @@ LogicalResult ParameterRewriter::rewriteOps(
 
   // We use a worklist for this so cloned versions of ParameterRewriter can
   // be created and known where to pick up from.
-  while (!commandWorklist.empty()) {
-    RewriterCommandType command = commandWorklist.pop_back_val();
-
+  while (!opWorklist.empty()) {
     // Most commands in the worklist are operations that need to be rewritten.
-    if (Operation *op = dyn_cast<Operation *>(command)) {
-      LogicalResult result = success();
-      // Process an operation that needs to be rewritten/lowered based on the
-      // context of the parameter values we know are defined.
-      if (auto declare = dyn_cast<ParamDeclareOp>(op))
-        result = processParamDeclareOp(declare);
-      else if (auto declare = dyn_cast<ParamDeclareRegionOp>(op))
-        result = processParamDeclareRegionOp(declare);
-      else if (auto value = dyn_cast<ParamSearchOp>(op))
-        result = processParamSearchOp(value, rewriterWorklist);
-      else if (auto value = dyn_cast<ParamConstantOp>(op))
-        result = processParamConstantOp(value);
-      else if (auto assertOp = dyn_cast<ParamAssertOp>(op))
-        result = processParamAssertOp(assertOp);
-      else if (auto addressof = dyn_cast<AddressOfOp>(op))
-        result = processGeneratorUser(addressof, rewriterWorklist);
-      else if (auto call = dyn_cast<CallOp>(op))
-        result = processGeneratorUser(call, rewriterWorklist);
-      else if (auto call = dyn_cast<CallParamOp>(op))
-        result = processCallParamOp(call, rewriterWorklist);
-      else
-        result = processGenericOp(op);
+    Operation *op = opWorklist.pop_back_val();
+    LogicalResult result = success();
+    // Process an operation that needs to be rewritten/lowered based on the
+    // context of the parameter values we know are defined.
+    if (auto declare = dyn_cast<ParamDeclareOp>(op))
+      result = processParamDeclareOp(declare);
+    else if (auto declare = dyn_cast<ParamDeclareRegionOp>(op))
+      result = processParamDeclareRegionOp(declare);
+    else if (auto value = dyn_cast<ParamSearchOp>(op))
+      result = processParamSearchOp(value, rewriterWorklist);
+    else if (auto value = dyn_cast<ParamConstantOp>(op))
+      result = processParamConstantOp(value);
+    else if (auto assertOp = dyn_cast<ParamAssertOp>(op))
+      result = processParamAssertOp(assertOp);
+    else if (auto addressof = dyn_cast<AddressOfOp>(op))
+      result = processGeneratorUser(addressof, rewriterWorklist);
+    else if (auto call = dyn_cast<CallOp>(op))
+      result = processGeneratorUser(call, rewriterWorklist);
+    else if (auto call = dyn_cast<CallParamOp>(op))
+      result = processCallParamOp(call, rewriterWorklist);
+    else
+      result = processGenericOp(op);
 
-      // If processing any operation failed, then this entire func elaboration
-      // failed.
-      if (failed(result))
-        return failure();
-      continue;
-    }
-
-    // Otherwise we have a RegionReturn operation.
-    std::unique_ptr<RegionReturn> rr(cast<RegionReturn *>(command));
-
-    // Evaluate each of the returned parameter expressions in the current
-    // scope.
-    SmallVector<Attribute> returnedParams;
-    for (TypedAttr expr : rr->returnedParamExprs) {
-      ErrorTreeOr<Attribute> value =
-          getEvaluator().concretizeParameterExpr(rr->returnLoc, expr);
-      if (value.isError())
-        return error(value.takeError());
-      returnedParams.push_back(value.takeValue());
-    }
-    // Next, pop the evaluator for the now-returned region.
-    assert(evaluators.size() > 1 && "Don't have excess evaluators to pop!");
-    evaluators.pop_back();
-
-    // Bind each of the result parameter declarations in the callers context.
-    assert(rr->callerParamDecls.size() == returnedParams.size());
-    for (auto [decl, value] : llvm::zip(rr->callerParamDecls, returnedParams))
-      getEvaluator().setOrOverwriteParameterValue(decl, value);
+    // If processing any operation failed, then this entire func elaboration
+    // failed.
+    if (failed(result))
+      return failure();
   }
 
   // If the generated function will be inlined, don't verify it.
@@ -734,13 +654,12 @@ LogicalResult ParameterRewriter::rewriteOps(
 LogicalResult ParameterRewriter::processParamDeclareOp(ParamDeclareOp op) {
   // Simplify the input expression.
   ErrorTreeOr<Attribute> value =
-      getEvaluator().concretizeParameterExpr(op.getLoc(), op.getValue());
+      evaluator.concretizeParameterExpr(op.getLoc(), op.getValue());
   if (value.isError())
     return error(value.takeError());
 
   // Bind it to the parameter declaration it is setting.
-  getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(),
-                                              value.getValue());
+  evaluator.setOrOverwriteParameterValue(op.getParamDecl(), value.getValue());
 
   // The kgen.param.declare operation serves no other purpose: remove it.
   op->erase();
@@ -770,9 +689,8 @@ ParameterRewriter::processParamDeclareRegionOp(ParamDeclareRegionOp op) {
   auto body = cast<RegionBodyOp>(op.getBody().front().front());
   bool isolated = operationIsIsolatedFromAbove(body);
   elaborator.setEvalContext(
-      symbolRef,
-      {elaborator.createEvaluator(getEvaluator().getParameterValues()),
-       !isolated, true});
+      symbolRef, {elaborator.createEvaluator(evaluator.getParameterValues()),
+                  !isolated, true});
 
   // Create the generator and move the body over.
   OpBuilder b(op.getContext());
@@ -784,7 +702,7 @@ ParameterRewriter::processParamDeclareRegionOp(ParamDeclareRegionOp op) {
   symtab.insert(gen, Block::iterator(elaboratedGenerator.func));
 
   // Bind the parameter value to the region reference.
-  getEvaluator().setOrOverwriteParameterValue(decl, symbolCst);
+  evaluator.setOrOverwriteParameterValue(decl, symbolCst);
   op->erase();
   return success();
 }
@@ -805,7 +723,7 @@ LogicalResult ParameterRewriter::processParamSearchOp(
   for (Attribute candidate : op.getValues()) {
     // Simplify the input expressions.
     ErrorTreeOr<Attribute> errorOrValue =
-        getEvaluator().concretizeParameterExpr(op.getLoc(), candidate);
+        evaluator.concretizeParameterExpr(op.getLoc(), candidate);
     if (errorOrValue.isError()) {
       errors.push_back(errorOrValue.takeError());
       continue;
@@ -867,7 +785,7 @@ void ParameterRewriter::spawnParamSearchClone(
 void ParameterRewriter::completeParamSearchOpProcessing(ParamSearchOp op,
                                                         Attribute value) {
   // Bind it to the parameter declaration it is setting.
-  getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(), value);
+  evaluator.setOrOverwriteParameterValue(op.getParamDecl(), value);
 
   // The kgen.param.search operation serves no other purpose: remove it.
   op->erase();
@@ -878,12 +796,12 @@ LogicalResult ParameterRewriter::processParamConstantOp(ParamConstantOp op) {
   // eventually lower this into lower level operators in the target set, but
   // for now we just simplify their operand.
   ErrorTreeOr<Attribute> value =
-      getEvaluator().concretizeParameterExpr(op.getLoc(), op.getValue());
+      evaluator.concretizeParameterExpr(op.getLoc(), op.getValue());
   if (value.isError())
     return error(value.takeError());
 
   ErrorTreeOr<Type> type =
-      getEvaluator().concretizeParameterExpr(op.getLoc(), op.getType());
+      evaluator.concretizeParameterExpr(op.getLoc(), op.getType());
   if (type.isError())
     return error(type.takeError());
 
@@ -895,7 +813,7 @@ LogicalResult ParameterRewriter::processParamConstantOp(ParamConstantOp op) {
 LogicalResult ParameterRewriter::processParamAssertOp(ParamAssertOp op) {
   // Check the condition expression.
   ErrorTreeOr<Attribute> value =
-      getEvaluator().concretizeParameterExpr(op.getLoc(), op.getCond());
+      evaluator.concretizeParameterExpr(op.getLoc(), op.getCond());
   if (value.isError())
     return error(value.takeError());
 
@@ -923,7 +841,7 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
   for (ParamBindAttr param : inputValues) {
     // Fold the parameter expression in this context to a simple constant.
     ErrorTreeOr<Attribute> value =
-        getEvaluator().concretizeParameterExpr(call.getLoc(), param.getValue());
+        evaluator.concretizeParameterExpr(call.getLoc(), param.getValue());
     if (value.isError())
       return error(value.takeError());
 
@@ -967,20 +885,46 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
   auto ref = cast<FlatSymbolRefAttr>(callee.getSymbol());
   FuncInterface func = elaborator.lookupCallee(ref);
 
+  // Bind the input parameters in the evaluator.
+  for (auto [inputDecl, inputValue] :
+       llvm::zip(func.getInputParamDecls(), inputParamKey))
+    evalCtx.evaluator.setOrOverwriteParameterValue(inputDecl, inputValue);
+
   // If the callee is an interface that provides an evaluator, resolve the
   // evaluator first.
   if (auto itf = dyn_cast<GeneratorInterfaceOp>(*func)) {
     if (SymbolConstantAttr evaluator = itf.getEvaluatorAttr()) {
-      if (!elaborator.analysis.getTopLevelSymbolTable().lookup<FuncOp>(
-              cast<FlatSymbolRefAttr>(evaluator.getSymbol()).getAttr())) {
-        evaluators.push_back(elaborator.createEvaluator());
-        for (auto [bind, value] :
-             llvm::zip(callee.getParamValues(), inputParamKey))
-          evaluators.back().setParameterValue(bind.getDecl(), value);
-        if (failed(processGeneratorUserImpl(itf, evaluator, {}, rewriters)))
-          return failure();
-        evaluators.pop_back();
+      EvalContext itfCtx = elaborator.getEvalContext(evaluator.getSymbol());
+
+      // Concretize the input parameters to the evaluator. The parameters of the
+      // interface to be evaluated are visible.
+      SmallVector<Attribute> itfParams;
+      for (ParamBindAttr bind : evaluator.getParamValues()) {
+        ErrorTreeOr<Attribute> value =
+            evalCtx.evaluator.concretizeParameterExpr(itf.getLoc(),
+                                                      bind.getValue());
+        if (value.isError())
+          return error(value.takeError());
+        itfCtx.evaluator.setParameterValue(bind.getDecl(), *value);
+        itfParams.push_back(*value);
       }
+      DeclAndInputParamsPair itfKey{
+          elaborator.lookupCallee(evaluator.getSymbol()),
+          ArrayAttr::get(itf.getContext(), itfParams)};
+      ArrayRef<ErrorTreeOr<ElaboratedGenerator>> evalCandidates =
+          elaborator.getAllInstantiations(itfKey, expansionDepth + 1, itfCtx);
+
+      // Ensure there is only one candidate
+      auto hasValue = [](auto &candidate) { return candidate.hasValue(); };
+      auto it = llvm::find_if(evalCandidates, hasValue);
+      if (std::count_if(it, evalCandidates.end(), hasValue) != 1)
+        return error(itf.getLoc(), "evaluator should have 1 candidate");
+
+      // Update the evaluator.
+      FuncOp evalFunc = it->getValue().func;
+      itf.setEvaluatorAttr(SymbolConstantAttr::get(
+          FlatSymbolRefAttr::get(evalFunc.getSymNameAttr()),
+          evalFunc.getSignature()));
     }
   }
 
@@ -1064,7 +1008,7 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
   SmallVector<Type> resultTypes;
   for (Type result : user->getResultTypes()) {
     ErrorTreeOr<Type> type =
-        getEvaluator().concretizeParameterExpr(user.getLoc(), result);
+        evaluator.concretizeParameterExpr(user.getLoc(), result);
     if (type.isError())
       return error(type.takeError());
     resultTypes.push_back(type.takeValue());
@@ -1121,7 +1065,7 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
   // Bind the result parameters to the output parameter decls.
   for (auto [decl, bindValue] :
        llvm::zip(decls, elaborator.lookupResultParameters(newCallee.func)))
-    getEvaluator().setOrOverwriteParameterValue(decl, bindValue);
+    evaluator.setOrOverwriteParameterValue(decl, bindValue);
 
   return success();
 }
@@ -1177,7 +1121,7 @@ LogicalResult ParameterRewriter::processCallParamOp(
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Simplify the callee expression.
   ErrorTreeOr<Attribute> value =
-      getEvaluator().concretizeParameterExpr(call.getLoc(), call.getCallee());
+      evaluator.concretizeParameterExpr(call.getLoc(), call.getCallee());
   if (value.isError())
     return error(value.takeError());
 
@@ -1212,7 +1156,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   SmallVector<NamedAttribute> newAttrs;
   bool changedAttrs = false;
   for (const NamedAttribute &namedAttr : op->getAttrs()) {
-    ErrorTreeOr<Attribute> value = getEvaluator().concretizeParameterExpr(
+    ErrorTreeOr<Attribute> value = evaluator.concretizeParameterExpr(
         op->getLoc(), namedAttr.getValue(), /*allowUnknown=*/true);
     if (value.isError())
       return error(value.takeError());
@@ -1231,7 +1175,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   // when being defined.
   for (OpResult result : op->getResults()) {
     ErrorTreeOr<Type> type =
-        getEvaluator().concretizeParameterExpr(op->getLoc(), result.getType());
+        evaluator.concretizeParameterExpr(op->getLoc(), result.getType());
     if (type.isError())
       return error(type.takeError());
     result.setType(type.takeValue());
@@ -1243,8 +1187,8 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
     for (Region &region : op->getRegions()) {
       for (Block &block : region) {
         for (Value arg : block.getArguments()) {
-          ErrorTreeOr<Type> type = getEvaluator().concretizeParameterExpr(
-              op->getLoc(), arg.getType());
+          ErrorTreeOr<Type> type =
+              evaluator.concretizeParameterExpr(op->getLoc(), arg.getType());
           if (type.isError())
             return error(type.takeError());
           arg.setType(type.takeValue());
@@ -1264,7 +1208,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
 }
 
 LogicalResult ParameterRewriter::processLocation(Operation *op) {
-  ErrorTreeOr<Attribute> value = getEvaluator().concretizeParameterExpr(
+  ErrorTreeOr<Attribute> value = evaluator.concretizeParameterExpr(
       op->getLoc(), op->getLoc(), /*allowUnknown=*/true);
   if (value.isError())
     return error(value.takeError());
@@ -1282,18 +1226,7 @@ ErrorTree ParameterRewriter::takeDiagnosticAndEraseFunc() {
   // in various maps though, so instead of actually deleting it, we just
   // mark it for removal later.
   elaborator.markFuncForRemoval(elaboratedGenerator.func);
-  ErrorTree error = std::move(*diagnostic);
-
-  // Check to see if the error occurs in the scope of a call_param to a region.
-  // If so, make sure to add the nested call to the expansion path.
-  for (auto command : llvm::reverse(commandWorklist)) {
-    RegionReturn *rr = dyn_cast<RegionReturn *>(command);
-    if (!rr)
-      continue;
-    error = ErrorTree(rr->callLoc, "call expansion failed", std::move(error));
-  }
-
-  return error;
+  return std::move(*diagnostic);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1796,11 +1729,6 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
     llvm::dbgs() << std::string(expansionDepth, ' ')
                  << "getAllInstantiations: ";
   });
-
-  // Bind the input parameters in the evaluator.
-  for (auto [inputDecl, inputValue] :
-       llvm::zip(decl.getInputParamDeclsAttr(), declAndInputParams.second))
-    evalCtx.evaluator.setOrOverwriteParameterValue(inputDecl, inputValue);
 
   // Check the constraints on the declaration.
   Optional<ErrorTree> err =
