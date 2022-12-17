@@ -163,7 +163,7 @@ void ParamDeclareOp::setParamDecl(ParamDeclAttr decl) {
 
 static ParseResult parseRegionDeclaration(OpAsmParser &p,
                                           ParamDeclArrayAttr &paramDecls,
-                                          Type &signature, Region &body) {
+                                          Region &body) {
   StringAttr paramName;
   if (parseParamName(p, paramName) || p.parseEqual())
     return failure();
@@ -179,15 +179,14 @@ static ParseResult parseRegionDeclaration(OpAsmParser &p,
   body.push_back(new Block);
   body.front().push_back(bodyOp);
 
-  signature = bodyOp.getSignature();
   paramDecls = ParamDeclArrayAttr::get(
-      p.getContext(), ParamDeclAttr::get(paramName, signature));
+      p.getContext(), ParamDeclAttr::get(paramName, bodyOp.getSignature()));
   return success();
 }
 
 static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
                                    ParamDeclArrayAttr paramDecls,
-                                   SignatureType signature, Region &region) {
+                                   Region &region) {
   printParamName(p, paramDecls.front().getName());
   p << " =";
   auto body = cast<RegionBodyOp>(region.front().front());

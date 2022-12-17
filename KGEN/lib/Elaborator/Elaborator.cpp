@@ -789,9 +789,10 @@ LogicalResult
 ParameterRewriter::processParamDeclareRegionOp(ParamDeclareRegionOp op) {
   // Give this reference a unique name, and make a RegionReferenceAttr with
   // the name and SignatureType.
+  ParamDeclAttr decl = op.getParamDecls().front();
   auto ref = RegionReferenceAttr::get(elaboratedGenerator.func.getName() +
                                           "_region_" + Twine(nextRegionID++),
-                                      op.getType());
+                                      cast<SignatureType>(decl.getType()));
 
   // Determine whether the body isolated before unhooking it from its parent.
   auto body = cast<RegionBodyOp>(op.getBody().front().front());
@@ -809,7 +810,7 @@ ParameterRewriter::processParamDeclareRegionOp(ParamDeclareRegionOp op) {
        isolated});
 
   // Bind the parameter value to the region reference.
-  getEvaluator().setOrOverwriteParameterValue(op.getParamDecls().front(), ref);
+  getEvaluator().setOrOverwriteParameterValue(decl, ref);
   op->erase();
   return success();
 }
