@@ -102,6 +102,8 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
   }
 
   if (auto fnOp = dyn_cast<LIT::FuncOp>(op)) {
+    assert(resolvedness >= DeclResolvedness::signatureResolved &&
+           "Functions don't have a symbol until their signatures are resolved");
     // TODO: Support multiple levels of nesting.  This should be recursive, and
     // SymbolRefAttr should support a get(FlatSymbol, SymbolRef) helper that
     // forms a properly flattened reference by unwinding the RHS if it isn't
@@ -168,11 +170,9 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
   parsedDeclList.push_back(decl);
 
   // If this has a parent and a name, insert it into the parents name table so
-  // name lookup will resolve it.
-  if (!parentDecl || !name) {
-    assert(!decl->getSymbolRef() && "Can't have symbol without a name");
+  // name lookup will resolve it.  If it does, then we're done.
+  if (!name)
     return *decl;
-  }
 
   // Remember the named decl in the symbol table so it can be looked up.
   TinyPtrVector<ASTDecl *> &entries = parentDecl->declsInScope[name];
@@ -181,8 +181,8 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
 
     // If the decl is a type or alias that has a symbol, remember it.  This
     // allows us to look up decls by symbol when referenced as types.
-    if (SymbolRefAttr symbol = decl->getSymbolRef()) {
-      if (isa<StructDeclOp>(*decl) || isa<ParamDeclareOp>(*decl)) {
+    if (isa<StructDeclOp>(*decl) || isa<ParamDeclareOp>(*decl)) {
+      if (SymbolRefAttr symbol = decl->getSymbolRef()) {
         assert(!declForTypeSymbol.count(symbol) &&
                "Symbol redefinition/collision");
         declForTypeSymbol[symbol] = decl;
@@ -1012,8 +1012,20 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
   // Finally now that the full signature has been resolved, build our IR.
 
-  // Set the symbol to the mangled name.
+  // Set the symbol to the mangled name and check for redefinition.
   funcOp.setName(name);
+
+  // Remove the temporary "sym_namex" attribute set up in FuncOp::build, see
+  // that method for an explanation.
+  funcOp->removeAttr("sym_namex");
+
+  if (Operation *existing = sharedState.setResolvedDeclSymbol(funcOp)) {
+    // On redefinition this is an overload of the same name and same signature.
+    auto diag = p.emitError(funcOp.getLoc(), "redefinition of function ")
+                << name << " with identical signature";
+    diag.attachNote(existing->getLoc()) << "previous definition here";
+    decl.hasReferenceError = true;
+  }
 
   // TODO: Handle the export attribute somehow else.  It should be a 'body
   // decorator' that is handled after the decl is fully resolved.

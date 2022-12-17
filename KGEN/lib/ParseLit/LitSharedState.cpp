@@ -32,6 +32,8 @@ using llvm::SourceMgr;
 
 class LitSharedState::Impl {
 public:
+  SymbolTableCollection symbolTables;
+
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTType typeCheckErrorType;
   /// This is the decl for the builtin 'kgen.none' type.
@@ -166,4 +168,25 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   // Add a declaration for an "object" struct.  This should be written in the
   // standard library.
   addEmptyStructDecl("object", impl->objectDecl);
+}
+
+/// Set the symbol for the specified declaration (known to be an operation)
+/// into the MLIR symbol table for its container.  If the symbol is already
+/// declared in the same MLIR scope, then return the conflicting operation.
+Operation *LitSharedState::setResolvedDeclSymbol(Operation *declOp) {
+  assert(declOp && "Cannot set a symbol for non-operation decl");
+
+  // We look up the symbol in the enclosing symbol table.  For example, for a
+  // method in a struct, we use the struct as the symbol table.  For a top-level
+  // function we use the global module.
+  Operation *parentSymbolTableOp =
+      SymbolTable::getNearestSymbolTable(declOp->getParentOp());
+  SymbolTable &symTab = impl->symbolTables.getSymbolTable(parentSymbolTableOp);
+
+  // Insert the operation into the symbol table and see if it got renamed.
+  auto origName = SymbolTable::getSymbolName(declOp);
+  if (symTab.insert(declOp) == origName)
+    return nullptr; // No conflict, done.
+
+  return symTab.lookup(origName);
 }

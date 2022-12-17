@@ -8,11 +8,11 @@ def foo():
 # expected-error @+1 {{unexpected token in expression}}
   return pass
 
-# xpected-note @+1 {{previous definition here}}
+# expected-note @+1 {{previous definition here}}
 def fn_redecl():
   pass
 
-# xpected-error @+1 {{invalid redefinition of "fn_redecl"}}
+# expected-error @+1 {{redefinition of function "fn_redecl()" with identical signature}}
 def fn_redecl():
   pass
 
