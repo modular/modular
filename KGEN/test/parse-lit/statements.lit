@@ -9,3 +9,22 @@ __include "../lit-examples/prolog.lit"
 def `pass`():
   pass
   # CHECK-NEXT : kgen.return
+
+##===----------------------------------------------------------------------===##
+# return
+
+# CHECK-LABEL lit.func @"return_impl_convert
+fn return_impl_convert() -> Int:
+  # CHECK: %idx4 = index.constant 4
+  # CHECK: %0 = kgen.call @Int::@"__new__(__mlir_type.index)"(%idx4)
+  # CHECK: kgen.return %0
+  return 4  # Implicit conversion from literal to Int
+
+# CHECK-LABEL lit.func @"return_impl_convert_raises
+@raises
+fn return_impl_convert_raises() -> Int:
+  # CHECK: %idx4 = index.constant 4
+  # CHECK: %0 = kgen.call @Int::@"__new__(__mlir_type.index)"(%idx4) : (index) -> !kgen.declref<@Int>
+  # CHECK: %1 = pop.variant.create %0 : !kgen.declref<@Int> -> !pop.variant<@Error, @Int>
+  # CHECK: kgen.return %1 : !pop.variant<@Error, @Int>
+  return 4  # Implicit conversion from literal to Int

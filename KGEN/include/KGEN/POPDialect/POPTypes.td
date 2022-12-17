@@ -365,6 +365,9 @@ def POP_VariantType : POPType<"Variant", "variant",
 
     /// Get an element type as a parameterized type.
     Type getType(unsigned index);
+
+    /// Return the number of types in the variant.
+    size_t getNumTypes();
   }];
 }
 
