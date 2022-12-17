@@ -105,6 +105,11 @@ public:
     return ArrayRef<T>(result, elements.size());
   }
 
+  /// Set the symbol for the specified declaration (known to be an operation)
+  /// into the MLIR symbol table for its container.  If the symbol is already
+  /// declared in the same MLIR scope, then return the conflicting operation.
+  Operation *setResolvedDeclSymbol(Operation *declOp);
+
   /// Add magic things to the builtins decl when parsing starts.
   void addBuiltinTypes(ASTDecl &builtinsDecl);
 

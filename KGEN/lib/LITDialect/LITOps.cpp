@@ -149,16 +149,28 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   auto errorType = builder.getType<TypeCheckErrorType>();
   auto signatureType =
       SignatureType::get(context, ArrayRef<Type>(), {errorType});
-  // FIXME(LLVM Issue #59529): We use a weird name here because symbols "cannot"
-  // be empty even when invalid.  They crash printSymbolReference: file
-  // AsmPrinter.cpp, line 2050.
-  build(builder, result, StringAttr::get(context, "\x01"),
-        StringArrayAttr::get(context, {}), TypeAttr::get(signatureType),
-        ConstraintArrayAttr::get(context, {}),
-        /*isStatic=*/mlir::UnitAttr(), /*isInterface=*/mlir::UnitAttr(),
-        /*isDef=*/mlir::UnitAttr(), /*raises=*/mlir::UnitAttr(),
-        /*implements=*/FlatSymbolRefAttr());
-  result.regions[0]->push_back(new Block());
+
+  auto emptyParamNames = StringArrayAttr::get(context, {});
+
+  // NOTE: We set an attribute named 'sym_namex' here instead of setting
+  // 'sym_name' because we don't /know/ the symbol name on construction and need
+  // to set it during signature resolution phase of the parser.
+  //
+  // Unfortunately, we cannot set it to null because that causes the SymbolTable
+  // logic to be extremely cranky and breaks other MLIR invariants.
+  //
+  // We also cannot completely omit the symbol, because ODS is doing some clever
+  // stuff to speed up attribute lookup.  That clever stuff requires that a slot
+  // is filled in the attr dict, so we set this thing and remove it when the
+  // real name is set.
+  result.addAttribute("sym_namex", emptyParamNames);
+
+  result.addAttribute(getValueParamNamesAttrName(result.name), emptyParamNames);
+  result.addAttribute(getSignatureAttrName(result.name),
+                      TypeAttr::get(signatureType));
+  result.addAttribute(getConstraintsAttrName(result.name),
+                      ConstraintArrayAttr::get(context, {}));
+  result.addRegion()->push_back(new Block());
 }
 
 //===----------------------------------------------------------------------===//
