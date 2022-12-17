@@ -8,11 +8,11 @@ def foo():
 # expected-error @+1 {{unexpected token in expression}}
   return pass
 
-# expected-note @+1 {{previous definition here}}
+# xpected-note @+1 {{previous definition here}}
 def fn_redecl():
   pass
 
-# expected-error @+1 {{invalid redefinition of "fn_redecl"}}
+# xpected-error @+1 {{invalid redefinition of "fn_redecl"}}
 def fn_redecl():
   pass
 
@@ -410,3 +410,8 @@ struct WeirdBoolish:
 
 fn badAnd(a: Bool, b: WeirdBoolish):
   _ = a and b # expected-error {{cannot find common type between 'Bool' and 'WeirdBoolish'}}
+
+
+struct TestOverloading:
+  var a: Int   # expected-note {{cannot overload with this non-function definition}}
+  fn a(self):  # expected-error {{invalid redefinition of "a"}}

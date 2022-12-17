@@ -38,6 +38,10 @@ def var_decls():
 fn empty_def():
   # Pass isn't required.
 
+# Method overloading.
+fn testThing(a: Int):
+fn testThing(a: Int, b: Int):
+
 
 ##===----------------------------------------------------------------------===##
 # @raises decorator.

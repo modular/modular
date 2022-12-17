@@ -28,3 +28,15 @@ fn return_impl_convert_raises() -> Int:
   # CHECK: %1 = pop.variant.create %0 : !kgen.declref<@Int> -> !pop.variant<@Error, @Int>
   # CHECK: kgen.return %1 : !pop.variant<@Error, @Int>
   return 4  # Implicit conversion from literal to Int
+
+
+##===----------------------------------------------------------------------===##
+
+# TODO(Issue #6139)
+
+#struct Iterable:
+
+#fn test_for(iterable: Iterable):
+#  var result = Int(0)
+#  for i in iterable:
+#    result += i

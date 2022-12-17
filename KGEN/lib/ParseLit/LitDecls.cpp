@@ -175,8 +175,10 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
   }
 
   // Remember the named decl in the symbol table so it can be looked up.
-  auto [it, inserted] = parentDecl->declsInScope.insert({name, decl});
-  if (inserted) {
+  TinyPtrVector<ASTDecl *> &entries = parentDecl->declsInScope[name];
+  if (entries.empty()) {
+    entries.push_back(decl);
+
     // If the decl is a type or alias that has a symbol, remember it.  This
     // allows us to look up decls by symbol when referenced as types.
     if (SymbolRefAttr symbol = decl->getSymbolRef()) {
@@ -186,20 +188,47 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
         declForTypeSymbol[symbol] = decl;
       }
     }
-  } else {
-    ASTDecl *existing = it->second;
-    auto diag =
-        sharedState.emitError(decl->getLoc(), "invalid redefinition of ")
-        << name;
-    diag.attachNote(sharedState.translateLocation(existing->getLoc()))
-        << "previous definition here";
-
-    // Mark the existing decl and this one as erroneous so uses of either
-    // don't create confusing errors.
-    decl->hasReferenceError = true;
-    existing->hasReferenceError = true;
+    return *decl;
   }
 
+  // Function support method overloading on input arguments.  Variables and
+  // types cannot be overloaded because they have no inputs.  Well, we could
+  // actually allow type overloading on parameters theoretically to support
+  // T[4] and T[1,7] as different things, but let's no proactively add
+  // complexity.
+  if (isa<FuncOp>(*decl)) {
+    // Verify that all previous entries are also functions.  Note that we can't
+    // check the overload set is compatible with each other because the
+    // signatures aren't all resolved.
+    for (ASTDecl *previous : entries) {
+      if (!isa<FuncOp>(*previous)) {
+        auto diag =
+            sharedState.emitError(decl->getLoc(), "invalid redefinition of ")
+            << name;
+        diag.attachNote(sharedState.translateLocation(previous->getLoc()))
+            << "cannot overload with this non-function definition";
+        decl->hasReferenceError = true;
+        previous->hasReferenceError = true;
+        return *decl;
+      }
+    }
+
+    // Otherwise, we're good, charge forwards.
+    entries.push_back(decl);
+    return *decl;
+  }
+
+  ASTDecl *existing = entries.back();
+  auto diag = sharedState.emitError(decl->getLoc(), "invalid redefinition of ")
+              << name;
+  diag.attachNote(sharedState.translateLocation(existing->getLoc()))
+      << "previous definition here";
+
+  // Mark the existing decl and this one as erroneous so uses of either
+  // don't create confusing errors.
+  decl->hasReferenceError = true;
+  for (ASTDecl *previous : entries)
+    previous->hasReferenceError = true;
   return *decl;
 }
 
