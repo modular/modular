@@ -7,6 +7,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/OpDefinition.h"
+#include "mlir/IR/SymbolTable.h"
 
 using namespace M;
 using CloneOptions = mlir::Operation::CloneOptions;
@@ -173,4 +174,12 @@ bool M::operationIsIsolatedFromAbove(Operation *op) {
     return WalkResult::advance();
   });
   return result;
+}
+
+std::string M::getUniqueSymbolName(std::string baseName, SymbolTable &symtab,
+                                   unsigned &counter) {
+  std::string uniqueName = baseName;
+  while (symtab.lookup(uniqueName))
+    uniqueName = (baseName + "_" + Twine(counter++)).str();
+  return uniqueName;
 }
