@@ -31,4 +31,4 @@ kgen.export [@exp_f32]
 // OBJ-LABEL: SYMBOL TABLE
 // OBJ-DAG: F {{.*}}exp
 
-// HDR-LABEL: extern float exp_f32(float);
+// HDR-LABEL: extern float exp_f32_c(float);

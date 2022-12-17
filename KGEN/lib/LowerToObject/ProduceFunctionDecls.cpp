@@ -151,7 +151,11 @@ static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
     os << "void";
   else if (failed(printTypeAsC(func.getResultTypes().front())))
     return failure();
-  os << " " << func.getName() << "(";
+
+  // FIXME: This assumes the C wrapper that eventually gets generated is not
+  // renamed due to a symbol name conflict. Header emission happens too early in
+  // the pipeline.
+  os << " " << func.getName() << "_c(";
   for (auto &it : llvm::enumerate(func.getFunctionType().getInputs())) {
     if (it.index() != 0)
       os << ", ";

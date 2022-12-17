@@ -23,15 +23,8 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass());
   pm.addPass(createLowerKGENToPOP());
 
-  SmallVector<std::string, 1> topLevelKernels;
-  if (options.topLevelKernel.hasValue())
-    topLevelKernels.push_back(options.topLevelKernel);
-
-  LowerKGENToLLVMOptions kgenToLLVMOptions{/*indexBitwidth=*/0,
-                                           topLevelKernels};
-  pm.addPass(createLowerKGENToLLVM(kgenToLLVMOptions));
-
   // Run all LLVM lowering passes.
+  pm.addPass(createLowerKGENToLLVM());
   pm.addPass(createLowerGlobalPOPToLLVM());
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(createLowerPOPToLLVM());
   pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(createLowerSCFToLLVM());

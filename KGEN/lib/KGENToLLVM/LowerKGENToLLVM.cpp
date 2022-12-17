@@ -391,80 +391,60 @@ convertCallingConvention(Location loc, Block *body,
   return results;
 }
 
-/// Convert the calling convention of the provided function in-place. The
-/// function must be top-level as callsites are not modified.
-static void rewriteCallingConventionInPlace(LLVM::LLVMFuncOp func) {
-  // If there are no argument types to rewrite, return early.
-  auto needRewrite = [](Type type) {
-    return type.isa<LLVM::LLVMStructType, LLVM::LLVMArrayType>();
-  };
-  if (!llvm::any_of(func.getArgumentTypes(), needRewrite) &&
-      !needRewrite(func.getResultTypes().front()))
-    return;
+/// Emit a wrapper for a function with the calling convention converted to C
+/// calling convention. The wrapper constructs the necessary structs and
+/// forwards them to the actual function.
+static void emitCWrapper(LLVM::LLVMFuncOp func, SymbolTable &symtab) {
+  // Generate a unique wrapper name to use.
+  std::string wrapperName = (func.getName() + "_c").str();
+  int64_t idx = -1;
+  while (symtab.lookup(wrapperName))
+    wrapperName = (func.getName() + "_c" + Twine(++idx)).str();
 
-  Block *entry = &func.getBody().front();
-  Type resultTy = func.getResultTypes().front();
+  // Generate a new subprogram scope if necessary.
+  Location loc = func.getLoc();
+  if (auto funcSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(loc)) {
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement([&](DebugInfo::DISubprogramAttr sp) {
+      if (sp != funcSp)
+        return sp;
+      // The symbol name corresponds to the linkage name.
+      return DebugInfo::DISubprogramAttr::get(
+          sp.getCompileUnit(), sp.getScope(), sp.getName(), wrapperName,
+          sp.getFile(), sp.getLine(), sp.getScopeLine(),
+          sp.getSubprogramFlags(), sp.getType());
+    });
+    loc = cast<Location>(replacer.replace(loc));
+  }
+
+  // Create the wrapper body. Ownership of the block is handed to the function.
+  auto *body = new Block;
+
+  // Convert the calling convention.
   SmallVector<Value> newArgs;
+  Type resultType = func.getResultTypes().front();
   ArrayRef<BlockArgument> results = convertCallingConvention(
-      func.getLoc(), entry, llvm::to_vector(func.getArguments()), resultTy,
-      newArgs);
+      loc, body, func.getArguments(), resultType, newArgs);
 
-  // Flatten the results if necessary at all the return points.
-  if (auto structTy = dyn_cast<LLVM::LLVMStructType>(resultTy)) {
-    resultTy = LLVM::LLVMVoidType::get(func.getContext());
-    SmallVector<LLVM::ReturnOp> returns;
-    func.walk([&](LLVM::ReturnOp ret) { returns.push_back(ret); });
-    for (LLVM::ReturnOp ret : returns) {
-      ImplicitLocOpBuilder b(ret.getLoc(), ret);
-      unsigned idx = 0;
-      flattenResultStruct(b, structTy, ret.getOperand(0), results, idx);
-      b.create<LLVM::ReturnOp>(ValueRange());
-      ret->erase();
-    }
+  ImplicitLocOpBuilder b(loc, loc.getContext());
+  b.setInsertionPointToEnd(body);
+  auto call = b.create<LLVM::CallOp>(func, newArgs);
+
+  // If the result type is a struct, flatten it into the arguments.
+  if (auto structTy = dyn_cast<LLVM::LLVMStructType>(resultType)) {
+    resultType = LLVM::LLVMVoidType::get(func.getContext());
+    unsigned idx = 0;
+    flattenResultStruct(b, structTy, call.getResult(), results, idx);
+    b.create<LLVM::ReturnOp>(ValueRange());
+  } else {
+    b.create<LLVM::ReturnOp>(call.getResults());
   }
 
-  // Replace and erase the old arguments.
-  for (auto [arg, newArg] : llvm::zip(
-           entry->getArguments().take_front(func.getNumArguments()), newArgs))
-    arg.replaceAllUsesWith(newArg);
-  entry->eraseArguments(0, func.getNumArguments());
-
-  // Update the function type.
-  func.setFunctionTypeAttr(TypeAttr::get(LLVM::LLVMFunctionType::get(
-      resultTy, llvm::to_vector(entry->getArgumentTypes()))));
-}
-
-/// Break up argument and result structs in-place for the given top-level
-/// funcs and emit C wrappers for specific non-top-level funcs.
-static LogicalResult emitWrappers(ModuleOp theModule, SymbolTable &symtab,
-                                  ArrayRef<std::string> topLevelFuncs) {
-  // Ensure that top-level funcs do not have callsites.
-  llvm::StringMap<LLVM::CallOp> callsites;
-  for (auto func : theModule.getOps<LLVM::LLVMFuncOp>())
-    for (auto call : func.getOps<LLVM::CallOp>())
-      if (Optional<StringRef> callee = call.getCallee())
-        callsites.try_emplace(*callee, call);
-
-  // Break up structs in-place in the specific top-level funcs.
-  for (StringRef funcName : topLevelFuncs) {
-    auto func = symtab.lookup<LLVM::LLVMFuncOp>(funcName);
-    if (!func)
-      return theModule.emitError("cannot find func: @") << funcName;
-    // If the function's linkage is private, don't bother creating a wrapper.
-    if (func.getLinkage() != LLVM::Linkage::External)
-      continue;
-
-    if (auto it = callsites.find(funcName); it != callsites.end()) {
-      return func.emitError("func is not top-level")
-                 .attachNote(it->second.getLoc())
-             << "callsite here";
-    }
-    if (func.isExternal())
-      return func.emitError("cannot break up structs of an external function");
-
-    rewriteCallingConventionInPlace(func);
-  }
-  return success();
+  b.setInsertionPointAfter(func);
+  auto wrapper = b.create<LLVM::LLVMFuncOp>(
+      wrapperName, LLVM::LLVMFunctionType::get(
+                       resultType, llvm::to_vector(body->getArgumentTypes())));
+  wrapper.getBody().push_back(body);
 }
 
 //===----------------------------------------------------------------------===//
@@ -481,11 +461,6 @@ struct LowerKGENToLLVMPass
     : public KGEN::impl::LowerKGENToLLVMBase<LowerKGENToLLVMPass> {
   using LowerKGENToLLVMBase::LowerKGENToLLVMBase;
 
-  explicit LowerKGENToLLVMPass(ArrayRef<StringRef> topLevelFuncs) {
-    for (StringRef topLevelFunc : topLevelFuncs)
-      this->topLevelFuncs.push_back(topLevelFunc.str());
-  }
-
   void runOnOperation() override;
 };
 } // namespace
@@ -499,10 +474,10 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addLegalDialect<LLVM::LLVMDialect>();
 
   // Capture all the public symbols declared by kgen.export declarations.
-  SmallVector<FlatSymbolRefAttr> publicSymbols;
+  SmallVector<StringAttr> publicSymbols;
   for (auto e : theModule.getOps<ExportOp>())
     for (auto sym : e.getExports().getAsRange<FlatSymbolRefAttr>())
-      publicSymbols.push_back(sym);
+      publicSymbols.push_back(sym.getAttr());
 
   // Set LLVM lowering options.
   mlir::LowerToLLVMOptions options(&getContext());
@@ -525,19 +500,13 @@ void LowerKGENToLLVMPass::runOnOperation() {
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
     return signalPassFailure();
 
-  // Fix up the linkage for the exported symbols.
-  for (FlatSymbolRefAttr sym : publicSymbols) {
-    // Have to add the public symbols to the topLevelFuncs list.
-    topLevelFuncs.push_back(sym.getValue().str());
-
-    // And if it's public, set it to external linkage.
-    if (auto llvmFunc = symtab.lookup<LLVM::LLVMFuncOp>(sym.getAttr()))
-      llvmFunc.setLinkage(LLVM::Linkage::External);
+  // Set the linkage of symbols marked as public to external.
+  for (StringAttr sym : publicSymbols) {
+    auto func = symtab.lookup<LLVM::LLVMFuncOp>(sym);
+    func.setLinkage(LLVM::Linkage::External);
+    // And emit a C wrapper for it.
+    emitCWrapper(func, symtab);
   }
-
-  // Break up structs in top-level funcs exposed to C.
-  if (failed(emitWrappers(theModule, symtab, topLevelFuncs)))
-    return signalPassFailure();
 
   // Convert the debug info within the IR.
   POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter);
