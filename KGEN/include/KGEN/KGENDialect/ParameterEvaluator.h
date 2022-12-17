@@ -45,11 +45,6 @@ bool isParameterizedType(Type type);
 // ParameterEvaluator
 //===----------------------------------------------------------------------===//
 
-/// This typedef represents a generator declaration + a set of input
-/// parameters that provide a complete binding for something that can be
-/// resolved.
-using DeclAndInputParamsPair = std::pair<FuncInterface, ArrayAttr>;
-
 /// This class keeps a set of defined parameter values and is used to evaluate
 /// and simplify parameter expressions based on those values.
 class ParameterEvaluator {
