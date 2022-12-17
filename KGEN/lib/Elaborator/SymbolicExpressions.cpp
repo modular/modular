@@ -316,3 +316,26 @@ KGEN::evaluateConstraints(ArrayRef<ConstraintAttr> constraints,
   // If we made it this far, then everything folded to true.
   return {};
 }
+
+/// Given a generator or interface declaration operation, evaluate any
+/// constraints against inputParamValues.  If the constraints are met, return
+/// success, otherwise return why they aren't.
+Optional<ErrorTree>
+KGEN::evaluateConstraints(DeclInterface decl,
+                          ArrayRef<Attribute> inputParamValues,
+                          IREvaluator &evaluator) {
+  // If there are no constraints, we are trivially done.
+  ArrayRef<ConstraintAttr> constraints = decl.getConstraints();
+  if (constraints.empty())
+    return {};
+
+  // Otherwise, we have constraints to evaluate.  Bind each of the input
+  // parameter names.
+  ArrayRef<ParamDeclAttr> inputParamDecls = decl.getInputParamDeclsAttr();
+  assert(inputParamDecls.size() == inputParamValues.size() &&
+         "incorrect number of input parameters");
+  for (auto [paramDecl, value] : llvm::zip(inputParamDecls, inputParamValues))
+    evaluator.setParameterValue(paramDecl, value);
+
+  return evaluateConstraints(constraints, evaluator);
+}
