@@ -556,10 +556,10 @@ kgen.generator @elaborateFnWithContextualType2() -> index {
   kgen.param.declare fn: <ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> = <@takeFnContextualType>
 
   // CHECK: kgen.param.declare boundFn: () -> index =
-  // CHECK-SAME: <bind_signature(:<ty: type, fn: () -> !kgen.paramref<ty>>() -> !kgen.paramref<ty> fn, :type index, :() -> index @sillyFn)>
+  // CHECK-SAME: <bind_signature(:<ty: type, fn: () -> !kgen.paramref<ty>>() -> !kgen.paramref<ty> fn, index, @sillyFn)>
   kgen.param.declare boundFn: ()->index =
     <bind_signature(:<ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> fn,
-                    :type index, :()->index @sillyFn)>
+                    index, @sillyFn)>
   %0 = kgen.call_param[()->index: boundFn]()
 
   kgen.return %0 : index

@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/ML/DType.h"
 #include "mlir/IR/FunctionImplementation.h"
 
@@ -543,27 +544,37 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
                         TargetType::get(p.getContext())))
       return failure();
     return success();
-  // Parse each operand with a type.  TODO: We could do better here by using
-  // the signature to infer the types of the parameters.
-  case (uint32_t)POC::BindSignature:
-  case (uint32_t)POC::Apply:
-    if (!isa_and_nonnull<SignatureType>(type))
+  case (uint32_t)POC::BindSignature: {
+    auto sig = dyn_cast_or_null<SignatureType>(type);
+    if (!sig)
       return p.emitError(p.getCurrentLocation(),
-                         "expected a signature type for operator");
-    // Parse each operand with a type.  TODO: We could do better here by using
-    // the signature to infer the types of the parameters.
-    if (parseParamValue(p, operands.emplace_back(), type))
+                         "expected a signature type for 'bind_signature'");
+    if (parseParamValue(p, operands.emplace_back(), sig))
       return failure();
-    if (failed(p.parseOptionalComma()))
-      return success();
-
-    return p.parseCommaSeparatedList([&]() -> LogicalResult {
-      if (parseColonTypeOrIndex(p, type) ||
-          parseParamValue(p, operands.emplace_back(), type))
+    // Parse each operand, inferring its type from the signature type. Bound
+    // parameters are allowed to refine the types of subsequent parameters, so
+    // specialize the types as we go.
+    ParameterEvaluator evaluator;
+    for (ParamDeclAttr decl : sig.getInputParams()) {
+      if (p.parseComma() ||
+          parseParamValue(p, operands.emplace_back(),
+                          evaluator.getReboundType(decl.getType())))
         return failure();
-      return success();
-    });
-
+      evaluator.setParameterValue(decl, operands.back());
+    }
+    return success();
+  }
+  case (uint32_t)POC::Apply:
+    auto sig = dyn_cast_or_null<SignatureType>(type);
+    if (!sig)
+      return p.emitError(p.getCurrentLocation(),
+                         "expected a signature type for 'apply'");
+    if (parseParamValue(p, operands.emplace_back(), sig))
+      return failure();
+    // Parse each operand, inferring its type from the signature type.
+    for (Type type : sig.getValueInputs())
+      if (p.parseComma() || parseParamValue(p, operands.emplace_back(), type))
+        return failure();
     return success();
   }
   llvm_unreachable("unknown operator");
@@ -852,9 +863,19 @@ static void printOperatorOperands(raw_ostream &os, POC opcode,
     os << "]";
     break;
 
-  case POC::GetListElement:
   case POC::Apply:
   case POC::BindSignature:
+    // Print the signature operand with a type. Print all other operands without
+    // types.
+    printColonTypeOrIndexPrefix(os, operands.front().getType());
+    printParamValue(operands.front(), os);
+    for (TypedAttr operand : operands.drop_front()) {
+      os << ", ";
+      printParamValue(operand, os);
+    }
+    break;
+
+  case POC::GetListElement:
     // Print types on all operands.
     llvm::interleaveComma(operands, os, [&](TypedAttr operand) {
       printColonTypeOrIndexPrefix(os, operand.getType());
