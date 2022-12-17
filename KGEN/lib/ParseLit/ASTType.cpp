@@ -33,10 +33,10 @@ ASTDecl *ASTType::getDecl(LitSharedState &shared) const {
 /// If this is a parametric user defined type, return all parameter bindings
 /// on this reference to the type.  Note that this is potentially a partial
 /// binding set - incomplete bindings (missing bindings) are valid.
-ArrayRef<ParamBindAttr> ASTType::getParamBindings() const {
+ParamBindArrayAttr ASTType::getParamBindings() const {
   if (auto declRef = dyn_cast<DeclRefType>(mlirType))
-    return declRef.getParamValues().getValue();
-  return {};
+    return declRef.getParamValues();
+  return ParamBindArrayAttr::get(mlirType.getContext(), {});
 }
 
 bool ASTType::isEqualCanon(ASTType other) const {
