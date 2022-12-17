@@ -170,7 +170,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 /// Given an ASTType 'containingType', look up a named member of it and return
 /// the reference to its symbol as an RValue.
 static CallableValue
-emitDeclMemberAsCallable(ASTDecl &container, ArrayRef<ParamBindAttr> bindings,
+emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
                          StringRef memberName, const ExprNode *node,
                          ExprEmitter &emitter, ASTType contextualType = {}) {
   // Perform a lookup of the specified decl in the current container.
@@ -310,15 +310,13 @@ CallableValue ExprNode::emitCallable(ExprEmitter &emitter,
 
 SymbolConstantAttr
 DirectCallable::getBoundConstantAttr(ExprEmitter &emitter) const {
-  SignatureType resultType = type;
+  SignatureType resultType = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
 
   // SymbolConstantAttr provides a type for the SymbolRefAttr with the
   // parameters substituted in.  The function reference binds any parameter
   // bindings present on the access (in bindings), which typically concretizes
   // the signature.
-  if (bindings.empty()) {
-    resultType = type;
-  } else {
+  if (!bindings.empty()) {
     resultType = resultType.getSpecializedSignature(
         bindings,
         [&]() -> InFlightDiagnostic { return emitter.emitError(loc, ""); });
@@ -326,15 +324,14 @@ DirectCallable::getBoundConstantAttr(ExprEmitter &emitter) const {
       return {};
   }
 
-  return SymbolConstantAttr::get(symbol, bindings, resultType);
+  return SymbolConstantAttr::get(fnDecl->getSymbolRef(), bindings, resultType);
 }
 
 /// Get a symbol for a direct reference to the specified function in its
 /// enclosing context.  This does not bind any values to arguments.
 CallableValue::CallableValue(SMLoc loc, ASTDecl &fnDecl,
-                             ArrayRef<ParamBindAttr> bindings)
-    : CallableValue(loc, fnDecl.getSymbolRef(),
-                    cast<LIT::FuncOp>(fnDecl).getFullSignature(), bindings) {}
+                             ParamBindArrayAttr bindings)
+    : direct({loc, &fnDecl, bindings}) {}
 
 /// Emit this as a flattened RValue or LValue.  This returns null on failure.
 AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
@@ -459,8 +456,10 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter,
 /// and return a null value.
 CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
                                         ASTType contextualType) const {
-  return emitDeclMemberAsCallable(emitter.declScope, /*no param bindings*/ {},
-                                  spelling, this, emitter, contextualType);
+  return emitDeclMemberAsCallable(
+      emitter.declScope,
+      /*no param bindings*/ ParamBindArrayAttr::get(emitter.getContext(), {}),
+      spelling, this, emitter, contextualType);
 }
 
 /// This uses the MLIR parser to turn the specified MLIR type name into an MLIR
@@ -1005,7 +1004,8 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   // meta values to bind its parameters.
   if (subValue.direct) {
     // We can bind additional parameters to a signature.
-    SignatureType signature = subValue.direct->type;
+    SignatureType signature =
+        cast<LIT::FuncOp>(*subValue.direct->fnDecl).getFullSignature();
 
     // TODO: For now we just support positional arguments, we could support
     // named arguments in the future.

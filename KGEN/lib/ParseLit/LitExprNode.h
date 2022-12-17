@@ -156,9 +156,8 @@ struct DirectCallable {
   llvm::SMLoc loc;
 
   /// The function that may be called directly.
-  SymbolRefAttr symbol;
-  /// The full signature of the symbol.
-  SignatureType type;
+  ASTDecl *fnDecl;
+
   /// Any bound parameters.
   ParamBindArrayAttr bindings;
 
@@ -188,12 +187,7 @@ public:
 
   CallableValue() {}
   CallableValue(ASTExprAnd<AnyValue> baseVal) : baseVal(baseVal) {}
-  CallableValue(llvm::SMLoc loc, SymbolRefAttr symbol, SignatureType type,
-                ArrayRef<ParamBindAttr> bindings = {})
-      : direct({loc, symbol, type,
-                ParamBindArrayAttr::get(type.getContext(), bindings)}) {}
-  CallableValue(llvm::SMLoc loc, ASTDecl &fnDecl,
-                ArrayRef<ParamBindAttr> bindings);
+  CallableValue(llvm::SMLoc loc, ASTDecl &fnDecl, ParamBindArrayAttr bindings);
 
   bool isNull() const { return !baseVal && !direct; }
   bool operator!() const { return isNull(); }
