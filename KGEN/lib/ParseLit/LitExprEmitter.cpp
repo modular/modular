@@ -154,10 +154,13 @@ auto ExprEmitter::lookupAndResolveDecl(StringRef name, SMLoc loc,
   }
 
   // Look up the name.
-  ASTDecl *result = scope.lookup(name);
+  TinyPtrVector<ASTDecl *> *entry = scope.lookup(name);
   // If nothing was found, return a failure.
-  if (!result)
+  if (!entry)
     return LookupResult::getFailure();
+
+  // FIXME: Hard coded to look up the first value.
+  ASTDecl *result = (*entry)[0];
 
   // If the lookup succeeded, make sure the signature for the referenced decl
   // is understood.

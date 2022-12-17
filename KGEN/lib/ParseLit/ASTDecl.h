@@ -16,6 +16,7 @@
 #include "LitSharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
+#include "llvm/ADT/TinyPtrVector.h"
 
 namespace M::KGEN {
 class ParamDeclAttr;
@@ -106,30 +107,30 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Look up a name in this declaration's scope only: return null on failure.
-  ASTDecl *lookupInCurrentScope(StringAttr name) {
+  TinyPtrVector<ASTDecl *> *lookupInCurrentScope(StringAttr name) {
     assert((resolvedness == DeclResolvedness::fullyResolved ||
             // FIXME(Issue#5975): FuncOp shouldn't be special cased.
             isa<FuncOp>(*this)) &&
            "cannot perform lookup in a decl that isn't fully resolved");
     auto it = declsInScope.find(name);
-    if (it != declsInScope.end())
-      return it->second;
+    if (it != declsInScope.end() && !it->second.empty())
+      return &it->second;
     return nullptr;
   }
 
   /// Perform a lookup in this declaration's scope and all parent scopes,
   /// returning the nearest target or null if nothing is found.
-  ASTDecl *lookup(StringAttr name) {
+  TinyPtrVector<ASTDecl *> *lookup(StringAttr name) {
     ASTDecl *curScope = this;
     while (curScope) {
-      if (ASTDecl *result = curScope->lookupInCurrentScope(name))
+      if (auto *result = curScope->lookupInCurrentScope(name))
         return result;
       curScope = curScope->parentDecl;
     }
     return nullptr;
   }
 
-  ASTDecl *lookup(StringRef name) {
+  TinyPtrVector<ASTDecl *> *lookup(StringRef name) {
     return lookup(StringAttr::get(getContext(), name));
   }
 
@@ -189,7 +190,7 @@ private:
   ssize_t indentation;
 
   /// These are the declarations defined within this scope.
-  DenseMap<StringAttr, ASTDecl *> declsInScope;
+  DenseMap<StringAttr, TinyPtrVector<ASTDecl *>> declsInScope;
 };
 
 } // namespace M::KGEN::LIT
