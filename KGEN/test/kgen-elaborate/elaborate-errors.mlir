@@ -167,13 +167,14 @@ kgen.generator @test_region_constraints() {
 
 // -----
 
+// expected-note @below {{elaborator expansion is 129 levels deep - infinite recursion?}}
 // expected-error @below {{no viable implementations found}}
 kgen.generator @recursiveEvaluator(%funcs: !pop.pointer<() -> index>, %size: index) -> index {
   %0 = kgen.call @itf() : () -> index
   kgen.return %0 : index
 }
 
-// expected-note @below {{evaluator should have 1 candidate}}
+// expected-note @below {{call expansion failed}}
 kgen.generator.interface @itf() -> index
   evaluator (!pop.pointer<() -> index>, index) -> index = @recursiveEvaluator
 
