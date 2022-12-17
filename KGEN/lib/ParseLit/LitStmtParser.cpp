@@ -331,7 +331,6 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
 
   // If there is an expression list present, parse it.
   SmallVector<ExprNode *> operandExprs;
-  SmallVector<Value> operandValues;
   if (!getToken().getIndentation().has_value()) {
     // TODO use hadTrailingSep to return a singleton tuple ex. `return 1,`
     if (parseExpressionList(operandExprs, returnIndent,
@@ -345,6 +344,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   }
 
   // Materialize the expression values into IR.
+  SmallVector<Value> operandValues;
   for (auto expr : operandExprs) {
     auto value = getExprEmitter().emitDRValue(expr);
     if (!value)
@@ -358,6 +358,10 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     return success();
   }
 
+  assert(operandValues.size() == 1 &&
+         "Should have a single returned value now");
+  Value resultValue = operandValues[0];
+
   // Check the result values match expected types.
   LIT::FuncOp decl = dyn_cast<LIT::FuncOp>(containingDecl);
   if (!decl) {
@@ -365,33 +369,37 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     return success();
   }
 
-  if (operandValues.size() == 1 && decl.getResultTypes().empty()) {
-    emitError(loc, "extraneous return value from 'def'");
-    return success();
+  // Convert the returned value to the returned type of the function.  If the
+  // function is a 'raising' function we need to remove the extra variant type
+  // to get the normal result type.
+  Type expectedResultType = decl.getResultType();
+  if (decl.getRaises()) {
+    // We know that the ABI of a raising function will have it return
+    // ErrorOr<NormalType>.  ErrorOr is a Variant<Error, NormalType>, and in the
+    // corner case where we return an error, it will be Variant<Error> only.
+    // TODO: Move to a method.
+    auto variant = cast<POP::VariantType>(expectedResultType);
+    unsigned normalIdx = std::max(variant.getNumTypes() - 1, size_t(1));
+    expectedResultType = variant.getType(normalIdx);
   }
+  resultValue = getExprEmitter().getAsExpectedType(resultValue, operandExprs[0],
+                                                   expectedResultType);
+  if (!resultValue)
+    return {};
 
   // If the enclosing method raises, implicitly wrap the result in a variant.
   Location returnLoc = translateLocation(loc);
-  if (getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock())
-          .getRaises()) {
-    operandValues[0] = builder.create<POP::VariantCreateOp>(
-        returnLoc,
-        Type(getSharedState().getErrorOrType(operandValues[0].getType())),
-        operandValues[0]);
-  }
-
-  if (operandValues[0].getType() != decl.getResultTypes()[0]) {
-    emitError(loc, "returned value has type ")
-        << ASTType(operandValues[0].getType()) << " but 'def' expected "
-        << ASTType(decl.getFunctionType().getResults()[0]);
-    return success();
+  if (decl.getRaises()) {
+    resultValue = builder.create<POP::VariantCreateOp>(
+        returnLoc, Type(getSharedState().getErrorOrType(resultValue.getType())),
+        resultValue);
   }
 
   if (isa<LIT::FuncOp>(builder.getInsertionBlock()->getParentOp())) {
     // TODO: Support result parameters.
-    builder.create<ReturnOp>(returnLoc, ArrayRef<TypedAttr>(), operandValues);
+    builder.create<ReturnOp>(returnLoc, ArrayRef<TypedAttr>(), resultValue);
   } else {
-    builder.create<HLCF::ReturnOp>(returnLoc, operandValues);
+    builder.create<HLCF::ReturnOp>(returnLoc, resultValue);
   }
   // Split the block here. Subsequent statements are dead code.
   builder.setInsertionPointToStart(

@@ -339,6 +339,9 @@ VariantType VariantType::get(ArrayRef<Type> types) {
   return get(types.front().getContext(), typeExprs);
 }
 
+/// Return the number of types in the variant.
+size_t VariantType::getNumTypes() { return getTypes().size(); }
+
 Optional<int64_t> VariantType::getTypeIndex(Type type) const {
   for (auto &variantType : llvm::enumerate(getTypes()))
     if (ParamRefType::get(variantType.value()) == type)
