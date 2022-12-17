@@ -372,18 +372,8 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // Convert the returned value to the returned type of the function.  If the
   // function is a 'raising' function we need to remove the extra variant type
   // to get the normal result type.
-  Type expectedResultType = decl.getResultType();
-  if (decl.getRaises()) {
-    // We know that the ABI of a raising function will have it return
-    // ErrorOr<NormalType>.  ErrorOr is a Variant<Error, NormalType>, and in the
-    // corner case where we return an error, it will be Variant<Error> only.
-    // TODO: Move to a method.
-    auto variant = cast<POP::VariantType>(expectedResultType);
-    unsigned normalIdx = std::max(variant.getNumTypes() - 1, size_t(1));
-    expectedResultType = variant.getType(normalIdx);
-  }
   resultValue = getExprEmitter().getAsExpectedType(resultValue, operandExprs[0],
-                                                   expectedResultType);
+                                                   decl.getNormalResultType());
   if (!resultValue)
     return {};
 

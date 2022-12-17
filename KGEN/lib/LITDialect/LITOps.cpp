@@ -33,6 +33,21 @@ ReturnOp LIT::FuncOp::getReturnOp() {
   return dyn_cast<ReturnOp>(getBody()->getTerminator());
 }
 
+/// Return the normal result type.  This is the same as getResultType unless
+/// the function throws, in which case this is dug out of the variant.
+Type LIT::FuncOp::getNormalResultType() {
+  Type resultType = getResultType();
+  if (!getRaises())
+    return resultType;
+
+  // We know that the ABI of a raising function will have it return
+  // ErrorOr<NormalType>.  ErrorOr is a Variant<Error, NormalType>, and in the
+  // corner case where we return an error, it will be Variant<Error> only.
+  auto variant = cast<POP::VariantType>(resultType);
+  unsigned normalIdx = std::min(variant.getNumTypes() - 1, size_t(1));
+  return variant.getType(normalIdx);
+}
+
 /// Parses a LIT Generator.
 ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::litfunc);

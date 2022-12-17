@@ -69,4 +69,11 @@ fn raisesReturnsNone():
 fn raisesReturnsVariant() -> __mlir_type.`!pop.variant<@Error, index>`:
     return __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, index>`](1)
 
+# CHECK-LABEL lit.func @"return_impl_convert_raises
+@raises
+fn return_impl_convert_raises(a: Error) -> Error:
+  # CHECK:  %0 = pop.variant.create %a : !kgen.declref<@Error> -> !pop.variant<@Error>
+  # CHECK-NEXT: kgen.return %0
+  return a
+
 ##===----------------------------------------------------------------------===##

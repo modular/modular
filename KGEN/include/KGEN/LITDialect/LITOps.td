@@ -67,6 +67,10 @@ let description = [{
 
     /// Returns the result type, which is guaranteed to be present.
     Type getResultType() { return getFunctionType().getResults()[0]; }
+
+    /// Return the normal result type.  This is the same as getResultType unless
+    /// the function throws, in which case this is dug out of the variant.
+    Type getNormalResultType();
   }];
 
   let builders = [
