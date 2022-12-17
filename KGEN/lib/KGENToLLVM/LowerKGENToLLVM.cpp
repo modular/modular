@@ -12,16 +12,14 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/Compiler/SymbolTableAnalysis.h"
-#include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "Support/HLCFToLLVM/HLCFToLLVM.h"
-#include "Support/ML/DType.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
-#include "llvm/ADT/StringMap.h"
 
 using namespace M;
 using namespace KGEN;
@@ -396,10 +394,9 @@ convertCallingConvention(Location loc, Block *body,
 /// forwards them to the actual function.
 static void emitCWrapper(LLVM::LLVMFuncOp func, SymbolTable &symtab) {
   // Generate a unique wrapper name to use.
-  std::string wrapperName = (func.getName() + "_c").str();
-  int64_t idx = -1;
-  while (symtab.lookup(wrapperName))
-    wrapperName = (func.getName() + "_c" + Twine(++idx)).str();
+  unsigned counter = 0;
+  std::string wrapperName =
+      getUniqueSymbolName((func.getName() + "_c").str(), symtab, counter);
 
   // Generate a new subprogram scope if necessary.
   Location loc = func.getLoc();

@@ -21,6 +21,13 @@ Operation *cloneOperation(Operation *original, BlockAndValueMapping &mapper,
 /// Given an operation, determine whether any nested operations use values
 /// captured from above.
 bool operationIsIsolatedFromAbove(Operation *op);
+
+/// Generate a unique flat symbol name with respect to the provided symbol table
+/// given a base name. This method is useful if one wants a unique symbol name
+/// before creating a function. The caller should provide a base ID to re-use,
+/// which is incremented until a unique name is found.
+std::string getUniqueSymbolName(std::string baseName, SymbolTable &symtab,
+                                unsigned &counter);
 } // namespace M
 
 #endif // SUPPORT_COMPILER_OPERATIONUTILS_H

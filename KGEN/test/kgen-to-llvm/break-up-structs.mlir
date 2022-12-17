@@ -108,7 +108,7 @@ kgen.func @cheeky_c() {
 
 // CHECK-LABEL: llvm.func internal @cheeky_c
 // CHECK-LABEL: llvm.func @cheeky
-// CHECK-LABEL: llvm.func @cheeky_c0
+// CHECK-LABEL: llvm.func @cheeky_c_0
 
 kgen.func @cheeky() {
   kgen.return
