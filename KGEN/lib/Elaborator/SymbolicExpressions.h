@@ -95,13 +95,6 @@ private:
 Optional<ErrorTree> evaluateConstraints(ArrayRef<ConstraintAttr> constraints,
                                         IREvaluator &evaluator);
 
-/// Given a generator or interface declaration operation, evaluate any
-/// constraints against inputParamValues. If the constraints are met, return
-/// success, otherwise return why they aren't.
-Optional<ErrorTree> evaluateConstraints(DeclInterface decl,
-                                        ArrayRef<Attribute> inputParamValues,
-                                        IREvaluator &evaluator);
-
 } // namespace M::KGEN
 
 #endif // KGEN_ELABORATOR_SYMBOLICEXPRESSIONS_H

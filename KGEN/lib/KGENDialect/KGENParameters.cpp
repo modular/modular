@@ -405,7 +405,7 @@ LogicalResult DeclParameterVerifier::checkParameterUses() {
 
       // Check that the types of the uses match the defs.
       auto [op, decl] = it->second;
-      if (decl.getType() != paramRefAttr.getType()) {
+      if (symbolTable && decl.getType() != paramRefAttr.getType()) {
         auto diag = usingOp->emitOpError("reference to parameter ")
                     << paramRefAttr.getName() << " with incorrect type "
                     << paramRefAttr.getType();
