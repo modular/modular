@@ -157,7 +157,7 @@ struct DirectCallable {
   llvm::SMLoc loc;
 
   /// The function that may be called directly.
-  ASTDecl *fnDecl;
+  SmallVector<ASTDecl *, 1> fnDecls;
 
   /// Any bound parameters.  Consider something like:
   ///    SomeType[param1].method[param2](arg1)
@@ -198,7 +198,8 @@ public:
 
   CallableValue() {}
   CallableValue(ASTExprAnd<AnyValue> baseVal) : baseVal(baseVal) {}
-  CallableValue(llvm::SMLoc loc, ASTDecl &fnDecl, ParamBindArrayAttr bindings);
+  CallableValue(llvm::SMLoc loc, ArrayRef<ASTDecl *> fnDecls,
+                ParamBindArrayAttr bindings);
 
   bool isNull() const { return !baseVal && !direct; }
   bool operator!() const { return isNull(); }
