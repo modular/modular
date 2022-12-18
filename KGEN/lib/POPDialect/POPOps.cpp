@@ -335,7 +335,8 @@ static Type getBoolOfSameParentType(Type type) {
   return nullptr;
 }
 
-LogicalResult CmpOp::inferReturnTypes(MLIRContext *ctx, Optional<Location> loc,
+LogicalResult CmpOp::inferReturnTypes(MLIRContext *ctx,
+                                      std::optional<Location> loc,
                                       ValueRange operands, DictionaryAttr attrs,
                                       RegionRange regions,
                                       SmallVectorImpl<Type> &types) {
@@ -384,8 +385,7 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   }
 
   // If the sizes do not match, then we cannot cast.
-  return inputDTypeWidth * inputSize.value() ==
-         outputDTypeWidth * outputSize.value();
+  return inputDTypeWidth * *inputSize == outputDTypeWidth * *outputSize;
 }
 
 //===----------------------------------------------------------------------===//
@@ -520,7 +520,7 @@ inferStructElementType(function_ref<LogicalResult(const Twine &)> emitError,
 }
 
 LogicalResult StructGetOp::inferReturnTypes(
-    MLIRContext *context, Optional<Location> loc, ValueRange operands,
+    MLIRContext *context, std::optional<Location> loc, ValueRange operands,
     DictionaryAttr attrs, RegionRange regions, SmallVectorImpl<Type> &types) {
   auto emitError = [&](const Twine &msg) -> LogicalResult {
     return mlir::emitOptionalError(loc, msg);
@@ -581,7 +581,7 @@ LogicalResult StructGEPOp::verify() {
 }
 
 LogicalResult StructGEPOp::inferReturnTypes(
-    MLIRContext *context, Optional<Location> loc, ValueRange operands,
+    MLIRContext *context, std::optional<Location> loc, ValueRange operands,
     DictionaryAttr attrs, RegionRange regions, SmallVectorImpl<Type> &types) {
   auto emitError = [&](const Twine &msg) -> LogicalResult {
     return mlir::emitOptionalError(loc, msg);
@@ -960,7 +960,7 @@ bool VariantVisitOp::areTypesCompatible(Type lhs, Type rhs) {
 }
 
 void VariantVisitOp::getSuccessorRegions(
-    Optional<unsigned> index, ArrayRef<Attribute> operands,
+    std::optional<unsigned> index, ArrayRef<Attribute> operands,
     SmallVectorImpl<mlir::RegionSuccessor> &successors) {
   // All regions branch back to the parent op.
   if (index) {
@@ -975,7 +975,7 @@ void VariantVisitOp::getSuccessorRegions(
 }
 
 OperandRange
-VariantVisitOp::getSuccessorEntryOperands(Optional<unsigned> index) {
+VariantVisitOp::getSuccessorEntryOperands(std::optional<unsigned> index) {
   assert(index);
   if (hasDefaultRegion() && *index == getNumRegions() - 1)
     return {(*this)->operand_end(), (*this)->operand_end()};

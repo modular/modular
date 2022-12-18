@@ -119,7 +119,7 @@ ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
   if (auto indent = getToken().getIndentation()) {
     // If the current token is less indented that the source of the suite,
     // then the body is empty.  We don't require a pass.
-    if (ssize_t(indent.value()) <= curIndent)
+    if (ssize_t(*indent) <= curIndent)
       return success();
     return parseStmts(curIndent + 1);
   }
@@ -163,10 +163,10 @@ ParseResult LitStmtParser::parseStmts(size_t minIndent) {
     if (!indent.has_value())
       return emitError("statements must start at the beginning of a line");
 
-    if (indent.value() < minIndent)
+    if (*indent < minIndent)
       break;
 
-    if (parseStmt(/*isSimpleStmt=*/false, indent.value()))
+    if (parseStmt(/*isSimpleStmt=*/false, *indent))
       return failure();
   }
   return success();
@@ -517,7 +517,7 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
 
   // The 'else' block is executed only when the condition check fails.
   if (getToken().getIndentation().has_value() &&
-      getToken().getIndentation().value() >= curIndent &&
+      *getToken().getIndentation() >= curIndent &&
       consumeIf(LitToken::kw_else)) {
     builder.setInsertionPointToStart(exit);
     if (parseToken(LitToken::colon, "expected ':' after else") ||
@@ -633,7 +633,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
 
   while (getToken().is(LitToken::kw_elif) &&
          getToken().getIndentation().has_value() &&
-         getToken().getIndentation().value() >= curIndent) {
+         *getToken().getIndentation() >= curIndent) {
     Location elifLoc =
         translateLocation(consumeToken(LitToken::kw_elif).getLoc());
     if (parseExpression(condExp, std::nullopt) ||
@@ -654,7 +654,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
 
   builder.createBlock(&ifOp.getElseRegion());
   if (getToken().getIndentation().has_value() &&
-      getToken().getIndentation().value() >= curIndent &&
+      *getToken().getIndentation() >= curIndent &&
       consumeIf(LitToken::kw_else)) {
     if (parseToken(LitToken::colon, "expected ':' after else"))
       return failure();

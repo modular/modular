@@ -1494,7 +1494,7 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   }
 
   // If a default has been provided and we don't want to do search, then use it.
-  Optional<SymbolConstantAttr> defaultImpl = itf.getDefaultImpl();
+  std::optional<SymbolConstantAttr> defaultImpl = itf.getDefaultImpl();
   if (!enableSearch && defaultImpl.has_value()) {
     // If the SymbolConstant exists, then the callee must exist.
     Operation *defaultImplCallee = lookupCallee(defaultImpl->getSymbol());

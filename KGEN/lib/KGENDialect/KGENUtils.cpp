@@ -650,8 +650,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     if (type.isa<DTypeType>()) {
       auto dtype = KGENDType::getFromString(keyword);
       if (succeeded(dtype)) {
-        value = DTypeConstantAttr::getChecked(
-            p.getEncodedSourceLoc(loc), p.getContext(), dtype.value(), type);
+        value = DTypeConstantAttr::getChecked(p.getEncodedSourceLoc(loc),
+                                              p.getContext(), *dtype, type);
         return success(value != Attribute());
       }
     }
@@ -785,7 +785,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       FailureOr<ParamBindArrayAttr> paramValues;
       if (parseOptionalParamBindSpec(p, paramValues))
         return failure();
-      value = SymbolConstantAttr::get(symbol, paramValues.value(), sigType);
+      value = SymbolConstantAttr::get(symbol, *paramValues, sigType);
       return success();
     }
 
@@ -1003,7 +1003,7 @@ parseElementsWithConventions(AsmParser &p, function_ref<ParseResult()> parseElt,
     StringRef effectStr;
     llvm::SMLoc loc = p.getCurrentLocation();
     if (succeeded(p.parseOptionalKeyword(&effectStr))) {
-      if (Optional<ValueInputConvention> effect =
+      if (std::optional<ValueInputConvention> effect =
               symbolizeValueInputConvention(effectStr))
         inputConventions.push_back(*effect);
       else

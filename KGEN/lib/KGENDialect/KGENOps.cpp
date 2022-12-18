@@ -872,7 +872,7 @@ LogicalResult CallIndirectOp::canonicalize(CallIndirectOp op,
 // PartialApplyOp
 //===----------------------------------------------------------------------===//
 
-static Type computePartialApplyResultType(Optional<Location> loc,
+static Type computePartialApplyResultType(std::optional<Location> loc,
                                           TypedValue<SignatureType> callee,
                                           ValueRange inputs,
                                           ArrayRef<int64_t> boundInputs) {
@@ -929,7 +929,7 @@ static Type computePartialApplyResultType(Optional<Location> loc,
 }
 
 LogicalResult PartialApplyOp::inferReturnTypes(
-    MLIRContext *context, Optional<Location> loc, ValueRange operands,
+    MLIRContext *context, std::optional<Location> loc, ValueRange operands,
     DictionaryAttr attrs, RegionRange regions, SmallVectorImpl<Type> &types) {
 
   mlir::OperationName name(getOperationName(), attrs.getContext());

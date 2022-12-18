@@ -444,7 +444,7 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
             symbolTable->lookupSymbolIn(root, name)))
       return decl;
     hadError = true;
-    emitError(curLocationCollecting.value())
+    emitError(*curLocationCollecting)
         << symbol << " does not reference a KGEN declaration";
     return nullptr;
   };
@@ -470,7 +470,7 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
   auto func = dyn_cast<FuncInterface>(*decl);
   if (!func) {
     hadError = true;
-    emitError(curLocationCollecting.value())
+    emitError(*curLocationCollecting)
         << symbol << " does not reference a function";
     return;
   }
@@ -485,7 +485,7 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
     auto result = declSignature.getSpecializedSignature(
         symbolConstant.getParamValues(), [&]() {
           hadError = true;
-          return emitError(curLocationCollecting.value());
+          return emitError(*curLocationCollecting);
         });
     if (!result)
       return;
@@ -506,7 +506,7 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
   SmallString<32> paramName("@");
   paramName.append(symbol.getLeafReference());
   if (failed(verifyDeclSignaturesMatch(
-          "symbol use", symbolSignature, curLocationCollecting.value(),
+          "symbol use", symbolSignature, *curLocationCollecting,
           paramName.c_str(), declSignature, decl->getLoc())))
     hadError = true;
 }
@@ -523,7 +523,7 @@ void DeclParameterVerifier::verifyRefType(DeclRefType refType) {
       symbolTable->lookupSymbolIn(module, refType.getName()));
   if (!decl) {
     hadError = true;
-    emitError(curLocationCollecting.value())
+    emitError(*curLocationCollecting)
         << refType.getName() << " does not reference a KGEN type declaration";
     return;
   }
@@ -546,7 +546,7 @@ void DeclParameterVerifier::verifyRefType(DeclRefType refType) {
           llvm::to_vector(llvm::map_range(
               refType.getParamValues(),
               [](ParamBindAttr value) { return value.getDecl(); })),
-          curLocationCollecting.value(), paramName.c_str(), specializedDecls,
+          *curLocationCollecting, paramName.c_str(), specializedDecls,
           decl.getLoc())))
     hadError = true;
 }
@@ -555,7 +555,7 @@ void DeclParameterVerifier::verifyNestedParameterUse(ParamDeclAttr decl,
                                                      ParamDeclRefAttr use) {
   if (decl.getType() == use.getType())
     return;
-  (mlir::emitError(curLocationCollecting.value(), "use of nested parameter ")
+  (mlir::emitError(*curLocationCollecting, "use of nested parameter ")
    << decl.getName() << " with incorrect type " << use.getType())
           .attachNote()
       << "parameter defined with type " << decl.getType();
@@ -563,7 +563,7 @@ void DeclParameterVerifier::verifyNestedParameterUse(ParamDeclAttr decl,
 }
 
 void DeclParameterVerifier::reportDuplicateNestedDecl(ParamDeclAttr decl) {
-  mlir::emitError(curLocationCollecting.value(), "nested parameter ")
+  mlir::emitError(*curLocationCollecting, "nested parameter ")
       << decl.getName() << " redefined";
   hadError = true;
 }

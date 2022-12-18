@@ -125,7 +125,7 @@ FailureOr<DType> DType::getFromString(StringRef str) {
       auto elt = getFromString(str.drop_front(8).drop_back());
       if (failed(elt))
         return failure();
-      return getComplexChecked(elt.value());
+      return getComplexChecked(*elt);
     }
     return failure();
   case 'i':

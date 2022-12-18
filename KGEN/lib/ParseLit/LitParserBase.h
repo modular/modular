@@ -168,7 +168,7 @@ public:
     // TODO: This needs to do python style brace matching.
     while (getToken().isNot(LitToken::eof)) {
       if (auto indent = getToken().getIndentation())
-        if (indent.value() <= minIndent)
+        if (*indent <= minIndent)
           break;
       if (stopOnSemicolon && getToken().is(LitToken::semi))
         break;
