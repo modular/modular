@@ -159,19 +159,21 @@ auto ExprEmitter::lookupAndResolveDecl(StringRef name, SMLoc loc,
   if (!entry)
     return LookupResult::getFailure();
 
-  // FIXME: Hard coded to look up the first value.
-  ASTDecl *result = (*entry)[0];
-
-  // If the lookup succeeded, make sure the signature for the referenced decl
-  // is understood.
-  if (failed(shared.declResolver->resolve(
-          *result, DeclResolvedness::signatureResolved, loc))) {
-    // If the decl was erroneous somehow, then don't form a reference to it, the
-    // error has already been diagnosed.
-    return LookupResult::getErroneous();
+  // If the lookup succeeded, make sure the signature for the referenced decls
+  // are understood.
+  for (auto *decl : *entry) {
+    if (failed(shared.declResolver->resolve(
+            *decl, DeclResolvedness::signatureResolved, loc))) {
+      // If the decl was erroneous somehow, then don't form a reference to it,
+      // the error has already been diagnosed.
+      return LookupResult::getErroneous();
+    }
   }
 
-  return LookupResult::getSuccess(result);
+  // We return a pointer into the TinyPtrVector entry in the scope.  This should
+  // be stable because you can't perform a lookup into a decl that has unknown
+  // entries, and we just resolved all the signatures for all the decls.
+  return LookupResult::getSuccess(*entry);
 }
 
 /// Perform a name lookup for a member in the specified type.
@@ -370,15 +372,15 @@ ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
   auto nameAttr = StringAttr::get(getContext(), specialFnInfo.name);
 
   auto lookupResult = lookupAndResolveDecl(specialFnInfo.name, callLoc, type);
-  ASTDecl *resultDecl = lookupResult.getIfSuccess();
-  if (!resultDecl) {
+  ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
+  if (resultDecls.empty()) {
     if (lookupResult.isFailure())
       emitError(callLoc, "") << type << " does not implement the " << nameAttr
                              << " special method";
     return {};
   }
 
-  CallableValue callee(callLoc, *resultDecl, type.getParamBindings());
+  CallableValue callee(callLoc, resultDecls, type.getParamBindings());
   return emitFunctionCall(callee, operands, callLoc);
 }
 
@@ -393,8 +395,8 @@ DRValue ExprEmitter::getAsExpectedType(DRValue value, const ExprNode *expr,
   // Check to see if we can invoke an __new__ method to convert it.
   auto lookupResult =
       lookupAndResolveDecl("__new__", expr->getLoc(), expectedType);
-  ASTDecl *resultDecl = lookupResult.getIfSuccess();
-  if (!resultDecl) {
+  ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
+  if (resultDecls.empty()) {
     if (lookupResult.isFailure()) {
       emitError(expr->getLoc(), "value of type ")
           << ASTType(value.getType())
@@ -403,7 +405,7 @@ DRValue ExprEmitter::getAsExpectedType(DRValue value, const ExprNode *expr,
     return {};
   }
 
-  CallableValue callee(expr->getLoc(), *resultDecl,
+  CallableValue callee(expr->getLoc(), resultDecls,
                        expectedType.getParamBindings());
   ASTExprAnd<AnyValue> newArg = {DRValue(value), expr};
   auto result = emitFunctionCall(callee, newArg, expr->getLoc());
