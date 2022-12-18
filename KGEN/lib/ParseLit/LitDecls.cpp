@@ -615,7 +615,9 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     if (!type) {
       if (funcOp.getIsDef()) {
         // If we are in a 'def', we infer object type for Python compatibility.
-        type = shared.getObjectType();
+        type = shared.lookupObjectType(arg.loc, *decl.getParentDecl());
+        if (!type)
+          type = shared.getTypeCheckErrorType();
       } else {
         // In an 'fn' we report an error.
         emitErrorLoc(arg.loc, "'fn' parameter type must be specified");

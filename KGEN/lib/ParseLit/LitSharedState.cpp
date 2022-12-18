@@ -38,12 +38,6 @@ public:
   ASTType typeCheckErrorType;
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType noneType;
-
-  // These should move the standard library and be looked up from there on
-  // demand.
-
-  /// This is the decl for the builtin lit.object type.
-  ASTDecl *objectDecl = nullptr;
 };
 
 /// Get the name of the main buffer so we can rapidly build Location objects
@@ -116,10 +110,6 @@ ASTType LitSharedState::getTypeCheckErrorType() const {
 }
 ASTType LitSharedState::getNoneType() const { return impl->noneType; }
 
-ASTType LitSharedState::getObjectType() const {
-  return impl->objectDecl->getSelfType();
-}
-
 /// Add declarations for magic things to the builtins decl.
 void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   DeclResolver &resolver = *declResolver;
@@ -154,10 +144,6 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
 
   addEmptyStructDecl("__mlir_type", mlirTypeDecl);
   mlirTypeDecl->setSelfType(MagicMLIRTypeType::get(context));
-
-  // Add a declaration for an "object" struct.  This should be written in the
-  // standard library.
-  addEmptyStructDecl("object", impl->objectDecl);
 }
 
 /// Set the symbol for the specified declaration (known to be an operation)
@@ -230,15 +216,15 @@ auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
   return LookupResult::getFailure();
 }
 
-/// Lookup the `Error` type in the current context and return it if found,
-/// otherwise emit an error and return null.
-ASTType LitSharedState::lookupErrorType(SMLoc loc, ASTDecl &context) {
-  LookupResult result = lookupAndResolveDecl(
-      StringAttr::get(getContext(), "Error"), loc, context);
+ASTType LitSharedState::lookupNonparameterizedNamedType(StringRef name,
+                                                        llvm::SMLoc loc,
+                                                        ASTDecl &context) {
+  LookupResult result =
+      lookupAndResolveDecl(StringAttr::get(getContext(), name), loc, context);
   if (result.isErroneous())
     return {};
   if (result.isFailure()) {
-    emitError(loc, "could not find an 'Error' type");
+    emitError(loc, "could not find an '") << name << "' type";
     return {};
   }
   // The overload set may contain multiple entries, but if it is a struct, it
@@ -246,18 +232,31 @@ ASTType LitSharedState::lookupErrorType(SMLoc loc, ASTDecl &context) {
   ASTDecl &firstDecl = *result.getIfSuccess()[0];
   auto structOp = dyn_cast<StructDeclOp>(firstDecl);
   if (!structOp) {
-    auto diag = emitError(loc, "'Error' doesn't resolve to a type");
+    auto diag = emitError(loc, "'") << name << "' doesn't resolve to a type";
     diag.attachNote(translateLocation(firstDecl.getLoc()))
-        << "'Error' declared here";
+        << "'" << name << "' declared here";
     return {};
   }
   if (!structOp.getInputParamDecls().empty()) {
-    auto diag = emitError(loc, "'Error' resolves to a parameterized type");
+    auto diag = emitError(loc, "'")
+                << name << "' resolves to a parameterized type";
     diag.attachNote(translateLocation(firstDecl.getLoc()))
-        << "'Error' declared here";
+        << "'" << name << "' declared here";
     return {};
   }
   return firstDecl.getSelfType();
+}
+
+/// Lookup the `object` type in the specified context and return it if found,
+/// otherwise emit an error and return null.
+ASTType LitSharedState::lookupObjectType(llvm::SMLoc loc, ASTDecl &context) {
+  return lookupNonparameterizedNamedType("object", loc, context);
+}
+
+/// Lookup the `Error` type in the current context and return it if found,
+/// otherwise emit an error and return null.
+ASTType LitSharedState::lookupErrorType(SMLoc loc, ASTDecl &context) {
+  return lookupNonparameterizedNamedType("Error", loc, context);
 }
 
 /// Lookup the Error type and wrap it in a variant with the specified normal

@@ -500,3 +500,11 @@ struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
 
     fn getError(self: ErrorOr[type]) -> Error:
         return __mlir_op.`pop.variant.get`[_type: Error](self.value)
+
+#===------------------------------------------------------------------------===#
+# object
+#===------------------------------------------------------------------------===#
+
+# TODO: This should eventually model a dynamic object base class.  For now, this
+# is just a placeholder to be used by untyped 'def' operands.
+struct object:
