@@ -26,6 +26,41 @@ using namespace LIT;
 // FuncOp
 //===----------------------------------------------------------------------===//
 
+/// Return the SymbolRefAttr for a declaration, including all scoping that
+/// may be needed, making it unique for every declaration.
+SymbolRefAttr LIT::FuncOp::getSymbolRef() {
+  // TODO: Support multiple levels of nesting.  This should be recursive, and
+  // SymbolRefAttr should support a get(FlatSymbol, SymbolRef) helper that
+  // forms a properly flattened reference by unwinding the RHS if it isn't
+  // flat.
+  FlatSymbolRefAttr symbolRef = FlatSymbolRefAttr::get(getNameAttr());
+  if (auto parentStruct = dyn_cast<StructDeclOp>(getOperation()->getParentOp()))
+    return SymbolRefAttr::get(parentStruct.getNameAttr(), symbolRef);
+  return symbolRef;
+}
+
+/// Return a SymbolConstantAttr for this function, optionally bound to a set
+/// of parameter bindings.
+SymbolConstantAttr LIT::FuncOp::getBoundReference(ParamBindArrayAttr bindings) {
+  if (!bindings) // We allow null for convenience.
+    bindings = ParamBindArrayAttr::get(getContext(), {});
+
+  // SymbolConstantAttr provides a type for the SymbolRefAttr with the
+  // parameters substituted in.  The function reference binds any parameter
+  // bindings present on the access (in bindings), which typically concretizes
+  // the signature.
+  SignatureType resultType = getFullSignature();
+  if (!bindings.empty()) {
+    resultType = resultType.getSpecializedSignature(
+        bindings, [&]() -> InFlightDiagnostic {
+          llvm_unreachable("bad bindings specified for getBoundReference");
+        });
+    assert(resultType && "bad bindings specified for getBoundReference");
+  }
+
+  return SymbolConstantAttr::get(getSymbolRef(), bindings, resultType);
+}
+
 ReturnOp LIT::FuncOp::getReturnOp() {
   // Tolerate malformed IR because this is used by the printer.
   if (isExternal() || getBody()->empty())

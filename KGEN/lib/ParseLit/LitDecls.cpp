@@ -104,15 +104,7 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
   if (auto fnOp = dyn_cast<LIT::FuncOp>(op)) {
     assert(resolvedness >= DeclResolvedness::signatureResolved &&
            "Functions don't have a symbol until their signatures are resolved");
-    // TODO: Support multiple levels of nesting.  This should be recursive, and
-    // SymbolRefAttr should support a get(FlatSymbol, SymbolRef) helper that
-    // forms a properly flattened reference by unwinding the RHS if it isn't
-    // flat.
-    SymbolRefAttr symbolRef = FlatSymbolRefAttr::get(fnOp.getNameAttr());
-    if (auto parentStruct = dyn_cast<StructDeclOp>(*getParentDecl()))
-      symbolRef = SymbolRefAttr::get(parentStruct.getNameAttr(),
-                                     cast<FlatSymbolRefAttr>(symbolRef));
-    return symbolRef;
+    return fnOp.getSymbolRef();
   }
 
   return {};
