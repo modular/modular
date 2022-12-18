@@ -45,7 +45,7 @@ public:
       return KGENDType(ExtraCases::index);
     auto dtype = DType::getFromString(str);
     if (succeeded(dtype))
-      return KGENDType(dtype.value());
+      return KGENDType(*dtype);
     return failure();
   }
 

@@ -70,7 +70,7 @@ ArrayRef<int64_t> ArrayType::getShape() const {
 }
 
 /// Clone the type. Expect the shape to always be rank 1.
-ShapedType ArrayType::cloneWith(Optional<ArrayRef<int64_t>> shape,
+ShapedType ArrayType::cloneWith(std::optional<ArrayRef<int64_t>> shape,
                                 Type elementType) const {
   assert(!shape || shape->size() == 1);
   if (shape)

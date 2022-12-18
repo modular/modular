@@ -86,7 +86,7 @@ ParseResult parseIndicesParamValue(AsmParser &p,
         FailureOr<TypedAttr> attr;
         if (auto err = parseIndexParamValue(p, attr); failed(err))
           return err;
-        result->emplace_back(attr.value());
+        result->emplace_back(*attr);
         return success();
       });
 }

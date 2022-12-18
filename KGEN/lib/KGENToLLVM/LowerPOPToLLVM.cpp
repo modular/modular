@@ -552,7 +552,7 @@ private:
   /// The enclosing function body.
   Block *body;
 
-  unsigned resolveAlignment(Optional<TypedAttr> alignment) const {
+  unsigned resolveAlignment(std::optional<TypedAttr> alignment) const {
     if (!alignment)
       return 0;
     return alignment->cast<IntegerAttr>().getInt();
@@ -919,7 +919,7 @@ struct ConvertPOPArrayGEP : public mlir::ConvertOpToLLVMPattern<ArrayGEPOp> {
 //===----------------------------------------------------------------------===//
 
 static unsigned getAlignment(const llvm::DataLayout &dataLayout, Type ptrType,
-                             Optional<TypedAttr> alignmentAttr = {}) {
+                             std::optional<TypedAttr> alignmentAttr = {}) {
   // If we have the alignment attribute, use it.
   if (alignmentAttr)
     return alignmentAttr->cast<IntegerAttr>().getInt();
@@ -1529,7 +1529,7 @@ public:
   LogicalResult
   matchAndRewrite(ExternalCallOp op, ExternalCallOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Optional<FunctionType> funcType = op.getVariadicType();
+    std::optional<FunctionType> funcType = op.getVariadicType();
     if (!funcType)
       funcType =
           rewriter.getFunctionType(op.getOperandTypes(), op.getResultTypes());
