@@ -797,13 +797,24 @@ void FnDecorators::applyImplements(const CallNode &callNode) {
       emitter.lookupAndResolveDecl(interfaceName, callNode.getLoc(), decl);
 
   // Reject the code if the interface wasn't found.
-  auto *interfaceDecl = result.getIfSuccess();
-  if (!interfaceDecl) {
+  ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();
+  if (resultDecls.empty()) {
     if (result.isFailure())
       shared.emitError(callNode.getLoc(), "unable to resolve interface named '")
           << interfaceName << "'";
     return;
   }
+
+  // Reject implementation of overloaded interface.
+  // TODO: Use signature matching to pick the right overload.
+  if (resultDecls.size() > 1) {
+    auto diag =
+        shared.emitError(callNode.getLoc(),
+                         "cannot (yet!) implement overloaded interface '")
+        << interfaceName << "'";
+    return;
+  }
+  auto interfaceDecl = resultDecls[0];
 
   // Okay, if we found an interface we're implementing, check that it makes
   // sense.

@@ -39,9 +39,15 @@ fn empty_def():
   # Pass isn't required.
 
 # Method overloading.
-fn testThing(a: Int):
-fn testThing(a: Int, b: Int):
+# CHECK-LABEL: lit.func @"testThing(Int)"
+fn testThing(a: Int) -> F32: return 1.0
+# CHECK-LABEL: lit.func @"testThing(Int,Int)"
+fn testThing(a: Int, b: Int) -> Int: return 1
 
+# CHECK-LABEL: lit.func @"callOverload
+fn callOverload(a: Int):
+#  testThing(a)
+#  testThing(a, a)
 
 ##===----------------------------------------------------------------------===##
 # @raises decorator.

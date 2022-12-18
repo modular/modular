@@ -9,6 +9,7 @@
 
 #include "LitExprNode.h"
 #include "mlir/IR/Builders.h"
+#include "llvm/ADT/TinyPtrVector.h"
 
 namespace M::KGEN::LIT {
 enum class SpecialFunctionKind : uint8_t;
@@ -106,16 +107,21 @@ public:
       kFailure,   //<- Lookup failed to find something of this name.
       kErroneous, //<- Lookup found an error, but it is already diagnosed.
     } kind;
-    /// When the kind is kSuccess, this is non-null and is the result of lookup.
-    ASTDecl *result;
-    LookupResult(Kind kind, ASTDecl *result) : kind(kind), result(result) {}
+
+    /// This is non-empty when the Kind is kSuccess.  This points to the symbol
+    /// entry in an ASTDecl, so the pointer is stable.
+    ArrayRef<ASTDecl *> decls;
+    LookupResult(Kind kind, ArrayRef<ASTDecl *> decls)
+        : kind(kind), decls(decls) {}
 
   public:
-    static LookupResult getSuccess(ASTDecl *decl) { return {kSuccess, decl}; }
-    static LookupResult getFailure() { return {kFailure, nullptr}; }
-    static LookupResult getErroneous() { return {kErroneous, nullptr}; }
+    static LookupResult getSuccess(ArrayRef<ASTDecl *> decls) {
+      return {kSuccess, decls};
+    }
+    static LookupResult getFailure() { return {kFailure, {}}; }
+    static LookupResult getErroneous() { return {kErroneous, {}}; }
 
-    ASTDecl *getIfSuccess() const { return result; }
+    ArrayRef<ASTDecl *> getIfSuccess() const { return decls; }
     bool isFailure() const { return kind == kFailure; }
     bool isErroneous() const { return kind == kErroneous; }
   };
