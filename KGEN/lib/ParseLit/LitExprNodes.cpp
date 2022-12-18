@@ -313,6 +313,238 @@ CallableValue ExprNode::emitCallable(ExprEmitter &emitter,
 // CallableValue Implementation
 //===----------------------------------------------------------------------===//
 
+namespace {
+/// This struct indicates whether a signature can be successfully applied to a
+/// parameter binding and argument list.  If so, it keeps track of the number of
+/// implicit conversions required to make the call, and if not, it indicates the
+/// reason for the mismatch.
+struct OverloadFitness {
+  enum Kind {
+    kValid,          //< This is a valid candidate.
+    kParamCount,     //< Invalid due to a parameter count mismatch
+    kParamWrongType, //< A parameter value cannot be converted to expected type
+    kArgCount,       //< Invalid due to a argument count mismatch
+    kArgNotLValue,   //< By-ref argument requires an lvalue, but got an rvalue.
+    kArgWrongLVType, //< By-ref argument and provided l-value types mismatch.
+    kArgWrongType,   //< An argument value cannot be converted to expected type
+  } kind;
+
+  /// The interpretation of this payload depends on the 'kind' field:
+  ///  kValid:          number of implicit conversions required.
+  ///  kParamCount:     number of arguments expected.
+  ///  kParamWrongType: the parameter # that mismatches.
+  ///  kArgCount:       number of arguments expected.
+  ///  kArgNotLValue:   the argument # that mismatches.
+  ///  kArgWrongLVType: the argument # that mismatches.
+  ///  kArgWrongType:   the argument # that mismatches.
+  size_t payload;
+
+  /// For type mismatches, this is the actual or expected type, otherwise null.
+  ASTType type;
+
+  /// Determine whether the specified signature can be invoked with the
+  /// parameter bindings specified in `callable` and the arguments specified in
+  /// `operands`.
+  static OverloadFitness evaluate(SignatureType signature,
+                                  const DirectCallable &callable,
+                                  ArrayRef<ASTExprAnd<AnyValue>> operands);
+
+  /// Add explaination for why this candidate doesn't work to the specified
+  /// diagnostic.
+  void diagnose(SignatureType signature, const DirectCallable &callable,
+                ArrayRef<ASTExprAnd<AnyValue>> operands, bool isMethodCall,
+                Diagnostic &diag);
+};
+} // namespace
+
+/// Determine whether the specified signature can be invoked with the
+/// parameter bindings specified in `callable` and the arguments specified in
+/// `operands`.
+OverloadFitness
+OverloadFitness::evaluate(SignatureType signature,
+                          const DirectCallable &callable,
+                          ArrayRef<ASTExprAnd<AnyValue>> operands) {
+  // We require an exact match for the signature right now, we don't allow
+  // inference or other fancy things.
+  auto expectedNumParams = signature.getInputParams().size();
+  if (callable.bindings.size() != expectedNumParams)
+    return {kParamCount, expectedNumParams, ASTType()};
+
+  // If we have bound parameters, type check them now and bind names to them.
+  size_t paramIdx = 0;
+  for (auto [bound, decl] :
+       llvm::zip(callable.bindings, signature.getInputParams())) {
+    // If this value was already bound and checked, then keep going.  This
+    // happens for type parameters.
+    if (auto prebound = dyn_cast<ParamBindAttr>(bound.bindingOrValue)) {
+      assert(prebound.getName() == decl.getName() &&
+             prebound.getType() == decl.getType() &&
+             "Prebinding not already checked?");
+      ++paramIdx;
+      continue;
+    }
+
+    // Check the type matches what is expected.
+    // TODO: Do implicit conversions when we can invoke parameter functions.
+    // TODO: Handle signatures like (T, scalar<T>) where early bound
+    // parameters changes the types of later ones.
+    auto value = cast<TypedAttr>(cast<Attribute>(bound.bindingOrValue));
+    auto valueType = value.getType();
+    if (!ASTType(valueType).isEqualCanon(decl.getType()))
+      return {kParamWrongType, paramIdx, valueType};
+    ++paramIdx;
+  }
+
+  // Ok, the parameters all line up, check the argument list.
+  size_t numArgs = signature.getValues().getNumInputs();
+  if (numArgs != operands.size())
+    return {kArgCount, numArgs, ASTType()};
+
+  size_t argIdx = 0;
+  size_t numImplicitConversions = 0;
+  for (auto [argAnyValueAndExpr, expectedType, convention] :
+       llvm::zip(operands, signature.getValueInputs(),
+                 signature.getValueInputConventions())) {
+    switch (convention) {
+    case ValueInputConvention::ByRef: {
+      // The actual value must be an lvalue if callee takes things by-ref.
+      auto argVal = argAnyValueAndExpr.ir.getIfLValue();
+      if (!argVal)
+        return {kArgNotLValue, argIdx, argAnyValueAndExpr.ir.getType()};
+
+      // By-ref argument types must exactly match, no conversions are allowed.
+      if (!ASTType(argVal.getType()).isEqualCanon(ASTType(expectedType)))
+        return {kArgWrongLVType, argIdx, expectedType};
+      break;
+    }
+    case ValueInputConvention::ByVal:
+      // Otherwise, we pass as an r-value.
+      // TODO: Add support for checking implicit conversions.
+      if (!ASTType(argAnyValueAndExpr.ir.getRValueType())
+               .isEqualCanon(ASTType(expectedType)))
+        return {kArgWrongType, argIdx, expectedType};
+      break;
+    }
+    ++argIdx;
+  }
+
+  return {kValid, numImplicitConversions, ASTType()};
+}
+
+/// Add explaination for why this candidate doesn't work to the specified
+/// diagnostic.
+void OverloadFitness::diagnose(SignatureType signature,
+                               const DirectCallable &callable,
+                               ArrayRef<ASTExprAnd<AnyValue>> operands,
+                               bool isMethodCall, Diagnostic &diag) {
+  // TODO: Would be really nice to range underline the operand in question!
+  switch (kind) {
+  case kValid:
+    diag << "candidate is viable";
+    return;
+  case kParamCount:
+    diag << "callee expects " << payload << " input parameter"
+         << plural(payload) << " but " << callable.bindings.size()
+         << plural(callable.bindings.size(), " was", " were") << " provided";
+    return;
+  case kParamWrongType: {
+    auto decl = signature.getInputParams()[payload];
+    diag << "callee parameter " << decl.getName() << " has "
+         << ASTType(decl.getType()) << " type, but value has type "
+         << ASTType(type);
+    return;
+  }
+  case kArgCount:
+    diag << "callee expects " << payload << " argument" << plural(payload);
+    return;
+  case kArgNotLValue:
+    if (isMethodCall && payload == 0) {
+      diag << "invalid use of mutating method on rvalue of type "
+           << ASTType(type);
+      return;
+    }
+    diag << "operand must be mutable in order to pass as a by-ref argument";
+    return;
+  case kArgWrongLVType:
+    diag << "l-value of type " << operands[payload].ir.getRValueType()
+         << " cannot be converted to reference to expected type "
+         // TODO(QoI): Types are not attributes.
+         << cast<POP::PointerType>(Type(type)).getElementType();
+    return;
+
+  case kArgWrongType:
+    diag << "in argument #" << payload << ", value of type "
+         << operands[payload].ir.getRValueType()
+         << " cannot be converted to expected type " << type;
+    break;
+  }
+}
+
+/// Evaluate the fnDecls candidates and see if there is an unambiguous
+/// candidate that works with the specified parameter bindings and provided
+/// arguments.  If so, replace fnDecls with a single entry that works and
+/// return success.  If not, generate a diagnostic and return failure.
+LogicalResult
+DirectCallable::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                  bool isMethodCall, ExprEmitter &emitter) {
+  // Evaluate the fitness of each candidate in our overload set.
+  SmallVector<OverloadFitness> evaluations;
+  bool anyValid = false;
+  for (ASTDecl *candidate : fnDecls) {
+    auto signature = cast<LIT::FuncOp>(*candidate).getFullSignature();
+    evaluations.push_back(
+        OverloadFitness::evaluate(signature, *this, operands));
+    anyValid |= evaluations.back().kind == OverloadFitness::kValid;
+  }
+
+  // If all of the candidates are wrong, diagnose this as a failure.
+  if (!anyValid) {
+    // TODO(QoI): Special case incorrect direct call with one callee.
+    auto diag = emitter.emitError(loc, "no matching function in call");
+    for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
+      auto fnDecl = cast<LIT::FuncOp>(*candidate);
+      eval.diagnose(fnDecl.getFullSignature(), *this, operands, isMethodCall,
+                    diag.attachNote(fnDecl->getLoc())
+                        << "candidate not viable: ");
+    }
+    return failure();
+  }
+
+  // Ok, we have at least one valid candidate, filter the list to the ones with
+  // the lowest number of implicit conversions required.
+  size_t minConversions = ~0U;
+  SmallVector<ASTDecl *, 1> newFnDecls;
+  for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
+    // Ignore failures or candidates that have more conversions.
+    if (eval.kind != OverloadFitness::kValid || eval.payload > minConversions)
+      continue;
+
+    // If we found a new floor to the # conversions needed, clear the list.
+    if (eval.payload < minConversions) {
+      newFnDecls.clear();
+      minConversions = eval.payload;
+    }
+    newFnDecls.push_back(candidate);
+  }
+
+  // If we found exactly one viable candidate, then we succeed.
+  if (newFnDecls.size() == 1) {
+    fnDecls = std::move(newFnDecls);
+    return success();
+  }
+
+  // Otherwise, we have multiple viable candidates that are ambiguous because
+  // they all require the same number of implicit conversions.
+  auto diag = emitter.emitError(loc, "ambiguous call, each candidate requires ")
+              << minConversions << " implicit conversion"
+              << plural(minConversions)
+              << ", disambiguate with an explicit cast";
+  for (ASTDecl *candidate : newFnDecls)
+    diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
+        << "candidate declared here";
+  return failure();
+}
+
 /// Generate a reference to the specified function, checking that any supplied
 /// parameters are correct and match expectations..
 SymbolConstantAttr
@@ -378,8 +610,8 @@ CallableValue::CallableValue(SMLoc loc, ArrayRef<ASTDecl *> fnDecls,
     direct->bindings.push_back({loc, bind});
 }
 
-/// Emit this as a flattened RValue or LValue.  This returns null on
-/// failure.
+/// Emit this as a flattened RValue or LValue with no additional parameter
+/// context.  This returns null on failure.
 AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
   // If we have no bound symbol, return the normal lvalue or rvalue we
   // represent.

@@ -154,9 +154,11 @@ public:
 /// This struct models something that can be directly called, e.g. a global
 /// symbol with any binding information.
 struct DirectCallable {
+  /// This is the location of the direct-callable, e.g. in `x.method(...`, this
+  /// is the location of 'method'.
   llvm::SMLoc loc;
 
-  /// The function that may be called directly.
+  /// The function overload set that may be called directly.
   SmallVector<ASTDecl *, 1> fnDecls;
 
   /// Any bound parameters.  Consider something like:
@@ -171,6 +173,13 @@ struct DirectCallable {
     PointerUnion<ParamBindAttr, Attribute> bindingOrValue;
   };
   SmallVector<BoundParam> bindings;
+
+  /// Evaluate the fnDecls candidates and see if there is an unambiguous
+  /// candidate that works with the specified parameter bindings and provided
+  /// arguments.  If so, replace fnDecls with a single entry that works and
+  /// return success.  If not, generate a diagnostic and return failure.
+  LogicalResult filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                  bool isMethodCall, ExprEmitter &emitter);
 
   /// Perform subsitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
@@ -209,6 +218,7 @@ public:
   /// failure.
   AnyValue emitAsValue(ExprEmitter &emitter) const;
 };
+
 } // namespace M::KGEN::LIT
 
 #endif // LIT_EXPRNODE_H
