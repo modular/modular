@@ -40,6 +40,11 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 namespace {
+/// This typedef represents a generator declaration + a set of input
+/// parameters that provide a complete binding for something that can be
+/// resolved.
+using DeclAndInputParamsPair = std::pair<DeclInterface, ArrayAttr>;
+
 /// This class keeps track of one result from binding a generator to a set of
 /// input parameters.  It holds both the func that gets produced as well as
 /// the (transitive) set of generator bindings used to create it.  This is used
@@ -128,40 +133,19 @@ void ElaboratedGenerator::addBinding(DeclAndInputParamsPair declAndInputParams,
 }
 
 //===----------------------------------------------------------------------===//
-// RegionReferenceAttr
-//===----------------------------------------------------------------------===//
-
-/// Region references in the elaborator are encoded as string attributes with
-/// signature types. The string value is a key that uniquely identifies a bound
-/// region whose ownership has been transferred to the elaborator. The string
-/// value is used to mangle the name of instantiated functions.
-namespace {
-class RegionReferenceAttr : public StringAttr {
-public:
-  using StringAttr::StringAttr;
-
-  /// Allow implicit conversion for dense maps.
-  RegionReferenceAttr(StringAttr impl) : StringAttr(impl) {}
-
-  /// Create a region reference.
-  static RegionReferenceAttr get(const Twine &regionName, SignatureType type) {
-    return llvm::cast<RegionReferenceAttr>(StringAttr::get(regionName, type));
-  }
-
-  /// Support type inquiry.
-  static bool classof(Attribute attr) {
-    if (auto string = llvm::dyn_cast<StringAttr>(attr))
-      return llvm::isa<SignatureType>(string.getType());
-    return false;
-  }
-};
-} // namespace
-
-//===----------------------------------------------------------------------===//
 // Elaborator class definition
 //===----------------------------------------------------------------------===//
 
 namespace {
+/// This struct contains information about a region body: whether it is
+/// isolated from above and the parameter context within its original parent
+/// operation.
+struct EvalContext {
+  IREvaluator evaluator;
+  bool transitivelyInlined;
+  bool inlinedAtCallsite;
+};
+
 class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
@@ -173,27 +157,25 @@ public:
       bool enableSearch = false)
       : analysis(analysis), runtime(runtime), asyncMap(map),
         transformCache(std::move(transformCache)),
-        regionCache(std::move(regionCache)),
-        regionOwner(ModuleOp::create(analysis.getModule().getLoc())),
-        enableSearch(enableSearch) {}
+        regionCache(std::move(regionCache)), enableSearch(enableSearch) {}
 
   /// Scan the primary and library module to collect all the interfaces,
   /// verifying that any common interfaces are the same.
   ParseResult collectInterfaces();
 
   /// Return the operation that defines the specified symbol.
-  Operation *lookupCallee(SymbolRefAttr symbolRef) {
+  FuncInterface lookupCallee(SymbolRefAttr symbolRef) {
     assert(isa<FlatSymbolRefAttr>(symbolRef) &&
            "Elaborator doesn't support nested symbols");
-    return analysis.getTopLevelSymbolTable().lookup(
-        symbolRef.getRootReference());
+    return cast<FuncInterface>(
+        analysis.getTopLevelSymbolTable().lookup(symbolRef.getRootReference()));
   }
 
   /// Return all instantiations of the specified declaration (a func,
   /// generator, or interface) with the specified input parameter values.
   ArrayRef<ErrorTreeOr<ElaboratedGenerator>>
   getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
-                       size_t expansionDepth, bool inlined = false);
+                       size_t expansionDepth, EvalContext &evalCtx);
 
   /// Insert a variant of an existing func into the primary file.
   void insertFuncVariant(FuncOp existing, FuncOp newFunc);
@@ -256,48 +238,26 @@ public:
     return it->second;
   }
 
-  /// This struct contains a region body and the parameter context at its
-  /// original parent operation.
-  struct RegionBody {
-    RegionBodyOp body;
-    IREvaluator evaluator;
-    bool isolated;
-  };
-
-  /// These methods provide access to the `regionsReferenced` dictionary. This
-  /// tracks regions on kgen.call operations with unique string names. The
-  /// elaborator takes ownership of the body by hooking it up to a module as
-  /// its virtual root.
-  void addRegionReference(RegionReferenceAttr attr, RegionBody regionBody) {
-    regionsReferenced.try_emplace(attr, std::move(regionBody));
-    regionOwner->push_back(regionBody.body);
+  /// Set the evaluation context of a region body.
+  void setEvalContext(SymbolRefAttr ref, EvalContext evalCtx) {
+    evaluationContext.try_emplace(ref, std::move(evalCtx));
   }
 
-  /// Get a reference region by name. The referenced region can be isolated
-  /// from above or not isolated from above.
-  const RegionBody &getRegionReferenced(RegionReferenceAttr attr) {
-    return regionsReferenced.find(attr)->second;
+  /// Get the evaluation context of the base symbol reference, or set it to the
+  /// default context.
+  EvalContext &getEvalContext(SymbolRefAttr ref) {
+    auto it = evaluationContext.find(ref);
+    if (it != evaluationContext.end())
+      return it->second;
+    return evaluationContext.insert({ref, {createEvaluator(), false, false}})
+        .first->second;
   }
 
-  /// Have the elaborator take the nested parameter declarations and uses for
-  /// a set of nested parameter scopes. The uses can be looked up later when
-  /// elaboration recurses into those nested scopes.
-  void takeNestedParameterUses(
-      DenseMap<DeclInterface, ParameterDeclsAndUses> &&nestedUses) {
-    for (auto entry : nestedUses) {
-      auto [_, inserted] = nestedParamDeclsAndUses.try_emplace(
-          entry.first, std::move(entry.second));
-      assert(inserted && "already found uses for nested scope?");
-    }
-  }
-
-  /// Try to find cached parameter declarations and uses for the provided
-  /// nested scope. Due to nested scopes getting cloned, nested scopes will
-  /// only hit the cache at best every other depth. Still, it covers the most
-  /// common case of depth 1.
-  const ParameterDeclsAndUses *lookupNestedUses(DeclInterface decl) {
-    auto it = nestedParamDeclsAndUses.find(decl);
-    return it == nestedParamDeclsAndUses.end() ? nullptr : &it->second;
+  /// Instantiate a new evaluator with the given parameters.
+  IREvaluator createEvaluator(DenseMap<StringAttr, Attribute> values =
+                                  DenseMap<StringAttr, Attribute>()) {
+    return {analysis.getTopLevelSymbolTable(), asyncMap, regionCache.copy(),
+            transformCache.copy(), std::move(values)};
   }
 
 private:
@@ -310,19 +270,19 @@ private:
   /// originally came from (likely not the primary module).
   SmallVector<ErrorTreeOr<ElaboratedGenerator>>
   specializeFunc(FuncOp func, ModuleOp sourceModule, size_t expansionDepth,
-                 bool inlined);
+                 EvalContext &evalCtx);
 
   /// Specialize a generator with the specified input parameters and return
   /// the generated func.
   SmallVector<ErrorTreeOr<ElaboratedGenerator>>
   specializeGenerator(DeclAndInputParamsPair declAndInputParams,
-                      size_t expansionDepth, bool inlined);
+                      size_t expansionDepth, EvalContext &evalCtx);
 
   /// Specialize a generator interface with the specified input parameters and
   /// return the generated func.
   SmallVector<ErrorTreeOr<ElaboratedGenerator>>
   specializeInterface(DeclAndInputParamsPair declAndInputParams,
-                      size_t expansionDepth, bool inlined);
+                      size_t expansionDepth, EvalContext &evalCtx);
 
   /// Report an error given an interface and an error string - just reduces
   /// boilerplate around CalleeExpansionError creation.
@@ -330,13 +290,6 @@ private:
   reportCalleeExpansionError(GeneratorInterfaceOp itf, Twine err) {
     return ErrorTree(itf.getLoc(), err);
   };
-
-  /// Instantiate a new evaluator with the given parameters.
-  IREvaluator createEvaluator(DenseMap<StringAttr, Attribute> values =
-                                  DenseMap<StringAttr, Attribute>()) {
-    return {analysis.getTopLevelSymbolTable(), asyncMap, regionCache.copy(),
-            transformCache.copy(), std::move(values)};
-  }
 
   /// This symbol table analysis allows efficient lookups across the module.
   SymbolTableAnalysis &analysis;
@@ -369,19 +322,11 @@ private:
            SmallVector<ErrorTreeOr<ElaboratedGenerator>>>
       generatedFuncs;
 
-  /// This is keeps track of a mapping from named regions (which get pulled
-  /// out of kgen.call's during elaboration) to a Block that provides the
-  /// body.
-  DenseMap<RegionReferenceAttr, RegionBody> regionsReferenced;
-
-  /// The elaborator maintains ownership of all region body parameters through
-  /// an owned module that is the parent of all region bodies. The region body
-  /// operations require a virtual for parameter scanning.
-  OwningOpRef<ModuleOp> regionOwner;
-
-  /// This map contains the parameter declarations and uses for nested
-  /// parameter scopes (region bodies).
-  DenseMap<DeclInterface, ParameterDeclsAndUses> nestedParamDeclsAndUses;
+  /// This keeps tracks the evaluation context of region bodies. It keeps a flag
+  /// of whether the region is isolated from above (and thus all nodes along the
+  /// callgraph down to the callsite need to be inlined) and the parameter
+  /// context.
+  DenseMap<SymbolRefAttr, EvalContext> evaluationContext;
 
   /// This map keeps track of the first func that a generator with no
   /// parameters expanded into.  We rename it to have the same symbol as the
@@ -413,32 +358,6 @@ void Elaborator::insertFuncVariant(FuncOp existing, FuncOp newFunc) {
 // Elaborator Algorithm for one func implementation
 //===----------------------------------------------------------------------===//
 
-/// The worklist in ParameterRewriter contains commands that may either be an
-/// operation to rewrite or a "RegionReturn" command that instructs it to
-/// evaluate any returned parameter expressions, pop its evaluator stack, and
-/// bind the returned parameters to a set of paramdecls in the callers context.
-struct RegionReturn {
-  /// This is the location of the call to the parameter region.
-  Location callLoc;
-
-  /// This is the location of the return from the region that binds the
-  /// parameters.
-  Location returnLoc;
-
-  /// This is a set of parameter expressions to evaluate as part of the return,
-  /// taken from the ReturnOp's parameters list.
-  ParameterExprArrayAttr returnedParamExprs;
-
-  /// This is the set of declarations bound by the returned expressions when the
-  /// call is popped off the evaluator stack.
-  ParamDeclArrayAttr callerParamDecls;
-};
-
-/// Commands are either operations to process or RegionReturn commands.  The
-/// RegionReturn commands are heap allocated so they occupy a single word:
-/// this keeps each entry in the worklist one pointer.
-using RewriterCommandType = llvm::PointerUnion<Operation *, RegionReturn *>;
-
 namespace {
 /// This class keeps a set of defined parameter values and is used to evaluate
 /// and simplify operations in a func based on those values.  If an error
@@ -446,35 +365,24 @@ namespace {
 /// returned.
 class ParameterRewriter {
 public:
-  ParameterRewriter(Elaborator &elaborator, FuncOp func,
-                    ArrayRef<Operation *> opsToRewrite, bool inlinedCallee,
+  ParameterRewriter(Elaborator &elaborator, FuncOp func, EvalContext &evalCtx,
+                    SmallVector<Operation *> opsToRewrite,
                     size_t expansionDepth)
       : elaborator(elaborator),
         sourceModule(cast<ModuleOp>(elaborator.analysis.getModule())),
-        elaboratedGenerator(func), inlinedCallee(inlinedCallee),
-        expansionDepth(expansionDepth) {
-    nextRegionID = 0;
-    evaluators.push_back(elaborator.createEvaluator());
-    commandWorklist.reserve(opsToRewrite.size());
-    llvm::append_range(commandWorklist, opsToRewrite);
-  }
+        elaboratedGenerator(func), evaluator(std::move(evalCtx.evaluator)),
+        opWorklist(std::move(opsToRewrite)), nextRegionID(0),
+        inlinedCallee(evalCtx.transitivelyInlined),
+        expansionDepth(expansionDepth) {}
 
   /// Create a clone of this rewriter, but refer with a clone of the func.
   /// This uses operationMap to remap our state onto the newly created func.
   ParameterRewriter(const ParameterRewriter &existing,
                     DenseMap<Operation *, Operation *> &operationMap);
   ParameterRewriter(const ParameterRewriter &) = delete;
-  ~ParameterRewriter();
 
-  /// Return the evaluator currently being used for our rewrite.  This is the
-  /// top of the stack of evaluators we track.
-  IREvaluator &getEvaluator() {
-    assert(!evaluators.empty());
-    return evaluators.back();
-  }
-
-  /// Process all the `commandWorklist`, simplifying this func.  If new
-  /// variants of this func are necessary, they are added to rewriterWorklist.
+  /// Process all the `opWorklist`, simplifying this func.  If new variants of
+  /// this func are necessary, they are added to rewriterWorklist.
   LogicalResult rewriteOps(
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriterWorklist);
 
@@ -554,11 +462,11 @@ private:
   LogicalResult completeGeneratorUserProcessing(
       KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
       DeclAndInputParamsPair calleeAndInputParams,
-      const ElaboratedGenerator &newCallee, bool inlineCallee);
+      const ElaboratedGenerator &newCallee, EvalContext &evalCtx);
   LogicalResult spawnNewFuncClone(
       KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
       DeclAndInputParamsPair calleeAndInputParams,
-      const ElaboratedGenerator &callee, bool inlineCallee,
+      const ElaboratedGenerator &callee, EvalContext &evalCtx,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters);
 
   /// Process a `kgen.call_param` operation by inlining region callees and
@@ -566,12 +474,6 @@ private:
   LogicalResult processCallParamOp(
       CallParamOp call,
       SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriter);
-
-  /// Process a call to a region.
-  LogicalResult processRegionCallImpl(KGENCallOpInterface call,
-                                      RegionReferenceAttr regionName,
-                                      ParamDeclArrayAttr decls,
-                                      ArrayRef<ParamBindAttr> paramValues);
 
   /// Process a generic operation that does not fit into one of the above types.
   /// Substitute parameters in the operation's attributes and types.
@@ -597,16 +499,13 @@ private:
   /// goes wrong.
   Optional<ErrorTree> diagnostic;
 
-  /// This is a stack of evaluators to use to process parameter expressions.
-  /// The current evaluator is always at the back() of the list.  Having a
-  /// stack of evaluators allows us to maintain scoped parameters when
-  /// processing regions.
-  SmallVector<IREvaluator, 2> evaluators;
+  /// The evaluator to use.
+  IREvaluator evaluator;
 
   /// These are the commands that still need to get performed before this func
   /// has been fully evaluated.  These are mostly operations that need to be
   /// rewritten.
-  SmallVector<RewriterCommandType> commandWorklist;
+  SmallVector<Operation *> opWorklist;
 
   /// This is a counter that gives each declared region parameter a unique
   /// number (and therefore, unique name).
@@ -621,15 +520,6 @@ private:
 };
 } // namespace
 
-ParameterRewriter::~ParameterRewriter() {
-  // If a ParameterRewriter is aborted without completion, we need to make sure
-  // to deallocate any RegionReturn nodes in the commandWorklist.
-  for (RewriterCommandType command : commandWorklist)
-    if (RegionReturn *rr = dyn_cast<RegionReturn *>(command))
-      delete rr;
-  commandWorklist.clear();
-}
-
 /// Create a clone of this rewriter, but refer with a clone of the func.
 /// This uses operationMap to remap our state onto the newly created func.
 ParameterRewriter::ParameterRewriter(
@@ -637,7 +527,7 @@ ParameterRewriter::ParameterRewriter(
     DenseMap<Operation *, Operation *> &operationMap)
     : elaborator(existing.elaborator), sourceModule(existing.sourceModule),
       elaboratedGenerator(existing.elaboratedGenerator),
-      evaluators(existing.evaluators), nextRegionID(existing.nextRegionID),
+      evaluator(existing.evaluator), nextRegionID(existing.nextRegionID),
       inlinedCallee(existing.inlinedCallee),
       expansionDepth(existing.expansionDepth) {
   // Remap the func operation.
@@ -646,16 +536,10 @@ ParameterRewriter::ParameterRewriter(
   assert(elaboratedGenerator.func && "didn't remap func correctly");
 
   // Remap the operation in the command worklist.
-  commandWorklist.reserve(existing.commandWorklist.size());
-  for (RewriterCommandType command : existing.commandWorklist) {
-    if (Operation *op = dyn_cast<Operation *>(command)) {
-      commandWorklist.push_back(operationMap[op]);
-      assert(commandWorklist.back() && "didn't clone operation correctly?");
-    } else {
-      RegionReturn *rr = cast<RegionReturn *>(command);
-      // Copy RegionReturn commands to a unique pointer.
-      commandWorklist.push_back(new RegionReturn(*rr));
-    }
+  opWorklist.reserve(existing.opWorklist.size());
+  for (Operation *op : existing.opWorklist) {
+    opWorklist.push_back(operationMap[op]);
+    assert(opWorklist.back() && "didn't clone operation correctly?");
   }
 }
 
@@ -671,61 +555,35 @@ LogicalResult ParameterRewriter::rewriteOps(
 
   // We use a worklist for this so cloned versions of ParameterRewriter can
   // be created and known where to pick up from.
-  while (!commandWorklist.empty()) {
-    RewriterCommandType command = commandWorklist.pop_back_val();
-
+  while (!opWorklist.empty()) {
     // Most commands in the worklist are operations that need to be rewritten.
-    if (Operation *op = dyn_cast<Operation *>(command)) {
-      LogicalResult result = success();
-      // Process an operation that needs to be rewritten/lowered based on the
-      // context of the parameter values we know are defined.
-      if (auto declare = dyn_cast<ParamDeclareOp>(op))
-        result = processParamDeclareOp(declare);
-      else if (auto declare = dyn_cast<ParamDeclareRegionOp>(op))
-        result = processParamDeclareRegionOp(declare);
-      else if (auto value = dyn_cast<ParamSearchOp>(op))
-        result = processParamSearchOp(value, rewriterWorklist);
-      else if (auto value = dyn_cast<ParamConstantOp>(op))
-        result = processParamConstantOp(value);
-      else if (auto assertOp = dyn_cast<ParamAssertOp>(op))
-        result = processParamAssertOp(assertOp);
-      else if (auto addressof = dyn_cast<AddressOfOp>(op))
-        result = processGeneratorUser(addressof, rewriterWorklist);
-      else if (auto call = dyn_cast<CallOp>(op))
-        result = processGeneratorUser(call, rewriterWorklist);
-      else if (auto call = dyn_cast<CallParamOp>(op))
-        result = processCallParamOp(call, rewriterWorklist);
-      else
-        result = processGenericOp(op);
+    Operation *op = opWorklist.pop_back_val();
+    LogicalResult result = success();
+    // Process an operation that needs to be rewritten/lowered based on the
+    // context of the parameter values we know are defined.
+    if (auto declare = dyn_cast<ParamDeclareOp>(op))
+      result = processParamDeclareOp(declare);
+    else if (auto declare = dyn_cast<ParamDeclareRegionOp>(op))
+      result = processParamDeclareRegionOp(declare);
+    else if (auto value = dyn_cast<ParamSearchOp>(op))
+      result = processParamSearchOp(value, rewriterWorklist);
+    else if (auto value = dyn_cast<ParamConstantOp>(op))
+      result = processParamConstantOp(value);
+    else if (auto assertOp = dyn_cast<ParamAssertOp>(op))
+      result = processParamAssertOp(assertOp);
+    else if (auto addressof = dyn_cast<AddressOfOp>(op))
+      result = processGeneratorUser(addressof, rewriterWorklist);
+    else if (auto call = dyn_cast<CallOp>(op))
+      result = processGeneratorUser(call, rewriterWorklist);
+    else if (auto call = dyn_cast<CallParamOp>(op))
+      result = processCallParamOp(call, rewriterWorklist);
+    else
+      result = processGenericOp(op);
 
-      // If processing any operation failed, then this entire func elaboration
-      // failed.
-      if (failed(result))
-        return failure();
-      continue;
-    }
-
-    // Otherwise we have a RegionReturn operation.
-    std::unique_ptr<RegionReturn> rr(cast<RegionReturn *>(command));
-
-    // Evaluate each of the returned parameter expressions in the current
-    // scope.
-    SmallVector<Attribute> returnedParams;
-    for (TypedAttr expr : rr->returnedParamExprs) {
-      ErrorTreeOr<Attribute> value =
-          getEvaluator().concretizeParameterExpr(rr->returnLoc, expr);
-      if (value.isError())
-        return error(value.takeError());
-      returnedParams.push_back(value.takeValue());
-    }
-    // Next, pop the evaluator for the now-returned region.
-    assert(evaluators.size() > 1 && "Don't have excess evaluators to pop!");
-    evaluators.pop_back();
-
-    // Bind each of the result parameter declarations in the callers context.
-    assert(rr->callerParamDecls.size() == returnedParams.size());
-    for (auto [decl, value] : llvm::zip(rr->callerParamDecls, returnedParams))
-      getEvaluator().setOrOverwriteParameterValue(decl, value);
+    // If processing any operation failed, then this entire func elaboration
+    // failed.
+    if (failed(result))
+      return failure();
   }
 
   // If the generated function will be inlined, don't verify it.
@@ -742,8 +600,7 @@ LogicalResult ParameterRewriter::rewriteOps(
   llvm::raw_string_ostream verificationError(verificationErrorStr);
   Optional<Location> verificationLoc;
   mlir::ScopedDiagnosticHandler diagHandler(
-      elaboratedGenerator.func.getContext(),
-      [&](Diagnostic &diag) -> LogicalResult {
+      func.getContext(), [&](Diagnostic &diag) -> LogicalResult {
         // Combine multiple verification errors.
         if (verificationLoc) {
           verificationError << "; " << diag.str();
@@ -772,13 +629,12 @@ LogicalResult ParameterRewriter::rewriteOps(
 LogicalResult ParameterRewriter::processParamDeclareOp(ParamDeclareOp op) {
   // Simplify the input expression.
   ErrorTreeOr<Attribute> value =
-      getEvaluator().concretizeParameterExpr(op.getLoc(), op.getValue());
+      evaluator.concretizeParameterExpr(op.getLoc(), op.getValue());
   if (value.isError())
     return error(value.takeError());
 
   // Bind it to the parameter declaration it is setting.
-  getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(),
-                                              value.getValue());
+  evaluator.setOrOverwriteParameterValue(op.getParamDecl(), value.getValue());
 
   // The kgen.param.declare operation serves no other purpose: remove it.
   op->erase();
@@ -787,30 +643,41 @@ LogicalResult ParameterRewriter::processParamDeclareOp(ParamDeclareOp op) {
 
 LogicalResult
 ParameterRewriter::processParamDeclareRegionOp(ParamDeclareRegionOp op) {
-  // Give this reference a unique name, and make a RegionReferenceAttr with
-  // the name and SignatureType.
-  ParamDeclAttr decl = op.getParamDecls().front();
-  auto ref = RegionReferenceAttr::get(elaboratedGenerator.func.getName() +
-                                          "_region_" + Twine(nextRegionID++),
-                                      cast<SignatureType>(decl.getType()));
-
-  // Determine whether the body isolated before unhooking it from its parent.
-  auto body = cast<RegionBodyOp>(op.getBody().front().front());
-  bool isolated = operationIsIsolatedFromAbove(body);
-  // Remove the RegionBodyOp from the call's region, and hand ownership of
-  // it to the elaborator.
-  body->remove();
-
+  // Give this region a unique name before we hoist it into a generator. Use the
+  // unique counter to give a best attempt at a unique name before hitting the
+  // symbol table.
   // TODO: We could do some content hashing to avoid making a new name for
   // a lexically identical body.  This would reduce some redundant
   // specialization.
-  elaborator.addRegionReference(
-      ref,
-      {body, elaborator.createEvaluator(getEvaluator().getParameterValues()),
-       isolated});
+  SymbolTable &symtab = elaborator.analysis.getTopLevelSymbolTable();
+  std::string symbolName = getUniqueSymbolName(
+      (elaboratedGenerator.func.getName() + "_region").str(), symtab,
+      nextRegionID);
+  auto symbolRef = FlatSymbolRefAttr::get(op.getContext(), symbolName);
+
+  // Make a symbol constant reference with the name and signature.
+  ParamDeclAttr decl = op.getParamDecls().front();
+  auto sig = cast<SignatureType>(decl.getType());
+  auto symbolCst = SymbolConstantAttr::get(symbolRef, sig);
+
+  // Determine whether the body is isolated before unhooking it from its parent.
+  auto body = cast<RegionBodyOp>(op.getBody().front().front());
+  bool isolated = operationIsIsolatedFromAbove(body);
+  elaborator.setEvalContext(
+      symbolRef, {elaborator.createEvaluator(evaluator.getParameterValues()),
+                  !isolated, true});
+
+  // Create the generator and move the body over.
+  OpBuilder b(op.getContext());
+  auto gen =
+      b.create<GeneratorOp>(op.getLoc(), symbolRef.getAttr(),
+                            TypeAttr::get(sig), body.getConstraintsAttr(),
+                            /*implements=*/FlatSymbolRefAttr());
+  gen.getBodyRegion().takeBody(body.getBodyRegion());
+  symtab.insert(gen, Block::iterator(elaboratedGenerator.func));
 
   // Bind the parameter value to the region reference.
-  getEvaluator().setOrOverwriteParameterValue(decl, ref);
+  evaluator.setOrOverwriteParameterValue(decl, symbolCst);
   op->erase();
   return success();
 }
@@ -831,7 +698,7 @@ LogicalResult ParameterRewriter::processParamSearchOp(
   for (Attribute candidate : op.getValues()) {
     // Simplify the input expressions.
     ErrorTreeOr<Attribute> errorOrValue =
-        getEvaluator().concretizeParameterExpr(op.getLoc(), candidate);
+        evaluator.concretizeParameterExpr(op.getLoc(), candidate);
     if (errorOrValue.isError()) {
       errors.push_back(errorOrValue.takeError());
       continue;
@@ -893,7 +760,7 @@ void ParameterRewriter::spawnParamSearchClone(
 void ParameterRewriter::completeParamSearchOpProcessing(ParamSearchOp op,
                                                         Attribute value) {
   // Bind it to the parameter declaration it is setting.
-  getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(), value);
+  evaluator.setOrOverwriteParameterValue(op.getParamDecl(), value);
 
   // The kgen.param.search operation serves no other purpose: remove it.
   op->erase();
@@ -904,12 +771,12 @@ LogicalResult ParameterRewriter::processParamConstantOp(ParamConstantOp op) {
   // eventually lower this into lower level operators in the target set, but
   // for now we just simplify their operand.
   ErrorTreeOr<Attribute> value =
-      getEvaluator().concretizeParameterExpr(op.getLoc(), op.getValue());
+      evaluator.concretizeParameterExpr(op.getLoc(), op.getValue());
   if (value.isError())
     return error(value.takeError());
 
   ErrorTreeOr<Type> type =
-      getEvaluator().concretizeParameterExpr(op.getLoc(), op.getType());
+      evaluator.concretizeParameterExpr(op.getLoc(), op.getType());
   if (type.isError())
     return error(type.takeError());
 
@@ -921,7 +788,7 @@ LogicalResult ParameterRewriter::processParamConstantOp(ParamConstantOp op) {
 LogicalResult ParameterRewriter::processParamAssertOp(ParamAssertOp op) {
   // Check the condition expression.
   ErrorTreeOr<Attribute> value =
-      getEvaluator().concretizeParameterExpr(op.getLoc(), op.getCond());
+      evaluator.concretizeParameterExpr(op.getLoc(), op.getCond());
   if (value.isError())
     return error(value.takeError());
 
@@ -949,14 +816,14 @@ ParameterRewriter::resolveCallInputParams(KGENCallOpInterface call,
   for (ParamBindAttr param : inputValues) {
     // Fold the parameter expression in this context to a simple constant.
     ErrorTreeOr<Attribute> value =
-        getEvaluator().concretizeParameterExpr(call.getLoc(), param.getValue());
+        evaluator.concretizeParameterExpr(call.getLoc(), param.getValue());
     if (value.isError())
       return error(value.takeError());
 
-    // If we have a reference to a non-isolated region, indicate that the callee
-    // will always be inlined.
-    auto regionRef = dyn_cast<RegionReferenceAttr>(*value);
-    if (regionRef && !elaborator.getRegionReferenced(regionRef).isolated)
+    // If this call has a reference to something that is transitively inlined,
+    // the call has to be inlined as well.
+    auto ref = dyn_cast<SymbolConstantAttr>(*value);
+    if (ref && elaborator.getEvalContext(ref.getSymbol()).transitivelyInlined)
       inlineCallee = true;
 
     boundInputParams.push_back(*value);
@@ -974,35 +841,65 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
       resolveCallInputParams(user, callee.getParamValues());
   if (failed(result))
     return failure();
-  auto [inputParamKey, inlineCallee] = *result;
+  auto [inputParamKey, transitivelyInlined] = *result;
+
+  // Check for region info. If the callee is not isolated from above or a
+  // non-isolated region is being passed as a parameter, we have to inline it.
+  const EvalContext &calleeCtx = elaborator.getEvalContext(callee.getSymbol());
+  EvalContext evalCtx{calleeCtx.evaluator,
+                      transitivelyInlined || calleeCtx.transitivelyInlined,
+                      calleeCtx.inlinedAtCallsite};
 
   // Prevent `kgen.addressof` from referencing a function that will be inilned.
-  if (inlineCallee && isa<AddressOfOp>(user))
+  if (evalCtx.transitivelyInlined && isa<AddressOfOp>(user))
     return error(user.getLoc(),
                  "cannot take the address of a function that will be inlined");
 
   // Instantiate the callee into one or more FuncOp's, depending on what the
   // callee is.
   auto ref = cast<FlatSymbolRefAttr>(callee.getSymbol());
-  auto func = dyn_cast_if_present<FuncInterface>(elaborator.lookupCallee(ref));
-  if (!func)
-    return error(user->getLoc(), Twine("could not find callee '") +
-                                     ref.getAttr().strref() + "'");
+  FuncInterface func = elaborator.lookupCallee(ref);
+
+  // Bind the input parameters in the evaluator.
+  for (auto [inputDecl, inputValue] :
+       llvm::zip(func.getInputParamDecls(), inputParamKey))
+    evalCtx.evaluator.setOrOverwriteParameterValue(inputDecl, inputValue);
 
   // If the callee is an interface that provides an evaluator, resolve the
   // evaluator first.
   if (auto itf = dyn_cast<GeneratorInterfaceOp>(*func)) {
     if (SymbolConstantAttr evaluator = itf.getEvaluatorAttr()) {
-      if (!elaborator.analysis.getTopLevelSymbolTable().lookup<FuncOp>(
-              cast<FlatSymbolRefAttr>(evaluator.getSymbol()).getAttr())) {
-        evaluators.push_back(elaborator.createEvaluator());
-        for (auto [bind, value] :
-             llvm::zip(callee.getParamValues(), inputParamKey))
-          evaluators.back().setParameterValue(bind.getDecl(), value);
-        if (failed(processGeneratorUserImpl(itf, evaluator, {}, rewriters)))
-          return failure();
-        evaluators.pop_back();
+      EvalContext itfCtx = elaborator.getEvalContext(evaluator.getSymbol());
+
+      // Concretize the input parameters to the evaluator. The parameters of the
+      // interface to be evaluated are visible.
+      SmallVector<Attribute> itfParams;
+      for (ParamBindAttr bind : evaluator.getParamValues()) {
+        ErrorTreeOr<Attribute> value =
+            evalCtx.evaluator.concretizeParameterExpr(itf.getLoc(),
+                                                      bind.getValue());
+        if (value.isError())
+          return error(value.takeError());
+        itfCtx.evaluator.setParameterValue(bind.getDecl(), *value);
+        itfParams.push_back(*value);
       }
+      DeclAndInputParamsPair itfKey{
+          elaborator.lookupCallee(evaluator.getSymbol()),
+          ArrayAttr::get(itf.getContext(), itfParams)};
+      ArrayRef<ErrorTreeOr<ElaboratedGenerator>> evalCandidates =
+          elaborator.getAllInstantiations(itfKey, expansionDepth + 1, itfCtx);
+
+      // Ensure there is only one candidate
+      auto hasValue = [](auto &candidate) { return candidate.hasValue(); };
+      auto it = llvm::find_if(evalCandidates, hasValue);
+      if (std::count_if(it, evalCandidates.end(), hasValue) != 1)
+        return error(itf.getLoc(), "evaluator should have 1 candidate");
+
+      // Update the evaluator.
+      FuncOp evalFunc = it->getValue().func;
+      itf.setEvaluatorAttr(SymbolConstantAttr::get(
+          FlatSymbolRefAttr::get(evalFunc.getSymNameAttr()),
+          evalFunc.getSignature()));
     }
   }
 
@@ -1014,14 +911,14 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
           elaboratedGenerator.getBinding(calleeDeclAndInputParams)) {
     return completeGeneratorUserProcessing(
         user, decls, calleeDeclAndInputParams, ElaboratedGenerator(callee),
-        inlineCallee);
+        evalCtx);
   }
 
   // Otherwise, this is our first use of this.  Ask the global elaborator for
   // the full set of candidates.
   ArrayRef<ErrorTreeOr<ElaboratedGenerator>> newCalleesRef =
       elaborator.getAllInstantiations(calleeDeclAndInputParams,
-                                      expansionDepth + 1, inlineCallee);
+                                      expansionDepth + 1, evalCtx);
 
   // Copy the list of funcs instead of referring to the cache entry to avoid
   // iterator invalidation problems.
@@ -1054,7 +951,7 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
     } else {
       // All other callees gets spawned as sub-evaluators.
       if (failed(spawnNewFuncClone(user, decls, calleeDeclAndInputParams,
-                                   calleeCandidate, inlineCallee, rewriters)))
+                                   calleeCandidate, evalCtx, rewriters)))
         return failure();
     }
   }
@@ -1069,13 +966,13 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
 
   // Finally, we can handle the first viable one as our continued progress here.
   return completeGeneratorUserProcessing(user, decls, calleeDeclAndInputParams,
-                                         thisCallee, inlineCallee);
+                                         thisCallee, evalCtx);
 }
 
 LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
     KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
     DeclAndInputParamsPair calleeAndInputParams,
-    const ElaboratedGenerator &newCallee, bool inlineCallee) {
+    const ElaboratedGenerator &newCallee, EvalContext &evalCtx) {
   // Add a binding to remember that we resolved this call to this candidate,
   // and merge any bindings from it into our set.
   elaboratedGenerator.addBinding(calleeAndInputParams, newCallee);
@@ -1086,7 +983,7 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
   SmallVector<Type> resultTypes;
   for (Type result : user->getResultTypes()) {
     ErrorTreeOr<Type> type =
-        getEvaluator().concretizeParameterExpr(user.getLoc(), result);
+        evaluator.concretizeParameterExpr(user.getLoc(), result);
     if (type.isError())
       return error(type.takeError());
     resultTypes.push_back(type.takeValue());
@@ -1096,14 +993,9 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
   // the old one.
   mlir::IRRewriter b{OpBuilder(user)};
   if (isa<CallOp, CallParamOp>(user)) {
-    if (!inlineCallee) {
-      b.replaceOpWithNewOp<CallOp>(
-          user, resultTypes,
-          SymbolConstantAttr::get(
-              FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
-              newCalleeFunc.getSignature()),
-          ArrayRef<ParamDeclAttr>(), user->getOperands());
-    } else {
+    if (evalCtx.inlinedAtCallsite || evalCtx.transitivelyInlined) {
+      if (evalCtx.inlinedAtCallsite)
+        elaborator.markFuncForRemoval(newCalleeFunc);
       // Inline the callee.
       BlockAndValueMapping bv;
       for (auto [operand, argument] :
@@ -1120,6 +1012,13 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
           b.clone(*newCalleeFunc.getBody()->getTerminator(), bv);
       b.replaceOp(user, terminator->getOperands());
       terminator->erase();
+    } else {
+      b.replaceOpWithNewOp<CallOp>(
+          user, resultTypes,
+          SymbolConstantAttr::get(
+              FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
+              newCalleeFunc.getSignature()),
+          ArrayRef<ParamDeclAttr>(), user->getOperands());
     }
 
   } else if (isa<AddressOfOp>(user)) {
@@ -1141,7 +1040,7 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
   // Bind the result parameters to the output parameter decls.
   for (auto [decl, bindValue] :
        llvm::zip(decls, elaborator.lookupResultParameters(newCallee.func)))
-    getEvaluator().setOrOverwriteParameterValue(decl, bindValue);
+    evaluator.setOrOverwriteParameterValue(decl, bindValue);
 
   return success();
 }
@@ -1154,7 +1053,7 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
 LogicalResult ParameterRewriter::spawnNewFuncClone(
     KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls,
     DeclAndInputParamsPair calleeAndInputParams,
-    const ElaboratedGenerator &callee, bool inlineCallee,
+    const ElaboratedGenerator &callee, EvalContext &evalCtx,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Start by cloning the current WIP func to a new copy of it.
   BlockAndValueMapping blocksAndValues;
@@ -1167,12 +1066,13 @@ LogicalResult ParameterRewriter::spawnNewFuncClone(
 
   // If the duplicated callee referenced a region not isolated from above, then
   // we need to remap any values that escaped to the cloned function.
-  auto isNonIsolatedRegionRef = [&](Attribute attr) {
-    if (auto regionRef = dyn_cast<RegionReferenceAttr>(attr))
-      return !elaborator.getRegionReferenced(regionRef).isolated;
+  auto isTransitivelyInlinedRef = [&](Attribute attr) {
+    if (auto regionRef = dyn_cast<SymbolConstantAttr>(attr))
+      return elaborator.getEvalContext(regionRef.getSymbol())
+          .transitivelyInlined;
     return false;
   };
-  if (llvm::any_of(calleeAndInputParams.second, isNonIsolatedRegionRef)) {
+  if (llvm::any_of(calleeAndInputParams.second, isTransitivelyInlinedRef)) {
     callee.func->walk([&](Operation *op) {
       for (OpOperand &operand : op->getOpOperands())
         if (Value remapped = blocksAndValues.lookupOrNull(operand.get()))
@@ -1188,7 +1088,7 @@ LogicalResult ParameterRewriter::spawnNewFuncClone(
   // the specifed callee.
   Operation *newUser = operationMap[user];
   return newRewriter->completeGeneratorUserProcessing(
-      newUser, decls, calleeAndInputParams, callee, inlineCallee);
+      newUser, decls, calleeAndInputParams, callee, evalCtx);
 }
 
 LogicalResult ParameterRewriter::processCallParamOp(
@@ -1196,154 +1096,23 @@ LogicalResult ParameterRewriter::processCallParamOp(
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Simplify the callee expression.
   ErrorTreeOr<Attribute> value =
-      getEvaluator().concretizeParameterExpr(call.getLoc(), call.getCallee());
+      evaluator.concretizeParameterExpr(call.getLoc(), call.getCallee());
   if (value.isError())
     return error(value.takeError());
 
-  // If the parameter expression is resolved to a symbol, then treat this like a
-  // direct call.
-  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(*value)) {
-    // If there are no bound parameters on the call, use the one on the
-    // CallParam.  TODO: Remove.
-    if (symbolCst.getParamValues().empty())
-      return processGeneratorUserImpl(
-          call,
-          SymbolConstantAttr::get(symbolCst.getSymbol(),
-                                  call.getParamValuesAttr(),
-                                  symbolCst.getType().dropParamValues()),
-          call.getParamDecls(), rewriters);
-    // Otherwise use the ones from the symbol.
-    return processGeneratorUserImpl(call, symbolCst, call.getParamDecls(),
-                                    rewriters);
-  }
-
-  // Otherwise, the only other case we support is a call to a region, which is
-  // marked with a StringAttr value that has signature type.
-  auto regionName = cast<RegionReferenceAttr>(*value);
-  return processRegionCallImpl(call, regionName, call.getParamDeclsAttr(),
-                               call.getParamValues());
-}
-
-LogicalResult ParameterRewriter::processRegionCallImpl(
-    KGENCallOpInterface call, RegionReferenceAttr regionName,
-    ParamDeclArrayAttr decls, ArrayRef<ParamBindAttr> paramValues) {
-  assert(regionName.getType().isa<SignatureType>() && "not a region reference");
-  const Elaborator::RegionBody &regionBody =
-      elaborator.getRegionReferenced(regionName);
-  FuncInterface region = regionBody.body;
-
-  // Compute the binding of input parameters to concrete values.
-  FailureOr<std::pair<ArrayAttr, bool>> result =
-      resolveCallInputParams(call, paramValues);
-  if (failed(result))
-    return failure();
-  auto [inputParamKey, _] = *result;
-
-  if (failed(processLocation(call)))
-    return failure();
-
-  auto theRegionReturnOp =
-      cast<ReturnOp>(region->getRegion(0).front().getTerminator());
-
-  // Push a region return command that contains the output parameters to bind
-  // after processing all the operations in the region.
-  commandWorklist.push_back(
-      new RegionReturn{call->getLoc(), theRegionReturnOp.getLoc(),
-                       theRegionReturnOp.getParametersAttr(), decls});
-
-  // Nested regions will have a different parameter namespace than the caller
-  // context: names will mean different things inside the region than they did
-  // in the caller.  To handle this, we push a IREvaluator scope that
-  // represents the bindings within the region body and set the region return to
-  // restore back to the previous scope when operations from the region have
-  // finished their processing.
-  IREvaluator &evaluator = evaluators.emplace_back(regionBody.evaluator);
-
-  // Add bindings for each of the input parameters to the new scope we just
-  // pushed, so they are properly bound when the rewriter continues processing
-  // the newly cloned operations.
-  for (auto [decl, value] :
-       llvm::zip(region.getInputParamDecls(), inputParamKey))
-    evaluator.setOrOverwriteParameterValue(decl, value);
-
-  // Evaluate any constraints for this declaration to see if this is a viable
-  // expansion.  If not, the expansion fails. Only isolated regions have
-  // constraints.
-  Optional<ErrorTree> err = evaluateConstraints(
-      cast<DeclInterface>(*region).getConstraints(), evaluator);
-  if (err)
-    return error(std::move(*err));
-
-  // We process the call to the region by cloning its body inline, replacing
-  // the call with the newly substituted operations.  While doing this, we
-  // need to remap the region's arguments to the call formal parameters.
-  BlockAndValueMapping mapper;
-  DenseMap<Operation *, Operation *> operationMap;
-  Block &bodyBlock = region->getRegion(0).front();
-  for (auto [arg, value] :
-       llvm::zip(bodyBlock.getArguments(), call->getOperands()))
-    mapper.map(arg, value);
-
-  // Clone all of the operations in the block.
-  OpBuilder b(call);
-  for (auto &bodyOp : bodyBlock) {
-    Operation *clonedOp =
-        b.insert(cloneOperation(&bodyOp, mapper, operationMap));
-    clonedOp->walk([&](Operation *newOp) {
-      newOp->setLoc(mlir::CallSiteLoc::get(newOp->getLoc(), call->getLoc()));
-    });
-  }
-
-  // Lookup all the parameter decls and uses in the body of region, we will
-  // visit all of them as the evaluator continues processing the ops we just
-  // cloned over.
-  const ParameterDeclsAndUses *uses =
-      elaborator.lookupNestedUses(cast<DeclInterface>(*region));
-  // If we didn't get a cache hit, recompute the uses.
-  Optional<ParameterDeclsAndUses> recomputedUses;
-  if (!uses) {
-    recomputedUses.emplace();
-    uses = &recomputedUses.value();
-    // Fold the current parameter scope into the declarations. Make the region's
-    // parent the virtual root.
-    for (auto [name, value] : evaluator.getParameterValues()) {
-      recomputedUses->decls.try_emplace(
-          name, std::make_pair(region->getParentOp(),
-                               ParamDeclAttr::get(
-                                   name, cast<TypedAttr>(value).getType())));
-    }
-    elaborator.takeNestedParameterUses(
-        recomputedUses->calculate(cast<DeclInterface>(*region)));
-  }
-
-  // Add the parameter-using operations we cloned over from the region to
-  // the commandWorklist so we rewrite them.
-  auto remapOp = [&](Operation *op) {
-    // We don't clone over the region op itself, and will be deleting the
-    // return soon though so ignore those.
-    if (op == region || op == theRegionReturnOp)
-      return;
-    commandWorklist.push_back(operationMap[op]);
-    assert(commandWorklist.back() && "operation wasn't cloned over correctly?");
-  };
-  for (Operation *op : uses->constExprOps)
-    remapOp(op);
-  for (auto &[op, _] : llvm::reverse(uses->usersAndDeclarers))
-    remapOp(op);
-
-  // Now that we've cloned all the operations over, we know what the SSA
-  // results are supposed to be.  Replace all the uses of the call results
-  // with them.
-  auto clonedReturn = cast<ReturnOp>(operationMap[theRegionReturnOp]);
-  SmallVector<Value> newResults;
-  llvm::append_range(newResults, clonedReturn.getOperands());
-  clonedReturn->erase();
-
-  // The SSA results of the old call go directly to the new call and remove
-  // it.
-  call->getResults().replaceAllUsesWith(newResults);
-  call->erase();
-  return success();
+  // If there are no bound parameters on the call, use the one on the
+  // CallParam.  TODO: Remove.
+  auto symbolCst = cast<SymbolConstantAttr>(*value);
+  if (symbolCst.getParamValues().empty())
+    return processGeneratorUserImpl(
+        call,
+        SymbolConstantAttr::get(symbolCst.getSymbol(),
+                                call.getParamValuesAttr(),
+                                symbolCst.getType().dropParamValues()),
+        call.getParamDecls(), rewriters);
+  // Otherwise use the ones from the symbol.
+  return processGeneratorUserImpl(call, symbolCst, call.getParamDecls(),
+                                  rewriters);
 }
 
 /// Unknown operations are allowed to use types and attributes with parameter
@@ -1362,7 +1131,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   SmallVector<NamedAttribute> newAttrs;
   bool changedAttrs = false;
   for (const NamedAttribute &namedAttr : op->getAttrs()) {
-    ErrorTreeOr<Attribute> value = getEvaluator().concretizeParameterExpr(
+    ErrorTreeOr<Attribute> value = evaluator.concretizeParameterExpr(
         op->getLoc(), namedAttr.getValue(), /*allowUnknown=*/true);
     if (value.isError())
       return error(value.takeError());
@@ -1381,7 +1150,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   // when being defined.
   for (OpResult result : op->getResults()) {
     ErrorTreeOr<Type> type =
-        getEvaluator().concretizeParameterExpr(op->getLoc(), result.getType());
+        evaluator.concretizeParameterExpr(op->getLoc(), result.getType());
     if (type.isError())
       return error(type.takeError());
     result.setType(type.takeValue());
@@ -1393,8 +1162,8 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
     for (Region &region : op->getRegions()) {
       for (Block &block : region) {
         for (Value arg : block.getArguments()) {
-          ErrorTreeOr<Type> type = getEvaluator().concretizeParameterExpr(
-              op->getLoc(), arg.getType());
+          ErrorTreeOr<Type> type =
+              evaluator.concretizeParameterExpr(op->getLoc(), arg.getType());
           if (type.isError())
             return error(type.takeError());
           arg.setType(type.takeValue());
@@ -1414,7 +1183,7 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
 }
 
 LogicalResult ParameterRewriter::processLocation(Operation *op) {
-  ErrorTreeOr<Attribute> value = getEvaluator().concretizeParameterExpr(
+  ErrorTreeOr<Attribute> value = evaluator.concretizeParameterExpr(
       op->getLoc(), op->getLoc(), /*allowUnknown=*/true);
   if (value.isError())
     return error(value.takeError());
@@ -1432,18 +1201,7 @@ ErrorTree ParameterRewriter::takeDiagnosticAndEraseFunc() {
   // in various maps though, so instead of actually deleting it, we just
   // mark it for removal later.
   elaborator.markFuncForRemoval(elaboratedGenerator.func);
-  ErrorTree error = std::move(*diagnostic);
-
-  // Check to see if the error occurs in the scope of a call_param to a region.
-  // If so, make sure to add the nested call to the expansion path.
-  for (auto command : llvm::reverse(commandWorklist)) {
-    RegionReturn *rr = dyn_cast<RegionReturn *>(command);
-    if (!rr)
-      continue;
-    error = ErrorTree(rr->callLoc, "call expansion failed", std::move(error));
-  }
-
-  return error;
+  return std::move(*diagnostic);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1506,7 +1264,7 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
 /// invoke interfaces etc which can cause them to produce multiple variants.
 SmallVector<ErrorTreeOr<ElaboratedGenerator>>
 Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
-                           size_t expansionDepth, bool inlined) {
+                           size_t expansionDepth, EvalContext &evalCtx) {
   LLVM_DEBUG({
     llvm::dbgs() << std::string(expansionDepth, ' ') << "specializeFunc "
                  << func.getName() << "\n";
@@ -1514,11 +1272,17 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
   // Get a partial ordering of parameter definitions and uses that is listed
   // "top down" in our evaluation order.
   ParameterDeclsAndUses uses;
-  takeNestedParameterUses(uses.calculate(func));
-  SmallVector<Operation *> opsToRewrite;
+  for (auto [name, value] : evalCtx.evaluator.getParameterValues()) {
+    uses.decls.try_emplace(
+        name, std::make_pair(
+                  func->getParentOp(),
+                  ParamDeclAttr::get(name, cast<TypedAttr>(value).getType())));
+  }
+  uses.calculate(func);
 
   // Rewrite all the parameter-using ops in this scope only. We are going to use
   // opsToRewrite as a worklist, so reverse it for efficient pop_back.
+  SmallVector<Operation *> opsToRewrite;
   opsToRewrite.reserve(uses.constExprOps.size() +
                        uses.usersAndDeclarers.size());
   for (auto &[op, _] : llvm::reverse(uses.usersAndDeclarers))
@@ -1530,7 +1294,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
   // invalidation.
   SmallVector<std::unique_ptr<ParameterRewriter>> rewriterWorklist;
   rewriterWorklist.emplace_back(new ParameterRewriter(
-      *this, func, std::move(opsToRewrite), inlined, expansionDepth));
+      *this, func, evalCtx, std::move(opsToRewrite), expansionDepth));
 
   // Extract the debug info from the function, if it's present.
   auto oldFuncSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func);
@@ -1589,7 +1353,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
 /// the result attributes.
 SmallVector<ErrorTreeOr<ElaboratedGenerator>>
 Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
-                                size_t expansionDepth, bool inlined) {
+                                size_t expansionDepth, EvalContext &evalCtx) {
   auto generator = cast<GeneratorOp>(declAndInputParams.first);
   LLVM_DEBUG({
     llvm::dbgs() << std::string(expansionDepth, ' ') << "specializeGenerator "
@@ -1628,15 +1392,11 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   // Provide definitions of the input parameters in the body block as bound
   // constants.
   b.setInsertionPoint(&newFunc.getBody()->front());
-  for (auto [inputDecl, inputValue] :
-       llvm::zip(inputParamDecls, inputParamValues)) {
-    b.create<ParamDeclareOp>(generator.getLoc(), inputDecl, inputValue);
-  }
 
   // Now that we have a new synthesized generic func, run the rewriter
   // over it to specialize its body.
   auto sourceModule = generator->getParentOfType<ModuleOp>();
-  auto result = specializeFunc(newFunc, sourceModule, expansionDepth, inlined);
+  auto result = specializeFunc(newFunc, sourceModule, expansionDepth, evalCtx);
 
   // If the generator had no parameters, then we want to reuse the same name as
   // the original generator.  We can't do that when we are building the concrete
@@ -1662,8 +1422,8 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   // If the generator had debug information, update the debug info for any
   // elaborated instantiations.
   if (DebugInfo::extractScope(generator)) {
-    for (auto &candidate : result) {
-      if (!candidate)
+    for (const ErrorTreeOr<ElaboratedGenerator> &candidate : result) {
+      if (candidate.isError())
         continue;
       FuncOp elabFunc = candidate->func;
 
@@ -1672,10 +1432,13 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
       if (elabFunc == firstSuccessfulImpl)
         continue;
 
-      // Otherwise, we need to update the sub program to use the new linkage
-      // name.
       auto oldSpAttr =
           DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(elabFunc);
+      // Region bodies hoisted to generators won't get a subprogram attribute.
+      if (!oldSpAttr)
+        break;
+      // Otherwise, we need to update the sub program to use the new linkage
+      // name.
       auto newSpAttr = DebugInfo::DISubprogramAttr::get(
           b.getContext(), oldSpAttr.getCompileUnit(), oldSpAttr.getScope(),
           oldSpAttr.getName(), elabFunc.getNameAttr(), oldSpAttr.getFile(),
@@ -1706,7 +1469,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
 /// evaluator changes, or the target changes, we need to redo search.
 SmallVector<ErrorTreeOr<ElaboratedGenerator>>
 Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
-                                size_t expansionDepth, bool inlined) {
+                                size_t expansionDepth, EvalContext &evalCtx) {
   auto itf = cast<GeneratorInterfaceOp>(declAndInputParams.first);
   LLVM_DEBUG({
     llvm::dbgs() << std::string(expansionDepth, ' ') << "specializeInterface "
@@ -1735,11 +1498,11 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   if (!enableSearch && defaultImpl.has_value()) {
     // If the SymbolConstant exists, then the callee must exist.
     Operation *defaultImplCallee = lookupCallee(defaultImpl->getSymbol());
-    assert(defaultImplCallee != nullptr && "expected defaultImpl to exist");
     // The default impl must be a generator.
     GeneratorOp gen = cast<GeneratorOp>(defaultImplCallee);
+    EvalContext evalCtx = getEvalContext(defaultImpl->getSymbol());
     auto funcs = getAllInstantiations({gen, declAndInputParams.second},
-                                      expansionDepth + 1, inlined);
+                                      expansionDepth + 1, evalCtx);
     for (auto &func : funcs)
       result.push_back(func.copy());
     return result;
@@ -1749,7 +1512,7 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
     // Make sure to go through getAllInstantiations so generators are cached
     // and any constraints on the generator itself are validated.
     ArrayRef<ErrorTreeOr<ElaboratedGenerator>> funcs = getAllInstantiations(
-        {gen, declAndInputParams.second}, expansionDepth + 1, inlined);
+        {gen, declAndInputParams.second}, expansionDepth + 1, evalCtx);
     LLVM_DEBUG({
       llvm::dbgs() << std::string(expansionDepth, ' ') << gen.getNameAttr()
                    << " produced " << std::to_string(funcs.size())
@@ -1788,7 +1551,7 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
     return result;
   }
 
-  SymbolConstantAttr evaluator = itf.getEvaluatorAttr();
+  SymbolConstantAttr evaluatorRef = itf.getEvaluatorAttr();
 
   // Truncate the result vector to contain only the successful implementations.
   result.erase(newEnd, result.end());
@@ -1809,7 +1572,7 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   // If there is no evaluator, return the full vector of instantiations. If the
   // interface is being inlined, we can't benchmark the instantiations because
   // they would not be well-formed.
-  if (!evaluator || inlined)
+  if (!evaluatorRef || evalCtx.transitivelyInlined)
     return result;
 
   // Store the valid implementations.
@@ -1828,7 +1591,7 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   }
 
   // Part of the key is the evaluation function.
-  auto evalFunc = cast<FuncOp>(lookupCallee(evaluator.getSymbol()));
+  auto evalFunc = cast<FuncOp>(lookupCallee(evaluatorRef.getSymbol()));
   mlir::writeBytecodeToFile(evalFunc, *keyBuf);
 
   // And finally, the target.
@@ -1914,14 +1677,14 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
 /// interface) with the specified input parameter values.
 ArrayRef<ErrorTreeOr<ElaboratedGenerator>>
 Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
-                                 size_t expansionDepth, bool inlined) {
+                                 size_t expansionDepth, EvalContext &evalCtx) {
   // Check the global cache of instantiations so we only ever instantiate a
   // generator once.
   auto cacheIt = generatedFuncs.find(declAndInputParams);
   if (cacheIt != generatedFuncs.end())
     return cacheIt->second;
 
-  Operation *decl = declAndInputParams.first;
+  DeclInterface decl = declAndInputParams.first;
   SmallVector<ErrorTreeOr<ElaboratedGenerator>> newCallees;
   auto localError = [&](ErrorTree err) {
     newCallees.push_back(std::move(err));
@@ -1933,13 +1696,14 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
     llvm::dbgs() << std::string(expansionDepth, ' ')
                  << "getAllInstantiations: ";
   });
-  IREvaluator evaluator = createEvaluator();
-  Optional<ErrorTree> err = evaluateConstraints(
-      decl, declAndInputParams.second.getValue(), evaluator);
+
+  // Check the constraints on the declaration.
+  Optional<ErrorTree> err =
+      evaluateConstraints(decl.getConstraints(), evalCtx.evaluator);
   if (err) {
     LLVM_DEBUG({ llvm::dbgs() << "evaluateConstraints failed\n"; });
     localError(std::move(*err));
-  } else if (auto func = dyn_cast<FuncOp>(decl)) {
+  } else if (auto func = dyn_cast<FuncOp>(*decl)) {
     // Nothing to do here. Just bind the result parameters and return the
     // function.
     LLVM_DEBUG({ llvm::dbgs() << "Func: " << func->getName() << "\n"; });
@@ -1951,14 +1715,14 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
                    << "\n";
     });
     newCallees =
-        specializeGenerator(declAndInputParams, expansionDepth + 1, inlined);
+        specializeGenerator(declAndInputParams, expansionDepth + 1, evalCtx);
   } else if (isa<GeneratorInterfaceOp>(decl)) {
     LLVM_DEBUG({
       llvm::dbgs() << "GenInterface: "
                    << cast<GeneratorInterfaceOp>(decl).getNameAttr() << "\n";
     });
     newCallees =
-        specializeInterface(declAndInputParams, expansionDepth + 1, inlined);
+        specializeInterface(declAndInputParams, expansionDepth + 1, evalCtx);
   } else {
     localError({decl->getLoc(), "call to an unknown kind of declaration"});
   }
@@ -2069,8 +1833,11 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
   for (GeneratorOp generatorRoot : primaryGenerators) {
 
     // Elaborate the generator into concrete versions.
+    EvalContext evalCtx = elaborator.getEvalContext(
+        FlatSymbolRefAttr::get(generatorRoot.getSymNameAttr()));
     ArrayRef<ErrorTreeOr<ElaboratedGenerator>> results =
-        elaborator.getAllInstantiations({generatorRoot, emptyInputParamKey}, 0);
+        elaborator.getAllInstantiations({generatorRoot, emptyInputParamKey}, 0,
+                                        evalCtx);
 
     // If the generator failed to expand into /anything/ then emit an error.
     // Note that the func will have been deleted.
@@ -2111,6 +1878,8 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
     assert(!func.getBody()->empty() &&
            "should only include successful expansions");
   }
+
+  asyncMap.awaitAll();
 
   // On success, we remove generators and generator interfaces from the file
   // to clean it up.

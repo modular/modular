@@ -383,7 +383,7 @@ kgen.generator @parametricTypes(%arg0: !pop.scalar<ui64>, %arg1: !pop.simd<2, f3
 // CHECK:    %1 = kgen.call @"nopExample,dt=f32"(%0) : (!pop.scalar<f32>) -> !pop.scalar<f32>
 
 
-// CHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=test_region_concrete_region_2"() {
+// CHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=test_region_concrete_region_1"() {
 // CHECK:    %cst = pop.constant(#M.dense_array<1> : vector<1xsi32>) : !pop.scalar<si32>
 // CHECK:    %0 = pop.add %cst, %cst : !pop.scalar<si32>
 // CHECK:    %1 = pop.mul %0, %cst : !pop.scalar<si32>
@@ -450,12 +450,12 @@ kgen.generator @take_non_parametric_f32<fn: (!pop.scalar<f32>) -> !pop.scalar<f3
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @"take_non_parametric_f32,fn=test_region_concrete_region_0"() {
+// CHECK-LABEL: kgen.func @"take_non_parametric_f32,fn=test_region_concrete_region"() {
 // CHECK:   %cst = pop.constant(1.000000e+00 : f32) : !pop.scalar<f32>
 // CHECK:   %0 = pop.mul %cst, %cst : !pop.scalar<f32>
 // CHECK:   %1 = pop.mul %0, %0 : !pop.scalar<f32>
 // CHECK:   kgen.return
-// CHECK-LABEL: kgen.func @"take_non_parametric_f32,fn=test_region_concrete_region_1"() {
+// CHECK-LABEL: kgen.func @"take_non_parametric_f32,fn=test_region_concrete_region_0"() {
 // CHECK:   %cst = pop.constant(1.000000e+00 : f32) : !pop.scalar<f32>
 // CHECK:   %0 = pop.add %cst, %cst : !pop.scalar<f32>
 // CHECK:   %1 = pop.add %0, %0 : !pop.scalar<f32>
@@ -463,7 +463,7 @@ kgen.generator @take_non_parametric_f32<fn: (!pop.scalar<f32>) -> !pop.scalar<f3
 
 // CHECK-LABEL:  kgen.func @test_region() {
 kgen.generator @test_region() {
-  // CHECK:  kgen.call @"take_non_parametric_f32,fn=test_region_concrete_region_0"() : () -> ()
+  // CHECK:  kgen.call @"take_non_parametric_f32,fn=test_region_concrete_region"() : () -> ()
   kgen.param.declare.region fn0 = (%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
     %result = pop.mul %arg0, %arg0 : !pop.scalar<f32>
     kgen.return %result : !pop.scalar<f32>
@@ -471,7 +471,7 @@ kgen.generator @test_region() {
   kgen.call @take_non_parametric_f32<
     fn : (!pop.scalar<f32>) -> !pop.scalar<f32> = fn0>() : () -> ()
 
-  // CHECK: kgen.call @"take_non_parametric_f32,fn=test_region_concrete_region_1"()
+  // CHECK: kgen.call @"take_non_parametric_f32,fn=test_region_concrete_region_0"()
 
   // This is the same as above, but calling through a parameter.  This shows the
   // kgen.call_param -> kgen.call lowering maintains the region correctly.
@@ -485,7 +485,7 @@ kgen.generator @test_region() {
     <fn : (!pop.scalar<f32>) -> !pop.scalar<f32> = fn1>()
 
   // Check a call to a parametric region.
-  // CHECK: kgen.call @"takeUnary,dt=si32,fn=test_region_concrete_region_2"()
+  // CHECK: kgen.call @"takeUnary,dt=si32,fn=test_region_concrete_region_1"()
   kgen.param.declare.region fn2 = <dt:dtype>(%arg0: !pop.scalar<dt>) -> !pop.scalar<dt> {
     %0 = pop.add %arg0, %arg0 : !pop.scalar<dt>
     %1 = pop.mul %0, %arg0 : !pop.scalar<dt>
@@ -497,7 +497,7 @@ kgen.generator @test_region() {
   kgen.return
 }
 
-// CHECK:  kgen.func @"just_call_it_pass_it,fn=test_region_insanity_concrete_region_0,littleFn=test_region_insanity_concrete_region_1"() {
+// CHECK:  kgen.func @"just_call_it_pass_it,fn=test_region_insanity_concrete_region,littleFn=test_region_insanity_concrete_region_0"() {
 // CHECK:    %cst = pop.constant(#M.dense_array<1.000000e+00> : vector<1xf64>) : !pop.scalar<f64>
 // CHECK:    %0 = kgen.param.constant  = <127>
 // CHECK:    kgen.return
@@ -511,7 +511,7 @@ kgen.generator @just_call_it_pass_it
 
 // CHECK-LABEL: @test_region_insanity
 kgen.generator @test_region_insanity() {
-  // CHECK: kgen.call @"just_call_it_pass_it,fn=test_region_insanity_concrete_region_0,littleFn=test_region_insanity_concrete_region_1"()
+  // CHECK: kgen.call @"just_call_it_pass_it,fn=test_region_insanity_concrete_region,littleFn=test_region_insanity_concrete_region_0"()
   kgen.param.declare.region fn = <subFn:<dt: dtype->index>()->()>() {
     kgen.call_param[<dt: dtype->index>()->(): subFn]<dt: dtype = f64->resultParam>()
     %0 = kgen.param.constant = <add(resultParam, 4)>
@@ -682,7 +682,7 @@ kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
 
 // CHECK-LABEL: kgen.func @top
 kgen.generator @top() {
-  // CHECK: kgen.call @"mid,fn=top_concrete_region_0,N=4"()
+  // CHECK: kgen.call @"mid,fn=top_concrete_region,N=4"()
   kgen.param.declare.region fn = <fn: ()->index>() -> index {
     %0 = kgen.call_param[()->index: fn]()
     kgen.return %0 : index
@@ -691,7 +691,7 @@ kgen.generator @top() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @"mid,fn=top_concrete_region_0,N=4"
+// CHECK-LABEL: kgen.func @"mid,fn=top_concrete_region,N=4"
 kgen.generator @mid<fn: <fn: ()->index>() -> index, N>() -> (index, index) {
   // CHECK: %[[C0:.*]] = index.constant 0
   // CHECK: %[[C1:.*]] = index.constant 1
@@ -717,7 +717,7 @@ kgen.generator @mid<fn: <fn: ()->index>() -> index, N>() -> (index, index) {
 
 // CHECK-LABEL: kgen.func @outermost
 kgen.generator @outermost() -> index{
-  // CHECK: kgen.call @"middle,outer=outermost_concrete_region_0"
+  // CHECK: kgen.call @"middle,outer=outermost_concrete_region"
   kgen.param.declare.region outer = <fn:()->index>() -> index {
     %2 = kgen.call_param[()->index:fn]()
     kgen.return %2 : index
@@ -726,7 +726,7 @@ kgen.generator @outermost() -> index{
   kgen.return %1 : index
 }
 
-// CHECK-LABEL: kgen.func @"middle,outer=outermost_concrete_region_0"
+// CHECK-LABEL: kgen.func @"middle,outer=outermost_concrete_region"
 kgen.generator @middle<outer:<fn:()->index>()->index>() -> index{
   // CHECK: %[[X:.*]] = index.constant 1
   %x = index.constant 1
@@ -908,7 +908,7 @@ kgen.generator @doIt() {
 
 // -----
 
-// CHECK-LABEL: kgen.func @"nestMe,fn=nestMe,fn=nestMe,fn=tripleNested,A=1_region_0_region_0_region_0"
+// CHECK-LABEL: kgen.func @"nestMe,fn=tripleNested,A=1_region_concrete_region_concrete_region"
 // CHECK-NEXT: kgen.param.constant = <6>
 kgen.generator @nestMe<fn: () -> index>() -> index {
   %0 = kgen.call_param[() -> index: fn]()
@@ -941,7 +941,7 @@ kgen.generator @doIt() {
 
 // -----
 
-// CHECK-LABEL: kgen.func @"nestMe,N=6,fn=nestMe,N=4,fn=nestMe,N=2,fn=tripleNested,A=1_region_0_region_0_region_0"
+// CHECK-LABEL: kgen.func @"nestMe,N=6,fn=tripleNested,A=1_region,N=2_region,N=4_region"
 // CHECK-NEXT: kgen.param.constant = <21>
 
 kgen.generator @nestMe<N, fn: <N>() -> index>() -> index {
@@ -1215,5 +1215,20 @@ kgen.func @fma(%arg0: index, %arg1: index, %arg2: index) -> index {
 kgen.generator @constexpr_fma() -> index {
   // CHECK-NEXT: kgen.param.constant = <7>
   %0 = kgen.param.constant = <apply(:(index, index, index) -> index @fma, 1, 2, 3)>
+  kgen.return %0 : index
+}
+
+// -----
+
+// CHECK-LABEL: kgen.func @bind_signature_region
+kgen.generator @bind_signature_region() -> index {
+  // CHECK-NEXT: %0 = kgen.param.constant = <1>
+  kgen.param.declare.region Fn = <A>() -> index {
+    %0 = kgen.param.constant = <A>
+    kgen.return %0 : index
+  }
+  kgen.param.declare BoundFn: () -> index = <bind_signature(:<A>() -> index Fn, 1)>
+  %0 = kgen.call_param[() -> index: BoundFn]()
+  // CHECK-NEXT: kgen.return %0
   kgen.return %0 : index
 }
