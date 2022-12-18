@@ -308,23 +308,12 @@ CallableValue ExprNode::emitCallable(ExprEmitter &emitter,
 // CallableValue Implementation
 //===----------------------------------------------------------------------===//
 
-SymbolConstantAttr
-DirectCallable::getBoundConstantAttr(ExprEmitter &emitter) const {
-  SignatureType resultType = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
+LIT::FuncOp DirectCallable::getFuncOp() const {
+  return cast<LIT::FuncOp>(*fnDecl);
+}
 
-  // SymbolConstantAttr provides a type for the SymbolRefAttr with the
-  // parameters substituted in.  The function reference binds any parameter
-  // bindings present on the access (in bindings), which typically concretizes
-  // the signature.
-  if (!bindings.empty()) {
-    resultType = resultType.getSpecializedSignature(
-        bindings,
-        [&]() -> InFlightDiagnostic { return emitter.emitError(loc, ""); });
-    if (!resultType)
-      return {};
-  }
-
-  return SymbolConstantAttr::get(fnDecl->getSymbolRef(), bindings, resultType);
+SymbolConstantAttr DirectCallable::getBoundConstantAttr() const {
+  return getFuncOp().getBoundReference(bindings);
 }
 
 /// Get a symbol for a direct reference to the specified function in its
@@ -340,7 +329,7 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
   if (!direct)
     return baseVal.ir;
 
-  auto directSymbolAttr = direct->getBoundConstantAttr(emitter);
+  auto directSymbolAttr = direct->getBoundConstantAttr();
   if (!directSymbolAttr)
     return {};
 

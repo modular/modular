@@ -231,7 +231,7 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
   // an indirect call.
   PointerUnion<Attribute, Value> callee;
   if (calleeVal.direct) {
-    SymbolConstantAttr symbol = calleeVal.direct->getBoundConstantAttr(*this);
+    SymbolConstantAttr symbol = calleeVal.direct->getBoundConstantAttr();
     if (!symbol)
       return {};
 

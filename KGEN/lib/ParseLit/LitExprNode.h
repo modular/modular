@@ -23,6 +23,7 @@ class ASTDecl;
 class CallableValue;
 class ExprEmitter;
 class ExprNode;
+class FuncOp;
 
 template <typename ValueType>
 struct ASTExprAnd {
@@ -164,7 +165,9 @@ struct DirectCallable {
   /// Perform subsitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
   /// returning null.
-  SymbolConstantAttr getBoundConstantAttr(ExprEmitter &emitter) const;
+  SymbolConstantAttr getBoundConstantAttr() const;
+
+  LIT::FuncOp getFuncOp() const;
 };
 
 /// This class is returned by the emitCallable hooks on AST expressions, which
