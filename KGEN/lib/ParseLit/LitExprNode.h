@@ -159,15 +159,23 @@ struct DirectCallable {
   /// The function that may be called directly.
   ASTDecl *fnDecl;
 
-  /// Any bound parameters.
-  ParamBindArrayAttr bindings;
+  /// Any bound parameters.  Consider something like:
+  ///    SomeType[param1].method[param2](arg1)
+  /// The type parameters (param1) will be bound as a ParamBindAttr, and the
+  /// param2 will be bound as the value of param2.  We cannot type check the
+  /// bindings until overload resolution has resolved which 'method' we are
+  /// talking about, so we keep them as either a ParamBindAttr or
+  /// (Typed)Attribute for the actual value.
+  struct BoundParam {
+    SMLoc loc;
+    PointerUnion<ParamBindAttr, Attribute> bindingOrValue;
+  };
+  SmallVector<BoundParam> bindings;
 
   /// Perform subsitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
   /// returning null.
-  SymbolConstantAttr getBoundConstantAttr() const;
-
-  LIT::FuncOp getFuncOp() const;
+  SymbolConstantAttr getBoundConstantAttr(ExprEmitter &emitter) const;
 };
 
 /// This class is returned by the emitCallable hooks on AST expressions, which

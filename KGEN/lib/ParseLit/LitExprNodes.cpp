@@ -308,28 +308,75 @@ CallableValue ExprNode::emitCallable(ExprEmitter &emitter,
 // CallableValue Implementation
 //===----------------------------------------------------------------------===//
 
-LIT::FuncOp DirectCallable::getFuncOp() const {
-  return cast<LIT::FuncOp>(*fnDecl);
-}
+/// Generate a reference to the specified function, checking that any supplied
+/// parameters are correct and match expectations..
+SymbolConstantAttr
+DirectCallable::getBoundConstantAttr(ExprEmitter &emitter) const {
+  auto funcOp = cast<LIT::FuncOp>(*fnDecl);
+  auto signature = funcOp.getFullSignature();
 
-SymbolConstantAttr DirectCallable::getBoundConstantAttr() const {
-  return getFuncOp().getBoundReference(bindings);
+  // We require an exact match for the signature right now, we don't allow
+  // inference or other fancy things.
+  auto expectedNumParams = signature.getInputParams().size();
+  if (bindings.size() != expectedNumParams) {
+    auto diag = emitter.emitError(loc, "function expects ")
+                << expectedNumParams << " input parameter"
+                << plural(expectedNumParams) << " but " << bindings.size()
+                << plural(bindings.size(), " was", " were") << " provided";
+    diag.attachNote(funcOp.getLoc()) << "function declared here";
+    return {};
+  }
+
+  // If we have bound parameters, type check them now and bind names to them.
+  SmallVector<ParamBindAttr> newBindings;
+  newBindings.reserve(bindings.size());
+
+  for (auto [bound, decl] : llvm::zip(bindings, signature.getInputParams())) {
+    // If this value was already bound and checked, use it.
+    auto prebound = dyn_cast<ParamBindAttr>(bound.bindingOrValue);
+    if (prebound) {
+      newBindings.push_back(prebound);
+      continue;
+    }
+
+    // Check the type matches what is expected.
+    // TODO: Do implicit conversions when we can invoke parameter functions.
+    // TODO: Handle signatures like (T, scalar<T>) where early bound
+    // parameters changes the types of later ones.
+    auto value = cast<TypedAttr>(cast<Attribute>(bound.bindingOrValue));
+    auto valueType = value.getType();
+    if (!ASTType(valueType).isEqualCanon(decl.getType())) {
+      emitter.emitError(bound.loc, "parameter ")
+          << decl.getName() << " has " << ASTType(decl.getType())
+          << " type, but value has type " << ASTType(valueType);
+      return {};
+    }
+    newBindings.push_back(ParamBindAttr::get(decl, value));
+  }
+
+  // Now that we checked the types match, form the binding.
+  return funcOp.getBoundReference(
+      ParamBindArrayAttr::get(emitter.getContext(), newBindings));
 }
 
 /// Get a symbol for a direct reference to the specified function in its
 /// enclosing context.  This does not bind any values to arguments.
 CallableValue::CallableValue(SMLoc loc, ASTDecl &fnDecl,
                              ParamBindArrayAttr bindings)
-    : direct({loc, &fnDecl, bindings}) {}
+    : direct({loc, &fnDecl, {}}) {
+  for (ParamBindAttr bind : bindings)
+    direct->bindings.push_back({loc, bind});
+}
 
-/// Emit this as a flattened RValue or LValue.  This returns null on failure.
+/// Emit this as a flattened RValue or LValue.  This returns null on
+/// failure.
 AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
   // If we have no bound symbol, return the normal lvalue or rvalue we
   // represent.
   if (!direct)
     return baseVal.ir;
 
-  auto directSymbolAttr = direct->getBoundConstantAttr();
+  auto directSymbolAttr = direct->getBoundConstantAttr(emitter);
   if (!directSymbolAttr)
     return {};
 
@@ -339,8 +386,8 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
 
   auto loc = baseVal.expr->getLoc();
 
-  // Otherwise, we have a base symbol for an instance method /and/ a self
-  // value to apply to it.  Partially apply it to form a result closure.
+  // Otherwise, we have a base symbol for an instance method /and/ a self value
+  // to apply to it.  Partially apply it to form a result closure.
   SignatureType calleeSignature = directSymbolAttr.getType();
   Type firstArgIRType = calleeSignature.getValueInputs()[0];
   Value firstArgValue;
@@ -355,18 +402,17 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
     }
 
     // TODO: Using partial application over an lvalue like this isn't
-    // technically safe.  We need to extend the lifetime of the pointer
-    // captured for as long as the partial application thunk is alive.  This
-    // will require some sort of borrow model.  In practice, this will be fine
-    // in the short term of Lit bringup because the thunk cannot be emitted
-    // independently anyway, it must always be canonicalized into another
-    // call.
+    // technically safe.  We need to extend the lifetime of the pointer captured
+    // for as long as the partial application thunk is alive. This will require
+    // some sort of borrow model.  In practice, this will be fine in the short
+    // term of Lit bringup because the thunk cannot be emitted independently
+    // anyway, it must always be canonicalized into another call.
     firstArgValue = baseLV;
     break;
   }
   case ValueInputConvention::ByVal:
-    // Otherwise we can have either an lvalue or rvalue, but we need to
-    // convert to an rvalue if we have an lvalue.
+    // Otherwise we can have either an lvalue or rvalue, but we need to convert
+    // to an rvalue if we have an lvalue.
     firstArgValue = emitter.emitDRValue(baseVal.ir, loc);
     if (!firstArgValue)
       return {};
@@ -381,8 +427,8 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
   // partial_apply.
   auto calleeDRVal = emitter.emitDRValue(AnyValue(directSymbolAttr), loc);
 
-  // Partial apply wants to know what operands to bind, we always bind the
-  // first one.
+  // Partial apply wants to know what operands to bind, we always bind the first
+  // one.
   auto zeroAttr = emitter.builder->getAttr<mlir::DenseI64ArrayAttr>(0);
   return DRValue(emitter.builder->create<PartialApplyOp>(
       emitter.translateLocation(loc), calleeDRVal,
@@ -992,46 +1038,25 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   // If the subValue has a bound callable symbol, then this is applying (more)
   // meta values to bind its parameters.
   if (subValue.direct) {
-    // We can bind additional parameters to a signature.
-    SignatureType signature =
-        cast<LIT::FuncOp>(*subValue.direct->fnDecl).getFullSignature();
-
-    // TODO: For now we just support positional arguments, we could support
-    // named arguments in the future.
-    SmallVector<ParamBindAttr> bindings(subValue.direct->bindings.getValue());
-    size_t numParams = signature.getInputParams().size();
-
     // Process each subscript entry as a binding.
+    // TODO: Support named bindings in addition to positional ones: `A[x: 42]`.
     for (auto idx : indices) {
-      if (bindings.size() >= numParams) {
-        emitter.emitError(idx->getLoc(),
-                          "too many parameters bound, signature expects ")
-            << numParams << " parameter value" << plural(numParams);
-        return {};
-      }
-
-      ParamDeclAttr decl = signature.getInputParams()[bindings.size()];
       auto val = emitter.emitMValue(
           idx, "declaration parameters may not be a run-time value");
       if (!val)
         return {};
 
-      // Check the type matches what is expected.
-      // TODO: Do implicit conversions.
-      // TODO: Handle signatures like (T, scalar<T>) where early bound
-      // parameters changes the types of later ones.
-      if (val.getType() != decl.getType()) {
-        emitter.emitError(idx->getLoc(), "index has type ")
-            << ASTType(val.getType()) << " but declaration expects "
-            << ASTType(decl.getType());
-        return {};
-      }
-      bindings.push_back(ParamBindAttr::get(decl.getName(), val));
+      // We don't do any checking to see if the value is compatible with the
+      // expected type - this is deferred until when the symbol is actually
+      // emitted for something.  This allow us to use the provided parameters to
+      // filter down the overload set.
+      //
+      // Note: we're being a bit abusive here by making a ParamBindAttr with a
+      // null name for positional attributes.
+      subValue.direct->bindings.push_back(
+          {idx->getLoc(), Attribute(val.get())});
     }
-
-    // Okay, everything checks out, form the new binding array.
-    subValue.direct->bindings =
-        ParamBindArrayAttr::get(emitter.getContext(), bindings);
+    // The bindings will be checked for validity when a reference is formed.
     return subValue;
   }
 

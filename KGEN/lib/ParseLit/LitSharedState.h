@@ -34,7 +34,13 @@ class ASTDecl;
 class ASTType;
 class MValue;
 
-inline const char *plural(size_t value) { return value == 1 ? "" : "s"; }
+/// Given a number, return one string if the number is 1, otherwise return the
+/// other.  This is typically used to generate an "s" suffix, but can also be
+/// used for things like `plural(count, "was", "were")`.
+inline const char *plural(size_t value, const char *one = "",
+                          const char *other = "s") {
+  return value == 1 ? one : other;
+}
 
 /// This is state shared across multiple different instances of LitParser
 /// which are always shared across them.

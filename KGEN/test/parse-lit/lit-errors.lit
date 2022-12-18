@@ -138,11 +138,12 @@ fn badCall():
   test_bool_context(voidReturningFn())
 
 
+# expected-note @+1 {{function declared here}}
 def generic_fn[a: DType, b: __mlir_type.index](c : __mlir_type.index):
 
 def call_generic[dt: DType]():
-  generic_fn[dt, 1, 42](57) # expected-error {{signature expects 2 parameter values}}
-  generic_fn[1, dt](57) # expected-error {{index has type '__mlir_type.index' but declaration expects 'DType'}}
+  generic_fn[dt, 1, 42](57) # expected-error {{function expects 2 input parameters but 3 were provided}}
+  generic_fn[1, dt](57) # expected-error {{parameter "a" has 'DType' type, but value has type '__mlir_type.index'}}
 
 def field_indexes(a: Int):
   a.badField = 42 # expected-error {{object has no attribute 'badField'}}
@@ -353,6 +354,7 @@ struct Parameterized[p1: __mlir_type.index]:
     var result: Parameterized[p1]
     return result
 
+  # expected-note @+1 {{function declared here}}
   fn method[B: __mlir_type.index](self, other: Parameterized[p1+B]):
     pass
 
@@ -365,7 +367,7 @@ fn testTestParamStruct(a: Parameterized[4]):
   # expected-error @+1 {{callee expects 0 arguments}}
   a.method[7](Parameterized[12]())
   a.method[2](Parameterized[6]())
-  a.method[2, 7] # expected-error {{too many parameters bound, signature expects 2 parameter values}}
+  a.method[2, 7] # expected-error {{function expects 2 input parameters but 3 were provided}}
 
 fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: SIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
