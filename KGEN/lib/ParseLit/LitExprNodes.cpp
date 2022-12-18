@@ -225,13 +225,15 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
 
     // In a normal implicit declaration, we add it to the name table so
     // subsequent uses find this one.
-    auto *decl = &emitter.shared.declResolver->addFullyResolvedDecl(
-        varDecl, node->getLoc(), nameAttr, &container);
-    lookup = ExprEmitter::LookupResult::getSuccess(decl);
+    emitter.shared.declResolver->addFullyResolvedDecl(varDecl, node->getLoc(),
+                                                      nameAttr, &container);
+    // Re-do lookup, making sure we form a uniqued vector that we can reference.
+    lookup =
+        emitter.lookupAndResolveDecl(memberName, node->getLoc(), container);
   }
 
-  ASTDecl *decl = lookup.getIfSuccess();
-  if (!decl) {
+  ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
+  if (decls.empty()) {
     if (lookup.isFailure()) {
       auto diag = emitter.emitError(node->getLoc());
       if (auto structDecl = dyn_cast<StructDeclOp>(container))
@@ -242,28 +244,31 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
     return {};
   }
 
+  // Functions form an address, and may be overloaded.
+  if (isa<LIT::FuncOp>(*decls[0]))
+    return CallableValue(node->getLoc(), decls, bindings);
+
+  assert(decls.size() == 1 && "Only functions may be overloaded");
+  ASTDecl &decl = *decls[0];
+
   // Variable references resolve to an lvalue addressing the variable.
-  if (auto var = dyn_cast<VarDeclOp>(*decl))
+  if (auto var = dyn_cast<VarDeclOp>(decl))
     return {{AnyValue(LValue(var.getResult())), node}};
 
-  // Functions form an address.
-  if (isa<LIT::FuncOp>(*decl))
-    return CallableValue(node->getLoc(), *decl, bindings);
-
   // Parameters form an meta-value.
-  if (auto param = dyn_cast<ParamDeclareOp>(*decl))
+  if (auto param = dyn_cast<ParamDeclareOp>(decl))
     return {{MValue(ParamDeclRefAttr::get(param.getName(), param.getType())),
              node}};
 
   // RValue's and LValues always resolve to their known value.
-  if (auto rvalue = decl->getIfRValue())
+  if (auto rvalue = decl.getIfRValue())
     return {{rvalue, node}};
-  if (auto lvalue = decl->getIfLValue())
+  if (auto lvalue = decl.getIfLValue())
     return {{lvalue, node}};
 
   // If this is a type declaration, return it as a type.
-  if (isa<StructDeclOp>(*decl))
-    return {{MValue(DeclRefType::get(decl->getSymbolRef())), node}};
+  if (isa<StructDeclOp>(decl))
+    return {{MValue(DeclRefType::get(decl.getSymbolRef())), node}};
 
   emitter.emitError(node->getLoc(), "use of declaration \"")
       << memberName << "\" as a value isn't supported yet";
@@ -312,7 +317,12 @@ CallableValue ExprNode::emitCallable(ExprEmitter &emitter,
 /// parameters are correct and match expectations..
 SymbolConstantAttr
 DirectCallable::getBoundConstantAttr(ExprEmitter &emitter) const {
-  auto funcOp = cast<LIT::FuncOp>(*fnDecl);
+  if (fnDecls.size() != 1) {
+    emitter.emitError(loc, "cannot form a reference to overloaded decls yet");
+    return {};
+  }
+
+  auto funcOp = cast<LIT::FuncOp>(*fnDecls[0]);
   auto signature = funcOp.getFullSignature();
 
   // We require an exact match for the signature right now, we don't allow
@@ -361,9 +371,9 @@ DirectCallable::getBoundConstantAttr(ExprEmitter &emitter) const {
 
 /// Get a symbol for a direct reference to the specified function in its
 /// enclosing context.  This does not bind any values to arguments.
-CallableValue::CallableValue(SMLoc loc, ASTDecl &fnDecl,
+CallableValue::CallableValue(SMLoc loc, ArrayRef<ASTDecl *> fnDecls,
                              ParamBindArrayAttr bindings)
-    : direct({loc, &fnDecl, {}}) {
+    : direct({loc, {fnDecls.begin(), fnDecls.end()}, {}}) {
   for (ParamBindAttr bind : bindings)
     direct->bindings.push_back({loc, bind});
 }
@@ -589,8 +599,8 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
   // Find the member being accessed.
   ExprEmitter::LookupResult lookup =
       emitter.lookupAndResolveDecl(attrSpelling, getLoc(), *typeDecl);
-  ASTDecl *memberDecl = lookup.getIfSuccess();
-  if (!memberDecl) {
+  ArrayRef<ASTDecl *> memberDecls = lookup.getIfSuccess();
+  if (memberDecls.empty()) {
     // If the error hasn't been diagnosed, handle it now.
     if (lookup.isFailure())
       emitter.emitError(getLoc(), "object has no attribute '")
@@ -599,21 +609,22 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
     return {};
   }
 
-  // Handle method references.
-  if (auto fnOp = dyn_cast<LIT::FuncOp>(*memberDecl)) {
+  // Handle method references, which might be overloaded.
+  if (auto fnOp = dyn_cast<LIT::FuncOp>(*memberDecls[0])) {
     // Get a symbol for the underlying function.
-    CallableValue fnRef(getLoc(), *memberDecl, baseRVType.getParamBindings());
+    CallableValue fnRef(getLoc(), memberDecls, baseRVType.getParamBindings());
 
     // If the callee is a static method, we can directly reference it without
-    // binding a self parameter.
-    if (fnOp.getIsStatic())
-      return fnRef;
-
-    // If this is an instance method, we bind the base value and the symbol
-    // together into a callable.
-    fnRef.baseVal = {baseVal, base};
+    // binding a self parameter.  If this is an instance method, we bind the
+    // base value and the symbol together into a callable.
+    // FIXME: This isn't handling overloaded static/non-static methods
+    // correctly.  What is the actual behavior we want for static methods?
+    if (!fnOp.getIsStatic())
+      fnRef.baseVal = {baseVal, base};
     return fnRef;
   }
+  assert(memberDecls.size() == 1 && "only methods may be overloaded");
+  ASTDecl &memberDecl = *memberDecls[0];
 
   if (!emitter.builder) {
     emitter.emitError(getLoc(),
@@ -624,7 +635,7 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
   auto mlirLoc = emitter.translateLocation(getLoc());
 
   // If the field is a variable, emit a reference to it.
-  if (auto fieldOp = dyn_cast<StructFieldOp>(*memberDecl)) {
+  if (auto fieldOp = dyn_cast<StructFieldOp>(memberDecl)) {
     // If the base is an lvalue, then we can return an lvalue to the field.
     if (LValue baseLV = baseVal.getIfLValue()) {
       auto fieldPtr =
@@ -1035,7 +1046,7 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   if (!subValue)
     return {};
 
-  // If the subValue has a bound callable symbol, then this is applying (more)
+  // If the subValue has a bound callable symbol, then this is applying (more?)
   // meta values to bind its parameters.
   if (subValue.direct) {
     // Process each subscript entry as a binding.
