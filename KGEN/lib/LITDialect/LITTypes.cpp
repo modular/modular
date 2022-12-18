@@ -11,11 +11,6 @@
 using namespace M;
 using namespace KGEN;
 
-DeclRefType LIT::getLibraryErrorType(MLIRContext *ctx) {
-  // The standard library error type is `@Error` with no parameters.
-  return DeclRefType::get(FlatSymbolRefAttr::get(ctx, "Error"));
-}
-
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

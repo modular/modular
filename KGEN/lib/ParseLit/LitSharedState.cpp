@@ -38,8 +38,6 @@ public:
   ASTType typeCheckErrorType;
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType noneType;
-  /// This is the decl for the builtin error type.
-  ASTType errorType;
 
   // These should move the standard library and be looked up from there on
   // demand.
@@ -117,14 +115,9 @@ ASTType LitSharedState::getTypeCheckErrorType() const {
   return impl->typeCheckErrorType;
 }
 ASTType LitSharedState::getNoneType() const { return impl->noneType; }
-ASTType LitSharedState::getErrorType() const { return impl->errorType; }
 
 ASTType LitSharedState::getObjectType() const {
   return impl->objectDecl->getSelfType();
-}
-
-ASTType LitSharedState::getErrorOrType(ASTType valueType) const {
-  return POP::VariantType::get({getErrorType(), valueType});
 }
 
 /// Add declarations for magic things to the builtins decl.
@@ -137,9 +130,6 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   // Make the type check error type.  Anything that references this will
   // considering it erroneous and already declared as such.
   impl->typeCheckErrorType = TypeCheckErrorType::get(context);
-
-  // The builtin error type always references the library `Error` type.
-  impl->errorType = LIT::getLibraryErrorType(context);
 
   OpBuilder b = builtinsDecl.getDeclEndBuilder();
   Location loc = translateLocation(builtinsDecl.getLoc());
@@ -210,7 +200,7 @@ auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
   }
 
   // Look up the name.
-  TinyPtrVector<ASTDecl *> *entry = scope.lookup(name);
+  const TinyPtrVector<ASTDecl *> *entry = scope.lookup(name);
   // If nothing was found, return a failure.
   if (!entry)
     return LookupResult::getFailure();
@@ -238,4 +228,44 @@ auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
   if (auto *decl = scope.getDecl(*this))
     return lookupAndResolveDecl(name, loc, *decl);
   return LookupResult::getFailure();
+}
+
+/// Lookup the `Error` type in the current context and return it if found,
+/// otherwise emit an error and return null.
+ASTType LitSharedState::lookupErrorType(SMLoc loc, ASTDecl &context) {
+  LookupResult result = lookupAndResolveDecl(
+      StringAttr::get(getContext(), "Error"), loc, context);
+  if (result.isErroneous())
+    return {};
+  if (result.isFailure()) {
+    emitError(loc, "could not find an 'Error' type");
+    return {};
+  }
+  // The overload set may contain multiple entries, but if it is a struct, it
+  // must be a single entry and therefore we can just check that one.
+  ASTDecl &firstDecl = *result.getIfSuccess()[0];
+  auto structOp = dyn_cast<StructDeclOp>(firstDecl);
+  if (!structOp) {
+    auto diag = emitError(loc, "'Error' doesn't resolve to a type");
+    diag.attachNote(translateLocation(firstDecl.getLoc()))
+        << "'Error' declared here";
+    return {};
+  }
+  if (!structOp.getInputParamDecls().empty()) {
+    auto diag = emitError(loc, "'Error' resolves to a parameterized type");
+    diag.attachNote(translateLocation(firstDecl.getLoc()))
+        << "'Error' declared here";
+    return {};
+  }
+  return firstDecl.getSelfType();
+}
+
+/// Lookup the Error type and wrap it in a variant with the specified normal
+/// value type.  Return the result, or error if the Error type couldn't be
+/// found.
+ASTType LitSharedState::lookupErrorOrType(ASTType valueType, SMLoc loc,
+                                          ASTDecl &context) {
+  if (auto errorType = lookupErrorType(loc, context))
+    return POP::VariantType::get({errorType, valueType});
+  return {};
 }
