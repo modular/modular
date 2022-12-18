@@ -67,9 +67,6 @@ public:
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType getNoneType() const;
 
-  /// This is the decl for the builtin lit.object struct type.
-  ASTType getObjectType() const;
-
   /// This is set to true if an error occurred at any point processing the file.
   bool errorOccurred = false;
 
@@ -125,6 +122,16 @@ public:
   /// Perform a name lookup for a member in the specified type.
   LookupResult lookupAndResolveDecl(StringRef name, llvm::SMLoc loc,
                                     ASTType scope);
+
+  /// Lookup the specified name, and check that it is a non-parameterized type.
+  /// This emits a diagnostic on error and returns null, or returns the type on
+  /// success.
+  ASTType lookupNonparameterizedNamedType(StringRef name, llvm::SMLoc loc,
+                                          ASTDecl &context);
+
+  /// Lookup the `object` type in the specified context and return it if found,
+  /// otherwise emit an error and return null.
+  ASTType lookupObjectType(llvm::SMLoc loc, ASTDecl &context);
 
   /// Lookup the `Error` type in the specified context and return it if found,
   /// otherwise emit an error and return null.
