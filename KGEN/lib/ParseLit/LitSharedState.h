@@ -33,6 +33,7 @@ class DeclResolver;
 class ASTDecl;
 class ASTType;
 class MValue;
+class LookupResult;
 
 /// Given a number, return one string if the number is 1, otherwise return the
 /// other.  This is typically used to generate an "s" suffix, but can also be
@@ -119,6 +120,18 @@ public:
   /// Add magic things to the builtins decl when parsing starts.
   void addBuiltinTypes(ASTDecl &builtinsDecl);
 
+  //===--------------------------------------------------------------------===//
+  // Name Lookup
+
+  /// Perform a name lookup in the current scope and return the named
+  /// declaration as a LookupResult.
+  LookupResult lookupAndResolveDecl(StringRef name, llvm::SMLoc loc,
+                                    ASTDecl &scope);
+
+  /// Perform a name lookup for a member in the specified type.
+  LookupResult lookupAndResolveDecl(StringRef name, llvm::SMLoc loc,
+                                    ASTType scope);
+
 private:
   /// This is used for memory that lives as long as the global parser does.
   llvm::BumpPtrAllocator persistentAllocator;
@@ -143,6 +156,32 @@ enum class DeclResolvedness : int8_t {
   /// This declaration has been fully type checked, including its body.  Any
   /// declarations within the body may not be fully resolved though.
   fullyResolved
+};
+
+/// This is the result of lookupDecl.
+class LookupResult {
+  enum Kind {
+    kSuccess,   //<- Lookup succeeded and result is non-null.
+    kFailure,   //<- Lookup failed to find something of this name.
+    kErroneous, //<- Lookup found an error, but it is already diagnosed.
+  } kind;
+
+  /// This is non-empty when the Kind is kSuccess.  This points to the symbol
+  /// entry in an ASTDecl, so the pointer is stable.
+  ArrayRef<ASTDecl *> decls;
+  LookupResult(Kind kind, ArrayRef<ASTDecl *> decls)
+      : kind(kind), decls(decls) {}
+
+public:
+  static LookupResult getSuccess(ArrayRef<ASTDecl *> decls) {
+    return {kSuccess, decls};
+  }
+  static LookupResult getFailure() { return {kFailure, {}}; }
+  static LookupResult getErroneous() { return {kErroneous, {}}; }
+
+  ArrayRef<ASTDecl *> getIfSuccess() const { return decls; }
+  bool isFailure() const { return kind == kFailure; }
+  bool isErroneous() const { return kind == kErroneous; }
 };
 
 } // namespace M::KGEN::LIT

@@ -190,3 +190,52 @@ Operation *LitSharedState::setResolvedDeclSymbol(Operation *declOp) {
 
   return symTab.lookup(origName);
 }
+
+//===----------------------------------------------------------------------===//
+// Name Lookup
+//===----------------------------------------------------------------------===//
+
+/// Perform a name lookup in the specified scope and return the named
+/// declaration as a LookupResult.
+auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
+                                          ASTDecl &scope) -> LookupResult {
+
+  // Ensure the context is fully resolved, so all its members are known.  It
+  // would be bad to look something up in a scope without all members known.
+  // FIXME(Issue#5975): FuncOp shouldn't be special cased.
+  if (!isa<FuncOp>(scope)) {
+    if (failed(
+            declResolver->resolve(scope, DeclResolvedness::fullyResolved, loc)))
+      return LookupResult::getErroneous();
+  }
+
+  // Look up the name.
+  TinyPtrVector<ASTDecl *> *entry = scope.lookup(name);
+  // If nothing was found, return a failure.
+  if (!entry)
+    return LookupResult::getFailure();
+
+  // If the lookup succeeded, make sure the signature for the referenced decls
+  // are understood.
+  for (auto *decl : *entry) {
+    if (failed(declResolver->resolve(*decl, DeclResolvedness::signatureResolved,
+                                     loc))) {
+      // If the decl was erroneous somehow, then don't form a reference to it,
+      // the error has already been diagnosed.
+      return LookupResult::getErroneous();
+    }
+  }
+
+  // We return a pointer into the TinyPtrVector entry in the scope.  This should
+  // be stable because you can't perform a lookup into a decl that has unknown
+  // entries, and we just resolved all the signatures for all the decls.
+  return LookupResult::getSuccess(*entry);
+}
+
+/// Perform a name lookup for a member in the specified type.
+auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
+                                          ASTType scope) -> LookupResult {
+  if (auto *decl = scope.getDecl(*this))
+    return lookupAndResolveDecl(name, loc, *decl);
+  return LookupResult::getFailure();
+}
