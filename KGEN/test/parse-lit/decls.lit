@@ -46,8 +46,10 @@ fn testThing(a: Int, b: Int) -> Int: return 1
 
 # CHECK-LABEL: lit.func @"callOverload
 fn callOverload(a: Int):
-#  testThing(a)
-#  testThing(a, a)
+  # CHECK: %0 = kgen.call @"testThing(Int)"(%a)
+  testThing(a)
+  # CHECK:  %1 = kgen.call @"testThing(Int,Int)"(%a, %a)
+  testThing(a, a)
 
 ##===----------------------------------------------------------------------===##
 # @raises decorator.

@@ -159,18 +159,10 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
   if (!calleeVal)
     return {};
 
-  // If the call is a direct call with a bound self, add it to the operand list
-  // to simplify the logic below.
-  bool isMethodInvocation = false;
+  // Set to true if this is a method call like `x.foo(...`.
+  bool isMethodCall = false;
+  // Used in some cases below, lifetime needs to exist for this whole method.
   SmallVector<ASTExprAnd<AnyValue>> operandsWithSelf;
-  if (calleeVal.baseVal && calleeVal.direct) {
-    operandsWithSelf.reserve(operands.size() + 1);
-    operandsWithSelf.push_back(calleeVal.baseVal);
-    operandsWithSelf.append(operands.begin(), operands.end());
-    operands = operandsWithSelf;
-    calleeVal.baseVal = {};
-    isMethodInvocation = true;
-  }
 
   auto emitError = [&](const Twine &message) {
     return this->emitError(callLoc, message);
@@ -184,6 +176,28 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
   // an indirect call.
   PointerUnion<Attribute, Value> callee;
   if (calleeVal.direct) {
+    // If we have a bound self, add it to the operand list to simplify the logic
+    // below.
+    if (calleeVal.baseVal) {
+      operandsWithSelf.reserve(operands.size() + 1);
+      operandsWithSelf.push_back(calleeVal.baseVal);
+      operandsWithSelf.append(operands.begin(), operands.end());
+      operands = operandsWithSelf;
+      calleeVal.baseVal = {};
+      isMethodCall = true;
+    }
+
+    // Check the direct callees to see if they can be unambiguously resolved
+    // with the bindings list and specified arguments.
+
+    // FIXME (impl conversions): We should do this all the time, but overload
+    // resolution doesn't support implicit conversions yet.
+    if (calleeVal.direct->fnDecls.size() > 1) {
+      if (failed(calleeVal.direct->filterOverloadSet(operands, isMethodCall,
+                                                     *this)))
+        return {};
+    }
+
     SymbolConstantAttr symbol = calleeVal.direct->getBoundConstantAttr(*this);
     if (!symbol)
       return {};
@@ -224,11 +238,11 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
     // If the callee takes the operand as a by-ref argument, we require an
     // lvalue.
     Value argVal;
-    switch (ValueInputConvention(convention)) {
+    switch (convention) {
     case ValueInputConvention::ByRef:
       argVal = argAnyValueAndExpr.ir.getIfLValue();
       if (!argVal) {
-        if (isMethodInvocation && valueArguments.empty()) {
+        if (isMethodCall && valueArguments.empty()) {
           this->emitError(argLoc,
                           "invalid use of mutating method on rvalue of type ")
               << ASTType(argAnyValueAndExpr.ir.getType());
