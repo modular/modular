@@ -98,42 +98,6 @@ public:
   ASTType emitType(const ExprNode *node);
 
   //===--------------------------------------------------------------------===//
-  // Name Lookup
-
-  /// This is the result of lookupDecl.
-  class LookupResult {
-    enum Kind {
-      kSuccess,   //<- Lookup succeeded and result is non-null.
-      kFailure,   //<- Lookup failed to find something of this name.
-      kErroneous, //<- Lookup found an error, but it is already diagnosed.
-    } kind;
-
-    /// This is non-empty when the Kind is kSuccess.  This points to the symbol
-    /// entry in an ASTDecl, so the pointer is stable.
-    ArrayRef<ASTDecl *> decls;
-    LookupResult(Kind kind, ArrayRef<ASTDecl *> decls)
-        : kind(kind), decls(decls) {}
-
-  public:
-    static LookupResult getSuccess(ArrayRef<ASTDecl *> decls) {
-      return {kSuccess, decls};
-    }
-    static LookupResult getFailure() { return {kFailure, {}}; }
-    static LookupResult getErroneous() { return {kErroneous, {}}; }
-
-    ArrayRef<ASTDecl *> getIfSuccess() const { return decls; }
-    bool isFailure() const { return kind == kFailure; }
-    bool isErroneous() const { return kind == kErroneous; }
-  };
-
-  /// Perform a name lookup in the current scope and return the named
-  /// declaration as a LookupResult.
-  LookupResult lookupAndResolveDecl(StringRef name, SMLoc loc, ASTDecl &scope);
-
-  /// Perform a name lookup for a member in the specified type.
-  LookupResult lookupAndResolveDecl(StringRef name, SMLoc loc, ASTType scope);
-
-  //===--------------------------------------------------------------------===//
   // Function Calls
 
   /// Emit a function call to the specified callee with the specified operand

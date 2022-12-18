@@ -174,8 +174,8 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
                          StringRef memberName, const ExprNode *node,
                          ExprEmitter &emitter, ASTType contextualType = {}) {
   // Perform a lookup of the specified decl in the current container.
-  ExprEmitter::LookupResult lookup =
-      emitter.lookupAndResolveDecl(memberName, node->getLoc(), container);
+  LookupResult lookup = emitter.shared.lookupAndResolveDecl(
+      memberName, node->getLoc(), container);
 
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a contextual type
@@ -228,8 +228,8 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
     emitter.shared.declResolver->addFullyResolvedDecl(varDecl, node->getLoc(),
                                                       nameAttr, &container);
     // Re-do lookup, making sure we form a uniqued vector that we can reference.
-    lookup =
-        emitter.lookupAndResolveDecl(memberName, node->getLoc(), container);
+    lookup = emitter.shared.lookupAndResolveDecl(memberName, node->getLoc(),
+                                                 container);
   }
 
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
@@ -597,8 +597,8 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
   }
 
   // Find the member being accessed.
-  ExprEmitter::LookupResult lookup =
-      emitter.lookupAndResolveDecl(attrSpelling, getLoc(), *typeDecl);
+  LookupResult lookup =
+      emitter.shared.lookupAndResolveDecl(attrSpelling, getLoc(), *typeDecl);
   ArrayRef<ASTDecl *> memberDecls = lookup.getIfSuccess();
   if (memberDecls.empty()) {
     // If the error hasn't been diagnosed, handle it now.

@@ -792,9 +792,8 @@ void FnDecorators::applyImplements(const CallNode &callNode) {
 
   // Perform a name lookup to find the right symbol.
   StringRef interfaceName = cast<DeclRefNode>(callNode.args.front())->spelling;
-  ExprEmitter emitter(shared, decl, {}, {});
   auto result =
-      emitter.lookupAndResolveDecl(interfaceName, callNode.getLoc(), decl);
+      shared.lookupAndResolveDecl(interfaceName, callNode.getLoc(), decl);
 
   // Reject the code if the interface wasn't found.
   ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();
