@@ -730,8 +730,18 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
   // If the method can raise an exception, wrap the result type in a variant
   // with the error type.
-  if (funcOp.getRaises())
-    resultType = shared.getErrorOrType(resultType);
+  if (funcOp.getRaises()) {
+    auto errorOr = shared.lookupErrorOrType(resultType, decl.getLoc(),
+                                            *decl.getParentDecl());
+    // If we couldn't find an Error type then recover by pretending we didn't
+    // raise.
+    if (!errorOr) {
+      funcOp.setRaises(false);
+      decl.hasReferenceError = true;
+    } else {
+      resultType = errorOr;
+    }
+  }
 }
 
 namespace {

@@ -14,3 +14,15 @@ fn printF32(x: F32):
 
 struct F32:
   var value : __mlir_type.`!pop.scalar<f32>`
+
+
+// -----
+
+@raises
+fn testRaisesWithoutProlog(): # expected-error {{could not find an 'Error' type}}
+
+// -----
+
+fn Error(): # expected-note {{'Error' declared here}}
+@raises
+fn testRaisesWithWeirdError(): # expected-error {{'Error' doesn't resolve to a type}}

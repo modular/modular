@@ -380,9 +380,12 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // If the enclosing method raises, implicitly wrap the result in a variant.
   Location returnLoc = translateLocation(loc);
   if (decl.getRaises()) {
+    auto errorOrType = getSharedState().lookupErrorOrType(resultValue.getType(),
+                                                          loc, containingDecl);
+    if (!errorOrType)
+      return {};
     resultValue = builder.create<POP::VariantCreateOp>(
-        returnLoc, Type(getSharedState().getErrorOrType(resultValue.getType())),
-        resultValue);
+        returnLoc, Type(errorOrType), resultValue);
   }
 
   if (isa<LIT::FuncOp>(builder.getInsertionBlock()->getParentOp())) {
@@ -528,11 +531,11 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
 ///              ["else" suite]
 ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
   auto func = getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock());
-  Location tryLoc = translateLocation(consumeToken(LitToken::kw_try).getLoc());
+  SMLoc loc = consumeToken(LitToken::kw_try).getLoc();
 
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
-  auto tryOp = builder.create<TryOp>(tryLoc);
+  auto tryOp = builder.create<TryOp>(translateLocation(loc));
   if (parseToken(LitToken::colon, "expected ':' after 'try'"))
     return failure();
 
@@ -557,9 +560,14 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
 
   if (parseToken(LitToken::colon, "expected ':' after 'except'"))
     return failure();
+
+  auto errorType = getSharedState().lookupErrorType(errValLoc, containingDecl);
+  if (!errorType)
+    return failure();
+
   Block *exceptBlock = builder.createBlock(&tryOp.getExceptRegion());
-  Value errVal = exceptBlock->addArgument(getSharedState().getErrorType(),
-                                          translateLocation(errValLoc));
+  Value errVal =
+      exceptBlock->addArgument(errorType, translateLocation(errValLoc));
 
   // If an identifier was declared for the error value, add a declaration that
   // references it.

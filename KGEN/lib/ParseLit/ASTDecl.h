@@ -107,7 +107,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Look up a name in this declaration's scope only: return null on failure.
-  TinyPtrVector<ASTDecl *> *lookupInCurrentScope(StringAttr name) {
+  const TinyPtrVector<ASTDecl *> *lookupInCurrentScope(StringAttr name) const {
     assert((resolvedness == DeclResolvedness::fullyResolved ||
             // FIXME(Issue#5975): FuncOp shouldn't be special cased.
             isa<FuncOp>(*this)) &&
@@ -120,8 +120,8 @@ public:
 
   /// Perform a lookup in this declaration's scope and all parent scopes,
   /// returning the nearest target or null if nothing is found.
-  TinyPtrVector<ASTDecl *> *lookup(StringAttr name) {
-    ASTDecl *curScope = this;
+  const TinyPtrVector<ASTDecl *> *lookup(StringAttr name) const {
+    const ASTDecl *curScope = this;
     while (curScope) {
       if (auto *result = curScope->lookupInCurrentScope(name))
         return result;
@@ -130,7 +130,7 @@ public:
     return nullptr;
   }
 
-  TinyPtrVector<ASTDecl *> *lookup(StringRef name) {
+  const TinyPtrVector<ASTDecl *> *lookup(StringRef name) const {
     return lookup(StringAttr::get(getContext(), name));
   }
 

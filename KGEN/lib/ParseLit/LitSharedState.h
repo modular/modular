@@ -67,14 +67,8 @@ public:
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType getNoneType() const;
 
-  /// This is the decl for the builtin error type.
-  ASTType getErrorType() const;
-
   /// This is the decl for the builtin lit.object struct type.
   ASTType getObjectType() const;
-
-  /// This is the decl for the error or type.
-  ASTType getErrorOrType(ASTType valueType) const;
 
   /// This is set to true if an error occurred at any point processing the file.
   bool errorOccurred = false;
@@ -131,6 +125,16 @@ public:
   /// Perform a name lookup for a member in the specified type.
   LookupResult lookupAndResolveDecl(StringRef name, llvm::SMLoc loc,
                                     ASTType scope);
+
+  /// Lookup the `Error` type in the specified context and return it if found,
+  /// otherwise emit an error and return null.
+  ASTType lookupErrorType(llvm::SMLoc loc, ASTDecl &context);
+
+  /// Lookup the Error type and wrap it in a variant with the specified normal
+  /// value type.  Return the result, or error if the Error type couldn't be
+  /// found.
+  ASTType lookupErrorOrType(ASTType valueType, llvm::SMLoc loc,
+                            ASTDecl &context);
 
 private:
   /// This is used for memory that lives as long as the global parser does.
