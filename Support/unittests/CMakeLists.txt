@@ -19,6 +19,7 @@ add_modular_unittest(
   HMACTest.cpp
   MathExtras.cpp
   MicroBenchmarkTest.cpp
+  SmartVariantTest.cpp
   TimeProfilerTest.cpp
 
   LINK_LIBS PRIVATE
