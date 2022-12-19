@@ -28,8 +28,8 @@ if sys.version_info >= (3, 10):
 else:
     from typing_extensions import TypeGuard
 
-from black.output import out
-from black.report import NothingChanged
+from mblack.output import out
+from mblack.report import NothingChanged
 
 TRANSFORMED_MAGICS = frozenset(
     (

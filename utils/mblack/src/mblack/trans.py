@@ -45,11 +45,11 @@ else:
 
 from mypy_extensions import trait
 
-from black.brackets import BracketMatchError
-from black.comments import contains_pragma_comment
-from black.lines import Line, append_leaves
-from black.mode import Feature
-from black.nodes import (
+from mblack.brackets import BracketMatchError
+from mblack.comments import contains_pragma_comment
+from mblack.lines import Line, append_leaves
+from mblack.mode import Feature
+from mblack.nodes import (
     CLOSING_BRACKETS,
     OPENING_BRACKETS,
     STANDALONE_COMMENT,
@@ -60,8 +60,8 @@ from black.nodes import (
     replace_child,
     syms,
 )
-from black.rusty import Err, Ok, Result
-from black.strings import (
+from mblack.rusty import Err, Ok, Result
+from mblack.strings import (
     assert_is_leaf_string,
     get_string_prefix,
     has_triple_quotes,

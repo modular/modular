@@ -48,16 +48,16 @@ from mypy_extensions import mypyc_attr
 from pathspec import PathSpec
 from pathspec.patterns.gitwildmatch import GitWildMatchPatternError
 
-from _black_version import version as __version__
-from black.cache import Cache, get_cache_info, read_cache, write_cache
-from black.comments import normalize_fmt_off
-from black.const import (
+from _mblack_version import version as __version__
+from mblack.cache import Cache, get_cache_info, read_cache, write_cache
+from mblack.comments import normalize_fmt_off
+from mblack.const import (
     DEFAULT_EXCLUDES,
     DEFAULT_INCLUDES,
     DEFAULT_LINE_LENGTH,
     STDIN_PLACEHOLDER,
 )
-from black.files import (
+from mblack.files import (
     find_project_root,
     find_pyproject_toml,
     find_user_pyproject_toml,
@@ -67,7 +67,7 @@ from black.files import (
     parse_pyproject_toml,
     wrap_stream_for_windows,
 )
-from black.handle_ipynb_magics import (
+from mblack.handle_ipynb_magics import (
     PYTHON_CELL_MAGICS,
     TRANSFORMED_MAGICS,
     jupyter_dependencies_are_installed,
@@ -76,9 +76,9 @@ from black.handle_ipynb_magics import (
     remove_trailing_semicolon,
     unmask_cell,
 )
-from black.linegen import LN, LineGenerator, transform_line
-from black.lines import EmptyLineTracker, LinesBlock
-from black.mode import (
+from mblack.linegen import LN, LineGenerator, transform_line
+from mblack.lines import EmptyLineTracker, LinesBlock
+from mblack.mode import (
     FUTURE_FLAG_TO_FEATURE,
     VERSION_TO_FEATURES,
     Feature,
@@ -86,18 +86,18 @@ from black.mode import (
     TargetVersion,
     supports_feature,
 )
-from black.nodes import (
+from mblack.nodes import (
     STARS,
     is_number_token,
     is_simple_decorator_expression,
     is_string_token,
     syms,
 )
-from black.output import color_diff, diff, dump_to_file, err, ipynb_diff, out
-from black.parsing import InvalidInput  # noqa F401
-from black.parsing import lib2to3_parse, parse_ast, stringify_ast
-from black.report import Changed, NothingChanged, Report
-from black.trans import iter_fexpr_spans
+from mblack.output import color_diff, diff, dump_to_file, err, ipynb_diff, out
+from mblack.parsing import InvalidInput  # noqa F401
+from mblack.parsing import lib2to3_parse, parse_ast, stringify_ast
+from mblack.report import Changed, NothingChanged, Report
+from mblack.trans import iter_fexpr_spans
 from blib2to3.pgen2 import token
 from blib2to3.pytree import Leaf, Node
 
@@ -616,7 +616,7 @@ def main(  # noqa: C901
                 report=report,
             )
         else:
-            from black.concurrency import reformat_many
+            from mblack.concurrency import reformat_many
 
             reformat_many(
                 sources=sources,
