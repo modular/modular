@@ -304,8 +304,8 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
     // Otherwise emit calls to SSA values with call_indirect.
     auto calleeDRVal = cast<Value>(callee);
     resultVal = builder
-                    ->create<CallIndirectOp>(loc, resultTypes, calleeDRVal,
-                                             /*operands*/ valueArguments)
+                    ->create<POP::CallIndirectOp>(loc, resultTypes, calleeDRVal,
+                                                  /*operands*/ valueArguments)
                     .getResult(0);
   }
 

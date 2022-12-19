@@ -505,6 +505,19 @@ static void printArrayOfPrettyTypes(AsmPrinter &p, ArrayRef<TypedAttr> values) {
   llvm::interleaveComma(values, p,
                         [&](TypedAttr value) { printPrettyType(p, value); });
 }
+//===----------------------------------------------------------------------===//
+// ClosureType
+//===----------------------------------------------------------------------===//
+
+Optional<int64_t> ClosureType::getTypeSize(TargetInfoAttr target) const {
+  // FIXME: Implement this.
+  llvm_unreachable("TODO: unimplemented");
+}
+
+Optional<int64_t> ClosureType::getTypeAlign(TargetInfoAttr target) const {
+  // FIXME: Implement this.
+  llvm_unreachable("TODO: unimplemented");
+}
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions

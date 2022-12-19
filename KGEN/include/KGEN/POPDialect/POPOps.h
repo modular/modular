@@ -37,6 +37,7 @@ enum class PrefetchLocality : uint32_t;
 class PrefetchLocalityAttr;
 
 class ArrayType;
+class ClosureType;
 class PointerType;
 class ScalarType;
 class SIMDType;
