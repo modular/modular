@@ -22,9 +22,9 @@ from pathlib import Path
 from typing import Any, Iterator, List, Optional, Tuple
 
 import black
-from black.debug import DebugVisitor
-from black.mode import TargetVersion
-from black.output import diff, err, out
+from mblack.debug import DebugVisitor
+from mblack.mode import TargetVersion
+from mblack.output import diff, err, out
 
 PYTHON_SUFFIX = ".py"
 ALLOWED_SUFFIXES = (PYTHON_SUFFIX, ".pyi", ".out", ".diff", ".ipynb")

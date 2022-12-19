@@ -28,9 +28,9 @@ from typing import (
     cast,
 )
 
-from black.brackets import DOT_PRIORITY, BracketTracker
-from black.mode import Mode, Preview
-from black.nodes import (
+from mblack.brackets import DOT_PRIORITY, BracketTracker
+from mblack.mode import Mode, Preview
+from mblack.nodes import (
     BRACKETS,
     CLOSING_BRACKETS,
     OPENING_BRACKETS,

@@ -23,8 +23,8 @@ from typing import Dict, Iterable, Set, Tuple
 
 from platformdirs import user_cache_dir
 
-from _black_version import version as __version__
-from black.mode import Mode
+from _mblack_version import version as __version__
+from mblack.mode import Mode
 
 # types
 Timestamp = float

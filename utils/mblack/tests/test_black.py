@@ -54,12 +54,12 @@ from pathspec import PathSpec
 
 import black
 import black.files
-from black import Feature, TargetVersion
-from black import re_compile_maybe_verbose as compile_pattern
-from black.cache import get_cache_dir, get_cache_file
-from black.debug import DebugVisitor
-from black.output import color_diff, diff
-from black.report import Report
+from mblack import Feature, TargetVersion
+from mblack import re_compile_maybe_verbose as compile_pattern
+from mblack.cache import get_cache_dir, get_cache_file
+from mblack.debug import DebugVisitor
+from mblack.output import color_diff, diff
+from mblack.report import Report
 
 # Import other test classes
 from tests.util import (
@@ -2373,7 +2373,7 @@ except UnicodeDecodeError:
 def tracefunc(
     frame: types.FrameType, event: str, arg: Any
 ) -> Callable[[types.FrameType, str, Any], Any]:
-    """Show function calls `from black/__init__.py` as they happen.
+    """Show function calls `from mblack/__init__.py` as they happen.
 
     Register this with `sys.settrace()` in a test you're debugging.
     """

@@ -21,14 +21,14 @@ from enum import Enum, auto
 from functools import partial, wraps
 from typing import Collection, Iterator, List, Optional, Set, Union, cast
 
-from black.brackets import (
+from mblack.brackets import (
     COMMA_PRIORITY,
     DOT_PRIORITY,
     get_leaves_inside_matching_brackets,
     max_delimiter_priority_in_atom,
 )
-from black.comments import FMT_OFF, generate_comments, list_comments
-from black.lines import (
+from mblack.comments import FMT_OFF, generate_comments, list_comments
+from mblack.lines import (
     Line,
     append_leaves,
     can_be_split,
@@ -36,8 +36,8 @@ from black.lines import (
     is_line_short_enough,
     line_to_string,
 )
-from black.mode import Feature, Mode, Preview
-from black.nodes import (
+from mblack.mode import Feature, Mode, Preview
+from mblack.nodes import (
     ASSIGNMENTS,
     CLOSING_BRACKETS,
     OPENING_BRACKETS,
@@ -65,14 +65,14 @@ from black.nodes import (
     syms,
     wrap_in_parentheses,
 )
-from black.numerics import normalize_numeric_literal
-from black.strings import (
+from mblack.numerics import normalize_numeric_literal
+from mblack.strings import (
     fix_docstring,
     get_string_prefix,
     normalize_string_prefix,
     normalize_string_quotes,
 )
-from black.trans import (
+from mblack.trans import (
     CannotTransform,
     StringMerger,
     StringParenStripper,

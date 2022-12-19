@@ -24,7 +24,7 @@ if sys.version_info < (3, 8):
 else:
     from typing import Final
 
-from black.nodes import (
+from mblack.nodes import (
     BRACKET,
     CLOSING_BRACKETS,
     COMPARATORS,

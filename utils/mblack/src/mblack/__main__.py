@@ -12,7 +12,6 @@
 #   Path:   src/black/__main__.py
 #
 # ===----------------------------------------------------------------------=== #
-
-from black import patched_main
+from mblack import patched_main
 
 patched_main()

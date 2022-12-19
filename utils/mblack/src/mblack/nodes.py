@@ -31,8 +31,8 @@ else:
 
 from mypy_extensions import mypyc_attr
 
-from black.cache import CACHE_DIR
-from black.strings import has_triple_quotes
+from mblack.cache import CACHE_DIR
+from mblack.strings import has_triple_quotes
 from blib2to3 import pygram
 from blib2to3.pgen2 import token
 from blib2to3.pytree import NL, Leaf, Node, type_repr
