@@ -17,6 +17,10 @@
 #define LIT_EXPR_NODES_H
 
 #include "LitExprNode.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/SMLoc.h"
+
 namespace M::KGEN {
 class SignatureType;
 }
@@ -228,9 +232,7 @@ struct ParenExprNode final : public ExprNode {
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 
   CallableValue emitCallable(ExprEmitter &emitter,
-                             ASTType contextualType) const override {
-    return subExpr->emitCallable(emitter, contextualType);
-  }
+                             ASTType contextualType) const override;
 };
 
 struct ListExprNode final : public ExprNode {
