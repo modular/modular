@@ -804,7 +804,7 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
 CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
                                              ASTType contextualType) const {
 
-  auto baseVal = base->emitIR(emitter);
+  auto baseVal = base->emitIR(emitter, /*No Contextual Type*/ {});
   if (!baseVal)
     return {};
 
@@ -1057,7 +1057,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   /// Emit a function call for a call node with the specified operands.
   SmallVector<ASTExprAnd<AnyValue>> operands;
   for (ExprNode *arg : args) {
-    operands.push_back({arg->emitIR(emitter), arg});
+    operands.push_back({arg->emitIR(emitter, /*No Contextual Type*/ {}), arg});
     if (!operands.back())
       return {};
   }
@@ -1608,7 +1608,7 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
 
 AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
                              ASTType contextualType) const {
-  auto exprRep = subExpr->emitIR(emitter);
+  auto exprRep = subExpr->emitIR(emitter, /*No Contextual Type*/ {});
   if (!exprRep)
     return {};
 

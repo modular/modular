@@ -57,7 +57,8 @@ public:
   /// This helper emits the specified value rep as an RValue.
   RValue emitRValue(const ExprNode *node) {
     assert(node && "cannot emit a null node");
-    return emitRValue(node->emitIR(*this), node->getLoc());
+    return emitRValue(node->emitIR(*this, /*No Contextual Type*/ {}),
+                      node->getLoc());
   }
   RValue emitRValue(AnyValue rep, SMLoc loc);
 
@@ -74,7 +75,8 @@ public:
   /// emission fails.
   DRValue emitDRValue(const ExprNode *node) {
     assert(node && "cannot emit a null node");
-    return emitDRValue(node->emitIR(*this), node->getLoc());
+    return emitDRValue(node->emitIR(*this, /*No Contextual Type*/ {}),
+                       node->getLoc());
   }
 
   /// This helper emits the specified expression as a meta value, diagnosing the
