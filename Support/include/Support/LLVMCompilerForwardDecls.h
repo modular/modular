@@ -44,6 +44,10 @@ class DenseElementsAttr;
 class DenseIntElementsAttr;
 using DenseI8ArrayAttr = detail::DenseArrayAttrImpl<int8_t>;
 class DenseResourceElementsAttr;
+namespace detail {
+template <typename Ty>
+struct TypedValue;
+} // namespace detail
 template <typename T>
 struct DialectResourceBlobHandle;
 class Diagnostic;
@@ -137,6 +141,12 @@ class CalibratedQuantizedType;
 class QuantizedType;
 class UniformQuantizedType;
 class UniformQuantizedPerAxisType;
+
+template <typename Ty, typename Value = mlir::Value>
+/// If Ty is mlir::Type this will select `Value` instead of having a wrapper
+/// around it. This helps resolve ambiguous conversion issues.
+using TypedValue = std::conditional_t<std::is_same_v<Ty, mlir::Type>,
+                                      mlir::Value, detail::TypedValue<Ty>>;
 } // namespace quant
 } // namespace mlir
 

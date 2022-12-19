@@ -672,7 +672,7 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
   // Partial apply wants to know what operands to bind, we always bind the first
   // one.
   auto zeroAttr = emitter.builder->getAttr<mlir::DenseI64ArrayAttr>(0);
-  return DRValue(emitter.builder->create<PartialApplyOp>(
+  return DRValue(emitter.builder->create<POP::PartialApplyOp>(
       emitter.translateLocation(loc), calleeDRVal,
       mlir::ValueRange(firstArgValue), zeroAttr));
 }

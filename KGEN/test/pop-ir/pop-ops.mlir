@@ -1094,6 +1094,36 @@ kgen.generator @indirect_call(%a: i32, %fn: (i32) -> index) -> index {
   kgen.return %0 : index
 }
 
+// CHECK-LABEL: @call_indirect
+kgen.generator @call_indirect(%arg0: (index) -> index, %arg1 : !pop.closure<(index) -> index>) {
+  %idx0 = index.constant 0
+  // CHECK: call_indirect %arg0(%idx0) : (index) -> index
+  %1 = pop.call_indirect %arg0(%idx0) : (index) -> index
+  // CHECK: call_indirect %arg1(%idx0) : !pop.closure<(index) -> index>
+  %2 = pop.call_indirect %arg1(%idx0) : !pop.closure<(index) -> index>
+  kgen.return
+}
+
+// CHECK-LABEL: @partial_apply
+// CHECK-SAME: %[[FN:.*]]: (i8, i16, i32, i64) -> ()
+// CHECK-SAME: %[[A0:.*]]: i8, %[[A1:.*]]: i16, %[[A2:.*]]: i32, %[[A3:.*]]: i64
+kgen.generator @partial_apply(
+    %fn: (i8, i16, i32, i64) -> (),
+    %arg0: i8, %arg1: i16, %arg2: i32, %arg3: i64) -> !pop.closure<() -> ()> {
+  // CHECK-NEXT: %[[F0:.*]] = pop.partial_apply %[[FN]](?, %[[A1]], %[[A2]], ?) : (i8, i16, i32, i64) -> ()
+  %0 = pop.partial_apply %fn(?, %arg1, %arg2, ?) : (i8, i16, i32, i64) -> ()
+  // CHECK-NEXT: %[[F1:.*]] = pop.partial_apply %[[F0]](?, ?) : !pop.closure<(i8, i64) -> ()>
+  %1 = pop.partial_apply %0(?, ?) : !pop.closure<(i8, i64) -> ()>
+  // CHECK-NEXT: %[[F2:.*]] = pop.partial_apply %[[F1]](?, %[[A3]]) : !pop.closure<(i8, i64) -> ()>
+  %2 = pop.partial_apply %1(?, %arg3) : !pop.closure<(i8, i64) -> ()>
+  // CHECK-NEXT: %[[F3:.*]] = pop.partial_apply %[[F2]](%[[A0]]) : !pop.closure<(i8) -> ()>
+  %3 = pop.partial_apply %2(%arg0) : !pop.closure<(i8) -> ()>
+  // CHECK-NEXT: %[[F4:.*]] = pop.partial_apply %[[F3]]() : !pop.closure<() -> ()>
+  %4 = pop.partial_apply %3() : !pop.closure<() -> ()>
+  // CHECK-NEXT: return %[[F4]]
+  kgen.return %4 : !pop.closure<() -> ()>
+}
+
 // CHECK-LABEL: @inline_asm
 kgen.generator @inline_asm<type: type, dtype: dtype>(
     %arg0: !pop.scalar<si32>,
