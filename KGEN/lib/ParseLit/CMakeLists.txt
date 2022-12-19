@@ -8,6 +8,7 @@ add_modular_conversion_library(ParseLit
   ASTType.cpp
   IRValues.cpp
   LitDecls.cpp
+  LitExprCalls.cpp
   LitExprEmitter.cpp
   LitExprNodes.cpp
   LitExprParser.cpp

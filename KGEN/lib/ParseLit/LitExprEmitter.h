@@ -7,11 +7,15 @@
 #ifndef LIT_EXPREMITTER_H
 #define LIT_EXPREMITTER_H
 
+#include "IRValues.h"
 #include "LitExprNode.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/TinyPtrVector.h"
+#include "llvm/Support/SMLoc.h"
 
 namespace M::KGEN::LIT {
+template <typename ValueType>
+struct ASTExprAnd;
 enum class SpecialFunctionKind : uint8_t;
 
 /// This class is the main driver for expression emission, providing helper
