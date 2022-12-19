@@ -139,7 +139,7 @@ public:
   /// contextualType (if non-null) indicates the contextual type to use for an
   /// implicitly declared value, e.g. a/b in `def f(): (a,b) = (1,2)`.
   virtual AnyValue emitIR(ExprEmitter &emitter,
-                          ASTType contextualType = {}) const = 0;
+                          ASTType contextualType) const = 0;
 
   /// Emit this expression to MLIR as a CallableValue.  On error, emit an error
   /// and return a null value.

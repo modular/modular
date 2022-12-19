@@ -84,7 +84,7 @@ DRValue ExprEmitter::emitDRValue(RValue rep, SMLoc loc) {
 /// problem if the expression is only valid as a runtime value.  This returns
 /// null if emission fails.
 MValue ExprEmitter::emitMValue(const ExprNode *node, const Twine &message) {
-  auto rep = node->emitIR(*this);
+  auto rep = node->emitIR(*this, /*No Contextual Type*/ {});
   if (!rep)
     return {};
 
