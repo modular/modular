@@ -1,0 +1,146 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef SUPPORT_SMART_VARIANT_H
+#define SUPPORT_SMART_VARIANT_H
+
+#include "llvm/ADT/PointerUnion.h"
+#include "llvm/Support/Casting.h"
+#include <type_traits>
+#include <variant>
+
+namespace M {
+
+/// A generic, discriminated union type, where, if all of the types are pointer
+/// types, the discriminator is stored in the low bit of the pointer.
+/// Otherwise, for non-pointer types, there is no notion of a discriminator to
+/// use generally speaking.  There is a concept of tombstone values, but we
+/// don't expose that as a customization point for non-pointer types, though we
+/// could in the future to have a hybrid, space-efficient approach.
+///
+/// This implementation is extremely efficient in space due to leveraging the
+/// low bits of the pointer, while exposing a natural and type-safe API.
+///
+/// `llvm::PointerUnion<Ts...>` can not be used generically by callers since it
+/// only works when all of the types are pointer types. `SmartVariant<Ts...>`
+/// allows for generically working with a variant-like type. Specifically, if
+/// all of the types are pointers (i.e. there are bits we can steal to represent
+/// the nullable value), the underlying storage is `PointerUnion`. Otherwise,
+/// we fall back to the less space-efficient `std::variant`. `SmartVariant`
+/// provides a uniform API for working with the set of types by providing the
+/// LLVM casting infra: `isa`, `get`, `dyn_cast`, etc. along with a similar API
+/// of checking for nullability via `isNull()` on the `SmartVariant` itself.
+template <class... Ts>
+class SmartVariant {
+public:
+  static constexpr bool CanStealBits = (std::is_pointer_v<Ts> && ...);
+
+private:
+  using UnderlyingStorage =
+      std::conditional_t<CanStealBits, llvm::PointerUnion<Ts...>,
+                         std::variant<Ts...>>;
+
+public:
+  SmartVariant() = default;
+
+  template <class... TArgs>
+  SmartVariant(TArgs &&...args) : storage(std::forward<TArgs...>(args...)) {}
+
+  bool isNull() const {
+    if constexpr (CanStealBits) {
+      return storage.isNull();
+    } else {
+      // A `std::variant` is never "null".  Even when default constructed, it's
+      // actually constructed with the first type in the `variant`.  This means
+      // there is no way to discern between the variant being constructed with
+      // the first type vs. default constructed.
+      return false;
+    }
+  }
+
+  explicit operator bool() const { return !isNull(); }
+
+  UnderlyingStorage &getUnderlyingStorage() { return storage; }
+
+  const UnderlyingStorage &getUnderlyingStorage() const { return storage; }
+
+private:
+  UnderlyingStorage storage;
+};
+
+template <class... Ts>
+SmartVariant(Ts &&...) -> SmartVariant<Ts...>;
+
+template <class... Ts>
+bool operator==(const SmartVariant<Ts...> &lhs,
+                const SmartVariant<Ts...> &rhs) {
+  return lhs.getUnderlyingStorage() == rhs.getUnderlyingStorage();
+}
+
+template <class... Ts>
+bool operator!=(const SmartVariant<Ts...> &lhs,
+                const SmartVariant<Ts...> &rhs) {
+  return lhs.getUnderlyingStorage() != rhs.getUnderlyingStorage();
+}
+
+template <class... Ts>
+bool operator<(const SmartVariant<Ts...> &lhs, const SmartVariant<Ts...> &rhs) {
+  return lhs.getUnderlyingStorage() < rhs.getUnderlyingStorage();
+}
+} // namespace M
+
+// Specialization of CastInfo for SmartVariant
+namespace llvm {
+
+template <class... Ts>
+inline constexpr bool IsNullable<M::SmartVariant<Ts...>> =
+    M::SmartVariant<Ts...>::CanStealBits;
+
+template <class... Ts>
+struct ValueIsPresent<M::SmartVariant<Ts...>,
+                      std::enable_if_t<!M::SmartVariant<Ts...>::CanStealBits>> {
+  static bool isPresent(const M::SmartVariant<Ts...> &t) { return true; }
+  static decltype(auto) unwrapValue(M::SmartVariant<Ts...> &t) { return t; }
+};
+
+template <class To, class... Ts>
+struct CastInfo<To, M::SmartVariant<Ts...>> {
+  using From = M::SmartVariant<Ts...>;
+  using PointerUnionCastImpl = CastInfoPointerUnionImpl<Ts...>;
+
+  static bool isPossible(From &f) {
+    if constexpr (From::CanStealBits)
+      return PointerUnionCastImpl::template isPossible<To>(
+          f.getUnderlyingStorage());
+    else
+      return std::holds_alternative<To>(f.getUnderlyingStorage());
+  }
+
+  static To doCast(From &f) {
+    if constexpr (From::CanStealBits)
+      return PointerUnionCastImpl::template doCast<To>(
+          f.getUnderlyingStorage());
+    else
+      return std::get<To>(f.getUnderlyingStorage());
+  }
+
+  static To doCastIfPossible(From &f) {
+    if (!isPossible(f))
+      return castFailed();
+    return doCast(f);
+  }
+
+  static To castFailed() { return {}; }
+};
+
+template <class To, class... Ts>
+struct CastInfo<To, const M::SmartVariant<Ts...>>
+    : public ConstStrippingForwardingCast<
+          To, const M::SmartVariant<Ts...>,
+          CastInfo<To, M::SmartVariant<Ts...>>> {};
+} // namespace llvm
+
+#endif
