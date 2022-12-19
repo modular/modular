@@ -9,6 +9,7 @@
 
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/PointerLikeTypeTraits.h"
 #include <type_traits>
 #include <variant>
 
@@ -17,9 +18,8 @@ namespace M {
 /// A generic, discriminated union type, where, if all of the types are pointer
 /// types, the discriminator is stored in the low bit of the pointer.
 /// Otherwise, for non-pointer types, there is no notion of a discriminator to
-/// use generally speaking.  There is a concept of tombstone values, but we
-/// don't expose that as a customization point for non-pointer types, though we
-/// could in the future to have a hybrid, space-efficient approach.
+/// use generally speaking.  Extend the set of pointer types by supporting the
+/// concept of `PointerLike` types in `llvm`.
 ///
 /// This implementation is extremely efficient in space due to leveraging the
 /// low bits of the pointer, while exposing a natural and type-safe API.
@@ -33,10 +33,12 @@ namespace M {
 /// provides a uniform API for working with the set of types by providing the
 /// LLVM casting infra: `isa`, `get`, `dyn_cast`, etc. along with a similar API
 /// of checking for nullability via `isNull()` on the `SmartVariant` itself.
+
 template <class... Ts>
 class SmartVariant {
 public:
-  static constexpr bool CanStealBits = (std::is_pointer_v<Ts> && ...);
+  static constexpr bool CanStealBits =
+      (llvm::detail::IsPointerLike<Ts>::value && ...);
 
 private:
   using UnderlyingStorage =

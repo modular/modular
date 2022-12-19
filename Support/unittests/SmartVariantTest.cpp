@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/SmartVariant.h"
+#include "mlir/IR/Attributes.h"
 
 #include "gtest/gtest.h"
 
@@ -103,4 +104,15 @@ TEST_F(SmartVariantTest, isNull) {
   EXPECT_FALSE(c2.isNull());
   EXPECT_TRUE(n1.isNull());
   EXPECT_FALSE(n2.isNull()); // a `std::variant` is never null
+}
+
+TEST_F(SmartVariantTest, pointerLikeTypes) {
+  {
+    using SV = SmartVariant<mlir::Attribute>;
+    static_assert(SV::CanStealBits);
+  }
+  {
+    using SV = SmartVariant<mlir::Attribute, int>;
+    static_assert(!SV::CanStealBits);
+  }
 }
