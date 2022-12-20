@@ -479,7 +479,7 @@ struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
 
     fn __bool__(self: ErrorOr[type]) -> Bool:
         return Bool.false()
-           if Bool(__mlir_op.`pop.variant.is`[testType: __mlir_attr.`!kgen.declref<@Error>`](self.value))
+           if __mlir_op.`pop.variant.is`[testType: __mlir_attr.`!kgen.declref<@Error>`](self.value)
            else Bool.true()
 
     fn getValue(self: ErrorOr[type]) -> __mlir_type.`!kgen.paramref<#lit.placeholder : !kgen.mlirtype>>`[type]:
