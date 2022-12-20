@@ -424,18 +424,22 @@ struct WeirdBoolish:
 fn badAnd(a: Bool, b: WeirdBoolish):
   _ = a and b # expected-error {{cannot find common type between 'Bool' and 'WeirdBoolish'}}
 
+# expected-note @below {{candidate declared here}}
 # expected-note @below {{in argument #0, value of type 'TestOverloading' cannot be converted to expected type 'Int'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
 fn overloadIntF32(a: Int):
 
+# expected-note @below {{candidate declared here}}
 # expected-note @below {{in argument #0, value of type 'TestOverloading' cannot be converted to expected type 'F32'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
 fn overloadIntF32(a: F32):
 
+# expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: callee expects 2 arguments}}
 # expected-note @below {{candidate not viable: in argument #1, value of type 'F32' cannot be converted to expected type 'Int'}}
 fn overloadIntF32(a: Int, b: Int):
 
+# expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: callee expects 2 arguments}}
 # expected-note @below {{candidate not viable: operand must be mutable in order to pass as a by-ref argument}}
 fn overloadIntF32(a: Int, b&: F32):
@@ -445,7 +449,7 @@ struct TestOverloading:
   fn a(self):  # expected-error {{invalid redefinition of "a"}}
 
   fn test(self, a: Int, b: F32):
-    # expected-error @+1 {{cannot form a reference to overloaded decls yet}}
+    # expected-error @+1 {{cannot form a reference to overloaded declaration}}
     var bad = overloadIntF32
 
     # expected-error @+1 {{no matching function in call}}
