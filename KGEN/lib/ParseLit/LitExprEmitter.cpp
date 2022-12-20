@@ -153,8 +153,6 @@ ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
   bool isErroneousDecl = false;
   CallableValue callee(type, specialFnInfo.name, callLoc,
                        /*emitErrorOnFailure=*/true, isErroneousDecl, shared);
-  if (callee.isNull())
-    return {};
   return callee.emitFunctionCall(operands, callLoc, *this);
 }
 
