@@ -309,6 +309,8 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
   if (parseExpressionOrAssignmentStmt(expr, stmtIndent))
     return failure();
 
+  // If this wasn't an assignment statement, it is just a freestanding
+  // expression.  Emit it and ignore the results.
   (void)getExprEmitter(/*allowImplicitVarDecl=*/true).emitDRValue(expr);
   return success();
 }

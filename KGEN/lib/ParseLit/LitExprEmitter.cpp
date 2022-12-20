@@ -162,6 +162,8 @@ ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
 /// conversions if necessary.  On error, this diagnoses it and returns null.
 DRValue ExprEmitter::getAsExpectedType(DRValue value, const ExprNode *expr,
                                        ASTType expectedType) {
+  if (!value)
+    return value;
   // If the type is already an exact match, then we are done.
   if (ASTType(value.getType()).isEqualCanon(expectedType))
     return value;

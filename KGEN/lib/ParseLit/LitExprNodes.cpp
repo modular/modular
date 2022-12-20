@@ -1050,18 +1050,11 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
 
     // Assignment expression (`=`) turns into a store, not into a method call.
     if (kind == kAssign) {
+      // Emit the RHS and coerce to the LHS type.
       auto rv = emitter.emitDRValue(rhsRep, rhs->getLoc());
+      rv = emitter.getAsExpectedType(rv, rhs, lhsLV.getRValueType());
       if (!rv)
         return {};
-
-      // Check to see if the destination type and the source type are
-      // compatible.
-      // TODO: Implement implicit conversions.
-      if (!lhsLV.getRValueType().isEqualCanon(rv.getType())) {
-        emitter.emitError(rhs->getLoc(), "cannot convert value of type ")
-            << ASTType(rv.getType()) << " to " << lhsLV.getRValueType();
-        return {};
-      }
 
       // If everything worked out, store the resultant value into the lvalue for
       // the destination.  If things didn't work, just drop this on the floor.
