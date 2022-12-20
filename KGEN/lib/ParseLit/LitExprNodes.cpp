@@ -1144,8 +1144,45 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   // If this operator maps onto a special function, attempt to lower it.
   auto specialFnKind = getOpSpecialFunctions(kind, /*isReversed=*/false);
   assert(specialFnKind != SpecialFunctionKind::kNormal);
-  // TODO: Add support for radd, looking up on the RHS.
   ASTExprAnd<AnyValue> argValues[] = {{lhsRep, lhs}, {rhsRep, rhs}};
+
+  // Check to see if we have a forward version of this function on the primary
+  // receiver.
+  bool isErroneousDecl = false;
+  CallableValue callee(lhsRep.getRValueType(),
+                       SpecialFunctionInfo::get(specialFnKind).name, getLoc(),
+                       /*emitErrorOnFailure=*/false, isErroneousDecl,
+                       emitter.shared);
+  if (callee.direct &&
+      succeeded(callee.direct->filterOverloadSet(
+          argValues, /*isMethodSyntax*/ false,
+          /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
+    return callee.emitFunctionCall(argValues, getLoc(), emitter);
+  }
+  if (isErroneousDecl)
+    return {};
+
+  // Check to see if we have the reverse version of this operator.
+  auto reversedFnKind = getOpSpecialFunctions(kind, /*isReversed=*/true);
+  if (reversedFnKind != SpecialFunctionKind::kNormal) {
+    // Swap the operand order.
+    std::swap(argValues[0], argValues[1]);
+    callee = CallableValue(
+        rhsRep.getType(), SpecialFunctionInfo::get(reversedFnKind).name,
+        getLoc(),
+        /*emitErrorOnFailure=*/false, isErroneousDecl, emitter.shared);
+    if (callee.direct &&
+        succeeded(callee.direct->filterOverloadSet(
+            argValues, /*isMethodSyntax*/ false,
+            /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
+      return callee.emitFunctionCall(argValues, getLoc(), emitter);
+    }
+
+    // Swap these back so we emit the right error.
+    std::swap(argValues[0], argValues[1]);
+  }
+
+  // Emit an error complaining about the forward version of the operator.
   return emitter.emitSpecialMethodCall(lhsRep.getRValueType(), specialFnKind,
                                        argValues, getLoc());
 }

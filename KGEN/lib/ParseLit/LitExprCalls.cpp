@@ -137,7 +137,7 @@ OverloadFitness OverloadFitness::evaluate(
       // Check to see if we have any viable candidates for the implicit
       // conversion.  If not, we have an argument conversion error.
       if (!callee.direct || failed(callee.direct->filterOverloadSet(
-                                {argAnyValueAndExpr}, false,
+                                {argAnyValueAndExpr}, /*isMethodSyntax*/ false,
                                 /*emitDiagnosticOnFailure=*/false, shared)))
         return {kArgWrongType, argIdx, expectedType};
 
