@@ -173,11 +173,11 @@ fn byval_byref_function(a: Int, b&: Int):
   byval_byref_function(b, b)
 
 # CHECK: lit.func @"lvaluesAndRValues()
-fn lvaluesAndRValues() -> __mlir_type.index:
+fn lvaluesAndRValues() -> __mlir_type.`!pop.scalar<index>`:
   # CHECK: [[FOUR:%.*]] = index.constant 4
   # CHECK: [[INT:%.*]] = kgen.call @Int::@"__new__{{.*}}([[FOUR]])
-  # CHECK: [[VALUE:%.*]] = kgen.struct.extract [[INT]][value] : index from
-  # CHECK: kgen.return [[VALUE]] : index
+  # CHECK: [[VALUE:%.*]] = kgen.struct.extract [[INT]][value] : !pop.scalar<index> from
+  # CHECK: kgen.return [[VALUE]] : !pop.scalar<index>
   return Int(4).value
 
 # CHECK: lit.func @"defTests({{.*}}, %untyped: !kgen.declref<@object>)
