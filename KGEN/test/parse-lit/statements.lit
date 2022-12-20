@@ -20,6 +20,12 @@ fn return_impl_convert() -> Int:
   # CHECK: kgen.return %0
   return 4  # Implicit conversion from literal to Int
 
+# CHECK-LABEL lit.func @"return_new_line
+fn return_new_line() -> Int:
+  # CHECK: %idx17 = index.constant 17
+  return
+     17  # Weird indentation should be fine
+
 # CHECK-LABEL lit.func @"return_impl_convert_raises
 @raises
 fn return_impl_convert_raises() -> Int:

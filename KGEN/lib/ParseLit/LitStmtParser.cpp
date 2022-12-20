@@ -333,7 +333,8 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
 
   // If there is an expression list present, parse it.
   SmallVector<ExprNode *> operandExprs;
-  if (!getToken().getIndentation().has_value()) {
+  if (!getToken().getIndentation().has_value() ||
+      *getToken().getIndentation() > returnIndent) {
     // TODO use hadTrailingSep to return a singleton tuple ex. `return 1,`
     if (parseExpressionList(operandExprs, returnIndent,
                             /*hadTrailingSep=*/nullptr))
