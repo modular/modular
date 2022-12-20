@@ -353,17 +353,23 @@ ParamBindArrayAttr DirectCallable::getCheckedBindings(
 SymbolConstantAttr
 DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
   if (fnDecls.size() != 1) {
-    shared.emitError(loc, "cannot form a reference to overloaded decls yet");
+    assert(!fnDecls.empty() && "DirectCallable malformed");
+    auto diag = shared.emitError(
+        loc, "cannot form a reference to overloaded declaration");
+    for (ASTDecl *candidate : fnDecls) {
+      auto funcOp = cast<LIT::FuncOp>(*candidate);
+      diag.attachNote(funcOp.getLoc()) << "candidate declared here";
+    }
+
     return {};
   }
 
   auto funcOp = cast<LIT::FuncOp>(*fnDecls[0]);
-  auto signature = funcOp.getFullSignature();
 
   // Check that the signature can be rebound with our set of bindings.
   ssize_t incorrectBindingNo = 0;
   auto newBindings =
-      getCheckedBindings(signature, incorrectBindingNo,
+      getCheckedBindings(funcOp.getFullSignature(), incorrectBindingNo,
                          /*emit diagnostics*/ funcOp.getLoc(), shared);
   if (!newBindings)
     return {};
