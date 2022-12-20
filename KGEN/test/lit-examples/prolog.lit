@@ -277,6 +277,21 @@ struct StringRef:
     var data: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`
     var size: __mlir_type.`index`
 
+    fn __new__(data: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`, size : Int) -> StringRef:
+      var result: StringRef
+      result.data = data
+      result.size = size.value
+      return result
+
+    @staticmethod
+    fn empty() -> StringRef:
+      var nullptr = __mlir_op.`index.constant`[value: 0]()
+      var size = Int(0)
+      return StringRef(
+        __mlir_op.`pop.index_to_pointer`[_type: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`](nullptr),
+        size
+      )
+
 struct Error:
     var msg: StringRef
 
@@ -318,3 +333,38 @@ struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
 # TODO: This should eventually model a dynamic object base class.  For now, this
 # is just a placeholder to be used by untyped 'def' operands.
 struct object:
+
+#===------------------------------------------------------------------------===#
+# Range
+#===------------------------------------------------------------------------===#
+
+struct range:
+  var start : Int
+  var end : Int
+  var step : Int
+
+  fn __new__(start : Int, end : Int, step : Int) -> range:
+    var result : range
+    result.start = start
+    result.end = end
+    return result
+
+  fn __iter__(self : range) -> range:
+    return self
+
+  fn __next__(self& : range) -> ErrorOr[Int]:
+    if self.start >= self.end:
+      return ErrorOr[Int](StringRef.empty()) # TODO: should raise StopIteration
+    var result : Int = self.start
+    self.start += self.step
+    return ErrorOr[Int](result)
+
+  fn __len__(self : range) -> Int:
+    if self.step > 0 and self.start < self.end:
+      return 1 + (self.end - self.start - 1) // self.step
+    if self.step < 0 and self.start > self.end:
+      return 1 - (self.start - self.end - 1) // self.step
+    return 1
+
+  fn __getitem__(self : range, idx : Int) -> Int:
+    return self.start + idx * self.step
