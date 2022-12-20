@@ -62,6 +62,9 @@ struct DirectCallable {
   };
   SmallVector<BoundParam> bindings;
 
+  DirectCallable(SMLoc loc, ArrayRef<ASTDecl *> fnDecls,
+                 ParamBindArrayAttr bindings);
+
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings and provided
   /// arguments.  If so, replace fnDecls with a single entry that works and
@@ -93,14 +96,25 @@ public:
   /// argument to a call to the symbol.
   ASTExprAnd<AnyValue> baseVal;
 
-  /// If present, this callable value is a reference to a fixed symbol.
-  /// TODO: Extend to support overload sets.
+  /// If present, this a reference to a fixed symbol or an overload set.
   Optional<DirectCallable> direct;
 
   CallableValue() {}
   CallableValue(ASTExprAnd<AnyValue> baseVal) : baseVal(baseVal) {}
   CallableValue(llvm::SMLoc loc, ArrayRef<ASTDecl *> fnDecls,
-                ParamBindArrayAttr bindings);
+                ParamBindArrayAttr bindings)
+      : direct({loc, fnDecls, bindings}) {}
+
+  /// Get a CallableValue for a lookup of a named method on the specified type.
+  /// If successful, this provides a non-null CallableValue.
+  ///
+  /// On failure, this returns a null CallableValue and sets 'erroneousDecl' to
+  /// indicate whether there was a problem with the callee that has already been
+  /// diagnosed (thus squishing downstream error messages).  If
+  /// emitErrorOnFailure is true an error message indicates why the call failed.
+  CallableValue(ASTType type, StringRef methodName, SMLoc callLoc,
+                bool emitErrorOnFailure, bool &erroneousDecl,
+                LitSharedState &shared);
 
   bool isNull() const { return !baseVal && !direct; }
   bool operator!() const { return isNull(); }

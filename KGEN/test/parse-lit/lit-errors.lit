@@ -110,7 +110,7 @@ def invalid_conversion(a: Int, b: __mlir_type.index):
 struct NotBoolConvertible:
 
 def test_bool_context(a: NotBoolConvertible):
-  if a: # expected-error {{'NotBoolConvertible' does not implement the "__bool__" special method}}
+  if a: # expected-error {{'NotBoolConvertible' does not implement the '__bool__' special method}}
      pass
 
 struct Thing[a: __mlir_type.index, b: __mlir_type.index]:
@@ -289,11 +289,11 @@ struct SpecialFunctions:
 
   fn failures(self):
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
-    self*self # expected-error {{'SpecialFunctions' does not implement the "__mul__" special method}}
+    self*self # expected-error {{'SpecialFunctions' does not implement the '__mul__' special method}}
 
 fn expr_errors():
   var x: __mlir_type.index
-  x += x # expected-error {{'__mlir_type.index' does not implement the "__iadd__" special method}}
+  x += x # expected-error {{'__mlir_type.index' does not implement the '__iadd__' special method}}
 
   # expected-error @+1 {{'index.add' op expected 2 operands, but found 0}}
   __mlir_op.`index.add`()
@@ -332,6 +332,9 @@ fn expr_errors():
 
   # expected-error @+1 {{unused parameter substitution}}
   var b : __mlir_type.`!pop.simd<#lit.placeholder : index, f32>`[4, 57]
+
+  # expected-error @+1 {{'__mlir_type.index' does not implement the '__new__' special method}}
+  _ = __mlir_type.index(42)
 
 
 fn slice_expression(a: Int):

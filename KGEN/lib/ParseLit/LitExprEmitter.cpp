@@ -149,19 +149,12 @@ ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
                                    SMLoc callLoc) {
   // Look up the special function based on the SpecialFunctionKind.
   auto specialFnInfo = SpecialFunctionInfo::get(kind);
-  auto nameAttr = StringAttr::get(getContext(), specialFnInfo.name);
 
-  auto lookupResult =
-      shared.lookupAndResolveDecl(specialFnInfo.name, callLoc, type);
-  ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
-  if (resultDecls.empty()) {
-    if (lookupResult.isFailure())
-      emitError(callLoc, "") << type << " does not implement the " << nameAttr
-                             << " special method";
+  bool isErroneousDecl = false;
+  CallableValue callee(type, specialFnInfo.name, callLoc,
+                       /*emitErrorOnFailure=*/true, isErroneousDecl, shared);
+  if (callee.isNull())
     return {};
-  }
-
-  CallableValue callee(callLoc, resultDecls, type.getParamBindings());
   return emitFunctionCall(callee, operands, callLoc);
 }
 
@@ -174,11 +167,11 @@ DRValue ExprEmitter::getAsExpectedType(DRValue value, const ExprNode *expr,
     return value;
 
   // Check to see if we can invoke an __new__ method to convert it.
-  auto lookupResult =
-      shared.lookupAndResolveDecl("__new__", expr->getLoc(), expectedType);
-  ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
-  if (resultDecls.empty()) {
-    if (lookupResult.isFailure()) {
+  bool isErroneousDecl = false;
+  CallableValue callee(expectedType, "__new__", expr->getLoc(),
+                       /*emitErrorOnFailure=*/false, isErroneousDecl, shared);
+  if (callee.isNull()) {
+    if (!isErroneousDecl) {
       emitError(expr->getLoc(), "value of type ")
           << ASTType(value.getType())
           << " cannot be converted to expected type " << expectedType;
@@ -186,8 +179,6 @@ DRValue ExprEmitter::getAsExpectedType(DRValue value, const ExprNode *expr,
     return {};
   }
 
-  CallableValue callee(expr->getLoc(), resultDecls,
-                       expectedType.getParamBindings());
   ASTExprAnd<AnyValue> newArg = {DRValue(value), expr};
   auto result = emitFunctionCall(callee, newArg, expr->getLoc());
   if (!result)

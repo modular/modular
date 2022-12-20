@@ -468,6 +468,8 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
     // base value and the symbol together into a callable.
     // FIXME: This isn't handling overloaded static/non-static methods
     // correctly.  What is the actual behavior we want for static methods?
+    // Maybe we don't allow overloading static and non-static methods with the
+    // same name?
     if (!fnOp.getIsStatic())
       fnRef.baseVal = {baseVal, base};
     return fnRef;
@@ -650,22 +652,6 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   return DRValue(resultOp->getResult(0));
 }
 
-/// Given a call to a Type value, figure out what 'T.__new__' initializer to
-/// call.
-static CallableValue emitInitializerCallable(ASTType calledType,
-                                             const ExprNode *node,
-                                             ExprEmitter &emitter) {
-  ASTDecl *calledDecl = calledType.getDecl(emitter.shared);
-  if (!calledDecl) {
-    emitter.emitError(node->getLoc(), "cannot create instance of MLIR type ")
-        << calledType;
-    return {};
-  }
-
-  return emitDeclMemberAsCallable(*calledDecl, calledType.getParamBindings(),
-                                  "__new__", node, emitter);
-}
-
 AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   auto calleeVal = callee->emitCallable(emitter, {});
   if (!calleeVal)
@@ -684,8 +670,14 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   // If the returned RValue is a type value (as in `T()` or `T[123]()`), then
   // this is an invocation of the initializer for the type.
   if (!calleeVal.direct)
-    if (ASTType calledType = calleeVal.baseVal.ir.getIfTypeValue())
-      calleeVal = emitInitializerCallable(calledType, this, emitter);
+    if (ASTType calledType = calleeVal.baseVal.ir.getIfTypeValue()) {
+      bool isErroneousDecl = false;
+      calleeVal = CallableValue(calledType, "__new__", getLoc(),
+                                /*emitErrorOnFailure=*/true, isErroneousDecl,
+                                emitter.shared);
+      if (calleeVal.isNull())
+        return {};
+    }
 
   /// Emit a function call for a call node with the specified operands.
   SmallVector<ASTExprAnd<AnyValue>> operands;
@@ -757,8 +749,9 @@ static CallableValue substituteParametersIntoUserDefinedType(
   }
 
   // Ok, we succeeded at reparameterizing the type.
-  return {{MValue(DeclRefType::get(typeDecl.getSymbolRef(), paramBindings)),
-           &subscript}};
+  return CallableValue(
+      {MValue(DeclRefType::get(typeDecl.getSymbolRef(), paramBindings)),
+       &subscript});
 }
 
 /// Given a set of decomposed types and attributes from an MLIR attribute or
