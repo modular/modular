@@ -113,7 +113,7 @@ struct Int:
     if n < 0:
       # Not defined for integers, this should raise an
       # exception.
-      res = Int(0)
+      res = 0
     while n > 0:
         res *= self
         n -= 1

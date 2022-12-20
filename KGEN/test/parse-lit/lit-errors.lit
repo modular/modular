@@ -105,7 +105,7 @@ def missing_type_on_var_decl():
 
 
 def invalid_conversion(a: Int, b: __mlir_type.index):
-  a = b # expected-error {{cannot convert value of type '__mlir_type.index' to 'Int'}}
+  b = a # expected-error {{value of type 'Int' cannot be converted to expected type '__mlir_type.index'}}
 
 struct NotBoolConvertible:
 

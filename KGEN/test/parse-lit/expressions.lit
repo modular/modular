@@ -17,6 +17,12 @@ fn simpleMath(a: Int, b: Int) -> Int:
 fn precedence_associativity(a: Int):
   # CHECK-NEXT: %z = lit.var.decl "z"
   var z: Int = Int(0)
+
+  # CHECK: %idx17 = index.constant 17
+  # CHECK: %[[SEVENTEEN:.*]] = kgen.call @Int::@"__new__(__mlir_type.index)"(%idx17)
+  # CHECK-NEXT: pop.store %[[SEVENTEEN]], %z
+  z = 17  # Implicit conversion
+
   # CHECK:      %[[TWO:.*]] = {{.*}} 2
   # CHECK-NEXT: %[[INT_TWO:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[TWO]])
   # CHECK-NEXT: %[[Z:.*]] = pop.load %z
