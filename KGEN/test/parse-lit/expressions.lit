@@ -247,8 +247,7 @@ fn listValues() -> __mlir_type.index:
 def test_if_cond(cond: Bool):
     # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@Int>
     # CHECK-NEXT: %[[COND:.*]] = pop.load %cond_0
-    # CHECK-NEXT: %[[BOOL:.*]] = kgen.call @Bool::@"__bool__{{.*}}(%[[COND]])
-    # CHECK-NEXT: %[[LIT_BOOL:.*]] = kgen.call @Bool::@"__lit_bool{{.*}}(%[[BOOL]])
+    # CHECK-NEXT: %[[LIT_BOOL:.*]] = kgen.call @Bool::@"__lit_bool{{.*}}(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = scf.if %[[LIT_BOOL]]
     # CHECK-NEXT:   %[[TWO:.*]] = {{.*}} 2
     # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[TWO]])
