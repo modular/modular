@@ -42,7 +42,7 @@ struct OverloadFitness {
 
   /// The interpretation of this payload depends on the 'kind' field:
   ///  kValid:          number of implicit conversions required.
-  ///  kParamCount:     number of arguments expected.
+  ///  kParamCount:     Not used.
   ///  kParamWrongType: the parameter # that mismatches.
   ///  kArgCount:       number of arguments expected.
   ///  kArgNotLValue:   the argument # that mismatches.
@@ -58,7 +58,8 @@ struct OverloadFitness {
   /// `operands`.
   static OverloadFitness evaluate(SignatureType signature,
                                   const DirectCallable &callable,
-                                  ArrayRef<ASTExprAnd<AnyValue>> operands);
+                                  ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                  LitSharedState &shared);
 
   /// Add explaination for why this candidate doesn't work to the specified
   /// diagnostic.
@@ -71,39 +72,31 @@ struct OverloadFitness {
 /// Determine whether the specified signature can be invoked with the
 /// parameter bindings specified in `callable` and the arguments specified in
 /// `operands`.
-OverloadFitness
-OverloadFitness::evaluate(SignatureType signature,
-                          const DirectCallable &callable,
-                          ArrayRef<ASTExprAnd<AnyValue>> operands) {
-  // We require an exact match for the signature right now, we don't allow
-  // inference or other fancy things.
-  auto expectedNumParams = signature.getInputParams().size();
-  if (callable.bindings.size() != expectedNumParams)
-    return {kParamCount, expectedNumParams, ASTType()};
+OverloadFitness OverloadFitness::evaluate(
+    SignatureType signature, const DirectCallable &callable,
+    ArrayRef<ASTExprAnd<AnyValue>> operands, LitSharedState &shared) {
 
-  // If we have bound parameters, type check them now and bind names to them.
-  size_t paramIdx = 0;
-  for (auto [bound, decl] :
-       llvm::zip(callable.bindings, signature.getInputParams())) {
-    // If this value was already bound and checked, then keep going.  This
-    // happens for type parameters.
-    if (auto prebound = dyn_cast<ParamBindAttr>(bound.bindingOrValue)) {
-      assert(prebound.getName() == decl.getName() &&
-             prebound.getType() == decl.getType() &&
-             "Prebinding not already checked?");
-      ++paramIdx;
-      continue;
-    }
+  // Check that the signature can be rebound with our set of bindings.
+  ssize_t incorrectBindingNo = 0;
+  auto newBindings =
+      callable.getCheckedBindings(signature, incorrectBindingNo,
+                                  /*don't emit diagnostics*/ {}, shared);
 
-    // Check the type matches what is expected.
-    // TODO: Do implicit conversions when we can invoke parameter functions.
-    // TODO: Handle signatures like (T, scalar<T>) where early bound
-    // parameters changes the types of later ones.
-    auto value = cast<TypedAttr>(cast<Attribute>(bound.bindingOrValue));
-    auto valueType = value.getType();
-    if (!ASTType(valueType).isEqualCanon(decl.getType()))
-      return {kParamWrongType, paramIdx, valueType};
-    ++paramIdx;
+  // If there is an error, return the problem.
+  if (!newBindings) {
+    if (incorrectBindingNo == -1)
+      return {kParamCount, 0, ASTType()};
+    return {kParamWrongType, (size_t)incorrectBindingNo, ASTType()};
+  }
+
+  // If anything was bound, apply it to the signature so the expected argument
+  // types are updated.
+  if (!newBindings.empty()) {
+    signature = signature.getSpecializedSignature(
+        newBindings, [&]() -> InFlightDiagnostic {
+          llvm_unreachable("bad bindings went undetected");
+        });
+    assert(signature && "bad bindings went undetected");
   }
 
   // Ok, the parameters all line up, check the argument list.
@@ -129,12 +122,27 @@ OverloadFitness::evaluate(SignatureType signature,
       break;
     }
     case ValueInputConvention::ByVal:
-      // Otherwise, we pass as an r-value.
-      // TODO: Add support for checking implicit conversions.
-      if (!ASTType(argAnyValueAndExpr.ir.getRValueType())
-               .isEqualCanon(ASTType(expectedType)))
+      // Otherwise, we pass as an r-value.  If the argument types match, then
+      // they are good.
+      if (ASTType(argAnyValueAndExpr.ir.getRValueType())
+              .isEqualCanon(ASTType(expectedType)))
+        break;
+
+      // Otherwise, check to see if we can do an implicit conversion.
+      bool isErroneousDecl = false;
+      CallableValue callee(
+          expectedType, "__new__", argAnyValueAndExpr.expr->getLoc(),
+          /*emitErrorOnFailure=*/false, isErroneousDecl, shared);
+
+      // Check to see if we have any viable candidates for the implicit
+      // conversion.  If not, we have an argument conversion error.
+      if (!callee.direct || failed(callee.direct->filterOverloadSet(
+                                {argAnyValueAndExpr}, false,
+                                /*emitDiagnosticOnFailure=*/false, shared)))
         return {kArgWrongType, argIdx, expectedType};
-      break;
+
+      // If we had one, this bumps our # implicit conversions.
+      ++numImplicitConversions;
     }
     ++argIdx;
   }
@@ -154,15 +162,17 @@ void OverloadFitness::diagnose(SignatureType signature,
     diag << "candidate is viable";
     return;
   case kParamCount:
-    diag << "callee expects " << payload << " input parameter"
-         << plural(payload) << " but " << callable.bindings.size()
+    diag << "callee expects " << signature.getInputParams().size()
+         << " input parameter" << plural(payload) << " but "
+         << callable.bindings.size()
          << plural(callable.bindings.size(), " was", " were") << " provided";
     return;
   case kParamWrongType: {
     auto decl = signature.getInputParams()[payload];
+    auto valueType = callable.bindings[payload].getType();
     diag << "callee parameter " << decl.getName() << " has "
          << ASTType(decl.getType()) << " type, but value has type "
-         << ASTType(type);
+         << ASTType(valueType);
     return;
   }
   case kArgCount:
@@ -184,6 +194,13 @@ void OverloadFitness::diagnose(SignatureType signature,
     return;
 
   case kArgWrongType:
+    // If this is a method syntax call, don't count the receiver.
+    if (isMethodCall) {
+      // it is probably possible for this assert to fire, if it does we should
+      // tailor the error message.
+      assert(payload != 0 && "TODO: unexpected self mismatch");
+      --payload;
+    }
     diag << "in argument #" << payload << ", value of type "
          << operands[payload].ir.getRValueType()
          << " cannot be converted to expected type " << type;
@@ -195,30 +212,45 @@ void OverloadFitness::diagnose(SignatureType signature,
 /// candidate that works with the specified parameter bindings and provided
 /// arguments.  If so, replace fnDecls with a single entry that works and
 /// return success.  If not, generate a diagnostic and return failure.
-LogicalResult
-DirectCallable::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                  bool isMethodCall, ExprEmitter &emitter) {
+LogicalResult DirectCallable::filterOverloadSet(
+    ArrayRef<ASTExprAnd<AnyValue>> operands, bool isMethodCall,
+    bool emitDiagnosticOnFailure, LitSharedState &shared) {
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
   for (ASTDecl *candidate : fnDecls) {
     auto signature = cast<LIT::FuncOp>(*candidate).getFullSignature();
     evaluations.push_back(
-        OverloadFitness::evaluate(signature, *this, operands));
+        OverloadFitness::evaluate(signature, *this, operands, shared));
     anyValid |= evaluations.back().kind == OverloadFitness::kValid;
   }
 
   // If all of the candidates are wrong, diagnose this as a failure.
   if (!anyValid) {
-    // TODO(QoI): Special case incorrect direct call with one callee.
-    auto diag = emitter.emitError(loc, "no matching function in call");
-    for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
-      auto fnDecl = cast<LIT::FuncOp>(*candidate);
-      eval.diagnose(fnDecl.getFullSignature(), *this, operands, isMethodCall,
-                    diag.attachNote(fnDecl->getLoc())
-                        << "candidate not viable: ");
+    if (emitDiagnosticOnFailure) {
+      // TODO(QoI): Handle the case of zero candidates.
+
+      // If there is a single callee, emit a specific error about the call.
+      if (fnDecls.size() == 1) {
+        auto fnDecl = cast<LIT::FuncOp>(*fnDecls[0]);
+        auto diag = shared.emitError(loc, "invalid call: ");
+        evaluations[0].diagnose(fnDecl.getFullSignature(), *this, operands,
+                                isMethodCall, *diag.getUnderlyingDiagnostic());
+        diag.attachNote(fnDecl.getLoc()) << "function declared here";
+        return failure();
+      }
+
+      // Otherwise emit an error, and a note for what is wrong with each
+      // candidate.
+      auto diag = shared.emitError(loc, "no matching function in call");
+      for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
+        auto fnDecl = cast<LIT::FuncOp>(*candidate);
+        eval.diagnose(fnDecl.getFullSignature(), *this, operands, isMethodCall,
+                      diag.attachNote(fnDecl->getLoc())
+                          << "candidate not viable: ");
+      }
+      return failure();
     }
-    return failure();
   }
 
   // Ok, we have at least one valid candidate, filter the list to the ones with
@@ -246,37 +278,39 @@ DirectCallable::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
   // Otherwise, we have multiple viable candidates that are ambiguous because
   // they all require the same number of implicit conversions.
-  auto diag = emitter.emitError(loc, "ambiguous call, each candidate requires ")
-              << minConversions << " implicit conversion"
-              << plural(minConversions)
-              << ", disambiguate with an explicit cast";
-  for (ASTDecl *candidate : newFnDecls)
-    diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
-        << "candidate declared here";
+  if (emitDiagnosticOnFailure) {
+    auto diag =
+        shared.emitError(loc, "ambiguous call, each candidate requires ")
+        << minConversions << " implicit conversion" << plural(minConversions)
+        << ", disambiguate with an explicit cast";
+    for (ASTDecl *candidate : newFnDecls)
+      diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
+          << "candidate declared here";
+  }
   return failure();
 }
 
-/// Generate a reference to the specified function, checking that any supplied
-/// parameters are correct and match expectations..
-SymbolConstantAttr
-DirectCallable::getBoundConstantAttr(ExprEmitter &emitter) const {
-  if (fnDecls.size() != 1) {
-    emitter.emitError(loc, "cannot form a reference to overloaded decls yet");
-    return {};
-  }
-
-  auto funcOp = cast<LIT::FuncOp>(*fnDecls[0]);
-  auto signature = funcOp.getFullSignature();
+/// Check that our set of parameter bindings work with the specified signature
+/// type, returning a checked ParamBindArrayAttr if so.  If the parameters do
+/// not work, this emits an diagnostic (if `shared` is non-null) and sets
+/// `incorrectBindingNo` to the bad binding (or -1 if there is a count
+/// mismatch).
+ParamBindArrayAttr DirectCallable::getCheckedBindings(
+    SignatureType signature, ssize_t &incorrectBindingNo,
+    Optional<Location> funcLoc, LitSharedState &shared) const {
 
   // We require an exact match for the signature right now, we don't allow
   // inference or other fancy things.
   auto expectedNumParams = signature.getInputParams().size();
   if (bindings.size() != expectedNumParams) {
-    auto diag = emitter.emitError(loc, "function expects ")
-                << expectedNumParams << " input parameter"
-                << plural(expectedNumParams) << " but " << bindings.size()
-                << plural(bindings.size(), " was", " were") << " provided";
-    diag.attachNote(funcOp.getLoc()) << "function declared here";
+    if (funcLoc) {
+      auto diag = shared.emitError(loc, "function expects ")
+                  << expectedNumParams << " input parameter"
+                  << plural(expectedNumParams) << " but " << bindings.size()
+                  << plural(bindings.size(), " was", " were") << " provided";
+      diag.attachNote(*funcLoc) << "function declared here";
+    }
+    incorrectBindingNo = -1;
     return {};
   }
 
@@ -296,20 +330,46 @@ DirectCallable::getBoundConstantAttr(ExprEmitter &emitter) const {
     // TODO: Do implicit conversions when we can invoke parameter functions.
     // TODO: Handle signatures like (T, scalar<T>) where early bound
     // parameters changes the types of later ones.
-    auto value = cast<TypedAttr>(cast<Attribute>(bound.bindingOrValue));
+    auto value = bound.getValue();
     auto valueType = value.getType();
     if (!ASTType(valueType).isEqualCanon(decl.getType())) {
-      emitter.emitError(bound.loc, "parameter ")
-          << decl.getName() << " has " << ASTType(decl.getType())
-          << " type, but value has type " << ASTType(valueType);
+      if (funcLoc) {
+        auto diag = shared.emitError(bound.loc, "parameter ")
+                    << decl.getName() << " has " << ASTType(decl.getType())
+                    << " type, but value has type " << ASTType(valueType);
+        diag.attachNote(*funcLoc) << "function declared here";
+      }
+      incorrectBindingNo = newBindings.size();
       return {};
     }
     newBindings.push_back(ParamBindAttr::get(decl, value));
   }
 
+  return ParamBindArrayAttr::get(signature.getContext(), newBindings);
+}
+
+/// Generate a reference to the specified function, checking that any supplied
+/// parameters are correct and match expectations..
+SymbolConstantAttr
+DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
+  if (fnDecls.size() != 1) {
+    shared.emitError(loc, "cannot form a reference to overloaded decls yet");
+    return {};
+  }
+
+  auto funcOp = cast<LIT::FuncOp>(*fnDecls[0]);
+  auto signature = funcOp.getFullSignature();
+
+  // Check that the signature can be rebound with our set of bindings.
+  ssize_t incorrectBindingNo = 0;
+  auto newBindings =
+      getCheckedBindings(signature, incorrectBindingNo,
+                         /*emit diagnostics*/ funcOp.getLoc(), shared);
+  if (!newBindings)
+    return {};
+
   // Now that we checked the types match, form the binding.
-  return funcOp.getBoundReference(
-      ParamBindArrayAttr::get(emitter.getContext(), newBindings));
+  return funcOp.getBoundReference(newBindings);
 }
 
 /// Get a symbol for a direct reference to the specified function in its
@@ -365,7 +425,7 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
   if (!direct)
     return baseVal.ir;
 
-  auto directSymbolAttr = direct->getBoundConstantAttr(emitter);
+  auto directSymbolAttr = direct->getBoundConstantAttr(emitter.shared);
   if (!directSymbolAttr)
     return {};
 
@@ -478,14 +538,11 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
 
     // Check the direct callees to see if they can be unambiguously resolved
     // with the bindings list and specified arguments.
-    // FIXME (impl conversions): We should do this all the time, but overload
-    // resolution doesn't support implicit conversions yet.
-    if (calleeVal.direct->fnDecls.size() > 1) {
-      if (failed(calleeVal.direct->filterOverloadSet(operands, isMethodCall,
-                                                     *this)))
-        return {};
-    }
-    SymbolConstantAttr symbol = calleeVal.direct->getBoundConstantAttr(*this);
+    if (failed(calleeVal.direct->filterOverloadSet(
+            operands, isMethodCall,
+            /*emitDiagnosticOnFailure=*/true, shared)))
+      return {};
+    SymbolConstantAttr symbol = calleeVal.direct->getBoundConstantAttr(shared);
     if (!symbol)
       return {};
 
