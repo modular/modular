@@ -67,8 +67,8 @@ from mblack.strings import (
     has_triple_quotes,
     normalize_string_quotes,
 )
-from blib2to3.pgen2 import token
-from blib2to3.pytree import Leaf, Node
+from mblib2to3.pgen2 import token
+from mblib2to3.pytree import Leaf, Node
 
 
 class CannotTransform(Exception):

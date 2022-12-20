@@ -9,7 +9,7 @@
 # File originates from:
 #   Repo:   git@github.com:psf/black.git
 #   Commit: d4a85643a465f5fae2113d07d22d021d4af4795a
-#   Path:   src/blib2to3/pytree.py
+#   Path:   src/mblib2to3/pytree.py
 #
 # ===----------------------------------------------------------------------=== #
 
@@ -40,7 +40,7 @@ from typing import (
     Set,
     Iterable,
 )
-from blib2to3.pgen2.grammar import Grammar
+from mblib2to3.pgen2.grammar import Grammar
 
 __author__ = "Guido van Rossum <guido@python.org>"
 

@@ -9,7 +9,7 @@
 # File originates from:
 #   Repo:   git@github.com:psf/black.git
 #   Commit: d4a85643a465f5fae2113d07d22d021d4af4795a
-#   Path:   src/blib2to3/pgen2/driver.py
+#   Path:   src/mblib2to3/pgen2/driver.py
 #
 # ===----------------------------------------------------------------------=== #
 
@@ -56,9 +56,9 @@ from dataclasses import dataclass, field
 # Pgen imports
 from . import grammar, parse, token, tokenize, pgen
 from logging import Logger
-from blib2to3.pytree import NL
-from blib2to3.pgen2.grammar import Grammar
-from blib2to3.pgen2.tokenize import GoodTokenInfo
+from mblib2to3.pytree import NL
+from mblib2to3.pgen2.grammar import Grammar
+from mblib2to3.pgen2.tokenize import GoodTokenInfo
 
 Path = Union[str, "os.PathLike[str]"]
 

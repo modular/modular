@@ -19,8 +19,8 @@ from typing import Iterator, TypeVar, Union
 from mblack.nodes import Visitor
 from mblack.output import out
 from mblack.parsing import lib2to3_parse
-from blib2to3.pgen2 import token
-from blib2to3.pytree import Leaf, Node, type_repr
+from mblib2to3.pgen2 import token
+from mblib2to3.pytree import Leaf, Node, type_repr
 
 LN = Union[Leaf, Node]
 T = TypeVar("T")

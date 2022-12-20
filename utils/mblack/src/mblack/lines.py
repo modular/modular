@@ -45,8 +45,8 @@ from mblack.nodes import (
     syms,
     whitespace,
 )
-from blib2to3.pgen2 import token
-from blib2to3.pytree import Leaf, Node
+from mblib2to3.pgen2 import token
+from mblib2to3.pytree import Leaf, Node
 
 # types
 T = TypeVar("T")
@@ -143,7 +143,7 @@ class Line:
         return (
             bool(self)
             and self.leaves[0].type == token.NAME
-            and self.leaves[0].value == "class"
+            and self.leaves[0].value in {"class", "struct"}
         )
 
     @property
@@ -165,11 +165,13 @@ class Line:
             second_leaf: Optional[Leaf] = self.leaves[1]
         except IndexError:
             second_leaf = None
-        return (first_leaf.type == token.NAME and first_leaf.value == "def") or (
+        return (
+            first_leaf.type == token.NAME and first_leaf.value in {"def", "fn"}
+        ) or (
             first_leaf.type == token.ASYNC
             and second_leaf is not None
             and second_leaf.type == token.NAME
-            and second_leaf.value == "def"
+            and second_leaf.value in {"def", "fn"}
         )
 
     @property

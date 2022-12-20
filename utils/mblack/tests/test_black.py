@@ -52,8 +52,8 @@ from click import unstyle
 from click.testing import CliRunner
 from pathspec import PathSpec
 
-import black
-import black.files
+import mblack
+import mblack.files
 from mblack import Feature, TargetVersion
 from mblack import re_compile_maybe_verbose as compile_pattern
 from mblack.cache import get_cache_dir, get_cache_file
@@ -1858,12 +1858,12 @@ class TestCaching:
         )
 
         # If BLACK_CACHE_DIR is not set, use user_cache_dir
-        monkeypatch.delenv("BLACK_CACHE_DIR", raising=False)
+        monkeypatch.delenv("MBLACK_CACHE_DIR", raising=False)
         with patch_user_cache_dir:
             assert get_cache_dir() == workspace1
 
         # If it is set, use the path provided in the env var.
-        monkeypatch.setenv("BLACK_CACHE_DIR", str(workspace2))
+        monkeypatch.setenv("MBLACK_CACHE_DIR", str(workspace2))
         assert get_cache_dir() == workspace2
 
     def test_cache_broken_file(self) -> None:

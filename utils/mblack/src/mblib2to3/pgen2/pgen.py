@@ -9,7 +9,7 @@
 # File originates from:
 #   Repo:   git@github.com:psf/black.git
 #   Commit: d4a85643a465f5fae2113d07d22d021d4af4795a
-#   Path:   src/blib2to3/pgen2/pgen.py
+#   Path:   src/mblib2to3/pgen2/pgen.py
 #
 # ===----------------------------------------------------------------------=== #
 
@@ -32,8 +32,8 @@ from typing import (
     Sequence,
     NoReturn,
 )
-from blib2to3.pgen2 import grammar
-from blib2to3.pgen2.tokenize import GoodTokenInfo
+from mblib2to3.pgen2 import grammar
+from mblib2to3.pgen2.tokenize import GoodTokenInfo
 import os
 
 
@@ -131,7 +131,7 @@ class ParserGenerator(object):
             # Either a keyword or an operator
             assert label[0] in ('"', "'"), label
             value = eval(label)
-            if value[0].isalpha():
+            if value[0].isalpha() or value.startswith("__include"):
                 if label[0] == '"':
                     keywords = c.soft_keywords
                 else:
