@@ -476,3 +476,10 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
   ambiguousConversions(a, a)
   # expected-error @+1 {{no matching function in call}}
   ambiguousConversions(b, b)
+
+  var localFn = testAmbiguousConversions  # ok
+  localFn(a, b)
+  localFn(a, a)
+  localFn(1, b)
+  # expected-error @+1 {{invalid indirect call: in argument #0, value of type 'ConvertibleFromInt' cannot be converted to expected type 'Int'}}
+  localFn(b, b)
