@@ -59,7 +59,19 @@ struct DirectCallable {
   struct BoundParam {
     SMLoc loc;
     PointerUnion<ParamBindAttr, Attribute> bindingOrValue;
+
+    TypedAttr getValue() const {
+      if (auto attr = dyn_cast<Attribute>(bindingOrValue))
+        return cast<TypedAttr>(attr);
+      return {};
+    }
+    Type getType() const {
+      if (auto attr = getValue())
+        return attr.getType();
+      return cast<ParamBindAttr>(bindingOrValue).getType();
+    }
   };
+
   SmallVector<BoundParam> bindings;
 
   DirectCallable(SMLoc loc, ArrayRef<ASTDecl *> fnDecls,
@@ -68,14 +80,27 @@ struct DirectCallable {
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings and provided
   /// arguments.  If so, replace fnDecls with a single entry that works and
-  /// return success.  If not, generate a diagnostic and return failure.
+  /// return success.  If not, generate a diagnostic (when
+  /// `emitDiagnosticOnFailure` is true) and return failure.
   LogicalResult filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                  bool isMethodCall, ExprEmitter &emitter);
+                                  bool isMethodCall,
+                                  bool emitDiagnosticOnFailure,
+                                  LitSharedState &shared);
+
+  /// Check that our set of parameter bindings work with the specified signature
+  /// type, returning a checked ParamBindArrayAttr if so.  If the parameters do
+  /// not work, this emits an diagnostic (if `funcLoc` is non-null) and sets
+  /// `incorrectBindingNo` to the bad binding (or -1 if there is a count
+  /// mismatch).
+  ParamBindArrayAttr getCheckedBindings(SignatureType signature,
+                                        ssize_t &incorrectBindingNo,
+                                        Optional<Location> funcLoc,
+                                        LitSharedState &shared) const;
 
   /// Perform subsitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
   /// returning null.
-  SymbolConstantAttr getBoundConstantAttr(ExprEmitter &emitter) const;
+  SymbolConstantAttr getBoundConstantAttr(LitSharedState &shared) const;
 };
 
 //===----------------------------------------------------------------------===//
