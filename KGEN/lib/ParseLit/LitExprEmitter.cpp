@@ -155,7 +155,7 @@ ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
                        /*emitErrorOnFailure=*/true, isErroneousDecl, shared);
   if (callee.isNull())
     return {};
-  return emitFunctionCall(callee, operands, callLoc);
+  return callee.emitFunctionCall(operands, callLoc, *this);
 }
 
 /// Convert the specified DRValue to the expected type, invoking implicit
@@ -180,7 +180,7 @@ DRValue ExprEmitter::getAsExpectedType(DRValue value, const ExprNode *expr,
   }
 
   ASTExprAnd<AnyValue> newArg = {DRValue(value), expr};
-  auto result = emitFunctionCall(callee, newArg, expr->getLoc());
+  auto result = callee.emitFunctionCall(newArg, expr->getLoc(), *this);
   if (!result)
     return {};
 

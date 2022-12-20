@@ -686,7 +686,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     if (!operands.back())
       return {};
   }
-  return emitter.emitFunctionCall(calleeVal, operands, getLoc());
+  return calleeVal.emitFunctionCall(operands, getLoc(), emitter);
 }
 
 AnyValue SliceNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
