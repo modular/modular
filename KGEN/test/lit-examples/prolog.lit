@@ -41,28 +41,28 @@ struct Int:
   # CHECK-LABEL: lit.func @"__lt__
   fn __lt__(self, rhs: Int) -> Bool:
     # CHECK: = index.cmp slt(%0, %1)
-    return Bool._cast_from_builtin(__mlir_op.`index.cmp`[pred:
-                __mlir_attr.`#index<cmp_predicate slt>`](self.value, rhs.value))
+    return __mlir_op.`index.cmp`[pred:
+                __mlir_attr.`#index<cmp_predicate slt>`](self.value, rhs.value)
 
   fn __le__(self, rhs: Int) -> Bool:
-    return Bool._cast_from_builtin(__mlir_op.`index.cmp`[pred:
-                __mlir_attr.`#index<cmp_predicate sle>`](self.value, rhs.value))
+    return __mlir_op.`index.cmp`[pred:
+                __mlir_attr.`#index<cmp_predicate sle>`](self.value, rhs.value)
 
   fn __eq__(self, rhs: Int) -> Bool:
-    return Bool._cast_from_builtin(__mlir_op.`index.cmp`[pred:
-                __mlir_attr.`#index<cmp_predicate eq>`](self.value, rhs.value))
+    return __mlir_op.`index.cmp`[pred:
+                __mlir_attr.`#index<cmp_predicate eq>`](self.value, rhs.value)
 
   fn __ne__(self, rhs: Int) -> Bool:
-    return Bool._cast_from_builtin(__mlir_op.`index.cmp`[pred:
-                __mlir_attr.`#index<cmp_predicate ne>`](self.value, rhs.value))
+    return __mlir_op.`index.cmp`[pred:
+                __mlir_attr.`#index<cmp_predicate ne>`](self.value, rhs.value)
 
   fn __gt__(self, rhs: Int) -> Bool:
-    return Bool._cast_from_builtin(__mlir_op.`index.cmp`[pred:
-                __mlir_attr.`#index<cmp_predicate sgt>`](self.value, rhs.value))
+    return __mlir_op.`index.cmp`[pred:
+                __mlir_attr.`#index<cmp_predicate sgt>`](self.value, rhs.value)
 
   fn __ge__(self, rhs: Int) -> Bool:
-    return Bool._cast_from_builtin(__mlir_op.`index.cmp`[pred:
-                __mlir_attr.`#index<cmp_predicate sge>`](self.value, rhs.value))
+    return __mlir_op.`index.cmp`[pred:
+                __mlir_attr.`#index<cmp_predicate sge>`](self.value, rhs.value)
 
   fn __pos__(self) -> Int:
     return self
@@ -80,20 +80,20 @@ struct Int:
     # CHECK: %2 = index.add %0, %1
     # CHECK: %3 = kgen.call @Int::@"__new__{{.*}}(%2) : (index) -> !kgen.declref<@Int>
     # CHECK: kgen.return %3
-    return Int(__mlir_op.`index.add`(self.value, rhs.value))
+    return __mlir_op.`index.add`(self.value, rhs.value)
   # CHECK: }
 
   fn __sub__(self, rhs: Int) -> Int:
-    return Int(__mlir_op.`index.sub`(self.value, rhs.value))
+    return __mlir_op.`index.sub`(self.value, rhs.value)
 
   fn __mul__(self, rhs: Int) -> Int:
-    return Int(__mlir_op.`index.mul`(self.value, rhs.value))
+    return __mlir_op.`index.mul`(self.value, rhs.value)
 
   #fn __truediv__(self, rhs: Int) -> Int:
   #  return Int(rhs.value)      # TODO: Implement this
 
   fn __floordiv__(self, rhs: Int) -> Int:
-    return Int(__mlir_op.`index.floordivs`(self.value, rhs.value))
+    return __mlir_op.`index.floordivs`(self.value, rhs.value)
 
   #fn __mod__(self, rhs: Int) -> Int:
   #  TODO: use floored reminder as in Python
@@ -110,35 +110,35 @@ struct Int:
   fn __pow__(self, rhs: Int) -> Int:
     var res = Int(1)
     var n = rhs
-    if n < Int(0):
+    if n < 0:
       # Not defined for integers, this should raise an
       # exception.
       res = Int(0)
-    while n > Int(0):
+    while n > 0:
         res *= self
-        n -= Int(1)
+        n -= 1
     return res
 
   fn __lshift__(self, rhs: Int) -> Int:
-    if rhs < Int(0):
+    if rhs < 0:
       # this should raise an exception.
-      return Int(0)
-    return Int(__mlir_op.`index.shl`(self.value, rhs.value))
+      return 0
+    return __mlir_op.`index.shl`(self.value, rhs.value)
 
   fn __rshift__(self, rhs: Int) -> Int:
-    if rhs < Int(0):
+    if rhs < 0:
       # this should raise an exception.
-      return Int(0)
-    return Int(__mlir_op.`index.shrs`(self.value, rhs.value))
+      return 0
+    return __mlir_op.`index.shrs`(self.value, rhs.value)
 
   fn __and__(self, rhs: Int) -> Int:
-    return Int(__mlir_op.`index.and`(self.value, rhs.value))
+    return __mlir_op.`index.and`(self.value, rhs.value)
 
   fn __xor__(self, rhs: Int) -> Int:
-    return Int(__mlir_op.`index.xor`(self.value, rhs.value))
+    return __mlir_op.`index.xor`(self.value, rhs.value)
 
   fn __or__(self, rhs: Int) -> Int:
-    return Int(__mlir_op.`index.or`(self.value, rhs.value))
+    return __mlir_op.`index.or`(self.value, rhs.value)
 
   #===----------------------------------------------------------------------===#
   # In place operations.
@@ -212,43 +212,39 @@ struct Int:
 struct F32:
   var value : __mlir_type.`!pop.scalar<f32>`
 
+  fn __new__(value: __mlir_type.`!pop.scalar<f32>`) -> F32:
+    return __mlir_op.`kgen.struct.create`[_type: F32](value)
+
   # Literals always are represented with f64 for now.
   fn __new__(value: __mlir_type.f64) -> F32:
     var pop64 = __mlir_op.`pop.cast_from_builtin`
       [_type: __mlir_type.`!pop.scalar<f64>`](value)
-    return _getFromStorage(__mlir_op.`pop.cast`
+    return F32(__mlir_op.`pop.cast`
       [_type: __mlir_type.`!pop.scalar<f32>`](pop64))
 
-  # TODO: This should be an overloaded __new__ someday.
-  @staticmethod
-  fn _getFromStorage(value: __mlir_type.`!pop.scalar<f32>`) -> F32:
-    var result: F32
-    result.value = value
-    return result
-
   fn __lt__(self, rhs: F32) -> Bool:
-    return Bool(__mlir_op.`pop.cmp`[pred:
-                      __mlir_attr.`#pop<cmp_pred lt>`](self.value, rhs.value))
+    return __mlir_op.`pop.cmp`[pred:
+                      __mlir_attr.`#pop<cmp_pred lt>`](self.value, rhs.value)
 
   fn __le__(self, rhs: F32) -> Bool:
-    return Bool(__mlir_op.`pop.cmp`[pred:
-                      __mlir_attr.`#pop<cmp_pred le>`](self.value, rhs.value))
+    return __mlir_op.`pop.cmp`[pred:
+                      __mlir_attr.`#pop<cmp_pred le>`](self.value, rhs.value)
 
   fn __eq__(self, rhs: F32) -> Bool:
-    return Bool(__mlir_op.`pop.cmp`[pred:
-                       __mlir_attr.`#pop<cmp_pred eq>`](self.value, rhs.value))
+    return __mlir_op.`pop.cmp`[pred:
+                       __mlir_attr.`#pop<cmp_pred eq>`](self.value, rhs.value)
 
   fn __ne__(self, rhs: F32) -> Bool:
-    return Bool(__mlir_op.`pop.cmp`[pred:
-                      __mlir_attr.`#pop<cmp_pred ne>`](self.value, rhs.value))
+    return __mlir_op.`pop.cmp`[pred:
+                      __mlir_attr.`#pop<cmp_pred ne>`](self.value, rhs.value)
 
   fn __gt__(self, rhs: F32) -> Bool:
-    return Bool(__mlir_op.`pop.cmp`[pred:
-                      __mlir_attr.`#pop<cmp_pred gt>`](self.value, rhs.value))
+    return __mlir_op.`pop.cmp`[pred:
+                      __mlir_attr.`#pop<cmp_pred gt>`](self.value, rhs.value)
 
   fn __ge__(self, rhs: F32) -> Bool:
-    return Bool(__mlir_op.`pop.cmp`[pred:
-                      __mlir_attr.`#pop<cmp_pred ge>`](self.value, rhs.value))
+    return __mlir_op.`pop.cmp`[pred:
+                      __mlir_attr.`#pop<cmp_pred ge>`](self.value, rhs.value)
 
   fn __pos__(self) -> F32:
     return self
@@ -256,19 +252,19 @@ struct F32:
   fn __neg__(self) -> F32:
     var zero = __mlir_op.`pop.constant`[value: __mlir_attr.`0.0: f32`,
                                         _type: __mlir_type.`!pop.scalar<f32>`]()
-    return F32._getFromStorage(__mlir_op.`pop.sub`(zero, self.value))
+    return __mlir_op.`pop.sub`(zero, self.value)
 
   fn __add__(self, rhs: F32) -> F32:
-    return F32._getFromStorage(__mlir_op.`pop.add`(self.value, rhs.value))
+    return __mlir_op.`pop.add`(self.value, rhs.value)
 
   fn __sub__(self, rhs: F32) -> F32:
-    return F32._getFromStorage(__mlir_op.`pop.sub`(self.value, rhs.value))
+    return __mlir_op.`pop.sub`(self.value, rhs.value)
 
   fn __mul__(self, rhs: F32) -> F32:
-    return F32._getFromStorage(__mlir_op.`pop.mul`(self.value, rhs.value))
+    return __mlir_op.`pop.mul`(self.value, rhs.value)
 
   fn __truediv__(self, rhs: F32) -> F32:
-    return F32._getFromStorage(__mlir_op.`pop.div`(self.value, rhs.value))
+    return __mlir_op.`pop.div`(self.value, rhs.value)
 
   # fn __floordiv__(self, rhs: F32) -> F32: # TODO: Implement this
   # fn __mod__(self, rhs: F32) -> F32: # TODO: Implement this
@@ -353,9 +349,8 @@ struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     # CHECK: kgen.return %0
     return __mlir_op.`kgen.struct.create`[_type: SIMD[size, type]](value)
 
-  # FIXME: These should be merged into __new__ when we support overloading.
-  @staticmethod
-  fn getFP(value: __mlir_type.f64) -> SIMD[size, type]:
+  # Initialize from FP literal.
+  fn __new__(value: __mlir_type.f64) -> SIMD[size, type]:
     # TODO: should be 'let' declarations to reduce IR size.
     var pop = __mlir_op.`pop.cast_from_builtin`[_type: __mlir_type.`!pop.scalar<f64>`](value)
     var popCast = __mlir_op.`pop.cast`[_type: __mlir_type.`!pop.simd<1, #lit.placeholder : !kgen.dtype>`[type]](pop)
@@ -369,55 +364,50 @@ struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     # CHECK: %2 = pop.add %0, %1 : !pop.simd<size, type>
     # CHECK: %3 = kgen.call @SIMD::@"__new__{{.*}}<size = size, type: dtype = type>(%2) : (!pop.simd<size, type>) -> !kgen.declref<@SIMD<size = size, type: dtype = type>>
     # CHECK: kgen.return %3 : !kgen.declref<@SIMD<size = size, type: dtype = type>>
-    return SIMD[size, type](__mlir_op.`pop.add`(self.value, rhs.value))
+    return __mlir_op.`pop.add`(self.value, rhs.value)
 
   fn __sub__(self, rhs: SIMD[size, type]) -> SIMD[size, type]:
-    return SIMD[size, type](__mlir_op.`pop.sub`(self.value, rhs.value))
+    return __mlir_op.`pop.sub`(self.value, rhs.value)
 
   fn __mul__(self, rhs: SIMD[size, type]) -> SIMD[size, type]:
-    return SIMD[size, type](__mlir_op.`pop.mul`(self.value, rhs.value))
+    return __mlir_op.`pop.mul`(self.value, rhs.value)
 
   fn __truediv__(self, rhs: SIMD[size, type]) -> SIMD[size, type]:
-    return SIMD[size, type](__mlir_op.`pop.div`(self.value, rhs.value))
+    return __mlir_op.`pop.div`(self.value, rhs.value)
 
   # fn __floordiv__(self, rhs: F32) -> F32: # TODO: Implement this
   # fn __mod__(self, rhs: F32) -> F32: # TODO: Implement this
   # fn __pow__(self, rhs: F32) -> F32: # TODO: Implement this
 
-#  @staticmethod
-#  fn _getBool(value: __mlir_type.`!pop.simd<#lit.placeholder : index, bool>`[size])
-#     -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:#
-#    return Bool(__mlir_op.`pop.cast_to_builtin`[_type: __mlir_type.i1](tmp))
+  fn __lt__(self, rhs: SIMD[size, type])
+     -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
+    return __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred lt>`](self.value, rhs.value)
 
-  fn __lt__(self, rhs: SIMD[size, type]) -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
-    return SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`](
-        __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred lt>`](self.value, rhs.value))
+  fn __le__(self, rhs: SIMD[size, type])
+     -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
+    return __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred le>`](self.value, rhs.value)
 
-  fn __le__(self, rhs: SIMD[size, type]) -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
-    return SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`](
-        __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred le>`](self.value, rhs.value))
+  fn __eq__(self, rhs: SIMD[size, type])
+     -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
+    return __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred eq>`](self.value, rhs.value)
 
-  fn __eq__(self, rhs: SIMD[size, type]) -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
-    return SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`](
-        __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred eq>`](self.value, rhs.value))
+  fn __ne__(self, rhs: SIMD[size, type])
+     -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
+    return __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred ne>`](self.value, rhs.value)
 
-  fn __ne__(self, rhs: SIMD[size, type]) -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
-    return SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`](
-        __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred ne>`](self.value, rhs.value))
+  fn __gt__(self, rhs: SIMD[size, type])
+     -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
+    return __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred gt>`](self.value, rhs.value)
 
-  fn __gt__(self, rhs: SIMD[size, type]) -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
-    return SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`](
-        __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred gt>`](self.value, rhs.value))
-
-  fn __ge__(self, rhs: SIMD[size, type]) -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
-    return SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`](
-        __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred ge>`](self.value, rhs.value))
+  fn __ge__(self, rhs: SIMD[size, type])
+     -> SIMD[size, __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`]:
+    return __mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred ge>`](self.value, rhs.value)
 
   fn __pos__(self) -> SIMD[size, type]:
     return self
 
   fn __neg__(self) -> SIMD[size, type]:
-    return SIMD[size, type](__mlir_op.`pop.neg`(self.value))
+    return __mlir_op.`pop.neg`(self.value)
 
   #===----------------------------------------------------------------------===#
   # In place operations.
@@ -452,9 +442,9 @@ struct SIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
   #  return self
 
   # TODO: Move to global function.
-  fn fma(self, multiplier: SIMD[size, type], accumulator: SIMD[size, type]) -> SIMD[size, type]:
-    return SIMD[size, type](__mlir_op.`pop.fma`(self.value, multiplier.value,
-                                             accumulator.value))
+  fn fma(self, multiplier: SIMD[size, type], accumulator: SIMD[size, type])
+     -> SIMD[size, type]:
+    return __mlir_op.`pop.fma`(self.value, multiplier.value, accumulator.value)
 
 #===------------------------------------------------------------------------===#
 # Error
@@ -475,25 +465,22 @@ struct Error:
 struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
     var value: __mlir_type.`!pop.variant<@Error, #lit.placeholder : !kgen.mlirtype>>`[type]
 
-    fn __new__(value: __mlir_type.`!pop.variant<@Error, #lit.placeholder : !kgen.mlirtype>>`[type]) -> ErrorOr[type]:
-        var result: ErrorOr[type]
-        result.value = value
-        return result
+    fn __new__(value: __mlir_type.`!pop.variant<@Error, #lit.placeholder : !kgen.mlirtype>>`[type])
+      -> ErrorOr[type]:
+        return __mlir_op.`kgen.struct.create`[_type: ErrorOr[type]](value)
 
-    @staticmethod
-    fn fromError(err: Error) -> ErrorOr[type]:
-        var result: ErrorOr[type]
-        result.value = __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, #lit.placeholder : !kgen.mlirtype>>`[type]](err)
-        return result
+    fn __new__(err: Error) -> ErrorOr[type]:
+        return __mlir_op.`kgen.struct.create`[_type: ErrorOr[type]](
+          __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, #lit.placeholder : !kgen.mlirtype>>`[type]](err))
 
-    @staticmethod
-    fn fromValue(value: __mlir_type.`!kgen.paramref<#lit.placeholder : !kgen.mlirtype>>`[type]) -> ErrorOr[type]:
-        var result: ErrorOr[type]
-        result.value = __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, #lit.placeholder : !kgen.mlirtype>>`[type]](value)
-        return result
+    fn __new__(value: __mlir_type.`!kgen.paramref<#lit.placeholder : !kgen.mlirtype>>`[type]) -> ErrorOr[type]:
+        return __mlir_op.`kgen.struct.create`[_type: ErrorOr[type]](
+           __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, #lit.placeholder : !kgen.mlirtype>>`[type]](value))
 
     fn __bool__(self: ErrorOr[type]) -> Bool:
-        return Bool.false() if Bool._cast_from_builtin(__mlir_op.`pop.variant.is`[testType: __mlir_attr.`!kgen.declref<@Error>`](self.value)) else Bool.true()
+        return Bool.false()
+           if Bool(__mlir_op.`pop.variant.is`[testType: __mlir_attr.`!kgen.declref<@Error>`](self.value))
+           else Bool.true()
 
     fn getValue(self: ErrorOr[type]) -> __mlir_type.`!kgen.paramref<#lit.placeholder : !kgen.mlirtype>>`[type]:
         return __mlir_op.`pop.variant.get`[_type: __mlir_type.`!kgen.paramref<#lit.placeholder : !kgen.mlirtype>>`[type]](self.value)
