@@ -33,8 +33,8 @@ from mblack.nodes import (
     preceding_leaf,
     syms,
 )
-from blib2to3.pgen2 import token
-from blib2to3.pytree import Leaf, Node
+from mblib2to3.pgen2 import token
+from mblib2to3.pytree import Leaf, Node
 
 # types
 LN = Union[Leaf, Node]
@@ -51,7 +51,7 @@ COMMENT_EXCEPTIONS = {True: " !:#'", False: " !:#'%"}
 class ProtoComment:
     """Describes a piece of syntax that is a comment.
 
-    It's not a :class:`blib2to3.pytree.Leaf` so that:
+    It's not a :class:`mblib2to3.pytree.Leaf` so that:
 
     * it can be cached (`Leaf` objects should not be reused more than once as
       they store their lineno, column, prefix, and parent information);

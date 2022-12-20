@@ -28,12 +28,12 @@ else:
 
 from mblack.mode import Feature, TargetVersion, supports_feature
 from mblack.nodes import syms
-from blib2to3 import pygram
-from blib2to3.pgen2 import driver
-from blib2to3.pgen2.grammar import Grammar
-from blib2to3.pgen2.parse import ParseError
-from blib2to3.pgen2.tokenize import TokenError
-from blib2to3.pytree import Leaf, Node
+from mblib2to3 import pygram
+from mblib2to3.pgen2 import driver
+from mblib2to3.pgen2.grammar import Grammar
+from mblib2to3.pgen2.parse import ParseError
+from mblib2to3.pgen2.tokenize import TokenError
+from mblib2to3.pytree import Leaf, Node
 
 ast3: Any
 

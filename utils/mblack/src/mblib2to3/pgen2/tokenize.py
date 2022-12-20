@@ -9,7 +9,7 @@
 # File originates from:
 #   Repo:   git@github.com:psf/black.git
 #   Commit: d4a85643a465f5fae2113d07d22d021d4af4795a
-#   Path:   src/blib2to3/pgen2/tokenize.py
+#   Path:   src/mblib2to3/pgen2/tokenize.py
 #
 # ===----------------------------------------------------------------------=== #
 
@@ -61,15 +61,15 @@ if sys.version_info >= (3, 8):
 else:
     from typing_extensions import Final
 
-from blib2to3.pgen2.token import *
-from blib2to3.pgen2.grammar import Grammar
+from mblib2to3.pgen2.token import *
+from mblib2to3.pgen2.grammar import Grammar
 
 __author__ = "Ka-Ping Yee <ping@lfw.org>"
 __credits__ = "GvR, ESR, Tim Peters, Thomas Wouters, Fred Drake, Skip Montanaro"
 
 import re
 from codecs import BOM_UTF8, lookup
-from blib2to3.pgen2.token import *
+from mblib2to3.pgen2.token import *
 
 from . import token
 
@@ -103,7 +103,7 @@ Whitespace = r"[ \f\t]*"
 Comment = r"#[^\r\n]*"
 Ignore = Whitespace + any(r"\\\r?\n" + Whitespace) + maybe(Comment)
 Name = (  # this is invalid but it's fine because Name comes after Number in all groups
-    r"[^\s#\(\)\[\]\{\}+\-*/!@$%^&=|;:'\",\.<>/?`~\\]+"
+    r"[^\s#\(\)\[\]\{\}+\-*/@$%^=|;:'\",\.<>/?~\\]+"
 )
 
 Binnumber = r"0[bB]_?[01]+(?:_[01]+)*"
@@ -124,6 +124,7 @@ Number = group(Imagnumber, Floatnumber, Intnumber)
 Single = r"[^'\\]*(?:\\.[^'\\]*)*'"
 # Tail end of " string.
 Double = r'[^"\\]*(?:\\.[^"\\]*)*"'
+Backtick = r"[^`\\]*(?:\\.[^`\\]*)*`"
 # Tail end of ''' string.
 Single3 = r"[^'\\]*(?:(?:\\.|'(?!''))[^'\\]*)*'''"
 # Tail end of """ string.
@@ -134,6 +135,7 @@ Triple = group(_litprefix + "'''", _litprefix + '"""')
 String = group(
     _litprefix + r"'[^\n'\\]*(?:\\.[^\n'\\]*)*'",
     _litprefix + r'"[^\n"\\]*(?:\\.[^\n"\\]*)*"',
+    _litprefix + r'`[^\n"\\]*(?:\\.[^\n"\\]*)*`',
 )
 
 # Because of leftmost-then-longest match semantics, be sure to put the
@@ -152,7 +154,7 @@ Operator = group(
 )
 
 Bracket = "[][(){}]"
-Special = group(r"\r?\n", r"[:;.,`@]")
+Special = group(r"\r?\n", r"[:;.,@]")
 Funny = group(Operator, Bracket, Special)
 
 # First (or only) line of ' or " string.
@@ -176,6 +178,7 @@ _strprefixes = (
 endprogs: Final = {
     "'": re.compile(Single),
     '"': re.compile(Double),
+    "`": re.compile(Backtick),
     "'''": single3prog,
     '"""': double3prog,
     **{f"{prefix}'''": single3prog for prefix in _strprefixes},
@@ -642,6 +645,16 @@ def generate_tokens(
                             yield stashed
                             stashed = None
                         yield (STRING, token, spos, epos, line)
+                elif token.startswith("`"):
+                    endprog = endprogs["`"]
+                    endmatch = endprog.match(line, pos)
+                    if endmatch:
+                        pos = endmatch.end(0)
+                        token = line[start:pos]
+                        yield (NAME, token, spos, (lnum, pos), line)
+                    else:
+                        yield (NAME, token, spos, epos, line)
+                        # raise TokenError("Missing matching ` in metaparam!")
                 elif initial.isidentifier():  # ordinary name
                     if token in ("async", "await"):
                         if async_keywords or async_def:
@@ -659,14 +672,14 @@ def generate_tokens(
                         stashed = tok
                         continue
 
-                    if token in ("def", "for"):
+                    if token in ("def", "fn", "for"):
                         if (
                             stashed
                             and stashed[0] == NAME
                             and stashed[1] == "async"
                         ):
 
-                            if token == "def":
+                            if token in ("def", "fn"):
                                 async_def = True
                                 async_def_indent = indents[-1]
 

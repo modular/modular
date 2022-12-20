@@ -81,8 +81,8 @@ from mblack.trans import (
     Transformer,
     hug_power_op,
 )
-from blib2to3.pgen2 import token
-from blib2to3.pytree import Leaf, Node
+from mblib2to3.pgen2 import token
+from mblib2to3.pytree import Leaf, Node
 
 # types
 LeafID = int
@@ -155,7 +155,7 @@ class LineGenerator(Visitor[Line]):
 
     def visit_INDENT(self, node: Leaf) -> Iterator[Line]:
         """Increase indentation level, maybe yield a line."""
-        # In blib2to3 INDENT never holds comments.
+        # In mblib2to3 INDENT never holds comments.
         yield from self.line(+1)
         yield from self.visit_default(node)
 
@@ -197,7 +197,7 @@ class LineGenerator(Visitor[Line]):
     def visit_funcdef(self, node: Node) -> Iterator[Line]:
         """Visit function definition."""
         if Preview.annotation_parens not in self.mode:
-            yield from self.visit_stmt(node, keywords={"def"}, parens=set())
+            yield from self.visit_stmt(node, keywords={"def", "fn"}, parens=set())
         else:
             yield from self.line()
 
@@ -448,7 +448,7 @@ class LineGenerator(Visitor[Line]):
         else:
             self.visit_except_clause = partial(v, keywords={"except"}, parens=Ø)
             self.visit_with_stmt = partial(v, keywords={"with"}, parens=Ø)
-        self.visit_classdef = partial(v, keywords={"class"}, parens=Ø)
+        self.visit_classdef = partial(v, keywords={"class", "struct"}, parens=Ø)
         self.visit_expr_stmt = partial(v, keywords=Ø, parens=ASSIGNMENTS)
         self.visit_return_stmt = partial(v, keywords={"return"}, parens={"return"})
         self.visit_import_from = partial(v, keywords=Ø, parens={"import"})

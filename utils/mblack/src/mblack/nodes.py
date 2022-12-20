@@ -14,7 +14,7 @@
 # ===----------------------------------------------------------------------=== #
 
 """
-blib2to3 Node/Leaf transformation-related utility functions.
+mblib2to3 Node/Leaf transformation-related utility functions.
 """
 
 import sys
@@ -33,9 +33,9 @@ from mypy_extensions import mypyc_attr
 
 from mblack.cache import CACHE_DIR
 from mblack.strings import has_triple_quotes
-from blib2to3 import pygram
-from blib2to3.pgen2 import token
-from blib2to3.pytree import NL, Leaf, Node, type_repr
+from mblib2to3 import pygram
+from mblib2to3.pgen2 import token
+from mblib2to3.pytree import NL, Leaf, Node, type_repr
 
 pygram.initialize(CACHE_DIR)
 syms: Final = pygram.python_symbols
@@ -93,6 +93,7 @@ VARARGS_SPECIALS: Final = STARS | {token.SLASH}
 VARARGS_PARENTS: Final = {
     syms.arglist,
     syms.argument,  # double star in arglist
+    syms.metaparams,
     syms.trailer,  # single argument to call
     syms.typedargslist,
     syms.varargslist,  # lambdas
@@ -100,6 +101,7 @@ VARARGS_PARENTS: Final = {
 UNPACKING_PARENTS: Final = {
     syms.atom,  # single element of a list or set literal
     syms.dictsetmaker,
+    syms.metaparams,
     syms.listmaker,
     syms.testlist_gexp,
     syms.testlist_star_expr,
@@ -407,7 +409,7 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
                 return NO
 
         elif t == token.NAME:
-            if v == "import":
+            if v in {"import", "__include"}:
                 return SPACE
 
             if prev and prev.type == token.DOT:
@@ -419,6 +421,9 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
     elif p.type == syms.except_clause:
         if t == token.STAR:
             return NO
+
+    elif p.type == syms.metaparams:
+        return NO
 
     return SPACE
 
@@ -792,6 +797,7 @@ def is_import(leaf: Leaf) -> bool:
         and (
             (v == "import" and p and p.type == syms.import_name)
             or (v == "from" and p and p.type == syms.import_from)
+            or (v == "__include")
         )
     )
 

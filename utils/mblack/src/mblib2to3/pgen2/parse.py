@@ -9,7 +9,7 @@
 # File originates from:
 #   Repo:   git@github.com:psf/black.git
 #   Commit: d4a85643a465f5fae2113d07d22d021d4af4795a
-#   Path:   src/blib2to3/pgen2/parse.py
+#   Path:   src/mblib2to3/pgen2/parse.py
 #
 # ===----------------------------------------------------------------------=== #
 
@@ -43,11 +43,11 @@ from typing import (
     Set,
     TYPE_CHECKING,
 )
-from blib2to3.pgen2.grammar import Grammar
-from blib2to3.pytree import convert, NL, Context, RawNode, Leaf, Node
+from mblib2to3.pgen2.grammar import Grammar
+from mblib2to3.pytree import convert, NL, Context, RawNode, Leaf, Node
 
 if TYPE_CHECKING:
-    from blib2to3.driver import TokenProxy
+    from mblib2to3.driver import TokenProxy
 
 
 Results = Dict[Text, NL]
@@ -223,7 +223,7 @@ class Parser(object):
         up.
 
         **post-note: the convert argument is ignored since for Black's
-        usage, convert will always be blib2to3.pytree.convert. Allowing
+        usage, convert will always be mblib2to3.pytree.convert. Allowing
         this to be dynamic hurts mypyc's ability to use early binding.
         These docs are left for historical and informational value.
 
