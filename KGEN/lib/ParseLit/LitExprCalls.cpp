@@ -509,11 +509,11 @@ static bool isValidErrorContext(Block *block) {
 }
 
 /// Emit a function call to the specified callee with the specified operand
-/// values.
-AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
-                                       ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                       SMLoc callLoc) {
-  if (!calleeVal)
+/// values.  This emits an error and returns null on failure.
+AnyValue
+CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                SMLoc callLoc, ExprEmitter &emitter) {
+  if (isNull()) // Base was already diagnosed as an error.
     return {};
 
   // Set to true if this is a method call like `x.foo(...`.
@@ -522,7 +522,7 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
   SmallVector<ASTExprAnd<AnyValue>> operandsWithSelf;
 
   auto emitError = [&](const Twine &message) {
-    return this->emitError(callLoc, message);
+    return emitter.emitError(callLoc, message);
   };
 
   // Figure out the type of the function to call, which is either symbol or a
@@ -532,25 +532,25 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
   // This is the callee symbol constant for a direct call, or the SSA value for
   // an indirect call.
   PointerUnion<Attribute, Value> callee;
-  if (calleeVal.direct) {
+  if (direct) {
     // If we have a bound self, add it to the operand list to simplify the logic
     // below.
-    if (calleeVal.baseVal) {
+    if (baseVal) {
       operandsWithSelf.reserve(operands.size() + 1);
-      operandsWithSelf.push_back(calleeVal.baseVal);
+      operandsWithSelf.push_back(baseVal);
       operandsWithSelf.append(operands.begin(), operands.end());
       operands = operandsWithSelf;
-      calleeVal.baseVal = {};
+      baseVal = {};
       isMethodCall = true;
     }
 
     // Check the direct callees to see if they can be unambiguously resolved
     // with the bindings list and specified arguments.
-    if (failed(calleeVal.direct->filterOverloadSet(
-            operands, isMethodCall,
-            /*emitDiagnosticOnFailure=*/true, shared)))
+    if (failed(direct->filterOverloadSet(operands, isMethodCall,
+                                         /*emitDiagnosticOnFailure=*/true,
+                                         emitter.shared)))
       return {};
-    SymbolConstantAttr symbol = calleeVal.direct->getBoundConstantAttr(shared);
+    SymbolConstantAttr symbol = direct->getBoundConstantAttr(emitter.shared);
     if (!symbol)
       return {};
 
@@ -559,7 +559,7 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
   } else {
     // Otherwise we have an indirect call, emit the callee value as a DRValue so
     // we can call it with call_indirect.
-    auto calleeDRVal = emitDRValue(calleeVal.baseVal.ir, callLoc);
+    auto calleeDRVal = emitter.emitDRValue(baseVal.ir, callLoc);
     if (!calleeDRVal)
       return {};
     callee = calleeDRVal;
@@ -573,11 +573,11 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
 
     // Check to see if we can apply these operands to the callee signature.
     DirectCallable bindings{callLoc, {}, {}}; // No additional bound parameters.
-    auto fitness =
-        OverloadFitness::evaluate(calleeSig, bindings, operands, shared);
+    auto fitness = OverloadFitness::evaluate(calleeSig, bindings, operands,
+                                             emitter.shared);
     if (fitness.kind != OverloadFitness::kValid) {
       // If not, diagnose it with an error.
-      auto diag = shared.emitError(callLoc, "invalid indirect call: ");
+      auto diag = emitError("invalid indirect call: ");
       fitness.diagnose(calleeSig, bindings, operands, isMethodCall,
                        *diag.getUnderlyingDiagnostic());
       return {};
@@ -586,12 +586,8 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
 
   assert(calleeSig.getResultParamTypes().empty() &&
          "TODO: meta results not implemented yet");
-
-  size_t numArgs = calleeSig.getValues().getNumInputs();
-  if (numArgs != operands.size()) {
-    emitError("callee expects ") << numArgs << " argument" << plural(numArgs);
-    return {};
-  }
+  assert(calleeSig.getValues().getNumInputs() == operands.size() &&
+         "Type checking should be done");
 
   // Emit all the arguments.
   SmallVector<Value> valueArguments;
@@ -609,12 +605,13 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
       break;
     case ValueInputConvention::ByVal:
       // Otherwise, we pass as an r-value.
-      argVal = emitDRValue(argAnyValueAndExpr.ir, argLoc);
+      argVal = emitter.emitDRValue(argAnyValueAndExpr.ir, argLoc);
       if (!argVal)
         return {};
 
       // Convert the argument to the expected type if needed.
-      argVal = getAsExpectedType(argVal, argAnyValueAndExpr.expr, expectedType);
+      argVal = emitter.getAsExpectedType(argVal, argAnyValueAndExpr.expr,
+                                         expectedType);
       if (!argVal)
         return {};
       break;
@@ -623,6 +620,7 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
     valueArguments.push_back(argVal);
   }
 
+  auto &builder = emitter.builder;
   if (!builder) {
     emitError("TODO: cannot call function in parameter context");
     return {};
@@ -631,7 +629,7 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
   // If this is a call to something representable as an attribute, we can use
   // a kgen.call_param.
   Value resultVal;
-  auto loc = translateLocation(callLoc);
+  auto loc = emitter.translateLocation(callLoc);
   // FIXME: Move result type inference into CallOp/CallIndirectOp.
   auto resultTypes = calleeSig.getValueResults();
   if (auto target = dyn_cast<Attribute>(callee)) {
@@ -652,8 +650,7 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
   // If the callee can raise an error, try to unwrap it.
   if (calleeSig.getFnEffects() == FnEffects::Throws) {
     if (!isValidErrorContext(builder->getInsertionBlock())) {
-      this->emitError(
-          callLoc,
+      emitError(
           "cannot call raising method within an 'fn' that does not raise");
       return {};
     }

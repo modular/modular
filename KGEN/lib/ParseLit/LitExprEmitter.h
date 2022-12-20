@@ -106,12 +106,6 @@ public:
   //===--------------------------------------------------------------------===//
   // Function Calls
 
-  /// Emit a function call to the specified callee with the specified operand
-  /// values.
-  AnyValue emitFunctionCall(CallableValue calleeVal,
-                            ArrayRef<ASTExprAnd<AnyValue>> operands,
-                            SMLoc callLoc);
-
   /// This helper emits a method call to a special function (`kind`) on `type`
   /// with the provided `operands`. This emits an error if the special function
   /// is not implemented by the type and returns null.
