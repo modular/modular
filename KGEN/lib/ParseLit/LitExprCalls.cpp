@@ -314,11 +314,47 @@ DirectCallable::getBoundConstantAttr(ExprEmitter &emitter) const {
 
 /// Get a symbol for a direct reference to the specified function in its
 /// enclosing context.  This does not bind any values to arguments.
-CallableValue::CallableValue(SMLoc loc, ArrayRef<ASTDecl *> fnDecls,
-                             ParamBindArrayAttr bindings)
-    : direct({loc, {fnDecls.begin(), fnDecls.end()}, {}}) {
-  for (ParamBindAttr bind : bindings)
-    direct->bindings.push_back({loc, bind});
+DirectCallable::DirectCallable(SMLoc loc, ArrayRef<ASTDecl *> fnDecls,
+                               ParamBindArrayAttr bindingsAttr)
+    : loc(loc), fnDecls(fnDecls.begin(), fnDecls.end()) {
+  for (ParamBindAttr bind : bindingsAttr)
+    bindings.push_back({loc, bind});
+}
+
+/// Get a CallableValue for a lookup of a named method on the specified type.
+/// If successful, this provides a non-null CallableValue.
+///
+/// On failure, this returns a null CallableValue and sets 'erroneousDecl' to
+/// indicate whether there was a problem with the callee that has already been
+/// diagnosed (thus squishing downstream error messages).  If
+/// emitErrorOnFailure is true an error message indicates why the call failed.
+CallableValue::CallableValue(ASTType type, StringRef methodName, SMLoc callLoc,
+                             bool emitErrorOnFailure, bool &erroneousDecl,
+                             LitSharedState &shared) {
+  erroneousDecl = false;
+  // First perform a lookup to see if there are any candidates.
+  auto lookupResult = shared.lookupAndResolveDecl(methodName, callLoc, type);
+  ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
+  if (resultDecls.empty()) {
+    if (lookupResult.isErroneous())
+      erroneousDecl = true;
+    else if (emitErrorOnFailure)
+      shared.emitError(callLoc, "") << type << " does not implement the '"
+                                    << methodName << "' special method";
+    return;
+  }
+
+  // If we find a vardecl or any other thing, then fail because it cannot be
+  // called.
+  if (!isa<LIT::FuncOp>(*resultDecls[0])) {
+    if (emitErrorOnFailure)
+      shared.emitError(callLoc, "member '")
+          << methodName << "' of " << type << " is not a method";
+    return;
+  }
+
+  // Handle method references, which might be overloaded.
+  direct = DirectCallable{callLoc, resultDecls, type.getParamBindings()};
 }
 
 /// Emit this as a flattened RValue or LValue with no additional parameter
@@ -442,7 +478,6 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
 
     // Check the direct callees to see if they can be unambiguously resolved
     // with the bindings list and specified arguments.
-
     // FIXME (impl conversions): We should do this all the time, but overload
     // resolution doesn't support implicit conversions yet.
     if (calleeVal.direct->fnDecls.size() > 1) {
@@ -450,7 +485,6 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
                                                      *this)))
         return {};
     }
-
     SymbolConstantAttr symbol = calleeVal.direct->getBoundConstantAttr(*this);
     if (!symbol)
       return {};
