@@ -383,8 +383,10 @@ DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
 DirectCallable::DirectCallable(SMLoc loc, ArrayRef<ASTDecl *> fnDecls,
                                ParamBindArrayAttr bindingsAttr)
     : loc(loc), fnDecls(fnDecls.begin(), fnDecls.end()) {
-  for (ParamBindAttr bind : bindingsAttr)
-    bindings.push_back({loc, bind});
+  if (bindingsAttr) {
+    for (ParamBindAttr bind : bindingsAttr)
+      bindings.push_back({loc, bind});
+  }
 }
 
 /// Get a CallableValue for a lookup of a named method on the specified type.
@@ -560,6 +562,7 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
     auto calleeDRVal = emitDRValue(calleeVal.baseVal.ir, callLoc);
     if (!calleeDRVal)
       return {};
+    callee = calleeDRVal;
 
     calleeSig = dyn_cast<SignatureType>(calleeDRVal.getType());
     if (!calleeSig) {
@@ -567,7 +570,18 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
           << ASTType(calleeDRVal.getType());
       return {};
     }
-    callee = calleeDRVal;
+
+    // Check to see if we can apply these operands to the callee signature.
+    DirectCallable bindings{callLoc, {}, {}}; // No additional bound parameters.
+    auto fitness =
+        OverloadFitness::evaluate(calleeSig, bindings, operands, shared);
+    if (fitness.kind != OverloadFitness::kValid) {
+      // If not, diagnose it with an error.
+      auto diag = shared.emitError(callLoc, "invalid indirect call: ");
+      fitness.diagnose(calleeSig, bindings, operands, isMethodCall,
+                       *diag.getUnderlyingDiagnostic());
+      return {};
+    }
   }
 
   assert(calleeSig.getResultParamTypes().empty() &&
@@ -591,30 +605,7 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
     switch (convention) {
     case ValueInputConvention::ByRef:
       argVal = argAnyValueAndExpr.ir.getIfLValue();
-      if (!argVal) {
-        if (isMethodCall && valueArguments.empty()) {
-          this->emitError(argLoc,
-                          "invalid use of mutating method on rvalue of type ")
-              << ASTType(argAnyValueAndExpr.ir.getType());
-        } else {
-          this->emitError(
-              argLoc,
-              "operand must be mutable in order to pass as a by-ref argument");
-        }
-        return {};
-      }
-
-      // If we have an lvalue of the wrong type, diagnose the error prettily.
-      if (!ASTType(argVal.getType()).isEqualCanon(ASTType(expectedType))) {
-        auto argRVType = argAnyValueAndExpr.ir.getRValueType();
-        this->emitError(argLoc, "l-value of type ")
-            << argRVType
-            << " cannot be converted to reference to expected type "
-            // TODO(QoI): Types are not attributes.
-            << cast<POP::PointerType>(expectedType).getElementType();
-        return {};
-      }
-
+      assert(argVal && "Call should already be type checked");
       break;
     case ValueInputConvention::ByVal:
       // Otherwise, we pass as an r-value.
@@ -622,8 +613,7 @@ AnyValue ExprEmitter::emitFunctionCall(CallableValue calleeVal,
       if (!argVal)
         return {};
 
-      // Convert the argument to the expected type if needed, or diagnose if
-      // incompatible.
+      // Convert the argument to the expected type if needed.
       argVal = getAsExpectedType(argVal, argAnyValueAndExpr.expr, expectedType);
       if (!argVal)
         return {};
