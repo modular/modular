@@ -16,7 +16,7 @@ fn simpleMath(a: Int, b: Int) -> Int:
 # CHECK-LABEL: lit.func @"precedence_associativity
 fn precedence_associativity(a: Int):
   # CHECK-NEXT: %z = lit.var.decl "z"
-  var z: Int = Int(0)
+  var z: Int = 0
 
   # CHECK: %idx17 = index.constant 17
   # CHECK: %[[SEVENTEEN:.*]] = kgen.call @Int::@"__new__(__mlir_type.index)"(%idx17)

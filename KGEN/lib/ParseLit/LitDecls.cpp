@@ -1241,18 +1241,15 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
     // directly on the var decl instead of doing a store.  This will work better
     // in structs etc.
     auto rhsValue = emitter.emitDRValue(initValue);
+    // If we had a declared type, coerce the expression value to it.
+    if (type)
+      rhsValue = emitter.getAsExpectedType(rhsValue, initValue, type);
+
     if (!rhsValue)
       return failure();
 
-    // If we had a declared type, coerce the expression value to it.
-    // TODO(implicit conversions etc).
-    if (type && !type.isEqualCanon(rhsValue.getType())) {
-      p.emitError(initValue->getLoc(), "initializer has type ")
-          << ASTType(rhsValue.getType()) << " but declared type is " << type;
-      return failure(); // Not sure which type is right.
-    }
-
     // Infer the type if we lack a declared type (`var x = 42`)
+    // TODO(literal autopromotion).
     if (!type) {
       type = rhsValue.getType();
       varOp.getResult().setType(POP::PointerType::get(type));
@@ -1325,7 +1322,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
       return failure();
 
     // If we had a declared type, coerce the expression value to it.
-    // TODO(implicit conversions etc).
+    // TODO(implicit conversions for parameters).
     if (!type) {
       // Infer the type since we lack a declared type (`var x = 42`)
       type = rhsValue.getType();
