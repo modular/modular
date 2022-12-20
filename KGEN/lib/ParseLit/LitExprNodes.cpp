@@ -1243,7 +1243,9 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
   if (!exprRep)
     return {};
 
-  if (exprRep.getType().isIndex()) {
+  // Special case some things for literals.
+  // TODO: Fix literal representation.
+  if (exprRep.getType().isIndex() || exprRep.getType().isF64()) {
     auto exprParam =
         emitter.emitMValue(subExpr, "expecting parameter values as operands");
     if (!exprParam) {
@@ -1252,11 +1254,18 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
     }
     switch (kind) {
     default:
-      llvm_unreachable("unknown binary operator");
-    case ExprNode::kNeg: {
-      IntegerAttr minusOne = emitter.builder->getIndexAttr(-1);
-      return ParamOperatorAttr::get(POC::Mul, exprParam, minusOne);
-    }
+      break;
+    case ExprNode::kNeg:
+      if (auto constantFP = dyn_cast<FloatAttr>(exprParam.get()))
+        return MValue(
+            FloatAttr::get(constantFP.getType(), -constantFP.getValue()));
+
+      // Support general integer parameter exprss.
+      if (exprRep.getType().isIndex()) {
+        IntegerAttr minusOne = emitter.builder->getIndexAttr(-1);
+        return ParamOperatorAttr::get(POC::Mul, exprParam, minusOne);
+      }
+      break;
     case ExprNode::kPos:
       return exprParam;
     }
