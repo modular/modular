@@ -198,21 +198,25 @@ DRValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
     return {};
 
   SMLoc valueLoc = value.expr->getLoc();
+  boolResult = value.ir;
 
   // If this is already an 'i1', then we're done.
   if (value.ir.getType().isInteger(1))
     return emitDRValue(value.ir, valueLoc);
 
-  // TODO: We could look for the presence of a __lit_bool method and avoid a
-  // redundant call to __bool__ for Bool types.
-
-  // First we use the __bool__ method to convert the user defined type to
-  // something that is a Bool or other type that implements __lit_bool.
-  boolResult =
-      emitSpecialMethodCall(value.ir.getType(), SpecialFunctionKind::kBool,
-                            {{value.ir, value.expr}}, valueLoc);
-  if (!boolResult)
-    return {};
+  // Check for the presence of a __lit_bool method.  If it exists, we can avoid
+  // a redundant call to __bool__ for Bool types.
+  bool isErroneousDecl = false;
+  if (!CallableValue(value.ir.getType(), "__lit_bool", valueLoc,
+                     /*emitErrorOnFailure=*/false, isErroneousDecl, shared)) {
+    // Use the __bool__ method to convert the user defined type to
+    // something that is a Bool or other type that implements __lit_bool.
+    boolResult =
+        emitSpecialMethodCall(value.ir.getType(), SpecialFunctionKind::kBool,
+                              {{value.ir, value.expr}}, valueLoc);
+    if (!boolResult)
+      return {};
+  }
 
   // Then we use __lit_bool to convert to an i1 value.
   AnyValue litBoolCall =
