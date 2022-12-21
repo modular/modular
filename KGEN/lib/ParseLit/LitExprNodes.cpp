@@ -671,10 +671,8 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   // this is an invocation of the initializer for the type.
   if (!calleeVal.direct)
     if (ASTType calledType = calleeVal.baseVal.ir.getIfTypeValue()) {
-      bool isErroneousDecl = false;
-      calleeVal = CallableValue(calledType, "__new__", getLoc(),
-                                /*emitErrorOnFailure=*/true, isErroneousDecl,
-                                emitter.shared);
+      calleeVal =
+          CallableValue(calledType, "__new__", getLoc(), emitter.shared);
       if (calleeVal.isNull())
         return {};
     }
@@ -1150,16 +1148,15 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   // receiver.
   bool isErroneousDecl = false;
   CallableValue callee(lhsRep.getRValueType(), specialFnInfo.name, getLoc(),
-                       /*emitErrorOnFailure=*/false, isErroneousDecl,
-                       emitter.shared);
+                       isErroneousDecl, emitter.shared);
+  if (isErroneousDecl)
+    return {};
   if (callee.direct &&
       succeeded(callee.direct->filterOverloadSet(
           argValues, /*isMethodSyntax*/ false,
           /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
     return callee.emitFunctionCall(argValues, getLoc(), emitter);
   }
-  if (isErroneousDecl)
-    return {};
 
   // Check to see if we have the reverse version of this operator.
   auto reversedFnInfo = getOpSpecialFunctions(kind, /*isReversed=*/true);
@@ -1167,8 +1164,7 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     // Swap the operand order.
     std::swap(argValues[0], argValues[1]);
     callee = CallableValue(rhsRep.getType(), reversedFnInfo.name, getLoc(),
-                           /*emitErrorOnFailure=*/false, isErroneousDecl,
-                           emitter.shared);
+                           isErroneousDecl, emitter.shared);
     if (callee.direct &&
         succeeded(callee.direct->filterOverloadSet(
             argValues, /*isMethodSyntax*/ false,
@@ -1240,7 +1236,6 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
     ifOp->getResult(0).setType(lhsRV.getType());
   } else {
     // Otherwise, check to see if their boolean versions are compatible.
-    auto boolFnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kBool);
     auto rhsBool = emitter.emitNamedMethodCall(rhsRV.getType(), "__bool__",
                                                {{rhsRV, rhs}}, rhs->getLoc());
     if (!rhsBool)

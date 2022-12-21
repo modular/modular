@@ -131,15 +131,20 @@ public:
       : direct({loc, fnDecls, bindings}) {}
 
   /// Get a CallableValue for a lookup of a named method on the specified type.
+  /// If successful, this provides a non-null CallableValue.  On failure, it
+  /// emits an error and returns a null CallableValue.
+  CallableValue(ASTType type, StringRef methodName, SMLoc callLoc,
+                LitSharedState &shared);
+
+  /// Get a CallableValue for a lookup of a named method on the specified type.
   /// If successful, this provides a non-null CallableValue.
   ///
   /// On failure, this returns a null CallableValue and sets 'erroneousDecl' to
   /// indicate whether there was a problem with the callee that has already been
-  /// diagnosed (thus squishing downstream error messages).  If
-  /// emitErrorOnFailure is true an error message indicates why the call failed.
+  /// diagnosed (allowing the client to squish downstream error messages).  This
+  /// does not emit an error on failure.
   CallableValue(ASTType type, StringRef methodName, SMLoc callLoc,
-                bool emitErrorOnFailure, bool &erroneousDecl,
-                LitSharedState &shared);
+                bool &erroneousDecl, LitSharedState &shared);
 
   bool isNull() const { return !baseVal && !direct; }
   bool operator!() const { return isNull(); }
@@ -153,6 +158,11 @@ public:
   /// values.  This emits an error and returns null on failure.
   AnyValue emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
                             SMLoc callLoc, ExprEmitter &emitter);
+
+private:
+  void lookup(ASTType type, StringRef methodName, SMLoc callLoc,
+              bool emitErrorOnFailure, bool &erroneousDecl,
+              LitSharedState &shared);
 };
 
 } // namespace M::KGEN::LIT

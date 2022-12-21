@@ -147,14 +147,7 @@ AnyValue
 ExprEmitter::emitNamedMethodCall(ASTType type, StringRef methodName,
                                  ArrayRef<ASTExprAnd<AnyValue>> argValues,
                                  SMLoc callLoc) {
-  bool isErroneousDecl = false;
-  CallableValue callee(type, methodName, callLoc,
-                       /*emitErrorOnFailure=*/true, isErroneousDecl, shared);
-  if (callee.direct && failed(callee.direct->filterOverloadSet(
-                           argValues, /*isMethodSyntax*/ false,
-                           /*emitDiagnosticOnFailure=*/true, shared)))
-    return {};
-
+  CallableValue callee(type, methodName, callLoc, shared);
   return callee.emitFunctionCall(argValues, callLoc, *this);
 }
 
@@ -170,8 +163,8 @@ DRValue ExprEmitter::getAsExpectedType(DRValue value, const ExprNode *expr,
 
   // Check to see if we can invoke an __new__ method to convert it.
   bool isErroneousDecl = false;
-  CallableValue callee(expectedType, "__new__", expr->getLoc(),
-                       /*emitErrorOnFailure=*/false, isErroneousDecl, shared);
+  CallableValue callee(expectedType, "__new__", expr->getLoc(), isErroneousDecl,
+                       shared);
   if (callee.isNull()) {
     if (!isErroneousDecl) {
       emitError(expr->getLoc(), "value of type ")
@@ -214,7 +207,7 @@ DRValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
   // a redundant call to __bool__ for Bool types.
   bool isErroneousDecl = false;
   if (!CallableValue(value.ir.getType(), "__lit_bool", valueLoc,
-                     /*emitErrorOnFailure=*/false, isErroneousDecl, shared)) {
+                     isErroneousDecl, shared)) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __lit_bool.
     boolResult = emitNamedMethodCall(value.ir.getType(), "__bool__",
