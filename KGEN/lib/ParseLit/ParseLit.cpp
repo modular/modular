@@ -56,7 +56,7 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
                           /*column=*/0);
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(fileLoc));
 
-  LitSharedState sharedState(sourceMgr, context, options);
+  LitSharedState sharedState(sourceMgr, *module, options);
   LitLexer lexer(sharedState, sourceBuf);
   auto startSMLoc = lexer.getToken().getLoc();
 

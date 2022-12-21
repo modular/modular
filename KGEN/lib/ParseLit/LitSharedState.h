@@ -47,11 +47,13 @@ inline const char *plural(size_t value, const char *one = "",
 /// which are always shared across them.
 class LitSharedState {
 public:
-  LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+  LitSharedState(llvm::SourceMgr &sourceMgr, ModuleOp topLevelModule,
                  const CompilationOptions &options);
   ~LitSharedState();
 
   llvm::SourceMgr &sourceMgr;
+  /// This is the top-level module that contains all of the IR we are parsing.
+  ModuleOp &topLevelModule;
   MLIRContext *const context;
   std::unique_ptr<DeclResolver> declResolver;
   const CompilationOptions &options;

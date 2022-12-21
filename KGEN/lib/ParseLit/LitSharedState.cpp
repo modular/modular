@@ -52,9 +52,11 @@ static StringAttr getBufferNameIdentifier(const SourceMgr &sourceMgr,
   return StringAttr::get(context, bufferName);
 }
 
-LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr,
+                               ModuleOp topLevelModule,
                                const CompilationOptions &options)
-    : sourceMgr(sourceMgr), context(context),
+    : sourceMgr(sourceMgr), topLevelModule(topLevelModule),
+      context(topLevelModule.getContext()),
       declResolver(std::make_unique<DeclResolver>(*this)), options(options),
       bufferNameIdentifier(getBufferNameIdentifier(
           sourceMgr, sourceMgr.getMainFileID(), context)),
