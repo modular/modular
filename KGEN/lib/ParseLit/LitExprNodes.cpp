@@ -1000,22 +1000,22 @@ AnyValue ListExprNode::emitIR(ExprEmitter &emitter,
   return MValue(noneAttr);
 }
 
-/// Given an operator, return the SpecialFunction that implements it.
-static SpecialFunctionKind getOpSpecialFunctions(ExprNode::Kind kind,
+/// Given an operator, return the SpecialFunctionInfo that implements it.
+static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
                                                  bool isReversed) {
 
   // Use an if chain to find the right match.  We can't use switch here because
   // multiple special functions may implement the same kind, e.g. __add__ and
   // __radd__ special methods both implement kAdd.
 #define SF(ENUM, NAME, NUMOPERANDS, EXPRNODE, FLAGS)                           \
-  if (kind == ExprNode::Kind::EXPRNODE &&                                      \
-      SpecialFunctionInfo::get(SpecialFunctionKind::ENUM).isReversed() ==      \
-          isReversed)                                                          \
-    return SpecialFunctionKind::ENUM;                                          \
-  else
+  if (kind == ExprNode::Kind::EXPRNODE) {                                      \
+    auto info = SpecialFunctionInfo::get(SpecialFunctionKind::ENUM);           \
+    if (info.isReversed() == isReversed)                                       \
+      return info;                                                             \
+  }
 #include "SpecialFunctions.def"
   // If everything fails we should return "normal".
-  return SpecialFunctionKind::kNormal;
+  return SpecialFunctionInfo::get(SpecialFunctionKind::kNormal);
 }
 
 AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
@@ -1142,15 +1142,14 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   }
 
   // If this operator maps onto a special function, attempt to lower it.
-  auto specialFnKind = getOpSpecialFunctions(kind, /*isReversed=*/false);
-  assert(specialFnKind != SpecialFunctionKind::kNormal);
+  auto specialFnInfo = getOpSpecialFunctions(kind, /*isReversed=*/false);
+  assert(specialFnInfo.kind != SpecialFunctionKind::kNormal);
   ASTExprAnd<AnyValue> argValues[] = {{lhsRep, lhs}, {rhsRep, rhs}};
 
   // Check to see if we have a forward version of this function on the primary
   // receiver.
   bool isErroneousDecl = false;
-  CallableValue callee(lhsRep.getRValueType(),
-                       SpecialFunctionInfo::get(specialFnKind).name, getLoc(),
+  CallableValue callee(lhsRep.getRValueType(), specialFnInfo.name, getLoc(),
                        /*emitErrorOnFailure=*/false, isErroneousDecl,
                        emitter.shared);
   if (callee.direct &&
@@ -1163,14 +1162,13 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     return {};
 
   // Check to see if we have the reverse version of this operator.
-  auto reversedFnKind = getOpSpecialFunctions(kind, /*isReversed=*/true);
-  if (reversedFnKind != SpecialFunctionKind::kNormal) {
+  auto reversedFnInfo = getOpSpecialFunctions(kind, /*isReversed=*/true);
+  if (reversedFnInfo.kind != SpecialFunctionKind::kNormal) {
     // Swap the operand order.
     std::swap(argValues[0], argValues[1]);
-    callee = CallableValue(
-        rhsRep.getType(), SpecialFunctionInfo::get(reversedFnKind).name,
-        getLoc(),
-        /*emitErrorOnFailure=*/false, isErroneousDecl, emitter.shared);
+    callee = CallableValue(rhsRep.getType(), reversedFnInfo.name, getLoc(),
+                           /*emitErrorOnFailure=*/false, isErroneousDecl,
+                           emitter.shared);
     if (callee.direct &&
         succeeded(callee.direct->filterOverloadSet(
             argValues, /*isMethodSyntax*/ false,
@@ -1183,8 +1181,8 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   }
 
   // Emit an error complaining about the forward version of the operator.
-  return emitter.emitSpecialMethodCall(lhsRep.getRValueType(), specialFnKind,
-                                       argValues, getLoc());
+  return emitter.emitNamedMethodCall(lhsRep.getRValueType(), specialFnInfo.name,
+                                     argValues, getLoc());
 }
 
 /// This method emits the `x and y`, `x or y` operators.  These are interesting
@@ -1242,9 +1240,11 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
     ifOp->getResult(0).setType(lhsRV.getType());
   } else {
     // Otherwise, check to see if their boolean versions are compatible.
-    auto rhsBool = emitter.emitSpecialMethodCall(rhsRV.getType(),
-                                                 SpecialFunctionKind::kBool,
-                                                 {{rhsRV, rhs}}, rhs->getLoc());
+    auto boolFnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kBool);
+    auto rhsBool = emitter.emitNamedMethodCall(rhsRV.getType(), "__bool__",
+                                               {{rhsRV, rhs}}, rhs->getLoc());
+    if (!rhsBool)
+      return {};
     if (!ASTType(lhsBool.getType()).isEqualCanon(rhsBool.getType())) {
       emitter.emitError(getLoc(), "cannot find common type between ")
           << ASTType(lhsRV.getType()) << " and " << ASTType(rhsRV.getType());
@@ -1307,8 +1307,8 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
   // Handle special cases that don't correspond to special function, "not x".
   if (kindToEmit == kBoolNot) {
     // Turn this into a call to __bool__.
-    argValue.ir = emitter.emitSpecialMethodCall(
-        exprRep.getType(), SpecialFunctionKind::kBool, argValue, getLoc());
+    argValue.ir = emitter.emitNamedMethodCall(exprRep.getType(), "__bool__",
+                                              argValue, getLoc());
     if (!argValue.ir)
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
@@ -1316,12 +1316,12 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
   }
 
   // If this operator maps onto a special function, attempt to lower it.
-  auto specialFnKind = getOpSpecialFunctions(kindToEmit, /*isReversed=*/false);
-  assert(specialFnKind != SpecialFunctionKind::kNormal &&
+  auto specialFnInfo = getOpSpecialFunctions(kindToEmit, /*isReversed=*/false);
+  assert(specialFnInfo.kind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
-  return emitter.emitSpecialMethodCall(argValue.ir.getType(), specialFnKind,
-                                       argValue, getLoc());
+  return emitter.emitNamedMethodCall(argValue.ir.getType(), specialFnInfo.name,
+                                     argValue, getLoc());
 }
 
 AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,

@@ -140,20 +140,22 @@ ASTType ExprEmitter::emitType(const ExprNode *node) {
 // Function Calls
 //===----------------------------------------------------------------------===//
 
-/// This helper emits a method call to a special function (`kind`) on `type`
-/// with the provided `operands`. This emits an error if the special function
-/// is not implemented by the type and returns null.
+/// This helper emits a method call to the named method on `type` with the
+/// provided `operands`. This emits an error if the special function is not
+/// implemented by the type and returns null.
 AnyValue
-ExprEmitter::emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
-                                   ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                   SMLoc callLoc) {
-  // Look up the special function based on the SpecialFunctionKind.
-  auto specialFnInfo = SpecialFunctionInfo::get(kind);
-
+ExprEmitter::emitNamedMethodCall(ASTType type, StringRef methodName,
+                                 ArrayRef<ASTExprAnd<AnyValue>> argValues,
+                                 SMLoc callLoc) {
   bool isErroneousDecl = false;
-  CallableValue callee(type, specialFnInfo.name, callLoc,
+  CallableValue callee(type, methodName, callLoc,
                        /*emitErrorOnFailure=*/true, isErroneousDecl, shared);
-  return callee.emitFunctionCall(operands, callLoc, *this);
+  if (callee.direct && failed(callee.direct->filterOverloadSet(
+                           argValues, /*isMethodSyntax*/ false,
+                           /*emitDiagnosticOnFailure=*/true, shared)))
+    return {};
+
+  return callee.emitFunctionCall(argValues, callLoc, *this);
 }
 
 /// Convert the specified DRValue to the expected type, invoking implicit
@@ -215,17 +217,15 @@ DRValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
                      /*emitErrorOnFailure=*/false, isErroneousDecl, shared)) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __lit_bool.
-    boolResult =
-        emitSpecialMethodCall(value.ir.getType(), SpecialFunctionKind::kBool,
-                              {{value.ir, value.expr}}, valueLoc);
+    boolResult = emitNamedMethodCall(value.ir.getType(), "__bool__",
+                                     {{value.ir, value.expr}}, valueLoc);
     if (!boolResult)
       return {};
   }
 
   // Then we use __lit_bool to convert to an i1 value.
-  AnyValue litBoolCall =
-      emitSpecialMethodCall(boolResult.getType(), SpecialFunctionKind::kLitBool,
-                            {{boolResult, value.expr}}, valueLoc);
+  AnyValue litBoolCall = emitNamedMethodCall(
+      boolResult.getType(), "__lit_bool", {{boolResult, value.expr}}, valueLoc);
   return emitDRValue(litBoolCall, valueLoc);
 }
 

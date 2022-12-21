@@ -17,6 +17,7 @@ namespace M::KGEN::LIT {
 template <typename ValueType>
 struct ASTExprAnd;
 enum class SpecialFunctionKind : uint8_t;
+class SpecialFunctionInfo;
 
 /// This class is the main driver for expression emission, providing helper
 /// functions used by the individual node emission hooks.
@@ -109,9 +110,9 @@ public:
   /// This helper emits a method call to a special function (`kind`) on `type`
   /// with the provided `operands`. This emits an error if the special function
   /// is not implemented by the type and returns null.
-  AnyValue emitSpecialMethodCall(ASTType type, SpecialFunctionKind kind,
-                                 ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                 SMLoc callLoc);
+  AnyValue emitNamedMethodCall(ASTType type, StringRef methodName,
+                               ArrayRef<ASTExprAnd<AnyValue>> operands,
+                               SMLoc callLoc);
 
   /// Convert the specified DRValue to the expected type, invoking implicit
   /// conversions if necessary.  On error, this diagnoses it and returns null.
