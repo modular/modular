@@ -204,6 +204,10 @@ DRValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
   if (value.ir.getType().isInteger(1))
     return emitDRValue(value.ir, valueLoc);
 
+  // TODO: Python manual includes this off-hand comment:
+  // Also, an object that doesn’t define a __bool__() method and whose __len__()
+  // method returns zero is considered to be false in a Boolean context.
+
   // Check for the presence of a __lit_bool method.  If it exists, we can avoid
   // a redundant call to __bool__ for Bool types.
   bool isErroneousDecl = false;
