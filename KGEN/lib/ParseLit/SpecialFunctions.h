@@ -23,7 +23,8 @@ enum class SpecialFunctionKind : uint8_t {
 #include "SpecialFunctions.def"
 };
 
-struct SpecialFunctionInfo {
+class SpecialFunctionInfo {
+public:
   const char *name = nullptr;
   SpecialFunctionKind kind = SpecialFunctionKind::kNormal;
 
