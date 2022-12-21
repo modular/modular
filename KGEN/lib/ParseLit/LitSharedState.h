@@ -53,7 +53,8 @@ public:
 
   llvm::SourceMgr &sourceMgr;
   /// This is the top-level module that contains all of the IR we are parsing.
-  ModuleOp &topLevelModule;
+  /// This is always a ModuleOp.
+  Operation *topLevelModule;
   MLIRContext *const context;
   std::unique_ptr<DeclResolver> declResolver;
   const CompilationOptions &options;
