@@ -46,6 +46,9 @@ struct DirectCallable {
   /// is the location of 'method'.
   llvm::SMLoc loc;
 
+  /// This is the basename of the declaration set, used in diagnostics.
+  StringRef baseName;
+
   /// The function overload set that may be called directly.
   SmallVector<ASTDecl *, 1> fnDecls;
 
@@ -74,7 +77,7 @@ struct DirectCallable {
 
   SmallVector<BoundParam> bindings;
 
-  DirectCallable(SMLoc loc, ArrayRef<ASTDecl *> fnDecls,
+  DirectCallable(SMLoc loc, StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
                  ParamBindArrayAttr bindings);
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
@@ -126,9 +129,9 @@ public:
 
   CallableValue() {}
   CallableValue(ASTExprAnd<AnyValue> baseVal) : baseVal(baseVal) {}
-  CallableValue(llvm::SMLoc loc, ArrayRef<ASTDecl *> fnDecls,
-                ParamBindArrayAttr bindings)
-      : direct({loc, fnDecls, bindings}) {}
+  CallableValue(llvm::SMLoc loc, StringRef baseName,
+                ArrayRef<ASTDecl *> fnDecls, ParamBindArrayAttr bindings)
+      : direct({loc, baseName, fnDecls, bindings}) {}
 
   /// Get a CallableValue for a lookup of a named method on the specified type.
   /// If successful, this provides a non-null CallableValue.  On failure, it

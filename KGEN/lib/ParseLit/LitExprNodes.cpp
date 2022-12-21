@@ -247,7 +247,7 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
 
   // Functions form an address, and may be overloaded.
   if (isa<LIT::FuncOp>(*decls[0]))
-    return CallableValue(node->getLoc(), decls, bindings);
+    return CallableValue(node->getLoc(), memberName, decls, bindings);
 
   assert(decls.size() == 1 && "Only functions may be overloaded");
   ASTDecl &decl = *decls[0];
@@ -461,7 +461,8 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
   // Handle method references, which might be overloaded.
   if (auto fnOp = dyn_cast<LIT::FuncOp>(*memberDecls[0])) {
     // Get a symbol for the underlying function.
-    CallableValue fnRef(getLoc(), memberDecls, baseRVType.getParamBindings());
+    CallableValue fnRef(getLoc(), attrSpelling, memberDecls,
+                        baseRVType.getParamBindings());
 
     // If the callee is a static method, we can directly reference it without
     // binding a self parameter.  If this is an instance method, we bind the
