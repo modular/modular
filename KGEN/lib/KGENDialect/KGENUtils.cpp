@@ -283,6 +283,20 @@ ParseResult KGEN::parseIndexParamValue(AsmParser &p,
   return success();
 }
 
+ParseResult KGEN::parseColonTypeParamValue(AsmParser &p,
+                                           FailureOr<TypedAttr> &value) {
+  Type type;
+  if (parseColonTypeOrIndex(p, type) || parseParamValue(p, value, type))
+    return failure();
+
+  return success();
+}
+
+void KGEN::printColonTypeParamValue(AsmPrinter &p, TypedAttr value) {
+  printColonTypeOrIndexPrefix(p.getStream(), value.getType());
+  printParamValue(value, p.getStream());
+}
+
 /// We need this for an ODS reason, it doesn't know that ParamDeclAttr is
 /// nullable or something :-/.
 ParseResult KGEN::parseParamDecl(AsmParser &p,
