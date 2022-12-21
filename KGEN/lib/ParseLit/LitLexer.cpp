@@ -311,9 +311,9 @@ LitToken LitLexer::lexTokenImpl() {
 ///
 LitToken LitLexer::lexIdentifierOrKeyword(const char *tokStart,
                                           ssize_t indentation) {
-  // Match the rest of the identifier regex: [0-9a-zA-Z_$-]*
+  // Match the rest of the identifier regex: [0-9a-zA-Z_$]*
   while (llvm::isAlpha(*curPtr) || llvm::isDigit(*curPtr) || *curPtr == '_' ||
-         *curPtr == '$' || *curPtr == '-')
+         *curPtr == '$')
     ++curPtr;
 
   StringRef spelling(tokStart, curPtr - tokStart);
