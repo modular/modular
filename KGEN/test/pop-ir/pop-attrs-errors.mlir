@@ -45,3 +45,24 @@ kgen.generator @simd_constant<size>() {
   %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<0>>
   kgen.return
 }
+
+// -----
+
+kgen.generator @array_constant<size>() {
+  // expected-error @below {{array attribute expected a fully-resolved array type}}
+  %0 = kgen.param.constant: !pop.array<size, index> = <#pop.array<0>>
+}
+
+// -----
+
+kgen.generator @array_constant<T: type>() {
+  // expected-error @below {{array attribute expected a fully-resolved array type}}
+  %0 = kgen.param.constant: !pop.array<1, T> = <#pop.array<0>>
+}
+
+// -----
+
+kgen.generator @struct_constant<T: type>() {
+  // expected-error @below {{struct attribute expected a fully-resolved struct type}}
+  %0 = kgen.param.constant: !pop.struct<T> = <#pop.struct<0>>
+}

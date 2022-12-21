@@ -108,4 +108,60 @@ def POP_SIMDAttr : POP_Attr<"SIMD", "simd", [TypedAttrInterface,
   let genVerifyDecl = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// ArrayAttr
+//===----------------------------------------------------------------------===//
+
+def POP_ArrayAttr : POP_Attr<"Array", "array", [TypedAttrInterface,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+  let summary = "An array attribute.";
+  let description = [{
+    The `#pop.array` attribute contains a homogeneous list of elements of an
+    array type. It is used to represent array constant values.
+
+    Example:
+
+    ```mlir
+    #pop.array<1, 2> : !pop.array<2, index>
+    ```
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values,
+                        AttributeSelfTypeParameter<"", "ArrayType">:$type);
+
+  let assemblyFormat = [{
+    `<` (`>`) : (custom<ArrayElements>($values, ref($type))^ `>`)?
+  }];
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// StructAttr
+//===----------------------------------------------------------------------===//
+
+def POP_StructAttr : POP_Attr<"Struct", "struct", [TypedAttrInterface,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+  let summary = "A heterogeneous list of elements.";
+  let description = [{
+    The `#pop.struct` attribute contains a heterogenous list of elements of
+    struct type. It is used to represent constant struct values.
+
+    Example:
+
+    ```mlir
+    #pop.struct<3, 3.5> : !pop.struct<index, f32>
+    ```
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values,
+                        AttributeSelfTypeParameter<"", "StructType">:$type);
+
+  let assemblyFormat = [{
+    `<` (`>`) : (custom<StructElements>($values, ref($type))^ `>`)?
+  }];
+
+  let genVerifyDecl = 1;
+}
+
 #endif // KGEN_POPDIALECT_POPATTRS_TD
