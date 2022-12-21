@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/POPDialect/POPAttrs.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
@@ -233,15 +234,16 @@ static ParseResult parseArrayElements(AsmParser &p,
   return failableInterleave(
       llvm::seq<unsigned>(0, *size),
       [&](unsigned) {
-        return p.parseAttribute(values->emplace_back(), elementType);
+        return parseParamValue(p, values->emplace_back(), elementType);
       },
       [&] { return p.parseComma(); });
 }
 
 static void printArrayElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
                                ArrayType type) {
-  llvm::interleaveComma(
-      values, p, [&](TypedAttr value) { p.printAttributeWithoutType(value); });
+  llvm::interleaveComma(values, p, [&](TypedAttr value) {
+    printParamValue(value, p.getStream());
+  });
 }
 
 /// The array attribute is a constant if all element values are constants.
@@ -283,14 +285,17 @@ parseStructElements(AsmParser &p, FailureOr<SmallVector<TypedAttr>> &values,
   values.emplace();
   return failableInterleave(
       types,
-      [&](Type type) { return p.parseAttribute(values->emplace_back(), type); },
+      [&](Type type) {
+        return parseParamValue(p, values->emplace_back(), type);
+      },
       [&] { return p.parseComma(); });
 }
 
 static void printStructElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
                                 StructType type) {
-  llvm::interleaveComma(
-      values, p, [&](TypedAttr value) { p.printAttributeWithoutType(value); });
+  llvm::interleaveComma(values, p, [&](TypedAttr value) {
+    printParamValue(value, p.getStream());
+  });
 }
 
 /// The struct attribute is a constant if all element values are constants.
@@ -314,6 +319,23 @@ POP::StructAttr::verify(function_ref<InFlightDiagnostic()> emitError,
       return emitError() << "struct element #" << idx << " has type "
                          << value.getType() << " but expected " << type;
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// VariantAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult VariantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  TypedAttr value, VariantType type) {
+  if (type.getTypeIndex(value.getType()))
+    return success();
+  return emitError() << "variant attribute value type " << value.getType()
+                     << " is not a possible variant subtype";
+}
+
+/// The variant attribute is a constant if the value type is a constant.
+bool VariantAttr::isConstant() const {
+  return ParameterAttr::isSimpleConstant(getValue());
 }
 
 //===----------------------------------------------------------------------===//

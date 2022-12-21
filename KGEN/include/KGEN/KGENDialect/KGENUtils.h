@@ -83,6 +83,10 @@ void printIndexParamValue(AsmPrinter &p, Attribute value);
 ParseResult parseIndexParamValue(AsmParser &p, TypedAttr &value);
 ParseResult parseIndexParamValue(AsmParser &p, FailureOr<TypedAttr> &value);
 
+/// Parse a index-or-colon-type and then a parameter value of that type.
+ParseResult parseColonTypeParamValue(AsmParser &p, FailureOr<TypedAttr> &value);
+void printColonTypeParamValue(AsmPrinter &p, TypedAttr value);
+
 /// Parse and print a ParamDeclAttr which has syntactic form `name (: type)?`.
 ParseResult parseParamDecl(AsmParser &p, FailureOr<ParamDeclAttr> &result);
 ParseResult parseParamDecl(AsmParser &p, ParamDeclAttr &result);

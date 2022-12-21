@@ -343,9 +343,9 @@ VariantType VariantType::get(ArrayRef<Type> types) {
 size_t VariantType::getNumTypes() { return getTypes().size(); }
 
 Optional<int64_t> VariantType::getTypeIndex(Type type) const {
-  for (auto &variantType : llvm::enumerate(getTypes()))
-    if (ParamRefType::get(variantType.value()) == type)
-      return variantType.index();
+  for (auto [idx, variantType] : llvm::enumerate(getTypes()))
+    if (ParamRefType::get(variantType) == type)
+      return idx;
   return {};
 }
 

@@ -66,3 +66,10 @@ kgen.generator @struct_constant<T: type>() {
   // expected-error @below {{struct attribute expected a fully-resolved struct type}}
   %0 = kgen.param.constant: !pop.struct<T> = <#pop.struct<0>>
 }
+
+// -----
+
+kgen.generator @variant_constant<value: i32>() {
+  // expected-error @below {{variant attribute value type 'i32' is not a possible variant subtype}}
+  %0 = kgen.param.constant: !pop.variant<f32, f64> = <#pop.variant<:i32 value>>
+}

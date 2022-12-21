@@ -19,5 +19,18 @@ kgen.func @array_struct_constants() {
   %0 = kgen.param.constant: !pop.struct<index, f32> = <#pop.struct<1, 2.5>>
   // CHECK: !pop.array<2, index> = <#pop.array<1, 2>>
   %1 = kgen.param.constant: !pop.array<2, index> = <#pop.array<1, 2>>
+  // CHECK: !pop.struct<scalar<f32>> = <#pop.struct<value>>
+  %2 = kgen.param.constant: !pop.struct<scalar<f32>> = <#pop.struct<value>>
+  // CHECK: !pop.array<2, dtype> = <#pop.array<ui4, si4>>
+  %3 = kgen.param.constant: !pop.array<2, dtype> = <#pop.array<ui4, si4>>
+  kgen.return
+}
+
+// CHECK-LABEL: @variant_constants
+kgen.generator @variant_constants<T: type, U: type, value: !kgen.paramref<T>>() {
+  // CHECK: !pop.variant<f32, f64> = <#pop.variant<:f32 2.5{{0+}}e+00>>
+  %0 = kgen.param.constant: !pop.variant<f32, f64> = <#pop.variant<:f32 2.5>>
+  // CHECK: !pop.variant<T, U> = <#pop.variant<:!kgen.paramref<T> value>>
+  %1 = kgen.param.constant: !pop.variant<T, U> = <#pop.variant<:!kgen.paramref<T> value>>
   kgen.return
 }
