@@ -9,9 +9,9 @@ fn noop():
 # CHECK-LABEL: lit.func @"simpleMath
 fn simpleMath(a: Int, b: Int) -> Int:
   # CHECK: %0 = kgen.call @Int::@"__mul__{{.*}}(%b, %a)
-  # CHECK: %1 = kgen.call @Int::@"__add__{{.*}}(%a, %0)
+  # CHECK: %1 = kgen.call @Int::@"__sub__{{.*}}(%a, %0)
   # CHECK: kgen.return %1 : !kgen.declref<@Int>
-  return a+b*a
+  return a-b*a
 
 # CHECK-LABEL: lit.func @"precedence_associativity
 fn precedence_associativity(a: Int):
