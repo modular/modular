@@ -218,6 +218,105 @@ static void printDTypeValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
 }
 
 //===----------------------------------------------------------------------===//
+// ArrayAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseArrayElements(AsmParser &p,
+                                      FailureOr<SmallVector<TypedAttr>> &values,
+                                      ArrayType type) {
+  Optional<int64_t> size = type.getResolvedSize();
+  Type elementType = type.getResolvedElementType();
+  if (!size || !elementType)
+    return p.emitError(p.getCurrentLocation(),
+                       "array attribute expected a fully-resolved array type");
+  values.emplace();
+  return failableInterleave(
+      llvm::seq<unsigned>(0, *size),
+      [&](unsigned) {
+        return p.parseAttribute(values->emplace_back(), elementType);
+      },
+      [&] { return p.parseComma(); });
+}
+
+static void printArrayElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
+                               ArrayType type) {
+  llvm::interleaveComma(
+      values, p, [&](TypedAttr value) { p.printAttributeWithoutType(value); });
+}
+
+/// The array attribute is a constant if all element values are constants.
+bool POP::ArrayAttr::isConstant() const {
+  return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant);
+}
+
+LogicalResult
+POP::ArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                       ArrayRef<TypedAttr> values, ArrayType type) {
+  Optional<int64_t> size = type.getResolvedSize();
+  Type elementType = type.getResolvedElementType();
+  if (!size || !elementType)
+    return emitError()
+           << "array attribute expected a fully-resolved array type";
+  if (*size != static_cast<int64_t>(values.size()))
+    return emitError() << "array attribute type requires " << *size
+                       << " elements but value has " << values.size();
+  for (auto [idx, value] : llvm::enumerate(values))
+    if (value.getType() != elementType)
+      return emitError() << "array element #" << idx << " has type "
+                         << value.getType() << " but expected " << elementType;
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// StructAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parseStructElements(AsmParser &p, FailureOr<SmallVector<TypedAttr>> &values,
+                    StructType type) {
+  SmallVector<Type> types;
+  if (failed(type.resolveElementTypes(types)))
+    return p.emitError(
+        p.getCurrentLocation(),
+        "struct attribute expected a fully-resolved struct type");
+
+  values.emplace();
+  return failableInterleave(
+      types,
+      [&](Type type) { return p.parseAttribute(values->emplace_back(), type); },
+      [&] { return p.parseComma(); });
+}
+
+static void printStructElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
+                                StructType type) {
+  llvm::interleaveComma(
+      values, p, [&](TypedAttr value) { p.printAttributeWithoutType(value); });
+}
+
+/// The struct attribute is a constant if all element values are constants.
+bool POP::StructAttr::isConstant() const {
+  return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant);
+}
+
+LogicalResult
+POP::StructAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                        ArrayRef<TypedAttr> values, StructType type) {
+  SmallVector<Type> types;
+  if (failed(type.resolveElementTypes(types)))
+    return emitError()
+           << "struct attribute expected a fully-resolved struct type";
+  if (types.size() != values.size())
+    return emitError() << "struct attribute type requires " << types.size()
+                       << " elements but value has " << values.size();
+  for (auto [idx, value, type] :
+       llvm::zip(llvm::seq<unsigned>(0, types.size()), values, types))
+    if (value.getType() != type)
+      return emitError() << "struct element #" << idx << " has type "
+                         << value.getType() << " but expected " << type;
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
