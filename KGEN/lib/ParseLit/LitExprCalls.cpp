@@ -130,9 +130,9 @@ OverloadFitness OverloadFitness::evaluate(
 
       // Otherwise, check to see if we can do an implicit conversion.
       bool isErroneousDecl = false;
-      CallableValue callee(
-          expectedType, "__new__", argAnyValueAndExpr.expr->getLoc(),
-          /*emitErrorOnFailure=*/false, isErroneousDecl, shared);
+      CallableValue callee(expectedType, "__new__",
+                           argAnyValueAndExpr.expr->getLoc(), isErroneousDecl,
+                           shared);
 
       // Check to see if we have any viable candidates for the implicit
       // conversion.  If not, we have an argument conversion error.
@@ -390,15 +390,38 @@ DirectCallable::DirectCallable(SMLoc loc, ArrayRef<ASTDecl *> fnDecls,
 }
 
 /// Get a CallableValue for a lookup of a named method on the specified type.
+/// If successful, this provides a non-null CallableValue.  On failure, it
+/// emits an error and returns a null CallableValue.
+CallableValue::CallableValue(ASTType type, StringRef methodName, SMLoc callLoc,
+                             LitSharedState &shared) {
+  bool erroneousDecl = false;
+  lookup(type, methodName, callLoc, /*emitErrorOnFailure=*/true, erroneousDecl,
+         shared);
+}
+
+/// Get a CallableValue for a lookup of a named method on the specified type.
+/// If successful, this provides a non-null CallableValue.
+///
+/// On failure, this returns a null CallableValue and sets 'erroneousDecl' to
+/// indicate whether there was a problem with the callee that has already been
+/// diagnosed (allowing the client to squish downstream error messages).  This
+/// does not emit an error on failure.
+CallableValue::CallableValue(ASTType type, StringRef methodName, SMLoc callLoc,
+                             bool &erroneousDecl, LitSharedState &shared) {
+  lookup(type, methodName, callLoc, /*emitErrorOnFailure=*/false, erroneousDecl,
+         shared);
+}
+
+/// Get a CallableValue for a lookup of a named method on the specified type.
 /// If successful, this provides a non-null CallableValue.
 ///
 /// On failure, this returns a null CallableValue and sets 'erroneousDecl' to
 /// indicate whether there was a problem with the callee that has already been
 /// diagnosed (thus squishing downstream error messages).  If
 /// emitErrorOnFailure is true an error message indicates why the call failed.
-CallableValue::CallableValue(ASTType type, StringRef methodName, SMLoc callLoc,
-                             bool emitErrorOnFailure, bool &erroneousDecl,
-                             LitSharedState &shared) {
+void CallableValue::lookup(ASTType type, StringRef methodName, SMLoc callLoc,
+                           bool emitErrorOnFailure, bool &erroneousDecl,
+                           LitSharedState &shared) {
   erroneousDecl = false;
   // First perform a lookup to see if there are any candidates.
   auto lookupResult = shared.lookupAndResolveDecl(methodName, callLoc, type);
