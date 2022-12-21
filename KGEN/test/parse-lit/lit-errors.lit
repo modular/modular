@@ -111,7 +111,7 @@ struct NotBoolConvertible:
 
 # expected-note @+1 {{function declared here}}
 def test_bool_context(a: NotBoolConvertible):
-  if a: # expected-error {{'NotBoolConvertible' does not implement the '__bool__' special method}}
+  if a: # expected-error {{'NotBoolConvertible' does not implement the '__bool__' method}}
      pass
 
 struct Thing[a: __mlir_type.index, b: __mlir_type.index]:
@@ -143,7 +143,7 @@ fn badCall():
 def generic_fn[a: DType, b: __mlir_type.index](c : __mlir_type.index):
 
 def call_generic[dt: DType]():
-  generic_fn[dt, 1, 42](57) # expected-error {{invalid call: callee expects 2 input parameters but 3 were provided}}
+  generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 input parameters but 3 were provided}}
   generic_fn[1, dt](57) # expected-error {{parameter "a" has 'DType' type, but value has type '__mlir_type.index'}}
 
 def field_indexes(a: Int):
@@ -292,11 +292,11 @@ struct SpecialFunctions:
 
   fn failures(self):
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
-    self*self # expected-error {{'SpecialFunctions' does not implement the '__mul__' special method}}
+    self*self # expected-error {{'SpecialFunctions' does not implement the '__mul__' method}}
 
 fn expr_errors():
   var x: __mlir_type.index
-  x += x # expected-error {{'__mlir_type.index' does not implement the '__iadd__' special method}}
+  x += x # expected-error {{'__mlir_type.index' does not implement the '__iadd__' method}}
 
   # expected-error @+1 {{'index.add' op expected 2 operands, but found 0}}
   __mlir_op.`index.add`()
@@ -336,7 +336,7 @@ fn expr_errors():
   # expected-error @+1 {{unused parameter substitution}}
   var b : __mlir_type.`!pop.simd<#lit.placeholder : index, f32>`[4, 57]
 
-  # expected-error @+1 {{'__mlir_type.index' does not implement the '__new__' special method}}
+  # expected-error @+1 {{'__mlir_type.index' does not implement the '__new__' method}}
   _ = __mlir_type.index(42)
 
 
@@ -369,10 +369,10 @@ struct Parameterized[p1: __mlir_type.index]:
 # of parameters.
 fn testTestParamStruct(a: Parameterized[4]):
   a.method[7](Parameterized[11]())
-  # expected-error @+1 {{invalid call: in argument #0, value of type 'Parameterized[4]' cannot be converted to expected type 'Parameterized[11]'}}
+  # expected-error @+1 {{invalid call to 'method': in argument #0, value of type 'Parameterized[4]' cannot be converted to expected type 'Parameterized[11]'}}
   a.method[7](Parameterized[12]())
   a.method[2](Parameterized[6]())
-  a.method[2, 7] # expected-error {{function expects 2 input parameters but 3 were provided}}
+  a.method[2, 7] # expected-error {{'method' expects 2 input parameters but 3 were provided}}
 
 
 struct MySIMD[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
@@ -383,7 +383,7 @@ fn testSIMD(a: MySIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: MySIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
   var x = a+a
   var y = b+b
-  var z = b+a  # expected-error {{invalid call: in argument #1, value of type 'MySIMD[1, f64]' cannot be converted to expected type 'MySIMD[2, si32]'}}
+  var z = b+a  # expected-error {{invalid call to '__add__': in argument #1, value of type 'MySIMD[1, f64]' cannot be converted to expected type 'MySIMD[2, si32]'}}
 
 fn method(variable: Int):
   # expected-error @+1 {{declaration must have either a type or an initializer}}
@@ -472,7 +472,7 @@ fn ambiguousConversions(a: Int, b: ConvertibleFromInt):
 fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
   ambiguousConversions(a, b) # ok
   ambiguousConversions(b, a) # ok
-  # expected-error @+1 {{ambiguous call, each candidate requires 1 implicit conversion, disambiguate with an explicit cast}}
+  # expected-error @+1 {{ambiguous call to 'ambiguousConversions', each candidate requires 1 implicit conversion, disambiguate with an explicit cast}}
   ambiguousConversions(a, a)
   # expected-error @+1 {{no matching function in call}}
   ambiguousConversions(b, b)

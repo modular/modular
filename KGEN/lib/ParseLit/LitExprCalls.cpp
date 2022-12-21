@@ -233,7 +233,8 @@ LogicalResult DirectCallable::filterOverloadSet(
       // If there is a single callee, emit a specific error about the call.
       if (fnDecls.size() == 1) {
         auto fnDecl = cast<LIT::FuncOp>(*fnDecls[0]);
-        auto diag = shared.emitError(loc, "invalid call: ");
+        auto diag = shared.emitError(loc, "invalid call to '")
+                    << baseName << "': ";
         evaluations[0].diagnose(fnDecl.getFullSignature(), *this, operands,
                                 isMethodCall, *diag.getUnderlyingDiagnostic());
         diag.attachNote(fnDecl.getLoc()) << "function declared here";
@@ -242,7 +243,8 @@ LogicalResult DirectCallable::filterOverloadSet(
 
       // Otherwise emit an error, and a note for what is wrong with each
       // candidate.
-      auto diag = shared.emitError(loc, "no matching function in call");
+      auto diag = shared.emitError(loc, "no matching function in call to '")
+                  << baseName << "': ";
       for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
         auto fnDecl = cast<LIT::FuncOp>(*candidate);
         eval.diagnose(fnDecl.getFullSignature(), *this, operands, isMethodCall,
@@ -279,10 +281,10 @@ LogicalResult DirectCallable::filterOverloadSet(
   // Otherwise, we have multiple viable candidates that are ambiguous because
   // they all require the same number of implicit conversions.
   if (emitDiagnosticOnFailure) {
-    auto diag =
-        shared.emitError(loc, "ambiguous call, each candidate requires ")
-        << minConversions << " implicit conversion" << plural(minConversions)
-        << ", disambiguate with an explicit cast";
+    auto diag = shared.emitError(loc, "ambiguous call to '")
+                << baseName << "', each candidate requires " << minConversions
+                << " implicit conversion" << plural(minConversions)
+                << ", disambiguate with an explicit cast";
     for (ASTDecl *candidate : newFnDecls)
       diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
           << "candidate declared here";
@@ -304,10 +306,11 @@ ParamBindArrayAttr DirectCallable::getCheckedBindings(
   auto expectedNumParams = signature.getInputParams().size();
   if (bindings.size() != expectedNumParams) {
     if (funcLoc) {
-      auto diag = shared.emitError(loc, "function expects ")
-                  << expectedNumParams << " input parameter"
-                  << plural(expectedNumParams) << " but " << bindings.size()
-                  << plural(bindings.size(), " was", " were") << " provided";
+      auto diag = shared.emitError(loc, "'")
+                  << baseName << "' expects " << expectedNumParams
+                  << " input parameter" << plural(expectedNumParams) << " but "
+                  << bindings.size() << plural(bindings.size(), " was", " were")
+                  << " provided";
       diag.attachNote(*funcLoc) << "function declared here";
     }
     incorrectBindingNo = -1;
@@ -334,9 +337,10 @@ ParamBindArrayAttr DirectCallable::getCheckedBindings(
     auto valueType = value.getType();
     if (!ASTType(valueType).isEqualCanon(decl.getType())) {
       if (funcLoc) {
-        auto diag = shared.emitError(bound.loc, "parameter ")
-                    << decl.getName() << " has " << ASTType(decl.getType())
-                    << " type, but value has type " << ASTType(valueType);
+        auto diag = shared.emitError(bound.loc, "'")
+                    << baseName << "' parameter " << decl.getName() << " has "
+                    << ASTType(decl.getType()) << " type, but value has type "
+                    << ASTType(valueType);
         diag.attachNote(*funcLoc) << "function declared here";
       }
       incorrectBindingNo = newBindings.size();
@@ -354,8 +358,10 @@ SymbolConstantAttr
 DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
   if (fnDecls.size() != 1) {
     assert(!fnDecls.empty() && "DirectCallable malformed");
-    auto diag = shared.emitError(
-        loc, "cannot form a reference to overloaded declaration");
+    auto diag =
+        shared.emitError(
+            loc, "cannot form a reference to overloaded declaration of '")
+        << baseName << "'";
     for (ASTDecl *candidate : fnDecls) {
       auto funcOp = cast<LIT::FuncOp>(*candidate);
       diag.attachNote(funcOp.getLoc()) << "candidate declared here";
@@ -380,9 +386,10 @@ DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
 
 /// Get a symbol for a direct reference to the specified function in its
 /// enclosing context.  This does not bind any values to arguments.
-DirectCallable::DirectCallable(SMLoc loc, ArrayRef<ASTDecl *> fnDecls,
+DirectCallable::DirectCallable(SMLoc loc, StringRef baseName,
+                               ArrayRef<ASTDecl *> fnDecls,
                                ParamBindArrayAttr bindingsAttr)
-    : loc(loc), fnDecls(fnDecls.begin(), fnDecls.end()) {
+    : loc(loc), baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()) {
   if (bindingsAttr) {
     for (ParamBindAttr bind : bindingsAttr)
       bindings.push_back({loc, bind});
@@ -430,8 +437,8 @@ void CallableValue::lookup(ASTType type, StringRef methodName, SMLoc callLoc,
     if (lookupResult.isErroneous())
       erroneousDecl = true;
     else if (emitErrorOnFailure)
-      shared.emitError(callLoc, "") << type << " does not implement the '"
-                                    << methodName << "' special method";
+      shared.emitError(callLoc, "")
+          << type << " does not implement the '" << methodName << "' method";
     return;
   }
 
@@ -445,7 +452,8 @@ void CallableValue::lookup(ASTType type, StringRef methodName, SMLoc callLoc,
   }
 
   // Handle method references, which might be overloaded.
-  direct = DirectCallable{callLoc, resultDecls, type.getParamBindings()};
+  direct =
+      DirectCallable{callLoc, methodName, resultDecls, type.getParamBindings()};
 }
 
 /// Emit this as a flattened RValue or LValue with no additional parameter
@@ -595,7 +603,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     }
 
     // Check to see if we can apply these operands to the callee signature.
-    DirectCallable bindings{callLoc, {}, {}}; // No additional bound parameters.
+    DirectCallable bindings{
+        callLoc, "callee", {}, {}}; // No additional bound parameters.
     auto fitness = OverloadFitness::evaluate(calleeSig, bindings, operands,
                                              emitter.shared);
     if (fitness.kind != OverloadFitness::kValid) {
