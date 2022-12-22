@@ -28,7 +28,7 @@ using namespace ZAP;
 /// otherwise emit an Op error and return failure.
 static LogicalResult
 verifyHasSameUnderlyingDType(Operation *op, Value memory,
-                             mlir::TypedValue<POP::SIMDType> simd) {
+                             TypedValue<POP::SIMDType> simd) {
   TypedAttr aDType =
       TypeSwitch<Type, TypedAttr>(memory.getType())
           .Case<NDBufferType>([](auto type) { return type.getDType(); })

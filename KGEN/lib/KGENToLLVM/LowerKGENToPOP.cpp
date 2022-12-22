@@ -272,9 +272,8 @@ static Type expandListsInType(Type type) {
 }
 
 /// Materialize a 1-to-N destination conversion for lists.
-static ValueRange
-materializeListDestConversion(mlir::RewriterBase &b,
-                              mlir::TypedValue<ListType> list) {
+static ValueRange materializeListDestConversion(mlir::RewriterBase &b,
+                                                TypedValue<ListType> list) {
   SmallVector<Type> resultTypes(*list.getType().getResolvedLength(),
                                 list.getType().getResolvedElementType());
   return b
@@ -619,8 +618,8 @@ struct ExpandListDebugValue
     if (!list)
       return failure();
 
-    ValueRange elements = materializeListDestConversion(
-        b, mlir::TypedValue<ListType>(op.getValue()));
+    ValueRange elements =
+        materializeListDestConversion(b, TypedValue<ListType>(op.getValue()));
     b.updateRootInPlace(op, [&] {
       op.setOperand(b.create<POP::ArrayCreateOp>(op.getLoc(), elements));
     });

@@ -141,12 +141,6 @@ class CalibratedQuantizedType;
 class QuantizedType;
 class UniformQuantizedType;
 class UniformQuantizedPerAxisType;
-
-template <typename Ty, typename Value = mlir::Value>
-/// If Ty is mlir::Type this will select `Value` instead of having a wrapper
-/// around it. This helps resolve ambiguous conversion issues.
-using TypedValue = std::conditional_t<std::is_same_v<Ty, mlir::Type>,
-                                      mlir::Value, detail::TypedValue<Ty>>;
 } // namespace quant
 } // namespace mlir
 
@@ -241,6 +235,12 @@ using mlir::Type;
 using mlir::TypeAttr;
 using mlir::TypeConverter;
 using mlir::TypedAttr;
+template <typename Ty, typename Value = mlir::Value>
+/// If Ty is mlir::Type this will select `Value` instead of having a wrapper
+/// around it. This helps resolve ambiguous conversion issues.
+using TypedValue =
+    std::conditional_t<std::is_same_v<Ty, mlir::Type>, mlir::Value,
+                       mlir::detail::TypedValue<Ty>>;
 using mlir::TypeID;
 using mlir::TypeRange;
 using mlir::TypeStorage;
