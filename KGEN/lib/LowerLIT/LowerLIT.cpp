@@ -495,9 +495,6 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
 }
 
 static void lowerLITOps(LIT::FuncOp func) {
-  auto errType =
-      DeclRefType::get(FlatSymbolRefAttr::get(func.getContext(), "Error"));
-
   // Check if we are building debug info for source variables.
   auto funcSpAttr = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func);
   bool buildingDebugVars =
@@ -535,15 +532,18 @@ static void lowerLITOps(LIT::FuncOp func) {
       // Lower a lit.unwrap_or_propagate to a conditional.
       Location loc = op->getLoc();
       Type type = unwrap.getType();
-      Value isValue = b.create<POP::VariantIsOp>(loc, unwrap.getValue(), type);
+      Value errorOrValue = unwrap.getValue();
+      Value isValue = b.create<POP::VariantIsOp>(loc, errorOrValue, type);
       auto ifOp = b.create<HLCF::IfOp>(unwrap.getLoc(), type, isValue);
 
       b.createBlock(&ifOp.getThenRegion());
-      Value value = b.create<POP::VariantGetOp>(loc, type, unwrap.getValue());
+      Value value = b.create<POP::VariantGetOp>(loc, type, errorOrValue);
       b.create<HLCF::YieldOp>(loc, value);
 
       b.createBlock(&ifOp.getElseRegion());
-      Value err = b.create<POP::VariantGetOp>(loc, errType, unwrap.getValue());
+      Type errorType =
+          errorOrValue.getType().cast<POP::VariantType>().getType(0);
+      Value err = b.create<POP::VariantGetOp>(loc, errorType, errorOrValue);
       if (auto tryOp = ifOp->getParentOfType<TryOp>();
           tryOp && tryOp.getTryRegion().findAncestorOpInRegion(*ifOp)) {
         b.create<TryRaiseOp>(unwrap.getLoc(), err);
