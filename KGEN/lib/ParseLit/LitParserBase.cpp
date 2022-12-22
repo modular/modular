@@ -93,3 +93,72 @@ ParseResult LitParserBase::parseSeparatedList(
   }
   return success();
 }
+
+/// Skip tokens until we get to a token at start of line that has indentation
+/// that is equal or less than the specified indentation.  This is used for
+/// multiphase parsing.
+///
+/// When stopOnSemicolon is true this will stop at the first semicolon seen.
+/// This should only be used for statements that can share a line with other
+/// statements with ; separation.
+void LitParserBase::skipUntilIndentation(size_t minIndent,
+                                         bool stopOnSemicolon) {
+  // This keeps track of open brackets we are inside of.
+  SmallVector<LitToken> openBrackets;
+
+  auto handleCloseBracket = [&](LitToken::Kind leftBracket) {
+    // If we see the correct closing bracket for the structure we're in, then
+    // just pop out of that context and keep going.
+    if (!openBrackets.empty() && openBrackets.back().getKind() == leftBracket) {
+      openBrackets.pop_back();
+      return;
+    }
+
+    // Otherwise, we have a parse error: don't diagnose it though, because the
+    // non-skipping parse will.  We don't really know how best to recover so we
+    // just nuke our scope which will cause us to stop skipping at the
+    // indentation level requested.
+    openBrackets.clear();
+  };
+
+  // We scan until we find the specified indentation at the same expression
+  // level as the current token.
+  while (getToken().isNot(LitToken::eof)) {
+    // If we are outside a bracketed expression, check indentation.
+    if (auto indent = getToken().getIndentation())
+      if (*indent <= minIndent && openBrackets.empty())
+        return;
+
+    // Check to see if this is a bracket that needs special handling.
+    switch (getToken().getKind()) {
+    default:
+      break;
+    case LitToken::l_paren:
+    case LitToken::l_square:
+    case LitToken::l_brace:
+      // Remember that we're nested.
+      openBrackets.push_back(getToken());
+      break;
+
+      // Handle closing brackets.
+    case LitToken::r_paren:
+      handleCloseBracket(LitToken::l_paren);
+      break;
+    case LitToken::r_square:
+      handleCloseBracket(LitToken::l_square);
+      break;
+    case LitToken::r_brace:
+      handleCloseBracket(LitToken::l_brace);
+      break;
+
+      // Stop on semicolons when outside a bracket expression if requested.
+    case LitToken::semi:
+      if (stopOnSemicolon && openBrackets.empty())
+        return;
+      break;
+    }
+
+    // Otherwise, keep eating.
+    consumeToken();
+  }
+}

@@ -164,17 +164,7 @@ public:
   /// When stopOnSemicolon is true this will stop at the first semicolon seen.
   /// This should only be used for statements that can share a line with other
   /// statements with ; separation.
-  void skipUntilIndentation(size_t minIndent, bool stopOnSemicolon = false) {
-    // TODO: This needs to do python style brace matching.
-    while (getToken().isNot(LitToken::eof)) {
-      if (auto indent = getToken().getIndentation())
-        if (*indent <= minIndent)
-          break;
-      if (stopOnSemicolon && getToken().is(LitToken::semi))
-        break;
-      consumeToken();
-    }
-  }
+  void skipUntilIndentation(size_t minIndent, bool stopOnSemicolon = false);
 
   /// Consume tokens until we get to the end of the current line, used for error
   /// recovery.
