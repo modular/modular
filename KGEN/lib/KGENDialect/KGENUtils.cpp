@@ -1266,7 +1266,7 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   if ((opKind == GeneratorOrFuncKind::generator ||
        opKind == GeneratorOrFuncKind::litfunc) &&
       succeeded(parser.parseOptionalKeyword("implements"))) {
-    FlatSymbolRefAttr implementsAttr;
+    SymbolRefAttr implementsAttr;
     if (parser.parseAttribute(implementsAttr,
                               parser.getBuilder().getType<::mlir::NoneType>(),
                               "implements", result.attributes))
