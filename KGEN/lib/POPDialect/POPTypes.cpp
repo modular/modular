@@ -411,14 +411,16 @@ static ParseResult parsePrettyScalarType(AsmParser &p,
 ParseResult POP::parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr) {
   // Try to parse a symbol name as sugar for [LIT]DeclRefType.
   {
-    StringAttr ref;
-    if (succeeded(p.parseOptionalSymbolName(ref))) {
-      // TODO: DeclRefType will eventually need @X::@Y::@Z.
+    SymbolRefAttr ref;
+    auto refResult = p.parseOptionalAttribute(ref);
+    if (refResult.has_value()) {
+      if (failed(*refResult))
+        return failure();
+
       FailureOr<ParamBindArrayAttr> paramValues;
       if (parseOptionalParamBindSpec(p, paramValues))
         return failure();
-
-      Type result = DeclRefType::get(FlatSymbolRefAttr::get(ref), *paramValues);
+      Type result = DeclRefType::get(ref, *paramValues);
       typeExpr = TypeConstantAttr::get(result);
       return success();
     }

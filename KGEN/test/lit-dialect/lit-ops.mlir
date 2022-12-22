@@ -188,3 +188,26 @@ lit.func @try_in_loop(%cond: i1) {
   // CHECK: kgen.return
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: lit.file_module @module
+lit.file_module @module {
+  // CHECK: kgen.struct.decl @A
+  kgen.struct.decl @A {}
+
+  // CHECK: kgen.struct.decl @B
+  kgen.struct.decl @B {
+    // CHECK-NEXT: lit.func @foo(%{{.*}}: !kgen.declref<@module::@B>, %{{.*}}: !pop.pointer<@module::@A>
+    lit.func @foo(%self: !kgen.declref<@module::@B>, %a: !pop.pointer<@module::@A>) {
+      kgen.return
+    }
+  }
+}
+
+// CHECK-LABEL: lit.func @main
+lit.func @main(%a: !pop.pointer<@module::@A>, %b: !kgen.declref<@module::@B>) {
+  // CHECK-NEXT: call_param[(!kgen.declref<@module::@B>, !pop.pointer<@module::@A>) -> (): @module::@B::@foo]
+  kgen.call_param[(!kgen.declref<@module::@B>, !pop.pointer<@module::@A>) -> (): @module::@B::@foo](%b, %a)
+  kgen.return
+}

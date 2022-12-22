@@ -19,6 +19,7 @@
 #include "Support/HLCFDialect/HLCFInterfaces.h"
 #include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/RegionKindInterface.h"
 #include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"

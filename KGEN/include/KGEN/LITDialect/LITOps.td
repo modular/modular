@@ -17,6 +17,7 @@ include "KGEN/POPDialect/POPTypes.td"
 include "Support/HLCFDialect/HLCFInterfaces.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
+include "mlir/IR/RegionKindInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
@@ -88,6 +89,36 @@ let description = [{
 
   let hasCustomAssemblyFormat = 1;
   let hasRegionVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// FileModuleOp
+//===----------------------------------------------------------------------===//
+
+def FileModuleOp : LITOp<"file_module", [
+    IsolatedFromAbove, NoRegionArguments, SymbolTable, Symbol
+  ] # GraphRegionNoTerminator.traits> {
+  let summary = "source file module";
+  let description = [{
+    A `lit.file_module` models a file module at the lit source level. It
+    contains any functions, modules, variables, etc. defined within the module.
+
+    Example:
+
+    ```mlir
+    lit.file_module @bar {
+    }
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name);
+  let regions = (region SizedRegion<1>:$bodyRegion);
+
+  let builders = [
+    OpBuilder<(ins "StringAttr":$name)>,
+  ];
+  let assemblyFormat = "$sym_name attr-dict-with-keyword $bodyRegion";
+  let skipDefaultBuilders = 1;
 }
 
 //===----------------------------------------------------------------------===//
