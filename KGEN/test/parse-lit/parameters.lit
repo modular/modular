@@ -1,0 +1,127 @@
+# RUN: kgen-translate -import-lit %s -verify-diagnostics | FileCheck %s
+
+__include "../lit-examples/prolog.lit"
+
+# CHECK-LABEL: kgen.struct.decl @OurSIMD<size, dt: !kgen.declref<@DType>> {
+struct OurSIMD[size: __mlir_type.index, dt: DType]:
+  pass
+
+struct StructWithIntParam[size: Int]:
+
+# CHECK-LABEL: lit.func @"paramArith{{.*}}"<x>(%y: index) -> !lit.none {
+fn paramArith[x: __mlir_type.index](y : __mlir_type.index):
+  # CHECK: kgen.call @"assertParam{{.*}}<condVal: i1 = eq(x, -99)>
+  assertParam[x == -100+1]()
+
+
+fn take_3index(a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index) -> __mlir_type.index:
+  return a
+
+# CHECK-LABEL: lit.func @"fancy_signature
+# CHECK-SAME: <dt: !kgen.declref<@DType>, size>
+# CHECK-SAME: (%x: !kgen.declref<@OurSIMD<size = size, dt: !kgen.declref<@DType> = dt>>,
+# CHECK-SAME:  %exp: !kgen.declref<@OurSIMD<size = size, dt: !kgen.declref<@DType> = dt>>) -> index {
+fn fancy_signature[dt: DType, size: __mlir_type.index]
+  (x: OurSIMD[size, dt], exp: (OurSIMD)[size, dt]) -> __mlir_type.index:
+
+  # CHECK: %local = lit.var.decl "local" : <index>
+  # CHECK: %[[TMP1:.*]] = kgen.param.constant = <size>
+  # CHECK: %[[TMP2:.*]] = kgen.param.constant = <size>
+  # CHECK: %[[TMP3:.*]] = kgen.param.constant = <size>
+  # CHECK: %[[RES:.*]] = kgen.call @"take_3index{{.*}}(%[[TMP1]], %[[TMP2]], %[[TMP3]]) : (index, index, index) -> index
+  # CHECK: pop.store %[[RES]], %local : !pop.pointer<index>
+  var local = take_3index(size, size, size)
+
+  # CHECK: %[[TMP:.*]] = kgen.param.constant = <add(size, 42)>
+  # CHECK: kgen.return %[[TMP]] : index
+  return size+42
+
+
+fn generic_fn[a: DType, b: __mlir_type.index, c: __mlir_type.`!kgen.mlirtype`](d : __mlir_type.index):
+
+# CHECK: lit.func @"call_generic()"<dt: !kgen.declref<@DType>>()
+fn call_generic[dt: DType]():
+  # CHECK: %idx57 = index.constant 57
+  # CHECK: kgen.call @"generic_fn{{.*}}<a: !kgen.declref<@DType> = dt, b = 42, c: type = !kgen.declref<@DType>>(%idx57)
+  generic_fn[dt, 42, DType](57)
+
+  # CHECK: [[TMP:%.*]] = index.constant 57
+  # CHECK: kgen.call @"generic_fn{{.*}}<a: !kgen.declref<@DType> = dt, b = 13, c: type = !kgen.declref<@OurSIMD<size = 4, dt: !kgen.declref<@DType> = dt>>>([[TMP]])
+  generic_fn[dt, 13, OurSIMD[4, dt]](57)
+
+# CHECK-LABEL: kgen.struct.decl @TestParamStruct<A>
+struct TestParamStruct[A: __mlir_type.index]:
+  fn __new__() -> TestParamStruct[A]:
+    var result: TestParamStruct[A]
+    return result
+
+  # CHECK: lit.func @"method{{.*}}<B>(%self: !kgen.declref<@TestParamStruct<A = A>>, %other: !kgen.declref<@TestParamStruct<A = add(A, B)>>) -> !lit.none {
+  fn method[B: __mlir_type.index](self: TestParamStruct[A], other: TestParamStruct[A+B]):
+    pass
+
+  # CHECK-LABEL: lit.func @"aliases{{.*}}%x: !kgen.declref<@TestParamStruct<A = TypeLevelAlias>>
+  fn aliases(self, x: TestParamStruct[TypeLevelAlias]):
+    # CHECK: kgen.param.declare B = <add(mul(A, A), 1)>
+    alias B = A*A+1
+    # CHECK: kgen.param.declare C = <mul(A, B)>
+    alias C = B*A
+    # CHECK: %temp = lit.var.decl "temp" : <@TestParamStruct<A = C>>
+    var temp: TestParamStruct[C]
+
+  # CHECK: kgen.param.declare TypeLevelAlias = <mul(A, A)>
+  alias TypeLevelAlias = A*A
+
+# Test that we support partially bound parameters.
+fn testTestParamStruct(a: TestParamStruct[4]):
+  # CHECK: %arg11 = lit.var.decl "arg11" : <@TestParamStruct<A = 11>>
+  # CHECK: %0 = kgen.call @TestParamStruct::@"__new__{{.*}}<A = 11>() : () -> !kgen.declref<@TestParamStruct<A = 11>>
+  # CHECK: pop.store %0, %arg11 : !pop.pointer<@TestParamStruct<A = 11>>
+  var arg11 = TestParamStruct[11]()
+
+  # CHECK: %1 = pop.load %arg11 : !pop.pointer<@TestParamStruct<A = 11>>
+  # CHECK: %2 = kgen.call @TestParamStruct::@"method{{.*}}<A = 4, B = 7>(%a, %1) : (!kgen.declref<@TestParamStruct<A = 4>>, !kgen.declref<@TestParamStruct<A = 11>>) -> !lit.none
+  a.method[7](arg11)
+
+# CHECK-LABEL: lit.func @"testSIMD(
+fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
+            b: SIMD[1, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
+            ref&: SIMD[1, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
+  # CHECK: %field1 = lit.var.decl "field1" : <scalar<f64>>
+  var field1 = a.value
+  # CHECK: %field2 = lit.var.decl "field2" : <scalar<si32>>
+  var field2 = ref.value
+
+  # Test calls to methods and operators on parameterized type.
+  a.fma(a, a)
+  b.fma(b, b)
+  # CHECK: kgen.call @SIMD::@"__add__{{.*}}<size = 1, type: dtype = f64>(%a, %a)
+  var x = a+a
+  # CHECK: kgen.call @SIMD::@"__add__{{.*}}<size = 1, type: dtype = si32>(%b, %b)
+  var y = b+b
+
+# Show that forward references of parameter names can be correctly resolved.
+#
+# CHECK-LABEL: lit.func @"paramResolution()"<
+# CHECK-SAME: size1: !kgen.declref<@Int>,
+# CHECK-SAME: a: !kgen.declref<@StructWithIntParam<size: !kgen.declref<@Int> = size1>>,
+# CHECK-SAME: b: !kgen.declref<@StructWithIntParam<size: !kgen.declref<@Int> = size2>>,
+# CHECK-SAME:  size2: !kgen.declref<@Int>>()
+fn paramResolution[size1: Int, a: StructWithIntParam[size1],
+                   b: StructWithIntParam[size2], size2: Int]():
+  pass
+
+# CHECK-LABEL: kgen.struct.decl @Pair<dt: !kgen.declref<@DType>> {
+struct Pair[dt: DType]:
+ # CHECK: kgen.struct.field a : !kgen.declref<@OurSIMD<size = 42, dt: !kgen.declref<@DType> = dt>>
+ # CHECK: kgen.struct.field b : !kgen.declref<@Int>
+  var a : OurSIMD[42, dt]
+  var b : Int
+
+  # CHECK: lit.func @"__new__{{.*}}() -> !kgen.declref<@Pair<dt: !kgen.declref<@DType> = dt>> attributes {isStatic}
+  fn __new__() -> Pair[dt]:
+    var result : Pair[dt]
+    # TODO: Fill this in.
+    return result
+  # CHECK: }
+
+# CHECK: }
