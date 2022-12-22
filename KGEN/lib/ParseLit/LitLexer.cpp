@@ -769,8 +769,7 @@ SMLoc LitLexer::findEndOfPreviousLine(SMLoc loc) const {
 
     // Scan from the start of the line to the current position.
     auto *lineStart = curBuffer.data() + nextNewLine;
-    LitLexerCursor cursor(lineStart,
-                          {LitToken::plus, StringRef(lineStart, 0), 0});
+    LitLexerCursor cursor({LitToken::plus, StringRef(lineStart, 0), 0});
     LitLexer tmpLexer(sharedState, cursor);
     tmpLexer.lexToken();
 

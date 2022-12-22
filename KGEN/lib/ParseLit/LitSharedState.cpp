@@ -22,6 +22,7 @@
 #include "mlir/IR/Location.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/SourceMgr.h"
+#include <filesystem>
 
 using namespace M;
 using namespace M::KGEN;
@@ -34,10 +35,16 @@ class LitSharedState::Impl {
 public:
   SymbolTableCollection symbolTables;
 
+  /// The top-level decl containing everything being parsed.
+  ASTDecl *topLevelDecl = nullptr;
+
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTType typeCheckErrorType;
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType noneType;
+
+  /// The current set of imported modules.
+  DenseMap<StringAttr, ASTDecl *> importedModules;
 };
 
 /// Get the name of the main buffer so we can rapidly build Location objects
@@ -52,11 +59,9 @@ static StringAttr getBufferNameIdentifier(const SourceMgr &sourceMgr,
   return StringAttr::get(context, bufferName);
 }
 
-LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr,
-                               ModuleOp topLevelModule,
+LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *ctx,
                                const CompilationOptions &options)
-    : sourceMgr(sourceMgr), topLevelModule(topLevelModule),
-      context(topLevelModule.getContext()),
+    : sourceMgr(sourceMgr), context(ctx),
       declResolver(std::make_unique<DeclResolver>(*this)), options(options),
       bufferNameIdentifier(getBufferNameIdentifier(
           sourceMgr, sourceMgr.getMainFileID(), context)),
@@ -76,6 +81,25 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr,
 }
 
 LitSharedState::~LitSharedState() { declResolver.reset(); }
+
+void LitSharedState::initialize(ASTDecl &topLevelDecl) {
+  assert(!impl->topLevelDecl && "already initialized");
+  impl->topLevelDecl = &topLevelDecl;
+
+  // Build the builtins decl.
+  // TODO: Add these:
+  // https://docs.python.org/3/library/functions.html#built-in-funcs
+  // https://docs.python.org/3/reference/executionmodel.html#naming-and-binding
+  ASTDecl &builtinsDecl = declResolver->addDecl(
+      topLevelDecl.getIfOperation(), topLevelDecl.getLoc(), StringAttr(),
+      nullptr, topLevelDecl.getCursor(), topLevelDecl.getCursor(), -1);
+  addBuiltinTypes(builtinsDecl);
+  builtinsDecl.resolvedness = DeclResolvedness::fullyResolved;
+
+  // The outermost scope contains all of the __builtins__ function definitions.
+  for (auto &[name, decls] : builtinsDecl.declsInScope)
+    declResolver->aliasDecls(decls, name, topLevelDecl.getLoc(), topLevelDecl);
+}
 
 /// Emit an error through the parser's logic.
 InFlightDiagnostic LitSharedState::emitError(Location loc, const Twine &twine) {
@@ -269,4 +293,84 @@ ASTType LitSharedState::lookupErrorOrType(ASTType valueType, SMLoc loc,
   if (auto errorType = lookupErrorType(loc, context))
     return POP::VariantType::get({errorType, valueType});
   return {};
+}
+
+/// Resolve the absolute path for a given module name. Returns nullopt if the
+/// module cannot be found.
+static std::optional<std::string> resolveModulePath(StringRef moduleName,
+                                                    llvm::SourceMgr &sourceMgr,
+                                                    llvm::SMLoc includeLoc) {
+  // Python has lots of magic rules surrounding how modules get resolved. For
+  // now, we just use the available include directories within the source
+  // manager and the working directory of where the module is included.
+  auto checkPath = [&](StringRef includeDir) -> std::optional<std::string> {
+    std::string path = (Twine(includeDir) + "/" + moduleName + ".lit").str();
+    if (std::filesystem::exists(path))
+      return path;
+    return std::nullopt;
+  };
+
+  // Check the working directory first.
+  const llvm::MemoryBuffer *includeBuffer =
+      sourceMgr.getMemoryBuffer(sourceMgr.FindBufferContainingLoc(includeLoc));
+  assert(includeBuffer && "must be in a source buffer");
+  auto includerPath =
+      std::filesystem::path(includeBuffer->getBufferIdentifier().str());
+  if (auto path = checkPath(includerPath.parent_path().string()))
+    return path;
+
+  // Then check the include directories.
+  for (StringRef includeDir : sourceMgr.getIncludeDirs())
+    if (auto path = checkPath(includeDir))
+      return path;
+  return std::nullopt;
+}
+
+ASTDecl &LitSharedState::importModule(StringRef moduleName, llvm::SMLoc loc) {
+  // Mangle the module name during import to avoid conflicts with symbols that
+  // are actually visible. We may import a module, but not directly expose it
+  // via its module name.
+  auto mangledName = StringAttr::get(getContext(), "$" + moduleName);
+
+  // Check to see if we've already imported this module.
+  if (auto *existingDecl = impl->importedModules.lookup(mangledName))
+    return *existingDecl;
+  auto moduleBuilder = impl->topLevelDecl->getDeclEndBuilder();
+
+  // Resolve the path for this module.
+  std::optional<std::string> modulePath =
+      resolveModulePath(moduleName, sourceMgr, loc);
+  ASTDecl *moduleDecl;
+  if (!modulePath) {
+    emitError(loc, "unable to locate module '") << moduleName << "'";
+
+    // Don't bail if we can't find the module, create a dummy decl so that we
+    // can have better error recorvery/messages.
+    moduleDecl =
+        &declResolver->addErroneousDecl(mangledName, loc, impl->topLevelDecl);
+  } else {
+    // Open the module file within the source manager.
+    std::string fullPath;
+    unsigned fileID = sourceMgr.AddIncludeFile(*modulePath, loc, fullPath);
+
+    // Now that we have a MemoryBuffer, we can lex it, and therefore parse it.
+    // do so.
+    const llvm::MemoryBuffer *moduleBuffer = sourceMgr.getMemoryBuffer(fileID);
+    LitLexer lexer(*this, moduleBuffer);
+    LitLexerCursor endCursor(
+        {LitToken::eof, StringRef(moduleBuffer->getBufferEnd() + 1, 0), 0});
+
+    // Create a new decl for this module.
+    auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(fullPath, /*line=*/0,
+                                                         /*column=*/0);
+    Operation *fileOp =
+        moduleBuilder.create<FileModuleOp>(fileLoc, mangledName);
+    moduleDecl =
+        &declResolver->addDecl(fileOp, lexer.getToken().getLoc(), mangledName,
+                               impl->topLevelDecl, lexer.getCursor(), endCursor,
+                               /*indentation=*/-1);
+  }
+
+  impl->importedModules.try_emplace(mangledName, moduleDecl);
+  return *moduleDecl;
 }

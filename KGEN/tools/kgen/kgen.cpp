@@ -407,6 +407,7 @@ int main(int argc, char **argv) {
 
   // Set up the input file(s).
   llvm::SourceMgr sourceManager;
+  sourceManager.setIncludeDirs(clOptions.searchPaths);
   clOptions.addInputFilesToSourceMgrOrExit(sourceManager);
 
   return failed(clOptions.configureMLIRContextAndExecute(

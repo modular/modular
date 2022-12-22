@@ -56,25 +56,23 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
                           /*column=*/0);
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(fileLoc));
 
-  LitSharedState sharedState(sourceMgr, *module, options);
+  LitSharedState sharedState(sourceMgr, context, options);
   LitLexer lexer(sharedState, sourceBuf);
   auto startSMLoc = lexer.getToken().getLoc();
+  LitLexerCursor endFileCursor(
+      {LitToken::eof, StringRef(sourceBuf->getBufferEnd() + 1, 0), 0});
 
-  // The outermost scope contains the __builtins__ function definitions.
-  // TODO: Add these:
-  // https://docs.python.org/3/library/functions.html#built-in-funcs
-  // https://docs.python.org/3/reference/executionmodel.html#naming-and-binding
-  ASTDecl &builtinsDecl = sharedState.declResolver->addDecl(
-      *module, startSMLoc, StringAttr(), nullptr, lexer.getCursor(),
-      lexer.getCursor(), -1);
-  sharedState.addBuiltinTypes(builtinsDecl);
-  builtinsDecl.resolvedness = DeclResolvedness::fullyResolved;
+  // Create the top-level outer decl, which will contain all things we parse.
+  ASTDecl &topLevelDecl = sharedState.declResolver->addDecl(
+      *module, startSMLoc, StringAttr(), /*parentDecl=*/nullptr,
+      lexer.getCursor(), endFileCursor, -1);
+  sharedState.initialize(topLevelDecl);
 
   // Create the module scope which will contain all things we parse.  These
   // shadow the builtins module during name lookup.
   ASTDecl &fileScope = sharedState.declResolver->addDecl(
-      *module, startSMLoc, StringAttr(), &builtinsDecl, lexer.getCursor(),
-      lexer.getCursor(), -1);
+      *module, startSMLoc, StringAttr(), &topLevelDecl, lexer.getCursor(),
+      endFileCursor, -1);
 
   // If we are emitting debug info, create a file entry for this file.
   DebugInfo::DIBuilder::ScopeGuard fileGuard;

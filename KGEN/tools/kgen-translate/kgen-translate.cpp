@@ -15,6 +15,7 @@
 #include "mlir/Tools/mlir-translate/Translation.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/SourceMgr.h"
 
 using namespace M;
 
@@ -31,9 +32,16 @@ int main(int argc, char *argv[]) {
           clEnumValN(KGEN::CompilationOptions::kFullDebugInfo, "full",
                      "Generate full debug info.")),
       llvm::cl::init(KGEN::CompilationOptions::kNoDebug)};
+
+  // TODO: This should be upstreamed directly into mlirTranslateMain.
+  llvm::cl::list<std::string> searchPaths{
+      "I", llvm::cl::desc("Paths to use when searching for included files.")};
+
   mlir::TranslateToMLIRRegistration fromLit(
       "import-lit", "Import 'lit' from source",
       [&](llvm::SourceMgr &sourceMgr, MLIRContext *context) {
+        sourceMgr.setIncludeDirs(searchPaths);
+
         mlir::TimingScope ts;
         KGEN::CompilationOptions options;
         options.debugLevel = debugInfoLevel;

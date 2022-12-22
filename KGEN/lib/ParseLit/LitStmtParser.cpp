@@ -84,6 +84,8 @@ struct LitStmtParser : public LitParserBase {
 
   // Declarations.
   ParseResult parseIncludeHack();
+  ParseResult parseFromImportStmt();
+  ParseResult parseImportStmt();
   ParseResult parseDefFnStmt(LitLexerCursor startCursor, size_t curIndent);
   ParseResult parseStructStmt(LitLexerCursor startCursor, size_t curIndent);
   ParseResult parseVarDeclStmt(LitLexerCursor startCursor, size_t stmtIndent);
@@ -205,7 +207,7 @@ ParseResult LitStmtParser::parseStmts(size_t minIndent) {
 ///               | raise_stmt [TODO]
 ///               | break_stmt [TODO]
 ///               | continue_stmt [TODO]
-///               | import_stmt [TODO]
+///               | import_stmt
 ///               | future_stmt [TODO]
 ///               | global_stmt [TODO]
 ///               | nonlocal_stmtParseResult [TODO]
@@ -268,6 +270,13 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
   case LitToken::kw___include:
     rejectDecorator(); // Decorators not allowed.
     return parseIncludeHack();
+
+  case LitToken::kw_from:
+    rejectDecorator(); // Decorators not allowed.
+    return parseFromImportStmt();
+  case LitToken::kw_import:
+    rejectDecorator(); // Decorators not allowed.
+    return parseImportStmt();
 
   case LitToken::kw_pass:
   case LitToken::dot_dot_dot:
@@ -713,6 +722,110 @@ ParseResult LitStmtParser::parseIncludeHack() {
   const llvm::MemoryBuffer *includerBuffer = sourceMgr.getMemoryBuffer(fileID);
   LitLexer lexer(getSharedState(), includerBuffer);
   return LitParserBase::parseSuite(containingDecl, lexer);
+}
+
+/// import_stmt     ::=  "from" relative_module "import" identifier
+///                        ["as" identifier] ("," identifier ["as" identifier])*
+///                      | "from" relative_module "import" "(" identifier
+///                        ["as" identifier] ("," identifier ["as" identifier])*
+///                        [","] ")"
+///                      | "from" relative_module "import" "*"
+/// module          ::=  (identifier ".")* identifier
+/// relative_module ::=  "."* module | "."+
+ParseResult LitStmtParser::parseFromImportStmt() {
+  consumeToken(LitToken::kw_from);
+
+  // TODO: Support packages, this currently just handles basic module importing.
+
+  // Parse the relative module we are importing from.
+  if (getToken().isAny(LitToken::dot, LitToken::dot_dot_dot))
+    return emitError("TODO: relative package imports are not yet supported");
+  SMLoc importLoc = getToken().getLoc();
+  StringRef moduleName = getTokenSpelling();
+  if (parseToken(LitToken::identifier, "expected module name") ||
+      parseToken(LitToken::kw_import, "expected 'import' after module name"))
+    return failure();
+
+  // Import the module.
+  ASTDecl &moduleDecl = getSharedState().importModule(moduleName, importLoc);
+
+  // Check for a wildcard import.
+  if (consumeIf(LitToken::star)) {
+    getSharedState().declResolver->importWildCardDeclsFromModule(
+        moduleDecl, containingDecl, importLoc);
+    return success();
+  }
+
+  // Parse the set of constructs to import.
+  SmallVector<std::tuple<StringRef, StringRef, SMLoc>> importList;
+  bool isTupleImport = consumeIf(LitToken::l_paren);
+
+  do {
+    // Parse the next construct to import.
+    SMLoc importSourceNameLoc = getToken().getLoc();
+    StringRef importSourceName = getTokenSpelling();
+    if (parseToken(LitToken::identifier, "expected construct name to import"))
+      return failure();
+    StringRef importDestName = importSourceName;
+    if (consumeIf(LitToken::kw_as)) {
+      importDestName = getTokenSpelling();
+      if (parseToken(LitToken::identifier,
+                     "expected name to import '" + importSourceName + "' as"))
+        return failure();
+    }
+    importList.emplace_back(importSourceName, importDestName,
+                            importSourceNameLoc);
+
+    // Check for more elements to import.
+    if (!consumeIf(LitToken::comma))
+      break;
+    // For tuple imports, there may optionally be a trailing comma at the end of
+    // the list.
+    if (isTupleImport && getToken().is(LitToken::r_paren))
+      break;
+  } while (true);
+
+  // Check for the end of the tuple import.
+  if (isTupleImport &&
+      parseToken(LitToken::r_paren, "expected ')' after import list"))
+    return failure();
+
+  // Process the import list.
+  getSharedState().declResolver->importDeclsFromModule(
+      moduleDecl, containingDecl, importList);
+  return success();
+}
+
+/// import_stmt ::=  "import" module ["as" identifier]
+///                  ("," module ["as" identifier])*
+/// module      ::=  (identifier ".")* identifier
+ParseResult LitStmtParser::parseImportStmt() {
+  consumeToken(LitToken::kw_import);
+
+  // TODO: Support packages, this currently just handles basic module importing.
+
+  // Parse the next module to import.
+  do {
+    SMLoc importLoc = getToken().getLoc();
+    StringRef moduleName = getTokenSpelling();
+    if (parseToken(LitToken::identifier, "expected module name"))
+      return failure();
+
+    // Check for a name binding.
+    StringRef boundModuleName = moduleName;
+    if (consumeIf(LitToken::kw_as)) {
+      boundModuleName = getTokenSpelling();
+      if (parseToken(LitToken::identifier, "expected name to bind import"))
+        return failure();
+    }
+
+    // Import the module, and export it using the desired binding name.
+    ASTDecl &moduleDecl = getSharedState().importModule(moduleName, importLoc);
+    getSharedState().declResolver->aliasDecls(
+        {&moduleDecl}, StringAttr::get(getContext(), boundModuleName),
+        importLoc, containingDecl);
+  } while (consumeIf(LitToken::comma));
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

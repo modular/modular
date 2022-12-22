@@ -1,0 +1,8 @@
+# This file is imported by 'import.lit' as part of testing import functionality,
+# and does not include any useful testing by itself.
+
+fn imported_fn():
+  return
+
+fn _ignored_wildcard_fn():
+  return

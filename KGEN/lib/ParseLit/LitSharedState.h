@@ -15,6 +15,7 @@
 #include "KGEN/CompilationOptions.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
 
 namespace llvm {
 class SourceMgr;
@@ -47,14 +48,11 @@ inline const char *plural(size_t value, const char *one = "",
 /// which are always shared across them.
 class LitSharedState {
 public:
-  LitSharedState(llvm::SourceMgr &sourceMgr, ModuleOp topLevelModule,
+  LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *ctx,
                  const CompilationOptions &options);
   ~LitSharedState();
 
   llvm::SourceMgr &sourceMgr;
-  /// This is the top-level module that contains all of the IR we are parsing.
-  /// This is always a ModuleOp.
-  Operation *topLevelModule;
   MLIRContext *const context;
   std::unique_ptr<DeclResolver> declResolver;
   const CompilationOptions &options;
@@ -63,6 +61,9 @@ public:
   const mlir::StringAttr bufferNameIdentifier;
 
   MLIRContext *getContext() const { return context; }
+
+  /// Initialize the shared state for the given top-level decl.
+  void initialize(ASTDecl &topLevelDecl);
 
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTType getTypeCheckErrorType() const;
@@ -111,9 +112,6 @@ public:
   /// declared in the same MLIR scope, then return the conflicting operation.
   Operation *setResolvedDeclSymbol(Operation *declOp);
 
-  /// Add magic things to the builtins decl when parsing starts.
-  void addBuiltinTypes(ASTDecl &builtinsDecl);
-
   //===--------------------------------------------------------------------===//
   // Name Lookup
 
@@ -146,7 +144,17 @@ public:
   ASTType lookupErrorOrType(ASTType valueType, llvm::SMLoc loc,
                             ASTDecl &context);
 
+  //===--------------------------------------------------------------------===//
+  // Module Resolution
+
+  /// Import the specified module, returning the module decl. Always returns a
+  /// valid decl, even if the module could not be found.
+  ASTDecl &importModule(StringRef moduleName, llvm::SMLoc loc);
+
 private:
+  /// Add magic things to the builtins decl when parsing starts.
+  void addBuiltinTypes(ASTDecl &builtinsDecl);
+
   /// This is used for memory that lives as long as the global parser does.
   llvm::BumpPtrAllocator persistentAllocator;
 
