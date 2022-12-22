@@ -17,10 +17,29 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/FunctionImplementation.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
+
+//===----------------------------------------------------------------------===//
+// Utilities
+//===----------------------------------------------------------------------===//
+
+SymbolRefAttr LIT::getFullyResolvedSymbolRef(mlir::SymbolOpInterface op) {
+  SmallVector<FlatSymbolRefAttr> symbols;
+  do {
+    symbols.push_back(FlatSymbolRefAttr::get(op.getNameAttr()));
+  } while ((op = dyn_cast<mlir::SymbolOpInterface>(op->getParentOp())));
+
+  // Form a reference from the symbols we collected.
+  if (symbols.size() == 1)
+    return symbols.front();
+  std::reverse(symbols.begin(), symbols.end());
+  return SymbolRefAttr::get(symbols[0].getAttr(),
+                            llvm::makeArrayRef(symbols).drop_front());
+}
 
 //===----------------------------------------------------------------------===//
 // FileModuleOp
@@ -35,19 +54,6 @@ void FileModuleOp::build(OpBuilder &odsBuilder, OperationState &state,
 //===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
-
-/// Return the SymbolRefAttr for a declaration, including all scoping that
-/// may be needed, making it unique for every declaration.
-SymbolRefAttr LIT::FuncOp::getSymbolRef() {
-  // TODO: Support multiple levels of nesting.  This should be recursive, and
-  // SymbolRefAttr should support a get(FlatSymbol, SymbolRef) helper that
-  // forms a properly flattened reference by unwinding the RHS if it isn't
-  // flat.
-  FlatSymbolRefAttr symbolRef = FlatSymbolRefAttr::get(getNameAttr());
-  if (auto parentStruct = dyn_cast<StructDeclOp>(getOperation()->getParentOp()))
-    return SymbolRefAttr::get(parentStruct.getNameAttr(), symbolRef);
-  return symbolRef;
-}
 
 /// Return a SymbolConstantAttr for this function, optionally bound to a set
 /// of parameter bindings.
@@ -68,7 +74,8 @@ SymbolConstantAttr LIT::FuncOp::getBoundReference(ParamBindArrayAttr bindings) {
     assert(resultType && "bad bindings specified for getBoundReference");
   }
 
-  return SymbolConstantAttr::get(getSymbolRef(), bindings, resultType);
+  return SymbolConstantAttr::get(getFullyResolvedSymbolRef(*this), bindings,
+                                 resultType);
 }
 
 ReturnOp LIT::FuncOp::getReturnOp() {

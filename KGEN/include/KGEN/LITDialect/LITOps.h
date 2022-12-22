@@ -33,6 +33,12 @@ class PointerType;
 
 namespace LIT {
 class NoneType;
+
+/// Return the fully resolved symbol reference for the given declaration,
+/// including all scoping that may be needed, making it unique for every
+/// declaration.
+SymbolRefAttr getFullyResolvedSymbolRef(mlir::SymbolOpInterface op);
+
 } // namespace LIT
 } // namespace M::KGEN
 

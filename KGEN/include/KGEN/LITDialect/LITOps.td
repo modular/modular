@@ -73,10 +73,6 @@ let description = [{
     /// the function throws, in which case this is dug out of the variant.
     Type getNormalResultType();
 
-    /// Return the SymbolRefAttr for a declaration, including all scoping that
-    /// may be needed, making it unique for every declaration.
-    SymbolRefAttr getSymbolRef();
-
     /// Return a SymbolConstantAttr for this function, optionally bound to a set
     /// of parameter bindings.
     SymbolConstantAttr getBoundReference(ParamBindArrayAttr bindings = {});

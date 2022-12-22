@@ -92,22 +92,13 @@ RValue ASTDecl::getIfRValue() const {
 /// be needed, making it unique for every declaration.  This returns null for
 /// named values that do not have a declaration.
 SymbolRefAttr ASTDecl::getSymbolRef() const {
-  auto *op = getIfOperation();
+  auto op = dyn_cast_if_present<mlir::SymbolOpInterface>(getIfOperation());
   if (!op)
     return {};
-
-  if (auto structOp = dyn_cast<StructDeclOp>(op)) {
-    // TODO: Support nested/local structs.
-    return FlatSymbolRefAttr::get(structOp.getNameAttr());
-  }
-
-  if (auto fnOp = dyn_cast<LIT::FuncOp>(op)) {
-    assert(resolvedness >= DeclResolvedness::signatureResolved &&
-           "Functions don't have a symbol until their signatures are resolved");
-    return fnOp.getSymbolRef();
-  }
-
-  return {};
+  assert((!isa<LIT::FuncOp>(op) ||
+          resolvedness >= DeclResolvedness::signatureResolved) &&
+         "Functions don't have a symbol until their signatures are resolved");
+  return getFullyResolvedSymbolRef(op);
 }
 
 /// Given an MLIR op for a struct declaration, return the self type.
@@ -224,6 +215,75 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
   return *decl;
 }
 
+void DeclResolver::aliasDecls(const TinyPtrVector<ASTDecl *> &decls,
+                              StringAttr name, llvm::SMLoc aliasLoc,
+                              ASTDecl &context) {
+  auto [it, inserted] = context.declsInScope.try_emplace(name, decls);
+  if (inserted)
+    return;
+
+  // Rejecting overlap is conservative and not what python does, but we can
+  // relax this in the future when we know what the right policy should be.
+  ASTDecl *existing = it->second.back();
+  auto diag = sharedState.emitError(aliasLoc, "invalid redefinition of ")
+              << name;
+  diag.attachNote(sharedState.translateLocation(existing->getLoc()))
+      << "previous definition here";
+
+  for (ASTDecl *previous : it->second)
+    previous->hasReferenceError = true;
+}
+
+void DeclResolver::importDeclsFromModule(
+    ASTDecl &module, ASTDecl &context,
+    ArrayRef<std::tuple<StringRef, StringRef, llvm::SMLoc>> importList) {
+  if (importList.empty())
+    return;
+
+  // Make sure the body of the module has been resolved.
+  if (failed(resolve(module, DeclResolvedness::fullyResolved,
+                     std::get<2>(importList[0]))))
+    return;
+
+  // Process the import list.
+  for (auto [sourceName, destName, loc] : importList) {
+    StringAttr sourceNameAttr = StringAttr::get(getContext(), sourceName);
+
+    // Check to see if the module has the construct we are importing.
+    const TinyPtrVector<ASTDecl *> *importDecls =
+        module.lookupInCurrentScope(sourceNameAttr);
+    if (importDecls) {
+      StringAttr destNameAttr = StringAttr::get(getContext(), destName);
+      aliasDecls(*importDecls, destNameAttr, loc, context);
+      continue;
+    }
+
+    // Emit an error with the module name without the leading `$` mangle.
+    StringRef moduleName =
+        cast<FileModuleOp>(module.getIfOperation()).getName();
+    assert(moduleName.startswith("$") && "unexpected module name mangling");
+    sharedState.emitError(loc, "module '" + moduleName.drop_front() +
+                                   "' does not contain '" + sourceName + "'");
+
+    // If we can't find the decl, recover by adding dummy decl with the dest
+    // name.
+    addErroneousDecl(destName, loc, &context);
+  }
+}
+
+void DeclResolver::importWildCardDeclsFromModule(ASTDecl &module,
+                                                 ASTDecl &context,
+                                                 llvm::SMLoc loc) {
+  // Make sure the body of the module has been resolved.
+  if (failed(resolve(module, DeclResolvedness::fullyResolved, loc)))
+    return;
+
+  // Wildcard imports don't import decls with a leading '_'.
+  for (const auto &[name, decls] : module.declsInScope)
+    if (name.getValue()[0] != '_')
+      aliasDecls(decls, name, loc, context);
+}
+
 /// Add a new declaration that needs to be resolved.
 ASTDecl &DeclResolver::addDecl(Operation *op, SMLoc loc, StringAttr name,
                                ASTDecl *parentDecl, LitLexerCursor cursor,
@@ -256,6 +316,16 @@ ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal, StringRef name,
                                             ASTDecl *parentDecl) {
   return addFullyResolvedDecl(declVal, StringAttr::get(getContext(), name), loc,
                               parentDecl);
+}
+
+ASTDecl &DeclResolver::addErroneousDecl(StringRef baseName, llvm::SMLoc loc,
+                                        ASTDecl *parentDecl) {
+  // Use a dummy attribute representation for the error.
+  BoolAttr dummyAttr = BoolAttr::get(parentDecl->getContext(), true);
+  ASTDecl &errDecl =
+      addFullyResolvedDecl(MValue(dummyAttr), baseName, loc, parentDecl);
+  errDecl.hasReferenceError = true;
+  return errDecl;
 }
 
 /// Resolve all of the declarations that are visible.
@@ -312,7 +382,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             decl.hasReferenceError = true;
           decl.getCursor() = lexer.getCursor();
         })
-        .Case([&](ModuleOp op) { /*Nothing*/ })
+        .Case<LIT::FileModuleOp, ModuleOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
           emitError(decl.getLoc(),
                     "do not know how to resolve the signature of this decl!");
@@ -326,7 +396,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       howResolved == DeclResolvedness::fullyResolved) {
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, VarDeclOp,
+        .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp, VarDeclOp,
               ParamDeclareOp, ParamDeclRefAttr>([&](auto op) {
           // Parse the body of the declaration from the correct point.
           LitLexer lexer(sharedState, decl.getCursor());
@@ -1200,6 +1270,27 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,
   }
 
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Module Decl implementation
+//===----------------------------------------------------------------------===//
+
+ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, LitLexer &lexer,
+                                      ASTDecl &decl) {
+  // Push a scope for the file of this module.
+  DebugInfo::DIBuilder::ScopeGuard fileGuard;
+  if (sharedState.diBuilder) {
+    auto &sourceMgr = lexer.getSourceMgr();
+    int fileId = sourceMgr.FindBufferContainingLoc(lexer.getToken().getLoc());
+    if (fileId) {
+      StringRef filename =
+          sourceMgr.getMemoryBuffer(fileId)->getBufferIdentifier();
+      fileGuard = sharedState.diBuilder->pushFile(filename, "/");
+    }
+  }
+
+  return LitParserBase::parseSuite(decl, lexer);
 }
 
 //===----------------------------------------------------------------------===//

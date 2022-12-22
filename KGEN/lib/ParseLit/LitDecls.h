@@ -28,6 +28,7 @@ class ParamDeclareOp;
 
 namespace M::KGEN::LIT {
 class ASTDecl;
+class FileModuleOp;
 class FuncOp;
 class LitLexer;
 class LitLexerCursor;
@@ -63,6 +64,23 @@ public:
                    ASTDecl *parentDecl, LitLexerCursor cursor,
                    LitLexerCursor endCursor, ssize_t indentation);
 
+  /// Add a pre-existing set of declarations as children of the specified
+  /// context, using the provided alias name (which may differ from that of the
+  /// decl).
+  void aliasDecls(const TinyPtrVector<ASTDecl *> &decls, StringAttr name,
+                  llvm::SMLoc aliasLoc, ASTDecl &context);
+
+  /// Import the provided decls from the given module decl, into the provided
+  /// destination context.
+  void importDeclsFromModule(
+      ASTDecl &module, ASTDecl &context,
+      ArrayRef<std::tuple<StringRef, StringRef, llvm::SMLoc>> importList);
+  /// Import decls from the given module decl into the provided destination
+  /// context using a wild-card import (i.e. import all decls that don't start
+  /// with an `_`).
+  void importWildCardDeclsFromModule(ASTDecl &module, ASTDecl &context,
+                                     llvm::SMLoc loc);
+
   /// Add a declaration that is already fully resolved.
   ASTDecl &addFullyResolvedDecl(Operation *decl, llvm::SMLoc loc,
                                 StringAttr baseName, ASTDecl *parentDecl);
@@ -72,6 +90,11 @@ public:
                                 llvm::SMLoc loc, ASTDecl *parentDecl);
   ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringRef baseName,
                                 llvm::SMLoc loc, ASTDecl *parentDecl);
+
+  /// Add a declaration that represents an erroneous declaration. The generated
+  /// decl is treated as fully resolved, and in an error state.
+  ASTDecl &addErroneousDecl(StringRef baseName, llvm::SMLoc loc,
+                            ASTDecl *parentDecl);
 
   /// Resolve the specified declaration to at least the specified level of
   /// resolution, performing incremental type checking as appropriate.
@@ -99,6 +122,8 @@ private:
   LogicalResult resolveSignature(LIT::FuncOp op, LitLexer &lexer,
                                  ASTDecl &decl);
   ParseResult resolveBody(LIT::FuncOp op, LitLexer &lexer, ASTDecl &decl);
+
+  ParseResult resolveBody(LIT::FileModuleOp op, LitLexer &lexer, ASTDecl &decl);
 
   LogicalResult resolveSignature(StructDeclOp op, LitLexer &lexer,
                                  ASTDecl &decl);

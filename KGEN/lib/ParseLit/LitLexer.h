@@ -172,11 +172,11 @@ private:
 /// This is the state captured for a lexer cursor.
 class LitLexerCursor {
 public:
-  LitLexerCursor() : state(nullptr), curToken(LitToken::eof, StringRef(), 0) {}
+  LitLexerCursor() : LitLexerCursor(LitToken(LitToken::eof, StringRef(), 0)) {}
   LitLexerCursor(const LitLexer &lexer)
       : state(lexer.curPtr), curToken(lexer.getToken()) {}
-  LitLexerCursor(const char *curPtr, const LitToken &tok)
-      : state(curPtr), curToken(tok) {}
+  LitLexerCursor(const LitToken &tok)
+      : state(tok.getSpelling().data()), curToken(tok) {}
   LitLexerCursor(const LitLexerCursor &cursor) = default;
   LitLexerCursor &operator=(const LitLexerCursor &cursor) = default;
 

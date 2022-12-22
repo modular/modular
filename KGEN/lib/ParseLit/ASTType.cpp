@@ -52,8 +52,10 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
 
   auto type = astType.mlirType;
   if (auto declRef = dyn_cast<DeclRefType>(type)) {
-    // TODO: Could include name scope information.
-    os << declRef.getSymbol().getRootReference().str();
+    SymbolRefAttr symbol = declRef.getSymbol();
+    os << symbol.getRootReference().strref();
+    for (FlatSymbolRefAttr nestedRef : symbol.getNestedReferences())
+      os << "::" << nestedRef.getValue();
 
     ParamBindArrayAttr params = declRef.getParamValues();
     if (!params.empty()) {
