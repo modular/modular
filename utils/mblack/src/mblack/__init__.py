@@ -824,6 +824,10 @@ def format_file_in_place(
         mode = replace(mode, is_pyi=True)
     elif src.suffix == ".ipynb":
         mode = replace(mode, is_ipynb=True)
+    elif src.suffix == ".lit":
+        # If we're formatting a lit file, we need to run with --fast, as `ast`
+        # doesn't know how to parse lit syntax.
+        fast = True
 
     then = datetime.utcfromtimestamp(src.stat().st_mtime)
     header = b""
