@@ -136,6 +136,17 @@ kgen.func @entry() {
 
 // -----
 
+module @nested_nondecl {
+}
+
+kgen.func @entry() {
+  // expected-error @below {{@nested_nondecl::@undefined does not reference a KGEN declaration}}
+  kgen.call @nested_nondecl::@undefined() : () -> ()
+  kgen.return
+}
+
+// -----
+
 kgen.generator @g1(%x : i32) {
   // expected-error @below {{symbol use has 1 argument but @g2 expects 0}}
   kgen.call @g2(%x) : (i32) -> ()

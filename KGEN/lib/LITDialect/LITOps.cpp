@@ -23,6 +23,16 @@ using namespace KGEN;
 using namespace LIT;
 
 //===----------------------------------------------------------------------===//
+// FileModuleOp
+//===----------------------------------------------------------------------===//
+
+void FileModuleOp::build(OpBuilder &odsBuilder, OperationState &state,
+                         StringAttr name) {
+  state.addAttribute(getSymNameAttrName(state.name), name);
+  state.addRegion()->push_back(new Block());
+}
+
+//===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
 

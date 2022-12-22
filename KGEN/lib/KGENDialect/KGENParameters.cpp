@@ -20,6 +20,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -439,35 +440,24 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
 
   // Build the signature of the referenced symbol.
   SymbolRefAttr symbol = symbolConstant.getSymbol();
-  auto lookupDecl = [&](Operation *root, auto name) -> DeclInterface {
-    if (auto decl = dyn_cast_or_null<DeclInterface>(
-            symbolTable->lookupSymbolIn(root, name)))
-      return decl;
+  SmallVector<Operation *> symbolOps;
+  if (failed(symbolTable->lookupSymbolIn(module, symbol, symbolOps))) {
     hadError = true;
     emitError(*curLocationCollecting)
         << symbol << " does not reference a KGEN declaration";
-    return nullptr;
-  };
-
-  // Lookup the root declaration.
-  DeclInterface decl = lookupDecl(module, symbol.getRootReference());
-  if (!decl)
     return;
+  }
 
   // The symbol reference may refer to a nested symbol, in which case we build
   // the signature by concatenating the parameter signature down to the leaf
   // symbol.
-  SmallVector<ParamDeclAttr> inputParams(
-      decl.getInputParamDeclsAttr().getValue());
-  for (FlatSymbolRefAttr nestedRef : symbol.getNestedReferences()) {
-    decl = lookupDecl(decl, nestedRef.getAttr());
-    if (!decl)
-      return;
-    llvm::append_range(inputParams, decl.getInputParamDeclsAttr());
-  }
+  SmallVector<ParamDeclAttr> inputParams;
+  for (Operation *op : symbolOps)
+    if (auto decl = dyn_cast<DeclInterface>(op))
+      llvm::append_range(inputParams, decl.getInputParamDeclsAttr());
 
   // The leaf symbol must refer to a function.
-  auto func = dyn_cast<FuncInterface>(*decl);
+  auto func = dyn_cast<FuncInterface>(symbolOps.back());
   if (!func) {
     hadError = true;
     emitError(*curLocationCollecting)
@@ -475,8 +465,8 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
     return;
   }
   auto declSignature = SignatureType::get(
-      ParamDeclArrayAttr::get(decl.getContext(), inputParams),
-      TypeArrayAttr::get(decl.getContext(), func.getResultParamTypes()),
+      ParamDeclArrayAttr::get(func.getContext(), inputParams),
+      TypeArrayAttr::get(func.getContext(), func.getResultParamTypes()),
       func.getSignature().getValues(), func.getConventions());
 
   // If this SymbolConstant binds the parameters for the symbol, then remap its
@@ -507,7 +497,7 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
   paramName.append(symbol.getLeafReference());
   if (failed(verifyDeclSignaturesMatch(
           "symbol use", symbolSignature, *curLocationCollecting,
-          paramName.c_str(), declSignature, decl->getLoc())))
+          paramName.c_str(), declSignature, func->getLoc())))
     hadError = true;
 }
 
@@ -520,11 +510,11 @@ void DeclParameterVerifier::verifyRefType(DeclRefType refType) {
     return;
 
   auto decl = dyn_cast_or_null<DeclInterface>(
-      symbolTable->lookupSymbolIn(module, refType.getName()));
+      symbolTable->lookupSymbolIn(module, refType.getSymbol()));
   if (!decl) {
     hadError = true;
     emitError(*curLocationCollecting)
-        << refType.getName() << " does not reference a KGEN type declaration";
+        << refType.getSymbol() << " does not reference a KGEN type declaration";
     return;
   }
 
@@ -540,7 +530,7 @@ void DeclParameterVerifier::verifyRefType(DeclRefType refType) {
         cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl)));
 
   SmallString<32> paramName("@");
-  paramName.append(refType.getName());
+  paramName.append(refType.getSymbol().getLeafReference());
   if (failed(verifyParamDeclsMatch(
           "!kgen.declref symbol use",
           llvm::to_vector(llvm::map_range(
