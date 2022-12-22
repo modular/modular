@@ -160,7 +160,7 @@ LIT::FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // If the generator is implementing a generator interface, check that they
   // line up correctly.
-  FlatSymbolRefAttr interfaceSym = getImplementsAttr();
+  SymbolRefAttr interfaceSym = getImplementsAttr();
   if (!interfaceSym)
     return success();
 
@@ -169,8 +169,8 @@ LIT::FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   auto interface = module.lookup<GeneratorInterfaceOp>(interfaceSym);
   auto funcInterface = module.lookup<LIT::FuncOp>(interfaceSym);
   if (!interface && (!funcInterface || !funcInterface.getIsInterface()))
-    return emitError() << "'" << interfaceSym.getValue()
-                       << "' does not reference a generator interface";
+    return emitError() << interfaceSym
+                       << " does not reference a generator interface";
   TypeArrayAttr interfaceResultParamTypesAttr;
   if (funcInterface)
     interfaceResultParamTypesAttr = funcInterface.getResultParamTypesAttr();

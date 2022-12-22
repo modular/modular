@@ -59,7 +59,7 @@ let description = [{
                        UnitAttr:$isInterface,
                        UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
                        UnitAttr:$raises,
-                       OptionalAttr<FlatSymbolRefAttr>:$implements);
+                       OptionalAttr<SymbolRefAttr>:$implements);
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{

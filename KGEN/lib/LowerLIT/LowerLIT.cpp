@@ -334,9 +334,10 @@ static Value insertRebindOp(Value arg, Type type, ImplicitLocOpBuilder &b) {
 /// If this generator is implementing an interface, check its conformance,
 /// diagnose any conflicts, and infer constraints.  Note that 'itf' may be null
 /// if this generator is not implementing an interface.
-static LogicalResult checkInterfaceConformance(GeneratorOp gen,
-                                               GeneratorInterfaceOp itf,
-                                               SymbolTable &symbolTable) {
+static LogicalResult
+checkInterfaceConformance(GeneratorOp gen, GeneratorInterfaceOp itf,
+                          SymbolTable &symbolTable,
+                          FlatSymbolRefAttr implementsAttr) {
   SignatureUnifier unifier(gen, itf);
 
   // Verify that the constraints already imposed on the generator are
@@ -412,12 +413,12 @@ static LogicalResult checkInterfaceConformance(GeneratorOp gen,
   // kgen level - we need to generate a thunk.
   if (needsForwardingThunk) {
     ImplicitLocOpBuilder b(gen.getLoc(), gen);
-    auto thunk = b.create<GeneratorOp>(
-        b.getStringAttr(gen.getSymName() + "_thunk"),
-        // Take the signature from the interface.
-        itf.getSignatureAttr(),
-        // Take the constraints from the generator.
-        gen.getConstraintsAttr(), gen.getImplementsAttr());
+    auto thunk =
+        b.create<GeneratorOp>(b.getStringAttr(gen.getSymName() + "_thunk"),
+                              // Take the signature from the interface.
+                              itf.getSignatureAttr(),
+                              // Take the constraints from the generator.
+                              gen.getConstraintsAttr(), implementsAttr);
     // The thunk implements the interface, not the original generator.
     gen.removeImplementsAttr();
 
@@ -583,6 +584,21 @@ static StringAttr flattenAndRenameSymbol(T op, const Twine &parentPrefix,
   return newName;
 }
 
+/// Flatten the given symbol reference, collapsing all nested scopes into one
+/// mangled name.
+static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
+  // If the symbol is already flat, there is nothing to do.
+  if (auto flatSym = dyn_cast<FlatSymbolRefAttr>(ref))
+    return flatSym;
+
+  // Flatten the symbol name into a single string.
+  SmallString<32> name = ref.getRootReference().getValue();
+  llvm::raw_svector_ostream nameOS(name);
+  for (FlatSymbolRefAttr sym : ref.getNestedReferences())
+    nameOS << "::" << sym.getValue();
+  return SymbolRefAttr::get(ref.getContext(), nameOS.str());
+}
+
 /// Lower an lit.func to kgen.generator.
 static LogicalResult
 lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
@@ -641,10 +657,15 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
     return success();
   }
 
+  // Flatten the implements reference if present.
+  FlatSymbolRefAttr implementsAttr;
+  if (auto fullImplementsAttr = gen.getImplementsAttr())
+    implementsAttr = flattenSymbolRefAttr(fullImplementsAttr);
+
   // Directly lower since these operations are exactly identical right now.
-  auto result = b.create<GeneratorOp>(
-      gen.getLoc(), gen.getSymNameAttr(), gen.getSignatureAttr(),
-      gen.getConstraintsAttr(), gen.getImplementsAttr());
+  auto result = b.create<GeneratorOp>(gen.getLoc(), gen.getSymNameAttr(),
+                                      gen.getSignatureAttr(),
+                                      gen.getConstraintsAttr(), implementsAttr);
 
   // Move over the body.
   auto *bodyBlock = gen.getBody();
@@ -659,18 +680,17 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
   // If the generator implemented an interface, infer additional constraints
   // and check the signature.
   GeneratorInterfaceOp itf;
-  if (auto interfaceName = result.getImplements()) {
-    if (!interfaceName)
-      return success();
-
+  if (implementsAttr) {
     // Check that the callee attribute was specified.
     itf = dyn_cast_if_present<GeneratorInterfaceOp>(
-        symbolTable.lookup(interfaceName.value()));
-    if (!itf)
-      return gen.emitError("could not find implemented interface");
+        symbolTable.lookup(implementsAttr.getAttr()));
+    if (!itf) {
+      return result.emitError("could not find implemented interface: ")
+             << implementsAttr.getValue();
+    }
   }
 
-  return checkInterfaceConformance(result, itf, symbolTable);
+  return checkInterfaceConformance(result, itf, symbolTable, implementsAttr);
 }
 
 /// Lower nested structures in kgen.struct.decl away.
@@ -716,18 +736,8 @@ static void lowerAttributesAndTypes(Operation *op) {
   // Member functions are reference with nested symbol references. After
   // lowering, the symbol tree will be flat. Concatenate all nested symbol
   // references in symbol constants.
-  replacer.addReplacement([](SymbolRefAttr ref) -> SymbolRefAttr {
-    // If the symbol is already flat, there is nothing to do.
-    if (ref.getNestedReferences().empty())
-      return ref;
-
-    // Flatten the symbol name into a single string.
-    SmallString<32> name = ref.getRootReference().getValue();
-    llvm::raw_svector_ostream nameOS(name);
-    for (FlatSymbolRefAttr sym : ref.getNestedReferences())
-      nameOS << "::" << sym.getValue();
-    return SymbolRefAttr::get(ref.getContext(), nameOS.str());
-  });
+  replacer.addReplacement(
+      [](SymbolRefAttr ref) { return flattenSymbolRefAttr(ref); });
 
   // Lower `!lit.none` to `list<i1[0]>`, which will eventually become nothing.
   auto emptyList = ListType::get(IntegerType::get(op->getContext(), 1), 0);
