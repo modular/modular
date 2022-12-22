@@ -17,9 +17,6 @@ config.test_source_root = os.path.dirname(__file__)
 # suffixes: A list of file extensions to treat as test files.
 config.suffixes = [".mlir", ".test"]
 
-# Tweak the PATH to include the tools dir.
-llvm_config.with_environment("PATH", config.llvm_tools_dir, append_path=True)
-
 tool_dirs = [
     config.modular_tools_dir,
     config.mlir_tools_dir,
