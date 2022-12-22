@@ -51,6 +51,12 @@ fn callOverload(a: Int):
   # CHECK:  %1 = kgen.call @"testThing(Int,Int)"(%a, %a)
   testThing(a, a)
 
+# Test that pointers don't get confused with by-ref arguments.
+# CHECK-LABEL: lit.func @"testPointerArgs{{.*}}(%ptr: !pop.pointer<si32>) -> si32 {
+fn testPointerArgs(ptr: __mlir_type.`!pop.pointer<si32>`) -> __mlir_type.si32:
+  # CHECK-NEXT: %0 = pop.load %ptr : !pop.pointer<si32>
+  return __mlir_op.`pop.load`[_type: __mlir_type.si32](ptr)
+
 ##===----------------------------------------------------------------------===##
 # @raises decorator.
 ##===----------------------------------------------------------------------===##
@@ -89,3 +95,44 @@ fn return_impl_convert_raises(a: Error) -> Error:
   return a
 
 ##===----------------------------------------------------------------------===##
+# Structs
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: kgen.struct.decl @EmptyStruct {
+struct EmptyStruct:
+  # No body
+# CHECK-NEXT: }
+
+# CHECK-LABEL: kgen.struct.decl @OneLineStruct<size: !kgen.declref<@Int>> {
+struct OneLineStruct[size: Int]: pass; pass
+# CHECK-NEXT: }
+
+# CHECK-LABEL: kgen.struct.decl @StructExample {
+struct StructExample:
+  fn __new__() -> StructExample:
+    var result : StructExample
+    return result
+
+  # CHECK: lit.func @"static(Int)"(%x: !kgen.declref<@Int>) -> !lit.none attributes {isStatic} {
+  @staticmethod
+  fn static(x: Int):
+    # CHECK: %idx4 = index.constant 4
+    # CHECK: %0 = kgen.call @Int::@"__new__{{.*}}"(%idx4) : (index) -> !kgen.declref<@Int>
+    # CHECK: %1 = kgen.call @StructExample::@"static{{.*}}"(%0) : (!kgen.declref<@Int>) -> !lit.none
+    StructExample.static(Int(4))
+    pass
+
+  # CHECK: lit.func @"mutatingMethod(StructExample&)"(%self: !pop.pointer<@StructExample> byref) -> !lit.none
+  fn mutatingMethod(self&):
+
+# CHECK: }
+# CHECK-NEXT: }
+
+# CHECK: lit.func @"callStatic{{.*}}(%a: !kgen.declref<@Int>) -> !lit.none
+fn callStatic(a: Int):
+  # CHECK: kgen.call @StructExample::@"static{{.*}}(%a)
+  StructExample.static(a)
+
+  # CHECK: kgen.call @StructExample::@"__new__{{.*}}()
+  # CHECK: kgen.call @StructExample::@"static{{.*}}(%a) : (!kgen.declref<@Int>) -> !lit.none
+  StructExample().static(a)
