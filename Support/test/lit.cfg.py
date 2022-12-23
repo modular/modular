@@ -15,7 +15,7 @@ config.test_exec_root = os.path.join(config.modular_obj_root, "Support", "test")
 config.test_source_root = os.path.dirname(__file__)
 
 # suffixes: A list of file extensions to treat as test files.
-config.suffixes = [".mlir", ".test"]
+config.suffixes = [".mlir"]
 
 tool_dirs = [
     config.modular_tools_dir,
