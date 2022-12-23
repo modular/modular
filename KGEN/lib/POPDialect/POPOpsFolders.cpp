@@ -78,6 +78,20 @@ ErrorOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
+// PointerBitcastOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult PointerBitcastOp::fold(ArrayRef<Attribute> operands) {
+  if (auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]))
+    return PointerAttr::get(ptr.getAddr(), getType());
+
+  auto cast = getInput().getDefiningOp<PointerBitcastOp>();
+  if (cast && cast.getInput().getType() == getType())
+    return cast.getInput();
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
 // StackAllocationOp
 //===----------------------------------------------------------------------===//
 
@@ -91,9 +105,12 @@ StackAllocationOp::interpret(ArrayRef<Attribute> operands,
     return Error("not concrete");
   Optional<int64_t> size =
       DataLayoutInterface::getTypeSizeInBytes(state.getTarget(), type);
-  if (!size)
+  Optional<int64_t> align =
+      DataLayoutInterface::getTypeAlignInBytes(state.getTarget(), type);
+  if (!size || !align)
     return Error("could not query type size");
-  size_t addr = state.allocateMemory(count.getInt() * *size);
+  size_t addr =
+      state.allocateMemory(count.getInt() * llvm::alignTo(*size, *align));
   results.push_back(PointerAttr::get(addr, getType()));
   return success();
 }
