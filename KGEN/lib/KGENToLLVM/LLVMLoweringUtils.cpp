@@ -153,6 +153,9 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
       maxSize = std::max(maxSize, llvm::alignTo(dl.getTypeSize(type),
                                                 dl.getTypeABIAlignment(type)));
     }
+    // FIXME: The alignment of the generated type must equal or exceed the
+    // greatest alignment requirement of any subtype. Right now it's just the
+    // pointer width.
     auto contentType = LLVM::LLVMArrayType::get(
         getIndexType(),
         llvm::divideCeil(maxSize * CHAR_BIT, getIndexTypeBitwidth()));
