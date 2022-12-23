@@ -385,30 +385,25 @@ static CallableValue emitTypeAttributeRef(ASTType baseType,
                                           ExprEmitter &emitter) {
   auto attrSpelling = node->attrSpelling;
   auto loc = node->getLoc();
-  ASTDecl *typeDecl = baseType.getDecl(emitter.shared);
-  if (!typeDecl) {
-    emitter.emitError(loc, "MLIR type ") << baseType << " has no attributes";
-    return {};
-  }
+
+  // Normal member references will have an declaration for the type.
+  if (ASTDecl *typeDecl = baseType.getDecl(emitter.shared))
+    return emitDeclMemberAsCallable(*typeDecl, baseType.getParamBindings(),
+                                    attrSpelling, node, emitter);
 
   // Handle __mlir_op.`xxx` references, lazily synthesizing values when
   // they are referenced.
-  if (typeDecl->resolvedness == DeclResolvedness::fullyResolved &&
-      isa<StructDeclOp>(*typeDecl)) {
-    auto resolvedMLIRType = typeDecl->getSelfType().mlirType;
-    if (isa<MagicMLIRAttrType>(resolvedMLIRType))
-      return {{synthesizeMLIRAttrFromString(attrSpelling, loc, emitter), node}};
-    if (isa<MagicMLIROpType>(resolvedMLIRType))
-      return {{synthesizeMLIROpFromString(attrSpelling, emitter), node}};
-    if (isa<MagicMLIRTypeType>(resolvedMLIRType)) {
-      Type result = parseMLIRType(attrSpelling, loc, emitter.shared);
-      return {{result ? AnyValue(result) : AnyValue(), node}};
-    }
+  if (isa<MagicMLIRAttrType>(baseType.mlirType))
+    return {{synthesizeMLIRAttrFromString(attrSpelling, loc, emitter), node}};
+  if (isa<MagicMLIROpType>(baseType.mlirType))
+    return {{synthesizeMLIROpFromString(attrSpelling, emitter), node}};
+  if (isa<MagicMLIRTypeType>(baseType.mlirType)) {
+    Type result = parseMLIRType(attrSpelling, loc, emitter.shared);
+    return {{result ? AnyValue(result) : AnyValue(), node}};
   }
 
-  // Normal member reference.
-  return emitDeclMemberAsCallable(*typeDecl, baseType.getParamBindings(),
-                                  attrSpelling, node, emitter);
+  emitter.emitError(loc, "MLIR type ") << baseType << " has no attributes";
+  return {};
 }
 
 AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,

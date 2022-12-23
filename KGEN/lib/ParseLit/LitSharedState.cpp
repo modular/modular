@@ -150,29 +150,16 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   // considering it erroneous and already declared as such.
   impl->typeCheckErrorType = TypeCheckErrorType::get(context);
 
-  OpBuilder b = builtinsDecl.getDeclEndBuilder();
-  Location loc = translateLocation(builtinsDecl.getLoc());
-
   // Add an empty struct with the specified name to the resolver.
-  auto addEmptyStructDecl = [&](StringRef name, ASTDecl *&decl) {
-    auto structOp = b.create<StructDeclOp>(loc, b.getStringAttr(name));
-    decl = &resolver.addDecl(structOp, builtinsDecl.getLoc(),
-                             structOp.getNameAttr(), &builtinsDecl,
-                             LitLexerCursor(), LitLexerCursor(), 0);
-    decl->setSelfType(decl->computeSelfTypeForStruct(*this));
-    decl->resolvedness = DeclResolvedness::fullyResolved;
+  auto addMagicMLIRDecl = [&](StringRef name, Type magicType) {
+    TypedAttr value = ConcreteTypeConstantAttr::get(magicType);
+    resolver.addFullyResolvedDecl(MValue(value), name, builtinsDecl.getLoc(),
+                                  &builtinsDecl);
   };
 
-  ASTDecl *mlirAttrDecl = nullptr, *mlirOpDecl = nullptr,
-          *mlirTypeDecl = nullptr;
-  addEmptyStructDecl("__mlir_attr", mlirAttrDecl);
-  mlirAttrDecl->setSelfType(MagicMLIRAttrType::get(context));
-
-  addEmptyStructDecl("__mlir_op", mlirOpDecl);
-  mlirOpDecl->setSelfType(MagicMLIROpType::get(context));
-
-  addEmptyStructDecl("__mlir_type", mlirTypeDecl);
-  mlirTypeDecl->setSelfType(MagicMLIRTypeType::get(context));
+  addMagicMLIRDecl("__mlir_attr", MagicMLIRAttrType::get(context));
+  addMagicMLIRDecl("__mlir_op", MagicMLIROpType::get(context));
+  addMagicMLIRDecl("__mlir_type", MagicMLIRTypeType::get(context));
 }
 
 /// Set the symbol for the specified declaration (known to be an operation)
