@@ -292,3 +292,74 @@ kgen.generator @doIt() -> !pop.scalar<f32> {
   %0 = kgen.call @materializeConstant<C: f32 = 2.5>() : () -> !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
 }
+
+// -----
+
+kgen.func @store_load_array(%arg0: !pop.array<2, i24>) -> !pop.array<2, i24> {
+  %0 = pop.stack_allocation 1 x !pop.array<2, i24>
+  pop.store %arg0, %0 : !pop.pointer<array<2, i24>>
+  %1 = pop.load %0 : !pop.pointer<array<2, i24>>
+  kgen.return %1 : !pop.array<2, i24>
+}
+
+kgen.func @store_load_pointer(%arg0: i32) -> i32 {
+  %0 = pop.stack_allocation 1 x i32
+  pop.store %arg0, %0 : !pop.pointer<i32>
+  %1 = pop.stack_allocation 1 x !pop.pointer<i32>
+  pop.store %0, %1 : !pop.pointer<pointer<i32>>
+  %2 = pop.load %1 : !pop.pointer<pointer<i32>>
+  %3 = pop.load %2 : !pop.pointer<i32>
+  kgen.return %3 : i32
+}
+
+// FIXME: Can't call generators from a meta context.
+kgen.func @store_load_simd(%arg0: !pop.simd<2, f32>) -> !pop.simd<2, f32> {
+  %0 = pop.stack_allocation 1 x !pop.simd<2, f32>
+  pop.store %arg0, %0 : !pop.pointer<simd<2, f32>>
+  %1 = pop.load %0 : !pop.pointer<simd<2, f32>>
+  kgen.return %1 : !pop.simd<2, f32>
+}
+
+kgen.func @store_load_simd_packed(%arg0: !pop.simd<2, si4>) -> !pop.simd<2, si4> {
+  %0 = pop.stack_allocation 1 x !pop.simd<2, si4>
+  pop.store %arg0, %0 : !pop.pointer<simd<2, si4>>
+  %1 = pop.load %0 : !pop.pointer<simd<2, si4>>
+  kgen.return %1 : !pop.simd<2, si4>
+}
+
+kgen.func @store_load_simd_packed_i2(%arg0: !pop.simd<6, ui2>) -> !pop.simd<6, ui2> {
+  %0 = pop.stack_allocation 1 x !pop.simd<6, ui2>
+  pop.store %arg0, %0 : !pop.pointer<simd<6, ui2>>
+  %1 = pop.load %0 : !pop.pointer<simd<6, ui2>>
+  kgen.return %1 : !pop.simd<6, ui2>
+}
+
+kgen.func @store_load_struct(%arg0: !pop.struct<i8, i16, f64>) -> !pop.struct<i8, i16, f64> {
+  %0 = pop.stack_allocation 1 x !pop.struct<i8, i16, f64>
+  pop.store %arg0, %0 : !pop.pointer<struct<i8, i16, f64>>
+  %1 = pop.load %0 : !pop.pointer<struct<i8, i16, f64>>
+  kgen.return %1 : !pop.struct<i8, i16, f64>
+}
+
+// CHECK-LABEL: kgen.func @do_it
+kgen.generator @do_it() {
+  // CHECK-NEXT: #pop.array<123, 456>
+  kgen.param.constant: !pop.array<2, i24> = <apply(
+    :(!pop.array<2, i24>) -> !pop.array<2, i24> @store_load_array, #pop.array<123, 456>)>
+  // CHECK-NEXT: <555>
+  kgen.param.constant: i32 = <apply(
+    :(i32) -> i32 @store_load_pointer, 555)>
+  // CHECK-NEXT: #pop.simd<"1.25", "2.25">
+  kgen.param.constant: !pop.simd<2, f32> = <apply(
+    :(!pop.simd<2, f32>) -> !pop.simd<2, f32> @store_load_simd, #pop.simd<"1.25", "2.25">)>
+  // CHECK-NEXT: #pop.simd<-7, 7>
+  kgen.param.constant: !pop.simd<2, si4> = <apply(
+    :(!pop.simd<2, si4>) -> !pop.simd<2, si4> @store_load_simd_packed, #pop.simd<-7, 7>)>
+  // CHECK-NEXT: #pop.simd<0, 1, 2, 3, 3, 2>
+  kgen.param.constant: !pop.simd<6, ui2> = <apply(
+    :(!pop.simd<6, ui2>) -> !pop.simd<6, ui2> @store_load_simd_packed_i2, #pop.simd<0, 1, 2, 3, 3, 2>)>
+  // CHECK-NEXT: #pop.struct<120, 32112, 1.125{{0+}}e+00>
+  kgen.param.constant: !pop.struct<i8, i16, f64> = <apply(
+    :(!pop.struct<i8, i16, f64>) -> !pop.struct<i8, i16, f64> @store_load_struct, #pop.struct<120, 32112, 1.125>)>
+  kgen.return
+}

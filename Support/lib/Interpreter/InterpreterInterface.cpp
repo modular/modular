@@ -24,16 +24,21 @@ intptr_t InterpreterState::allocateMemory(size_t size) {
 }
 
 ErrorOr<void *> InterpreterState::getMemory(intptr_t addr, size_t size) {
+  // Check for a null pointer access.
   if (!addr)
     return Error("null address");
-  if (addr < invalidMemOffset ||
-      static_cast<size_t>(addr - invalidMemOffset) > memory.size())
-    return Error("address is out-of-bounds");
+  // Otherwise, check for an address that we know is invalid.
+  if (addr < invalidMemOffset)
+    return Error("address is invalid: " + Twine(addr));
   addr -= invalidMemOffset;
   // Accessing memory at the end iterator is okay if the access size is zero.
   // For example, if the memory size is 2, a memory access at index 2 is only
   // valid if the access size is 0. This is because the index points to the
-  // beginning of the byte in memory.
+  // beginning of the byte in memory. Check if the address exceeds the size of
+  // allocated memory.
+  if (static_cast<size_t>(addr) > memory.size())
+    return Error("address is out-of-bounds: " + Twine(addr));
+  // Now check if the access size will still be in-bounds.
   if (addr + size > memory.size())
     return Error("memory access size " + Twine(size) + " is out-of-bounds");
   return reinterpret_cast<void *>(memory.data() + addr);
@@ -41,28 +46,26 @@ ErrorOr<void *> InterpreterState::getMemory(intptr_t addr, size_t size) {
 
 ErrorOrSuccess InterpreterState::writeAttributeToMemory(intptr_t addr,
                                                         TypedAttr value) {
-  Optional<int64_t> size =
-      DataLayoutInterface::getTypeSizeInBytes(target, value.getType());
-  if (!size)
-    return Error("could not query the size of the type to write");
-  ErrorOr<void *> mem = getMemory(addr, *size);
-  if (mem.isError())
-    return mem.takeError();
+  if (isa<IntegerAttr, FloatAttr>(value)) {
+    int64_t size =
+        *DataLayoutInterface::getTypeSizeInBytes(target, value.getType());
+    ErrorOr<void *> mem = getMemory(addr, size);
+    if (mem.isError())
+      return mem.takeError();
 
-  if (auto intAttr = dyn_cast<IntegerAttr>(value)) {
-    llvm::StoreIntToMemory(intAttr.getValue(),
-                           reinterpret_cast<uint8_t *>(*mem), *size);
-    return success();
-  }
+    if (auto intAttr = dyn_cast<IntegerAttr>(value)) {
+      llvm::StoreIntToMemory(intAttr.getValue(),
+                             reinterpret_cast<uint8_t *>(*mem), size);
+      return success();
+    }
 
-  if (auto fpAttr = dyn_cast<FloatAttr>(value)) {
-    llvm::StoreIntToMemory(fpAttr.getValue().bitcastToAPInt(),
-                           reinterpret_cast<uint8_t *>(*mem), *size);
+    llvm::StoreIntToMemory(cast<FloatAttr>(value).getValue().bitcastToAPInt(),
+                           reinterpret_cast<uint8_t *>(*mem), size);
     return success();
   }
 
   if (auto itf = dyn_cast<MemoryableTypeInterface>(value.getType()))
-    return itf.writeTo(value, *size, *mem);
+    return itf.writeTo(value, addr, *this);
 
   return Error(mlir::debugString(value.getType()) +
                " does not implement MemoryableTypeInterface");
@@ -70,35 +73,32 @@ ErrorOrSuccess InterpreterState::writeAttributeToMemory(intptr_t addr,
 
 ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(intptr_t addr,
                                                              Type type) {
-  Optional<int64_t> size =
-      DataLayoutInterface::getTypeSizeInBytes(target, type);
-  if (!size)
-    return Error("could not query the size of the type to write");
-  ErrorOr<void *> mem = getMemory(addr, *size);
-  if (mem.isError())
-    return mem.takeError();
+  if (isa<IndexType, IntegerType, FloatType>(type)) {
+    int64_t size = *DataLayoutInterface::getTypeSizeInBytes(target, type);
+    ErrorOr<void *> mem = getMemory(addr, size);
+    if (mem.isError())
+      return mem.takeError();
 
-  if (isa<IndexType>(type)) {
+    if (auto intType = dyn_cast<IntegerType>(type)) {
+      APInt value(intType.getWidth(), 0);
+      llvm::LoadIntFromMemory(value, reinterpret_cast<uint8_t *>(*mem), size);
+      return IntegerAttr::get(type, value);
+    }
+
+    if (auto fpType = dyn_cast<FloatType>(type)) {
+      APInt intVal(fpType.getWidth(), 0);
+      llvm::LoadIntFromMemory(intVal, reinterpret_cast<uint8_t *>(*mem), size);
+      APFloat value(fpType.getFloatSemantics(), intVal);
+      return FloatAttr::get(fpType, value);
+    }
+
     APInt value(64, 0);
-    llvm::LoadIntFromMemory(value, reinterpret_cast<uint8_t *>(*mem), *size);
+    llvm::LoadIntFromMemory(value, reinterpret_cast<uint8_t *>(*mem), size);
     return IntegerAttr::get(type, value);
-  }
-
-  if (auto intType = dyn_cast<IntegerType>(type)) {
-    APInt value(intType.getWidth(), 0);
-    llvm::LoadIntFromMemory(value, reinterpret_cast<uint8_t *>(*mem), *size);
-    return IntegerAttr::get(type, value);
-  }
-
-  if (auto fpType = dyn_cast<FloatType>(type)) {
-    APInt intVal(fpType.getWidth(), 0);
-    llvm::LoadIntFromMemory(intVal, reinterpret_cast<uint8_t *>(*mem), *size);
-    APFloat value(fpType.getFloatSemantics(), intVal);
-    return FloatAttr::get(fpType, value);
   }
 
   if (auto itf = dyn_cast<MemoryableTypeInterface>(type))
-    return itf.readFrom(*size, *mem);
+    return itf.readFrom(addr, *this);
 
   return Error(mlir::debugString(type) +
                " does not implement MemoryableTypeInterface");

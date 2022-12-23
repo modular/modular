@@ -105,6 +105,13 @@ def POP_SIMDAttr : POP_Attr<"SIMD", "simd", [TypedAttrInterface,
     `<` (`>`) : (custom<DTypeValues>($values, ref($type))^ `>`)?
   }];
 
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "ArrayRef<DTypeValue>":$values,
+                                        "SIMDType":$type), [{
+      return get(type.getContext(), values, type);
+    }]>
+  ];
+
   let genVerifyDecl = 1;
 }
 

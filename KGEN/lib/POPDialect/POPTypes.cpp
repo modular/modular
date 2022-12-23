@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -105,6 +106,37 @@ Optional<int64_t> POP::ArrayType::getTypeAlign(TargetInfoAttr target) const {
   return DataLayoutInterface::getTypeAlignInBytes(target, elementType);
 }
 
+ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, intptr_t addr,
+                                       InterpreterState &state) const {
+  auto dl = getResolvedElementType().cast<DataLayoutInterface>();
+  // Store each element spaced apart by padding according to its alignment.
+  int64_t offset = llvm::alignTo(*dl.getTypeSize(state.getTarget()),
+                                 *dl.getTypeAlign(state.getTarget()));
+  for (TypedAttr value : value.cast<POP::ArrayAttr>().getValues()) {
+    ErrorOrSuccess result = state.writeAttributeToMemory(addr, value);
+    if (result.isError())
+      return result.takeError();
+    addr += offset;
+  }
+  return success();
+}
+
+ErrorOr<TypedAttr> POP::ArrayType::readFrom(intptr_t addr,
+                                            InterpreterState &state) const {
+  Type elemType = getResolvedElementType();
+  auto dl = getResolvedElementType().cast<DataLayoutInterface>();
+  int64_t offset = llvm::alignTo(*dl.getTypeSize(state.getTarget()),
+                                 *dl.getTypeAlign(state.getTarget()));
+  SmallVector<TypedAttr> values;
+  for (int64_t i = 0, e = *getResolvedSize(); i != e; ++i, addr += offset) {
+    ErrorOr<TypedAttr> result = state.readAttributeFromMemory(addr, elemType);
+    if (result.isError())
+      return result.takeError();
+    values.push_back(result.takeValue());
+  }
+  return POP::ArrayAttr::get(values, *this);
+}
+
 //===----------------------------------------------------------------------===//
 // PointerType
 //===----------------------------------------------------------------------===//
@@ -138,39 +170,32 @@ Optional<int64_t> PointerType::getTypeAlign(TargetInfoAttr target) const {
   return target.getPointerSize();
 }
 
+ErrorOrSuccess PointerType::writeTo(TypedAttr value, intptr_t addr,
+                                    InterpreterState &state) const {
+  int64_t size = state.getTarget().getPointerSize();
+  ErrorOr<void *> mem = state.getMemory(addr, size);
+  if (mem.isError())
+    return mem.takeError();
+  // The pointer size of the target is variable.
+  APInt intVal(size * CHAR_BIT, value.cast<PointerAttr>().getAddr());
+  llvm::StoreIntToMemory(intVal, reinterpret_cast<uint8_t *>(*mem), size);
+  return success();
+}
+
+ErrorOr<TypedAttr> PointerType::readFrom(intptr_t addr,
+                                         InterpreterState &state) const {
+  int64_t size = state.getTarget().getPointerSize();
+  ErrorOr<void *> mem = state.getMemory(addr, size);
+  if (mem.isError())
+    return mem.takeError();
+  APInt intVal(size * CHAR_BIT, 0);
+  llvm::LoadIntFromMemory(intVal, reinterpret_cast<uint8_t *>(*mem), size);
+  return PointerAttr::get(intVal.getLimitedValue(), *this);
+}
+
 //===----------------------------------------------------------------------===//
 // SIMDType
 //===----------------------------------------------------------------------===//
-
-/// Get the size in bytes of a KGEN dtype.
-static Optional<int64_t> getDTypeByteSize(TargetInfoAttr target,
-                                          KGENDType dtype) {
-  // KGEN dtypes.
-  if (dtype.getValue() == KGENDType::address)
-    return target.getPointerSize();
-
-  // Generic DType.
-  int64_t size = dtype.getWidthInBits();
-  if (size == -1)
-    return {};
-  return llvm::divideCeil(size, CHAR_BIT);
-}
-
-/// Get the alignment in bytes of a KGEN dtype.
-static Optional<int64_t> getDTypeByteAlign(TargetInfoAttr target,
-                                           KGENDType dtype) {
-  // KGEN dtypes.
-  if (dtype.getValue() == KGENDType::address)
-    return target.getPointerSize();
-
-  // Generic DType.
-  int64_t size = dtype.getWidthInBits();
-  if (size == -1)
-    return {};
-  int64_t align = llvm::PowerOf2Ceil(llvm::divideCeil(size, CHAR_BIT));
-  // Cap the alignment to the pointer size.
-  return std::min(align, target.getPointerSize());
-}
 
 LogicalResult SIMDType::verify(function_ref<InFlightDiagnostic()> emitError,
                                TypedAttr size, TypedAttr dtype) {
@@ -212,16 +237,23 @@ Optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
   if (!dtype || !size)
     return {};
 
-  Optional<int64_t> elSize = getDTypeByteSize(target, *dtype);
-  Optional<int64_t> elAlign = getDTypeByteAlign(target, *dtype);
-  if (!elSize || !elAlign)
-    return {};
-  // Take the next power of 2 of the SIMD size.
-  return llvm::PowerOf2Ceil(*size) * llvm::alignTo(*elSize, *elAlign);
+  int64_t elSize;
+  switch (dtype->getValue()) {
+  case KGENDType::address:
+  case KGENDType::index:
+    elSize = target.getPointerSize();
+    break;
+  default:
+    elSize = dtype->getWidthInBits();
+    break;
+  }
+  return llvm::divideCeil(*size * elSize, CHAR_BIT);
 }
 
 Optional<int64_t> SIMDType::getTypeAlign(TargetInfoAttr target) const {
-  return getTypeSize(target);
+  if (Optional<int64_t> size = getTypeSize(target))
+    return llvm::PowerOf2Ceil(*size);
+  return {};
 }
 
 bool M::KGEN::POP::isSIMDSizeOneType(Type type) {
@@ -230,6 +262,77 @@ bool M::KGEN::POP::isSIMDSizeOneType(Type type) {
     return (resolvedSize && *resolvedSize == 1);
   }
   return false;
+}
+
+ErrorOrSuccess SIMDType::writeTo(TypedAttr value, intptr_t addr,
+                                 InterpreterState &state) const {
+  DType dtype = *getResolvedDType();
+  ErrorOr<void *> mem =
+      state.getMemory(addr, dtype.getSizeInBytes(*getResolvedSize()));
+  if (mem.isError())
+    return mem.takeError();
+  auto *data = reinterpret_cast<uint8_t *>(*mem);
+  ArrayRef<DTypeValue> values = value.cast<SIMDAttr>().getValues();
+
+  // Integer dtypes s/ui1/2/4 are densely packed. Handle them here.
+  if (dtype.isInt()) {
+    unsigned bitWidth = dtype.getIntegerWidthInBits();
+    if (bitWidth < CHAR_BIT) {
+      assert(CHAR_BIT % bitWidth == 0);
+      for (unsigned i = 0, e = values.size(); i != e;) {
+        APInt value(CHAR_BIT, 0);
+        for (unsigned j = 0; j != CHAR_BIT && i != e; j += bitWidth, ++i)
+          value |= values[i].getIntVal().zext(CHAR_BIT).shl(j);
+        llvm::StoreIntToMemory(value, data++, 1);
+      }
+      return success();
+    }
+  }
+
+  // Other dtypes are multiples of bytes.
+  int64_t byteSize = dtype.getSizeInBytes(1);
+  for (const DTypeValue &value : values) {
+    llvm::StoreIntToMemory(value.getData(), data, byteSize);
+    data += byteSize;
+  }
+  return success();
+}
+
+ErrorOr<TypedAttr> SIMDType::readFrom(intptr_t addr,
+                                      InterpreterState &state) const {
+  DType dtype = *getResolvedDType();
+  ErrorOr<void *> mem =
+      state.getMemory(addr, dtype.getSizeInBytes(*getResolvedSize()));
+  if (mem.isError())
+    return mem.takeError();
+  auto *data = reinterpret_cast<uint8_t *>(*mem);
+  int64_t count = *getResolvedSize();
+
+  // Integer dtypes s/ui1/2/4 are densely packed. Handle them here.
+  if (dtype.isInt()) {
+    unsigned bitWidth = dtype.getIntegerWidthInBits();
+    if (bitWidth < CHAR_BIT) {
+      assert(CHAR_BIT % bitWidth == 0);
+      SmallVector<DTypeValue> values;
+      for (unsigned i = 0; i != count;) {
+        APInt value(CHAR_BIT, 0);
+        llvm::LoadIntFromMemory(value, data++, 1);
+        for (unsigned j = 0; j != CHAR_BIT && i != count; j += bitWidth, ++i)
+          values.emplace_back(value.lshr(j).trunc(bitWidth), dtype);
+      }
+      return SIMDAttr::get(values, *this);
+    }
+  }
+
+  // Other dtypes are multiples of bytes.
+  int64_t byteSize = dtype.getSizeInBytes(1);
+  SmallVector<DTypeValue> values;
+  APInt value(byteSize * CHAR_BIT, 0);
+  for (unsigned i = 0; i != count; ++i) {
+    llvm::LoadIntFromMemory(value, data + i * byteSize, byteSize);
+    values.emplace_back(value, dtype);
+  }
+  return SIMDAttr::get(values, *this);
 }
 
 //===----------------------------------------------------------------------===//
@@ -310,6 +413,40 @@ Optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
     strictest = std::max(strictest, *typeAlign);
   }
   return strictest;
+}
+
+ErrorOrSuccess StructType::writeTo(TypedAttr value, intptr_t addr,
+                                   InterpreterState &state) const {
+  intptr_t offset = 0;
+  for (TypedAttr value : value.cast<StructAttr>().getValues()) {
+    auto dl = value.getType().cast<DataLayoutInterface>();
+    // Store each element spaced apart by padding according to its alignment.
+    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+    ErrorOrSuccess result = state.writeAttributeToMemory(addr + offset, value);
+    if (result.isError())
+      return result.takeError();
+    offset += *dl.getTypeSize(state.getTarget());
+  }
+  return success();
+}
+
+ErrorOr<TypedAttr> StructType::readFrom(intptr_t addr,
+                                        InterpreterState &state) const {
+  SmallVector<Type> elTypes;
+  (void)resolveElementTypes(elTypes);
+  SmallVector<TypedAttr> values;
+  intptr_t offset = 0;
+  for (Type elType : elTypes) {
+    auto dl = elType.cast<DataLayoutInterface>();
+    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+    ErrorOr<TypedAttr> value =
+        state.readAttributeFromMemory(addr + offset, elType);
+    if (value.isError())
+      return value.takeError();
+    values.push_back(value.takeValue());
+    offset += *dl.getTypeSize(state.getTarget());
+  }
+  return StructAttr::get(values, *this);
 }
 
 //===----------------------------------------------------------------------===//

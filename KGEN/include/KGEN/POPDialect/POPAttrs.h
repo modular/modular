@@ -32,6 +32,9 @@ public:
   /// Get a bool value.
   DTypeValue(bool value, DType dtype);
 
+  /// Raw data constructor.
+  DTypeValue(APInt data, DType dtype) : data(std::move(data)), dtype(dtype) {}
+
   /// Compare two dtype values.
   bool operator==(const DTypeValue &rhs) const {
     return std::tie(dtype, data) == std::tie(rhs.dtype, rhs.data);
@@ -53,9 +56,6 @@ public:
   bool getBoolVal() const;
 
 private:
-  /// Private constructor.
-  DTypeValue(APInt data, DType dtype) : data(std::move(data)), dtype(dtype) {}
-
   /// All values are stored as `APInt`s.
   APInt data;
 
