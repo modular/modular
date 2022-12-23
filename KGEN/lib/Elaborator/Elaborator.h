@@ -8,9 +8,9 @@
 #define KGEN_ELABORATOR_ELABORATOR_H
 
 #include "Cache/CacheDialect/CachedTransform.h"
-#include "ErrorTree.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
+#include "Support/Compiler/ErrorTree.h"
 
 namespace M::KGEN {
 struct EvalContext;

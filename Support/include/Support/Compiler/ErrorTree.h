@@ -9,6 +9,7 @@
 
 #include "Support/Error.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/SmartVariant.h"
 #include "mlir/IR/Location.h"
 
 namespace M::KGEN {
@@ -105,22 +106,22 @@ public:
   ErrorTreeOr(U &&value) : value(T(std::forward<U>(value))) {}
 
   /// Returns true if there is an error.
-  bool isError() const { return std::holds_alternative<ErrorTree>(value); }
+  bool isError() const { return isa<ErrorTree>(value); }
 
   /// Get a reference to the error, assuming there is one.
-  const ErrorTree &getError() const { return std::get<ErrorTree>(value); }
+  const ErrorTree &getError() const { return cast<ErrorTree>(value); }
 
   /// Take the underlying error, assuming there is one.
-  ErrorTree takeError() { return std::move(std::get<ErrorTree>(value)); }
+  ErrorTree takeError() { return std::move(cast<ErrorTree>(value)); }
 
   /// Returns true if there is a valid value.
-  bool hasValue() const { return std::holds_alternative<T>(value); }
+  bool hasValue() const { return isa<T>(value); }
 
   /// Get a reference to the value, assuming there is one.
-  const T &getValue() const { return std::get<T>(value); }
+  const T &getValue() const { return cast<T>(value); }
 
   /// Take the underlying value, assuming there is one.
-  T takeValue() { return std::move(std::get<T>(value)); }
+  T takeValue() { return std::move(cast<T>(value)); }
 
   /// Allow implicit conversion to bool. Returns true if there is a valid value.
   operator bool() const { return hasValue(); }
@@ -144,9 +145,8 @@ public:
   }
 
 private:
-  /// The underlying value of this type is a variant.
-  /// TODO(5864): Use a more efficient variant type when avaiable.
-  std::variant<ErrorTree, T> value;
+  /// This type is backed by a variant of an error and the value type.
+  SmartVariant<ErrorTree, T> value;
 };
 
 } // namespace M::KGEN

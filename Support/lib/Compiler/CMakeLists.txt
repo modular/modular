@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_mlir_library(MCompilerSupport
+  ErrorTree.cpp
   MLIRDType.cpp
   OperationUtils.cpp
   VerifyUtils.cpp

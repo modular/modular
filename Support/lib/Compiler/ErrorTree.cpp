@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ErrorTree.h"
+#include "Support/Compiler/ErrorTree.h"
 #include "mlir/IR/Diagnostics.h"
 
 using namespace M;
