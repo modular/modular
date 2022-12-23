@@ -790,25 +790,6 @@ kgen.func @cast_from_builtin(%arg0: index) -> !pop.scalar<index> {
 
 !var = !pop.variant<f32, i64, struct<i8, i8, f64>>
 
-// CHECK-LABEL: @create
-// CHECK-SAME: %[[A:.*]]: i64
-kgen.func @create(%a: i64) -> !var {
-  // CHECK: %[[ONE:.*]] = llvm.mlir.constant(1 : i64)
-  // CHECK: %[[MEM:.*]] = llvm.alloca %[[ONE]] x !llvm.array<2 x i64>
-  // CHECK: %[[PTR:.*]] = llvm.bitcast %[[MEM]] : !llvm.ptr<array<2 x i64>> to !llvm.ptr<i64>
-  // CHECK-NEXT: llvm.intr.lifetime.start 16, %[[MEM]]
-  // CHECK: llvm.store %[[A]], %[[PTR]]
-  // CHECK: %[[CONTENT:.*]] = llvm.load %[[MEM]]
-  // CHECK-NEXT: llvm.intr.lifetime.end 16, %[[MEM]]
-  // CHECK: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(array<2 x i64>, i2)>
-  // CHECK: %[[S1:.*]] = llvm.insertvalue %[[CONTENT]], %[[S0]][0]
-  // CHECK: %[[DISCR:.*]] = llvm.mlir.constant(1 : i2)
-  // CHECK: %[[S2:.*]] = llvm.insertvalue %[[DISCR]], %[[S1]][1]
-  %0 = pop.variant.create %a : i64 -> !var
-  // CHECK: unrealized_conversion_cast %[[S2]]
-  kgen.return %0 : !var
-}
-
 // CHECK-LABEL: @test
 kgen.func @test(%a: !var) -> i1 {
   // CHECK: %[[VAR:.*]] = builtin.unrealized_conversion_cast
@@ -818,65 +799,6 @@ kgen.func @test(%a: !var) -> i1 {
   %0 = pop.variant.is f32, %a : !var
   // CHECK: return %[[VAL]]
   kgen.return %0 : i1
-}
-
-// CHECK-LABEL: @bitcast
-kgen.func @bitcast(%a: !var) -> f32 {
-  // CHECK: %[[VAR:.*]] = builtin.unrealized_conversion_cast
-  // CHECK: %[[ONE:.*]] = llvm.mlir.constant(1 : i64)
-  // CHECK: %[[MEM:.*]] = llvm.alloca %[[ONE]]
-  // CHECK: %[[CONTENT:.*]] = llvm.extractvalue %0[0]
-  // CHECK: llvm.intr.lifetime.start 16, %[[MEM]]
-  // CHECK: llvm.store %[[CONTENT]], %[[MEM]]
-  // CHECK: %[[PTR:.*]] = llvm.bitcast %[[MEM]] : !llvm.ptr<array<2 x i64>> to !llvm.ptr<f32>
-  // CHECK: %[[RESULT:.*]] = llvm.load %[[PTR]]
-  // CHECK: llvm.intr.lifetime.end 16, %[[MEM]]
-  %0 = pop.variant.get %a : !var as f32
-  // CHECK: return %[[RESULT]]
-  kgen.return %0 : f32
-}
-
-// -----
-
-kgen.func @use(%a: !pop.variant<i32, i64>) {
-  kgen.return
-}
-
-// CHECK-LABEL: @hoist_alloca
-kgen.func @hoist_alloca(%a: i32, %ub: index) {
-  // CHECK-NEXT: %[[ONE:.*]] = llvm.mlir.constant(1 : i64)
-  // CHECK-NEXT: %[[PTR:.*]] = llvm.alloca %[[ONE]] x !llvm.array<1 x i64>
-  %0 = index.constant 0
-  %1 = index.constant 1
-  // CHECK: scf.for
-  scf.for %i = %0 to %ub step %1 {
-    // CHECK: llvm.bitcast %[[PTR]] : !llvm.ptr<array<1 x i64>> to !llvm.ptr<i32>
-    %2 = pop.variant.create %a : i32 -> !pop.variant<i32, i64>
-    kgen.call @use(%2) : (!pop.variant<i32, i64>) -> ()
-  }
-  kgen.return
-}
-
-// -----
-
-kgen.func @use(%a: i32) {
-  kgen.return
-}
-
-// CHECK-LABEL: @hoist_alloca
-kgen.func @hoist_alloca(%a: !pop.variant<i32, i64>, %ub: index) {
-  // CHECK: builtin.unrealized_conversion_cast
-  // CHECK-NEXT: %[[ONE:.*]] = llvm.mlir.constant(1 : i64)
-  // CHECK-NEXT: %[[PTR:.*]] = llvm.alloca %[[ONE]] x !llvm.array<1 x i64>
-  %0 = index.constant 0
-  %1 = index.constant 1
-  // CHECK: scf.for
-  scf.for %i = %0 to %ub step %1 {
-    // CHECK: llvm.bitcast %[[PTR]] : !llvm.ptr<array<1 x i64>> to !llvm.ptr<i32>
-    %2 = pop.variant.get %a : !pop.variant<i32, i64> as i32
-    kgen.call @use(%2) : (i32) -> ()
-  }
-  kgen.return
 }
 
 // -----

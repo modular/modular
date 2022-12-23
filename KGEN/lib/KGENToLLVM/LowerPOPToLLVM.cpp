@@ -20,6 +20,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/Target/LLVMIR/TypeToLLVM.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -1056,11 +1057,210 @@ private:
 // ConvertPOPVariantCreate
 //===----------------------------------------------------------------------===//
 
-/// Lower `pop.variant.create` into a series of bitcasts, loads, and stores.
-/// LLVM's `bitcast` doesn't work on aggregate types, so we need to allocate
-/// memory to play around with. The `alloca` should always be optimized away by
-/// LLVM's SROA, but we have to be careful with it (place it in the entry block
-/// and add lifetime markers) in case it does not.
+namespace {
+/// A helper for creating variants and extracting from them.
+class VariantHelper {
+public:
+  VariantHelper(OpBuilder &b, Location loc) : b(loc, b) {}
+
+  /// Walk a simple or aggregate LLVM type and generate the code to insert its
+  /// elements into a variant's content type. This tightly packs the element
+  /// types within the content type. The first argument is an iterator to the
+  /// current content element values. It is initialized with zeroes. The second
+  /// is an iterator to the content element types.
+  void walkAndCreateVariant(MutableArrayRef<Value>::iterator &valueIt,
+                            unsigned &storageOffset, Value value);
+
+  Value walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
+                              unsigned &storageOffset, Type type);
+
+private:
+  /// The builder to use.
+  ImplicitLocOpBuilder b;
+  /// The data layout to use.
+  mlir::DataLayout dl;
+};
+} // namespace
+
+void VariantHelper::walkAndCreateVariant(
+    MutableArrayRef<Value>::iterator &valueIt, unsigned &storageOffset,
+    Value value) {
+  // Aggregate types like structs and arrays are flattened to their leaf types.
+  // Leaf types are integers, floats, and pointers.
+  if (isa<IntegerType, FloatType, LLVM::LLVMPointerType>(value.getType())) {
+    Value normalizedValue;
+    // Normalize the value to store to an integer.
+    if (isa<IntegerType>(value.getType())) {
+      normalizedValue = value;
+    } else if (auto fpType = dyn_cast<FloatType>(value.getType())) {
+      normalizedValue =
+          b.create<LLVM::BitcastOp>(b.getIntegerType(fpType.getWidth()), value);
+    } else {
+      // Pointer type.
+      normalizedValue = b.create<LLVM::PtrToIntOp>(
+          b.getIntegerType(dl.getTypeSizeInBits(value.getType())), value);
+    }
+
+    unsigned curValueSize =
+        cast<IntegerType>(normalizedValue.getType()).getWidth();
+    unsigned curValueOffset = 0;
+    while (curValueOffset != curValueSize) {
+      // Compute the remaining space.
+      auto curStorageType = cast<IntegerType>(valueIt->getType());
+
+      // Ignore the bits of the value that has already been stored.
+      Value valueToStore = b.create<LLVM::LShrOp>(
+          normalizedValue, b.create<LLVM::ConstantOp>(normalizedValue.getType(),
+                                                      curValueOffset));
+      // Match the type with the storage type.
+      if (curValueSize < curStorageType.getWidth())
+        valueToStore = b.create<LLVM::ZExtOp>(curStorageType, valueToStore);
+      else
+        valueToStore = b.create<LLVM::TruncOp>(curStorageType, valueToStore);
+      // Shift the current value to store to the current storage offset.
+      valueToStore = b.create<LLVM::ShlOp>(
+          valueToStore,
+          b.create<LLVM::ConstantOp>(curStorageType, storageOffset));
+      // Set the bits of the current value to store.
+      *valueIt = b.create<LLVM::OrOp>(*valueIt, valueToStore);
+
+      unsigned remainingSpace = curStorageType.getWidth() - storageOffset;
+      unsigned amountToStore = curValueSize - curValueOffset;
+      if (amountToStore <= remainingSpace) {
+        // The entire value has been stored.
+        storageOffset += amountToStore;
+        curValueOffset += amountToStore;
+      } else {
+        // Overflow to the next storage element.
+        ++valueIt;
+        storageOffset = 0;
+        curValueOffset += remainingSpace;
+      }
+    }
+
+    // The value has been stored.
+    return;
+  }
+
+  // This is an aggregate type. Extract the next elements and recurse.
+  if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(value.getType())) {
+    for (unsigned i = 0, e = arrayType.getNumElements(); i < e; ++i) {
+      Value nestedValue = b.create<LLVM::ExtractValueOp>(value, i);
+      walkAndCreateVariant(valueIt, storageOffset, nestedValue);
+    }
+    return;
+  }
+  if (auto structType = dyn_cast<LLVM::LLVMStructType>(value.getType())) {
+    for (unsigned i = 0, e = structType.getBody().size(); i < e; ++i) {
+      Value nestedValue = b.create<LLVM::ExtractValueOp>(value, i);
+      walkAndCreateVariant(valueIt, storageOffset, nestedValue);
+    }
+    return;
+  }
+  if (auto vecType = dyn_cast<LLVM::LLVMFixedVectorType>(value.getType())) {
+    for (unsigned i = 0, e = vecType.getNumElements(); i < e; ++i) {
+      Value nestedValue = b.create<LLVM::ExtractElementOp>(
+          value, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
+      walkAndCreateVariant(valueIt, storageOffset, nestedValue);
+    }
+    return;
+  }
+  auto vectorType = cast<VectorType>(value.getType());
+  for (unsigned i = 0, e = vectorType.getNumElements(); i < e; ++i) {
+    Value nestedValue = b.create<LLVM::ExtractElementOp>(
+        value, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
+    walkAndCreateVariant(valueIt, storageOffset, nestedValue);
+  }
+}
+
+Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
+                                           unsigned &storageOffset, Type type) {
+  // Given a leaf type, extract a value of that type from the current storage.
+  if (isa<IntegerType, FloatType, LLVM::LLVMPointerType>(type)) {
+    IntegerType normalizedType;
+    if (auto intType = dyn_cast<IntegerType>(type))
+      normalizedType = intType;
+    else if (auto fpType = dyn_cast<FloatType>(type))
+      normalizedType = b.getIntegerType(fpType.getWidth());
+    else
+      normalizedType = b.getIntegerType(dl.getTypeSize(type));
+
+    unsigned curValueSize = normalizedType.getWidth();
+    unsigned curValueOffset = 0;
+    Value curValue = b.create<LLVM::ConstantOp>(normalizedType, 0);
+    while (curValueOffset != curValueSize) {
+      auto storageType = cast<IntegerType>(valueIt->getType());
+
+      // Drop the parts of the storage that have already been read.
+      Value valueToLoad = b.create<LLVM::LShrOp>(
+          *valueIt, b.create<LLVM::ConstantOp>(storageType, storageOffset));
+      // Shift the data to load into position.
+      valueToLoad = b.create<LLVM::ShlOp>(
+          valueToLoad, b.create<LLVM::ConstantOp>(storageType, curValueOffset));
+      // Match the type to the value type.
+      if (normalizedType.getWidth() <= storageType.getWidth())
+        valueToLoad = b.create<LLVM::TruncOp>(normalizedType, valueToLoad);
+      else
+        valueToLoad = b.create<LLVM::ZExtOp>(normalizedType, valueToLoad);
+
+      curValue = b.create<LLVM::OrOp>(curValue, valueToLoad);
+
+      unsigned remainingStorage = storageType.getWidth() - storageOffset;
+      unsigned amountToLoad = curValueSize - curValueOffset;
+      if (amountToLoad < remainingStorage) {
+        storageOffset += amountToLoad;
+        curValueOffset += amountToLoad;
+      } else {
+        ++valueIt;
+        storageOffset = 0;
+        curValueOffset += remainingStorage;
+      }
+    }
+
+    if (isa<FloatType>(type))
+      return b.create<LLVM::BitcastOp>(type, curValue);
+    if (isa<LLVM::LLVMPointerType>(type))
+      return b.create<LLVM::IntToPtrOp>(type, curValue);
+    return curValue;
+  }
+
+  // This is an aggregate type. Read the required elements.
+  Value result = b.create<LLVM::UndefOp>(type);
+  if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(type)) {
+    for (unsigned i = 0, e = arrayType.getNumElements(); i < e; ++i) {
+      Value element = walkAndExtractVariant(valueIt, storageOffset,
+                                            arrayType.getElementType());
+      result = b.create<LLVM::InsertValueOp>(result, element, i);
+    }
+    return result;
+  }
+  if (auto structType = dyn_cast<LLVM::LLVMStructType>(type)) {
+    for (auto [idx, elementType] : llvm::enumerate(structType.getBody())) {
+      Value element =
+          walkAndExtractVariant(valueIt, storageOffset, elementType);
+      result = b.create<LLVM::InsertValueOp>(result, element, idx);
+    }
+    return result;
+  }
+  if (auto vecType = dyn_cast<LLVM::LLVMFixedVectorType>(type)) {
+    for (unsigned i = 0, e = vecType.getNumElements(); i < e; ++i) {
+      Value element = walkAndExtractVariant(valueIt, storageOffset,
+                                            vecType.getElementType());
+      result = b.create<LLVM::InsertElementOp>(
+          result, element, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
+    }
+    return result;
+  }
+  auto vectorType = cast<VectorType>(type);
+  for (unsigned i = 0, e = vectorType.getNumElements(); i < e; ++i) {
+    Value element = walkAndExtractVariant(valueIt, storageOffset,
+                                          vectorType.getElementType());
+    result = b.create<LLVM::InsertElementOp>(
+        result, element, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
+  }
+  return result;
+}
+
 struct ConvertPOPVariantCreate
     : public mlir::ConvertOpToLLVMPattern<VariantCreateOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
@@ -1073,26 +1273,21 @@ struct ConvertPOPVariantCreate
     if (!variantType)
       return failure();
 
-    // We need to alloca the content type to bitcast it. Put it in the entry
-    // block in case it isn't optimized away.
-    Value contentPtr =
-        createAllocaAtEntry(op, variantType.getBody().front(), rewriter);
+    auto contentType = cast<LLVM::LLVMArrayType>(variantType.getBody().front());
+    SmallVector<Value> storageValues;
+    for (unsigned i = 0, e = contentType.getNumElements(); i < e; ++i)
+      storageValues.push_back(rewriter.create<LLVM::ConstantOp>(
+          op.getLoc(), contentType.getElementType(), 0));
 
-    // Bitcast the content element pointer.
-    Value valuePtr = rewriter.create<LLVM::BitcastOp>(
-        op.getLoc(), LLVM::LLVMPointerType::get(adaptor.getOperand().getType()),
-        contentPtr);
+    VariantHelper helper(rewriter, op.getLoc());
+    unsigned storageOffset = 0;
+    MutableArrayRef<Value>::iterator valueIt = storageValues.begin();
+    helper.walkAndCreateVariant(valueIt, storageOffset, adaptor.getOperand());
 
-    // Compute the bytecount of the variant.
-    int64_t byteCount = getByteCount(variantType.getBody().front());
-
-    // Add lifetime markers in case the alloca doesn't get optimized away.
-    rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), byteCount, contentPtr);
-
-    // Store the variant value and then load the result.
-    rewriter.create<LLVM::StoreOp>(op.getLoc(), adaptor.getOperand(), valuePtr);
-    Value content = rewriter.create<LLVM::LoadOp>(op.getLoc(), contentPtr);
-    rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), byteCount, contentPtr);
+    Value content = rewriter.create<LLVM::UndefOp>(op.getLoc(), contentType);
+    for (auto [idx, value] : llvm::enumerate(storageValues))
+      content = rewriter.create<LLVM::InsertValueOp>(op.getLoc(), content,
+                                                     value, idx);
 
     // Build the result struct.
     Value variant = rewriter.create<LLVM::UndefOp>(op.getLoc(), variantType);
@@ -1134,11 +1329,6 @@ struct ConvertPOPVariantIs : public mlir::ConvertOpToLLVMPattern<VariantIsOp> {
 // ConvertPOPVariantGet
 //===----------------------------------------------------------------------===//
 
-/// Lower `pop.variant.get` into a series of bitcasts, loads, and stores.
-/// LLVM's `bitcast` doesn't work on aggregate types, so we need to allocate
-/// memory to play around with. The `alloca` should always be optimized away by
-/// LLVM's SROA, but we have to be careful with it (place it in the entry block
-/// and add lifetime markers) in case it does not.
 struct ConvertPOPVariantGet : mlir::ConvertOpToLLVMPattern<VariantGetOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
@@ -1150,27 +1340,24 @@ struct ConvertPOPVariantGet : mlir::ConvertOpToLLVMPattern<VariantGetOp> {
       return failure();
     auto variantType =
         adaptor.getVariant().getType().cast<LLVM::LLVMStructType>();
-
-    // We need to alloca the content type to bitcast it. Put it in the entry
-    // block in case it isn't optimized away.
-    Value contentPtr =
-        createAllocaAtEntry(op, variantType.getBody().front(), rewriter);
-    // Compute the bytecount of the variant.
-    int64_t byteCount = getByteCount(variantType.getBody().front());
+    auto contentType = cast<LLVM::LLVMArrayType>(variantType.getBody().front());
 
     // Extract the content and put it in the block of memory.
     Value content = rewriter.create<LLVM::ExtractValueOp>(
         op.getLoc(), adaptor.getVariant(), 0);
 
-    // Add lifetime markers in case the alloca doesn't get optimized away.
-    rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), byteCount, contentPtr);
-    rewriter.create<LLVM::StoreOp>(op.getLoc(), content, contentPtr);
+    SmallVector<Value> storageValues;
+    for (unsigned i = 0, e = contentType.getNumElements(); i != e; ++i)
+      storageValues.push_back(
+          rewriter.create<LLVM::ExtractValueOp>(op.getLoc(), content, i));
 
-    // Bitcast and read the value.
-    Value valuePtr = rewriter.create<LLVM::BitcastOp>(
-        op.getLoc(), LLVM::LLVMPointerType::get(valueType), contentPtr);
-    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, valuePtr);
-    rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), byteCount, contentPtr);
+    VariantHelper helper(rewriter, op.getLoc());
+    ArrayRef<Value>::iterator valueIt = storageValues.begin();
+    unsigned storageOffset = 0;
+    Value result =
+        helper.walkAndExtractVariant(valueIt, storageOffset, valueType);
+
+    rewriter.replaceOp(op, result);
     return success();
   }
 };
