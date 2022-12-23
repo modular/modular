@@ -38,13 +38,13 @@ namespace scf = mlir::scf;
 /// it into an Attribute (which may not be a TypedAttr) and return it.  On
 /// error, emit a diagnostic and return null.
 static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
-                                         ExprEmitter &emitter) {
+                                         LitSharedState &shared) {
   Attribute result;
   std::string errorMsg;
   {
     // Capture errors thrown by parseAttribute and ignore them.
     // FIXME: This doesn't silence errors!
-    mlir::ScopedDiagnosticHandler handler(emitter.shared.getContext(),
+    mlir::ScopedDiagnosticHandler handler(shared.getContext(),
                                           [&](Diagnostic &diag) {
                                             errorMsg = diag.str();
                                             printf("hello\n");
@@ -56,10 +56,10 @@ static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
     SmallString<64> tmpBuf(name.begin(), name.end());
     tmpBuf.push_back(0);
     result = mlir::parseAttribute(StringRef(tmpBuf).drop_back(),
-                                  emitter.shared.getContext());
+                                  shared.getContext());
   }
   if (!result) {
-    emitter.shared.emitError(loc, "invalid MLIR attribute: ") << errorMsg;
+    shared.emitError(loc, "invalid MLIR attribute: ") << errorMsg;
     return {};
   }
 
@@ -71,14 +71,14 @@ static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
 /// This implements __mlir_attr.x lookup, synthesizing a MAValue for the
 /// attribute on demand.
 static AnyValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
-                                             ExprEmitter &emitter) {
-  auto attr = parseMLIRAttrFromString(name, loc, emitter);
+                                             LitSharedState &shared) {
+  auto attr = parseMLIRAttrFromString(name, loc, shared);
   if (!attr)
     return {};
 
   auto typedAttr = dyn_cast<TypedAttr>(attr);
   if (!typedAttr) {
-    emitter.shared.emitError(loc, "MLIR attribute has no type: ") << attr;
+    shared.emitError(loc, "MLIR attribute has no type: ") << attr;
     return {};
   }
   return MValue(typedAttr);
@@ -123,7 +123,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
       auto mlirAttr = dyn_cast<DeclRefNode>(attrRef->base);
       if (mlirAttr && mlirAttr->spelling == "__mlir_attr")
         return parseMLIRAttrFromString(attrRef->attrSpelling, attrRef->getLoc(),
-                                       emitter);
+                                       emitter.shared);
     }
 
     // Otherwise emit the value as an MAValue.  This allows references to
@@ -394,7 +394,8 @@ static CallableValue emitTypeAttributeRef(ASTType baseType,
   // Handle __mlir_op.`xxx` references, lazily synthesizing values when
   // they are referenced.
   if (isa<MagicMLIRAttrType>(baseType.mlirType))
-    return {{synthesizeMLIRAttrFromString(attrSpelling, loc, emitter), node}};
+    return {{synthesizeMLIRAttrFromString(attrSpelling, loc, emitter.shared),
+             node}};
   if (isa<MagicMLIROpType>(baseType.mlirType))
     return {{synthesizeMLIROpFromString(attrSpelling, emitter), node}};
   if (isa<MagicMLIRTypeType>(baseType.mlirType)) {
@@ -751,7 +752,7 @@ static CallableValue substituteParametersIntoUserDefinedType(
 /// Given an Attribute or Type, substitute parameters into instances of
 /// PlaceholderAttr, producing a more concrete thing.
 template <typename T>
-static T substituteParametersIntoMLIR(T mlirEntityToSubstituteInto,
+static T substitutePlaceholdersInMLIR(T mlirEntityToSubstituteInto,
                                       const SubscriptNode &subscript,
                                       ExprEmitter &emitter) {
   mlir::AttrTypeReplacer replacer;
@@ -815,6 +816,43 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
   return emitCallable(emitter, contextualType).emitAsValue(emitter);
 }
 
+/// Given an __mlir_type[a,b,c] or __mlir_attr[a,b,c] usage, stringize the
+/// indices and return the result.  On error, emit an error and return an empty
+/// string.
+static std::string substituteMLIRMagic(const SubscriptNode &node,
+                                       ExprEmitter &emitter) {
+  std::string result;
+  llvm::raw_string_ostream os(result);
+
+  for (auto *indexExpr : node.indices) {
+    // If the index is an identifer, and if it is a backtick identifier, we
+    // treat it as an interpolated literal string.  Otherwise we look it up as
+    // an expression.  Rationale: this allows using strings attributes, which
+    // could be useful someday, and keeps __mlir_attr.`thing` more consistent
+    // with __mlir_attr[`thing`].
+    if (auto *dre = dyn_cast<DeclRefNode>(indexExpr))
+      if (dre->spelling.data()[dre->spelling.size()] == '`') {
+        os << dre->spelling;
+        continue;
+      }
+
+    auto indexVal = emitter.emitMValue(
+        indexExpr, "mlir magic values must resolve to a parameter");
+    if (!indexVal)
+      return "";
+
+    // If this is a wrapper for a type, print it as such.
+    if (auto typeVal = indexVal.getIfTypeValue())
+      os << typeVal;
+    else // Otherwise print it as an attribute.
+      indexVal.get().print(os);
+  }
+
+  if (result.empty())
+    emitter.emitError(node.getLoc(), "mlir magic expanded to an empty string");
+  return result;
+}
+
 /// Emit this expression to MLIR as a CallableValue.  On error, emit an error
 /// and return a null value.
 CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
@@ -859,8 +897,30 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
     if (auto declRef = dyn_cast<DeclRefType>(typeValue))
       return substituteParametersIntoUserDefinedType(declRef, *this, emitter);
 
-    // Handle __mlir_type types.
-    typeValue = substituteParametersIntoMLIR(typeValue, *this, emitter);
+    // Handle __mlir_type["foo"] and __mlir_attr["foo"].
+    if (isa<MagicMLIRTypeType>(typeValue)) {
+      std::string result = substituteMLIRMagic(*this, emitter);
+      if (result.empty())
+        return {};
+      auto type = parseMLIRType(result, getLoc(), emitter.shared);
+      if (!type)
+        return {};
+      return CallableValue({type, this});
+    }
+    if (isa<MagicMLIRAttrType>(typeValue)) {
+      // TODO: Merge with bindAttributesToMLIROperatorCall.
+      std::string result = substituteMLIRMagic(*this, emitter);
+      if (result.empty())
+        return {};
+      auto attr =
+          synthesizeMLIRAttrFromString(result, getLoc(), emitter.shared);
+      if (!attr)
+        return {};
+      return CallableValue({attr, this});
+    }
+
+    // Handle subsitution of placeholders __mlir_type types.
+    typeValue = substitutePlaceholdersInMLIR(typeValue, *this, emitter);
     if (typeValue)
       return CallableValue({typeValue, this});
     return {};
@@ -873,7 +933,7 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
            this}};
 
     auto attrValue =
-        substituteParametersIntoMLIR((Attribute)mValue.get(), *this, emitter);
+        substitutePlaceholdersInMLIR((Attribute)mValue.get(), *this, emitter);
     if (auto attrTA = dyn_cast<TypedAttr>(attrValue))
       return CallableValue({MValue(attrTA), this});
     return {};
