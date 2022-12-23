@@ -121,6 +121,10 @@ def POP_PointerType : POPType<"Pointer", "pointer",
   let extraClassDeclaration = [{
     /// Try to narrow the type expression of the pointer type to an MLIR type.
     Type getResolvedElementType() const;
+
+    /// Get the element type as the provided type.
+    template <typename ElTy>
+    ElTy getElementTypeAs() { return getResolvedElementType().cast<ElTy>(); }
   }];
 }
 
@@ -325,6 +329,9 @@ def POP_StructType : POPType<"Struct", "struct",
 
     /// Get the element types as parameterized types.
     SmallVector<Type> getParameterizedElementTypes() const;
+
+    /// Get a concrete element type.
+    Type getConcreteElementType(unsigned i) const;
   }];
 }
 
