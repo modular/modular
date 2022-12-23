@@ -30,6 +30,8 @@ def MDialect : Dialect {
     void registerAttributes();
     /// Register all dialect types.
     void registerTypes();
+    /// Inject any external attribute models.
+    void injectAttrInterfaces();
   }];
 
   let useDefaultAttributePrinterParser = 1;

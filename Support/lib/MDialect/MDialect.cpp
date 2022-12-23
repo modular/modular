@@ -15,6 +15,7 @@ using namespace M;
 void MDialect::initialize() {
   registerAttributes();
   registerTypes();
+  injectAttrInterfaces();
 }
 
 //===----------------------------------------------------------------------===//
