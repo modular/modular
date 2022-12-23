@@ -14,6 +14,9 @@
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 
+#include <cstdlib>
+#include <cstring>
+
 namespace M {
 
 /// This is a lightweight error class that holds a nul-terminated string, with a

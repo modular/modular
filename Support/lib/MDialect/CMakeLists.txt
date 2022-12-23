@@ -16,5 +16,6 @@ add_modular_dialect_library(MDialect
   LINK_COMPONENTS
 
   LINK_LIBS PUBLIC
+  LLVMTargetParser
   MLIRIR
 )
