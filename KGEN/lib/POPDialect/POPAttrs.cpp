@@ -206,7 +206,7 @@ static void printDTypeValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
   DType dtype = *type.getResolvedDType();
   auto printElt = [&](const DTypeValue &value) {
     if (dtype.isInt()) {
-      p << APInt(value.getIntVal());
+      p << value.getIntVal();
     } else if (dtype.isFloat()) {
       SmallVector<char, 256> strVal;
       value.getFloatVal().toString(strVal);
