@@ -164,12 +164,15 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
 
     // If the decl is a type or alias that has a symbol, remember it.  This
     // allows us to look up decls by symbol when referenced as types.
-    if (isa<StructDeclOp>(*decl) || isa<ParamDeclareOp>(*decl)) {
-      if (SymbolRefAttr symbol = decl->getSymbolRef()) {
-        assert(!declForTypeSymbol.count(symbol) &&
-               "Symbol redefinition/collision");
-        declForTypeSymbol[symbol] = decl;
-      }
+    if (auto structDecl = dyn_cast<StructDeclOp>(*decl)) {
+      // Make sure there are no name conflicts with the MLIR symbol.  If there
+      // are, then addDecl will have rejected it with an error.
+      sharedState.setResolvedDeclSymbol(structDecl);
+
+      SymbolRefAttr symbol = decl->getSymbolRef();
+      assert(!declForTypeSymbol.count(symbol) &&
+             "Symbol redefinition/collision");
+      declForTypeSymbol[symbol] = decl;
     }
     return *decl;
   }
