@@ -6,51 +6,64 @@
 
 #include "Support/ML/CompiledFrameworkLabel.h"
 
+#include "llvm/Support/raw_ostream.h"
+
 using namespace M;
 
 const char *CompiledFrameworkLabel::getAsOpNameOrNull() const {
   switch (value) {
+  case kUnknown:
+    return nullptr;
   case kTensorFlowModel:
-    return "tfp.model";
   case kTFLiteModel:
     return "mgp.model";
   case kFauxModel:
+    // TODO(#6190): Support mgp.model for faux.
     return "faux.testcase";
-  default:
-    return nullptr;
   }
+  llvm::report_fatal_error("missing case");
 }
 
 const char *CompiledFrameworkLabel::getAsFrameworkNameOrNull() const {
   switch (value) {
+  case kUnknown:
+    return nullptr;
   case kTFLiteModel:
     return "tfl";
-  default:
+  case kTensorFlowModel:
+    return "tf";
+  case kFauxModel:
+    // TODO(#6190): Support mgp.model for faux.
     return nullptr;
   }
+  llvm::report_fatal_error("missing case");
 }
 
 bool CompiledFrameworkLabel::isValidOpName(StringRef opName) {
-  return opName == "tfp.model" || opName == "mgp.model" ||
+  return opName == "mgp.model" ||
+         // TODO(#6190)
          opName == "faux.testcase";
 }
 
 bool CompiledFrameworkLabel::isValidFrameworkName(StringRef frameworkName) {
-  // TODO: "mgp" isn't really a framework
-  return frameworkName == "tfl" || frameworkName == "mgp";
+  return frameworkName == "tfl" || frameworkName == "tf" ||
+         // TODO(#6190): "mgp" isn't really a framework, replace with faux.
+         frameworkName == "mgp";
 }
 
 CompiledFrameworkLabel
 CompiledFrameworkLabel::getLabelForOpName(StringRef opName,
                                           StringRef frameworkName) {
-  if (opName == "tfp.model")
-    return CompiledFrameworkLabel{kTensorFlowModel};
   if (opName == "faux.testcase")
+    // TODO(#6190): Support mgp.model for faux.
     return CompiledFrameworkLabel{kFauxModel};
   if (opName == "mgp.model") {
     if (frameworkName == "tfl")
       return CompiledFrameworkLabel{kTFLiteModel};
+    else if (frameworkName == "tf")
+      return CompiledFrameworkLabel{kTensorFlowModel};
   }
+  llvm::errs() << opName << " & " << frameworkName << "\n";
   return CompiledFrameworkLabel{kUnknown};
 }
 
@@ -65,5 +78,5 @@ const char *CompiledFrameworkLabel::getAsString() const {
   case kFauxModel:
     return "compiled Faux model";
   }
-  llvm::report_fatal_error("invalid CompiledFrameworkLabel value");
+  llvm::report_fatal_error("missing case");
 };
