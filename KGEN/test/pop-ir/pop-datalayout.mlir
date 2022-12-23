@@ -47,5 +47,10 @@ kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
   // CHECK-NEXT: <4>
   %19 = kgen.param.constant = <get_alignof(!pop.struct<i8, i32, i16>, #kgen.target<host>)>
 
+  // CHECK-NEXT: <16>
+  %20 = kgen.param.constant = <get_sizeof(!pop.variant<i32, i16>, #kgen.target<host>)>
+  // CHECK-NEXT: <8>
+  %21 = kgen.param.constant = <get_alignof(!pop.variant<i1, i2, i3, i4>, #kgen.target<host>)>
+
   kgen.return
 }

@@ -362,13 +362,35 @@ Type VariantType::getType(unsigned index) {
 }
 
 Optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
-  // FIXME: Implement this.
-  llvm_unreachable("TODO: unimplemented");
+  // A variant is lowered to a struct that consists of a content field and a
+  // discriminator field. The content field is the biggest element size rounded
+  // up to the nearest multiple of the pointer width. The discriminator field is
+  // the smallest integer type whose maximum value is greater than the number of
+  // possible subtypes, but which is at least `i1`.
+  uint64_t maxSize = 0;
+  for (TypedAttr typeExpr : getTypes()) {
+    auto typeCst = llvm::dyn_cast<ConcreteTypeConstantAttr>(typeExpr);
+    if (!typeCst)
+      return {};
+    Optional<int64_t> typeSize =
+        DataLayoutInterface::getTypeSizeInBytes(target, typeCst.getValue());
+    Optional<int64_t> typeAlign =
+        DataLayoutInterface::getTypeAlignInBytes(target, typeCst.getValue());
+    if (!typeSize || !typeAlign)
+      return {};
+    maxSize = std::max(maxSize, llvm::alignTo(*typeSize, *typeAlign));
+  }
+  int64_t contentSize = llvm::alignTo(maxSize, target.getPointerSize());
+  int64_t discrSizeBits = llvm::alignTo(
+      std::max(1u, llvm::Log2_32_Ceil(getTypes().size())), CHAR_BIT);
+  return llvm::alignTo(contentSize + discrSizeBits / CHAR_BIT,
+                       target.getPointerSize());
 }
 
 Optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {
-  // FIXME: Implement this.
-  llvm_unreachable("TODO: unimplemented");
+  // The alignment of the variant type is just the pointer width.
+  // FIXME: This is incorrect but the LLVM lowering needs to be fixed.
+  return target.getPointerSize();
 }
 
 //===----------------------------------------------------------------------===//
