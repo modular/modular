@@ -10,15 +10,11 @@ from SIMD import SIMD
 from Assert import assert_param
 
 struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
-    var pointer: __mlir_type.`!pop.pointer<#lit.placeholder: !kgen.mlirtype>`[
-        __mlir_type.`!pop.scalar<#lit.placeholder : !kgen.dtype>>`[type]
-    ]
+    var pointer: __mlir_type.`!pop.pointer<scalar<#lit.placeholder : !kgen.dtype>>`[type]
     var dynamic_size: Int
 
     fn __new__(
-        ptr: __mlir_type.`!pop.pointer<#lit.placeholder: !kgen.mlirtype>`[
-            __mlir_type.`!pop.scalar<#lit.placeholder : !kgen.dtype>>`[type]
-        ],
+        ptr: __mlir_type.`!pop.pointer<scalar<#lit.placeholder : !kgen.dtype>>`[type]
     ) -> Buffer[size, type]:
         # Construct a Buffer type with statically known size
         assert_param[size != __mlir_attr.`#kgen.unknown : index`]()
@@ -27,9 +23,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         )
 
     fn __new__(
-        ptr: __mlir_type.`!pop.pointer<#lit.placeholder: !kgen.mlirtype>`[
-            __mlir_type.`!pop.scalar<#lit.placeholder : !kgen.dtype>>`[type]
-        ],
+        ptr: __mlir_type.`!pop.pointer<scalar<#lit.placeholder : !kgen.dtype>>`[type],
         in_size: Int,
     ) -> Buffer[size, type]:
         # Construct a Buffer type with dynamic size
@@ -60,10 +54,8 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         # Loads a simd value from the buffer at the specified index
         var offset = __mlir_op.`pop.offset`(self.pointer, idx.__as_mlir_index())
         var ptr = __mlir_op.`pop.pointer.bitcast`[
-            _type : __mlir_type.`!pop.pointer<#lit.placeholder: !kgen.mlirtype>`[
-                __mlir_type.`!pop.simd<#lit.placeholder<0> : index, #lit.placeholder<1> : !kgen.dtype>>`[
+            _type : __mlir_type.`!pop.pointer<!pop.simd<#lit.placeholder<0> : index, #lit.placeholder<1> : !kgen.dtype>>`[
                     width, type
-                ]
             ]
         ](offset)
         var result = __mlir_op.`pop.load`[
