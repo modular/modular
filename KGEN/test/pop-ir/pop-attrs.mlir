@@ -10,6 +10,8 @@ kgen.func @simd_constants() {
   %2 = kgen.param.constant: !pop.simd<2, bool> = <#pop.simd<true, false>>
   // CHECK: !pop.scalar<f64> = <#pop.simd<"0.01171875">>
   %3 = kgen.param.constant: !pop.scalar<f64> = <#pop.simd<"0.01171875">>
+  // CHECK: !pop.simd<6, ui2> = <#pop.simd<0, 1, 2, 3, 3, 2>>
+  %4 = kgen.param.constant: !pop.simd<6, ui2> = <#pop.simd<0, 1, 2, 3, 3, 2>>
   kgen.return
 }
 
