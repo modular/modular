@@ -30,7 +30,7 @@ fn mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2) -> __mlir_type.inde
   var i1Cast = __mlir_op.`index.castu`[_type: __mlir_type.i1](idxConstant)
 
   # CHECK: kgen.param.declare new_lower = <max(a, 42)>
-  alias new_lower = __mlir_attr.`#kgen.param.expr<max, #lit.placeholder<0> : index, #lit.placeholder<1> : index> : index`[a, 42]
+  alias new_lower = __mlir_attr[`#kgen.param.expr<max, `, a, `, `, 42, `> : index`]
 
   # CHECK: [[TMP1:%.*]] = kgen.param.constant = <new_lower>
   # CHECK: [[TMP2:%.*]] = index.constant 1
@@ -41,20 +41,20 @@ fn mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2) -> __mlir_type.inde
 # CHECK-LABEL: lit.func @"mlirTypesAndAttrs
 fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`] ():
   # CHECK: %a = lit.var.decl "a" : <scalar<dtype>>
-  var a : __mlir_type.`!pop.scalar<#lit.placeholder<0> : !kgen.dtype>`[dtype]
+  var a : __mlir_type[`!pop.scalar<`, dtype, `>`]
   # CHECK: %b = lit.var.decl "b" : <simd<4, dtype>>
-  var b : __mlir_type.`!pop.simd<#lit.placeholder<1> : index, #lit.placeholder<2> : !kgen.dtype>`[4, dtype]
+  var b : __mlir_type[`!pop.simd<4, `, dtype, `>`]
 
 
 # Issue #6282: [Lit] Placeholder substitution does not work on nested types
 struct ComplexSubstitution[type: __mlir_type.`!kgen.dtype`]:
   # CHECK: kgen.struct.field pointer : !pop.pointer<scalar<type>>
-  var pointer: __mlir_type.`!pop.pointer<!pop.scalar<#lit.placeholder : !kgen.dtype>>`[type]
+  var pointer: __mlir_type[`!pop.pointer<!pop.scalar<`, type, `>>`]
 
 # Issue #6374: [Lit] Add support for type placeholder
 fn typePlaceholder():
   # CHECK: %x = lit.var.decl "x" : <!kgen.list<i32[2]>>
-  var x : __mlir_type.`!kgen.list<!lit.placeholder[2]>`[__mlir_type.i32]
+  var x : __mlir_type[`!kgen.list<`, __mlir_type.i32, `[2]>`]
 
 # CHECK-LABEL: lit.func @"fancierSubstitutions
 fn fancierSubstitutions():
