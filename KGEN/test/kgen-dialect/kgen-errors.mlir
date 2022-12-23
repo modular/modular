@@ -101,7 +101,7 @@ kgen.generator @dtype_params() {
 // -----
 
 // expected-error @below {{'get_sizeof' should return an index}}
-"someop"() {a = #kgen.param.expr<get_sizeof, #kgen.concretetype.constant<i32>, #kgen.target<host>> : !kgen.dtype} : () -> ()
+"someop"() {a = #kgen.param.expr<get_sizeof, #kgen.concretetype.constant<i32>, #kgen<target host> : !kgen.target> : !kgen.dtype} : () -> ()
 
 // -----
 
@@ -116,7 +116,7 @@ kgen.generator @dtype_params() {
 // -----
 
 // expected-error @below {{'get_alignof' should return an index}}
-"someop"() {a = #kgen.param.expr<get_alignof, #kgen.concretetype.constant<i32>, #kgen.target<host>> : !kgen.dtype} : () -> ()
+"someop"() {a = #kgen.param.expr<get_alignof, #kgen.concretetype.constant<i32>, #kgen<target host> : !kgen.target> : !kgen.dtype} : () -> ()
 
 // -----
 

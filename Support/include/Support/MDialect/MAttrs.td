@@ -230,4 +230,55 @@ def M_PointerAttr : MAttr<"Pointer", "pointer",
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// TargetInfoAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
+  let summary = "Target configuration attribute.";
+  let description = [{
+    The `#M.target` attribute represents a compilation target configuration. It
+    contains the target triple, CPU type and features, and target data layout
+    information.
+
+    Example:
+
+    ```mlir
+    #M.target<triple="arm64-apple-darwin21.6.0", cpu="apple-m1", features="",
+              pointer_size=8, simd_bit_width=128>
+    ```
+  }];
+
+  let parameters = (ins "llvm::Triple":$triple, StringRefParameter<"">:$cpu,
+                        StringRefParameter<"">:$features,
+                        "int64_t":$pointer_size, "int64_t":$simd_bit_width);
+
+  let assemblyFormat = "`<` struct(params) `>`";
+
+  let extraClassDeclaration = [{
+    /// Provides a stable hash function for use as part of a cache key.
+    llvm::hash_code hash() const;
+
+    /// Get the target triple as a string.
+    std::string getTripleStr() const {
+      return getTriple().normalize();
+    }
+
+    /// Check if the target supports a specific hardware feature. Note that to
+    /// check if a feature is supported, its feature name should be prefixed
+    /// with a "+", e.g. "+avx".
+    bool hasFeature(StringRef feature) const {
+      return getFeatures().contains(feature);
+    }
+
+    /// Check if the CPU architecture matches the provided one.
+    bool isArch(StringRef arch) const {
+      return getCpu().equals(arch);
+    }
+
+    /// Get the host target configuration attribute.
+    static TargetInfoAttr getForHost(MLIRContext *ctx);
+  }];
+}
+
 #endif // MATTRS_TD

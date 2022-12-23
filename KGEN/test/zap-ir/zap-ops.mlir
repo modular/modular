@@ -230,7 +230,7 @@ kgen.func @zap_ndbuffer_load_aligned(
   // CHECK: zap.ndbuffer.load %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] align 8 : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<3, f32>
   %1 = zap.ndbuffer.load %ndbuffer0[%idx, %idx, %idx] align 8 : !zap.ndbuffer<[4, 5, 3], f32>, !pop.simd<3, f32>
   // CHECK: zap.ndbuffer.load %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] align 4 : !zap.ndbuffer<[4, ?], f32>, !pop.simd<3, f32>
-  %2 = zap.ndbuffer.load %ndbuffer1[%idx, %idx] align get_alignof(f32, #kgen.target<host>) : !zap.ndbuffer<[4, ?], f32>, !pop.simd<3, f32>
+  %2 = zap.ndbuffer.load %ndbuffer1[%idx, %idx] align get_alignof(f32, #kgen<target host>) : !zap.ndbuffer<[4, ?], f32>, !pop.simd<3, f32>
   // CHECK: zap.ndbuffer.load %[[NDBUFFER2]][%[[IDX]]] align 16 : !zap.ndbuffer<[?], f32>, !pop.simd<3, f32>
   %3 = zap.ndbuffer.load %ndbuffer2[%idx] align 16 : !zap.ndbuffer<[?], f32>, !pop.simd<3, f32>
   kgen.return
@@ -312,9 +312,9 @@ kgen.func @zap_ndbuffer_store_aligned(
   // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER0]][%[[IDX]], %[[IDX]], %[[IDX]]] align 8 : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
   zap.ndbuffer.store %val, %ndbuffer0[%idx, %idx, %idx] align 8 : !pop.simd<4, f32>, !zap.ndbuffer<[4, 5, 3], f32>
   // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER1]][%[[IDX]], %[[IDX]]] align 4 : !pop.simd<4, f32>, !zap.ndbuffer<[4, ?], f32>
-  zap.ndbuffer.store %val, %ndbuffer1[%idx, %idx] align get_alignof(f32, #kgen.target<host>) : !pop.simd<4, f32>, !zap.ndbuffer<[4, ?], f32>
+  zap.ndbuffer.store %val, %ndbuffer1[%idx, %idx] align get_alignof(f32, #kgen<target host>) : !pop.simd<4, f32>, !zap.ndbuffer<[4, ?], f32>
   // CHECK: zap.ndbuffer.store %[[VAL]], %[[NDBUFFER2]][%[[IDX]]] align 8 : !pop.simd<4, f32>, !zap.ndbuffer<[?], f32>
-  zap.ndbuffer.store %val, %ndbuffer2[%idx] align get_alignof(f64, #kgen.target<host>) : !pop.simd<4, f32>, !zap.ndbuffer<[?], f32>
+  zap.ndbuffer.store %val, %ndbuffer2[%idx] align get_alignof(f64, #kgen<target host>) : !pop.simd<4, f32>, !zap.ndbuffer<[?], f32>
   kgen.return
 }
 

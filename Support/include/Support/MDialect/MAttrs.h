@@ -13,6 +13,7 @@
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "llvm/ADT/Triple.h"
 
 //===----------------------------------------------------------------------===//
 // ArrayElementsAttr

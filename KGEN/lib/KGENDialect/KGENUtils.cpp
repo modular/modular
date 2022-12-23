@@ -11,6 +11,7 @@
 
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "Cache/CacheDialect/CacheOps.h"
+#include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"

@@ -34,8 +34,9 @@ void POPDialect::registerTypes() {
 // ArrayType
 //===----------------------------------------------------------------------===//
 
-LogicalResult ArrayType::verify(function_ref<InFlightDiagnostic()> emitError,
-                                TypedAttr size, TypedAttr elementType) {
+LogicalResult
+POP::ArrayType::verify(function_ref<InFlightDiagnostic()> emitError,
+                       TypedAttr size, TypedAttr elementType) {
   if (!size.getType().isa<IndexType>())
     return emitError() << "expected size expression to be index type";
   if (!elementType.getType().isa<MLIRTypeType>())
@@ -43,31 +44,31 @@ LogicalResult ArrayType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-Optional<int64_t> ArrayType::getResolvedSize() const {
+Optional<int64_t> POP::ArrayType::getResolvedSize() const {
   if (auto intAttr = llvm::dyn_cast<IntegerAttr>(getSize()))
     return intAttr.getInt();
   return {};
 }
 
-Type ArrayType::getResolvedElementType() const {
+Type POP::ArrayType::getResolvedElementType() const {
   if (auto typeCst = dyn_cast_if_present<TypeConstantAttr>(getElementType()))
     return typeCst.getValue();
   return nullptr;
 }
 
-ArrayType ArrayType::get(TypedAttr size, TypedAttr elementType) {
+POP::ArrayType POP::ArrayType::get(TypedAttr size, TypedAttr elementType) {
   return get(size.getContext(), size, elementType);
 }
 
-ArrayType ArrayType::get(TypedAttr size, Type elementType) {
+POP::ArrayType POP::ArrayType::get(TypedAttr size, Type elementType) {
   return get(size.getContext(), size, TypeConstantAttr::get(elementType));
 }
 
-ArrayType ArrayType::get(int64_t size, Type elementType) {
+POP::ArrayType POP::ArrayType::get(int64_t size, Type elementType) {
   return get(Builder(elementType.getContext()).getIndexAttr(size), elementType);
 }
 
-ArrayType ArrayType::get(ValueRange elements) {
+POP::ArrayType POP::ArrayType::get(ValueRange elements) {
   assert(!elements.empty() && "expected non-empty elements");
   auto firstElement = elements.front();
   assert(llvm::all_of(elements,
@@ -80,7 +81,7 @@ ArrayType ArrayType::get(ValueRange elements) {
 
 /// The size of the array is the number of elements times the size of each
 /// aligned element.
-Optional<int64_t> ArrayType::getTypeSize(TargetInfoAttr target) const {
+Optional<int64_t> POP::ArrayType::getTypeSize(TargetInfoAttr target) const {
   Type elementType = getResolvedElementType();
   Optional<int64_t> size = getResolvedSize();
   if (!elementType || !size)
@@ -97,7 +98,7 @@ Optional<int64_t> ArrayType::getTypeSize(TargetInfoAttr target) const {
 }
 
 /// The alignment of the array is the alignment of the element type.
-Optional<int64_t> ArrayType::getTypeAlign(TargetInfoAttr target) const {
+Optional<int64_t> POP::ArrayType::getTypeAlign(TargetInfoAttr target) const {
   Type elementType = getResolvedElementType();
   if (!elementType)
     return {};

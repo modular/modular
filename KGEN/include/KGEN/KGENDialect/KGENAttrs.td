@@ -507,67 +507,59 @@ def KGEN_ExprFuncAttr : KGEN_ExprAttr<"ExprFunc", "expr.func"> {
 }
 
 //===----------------------------------------------------------------------===//
-// TargetInfoAttr
+// TargetParamAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_TargetInfoAttr : KGEN_ExprAttr<"TargetInfo", "target"> {
-  let summary = "kgen target";
+def KGEN_TargetParamAttr : KGEN_ExprAttr<"TargetParam", "target"> {
+  let summary = "Target configuration parameter attribute.";
   let description = [{
-    An attribute representing a target of type !kgen.target. It contains the
-    target triple, cpu, features, and pointer size.
+    The `#kgen.target` is an attribute representing a target of type
+    `!kgen.target`. It contains the target configuration information.
 
     There are two text formats that represent this attribute:
-      `#kgen.target<host>` and
-      `#kgen.target<"triple", "cpu", "features", ptrSize>`
 
-    `#kgen.target<host>` is sugar for the TargetInfoAttr corresponding to the
-    host machine. It will NOT be printed as `kgen.target<host>`.
+    ```mlir
+    #kgen<target host>
+    #kgen.target<triple="triple", cpu="cpu", features="features",
+                 pointer_size=8, simd_bit_width=128>
+    ```
+
+    `#kgen<target host>` is sugar for the target parameter corresponding to the
+    host machine. It will NOT be printed as `kgen<target host>`.
 
     Example:
 
     ```mlir
     kgen.generator @target_host<t0: target>()
-      constraints <[target_eq(:target #kgen.target<host>, t0),
-                                    "Must support the target!"]> {
+      constraints <[target_eq(:target #kgen<target host>, t0),
+                    "Must support the target!"]> {
       kgen.return
     }
 
     kgen.generator @target_host<t0: target>()
-      constraints <[target_eq(:target
-        #kgen.target<"triple", "cpu", "features", ptrSize>,
-        t0), "Must support the target!"]> {
+        constraints <[
+          target_eq(:target
+            #kgen.target<triple="triple", cpu="cpu", features="features",
+                         pointer_size=8, simd_bit_width=128>,
+            t0),
+          "Must support the target!"
+        ]> {
       kgen.return
     }
     ```
   }];
 
-  let parameters = (ins "llvm::Triple":$triple,
-                        StringRefParameter<"">:$cpu,
-                        StringRefParameter<"">:$features,
-                        "int64_t":$pointerSize,
-                        "int64_t":$SIMDBitWidth,
-                        AttributeSelfTypeParameter<"">:$type);
+  let parameters = (ins "TargetInfoAttr":$target,
+                         AttributeSelfTypeParameter<"", "TargetType">:$type);
+
+  let builders =[
+    AttrBuilderWithInferredContext<(ins "TargetInfoAttr":$target,
+                                        "TargetType":$type), [{
+      return get(type.getContext(), target, type);
+    }]>
+  ];
 
   let hasCustomAssemblyFormat = 1;
-
-  let extraClassDeclaration = [{
-    /// Provides a stable hash function for use as part of a cache key.
-    llvm::hash_code hash() const;
-
-    std::string getTripleStr() const {
-      return getTriple().normalize();
-    }
-
-    bool hasFeature(StringRef feature) const {
-      return getFeatures().contains(feature);
-    }
-
-    bool isArch(StringRef arch) const {
-      return getCpu().equals(arch);
-    }
-
-    static TargetInfoAttr getForHost(MLIRContext *ctx);
-  }];
 }
 
 //===----------------------------------------------------------------------===//

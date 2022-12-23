@@ -204,7 +204,7 @@ IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
   // to emit an error during the evaluation attempt.
   if (op.getOpcode() == POC::GetSizeOf || op.getOpcode() == POC::GetAlignOf) {
     auto typeCst = dyn_cast<TypeConstantAttr>(op.getOperand(0));
-    auto target = dyn_cast<TargetInfoAttr>(op.getOperand(1));
+    auto target = dyn_cast<TargetParamAttr>(op.getOperand(1));
     if (!typeCst || !target)
       return failure();
     auto ref = dyn_cast<DeclRefType>(typeCst.getValue());
@@ -213,9 +213,9 @@ IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
 
     ErrorOr<int64_t> indexResult = 0;
     if (op.getOpcode() == POC::GetSizeOf)
-      indexResult = computeStructSizeof(symtab, target, ref);
+      indexResult = computeStructSizeof(symtab, target.getTarget(), ref);
     else
-      indexResult = computeStructAlignof(symtab, target, ref);
+      indexResult = computeStructAlignof(symtab, target.getTarget(), ref);
 
     if (indexResult.isError()) {
       emitError({*errorLoc, indexResult.takeError()});

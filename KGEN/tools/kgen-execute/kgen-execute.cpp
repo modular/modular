@@ -69,7 +69,7 @@ struct ProcessBuffer {
                                            Twine(compiler.getError())));
 
     // Lower the input to an object.
-    KGEN::TargetInfoAttr attr = KGEN::TargetInfoAttr::getForHost(ctx);
+    auto attr = TargetInfoAttr::getForHost(ctx);
 
     // Produce a single standalone .o
     auto standaloneOr = compiler->produceStandaloneObject(
