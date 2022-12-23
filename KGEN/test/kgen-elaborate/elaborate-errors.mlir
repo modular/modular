@@ -205,3 +205,15 @@ kgen.generator @interp_func() {
   %0 = kgen.param.constant = <apply(:(index) -> index @cant_interpret, 1)>
   kgen.return
 }
+
+// -----
+
+// expected-note @below {{no implementations of interface 'no_impls' found}}
+kgen.generator.interface @no_impls() -> index
+
+// expected-error @below {{no viable implementations found}}
+kgen.generator @call_it() {
+  // expected-note @below {{unable to evaluate generator or interface}}
+  kgen.param.constant = <apply(:() -> index @no_impls)>
+  kgen.return
+}
