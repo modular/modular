@@ -341,25 +341,79 @@ kgen.func @store_load_struct(%arg0: !pop.struct<i8, i16, f64>) -> !pop.struct<i8
   kgen.return %1 : !pop.struct<i8, i16, f64>
 }
 
+kgen.func @i24_pair_bitcast(%arg0: !pop.array<2, i24>) -> i64 {
+  %0 = pop.stack_allocation 2 x i24
+  %1 = pop.pointer.bitcast %0 : !pop.pointer<i24> to !pop.pointer<array<2, i24>>
+  pop.store %arg0, %1 : !pop.pointer<array<2, i24>>
+  %2 = pop.pointer.bitcast %0 : !pop.pointer<i24> to !pop.pointer<i64>
+  %3 = pop.load %2 : !pop.pointer<i64>
+  kgen.return %3 : i64
+}
+
+kgen.func @i8_i16_i32_bitcast(%arg0: !pop.struct<i8, i16, i32>) -> i64 {
+  %0 = pop.stack_allocation 1 x i64
+  %1 = pop.pointer.bitcast %0 : !pop.pointer<i64> to !pop.pointer<struct<i8, i16, i32>>
+  pop.store %arg0, %1 : !pop.pointer<struct<i8, i16, i32>>
+  %2 = pop.load %0 : !pop.pointer<i64>
+  kgen.return %2 : i64
+}
+
+kgen.func @i8_vec_bitcast(%arg0: !pop.simd<2, si8>) -> i16 {
+  %0 = pop.stack_allocation 1 x !pop.simd<2, si8>
+  pop.store %arg0, %0 : !pop.pointer<simd<2, si8>>
+  %1 = pop.pointer.bitcast %0 : !pop.pointer<simd<2, si8>> to !pop.pointer<i16>
+  %2 = pop.load %1 : !pop.pointer<i16>
+  kgen.return %2 : i16
+}
+
+kgen.func @i2_vec_bitcast(%arg0: !pop.simd<4, ui2>) -> ui8 {
+  %0 = pop.stack_allocation 1 x !pop.simd<4, ui2>
+  pop.store %arg0, %0 : !pop.pointer<simd<4, ui2>>
+  %1 = pop.pointer.bitcast %0 : !pop.pointer<simd<4, ui2>> to !pop.pointer<ui8>
+  %2 = pop.load %1 : !pop.pointer<ui8>
+  kgen.return %2 : ui8
+}
+
 // CHECK-LABEL: kgen.func @do_it
 kgen.generator @do_it() {
   // CHECK-NEXT: #pop.array<123, 456>
   kgen.param.constant: !pop.array<2, i24> = <apply(
     :(!pop.array<2, i24>) -> !pop.array<2, i24> @store_load_array, #pop.array<123, 456>)>
+
   // CHECK-NEXT: <555>
   kgen.param.constant: i32 = <apply(
     :(i32) -> i32 @store_load_pointer, 555)>
+
   // CHECK-NEXT: #pop.simd<"1.25", "2.25">
   kgen.param.constant: !pop.simd<2, f32> = <apply(
     :(!pop.simd<2, f32>) -> !pop.simd<2, f32> @store_load_simd, #pop.simd<"1.25", "2.25">)>
+
   // CHECK-NEXT: #pop.simd<-7, 7>
   kgen.param.constant: !pop.simd<2, si4> = <apply(
     :(!pop.simd<2, si4>) -> !pop.simd<2, si4> @store_load_simd_packed, #pop.simd<-7, 7>)>
+
   // CHECK-NEXT: #pop.simd<0, 1, 2, 3, 3, 2>
   kgen.param.constant: !pop.simd<6, ui2> = <apply(
     :(!pop.simd<6, ui2>) -> !pop.simd<6, ui2> @store_load_simd_packed_i2, #pop.simd<0, 1, 2, 3, 3, 2>)>
+
   // CHECK-NEXT: #pop.struct<120, 32112, 1.125{{0+}}e+00>
   kgen.param.constant: !pop.struct<i8, i16, f64> = <apply(
     :(!pop.struct<i8, i16, f64>) -> !pop.struct<i8, i16, f64> @store_load_struct, #pop.struct<120, 32112, 1.125>)>
+
+  // CHECK-NEXT: <1099511627792>
+  kgen.param.constant: i64 = <apply(
+    :(!pop.array<2, i24>) -> i64 @i24_pair_bitcast, #pop.array<16, 256>)>
+
+  // CHECK-NEXT: <8590983192>
+  kgen.param.constant: i64 = <apply(
+    :(!pop.struct<i8, i16, i32>) -> i64 @i8_i16_i32_bitcast, #pop.struct<24, 16, 2>)>
+
+  // CHECK-NEXT: <1026>
+  kgen.param.constant: i16 = <apply(
+    :(!pop.simd<2, si8>) -> i16 @i8_vec_bitcast, #pop.simd<2, 4>)>
+
+  // CHECK-NEXT: <229>
+  kgen.param.constant: ui8 = <apply(
+    :(!pop.simd<4, ui2>) -> ui8 @i2_vec_bitcast, #pop.simd<1, 1, 2, 3>)>
   kgen.return
 }

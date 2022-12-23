@@ -399,13 +399,6 @@ bool PointerBitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
          outputs.front().isa<ParamRefType, PointerType, FunctionType>();
 }
 
-OpFoldResult PointerBitcastOp::fold(ArrayRef<Attribute> operands) {
-  auto cast = getInput().getDefiningOp<PointerBitcastOp>();
-  if (cast && cast.getInput().getType() == getType())
-    return cast.getInput();
-  return {};
-}
-
 //===----------------------------------------------------------------------===//
 // CastOp
 //===----------------------------------------------------------------------===//
