@@ -499,14 +499,13 @@ Type VariantType::getType(unsigned index) {
   return ParamRefType::get(getTypes()[index]);
 }
 
-Optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
-  // A variant is lowered to a struct that consists of a content field and a
-  // discriminator field. The content field is the biggest element size rounded
-  // up to the nearest multiple of the pointer width. The discriminator field is
-  // the smallest integer type whose maximum value is greater than the number of
-  // possible subtypes, but which is at least `i1`.
+/// Compute the size in bytes of just the content section of a variant. The
+/// content field is the biggest element size rounded up to the nearest multiple
+/// of the pointer width.
+static Optional<int64_t> computeVariantContentSize(VariantType type,
+                                                   TargetInfoAttr target) {
   uint64_t maxSize = 0;
-  for (TypedAttr typeExpr : getTypes()) {
+  for (TypedAttr typeExpr : type.getTypes()) {
     auto typeCst = llvm::dyn_cast<ConcreteTypeConstantAttr>(typeExpr);
     if (!typeCst)
       return {};
@@ -518,10 +517,30 @@ Optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
       return {};
     maxSize = std::max(maxSize, llvm::alignTo(*typeSize, *typeAlign));
   }
-  int64_t contentSize = llvm::alignTo(maxSize, target.getPointerSize());
-  int64_t discrSizeBits = llvm::alignTo(
-      std::max(1u, llvm::Log2_32_Ceil(getTypes().size())), CHAR_BIT);
-  return llvm::alignTo(contentSize + discrSizeBits / CHAR_BIT,
+  return llvm::alignTo(maxSize, target.getPointerSize());
+}
+
+/// Get bitwidth of the integer used to represent the discriminator. The
+/// discriminator field is the smallest integer type whose maximum value is
+/// greater than the number of possible subtypes, but which is at least `i1`.
+static int64_t getVariantDiscrSizeInBits(VariantType type) {
+  return std::max(1u, llvm::Log2_32_Ceil(type.getTypes().size()));
+}
+
+/// Get the width of the integer used to represent the discriminator in bytes.
+/// This returns at least 1, because the bitwidth of the discriminator is at
+/// least 1.
+static int64_t getVariantDiscrSize(VariantType type) {
+  return llvm::divideCeil(getVariantDiscrSizeInBits(type), CHAR_BIT);
+}
+
+Optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
+  // A variant is lowered to a struct that consists of a content field and a
+  // discriminator field.
+  Optional<int64_t> contentSize = computeVariantContentSize(*this, target);
+  if (!contentSize)
+    return {};
+  return llvm::alignTo(*contentSize + getVariantDiscrSize(*this),
                        target.getPointerSize());
 }
 
@@ -529,6 +548,45 @@ Optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {
   // The alignment of the variant type is just the pointer width.
   // FIXME: This is incorrect but the LLVM lowering needs to be fixed.
   return target.getPointerSize();
+}
+
+ErrorOrSuccess VariantType::writeTo(TypedAttr value, intptr_t addr,
+                                    InterpreterState &state) const {
+  // Just write the value to the address and then the discriminator.
+  TypedAttr typeValue = value.cast<VariantAttr>().getValue();
+  ErrorOrSuccess result = state.writeAttributeToMemory(addr, typeValue);
+  if (result.isError())
+    return result.takeError();
+  addr += *computeVariantContentSize(*this, state.getTarget());
+
+  unsigned discrSize = getVariantDiscrSize(*this);
+  ErrorOr<void *> mem = state.getMemory(addr, discrSize);
+  if (mem.isError())
+    return mem.takeError();
+  APInt discrVal(discrSize * CHAR_BIT, *getTypeIndex(typeValue.getType()));
+  llvm::StoreIntToMemory(discrVal, reinterpret_cast<uint8_t *>(*mem),
+                         discrSize);
+  return success();
+}
+
+ErrorOr<TypedAttr> VariantType::readFrom(intptr_t addr,
+                                         InterpreterState &state) const {
+  // Read the discriminator first so we know what type to read.
+  unsigned discrSize = getVariantDiscrSize(*this);
+  ErrorOr<void *> mem = state.getMemory(
+      addr + *computeVariantContentSize(*this, state.getTarget()), discrSize);
+  if (mem.isError())
+    return mem.takeError();
+  APInt discrVal(discrSize * CHAR_BIT, 0);
+  llvm::LoadIntFromMemory(discrVal, reinterpret_cast<uint8_t *>(*mem),
+                          discrSize);
+
+  TypedAttr type = getTypes()[discrVal.getZExtValue()];
+  ErrorOr<TypedAttr> result = state.readAttributeFromMemory(
+      addr, type.cast<ConcreteTypeConstantAttr>().getValue());
+  if (result.isError())
+    return result.takeError();
+  return VariantAttr::get(result.takeValue(), *this);
 }
 
 //===----------------------------------------------------------------------===//

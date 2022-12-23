@@ -333,7 +333,7 @@ def POP_StructType : POPType<"Struct", "struct",
 //===----------------------------------------------------------------------===//
 
 def POP_VariantType : POPType<"Variant", "variant",
-    [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
+    [DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
   let summary = "A parametric variant type.";
   let description = [{
     A `!pop.variant` type is a structural variant type that represents a value
@@ -380,7 +380,7 @@ def POP_VariantType : POPType<"Variant", "variant",
 // ClosureType
 //===----------------------------------------------------------------------===//
 
-def POP_ClosureType : POPType<"Closure", "closure", [SubElementTypeInterface]> {
+def POP_ClosureType : POPType<"Closure", "closure"> {
   let summary = "The type for a closure.";
   let description = [{
     A type for a closure.
@@ -390,11 +390,10 @@ def POP_ClosureType : POPType<"Closure", "closure", [SubElementTypeInterface]> {
     ```mlir
     !pop.closure<(index, i32) -> ()>
     ```
-    }];
+  }];
+
   let parameters = (ins "FunctionType": $func);
-
   let assemblyFormat = " `<` $func `>` ";
-
 }
 
 

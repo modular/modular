@@ -374,6 +374,23 @@ kgen.func @i2_vec_bitcast(%arg0: !pop.simd<4, ui2>) -> ui8 {
   kgen.return %2 : ui8
 }
 
+kgen.func @store_load_variant(%arg0: !pop.variant<i32, f64>) -> !pop.variant<i32, f64> {
+  %0 = pop.stack_allocation 1 x !pop.variant<i32, f64>
+  pop.store %arg0, %0 : !pop.pointer<variant<i32, f64>>
+  %1 = pop.load %0 : !pop.pointer<variant<i32, f64>>
+  kgen.return %1 : !pop.variant<i32, f64>
+}
+
+// COM: Store the variant and sneakily read its discriminator's raw value.
+kgen.func @variant_bitcast_discr(%arg0: !pop.variant<i32, i64>) -> i8 {
+  %0 = pop.stack_allocation 1 x !pop.variant<i32, i64>
+  pop.store %arg0, %0 : !pop.pointer<variant<i32, i64>>
+  %1 = pop.pointer.bitcast %0 : !pop.pointer<variant<i32, i64>> to !pop.pointer<struct<i64, i8>>
+  %2 = pop.load %1 : !pop.pointer<struct<i64, i8>>
+  %3 = pop.struct.get %2[1] : !pop.struct<i64, i8>
+  kgen.return %3 : i8
+}
+
 // CHECK-LABEL: kgen.func @do_it
 kgen.generator @do_it() {
   // CHECK-NEXT: #pop.array<123, 456>
@@ -415,5 +432,17 @@ kgen.generator @do_it() {
   // CHECK-NEXT: <229>
   kgen.param.constant: ui8 = <apply(
     :(!pop.simd<4, ui2>) -> ui8 @i2_vec_bitcast, #pop.simd<1, 1, 2, 3>)>
+
+  // CHECK-NEXT: #pop.variant<:i32 42>
+  kgen.param.constant: !pop.variant<i32, f64> = <apply(
+    :(!pop.variant<i32, f64>) -> !pop.variant<i32, f64> @store_load_variant, #pop.variant<:i32 42>)>
+
+  // CHECK-NEXT: <0>
+  kgen.param.constant: i8 = <apply(
+    :(!pop.variant<i32, i64>) -> i8 @variant_bitcast_discr, #pop.variant<:i32 1>)>
+
+  // CHECK-NEXT: <1>
+  kgen.param.constant: i8 = <apply(
+    :(!pop.variant<i32, i64>) -> i8 @variant_bitcast_discr, #pop.variant<:i64 1>)>
   kgen.return
 }
