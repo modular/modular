@@ -12,7 +12,6 @@
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "mlir/IR/BuiltinOps.h"
-#include "llvm/ADT/StringSet.h"
 #include <filesystem>
 #include <string>
 
