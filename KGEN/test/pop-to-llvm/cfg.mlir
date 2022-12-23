@@ -2,63 +2,61 @@
 
 // CHECK-LABEL: @variant_visit
 // CHECK-SAME: %[[A:.*]]:
-kgen.func @variant_visit(%a: !pop.variant<i32, f32>) -> !pop.simd<1, si32> {
-  // CHECK: %[[ONE:.*]] = llvm.mlir.constant(1 : i64) : i64
-  // CHECK-NEXT: %[[PTR:.*]] = llvm.alloca
+kgen.func @variant_visit(%a: !pop.variant<i32, f32>) -> !pop.scalar<si32> {
   // CHECK-NEXT: %[[CONTENT:.*]] = llvm.extractvalue %[[A]][0]
-  // CHECK-NEXT: llvm.intr.lifetime.start 8, %[[PTR]]
-  // CHECK-NEXT: llvm.store %[[CONTENT]], %[[PTR]]
+  // CHECK-NEXT: %[[V0:.*]] = llvm.extractvalue %[[CONTENT]][0]
   // CHECK-NEXT: %[[DISCR:.*]] = llvm.extractvalue %[[A]][1]
   // CHECK-NEXT: llvm.switch %[[DISCR]] : i1, ^bb2
   // CHECK-NEXT:   0: ^bb1
-  %0 = pop.variant.visit %a : !pop.variant<i32, f32> -> !pop.simd<1, si32>
+  %0 = pop.variant.visit %a : !pop.variant<i32, f32> -> !pop.scalar<si32>
   // CHECK: ^bb1:
   case (%v: i32) {
-    // CHECK-NEXT: %[[VPTR:.*]] = llvm.bitcast %[[PTR]]
-    // CHECK-NEXT: %[[V:.*]] = llvm.load %[[VPTR]]
-    // CHECK-NEXT: llvm.intr.lifetime.end 8, %[[PTR]]
+    // CHECK: %[[C0_i32:.*]] = llvm.mlir.constant(0 : i32)
+    // CHECK: %[[P0:.*]] = llvm.trunc %{{.*}} : i64 to i32
+    // CHECK-NEXT: llvm.or %[[C0_i32]], %[[P0]]
     // CHECK-NEXT: %[[R:.*]] = llvm.mlir.constant(0 :
-    %1 = pop.constant(0 : si32) : !pop.simd<1, si32>
+    %1 = pop.constant(0 : si32) : !pop.scalar<si32>
     // CHECK-NEXT: llvm.br ^bb3(%[[R]]
-    pop.yield %1 : !pop.simd<1, si32>
+    pop.yield %1 : !pop.scalar<si32>
   }
   // CHECK: ^bb2:
   case (%v: f32) {
-    // CHECK-NEXT: %[[VPTR:.*]] = llvm.bitcast %[[PTR]]
-    // CHECK-NEXT: %[[V:.*]] = llvm.load %[[VPTR]]
-    // CHECK-NEXT: llvm.intr.lifetime.end 8, %[[PTR]]
+    // CHECK: %[[C0_i32:.*]] = llvm.mlir.constant(0 : i32)
+    // CHECK: %[[P0:.*]] = llvm.trunc %{{.*}} : i64 to i32
+    // CHECK-NEXT: %[[P1:.*]] = llvm.or %[[C0_i32]], %[[P0]]
+    // CHECK-NEXT: llvm.bitcast %[[P1]] : i32 to f32
     // CHECK-NEXT: %[[R:.*]] = llvm.mlir.constant(1 :
-    %1 = pop.constant(1 : si32) : !pop.simd<1, si32>
+    %1 = pop.constant(1 : si32) : !pop.scalar<si32>
     // CHECK-NEXT: llvm.br ^bb3(%[[R]]
-    pop.yield %1 : !pop.simd<1, si32>
+    pop.yield %1 : !pop.scalar<si32>
   }
   // CHECK: ^bb3(%[[ARG:.*]]: i32
   // CHECK-NEXT: return %[[ARG]]
-  kgen.return %0 : !pop.simd<1, si32>
+  kgen.return %0 : !pop.scalar<si32>
 }
 
 // -----
 
 // CHECK-LABEL: @variant_visit
-kgen.func @variant_visit(%a: !pop.variant<simd<1, si32>, f32>) -> !pop.simd<1, si32> {
-  %0 = pop.constant(1 : si32) : !pop.simd<1, si32>
-  // CHECK: %[[PTR:.*]] = llvm.alloca
+kgen.func @variant_visit(%a: !pop.variant<scalar<si32>, f32>) -> !pop.scalar<si32> {
+  %0 = pop.constant(1 : si32) : !pop.scalar<si32>
   // CHECK: llvm.switch %{{.*}} : i1, ^bb2
   // CHECK-NEXT: 0: ^bb1
-  %1 = pop.variant.visit %a : !pop.variant<simd<1, si32>, f32> -> !pop.simd<1, si32>
+  %1 = pop.variant.visit %a : !pop.variant<scalar<si32>, f32> -> !pop.scalar<si32>
   // CHECK: ^bb1:
-  case (%v: !pop.simd<1, si32>) {
-    // CHECK-NEXT: llvm.bitcast
-    %2 = pop.add %v, %0 : !pop.simd<1, si32>
-    pop.yield %2 : !pop.simd<1, si32>
+  case (%v: !pop.scalar<si32>) {
+    // CHECK: %[[C0_i32:.*]] = llvm.mlir.constant(0 : i32)
+    // CHECK: %[[V:.*]] = llvm.or %[[C0_i32]], %{{.*}}
+    // CHECK-NEXT: llvm.add %[[V]], %{{.*}} : i32
+    %2 = pop.add %v, %0 : !pop.scalar<si32>
+    pop.yield %2 : !pop.scalar<si32>
   }
   // CHECK: ^bb2:
   default {
-    // CHECK-NEXT: llvm.intr.lifetime.end 8, %[[PTR]]
-    %2 = pop.sub %0, %0 : !pop.simd<1, si32>
-    pop.yield %2 : !pop.simd<1, si32>
+    %2 = pop.sub %0, %0 : !pop.scalar<si32>
+    pop.yield %2 : !pop.scalar<si32>
   }
-  kgen.return %1 : !pop.simd<1, si32>
+  kgen.return %1 : !pop.scalar<si32>
 }
 
 // -----

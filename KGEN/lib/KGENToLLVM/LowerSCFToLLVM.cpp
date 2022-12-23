@@ -350,16 +350,13 @@ struct ConvertPOPVariantVisit
   matchAndRewrite(POP::VariantVisitOp op, POP::VariantVisitOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Store the contents into a block of memory.
-    auto variantType =
-        adaptor.getVariant().getType().cast<LLVM::LLVMStructType>();
-    Value contentPtr =
-        createAllocaAtEntry(op, variantType.getBody().front(), rewriter);
-    // Compute the bytecount of the content.
-    int64_t byteCount = getByteCount(variantType.getBody().front());
     Value content = rewriter.create<LLVM::ExtractValueOp>(
         op.getLoc(), adaptor.getVariant(), 0);
-    rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), byteCount, contentPtr);
-    rewriter.create<LLVM::StoreOp>(op.getLoc(), content, contentPtr);
+    SmallVector<Value> storageValues;
+    auto contentType = cast<LLVM::LLVMArrayType>(content.getType());
+    for (unsigned i = 0, e = contentType.getNumElements(); i != e; ++i)
+      storageValues.push_back(
+          rewriter.create<LLVM::ExtractValueOp>(op.getLoc(), content, i));
 
     // Split the block at the op.
     Block *condBlock = rewriter.getInsertionBlock();
@@ -397,10 +394,10 @@ struct ConvertPOPVariantVisit
       // Load the content and replace the region argument with it.
       rewriter.setInsertionPointToStart(block);
       Type type = getTypeConverter()->convertType(caseType);
-      Value valuePtr = rewriter.create<LLVM::BitcastOp>(
-          op.getLoc(), LLVM::LLVMPointerType::get(type), contentPtr);
-      Value value = rewriter.create<LLVM::LoadOp>(op.getLoc(), valuePtr);
-      rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), byteCount, contentPtr);
+      VariantHelper helper(rewriter, op.getLoc());
+      ArrayRef<Value>::iterator valueIt = storageValues.begin();
+      unsigned storageOffset = 0;
+      Value value = helper.walkAndExtractVariant(valueIt, storageOffset, type);
       region.getArgument(0).replaceAllUsesWith(value);
       region.eraseArgument(0);
 
@@ -420,7 +417,6 @@ struct ConvertPOPVariantVisit
       Block *block = &op.getRegions().back().front();
       // Insert a lifetime end marker on this control path.
       rewriter.setInsertionPointToStart(block);
-      rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), byteCount, contentPtr);
       if (failed(rewriteYield(block)))
         return failure();
       successors.push_back(block);

@@ -10,7 +10,6 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
-#include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/Compiler/SymbolTableAnalysis.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
@@ -19,7 +18,6 @@
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/Target/LLVMIR/TypeToLLVM.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -562,29 +560,32 @@ private:
 LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
     StackAllocationOp op, StackAllocationOpAdaptor adaptor,
     ConversionPatternRewriter &rewriter) const {
-  IntegerAttr size =
-      rewriter.getI64IntegerAttr(op.getCount().cast<IntegerAttr>().getInt());
   Type ptrType = getTypeConverter()->convertType(op.getType());
   if (!ptrType)
     return op.emitOpError("could not lower pointer element type");
 
   // Hoist the alloca to the top of the enclosing function body.
   rewriter.setInsertionPointToStart(body);
-  Value sizeVal = rewriter.create<LLVM::ConstantOp>(op.getLoc(), size);
+  int64_t count = cast<IntegerAttr>(op.getCount()).getInt();
+  Value sizeVal = rewriter.create<LLVM::ConstantOp>(
+      op.getLoc(), rewriter.getI64IntegerAttr(count));
   Value ptr = rewriter.create<LLVM::AllocaOp>(
       op.getLoc(), ptrType,
       ptrType.cast<LLVM::LLVMPointerType>().getElementType(), sizeVal,
       resolveAlignment(op.getAlignment()));
 
   // Compute the bytecount of the allocated buffer.
-  int64_t byteCount = getByteCount(
-      op.getType().cast<PointerType>().getResolvedElementType(), size);
+  Optional<int64_t> byteCount = DataLayoutInterface::getTypeSizeInBytes(
+      TargetInfoAttr::getForHost(op.getContext()),
+      cast<PointerType>(op.getType()).getResolvedElementType());
+  if (!byteCount)
+    return op.emitError("could not get size of pointer element size");
 
   // Insert lifetime markers starting from the op to the end of its block.
   rewriter.setInsertionPoint(op);
-  rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), byteCount, ptr);
+  rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), *byteCount * count, ptr);
   rewriter.setInsertionPoint(op->getBlock(), --op->getBlock()->end());
-  rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), byteCount, ptr);
+  rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), *byteCount * count, ptr);
   rewriter.replaceOp(op, ptr);
   return success();
 }

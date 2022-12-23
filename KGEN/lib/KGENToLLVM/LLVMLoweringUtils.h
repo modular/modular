@@ -72,6 +72,8 @@ public:
   void walkAndCreateVariant(MutableArrayRef<Value>::iterator &valueIt,
                             unsigned &storageOffset, Value value);
 
+  /// Walk a simple or aggregate LLVM type and generate the code to extract its
+  /// elements from a variant's content type.
   Value walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
                               unsigned &storageOffset, Type type);
 
@@ -86,7 +88,8 @@ private:
 // Attribute Conversion
 //===----------------------------------------------------------------------===//
 
-/// Generate the LLVM IR needed to materialize the provided constant value.
+/// Generate the LLVM IR to materialize a constant of the given value. This is
+/// used to convert attribute values in `kgen.param.constant`.
 Value convertParameterToLLVM(ImplicitLocOpBuilder &b, TypeConverter &tc,
                              TypedAttr attr);
 
@@ -100,16 +103,6 @@ struct POPToLLVMDebugInfoTypeConverter
     : public DebugInfo::DebugInfoTypeConverter {
   POPToLLVMDebugInfoTypeConverter(POPToLLVMTypeConverter &converter);
 };
-
-//===----------------------------------------------------------------------===//
-// Utility Functions
-//===----------------------------------------------------------------------===//
-
-/// Insert an alloca at the top of the function body.
-Value createAllocaAtEntry(Operation *op, Type type, PatternRewriter &rewriter);
-
-/// Compute the bytecount of a buffer of numElements with specified elementType.
-int64_t getByteCount(Type elementType, IntegerAttr numElements = {});
 
 } // namespace M::KGEN
 
