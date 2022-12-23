@@ -6,7 +6,6 @@
 
 add_modular_mlir_library(KGENElaborator
   Elaborator.cpp
-  ErrorTree.cpp
   IncludeResolution.cpp
   SelectFastestFunction.cpp
   SymbolicExpressions.cpp

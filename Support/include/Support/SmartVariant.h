@@ -121,7 +121,20 @@ struct CastInfo<To, M::SmartVariant<Ts...>> {
       return std::holds_alternative<To>(f.getUnderlyingStorage());
   }
 
-  static To doCast(From &f) {
+  /// Perform the cast from `From` to `To`. If the underlying storage is a
+  /// pointer, return a value. Otherwise, return a reference.
+  static std::conditional_t<From::CanStealBits, To, To &> doCast(From &f) {
+    if constexpr (From::CanStealBits)
+      return PointerUnionCastImpl::template doCast<To>(
+          f.getUnderlyingStorage());
+    else
+      return std::get<To>(f.getUnderlyingStorage());
+  }
+
+  /// Perform the cast from `From` to `To`. If the underlying storage is a
+  /// pointer, return a value. Otherwise, return a reference.
+  static std::conditional_t<From::CanStealBits, To, const To &>
+  doCast(const From &f) {
     if constexpr (From::CanStealBits)
       return PointerUnionCastImpl::template doCast<To>(
           f.getUnderlyingStorage());

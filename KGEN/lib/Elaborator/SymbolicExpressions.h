@@ -8,8 +8,9 @@
 #define KGEN_ELABORATOR_SYMBOLICEXPRESSIONS_H
 
 #include "Cache/CacheDialect/CachedTransform.h"
-#include "ErrorTree.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "Support/Compiler/ErrorTree.h"
 #include "Support/Interpreter/InterpreterInterface.h"
 
 namespace M::KGEN {
