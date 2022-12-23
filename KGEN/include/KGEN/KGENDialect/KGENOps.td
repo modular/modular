@@ -755,64 +755,6 @@ def KGEN_StructGEPOp : KGENOp<"struct.gep", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
-// ListGetOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ListGetOp : KGENOp<"list.get", [Pure, TypesMatchWith<"list element type",
-    "list", "result",
-    "ParamRefType::get($_self.cast<ListType>().getElementType())">]> {
-  let summary = "Get a list element.";
-  let description = [{
-    The `kgen.list.get` operation returns the element of a list at the provided
-    index. The index can be an expression, but if it resolves to an out-of-range
-    index, an error is emitted.
-
-    Example:
-
-    ```mlir
-    %0 = kgen.list.get %list[add(A, N)] : <index[N]>
-    ```
-  }];
-
-  let arguments = (ins KGEN_ListType:$list, AttrOfType<Index>:$index);
-  let results = (outs AnyType:$result);
-
-  let assemblyFormat = [{
-    $list `[` custom<IndexParamValue>($index) `]` attr-dict `:` type($list)
-  }];
-
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// ListCreateOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ListCreateOp : KGENOp<"list.create", [Pure,
-    TypesMatchWith<"list element type", "result", "operands",
-      "ParamRefType::get($_self.cast<ListType>().getElementType())",
-      "typeRangeMatches">]> {
-  let summary = "Form a list.";
-  let description = [{
-    The `kgen.list.create` operation forms a list using the provided operands.
-
-    Example:
-
-    ```mlir
-    %0 = kgen.list.create(%arg0, %arg1) : <index[2]>
-    ```
-  }];
-
-  let arguments = (ins Variadic<AnyType>:$operands);
-  let results = (outs KGEN_ListType:$result);
-  let assemblyFormat = [{
-    `(` operands `)` attr-dict `:` type($result)
-  }];
-
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // ExportOp
 //===----------------------------------------------------------------------===//
 

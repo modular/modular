@@ -408,6 +408,14 @@ kgen.func @variant_visit_bad_terminator(%a: !pop.variant<i32>) {
 
 // -----
 
+kgen.func @list_index_out_of_bounds(%list : !kgen.list<index[0]>) {
+  // expected-error @below {{'pop.list.get' op list index out-of-range}}
+  %0 = pop.list.get %list[0] : <index[0]>
+  kgen.return
+}
+
+// -----
+
 kgen.func @struct_gep_type(%a: !pop.pointer<struct<i32>>) {
   // expected-error @below {{'pop.struct.gep' op element index 1 out of bounds (>=1)}}
   %0 = "pop.struct.gep"(%a) { index = 1 : index } : (!pop.pointer<struct<i32>>) -> !pop.pointer<i32>

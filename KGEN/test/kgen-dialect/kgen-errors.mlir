@@ -814,14 +814,6 @@ kgen.export [@doesNotExist]
 
 // -----
 
-kgen.func @list_index_out_of_bounds(%list : !kgen.list<index[0]>) {
-  // expected-error @below {{'kgen.list.get' op list index out-of-range}}
-  %0 = kgen.list.get %list[0] : <index[0]>
-  kgen.return
-}
-
-// -----
-
 kgen.generator @apply_error() {
   // expected-error @below {{custom op 'kgen.param.declare' expected a signature type for 'apply'}}
   kgen.param.declare fn = <apply(5, 5)>

@@ -1073,36 +1073,6 @@ void StructGEPOp::build(OpBuilder &builder, OperationState &result,
 }
 
 //===----------------------------------------------------------------------===//
-// ListGetOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult ListGetOp::verify() {
-  auto index = dyn_cast<IntegerAttr>(getIndex());
-  Optional<int64_t> length = getList().getType().getResolvedLength();
-  if (!index || !length)
-    return success();
-  if (index.getInt() < 0 || index.getInt() >= *length)
-    return emitOpError("list index out-of-range");
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// ListCreateOp
-//===----------------------------------------------------------------------===//
-
-static bool typeRangeMatches(Type type, TypeRange range) {
-  return llvm::all_of(range, [&](Type e) { return type == e; });
-}
-
-LogicalResult ListCreateOp::verify() {
-  if (getResult().getType().getLength() !=
-      Builder(getContext()).getIndexAttr(getNumOperands()))
-    return emitOpError("expected result list to have ")
-           << getNumOperands() << "elements";
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // ExportOp
 //===----------------------------------------------------------------------===//
 

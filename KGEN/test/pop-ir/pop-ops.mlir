@@ -1086,6 +1086,20 @@ kgen.generator @variant_visit(%a: !pop.variant<i32, f32>) -> index {
   kgen.return %0 : index
 }
 
+// CHECK-LABEL: @list_get
+kgen.generator @list_get<N, A>(%list: !kgen.list<index[N]>) -> index {
+  // CHECK-NEXT: pop.list.get %arg0[A] : <index[N]>
+  %0 = pop.list.get %list[A] : <index[N]>
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: @list_create
+kgen.generator @list_create(%arg0: index) -> !kgen.list<index[1]> {
+  // CHECK-NEXT: %0 = pop.list.create(%arg0)
+  %0 = pop.list.create(%arg0) : <index[1]>
+  kgen.return %0 : !kgen.list<index[1]>
+}
+
 // CHECK-LABEL: @indirect_call
 kgen.generator @indirect_call(%a: i32, %fn: (i32) -> index) -> index {
   // CHECK: pop.indirect_call %arg1(%arg0) : (i32) -> index

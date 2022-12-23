@@ -174,14 +174,14 @@ kgen.func @hlcf_scf_loops(%list: !kgen.list<!kgen.list<index[1]>[1]>, %cond: i1,
 
 // CHECK-LABEL: @list_get_op
 kgen.func @list_get_op(%list: !kgen.list<index[3]>) -> index {
-  %0 = kgen.list.get %list[1] : <index[3]>
+  %0 = pop.list.get %list[1] : <index[3]>
   // CHECK: return %arg1 : index
   kgen.return %0 : index
 }
 
 // CHECK-LABEL: @list_create_op
 kgen.func @list_create_op(%arg0: index, %arg1: index) -> !kgen.list<index[2]> {
-  %list = kgen.list.create(%arg0, %arg1) : <index[2]>
+  %list = pop.list.create(%arg0, %arg1) : <index[2]>
   // CHECK-NEXT: return %arg0, %arg1 : index, index
   kgen.return %list : !kgen.list<index[2]>
 }
