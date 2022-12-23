@@ -13,6 +13,7 @@ include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/POPDialect/POPAttrs.td"
 include "KGEN/POPDialect/POPDialect.td"
 include "KGEN/POPDialect/POPTypes.td"
+include "Support/Interpreter/InterpreterInterface.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/Interfaces/CastInterfaces.td"
@@ -1027,7 +1028,8 @@ def POP_SIMDScatterOp : POPOp<"simd.scatter", [
 // LoadOp
 //===----------------------------------------------------------------------===//
 
-def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">]> {
+def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pointer load operation";
   let description = [{
     Loads the data at the given pointer. Returns a scalar of the same dtype. The
@@ -1061,7 +1063,8 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">]> {
 // StoreOp
 //===----------------------------------------------------------------------===//
 
-def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">]> {
+def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pointer store operation";
   let description = [{
     Store the given scalar data to the given pointer of the same dtype. The
@@ -1154,6 +1157,8 @@ def POP_OffsetOp : POPOp<"offset",
   let assemblyFormat = [{
     $ptr `[` $index `]` attr-dict `:` qualified(type($ptr))
   }];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1748,7 +1753,8 @@ def POP_IndirectCallOp : POPOp<"indirect_call", [
 // StackAllocationOp
 //===----------------------------------------------------------------------===//
 
-def POP_StackAllocationOp : POPOp<"stack_allocation"> {
+def POP_StackAllocationOp : POPOp<"stack_allocation",
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "scoped stack allocation operation";
   let description = [{
     The `pop.stack_allocation` operation allocates statically-sized scoped

@@ -256,8 +256,8 @@ public:
   /// Instantiate a new evaluator with the given parameters.
   IREvaluator createEvaluator(DenseMap<StringAttr, Attribute> values =
                                   DenseMap<StringAttr, Attribute>()) {
-    return {analysis.getTopLevelSymbolTable(), asyncMap, regionCache.copy(),
-            transformCache.copy(), std::move(values)};
+    return {analysis, asyncMap, regionCache.copy(), transformCache.copy(),
+            std::move(values)};
   }
 
 private:

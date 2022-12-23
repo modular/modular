@@ -16,6 +16,7 @@ add_modular_mlir_library(KGENElaborator
   CacheDialect
   KGENDialect
   KGENExecutionEngine
+  InterpreterInterface
   MLIRIR
   MLIRSupport
   MSupport

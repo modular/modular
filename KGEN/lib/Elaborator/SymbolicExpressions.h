@@ -11,6 +11,7 @@
 #include "ErrorTree.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
+#include "Support/Interpreter/InterpreterInterface.h"
 
 namespace M::KGEN {
 class FuncOp;
@@ -19,23 +20,24 @@ class FuncOp;
 /// to concretize parameter expressions and compute symbolic parameter
 /// expressions, such as `apply` on a symbol constant or `get_sizeof` and
 /// `get_alignof` a decl type.
-class IREvaluator : public ParameterEvaluator {
+class IREvaluator : public ParameterEvaluator, public InterpreterState {
 public:
   /// Construct the IR evaluator with a symbol table for evaluating symbolic
   /// expressions.
   IREvaluator(
-      SymbolTable &symtab, LLCL::AsyncSideEffectMap &asyncMap,
+      SymbolTableAnalysis &analysis, LLCL::AsyncSideEffectMap &asyncMap,
       LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache,
       LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache,
       DenseMap<StringAttr, Attribute> paramValues =
           DenseMap<StringAttr, Attribute>())
-      : ParameterEvaluator(std::move(paramValues)), symtab(symtab),
-        asyncMap(asyncMap), regionCache(std::move(regionCache)),
+      : ParameterEvaluator(std::move(paramValues)), InterpreterState(analysis),
+        symtab(analysis.getTopLevelSymbolTable()), asyncMap(asyncMap),
+        regionCache(std::move(regionCache)),
         transformCache(std::move(transformCache)) {}
 
   IREvaluator(const IREvaluator &eval)
-      : ParameterEvaluator(eval), symtab(eval.symtab), asyncMap(eval.asyncMap),
-        regionCache(eval.regionCache.copy()),
+      : ParameterEvaluator(eval), InterpreterState(eval), symtab(eval.symtab),
+        asyncMap(eval.asyncMap), regionCache(eval.regionCache.copy()),
         transformCache(eval.transformCache.copy()) {}
 
   IREvaluator &operator=(const IREvaluator &eval) {

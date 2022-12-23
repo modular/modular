@@ -10,6 +10,7 @@
 include "Support/MDialect/MDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
+include "mlir/IR/SubElementInterfaces.td"
 
 class MAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
     : AttrDef<MDialect, attrName, traits> {
@@ -203,6 +204,30 @@ def UI64ArrayElementsAttr : ConfinedAttr<IntArrayElementsAttr, [AttrConstraint<C
   let constBuilderCall = "$_builder.getAttr<IntArrayElementsAttr>($0, IntegerType::Unsigned)";
   let returnType = "ArrayRef<uint64_t>";
   let convertFromStorage = "$_self.asArrayRef<uint64_t>()";
+}
+
+//===----------------------------------------------------------------------===//
+// PointerAttr
+//===----------------------------------------------------------------------===//
+
+def M_PointerAttr : MAttr<"Pointer", "pointer",
+    [SubElementAttrInterface, TypedAttrInterface]> {
+  let summary = "an opaque pointer attribute";
+  let description = [{
+    The `#M.pointer` attribute represents an opaque pointer value as an address.
+    Pointer constants have no meaning outside of in-memory IR, so the textual
+    format of this attribute has no inherent meaning. It is meant to be used in
+    operation folders or interpreters.
+  }];
+
+  let parameters = (ins "size_t":$addr, AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "`<` $addr `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "size_t":$addr, "Type":$type), [{
+      return get(type.getContext(), addr, type);
+    }]>
+  ];
 }
 
 #endif // MATTRS_TD
