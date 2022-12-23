@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/KGENDialect/KGENAttrInterfaces.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 
 using namespace M;
@@ -15,15 +15,51 @@ using namespace KGEN;
 // ParameterAttr
 //===----------------------------------------------------------------------===//
 
+namespace {
+struct IntegerParameterAttr
+    : public ParameterAttr::ExternalModel<IntegerParameterAttr, IntegerAttr> {
+  bool isConstant(Attribute attr) const { return true; }
+  bool isLessThan(Attribute attr, Attribute rhs) const {
+    auto intAttr = dyn_cast<IntegerAttr>(rhs);
+    return intAttr &&
+           cast<IntegerAttr>(attr).getValue().slt(intAttr.getValue());
+  }
+};
+
+struct FloatParameterAttr
+    : public ParameterAttr::ExternalModel<FloatParameterAttr, FloatAttr> {
+  bool isConstant(Attribute attr) const { return true; }
+  bool isLessThan(Attribute attr, Attribute rhs) const {
+    auto fpAttr = dyn_cast<FloatAttr>(rhs);
+    return fpAttr && cast<FloatAttr>(attr).getValue() < fpAttr.getValue();
+  }
+};
+
+struct StringParameterAttr
+    : public ParameterAttr::ExternalModel<StringParameterAttr, StringAttr> {
+  bool isConstant(Attribute attr) const { return true; }
+  bool isLessThan(Attribute attr, Attribute rhs) const {
+    auto strAttr = dyn_cast<StringAttr>(rhs);
+    return strAttr && cast<StringAttr>(attr).getValue() < strAttr.getValue();
+  }
+};
+
+struct TypeParameterAttr
+    : public ParameterAttr::ExternalModel<TypeParameterAttr, TypeAttr> {
+  bool isConstant(Attribute attr) const {
+    return !isParameterizedType(cast<TypeAttr>(attr).getValue());
+  }
+};
+} // namespace
+
+void KGENDialect::injectAttrInterfaces() {
+  IntegerAttr::attachInterface<IntegerParameterAttr>(*getContext());
+  FloatAttr::attachInterface<FloatParameterAttr>(*getContext());
+  StringAttr::attachInterface<StringParameterAttr>(*getContext());
+  TypeAttr::attachInterface<TypeParameterAttr>(*getContext());
+}
+
 bool ParameterAttr::isSimpleConstant(Attribute attr) {
-  // Check for simple builtin-in constants.
-  if (attr.isa<FloatAttr, IntegerAttr, StringAttr>())
-    return true;
-
-  // FIXME: Ops that trigger this path should use ConcreteTypeConstantAttr.
-  if (auto type = llvm::dyn_cast<TypeAttr>(attr))
-    return !isParameterizedType(type.getValue());
-
   // Check for an interface.
   if (auto itf = llvm::dyn_cast<ParameterAttr>(attr))
     return itf.isConstant();
@@ -43,20 +79,6 @@ bool ParameterAttr::compare(Attribute lhs, Attribute rhs) {
   if (isSimpleConstant(rhs)) {
     if (!isSimpleConstant(lhs))
       return true;
-
-    // Check built-in attributes.
-    if (auto intRhs = llvm::dyn_cast<IntegerAttr>(rhs)) {
-      auto intLhs = llvm::dyn_cast<IntegerAttr>(lhs);
-      return !intLhs || intLhs.getValue().slt(intRhs.getValue());
-    }
-    if (auto strRhs = llvm::dyn_cast<StringAttr>(rhs)) {
-      auto strLhs = llvm::dyn_cast<StringAttr>(lhs);
-      return !strLhs || strLhs.getValue() < strRhs.getValue();
-    }
-    if (auto fltRhs = llvm::dyn_cast<FloatAttr>(rhs)) {
-      auto fltLhs = llvm::dyn_cast<FloatAttr>(lhs);
-      return !fltLhs || fltLhs.getValue() < fltRhs.getValue();
-    }
 
     // Otherwise, we must have an interface. Any attribute that doesn't
     // implement one wouldn't be considered a simple constant.
