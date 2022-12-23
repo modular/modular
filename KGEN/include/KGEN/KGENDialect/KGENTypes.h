@@ -11,9 +11,10 @@
 #ifndef KGEN_KGENDIALECT_KGENTYPES_H
 #define KGEN_KGENDIALECT_KGENTYPES_H
 
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
-#include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "Support/ForwardDecls.h"
+#include "Support/MDialect/MTypeInterfaces.h"
 
 namespace M::KGEN {
 class FuncInterface;

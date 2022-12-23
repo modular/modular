@@ -7,16 +7,16 @@
 #ifndef POPTYPES_TD
 #define POPTYPES_TD
 
-include "KGEN/KGENDialect/KGENTypeInterfaces.td"
 include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/POPDialect/POPDialect.td"
+include "Support/MDialect/MTypeInterfaces.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/SubElementInterfaces.td"
 
 class POPType<string typeName, string typeMnemonic, list<Trait> traits = []>
   : TypeDef<POPDialect, typeName,
             [DeclareTypeInterfaceMethods<SubElementTypeInterface>,
-             DeclareTypeInterfaceMethods<KGEN_DataLayoutInterface>] # traits> {
+             DeclareTypeInterfaceMethods<DataLayoutInterface>] # traits> {
   let mnemonic = typeMnemonic;
 }
 

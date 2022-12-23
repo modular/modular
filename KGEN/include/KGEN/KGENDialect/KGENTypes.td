@@ -12,7 +12,7 @@
 #define KGEN_KGENDIALECT_KGENTYPES_TD
 
 include "KGEN/KGENDialect/KGENDialect.td"
-include "KGEN/KGENDialect/KGENTypeInterfaces.td"
+include "Support/MDialect/MTypeInterfaces.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/SubElementInterfaces.td"
 
@@ -71,8 +71,8 @@ def KGEN_MLIRTypeType : KGENType<"MLIRType", "mlirtype"> {
 // DTypeType
 //===----------------------------------------------------------------------===//
 
-def KGEN_DTypeType : KGENType<"DType", "dtype", [
-    DeclareTypeInterfaceMethods<KGEN_DataLayoutInterface>]> {
+def KGEN_DTypeType : KGENType<"DType", "dtype",
+    [DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
   let summary = "8-bit integer DType type";
   let description = [{
     This type corresponds to the DType runtime class, representing an

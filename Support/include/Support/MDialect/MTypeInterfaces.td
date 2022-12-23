@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_KGENDIALECT_KGENTYPEINTERFACES_TD
-#define KGEN_KGENDIALECT_KGENTYPEINTERFACES_TD
+#ifndef MTYPEINTERFACES_TD
+#define MTYPEINTERFACES_TD
 
 include "mlir/IR/OpBase.td"
 
@@ -13,19 +13,26 @@ include "mlir/IR/OpBase.td"
 // DataLayoutInterface
 //===----------------------------------------------------------------------===//
 
-def KGEN_DataLayoutInterface : TypeInterface<"DataLayoutInterface"> {
+def DataLayoutInterface : TypeInterface<"DataLayoutInterface"> {
   let description = [{
-    This interface is used to query the size and layout of types.
+    This interfaces allows the data layout of a type to be queried. It provides
+    methods to query the size and alignment of the type. These methods are
+    defined to be failable so that aggregate types may return null if a
+    contained type does not implement the interface.
+
+    The data layouts of types is target-dependent, which is why the methods
+    require a target configuration to be passed. Callers should use the static
+    `getTypeSizeInBytes` and `getTypeAlignInBytes` methods.
   }];
 
-  let cppNamespace = "::M::KGEN";
+  let cppNamespace = "::M";
 
   let methods = [
     InterfaceMethod<
-      /*desc=*/"Get the size in bytes of the type.",
+      /*desc=*/"Get the size in bytes of the type for the given target.",
       "Optional<int64_t>", "getTypeSize", (ins "TargetInfoAttr":$target)>,
     InterfaceMethod<
-      /*desc=*/"Get the alignment in bytes of the type.",
+      /*desc=*/"Get the alignment in bytes of the type for the given target.",
       "Optional<int64_t>", "getTypeAlign", (ins "TargetInfoAttr":$target)>,
   ];
 
@@ -40,4 +47,4 @@ def KGEN_DataLayoutInterface : TypeInterface<"DataLayoutInterface"> {
   }];
 }
 
-#endif // KGEN_KGENDIALECT_KGENTYPEINTERFACES_TD
+#endif // MTYPEINTERFACES_TD
