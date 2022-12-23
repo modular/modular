@@ -253,17 +253,11 @@ struct ConvertKGENParamConstant
   LogicalResult
   matchAndRewrite(ParamConstantOp op, ParamConstantOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    if (auto dtype = dyn_cast<DTypeConstantAttr>(op.getValue())) {
-      rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
-          op, rewriter.getI8Type(), dtype.getDType().getValue());
-    } else if (auto attr = dyn_cast<TypedAttr>(op.getValue());
-               attr && isa<IntegerAttr, FloatAttr>(attr)) {
-      rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
-          op, getTypeConverter()->convertType(attr.getType()), attr);
-    } else {
-      // No support for strings, type constants, or symbol references.
-      return op.emitError("unknown parameter value type");
-    }
+    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
+    Value value = convertParameterToLLVM(b, *getTypeConverter(), op.getValue());
+    if (!value)
+      return failure();
+    rewriter.replaceOp(op, value);
     return success();
   }
 };

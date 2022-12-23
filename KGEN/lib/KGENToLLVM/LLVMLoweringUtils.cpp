@@ -6,11 +6,14 @@
 
 #include "LLVMLoweringUtils.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/MLIRDType.h"
+#include "Support/MDialect/MAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/MLIRContext.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -161,6 +164,326 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
     return LLVM::LLVMStructType::getLiteral(&getContext(),
                                             {contentType, discrType});
   });
+}
+
+//===----------------------------------------------------------------------===//
+// VariantHelper
+//===----------------------------------------------------------------------===//
+
+void VariantHelper::walkAndCreateVariant(
+    MutableArrayRef<Value>::iterator &valueIt, unsigned &storageOffset,
+    Value value) {
+  // Aggregate types like structs and arrays are flattened to their leaf types.
+  // Leaf types are integers, floats, and pointers.
+  if (isa<IntegerType, FloatType, LLVM::LLVMPointerType>(value.getType())) {
+    Value normalizedValue;
+    // Normalize the value to store to an integer.
+    if (isa<IntegerType>(value.getType())) {
+      normalizedValue = value;
+    } else if (auto fpType = dyn_cast<FloatType>(value.getType())) {
+      normalizedValue =
+          b.create<LLVM::BitcastOp>(b.getIntegerType(fpType.getWidth()), value);
+    } else {
+      // Pointer type.
+      normalizedValue = b.create<LLVM::PtrToIntOp>(
+          b.getIntegerType(dl.getTypeSizeInBits(value.getType())), value);
+    }
+
+    unsigned curValueSize =
+        cast<IntegerType>(normalizedValue.getType()).getWidth();
+    unsigned curValueOffset = 0;
+    while (curValueOffset != curValueSize) {
+      // Compute the remaining space.
+      auto curStorageType = cast<IntegerType>(valueIt->getType());
+
+      // Ignore the bits of the value that has already been stored.
+      Value valueToStore = b.create<LLVM::LShrOp>(
+          normalizedValue, b.create<LLVM::ConstantOp>(normalizedValue.getType(),
+                                                      curValueOffset));
+      // Match the type with the storage type.
+      if (curValueSize < curStorageType.getWidth())
+        valueToStore = b.create<LLVM::ZExtOp>(curStorageType, valueToStore);
+      else
+        valueToStore = b.create<LLVM::TruncOp>(curStorageType, valueToStore);
+      // Shift the current value to store to the current storage offset.
+      valueToStore = b.create<LLVM::ShlOp>(
+          valueToStore,
+          b.create<LLVM::ConstantOp>(curStorageType, storageOffset));
+      // Set the bits of the current value to store.
+      *valueIt = b.create<LLVM::OrOp>(*valueIt, valueToStore);
+
+      unsigned remainingSpace = curStorageType.getWidth() - storageOffset;
+      unsigned amountToStore = curValueSize - curValueOffset;
+      if (amountToStore <= remainingSpace) {
+        // The entire value has been stored.
+        storageOffset += amountToStore;
+        curValueOffset += amountToStore;
+      } else {
+        // Overflow to the next storage element.
+        ++valueIt;
+        storageOffset = 0;
+        curValueOffset += remainingSpace;
+      }
+    }
+
+    // The value has been stored.
+    return;
+  }
+
+  // This is an aggregate type. Extract the next elements and recurse.
+  if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(value.getType())) {
+    for (unsigned i = 0, e = arrayType.getNumElements(); i < e; ++i) {
+      Value nestedValue = b.create<LLVM::ExtractValueOp>(value, i);
+      walkAndCreateVariant(valueIt, storageOffset, nestedValue);
+    }
+    return;
+  }
+  if (auto structType = dyn_cast<LLVM::LLVMStructType>(value.getType())) {
+    for (unsigned i = 0, e = structType.getBody().size(); i < e; ++i) {
+      Value nestedValue = b.create<LLVM::ExtractValueOp>(value, i);
+      walkAndCreateVariant(valueIt, storageOffset, nestedValue);
+    }
+    return;
+  }
+  if (auto vecType = dyn_cast<LLVM::LLVMFixedVectorType>(value.getType())) {
+    for (unsigned i = 0, e = vecType.getNumElements(); i < e; ++i) {
+      Value nestedValue = b.create<LLVM::ExtractElementOp>(
+          value, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
+      walkAndCreateVariant(valueIt, storageOffset, nestedValue);
+    }
+    return;
+  }
+  auto vectorType = cast<VectorType>(value.getType());
+  for (unsigned i = 0, e = vectorType.getNumElements(); i < e; ++i) {
+    Value nestedValue = b.create<LLVM::ExtractElementOp>(
+        value, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
+    walkAndCreateVariant(valueIt, storageOffset, nestedValue);
+  }
+}
+
+Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
+                                           unsigned &storageOffset, Type type) {
+  // Given a leaf type, extract a value of that type from the current storage.
+  if (isa<IntegerType, FloatType, LLVM::LLVMPointerType>(type)) {
+    IntegerType normalizedType;
+    if (auto intType = dyn_cast<IntegerType>(type))
+      normalizedType = intType;
+    else if (auto fpType = dyn_cast<FloatType>(type))
+      normalizedType = b.getIntegerType(fpType.getWidth());
+    else
+      normalizedType = b.getIntegerType(dl.getTypeSize(type));
+
+    unsigned curValueSize = normalizedType.getWidth();
+    unsigned curValueOffset = 0;
+    Value curValue = b.create<LLVM::ConstantOp>(normalizedType, 0);
+    while (curValueOffset != curValueSize) {
+      auto storageType = cast<IntegerType>(valueIt->getType());
+
+      // Drop the parts of the storage that have already been read.
+      Value valueToLoad = b.create<LLVM::LShrOp>(
+          *valueIt, b.create<LLVM::ConstantOp>(storageType, storageOffset));
+      // Shift the data to load into position.
+      valueToLoad = b.create<LLVM::ShlOp>(
+          valueToLoad, b.create<LLVM::ConstantOp>(storageType, curValueOffset));
+      // Match the type to the value type.
+      if (normalizedType.getWidth() <= storageType.getWidth())
+        valueToLoad = b.create<LLVM::TruncOp>(normalizedType, valueToLoad);
+      else
+        valueToLoad = b.create<LLVM::ZExtOp>(normalizedType, valueToLoad);
+
+      curValue = b.create<LLVM::OrOp>(curValue, valueToLoad);
+
+      unsigned remainingStorage = storageType.getWidth() - storageOffset;
+      unsigned amountToLoad = curValueSize - curValueOffset;
+      if (amountToLoad < remainingStorage) {
+        storageOffset += amountToLoad;
+        curValueOffset += amountToLoad;
+      } else {
+        ++valueIt;
+        storageOffset = 0;
+        curValueOffset += remainingStorage;
+      }
+    }
+
+    if (isa<FloatType>(type))
+      return b.create<LLVM::BitcastOp>(type, curValue);
+    else if (isa<LLVM::LLVMPointerType>(type))
+      return b.create<LLVM::IntToPtrOp>(type, curValue);
+    return curValue;
+  }
+
+  // This is an aggregate type. Read the required elements.
+  Value result = b.create<LLVM::UndefOp>(type);
+  if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(type)) {
+    for (unsigned i = 0, e = arrayType.getNumElements(); i < e; ++i) {
+      Value element = walkAndExtractVariant(valueIt, storageOffset,
+                                            arrayType.getElementType());
+      result = b.create<LLVM::InsertValueOp>(result, element, i);
+    }
+    return result;
+  }
+  if (auto structType = dyn_cast<LLVM::LLVMStructType>(type)) {
+    for (auto [idx, elementType] : llvm::enumerate(structType.getBody())) {
+      Value element =
+          walkAndExtractVariant(valueIt, storageOffset, elementType);
+      result = b.create<LLVM::InsertValueOp>(result, element, idx);
+    }
+    return result;
+  }
+  if (auto vecType = dyn_cast<LLVM::LLVMFixedVectorType>(type)) {
+    for (unsigned i = 0, e = vecType.getNumElements(); i < e; ++i) {
+      Value element = walkAndExtractVariant(valueIt, storageOffset,
+                                            vecType.getElementType());
+      result = b.create<LLVM::InsertElementOp>(
+          result, element, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
+    }
+    return result;
+  }
+  auto vectorType = cast<VectorType>(type);
+  for (unsigned i = 0, e = vectorType.getNumElements(); i < e; ++i) {
+    Value element = walkAndExtractVariant(valueIt, storageOffset,
+                                          vectorType.getElementType());
+    result = b.create<LLVM::InsertElementOp>(
+        result, element, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
+  }
+  return result;
+}
+
+Value VariantHelper::materializeLLVMVariant(Type type, Value value,
+                                            int64_t index) {
+  auto variantType = cast<LLVM::LLVMStructType>(type);
+  auto contentType = cast<LLVM::LLVMArrayType>(variantType.getBody().front());
+  SmallVector<Value> storageValues;
+  for (unsigned i = 0, e = contentType.getNumElements(); i < e; ++i)
+    storageValues.push_back(
+        b.create<LLVM::ConstantOp>(contentType.getElementType(), 0));
+
+  unsigned storageOffset = 0;
+  MutableArrayRef<Value>::iterator valueIt = storageValues.begin();
+  walkAndCreateVariant(valueIt, storageOffset, value);
+
+  Value content = b.create<LLVM::UndefOp>(contentType);
+  for (auto [idx, value] : llvm::enumerate(storageValues))
+    content = b.create<LLVM::InsertValueOp>(content, value, idx);
+
+  // Build the result struct.
+  Value variant = b.create<LLVM::UndefOp>(variantType);
+  variant = b.create<LLVM::InsertValueOp>(variant, content, 0);
+  Value discrVal = b.create<LLVM::ConstantOp>(
+      variantType.getBody().back().cast<IntegerType>(), index);
+  return b.create<LLVM::InsertValueOp>(variant, discrVal, 1);
+}
+
+//===----------------------------------------------------------------------===//
+// Attribute Conversion
+//===----------------------------------------------------------------------===//
+
+/// Convert a SIMD vector constant.
+static TypedAttr convertSIMDAttr(POP::SIMDAttr simd, Builder &b) {
+  DType dtype = *simd.getType().getResolvedDType();
+
+  // Handle scalar constants.
+  if (simd.getValues().size() == 1) {
+    const POP::DTypeValue &value = simd.getValues().front();
+    if (dtype.isBool())
+      return b.getBoolAttr(value.getBoolVal());
+    if (dtype.isInt())
+      return b.getIntegerAttr(b.getIntegerType(dtype.getIntegerWidthInBits()),
+                              value.getIntVal());
+    return b.getFloatAttr(getEquivalentFloatType(b.getContext(), dtype),
+                          value.getFloatVal());
+  }
+
+  // Handle vector constants.
+  if (dtype.isBool()) {
+    SmallVector<APInt> values;
+    for (const POP::DTypeValue &value : simd.getValues())
+      values.emplace_back(1, value.getBoolVal());
+    return IntArrayElementsAttr::get(
+        VectorType::get(values.size(), b.getI1Type()), values);
+  }
+  if (dtype.isInt()) {
+    SmallVector<APInt> values;
+    for (const POP::DTypeValue &value : simd.getValues())
+      values.push_back(value.getIntVal());
+    return IntArrayElementsAttr::get(
+        VectorType::get(values.size(),
+                        b.getIntegerType(dtype.getIntegerWidthInBits())),
+        values);
+  }
+  SmallVector<APFloat> values;
+  for (const POP::DTypeValue &value : simd.getValues())
+    values.push_back(value.getFloatVal());
+  return FloatArrayElementsAttr::get(
+      VectorType::get(values.size(),
+                      getEquivalentFloatType(b.getContext(), dtype)),
+      values);
+}
+
+Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b, TypeConverter &tc,
+                                   TypedAttr attr) {
+  //===--------------------------------------------------------------------===//
+  // Builtin
+
+  // Drop the sign on integer attributes; LLVM is signless.
+  if (auto intCst = dyn_cast<IntegerAttr>(attr)) {
+    return b.create<LLVM::ConstantOp>(
+        b.getIntegerAttr(cast<IntegerType>(tc.convertType(intCst.getType())),
+                         intCst.getValue()));
+  }
+
+  // Float attributes are fine as-is.
+  if (isa<FloatAttr>(attr))
+    return b.create<LLVM::ConstantOp>(attr);
+
+  // Convert DType constants to `i8` constants of the DType's enum value.
+  if (auto dtypeCst = dyn_cast<DTypeConstantAttr>(attr))
+    return b.create<LLVM::ConstantOp>(
+        b.getI8IntegerAttr(dtypeCst.getDType().getValue()));
+
+  //===--------------------------------------------------------------------===//
+  // POP
+
+  // Convert SIMD constants to an array of integer or float constants.
+  if (auto simd = dyn_cast<POP::SIMDAttr>(attr))
+    return b.create<LLVM::ConstantOp>(convertSIMDAttr(simd, b));
+
+  // Convert array or struct constants to LLVM array or struct constants.
+  if (isa<POP::ArrayAttr, POP::StructAttr>(attr)) {
+    Type type = tc.convertType(attr.getType());
+    if (!type)
+      return {};
+    Value aggregate = b.create<LLVM::UndefOp>(type);
+    ArrayRef<TypedAttr> values = isa<POP::ArrayAttr>(attr)
+                                     ? cast<POP::ArrayAttr>(attr).getValues()
+                                     : cast<POP::StructAttr>(attr).getValues();
+    for (auto [idx, value] : llvm::enumerate(values)) {
+      Value element = convertParameterToLLVM(b, tc, value);
+      if (!element)
+        return {};
+      aggregate = b.create<LLVM::InsertValueOp>(aggregate, element, idx);
+    }
+    return aggregate;
+  }
+
+  // Bitpack variant constants.
+  if (auto variant = dyn_cast<POP::VariantAttr>(attr)) {
+    auto variantType = llvm::cast_if_present<LLVM::LLVMStructType>(
+        tc.convertType(variant.getType()));
+    if (!variantType)
+      return {};
+    Value value = convertParameterToLLVM(b, tc, variant.getValue());
+    if (!value)
+      return {};
+
+    VariantHelper helper(b, b.getLoc());
+    return helper.materializeLLVMVariant(
+        variantType, value,
+        *variant.getType().getTypeIndex(variant.getValue().getType()));
+  }
+
+  // Unknown attribute to convert.
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

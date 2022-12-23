@@ -8,6 +8,7 @@ add_modular_dialect_library(POPDialect
   POPAttrs.cpp
   POPDialect.cpp
   POPOps.cpp
+  POPOpsFolders.cpp
   POPTypes.cpp
 
   ADDITIONAL_HEADER_DIRS

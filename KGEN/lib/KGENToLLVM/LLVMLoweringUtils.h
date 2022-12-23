@@ -10,6 +10,7 @@
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Value.h"
 
 namespace M::KGEN {
@@ -49,6 +50,45 @@ private:
   /// default data layout.
   mlir::DataLayout dl;
 };
+
+//===----------------------------------------------------------------------===//
+// VariantHelper
+//===----------------------------------------------------------------------===//
+
+/// A helper for creating variants and extracting from them.
+class VariantHelper {
+public:
+  VariantHelper(OpBuilder &b, Location loc) : b(loc, b) {}
+
+  /// Generate the code required to materialize the provided value as a variant
+  /// of the given LLVM type.
+  Value materializeLLVMVariant(Type type, Value value, int64_t index);
+
+  /// Walk a simple or aggregate LLVM type and generate the code to insert its
+  /// elements into a variant's content type. This tightly packs the element
+  /// types within the content type. The first argument is an iterator to the
+  /// current content element values. It is initialized with zeroes. The second
+  /// is an iterator to the content element types.
+  void walkAndCreateVariant(MutableArrayRef<Value>::iterator &valueIt,
+                            unsigned &storageOffset, Value value);
+
+  Value walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
+                              unsigned &storageOffset, Type type);
+
+private:
+  /// The builder to use.
+  ImplicitLocOpBuilder b;
+  /// The data layout to use.
+  mlir::DataLayout dl;
+};
+
+//===----------------------------------------------------------------------===//
+// Attribute Conversion
+//===----------------------------------------------------------------------===//
+
+/// Generate the LLVM IR needed to materialize the provided constant value.
+Value convertParameterToLLVM(ImplicitLocOpBuilder &b, TypeConverter &tc,
+                             TypedAttr attr);
 
 //===----------------------------------------------------------------------===//
 // POPToLLVMDebugInfoTypeConverter
