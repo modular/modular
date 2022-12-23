@@ -8,28 +8,34 @@ from Bool import Bool
 from Int import Int
 from SIMD import SIMD
 from Assert import assert_param
+from Pointer import DTypePointer
+
 
 struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
-    var pointer: __mlir_type.`!pop.pointer<scalar<#lit.placeholder : !kgen.dtype>>`[type]
+    var data: DTypePointer[type]
     var dynamic_size: Int
 
     fn __new__(
-        ptr: __mlir_type.`!pop.pointer<scalar<#lit.placeholder : !kgen.dtype>>`[type]
+        ptr: __mlir_type.`!pop.pointer<scalar<#lit.placeholder : !kgen.dtype>>`[
+            type
+        ],
     ) -> Buffer[size, type]:
         # Construct a Buffer type with statically known size
         assert_param[size != __mlir_attr.`#kgen.unknown : index`]()
         return __mlir_op.`kgen.struct.create`[_type : Buffer[size, type]](
-            ptr, Int(size)
+            DTypePointer[type](ptr), Int(size)
         )
 
     fn __new__(
-        ptr: __mlir_type.`!pop.pointer<scalar<#lit.placeholder : !kgen.dtype>>`[type],
+        ptr: __mlir_type.`!pop.pointer<scalar<#lit.placeholder : !kgen.dtype>>`[
+            type
+        ],
         in_size: Int,
     ) -> Buffer[size, type]:
         # Construct a Buffer type with dynamic size
         assert_param[size == __mlir_attr.`#kgen.unknown : index`]()
         return __mlir_op.`kgen.struct.create`[_type : Buffer[size, type]](
-            ptr, in_size
+            DTypePointer[type](ptr), in_size
         )
 
     fn _is_dynamic(self) -> Bool:
@@ -52,19 +58,8 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
 
     fn simd_load[width: __mlir_type.index](self, idx: Int) -> SIMD[width, type]:
         # Loads a simd value from the buffer at the specified index
-        var offset = __mlir_op.`pop.offset`(self.pointer, idx.__as_mlir_index())
-        var ptr = __mlir_op.`pop.pointer.bitcast`[
-            _type : __mlir_type.`!pop.pointer<!pop.simd<#lit.placeholder<0> : index, #lit.placeholder<1> : !kgen.dtype>>`[
-                    width, type
-            ]
-        ](offset)
-        var result = __mlir_op.`pop.load`[
-            alignment : __mlir_attr.`1: index`,
-            _type : __mlir_type.`!pop.simd<#lit.placeholder : index, #lit.placeholder : !kgen.dtype>>`[
-                width, type
-            ],
-        ](ptr)
-        return result
+        var offset = self.data.offset(idx)
+        return offset.simd_load[width]()
 
     fn __setitem__(self, idx: Int, val: SIMD[1, type]):
         # Stores a single value into the buffer at the specified index
@@ -74,15 +69,5 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         width: __mlir_type.index
     ](self, idx: Int, val: SIMD[width, type]):
         # Stores a simd value into the buffer at the specified index
-        var offset = __mlir_op.`pop.offset`(self.pointer, idx.__as_mlir_index())
-        var ptr = __mlir_op.`pop.pointer.bitcast`[
-            _type : __mlir_type.`!pop.pointer<#lit.placeholder: !kgen.mlirtype>`[
-                __mlir_type.`!pop.simd<#lit.placeholder<0> : index, #lit.placeholder<1> : !kgen.dtype>>`[
-                    width, type
-                ]
-            ]
-        ](offset)
-        __mlir_op.`pop.store`[
-            alignment : __mlir_attr.`1: index`,
-            _type:[],
-        ](val.value, ptr)
+        var offset = self.data.offset(idx)
+        offset.simd_store[width](val)
