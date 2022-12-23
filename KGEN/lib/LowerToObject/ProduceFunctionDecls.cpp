@@ -129,7 +129,10 @@ static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
 
     // Elementary type, just print it.
     if (t.isa<IntegerType>())
-      os << "int" << t.getIntOrFloatBitWidth() << "_t";
+      if (auto bitWidth = t.getIntOrFloatBitWidth(); bitWidth > 1)
+        os << "int" << bitWidth << "_t";
+      else
+        os << "bool";
     else if (t.isa<IndexType>())
       os << "ssize_t";
     else if (t.isF16())
