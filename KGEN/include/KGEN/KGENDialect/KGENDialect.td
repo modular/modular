@@ -33,6 +33,8 @@ def KGENDialect : Dialect {
     void registerAttributes();
     /// Register all KGEN types.
     void registerTypes();
+    /// Inject any external attribute models.
+    void injectAttrInterfaces();
   }];
 }
 
