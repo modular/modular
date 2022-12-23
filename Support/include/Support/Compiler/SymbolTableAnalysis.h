@@ -7,6 +7,7 @@
 #ifndef SUPPORT_COMPILER_SYMBOLTABLEANALYSIS_H
 #define SUPPORT_COMPILER_SYMBOLTABLEANALYSIS_H
 
+#include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Pass/AnalysisManager.h"
