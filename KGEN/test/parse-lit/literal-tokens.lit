@@ -44,33 +44,52 @@ def tmp():
     c = False         # CHECK: 0
     c = True          # CHECK: 1
 
+fn strings():
+   """
+      Various tests on strings
+   """
 
-# HECK: "hello world"
-"hello \
+    var a = ""                 # CHECK: ""
+    # CHECK: "hello world"
+    a = "hello \
 world"
 
-# COM: match newline hex values via regex since they vary between OSs
-# HECK: "hello \\\{{[0-9A-Z]+}}world"
-r"hello \
+    # COM: match newline hex values via regex since they vary between OSs
+    # CHECK: "hello \\\{{[0-9A-Z]+}}world"
+    a = r"hello \
 world"
 
-""                 # HECK: ""
-"Hello"            # HECK: "Hello"
-"Hello 'world'"    # HECK: "Hello 'world'"
-"A\x42"            # HECK: "AB"
-"A\x423"           # HECK: "AB3"
-"A\102"            # HECK: "AB"
-"A\1023"           # HECK: "AB3"
+    # CHECK  "1'\0A2"
+    a = """1'
+2"""
 
-# COM: the MLIR textual representation escapes strings, so below \ is \\ and " is \"
-'Hello "world"'    # HECK: "Hello \22world\22"
-r"A\x42"           # HECK: "A\\x42"
-R"A\x42"           # HECK: "A\\x42"
-r"AB\\"            # HECK: "AB\\\\"
-r"A\x"             # HECK: "A\\x"
-"AB\\"             # HECK: "AB\\"
-r"A\"B"            # HECK: "A\\\22B"
-r'A\'B'            # HECK: "A\\'B"
-"A\"B"             # HECK: "A\22B"
-'A\'B'             # HECK: "A'B"
-r"A\zB"            # HECK: "A\\zB"
+    # CHECK  "1\222"
+    a = '''1"\
+2'''
+
+    # CHECK   "1\22\0A2"
+    a = '''1"
+2'''
+
+    # CHECK   "1\22\0A2"
+    a = '1"\n2'
+
+    a = "Hello"            # CHECK: "Hello"
+    a = "Hello 'world'"    # CHECK: "Hello 'world'"
+    a = "A\x42"            # CHECK: "AB"
+    a = "A\x423"           # CHECK: "AB3"
+    a = "A\102"            # CHECK: "AB"
+    a = "A\1023"           # CHECK: "AB3"
+
+    # COM: the MLIR textual representation escapes strings, so below \ is \\ and " is \"
+    a = 'Hello "world"'    # CHECK: "Hello \22world\22"
+    a = r"A\x42"           # CHECK: "A\\x42"
+    a = R"A\x42"           # CHECK: "A\\x42"
+    a = r"AB\\"            # CHECK: "AB\\\\"
+    a = r"A\x"             # CHECK: "A\\x"
+    a = "AB\\"             # CHECK: "AB\\"
+    a = r"A\"B"            # CHECK: "A\\\22B"
+    a = r'A\'B'            # CHECK: "A\\'B"
+    a = "A\"B"             # CHECK: "A\22B"
+    a = 'A\'B'             # CHECK: "A'B"
+    a = r"A\zB"            # CHECK: "A\\zB"
