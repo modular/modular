@@ -51,3 +51,6 @@ void LITDialect::initialize() {
 #include "KGEN/LITDialect/LIT.cpp.inc"
       >();
 }
+
+#define GET_TYPEDEF_CLASSES
+#include "KGEN/LITDialect/LITTypes.cpp.inc"
