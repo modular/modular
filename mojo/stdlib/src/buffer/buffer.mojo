@@ -23,11 +23,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         # Construct a Buffer type with statically known size
         __mlir_op.`kgen.param.assert`[
             _type:[],
-            cond : __mlir_attr.`#kgen.param.expr<xor, true, #lit.placeholder : i1> : i1`[
-                __mlir_attr.`#kgen.param.expr<eq, #kgen.unknown : index, #lit.placeholder : index> : i1`[
-                    size
-                ]
-            ],
+            cond : size != __mlir_attr.`#kgen.unknown : index`,
             message:"must be a known size",
         ]()
         return __mlir_op.`kgen.struct.create`[_type : Buffer[size, type]](
@@ -43,9 +39,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         # Construct a Buffer type with dynamic size
         __mlir_op.`kgen.param.assert`[
             _type:[],
-            cond : __mlir_attr.`#kgen.param.expr<eq, #kgen.unknown : index, #lit.placeholder : index> : i1`[
-                size
-            ],
+            cond : size == __mlir_attr.`#kgen.unknown : index`,
             message:"must be a dynamic size",
         ]()
         return __mlir_op.`kgen.struct.create`[_type : Buffer[size, type]](
