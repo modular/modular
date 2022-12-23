@@ -21,6 +21,7 @@
 #include <chrono>
 #include <functional>
 #include <iterator>
+#include <string>
 #include <type_traits>
 
 namespace M {
