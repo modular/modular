@@ -562,6 +562,12 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         mlir::RegisteredOperationName::lookup(unboundOp.getName(), context);
     if (!opNameInfo)
       return failure();
+
+    // Check to see if this implements the ZeroResults trait.
+    if (opNameInfo->hasTrait<mlir::OpTrait::ZeroResults>())
+      return success(); // We know there are zero results.
+
+    // Otherwise, check for InferTypeOpInterface.
     auto inferTypesItf = opNameInfo->getInterface<mlir::InferTypeOpInterface>();
     if (!inferTypesItf)
       return failure();
