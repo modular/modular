@@ -397,7 +397,9 @@ struct ConvertPOPVariantVisit
       VariantHelper helper(rewriter, op.getLoc());
       ArrayRef<Value>::iterator valueIt = storageValues.begin();
       unsigned storageOffset = 0;
-      Value value = helper.walkAndExtractVariant(valueIt, storageOffset, type);
+      unsigned offset = 0;
+      Value value =
+          helper.walkAndExtractVariant(valueIt, storageOffset, offset, type);
       region.getArgument(0).replaceAllUsesWith(value);
       region.eraseArgument(0);
 
