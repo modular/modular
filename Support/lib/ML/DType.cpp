@@ -36,9 +36,8 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
     // i1,i2,i4 values are packed densely in memory.
     if (widthShift < 3) {
       // We're going to do a truncating division (with a shift right) by the
-      // element size, so add 7 to make sure we round up to the next byte.
-      size_t numElementsRoundedUp = numElements + 7;
-      return numElementsRoundedUp >> (3 - widthShift);
+      // element size, so make sure we round up to the next byte.
+      return llvm::divideCeil(numElements << widthShift, CHAR_BIT);
     }
 
     // Otherwise, we're growing this convert shift amount to byte shift amount.

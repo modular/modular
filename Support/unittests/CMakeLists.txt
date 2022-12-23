@@ -15,6 +15,7 @@ add_modular_unittest(
   SupportTests
 
   BCastTest.cpp
+  DTypeTest.cpp
   FunctionExtrasTest.cpp
   HMACTest.cpp
   MathExtras.cpp
