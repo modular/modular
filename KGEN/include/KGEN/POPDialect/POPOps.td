@@ -1137,8 +1137,8 @@ def POP_PrefetchOp : POPOp<"prefetch"> {
 // OffsetOp
 //===----------------------------------------------------------------------===//
 
-def POP_OffsetOp : POPOp<"offset",
-    [Pure, AllTypesMatch<["result", "ptr"]>]> {
+def POP_OffsetOp : POPOp<"offset", [Pure, AllTypesMatch<["result", "ptr"]>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pointer offset operation";
   let description = [{
     The `pop.offset` operation takes a pointer and increments or decrements its
@@ -1157,8 +1157,6 @@ def POP_OffsetOp : POPOp<"offset",
   let assemblyFormat = [{
     $ptr `[` $index `]` attr-dict `:` qualified(type($ptr))
   }];
-
-  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

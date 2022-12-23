@@ -12,11 +12,13 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Support/DebugStringHelper.h"
 
+namespace M {
+class MemoryReference;
+
 //===----------------------------------------------------------------------===//
 // InterpreterState
 //===----------------------------------------------------------------------===//
 
-namespace M {
 class InterpreterState {
 public:
   InterpreterState(SymbolTableAnalysis &analysis) : analysis(analysis) {}
@@ -29,29 +31,68 @@ public:
     return analysis.getSymbolTables();
   }
 
-  /// Allocate a certain amount of memory of a given type. Reads and writes to
-  /// these memory locations of incorrect type will fail.
-  size_t allocateMemory(unsigned numElements, Type type);
+  /// Allocate internal interpreter memory of a requested size.
+  /// TODO: Allow alignment as well.
+  intptr_t allocateMemory(size_t size);
 
-  /// Attempt to read the given memory location.
-  ErrorOr<TypedAttr> readMemory(size_t addr, Type type) const;
-
-  /// Attempt to write to the given memory location.
-  ErrorOrSuccess writeMemory(size_t addr, TypedAttr value);
+  /// Get a memory reference.
+  ErrorOr<MemoryReference> getMemory(intptr_t addr);
 
 private:
+  /// Get a pointer to the underlying memory given a memory reference.
+  ErrorOr<void *> materializeReference(intptr_t addr, size_t size);
+
+  /// Allow memory references to materialize themselves.
+  friend class MemoryReference;
+
   /// The cached symbol table.
   SymbolTableAnalysis &analysis;
 
   /// An internal memory table.
-  std::vector<std::pair<TypedAttr, Type>> memory;
+  std::vector<uint8_t> memory;
 };
+
+//===----------------------------------------------------------------------===//
+// MemoryableTypeInterface
+//===----------------------------------------------------------------------===//
+
+/// This class encapsulates a "safe" reference to raw interpreter memory.
+class MemoryReference {
+public:
+  /// Request a chunk of memory of a certain size.
+  ErrorOr<void *> get(size_t size);
+
+private:
+  MemoryReference(InterpreterState &state, intptr_t addr)
+      : state(state), addr(addr) {}
+
+  /// Allow the interpreter state to create memory references.
+  friend class InterpreterState;
+
+  /// The underlying interpreter state.
+  InterpreterState &state;
+
+  /// The "address" of the memory in the interpreter.
+  intptr_t addr;
+};
+
+/// Write an attribute value of a given type to the provided chunk of memory.
+/// This method should be used over invoking the interface methods directly,
+/// since it covers builtin attributes and types.
+ErrorOrSuccess writeAttributeToMemory(TypedAttr value, MemoryReference ref);
+
+/// Read an attribute value of the given type from the provided chunk of memory.
+/// This method should be used over invoking the interface methods directly,
+/// since it covers builtin attributes and types.
+ErrorOr<TypedAttr> readAttributeFromMemory(Type type, MemoryReference ref);
+
 } // namespace M
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
-#include "Support/Interpreter/InterpreterInterface.h.inc"
+#include "Support/Interpreter/InterpreterOpInterface.h.inc"
+#include "Support/Interpreter/MemoryableTypeInterface.h.inc"
 
 #endif // SUPPORT_INTERPRETER_INTERPRETERINTERFACE_H

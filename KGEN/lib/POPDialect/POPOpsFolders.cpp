@@ -33,7 +33,12 @@ ErrorOrSuccess LoadOp::interpret(ArrayRef<Attribute> operands,
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
   if (!ptr)
     return Error("non-constant inputs");
-  ErrorOr<TypedAttr> result = state.readMemory(ptr.getAddr(), getType());
+
+  ErrorOr<MemoryReference> ref = state.getMemory(ptr.getAddr());
+  if (ref.isError())
+    return ref.takeError();
+  ErrorOr<TypedAttr> result =
+      readAttributeFromMemory(getType(), ref.takeValue());
   if (result.isError())
     return result.takeError();
   results.push_back(result.takeValue());
@@ -51,22 +56,31 @@ ErrorOrSuccess StoreOp::interpret(ArrayRef<Attribute> operands,
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[1]);
   if (!value || !ptr)
     return Error("non-constant inputs");
-  ErrorOrSuccess result = state.writeMemory(ptr.getAddr(), value);
-  if (result.isError())
-    return result.takeError();
-  return success();
+
+  ErrorOr<MemoryReference> ref = state.getMemory(ptr.getAddr());
+  if (ref.isError())
+    return ref.takeError();
+  return writeAttributeToMemory(value, ref.takeValue());
 }
 
 //===----------------------------------------------------------------------===//
 // OffsetOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult OffsetOp::fold(ArrayRef<Attribute> operands) {
+ErrorOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
+                                   InterpreterState &state,
+                                   SmallVectorImpl<OpFoldResult> &results) {
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
   auto offset = dyn_cast_or_null<IntegerAttr>(operands[1]);
   if (!ptr || !offset)
-    return {};
-  return PointerAttr::get(ptr.getAddr() + offset.getInt(), ptr.getType());
+    return Error("non-constant inputs");
+  Optional<int64_t> elSize = DataLayoutInterface::getTypeSizeInBytes(
+      TargetInfoAttr::getForHost(getContext()), ptr.getType());
+  if (!elSize)
+    return Error("could not query pointer element size");
+  results.push_back(PointerAttr::get(ptr.getAddr() + *elSize * offset.getInt(),
+                                     ptr.getType()));
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -81,7 +95,11 @@ StackAllocationOp::interpret(ArrayRef<Attribute> operands,
   Type type = cast<PointerType>(getType()).getResolvedElementType();
   if (!count || !type)
     return Error("not concrete");
-  size_t addr = state.allocateMemory(count.getInt(), type);
+  Optional<int64_t> size = DataLayoutInterface::getTypeSizeInBytes(
+      TargetInfoAttr::getForHost(getContext()), type);
+  if (!size)
+    return Error("could not query type size");
+  size_t addr = state.allocateMemory(count.getInt() * *size);
   results.push_back(PointerAttr::get(addr, getType()));
   return success();
 }
