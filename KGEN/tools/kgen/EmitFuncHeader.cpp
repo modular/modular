@@ -41,6 +41,7 @@ LogicalResult M::KGEN::emitHeader(ObjectCompiler &compiler,
 extern "C" {{
 #endif
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
 
