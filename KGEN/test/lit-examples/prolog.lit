@@ -10,14 +10,10 @@
 __include "../../../Kernels/lit-stdlib/Int.lit"
 __include "../../../Kernels/lit-stdlib/SIMD.lit"
 __include "../../../Kernels/lit-stdlib/F32.lit"
+__include "../../../Kernels/lit-stdlib/Assert.lit"
 
-# CHECK-LABEL: assertParam
-fn assertParam[condVal: __mlir_type.i1]():
-# CHECK: kgen.param.assert <condVal>, "param assertion failed"
-  __mlir_op.`kgen.param.assert`[_type: [],
-                                cond: condVal,
-                                message: "param assertion failed"]()
 
+# CHECK: lit.func @"printF32
 fn printF32(x: F32):
   var f64 = __mlir_op.`pop.cast`[_type: __mlir_type.`!pop.scalar<f64>`](x.value)
   __mlir_op.`zap.print`[_type: [], fmt: "%f\n"](f64)
