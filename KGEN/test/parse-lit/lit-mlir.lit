@@ -47,7 +47,7 @@ fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`] ():
 
 
 # Issue #6282: [Lit] Placeholder substitution does not work on nested types
-struct ComplexSubsitution[type: __mlir_type.`!kgen.dtype`]:
+struct ComplexSubstitution[type: __mlir_type.`!kgen.dtype`]:
   # CHECK: kgen.struct.field pointer : !pop.pointer<scalar<type>>
   var pointer: __mlir_type.`!pop.pointer<!pop.scalar<#lit.placeholder : !kgen.dtype>>`[type]
 
@@ -55,3 +55,13 @@ struct ComplexSubsitution[type: __mlir_type.`!kgen.dtype`]:
 fn typePlaceholder():
   # CHECK: %x = lit.var.decl "x" : <!kgen.list<i32[2]>>
   var x : __mlir_type.`!kgen.list<!lit.placeholder[2]>`[__mlir_type.i32]
+
+# CHECK-LABEL: lit.func @"fancierSubstitutions
+fn fancierSubstitutions():
+  # CHECK: = lit.var.decl "complexInt" : <complex<i32>>
+  var complexInt : __mlir_type[`complex<`, __mlir_type.i32, `>`]
+
+  alias a : __mlir_type.index = 1
+  # CHECK: kgen.param.declare new_lower = <max(a, 42)>
+  alias new_lower = __mlir_attr[`#kgen.param.expr<max,`,
+         a, `, `, 42, `> : index`]
