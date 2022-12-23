@@ -1186,6 +1186,8 @@ def POP_StructConstructOp : POPOp<"struct.construct", [Pure,
   let assemblyFormat = [{
     `(` operands `)` attr-dict `:` qualified(type($result))
   }];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1221,6 +1223,7 @@ def POP_StructGetOp : POPOp<"struct.get", [Pure,
   let builders = [OpBuilder<(ins "Value":$container, "int64_t":$index)>];
 
   let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1257,6 +1260,7 @@ def POP_StructReplaceOp : POPOp<"struct.replace", [Pure,
   }];
 
   let hasVerifier = 1;
+  let hasFolder = 1;
 
   let builders = [
     OpBuilder<(ins "Value":$value, "Value":$container, "int64_t":$index)>
@@ -1337,6 +1341,7 @@ def POP_ArrayCreateOp : POPOp<"array.create", [Pure,
   ];
 
   let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1375,6 +1380,7 @@ def POP_ArrayRepeatOp : POPOp<"array.repeat", [Pure,
   }];
 
   let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1409,6 +1415,7 @@ def POP_ArrayGetOp : POPOp<"array.get", [Pure,
   let builders = [OpBuilder<(ins "Value":$array, "int64_t":$index)>];
 
   let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1443,6 +1450,7 @@ def POP_ArrayReplaceOp : POPOp<"array.replace", [Pure,
   }];
 
   let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1504,6 +1512,7 @@ def VariantCreateOp : POPOp<"variant.create", [Pure]> {
   }];
 
   let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1533,6 +1542,7 @@ def VariantIsOp : POPOp<"variant.is", [Pure]> {
   }];
 
   let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

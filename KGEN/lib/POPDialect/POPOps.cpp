@@ -715,14 +715,6 @@ LogicalResult VariantGetOp::verify() {
   return verifyVariantElementType(*this, getType(), getVariant().getType());
 }
 
-/// Canonicalize `pop.variant.get(pop.variant.create(x)) -> x`.
-OpFoldResult VariantGetOp::fold(ArrayRef<Attribute> operands) {
-  auto create = getVariant().getDefiningOp<VariantCreateOp>();
-  if (!create || create.getOperand().getType() != getType())
-    return {};
-  return create.getOperand();
-}
-
 //===----------------------------------------------------------------------===//
 // StackAllocationOp
 //===----------------------------------------------------------------------===//

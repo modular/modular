@@ -112,7 +112,8 @@ def POP_SIMDAttr : POP_Attr<"SIMD", "simd", [TypedAttrInterface,
 // ArrayAttr
 //===----------------------------------------------------------------------===//
 
-def POP_ArrayAttr : POP_Attr<"Array", "array", [TypedAttrInterface,
+def POP_ArrayAttr : POP_Attr<"Array", "array", [
+    TypedAttrInterface, SubElementAttrInterface,
     DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
   let summary = "An array attribute.";
   let description = [{
@@ -133,6 +134,13 @@ def POP_ArrayAttr : POP_Attr<"Array", "array", [TypedAttrInterface,
     `<` (`>`) : (custom<ArrayElements>($values, ref($type))^ `>`)?
   }];
 
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
+                                        "ArrayType":$type), [{
+      return get(type.getContext(), values, type);
+    }]>
+  ];
+
   let genVerifyDecl = 1;
 }
 
@@ -140,7 +148,8 @@ def POP_ArrayAttr : POP_Attr<"Array", "array", [TypedAttrInterface,
 // StructAttr
 //===----------------------------------------------------------------------===//
 
-def POP_StructAttr : POP_Attr<"Struct", "struct", [TypedAttrInterface,
+def POP_StructAttr : POP_Attr<"Struct", "struct", [
+    TypedAttrInterface, SubElementAttrInterface,
     DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
   let summary = "A heterogeneous list of elements.";
   let description = [{
@@ -161,6 +170,13 @@ def POP_StructAttr : POP_Attr<"Struct", "struct", [TypedAttrInterface,
     `<` (`>`) : (custom<StructElements>($values, ref($type))^ `>`)?
   }];
 
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
+                                        "StructType":$type), [{
+      return get(type.getContext(), values, type);
+    }]>
+  ];
+
   let genVerifyDecl = 1;
 }
 
@@ -168,7 +184,8 @@ def POP_StructAttr : POP_Attr<"Struct", "struct", [TypedAttrInterface,
 // VariantAttr
 //===----------------------------------------------------------------------===//
 
-def POP_VariantAttr : POP_Attr<"Variant", "variant", [TypedAttrInterface,
+def POP_VariantAttr : POP_Attr<"Variant", "variant", [
+    TypedAttrInterface, SubElementAttrInterface,
     DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
   let summary = "A variant constant value.";
   let description = [{
@@ -187,6 +204,13 @@ def POP_VariantAttr : POP_Attr<"Variant", "variant", [TypedAttrInterface,
                         AttributeSelfTypeParameter<"", "VariantType">:$type);
 
   let assemblyFormat = "`<` custom<ColonTypeParamValue>($value) `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$value,
+                                        "VariantType":$type), [{
+      return get(type.getContext(), value, type);
+    }]>
+  ];
 
   let genVerifyDecl = 1;
 }

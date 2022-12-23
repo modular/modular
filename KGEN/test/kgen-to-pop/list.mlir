@@ -201,8 +201,7 @@ kgen.func @variant_of_list(%list: !kgen.list<index[2]>, %var: !pop.variant<i1, !
 
 // CHECK-LABEL: @variant_of_empty_list
 kgen.func @variant_of_empty_list(%list: !kgen.list<i0[0]>, %var: !pop.variant<i1, !kgen.list<i0[0]>>) -> (!kgen.list<i0[0]>, !pop.variant<i1, !kgen.list<i0[0]>>) {
-  // CHECK-NEXT: %[[ARR:.*]] = pop.array.create [] : !pop.array<0, i0>
-  // CHECK-NEXT: %[[VAR:.*]] = pop.variant.create %[[ARR]] : !pop.array<0, i0> -> !pop.variant<i1, array<0, i0>>
+  // CHECK-NEXT: %[[VAR:.*]] = kgen.param.constant: !pop.variant<i1, array<0, i0>> = <#pop.variant<:!pop.array<0, i0> #pop.array<>>
   %0 = pop.variant.create %list : !kgen.list<i0[0]> -> !pop.variant<i1, !kgen.list<i0[0]>>
   %1 = pop.variant.get %var : !pop.variant<i1, !kgen.list<i0[0]>> as !kgen.list<i0[0]>
   // CHECK-NEXT: return %[[VAR]]

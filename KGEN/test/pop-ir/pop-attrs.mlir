@@ -14,7 +14,7 @@ kgen.func @simd_constants() {
 }
 
 // CHECK-LABEL: @array_struct_constants
-kgen.func @array_struct_constants() {
+kgen.generator @array_struct_constants<value: !pop.scalar<f32>>() {
   // CHECK: !pop.struct<index, f32> = <#pop.struct<1, 2.5{{0+}}e+00>>
   %0 = kgen.param.constant: !pop.struct<index, f32> = <#pop.struct<1, 2.5>>
   // CHECK: !pop.array<2, index> = <#pop.array<1, 2>>
