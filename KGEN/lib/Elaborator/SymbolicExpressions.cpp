@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "SymbolicExpressions.h"
+#include "Elaborator.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -133,10 +133,10 @@ static ErrorTree reportFoldError(FuncOp func, Operation &op,
 ErrorTreeOr<TypedAttr>
 IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   // Make sure the function is inflated.
-  asyncMap.mapChained(func, [&](LLCL::AnyAsyncValueRef ch) {
-    return Cache::inflateOp(func, regionCache.copy(), std::move(ch));
+  elaborator.asyncMap.mapChained(func, [&](LLCL::AnyAsyncValueRef ch) {
+    return Cache::inflateOp(func, elaborator.regionCache.copy(), std::move(ch));
   });
-  asyncMap.await(func);
+  elaborator.asyncMap.await(func);
 
   DenseMap<Value, Attribute> values;
   // Map the function argument values.
@@ -194,9 +194,16 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
                            " result is not a parameter expression")));
 }
 
-//=----------------------------------------------------------------------===//
-// IR Evaluator
 //===----------------------------------------------------------------------===//
+// IREvaluator
+//===----------------------------------------------------------------------===//
+
+IREvaluator::IREvaluator(Elaborator &elaborator,
+                         DenseMap<StringAttr, Attribute> paramValues)
+    : ParameterEvaluator(std::move(paramValues)),
+      InterpreterState(elaborator.analysis, elaborator.target),
+      symtab(elaborator.analysis.getTopLevelSymbolTable()),
+      elaborator(elaborator) {}
 
 FailureOr<TypedAttr>
 IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
