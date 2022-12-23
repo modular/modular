@@ -7,8 +7,8 @@
 #ifndef ZAPTYPES_TD
 #define ZAPTYPES_TD
 
-include "KGEN/KGENDialect/KGENTypeInterfaces.td"
 include "KGEN/ZAPDialect/ZAPDialect.td"
+include "Support/MDialect/MTypeInterfaces.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinTypeInterfaces.td"
 

@@ -4,16 +4,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_KGENDIALECT_KGENTYPEINTERFACES_H
-#define KGEN_KGENDIALECT_KGENTYPEINTERFACES_H
+#ifndef SUPPORT_MDIALECT_MTYPEINTERFACES_H
+#define SUPPORT_MDIALECT_MTYPEINTERFACES_H
 
-#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "Support/MDialect/MAttrs.h"
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/KGENDialect/KGENTypeInterfaces.h.inc"
+#include "Support/MDialect/MTypeInterfaces.h.inc"
 
-#endif // KGEN_KGENDIALECT_KGENTYPEINTERFACES_H
+#endif // SUPPORT_MDIALECT_MTYPEINTERFACES_H

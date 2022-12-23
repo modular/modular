@@ -7,6 +7,7 @@
 #ifndef KGEN_POPDIALECT_POPATTRS_H
 #define KGEN_POPDIALECT_POPATTRS_H
 
+#include "KGEN/KGENDialect/KGENAttrInterfaces.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"

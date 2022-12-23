@@ -4,13 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/KGENDialect/KGENTypeInterfaces.h"
+#include "Support/MDialect/MTypeInterfaces.h"
 #include "Support/MathExtras.h"
 #include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/Diagnostics.h"
-#include <random>
 
 using namespace M;
 
@@ -19,8 +16,7 @@ using namespace M;
 //===----------------------------------------------------------------------===//
 
 Optional<int64_t>
-KGEN::DataLayoutInterface::getTypeSizeInBytes(TargetInfoAttr target,
-                                              Type type) {
+M::DataLayoutInterface::getTypeSizeInBytes(TargetInfoAttr target, Type type) {
   // Check for builtin types.
   if (auto iface = llvm::dyn_cast<DataLayoutInterface>(type))
     return iface.getTypeSize(target);
@@ -46,8 +42,7 @@ KGEN::DataLayoutInterface::getTypeSizeInBytes(TargetInfoAttr target,
 }
 
 Optional<int64_t>
-KGEN::DataLayoutInterface::getTypeAlignInBytes(TargetInfoAttr target,
-                                               Type type) {
+M::DataLayoutInterface::getTypeAlignInBytes(TargetInfoAttr target, Type type) {
   Builder b(target.getContext());
   auto iface = llvm::dyn_cast<DataLayoutInterface>(type);
 
@@ -80,4 +75,4 @@ KGEN::DataLayoutInterface::getTypeAlignInBytes(TargetInfoAttr target,
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/KGENDialect/KGENTypeInterfaces.cpp.inc"
+#include "Support/MDialect/MTypeInterfaces.cpp.inc"
