@@ -65,16 +65,6 @@ def LIT_NoneType : LITType<"None", "none"> {
 }
 
 //===----------------------------------------------------------------------===//
-// PlaceholderType
-//===----------------------------------------------------------------------===//
-
-def LIT_PlaceholderType : LITType<"Placeholder", "placeholder"> {
-  let summary = "Used for parameterized MLIR types/attrs before substitution";
-  let parameters = (ins DefaultValuedParameter<"int", "0">:$index);
-  let assemblyFormat = "( `<` $index^ `>`)?";
-}
-
-//===----------------------------------------------------------------------===//
 // Types for magic declarations.
 //===----------------------------------------------------------------------===//
 
