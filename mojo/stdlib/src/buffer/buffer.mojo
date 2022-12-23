@@ -7,7 +7,7 @@
 from Bool import Bool
 from Int import Int
 from SIMD import SIMD
-
+from Assert import assert_param
 
 struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     var pointer: __mlir_type.`!pop.pointer<#lit.placeholder: !kgen.mlirtype>`[
@@ -21,11 +21,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         ],
     ) -> Buffer[size, type]:
         # Construct a Buffer type with statically known size
-        __mlir_op.`kgen.param.assert`[
-            _type:[],
-            cond : size != __mlir_attr.`#kgen.unknown : index`,
-            message:"must be a known size",
-        ]()
+        assert_param[size != __mlir_attr.`#kgen.unknown : index`]()
         return __mlir_op.`kgen.struct.create`[_type : Buffer[size, type]](
             ptr, Int(size)
         )
@@ -37,11 +33,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         in_size: Int,
     ) -> Buffer[size, type]:
         # Construct a Buffer type with dynamic size
-        __mlir_op.`kgen.param.assert`[
-            _type:[],
-            cond : size == __mlir_attr.`#kgen.unknown : index`,
-            message:"must be a dynamic size",
-        ]()
+        assert_param[size == __mlir_attr.`#kgen.unknown : index`]()
         return __mlir_op.`kgen.struct.create`[_type : Buffer[size, type]](
             ptr, in_size
         )
