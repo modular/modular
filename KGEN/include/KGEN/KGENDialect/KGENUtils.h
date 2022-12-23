@@ -131,6 +131,7 @@ void printFunctionSignature(OpAsmPrinter &p, Region &region, TypeRange argTypes,
 /// Parse and print a constraint specification if present.
 ParseResult parseOptionalConstraints(OpAsmParser &p,
                                      ConstraintArrayAttr &constraints);
+
 // FIXME: Remove this when next LLVM integrate lands.
 void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
                               ArrayRef<ConstraintAttr> constraints);
@@ -164,9 +165,6 @@ enum class GeneratorOrFuncKind {
   generator,
   interface,
   precompiled,
-
-  // LIT dialect
-  litfunc,
 };
 
 /// Parse the MLIR syntax for a kgen.generator, kgen.func and related

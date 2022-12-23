@@ -15,7 +15,6 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/FunctionImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -100,13 +99,142 @@ Type LIT::FuncOp::getNormalResultType() {
   return variant.getType(normalIdx);
 }
 
+// These FuncOp attributes are disallowed while parsing since they can
+// be inferred. Likewise while printing we ignore them.
+static StringRef disallowedAttrNames[] = {
+    "constraints",     "implements", "signature",  "sym_name",
+    "valueParamNames", "evaluator",  "defaultImpl"};
+
 /// Parses a LIT Generator.
 ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
-  return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::litfunc);
+  SmallVector<OpAsmParser::Argument> entryArgs;
+  SmallVector<DictionaryAttr> resultAttrs;
+  SmallVector<Type> resultTypes;
+  Builder &builder = parser.getBuilder();
+
+  // Parse the name as a symbol.
+  StringAttr nameAttr;
+  if (parser.parseSymbolName(nameAttr, SymbolTable::getSymbolAttrName(),
+                             result.attributes))
+    return failure();
+
+  // Parse the function signature.
+  ParamDeclArrayAttr inputParamDecls;
+  TypeArrayAttr resultParamTypes;
+  ConventionsAttr conventions;
+  llvm::SMLoc sigLoc;
+  if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamTypes) ||
+      parser.getCurrentLocation(&sigLoc) ||
+      parseFunctionSignature(parser, entryArgs, resultTypes, conventions))
+    return failure();
+
+  ConstraintArrayAttr constraints;
+  if (parseOptionalConstraints(parser, constraints))
+    return failure();
+  result.addAttribute("constraints", constraints);
+
+  SmallVector<Type> argTypes;
+  argTypes.reserve(entryArgs.size());
+  for (auto &arg : entryArgs)
+    argTypes.push_back(arg.type);
+  FunctionType type = builder.getFunctionType(argTypes, resultTypes);
+  auto signature =
+      parser.getChecked<SignatureType>(parser.getContext(), inputParamDecls,
+                                       resultParamTypes, type, conventions);
+  if (!signature)
+    return failure();
+
+  result.addAttribute(getSignatureAttrName(result.name),
+                      TypeAttr::get(signature));
+
+  // Handle keyword argument names.
+  SmallVector<StringAttr> names;
+  for (OpAsmParser::Argument &arg : entryArgs) {
+    StringRef spelling;
+    if (arg.ssaName.name.size() < 2)
+      return parser.emitError(sigLoc, "arguments requires SSA names");
+    if (isdigit(arg.ssaName.name[1])) // %42 -> no name.
+      spelling = "";
+    else
+      spelling = arg.ssaName.name.drop_front();
+    names.push_back(builder.getStringAttr(spelling));
+  }
+
+  result.addAttribute(getValueParamNamesAttrName(result.name),
+                      StringArrayAttr::get(builder.getContext(), names));
+
+  // If function attributes are present, parse them.
+  NamedAttrList parsedAttributes;
+  llvm::SMLoc attributeDictLocation = parser.getCurrentLocation();
+  if (parser.parseOptionalAttrDictWithKeyword(parsedAttributes))
+    return failure();
+
+  // If this function implements an interface.
+  if (succeeded(parser.parseOptionalKeyword("implements"))) {
+    SymbolRefAttr implementsAttr;
+    if (parser.parseAttribute(implementsAttr,
+                              parser.getBuilder().getType<::mlir::NoneType>(),
+                              "implements", result.attributes))
+      return failure();
+  }
+
+  // Disallow attributes that are inferred from elsewhere in the attribute
+  // dictionary.
+  for (StringRef disallowed : disallowedAttrNames) {
+    if (parsedAttributes.get(disallowed))
+      return parser.emitError(attributeDictLocation, "'")
+             << disallowed
+             << "' is an inferred attribute and should not be specified in the "
+                "explicit attribute dictionary";
+  }
+  result.attributes.append(parsedAttributes);
+
+  // Parse the required function body.
+  Region *region = result.addRegion();
+
+  // If this is a generator interface, no body block is allowed.
+  if (dyn_cast_or_null<mlir::UnitAttr>(parsedAttributes.get("isInterface")))
+    return success();
+
+  return parser.parseRegion(*region, entryArgs, /*enableNameShadowing=*/true);
 }
 
 // Print the LIT::FuncOp using the shared printing logic.
-void LIT::FuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
+void LIT::FuncOp::print(OpAsmPrinter &p) {
+  using namespace mlir::function_interface_impl;
+
+  FuncInterface op = cast<FuncInterface>(getOperation());
+  auto func = cast<mlir::FunctionOpInterface>(*op);
+  // Print the operation and the function name.
+  p << ' ';
+
+  p.printSymbolName(func.getName());
+  printOptionalParameterSpec(op.getInputParamDeclsAttr(),
+                             op.getResultParamTypesAttr(), p.getStream());
+
+  ArrayRef<Type> argTypes = op.getArgumentTypes();
+  printFunctionSignature(p, func.getFunctionBody(), argTypes,
+                         op.getResultTypes(), op.getConventions(),
+                         op->getAttrOfType<StringArrayAttr>("valueParamNames"));
+
+  // Don't print the following in lit.func.
+  SmallVector<StringRef> ignoredAttrNames(
+      (ArrayRef<StringRef>(disallowedAttrNames)));
+
+  printFunctionAttributes(p, op, ignoredAttrNames);
+  printOptionalConstraints(p, func, cast<DeclInterface>(*op).getConstraints());
+
+  // If this is a generator implementing a generator.interface, include the
+  // symbol for the generator interface.
+  if (getImplementsAttr()) {
+    p.printNewline();
+    p << "  implements " << op->getAttrOfType<FlatSymbolRefAttr>("implements");
+  }
+
+  p << ' ';
+  if (!func.isExternal())
+    p.printRegion(func.getFunctionBody(), /*printEntryBlockArgs=*/false);
+}
 
 // Name the arguments of the region with the valueParamNames.
 void LIT::FuncOp::getAsmBlockArgumentNames(
