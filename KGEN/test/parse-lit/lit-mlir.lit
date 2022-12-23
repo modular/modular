@@ -50,3 +50,8 @@ fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`] ():
 struct ComplexSubsitution[type: __mlir_type.`!kgen.dtype`]:
   # CHECK: kgen.struct.field pointer : !pop.pointer<scalar<type>>
   var pointer: __mlir_type.`!pop.pointer<!pop.scalar<#lit.placeholder : !kgen.dtype>>`[type]
+
+# Issue #6374: [Lit] Add support for type placeholder
+fn typePlaceholder():
+  # CHECK: %x = lit.var.decl "x" : <!kgen.list<i32[2]>>
+  var x : __mlir_type.`!kgen.list<!lit.placeholder[2]>`[__mlir_type.i32]

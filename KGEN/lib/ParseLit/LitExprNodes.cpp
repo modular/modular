@@ -781,6 +781,23 @@ static T substituteParametersIntoMLIR(T mlirEntityToSubstituteInto,
     }
     return std::pair<Attribute, WalkResult>(newVal, WalkResult::advance());
   });
+  replacer.addReplacement(
+      [&](PlaceholderType attr) -> Optional<std::pair<Type, WalkResult>> {
+        if (nextIndex >= subscript.indices.size()) {
+          emitter.emitError(
+              subscript.getLoc(),
+              "more placeholders found than subscript has indices");
+          return std::pair<Type, WalkResult>(attr, WalkResult::interrupt());
+        }
+
+        // Get the Type value of the subscript index in question.
+        ExprNode *indexVal = subscript.indices[nextIndex++];
+        Type newVal = emitter.emitType(indexVal);
+        if (!newVal)
+          return std::pair<Type, WalkResult>(attr, WalkResult::interrupt());
+
+        return std::pair<Type, WalkResult>(newVal, WalkResult::advance());
+      });
 
   T result = replacer.replace(mlirEntityToSubstituteInto);
 
