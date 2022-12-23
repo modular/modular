@@ -941,7 +941,6 @@ ParseResult LitStmtParser::parseStructStmt(LitLexerCursor startCursor,
   // when it gets referenced.
   getDeclResolver().addDecl(newStruct, smLoc, nameAttr, &containingDecl,
                             startCursor, getLexer().getCursor(), curIndent);
-
   return success();
 }
 

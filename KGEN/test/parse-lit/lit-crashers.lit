@@ -37,3 +37,11 @@ def foo(a): # expected-error {{could not find an 'object' type}}
 
 # expected-error @+1 {{MLIR attribute has no type: #index<cmp_predicate eq>}}
 __mlir_attr.`#index<cmp_predicate eq>`
+
+// -----
+# MLIR Symbol Redefinition crash
+
+struct Foo: # expected-note {{previous definition here}}
+struct Foo: # expected-error {{invalid redefinition of "Foo"}}
+
+fn x(a: Foo):
