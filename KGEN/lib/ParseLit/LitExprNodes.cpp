@@ -749,68 +749,6 @@ static CallableValue substituteParametersIntoUserDefinedType(
        &subscript});
 }
 
-/// Given an Attribute or Type, substitute parameters into instances of
-/// PlaceholderAttr, producing a more concrete thing.
-template <typename T>
-static T substitutePlaceholdersInMLIR(T mlirEntityToSubstituteInto,
-                                      const SubscriptNode &subscript,
-                                      ExprEmitter &emitter) {
-  mlir::AttrTypeReplacer replacer;
-  size_t nextIndex = 0;
-  replacer.addReplacement([&](PlaceholderAttr attr)
-                              -> Optional<std::pair<Attribute, WalkResult>> {
-    if (nextIndex >= subscript.indices.size()) {
-      emitter.emitError(subscript.getLoc(),
-                        "more placeholders found than subscript has indices");
-      return std::pair<Attribute, WalkResult>(attr, WalkResult::interrupt());
-    }
-
-    // Get the attribute value of the subscript index in question.
-    ExprNode *indexVal = subscript.indices[nextIndex++];
-    TypedAttr newVal = emitter.emitMValue(
-        indexVal, "expected meta value in type substitution list");
-    if (!newVal)
-      return std::pair<Attribute, WalkResult>(attr, WalkResult::interrupt());
-
-    // TODO: Support conversions.
-    auto expectedType = attr.getType();
-    if (newVal.getType() != expectedType) {
-      emitter.emitError(indexVal->getLoc(), "parameter of type ")
-          << ASTType(newVal.getType())
-          << " cannot be converted to expected type " << ASTType(expectedType);
-      return std::pair<Attribute, WalkResult>(attr, WalkResult::interrupt());
-    }
-    return std::pair<Attribute, WalkResult>(newVal, WalkResult::advance());
-  });
-  replacer.addReplacement(
-      [&](PlaceholderType attr) -> Optional<std::pair<Type, WalkResult>> {
-        if (nextIndex >= subscript.indices.size()) {
-          emitter.emitError(
-              subscript.getLoc(),
-              "more placeholders found than subscript has indices");
-          return std::pair<Type, WalkResult>(attr, WalkResult::interrupt());
-        }
-
-        // Get the Type value of the subscript index in question.
-        ExprNode *indexVal = subscript.indices[nextIndex++];
-        Type newVal = emitter.emitType(indexVal);
-        if (!newVal)
-          return std::pair<Type, WalkResult>(attr, WalkResult::interrupt());
-
-        return std::pair<Type, WalkResult>(newVal, WalkResult::advance());
-      });
-
-  T result = replacer.replace(mlirEntityToSubstituteInto);
-
-  // Reject extraneous subscript indices.
-  if (result && nextIndex != subscript.indices.size()) {
-    emitter.emitError(subscript.indices[nextIndex]->getLoc(),
-                      "unused parameter substitution");
-    result = {};
-  }
-  return result;
-}
-
 AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
                                ASTType contextualType) const {
   return emitCallable(emitter, contextualType).emitAsValue(emitter);
@@ -918,12 +856,6 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
         return {};
       return CallableValue({attr, this});
     }
-
-    // Handle subsitution of placeholders __mlir_type types.
-    typeValue = substitutePlaceholdersInMLIR(typeValue, *this, emitter);
-    if (typeValue)
-      return CallableValue({typeValue, this});
-    return {};
   }
 
   if (auto mValue = subValue.baseVal.ir.getIfMValue()) {
@@ -931,12 +863,6 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
       return {
           {bindAttributesToMLIROperatorCall(*this, unboundOperator, emitter),
            this}};
-
-    auto attrValue =
-        substitutePlaceholdersInMLIR((Attribute)mValue.get(), *this, emitter);
-    if (auto attrTA = dyn_cast<TypedAttr>(attrValue))
-      return CallableValue({MValue(attrTA), this});
-    return {};
   }
 
   // Emit each of the index values to generate error messages.

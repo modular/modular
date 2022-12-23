@@ -75,30 +75,4 @@ def UnresolvedAliasValueAttr
   ];
 }
 
-//===----------------------------------------------------------------------===//
-// PlaceholderAttr
-//===----------------------------------------------------------------------===//
-
-def LIT_PlaceholderAttr : LITAttr<"Placeholder", "placeholder"> {
-  let summary = "Used for parameterized MLIR types/attrs before substitution";
-  let description = [{
-    This attribute is used at the lit language level to represent MLIR types
-    that will have parameters substituted into them, e.g.
-    `!pop.simd<4, #lit.placeholder>` or
-    `!pop.simd<#lit.placeholder, #lit.placeholder>`.
-
-    Placeholders also have indexes to differentiate them from one another. The
-    index defaults to 0.
-    Indexes can be specified like this:
-    `!pop.simd<4, #lit.placeholder<0>>` or
-    `!pop.simd<#lit.placeholder<0>, #lit.placeholder<1>>`.
-
-    This must be substituted before lowering from LIT.
-  }];
-
-  let parameters = (ins DefaultValuedParameter<"int", "0">:$index,
-                        AttributeSelfTypeParameter<"">:$type);
-  let assemblyFormat = "( `<` $index^ `>`)?";
-}
-
 #endif // KGEN_LITDIALECT_LITATTRS_TD
