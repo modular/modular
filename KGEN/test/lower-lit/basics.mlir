@@ -158,3 +158,13 @@ lit.func @SetIntersect<a, b>()
    > {
   kgen.return
 }
+
+//===----------------------------------------------------------------------===//
+// Evaluator
+//===----------------------------------------------------------------------===//
+
+lit.func @"my_evaluator(__mlir_type.!pop.pointer<(index) -> index>,__mlir_type.index)"(%funcs: !pop.pointer<(index) -> index>, %size: index) -> index attributes {isInterface}
+
+// CHECK-LABEL: @"useEvaluator
+// CHECK-SAME: (!pop.pointer<(index) -> index>, index) -> index = @"my_evaluator{{.*}}
+lit.func @"useEvaluator(__mlir_type.index)"(%x: index) -> index attributes {isInterface}  evaluator (!pop.pointer<(index) -> index>, index) -> index = @"my_evaluator(__mlir_type.!pop.pointer<(index) -> index>,__mlir_type.index)"

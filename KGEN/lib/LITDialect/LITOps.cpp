@@ -193,10 +193,22 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   Region *region = result.addRegion();
 
   // If this is a generator interface, no body block is allowed.
-  if (dyn_cast_or_null<mlir::UnitAttr>(parsedAttributes.get("isInterface")))
+  if (!isa_and_nonnull<mlir::UnitAttr>(parsedAttributes.get("isInterface")) &&
+      parser.parseRegion(*region, entryArgs, /*enableNameShadowing=*/true))
+    return failure();
+
+  // Parse an optional evaluator.
+  if (parser.parseOptionalKeyword("evaluator"))
     return success();
 
-  return parser.parseRegion(*region, entryArgs, /*enableNameShadowing=*/true);
+  Type sigType;
+  TypedAttr evaluator;
+  if (parseKGENType(parser, sigType) || parser.parseEqual() ||
+      parseParamValue(parser, evaluator, sigType))
+    return failure();
+  result.addAttribute(LIT::FuncOp::getEvaluatorAttrName(result.name),
+                      evaluator);
+  return success();
 }
 
 // Print the LIT::FuncOp using the shared printing logic.
@@ -234,6 +246,12 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   p << ' ';
   if (!func.isExternal())
     p.printRegion(func.getFunctionBody(), /*printEntryBlockArgs=*/false);
+  if (SymbolConstantAttr evaluator = getEvaluatorAttr()) {
+    p << " evaluator ";
+    printKGENType(p.getStream(), evaluator.getType());
+    p << " = ";
+    printParamValue(evaluator, p.getStream());
+  }
 }
 
 // Name the arguments of the region with the valueParamNames.
