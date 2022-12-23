@@ -295,13 +295,6 @@ kgen.generator @doIt() -> !pop.scalar<f32> {
 
 // -----
 
-kgen.func @store_load_array(%arg0: !pop.array<2, i24>) -> !pop.array<2, i24> {
-  %0 = pop.stack_allocation 1 x !pop.array<2, i24>
-  pop.store %arg0, %0 : !pop.pointer<array<2, i24>>
-  %1 = pop.load %0 : !pop.pointer<array<2, i24>>
-  kgen.return %1 : !pop.array<2, i24>
-}
-
 kgen.func @store_load_pointer(%arg0: i32) -> i32 {
   %0 = pop.stack_allocation 1 x i32
   pop.store %arg0, %0 : !pop.pointer<i32>
@@ -312,33 +305,11 @@ kgen.func @store_load_pointer(%arg0: i32) -> i32 {
   kgen.return %3 : i32
 }
 
-// FIXME: Can't call generators from a meta context.
-kgen.func @store_load_simd(%arg0: !pop.simd<2, f32>) -> !pop.simd<2, f32> {
-  %0 = pop.stack_allocation 1 x !pop.simd<2, f32>
-  pop.store %arg0, %0 : !pop.pointer<simd<2, f32>>
-  %1 = pop.load %0 : !pop.pointer<simd<2, f32>>
-  kgen.return %1 : !pop.simd<2, f32>
-}
-
-kgen.func @store_load_simd_packed(%arg0: !pop.simd<2, si4>) -> !pop.simd<2, si4> {
-  %0 = pop.stack_allocation 1 x !pop.simd<2, si4>
-  pop.store %arg0, %0 : !pop.pointer<simd<2, si4>>
-  %1 = pop.load %0 : !pop.pointer<simd<2, si4>>
-  kgen.return %1 : !pop.simd<2, si4>
-}
-
-kgen.func @store_load_simd_packed_i2(%arg0: !pop.simd<6, ui2>) -> !pop.simd<6, ui2> {
-  %0 = pop.stack_allocation 1 x !pop.simd<6, ui2>
-  pop.store %arg0, %0 : !pop.pointer<simd<6, ui2>>
-  %1 = pop.load %0 : !pop.pointer<simd<6, ui2>>
-  kgen.return %1 : !pop.simd<6, ui2>
-}
-
-kgen.func @store_load_struct(%arg0: !pop.struct<i8, i16, f64>) -> !pop.struct<i8, i16, f64> {
-  %0 = pop.stack_allocation 1 x !pop.struct<i8, i16, f64>
-  pop.store %arg0, %0 : !pop.pointer<struct<i8, i16, f64>>
-  %1 = pop.load %0 : !pop.pointer<struct<i8, i16, f64>>
-  kgen.return %1 : !pop.struct<i8, i16, f64>
+kgen.generator @store_load<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
+  %0 = pop.stack_allocation 1 x T
+  pop.store %arg0, %0 : !pop.pointer<T>
+  %1 = pop.load %0 : !pop.pointer<T>
+  kgen.return %1 : !kgen.paramref<T>
 }
 
 kgen.func @i24_pair_bitcast(%arg0: !pop.array<2, i24>) -> i64 {
@@ -350,35 +321,12 @@ kgen.func @i24_pair_bitcast(%arg0: !pop.array<2, i24>) -> i64 {
   kgen.return %3 : i64
 }
 
-kgen.func @i8_i16_i32_bitcast(%arg0: !pop.struct<i8, i16, i32>) -> i64 {
-  %0 = pop.stack_allocation 1 x i64
-  %1 = pop.pointer.bitcast %0 : !pop.pointer<i64> to !pop.pointer<struct<i8, i16, i32>>
-  pop.store %arg0, %1 : !pop.pointer<struct<i8, i16, i32>>
-  %2 = pop.load %0 : !pop.pointer<i64>
-  kgen.return %2 : i64
-}
-
-kgen.func @i8_vec_bitcast(%arg0: !pop.simd<2, si8>) -> i16 {
-  %0 = pop.stack_allocation 1 x !pop.simd<2, si8>
-  pop.store %arg0, %0 : !pop.pointer<simd<2, si8>>
-  %1 = pop.pointer.bitcast %0 : !pop.pointer<simd<2, si8>> to !pop.pointer<i16>
-  %2 = pop.load %1 : !pop.pointer<i16>
-  kgen.return %2 : i16
-}
-
-kgen.func @i2_vec_bitcast(%arg0: !pop.simd<4, ui2>) -> ui8 {
-  %0 = pop.stack_allocation 1 x !pop.simd<4, ui2>
-  pop.store %arg0, %0 : !pop.pointer<simd<4, ui2>>
-  %1 = pop.pointer.bitcast %0 : !pop.pointer<simd<4, ui2>> to !pop.pointer<ui8>
-  %2 = pop.load %1 : !pop.pointer<ui8>
-  kgen.return %2 : ui8
-}
-
-kgen.func @store_load_variant(%arg0: !pop.variant<i32, f64>) -> !pop.variant<i32, f64> {
-  %0 = pop.stack_allocation 1 x !pop.variant<i32, f64>
-  pop.store %arg0, %0 : !pop.pointer<variant<i32, f64>>
-  %1 = pop.load %0 : !pop.pointer<variant<i32, f64>>
-  kgen.return %1 : !pop.variant<i32, f64>
+kgen.generator @bitcast<I: type, O: type>(%arg0: !kgen.paramref<I>) -> !kgen.paramref<O> {
+  %0 = pop.stack_allocation 1 x I
+  pop.store %arg0, %0 : !pop.pointer<I>
+  %1 = pop.pointer.bitcast %0 : !pop.pointer<I> to !pop.pointer<O>
+  %2 = pop.load %1 : !pop.pointer<O>
+  kgen.return %2 : !kgen.paramref<O>
 }
 
 // COM: Store the variant and sneakily read its discriminator's raw value.
@@ -395,7 +343,8 @@ kgen.func @variant_bitcast_discr(%arg0: !pop.variant<i32, i64>) -> i8 {
 kgen.generator @do_it() {
   // CHECK-NEXT: #pop.array<123, 456>
   kgen.param.constant: !pop.array<2, i24> = <apply(
-    :(!pop.array<2, i24>) -> !pop.array<2, i24> @store_load_array, #pop.array<123, 456>)>
+    :(!pop.array<2, i24>) -> !pop.array<2, i24> @store_load<T: type = !pop.array<2, i24>>,
+    #pop.array<123, 456>)>
 
   // CHECK-NEXT: <555>
   kgen.param.constant: i32 = <apply(
@@ -403,19 +352,28 @@ kgen.generator @do_it() {
 
   // CHECK-NEXT: #pop.simd<"1.25", "2.25">
   kgen.param.constant: !pop.simd<2, f32> = <apply(
-    :(!pop.simd<2, f32>) -> !pop.simd<2, f32> @store_load_simd, #pop.simd<"1.25", "2.25">)>
+    :(!pop.simd<2, f32>) -> !pop.simd<2, f32> @store_load<T: type = !pop.simd<2, f32>>,
+    #pop.simd<"1.25", "2.25">)>
 
   // CHECK-NEXT: #pop.simd<-7, 7>
   kgen.param.constant: !pop.simd<2, si4> = <apply(
-    :(!pop.simd<2, si4>) -> !pop.simd<2, si4> @store_load_simd_packed, #pop.simd<-7, 7>)>
+    :(!pop.simd<2, si4>) -> !pop.simd<2, si4> @store_load<T: type = !pop.simd<2, si4>>,
+    #pop.simd<-7, 7>)>
 
   // CHECK-NEXT: #pop.simd<0, 1, 2, 3, 3, 2>
   kgen.param.constant: !pop.simd<6, ui2> = <apply(
-    :(!pop.simd<6, ui2>) -> !pop.simd<6, ui2> @store_load_simd_packed_i2, #pop.simd<0, 1, 2, 3, 3, 2>)>
+    :(!pop.simd<6, ui2>) -> !pop.simd<6, ui2> @store_load<T: type =!pop.simd<6, ui2>>,
+    #pop.simd<0, 1, 2, 3, 3, 2>)>
 
   // CHECK-NEXT: #pop.struct<120, 32112, 1.125{{0+}}e+00>
   kgen.param.constant: !pop.struct<i8, i16, f64> = <apply(
-    :(!pop.struct<i8, i16, f64>) -> !pop.struct<i8, i16, f64> @store_load_struct, #pop.struct<120, 32112, 1.125>)>
+    :(!pop.struct<i8, i16, f64>) -> !pop.struct<i8, i16, f64> @store_load<T: type = !pop.struct<i8, i16, f64>>,
+    #pop.struct<120, 32112, 1.125>)>
+
+  // CHECK-NEXT: #pop.variant<:i32 42>
+  kgen.param.constant: !pop.variant<i32, f64> = <apply(
+    :(!pop.variant<i32, f64>) -> !pop.variant<i32, f64> @store_load<T: type = !pop.variant<i32, f64>>,
+    #pop.variant<:i32 42>)>
 
   // CHECK-NEXT: <1099511627792>
   kgen.param.constant: i64 = <apply(
@@ -423,19 +381,18 @@ kgen.generator @do_it() {
 
   // CHECK-NEXT: <8590983192>
   kgen.param.constant: i64 = <apply(
-    :(!pop.struct<i8, i16, i32>) -> i64 @i8_i16_i32_bitcast, #pop.struct<24, 16, 2>)>
+    :(!pop.struct<i8, i16, i32>) -> i64 @bitcast<I: type = !pop.struct<i8, i16, i32>, O: type = i64>,
+    #pop.struct<24, 16, 2>)>
 
   // CHECK-NEXT: <1026>
   kgen.param.constant: i16 = <apply(
-    :(!pop.simd<2, si8>) -> i16 @i8_vec_bitcast, #pop.simd<2, 4>)>
+    :(!pop.simd<2, si8>) -> i16 @bitcast<I: type = !pop.simd<2, si8>, O: type = i16>,
+    #pop.simd<2, 4>)>
 
   // CHECK-NEXT: <229>
   kgen.param.constant: ui8 = <apply(
-    :(!pop.simd<4, ui2>) -> ui8 @i2_vec_bitcast, #pop.simd<1, 1, 2, 3>)>
-
-  // CHECK-NEXT: #pop.variant<:i32 42>
-  kgen.param.constant: !pop.variant<i32, f64> = <apply(
-    :(!pop.variant<i32, f64>) -> !pop.variant<i32, f64> @store_load_variant, #pop.variant<:i32 42>)>
+    :(!pop.simd<4, ui2>) -> ui8 @bitcast<I: type = !pop.simd<4, ui2>, O: type = ui8>,
+    #pop.simd<1, 1, 2, 3>)>
 
   // CHECK-NEXT: <0>
   kgen.param.constant: i8 = <apply(

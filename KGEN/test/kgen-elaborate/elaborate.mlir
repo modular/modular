@@ -1267,3 +1267,22 @@ kgen.generator @bind_signature_region() -> index {
   // CHECK-NEXT: kgen.return %0
   kgen.return %0 : index
 }
+
+// -----
+
+kgen.generator @return_it<A>() -> index {
+  %0 = kgen.param.constant = <A>
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @call_it
+kgen.generator @call_it() {
+  // CHECK-NEXT: <1>
+  kgen.param.constant = <apply(:() -> index bind_signature(:<A>() -> index @return_it, 1))>
+  // CHECK-NEXT: <2>
+  kgen.param.constant = <apply(:() -> index bind_signature(:<A>() -> index @return_it, 2))>
+  // CHECK-NEXT: <3>
+  kgen.param.constant = <apply(:() -> index bind_signature(:<A>() -> index @return_it,
+    apply(:() -> index bind_signature(:<A>() -> index @return_it, 3))))>
+  kgen.return
+}

@@ -233,17 +233,50 @@ IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
 
   if (op.getOpcode() == POC::Apply) {
     auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
-    if (!symbol || !symbol.getType().isConcrete())
+    if (!symbol || !symbol.getType().getResultParamTypes().empty())
       return failure();
     ArrayRef<TypedAttr> operands = op.getOperands().drop_front();
     auto ref = dyn_cast<FlatSymbolRefAttr>(symbol.getSymbol());
     if (!llvm::all_of(operands, ParameterAttr::isSimpleConstant) || !ref)
       return failure();
-    auto func = symtab.lookup<FuncOp>(ref.getAttr());
-    if (!func)
-      return failure();
 
-    ErrorTreeOr<TypedAttr> result = evaluateFunction(func, operands);
+    // Lookup the symbol reference.
+    FuncInterface func = elaborator.lookupCallee(ref);
+    if (!isa<FuncOp>(*func)) {
+      // The symbol does not refer to a concrete function. Ask the elaborator to
+      // instantiate the callee.
+      SmallVector<Attribute> inputParams;
+      for (ParamBindAttr bind : symbol.getParamValues())
+        inputParams.push_back(bind.getValue());
+      EvalContext &evalCtx = elaborator.getEvalContext(ref);
+      auto paramValues = ArrayAttr::get(op.getContext(), inputParams);
+      for (auto [decl, value] :
+           llvm::zip(func.getInputParamDecls(), paramValues))
+        evalCtx.evaluator.setOrOverwriteParameterValue(decl, value);
+      ArrayRef<ErrorTreeOr<ElaboratedGenerator>> results =
+          elaborator.getAllInstantiations(
+              {cast<DeclInterface>(*func), paramValues},
+              /*expansionDepth=*/0, evalCtx);
+
+      // Since we are evaluating the callee at compile time, just pick the first
+      // viable candidate.
+      ErrorTree err(*errorLoc, "unable to evaluate generator or interface");
+      for (const ErrorTreeOr<ElaboratedGenerator> &result : results) {
+        if (result.isError()) {
+          err.addCause(result.getError().copy());
+          continue;
+        }
+        func = result.getValue().func;
+        break;
+      }
+      if (!isa<FuncOp>(*func)) {
+        emitError(std::move(err));
+        return failure();
+      }
+    }
+
+    ErrorTreeOr<TypedAttr> result =
+        evaluateFunction(cast<FuncOp>(*func), operands);
     if (TypedAttr value = result.tryGetValue())
       return value;
     emitError(result.takeError());
