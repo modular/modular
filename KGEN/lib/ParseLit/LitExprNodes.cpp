@@ -761,49 +761,40 @@ static T substituteParametersIntoMLIR(T mlirEntityToSubstituteInto,
                                       ExprEmitter &emitter) {
   mlir::AttrTypeReplacer replacer;
   size_t nextIndex = 0;
-  bool hadError = false;
-  replacer.addReplacement([&](PlaceholderAttr attr) -> Attribute {
+  replacer.addReplacement([&](PlaceholderAttr attr)
+                              -> Optional<std::pair<Attribute, WalkResult>> {
     if (nextIndex >= subscript.indices.size()) {
-      if (!hadError)
-        emitter.emitError(subscript.getLoc(),
-                          "more placeholders found than subscript has indices");
-      hadError = true;
-      return attr;
+      emitter.emitError(subscript.getLoc(),
+                        "more placeholders found than subscript has indices");
+      return std::pair<Attribute, WalkResult>(attr, WalkResult::interrupt());
     }
 
     // Get the attribute value of the subscript index in question.
     ExprNode *indexVal = subscript.indices[nextIndex++];
     TypedAttr newVal = emitter.emitMValue(
         indexVal, "expected meta value in type substitution list");
-    if (!newVal) {
-      hadError = true;
-      return attr;
-    }
+    if (!newVal)
+      return std::pair<Attribute, WalkResult>(attr, WalkResult::interrupt());
 
     // TODO: Support conversions.
     auto expectedType = attr.getType();
     if (newVal.getType() != expectedType) {
-      if (!hadError)
-        emitter.emitError(indexVal->getLoc(), "parameter of type ")
-            << ASTType(newVal.getType())
-            << " cannot be converted to expected type "
-            << ASTType(expectedType);
-      hadError = true;
-      return attr;
+      emitter.emitError(indexVal->getLoc(), "parameter of type ")
+          << ASTType(newVal.getType())
+          << " cannot be converted to expected type " << ASTType(expectedType);
+      return std::pair<Attribute, WalkResult>(attr, WalkResult::interrupt());
     }
-    return newVal;
+    return std::pair<Attribute, WalkResult>(newVal, WalkResult::advance());
   });
 
   T result = replacer.replace(mlirEntityToSubstituteInto);
 
   // Reject extraneous subscript indices.
-  if (!hadError && nextIndex != subscript.indices.size()) {
+  if (result && nextIndex != subscript.indices.size()) {
     emitter.emitError(subscript.indices[nextIndex]->getLoc(),
                       "unused parameter substitution");
-    hadError = true;
+    result = {};
   }
-  if (hadError)
-    return {};
   return result;
 }
 
