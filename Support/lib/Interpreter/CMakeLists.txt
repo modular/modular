@@ -11,4 +11,5 @@ add_modular_library(InterpreterInterface
   InterpreterInterfaceIncGen
   MLIRIR
   MCompilerSupport
+  MDialect
 )

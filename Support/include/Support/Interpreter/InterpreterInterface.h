@@ -9,6 +9,7 @@
 
 #include "Support/Compiler/SymbolTableAnalysis.h"
 #include "Support/ErrorOr.h"
+#include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Support/DebugStringHelper.h"
 
@@ -21,7 +22,8 @@ class MemoryReference;
 
 class InterpreterState {
 public:
-  InterpreterState(SymbolTableAnalysis &analysis) : analysis(analysis) {}
+  InterpreterState(SymbolTableAnalysis &analysis, TargetInfoAttr target)
+      : analysis(analysis), target(target) {}
 
   /// Get the top-level symbol table.
   SymbolTable &getSymbolTable() { return analysis.getTopLevelSymbolTable(); }
@@ -30,6 +32,9 @@ public:
   SymbolTableCollection &getSymbolTables() {
     return analysis.getSymbolTables();
   }
+
+  /// Get the interpreter target.
+  TargetInfoAttr getTarget() const { return target; }
 
   /// Allocate internal interpreter memory of a requested size.
   /// TODO: Allow alignment as well.
@@ -47,6 +52,9 @@ private:
 
   /// The cached symbol table.
   SymbolTableAnalysis &analysis;
+
+  /// The interpreter targt configuration.
+  TargetInfoAttr target;
 
   /// An internal memory table.
   std::vector<uint8_t> memory;
