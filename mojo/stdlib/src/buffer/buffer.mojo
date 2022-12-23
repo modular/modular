@@ -16,9 +16,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     var dynamic_size: Int
 
     fn __new__(
-        ptr: __mlir_type.`!pop.pointer<scalar<#lit.placeholder : !kgen.dtype>>`[
-            type
-        ],
+        ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`]
     ) -> Buffer[size, type]:
         # Construct a Buffer type with statically known size
         assert_param[size != __mlir_attr.`#kgen.unknown : index`]()
@@ -27,9 +25,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         )
 
     fn __new__(
-        ptr: __mlir_type.`!pop.pointer<scalar<#lit.placeholder : !kgen.dtype>>`[
-            type
-        ],
+        ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
         in_size: Int,
     ) -> Buffer[size, type]:
         # Construct a Buffer type with dynamic size
@@ -40,9 +36,8 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
 
     fn _is_dynamic(self) -> Bool:
         # Returns true if the size is not statically known.
-        return __mlir_attr.`#kgen.param.expr<eq, #kgen.unknown : index, #lit.placeholder : index> : i1`[
-            size
-        ]
+        return __mlir_attr[`#kgen.param.expr<eq, #kgen.unknown : index,`,
+                           size, `> : i1`]
 
     fn __len__(self) -> Int:
         # Returns the dynamic size if the buffer is not statically known,
