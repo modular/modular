@@ -483,3 +483,41 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
   localFn(1, b)
   # expected-error @+1 {{invalid indirect call: in argument #0, value of type 'ConvertibleFromInt' cannot be converted to expected type 'Int'}}
   localFn(b, b)
+
+
+@interface
+fn my_evaluator0(funcs: __mlir_type.`!pop.pointer<(index) -> index>`, size: __mlir_type.index) -> __mlir_type.index:
+    ...
+
+@interface
+@evaluator(my_evaluator0)
+# expected-error @+1 {{only one @evaluator decorator is allowed}}
+@evaluator(my_evaluator0)
+fn useEvaluator0(x:  __mlir_type.index) ->  __mlir_type.index:
+  ...
+
+@interface
+# expected-error @+1 {{unable to resolve function named 'my_evaluator1'}}
+@evaluator(my_evaluator1)
+fn useEvaluator1(x:  __mlir_type.index) ->  __mlir_type.index:
+  ...
+
+@interface
+# expected-error @+1 {{@evaluator decorator must specify one function by name}}
+@evaluator(my_evaluator0, my_evaluator0)
+fn useEvaluator2(x:  __mlir_type.index) ->  __mlir_type.index:
+  ...
+
+struct my_struct: # expected-note {{'my_struct' declared here}}
+  pass
+
+@interface
+# expected-error @+1 {{'my_struct' is not a valid function}}
+@evaluator(my_struct)
+fn useEvaluator3(x:  __mlir_type.index) ->  __mlir_type.index:
+  ...
+
+# expected-error @+1 {{only interfaces can have an evaluator}}
+@evaluator(my_evaluator0)
+fn useEvaluator4(x:  __mlir_type.index) ->  __mlir_type.index:
+  ...

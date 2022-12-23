@@ -829,6 +829,7 @@ private:
   void applyInterface(SMLoc loc);
   void applyRaises(SMLoc loc);
   void applyImplements(const CallNode &callNode);
+  void applyEvaluator(const CallNode &callNode);
   void applyLateExport();
 
   ASTDecl &decl;
@@ -906,19 +907,70 @@ void FnDecorators::applyImplements(const CallNode &callNode) {
                 << interfaceName << "' is not a kgen interface";
     diag.attachNote(shared.translateLocation(interfaceDecl->getLoc()))
         << "'" << interfaceName << "' declared here";
+    return;
   }
 
   // FIXME: This needs to type check the signature here, not defer to
   // lowering.  This also needs to resolve the interface.
+  funcOp.setImplementsAttr(interfaceDecl->getSymbolRef());
+}
 
-  // TODO: Allow nested symbols.
-  auto symbol = dyn_cast<FlatSymbolRefAttr>(interfaceDecl->getSymbolRef());
-  if (!symbol) {
-    shared.emitError(callNode.getLoc(), "unable to reference nested symbol");
+// @evaluator interface.
+void FnDecorators::applyEvaluator(const CallNode &callNode) {
+  if (funcOp.getEvaluatorAttr()) {
+    shared.emitError(callNode.getLoc(),
+                     "only one @evaluator decorator is allowed");
     return;
   }
 
-  funcOp.setImplementsAttr(symbol);
+  if (callNode.args.size() != 1 || !isa<DeclRefNode>(callNode.args.front())) {
+    shared.emitError(callNode.getLoc(),
+                     "@evaluator decorator must specify one function by name");
+    return;
+  }
+
+  // Perform a name lookup to find the right symbol.
+  StringRef evaluatorName = cast<DeclRefNode>(callNode.args.front())->spelling;
+  auto result =
+      shared.lookupAndResolveDecl(evaluatorName, callNode.getLoc(), decl);
+
+  // Reject the code if no function was found.
+  ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();
+  if (resultDecls.empty()) {
+    if (result.isFailure())
+      shared.emitError(callNode.getLoc(), "unable to resolve function named '")
+          << evaluatorName << "'";
+    return;
+  }
+
+  // Reject implementation of overloaded function.
+  // TODO: Use signature matching to pick the right overload.
+  if (resultDecls.size() > 1) {
+    auto diag =
+        shared.emitError(callNode.getLoc(),
+                         "cannot (yet!) implement overloaded functions '")
+        << evaluatorName << "'";
+    return;
+  }
+  auto funcDecl = resultDecls[0];
+
+  auto evaluatorFuncOp =
+      dyn_cast_or_null<LIT::FuncOp>(funcDecl->getIfOperation());
+  if (!evaluatorFuncOp) {
+    auto diag = shared.emitError(callNode.getLoc(), "'")
+                << evaluatorName << "' is not a valid function";
+    diag.attachNote(shared.translateLocation(funcDecl->getLoc()))
+        << '\'' << evaluatorName << "' declared here";
+    return;
+  }
+
+  if (!funcOp.getIsInterface())
+    shared.emitError(callNode.getLoc(),
+                     "only interfaces can have an evaluator");
+  SignatureType signature = evaluatorFuncOp.getSignature();
+  auto evaluatorAttr =
+      SymbolConstantAttr::get(funcDecl->getSymbolRef(), signature);
+  funcOp.setEvaluatorAttr(evaluatorAttr);
 }
 
 // Apply all signature decorators.
@@ -946,6 +998,8 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
         processedIt = true;
         if (declRef->spelling == "implements")
           applyImplements(*callNode);
+        else if (declRef->spelling == "evaluator")
+          applyEvaluator(*callNode);
         else
           processedIt = false;
       }

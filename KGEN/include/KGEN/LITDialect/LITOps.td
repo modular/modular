@@ -59,7 +59,8 @@ let description = [{
                        UnitAttr:$isInterface,
                        UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
                        UnitAttr:$raises,
-                       OptionalAttr<SymbolRefAttr>:$implements);
+                       OptionalAttr<SymbolRefAttr>:$implements,
+                       OptionalAttr<KGEN_SymbolConstantAttr>:$evaluator);
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{

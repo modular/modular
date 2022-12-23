@@ -62,6 +62,17 @@ fn func_interface2[type: DType](x: __mlir_type.index) -> __mlir_type.index:
 fn func_impl[type: DType](x: __mlir_type.index) -> __mlir_type.index:
   return x
 
+@interface
+# CHECK: lit.func @"my_evaluator{{.*}}(%funcs: !pop.pointer<(index) -> index>, %size: index) -> index attributes {isInterface}
+fn my_evaluator(funcs: __mlir_type.`!pop.pointer<(index) -> index>`, size: __mlir_type.index) -> __mlir_type.index:
+    ...
+
+@interface
+@evaluator(my_evaluator)
+# CHECK: lit.func @"useEvaluator{{.*}} {isInterface}  evaluator (!pop.pointer<(index) -> index>, index) -> index = @"my_evaluator(__mlir_type.!pop.pointer<(index) -> index>,__mlir_type.index)"
+fn useEvaluator(x:  __mlir_type.index) ->  __mlir_type.index:
+  ...
+
 # CHECK: lit.func @"byval_byref_function(Int,Int&)"(%a: !kgen.declref<@Int>, %b: !pop.pointer<@Int> byref) -> !lit.none
 fn byval_byref_function(a: Int, b&: Int):
   # CHECK-NEXT: pop.store %a, %b

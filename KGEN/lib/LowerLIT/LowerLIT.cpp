@@ -648,9 +648,12 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
 
   // Is a LITFuncOp with empy body representing an interface?
   if (gen.getIsInterface()) {
+    SymbolConstantAttr evaluator;
+    if (gen.getEvaluator().has_value())
+      evaluator = gen.getEvaluatorAttr();
     auto result = b.create<GeneratorInterfaceOp>(
         gen.getLoc(), gen.getSymNameAttr(), gen.getSignatureAttr(),
-        gen.getConstraintsAttr(), nullptr, nullptr);
+        gen.getConstraintsAttr(), evaluator, nullptr);
     // Move over the symbol.
     symbolTable.erase(gen);
     symbolTable.insert(result);
