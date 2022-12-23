@@ -1275,7 +1275,8 @@ def POP_StructReplaceOp : POPOp<"struct.replace", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_StructGEPOp : POPOp<"struct.gep", [Pure,
-    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+    DeclareOpInterfaceMethods<InferTypeOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "struct get element pointer";
   let description = [{
     The `pop.struct.gep` operation takes a pointer to a `!pop.struct` and a
@@ -1462,7 +1463,8 @@ def POP_ArrayReplaceOp : POPOp<"array.replace", [Pure,
 
 def POP_ArrayGEPOp : POPOp<"array.gep", [Pure,
     TypesMatchWith<"pointer to array element type", "array", "result",
-                   "getPointerToArrayElementType($_self)">]> {
+                   "getPointerToArrayElementType($_self)">,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "array get element pointer";
   let description = [{
     The `pop.array.gep` operation takes a pointer to a `!pop.array` and an index

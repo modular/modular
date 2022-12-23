@@ -368,6 +368,10 @@ SmallVector<Type> StructType::getParameterizedElementTypes() const {
   return elementTypes;
 }
 
+Type StructType::getConcreteElementType(unsigned i) const {
+  return llvm::cast<ConcreteTypeConstantAttr>(getElementTypes()[i]).getValue();
+}
+
 StructType StructType::get(MLIRContext *ctx, ArrayRef<Type> elementTypes) {
   SmallVector<TypedAttr> elementTypeExprs;
   elementTypeExprs.reserve(elementTypes.size());

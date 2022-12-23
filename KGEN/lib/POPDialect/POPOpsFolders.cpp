@@ -157,6 +157,39 @@ OpFoldResult StructReplaceOp::fold(ArrayRef<Attribute> operands) {
 }
 
 //===----------------------------------------------------------------------===//
+// StructGEPOp
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess
+POP::StructGEPOp::interpret(ArrayRef<Attribute> operands,
+                            InterpreterState &state,
+                            SmallVectorImpl<OpFoldResult> &results) {
+  auto ptr = dyn_cast_if_present<PointerAttr>(operands.front());
+  if (!ptr)
+    return Error("non-constant inputs");
+
+  size_t offset = 0;
+  auto structType = getContainer().getType().getElementTypeAs<StructType>();
+
+  // Move the address over the elements before the one we are reading.
+  unsigned index = getIndexAttr().getInt();
+  for (unsigned i = 0; i != index; ++i) {
+    auto dl = cast<DataLayoutInterface>(structType.getConcreteElementType(i));
+    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+    offset += *dl.getTypeSize(state.getTarget());
+  }
+
+  // Align the address to the target element.
+  Type targetType = structType.getConcreteElementType(index);
+  offset = llvm::alignTo(
+      offset,
+      *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
+  results.push_back(
+      PointerAttr::get(ptr.getAddr() + offset, PointerType::get(targetType)));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ArrayCreateOp
 //===----------------------------------------------------------------------===//
 
@@ -221,6 +254,28 @@ OpFoldResult ArrayReplaceOp::fold(ArrayRef<Attribute> operands) {
   SmallVector<TypedAttr> values(array.getValues());
   values[index.getInt()] = value;
   return POP::ArrayAttr::get(values, getType());
+}
+
+//===----------------------------------------------------------------------===//
+// ArrayGEPOp
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
+                                     InterpreterState &state,
+                                     SmallVectorImpl<OpFoldResult> &results) {
+  auto ptr = dyn_cast_if_present<PointerAttr>(operands[0]);
+  auto index = dyn_cast_if_present<IntegerAttr>(operands[1]);
+  if (!ptr || !index)
+    return Error("non-constant inputs");
+
+  auto arrayType = getArray().getType().getElementTypeAs<POP::ArrayType>();
+  auto dl = cast<DataLayoutInterface>(arrayType.getResolvedElementType());
+  size_t addr =
+      ptr.getAddr() +
+      index.getInt() * (llvm::alignTo(*dl.getTypeSize(state.getTarget()),
+                                      *dl.getTypeAlign(state.getTarget())));
+  results.push_back(PointerAttr::get(addr, PointerType::get(dl)));
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
