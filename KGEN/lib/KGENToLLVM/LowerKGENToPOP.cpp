@@ -334,10 +334,10 @@ struct ExpandListConstantOp : public mlir::OpRewritePattern<ParamConstantOp> {
 };
 
 /// get(%list[i]) -> %li
-struct ExpandListGetOp : public mlir::OpRewritePattern<ListGetOp> {
+struct ExpandListGetOp : public mlir::OpRewritePattern<POP::ListGetOp> {
   ExpandListGetOp(MLIRContext *ctx) : OpRewritePattern(ctx, /*benefit=*/2) {}
 
-  LogicalResult matchAndRewrite(ListGetOp op,
+  LogicalResult matchAndRewrite(POP::ListGetOp op,
                                 PatternRewriter &b) const override {
     b.replaceOp(
         op, materializeListDestConversion(
@@ -347,10 +347,10 @@ struct ExpandListGetOp : public mlir::OpRewritePattern<ListGetOp> {
 };
 
 /// create(%l0, %l1) -> %l0, %l1
-struct ExpandListCreateOp : public mlir::OpRewritePattern<ListCreateOp> {
+struct ExpandListCreateOp : public mlir::OpRewritePattern<POP::ListCreateOp> {
   ExpandListCreateOp(MLIRContext *ctx) : OpRewritePattern(ctx, /*benefit=*/2) {}
 
-  LogicalResult matchAndRewrite(ListCreateOp op,
+  LogicalResult matchAndRewrite(POP::ListCreateOp op,
                                 PatternRewriter &b) const override {
     b.replaceOp(op, materializeListSourceConversion(
                         b, op.getLoc(), op.getOperands(), op.getType()));

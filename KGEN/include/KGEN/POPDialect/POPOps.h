@@ -25,6 +25,7 @@
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN {
+class ListType;
 class TypeArrayAttr;
 } // namespace M::KGEN
 
