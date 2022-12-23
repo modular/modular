@@ -30,3 +30,10 @@ fn testRaisesWithWeirdError(): # expected-error {{'Error' doesn't resolve to a t
 struct Error:
 
 def foo(a): # expected-error {{could not find an 'object' type}}
+
+
+// -----
+# Crashed at top level.
+
+# expected-error @+1 {{MLIR attribute has no type: #index<cmp_predicate eq>}}
+__mlir_attr.`#index<cmp_predicate eq>`

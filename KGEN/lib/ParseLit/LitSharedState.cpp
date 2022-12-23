@@ -99,6 +99,9 @@ void LitSharedState::initialize(ASTDecl &topLevelDecl) {
   // The outermost scope contains all of the __builtins__ function definitions.
   for (auto &[name, decls] : builtinsDecl.declsInScope)
     declResolver->aliasDecls(decls, name, topLevelDecl.getLoc(), topLevelDecl);
+
+  // Top level is fully resolved now.
+  topLevelDecl.resolvedness = DeclResolvedness::fullyResolved;
 }
 
 /// Emit an error through the parser's logic.
