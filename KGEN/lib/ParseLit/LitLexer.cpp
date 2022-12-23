@@ -389,27 +389,22 @@ static bool isOctalDigit(char C) { return C >= '0' && C <= '7'; }
 
 /// Lex a string literal.
 ///
-/// stringliteral   ::=  [stringprefix] shortstring
-/// stringprefix    ::=  "r" | "R"
+/// stringliteral   ::=  [stringprefix](shortstring | longstring)
+/// stringprefix    ::=  "r" | "u" | "R" | "U" | "f" | "F"
+///                      | "fr" | "Fr" | "fR" | "FR" | "rf" | "rF" | "Rf" | "RF"
 /// shortstring     ::=  "'" shortstringitem* "'" | '"' shortstringitem* '"'
+/// longstring      ::=  "'''" longstringitem* "'''" |
+///                      '"""' longstringitem* '"""'
 /// shortstringitem ::=  shortstringchar | stringescapeseq
+/// longstringitem  ::=  longstringchar | stringescapeseq
 /// shortstringchar ::=  <any source character except "\" or newline or the
-/// quote> stringescapeseq ::=  "\" <any source character>
-///
-///
-// TODO: support full Python grammar below:
-// stringliteral   ::=  [stringprefix](shortstring | longstring)
-// stringprefix    ::=  "r" | "u" | "R" | "U" | "f" | "F"
-//                      | "fr" | "Fr" | "fR" | "FR" | "rf" | "rF" | "Rf" | "RF"
-// shortstring     ::=  "'" shortstringitem* "'" | '"' shortstringitem* '"'
-// longstring      ::=  "'''" longstringitem* "'''" | '"""' longstringitem*
-// '"""' shortstringitem ::=  shortstringchar | stringescapeseq longstringitem
-// ::=  longstringchar | stringescapeseq shortstringchar ::=  <any source
-// character except "\" or newline or the quote> longstringchar  ::=  <any
-// source character except "\"> stringescapeseq ::=  "\" <any source character>
+///                      quote>
+/// longstringchar  ::=  <any source character except "\">
+/// stringescapeseq ::=  "\" <any source character>
 LitToken LitLexer::lexString(const char *tokStart, ssize_t indentation) {
   curPtr = tokStart;
   bool isRaw = false;
+  bool isTripleQuote = false;
   if (*curPtr == 'r' || *curPtr == 'R') {
     isRaw = true;
     ++curPtr;
@@ -419,9 +414,13 @@ LitToken LitLexer::lexString(const char *tokStart, ssize_t indentation) {
     return emitError(tokStart,
                      "expecting a string quoting character: `'` or `\"`");
   char quoteChar = *curPtr;
+  if ((curPtr[1] == quoteChar && curPtr[2] == quoteChar)) {
+    isTripleQuote = true;
+    curPtr += 2;
+  }
   ++curPtr;
 
-  while (*curPtr != quoteChar && curPtr != curBuffer.end()) {
+  while (curPtr != curBuffer.end()) {
     switch (*curPtr++) {
     case '\\':
       if (isRaw) {
@@ -461,18 +460,45 @@ LitToken LitLexer::lexString(const char *tokStart, ssize_t indentation) {
         ++curPtr;
       }
       break;
-    case '\n': // newline isn't allowed in a string.
+    case '\'':
+    case '"':
+      // end of short strings.
+      if (curPtr[-1] == quoteChar && !isTripleQuote) {
+        --curPtr;
+        goto done;
+      }
+      // end of long string
+      if ((curPtr[-1] == quoteChar && curPtr[0] == quoteChar &&
+           curPtr[1] == quoteChar)) {
+        ++curPtr;
+        goto done;
+      }
+      break;
+    case '\n':
     case '\r':
-      return emitError(tokStart, "unterminated string");
+      // newline isn't allowed in a short string.
+      if (!isTripleQuote)
+        return emitError(tokStart, "unterminated string");
+      ++curPtr;
+      break;
     default:
       // Skip over other characters.
       break;
     }
   }
+done:
   if (curPtr == curBuffer.end())
     return emitError(tokStart, "unterminated string");
   ++curPtr;
-  return formToken(LitToken::string, tokStart, indentation);
+
+  if (!isTripleQuote)
+    return formToken(LitToken::string, tokStart, indentation);
+
+  // Use only one character quotes: strip the rest when forming the final
+  // string token.
+  tokStart += 2;
+  return {LitToken::string, StringRef(tokStart, curPtr - tokStart - 2),
+          indentation};
 }
 
 /// Lex a integer number literal.
