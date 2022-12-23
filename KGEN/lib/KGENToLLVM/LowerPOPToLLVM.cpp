@@ -1133,8 +1133,9 @@ struct ConvertPOPVariantGet : mlir::ConvertOpToLLVMPattern<VariantGetOp> {
     VariantHelper helper(rewriter, op.getLoc());
     ArrayRef<Value>::iterator valueIt = storageValues.begin();
     unsigned storageOffset = 0;
+    unsigned offset = 0;
     Value result =
-        helper.walkAndExtractVariant(valueIt, storageOffset, valueType);
+        helper.walkAndExtractVariant(valueIt, storageOffset, offset, valueType);
 
     rewriter.replaceOp(op, result);
     return success();

@@ -70,12 +70,14 @@ public:
   /// current content element values. It is initialized with zeroes. The second
   /// is an iterator to the content element types.
   void walkAndCreateVariant(MutableArrayRef<Value>::iterator &valueIt,
-                            unsigned &storageOffset, Value value);
+                            unsigned &storageOffset, unsigned &offset,
+                            Value value);
 
   /// Walk a simple or aggregate LLVM type and generate the code to extract its
   /// elements from a variant's content type.
   Value walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
-                              unsigned &storageOffset, Type type);
+                              unsigned &storageOffset, unsigned &offset,
+                              Type type);
 
 private:
   /// The builder to use.

@@ -173,27 +173,56 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
 // VariantHelper
 //===----------------------------------------------------------------------===//
 
+/// Advance the variant storage pointer by a set amount no more than the current
+/// amount of remaining space in the current storage element.
+template <typename ItType>
+static unsigned advanceStoragePtr(ItType &valueIt, unsigned &storageOffset,
+                                  unsigned amt) {
+  auto curStorageSize = cast<IntegerType>(valueIt->getType()).getWidth();
+  unsigned advanceBy = std::min(amt, curStorageSize - storageOffset);
+  storageOffset += advanceBy;
+  if (storageOffset == curStorageSize) {
+    ++valueIt;
+    storageOffset = 0;
+  }
+  return advanceBy;
+}
+
+/// Pad the variant storage by a bit amount. This is used to add padding to the
+/// variant layout.
+template <typename ItType>
+static void addStoragePadding(ItType &valueIt, unsigned &storageOffset,
+                              unsigned &offset, unsigned alignment) {
+  unsigned padding = llvm::alignTo(offset, alignment * CHAR_BIT) - offset;
+  for (unsigned added = 0; added != padding;)
+    added += advanceStoragePtr(valueIt, storageOffset, padding - added);
+  offset += padding;
+}
+
 void VariantHelper::walkAndCreateVariant(
     MutableArrayRef<Value>::iterator &valueIt, unsigned &storageOffset,
-    Value value) {
+    unsigned &offset, Value value) {
+  // Align the storage pointer to the current value being stored.
+  addStoragePadding(valueIt, storageOffset, offset,
+                    dl.getTypeABIAlignment(value.getType()));
+
   // Aggregate types like structs and arrays are flattened to their leaf types.
   // Leaf types are integers, floats, and pointers.
   if (isa<IntegerType, FloatType, LLVM::LLVMPointerType>(value.getType())) {
     Value normalizedValue;
     // Normalize the value to store to an integer.
-    if (isa<IntegerType>(value.getType())) {
+    if (isa<IntegerType>(value.getType()))
       normalizedValue = value;
-    } else if (auto fpType = dyn_cast<FloatType>(value.getType())) {
+    else if (auto fpType = dyn_cast<FloatType>(value.getType()))
       normalizedValue =
           b.create<LLVM::BitcastOp>(b.getIntegerType(fpType.getWidth()), value);
-    } else {
-      // Pointer type.
+    else
       normalizedValue = b.create<LLVM::PtrToIntOp>(
           b.getIntegerType(dl.getTypeSizeInBits(value.getType())), value);
-    }
 
     unsigned curValueSize =
         cast<IntegerType>(normalizedValue.getType()).getWidth();
+    offset += curValueSize;
     unsigned curValueOffset = 0;
     while (curValueOffset != curValueSize) {
       // Compute the remaining space.
@@ -215,18 +244,8 @@ void VariantHelper::walkAndCreateVariant(
       // Set the bits of the current value to store.
       *valueIt = b.create<LLVM::OrOp>(*valueIt, valueToStore);
 
-      unsigned remainingSpace = curStorageType.getWidth() - storageOffset;
-      unsigned amountToStore = curValueSize - curValueOffset;
-      if (amountToStore <= remainingSpace) {
-        // The entire value has been stored.
-        storageOffset += amountToStore;
-        curValueOffset += amountToStore;
-      } else {
-        // Overflow to the next storage element.
-        ++valueIt;
-        storageOffset = 0;
-        curValueOffset += remainingSpace;
-      }
+      curValueOffset += advanceStoragePtr(valueIt, storageOffset,
+                                          curValueSize - curValueOffset);
     }
 
     // The value has been stored.
@@ -237,14 +256,14 @@ void VariantHelper::walkAndCreateVariant(
   if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(value.getType())) {
     for (unsigned i = 0, e = arrayType.getNumElements(); i < e; ++i) {
       Value nestedValue = b.create<LLVM::ExtractValueOp>(value, i);
-      walkAndCreateVariant(valueIt, storageOffset, nestedValue);
+      walkAndCreateVariant(valueIt, storageOffset, offset, nestedValue);
     }
     return;
   }
   if (auto structType = dyn_cast<LLVM::LLVMStructType>(value.getType())) {
     for (unsigned i = 0, e = structType.getBody().size(); i < e; ++i) {
       Value nestedValue = b.create<LLVM::ExtractValueOp>(value, i);
-      walkAndCreateVariant(valueIt, storageOffset, nestedValue);
+      walkAndCreateVariant(valueIt, storageOffset, offset, nestedValue);
     }
     return;
   }
@@ -252,7 +271,7 @@ void VariantHelper::walkAndCreateVariant(
     for (unsigned i = 0, e = vecType.getNumElements(); i < e; ++i) {
       Value nestedValue = b.create<LLVM::ExtractElementOp>(
           value, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
-      walkAndCreateVariant(valueIt, storageOffset, nestedValue);
+      walkAndCreateVariant(valueIt, storageOffset, offset, nestedValue);
     }
     return;
   }
@@ -260,12 +279,17 @@ void VariantHelper::walkAndCreateVariant(
   for (unsigned i = 0, e = vectorType.getNumElements(); i < e; ++i) {
     Value nestedValue = b.create<LLVM::ExtractElementOp>(
         value, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
-    walkAndCreateVariant(valueIt, storageOffset, nestedValue);
+    walkAndCreateVariant(valueIt, storageOffset, offset, nestedValue);
   }
 }
 
 Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
-                                           unsigned &storageOffset, Type type) {
+                                           unsigned &storageOffset,
+                                           unsigned &offset, Type type) {
+  // Align the storage pointer to the current value being stored.
+  addStoragePadding(valueIt, storageOffset, offset,
+                    dl.getTypeABIAlignment(type));
+
   // Given a leaf type, extract a value of that type from the current storage.
   if (isa<IntegerType, FloatType, LLVM::LLVMPointerType>(type)) {
     IntegerType normalizedType;
@@ -277,6 +301,7 @@ Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
       normalizedType = b.getIntegerType(dl.getTypeSize(type));
 
     unsigned curValueSize = normalizedType.getWidth();
+    offset += curValueSize;
     unsigned curValueOffset = 0;
     Value curValue = b.create<LLVM::ConstantOp>(normalizedType, 0);
     while (curValueOffset != curValueSize) {
@@ -296,16 +321,8 @@ Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
 
       curValue = b.create<LLVM::OrOp>(curValue, valueToLoad);
 
-      unsigned remainingStorage = storageType.getWidth() - storageOffset;
-      unsigned amountToLoad = curValueSize - curValueOffset;
-      if (amountToLoad < remainingStorage) {
-        storageOffset += amountToLoad;
-        curValueOffset += amountToLoad;
-      } else {
-        ++valueIt;
-        storageOffset = 0;
-        curValueOffset += remainingStorage;
-      }
+      curValueOffset += advanceStoragePtr(valueIt, storageOffset,
+                                          curValueSize - curValueOffset);
     }
 
     if (isa<FloatType>(type))
@@ -319,7 +336,7 @@ Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
   Value result = b.create<LLVM::UndefOp>(type);
   if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(type)) {
     for (unsigned i = 0, e = arrayType.getNumElements(); i < e; ++i) {
-      Value element = walkAndExtractVariant(valueIt, storageOffset,
+      Value element = walkAndExtractVariant(valueIt, storageOffset, offset,
                                             arrayType.getElementType());
       result = b.create<LLVM::InsertValueOp>(result, element, i);
     }
@@ -328,14 +345,14 @@ Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
   if (auto structType = dyn_cast<LLVM::LLVMStructType>(type)) {
     for (auto [idx, elementType] : llvm::enumerate(structType.getBody())) {
       Value element =
-          walkAndExtractVariant(valueIt, storageOffset, elementType);
+          walkAndExtractVariant(valueIt, storageOffset, offset, elementType);
       result = b.create<LLVM::InsertValueOp>(result, element, idx);
     }
     return result;
   }
   if (auto vecType = dyn_cast<LLVM::LLVMFixedVectorType>(type)) {
     for (unsigned i = 0, e = vecType.getNumElements(); i < e; ++i) {
-      Value element = walkAndExtractVariant(valueIt, storageOffset,
+      Value element = walkAndExtractVariant(valueIt, storageOffset, offset,
                                             vecType.getElementType());
       result = b.create<LLVM::InsertElementOp>(
           result, element, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
@@ -344,7 +361,7 @@ Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
   }
   auto vectorType = cast<VectorType>(type);
   for (unsigned i = 0, e = vectorType.getNumElements(); i < e; ++i) {
-    Value element = walkAndExtractVariant(valueIt, storageOffset,
+    Value element = walkAndExtractVariant(valueIt, storageOffset, offset,
                                           vectorType.getElementType());
     result = b.create<LLVM::InsertElementOp>(
         result, element, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
@@ -361,9 +378,10 @@ Value VariantHelper::materializeLLVMVariant(Type type, Value value,
     storageValues.push_back(
         b.create<LLVM::ConstantOp>(contentType.getElementType(), 0));
 
-  unsigned storageOffset = 0;
   MutableArrayRef<Value>::iterator valueIt = storageValues.begin();
-  walkAndCreateVariant(valueIt, storageOffset, value);
+  unsigned storageOffset = 0;
+  unsigned offset = 0;
+  walkAndCreateVariant(valueIt, storageOffset, offset, value);
 
   Value content = b.create<LLVM::UndefOp>(contentType);
   for (auto [idx, value] : llvm::enumerate(storageValues))
