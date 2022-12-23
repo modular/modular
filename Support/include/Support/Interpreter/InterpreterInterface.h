@@ -13,13 +13,11 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Support/DebugStringHelper.h"
 
-namespace M {
-class MemoryReference;
-
 //===----------------------------------------------------------------------===//
 // InterpreterState
 //===----------------------------------------------------------------------===//
 
+namespace M {
 class InterpreterState {
 public:
   InterpreterState(SymbolTableAnalysis &analysis, TargetInfoAttr target)
@@ -40,15 +38,16 @@ public:
   /// TODO: Allow alignment as well.
   intptr_t allocateMemory(size_t size);
 
-  /// Get a memory reference.
-  ErrorOr<MemoryReference> getMemory(intptr_t addr);
+  /// Write an attribute value of a given type to the provided chunk of memory.
+  ErrorOrSuccess writeAttributeToMemory(intptr_t addr, TypedAttr value);
+
+  /// Read an attribute value of the given type from the provided chunk of
+  /// memory.
+  ErrorOr<TypedAttr> readAttributeFromMemory(intptr_t addr, Type type);
 
 private:
-  /// Get a pointer to the underlying memory given a memory reference.
-  ErrorOr<void *> materializeReference(intptr_t addr, size_t size);
-
-  /// Allow memory references to materialize themselves.
-  friend class MemoryReference;
+  /// Try to get a memory reference at the given address.
+  ErrorOr<void *> getMemory(intptr_t addr, size_t size);
 
   /// The cached symbol table.
   SymbolTableAnalysis &analysis;
@@ -59,41 +58,6 @@ private:
   /// An internal memory table.
   std::vector<uint8_t> memory;
 };
-
-//===----------------------------------------------------------------------===//
-// MemoryableTypeInterface
-//===----------------------------------------------------------------------===//
-
-/// This class encapsulates a "safe" reference to raw interpreter memory.
-class MemoryReference {
-public:
-  /// Request a chunk of memory of a certain size.
-  ErrorOr<void *> get(size_t size);
-
-private:
-  MemoryReference(InterpreterState &state, intptr_t addr)
-      : state(state), addr(addr) {}
-
-  /// Allow the interpreter state to create memory references.
-  friend class InterpreterState;
-
-  /// The underlying interpreter state.
-  InterpreterState &state;
-
-  /// The "address" of the memory in the interpreter.
-  intptr_t addr;
-};
-
-/// Write an attribute value of a given type to the provided chunk of memory.
-/// This method should be used over invoking the interface methods directly,
-/// since it covers builtin attributes and types.
-ErrorOrSuccess writeAttributeToMemory(TypedAttr value, MemoryReference ref);
-
-/// Read an attribute value of the given type from the provided chunk of memory.
-/// This method should be used over invoking the interface methods directly,
-/// since it covers builtin attributes and types.
-ErrorOr<TypedAttr> readAttributeFromMemory(Type type, MemoryReference ref);
-
 } // namespace M
 
 //===----------------------------------------------------------------------===//

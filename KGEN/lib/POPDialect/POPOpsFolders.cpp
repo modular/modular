@@ -34,11 +34,8 @@ ErrorOrSuccess LoadOp::interpret(ArrayRef<Attribute> operands,
   if (!ptr)
     return Error("non-constant inputs");
 
-  ErrorOr<MemoryReference> ref = state.getMemory(ptr.getAddr());
-  if (ref.isError())
-    return ref.takeError();
   ErrorOr<TypedAttr> result =
-      readAttributeFromMemory(getType(), ref.takeValue());
+      state.readAttributeFromMemory(ptr.getAddr(), getType());
   if (result.isError())
     return result.takeError();
   results.push_back(result.takeValue());
@@ -57,10 +54,7 @@ ErrorOrSuccess StoreOp::interpret(ArrayRef<Attribute> operands,
   if (!value || !ptr)
     return Error("non-constant inputs");
 
-  ErrorOr<MemoryReference> ref = state.getMemory(ptr.getAddr());
-  if (ref.isError())
-    return ref.takeError();
-  return writeAttributeToMemory(value, ref.takeValue());
+  return state.writeAttributeToMemory(ptr.getAddr(), value);
 }
 
 //===----------------------------------------------------------------------===//

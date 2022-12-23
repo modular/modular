@@ -53,13 +53,13 @@ def MemoryableTypeInterface : TypeInterface<"MemoryableTypeInterface"> {
   let methods = [
     InterfaceMethod<[{
       Write the raw contents of the attribute to the provided chunk of memory.
-    }], "ErrorOrSuccess", "writeTo", (ins "TypedAttr":$value,
-                                          "MemoryReference":$ref)>,
+    }], "ErrorOrSuccess", "writeTo", (ins "TypedAttr":$value, "int64_t":$size,
+                                          "void *":$mem)>,
     InterfaceMethod<[{
       Materialize an instance of this type by reading the raw contents of an
       attribute that represents a value of this type from the provided chunk of
       memory.
-    }], "ErrorOr<TypedAttr>", "readFrom", (ins "MemoryReference":$ref)>
+    }], "ErrorOr<TypedAttr>", "readFrom", (ins "int64_t":$size, "void *":$mem)>
   ];
 }
 
