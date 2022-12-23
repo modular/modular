@@ -1141,19 +1141,6 @@ void KGEN::printTypesWithConventions(raw_ostream &os, TypeRange operandTypes,
 /// Parse a constraint specification if present.
 /// constraints-spec ::=
 ///    `constraints` `<` attribute-value (`,` attribute-value)? `>`
-static ParseResult parseOptionalConstraints(OpAsmParser &parser,
-                                            OperationState &result,
-                                            GeneratorOrFuncKind opKind) {
-  // Funcs cannot have constraint specifications.
-  if (opKind == GeneratorOrFuncKind::func)
-    return success();
-  ConstraintArrayAttr constraints;
-  if (parseOptionalConstraints(parser, constraints))
-    return failure();
-  result.addAttribute("constraints", constraints);
-  return success();
-}
-
 ParseResult KGEN::parseOptionalConstraints(OpAsmParser &parser,
                                            ConstraintArrayAttr &result) {
   SmallVector<ConstraintAttr> constraints;
@@ -1221,9 +1208,16 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   llvm::SMLoc sigLoc;
   if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamTypes) ||
       parser.getCurrentLocation(&sigLoc) ||
-      parseFunctionSignature(parser, entryArgs, resultTypes, conventions) ||
-      ::parseOptionalConstraints(parser, result, opKind))
+      parseFunctionSignature(parser, entryArgs, resultTypes, conventions))
     return failure();
+
+  // Funcs cannot have constraint specifications.
+  if (opKind != GeneratorOrFuncKind::func) {
+    ConstraintArrayAttr constraints;
+    if (parseOptionalConstraints(parser, constraints))
+      return failure();
+    result.addAttribute("constraints", constraints);
+  }
 
   SmallVector<Type> argTypes;
   argTypes.reserve(entryArgs.size());
@@ -1238,24 +1232,6 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
 
   result.addAttribute("signature", TypeAttr::get(signature));
 
-  // If this is a litfunc, handle keyword argument names.
-  if (opKind == GeneratorOrFuncKind::litfunc) {
-    SmallVector<StringAttr> names;
-    for (OpAsmParser::Argument &arg : entryArgs) {
-      StringRef spelling;
-      if (arg.ssaName.name.size() < 2)
-        return parser.emitError(sigLoc, "arguments requires SSA names");
-      if (isdigit(arg.ssaName.name[1])) // %42 -> no name.
-        spelling = "";
-      else
-        spelling = arg.ssaName.name.drop_front();
-      names.push_back(builder.getStringAttr(spelling));
-    }
-
-    result.addAttribute("valueParamNames",
-                        StringArrayAttr::get(builder.getContext(), names));
-  }
-
   // If function attributes are present, parse them.
   NamedAttrList parsedAttributes;
   llvm::SMLoc attributeDictLocation = parser.getCurrentLocation();
@@ -1264,8 +1240,7 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
 
   // If this is a generator, see if it is an implementation of a generator
   // interface.
-  if ((opKind == GeneratorOrFuncKind::generator ||
-       opKind == GeneratorOrFuncKind::litfunc) &&
+  if (opKind == GeneratorOrFuncKind::generator &&
       succeeded(parser.parseOptionalKeyword("implements"))) {
     SymbolRefAttr implementsAttr;
     if (parser.parseAttribute(implementsAttr,
@@ -1301,8 +1276,6 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
 }
 
 void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
-  using namespace mlir::function_interface_impl;
-
   auto func = cast<mlir::FunctionOpInterface>(*op);
 
   // Print the operation and the function name.
@@ -1315,28 +1288,30 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
 
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   printFunctionSignature(p, func.getFunctionBody(), argTypes,
-                         op.getResultTypes(), op.getConventions(),
-                         op->getAttrOfType<StringArrayAttr>("valueParamNames"));
+                         op.getResultTypes(), op.getConventions());
 
   SmallVector<StringRef> ignoredAttrNames(
       GeneratorOp::getAttributeNames().begin(),
       GeneratorOp::getAttributeNames().end());
-  // Don't print valueParamNames in lit.func.
-  ignoredAttrNames.push_back("valueParamNames");
   // Don't print evaluator in kgen.generator.interface.
   ignoredAttrNames.push_back("evaluator");
   // Don't print the default_impl in kgen.generator.interface.
   ignoredAttrNames.push_back("defaultImpl");
 
-  printFunctionAttributes(p, op, ignoredAttrNames);
+  // Print out function attributes, if present.
+  SmallVector<StringRef, 8> ignoredAttrs = {SymbolTable::getSymbolAttrName()};
+  ignoredAttrs.append(ignoredAttrNames.begin(), ignoredAttrNames.end());
+  p.printOptionalAttrDictWithKeyword(op->getAttrs(), ignoredAttrs);
+
   printOptionalConstraints(p, func, cast<DeclInterface>(*op).getConstraints());
 
   // If this is a generator implementing a generator.interface, include the
   // symbol for the generator interface.
-  if (auto implementsAttr =
-          op->getAttrOfType<FlatSymbolRefAttr>("implements")) {
-    p.printNewline();
-    p << "  implements " << implementsAttr;
+  if (auto gen = dyn_cast<GeneratorOp>(*op)) {
+    if (auto itf = gen.getImplementsAttr()) {
+      p.printNewline();
+      p << "  implements " << itf;
+    }
   }
 
   p << ' ';
