@@ -25,12 +25,14 @@ public:
   /// Construct the IR evaluator with a symbol table for evaluating symbolic
   /// expressions.
   IREvaluator(
-      SymbolTableAnalysis &analysis, LLCL::AsyncSideEffectMap &asyncMap,
+      SymbolTableAnalysis &analysis, TargetInfoAttr target,
+      LLCL::AsyncSideEffectMap &asyncMap,
       LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache,
       LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache,
       DenseMap<StringAttr, Attribute> paramValues =
           DenseMap<StringAttr, Attribute>())
-      : ParameterEvaluator(std::move(paramValues)), InterpreterState(analysis),
+      : ParameterEvaluator(std::move(paramValues)),
+        InterpreterState(analysis, target),
         symtab(analysis.getTopLevelSymbolTable()), asyncMap(asyncMap),
         regionCache(std::move(regionCache)),
         transformCache(std::move(transformCache)) {}

@@ -74,8 +74,8 @@ ErrorOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
   auto offset = dyn_cast_or_null<IntegerAttr>(operands[1]);
   if (!ptr || !offset)
     return Error("non-constant inputs");
-  Optional<int64_t> elSize = DataLayoutInterface::getTypeSizeInBytes(
-      TargetInfoAttr::getForHost(getContext()), ptr.getType());
+  Optional<int64_t> elSize =
+      DataLayoutInterface::getTypeSizeInBytes(state.getTarget(), ptr.getType());
   if (!elSize)
     return Error("could not query pointer element size");
   results.push_back(PointerAttr::get(ptr.getAddr() + *elSize * offset.getInt(),
@@ -95,8 +95,8 @@ StackAllocationOp::interpret(ArrayRef<Attribute> operands,
   Type type = cast<PointerType>(getType()).getResolvedElementType();
   if (!count || !type)
     return Error("not concrete");
-  Optional<int64_t> size = DataLayoutInterface::getTypeSizeInBytes(
-      TargetInfoAttr::getForHost(getContext()), type);
+  Optional<int64_t> size =
+      DataLayoutInterface::getTypeSizeInBytes(state.getTarget(), type);
   if (!size)
     return Error("could not query type size");
   size_t addr = state.allocateMemory(count.getInt() * *size);

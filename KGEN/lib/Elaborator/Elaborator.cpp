@@ -151,12 +151,12 @@ class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
   Elaborator(
-      SymbolTableAnalysis &analysis, LLCL::Runtime &runtime,
-      LLCL::AsyncSideEffectMap &map,
+      SymbolTableAnalysis &analysis, TargetInfoAttr target,
+      LLCL::Runtime &runtime, LLCL::AsyncSideEffectMap &map,
       LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache,
       LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache,
       bool enableSearch = false)
-      : analysis(analysis), runtime(runtime), asyncMap(map),
+      : analysis(analysis), target(target), runtime(runtime), asyncMap(map),
         transformCache(std::move(transformCache)),
         regionCache(std::move(regionCache)), enableSearch(enableSearch) {}
 
@@ -257,7 +257,11 @@ public:
   /// Instantiate a new evaluator with the given parameters.
   IREvaluator createEvaluator(DenseMap<StringAttr, Attribute> values =
                                   DenseMap<StringAttr, Attribute>()) {
-    return {analysis, asyncMap, regionCache.copy(), transformCache.copy(),
+    return {analysis,
+            target,
+            asyncMap,
+            regionCache.copy(),
+            transformCache.copy(),
             std::move(values)};
   }
 
@@ -294,6 +298,9 @@ private:
 
   /// This symbol table analysis allows efficient lookups across the module.
   SymbolTableAnalysis &analysis;
+
+  /// The target we are compiling code for.
+  TargetInfoAttr target;
 
   /// This provides a runtime reference for the Elaborator and all its
   /// functionality.
@@ -1596,9 +1603,7 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
   mlir::writeBytecodeToFile(evalFunc, *keyBuf);
 
   // And finally, the target.
-  // TODO(#5584): This needs to use the target we're compiling *for*, not the
-  //              host.
-  *keyBuf << TargetInfoAttr::getForHost(itf->getContext());
+  *keyBuf << target;
 
   // Alright - we want to do search now.
   LLCL::AsyncValue::registerTypes<ErrorTreeOr<ElaboratedGenerator>>();
@@ -1814,8 +1819,10 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
     });
   }
 
-  Elaborator elaborator(analysis, runtime, asyncMap, transformCache.copy(),
-                        regionCache.copy(), enableSearch);
+  // TODO: Pipe the compilation target through the pipeline.
+  Elaborator elaborator(
+      analysis, TargetInfoAttr::getForHost(primary.getContext()), runtime,
+      asyncMap, transformCache.copy(), regionCache.copy(), enableSearch);
 
   // Scan the primary and library module to collect all the interfaces,
   // verifying that any common interfaces are the same.
