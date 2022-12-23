@@ -343,21 +343,15 @@ kgen.generator @datalayout_operators() {
   %2 = kgen.param.constant = <get_sizeof(f64, #kgen<target host>)>
   // CHECK-NEXT: <8>
   %3 = kgen.param.constant = <get_sizeof(index, #kgen<target host>)>
-  // CHECK-NEXT: <2>
-  %4 = kgen.param.constant = <get_sizeof(vector<2xi8>, #kgen<target host>)>
-  // CHECK-NEXT: <4>
-  %5 = kgen.param.constant = <get_sizeof(vector<3xi8>, #kgen<target host>)>
 
   // CHECK-NEXT: <4>
-  %6 = kgen.param.constant = <get_alignof(i32, #kgen<target host>)>
+  %4 = kgen.param.constant = <get_alignof(i32, #kgen<target host>)>
   // CHECK-NEXT: <4>
-  %7 = kgen.param.constant = <get_alignof(i20, #kgen<target host>)>
+  %5 = kgen.param.constant = <get_alignof(i20, #kgen<target host>)>
   // CHECK-NEXT: <8>
-  %8 = kgen.param.constant = <get_alignof(f64, #kgen<target host>)>
+  %6 = kgen.param.constant = <get_alignof(f64, #kgen<target host>)>
   // CHECK-NEXT: <8>
-  %9 = kgen.param.constant = <get_alignof(index, #kgen<target host>)>
-  // CHECK-NEXT: <4>
-  %10 = kgen.param.constant = <get_alignof(vector<3xi8>, #kgen<target host>)>
+  %7 = kgen.param.constant = <get_alignof(index, #kgen<target host>)>
 
   kgen.return
 }

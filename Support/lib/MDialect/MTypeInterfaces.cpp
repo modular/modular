@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MDialect/MTypeInterfaces.h"
+#include "Support/MDialect/MDialect.h"
 #include "Support/MathExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -12,63 +13,91 @@
 using namespace M;
 
 //===----------------------------------------------------------------------===//
-// DataLayoutInterface Utility Functions
+// DataLayoutInterface
 //===----------------------------------------------------------------------===//
+
+namespace {
+struct IntegerLayout
+    : public DataLayoutInterface::ExternalModel<IntegerLayout, IntegerType> {
+  /// The size of an integer type is its width rounded up to the nearest byte.
+  Optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
+    return llvm::divideCeil(cast<IntegerType>(type).getWidth(), CHAR_BIT);
+  }
+
+  /// The alignment of an integer type is its width in bytes rounded up to the
+  /// nearest power of 2, but capped at the pointer width.
+  Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
+    return std::min<int64_t>(llvm::PowerOf2Ceil(*getTypeSize(type, target)),
+                             target.getPointerSize());
+  }
+};
+
+struct FloatLayout
+    : public DataLayoutInterface::ExternalModel<FloatLayout, FloatType> {
+  /// The size of an integer type is its width in bytes.
+  Optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
+    return cast<FloatType>(type).getWidth() / CHAR_BIT;
+  }
+
+  /// The alignment of a float type is its width in bytes rounded up to the
+  /// nearest power of 2, but capped at the pointer width.
+  Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
+    return std::min<int64_t>(llvm::PowerOf2Ceil(*getTypeSize(type, target)),
+                             target.getPointerSize());
+  }
+};
+
+struct FunctionLayout
+    : public DataLayoutInterface::ExternalModel<FunctionLayout, FunctionType> {
+  /// The size of a function type is the pointer width.
+  Optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
+    return target.getPointerSize();
+  }
+
+  /// The align of a function type is the pointer width.
+  Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
+    return target.getPointerSize();
+  }
+};
+
+struct IndexLayout
+    : public DataLayoutInterface::ExternalModel<IndexLayout, IndexType> {
+  /// The size of an index type is the pointer width.
+  Optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
+    return target.getPointerSize();
+  }
+
+  /// The align of an index type is the pointer width.
+  Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
+    return target.getPointerSize();
+  }
+};
+} // namespace
+
+void MDialect::injectAttrInterfaces() {
+  IntegerType::attachInterface<IntegerLayout>(*getContext());
+  BFloat16Type::attachInterface<FloatLayout>(*getContext());
+  Float16Type::attachInterface<FloatLayout>(*getContext());
+  Float32Type::attachInterface<FloatLayout>(*getContext());
+  Float64Type::attachInterface<FloatLayout>(*getContext());
+  Float80Type::attachInterface<FloatLayout>(*getContext());
+  Float128Type::attachInterface<FloatLayout>(*getContext());
+  FunctionType::attachInterface<FunctionLayout>(*getContext());
+  IndexType::attachInterface<IndexLayout>(*getContext());
+}
 
 Optional<int64_t>
 M::DataLayoutInterface::getTypeSizeInBytes(TargetInfoAttr target, Type type) {
-  // Check for builtin types.
   if (auto iface = llvm::dyn_cast<DataLayoutInterface>(type))
     return iface.getTypeSize(target);
-
-  // Return the integer or floating point width rounded up to the next byte.
-  if (type.isIntOrFloat())
-    return llvm::divideCeil(type.getIntOrFloatBitWidth(), CHAR_BIT);
-
-  // Return the target pointer width.
-  if (type.isa<FunctionType>() || type.isIndex())
-    return target.getPointerSize();
-
-  // Return the element type size multiplied by the size.
-  if (auto vec = llvm::dyn_cast<VectorType>(type)) {
-    Optional<int64_t> elSize = getTypeSizeInBytes(target, vec.getElementType());
-    if (!elSize || vec.getRank() != 1)
-      return {};
-    return *elSize * llvm::PowerOf2Ceil(vec.getShape().back());
-  }
-
-  // No other builtin types are supported;
   return {};
 }
 
 Optional<int64_t>
 M::DataLayoutInterface::getTypeAlignInBytes(TargetInfoAttr target, Type type) {
-  Builder b(target.getContext());
-  auto iface = llvm::dyn_cast<DataLayoutInterface>(type);
-
-  // Check for builtin types.
-  if (!iface) {
-    // Return the next power of 2 for integers and floats.
-    if (type.isIntOrFloat())
-      return llvm::PowerOf2Ceil(
-          llvm::divideCeil(type.getIntOrFloatBitWidth(), CHAR_BIT));
-
-    // Return the pointer size.
-    if (type.isa<FunctionType>() || type.isIndex())
-      return target.getPointerSize();
-
-    // Round the vector size up to the nearest power of 2.
-    if (auto vec = llvm::dyn_cast<VectorType>(type)) {
-      if (Optional<int64_t> size = getTypeSizeInBytes(target, vec))
-        return llvm::PowerOf2Ceil(*size);
-      return {};
-    }
-
-    // No other builtin types are supported;
-    return {};
-  }
-
-  return iface.getTypeAlign(target);
+  if (auto iface = llvm::dyn_cast<DataLayoutInterface>(type))
+    return iface.getTypeAlign(target);
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
