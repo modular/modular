@@ -146,7 +146,7 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   // This is the top-level error that will be returned if one occurs.
   ErrorTree error(*errorLoc, "failed to evaluate 'apply'");
 
-  // "Interpret" the IR by calling operation folders.
+  // Interpret the IR.
   SmallVector<Attribute> operands;
   SmallVector<OpFoldResult> results;
   for (Operation &op : func.getBody()->without_terminator()) {
@@ -154,17 +154,29 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
     results.clear();
     for (Value operand : op.getOperands())
       operands.push_back(values.lookup(operand));
-    if (failed(op.fold(operands, results)))
-      return std::move(error.addCause(
-          reportFoldError(func, op, operands, "failed to fold operation ")));
 
+    // Check for an interpreter interface implementation.
+    if (auto interpItf = dyn_cast<InterpreterOpInterface>(op)) {
+      ErrorOrSuccess err = interpItf.interpret(operands, *this, results);
+      if (err.isError()) {
+        return std::move(error.addCause(
+            std::move(reportFoldError(func, op, operands,
+                                      "failed to interpret operation ")
+                          .addCause(op.getLoc(), err.takeError()))));
+      }
+    } else {
+      // Otherwise, try to use the operation folder.
+      if (failed(op.fold(operands, results)))
+        return std::move(error.addCause(
+            reportFoldError(func, op, operands, "failed to fold operation ")));
+    }
     for (auto [i, result, output] :
          llvm::zip(llvm::seq<unsigned>(0, op.getNumResults()), results,
                    op.getResults())) {
       auto value = result.dyn_cast<Attribute>();
       if (!value) {
         return std::move(error.addCause(reportFoldError(
-            func, op, operands, "operation folder ",
+            func, op, operands, "operation evaluation ",
             " did not return a value for result #" + Twine(i))));
       }
       values.try_emplace(output, value);

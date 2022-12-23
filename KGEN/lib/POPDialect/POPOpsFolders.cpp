@@ -8,6 +8,7 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "Support/MDialect/MAttrs.h"
 
 using namespace M;
 using namespace KGEN;
@@ -20,6 +21,69 @@ using namespace POP;
 Operation *POPDialect::materializeConstant(OpBuilder &b, Attribute value,
                                            Type type, Location loc) {
   return b.create<ParamConstantOp>(loc, type, cast<TypedAttr>(value));
+}
+
+//===----------------------------------------------------------------------===//
+// LoadOp
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess LoadOp::interpret(ArrayRef<Attribute> operands,
+                                 InterpreterState &state,
+                                 SmallVectorImpl<OpFoldResult> &results) {
+  auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
+  if (!ptr)
+    return Error("non-constant inputs");
+  ErrorOr<TypedAttr> result = state.readMemory(ptr.getAddr(), getType());
+  if (result.isError())
+    return result.takeError();
+  results.push_back(result.takeValue());
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// StoreOp
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess StoreOp::interpret(ArrayRef<Attribute> operands,
+                                  InterpreterState &state,
+                                  SmallVectorImpl<OpFoldResult> &results) {
+  auto value = llvm::cast_if_present<TypedAttr>(operands[0]);
+  auto ptr = dyn_cast_or_null<PointerAttr>(operands[1]);
+  if (!value || !ptr)
+    return Error("non-constant inputs");
+  ErrorOrSuccess result = state.writeMemory(ptr.getAddr(), value);
+  if (result.isError())
+    return result.takeError();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// OffsetOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult OffsetOp::fold(ArrayRef<Attribute> operands) {
+  auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
+  auto offset = dyn_cast_or_null<IntegerAttr>(operands[1]);
+  if (!ptr || !offset)
+    return {};
+  return PointerAttr::get(ptr.getAddr() + offset.getInt(), ptr.getType());
+}
+
+//===----------------------------------------------------------------------===//
+// StackAllocationOp
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess
+StackAllocationOp::interpret(ArrayRef<Attribute> operands,
+                             InterpreterState &state,
+                             SmallVectorImpl<OpFoldResult> &results) {
+  auto count = dyn_cast<IntegerAttr>(getCount());
+  Type type = cast<PointerType>(getType()).getResolvedElementType();
+  if (!count || !type)
+    return Error("not concrete");
+  size_t addr = state.allocateMemory(count.getInt(), type);
+  results.push_back(PointerAttr::get(addr, getType()));
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

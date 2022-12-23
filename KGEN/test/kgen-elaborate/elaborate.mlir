@@ -1220,6 +1220,41 @@ kgen.generator @constexpr_fma() -> index {
 
 // -----
 
+kgen.func @alloc_load_store(%arg0: index) -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+  %idx3 = index.constant 3
+
+  %p0 = pop.stack_allocation 4 x index
+  pop.store %idx0, %p0 : !pop.pointer<index>
+  %p1 = pop.offset %p0[%idx1] : !pop.pointer<index>
+  pop.store %idx1, %p1 : !pop.pointer<index>
+  %p2 = pop.offset %p0[%idx2] : !pop.pointer<index>
+  pop.store %idx2, %p2 : !pop.pointer<index>
+  %p3 = pop.offset %p1[%idx2] : !pop.pointer<index>
+  pop.store %idx3, %p3 : !pop.pointer<index>
+
+  %ptr = pop.offset %p0[%arg0] : !pop.pointer<index>
+  %result = pop.load %ptr : !pop.pointer<index>
+  kgen.return %result : index
+}
+
+// CHECK-LABEL: kgen.func @constexpr_load_store
+kgen.generator @constexpr_load_store() {
+  // CHECK-NEXT: = <0>
+  %0 = kgen.param.constant = <apply(:(index) -> index @alloc_load_store, 0)>
+  // CHECK-NEXT: = <1>
+  %1 = kgen.param.constant = <apply(:(index) -> index @alloc_load_store, 1)>
+  // CHECK-NEXT: = <2>
+  %2 = kgen.param.constant = <apply(:(index) -> index @alloc_load_store, 2)>
+  // CHECK-NEXT: = <3>
+  %3 = kgen.param.constant = <apply(:(index) -> index @alloc_load_store, 3)>
+  kgen.return
+}
+
+// -----
+
 // CHECK-LABEL: kgen.func @bind_signature_region
 kgen.generator @bind_signature_region() -> index {
   // CHECK-NEXT: %0 = kgen.param.constant = <1>

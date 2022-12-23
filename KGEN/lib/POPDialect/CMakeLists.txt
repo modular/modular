@@ -20,6 +20,7 @@ add_modular_dialect_library(POPDialect
   LINK_COMPONENTS
 
   LINK_LIBS PUBLIC
+  InterpreterInterface
   KGENDialect
   MCompilerSupport
   MDialect

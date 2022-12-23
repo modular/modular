@@ -26,8 +26,8 @@ def InterpreterOpInterface : OpInterface<"InterpreterOpInterface"> {
       Given the constant value inputs to the operation, compute the constant
       value results, with access to the interpreter state.
     }], "ErrorOrSuccess", "interpret",
-    (ins "ArrayRef<TypedAttr>":$operands, "InterpreterState &":$interpreter,
-         "SmallVectorImpl<TypedAttr> &":$results)>
+    (ins "ArrayRef<Attribute>":$operands, "InterpreterState &":$state,
+         "SmallVectorImpl<OpFoldResult> &":$results)>
   ];
 }
 
