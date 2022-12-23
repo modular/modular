@@ -255,6 +255,13 @@ def KGEN_ListAttr : KGEN_ExprAttr<"List", "list"> {
     `<` (`>`) : (custom<ListValue>($values, ref($type))^ `>`)?
   }];
 
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
+                                        "ListType":$type), [{
+      return get(type.getContext(), values, type);
+    }]>
+  ];
+
   let genVerifyDecl = 1;
 }
 

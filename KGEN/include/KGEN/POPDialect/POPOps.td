@@ -1682,6 +1682,7 @@ def POP_ListGetOp : POPOp<"list.get", [Pure,
   }];
 
   let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1710,6 +1711,7 @@ def POP_ListCreateOp : POPOp<"list.create", [Pure,
   }];
 
   let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 

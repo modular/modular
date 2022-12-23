@@ -100,21 +100,27 @@ kgen.func @variant_create_get(%a: i32) -> i32 {
   kgen.return %1 : i32
 }
 
-
-// CHECK-LABEL: @call_indirect_partial_apply
-kgen.generator @call_indirect_partial_apply(%fn: (index, i32) -> index, %arg0: index, %arg1: i32) -> index {
-  // CHECK-NEXT: %0 = pop.call_indirect %arg0(%arg1, %arg2) : (index, i32) -> index
-  %0 = pop.partial_apply %fn(?, %arg1) : (index, i32) -> index
-  %1 = pop.call_indirect %0(%arg0) : !pop.closure<(index) -> index>
-  // CHECK-NEXT: return %0
-  kgen.return %1 : index
+// CHECK-LABEL: @list_get
+kgen.func @list_get() -> i32 {
+  // CHECK-NEXT: constant: i32 = <2>
+  %0 = kgen.param.constant: list<i32[2]> = <[1, 2]>
+  %1 = pop.list.get %0[1] : <i32[2]>
+  kgen.return %1 : i32
 }
 
-// CHECK-LABEL: @partial_apply_of_partial_apply
-kgen.generator @partial_apply_of_partial_apply(%fn: (index, i32) -> index, %arg0: index, %arg1: i32) -> !pop.closure<() -> index> {
-  // CHECK-NEXT: %0 = pop.partial_apply %arg0(%arg1, %arg2) : (index, i32) -> index
-  %0 = pop.partial_apply %fn(?, %arg1) : (index, i32) -> index
-  %1 = pop.partial_apply %0(%arg0) : !pop.closure<(index) -> index>
-  // CHECK-NEXT: return %0
-  kgen.return %1 : !pop.closure<() -> index>
+// CHECK-LABEL: @list_create
+kgen.func @list_create() -> !kgen.list<i32[2]> {
+  // CHECK-NEXT: constant: list<i32[2]> = <[1, 2]>
+  %0 = kgen.param.constant: i32 = <1>
+  %1 = kgen.param.constant: i32 = <2>
+  %2 = pop.list.create(%0, %1) : <i32[2]>
+  kgen.return %2 : !kgen.list<i32[2]>
+}
+
+// CHECK-LABEL: @list_get_create
+kgen.func @list_get_create(%arg0: i32, %arg1: i32) -> i32 {
+  %0 = pop.list.create(%arg0, %arg1) : <i32[2]>
+  %1 = pop.list.get %0[1] : <i32[2]>
+  // CHECK-NEXT: return %arg1
+  kgen.return %1 : i32
 }

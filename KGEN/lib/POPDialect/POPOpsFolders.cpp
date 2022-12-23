@@ -172,3 +172,36 @@ OpFoldResult VariantGetOp::fold(ArrayRef<Attribute> operands) {
     return {};
   return create.getOperand();
 }
+
+//===----------------------------------------------------------------------===//
+// ListGetOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult ListGetOp::fold(ArrayRef<Attribute> operands) {
+  auto index = dyn_cast<IntegerAttr>(getIndex());
+  if (!index)
+    return {};
+
+  if (auto list = dyn_cast_or_null<ListAttr>(operands[0]))
+    return list.getValues()[index.getInt()];
+
+  // Canonicalize `get(create(x)) -> x`.
+  if (auto create = getList().getDefiningOp<ListCreateOp>())
+    return create.getOperands()[index.getInt()];
+
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// ListCreateOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult ListCreateOp::fold(ArrayRef<Attribute> operands) {
+  SmallVector<TypedAttr> values;
+  for (Attribute operand : operands) {
+    if (!operand)
+      return {};
+    values.push_back(cast<TypedAttr>(operand));
+  }
+  return ListAttr::get(values, getType());
+}
