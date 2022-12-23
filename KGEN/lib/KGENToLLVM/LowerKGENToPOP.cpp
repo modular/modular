@@ -818,7 +818,7 @@ void LowerKGENToPOPPass::runOnOperation() {
   // KGEN structs are lowered so that we don't have to iterate between both. Use
   // the greedy rewrite driver to apply the lowerings iteratively.
   mlir::GreedyRewriteConfig config;
-  config.maxIterations = mlir::GreedyRewriteConfig::kNoIterationLimit;
+  config.maxIterations = mlir::GreedyRewriteConfig::kNoLimit;
   RewritePatternSet patterns(&getContext());
   patterns.insert<ExpandListConstantOp, ExpandListGetOp, ExpandListCreateOp,
                   ExpandStructConstructOp, ExpandStructGetOp,
