@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -13,18 +14,13 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "Support/Compiler/MLIRDType.h"
-#include "Support/Host.h"
-#include "Support/SIMD.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
-#include "llvm/ADT/Triple.h"
 #include "llvm/ADT/TypeSwitch.h"
-#include "llvm/MC/SubtargetFeature.h"
-#include "llvm/Support/Host.h"
 
 using namespace M;
 using namespace KGEN;
@@ -460,101 +456,32 @@ bool ExprFuncAttr::isConstant() const {
 bool SymbolConstantAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
-// TargetInfoAttr
+// TargetParamAttr
 //===----------------------------------------------------------------------===//
 
-llvm::hash_code TargetInfoAttr::hash() const {
-  return llvm::hash_combine(getTripleStr(), getCpu(), getFeatures(),
-                            getPointerSize(), getSIMDBitWidth());
-}
-
-void TargetInfoAttr::print(mlir::AsmPrinter &odsPrinter) const {
-  odsPrinter << "<triple=\"" << getTripleStr() << "\", cpu=\"" << getCpu()
-             << "\", features=\"" << getFeatures()
-             << "\", pointer_size=" << getPointerSize()
-             << ", simd_bit_width=" << getSIMDBitWidth() << '>';
-}
-
-// TargetInfoAttr is either
-// #kgen.target<"triple", "cpu", "features", "pointerSize">
-// or #kgen.target<host>
-mlir::Attribute TargetInfoAttr::parse(mlir::AsmParser &parser,
-                                      mlir::Type odsType) {
-  if (parser.parseLess())
+Attribute TargetParamAttr::parse(AsmParser &p, Type type) {
+  auto targetType = llvm::dyn_cast_or_null<TargetType>(type);
+  if (!targetType) {
+    p.emitError(p.getCurrentLocation(),
+                "target parameter expected a target type");
     return {};
-
-  // #kgen.target<host>
-  if (succeeded(parser.parseOptionalKeyword("host"))) {
-    if (parser.parseGreater())
-      return {};
-    return TargetInfoAttr::getForHost(parser.getContext());
   }
+  // Check for a special host attribute.
+  if (succeeded(p.parseOptionalKeyword("host")))
+    return TargetParamAttr::get(TargetInfoAttr::getForHost(p.getContext()),
+                                targetType);
 
-  // #kgen.target<"triple", "cpu", "features", ptrSize, simdWidth>
-  std::string tripleStr;
-  std::string cpuStr;
-  std::string featuresStr;
-  int64_t pointerSize;
-  int64_t simdWidth;
-
-  auto parseOptionalKeywordEqual = [&](StringRef word) -> ParseResult {
-    if (succeeded(parser.parseOptionalKeyword(word)))
-      return parser.parseEqual();
-    return success();
-  };
-
-  // Parse target triple.
-  if (parseOptionalKeywordEqual("triple") || parser.parseString(&tripleStr) ||
-      parser.parseComma() ||
-      // CPU
-      parseOptionalKeywordEqual("cpu") || parser.parseString(&cpuStr) ||
-      parser.parseComma() ||
-      // Features
-      parseOptionalKeywordEqual("features") ||
-      parser.parseString(&featuresStr) || parser.parseComma() ||
-      // Pointer Size
-      parseOptionalKeywordEqual("pointer_size") ||
-      parser.parseInteger(pointerSize) || parser.parseComma() ||
-      // SIMD Width
-      parseOptionalKeywordEqual("simd_bit_width") ||
-      parser.parseInteger(simdWidth) || parser.parseGreater())
+  // Otherwise, parse the whole target info attribute.
+  TargetInfoAttr target;
+  if (p.parseCustomAttributeWithFallback(target))
     return {};
-
-  llvm::Triple triple(tripleStr);
-  mlir::MLIRContext *ctx = parser.getContext();
-  return TargetInfoAttr::get(ctx, triple, cpuStr, featuresStr, pointerSize,
-                             simdWidth, TargetType::get(ctx));
+  return TargetParamAttr::get(target, targetType);
 }
 
-TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
-  auto targetTriple = llvm::sys::getDefaultTargetTriple();
-
-  // Get the host CPU and set up to get the features.
-  std::string cpu(llvm::sys::getHostCPUName());
-  llvm::SubtargetFeatures features;
-  llvm::StringMap<bool> hostFeatures;
-
-  // Get the host features.
-  if (llvm::sys::getHostCPUFeatures(hostFeatures))
-    for (auto &f : hostFeatures)
-      if (f.second) // add feature if it's enabled
-        features.AddFeature(f.first(), f.second);
-
-  //  Return a TargetInfoAttr built for the host.
-  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu,
-                             features.getString(), sizeof(ssize_t),
-                             kPreferredSIMDBitWidth, TargetType::get(ctx));
-}
-
-namespace llvm {
-/// Provide the ability to hash triples for attribute uniquing.
-inline hash_code hash_value(const llvm::Triple &triple) {
-  return hash_value(triple.normalize());
-}
-} // namespace llvm
+void TargetParamAttr::print(AsmPrinter &p) const { getTarget().print(p); }
 
 /// Always a constant.
-bool TargetInfoAttr::isConstant() const { return true; }
+bool TargetParamAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
 // ParamOperatorAttr
@@ -1212,7 +1139,8 @@ simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
 static Attribute simplifyTargetEq(SmallVectorImpl<TypedAttr> &operands) {
   // TODO: Make simplifyTargetEq more granular than just checking that the
   // TargetAttrInfos are the same.
-  if (operands[0].isa<TargetInfoAttr>() && operands[1].isa<TargetInfoAttr>()) {
+  if (operands[0].isa<TargetParamAttr>() &&
+      operands[1].isa<TargetParamAttr>()) {
     bool targetsAreSame = (operands[0] == operands[1]);
     return IntegerAttr::get(IntegerType::get(operands[0].getContext(), 1),
                             targetsAreSame);
@@ -1221,43 +1149,36 @@ static Attribute simplifyTargetEq(SmallVectorImpl<TypedAttr> &operands) {
 }
 
 static Attribute simplifyHasFeature(SmallVectorImpl<TypedAttr> &operands) {
-  if (!operands[0].isa<TargetInfoAttr>() || !operands[1].isa<StringAttr>())
+  auto target = dyn_cast<TargetParamAttr>(operands[0]);
+  auto feature = dyn_cast<StringAttr>(operands[1]);
+  if (!target || !feature)
     return {};
-  StringRef feature = cast<StringAttr>(operands[1]).getValue();
-  bool hasFeature = cast<TargetInfoAttr>(operands[0]).hasFeature(feature);
-  return IntegerAttr::get(IntegerType::get(operands[0].getContext(), 1),
-                          hasFeature);
+  return Builder(target.getContext())
+      .getBoolAttr(target.getTarget().hasFeature(feature));
 }
 
 static Attribute simplifyIsArch(SmallVectorImpl<TypedAttr> &operands) {
-  if (!operands[0].isa<TargetInfoAttr>() || !operands[1].isa<StringAttr>())
+  auto target = dyn_cast<TargetParamAttr>(operands[0]);
+  auto arch = dyn_cast<StringAttr>(operands[1]);
+  if (!target || !arch)
     return {};
-  StringRef archStr = cast<StringAttr>(operands[1]).getValue();
-  bool isArch = cast<TargetInfoAttr>(operands[0]).isArch(archStr);
-  return IntegerAttr::get(IntegerType::get(operands[0].getContext(), 1),
-                          isArch);
+  return Builder(target.getContext())
+      .getBoolAttr(target.getTarget().isArch(arch));
 }
 
 static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands) {
-  if (!operands[0].isa<TargetInfoAttr>() || !operands[1].isa<StringAttr>())
+  auto target = dyn_cast<TargetParamAttr>(operands[0]);
+  auto field = dyn_cast<StringAttr>(operands[1]);
+  if (!target || !field)
     return {};
-  TargetInfoAttr target = cast<TargetInfoAttr>(operands[0]);
-  StringRef fieldStr = cast<StringAttr>(operands[1]).getValue();
-  auto ctx = operands[0].getContext();
-  auto indexType = IndexType::get(ctx);
-  Attribute attr =
-      llvm::StringSwitch<Attribute>(fieldStr)
-          .Case("pointer_size",
-                IntegerAttr::get(indexType, target.getPointerSize()))
-          .Case("simd_bit_width",
-                IntegerAttr::get(indexType, target.getSIMDBitWidth()))
-          .Default(nullptr);
-  if (!attr) {
-    mlir::emitError(UnknownLoc::get(ctx))
-        << "Field passed into target_get_field is not valid, got " << fieldStr;
+  Optional<ssize_t> result =
+      llvm::StringSwitch<Optional<ssize_t>>(field.getValue())
+          .Case("pointer_size", target.getTarget().getPointerSize())
+          .Case("simd_bit_width", target.getTarget().getSimdBitWidth())
+          .Default(std::nullopt);
+  if (!result)
     return {};
-  }
-  return attr;
+  return Builder(target.getContext()).getIndexAttr(*result);
 }
 
 /// Simplifies an `in` (also `in(:dtype`) operator.  We know the all the
@@ -1316,15 +1237,12 @@ static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
 /// Simplifies a `get_sizeof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
 static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands) {
-  // FIXME: The target info attribute should be passed through the operator.
-  auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(operands.front());
-  if (!typeCst)
+  auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(operands[0]);
+  auto target = dyn_cast<TargetParamAttr>(operands[1]);
+  if (!typeCst || !target)
     return {};
-  auto targetInfo = dyn_cast<TargetInfoAttr>(operands[1]);
-  if (!targetInfo)
-    return {};
-  Optional<int64_t> size =
-      DataLayoutInterface::getTypeSizeInBytes(targetInfo, typeCst.getValue());
+  Optional<int64_t> size = DataLayoutInterface::getTypeSizeInBytes(
+      target.getTarget(), typeCst.getValue());
   if (!size)
     return {};
   return Builder(typeCst.getContext()).getIndexAttr(*size);
@@ -1333,15 +1251,12 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands) {
 /// Simplifies a `get_alignof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
 static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands) {
-  // FIXME: The target info attribute should be passed through the operator.
-  auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(operands.front());
-  if (!typeCst)
+  auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(operands[0]);
+  auto target = dyn_cast<TargetParamAttr>(operands[1]);
+  if (!typeCst || !target)
     return {};
-  auto targetInfo = dyn_cast<TargetInfoAttr>(operands[1]);
-  if (!targetInfo)
-    return {};
-  Optional<int64_t> size =
-      DataLayoutInterface::getTypeAlignInBytes(targetInfo, typeCst.getValue());
+  Optional<int64_t> size = DataLayoutInterface::getTypeAlignInBytes(
+      target.getTarget(), typeCst.getValue());
   if (!size)
     return {};
   return Builder(typeCst.getContext()).getIndexAttr(*size);

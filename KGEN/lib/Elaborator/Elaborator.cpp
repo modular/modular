@@ -11,6 +11,7 @@
 
 #include "KGEN/Elaborator.h"
 #include "KGEN/KGENDialect/ElaboratorOpInterface.h"
+#include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENPasses.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"

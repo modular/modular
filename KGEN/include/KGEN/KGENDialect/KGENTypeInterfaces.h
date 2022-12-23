@@ -8,10 +8,7 @@
 #define KGEN_KGENDIALECT_KGENTYPEINTERFACES_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "Support/LLVMCompilerForwardDecls.h"
-#include "Support/ML/DType.h"
-#include "mlir/IR/BuiltinAttributeInterfaces.h"
-#include "mlir/IR/Location.h"
+#include "Support/MDialect/MAttrs.h"
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations

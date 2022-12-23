@@ -14,16 +14,16 @@
 #define KGEN_KGENDIALECT_KGENATTRS_H
 
 #include "KGEN/KGENDialect/KGENAttrInterfaces.h"
-#include "KGEN/KGENDialect/KGENDType.h"
-#include "Support/LLVMCompilerForwardDecls.h"
-#include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/Triple.h"
 
-namespace M::KGEN {
+namespace M {
+class TargetInfoAttr;
+
+namespace KGEN {
+class KGENDType;
 class ListType;
 class SignatureType;
+class TargetType;
 
 //===----------------------------------------------------------------------===//
 // TypeConstantAttr
@@ -45,7 +45,8 @@ public:
   static bool classof(Attribute attr);
 };
 
-} // namespace M::KGEN
+} // namespace KGEN
+} // namespace M
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations

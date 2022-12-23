@@ -6,14 +6,17 @@
 
 #include "Support/MDialect/MAttrs.h"
 #include "Support/Compiler/MLIRDenseAttrStorage.h"
+#include "Support/Host.h"
 #include "Support/MDialect/MDialect.h"
+#include "Support/SIMD.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/Triple.h"
 #include "llvm/ADT/TypeSwitch.h"
-
+#include "llvm/Support/Host.h"
 #include <type_traits>
 
 using namespace M;
@@ -594,6 +597,61 @@ ShapedType AlignedBytesAttr::getType() const {
       static_cast<int64_t>(getData().size()),
       IntegerType::get(getContext(), 8, IntegerType::Unsigned));
 }
+
+//===----------------------------------------------------------------------===//
+// TargetInfoAttr
+//===----------------------------------------------------------------------===//
+
+namespace mlir {
+/// Allow target triples to be parsed by MLIR.
+template <>
+struct FieldParser<llvm::Triple> {
+  static FailureOr<llvm::Triple> parse(AsmParser &p) {
+    std::string tripleStr;
+    if (failed(p.parseString(&tripleStr)))
+      return failure();
+    return llvm::Triple(tripleStr);
+  }
+};
+} // namespace mlir
+
+llvm::hash_code TargetInfoAttr::hash() const {
+  return llvm::hash_combine(getTripleStr(), getCpu(), getFeatures(),
+                            getPointerSize(), getSimdBitWidth());
+}
+
+TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
+  auto targetTriple = llvm::sys::getDefaultTargetTriple();
+
+  // Get the host CPU and set up to get the features.
+  std::string cpu(llvm::sys::getHostCPUName());
+  llvm::StringMap<bool> hostFeatures;
+
+  // Get the host features.
+  std::string featureStr;
+  llvm::raw_string_ostream os(featureStr);
+  if (llvm::sys::getHostCPUFeatures(hostFeatures))
+    llvm::interleave(
+        hostFeatures, os,
+        [&](auto &f) { os << (f.second ? '+' : '-') << f.first(); }, ",");
+
+  //  Return a TargetInfoAttr built for the host.
+  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu, os.str(),
+                             sizeof(ssize_t), kPreferredSIMDBitWidth);
+}
+
+namespace llvm {
+/// Provide the ability to hash triples for attribute uniquing.
+static hash_code hash_value(const llvm::Triple &triple) {
+  return hash_value(triple.normalize());
+}
+
+/// Allow the attribute printer to print a target triple.
+static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
+  os << '"' << triple.normalize() << '"';
+  return os;
+}
+} // namespace llvm
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions

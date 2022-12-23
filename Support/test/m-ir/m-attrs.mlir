@@ -26,3 +26,6 @@
 
 // CHECK: aligned_bytes<"0x01020304">
 "M"() {a = #M.aligned_bytes<"0x01020304">} : () -> ()
+
+// CHECK: #M.target<triple = "a", cpu = "b", features = "", pointer_size = 8, simd_bit_width = 128>
+"M"() {a = #M.target<triple = "a", cpu = "b", features = "", pointer_size = 8, simd_bit_width = 128>} : () -> ()

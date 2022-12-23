@@ -224,7 +224,7 @@ static void printDTypeValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
 
 static ParseResult parseArrayElements(AsmParser &p,
                                       FailureOr<SmallVector<TypedAttr>> &values,
-                                      ArrayType type) {
+                                      POP::ArrayType type) {
   Optional<int64_t> size = type.getResolvedSize();
   Type elementType = type.getResolvedElementType();
   if (!size || !elementType)
@@ -240,7 +240,7 @@ static ParseResult parseArrayElements(AsmParser &p,
 }
 
 static void printArrayElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
-                               ArrayType type) {
+                               POP::ArrayType type) {
   llvm::interleaveComma(values, p, [&](TypedAttr value) {
     printParamValue(value, p.getStream());
   });

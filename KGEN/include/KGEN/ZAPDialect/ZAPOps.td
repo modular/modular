@@ -184,7 +184,7 @@ def ZAP_NDBufferLoadOp : ZAPOp<"ndbuffer.load"> {
     alignment in bytes. If not specified, the alignment is assumed to be 1.
 
     ```mlir
-    %1 = zap.ndbuffer.load %0[%pos0] align get_alignof(f32, #kgen.target<host>):
+    %1 = zap.ndbuffer.load %0[%pos0] align get_alignof(f32, #kgen<target host>):
                       !zap.ndbuffer<[size], dtype>, !pop.simd<simd_width, dtype>
     %2 = zap.ndbuffer.load %1[%pos0, %pos1] align 64 :
                                             !zap.ndbuffer<[s0, s1], dtype>,
