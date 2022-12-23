@@ -10,8 +10,8 @@ struct StructWithIntParam[size: Int]:
 
 # CHECK-LABEL: lit.func @"paramArith{{.*}}"<x>(%y: index) -> !lit.none {
 fn paramArith[x: __mlir_type.index](y : __mlir_type.index):
-  # CHECK: kgen.call @"assertParam{{.*}}<condVal: i1 = eq(x, -99)>
-  assertParam[x == -100+1]()
+  # CHECK: kgen.call @"assert_param{{.*}}<cond: i1 = eq(x, -99)>
+  assert_param[x == -100+1]()
 
 fn take_3index(a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index) -> __mlir_type.index:
   return a
