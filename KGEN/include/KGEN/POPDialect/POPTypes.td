@@ -10,6 +10,7 @@
 include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/POPDialect/POPDialect.td"
 include "Support/MDialect/MTypeInterfaces.td"
+include "Support/Interpreter/InterpreterInterface.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/SubElementInterfaces.td"
 
@@ -24,7 +25,8 @@ class POPType<string typeName, string typeMnemonic, list<Trait> traits = []>
 // ArrayType
 //===----------------------------------------------------------------------===//
 
-def POP_ArrayType : POPType<"Array", "array"> {
+def POP_ArrayType : POPType<"Array", "array",
+    [DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
   let summary = "parameterized array type";
   let description = [{
     This type represents a statically-sized array of elements. The size and
@@ -81,7 +83,8 @@ def ArrayKnownSize : ConfinedType<POP_ArrayType,
 // PointerType
 //===----------------------------------------------------------------------===//
 
-def POP_PointerType : POPType<"Pointer", "pointer"> {
+def POP_PointerType : POPType<"Pointer", "pointer",
+    [DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
   let summary = "parameterized pointer type";
   let description = [{
     This type represents a pointer. The pointee type is parameterized with a
@@ -141,7 +144,8 @@ class PointerOf<Type type> : ConfinedType<POP_PointerType,
 // SIMDType
 //===----------------------------------------------------------------------===//
 
-def POP_SIMDType : POPType<"SIMD", "simd"> {
+def POP_SIMDType : POPType<"SIMD", "simd",
+    [DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
   let summary = "parameterized SIMD vector type";
   let description = [{
     This type is parameterized with a size and a !kgen.dtype type.
@@ -272,7 +276,8 @@ class BoolSIMDOfSameSize<string operand, string value> : TypesMatchWith<
 // StructType
 //===----------------------------------------------------------------------===//
 
-def POP_StructType : POPType<"Struct", "struct"> {
+def POP_StructType : POPType<"Struct", "struct",
+    [DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
   let summary = "parameterized struct type";
   let description = [{
     This type represents a struct. A struct contains element types arranged in

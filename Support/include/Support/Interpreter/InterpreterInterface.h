@@ -45,10 +45,10 @@ public:
   /// memory.
   ErrorOr<TypedAttr> readAttributeFromMemory(intptr_t addr, Type type);
 
-private:
   /// Try to get a memory reference at the given address.
   ErrorOr<void *> getMemory(intptr_t addr, size_t size);
 
+private:
   /// The cached symbol table.
   SymbolTableAnalysis &analysis;
 
