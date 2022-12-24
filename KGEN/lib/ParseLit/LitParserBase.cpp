@@ -72,18 +72,17 @@ ParseResult LitParserBase::parseListUntil(
 ///
 ParseResult LitParserBase::parseSeparatedList(
     LitToken::Kind separator, const std::function<ParseResult()> &parseElement,
-    LitToken::Kind terminator, bool *hadTrailingSep) {
+    ArrayRef<LitToken::Kind> terminators, bool *hadTrailingSep) {
   if (hadTrailingSep)
     *hadTrailingSep = false;
   if (parseElement())
     return failure();
   while (consumeIf(separator)) {
-    // terminator = eof signals no terminator was given as input so check for
+    // Empty terminators signals no terminator was given as input so check for
     // "new line": if we have indentation it means we are starting a line
     // after the last separator.
-    if (getToken().is(terminator) ||
-        (terminator == LitToken::eof &&
-         getToken().getIndentation().has_value())) {
+    if (getToken().isAny(terminators) ||
+        (terminators.empty() && getToken().getIndentation().has_value())) {
       if (hadTrailingSep)
         *hadTrailingSep = true;
       break;

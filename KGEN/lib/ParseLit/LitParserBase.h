@@ -148,12 +148,13 @@ public:
   ParseResult
   parseSeparatedList(LitToken::Kind separator,
                      const std::function<ParseResult()> &parseElement,
-                     LitToken::Kind terminator, bool *hadTrailingSep);
+                     ArrayRef<LitToken::Kind> terminators,
+                     bool *hadTrailingSep);
   ParseResult
   parseCommaSeparatedList(const std::function<ParseResult()> &parseElement,
-                          LitToken::Kind terminator,
+                          ArrayRef<LitToken::Kind> terminators,
                           bool *hadTrailingSep = nullptr) {
-    return parseSeparatedList(LitToken::comma, parseElement, terminator,
+    return parseSeparatedList(LitToken::comma, parseElement, terminators,
                               hadTrailingSep);
   }
 

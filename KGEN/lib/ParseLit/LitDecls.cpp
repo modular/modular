@@ -438,13 +438,15 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
 namespace {
 /// identifier_opt_type  ::= identifier [":" expression]
-/// meta_signature    ::= "[" [meta_param_list] "]"
+/// meta_signature    ::= "[" [meta_param_list] ("->" meta_result_types)
 /// meta_param_list   ::= identifier_opt_type ("," identifier_opt_type)
+/// meta_result_types ::= expression ("," expression)*
 struct ParsedMetaSignature {
   /// This is the function or struct that we're parsing the meta signature for.
   ASTDecl &decl;
   /// These are the parsed input parameters.
   SmallVector<ASTDecl *> parsedInputs;
+  SmallVector<ExprNode *> resultTypes;
 
   ParsedMetaSignature(ASTDecl &decl) : decl(decl) {}
 
@@ -481,10 +483,21 @@ struct ParsedMetaSignature {
       return success();
     };
 
-    if (p.parseCommaSeparatedList(parseMetaParameter, LitToken::r_square) ||
-        p.parseToken(LitToken::r_square, "expected ']' for parameter list"))
+    // Parse the meta parameters.
+    if (p.parseCommaSeparatedList(
+            parseMetaParameter, {LitToken::r_square, LitToken::minus_greater}))
       return failure();
-    return success();
+
+    // Parse the meta results if present.
+    if (p.consumeIf(LitToken::minus_greater)) {
+      auto parseResultType = [&]() -> ParseResult {
+        return p.parseExpression(resultTypes.emplace_back(nullptr),
+                                 std::nullopt);
+      };
+      if (p.parseCommaSeparatedList(parseResultType, LitToken::r_square))
+        return failure();
+    }
+    return p.parseToken(LitToken::r_square, "expected ']' for parameter list");
   }
 
   /// Given a parsed parameter signature, resolve the types of each of them,
@@ -513,6 +526,13 @@ struct ParsedMetaSignature {
     }
 
     return result;
+  }
+
+  SmallVector<Type> getResolvedResultTypes(ExprEmitter &emitter) const {
+    SmallVector<Type> results;
+    for (ExprNode *expr : resultTypes)
+      results.push_back(emitter.emitType(expr));
+    return results;
   }
 };
 } // namespace
@@ -1110,10 +1130,14 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   SmallVector<ParamDeclAttr> inputParamDecls =
       metaSignature.getResolvedInputParamDecls(*this);
 
+  // Resolve the result parameter types now that the arguments are in scope.
+  ExprEmitter typeEmitter(sharedState, decl, std::nullopt, nullptr);
+  SmallVector<Type> resultParamTypes =
+      metaSignature.getResolvedResultTypes(typeEmitter);
+
   // Resolve the result type and any argument types that are present, leaving
   // any unspecified types null.
   SmallVector<Type> argTypes;
-  ExprEmitter typeEmitter(sharedState, decl, std::nullopt, nullptr);
   for (auto &arg : args) {
     // This returns a TypeCheckErrorType on error, no extra check is needed.
     ASTType type =
@@ -1217,8 +1241,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(argNames));
   funcOp.setSignature(SignatureType::get(
       builder.getAttr<ParamDeclArrayAttr>(inputParamDecls),
-      builder.getAttr<TypeArrayAttr>(
-          /*TODO: result params*/ ArrayRef<Type>()),
+      builder.getAttr<TypeArrayAttr>(resultParamTypes),
       builder.getFunctionType(argTypes, {resultType.mlirType}),
       builder.getAttr<ConventionsAttr>(inputConventions,
                                        funcOp.getRaises() ? FnEffects::Throws
@@ -1531,8 +1554,13 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Resolve the meta parameters and get their decls.
   SmallVector<ParamDeclAttr> inputParamDecls =
       metaSignature.getResolvedInputParamDecls(*this);
-
   structOp.setInputParamDecls(inputParamDecls);
+
+  // Reject result parameters.
+  if (!metaSignature.resultTypes.empty())
+    sharedState.emitError(
+        metaSignature.resultTypes[0]->getLoc(),
+        "struct declarations do not support result parameters");
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
