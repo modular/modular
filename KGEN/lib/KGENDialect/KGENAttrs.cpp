@@ -202,10 +202,16 @@ bool TypeConstantAttr::classof(Attribute attr) {
 // ConcreteTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-ConcreteTypeConstantAttr ConcreteTypeConstantAttr::get(Type type) {
+TypedAttr ConcreteTypeConstantAttr::get(Type type) {
   auto *ctx = type.getContext();
   assert(!isParameterizedType(type) &&
          "Cannot create a ConcreteTypeConstantAttr with parameterized type");
+
+  // If this is a ParamRefType, then we're unwrapping a wrapper.  Remove this to
+  // keep the types canonical.
+  if (auto refType = ::dyn_cast<ParamRefType>(type))
+    return refType.getParam();
+
   return Base::get(ctx, type, MLIRTypeType::get(ctx));
 }
 
@@ -231,10 +237,33 @@ Attribute ParameterizedTypeConstantAttr::replaceImmediateSubElements(
   return get(replTypes[0]);
 }
 
+TypedAttr ParameterizedTypeConstantAttr::getChecked(
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+    mlir::MLIRContext *ctx, mlir::Type argType, mlir::Type resultType) {
+  auto result = get(argType);
+  if (result.getType() == resultType)
+    return result;
+  emitError() << "expected type to be !kgen.mlirtype";
+  return {};
+}
+
+TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type type) {
+  return get(type);
+}
+
+TypedAttr ParameterizedTypeConstantAttr::get(MLIRContext *ctx, Type type,
+                                             Type resultType) {
+  return get(type);
+}
+
 TypedAttr ParameterizedTypeConstantAttr::get(Type type) {
+  // If this is a ParamRefType, then we're unwrapping a wrapper.  Remove this to
+  // keep the types canonical.
+  if (auto refType = ::dyn_cast<ParamRefType>(type))
+    return refType.getParam();
+
   auto *ctx = type.getContext();
   auto typeType = MLIRTypeType::get(ctx);
-
   if (isParameterizedType(type))
     return Base::get(ctx, type, typeType);
   return ConcreteTypeConstantAttr::Base::get(ctx, type, typeType);

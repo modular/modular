@@ -337,7 +337,7 @@ def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
   );
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "mlir::Type":$value)>,
+    AttrBuilderWithInferredContext<(ins "mlir::Type":$value), "", "TypedAttr">,
   ];
 
   let assemblyFormat = "`<` $value `>`";
@@ -377,11 +377,14 @@ def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
   );
 
   let builders = [
+    AttrBuilder<(ins "mlir::Type":$value), "", "TypedAttr">,
+    AttrBuilder<(ins "mlir::Type":$value, "mlir::Type":$resultType), "", "TypedAttr">,
     AttrBuilderWithInferredContext<(ins "mlir::Type":$value), "", "TypedAttr">,
   ];
 
   let assemblyFormat = "`<` $value `>`";
   let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
 }
 
 //===----------------------------------------------------------------------===//

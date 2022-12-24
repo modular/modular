@@ -132,8 +132,6 @@ ASTType ExprEmitter::emitType(const ExprNode *node) {
   if (isa<NoneAttr>(value.get()))
     return shared.getNoneType();
 
-  value.get().dump();
-
   emitError(node->getLoc(), "expected a type, not a value");
   return shared.getTypeCheckErrorType();
 }

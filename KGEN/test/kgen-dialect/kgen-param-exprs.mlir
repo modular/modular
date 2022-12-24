@@ -10,7 +10,13 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
     // CHECK-SAME: use2 = #kgen.param.expr<add, #kgen.param.decl.ref<"p1"> : index, 43 : index>
     use2 = #kgen.param.expr<add, 1 : index, #kgen.param.decl.ref<"p1"> : index, 42 : index> : index,
     // CHECK-SAME: use3 = 3 : index
-    use3 = #kgen.param.expr<add, 1 : index, 2 : index> : index
+    use3 = #kgen.param.expr<add, 1 : index, 2 : index> : index,
+
+    // Type folding.
+    // CHECK-SAME: use4 = #kgen.param.decl.ref<"mlirType"> : !kgen.mlirtype
+    use4 = #kgen.parameterizedtype.constant<!kgen.paramref<mlirType>> : !kgen.mlirtype
+
+
   } : () -> ()
   // Generic syntax in known contexts
 
