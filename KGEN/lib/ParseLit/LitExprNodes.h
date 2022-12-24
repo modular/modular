@@ -180,6 +180,33 @@ struct SubscriptNode final : public ExprNode {
                              ASTType contextualType) const override;
 };
 
+/// This represents `A[i,j -> a, b]`.  In the case of slices (e.g. `A[i, ::]`),
+/// the slice will be represented with a subexpression.
+struct SubscriptArrowNode final : public ExprNode {
+  SubscriptArrowNode(ExprNode *base, SMLoc lsquareLoc,
+                     ArrayRef<ExprNode *> indices, SMLoc arrowLoc,
+                     ArrayRef<ExprNode *> arrowExprs, SMLoc rsquareLoc)
+      : ExprNode(kSubscriptArrow), base(base), lsquareLoc(lsquareLoc),
+        indices(indices), arrowLoc(arrowLoc), arrowExprs(arrowExprs),
+        rsquareLoc(rsquareLoc) {}
+
+  ExprNode *const base;
+  const SMLoc lsquareLoc;
+  ArrayRef<ExprNode *> indices;
+  const SMLoc arrowLoc;
+  ArrayRef<ExprNode *> arrowExprs;
+  const SMLoc rsquareLoc;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kSubscriptArrow;
+  }
+  SMLoc getLoc() const override { return lsquareLoc; }
+  llvm::SMRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
+  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  CallableValue emitCallable(ExprEmitter &emitter,
+                             ASTType contextualType) const override;
+};
+
 /// This is an expression that produces a slice value in a SubscriptNode index
 /// expression.  These have at least one colon in them, and one, two, or three
 /// expressions, e.g. `:`, `: :`, `a:b`, `a::b` etc.
@@ -233,6 +260,7 @@ struct ParenNode final : public ExprNode {
                              ASTType contextualType) const override;
 };
 
+/// [a, b, c]
 struct ListNode final : public ExprNode {
   ListNode(SMLoc lsquareLoc, ArrayRef<ExprNode *> exprs, SMLoc rsquareLoc)
       : ExprNode(kList), lsquareLoc(lsquareLoc), exprs(exprs),

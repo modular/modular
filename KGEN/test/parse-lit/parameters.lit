@@ -138,8 +138,8 @@ struct TypeParameter[type: __mlir_type.`!kgen.mlirtype`]:
 # Result parameters
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"no_result_param()"<a: !kgen.declref<@Int>>()
-fn no_result_param[a: Int]():
+# CHECK-LABEL: lit.func @"no_result_param()"<a>()
+fn no_result_param[a: __mlir_type.index]():
   return
 
 # CHECK-LABEL: lit.func @"idx_result_params()"<a -> index, index>() -> index
@@ -172,3 +172,13 @@ fn search3[a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index
    alias result = __mlir_attr.`#kgen.param.decl.ref<"result_hidden"> : index`
    # CHECK: kgen.return<result>
    return[result]
+
+fn useResultParams():
+  # Call function with input parameter, no result parameters.
+  no_result_param[42]()
+
+  # Function call with only result parameter.
+  #just_result_params[() -> a]()
+
+  # TODO.
+  # search3[1,2,3-> xyz]()
