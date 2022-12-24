@@ -84,6 +84,43 @@ static AnyValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
   return MValue(typedAttr);
 }
 
+/// Given an __mlir_type[a,b,c] or __mlir_attr[a,b,c] usage, stringize the
+/// indices and return the result.  On error, emit an error and return an empty
+/// string.
+static std::string substituteMLIRMagic(const SubscriptNode &node,
+                                       ExprEmitter &emitter) {
+  std::string result;
+  llvm::raw_string_ostream os(result);
+
+  for (auto *indexExpr : node.indices) {
+    // If the index is an identifer, and if it is a backtick identifier, we
+    // treat it as an interpolated literal string.  Otherwise we look it up as
+    // an expression.  Rationale: this allows using strings attributes, which
+    // could be useful someday, and keeps __mlir_attr.`thing` more consistent
+    // with __mlir_attr[`thing`].
+    if (auto *dre = dyn_cast<DeclRefNode>(indexExpr))
+      if (dre->spelling.data()[dre->spelling.size()] == '`') {
+        os << dre->spelling;
+        continue;
+      }
+
+    auto indexVal = emitter.emitMValue(
+        indexExpr, "mlir magic values must resolve to a parameter");
+    if (!indexVal)
+      return "";
+
+    // If this is a wrapper for a type, print it as such.
+    if (auto typeVal = indexVal.getIfTypeValue())
+      os << typeVal;
+    else // Otherwise print it as an attribute.
+      indexVal.get().print(os);
+  }
+
+  if (result.empty())
+    emitter.emitError(node.getLoc(), "mlir magic expanded to an empty string");
+  return result;
+}
+
 /// When a lookup in __mlir_op fails for a named field, this method tries to
 /// resolve it.  On success, it lazily creates a resolved declaration.  On
 /// failure, it bails out.
@@ -124,6 +161,19 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
       if (mlirAttr && mlirAttr->spelling == "__mlir_attr")
         return parseMLIRAttrFromString(attrRef->attrSpelling, attrRef->getLoc(),
                                        emitter.shared);
+    }
+
+    // Likewise, special case the __mlir_attr[a,b,c] syntax to support
+    // attributes without types.
+    if (auto subscript = dyn_cast<SubscriptNode>(node)) {
+      auto mlirAttr = dyn_cast<DeclRefNode>(subscript->base);
+      if (mlirAttr && mlirAttr->spelling == "__mlir_attr") {
+        std::string result = substituteMLIRMagic(*subscript, emitter);
+        if (result.empty())
+          return {};
+        return parseMLIRAttrFromString(result, subscript->getLoc(),
+                                       emitter.shared);
+      }
     }
 
     // Otherwise emit the value as an MAValue.  This allows references to
@@ -760,43 +810,6 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
   return emitCallable(emitter, contextualType).emitAsValue(emitter);
 }
 
-/// Given an __mlir_type[a,b,c] or __mlir_attr[a,b,c] usage, stringize the
-/// indices and return the result.  On error, emit an error and return an empty
-/// string.
-static std::string substituteMLIRMagic(const SubscriptNode &node,
-                                       ExprEmitter &emitter) {
-  std::string result;
-  llvm::raw_string_ostream os(result);
-
-  for (auto *indexExpr : node.indices) {
-    // If the index is an identifer, and if it is a backtick identifier, we
-    // treat it as an interpolated literal string.  Otherwise we look it up as
-    // an expression.  Rationale: this allows using strings attributes, which
-    // could be useful someday, and keeps __mlir_attr.`thing` more consistent
-    // with __mlir_attr[`thing`].
-    if (auto *dre = dyn_cast<DeclRefNode>(indexExpr))
-      if (dre->spelling.data()[dre->spelling.size()] == '`') {
-        os << dre->spelling;
-        continue;
-      }
-
-    auto indexVal = emitter.emitMValue(
-        indexExpr, "mlir magic values must resolve to a parameter");
-    if (!indexVal)
-      return "";
-
-    // If this is a wrapper for a type, print it as such.
-    if (auto typeVal = indexVal.getIfTypeValue())
-      os << typeVal;
-    else // Otherwise print it as an attribute.
-      indexVal.get().print(os);
-  }
-
-  if (result.empty())
-    emitter.emitError(node.getLoc(), "mlir magic expanded to an empty string");
-  return result;
-}
-
 /// Emit this expression to MLIR as a CallableValue.  On error, emit an error
 /// and return a null value.
 CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
@@ -873,7 +886,6 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
       return CallableValue({type, this});
     }
     if (isa<MagicMLIRAttrType>(typeValue)) {
-      // TODO: Merge with bindAttributesToMLIROperatorCall.
       std::string result = substituteMLIRMagic(*this, emitter);
       if (result.empty())
         return {};

@@ -147,3 +147,22 @@ fn idx_result_params[a: __mlir_type.index -> __mlir_type.index, __mlir_type.inde
   # CHECK: %0 = kgen.param.constant = <add(a, 2)>
   # CHECK: kgen.return<a, add(a, 1)> %0 : index
   return[a,a+1] a+2
+
+# A bit grotty, but effective way to provide a kgen.param.search over three
+# values.  This should be made variadic and generic and moved to the standard
+# library at some point.
+
+# CHECK-LABEL: lit.func @"search3()"<a, b, c -> index>()
+fn search3[a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index
+              -> __mlir_type.index]():
+
+   # Grotty but effective way to pull a param decl out and return it.
+   # CHECK-NEXT: kgen.param.search result_hidden = <a, b, c>
+   __mlir_op.`kgen.param.search`[
+      paramDecls: __mlir_attr.`#kgen<param.decls[result_hidden : index]>`,
+      values: __mlir_attr[`#kgen<exprs[`, a, `, `, b, `, `, c, `]>`]
+   ]()
+   # CHECK: kgen.param.declare result = <result_hidden>
+   alias result = __mlir_attr.`#kgen.param.decl.ref<"result_hidden"> : index`
+   # CHECK: kgen.return<result>
+   return[result]
