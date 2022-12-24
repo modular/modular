@@ -5,7 +5,6 @@ __include "prolog.lit"
 @interface
 fn exp_scalar_f32(x: F32) -> F32: ...
 
-
 # Evaluates the exp function using 6th order taylor series expansion. This is
 # the same expansion used by MLAS internally. The expansion is:
 #
@@ -13,11 +12,11 @@ fn exp_scalar_f32(x: F32) -> F32: ...
 #        = 1 + x (1 + x (1/2 + x (1/6 + x (1/24 + (1/120 + x/720) x))))
 @implements(exp_scalar_f32)
 fn exp_scalar_taylor_f32(x: F32) -> F32:
-  return F32(1.) + x*(F32(1.) + x*(F32(0.5) + x*(F32(0.166667) + x*(F32(0.0416667) + (F32(0.00833333) + F32(0.00138889)*x)*x))))
+  return 1. + x*(1. + x*(0.5 + x*(0.166667 + x*(0.0416667 + (0.00833333 + 0.00138889*x)*x))))
 
 @export
 fn run_me() -> __mlir_type.index:
-    var res = exp_scalar_taylor_f32(F32(2.3))
+    var res = exp_scalar_taylor_f32(2.3)
     # CHECK: 9.88
     printF32(res)
     return 0
