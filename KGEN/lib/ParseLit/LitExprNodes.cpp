@@ -944,15 +944,28 @@ CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter,
   // If the subValue has a bound callable symbol, then this is applying (more?)
   // meta values to bind its parameters.
   if (!subValue.direct) {
-    emitter.emitError(getLoc(), "cannot subscript declaration of this type ")
+    emitter.emitError(arrowLoc, "invalid '->' when subscripting type ")
         << ASTType(subValue.baseVal.ir.getType());
+    return {};
   }
 
+  // The only use of SubscriptArrow nodes right now is to bind parameter
+  // input values and results to a call.  Start by binding the input values.
   subValue = bindAttrValuesToDirectCall(subValue, indices, emitter);
   if (!subValue)
     return {};
 
-  // TODO: Handle the identifiers after the arrow!
+  // Next, bind the results.  The grammar allows any expression, but we only
+  // accept identifiers.
+  for (ExprNode *dest : arrowExprs) {
+    auto *drn = dyn_cast<DeclRefNode>(dest);
+    if (!drn) {
+      emitter.emitError(drn->getLoc(),
+                        "expected identifier for parameter result");
+      return {};
+    }
+    subValue.direct->resultParams.push_back(drn->spelling);
+  }
 
   return subValue;
 }

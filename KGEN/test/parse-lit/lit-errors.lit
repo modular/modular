@@ -521,3 +521,25 @@ fn useEvaluator4(x:  __mlir_type.index) ->  __mlir_type.index:
 
 # expected-error @+1 {{struct declarations do not support result parameters}}
 struct ResultParams[a: Int -> Int, F32]:
+
+# expected-note @+1 {{function declared here}}
+fn hasResultParam[a: __mlir_type.index -> __mlir_type.index]():
+  return[a]
+
+fn useResultParams():
+  # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter but 0 were provided}}
+  hasResultParam[1]()
+
+  hasResultParam[1 -> b]()  # expected-note {{previous definition here}}
+
+  # expected-error @+1 {{invalid redefinition of "b"}}
+  hasResultParam[1 -> b]()
+
+  # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter but 2 were provided}}
+  hasResultParam[1 -> b, c]()
+
+  # expected-error @+1 {{'hasResultParam' expects 1 input parameter but 0 were provided}}
+  _ = hasResultParam
+
+  # expected-error @+1 {{calls with result parameters must be called directly}}
+  _ = hasResultParam[1 -> b]
