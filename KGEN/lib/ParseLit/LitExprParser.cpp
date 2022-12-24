@@ -72,7 +72,7 @@ public:
   // Expressions.
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                   ArrayRef<LitToken::Kind> terminators,
-                                  bool *hadTrailingSep = nullptr);
+                                  bool *hadTrailingComma = nullptr);
   ParseResult parseExpression(ExprNode *&result,
                               Precedence minPrec = Precedence::kLowestExpr);
 
@@ -136,12 +136,12 @@ bool ExprParser::isTokenStartOfNextStatement() {
 ParseResult
 ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                 ArrayRef<LitToken::Kind> terminators,
-                                bool *hadTrailingSep) {
+                                bool *hadTrailingComma) {
   return parseCommaSeparatedList(
       [&]() -> ParseResult {
         return parseExpression(results.emplace_back(nullptr));
       },
-      terminators, hadTrailingSep);
+      terminators, hadTrailingComma);
 }
 
 namespace {
@@ -418,13 +418,27 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
 }
 
 /// parenth_form ::= "(" [starred_expression] ")"
+///
+/// If the list contains at least one comma, it yields a tuple.
 ParseResult ExprParser::parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc) {
-  if (parseExpression(result))
-    return failure();
-  auto rparenLoc = getToken().getLoc();
-  if (parseToken(LitToken::r_paren, "expected ')' in parenthesized expression"))
-    return failure();
-  result = alloc<ParenNode>(lparenLoc, result, rparenLoc);
+  SMLoc rparenLoc;
+  SmallVector<ExprNode *> exprs;
+  bool hadTrailingComma = false;
+
+  // Empty parens is a tuple.
+  if (!consumeIf(LitToken::r_paren, &rparenLoc)) {
+    if (parseExpressionList(exprs, LitToken::r_paren, &hadTrailingComma) ||
+        parseToken(LitToken::r_paren,
+                   "expected ')' in parenthesized expression", &rparenLoc))
+      return failure();
+  }
+
+  // If this is a single expression with no trailing comma, it is parens.
+  if (exprs.size() == 1 && !hadTrailingComma)
+    result = alloc<ParenNode>(lparenLoc, exprs[0], rparenLoc);
+  else // Otherwise it is a tuple.
+    result =
+        alloc<TupleNode>(lparenLoc, copyArrayRef<ExprNode *>(exprs), rparenLoc);
   return success();
 }
 

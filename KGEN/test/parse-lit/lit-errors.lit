@@ -242,6 +242,11 @@ struct struct_bar: # expected-note {{'struct_bar' declared here}}
 def func_impl4(x: __mlir_type.index) -> __mlir_type.index:
   return x
 
+fn bad_tuple(a: Int):
+  _ = ()  # expected-error {{FIXME: Cannot emit tuple expressions yet}}
+  _ = (a, a)  # expected-error {{FIXME: Cannot emit tuple expressions yet}}
+  _ = (a,)  # expected-error {{FIXME: Cannot emit tuple expressions yet}}
+  _ = (a, a, b)  # expected-error {{use of unknown declaration "b"}}
 
 struct LValuesRvalues:
   fn __new__() -> LValuesRvalues:
