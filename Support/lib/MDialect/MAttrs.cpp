@@ -630,10 +630,11 @@ TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
   // Get the host features.
   std::string featureStr;
   llvm::raw_string_ostream os(featureStr);
-  if (llvm::sys::getHostCPUFeatures(hostFeatures))
+  if (llvm::sys::getHostCPUFeatures(hostFeatures)) {
     llvm::interleave(
-        hostFeatures, os,
-        [&](auto &f) { os << (f.second ? '+' : '-') << f.first(); }, ",");
+        llvm::make_filter_range(hostFeatures, [](auto &f) { return f.second; }),
+        os, [&](auto &f) { os << '+' << f.first(); }, ",");
+  }
 
   //  Return a TargetInfoAttr built for the host.
   return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu, os.str(),
