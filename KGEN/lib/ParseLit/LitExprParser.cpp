@@ -94,7 +94,8 @@ private:
   bool isTokenStartOfNextStatement();
 
   ParseResult parsePrefixExpr(ExprNode *&result);
-  ParseResult parseListDisplay(ExprNode *&result, SMLoc lsquareLoc);
+  ParseResult parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc);
+  ParseResult parsePrefixLSquare(ExprNode *&result, SMLoc lsquareLoc);
   ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
   ParseResult parseCallSuffix(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
@@ -320,10 +321,6 @@ static ExprNode::Kind getUnaryOpKind(LitToken::Kind tokKind) {
 ///
 /// enclosure ::= parenth_form | list_display | dict_display | set_display
 ///             | generator_expression | yield_atom
-/// parenth_form ::= "(" [starred_expression] ")"
-/// list_display ::=  "[" [starred_list | comprehension [TODO]] "]"
-/// starred_list       ::=  starred_item ("," starred_item)* [","]
-/// starred_item       ::=  assignment_expression[TODO] | "*" or_expr [TODO]
 /// literal ::=
 ///     stringliteral | bytesliteral | integer | floatnumber | imagnumber
 ///
@@ -374,34 +371,14 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     result = getNoneExpr(getToken().getLoc());
     consumeToken(LitToken::kw_None);
     break;
-  case LitToken::l_paren: { // primary -> atom -> enclosure -> parenth_form
-    auto lpLoc = consumeToken(LitToken::l_paren).getLoc();
-    if (parseExpression(result))
+  case LitToken::l_paren: // primary -> atom -> enclosure -> parenth_form
+    if (parsePrefixLParen(result, consumeToken(LitToken::l_paren).getLoc()))
       return failure();
-    auto rpLoc = getToken().getLoc();
-    if (parseToken(LitToken::r_paren,
-                   "expected ')' in parenthesized expression"))
-      return failure();
-    result = alloc<ParenNode>(lpLoc, result, rpLoc);
     break;
-  }
-  case LitToken::l_square: { // list_display
-    SMLoc lsLoc = consumeToken(LitToken::l_square).getLoc();
-    SMLoc rsLoc;
-    SmallVector<ExprNode *> exprs;
-    if (consumeIf(LitToken::r_square, &rsLoc)) {
-      // Empty list: []
-      result = alloc<ListNode>(lsLoc, exprs, rsLoc);
-      break;
-    }
-    if (parseExpressionList(exprs, LitToken::r_square))
+  case LitToken::l_square: // list_display
+    if (parsePrefixLSquare(result, consumeToken(LitToken::l_square).getLoc()))
       return failure();
-    rsLoc = getToken().getLoc();
-    if (parseToken(LitToken::r_square, "expected ']' in list expression"))
-      return failure();
-    result = alloc<ListNode>(lsLoc, copyArrayRef<ExprNode *>(exprs), rsLoc);
     break;
-  }
   default:
     emitError("unexpected token in expression");
     result = nullptr;
@@ -437,6 +414,39 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     break;
   }
 
+  return success();
+}
+
+/// parenth_form ::= "(" [starred_expression] ")"
+ParseResult ExprParser::parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc) {
+  if (parseExpression(result))
+    return failure();
+  auto rparenLoc = getToken().getLoc();
+  if (parseToken(LitToken::r_paren, "expected ')' in parenthesized expression"))
+    return failure();
+  result = alloc<ParenNode>(lparenLoc, result, rparenLoc);
+  return success();
+}
+
+/// list_display ::=  "[" [starred_list | comprehension [TODO]] "]"
+/// starred_list       ::=  starred_item ("," starred_item)* [","]
+/// starred_item       ::=  assignment_expression[TODO] | "*" or_expr [TODO]
+ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
+                                           SMLoc lsquareLoc) {
+  SMLoc rsquareLoc;
+  // Handle empty list: []
+  if (consumeIf(LitToken::r_square, &rsquareLoc)) {
+    result = alloc<ListNode>(lsquareLoc, ArrayRef<ExprNode *>(), rsquareLoc);
+    return success();
+  }
+
+  SmallVector<ExprNode *> exprs;
+  if (parseExpressionList(exprs, LitToken::r_square) ||
+      getLocation(rsquareLoc) ||
+      parseToken(LitToken::r_square, "expected ']' in list expression"))
+    return failure();
+  result =
+      alloc<ListNode>(lsquareLoc, copyArrayRef<ExprNode *>(exprs), rsquareLoc);
   return success();
 }
 
