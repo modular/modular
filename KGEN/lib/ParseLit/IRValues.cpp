@@ -106,6 +106,11 @@ Type MValue::getIfTypeValue() const {
     return type.getValue();
   if (auto type = dyn_cast<ParameterizedTypeConstantAttr>(attr))
     return type.getValue();
+
+  // If this is a parameter expression of type value, use ParamRefType to turn
+  // it into a type.
+  if (isa<MLIRTypeType>(attr.getType()))
+    return ParamRefType::get(attr);
   return {};
 }
 

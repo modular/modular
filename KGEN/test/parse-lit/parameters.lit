@@ -127,3 +127,9 @@ struct Pair[dt: DType]:
   # CHECK: }
 
 # CHECK: }
+
+# CHECK-LABEL: kgen.struct.decl @TypeParameter
+struct TypeParameter[type: __mlir_type.`!kgen.mlirtype`]:
+  # CHECK: @"bar(TypeParameter{{.*}})"(%self: {{.*}}, %val: !kgen.paramref<type>)
+  fn bar(self, val: type):
+    pass
