@@ -805,6 +805,34 @@ static CallableValue substituteParametersIntoUserDefinedType(
        &subscript});
 }
 
+/// When subscripting a callable with a bound symbol (i.e. a direct method call
+/// or call to a method), apply parameter bindings to it.
+static CallableValue bindAttrValuesToDirectCall(CallableValue &callable,
+                                                ArrayRef<ExprNode *> indices,
+                                                ExprEmitter &emitter) {
+  assert(callable.direct && "only valid on direct call");
+
+  // Process each subscript entry as a binding.
+  // TODO: Support named bindings in addition to positional ones: `A[x: 42]`.
+  for (auto idx : indices) {
+    auto val = emitter.emitMValue(
+        idx, "declaration bindings may not be a run-time value");
+    if (!val)
+      return {};
+
+    // We don't do any checking to see if the value is compatible with the
+    // expected type - this is deferred until when the symbol is actually
+    // emitted for something.  This allow us to use the provided parameters to
+    // filter down the overload set.
+    //
+    // Note: we're being a bit abusive here by making a ParamBindAttr with a
+    // null name for positional attributes.
+    callable.direct->bindings.push_back({idx->getLoc(), Attribute(val.get())});
+  }
+  // The bindings will be checked for validity when a reference is formed.
+  return std::move(callable);
+}
+
 AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
                                ASTType contextualType) const {
   return emitCallable(emitter, contextualType).emitAsValue(emitter);
@@ -822,28 +850,9 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
 
   // If the subValue has a bound callable symbol, then this is applying (more?)
   // meta values to bind its parameters.
-  if (subValue.direct) {
-    // Process each subscript entry as a binding.
-    // TODO: Support named bindings in addition to positional ones: `A[x: 42]`.
-    for (auto idx : indices) {
-      auto val = emitter.emitMValue(
-          idx, "declaration parameters may not be a run-time value");
-      if (!val)
-        return {};
+  if (subValue.direct)
+    return bindAttrValuesToDirectCall(subValue, indices, emitter);
 
-      // We don't do any checking to see if the value is compatible with the
-      // expected type - this is deferred until when the symbol is actually
-      // emitted for something.  This allow us to use the provided parameters to
-      // filter down the overload set.
-      //
-      // Note: we're being a bit abusive here by making a ParamBindAttr with a
-      // null name for positional attributes.
-      subValue.direct->bindings.push_back(
-          {idx->getLoc(), Attribute(val.get())});
-    }
-    // The bindings will be checked for validity when a reference is formed.
-    return subValue;
-  }
   if (auto callableMVal = subValue.baseVal.ir.getIfMValue()) {
     if (auto sig = dyn_cast<SignatureType>(callableMVal.getType())) {
       // If this is a signature-type MValue callable, this is binding parameter
@@ -915,6 +924,37 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   emitter.emitError(getLoc(), "TODO: Subscript irgen not implemented yet ")
       << ASTType(subValue.baseVal.ir.getType());
   return {};
+}
+
+AnyValue SubscriptArrowNode::emitIR(ExprEmitter &emitter,
+                                    ASTType contextualType) const {
+  return emitCallable(emitter, contextualType).emitAsValue(emitter);
+}
+
+/// Emit this expression to MLIR as a CallableValue.  On error, emit an error
+/// and return a null value.
+CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter,
+                                               ASTType contextualType) const {
+
+  // Subscripting a generic function binds the parameter expressions.
+  auto subValue = base->emitCallable(emitter, {});
+  if (!subValue)
+    return {};
+
+  // If the subValue has a bound callable symbol, then this is applying (more?)
+  // meta values to bind its parameters.
+  if (!subValue.direct) {
+    emitter.emitError(getLoc(), "cannot subscript declaration of this type ")
+        << ASTType(subValue.baseVal.ir.getType());
+  }
+
+  subValue = bindAttrValuesToDirectCall(subValue, indices, emitter);
+  if (!subValue)
+    return {};
+
+  // TODO: Handle the identifiers after the arrow!
+
+  return subValue;
 }
 
 AnyValue ParenNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {

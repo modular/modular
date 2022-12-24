@@ -32,18 +32,19 @@ class ExprNode {
 public:
   // This indicates the subclass.
   enum Kind {
-    kIntLiteral,    // 42
-    kFloatLiteral,  // 1.1
-    kBoolLiteral,   // False
-    kStringLiteral, // "Hello"
-    kNoneLiteral,   // None
-    kDeclRef,       // x
-    kAttributeRef,  // x.y
-    kCall,          // thing(a, b)
-    kSubscript,     // thing[a, b:c]
-    kSlice,         // :, a:, :a, ::, a:b:c, etc.  Only valid in subscripts.
-    kParen,         // (x+y)
-    kList,          // [x, y]
+    kIntLiteral,     // 42
+    kFloatLiteral,   // 1.1
+    kBoolLiteral,    // False
+    kStringLiteral,  // "Hello"
+    kNoneLiteral,    // None
+    kDeclRef,        // x
+    kAttributeRef,   // x.y
+    kCall,           // thing(a, b)
+    kSubscript,      // thing[a, b:c]
+    kSubscriptArrow, // thing[x, y -> a, b]
+    kSlice,          // :, a:, :a, ::, a:b:c, etc.  Only valid in subscripts.
+    kParen,          // (x+y)
+    kList,           // [x, y]
 
     // Unary expressions.
     kNeg,     // -x

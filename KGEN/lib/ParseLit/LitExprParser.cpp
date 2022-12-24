@@ -71,7 +71,7 @@ public:
 
   // Expressions.
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
-                                  LitToken::Kind terminator,
+                                  ArrayRef<LitToken::Kind> terminators,
                                   bool *hadTrailingSep = nullptr);
   ParseResult parseExpression(ExprNode *&result,
                               Precedence minPrec = Precedence::kLowestExpr);
@@ -94,6 +94,7 @@ private:
   bool isTokenStartOfNextStatement();
 
   ParseResult parsePrefixExpr(ExprNode *&result);
+  ParseResult parseListDisplay(ExprNode *&result, SMLoc lsquareLoc);
   ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
   ParseResult parseCallSuffix(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
@@ -133,13 +134,13 @@ bool ExprParser::isTokenStartOfNextStatement() {
 /// expression_list ::= expression ("," expression)* [","]
 ParseResult
 ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
-                                LitToken::Kind terminator,
+                                ArrayRef<LitToken::Kind> terminators,
                                 bool *hadTrailingSep) {
   return parseCommaSeparatedList(
       [&]() -> ParseResult {
         return parseExpression(results.emplace_back(nullptr));
       },
-      terminator, hadTrailingSep);
+      terminators, hadTrailingSep);
 }
 
 namespace {
@@ -401,7 +402,6 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     result = alloc<ListNode>(lsLoc, copyArrayRef<ExprNode *>(exprs), rsLoc);
     break;
   }
-
   default:
     emitError("unexpected token in expression");
     result = nullptr;
@@ -482,7 +482,7 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
   return success();
 }
 
-/// subscription ::=  primary "[" expression_list "]"
+/// subscription ::=  primary "[" expression_list ("->" expression_list)?"]"
 ///
 /// slicing      ::=  primary "[" slice_list "]"  [TODO]
 /// slice_list   ::=  slice_item ("," slice_item)* [","]
@@ -497,7 +497,6 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   llvm::SaveAndRestore<Optional<size_t>> X(stmtIndent, std::nullopt);
 
   SmallVector<ExprNode *> indices;
-
   auto parseExprOrSlice = [&]() -> ParseResult {
     ExprNode *firstExpr = nullptr;
     // If this has a leading expr it could be an expr only or could be the first
@@ -538,13 +537,34 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   };
 
   SMLoc rsquareLoc;
-  if (parseCommaSeparatedList(parseExprOrSlice, LitToken::r_square) ||
+  if (parseCommaSeparatedList(parseExprOrSlice,
+                              {LitToken::r_square, LitToken::minus_greater}) ||
+      getLocation(rsquareLoc))
+    return failure();
+
+  // If we have no arrow, handle this as a normal subscript.
+  if (!consumeIf(LitToken::minus_greater)) {
+    if (parseToken(LitToken::r_square, "expected ']' in call argument list"))
+      return failure();
+    result = alloc<SubscriptNode>(
+        result, lsquareLoc, copyArrayRef<ExprNode *>(indices), rsquareLoc);
+    return success();
+  }
+
+  // Otherwise, parse the arrow production.
+  SMLoc arrowLoc = rsquareLoc;
+  SmallVector<ExprNode *> arrowExprs;
+  std::swap(indices, arrowExprs);
+  if (parseCommaSeparatedList(parseExprOrSlice,
+                              {LitToken::r_square, LitToken::minus_greater}) ||
       getLocation(rsquareLoc) ||
       parseToken(LitToken::r_square, "expected ']' in call argument list"))
     return failure();
 
-  result = alloc<SubscriptNode>(result, lsquareLoc,
-                                copyArrayRef<ExprNode *>(indices), rsquareLoc);
+  std::swap(indices, arrowExprs);
+  result = alloc<SubscriptArrowNode>(
+      result, lsquareLoc, copyArrayRef<ExprNode *>(indices), arrowLoc,
+      copyArrayRef<ExprNode *>(arrowExprs), rsquareLoc);
   return success();
 }
 
