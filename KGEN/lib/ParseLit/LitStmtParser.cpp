@@ -336,9 +336,31 @@ static OpT getBlockParentOfType(Block *block) {
   return block->getParentOp()->getParentOfType<OpT>();
 }
 
-/// return_stmt ::= "return" [expression_list]
+/// return_stmt ::= "return"(return_param_spec)? [expression_list]
+/// return_param_spec ::= "[" expression ("," expression)* "]"
+///
+/// The return param spec is required if the enclosing function has return
+/// parameters, otherwise it is absent.
 ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
+  LIT::FuncOp decl = dyn_cast<LIT::FuncOp>(containingDecl);
+
   auto loc = consumeToken(LitToken::kw_return).getLoc();
+
+  // If this function declaration requires result parameters, parse them
+  // specially.  'decl' may be missing in an invalid return.  This handles the
+  // ambiguity where there may be result parameters /and/ a list-display in
+  // square brackets may also be used as a normal result.
+  ExprNode *resultParams = nullptr;
+  if (decl && !decl.getResultParamTypes().empty()) {
+    auto numResultParams = decl.getResultParamTypes().size();
+    // Catch obvious missed parameter list.
+    if (getToken().isNot(LitToken::l_square)) {
+      emitError(loc, "expected '[' in function that returns ")
+          << numResultParams << " result parameter" << plural(numResultParams);
+    } else if (parseExpression(resultParams, returnIndent)) {
+      return failure();
+    }
+  }
 
   // If there is an expression list present, parse it.
   SmallVector<ExprNode *> operandExprs;
@@ -374,18 +396,39 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
          "Should have a single returned value now");
   Value resultValue = operandValues[0];
 
-  // Check the result values match expected types.
-  LIT::FuncOp decl = dyn_cast<LIT::FuncOp>(containingDecl);
+  // Ok, now that we parsed all the tokens for this statement, do semantic
+  // analysis.
   if (!decl) {
     emitError(loc, "cannot return from this context");
     return success();
   }
 
+  auto emitter = getExprEmitter();
+
+  // Check the result parameters if present.
+  SmallVector<TypedAttr> resultParamValues;
+  if (resultParams) {
+    auto resultParamList = dyn_cast<ListExprNode>(resultParams);
+    size_t numResultParams = decl.getResultParamTypes().size();
+    if (!resultParamList || resultParamList->exprs.size() != numResultParams) {
+      emitError(resultParamList->getLoc(), "expected ")
+          << numResultParams << " result parameter" << plural(numResultParams);
+      return success();
+    }
+    for (ExprNode *paramExpr : resultParamList->exprs) {
+      auto result = emitter.emitMValue(
+          paramExpr, "dynamic value not allowed in result parameter list");
+      if (!result)
+        return success();
+      resultParamValues.push_back(result);
+    }
+  }
+
   // Convert the returned value to the returned type of the function.  If the
   // function is a 'raising' function we need to remove the extra variant type
   // to get the normal result type.
-  resultValue = getExprEmitter().getAsExpectedType(resultValue, operandExprs[0],
-                                                   decl.getNormalResultType());
+  resultValue = emitter.getAsExpectedType(resultValue, operandExprs[0],
+                                          decl.getNormalResultType());
   if (!resultValue)
     return {};
 
@@ -401,9 +444,17 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   }
 
   if (isa<LIT::FuncOp>(builder.getInsertionBlock()->getParentOp())) {
-    // TODO: Support result parameters.
-    builder.create<ReturnOp>(returnLoc, ArrayRef<TypedAttr>(), resultValue);
+    builder.create<ReturnOp>(returnLoc, resultParamValues, resultValue);
   } else {
+    // FIXME(https://github.com/modularml/modular/issues/6449): HLCF::ReturnOp
+    // doesn't support result parameters.
+    if (!resultParamValues.empty()) {
+      emitError(resultParams->getLoc(),
+                "FIXME(Issue#6449): don't support result parameters in nested "
+                "returns yet");
+      return success();
+    }
+
     builder.create<HLCF::ReturnOp>(returnLoc, resultValue);
   }
   // Split the block here. Subsequent statements are dead code.

@@ -142,7 +142,8 @@ struct TypeParameter[type: __mlir_type.`!kgen.mlirtype`]:
 fn no_result_param[a: Int]():
   return
 
-# CHECK-LABEL: lit.func @"int_result_params()"<a: !kgen.declref<@Int> -> !kgen.declref<@Int>, !kgen.declref<@Int>>()
-@interface
-fn int_result_params[a: Int -> Int, Int]():
-  ...
+# CHECK-LABEL: lit.func @"idx_result_params()"<a -> index, index>() -> index
+fn idx_result_params[a: __mlir_type.index -> __mlir_type.index, __mlir_type.index]() -> __mlir_type.index:
+  # CHECK: %0 = kgen.param.constant = <add(a, 2)>
+  # CHECK: kgen.return<a, add(a, 1)> %0 : index
+  return[a,a+1] a+2
