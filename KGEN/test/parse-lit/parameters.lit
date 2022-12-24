@@ -133,3 +133,16 @@ struct TypeParameter[type: __mlir_type.`!kgen.mlirtype`]:
   # CHECK: @"bar(TypeParameter{{.*}})"(%self: {{.*}}, %val: !kgen.paramref<type>)
   fn bar(self, val: type):
     pass
+
+##===----------------------------------------------------------------------===##
+# Result parameters
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.func @"no_result_param()"<a: !kgen.declref<@Int>>()
+fn no_result_param[a: Int]():
+  return
+
+# CHECK-LABEL: lit.func @"int_result_params()"<a: !kgen.declref<@Int> -> !kgen.declref<@Int>, !kgen.declref<@Int>>()
+@interface
+fn int_result_params[a: Int -> Int, Int]():
+  ...
