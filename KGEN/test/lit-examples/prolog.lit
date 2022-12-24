@@ -95,7 +95,7 @@ struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
         return __mlir_op.`kgen.struct.create`[_type: ErrorOr[type]](
           __mlir_op.`pop.variant.create`[_type: __mlir_type[`!pop.variant<@Error, `, type, `>`]](err))
 
-    fn __new__(value: __mlir_type[`!kgen.paramref<`, type, `>>`]) -> ErrorOr[type]:
+    fn __new__(value: type) -> ErrorOr[type]:
         return __mlir_op.`kgen.struct.create`[_type: ErrorOr[type]](
            __mlir_op.`pop.variant.create`[_type: __mlir_type[`!pop.variant<@Error, `, type, `>`]](value))
 
@@ -104,8 +104,8 @@ struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
            if __mlir_op.`pop.variant.is`[testType: __mlir_attr.`!kgen.declref<@Error>`](self.value)
            else Bool.true()
 
-    fn getValue(self: ErrorOr[type]) -> __mlir_type[`!kgen.paramref<`, type, `>`]:
-        return __mlir_op.`pop.variant.get`[_type: __mlir_type[`!kgen.paramref<`, type, `>`]](self.value)
+    fn getValue(self: ErrorOr[type]) -> type:
+        return __mlir_op.`pop.variant.get`[_type: type](self.value)
 
     fn getError(self: ErrorOr[type]) -> Error:
         return __mlir_op.`pop.variant.get`[_type: Error](self.value)
