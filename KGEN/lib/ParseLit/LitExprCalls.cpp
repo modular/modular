@@ -562,7 +562,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
   // This is the callee symbol constant for a direct call, or the SSA value for
   // an indirect call.
-  PointerUnion<Attribute, Value> callee;
+  AnyValue callee;
   if (direct) {
     // If we have a bound self, add it to the operand list to simplify the logic
     // below.
@@ -586,19 +586,21 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       return {};
 
     calleeSig = symbol.getType();
-    callee = symbol;
+    callee = MValue(symbol);
   } else {
-    // Otherwise we have an indirect call, emit the callee value as a DRValue so
-    // we can call it with call_indirect.
-    auto calleeDRVal = emitter.emitDRValue(baseVal.ir, callLoc);
-    if (!calleeDRVal)
-      return {};
-    callee = calleeDRVal;
+    // Otherwise we have an indirect call. If the callee is an MValue, emit a
+    // `call_param`. Otherwise, emit the callee value as a DRValue so we can
+    // call it with call_indirect.
+    callee = baseVal.ir.getIfMValue();
+    if (!callee) {
+      callee = emitter.emitDRValue(baseVal.ir, callLoc);
+      if (!callee)
+        return {};
+    }
 
-    calleeSig = dyn_cast<SignatureType>(calleeDRVal.getType());
+    calleeSig = dyn_cast<SignatureType>(callee.getType());
     if (!calleeSig) {
-      emitError("invalid function type to call ")
-          << ASTType(calleeDRVal.getType());
+      emitError("invalid function type to call ") << ASTType(callee.getType());
       return {};
     }
 
@@ -658,28 +660,29 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     return {};
   }
 
-  // If this is a call to something representable as an attribute, we can use
-  // a kgen.call_param.
-  Value resultVal;
+  Operation *callOp;
   auto loc = emitter.translateLocation(callLoc);
   // FIXME: Move result type inference into CallOp/CallIndirectOp.
   auto resultTypes = calleeSig.getValueResults();
-  if (auto target = dyn_cast<Attribute>(callee)) {
-    resultVal =
-        builder
-            ->create<CallOp>(loc, resultTypes, cast<SymbolConstantAttr>(target),
-                             ArrayRef<ParamDeclAttr>(), valueArguments)
-            .getResult(0);
+  if (auto target = callee.getIfMValue()) {
+    // If the callee is a symbol constant, directly emit a call.
+    if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
+      callOp = builder->create<CallOp>(
+          loc, resultTypes, symbol, ArrayRef<ParamDeclAttr>(), valueArguments);
+    } else {
+      callOp = builder->create<CallParamOp>(
+          loc, resultTypes, target.get(), ArrayRef<ParamBindAttr>(),
+          ArrayRef<ParamDeclAttr>(), valueArguments);
+    }
   } else {
     // Otherwise emit calls to SSA values with call_indirect.
-    auto calleeDRVal = cast<Value>(callee);
-    resultVal = builder
-                    ->create<POP::CallIndirectOp>(loc, resultTypes, calleeDRVal,
-                                                  /*operands*/ valueArguments)
-                    .getResult(0);
+    callOp = builder->create<POP::CallIndirectOp>(loc, resultTypes,
+                                                  callee.getIfDRValue(),
+                                                  /*operands*/ valueArguments);
   }
 
   // If the callee can raise an error, try to unwrap it.
+  Value resultVal = callOp->getResult(0);
   if (calleeSig.getFnEffects() == FnEffects::Throws) {
     if (!isValidErrorContext(builder->getInsertionBlock())) {
       emitError(

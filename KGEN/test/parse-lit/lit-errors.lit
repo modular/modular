@@ -478,6 +478,9 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
   # expected-error @+1 {{invalid indirect call: in argument #0, value of type 'ConvertibleFromInt' cannot be converted to expected type 'Int'}}
   localFn(b, b)
 
+fn partialBindSignature[callable: __mlir_type.`!kgen.signature<[a: index, b: index], [], () -> ()>`, a: __mlir_type.index]():
+  # expected-error @below {{cannot partially bind a parametric callable}}
+  return callable[a]
 
 @interface
 fn my_evaluator0(funcs: __mlir_type.`!pop.pointer<(index) -> index>`, size: __mlir_type.index) -> __mlir_type.index:

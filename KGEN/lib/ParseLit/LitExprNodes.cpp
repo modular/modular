@@ -831,6 +831,27 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
     // The bindings will be checked for validity when a reference is formed.
     return subValue;
   }
+  if (auto callableMVal = subValue.baseVal.ir.getIfMValue()) {
+    if (auto sig = dyn_cast<SignatureType>(callableMVal.getType())) {
+      // If this is a signature-type MValue callable, this is binding parameter
+      // values to a call.
+      SmallVector<TypedAttr> bindOperands({callableMVal.get()});
+      if (indices.size() != sig.getInputParams().size()) {
+        emitter.emitError(getLoc(),
+                          "cannot partially bind a parametric callable");
+        return {};
+      }
+      for (ExprNode *idx : indices) {
+        bindOperands.push_back(emitter.emitMValue(
+            idx, "declaration parameters may not be a run-time value"));
+        if (!bindOperands.back())
+          return {};
+      }
+      return CallableValue(
+          {MValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands)),
+           this});
+    }
+  }
 
   // Otherwise, if there is no symbol, it is just an LValue or RValue being
   // subscript.
