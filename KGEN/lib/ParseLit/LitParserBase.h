@@ -190,7 +190,7 @@ public:
   /// trailing punctuator that naturally terminates the expression.
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
                                   Optional<size_t> stmtIndent,
-                                  bool *hadTrailingSep);
+                                  bool *hadTrailingComma);
   ParseResult parseExpression(ExprNode *&expr, Optional<size_t> stmtIndent);
   /// Parse an expression, allowing `=`, and `+=`.
   ParseResult parseExpressionOrAssignmentStmt(ExprNode *&expr,

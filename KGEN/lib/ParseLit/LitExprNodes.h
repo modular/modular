@@ -260,6 +260,22 @@ struct ParenNode final : public ExprNode {
                              ASTType contextualType) const override;
 };
 
+/// (a, b, c)
+struct TupleNode final : public ExprNode {
+  TupleNode(SMLoc lparenLoc, ArrayRef<ExprNode *> exprs, SMLoc rparenLoc)
+      : ExprNode(kTuple), lparenLoc(lparenLoc), exprs(exprs),
+        rparenLoc(rparenLoc) {}
+
+  const SMLoc lparenLoc;
+  ArrayRef<ExprNode *> exprs;
+  const SMLoc rparenLoc;
+
+  static bool classof(const ExprNode *node) { return node->kind == kTuple; }
+  SMLoc getLoc() const override { return lparenLoc; }
+  llvm::SMRange getRange() const override { return {lparenLoc, rparenLoc}; }
+  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+};
+
 /// [a, b, c]
 struct ListNode final : public ExprNode {
   ListNode(SMLoc lsquareLoc, ArrayRef<ExprNode *> exprs, SMLoc rsquareLoc)

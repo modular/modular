@@ -44,6 +44,7 @@ public:
     kSubscriptArrow, // thing[x, y -> a, b]
     kSlice,          // :, a:, :a, ::, a:b:c, etc.  Only valid in subscripts.
     kParen,          // (x+y)
+    kTuple,          // (), (x,), (x, y), etc
     kList,           // [x, y]
 
     // Unary expressions.

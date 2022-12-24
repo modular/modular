@@ -979,6 +979,19 @@ CallableValue ParenNode::emitCallable(ExprEmitter &emitter,
   return subExpr->emitCallable(emitter, contextualType);
 }
 
+AnyValue TupleNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
+  // Emit each of the index values to generate error messages.
+  SmallVector<RValue> exprValues;
+  for (ExprNode *expr : exprs) {
+    exprValues.push_back(emitter.emitRValue(expr));
+    if (!exprValues.back())
+      return {};
+  }
+
+  emitter.emitError(getLoc(), "FIXME: Cannot emit tuple expressions yet");
+  return {};
+}
+
 AnyValue ListNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   SmallVector<RValue> elements;
   for (ExprNode *expr : exprs) {
