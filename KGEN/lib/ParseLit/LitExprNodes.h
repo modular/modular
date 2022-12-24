@@ -215,18 +215,16 @@ struct SliceNode final : public ExprNode {
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
 
-struct ParenExprNode final : public ExprNode {
-  ParenExprNode(SMLoc lparenLoc, ExprNode *subExpr, SMLoc rparenLoc)
-      : ExprNode(kParenExprNode), lparenLoc(lparenLoc), subExpr(subExpr),
+struct ParenNode final : public ExprNode {
+  ParenNode(SMLoc lparenLoc, ExprNode *subExpr, SMLoc rparenLoc)
+      : ExprNode(kParen), lparenLoc(lparenLoc), subExpr(subExpr),
         rparenLoc(rparenLoc) {}
 
   const SMLoc lparenLoc;
   ExprNode *const subExpr;
   const SMLoc rparenLoc;
 
-  static bool classof(const ExprNode *node) {
-    return node->kind == kParenExprNode;
-  }
+  static bool classof(const ExprNode *node) { return node->kind == kParen; }
   SMLoc getLoc() const override { return lparenLoc; }
   llvm::SMRange getRange() const override { return {lparenLoc, rparenLoc}; }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
@@ -235,18 +233,16 @@ struct ParenExprNode final : public ExprNode {
                              ASTType contextualType) const override;
 };
 
-struct ListExprNode final : public ExprNode {
-  ListExprNode(SMLoc lsquareLoc, ArrayRef<ExprNode *> exprs, SMLoc rsquareLoc)
-      : ExprNode(kListExprNode), lsquareLoc(lsquareLoc), exprs(exprs),
+struct ListNode final : public ExprNode {
+  ListNode(SMLoc lsquareLoc, ArrayRef<ExprNode *> exprs, SMLoc rsquareLoc)
+      : ExprNode(kList), lsquareLoc(lsquareLoc), exprs(exprs),
         rsquareLoc(rsquareLoc) {}
 
   const SMLoc lsquareLoc;
-  llvm::SmallVector<ExprNode *> exprs;
+  ArrayRef<ExprNode *> exprs;
   const SMLoc rsquareLoc;
 
-  static bool classof(const ExprNode *node) {
-    return node->kind == kListExprNode;
-  }
+  static bool classof(const ExprNode *node) { return node->kind == kList; }
   SMLoc getLoc() const override { return lsquareLoc; }
   llvm::SMRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;

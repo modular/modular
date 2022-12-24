@@ -408,7 +408,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // Check the result parameters if present.
   SmallVector<TypedAttr> resultParamValues;
   if (resultParams) {
-    auto resultParamList = dyn_cast<ListExprNode>(resultParams);
+    auto resultParamList = dyn_cast<ListNode>(resultParams);
     size_t numResultParams = decl.getResultParamTypes().size();
     if (!resultParamList || resultParamList->exprs.size() != numResultParams) {
       emitError(resultParamList->getLoc(), "expected ")
