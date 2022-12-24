@@ -381,7 +381,7 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     if (parseToken(LitToken::r_paren,
                    "expected ')' in parenthesized expression"))
       return failure();
-    result = alloc<ParenExprNode>(lpLoc, result, rpLoc);
+    result = alloc<ParenNode>(lpLoc, result, rpLoc);
     break;
   }
   case LitToken::l_square: { // list_display
@@ -390,7 +390,7 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     SmallVector<ExprNode *> exprs;
     if (consumeIf(LitToken::r_square, &rsLoc)) {
       // Empty list: []
-      result = alloc<ListExprNode>(lsLoc, exprs, rsLoc);
+      result = alloc<ListNode>(lsLoc, exprs, rsLoc);
       break;
     }
     if (parseExpressionList(exprs, LitToken::r_square))
@@ -398,7 +398,7 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     rsLoc = getToken().getLoc();
     if (parseToken(LitToken::r_square, "expected ']' in list expression"))
       return failure();
-    result = alloc<ListExprNode>(lsLoc, copyArrayRef<ExprNode *>(exprs), rsLoc);
+    result = alloc<ListNode>(lsLoc, copyArrayRef<ExprNode *>(exprs), rsLoc);
     break;
   }
 

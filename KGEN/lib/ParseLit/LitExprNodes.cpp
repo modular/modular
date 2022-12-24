@@ -917,18 +917,16 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   return {};
 }
 
-AnyValue ParenExprNode::emitIR(ExprEmitter &emitter,
-                               ASTType contextualType) const {
+AnyValue ParenNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   return subExpr->emitIR(emitter, contextualType);
 }
 
-CallableValue ParenExprNode::emitCallable(ExprEmitter &emitter,
-                                          ASTType contextualType) const {
+CallableValue ParenNode::emitCallable(ExprEmitter &emitter,
+                                      ASTType contextualType) const {
   return subExpr->emitCallable(emitter, contextualType);
 }
 
-AnyValue ListExprNode::emitIR(ExprEmitter &emitter,
-                              ASTType contextualType) const {
+AnyValue ListNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   SmallVector<RValue> elements;
   for (ExprNode *expr : exprs) {
     elements.push_back(emitter.emitRValue(expr));
