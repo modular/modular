@@ -21,8 +21,20 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 //===----------------------------------------------------------------------===//
-// CallableValue Implementation
+// DirectCallable Implementation
 //===----------------------------------------------------------------------===//
+
+/// Get a symbol for a direct reference to the specified function in its
+/// enclosing context.  This does not bind any values to arguments.
+DirectCallable::DirectCallable(SMLoc loc, StringRef baseName,
+                               ArrayRef<ASTDecl *> fnDecls,
+                               ParamBindArrayAttr bindingsAttr)
+    : loc(loc), baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()) {
+  if (bindingsAttr) {
+    for (ParamBindAttr bind : bindingsAttr)
+      bindings.push_back({loc, bind});
+  }
+}
 
 namespace {
 /// This struct indicates whether a signature can be successfully applied to a
@@ -31,23 +43,25 @@ namespace {
 /// reason for the mismatch.
 struct OverloadFitness {
   enum Kind {
-    kValid,          //< This is a valid candidate.
-    kParamCount,     //< Invalid due to a parameter count mismatch
-    kParamWrongType, //< A parameter value cannot be converted to expected type
-    kArgCount,       //< Invalid due to a argument count mismatch
-    kArgNotLValue,   //< By-ref argument requires an lvalue, but got an rvalue.
-    kArgWrongLVType, //< By-ref argument and provided l-value types mismatch.
-    kArgWrongType,   //< An argument value cannot be converted to expected type
+    kValid,            //< This is a valid candidate.
+    kParamCount,       //< Invalid due to a parameter count mismatch
+    kParamWrongType,   //< A parameter value not convertible to expected type
+    kResultParamCount, //< Incorrect number of result params.
+    kArgCount,         //< Invalid due to a argument count mismatch
+    kArgNotLValue,     //< By-ref argument requires an lvalue, but got an rvalue
+    kArgWrongLVType,   //< By-ref argument and provided l-value types mismatch.
+    kArgWrongType,     //< An argument value not convertible to expected type
   } kind;
 
   /// The interpretation of this payload depends on the 'kind' field:
-  ///  kValid:          number of implicit conversions required.
-  ///  kParamCount:     Not used.
-  ///  kParamWrongType: the parameter # that mismatches.
-  ///  kArgCount:       number of arguments expected.
-  ///  kArgNotLValue:   the argument # that mismatches.
-  ///  kArgWrongLVType: the argument # that mismatches.
-  ///  kArgWrongType:   the argument # that mismatches.
+  ///  kValid:            number of implicit conversions required.
+  ///  kParamCount:       not used.
+  ///  kParamWrongType:   the parameter # that mismatches.
+  ///  kResultParamCount: not used.
+  ///  kArgCount:         number of arguments expected.
+  ///  kArgNotLValue:     the argument # that mismatches.
+  ///  kArgWrongLVType:   the argument # that mismatches.
+  ///  kArgWrongType:     the argument # that mismatches.
   size_t payload;
 
   /// For type mismatches, this is the actual or expected type, otherwise null.
@@ -88,6 +102,10 @@ OverloadFitness OverloadFitness::evaluate(
       return {kParamCount, 0, ASTType()};
     return {kParamWrongType, (size_t)incorrectBindingNo, ASTType()};
   }
+
+  // Check the result parameter count.
+  if (signature.getResultParamTypes().size() != callable.resultParams.size())
+    return {kResultParamCount, 0, ASTType()};
 
   // If anything was bound, apply it to the signature so the expected argument
   // types are updated.
@@ -163,8 +181,8 @@ void OverloadFitness::diagnose(SignatureType signature,
     return;
   case kParamCount:
     diag << "callee expects " << signature.getInputParams().size()
-         << " input parameter" << plural(payload) << " but "
-         << callable.bindings.size()
+         << " input parameter" << plural(signature.getInputParams().size())
+         << " but " << callable.bindings.size()
          << plural(callable.bindings.size(), " was", " were") << " provided";
     return;
   case kParamWrongType: {
@@ -175,6 +193,14 @@ void OverloadFitness::diagnose(SignatureType signature,
          << ASTType(valueType);
     return;
   }
+  case kResultParamCount:
+    diag << "callee expects " << signature.getResultParamTypes().size()
+         << " result parameter"
+         << plural(signature.getResultParamTypes().size()) << " but "
+         << callable.resultParams.size()
+         << plural(callable.resultParams.size(), " was", " were")
+         << " provided";
+    return;
   case kArgCount:
     diag << "callee expects " << payload << " argument" << plural(payload);
     return;
@@ -384,17 +410,41 @@ DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
   return funcOp.getBoundReference(newBindings);
 }
 
-/// Get a symbol for a direct reference to the specified function in its
-/// enclosing context.  This does not bind any values to arguments.
-DirectCallable::DirectCallable(SMLoc loc, StringRef baseName,
-                               ArrayRef<ASTDecl *> fnDecls,
-                               ParamBindArrayAttr bindingsAttr)
-    : loc(loc), baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()) {
-  if (bindingsAttr) {
-    for (ParamBindAttr bind : bindingsAttr)
-      bindings.push_back({loc, bind});
+/// Generate declarations for the result parameters and add them to
+/// resultParamDecls.  This emits and error and returns failure if an error is
+/// detected.
+LogicalResult DirectCallable::getResultParamDecls(
+    SignatureType signature, SmallVectorImpl<ParamDeclAttr> &resultParamDecls,
+    ExprEmitter &emitter) {
+  assert(signature.getResultParamTypes().size() == resultParams.size() &&
+         "We know that the callee is type checked");
+
+  // If there is nothing to do, then we are done.
+  if (resultParams.empty())
+    return success();
+
+  // TODO: We currently generate declarations on the fly.  This won't
+  // effectively support non-lexical parameter result references etc, we should
+  // force an `alias x : Int` sort of declaraton and then allow calls to fulfill
+  // it.
+  // This will unblock progress until then though.
+  DeclResolver &resolver = *emitter.shared.declResolver;
+  for (auto [type, name] :
+       llvm::zip(signature.getResultParamTypes(), resultParams)) {
+    // The name strings point into the buffer they came from.
+    SMLoc resultLoc = SMLoc::getFromPointer(name.data());
+    auto value = MValue(ParamDeclRefAttr::get(name, type));
+
+    // Add the declaration so name lookup will find it.
+    resolver.addFullyResolvedDecl(value, name, resultLoc, &emitter.declScope);
+    resultParamDecls.push_back(ParamDeclAttr::get(name, type));
   }
+  return success();
 }
+
+//===----------------------------------------------------------------------===//
+// CallableValue Implementation
+//===----------------------------------------------------------------------===//
 
 /// Get a CallableValue for a lookup of a named method on the specified type.
 /// If successful, this provides a non-null CallableValue.  On failure, it
@@ -468,6 +518,15 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
   if (!directSymbolAttr)
     return {};
 
+  // Verify that the target has no result parameters.  We have no way to bind
+  // these indirectly.
+  SignatureType calleeSignature = directSymbolAttr.getType();
+  if (!calleeSignature.getResultParamTypes().empty()) {
+    emitter.emitError(direct->loc,
+                      "calls with result parameters must be called directly");
+    return {};
+  }
+
   // If we have no base value, then we are just a symbol, return it.
   if (!baseVal)
     return MValue(directSymbolAttr);
@@ -476,7 +535,6 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
 
   // Otherwise, we have a base symbol for an instance method /and/ a self value
   // to apply to it.  Partially apply it to form a result closure.
-  SignatureType calleeSignature = directSymbolAttr.getType();
   Type firstArgIRType = calleeSignature.getValueInputs()[0];
   Value firstArgValue;
   switch (calleeSignature.getInputConvention(0)) {
@@ -560,6 +618,9 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   // normal rvalue.
   SignatureType calleeSig;
 
+  // If the callee defines parameters, this is the definitions to use.
+  SmallVector<ParamDeclAttr> resultParamDecls;
+
   // This is the callee symbol constant for a direct call, or the SSA value for
   // an indirect call.
   AnyValue callee;
@@ -587,6 +648,10 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
     calleeSig = symbol.getType();
     callee = MValue(symbol);
+    if (failed(
+            direct->getResultParamDecls(calleeSig, resultParamDecls, emitter)))
+      return {};
+
   } else {
     // Otherwise we have an indirect call. If the callee is an MValue, emit a
     // `call_param`. Otherwise, emit the callee value as a DRValue so we can
@@ -618,9 +683,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     }
   }
 
-  assert(calleeSig.getResultParamTypes().empty() &&
-         "TODO: meta results not implemented yet");
-  assert(calleeSig.getValues().getNumInputs() == operands.size() &&
+  assert(calleeSig.getResultParamTypes().size() == resultParamDecls.size() &&
+         calleeSig.getValues().getNumInputs() == operands.size() &&
          "Type checking should be done");
 
   // Emit all the arguments.
@@ -667,12 +731,12 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   if (auto target = callee.getIfMValue()) {
     // If the callee is a symbol constant, directly emit a call.
     if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
-      callOp = builder->create<CallOp>(
-          loc, resultTypes, symbol, ArrayRef<ParamDeclAttr>(), valueArguments);
+      callOp = builder->create<CallOp>(loc, resultTypes, symbol,
+                                       resultParamDecls, valueArguments);
     } else {
-      callOp = builder->create<CallParamOp>(
-          loc, resultTypes, target.get(), ArrayRef<ParamBindAttr>(),
-          ArrayRef<ParamDeclAttr>(), valueArguments);
+      callOp = builder->create<CallParamOp>(loc, resultTypes, target.get(),
+                                            ArrayRef<ParamBindAttr>(),
+                                            resultParamDecls, valueArguments);
     }
   } else {
     // Otherwise emit calls to SSA values with call_indirect.

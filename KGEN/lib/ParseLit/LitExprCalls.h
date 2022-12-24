@@ -74,8 +74,11 @@ struct DirectCallable {
       return cast<ParamBindAttr>(bindingOrValue).getType();
     }
   };
-
+  /// This contains a list of bound input parameters.
   SmallVector<BoundParam> bindings;
+
+  /// This is a list of names to be bound to output parameters.
+  SmallVector<StringRef> resultParams;
 
   DirectCallable(SMLoc loc, StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
                  ParamBindArrayAttr bindings);
@@ -104,6 +107,14 @@ struct DirectCallable {
   /// the resultant LITSymbolConstant attr or producing an error message and
   /// returning null.
   SymbolConstantAttr getBoundConstantAttr(LitSharedState &shared) const;
+
+  /// Generate declarations for the result parameters and add them to
+  /// resultParamDecls.  This emits and error and returns failure if an error is
+  /// detected.
+  LogicalResult
+  getResultParamDecls(SignatureType signature,
+                      SmallVectorImpl<ParamDeclAttr> &resultParamDecls,
+                      ExprEmitter &emitter);
 };
 
 //===----------------------------------------------------------------------===//
