@@ -812,6 +812,14 @@ static CallableValue bindAttrValuesToDirectCall(CallableValue &callable,
                                                 ExprEmitter &emitter) {
   assert(callable.direct && "only valid on direct call");
 
+  // If the indices are a single () expression, then we treat this as having
+  // no parameters.  This is used with arrow expressions to allow `f[() -> x]`.
+  if (indices.size() == 1) {
+    if (auto *tuple = dyn_cast<TupleNode>(indices[0]))
+      if (tuple->exprs.empty())
+        return std::move(callable);
+  }
+
   // Process each subscript entry as a binding.
   // TODO: Support named bindings in addition to positional ones: `A[x: 42]`.
   for (auto idx : indices) {
