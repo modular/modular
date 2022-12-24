@@ -280,3 +280,13 @@ def test_if_cond(cond: Bool):
     i += i
     if cond:     # 'if' stmt, not an 'if' expression.
         i = i+i
+
+# CHECK-LABEL: lit.func @"callable_mv{{.*}}"<callable: (index) -> index>(%a: index) -> index
+fn callable_mv[callable: __mlir_type.`!kgen.signature<[], [], (index) -> index>`](a: __mlir_type.index) -> __mlir_type.index:
+  # CHECK-NEXT: kgen.call_param[(index) -> index: callable](%a)
+  return callable(a)
+
+# CHECK-LABEL: lit.func @"callable_mv_inputs{{.*}}"<callable: <M>(index) -> index, b>(%a: index) -> index
+fn callable_mv_inputs[callable: __mlir_type.`!kgen.signature<[M : index], [], (index) -> index>`, b: __mlir_type.index](a: __mlir_type.index) -> __mlir_type.index:
+  # CHECK-NEXT: kgen.call_param[(index) -> index: bind_signature(:<M>(index) -> index callable, b)](%a)
+  return callable[b](a)
