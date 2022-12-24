@@ -148,6 +148,12 @@ fn idx_result_params[a: __mlir_type.index -> __mlir_type.index, __mlir_type.inde
   # CHECK: kgen.return<a, add(a, 1)> %0 : index
   return[a,a+1] a+2
 
+# CHECK-LABEL: lit.func @"just_result_params()"<() -> index>()
+fn just_result_params[() -> __mlir_type.index]():
+  # CHECK: kgen.return<42>
+  return[42]
+
+
 # A bit grotty, but effective way to provide a kgen.param.search over three
 # values.  This should be made variadic and generic and moved to the standard
 # library at some point.

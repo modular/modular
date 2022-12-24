@@ -438,7 +438,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
 namespace {
 /// identifier_opt_type  ::= identifier [":" expression]
-/// meta_signature    ::= "[" [meta_param_list] ("->" meta_result_types)
+/// meta_signature    ::= "[" [meta_param_list] ("->" meta_result_types)? "]"
+/// meta_signature    ::= "[" "(" ")" ("->" meta_result_types)? "]"
 /// meta_param_list   ::= identifier_opt_type ("," identifier_opt_type)
 /// meta_result_types ::= expression ("," expression)*
 struct ParsedMetaSignature {
@@ -483,10 +484,19 @@ struct ParsedMetaSignature {
       return success();
     };
 
-    // Parse the meta parameters.
-    if (p.parseCommaSeparatedList(
-            parseMetaParameter, {LitToken::r_square, LitToken::minus_greater}))
-      return failure();
+    // Parse the meta parameters.  We either have () or a parameter list.
+    if (p.consumeIf(LitToken::l_paren)) {
+      if (p.parseToken(LitToken::r_paren,
+                       "expected ')' in empty parameter list; try dropping the "
+                       "'(' if you have parameters"))
+        return failure();
+    } else {
+      // Parse an actual parameter list.
+      if (p.parseCommaSeparatedList(
+              parseMetaParameter,
+              {LitToken::r_square, LitToken::minus_greater}))
+        return failure();
+    }
 
     // Parse the meta results if present.
     if (p.consumeIf(LitToken::minus_greater)) {
