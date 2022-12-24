@@ -189,7 +189,8 @@ fn useResultParams(i: Int):
   # Normal result and multi parameter results.
   # CHECK: [[TMP:%.*]] = kgen.call @"idx_result_params()"<a = mul(xyz, 2) -> a, b>() : () -> !kgen.declref<@Int>
   # CHECK-NEXT: kgen.call @Int::@"__mul__(Int,Int)"([[TMP]], %i)
-  var value = idx_result_params[xyz*2 -> a, b]() * i
+  _ = idx_result_params[xyz*2 -> a, b]() * i
 
-  # Function call with only result parameter.
-  #just_result_params[() -> a]()
+  # Function call with only a result parameter.
+  # CHECK: kgen.call @"just_result_params()"<() -> c>()
+  just_result_params[() -> c]()
