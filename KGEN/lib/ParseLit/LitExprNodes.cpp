@@ -302,6 +302,10 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
   assert(decls.size() == 1 && "Only functions may be overloaded");
   ASTDecl &decl = *decls[0];
 
+  // Let declarations resolve to an rvalue.
+  if (auto letDecl = dyn_cast<LetDeclOp>(decl))
+    return {{AnyValue(RValue(letDecl.getResult())), node}};
+
   // Variable references resolve to an lvalue addressing the variable.
   if (auto var = dyn_cast<VarDeclOp>(decl))
     return {{AnyValue(LValue(var.getResult())), node}};

@@ -88,7 +88,7 @@ struct LitStmtParser : public LitParserBase {
   ParseResult parseImportStmt();
   ParseResult parseDefFnStmt(LitLexerCursor startCursor, size_t curIndent);
   ParseResult parseStructStmt(LitLexerCursor startCursor, size_t curIndent);
-  ParseResult parseVarDeclStmt(LitLexerCursor startCursor, size_t stmtIndent);
+  ParseResult parseLetVarStmt(LitLexerCursor startCursor, size_t stmtIndent);
   ParseResult parseAliasDeclStmt(LitLexerCursor startCursor, size_t stmtIndent);
 
 private:
@@ -283,8 +283,9 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     // pass_stmt ::= "pass"
     consumeToken();
     return success();
+  case LitToken::kw_let:
   case LitToken::kw_var:
-    return parseVarDeclStmt(startCursor, stmtIndent);
+    return parseLetVarStmt(startCursor, stmtIndent);
   case LitToken::kw_alias:
     return parseAliasDeclStmt(startCursor, stmtIndent);
   case LitToken::kw_return:
@@ -908,26 +909,35 @@ ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor startCursor,
   return success();
 }
 
-ParseResult LitStmtParser::parseVarDeclStmt(LitLexerCursor startCursor,
-                                            size_t stmtIndent) {
-  auto smLoc = consumeToken(LitToken::kw_var).getLoc();
+ParseResult LitStmtParser::parseLetVarStmt(LitLexerCursor startCursor,
+                                           size_t stmtIndent) {
+  bool isLet = getToken().is(LitToken::kw_let);
+  auto smLoc = consumeToken().getLoc();
   auto loc = translateLocation(smLoc);
   StringAttr name;
-  if (parseIdentifier(name, "expected name for 'var' declaration"))
+  if (parseIdentifier(name, isLet ? "expected name for 'let' declaration"
+                                  : "expected name for 'var' declaration"))
     return failure();
 
+  auto unresolvedType = UnresolvedType::get(getContext());
   // If we're in a struct, then this is a field declaration.
   Operation *declOp;
   if (isa<StructDeclOp>(containingDecl)) {
-    declOp = builder.create<StructFieldOp>(loc, name,
-                                           UnresolvedType::get(getContext()));
-  } else { // Otherwise this is a local variable definition.
+    // TODO: implement support for constant struct fields.
+    if (isLet)
+      emitError(loc, "'let' fields in structs are not supported yet");
+    declOp = builder.create<StructFieldOp>(loc, name, unresolvedType);
+  } else if (isLet) {
+    declOp = builder.create<LetDeclOp>(loc, unresolvedType, name);
+
+  } else {
+    // Otherwise this is a local variable definition.
 
     // Emit the vardecl at the current insertion point.  Unlike implicitly
     // declared variables, let/var declarations are always correctly scoped.
-    // TODO: Maintain scopes correctly so we don't have a conflict between
-    // things like "if cond: var x = 1 else var x = 2"
-    auto varType = POP::PointerType::get(UnresolvedType::get(getContext()));
+    // TODO (Issue#5005): Maintain scopes correctly so we don't have a conflict
+    // between things like "if cond: var x = 1 else var x = 2"
+    auto varType = POP::PointerType::get(unresolvedType);
     declOp = builder.create<VarDeclOp>(loc, varType, name);
   }
 

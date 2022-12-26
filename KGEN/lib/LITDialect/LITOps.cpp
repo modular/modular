@@ -477,6 +477,12 @@ void TryRaiseOp::getBranchTargets(
 // LetDeclOp / VarDeclOp
 //===----------------------------------------------------------------------===//
 
+void LetDeclOp::build(OpBuilder &builder, OperationState &state,
+                      Type resultType, StringAttr name) {
+  state.addAttribute(getNameAttrName(state.name), name);
+  state.addTypes(resultType);
+}
+
 void LetDeclOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
   setNameFn(getResult(), getName());
