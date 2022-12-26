@@ -15,7 +15,7 @@ __include "../../../Kernels/lit-stdlib/Assert.lit"
 
 # CHECK: lit.func @"printF32
 fn printF32(x: F32):
-  var f64 = __mlir_op.`pop.cast`[_type: __mlir_type.`!pop.scalar<f64>`](x.value)
+  let f64 = __mlir_op.`pop.cast`[_type: __mlir_type.`!pop.scalar<f64>`](x.value)
   __mlir_op.`zap.print`[fmt: "%f\n"](f64)
 
 fn printInt(x: Int):
@@ -62,15 +62,12 @@ struct StringRef:
     var size: Int
 
     fn __new__(data: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`, size : Int) -> StringRef:
-      var result: StringRef
-      result.data = data
-      result.size = size
-      return result
+      return __mlir_op.`kgen.struct.create`[_type: StringRef](data, size)
 
     @staticmethod
     fn empty() -> StringRef:
-      var nullptr = __mlir_op.`index.constant`[value: 0]()
-      var size = Int(0)
+      let nullptr = __mlir_op.`index.constant`[value: 0]()
+      let size = Int(0)
       return StringRef(
         __mlir_op.`pop.index_to_pointer`[_type: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`](nullptr),
         size
@@ -80,9 +77,7 @@ struct Error:
     var msg: StringRef
 
     fn __new__(msg: StringRef) -> Error:
-        var result: Error
-        result.msg = msg
-        return result
+        return __mlir_op.`kgen.struct.create`[_type: Error](msg)
 
 struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
     var value: __mlir_type[`!pop.variant<@Error, `, type, `>>`]
@@ -128,10 +123,7 @@ struct range:
   var step : Int
 
   fn __new__(start : Int, end : Int, step : Int) -> range:
-    var result : range
-    result.start = start
-    result.end = end
-    return result
+    return __mlir_op.`kgen.struct.create`[_type: range](start, end)
 
   fn __iter__(self : range) -> range:
     return self
@@ -139,7 +131,7 @@ struct range:
   fn __next__(self& : range) -> ErrorOr[Int]:
     if self.start >= self.end:
       return ErrorOr[Int](StringRef.empty()) # TODO: should raise StopIteration
-    var result : Int = self.start
+    let result : Int = self.start
     self.start += self.step
     return ErrorOr[Int](result)
 
