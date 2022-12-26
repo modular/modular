@@ -19,6 +19,15 @@ lit.func @varDecl(%arg0: index) -> index {
   kgen.return %arg0 : index
 }
 
+// CHECK-LABEL: kgen.generator @letDecl(%arg0
+// CHECK-NEXT:    kgen.return %arg0 : index
+lit.func @letDecl(%arg0: index) -> index {
+  %a = lit.let.decl "a" = %arg0 : index
+  %b = lit.let.decl "b" = %a : index
+  kgen.return %b : index
+}
+
+
 kgen.generator.interface @add<ty: dtype>(%arg0: !pop.scalar<ty>, %arg1: !pop.scalar<ty>)
 -> !pop.scalar<ty>
 
