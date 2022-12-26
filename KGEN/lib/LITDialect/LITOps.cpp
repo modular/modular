@@ -474,8 +474,13 @@ void TryRaiseOp::getBranchTargets(
 }
 
 //===----------------------------------------------------------------------===//
-// VarDeclOp
+// LetDeclOp / VarDeclOp
 //===----------------------------------------------------------------------===//
+
+void LetDeclOp::getAsmResultNames(
+    function_ref<void(Value, StringRef)> setNameFn) {
+  setNameFn(getResult(), getName());
+}
 
 void VarDeclOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
