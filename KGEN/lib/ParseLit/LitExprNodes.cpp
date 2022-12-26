@@ -1094,16 +1094,19 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   // FIXME: We currently hack in index type support as transition to proper
   // expression support.
   if (lhsRep.getType().isIndex() && rhsRep.getType().isIndex()) {
-    auto lhsParam =
-        emitter.emitMValue(lhs, "expecting parameter values as operands");
-    auto rhsParam =
-        emitter.emitMValue(rhs, "expecting parameter values as operands");
-    // If these are both parameter values, we can fold them using parameter
-    // expressions.
-    if (!lhsParam || !rhsParam) {
-      emitter.emitError(getLoc(), "expecting parameter values as operands");
+    auto lhsParam = lhsRep.getIfMValue();
+    if (!lhsParam) {
+      emitter.emitError(lhs->getLoc(),
+                        "TODO: can only emit index arithmetic as meta value");
       return {};
     }
+    auto rhsParam = rhsRep.getIfMValue();
+    if (!rhsParam) {
+      emitter.emitError(rhs->getLoc(),
+                        "TODO: can only emit index arithmetic as meta value");
+      return {};
+    }
+
     uint32_t opcode;
     bool needsInvert = false;
     switch (kind) {
