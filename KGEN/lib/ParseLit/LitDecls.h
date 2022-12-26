@@ -34,6 +34,7 @@ class LitLexer;
 class LitLexerCursor;
 class LitParserBase;
 class LitSharedState;
+class LetDeclOp;
 class VarDeclOp;
 
 //===----------------------------------------------------------------------===//
@@ -133,6 +134,8 @@ private:
                                  ASTDecl &decl);
   ParseResult resolveBody(StructFieldOp op, LitLexer &lexer, ASTDecl &decl);
 
+  LogicalResult resolveSignature(LetDeclOp op, LitLexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(LetDeclOp op, LitLexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(VarDeclOp op, LitLexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(VarDeclOp op, LitLexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(ParamDeclareOp op, LitLexer &lexer,

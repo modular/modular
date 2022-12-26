@@ -374,7 +374,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, VarDeclOp,
+        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, LetDeclOp, VarDeclOp,
               ParamDeclareOp, ParamDeclRefAttr>([&](auto op) {
           LitLexer lexer(sharedState, decl.getCursor());
 
@@ -399,8 +399,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       howResolved == DeclResolvedness::fullyResolved) {
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp, VarDeclOp,
-              ParamDeclareOp, ParamDeclRefAttr>([&](auto op) {
+        .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp, LetDeclOp,
+              VarDeclOp, ParamDeclareOp, ParamDeclRefAttr>([&](auto op) {
           // Parse the body of the declaration from the correct point.
           LitLexer lexer(sharedState, decl.getCursor());
           if (resolveBody(op, lexer, decl))
@@ -1384,72 +1384,145 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, LitLexer &lexer,
 }
 
 //===----------------------------------------------------------------------===//
-// Variable Decl implementation
+// LetDecl / VarDecl implementation
 //===----------------------------------------------------------------------===//
 
-/// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
-///                 | "var" identifier "=" expression
-///
-LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
-                                             ASTDecl &decl) {
-  LitParserBase p(lexer);
-  SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
-
+namespace {
+struct ParsedLetVarDecl {
+  SmallVector<ExprNode *> decorators;
   ASTType type;
-  // Parse the type if present.
-  if (p.parseToken(LitToken::kw_var,
-                   "internal error: checked by stmt parser") ||
-      p.parseToken(LitToken::identifier,
-                   "internal error: checked by stmt parser") ||
-      p.consumeIf(LitToken::colon)) {
+  ExprNode *initValue = nullptr;
+
+  ParseResult parse(LitLexer &lexer, ASTDecl &decl);
+  std::pair<DRValue, OpBuilder> emitInitValue(Operation *declOp, ASTDecl &decl,
+                                              LitSharedState &shared);
+};
+} // namespace
+
+/// Parse the structure of a let/var declaration.
+ParseResult ParsedLetVarDecl::parse(LitLexer &lexer, ASTDecl &decl) {
+  LitParserBase p(lexer);
+  decorators = parseDecorators(decl, p);
+
+  p.consumeToken(); // eat the let/var.
+  if (p.parseToken(LitToken::identifier,
+                   "internal error: checked by stmt parser"))
+    return failure();
+
+  //  Parse the type if present.
+  if (p.consumeIf(LitToken::colon)) {
     if (parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
-    varOp.getResult().setType(POP::PointerType::get(type));
   }
 
-  // Parse the initializer if present.
-  ExprNode *initValue = nullptr;
+  // Parse and emit the initializer if present.
   if (p.consumeIf(LitToken::equal)) {
     if (p.parseExpression(initValue, decl.getIndentation()))
       return failure();
+  }
+  return success();
+}
 
-    ASTDecl &parentDecl = *decl.getParentDecl();
-    OpBuilder builder(varOp->getBlock(), ++Block::iterator(varOp));
-    ExprEmitter emitter(sharedState, parentDecl, builder,
-                        /*varDeclCursor*/ nullptr);
+/// Emit the initializer at hte specified point and convert it to the declared
+/// type if known.
+std::pair<DRValue, OpBuilder>
+ParsedLetVarDecl::emitInitValue(Operation *declOp, ASTDecl &decl,
+                                LitSharedState &shared) {
+  // We insert after var decl, but before let decl.
+  auto iterator = Block::iterator(declOp);
+  if (isa<VarDeclOp>(declOp))
+    ++iterator;
+  OpBuilder builder(declOp->getBlock(), iterator);
+  ExprEmitter emitter(shared, *decl.getParentDecl(), builder,
+                      /*varDeclCursor*/ nullptr);
 
-    // TODO: If the initializer is a parameter value/constant, we can install it
-    // directly on the var decl instead of doing a store.  This will work better
-    // in structs etc.
-    auto rhsValue = emitter.emitDRValue(initValue);
-    // If we had a declared type, coerce the expression value to it.
-    if (type)
-      rhsValue = emitter.getAsExpectedType(rhsValue, initValue, type);
+  auto value = emitter.emitDRValue(initValue);
+  if (!value)
+    return {value, builder};
 
-    if (!rhsValue)
+  // If we had a declared type, coerce the expression value to it.
+  if (type)
+    value = emitter.getAsExpectedType(value, initValue, type);
+  else {
+    // Infer the type if we lack a declared type (`var x = 42`).
+    // TODO(literal autopromotion).
+    type = value.getType();
+  }
+  return {value, builder};
+}
+
+/// let_decl_stmt ::= "let" identifier ":" expression ["=" expression]
+///                 | "let" identifier "=" expression
+LogicalResult DeclResolver::resolveSignature(LetDeclOp letOp, LitLexer &lexer,
+                                             ASTDecl &decl) {
+  ParsedLetVarDecl parsed;
+  if (parsed.parse(lexer, decl))
+    return failure();
+
+  // Handle the initializer if present.
+  if (parsed.initValue) {
+    auto [initVal, _] = parsed.emitInitValue(letOp, decl, sharedState);
+    if (!initVal)
       return failure();
 
-    // Infer the type if we lack a declared type (`var x = 42`)
-    // TODO(literal autopromotion).
-    if (!type) {
-      type = rhsValue.getType();
-      varOp.getResult().setType(POP::PointerType::get(type));
-    }
-
-    // The types line up, do a store.
-    auto loc = sharedState.translateLocation(initValue->getLoc());
-    builder.create<POP::StoreOp>(loc, rhsValue, varOp,
-                                 /*alignment=*/std::nullopt);
-  }
-
-  // If there was neither a type or initializer, reject the var.
-  if (!type) {
-    p.emitError(varOp.getLoc(),
-                "declaration must have either a type or an initializer");
+    letOp->setOperands(initVal);
+  } else {
+    // Reject let's without an initializer.
+    // TODO: Use definitive initialization to allow late initialization, e.g.:
+    //   let x : Int
+    //   if cond:
+    //     x = foo()
+    //   else
+    //     y = bar()
+    // If there was neither a type or initializer, reject the var.
+    emitError(letOp.getLoc(), "'let' declaration must have an initializer");
     return failure();
   }
 
-  rejectDecorators(decoratorExprs, decl, sharedState);
+  letOp.getResult().setType(parsed.type);
+  rejectDecorators(parsed.decorators, decl, sharedState);
+  return success();
+}
+
+/// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
+///                 | "var" identifier "=" expression
+LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
+                                             ASTDecl &decl) {
+  ParsedLetVarDecl parsed;
+  if (parsed.parse(lexer, decl))
+    return failure();
+
+  // Handle the initializer if present.
+  if (parsed.initValue) {
+    auto [initVal, builder] = parsed.emitInitValue(varOp, decl, sharedState);
+    if (!initVal)
+      return failure();
+
+    // Store the initializer value into the VarDecl.
+    auto loc = sharedState.translateLocation(parsed.initValue->getLoc());
+    builder.create<POP::StoreOp>(loc, initVal, varOp,
+                                 /*alignment=*/std::nullopt);
+  }
+
+  if (parsed.type)
+    varOp.getResult().setType(POP::PointerType::get(parsed.type));
+  else {
+    // If there was neither a type or initializer, reject the var.
+    emitError(varOp.getLoc(),
+              "declaration must have either a type or an initializer");
+    return failure();
+  }
+
+  rejectDecorators(parsed.decorators, decl, sharedState);
+  return success();
+}
+
+ParseResult DeclResolver::resolveBody(LetDeclOp op, LitLexer &lexer,
+                                      ASTDecl &decl) {
+  // Nothing to do for a let decl, we parse everything as part of its
+  // signature. We could move to parsing an initializer expression lazily when
+  // a type is present if there were a reason to do that (e.g. more laziness
+  // desired) in the future.
   return success();
 }
 

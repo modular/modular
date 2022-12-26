@@ -2,12 +2,30 @@
 
 __include "../lit-examples/prolog.lit"
 
+
+##===----------------------------------------------------------------------===##
+# let
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL:  lit.func @"let_decls()
+def let_decls():
+  # CHECK: %x = lit.let.decl "x" = %idx123 : index
+  let x = 123
+  # CHECK: %0 = kgen.param.constant: f64 = <1.000000e+00>
+  # CHECK: %y = lit.let.decl "y" = %0 : f64
+  let y = 1.0
+
+  # CHECK: [[TMP:%.*]] = kgen.call @Int{{.*}}(%x)
+  # CHECK: %z = lit.let.decl "z" = [[TMP]]
+  let z = Int(x)
+
 ##===----------------------------------------------------------------------===##
 # var
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL:  lit.func @"var_decls()
 def var_decls():
+  # Implicit declaration is mutable.
   # CHECK: %x = lit.var.decl "x"
   x = 123
   # CHECK: %y = lit.var.decl "y"

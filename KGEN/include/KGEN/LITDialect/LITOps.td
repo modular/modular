@@ -230,6 +230,12 @@ def LIT_LetDeclOp : LITOp<"let.decl",
   let arguments = (ins StrAttr:$name, AnyType:$value);
   let results = (outs AnyType:$result);
   let assemblyFormat = "$name `=` $value `:` type($result) attr-dict";
+
+  let builders = [
+    // Create a 'let' without a value, this is malformed until specified.
+    OpBuilder<(ins "Type":$type, "StringAttr":$name)>,
+  ];
+
 }
 
 def LIT_VarDeclOp : LITOp<"var.decl",
