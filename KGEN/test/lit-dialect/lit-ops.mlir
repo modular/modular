@@ -19,9 +19,15 @@ lit.func @impl1<ty : dtype>(%arg0: !pop.scalar<ty>) -> !pop.scalar<ty>
 
 // One implementation of dynamic_thing
 // CHECK-LABEL: lit.func @vardecl
-// CHECK-NEXT: %x = lit.var.decl "x" : <scalar<ty>>
-lit.func @vardecl<ty : dtype>() {
-  %x = lit.var.decl "x": !pop.pointer<scalar<ty>>
+lit.func @vardecl<ty : dtype>(%x : i32) {
+// CHECK-NEXT: %a = lit.var.decl "a" : <scalar<ty>>
+  %a = lit.var.decl "a": !pop.pointer<scalar<ty>>
+
+  // CHECK-NEXT: %y = lit.let.decl "y" = %x : i32
+  %y = lit.let.decl "y" = %x: i32
+
+  // CHECK-NEXT: %z = lit.let.decl "z" = %y : i32
+  %z = lit.let.decl "z" = %y: i32
   kgen.return
 }
 

@@ -219,12 +219,22 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
 }
 
 //===----------------------------------------------------------------------===//
-// VarDeclOp
+// LetDeclOp / VarDeclOp
 //===----------------------------------------------------------------------===//
+
+def LIT_LetDeclOp : LITOp<"let.decl",
+         [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
+          Pure, AllTypesMatch<["value", "result"]>,]> {
+  let summary = "Local constant declaration";
+
+  let arguments = (ins StrAttr:$name, AnyType:$value);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = "$name `=` $value `:` type($result) attr-dict";
+}
 
 def LIT_VarDeclOp : LITOp<"var.decl",
          [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
-  let summary = "Local variable declaration for Lightning";
+  let summary = "Local variable declaration";
 
   let arguments = (ins StrAttr:$name);
   let results = (outs POP_PointerType:$result);
