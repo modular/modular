@@ -49,7 +49,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
 
     fn simd_load[width: __mlir_type.index](self, idx: Int) -> SIMD[width, type]:
         # Loads a simd value from the buffer at the specified index
-        var offset = self.data.offset(idx)
+        let offset = self.data.offset(idx)
         return offset.simd_load[width]()
 
     fn __setitem__(self, idx: Int, val: SIMD[1, type]):
@@ -60,7 +60,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         width: __mlir_type.index
     ](self, idx: Int, val: SIMD[width, type]):
         # Stores a simd value into the buffer at the specified index
-        var offset = self.data.offset(idx)
+        let offset = self.data.offset(idx)
         offset.simd_store[width](val)
 
 
