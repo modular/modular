@@ -503,7 +503,10 @@ static void lowerLITOps(LIT::FuncOp func,
                         DebugInfo::EmissionKind::Full;
   func.walk([&](Operation *op) {
     mlir::IRRewriter b{OpBuilder(op)};
-    if (auto varDecl = dyn_cast<LIT::VarDeclOp>(op)) {
+    if (auto letDecl = dyn_cast<LIT::LetDeclOp>(op)) {
+      // TODO: Generate debug info for let decl.
+      b.replaceOp(letDecl, letDecl.getOperand());
+    } else if (auto varDecl = dyn_cast<LIT::VarDeclOp>(op)) {
       StringAttr varName = varDecl.getNameAttr();
       auto varType = varDecl.getType();
 
