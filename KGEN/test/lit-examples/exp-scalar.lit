@@ -16,7 +16,7 @@ fn exp_scalar_taylor_f32(x: F32) -> F32:
 
 @export
 fn run_me() -> __mlir_type.index:
-    var res = exp_scalar_taylor_f32(2.3)
+    let res = exp_scalar_taylor_f32(2.3)
     # CHECK: 9.88
     printF32(res)
     return 0
