@@ -15,6 +15,7 @@
 #include "LitExprCalls.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -789,6 +790,14 @@ static CallableValue substituteParametersIntoUserDefinedType(
     return {};
   }
 
+  // Parameters defined at the beginning of the parameter list may be used by
+  // the types of other parameters defined later in the list, e.g. in:
+  //    [rank: Int, indices: StaticTuple[rank]]
+  // the value provided to 'indices' should actually depend on the specified
+  // value of 'rank'.  We use a ParameterEvaluator to keep track of the mapping
+  // so far and remap types on demand.
+  ParameterEvaluator evaluator;
+
   // Emit each of the indices as parameter expressions.
   SmallVector<ParamBindAttr> paramBindings;
   for (auto [indexExpr, decl] :
@@ -800,15 +809,25 @@ static CallableValue substituteParametersIntoUserDefinedType(
     if (!indexVal)
       return {};
 
-    // TODO: Support conversions.
-    if (indexVal.getType() != decl.getType()) {
+    auto expectedType = evaluator.getReboundType(decl.getType());
+
+    // TODO: Support conversions when we can call functions in parameter
+    // expressions.
+    if (!ASTType(indexVal.getType()).isEqualCanon(expectedType)) {
       emitter.emitError(indexExpr->getLoc(), "parameter of type ")
           << ASTType(indexVal.getType())
-          << " cannot be converted to expected type "
-          << ASTType(decl.getType());
+          << " cannot be converted to expected type " << ASTType(expectedType);
       return {};
     }
-    paramBindings.push_back(ParamBindAttr::get(decl, indexVal));
+
+    // If we rebound the type, then update the type in the decl for the
+    // ParamBindAttr.
+    ParamDeclAttr declToBind = decl;
+    if (expectedType != decl.getType())
+      declToBind = ParamDeclAttr::get(decl.getName(), expectedType);
+
+    paramBindings.push_back(ParamBindAttr::get(declToBind, indexVal));
+    evaluator.setParameterValue(decl, indexVal);
   }
 
   // Ok, we succeeded at reparameterizing the type.
