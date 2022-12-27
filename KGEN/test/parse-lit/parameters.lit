@@ -194,3 +194,25 @@ fn useResultParams(i: Int):
   # Function call with only a result parameter.
   # CHECK: kgen.call @"just_result_params()"<() -> c>()
   just_result_params[() -> c]()
+
+##===----------------------------------------------------------------------===##
+# First-class functions as parameters.
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.func @"takeCallable(__mlir_type.index)"<callable: (index) -> index>(%a: index) -> index
+fn takeCallable[
+     callable: __mlir_type.`!kgen.signature<[], [], (index) -> index>`
+   ](a: __mlir_type.index) -> __mlir_type.index:
+  # CHECK-NEXT: %0 = kgen.call_param[(index) -> index: callable](%a)
+  # CHECK-NEXT: kgen.return %0
+  return callable(a)
+
+fn takeAndReturnIndex(x: __mlir_type.index) -> __mlir_type.index:
+  return x
+
+# CHECK-LABEL: lit.func @"takeAndReturnIndex
+fn passFunction(a: __mlir_type.index) -> __mlir_type.index:
+  # CHECK: %0 = kgen.call @"takeCallable(__mlir_type.index)"
+  # CHECK-SAME: <callable: (index) -> index =
+  # CHECK-SAME: @"takeAndReturnIndex(__mlir_type.index)">(%a) : (index) -> index
+  return takeCallable[takeAndReturnIndex](a)

@@ -217,8 +217,6 @@ def KGEN_CallOp : KGENOp<"call", [KGEN_CallOpInterface,
 // CallParamOp
 //===----------------------------------------------------------------------===//
 
-// NOTE: This cannot be a CallOpInterface, because the callee is not a
-// SymbolRefAttr, it is a different kind of attribute.
 def KGEN_CallParamOp : KGENOp<"call_param", [KGEN_CallOpInterface]> {
   let summary = "Call declaration specified by a parameter expression";
   let description = [{
