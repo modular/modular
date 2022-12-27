@@ -134,6 +134,18 @@ struct TypeParameter[type: __mlir_type.`!kgen.mlirtype`]:
   fn bar(self, val: type):
     pass
 
+# Test that parameter decls can refine subsequent ones in the same param list.
+# CHECK-LABEL: kgen.struct.decl @ParamSubst<rank, shape: list<index[rank]>>
+struct ParamSubst[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+  ]: pass
+
+# CHECK-LABEL: lit.func @"testParamSubst
+fn testParamSubst():
+  # CHECK: %xx = lit.var.decl "xx" : <@ParamSubst<rank = 2, shape: list<index[2]> = [1, 2]>>
+  var xx : ParamSubst[2, __mlir_attr.`#kgen.list<1, 2> : !kgen.list<index[2]>`]
+
 ##===----------------------------------------------------------------------===##
 # Result parameters
 ##===----------------------------------------------------------------------===##

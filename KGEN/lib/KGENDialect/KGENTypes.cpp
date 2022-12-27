@@ -184,7 +184,7 @@ SignatureType SignatureType::getSpecializedSignature(
     // Bound parameters are allowed to refine the type of subsequent parameters,
     // e.g. in `<ty: type, fn: () -> !kgen.paramref<ty>>`, the expected type of
     // the second parameter will be refined when the first parameter is bound.
-    auto remappedDeclType = evaluator.getReboundType(decl.getType());
+    auto remappedDeclType = remapType(decl.getType());
     if (bind.getType() != remappedDeclType) {
       emitErrorFn() << "caller input parameter #" << paramNo << " has type "
                     << bind.getType() << " but callee expected type "

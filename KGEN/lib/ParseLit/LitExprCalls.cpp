@@ -13,6 +13,7 @@
 #include "LitExprEmitter.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 
@@ -347,25 +348,37 @@ ParamBindArrayAttr DirectCallable::getCheckedBindings(
     return {};
   }
 
+  // If there are no bindings, exit early.
+  if (bindings.empty())
+    return ParamBindArrayAttr::get(signature.getContext(), {});
+
   // If we have bound parameters, type check them now and bind names to them.
   SmallVector<ParamBindAttr> newBindings;
   newBindings.reserve(bindings.size());
 
+  // Parameters defined at the beginning of the parameter list may be used by
+  // the types of other parameters defined later in the list, e.g. in:
+  //    [rank: Int, indices: StaticTuple[rank]]
+  // the value provided to 'indices' should actually depend on the specified
+  // value of 'rank'.  We use a ParameterEvaluator to keep track of the mapping
+  // so far and remap types on demand.
+  ParameterEvaluator evaluator;
   for (auto [bound, decl] : llvm::zip(bindings, signature.getInputParams())) {
     // If this value was already bound and checked, use it.
     auto prebound = dyn_cast<ParamBindAttr>(bound.bindingOrValue);
     if (prebound) {
+      evaluator.setParameterValue(prebound.getDecl(), prebound.getValue());
       newBindings.push_back(prebound);
       continue;
     }
 
     // Check the type matches what is expected.
     // TODO: Do implicit conversions when we can invoke parameter functions.
-    // TODO: Handle signatures like (T, scalar<T>) where early bound
-    // parameters changes the types of later ones.
-    auto value = bound.getValue();
-    auto valueType = value.getType();
-    if (!ASTType(valueType).isEqualCanon(decl.getType())) {
+    auto valueType = bound.getValue().getType();
+    auto expectedType = evaluator.getReboundType(decl.getType());
+
+    expectedType.dump();
+    if (!ASTType(valueType).isEqualCanon(expectedType)) {
       if (funcLoc) {
         auto diag = shared.emitError(bound.loc, "'")
                     << baseName << "' parameter " << decl.getName() << " has "
@@ -376,7 +389,8 @@ ParamBindArrayAttr DirectCallable::getCheckedBindings(
       incorrectBindingNo = newBindings.size();
       return {};
     }
-    newBindings.push_back(ParamBindAttr::get(decl, value));
+    evaluator.setParameterValue(decl, bound.getValue());
+    newBindings.push_back(ParamBindAttr::get(decl, bound.getValue()));
   }
 
   return ParamBindArrayAttr::get(signature.getContext(), newBindings);
