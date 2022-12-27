@@ -104,6 +104,14 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
         continue;
       }
 
+    // As a very special hack, we treat a unary plus as a marker that the type
+    // should not be printed when the attribute is stringized.
+    bool elideType = false;
+    if (indexExpr->kind == ExprNode::kPos) {
+      elideType = true;
+      indexExpr = cast<UnaryOpNode>(indexExpr)->subExpr;
+    }
+
     auto indexVal = emitter.emitMValue(
         indexExpr, "mlir magic values must resolve to a parameter");
     if (!indexVal)
@@ -113,7 +121,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
     if (auto typeVal = indexVal.getIfTypeValue())
       os << typeVal;
     else // Otherwise print it as an attribute.
-      indexVal.get().print(os);
+      indexVal.get().print(os, elideType);
   }
 
   if (result.empty())

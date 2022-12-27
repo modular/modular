@@ -65,3 +65,18 @@ fn fancierSubstitutions():
   # CHECK: kgen.param.declare new_lower = <max(a, 42)>
   alias new_lower = __mlir_attr[`#kgen.param.expr<max,`,
          a, `, `, 42, `> : index`]
+
+
+# This shows that we can use unary+ to make the printer avoid printing types.
+# See Issue #6468: [Lit] __mlir_attr construction fails for !kgen.list
+# CHECK-LABEL: testAttrConcatWithoutType
+fn testAttrConcatWithoutType[
+    length: __mlir_type.index,
+]():
+  # CHECK: kgen.param.declare x: list<index[2]> = <[1, length]>
+  alias x = __mlir_attr[
+            `#kgen.list<`, +1, `,`, length, `> : `,
+            `!kgen.list<index[`,
+            +2,
+            `]>`,
+        ]
