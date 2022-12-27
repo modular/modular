@@ -259,6 +259,9 @@ struct LValuesRvalues:
   # expected-note @+1 {{function declared here}}
   def takesByRef(self, x&: LValuesRvalues):
 
+  # expected-note @+1 {{function declared here}}
+  def normalMethod3(self, a: F32):
+
 def testLValuesRvalues():
   # Test with lvalues
   var lv: LValuesRvalues
@@ -274,6 +277,10 @@ def testLValuesRvalues():
 
   # We can implicitly declare things on the LHS but not on the RHS.
   unknown1 += unknown2 # expected-error {{use of unknown declaration "unknown2"}}
+
+  lv.normalMethod3(1.0)
+  lv.normalMethod3(1) # expected-error {{invalid call to 'normalMethod3': in method argument #0, value of type '__mlir_type.index' cannot be converted to expected type 'F32'}}
+
 
 # Test differences between fn and def.
 fn testFn(a: Int, b): # expected-error {{'fn' parameter type must be specified}}
@@ -368,7 +375,7 @@ struct Parameterized[p1: __mlir_type.index]:
 # of parameters.
 fn testTestParamStruct(a: Parameterized[4]):
   a.method[7](Parameterized[11]())
-  # expected-error @+1 {{invalid call to 'method': in argument #0, value of type 'Parameterized[4]' cannot be converted to expected type 'Parameterized[11]'}}
+  # expected-error @+1 {{invalid call to 'method': in method argument #0, value of type 'Parameterized[12]' cannot be converted to expected type 'Parameterized[11]'}}
   a.method[7](Parameterized[12]())
   a.method[2](Parameterized[6]())
   a.method[2, 7] # expected-error {{'method' expects 2 input parameters but 3 were provided}}

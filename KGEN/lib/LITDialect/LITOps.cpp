@@ -81,7 +81,7 @@ ReturnOp LIT::FuncOp::getReturnOp() {
   // Tolerate malformed IR because this is used by the printer.
   if (isExternal() || getBody()->empty())
     return {};
-  return dyn_cast<ReturnOp>(getBody()->getTerminator());
+  return dyn_cast<ReturnOp>(getBody()->back());
 }
 
 /// Return the normal result type.  This is the same as getResultType unless

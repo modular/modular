@@ -169,7 +169,8 @@ OverloadFitness OverloadFitness::evaluate(
 }
 
 /// Add explaination for why this candidate doesn't work to the specified
-/// diagnostic.
+/// diagnostic. isMethodCall indicates whether the call was written with
+/// `foo(x,y)` syntax or `x.foo(y)` syntax.
 void OverloadFitness::diagnose(SignatureType signature,
                                const DirectCallable &callable,
                                ArrayRef<ASTExprAnd<AnyValue>> operands,
@@ -225,11 +226,14 @@ void OverloadFitness::diagnose(SignatureType signature,
       // it is probably possible for this assert to fire, if it does we should
       // tailor the error message.
       assert(payload != 0 && "TODO: unexpected self mismatch");
-      --payload;
+      diag << "in method argument #" << payload - 1 << ", value of type "
+           << operands[payload].ir.getRValueType()
+           << " cannot be converted to expected type " << type;
+    } else {
+      diag << "in argument #" << payload << ", value of type "
+           << operands[payload].ir.getRValueType()
+           << " cannot be converted to expected type " << type;
     }
-    diag << "in argument #" << payload << ", value of type "
-         << operands[payload].ir.getRValueType()
-         << " cannot be converted to expected type " << type;
     break;
   }
 }
