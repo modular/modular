@@ -1441,9 +1441,10 @@ ParsedLetVarDecl::emitInitValue(Operation *declOp, ASTDecl &decl,
     return {value, builder};
 
   // If we had a declared type, coerce the expression value to it.
-  if (type)
-    value = emitter.getAsExpectedType(value, initValue, type);
-  else {
+  if (type) {
+    value = emitter.emitDRValue(
+        emitter.getAsExpectedType(value, initValue, type), initValue->getLoc());
+  } else {
     // Infer the type if we lack a declared type (`var x = 42`).
     // TODO(literal autopromotion).
     type = value.getType();

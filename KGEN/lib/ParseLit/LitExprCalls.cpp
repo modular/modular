@@ -705,24 +705,27 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
          "Type checking should be done");
 
   // Emit all the arguments.
-  SmallVector<Value> valueArguments;
+  SmallVector<std::pair<AnyValue, llvm::SMLoc>> valueArguments;
   for (auto [argAnyValueAndExpr, expectedType, convention] :
        llvm::zip(operands, calleeSig.getValueInputs(),
                  calleeSig.getValueInputConventions())) {
     auto argLoc = argAnyValueAndExpr.expr->getLoc();
     // If the callee takes the operand as a by-ref argument, we require an
     // lvalue.
-    Value argVal;
+    AnyValue argVal;
     switch (convention) {
     case ValueInputConvention::ByRef:
       argVal = argAnyValueAndExpr.ir.getIfLValue();
       assert(argVal && "Call should already be type checked");
       break;
     case ValueInputConvention::ByVal:
-      // Otherwise, we pass as an r-value.
-      argVal = emitter.emitDRValue(argAnyValueAndExpr.ir, argLoc);
-      if (!argVal)
-        return {};
+      if (!emitter.builder) {
+        argVal = emitter.emitMValue(
+            argAnyValueAndExpr.expr,
+            "context only permits a meta value, not a dynamic one");
+      } else {
+        argVal = emitter.emitDRValue(argAnyValueAndExpr.ir, argLoc);
+      }
 
       // Convert the argument to the expected type if needed.
       argVal = emitter.getAsExpectedType(argVal, argAnyValueAndExpr.expr,
@@ -732,34 +735,46 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       break;
     }
 
-    valueArguments.push_back(argVal);
+    valueArguments.emplace_back(argVal, argLoc);
   }
 
   auto &builder = emitter.builder;
   if (!builder) {
-    emitError("TODO: cannot call function in parameter context");
-    return {};
+    // Emitting a call in a meta context. Generate an apply operator.
+    SmallVector<TypedAttr> operands({callee.getIfMValue().get()});
+    for (auto [argVal, loc] : valueArguments)
+      operands.push_back(argVal.getIfMValue().get());
+    return MValue(ParamOperatorAttr::get(POC::Apply, operands));
+  }
+
+  // Otherwise, materialize MValue arguments as DRValues.
+  SmallVector<Value> callArgs;
+  for (auto [argVal, loc] : valueArguments) {
+    if (auto lv = argVal.getIfLValue())
+      callArgs.push_back(lv);
+    else
+      callArgs.push_back(emitter.emitDRValue(argVal, loc));
   }
 
   Operation *callOp;
-  auto loc = emitter.translateLocation(callLoc);
+  Location loc = emitter.translateLocation(callLoc);
   // FIXME: Move result type inference into CallOp/CallIndirectOp.
-  auto resultTypes = calleeSig.getValueResults();
+  ArrayRef<Type> resultTypes = calleeSig.getValueResults();
   if (auto target = callee.getIfMValue()) {
     // If the callee is a symbol constant, directly emit a call.
     if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
       callOp = builder->create<CallOp>(loc, resultTypes, symbol,
-                                       resultParamDecls, valueArguments);
+                                       resultParamDecls, callArgs);
     } else {
       callOp = builder->create<CallParamOp>(loc, resultTypes, target.get(),
                                             ArrayRef<ParamBindAttr>(),
-                                            resultParamDecls, valueArguments);
+                                            resultParamDecls, callArgs);
     }
   } else {
     // Otherwise emit calls to SSA values with call_indirect.
     callOp = builder->create<POP::CallIndirectOp>(loc, resultTypes,
                                                   callee.getIfDRValue(),
-                                                  /*operands*/ valueArguments);
+                                                  /*operands*/ callArgs);
   }
 
   // If the callee can raise an error, try to unwrap it.

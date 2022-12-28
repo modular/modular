@@ -295,6 +295,8 @@ LogicalResult LIT::FuncOp::verifyRegions() {
   // Generators must have non-empty bodies terminated by a return.
   if (getFunctionBody().empty() || getBody()->empty())
     return emitOpError("expected non-empty function body");
+  if (!getBody()->back().hasTrait<OpTrait::IsTerminator>())
+    return emitOpError("expected a terminator");
   ReturnOp returnOp = getReturnOp();
   if (!returnOp)
     return emitOpError("should have a return");

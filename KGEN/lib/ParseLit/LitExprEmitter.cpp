@@ -19,6 +19,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -85,6 +86,10 @@ DRValue ExprEmitter::emitDRValue(RValue rep, SMLoc loc) {
 /// problem if the expression is only valid as a runtime value.  This returns
 /// null if emission fails.
 MValue ExprEmitter::emitMValue(const ExprNode *node, const Twine &message) {
+  // Clear the builder to indicate that an MValue must be emitted.
+  llvm::SaveAndRestore<Optional<OpBuilder>> savedBuilder(builder);
+  builder.reset();
+
   auto rep = node->emitIR(*this, /*No Contextual Type*/ {});
   if (!rep)
     return {};
@@ -151,10 +156,10 @@ ExprEmitter::emitNamedMethodCall(ASTType type, StringRef methodName,
   return callee.emitFunctionCall(argValues, callLoc, *this);
 }
 
-/// Convert the specified DRValue to the expected type, invoking implicit
+/// Convert the specified value to the expected type, invoking implicit
 /// conversions if necessary.  On error, this diagnoses it and returns null.
-DRValue ExprEmitter::getAsExpectedType(DRValue value, const ExprNode *expr,
-                                       ASTType expectedType) {
+AnyValue ExprEmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
+                                        ASTType expectedType) {
   if (!value)
     return value;
   // If the type is already an exact match, then we are done.
@@ -174,13 +179,8 @@ DRValue ExprEmitter::getAsExpectedType(DRValue value, const ExprNode *expr,
     return {};
   }
 
-  ASTExprAnd<AnyValue> newArg = {DRValue(value), expr};
-  auto result = callee.emitFunctionCall(newArg, expr->getLoc(), *this);
-  if (!result)
-    return {};
-
-  // Make sure the result is a DRValue.
-  return emitDRValue(result, expr->getLoc());
+  ASTExprAnd<AnyValue> newArg = {value, expr};
+  return callee.emitFunctionCall(newArg, expr->getLoc(), *this);
 }
 
 /// Emit the specified expression as a condition, converting it to an MLIR I1

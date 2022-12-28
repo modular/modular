@@ -64,6 +64,8 @@ struct TestParamStruct[A: __mlir_type.index]:
     alias B = A*A+1
     # CHECK: kgen.param.declare C = <mul(A, B)>
     alias C = B*A
+    # CHECK: kgen.param.declare D: !kgen.declref<@TestParamStruct<A = 1>> = <apply(:() -> !kgen.declref<@TestParamStruct<A = 1>> @TestParamStruct::@"__new__()"<A = 1>)>
+    alias D = TestParamStruct[1]()
     # CHECK: %temp = lit.var.decl "temp" : <@TestParamStruct<A = C>>
     var temp: TestParamStruct[C]
 
