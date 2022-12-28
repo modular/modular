@@ -21,6 +21,20 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LowerStructs
+//===----------------------------------------------------------------------===//
+
+def LowerStructs : Pass<"lower-structs", "mlir::ModuleOp"> {
+  let summary = "Lower struct declarations to POP structs.";
+  let description = [{
+    This pass lowerings struct decls and decl reference types to in-inline POP
+    struct types.
+  }];
+
+  let dependentDialects = ["POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerZAPToPOP
 //===----------------------------------------------------------------------===//
 

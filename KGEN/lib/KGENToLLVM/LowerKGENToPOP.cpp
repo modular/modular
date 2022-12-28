@@ -178,6 +178,83 @@ void StructOperationLowerer::materializeLowering(OpT op) {
 }
 
 //===----------------------------------------------------------------------===//
+// LowerStructsPass
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_LOWERSTRUCTS
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
+namespace {
+struct LowerStructsPass
+    : public KGEN::impl::LowerStructsBase<LowerStructsPass> {
+  using LowerStructsBase::LowerStructsBase;
+
+  void runOnOperation() override;
+};
+} // namespace
+
+void LowerStructsPass::runOnOperation() {
+  // Collect all struct declarations and erase them.
+  StructDeclarations structDecls;
+  for (auto decl :
+       llvm::make_early_inc_range(getOperation().getOps<StructDeclOp>())) {
+    SmallVector<std::pair<StringAttr, Type>> fields;
+    for (auto [idx, field] : llvm::enumerate(decl.getFieldDecls())) {
+      fields.emplace_back(field.getNameAttr(), field.getType());
+      structDecls.fieldIndices.try_emplace(
+          {decl.getNameAttr(), field.getNameAttr()}, idx);
+    }
+    structDecls.fields.try_emplace(decl.getNameAttr(), std::move(fields));
+    decl->erase();
+  }
+  StructOperationLowerer structLowerer(&getContext(), structDecls);
+
+  // Lower KGEN struct operations.
+  getOperation()->walk([&](Operation *op) {
+    llvm::TypeSwitch<Operation *>(op)
+        .Case<StructCreateOp, StructInsertOp, StructExtractOp, StructGEPOp>(
+            [&](auto op) { structLowerer.materializeLowering(op); });
+  });
+
+  // Build a converter to handle updating converted types within debug info
+  // constructs.
+  DebugInfo::DebugInfoTypeConverter debugTypeConverter;
+  debugTypeConverter.addConversion([&](Type type) -> Optional<Type> {
+    Type newType = structLowerer.substituteTypes(type);
+    if (newType != type)
+      return debugTypeConverter.convertDebugType(newType);
+    return std::nullopt;
+  });
+  debugTypeConverter.addConversion([&](DeclRefType type) -> DebugInfo::DIType {
+    return structLowerer.buildDebugInfoForStructRef(type, debugTypeConverter);
+  });
+  debugTypeConverter.addConversion([&](ListType type) -> Optional<Type> {
+    Type elementType = type.getResolvedElementType();
+    if (!elementType)
+      return std::nullopt;
+
+    // Treat a list as an array for the sake of debugging.
+    return DebugInfo::DIArrayType::get(
+        debugTypeConverter.convertDebugType(elementType),
+        *type.getResolvedLength());
+  });
+
+  // Type references can be used in nested types. Walk through all the types and
+  // rewrite them in-place to use the lowered types.
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement(
+      [&](Type type) -> Type { return structLowerer.substituteTypes(type); });
+  replacer.addReplacement([&](DebugInfo::DIType type) -> Type {
+    return debugTypeConverter.convertDebugType(type);
+  });
+  replacer.recursivelyReplaceElementsIn(getOperation(), /*replaceAttrs=*/true,
+                                        /*replaceLocs=*/true,
+                                        /*replaceTypes=*/true);
+}
+
+//===----------------------------------------------------------------------===//
 // List Lowering
 //===----------------------------------------------------------------------===//
 
@@ -757,63 +834,6 @@ struct LowerKGENToPOPPass
 } // namespace
 
 void LowerKGENToPOPPass::runOnOperation() {
-  // Collect all struct declarations and erase them.
-  StructDeclarations structDecls;
-  for (auto decl :
-       llvm::make_early_inc_range(getOperation().getOps<StructDeclOp>())) {
-    SmallVector<std::pair<StringAttr, Type>> fields;
-    for (auto [idx, field] : llvm::enumerate(decl.getFieldDecls())) {
-      fields.emplace_back(field.getNameAttr(), field.getType());
-      structDecls.fieldIndices.try_emplace(
-          {decl.getNameAttr(), field.getNameAttr()}, idx);
-    }
-    structDecls.fields.try_emplace(decl.getNameAttr(), std::move(fields));
-    decl->erase();
-  }
-  StructOperationLowerer structLowerer(&getContext(), structDecls);
-
-  // Lower KGEN struct operations.
-  getOperation()->walk([&](Operation *op) {
-    llvm::TypeSwitch<Operation *>(op)
-        .Case<StructCreateOp, StructInsertOp, StructExtractOp, StructGEPOp>(
-            [&](auto op) { structLowerer.materializeLowering(op); });
-  });
-
-  // Build a converter to handle updating converted types within debug info
-  // constructs.
-  DebugInfo::DebugInfoTypeConverter debugTypeConverter;
-  debugTypeConverter.addConversion([&](Type type) -> Optional<Type> {
-    Type newType = structLowerer.substituteTypes(type);
-    if (newType != type)
-      return debugTypeConverter.convertDebugType(newType);
-    return std::nullopt;
-  });
-  debugTypeConverter.addConversion([&](DeclRefType type) -> DebugInfo::DIType {
-    return structLowerer.buildDebugInfoForStructRef(type, debugTypeConverter);
-  });
-  debugTypeConverter.addConversion([&](ListType type) -> Optional<Type> {
-    Type elementType = type.getResolvedElementType();
-    if (!elementType)
-      return std::nullopt;
-
-    // Treat a list as an array for the sake of debugging.
-    return DebugInfo::DIArrayType::get(
-        debugTypeConverter.convertDebugType(elementType),
-        *type.getResolvedLength());
-  });
-
-  // Type references can be used in nested types. Walk through all the types and
-  // rewrite them in-place to use the lowered types.
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement(
-      [&](Type type) -> Type { return structLowerer.substituteTypes(type); });
-  replacer.addReplacement([&](DebugInfo::DIType type) -> Type {
-    return debugTypeConverter.convertDebugType(type);
-  });
-  replacer.recursivelyReplaceElementsIn(getOperation(), /*replaceAttrs=*/true,
-                                        /*replaceLocs=*/true,
-                                        /*replaceTypes=*/true);
-
   // Transpose boundary operations involving lists. We have to do this after
   // KGEN structs are lowered so that we don't have to iterate between both. Use
   // the greedy rewrite driver to apply the lowerings iteratively.

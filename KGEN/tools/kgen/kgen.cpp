@@ -233,6 +233,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Set up the pass pipeline.
   mlir::PassManager pm(ctx);
   pm.addPass(createLowerLIT());
+  pm.addPass(createLowerStructs());
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addNestedPass<GeneratorOp>(createMem2Reg());
 
