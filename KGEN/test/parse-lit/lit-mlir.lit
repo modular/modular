@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit %s -verify-diagnostics | FileCheck %s
+# RUN: kgen-translate -import-lit %s -verify-diagnostics -I %stdlibdir | FileCheck %s
 
 __include "../lit-examples/prolog.lit"
 

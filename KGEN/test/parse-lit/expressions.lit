@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit %s | FileCheck %s
+# RUN: kgen-translate -import-lit %s -I %stdlibdir | FileCheck %s
 
 # CHECK: module {
 
@@ -8,9 +8,9 @@ fn noop():
 
 # CHECK-LABEL: lit.func @"simpleMath
 fn simpleMath(a: Int, b: Int) -> Int:
-  # CHECK: %0 = kgen.call @Int::@"__mul__{{.*}}(%b, %a)
-  # CHECK: %1 = kgen.call @Int::@"__sub__{{.*}}(%a, %0)
-  # CHECK: kgen.return %1 : !kgen.declref<@Int>
+  # CHECK: %0 = kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%b, %a)
+  # CHECK: %1 = kgen.call @"$Int"::@Int::@"__sub__{{.*}}(%a, %0)
+  # CHECK: kgen.return %1 : !kgen.declref<@"$Int"::@Int>
   return a-b*a
 
 # CHECK-LABEL: lit.func @"precedence_associativity
@@ -19,68 +19,68 @@ fn precedence_associativity(a: Int):
   var z: Int = 0
 
   # CHECK: %idx17 = index.constant 17
-  # CHECK: %[[SEVENTEEN:.*]] = kgen.call @Int::@"__new__(__mlir_type.index)"(%idx17)
+  # CHECK: %[[SEVENTEEN:.*]] = kgen.call @"$Int"::@Int::@"__new__(__mlir_type.index)"(%idx17)
   # CHECK-NEXT: pop.store %[[SEVENTEEN]], %z
   z = 17  # Implicit conversion
 
   # CHECK:      %[[TWO:.*]] = {{.*}} 2
-  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[TWO]])
+  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[TWO]])
   # CHECK-NEXT: %[[Z:.*]] = pop.load %z
-  # CHECK-NEXT: %[[POW0:.*]] = kgen.call @Int::@"__pow__{{.*}}(%a, %[[Z]])
-  # CHECK-NEXT: %[[POW1:.*]] = kgen.call @Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
+  # CHECK-NEXT: %[[POW0:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%a, %[[Z]])
+  # CHECK-NEXT: %[[POW1:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
   # CHECK-NEXT: pop.store %[[POW1]], %z
   z = Int(2)**(a**z)
   # CHECK-NEXT: %[[TWO:.*]] = {{.*}} 2
-  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[TWO]])
+  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[TWO]])
   # CHECK-NEXT: %[[Z:.*]] = pop.load %z
-  # CHECK-NEXT: %[[POW0:.*]] = kgen.call @Int::@"__pow__{{.*}}(%a, %[[Z]])
-  # CHECK-NEXT: %[[POW1:.*]] = kgen.call @Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
+  # CHECK-NEXT: %[[POW0:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%a, %[[Z]])
+  # CHECK-NEXT: %[[POW1:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
   # CHECK-NEXT: pop.store %[[POW1]], %z
   z = Int(2)**a**z
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} 3
-  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[THREE]])
+  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[THREE]])
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} 2
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[TWO]])
-  # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @Int::@"__neg__{{.*}}(%[[INT_TWO]])
-  # CHECK-NEXT:  %[[MUL:.*]] = kgen.call @Int::@"__mul__{{.*}}(%[[INT_THREE]], %[[NEG]])
-  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @Int::@"__add__{{.*}}(%[[Z]], %[[MUL]])
+  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[TWO]])
+  # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$Int"::@Int::@"__neg__{{.*}}(%[[INT_TWO]])
+  # CHECK-NEXT:  %[[MUL:.*]] = kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%[[INT_THREE]], %[[NEG]])
+  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[MUL]])
   # CHECK-NEXT:  pop.store %[[ADD]], %z
   z = z + Int(3) * -Int(2)
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} 3
-  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[THREE]])
+  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[THREE]])
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} 2
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[TWO]])
-  # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @Int::@"__neg__{{.*}}(%[[INT_TWO]])
-  # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = kgen.call @Int::@"__floordiv__{{.*}}(%[[INT_THREE]], %[[NEG]])
-  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @Int::@"__add__{{.*}}(%[[Z]], %[[FLOOR_DIV]])
+  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[TWO]])
+  # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$Int"::@Int::@"__neg__{{.*}}(%[[INT_TWO]])
+  # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = kgen.call @"$Int"::@Int::@"__floordiv__{{.*}}(%[[INT_THREE]], %[[NEG]])
+  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[FLOOR_DIV]])
   # CHECK-NEXT:  pop.store %[[ADD]], %z
   z = z + Int(3) // -Int(2)
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} 3
-  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[THREE]])
-  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @Int::@"__add__{{.*}}(%[[Z]], %[[INT_THREE]])
+  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[THREE]])
+  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[INT_THREE]])
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} 2
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[TWO]])
-  # CHECK-NEXT:  %[[POS:.*]] = kgen.call @Int::@"__pos__{{.*}}(%[[INT_TWO]])
-  # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @Int::@"__neg__{{.*}}(%[[POS]])
-  # CHECK-NEXT:  %[[MUL:.*]] =  kgen.call @Int::@"__mul__{{.*}}(%[[ADD]], %[[NEG]])
+  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[TWO]])
+  # CHECK-NEXT:  %[[POS:.*]] = kgen.call @"$Int"::@Int::@"__pos__{{.*}}(%[[INT_TWO]])
+  # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$Int"::@Int::@"__neg__{{.*}}(%[[POS]])
+  # CHECK-NEXT:  %[[MUL:.*]] =  kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%[[ADD]], %[[NEG]])
   # CHECK-NEXT:  pop.store %[[MUL]], %z
   z = (z + 3) * -+Int(2)
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} 2
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[TWO]])
+  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[TWO]])
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
-  # CHECK-NEXT:  %[[POW:.*]] = kgen.call @Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[Z]])
-  # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @Int::@"__neg__{{.*}}(%[[POW]])
+  # CHECK-NEXT:  %[[POW:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[Z]])
+  # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$Int"::@Int::@"__neg__{{.*}}(%[[POW]])
   # CHECK-NEXT:  pop.store %[[NEG]], %z
   z = -Int(2)**z
 
   # radd test
-  # CHECK-NEXT: [[Z:%.*]] = pop.load %z : !pop.pointer<@Int>
+  # CHECK-NEXT: [[Z:%.*]] = pop.load %z : !pop.pointer<@"$Int"::@Int>
   # CHECK-NEXT: %idx1 = index.constant 1
-  # CHECK-NEXT: [[ONE:%.*]] = kgen.call @Int::@"__new__(__mlir_type.index)"(%idx1)
-  # CHECK-NEXT: [[RES:%.*]] = kgen.call @Int::@"__radd__(Int,Int)"([[Z]], [[ONE]])
+  # CHECK-NEXT: [[ONE:%.*]] = kgen.call @"$Int"::@Int::@"__new__(__mlir_type.index)"(%idx1)
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__radd__($Int::Int,$Int::Int)"([[Z]], [[ONE]])
   # CHECK-NEXT: pop.store [[RES]], %z
   z = 1 + z
 
@@ -110,30 +110,30 @@ fn precedence_matmul(z: M) -> M:
 # CHECK-LABEL: lit.func @"precedence_bitwise
 fn precedence_bitwise(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %[[TWO:.*]] = {{.*}} 2
-  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[TWO]])
-  # CHECK-NEXT: %[[MUL:.*]] = kgen.call @Int::@"__mul__{{.*}}(%a, %[[INT_TWO]])
-  # CHECK-NEXT: %[[AND:.*]] = kgen.call @Int::@"__and__{{.*}}(%[[MUL]], %b)
+  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[TWO]])
+  # CHECK-NEXT: %[[MUL:.*]] = kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%a, %[[INT_TWO]])
+  # CHECK-NEXT: %[[AND:.*]] = kgen.call @"$Int"::@Int::@"__and__{{.*}}(%[[MUL]], %b)
   # CHECK-NEXT: %[[FOUR:.*]] = {{.*}} 4
-  # CHECK-NEXT: %[[INT_FOUR:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[FOUR]])
-  # CHECK-NEXT: %[[XOR:.*]] = kgen.call @Int::@"__xor__{{.*}}(%[[INT_FOUR]], %c)
-  # CHECK-NEXT: %[[OR:.*]] = kgen.call @Int::@"__or__{{.*}}(%[[AND]], %[[XOR]])
+  # CHECK-NEXT: %[[INT_FOUR:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[FOUR]])
+  # CHECK-NEXT: %[[XOR:.*]] = kgen.call @"$Int"::@Int::@"__xor__{{.*}}(%[[INT_FOUR]], %c)
+  # CHECK-NEXT: %[[OR:.*]] = kgen.call @"$Int"::@Int::@"__or__{{.*}}(%[[AND]], %[[XOR]])
   # CHECK-NEXT: kgen.return %[[OR]]
   return a * Int(2) & b | Int(4) ^ c
 
 # CHECK-LABEL: @"comparisons
 fn comparisons(a: Int, b: Int):
    var res: Bool
-   # CHECK: kgen.call @Int::@"__lt__{{.*}}(%a, %b)
+   # CHECK: kgen.call @"$Int"::@Int::@"__lt__{{.*}}(%a, %b)
    res = a < b
-   # CHECK: kgen.call @Int::@"__le__{{.*}}(%a, %b)
+   # CHECK: kgen.call @"$Int"::@Int::@"__le__{{.*}}(%a, %b)
    res = a <= b
-   # CHECK: kgen.call @Int::@"__gt__{{.*}}(%a, %b)
+   # CHECK: kgen.call @"$Int"::@Int::@"__gt__{{.*}}(%a, %b)
    res = a > b
-   # CHECK: kgen.call @Int::@"__ge__{{.*}}(%a, %b)
+   # CHECK: kgen.call @"$Int"::@Int::@"__ge__{{.*}}(%a, %b)
    res = a >= b
-   # CHECK: kgen.call @Int::@"__eq__{{.*}}(%a, %b)
+   # CHECK: kgen.call @"$Int"::@Int::@"__eq__{{.*}}(%a, %b)
    res = a == b
-   # CHECK: kgen.call @Int::@"__ne__{{.*}}(%a, %b)
+   # CHECK: kgen.call @"$Int"::@Int::@"__ne__{{.*}}(%a, %b)
    res = a != b
 
 struct Boolish:
@@ -141,17 +141,17 @@ struct Boolish:
 
 # CHECK-LABEL: @"unary
 fn unary(a: Bool, b: Int, c: Boolish):
-  # CHECK: %0 = kgen.call @Bool::@"__bool__(Bool)"(%a)
-  # CHECK: %1 = kgen.call @Bool::@"__invert__(Bool)"(%0)
+  # CHECK: %0 = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"(%a)
+  # CHECK: %1 = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"(%0)
   _ = not a
 
-  # CHECK: [[EQ:%.*]] = kgen.call @Int::@"__eq__(Int,Int)"
-  # CHECK: [[BOOL:%.*]] = kgen.call @Bool::@"__bool__(Bool)"([[EQ]])
-  # CHECK:  = kgen.call @Bool::@"__invert__(Bool)"([[BOOL]])
+  # CHECK: [[EQ:%.*]] = kgen.call @"$Int"::@Int::@"__eq__($Int::Int,$Int::Int)"
+  # CHECK: [[BOOL:%.*]] = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"([[EQ]])
+  # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[BOOL]])
   _ = not b == 0
 
   # CHECK: [[BOOL:%.*]] = kgen.call @Boolish::@"__bool__(Boolish)"(%c)
-  # CHECK:  = kgen.call @Bool::@"__invert__(Bool)"([[BOOL]])
+  # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[BOOL]])
   _ = not c
 
 # CHECK-LABEL: lit.func @"andOr
@@ -160,7 +160,7 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # otherwise.
 
   # CHECK: %0 = kgen.call @Boolish::@"__bool__(Boolish)"(%a)
-  # CHECK: %1 = kgen.call @Bool::@"__lit_bool(Bool)"(%0)
+  # CHECK: %1 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%0)
   # CHECK: %2 = scf.if %1 -> (!kgen.declref<@Boolish>) {
   # CHECK:   scf.yield %b
   # CHECK: } else {
@@ -172,7 +172,7 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # otherwise.
 
   # CHECK: %3 = kgen.call @Boolish::@"__bool__(Boolish)"(%a)
-  # CHECK: %4 = kgen.call @Bool::@"__lit_bool(Bool)"(%3)
+  # CHECK: %4 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%3)
   # CHECK: %5 = scf.if %4 -> (!kgen.declref<@Boolish>) {
   # CHECK:   scf.yield %a
   # CHECK: } else {
@@ -183,11 +183,11 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # Testing two different logic'y types returns the common bool type if present.
 
   # CHECK: %6 = kgen.call @Boolish::@"__bool__(Boolish)"(%a)
-  # CHECK: %7 = kgen.call @Bool::@"__lit_bool(Bool)"(%6)
-  # CHECK: %8 = scf.if %7 -> (!kgen.declref<@Bool>) {
+  # CHECK: %7 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%6)
+  # CHECK: %8 = scf.if %7 -> (!kgen.declref<@"$Bool"::@Bool>) {
   # CHECK:   scf.yield %6
   # CHECK: } else {
-  # CHECK:   %10 = kgen.call @Bool::@"__bool__(Bool)"(%x)
+  # CHECK:   %10 = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"(%x)
   # CHECK:   scf.yield %10
   # CHECK: }
    _ = a or x
@@ -217,11 +217,11 @@ fn do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %z = lit.var.decl "z"
   var z : Int
   # CHECK-NEXT:  %[[I42:.*]] = {{.*}} 42
-  # CHECK-NEXT:  %[[INT_42:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[I42]])
+  # CHECK-NEXT:  %[[INT_42:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[I42]])
   # CHECK-NEXT:  %[[I5:.*]] = {{.*}} 5
-  # CHECK-NEXT:  %[[INT_5:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[I5]])
-  # CHECK-NEXT: %[[MUL:.*]] = kgen.call @Int::@"__mul__{{.*}}(%[[INT_5]], %a)
-  # CHECK-NEXT: %[[ADD:.*]] = kgen.call @Int::@"__add__{{.*}}(%[[INT_42]], %[[MUL]])
+  # CHECK-NEXT:  %[[INT_5:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[I5]])
+  # CHECK-NEXT: %[[MUL:.*]] = kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%[[INT_5]], %a)
+  # CHECK-NEXT: %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[INT_42]], %[[MUL]])
   # CHECK-NEXT: pop.store %[[ADD]], %z
   z = Int(42) + Int(5)*a
 
@@ -259,22 +259,22 @@ fn listValues() -> __mlir_type.index:
 
 # CHECK-LABEL: lit.func @"test_if_cond
 def test_if_cond(cond: Bool):
-    # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@Int>
+    # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@"$Int"::@Int>
     # CHECK-NEXT: %[[COND:.*]] = pop.load %cond_0
-    # CHECK-NEXT: %[[LIT_BOOL:.*]] = kgen.call @Bool::@"__lit_bool{{.*}}(%[[COND]])
+    # CHECK-NEXT: %[[LIT_BOOL:.*]] = kgen.call @"$Bool"::@Bool::@"__lit_bool{{.*}}(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = scf.if %[[LIT_BOOL]]
     # CHECK-NEXT:   %[[TWO:.*]] = {{.*}} 2
-    # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[TWO]])
+    # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[TWO]])
     # CHECK-NEXT:   scf.yield %[[INT_TWO]]
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   %[[THREE:.*]] = {{.*}} 3
-    # CHECK-NEXT:   %[[INT_THREE:.*]] = kgen.call @Int::@"__new__{{.*}}(%[[THREE]])
+    # CHECK-NEXT:   %[[INT_THREE:.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%[[THREE]])
     # CHECK-NEXT:   scf.yield %[[INT_THREE]]
     # CHECK-NEXT: }
     # CHECK-NEXT: pop.store %[[IF_RES]], %i
     var i: Int = Int(2) if cond else Int(3)
 
-    # CHECK:      %[[TRUE:.+]] = kgen.call @Bool::@"true{{.*}}()
+    # CHECK:      %[[TRUE:.+]] = kgen.call @"$Bool"::@Bool::@"true{{.*}}()
     # CHECK-NEXT: pop.store %[[TRUE]], %cond
     cond = Bool.true()
     i += i

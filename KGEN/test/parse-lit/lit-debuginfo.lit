@@ -1,17 +1,17 @@
-# RUN: kgen-translate -import-lit -import-lit-debug-level=full -mlir-print-debuginfo %s | FileCheck %s
+# RUN: kgen-translate -import-lit -import-lit-debug-level=full -mlir-print-debuginfo %s -I %stdlibdir | FileCheck %s
 
 __include "../lit-examples/prolog.lit"
 import imported_module
 
 # Check single file debug info generation.
 
-# CHECK: ![[INT_TYPE:.*]] = !debuginfo.unresolved<!kgen.declref<@Int>>
+# CHECK: ![[INT_TYPE:.*]] = !debuginfo.unresolved<!kgen.declref<@"$Int"::@Int>>
 # CHECK: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(![[INT_TYPE]], ![[INT_TYPE]]) -> (![[INT_TYPE]]): DW_CC_normal>
-# CHECK: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power(Int,Int)", file = #{{.*}}, line = 15, scopeLine = 15, subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
+# CHECK: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power($Int::Int,$Int::Int)", file = #{{.*}}, line = 15, scopeLine = 15, subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
 # CHECK: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = 15, arg = 1> : ![[INT_TYPE]]
 # CHECK: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = 15, arg = 2> : ![[INT_TYPE]]
 
-# CHECK-LABEL: lit.func @"power(Int,Int)"(
+# CHECK-LABEL: lit.func @"power($Int::Int,$Int::Int)"(
 fn power(lhs: Int, rhs: Int) -> Int:
   # CHECK: debuginfo.value #[[LHS_VAR]] = %lhs
   # CHECK: debuginfo.value #[[RHS_VAR]] = %rhs

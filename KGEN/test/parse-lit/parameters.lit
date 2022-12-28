@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit %s -verify-diagnostics | FileCheck %s
+# RUN: kgen-translate -import-lit %s -I %stdlibdir -verify-diagnostics | FileCheck %s
 
 __include "../lit-examples/prolog.lit"
 
@@ -10,7 +10,7 @@ struct StructWithIntParam[size: Int]:
 
 # CHECK-LABEL: lit.func @"paramArith{{.*}}"<x>(%y: index) -> !lit.none {
 fn paramArith[x: __mlir_type.index](y : __mlir_type.index):
-  # CHECK: kgen.call @"assert_param{{.*}}<cond: i1 = eq(x, -99)>
+  # CHECK: kgen.call @"$Assert"::@"assert_param{{.*}}<cond: i1 = eq(x, -99)>
   assert_param[x == -100+1]()
 
 fn take_3index(a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index) -> __mlir_type.index:
@@ -98,18 +98,18 @@ fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
   # Test calls to methods and operators on parameterized type.
   a.fma(a, a)
   b.fma(b, b)
-  # CHECK: kgen.call @SIMD::@"__add__{{.*}}<size = 1, type: dtype = f64>(%a, %a)
+  # CHECK: kgen.call @"$SIMD"::@SIMD::@"__add__{{.*}}<size = 1, type: dtype = f64>(%a, %a)
   var x = a+a
-  # CHECK: kgen.call @SIMD::@"__add__{{.*}}<size = 1, type: dtype = si32>(%b, %b)
+  # CHECK: kgen.call @"$SIMD"::@SIMD::@"__add__{{.*}}<size = 1, type: dtype = si32>(%b, %b)
   var y = b+b
 
 # Show that forward references of parameter names can be correctly resolved.
 #
 # CHECK-LABEL: lit.func @"paramResolution()"<
-# CHECK-SAME: size1: !kgen.declref<@Int>,
-# CHECK-SAME: a: !kgen.declref<@StructWithIntParam<size: !kgen.declref<@Int> = size1>>,
-# CHECK-SAME: b: !kgen.declref<@StructWithIntParam<size: !kgen.declref<@Int> = size2>>,
-# CHECK-SAME:  size2: !kgen.declref<@Int>>()
+# CHECK-SAME: size1: !kgen.declref<@"$Int"::@Int>,
+# CHECK-SAME: a: !kgen.declref<@StructWithIntParam<size: !kgen.declref<@"$Int"::@Int> = size1>>,
+# CHECK-SAME: b: !kgen.declref<@StructWithIntParam<size: !kgen.declref<@"$Int"::@Int> = size2>>,
+# CHECK-SAME:  size2: !kgen.declref<@"$Int"::@Int>>()
 fn paramResolution[size1: Int, a: StructWithIntParam[size1],
                    b: StructWithIntParam[size2], size2: Int]():
   pass
@@ -117,7 +117,7 @@ fn paramResolution[size1: Int, a: StructWithIntParam[size1],
 # CHECK-LABEL: kgen.struct.decl @Pair<dt: !kgen.declref<@DType>> {
 struct Pair[dt: DType]:
  # CHECK: kgen.struct.field a : !kgen.declref<@OurSIMD<size = 42, dt: !kgen.declref<@DType> = dt>>
- # CHECK: kgen.struct.field b : !kgen.declref<@Int>
+ # CHECK: kgen.struct.field b : !kgen.declref<@"$Int"::@Int>
   var a : OurSIMD[42, dt]
   var b : Int
 
@@ -159,7 +159,7 @@ fn no_result_param[a: __mlir_type.index]():
 # CHECK-LABEL: lit.func @"idx_result_params()"<a -> index, index>()
 fn idx_result_params[a: __mlir_type.index -> __mlir_type.index, __mlir_type.index]() -> Int:
   # CHECK: %0 = kgen.param.constant = <add(a, 2)>
-  # CHECK: %1 = kgen.call @Int::@"__new__(__mlir_type.index)"(%0)
+  # CHECK: %1 = kgen.call @"$Int"::@Int::@"__new__(__mlir_type.index)"(%0)
   # CHECK: kgen.return<a, add(a, 1)> %1
   return[a,a+1] a+2
 
@@ -201,8 +201,8 @@ fn useResultParams(i: Int):
   no_result_param[xyz+1]()
 
   # Normal result and multi parameter results.
-  # CHECK: [[TMP:%.*]] = kgen.call @"idx_result_params()"<a = mul(xyz, 2) -> a, b>() : () -> !kgen.declref<@Int>
-  # CHECK-NEXT: kgen.call @Int::@"__mul__(Int,Int)"([[TMP]], %i)
+  # CHECK: [[TMP:%.*]] = kgen.call @"idx_result_params()"<a = mul(xyz, 2) -> a, b>() : () -> !kgen.declref<@"$Int"::@Int>
+  # CHECK-NEXT: kgen.call @"$Int"::@Int::@"__mul__($Int::Int,$Int::Int)"([[TMP]], %i)
   _ = idx_result_params[xyz*2 -> a, b]() * i
 
   # Function call with only a result parameter.

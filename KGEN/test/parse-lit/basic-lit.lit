@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit %s -verify-diagnostics | FileCheck %s
+# RUN: kgen-translate -import-lit %s -verify-diagnostics -I %stdlibdir | FileCheck %s
 
 __include "../lit-examples/prolog.lit"
 
@@ -17,28 +17,28 @@ fn patterns():
 
   var someInt : Int
   (someInt) += someInt
-  # CHECK: %someInt = lit.var.decl "someInt" : <@Int>
-  # CHECK:  %0 = pop.load %someInt : !pop.pointer<@Int>
-  # CHECK:  %1 = kgen.call @Int::@"__iadd__{{.*}}(%someInt, %0)
+  # CHECK: %someInt = lit.var.decl "someInt" : <@"$Int"::@Int>
+  # CHECK:  %0 = pop.load %someInt : !pop.pointer<@"$Int"::@Int>
+  # CHECK:  %1 = kgen.call @"$Int"::@Int::@"__iadd__{{.*}}(%someInt, %0)
 
   # Discard pattern with different types.
   (_) = someInt
-  # CHECK: %_ = lit.var.decl "_" : <@Int>
-  # CHECK: pop.store {{.*}}, %_ : !pop.pointer<@Int>
+  # CHECK: %_ = lit.var.decl "_" : <@"$Int"::@Int>
+  # CHECK: pop.store {{.*}}, %_ : !pop.pointer<@"$Int"::@Int>
 
   (_) = 1.0
   # CHECK: %__0 = lit.var.decl "_" : <f64>
   # CHECK: pop.store {{.*}}, %__0 : !pop.pointer<f64>
 
-  # CHECK: %someF32 = lit.var.decl "someF32" : <@F32>
-  # CHECK: [[F32:%.*]] = pop.load %someF32 : !pop.pointer<@F32>
-  # CHECK: {{%.*}} = kgen.call @F32::@"__iadd__{{.*}}(%someF32, [[F32]])
+  # CHECK: %someF32 = lit.var.decl "someF32" : <@"$F32"::@F32>
+  # CHECK: [[F32:%.*]] = pop.load %someF32 : !pop.pointer<@"$F32"::@F32>
+  # CHECK: {{%.*}} = kgen.call @"$F32"::@F32::@"__iadd__{{.*}}(%someF32, [[F32]])
   var someF32 : F32
   (someF32) += someF32
 
-  # CHECK: %someSIMD = lit.var.decl "someSIMD" : <@SIMD<size = 4, type: dtype = f64>>
-  # CHECK: [[SIMD:%.*]] = pop.load %someSIMD : !pop.pointer<@SIMD<size = 4, type: dtype = f64>>
-  # CHECK: {{%.*}} = kgen.call @SIMD::@"__iadd__{{.*}}(%someSIMD, [[SIMD]])
+  # CHECK: %someSIMD = lit.var.decl "someSIMD" : <@"$SIMD"::@SIMD<size = 4, type: dtype = f64>>
+  # CHECK: [[SIMD:%.*]] = pop.load %someSIMD : !pop.pointer<@"$SIMD"::@SIMD<size = 4, type: dtype = f64>>
+  # CHECK: {{%.*}} = kgen.call @"$SIMD"::@SIMD::@"__iadd__{{.*}}(%someSIMD, [[SIMD]])
   var someSIMD : SIMD[4, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`]
   (someSIMD) += someSIMD
 
@@ -73,7 +73,7 @@ fn my_evaluator(funcs: __mlir_type.`!pop.pointer<(index) -> index>`, size: __mli
 fn useEvaluator(x:  __mlir_type.index) ->  __mlir_type.index:
   ...
 
-# CHECK: lit.func @"byval_byref_function(Int,Int&)"(%a: !kgen.declref<@Int>, %b: !pop.pointer<@Int> byref) -> !lit.none
+# CHECK: lit.func @"byval_byref_function($Int::Int,$Int::Int&)"(%a: !kgen.declref<@"$Int"::@Int>, %b: !pop.pointer<@"$Int"::@Int> byref) -> !lit.none
 fn byval_byref_function(a: Int, b&: Int):
   # CHECK-NEXT: pop.store %a, %b
   b = a
@@ -82,14 +82,14 @@ fn byval_byref_function(a: Int, b&: Int):
   var x : Int
   # This needs to load 'b' to pass it by value for the first arg, but pass its
   # address in directly for the second.
-  # CHECK: %0 = pop.load %b : !pop.pointer<@Int>
+  # CHECK: %0 = pop.load %b : !pop.pointer<@"$Int"::@Int>
   # CHECK: %1 = kgen.call @"byval_byref_function{{.*}}(%0, %b)
   byval_byref_function(b, b)
 
 # CHECK: lit.func @"lvaluesAndRValues()
 fn lvaluesAndRValues() -> __mlir_type.`!pop.scalar<index>`:
   # CHECK: [[FOUR:%.*]] = index.constant 4
-  # CHECK: [[INT:%.*]] = kgen.call @Int::@"__new__{{.*}}([[FOUR]])
+  # CHECK: [[INT:%.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}([[FOUR]])
   # CHECK: [[VALUE:%.*]] = kgen.struct.extract [[INT]][value] : !pop.scalar<index> from
   # CHECK: kgen.return [[VALUE]] : !pop.scalar<index>
   return Int(4).value

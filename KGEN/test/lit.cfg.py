@@ -22,6 +22,13 @@ config.test_source_root = os.path.dirname(__file__)
 # test_exec_root: The root path where tests should be run.
 config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 
+config.substitutions.append(
+    (
+        "%stdlibdir",
+        os.path.join(config.modular_src_root, "Kernels", "lit-stdlib"),
+    )
+)
+
 tool_dirs = [
     config.modular_tools_dir,
     config.mlir_tools_dir,
