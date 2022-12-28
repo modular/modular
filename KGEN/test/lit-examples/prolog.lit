@@ -123,7 +123,7 @@ struct range:
   var step : Int
 
   fn __new__(start : Int, end : Int, step : Int) -> range:
-    return __mlir_op.`kgen.struct.create`[_type: range](start, end)
+    return __mlir_op.`kgen.struct.create`[_type: range](start, end, step)
 
   fn __iter__(self : range) -> range:
     return self
