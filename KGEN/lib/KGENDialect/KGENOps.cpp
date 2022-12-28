@@ -968,9 +968,13 @@ StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // struct declaration.
   ParameterEvaluator evaluator = getEvaluatorForBoundStructType(getType());
   StructDeclOp structDecl = lookupStructDecl(symbolTable, *this, getType());
+  auto fields = structDecl.getFieldDecls();
+  unsigned numFields = std::distance(fields.begin(), fields.end());
+  if (numFields != getNumOperands())
+    return emitOpError("expected ")
+           << numFields << " operands but got " << getNumOperands();
   for (auto [fieldDecl, operand, i] :
-       llvm::zip(structDecl.getFieldDecls(), getOperands(),
-                 llvm::seq<unsigned>(0, getNumOperands()))) {
+       llvm::zip(fields, getOperands(), llvm::seq<unsigned>(0, numFields))) {
     Type reboundType = evaluator.getReboundType(fieldDecl.getType());
     if (reboundType != operand.getType()) {
       return emitOpError("operand #")

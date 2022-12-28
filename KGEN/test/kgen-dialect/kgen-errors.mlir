@@ -630,6 +630,17 @@ kgen.generator @invalid_field_type<c: type>(%a: !kgen.paramref<c>) {
 
 // -----
 
+kgen.struct.decl @Bar {
+}
+
+kgen.generator @invalid_num_fields(%a: index) {
+  // expected-error @below {{'kgen.struct.create' op expected 0 operands but got 1}}
+  %0 = kgen.struct.create(%a) : (index) -> !kgen.declref<@Bar>
+  kgen.return
+}
+
+// -----
+
 kgen.struct.decl @Bar {}
 
 kgen.generator @invalid_field_name(%a: index, %container: !kgen.declref<@Bar>) {
