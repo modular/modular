@@ -388,14 +388,18 @@ struct ConvertPOPSIMDShuffle
   LogicalResult
   matchAndRewrite(SIMDShuffleOp op, SIMDShuffleOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    auto mask = cast<ListAttr>(adaptor.getMask());
+    SmallVector<int32_t> maskValues;
+    for (TypedAttr maskElement : mask.getValues())
+      maskValues.push_back(cast<IntegerAttr>(maskElement).getInt());
 
     auto lhs = adaptor.getLhs();
     auto rhs = adaptor.getRhs();
     auto inputSize = *op.getLhs().getType().getResolvedSize();
     if (inputSize != 1) {
       // Both LHS and RHS are vectors - generate LLVM ShuffleVector
-      rewriter.replaceOpWithNewOp<LLVM::ShuffleVectorOp>(op, lhs, rhs,
-                                                         adaptor.getMask());
+      rewriter.replaceOpWithNewOp<LLVM::ShuffleVectorOp>(
+          op, lhs, rhs, rewriter.getDenseI32ArrayAttr(maskValues));
 
       return success();
     }
@@ -409,10 +413,10 @@ struct ConvertPOPSIMDShuffle
     auto llvmVecType = LLVM::getFixedVectorType(
         *getMLIRTypeForDType(op.getType().getContext(), dtype,
                              getTypeConverter()->getIndexTypeBitwidth()),
-        adaptor.getMask().size());
+        mask.getValues().size());
     Value result = rewriter.create<LLVM::UndefOp>(op.getLoc(), llvmVecType);
     int idx = 0;
-    for (auto maskElement : adaptor.getMask()) {
+    for (int32_t maskElement : maskValues) {
       Value pos = rewriter.create<LLVM::ConstantOp>(
           op.getLoc(), rewriter.getI32IntegerAttr(idx));
       result = rewriter.create<LLVM ::InsertElementOp>(

@@ -794,18 +794,17 @@ def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [Pure,
     Example:
 
     ```mlir
-    %0 = pop.simd.shuffle %lhs, %rhs [0, 1, 2, 3]
-        : !pop.simd<2, f32> -> !pop.simd<4, f32>
+    %0 = pop.simd.shuffle <2, f32> %lhs, %rhs -> <4, f32> [0, 1, 2, 3]
     ```
   }];
 
   let arguments = (ins POP_SIMDType:$lhs, POP_SIMDType:$rhs,
-                       DenseI32ArrayAttr:$mask);
+                       AttrOfType<KGEN_ListType>:$mask);
   let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat = [{
-    $lhs `,` $rhs $mask attr-dict `:` qualified(type($lhs)) `->`
-    qualified(type($result))
+    type($lhs) $lhs `,` $rhs `->` type($result)
+    custom<ShuffleMask>($mask, ref(type($result))) attr-dict
   }];
   let hasVerifier = 1;
 }

@@ -419,22 +419,46 @@ LogicalResult CastOp::verify() {
 // SIMDShuffleOp
 //===----------------------------------------------------------------------===//
 
+static ParseResult parseShuffleMask(AsmParser &p, TypedAttr &mask,
+                                    Type resultType) {
+  return parseParamValue(p, mask,
+                         ListType::get(p.getBuilder().getIndexType(),
+                                       cast<SIMDType>(resultType).getSize()));
+}
+
+static void printShuffleMask(AsmPrinter &p, Operation *op, TypedAttr mask,
+                             Type resultType) {
+  printParamValue(mask, p.getStream());
+}
+
 LogicalResult SIMDShuffleOp::verify() {
   Optional<int64_t> size = getType().getResolvedSize();
   if (!size)
     return success();
-  if (static_cast<size_t>(*size) != getMask().size())
+  auto maskType = cast<ListType>(getMask().getType());
+  if (maskType.getResolvedElementType() != Builder(getContext()).getIndexType())
+    return emitOpError("expected mask to be a list of indices");
+  auto mask = dyn_cast_or_null<ListAttr>(getMask());
+  if (!mask)
+    return success();
+
+  if (*size != static_cast<int64_t>(mask.getValues().size()))
     return emitOpError("expected result to be a vector of ")
-           << getMask().size() << " elements";
+           << mask.getValues().size() << " elements";
 
   auto lhsType = getLhs().getType().cast<SIMDType>();
   if (lhsType.getDType() != getType().getDType())
     return emitOpError("expected result dtype to match operand dtypes");
 
   if (Optional<int64_t> size = lhsType.getResolvedSize()) {
-    for (int32_t index : getMask())
-      if (index >= *size * 2)
-        return emitOpError("mask element ") << index << " is out of bounds";
+    for (TypedAttr indexAttr : mask.getValues()) {
+      auto index = dyn_cast<IntegerAttr>(indexAttr);
+      if (!index)
+        continue;
+      if (index.getInt() >= *size * 2)
+        return emitOpError("mask element ")
+               << index.getInt() << " is out of bounds";
+    }
   }
 
   return success();
