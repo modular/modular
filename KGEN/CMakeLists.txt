@@ -61,6 +61,11 @@ macro(_setup_debug_flags)
   elseif (build_type STREQUAL "relwithdebinfo")
     set(KGEN_DEBUG_LEVEL "full")
   endif()
+
+  # The caller specified no debug, so disable debugging.
+  if (KGEN_NO_DEBUG)
+    set(KGEN_DEBUG_LEVEL "none")
+  endif()
 endmacro()
 
 
@@ -78,7 +83,7 @@ endmacro()
 # specify this target in the LINK_LIBS of another kgen_library or kgen_kernel
 # and the include flags will be setup correctly.
 function(add_kgen_library target)
-  cmake_parse_arguments(KGEN "SAVE_TEMPS" "OUTPUT" "LINK_LIBS" ${ARGN})
+  cmake_parse_arguments(KGEN "SAVE_TEMPS;NO_DEBUG" "OUTPUT" "LINK_LIBS" ${ARGN})
 
   _setup_libs()
   _setup_debug_flags()
@@ -117,7 +122,7 @@ endfunction()
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
 function(add_kgen_kernel target)
-  cmake_parse_arguments(KGEN "SFF_DEBUG;ENABLE_SEARCH" "SOURCE;OUTPUT_NAME" "KERNELS;LINK_LIBS" ${ARGN})
+  cmake_parse_arguments(KGEN "SFF_DEBUG;ENABLE_SEARCH;NO_DEBUG" "SOURCE;OUTPUT_NAME" "KERNELS;LINK_LIBS" ${ARGN})
 
   _setup_libs()
   _setup_debug_flags()
