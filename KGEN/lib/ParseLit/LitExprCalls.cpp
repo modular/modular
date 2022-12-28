@@ -377,7 +377,6 @@ ParamBindArrayAttr DirectCallable::getCheckedBindings(
     auto valueType = bound.getValue().getType();
     auto expectedType = evaluator.getReboundType(decl.getType());
 
-    expectedType.dump();
     if (!ASTType(valueType).isEqualCanon(expectedType)) {
       if (funcLoc) {
         auto diag = shared.emitError(bound.loc, "'")
