@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit -verify-diagnostics %s | FileCheck %s
+# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %stdlibdir | FileCheck %s
 #===------------------------------------------------------------------------===#
 #
 # Standard Prolog(ue) for Lit.
@@ -7,11 +7,11 @@
 #
 #===------------------------------------------------------------------------===#
 
-__include "../../../Kernels/lit-stdlib/Int.lit"
-__include "../../../Kernels/lit-stdlib/SIMD.lit"
-__include "../../../Kernels/lit-stdlib/F32.lit"
-__include "../../../Kernels/lit-stdlib/Assert.lit"
-
+from Bool import Bool
+from Int import Int
+from SIMD import SIMD
+from F32 import F32
+from Assert import assert_param
 
 # CHECK: lit.func @"printF32
 fn printF32(x: F32):

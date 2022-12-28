@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit %s | FileCheck %s
+# RUN: kgen-translate -import-lit %s -I %stdlibdir | FileCheck %s
 
 __include "../lit-examples/prolog.lit"
 
@@ -11,16 +11,16 @@ __include "../lit-examples/prolog.lit"
 # CHECK-NEXT:     hlcf.yield
 # CHECK-NEXT:    } else {
 # CHECK-NEXT:     index.constant 2
-# CHECK-NEXT:     kgen.call @Int::@"__new__
+# CHECK-NEXT:     kgen.call @"$Int"::@Int::@"__new__
 # CHECK-NEXT:     pop.store {{.+}}, %inside_else
 # CHECK-NEXT:     hlcf.break
 # CHECK-NEXT:    }
 # CHECK-NEXT:    index.constant 0
-# CHECK-NEXT:    kgen.call @Int::@"__new__
+# CHECK-NEXT:    kgen.call @"$Int"::@Int::@"__new__
 # CHECK-NEXT:    pop.store {{.+}}, %inside_a
 # CHECK:         hlcf.if
 # CHECK-NEXT:      {{.+}} = index.constant 1
-# CHECK-NEXT:      kgen.call @Int::@"__new__
+# CHECK-NEXT:      kgen.call @"$Int"::@Int::@"__new__
 # CHECK-NEXT:      pop.store {{.+}}, %inside_b
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } else {

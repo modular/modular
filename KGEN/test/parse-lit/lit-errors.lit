@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit -verify-diagnostics %s
+# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %stdlibdir
 
 __include "../lit-examples/prolog.lit"
 
@@ -105,7 +105,7 @@ def missing_type_on_var_decl():
 
 
 def invalid_conversion(a: Int, b: __mlir_type.index):
-  b = a # expected-error {{value of type 'Int' cannot be converted to expected type '__mlir_type.index'}}
+  b = a # expected-error {{value of type '$Int::Int' cannot be converted to expected type '__mlir_type.index'}}
 
 struct NotBoolConvertible:
 
@@ -279,7 +279,7 @@ def testLValuesRvalues():
   unknown1 += unknown2 # expected-error {{use of unknown declaration "unknown2"}}
 
   lv.normalMethod3(1.0)
-  lv.normalMethod3(1) # expected-error {{invalid call to 'normalMethod3': in method argument #0, value of type '__mlir_type.index' cannot be converted to expected type 'F32'}}
+  lv.normalMethod3(1) # expected-error {{invalid call to 'normalMethod3': in method argument #0, value of type '__mlir_type.index' cannot be converted to expected type '$F32::F32'}}
 
 
 # Test differences between fn and def.
@@ -416,7 +416,7 @@ fn cannotRaise(err: Error):
 # expected-note @+1 {{function declared here}}
 fn badRef(val&: Int):
   var x = F32(1.0)
-  # TODO(QoI): expected-error @+1 {{l-value of type 'F32' cannot be converted to reference to expected type #kgen.concretetype.constant<!kgen.declref<@Int>> : !kgen.mlirtype}}
+  # TODO(QoI): expected-error @+1 {{l-value of type '$F32::F32' cannot be converted to reference to expected type #kgen.concretetype.constant<!kgen.declref<@"$Int"::@Int>> : !kgen.mlirtype}}
   badRef(x)
 
 fn missingColon()  # expected-error {{expected ':' in function definition}}
@@ -428,21 +428,21 @@ struct WeirdBoolish:
   fn __bool__(self) -> Int: return Int(0)
 
 fn badAnd(a: Bool, b: WeirdBoolish):
-  _ = a and b # expected-error {{cannot find common type between 'Bool' and 'WeirdBoolish'}}
+  _ = a and b # expected-error {{cannot find common type between '$Bool::Bool' and 'WeirdBoolish'}}
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{in argument #0, value of type 'TestOverloading' cannot be converted to expected type 'Int'}}
+# expected-note @below {{in argument #0, value of type 'TestOverloading' cannot be converted to expected type '$Int::Int'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
 fn overloadIntF32(a: Int):
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{in argument #0, value of type 'TestOverloading' cannot be converted to expected type 'F32'}}
+# expected-note @below {{in argument #0, value of type 'TestOverloading' cannot be converted to expected type '$F32::F32'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
 fn overloadIntF32(a: F32):
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: callee expects 2 arguments}}
-# expected-note @below {{candidate not viable: in argument #1, value of type 'F32' cannot be converted to expected type 'Int'}}
+# expected-note @below {{candidate not viable: in argument #1, value of type '$F32::F32' cannot be converted to expected type '$Int::Int'}}
 fn overloadIntF32(a: Int, b: Int):
 
 # expected-note @below {{candidate declared here}}
@@ -469,10 +469,10 @@ struct ConvertibleFromInt:
     return result
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: in argument #1, value of type 'ConvertibleFromInt' cannot be converted to expected type 'Int'}}
+# expected-note @below {{candidate not viable: in argument #1, value of type 'ConvertibleFromInt' cannot be converted to expected type '$Int::Int'}}
 fn ambiguousConversions(a: ConvertibleFromInt, b: Int):
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: in argument #0, value of type 'ConvertibleFromInt' cannot be converted to expected type 'Int'}}
+# expected-note @below {{candidate not viable: in argument #0, value of type 'ConvertibleFromInt' cannot be converted to expected type '$Int::Int'}}
 fn ambiguousConversions(a: Int, b: ConvertibleFromInt):
 
 fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
@@ -487,7 +487,7 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
   localFn(a, b)
   localFn(a, a)
   localFn(1, b)
-  # expected-error @+1 {{invalid indirect call: in argument #0, value of type 'ConvertibleFromInt' cannot be converted to expected type 'Int'}}
+  # expected-error @+1 {{invalid indirect call: in argument #0, value of type 'ConvertibleFromInt' cannot be converted to expected type '$Int::Int'}}
   localFn(b, b)
 
 fn partialBindSignature[callable: __mlir_type.`!kgen.signature<[a: index, b: index], [], () -> ()>`, a: __mlir_type.index]():

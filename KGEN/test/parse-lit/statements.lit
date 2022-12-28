@@ -1,4 +1,4 @@
-# RUN: kgen-translate %s -import-lit | FileCheck %s
+# RUN: kgen-translate %s -import-lit -I %stdlibdir | FileCheck %s
 
 __include "../lit-examples/prolog.lit"
 
@@ -16,7 +16,7 @@ def `pass`():
 # CHECK-LABEL lit.func @"return_impl_convert
 fn return_impl_convert() -> Int:
   # CHECK: %idx4 = index.constant 4
-  # CHECK: %0 = kgen.call @Int::@"__new__(__mlir_type.index)"(%idx4)
+  # CHECK: %0 = kgen.call @"$Int"::@Int::@"__new__(__mlir_type.index)"(%idx4)
   # CHECK: kgen.return %0
   return 4  # Implicit conversion from literal to Int
 
@@ -30,9 +30,9 @@ fn return_new_line() -> Int:
 @raises
 fn return_impl_convert_raises() -> Int:
   # CHECK: %idx4 = index.constant 4
-  # CHECK: %0 = kgen.call @Int::@"__new__(__mlir_type.index)"(%idx4) : (index) -> !kgen.declref<@Int>
-  # CHECK: %1 = pop.variant.create %0 : !kgen.declref<@Int> -> !pop.variant<@Error, @Int>
-  # CHECK: kgen.return %1 : !pop.variant<@Error, @Int>
+  # CHECK: %0 = kgen.call @"$Int"::@Int::@"__new__(__mlir_type.index)"(%idx4) : (index) -> !kgen.declref<@"$Int"::@Int>
+  # CHECK: %1 = pop.variant.create %0 : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@Error, @"$Int"::@Int>
+  # CHECK: kgen.return %1 : !pop.variant<@Error, @"$Int"::@Int>
   return 4  # Implicit conversion from literal to Int
 
 

@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit -verify-diagnostics %s | FileCheck %s
+# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %stdlibdir | FileCheck %s
 
 
 __include "prolog.lit"
@@ -34,8 +34,8 @@ fn erf_scalar_taylor[type: DType](x: Scalar[type]) -> Scalar[type]:
 
 # CHECK-LABEL: lit.func @"fma_f32
 fn fma_f32(x: F32, y: F32, z: F32) -> F32:
-# CHECK: %0 = kgen.call @F32::@"__mul__{{.*}}(%x, %y)
-# CHECK: %1 = kgen.call @F32::@"__add__{{.*}}(%0, %z)
+# CHECK: %0 = kgen.call @"$F32"::@F32::@"__mul__{{.*}}(%x, %y)
+# CHECK: %1 = kgen.call @"$F32"::@F32::@"__add__{{.*}}(%0, %z)
 # CHECK: kgen.return %1
   return x*y+z
 
@@ -51,7 +51,7 @@ fn erf_scalar_taylor_f32(x: F32) -> F32:
 
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"erf_taylor_vector{{.*}}<size, type: dtype>(%x: !kgen.declref<@SIMD<size = size, type: dtype = type>>) -> !kgen.declref<@SIMD<size = size, type: dtype = type>> {
+# CHECK-LABEL: lit.func @"erf_taylor_vector{{.*}}"<size, type: dtype>(%x: !kgen.declref<@"$SIMD"::@SIMD<size = size, type: dtype = type>>) -> !kgen.declref<@"$SIMD"::@SIMD<size = size, type: dtype = type>> {
 fn erf_taylor_vector[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`](x: SIMD[size, type]) -> SIMD[size, type]:
   # CHECK: = kgen.param.constant: f64 = <-0.37612638903183754>
   return x * (x*x).fma(-0.37612638903183752463, 1.1283791670955125739)
