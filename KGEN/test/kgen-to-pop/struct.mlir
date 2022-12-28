@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-kgen-to-pop | FileCheck %s
+// RUN: kgen-opt %s -lower-structs | FileCheck %s
 
 // CHECK-NOT: kgen.struct.decl
 kgen.struct.decl @SmallVector<N, T: type> {

@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-kgen-to-pop -allow-unregistered-dialect -split-input-file | FileCheck %s
+// RUN: kgen-opt %s -lower-structs -lower-kgen-to-pop -allow-unregistered-dialect -split-input-file | FileCheck %s
 
 // Test proper handling of debug types.
 

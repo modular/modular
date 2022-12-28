@@ -28,7 +28,7 @@ class LLVMFuncOp;
 
 namespace M::LLCL {
 class Runtime;
-}
+} // namespace M::LLCL
 
 namespace M::KGEN {
 class KGENDialect;
