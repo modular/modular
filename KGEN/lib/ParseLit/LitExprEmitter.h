@@ -114,10 +114,10 @@ public:
                                ArrayRef<ASTExprAnd<AnyValue>> operands,
                                SMLoc callLoc);
 
-  /// Convert the specified DRValue to the expected type, invoking implicit
+  /// Convert the specified value to the expected type, invoking implicit
   /// conversions if necessary.  On error, this diagnoses it and returns null.
-  DRValue getAsExpectedType(DRValue value, const ExprNode *expr,
-                            ASTType expectedType);
+  AnyValue getAsExpectedType(AnyValue value, const ExprNode *expr,
+                             ASTType expectedType);
 
   /// Emit the specified expression as a condition, converting it to an MLIR I1
   /// value that we can test directly.  This reports and error and returns null

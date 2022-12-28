@@ -290,3 +290,23 @@ fn callable_mv[callable: __mlir_type.`!kgen.signature<[], [], (index) -> index>`
 fn callable_mv_inputs[callable: __mlir_type.`!kgen.signature<[M : index], [], (index) -> index>`, b: __mlir_type.index](a: __mlir_type.index) -> __mlir_type.index:
   # CHECK-NEXT: kgen.call_param[(index) -> index: bind_signature(:<M>(index) -> index callable, b)](%a)
   return callable[b](a)
+
+# CHECK-LABEL: lit.func @"takeIndexParam()"<a>() -> index
+fn takeIndexParam[a: __mlir_type.index]() -> __mlir_type.index:
+  return a + 1
+
+# CHECK-LABEL: lit.func @"returnIndex()"() -> index
+fn returnIndex() -> __mlir_type.index:
+  return 0
+
+# CHECK-LABEL: lit.func @"returnIndex2()"() -> index
+fn returnIndex2() -> __mlir_type.index:
+  # CHECK-NEXT: %0 = kgen.call @"takeIndexParam()"<a = apply(:() -> index @"returnIndex()")>() : () -> index
+  # CHECK-NEXT: return %0
+  return takeIndexParam[returnIndex()]()
+
+# CHECK-LABEL: lit.func @"callInParam()"<callable: <a>(index) -> index>() -> index
+fn callInParam[callable: __mlir_type.`!kgen.signature<[a : index], [], (index) -> index>`]() -> __mlir_type.index:
+  # CHECK-NEXT: %0 = kgen.call @"takeIndexParam()"<a = apply(:(index) -> index bind_signature(:<a>(index) -> index callable, 1), 1)>() : () -> index
+  # CHECK-NEXT: return %0
+  return takeIndexParam[callable[1](1)]()
