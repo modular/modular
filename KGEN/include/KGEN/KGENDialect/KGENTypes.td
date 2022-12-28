@@ -140,7 +140,9 @@ def KGEN_ListType : KGENType<"List", "list", [SubElementTypeInterface]> {
     TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType,
                                         "TypedAttr":$length)>,
     TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        "int64_t":$length)>
+                                        "int64_t":$length)>,
+    TypeBuilderWithInferredContext<(ins "Type":$elementType,
+                                        "TypedAttr":$length)>
   ];
 
   let extraClassDeclaration = [{

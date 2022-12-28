@@ -835,9 +835,11 @@ void LowerKGENToPOPPass::runOnOperation() {
     if (auto cast = dyn_cast<mlir::UnrealizedConversionCastOp>(op))
       leftoverCasts.push_back(cast);
 
-    // Expand any lists in attributes.
+    // Expand any lists in signature attributes.
     op->setAttrs(op->getAttrDictionary()
-                     .replaceSubElements(expandListsInType)
+                     .replaceSubElements([](SignatureType signature) {
+                       return expandListsInType(signature);
+                     })
                      .cast<DictionaryAttr>());
 
     // Expand the result types.

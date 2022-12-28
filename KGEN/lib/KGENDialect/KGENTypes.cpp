@@ -65,6 +65,10 @@ ListType ListType::get(Type elementType, int64_t length) {
              Builder(elementType.getContext()).getIndexAttr(length));
 }
 
+ListType ListType::get(Type elementType, TypedAttr length) {
+  return get(TypeConstantAttr::get(elementType), length);
+}
+
 LogicalResult ListType::verify(function_ref<InFlightDiagnostic()> emitError,
                                TypedAttr elementType, TypedAttr length) {
   if (!llvm::isa<MLIRTypeType>(elementType.getType()))

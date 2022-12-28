@@ -762,7 +762,7 @@ kgen.func @simd_insertelement_1xf32(%val: !pop.scalar<f32>, %vec: !pop.scalar<f3
 // CHECK-LABEL: @simd_shuffle
 kgen.func @simd_shuffle(%a: !pop.simd<2, f32>, %b: !pop.simd<2, f32>) -> !pop.simd<4, f32> {
   // CHECK: llvm.shufflevector %{{.*}}, %{{.*}} [2, 3, 1, 0]
-  %0 = pop.simd.shuffle %a, %b [2, 3, 1, 0] : !pop.simd<2, f32> -> !pop.simd<4, f32>
+  %0 = pop.simd.shuffle <2, f32> %a, %b -> <4, f32> [2, 3, 1, 0]
   kgen.return %0 : !pop.simd<4, f32>
 }
 
@@ -778,13 +778,13 @@ kgen.func @simd_shuffle_1xf32(%a: !pop.scalar<f32>, %b: !pop.scalar<f32>) -> (!p
   // CHECK: %[[CONST0_1:.*]] = llvm.mlir.constant(1 : i32) : i32
   // CHECK: %[[VECVAL0_2:.*]] = llvm.insertelement %[[F32VAL0]], %[[VECVAL0_1]][%[[CONST0_1]] : i32]
   // CHECK: builtin.unrealized_conversion_cast %[[VECVAL0_2]] : vector<2xf32> to !pop.simd<2, f32>
-  %0 = pop.simd.shuffle %a, %b [1, 0] : !pop.scalar<f32> -> !pop.simd<2, f32>
+  %0 = pop.simd.shuffle <1, f32> %a, %b -> <2, f32> [1, 0]
 
   // CHECK: %[[VECVAL1_0:.*]] = llvm.mlir.undef : vector<1xf32>
   // CHECK: %[[CONST1_0:.*]] = llvm.mlir.constant(0 : i32) : i32
   // CHECK: %[[VECVAL1_1:.*]] = llvm.insertelement %[[F32VAL1]], %[[VECVAL1_0]][%[[CONST1_0]] : i32]
   // CHECK: builtin.unrealized_conversion_cast %[[VECVAL1_1]] : vector<1xf32> to !pop.scalar<f32>
-  %1 = pop.simd.shuffle %a, %b [1] : !pop.scalar<f32> -> !pop.scalar<f32>
+  %1 = pop.simd.shuffle <1, f32> %a, %b -> <1, f32> [1]
 
   kgen.return %0, %1 : !pop.simd<2, f32>, !pop.scalar<f32>
 }
