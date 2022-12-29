@@ -602,39 +602,6 @@ kgen.generator @parametric_addressof() {
 
 // -----
 
-kgen.struct.decl @Int20 {
-  kgen.struct.field value : i20
-}
-
-kgen.struct.decl @Int40 {
-  kgen.struct.field value : i40
-}
-
-kgen.struct.decl @Pair<T1: type, T2: type> {
-  kgen.struct.field first : !kgen.paramref<T1>
-  kgen.struct.field second : !kgen.paramref<T2>
-}
-
-// CHECK-LABEL: @"struct_sizeof
-kgen.generator @struct_sizeof<T1: type, T2: type>() {
-  // CHECK-NEXT: <4>
-  %0 = kgen.param.constant = <get_alignof(!kgen.declref<@Int20>, #kgen<target host>)>
-  // CHECK-NEXT: <4>
-  %1 = kgen.param.constant = <get_sizeof(!kgen.declref<@Int20>, #kgen<target host>)>
-  // CHECK-NEXT: <8>
-  %2 = kgen.param.constant = <get_alignof(!kgen.declref<@Pair<T1: type = T1, T2: type = T2>>, #kgen<target host>)>
-  // CHECK-NEXT: <16>
-  %3 = kgen.param.constant = <get_sizeof(!kgen.declref<@Pair<T1: type = T1, T2: type = T2>>, #kgen<target host>)>
-  kgen.return
-}
-
-kgen.generator @elaborate() {
-  kgen.call @struct_sizeof<T1: type = !kgen.declref<@Int40>, T2: type = !kgen.declref<@Int20>>() : () -> ()
-  kgen.return
-}
-
-// -----
-
 // This takes a parameter function that uses a contextual type instead of
 // to-be-bound types.
 // CHECK-LABEL: kgen.func @"takeFnContextualType,ty=index,fn=sillyFn"() -> index {
