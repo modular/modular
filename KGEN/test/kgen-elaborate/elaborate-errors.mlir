@@ -185,7 +185,7 @@ kgen.struct.decl @Unknown {
 
 // expected-error @below {{no viable implementations found}}
 kgen.generator @sizeof_unknown() {
-  // expected-note @below {{could not compute alignment of type !opaque<"type">}}
+  // expected-note @below {{could not simplify operator get_sizeof}}
   %0 = kgen.param.constant = <get_sizeof(!kgen.declref<@Unknown>, #kgen<target host>)>
   kgen.return
 }
