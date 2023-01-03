@@ -33,10 +33,10 @@ def M_PrimitivesArrayAttr : MAttr<"PrimitiveArray", "primitives_array"> {
   let summary = "an array of primitive elements";
   let description = [{
     The `#M.primitives_array` attribute represents an array of primitive
-    (boolean, integer, or floating point) data of equal size. The data is stored as
-    a byte array with element types whose sizes are not multiples of bytes
-    padded to the nearest byte. The underlying array is aligned to that byte
-    size.
+    (boolean, integer, index, or floating point) data of equal size. The data is
+    stored as a byte array with element types whose sizes are not multiples of
+    bytes padded to the nearest byte. The underlying array is aligned to that
+    byte size.
 
     Example:
 

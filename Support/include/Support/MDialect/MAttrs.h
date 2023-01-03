@@ -161,6 +161,33 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
+// IndexArrayElementsAttr
+//===----------------------------------------------------------------------===//
+
+/// This class represents a dense array of indices. Index type elements are
+/// stored according to the index type's internal storage bitwidth.
+class IndexArrayElementsAttr : public ArrayElementsAttr {
+public:
+  using ArrayElementsAttr::ArrayElementsAttr;
+
+  /// Create an index array.
+  static IndexArrayElementsAttr get(ShapedType type, ArrayRef<int64_t> values);
+
+  using iterator = ArrayRef<int64_t>::iterator;
+
+  iterator begin() const { return asArrayRef().begin(); }
+  iterator end() const { return asArrayRef().end(); }
+
+  ArrayRef<int64_t> asArrayRef() const {
+    return {reinterpret_cast<const int64_t *>(getRawData().data()),
+            static_cast<size_t>(size())};
+  }
+
+  /// Support type inquiry.
+  static bool classof(Attribute attr);
+};
+
+//===----------------------------------------------------------------------===//
 // Attribute Conversion
 //===----------------------------------------------------------------------===//
 
