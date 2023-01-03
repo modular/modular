@@ -125,10 +125,12 @@ class POP_ArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
         SameOperandsAndResultType,
         DeclareOpInterfaceMethods<InferTypeOpInterface>
       ]> {
-  let arguments = (ins POP_SIMDType:$operand);
-  let results = (outs POP_SIMDType:$result);
+  let arguments = (ins UnboundOrIndexOrSignedSIMD:$operand);
+  let results = (outs UnboundOrIndexOrSignedSIMD:$result);
 
   let assemblyFormat = "$operand attr-dict `:` qualified(type($result))";
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -138,9 +140,9 @@ class POP_ArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
 def POP_AbsOp : POP_ArithmeticUnaryOp<"abs"> {
   let summary = "absolute value";
   let description = [{
-    The `pop.abs` operation takes a `!pop.scalar` or `!pop.simd` type and
-    returns its absolute value. The operand and result types must
-    be the same.
+    The `pop.abs` operation takes a `!pop.simd` value and returns its absolute
+    value. The operand and result types are the same. The operand type must be
+    an index, signed integer, or float dtype.
 
     Example:
 
@@ -158,8 +160,9 @@ def POP_AbsOp : POP_ArithmeticUnaryOp<"abs"> {
 def POP_NegOp : POP_ArithmeticUnaryOp<"neg"> {
   let summary = "negation";
   let description = [{
-    The `pop.neg` operation takes a `!pop.scalar` or `!pop.simd` type and
-    returns its negative. The operand and result types must be the same.
+    The `pop.neg` operation takes a `!pop.simd` value and returns its negated
+    value. The operand and result types are the same. The operand type must be
+    an index, signed integer, or float dtype.
 
     Example:
 
@@ -168,8 +171,6 @@ def POP_NegOp : POP_ArithmeticUnaryOp<"neg"> {
     %b = pop.neg %a : !pop.simd<size, type>
     ```
   }];
-  let arguments = (ins UnboundOrIndexOrSignedSIMD:$operand);
-  let results = (outs UnboundOrIndexOrSignedSIMD:$result);
 }
 
 //===----------------------------------------------------------------------===//
@@ -183,10 +184,12 @@ class POP_ArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
         SameOperandsAndResultType,
         DeclareOpInterfaceMethods<InferTypeOpInterface>
       ]> {
-  let arguments = (ins POP_SIMDType:$lhs, POP_SIMDType:$rhs);
-  let results = (outs POP_SIMDType:$result);
+  let arguments = (ins UnboundOrIndexOrArithmeticSIMD:$lhs,
+                       UnboundOrIndexOrArithmeticSIMD:$rhs);
+  let results = (outs UnboundOrIndexOrArithmeticSIMD:$result);
 
   let assemblyFormat = "$lhs `,` $rhs attr-dict `:` qualified(type($result))";
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -196,9 +199,9 @@ class POP_ArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
 def POP_AddOp : POP_ArithmeticBinaryOp<"add", [Commutative]> {
   let summary = "addition";
   let description = [{
-    The `pop.add` operation takes two `!pop.scalar` or `!pop.simd` types
-    and returns their sum. The operand and result types must be
-    the same.
+    The `pop.add` operation takes two `!pop.simd` values and returns their sum.
+    The operand and result types must be the same. This operation is only valid
+    on integer, index, and floating point dtypes.
 
     Example:
 
@@ -216,8 +219,9 @@ def POP_AddOp : POP_ArithmeticBinaryOp<"add", [Commutative]> {
 def POP_SubOp : POP_ArithmeticBinaryOp<"sub"> {
   let summary = "subtraction";
   let description = [{
-    The `pop.sub` operation takes two `!pop.scalar` or `!pop.simd` types
-    and subtracts them. The operand and result types must be the same.
+    The `pop.sub` operation takes two `!pop.simd` values and returns their
+    difference. The operand and result types must be the same. This operation is
+    only valid on integer, index, and floating point dtypes.
 
     Example:
 
@@ -235,8 +239,9 @@ def POP_SubOp : POP_ArithmeticBinaryOp<"sub"> {
 def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative]> {
   let summary = "multiplication";
   let description = [{
-    The `mul` operation takes two `!pop.scalar` or `!pop.simd` types and returns
-    their product. The operand and result types must be the same.
+    The `pop.mul` operation takes two `!pop.simd` values and returns their
+    product. The operand and result types must be the same. This operation is
+    only valid on integer, index, and floating point dtypes.
 
     Example:
 
@@ -254,8 +259,10 @@ def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative]> {
 def POP_DivOp : POP_ArithmeticBinaryOp<"div"> {
   let summary = "divide";
   let description = [{
-    The `div` operation takes two `!pop.scalar` or `!pop.simd` types and divdes
-    them. The operand and result types must be the same.
+    The `pop.div` operation takes two `!pop.simd` values and divides them. The
+    operand and result types must be the same. This operation is only valid on
+    integer, index, and floating point dtypes. The signedness of integer
+    division is determined by the dtype. Index is always treated as signed.
 
     Example:
 
@@ -273,8 +280,11 @@ def POP_DivOp : POP_ArithmeticBinaryOp<"div"> {
 def POP_RemOp : POP_ArithmeticBinaryOp<"rem"> {
   let summary = "remainder";
   let description = [{
-    The `pop.rem` operation takes two `!pop.scalar` or `!pop.simd` types and
-    returns their remainder. The operand and result types must be the same.
+    The `pop.rem` operation takes two `!pop.simd` values and returns their
+    remainder. The operand and result types must be the same. This operation is
+    only valid on integer, index, and floating point dtypes. The signedness of
+    integer remainder is determined by the dtype. Index is always treated as
+    signed.
 
     Example:
 
@@ -292,9 +302,11 @@ def POP_RemOp : POP_ArithmeticBinaryOp<"rem"> {
 def POP_MaxOp : POP_ArithmeticBinaryOp<"max", [Commutative]> {
   let summary = "max";
   let description = [{
-    The `pop.max` operation takes two `!pop.scalar` or `!pop.simd` types
-    and returns their elementwise max. The operand and result types must be
-    the same.
+    The `pop.max` operation takes two `!pop.simd` values and returns their
+    elementwise max. The operand and result types must be the same. This
+    operation is only valid on integer, index, and floating point dtypes. The
+    signedness of the integer maximum is determined by the dtype. Index is
+    always treated as signed.
 
     Example:
 
@@ -312,9 +324,11 @@ def POP_MaxOp : POP_ArithmeticBinaryOp<"max", [Commutative]> {
 def POP_MinOp : POP_ArithmeticBinaryOp<"min", [Commutative]> {
   let summary = "min";
   let description = [{
-    The `pop.min` operation takes two `!pop.scalar` or `!pop.simd` types
-    and returns their elementwise min. The operand and result types must be
-    the same.
+    The `pop.min` operation takes two `!pop.simd` values and returns their
+    elementwise min. The operand and result types must be the same. This
+    operation is only valid on integer, index, and floating point dtypes. The
+    signedness of the integer minimum is determined by the dtype. Index is
+    always treated as signed.
 
     Example:
 
@@ -332,16 +346,12 @@ def POP_MinOp : POP_ArithmeticBinaryOp<"min", [Commutative]> {
 def POP_ShlOp : POP_ArithmeticBinaryOp<"shl"> {
   let summary = "shift left";
   let description = [{
-    The `pop.shl` instruction returns the first operand shifted to the left a
-    specified number of bits. Both arguments to the shl instruction must be
-    the same integer/index or vector of integer/index type. rhs is treated as an
-    unsigned value.
+    The `pop.shl` operation returns the first operand shifted to the left a
+    specified number of bits. Both arguments to `pop.shl` must be the same
+    integer or index dtype. The RHS value is always treated as unsigned.
 
-    The value produced is lhs * 2^{rhs} mod 2^n, where n is the width of the
-    result. If rhs is (statically or dynamically) equal to or larger than the
-    number of bits in lhs, this instruction returns a poison value. If the
-    arguments are vectors, each vector element of op1 is shifted by the
-    corresponding shift amount in op2.
+    If the RHS value is equal to or larger than the number of bits in LHS, the
+    results of this operation are undefined.
 
     Example:
 
@@ -350,8 +360,8 @@ def POP_ShlOp : POP_ArithmeticBinaryOp<"shl"> {
     %0 = pop.shl %val, %shft: !pop.simd<size, type>
     ```
   }];
-  let arguments = (ins UnboudOrIndexOrIntegerSIMD:$lhs,
-                       UnboudOrIndexOrIntegerSIMD:$rhs);
+  let arguments = (ins UnboundOrIndexOrIntegerSIMD:$lhs,
+                       UnboundOrIndexOrIntegerSIMD:$rhs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -361,11 +371,11 @@ def POP_ShlOp : POP_ArithmeticBinaryOp<"shl"> {
 def POP_ShrOp : POP_ArithmeticBinaryOp<"shr"> {
   let summary = "shift right";
   let description = [{
-    The `pop.shr` op returns the first operand shifted to the right a specified
-    number of bits. Whether the result is sign extended or zero extended depends
-    on the result dtype. Both arguments to the `shr` op must be the same
-    integer/index or vector of integer/index type. `rhs` is always treated as
-    unsigned.
+    The `pop.shr` operation returns the first operand shifted to the right a
+    specified number of bits. Whether the result is sign extended or zero
+    extended depends on the result dtype. Both arguments to the `shr` op must be
+    the same integer/index or vector of integer/index type. `rhs` is always
+    treated as unsigned.
 
     This operation performs an arithmetic shift right operation if the dtype
     is signed. The most significant bits of the result will be filled with the
@@ -373,17 +383,17 @@ def POP_ShrOp : POP_ArithmeticBinaryOp<"shr"> {
     if the dtype is unsigned. The most significant bits of the result will be
     filled with zero bits after the shift.
 
-    If `rhs` is equal to or larger than the number of bits in `lhs`, this op
-    returns a poison value. If the arguments are vectors, each vector element of
-    `lhs` is shifted by the corresponding shift amount in `rhs`.
+    If `rhs` is equal to or larger than the number of bits in `lhs`, the results
+    of this operation are undefined. If the arguments are vectors, each vector
+    element of `lhs` is shifted by the corresponding shift amount in `rhs`.
 
     ```mlir
     %0 = pop.shr %val, %shft: !pop.scalar<type>
     %0 = pop.shr %val, %shft: !pop.simd<size, type>
     ```
   }];
-  let arguments = (ins UnboudOrIndexOrIntegerSIMD:$lhs,
-                       UnboudOrIndexOrIntegerSIMD:$rhs);
+  let arguments = (ins UnboundOrIndexOrIntegerSIMD:$lhs,
+                       UnboundOrIndexOrIntegerSIMD:$rhs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -393,10 +403,10 @@ def POP_ShrOp : POP_ArithmeticBinaryOp<"shr"> {
 def POP_CopySignOp : POP_ArithmeticBinaryOp<"copysign"> {
   let summary = "copy sign";
   let description = [{
-    The `pop.copysign` operation takes two `!pop.scalar` or `!pop.simd` types (a
-    magnitude `a` and a sign `b`) of floating-point dtype. The `pop.copysign`
-    operation copies the sign from `b` to the `a`. The operand and result types
-    must be the same and must have a floating-point dtype.
+    The `pop.copysign` operation takes two `!pop.simd` values of floating-point
+    dtype. The `pop.copysign` operation returns a value that has the sign of `b`
+    and the absolute value of `a`. The operand and result types must be the same
+    and must have a floating-point dtype.
 
     Example:
 
@@ -405,8 +415,7 @@ def POP_CopySignOp : POP_ArithmeticBinaryOp<"copysign"> {
     %c = pop.copysign %a, %b : !pop.simd<size, type>
     ```
   }];
-  let arguments = (ins UnboundOrFloatSIMD:$lhs,
-                       UnboundOrFloatSIMD:$rhs);
+  let arguments = (ins UnboundOrFloatSIMD:$lhs, UnboundOrFloatSIMD:$rhs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -420,12 +429,17 @@ class POP_ArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
         SameOperandsAndResultType,
         DeclareOpInterfaceMethods<InferTypeOpInterface>
       ]> {
-  let arguments = (ins POP_SIMDType:$a, POP_SIMDType:$b, POP_SIMDType:$c);
-  let results = (outs POP_SIMDType:$result);
+  let arguments = (ins UnboundOrIndexOrArithmeticSIMD:$a,
+                       UnboundOrIndexOrArithmeticSIMD:$b,
+                       UnboundOrIndexOrArithmeticSIMD:$c);
+  let results = (outs UnboundOrIndexOrArithmeticSIMD:$result);
 
-  let assemblyFormat = "$a `,` $b `,` $c attr-dict `:`"
-                       " qualified(type($result))";
+  let assemblyFormat = [{
+    $a `,` $b `,` $c attr-dict `:` qualified(type($result))
+  }];
+  let hasFolder = 1;
 }
+
 //===----------------------------------------------------------------------===//
 // FMAOp
 //===----------------------------------------------------------------------===//
@@ -433,9 +447,10 @@ class POP_ArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
 def POP_FMAOp : POP_ArithmeticTernaryOp<"fma"> {
   let summary = "fused-multiply add";
   let description = [{
-    The `pop.fma` operation takes three `!pop.simd` types (`a`, `b`, and `c`)
+    The `pop.fma` operation takes three `!pop.simd` values (`a`, `b`, and `c`)
     and computes the fma operation `a * b + c`. The operand and result types
-    must be the same.
+    must be the same. This operation is only valid on integer, index, and
+    floating point dtypes.
 
     Example:
 
@@ -818,8 +833,8 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
 class POP_MetaSIMDReduceOp<string mnemonic, list<Trait> traits = []> :
     POPOp<mnemonic, traits # [Pure,
                               SIMDSizeOneOfSameDType<"operand", "result">]>,
-    Arguments<(ins UnboudOrIndexOrArithmeticSIMD:$operand)>,
-    Results<(outs UnboudOrIndexOrArithmeticSIMD:$result)> {
+    Arguments<(ins UnboundOrIndexOrArithmeticSIMD:$operand)>,
+    Results<(outs UnboundOrIndexOrArithmeticSIMD:$result)> {
   let assemblyFormat = "$operand attr-dict `:` qualified(type($operand))";
 }
 
