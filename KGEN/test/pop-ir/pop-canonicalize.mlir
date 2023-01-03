@@ -548,3 +548,25 @@ kgen.func @list_get_create(%arg0: i32, %arg1: i32) -> i32 {
   // CHECK-NEXT: return %arg1
   kgen.return %1 : i32
 }
+
+// CHECK-LABEL: @index_to_pointer
+kgen.func @index_to_pointer() -> (!pop.pointer<i8>, !pop.scalar<address>) {
+  // CHECK-DAG: #M.pointer<1>
+  // CHECK-DAG: !pop.scalar<address> = <#pop.simd<2>>
+  %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<1>>
+  %1 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<2>>
+  %2 = pop.index_to_pointer %0 : !pop.scalar<index> to !pop.pointer<i8>
+  %3 = pop.index_to_pointer %1 : !pop.scalar<index> to !pop.scalar<address>
+  kgen.return %2, %3 : !pop.pointer<i8>, !pop.scalar<address>
+}
+
+// CHECK-LABEL: @pointer_to_index
+kgen.func @pointer_to_index() -> (!pop.scalar<index>, !pop.scalar<index>) {
+  // CHECK-DAG: <1>
+  // CHECK-DAG: <2>
+  %0 = kgen.param.constant: !pop.pointer<i8> = <#M.pointer<1>>
+  %1 = kgen.param.constant: !pop.scalar<address> = <#pop.simd<2>>
+  %2 = pop.pointer_to_index %0 : !pop.pointer<i8> to !pop.scalar<index>
+  %3 = pop.pointer_to_index %1 : !pop.scalar<address> to !pop.scalar<index>
+  kgen.return %2, %3 : !pop.scalar<index>, !pop.scalar<index>
+}

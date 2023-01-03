@@ -897,10 +897,37 @@ OpFoldResult ListCreateOp::fold(ArrayRef<Attribute> operands) {
 // IndexToPointerOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult IndexToPointerOp::fold(ArrayRef<Attribute> operands) { return {}; }
+OpFoldResult IndexToPointerOp::fold(ArrayRef<Attribute> operands) {
+  auto index = dyn_cast_if_present<SIMDAttr>(operands[0]);
+  if (!index)
+    return {};
+  // Check for a pointer type. Create a pointer constant attribute.
+  if (isa<PointerType>(getType()))
+    return PointerAttr::get(index.getValues().front().getIndexVal(), getType());
+  // Otherwise, this is converting to an address dtype vector. The DTypeValue
+  // storage is the same, but the type is different.
+  SmallVector<DTypeValue> values;
+  for (const DTypeValue &value : index.getValues())
+    values.emplace_back(value.getIndexVal(), KGENDType::address);
+  return SIMDAttr::get(values, cast<SIMDType>(getType()));
+}
 
 //===----------------------------------------------------------------------===//
 // PointerToIndexOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult PointerToIndexOp::fold(ArrayRef<Attribute> operands) { return {}; }
+OpFoldResult PointerToIndexOp::fold(ArrayRef<Attribute> operands) {
+  // Check for a pointer input. The result must be a scalar index.
+  if (auto ptr = dyn_cast_if_present<PointerAttr>(operands[0])) {
+    DTypeValue index(static_cast<int64_t>(ptr.getAddr()), KGENDType::index);
+    return SIMDAttr::get(index, getType());
+  }
+  // Otherwise, the input might be an address vector.
+  if (auto simd = dyn_cast_if_present<SIMDAttr>(operands[0])) {
+    SmallVector<DTypeValue> values;
+    for (const DTypeValue &value : simd.getValues())
+      values.emplace_back(value.getIndexVal(), KGENDType::index);
+    return SIMDAttr::get(values, getType());
+  }
+  return {};
+}
