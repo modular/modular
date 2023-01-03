@@ -81,12 +81,12 @@ public:
 private:
   template <typename T, typename... Args>
   T *alloc(Args &&...args) {
-    return getSharedState().allocPersistent<T>(std::forward<Args>(args)...);
+    return shared.allocPersistent<T>(std::forward<Args>(args)...);
   }
 
   template <typename T>
   ArrayRef<T> copyArrayRef(ArrayRef<T> elements) {
-    return getSharedState().getPersistentCopy(elements);
+    return shared.getPersistentCopy(elements);
   }
 
   /// Return true if the current token is the start of another statement, false
@@ -380,7 +380,7 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
       return failure();
     break;
   default:
-    emitError("unexpected token in expression");
+    emitTokenError("unexpected token in expression");
     result = nullptr;
     return failure();
   }

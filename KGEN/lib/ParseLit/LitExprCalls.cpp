@@ -445,7 +445,7 @@ LogicalResult DirectCallable::getResultParamDecls(
   // force an `alias x : Int` sort of declaraton and then allow calls to fulfill
   // it.
   // This will unblock progress until then though.
-  DeclResolver &resolver = *emitter.shared.declResolver;
+  DeclResolver &resolver = emitter.getDeclResolver();
   for (auto [type, name] :
        llvm::zip(signature.getResultParamTypes(), resultParams)) {
     // The name strings point into the buffer they came from.

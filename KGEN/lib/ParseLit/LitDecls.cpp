@@ -58,8 +58,8 @@ static ParseResult parseType(LitParserBase &p, ASTType &result,
   ExprNode *expr = nullptr;
   if (p.parseExpression(expr, stmtIndent))
     return failure();
-  result = ExprEmitter(p.getSharedState(), declScope, std::nullopt, nullptr)
-               .emitType(expr);
+  result =
+      ExprEmitter(p.shared, declScope, std::nullopt, nullptr).emitType(expr);
   return success();
 }
 
@@ -137,7 +137,9 @@ ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
 //     x = 42
 //     bar()
 //   foo()
-DeclResolver::DeclResolver(LitSharedState &state) : sharedState(state) {}
+
+DeclResolver::DeclResolver(LitSharedState &state) : LitSharedStateUser(state) {}
+
 DeclResolver::~DeclResolver() {
   // Run the destructors on all the ASTDecl objects to make sure any
   // transitively allocated data is released.
@@ -149,7 +151,7 @@ DeclResolver::~DeclResolver() {
 ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
                                ASTDecl *parentDecl, LitLexerCursor cursor,
                                LitLexerCursor endCursor, ssize_t indentation) {
-  ASTDecl *decl = sharedState.allocPersistent<ASTDecl>(
+  ASTDecl *decl = shared.allocPersistent<ASTDecl>(
       irValue, loc, parentDecl, cursor, endCursor, indentation);
   parsedDeclList.push_back(decl);
 
@@ -168,7 +170,7 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
     if (auto structDecl = dyn_cast<StructDeclOp>(*decl)) {
       // Make sure there are no name conflicts with the MLIR symbol.  If there
       // are, then addDecl will have rejected it with an error.
-      sharedState.setResolvedDeclSymbol(structDecl);
+      shared.setResolvedDeclSymbol(structDecl);
 
       SymbolRefAttr symbol = decl->getSymbolRef();
       assert(!declForTypeSymbol.count(symbol) &&
@@ -189,10 +191,9 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
     // signatures aren't all resolved.
     for (ASTDecl *previous : entries) {
       if (!isa<FuncOp>(*previous)) {
-        auto diag =
-            sharedState.emitError(decl->getLoc(), "invalid redefinition of ")
-            << name;
-        diag.attachNote(sharedState.translateLocation(previous->getLoc()))
+        auto diag = emitError(decl->getLoc(), "invalid redefinition of ")
+                    << name;
+        diag.attachNote(translateLocation(previous->getLoc()))
             << "cannot overload with this non-function definition";
         decl->hasReferenceError = true;
         previous->hasReferenceError = true;
@@ -206,9 +207,8 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
   }
 
   ASTDecl *existing = entries.back();
-  auto diag = sharedState.emitError(decl->getLoc(), "invalid redefinition of ")
-              << name;
-  diag.attachNote(sharedState.translateLocation(existing->getLoc()))
+  auto diag = emitError(decl->getLoc(), "invalid redefinition of ") << name;
+  diag.attachNote(translateLocation(existing->getLoc()))
       << "previous definition here";
 
   // Mark the existing decl and this one as erroneous so uses of either
@@ -229,9 +229,8 @@ void DeclResolver::aliasDecls(const TinyPtrVector<ASTDecl *> &decls,
   // Rejecting overlap is conservative and not what python does, but we can
   // relax this in the future when we know what the right policy should be.
   ASTDecl *existing = it->second.back();
-  auto diag = sharedState.emitError(aliasLoc, "invalid redefinition of ")
-              << name;
-  diag.attachNote(sharedState.translateLocation(existing->getLoc()))
+  auto diag = emitError(aliasLoc, "invalid redefinition of ") << name;
+  diag.attachNote(translateLocation(existing->getLoc()))
       << "previous definition here";
 
   for (ASTDecl *previous : it->second)
@@ -266,8 +265,8 @@ void DeclResolver::importDeclsFromModule(
     StringRef moduleName =
         cast<FileModuleOp>(module.getIfOperation()).getName();
     assert(moduleName.startswith("$") && "unexpected module name mangling");
-    sharedState.emitError(loc, "module '" + moduleName.drop_front() +
-                                   "' does not contain '" + sourceName + "'");
+    emitError(loc, "module '" + moduleName.drop_front() +
+                       "' does not contain '" + sourceName + "'");
 
     // If we can't find the decl, recover by adding dummy decl with the dest
     // name.
@@ -354,15 +353,14 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   }
 
   auto emitError = [&](SMLoc loc, const Twine &message) -> InFlightDiagnostic {
-    return mlir::emitError(sharedState.translateLocation(loc), message);
+    return mlir::emitError(translateLocation(loc), message);
   };
 
   // If we are currently name binding this operation, we found a cycle, reject
   // it with an error.
   if (!declsCurrentlyProcessing.insert({&decl, loc}).second) {
     emitError(loc, "recursive reference to declaration")
-            .attachNote(
-                sharedState.translateLocation(declsCurrentlyProcessing[&decl]))
+            .attachNote(translateLocation(declsCurrentlyProcessing[&decl]))
         << "previously used here";
     decl.hasReferenceError = true;
     return failure();
@@ -377,7 +375,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     TypeSwitch<ASTDecl &>(decl)
         .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, LetDeclOp, VarDeclOp,
               ParamDeclareOp, ParamDeclRefAttr>([&](auto op) {
-          LitLexer lexer(sharedState, decl.getCursor());
+          LitLexer lexer(shared, decl.getCursor());
 
           // Resolve the signature: on a parse error, we note that the decl
           // is malformed and should not be referenced to silence downstream
@@ -403,7 +401,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
         .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp, LetDeclOp,
               VarDeclOp, ParamDeclareOp, ParamDeclRefAttr>([&](auto op) {
           // Parse the body of the declaration from the correct point.
-          LitLexer lexer(sharedState, decl.getCursor());
+          LitLexer lexer(shared, decl.getCursor());
           if (resolveBody(op, lexer, decl))
             return;
 
@@ -414,10 +412,12 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
               !decl.hasReferenceError) {
             if (lexer.getToken().isAny(LitToken::kw_def, LitToken::kw_struct,
                                        LitToken::kw_class, LitToken::kw_var))
-              lexer.emitError("definition isn't on its own line at the correct "
-                              "indentation");
+              lexer.emitTokenError(
+                  "definition isn't on its own line at the correct "
+                  "indentation");
             else
-              lexer.emitError("unknown tokens at the end of a declaration");
+              lexer.emitTokenError(
+                  "unknown tokens at the end of a declaration");
           }
         })
         .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
@@ -560,7 +560,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclRefAttr paramDeclRef,
     return failure(); // Should never happen, we already checked this.
 
   // Emit the type.
-  ExprEmitter emitter(sharedState, *decl.getParentDecl(), /*builder*/ {},
+  ExprEmitter emitter(shared, *decl.getParentDecl(), /*builder*/ {},
                       /*varDeclCursor*/ nullptr);
   // This always succeeds, reporting an error and returning erroneous on
   // failure.
@@ -851,9 +851,9 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 }
 
 namespace {
-struct FnDecorators {
+struct FnDecorators : public LitSharedStateUser {
   FnDecorators(ASTDecl &decl, LitSharedState &shared)
-      : decl(decl), shared(shared), funcOp(cast<LIT::FuncOp>(decl)),
+      : LitSharedStateUser(shared), decl(decl), funcOp(cast<LIT::FuncOp>(decl)),
         isMethod(isa<StructDeclOp>(*decl.getParentDecl())) {}
 
   void apply(SmallVector<ExprNode *> &decoratorExprs);
@@ -867,7 +867,6 @@ private:
   void applyLateExport();
 
   ASTDecl &decl;
-  LitSharedState &shared;
   LIT::FuncOp funcOp;
   const bool isMethod;
 };
@@ -875,19 +874,19 @@ private:
 
 void FnDecorators::applyInterface(SMLoc loc) {
   if (isMethod) {
-    shared.emitError(loc, "interfaces cannot be nested inside a struct");
+    emitError(loc, "interfaces cannot be nested inside a struct");
     return;
   }
 
   if (funcOp.getImplementsAttr())
-    shared.emitError(loc, "interfaces cannot implement other interfaces");
+    emitError(loc, "interfaces cannot implement other interfaces");
 
   funcOp.setIsInterface(true);
 }
 
 void FnDecorators::applyRaises(SMLoc loc) {
   if (funcOp.getIsDef())
-    shared.emitError(loc, "methods defined with 'def' always raise");
+    emitError(loc, "methods defined with 'def' always raise");
   else
     funcOp.setRaises(true);
 }
@@ -895,15 +894,13 @@ void FnDecorators::applyRaises(SMLoc loc) {
 // @implements interface.
 void FnDecorators::applyImplements(const CallNode &callNode) {
   if (funcOp.getImplementsAttr()) {
-    shared.emitError(callNode.getLoc(),
-                     "only one @implements decorator is allowed");
+    emitError(callNode.getLoc(), "only one @implements decorator is allowed");
     return;
   }
 
   if (callNode.args.size() != 1 || !isa<DeclRefNode>(callNode.args.front())) {
-    shared.emitError(
-        callNode.getLoc(),
-        "@implements decorator must specify one interface by name");
+    emitError(callNode.getLoc(),
+              "@implements decorator must specify one interface by name");
     return;
   }
 
@@ -916,7 +913,7 @@ void FnDecorators::applyImplements(const CallNode &callNode) {
   ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();
   if (resultDecls.empty()) {
     if (result.isFailure())
-      shared.emitError(callNode.getLoc(), "unable to resolve interface named '")
+      emitError(callNode.getLoc(), "unable to resolve interface named '")
           << interfaceName << "'";
     return;
   }
@@ -924,10 +921,9 @@ void FnDecorators::applyImplements(const CallNode &callNode) {
   // Reject implementation of overloaded interface.
   // TODO: Use signature matching to pick the right overload.
   if (resultDecls.size() > 1) {
-    auto diag =
-        shared.emitError(callNode.getLoc(),
-                         "cannot (yet!) implement overloaded interface '")
-        << interfaceName << "'";
+    auto diag = emitError(callNode.getLoc(),
+                          "cannot (yet!) implement overloaded interface '")
+                << interfaceName << "'";
     return;
   }
   auto interfaceDecl = resultDecls[0];
@@ -937,9 +933,9 @@ void FnDecorators::applyImplements(const CallNode &callNode) {
   auto funcInterface =
       dyn_cast_or_null<LIT::FuncOp>(interfaceDecl->getIfOperation());
   if (!funcInterface || !funcInterface.getIsInterface()) {
-    auto diag = shared.emitError(callNode.getLoc(), "'")
+    auto diag = emitError(callNode.getLoc(), "'")
                 << interfaceName << "' is not a kgen interface";
-    diag.attachNote(shared.translateLocation(interfaceDecl->getLoc()))
+    diag.attachNote(translateLocation(interfaceDecl->getLoc()))
         << "'" << interfaceName << "' declared here";
     return;
   }
@@ -952,14 +948,13 @@ void FnDecorators::applyImplements(const CallNode &callNode) {
 // @evaluator interface.
 void FnDecorators::applyEvaluator(const CallNode &callNode) {
   if (funcOp.getEvaluatorAttr()) {
-    shared.emitError(callNode.getLoc(),
-                     "only one @evaluator decorator is allowed");
+    emitError(callNode.getLoc(), "only one @evaluator decorator is allowed");
     return;
   }
 
   if (callNode.args.size() != 1 || !isa<DeclRefNode>(callNode.args.front())) {
-    shared.emitError(callNode.getLoc(),
-                     "@evaluator decorator must specify one function by name");
+    emitError(callNode.getLoc(),
+              "@evaluator decorator must specify one function by name");
     return;
   }
 
@@ -972,7 +967,7 @@ void FnDecorators::applyEvaluator(const CallNode &callNode) {
   ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();
   if (resultDecls.empty()) {
     if (result.isFailure())
-      shared.emitError(callNode.getLoc(), "unable to resolve function named '")
+      emitError(callNode.getLoc(), "unable to resolve function named '")
           << evaluatorName << "'";
     return;
   }
@@ -980,10 +975,9 @@ void FnDecorators::applyEvaluator(const CallNode &callNode) {
   // Reject implementation of overloaded function.
   // TODO: Use signature matching to pick the right overload.
   if (resultDecls.size() > 1) {
-    auto diag =
-        shared.emitError(callNode.getLoc(),
-                         "cannot (yet!) implement overloaded functions '")
-        << evaluatorName << "'";
+    auto diag = emitError(callNode.getLoc(),
+                          "cannot (yet!) implement overloaded functions '")
+                << evaluatorName << "'";
     return;
   }
   auto funcDecl = resultDecls[0];
@@ -991,16 +985,15 @@ void FnDecorators::applyEvaluator(const CallNode &callNode) {
   auto evaluatorFuncOp =
       dyn_cast_or_null<LIT::FuncOp>(funcDecl->getIfOperation());
   if (!evaluatorFuncOp) {
-    auto diag = shared.emitError(callNode.getLoc(), "'")
+    auto diag = emitError(callNode.getLoc(), "'")
                 << evaluatorName << "' is not a valid function";
-    diag.attachNote(shared.translateLocation(funcDecl->getLoc()))
+    diag.attachNote(translateLocation(funcDecl->getLoc()))
         << '\'' << evaluatorName << "' declared here";
     return;
   }
 
   if (!funcOp.getIsInterface())
-    shared.emitError(callNode.getLoc(),
-                     "only interfaces can have an evaluator");
+    emitError(callNode.getLoc(), "only interfaces can have an evaluator");
   SignatureType signature = evaluatorFuncOp.getSignature();
   auto evaluatorAttr =
       SymbolConstantAttr::get(funcDecl->getSymbolRef(), signature);
@@ -1047,7 +1040,7 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
 
 void FnDecorators::applyLateExport() {
   if (isMethod) {
-    shared.emitError(funcOp.getLoc(), "methods cannot be exported");
+    emitError(funcOp.getLoc(), "methods cannot be exported");
     return;
   }
 
@@ -1069,11 +1062,11 @@ void FnDecorators::applyLate(SmallVector<ExprNode *> &decoratorExprs) {
         continue;
       }
 
-      shared.emitError(decorator->getLoc(), "unsupported decorator: ")
+      emitError(decorator->getLoc(), "unsupported decorator: ")
           << declRef->spelling;
       continue;
     }
-    shared.emitError(decorator->getLoc(), "unsupported decorator");
+    emitError(decorator->getLoc(), "unsupported decorator");
   }
 }
 
@@ -1142,7 +1135,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       metaSignature.getResolvedInputParamDecls(*this);
 
   // Resolve the result parameter types now that the arguments are in scope.
-  ExprEmitter typeEmitter(sharedState, decl, std::nullopt, nullptr);
+  ExprEmitter typeEmitter(shared, decl, std::nullopt, nullptr);
   SmallVector<Type> resultParamTypes =
       metaSignature.getResolvedResultTypes(typeEmitter);
 
@@ -1170,13 +1163,13 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   if (!resultType) {
     // TODO: We shouldn't default this to none for 'def's.  This should default
     // to object type.  Our return checker is currently a lame duck.
-    resultType = sharedState.getNoneType();
+    resultType = shared.getNoneType();
   }
 
   // Now that we have figured out the lexical structure, allow decorators to
   // take a crack at the signature.
   // Okay, apply them now.
-  FnDecorators(decl, sharedState).apply(decoratorExprs);
+  FnDecorators(decl, shared).apply(decoratorExprs);
 
   // Now that all the structural properties are determined, perform any
   // name-binding specific checks over the declaration.  This happens after
@@ -1184,7 +1177,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // fills in any implicitly declared types.
   StringAttr name = baseName;
   verifyFunctionNameBinding(decl, funcOp, name, args, argTypes, resultType,
-                            sharedState);
+                            shared);
 
   // Finally now that the full signature has been resolved, build our IR.
 
@@ -1195,7 +1188,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // that method for an explanation.
   funcOp->removeAttr("sym_namex");
 
-  if (Operation *existing = sharedState.setResolvedDeclSymbol(funcOp)) {
+  if (Operation *existing = shared.setResolvedDeclSymbol(funcOp)) {
     // On redefinition this is an overload of the same name and same signature.
     auto diag = p.emitError(funcOp.getLoc(), "redefinition of function ")
                 << name << " with identical signature";
@@ -1205,20 +1198,19 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
   // TODO: Handle the export attribute somehow else.  It should be a 'body
   // decorator' that is handled after the decl is fully resolved.
-  FnDecorators(decl, sharedState).applyLate(decoratorExprs);
+  FnDecorators(decl, shared).applyLate(decoratorExprs);
 
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (auto &diBuilder = sharedState.diBuilder) {
+  if (auto &diBuilder = shared.diBuilder) {
     FileLineColLoc fileLineCol =
         funcOp.getLoc()->findInstanceOf<FileLineColLoc>();
 
     // Compute the subprogram flags.
     /// If we have any optimizations, mark the subprogram as optimized.
     DebugInfo::SubprogramFlags spFlags =
-        sharedState.options.optimizationLevel
-            ? DebugInfo::SubprogramFlags::Optimized
-            : DebugInfo::SubprogramFlags::None;
+        shared.options.optimizationLevel ? DebugInfo::SubprogramFlags::Optimized
+                                         : DebugInfo::SubprogramFlags::None;
     /// If the function has a body, treat it as a definition.
     if (!funcOp.isExternal())
       spFlags = spFlags | DebugInfo::SubprogramFlags::Definition;
@@ -1265,9 +1257,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
   // Functor used to build the debug info for an argument.
   auto buildArgDIInfo = [&](Value argVal, StringRef name, unsigned argIdx) {
-    auto &diBuilder = sharedState.diBuilder;
+    auto &diBuilder = shared.diBuilder;
     if (!diBuilder ||
-        sharedState.options.debugLevel != CompilationOptions::kFullDebugInfo)
+        shared.options.debugLevel != CompilationOptions::kFullDebugInfo)
       return;
     auto bbArgLoc = argVal.getLoc()->findInstanceOf<FileLineColLoc>();
 
@@ -1324,7 +1316,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,
   // operations have proper debug info.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (auto spAttr = DebugInfo::extractScope(defOp))
-    diScopeGuard = sharedState.diBuilder->pushScopeGuard(spAttr);
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
   // Resolve the body of the decl.
   if (LitParserBase::parseSuite(decl, lexer))
@@ -1355,7 +1347,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,
         noneVal =
             b.create<POP::VariantCreateOp>(loc, defOp.getResultType(), noneVal);
       b.create<ReturnOp>(loc, ArrayRef<TypedAttr>(), noneVal);
-    } else if (!sharedState.diags.isErrorEmitted()) {
+    } else if (!shared.diags.isErrorEmitted()) {
       Location endLoc = bodyBlock->empty() ? loc : bodyBlock->back().getLoc();
       emitError(endLoc, "return expected at end of 'def' with results");
     }
@@ -1372,13 +1364,13 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, LitLexer &lexer,
                                       ASTDecl &decl) {
   // Push a scope for the file of this module.
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
-  if (sharedState.diBuilder) {
+  if (shared.diBuilder) {
     auto &sourceMgr = lexer.getSourceMgr();
     int fileId = sourceMgr.FindBufferContainingLoc(lexer.getToken().getLoc());
     if (fileId) {
       StringRef filename =
           sourceMgr.getMemoryBuffer(fileId)->getBufferIdentifier();
-      fileGuard = sharedState.diBuilder->pushFile(filename, "/");
+      fileGuard = shared.diBuilder->pushFile(filename, "/");
     }
   }
 
@@ -1464,7 +1456,7 @@ LogicalResult DeclResolver::resolveSignature(LetDeclOp letOp, LitLexer &lexer,
 
   // Handle the initializer if present.
   if (parsed.initValue) {
-    auto [initVal, _] = parsed.emitInitValue(letOp, decl, sharedState);
+    auto [initVal, _] = parsed.emitInitValue(letOp, decl, shared);
     if (!initVal)
       return failure();
 
@@ -1483,7 +1475,7 @@ LogicalResult DeclResolver::resolveSignature(LetDeclOp letOp, LitLexer &lexer,
   }
 
   letOp.getResult().setType(parsed.type);
-  rejectDecorators(parsed.decorators, decl, sharedState);
+  rejectDecorators(parsed.decorators, decl, shared);
   return success();
 }
 
@@ -1497,12 +1489,12 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
 
   // Handle the initializer if present.
   if (parsed.initValue) {
-    auto [initVal, builder] = parsed.emitInitValue(varOp, decl, sharedState);
+    auto [initVal, builder] = parsed.emitInitValue(varOp, decl, shared);
     if (!initVal)
       return failure();
 
     // Store the initializer value into the VarDecl.
-    auto loc = sharedState.translateLocation(parsed.initValue->getLoc());
+    auto loc = translateLocation(parsed.initValue->getLoc());
     builder.create<POP::StoreOp>(loc, initVal, varOp,
                                  /*alignment=*/std::nullopt);
   }
@@ -1516,7 +1508,7 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
     return failure();
   }
 
-  rejectDecorators(parsed.decorators, decl, sharedState);
+  rejectDecorators(parsed.decorators, decl, shared);
   return success();
 }
 
@@ -1570,7 +1562,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
       return failure();
 
     ASTDecl &parentDecl = *decl.getParentDecl();
-    ExprEmitter emitter(sharedState, parentDecl, /*builder*/ {},
+    ExprEmitter emitter(shared, parentDecl, /*builder*/ {},
                         /*varDeclCursor*/ nullptr);
 
     auto rhsValue =
@@ -1603,7 +1595,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
   // Regardless of whether we have a type of value initializer, update the type.
   paramDeclOp.setParamDecl(ParamDeclAttr::get(paramDeclOp.getName(), type));
 
-  rejectDecorators(decoratorExprs, decl, sharedState);
+  rejectDecorators(decoratorExprs, decl, shared);
   return success();
 }
 
@@ -1644,14 +1636,13 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   // Reject result parameters.
   if (!metaSignature.resultTypes.empty())
-    sharedState.emitError(
-        metaSignature.resultTypes[0]->getLoc(),
-        "struct declarations do not support result parameters");
+    emitError(metaSignature.resultTypes[0]->getLoc(),
+              "struct declarations do not support result parameters");
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
-  decl.setSelfType(decl.computeSelfTypeForStruct(sharedState));
-  rejectDecorators(decoratorExprs, decl, sharedState);
+  decl.setSelfType(decl.computeSelfTypeForStruct(shared));
+  rejectDecorators(decoratorExprs, decl, shared);
   return success();
 }
 
@@ -1684,7 +1675,7 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
     return failure();
 
   fieldOp.setType(type);
-  rejectDecorators(decoratorExprs, decl, sharedState);
+  rejectDecorators(decoratorExprs, decl, shared);
   return success();
 }
 

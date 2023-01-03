@@ -62,7 +62,7 @@ struct LitStmtParser : public LitParserBase {
   // Expression emission.
 
   ExprEmitter getExprEmitter(bool allowImplicitVarDecl = false) {
-    return ExprEmitter(getSharedState(), containingDecl, builder,
+    return ExprEmitter(shared, containingDecl, builder,
                        allowImplicitVarDecl ? varDeclCursor : nullptr);
   }
 
@@ -139,14 +139,14 @@ ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
 ParseResult LitStmtParser::parseLocalScopeSuite(ssize_t curIndent) {
   // If we are generating debug info, push a local scope for the suite.
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
-  if (getSharedState().diBuilder) {
+  if (shared.diBuilder) {
     SMLoc curLoc = getToken().getLoc();
-    auto &sourceMgr = getSharedState().getSourceMgr();
+    auto &sourceMgr = getSourceMgr();
     unsigned bufferID = sourceMgr.FindBufferContainingLoc(curLoc);
     auto [line, column] = sourceMgr.getLineAndColumn(curLoc, bufferID);
 
-    scopeGuard = getSharedState().diBuilder->pushLexicalBlock(
-        getSharedState().diBuilder->createFile(
+    scopeGuard = shared.diBuilder->pushLexicalBlock(
+        shared.diBuilder->createFile(
             sourceMgr.getMemoryBuffer(bufferID)->getBufferIdentifier(), "/"),
         line, column);
   }
@@ -163,7 +163,7 @@ ParseResult LitStmtParser::parseStmts(size_t minIndent) {
   while (getToken().isNot(LitToken::eof)) {
     auto indent = getToken().getIndentation();
     if (!indent.has_value())
-      return emitError("statements must start at the beginning of a line");
+      return emitTokenError("statements must start at the beginning of a line");
 
     if (*indent < minIndent)
       break;
@@ -222,8 +222,8 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
   auto rejectDecorator = [&]() {
     if (startCursor.getState() == getLexer().getCursor().getState())
       return;
-    emitError() << "'" << getToken().getSpelling()
-                << "' statement does not allow decorators";
+    emitTokenError() << "'" << getToken().getSpelling()
+                     << "' statement does not allow decorators";
   };
 
   // This lambda is used to generate an error when a compound statement is used
@@ -231,8 +231,8 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
   auto rejectSimpleStmt = [&]() {
     if (!isSimpleStmt)
       return;
-    emitError() << "'" << getToken().getSpelling()
-                << "' statement must be on its own line";
+    emitTokenError() << "'" << getToken().getSpelling()
+                     << "' statement must be on its own line";
   };
 
   // Skip over any decorators that are present.  These will be reparsed during
@@ -310,7 +310,7 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
   // grammar.
   if (isa<StructDeclOp>(containingDecl)) {
     // TODO: Support type-level meta programs.
-    emitError("invalid expression in this context");
+    emitTokenError("invalid expression in this context");
   }
 
   // Parse a single expression, an assignment stmt, or augmented assignment
@@ -438,8 +438,8 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // If the enclosing method raises, implicitly wrap the result in a variant.
   Location returnLoc = translateLocation(loc);
   if (decl.getRaises()) {
-    auto errorOrType = getSharedState().lookupErrorOrType(resultValue.getType(),
-                                                          loc, containingDecl);
+    auto errorOrType =
+        shared.lookupErrorOrType(resultValue.getType(), loc, containingDecl);
     if (!errorOrType)
       return {};
     resultValue = builder.create<POP::VariantCreateOp>(
@@ -627,7 +627,7 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
   if (parseToken(LitToken::colon, "expected ':' after 'except'"))
     return failure();
 
-  auto errorType = getSharedState().lookupErrorType(errValLoc, containingDecl);
+  auto errorType = shared.lookupErrorType(errValLoc, containingDecl);
   if (!errorType)
     return failure();
 
@@ -741,7 +741,7 @@ ParseResult LitStmtParser::parseIncludeHack() {
   // Strip off the ""'s.
   path = path.drop_front().drop_back();
 
-  llvm::SourceMgr &sourceMgr = getSharedState().getSourceMgr();
+  llvm::SourceMgr &sourceMgr = getSourceMgr();
 
   // Resolve the absolute filename of the target.
   std::string absolutePath;
@@ -768,13 +768,13 @@ ParseResult LitStmtParser::parseIncludeHack() {
 
   // Push a scope for this new file.
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
-  if (getSharedState().diBuilder)
-    fileGuard = getSharedState().diBuilder->pushFile(fullPath, "/");
+  if (shared.diBuilder)
+    fileGuard = shared.diBuilder->pushFile(fullPath, "/");
 
   // Now that we have a MemoryBuffer, we can lex it, and therefore parse it.
   // do so.
   const llvm::MemoryBuffer *includerBuffer = sourceMgr.getMemoryBuffer(fileID);
-  LitLexer lexer(getSharedState(), includerBuffer);
+  LitLexer lexer(shared, includerBuffer);
   return LitParserBase::parseSuite(containingDecl, lexer);
 }
 
@@ -793,7 +793,8 @@ ParseResult LitStmtParser::parseFromImportStmt() {
 
   // Parse the relative module we are importing from.
   if (getToken().isAny(LitToken::dot, LitToken::dot_dot_dot))
-    return emitError("TODO: relative package imports are not yet supported");
+    return emitTokenError(
+        "TODO: relative package imports are not yet supported");
   SMLoc importLoc = getToken().getLoc();
   StringRef moduleName = getTokenSpelling();
   if (parseToken(LitToken::identifier, "expected module name") ||
@@ -801,12 +802,12 @@ ParseResult LitStmtParser::parseFromImportStmt() {
     return failure();
 
   // Import the module.
-  ASTDecl &moduleDecl = getSharedState().importModule(moduleName, importLoc);
+  ASTDecl &moduleDecl = shared.importModule(moduleName, importLoc);
 
   // Check for a wildcard import.
   if (consumeIf(LitToken::star)) {
-    getSharedState().declResolver->importWildCardDeclsFromModule(
-        moduleDecl, containingDecl, importLoc);
+    getDeclResolver().importWildCardDeclsFromModule(moduleDecl, containingDecl,
+                                                    importLoc);
     return success();
   }
 
@@ -845,8 +846,8 @@ ParseResult LitStmtParser::parseFromImportStmt() {
     return failure();
 
   // Process the import list.
-  getSharedState().declResolver->importDeclsFromModule(
-      moduleDecl, containingDecl, importList);
+  getDeclResolver().importDeclsFromModule(moduleDecl, containingDecl,
+                                          importList);
   return success();
 }
 
@@ -874,10 +875,10 @@ ParseResult LitStmtParser::parseImportStmt() {
     }
 
     // Import the module, and export it using the desired binding name.
-    ASTDecl &moduleDecl = getSharedState().importModule(moduleName, importLoc);
-    getSharedState().declResolver->aliasDecls(
-        {&moduleDecl}, StringAttr::get(getContext(), boundModuleName),
-        importLoc, containingDecl);
+    ASTDecl &moduleDecl = shared.importModule(moduleName, importLoc);
+    getDeclResolver().aliasDecls({&moduleDecl},
+                                 StringAttr::get(getContext(), boundModuleName),
+                                 importLoc, containingDecl);
   } while (consumeIf(LitToken::comma));
   return success();
 }
@@ -985,7 +986,7 @@ ParseResult LitStmtParser::parseStructStmt(LitLexerCursor startCursor,
                                            size_t curIndent) {
   // We don't support structs in structs (yet?).
   if (isa<StructDeclOp>(containingDecl))
-    emitError("nested struct not supported here");
+    emitTokenError("nested struct not supported here");
 
   auto smLoc = consumeToken(LitToken::kw_struct).getLoc();
   auto loc = translateLocation(smLoc);

@@ -135,8 +135,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
 /// failure, it bails out.
 static AnyValue synthesizeMLIROpFromString(StringRef name,
                                            ExprEmitter &emitter) {
-  auto &shared = emitter.shared;
-  auto *context = shared.getContext();
+  auto *context = emitter.getContext();
   auto nameStr = StringAttr::get(context, name);
 
   auto result = UnboundMLIROperationAttr::get(
@@ -155,7 +154,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 
   // Only allow applying attributes to something without them.
   if (!unboundOp.getAttrs().empty()) {
-    emitter.shared.emitError(loc, "operation already has attributes");
+    emitter.emitError(loc, "operation already has attributes");
     return {};
   }
 
@@ -202,7 +201,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
     auto *slice = dyn_cast<SliceNode>(subscriptIdx);
     if (!slice || slice->colon2Loc.isValid() || !slice->lower ||
         !slice->upper || !isa<DeclRefNode>(slice->lower)) {
-      emitter.shared.emitError(
+      emitter.emitError(
           loc, "attribute spec requires an attribute name and attr value");
       return {};
     }
@@ -216,7 +215,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 
   // Check for duplicate attribute specifications.
   if (auto duplicate = DictionaryAttr::findDuplicate(attrValues, false)) {
-    emitter.shared.emitError(loc, "attribute ")
+    emitter.emitError(loc, "attribute ")
         << duplicate->getName() << " redundantly specified";
     return {};
   }
@@ -285,8 +284,8 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
 
     // In a normal implicit declaration, we add it to the name table so
     // subsequent uses find this one.
-    emitter.shared.declResolver->addFullyResolvedDecl(varDecl, node->getLoc(),
-                                                      nameAttr, &container);
+    emitter.getDeclResolver().addFullyResolvedDecl(varDecl, node->getLoc(),
+                                                   nameAttr, &container);
     // Re-do lookup, making sure we form a uniqued vector that we can reference.
     lookup = emitter.shared.lookupAndResolveDecl(memberName, node->getLoc(),
                                                  container);
@@ -381,7 +380,7 @@ AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter,
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
   auto attr = FloatAttr::get(FloatType::getF64(emitter.getContext()),
                              APFloat(value.convertToDouble()));
-  // FIXME: This should eventually use emitter.shared.getFloatLiteralType()
+  // FIXME: This should eventually use a float literal type.
   // when we support conversions.
   return AnyValue(attr);
 }

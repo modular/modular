@@ -21,13 +21,10 @@ class SpecialFunctionInfo;
 
 /// This class is the main driver for expression emission, providing helper
 /// functions used by the individual node emission hooks.
-class ExprEmitter {
+class ExprEmitter : public LitSharedStateUser {
 public:
   //===--------------------------------------------------------------------===//
   // General Emitter State.
-
-  /// This is the shared state for the parser overall.
-  LitSharedState &shared;
 
   /// This is scope to resolve declaration references against.
   ASTDecl &declScope;
@@ -42,20 +39,9 @@ public:
 
   ExprEmitter(LitSharedState &shared, ASTDecl &declScope,
               Optional<OpBuilder> builder, Operation *varDeclCursor)
-      : shared(shared), declScope(declScope), builder(builder),
+      : LitSharedStateUser(shared), declScope(declScope), builder(builder),
         varDeclCursor(varDeclCursor) {}
 
-  MLIRContext *getContext() const { return shared.getContext(); }
-
-  /// Emit an error through the parser's logic.
-  InFlightDiagnostic emitError(SMLoc loc, const Twine &twine = "") const {
-    return shared.emitError(loc, twine);
-  }
-
-  /// Translate an SMLoc into an MLIR Location.
-  Location translateLocation(SMLoc loc) const {
-    return shared.translateLocation(loc);
-  }
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 

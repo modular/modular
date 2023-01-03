@@ -25,15 +25,10 @@ class ASTDecl;
 
 /// This class implements logic that is common to many parts of the parser, but
 /// which is independent of the concrete grammar.
-class LitParserBase {
+class LitParserBase : public LitSharedStateUser {
 public:
-  LitParserBase(LitLexer &lexer) : lexer(lexer) {}
-
-  LitSharedState &getSharedState() const { return lexer.sharedState; }
-  MLIRContext *getContext() const { return getSharedState().getContext(); }
-  DeclResolver &getDeclResolver() const {
-    return *getSharedState().declResolver;
-  }
+  LitParserBase(LitLexer &lexer)
+      : LitSharedStateUser(lexer.shared), lexer(lexer) {}
 
   LitLexer &getLexer() { return lexer; }
 
@@ -45,29 +40,19 @@ public:
   // Error Handling
   //===--------------------------------------------------------------------===//
 
-  /// Emit an error and notice that so we don't verify the IR at the end of
-  /// compilation.
-  InFlightDiagnostic emitError(Location loc, const Twine &message = {}) {
-    return getSharedState().emitError(loc, message);
-  }
+  using LitSharedStateUser::emitError;
 
   /// Emit an error at a specific lexer location.
   InFlightDiagnostic emitError(llvm::SMLoc loc, const Twine &message = {});
 
   /// Emit an error at the current token.
-  InFlightDiagnostic emitError(const Twine &message = {}) {
+  InFlightDiagnostic emitTokenError(const Twine &message = {}) {
     return emitError(getToken().getLoc(), message);
   }
 
   //===--------------------------------------------------------------------===//
   // Location Handling
   //===--------------------------------------------------------------------===//
-
-  /// Encode the specified source location information into an attribute for
-  /// attachment to the IR.
-  Location translateLocation(llvm::SMLoc loc) {
-    return getSharedState().translateLocation(loc);
-  }
 
   /// Capture the location of the current token in a convenient way that can be
   /// used in parsing pipelines.
