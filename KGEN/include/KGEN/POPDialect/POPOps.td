@@ -2107,9 +2107,11 @@ def POP_CastToBuiltinOp : POPOp<"cast_to_builtin", [Pure]> {
     ```
   }];
 
-  let arguments = (ins AnyType:$input);
+  let arguments = (ins POP_SIMDType:$input);
   let results = (outs AnyType:$output);
-  let assemblyFormat = "$input attr-dict `:` type($input) `to` type($output)";
+  let assemblyFormat = [{
+    $input attr-dict `:` qualified(type($input)) `to` type($output)
+  }];
 
   let hasFolder = 1;
   let hasVerifier = 1;
@@ -2156,8 +2158,10 @@ def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [Pure]> {
   }];
 
   let arguments = (ins AnyType:$input);
-  let results = (outs AnyType:$output);
-  let assemblyFormat = "$input attr-dict `:` type($input) `to` type($output)";
+  let results = (outs POP_SIMDType:$output);
+  let assemblyFormat = [{
+    $input attr-dict `:` type($input) `to` qualified(type($output))
+  }];
 
   let hasFolder = 1;
   let hasVerifier = 1;

@@ -397,6 +397,23 @@ kgen.func @cast_fp_too_big() -> (!pop.scalar<si2>, !pop.scalar<si2>) {
   kgen.return %2, %3 : !pop.scalar<si2>, !pop.scalar<si2>
 }
 
+// CHECK-LABEL: @cast_index_to_int
+kgen.func @cast_index_to_int() -> !pop.scalar<si32> {
+  // CHECK-NEXT: !pop.scalar<si32> = <#pop.simd<-2>>
+  %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<-2>>
+  %1 = pop.cast %0 : !pop.scalar<index> to !pop.scalar<si32>
+  kgen.return %1 : !pop.scalar<si32>
+}
+
+// CHECK-LABEL: @cast_index_to_index
+kgen.func @cast_index_to_index() -> !pop.scalar<index> {
+  // CHECK-NEXT: !pop.scalar<index> = <#pop.simd<99999999999>>
+  // CHECK-NOT: pop.cast
+  %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<99999999999>>
+  %1 = pop.cast %0 : !pop.scalar<index> to !pop.scalar<index>
+  kgen.return %1 : !pop.scalar<index>
+}
+
 // CHECK-LABEL: @simd_extractelement
 kgen.func @simd_extractelement() -> (!pop.scalar<si8>) {
   // CHECK-NEXT: <20>
@@ -569,4 +586,84 @@ kgen.func @pointer_to_index() -> (!pop.scalar<index>, !pop.scalar<index>) {
   %2 = pop.pointer_to_index %0 : !pop.pointer<i8> to !pop.scalar<index>
   %3 = pop.pointer_to_index %1 : !pop.scalar<address> to !pop.scalar<index>
   kgen.return %2, %3 : !pop.scalar<index>, !pop.scalar<index>
+}
+
+// CHECK-LABEL: @cast_to_builtin
+kgen.func @cast_to_builtin() -> (
+    vector<2xi1>, vector<2xindex>, vector<2xi4>, vector<2xbf16>,
+    i1, index, ui8, f16) {
+  // CHECK-DAG: %[[C0:.*]] = kgen{{.*}}vector<2xi1> = <#M.dense_array<true, false>>
+  // CHECK-DAG: %[[C1:.*]] = kgen{{.*}}vector<2xindex> = <#M.dense_array<1, 2>>
+  // CHECK-DAG: %[[C2:.*]] = kgen{{.*}}vector<2xi4> = <#M.dense_array<3, 4>>
+  // CHECK-DAG: %[[C3:.*]] = kgen{{.*}}vector<2xbf16> = <#M.dense_array<1.5{{0+}}e+00, 2.5{{0+}}e+00>>
+  // CHECK-DAG: %[[C4:.*]] = kgen{{.*}}i1 = <1>
+  // CHECK-DAG: %[[C5:.*]] = kgen{{.*}}constant = <10>
+  // CHECK-DAG: %[[C6:.*]] = kgen{{.*}}ui8 = <66>
+  // CHECK-DAG: %[[C7:.*]] = kgen{{.*}}f16 = <5.5{{0+}}e+00>
+  %0 = kgen.param.constant: !pop.simd<2, bool> = <#pop.simd<true, false>>
+  %1 = kgen.param.constant: !pop.simd<2, index> = <#pop.simd<1, 2>>
+  %2 = kgen.param.constant: !pop.simd<2, si4> = <#pop.simd<3, 4>>
+  %3 = kgen.param.constant: !pop.simd<2, bf16> = <#pop.simd<"1.5", "2.5">>
+  %4 = kgen.param.constant: !pop.scalar<bool> = <#pop.simd<true>>
+  %5 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<10>>
+  %6 = kgen.param.constant: !pop.scalar<ui8> = <#pop.simd<66>>
+  %7 = kgen.param.constant: !pop.scalar<f16> = <#pop.simd<"5.5">>
+
+  %a0 = pop.cast_to_builtin %0 : !pop.simd<2, bool> to vector<2xi1>
+  %a1 = pop.cast_to_builtin %1 : !pop.simd<2, index> to vector<2xindex>
+  %a2 = pop.cast_to_builtin %2 : !pop.simd<2, si4> to vector<2xi4>
+  %a3 = pop.cast_to_builtin %3 : !pop.simd<2, bf16> to vector<2xbf16>
+  %a4 = pop.cast_to_builtin %4 : !pop.scalar<bool> to i1
+  %a5 = pop.cast_to_builtin %5 : !pop.scalar<index> to index
+  %a6 = pop.cast_to_builtin %6 : !pop.scalar<ui8> to ui8
+  %a7 = pop.cast_to_builtin %7 : !pop.scalar<f16> to f16
+
+  // CHECK: return %[[C0]], %[[C1]], %[[C2]], %[[C3]], %[[C4]], %[[C5]], %[[C6]], %[[C7]]
+  kgen.return %a0, %a1, %a2, %a3, %a4, %a5, %a6, %a7 :
+    vector<2xi1>, vector<2xindex>, vector<2xi4>, vector<2xbf16>,
+    i1, index, ui8, f16
+}
+
+// CHECK-LABEL: @cast_from_builtin
+kgen.func @cast_from_builtin() -> (
+    !pop.simd<2, bool>, !pop.simd<2, index>, !pop.simd<2, si4>, !pop.simd<2, bf16>,
+    !pop.scalar<bool>, !pop.scalar<index>, !pop.scalar<ui8>, !pop.scalar<f16>) {
+  // CHECK-DAG: %[[C0:.*]] = kgen{{.*}}!pop.simd<2, bool> = <#pop.simd<true, false>>
+  // CHECK-DAG: %[[C1:.*]] = kgen{{.*}}!pop.simd<2, index> = <#pop.simd<1, 2>>
+  // CHECK-DAG: %[[C2:.*]] = kgen{{.*}}!pop.simd<2, si4> = <#pop.simd<3, 4>>
+  // CHECK-DAG: %[[C3:.*]] = kgen{{.*}}!pop.simd<2, bf16> = <#pop.simd<"1.5", "2.5">>
+  // CHECK-DAG: %[[C4:.*]] = kgen{{.*}}!pop.scalar<bool> = <#pop.simd<true>>
+  // CHECK-DAG: %[[C5:.*]] = kgen{{.*}}!pop.scalar<index> = <#pop.simd<10>>
+  // CHECK-DAG: %[[C6:.*]] = kgen{{.*}}!pop.scalar<ui8> = <#pop.simd<66>>
+  // CHECK-DAG: %[[C7:.*]] = kgen{{.*}}!pop.scalar<f16> = <#pop.simd<"5.5">>
+  %0 = kgen.param.constant: vector<2xi1> = <#M.dense_array<true, false>>
+  %1 = kgen.param.constant: vector<2xindex> = <#M.dense_array<1, 2>>
+  %2 = kgen.param.constant: vector<2xi4> = <#M.dense_array<3, 4>>
+  %3 = kgen.param.constant: vector<2xbf16> = <#M.dense_array<1.5, 2.5>>
+  %4 = kgen.param.constant: i1 = <1>
+  %5 = kgen.param.constant = <10>
+  %6 = kgen.param.constant: ui8 = <66>
+  %7 = kgen.param.constant: f16 = <5.5>
+
+  %a0 = pop.cast_from_builtin %0 : vector<2xi1> to !pop.simd<2, bool>
+  %a1 = pop.cast_from_builtin %1 : vector<2xindex> to !pop.simd<2, index>
+  %a2 = pop.cast_from_builtin %2 : vector<2xi4> to !pop.simd<2, si4>
+  %a3 = pop.cast_from_builtin %3 : vector<2xbf16> to !pop.simd<2, bf16>
+  %a4 = pop.cast_from_builtin %4 : i1 to !pop.scalar<bool>
+  %a5 = pop.cast_from_builtin %5 : index to !pop.scalar<index>
+  %a6 = pop.cast_from_builtin %6 : ui8 to !pop.scalar<ui8>
+  %a7 = pop.cast_from_builtin %7 : f16 to !pop.scalar<f16>
+
+  // CHECK: return %[[C0]], %[[C1]], %[[C2]], %[[C3]], %[[C4]], %[[C5]], %[[C6]], %[[C7]]
+  kgen.return %a0, %a1, %a2, %a3, %a4, %a5, %a6, %a7 :
+    !pop.simd<2, bool>, !pop.simd<2, index>, !pop.simd<2, si4>, !pop.simd<2, bf16>,
+    !pop.scalar<bool>, !pop.scalar<index>, !pop.scalar<ui8>, !pop.scalar<f16>
+}
+
+// CHECK-LABEL: @cast_from_parameter
+kgen.generator @cast_from_parameter<N>() -> !pop.scalar<index> {
+  %0 = kgen.param.constant = <N>
+  // CHECK: pop.cast_from_builtin
+  %1 = pop.cast_from_builtin %0 : index to !pop.scalar<index>
+  kgen.return %1 : !pop.scalar<index>
 }

@@ -998,20 +998,11 @@ LogicalResult ListCreateOp::verify() {
 /// Verify the conversion between the higher-level type and lower-level type.
 static LogicalResult
 verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
-                     Type popType, Type builtinType) {
-  auto simd = dyn_cast<SIMDType>(popType);
-  if (!simd)
-    return emitError("cannot convert type ") << popType;
+                     SIMDType simd, Type builtinType) {
   // Verify the SIMD size matches the vector size and the dtypes match.
-
   auto size = simd.getResolvedSize();
   if (size && *size == 1) {
     // Scalar case
-    auto vector = dyn_cast<VectorType>(builtinType);
-    if (vector) {
-      builtinType = vector.getElementType();
-      return verifyConversionCast(emitError, popType, builtinType);
-    }
     auto dtype = dyn_cast<DTypeConstantAttr>(simd.getDType());
     if (dtype && !dtype.isConvertibleTo(builtinType))
       return emitError("cannot convert from scalar dtype ")
@@ -1040,14 +1031,6 @@ LogicalResult CastToBuiltinOp::verify() {
       getType());
 }
 
-OpFoldResult CastToBuiltinOp::fold(ArrayRef<Attribute> operands) {
-  // Fold A->B->A cast.
-  if (auto parent = getInput().getDefiningOp<CastFromBuiltinOp>();
-      parent && parent.getInput().getType() == getType())
-    return parent.getInput();
-  return {};
-}
-
 //===----------------------------------------------------------------------===//
 // CastFromBuiltinOp
 //===----------------------------------------------------------------------===//
@@ -1058,13 +1041,6 @@ LogicalResult CastFromBuiltinOp::verify() {
       getInput().getType());
 }
 
-OpFoldResult CastFromBuiltinOp::fold(ArrayRef<Attribute> operands) {
-  // Fold A->B->A cast.
-  if (auto parent = getInput().getDefiningOp<CastToBuiltinOp>();
-      parent && parent.getInput().getType() == getType())
-    return parent.getInput();
-  return {};
-}
 //===----------------------------------------------------------------------===//
 // PartialApplyOp
 //===----------------------------------------------------------------------===//
