@@ -7,9 +7,9 @@
 #ifndef KGEN_ELABORATOR_ERRORTREE_H
 #define KGEN_ELABORATOR_ERRORTREE_H
 
+#include "Support/ADT/SmartVariant.h"
 #include "Support/Error.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "Support/SmartVariant.h"
 #include "mlir/IR/Location.h"
 
 namespace M::KGEN {

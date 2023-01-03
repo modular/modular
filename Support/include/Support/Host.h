@@ -16,6 +16,6 @@
 
 namespace M {
 ErrorOr<size_t> getHostCPUCacheSize(size_t cacheLevel);
-}
+} // namespace M
 
 #endif // SUPPORT_HOST_H

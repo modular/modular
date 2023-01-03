@@ -4,27 +4,15 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_subdirectory(ADT)
-
 add_modular_unittest(
   TOP_LEVEL_CHECK
   check-support
 
   SUITE_NAME
-  SupportUnitTests
+  SupportADTUnitTests
 
   TEST_NAME
-  SupportTests
+  SupportADTTests
 
-  BCastTest.cpp
-  DTypeTest.cpp
-  FunctionExtrasTest.cpp
-  HMACTest.cpp
-  MathExtras.cpp
-  MicroBenchmarkTest.cpp
-  TimeProfilerTest.cpp
-
-  LINK_LIBS PRIVATE
-  MSupport
-  MSupportML
+  SmartVariantTest.cpp
 )

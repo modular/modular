@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/SmartVariant.h"
+#include "Support/ADT/SmartVariant.h"
 #include "mlir/IR/Attributes.h"
 
 #include "gtest/gtest.h"
