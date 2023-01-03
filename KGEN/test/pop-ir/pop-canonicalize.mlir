@@ -170,6 +170,24 @@ kgen.func @fma() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
   kgen.return %2, %3 : !pop.scalar<si8>, !pop.scalar<f32>
 }
 
+// CHECK-LABEL: @index_folds
+kgen.func @index_folds() -> (!pop.scalar<index>, !pop.scalar<index>) {
+  // COM: Index folds go through the same path as integer folds. We just need to
+  // check that ops can fold for index dtypes and do not fold when the results
+  // differ between 64-bit and 32-bit arithmetic.
+  // CHECK-DAG: %[[DNF_LHS:.*]] = kgen{{.*}}<4294967298>
+  // CHECK-DAG: %[[DNF_RHS:.*]] = kgen{{.*}}<2>
+  // CHECK-DAG: %[[FOLDED:.*]] = kgen{{.*}}<4294967297>
+  // CHECK: %[[R2:.*]] = pop.div %[[DNF_LHS]], %[[DNF_RHS]]
+  // CHECK-NEXT: return %[[FOLDED]], %[[R2]]
+  %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<8589934594>>
+  %1 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<4294967298>>
+  %2 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<2>>
+  %3 = pop.div %0, %2 : !pop.scalar<index>
+  %4 = pop.div %1, %2 : !pop.scalar<index>
+  kgen.return %3, %4 : !pop.scalar<index>, !pop.scalar<index>
+}
+
 // CHECK-LABEL: @struct_construct
 kgen.func @struct_construct() -> !pop.struct<si4, ui4> {
   // CHECK-NEXT: constant: !pop.struct<si4, ui4> = <#pop.struct<-3, 7>>

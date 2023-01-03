@@ -41,8 +41,8 @@ kgen.generator @simd_constant<size>() {
 // -----
 
 kgen.generator @simd_constant<size>() {
-  // expected-error @below {{only integer, float, and bool dtype constants can be parsed}}
-  %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<0>>
+  // expected-error @below {{only integer, float, bool, and index dtype constants can be parsed}}
+  %0 = kgen.param.constant: !pop.scalar<address> = <#pop.simd<0>>
   kgen.return
 }
 

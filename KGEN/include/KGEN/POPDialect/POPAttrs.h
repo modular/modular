@@ -20,20 +20,25 @@
 
 namespace M::KGEN::POP {
 /// This class stores a value of a particular dtype. It supports containing
-/// integer, float, and bool dtype values only.
+/// integer, index, float, and bool dtype values only. Index values are treated
+/// as signed.
 class DTypeValue {
 public:
   /// Get an integer value.
-  DTypeValue(APSInt value, DType dtype);
+  DTypeValue(APSInt value, KGENDType dtype);
 
   /// Get a floating point value.
-  DTypeValue(APFloat value, DType dtype);
+  DTypeValue(APFloat value, KGENDType dtype);
 
   /// Get a bool value.
-  DTypeValue(bool value, DType dtype);
+  DTypeValue(bool value, KGENDType dtype);
+
+  /// Get an index value.
+  DTypeValue(int64_t value, KGENDType dtype);
 
   /// Raw data constructor.
-  DTypeValue(APInt data, DType dtype) : data(std::move(data)), dtype(dtype) {}
+  DTypeValue(APInt data, KGENDType dtype)
+      : data(std::move(data)), dtype(dtype) {}
 
   /// Compare two dtype values.
   bool operator==(const DTypeValue &rhs) const {
@@ -44,7 +49,7 @@ public:
   const APInt &getData() const { return data; }
 
   /// Get the dtype.
-  DType getDType() const { return dtype; }
+  KGENDType getDType() const { return dtype; }
 
   /// Get the value as an integer.
   APSInt getIntVal() const;
@@ -55,12 +60,15 @@ public:
   /// Get the value as a bool
   bool getBoolVal() const;
 
+  /// Get the value as an index.
+  int64_t getIndexVal() const;
+
 private:
   /// All values are stored as `APInt`s.
   APInt data;
 
   /// The dtype of the value. This indicates how to interpret `data`.
-  DType dtype;
+  KGENDType dtype;
 };
 } // namespace M::KGEN::POP
 
