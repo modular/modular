@@ -78,9 +78,9 @@ struct NDBuffer[
     ) -> NDBuffer[rank, shape, type]:
         # Construct an NDBuffer type with statically known shape.
         # TODO: Verify that the shape is valid (i.e. does not have #kgen.unknown)
-        return __mlir_op.`kgen.struct.create`[
-            _type : NDBuffer[rank, shape, type]
-        ](DTypePointer[type](ptr))
+        var buf : NDBuffer[rank, shape, type]
+        buf.data = DTypePointer[type](ptr)
+        return buf
 
     fn get_rank(self) -> Int:
         if rank == __mlir_attr.`#kgen.unknown : index`:
