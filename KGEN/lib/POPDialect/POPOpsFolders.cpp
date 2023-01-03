@@ -24,13 +24,23 @@ Operation *POPDialect::materializeConstant(OpBuilder &b, Attribute value,
 }
 
 //===----------------------------------------------------------------------===//
-// Arithmetic Operation Folders
+// SIMD Folder Helpers
 //===----------------------------------------------------------------------===//
 
 namespace detail {
 /// Detector for whether `T` posseses a `has_value` method.
 template <typename T>
 using IsOptionalType = decltype(std::declval<T>().has_value());
+
+/// `std::optional<T>` -> `T`
+template <typename T>
+struct remove_optional {
+  using type = T;
+};
+template <typename T>
+struct remove_optional<std::optional<T>> {
+  using type = T;
+};
 
 /// Perform folding of an n-ary SIMD vector operation of a given dtype by
 /// applying the operation `op` to each vector element. `getValue` transforms a
@@ -39,11 +49,9 @@ using IsOptionalType = decltype(std::declval<T>().has_value());
 template <size_t... I, typename OpFn, typename GetValueFn>
 static SIMDAttr foldSIMDOpImpl(std::index_sequence<I...>,
                                ArrayRef<Attribute> operands, OpFn op,
-                               GetValueFn getValue) {
-  auto type = cast<SIMDType>(cast<TypedAttr>(operands.front()).getType());
+                               KGENDType dtype, GetValueFn getValue) {
   SmallVector<DTypeValue> results;
   auto firstArg = cast<SIMDAttr>(operands.front());
-  DType dtype = *firstArg.getType().getResolvedDType();
   for (unsigned i = 0, e = firstArg.getValues().size(); i != e; ++i) {
     auto result =
         std::apply(op, std::make_tuple(getValue(
@@ -58,7 +66,9 @@ static SIMDAttr foldSIMDOpImpl(std::index_sequence<I...>,
       results.emplace_back(result, dtype);
     }
   }
-  return SIMDAttr::get(results, type);
+  auto type = cast<SIMDType>(cast<TypedAttr>(operands.front()).getType());
+  return SIMDAttr::get(results, SIMDType::get(type.getContext(),
+                                              *type.getResolvedSize(), dtype));
 }
 
 /// Return true if the function type `OpFn` is a function whose first argument
@@ -93,14 +103,15 @@ static constexpr auto getOpFnOfType(OpFn op, OpFns &&...fns) {
 /// provided for each dtype for which the operation is valid.
 template <typename TestType, typename GetValueFn, typename... OpFns>
 static SIMDAttr foldSIMDOpDType(GetValueFn getValue,
-                                ArrayRef<Attribute> operands, OpFns &&...ops) {
+                                ArrayRef<Attribute> operands, KGENDType dtype,
+                                OpFns &&...ops) {
   auto op = getOpFnOfType<TestType>(std::forward<OpFns>(ops)...);
   if constexpr (std::is_same_v<decltype(op), std::nullopt_t>) {
     llvm_unreachable("unhandled dtype");
   } else {
     return foldSIMDOpImpl(std::make_index_sequence<
                               llvm::function_traits<decltype(op)>::num_args>(),
-                          operands, op, getValue);
+                          operands, op, dtype, getValue);
   }
 }
 
@@ -110,53 +121,105 @@ static SIMDAttr foldSIMDOpDType(GetValueFn getValue,
 /// and 32-bit arithmetic. If the results match, then the operation can fold.
 /// See the MLIR `index` dialect for more details.
 template <typename... OpFns>
-static SIMDAttr foldSIMDOpIndex(ArrayRef<Attribute> operands, OpFns &&...ops) {
+static SIMDAttr foldSIMDOpIndex(ArrayRef<Attribute> operands, KGENDType dtype,
+                                OpFns &&...ops) {
   auto op = getOpFnOfType<APSInt>(std::forward<OpFns>(ops)...);
   if constexpr (std::is_same_v<decltype(op), std::nullopt_t>) {
     llvm_unreachable("unhandled dtype");
   } else {
-    // Define the index fold function using the integer fold function.
-    auto indexOp = [&op](auto... args) -> Optional<int64_t> {
-      auto result64 = op(args...);
-      // Check if the fold function is failable. If the fold function can fail,
-      // make sure to propagate the failure in both 64-bit and 32-bit
-      // arithmetic.
-      constexpr bool isOptional =
-          llvm::is_detected<IsOptionalType, decltype(result64)>::value;
-      APSInt result64Value;
-      if constexpr (isOptional) {
+    // Define the index fold function using the integer fold function. Detect a
+    // bool function. Return a bool instead of an index value in that case.
+    using OpResultT = typename llvm::function_traits<decltype(op)>::result_t;
+    // Check if the fold function is failable. If the fold function can fail,
+    // make sure to propagate the failure in both 64-bit and 32-bit arithmetic.
+    constexpr bool isOptional =
+        llvm::is_detected<IsOptionalType, OpResultT>::value;
+    using ResultT = typename remove_optional<OpResultT>::type;
+    constexpr bool isIndexResult = std::is_same_v<APSInt, ResultT>;
+    auto indexOp = [&op](auto... args)
+        -> std::optional<std::conditional_t<isIndexResult, int64_t, ResultT>> {
+      OpResultT result64 = op(args...);
+      if constexpr (isOptional)
         if (!result64.has_value())
           return {};
-        result64Value = *result64;
-      } else {
-        result64Value = result64;
-      }
-      auto result32 = op(args.trunc(32)...);
-      APSInt result32Value;
-      if constexpr (isOptional) {
+      OpResultT result32 = op(args.trunc(32)...);
+      if constexpr (isOptional)
         if (!result32.has_value())
           return {};
-        result32Value = *result32;
-      } else {
-        result32Value = result32;
-      }
+      auto unwrap = [](OpResultT value) {
+        if constexpr (isOptional)
+          return *value;
+        else
+          return value;
+      };
+
       // Compare the results. Return the index value if the fold results match.
-      if (result64Value.trunc(32) == result32Value)
-        return result64Value.getSExtValue();
-      return {};
+      // If the result type isn't an index represented as an APSInt, just
+      // compare the results directly.
+      if constexpr (isIndexResult) {
+        if (unwrap(result64).trunc(32) == unwrap(result32))
+          return unwrap(result64).getSExtValue();
+        return {};
+      } else {
+        if (unwrap(result64) == unwrap(result32))
+          return unwrap(result64);
+        return {};
+      }
     };
     return foldSIMDOpImpl(std::make_index_sequence<
                               llvm::function_traits<decltype(op)>::num_args>(),
-                          operands, indexOp, [](DTypeValue val) {
+                          operands, indexOp, dtype, [](DTypeValue val) {
                             return APSInt(APInt(64, val.getIndexVal()),
                                           /*isUnsigned=*/false);
                           });
   }
 }
+
+/// Try to fold an n-ary SIMD vector operation using one of the provided
+/// functions for each possible operand dtype given a result dtype.
+template <bool allowIndex, typename... OpFns>
+static SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, KGENDType inputDType,
+                           KGENDType resultDType, OpFns &&...ops) {
+  if (inputDType.isInt())
+    return ::detail::foldSIMDOpDType<APSInt>(
+        [](DTypeValue val) { return val.getIntVal(); }, operands, resultDType,
+        std::forward<OpFns>(ops)...);
+  // FIXME: Should we even do floating point folds? Results don't match hardware
+  // and not all float semantics are supported.
+  if (inputDType.isFloat())
+    return ::detail::foldSIMDOpDType<APFloat>(
+        [](DTypeValue val) { return val.getFloatVal(); }, operands, resultDType,
+        std::forward<OpFns>(ops)...);
+  if (inputDType.isBool())
+    return ::detail::foldSIMDOpDType<bool>(
+        [](DTypeValue val) { return val.getBoolVal(); }, operands, resultDType,
+        std::forward<OpFns>(ops)...);
+  if constexpr (allowIndex) {
+    if (inputDType.isIndex())
+      return ::detail::foldSIMDOpIndex(operands, resultDType,
+                                       std::forward<OpFns>(ops)...);
+  }
+  llvm_unreachable("unhandled dtype");
+}
 } // namespace detail
 
 /// Try to fold an n-ary SIMD vector operation using one of the provided
-/// functions for each possible dtype.
+/// functions for each possible operand dtype given a result dtype.
+template <bool AllowIndex, typename... OpFns>
+static SIMDAttr foldSIMDOpResult(ArrayRef<Attribute> operands,
+                                 KGENDType resultDType, OpFns &&...ops) {
+  if (llvm::any_of(operands, [](Attribute operand) {
+        return !isa_and_nonnull<SIMDAttr>(operand);
+      }))
+    return {};
+  return ::detail::foldSIMDOp<AllowIndex>(
+      operands, *cast<SIMDAttr>(operands.front()).getType().getResolvedDType(),
+      resultDType, std::forward<OpFns>(ops)...);
+}
+
+/// Try to fold an n-ary SIMD vector operation using one of the provided
+/// functions for each possible operand dtype, assuming the result dtype is the
+/// same as the operands' dtypes.
 template <typename... OpFns>
 static SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, OpFns &&...ops) {
   if (llvm::any_of(operands, [](Attribute operand) {
@@ -165,24 +228,13 @@ static SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, OpFns &&...ops) {
     return {};
   KGENDType dtype =
       *cast<SIMDAttr>(operands.front()).getType().getResolvedDType();
-  if (dtype.isInt())
-    return ::detail::foldSIMDOpDType<APSInt>(
-        [](DTypeValue val) { return val.getIntVal(); }, operands,
-        std::forward<OpFns>(ops)...);
-  // FIXME: Should we even do floating point folds? Results don't match hardware
-  // and not all float semantics are supported.
-  if (dtype.isFloat())
-    return ::detail::foldSIMDOpDType<APFloat>(
-        [](DTypeValue val) { return val.getFloatVal(); }, operands,
-        std::forward<OpFns>(ops)...);
-  if (dtype.isBool())
-    return ::detail::foldSIMDOpDType<bool>(
-        [](DTypeValue val) { return val.getBoolVal(); }, operands,
-        std::forward<OpFns>(ops)...);
-  if (dtype.isIndex())
-    return ::detail::foldSIMDOpIndex(operands, std::forward<OpFns>(ops)...);
-  llvm_unreachable("unhandled dtype");
+  return ::detail::foldSIMDOp</*AllowIndex=*/true>(operands, dtype, dtype,
+                                                   std::forward<OpFns>(ops)...);
 }
+
+//===----------------------------------------------------------------------===//
+// Arithmetic Operation Folders
+//===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
 // Unary Operations
@@ -317,6 +369,233 @@ ErrorOrSuccess LoadOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
+// CmpOp
+//===----------------------------------------------------------------------===//
+
+template <typename ArgT>
+static bool compareConstants(CmpPredicate pred, ArgT lhs, ArgT rhs) {
+  switch (pred) {
+  case CmpPredicate::EQ:
+    return lhs == rhs;
+  case CmpPredicate::NE:
+    return lhs != rhs;
+  case CmpPredicate::LT:
+    return lhs < rhs;
+  case CmpPredicate::GT:
+    return lhs > rhs;
+  case CmpPredicate::LE:
+    return lhs <= rhs;
+  case CmpPredicate::GE:
+    return lhs >= rhs;
+  }
+}
+
+OpFoldResult CmpOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOpResult</*AllowIndex=*/true>(
+      operands, KGENDType::kBool,
+      [&](APSInt lhs, APSInt rhs) {
+        return compareConstants(getPred(), lhs, rhs);
+      },
+      [&](APFloat lhs, APFloat rhs) {
+        return compareConstants(getPred(), lhs, rhs);
+      },
+      [&](bool lhs, bool rhs) {
+        return compareConstants(getPred(), lhs, rhs);
+      });
+}
+
+//===----------------------------------------------------------------------===//
+// Bitwise Operation Folders
+//===----------------------------------------------------------------------===//
+
+OpFoldResult AndOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(
+      operands, [](APSInt lhs, APSInt rhs) { return lhs & rhs; },
+      [](bool lhs, bool rhs) { return lhs && rhs; });
+}
+
+OpFoldResult OrOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(
+      operands, [](APSInt lhs, APSInt rhs) { return lhs | rhs; },
+      [](bool lhs, bool rhs) { return lhs || rhs; });
+}
+
+OpFoldResult XOrOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(
+      operands, [](APSInt lhs, APSInt rhs) { return lhs ^ rhs; },
+      [](bool lhs, bool rhs) -> bool { return lhs ^ rhs; });
+}
+
+//===----------------------------------------------------------------------===//
+// SelectOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult SelectOp::fold(ArrayRef<Attribute> operands) {
+  auto condVals = dyn_cast_or_null<SIMDAttr>(operands[0]);
+  auto trueVals = dyn_cast_or_null<SIMDAttr>(operands[1]);
+  auto falseVals = dyn_cast_or_null<SIMDAttr>(operands[2]);
+  if (!condVals || !trueVals || !falseVals)
+    return {};
+  SmallVector<DTypeValue> results;
+  for (auto [cond, trueVal, falseVal] : llvm::zip(
+           condVals.getValues(), trueVals.getValues(), falseVals.getValues()))
+    results.push_back(cond.getBoolVal() ? trueVal : falseVal);
+  return SIMDAttr::get(results, getType());
+}
+
+//===----------------------------------------------------------------------===//
+// BitcastOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult BitcastOp::fold(ArrayRef<Attribute> operands) {
+  // Don't fold if the size changes. This requires knowing the endianness of the
+  // target.
+  Optional<KGENDType> dtype = getType().getResolvedDType();
+  if (!dtype || !getType().getResolvedSize() ||
+      getInput().getType().getResolvedSize() != getType().getResolvedSize())
+    return {};
+  if (dtype->isInt()) {
+    return foldSIMDOpResult</*AllowIndex=*/false>(
+        operands, *dtype,
+        [&](APSInt in) { return APSInt(in, dtype->isUInt()); },
+        [&](APFloat in) {
+          return APSInt(in.bitcastToAPInt(), dtype->isUInt());
+        });
+  }
+  assert(dtype->isFloat());
+  // Check to make sure we have a supported float dtype.
+  if (!DTypeValue::isValidFloatDType(*dtype))
+    return {};
+  const llvm::fltSemantics &sem = DTypeValue::getFloatSemantics(*dtype);
+  return foldSIMDOpResult</*AllowIndex=*/false>(
+      operands, *dtype, [&](APSInt in) { return APFloat(sem, in); },
+      [&](APFloat in) { return APFloat(sem, in.bitcastToAPInt()); });
+}
+
+//===----------------------------------------------------------------------===//
+// PointerBitcastOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult PointerBitcastOp::fold(ArrayRef<Attribute> operands) {
+  if (auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]))
+    return PointerAttr::get(ptr.getAddr(), getType());
+
+  auto cast = getInput().getDefiningOp<PointerBitcastOp>();
+  if (cast && cast.getInput().getType() == getType())
+    return cast.getInput();
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// CastOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult CastOp::fold(ArrayRef<Attribute> operands) {
+  auto in = dyn_cast_if_present<SIMDAttr>(operands[0]);
+  Optional<KGENDType> dtype = getType().getResolvedDType();
+  if (in && dtype) {
+    if (dtype->isFloat()) {
+      // Cannot fold cast to unsupported float dtype.
+      if (!DTypeValue::isValidFloatDType(*dtype))
+        return {};
+      const llvm::fltSemantics &sem = DTypeValue::getFloatSemantics(*dtype);
+      return foldSIMDOpResult</*AllowIndex=*/true>(
+          operands, *dtype,
+          [&](APSInt in) {
+            APFloat fp(sem);
+            fp.convertFromAPInt(in, in.isSigned(),
+                                APFloat::rmNearestTiesToEven);
+            return fp;
+          },
+          [&](APFloat in) {
+            bool ignored;
+            in.convert(sem, APFloat::rmNearestTiesToEven, &ignored);
+            return in;
+          },
+          [&](bool in) { return APFloat(sem, in); });
+    }
+    if (dtype->isInt()) {
+      // Note that float to integer casts are undefined if the float value is
+      // too large to fit in the integer dtype.
+      unsigned width = dtype->getIntegerWidthInBits();
+      return foldSIMDOpResult</*AllowIndex=*/true>(
+          operands, *dtype, [&](APSInt in) { return in.extOrTrunc(width); },
+          [&](APFloat in) -> std::optional<APSInt> {
+            APSInt iv(width, dtype->isUInt());
+            bool ignored;
+            if (in.convertToInteger(iv, APFloat::rmTowardZero, &ignored) ==
+                APFloat::opInvalidOp)
+              return {};
+            return iv;
+          },
+          [&](bool in) { return APSInt(APInt(width, in), dtype->isUInt()); });
+    }
+    if (dtype->isIndex()) {
+      // Cast to index like it's a 64-bit integer.
+      return foldSIMDOpResult</*AllowIndex=*/true>(
+          operands, *dtype, [](APSInt in) { return in.getSExtValue(); },
+          [](APFloat in) -> std::optional<int64_t> {
+            APSInt iv(64, /*isUnsigned=*/false);
+            bool ignored;
+            if (in.convertToInteger(iv, APFloat::rmTowardZero, &ignored) ==
+                APFloat::opInvalidOp)
+              return {};
+            return iv.getSExtValue();
+          },
+          [](bool in) { return static_cast<int64_t>(in); });
+    }
+    assert(dtype->isBool());
+    return foldSIMDOpResult</*AllowIndex=*/true>(
+        operands, *dtype, [&](APSInt in) { return !in.isZero(); },
+        [&](APFloat in) { return !in.isZero(); }, [&](bool in) { return in; });
+  }
+
+  if (getInput().getType() == getOutput().getType())
+    return getInput();
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDExtractElementOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult SIMDExtractElementOp::fold(ArrayRef<Attribute> operands) {
+  auto vec = dyn_cast_if_present<SIMDAttr>(operands[0]);
+  auto idx = dyn_cast_if_present<IntegerAttr>(operands[1]);
+  if (!vec || !idx)
+    return {};
+  return SIMDAttr::get(vec.getValues()[idx.getInt()], getType());
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDInsertElementOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult SIMDInsertElementOp::fold(ArrayRef<Attribute> operands) {
+  auto vec = dyn_cast_if_present<SIMDAttr>(operands[0]);
+  auto val = dyn_cast_if_present<SIMDAttr>(operands[1]);
+  auto idx = dyn_cast_if_present<IntegerAttr>(operands[2]);
+  if (!vec || !val || !idx)
+    return {};
+  SmallVector<DTypeValue> values(vec.getValues());
+  values[idx.getInt()] = val.getValues().front();
+  return SIMDAttr::get(values, getType());
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDSplatOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult SIMDSplatOp::fold(ArrayRef<Attribute> operands) {
+  Optional<int64_t> size = getType().getResolvedSize();
+  auto scalar = dyn_cast_if_present<SIMDAttr>(operands[0]);
+  if (!size || !scalar)
+    return {};
+  SmallVector<DTypeValue> values(*size, scalar.getValues().front());
+  return SIMDAttr::get(values, getType());
+}
+
+//===----------------------------------------------------------------------===//
 // StoreOp
 //===----------------------------------------------------------------------===//
 
@@ -349,20 +628,6 @@ ErrorOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
   results.push_back(PointerAttr::get(ptr.getAddr() + *elSize * offset.getInt(),
                                      ptr.getType()));
   return success();
-}
-
-//===----------------------------------------------------------------------===//
-// PointerBitcastOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult PointerBitcastOp::fold(ArrayRef<Attribute> operands) {
-  if (auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]))
-    return PointerAttr::get(ptr.getAddr(), getType());
-
-  auto cast = getInput().getDefiningOp<PointerBitcastOp>();
-  if (cast && cast.getInput().getType() == getType())
-    return cast.getInput();
-  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -627,3 +892,15 @@ OpFoldResult ListCreateOp::fold(ArrayRef<Attribute> operands) {
   }
   return ListAttr::get(values, getType());
 }
+
+//===----------------------------------------------------------------------===//
+// IndexToPointerOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult IndexToPointerOp::fold(ArrayRef<Attribute> operands) { return {}; }
+
+//===----------------------------------------------------------------------===//
+// PointerToIndexOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult PointerToIndexOp::fold(ArrayRef<Attribute> operands) { return {}; }

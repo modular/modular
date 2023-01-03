@@ -34,14 +34,12 @@ void POPDialect::registerAttributes() {
 // DTypeValue
 //===----------------------------------------------------------------------===//
 
-/// Returns true if this is a supported float dtype.
-static bool isValidFloatDType(KGENDType dtype) {
+bool DTypeValue::isValidFloatDType(KGENDType dtype) {
   return dtype.isFloat() &&
          !(dtype == DType::f8 || dtype == DType::f24 || dtype == DType::tf32);
 }
 
-/// Returns the floating semantics for the given dtype.
-static const llvm::fltSemantics &getFloatSemantics(KGENDType dtype) {
+const llvm::fltSemantics &DTypeValue::getFloatSemantics(KGENDType dtype) {
   switch (dtype.getValue()) {
   case DType::f16:
     return APFloat::IEEEhalf();
@@ -66,10 +64,7 @@ static const llvm::fltSemantics &getFloatSemantics(KGENDType dtype) {
 
 DTypeValue::DTypeValue(APSInt value, KGENDType dtype)
     : DTypeValue(APInt(value), dtype) {
-  assert(
-      (dtype.isInt() && value.getBitWidth() == dtype.getIntegerWidthInBits()) ||
-      (dtype.isIndex() &&
-       value.getBitWidth() == IndexType::kInternalStorageBitWidth));
+  assert(dtype.isInt() && value.getBitWidth() == dtype.getIntegerWidthInBits());
 }
 
 DTypeValue::DTypeValue(APFloat value, KGENDType dtype)
@@ -84,12 +79,12 @@ DTypeValue::DTypeValue(bool value, KGENDType dtype)
 
 DTypeValue::DTypeValue(int64_t value, KGENDType dtype)
     : DTypeValue(APInt(64, value), dtype) {
-  assert(dtype.isIndex());
+  assert(dtype.isIndex() || dtype.isAddress());
 }
 
 APSInt DTypeValue::getIntVal() const {
-  assert(dtype.isInt() || dtype.isIndex());
-  return APSInt(data, /*isUnsigned=*/!dtype.isIndex() && dtype.isUInt());
+  assert(dtype.isInt());
+  return APSInt(data, /*isUnsigned=*/dtype.isUInt());
 }
 
 APFloat DTypeValue::getFloatVal() const {
@@ -103,7 +98,7 @@ bool DTypeValue::getBoolVal() const {
 }
 
 int64_t DTypeValue::getIndexVal() const {
-  assert(dtype.isIndex());
+  assert(dtype.isIndex() || dtype.isAddress());
   return data.getSExtValue();
 }
 
@@ -143,7 +138,7 @@ static FailureOr<DTypeValue> parseDTypeValue(AsmParser &p, KGENDType dtype) {
     std::string strVal;
     if (p.parseString(&strVal))
       return failure();
-    APFloat apFp(getFloatSemantics(dtype));
+    APFloat apFp(DTypeValue::getFloatSemantics(dtype));
     llvm::Expected<APFloat::opStatus> status =
         apFp.convertFromString(strVal, APFloat::rmNearestTiesToEven);
     if (llvm::errorToBool(status.takeError()))
@@ -164,7 +159,7 @@ static FailureOr<DTypeValue> parseDTypeValue(AsmParser &p, KGENDType dtype) {
   }
 
   // Handle indices.
-  assert(dtype.isIndex());
+  assert(dtype.isIndex() || dtype.isAddress());
   int64_t indexVal;
   if (p.parseInteger(indexVal))
     return failure();
@@ -204,8 +199,8 @@ static ParseResult parseDTypeValues(AsmParser &p,
     return p.emitError(p.getCurrentLocation(),
                        "SIMD constant requires a concrete type");
   }
-  if (!dtype->isInt() && !isValidFloatDType(*dtype) && !dtype->isBool() &&
-      !dtype->isIndex()) {
+  if (!dtype->isInt() && !DTypeValue::isValidFloatDType(*dtype) &&
+      !dtype->isBool() && !dtype->isIndex() && !dtype->isAddress()) {
     return p.emitError(
         p.getCurrentLocation(),
         "only integer, float, bool, and index dtype constants can be parsed");
@@ -236,6 +231,7 @@ static void printDTypeValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
     } else if (dtype.isBool()) {
       p << (value.getBoolVal() ? "true" : "false");
     } else {
+      assert(dtype.isIndex() || dtype.isAddress());
       p << value.getIndexVal();
     }
   };

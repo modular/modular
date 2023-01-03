@@ -403,12 +403,6 @@ bool PointerBitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
 // CastOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult CastOp::fold(ArrayRef<Attribute> operands) {
-  if (getInput().getType() == getOutput().getType())
-    return getInput();
-  return {};
-}
-
 LogicalResult CastOp::verify() {
   if (getInput().getType().getSize() != getOutput().getType().getSize())
     return emitOpError("cannot cast between SIMD types of different sizes");
