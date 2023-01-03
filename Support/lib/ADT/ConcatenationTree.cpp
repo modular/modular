@@ -4,7 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/ConcatenationTree.h"
+#include "Support/ADT/ConcatenationTree.h"
+
 using namespace M;
 
 //===----------------------------------------------------------------------===//

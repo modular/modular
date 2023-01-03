@@ -4,6 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
+add_subdirectory(ADT)
 add_subdirectory(Benchmark)
 add_subdirectory(DebugInfoDialect)
 add_subdirectory(HLCFDialect)
@@ -17,7 +18,6 @@ add_subdirectory(Telemetry)
 add_modular_library(MSupport
   AlignedAlloc.cpp
   CommonCLOptions.cpp
-  ConcatenationTree.cpp
   Error.cpp
   HMAC.cpp
   Host.cpp

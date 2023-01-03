@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_SMART_VARIANT_H
-#define SUPPORT_SMART_VARIANT_H
+#ifndef SUPPORT_ADT_SMARTVARIANT_H
+#define SUPPORT_ADT_SMARTVARIANT_H
 
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/Support/Casting.h"
@@ -92,6 +92,7 @@ template <class... Ts>
 bool operator<(const SmartVariant<Ts...> &lhs, const SmartVariant<Ts...> &rhs) {
   return lhs.getUnderlyingStorage() < rhs.getUnderlyingStorage();
 }
+
 } // namespace M
 
 // Specialization of CastInfo for SmartVariant
@@ -156,6 +157,7 @@ struct CastInfo<To, const M::SmartVariant<Ts...>>
     : public ConstStrippingForwardingCast<
           To, const M::SmartVariant<Ts...>,
           CastInfo<To, M::SmartVariant<Ts...>>> {};
+
 } // namespace llvm
 
-#endif
+#endif // SUPPORT_ADT_SMARTVARIANT_H

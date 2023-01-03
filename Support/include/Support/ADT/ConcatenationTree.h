@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef CONCATENATIONTREE_H
-#define CONCATENATIONTREE_H
+#ifndef SUPPORT_ADT_CONCATENATIONTREE_H
+#define SUPPORT_ADT_CONCATENATIONTREE_H
 
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -56,4 +56,4 @@ private:
 
 } // namespace M
 
-#endif // CONCATENATIONTREE_H
+#endif // SUPPORT_ADT_CONCATENATIONTREE_H
