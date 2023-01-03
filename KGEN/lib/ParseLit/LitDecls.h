@@ -51,7 +51,7 @@ public:
   DeclResolver(LitSharedState &state);
   ~DeclResolver();
 
-  MLIRContext *getContext() const { return sharedState.context; }
+  MLIRContext *getContext() const { return sharedState.getContext(); }
 
   /// Resolve all of the declarations that are visible, processing the entire
   /// translation unit.

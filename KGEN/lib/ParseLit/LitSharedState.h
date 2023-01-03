@@ -12,20 +12,16 @@
 #ifndef LIT_SHARED_STATE_H
 #define LIT_SHARED_STATE_H
 
-#include "KGEN/CompilationOptions.h"
-#include "Support/LLVMCompilerForwardDecls.h"
-#include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/BuiltinOps.h"
+#include "LitDiags.h"
 
-namespace llvm {
-class SourceMgr;
-}
+#include "mlir/IR/BuiltinOps.h"
 
 namespace M::DebugInfo {
 class DIBuilder;
 } // namespace M::DebugInfo
 
 namespace M::KGEN {
+class CompilationOptions;
 class ParamDeclAttr;
 }
 
@@ -48,19 +44,20 @@ inline const char *plural(size_t value, const char *one = "",
 /// which are always shared across them.
 class LitSharedState {
 public:
-  LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *ctx,
+  LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
                  const CompilationOptions &options);
   ~LitSharedState();
 
-  llvm::SourceMgr &sourceMgr;
-  MLIRContext *const context;
-  std::unique_ptr<DeclResolver> declResolver;
+  LitDiags diags; // Contains SourceMgr and MLIRContext pointers.
   const CompilationOptions &options;
+
+  std::unique_ptr<DeclResolver> declResolver;
   std::unique_ptr<DebugInfo::DIBuilder> diBuilder;
 
   const mlir::StringAttr bufferNameIdentifier;
 
-  MLIRContext *getContext() const { return context; }
+  llvm::SourceMgr &getSourceMgr() const { return diags.sourceMgr; }
+  MLIRContext *getContext() const { return diags.context; }
 
   /// Initialize the shared state for the given top-level decl.
   void initialize(ASTDecl &topLevelDecl);
@@ -70,9 +67,6 @@ public:
 
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType getNoneType() const;
-
-  /// This is set to true if an error occurred at any point processing the file.
-  bool errorOccurred = false;
 
   /// Emit an error through the parser's logic.
   InFlightDiagnostic emitError(Location loc, const Twine &twine);

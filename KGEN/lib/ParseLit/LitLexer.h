@@ -104,7 +104,9 @@ public:
   LitLexer(LitSharedState &sharedState, const llvm::MemoryBuffer *buffer);
   LitLexer(LitSharedState &sharedState, const LitLexerCursor &cursor);
 
-  const llvm::SourceMgr &getSourceMgr() const { return sharedState.sourceMgr; }
+  const llvm::SourceMgr &getSourceMgr() const {
+    return sharedState.getSourceMgr();
+  }
 
   /// Move to the next valid token.
   void lexToken() { curToken = lexTokenImpl(); }

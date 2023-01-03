@@ -12,6 +12,7 @@
 #include "ASTDecl.h"
 #include "ASTType.h"
 #include "IRValues.h"
+#include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -47,24 +48,11 @@ public:
   DenseMap<StringAttr, ASTDecl *> importedModules;
 };
 
-/// Get the name of the main buffer so we can rapidly build Location objects
-/// on demand.
-static StringAttr getBufferNameIdentifier(const SourceMgr &sourceMgr,
-                                          unsigned bufferID,
-                                          MLIRContext *context) {
-  auto mainBuffer = sourceMgr.getMemoryBuffer(bufferID);
-  StringRef bufferName = mainBuffer->getBufferIdentifier();
-  if (bufferName.empty())
-    bufferName = "<unknown>";
-  return StringAttr::get(context, bufferName);
-}
-
-LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *ctx,
+LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
                                const CompilationOptions &options)
-    : sourceMgr(sourceMgr), context(ctx),
-      declResolver(std::make_unique<DeclResolver>(*this)), options(options),
-      bufferNameIdentifier(getBufferNameIdentifier(
-          sourceMgr, sourceMgr.getMainFileID(), context)),
+    : diags(sourceMgr, context), options(options),
+      declResolver(std::make_unique<DeclResolver>(*this)),
+
       impl(std::make_unique<Impl>()) {
   if (options.getDebugInfoLevelForInput()) {
     diBuilder = std::make_unique<DebugInfo::DIBuilder>(context);
@@ -75,7 +63,7 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *ctx,
     // enough for now).
     diBuilder->initializeCompileUnit(
         llvm::dwarf::DW_LANG_C,
-        diBuilder->createFile(bufferNameIdentifier, "/"), "Lit",
+        diBuilder->createFile(diags.getBufferNameIdentifier(), "/"), "Lit",
         /*isOptimized=*/true, options.getDIEmissionKind());
   }
 }
@@ -104,33 +92,20 @@ void LitSharedState::initialize(ASTDecl &topLevelDecl) {
   topLevelDecl.resolvedness = DeclResolvedness::fullyResolved;
 }
 
-/// Emit an error through the parser's logic.
 InFlightDiagnostic LitSharedState::emitError(Location loc, const Twine &twine) {
-  errorOccurred = true;
-  return mlir::emitError(loc, twine);
+  return diags.emitError(loc, twine);
 }
 
 /// Emit an error through the parser's logic.
 InFlightDiagnostic LitSharedState::emitError(llvm::SMLoc loc,
                                              const Twine &twine) {
-  return emitError(translateLocation(loc), twine);
+  return diags.emitError(loc, twine);
 }
 
-/// Encode the specified source location information into a Location object
-/// for attachment to the IR or error reporting.
-Location LitSharedState::translateLocation(SMLoc loc) const {
-  // TODO: Implement a cache here to speed up location translation.
-  unsigned bufferID = sourceMgr.FindBufferContainingLoc(loc);
-  auto lineAndColumn = sourceMgr.getLineAndColumn(loc, bufferID);
-
-  StringAttr bufferName;
-  if (bufferID == sourceMgr.getMainFileID())
-    bufferName = bufferNameIdentifier;
-  else
-    bufferName = getBufferNameIdentifier(sourceMgr, bufferID, getContext());
-
-  auto fileLoc = FileLineColLoc::get(bufferName, lineAndColumn.first,
-                                     lineAndColumn.second);
+/// Inflate a lightweight SMLoc into an MLIR Location object for addition
+/// into the IR.
+Location LitSharedState::translateLocation(llvm::SMLoc loc) const {
+  auto fileLoc = diags.translateLocation(loc);
   return diBuilder ? diBuilder->createScopedLoc(fileLoc) : fileLoc;
 }
 
@@ -142,6 +117,7 @@ ASTType LitSharedState::getNoneType() const { return impl->noneType; }
 /// Add declarations for magic things to the builtins decl.
 void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   DeclResolver &resolver = *declResolver;
+  MLIRContext *context = getContext();
 
   // Add a declarations for builtin types.
   impl->noneType = LIT::NoneType::get(context);
@@ -329,7 +305,7 @@ ASTDecl &LitSharedState::importModule(StringRef moduleName, llvm::SMLoc loc) {
 
   // Resolve the path for this module.
   std::optional<std::string> modulePath =
-      resolveModulePath(moduleName, sourceMgr, loc);
+      resolveModulePath(moduleName, getSourceMgr(), loc);
   ASTDecl *moduleDecl;
   if (!modulePath) {
     emitError(loc, "unable to locate module '") << moduleName << "'";
@@ -341,11 +317,12 @@ ASTDecl &LitSharedState::importModule(StringRef moduleName, llvm::SMLoc loc) {
   } else {
     // Open the module file within the source manager.
     std::string fullPath;
-    unsigned fileID = sourceMgr.AddIncludeFile(*modulePath, loc, fullPath);
+    unsigned fileID = getSourceMgr().AddIncludeFile(*modulePath, loc, fullPath);
 
     // Now that we have a MemoryBuffer, we can lex it, and therefore parse it.
     // do so.
-    const llvm::MemoryBuffer *moduleBuffer = sourceMgr.getMemoryBuffer(fileID);
+    const llvm::MemoryBuffer *moduleBuffer =
+        getSourceMgr().getMemoryBuffer(fileID);
     LitLexer lexer(*this, moduleBuffer);
     LitLexerCursor endCursor(
         {LitToken::eof, StringRef(moduleBuffer->getBufferEnd() + 1, 0), 0});

@@ -18,7 +18,7 @@ class TargetMachine;
 } // namespace llvm
 
 namespace M::KGEN {
-struct CompilationOptions;
+class CompilationOptions;
 
 /// Setup the machine properties from the provided target.
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
