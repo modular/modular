@@ -35,13 +35,13 @@ void POPDialect::registerAttributes() {
 //===----------------------------------------------------------------------===//
 
 /// Returns true if this is a supported float dtype.
-static bool isValidFloatDType(DType dtype) {
+static bool isValidFloatDType(KGENDType dtype) {
   return dtype.isFloat() &&
          !(dtype == DType::f8 || dtype == DType::f24 || dtype == DType::tf32);
 }
 
 /// Returns the floating semantics for the given dtype.
-static const llvm::fltSemantics &getFloatSemantics(DType dtype) {
+static const llvm::fltSemantics &getFloatSemantics(KGENDType dtype) {
   switch (dtype.getValue()) {
   case DType::f16:
     return APFloat::IEEEhalf();
@@ -64,24 +64,32 @@ static const llvm::fltSemantics &getFloatSemantics(DType dtype) {
   }
 }
 
-DTypeValue::DTypeValue(APSInt value, DType dtype)
+DTypeValue::DTypeValue(APSInt value, KGENDType dtype)
     : DTypeValue(APInt(value), dtype) {
-  assert(dtype.isInt() && value.getBitWidth() == dtype.getIntegerWidthInBits());
+  assert(
+      (dtype.isInt() && value.getBitWidth() == dtype.getIntegerWidthInBits()) ||
+      (dtype.isIndex() &&
+       value.getBitWidth() == IndexType::kInternalStorageBitWidth));
 }
 
-DTypeValue::DTypeValue(APFloat value, DType dtype)
+DTypeValue::DTypeValue(APFloat value, KGENDType dtype)
     : DTypeValue(value.bitcastToAPInt(), dtype) {
   assert(isValidFloatDType(dtype));
 }
 
-DTypeValue::DTypeValue(bool value, DType dtype)
+DTypeValue::DTypeValue(bool value, KGENDType dtype)
     : DTypeValue(APInt(1, value), dtype) {
   assert(dtype.isBool());
 }
 
+DTypeValue::DTypeValue(int64_t value, KGENDType dtype)
+    : DTypeValue(APInt(64, value), dtype) {
+  assert(dtype.isIndex());
+}
+
 APSInt DTypeValue::getIntVal() const {
-  assert(dtype.isInt());
-  return APSInt(data, /*isUnsigned=*/dtype.isUInt());
+  assert(dtype.isInt() || dtype.isIndex());
+  return APSInt(data, /*isUnsigned=*/!dtype.isIndex() && dtype.isUInt());
 }
 
 APFloat DTypeValue::getFloatVal() const {
@@ -94,6 +102,11 @@ bool DTypeValue::getBoolVal() const {
   return data.isOne();
 }
 
+int64_t DTypeValue::getIndexVal() const {
+  assert(dtype.isIndex());
+  return data.getSExtValue();
+}
+
 namespace M::KGEN::POP {
 /// Provide the ability to hash values for attribute uniquing.
 inline llvm::hash_code hash_value(const DTypeValue &value) {
@@ -102,7 +115,7 @@ inline llvm::hash_code hash_value(const DTypeValue &value) {
 } // namespace M::KGEN::POP
 
 /// Parse a value of a particular DType.
-static FailureOr<DTypeValue> parseDTypeValue(AsmParser &p, DType dtype) {
+static FailureOr<DTypeValue> parseDTypeValue(AsmParser &p, KGENDType dtype) {
   llvm::SMLoc loc = p.getCurrentLocation();
 
   // Handle integers.
@@ -142,12 +155,20 @@ static FailureOr<DTypeValue> parseDTypeValue(AsmParser &p, DType dtype) {
   }
 
   // Handle bools.
-  assert(dtype.isBool());
-  if (succeeded(p.parseOptionalKeyword("true")))
-    return {{true, dtype}};
-  if (succeeded(p.parseOptionalKeyword("false")))
-    return {{false, dtype}};
-  return p.emitError(loc, "expected 'true' or 'false' for bool literal");
+  if (dtype.isBool()) {
+    if (succeeded(p.parseOptionalKeyword("true")))
+      return DTypeValue(true, dtype);
+    if (succeeded(p.parseOptionalKeyword("false")))
+      return DTypeValue(false, dtype);
+    return p.emitError(loc, "expected 'true' or 'false' for bool literal");
+  }
+
+  // Handle indices.
+  assert(dtype.isIndex());
+  int64_t indexVal;
+  if (p.parseInteger(indexVal))
+    return failure();
+  return DTypeValue(indexVal, dtype);
 }
 
 LogicalResult SIMDAttr::verify(function_ref<InFlightDiagnostic()> emitError,
@@ -183,10 +204,11 @@ static ParseResult parseDTypeValues(AsmParser &p,
     return p.emitError(p.getCurrentLocation(),
                        "SIMD constant requires a concrete type");
   }
-  if (!dtype->isInt() && !isValidFloatDType(*dtype) && !dtype->isBool()) {
+  if (!dtype->isInt() && !isValidFloatDType(*dtype) && !dtype->isBool() &&
+      !dtype->isIndex()) {
     return p.emitError(
         p.getCurrentLocation(),
-        "only integer, float, and bool dtype constants can be parsed");
+        "only integer, float, bool, and index dtype constants can be parsed");
   }
 
   values.emplace();
@@ -203,7 +225,7 @@ static ParseResult parseDTypeValues(AsmParser &p,
 
 static void printDTypeValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
                              SIMDType type) {
-  DType dtype = *type.getResolvedDType();
+  KGENDType dtype = *type.getResolvedDType();
   auto printElt = [&](const DTypeValue &value) {
     if (dtype.isInt()) {
       p << value.getIntVal();
@@ -211,8 +233,10 @@ static void printDTypeValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
       SmallVector<char, 256> strVal;
       value.getFloatVal().toString(strVal);
       p << '"' << StringRef(strVal.data(), strVal.size()) << '"';
-    } else {
+    } else if (dtype.isBool()) {
       p << (value.getBoolVal() ? "true" : "false");
+    } else {
+      p << value.getIndexVal();
     }
   };
   llvm::interleaveComma(values, p, printElt);

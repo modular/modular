@@ -103,6 +103,56 @@ static SIMDAttr foldSIMDOpDType(GetValueFn getValue,
                           operands, op, getValue);
   }
 }
+
+/// Try to fold an operation with index dtype using one of the provided fold
+/// functions. Index folds are performed using the same function as integer
+/// dtype folds. An index fold is performed by computing the result in 64-bit
+/// and 32-bit arithmetic. If the results match, then the operation can fold.
+/// See the MLIR `index` dialect for more details.
+template <typename... OpFns>
+static SIMDAttr foldSIMDOpIndex(ArrayRef<Attribute> operands, OpFns &&...ops) {
+  auto op = getOpFnOfType<APSInt>(std::forward<OpFns>(ops)...);
+  if constexpr (std::is_same_v<decltype(op), std::nullopt_t>) {
+    llvm_unreachable("unhandled dtype");
+  } else {
+    // Define the index fold function using the integer fold function.
+    auto indexOp = [&op](auto... args) -> Optional<int64_t> {
+      auto result64 = op(args...);
+      // Check if the fold function is failable. If the fold function can fail,
+      // make sure to propagate the failure in both 64-bit and 32-bit
+      // arithmetic.
+      constexpr bool isOptional =
+          llvm::is_detected<IsOptionalType, decltype(result64)>::value;
+      APSInt result64Value;
+      if constexpr (isOptional) {
+        if (!result64.has_value())
+          return {};
+        result64Value = *result64;
+      } else {
+        result64Value = result64;
+      }
+      auto result32 = op(args.trunc(32)...);
+      APSInt result32Value;
+      if constexpr (isOptional) {
+        if (!result32.has_value())
+          return {};
+        result32Value = *result32;
+      } else {
+        result32Value = result32;
+      }
+      // Compare the results. Return the index value if the fold results match.
+      if (result64Value.trunc(32) == result32Value)
+        return result64Value.getSExtValue();
+      return {};
+    };
+    return foldSIMDOpImpl(std::make_index_sequence<
+                              llvm::function_traits<decltype(op)>::num_args>(),
+                          operands, indexOp, [](DTypeValue val) {
+                            return APSInt(APInt(64, val.getIndexVal()),
+                                          /*isUnsigned=*/false);
+                          });
+  }
+}
 } // namespace detail
 
 /// Try to fold an n-ary SIMD vector operation using one of the provided
@@ -113,7 +163,8 @@ static SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, OpFns &&...ops) {
         return !isa_and_nonnull<SIMDAttr>(operand);
       }))
     return {};
-  DType dtype = *cast<SIMDAttr>(operands.front()).getType().getResolvedDType();
+  KGENDType dtype =
+      *cast<SIMDAttr>(operands.front()).getType().getResolvedDType();
   if (dtype.isInt())
     return ::detail::foldSIMDOpDType<APSInt>(
         [](DTypeValue val) { return val.getIntVal(); }, operands,
@@ -128,6 +179,8 @@ static SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, OpFns &&...ops) {
     return ::detail::foldSIMDOpDType<bool>(
         [](DTypeValue val) { return val.getBoolVal(); }, operands,
         std::forward<OpFns>(ops)...);
+  if (dtype.isIndex())
+    return ::detail::foldSIMDOpIndex(operands, std::forward<OpFns>(ops)...);
   llvm_unreachable("unhandled dtype");
 }
 
