@@ -148,6 +148,18 @@ fn testParamSubst():
   # CHECK: %xx = lit.var.decl "xx" : <@ParamSubst<rank = 2, shape: list<index[2]> = [1, 2]>>
   var xx : ParamSubst[2, __mlir_attr.`#kgen.list<1, 2> : !kgen.list<index[2]>`]
 
+
+# Test parameter substitution.
+# CHECK-LABEL: lit.func @"fnToCall()"<size, array: !pop.array<size, f32>>()
+fn fnToCall[size: __mlir_type.index, array: __mlir_type[`!pop.array<`, size, `, f32>`]]():
+  pass
+
+# CHECK: lit.func @"fnWithCall
+fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
+   # CHECK:  kgen.call @"fnToCall()"<size = 10, array: !pop.array<10, f32> = array>()
+   fnToCall[10, array]()
+
+
 ##===----------------------------------------------------------------------===##
 # Result parameters
 ##===----------------------------------------------------------------------===##

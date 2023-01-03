@@ -388,8 +388,17 @@ ParamBindArrayAttr DirectCallable::getCheckedBindings(
       incorrectBindingNo = newBindings.size();
       return {};
     }
+
+    // Any reference between parameters to this parameter will get our bound and
+    // potentially type-converted value.
     evaluator.setParameterValue(decl, bound.getValue());
-    newBindings.push_back(ParamBindAttr::get(decl, bound.getValue()));
+
+    // Update the decl's type if we remapped the type.
+    ParamDeclAttr boundDecl = decl;
+    if (decl.getType() != expectedType)
+      boundDecl = ParamDeclAttr::get(decl.getName(), expectedType);
+
+    newBindings.push_back(ParamBindAttr::get(boundDecl, bound.getValue()));
   }
 
   return ParamBindArrayAttr::get(signature.getContext(), newBindings);
