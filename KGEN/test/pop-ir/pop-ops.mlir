@@ -869,63 +869,50 @@ kgen.generator @pointer_to_index<type: type>(%a: !pop.pointer<type>,
                                              %c: !pop.pointer<simd<4, f32>>,
                                              %d: !pop.pointer<scalar<invalid>>) {
   // CHECK: pop.pointer_to_index %{{.*}} : !pop.pointer<type>
-  %0 = pop.pointer_to_index %a : !pop.pointer<type> to index
+  %0 = pop.pointer_to_index %a : !pop.pointer<type> to !pop.scalar<index>
   // CHECK: pop.pointer_to_index %{{.*}} : !pop.pointer<scalar<f32>>
-  %1 = pop.pointer_to_index %b : !pop.pointer<scalar<f32>> to index
+  %1 = pop.pointer_to_index %b : !pop.pointer<scalar<f32>> to !pop.scalar<index>
   // CHECK: pop.pointer_to_index %{{.*}} : !pop.pointer<simd<4, f32>>
-  %2 = pop.pointer_to_index %c : !pop.pointer<simd<4, f32>> to index
+  %2 = pop.pointer_to_index %c : !pop.pointer<simd<4, f32>> to !pop.scalar<index>
   // CHECK: pop.pointer_to_index %{{.*}} : !pop.pointer<scalar<invalid>>
-  %3 = pop.pointer_to_index %d : !pop.pointer<scalar<invalid>> to index
+  %3 = pop.pointer_to_index %d : !pop.pointer<scalar<invalid>> to !pop.scalar<index>
   kgen.return
 }
 
 // CHECK-LABEL: @address_to_index
-kgen.generator @address_to_index<type: dtype>(%a: !pop.simd<1, address>) {
+kgen.generator @address_to_index(%a: !pop.simd<1, address>) {
   // CHECK: pop.pointer_to_index %{{.*}} : !pop.scalar<address>
-  %0 = pop.pointer_to_index %a : !pop.simd<1, address> to index
-  // CHECK: pop.pointer_to_index %{{.*}} : !pop.scalar<address>
-  %1 = pop.pointer_to_index %a : !pop.simd<1, address> to !pop.simd<1, type>
+  %0 = pop.pointer_to_index %a : !pop.simd<1, address> to !pop.scalar<index>
   kgen.return
 }
 
 // CHECK-LABEL: @simd_address_to_index
-kgen.generator @simd_address_to_index<type: dtype>(%a: !pop.simd<4, address>) {
+kgen.generator @simd_address_to_index(%a: !pop.simd<4, address>) {
   // CHECK: pop.pointer_to_index %{{.*}} : !pop.simd<4, address> to !pop.simd<4, index>
   %0 = pop.pointer_to_index %a : !pop.simd<4, address> to !pop.simd<4, index>
-  // CHECK: pop.pointer_to_index %{{.*}} : !pop.simd<4, address> to !pop.simd<4, type>
-  %1 = pop.pointer_to_index %a : !pop.simd<4, address> to !pop.simd<4, type>
   kgen.return
 }
 
 // CHECK-LABEL: @index_to_address
-kgen.generator @index_to_address<type: type>(%idx: index) {
-  // CHECK: pop.index_to_pointer %{{.*}} : index to !pop.scalar<address>
-  %0 = pop.index_to_pointer %idx : index to !pop.simd<1, address>
+kgen.generator @index_to_address(%idx: !pop.scalar<index>) {
+  // CHECK: pop.index_to_pointer %{{.*}} : !pop.scalar<index> to !pop.scalar<address>
+  %0 = pop.index_to_pointer %idx : !pop.scalar<index> to !pop.simd<1, address>
   kgen.return
 }
 
 // CHECK-LABEL: @index_to_pointer
-kgen.generator @index_to_pointer<type: type>(%idx: index) {
-  // CHECK: pop.index_to_pointer %{{.*}} : index to !pop.pointer<type>
-  %0 = pop.index_to_pointer %idx : index to !pop.pointer<type>
-  // CHECK: pop.index_to_pointer %{{.*}} : index to !pop.pointer<scalar<f32>>
-  %1 = pop.index_to_pointer %idx : index to !pop.pointer<scalar<f32>>
-  // CHECK: pop.index_to_pointer %{{.*}} : index to !pop.pointer<simd<4, f32>>
-  %2 = pop.index_to_pointer %idx : index to !pop.pointer<simd<4, f32>>
-  // CHECK: pop.index_to_pointer %{{.*}} : index to !pop.pointer<scalar<invalid>>
-  %3 = pop.index_to_pointer %idx : index to !pop.pointer<scalar<invalid>>
+kgen.generator @index_to_pointer(%idx: !pop.scalar<index>) {
+  // CHECK: pop.index_to_pointer %{{.*}} : !pop.scalar<index> to !pop.pointer<scalar<f32>>
+  %0 = pop.index_to_pointer %idx : !pop.scalar<index> to !pop.pointer<scalar<f32>>
+  // CHECK: pop.index_to_pointer %{{.*}} : !pop.scalar<index> to !pop.pointer<simd<4, f32>>
+  %1 = pop.index_to_pointer %idx : !pop.scalar<index> to !pop.pointer<simd<4, f32>>
   kgen.return
 }
 
 // CHECK-LABEL: @simd_index_to_address
-kgen.generator @simd_index_to_address<type: dtype>(%idx0: !pop.simd<4, index>,
-                                                   %idx1: !pop.simd<4, type>) {
+kgen.generator @simd_index_to_address(%idx0: !pop.simd<4, index>) {
   // CHECK: pop.index_to_pointer %{{.*}} : !pop.simd<4, index> to !pop.simd<4, address>
   %0 = pop.index_to_pointer %idx0 : !pop.simd<4, index> to !pop.simd<4, address>
-  // CHECK: pop.index_to_pointer %{{.*}} : !pop.simd<4, type> to !pop.simd<4, address>
-  %1 = pop.index_to_pointer %idx1 : !pop.simd<4, type> to !pop.simd<4, address>
-  // CHECK: pop.index_to_pointer %{{.*}} : !pop.simd<4, type> to !pop.simd<4, type>
-  %2 = pop.index_to_pointer %idx1 : !pop.simd<4, type> to !pop.simd<4, type>
   kgen.return
 }
 

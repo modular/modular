@@ -28,6 +28,23 @@ kgen.func @simd_constant() -> (!pop.simd<2, bool>, !pop.simd<2, si8>, !pop.scala
   kgen.return %0, %1, %2 : !pop.simd<2, bool>, !pop.simd<2, si8>, !pop.scalar<bf16>
 }
 
+// CHECK-LABEL: @scalar_index_addr_constants
+kgen.func @scalar_index_addr_constants() -> (!pop.scalar<index>, !pop.scalar<address>) {
+  // CHECK-NEXT: { i64, ptr } { i64 1, ptr inttoptr (i64 2 to ptr) }
+  %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<1>>
+  %1 = kgen.param.constant: !pop.scalar<address> = <#pop.simd<2>>
+  kgen.return %0, %1 : !pop.scalar<index>, !pop.scalar<address>
+}
+
+// CHECK-LABEL: @simd_index_addr_constants
+kgen.func @simd_index_addr_constants() -> (!pop.simd<2, index>, !pop.simd<2, address>) {
+  // CHECK-NEXT: { <2 x i64>, <2 x ptr> }
+  // CHECK-SAME: { <2 x i64> <i64 1, i64 11>, <2 x ptr> <ptr inttoptr (i64 2 to ptr), ptr inttoptr (i64 22 to ptr)> }
+  %0 = kgen.param.constant: !pop.simd<2, index> = <#pop.simd<1, 11>>
+  %1 = kgen.param.constant: !pop.simd<2, address> = <#pop.simd<2, 22>>
+  kgen.return %0, %1 : !pop.simd<2, index>, !pop.simd<2, address>
+}
+
 // CHECK-LABEL: @variant_constant_0
 kgen.func @variant_constant_0() -> !pop.variant<i32> {
   // CHECK-NEXT: { [1 x i64], i1 } { [1 x i64] [i64 1], i1 false }

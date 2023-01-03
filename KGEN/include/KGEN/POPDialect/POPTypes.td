@@ -257,7 +257,6 @@ def UI8Scalar : ScalarOfDType<BoundAnd<UI8DType>, "!pop.simd<1, ui8>">,
 
 def UnboundOrPointerOrSIMDAddressType : AnyTypeOf<
     [POP_PointerType, AddressSIMD, UnboundSIMD]>;
-def UnboundOrIndexSIMDOrIndex : AnyTypeOf<[Index, IndexSIMD, UnboundSIMD]>;
 
 //===----------------------------------------------------------------------===//
 // Type Constraint Traits

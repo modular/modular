@@ -400,19 +400,31 @@ Value VariantHelper::materializeLLVMVariant(Type type, Value value,
 //===----------------------------------------------------------------------===//
 
 /// Convert a SIMD vector constant.
-static TypedAttr convertSIMDAttr(POP::SIMDAttr simd, Builder &b) {
-  DType dtype = *simd.getType().getResolvedDType();
+static Value convertSIMDAttr(ImplicitLocOpBuilder &b, TypeConverter &tc,
+                             POP::SIMDAttr simd) {
+  KGENDType dtype = *simd.getType().getResolvedDType();
+  auto asConst = [&](TypedAttr value) {
+    return b.create<LLVM::ConstantOp>(value);
+  };
 
   // Handle scalar constants.
   if (simd.getValues().size() == 1) {
     const POP::DTypeValue &value = simd.getValues().front();
     if (dtype.isBool())
-      return b.getBoolAttr(value.getBoolVal());
+      return asConst(b.getBoolAttr(value.getBoolVal()));
     if (dtype.isInt())
-      return b.getIntegerAttr(b.getIntegerType(dtype.getIntegerWidthInBits()),
-                              value.getIntVal());
-    return b.getFloatAttr(getEquivalentFloatType(b.getContext(), dtype),
-                          value.getFloatVal());
+      return asConst(b.getIntegerAttr(
+          b.getIntegerType(dtype.getIntegerWidthInBits()), value.getIntVal()));
+    if (dtype.isIndex() || dtype.isAddress()) {
+      Value addr = asConst(b.getIntegerAttr(tc.convertType(b.getIndexType()),
+                                            value.getIndexVal()));
+      if (dtype.isIndex())
+        return addr;
+      return b.create<LLVM::IntToPtrOp>(
+          LLVM::LLVMPointerType::get(b.getContext()), addr);
+    }
+    return asConst(b.getFloatAttr(getEquivalentFloatType(b.getContext(), dtype),
+                                  value.getFloatVal()));
   }
 
   // Handle vector constants.
@@ -420,25 +432,39 @@ static TypedAttr convertSIMDAttr(POP::SIMDAttr simd, Builder &b) {
     SmallVector<APInt> values;
     for (const POP::DTypeValue &value : simd.getValues())
       values.emplace_back(1, value.getBoolVal());
-    return IntArrayElementsAttr::get(
-        VectorType::get(values.size(), b.getI1Type()), values);
+    return asConst(IntArrayElementsAttr::get(
+        VectorType::get(values.size(), b.getI1Type()), values));
   }
   if (dtype.isInt()) {
     SmallVector<APInt> values;
     for (const POP::DTypeValue &value : simd.getValues())
       values.push_back(value.getIntVal());
-    return IntArrayElementsAttr::get(
+    return asConst(IntArrayElementsAttr::get(
         VectorType::get(values.size(),
                         b.getIntegerType(dtype.getIntegerWidthInBits())),
-        values);
+        values));
+  }
+  if (dtype.isIndex() || dtype.isAddress()) {
+    SmallVector<APInt> values;
+    auto indexType = cast<IntegerType>(tc.convertType(b.getIndexType()));
+    for (const POP::DTypeValue &value : simd.getValues())
+      values.push_back(APInt(indexType.getWidth(), value.getIndexVal()));
+    Value addr = asConst(IntArrayElementsAttr::get(
+        VectorType::get(values.size(), indexType), values));
+    if (dtype.isIndex())
+      return addr;
+    return b.create<LLVM::IntToPtrOp>(
+        LLVM::LLVMFixedVectorType::get(
+            LLVM::LLVMPointerType::get(b.getContext()), values.size()),
+        addr);
   }
   SmallVector<APFloat> values;
   for (const POP::DTypeValue &value : simd.getValues())
     values.push_back(value.getFloatVal());
-  return FloatArrayElementsAttr::get(
+  return asConst(FloatArrayElementsAttr::get(
       VectorType::get(values.size(),
                       getEquivalentFloatType(b.getContext(), dtype)),
-      values);
+      values));
 }
 
 Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b, TypeConverter &tc,
@@ -467,7 +493,7 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b, TypeConverter &tc,
 
   // Convert SIMD constants to an array of integer or float constants.
   if (auto simd = dyn_cast<POP::SIMDAttr>(attr))
-    return b.create<LLVM::ConstantOp>(convertSIMDAttr(simd, b));
+    return convertSIMDAttr(b, tc, simd);
 
   // Convert array or struct constants to LLVM array or struct constants.
   if (isa<POP::ArrayAttr, POP::StructAttr>(attr)) {
