@@ -33,20 +33,24 @@ void MDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
-// IntOrFPType
+// ArithmeticType
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// A helper class for manipulating float or integer element types.
-class IntOrFPType : public Type {
+/// A helper class for manipulating float, integer, or index element types.
+class ArithmeticType : public Type {
 public:
   using Type::Type;
 
   /// Support type inquiry.
-  static bool classof(Type type) { return type.isIntOrFloat(); }
+  static bool classof(Type type) { return type.isIntOrIndexOrFloat(); }
 
   /// Get the bitwidth.
-  unsigned getWidth() const { return getIntOrFloatBitWidth(); }
+  unsigned getWidth() const {
+    if (isIndex())
+      return IndexType::kInternalStorageBitWidth;
+    return getIntOrFloatBitWidth();
+  }
 
   /// Get the type size in bytes rounded up to the nearest byte boundary.
   unsigned getNearestByteSize() const {
@@ -59,13 +63,13 @@ public:
 // PrimitiveArray
 //===----------------------------------------------------------------------===//
 
-/// Require the element type to be a float or integer.
+/// Require the element type to be a float, integer, or index.
 LogicalResult
 PrimitiveArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                            ArrayRef<uint8_t> data, Type elementType) {
-  auto intOrFp = llvm::dyn_cast<IntOrFPType>(elementType);
+  auto intOrFp = llvm::dyn_cast<ArithmeticType>(elementType);
   if (!intOrFp)
-    return emitError() << "expected integer or float element type";
+    return emitError() << "expected integer, index, or float element type";
   // Disallow s/ui0.
   if (intOrFp.getWidth() == 0)
     return emitError() << "zero-width element type unsupported";
@@ -83,7 +87,7 @@ static ArrayRef<uint8_t>
 copyIntoAlignedBuffer(mlir::StorageUniquer::StorageAllocator &allocator,
                       ArrayRef<uint8_t> data, Type elementType) {
   unsigned byteSize =
-      llvm::divideCeil(elementType.getIntOrFloatBitWidth(), CHAR_BIT);
+      llvm::divideCeil(cast<ArithmeticType>(elementType).getWidth(), CHAR_BIT);
   auto *ptr = static_cast<uint8_t *>(
       allocator.allocate(data.size(), llvm::NextPowerOf2(byteSize)));
   std::uninitialized_copy(data.begin(), data.end(), ptr);
@@ -94,7 +98,7 @@ namespace {
 /// Helper for parsing arbitrary integers and floats.
 class PrimitiveElementParser {
 public:
-  PrimitiveElementParser(IntOrFPType type)
+  PrimitiveElementParser(ArithmeticType type)
       : type(type), byteSize(type.getNearestByteSize()) {}
 
   /// Take the parsed data.
@@ -140,7 +144,7 @@ private:
     llvm::StoreIntToMemory(value, data.data() + offset, byteSize);
   }
 
-  IntOrFPType type;
+  ArithmeticType type;
   unsigned byteSize;
   std::vector<uint8_t> data;
 };
@@ -148,7 +152,7 @@ private:
 /// Helper for printing arbitrary integers and floats.
 class PrimitiveElementPrinter {
 public:
-  PrimitiveElementPrinter(IntOrFPType type, ArrayRef<uint8_t> data)
+  PrimitiveElementPrinter(ArithmeticType type, ArrayRef<uint8_t> data)
       : type(type), byteSize(type.getNearestByteSize()), data(data) {}
 
   /// Print a single integer.
@@ -188,7 +192,7 @@ public:
   }
 
 private:
-  IntOrFPType type;
+  ArithmeticType type;
   unsigned byteSize;
   ArrayRef<uint8_t> data;
 };
@@ -198,10 +202,10 @@ private:
 static ParseResult parsePrimitiveArray(AsmParser &p,
                                        FailureOr<std::vector<uint8_t>> &values,
                                        Type elementType) {
-  auto intOrFp = elementType.dyn_cast<IntOrFPType>();
+  auto intOrFp = elementType.dyn_cast<ArithmeticType>();
   if (!intOrFp)
     return p.emitError(p.getCurrentLocation(),
-                       "expected integer or float element type");
+                       "expected integer, index, or float element type");
 
   // The array is empty if there are no colons.
   if (p.parseOptionalColon()) {
@@ -223,13 +227,13 @@ static void printPrimitiveArray(AsmPrinter &p, ArrayRef<uint8_t> values,
   if (values.empty())
     return;
   p << ": ";
-  PrimitiveElementPrinter handler(elementType.cast<IntOrFPType>(), values);
+  PrimitiveElementPrinter handler(elementType.cast<ArithmeticType>(), values);
   handler.printElements(p);
 }
 
 int64_t PrimitiveArrayAttr::size() const {
   return getData().size() /
-         getElementType().cast<IntOrFPType>().getNearestByteSize();
+         getElementType().cast<ArithmeticType>().getNearestByteSize();
 }
 
 PrimitiveArrayAttr PrimitiveArrayAttr::get(ArrayRef<uint8_t> data,
@@ -261,10 +265,10 @@ Attribute ArrayElementsAttr::parse(AsmParser &p, Type attrType) {
     p.emitError(p.getCurrentLocation(), "expected a shaped type");
     return {};
   }
-  auto elementType = llvm::dyn_cast<IntOrFPType>(type.getElementType());
+  auto elementType = llvm::dyn_cast<ArithmeticType>(type.getElementType());
   if (!elementType) {
     p.emitError(p.getCurrentLocation(),
-                "expected integer or float element type");
+                "expected integer, index, or float element type");
     return {};
   }
 
@@ -289,7 +293,7 @@ Attribute ArrayElementsAttr::parse(AsmParser &p, Type attrType) {
 /// Print the elements of an array elements attribute.
 void ArrayElementsAttr::print(AsmPrinter &p) const {
   p << '<';
-  PrimitiveElementPrinter handler(getElementType().cast<IntOrFPType>(),
+  PrimitiveElementPrinter handler(getElementType().cast<ArithmeticType>(),
                                   getData().getData());
   handler.printElements(p);
   p << '>';
@@ -311,11 +315,11 @@ ArrayElementsAttr::try_value_begin_impl(OverloadToken<Attribute>) const {
 }
 
 Attribute detail::AttrIterator::operator*() const {
-  auto type = elementType.cast<IntOrFPType>();
+  auto type = elementType.cast<ArithmeticType>();
   APInt val(type.getWidth(), 0);
   unsigned byteSize = type.getNearestByteSize();
   llvm::LoadIntFromMemory(val, getBase() + getIndex() * byteSize, byteSize);
-  if (type.isa<IntegerType>())
+  if (type.isIntOrIndex())
     return IntegerAttr::get(type, val);
   APFloat fpVal(type.cast<FloatType>().getFloatSemantics(), val);
   return FloatAttr::get(type.cast<FloatType>(), fpVal);
@@ -458,6 +462,23 @@ auto FloatArrayElementsAttr::end() const -> Iterator {
 bool FloatArrayElementsAttr::classof(Attribute attr) {
   if (auto arr = llvm::dyn_cast<ArrayElementsAttr>(attr))
     return arr.getElementType().isa<FloatType>();
+  return false;
+}
+
+//===----------------------------------------------------------------------===//
+// IndexArrayElementsAttr
+//===----------------------------------------------------------------------===//
+
+IndexArrayElementsAttr IndexArrayElementsAttr::get(ShapedType type,
+                                                   ArrayRef<int64_t> values) {
+  ArrayRef<uint8_t> data(reinterpret_cast<const uint8_t *>(values.data()),
+                         values.size() * sizeof(int64_t));
+  return ArrayElementsAttr::get(data, type).cast<IndexArrayElementsAttr>();
+}
+
+bool IndexArrayElementsAttr::classof(Attribute attr) {
+  if (auto arr = llvm::dyn_cast<ArrayElementsAttr>(attr))
+    return arr.getElementType().isa<IndexType>();
   return false;
 }
 

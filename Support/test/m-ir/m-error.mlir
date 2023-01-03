@@ -5,7 +5,7 @@
 
 // -----
 
-// expected-error @below {{expected integer or float element type}}
+// expected-error @below {{expected integer, index, or float element type}}
 "M"() {a = #M.primitives_array<vector<2xi2>>} : () -> ()
 
 // -----

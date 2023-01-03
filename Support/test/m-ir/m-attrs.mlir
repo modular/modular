@@ -12,6 +12,9 @@
 // CHECK: primitives_array<i64>
 "M"() {a = #M.primitives_array<i64>} : () -> ()
 
+// CHECK: primitives_array<index: -3, 1, 3>
+"M"() {a = #M.primitives_array<index: -3, 1, 3>} : () -> ()
+
 // CHECK: dense_array<1, 2, 3, 4> : tensor<2x2xi32>
 "M"() {a = #M.dense_array<1, 2, 3, 4> : tensor<2x2xi32>} : () -> ()
 
@@ -20,6 +23,9 @@
 
 // CHECK: dense_array<65534, 1, 4> : !M.array<3xui16>
 "M"() {a = #M.dense_array<-2, 1, 4> : !M.array<3xui16>} : () -> ()
+
+// CHECK: dense_array<-3, 1, 3> : !M.array<3xindex>
+"M"() {a = #M.dense_array<-3, 1, 3> : !M.array<3xindex>} : () -> ()
 
 // CHECK: aligned_bytes<64 :"0x01020304">
 "M"() {a = #M.aligned_bytes<64: "0x01020304">} : () -> ()
