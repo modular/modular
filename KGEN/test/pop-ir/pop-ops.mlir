@@ -979,11 +979,11 @@ kgen.func @cast_from_builtin(%arg0: f32, %arg1: ui32) {
 
 // CHECK-LABEL: @cast_from_builtin_vector
 // CHECK-SAME: %[[ARG:.*]]:
-kgen.func @cast_from_builtin_vector(%arg0: vector<1xf32>) -> !pop.scalar<f32> {
-  // CHECK: %[[V0:.*]] = pop.cast_from_builtin %[[ARG]] : vector<1xf32> to !pop.scalar<f32>
-  %0 = pop.cast_from_builtin %arg0 : vector<1xf32> to !pop.scalar<f32>
-  // CHECK: kgen.return  %[[V0:.*]] : !pop.scalar<f32>
-  kgen.return %0 : !pop.scalar<f32>
+kgen.func @cast_from_builtin_vector(%arg0: vector<2xf32>) -> !pop.simd<2, f32> {
+  // CHECK: %[[V0:.*]] = pop.cast_from_builtin %[[ARG]] : vector<2xf32> to !pop.simd<2, f32>
+  %0 = pop.cast_from_builtin %arg0 : vector<2xf32> to !pop.simd<2, f32>
+  // CHECK: kgen.return %[[V0:.*]] : !pop.simd<2, f32>
+  kgen.return %0 : !pop.simd<2, f32>
 }
 
 // CHECK-LABEL: @array_ops
