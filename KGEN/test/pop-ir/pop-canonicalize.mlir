@@ -188,6 +188,242 @@ kgen.func @index_folds() -> (!pop.scalar<index>, !pop.scalar<index>) {
   kgen.return %3, %4 : !pop.scalar<index>, !pop.scalar<index>
 }
 
+// CHECK-LABEL: @cmp_eq
+kgen.func @cmp_eq() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
+  // CHECK-DAG: <false, true>
+  // CHECK-DAG: <false>
+  %0 = kgen.param.constant: !pop.simd<2, si8> = <#pop.simd<1, 2>>
+  %1 = kgen.param.constant: !pop.simd<2, si8> = <#pop.simd<-2, 2>>
+  %2 = pop.cmp eq(%0, %1) : !pop.simd<2, si8>
+  %3 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"1">>
+  %4 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"2">>
+  %5 = pop.cmp eq(%3, %4) : !pop.scalar<f32>
+  kgen.return %2, %5 : !pop.simd<2, bool>, !pop.scalar<bool>
+}
+
+// CHECK-LABEL: @cmp_ne
+kgen.func @cmp_ne() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
+  // CHECK-DAG: <true, false>
+  // CHECK-DAG: <true>
+  %0 = kgen.param.constant: !pop.simd<2, si8> = <#pop.simd<1, 2>>
+  %1 = kgen.param.constant: !pop.simd<2, si8> = <#pop.simd<-2, 2>>
+  %2 = pop.cmp ne(%0, %1) : !pop.simd<2, si8>
+  %3 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"1">>
+  %4 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"2">>
+  %5 = pop.cmp ne(%3, %4) : !pop.scalar<f32>
+  kgen.return %2, %5 : !pop.simd<2, bool>, !pop.scalar<bool>
+}
+
+// CHECK-LABEL: @cmp_lt
+kgen.func @cmp_lt() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
+  // CHECK-DAG: <false, false>
+  // CHECK-DAG: <true>
+  %0 = kgen.param.constant: !pop.simd<2, si8> = <#pop.simd<1, 2>>
+  %1 = kgen.param.constant: !pop.simd<2, si8> = <#pop.simd<-2, 2>>
+  %2 = pop.cmp lt(%0, %1) : !pop.simd<2, si8>
+  %3 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"1">>
+  %4 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"2">>
+  %5 = pop.cmp lt(%3, %4) : !pop.scalar<f32>
+  kgen.return %2, %5 : !pop.simd<2, bool>, !pop.scalar<bool>
+}
+
+// CHECK-LABEL: @cmp_gt
+kgen.func @cmp_gt() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
+  // CHECK-DAG: <true, false>
+  // CHECK-DAG: <false>
+  %0 = kgen.param.constant: !pop.simd<2, si8> = <#pop.simd<1, 2>>
+  %1 = kgen.param.constant: !pop.simd<2, si8> = <#pop.simd<-2, 2>>
+  %2 = pop.cmp gt(%0, %1) : !pop.simd<2, si8>
+  %3 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"1">>
+  %4 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"2">>
+  %5 = pop.cmp gt(%3, %4) : !pop.scalar<f32>
+  kgen.return %2, %5 : !pop.simd<2, bool>, !pop.scalar<bool>
+}
+
+// CHECK-LABEL: @cmp_le
+kgen.func @cmp_le() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
+  // CHECK-DAG: <false, true>
+  // CHECK-DAG: <true>
+  %0 = kgen.param.constant: !pop.simd<2, si8> = <#pop.simd<1, 2>>
+  %1 = kgen.param.constant: !pop.simd<2, si8> = <#pop.simd<-2, 2>>
+  %2 = pop.cmp le(%0, %1) : !pop.simd<2, si8>
+  %3 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"1">>
+  %4 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"2">>
+  %5 = pop.cmp le(%3, %4) : !pop.scalar<f32>
+  kgen.return %2, %5 : !pop.simd<2, bool>, !pop.scalar<bool>
+}
+
+// CHECK-LABEL: @cmp_ge
+kgen.func @cmp_ge() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
+  // CHECK-DAG: <true, true>
+  // CHECK-DAG: <false>
+  %0 = kgen.param.constant: !pop.simd<2, si8> = <#pop.simd<1, 2>>
+  %1 = kgen.param.constant: !pop.simd<2, si8> = <#pop.simd<-2, 2>>
+  %2 = pop.cmp ge(%0, %1) : !pop.simd<2, si8>
+  %3 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"1">>
+  %4 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"2">>
+  %5 = pop.cmp ge(%3, %4) : !pop.scalar<f32>
+  kgen.return %2, %5 : !pop.simd<2, bool>, !pop.scalar<bool>
+}
+
+// CHECK-LABEL: @cmp_index
+kgen.func @cmp_index() -> !pop.scalar<bool> {
+  // CHECK: pop.cmp
+  %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<4294967296>>
+  %1 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<8589934592>>
+  %2 = pop.cmp eq(%0, %1) : !pop.scalar<index>
+  kgen.return %2 : !pop.scalar<bool>
+}
+
+// CHECK-LABEL: @and
+kgen.func @and() -> !pop.scalar<ui4> {
+  // CHECK-NEXT <1>
+  %0 = kgen.param.constant: !pop.scalar<ui4> = <#pop.simd<7>>
+  %1 = kgen.param.constant: !pop.scalar<ui4> = <#pop.simd<9>>
+  %2 = pop.and %0, %1 : !pop.scalar<ui4>
+  kgen.return %2 : !pop.scalar<ui4>
+}
+
+// CHECK-LABEL: @or
+kgen.func @or() -> !pop.scalar<ui4> {
+  // CHECK-NEXT <15>
+  %0 = kgen.param.constant: !pop.scalar<ui4> = <#pop.simd<6>>
+  %1 = kgen.param.constant: !pop.scalar<ui4> = <#pop.simd<9>>
+  %2 = pop.or %0, %1 : !pop.scalar<ui4>
+  kgen.return %2 : !pop.scalar<ui4>
+}
+
+// CHECK-LABEL: @xor
+kgen.func @xor() -> !pop.scalar<ui4> {
+  // CHECK-NEXT <2>
+  %0 = kgen.param.constant: !pop.scalar<ui4> = <#pop.simd<5>>
+  %1 = kgen.param.constant: !pop.scalar<ui4> = <#pop.simd<7>>
+  %2 = pop.xor %0, %1 : !pop.scalar<ui4>
+  kgen.return %2 : !pop.scalar<ui4>
+}
+
+// CHECK-LABEL: @select
+kgen.func @select() -> !pop.simd<2, si4> {
+  // CHECK-NEXT: <1, 4>
+  %0 = kgen.param.constant: !pop.simd<2, si4> = <#pop.simd<1, 3>>
+  %1 = kgen.param.constant: !pop.simd<2, si4> = <#pop.simd<2, 4>>
+  %2 = kgen.param.constant: !pop.simd<2, bool> = <#pop.simd<true, false>>
+  %3 = pop.select %2, %0, %1 : !pop.simd<2, si4>
+  kgen.return %3 : !pop.simd<2, si4>
+}
+
+// CHECK-LABEL: @bitcast
+kgen.func @bitcast() -> (!pop.simd<2, bf16>, !pop.simd<2, f16>) {
+  // CHECK-DAG: <"0.125", "8">
+  // CHECK-DAG: <"5.9605E-8", "1.1921E-7">
+  %0 = kgen.param.constant: !pop.simd<2, si16> = <#pop.simd<1, 2>>
+  %1 = kgen.param.constant: !pop.simd<2, f16> = <#pop.simd<"1.5", "2.5">>
+  %2 = pop.bitcast %0 : !pop.simd<2, si16> to !pop.simd<2, f16>
+  %3 = pop.bitcast %1 : !pop.simd<2, f16> to !pop.simd<2, bf16>
+  kgen.return %3, %2 : !pop.simd<2, bf16>, !pop.simd<2, f16>
+}
+
+// CHECK-LABEL: @bitcast_size_change
+kgen.func @bitcast_size_change() -> (!pop.simd<4, si16>) {
+  // CHECK: pop.bitcast
+  %0 = kgen.param.constant: !pop.simd<2, si32> = <#pop.simd<1, 2>>
+  %1 = pop.bitcast %0 : !pop.simd<2, si32> to !pop.simd<4, si16>
+  kgen.return %1 : !pop.simd<4, si16>
+}
+
+// CHECK-LABEL: @pointer_bitcast
+kgen.func @pointer_bitcast() -> !pop.pointer<si32> {
+  // CHECK-NEXT: !pop.pointer<si32> = <#M.pointer<0>>
+  %0 = kgen.param.constant: !pop.pointer<si64> = <#M.pointer<0>>
+  %1 = pop.pointer.bitcast %0 : !pop.pointer<si64> to !pop.pointer<si32>
+  kgen.return %1 : !pop.pointer<si32>
+}
+
+// CHECK-LABEL: @cast
+kgen.func @cast() -> (
+    !pop.scalar<f16>, !pop.scalar<f16>, !pop.scalar<f16>,
+    !pop.scalar<ui8>, !pop.scalar<ui8>, !pop.scalar<ui8>,
+    !pop.scalar<bool>, !pop.scalar<bool>, !pop.scalar<bool>,
+    !pop.scalar<index>, !pop.scalar<index>, !pop.scalar<index>) {
+  // CHECK-DAG: %[[C0:.*]] = kgen{{.*}}<"10.125">
+  // CHECK-DAG: %[[C1:.*]] = kgen{{.*}}<"500">
+  // CHECK-DAG: %[[C2:.*]] = kgen{{.*}}<"1">
+  // CHECK-DAG: %[[C3:.*]] = kgen{{.*}}ui8{{.*}}<10>
+  // CHECK-DAG: %[[C4:.*]] = kgen{{.*}}ui8{{.*}}<244>
+  // CHECK-DAG: %[[C5:.*]] = kgen{{.*}}ui8{{.*}}<1>
+  // CHECK-DAG: %[[TRUE:.*]] = kgen{{.*}}<true>
+  // CHECK-DAG: %[[C6:.*]] = kgen{{.*}}index{{.*}}<10>
+  // CHECK-DAG: %[[C7:.*]] = kgen{{.*}}index{{.*}}<500>
+  // CHECK-DAG: %[[C8:.*]] = kgen{{.*}}index{{.*}}<1>
+  %0 = kgen.param.constant: !pop.scalar<bf16> = <#pop.simd<"10.125">>
+  %1 = kgen.param.constant: !pop.scalar<si32> = <#pop.simd<500>>
+  %2 = kgen.param.constant: !pop.scalar<bool> = <#pop.simd<true>>
+
+  %3 = pop.cast %0 : !pop.scalar<bf16> to !pop.scalar<f16>
+  %4 = pop.cast %1 : !pop.scalar<si32> to !pop.scalar<f16>
+  %5 = pop.cast %2 : !pop.scalar<bool> to !pop.scalar<f16>
+
+  %6 = pop.cast %0 : !pop.scalar<bf16> to !pop.scalar<ui8>
+  %7 = pop.cast %1 : !pop.scalar<si32> to !pop.scalar<ui8>
+  %8 = pop.cast %2 : !pop.scalar<bool> to !pop.scalar<ui8>
+
+  %9 = pop.cast %0 : !pop.scalar<bf16> to !pop.scalar<bool>
+  %10 = pop.cast %1 : !pop.scalar<si32> to !pop.scalar<bool>
+  %11 = pop.cast %2 : !pop.scalar<bool> to !pop.scalar<bool>
+
+  %12 = pop.cast %0 : !pop.scalar<bf16> to !pop.scalar<index>
+  %13 = pop.cast %1 : !pop.scalar<si32> to !pop.scalar<index>
+  %14 = pop.cast %2 : !pop.scalar<bool> to !pop.scalar<index>
+
+  // CHECK-NEXT: return %[[C0]], %[[C1]], %[[C2]], %[[C3]], %[[C4]], %[[C5]], %[[TRUE]], %[[TRUE]], %[[TRUE]]
+  // CHECK-SAME: %[[C6]], %[[C7]], %[[C8]]
+  kgen.return %3, %4, %5, %6, %7, %8, %9, %10, %11, %12, %13, %14 :
+    !pop.scalar<f16>, !pop.scalar<f16>, !pop.scalar<f16>,
+    !pop.scalar<ui8>, !pop.scalar<ui8>, !pop.scalar<ui8>,
+    !pop.scalar<bool>, !pop.scalar<bool>, !pop.scalar<bool>,
+    !pop.scalar<index>, !pop.scalar<index>, !pop.scalar<index>
+}
+
+// CHECK-LABEL: @cast_fp_too_big
+kgen.func @cast_fp_too_big() -> (!pop.scalar<si2>, !pop.scalar<si2>) {
+  // CHECK-DAG: <1>
+  // CHECK-DAG: <"7">
+  %0 = kgen.param.constant: !pop.scalar<f16> = <#pop.simd<"1.5">>
+  %1 = kgen.param.constant: !pop.scalar<f16> = <#pop.simd<"7">>
+  %2 = pop.cast %0 : !pop.scalar<f16> to !pop.scalar<si2>
+  // CHECK: %[[TOO_BIG:.*]] = pop.cast
+  %3 = pop.cast %1 : !pop.scalar<f16> to !pop.scalar<si2>
+  // CHECK-NEXT: return %{{.*}}, %[[TOO_BIG]]
+  kgen.return %2, %3 : !pop.scalar<si2>, !pop.scalar<si2>
+}
+
+// CHECK-LABEL: @simd_extractelement
+kgen.func @simd_extractelement() -> (!pop.scalar<si8>) {
+  // CHECK-NEXT: <20>
+  %idx1 = index.constant 1
+  %0 = kgen.param.constant: !pop.simd<2, si8> = <#pop.simd<10, 20>>
+  %1 = pop.simd.extractelement %0[%idx1] : !pop.simd<2, si8>
+  kgen.return %1 : !pop.scalar<si8>
+}
+
+// CHECK-LABEL: @simd_insertelement
+kgen.func @simd_insertelement() -> (!pop.simd<2, si8>) {
+  // CHECK-NEXT: <30, 20>
+  %idx0 = index.constant 0
+  %0 = kgen.param.constant: !pop.simd<2, si8> = <#pop.simd<10, 20>>
+  %1 = kgen.param.constant: !pop.scalar<si8> = <#pop.simd<30>>
+  %2 = pop.simd.insertelement %1, %0[%idx0] : !pop.simd<2, si8>
+  kgen.return %2 : !pop.simd<2, si8>
+}
+
+// CHECK-LABEL: @simd_splat
+kgen.func @simd_splat() -> !pop.simd<2, si8> {
+  // CHECK-NEXT: <2, 2>
+  %0 = kgen.param.constant: !pop.scalar<si8> = <#pop.simd<2>>
+  %1 = pop.simd.splat %0 : !pop.simd<2, si8>
+  kgen.return %1 : !pop.simd<2, si8>
+}
+
 // CHECK-LABEL: @struct_construct
 kgen.func @struct_construct() -> !pop.struct<si4, ui4> {
   // CHECK-NEXT: constant: !pop.struct<si4, ui4> = <#pop.struct<-3, 7>>

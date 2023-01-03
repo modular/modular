@@ -207,7 +207,9 @@ class UnboundOr<DTypeConstraint pred> : OrDType<[UnboundDType, pred]>;
 class SIMDOfDType<DTypeConstraint constraint, string desc> :
   ConfinedType<POP_SIMDType,
     [CPred<!subst("$_self", "$_self.cast<POP::SIMDType>().getResolvedDType()",
-                 constraint.pred)>], desc>;
+                 constraint.pred)>], desc> {
+  let cppClassName = "::M::KGEN::POP::SIMDType";
+}
 
 def BoolSIMD : SIMDOfDType<BoundAnd<BoolDType>, "!pop.simd<N, bool>">;
 def UnboundSIMD : SIMDOfDType<UnboundDType, "!pop.simd<N, invalid>">;
@@ -231,9 +233,14 @@ def UnboundOrBoolOrIndexOrIntegerSIMD : SIMDOfDType<
 def UnboundOrIndexOrIntegerSIMD : SIMDOfDType<
     UnboundOr<OrDType<[IndexDType, IntDType]>>,
     "whose element type is either unbound, index, or integral dtype">;
+def UnboundOrArithmeticSIMD : SIMDOfDType<UnboundOr<ArithmeticDType>,
+    "whose element type is either integer or float dtype">;
 def UnboundOrIndexOrArithmeticSIMD : SIMDOfDType<
     UnboundOr<OrDType<[IndexDType, ArithmeticDType]>>,
     "whose element type is either unbound, index, or arithmetic dtype">;
+def UnboundOrBoolOrIndexOrArithmeticSIMD : SIMDOfDType<
+    UnboundOr<OrDType<[IndexDType, IntDType, BoolDType, FloatDType]>>,
+    "whose element type is either unbound, integral, bool or float dtype">;
 
 /// A "scalar" type is a SIMD of size 1.
 def ScalarType : ConfinedType<POP_SIMDType,

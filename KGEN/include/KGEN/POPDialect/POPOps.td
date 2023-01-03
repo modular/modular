@@ -482,11 +482,15 @@ def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands,
     ```
   }];
 
-  let arguments = (ins POP_CmpPredicateAttr:$pred, POP_SIMDType:$lhs,
-                       POP_SIMDType:$rhs);
+  let arguments = (ins POP_CmpPredicateAttr:$pred,
+                       UnboundOrBoolOrIndexOrArithmeticSIMD:$lhs,
+                       UnboundOrBoolOrIndexOrArithmeticSIMD:$rhs);
   let results = (outs BoolSIMD:$result);
 
-  let assemblyFormat = "$pred `(` $lhs `,` $rhs `)` attr-dict `:` type($lhs)";
+  let assemblyFormat = [{
+    `` $pred `(` $lhs `,` $rhs `)` attr-dict `:` type($lhs)
+  }];
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -507,6 +511,7 @@ class POP_BitwiseOp<string mnemonic, list<Trait> traits = []> :
   let results = (outs UnboundOrBoolOrIndexOrIntegerSIMD:$result);
 
   let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($lhs)";
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -609,6 +614,7 @@ def POP_SelectOp : POPOp<"select",
   let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat = "operands attr-dict `:` type($result)";
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -634,10 +640,12 @@ def POP_BitcastOp : POPOp<"bitcast", [Pure,
     ```
   }];
 
-  let arguments = (ins POP_SIMDType:$input);
-  let results = (outs POP_SIMDType:$output);
-  let assemblyFormat = "$input attr-dict `:` qualified(type($input)) `to` "
-                       "qualified(type($output))";
+  let arguments = (ins UnboundOrArithmeticSIMD:$input);
+  let results = (outs UnboundOrArithmeticSIMD:$output);
+  let assemblyFormat = [{
+    $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
+  }];
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -699,10 +707,11 @@ def POP_CastOp : POPOp<"cast", [Pure]> {
     ```
   }];
 
-  let arguments = (ins POP_SIMDType:$input);
-  let results = (outs POP_SIMDType:$output);
-  let assemblyFormat = "$input attr-dict `:` qualified(type($input)) `to` "
-                       "qualified(type($output))";
+  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$input);
+  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$output);
+  let assemblyFormat = [{
+    $input attr-dict `:` qualified(type($input)) `to`  qualified(type($output))
+  }];
   let hasVerifier = 1;
   let hasFolder = 1;
 }
@@ -728,11 +737,13 @@ def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [Pure,
   }];
 
   let arguments = (ins POP_SIMDType:$vector, Index:$position);
-  let results = (outs POP_SIMDType:$result);
+  let results = (outs ScalarType:$result);
 
   let assemblyFormat = [{
     $vector `[` $position `]` attr-dict `:` qualified(type($vector))
   }];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -757,13 +768,15 @@ def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [Pure,
     ```
   }];
 
-  let arguments = (ins POP_SIMDType:$vector, POP_SIMDType:$value,
+  let arguments = (ins POP_SIMDType:$vector, ScalarType:$value,
                        Index:$position);
   let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat = [{
     $value `,` $vector `[` $position `]` attr-dict `:` qualified(type($vector))
   }];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -819,10 +832,11 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
     ```
   }];
 
-  let arguments = (ins POP_SIMDType:$scalar);
+  let arguments = (ins ScalarType:$scalar);
   let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat = "$scalar attr-dict `:` qualified(type($result))";
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2033,6 +2047,7 @@ def POP_IndexToPointerOp : POPOp<"index_to_pointer", [
   let assemblyFormat = [{
     $value attr-dict `:` qualified(type($value)) `to` qualified(type($result))
   }];
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2064,6 +2079,7 @@ def POP_PointerToIndexOp : POPOp<"pointer_to_index", [
   let assemblyFormat = [{
     $value attr-dict `:` qualified(type($value)) `to` qualified(type($result))
   }];
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2226,8 +2242,8 @@ def POP_PartialApplyOp : POPOp<"partial_apply",
       : (index, i32, f32, !pop.scalar<index>) -> !pop.scalar<address>
     // Using partial_apply on a closure.
     %1 = pop.partial_apply %closure(?, %arg0, ?, %arg1)
-      : !pop.closure<(index, i32, f32, <pop.scalar<index>) -> !pop.scalar<address>>
-
+      : !pop.closure<(index, i32, f32, <pop.scalar<index>)
+      -> !pop.scalar<address>>
     ```
 
     The syntax of the operation uses `?` to denote arguments that are left
@@ -2250,7 +2266,6 @@ def POP_PartialApplyOp : POPOp<"partial_apply",
   let hasCanonicalizeMethod = 1;
 }
 
-
 //===----------------------------------------------------------------------===//
 // CallIndirectOp
 //===----------------------------------------------------------------------===//
@@ -2268,7 +2283,8 @@ def POP_CallIndirectOp : POPOp<"call_indirect"> {
       : (index, !kgen.declref<@Foo>) -> (!pop.simd<2, si32>, !kgen.declref<@Bar>)
     //
     %0 = pop.call_indirect %closure(%arg0, %arg1)
-      : !pop.closure<(index, !kgen.declref<@Foo>) -> (!pop.simd<2, si32>, !kgen.declref<@Bar>)>
+      : !pop.closure<(index, !kgen.declref<@Foo>)
+      -> (!pop.simd<2, si32>, !kgen.declref<@Bar>)>
     ```
   }];
 
@@ -2277,8 +2293,8 @@ def POP_CallIndirectOp : POPOp<"call_indirect"> {
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
     $callee `(` $inputs `)` attr-dict
-    `` custom<CallIndirectCalleeAndInputResultTypes>(type($inputs), type($results),
-                                            type($callee))
+    `` custom<CallIndirectCalleeAndInputResultTypes>(
+      type($inputs), type($results), type($callee))
   }];
 
   let hasCanonicalizeMethod = 1;
