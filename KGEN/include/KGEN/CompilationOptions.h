@@ -16,7 +16,8 @@
 namespace M::KGEN {
 /// This class provides a set of options used to control the compilation of
 /// KGEN modules.
-struct CompilationOptions {
+class CompilationOptions {
+public:
   /// The debug info level to use when compiling.
   enum DebugInfoLevel {
     /// Disable debug info generation.

@@ -30,7 +30,7 @@ public:
   LitParserBase(LitLexer &lexer) : lexer(lexer) {}
 
   LitSharedState &getSharedState() const { return lexer.sharedState; }
-  MLIRContext *getContext() const { return getSharedState().context; }
+  MLIRContext *getContext() const { return getSharedState().getContext(); }
   DeclResolver &getDeclResolver() const {
     return *getSharedState().declResolver;
   }

@@ -141,7 +141,7 @@ ParseResult LitStmtParser::parseLocalScopeSuite(ssize_t curIndent) {
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
   if (getSharedState().diBuilder) {
     SMLoc curLoc = getToken().getLoc();
-    auto &sourceMgr = getSharedState().sourceMgr;
+    auto &sourceMgr = getSharedState().getSourceMgr();
     unsigned bufferID = sourceMgr.FindBufferContainingLoc(curLoc);
     auto [line, column] = sourceMgr.getLineAndColumn(curLoc, bufferID);
 
@@ -741,7 +741,7 @@ ParseResult LitStmtParser::parseIncludeHack() {
   // Strip off the ""'s.
   path = path.drop_front().drop_back();
 
-  llvm::SourceMgr &sourceMgr = getSharedState().sourceMgr;
+  llvm::SourceMgr &sourceMgr = getSharedState().getSourceMgr();
 
   // Resolve the absolute filename of the target.
   std::string absolutePath;

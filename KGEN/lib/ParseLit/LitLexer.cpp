@@ -64,10 +64,11 @@ LitLexer::LitLexer(LitSharedState &sharedState,
 
 static StringRef getBuffer(LitSharedState &sharedState,
                            const LitLexerCursor &cursor) {
+  auto &sourceMgr = sharedState.getSourceMgr();
   unsigned cursorBufferId =
-      sharedState.sourceMgr.FindBufferContainingLoc(cursor.getToken().getLoc());
+      sourceMgr.FindBufferContainingLoc(cursor.getToken().getLoc());
   assert(cursorBufferId && "invalid cursor!");
-  const auto *buffer = sharedState.sourceMgr.getMemoryBuffer(cursorBufferId);
+  const auto *buffer = sourceMgr.getMemoryBuffer(cursorBufferId);
   return buffer->getBuffer();
 }
 

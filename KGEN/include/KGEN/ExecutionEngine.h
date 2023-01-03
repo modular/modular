@@ -25,7 +25,7 @@ class Runtime;
 
 namespace M::KGEN {
 class ObjectCompiler;
-struct CompilationOptions;
+class CompilationOptions;
 
 /// This class provides an interface to interact with a compiled func. You
 /// can either invoke the func, or get it as an object. The lifetime of one of

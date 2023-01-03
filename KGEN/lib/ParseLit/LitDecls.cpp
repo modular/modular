@@ -16,6 +16,7 @@
 #include "LitLexer.h"
 #include "LitParserBase.h"
 
+#include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -1342,18 +1343,19 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,
     return success();
   }
 
+  // Check for a return op at the end of the function.
+  // TODO: This should really be moved to a dataflow pass after the parser.
   if (bodyBlock->empty() || !isa<ReturnOp>(bodyBlock->back())) {
     auto loc = defOp.getLoc();
     if (isNoneResultType(defOp) && defOp.getResultParamTypes().empty()) {
       auto b = OpBuilder::atBlockEnd(bodyBlock);
-
       Value noneVal =
           b.create<ParamConstantOp>(loc, NoneAttr::get(getContext()));
       if (defOp.getConventions().getFnEffects() == FnEffects::Throws)
         noneVal =
             b.create<POP::VariantCreateOp>(loc, defOp.getResultType(), noneVal);
       b.create<ReturnOp>(loc, ArrayRef<TypedAttr>(), noneVal);
-    } else if (!sharedState.errorOccurred) {
+    } else if (!sharedState.diags.isErrorEmitted()) {
       Location endLoc = bodyBlock->empty() ? loc : bodyBlock->back().getLoc();
       emitError(endLoc, "return expected at end of 'def' with results");
     }

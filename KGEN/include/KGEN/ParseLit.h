@@ -18,7 +18,7 @@ class TimingScope;
 
 namespace M {
 namespace KGEN {
-struct CompilationOptions;
+class CompilationOptions;
 } // namespace KGEN
 
 /// Parse a single .lit file and return the MLIR module for it.

@@ -45,7 +45,7 @@ public:
       : shared(shared), declScope(declScope), builder(builder),
         varDeclCursor(varDeclCursor) {}
 
-  MLIRContext *getContext() const { return shared.context; }
+  MLIRContext *getContext() const { return shared.getContext(); }
 
   /// Emit an error through the parser's logic.
   InFlightDiagnostic emitError(SMLoc loc, const Twine &twine = "") const {

@@ -91,7 +91,7 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
   // We fail either if we have a non-recoverable parse error, or if we emitted
   // an error and then recovered.  In either case, the IR will not be valid and
   // the caller should not verify it.
-  if (sharedState.errorOccurred)
+  if (sharedState.diags.isErrorEmitted())
     return nullptr;
   // Make sure the parse module has no other structural problems detected by
   // the verifier.
