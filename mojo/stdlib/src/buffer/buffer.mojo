@@ -64,6 +64,174 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         offset.simd_store[width](val)
 
 
+@interface
+fn _compute_ndbuffer_offset[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](
+    buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
+) -> Int:
+    ...
+
+
+@implements(_compute_ndbuffer_offset)
+fn _compute_ndbuffer_offset_rank_0[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](
+    buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
+) -> Int:
+    assert_param[rank == 0]()
+    return 0
+
+
+@implements(_compute_ndbuffer_offset)
+fn _compute_ndbuffer_offset_rank_1[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](
+    buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
+) -> Int:
+    assert_param[rank == 1]()
+    return idx.__getitem__[0]()
+
+
+@implements(_compute_ndbuffer_offset)
+fn _compute_ndbuffer_offset_rank_2[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](
+    buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
+) -> Int:
+    assert_param[rank == 2]()
+    return idx.__getitem__[0]() + buf.dim[0]() * idx.__getitem__[1]()
+
+
+@implements(_compute_ndbuffer_offset)
+fn _compute_ndbuffer_offset_rank_3[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](
+    buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
+) -> Int:
+    assert_param[rank == 3]()
+    return idx.__getitem__[0]() + buf.dim[0]() * (
+        idx.__getitem__[1]() + buf.dim[1]() * idx.__getitem__[2]()
+    )
+
+
+@implements(_compute_ndbuffer_offset)
+fn _compute_ndbuffer_offset_rank_4[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](
+    buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
+) -> Int:
+    assert_param[rank == 4]()
+    return idx.__getitem__[0]() + buf.dim[0]() * (
+        idx.__getitem__[1]()
+        + buf.dim[1]()
+        * (idx.__getitem__[2]() + buf.dim[2]() * idx.__getitem__[3]())
+    )
+
+
+@implements(_compute_ndbuffer_offset)
+fn _compute_ndbuffer_offset_rank_5[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](
+    buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
+) -> Int:
+    assert_param[rank == 5]()
+    return idx.__getitem__[0]() + buf.dim[0]() * (
+        idx.__getitem__[1]()
+        + buf.dim[1]()
+        * (
+            idx.__getitem__[2]()
+            + buf.dim[2]()
+            * (idx.__getitem__[3]() + buf.dim[3]() * idx.__getitem__[4]())
+        )
+    )
+
+
+@interface
+fn _compute_ndbuffer_size[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](buf: NDBuffer[rank, shape, type]) -> Int:
+    ...
+
+
+@implements(_compute_ndbuffer_size)
+fn _compute_ndbuffer_size_rank_0[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](buf: NDBuffer[rank, shape, type]) -> Int:
+    assert_param[rank == 0]()
+    return 0
+
+
+@implements(_compute_ndbuffer_size)
+fn _compute_ndbuffer_size_rank_1[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](buf: NDBuffer[rank, shape, type]) -> Int:
+    assert_param[rank == 1]()
+    return buf.dim[0]()
+
+
+@implements(_compute_ndbuffer_size)
+fn _compute_ndbuffer_size_rank_2[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](buf: NDBuffer[rank, shape, type]) -> Int:
+    assert_param[rank == 2]()
+    return buf.dim[0]() * buf.dim[1]()
+
+
+@implements(_compute_ndbuffer_size)
+fn _compute_ndbuffer_size_rank_3[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](buf: NDBuffer[rank, shape, type]) -> Int:
+    assert_param[rank == 3]()
+    return buf.dim[0]() * buf.dim[1]() * buf.dim[2]()
+
+
+@implements(_compute_ndbuffer_size)
+fn _compute_ndbuffer_size_rank_4[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](buf: NDBuffer[rank, shape, type]) -> Int:
+    assert_param[rank == 4]()
+    return buf.dim[0]() * buf.dim[1]() * buf.dim[2]() * buf.dim[3]()
+
+
+@implements(_compute_ndbuffer_size)
+fn _compute_ndbuffer_size_rank_5[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](buf: NDBuffer[rank, shape, type]) -> Int:
+    assert_param[rank == 5]()
+    return (
+        buf.dim[0]() * buf.dim[1]() * buf.dim[2]() * buf.dim[3]() * buf.dim[4]()
+    )
+
+
 struct NDBuffer[
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
@@ -78,7 +246,7 @@ struct NDBuffer[
     ) -> NDBuffer[rank, shape, type]:
         # Construct an NDBuffer type with statically known shape.
         # TODO: Verify that the shape is valid (i.e. does not have #kgen.unknown)
-        var buf : NDBuffer[rank, shape, type]
+        var buf: NDBuffer[rank, shape, type]
         buf.data = DTypePointer[type](ptr)
         return buf
 
@@ -87,71 +255,16 @@ struct NDBuffer[
             return self.dynamic_rank
         return rank
 
-    fn size(self, idx: StaticTuple[rank, __mlir_type.index]) -> Int:
-        assert_param[rank <= 5]()
-        var size = self.dim[0]()
-        if rank == 1:
-            return size
-        size *= self.dim[1]()
-        if rank == 2:
-            return size
-        size *= self.dim[2]()
-        if rank == 3:
-            return size
-        size *= self.dim[3]()
-        if rank == 4:
-            return size
-        size *= self.dim[4]()
-        return size
+    fn size(self) -> Int:
+        return _compute_ndbuffer_size[rank, shape, type](self)
 
     fn _offset(
         self, idx: StaticTuple[rank, __mlir_type.index]
     ) -> DTypePointer[type]:
         assert_param[rank <= 5]()
-        if rank == 1:
-            return self.data.offset(idx.__getitem__[0]())
-        if rank == 2:
-            return self.data.offset(
-                idx.__getitem__[0]() + self.dim[0]() * idx.__getitem__[1]()
-            )
-        if rank == 3:
-            return self.data.offset(
-                idx.__getitem__[0]()
-                + self.dim[0]()
-                * (idx.__getitem__[1]() + self.dim[1]() * idx.__getitem__[2]())
-            )
-        if rank == 4:
-            return self.data.offset(
-                idx.__getitem__[0]()
-                + self.dim[0]()
-                * (
-                    idx.__getitem__[1]()
-                    + self.dim[1]()
-                    * (
-                        idx.__getitem__[2]()
-                        + self.dim[2]() * idx.__getitem__[3]()
-                    )
-                )
-            )
-        if rank == 5:
-            return self.data.offset(
-                idx.__getitem__[0]()
-                + self.dim[0]()
-                * (
-                    idx.__getitem__[1]()
-                    + self.dim[1]()
-                    * (
-                        idx.__getitem__[2]()
-                        + self.dim[2]()
-                        * (
-                            idx.__getitem__[3]()
-                            + self.dim[3]() * idx.__getitem__[4]()
-                        )
-                    )
-                )
-            )
-        # This should not be reachable.
-        return self.data
+        return self.data.offset(
+            _compute_ndbuffer_offset[rank, shape, type](self, idx)
+        )
 
     fn __getitem__(
         self, idx: StaticTuple[rank, __mlir_type.index]
