@@ -12,7 +12,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Location.h"
 
-namespace M::KGEN {
+namespace M {
 
 /// This error class is a complex error consisting of various possible nested
 /// causes at certain IR locations. The error consists of a single top-level
@@ -149,6 +149,6 @@ private:
   SmartVariant<ErrorTree, T> value;
 };
 
-} // namespace M::KGEN
+} // namespace M
 
 #endif // KGEN_ELABORATOR_ERRORTREE_H

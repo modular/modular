@@ -22,21 +22,6 @@ using namespace KGEN;
 // IR Interpreter
 //===----------------------------------------------------------------------===//
 
-/// Report an error with folding an operation.
-static ErrorTree reportFoldError(FuncOp func, Operation &op,
-                                 ArrayRef<Attribute> operands,
-                                 const Twine &prefix,
-                                 const Twine &suffix = "") {
-  ErrorTree error(func.getLoc(),
-                  "failed to interpret function @" + func.getName());
-  std::string note;
-  llvm::raw_string_ostream os(note);
-  os << prefix << op.getName() << '(';
-  llvm::interleaveComma(operands, os);
-  os << ')' << suffix;
-  return std::move(error.addCause(op.getLoc(), Error(os.str())));
-}
-
 ErrorTreeOr<TypedAttr>
 IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   // Make sure the function is inflated.
@@ -45,60 +30,22 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   });
   elaborator.asyncMap.await(func);
 
+  // Evaluate the function body.
   DenseMap<Value, Attribute> values;
-  // Map the function argument values.
-  for (auto [arg, input] : llvm::zip(func.getArguments(), inputs))
-    values.try_emplace(arg, input);
+  ErrorTreeOr<RegionResult> result =
+      evaluateRegion(values, inputs, func.getBodyRegion());
 
-  // This is the top-level error that will be returned if one occurs.
-  ErrorTree error(*errorLoc, "failed to evaluate 'apply'");
-
-  // Interpret the IR.
-  SmallVector<Attribute> operands;
-  SmallVector<OpFoldResult> results;
-  for (Operation &op : func.getBody()->without_terminator()) {
-    operands.clear();
-    results.clear();
-    for (Value operand : op.getOperands())
-      operands.push_back(values.lookup(operand));
-
-    // Check for an interpreter interface implementation.
-    if (auto interpItf = dyn_cast<InterpreterOpInterface>(op)) {
-      ErrorOrSuccess err = interpItf.interpret(operands, *this, results);
-      if (err.isError()) {
-        return std::move(error.addCause(
-            std::move(reportFoldError(func, op, operands,
-                                      "failed to interpret operation ")
-                          .addCause(op.getLoc(), err.takeError()))));
-      }
-    } else {
-      // Otherwise, try to use the operation folder.
-      if (failed(op.fold(operands, results)))
-        return std::move(error.addCause(
-            reportFoldError(func, op, operands, "failed to fold operation ")));
-    }
-    for (auto [i, result, output] :
-         llvm::zip(llvm::seq<unsigned>(0, op.getNumResults()), results,
-                   op.getResults())) {
-      auto value = result.dyn_cast<Attribute>();
-      if (!value) {
-        return std::move(error.addCause(reportFoldError(
-            func, op, operands, "operation evaluation ",
-            " did not return a value for result #" + Twine(i))));
-      }
-      values.try_emplace(output, value);
-    }
+  // Report an error if evaluation fails.
+  if (result.isError()) {
+    ErrorTree funcError(func.getLoc(),
+                        "failed to interpret function @" + func.getName());
+    funcError.addCause(result.takeError());
+    return ErrorTree(*errorLoc, "failed to evaluate 'apply'",
+                     std::move(funcError));
   }
 
-  // Extract the result.
-  assert(func.getNumResults() == 1);
-  Attribute result = values.lookup(func.getReturnOp().getOperand(0));
-  if (auto expr = dyn_cast<TypedAttr>(result))
-    return expr;
-
-  return std::move(error.addCause(
-      func.getLoc(), Error("function @" + func.getName() +
-                           " result is not a parameter expression")));
+  // Apply operators only return one result.
+  return result.getValue().operands.front();
 }
 
 //===----------------------------------------------------------------------===//

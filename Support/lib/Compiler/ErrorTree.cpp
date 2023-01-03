@@ -8,7 +8,6 @@
 #include "mlir/IR/Diagnostics.h"
 
 using namespace M;
-using namespace KGEN;
 
 ErrorTree::ErrorTree(Location loc, Error error, ErrorTree causes)
     : loc(loc), error(std::move(error)) {

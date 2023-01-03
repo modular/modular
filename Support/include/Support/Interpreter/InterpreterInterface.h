@@ -7,6 +7,7 @@
 #ifndef SUPPORT_INTERPRETER_INTERPRETERINTERFACE_H
 #define SUPPORT_INTERPRETER_INTERPRETERINTERFACE_H
 
+#include "Support/Compiler/ErrorTree.h"
 #include "Support/Compiler/SymbolTableAnalysis.h"
 #include "Support/ErrorOr.h"
 #include "Support/MDialect/MAttrs.h"
@@ -47,6 +48,19 @@ public:
 
   /// Try to get a memory reference at the given address.
   ErrorOr<void *> getMemory(intptr_t addr, size_t size);
+
+  /// The result of evaluating a region is an operation with no successors and
+  /// the constant values of its operands.
+  struct RegionResult {
+    Operation *terminator;
+    SmallVector<TypedAttr> operands;
+  };
+
+  /// Evaluate the operations in a region given a contextual map of values and
+  /// the region arguments.
+  ErrorTreeOr<RegionResult> evaluateRegion(DenseMap<Value, Attribute> &values,
+                                           ArrayRef<TypedAttr> arguments,
+                                           Region &region);
 
 private:
   /// The cached symbol table.

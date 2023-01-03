@@ -104,6 +104,73 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(intptr_t addr,
                " does not implement MemoryableTypeInterface");
 }
 
+/// Report an error with folding an operation.
+static ErrorTree reportFoldError(Operation &op, ArrayRef<Attribute> operands,
+                                 const Twine &prefix,
+                                 const Twine &suffix = "") {
+  std::string note;
+  llvm::raw_string_ostream os(note);
+  os << prefix << op.getName() << '(';
+  llvm::interleaveComma(operands, os);
+  os << ')' << suffix;
+  return {op.getLoc(), Error(os.str())};
+}
+
+ErrorTreeOr<InterpreterState::RegionResult>
+InterpreterState::evaluateRegion(DenseMap<Value, Attribute> &values,
+                                 ArrayRef<TypedAttr> arguments,
+                                 Region &region) {
+  assert(llvm::hasSingleElement(region) && "TODO: support CFG regions");
+  Block &body = region.front();
+
+  // Map the region argument values.
+  for (auto [arg, input] : llvm::zip(region.getArguments(), arguments))
+    values.try_emplace(arg, input);
+
+  // Interpret the IR in the single-block region without evaluating the
+  // terminator.
+  SmallVector<Attribute> operands;
+  SmallVector<OpFoldResult> results;
+  for (Operation &op : body.without_terminator()) {
+    operands.clear();
+    results.clear();
+    for (Value operand : op.getOperands())
+      operands.push_back(values.lookup(operand));
+
+    // Check for an interpreter interface implementation.
+    if (auto interpItf = dyn_cast<InterpreterOpInterface>(op)) {
+      ErrorOrSuccess err = interpItf.interpret(operands, *this, results);
+      if (err.isError()) {
+        return std::move(
+            reportFoldError(op, operands, "failed to interpret operation ")
+                .addCause(op.getLoc(), err.takeError()));
+      }
+    } else {
+      // Otherwise, try to use the operation folder.
+      if (failed(op.fold(operands, results)))
+        return reportFoldError(op, operands, "failed to fold operation ");
+    }
+    for (auto [i, result, output] :
+         llvm::zip(llvm::seq<unsigned>(0, op.getNumResults()), results,
+                   op.getResults())) {
+      auto value = result.dyn_cast<Attribute>();
+      if (!value) {
+        return reportFoldError(op, operands, "operation evaluation ",
+                               " did not return a value for result #" +
+                                   Twine(i));
+      }
+      values.try_emplace(output, value);
+    }
+  }
+
+  // Collect the constant values of the operands and return them.
+  RegionResult result;
+  result.terminator = body.getTerminator();
+  for (Value operand : body.getTerminator()->getOperands())
+    result.operands.push_back(values.lookup(operand));
+  return result;
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
