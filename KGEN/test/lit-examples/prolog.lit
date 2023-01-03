@@ -66,7 +66,8 @@ struct StringRef:
 
     @staticmethod
     fn empty() -> StringRef:
-      let nullptr = __mlir_op.`index.constant`[value: 0]()
+      let nullptr = __mlir_op.`pop.cast_from_builtin`[_type: __mlir_type.`!pop.scalar<index>`](
+        __mlir_op.`index.constant`[value: 0]())
       let size = Int(0)
       return StringRef(
         __mlir_op.`pop.index_to_pointer`[_type: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`](nullptr),

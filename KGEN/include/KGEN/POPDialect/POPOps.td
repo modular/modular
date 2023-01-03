@@ -2041,7 +2041,7 @@ def POP_IndexToPointerOp : POPOp<"index_to_pointer", [
     ```
   }];
 
-  let arguments = (ins UnboundOrIndexSIMDOrIndex:$value);
+  let arguments = (ins IndexSIMD:$value);
   let results = (outs UnboundOrPointerOrSIMDAddressType:$result);
 
   let assemblyFormat = [{
@@ -2075,7 +2075,7 @@ def POP_PointerToIndexOp : POPOp<"pointer_to_index", [
   }];
 
   let arguments = (ins UnboundOrPointerOrSIMDAddressType:$value);
-  let results = (outs UnboundOrIndexSIMDOrIndex:$result);
+  let results = (outs IndexSIMD:$result);
   let assemblyFormat = [{
     $value attr-dict `:` qualified(type($value)) `to` qualified(type($result))
   }];
