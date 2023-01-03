@@ -173,32 +173,6 @@ def POP_NegOp : POP_ArithmeticUnaryOp<"neg"> {
 }
 
 //===----------------------------------------------------------------------===//
-// CeilOp
-//===----------------------------------------------------------------------===//
-
-def POP_CeilOp : POP_ArithmeticUnaryOp<"ceil">  {
-  let summary = "ceil";
-  let description = [{
-    The `pop.ceil` operation takes a `!pop.scalar` or `!pop.simd` type and
-    returns its ceiling. The input must have a floating point dtype. The operand
-    and result types must be the same.
-
-    This function returns the same values as the libm ceil functions would,
-    and handles error conditions in the same way.
-
-    Example:
-
-    ```mlir
-    %b = pop.ceil %a : !pop.scalar<type>
-    %b = pop.ceil %a : !pop.simd<size, type>
-    ```
-  }];
-
-  let arguments = (ins UnboundOrFloatSIMD:$operand);
-  let results = (outs UnboundOrFloatSIMD:$result);
-}
-
-//===----------------------------------------------------------------------===//
 // BinaryOp
 //===----------------------------------------------------------------------===//
 

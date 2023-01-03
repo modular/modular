@@ -1304,8 +1304,6 @@ using ConvertPOPDiv = OneToOneFloatOrIntConversion<DivOp, LLVM::FDivOp,
                                                    LLVM::SDivOp, LLVM::UDivOp>;
 using ConvertPOPRem = OneToOneFloatOrIntConversion<RemOp, LLVM::FRemOp,
                                                    LLVM::SRemOp, LLVM::URemOp>;
-using ConvertPOPCeil =
-    mlir::OneToOneConvertToLLVMPattern<CeilOp, LLVM::FCeilOp>;
 using ConvertPOPMax = OneToOneFloatOrIntConversion<MaxOp, LLVM::MaxNumOp,
                                                    LLVM::SMaxOp, LLVM::UMaxOp>;
 using ConvertPOPMin = OneToOneFloatOrIntConversion<MinOp, LLVM::MinNumOp,
@@ -1348,7 +1346,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPCast,
       ConvertPOPCastFromBuiltin,
       ConvertPOPCastToBuiltin,
-      ConvertPOPCeil,
       ConvertPOPCmp,
       ConvertPOPConstant,
       ConvertPOPCopySign,
