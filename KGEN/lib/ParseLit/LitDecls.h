@@ -46,12 +46,10 @@ class VarDeclOp;
 /// RValue.
 using DeclIRValue = PointerUnion<Operation *, MValue, DRValue, LValue>;
 
-class DeclResolver {
+class DeclResolver : public LitSharedStateUser {
 public:
   DeclResolver(LitSharedState &state);
   ~DeclResolver();
-
-  MLIRContext *getContext() const { return sharedState.getContext(); }
 
   /// Resolve all of the declarations that are visible, processing the entire
   /// translation unit.
@@ -143,9 +141,6 @@ private:
   ParseResult resolveBody(ParamDeclareOp op, LitLexer &lexer, ASTDecl &decl);
 
 private:
-  /// This is shared state across the whole parser.
-  LitSharedState &sharedState;
-
   /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.
   /// This does not include functions, only things that may be referred to by a
   /// DeclRefType: StructTypes, aliases, etc.

@@ -14,7 +14,7 @@ using namespace M::KGEN::LIT;
 using namespace M;
 
 InFlightDiagnostic LitParserBase::emitError(SMLoc loc, const Twine &message) {
-  auto diag = getSharedState().emitError(loc, message);
+  auto diag = shared.emitError(loc, message);
 
   // If we hit a parse error in response to a lexer error, then the lexer
   // already reported the error.
@@ -37,7 +37,7 @@ ParseResult LitParserBase::parseToken(LitToken::Kind expectedToken,
   if (getToken().getIndentation().has_value())
     return emitError(lexer.findEndOfPreviousLine(getToken().getLoc()), message);
 
-  return emitError(message);
+  return emitTokenError(message);
 }
 
 /// Consume an identifier token, binding its name into the specified result

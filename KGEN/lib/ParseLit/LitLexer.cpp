@@ -55,9 +55,8 @@ bool LitToken::isKeyword() const {
 // LitLexer
 //===----------------------------------------------------------------------===//
 
-LitLexer::LitLexer(LitSharedState &sharedState,
-                   const llvm::MemoryBuffer *buffer)
-    : sharedState(sharedState), curBuffer(buffer->getBuffer()),
+LitLexer::LitLexer(LitSharedState &shared, const llvm::MemoryBuffer *buffer)
+    : LitSharedStateUser(shared), curBuffer(buffer->getBuffer()),
       curPtr(curBuffer.begin()),
       // Prime the first token.
       curToken(lexTokenImpl()) {}
@@ -72,20 +71,14 @@ static StringRef getBuffer(LitSharedState &sharedState,
   return buffer->getBuffer();
 }
 
-LitLexer::LitLexer(LitSharedState &sharedState, const LitLexerCursor &cursor)
-    : sharedState(sharedState), curBuffer(getBuffer(sharedState, cursor)),
+LitLexer::LitLexer(LitSharedState &shared, const LitLexerCursor &cursor)
+    : LitSharedStateUser(shared), curBuffer(getBuffer(shared, cursor)),
       curToken(LitToken::eof, {}, 0) {
   cursor.restore(*this);
 }
 
-/// Inflate a lightweight SMLoc into an MLIR Location object for addition
-/// into the IR.
-Location LitLexer::translateLocation(llvm::SMLoc loc) {
-  return sharedState.translateLocation(loc);
-}
-
 /// Emit an error message and return a LitToken::error token.
-LitToken LitLexer::emitError(const char *loc, const Twine &message) {
+LitToken LitLexer::emitErrorAt(const char *loc, const Twine &message) {
   mlir::emitError(translateLocation(SMLoc::getFromPointer(loc)), message);
   return formToken(LitToken::error, loc, -1);
 }
@@ -152,8 +145,8 @@ LitToken LitLexer::lexTokenImpl() {
         indentation = -1;
         continue;
       }
-      return emitError(tokStart,
-                       "unexpected '\\' character, isn't at end of line");
+      return emitErrorAt(tokStart,
+                         "unexpected '\\' character, isn't at end of line");
     }
 
     default:
@@ -167,7 +160,7 @@ LitToken LitLexer::lexTokenImpl() {
       }
 
       // Unknown character, emit an error.
-      return emitError(tokStart, "unexpected character");
+      return emitErrorAt(tokStart, "unexpected character");
 
     case '_':
       // Handle identifiers.
@@ -284,7 +277,7 @@ LitToken LitLexer::lexTokenImpl() {
     case '!':
       if (*curPtr == '=')
         return formToken(LitToken::exclaim_equal, 1);
-      return emitError(tokStart, "unexpected character");
+      return emitErrorAt(tokStart, "unexpected character");
 
     case '0':
     case '1':
@@ -346,12 +339,12 @@ LitToken LitLexer::lexBacktickIdentifier(const char *tokStart,
     case '\v':
     case '\f':
       // Vertical whitespace within a ` is invalid is the end of the comment.
-      return emitError(tokStart, "unterminated backtick identifier");
+      return emitErrorAt(tokStart, "unterminated backtick identifier");
     case 0:
       // If this is the end of the buffer, end the comment.
       if (curPtr - 1 == curBuffer.end()) {
         --curPtr;
-        return emitError(tokStart, "unterminated backtick identifier");
+        return emitErrorAt(tokStart, "unterminated backtick identifier");
       }
       [[fallthrough]];
     default:
@@ -412,8 +405,8 @@ LitToken LitLexer::lexString(const char *tokStart, ssize_t indentation) {
   }
 
   if (*curPtr != '\'' && *curPtr != '"')
-    return emitError(tokStart,
-                     "expecting a string quoting character: `'` or `\"`");
+    return emitErrorAt(tokStart,
+                       "expecting a string quoting character: `'` or `\"`");
   char quoteChar = *curPtr;
   if ((curPtr[1] == quoteChar && curPtr[2] == quoteChar)) {
     isTripleQuote = true;
@@ -426,7 +419,7 @@ LitToken LitLexer::lexString(const char *tokStart, ssize_t indentation) {
     case '\\':
       if (isRaw) {
         if (curPtr == curBuffer.end())
-          return emitError(tokStart, "unterminated string");
+          return emitErrorAt(tokStart, "unterminated string");
         ++curPtr;
         break;
       }
@@ -448,14 +441,14 @@ LitToken LitLexer::lexString(const char *tokStart, ssize_t indentation) {
           i++;
         }
         if (i != 2)
-          return emitError(
+          return emitErrorAt(
               tokStart,
               "invalid hex escape sequence: exactly two hex digits needed");
       } else {
         if (!llvm::is_contained({'\\', '"', '\'', '\n', '\r', 'a', 'b', 'f',
                                  'n', 'r', 't', 'v'},
                                 *curPtr))
-          return emitError(tokStart, "invalid escape sequence");
+          return emitErrorAt(tokStart, "invalid escape sequence");
         if (*curPtr == '\r' && curPtr[1] == '\n') // Windows new line
           ++curPtr;
         ++curPtr;
@@ -479,7 +472,7 @@ LitToken LitLexer::lexString(const char *tokStart, ssize_t indentation) {
     case '\r':
       // newline isn't allowed in a short string.
       if (!isTripleQuote)
-        return emitError(tokStart, "unterminated string");
+        return emitErrorAt(tokStart, "unterminated string");
       ++curPtr;
       break;
     default:
@@ -489,7 +482,7 @@ LitToken LitLexer::lexString(const char *tokStart, ssize_t indentation) {
   }
 done:
   if (curPtr == curBuffer.end())
-    return emitError(tokStart, "unterminated string");
+    return emitErrorAt(tokStart, "unterminated string");
   ++curPtr;
 
   if (!isTripleQuote)
@@ -535,7 +528,7 @@ LitToken LitLexer::lexInteger(const char *tokStart, ssize_t indentation) {
         ++curPtr;
       }
       if (!hasDigits)
-        return emitError(curPtr, "no digits specified for binary literal");
+        return emitErrorAt(curPtr, "no digits specified for binary literal");
     } else if (*curPtr == 'o' || *curPtr == 'O') {
       ++curPtr;
       bool hasDigits = false;
@@ -544,7 +537,7 @@ LitToken LitLexer::lexInteger(const char *tokStart, ssize_t indentation) {
         ++curPtr;
       }
       if (!hasDigits)
-        return emitError(curPtr, "no digits specified for octal literal");
+        return emitErrorAt(curPtr, "no digits specified for octal literal");
     } else if (*curPtr == 'x' || *curPtr == 'X') {
       ++curPtr;
       bool hasDigits = false;
@@ -553,7 +546,7 @@ LitToken LitLexer::lexInteger(const char *tokStart, ssize_t indentation) {
         ++curPtr;
       }
       if (!hasDigits)
-        return emitError(curPtr, "no digits specified for hex literal");
+        return emitErrorAt(curPtr, "no digits specified for hex literal");
     } else if (*curPtr == '.' || *curPtr == 'e' || *curPtr == 'E' ||
                *curPtr == 'j' || *curPtr == 'J') {
       return lexFloat(tokStart, indentation);
@@ -566,9 +559,9 @@ LitToken LitLexer::lexInteger(const char *tokStart, ssize_t indentation) {
       while (*curPtr == '0' || *curPtr == '_');
     } else if (llvm::isDigit(*curPtr))
       // ex. 0123
-      return emitError(curPtr,
-                       "leading zeros in decimal integer literals are not "
-                       "permitted; use an 0o prefix for octal integers");
+      return emitErrorAt(curPtr,
+                         "leading zeros in decimal integer literals are not "
+                         "permitted; use an 0o prefix for octal integers");
   } else {
     // nonzerodigit
     // Superset of Python's grammar, we allow consecutive and trailing `_`
@@ -617,7 +610,7 @@ LitToken LitLexer::lexFloat(const char *tokStart, ssize_t indentation) {
     if (*curPtr == '+' || *curPtr == '-')
       ++curPtr;
     if (!llvm::isDigit(*curPtr))
-      return emitError(curPtr, "expecting a digit after the exponent");
+      return emitErrorAt(curPtr, "expecting a digit after the exponent");
     while (llvm::isDigit(*curPtr) || *curPtr == '_')
       ++curPtr;
   }
@@ -797,7 +790,7 @@ SMLoc LitLexer::findEndOfPreviousLine(SMLoc loc) const {
     // Scan from the start of the line to the current position.
     auto *lineStart = curBuffer.data() + nextNewLine;
     LitLexerCursor cursor({LitToken::plus, StringRef(lineStart, 0), 0});
-    LitLexer tmpLexer(sharedState, cursor);
+    LitLexer tmpLexer(shared, cursor);
     tmpLexer.lexToken();
 
     // If the token is on this line, then there was at least one token on this

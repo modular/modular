@@ -99,21 +99,15 @@ private:
 };
 
 /// This implements a lexer for .lit files.
-class LitLexer {
+class LitLexer : public LitSharedStateUser {
 public:
   LitLexer(LitSharedState &sharedState, const llvm::MemoryBuffer *buffer);
   LitLexer(LitSharedState &sharedState, const LitLexerCursor &cursor);
-
-  const llvm::SourceMgr &getSourceMgr() const {
-    return sharedState.getSourceMgr();
-  }
 
   /// Move to the next valid token.
   void lexToken() { curToken = lexTokenImpl(); }
 
   const LitToken &getToken() const { return curToken; }
-
-  mlir::Location translateLocation(SMLoc loc);
 
   /// Get an opaque pointer into the lexer state that can be restored later.
   LitLexerCursor getCursor() const;
@@ -128,8 +122,8 @@ public:
   /// handled. `spelling` is known to have been lexed as a string literal token.
   static std::string getStringLiteralValue(StringRef spelling);
 
-  LitToken emitError(const Twine &message) {
-    return emitError(getToken().getSpelling().data(), message);
+  LitToken emitTokenError(const Twine &message) {
+    return emitErrorAt(getToken().getSpelling().data(), message);
   }
 
   /// Given a location that is at the start of a line, scan backwards to find
@@ -146,7 +140,7 @@ private:
     return LitToken(kind, StringRef(tokStart, curPtr - tokStart), indentation);
   }
 
-  LitToken emitError(const char *loc, const Twine &message);
+  LitToken emitErrorAt(const char *loc, const Twine &message);
 
   // Lexer implementation methods.
   LitToken lexIdentifierOrKeyword(const char *tokStart, ssize_t indentation);
@@ -155,9 +149,6 @@ private:
   LitToken lexFloat(const char *tokStart, ssize_t indentation);
   LitToken lexString(const char *tokStart, ssize_t indentation);
   void skipComment();
-
-public:
-  LitSharedState &sharedState;
 
 private:
   StringRef curBuffer;

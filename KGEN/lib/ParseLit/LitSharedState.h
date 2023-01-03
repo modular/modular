@@ -156,6 +156,39 @@ private:
   std::unique_ptr<Impl> impl;
 };
 
+/// This class is intended to be used as a convenience base class for subsystems
+/// that want to have access to various LitSharedState functionality in a
+/// convenient way.
+class LitSharedStateUser {
+public:
+  LitSharedStateUser(LitSharedState &shared) : shared(shared) {}
+
+  /// This reference provides direct access to LitSharedState for anything
+  /// fancy.
+  LitSharedState &shared;
+
+  // Convenience forwarding functions used pervasively through the frontend.
+
+  MLIRContext *getContext() const { return shared.getContext(); }
+  llvm::SourceMgr &getSourceMgr() const { return shared.getSourceMgr(); }
+  DeclResolver &getDeclResolver() const { return *shared.declResolver; }
+
+  mlir::Location translateLocation(SMLoc loc) {
+    return shared.translateLocation(loc);
+  }
+
+  /// Emit an error and notice that so we don't verify the IR at the end of
+  /// compilation.
+  InFlightDiagnostic emitError(Location loc, const Twine &message = {}) {
+    return shared.emitError(loc, message);
+  }
+
+  /// Emit an error at a specific lexer location.
+  InFlightDiagnostic emitError(llvm::SMLoc loc, const Twine &message = {}) {
+    return shared.emitError(loc, message);
+  }
+};
+
 /// This enum indicates how much parsing and type checking has been done on
 /// this declaration.
 enum class DeclResolvedness : int8_t {
