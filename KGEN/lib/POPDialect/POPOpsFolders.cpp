@@ -24,6 +24,227 @@ Operation *POPDialect::materializeConstant(OpBuilder &b, Attribute value,
 }
 
 //===----------------------------------------------------------------------===//
+// Arithmetic Operation Folders
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+/// Detector for whether `T` posseses a `has_value` method.
+template <typename T>
+using IsOptionalType = decltype(std::declval<T>().has_value());
+
+/// Perform folding of an n-ary SIMD vector operation of a given dtype by
+/// applying the operation `op` to each vector element. `getValue` transforms a
+/// `DTypeValue` to the value used to represent the dtype: `APSInt` for
+/// integers, `APFloat` for floats, and `bool` for bools.
+template <size_t... I, typename OpFn, typename GetValueFn>
+static SIMDAttr foldSIMDOpImpl(std::index_sequence<I...>,
+                               ArrayRef<Attribute> operands, OpFn op,
+                               GetValueFn getValue) {
+  auto type = cast<SIMDType>(cast<TypedAttr>(operands.front()).getType());
+  SmallVector<DTypeValue> results;
+  auto firstArg = cast<SIMDAttr>(operands.front());
+  DType dtype = *firstArg.getType().getResolvedDType();
+  for (unsigned i = 0, e = firstArg.getValues().size(); i != e; ++i) {
+    auto result =
+        std::apply(op, std::make_tuple(getValue(
+                           cast<SIMDAttr>(operands[I]).getValues()[i])...));
+    // Allow folders to return failure. This indicates undefined behaviour,
+    // which we do not fold.
+    if constexpr (llvm::is_detected<IsOptionalType, decltype(result)>::value) {
+      if (!result)
+        return {};
+      results.emplace_back(*result, dtype);
+    } else {
+      results.emplace_back(result, dtype);
+    }
+  }
+  return SIMDAttr::get(results, type);
+}
+
+/// Return true if the function type `OpFn` is a function whose first argument
+/// type is `TestType`, which can be an integer, float, index, or bool type.
+template <typename OpFn, typename TestType>
+static constexpr bool testOpFnType() {
+  return std::is_same_v<
+      TestType,
+      std::decay_t<typename llvm::function_traits<OpFn>::template arg_t<0>>>;
+}
+
+/// Base case for getting an op function of a given type. This one returns none.
+template <typename TestType>
+static constexpr auto getOpFnOfType() {
+  return std::nullopt;
+}
+
+/// This function selects a function which can be applied to `TestType` from
+/// `OpFns`. If the head op function is of the given type, return it. Otherwise,
+/// check the rest of the functions.
+template <typename TestType, typename OpFn, typename... OpFns>
+static constexpr auto getOpFnOfType(OpFn op, OpFns &&...fns) {
+  if constexpr (testOpFnType<OpFn, TestType>())
+    return op;
+  else
+    return getOpFnOfType<TestType>(std::forward<OpFns>(fns)...);
+}
+
+/// Try to fold the operation using one of the provided fold functions for a
+/// given dtype. If a fold function for that dtype is not provided, if such a
+/// dtype is encountered by the folder, it will assert; a folder must be
+/// provided for each dtype for which the operation is valid.
+template <typename TestType, typename GetValueFn, typename... OpFns>
+static SIMDAttr foldSIMDOpDType(GetValueFn getValue,
+                                ArrayRef<Attribute> operands, OpFns &&...ops) {
+  auto op = getOpFnOfType<TestType>(std::forward<OpFns>(ops)...);
+  if constexpr (std::is_same_v<decltype(op), std::nullopt_t>) {
+    llvm_unreachable("unhandled dtype");
+  } else {
+    return foldSIMDOpImpl(std::make_index_sequence<
+                              llvm::function_traits<decltype(op)>::num_args>(),
+                          operands, op, getValue);
+  }
+}
+} // namespace detail
+
+/// Try to fold an n-ary SIMD vector operation using one of the provided
+/// functions for each possible dtype.
+template <typename... OpFns>
+static SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, OpFns &&...ops) {
+  if (llvm::any_of(operands, [](Attribute operand) {
+        return !isa_and_nonnull<SIMDAttr>(operand);
+      }))
+    return {};
+  DType dtype = *cast<SIMDAttr>(operands.front()).getType().getResolvedDType();
+  if (dtype.isInt())
+    return ::detail::foldSIMDOpDType<APSInt>(
+        [](DTypeValue val) { return val.getIntVal(); }, operands,
+        std::forward<OpFns>(ops)...);
+  // FIXME: Should we even do floating point folds? Results don't match hardware
+  // and not all float semantics are supported.
+  if (dtype.isFloat())
+    return ::detail::foldSIMDOpDType<APFloat>(
+        [](DTypeValue val) { return val.getFloatVal(); }, operands,
+        std::forward<OpFns>(ops)...);
+  if (dtype.isBool())
+    return ::detail::foldSIMDOpDType<bool>(
+        [](DTypeValue val) { return val.getBoolVal(); }, operands,
+        std::forward<OpFns>(ops)...);
+  llvm_unreachable("unhandled dtype");
+}
+
+//===----------------------------------------------------------------------===//
+// Unary Operations
+
+OpFoldResult AbsOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(
+      operands, [](APSInt val) { return val.abs(); },
+      [](APFloat val) { return llvm::abs(val); });
+}
+
+OpFoldResult NegOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(
+      operands, [](APSInt val) { return -val; },
+      [](APFloat val) { return llvm::neg(val); });
+}
+
+//===----------------------------------------------------------------------===//
+// Binary Operations
+
+OpFoldResult AddOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(
+      operands, [](APSInt lhs, APSInt rhs) { return lhs + rhs; },
+      [](APFloat lhs, APFloat rhs) { return lhs + rhs; });
+}
+
+OpFoldResult SubOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(
+      operands, [](APSInt lhs, APSInt rhs) { return lhs - rhs; },
+      [](APFloat lhs, APFloat rhs) { return lhs - rhs; });
+}
+
+OpFoldResult MulOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(
+      operands, [](APSInt lhs, APSInt rhs) { return lhs * rhs; },
+      [](APFloat lhs, APFloat rhs) { return lhs * rhs; });
+}
+
+OpFoldResult DivOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(
+      operands,
+      [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+        if (rhs.isZero())
+          return std::nullopt;
+        return lhs / rhs;
+      },
+      [](APFloat lhs, APFloat rhs) -> std::optional<APFloat> {
+        if (rhs.isZero())
+          return std::nullopt;
+        return lhs / rhs;
+      });
+}
+
+OpFoldResult RemOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(
+      operands,
+      [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+        if (rhs.isZero())
+          return std::nullopt;
+        return lhs % rhs;
+      },
+      [](APFloat lhs, APFloat rhs) -> std::optional<APFloat> {
+        if (rhs.isZero())
+          return std::nullopt;
+        (void)lhs.remainder(rhs);
+        return lhs;
+      });
+}
+
+OpFoldResult MaxOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(
+      operands, [](APSInt lhs, APSInt rhs) { return lhs > rhs ? lhs : rhs; },
+      [](APFloat lhs, APFloat rhs) { return llvm::maximum(lhs, rhs); });
+}
+
+OpFoldResult MinOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(
+      operands, [](APSInt lhs, APSInt rhs) { return lhs < rhs ? lhs : rhs; },
+      [](APFloat lhs, APFloat rhs) { return llvm::minimum(lhs, rhs); });
+}
+
+OpFoldResult ShlOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(operands,
+                    [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+                      if (rhs.uge(lhs.getBitWidth()))
+                        return std::nullopt;
+                      return APSInt(lhs.shl(rhs), lhs.isSigned());
+                    });
+}
+
+OpFoldResult ShrOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(
+      operands, [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+        if (rhs.uge(lhs.getBitWidth()))
+          return std::nullopt;
+        return APSInt(lhs.isSigned() ? lhs.ashr(rhs) : lhs.lshr(rhs),
+                      lhs.isSigned());
+      });
+}
+
+OpFoldResult CopySignOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(operands, [](APFloat lhs, APFloat rhs) {
+    return rhs.isNegative() ? -llvm::abs(lhs) : llvm::abs(lhs);
+  });
+}
+
+//===----------------------------------------------------------------------===//
+// Ternary Operations
+
+OpFoldResult FMAOp::fold(ArrayRef<Attribute> operands) {
+  return foldSIMDOp(
+      operands, [](APSInt a, APSInt b, APSInt c) { return a * b + c; },
+      [](APFloat a, APFloat b, APFloat c) { return a * b + c; });
+}
+
+//===----------------------------------------------------------------------===//
 // LoadOp
 //===----------------------------------------------------------------------===//
 
