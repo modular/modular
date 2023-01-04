@@ -53,11 +53,8 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
 
   // Report an error if evaluation fails.
   if (result.isError()) {
-    ErrorTree funcError(func.getLoc(),
-                        "failed to interpret function @" + func.getName());
-    funcError.addCause(result.takeError());
     return ErrorTree(*errorLoc, "failed to evaluate 'apply'",
-                     std::move(funcError));
+                     result.takeError());
   }
 
   // Apply operators only return one result.
