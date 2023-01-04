@@ -153,12 +153,7 @@ fn transpose_inplace_generic[
         _type : NDBuffer[
             2,
             __mlir_attr[
-                `#kgen.list<`,
-                rows,
-                `, `,
-                cols,
-                `> : `,
-                `!kgen.list<index[2]>`
+                `#kgen.list<`, rows, `, `, cols, `> : `, `!kgen.list<index[2]>`
             ],
             type,
         ]
