@@ -28,10 +28,10 @@ def InterpreterOpInterface : OpInterface<"InterpreterOpInterface"> {
   let methods = [
     InterfaceMethod<[{
       Given the constant value inputs to the operation, compute the constant
-      value results, with access to the interpreter state.
-    }], "ErrorOrSuccess", "interpret",
-    (ins "ArrayRef<Attribute>":$operands, "InterpreterState &":$state,
-         "SmallVectorImpl<OpFoldResult> &":$results)>
+      value results, with access to the interpreter state and the contextual
+      value map.
+    }], "ErrorTreeOr<SuccessType>", "interpret",
+    (ins "ArrayRef<Attribute>":$operands, "InterpreterState &":$state)>
   ];
 }
 

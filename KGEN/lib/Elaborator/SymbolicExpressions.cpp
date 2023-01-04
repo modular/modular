@@ -45,12 +45,11 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   elaborator.asyncMap.await(func);
 
   // Evaluate the function body.
-  DenseMap<Value, Attribute> values;
   SmallVector<Attribute> arguments;
   for (TypedAttr input : inputs)
     arguments.push_back(input);
-  ErrorTreeOr<RegionResult> result =
-      evaluateRegion(values, arguments, func.getBodyRegion());
+  ErrorTreeOr<SmallVector<Attribute>> result =
+      startInterpreterAt(func.getBodyRegion(), arguments);
 
   // Report an error if evaluation fails.
   if (result.isError()) {
@@ -62,7 +61,7 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   }
 
   // Apply operators only return one result.
-  return result.getValue().operands.front();
+  return result.getValue().front();
 }
 
 //===----------------------------------------------------------------------===//

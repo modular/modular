@@ -360,18 +360,17 @@ OpFoldResult FMAOp::fold(ArrayRef<Attribute> operands) {
 // LoadOp
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess LoadOp::interpret(ArrayRef<Attribute> operands,
-                                 InterpreterState &state,
-                                 SmallVectorImpl<OpFoldResult> &results) {
+ErrorTreeOr<SuccessType> LoadOp::interpret(ArrayRef<Attribute> operands,
+                                           InterpreterState &state) {
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
   if (!ptr)
-    return Error("non-constant inputs");
+    return ErrorTree(getLoc(), Error("non-constant inputs"));
 
   ErrorOr<TypedAttr> result =
       state.readAttributeFromMemory(ptr.getAddr(), getType());
   if (result.isError())
-    return result.takeError();
-  results.push_back(result.takeValue());
+    return ErrorTree(getLoc(), result.takeError());
+  state.mapResults(result.takeValue());
   return success();
 }
 
@@ -610,34 +609,35 @@ OpFoldResult SIMDSplatOp::fold(ArrayRef<Attribute> operands) {
 // StoreOp
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess StoreOp::interpret(ArrayRef<Attribute> operands,
-                                  InterpreterState &state,
-                                  SmallVectorImpl<OpFoldResult> &results) {
+ErrorTreeOr<SuccessType> StoreOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
   auto value = llvm::cast_if_present<TypedAttr>(operands[0]);
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[1]);
   if (!value || !ptr)
-    return Error("non-constant inputs");
+    return ErrorTree(getLoc(), "non-constant inputs");
 
-  return state.writeAttributeToMemory(ptr.getAddr(), value);
+  ErrorOrSuccess result = state.writeAttributeToMemory(ptr.getAddr(), value);
+  if (result.isError())
+    return ErrorTree(getLoc(), result.takeError());
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
 // OffsetOp
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
-                                   InterpreterState &state,
-                                   SmallVectorImpl<OpFoldResult> &results) {
+ErrorTreeOr<SuccessType> OffsetOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
   auto offset = dyn_cast_or_null<IntegerAttr>(operands[1]);
   if (!ptr || !offset)
-    return Error("non-constant inputs");
+    return ErrorTree(getLoc(), "non-constant inputs");
   Optional<int64_t> elSize =
       DataLayoutInterface::getTypeSizeInBytes(state.getTarget(), ptr.getType());
   if (!elSize)
-    return Error("could not query pointer element size");
-  results.push_back(PointerAttr::get(ptr.getAddr() + *elSize * offset.getInt(),
-                                     ptr.getType()));
+    return ErrorTree(getLoc(), "could not query pointer element size");
+  state.mapResults(PointerAttr::get(ptr.getAddr() + *elSize * offset.getInt(),
+                                    ptr.getType()));
   return success();
 }
 
@@ -645,23 +645,22 @@ ErrorOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
 // StackAllocationOp
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess
+ErrorTreeOr<SuccessType>
 StackAllocationOp::interpret(ArrayRef<Attribute> operands,
-                             InterpreterState &state,
-                             SmallVectorImpl<OpFoldResult> &results) {
+                             InterpreterState &state) {
   auto count = dyn_cast<IntegerAttr>(getCount());
   Type type = cast<PointerType>(getType()).getResolvedElementType();
   if (!count || !type)
-    return Error("not concrete");
+    return ErrorTree(getLoc(), "not concrete");
   Optional<int64_t> size =
       DataLayoutInterface::getTypeSizeInBytes(state.getTarget(), type);
   Optional<int64_t> align =
       DataLayoutInterface::getTypeAlignInBytes(state.getTarget(), type);
   if (!size || !align)
-    return Error("could not query type size");
+    return ErrorTree(getLoc(), "could not query type size");
   size_t addr =
       state.allocateMemory(count.getInt() * llvm::alignTo(*size, *align));
-  results.push_back(PointerAttr::get(addr, getType()));
+  state.mapResults(PointerAttr::get(addr, getType()));
   return success();
 }
 
@@ -710,13 +709,12 @@ OpFoldResult StructReplaceOp::fold(ArrayRef<Attribute> operands) {
 // StructGEPOp
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess
+ErrorTreeOr<SuccessType>
 POP::StructGEPOp::interpret(ArrayRef<Attribute> operands,
-                            InterpreterState &state,
-                            SmallVectorImpl<OpFoldResult> &results) {
+                            InterpreterState &state) {
   auto ptr = dyn_cast_if_present<PointerAttr>(operands.front());
   if (!ptr)
-    return Error("non-constant inputs");
+    return ErrorTree(getLoc(), "non-constant inputs");
 
   size_t offset = 0;
   auto structType = getContainer().getType().getElementTypeAs<StructType>();
@@ -734,7 +732,7 @@ POP::StructGEPOp::interpret(ArrayRef<Attribute> operands,
   offset = llvm::alignTo(
       offset,
       *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
-  results.push_back(
+  state.mapResults(
       PointerAttr::get(ptr.getAddr() + offset, PointerType::get(targetType)));
   return success();
 }
@@ -810,13 +808,12 @@ OpFoldResult ArrayReplaceOp::fold(ArrayRef<Attribute> operands) {
 // ArrayGEPOp
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
-                                     InterpreterState &state,
-                                     SmallVectorImpl<OpFoldResult> &results) {
+ErrorTreeOr<SuccessType> ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
+                                               InterpreterState &state) {
   auto ptr = dyn_cast_if_present<PointerAttr>(operands[0]);
   auto index = dyn_cast_if_present<IntegerAttr>(operands[1]);
   if (!ptr || !index)
-    return Error("non-constant inputs");
+    return ErrorTree(getLoc(), "non-constant inputs");
 
   auto arrayType = getArray().getType().getElementTypeAs<POP::ArrayType>();
   auto dl = cast<DataLayoutInterface>(arrayType.getResolvedElementType());
@@ -824,7 +821,7 @@ ErrorOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
       ptr.getAddr() +
       index.getInt() * (llvm::alignTo(*dl.getTypeSize(state.getTarget()),
                                       *dl.getTypeAlign(state.getTarget())));
-  results.push_back(PointerAttr::get(addr, PointerType::get(dl)));
+  state.mapResults(PointerAttr::get(addr, PointerType::get(dl)));
   return success();
 }
 
