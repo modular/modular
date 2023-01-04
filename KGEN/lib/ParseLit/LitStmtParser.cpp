@@ -280,6 +280,8 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
 
   case LitToken::kw_pass:
   case LitToken::dot_dot_dot:
+  case LitToken::string:
+    // doc string
     // pass_stmt ::= "pass"
     consumeToken();
     return success();
