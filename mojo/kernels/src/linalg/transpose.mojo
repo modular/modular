@@ -10,10 +10,12 @@ from Assert import assert_param
 from Int import Int
 from SIMD import SIMD
 
+
 fn _pair(i: Int, j: Int) -> StaticTuple[2, __mlir_type.index]:
     return StaticTuple[2, __mlir_type.index].pair(
         i.__as_mlir_index(), j.__as_mlir_index()
     )
+
 
 @interface
 fn transpose_inplace[
