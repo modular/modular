@@ -16,6 +16,7 @@ add_modular_dialect_library(HLCFDialect
 
   LINK_LIBS PUBLIC
   HLCFAnalysis
+  InterpreterInterface
 
   MLIRIR
   MLIRSideEffectInterfaces

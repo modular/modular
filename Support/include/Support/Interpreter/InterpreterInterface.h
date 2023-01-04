@@ -118,13 +118,6 @@ public:
   //===--------------------------------------------------------------------===//
   // Interpreter Value Management
 
-  /// Map a value to a constant value. This method asserts that the value has
-  /// not already been mapped.
-  void mapUnique(Value value, Attribute attr) {
-    auto [_, inserted] = stack.back().values.try_emplace(value, attr);
-    assert(inserted && "mapped value is not unique");
-  }
-
   /// Map a value to a constant value, overwriting the previous value if there
   /// was one.
   void mapOrOverwrite(Value value, Attribute attr) {

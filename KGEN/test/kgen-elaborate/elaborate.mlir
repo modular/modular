@@ -1272,3 +1272,51 @@ kgen.generator @call_it() -> index {
   %0 = kgen.param.constant = <apply(:(index) -> index @func, 7)>
   kgen.return %0 : index
 }
+
+// -----
+
+kgen.func @sum(%from: index, %to: index) -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %result = hlcf.loop (%acc = %idx0 : index, %i = %from : index) -> index {
+    %cond = index.cmp sle(%i, %to)
+    hlcf.if %cond {
+      hlcf.yield
+    } else {
+      hlcf.break %acc : index
+    }
+    %nextI = index.add %idx1, %i
+    %nextAcc = index.add %acc, %i
+    hlcf.continue %nextAcc, %nextI : index, index
+  }
+  kgen.return %result : index
+}
+
+// CHECK-LABEL: kgen.func @call_it
+kgen.generator @call_it() {
+  // CHECK-NEXT: <55>
+  kgen.param.constant = <apply(:(index, index) -> index @sum, 0, 10)>
+  kgen.return
+}
+
+// -----
+
+kgen.func @early_return(%cond: i1) -> index {
+  %idx0 = index.constant 0
+  %result = hlcf.if %cond -> index {
+    hlcf.yield %idx0 : index
+  } else {
+    %idx1 = index.constant 1
+    hlcf.return %idx1 : index
+  }
+  kgen.return %result : index
+}
+
+// CHECK-LABEL: kgen.func @call_it
+kgen.generator @call_it() {
+  // CHECK-NEXT: <1>
+  kgen.param.constant = <apply(:(i1) -> index @early_return, 0)>
+  // CHECK-NEXT: <0>
+  kgen.param.constant = <apply(:(i1) -> index @early_return, 1)>
+  kgen.return
+}

@@ -8,6 +8,7 @@
 #define SUPPORT_HLCFDIALECT_HLCFOPS_H
 
 #include "Support/HLCFDialect/HLCFInterfaces.h"
+#include "Support/Interpreter/InterpreterInterface.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "mlir/IR/OpDefinition.h"

@@ -230,7 +230,7 @@ void InterpreterState::transferControlFlowTo(Operation *target) {
 void InterpreterState::transferControlFlowTo(Block *target,
                                              ArrayRef<Attribute> arguments) {
   for (auto [arg, value] : llvm::zip(target->getArguments(), arguments))
-    mapUnique(arg, value);
+    mapOrOverwrite(arg, value);
   op = &target->front();
 }
 
