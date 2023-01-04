@@ -23,3 +23,17 @@ fn bracketError1():
 
 fn bracketError2():
   _ = [[1, 2], }# expected-error {{unexpected token in expression}}
+
+
+# Failed to parse doc strings.
+struct struct_issue_6526:
+    """
+    foo
+    """
+    pass
+
+fn fn_issue_6526():
+    """
+    foo
+    """
+    pass
