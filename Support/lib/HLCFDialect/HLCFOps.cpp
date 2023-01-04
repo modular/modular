@@ -85,6 +85,12 @@ ValueRange LoopOp::getEntryArguments(Optional<unsigned> target) {
   return getBody().getArguments();
 }
 
+ErrorTreeOr<SuccessType> LoopOp::interpret(ArrayRef<Attribute> operands,
+                                           InterpreterState &state) {
+  state.transferControlFlowTo(&getBody().front(), operands);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // IfOp
 //===----------------------------------------------------------------------===//
@@ -107,6 +113,17 @@ ValueRange IfOp::getEntryArguments(Optional<unsigned> target) {
   return {};
 }
 
+ErrorTreeOr<SuccessType> IfOp::interpret(ArrayRef<Attribute> operands,
+                                         InterpreterState &state) {
+  auto cond = dyn_cast_if_present<BoolAttr>(operands[0]);
+  if (!cond)
+    return ErrorTree(getLoc(), "non-constant condition");
+
+  state.transferControlFlowTo(
+      &(cond.getValue() ? getThenRegion() : getElseRegion()).front(), {});
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ContinueOp
 //===----------------------------------------------------------------------===//
@@ -118,6 +135,13 @@ void ContinueOp::getBranchTargets(ArrayRef<Attribute> operands,
   assert(operands.size() == getNumOperands());
   // Branch to the beginning of the body region.
   targets.emplace_back(0, getOperands());
+}
+
+ErrorTreeOr<SuccessType> ContinueOp::interpret(ArrayRef<Attribute> operands,
+                                               InterpreterState &state) {
+  auto loop = getOperation()->getParentOfType<LoopOp>();
+  state.transferControlFlowTo(&loop.getBody().front(), operands);
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -145,6 +169,14 @@ void BreakOp::getBranchTargets(ArrayRef<Attribute> operands,
   targets.emplace_back(std::nullopt, getOperands());
 }
 
+ErrorTreeOr<SuccessType> BreakOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  auto loop = getOperation()->getParentOfType<LoopOp>();
+  state.setReturnValues(operands);
+  state.transferControlFlowTo(loop);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // YieldOp
 //===----------------------------------------------------------------------===//
@@ -156,6 +188,14 @@ void YieldOp::getBranchTargets(ArrayRef<Attribute> operands,
   assert(operands.size() == getNumOperands());
   // Branch to after the if operation.
   targets.emplace_back(std::nullopt, getOperands());
+}
+
+ErrorTreeOr<SuccessType> YieldOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  auto ifOp = cast<IfOp>(getOperation()->getParentOp());
+  state.setReturnValues(operands);
+  state.transferControlFlowTo(ifOp);
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

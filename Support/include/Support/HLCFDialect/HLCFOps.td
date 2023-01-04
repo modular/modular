@@ -9,6 +9,7 @@
 
 include "Support/HLCFDialect/HLCFDialect.td"
 include "Support/HLCFDialect/HLCFInterfaces.td"
+include "Support/Interpreter/InterpreterInterface.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
@@ -24,7 +25,8 @@ class HLCFOp<string mnemonic, list<Trait> traits = []> :
 /// Base class for HLCF control-flow operations.
 class HLCFParentOp<string mnemonic> : HLCFOp<mnemonic, [
     RecursiveMemoryEffects, RecursivelySpeculatable,
-    DeclareOpInterfaceMethods<ControlFlowNode>]>;
+    DeclareOpInterfaceMethods<ControlFlowNode>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]>;
 
 /// Base class for HLCF terminator operations.
 class HLCFTerminatorOp<string mnemonic, list<Trait> traits = []> :
@@ -182,7 +184,8 @@ def HLCF_IfOp : HLCFParentOp<"if"> {
 // ContinueOp
 //===----------------------------------------------------------------------===//
 
-def HLCF_ContinueOp : HLCFTerminatorOp<"continue"> {
+def HLCF_ContinueOp : HLCFTerminatorOp<"continue",
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "continue loop execution";
   let description = [{
     The `hlcf.continue` operation is a control-flow terminator that transfers
@@ -209,7 +212,8 @@ def HLCF_ContinueOp : HLCFTerminatorOp<"continue"> {
 
 def HLCF_BreakOp : HLCFTerminatorOp<"break", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
-    DeclareOpInterfaceMethods<ConditionallySpeculatable>]> {
+    DeclareOpInterfaceMethods<ConditionallySpeculatable>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "loop exit operation";
   let description = [{
     The `hlcf.break` opeartion is a control-flow terminator that transfer
@@ -235,7 +239,8 @@ def HLCF_BreakOp : HLCFTerminatorOp<"break", [
 // YieldOp
 //===----------------------------------------------------------------------===//
 
-def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure, HasParent<"IfOp">]> {
+def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure, HasParent<"IfOp">,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "conditional yield operation";
   let description = [{
     The `hlcf.yield` operation is a control-flow terminator that transfers
