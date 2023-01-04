@@ -376,8 +376,12 @@ kgen.generator @do_it() {
     #pop.simd<-7, 7>)>
   // CHECK-NEXT: #pop.simd<0, 1, 2, 3, 3, 2>
   kgen.param.constant: !pop.simd<6, ui2> = <apply(
-    :(!pop.simd<6, ui2>) -> !pop.simd<6, ui2> @store_load<T: type =!pop.simd<6, ui2>>,
+    :(!pop.simd<6, ui2>) -> !pop.simd<6, ui2> @store_load<T: type = !pop.simd<6, ui2>>,
     #pop.simd<0, 1, 2, 3, 3, 2>)>
+  // CHECK-NEXT: #pop.simd<-5>
+  kgen.param.constant: !pop.scalar<index> = <apply(
+    :(!pop.scalar<index>) -> !pop.scalar<index> @store_load<T: type = !pop.scalar<index>>,
+    #pop.simd<-5>)>
   // CHECK-NEXT: #pop.struct<120, 32112, 1.125{{0+}}e+00>
   kgen.param.constant: !pop.struct<i8, i16, f64> = <apply(
     :(!pop.struct<i8, i16, f64>) -> !pop.struct<i8, i16, f64> @store_load<T: type = !pop.struct<i8, i16, f64>>,

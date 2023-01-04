@@ -237,17 +237,13 @@ Optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
   if (!dtype || !size)
     return {};
 
-  int64_t elSize;
   switch (dtype->getValue()) {
   case KGENDType::address:
   case KGENDType::index:
-    elSize = target.getPointerSize();
-    break;
+    return target.getPointerSize() * *size;
   default:
-    elSize = dtype->getWidthInBits();
-    break;
+    return dtype->getSizeInBytes(*size);
   }
-  return llvm::divideCeil(*size * elSize, CHAR_BIT);
 }
 
 Optional<int64_t> SIMDType::getTypeAlign(TargetInfoAttr target) const {
@@ -266,9 +262,9 @@ bool M::KGEN::POP::isSIMDSizeOneType(Type type) {
 
 ErrorOrSuccess SIMDType::writeTo(TypedAttr value, intptr_t addr,
                                  InterpreterState &state) const {
-  DType dtype = *getResolvedDType();
-  ErrorOr<void *> mem =
-      state.getMemory(addr, dtype.getSizeInBytes(*getResolvedSize()));
+  KGENDType dtype = *getResolvedDType();
+  int64_t vecSize = *getTypeSize(state.getTarget());
+  ErrorOr<void *> mem = state.getMemory(addr, vecSize);
   if (mem.isError())
     return mem.takeError();
   auto *data = reinterpret_cast<uint8_t *>(*mem);
@@ -290,7 +286,7 @@ ErrorOrSuccess SIMDType::writeTo(TypedAttr value, intptr_t addr,
   }
 
   // Other dtypes are multiples of bytes.
-  int64_t byteSize = dtype.getSizeInBytes(1);
+  int64_t byteSize = vecSize / *getResolvedSize();
   for (const DTypeValue &value : values) {
     llvm::StoreIntToMemory(value.getData(), data, byteSize);
     data += byteSize;
@@ -301,8 +297,8 @@ ErrorOrSuccess SIMDType::writeTo(TypedAttr value, intptr_t addr,
 ErrorOr<TypedAttr> SIMDType::readFrom(intptr_t addr,
                                       InterpreterState &state) const {
   DType dtype = *getResolvedDType();
-  ErrorOr<void *> mem =
-      state.getMemory(addr, dtype.getSizeInBytes(*getResolvedSize()));
+  int64_t vecSize = *getTypeSize(state.getTarget());
+  ErrorOr<void *> mem = state.getMemory(addr, vecSize);
   if (mem.isError())
     return mem.takeError();
   auto *data = reinterpret_cast<uint8_t *>(*mem);
@@ -325,7 +321,7 @@ ErrorOr<TypedAttr> SIMDType::readFrom(intptr_t addr,
   }
 
   // Other dtypes are multiples of bytes.
-  int64_t byteSize = dtype.getSizeInBytes(1);
+  int64_t byteSize = vecSize / *getResolvedSize();
   SmallVector<DTypeValue> values;
   APInt value(byteSize * CHAR_BIT, 0);
   for (unsigned i = 0; i != count; ++i) {

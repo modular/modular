@@ -54,3 +54,17 @@ kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
 
   kgen.return
 }
+
+
+// CHECK-LABEL: @simd_bitpacked()
+kgen.generator @simd_bitpacked() {
+  // CHECK-NEXT: <1>
+  kgen.param.constant = <get_sizeof(!pop.scalar<si4>, #kgen<target host>)>
+  // CHECK-NEXT: <2>
+  kgen.param.constant = <get_sizeof(!pop.simd<4, si4>, #kgen<target host>)>
+  // CHECK-NEXT: <4>
+  kgen.param.constant = <get_sizeof(!pop.scalar<index>, #kgen.target<triple="", cpu="", features="", pointer_size=4, simd_bit_width=128>)>
+  // CHECK-NEXT: <8>
+  kgen.param.constant = <get_sizeof(!pop.simd<2, address>, #kgen.target<triple="", cpu="", features="", pointer_size=4, simd_bit_width=128>)>
+  kgen.return
+}
