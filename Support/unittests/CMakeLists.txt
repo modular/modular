@@ -16,6 +16,7 @@ add_modular_unittest(
   TEST_NAME
   SupportTests
 
+  AlignedAllocTest.cpp
   BCastTest.cpp
   DTypeTest.cpp
   FunctionExtrasTest.cpp

@@ -248,7 +248,7 @@ static constexpr size_t SAMPLES = 20;
 using memset_ty = void(uint8_t *, uint8_t, ssize_t);
 
 uint64_t measureScore(memset_ty *fn, ssize_t size) {
-  void *ptr = M::alignedAlloc(kPreferredMemoryAlignment, size);
+  auto ptr = M::makeAlignedUniquePtr<uint8_t>(kPreferredMemoryAlignment, size);
 
   std::vector<uint64_t> samples;
 
@@ -258,7 +258,7 @@ uint64_t measureScore(memset_ty *fn, ssize_t size) {
         std::chrono::steady_clock::now();
 
     for (size_t j = 0; j < ITER; j++)
-      (fn)((uint8_t *)ptr, 0, size);
+      (fn)(ptr.get(), 0, size);
 
     std::chrono::steady_clock::time_point toc =
         std::chrono::steady_clock::now();
@@ -267,7 +267,6 @@ uint64_t measureScore(memset_ty *fn, ssize_t size) {
             .count();
     samples.push_back(interval);
   }
-  M::alignedFree(ptr);
 
   // Return median
   std::sort(samples.begin(), samples.end());

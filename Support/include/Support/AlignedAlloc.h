@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <cstdlib>
+#include <memory>
 
 namespace M {
 
@@ -40,6 +41,20 @@ inline void alignedFree(void *ptr) { std::free(ptr); }
 /// alignedFree deallocates a pointer allocated with alignedAlloc.
 void alignedFree(void *ptr);
 #endif
+
+/// Helper alias template that fixes the deleter type to be `alignedFree`.
+template <class T>
+using unique_ptr_aligned = std::unique_ptr<T, decltype(&alignedFree)>;
+
+/// Helper function template to simplify declarations of aligned unique
+/// pointers.  The alignment and size are passed through to `alignedAlloc` and
+/// `alignedFree` is always used as the deleter.  The aligned unique pointer
+/// created is based on the template type `T`.
+template <class T>
+unique_ptr_aligned<T> makeAlignedUniquePtr(size_t alignment, size_t size) {
+  return unique_ptr_aligned<T>(static_cast<T *>(alignedAlloc(alignment, size)),
+                               &alignedFree);
+}
 
 } // namespace M
 
