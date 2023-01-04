@@ -7,6 +7,7 @@
 #include "Support/Interpreter/InterpreterInterface.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/Interfaces/CallInterfaces.h"
+#include "mlir/Interfaces/ControlFlowInterfaces.h"
 
 using namespace M;
 
@@ -106,107 +107,131 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(intptr_t addr,
 }
 
 /// Report an error with folding an operation.
-static ErrorTree reportFoldError(Operation &op, ArrayRef<Attribute> operands,
+static ErrorTree reportFoldError(Operation *op, ArrayRef<Attribute> operands,
                                  const Twine &prefix,
                                  const Twine &suffix = "") {
   std::string note;
   llvm::raw_string_ostream os(note);
-  os << prefix << op.getName() << '(';
+  os << prefix << op->getName() << '(';
   llvm::interleaveComma(operands, os);
   os << ')' << suffix;
-  return {op.getLoc(), Error(os.str())};
+  return {op->getLoc(), Error(os.str())};
 }
 
 //===----------------------------------------------------------------------===//
 // Interpreter Implementation
 
 /// Interpret a call operation.
-static ErrorTreeOr<SuccessType>
-interpretCallOp(mlir::CallOpInterface op, ArrayRef<Attribute> operands,
-                InterpreterState &state,
-                SmallVectorImpl<OpFoldResult> &results) {
+static void interpretCallOp(mlir::CallOpInterface op,
+                            ArrayRef<Attribute> operands,
+                            InterpreterState &state) {
   auto callee = op.getCallableForCallee().get<SymbolRefAttr>();
   Region &body = state.lookupFunctionBody(callee);
 
-  // Function regions are isolated from above, so create a new value map.
-  DenseMap<Value, Attribute> values;
-  ErrorTreeOr<InterpreterState::RegionResult> result =
-      state.evaluateRegion(values, operands, body);
+  // Function regions are isolated from above, so push a new stack frame. Then,
+  // transfer control flow to the beginning of the function body.
+  state.pushFrame(op);
+  state.transferControlFlowTo(&body.front(), operands);
+}
 
-  if (result.isError()) {
-    return ErrorTree(
-        body.getLoc(),
-        Error("failed to interpret function " + mlir::debugString(callee)),
-        result.takeError());
+/// Interpreter a return-like operation.
+static void interpretReturnOp(Operation *op, ArrayRef<Attribute> operands,
+                              InterpreterState &state) {
+  // Pop the current frame and transfer control flow back to the call operation,
+  // using the operands of the return as the results of the call.
+  Operation *call = state.popFrame();
+  state.setReturnValues(operands);
+  state.transferControlFlowTo(call);
+}
+
+/// Interpreter a generic operation by trying to use its operation folder.
+static ErrorTreeOr<SuccessType>
+interpretOpWithFolder(Operation *op, ArrayRef<Attribute> operands,
+                      InterpreterState &state) {
+  SmallVector<OpFoldResult> results;
+  if (failed(op->fold(operands, results)))
+    return reportFoldError(op, operands, "failed to fold operation ");
+  for (auto [i, result, output] : llvm::zip(
+           llvm::seq<int>(0, op->getNumResults()), results, op->getResults())) {
+    auto value = result.dyn_cast<Attribute>();
+    if (!value)
+      return reportFoldError(op, operands, "operation evaluation ",
+                             " did not return a value for result #" + Twine(i));
+    state.mapOrOverwrite(output, value);
   }
-
-  // Push the return operands as the results of the call.
-  llvm::append_range(results, result.getValue().operands);
   return success();
 }
 
-ErrorTreeOr<InterpreterState::RegionResult>
-InterpreterState::evaluateRegion(DenseMap<Value, Attribute> &values,
-                                 ArrayRef<Attribute> arguments,
-                                 Region &region) {
-  assert(llvm::hasSingleElement(region) && "TODO: support CFG regions");
-  Block &body = region.front();
+ErrorTreeOr<SmallVector<Attribute>>
+InterpreterState::startInterpreterAt(Region &region,
+                                     ArrayRef<Attribute> arguments) {
+  // Push an empty stack frame and map the region arguments.
+  stack.emplace_back(nullptr);
+  transferControlFlowTo(&region.front(), arguments);
 
-  // Map the region argument values.
-  for (auto [arg, input] : llvm::zip(region.getArguments(), arguments))
-    values.try_emplace(arg, input);
+  // Run the interpreter.
+  return runInterpreter();
+}
 
-  // Interpret the IR in the single-block region without evaluating the
-  // terminator.
+ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
   SmallVector<Attribute> operands;
-  SmallVector<OpFoldResult> results;
-  for (Operation &op : body.without_terminator()) {
+  while (op) {
+    Operation *prev = op;
+
     operands.clear();
-    results.clear();
-    for (Value operand : op.getOperands())
-      operands.push_back(values.lookup(operand));
+    // Lookup the operands of the current operation.
+    for (Value operand : op->getOperands())
+      operands.push_back(lookupValue(operand));
 
     // Check for a builtin interface.
     if (auto call = dyn_cast<mlir::CallOpInterface>(op)) {
-      ErrorTreeOr<SuccessType> result =
-          interpretCallOp(call, operands, *this, results);
-      if (result.isError())
-        return reportFoldError(op, operands, "failed to interpret call")
-            .addCause(result.takeError());
+      interpretCallOp(call, operands, *this);
+    } else if (op->hasTrait<OpTrait::ReturnLike>()) {
+      interpretReturnOp(op, operands, *this);
 
       // Check for an interpreter interface implementation.
     } else if (auto interpItf = dyn_cast<InterpreterOpInterface>(op)) {
-      ErrorOrSuccess err = interpItf.interpret(operands, *this, results);
-      if (err.isError()) {
+      ErrorTreeOr<SuccessType> err = interpItf.interpret(operands, *this);
+      if (err.isError())
         return reportFoldError(op, operands, "failed to interpret operation ")
-            .addCause(op.getLoc(), err.takeError());
-      }
+            .addCause(err.takeError());
 
       // Otherwise, try to use the operation folder.
     } else {
-      if (failed(op.fold(operands, results)))
-        return reportFoldError(op, operands, "failed to fold operation ");
+      ErrorTreeOr<SuccessType> result =
+          interpretOpWithFolder(op, operands, *this);
+      if (result.isError())
+        return result.takeError();
     }
 
-    for (auto [i, result, output] :
-         llvm::zip(llvm::seq<unsigned>(0, op.getNumResults()), results,
-                   op.getResults())) {
-      auto value = result.dyn_cast<Attribute>();
-      if (!value) {
-        return reportFoldError(op, operands, "operation evaluation ",
-                               " did not return a value for result #" +
-                                   Twine(i));
-      }
-      values.try_emplace(output, value);
+    // If the operation has not changed, advance to the next operation. If the
+    // current operation is a terminator, return an error.
+    if (prev == op) {
+      if (!op->getNextNode())
+        return ErrorTree(op->getLoc(),
+                         "terminator did not transfer control flow");
+      op = op->getNextNode();
     }
   }
 
-  // Collect the constant values of the operands and return them.
-  RegionResult result;
-  result.terminator = body.getTerminator();
-  for (Value operand : body.getTerminator()->getOperands())
-    result.operands.push_back(values.lookup(operand));
-  return result;
+  // The stack frame must be empty.
+  assert(stack.empty() && "exiting interpreter with remaining stack frames");
+  return takeReturnValues();
+}
+
+void InterpreterState::transferControlFlowTo(Operation *target) {
+  op = target;
+  if (op) {
+    mapResults(takeReturnValues());
+    op = op->getNextNode();
+  }
+}
+
+void InterpreterState::transferControlFlowTo(Block *target,
+                                             ArrayRef<Attribute> arguments) {
+  for (auto [arg, value] : llvm::zip(target->getArguments(), arguments))
+    mapUnique(arg, value);
+  op = &target->front();
 }
 
 //===----------------------------------------------------------------------===//
