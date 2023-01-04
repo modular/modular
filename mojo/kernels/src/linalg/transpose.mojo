@@ -41,6 +41,7 @@ fn transpose_inplace[
 ):
     ...
 
+
 @implements(transpose_inplace)
 fn transpose_inplace_4x4[
     rank: __mlir_type.index,
@@ -87,52 +88,49 @@ fn transpose_inplace_4x4[
         ]
     ](buf0)
 
-    alias simd_width = 4
+    let row0 = buf.simd_load[4](_pair(0, 0))
+    let row1 = buf.simd_load[4](_pair(1, 0))
+    let row2 = buf.simd_load[4](_pair(2, 0))
+    let row3 = buf.simd_load[4](_pair(3, 0))
 
-    let row0 = buf.simd_load[simd_width](_pair(0, 0))
-    let row1 = buf.simd_load[simd_width](_pair(1, 0))
-    let row2 = buf.simd_load[simd_width](_pair(2, 0))
-    let row3 = buf.simd_load[simd_width](_pair(3, 0))
-
-    alias len = simd_width
     let tmp0 = row0.shuffle[
-        len,
-        __mlir_attr[`#kgen.list<0, 1, 4, 5> : !kgen.list<index[`, len, `]>`],
+        4,
+        __mlir_attr[`#kgen.list<0, 1, 4, 5> : !kgen.list<index[4]>`],
     ](row1)
     let tmp1 = row0.shuffle[
-        len,
-        __mlir_attr[`#kgen.list<2, 3, 6, 7> : !kgen.list<index[`, len, `]>`],
+        4,
+        __mlir_attr[`#kgen.list<2, 3, 6, 7> : !kgen.list<index[4]>`],
     ](row1)
     let tmp2 = row2.shuffle[
-        len,
-        __mlir_attr[`#kgen.list<0, 1, 4, 5> : !kgen.list<index[`, len, `]>`],
+        4,
+        __mlir_attr[`#kgen.list<0, 1, 4, 5> : !kgen.list<index[4]>`],
     ](row3)
     let tmp3 = row2.shuffle[
-        len,
-        __mlir_attr[`#kgen.list<2, 3, 6, 7> : !kgen.list<index[`, len, `]>`],
+        4,
+        __mlir_attr[`#kgen.list<2, 3, 6, 7> : !kgen.list<index[4]>`],
     ](row3)
 
     let r0 = tmp0.shuffle[
-        len,
-        __mlir_attr[`#kgen.list<0, 2, 4, 6> : !kgen.list<index[`, len, `]>`],
+        4,
+        __mlir_attr[`#kgen.list<0, 2, 4, 6> : !kgen.list<index[4]>`],
     ](tmp1)
     let r1 = tmp0.shuffle[
-        len,
-        __mlir_attr[`#kgen.list<1, 3, 5, 7> : !kgen.list<index[`, len, `]>`],
+        4,
+        __mlir_attr[`#kgen.list<1, 3, 5, 7> : !kgen.list<index[4]>`],
     ](tmp1)
     let r2 = tmp2.shuffle[
-        len,
-        __mlir_attr[`#kgen.list<0, 2, 4, 6> : !kgen.list<index[`, len, `]>`],
+        4,
+        __mlir_attr[`#kgen.list<0, 2, 4, 6> : !kgen.list<index[4]>`],
     ](tmp3)
     let r3 = tmp2.shuffle[
-        len,
-        __mlir_attr[`#kgen.list<1, 3, 5, 7> : !kgen.list<index[`, len, `]>`],
+        4,
+        __mlir_attr[`#kgen.list<1, 3, 5, 7> : !kgen.list<index[4]>`],
     ](tmp3)
 
-    buf.simd_store[len](_pair(0, 0), r0)
-    buf.simd_store[len](_pair(1, 0), r1)
-    buf.simd_store[len](_pair(2, 0), r2)
-    buf.simd_store[len](_pair(3, 0), r3)
+    buf.simd_store[4](_pair(0, 0), r0)
+    buf.simd_store[4](_pair(1, 0), r1)
+    buf.simd_store[4](_pair(2, 0), r2)
+    buf.simd_store[4](_pair(3, 0), r3)
 
 
 @implements(transpose_inplace)
