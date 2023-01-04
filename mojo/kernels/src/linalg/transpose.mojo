@@ -74,18 +74,7 @@ fn transpose_inplace_4x4[
     var buf = __mlir_op.`kgen.rebind`[
         _type : NDBuffer[
             2,
-            __mlir_attr[
-                `#kgen.list<`,
-                +4,
-                `, `,
-                +4,
-                `> : `,
-                `!kgen.list<`,
-                __mlir_type.index,
-                `[`,
-                +2,
-                `]>`,
-            ],
+            __mlir_attr.`#kgen.list<4,4> : !kgen.list<index[2]>`,
             type,
         ]
     ](buf0)
@@ -169,11 +158,7 @@ fn transpose_inplace_generic[
                 `, `,
                 cols,
                 `> : `,
-                `!kgen.list<`,
-                __mlir_type.index,
-                `[`,
-                +2,
-                `]>`,
+                `!kgen.list<index[2]>`
             ],
             type,
         ]
