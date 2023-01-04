@@ -24,6 +24,8 @@ public:
   InterpreterState(SymbolTableAnalysis &analysis, TargetInfoAttr target)
       : analysis(analysis), target(target) {}
 
+  virtual ~InterpreterState() = default;
+
   /// Get the top-level symbol table.
   SymbolTable &getSymbolTable() { return analysis.getTopLevelSymbolTable(); }
 
@@ -59,8 +61,13 @@ public:
   /// Evaluate the operations in a region given a contextual map of values and
   /// the region arguments.
   ErrorTreeOr<RegionResult> evaluateRegion(DenseMap<Value, Attribute> &values,
-                                           ArrayRef<TypedAttr> arguments,
+                                           ArrayRef<Attribute> arguments,
                                            Region &region);
+
+  /// Lookup the body of the referenced function. This method is made virtual so
+  /// that implementors that don't have a monolithic module available can
+  /// implement it differently than a symbol table lookup.
+  virtual Region &lookupFunctionBody(SymbolRefAttr symbol) = 0;
 
 private:
   /// The cached symbol table.

@@ -11,6 +11,7 @@ add_modular_mlir_library(MCompilerSupport
   VerifyUtils.cpp
 
   LINK_LIBS PUBLIC
+  MSupport
   MSupportML
   MLIRIR
 )

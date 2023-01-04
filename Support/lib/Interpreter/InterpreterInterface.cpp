@@ -6,6 +6,7 @@
 
 #include "Support/Interpreter/InterpreterInterface.h"
 #include "Support/MDialect/MTypeInterfaces.h"
+#include "mlir/Interfaces/CallInterfaces.h"
 
 using namespace M;
 
@@ -116,9 +117,37 @@ static ErrorTree reportFoldError(Operation &op, ArrayRef<Attribute> operands,
   return {op.getLoc(), Error(os.str())};
 }
 
+//===----------------------------------------------------------------------===//
+// Interpreter Implementation
+
+/// Interpret a call operation.
+static ErrorTreeOr<SuccessType>
+interpretCallOp(mlir::CallOpInterface op, ArrayRef<Attribute> operands,
+                InterpreterState &state,
+                SmallVectorImpl<OpFoldResult> &results) {
+  auto callee = op.getCallableForCallee().get<SymbolRefAttr>();
+  Region &body = state.lookupFunctionBody(callee);
+
+  // Function regions are isolated from above, so create a new value map.
+  DenseMap<Value, Attribute> values;
+  ErrorTreeOr<InterpreterState::RegionResult> result =
+      state.evaluateRegion(values, operands, body);
+
+  if (result.isError()) {
+    return ErrorTree(
+        body.getLoc(),
+        Error("failed to interpret function " + mlir::debugString(callee)),
+        result.takeError());
+  }
+
+  // Push the return operands as the results of the call.
+  llvm::append_range(results, result.getValue().operands);
+  return success();
+}
+
 ErrorTreeOr<InterpreterState::RegionResult>
 InterpreterState::evaluateRegion(DenseMap<Value, Attribute> &values,
-                                 ArrayRef<TypedAttr> arguments,
+                                 ArrayRef<Attribute> arguments,
                                  Region &region) {
   assert(llvm::hasSingleElement(region) && "TODO: support CFG regions");
   Block &body = region.front();
@@ -137,19 +166,28 @@ InterpreterState::evaluateRegion(DenseMap<Value, Attribute> &values,
     for (Value operand : op.getOperands())
       operands.push_back(values.lookup(operand));
 
-    // Check for an interpreter interface implementation.
-    if (auto interpItf = dyn_cast<InterpreterOpInterface>(op)) {
+    // Check for a builtin interface.
+    if (auto call = dyn_cast<mlir::CallOpInterface>(op)) {
+      ErrorTreeOr<SuccessType> result =
+          interpretCallOp(call, operands, *this, results);
+      if (result.isError())
+        return reportFoldError(op, operands, "failed to interpret call")
+            .addCause(result.takeError());
+
+      // Check for an interpreter interface implementation.
+    } else if (auto interpItf = dyn_cast<InterpreterOpInterface>(op)) {
       ErrorOrSuccess err = interpItf.interpret(operands, *this, results);
       if (err.isError()) {
-        return std::move(
-            reportFoldError(op, operands, "failed to interpret operation ")
-                .addCause(op.getLoc(), err.takeError()));
+        return reportFoldError(op, operands, "failed to interpret operation ")
+            .addCause(op.getLoc(), err.takeError());
       }
-    } else {
+
       // Otherwise, try to use the operation folder.
+    } else {
       if (failed(op.fold(operands, results)))
         return reportFoldError(op, operands, "failed to fold operation ");
     }
+
     for (auto [i, result, output] :
          llvm::zip(llvm::seq<unsigned>(0, op.getNumResults()), results,
                    op.getResults())) {

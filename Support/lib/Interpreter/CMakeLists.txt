@@ -9,7 +9,10 @@ add_modular_library(InterpreterInterface
 
   DEPENDS
   InterpreterInterfaceIncGen
+
+  LINK_LIBS PUBLIC
   MLIRIR
+  MSupport
   MCompilerSupport
   MDialect
 )

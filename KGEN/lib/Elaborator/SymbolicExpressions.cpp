@@ -22,6 +22,20 @@ using namespace KGEN;
 // IR Interpreter
 //===----------------------------------------------------------------------===//
 
+Region &IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
+  auto func = getSymbolTable().lookup<FuncOp>(
+      cast<FlatSymbolRefAttr>(symbol).getAttr());
+
+  // Make sure the function is inflated.
+  elaborator.asyncMap.mapChained(func, [&](LLCL::AnyAsyncValueRef ch) {
+    return Cache::inflateOp(func, elaborator.regionCache.copy(), std::move(ch));
+  });
+  elaborator.asyncMap.await(func);
+
+  // Now we can return the function body.
+  return func.getBodyRegion();
+}
+
 ErrorTreeOr<TypedAttr>
 IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   // Make sure the function is inflated.
@@ -32,8 +46,11 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
 
   // Evaluate the function body.
   DenseMap<Value, Attribute> values;
+  SmallVector<Attribute> arguments;
+  for (TypedAttr input : inputs)
+    arguments.push_back(input);
   ErrorTreeOr<RegionResult> result =
-      evaluateRegion(values, inputs, func.getBodyRegion());
+      evaluateRegion(values, arguments, func.getBodyRegion());
 
   // Report an error if evaluation fails.
   if (result.isError()) {

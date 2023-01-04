@@ -1253,3 +1253,22 @@ kgen.generator @call_it() {
     apply(:() -> index bind_signature(:<A>() -> index @return_it, 3))))>
   kgen.return
 }
+
+// -----
+
+kgen.func @callee(%arg0: index) -> index {
+  %0 = index.add %arg0, %arg0
+  kgen.return %0 : index
+}
+
+kgen.func @func(%arg0: index) -> index {
+  %0 = kgen.call @callee(%arg0) : (index) -> index
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @call_it
+kgen.generator @call_it() -> index {
+  // CHECK-NEXT: <14>
+  %0 = kgen.param.constant = <apply(:(index) -> index @func, 7)>
+  kgen.return %0 : index
+}
