@@ -106,6 +106,9 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(intptr_t addr,
                " does not implement MemoryableTypeInterface");
 }
 
+//===----------------------------------------------------------------------===//
+// Interpreter Implementation
+
 /// Report an error with folding an operation.
 static ErrorTree reportFoldError(Operation *op, ArrayRef<Attribute> operands,
                                  const Twine &prefix,
@@ -118,9 +121,6 @@ static ErrorTree reportFoldError(Operation *op, ArrayRef<Attribute> operands,
   return {op->getLoc(), Error(os.str())};
 }
 
-//===----------------------------------------------------------------------===//
-// Interpreter Implementation
-
 /// Interpret a call operation.
 static void interpretCallOp(mlir::CallOpInterface op,
                             ArrayRef<Attribute> operands,
@@ -130,7 +130,7 @@ static void interpretCallOp(mlir::CallOpInterface op,
 
   // Function regions are isolated from above, so push a new stack frame. Then,
   // transfer control flow to the beginning of the function body.
-  state.pushFrame(op);
+  state.pushFrame(op, body.getParentOp());
   state.transferControlFlowTo(&body.front(), operands);
 }
 
@@ -166,11 +166,26 @@ ErrorTreeOr<SmallVector<Attribute>>
 InterpreterState::startInterpreterAt(Region &region,
                                      ArrayRef<Attribute> arguments) {
   // Push an empty stack frame and map the region arguments.
-  stack.emplace_back(nullptr);
+  pushFrame(nullptr, region.getParentOp());
   transferControlFlowTo(&region.front(), arguments);
 
   // Run the interpreter.
-  return runInterpreter();
+  ErrorTreeOr<SmallVector<Attribute>> results = runInterpreter();
+  if (results)
+    return results.takeValue();
+
+  // The interpreter ran into an error. Report an error using a stacktrace.
+  ErrorTree error = results.takeError();
+  for (const StackFrame &frame : llvm::reverse(stack)) {
+    StringRef funcName = cast<mlir::SymbolOpInterface>(frame.func).getName();
+    error = ErrorTree(frame.func->getLoc(),
+                      Error("failed to interpret function @" + funcName),
+                      std::move(error));
+    if (frame.origin)
+      error = ErrorTree(frame.origin->getLoc(),
+                        Error("failed to evaluate call"), std::move(error));
+  }
+  return std::move(error);
 }
 
 ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {

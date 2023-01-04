@@ -83,16 +83,22 @@ public:
   // Interpreter Stack Management
 
   /// A call stack frame contains the call operation and the value map at the
-  /// callsite. The entry frame has a null operation.
+  /// callsite. The entry frame has a null operation. Also keep the operation
+  /// the stack frame is for so that if an error occurs, we can emit a nice
+  /// stacktrace.
   struct StackFrame {
-    StackFrame(Operation *origin) : origin(origin) {}
+    StackFrame(Operation *origin, Operation *func)
+        : origin(origin), func(func) {}
 
     Operation *origin;
+    Operation *func;
     DenseMap<Value, Attribute> values;
   };
 
   /// Push a new stack frame.
-  void pushFrame(Operation *origin) { stack.emplace_back(origin); }
+  void pushFrame(Operation *origin, Operation *func) {
+    stack.emplace_back(origin, func);
+  }
 
   /// Pop the current stack frame, returning the origin operation.
   Operation *popFrame() {

@@ -217,3 +217,27 @@ kgen.generator @call_it() {
   kgen.param.constant = <apply(:() -> index @no_impls)>
   kgen.return
 }
+
+// -----
+
+// expected-note @below {{failed to interpret function @fails_to_interpret}}
+kgen.func @fails_to_interpret() {
+  // expected-note @below {{failed to fold operation some.op()}}
+  "some.op"() : () -> ()
+  kgen.return
+}
+
+// expected-note @below {{failed to interpret function @passthrough}}
+kgen.func @passthrough() -> index {
+  // expected-note @below {{failed to evaluate call}}
+  kgen.call @fails_to_interpret() : () -> ()
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// expected-error @below {{no viable implementations found}}
+kgen.generator @call_it() {
+  // expected-note @below {{failed to evaluate 'apply'}}
+  kgen.param.constant = <apply(:() -> index @passthrough)>
+  kgen.return
+}
