@@ -11,9 +11,9 @@ from Int import Int
 from SIMD import SIMD
 
 
-fn _pair(i: Int, j: Int) -> StaticTuple[2, __mlir_type.index]:
+fn _index2D(rows: Int, cols: Int) -> StaticTuple[2, __mlir_type.index]:
     return StaticTuple[2, __mlir_type.index].pair(
-        i.__as_mlir_index(), j.__as_mlir_index()
+        rows.__as_mlir_index(), cols.__as_mlir_index()
     )
 
 
@@ -79,23 +79,23 @@ fn transpose_inplace_4x4[
         ]
     ](buf0)
 
-    let row0 = buf.simd_load[4](_pair(0, 0))
-    let row1 = buf.simd_load[4](_pair(1, 0))
-    let row2 = buf.simd_load[4](_pair(2, 0))
-    let row3 = buf.simd_load[4](_pair(3, 0))
+    let row0 = buf.simd_load[4](_index2D(0, 0))
+    let row1 = buf.simd_load[4](_index2D(1, 0))
+    let row2 = buf.simd_load[4](_index2D(2, 0))
+    let row3 = buf.simd_load[4](_index2D(3, 0))
 
     let tmp0 = row0.shuffle[
         4,
         __mlir_attr[`#kgen.list<0, 1, 4, 5> : !kgen.list<index[4]>`],
     ](row1)
-    let tmp1 = row0.shuffle[
-        4,
-        __mlir_attr[`#kgen.list<2, 3, 6, 7> : !kgen.list<index[4]>`],
-    ](row1)
-    let tmp2 = row2.shuffle[
+    let tmp1 = row2.shuffle[
         4,
         __mlir_attr[`#kgen.list<0, 1, 4, 5> : !kgen.list<index[4]>`],
     ](row3)
+    let tmp2 = row0.shuffle[
+        4,
+        __mlir_attr[`#kgen.list<2, 3, 6, 7> : !kgen.list<index[4]>`],
+    ](row1)
     let tmp3 = row2.shuffle[
         4,
         __mlir_attr[`#kgen.list<2, 3, 6, 7> : !kgen.list<index[4]>`],
@@ -118,10 +118,10 @@ fn transpose_inplace_4x4[
         __mlir_attr[`#kgen.list<1, 3, 5, 7> : !kgen.list<index[4]>`],
     ](tmp3)
 
-    buf.simd_store[4](_pair(0, 0), r0)
-    buf.simd_store[4](_pair(1, 0), r1)
-    buf.simd_store[4](_pair(2, 0), r2)
-    buf.simd_store[4](_pair(3, 0), r3)
+    buf.simd_store[4](_index2D(0, 0), r0)
+    buf.simd_store[4](_index2D(1, 0), r1)
+    buf.simd_store[4](_index2D(2, 0), r2)
+    buf.simd_store[4](_index2D(3, 0), r3)
 
 
 @implements(transpose_inplace)
@@ -165,11 +165,12 @@ fn transpose_inplace_generic[
     ](buf0)
     var i: Int = 0
     while i < rows:
-        var j: Int = 0
+        var j: Int = i + 1
         while j < cols:
-            let pos = _pair(i, j)
-            let pos_tr = _pair(j, i)
-            let val: SIMD[1, type] = buf.__getitem__(pos)
-            buf.__setitem__(pos_tr, val)
+            let pos = _index2D(i, j)
+            let pos_tr = _index2D(j, i)
+            let tmp = buf.__getitem__(pos)
+            buf.__setitem__(pos, buf.__getitem__(pos_tr))
+            buf.__setitem__(pos_tr, tmp)
             j += 1
         i += 1
