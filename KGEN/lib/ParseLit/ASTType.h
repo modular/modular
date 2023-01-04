@@ -23,6 +23,7 @@ class ParamBindArrayAttr;
 namespace M::KGEN::LIT {
 class ASTDecl;
 class LitSharedState;
+class LitDiagnostic;
 
 /// This is a simple wrapper around an MLIR Type that provides helpful utilities
 /// for working with our types, provides pretty printing in diagnostics, and
@@ -73,7 +74,7 @@ public:
   }
 };
 
-mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, ASTType type);
+void appendText(ASTType type, LitDiagnostic &diag);
 raw_ostream &operator<<(raw_ostream &os, ASTType type);
 
 } // namespace M::KGEN::LIT

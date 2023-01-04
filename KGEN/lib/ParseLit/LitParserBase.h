@@ -43,10 +43,10 @@ public:
   using LitSharedStateUser::emitError;
 
   /// Emit an error at a specific lexer location.
-  InFlightDiagnostic emitError(llvm::SMLoc loc, const Twine &message = {});
+  LitDiagnostic emitError(llvm::SMLoc loc, const Twine &message = {});
 
   /// Emit an error at the current token.
-  InFlightDiagnostic emitTokenError(const Twine &message = {}) {
+  LitDiagnostic emitTokenError(const Twine &message = {}) {
     return emitError(getToken().getLoc(), message);
   }
 

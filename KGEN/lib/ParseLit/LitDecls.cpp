@@ -352,8 +352,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     return success(!decl.hasReferenceError);
   }
 
-  auto emitError = [&](SMLoc loc, const Twine &message) -> InFlightDiagnostic {
-    return mlir::emitError(translateLocation(loc), message);
+  auto emitError = [&](SMLoc loc, const Twine &message) -> LitDiagnostic {
+    return this->emitError(loc, message);
   };
 
   // If we are currently name binding this operation, we found a cycle, reject
@@ -768,7 +768,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
   // Verify the operand count lines up.
   if (fnInfo.numOperands != -1 && size_t(fnInfo.numOperands) != args.size()) {
-    auto numOperands = fnInfo.numOperands;
+    size_t numOperands = fnInfo.numOperands;
     emitError("special function must have ")
         << numOperands << " operand" << plural(numOperands);
   }

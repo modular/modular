@@ -92,13 +92,12 @@ void LitSharedState::initialize(ASTDecl &topLevelDecl) {
   topLevelDecl.resolvedness = DeclResolvedness::fullyResolved;
 }
 
-InFlightDiagnostic LitSharedState::emitError(Location loc, const Twine &twine) {
+LitDiagnostic LitSharedState::emitError(Location loc, const Twine &twine) {
   return diags.emitError(loc, twine);
 }
 
 /// Emit an error through the parser's logic.
-InFlightDiagnostic LitSharedState::emitError(llvm::SMLoc loc,
-                                             const Twine &twine) {
+LitDiagnostic LitSharedState::emitError(llvm::SMLoc loc, const Twine &twine) {
   return diags.emitError(loc, twine);
 }
 

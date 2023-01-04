@@ -69,10 +69,10 @@ public:
   ASTType getNoneType() const;
 
   /// Emit an error through the parser's logic.
-  InFlightDiagnostic emitError(Location loc, const Twine &twine);
+  LitDiagnostic emitError(Location loc, const Twine &twine);
 
   /// Emit an error through the parser's logic.
-  InFlightDiagnostic emitError(llvm::SMLoc loc, const Twine &twine);
+  LitDiagnostic emitError(llvm::SMLoc loc, const Twine &twine);
 
   /// Inflate a lightweight SMLoc into an MLIR Location object for addition
   /// into the IR.
@@ -179,12 +179,12 @@ public:
 
   /// Emit an error and notice that so we don't verify the IR at the end of
   /// compilation.
-  InFlightDiagnostic emitError(Location loc, const Twine &message = {}) {
+  LitDiagnostic emitError(Location loc, const Twine &message = {}) {
     return shared.emitError(loc, message);
   }
 
   /// Emit an error at a specific lexer location.
-  InFlightDiagnostic emitError(llvm::SMLoc loc, const Twine &message = {}) {
+  LitDiagnostic emitError(llvm::SMLoc loc, const Twine &message = {}) {
     return shared.emitError(loc, message);
   }
 };
