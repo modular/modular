@@ -310,8 +310,8 @@ public:
   /// process. This is intended for debugging/assertions only, and shouldn't be
   /// used for mainline logic in the runtime.
   static ssize_t getNumAllocatedInstances() {
-    static_assert(isAllocationTrackingEnabled() &&
-                  "AsyncValue instance tracking disabled!");
+    assert(isAllocationTrackingEnabled() &&
+           "AsyncValue instance tracking disabled!");
     return totalAllocatedAsyncValues.load(std::memory_order_relaxed);
   }
 
