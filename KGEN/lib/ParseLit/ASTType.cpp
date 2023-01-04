@@ -81,10 +81,9 @@ std::string ASTType::getAsString() const {
   return os.str();
 }
 
-mlir::Diagnostic &M::KGEN::LIT::operator<<(mlir::Diagnostic &diag,
-                                           ASTType type) {
-  return diag << '\'' << type.getAsString() << '\'';
+void LIT::appendText(ASTType type, LitDiagnostic &diag) {
+  diag << '\'' << type.getAsString() << '\'';
 }
 
-  /// Print to standard error with newline after it, for use in a debugger.
-  void ASTType::dump() const { llvm::errs() << getAsString() << '\n'; }
+/// Print to standard error with newline after it, for use in a debugger.
+void ASTType::dump() const { llvm::errs() << getAsString() << '\n'; }

@@ -80,7 +80,7 @@ struct OverloadFitness {
   /// diagnostic.
   void diagnose(SignatureType signature, const DirectCallable &callable,
                 ArrayRef<ASTExprAnd<AnyValue>> operands, bool isMethodCall,
-                Diagnostic &diag);
+                LitDiagnostic &diag);
 };
 } // namespace
 
@@ -175,7 +175,7 @@ OverloadFitness OverloadFitness::evaluate(
 void OverloadFitness::diagnose(SignatureType signature,
                                const DirectCallable &callable,
                                ArrayRef<ASTExprAnd<AnyValue>> operands,
-                               bool isMethodCall, Diagnostic &diag) {
+                               bool isMethodCall, LitDiagnostic &diag) {
   // TODO: Would be really nice to range underline the operand in question!
   switch (kind) {
   case kValid:
@@ -217,7 +217,8 @@ void OverloadFitness::diagnose(SignatureType signature,
   case kArgWrongLVType:
     diag << "l-value of type " << operands[payload].ir.getRValueType()
          << " cannot be converted to reference to expected type "
-         // TODO(QoI): Types are not attributes.
+         // TODO(QoI): Types are not attributes.  We are printing this as an
+         // attr... not a sugared type.
          << cast<POP::PointerType>(Type(type)).getElementType();
     return;
 
@@ -267,7 +268,7 @@ LogicalResult DirectCallable::filterOverloadSet(
         auto diag = shared.emitError(loc, "invalid call to '")
                     << baseName << "': ";
         evaluations[0].diagnose(fnDecl.getFullSignature(), *this, operands,
-                                isMethodCall, *diag.getUnderlyingDiagnostic());
+                                isMethodCall, diag);
         diag.attachNote(fnDecl.getLoc()) << "function declared here";
         return failure();
       }
@@ -278,9 +279,9 @@ LogicalResult DirectCallable::filterOverloadSet(
                   << baseName << "': ";
       for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
         auto fnDecl = cast<LIT::FuncOp>(*candidate);
+        diag.attachNote(fnDecl->getLoc()) << "candidate not viable: ";
         eval.diagnose(fnDecl.getFullSignature(), *this, operands, isMethodCall,
-                      diag.attachNote(fnDecl->getLoc())
-                          << "candidate not viable: ");
+                      diag);
       }
       return failure();
     }
@@ -703,8 +704,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     if (fitness.kind != OverloadFitness::kValid) {
       // If not, diagnose it with an error.
       auto diag = emitError("invalid indirect call: ");
-      fitness.diagnose(calleeSig, bindings, operands, isMethodCall,
-                       *diag.getUnderlyingDiagnostic());
+      fitness.diagnose(calleeSig, bindings, operands, isMethodCall, diag);
       return {};
     }
   }
