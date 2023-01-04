@@ -108,7 +108,7 @@ fn _compute_ndbuffer_offset_rank_2[
     buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
 ) -> Int:
     assert_param[rank == 2]()
-    return idx.__getitem__[0]() + buf.dim[0]() * idx.__getitem__[1]()
+    return idx.__getitem__[1]() + buf.dim[0]() * idx.__getitem__[0]()
 
 
 @implements(_compute_ndbuffer_offset)
@@ -120,8 +120,8 @@ fn _compute_ndbuffer_offset_rank_3[
     buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
 ) -> Int:
     assert_param[rank == 3]()
-    return idx.__getitem__[0]() + buf.dim[0]() * (
-        idx.__getitem__[1]() + buf.dim[1]() * idx.__getitem__[2]()
+    return idx.__getitem__[2]() + buf.dim[1]() * (
+        idx.__getitem__[1]() + buf.dim[0]() * idx.__getitem__[0]()
     )
 
 
@@ -134,10 +134,10 @@ fn _compute_ndbuffer_offset_rank_4[
     buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
 ) -> Int:
     assert_param[rank == 4]()
-    return idx.__getitem__[0]() + buf.dim[0]() * (
-        idx.__getitem__[1]()
+    return idx.__getitem__[3]() + buf.dim[2]() * (
+        idx.__getitem__[2]()
         + buf.dim[1]()
-        * (idx.__getitem__[2]() + buf.dim[2]() * idx.__getitem__[3]())
+        * (idx.__getitem__[1]() + buf.dim[0]() * idx.__getitem__[0]())
     )
 
 
@@ -150,13 +150,13 @@ fn _compute_ndbuffer_offset_rank_5[
     buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
 ) -> Int:
     assert_param[rank == 5]()
-    return idx.__getitem__[0]() + buf.dim[0]() * (
-        idx.__getitem__[1]()
-        + buf.dim[1]()
+    return idx.__getitem__[4]() + buf.dim[4]() * (
+        idx.__getitem__[3]()
+        + buf.dim[2]()
         * (
             idx.__getitem__[2]()
-            + buf.dim[2]()
-            * (idx.__getitem__[3]() + buf.dim[3]() * idx.__getitem__[4]())
+            + buf.dim[1]()
+            * (idx.__getitem__[1]() + buf.dim[0]() * idx.__getitem__[0]())
         )
     )
 
