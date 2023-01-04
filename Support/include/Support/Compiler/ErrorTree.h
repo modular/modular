@@ -46,15 +46,21 @@ public:
   StringRef getMessage() const { return error.get(); }
 
   /// Add a cause to the error. Return a reference to the current error tree.
-  ErrorTree &addCause(ErrorTree cause) {
+  ErrorTree &addCause(ErrorTree cause) & {
     causes.push_back(std::move(cause));
     return *this;
   }
+  ErrorTree &&addCause(ErrorTree cause) && {
+    return std::move(addCause(std::move(cause)));
+  }
 
   /// Add a cause to the error. Return a reference to the current error tree.
-  ErrorTree &addCause(Location loc, Error cause) {
+  ErrorTree &addCause(Location loc, Error cause) & {
     causes.emplace_back(loc, std::move(cause));
     return *this;
+  }
+  ErrorTree &&addCause(Location loc, Error cause) && {
+    return std::move(addCause(loc, std::move(cause)));
   }
 
   /// Add a collection of causes to the error. Return a reference to the current

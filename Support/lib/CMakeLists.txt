@@ -4,17 +4,6 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_subdirectory(ADT)
-add_subdirectory(Benchmark)
-add_subdirectory(DebugInfoDialect)
-add_subdirectory(HLCFDialect)
-add_subdirectory(HLCFToLLVM)
-add_subdirectory(Interpreter)
-add_subdirectory(MDialect)
-add_subdirectory(ML)
-add_subdirectory(Compiler)
-add_subdirectory(Telemetry)
-
 add_modular_library(MSupport
   AlignedAlloc.cpp
   CommonCLOptions.cpp
@@ -27,7 +16,19 @@ add_modular_library(MSupport
 
   LINK_LIBS PUBLIC
   LLVMSupport
+  MLIRSupport
 
   DEPENDS
   MConfig
   )
+
+add_subdirectory(ADT)
+add_subdirectory(Benchmark)
+add_subdirectory(DebugInfoDialect)
+add_subdirectory(HLCFDialect)
+add_subdirectory(HLCFToLLVM)
+add_subdirectory(MDialect)
+add_subdirectory(ML)
+add_subdirectory(Compiler)
+add_subdirectory(Interpreter)
+add_subdirectory(Telemetry)

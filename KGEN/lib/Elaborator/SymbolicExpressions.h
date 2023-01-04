@@ -42,6 +42,10 @@ public:
                                                  bool allowUnknown = false);
   ErrorTreeOr<Type> concretizeParameterExpr(Location loc, Type expr);
 
+  /// Lookup the body of the referenced function. Ensure the function is
+  /// inflated as well.
+  Region &lookupFunctionBody(SymbolRefAttr symbol) override;
+
 private:
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);
