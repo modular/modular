@@ -1339,8 +1339,6 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
       }
       assert(operandIter == operands.end() && "Didn't use all the operands?");
     }
-    llvm::interleaveComma(paramBinds, llvm::errs());
-    llvm::errs() << "\n";
 
     return SymbolConstantAttr::get(
         symbolConstant.getSymbol(),
