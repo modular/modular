@@ -119,7 +119,7 @@ struct Thing[a: __mlir_type.index, b: __mlir_type.index]:
 def GoodUseOfThing(a: Thing[4, 5]):
   pass
 
-def MissingThingMetaParams(a: Thing):  # xpected-error {{'Thing' requires 2 meta parameters}}
+def MissingThingMetaParams(a: Thing):  # expected-error {{use of type "Thing" with 2 unbound parameters}}
   pass
 
 # expected-error @+1 {{cannot apply more parameters to an already parameterized type 'Thing[1, 2]'}}
@@ -536,6 +536,8 @@ struct ResultParams[a: Int -> Int, F32]:
 fn hasResultParam[a: __mlir_type.index -> __mlir_type.index]():
   return[a]
 
+fn hasInputParam[a: __mlir_type.index]():
+
 fn useResultParams():
   # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter but 0 were provided}}
   hasResultParam[1]()
@@ -548,9 +550,11 @@ fn useResultParams():
   # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter but 2 were provided}}
   hasResultParam[1 -> b, c]()
 
-  #TODO: How can I detect this but also allow the test callableWithParam in parameters.lit?
-  # e x pected-error @+1 {{'hasResultParam' expects 1 input parameter but 0 were provided}}
+  # expected-error @+1 {{calls with result parameters must be called directly}}
   _ = hasResultParam
+
+  # TODO: xpected-error @+1 {{calls with result parameters must be called directly}}
+  _ = hasInputParam
 
   # expected-error @+1 {{calls with result parameters must be called directly}}
   _ = hasResultParam[1 -> b]

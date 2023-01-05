@@ -63,7 +63,6 @@ DRValue ExprEmitter::emitDRValue(RValue rep, SMLoc loc) {
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
   auto attr = rep.getIfMValue().get();
-
   if (!builder) {
     emitError(loc, "context only permits a meta value, not a dynamic one");
     return {};
@@ -128,8 +127,25 @@ ASTType ExprEmitter::emitType(const ExprNode *node) {
     return shared.getTypeCheckErrorType();
 
   // If this emitted a type, we can lower it.
-  if (auto type = value.getIfTypeValue())
+  if (auto type = value.getIfTypeValue()) {
+    // Verify that all of the parameters for this type are bound.  We allow
+    // MValues to refer to parameteric type, but anything calling `emitType` can
+    // only handle fully bound types.
+    if (auto *decl = type.getDecl(shared)) {
+      auto structDecl = cast<StructDeclOp>(*decl);
+      if (type.getParamBindings().size() !=
+          structDecl.getInputParamDecls().size()) {
+        size_t numMissing = structDecl.getInputParamDecls().size() -
+                            type.getParamBindings().size();
+        emitError(node->getLoc(), "use of type ")
+            << structDecl.getNameAttr() << " with " << numMissing
+            << " unbound parameter" << plural(numMissing);
+        return shared.getTypeCheckErrorType();
+      }
+    }
+
     return type;
+  }
 
   // If we emitted a NoneAttr then convert it to a NoneType.  This is a
   // special case because "None" is both a value and a type, and defaults to a

@@ -83,10 +83,8 @@ public:
   /// Return the type for the contained representation, or null if null.
   Type getType() const { return get().getType(); }
 
-  /// If this value /is/ a type return it.
-  /// FIXME: virtually all users of this are going to be incorrect with type
-  /// variables.
-  Type getIfTypeValue() const;
+  /// If this value /is/ a type (i.e., if it has metatype type) return it.
+  ASTType getIfTypeValue() const;
 
   const void *getAsOpaquePointer() const {
     return storage.getAsOpaquePointer();
@@ -205,9 +203,7 @@ public:
   DRValue getIfDRValue() const { return dyn_cast<DRValue>(storage); }
 
   /// If this value /is/ a type return it.
-  /// FIXME: virtually all users of this are going to be incorrect with type
-  /// variables.
-  Type getIfTypeValue() const {
+  ASTType getIfTypeValue() const {
     if (auto mValue = getIfMValue())
       return mValue.getIfTypeValue();
     return {};
@@ -242,9 +238,7 @@ public:
   ASTType getRValueType() const;
 
   /// If this value /is/ a type return it.
-  /// FIXME: virtually all users of this are going to be incorrect with type
-  /// variables.
-  Type getIfTypeValue() const {
+  ASTType getIfTypeValue() const {
     if (auto mValue = getIfMValue())
       return mValue.getIfTypeValue();
     return {};
