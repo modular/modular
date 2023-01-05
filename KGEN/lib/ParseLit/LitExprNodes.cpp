@@ -120,7 +120,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
 
     // If this is a wrapper for a type, print it as such.
     if (auto typeVal = indexVal.getIfTypeValue())
-      os << typeVal;
+      os << typeVal.mlirType;
     else // Otherwise print it as an attribute.
       indexVal.get().print(os, elideType);
   }
@@ -917,7 +917,7 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   // subscript.
 
   // If the sub-value is an unbound Type, try binding things to it!
-  if (auto typeValue = subValue.baseVal.ir.getIfTypeValue()) {
+  if (Type typeValue = subValue.baseVal.ir.getIfTypeValue()) {
     // Handle user-defined types.
     if (auto declRef = dyn_cast<DeclRefType>(typeValue))
       return substituteParametersIntoUserDefinedType(declRef, *this, emitter);

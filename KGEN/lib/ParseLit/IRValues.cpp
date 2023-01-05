@@ -98,9 +98,7 @@ MValue::MValue(Type value)
     : storage(ParameterizedTypeConstantAttr::get(value)) {}
 
 /// If this value /is/ a type return it.
-/// FIXME: virtually all users of this are going to be incorrect with type
-/// variables.
-Type MValue::getIfTypeValue() const {
+ASTType MValue::getIfTypeValue() const {
   auto attr = get();
   if (auto type = dyn_cast<ConcreteTypeConstantAttr>(attr))
     return type.getValue();
