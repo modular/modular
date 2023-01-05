@@ -555,3 +555,12 @@ fn useResultParams():
 
   # expected-error @+1 {{calls with result parameters must be called directly}}
   _ = hasResultParam[1 -> b]
+
+
+# expected-note @+1 {{function declared here}}
+fn badReboundType[type: __mlir_type.`!kgen.dtype`,
+                  val: __mlir_type[`!pop.scalar<`, type, `>`]]():
+
+fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
+  # expected-error @+1 {{invalid call to 'badReboundType': callee parameter "val" has '__mlir_type.!pop.scalar<f64>' type, but value has type '__mlir_type.!pop.scalar<f32>'}}
+  badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
