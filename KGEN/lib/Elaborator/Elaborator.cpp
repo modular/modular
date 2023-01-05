@@ -881,7 +881,8 @@ LogicalResult ParameterRewriter::spawnNewFuncClone(
 LogicalResult ParameterRewriter::processCallParamOp(
     CallParamOp call,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
-  // Simplify the callee expression.
+  // Simplify the callee expression. We need to put all the parameter values on
+  // the call into the evaluator so that we get the correct value out.
   ErrorTreeOr<Attribute> value =
       evaluator.concretizeParameterExpr(call.getLoc(), call.getCallee());
   if (value.isError())
@@ -890,6 +891,25 @@ LogicalResult ParameterRewriter::processCallParamOp(
   // If there are no bound parameters on the call, use the one on the
   // CallParam.  TODO: Remove.
   auto symbolCst = cast<SymbolConstantAttr>(*value);
+
+  // We might have a placeholder value in the symbol constant we just found. If
+  // we do, re-substitute the values using the bindings in the call's
+  // parameters.
+  symbolCst = cast<SymbolConstantAttr>(
+      symbolCst.replaceSubElements([&](ParamBindAttr unk) -> ParamBindAttr {
+        if (!unk.getValue().isa<UnboundAttr>())
+          return unk;
+
+        // Find it in the bindings.
+        auto bound =
+            llvm::find_if(call.getParamValues(), [&](ParamBindAttr bind) {
+              return bind.getName() == unk.getName();
+            });
+        assert(bound != call.getParamValues().end() &&
+               "unbound attributes must have bindings");
+        return *bound;
+      }));
+
   if (symbolCst.getParamValues().empty())
     return processGeneratorUserImpl(
         call,

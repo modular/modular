@@ -480,13 +480,9 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
     if (!result)
       return;
 
-    // The signature we just got back has all the parameter we just substituted
-    // in as part of the signature.  These are now fully bound, so we don't need
-    // them anymore.
-    declSignature =
-        SignatureType::get(ParamDeclArrayAttr::get(result.getContext(), {}),
-                           result.getResultParamTypes(), result.getValues(),
-                           result.getConventions());
+    // The signature we just got back has all the parameters we just substituted
+    // in as part of the signature and handles the unbound case correctly.
+    declSignature = result;
   }
 
   auto symbolSignature = symbolConstant.getType();

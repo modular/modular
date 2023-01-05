@@ -286,6 +286,26 @@ def KGEN_UnknownAttr : KGEN_ExprAttr<"Unknown", "unknown"> {
 }
 
 //===----------------------------------------------------------------------===//
+// UnboundAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_UnboundAttr : KGEN_ExprAttr<"Unbound", "unbound"> {
+  let summary = "An unbound parameter value.";
+  let description = [{
+    The `#kgen.unbound` attribute represents an unbound parameter value. It is
+    a special placeholder that appears in collections of parameters that have
+    been partially bound.
+  }];
+
+  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "";
+
+  let builders = [TypeBuilderWithInferredContext<(ins "Type":$type), [{
+    return get(type.getContext(), type);
+  }]>];
+}
+
+//===----------------------------------------------------------------------===//
 // ParamDeclRefAttr
 //===----------------------------------------------------------------------===//
 

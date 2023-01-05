@@ -1237,6 +1237,83 @@ kgen.generator @bind_signature_region() -> index {
 
 // -----
 
+// CHECK-LABEL: kgen.func @partial_bind_signature_region
+kgen.generator @partial_bind_signature_region() -> index {
+  // CHECK-NEXT: %0 = kgen.param.constant = <1>
+  kgen.param.declare.region Fn = <A, B>() -> index {
+    %0 = kgen.param.constant = <sub(A, B)>
+    kgen.return %0 : index
+  }
+  kgen.param.declare BoundFn: <A>() -> index = <bind_signature(:<A, B>() -> index Fn, #kgen.unbound, 1)>
+  %0 = kgen.call_param[<A>() -> index: BoundFn]<A = 2>()
+  // CHECK-NEXT: kgen.return %0
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @partial_bind_signature_region_2
+kgen.generator @partial_bind_signature_region_2() -> index {
+  // CHECK-NEXT: %0 = kgen.param.constant = <3>
+  kgen.param.declare.region Fn = <A, B>() -> index {
+    %0 = kgen.param.constant = <add(A, B)>
+    kgen.return %0 : index
+  }
+  kgen.param.declare BoundFn: <B>() -> index = <bind_signature(:<A, B>() -> index Fn, 1, #kgen.unbound)>
+  %0 = kgen.call_param[<B>() -> index: BoundFn]<B = 2>()
+  // CHECK-NEXT: kgen.return %0
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @partial_bind_signature_region_3
+kgen.generator @partial_bind_signature_region_3() -> index {
+  // CHECK-NEXT: %0 = kgen.param.constant = <4>
+  kgen.param.declare.region Fn = <A, B, C>() -> index {
+    %0 = kgen.param.constant = <add(sub(B, A), C)>
+    kgen.return %0 : index
+  }
+  kgen.param.declare BoundFn: <B, C>() -> index = <bind_signature(:<A, B, C>() -> index Fn, 1, #kgen.unbound, #kgen.unbound)>
+  kgen.param.declare BoundFn2: <B>() -> index = <bind_signature(:<B, C>() -> index BoundFn, #kgen.unbound, 3)>
+  %0 = kgen.call_param[<B>() -> index: BoundFn2]<B = 2>()
+  // CHECK-NEXT: kgen.return %0
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @"param_add,A=1,B=2"
+kgen.generator @param_add<A, B>() -> index {
+  // CHECK-NEXT: %0 = kgen.param.constant = <3>
+  %0 = kgen.param.constant = <add(A, B)>
+  // CHECK-NEXT: kgen.return %0
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @partial_bind_signature_region_4
+kgen.generator @partial_bind_signature_region_4() -> index {
+  kgen.param.declare BoundFn: <B>() -> index = <bind_signature(:<A, B>() -> index @param_add, 1, #kgen.unbound)>
+  // CHECK-NEXT: %0 = kgen.call @"param_add,A=1,B=2"() : () -> index
+  %0 = kgen.call_param[<B>() -> index: BoundFn]<B = 2>()
+  // CHECK-NEXT: kgen.return %0
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @"param_add3,A=1,B=2,C=3"
+kgen.generator @param_add3<A, B, C>() -> index {
+  // CHECK-NEXT: %0 = kgen.param.constant = <4>
+  %0 = kgen.param.constant = <add(sub(B, A), C)>
+  // CHECK-NEXT: kgen.return %0
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @partial_bind_signature_region_5
+kgen.generator @partial_bind_signature_region_5() -> index {
+  kgen.param.declare BoundFn: <B, C>() -> index = <bind_signature(:<A, B, C>() -> index @param_add3, 1, #kgen.unbound, #kgen.unbound)>
+  kgen.param.declare BoundFn2: <B>() -> index = <bind_signature(:<B, C>() -> index BoundFn, #kgen.unbound, 3)>
+  // CHECK-NEXT: %0 = kgen.call @"param_add3,A=1,B=2,C=3"() : () -> index
+  %0 = kgen.call_param[<B>() -> index: BoundFn2]<B = 2>()
+  // CHECK-NEXT: kgen.return %0
+  kgen.return %0 : index
+}
+
+// -----
+
 kgen.generator @return_it<A>() -> index {
   %0 = kgen.param.constant = <A>
   kgen.return %0 : index
