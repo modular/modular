@@ -242,3 +242,25 @@ fn passFunction(a: __mlir_type.index) -> __mlir_type.index:
   # CHECK-SAME: <callable: (index) -> index =
   # CHECK-SAME: @"takeAndReturnIndex(__mlir_type.index)">(%a) : (index) -> index
   return takeCallable[takeAndReturnIndex](a)
+
+##===--------------------Test function with parameters---------------------===##
+
+# CHECK-LABEL: lit.func @"callableWithParam()"<type: dtype>() -> !lit.none
+fn callableWithParam[type: __mlir_type.`!kgen.dtype`]():
+  pass
+
+# CHECK-LABEL: lit.func @"takeCallable2
+fn takeCallable2[
+      func: __mlir_type[
+          `!kgen.signature<[type : !kgen.dtype], [],`,
+          `() -> !lit.none>`,
+      ],
+  ]():
+      pass
+
+# CHECK-LABEL: lit.func @"passFunctionParam2
+fn passFunctionParam2():
+  #CHECK: kgen.call @"takeCallable2()"
+  #CHECK-SAME: <func: <type: dtype>() -> !lit.none =
+  #CHECK-SAME: @"callableWithParam()">() : () -> !lit.none
+  takeCallable2[callableWithParam]()

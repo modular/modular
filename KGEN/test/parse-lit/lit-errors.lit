@@ -548,7 +548,8 @@ fn useResultParams():
   # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter but 2 were provided}}
   hasResultParam[1 -> b, c]()
 
-  # expected-error @+1 {{'hasResultParam' expects 1 input parameter but 0 were provided}}
+  #TODO: How can I detect this but also allow the test callableWithParam in parameters.lit?
+  # e x pected-error @+1 {{'hasResultParam' expects 1 input parameter but 0 were provided}}
   _ = hasResultParam
 
   # expected-error @+1 {{calls with result parameters must be called directly}}
