@@ -277,6 +277,16 @@ struct NDBuffer[
         return self._offset(idx).simd_load[width]()
 
     fn __setitem__(
+        self,
+        idx: StaticTuple[rank, __mlir_type.index],
+        val: __mlir_type[`!pop.scalar<`, type, `>`],
+    ):
+        # Stores a single value into the ndbuffer at the specified index
+        var simd_val: SIMD[1, type]
+        simd_val.value = val
+        self.simd_store[1](idx, simd_val)
+
+    fn __setitem__(
         self, idx: StaticTuple[rank, __mlir_type.index], val: SIMD[1, type]
     ):
         # Stores a single value into the ndbuffer at the specified index
