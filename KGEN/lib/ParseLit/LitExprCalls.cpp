@@ -93,15 +93,17 @@ OverloadFitness OverloadFitness::evaluate(
 
   // Check that the signature can be rebound with our set of bindings.
   ssize_t incorrectBindingNo = 0;
-  auto newBindings =
-      callable.getCheckedBindings(signature, incorrectBindingNo,
-                                  /*don't emit diagnostics*/ {}, shared);
+  ASTType incorrectBindingExpectedType;
+  auto newBindings = callable.getCheckedBindings(
+      signature, incorrectBindingNo, incorrectBindingExpectedType,
+      /*don't emit diagnostics*/ {}, shared);
 
   // If there is an error, return the problem.
   if (!newBindings) {
     if (incorrectBindingNo == -1)
       return {kParamCount, 0, ASTType()};
-    return {kParamWrongType, (size_t)incorrectBindingNo, ASTType()};
+    return {kParamWrongType, (size_t)incorrectBindingNo,
+            incorrectBindingExpectedType};
   }
 
   // Check the result parameter count.
@@ -190,9 +192,8 @@ void OverloadFitness::diagnose(SignatureType signature,
   case kParamWrongType: {
     auto decl = signature.getInputParams()[payload];
     auto valueType = callable.bindings[payload].getType();
-    diag << "callee parameter " << decl.getName() << " has "
-         << ASTType(decl.getType()) << " type, but value has type "
-         << ASTType(valueType);
+    diag << "callee parameter " << decl.getName() << " has " << ASTType(type)
+         << " type, but value has type " << ASTType(valueType);
     return;
   }
   case kResultParamCount:
@@ -331,7 +332,8 @@ LogicalResult DirectCallable::filterOverloadSet(
 /// mismatch).
 ParamBindArrayAttr DirectCallable::getCheckedBindings(
     SignatureType signature, ssize_t &incorrectBindingNo,
-    Optional<Location> funcLoc, LitSharedState &shared) const {
+    ASTType &incorrectBindingExpectedType, Optional<Location> funcLoc,
+    LitSharedState &shared) const {
 
   // We require an exact match for the signature right now, we don't allow
   // inference or other fancy things.
@@ -387,6 +389,7 @@ ParamBindArrayAttr DirectCallable::getCheckedBindings(
         diag.attachNote(*funcLoc) << "function declared here";
       }
       incorrectBindingNo = newBindings.size();
+      incorrectBindingExpectedType = expectedType;
       return {};
     }
 
@@ -427,8 +430,10 @@ DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
 
   // Check that the signature can be rebound with our set of bindings.
   ssize_t incorrectBindingNo = 0;
+  ASTType incorrectBindingExpectedType;
   auto newBindings =
       getCheckedBindings(funcOp.getFullSignature(), incorrectBindingNo,
+                         incorrectBindingExpectedType,
                          /*emit diagnostics*/ funcOp.getLoc(), shared);
   if (!newBindings)
     return {};

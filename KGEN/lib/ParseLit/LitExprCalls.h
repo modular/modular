@@ -96,10 +96,11 @@ struct DirectCallable {
   /// Check that our set of parameter bindings work with the specified signature
   /// type, returning a checked ParamBindArrayAttr if so.  If the parameters do
   /// not work, this emits an diagnostic (if `funcLoc` is non-null) and sets
-  /// `incorrectBindingNo` to the bad binding (or -1 if there is a count
-  /// mismatch).
+  /// `incorrectBindingNo/Expectedtype` to the bad binding (or -1 if there is a
+  /// count mismatch).
   ParamBindArrayAttr getCheckedBindings(SignatureType signature,
                                         ssize_t &incorrectBindingNo,
+                                        ASTType &incorrectBindingExpectedType,
                                         Optional<Location> funcLoc,
                                         LitSharedState &shared) const;
 
