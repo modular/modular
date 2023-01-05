@@ -189,7 +189,7 @@ public:
 
   /// Loads the vector from the given memory range.
   void assign(const element_type *begin, const element_type *end) {
-    assert((size_t)std::distance(begin, end) == size() &&
+    assert(static_cast<size_t>(std::distance(begin, end)) == size() &&
            "Wrong number of elements when assigning the vector");
     memcpy(data(), begin, getSizeInBytes());
   }

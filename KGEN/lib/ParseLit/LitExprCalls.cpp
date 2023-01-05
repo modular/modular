@@ -102,7 +102,7 @@ OverloadFitness OverloadFitness::evaluate(
   if (!newBindings) {
     if (incorrectBindingNo == -1)
       return {kParamCount, 0, ASTType()};
-    return {kParamWrongType, (size_t)incorrectBindingNo,
+    return {kParamWrongType, static_cast<size_t>(incorrectBindingNo),
             incorrectBindingExpectedType};
   }
 
