@@ -172,6 +172,12 @@ bool ListAttr::isConstant() const {
 bool UnknownAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
+// UnboundAttr
+//===----------------------------------------------------------------------===//
+
+bool UnboundAttr::isConstant() const { return true; }
+
+//===----------------------------------------------------------------------===//
 // ParamDeclRefAttr
 //===----------------------------------------------------------------------===//
 
@@ -541,18 +547,13 @@ verifyBindSignature(ArrayRef<TypedAttr> operands,
   SmallVector<ParamBindAttr> inputParams = getBindAttrsForDeclsAndValues(
       signature.getInputParams(), operands.drop_front());
 
-  // Get the specialized version of the signature with all the parameters
+  // Get the specialized version of the signature with all the known parameters
   // substituted in.
   auto result = signature.getSpecializedSignature(inputParams, emitError);
   if (!result)
     return failure();
 
-  // The signature we just got back has all the parameter we just substituted in
-  // as part of the signature.  These are now fully bound, so we don't need them
-  // anymore.
-  return SignatureType::get(ParamDeclArrayAttr::get(result.getContext(), {}),
-                            result.getResultParamTypes(), result.getValues(),
-                            result.getConventions());
+  return result;
 }
 
 static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
@@ -1307,13 +1308,39 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
   // If the actual operand is a SymbolConstantAttr operand, then we can simplify
   // the bind_signature by folding the parameter values into it directly.
   if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(operands.front())) {
-    assert(symbolConstant.getParamValues().empty() &&
-           "cannot have already bound the input parameter, because we'd end up "
-           "with a nongeneric signature that would fail verification");
+    bool hasUnboundParameters = symbolConstant.getParamValues().empty();
+    hasUnboundParameters |=
+        llvm::any_of(symbolConstant.getParamValues(), [](ParamBindAttr bind) {
+          return bind.getValue().isa<UnboundAttr>();
+        });
+    assert(hasUnboundParameters &&
+           "cannot have already bound all the input parameters, because we'd "
+           "end up with a nongeneric signature that would fail verification");
 
     SignatureType signature = symbolConstant.getType();
-    SmallVector<ParamBindAttr> paramBinds = getBindAttrsForDeclsAndValues(
-        signature.getInputParams(), operands.drop_front());
+    SmallVector<ParamBindAttr> paramBinds;
+    if (symbolConstant.getParamValues().empty()) {
+      paramBinds = getBindAttrsForDeclsAndValues(signature.getInputParams(),
+                                                 operands.drop_front());
+    } else {
+      // We have to interleave the new values wherever there's an unbound thing
+      // so we preserve the order. Drop the first operand because it's the
+      // signature itself.
+      auto operandIter = operands.begin() + 1;
+      for (auto param : symbolConstant.getParamValues()) {
+        // If we have this parameter already, we're good.
+        if (!param.getValue().isa<UnboundAttr>()) {
+          paramBinds.push_back(param);
+          continue;
+        }
+        // Otherwise, bind it to the operand provided.
+        paramBinds.push_back(
+            ParamBindAttr::get(param.getName(), *operandIter++));
+      }
+      assert(operandIter == operands.end() && "Didn't use all the operands?");
+    }
+    llvm::interleaveComma(paramBinds, llvm::errs());
+    llvm::errs() << "\n";
 
     return SymbolConstantAttr::get(
         symbolConstant.getSymbol(),

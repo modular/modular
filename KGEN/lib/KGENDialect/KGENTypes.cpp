@@ -177,6 +177,7 @@ SignatureType SignatureType::getSpecializedSignature(
   };
 
   unsigned paramNo = 0;
+  SmallVector<ParamDeclAttr> unboundDecls;
   for (auto [bind, decl] : llvm::zip(inputParamValues, getInputParams())) {
     if (bind.getName() != decl.getName()) {
       emitErrorFn() << "caller input parameter #" << paramNo << " has name "
@@ -196,6 +197,17 @@ SignatureType SignatureType::getSpecializedSignature(
       return SignatureType();
     }
 
+    // If we're attempting to bind to an unknown attribute, we need to update
+    // the decl, and keep it around so that we can continue to use it (as in a
+    // partial bind).
+    //
+    // isa<UnknownAttr> doesn't work here because it attempts to use it on the
+    // Type overload for some reason.
+    if (bind.getValue().isa<UnboundAttr>()) {
+      unboundDecls.push_back(
+          ParamDeclAttr::get(decl.getName(), remappedDeclType));
+    }
+
     evaluator.setParameterValue(bind.getDecl(), bind.getValue());
     ++paramNo;
   }
@@ -212,7 +224,7 @@ SignatureType SignatureType::getSpecializedSignature(
                      llvm::map_range(getValueResults(), remapType));
 
   return SignatureType::get(
-      ParamDeclArrayAttr::get(getContext(), {}),
+      ParamDeclArrayAttr::get(getContext(), unboundDecls),
       TypeArrayAttr::get(getContext(), newParamResultTypes),
       FunctionType::get(getContext(), inputTypes, resultTypes),
       getConventions());

@@ -563,3 +563,34 @@ kgen.generator @elaborateFnWithContextualType2() -> index {
 
   kgen.return %0 : index
 }
+
+// CHECK-LABEL: @partialBindSignature
+kgen.generator @partialBindSignature() -> index {
+  kgen.param.declare fn: <ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> = <@takeFnContextualType>
+
+  // CHECK: kgen.param.declare partiallyBound: <fn: () -> index>() -> index =
+  // CHECK-SAME: <bind_signature(:<ty: type, fn: () -> !kgen.paramref<ty>>() -> !kgen.paramref<ty> fn, index, #kgen.unbound)>
+  kgen.param.declare
+    partiallyBound: <fn: ()->index>()->index =
+      <bind_signature(:<ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> fn, index, #kgen.unbound)>
+  // CHECK: kgen.call_param[<fn: () -> index>() -> index: partiallyBound]<fn: () -> index = @sillyFn>
+  %0 = kgen.call_param[<fn: ()->index>()->index: partiallyBound]<fn: ()->index = @sillyFn>()
+
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: @partialBindSignature2
+kgen.generator @partialBindSignature2() -> index {
+  // CHECK: kgen.param.declare fn: <fn: () -> index>() -> index = <@takeFnContextualType<ty: type = index, fn: () -> index = #kgen.unbound>>
+  kgen.param.declare fn: <fn: ()->index>() -> index =
+    <bind_signature(:<ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> @takeFnContextualType, index, #kgen.unbound)>
+  // CHECK: kgen.param.declare fullyBound: () -> index = <bind_signature(:<fn: () -> index>() -> index fn, @sillyFn)>
+  kgen.param.declare fullyBound: () -> index = <bind_signature(:<fn: ()->index>() -> index fn, @sillyFn)>
+
+  // CHECK: kgen.call_param[<fn: () -> index>() -> index: fn]<fn: () -> index = @sillyFn>
+  %0 = kgen.call_param[<fn: ()->index>()->index: fn]<fn: ()->index = @sillyFn>()
+  // CHECK: kgen.call_param[() -> index: fullyBound]()
+  %1 = kgen.call_param[()->index : fullyBound]()
+
+  kgen.return %0 : index
+}
