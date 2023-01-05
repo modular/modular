@@ -132,8 +132,8 @@ public:
 
   /// Map the results of the current operation.
   void mapResults(ArrayRef<Attribute> results) {
-    assert(op->getNumResults() == results.size());
-    for (auto [result, value] : llvm::zip(op->getResults(), results))
+    assert(pc->getNumResults() == results.size());
+    for (auto [result, value] : llvm::zip(pc->getResults(), results))
       mapOrOverwrite(result, value);
   }
 
@@ -161,7 +161,7 @@ private:
   /// The current operation being interpreted. The interpreter exits when the
   /// operation is null, in which case the required invariant be that the stack
   /// frame is empty.
-  Operation *op;
+  Operation *pc;
 
   /// A call stack. The values in the current frame are available to the
   /// operation being interpreted.

@@ -190,42 +190,42 @@ InterpreterState::startInterpreterAt(Region &region,
 
 ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
   SmallVector<Attribute> operands;
-  while (op) {
-    Operation *prev = op;
+  while (pc) {
+    Operation *prev = pc;
 
     operands.clear();
     // Lookup the operands of the current operation.
-    for (Value operand : op->getOperands())
+    for (Value operand : pc->getOperands())
       operands.push_back(lookupValue(operand));
 
     // Check for a builtin interface.
-    if (auto call = dyn_cast<mlir::CallOpInterface>(op)) {
+    if (auto call = dyn_cast<mlir::CallOpInterface>(pc)) {
       interpretCallOp(call, operands, *this);
-    } else if (op->hasTrait<OpTrait::ReturnLike>()) {
-      interpretReturnOp(op, operands, *this);
+    } else if (pc->hasTrait<OpTrait::ReturnLike>()) {
+      interpretReturnOp(pc, operands, *this);
 
       // Check for an interpreter interface implementation.
-    } else if (auto interpItf = dyn_cast<InterpreterOpInterface>(op)) {
+    } else if (auto interpItf = dyn_cast<InterpreterOpInterface>(pc)) {
       ErrorTreeOr<SuccessType> err = interpItf.interpret(operands, *this);
       if (err.isError())
-        return reportFoldError(op, operands, "failed to interpret operation ")
+        return reportFoldError(pc, operands, "failed to interpret operation ")
             .addCause(err.takeError());
 
       // Otherwise, try to use the operation folder.
     } else {
       ErrorTreeOr<SuccessType> result =
-          interpretOpWithFolder(op, operands, *this);
+          interpretOpWithFolder(pc, operands, *this);
       if (result.isError())
         return result.takeError();
     }
 
     // If the operation has not changed, advance to the next operation. If the
     // current operation is a terminator, return an error.
-    if (prev == op) {
-      if (!op->getNextNode())
-        return ErrorTree(op->getLoc(),
+    if (prev == pc) {
+      if (!pc->getNextNode())
+        return ErrorTree(pc->getLoc(),
                          "terminator did not transfer control flow");
-      op = op->getNextNode();
+      pc = pc->getNextNode();
     }
   }
 
@@ -235,10 +235,10 @@ ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
 }
 
 void InterpreterState::transferControlFlowTo(Operation *target) {
-  op = target;
-  if (op) {
+  pc = target;
+  if (pc) {
     mapResults(takeReturnValues());
-    op = op->getNextNode();
+    pc = pc->getNextNode();
   }
 }
 
@@ -246,7 +246,7 @@ void InterpreterState::transferControlFlowTo(Block *target,
                                              ArrayRef<Attribute> arguments) {
   for (auto [arg, value] : llvm::zip(target->getArguments(), arguments))
     mapOrOverwrite(arg, value);
-  op = &target->front();
+  pc = &target->front();
 }
 
 //===----------------------------------------------------------------------===//
