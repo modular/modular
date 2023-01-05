@@ -335,6 +335,10 @@ ParamBindArrayAttr DirectCallable::getCheckedBindings(
     ASTType &incorrectBindingExpectedType, Optional<Location> funcLoc,
     LitSharedState &shared) const {
 
+  // If there are no bindings, exit early.
+  if (bindings.empty())
+    return ParamBindArrayAttr::get(signature.getContext(), {});
+
   // We require an exact match for the signature right now, we don't allow
   // inference or other fancy things.
   auto expectedNumParams = signature.getInputParams().size();
@@ -350,10 +354,6 @@ ParamBindArrayAttr DirectCallable::getCheckedBindings(
     incorrectBindingNo = -1;
     return {};
   }
-
-  // If there are no bindings, exit early.
-  if (bindings.empty())
-    return ParamBindArrayAttr::get(signature.getContext(), {});
 
   // If we have bound parameters, type check them now and bind names to them.
   SmallVector<ParamBindAttr> newBindings;
