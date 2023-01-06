@@ -18,6 +18,7 @@ from Buffer import NDBuffer
 from TargetInfo import sizeof
 from Memory import memset_zero, memcpy
 from IO import print
+from DType import dtype_is_f32
 
 
 struct amx_detail:
@@ -300,15 +301,7 @@ struct amx_detail:
             ]
         ]()
         # The type must be f32.
-        assert_param[
-            __mlir_attr[
-                `#kgen.param.expr<eq,`,
-                type,
-                `,`,
-                __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
-                `> : i1`,
-            ]
-        ]()
+        assert_param[dtype_is_f32[type]()]()
 
         # make the y offset field
         #  shift left by 6 to make this an offset in rows,
@@ -365,15 +358,7 @@ struct amx_detail:
             ]
         ]()
         # The type must be f32.
-        assert_param[
-            __mlir_attr[
-                `#kgen.param.expr<eq,`,
-                type,
-                `,`,
-                __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
-                `> : i1`,
-            ]
-        ]()
+        assert_param[dtype_is_f32[type]()]()
 
         let is_row_mode = __mlir_attr[
             `#kgen.param.expr<eq,`,
