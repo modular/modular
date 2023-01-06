@@ -15,12 +15,12 @@ kgen.func @"kernel()"() {
 } loc(#loc)
 
 
-// CHECK-LABEL: llvm.func @"kernel()_c"
+// CHECK-LABEL: llvm.func @kernel___c
 // CHECK-NEXT: llvm.call {{.*}} loc(#[[LOC:.*]])
 // CHECK-NEXT: llvm.return{{.*}}loc(#[[LOC]])
 // CHECK-NEXT: loc(#[[LOC]])
 
-// CHECK: #[[SP1:.*]] = #debuginfo.subprogram<{{.*}} "kernel", linkageName = "kernel()_c"
+// CHECK: #[[SP1:.*]] = #debuginfo.subprogram<{{.*}} "kernel", linkageName = "kernel___c"
 // CHECK: #[[LOC]] = loc(fused<#[[SP1]]>[#{{.*}}])
 
 kgen.export [@"kernel()"]

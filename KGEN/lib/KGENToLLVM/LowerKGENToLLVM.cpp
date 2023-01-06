@@ -389,8 +389,8 @@ convertCallingConvention(Location loc, Block *body,
 static void emitCWrapper(LLVM::LLVMFuncOp func, SymbolTable &symtab) {
   // Generate a unique wrapper name to use.
   unsigned counter = 0;
-  std::string wrapperName =
-      getUniqueSymbolName((func.getName() + "_c").str(), symtab, counter);
+  std::string wrapperName = getUniqueSymbolName(
+      makeCIdentifier(func.getName()) + "_c", symtab, counter);
 
   // Generate a new subprogram scope if necessary.
   Location loc = func.getLoc();

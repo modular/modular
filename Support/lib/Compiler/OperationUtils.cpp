@@ -8,6 +8,7 @@
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/SymbolTable.h"
+#include "llvm/ADT/StringExtras.h"
 
 using namespace M;
 using CloneOptions = mlir::Operation::CloneOptions;
@@ -182,4 +183,13 @@ std::string M::getUniqueSymbolName(std::string baseName, SymbolTable &symtab,
   while (symtab.lookup(uniqueName))
     uniqueName = (baseName + "_" + Twine(counter++)).str();
   return uniqueName;
+}
+
+std::string M::makeCIdentifier(StringRef ident) {
+  std::string res(ident.str());
+  for (char &c : res)
+    // Only allow [0-9a-zA-Z_].
+    if (!llvm::isAlnum(c) && c != '_')
+      c = '_';
+  return res;
 }

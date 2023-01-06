@@ -28,6 +28,9 @@ bool operationIsIsolatedFromAbove(Operation *op);
 /// which is incremented until a unique name is found.
 std::string getUniqueSymbolName(std::string baseName, SymbolTable &symtab,
                                 unsigned &counter);
+/// Generate a valid C identifier from the input identifier. A valid C
+/// identifier contains only the characters in the set [0-9a-zA-Z_].
+std::string makeCIdentifier(StringRef ident);
 } // namespace M
 
 #endif // SUPPORT_COMPILER_OPERATIONUTILS_H

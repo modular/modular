@@ -9,6 +9,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ZAPDialect/ZAPTypes.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/ML/DType.h"
 #include "Support/STLExtras.h"
 
@@ -18,7 +19,7 @@ using namespace KGEN;
 /// Emit the C signature of a KGEN func.
 static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
                                    FuncOp func) {
-  auto printDTypeAsC = [&](DType dt) -> LogicalResult {
+  auto printDTypeAsC = [&](KGENDType dt) -> LogicalResult {
     if (dt.isFloat()) {
       switch (dt.getValue()) {
       case DType::f32:
@@ -43,7 +44,10 @@ static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
       os << "bool";
       return success();
     }
-
+    if (dt.isIndex()) {
+      os << "ssize_t";
+      return success();
+    }
     return func.emitError("unhandled dtype for header generation ")
            << dt.getAsString();
   };
@@ -158,7 +162,7 @@ static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
   // FIXME: This assumes the C wrapper that eventually gets generated is not
   // renamed due to a symbol name conflict. Header emission happens too early in
   // the pipeline.
-  os << " " << func.getName() << "_c(";
+  os << " " << makeCIdentifier(func.getName()) << "_c(";
   for (auto &it : llvm::enumerate(func.getFunctionType().getInputs())) {
     if (it.index() != 0)
       os << ", ";
