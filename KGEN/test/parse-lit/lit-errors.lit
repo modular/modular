@@ -567,3 +567,11 @@ fn badReboundType[type: __mlir_type.`!kgen.dtype`,
 fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
   # expected-error @+1 {{invalid call to 'badReboundType': callee parameter "val" has '__mlir_type.!pop.scalar<f64>' type, but value has type '__mlir_type.!pop.scalar<f32>'}}
   badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
+
+# Issue #6587: [Lit] Recursive constructors crash kgen
+struct BadInit[size: __mlir_type.index]:
+    # expected-note @+1 {{function declared here}}
+    fn __new__(elem: BadInit[1]) -> BadInit[size]:
+      var x : __mlir_type[`!pop.simd<`, size, `, f32>`]
+      # expected-error @+1 {{invalid call to '__new__': in argument #0, value of type '__mlir_type.!pop.simd<size, f32>' cannot be converted to expected type 'BadInit[1]'}}
+      return x

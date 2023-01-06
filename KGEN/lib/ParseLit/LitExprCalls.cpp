@@ -149,6 +149,11 @@ OverloadFitness OverloadFitness::evaluate(
               .isEqualCanon(ASTType(expectedType)))
         break;
 
+      // If we lack an exact match and conversions are disabled, this candidate
+      // fails.
+      if (callable.disableImplicitConversions)
+        return {kArgWrongType, argIdx, expectedType};
+
       // Otherwise, check to see if we can do an implicit conversion.
       bool isErroneousDecl = false;
       CallableValue callee(expectedType, "__new__",
@@ -157,9 +162,16 @@ OverloadFitness OverloadFitness::evaluate(
 
       // Check to see if we have any viable candidates for the implicit
       // conversion.  If not, we have an argument conversion error.
-      if (!callee.direct || failed(callee.direct->filterOverloadSet(
-                                {argAnyValueAndExpr}, /*isMethodSyntax*/ false,
-                                /*emitDiagnosticOnFailure=*/false, shared)))
+      if (!callee.direct)
+        return {kArgWrongType, argIdx, expectedType};
+
+      // If we have at least one candidate, we check to see if any of them can
+      // work. We disable implicit conversions though, to prevent converting
+      // T -> S -> U in one step.
+      callee.direct->disableImplicitConversions = true;
+      if (failed(callee.direct->filterOverloadSet(
+              {argAnyValueAndExpr}, /*isMethodSyntax*/ false,
+              /*emitDiagnosticOnFailure=*/false, shared)))
         return {kArgWrongType, argIdx, expectedType};
 
       // If we had one, this bumps our # implicit conversions.
