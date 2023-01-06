@@ -80,6 +80,10 @@ struct DirectCallable {
   /// This is a list of names to be bound to output parameters.
   SmallVector<StringRef> resultParams;
 
+  /// When this is set to true, implicit conversions are not considered for
+  /// argument and parameter values.
+  bool disableImplicitConversions = false;
+
   DirectCallable(SMLoc loc, StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
                  ParamBindArrayAttr bindings);
 
