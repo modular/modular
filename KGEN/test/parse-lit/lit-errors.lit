@@ -553,7 +553,7 @@ fn useResultParams():
   # expected-error @+1 {{calls with result parameters must be called directly}}
   _ = hasResultParam
 
-  # TODO: xpected-error @+1 {{calls with result parameters must be called directly}}
+  # expected-error @+1 {{cannot use parameterized function of type '__mlir_type.!kgen.signature<[a : index], [],  () -> !lit.none>' without binding all its parameters}}
   _ = hasInputParam
 
   # expected-error @+1 {{calls with result parameters must be called directly}}

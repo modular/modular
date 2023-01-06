@@ -68,6 +68,20 @@ DRValue ExprEmitter::emitDRValue(RValue rep, SMLoc loc) {
     return {};
   }
 
+  // If the value being materialized is itself parameterized, then we cannot
+  // materialize it as an SSA value - there will be no way to bind parameters to
+  // it.
+  // TODO: We should have a general predicate from this provided by the KGEN
+  // parameter utilities.
+  if (auto signature = dyn_cast<SignatureType>(attr.getType())) {
+    if (!signature.getInputParams().empty() ||
+        !signature.getResultParamTypes().empty()) {
+      emitError(loc, "cannot use parameterized function of type ")
+          << ASTType(attr.getType()) << " without binding all its parameters";
+      return {};
+    }
+  }
+
   auto location = translateLocation(loc);
   // Materialize index integer constants as a special case.
   if (auto intAttr = dyn_cast<IntegerAttr>(attr))
