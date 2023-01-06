@@ -21,9 +21,10 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     ) -> Buffer[size, type]:
         # Construct a Buffer type with statically known size
         assert_param[size != __mlir_attr.`#kgen.unknown : index`]()
-        return __mlir_op.`kgen.struct.create`[_type : Buffer[size, type]](
-            DTypePointer[type](ptr), Int(size)
-        )
+        var result: Buffer[size, type]
+        result.data = DTypePointer[type](ptr)
+        result.dynamic_size = size
+        return result
 
     fn __new__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
@@ -31,9 +32,10 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     ) -> Buffer[size, type]:
         # Construct a Buffer type with dynamic size
         assert_param[size == __mlir_attr.`#kgen.unknown : index`]()
-        return __mlir_op.`kgen.struct.create`[_type : Buffer[size, type]](
-            DTypePointer[type](ptr), in_size
-        )
+        var result: Buffer[size, type]
+        result.data = DTypePointer[type](ptr)
+        result.dynamic_size = in_size
+        return result
 
     fn __len__(self) -> Int:
         # Returns the dynamic size if the buffer is not statically known,
@@ -51,6 +53,16 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         # Loads a simd value from the buffer at the specified index
         let offset = self.data.offset(idx)
         return offset.simd_load[width]()
+
+    fn __setitem__(
+        self,
+        idx: Int,
+        val: __mlir_type[`!pop.scalar<`, type, `>`],
+    ):
+        # Stores a single value into the buffer at the specified index
+        var simd_val: SIMD[1, type]
+        simd_val.value = val
+        self.simd_store[1](idx, simd_val)
 
     fn __setitem__(self, idx: Int, val: SIMD[1, type]):
         # Stores a single value into the buffer at the specified index
