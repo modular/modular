@@ -12,9 +12,27 @@ from Pointer import DTypePointer
 from Tuple import StaticTuple
 
 
+@interface
+fn _get_buffer_len[size: __mlir_type.index](dynamic_size: Int) -> Int:
+    ...
+
+
+@implements(_get_buffer_len)
+fn _get_buffer_len_dynamic[size: __mlir_type.index](dynamic_size: Int) -> Int:
+    assert_param[size == __mlir_attr.`#kgen.unknown : index`]()
+    return dynamic_size
+
+
+@implements(_get_buffer_len)
+fn _get_buffer_len_static[size: __mlir_type.index](dynamic_size: Int) -> Int:
+    assert_param[size != __mlir_attr.`#kgen.unknown : index`]()
+    return size
+
+
 struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     var data: DTypePointer[type]
     var dynamic_size: Int
+    var dtype : __mlir_type.`!kgen.dtype`
 
     fn __new__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`]
@@ -24,6 +42,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         var result: Buffer[size, type]
         result.data = DTypePointer[type](ptr)
         result.dynamic_size = size
+        result.dtype = type
         return result
 
     fn __new__(
@@ -40,9 +59,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     fn __len__(self) -> Int:
         # Returns the dynamic size if the buffer is not statically known,
         # otherwise returns the statically known size parameter.
-        if size == __mlir_attr.`#kgen.unknown : index`:
-            return self.dynamic_size
-        return size
+        return _get_buffer_len[size](self.dynamic_size)
 
     fn __getitem__(self, idx: Int) -> SIMD[1, type]:
         # Loads a single element (SIMD of size 1) from the buffer at the
