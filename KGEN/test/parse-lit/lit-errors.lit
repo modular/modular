@@ -575,3 +575,8 @@ struct BadInit[size: __mlir_type.index]:
       var x : __mlir_type[`!pop.simd<`, size, `, f32>`]
       # expected-error @+1 {{invalid call to '__new__': in argument #0, value of type '__mlir_type.!pop.simd<size, f32>' cannot be converted to expected type 'BadInit[1]'}}
       return x
+
+# Issue #6600
+fn negBuiltinType(x: __mlir_type.f64) :
+    # expected-error @+1 {{'__mlir_type.f64' does not implement the '__neg__' method}}
+    _ = -x

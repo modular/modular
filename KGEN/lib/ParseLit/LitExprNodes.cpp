@@ -1125,20 +1125,10 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
 
   // FIXME: We currently hack in index type support as transition to proper
   // expression support.
-  if (lhsRep.getType().isIndex() && rhsRep.getType().isIndex()) {
+  if ((lhsRep.getType().isIndex() && rhsRep.getType().isIndex()) &&
+      lhsRep.getIfMValue() && rhsRep.getIfMValue()) {
     auto lhsParam = lhsRep.getIfMValue();
-    if (!lhsParam) {
-      emitter.emitError(lhs->getLoc(),
-                        "TODO: can only emit index arithmetic as meta value");
-      return {};
-    }
     auto rhsParam = rhsRep.getIfMValue();
-    if (!rhsParam) {
-      emitter.emitError(rhs->getLoc(),
-                        "TODO: can only emit index arithmetic as meta value");
-      return {};
-    }
-
     uint32_t opcode;
     bool needsInvert = false;
     switch (kind) {
@@ -1330,13 +1320,9 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
 
   // Special case some things for literals.
   // TODO: Fix literal representation.
-  if (exprRep.getType().isIndex() || exprRep.getType().isF64()) {
-    auto exprParam =
-        emitter.emitMValue(subExpr, "expecting parameter values as operands");
-    if (!exprParam) {
-      emitter.emitError(getLoc(), "expecting parameter values as operands");
-      return {};
-    }
+  if ((exprRep.getType().isIndex() || exprRep.getType().isF64()) &&
+      exprRep.getIfMValue()) {
+    auto exprParam = exprRep.getIfMValue();
     switch (kind) {
     default:
       break;
