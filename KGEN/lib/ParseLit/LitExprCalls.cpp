@@ -219,69 +219,69 @@ OverloadFitness OverloadFitness::evaluate(
           llvm_unreachable("bad bindings went undetected");
         });
     assert(signature && "bad bindings went undetected");
+  }
+
+  // Ok, the parameters all line up, check the argument list.
+  size_t numArgs = signature.getValues().getNumInputs();
+  if (numArgs != operands.size())
+    return {kArgCount, numArgs, ASTType()};
+
+  size_t argIdx = 0;
+  size_t numImplicitConversions = 0;
+  for (auto [argAnyValueAndExpr, expectedType, convention] :
+       llvm::zip(operands, signature.getValueInputs(),
+                 signature.getValueInputConventions())) {
+    switch (convention) {
+    case ValueInputConvention::ByRef: {
+      // The actual value must be an lvalue if callee takes things by-ref.
+      auto argVal = argAnyValueAndExpr.ir.getIfLValue();
+      if (!argVal)
+        return {kArgNotLValue, argIdx, argAnyValueAndExpr.ir.getType()};
+
+      // By-ref argument types must exactly match, no conversions are allowed.
+      if (!ASTType(argVal.getType()).isEqualCanon(ASTType(expectedType)))
+        return {kArgWrongLVType, argIdx, expectedType};
+      break;
     }
-
-    // Ok, the parameters all line up, check the argument list.
-    size_t numArgs = signature.getValues().getNumInputs();
-    if (numArgs != operands.size())
-      return {kArgCount, numArgs, ASTType()};
-
-    size_t argIdx = 0;
-    size_t numImplicitConversions = 0;
-    for (auto [argAnyValueAndExpr, expectedType, convention] :
-         llvm::zip(operands, signature.getValueInputs(),
-                   signature.getValueInputConventions())) {
-      switch (convention) {
-      case ValueInputConvention::ByRef: {
-        // The actual value must be an lvalue if callee takes things by-ref.
-        auto argVal = argAnyValueAndExpr.ir.getIfLValue();
-        if (!argVal)
-          return {kArgNotLValue, argIdx, argAnyValueAndExpr.ir.getType()};
-
-        // By-ref argument types must exactly match, no conversions are allowed.
-        if (!ASTType(argVal.getType()).isEqualCanon(ASTType(expectedType)))
-          return {kArgWrongLVType, argIdx, expectedType};
+    case ValueInputConvention::ByVal:
+      // Otherwise, we pass as an r-value.  If the argument types match, then
+      // they are good.
+      if (ASTType(argAnyValueAndExpr.ir.getRValueType())
+              .isEqualCanon(ASTType(expectedType)))
         break;
-      }
-      case ValueInputConvention::ByVal:
-        // Otherwise, we pass as an r-value.  If the argument types match, then
-        // they are good.
-        if (ASTType(argAnyValueAndExpr.ir.getRValueType())
-                .isEqualCanon(ASTType(expectedType)))
-          break;
 
-        // If we lack an exact match and conversions are disabled, this
-        // candidate fails.
-        if (callable.disableImplicitConversions)
-          return {kArgWrongType, argIdx, expectedType};
+      // If we lack an exact match and conversions are disabled, this
+      // candidate fails.
+      if (callable.disableImplicitConversions)
+        return {kArgWrongType, argIdx, expectedType};
 
-        // Otherwise, check to see if we can do an implicit conversion.
-        bool isErroneousDecl = false;
-        CallableValue callee(expectedType, "__new__",
-                             argAnyValueAndExpr.expr->getLoc(), isErroneousDecl,
-                             shared);
+      // Otherwise, check to see if we can do an implicit conversion.
+      bool isErroneousDecl = false;
+      CallableValue callee(expectedType, "__new__",
+                           argAnyValueAndExpr.expr->getLoc(), isErroneousDecl,
+                           shared);
 
-        // Check to see if we have any viable candidates for the implicit
-        // conversion.  If not, we have an argument conversion error.
-        if (!callee.direct)
-          return {kArgWrongType, argIdx, expectedType};
+      // Check to see if we have any viable candidates for the implicit
+      // conversion.  If not, we have an argument conversion error.
+      if (!callee.direct)
+        return {kArgWrongType, argIdx, expectedType};
 
-        // If we have at least one candidate, we check to see if any of them can
-        // work. We disable implicit conversions though, to prevent converting
-        // T -> S -> U in one step.
-        callee.direct->disableImplicitConversions = true;
-        if (failed(callee.direct->filterOverloadSet(
-                {argAnyValueAndExpr}, /*isMethodSyntax*/ false,
-                /*emitDiagnosticOnFailure=*/false, shared)))
-          return {kArgWrongType, argIdx, expectedType};
+      // If we have at least one candidate, we check to see if any of them can
+      // work. We disable implicit conversions though, to prevent converting
+      // T -> S -> U in one step.
+      callee.direct->disableImplicitConversions = true;
+      if (failed(callee.direct->filterOverloadSet(
+              {argAnyValueAndExpr}, /*isMethodSyntax*/ false,
+              /*emitDiagnosticOnFailure=*/false, shared)))
+        return {kArgWrongType, argIdx, expectedType};
 
-        // If we had one, this bumps our # implicit conversions.
-        ++numImplicitConversions;
-      }
-      ++argIdx;
+      // If we had one, this bumps our # implicit conversions.
+      ++numImplicitConversions;
     }
+    ++argIdx;
+  }
 
-    return {kValid, numImplicitConversions, ASTType()};
+  return {kValid, numImplicitConversions, ASTType()};
 }
 
 /// Add explaination for why this candidate doesn't work to the specified
@@ -480,7 +480,7 @@ DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
 /// detected.
 LogicalResult DirectCallable::getResultParamDecls(
     SignatureType signature, SmallVectorImpl<ParamDeclAttr> &resultParamDecls,
-    ExprEmitter &emitter) {
+    IREmitter &emitter) {
   assert(signature.getResultParamTypes().size() == resultParams.size() &&
          "We know that the callee is type checked");
 
@@ -493,10 +493,14 @@ LogicalResult DirectCallable::getResultParamDecls(
   // force an `alias x : Int` sort of declaraton and then allow calls to fulfill
   // it.
   // This will unblock progress until then though.
-  //
+
+  // FIXME: HACK HACK HACK: This will crash on some source code!!
+  // TODO(clattner): Rework this.
+  ExprEmitter &nodeEmitter = static_cast<ExprEmitter &>(emitter);
+
   // TODO: We don't remap input parameters types into output parameter types.
   // We surely handle this wrong: `fn x[a: type -> a]():` for example.
-  DeclResolver &resolver = emitter.getDeclResolver();
+  DeclResolver &resolver = nodeEmitter.getDeclResolver();
   for (auto [type, name] :
        llvm::zip(signature.getResultParamTypes(), resultParams)) {
     // The name strings point into the buffer they came from.
@@ -504,7 +508,8 @@ LogicalResult DirectCallable::getResultParamDecls(
     auto value = MValue(ParamDeclRefAttr::get(name, type));
 
     // Add the declaration so name lookup will find it.
-    resolver.addFullyResolvedDecl(value, name, resultLoc, &emitter.declScope);
+    resolver.addFullyResolvedDecl(value, name, resultLoc,
+                                  &nodeEmitter.declScope);
     resultParamDecls.push_back(ParamDeclAttr::get(name, type));
   }
   return success();
@@ -576,7 +581,7 @@ void CallableValue::lookup(ASTType type, StringRef methodName, SMLoc callLoc,
 
 /// Emit this as a flattened RValue or LValue with no additional parameter
 /// context.  This returns null on failure.
-AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
+AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   // If we have no bound symbol, return the normal lvalue or rvalue we
   // represent.
   if (!direct)
@@ -669,7 +674,7 @@ static bool isValidErrorContext(Block *block) {
 /// values.  This emits an error and returns null on failure.
 AnyValue
 CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                SMLoc callLoc, ExprEmitter &emitter) {
+                                SMLoc callLoc, IREmitter &emitter) {
   if (isNull()) // Base was already diagnosed as an error.
     return {};
 
@@ -770,9 +775,12 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       break;
     case ValueInputConvention::ByVal:
       if (!emitter.builder) {
-        argVal = emitter.emitMValue(
-            argAnyValueAndExpr.expr,
-            "context only permits a meta value, not a dynamic one");
+        argVal = argAnyValueAndExpr.ir;
+        if (!argVal.getIfMValue()) {
+          emitter.emitError(argAnyValueAndExpr.expr->getLoc(),
+                            "cannot use a dynamic value in meta context");
+          return {};
+        }
       } else {
         argVal = emitter.emitDRValue(argAnyValueAndExpr.ir, argLoc);
       }

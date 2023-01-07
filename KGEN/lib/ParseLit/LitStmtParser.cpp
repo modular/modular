@@ -61,7 +61,7 @@ struct LitStmtParser : public LitParserBase {
 
   // Expression emission.
 
-  ExprEmitter getExprEmitter(bool allowImplicitVarDecl = false) {
+  ExprEmitter getEmitter(bool allowImplicitVarDecl = false) {
     return ExprEmitter(shared, containingDecl, builder,
                        allowImplicitVarDecl ? varDeclCursor : nullptr);
   }
@@ -323,7 +323,7 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
 
   // If this wasn't an assignment statement, it is just a freestanding
   // expression.  Emit it and ignore the results.
-  (void)getExprEmitter(/*allowImplicitVarDecl=*/true).emitDRValue(expr);
+  (void)getEmitter(/*allowImplicitVarDecl=*/true).emitExprDRValue(expr);
   return success();
 }
 
@@ -383,7 +383,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // Materialize the expression values into IR.
   SmallVector<Value> operandValues;
   for (auto expr : operandExprs) {
-    auto value = getExprEmitter().emitDRValue(expr);
+    auto value = getEmitter().emitExprDRValue(expr);
     if (!value)
       return failure();
     operandValues.push_back(value);
@@ -406,7 +406,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     return success();
   }
 
-  auto emitter = getExprEmitter();
+  auto emitter = getEmitter();
 
   // Check the result parameters if present.
   SmallVector<TypedAttr> resultParamValues;
@@ -419,7 +419,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
       return success();
     }
     for (ExprNode *paramExpr : resultParamList->exprs) {
-      auto result = emitter.emitMValue(
+      auto result = emitter.emitExprMValue(
           paramExpr, "dynamic value not allowed in result parameter list");
       if (!result)
         return success();
@@ -480,7 +480,7 @@ ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
     ExprNode *errorExpr;
     if (parseExpression(errorExpr, raiseIndent))
       return failure();
-    errorVal = getExprEmitter().emitDRValue(errorExpr);
+    errorVal = getEmitter().emitExprDRValue(errorExpr);
 
     // Determine whether we are raising an error inside a 'try'.
     inTry = tryOp && tryOp.getTryRegion().findAncestorBlockInRegion(*block);
@@ -566,7 +566,7 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
   Block *body = builder.createBlock(&loopOp.getBody());
   builder = OpBuilder::atBlockEnd(body);
 
-  Value condVal = getExprEmitter().emitConditionValueAsI1(condExp);
+  Value condVal = getEmitter().emitExprConditionValueAsI1(condExp);
   if (!condVal)
     return success(); // IRGen error already emitted; parse succeeded!
 
@@ -688,7 +688,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
       parseToken(LitToken::colon, "expected ':' after 'if' expression"))
     return failure();
 
-  Value cond = getExprEmitter().emitConditionValueAsI1(condExp);
+  Value cond = getEmitter().emitExprConditionValueAsI1(condExp);
   if (!cond)
     return success();
 
@@ -709,7 +709,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
       return failure();
 
     builder.createBlock(&ifOp.getElseRegion());
-    cond = getExprEmitter().emitConditionValueAsI1(condExp);
+    cond = getEmitter().emitExprConditionValueAsI1(condExp);
     if (!cond)
       return success();
     ifOp = builder.create<HLCF::IfOp>(elifLoc, cond);

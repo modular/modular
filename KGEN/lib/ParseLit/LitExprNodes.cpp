@@ -112,7 +112,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
       indexExpr = cast<UnaryOpNode>(indexExpr)->subExpr;
     }
 
-    auto indexVal = emitter.emitMValue(
+    auto indexVal = emitter.emitExprMValue(
         indexExpr, "mlir magic values must resolve to a parameter");
     if (!indexVal)
       return "";
@@ -185,7 +185,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 
     // Otherwise emit the value as an MAValue.  This allows references to
     // parameter expressions.
-    auto value = emitter.emitMValue(
+    auto value = emitter.emitExprMValue(
         node, "attribute value for '" + Twine(name) + "' must be constant");
     if (!value)
       return {};
@@ -348,7 +348,7 @@ ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 CallableValue ExprNode::emitCallable(ExprEmitter &emitter,
                                      ASTType contextualType) const {
   // The default implementation of this returns the expression as an RValue.
-  auto calleeVal = emitter.emitRValue(this);
+  auto calleeVal = emitter.emitExprRValue(this);
   if (!calleeVal)
     return {};
 
@@ -585,7 +585,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   // Emit all the arguments so we can encode them as SSA values.
   SmallVector<Value> opOperands;
   for (auto operand : call.args) {
-    opOperands.push_back(emitter.emitDRValue(operand));
+    opOperands.push_back(emitter.emitExprDRValue(operand));
     if (!opOperands.back())
       return {};
   }
@@ -784,7 +784,7 @@ static CallableValue substituteParametersIntoUserDefinedType(
   for (ExprNode *indexExpr : subscript.indices) {
     // TODO: Slice syntax is the obvious way to support named parameter
     // arguments.
-    auto indexVal = emitter.emitMValue(
+    auto indexVal = emitter.emitExprMValue(
         indexExpr, "type parameters may not be a run-time value");
     if (!indexVal)
       return {};
@@ -825,7 +825,7 @@ static CallableValue bindAttrValuesToDirectCall(CallableValue &callable,
   // Process each subscript entry as a binding.
   // TODO: Support named bindings in addition to positional ones: `A[x: 42]`.
   for (auto idx : indices) {
-    auto val = emitter.emitMValue(
+    auto val = emitter.emitExprMValue(
         idx, "declaration bindings may not be a run-time value");
     if (!val)
       return {};
@@ -874,7 +874,7 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
         return {};
       }
       for (ExprNode *idx : indices) {
-        bindOperands.push_back(emitter.emitMValue(
+        bindOperands.push_back(emitter.emitExprMValue(
             idx, "declaration parameters may not be a run-time value"));
         if (!bindOperands.back())
           return {};
@@ -926,7 +926,7 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   // Emit each of the index values to generate error messages.
   SmallVector<RValue> indexValues;
   for (ExprNode *index : indices) {
-    indexValues.push_back(emitter.emitRValue(index));
+    indexValues.push_back(emitter.emitExprRValue(index));
     if (!indexValues.back())
       return {};
   }
@@ -993,7 +993,7 @@ AnyValue TupleNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   // Emit each of the index values to generate error messages.
   SmallVector<RValue> exprValues;
   for (ExprNode *expr : exprs) {
-    exprValues.push_back(emitter.emitRValue(expr));
+    exprValues.push_back(emitter.emitExprRValue(expr));
     if (!exprValues.back())
       return {};
   }
@@ -1005,7 +1005,7 @@ AnyValue TupleNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
 AnyValue ListNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   SmallVector<RValue> elements;
   for (ExprNode *expr : exprs) {
-    elements.push_back(emitter.emitRValue(expr));
+    elements.push_back(emitter.emitExprRValue(expr));
     if (!elements.back())
       return {};
   }
@@ -1053,23 +1053,23 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     return emitAndOr(emitter);
 
   if (!isAssignmentStmt()) {
-    auto lhsRV = emitter.emitRValue(lhs);
+    auto lhsRV = emitter.emitExprRValue(lhs);
     lhsRep = lhsRV;
-    rhsRep = emitter.emitRValue(rhs);
+    rhsRep = emitter.emitExprRValue(rhs);
     if (!lhsRep || !rhsRep)
       return {};
   } else {
     // In an assignment, we emit the RHS first as a value and the LHS as an
     // lvalue with a contextual type.  This is required to enable the 'implicit
     // declaration' behavior in a def.
-    rhsRep = emitter.emitRValue(rhs);
+    rhsRep = emitter.emitExprRValue(rhs);
     if (!rhsRep)
       return {};
 
     // Emit the LHS pattern as an lvalue.  Pass in the RHS's type as the
     // contextual type in case we need to implicitly declare a variable.
-    auto lhsLV = emitter.emitLValue(lhs, rhsRep.getType(),
-                                    "cannot assign to immutable expression");
+    auto lhsLV = emitter.emitExprLValue(
+        lhs, rhsRep.getType(), "cannot assign to immutable expression");
     if (!lhsLV)
       return {};
 
@@ -1230,7 +1230,7 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
   // Emit the LHS value and capture the result of calling __bool__ in case we
   // need it.
   AnyValue lhsBool;
-  DRValue lhsRV = emitter.emitDRValue(lhs);
+  DRValue lhsRV = emitter.emitExprDRValue(lhs);
   auto lhsI1Value = emitter.emitConditionValueAsI1({lhsRV, lhs}, lhsBool);
   if (!lhsI1Value)
     return {};
@@ -1244,7 +1244,7 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
     std::swap(trueBuilder, falseBuilder);
 
   emitter.builder = trueBuilder;
-  DRValue rhsRV = emitter.emitDRValue(rhs);
+  DRValue rhsRV = emitter.emitExprDRValue(rhs);
   if (!rhsRV)
     return {};
 
@@ -1339,7 +1339,7 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
 
 AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
                               ASTType contextualType) const {
-  auto condValue = emitter.emitConditionValueAsI1(condExpr);
+  auto condValue = emitter.emitExprConditionValueAsI1(condExpr);
   if (!condValue)
     return {};
 
@@ -1354,12 +1354,12 @@ AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
   auto ifOp = emitter.builder->create<scf::IfOp>(
       ifLoc, TypeRange{condValue.getType()}, condValue, /*withElse=*/true);
   emitter.builder = ifOp.getThenBodyBuilder();
-  DRValue trueVal = emitter.emitDRValue(trueExpr);
+  DRValue trueVal = emitter.emitExprDRValue(trueExpr);
   if (!trueVal)
     return {};
   emitter.builder->create<scf::YieldOp>(ifLoc, trueVal);
   emitter.builder = ifOp.getElseBodyBuilder();
-  DRValue falseVal = emitter.emitDRValue(falseExpr);
+  DRValue falseVal = emitter.emitExprDRValue(falseExpr);
   if (!falseVal)
     return {};
   emitter.builder->create<scf::YieldOp>(ifLoc, falseVal);

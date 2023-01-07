@@ -54,12 +54,14 @@ struct CastInfo<ParamDeclRefAttr, LIT::ASTDecl>
 /// Parse an expression and immediately resolve it to a type.  This returns
 /// failure on parse error.
 static ParseResult parseType(LitParserBase &p, ASTType &result,
-                             ASTDecl &declScope, Optional<size_t> stmtIndent) {
+                             ASTDecl &declScope,
+                             std::optional<size_t> stmtIndent) {
   ExprNode *expr = nullptr;
   if (p.parseExpression(expr, stmtIndent))
     return failure();
-  result =
-      ExprEmitter(p.shared, declScope, std::nullopt, nullptr).emitType(expr);
+
+  ExprEmitter emitter(p.shared, declScope, std::nullopt, nullptr);
+  result = emitter.emitExprType(expr);
   return success();
 }
 
@@ -542,7 +544,7 @@ struct ParsedMetaSignature {
   SmallVector<Type> getResolvedResultTypes(ExprEmitter &emitter) const {
     SmallVector<Type> results;
     for (ExprNode *expr : resultTypes)
-      results.push_back(emitter.emitType(expr));
+      results.push_back(emitter.emitExprType(expr));
     return results;
   }
 };
@@ -555,20 +557,14 @@ struct ParsedMetaSignature {
 LogicalResult DeclResolver::resolveSignature(ParamDeclRefAttr paramDeclRef,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
-  ExprNode *typeExpr;
-  if (p.parseExpression(typeExpr, std::nullopt))
-    return failure(); // Should never happen, we already checked this.
 
-  // Emit the type.
-  ExprEmitter emitter(shared, *decl.getParentDecl(), /*builder*/ {},
-                      /*varDeclCursor*/ nullptr);
-  // This always succeeds, reporting an error and returning erroneous on
-  // failure.
-  Type type = emitter.emitType(typeExpr);
+  ASTType type;
+  if (parseType(p, type, *decl.getParentDecl(), std::nullopt))
+    return failure(); // Should never happen, we already checked this.
 
   // Update the value to the newly resolved type.
   decl.irValue = MValue(ParamDeclRefAttr::get(paramDeclRef.getName(), type));
-  return success(!isa<TypeCheckErrorType>(type));
+  return success(!isa<TypeCheckErrorType>(type.mlirType));
 }
 
 ParseResult DeclResolver::resolveBody(ParamDeclRefAttr paramDeclRef,
@@ -1145,7 +1141,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   for (auto &arg : args) {
     // This returns a TypeCheckErrorType on error, no extra check is needed.
     ASTType type =
-        arg.typeExpr ? typeEmitter.emitType(arg.typeExpr) : ASTType();
+        arg.typeExpr ? typeEmitter.emitExprType(arg.typeExpr) : ASTType();
 
     // If this is a 'self' argument in a fn that is a method, default to a self
     // type.  TODO: Should we do this, or default to object in a 'def'?
@@ -1159,7 +1155,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   }
 
   ASTType resultType =
-      resultTypeExpr ? typeEmitter.emitType(resultTypeExpr) : ASTType();
+      resultTypeExpr ? typeEmitter.emitExprType(resultTypeExpr) : ASTType();
   if (!resultType) {
     // TODO: We shouldn't default this to none for 'def's.  This should default
     // to object type.  Our return checker is currently a lame duck.
@@ -1430,7 +1426,7 @@ ParsedLetVarDecl::emitInitValue(Operation *declOp, ASTDecl &decl,
   ExprEmitter emitter(shared, *decl.getParentDecl(), builder,
                       /*varDeclCursor*/ nullptr);
 
-  auto value = emitter.emitDRValue(initValue);
+  auto value = emitter.emitExprDRValue(initValue);
   if (!value)
     return {value, builder};
 
@@ -1566,7 +1562,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
                         /*varDeclCursor*/ nullptr);
 
     auto rhsValue =
-        emitter.emitMValue(initValue, "expected meta parameter value");
+        emitter.emitExprMValue(initValue, "expected meta parameter value");
     if (!rhsValue)
       return failure();
 
