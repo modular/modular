@@ -865,7 +865,7 @@ static CallableValue bindAttrValuesToDirectCall(CallableValue &callable,
     //
     // Note: we're being a bit abusive here by making a ParamBindAttr with a
     // null name for positional attributes.
-    callable.direct->bindings.push_back({idx->getLoc(), Attribute(val.get())});
+    callable.direct->inputParamBindings.add(idx, val.get());
   }
   // The bindings will be checked for validity when a reference is formed.
   return std::move(callable);

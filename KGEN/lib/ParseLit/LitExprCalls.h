@@ -36,6 +36,61 @@ struct ASTExprAnd {
 };
 
 //===----------------------------------------------------------------------===//
+// InputParamBindings
+//===----------------------------------------------------------------------===//
+
+/// This class holds a work-in-progress set of parameter bindings for a type or
+/// function declaration.  Some of the bindings may be pre-checked, others may
+/// not be.  They are eventually resolved and diagnosed with the
+/// verifyBindings() method.
+///
+/// Consider something like one of these:
+///    SomeType[param1].method[param2](...args...)
+///    OuterType[param1].InnerType[param2]
+///
+/// The type parameters (param1) will be bound as a ParamBindAttr, and the
+/// param2 will be bound as the value of param2.  We cannot type check the
+/// bindings until overload resolution has resolved which 'method' we are
+/// talking about and when inference is complete, so we keep them as either a
+/// ParamBindAttr or (Typed)Attribute for the actual value.
+///
+/// TODO: This should grow to incorporate logic similar to KGEN::ConstraintSet.
+class InputParamBindings {
+public:
+  struct Binding {
+    /// This is the expression tree that produced the binding in the case of an
+    /// Attribute, or null in the case of ParamBindAttr.
+    ExprNode *expr;
+    PointerUnion<ParamBindAttr, Attribute> bindingOrValue;
+
+    TypedAttr getValue() const {
+      if (auto attr = dyn_cast<Attribute>(bindingOrValue))
+        return cast<TypedAttr>(attr);
+      return {};
+    }
+    Type getType() const {
+      if (auto attr = getValue())
+        return attr.getType();
+      return cast<ParamBindAttr>(bindingOrValue).getType();
+    }
+  };
+
+  /// This contains a list of bound input parameters.
+  SmallVector<Binding> bindings;
+
+  /// Add a bound value for a pre-checked parameter bindings.  The binding must
+  /// be known to be valid.
+  void add(ParamBindAttr precheckedBinding) {
+    bindings.push_back({nullptr, precheckedBinding});
+  }
+
+  /// Add a bound value for a parameter expression bound to a value.
+  void add(ExprNode *expr, TypedAttr value) {
+    bindings.push_back({expr, Attribute(value)});
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // DirectCallable
 //===----------------------------------------------------------------------===//
 
@@ -52,30 +107,8 @@ struct DirectCallable {
   /// The function overload set that may be called directly.
   SmallVector<ASTDecl *, 1> fnDecls;
 
-  /// Any bound parameters.  Consider something like:
-  ///    SomeType[param1].method[param2](arg1)
-  /// The type parameters (param1) will be bound as a ParamBindAttr, and the
-  /// param2 will be bound as the value of param2.  We cannot type check the
-  /// bindings until overload resolution has resolved which 'method' we are
-  /// talking about, so we keep them as either a ParamBindAttr or
-  /// (Typed)Attribute for the actual value.
-  struct BoundParam {
-    SMLoc loc;
-    PointerUnion<ParamBindAttr, Attribute> bindingOrValue;
-
-    TypedAttr getValue() const {
-      if (auto attr = dyn_cast<Attribute>(bindingOrValue))
-        return cast<TypedAttr>(attr);
-      return {};
-    }
-    Type getType() const {
-      if (auto attr = getValue())
-        return attr.getType();
-      return cast<ParamBindAttr>(bindingOrValue).getType();
-    }
-  };
-  /// This contains a list of bound input parameters.
-  SmallVector<BoundParam> bindings;
+  /// Any bound input parameters.
+  InputParamBindings inputParamBindings;
 
   /// This is a list of names to be bound to output parameters.
   SmallVector<StringRef> resultParams;
@@ -97,15 +130,15 @@ struct DirectCallable {
                                   bool emitDiagnosticOnFailure,
                                   LitSharedState &shared);
 
-  /// Check that our set of parameter bindings work with the specified signature
-  /// type, returning a checked ParamBindArrayAttr if so.  If the parameters do
-  /// not work, this emits an diagnostic (if `funcLoc` is non-null) and sets
-  /// `incorrectBindingNo/Expectedtype` to the bad binding (or -1 if there is a
-  /// count mismatch).
-  ParamBindArrayAttr getCheckedBindings(SignatureType signature,
+  /// Check that our set of parameter bindings work with the specified input
+  /// parameters, returning a checked ParamBindArrayAttr if so.  If the
+  /// parameters do not work, this emits an diagnostic (if `declOp` is
+  /// non-null) and set `incorrectBindingNo/Expectedtype` to the bad binding
+  /// (or -1 if there is a count mismatch).
+  ParamBindArrayAttr getCheckedBindings(ParamDeclArrayAttr inputParams,
                                         ssize_t &incorrectBindingNo,
                                         ASTType &incorrectBindingExpectedType,
-                                        Optional<Location> funcLoc,
+                                        /*nullable*/ Operation *declOp,
                                         LitSharedState &shared) const;
 
   /// Perform subsitutions of the specified bindings into the symbol, returning
