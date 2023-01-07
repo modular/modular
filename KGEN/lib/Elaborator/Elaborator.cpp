@@ -887,39 +887,8 @@ LogicalResult ParameterRewriter::processCallParamOp(
       evaluator.concretizeParameterExpr(call.getLoc(), call.getCallee());
   if (value.isError())
     return error(value.takeError());
-
-  // If there are no bound parameters on the call, use the one on the
-  // CallParam.  TODO: Remove.
-  auto symbolCst = cast<SymbolConstantAttr>(*value);
-
-  // We might have a placeholder value in the symbol constant we just found. If
-  // we do, re-substitute the values using the bindings in the call's
-  // parameters.
-  symbolCst = cast<SymbolConstantAttr>(
-      symbolCst.replaceSubElements([&](ParamBindAttr unk) -> ParamBindAttr {
-        if (!unk.getValue().isa<UnboundAttr>())
-          return unk;
-
-        // Find it in the bindings.
-        auto bound =
-            llvm::find_if(call.getParamValues(), [&](ParamBindAttr bind) {
-              return bind.getName() == unk.getName();
-            });
-        assert(bound != call.getParamValues().end() &&
-               "unbound attributes must have bindings");
-        return *bound;
-      }));
-
-  if (symbolCst.getParamValues().empty())
-    return processGeneratorUserImpl(
-        call,
-        SymbolConstantAttr::get(symbolCst.getSymbol(),
-                                call.getParamValuesAttr(),
-                                symbolCst.getType().dropParamValues()),
-        call.getParamDecls(), rewriters);
-  // Otherwise use the ones from the symbol.
-  return processGeneratorUserImpl(call, symbolCst, call.getParamDecls(),
-                                  rewriters);
+  return processGeneratorUserImpl(call, cast<SymbolConstantAttr>(*value),
+                                  call.getParamDecls(), rewriters);
 }
 
 /// Unknown operations are allowed to use types and attributes with parameter

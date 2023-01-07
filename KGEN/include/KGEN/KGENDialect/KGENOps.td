@@ -238,14 +238,13 @@ def KGEN_CallParamOp : KGENOp<"call_param", [KGEN_CallOpInterface]> {
 
   let arguments = (ins
     AttrOfType<KGEN_SignatureType>:$callee,
-    ParamBindArrayAttr:$paramValues,
     KGEN_ParamDeclArrayAttr:$paramDecls,
     Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
-    `` custom<CallParamCallee>($callee, $paramValues, $paramDecls,
-                            type($operands), type($results))
+    `` custom<CallParamCallee>($callee, $paramDecls, type($operands),
+                               type($results))
     `(` $operands `)` attr-dict
   }];
 

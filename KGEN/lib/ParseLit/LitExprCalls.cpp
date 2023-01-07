@@ -825,7 +825,6 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
                                        resultParamDecls, callArgs);
     } else {
       callOp = builder->create<CallParamOp>(loc, resultTypes, target.get(),
-                                            ArrayRef<ParamBindAttr>(),
                                             resultParamDecls, callArgs);
     }
   } else {
