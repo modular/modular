@@ -61,7 +61,7 @@ public:
   /// Convert the specified value to the expected type, invoking implicit
   /// conversions if necessary.  On error, this diagnoses it and returns null.
   AnyValue getAsExpectedType(AnyValue value, const ExprNode *expr,
-                             ASTType expectedType);
+                             ASTType expectedType, const Twine &errorSuffix);
 
   /// Convert the specified value to the expected type, invoking implicit
   /// conversions if necessary.  On error, this invokes the specified closure to

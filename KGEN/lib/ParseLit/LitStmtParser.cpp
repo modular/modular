@@ -432,7 +432,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // to get the normal result type.
   resultValue = emitter.emitDRValue(
       emitter.getAsExpectedType(DRValue(resultValue), operandExprs[0],
-                                decl.getNormalResultType()),
+                                decl.getNormalResultType(), " in return"),
       loc);
   if (!resultValue)
     return {};

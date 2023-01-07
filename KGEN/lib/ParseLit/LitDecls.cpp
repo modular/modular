@@ -1433,7 +1433,8 @@ ParsedLetVarDecl::emitInitValue(Operation *declOp, ASTDecl &decl,
   // If we had a declared type, coerce the expression value to it.
   if (type) {
     value = emitter.emitDRValue(
-        emitter.getAsExpectedType(value, initValue, type), initValue->getLoc());
+        emitter.getAsExpectedType(value, initValue, type, ""),
+        initValue->getLoc());
   } else {
     // Infer the type if we lack a declared type (`var x = 42`).
     // TODO(literal autopromotion).
@@ -1588,7 +1589,8 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
     type = rhsValue.getType();
   } else {
     // Convert the initializer value to the declared type.
-    auto convertedVal = emitter.getAsExpectedType(rhsValue, initValue, type);
+    auto convertedVal =
+        emitter.getAsExpectedType(rhsValue, initValue, type, " in alias");
     if (!convertedVal)
       return failure();
     assert(convertedVal.getIfMValue() &&
