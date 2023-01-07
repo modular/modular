@@ -268,6 +268,10 @@ def testLValuesRvalues():
   lv.normalMethod()
   lv.mutatingMethod()
 
+  # Partial application.
+  # expected-error @+1 {{TODO: partial application to mutable base isn't supportable without a lifetime model}}
+  lv.mutatingMethod
+
   # Test with rvalues
   LValuesRvalues().normalMethod()
   LValuesRvalues().mutatingMethod()  # expected-error {{invalid use of mutating method on rvalue of type 'LValuesRvalues'}}
@@ -391,7 +395,7 @@ fn testSIMD(a: MySIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
   var y = b+b
   var z = b+a  # expected-error {{invalid call to '__add__': in argument #1, value of type 'MySIMD[1, f64]' cannot be converted to expected type 'MySIMD[2, si32]'}}
 
-fn method(variable: Int):
+fn testAliases(variable: Int):
   # expected-error @+1 {{declaration must have either a type or an initializer}}
   alias MissingInit
 
@@ -401,17 +405,17 @@ fn method(variable: Int):
   # TODO: Should reject as not initialized.
   alias NotInitialized : __mlir_type.index
 
-def raisingMethod():
+def raisingFunction():
     pass
 
-fn callRaisingMethod():
-    raisingMethod() # expected-error {{cannot call raising method within an 'fn' that does not raise}}
+fn callRaisingFunction():
+    raisingFunction() # expected-error {{cannot call function that may raise in a context that cannot raise}}
 
 fn cannotReRaise():
     raise # expected-error {{no contextual exception to reraise}}
 
 fn cannotRaise(err: Error):
-    raise err # expected-error {{cannot raise error inside method that does not raise}}
+    raise err # expected-error {{cannot raise error in a context that cannot raise}}
 
 # expected-note @+1 {{function declared here}}
 fn badRef(val&: Int):
