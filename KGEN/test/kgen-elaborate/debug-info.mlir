@@ -28,7 +28,7 @@ kgen.generator @takeFnContextualType<ty: type, fn: () -> !kgen.paramref<ty>>() -
   kgen.return %0 : !kgen.paramref<ty> loc(#loc12)
 } loc(#loc10)
 
-kgen.func @sillyFn() -> index {
+kgen.generator @sillyFn() -> index {
   %0 = kgen.param.constant = <42>
   kgen.return %0 : index
 }

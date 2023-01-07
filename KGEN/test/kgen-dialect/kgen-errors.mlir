@@ -160,7 +160,7 @@ kgen.generator @g2<>() {
 
 // -----
 
-// expected-error @+1 {{'kgen.func' op only allows output parameters, not input parameters}}
+// expected-error @below {{'kgen.func' op cannot have input or result parameters}}
 kgen.func @bad_param<x>() {
   kgen.return
 }

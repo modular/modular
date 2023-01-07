@@ -9,7 +9,7 @@
 kgen.generator.interface @unary_add<size>(si32) -> si32
 
 // Trivial kernel so we can call something
-kgen.func @unary_add_library_impl() {
+kgen.generator @unary_add_library_impl() {
   kgen.return
 }
 
