@@ -573,8 +573,8 @@ kgen.generator @partialBindSignature() -> index {
   kgen.param.declare
     partiallyBound: <fn: ()->index>()->index =
       <bind_signature(:<ty: type, fn: ()->!kgen.paramref<ty>>() -> !kgen.paramref<ty> fn, index, #kgen.unbound)>
-  // CHECK: kgen.call_param[<fn: () -> index>() -> index: partiallyBound]<fn: () -> index = @sillyFn>
-  %0 = kgen.call_param[<fn: ()->index>()->index: partiallyBound]<fn: ()->index = @sillyFn>()
+  // CHECK: kgen.call_param[() -> index: bind_signature(:<fn: () -> index>() -> index partiallyBound, @sillyFn)]()
+  %0 = kgen.call_param[()->index: bind_signature(:<fn: ()->index>()->index partiallyBound, @sillyFn)]()
 
   kgen.return %0 : index
 }
@@ -587,8 +587,8 @@ kgen.generator @partialBindSignature2() -> index {
   // CHECK: kgen.param.declare fullyBound: () -> index = <bind_signature(:<fn: () -> index>() -> index fn, @sillyFn)>
   kgen.param.declare fullyBound: () -> index = <bind_signature(:<fn: ()->index>() -> index fn, @sillyFn)>
 
-  // CHECK: kgen.call_param[<fn: () -> index>() -> index: fn]<fn: () -> index = @sillyFn>
-  %0 = kgen.call_param[<fn: ()->index>()->index: fn]<fn: ()->index = @sillyFn>()
+  // CHECK: kgen.call_param[() -> index: bind_signature(:<fn: () -> index>() -> index fn, @sillyFn)]()
+  %0 = kgen.call_param[()->index: bind_signature(:<fn: ()->index>()->index fn, @sillyFn)]()
   // CHECK: kgen.call_param[() -> index: fullyBound]()
   %1 = kgen.call_param[()->index : fullyBound]()
 

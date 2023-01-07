@@ -683,39 +683,33 @@ mlir::CallInterfaceCallable CallOp::getCallableForCallee() {
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseCallParamCallee(OpAsmParser &p, TypedAttr &value,
-                                        ParamBindArrayAttr &paramValues,
                                         ParamDeclArrayAttr &paramResultDecls,
                                         SmallVectorImpl<Type> &operandTypes,
                                         SmallVectorImpl<Type> &resultTypes) {
   Type type;
-  auto loc = p.getCurrentLocation();
+  llvm::SMLoc loc = p.getCurrentLocation();
   if (p.parseLSquare() || parseKGENType(p, type) || p.parseColon() ||
-      parseParamValue(p, value, type) || p.parseRSquare() ||
-      parseCallOpParams(p, paramValues, paramResultDecls))
+      parseParamValue(p, value, type) || p.parseRSquare())
     return failure();
+  if (succeeded(p.parseOptionalLess())) {
+    if (p.parseLParen() || p.parseRParen() || p.parseArrow() ||
+        parseParamDecls(p, paramResultDecls) || p.parseGreater())
+      return failure();
+  } else {
+    paramResultDecls = ParamDeclArrayAttr::get(p.getContext(), {});
+  }
 
   auto signature = dyn_cast<SignatureType>(value.getType());
   if (!signature)
     return p.emitError(loc, "callee parameter type must be a signature type");
 
-  // Get the substituted signature based on the input parameters specified and
-  // check that the parameter names/types specified match up with the expected
-  // ones.
-  auto emitErrorFn = [&]() { return p.emitError(loc); };
-  auto substitutedSignature =
-      signature.getSpecializedSignature(paramValues, emitErrorFn);
-  if (!substitutedSignature)
-    return failure();
-
-  llvm::append_range(operandTypes, substitutedSignature.getValueInputs());
-  llvm::append_range(resultTypes, substitutedSignature.getValueResults());
+  llvm::append_range(operandTypes, signature.getValueInputs());
+  llvm::append_range(resultTypes, signature.getValueResults());
   return success();
 }
 
 static void printCallParamCallee(OpAsmPrinter &p, Operation *op,
-                                 TypedAttr value,
-                                 ParamBindArrayAttr paramValues,
-                                 ParamDeclArrayAttr paramDecls,
+                                 TypedAttr value, ParamDeclArrayAttr paramDecls,
                                  OperandRange::type_range operandTypes,
                                  mlir::ResultRange::type_range resultTypes) {
   p << "[";
@@ -723,7 +717,11 @@ static void printCallParamCallee(OpAsmPrinter &p, Operation *op,
   p << ": ";
   printParamValue(p, value);
   p << "]";
-  printCallOpParams(p, op, paramValues, paramDecls);
+  if (!paramDecls.empty()) {
+    p << "<() -> ";
+    printParamDecls(paramDecls, p.getStream());
+    p << '>';
+  }
 }
 
 LogicalResult CallParamOp::canonicalize(CallParamOp op,
@@ -732,17 +730,6 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
   auto callee = dyn_cast<SymbolConstantAttr>(op.getCallee());
   if (!callee)
     return failure();
-
-  // If the call has parameter values, we need to bind them into the symbol
-  // constant reference. Take the operand and result types of the operation
-  // since they are already the specialized types of the signature.
-  if (!op.getParamValues().empty()) {
-    callee = SymbolConstantAttr::get(
-        callee.getSymbol(), op.getParamValuesAttr(),
-        callee.getType().dropParamValues().getWithValuesReplaced(
-            FunctionType::get(op.getContext(), op.getOperandTypes(),
-                              op.getResultTypes())));
-  }
 
   rewriter.replaceOpWithNewOp<CallOp>(op, op.getResultTypes(), callee,
                                       op.getParamDecls(), op.getOperands());

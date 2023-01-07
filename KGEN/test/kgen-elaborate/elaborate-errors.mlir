@@ -149,7 +149,7 @@ lit.func @genItf2_impl0<x>() implements @genItf2 {
 
 kgen.generator @call_with_42<fn: <value>()->()>() {
   // expected-note @below {{call expansion failed}}
-  kgen.call_param[<value>()->(): fn]<value = 42>()
+  kgen.call_param[()->(): bind_signature(:<value>()->() fn, 42)]()
   kgen.return
 }
 

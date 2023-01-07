@@ -495,15 +495,7 @@ kgen.generator @call_param() {
 
 kgen.generator @call_param<fn: <ty: type>()->()>() {
   // expected-error @+1 {{cannot name an operation with no results}}
-  %0 = kgen.call_param[<ty: type>()->(): fn]<ty : !kgen.mlirtype = f32>()
-  kgen.return
-}
-
-// -----
-
-kgen.generator @call_param<fn: <ty: type>()->()>() {
-  // expected-error @below {{custom op 'kgen.call_param' caller input parameter #0 has type 'index' but callee expected type '!kgen.mlirtype'}}
-  kgen.call_param[<ty: type>()->(): fn]<ty = 42>()
+  %0 = kgen.call_param[()->(): bind_signature(:<ty: type>()->() fn, f32)]()
   kgen.return
 }
 
