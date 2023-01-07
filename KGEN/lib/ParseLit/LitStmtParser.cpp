@@ -503,7 +503,7 @@ ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
     // Wrap the error and propagate it.
     auto func = getBlockParentOfType<LIT::FuncOp>(block);
     if (!func.getRaises()) {
-      emitError(loc, "cannot raise error inside method that does not raise");
+      emitError(loc, "cannot raise error in a context that cannot raise");
       return success();
     }
     Value wrappedErr = builder.create<POP::VariantCreateOp>(

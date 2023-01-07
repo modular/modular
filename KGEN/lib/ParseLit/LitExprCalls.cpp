@@ -619,15 +619,13 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
           << ASTType(baseVal.ir.getType());
       return {};
     }
-
-    // TODO: Using partial application over an lvalue like this isn't
-    // technically safe.  We need to extend the lifetime of the pointer captured
-    // for as long as the partial application thunk is alive. This will require
-    // some sort of borrow model.  In practice, this will be fine in the short
-    // term of Lit bringup because the thunk cannot be emitted independently
-    // anyway, it must always be canonicalized into another call.
     firstArgValue = baseLV;
-    break;
+
+    // Using partial application over an lvalue isn't safe until we support an
+    // ownership models with mutable borrows.
+    emitter.emitError(loc, "TODO: partial application to mutable base isn't "
+                           "supportable without a lifetime model");
+    return {};
   }
   case ValueInputConvention::ByVal:
     // Otherwise we can have either an lvalue or rvalue, but we need to convert
@@ -838,8 +836,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   Value resultVal = callOp->getResult(0);
   if (calleeSig.getFnEffects() == FnEffects::Throws) {
     if (!isValidErrorContext(builder->getInsertionBlock())) {
-      emitError(
-          "cannot call raising method within an 'fn' that does not raise");
+      emitError("cannot call function that may raise in a context that "
+                "cannot raise");
       return {};
     }
     resultVal = builder->create<UnwrapOrPropagateOp>(
