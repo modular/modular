@@ -114,6 +114,12 @@ fn paramResolution[size1: Int, a: StructWithIntParam[size1],
                    b: StructWithIntParam[size2], size2: Int]():
   pass
 
+# Show that we can implicitly convert from 42's literal type to Int.
+# CHECK-LABEL: lit.func @"implConversion
+# CHECK: <a: !kgen.declref<@StructWithIntParam<size: !kgen.declref<@"$Int"::@Int> = apply(:(index) {{.*}}", 42)>
+fn implConversion[a: StructWithIntParam[42]]():
+  pass
+
 # CHECK-LABEL: kgen.struct.decl @Pair<dt: !kgen.declref<@DType>> {
 struct Pair[dt: DType]:
  # CHECK: kgen.struct.field a : !kgen.declref<@OurSIMD<size = 42, dt: !kgen.declref<@DType> = dt>>

@@ -99,7 +99,7 @@ public:
                                     ssize_t &incorrectBindingNo,
                                     ASTType &incorrectBindingExpectedType,
                                     LitSharedState &shared,
-                                    Operation *declOp = nullptr) const;
+                                    Operation *declOp) const;
 };
 
 //===----------------------------------------------------------------------===//
@@ -211,6 +211,13 @@ public:
   /// values.  This emits an error and returns null on failure.
   AnyValue emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
                             SMLoc callLoc, IREmitter &emitter);
+
+  /// Return true if 'value' may be implicitly converted to 'requiredType'
+  /// by invoking (one level of) conversion operations.  This does not generate
+  /// any IR.
+  static bool canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
+                                         ASTType requiredType,
+                                         LitSharedState &shared);
 
 private:
   void lookup(ASTType type, StringRef methodName, SMLoc callLoc,
