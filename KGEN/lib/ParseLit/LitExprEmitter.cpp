@@ -115,8 +115,10 @@ IREmitter::emitNamedMethodCall(ASTType type, StringRef methodName,
 AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
                                       ASTType expectedType,
                                       std::function<void()> errorHandler) {
+  // If the value handed to is us already erroneous, don't diagnose anything.
   if (!value)
     return value;
+
   // If the type is already an exact match, then we are done.
   if (ASTType(value.getType()).isEqualCanon(expectedType))
     return value;
@@ -131,16 +133,29 @@ AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
     return {};
   }
 
+  // If we have at least one candidate, we check to see if any of them can
+  // work. We disable implicit conversions though, to prevent converting
+  // T -> S -> U in one step.
   ASTExprAnd<AnyValue> newArg = {value, expr};
+  callee.direct->disableImplicitConversions = true;
+  if (failed(callee.direct->filterOverloadSet(
+          {newArg}, /*isMethodSyntax*/ false,
+          /*emitDiagnosticOnFailure=*/false, shared))) {
+    errorHandler();
+    return {};
+  }
+
+  // Ok, cool we know it will succeed; do it.
   return callee.emitFunctionCall(newArg, expr->getLoc(), *this);
 }
 
 AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
-                                      ASTType expectedType) {
+                                      ASTType expectedType,
+                                      const Twine &errorSuffix) {
   auto errorHandler = [&]() {
-    emitError(expr->getLoc(), "value of type ")
-        << ASTType(value.getType()) << " cannot be converted to expected type "
-        << expectedType;
+    emitError(expr->getLoc())
+        << ASTType(value.getType()) << " value cannot be converted to "
+        << expectedType << errorSuffix;
   };
   return getAsExpectedType(value, expr, expectedType, std::move(errorHandler));
 }

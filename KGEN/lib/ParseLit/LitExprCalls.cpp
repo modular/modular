@@ -814,7 +814,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
       // Convert the argument to the expected type if needed.
       argVal = emitter.getAsExpectedType(argVal, argAnyValueAndExpr.expr,
-                                         expectedType);
+                                         expectedType, " in argument");
       if (!argVal)
         return {};
       break;

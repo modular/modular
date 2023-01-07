@@ -1077,9 +1077,10 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     if (kind == kAssign) {
       // Emit the RHS and coerce to the LHS type.
       auto rv = emitter.emitDRValue(rhsRep, rhs->getLoc());
-      rv = emitter.emitDRValue(
-          emitter.getAsExpectedType(rv, rhs, lhsLV.getRValueType()),
-          rhs->getLoc());
+      rv = emitter.emitDRValue(emitter.getAsExpectedType(rv, rhs,
+                                                         lhsLV.getRValueType(),
+                                                         " in assignment"),
+                               rhs->getLoc());
       if (!rv)
         return {};
 

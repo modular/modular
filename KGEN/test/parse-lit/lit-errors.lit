@@ -45,10 +45,10 @@ def tuple_return():
   return 32, 17 # expected-error {{tuple return not supported yet}}
 
 fn missing_ret_val() -> __mlir_type.index:
-  return # expected-error {{value of type 'None' cannot be converted to expected type '__mlir_type.index'}}
+  return # expected-error {{'None' value cannot be converted to '__mlir_type.index' in return}}
 
 fn ret_type_mismatch() -> __mlir_type.index:
-  return 4.0 # expected-error {{value of type '__mlir_type.f64' cannot be converted to expected type '__mlir_type.index'}}
+  return 4.0 # expected-error {{'__mlir_type.f64' value cannot be converted to '__mlir_type.index' in return}}
 
 fn meta_param_then_param_redef[
       dt: __mlir_type.index # expected-note {{previous definition here}}
@@ -68,7 +68,7 @@ struct ReturnFromStruct:
   return 42
 
 def var_decl_without_type():
-  # expected-error @+1 {{value of type '__mlir_type.f64' cannot be converted to expected type 'ReturnFromStruct'}}
+  # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to 'ReturnFromStruct'}}
   var y : ReturnFromStruct = 1.0
 
   # expected-error @+1 {{declaration must have either a type or an initializer}}
@@ -105,7 +105,7 @@ def missing_type_on_var_decl():
 
 
 def invalid_conversion(a: Int, b: __mlir_type.index):
-  b = a # expected-error {{value of type '$Int::Int' cannot be converted to expected type '__mlir_type.index'}}
+  b = a # expected-error {{'$Int::Int' value cannot be converted to '__mlir_type.index' in assignment}}
 
 struct NotBoolConvertible:
 
@@ -579,13 +579,16 @@ fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
 
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
-    # expected-note @+1 {{function declared here}}
-    fn __new__(elem: BadInit[1]) -> BadInit[size]:
-      var x : __mlir_type[`!pop.simd<`, size, `, f32>`]
-      # expected-error @+1 {{invalid call to '__new__': in argument #0, value of type '__mlir_type.!pop.simd<size, f32>' cannot be converted to expected type 'BadInit[1]'}}
-      return x
+  fn __new__(elem: BadInit[1]) -> BadInit[size]:
+    var x : __mlir_type[`!pop.simd<`, size, `, f32>`]
+    # expected-error @+1 {{'__mlir_type.!pop.simd<size, f32>' value cannot be converted to 'BadInit[size]'}}
+    return x
 
 # Issue #6600
 fn negBuiltinType(x: __mlir_type.f64) :
     # expected-error @+1 {{'__mlir_type.f64' does not implement the '__neg__' method}}
     _ = -x
+
+fn testConversionQoI():
+  # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in alias}}
+  alias intVal : Int = 1.2
