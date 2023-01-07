@@ -395,7 +395,7 @@ fn method(variable: Int):
   # expected-error @+1 {{declaration must have either a type or an initializer}}
   alias MissingInit
 
-  # expected-error @+1 {{context only permits a meta value, not a dynamic one}}
+  # expected-error @+1 {{cannot use a dynamic value in meta context}}
   alias NotConstant = variable*2
 
   # TODO: Should reject as not initialized.

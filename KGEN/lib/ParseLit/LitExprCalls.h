@@ -19,7 +19,7 @@
 namespace M::KGEN::LIT {
 using llvm::SMLoc;
 class ASTDecl;
-class ExprEmitter;
+class IREmitter;
 class ExprNode;
 
 template <typename ValueType>
@@ -153,7 +153,7 @@ struct DirectCallable {
   LogicalResult
   getResultParamDecls(SignatureType signature,
                       SmallVectorImpl<ParamDeclAttr> &resultParamDecls,
-                      ExprEmitter &emitter);
+                      IREmitter &emitter);
 };
 
 //===----------------------------------------------------------------------===//
@@ -205,12 +205,12 @@ public:
 
   /// Emit this as a flattened RValue or LValue.  This returns null on
   /// failure.
-  AnyValue emitAsValue(ExprEmitter &emitter) const;
+  AnyValue emitAsValue(IREmitter &emitter) const;
 
   /// Emit a function call to the specified callee with the specified operand
   /// values.  This emits an error and returns null on failure.
   AnyValue emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                            SMLoc callLoc, ExprEmitter &emitter);
+                            SMLoc callLoc, IREmitter &emitter);
 
 private:
   void lookup(ASTType type, StringRef methodName, SMLoc callLoc,
