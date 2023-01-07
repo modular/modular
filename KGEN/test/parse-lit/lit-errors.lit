@@ -114,6 +114,7 @@ def test_bool_context(a: NotBoolConvertible):
   if a: # expected-error {{'NotBoolConvertible' does not implement the '__bool__' method}}
      pass
 
+# expected-note @+1 {{'Thing' declared here}}
 struct Thing[a: __mlir_type.index, b: __mlir_type.index]:
 
 def GoodUseOfThing(a: Thing[4, 5]):
@@ -126,10 +127,10 @@ def MissingThingMetaParams(a: Thing):  # expected-error {{use of type "Thing" wi
 def MultipleThingMetaparams(a: Thing[1,2][1]):
   pass
 
-def OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' requires 2 meta parameters}}
+def OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' expects 2 input parameters but 1 was provided}}
   pass
 
-# expected-error @+1 {{parameter of type '__mlir_type.f64' cannot be converted to expected type '__mlir_type.index'}}
+# expected-error @+1 {{'Thing' parameter "b" has '__mlir_type.index' type, but value has type '__mlir_type.f64'}}
 def WeirdMetaParams(a: Thing[1, 1.5]):
   pass
 
@@ -364,6 +365,7 @@ struct Parameterized[p1: __mlir_type.index]:
     var result: Parameterized[p1]
     return result
 
+  # expected-note @+2 {{'method' declared here}}
   # expected-note @+1 {{function declared here}}
   fn method[B: __mlir_type.index](self, other: Parameterized[p1+B]):
     pass

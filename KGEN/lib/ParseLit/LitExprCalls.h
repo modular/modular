@@ -88,6 +88,18 @@ public:
   void add(ExprNode *expr, TypedAttr value) {
     bindings.push_back({expr, Attribute(value)});
   }
+
+  /// Check that our set of parameter bindings work with the specified input
+  /// parameters, returning a checked ParamBindArrayAttr if so.  If the
+  /// parameters do not work, this emits an diagnostic (if `declOp` is non-null)
+  /// and set `incorrectBindingNo/Expectedtype` to the bad binding (or -1 if
+  /// there is a count mismatch).
+  ParamBindArrayAttr verifyBindings(ParamDeclArrayAttr actualParamDecls,
+                                    StringRef baseName, SMLoc loc,
+                                    ssize_t &incorrectBindingNo,
+                                    ASTType &incorrectBindingExpectedType,
+                                    LitSharedState &shared,
+                                    Operation *declOp = nullptr) const;
 };
 
 //===----------------------------------------------------------------------===//
@@ -129,17 +141,6 @@ struct DirectCallable {
                                   bool isMethodCall,
                                   bool emitDiagnosticOnFailure,
                                   LitSharedState &shared);
-
-  /// Check that our set of parameter bindings work with the specified input
-  /// parameters, returning a checked ParamBindArrayAttr if so.  If the
-  /// parameters do not work, this emits an diagnostic (if `declOp` is
-  /// non-null) and set `incorrectBindingNo/Expectedtype` to the bad binding
-  /// (or -1 if there is a count mismatch).
-  ParamBindArrayAttr getCheckedBindings(ParamDeclArrayAttr inputParams,
-                                        ssize_t &incorrectBindingNo,
-                                        ASTType &incorrectBindingExpectedType,
-                                        /*nullable*/ Operation *declOp,
-                                        LitSharedState &shared) const;
 
   /// Perform subsitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
