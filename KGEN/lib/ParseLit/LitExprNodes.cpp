@@ -15,7 +15,6 @@
 #include "LitExprCalls.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -780,58 +779,31 @@ static CallableValue substituteParametersIntoUserDefinedType(
     return {};
   }
 
-  auto numParams = structOp.getInputParamDecls().size();
-  if (numParams != subscript.indices.size()) {
-    emitter.emitError(subscript.getLoc(), "")
-        << ASTType(declRef) << " requires " << numParams << " meta parameter"
-        << plural(numParams) << " but " << subscript.indices.size()
-        << " were specified";
-    return {};
-  }
-
-  // Parameters defined at the beginning of the parameter list may be used by
-  // the types of other parameters defined later in the list, e.g. in:
-  //    [rank: Int, indices: StaticTuple[rank]]
-  // the value provided to 'indices' should actually depend on the specified
-  // value of 'rank'.  We use a ParameterEvaluator to keep track of the mapping
-  // so far and remap types on demand.
-  ParameterEvaluator evaluator;
-
-  // Emit each of the indices as parameter expressions.
-  SmallVector<ParamBindAttr> paramBindings;
-  for (auto [indexExpr, decl] :
-       llvm::zip(subscript.indices, structOp.getInputParamDecls())) {
+  // Build up a InputParamBindings set to validate and check the bindings.
+  InputParamBindings paramBindings;
+  for (ExprNode *indexExpr : subscript.indices) {
     // TODO: Slice syntax is the obvious way to support named parameter
     // arguments.
     auto indexVal = emitter.emitMValue(
         indexExpr, "type parameters may not be a run-time value");
     if (!indexVal)
       return {};
-
-    auto expectedType = evaluator.getReboundType(decl.getType());
-
-    // TODO: Support conversions when we can call functions in parameter
-    // expressions.
-    if (!ASTType(indexVal.getType()).isEqualCanon(expectedType)) {
-      emitter.emitError(indexExpr->getLoc(), "parameter of type ")
-          << ASTType(indexVal.getType())
-          << " cannot be converted to expected type " << ASTType(expectedType);
-      return {};
-    }
-
-    // If we rebound the type, then update the type in the decl for the
-    // ParamBindAttr.
-    ParamDeclAttr declToBind = decl;
-    if (expectedType != decl.getType())
-      declToBind = ParamDeclAttr::get(decl.getName(), expectedType);
-
-    paramBindings.push_back(ParamBindAttr::get(declToBind, indexVal));
-    evaluator.setParameterValue(decl, indexVal);
+    paramBindings.add(indexExpr, indexVal.get());
   }
+
+  // Check the bindings.
+  ssize_t incorrectBindingNo = 0;
+  ASTType incorrectBindingExpectedType;
+  auto bindingAttr = paramBindings.verifyBindings(
+      structOp.getInputParamDeclsAttr(), structOp.getName(), subscript.getLoc(),
+      incorrectBindingNo, incorrectBindingExpectedType, emitter.shared,
+      structOp);
+  if (!bindingAttr)
+    return {};
 
   // Ok, we succeeded at reparameterizing the type.
   return CallableValue(
-      {MValue(DeclRefType::get(typeDecl.getSymbolRef(), paramBindings)),
+      {MValue(DeclRefType::get(typeDecl.getSymbolRef(), bindingAttr)),
        &subscript});
 }
 

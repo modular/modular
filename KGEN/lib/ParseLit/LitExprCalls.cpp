@@ -22,6 +22,99 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 //===----------------------------------------------------------------------===//
+// InputParamBindings Implementation
+//===----------------------------------------------------------------------===//
+
+/// Check that our set of parameter bindings work with the specified input
+/// parameters, returning a checked ParamBindArrayAttr if so.  If the parameters
+/// do not work, this emits an diagnostic (if `declOp` is non-null) and set
+/// `incorrectBindingNo/Expectedtype` to the bad binding (or -1 if there is a
+/// count mismatch).
+ParamBindArrayAttr InputParamBindings::verifyBindings(
+    ParamDeclArrayAttr actualParamDecls, StringRef baseName, SMLoc loc,
+    ssize_t &incorrectBindingNo, ASTType &incorrectBindingExpectedType,
+    LitSharedState &shared, Operation *declOp) const {
+  // If there are no bindings, exit early.
+  // FIXME: This all or nothing thing is really weird and needs to be fixed when
+  // we start infering parameter bindings from arguments etc.
+  if (bindings.empty())
+    return ParamBindArrayAttr::get(shared.getContext(), {});
+
+  // We require an exact match for the actualParamDecls right now, we don't
+  // allow inference or other fancy things.
+  auto actualNumParams = bindings.size();
+  auto expectedNumParams = actualParamDecls.size();
+  if (actualNumParams != expectedNumParams) {
+    if (declOp) {
+      auto diag = shared.emitError(loc, "'")
+                  << baseName << "' expects " << expectedNumParams
+                  << " input parameter" << plural(expectedNumParams) << " but "
+                  << actualNumParams << plural(actualNumParams, " was", " were")
+                  << " provided";
+      diag.attachNote(declOp->getLoc()) << "'" << baseName << "' declared here";
+    }
+    incorrectBindingNo = -1;
+    return {};
+  }
+
+  // If we have bound parameters, type check them now and bind names to them.
+  SmallVector<ParamBindAttr> newBindings;
+  newBindings.reserve(actualNumParams);
+
+  // Parameters defined at the beginning of the parameter list may be used by
+  // the types of other parameters defined later in the list, e.g. in:
+  //    [rank: Int, indices: StaticTuple[rank]]
+  // the value provided to 'indices' should actually depend on the specified
+  // value of 'rank'.  We use a ParameterEvaluator to keep track of the mapping
+  // so far and remap types on demand.
+  ParameterEvaluator evaluator;
+  for (auto [bound, decl] : llvm::zip(bindings, actualParamDecls)) {
+    // If this value was already bound and checked, use it.
+    auto prebound = dyn_cast<ParamBindAttr>(bound.bindingOrValue);
+    if (prebound) {
+      evaluator.setParameterValue(prebound.getDecl(), prebound.getValue());
+      newBindings.push_back(prebound);
+      continue;
+    }
+
+    assert(bound.expr &&
+           "should always have an expr tree for unchecked bindings");
+
+    // Check the type matches what is expected.
+    // TODO: Do implicit conversions when we can invoke parameter functions.
+    auto valueType = bound.getValue().getType();
+    auto expectedType = evaluator.getReboundType(decl.getType());
+
+    if (!ASTType(valueType).isEqualCanon(expectedType)) {
+      if (declOp) {
+        auto diag = shared.emitError(bound.expr->getLoc(), "'")
+                    << baseName << "' parameter " << decl.getName() << " has "
+                    << ASTType(decl.getType()) << " type, but value has type "
+                    << ASTType(valueType);
+        diag.attachNote(declOp->getLoc())
+            << "'" << baseName << "' declared here";
+      }
+      incorrectBindingNo = newBindings.size();
+      incorrectBindingExpectedType = expectedType;
+      return {};
+    }
+
+    // Any reference between parameters to this parameter will get our bound and
+    // potentially type-converted value.
+    evaluator.setParameterValue(decl, bound.getValue());
+
+    // Update the decl's type if we remapped the type.
+    ParamDeclAttr boundDecl = decl;
+    if (decl.getType() != expectedType)
+      boundDecl = ParamDeclAttr::get(decl.getName(), expectedType);
+
+    newBindings.push_back(ParamBindAttr::get(boundDecl, bound.getValue()));
+  }
+
+  return ParamBindArrayAttr::get(shared.getContext(), newBindings);
+}
+
+//===----------------------------------------------------------------------===//
 // DirectCallable Implementation
 //===----------------------------------------------------------------------===//
 
@@ -94,10 +187,10 @@ OverloadFitness OverloadFitness::evaluate(
   // Check that the signature can be rebound with our set of bindings.
   ssize_t incorrectBindingNo = 0;
   ASTType incorrectBindingExpectedType;
-  auto newBindings = callable.getCheckedBindings(
-      signature.getInputParams(), incorrectBindingNo,
-      incorrectBindingExpectedType,
-      /*don't emit diagnostics*/ {}, shared);
+  auto newBindings = callable.inputParamBindings.verifyBindings(
+      signature.getInputParams(), callable.baseName, callable.loc,
+      incorrectBindingNo, incorrectBindingExpectedType, shared,
+      /*don't emit diagnostics*/ {});
 
   // If there is an error, return the problem.
   if (!newBindings) {
@@ -107,7 +200,7 @@ OverloadFitness OverloadFitness::evaluate(
             incorrectBindingExpectedType};
   }
 
-  // Check that we bound all the input parameters.  getCheckedBindings checks
+  // Check that we bound all the input parameters.  verifyBindings checks
   // bindings that are present, but doesn't check that they were all here.
   // TODO: We'll need to refactor this when infering parameter bindings from
   // arguments.
@@ -347,96 +440,6 @@ LogicalResult DirectCallable::filterOverloadSet(
   return failure();
 }
 
-/// Check that our set of parameter bindings work with the specified input
-/// parameters, returning a checked ParamBindArrayAttr if so.  If the parameters
-/// do not work, this emits an diagnostic (if `declOp` is non-null) and set
-/// `incorrectBindingNo/Expectedtype` to the bad binding (or -1 if there is a
-/// count mismatch).
-ParamBindArrayAttr DirectCallable::getCheckedBindings(
-    ParamDeclArrayAttr inputParams, ssize_t &incorrectBindingNo,
-    ASTType &incorrectBindingExpectedType, Operation *declOp,
-    LitSharedState &shared) const {
-
-  // If there are no bindings, exit early.
-  // FIXME: This all or nothing thing is really weird and needs to be fixed when
-  // we start infering parameter bindings from arguments etc.
-  if (inputParamBindings.bindings.empty())
-    return ParamBindArrayAttr::get(shared.getContext(), {});
-
-  // We require an exact match for the inputParams right now, we don't allow
-  // inference or other fancy things.
-  auto actualNumParams = inputParamBindings.bindings.size();
-  auto expectedNumParams = inputParams.size();
-  if (actualNumParams != expectedNumParams) {
-    if (declOp) {
-      auto diag = shared.emitError(loc, "'")
-                  << baseName << "' expects " << expectedNumParams
-                  << " input parameter" << plural(expectedNumParams) << " but "
-                  << actualNumParams << plural(actualNumParams, " was", " were")
-                  << " provided";
-      diag.attachNote(declOp->getLoc()) << "function declared here";
-    }
-    incorrectBindingNo = -1;
-    return {};
-  }
-
-  // If we have bound parameters, type check them now and bind names to them.
-  SmallVector<ParamBindAttr> newBindings;
-  newBindings.reserve(actualNumParams);
-
-  // Parameters defined at the beginning of the parameter list may be used by
-  // the types of other parameters defined later in the list, e.g. in:
-  //    [rank: Int, indices: StaticTuple[rank]]
-  // the value provided to 'indices' should actually depend on the specified
-  // value of 'rank'.  We use a ParameterEvaluator to keep track of the mapping
-  // so far and remap types on demand.
-  ParameterEvaluator evaluator;
-  for (auto [bound, decl] :
-       llvm::zip(inputParamBindings.bindings, inputParams)) {
-    // If this value was already bound and checked, use it.
-    auto prebound = dyn_cast<ParamBindAttr>(bound.bindingOrValue);
-    if (prebound) {
-      evaluator.setParameterValue(prebound.getDecl(), prebound.getValue());
-      newBindings.push_back(prebound);
-      continue;
-    }
-
-    assert(bound.expr &&
-           "should always have an expr tree for unchecked bindings");
-
-    // Check the type matches what is expected.
-    // TODO: Do implicit conversions when we can invoke parameter functions.
-    auto valueType = bound.getValue().getType();
-    auto expectedType = evaluator.getReboundType(decl.getType());
-
-    if (!ASTType(valueType).isEqualCanon(expectedType)) {
-      if (declOp) {
-        auto diag = shared.emitError(bound.expr->getLoc(), "'")
-                    << baseName << "' parameter " << decl.getName() << " has "
-                    << ASTType(decl.getType()) << " type, but value has type "
-                    << ASTType(valueType);
-        diag.attachNote(declOp->getLoc()) << "function declared here";
-      }
-      incorrectBindingNo = newBindings.size();
-      incorrectBindingExpectedType = expectedType;
-      return {};
-    }
-
-    // Any reference between parameters to this parameter will get our bound and
-    // potentially type-converted value.
-    evaluator.setParameterValue(decl, bound.getValue());
-
-    // Update the decl's type if we remapped the type.
-    ParamDeclAttr boundDecl = decl;
-    if (decl.getType() != expectedType)
-      boundDecl = ParamDeclAttr::get(decl.getName(), expectedType);
-
-    newBindings.push_back(ParamBindAttr::get(boundDecl, bound.getValue()));
-  }
-
-  return ParamBindArrayAttr::get(shared.getContext(), newBindings);
-}
-
 /// Generate a reference to the specified function, checking that any supplied
 /// parameters are correct and match expectations.
 SymbolConstantAttr
@@ -460,10 +463,11 @@ DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
   // Check that the signature can be rebound with our set of bindings.
   ssize_t incorrectBindingNo = 0;
   ASTType incorrectBindingExpectedType;
-  auto newBindings =
-      getCheckedBindings(funcOp.getFullSignature().getInputParams(),
-                         incorrectBindingNo, incorrectBindingExpectedType,
-                         /*emit diagnostics*/ funcOp, shared);
+
+  auto newBindings = inputParamBindings.verifyBindings(
+      funcOp.getFullSignature().getInputParams(), baseName, loc,
+      incorrectBindingNo, incorrectBindingExpectedType, shared,
+      /*emit diagnostics*/ funcOp);
   if (!newBindings)
     return {};
 
@@ -489,6 +493,9 @@ LogicalResult DirectCallable::getResultParamDecls(
   // force an `alias x : Int` sort of declaraton and then allow calls to fulfill
   // it.
   // This will unblock progress until then though.
+  //
+  // TODO: We don't remap input parameters types into output parameter types.
+  // We surely handle this wrong: `fn x[a: type -> a]():` for example.
   DeclResolver &resolver = emitter.getDeclResolver();
   for (auto [type, name] :
        llvm::zip(signature.getResultParamTypes(), resultParams)) {
