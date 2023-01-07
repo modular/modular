@@ -90,29 +90,24 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
            "should always have an expr tree for unchecked bindings");
 
     // Check the type matches what is expected, and perform an implicit
-    // conversion if needed.  We explicitly check the conversion with
-    // 'canImplicitlyConvertToType' to get better QoI in the case of a failure.
+    // conversion if needed.
     auto expectedType = ASTType(evaluator.getReboundType(decl.getType()));
-    if (!CallableValue::canImplicitlyConvertToType(
-            {MValue(bound.getValue()), bound.expr}, expectedType, shared)) {
-      if (declOp) {
-        auto diag = shared.emitError(bound.expr->getLoc(), "'")
-                    << baseName << "' parameter " << decl.getName() << " has "
-                    << expectedType << " type, but value has type "
-                    << ASTType(bound.getValue().getType());
-        diag.attachNote(declOp->getLoc())
-            << "'" << baseName << "' declared here";
-      }
-      incorrectBindingNo = newBindings.size();
-      incorrectBindingExpectedType = expectedType;
-      return {};
-    }
-
-    // Perform the conversion if needed, this will always succeed.
     auto argValue = emitter.getAsExpectedType(
         MValue(bound.getValue()), bound.expr, expectedType, [&]() {
-          llvm_unreachable("we already checked that this is convertible");
+          if (declOp) {
+            auto diag = shared.emitError(bound.expr->getLoc(), "'")
+                        << baseName << "' parameter " << decl.getName()
+                        << " has " << expectedType
+                        << " type, but value has type "
+                        << ASTType(bound.getValue().getType());
+            diag.attachNote(declOp->getLoc())
+                << "'" << baseName << "' declared here";
+          }
+          incorrectBindingNo = newBindings.size();
+          incorrectBindingExpectedType = expectedType;
         });
+    if (!argValue)
+      return {};
 
     auto argMValue = argValue.getIfMValue();
     assert(argMValue && "cannot emit a dynamic value in parameter context");
