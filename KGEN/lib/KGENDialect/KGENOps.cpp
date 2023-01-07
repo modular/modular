@@ -448,8 +448,8 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
 LogicalResult FuncOp::verify() {
   // kgen.func's are not allowed to have input parameter lists.
-  if (!getInputParamDecls().empty())
-    return emitOpError("only allows output parameters, not input parameters");
+  if (!getInputParamDecls().empty() || !getResultParamTypes().empty())
+    return emitOpError("cannot have input or result parameters");
   if (!getConventions().isDefault())
     return emitOpError("can only have default conventions");
   return success();

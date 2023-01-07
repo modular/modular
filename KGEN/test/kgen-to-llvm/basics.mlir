@@ -9,14 +9,6 @@ kgen.func @trivial(%arg0: si32) -> si32 {
 
 // -----
 
-// CHECK-LABEL: llvm.func internal @produces_result
-kgen.func @produces_result<() -> index>() {
-  // CHECK: llvm.return
-  kgen.return<42>
-}
-
-// -----
-
 // CHECK-LABEL: llvm.func internal @convert_pop_types
 // CHECK-SAME: %{{.*}}: f32
 // CHECK-SAME: %{{.*}}: !llvm.ptr<f32>

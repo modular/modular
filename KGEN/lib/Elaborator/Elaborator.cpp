@@ -373,8 +373,11 @@ LogicalResult ParameterRewriter::rewriteOps(
       return failure();
   }
 
-  // If the generated function will be inlined, don't verify it.
+  // Bind and remove the result parameters of the function.
   FuncOp func = elaboratedGenerator.func;
+  elaborator.bindResultParameters(func);
+
+  // If the generated function will be inlined, don't verify it.
   if (inlinedCallee) {
     elaborator.markFuncForRemoval(func);
     return success();
@@ -1087,9 +1090,7 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
     if (succeeded(rewriter->rewriteOps(rewriterWorklist))) {
       // Take the result parameters from the rewritten function and bind it in
       // the elaborator.
-      ElaboratedGenerator result = rewriter->takeElaboratedGenerator();
-      bindResultParameters(result.func);
-      results.push_back(std::move(result));
+      results.push_back(rewriter->takeElaboratedGenerator());
       counter++;
 
     } else {
@@ -1481,11 +1482,10 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
     LLVM_DEBUG({ llvm::dbgs() << "evaluateConstraints failed\n"; });
     localError(std::move(*err));
   } else if (auto func = dyn_cast<FuncOp>(*decl)) {
-    // Nothing to do here. Just bind the result parameters and return the
-    // function.
+    // Reject functions in a pre-elaboration context.
     LLVM_DEBUG({ llvm::dbgs() << "Func: " << func->getName() << "\n"; });
-    bindResultParameters(func);
-    newCallees.emplace_back(ElaboratedGenerator(func));
+    localError(
+        {func.getLoc(), "unexpected function encountered during elaboration"});
   } else if (isa<GeneratorOp>(decl)) {
     LLVM_DEBUG({
       llvm::dbgs() << "Generator: " << cast<GeneratorOp>(decl).getNameAttr()

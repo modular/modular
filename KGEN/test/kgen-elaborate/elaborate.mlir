@@ -7,7 +7,7 @@ kgen.include "library-test.mlir"
 // CHECK-NEXT: %[[V0:.*]] = kgen.param.constant = <1>
 // CHECK-NEXT:  kgen.return %[[V0]] : index
 // CHECK-NEXT: }
-kgen.func @test0<() -> index>() -> index {
+kgen.generator @test0<() -> index>() -> index {
   %0 = kgen.param.constant = <1>
   kgen.return <123456> %0 : index
 }
@@ -614,7 +614,7 @@ kgen.generator @takeFnContextualType<ty: type, fn: ()->!kgen.paramref<ty>>() -> 
   kgen.return %0: !kgen.paramref<ty>
 }
 
-kgen.func @sillyFn() -> index {
+kgen.generator @sillyFn() -> index {
   %0 = kgen.param.constant = <42>
   kgen.return %0: index
 }
@@ -1175,7 +1175,7 @@ kgen.generator @use_Itf3() {
 
 // -----
 
-kgen.func @fma(%arg0: index, %arg1: index, %arg2: index) -> index {
+kgen.generator @fma(%arg0: index, %arg1: index, %arg2: index) -> index {
   %0 = index.mul %arg1, %arg2
   %1 = index.add %0, %arg0
   kgen.return %1 : index
@@ -1190,7 +1190,7 @@ kgen.generator @constexpr_fma() -> index {
 
 // -----
 
-kgen.func @alloc_load_store(%arg0: index) -> index {
+kgen.generator @alloc_load_store(%arg0: index) -> index {
   %idx0 = index.constant 0
   %idx1 = index.constant 1
   %idx2 = index.constant 2
@@ -1336,12 +1336,12 @@ kgen.generator @call_it() {
 
 // -----
 
-kgen.func @callee(%arg0: index) -> index {
+kgen.generator @callee(%arg0: index) -> index {
   %0 = index.add %arg0, %arg0
   kgen.return %0 : index
 }
 
-kgen.func @func(%arg0: index) -> index {
+kgen.generator @func(%arg0: index) -> index {
   %0 = kgen.call @callee(%arg0) : (index) -> index
   kgen.return %0 : index
 }
@@ -1355,7 +1355,7 @@ kgen.generator @call_it() -> index {
 
 // -----
 
-kgen.func @sum(%from: index, %to: index) -> index {
+kgen.generator @sum(%from: index, %to: index) -> index {
   %idx0 = index.constant 0
   %idx1 = index.constant 1
   %result = hlcf.loop (%acc = %idx0 : index, %i = %from : index) -> index {
@@ -1381,7 +1381,7 @@ kgen.generator @call_it() {
 
 // -----
 
-kgen.func @early_return(%cond: i1) -> index {
+kgen.generator @early_return(%cond: i1) -> index {
   %idx0 = index.constant 0
   %result = hlcf.if %cond -> index {
     hlcf.yield %idx0 : index
