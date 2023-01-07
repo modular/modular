@@ -29,9 +29,9 @@ public:
   /// This is the current builder to emit into if we are allowed to generate a
   /// value.  This will be None when in a context that only allows parameters.
   /// It is mutable to support expressions that require internal control flow.
-  Optional<OpBuilder> builder;
+  std::optional<OpBuilder> builder;
 
-  IREmitter(LitSharedState &shared, Optional<OpBuilder> builder)
+  IREmitter(LitSharedState &shared, std::optional<OpBuilder> builder)
       : LitSharedStateUser(shared), builder(builder) {}
 
   //===--------------------------------------------------------------------===//

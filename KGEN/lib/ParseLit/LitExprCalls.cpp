@@ -61,6 +61,10 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
   SmallVector<ParamBindAttr> newBindings;
   newBindings.reserve(actualNumParams);
 
+  // This is the IR emitter we use for emitting implicit conversions when
+  // needed.
+  IREmitter emitter(shared, /*no builder*/ {});
+
   // Parameters defined at the beginning of the parameter list may be used by
   // the types of other parameters defined later in the list, e.g. in:
   //    [rank: Int, indices: StaticTuple[rank]]
@@ -68,7 +72,12 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
   // value of 'rank'.  We use a ParameterEvaluator to keep track of the mapping
   // so far and remap types on demand.
   ParameterEvaluator evaluator;
-  for (auto [bound, decl] : llvm::zip(bindings, actualParamDecls)) {
+  for (auto [boundX, declX] : llvm::zip(bindings, actualParamDecls)) {
+    // Work around: "reference to local binding 'decl' declared in enclosing
+    // function"
+    auto bound = boundX;
+    auto &decl = declX;
+
     // If this value was already bound and checked, use it.
     auto prebound = dyn_cast<ParamBindAttr>(bound.bindingOrValue);
     if (prebound) {
@@ -80,17 +89,17 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
     assert(bound.expr &&
            "should always have an expr tree for unchecked bindings");
 
-    // Check the type matches what is expected.
-    // TODO: Do implicit conversions when we can invoke parameter functions.
-    auto valueType = bound.getValue().getType();
-    auto expectedType = evaluator.getReboundType(decl.getType());
-
-    if (!ASTType(valueType).isEqualCanon(expectedType)) {
+    // Check the type matches what is expected, and perform an implicit
+    // conversion if needed.  We explicitly check the conversion with
+    // 'canImplicitlyConvertToType' to get better QoI in the case of a failure.
+    auto expectedType = ASTType(evaluator.getReboundType(decl.getType()));
+    if (!CallableValue::canImplicitlyConvertToType(
+            {MValue(bound.getValue()), bound.expr}, expectedType, shared)) {
       if (declOp) {
         auto diag = shared.emitError(bound.expr->getLoc(), "'")
                     << baseName << "' parameter " << decl.getName() << " has "
-                    << ASTType(decl.getType()) << " type, but value has type "
-                    << ASTType(valueType);
+                    << expectedType << " type, but value has type "
+                    << ASTType(bound.getValue().getType());
         diag.attachNote(declOp->getLoc())
             << "'" << baseName << "' declared here";
       }
@@ -99,16 +108,25 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       return {};
     }
 
+    // Perform the conversion if needed, this will always succeed.
+    auto argValue = emitter.getAsExpectedType(
+        MValue(bound.getValue()), bound.expr, expectedType, [&]() {
+          llvm_unreachable("we already checked that this is convertible");
+        });
+
+    auto argMValue = argValue.getIfMValue();
+    assert(argMValue && "cannot emit a dynamic value in parameter context");
+
     // Any reference between parameters to this parameter will get our bound and
     // potentially type-converted value.
-    evaluator.setParameterValue(decl, bound.getValue());
+    evaluator.setParameterValue(decl, argMValue);
 
     // Update the decl's type if we remapped the type.
     ParamDeclAttr boundDecl = decl;
     if (decl.getType() != expectedType)
       boundDecl = ParamDeclAttr::get(decl.getName(), expectedType);
 
-    newBindings.push_back(ParamBindAttr::get(boundDecl, bound.getValue()));
+    newBindings.push_back(ParamBindAttr::get(boundDecl, argMValue));
   }
 
   return ParamBindArrayAttr::get(shared.getContext(), newBindings);
@@ -244,35 +262,17 @@ OverloadFitness OverloadFitness::evaluate(
       break;
     }
     case ValueInputConvention::ByVal:
+      auto argType = argAnyValueAndExpr.ir.getRValueType();
       // Otherwise, we pass as an r-value.  If the argument types match, then
       // they are good.
-      if (ASTType(argAnyValueAndExpr.ir.getRValueType())
-              .isEqualCanon(ASTType(expectedType)))
+      if (argType.isEqualCanon(expectedType))
         break;
 
       // If we lack an exact match and conversions are disabled, this
       // candidate fails.
-      if (callable.disableImplicitConversions)
-        return {kArgWrongType, argIdx, expectedType};
-
-      // Otherwise, check to see if we can do an implicit conversion.
-      bool isErroneousDecl = false;
-      CallableValue callee(expectedType, "__new__",
-                           argAnyValueAndExpr.expr->getLoc(), isErroneousDecl,
-                           shared);
-
-      // Check to see if we have any viable candidates for the implicit
-      // conversion.  If not, we have an argument conversion error.
-      if (!callee.direct)
-        return {kArgWrongType, argIdx, expectedType};
-
-      // If we have at least one candidate, we check to see if any of them can
-      // work. We disable implicit conversions though, to prevent converting
-      // T -> S -> U in one step.
-      callee.direct->disableImplicitConversions = true;
-      if (failed(callee.direct->filterOverloadSet(
-              {argAnyValueAndExpr}, /*isMethodSyntax*/ false,
-              /*emitDiagnosticOnFailure=*/false, shared)))
+      if (callable.disableImplicitConversions ||
+          !CallableValue::canImplicitlyConvertToType(argAnyValueAndExpr,
+                                                     expectedType, shared))
         return {kArgWrongType, argIdx, expectedType};
 
       // If we had one, this bumps our # implicit conversions.
@@ -650,6 +650,35 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   return DRValue(emitter.builder->create<POP::PartialApplyOp>(
       emitter.translateLocation(loc), calleeDRVal,
       mlir::ValueRange(firstArgValue), zeroAttr));
+}
+
+/// Return true if 'value' may be implicitly converted to 'requiredType'
+/// by invoking (one level of) conversion operations.  This does not generate
+/// any IR.
+bool CallableValue::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
+                                               ASTType requiredType,
+                                               LitSharedState &shared) {
+  // If it already matches, then we're done.
+  if (value.ir.getRValueType().isEqualCanon(requiredType))
+    return true;
+
+  // Otherwise, check to see if we can do an implicit conversion by invoking a
+  // `__new__` method on the expected type.
+  bool isErroneousDecl = false;
+  CallableValue callee(requiredType, "__new__", SMLoc(), isErroneousDecl,
+                       shared);
+
+  // If there are no viable candidates for the implicit conversion, we fail.
+  if (!callee.direct)
+    return false;
+
+  // If we have at least one candidate, we check to see if any of them can
+  // work. We disable implicit conversions though, to prevent converting
+  // T -> S -> U in one step.
+  callee.direct->disableImplicitConversions = true;
+  return succeeded(callee.direct->filterOverloadSet(
+      {value}, /*isMethodSyntax*/ false,
+      /*emitDiagnosticOnFailure=*/false, shared));
 }
 
 //===----------------------------------------------------------------------===//
