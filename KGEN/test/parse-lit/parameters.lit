@@ -69,6 +69,9 @@ struct TestParamStruct[A: __mlir_type.index]:
     # CHECK: %temp = lit.var.decl "temp" : <@TestParamStruct<A = C>>
     var temp: TestParamStruct[C]
 
+    # CHECK: kgen.param.declare intVal: !kgen.declref<@"$Int"::@Int> = <apply(:(index){{.*}}", 42)>
+    alias intVal : Int = 42
+
     # CHECK:  %temp2 = lit.var.decl "temp2" : <@TestParamStruct<A = TypeLevelAlias>>
     var temp2: TestParamStruct[TypeLevelAlias]
 
