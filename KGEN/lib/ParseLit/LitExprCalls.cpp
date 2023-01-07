@@ -106,6 +106,13 @@ OverloadFitness OverloadFitness::evaluate(
             incorrectBindingExpectedType};
   }
 
+  // Check that we bound all the input parameters.  getCheckedBindings checks
+  // bindings that are present, but doesn't check that they were all here.
+  // TODO: We'll need to refactor this when infering parameter bindings from
+  // arguments.
+  if (newBindings.size() != signature.getInputParams().size())
+    return {kParamCount, 0, ASTType()};
+
   // Check the result parameter count.
   if (signature.getResultParamTypes().size() != callable.resultParams.size())
     return {kResultParamCount, 0, ASTType()};
@@ -118,69 +125,69 @@ OverloadFitness OverloadFitness::evaluate(
           llvm_unreachable("bad bindings went undetected");
         });
     assert(signature && "bad bindings went undetected");
-  }
-
-  // Ok, the parameters all line up, check the argument list.
-  size_t numArgs = signature.getValues().getNumInputs();
-  if (numArgs != operands.size())
-    return {kArgCount, numArgs, ASTType()};
-
-  size_t argIdx = 0;
-  size_t numImplicitConversions = 0;
-  for (auto [argAnyValueAndExpr, expectedType, convention] :
-       llvm::zip(operands, signature.getValueInputs(),
-                 signature.getValueInputConventions())) {
-    switch (convention) {
-    case ValueInputConvention::ByRef: {
-      // The actual value must be an lvalue if callee takes things by-ref.
-      auto argVal = argAnyValueAndExpr.ir.getIfLValue();
-      if (!argVal)
-        return {kArgNotLValue, argIdx, argAnyValueAndExpr.ir.getType()};
-
-      // By-ref argument types must exactly match, no conversions are allowed.
-      if (!ASTType(argVal.getType()).isEqualCanon(ASTType(expectedType)))
-        return {kArgWrongLVType, argIdx, expectedType};
-      break;
     }
-    case ValueInputConvention::ByVal:
-      // Otherwise, we pass as an r-value.  If the argument types match, then
-      // they are good.
-      if (ASTType(argAnyValueAndExpr.ir.getRValueType())
-              .isEqualCanon(ASTType(expectedType)))
+
+    // Ok, the parameters all line up, check the argument list.
+    size_t numArgs = signature.getValues().getNumInputs();
+    if (numArgs != operands.size())
+      return {kArgCount, numArgs, ASTType()};
+
+    size_t argIdx = 0;
+    size_t numImplicitConversions = 0;
+    for (auto [argAnyValueAndExpr, expectedType, convention] :
+         llvm::zip(operands, signature.getValueInputs(),
+                   signature.getValueInputConventions())) {
+      switch (convention) {
+      case ValueInputConvention::ByRef: {
+        // The actual value must be an lvalue if callee takes things by-ref.
+        auto argVal = argAnyValueAndExpr.ir.getIfLValue();
+        if (!argVal)
+          return {kArgNotLValue, argIdx, argAnyValueAndExpr.ir.getType()};
+
+        // By-ref argument types must exactly match, no conversions are allowed.
+        if (!ASTType(argVal.getType()).isEqualCanon(ASTType(expectedType)))
+          return {kArgWrongLVType, argIdx, expectedType};
         break;
+      }
+      case ValueInputConvention::ByVal:
+        // Otherwise, we pass as an r-value.  If the argument types match, then
+        // they are good.
+        if (ASTType(argAnyValueAndExpr.ir.getRValueType())
+                .isEqualCanon(ASTType(expectedType)))
+          break;
 
-      // If we lack an exact match and conversions are disabled, this candidate
-      // fails.
-      if (callable.disableImplicitConversions)
-        return {kArgWrongType, argIdx, expectedType};
+        // If we lack an exact match and conversions are disabled, this
+        // candidate fails.
+        if (callable.disableImplicitConversions)
+          return {kArgWrongType, argIdx, expectedType};
 
-      // Otherwise, check to see if we can do an implicit conversion.
-      bool isErroneousDecl = false;
-      CallableValue callee(expectedType, "__new__",
-                           argAnyValueAndExpr.expr->getLoc(), isErroneousDecl,
-                           shared);
+        // Otherwise, check to see if we can do an implicit conversion.
+        bool isErroneousDecl = false;
+        CallableValue callee(expectedType, "__new__",
+                             argAnyValueAndExpr.expr->getLoc(), isErroneousDecl,
+                             shared);
 
-      // Check to see if we have any viable candidates for the implicit
-      // conversion.  If not, we have an argument conversion error.
-      if (!callee.direct)
-        return {kArgWrongType, argIdx, expectedType};
+        // Check to see if we have any viable candidates for the implicit
+        // conversion.  If not, we have an argument conversion error.
+        if (!callee.direct)
+          return {kArgWrongType, argIdx, expectedType};
 
-      // If we have at least one candidate, we check to see if any of them can
-      // work. We disable implicit conversions though, to prevent converting
-      // T -> S -> U in one step.
-      callee.direct->disableImplicitConversions = true;
-      if (failed(callee.direct->filterOverloadSet(
-              {argAnyValueAndExpr}, /*isMethodSyntax*/ false,
-              /*emitDiagnosticOnFailure=*/false, shared)))
-        return {kArgWrongType, argIdx, expectedType};
+        // If we have at least one candidate, we check to see if any of them can
+        // work. We disable implicit conversions though, to prevent converting
+        // T -> S -> U in one step.
+        callee.direct->disableImplicitConversions = true;
+        if (failed(callee.direct->filterOverloadSet(
+                {argAnyValueAndExpr}, /*isMethodSyntax*/ false,
+                /*emitDiagnosticOnFailure=*/false, shared)))
+          return {kArgWrongType, argIdx, expectedType};
 
-      // If we had one, this bumps our # implicit conversions.
-      ++numImplicitConversions;
+        // If we had one, this bumps our # implicit conversions.
+        ++numImplicitConversions;
+      }
+      ++argIdx;
     }
-    ++argIdx;
-  }
 
-  return {kValid, numImplicitConversions, ASTType()};
+    return {kValid, numImplicitConversions, ASTType()};
 }
 
 /// Add explaination for why this candidate doesn't work to the specified
@@ -348,6 +355,8 @@ ParamBindArrayAttr DirectCallable::getCheckedBindings(
     LitSharedState &shared) const {
 
   // If there are no bindings, exit early.
+  // FIXME: This all or nothing thing is really weird and needs to be fixed when
+  // we start infering parameter bindings from arguments etc.
   if (bindings.empty())
     return ParamBindArrayAttr::get(signature.getContext(), {});
 
@@ -421,7 +430,7 @@ ParamBindArrayAttr DirectCallable::getCheckedBindings(
 }
 
 /// Generate a reference to the specified function, checking that any supplied
-/// parameters are correct and match expectations..
+/// parameters are correct and match expectations.
 SymbolConstantAttr
 DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
   if (fnDecls.size() != 1) {
