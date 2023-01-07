@@ -1538,7 +1538,6 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
   LitParserBase p(lexer);
   SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
 
-  ASTType type;
   // Parse the type if present.
   if (p.parseToken(LitToken::kw_alias,
                    "internal error: checked by stmt parser") ||
@@ -1546,47 +1545,59 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
                    "internal error: checked by stmt parser"))
     return failure();
 
+  ASTType type;
   if (p.consumeIf(LitToken::colon)) {
     if (parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
   }
 
-  // Parse the initializer if present.
-  ExprNode *initValue = nullptr;
-  if (p.consumeIf(LitToken::equal)) {
-    if (p.parseExpression(initValue, decl.getIndentation()))
-      return failure();
-
-    ASTDecl &parentDecl = *decl.getParentDecl();
-    ExprEmitter emitter(shared, parentDecl, /*builder*/ {},
-                        /*varDeclCursor*/ nullptr);
-
-    auto rhsValue =
-        emitter.emitExprMValue(initValue, "expected meta parameter value");
-    if (!rhsValue)
-      return failure();
-
-    // If we had a declared type, coerce the expression value to it.
-    // TODO(implicit conversions for parameters).
-    if (!type) {
-      // Infer the type since we lack a declared type (`var x = 42`)
-      type = rhsValue.getType();
-    } else if (!type.isEqualCanon(rhsValue.getType())) {
-      p.emitError(initValue->getLoc(), "initializer has type ")
-          << ASTType(rhsValue.getType()) << " but declared type is " << type;
-      return failure();
-    }
-
-    // Remember the value.
-    paramDeclOp.setValueAttr(rhsValue.get());
-  } else {
+  // Handle the case where there is no initializer.
+  if (!p.consumeIf(LitToken::equal)) {
     // If there was neither a type or initializer, reject the var.
     if (!type) {
       p.emitError(paramDeclOp.getLoc(),
                   "declaration must have either a type or an initializer");
       return failure();
     }
+
+    // Update the type of the alias we parsed.
+    paramDeclOp.setParamDecl(ParamDeclAttr::get(paramDeclOp.getName(), type));
+
+    rejectDecorators(decoratorExprs, decl, shared);
+    return success();
   }
+
+  // Parse the initializer if present.
+  ExprNode *initValue = nullptr;
+  if (p.parseExpression(initValue, decl.getIndentation()))
+    return failure();
+
+  ASTDecl &parentDecl = *decl.getParentDecl();
+  ExprEmitter emitter(shared, parentDecl, /*builder*/ {},
+                      /*varDeclCursor*/ nullptr);
+
+  auto rhsValue =
+      emitter.emitExprMValue(initValue, "expected meta parameter value");
+  if (!rhsValue)
+    return failure();
+
+  // If we had a declared type, coerce the expression value to it.
+  // TODO(implicit conversions for parameters).
+  if (!type) {
+    // Infer the type since we lack a declared type (`var x = 42`)
+    type = rhsValue.getType();
+  } else {
+    // Convert the initializer value to the declared type.
+    auto convertedVal = emitter.getAsExpectedType(rhsValue, initValue, type);
+    if (!convertedVal)
+      return failure();
+    assert(convertedVal.getIfMValue() &&
+           "converting an mvalue produced a non-mvalue?");
+    rhsValue = convertedVal.getIfMValue();
+  }
+
+  // Remember the value.
+  paramDeclOp.setValueAttr(rhsValue.get());
 
   // Regardless of whether we have a type of value initializer, update the type.
   paramDeclOp.setParamDecl(ParamDeclAttr::get(paramDeclOp.getName(), type));
