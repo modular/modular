@@ -536,6 +536,7 @@ struct ResultParams[a: Int -> Int, F32]:
 fn hasResultParam[a: __mlir_type.index -> __mlir_type.index]():
   return[a]
 
+# expected-note @+1 {{function declared here}}
 fn hasInputParam[a: __mlir_type.index]():
 
 fn useResultParams():
@@ -559,6 +560,8 @@ fn useResultParams():
   # expected-error @+1 {{calls with result parameters must be called directly}}
   _ = hasResultParam[1 -> b]
 
+  # expected-error @+1 {{invalid call to 'hasInputParam': callee expects 1 input parameter but 0 were provided}}
+  hasInputParam()
 
 # expected-note @+1 {{function declared here}}
 fn badReboundType[type: __mlir_type.`!kgen.dtype`,
