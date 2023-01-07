@@ -13,6 +13,9 @@
 // RUN: kgen %s -emit -func="nestedParametricStruct" -o %t.o
 // RUN: cat %t.h | FileCheck %s --check-prefixes=STRUCT
 
+// RUN: kgen %s -emit -func="litNoneKernel" -o %t.o
+// RUN: cat %t.h | FileCheck %s --check-prefixes=VOID
+
 kgen.func @someKernel(%arg1: f32, %arg2: index) -> f32 {
   kgen.return %arg1 : f32
 }
@@ -50,4 +53,13 @@ kgen.func @nestedParametricStruct(%a: !kgen.declref<@Bar>) {
 }
 // STRUCT: extern void nestedParametricStruct_c(float, double)
 
-kgen.export [@someKernel, @someBufferKernel, @someNDBufferKernel, @someMetaScalarKernel, @nestedParametricStruct]
+
+kgen.func @litNoneKernel() -> !kgen.list<i1[0]> {
+  %0 = kgen.param.constant: list<i1[0]> = <[]>
+  kgen.return %0 : !kgen.list<i1[0]>
+}
+
+// VOID: extern void litNoneKernel_c();
+
+kgen.export [@someKernel, @someBufferKernel, @someNDBufferKernel,
+             @someMetaScalarKernel, @nestedParametricStruct, @litNoneKernel]

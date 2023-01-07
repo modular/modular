@@ -125,7 +125,15 @@ static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
             return mlir::success();
           });
     }
-
+    // Check for !kgen.list<i1[0]> which the lowering of !lit.none and it
+    // corresponds to void.
+    if (auto listType = dyn_cast<ListType>(t)) {
+      auto emptyList = ListType::get(IntegerType::get(t.getContext(), 1), 0);
+      if (listType != emptyList)
+        return func.emitError("unsupported argument type: ") << t;
+      os << "void";
+      return success();
+    }
     if (!t.isa<IndexType, IntegerType, FloatType>())
       return func.emitError("unsupported argument type: ") << t;
     if (!t.isIndex() && !llvm::isPowerOf2_64(t.getIntOrFloatBitWidth()))
