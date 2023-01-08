@@ -177,3 +177,11 @@ lit.func @"my_evaluator(__mlir_type.!pop.pointer<(index) -> index>,__mlir_type.i
 // CHECK-LABEL: @"useEvaluator
 // CHECK-SAME: (!pop.pointer<(index) -> index>, index) -> index = @"my_evaluator{{.*}}
 lit.func @"useEvaluator(__mlir_type.index)"(%x: index) -> index attributes {isInterface}  evaluator (!pop.pointer<(index) -> index>, index) -> index = @"my_evaluator(__mlir_type.!pop.pointer<(index) -> index>,__mlir_type.index)"
+
+
+// CHECK-LABEL: kgen.generator @aliasFwdDecl()
+// CHECK-NEXT: kgen.return
+lit.func @aliasFwdDecl() {
+  lit.alias.fwd.decl "xyz" : index
+  kgen.return
+}
