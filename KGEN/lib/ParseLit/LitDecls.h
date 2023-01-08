@@ -27,6 +27,7 @@ class ParamDeclareOp;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
+class AliasForwardDeclOp;
 class ASTDecl;
 class FileModuleOp;
 class FuncOp;
@@ -127,11 +128,9 @@ private:
   LogicalResult resolveSignature(StructDeclOp op, LitLexer &lexer,
                                  ASTDecl &decl);
   ParseResult resolveBody(StructDeclOp op, LitLexer &lexer, ASTDecl &decl);
-
   LogicalResult resolveSignature(StructFieldOp op, LitLexer &lexer,
                                  ASTDecl &decl);
   ParseResult resolveBody(StructFieldOp op, LitLexer &lexer, ASTDecl &decl);
-
   LogicalResult resolveSignature(LetDeclOp op, LitLexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(LetDeclOp op, LitLexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(VarDeclOp op, LitLexer &lexer, ASTDecl &decl);
@@ -139,6 +138,8 @@ private:
   LogicalResult resolveSignature(ParamDeclareOp op, LitLexer &lexer,
                                  ASTDecl &decl);
   ParseResult resolveBody(ParamDeclareOp op, LitLexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(AliasForwardDeclOp op, LitLexer &lexer,
+                          ASTDecl &decl);
 
 private:
   /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.
