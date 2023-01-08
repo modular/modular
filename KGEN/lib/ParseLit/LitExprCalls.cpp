@@ -470,7 +470,7 @@ DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
   return funcOp.getBoundReference(newBindings);
 }
 
-/// Generate declarations for the result parameters and add them to
+/// Check declarations for the result parameters and add them to
 /// resultParamDecls.  This emits and error and returns failure if an error is
 /// detected.
 LogicalResult DirectCallable::getResultParamDecls(
@@ -483,29 +483,27 @@ LogicalResult DirectCallable::getResultParamDecls(
   if (resultParams.empty())
     return success();
 
-  // TODO: We currently generate declarations on the fly.  This won't
-  // effectively support non-lexical parameter result references etc, we should
-  // force an `alias x : Int` sort of declaraton and then allow calls to fulfill
-  // it.
-  // This will unblock progress until then though.
-
-  // FIXME: HACK HACK HACK: This will crash on some source code!!
-  // TODO(clattner): Rework this.
-  ExprEmitter &nodeEmitter = static_cast<ExprEmitter &>(emitter);
-
+  // Verify completion of forward declared alias declarations.  We know the
+  // decl exists, but we don't know if the type is compatible or it has been
+  // multiply defined.
+  //
   // TODO: We don't remap input parameters types into output parameter types.
   // We surely handle this wrong: `fn x[a: type -> a]():` for example.
-  DeclResolver &resolver = nodeEmitter.getDeclResolver();
-  for (auto [type, name] :
+  for (auto [type, declAndLoc] :
        llvm::zip(signature.getResultParamTypes(), resultParams)) {
-    // The name strings point into the buffer they came from.
-    SMLoc resultLoc = SMLoc::getFromPointer(name.data());
-    auto value = MValue(ParamDeclRefAttr::get(name, type));
+    auto forwardDecl = cast<AliasForwardDeclOp>(*declAndLoc.first);
 
-    // Add the declaration so name lookup will find it.
-    resolver.addFullyResolvedDecl(value, name, resultLoc,
-                                  &nodeEmitter.declScope);
-    resultParamDecls.push_back(ParamDeclAttr::get(name, type));
+    // Verify the types match.
+    // TODO: Move this to overload resolution.
+    if (!ASTType(forwardDecl.getType()).isEqualCanon(type)) {
+      auto diag =
+          emitter.emitError(declAndLoc.second, "result parameter returns type ")
+          << type << " but forward declaration is of type "
+          << ASTType(forwardDecl.getType());
+      diag.attachNote(forwardDecl.getLoc()) << "alias forward declared here";
+      return failure();
+    }
+    resultParamDecls.push_back(ParamDeclAttr::get(forwardDecl.getName(), type));
   }
   return success();
 }

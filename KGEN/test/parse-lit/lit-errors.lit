@@ -28,7 +28,6 @@ def bad_assignment1(a: Int, b: Int):
    # expected-error @+1 {{expected ')' in parenthesized expression}}
    a = (b += b)
 
-
 def elif_parse_error(a: Bool):
   if a:
     pass
@@ -555,22 +554,37 @@ fn useResultParams():
   # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter but 0 were provided}}
   hasResultParam[1]()
 
-  hasResultParam[1 -> b]()  # expected-note {{previous definition here}}
+  alias b: __mlir_type.index
+  hasResultParam[1 -> b]()  # expected-note {{previously defined here}}
 
-  # expected-error @+1 {{invalid redefinition of 'b'}}
+  # expected-error @+1 {{'b' alias was defined by another result}}
   hasResultParam[1 -> b]()
 
+  alias c: __mlir_type.index
+  alias d: __mlir_type.index
   # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter but 2 were provided}}
-  hasResultParam[1 -> b, c]()
+  hasResultParam[1 -> c, d]()
+
+  # expected-error @+1 {{unable to find forward-declared alias named 'e'}}
+  hasResultParam[1 -> e]()
+
+  alias f: __mlir_type.f32 # expected-note {{alias forward declared here}}
+  # expected-error @+1 {{result parameter returns type '__mlir_type.index' but forward declaration is of type '__mlir_type.f32'}}
+  hasResultParam[1 -> f]()
+
+  var varNotAlias : __mlir_type.f32 # expected-note {{'varNotAlias' declared here}}
+  # expected-error @+1 {{'varNotAlias' is not a forward declared alias}}
+  hasResultParam[1 -> varNotAlias]()
+
+  alias g: __mlir_type.index
+  # expected-error @+1 {{calls with result parameters must be called directly}}
+  _ = hasResultParam[1 -> g]
 
   # expected-error @+1 {{calls with result parameters must be called directly}}
   _ = hasResultParam
 
   # expected-error @+1 {{cannot use parameterized function of type '__mlir_type.!kgen.signature<[a : index], [],  () -> !lit.none>' without binding all its parameters}}
   _ = hasInputParam
-
-  # expected-error @+1 {{calls with result parameters must be called directly}}
-  _ = hasResultParam[1 -> b]
 
   # expected-error @+1 {{invalid call to 'hasInputParam': callee expects 1 input parameter but 0 were provided}}
   hasInputParam()

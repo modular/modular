@@ -122,8 +122,9 @@ struct DirectCallable {
   /// Any bound input parameters.
   InputParamBindings inputParamBindings;
 
-  /// This is a list of names to be bound to output parameters.
-  SmallVector<StringRef> resultParams;
+  /// This is a list of result parameters that are to be bound to the returned
+  /// parameters from the call.
+  std::vector<std::pair<ASTDecl *, SMLoc>> resultParams;
 
   /// When this is set to true, implicit conversions are not considered for
   /// argument and parameter values.
@@ -147,7 +148,7 @@ struct DirectCallable {
   /// returning null.
   SymbolConstantAttr getBoundConstantAttr(LitSharedState &shared) const;
 
-  /// Generate declarations for the result parameters and add them to
+  /// Check declarations for the result parameters and add them to
   /// resultParamDecls.  This emits and error and returns failure if an error is
   /// detected.
   LogicalResult
