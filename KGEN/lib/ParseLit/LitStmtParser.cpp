@@ -391,7 +391,9 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
 
   // We don't support formation of tuples / multiple result values yet.
   if (operandValues.size() > 1) {
-    emitError(loc, "tuple return not supported yet");
+    emitError(loc, "tuple return not supported yet")
+        << LitSourceRange(operandExprs.front()->getRangeStart(),
+                          operandExprs.back()->getRangeEnd());
     return success();
   }
 
@@ -415,7 +417,8 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     size_t numResultParams = decl.getResultParamTypes().size();
     if (!resultParamList || resultParamList->exprs.size() != numResultParams) {
       emitError(resultParamList->getLoc(), "expected ")
-          << numResultParams << " result parameter" << plural(numResultParams);
+          << numResultParams << " result parameter" << plural(numResultParams)
+          << resultParams->getRange();
       return success();
     }
     for (ExprNode *paramExpr : resultParamList->exprs) {
@@ -456,7 +459,8 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     if (!resultParamValues.empty()) {
       emitError(resultParams->getLoc(),
                 "FIXME(Issue#6449): don't support result parameters in nested "
-                "returns yet");
+                "returns yet")
+          << resultParams->getRange();
       return success();
     }
 
@@ -928,7 +932,8 @@ ParseResult LitStmtParser::parseLetVarStmt(LitLexerCursor startCursor,
   // If we're in a struct, then this is a field declaration.
   Operation *declOp;
   if (isa<StructDeclOp>(containingDecl)) {
-    // TODO: implement support for constant struct fields.
+    // TODO: implement support for constant struct fields when we have a
+    // stronger init model with Definitive Initialization.
     if (isLet)
       emitError(loc, "'let' fields in structs are not supported yet");
     declOp = builder.create<StructFieldOp>(loc, name, unresolvedType);

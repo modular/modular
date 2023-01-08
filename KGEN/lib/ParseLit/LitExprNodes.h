@@ -131,8 +131,11 @@ struct AttributeRefNode final : public ExprNode {
     return node->kind == kAttributeRef;
   }
   SMLoc getLoc() const override { return dotLoc; }
+  SMLoc getAttributeNameLoc() const {
+    return getSMLocFromStringRef(attrSpelling);
+  }
   LitSourceRange getRange() const override {
-    return {base->getRange().getStart(), getSMLocFromStringRef(attrSpelling)};
+    return {base->getRangeStart(), getAttributeNameLoc()};
   }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
   CallableValue emitCallable(ExprEmitter &emitter,
@@ -153,8 +156,9 @@ struct CallNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kCall; }
   SMLoc getLoc() const override { return lparenLoc; }
   LitSourceRange getRange() const override {
-    return {callee->getRange().getStart(), rparenLoc};
+    return {callee->getRangeStart(), rparenLoc};
   }
+  LitSourceRange getParenRange() const { return {lparenLoc, rparenLoc}; }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
 
@@ -174,8 +178,11 @@ struct SubscriptNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kSubscript; }
   SMLoc getLoc() const override { return lsquareLoc; }
   LitSourceRange getRange() const override {
-    return {base->getRange().getStart(), rsquareLoc};
+    return {base->getRangeStart(), rsquareLoc};
   }
+  /// Return a source range from '[' to ']'.
+  LitSourceRange getIndexRange() const { return {lsquareLoc, rsquareLoc}; }
+
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
   CallableValue emitCallable(ExprEmitter &emitter,
                              ASTType contextualType) const override;
@@ -230,13 +237,13 @@ struct SliceNode final : public ExprNode {
   SMLoc getLoc() const override { return colon1Loc; }
 
   LitSourceRange getRange() const override {
-    auto startLoc = lower ? lower->getRange().getStart() : colon1Loc;
+    auto startLoc = lower ? lower->getRangeStart() : colon1Loc;
     if (stride)
-      return {startLoc, stride->getRange().getStart()};
+      return {startLoc, stride->getRangeEnd()};
     if (colon2Loc.isValid())
       return {startLoc, colon2Loc};
     if (upper)
-      return {startLoc, upper->getRange().getStart()};
+      return {startLoc, upper->getRangeEnd()};
     return {startLoc, colon1Loc};
   }
 
@@ -310,7 +317,7 @@ struct IfElseOpNode final : public ExprNode {
 
   SMLoc getLoc() const override { return ifLoc; }
   LitSourceRange getRange() const override {
-    return {trueExpr->getRange().getStart(), falseExpr->getRange().getEnd()};
+    return {trueExpr->getRangeStart(), falseExpr->getRangeEnd()};
   }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
@@ -334,7 +341,7 @@ struct BinOpNode final : public ExprNode {
 
   SMLoc getLoc() const override { return opLoc; }
   LitSourceRange getRange() const override {
-    return {lhs->getRange().getStart(), rhs->getRange().getEnd()};
+    return {lhs->getRangeStart(), rhs->getRangeEnd()};
   }
 
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
@@ -355,7 +362,7 @@ struct UnaryOpNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return opLoc; }
   LitSourceRange getRange() const override {
-    return {opLoc, subExpr->getRange().getEnd()};
+    return {opLoc, subExpr->getRangeEnd()};
   }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
