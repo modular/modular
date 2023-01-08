@@ -142,13 +142,14 @@ void LIT::appendText(size_t number, LitDiagnostic &diag) {
   diag.addText(Twine(number));
 }
 
-void LIT::appendText(StringAttr text, LitDiagnostic &diag) {
-  diag.addText(Twine("\""));
-  diag.addText(text.getValue());
-  diag.addText(Twine("\""));
-}
-
 void LIT::appendText(Attribute attr, LitDiagnostic &diag) {
+  if (auto strAttr = dyn_cast<StringAttr>(attr)) {
+    diag.addText(Twine("'"));
+    diag.addText(strAttr.getValue());
+    diag.addText(Twine("'"));
+    return;
+  }
+
   SmallString<128> str;
   llvm::raw_svector_ostream os(str);
   attr.print(os);

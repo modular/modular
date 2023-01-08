@@ -42,6 +42,6 @@ __mlir_attr.`#index<cmp_predicate eq>`
 # MLIR Symbol Redefinition crash
 
 struct Foo: # expected-note {{previous definition here}}
-struct Foo: # expected-error {{invalid redefinition of "Foo"}}
+struct Foo: # expected-error {{invalid redefinition of 'Foo'}}
 
 fn x(a: Foo):

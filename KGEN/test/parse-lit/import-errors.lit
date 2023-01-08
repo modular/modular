@@ -63,7 +63,7 @@ from imported_module import *
 fn test_import():
   imported_fn()
 
-  # expected-error @+1 {{use of unknown declaration "_ignored_wildcard_fn"}}
+  # expected-error @+1 {{use of unknown declaration '_ignored_wildcard_fn'}}
   _ignored_wildcard_fn()
 
 # expected-error @+1 {{module 'imported_module' does not contain 'there_cant_be_a_decl_named_this'}}
@@ -76,5 +76,5 @@ from there_cant_be_a_module_named_this import there_cant_be_a_decl_named_this
 fn already_defined_fn():
   return
 
-# expected-error @+1 {{invalid redefinition of "already_defined_fn"}}
+# expected-error @+1 {{invalid redefinition of 'already_defined_fn'}}
 from imported_module import imported_fn as already_defined_fn

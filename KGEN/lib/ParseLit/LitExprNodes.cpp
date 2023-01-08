@@ -275,7 +275,7 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
         dyn_cast_or_null<LIT::FuncOp>(emitter.declScope.getIfOperation());
     if (!funcContext || !funcContext.getIsDef()) {
       auto diag = emitter.emitError(node->getLoc())
-                  << "use of unknown declaration \"" << memberName << '"';
+                  << "use of unknown declaration '" << memberName << "'";
       if (funcContext)
         diag << ", `fn` declarations require explicit variable declarations";
       return {};
@@ -297,7 +297,7 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
       if (auto structDecl = dyn_cast<StructDeclOp>(container))
         diag << structDecl.getName() << " has no '" << memberName << "' member";
       else
-        diag << "use of unknown declaration \"" << memberName << '"';
+        diag << "use of unknown declaration '" << memberName << "'";
     }
     return {};
   }
