@@ -18,12 +18,15 @@
 
 namespace llvm {
 class SourceMgr;
+class SMFixIt;
 } // namespace llvm
 
 namespace M::KGEN::LIT {
+using llvm::SMFixIt;
 using llvm::SMLoc;
 using llvm::SourceMgr;
 class LitDiagnostic;
+class LitSourceRange;
 
 class LitDiags {
 public:
@@ -49,21 +52,30 @@ public:
   /// FileLineColLoc.
   Location translateLocation(llvm::SMLoc loc) const;
 
-  /// This is true if we should use MLIR for diagnostics (e.g. to enable
-  /// -verify-diagnostics and other MLIR testing features), but we prefer
-  /// llvm::SourceMgr for better QoI: it supports source ranges and FixIt hints.
-  const bool useMLIRDiagnostics;
-
   /// This is a helper object that allows turning Location objects into SMLoc's.
   class SourceMgrLocationMapper;
   std::unique_ptr<SourceMgrLocationMapper> sourceMgrMapper;
 
+  /// Specify a function used to adjust the end-point of a token given a pointer
+  /// to the start of the token.
+  void setTokenEndPointAdjustmentFn(std::function<void(SMLoc &)> fn) {
+    tokenEndPointAdjustmentFn = std::move(fn);
+  }
+
 private:
+  friend class LitDiagnostic;
   LitDiags(const LitDiags &) = delete;
+
+  std::function<void(SMLoc &)> tokenEndPointAdjustmentFn;
 
   /// This is the StringAttr for the main buffer identifier.  It is type erased
   /// to void* to reduce header polution.
   const void *const bufferNameIdentifier;
+
+  /// This is true if we should use MLIR for diagnostics (e.g. to enable
+  /// -verify-diagnostics and other MLIR testing features), but we prefer
+  /// llvm::SourceMgr for better QoI: it supports source ranges and FixIt hints.
+  const bool useMLIRDiagnostics;
 
   /// This is set to true if an error occurred at any point processing the
   /// file.
@@ -97,21 +109,23 @@ public:
   LitDiagnostic &attachNote(Location loc) &;
 
   // Insertion operations for various things that contribute to the current
-  // messages's text.  These are implemented with appendText methods.
+  // messages.  These are implemented with addToDiagnostic methods.
   template <typename Arg>
   LitDiagnostic &operator<<(Arg &&value) & {
-    appendText(std::forward<Arg>(value), *this);
+    addToDiagnostic(std::forward<Arg>(value), *this);
     return *this;
   }
   template <typename Arg>
   LitDiagnostic operator<<(Arg value) && {
-    appendText(std::forward<Arg>(value), *this);
+    addToDiagnostic(std::forward<Arg>(value), *this);
     return std::move(*this);
   }
 
-  /// This method can be used by appendText methods to add things to the
+  /// This method can be used by addToDiagnostic impls to add things to the
   /// diagnostic.
   void addText(const Twine &text);
+  void addSourceRange(LitSourceRange range);
+  void addFixIt(const SMFixIt &range);
 
 private:
   void emitMLIRDiagnostic();
@@ -131,11 +145,51 @@ private:
   LitDiags *diags;
 };
 
-// Allow inserting string-like things.
-void appendText(const Twine &text, LitDiagnostic &diag);
-void appendText(char text, LitDiagnostic &diag);
-void appendText(size_t number, LitDiagnostic &diag);
-void appendText(Attribute attr, LitDiagnostic &diag);
+/// Represents a range in source code.  The default use-case for this class is
+/// to represent source ranges in terms of lit token positions beginnings, where
+/// the start/end of the range indicate the beginning of the tokens included in
+/// the range.  This makes it easier to construct and work with.
+///
+/// For example, in the expression `yoda + 492`, a range with the start/end both
+/// pointing to the 'y', would indicate the full identifier "yoda".  Similarly,
+/// a range pointing to the 'y' and the '4' would cover the entire span from the
+/// start of y through the end of 2.
+///
+/// There are some narrow cases where you may want to diagnose within a token,
+/// e.g. complaining about a format character in a string literal.  In those
+/// cases, you may use a 'byte-level' string, which uses a half-open range and
+/// is not extended to include the end of the token.
+class LitSourceRange {
+public:
+  /// Build a null range.
+  LitSourceRange() = default;
+
+  /// Build a normal token-start range.
+  LitSourceRange(SMLoc start, SMLoc end);
+
+  /// Build a byte-level range.
+  static LitSourceRange getByteLevel(SMLoc start, SMLoc end);
+
+  SMLoc getStart() const;
+  SMLoc getEnd() const;
+  bool isValid() const { return start != nullptr; }
+  bool isByteLevel() const { return byteLevel; }
+
+private:
+  const char *start = nullptr, *end = nullptr;
+  bool byteLevel = false;
+};
+
+// These methods enable adding common types to the current diagnostic.
+void addToDiagnostic(const Twine &text, LitDiagnostic &diag);
+void addToDiagnostic(char text, LitDiagnostic &diag);
+void addToDiagnostic(size_t number, LitDiagnostic &diag);
+void addToDiagnostic(Attribute attr, LitDiagnostic &diag);
+
+/// This adds a source range highlight.
+void addToDiagnostic(LitSourceRange range, LitDiagnostic &diag);
+/// This adds a fixit hint.
+void addToDiagnostic(SMFixIt fixIt, LitDiagnostic &diag);
 
 } // namespace M::KGEN::LIT
 

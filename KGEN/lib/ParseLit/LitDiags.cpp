@@ -11,9 +11,33 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/SourceMgr.h"
 
+using llvm::SMRange;
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
+
+//===----------------------------------------------------------------------===//
+// LitSourceRange implementation
+//===----------------------------------------------------------------------===//
+
+LitSourceRange::LitSourceRange(SMLoc start, SMLoc end)
+    : start(start.getPointer()), end(end.getPointer()) {
+  assert(start.isValid() == end.isValid() &&
+         "Start and End should either both be valid or both be invalid!");
+}
+
+LitSourceRange LitSourceRange::getByteLevel(SMLoc start, SMLoc end) {
+  auto result = LitSourceRange(start, end);
+  result.byteLevel = true;
+  return result;
+}
+
+SMLoc LitSourceRange::getStart() const { return SMLoc::getFromPointer(start); }
+SMLoc LitSourceRange::getEnd() const { return SMLoc::getFromPointer(end); }
+
+//===----------------------------------------------------------------------===//
+// SourceMgrLocationMapper implementation
+//===----------------------------------------------------------------------===//
 
 /// This is a helper that allows us to translate mlir::Location objects to
 /// llvm::SMLoc objects.
@@ -105,9 +129,8 @@ static const void *makeMainBufferNameIdentifier(const SourceMgr &sourceMgr,
 LitDiags::LitDiags(SourceMgr &sourceMgr, MLIRContext *context,
                    bool useMLIRDiagnostics)
     : sourceMgr(sourceMgr), context(context),
-
-      useMLIRDiagnostics(useMLIRDiagnostics),
-      bufferNameIdentifier(makeMainBufferNameIdentifier(sourceMgr, context)) {
+      bufferNameIdentifier(makeMainBufferNameIdentifier(sourceMgr, context)),
+      useMLIRDiagnostics(useMLIRDiagnostics) {
 
   if (!useMLIRDiagnostics)
     sourceMgrMapper = std::make_unique<SourceMgrLocationMapper>();
@@ -158,7 +181,8 @@ Location LitDiags::translateLocation(SMLoc loc) const {
 struct LitDiagnostic::Message {
   Location loc;
   std::string text;
-  // TODO: ranges and fixits.
+  std::vector<SMRange> ranges;
+  std::vector<SMFixIt> fixIts;
 };
 
 LitDiagnostic::LitDiagnostic(LitDiagnostic &&other)
@@ -168,7 +192,7 @@ LitDiagnostic::LitDiagnostic(LitDiagnostic &&other)
 }
 
 LitDiagnostic::LitDiagnostic(Location loc, LitDiags &diags) : diags(&diags) {
-  messages.push_back({loc, ""});
+  messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{}});
 }
 
 LitDiagnostic::~LitDiagnostic() {
@@ -209,8 +233,8 @@ void LitDiagnostic::emitSourceMgrDiagnostic() {
     if (!loc.isValid())
       loc = sourceMgr.FindLocForLineAndColumn(sourceMgr.getMainFileID(), 0, 0);
 
-    sourceMgr.PrintMessage(loc, kind, message.text, /*todo: ranges*/ {},
-                           /*todo: fixits*/ {});
+    sourceMgr.PrintMessage(loc, kind, message.text, message.ranges,
+                           message.fixIts);
     // Subsequent diagnostics are all notes.
     kind = SourceMgr::DK_Note;
   }
@@ -219,11 +243,11 @@ void LitDiagnostic::emitSourceMgrDiagnostic() {
 /// Add a note to this diagnostic at the specified location, and change the
 /// emission point to start filling it in.
 LitDiagnostic LitDiagnostic::attachNote(Location loc) && {
-  messages.push_back({loc, ""});
+  messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{}});
   return std::move(*this);
 }
 LitDiagnostic &LitDiagnostic::attachNote(Location loc) & {
-  messages.push_back({loc, ""});
+  messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{}});
   return *this;
 }
 
@@ -231,20 +255,41 @@ void LitDiagnostic::addText(const Twine &text) {
   messages.back().text += text.str();
 }
 
+void LitDiagnostic::addSourceRange(LitSourceRange range) {
+  SMRange byteLevelRange{range.getStart(), range.getEnd()};
+
+  // LitSourceRange typically represents the end of range in terms of the start
+  // of the end location.  Convert to a SMRange with a byte-level end position
+  // if needed.
+  if (!range.isByteLevel() && diags && !diags->useMLIRDiagnostics &&
+      diags->tokenEndPointAdjustmentFn)
+    diags->tokenEndPointAdjustmentFn(byteLevelRange.End);
+
+  messages.back().ranges.push_back(byteLevelRange);
+}
+
+void LitDiagnostic::addFixIt(const SMFixIt &fixIt) {
+  messages.back().fixIts.push_back(fixIt);
+}
+
+//===----------------------------------------------------------------------===//
+// addToDiagnostic helpers
+//===----------------------------------------------------------------------===//
+
 // Allow inserting string-like things.
-void LIT::appendText(const Twine &text, LitDiagnostic &diag) {
+void LIT::addToDiagnostic(const Twine &text, LitDiagnostic &diag) {
   diag.addText(text);
 }
 
-void LIT::appendText(char text, LitDiagnostic &diag) {
+void LIT::addToDiagnostic(char text, LitDiagnostic &diag) {
   diag.addText(Twine(text));
 }
 
-void LIT::appendText(size_t number, LitDiagnostic &diag) {
+void LIT::addToDiagnostic(size_t number, LitDiagnostic &diag) {
   diag.addText(Twine(number));
 }
 
-void LIT::appendText(Attribute attr, LitDiagnostic &diag) {
+void LIT::addToDiagnostic(Attribute attr, LitDiagnostic &diag) {
   if (auto strAttr = dyn_cast<StringAttr>(attr)) {
     diag.addText(Twine("'"));
     diag.addText(strAttr.getValue());
@@ -256,4 +301,14 @@ void LIT::appendText(Attribute attr, LitDiagnostic &diag) {
   llvm::raw_svector_ostream os(str);
   attr.print(os);
   diag.addText(os.str());
+}
+
+/// This adds a source range highlight.
+void LIT::addToDiagnostic(LitSourceRange range, LitDiagnostic &diag) {
+  diag.addSourceRange(range);
+}
+
+/// This adds a fixit hint.
+void LIT::addToDiagnostic(SMFixIt fixIt, LitDiagnostic &diag) {
+  diag.addFixIt(fixIt);
 }

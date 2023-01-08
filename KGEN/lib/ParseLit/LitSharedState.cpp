@@ -32,6 +32,8 @@ using namespace M::KGEN::LIT;
 using llvm::SMLoc;
 using llvm::SourceMgr;
 
+static void adjustTokenEndPoint(LitSharedState &shared, SMLoc &loc);
+
 class LitSharedState::Impl {
 public:
   SymbolTableCollection symbolTables;
@@ -53,8 +55,13 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
                                bool useMLIRDiagnostics)
     : diags(sourceMgr, context, useMLIRDiagnostics), options(options),
       declResolver(std::make_unique<DeclResolver>(*this)),
-
       impl(std::make_unique<Impl>()) {
+
+  // Tell the diagnostics machinery how to find the end of a token lazily when
+  // it needs it.
+  diags.setTokenEndPointAdjustmentFn(
+      [=](SMLoc &loc) { adjustTokenEndPoint(*this, loc); });
+
   if (options.getDebugInfoLevelForInput()) {
     diBuilder = std::make_unique<DebugInfo::DIBuilder>(context);
 
@@ -340,4 +347,10 @@ ASTDecl &LitSharedState::importModule(StringRef moduleName, llvm::SMLoc loc) {
 
   impl->importedModules.try_emplace(mangledName, moduleDecl);
   return *moduleDecl;
+}
+
+/// Given a pointer to the start of a token, find the end of it.
+static void adjustTokenEndPoint(LitSharedState &shared, SMLoc &loc) {
+  size_t tokenSize = LitLexer::getTokenLength(shared, loc);
+  loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
 }

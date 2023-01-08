@@ -131,6 +131,10 @@ public:
   /// buffer if there is none.
   SMLoc findEndOfPreviousLine(SMLoc loc) const;
 
+  /// Given a valid pointer into a source buffer for some token, return the
+  /// length of the token by re-lex'ing it.  This is efficient.
+  static size_t getTokenLength(LitSharedState &sharedState, SMLoc loc);
+
 private:
   LitToken lexTokenImpl();
 
@@ -151,6 +155,8 @@ private:
   void skipComment();
 
 private:
+  LitLexer(LitSharedState &shared, StringRef curBuffer, const char *curPtr);
+
   StringRef curBuffer;
   const char *curPtr;
 

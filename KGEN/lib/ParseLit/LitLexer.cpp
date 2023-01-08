@@ -512,10 +512,9 @@ done:
 /// - Python uses the following more restrictive productions, which
 ///   disallows `1__9_` for example:
 ///   decinteger   ::=  nonzerodigit (["_"] digit)* | "0"+ (["_"] "0")*
-//    same thing for  bininteger, octinteger and hexinteger
+///   same thing for  bininteger, octinteger and hexinteger
 /// - Python warns if the numeric literal is immediately followed by
-//    other keyword or identifier.
-
+///   other keyword or identifier.
 LitToken LitLexer::lexInteger(const char *tokStart, ssize_t indentation) {
   assert(llvm::isDigit(curPtr[-1]));
 
@@ -801,4 +800,27 @@ SMLoc LitLexer::findEndOfPreviousLine(SMLoc loc) const {
     // Otherwise, drop the newline and anything after it and try again.
     buffer = buffer.take_front(nextNewLine);
   }
+}
+
+LitLexer::LitLexer(LitSharedState &shared, StringRef curBuffer,
+                   const char *curPtr)
+    : LitSharedStateUser(shared), curBuffer(curBuffer), curPtr(curPtr),
+      curToken(lexTokenImpl()) {}
+
+/// Given a valid pointer into a source buffer for some token, return the
+/// length of the token by re-lex'ing it.  This is efficient.
+size_t LitLexer::getTokenLength(LitSharedState &sharedState, SMLoc loc) {
+  // Because we know the pointer is to a valid place in a source buffer, and
+  // because we know that all source buffers are NUL terminated, we know that
+  // the end of buffer check isn't needed.  This allows us to form a lexer
+  // without having to find the MemoryBuffer it came from, saving some expense
+  // in diagnostic emission.
+  const char *curPtr = loc.getPointer();
+
+  // If the byte is NUL, it is an invalid token and might be end of buffer.
+  if (*curPtr == '\0')
+    return 0;
+
+  LitLexer lexer(sharedState, StringRef(curPtr, ~0ULL), curPtr);
+  return lexer.getToken().getSpelling().size();
 }
