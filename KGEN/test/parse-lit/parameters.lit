@@ -215,18 +215,24 @@ fn useResultParams(i: Int):
   # CHECK: kgen.call @"no_result_param()"<a = 42>()
   no_result_param[42]()
 
+  # CHECK: lit.alias.fwd.decl "xyz" : index
+  alias xyz : __mlir_type.index
+
+  # Normal result and multi parameter results.  This forward references xyz
+  # CHECK: [[TMP:%.*]] = kgen.call @"idx_result_params()"<a = mul(xyz, 2) -> a, b>() : () -> !kgen.declref<@"$Int"::@Int>
+  # CHECK-NEXT: kgen.call @"$Int"::@Int::@"__mul__($Int::Int,$Int::Int)"([[TMP]], %i)
+  alias a : __mlir_type.index
+  alias b : __mlir_type.index
+  _ = idx_result_params[xyz*2 -> a, b]() * i
+
   # CHECK: kgen.call @"search3()"<a = 1, b = 2, c = 3 -> xyz>()
   search3[1,2,3-> xyz]()
 
   # CHECK: kgen.call @"no_result_param()"<a = add(xyz, 1)>()
   no_result_param[xyz+1]()
 
-  # Normal result and multi parameter results.
-  # CHECK: [[TMP:%.*]] = kgen.call @"idx_result_params()"<a = mul(xyz, 2) -> a, b>() : () -> !kgen.declref<@"$Int"::@Int>
-  # CHECK-NEXT: kgen.call @"$Int"::@Int::@"__mul__($Int::Int,$Int::Int)"([[TMP]], %i)
-  _ = idx_result_params[xyz*2 -> a, b]() * i
-
   # Function call with only a result parameter.
+  alias c : __mlir_type.index
   # CHECK: kgen.call @"just_result_params()"<() -> c>()
   just_result_params[() -> c]()
 

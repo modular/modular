@@ -321,6 +321,10 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
   if (auto param = dyn_cast<ParamDeclareOp>(decl))
     return {{MValue(ParamDeclRefAttr::get(param.getName(), param.getType())),
              node}};
+  // Use of forward references.
+  if (auto param = dyn_cast<AliasForwardDeclOp>(decl))
+    return {{MValue(ParamDeclRefAttr::get(param.getName(), param.getType())),
+             node}};
 
   // RValue's and LValues always resolve to their known value.
   if (auto rvalue = decl.getIfRValue())
@@ -974,7 +978,46 @@ CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter,
                         "expected identifier for parameter result");
       return {};
     }
-    subValue.direct->resultParams.push_back(drn->spelling);
+
+    // Lookup the name.  We must find a forward declared alias that isn't
+    // already completed.
+    auto result = emitter.shared.lookupAndResolveDecl(
+        drn->spelling, drn->getLoc(), emitter.declScope);
+
+    // Reject the code if nothing was found.
+    ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();
+    if (resultDecls.empty()) {
+      if (result.isFailure())
+        emitter.emitError(drn->getLoc(),
+                          "unable to find forward-declared alias named '")
+            << drn->spelling << "'";
+      return {};
+    }
+
+    // Reject non-alias results.
+    auto aliasDecl = dyn_cast<AliasForwardDeclOp>(*resultDecls[0]);
+    if (!aliasDecl || resultDecls.size() > 1) {
+      auto diag = emitter.emitError(drn->getLoc(), "'")
+                  << drn->spelling << "' is not a forward declared alias";
+      for (auto *decl : resultDecls)
+        diag.attachNote(emitter.translateLocation(decl->getLoc()))
+            << "'" << drn->spelling << "' declared here";
+      return {};
+    }
+
+    // Verify the decl isn't already defined.
+    if (aliasDecl.getResultParamLoc().has_value()) {
+      auto diag = emitter.emitError(drn->getLoc(), "'")
+                  << drn->spelling << "' alias was defined by another result";
+      diag.attachNote(*aliasDecl.getResultParamLoc())
+          << "previously defined here";
+      return {};
+    }
+
+    // Set the location for this definition so we can know it was defined
+    // correctly, and diagnose subsequent attempts to redefine it.
+    aliasDecl.setResultParamLocAttr(emitter.translateLocation(drn->getLoc()));
+    subValue.direct->resultParams.push_back({resultDecls[0], drn->getLoc()});
   }
 
   return subValue;
