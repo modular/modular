@@ -15,6 +15,7 @@
 #define LITDIAGS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include <functional>
 
 namespace llvm {
 class SourceMgr;
