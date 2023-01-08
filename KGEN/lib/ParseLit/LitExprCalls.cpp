@@ -301,9 +301,10 @@ void OverloadFitness::diagnose(SignatureType signature,
   }
   case kParamWrongType: {
     auto decl = signature.getInputParams()[payload];
-    auto valueType = callable.inputParamBindings.bindings[payload].getType();
+    auto binding = callable.inputParamBindings.bindings[payload];
     diag << "callee parameter " << decl.getName() << " has " << ASTType(type)
-         << " type, but value has type " << ASTType(valueType);
+         << " type, but value has type " << ASTType(binding.getType())
+         << binding.expr->getRange();
     return;
   }
   case kResultParamCount:
@@ -320,17 +321,20 @@ void OverloadFitness::diagnose(SignatureType signature,
   case kArgNotLValue:
     if (isMethodCall && payload == 0) {
       diag << "invalid use of mutating method on rvalue of type "
-           << ASTType(type);
+           << ASTType(type) << operands[0].expr->getRange();
       return;
     }
-    diag << "operand must be mutable in order to pass as a by-ref argument";
+    diag << "argument #" << payload
+         << " must be mutable in order to pass as a by-ref argument"
+         << operands[0].expr->getRange();
     return;
   case kArgWrongLVType:
     diag << "l-value of type " << operands[payload].ir.getRValueType()
          << " cannot be converted to reference to expected type "
          // TODO(QoI): Types are not attributes.  We are printing this as an
          // attr... not a sugared type.
-         << cast<POP::PointerType>(Type(type)).getElementType();
+         << cast<POP::PointerType>(Type(type)).getElementType()
+         << operands[payload].expr->getRange();
     return;
 
   case kArgWrongType:
@@ -341,11 +345,13 @@ void OverloadFitness::diagnose(SignatureType signature,
       assert(payload != 0 && "TODO: unexpected self mismatch");
       diag << "in method argument #" << payload - 1 << ", value of type "
            << operands[payload].ir.getRValueType()
-           << " cannot be converted to expected type " << type;
+           << " cannot be converted to expected type " << type
+           << operands[payload].expr->getRange();
     } else {
       diag << "in argument #" << payload << ", value of type "
            << operands[payload].ir.getRValueType()
-           << " cannot be converted to expected type " << type;
+           << " cannot be converted to expected type " << type
+           << operands[payload].expr->getRange();
     }
     break;
   }

@@ -68,7 +68,7 @@ public:
         return cast<TypedAttr>(attr);
       return {};
     }
-    Type getType() const {
+    ASTType getType() const {
       if (auto attr = getValue())
         return attr.getType();
       return cast<ParamBindAttr>(bindingOrValue).getType();
