@@ -275,7 +275,7 @@ def testLValuesRvalues():
   LValuesRvalues().normalMethod()
   LValuesRvalues().mutatingMethod()  # expected-error {{invalid use of mutating method on rvalue of type 'LValuesRvalues'}}
 
-  # expected-error @+1 {{operand must be mutable in order to pass as a by-ref argument}}
+  # expected-error @+1 {{argument #1 must be mutable in order to pass as a by-ref argument}}
   LValuesRvalues().takesByRef(LValuesRvalues())
 
   # We can implicitly declare things on the LHS but not on the RHS.
@@ -456,7 +456,7 @@ fn overloadIntF32(a: Int, b: Int):
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: callee expects 2 arguments}}
-# expected-note @below {{candidate not viable: operand must be mutable in order to pass as a by-ref argument}}
+# expected-note @below {{argument #1 must be mutable in order to pass as a by-ref argument}}
 fn overloadIntF32(a: Int, b&: F32):
 
 struct TestOverloading:

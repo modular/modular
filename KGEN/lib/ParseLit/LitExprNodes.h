@@ -16,6 +16,7 @@
 #ifndef LIT_EXPR_NODES_H
 #define LIT_EXPR_NODES_H
 
+#include "LitDiags.h"
 #include "LitExprNode.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
@@ -41,7 +42,7 @@ struct IntLiteralNode final : public ExprNode {
     return node->kind == kIntLiteral;
   }
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
-  llvm::SMRange getRange() const override { return {getLoc(), getLoc()}; }
+  LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
 
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
@@ -56,7 +57,7 @@ struct FloatLiteralNode final : public ExprNode {
     return node->kind == kFloatLiteral;
   }
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
-  llvm::SMRange getRange() const override { return {getLoc(), getLoc()}; }
+  LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
 
@@ -72,7 +73,7 @@ struct BoolLiteralNode final : public ExprNode {
   }
 
   SMLoc getLoc() const override { return loc; }
-  llvm::SMRange getRange() const override { return {getLoc(), getLoc()}; }
+  LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
 
@@ -86,7 +87,7 @@ struct StringLiteralNode final : public ExprNode {
     return node->kind == kStringLiteral;
   }
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
-  llvm::SMRange getRange() const override { return {getLoc(), getLoc()}; }
+  LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
 
@@ -99,7 +100,7 @@ struct NoneLiteralNode final : public ExprNode {
     return node->kind == kNoneLiteral;
   }
   SMLoc getLoc() const override { return loc; }
-  llvm::SMRange getRange() const override { return {getLoc(), getLoc()}; }
+  LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
 
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
@@ -111,7 +112,7 @@ struct DeclRefNode final : public ExprNode {
 
   static bool classof(const ExprNode *node) { return node->kind == kDeclRef; }
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
-  llvm::SMRange getRange() const override { return {getLoc(), getLoc()}; }
+  LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
   CallableValue emitCallable(ExprEmitter &emitter,
                              ASTType contextualType) const override;
@@ -130,8 +131,8 @@ struct AttributeRefNode final : public ExprNode {
     return node->kind == kAttributeRef;
   }
   SMLoc getLoc() const override { return dotLoc; }
-  llvm::SMRange getRange() const override {
-    return {base->getRange().Start, getSMLocFromStringRef(attrSpelling)};
+  LitSourceRange getRange() const override {
+    return {base->getRange().getStart(), getSMLocFromStringRef(attrSpelling)};
   }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
   CallableValue emitCallable(ExprEmitter &emitter,
@@ -151,8 +152,8 @@ struct CallNode final : public ExprNode {
 
   static bool classof(const ExprNode *node) { return node->kind == kCall; }
   SMLoc getLoc() const override { return lparenLoc; }
-  llvm::SMRange getRange() const override {
-    return {callee->getRange().Start, rparenLoc};
+  LitSourceRange getRange() const override {
+    return {callee->getRange().getStart(), rparenLoc};
   }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
@@ -172,8 +173,8 @@ struct SubscriptNode final : public ExprNode {
 
   static bool classof(const ExprNode *node) { return node->kind == kSubscript; }
   SMLoc getLoc() const override { return lsquareLoc; }
-  llvm::SMRange getRange() const override {
-    return {base->getRange().Start, rsquareLoc};
+  LitSourceRange getRange() const override {
+    return {base->getRange().getStart(), rsquareLoc};
   }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
   CallableValue emitCallable(ExprEmitter &emitter,
@@ -201,7 +202,7 @@ struct SubscriptArrowNode final : public ExprNode {
     return node->kind == kSubscriptArrow;
   }
   SMLoc getLoc() const override { return lsquareLoc; }
-  llvm::SMRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
+  LitSourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
   CallableValue emitCallable(ExprEmitter &emitter,
                              ASTType contextualType) const override;
@@ -228,14 +229,14 @@ struct SliceNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kSlice; }
   SMLoc getLoc() const override { return colon1Loc; }
 
-  llvm::SMRange getRange() const override {
-    auto startLoc = lower ? lower->getRange().Start : colon1Loc;
+  LitSourceRange getRange() const override {
+    auto startLoc = lower ? lower->getRange().getStart() : colon1Loc;
     if (stride)
-      return {startLoc, stride->getRange().Start};
+      return {startLoc, stride->getRange().getStart()};
     if (colon2Loc.isValid())
       return {startLoc, colon2Loc};
     if (upper)
-      return {startLoc, upper->getRange().Start};
+      return {startLoc, upper->getRange().getStart()};
     return {startLoc, colon1Loc};
   }
 
@@ -253,7 +254,7 @@ struct ParenNode final : public ExprNode {
 
   static bool classof(const ExprNode *node) { return node->kind == kParen; }
   SMLoc getLoc() const override { return lparenLoc; }
-  llvm::SMRange getRange() const override { return {lparenLoc, rparenLoc}; }
+  LitSourceRange getRange() const override { return {lparenLoc, rparenLoc}; }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 
   CallableValue emitCallable(ExprEmitter &emitter,
@@ -272,7 +273,7 @@ struct TupleNode final : public ExprNode {
 
   static bool classof(const ExprNode *node) { return node->kind == kTuple; }
   SMLoc getLoc() const override { return lparenLoc; }
-  llvm::SMRange getRange() const override { return {lparenLoc, rparenLoc}; }
+  LitSourceRange getRange() const override { return {lparenLoc, rparenLoc}; }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
 
@@ -288,7 +289,7 @@ struct ListNode final : public ExprNode {
 
   static bool classof(const ExprNode *node) { return node->kind == kList; }
   SMLoc getLoc() const override { return lsquareLoc; }
-  llvm::SMRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
+  LitSourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
 
@@ -308,8 +309,8 @@ struct IfElseOpNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kIfElse; }
 
   SMLoc getLoc() const override { return ifLoc; }
-  llvm::SMRange getRange() const override {
-    return {trueExpr->getRange().Start, falseExpr->getRange().End};
+  LitSourceRange getRange() const override {
+    return {trueExpr->getRange().getStart(), falseExpr->getRange().getEnd()};
   }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
@@ -332,8 +333,8 @@ struct BinOpNode final : public ExprNode {
   }
 
   SMLoc getLoc() const override { return opLoc; }
-  llvm::SMRange getRange() const override {
-    return {lhs->getRange().Start, rhs->getRange().End};
+  LitSourceRange getRange() const override {
+    return {lhs->getRange().getStart(), rhs->getRange().getEnd()};
   }
 
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
@@ -353,8 +354,8 @@ struct UnaryOpNode final : public ExprNode {
     return node->kind >= kFirstUnaryOp && node->kind <= klastUnaryOp;
   }
   SMLoc getLoc() const override { return opLoc; }
-  llvm::SMRange getRange() const override {
-    return {opLoc, subExpr->getRange().End};
+  LitSourceRange getRange() const override {
+    return {opLoc, subExpr->getRange().getEnd()};
   }
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
