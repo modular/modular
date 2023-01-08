@@ -20,12 +20,13 @@ from TargetInfo import has_m1_amx, sizeof
 from Memory import memset_zero
 from AppleAMX import amx_detail
 from IO import print
+from List import create_kgen_list_2
 
 
 fn fill_a(
     buf: NDBuffer[
         2,
-        __mlir_attr.`#kgen.list<16,16> : !kgen.list<index[2]>`,
+        create_kgen_list_2[__mlir_type.index, 16, 16](),
         __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
     ]
 ):
@@ -45,7 +46,7 @@ fn fill_a(
 fn fill_b(
     buf: NDBuffer[
         2,
-        __mlir_attr.`#kgen.list<16,16> : !kgen.list<index[2]>`,
+        create_kgen_list_2[__mlir_type.index, 16, 16](),
         __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
     ]
 ):
@@ -65,7 +66,7 @@ fn fill_b(
 fn clear_c(
     buf: NDBuffer[
         2,
-        __mlir_attr.`#kgen.list<16,16> : !kgen.list<index[2]>`,
+        create_kgen_list_2[__mlir_type.index, 16, 16](),
         __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
     ]
 ):
@@ -78,7 +79,7 @@ fn clear_c(
 fn print_matrix(
     buf: NDBuffer[
         2,
-        __mlir_attr.`#kgen.list<16,16> : !kgen.list<index[2]>`,
+        create_kgen_list_2[__mlir_type.index, 16, 16](),
         __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
     ]
 ):
@@ -112,17 +113,17 @@ fn test_amx_matmul():
 
     var a_matrix = NDBuffer[
         2,
-        __mlir_attr.`#kgen.list<16,16> : !kgen.list<index[2]>`,
+        create_kgen_list_2[__mlir_type.index, 16, 16](),
         __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
     ](a_buffer)
     var b_matrix = NDBuffer[
         2,
-        __mlir_attr.`#kgen.list<16,16> : !kgen.list<index[2]>`,
+        create_kgen_list_2[__mlir_type.index, 16, 16](),
         __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
     ](b_buffer)
     var c_matrix = NDBuffer[
         2,
-        __mlir_attr.`#kgen.list<16,16> : !kgen.list<index[2]>`,
+        create_kgen_list_2[__mlir_type.index, 16, 16](),
         __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
     ](c_buffer)
 
