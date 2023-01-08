@@ -81,7 +81,7 @@ std::string ASTType::getAsString() const {
   return os.str();
 }
 
-void LIT::appendText(ASTType type, LitDiagnostic &diag) {
+void LIT::addToDiagnostic(ASTType type, LitDiagnostic &diag) {
   diag << '\'' << type.getAsString() << '\'';
 }
 

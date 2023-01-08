@@ -74,7 +74,7 @@ public:
   }
 };
 
-void appendText(ASTType type, LitDiagnostic &diag);
+void addToDiagnostic(ASTType type, LitDiagnostic &diag);
 raw_ostream &operator<<(raw_ostream &os, ASTType type);
 
 } // namespace M::KGEN::LIT
