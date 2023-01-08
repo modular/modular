@@ -153,7 +153,8 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 
   // Only allow applying attributes to something without them.
   if (!unboundOp.getAttrs().empty()) {
-    emitter.emitError(loc, "operation already has attributes");
+    emitter.emitError(loc, "operation already has attributes")
+        << subscript.getRange();
     return {};
   }
 
@@ -201,7 +202,8 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
     if (!slice || slice->colon2Loc.isValid() || !slice->lower ||
         !slice->upper || !isa<DeclRefNode>(slice->lower)) {
       emitter.emitError(
-          loc, "attribute spec requires an attribute name and attr value");
+          loc, "attribute spec requires an attribute name and attr value")
+          << subscriptIdx->getRange();
       return {};
     }
 
@@ -215,7 +217,8 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
   // Check for duplicate attribute specifications.
   if (auto duplicate = DictionaryAttr::findDuplicate(attrValues, false)) {
     emitter.emitError(loc, "attribute ")
-        << duplicate->getName() << " redundantly specified";
+        << duplicate->getName() << " redundantly specified"
+        << subscript.getIndexRange();
     return {};
   }
 
@@ -275,7 +278,8 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
         dyn_cast_or_null<LIT::FuncOp>(emitter.declScope.getIfOperation());
     if (!funcContext || !funcContext.getIsDef()) {
       auto diag = emitter.emitError(node->getLoc())
-                  << "use of unknown declaration '" << memberName << "'";
+                  << "use of unknown declaration '" << memberName << "'"
+                  << node->getRange();
       if (funcContext)
         diag << ", `fn` declarations require explicit variable declarations";
       return {};
@@ -293,7 +297,7 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
   if (decls.empty()) {
     if (lookup.isFailure()) {
-      auto diag = emitter.emitError(node->getLoc());
+      auto diag = emitter.emitError(node->getLoc()) << node->getRange();
       if (auto structDecl = dyn_cast<StructDeclOp>(container))
         diag << structDecl.getName() << " has no '" << memberName << "' member";
       else
@@ -337,7 +341,7 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
     return {{MValue(DeclRefType::get(decl.getSymbolRef())), node}};
 
   emitter.emitError(node->getLoc(), "use of declaration \"")
-      << memberName << "\" as a value isn't supported yet";
+      << memberName << "\" as a value isn't supported yet" << node->getRange();
   return {};
 }
 
@@ -346,6 +350,10 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
 //===----------------------------------------------------------------------===//
 
 ExprNode::~ExprNode() { llvm_unreachable("never called"); }
+
+/// Return the start or end of the source range.
+llvm::SMLoc ExprNode::getRangeStart() const { return getRange().getStart(); }
+llvm::SMLoc ExprNode::getRangeEnd() const { return getRange().getEnd(); }
 
 /// Emit this expression to MLIR as a CallableValue.  On error, emit an error
 /// and return a null value.
@@ -423,7 +431,8 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
 
 /// This uses the MLIR parser to turn the specified MLIR type name into an MLIR
 /// type.
-static Type parseMLIRType(StringRef name, SMLoc loc, LitSharedState &shared) {
+static Type parseMLIRType(StringRef name, const ExprNode *node,
+                          LitSharedState &shared) {
   Type result;
   {
     // Capture errors thrown by parseType and ignore them.
@@ -440,7 +449,8 @@ static Type parseMLIRType(StringRef name, SMLoc loc, LitSharedState &shared) {
         mlir::parseType(StringRef(tmpBuf).drop_back(), shared.getContext());
   }
   if (!result)
-    shared.emitError(loc, "unknown MLIR type: ") << name;
+    shared.emitError(node->getLoc(), "unknown MLIR type: ")
+        << name << node->getRange();
   return result;
 }
 
@@ -464,11 +474,12 @@ static CallableValue emitTypeAttributeRef(ASTType baseType,
   if (isa<MagicMLIROpType>(baseType.mlirType))
     return {{synthesizeMLIROpFromString(attrSpelling, emitter), node}};
   if (isa<MagicMLIRTypeType>(baseType.mlirType)) {
-    Type result = parseMLIRType(attrSpelling, loc, emitter.shared);
+    Type result = parseMLIRType(attrSpelling, node, emitter.shared);
     return {{result ? AnyValue(result) : AnyValue(), node}};
   }
 
-  emitter.emitError(loc, "MLIR type ") << baseType << " has no attributes";
+  emitter.emitError(loc, "MLIR type ")
+      << baseType << " has no attributes" << node->getRange();
   return {};
 }
 
@@ -496,13 +507,14 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
   ASTDecl *typeDecl = baseRVType.getDecl(emitter.shared);
   if (!typeDecl) {
     emitter.emitError(getLoc(), "MLIR type ")
-        << ASTType(baseVal.getType()) << " has no attributes";
+        << ASTType(baseVal.getType()) << " has no attributes"
+        << base->getRange();
     return {};
   }
 
   if (!isa<StructDeclOp>(*typeDecl)) {
-    emitter.emitError(getLoc(), "cannot access fields in type ")
-        << ASTType(baseVal.getType());
+    emitter.emitError(getLoc(), "cannot access attribute in type ")
+        << ASTType(baseVal.getType()) << base->getRange();
     return {};
   }
 
@@ -513,9 +525,9 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
   if (memberDecls.empty()) {
     // If the error hasn't been diagnosed, handle it now.
     if (lookup.isFailure())
-      emitter.emitError(getLoc(), "object has no attribute '")
-          << attrSpelling << "'";
-
+      emitter.emitError(getLoc(), "")
+          << baseRVType << " value has no attribute '" << attrSpelling << "'"
+          << getRange();
     return {};
   }
 
@@ -541,7 +553,8 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
 
   if (!emitter.builder) {
     emitter.emitError(getLoc(),
-                      "TODO: cannot access member in parameter context");
+                      "TODO: cannot access member in parameter context yet")
+        << getRange();
     return {};
   }
 
@@ -570,7 +583,10 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
              this}};
   }
 
-  emitter.emitError(getLoc(), "reference to unknown member");
+  // Reference to some non-function/struct member of the type.
+  // TODO: Handle aliases.
+  emitter.emitError(getLoc(), "reference to unknown member '")
+      << attrSpelling << "'" << getRange();
   return {};
 }
 
@@ -582,7 +598,10 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   auto *context = emitter.getContext();
 
   if (!emitter.builder) {
-    emitter.emitError(call.getLoc(), "cannot emit operation in this context");
+    emitter.emitError(
+        call.getLoc(),
+        "TODO: cannot emit MLIR operation in parameter expressions yet")
+        << call.getRange();
     return {};
   }
 
@@ -646,13 +665,13 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     if (failed(inferType())) {
       emitter.emitError(call.getLoc(),
                         "unable to infer result type from MLIR operation ")
-          << unboundOp.getName();
+          << unboundOp.getName() << call.getRange();
       return {};
     }
     if (state.types.size() > 1) {
       emitter.emitError(call.getLoc(),
                         "cannot use operations with multiple results (yet) ")
-          << unboundOp.getName();
+          << unboundOp.getName() << call.getRange();
       return {};
     }
   }
@@ -756,7 +775,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
 }
 
 AnyValue SliceNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
-  emitter.emitError(getLoc(), "slice values not implemented yet");
+  emitter.emitError(getLoc(), "TODO: SliceNode::emitIR not implemented yet");
   return {};
 }
 
@@ -770,7 +789,7 @@ static CallableValue substituteParametersIntoUserDefinedType(
     emitter.emitError(
         subscript.getLoc(),
         "cannot apply more parameters to an already parameterized type ")
-        << ASTType(declRef);
+        << ASTType(declRef) << subscript.getIndexRange();
     return {};
   }
 
@@ -779,7 +798,7 @@ static CallableValue substituteParametersIntoUserDefinedType(
   auto structOp = dyn_cast<StructDeclOp>(typeDecl);
   if (!structOp) {
     emitter.emitError(subscript.getLoc(), "unknown parameterized type ")
-        << ASTType(declRef);
+        << ASTType(declRef) << subscript.base->getRange();
     return {};
   }
 
@@ -873,8 +892,9 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
       // values to a call.
       SmallVector<TypedAttr> bindOperands({callableMVal.get()});
       if (indices.size() != sig.getInputParams().size()) {
-        emitter.emitError(getLoc(),
-                          "cannot partially bind a parametric callable");
+        emitter.emitError(getLoc(), "parametric callable expected ")
+            << sig.getInputParams().size() << " parameter"
+            << plural(sig.getInputParams().size()) << getIndexRange();
         return {};
       }
       for (ExprNode *idx : indices) {
@@ -903,7 +923,7 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
       std::string result = substituteMLIRMagic(*this, emitter);
       if (result.empty())
         return {};
-      auto type = parseMLIRType(result, getLoc(), emitter.shared);
+      auto type = parseMLIRType(result, this, emitter.shared);
       if (!type)
         return {};
       return CallableValue({type, this});
@@ -935,8 +955,9 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
       return {};
   }
 
-  emitter.emitError(getLoc(), "TODO: Subscript irgen not implemented yet ")
-      << ASTType(subValue.baseVal.ir.getType());
+  emitter.emitError(getLoc(),
+                    "TODO: Subscript irgen not implemented for base of type ")
+      << ASTType(subValue.baseVal.ir.getType()) << base->getRange();
   return {};
 }
 
@@ -959,7 +980,7 @@ CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter,
   // meta values to bind its parameters.
   if (!subValue.direct) {
     emitter.emitError(arrowLoc, "invalid '->' when subscripting type ")
-        << ASTType(subValue.baseVal.ir.getType());
+        << ASTType(subValue.baseVal.ir.getType()) << getRange();
     return {};
   }
 
@@ -975,14 +996,16 @@ CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter,
     auto *drn = dyn_cast<DeclRefNode>(dest);
     if (!drn) {
       emitter.emitError(drn->getLoc(),
-                        "expected identifier for parameter result");
+                        "expected identifier for parameter result")
+          << dest->getRange();
       return {};
     }
+    StringRef resultName = drn->spelling;
 
     // Lookup the name.  We must find a forward declared alias that isn't
     // already completed.
-    auto result = emitter.shared.lookupAndResolveDecl(
-        drn->spelling, drn->getLoc(), emitter.declScope);
+    auto result = emitter.shared.lookupAndResolveDecl(resultName, drn->getLoc(),
+                                                      emitter.declScope);
 
     // Reject the code if nothing was found.
     ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();
@@ -990,7 +1013,7 @@ CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter,
       if (result.isFailure())
         emitter.emitError(drn->getLoc(),
                           "unable to find forward-declared alias named '")
-            << drn->spelling << "'";
+            << resultName << "'" << drn->getRange();
       return {};
     }
 
@@ -998,17 +1021,19 @@ CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter,
     auto aliasDecl = dyn_cast<AliasForwardDeclOp>(*resultDecls[0]);
     if (!aliasDecl || resultDecls.size() > 1) {
       auto diag = emitter.emitError(drn->getLoc(), "'")
-                  << drn->spelling << "' is not a forward declared alias";
+                  << resultName << "' is not a forward declared alias"
+                  << drn->getRange();
       for (auto *decl : resultDecls)
         diag.attachNote(emitter.translateLocation(decl->getLoc()))
-            << "'" << drn->spelling << "' declared here";
+            << "'" << resultName << "' declared here";
       return {};
     }
 
     // Verify the decl isn't already defined.
     if (aliasDecl.getResultParamLoc().has_value()) {
       auto diag = emitter.emitError(drn->getLoc(), "'")
-                  << drn->spelling << "' alias was defined by another result";
+                  << resultName << "' alias was defined by another result"
+                  << drn->getRange();
       diag.attachNote(*aliasDecl.getResultParamLoc())
           << "previously defined here";
       return {};
@@ -1041,7 +1066,8 @@ AnyValue TupleNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
       return {};
   }
 
-  emitter.emitError(getLoc(), "FIXME: Cannot emit tuple expressions yet");
+  emitter.emitError(getLoc(), "FIXME: Cannot emit tuple expressions yet")
+      << getRange();
   return {};
 }
 
@@ -1111,8 +1137,9 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
 
     // Emit the LHS pattern as an lvalue.  Pass in the RHS's type as the
     // contextual type in case we need to implicitly declare a variable.
-    auto lhsLV = emitter.emitExprLValue(
-        lhs, rhsRep.getType(), "cannot assign to immutable expression");
+    auto lhsLV =
+        emitter.emitExprLValue(getLoc(), lhs, rhsRep.getType(),
+                               "cannot assign to immutable expression");
     if (!lhsLV)
       return {};
 
@@ -1267,7 +1294,10 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
   Location ifLoc = emitter.translateLocation(getLoc());
 
   if (!emitter.builder) {
-    emitter.emitError(getLoc(), "cannot emit operation in this context");
+    emitter.emitError(
+        getLoc(),
+        "TODO: cannot emit short-circuit and/or in this parameter context")
+        << lhs->getRange() << rhs->getRange();
     return {};
   }
 
@@ -1308,7 +1338,8 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
       return {};
     if (!ASTType(lhsBool.getType()).isEqualCanon(rhsBool.getType())) {
       emitter.emitError(getLoc(), "cannot find common type between ")
-          << ASTType(lhsRV.getType()) << " and " << ASTType(rhsRV.getType());
+          << ASTType(lhsRV.getType()) << " and " << ASTType(rhsRV.getType())
+          << lhs->getRange() << rhs->getRange();
       return {};
     }
     auto rhsBoolDRVal = emitter.emitDRValue(rhsBool, rhs->getLoc());
@@ -1388,7 +1419,9 @@ AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
     return {};
 
   if (!emitter.builder) {
-    emitter.emitError(getLoc(), "cannot emit operation in this context");
+    emitter.emitError(getLoc(),
+                      "TODO: cannot emit if/else in parameter expression yet")
+        << trueExpr->getRange();
     return {};
   }
 
@@ -1412,10 +1445,10 @@ AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
   /// TODO(subtyping): With subtypes, we can find intersection types, e.g. a
   /// common superclass.
   if (!ASTType(trueVal.getType()).isEqualCanon(falseVal.getType())) {
-    emitter.emitError(
-        getLoc(), "the types of a conditional expression must be compatible:  ")
-        << ASTType(trueVal.getType()) << " is not compatible with "
-        << ASTType(falseVal.getType());
+    emitter.emitError(getLoc(), "true value of type ")
+        << ASTType(trueVal.getType()) << " is not compatible with false value "
+        << ASTType(falseVal.getType()) << " in conditional"
+        << trueExpr->getRange() << falseExpr->getRange();
     return {};
   }
   // Ensure the correct type is used.

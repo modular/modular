@@ -597,7 +597,9 @@ static void rejectDecorators(ArrayRef<ExprNode *> decoratorExprs, ASTDecl &decl,
                              LitSharedState &shared) {
   if (!decoratorExprs.empty())
     shared.emitError(decoratorExprs[0]->getLoc(),
-                     "decorators not supported on this statement");
+                     "decorators not supported on this statement")
+        << LitSourceRange(decoratorExprs.front()->getRangeStart(),
+                          decoratorExprs.back()->getRangeEnd());
 }
 
 //===----------------------------------------------------------------------===//
@@ -724,13 +726,15 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
           type = shared.getTypeCheckErrorType();
       } else {
         // In an 'fn' we report an error.
-        emitErrorLoc(arg.loc, "'fn' parameter type must be specified");
+        emitErrorLoc(arg.loc, "'fn' parameter type must be specified")
+            << LitSourceRange(arg.loc, arg.loc);
         type = shared.getTypeCheckErrorType();
       }
     }
     // TODO: add support for default parameter expressions.
     if (arg.initValue)
-      shared.emitError(arg.loc, "TODO: No default values yet");
+      shared.emitError(arg.loc, "TODO: No default values yet")
+          << arg.initValue->getRange();
   }
 
   // If this definition is a struct/class member, compute the self type.
@@ -756,8 +760,11 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       // they should be able to implicit ignore arguments like Python does.
       emitError("self argument must be present in instance method");
     } else if (!ASTType(argTypes[0]).isEqualCanon(selfType)) {
-      emitErrorLoc(args[0].loc, "'self' argument must have type ")
-          << selfType << " but actually has type " << ASTType(argTypes[0]);
+      auto diag = emitErrorLoc(args[0].loc, "'self' argument must have type ")
+                  << selfType << " but actually has type "
+                  << ASTType(argTypes[0]);
+      if (args[0].typeExpr)
+        diag << args[0].typeExpr->getRange();
     }
   }
 
@@ -860,8 +867,8 @@ struct FnDecorators : public LitSharedStateUser {
   void applyLate(SmallVector<ExprNode *> &decoratorExprs);
 
 private:
-  void applyInterface(SMLoc loc);
-  void applyRaises(SMLoc loc);
+  void applyInterface(const DeclRefNode &node);
+  void applyRaises(const DeclRefNode &node);
   void applyImplements(const CallNode &callNode);
   void applyEvaluator(const CallNode &callNode);
   void applyLateExport();
@@ -872,58 +879,66 @@ private:
 };
 } // namespace
 
-void FnDecorators::applyInterface(SMLoc loc) {
+void FnDecorators::applyInterface(const DeclRefNode &node) {
   if (isMethod) {
-    emitError(loc, "interfaces cannot be nested inside a struct");
+    emitError(node.getLoc(), "interfaces cannot be nested inside a struct")
+        << node.getRange();
     return;
   }
 
   if (funcOp.getImplementsAttr())
-    emitError(loc, "interfaces cannot implement other interfaces");
+    emitError(node.getLoc(), "interfaces cannot implement other interfaces")
+        << node.getRange();
 
   funcOp.setIsInterface(true);
 }
 
-void FnDecorators::applyRaises(SMLoc loc) {
-  if (funcOp.getIsDef())
-    emitError(loc, "methods defined with 'def' always raise");
-  else
-    funcOp.setRaises(true);
-}
-
-// @implements interface.
-void FnDecorators::applyImplements(const CallNode &callNode) {
-  if (funcOp.getImplementsAttr()) {
-    emitError(callNode.getLoc(), "only one @implements decorator is allowed");
+void FnDecorators::applyRaises(const DeclRefNode &node) {
+  if (funcOp.getIsDef()) {
+    emitError(node.getLoc(), "methods defined with 'def' always raise")
+        << node.getRange();
     return;
   }
 
-  if (callNode.args.size() != 1 || !isa<DeclRefNode>(callNode.args.front())) {
-    emitError(callNode.getLoc(),
-              "@implements decorator must specify one interface by name");
+  funcOp.setRaises(true);
+}
+
+// @implements interface.
+void FnDecorators::applyImplements(const CallNode &node) {
+  if (funcOp.getImplementsAttr()) {
+    emitError(node.getLoc(), "only one @implements decorator is allowed")
+        << node.getRange();
+    return;
+  }
+
+  if (node.args.size() != 1 || !isa<DeclRefNode>(node.args.front())) {
+    emitError(node.getLoc(),
+              "@implements decorator must specify one interface by name")
+        << node.getParenRange();
     return;
   }
 
   // Perform a name lookup to find the right symbol.
-  StringRef interfaceName = cast<DeclRefNode>(callNode.args.front())->spelling;
-  auto result =
-      shared.lookupAndResolveDecl(interfaceName, callNode.getLoc(), decl);
+  const DeclRefNode &nameNode = *cast<DeclRefNode>(node.args.front());
+  StringRef interfaceName = nameNode.spelling;
+  auto result = shared.lookupAndResolveDecl(interfaceName, node.getLoc(), decl);
 
   // Reject the code if the interface wasn't found.
   ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();
   if (resultDecls.empty()) {
     if (result.isFailure())
-      emitError(callNode.getLoc(), "unable to resolve interface named '")
-          << interfaceName << "'";
+      emitError(node.getLoc(), "unable to resolve interface named '")
+          << interfaceName << "'" << nameNode.getRange();
     return;
   }
 
   // Reject implementation of overloaded interface.
   // TODO: Use signature matching to pick the right overload.
   if (resultDecls.size() > 1) {
-    auto diag = emitError(callNode.getLoc(),
-                          "cannot (yet!) implement overloaded interface '")
-                << interfaceName << "'";
+    auto diag =
+        emitError(node.getLoc(),
+                  "TODO: cannot (yet!) implement overloaded interface '")
+        << interfaceName << "'" << nameNode.getRange();
     return;
   }
   auto interfaceDecl = resultDecls[0];
@@ -933,8 +948,9 @@ void FnDecorators::applyImplements(const CallNode &callNode) {
   auto funcInterface =
       dyn_cast_or_null<LIT::FuncOp>(interfaceDecl->getIfOperation());
   if (!funcInterface || !funcInterface.getIsInterface()) {
-    auto diag = emitError(callNode.getLoc(), "'")
-                << interfaceName << "' is not a kgen interface";
+    auto diag = emitError(node.getLoc(), "'")
+                << interfaceName << "' is not a kgen interface"
+                << nameNode.getRange();
     diag.attachNote(translateLocation(interfaceDecl->getLoc()))
         << "'" << interfaceName << "' declared here";
     return;
@@ -946,38 +962,39 @@ void FnDecorators::applyImplements(const CallNode &callNode) {
 }
 
 // @evaluator interface.
-void FnDecorators::applyEvaluator(const CallNode &callNode) {
+void FnDecorators::applyEvaluator(const CallNode &node) {
   if (funcOp.getEvaluatorAttr()) {
-    emitError(callNode.getLoc(), "only one @evaluator decorator is allowed");
+    emitError(node.getLoc(), "only one @evaluator decorator is allowed")
+        << node.getRange();
     return;
   }
 
-  if (callNode.args.size() != 1 || !isa<DeclRefNode>(callNode.args.front())) {
-    emitError(callNode.getLoc(),
-              "@evaluator decorator must specify one function by name");
+  if (node.args.size() != 1 || !isa<DeclRefNode>(node.args.front())) {
+    emitError(node.getLoc(),
+              "@evaluator decorator must specify one function by name")
+        << node.getRange();
     return;
   }
 
   // Perform a name lookup to find the right symbol.
-  StringRef evaluatorName = cast<DeclRefNode>(callNode.args.front())->spelling;
-  auto result =
-      shared.lookupAndResolveDecl(evaluatorName, callNode.getLoc(), decl);
+  DeclRefNode &nameNode = *cast<DeclRefNode>(node.args.front());
+  StringRef evaluatorName = nameNode.spelling;
+  auto result = shared.lookupAndResolveDecl(evaluatorName, node.getLoc(), decl);
 
   // Reject the code if no function was found.
   ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();
   if (resultDecls.empty()) {
     if (result.isFailure())
-      emitError(callNode.getLoc(), "unable to resolve function named '")
-          << evaluatorName << "'";
+      emitError(node.getLoc(), "unable to resolve function named '")
+          << evaluatorName << "'" << nameNode.getRange();
     return;
   }
 
   // Reject implementation of overloaded function.
   // TODO: Use signature matching to pick the right overload.
   if (resultDecls.size() > 1) {
-    auto diag = emitError(callNode.getLoc(),
-                          "cannot (yet!) implement overloaded functions '")
-                << evaluatorName << "'";
+    emitError(node.getLoc(), "cannot (yet!) implement overloaded functions '")
+        << evaluatorName << "'" << nameNode.getRange();
     return;
   }
   auto funcDecl = resultDecls[0];
@@ -985,15 +1002,16 @@ void FnDecorators::applyEvaluator(const CallNode &callNode) {
   auto evaluatorFuncOp =
       dyn_cast_or_null<LIT::FuncOp>(funcDecl->getIfOperation());
   if (!evaluatorFuncOp) {
-    auto diag = emitError(callNode.getLoc(), "'")
-                << evaluatorName << "' is not a valid function";
+    auto diag = emitError(node.getLoc(), "'")
+                << evaluatorName << "' is not a valid function"
+                << nameNode.getRange();
     diag.attachNote(translateLocation(funcDecl->getLoc()))
         << '\'' << evaluatorName << "' declared here";
     return;
   }
 
   if (!funcOp.getIsInterface())
-    emitError(callNode.getLoc(), "only interfaces can have an evaluator");
+    emitError(node.getLoc(), "only interfaces can have an evaluator");
   SignatureType signature = evaluatorFuncOp.getSignature();
   auto evaluatorAttr =
       SymbolConstantAttr::get(funcDecl->getSymbolRef(), signature);
@@ -1012,9 +1030,9 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
       if (declRef->spelling == "staticmethod")
         funcOp.setIsStatic(true);
       else if (declRef->spelling == "interface")
-        applyInterface(declRef->getLoc());
+        applyInterface(*declRef);
       else if (declRef->spelling == "raises")
-        applyRaises(declRef->getLoc());
+        applyRaises(*declRef);
       else
         processedIt = false;
     }
@@ -1063,10 +1081,11 @@ void FnDecorators::applyLate(SmallVector<ExprNode *> &decoratorExprs) {
       }
 
       emitError(decorator->getLoc(), "unsupported decorator: ")
-          << declRef->spelling;
+          << declRef->spelling << declRef->getRange();
       continue;
     }
-    emitError(decorator->getLoc(), "unsupported decorator");
+    emitError(decorator->getLoc(), "unsupported decorator")
+        << decorator->getRange();
   }
 }
 
@@ -1666,7 +1685,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Reject result parameters.
   if (!metaSignature.resultTypes.empty())
     emitError(metaSignature.resultTypes[0]->getLoc(),
-              "struct declarations do not support result parameters");
+              "struct declarations do not support result parameters")
+        << metaSignature.resultTypes[0]->getRange();
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.

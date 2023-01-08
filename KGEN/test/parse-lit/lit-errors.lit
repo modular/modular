@@ -2,7 +2,10 @@
 
 __include "../lit-examples/prolog.lit"
 
-# Tests
+def bad_exprs(aaaa: Bool, bbbb: F32, cccc: Int):
+  # expected-error @+1 {{true value of type '$F32::F32' is not compatible with false value '$Int::Int' in conditional}}
+  _ = bbbb if aaaa else cccc
+
 
 def foo():
 # expected-error @+1 {{unexpected token in expression}}
@@ -135,7 +138,7 @@ def WeirdMetaParams(a: Thing[1, 1.5]):
 
 fn voidReturningFn(): pass
 fn badCall():
-  # expected-error @+1 {{value of type 'None' cannot be converted to expected type 'NotBoolConvertible'}}
+  # expected-error @+1 {{invalid call to 'test_bool_context': argument #0 cannot be converted from 'None' to 'NotBoolConvertible'}}
   test_bool_context(voidReturningFn())
 
 
@@ -147,7 +150,7 @@ def call_generic[dt: DType]():
   generic_fn[1, dt](57) # expected-error {{parameter 'a' has 'DType' type, but value has type '__mlir_type.index'}}
 
 def field_indexes(a: Int):
-  a.badField = 42 # expected-error {{object has no attribute 'badField'}}
+  a.badField = 42 # expected-error {{'$Int::Int' value has no attribute 'badField'}}
 
 
 # https://github.com/modularml/modular/issues/4181
@@ -349,10 +352,10 @@ fn expr_errors():
 
 
 fn slice_expression(a: Int):
-  a[:]    # expected-error {{slice values not implemented yet}}
-  a[::]   # expected-error {{slice values not implemented yet}}
-  a[1:2]  # expected-error {{slice values not implemented yet}}
-  a[:2:3] # expected-error {{slice values not implemented yet}}
+  a[:]    # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
+  a[::]   # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
+  a[1:2]  # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
+  a[:2:3] # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
 
 
 # expected-note @+1 {{previous definition here}}
@@ -378,7 +381,7 @@ struct Parameterized[p1: __mlir_type.index]:
 # of parameters.
 fn testTestParamStruct(a: Parameterized[4]):
   a.method[7](Parameterized[11]())
-  # expected-error @+1 {{invalid call to 'method': in method argument #0, value of type 'Parameterized[12]' cannot be converted to expected type 'Parameterized[11]'}}
+  # expected-error @+1 {{invalid call to 'method': method argument #0 cannot be converted from 'Parameterized[12]' to 'Parameterized[11]'}}
   a.method[7](Parameterized[12]())
   a.method[2](Parameterized[6]())
   a.method[2, 7] # expected-error {{'method' expects 2 input parameters but 3 were provided}}
@@ -392,7 +395,7 @@ fn testSIMD(a: MySIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: MySIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
   var x = a+a
   var y = b+b
-  var z = b+a  # expected-error {{invalid call to '__add__': in argument #1, value of type 'MySIMD[1, f64]' cannot be converted to expected type 'MySIMD[2, si32]'}}
+  var z = b+a  # expected-error {{invalid call to '__add__': argument #1 cannot be converted from 'MySIMD[1, f64]' to 'MySIMD[2, si32]'}}
 
 fn testAliases(variable: Int):
   # expected-error @+1 {{declaration must have either a type or an initializer}}
@@ -440,18 +443,18 @@ fn badAnd(a: Bool, b: WeirdBoolish):
   _ = a and b # expected-error {{cannot find common type between '$Bool::Bool' and 'WeirdBoolish'}}
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{in argument #0, value of type 'TestOverloading' cannot be converted to expected type '$Int::Int'}}
+# expected-note @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to '$Int::Int'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
 fn overloadIntF32(a: Int):
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{in argument #0, value of type 'TestOverloading' cannot be converted to expected type '$F32::F32'}}
+# expected-note @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to '$F32::F32'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
 fn overloadIntF32(a: F32):
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: callee expects 2 arguments}}
-# expected-note @below {{candidate not viable: in argument #1, value of type '$F32::F32' cannot be converted to expected type '$Int::Int'}}
+# expected-note @below {{candidate not viable: argument #1 cannot be converted from '$F32::F32' to '$Int::Int'}}
 fn overloadIntF32(a: Int, b: Int):
 
 # expected-note @below {{candidate declared here}}
@@ -478,10 +481,10 @@ struct ConvertibleFromInt:
     return result
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: in argument #1, value of type 'ConvertibleFromInt' cannot be converted to expected type '$Int::Int'}}
+# expected-note @below {{candidate not viable: argument #1 cannot be converted from 'ConvertibleFromInt' to '$Int::Int'}}
 fn ambiguousConversions(a: ConvertibleFromInt, b: Int):
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: in argument #0, value of type 'ConvertibleFromInt' cannot be converted to expected type '$Int::Int'}}
+# expected-note @below {{candidate not viable: argument #0 cannot be converted from 'ConvertibleFromInt' to '$Int::Int'}}
 fn ambiguousConversions(a: Int, b: ConvertibleFromInt):
 
 fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
@@ -496,11 +499,11 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
   localFn(a, b)
   localFn(a, a)
   localFn(1, b)
-  # expected-error @+1 {{invalid indirect call: in argument #0, value of type 'ConvertibleFromInt' cannot be converted to expected type '$Int::Int'}}
+  # expected-error @+1 {{invalid indirect call: argument #0 cannot be converted from 'ConvertibleFromInt' to '$Int::Int'}}
   localFn(b, b)
 
 fn partialBindSignature[callable: __mlir_type.`!kgen.signature<[a: index, b: index], [], () -> ()>`, a: __mlir_type.index]():
-  # expected-error @below {{cannot partially bind a parametric callable}}
+  # expected-error @below {{parametric callable expected 2 parameters}}
   return callable[a]
 
 @interface

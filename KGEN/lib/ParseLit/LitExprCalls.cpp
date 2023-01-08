@@ -99,7 +99,8 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
                         << baseName << "' parameter " << decl.getName()
                         << " has " << expectedType
                         << " type, but value has type "
-                        << ASTType(bound.getValue().getType());
+                        << ASTType(bound.getValue().getType())
+                        << bound.expr->getRange();
             diag.attachNote(declOp->getLoc())
                 << "'" << baseName << "' declared here";
           }
@@ -343,16 +344,12 @@ void OverloadFitness::diagnose(SignatureType signature,
       // it is probably possible for this assert to fire, if it does we should
       // tailor the error message.
       assert(payload != 0 && "TODO: unexpected self mismatch");
-      diag << "in method argument #" << payload - 1 << ", value of type "
-           << operands[payload].ir.getRValueType()
-           << " cannot be converted to expected type " << type
-           << operands[payload].expr->getRange();
+      diag << "method argument #" << (payload - 1);
     } else {
-      diag << "in argument #" << payload << ", value of type "
-           << operands[payload].ir.getRValueType()
-           << " cannot be converted to expected type " << type
-           << operands[payload].expr->getRange();
+      diag << "argument #" << payload;
     }
+    diag << " cannot be converted from " << operands[payload].ir.getRValueType()
+         << " to " << type << operands[payload].expr->getRange();
     break;
   }
 }
@@ -615,7 +612,7 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
     if (!baseLV) {
       emitter.emitError(loc,
                         "invalid use of mutating method on rvalue of type ")
-          << ASTType(baseVal.ir.getType());
+          << ASTType(baseVal.ir.getType()) << baseVal.expr->getRange();
       return {};
     }
     firstArgValue = baseLV;
@@ -623,7 +620,8 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
     // Using partial application over an lvalue isn't safe until we support an
     // ownership models with mutable borrows.
     emitter.emitError(loc, "TODO: partial application to mutable base isn't "
-                           "supportable without a lifetime model");
+                           "supportable without a lifetime model")
+        << baseVal.expr->getRange();
     return {};
   }
   case ValueInputConvention::ByVal:
@@ -764,7 +762,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
     calleeSig = dyn_cast<SignatureType>(callee.getType());
     if (!calleeSig) {
-      emitError("invalid function type to call ") << ASTType(callee.getType());
+      emitError("invalid function type to call ")
+          << ASTType(callee.getType()) << baseVal.expr->getRange();
       return {};
     }
 
@@ -804,7 +803,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
         argVal = argAnyValueAndExpr.ir;
         if (!argVal.getIfMValue()) {
           emitter.emitError(argAnyValueAndExpr.expr->getLoc(),
-                            "cannot use a dynamic value in meta context");
+                            "cannot use a dynamic value in meta context")
+              << argAnyValueAndExpr.expr->getRange();
           return {};
         }
       } else {

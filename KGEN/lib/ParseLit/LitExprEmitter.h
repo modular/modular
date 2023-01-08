@@ -123,7 +123,7 @@ public:
   ///
   /// This diagnoses the expression with the specified message if it isn't a
   /// valid LValue.
-  LValue emitExprLValue(const ExprNode *node, ASTType contextualType,
+  LValue emitExprLValue(SMLoc loc, const ExprNode *node, ASTType contextualType,
                         const Twine &message);
 
   /// This helper emits the specified expression tree as a type, e.g. turning

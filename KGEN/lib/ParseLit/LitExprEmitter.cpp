@@ -45,6 +45,7 @@ RValue IREmitter::emitRValue(AnyValue rep, SMLoc loc) {
   assert(pointer);
 
   if (!builder) {
+    // TODO: Add range.
     emitError(loc, "context only permits a meta value, not a dynamic one");
     return {};
   }
@@ -64,6 +65,7 @@ DRValue IREmitter::emitDRValue(RValue rep, SMLoc loc) {
   // index.constant or as a parameter expression.
   auto attr = rep.getIfMValue().get();
   if (!builder) {
+    // TODO: Add range.
     emitError(loc, "context only permits a meta value, not a dynamic one");
     return {};
   }
@@ -76,6 +78,7 @@ DRValue IREmitter::emitDRValue(RValue rep, SMLoc loc) {
   if (auto signature = dyn_cast<SignatureType>(attr.getType())) {
     if (!signature.getInputParams().empty() ||
         !signature.getResultParamTypes().empty()) {
+      // TODO: Add range.
       emitError(loc, "cannot use parameterized function of type ")
           << ASTType(attr.getType()) << " without binding all its parameters";
       return {};
@@ -155,7 +158,7 @@ AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
   auto errorHandler = [&]() {
     emitError(expr->getLoc())
         << ASTType(value.getType()) << " value cannot be converted to "
-        << expectedType << errorSuffix;
+        << expectedType << errorSuffix << expr->getRange();
   };
   return getAsExpectedType(value, expr, expectedType, std::move(errorHandler));
 }
@@ -229,14 +232,15 @@ MValue ExprEmitter::emitExprMValue(const ExprNode *node, const Twine &message) {
 ///
 /// This diagnoses the expression with the specified message if it isn't a
 /// valid LValue.
-LValue ExprEmitter::emitExprLValue(const ExprNode *node, ASTType contextualType,
+LValue ExprEmitter::emitExprLValue(SMLoc loc, const ExprNode *node,
+                                   ASTType contextualType,
                                    const Twine &message) {
   AnyValue anyValue = node->emitIR(*this, contextualType);
   if (!anyValue)
     return {}; // Error already diagnosed.
   if (LValue lValue = anyValue.getIfLValue())
     return lValue;
-  emitError(node->getLoc(), message);
+  emitError(loc, message) << node->getRange();
   return {};
 }
 
@@ -261,7 +265,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *node) {
                             type.getParamBindings().size();
         emitError(node->getLoc(), "use of type ")
             << structDecl.getNameAttr() << " with " << numMissing
-            << " unbound parameter" << plural(numMissing);
+            << " unbound parameter" << plural(numMissing) << node->getRange();
         return shared.getTypeCheckErrorType();
       }
     }
@@ -275,7 +279,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *node) {
   if (isa<NoneAttr>(value.get()))
     return shared.getNoneType();
 
-  emitError(node->getLoc(), "expected a type, not a value");
+  emitError(node->getLoc(), "expected a type, not a value"), node->getRange();
   return shared.getTypeCheckErrorType();
 }
 

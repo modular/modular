@@ -122,6 +122,10 @@ public:
   /// Return the source range spanned by this expression.
   virtual LitSourceRange getRange() const = 0;
 
+  /// Return the start or end of the source range.
+  llvm::SMLoc getRangeStart() const;
+  llvm::SMLoc getRangeEnd() const;
+
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
   /// contextualType (if non-null) indicates the contextual type to use for an
   /// implicitly declared value, e.g. a/b in `def f(): (a,b) = (1,2)`.
