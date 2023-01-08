@@ -32,7 +32,7 @@ fn _get_buffer_len_static[size: __mlir_type.index](dynamic_size: Int) -> Int:
 struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     var data: DTypePointer[type]
     var dynamic_size: Int
-    var dtype : __mlir_type.`!kgen.dtype`
+    var dtype: __mlir_type.`!kgen.dtype`
 
     fn __new__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`]
