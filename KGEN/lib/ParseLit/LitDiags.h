@@ -121,7 +121,6 @@ private:
 void appendText(const Twine &text, LitDiagnostic &diag);
 void appendText(char text, LitDiagnostic &diag);
 void appendText(size_t number, LitDiagnostic &diag);
-void appendText(StringAttr text, LitDiagnostic &diag);
 void appendText(Attribute attr, LitDiagnostic &diag);
 
 } // namespace M::KGEN::LIT

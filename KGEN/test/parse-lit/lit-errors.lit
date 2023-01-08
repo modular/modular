@@ -12,12 +12,12 @@ def foo():
 def fn_redecl():
   pass
 
-# expected-error @+1 {{redefinition of function "fn_redecl()" with identical signature}}
+# expected-error @+1 {{redefinition of function 'fn_redecl()' with identical signature}}
 def fn_redecl():
   pass
 
 def func():
-  never_declared_fn() # expected-error {{use of unknown declaration "never_declared_fn"}}
+  never_declared_fn() # expected-error {{use of unknown declaration 'never_declared_fn'}}
   pass
 
 def bad_assignment0(a: Int, b: Int):
@@ -52,11 +52,11 @@ fn ret_type_mismatch() -> __mlir_type.index:
 
 fn meta_param_then_param_redef[
       dt: __mlir_type.index # expected-note {{previous definition here}}
-    ](dt: __mlir_type.index):    # expected-error {{invalid redefinition of "dt"}}
+    ](dt: __mlir_type.index):    # expected-error {{invalid redefinition of 'dt'}}
   pass
 
 # expected-note @below {{previous definition here}}
-# expected-error @below {{invalid redefinition of "x"}}
+# expected-error @below {{invalid redefinition of 'x'}}
 def param_redef(x: __mlir_type.index, x: __mlir_type.index):
   pass
 
@@ -76,11 +76,11 @@ def var_decl_without_type():
 
 struct StructMemberRedefinition:
   var x : __mlir_type.index  # expected-note {{previous definition here}}
-  var x : __mlir_type.index  # expected-error {{invalid redefinition of "x"}}
+  var x : __mlir_type.index  # expected-error {{invalid redefinition of 'x'}}
 
 def var_decl():
   x = 123        # expected-note {{previous definition here}}
-  var x : Int  # expected-error {{invalid redefinition of "x"}}
+  var x : Int  # expected-error {{invalid redefinition of 'x'}}
   x+4   # no follow-on error.
 
 var globalvar : __mlir_type.index
@@ -120,7 +120,7 @@ struct Thing[a: __mlir_type.index, b: __mlir_type.index]:
 def GoodUseOfThing(a: Thing[4, 5]):
   pass
 
-def MissingThingMetaParams(a: Thing):  # expected-error {{use of type "Thing" with 2 unbound parameters}}
+def MissingThingMetaParams(a: Thing):  # expected-error {{use of type 'Thing' with 2 unbound parameters}}
   pass
 
 # expected-error @+1 {{cannot apply more parameters to an already parameterized type 'Thing[1, 2]'}}
@@ -130,7 +130,7 @@ def MultipleThingMetaparams(a: Thing[1,2][1]):
 def OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' expects 2 input parameters but 1 was provided}}
   pass
 
-# expected-error @+1 {{'Thing' parameter "b" has '__mlir_type.index' type, but value has type '__mlir_type.f64'}}
+# expected-error @+1 {{'Thing' parameter 'b' has '__mlir_type.index' type, but value has type '__mlir_type.f64'}}
 def WeirdMetaParams(a: Thing[1, 1.5]):
   pass
 
@@ -145,7 +145,7 @@ def generic_fn[a: DType, b: __mlir_type.index](c : __mlir_type.index):
 
 def call_generic[dt: DType]():
   generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 input parameters but 3 were provided}}
-  generic_fn[1, dt](57) # expected-error {{parameter "a" has 'DType' type, but value has type '__mlir_type.index'}}
+  generic_fn[1, dt](57) # expected-error {{parameter 'a' has 'DType' type, but value has type '__mlir_type.index'}}
 
 def field_indexes(a: Int):
   a.badField = 42 # expected-error {{object has no attribute 'badField'}}
@@ -247,7 +247,7 @@ fn bad_tuple(a: Int):
   _ = ()  # expected-error {{FIXME: Cannot emit tuple expressions yet}}
   _ = (a, a)  # expected-error {{FIXME: Cannot emit tuple expressions yet}}
   _ = (a,)  # expected-error {{FIXME: Cannot emit tuple expressions yet}}
-  _ = (a, a, b)  # expected-error {{use of unknown declaration "b"}}
+  _ = (a, a, b)  # expected-error {{use of unknown declaration 'b'}}
 
 struct LValuesRvalues:
   fn __new__() -> LValuesRvalues:
@@ -280,7 +280,7 @@ def testLValuesRvalues():
   LValuesRvalues().takesByRef(LValuesRvalues())
 
   # We can implicitly declare things on the LHS but not on the RHS.
-  unknown1 += unknown2 # expected-error {{use of unknown declaration "unknown2"}}
+  unknown1 += unknown2 # expected-error {{use of unknown declaration 'unknown2'}}
 
   lv.normalMethod3(1.0)
 
@@ -288,7 +288,7 @@ def testLValuesRvalues():
 # Test differences between fn and def.
 fn testFn(a: Int, b): # expected-error {{'fn' parameter type must be specified}}
   a = a  # expected-error {{cannot assign to immutable expression}}
-  c = a  # expected-error {{use of unknown declaration "c", `fn` declarations require explicit variable declarations}}
+  c = a  # expected-error {{use of unknown declaration 'c', `fn` declarations require explicit variable declarations}}
 
 
 fn testMLIR():
@@ -322,15 +322,15 @@ fn expr_errors():
   # expected-error @+1 {{operation already has attributes}}
   __mlir_op.`op`[value1: 42][value2: 42]
 
-  # expected-error @+1 {{attribute "value" redundantly specified}}
+  # expected-error @+1 {{attribute 'value' redundantly specified}}
   __mlir_op.`op`[value: 42, value: 42]
 
   # expected-error @+1 {{unknown MLIR type: kgen.dtype}}
   var y : __mlir_type.`kgen.dtype`  # should be !kgen.dtype
 
-  # expected-error @+1 {{unable to infer result type from MLIR operation "index.castu"}}
+  # expected-error @+1 {{unable to infer result type from MLIR operation 'index.castu'}}
   __mlir_op.`index.castu`(x, __mlir_type.i1)
-  # expected-error @+1 {{unable to infer result type from MLIR operation "index.castu"}}
+  # expected-error @+1 {{unable to infer result type from MLIR operation 'index.castu'}}
   __mlir_op.`index.castu`(x)
   # expected-error @+1 {{'index.castu' op result #0 must be integer or index, but got 'f32'}}
   __mlir_op.`index.castu`[_type: __mlir_type.f32](x)
@@ -358,10 +358,10 @@ fn slice_expression(a: Int):
 
 # expected-note @+1 {{previous definition here}}
 struct Parameterized[p1: __mlir_type.index]:
-  # expected-error @+1 {{invalid redefinition of "p1"}}
+  # expected-error @+1 {{invalid redefinition of 'p1'}}
   fn a[p1: Int](self):  # Cannot shadow parameter names.
 
-  # expected-error @+2 {{invalid redefinition of "p2"}}
+  # expected-error @+2 {{invalid redefinition of 'p2'}}
   # expected-note @+1 {{previous definition here}}
   fn b[p2: Int, p2: Int, p3: Int](self):  # Cannot shadow parameter names.
 
@@ -402,7 +402,7 @@ fn testAliases(variable: Int):
   # expected-error @+1 {{cannot use a dynamic value in meta context}}
   alias NotConstant = variable*2
 
-  # expected-error @+1 {{alias "NotInitialized" was never defined by a result parameter}}
+  # expected-error @+1 {{alias 'NotInitialized' was never defined by a result parameter}}
   alias NotInitialized : __mlir_type.index
 
   if variable != 0:
@@ -462,7 +462,7 @@ fn overloadIntF32(a: Int, b&: F32):
 
 struct TestOverloading:
   var a: Int   # expected-note {{cannot overload with this non-function definition}}
-  fn a(self):  # expected-error {{invalid redefinition of "a"}}
+  fn a(self):  # expected-error {{invalid redefinition of 'a'}}
 
   fn test(self, a: Int, b: F32):
     # expected-error @+1 {{cannot form a reference to overloaded declaration}}
@@ -557,7 +557,7 @@ fn useResultParams():
 
   hasResultParam[1 -> b]()  # expected-note {{previous definition here}}
 
-  # expected-error @+1 {{invalid redefinition of "b"}}
+  # expected-error @+1 {{invalid redefinition of 'b'}}
   hasResultParam[1 -> b]()
 
   # expected-error @+1 {{invalid call to 'hasResultParam': callee expects 1 result parameter but 2 were provided}}
@@ -580,7 +580,7 @@ fn badReboundType[type: __mlir_type.`!kgen.dtype`,
                   val: __mlir_type[`!pop.scalar<`, type, `>`]]():
 
 fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
-  # expected-error @+1 {{invalid call to 'badReboundType': callee parameter "val" has '__mlir_type.!pop.scalar<f64>' type, but value has type '__mlir_type.!pop.scalar<f32>'}}
+  # expected-error @+1 {{invalid call to 'badReboundType': callee parameter 'val' has '__mlir_type.!pop.scalar<f64>' type, but value has type '__mlir_type.!pop.scalar<f32>'}}
   badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
 
 # Issue #6587: [Lit] Recursive constructors crash kgen
