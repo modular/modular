@@ -45,7 +45,8 @@ int main(int argc, char *argv[]) {
         mlir::TimingScope ts;
         KGEN::CompilationOptions options;
         options.debugLevel = debugInfoLevel;
-        return importLitFile(sourceMgr, context, ts, options);
+        return importLitFile(sourceMgr, context, ts, options,
+                             /*useMLIRForDiagnostics*/ true);
       });
 
   // Register LLVM IR generation.

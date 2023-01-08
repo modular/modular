@@ -15,6 +15,70 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// This is a helper that allows us to translate mlir::Location objects to
+/// llvm::SMLoc objects.
+///
+/// TODO(mlir upstream): This was refactored out of
+/// SourceMgrDiagnosticHandlerImpl; upstream this.
+class LitDiags::SourceMgrLocationMapper {
+public:
+  /// Return the SrcManager buffer id for the specified file, or zero if none
+  /// can be found.
+  unsigned getBufferIDForFile(SourceMgr &sourceMgr, StringAttr filename);
+
+  /// Convert a location to SMLoc.
+  SMLoc convertLocToSMLoc(SourceMgr &sourceMgr, FileLineColLoc loc);
+  SMLoc convertLocToSMLoc(SourceMgr &sourceMgr, Location loc);
+
+private:
+  /// Mapping between file name and buffer ID's.
+  llvm::DenseMap<StringAttr, unsigned> filenameToBufId;
+};
+
+unsigned LitDiags::SourceMgrLocationMapper::getBufferIDForFile(
+    llvm::SourceMgr &sourceMgr, StringAttr filename) {
+  // Check for an existing mapping to the buffer id for this file.
+  auto bufferIt = filenameToBufId.find(filename);
+  if (bufferIt != filenameToBufId.end())
+    return bufferIt->second;
+
+  // Look for a buffer in the manager that has this filename.
+  for (unsigned i = 1, e = sourceMgr.getNumBuffers() + 1; i != e; ++i) {
+    auto *buf = sourceMgr.getMemoryBuffer(i);
+    if (buf->getBufferIdentifier() == filename.getValue())
+      return filenameToBufId[filename] = i;
+  }
+
+  // Otherwise, try to load the source file.
+  std::string ignored;
+  unsigned id = sourceMgr.AddIncludeFile(filename.str(), SMLoc(), ignored);
+  filenameToBufId[filename] = id;
+  return id;
+}
+
+/// Get a memory buffer for the given file, or the main file of the source
+/// manager if one doesn't exist. This always returns non-null.
+SMLoc LitDiags::SourceMgrLocationMapper::convertLocToSMLoc(SourceMgr &sourceMgr,
+                                                           FileLineColLoc loc) {
+  // The column and line may be zero to represent unknown column and/or unknown
+  /// line/column information.
+  if (loc.getLine() == 0 || loc.getColumn() == 0)
+    return SMLoc();
+
+  unsigned bufferId = getBufferIDForFile(sourceMgr, loc.getFilename());
+  if (!bufferId)
+    return SMLoc();
+  return sourceMgr.FindLocForLineAndColumn(bufferId, loc.getLine(),
+                                           loc.getColumn());
+}
+
+SMLoc LitDiags::SourceMgrLocationMapper::convertLocToSMLoc(SourceMgr &sourceMgr,
+                                                           Location loc) {
+  if (auto fileLineCol = dyn_cast<FileLineColLoc>(loc))
+    return convertLocToSMLoc(sourceMgr, fileLineCol);
+  return SMLoc();
+}
+
 //===----------------------------------------------------------------------===//
 // LitDiags implementation
 //===----------------------------------------------------------------------===//
@@ -38,9 +102,18 @@ static const void *makeMainBufferNameIdentifier(const SourceMgr &sourceMgr,
       .getAsOpaquePointer();
 }
 
-LitDiags::LitDiags(SourceMgr &sourceMgr, MLIRContext *context)
+LitDiags::LitDiags(SourceMgr &sourceMgr, MLIRContext *context,
+                   bool useMLIRDiagnostics)
     : sourceMgr(sourceMgr), context(context),
-      bufferNameIdentifier(makeMainBufferNameIdentifier(sourceMgr, context)) {}
+
+      useMLIRDiagnostics(useMLIRDiagnostics),
+      bufferNameIdentifier(makeMainBufferNameIdentifier(sourceMgr, context)) {
+
+  if (!useMLIRDiagnostics)
+    sourceMgrMapper = std::make_unique<SourceMgrLocationMapper>();
+}
+
+LitDiags::~LitDiags() {}
 
 /// Return the identifier for the main buffer in the SourceMgr.
 StringAttr LitDiags::getBufferNameIdentifier() const {
@@ -103,7 +176,14 @@ LitDiagnostic::~LitDiagnostic() {
   if (!diags)
     return;
 
-  // Build the MLIR diagnostic and hand it off to its diagnostic machinery.
+  if (diags->useMLIRDiagnostics)
+    emitMLIRDiagnostic();
+  else
+    emitSourceMgrDiagnostic();
+}
+
+/// Build the MLIR diagnostic and hand it off to its diagnostic machinery.
+void LitDiagnostic::emitMLIRDiagnostic() {
   // TODO: Support warnings.
   Diagnostic mlirDiag(messages.front().loc, mlir::DiagnosticSeverity::Error);
   mlirDiag << messages.front().text;
@@ -112,6 +192,28 @@ LitDiagnostic::~LitDiagnostic() {
 
   // Emit the diagnostic through the MLIR machinery.
   diags->context->getDiagEngine().emit(std::move(mlirDiag));
+}
+
+/// Print the diagnostic + each note through SourceMgr.
+void LitDiagnostic::emitSourceMgrDiagnostic() {
+  auto &sourceMgr = diags->sourceMgr;
+
+  // TODO: Support warnings.
+  SourceMgr::DiagKind kind = SourceMgr::DK_Error;
+  for (auto &message : messages) {
+    auto loc =
+        diags->sourceMgrMapper->convertLocToSMLoc(sourceMgr, message.loc);
+
+    // If we have an exotic MLIR location, give up.  Lit shouldn't be producing
+    // these, so just pick a weird-but-valid location.
+    if (!loc.isValid())
+      loc = sourceMgr.FindLocForLineAndColumn(sourceMgr.getMainFileID(), 0, 0);
+
+    sourceMgr.PrintMessage(loc, kind, message.text, /*todo: ranges*/ {},
+                           /*todo: fixits*/ {});
+    // Subsequent diagnostics are all notes.
+    kind = SourceMgr::DK_Note;
+  }
 }
 
 /// Add a note to this diagnostic at the specified location, and change the

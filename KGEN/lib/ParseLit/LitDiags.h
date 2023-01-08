@@ -23,12 +23,12 @@ class SourceMgr;
 namespace M::KGEN::LIT {
 using llvm::SMLoc;
 using llvm::SourceMgr;
-
 class LitDiagnostic;
 
 class LitDiags {
 public:
-  LitDiags(SourceMgr &sourceMgr, MLIRContext *context);
+  LitDiags(SourceMgr &sourceMgr, MLIRContext *context, bool useMLIRDiagnostics);
+  ~LitDiags();
 
   llvm::SourceMgr &sourceMgr;
   MLIRContext *const context;
@@ -49,7 +49,18 @@ public:
   /// FileLineColLoc.
   Location translateLocation(llvm::SMLoc loc) const;
 
+  /// This is true if we should use MLIR for diagnostics (e.g. to enable
+  /// -verify-diagnostics and other MLIR testing features), but we prefer
+  /// llvm::SourceMgr for better QoI: it supports source ranges and FixIt hints.
+  const bool useMLIRDiagnostics;
+
+  /// This is a helper object that allows turning Location objects into SMLoc's.
+  class SourceMgrLocationMapper;
+  std::unique_ptr<SourceMgrLocationMapper> sourceMgrMapper;
+
 private:
+  LitDiags(const LitDiags &) = delete;
+
   /// This is the StringAttr for the main buffer identifier.  It is type erased
   /// to void* to reduce header polution.
   const void *const bufferNameIdentifier;
@@ -103,6 +114,9 @@ public:
   void addText(const Twine &text);
 
 private:
+  void emitMLIRDiagnostic();
+  void emitSourceMgrDiagnostic();
+
   /// Each message in a diagnostic must have a location and text, and may
   /// have any number of highlighted ranges and fixit hints.
   struct Message;
