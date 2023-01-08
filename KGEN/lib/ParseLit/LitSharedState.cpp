@@ -49,8 +49,9 @@ public:
 };
 
 LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
-                               const CompilationOptions &options)
-    : diags(sourceMgr, context), options(options),
+                               const CompilationOptions &options,
+                               bool useMLIRDiagnostics)
+    : diags(sourceMgr, context, useMLIRDiagnostics), options(options),
       declResolver(std::make_unique<DeclResolver>(*this)),
 
       impl(std::make_unique<Impl>()) {

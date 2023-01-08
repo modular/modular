@@ -76,6 +76,12 @@ public:
       "d", llvm::cl::desc("Path of the dependency file to generate"),
       llvm::cl::value_desc("filename"), llvm::cl::init("")};
 
+  /// We default to printing diagnostics through llvm::SourceMgr to enable
+  /// source ranges and fixit hints, but allow disabling this for testing.
+  cl::opt<bool> enableMLIRDiagnostics{
+      "enable-mlir-diagnostics",
+      cl::desc("Print .lit parser diagnostics through MLIR."), cl::init(false)};
+
   /// Add all the input files provided on the command line to the SourceMgr.
   /// This is how MLIR parses multiple files.
   ErrorOrSuccess addInputFilesToSourceMgr(llvm::SourceMgr &mgr);
@@ -217,7 +223,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   auto inputFileName = llvm::StringRef(clOptions.inputFilename.getValue());
   mlir::TimingScope ts;
   if (inputFileName.ends_with(".lit"))
-    theModule = importLitFile(mgr, ctx, ts, compilationOptions);
+    theModule = importLitFile(mgr, ctx, ts, compilationOptions,
+                              clOptions.enableMLIRDiagnostics);
   else if (compilationOptions.getDebugInfoLevelForInput())
     theModule = DebugInfo::parseSourceFileWithDebugInfo(
         mgr, ctx, compilationOptions.getDIEmissionKind());

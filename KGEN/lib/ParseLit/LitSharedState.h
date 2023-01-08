@@ -45,7 +45,7 @@ inline const char *plural(size_t value, const char *one = "",
 class LitSharedState {
 public:
   LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
-                 const CompilationOptions &options);
+                 const CompilationOptions &options, bool useMLIRDiagnostics);
   ~LitSharedState();
 
   LitDiags diags; // Contains SourceMgr and MLIRContext pointers.

@@ -42,8 +42,8 @@ using llvm::SourceMgr;
 // Parse the specified .lit file into the specified MLIR context.
 OwningOpRef<mlir::ModuleOp>
 M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
-                 mlir::TimingScope &ts,
-                 const KGEN::CompilationOptions &options) {
+                 mlir::TimingScope &ts, const KGEN::CompilationOptions &options,
+                 bool useMLIRDiagnostics) {
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
 
   context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
@@ -56,7 +56,7 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
                           /*column=*/0);
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(fileLoc));
 
-  LitSharedState sharedState(sourceMgr, context, options);
+  LitSharedState sharedState(sourceMgr, context, options, useMLIRDiagnostics);
   LitLexer lexer(sharedState, sourceBuf);
   auto startSMLoc = lexer.getToken().getLoc();
   LitLexerCursor endFileCursor(
