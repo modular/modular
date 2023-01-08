@@ -503,7 +503,11 @@ static void lowerLITOps(LIT::FuncOp func,
                         DebugInfo::EmissionKind::Full;
   func.walk([&](Operation *op) {
     mlir::IRRewriter b{OpBuilder(op)};
-    if (auto letDecl = dyn_cast<LIT::LetDeclOp>(op)) {
+    if (isa<AliasForwardDeclOp>(op)) {
+      // lit.alias.fwd.decl is used internally by the frontend, but is not
+      // needed by lowering at all.
+      op->erase();
+    } else if (auto letDecl = dyn_cast<LIT::LetDeclOp>(op)) {
       // TODO: Generate debug info for let decl.
       b.replaceOp(letDecl, letDecl.getOperand());
     } else if (auto varDecl = dyn_cast<LIT::VarDeclOp>(op)) {
