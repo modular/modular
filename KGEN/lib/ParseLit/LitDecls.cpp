@@ -398,30 +398,34 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   // If the declaration hasn't been fully parsed and we need to, do so.
   if (decl.resolvedness < DeclResolvedness::fullyResolved &&
       howResolved == DeclResolvedness::fullyResolved) {
+    auto checkEndOfBodyCursor = [&](LitLexer &lexer) {
+      // If the final parse of the declaration didn't match the initial
+      // parse, report an error about unrecognized tokens at end of
+      // declaration.
+      if (!decl.isMatchingEndCursor(lexer.getCursor()) &&
+          !decl.hasReferenceError) {
+        if (lexer.getToken().isAny(LitToken::kw_def, LitToken::kw_struct,
+                                   LitToken::kw_class, LitToken::kw_var))
+          lexer.emitTokenError(
+              "definition isn't on its own line at the correct "
+              "indentation");
+        else
+          lexer.emitTokenError("unknown tokens at the end of a declaration");
+      }
+    };
+
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
         .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp, LetDeclOp,
-              VarDeclOp, ParamDeclareOp, ParamDeclRefAttr>([&](auto op) {
-          // Parse the body of the declaration from the correct point.
-          LitLexer lexer(shared, decl.getCursor());
-          if (resolveBody(op, lexer, decl))
-            return;
+              VarDeclOp, ParamDeclareOp, ParamDeclRefAttr, AliasForwardDeclOp>(
+            [&](auto op) {
+              // Parse the body of the declaration from the correct point.
+              LitLexer lexer(shared, decl.getCursor());
+              if (resolveBody(op, lexer, decl))
+                return;
 
-          // If the final parse of the declaration didn't match the initial
-          // parse, report an error about unrecognized tokens at end of
-          // declaration.
-          if (!decl.isMatchingEndCursor(lexer.getCursor()) &&
-              !decl.hasReferenceError) {
-            if (lexer.getToken().isAny(LitToken::kw_def, LitToken::kw_struct,
-                                       LitToken::kw_class, LitToken::kw_var))
-              lexer.emitTokenError(
-                  "definition isn't on its own line at the correct "
-                  "indentation");
-            else
-              lexer.emitTokenError(
-                  "unknown tokens at the end of a declaration");
-          }
-        })
+              checkEndOfBodyCursor(lexer);
+            })
         .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
           emitError(decl.getLoc(),
@@ -567,8 +571,8 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclRefAttr paramDeclRef,
   return success(!isa<TypeCheckErrorType>(type.mlirType));
 }
 
-ParseResult DeclResolver::resolveBody(ParamDeclRefAttr paramDeclRef,
-                                      LitLexer &lexer, ASTDecl &decl) {
+ParseResult DeclResolver::resolveBody(ParamDeclRefAttr op, LitLexer &lexer,
+                                      ASTDecl &decl) {
   return success();
 }
 
@@ -1476,6 +1480,11 @@ LogicalResult DeclResolver::resolveSignature(LetDeclOp letOp, LitLexer &lexer,
   return success();
 }
 
+ParseResult DeclResolver::resolveBody(LetDeclOp op, LitLexer &lexer,
+                                      ASTDecl &decl) {
+  return success();
+}
+
 /// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
 ///                 | "var" identifier "=" expression
 LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
@@ -1509,21 +1518,8 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
   return success();
 }
 
-ParseResult DeclResolver::resolveBody(LetDeclOp op, LitLexer &lexer,
-                                      ASTDecl &decl) {
-  // Nothing to do for a let decl, we parse everything as part of its
-  // signature. We could move to parsing an initializer expression lazily when
-  // a type is present if there were a reason to do that (e.g. more laziness
-  // desired) in the future.
-  return success();
-}
-
 ParseResult DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer,
                                       ASTDecl &decl) {
-  // Nothing to do for a var decl, we parse everything as part of its
-  // signature. We could move to parsing an initializer expression lazily when
-  // a type is present if there were a reason to do that (e.g. more laziness
-  // desired) in the future.
   return success();
 }
 
@@ -1561,14 +1557,31 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
       return failure();
     }
 
-    // Update the type of the alias we parsed.
-    paramDeclOp.setParamDecl(ParamDeclAttr::get(paramDeclOp.getName(), type));
+    // `alias x: Int` is a forward declaration of a return parameter from a
+    // function call, so it must occur in a function.
+    if (!isa<LIT::FuncOp>(paramDeclOp->getParentOp())) {
+      p.emitError(paramDeclOp.getLoc(),
+                  "parameter results may only be declared in a function");
+      return failure();
+    }
+
+    // Ok, things seem set up right, replace the ParamDeclOp with the right
+    // operation that will allow us to track things.
+    OpBuilder builder(paramDeclOp);
+    Operation *forwardDecl = builder.create<AliasForwardDeclOp>(
+        paramDeclOp.getLoc(), paramDeclOp.getName(), TypeAttr::get(type),
+        mlir::LocationAttr());
+    decl.setIRValue(forwardDecl);
+
+    // Remove the paramDeclOp from the IR, since we ended up changing our mind
+    // about how to represent this.
+    paramDeclOp->erase();
 
     rejectDecorators(decoratorExprs, decl, shared);
     return success();
   }
 
-  // Parse the initializer if present.
+  // Otherwise this is a normal `alias` declaration with an initializer.
   ExprNode *initValue = nullptr;
   if (p.parseExpression(initValue, decl.getIndentation()))
     return failure();
@@ -1598,22 +1611,29 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
     rhsValue = convertedVal.getIfMValue();
   }
 
-  // Remember the value.
+  // Remember the value, and update the type from UnresolvedType.
   paramDeclOp.setValueAttr(rhsValue.get());
-
-  // Regardless of whether we have a type of value initializer, update the type.
   paramDeclOp.setParamDecl(ParamDeclAttr::get(paramDeclOp.getName(), type));
-
   rejectDecorators(decoratorExprs, decl, shared);
   return success();
 }
 
 ParseResult DeclResolver::resolveBody(ParamDeclareOp op, LitLexer &lexer,
                                       ASTDecl &decl) {
-  // Nothing to do for a var decl, we parse everything as part of its
-  // signature. We could move to parsing an initializer expression lazily when
-  // a type is present if there were a reason to do that (e.g. more laziness
-  // desired) in the future.
+  return success();
+}
+
+ParseResult DeclResolver::resolveBody(AliasForwardDeclOp aliasFwdDeclOp,
+                                      LitLexer &lexer, ASTDecl &decl) {
+  // If the location for the resultParam was never set then this forward
+  // declaration was never defined.
+  if (!aliasFwdDeclOp.getResultParamLoc().has_value()) {
+    emitError(aliasFwdDeclOp.getLoc(), "alias ")
+        << aliasFwdDeclOp.getNameAttr()
+        << " was never defined by a result parameter";
+    return failure();
+  }
+
   return success();
 }
 
@@ -1690,9 +1710,5 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
 
 ParseResult DeclResolver::resolveBody(StructFieldOp op, LitLexer &lexer,
                                       ASTDecl &decl) {
-  // Nothing to do for a var decl, we parse everything as part of its
-  // signature. We could move to parsing an initializer expression lazily when
-  // a type is present if there were a reason to do that (e.g. more laziness
-  // desired) in the future.
   return success();
 }

@@ -15,6 +15,7 @@ include "KGEN/KGENDialect/KGENEnums.td"
 include "KGEN/KGENDialect/KGENInterfaces.td"
 include "KGEN/POPDialect/POPTypes.td"
 include "Support/HLCFDialect/HLCFInterfaces.td"
+include "mlir/IR/BuiltinAttributes.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/RegionKindInterface.td"
@@ -39,7 +40,7 @@ def LIT_FuncOp : LITOp<"func", [
     DeclInterface, FuncInterface]> {
   let summary = "High level generator definition";
 
-let description = [{
+  let description = [{
     The `lit.func` operation models a def/fn declaration at the Lit source
     level.
     @interface and @staticmethod decorators in Lit correspond to the
@@ -219,6 +220,32 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
 }
 
 //===----------------------------------------------------------------------===//
+// LocalAliasDeclOp
+//===----------------------------------------------------------------------===//
+
+// TODO(LLVM Issue #59877): Why isn't this in BuiltinAttributes.td?
+def Builtin_LocationAttr : Builtin_Attr<"Location", []> {
+}
+
+def LIT_AliasForwardDeclOp : LITOp<"alias.fwd.decl"> {
+  let summary = "`alias x: T` declaration for a callee return parameter";
+
+  let description = [{
+    This op represents an alias decl after its signature has been resolved and
+    it was found to have no initializer.  It is therefore a forward declaration
+    of a return parameter from a function call.
+
+    `resultParamLoc` is filled in with the location of the result parameter that
+    ultimately actually defines this.
+  }];
+
+  let arguments = (ins StrAttr:$name, TypeAttr:$type,
+                   OptionalAttr<Builtin_LocationAttr>:$resultParamLoc);
+  let results = (outs);
+  let assemblyFormat = "$name `:` $type attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // LetDeclOp / VarDeclOp
 //===----------------------------------------------------------------------===//
 
@@ -235,7 +262,6 @@ def LIT_LetDeclOp : LITOp<"let.decl",
     // Create a 'let' without a value, this is malformed until specified.
     OpBuilder<(ins "Type":$type, "StringAttr":$name)>,
   ];
-
 }
 
 def LIT_VarDeclOp : LITOp<"var.decl",

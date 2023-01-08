@@ -402,8 +402,14 @@ fn testAliases(variable: Int):
   # expected-error @+1 {{cannot use a dynamic value in meta context}}
   alias NotConstant = variable*2
 
-  # TODO: Should reject as not initialized.
+  # expected-error @+1 {{alias "NotInitialized" was never defined by a result parameter}}
   alias NotInitialized : __mlir_type.index
+
+  if variable != 0:
+    alias x : Int # expected-error {{parameter results may only be declared in a function}}
+
+struct BadAliasStruct:
+  alias x: Int # expected-error {{parameter results may only be declared in a function}}
 
 def raisingFunction():
     pass
