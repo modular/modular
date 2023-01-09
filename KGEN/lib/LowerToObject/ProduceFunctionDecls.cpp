@@ -128,10 +128,15 @@ static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
     // Check for !kgen.list<i1[0]> which the lowering of !lit.none and it
     // corresponds to void.
     if (auto listType = dyn_cast<ListType>(t)) {
-      auto emptyList = ListType::get(IntegerType::get(t.getContext(), 1), 0);
-      if (listType != emptyList)
+      Optional<int64_t> length = listType.getResolvedLength();
+      if (!length.has_value() || length.value() > 1)
         return func.emitError("unsupported argument type: ") << t;
-      os << "void";
+      if (length.value() == 0) {
+        os << "void";
+        return success();
+      }
+      if (failed(printTypeAsC(listType.getResolvedElementType())))
+        return failure();
       return success();
     }
     if (!t.isa<IndexType, IntegerType, FloatType>())

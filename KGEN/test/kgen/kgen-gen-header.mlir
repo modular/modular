@@ -16,6 +16,9 @@
 // RUN: kgen %s -emit -func="litNoneKernel" -o %t.o
 // RUN: cat %t.h | FileCheck %s --check-prefixes=VOID
 
+// RUN: kgen %s -emit -func="listOneElem" -o %t.o
+// RUN: cat %t.h | FileCheck %s --check-prefixes=LISTF32
+
 kgen.func @someKernel(%arg1: f32, %arg2: index) -> f32 {
   kgen.return %arg1 : f32
 }
@@ -61,5 +64,13 @@ kgen.func @litNoneKernel() -> !kgen.list<i1[0]> {
 
 // VOID: extern void litNoneKernel_c();
 
+kgen.func @listOneElem() -> !kgen.list<f32[1]> {
+  %0 = kgen.param.constant: list<f32[1]> = <[1.0]>
+  kgen.return %0 : !kgen.list<f32[1]>
+}
+
+// LISTF32: extern float listOneElem_c();
+
 kgen.export [@someKernel, @someBufferKernel, @someNDBufferKernel,
-             @someMetaScalarKernel, @nestedParametricStruct, @litNoneKernel]
+             @someMetaScalarKernel, @nestedParametricStruct, @litNoneKernel,
+             @listOneElem]
