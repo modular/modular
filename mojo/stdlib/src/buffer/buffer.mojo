@@ -14,22 +14,64 @@ from Tuple import StaticTuple
 
 @interface
 fn _get_buffer_len[size: __mlir_type.index](dynamic_size: Int) -> Int:
+    """Gets the size if it is a known constant, otherwise it gets the
+    dynamic_size.
+
+    This method is used by `Buffer.__len__` to get the size of the buffer.
+    If the Buffer size is a known constant, then the size is returned.
+    Otherwise, the dynamic_size is returned.
+
+
+    Args:
+        size (__mlir_type.index): The static size.
+        dynamic_size (Int): The dynamic size.
+
+    Returns:
+        Int: The size if static otherwise dynamic_size.
+    """
     ...
 
 
 @implements(_get_buffer_len)
 fn _get_buffer_len_dynamic[size: __mlir_type.index](dynamic_size: Int) -> Int:
+    """Gets the dynamic size.
+
+    Constraints:
+        The size is unknown.
+
+    Args:
+        size (__mlir_type.index): The static size.
+        dynamic_size (Int): The dynamic size.
+
+    Returns:
+        Int: The dynamic size.
+    """
     assert_param[size == __mlir_attr.`#kgen.unknown : index`]()
     return dynamic_size
 
 
 @implements(_get_buffer_len)
 fn _get_buffer_len_static[size: __mlir_type.index](dynamic_size: Int) -> Int:
+    """Gets the static size.
+
+    Constraints:
+        The size is known.
+
+    Args:
+        size (__mlir_type.index): The static size.
+        dynamic_size (Int): The dynamic size.
+
+    Returns:
+        Int: The static size.
+    """
     assert_param[size != __mlir_attr.`#kgen.unknown : index`]()
     return size
 
 
 struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
+    """Defines a Buffer which can be parametrized on a static size and Dtype.
+    The Buffer does not own its underlying pointer.
+    """
     var data: DTypePointer[type]
     var dynamic_size: Int
     var dtype: __mlir_type.`!kgen.dtype`
@@ -37,6 +79,17 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     fn __new__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`]
     ) -> Buffer[size, type]:
+        """Constructor for a Buffer with statically known size and type.
+
+        Constraints:
+            The size is known.
+
+        Args:
+            ptr (!pop.pointer<scalar<type>>): Pointer to the data.
+
+        Returns:
+            Buffer[size, type]: The buffer object.
+        """
         # Construct a Buffer type with statically known size
         assert_param[size != __mlir_attr.`#kgen.unknown : index`]()
         var result: Buffer[size, type]
@@ -49,7 +102,18 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
         in_size: Int,
     ) -> Buffer[size, type]:
-        # Construct a Buffer type with dynamic size
+        """Constructor for a Buffer with statically known type.
+
+        Constraints:
+            The size is unknown.
+
+        Args:
+            ptr (!pop.pointer<scalar<type>>): Pointer to the data.
+            size (Int): Dynamic size of the buffer.
+
+        Returns:
+            Buffer[size, type]: The buffer object.
+        """
         assert_param[size == __mlir_attr.`#kgen.unknown : index`]()
         var result: Buffer[size, type]
         result.data = DTypePointer[type](ptr)
@@ -57,17 +121,34 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         return result
 
     fn __len__(self) -> Int:
-        # Returns the dynamic size if the buffer is not statically known,
-        # otherwise returns the statically known size parameter.
+        """Returns the dynamic size if the buffer is not statically known,
+        otherwise returns the statically known size parameter.
+        """
         return _get_buffer_len[size](self.dynamic_size)
 
     fn __getitem__(self, idx: Int) -> SIMD[1, type]:
-        # Loads a single element (SIMD of size 1) from the buffer at the
-        # specified index
+        """Loads a single element (SIMD of size 1) from the buffer at the
+        specified index.
+
+        Args:
+            idx (Idx): The index into the Buffer.
+
+        Returns:
+            SIMD[1, type]: The value at the `idx` position.
+        """
         return self.simd_load[1](idx)
 
     fn simd_load[width: __mlir_type.index](self, idx: Int) -> SIMD[width, type]:
-        # Loads a simd value from the buffer at the specified index
+        """Loads a simd value from the buffer at the specified index.
+
+        Args:
+            width (__mlir_type.index): The simd_width of the load.
+            idx (Idx): The index into the Buffer.
+
+        Returns:
+            SIMD[width, type]: The simd value starting at the `idx` position
+            and ending at `idx+width`.
+        """
         let offset = self.data.offset(idx)
         return offset.simd_load[width]()
 
@@ -76,19 +157,35 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         idx: Int,
         val: __mlir_type[`!pop.scalar<`, type, `>`],
     ):
-        # Stores a single value into the buffer at the specified index
+        """Stores a single value into the buffer at the specified index.
+
+        Args:
+            idx (Idx): The index into the Buffer.
+            val (!pop.scalar<type>): The value to store.
+        """
         var simd_val: SIMD[1, type]
         simd_val.value = val
         self.simd_store[1](idx, simd_val)
 
     fn __setitem__(self, idx: Int, val: SIMD[1, type]):
-        # Stores a single value into the buffer at the specified index
+        """Stores a single value into the buffer at the specified index.
+
+        Args:
+            idx (Idx): The index into the Buffer.
+            val (SIMD[1, type]): The value to store.
+        """
         self.simd_store[1](idx, val)
 
     fn simd_store[
         width: __mlir_type.index
     ](self, idx: Int, val: SIMD[width, type]):
-        # Stores a simd value into the buffer at the specified index
+        """Stores a simd value into the buffer at the specified index.
+
+        Args:
+            width (__mlir_type.index): The width of the simd vector.
+            idx (Idx): The index into the Buffer.
+            val (SIMD[width, type]): The value to store.
+        """
         let offset = self.data.offset(idx)
         offset.simd_store[width](val)
 
