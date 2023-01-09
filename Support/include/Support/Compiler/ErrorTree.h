@@ -74,7 +74,7 @@ public:
   /// Check if this error is equal to another error in contents.
   bool operator==(const ErrorTree &other) const {
     return loc == other.loc && getMessage() == other.getMessage() &&
-           llvm::makeArrayRef(causes) == llvm::makeArrayRef(other.causes);
+           ArrayRef(causes) == ArrayRef(other.causes);
   }
 
   /// Explicitly copy this error.

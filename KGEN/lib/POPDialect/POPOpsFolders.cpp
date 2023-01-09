@@ -773,8 +773,7 @@ OpFoldResult ArrayRepeatOp::fold(ArrayRef<Attribute> operands) {
   values.reserve(*size);
   while (static_cast<int64_t>(values.size()) < *size)
     values.append(args);
-  return POP::ArrayAttr::get(llvm::makeArrayRef(values).take_front(*size),
-                             getType());
+  return POP::ArrayAttr::get(ArrayRef(values).take_front(*size), getType());
 }
 
 //===----------------------------------------------------------------------===//

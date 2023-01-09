@@ -615,14 +615,14 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
   let builders = [
     // Override the default builder used by the generated parser.
     AttrBuilder<(ins
-      "POC":$opcode, "llvm::ArrayRef<TypedAttr>":$operands,
+      "POC":$opcode, "ArrayRef<TypedAttr>":$operands,
       "mlir::Type":$type
     ), "", "TypedAttr">,
 
     // Build a parameter expression.  This automatically canonicalizes and
     // folds, so it may not necessarily return a ParamOperatorAttr.
     AttrBuilderWithInferredContext<(ins
-      "POC":$opcode, "llvm::ArrayRef<TypedAttr>":$operands
+      "POC":$opcode, "ArrayRef<TypedAttr>":$operands
     ), "", "TypedAttr">,
 
     // Build a binary parameter expression for convenience.

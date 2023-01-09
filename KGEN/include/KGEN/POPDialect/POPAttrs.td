@@ -112,7 +112,7 @@ def POP_SIMDAttr : POP_Attr<"SIMD", "simd", [TypedAttrInterface,
     }]>,
     AttrBuilderWithInferredContext<(ins "DTypeValue":$value,
                                         "SIMDType":$type), [{
-      return get(llvm::makeArrayRef(value), type);
+      return get(ArrayRef(value), type);
     }]>
   ];
 

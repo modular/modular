@@ -45,7 +45,7 @@ using ResultType = typename UnwrapErrorOr<std::invoke_result_t<F>>::type;
 
 /// Donate the current thread to running work until all of the specified values
 /// are ready.
-inline static void await(llvm::ArrayRef<AnyAsyncValueRef> values) {
+inline static void await(ArrayRef<AnyAsyncValueRef> values) {
   if (!values.empty())
     values[0]->getRuntime()->getWorkQueue()->await(values);
 }
@@ -253,7 +253,7 @@ inline static void andThenArrayImpl(ArrayRefType values,
 /// the work queue when all the async values are fulfilled.
 
 template <typename CompletionFn>
-inline static void andThenSyncCopying(llvm::ArrayRef<AnyAsyncValueRef> values,
+inline static void andThenSyncCopying(ArrayRef<AnyAsyncValueRef> values,
                                       CompletionFn &&completionFn) {
   Detail::andThenArrayImpl</*IsAsync=*/false>(
       values, std::forward<CompletionFn>(completionFn),
@@ -263,7 +263,7 @@ inline static void andThenSyncCopying(llvm::ArrayRef<AnyAsyncValueRef> values,
 }
 
 template <typename CompletionFn>
-inline static void andThenAsyncCopying(llvm::ArrayRef<AnyAsyncValueRef> values,
+inline static void andThenAsyncCopying(ArrayRef<AnyAsyncValueRef> values,
                                        CompletionFn &&completionFn) {
   Detail::andThenArrayImpl</*IsAsync=*/true>(
       values, std::forward<CompletionFn>(completionFn),

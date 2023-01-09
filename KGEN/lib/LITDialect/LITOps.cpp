@@ -37,7 +37,7 @@ SymbolRefAttr LIT::getFullyResolvedSymbolRef(mlir::SymbolOpInterface op) {
     return symbols.front();
   std::reverse(symbols.begin(), symbols.end());
   return SymbolRefAttr::get(symbols[0].getAttr(),
-                            llvm::makeArrayRef(symbols).drop_front());
+                            ArrayRef(symbols).drop_front());
 }
 
 //===----------------------------------------------------------------------===//

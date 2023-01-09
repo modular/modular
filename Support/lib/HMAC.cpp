@@ -27,8 +27,8 @@ SHA256Hash M::hmacSHA256(StringRef data, StringRef key) {
   // If the key is larger than sha256Bytes then hash it and put it at the
   // beginning.
   if (key.size() > sha256BlockSize) {
-    auto hashed = llvm::SHA256::hash(
-        llvm::makeArrayRef(key.bytes_begin(), key.bytes_end()));
+    auto hashed =
+        llvm::SHA256::hash(ArrayRef(key.bytes_begin(), key.bytes_end()));
     std::copy(hashed.begin(), hashed.end(), keyBytes.begin());
   } else {
     std::copy(key.begin(), key.end(), keyBytes.begin());

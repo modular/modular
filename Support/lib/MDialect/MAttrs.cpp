@@ -436,8 +436,8 @@ FloatArrayElementsAttr FloatArrayElementsAttr::get(ShapedType type,
   intVals.reserve(values.size());
   for (const APFloat &value : values)
     intVals.push_back(value.bitcastToAPInt());
-  std::vector<uint8_t> rawData = packIntegerValues(
-      type.getElementTypeBitWidth(), llvm::makeArrayRef(intVals));
+  std::vector<uint8_t> rawData =
+      packIntegerValues(type.getElementTypeBitWidth(), ArrayRef(intVals));
   return ArrayElementsAttr::get(rawData, type).cast<FloatArrayElementsAttr>();
 }
 
@@ -599,8 +599,7 @@ static void printAlignedBytesData(AsmPrinter &p, ArrayRef<uint8_t> data) {
 /// Verifies the attribute's align constraint is sensible.
 LogicalResult
 AlignedBytesAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                         Optional<uint64_t> align,
-                         ::llvm::ArrayRef<uint8_t> data) {
+                         Optional<uint64_t> align, ::ArrayRef<uint8_t> data) {
   if (align && !llvm::isPowerOf2_64(*align))
     return emitError() << "alignment must be a power of two.";
   return success();
