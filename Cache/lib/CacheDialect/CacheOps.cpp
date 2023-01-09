@@ -339,10 +339,10 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
 
     hashVec.push_back(builder.getAttr<RegionHashAttr>(
         **hashOr,
-        llvm::makeArrayRef<SymbolRefAttr>(&*uniqueSymbolRefs.begin(),
-                                          uniqueSymbolRefs.size()),
-        llvm::makeArrayRef<ConstantHashAttr>(&*uniqueHashRefs.begin(),
-                                             uniqueHashRefs.size())));
+        ArrayRef<SymbolRefAttr>(&*uniqueSymbolRefs.begin(),
+                                uniqueSymbolRefs.size()),
+        ArrayRef<ConstantHashAttr>(&*uniqueHashRefs.begin(),
+                                   uniqueHashRefs.size())));
 
     auto hashVecAttr = builder.getAttr<RegionHashArrayAttr>(hashVec);
     op->setAttr(getRegionHashAttrName(), hashVecAttr);

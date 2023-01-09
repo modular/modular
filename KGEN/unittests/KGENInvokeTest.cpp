@@ -16,11 +16,11 @@ TEST(KGENInvokeTest, testinvokeKGENFunction) {
   auto noOp = [](void *, ssize_t, uint8_t, void *, ssize_t, uint8_t) {};
 
   // Test that we can call a function that returns no arguments.
-  KGEN::invoke(noOp, llvm::makeArrayRef<int32_t>(nullptr, 1),
-               llvm::makeArrayRef<int32_t>(nullptr, 1));
+  KGEN::invoke(noOp, ArrayRef<int32_t>(nullptr, 1),
+               ArrayRef<int32_t>(nullptr, 1));
 
   // Test that we can call the function with a value.
-  auto dummyArray = llvm::makeArrayRef<int32_t>(nullptr, 1);
+  auto dummyArray = ArrayRef<int32_t>(nullptr, 1);
   KGEN::invoke(noOp, std::forward<decltype(dummyArray)>(dummyArray),
                std::forward<decltype(dummyArray)>(dummyArray));
 }
@@ -30,9 +30,8 @@ TEST(KGENInvokeTest, testinvokeInterleavedInput) {
   auto addKernel = [](int a, void *, ssize_t, uint8_t, float b) {
     return a + b;
   };
-  EXPECT_EQ(
-      KGEN::invoke(addKernel, 1, llvm::makeArrayRef<float>(nullptr, 1), 2.0f),
-      3.0f);
+  EXPECT_EQ(KGEN::invoke(addKernel, 1, ArrayRef<float>(nullptr, 1), 2.0f),
+            3.0f);
 }
 
 /// Can get the correct address for a single input.
@@ -43,9 +42,8 @@ TEST(KGENInvokeTest, testinvokeFirstAddress) {
   };
   EXPECT_EQ(KGEN::invoke(getAddr, arry, std::size(arry), DType::si32),
             reinterpret_cast<uintptr_t>(arry));
-  EXPECT_EQ(
-      KGEN::invoke(getAddr, llvm::makeArrayRef<int32_t>(arry, std::size(arry))),
-      reinterpret_cast<uintptr_t>(arry));
+  EXPECT_EQ(KGEN::invoke(getAddr, ArrayRef<int32_t>(arry, std::size(arry))),
+            reinterpret_cast<uintptr_t>(arry));
   EXPECT_EQ(KGEN::invoke(getAddr, llvm::makeMutableArrayRef<int32_t>(
                                       arry, std::size(arry))),
             reinterpret_cast<uintptr_t>(arry));
@@ -57,8 +55,8 @@ TEST(KGENInvokeTest, testinvokeSecondAddress) {
   EXPECT_EQ(
       KGEN::invoke([](void *ptr0, ssize_t, uint8_t, void *ptr1, ssize_t,
                       uint8_t) { return reinterpret_cast<uintptr_t>(ptr1); },
-                   llvm::makeArrayRef<int32_t>(arry0, std::size(arry0)),
-                   llvm::makeArrayRef<int32_t>(arry1, std::size(arry1))),
+                   ArrayRef<int32_t>(arry0, std::size(arry0)),
+                   ArrayRef<int32_t>(arry1, std::size(arry1))),
       reinterpret_cast<uintptr_t>(arry1));
 }
 

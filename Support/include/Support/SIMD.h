@@ -535,7 +535,7 @@ public:
 
   void print(raw_ostream &os) const {
     os << "SIMDVector([";
-    llvm::interleaveComma(llvm::makeArrayRef(data(), size()), os);
+    llvm::interleaveComma(ArrayRef(data(), size()), os);
     os << "], dtype=" << llvm::getTypeName<element_type>()
        << ", width=" << width << ")";
   }

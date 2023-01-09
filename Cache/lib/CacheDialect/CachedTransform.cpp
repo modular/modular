@@ -23,8 +23,8 @@ using namespace LLCL;
 std::string TransformCacheKey::hashKey(TransformCacheKey::KeyTy key) {
   // This is just a (usually relatively small) string - the hash is just the
   // SHA256 hash of the input.
-  std::array<uint8_t, 32> hash = llvm::SHA256::hash(
-      llvm::makeArrayRef((const uint8_t *)key.begin(), key.size()));
+  std::array<uint8_t, 32> hash =
+      llvm::SHA256::hash(ArrayRef((const uint8_t *)key.begin(), key.size()));
   return {hash.begin(), hash.end()};
 }
 
