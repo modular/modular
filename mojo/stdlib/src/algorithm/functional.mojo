@@ -83,12 +83,13 @@ fn vectorize[
     """
     var i: Int = 0
     let len = dest.__len__()
-    while i < len:
+    let vector_end = (len // simd_width) * simd_width
+    while i < vector_end:
         dest.simd_store[simd_width](
             i, func[simd_width, type](src.simd_load[simd_width](i))
         )
         i += simd_width
-    i = (len // simd_width) * simd_width
+    i = vector_end
     while i < len:
         dest.__setitem__(i, func[1, type](src.__getitem__(i)))
         i += 1
@@ -118,7 +119,8 @@ fn vectorize[
     """
     var i: Int = 0
     let len = dest.__len__()
-    while i < len:
+    let vector_end = (len // simd_width) * simd_width
+    while i < vector_end:
         dest.simd_store[simd_width](
             i,
             func[simd_width, type](
@@ -126,7 +128,7 @@ fn vectorize[
             ),
         )
         i += simd_width
-    i = (len // simd_width) * simd_width
+    i = vector_end
     while i < len:
         dest.__setitem__(
             i, func[1, type](lhs.__getitem__(i), rhs.__getitem__(i))
