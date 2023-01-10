@@ -11,7 +11,6 @@
 #ifndef KGEN_POPDIALECT_POPOPS_H
 #define KGEN_POPDIALECT_POPOPS_H
 
-#include "KGEN/KGENDialect/ElaboratorOpInterface.h"
 #include "Support/Interpreter/InterpreterInterface.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/OpImplementation.h"
