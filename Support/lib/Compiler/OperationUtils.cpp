@@ -147,7 +147,8 @@ Operation *M::cloneOperation(Operation *original, BlockAndValueMapping &mapper,
   return ::cloneOperation(original, mapper, operationMap, CloneOptions::all());
 }
 
-bool M::operationIsIsolatedFromAbove(Operation *op) {
+bool M::operationIsIsolatedFromAbove(Operation *op,
+                                     SmallVectorImpl<Value> *captures) {
   bool result = true;
   op->walk<mlir::WalkOrder::PreOrder>([&](Operation *nested) {
     // Skip over isolated operations. There's nothing to check in them.
@@ -160,7 +161,8 @@ bool M::operationIsIsolatedFromAbove(Operation *op) {
         // value is captured from above.
         if (!op->isAncestor(defOp)) {
           result = false;
-          return WalkResult::interrupt();
+          if (captures)
+            captures->push_back(operand);
         }
       } else {
         Block *parent = cast<BlockArgument>(operand).getParentBlock();
@@ -168,7 +170,8 @@ bool M::operationIsIsolatedFromAbove(Operation *op) {
         // argument is captured from above.
         if (parent->findAncestorOpInBlock(*op)) {
           result = false;
-          return WalkResult::interrupt();
+          if (captures)
+            captures->push_back(operand);
         }
       }
     }

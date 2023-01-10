@@ -19,8 +19,10 @@ Operation *cloneOperation(Operation *original, BlockAndValueMapping &mapper,
                           DenseMap<Operation *, Operation *> &operationMap);
 
 /// Given an operation, determine whether any nested operations use values
-/// captured from above.
-bool operationIsIsolatedFromAbove(Operation *op);
+/// captured from above. Store those captures in the `captures` pointer if it's
+/// provided.
+bool operationIsIsolatedFromAbove(Operation *op,
+                                  SmallVectorImpl<Value> *captures = nullptr);
 
 /// Generate a unique flat symbol name with respect to the provided symbol table
 /// given a base name. This method is useful if one wants a unique symbol name
