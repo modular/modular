@@ -27,94 +27,6 @@ class POPOp<string mnemonic, list<Trait> traits = []> :
     Op<POPDialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
-// ConstantOp
-//===----------------------------------------------------------------------===//
-
-def POP_ConstantOp : POPOp<"constant", [ConstantLike, Pure,
-    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
-    DeclareOpInterfaceMethods<ElaboratorOpInterface, ["finalizeElaboration"]>
-  ]> {
-  let summary = "integer or floating point constant";
-  let description = [{
-    The `pop.constant` operation produces a `!pop.scalar` or `!pop.simd` equal
-    to the specified integer, floating point, or vector constant. If the
-    constant attribute is an integer or floating point, the result type must be
-    a scalar. If the constant is a 1D vector elements attribute, the result type
-    must be a SIMD vector of the same size.
-
-    If the result dtype is specified, the type of the constant values must be
-    convertible from the dtype.
-
-    ```mlir
-    // Signless integers can form signed or unsigned integers of the same
-    // bitwidth.
-    %0 = pop.constant(42 : i64) : !pop.scalar<si64>
-
-    // Explicitly signed or unsigned integers can form only integers of the
-    // same bitwidth and signedness.
-
-    %1 = pop.constant(#M.dense_array<42, 24> : vector<2xui64>) : !pop.simd<2, ui64>
-    // Floats can only form equivalent floating point.
-    %2 = pop.constant(12.3 : f80) : !pop.scalar<f80>
-    ```
-
-    If the result dtype is unspecified, the constant values can use integers of
-    any size or floats of any precision and semantics:
-
-    ```mlir
-    %0 = pop.constant(42) : !pop.scalar<type>
-    %1 = pop.constant(12.3 : f32) : !pop.scalar<type>
-    %2 = pop.constant(#M.dense_array<1, 2> : vector<2xi64>) : !pop.simd<2, type>
-    %3 = pop.constant(#M.dense_array<0.1> : vector<4xbf16>) : !pop.simd<4, type>
-    ```
-
-    When the operation is elaborated, the constant is reified according to the
-    concretized dtype as follows:
-
-    - If the concretized dtype is floating point, float values are coerced to
-      the floating point type if they fit within its range. Integers are
-      converted only if they losslessly roundtrip.
-    - If the concretized dtype is an integer, integers are converted only if
-      truncating or extending (according to the dtype signedness) the value
-      leaves it unchanged. Floats are converted only if they are exact integers.
-
-    Examples:
-
-    ```mlir
-    // No change in type required.
-    %0 = pop.constant(42 : si32) : !pop.scalar<type>
-    %0 = pop.constant(42 : si32) : !pop.scalar<si32>
-
-    // `42 : i64` can be represented losslessly as an `f32`.
-    %1 = pop.constant(42) : !pop.scalar<type>
-    %1 = pop.constant(42.0 : f32) : !pop.scalar<f32>
-
-    // `0.021 : f64` can be coerced to `f32`.
-    %1 = pop.constant(0.021) : !pop.scalar<type>
-    %1 = pop.constant(0.021 : f32) : !pop.scalar<f32>
-
-    // `16777217 : i32` cannot be represented losslessly as an `f32`. This
-    // results in an elaboration error.
-    %1 = pop.constant(16777217) : !pop.scalar<type>
-    %1 = pop.constant(16777217) : !pop.scalar<f32>
-    ```
-  }];
-  let arguments = (ins TypedAttrInterface:$value);
-  let results = (outs AnyTypeOf<[KGEN_ParamRefType, POP_SIMDType,
-                                 POP_ArrayType]>:$result);
-
-  let extraClassDeclaration = [{
-    /// Whether the constant op can be constructed with a particular value and
-    /// type.
-    static bool isBuildableWith(Attribute value, Type type);
-  }];
-
-  let assemblyFormat = "`(` $value `)` attr-dict `:` type($result)";
-  let hasVerifier = 1;
-  let hasFolder = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // UnaryOp
 //===----------------------------------------------------------------------===//
 
@@ -563,7 +475,8 @@ def POP_XOrOp : POP_BitwiseOp<"xor"> {
     The XOr is used to implement the `not` operation. For example:
 
     ```mlir
-    %neg_one = pop.constant(-1) : !pop.scalar<type>
+    %neg_one_si64 = kgen.param.constant: !pop.scalar<si64> = <#pop.simd<-1>>
+    %neg_one = pop.cast %neg_one_si64 : !pop.scalar<si64> to !pop.scalar<type>
     %not = pop.xor %val, %neg_one : !pop.scalar<type> // returns ~(%val)
     ```
   }];
@@ -928,7 +841,8 @@ def POP_SIMDGatherOp : POPOp<"simd.gather", [
     ```mlir
     %0 = load %p0 : !pop.scalar<type>
     %1 = load %p2 : !pop.scalar<type>
-    %2 = pop.constant(0) : !pop.simd<4, type>
+    %c0 = kgen.param.constant: !pop.simd<4, si64> = <#pop.simd<0, 0, 0, 0>>
+    %2 = pop.cast %c0 : !pop.simd<4, si64> to !pop.simd<4, type>
     %3 = pop.simd.insertelement %0, %2[0] : !pop.simd<4, type>
     %4 = pop.simd.insertelement %d0, %3[1] : !pop.simd<4, type>
     %5 = pop.simd.insertelement %1, %4[2] : !pop.simd<4, type>
@@ -1492,7 +1406,7 @@ def VariantCreateOp : POPOp<"variant.create", [Pure]> {
         -> !pop.variant<struct<>, T>
 
     // Create a variant of either a scalar float or integer.
-    %1 = pop.constant(0.0) : !pop.scalar<f64>
+    %1 = kgen.param.constant: !pop.scalar<f64> = <#pop.simd<"0.0">>
     %2 = pop.variant.create %1 : !pop.scalar<f64>
         -> !pop.variant<scalar<i64>, scalar<f64>>
     ```

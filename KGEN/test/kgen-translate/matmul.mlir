@@ -18,7 +18,7 @@ kgen.func @naive_matmul(%a: !zap.ndbuffer<[?, ?], f32>,
 
   scf.for %i = %zero to %M step %one {
     scf.for %j = %zero to %N step %one {
-      %init = pop.constant(0.0 : f32) : !pop.simd<1, f32>
+      %init = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"0.0">>
       %cij = scf.for %k = %zero to %K step %one
                     iter_args(%sum = %init) -> (!pop.simd<1, f32>) {
         %aik = zap.ndbuffer.load %a[%i, %k] : !zap.ndbuffer<[?, ?], f32>, !pop.simd<1, f32>

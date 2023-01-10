@@ -23,7 +23,8 @@ kgen.generator @add_scalar_loop<bcst: i1, type: dtype>(
 
   // Using 0 as a placeholder for undefined value since we do not have optional values.
   // %undef will be eliminated after kernel elaboration and simplification.
-  %undef = pop.constant(0) : !pop.scalar<type>
+  %zero_si64 = kgen.param.constant: !pop.scalar<si64> = <#pop.simd<0>>
+  %undef = pop.cast %zero_si64 : !pop.scalar<si64> to !pop.scalar<type>
   kgen.param.declare no_bcst: i1 = <not(bcst)>
   %bcst_val =  kgen.call @buffer.loadOrValue<isLoad:i1=bcst, type:dtype=type>(%in1, %zero, %undef)
     : (!pop.pointer<scalar<type>>, index, !pop.scalar<type>) -> !pop.scalar<type>

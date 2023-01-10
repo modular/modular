@@ -15,7 +15,7 @@ kgen.func @variant_visit(%a: !pop.variant<i32, f32>) -> !pop.scalar<si32> {
     // CHECK: %[[P0:.*]] = llvm.trunc %{{.*}} : i64 to i32
     // CHECK-NEXT: llvm.or %[[C0_i32]], %[[P0]]
     // CHECK-NEXT: %[[R:.*]] = llvm.mlir.constant(0 :
-    %1 = pop.constant(0 : si32) : !pop.scalar<si32>
+    %1 = kgen.param.constant: !pop.scalar<si32> = <#pop.simd<0>>
     // CHECK-NEXT: llvm.br ^bb3(%[[R]]
     pop.yield %1 : !pop.scalar<si32>
   }
@@ -26,7 +26,7 @@ kgen.func @variant_visit(%a: !pop.variant<i32, f32>) -> !pop.scalar<si32> {
     // CHECK-NEXT: %[[P1:.*]] = llvm.or %[[C0_i32]], %[[P0]]
     // CHECK-NEXT: llvm.bitcast %[[P1]] : i32 to f32
     // CHECK-NEXT: %[[R:.*]] = llvm.mlir.constant(1 :
-    %1 = pop.constant(1 : si32) : !pop.scalar<si32>
+    %1 = kgen.param.constant: !pop.scalar<si32> = <#pop.simd<1>>
     // CHECK-NEXT: llvm.br ^bb3(%[[R]]
     pop.yield %1 : !pop.scalar<si32>
   }
@@ -39,7 +39,7 @@ kgen.func @variant_visit(%a: !pop.variant<i32, f32>) -> !pop.scalar<si32> {
 
 // CHECK-LABEL: @variant_visit
 kgen.func @variant_visit(%a: !pop.variant<scalar<si32>, f32>) -> !pop.scalar<si32> {
-  %0 = pop.constant(1 : si32) : !pop.scalar<si32>
+  %0 = kgen.param.constant: !pop.scalar<si32> = <#pop.simd<1>>
   // CHECK: llvm.switch %{{.*}} : i1, ^bb2
   // CHECK-NEXT: 0: ^bb1
   %1 = pop.variant.visit %a : !pop.variant<scalar<si32>, f32> -> !pop.scalar<si32>

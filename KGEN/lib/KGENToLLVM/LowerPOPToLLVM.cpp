@@ -429,72 +429,6 @@ struct ConvertPOPSIMDShuffle
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPConstant
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPConstant : public mlir::ConvertOpToLLVMPattern<ConstantOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(ConstantOp op, ConstantOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    auto type = getTypeConverter()->convertType(op.getType());
-
-    // Vector constants with a single element should be lowered to scalar
-    // constants in LLVM dialect
-    if (isSIMDSizeOneType(op.getType())) {
-      TypeSwitch<Attribute>(op.getValue())
-          .Case([&](FloatArrayElementsAttr arry) {
-            rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(op, type,
-                                                          *arry.begin());
-          })
-          .Case([&](IntArrayElementsAttr arry) {
-            rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(op, type,
-                                                          *arry.begin());
-          })
-          .Case<FloatAttr, IntegerAttr>([&](auto attr) {
-            rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(op, type, attr);
-          })
-          .Default([&](Attribute attr) {
-            llvm_unreachable("unknown constant dtype");
-          });
-      return success();
-    }
-    if (auto vectorType = dyn_cast<VectorType>(type)) {
-      // Special handling for cases where pop.constant is represented by a
-      // single number, e.g.
-      //   %1 = pop.constant(0 : ui32) : !pop.simd<8, ui32>
-      TypeSwitch<Attribute>(op.getValue())
-          // Vector to vector translation
-          .Case<FloatArrayElementsAttr, IntArrayElementsAttr>([&](auto attr) {
-            rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(op, type, attr);
-          })
-          // Scalar to vector translation
-          .Case([&](FloatAttr attr) {
-            SmallVector<APFloat> values(vectorType.getNumElements(),
-                                        attr.getValue());
-            rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
-                op, type, FloatArrayElementsAttr::get(vectorType, values));
-          })
-          .Case([&](IntegerAttr attr) {
-            SmallVector<APInt> values(vectorType.getNumElements(),
-                                      attr.getValue());
-            rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
-                op, type, IntArrayElementsAttr::get(vectorType, values));
-          })
-          .Default([&](Attribute attr) {
-            llvm_unreachable("unknown constant type");
-          });
-      return success();
-    }
-
-    rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
-        op, type, adaptor.getOperands(), op->getAttrs());
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPSIMDExtractElement
 //===----------------------------------------------------------------------===//
 
@@ -1347,7 +1281,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPCastFromBuiltin,
       ConvertPOPCastToBuiltin,
       ConvertPOPCmp,
-      ConvertPOPConstant,
       ConvertPOPCopySign,
       ConvertPOPDiv,
       ConvertPOPFMA,

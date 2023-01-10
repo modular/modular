@@ -326,50 +326,6 @@ kgen.func @fmin_1xf32(%arg0: !pop.scalar<f32>, %arg1: !pop.scalar<f32>) -> !pop.
 
 // -----
 
-// CHECK-LABEL: @constant_simd
-kgen.func @constant_simd() -> !pop.simd<2, si32> {
-  // CHECK: llvm.mlir.constant(#M.dense_array<0, 0>
-  %0 = pop.constant(#M.dense_array<0, 0> : vector<2xsi32>) : !pop.simd<2, si32>
-  // CHECK: llvm.mlir.constant(#M.dense_array<0, 0> : vector<2xi32>)
-  %1 = pop.constant(0 : ui32) : !pop.simd<2, ui32>
-  kgen.return %0 : !pop.simd<2, si32>
-}
-
-// -----
-
-// CHECK-LABEL: @constant_simd
-kgen.func @constant_simd() -> !pop.simd<2, f32> {
-  // CHECK: llvm.mlir.constant(#M.dense_array<1.{{0*}}e+00, 2.{{0*}}e+00>
-  %0 = pop.constant(#M.dense_array<1., 2.> : vector<2xf32>) : !pop.simd<2, f32>
-  // CHECK: llvm.mlir.constant(#M.dense_array<1.{{0*}}e+00, 1.{{0*}}e+00> : vector<2xf32>)
-  %1 = pop.constant(1. : f32) : !pop.simd<2, f32>
-  kgen.return %0 : !pop.simd<2, f32>
-}
-
-// -----
-
-// CHECK-LABEL: @constant_1xsi64
-kgen.func @constant_1xsi64() -> !pop.scalar<si64> {
-  // CHECK: llvm.mlir.constant(42 : i64) : i64
-  %x = pop.constant(#M.dense_array<42> : vector<1xsi64>) : !pop.scalar<si64>
-  // CHECK: llvm.mlir.constant(4 : si64) : i64
-  %y = pop.constant(4 : si64) : !pop.scalar<si64>
-  kgen.return %x : !pop.scalar<si64>
-}
-
-// -----
-
-// CHECK-LABEL: @constant_1xf32
-kgen.func @constant_1xf32() -> !pop.scalar<f32> {
-  // CHECK: llvm.mlir.constant(3.14{{0+}}e+00 : f32) : f32
-  %x = pop.constant(#M.dense_array<3.14> : vector<1xf32>) : !pop.scalar<f32>
-  // CHECK: llvm.mlir.constant(3.14{{0+}}e+00 : f32) : f32
-  %y = pop.constant(3.14 : f32) : !pop.scalar<f32>
-  kgen.return %x : !pop.scalar<f32>
-}
-
-// -----
-
 // CHECK-LABEL: @shl_simd
 kgen.func @shl_simd(%arg0: !pop.simd<4, si32>, %arg1: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
   // CHECK: llvm.shl
