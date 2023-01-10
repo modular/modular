@@ -374,8 +374,6 @@ LogicalResult DirectCallable::filterOverloadSet(
   // If all of the candidates are wrong, diagnose this as a failure.
   if (!anyValid) {
     if (emitDiagnosticOnFailure) {
-      // TODO(QoI): Handle the case of zero candidates.
-
       // If there is a single callee, emit a specific error about the call.
       if (fnDecls.size() == 1) {
         auto fnDecl = cast<LIT::FuncOp>(*fnDecls[0]);
