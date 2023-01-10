@@ -17,7 +17,9 @@ fn create_kgen_list_1[
     Returns:
         !kgen.list<type[1]>: The list containing the elements.
     """
-    return __mlir_attr[`#kgen.list<`, e0, `> : !kgen.list<`, type, `[1]>`]
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[1]>`]
+    ](e0)
 
 
 fn create_kgen_list_2[
@@ -33,9 +35,9 @@ fn create_kgen_list_2[
     Returns:
         !kgen.list<type[2]>: The list containing the elements.
     """
-    return __mlir_attr[
-        `#kgen.list<`, e0, `,`, e1, `> : !kgen.list<`, type, `[2]>`
-    ]
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[2]>`]
+    ](e0, e1)
 
 
 fn create_kgen_list_3[
@@ -52,9 +54,9 @@ fn create_kgen_list_3[
     Returns:
         !kgen.list<type[3]>: The list containing the elements.
     """
-    return __mlir_attr[
-        `#kgen.list<`, e0, `,`, e1, `,`, e2, `> : !kgen.list<`, type, `[3]>`
-    ]
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[3]>`]
+    ](e0, e1, e2)
 
 
 fn create_kgen_list_4[
@@ -72,19 +74,9 @@ fn create_kgen_list_4[
     Returns:
         !kgen.list<type[4]>: The list containing the elements.
     """
-    return __mlir_attr[
-        `#kgen.list<`,
-        e0,
-        `,`,
-        e1,
-        `,`,
-        e2,
-        `,`,
-        e3,
-        `> : !kgen.list<`,
-        type,
-        `[4]>`,
-    ]
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[4]>`]
+    ](e0, e1, e2, e3)
 
 
 fn create_kgen_list_5[
@@ -108,21 +100,9 @@ fn create_kgen_list_5[
     Returns:
         !kgen.list<type[5]>: The list containing the elements.
     """
-    return __mlir_attr[
-        `#kgen.list<`,
-        e0,
-        `,`,
-        e1,
-        `,`,
-        e2,
-        `,`,
-        e3,
-        `,`,
-        e4,
-        `> : !kgen.list<`,
-        type,
-        `[5]>`,
-    ]
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[5]>`]
+    ](e0, e1, e2, e3, e4)
 
 
 fn create_kgen_list_6[
@@ -148,23 +128,9 @@ fn create_kgen_list_6[
     Returns:
         !kgen.list<type[6]>: The list containing the elements.
     """
-    return __mlir_attr[
-        `#kgen.list<`,
-        e0,
-        `,`,
-        e1,
-        `,`,
-        e2,
-        `,`,
-        e3,
-        `,`,
-        e4,
-        `,`,
-        e5,
-        `> : !kgen.list<`,
-        type,
-        `[6]>`,
-    ]
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[6]>`]
+    ](e0, e1, e2, e3, e4, e5)
 
 
 fn create_kgen_list_7[
@@ -192,25 +158,9 @@ fn create_kgen_list_7[
     Returns:
         !kgen.list<type[7]>: The list containing the elements.
     """
-    return __mlir_attr[
-        `#kgen.list<`,
-        e0,
-        `,`,
-        e1,
-        `,`,
-        e2,
-        `,`,
-        e3,
-        `,`,
-        e4,
-        `,`,
-        e5,
-        `,`,
-        e6,
-        `> : !kgen.list<`,
-        type,
-        `[7]>`,
-    ]
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[7]>`]
+    ](e0, e1, e2, e3, e4, e5, e6)
 
 
 fn create_kgen_list_8[
@@ -240,27 +190,9 @@ fn create_kgen_list_8[
     Returns:
         !kgen.list<type[8]>: The list containing the elements.
     """
-    return __mlir_attr[
-        `#kgen.list<`,
-        e0,
-        `,`,
-        e1,
-        `,`,
-        e2,
-        `,`,
-        e3,
-        `,`,
-        e4,
-        `,`,
-        e5,
-        `,`,
-        e6,
-        `,`,
-        e7,
-        `> : !kgen.list<`,
-        type,
-        `[8]>`,
-    ]
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[8]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7)
 
 
 fn create_kgen_list_9[
@@ -292,29 +224,9 @@ fn create_kgen_list_9[
     Returns:
         !kgen.list<type[9]>: The list containing the elements.
     """
-    return __mlir_attr[
-        `#kgen.list<`,
-        e0,
-        `,`,
-        e1,
-        `,`,
-        e2,
-        `,`,
-        e3,
-        `,`,
-        e4,
-        `,`,
-        e5,
-        `,`,
-        e6,
-        `,`,
-        e7,
-        `,`,
-        e8,
-        `> : !kgen.list<`,
-        type,
-        `[9]>`,
-    ]
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[9]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8)
 
 
 fn create_kgen_list_10[
@@ -348,28 +260,6 @@ fn create_kgen_list_10[
     Returns:
         !kgen.list<type[10]>: The list containing the elements.
     """
-    return __mlir_attr[
-        `#kgen.list<`,
-        e0,
-        `,`,
-        e1,
-        `,`,
-        e2,
-        `,`,
-        e3,
-        `,`,
-        e4,
-        `,`,
-        e5,
-        `,`,
-        e6,
-        `,`,
-        e7,
-        `,`,
-        e8,
-        `,`,
-        e9,
-        `> : !kgen.list<`,
-        type,
-        `[10]>`,
-    ]
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[10]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9)
