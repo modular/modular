@@ -15,6 +15,7 @@ include "KGEN/POPDialect/POPTypes.td"
 include "Support/Interpreter/InterpreterInterface.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
+include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/CopyOpInterface.td"
@@ -1911,6 +1912,110 @@ def POP_GlobalConstantOp : POPOp<"global_constant", [Pure]> {
 
   let hasVerifier = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// CompilerGlobalVariableOp
+//===----------------------------------------------------------------------===//
+
+def POP_CompilerGlobalVariableOp : POPOp<"compiler.global_variable",
+    [DeclareOpInterfaceMethods<Symbol, ["getVisibility"]>]> {
+  let summary = "create a global variable";
+  let description = [{
+    The `pop.global_variable` operation declares a global variable.
+    The variable defines a symbol to ensure that it is unique. It can
+    be accessed with `pop.global_handle` which returns a pointer to the
+    variable.
+
+    Example:
+
+    ```mlir
+    pop.global_variable @foo : !pop.scalar<ui32>
+
+    ...
+
+    %0 = pop.global_load @foo : !pop.scalar<ui32>
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name, TypeAttr:$result);
+
+  let assemblyFormat = "$sym_name attr-dict `:` $result";
+}
+
+//===----------------------------------------------------------------------===//
+// CompilerGlobalLoadOp
+//===----------------------------------------------------------------------===//
+
+def POP_CompilerGlobalLoadOp : POPOp<"compiler.global_load",
+    [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "load the value of a global variable";
+  let description = [{
+    The `pop.compiler.global_load` operation loads a global variable by symbol
+    name so it can be used by SSA value. This op is a compile time only
+    operation and expects to be folded away.
+
+    Example:
+
+    ```mlir
+    pop.global_variable @foo : !pop.scalar<ui32>
+
+    ...
+
+    %0 = pop.global_load @foo : !pop.scalar<ui32>
+    ```
+  }];
+
+  let arguments = (ins SymbolRefAttr:$name);
+  let results = (outs AnyType:$result);
+
+  let builders = [
+    OpBuilder<(ins "POP::CompilerGlobalVariableOp":$op), [{
+      return build($_builder, $_state, op.getResult(),
+                   SymbolRefAttr::get(op.getNameAttr()));
+    }]>,
+  ];
+
+  let assemblyFormat = "$name attr-dict `:` qualified(type($result))";
+}
+
+//===----------------------------------------------------------------------===//
+// CompilerGlobalStoreOp
+//===----------------------------------------------------------------------===//
+
+def POP_CompilerGlobalStoreOp : POPOp<"compiler.global_store",
+    [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "store a value into a global variable";
+  let description = [{
+    The `pop.compiler.global_store` operation stores a value into a global
+    variable by symbol name. It is a compile error if this op exists by the
+    time POP is lowered to LLVM.
+
+    Example:
+
+    ```mlir
+    pop.global_variable @foo : !pop.scalar<ui32>
+
+    ...
+
+    %0 = pop.constant(0) : !pop.scalar<ui32>
+    pop.global_store @foo, %0 : !pop.scalar<ui32>
+    ```
+  }];
+
+  let arguments = (ins SymbolRefAttr:$name, AnyType:$value);
+
+  let builders = [
+    OpBuilder<(ins "POP::CompilerGlobalVariableOp":$op, "Value":$value), [{
+      return build($_builder, $_state,
+                   SymbolRefAttr::get(op.getNameAttr()), value);
+    }]>,
+  ];
+
+  let assemblyFormat = [{
+    $name `,` $value `:` type($value) attr-dict
+  }];
+}
+
 
 //===----------------------------------------------------------------------===//
 // IndexToPointerOp
