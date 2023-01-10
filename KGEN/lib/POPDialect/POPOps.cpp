@@ -328,6 +328,7 @@ OpFoldResult ConstantOp::fold(ArrayRef<Attribute> operands) {
 // CmpOp
 //===----------------------------------------------------------------------===//
 
+/// Return a SIMD type whose dtype is bool with the same size as the given type.
 static Type getBoolOfSameParentType(Type type) {
   auto boolType = DTypeConstantAttr::get(type.getContext(), DType::kBool);
   if (auto simd = dyn_cast<SIMDType>(type))

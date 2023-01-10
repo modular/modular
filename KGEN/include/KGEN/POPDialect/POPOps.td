@@ -120,11 +120,7 @@ def POP_ConstantOp : POPOp<"constant", [ConstantLike, Pure,
 
 // Base class for unary arithmetic pop operations.
 class POP_ArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
-      POPOp<mnemonic, traits # [
-        Pure,
-        SameOperandsAndResultType,
-        DeclareOpInterfaceMethods<InferTypeOpInterface>
-      ]> {
+    POPOp<mnemonic, traits # [Pure, SameOperandsAndResultType]> {
   let arguments = (ins UnboundOrIndexOrSignedSIMD:$operand);
   let results = (outs UnboundOrIndexOrSignedSIMD:$result);
 
@@ -179,11 +175,7 @@ def POP_NegOp : POP_ArithmeticUnaryOp<"neg"> {
 
 // Base class for binary arithmetic pop operations.
 class POP_ArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
-      POPOp<mnemonic, traits # [
-        Pure,
-        SameOperandsAndResultType,
-        DeclareOpInterfaceMethods<InferTypeOpInterface>
-      ]> {
+    POPOp<mnemonic, traits # [Pure, SameOperandsAndResultType]> {
   let arguments = (ins UnboundOrIndexOrArithmeticSIMD:$lhs,
                        UnboundOrIndexOrArithmeticSIMD:$rhs);
   let results = (outs UnboundOrIndexOrArithmeticSIMD:$result);
@@ -424,11 +416,7 @@ def POP_CopySignOp : POP_ArithmeticBinaryOp<"copysign"> {
 
 // Base class for ternary arithmetic pop operations.
 class POP_ArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
-      POPOp<mnemonic, traits # [
-        Pure,
-        SameOperandsAndResultType,
-        DeclareOpInterfaceMethods<InferTypeOpInterface>
-      ]> {
+    POPOp<mnemonic, traits # [Pure, SameOperandsAndResultType]> {
   let arguments = (ins UnboundOrIndexOrArithmeticSIMD:$a,
                        UnboundOrIndexOrArithmeticSIMD:$b,
                        UnboundOrIndexOrArithmeticSIMD:$c);
@@ -465,7 +453,7 @@ def POP_FMAOp : POP_ArithmeticTernaryOp<"fma"> {
 //===----------------------------------------------------------------------===//
 
 def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands,
-                          DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "comparison";
   let description = [{
     The `pop.cmp` operation takes a comparison predicate and two `!pop.scalar`
@@ -585,12 +573,10 @@ def POP_XOrOp : POP_BitwiseOp<"xor"> {
 // SelectOp
 //===----------------------------------------------------------------------===//
 
-def POP_SelectOp : POPOp<"select",
-        [Pure,
-         AllTypesMatch<["trueValue", "falseValue", "result"]>,
-         TypesMatchWith<"bool of same branch type", "result", "condition",
-                        "getBoolOfSameParentType($_self)">
-        ]> {
+def POP_SelectOp : POPOp<"select", [Pure,
+    AllTypesMatch<["trueValue", "falseValue", "result"]>,
+    TypesMatchWith<"bool of same branch type", "result", "condition",
+                   "getBoolOfSameParentType($_self)">]> {
   let summary = "select";
   let description = [{
     The `pop.select` operation takes a condition predicate and two `!pop.scalar`
