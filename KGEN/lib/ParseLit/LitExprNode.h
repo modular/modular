@@ -107,10 +107,8 @@ public:
     kFirstAssignStmt = kAssign,
     kLastAssignStmt = kIPow,
 
-    // FIXME: This range isn't right.  It will include things like kAssign and
-    // kPow which are not binary operators!
     kFirstBinOp = kAdd,
-    kLastBinOp = kIFloorDiv,
+    kLastBinOp = kIPow,
   } const kind;
 
   ExprNode(Kind kind) : kind(kind) {}
