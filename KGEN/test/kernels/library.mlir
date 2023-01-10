@@ -43,7 +43,8 @@ kgen.generator @horner<type: dtype, size>(
   constraints <[in(:dtype type, [f32, f64]), "incorrect element type"]> implements @polynomial_evaluate {
   %zero = index.constant 0
   %one = index.constant 1
-  %zerof = pop.constant(0.0) : !pop.scalar<type>
+  %zero_si64 = kgen.param.constant: !pop.scalar<si64> = <#pop.simd<0>>
+  %zerof = pop.cast %zero_si64 : !pop.scalar<si64> to !pop.scalar<type>
   %numCoeffs = kgen.param.constant = <size>
   %result = scf.for %i = %zero to %numCoeffs step %one iter_args(%sum = %zerof) -> !pop.scalar<type> {
     %ptr = pop.offset %coefficients[%i] : !pop.pointer<scalar<type>>

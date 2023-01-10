@@ -166,40 +166,6 @@ The `pop` dialect solves two problems for KGEN:
 This section captures other specific design points that may be surprising about
 its design and why.
 
-### `pop.constant` allows its attribute value to mismatch the result type
-
-The `pop.constant` operation allows things like this, which have mismatched
-attribute types and the result type:
-
-```
-  %c1 = pop.constant(1.5 : f64) : !pop.scalar<f32>  // wrong fp type
-  %c2 = pop.constant(12 : i8) : !pop.scalar<f32> // means 12.0f
-  %c3 = pop.constant(256) : scalar<si8>   // too big for si8
-```
-
-The rationale stems from pop being a parametric dialect which allows the
-concrete type to be resolved late.  The first code could very reasonably have
-started out as:
-
-```
-  %0 = pop.constant(1.5 : f64) : !pop.scalar<someFPType>
-```
-
-and `someFPType` got resolve to `f32` by the elaborator, which generically
-resolves type parameters without making other adjustments to the operation.
-
-Some amount of type fluidity makes sense, but there are other designs we could
-investigate:
-
-1) We could reject `%c3` with an error or warning, for the same reason that
-   using `T x = 256;` in C++ and resolving T to char would.
-2) We could allow operations to adopt an operation interface with a "resolve
-   yourself" method that would be invoked after parameters are resolved in the
-   operation.  The elaborator would invoke this, allowing the `pop.constant`
-   operation to fix itself after elaboration or report an error.
-
-The benefit of #2 is that it would lead to a simpler IR.
-
 ## `zap` dialect design
 
 The `zap` dialect is a substitute for language-level features and libraries
@@ -314,7 +280,7 @@ kgen.generator @foo
 }
 
 kgen.generator @bar() {
-  %a = pop.constant(2.0: f32) : !pop.simd<4, f32>
+  %a = kgen.param.constant: !pop.simd<4, f32> = <#pop.simd<"2.0", "2.0", "2.0", "2.0">>
 
   // Call example 1
   kgen.call @foo
@@ -330,7 +296,7 @@ kgen.generator @bar() {
       kgen.return %res : !pop.simd<size, dt>
     }
 
-  %b = pop.constant(3: si32) : !pop.simd<8, si32>
+  %b = kgen.param.constant: !pop.simd<8, si32> = <#pop.simd<3, 3, ...>>
 
   // Call example 2
   kgen.call @foo
@@ -366,9 +332,9 @@ module {
     kgen.return %0 : !pop.simd<8, si32>
   }
   kgen.func @bar() {
-    %cst = pop.constant(2.000000e+00 : f32) : !pop.simd<4, f32>
+    %cst = kgen.param.constant: !pop.simd<4, f32> = <#pop.simd<"2.0", "2.0", ...>>
     %0 = kgen.call @"foo,size=4,dt=f32,fn=bar_concrete_region_0"(%cst) : (!pop.simd<4, f32>) -> !pop.simd<4, f32>
-    %cst_0 = pop.constant(3 : si32) : !pop.simd<8, si32>
+    %cst_0 = kgen.param.constant: !pop.simd<8, si32> = <#pop.simd<3, 3, ...>>
     %1 = kgen.call @"foo,size=8,dt=si32,fn=bar_concrete_region_1"(%cst_0) : (!pop.simd<8, si32>) -> !pop.simd<8, si32>
     kgen.return
   }

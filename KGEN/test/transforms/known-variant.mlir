@@ -65,7 +65,7 @@ kgen.func @entry() -> !pop.variant<i8, i32> {
     %4 = pop.variant.create %3 : i8 -> !pop.variant<i8, i32>
     scf.yield %4 : !pop.variant<i8, i32>
   } else {
-    %3 = pop.constant(0 : si32) : !pop.simd<1, si32>
+    %3 = kgen.param.constant: !pop.scalar<si32> = <#pop.simd<0>>
     %4 = pop.cast_to_builtin %3 : !pop.simd<1, si32> to i32
     %5 = pop.variant.create %4 : i32 -> !pop.variant<i8, i32>
     scf.yield %5 : !pop.variant<i8, i32>
