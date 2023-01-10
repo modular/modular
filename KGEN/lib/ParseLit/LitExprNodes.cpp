@@ -1172,58 +1172,60 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
       lhsRep.getIfMValue() && rhsRep.getIfMValue()) {
     auto lhsParam = lhsRep.getIfMValue();
     auto rhsParam = rhsRep.getIfMValue();
-    uint32_t opcode;
+    POC opcode;
     bool needsInvert = false;
     switch (kind) {
     default:
       llvm_unreachable("unknown binary operator");
+    case kSub:
+      return ParamOperatorAttr::getSub(lhsParam, rhsParam);
     case kAdd:
-      opcode = (uint32_t)POC::Add;
+      opcode = POC::Add;
       break;
     case kMul:
-      opcode = (uint32_t)POC::Mul;
+      opcode = POC::Mul;
       break;
     case kAnd:
-      opcode = (uint32_t)POC::And;
+      opcode = POC::And;
       break;
     case kOr:
-      opcode = (uint32_t)POC::Or;
+      opcode = POC::Or;
       break;
     case kXor:
-      opcode = (uint32_t)POC::Xor;
+      opcode = POC::Xor;
       break;
     case kLShift:
-      opcode = (uint32_t)POC::Shl;
+      opcode = POC::Shl;
       break;
     case kRShift:
-      opcode = (uint32_t)POC::Shr;
+      opcode = POC::Shr;
       break;
     case kFloorDiv:
-      opcode = (uint32_t)POC::Div;
+      opcode = POC::Div;
       break;
     case kMod:
-      opcode = (uint32_t)POC::Mod;
+      opcode = POC::Mod;
       break;
     case kCmpEQ:
-      opcode = (uint32_t)POC::EQ;
+      opcode = POC::EQ;
       break;
     case kCmpNE:
-      opcode = (uint32_t)POC::EQ;
+      opcode = POC::EQ;
       needsInvert = true;
       break;
     case kCmpGE:
-      opcode = (uint32_t)POC::LT;
+      opcode = POC::LT;
       needsInvert = true;
       break;
     case kCmpGT:
-      opcode = (uint32_t)POC::LE;
+      opcode = POC::LE;
       needsInvert = true;
       break;
     case kCmpLT:
-      opcode = (uint32_t)POC::LT;
+      opcode = POC::LT;
       break;
     case kCmpLE:
-      opcode = (uint32_t)POC::LE;
+      opcode = POC::LE;
       break;
     }
     auto value = ParamOperatorAttr::get((POC)opcode, lhsParam, rhsParam);
@@ -1377,11 +1379,10 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
         return MValue(
             FloatAttr::get(constantFP.getType(), -constantFP.getValue()));
 
-      // Support general integer parameter exprss.
-      if (exprRep.getType().isIndex()) {
-        IntegerAttr minusOne = emitter.builder->getIndexAttr(-1);
-        return ParamOperatorAttr::get(POC::Mul, exprParam, minusOne);
-      }
+      // Support general integer parameter exprs.
+      if (exprRep.getType().isIndex())
+        return ParamOperatorAttr::getNeg(exprParam);
+
       break;
     case ExprNode::kPos:
       return exprParam;

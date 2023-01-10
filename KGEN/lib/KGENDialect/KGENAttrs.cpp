@@ -1429,6 +1429,20 @@ TypedAttr ParamOperatorAttr::getNot(TypedAttr operand) {
   return ParamOperatorAttr::get(POC::Xor, {operand, one});
 }
 
+/// Return (neg x) which is the same as (mul x, -1).  The `operand` value
+/// must have `index` type.
+TypedAttr ParamOperatorAttr::getNeg(TypedAttr operand) {
+  IntegerAttr minusOne =
+      IntegerAttr::get(IndexType::get(operand.getContext()), APInt(64, -1ULL));
+  return ParamOperatorAttr::get(POC::Mul, operand, minusOne);
+}
+
+/// Return (x-y) which is the same as (add x, (neg y)).  The `operand` value
+/// must have `index` type.
+TypedAttr ParamOperatorAttr::getSub(TypedAttr lhs, TypedAttr rhs) {
+  return get(POC::Add, lhs, getNeg(rhs));
+}
+
 TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   assert(!operandsIn.empty() && "Cannot have expr with no operands");
   // All operands must have the same type.  The result type is usually the
