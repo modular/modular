@@ -9,7 +9,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: apple-m1
-# RUN: kgen %s -execute -func="main():index()" -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$lit_apple_amx::main():index()' -I %stdlibdir | FileCheck %s
 
 from Int import Int
 from F32 import F32
