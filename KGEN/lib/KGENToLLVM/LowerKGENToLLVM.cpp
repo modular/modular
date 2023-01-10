@@ -175,6 +175,12 @@ struct ConvertKGENCall : public mlir::ConvertOpToLLVMPattern<CallOp> {
   LogicalResult
   matchAndRewrite(CallOp op, CallOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    // Don't do anything else if we hit a ForceInline call that wasn't inlined.
+    if (bitEnumContainsAny(op.getCallee().getType().getFnEffects(),
+                           FnEffects::ForceInline))
+      return emitError(op.getLoc(), "cannot lower call with force_inline, it "
+                                    "should have been removed by now");
+
     // Convert the result types.
     SmallVector<Type> types = llvm::to_vector(op.getResultTypes());
     if (!types.empty()) {
