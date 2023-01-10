@@ -143,7 +143,7 @@ static FailureOr<DTypeValue> parseDTypeValue(AsmParser &p, KGENDType dtype) {
         apFp.convertFromString(strVal, APFloat::rmNearestTiesToEven);
     if (llvm::errorToBool(status.takeError()))
       return p.emitError(loc, "failed to parse floating point value");
-    if (*status != APFloat::opOK)
+    if (*status != APFloat::opOK && *status != APFloat::opInexact)
       return p.emitError(loc, "cannot convert ")
              << strVal << " to " << dtype.getAsString();
     return DTypeValue(apFp, dtype);

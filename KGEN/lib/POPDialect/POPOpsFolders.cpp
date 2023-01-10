@@ -964,19 +964,21 @@ OpFoldResult CastToBuiltinOp::fold(ArrayRef<Attribute> operands) {
   }
 
   // Conversion to a 1D vector type.
-  KGENDType dtype = *simd.getType().getResolvedDType();
+  Optional<KGENDType> dtype = simd.getType().getResolvedDType();
+  if (!dtype)
+    return {};
   if (auto vector = dyn_cast<VectorType>(getType())) {
-    if (dtype.isBool())
+    if (dtype->isBool())
       return convertSIMDToVectorAttr<IntArrayElementsAttr>(
           simd, vector,
           [](DTypeValue val) { return APInt(1, val.getBoolVal()); });
-    if (dtype.isIndex())
+    if (dtype->isIndex())
       return convertSIMDToVectorAttr<IndexArrayElementsAttr>(
           simd, vector, [](DTypeValue val) { return val.getIndexVal(); });
-    if (dtype.isInt())
+    if (dtype->isInt())
       return convertSIMDToVectorAttr<IntArrayElementsAttr>(
           simd, vector, [](DTypeValue val) { return val.getIntVal(); });
-    assert(dtype.isFloat() && "unexpected dtype");
+    assert(dtype->isFloat() && "unexpected dtype");
     return convertSIMDToVectorAttr<FloatArrayElementsAttr>(
         simd, vector, [](DTypeValue val) { return val.getFloatVal(); });
   }
@@ -986,13 +988,13 @@ OpFoldResult CastToBuiltinOp::fold(ArrayRef<Attribute> operands) {
 
   // Convert to a scalar attribute.
   Builder b(simd.getContext());
-  if (dtype.isBool())
+  if (dtype->isBool())
     return b.getBoolAttr(value.getBoolVal());
-  if (dtype.isIndex())
+  if (dtype->isIndex())
     return b.getIndexAttr(value.getIndexVal());
-  if (dtype.isInt())
+  if (dtype->isInt())
     return b.getIntegerAttr(cast<IntegerType>(getType()), value.getIntVal());
-  assert(dtype.isFloat() && "unexpected dtype");
+  assert(dtype->isFloat() && "unexpected dtype");
   return b.getFloatAttr(cast<FloatType>(getType()), value.getFloatVal());
 }
 
@@ -1016,31 +1018,34 @@ OpFoldResult CastFromBuiltinOp::fold(ArrayRef<Attribute> operands) {
     return {};
 
   // Conversion from vector constant.
-  KGENDType dtype = *getType().getResolvedDType();
+  Optional<KGENDType> dtype = getType().getResolvedDType();
+  if (!dtype)
+    return {};
   if (auto vector = dyn_cast<VectorType>(val.getType())) {
     SmallVector<DTypeValue> values;
-    if (dtype.isBool())
+    if (dtype->isBool())
       for (APInt value : cast<IntArrayElementsAttr>(val).getValues())
-        values.emplace_back(!value.isZero(), dtype);
-    else if (dtype.isIndex())
+        values.emplace_back(!value.isZero(), *dtype);
+    else if (dtype->isIndex())
       for (int64_t value : cast<IndexArrayElementsAttr>(val))
-        values.emplace_back(value, dtype);
-    else if (dtype.isInt())
+        values.emplace_back(value, *dtype);
+    else if (dtype->isInt())
       for (APInt value : cast<IntArrayElementsAttr>(val).getValues())
-        values.emplace_back(value, dtype);
+        values.emplace_back(value, *dtype);
     else
       for (APFloat value : cast<FloatArrayElementsAttr>(val).getValues())
-        values.emplace_back(value, dtype);
+        values.emplace_back(value, *dtype);
     return SIMDAttr::get(values, getType());
   }
 
   // Handle scalar constants.
-  if (dtype.isBool())
-    return SIMDAttr::get({cast<BoolAttr>(val).getValue(), dtype}, getType());
-  if (dtype.isIndex())
-    return SIMDAttr::get({cast<IntegerAttr>(val).getInt(), dtype}, getType());
-  if (dtype.isInt())
-    return SIMDAttr::get({cast<IntegerAttr>(val).getValue(), dtype}, getType());
-  assert(dtype.isFloat() && "unexpected dtype");
-  return SIMDAttr::get({cast<FloatAttr>(val).getValue(), dtype}, getType());
+  if (dtype->isBool())
+    return SIMDAttr::get({cast<BoolAttr>(val).getValue(), *dtype}, getType());
+  if (dtype->isIndex())
+    return SIMDAttr::get({cast<IntegerAttr>(val).getInt(), *dtype}, getType());
+  if (dtype->isInt())
+    return SIMDAttr::get({cast<IntegerAttr>(val).getValue(), *dtype},
+                         getType());
+  assert(dtype->isFloat() && "unexpected dtype");
+  return SIMDAttr::get({cast<FloatAttr>(val).getValue(), *dtype}, getType());
 }
