@@ -41,6 +41,24 @@ SymbolRefAttr LIT::getFullyResolvedSymbolRef(mlir::SymbolOpInterface op) {
 }
 
 //===----------------------------------------------------------------------===//
+// ExportOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+LIT::ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  if (getExports().empty())
+    return emitOpError("exports must not be empty");
+
+  // Just ensure we're exporting symbols we can see.
+  auto module = KGENModule::from(*this, symbolTable);
+  for (auto e : getExports().getAsRange<SymbolRefAttr>())
+    if (!module.lookup<FuncInterface>(e))
+      return emitOpError("could not find referenced symbol '") << e << "'";
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // FileModuleOp
 //===----------------------------------------------------------------------===//
 
@@ -238,9 +256,9 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
 
   // If this is a generator implementing a generator.interface, include the
   // symbol for the generator interface.
-  if (getImplementsAttr()) {
+  if (auto implementsAttr = getImplementsAttr()) {
     p.printNewline();
-    p << "  implements " << op->getAttrOfType<FlatSymbolRefAttr>("implements");
+    p << "  implements " << implementsAttr;
   }
 
   p << ' ';

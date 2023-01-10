@@ -777,7 +777,11 @@ static LogicalResult lowerModuleDecl(Block *moduleBody,
     // If we are already in the symbol table, use the the operations iterator.
     auto opSymTableIt = isTopLevel ? op.getIterator() : symTableIt;
 
-    if (auto func = dyn_cast<LIT::FuncOp>(op)) {
+    if (auto exportOp = dyn_cast<LIT::ExportOp>(op)) {
+      OpBuilder(&op).create<KGEN::ExportOp>(exportOp.getLoc(),
+                                            exportOp.getExportsAttr());
+      exportOp->erase();
+    } else if (auto func = dyn_cast<LIT::FuncOp>(op)) {
       if (failed(lowerLITFunc(func, symbolTable, opSymTableIt, parentPrefix)))
         return failure();
     } else if (auto structDecl = dyn_cast<KGEN::StructDeclOp>(op)) {

@@ -864,14 +864,15 @@ struct FnDecorators : public LitSharedStateUser {
         isMethod(isa<StructDeclOp>(*decl.getParentDecl())) {}
 
   void apply(SmallVector<ExprNode *> &decoratorExprs);
-  void applyLate(SmallVector<ExprNode *> &decoratorExprs);
+  void applyLate(SymbolRefAttr symbolName,
+                 SmallVector<ExprNode *> &decoratorExprs);
 
 private:
   void applyInterface(const DeclRefNode &node);
   void applyRaises(const DeclRefNode &node);
   void applyImplements(const CallNode &callNode);
   void applyEvaluator(const CallNode &callNode);
-  void applyLateExport();
+  void applyLateExport(SymbolRefAttr symbolName);
 
   ASTDecl &decl;
   LIT::FuncOp funcOp;
@@ -1056,7 +1057,7 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
   decoratorExprs = unprocessed;
 }
 
-void FnDecorators::applyLateExport() {
+void FnDecorators::applyLateExport(SymbolRefAttr symbolName) {
   if (isMethod) {
     emitError(funcOp.getLoc(), "methods cannot be exported");
     return;
@@ -1064,19 +1065,18 @@ void FnDecorators::applyLateExport() {
 
   ASTDecl *containingDecl = decl.getParentDecl();
   auto builder = containingDecl->getDeclEndBuilder();
-  builder.create<ExportOp>(
-      funcOp.getLoc(),
-      ArrayAttr::get(funcOp.getContext(),
-                     {FlatSymbolRefAttr::get(funcOp.getNameAttr())}));
+  builder.create<LIT::ExportOp>(funcOp.getLoc(),
+                                builder.getArrayAttr(symbolName));
 }
 
-void FnDecorators::applyLate(SmallVector<ExprNode *> &decoratorExprs) {
+void FnDecorators::applyLate(SymbolRefAttr symbolName,
+                             SmallVector<ExprNode *> &decoratorExprs) {
   // Scan through and process decorator expressions that are in the late pass.
   for (ExprNode *decorator : decoratorExprs) {
     // Process all the decorators we know about.
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
       if (declRef->spelling == "export") {
-        applyLateExport();
+        applyLateExport(symbolName);
         continue;
       }
 
@@ -1217,7 +1217,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
   // TODO: Handle the export attribute somehow else.  It should be a 'body
   // decorator' that is handled after the decl is fully resolved.
-  FnDecorators(decl, shared).applyLate(decoratorExprs);
+  SymbolRefAttr symbolName = getFullyResolvedSymbolRef(funcOp);
+  FnDecorators(decl, shared).applyLate(symbolName, decoratorExprs);
 
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
