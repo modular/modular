@@ -308,12 +308,7 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     break;
   }
 
-  // Otherwise, we must have a statement that starts with the expression
-  // grammar.
-  if (isa<StructDeclOp>(containingDecl)) {
-    // TODO: Support type-level meta programs.
-    emitTokenError("invalid expression in this context");
-  }
+  // TODO: Nail down a model for struct-level meta-programs.
 
   // Parse a single expression, an assignment stmt, or augmented assignment
   // statement.

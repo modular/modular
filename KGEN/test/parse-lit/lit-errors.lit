@@ -615,3 +615,8 @@ fn negBuiltinType(x: __mlir_type.f64) :
 fn testConversionQoI():
   # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in alias}}
   alias intVal : Int = 1.2
+
+# https://github.com/modularml/modular/issues/6701
+struct MLIRAttrWithinStruct: # expected-note {{previously used here}}
+  # expected-error @+1 {{recursive reference to declaration}}
+  __mlir_attr.`#index<cmp_predicate eq>`
