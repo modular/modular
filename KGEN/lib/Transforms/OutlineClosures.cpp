@@ -147,7 +147,7 @@ void OutlineClosuresPass::runOnOperation() {
       SmallVector<Value> liftedInputs = captures;
       llvm::append_range(liftedInputs, body.getBodyRegion().getArguments());
       auto liftedValueSignature =
-          FunctionType::get(&getContext(), ValueRange(liftedInputs),
+          FunctionType::get(&getContext(), ValueRange(liftedInputs).getTypes(),
                             bodySignature.getValueResults());
 
       // The parameter signature is just the necessary decls + original
