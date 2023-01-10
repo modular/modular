@@ -899,7 +899,7 @@ kgen.generator @target_params2<t0: target>()
 
 // -----
 
-// expected-error @below {{'kgen.func' op can only have default conventions}}
+// expected-error @below {{'kgen.func' op can only have default value input conventions}}
 kgen.func @conventions(%arg0: !pop.pointer<index> byref) {
   kgen.return
 }
@@ -933,4 +933,12 @@ kgen.generator @no_return() {
 kgen.func @no_return() {
   // expected-error @below {{block with no terminator}}
   kgen.param.declare A = <1>
+}
+
+// -----
+
+// expected-error @below {{specified force_inline, and so expected force_inline on this signature as well}}
+kgen.generator @bad_signature<fn: <>() force_inline -> ()>() {
+  kgen.call_param[fn: ()force_inline -> ()]() : () -> ()
+  kgen.return
 }

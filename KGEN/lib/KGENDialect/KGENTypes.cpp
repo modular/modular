@@ -300,10 +300,28 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
     ++argNo;
   }
 
-  // If the function throws an error, make sure the result type is a variant of
-  // one or two types.  It will be one if the function both returns and throws
-  // the same type.
-  if (conventions.getFnEffects() == FnEffects::Throws) {
+  // If any signature parameters are force_inline, this signature must be as
+  // well.
+  for (ParamDeclAttr decl : inputParams) {
+    auto sig = decl.getType().dyn_cast<SignatureType>();
+    if (!sig)
+      continue;
+
+    // Found a signature, if it is force_inline then this
+    if (bitEnumContainsAny(sig.getFnEffects(), FnEffects::ForceInline)) {
+      if (!bitEnumContainsAny(conventions.getFnEffects(),
+                              FnEffects::ForceInline)) {
+        return emitError() << "signature input parameter " << decl
+                           << " specified force_inline, and so expected "
+                              "force_inline on this signature as well";
+      }
+    }
+  }
+
+  // If the function throws an error, make sure the result type is a variant
+  // of one or two types.  It will be one if the function both returns and
+  // throws the same type.
+  if (bitEnumContainsAny(conventions.getFnEffects(), FnEffects::Throws)) {
     if (values.getNumResults() != 1)
       return emitError() << "a function that throws should have 1 result";
     auto errorOrType = llvm::dyn_cast<POP::VariantType>(values.getResult(0));
