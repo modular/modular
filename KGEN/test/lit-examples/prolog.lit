@@ -81,23 +81,23 @@ struct Error:
         return __mlir_op.`kgen.struct.create`[_type: Error](msg)
 
 struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
-    var value: __mlir_type[`!pop.variant<@Error, `, type, `>>`]
+    var value: __mlir_type[`!pop.variant<`, Error, `, `, type, `>>`]
 
-    fn __new__(value: __mlir_type[`!pop.variant<@Error, `, type, `>>`])
+    fn __new__(value: __mlir_type[`!pop.variant<`, Error, `, `, type, `>>`])
       -> ErrorOr[type]:
         return __mlir_op.`kgen.struct.create`[_type: ErrorOr[type]](value)
 
     fn __new__(err: Error) -> ErrorOr[type]:
         return __mlir_op.`kgen.struct.create`[_type: ErrorOr[type]](
-          __mlir_op.`pop.variant.create`[_type: __mlir_type[`!pop.variant<@Error, `, type, `>`]](err))
+          __mlir_op.`pop.variant.create`[_type: __mlir_type[`!pop.variant<`, Error, `, `, type, `>`]](err))
 
     fn __new__(value: type) -> ErrorOr[type]:
         return __mlir_op.`kgen.struct.create`[_type: ErrorOr[type]](
-           __mlir_op.`pop.variant.create`[_type: __mlir_type[`!pop.variant<@Error, `, type, `>`]](value))
+           __mlir_op.`pop.variant.create`[_type: __mlir_type[`!pop.variant<`, Error, `, `, type, `>`]](value))
 
     fn __bool__(self: ErrorOr[type]) -> Bool:
         return Bool.false()
-           if __mlir_op.`pop.variant.is`[testType: __mlir_attr.`!kgen.declref<@Error>`](self.value)
+           if __mlir_op.`pop.variant.is`[testType: __mlir_attr[Error]](self.value)
            else Bool.true()
 
     fn getValue(self: ErrorOr[type]) -> type:

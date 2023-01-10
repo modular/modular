@@ -299,11 +299,17 @@ static std::optional<std::string> resolveModulePath(StringRef moduleName,
   return std::nullopt;
 }
 
+/// Return a mangled version of the given module name. This is used to avoid
+/// conflicts with symbols that are actually visible.
+static StringAttr getMangledModuleName(MLIRContext *ctx, StringRef moduleName) {
+  return StringAttr::get(ctx, "$" + moduleName);
+}
+
 ASTDecl &LitSharedState::importModule(StringRef moduleName, llvm::SMLoc loc) {
   // Mangle the module name during import to avoid conflicts with symbols that
   // are actually visible. We may import a module, but not directly expose it
   // via its module name.
-  auto mangledName = StringAttr::get(getContext(), "$" + moduleName);
+  auto mangledName = getMangledModuleName(getContext(), moduleName);
 
   // Check to see if we've already imported this module.
   if (auto *existingDecl = impl->importedModules.lookup(mangledName))
@@ -313,40 +319,46 @@ ASTDecl &LitSharedState::importModule(StringRef moduleName, llvm::SMLoc loc) {
   // Resolve the path for this module.
   std::optional<std::string> modulePath =
       resolveModulePath(moduleName, getSourceMgr(), loc);
-  ASTDecl *moduleDecl;
   if (!modulePath) {
     emitError(loc, "unable to locate module '") << moduleName << "'";
 
     // Don't bail if we can't find the module, create a dummy decl so that we
     // can have better error recorvery/messages.
-    moduleDecl =
-        &declResolver->addErroneousDecl(mangledName, loc, impl->topLevelDecl);
-  } else {
-    // Open the module file within the source manager.
-    std::string fullPath;
-    unsigned fileID = getSourceMgr().AddIncludeFile(*modulePath, loc, fullPath);
-
-    // Now that we have a MemoryBuffer, we can lex it, and therefore parse it.
-    // do so.
-    const llvm::MemoryBuffer *moduleBuffer =
-        getSourceMgr().getMemoryBuffer(fileID);
-    LitLexer lexer(*this, moduleBuffer);
-    LitLexerCursor endCursor(
-        {LitToken::eof, StringRef(moduleBuffer->getBufferEnd() + 1, 0), 0});
-
-    // Create a new decl for this module.
-    auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(fullPath, /*line=*/0,
-                                                         /*column=*/0);
-    Operation *fileOp =
-        moduleBuilder.create<FileModuleOp>(fileLoc, mangledName);
-    moduleDecl =
-        &declResolver->addDecl(fileOp, lexer.getToken().getLoc(), mangledName,
-                               impl->topLevelDecl, lexer.getCursor(), endCursor,
-                               /*indentation=*/-1);
+    ASTDecl &moduleDecl =
+        declResolver->addErroneousDecl(mangledName, loc, impl->topLevelDecl);
+    impl->importedModules.try_emplace(mangledName, &moduleDecl);
+    return moduleDecl;
   }
 
-  impl->importedModules.try_emplace(mangledName, moduleDecl);
-  return *moduleDecl;
+  // Open the module file within the source manager.
+  std::string fullPath;
+  unsigned fileID = getSourceMgr().AddIncludeFile(*modulePath, loc, fullPath);
+
+  // Now that we have a MemoryBuffer, we can lex it, and therefore parse it.
+  // do so.
+  const llvm::MemoryBuffer *moduleBuffer =
+      getSourceMgr().getMemoryBuffer(fileID);
+  auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(fullPath, /*line=*/0,
+                                                       /*column=*/0);
+  return createModule(moduleName, moduleBuffer, fileLoc);
+}
+
+ASTDecl &LitSharedState::createModule(StringRef moduleName,
+                                      const llvm::MemoryBuffer *moduleBuffer,
+                                      FileLineColLoc loc) {
+  StringAttr mangledName = getMangledModuleName(getContext(), moduleName);
+  LitLexer lexer(*this, moduleBuffer);
+  LitLexerCursor endCursor(
+      {LitToken::eof, StringRef(moduleBuffer->getBufferEnd() + 1, 0), 0});
+
+  // Create a new decl for this module.
+  auto moduleBuilder = impl->topLevelDecl->getDeclEndBuilder();
+  Operation *fileOp = moduleBuilder.create<FileModuleOp>(loc, mangledName);
+  ASTDecl &moduleDecl = declResolver->addDecl(
+      fileOp, lexer.getToken().getLoc(), mangledName, impl->topLevelDecl,
+      lexer.getCursor(), endCursor, /*indentation=*/-1);
+  impl->importedModules.try_emplace(mangledName, &moduleDecl);
+  return moduleDecl;
 }
 
 /// Given a pointer to the start of a token, find the end of it.

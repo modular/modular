@@ -31,8 +31,8 @@ fn return_new_line() -> Int:
 fn return_impl_convert_raises() -> Int:
   # CHECK: %idx4 = index.constant 4
   # CHECK: %0 = kgen.call @"$Int"::@Int::@"__new__(__mlir_type.index)"(%idx4) : (index) -> !kgen.declref<@"$Int"::@Int>
-  # CHECK: %1 = pop.variant.create %0 : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@Error, @"$Int"::@Int>
-  # CHECK: kgen.return %1 : !pop.variant<@Error, @"$Int"::@Int>
+  # CHECK: %1 = pop.variant.create %0 : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@"$statements"::@Error, @"$Int"::@Int>
+  # CHECK: kgen.return %1 : !pop.variant<@"$statements"::@Error, @"$Int"::@Int>
   return 4  # Implicit conversion from literal to Int
 
 

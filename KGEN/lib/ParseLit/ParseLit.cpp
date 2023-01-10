@@ -29,6 +29,8 @@
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/Timing.h"
 
+#include <filesystem>
+
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
@@ -68,21 +70,20 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
       lexer.getCursor(), endFileCursor, -1);
   sharedState.initialize(topLevelDecl);
 
-  // Create the module scope which will contain all things we parse.  These
-  // shadow the builtins module during name lookup.
-  ASTDecl &fileScope = sharedState.declResolver->addDecl(
-      *module, startSMLoc, StringAttr(), &topLevelDecl, lexer.getCursor(),
-      endFileCursor, -1);
-
   // If we are emitting debug info, create a file entry for this file.
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
   if (sharedState.diBuilder)
     fileGuard = sharedState.diBuilder->pushFile(fileLoc.getFilename(), "/");
 
-  // Parse the file.
-  /// file ::= statements
-  if (LitParserBase::parseSuite(fileScope, lexer))
-    return nullptr;
+  // Grab a module name for the current input, choosing a dummy name if we don't
+  // have one that's valid.
+  std::string moduleName =
+      std::filesystem::path(fileLoc.getFilename().str()).stem().string();
+  if (moduleName.empty())
+    moduleName = "<input>";
+
+  // Parse the input module.
+  sharedState.createModule(moduleName, sourceBuf, fileLoc);
 
   // With the top-level of the file parsed, we can now go ahead and resolve all
   // of the deferred declarations.

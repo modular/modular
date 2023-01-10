@@ -35,7 +35,9 @@ def foo(a): # expected-error {{could not find an 'object' type}}
 // -----
 # Crashed at top level.
 
-# expected-error @+1 {{MLIR attribute has no type: #index<cmp_predicate eq>}}
+# https://github.com/modularml/modular/issues/6701
+# expected-error @below {{recursive reference to declaration}}
+# expected-note @below {{previously used here}}
 __mlir_attr.`#index<cmp_predicate eq>`
 
 // -----

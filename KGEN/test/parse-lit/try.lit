@@ -10,7 +10,7 @@ fn simpleTryExcept():
         # CHECK: pop.store
         a = Int(0)
         # CHECK-NEXT: lit.try.yield
-    # CHECK-NEXT: except (%{{.*}}: !kgen.declref<@Error>)
+    # CHECK-NEXT: except (%{{.*}}: !kgen.declref<@"$try"::@Error>)
     except:
         # CHECK-NEXT: lit.try.yield
         pass
@@ -39,18 +39,18 @@ fn eatError(err: Error):
 fn tryExceptArg():
     try:
         pass
-    # CHECK: except (%arg0: !kgen.declref<@Error>)
+    # CHECK: except (%arg0: !kgen.declref<@"$try"::@Error>)
     except err:
-        # CHECK-NEXT: kgen.call @"eatError{{.*}}(%arg0)
+        # CHECK-NEXT: kgen.call @"$try"::@"eatError{{.*}}(%arg0)
         eatError(err)
 
 # CHECK-LABEL: lit.func @"tryExceptArgDef
 def tryExceptArgDef():
     try:
         pass
-    # CHECK: except (%arg0: !kgen.declref<@Error>)
+    # CHECK: except (%arg0: !kgen.declref<@"$try"::@Error>)
     except err:
-        # CHECK-NEXT: lit.var.decl "err" : <@Error>
+        # CHECK-NEXT: lit.var.decl "err" : <@"$try"::@Error>
         # CHECK: %[[ERRVAL:.*]] = pop.load
         # CHECK: eatError{{.*}}(%[[ERRVAL]])
         eatError(err)
@@ -60,7 +60,7 @@ def maybeRaises() -> Int:
 
 # CHECK-LABEL: lit.func @"propagateErrorInDef
 def propagateErrorInDef():
-    # CHECK: %[[MAYBE_ERR:.*]] = kgen.call @"maybeRaises
+    # CHECK: %[[MAYBE_ERR:.*]] = kgen.call @"$try"::@"maybeRaises
     # CHECK-NEXT: %[[VALUE:.*]] = lit.unwrap_or_propagate %[[MAYBE_ERR]]
     # CHECK-NEXT: pop.store %[[VALUE]], %a
     a = maybeRaises()
@@ -69,7 +69,7 @@ def propagateErrorInDef():
 @raises
 fn propagateErrorInRaisingFn():
     var a: Int
-    # CHECK: %[[MAYBE_ERR:.*]] = kgen.call @"maybeRaises
+    # CHECK: %[[MAYBE_ERR:.*]] = kgen.call @"$try"::@"maybeRaises
     # CHECK-NEXT: %[[VALUE:.*]] = lit.unwrap_or_propagate %[[MAYBE_ERR]]
     # CHECK-NEXT: pop.store %[[VALUE]], %a
     a = maybeRaises()
@@ -79,7 +79,7 @@ fn propagateErrorInTry():
     var a: Int
     # CHECK: lit.try
     try:
-        # CHECK: %[[MAYBE_ERR:.*]] = kgen.call @"maybeRaises
+        # CHECK: %[[MAYBE_ERR:.*]] = kgen.call @"$try"::@"maybeRaises
         # CHECK-NEXT: %[[VALUE:.*]] = lit.unwrap_or_propagate %[[MAYBE_ERR]]
         # CHECK-NEXT: pop.store %[[VALUE]], %a
         a = maybeRaises()
@@ -89,7 +89,7 @@ fn propagateErrorInTry():
 
 # CHECK-LABEL: lit.func @"raiseError
 def raiseErrorInDef(err: Error):
-    # CHECK: %[[ERR:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
+    # CHECK: %[[ERR:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$try"::@Error> -> !pop.variant<@"$try"::@Error, !lit.none>
     # CHECK-NEXT: kgen.return %[[ERR]]
     raise err
 
@@ -97,7 +97,7 @@ def raiseErrorInDef(err: Error):
 def raiseErrorInIf(cond: Bool, err: Error):
     # CHECK: hlcf.if
     if cond:
-        # CHECK: %[[ERR:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
+        # CHECK: %[[ERR:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$try"::@Error> -> !pop.variant<@"$try"::@Error, !lit.none>
         # CHECK-NEXT: hlcf.return %[[ERR]]
         raise err
 

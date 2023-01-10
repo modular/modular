@@ -145,6 +145,11 @@ public:
   /// valid decl, even if the module could not be found.
   ASTDecl &importModule(StringRef moduleName, llvm::SMLoc loc);
 
+  /// Create a new module with the given name, location, and body.
+  ASTDecl &createModule(StringRef moduleName,
+                        const llvm::MemoryBuffer *moduleBuffer,
+                        FileLineColLoc loc);
+
 private:
   /// Add magic things to the builtins decl when parsing starts.
   void addBuiltinTypes(ASTDecl &builtinsDecl);
