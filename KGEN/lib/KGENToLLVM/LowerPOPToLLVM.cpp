@@ -1557,10 +1557,22 @@ public:
       if (!type)
         return rewriter.notifyMatchFailure(
             op.getLoc(), "failed to convert constant result type");
-      it->second = rewriter.create<LLVM::GlobalOp>(
+      auto global = rewriter.create<LLVM::GlobalOp>(
           op.getLoc(), type.cast<LLVM::LLVMPointerType>().getElementType(),
-          true, LLVM::Linkage::Internal, "global_constant", op.getValue());
-      symtab.insert(it->second);
+          true, LLVM::Linkage::Internal, "global_constant", Attribute());
+
+      // Emit the constant using an initializer region.
+      global.getBodyRegion().push_back(new Block);
+      ImplicitLocOpBuilder b(op.getLoc(), op.getContext());
+      b.setInsertionPointToStart(global.getBody());
+      Value value =
+          convertParameterToLLVM(b, *getTypeConverter(), op.getValue());
+      if (!value)
+        return failure();
+      b.create<LLVM::ReturnOp>(value);
+
+      // Insert the global into the module.
+      symtab.insert(it->second = global);
     }
 
     rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(op, it->second);

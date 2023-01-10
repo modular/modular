@@ -2,7 +2,7 @@
 
 // CHECK-LABEL: @zap_print
 kgen.generator @zap_print(%a: !pop.scalar<f32>) {
-  // CHECK: %[[FMT:.*]] = pop.global_constant(#M.dense_array<102, 111, 111{{.*}}> : !M.array<7xsi8>)
+  // CHECK: %[[FMT:.*]] = pop.global_constant: !pop.array<7, scalar<si8>> = <#pop.array<#pop.simd<102>, {{.*}}>>
   // CHECK: %[[C_STR:.*]] = pop.pointer.bitcast %[[FMT]] : !pop.pointer<array{{.*}}> to !pop.pointer<scalar<si8>>
   // CHECK: pop.external_call @KGEN_CompilerRT_PrintFormat(%[[C_STR]], %{{.*}}) (!pop.pointer<scalar<si8>>) -> ()
   zap.print "foo %f"(%a) : !pop.scalar<f32>
@@ -13,9 +13,9 @@ kgen.generator @zap_print(%a: !pop.scalar<f32>) {
 
 // CHECK-LABEL: @zap_debug_assert
 kgen.generator @zap_debug_assert(%cond: !pop.scalar<bool>) {
-  // CHECK: pop.global_constant(#M.dense_array
-  // CHECK: pop.global_constant(#M.dense_array
-  // CHECK: pop.global_constant(#M.dense_array
+  // CHECK: pop.global_constant: !pop.array<{{.*}}, scalar<si8>> = <
+  // CHECK: pop.global_constant: !pop.array<{{.*}}, scalar<si8>> = <
+  // CHECK: pop.global_constant: !pop.array<{{.*}}, scalar<si8>> = <
   // CHECK: pop.external_call @KGEN_CompilerRT_DebugAssert
   zap.debug_assert %cond, "my message" : !pop.scalar<bool>
   kgen.return

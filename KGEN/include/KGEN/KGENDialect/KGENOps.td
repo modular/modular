@@ -269,8 +269,9 @@ def KGEN_ParamConstantOp : KGENOp<"param.constant",
 
   let arguments = (ins TypedAttrInterface:$value);
   let results = (outs AnyType:$result);
-  let assemblyFormat =
-     "`` custom<ParamConstantOpValue>($value, qualified(type($result))) attr-dict";
+  let assemblyFormat = [{
+    `` custom<ParamConstantOpValue>($value, type($result)) attr-dict
+  }];
 
   let builders = [OpBuilder<(ins "TypedAttr":$value)>];
 

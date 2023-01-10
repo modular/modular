@@ -7,6 +7,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -75,12 +76,14 @@ namespace {
 /// Lower the string to a global constant.
 static Value lowerStringToGlobalConstant(Operation *op, StringRef str,
                                          OpBuilder &b) {
-  auto values = IntArrayElementsAttr::get<char>(
-      b.getContext(), {str.data(), str.size()}, IntegerType::Signed);
+  SmallVector<TypedAttr> values;
   auto charType = b.getType<SIMDType>(1, DType::si8);
-  return b.create<GlobalConstantOp>(
-      op->getLoc(), PointerType::get(POP::ArrayType::get(str.size(), charType)),
-      values);
+  for (char c : str)
+    values.push_back(SIMDAttr::get(
+        {APSInt(APInt(CHAR_BIT, c), /*isSigned=*/true), DType::si8}, charType));
+  auto arrayType = POP::ArrayType::get(str.size(), charType);
+  return b.create<GlobalConstantOp>(op->getLoc(), PointerType::get(arrayType),
+                                    POP::ArrayAttr::get(values, arrayType));
 }
 
 /// Lower the string into a global C string. Null-terminate the string and

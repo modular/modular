@@ -760,21 +760,30 @@ void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
 // GlobalConstantOp
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess GlobalConstantOp::finalizeElaboration() {
-  Type type = getType().getResolvedElementType();
-  auto simd = dyn_cast<SIMDType>(type);
-  if (!simd)
-    simd = cast<SIMDType>(cast<POP::ArrayType>(type).getResolvedElementType());
-  UNWRAP_ERROR(value,
-               reifyConstant(getValue(), *simd.getResolvedDType(), type));
-  setValueAttr(value);
+static ParseResult parseGlobalConstantOpValue(OpAsmParser &p, TypedAttr &value,
+                                              Type &resultType) {
+  Type elementType;
+  if (parseColonTypeOrIndex(p, elementType) || p.parseEqual() ||
+      p.parseLess() || parseParamValue(p, value, elementType) ||
+      p.parseGreater())
+    return failure();
+  resultType = PointerType::get(elementType);
   return success();
 }
 
+static void printGlobalConstantOpValue(OpAsmPrinter &p, Operation *,
+                                       TypedAttr value, Type type) {
+  printColonTypeOrIndex(p.getStream(),
+                        cast<PointerType>(type).getResolvedElementType());
+  p << " = <";
+  printParamValue(p, value);
+  p << ">";
+}
+
 LogicalResult GlobalConstantOp::verify() {
-  return verifyConstant([this](StringRef msg) { return emitOpError(msg); },
-                        getValue(),
-                        ParamRefType::get(getType().getElementType()));
+  if (getResult().getType().getResolvedElementType())
+    return success();
+  return emitOpError("must have a concrete element type");
 }
 
 //===----------------------------------------------------------------------===//

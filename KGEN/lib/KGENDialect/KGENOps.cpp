@@ -56,7 +56,7 @@ static ParseResult parseParamConstantOpValue(OpAsmParser &p, TypedAttr &value,
 }
 
 static void printParamConstantOpValue(OpAsmPrinter &p, Operation *,
-                                      Attribute value, Type type) {
+                                      TypedAttr value, Type type) {
   printColonTypeOrIndex(p.getStream(), type);
   p << " = <";
   printParamValue(p, value);

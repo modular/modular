@@ -27,11 +27,11 @@ kgen.func @external_call_variadic(%a: !pop.simd<1, ui32>) {
 // CHECK-LABEL: @global_constant
 kgen.func @global_constant() {
   // CHECK: llvm.mlir.addressof @global_constant_0
-  %0 = pop.global_constant(5 : ui32) : !pop.simd<1, ui32>
+  %0 = pop.global_constant: ui32 = <5>
   // CHECK: llvm.mlir.addressof @global_constant_0
-  %1 = pop.global_constant(5 : ui32) : !pop.simd<1, ui32>
+  %1 = pop.global_constant: ui32 = <5>
   // CHECK: llvm.mlir.addressof @global_constant_1
-  %2 = pop.global_constant(6 : ui32) : !pop.simd<1, ui32>
+  %2 = pop.global_constant: !pop.simd<2, si32> = <#pop.simd<2, 5>>
   kgen.return
 }
 
@@ -40,8 +40,10 @@ kgen.func @global_constant() {
 // CHECK-LABEL: @global_array_constant
 kgen.func @global_array_constant() {
   // CHECK: llvm.mlir.addressof @global_constant
-  %0 = pop.global_constant(#M.dense_array<0, 1, 2, 3> : !M.array<4xui32>) : !pop.array<4, simd<1, ui32>>
+  %0 = pop.global_constant: !pop.array<4, ui32> = <#pop.array<1, 2, 3, 4>>
   kgen.return
 }
 
-// CHECK: llvm.mlir.global internal constant @global_constant(#M.dense_array<0, 1, 2, 3> : !M.array<4xui32>) {{.*}} : !llvm.array<4 x i32>
+// CHECK: llvm.mlir.global internal constant @global_constant() {
+// CHECK: %0 = llvm.mlir.undef : !llvm.array<4 x i32>
+// CHECK: llvm.return %{{.*}} : !llvm.array<4 x i32>
