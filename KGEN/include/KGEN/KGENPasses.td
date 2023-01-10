@@ -21,6 +21,20 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// OutlineClosures
+//===----------------------------------------------------------------------===//
+
+def OutlineClosures : Pass<"outline-closures", "mlir::ModuleOp"> {
+  let summary = "Outlines region parameters into explicit closures.";
+  let description = [{
+    This pass outlines region parameters into functions that are called with
+    a struct that contains all captures.
+  }];
+
+  let dependentDialects = ["KGENDialect", "POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerStructs
 //===----------------------------------------------------------------------===//
 
