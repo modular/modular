@@ -7,6 +7,7 @@
 #include "KGEN/CLOptions.h"
 #include "KGEN/ExecutionEngine.h"
 #include "mlir/Support/DebugStringHelper.h"
+#include "llvm/Support/Regex.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include <filesystem>
 
@@ -85,20 +86,21 @@ CommandLineFunc::executeAndPrint(KGEN::CompiledFunc &compiledFunc) const {
 
 bool CommandLineFuncParser::parse(llvm::cl::Option &o, StringRef argName,
                                   StringRef argValue, CommandLineFunc &val) {
-  SmallVector<StringRef, 2> parts;
-  argValue.split(parts, ':');
+  // Match a function name and signature, of the form: `name:signature`. This
+  // check also ensures that "name" supports '::' tokens, which may be used for
+  // scope signifiers.
+  static llvm::Regex funcAndSignatureMatcher("(.*[^:]):([^:].*)");
 
-  // If only one is provided, parse it into just a name.
-  if (parts.size() == 1) {
-    val.name = parts[0];
+  // Check if the value contains the name and signature.
+  SmallVector<StringRef> matches;
+  if (funcAndSignatureMatcher.match(argValue, &matches)) {
+    val.name = matches[1];
+    val.signature = matches.back();
     return false;
   }
 
-  if (parts.size() != 2)
-    return o.error("'" + argValue + "' invalid: must provide name:signature");
-
-  val.name = parts[0];
-  val.signature = parts[1];
+  // Otherwise, if we don't have a signature, the value is the name.
+  val.name = argValue;
   return false;
 }
 

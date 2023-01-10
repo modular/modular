@@ -98,13 +98,13 @@ struct M:
 # CHECK-LABEL: lit.func @"precedence_matmul
 fn precedence_matmul(z: M) -> M:
   # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} 3
-  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call @M::@"__new__{{.*}}(%[[THREE]])
+  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.call @"$expressions"::@M::@"__new__{{.*}}(%[[THREE]])
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} 2
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call @M::@"__new__{{.*}}(%[[TWO]])
-  # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @M::@"__neg__{{.*}}(%[[INT_TWO]])
-  # CHECK-NEXT:  %[[MATMUL:.*]] = kgen.call @M::@"__matmul__{{.*}}(%[[INT_THREE]], %[[NEG]])
-  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @M::@"__add__{{.*}}(%z, %[[MATMUL]])
-  # CHECK-NEXT:  kgen.return %[[ADD]] : !kgen.declref<@M>
+  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.call @"$expressions"::@M::@"__new__{{.*}}(%[[TWO]])
+  # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$expressions"::@M::@"__neg__{{.*}}(%[[INT_TWO]])
+  # CHECK-NEXT:  %[[MATMUL:.*]] = kgen.call @"$expressions"::@M::@"__matmul__{{.*}}(%[[INT_THREE]], %[[NEG]])
+  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$expressions"::@M::@"__add__{{.*}}(%z, %[[MATMUL]])
+  # CHECK-NEXT:  kgen.return %[[ADD]] : !kgen.declref<@"$expressions"::@M>
   return z + M(3) @ -M(2)
 
 # CHECK-LABEL: lit.func @"precedence_bitwise
@@ -150,7 +150,7 @@ fn unary(a: Bool, b: Int, c: Boolish):
   # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[BOOL]])
   _ = not b == 0
 
-  # CHECK: [[BOOL:%.*]] = kgen.call @Boolish::@"__bool__(Boolish)"(%c)
+  # CHECK: [[BOOL:%.*]] = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%c)
   # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[BOOL]])
   _ = not c
 
@@ -159,9 +159,9 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
-  # CHECK: %0 = kgen.call @Boolish::@"__bool__(Boolish)"(%a)
+  # CHECK: %0 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
   # CHECK: %1 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%0)
-  # CHECK: %2 = scf.if %1 -> (!kgen.declref<@Boolish>) {
+  # CHECK: %2 = scf.if %1 -> (!kgen.declref<@"$expressions"::@Boolish>) {
   # CHECK:   scf.yield %b
   # CHECK: } else {
   # CHECK:   scf.yield %a
@@ -171,9 +171,9 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.
 
-  # CHECK: %3 = kgen.call @Boolish::@"__bool__(Boolish)"(%a)
+  # CHECK: %3 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
   # CHECK: %4 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%3)
-  # CHECK: %5 = scf.if %4 -> (!kgen.declref<@Boolish>) {
+  # CHECK: %5 = scf.if %4 -> (!kgen.declref<@"$expressions"::@Boolish>) {
   # CHECK:   scf.yield %a
   # CHECK: } else {
   # CHECK:   scf.yield %b
@@ -182,7 +182,7 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
 
   # Testing two different logic'y types returns the common bool type if present.
 
-  # CHECK: %6 = kgen.call @Boolish::@"__bool__(Boolish)"(%a)
+  # CHECK: %6 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
   # CHECK: %7 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%6)
   # CHECK: %8 = scf.if %7 -> (!kgen.declref<@"$Bool"::@Bool>) {
   # CHECK:   scf.yield %6
@@ -233,7 +233,7 @@ fn do_math(a: Int, b: Int, c: Int) -> Int:
   x = \
 z
 
-  # CHECK-NEXT: kgen.call @"noop()"()
+  # CHECK-NEXT: kgen.call @"$expressions"::@"noop()"()
   noop()
 
   # CHECK-NEXT: %[[TMP:.*]] = pop.load %x
@@ -301,13 +301,13 @@ fn returnIndex() -> __mlir_type.index:
 
 # CHECK-LABEL: lit.func @"returnIndex2()"() -> index
 fn returnIndex2() -> __mlir_type.index:
-  # CHECK-NEXT: %0 = kgen.call @"takeIndexParam()"<a = apply(:() -> index @"returnIndex()")>() : () -> index
+  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam()"<a = apply(:() -> index @"$expressions"::@"returnIndex()")>() : () -> index
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
 # CHECK-LABEL: lit.func @"callInParam()"<callable: <a>(index) -> index>() -> index
 fn callInParam[callable: __mlir_type.`!kgen.signature<[a : index], [], (index) -> index>`]() -> __mlir_type.index:
-  # CHECK-NEXT: %0 = kgen.call @"takeIndexParam()"<a = apply(:(index) -> index bind_signature(:<a>(index) -> index callable, 1), 1)>() : () -> index
+  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam()"<a = apply(:(index) -> index bind_signature(:<a>(index) -> index callable, 1), 1)>() : () -> index
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 

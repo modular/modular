@@ -1,4 +1,4 @@
-# RUN: kgen %s -execute -func="run_me():index()" -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$exp-scalar::run_me():index()' -I %stdlibdir | FileCheck %s
 
 __include "prolog.lit"
 

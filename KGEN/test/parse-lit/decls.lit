@@ -64,9 +64,9 @@ fn testThing(a: Int, b: Int) -> Int: return 1
 
 # CHECK-LABEL: lit.func @"callOverload
 fn callOverload(a: Int):
-  # CHECK: %0 = kgen.call @"testThing($Int::Int)"(%a)
+  # CHECK: %0 = kgen.call @"$decls"::@"testThing($Int::Int)"(%a)
   testThing(a)
-  # CHECK:  %1 = kgen.call @"testThing($Int::Int,$Int::Int)"(%a, %a)
+  # CHECK:  %1 = kgen.call @"$decls"::@"testThing($Int::Int,$Int::Int)"(%a, %a)
   testThing(a, a)
 
 # Test that pointers don't get confused with by-ref arguments.
@@ -79,20 +79,20 @@ fn testPointerArgs(ptr: __mlir_type.`!pop.pointer<si32>`) -> __mlir_type.si32:
 # @raises decorator.
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@Error, @"$Int"::@Int> attributes {isDef, raises}
+# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@"$decls"::@Error, @"$Int"::@Int> attributes {isDef, raises}
 def defAlwaysRaises() -> Int:
-    # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@Error, @"$Int"::@Int>
+    # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@"$decls"::@Error, @"$Int"::@Int>
     # CHECK-NEXT: kgen.return %[[RESULT]]
     return Int(0)
 
-# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<@Error, @"$Int"::@Int> attributes {raises}
+# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<@"$decls"::@Error, @"$Int"::@Int> attributes {raises}
 @raises
 fn fnThatRaises() -> Int:
-    # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@Error, @"$Int"::@Int>
+    # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@"$decls"::@Error, @"$Int"::@Int>
     # CHECK-NEXT: kgen.return %[[RESULT]]
     return Int(0)
 
-# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<@Error, !lit.none>
+# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<@"$decls"::@Error, !lit.none>
 @raises
 fn raisesReturnsNone():
     # CHECK: %0 = kgen.param.constant: !lit.none = <#lit.none>
@@ -101,14 +101,14 @@ fn raisesReturnsNone():
     pass
 
 # COM: We can return an variant of error and index in a non-throwing function.
-# CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<@Error, index>
-fn raisesReturnsVariant() -> __mlir_type.`!pop.variant<@Error, index>`:
-    return __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@Error, index>`](1)
+# CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<@"$decls"::@Error, index>
+fn raisesReturnsVariant() -> __mlir_type.`!pop.variant<@"$decls"::@Error, index>`:
+    return __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@"$decls"::@Error, index>`](1)
 
 # CHECK-LABEL lit.func @"return_impl_convert_raises
 @raises
 fn return_impl_convert_raises(a: Error) -> Error:
-  # CHECK:  %0 = pop.variant.create %a : !kgen.declref<@Error> -> !pop.variant<@Error>
+  # CHECK:  %0 = pop.variant.create %a : !kgen.declref<@"$decls"::@Error> -> !pop.variant<@"$decls"::@Error>
   # CHECK-NEXT: kgen.return %0
   return a
 
@@ -136,11 +136,11 @@ struct StructExample:
   fn static(x: Int):
     # CHECK: %idx4 = index.constant 4
     # CHECK: %0 = kgen.call @"$Int"::@Int::@"__new__{{.*}}"(%idx4) : (index) -> !kgen.declref<@"$Int"::@Int>
-    # CHECK: %1 = kgen.call @StructExample::@"static{{.*}}"(%0) : (!kgen.declref<@"$Int"::@Int>) -> !lit.none
+    # CHECK: %1 = kgen.call @"$decls"::@StructExample::@"static{{.*}}"(%0) : (!kgen.declref<@"$Int"::@Int>) -> !lit.none
     StructExample.static(Int(4))
     pass
 
-  # CHECK: lit.func @"mutatingMethod(StructExample&)"(%self: !pop.pointer<@StructExample> byref) -> !lit.none
+  # CHECK: lit.func @"mutatingMethod($decls::StructExample&)"(%self: !pop.pointer<@"$decls"::@StructExample> byref) -> !lit.none
   fn mutatingMethod(self&):
 
 # CHECK: }
@@ -148,9 +148,9 @@ struct StructExample:
 
 # CHECK: lit.func @"callStatic{{.*}}(%a: !kgen.declref<@"$Int"::@Int>) -> !lit.none
 fn callStatic(a: Int):
-  # CHECK: kgen.call @StructExample::@"static{{.*}}(%a)
+  # CHECK: kgen.call @"$decls"::@StructExample::@"static{{.*}}(%a)
   StructExample.static(a)
 
-  # CHECK: kgen.call @StructExample::@"__new__{{.*}}()
-  # CHECK: kgen.call @StructExample::@"static{{.*}}(%a) : (!kgen.declref<@"$Int"::@Int>) -> !lit.none
+  # CHECK: kgen.call @"$decls"::@StructExample::@"__new__{{.*}}()
+  # CHECK: kgen.call @"$decls"::@StructExample::@"static{{.*}}(%a) : (!kgen.declref<@"$Int"::@Int>) -> !lit.none
   StructExample().static(a)

@@ -70,7 +70,7 @@ struct ReturnFromStruct:
   return 42
 
 def var_decl_without_type():
-  # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to 'ReturnFromStruct'}}
+  # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$lit-errors::ReturnFromStruct'}}
   var y : ReturnFromStruct = 1.0
 
   # expected-error @+1 {{declaration must have either a type or an initializer}}
@@ -113,7 +113,7 @@ struct NotBoolConvertible:
 
 # expected-note @+1 {{function declared here}}
 def test_bool_context(a: NotBoolConvertible):
-  if a: # expected-error {{'NotBoolConvertible' does not implement the '__bool__' method}}
+  if a: # expected-error {{'$lit-errors::NotBoolConvertible' does not implement the '__bool__' method}}
      pass
 
 # expected-note @+1 {{'Thing' declared here}}
@@ -125,7 +125,7 @@ def GoodUseOfThing(a: Thing[4, 5]):
 def MissingThingMetaParams(a: Thing):  # expected-error {{use of type 'Thing' with 2 unbound parameters}}
   pass
 
-# expected-error @+1 {{cannot apply more parameters to an already parameterized type 'Thing[1, 2]'}}
+# expected-error @+1 {{cannot apply more parameters to an already parameterized type '$lit-errors::Thing[1, 2]'}}
 def MultipleThingMetaparams(a: Thing[1,2][1]):
   pass
 
@@ -138,7 +138,7 @@ def WeirdMetaParams(a: Thing[1, 1.5]):
 
 fn voidReturningFn(): pass
 fn badCall():
-  # expected-error @+1 {{invalid call to 'test_bool_context': argument #0 cannot be converted from 'None' to 'NotBoolConvertible'}}
+  # expected-error @+1 {{invalid call to 'test_bool_context': argument #0 cannot be converted from 'None' to '$lit-errors::NotBoolConvertible'}}
   test_bool_context(voidReturningFn())
 
 
@@ -147,7 +147,7 @@ def generic_fn[a: DType, b: __mlir_type.index](c : __mlir_type.index):
 
 def call_generic[dt: DType]():
   generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 input parameters but 3 were provided}}
-  generic_fn[1, dt](57) # expected-error {{parameter 'a' has 'DType' type, but value has type '__mlir_type.index'}}
+  generic_fn[1, dt](57) # expected-error {{parameter 'a' has '$lit-errors::DType' type, but value has type '__mlir_type.index'}}
 
 def field_indexes(a: Int):
   a.badField = 42 # expected-error {{'$Int::Int' value has no attribute 'badField'}}
@@ -181,11 +181,11 @@ struct WrongType:
   # expected-error @+1 {{__init__ is not allowed on structs, use __new__ instead}}
   def __init__(self): pass
 
-  # expected-error @+1 {{result type must be 'WrongType'}}
+  # expected-error @+1 {{result type must be '$lit-errors::WrongType'}}
   def __new__() -> Int: pass
 
 struct WrongSelfType[a: Int]:
-  # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]'}}
+  # expected-error @+1 {{'self' argument must have type '$lit-errors::WrongSelfType[a]'}}
   def badMethod(self: Int): pass
   def goodMethod(self&: WrongSelfType[a]): pass
 
@@ -276,7 +276,7 @@ def testLValuesRvalues():
 
   # Test with rvalues
   LValuesRvalues().normalMethod()
-  LValuesRvalues().mutatingMethod()  # expected-error {{invalid use of mutating method on rvalue of type 'LValuesRvalues'}}
+  LValuesRvalues().mutatingMethod()  # expected-error {{invalid use of mutating method on rvalue of type '$lit-errors::LValuesRvalues'}}
 
   # expected-error @+1 {{argument #1 must be mutable in order to pass as a by-ref argument}}
   LValuesRvalues().takesByRef(LValuesRvalues())
@@ -309,7 +309,7 @@ struct SpecialFunctions:
 
   fn failures(self):
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
-    self*self # expected-error {{'SpecialFunctions' does not implement the '__mul__' method}}
+    self*self # expected-error {{'$lit-errors::SpecialFunctions' does not implement the '__mul__' method}}
 
 fn expr_errors():
   var x: __mlir_type.index
@@ -381,7 +381,7 @@ struct Parameterized[p1: __mlir_type.index]:
 # of parameters.
 fn testTestParamStruct(a: Parameterized[4]):
   a.method[7](Parameterized[11]())
-  # expected-error @+1 {{invalid call to 'method': method argument #0 cannot be converted from 'Parameterized[12]' to 'Parameterized[11]'}}
+  # expected-error @+1 {{invalid call to 'method': method argument #0 cannot be converted from '$lit-errors::Parameterized[12]' to '$lit-errors::Parameterized[11]'}}
   a.method[7](Parameterized[12]())
   a.method[2](Parameterized[6]())
   a.method[2, 7] # expected-error {{'method' expects 2 input parameters but 3 were provided}}
@@ -395,7 +395,7 @@ fn testSIMD(a: MySIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: MySIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
   var x = a+a
   var y = b+b
-  var z = b+a  # expected-error {{invalid call to '__add__': argument #1 cannot be converted from 'MySIMD[1, f64]' to 'MySIMD[2, si32]'}}
+  var z = b+a  # expected-error {{invalid call to '__add__': argument #1 cannot be converted from '$lit-errors::MySIMD[1, f64]' to '$lit-errors::MySIMD[2, si32]'}}
 
 fn testAliases(variable: Int):
   # expected-error @+1 {{declaration must have either a type or an initializer}}
@@ -440,15 +440,15 @@ struct WeirdBoolish:
   fn __bool__(self) -> Int: return Int(0)
 
 fn badAnd(a: Bool, b: WeirdBoolish):
-  _ = a and b # expected-error {{cannot find common type between '$Bool::Bool' and 'WeirdBoolish'}}
+  _ = a and b # expected-error {{cannot find common type between '$Bool::Bool' and '$lit-errors::WeirdBoolish'}}
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to '$Int::Int'}}
+# expected-note @below {{candidate not viable: argument #0 cannot be converted from '$lit-errors::TestOverloading' to '$Int::Int'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
 fn overloadIntF32(a: Int):
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to '$F32::F32'}}
+# expected-note @below {{candidate not viable: argument #0 cannot be converted from '$lit-errors::TestOverloading' to '$F32::F32'}}
 # expected-note @below {{candidate not viable: callee expects 1 argument}}
 fn overloadIntF32(a: F32):
 
@@ -481,10 +481,10 @@ struct ConvertibleFromInt:
     return result
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: argument #1 cannot be converted from 'ConvertibleFromInt' to '$Int::Int'}}
+# expected-note @below {{candidate not viable: argument #1 cannot be converted from '$lit-errors::ConvertibleFromInt' to '$Int::Int'}}
 fn ambiguousConversions(a: ConvertibleFromInt, b: Int):
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: argument #0 cannot be converted from 'ConvertibleFromInt' to '$Int::Int'}}
+# expected-note @below {{candidate not viable: argument #0 cannot be converted from '$lit-errors::ConvertibleFromInt' to '$Int::Int'}}
 fn ambiguousConversions(a: Int, b: ConvertibleFromInt):
 
 fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
@@ -499,7 +499,7 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
   localFn(a, b)
   localFn(a, a)
   localFn(1, b)
-  # expected-error @+1 {{invalid indirect call: argument #0 cannot be converted from 'ConvertibleFromInt' to '$Int::Int'}}
+  # expected-error @+1 {{invalid indirect call: argument #0 cannot be converted from '$lit-errors::ConvertibleFromInt' to '$Int::Int'}}
   localFn(b, b)
 
 fn partialBindSignature[callable: __mlir_type.`!kgen.signature<[a: index, b: index], [], () -> ()>`, a: __mlir_type.index]():
@@ -604,7 +604,7 @@ fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
 struct BadInit[size: __mlir_type.index]:
   fn __new__(elem: BadInit[1]) -> BadInit[size]:
     var x : __mlir_type[`!pop.simd<`, size, `, f32>`]
-    # expected-error @+1 {{'__mlir_type.!pop.simd<size, f32>' value cannot be converted to 'BadInit[size]'}}
+    # expected-error @+1 {{'__mlir_type.!pop.simd<size, f32>' value cannot be converted to '$lit-errors::BadInit[size]'}}
     return x
 
 # Issue #6600

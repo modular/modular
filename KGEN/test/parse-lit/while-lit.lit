@@ -114,6 +114,6 @@ def test_early_return():
     # CHECK-NEXT: yield
     # CHECK: kgen.return
     return
-    # CHECK-NOT: kgen.return
+    # CHECK-NEXT: }
     c = 3
     return
