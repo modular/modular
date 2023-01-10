@@ -61,8 +61,9 @@ TEST(KGENInvokeTest, testinvokeSecondAddress) {
 }
 
 TEST(KGENInvokeTest, testinvokeWithTensor) {
+  float buffer[1 * 2 * 3];
   Tensor tensor =
-      Tensor::createBorrowed((void *)nullptr, TensorSpec({1, 2, 3}, DType::f32),
+      Tensor::createBorrowed(buffer, TensorSpec({1, 2, 3}, DType::f32),
                              /*alignment=*/{}, GML::BufferRef::kLocal);
   EXPECT_EQ(KGEN::invoke([](void *ptr0, ssize_t, ssize_t shape[5],
                             uint8_t) { return shape[1]; },
