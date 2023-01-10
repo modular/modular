@@ -11,7 +11,6 @@
 
 #include "KGEN/Elaborator.h"
 #include "Elaborator.h"
-#include "KGEN/KGENDialect/ElaboratorOpInterface.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENPasses.h"
@@ -949,13 +948,6 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
         }
       }
     }
-  }
-
-  // If the op implements the elaborator interface, indicate it as resolved.
-  if (auto elaboratorIface = dyn_cast<ElaboratorOpInterface>(op)) {
-    ErrorOrSuccess result = elaboratorIface.finalizeElaboration();
-    if (result.isError())
-      return error(op->getLoc(), result.takeError());
   }
 
   return success();

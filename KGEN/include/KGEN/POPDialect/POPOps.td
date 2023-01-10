@@ -8,7 +8,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-include "KGEN/KGENDialect/ElaboratorOpInterface.td"
 include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/POPDialect/POPAttrs.td"
 include "KGEN/POPDialect/POPDialect.td"

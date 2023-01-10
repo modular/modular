@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENInterfaces.h"
-#include "KGEN/KGENDialect/ElaboratorOpInterface.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -41,5 +40,4 @@ LogicalResult impl::verifyCallOp(KGENCallOpInterface op) {
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/KGENDialect/ElaboratorOpInterface.cpp.inc"
 #include "KGEN/KGENDialect/KGENInterfaces.cpp.inc"
