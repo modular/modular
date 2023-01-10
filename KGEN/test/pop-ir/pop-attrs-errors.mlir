@@ -17,8 +17,8 @@ kgen.func @simd_constant() {
 // -----
 
 kgen.func @simd_constant() {
-  // expected-error @below {{cannot convert 0.1 to f16}}
-  %0 = kgen.param.constant: !pop.scalar<f16> = <#pop.simd<"0.1">>
+  // expected-error @below {{cannot convert 1e+100 to f16}}
+  %0 = kgen.param.constant: !pop.scalar<f16> = <#pop.simd<"1e+100">>
   kgen.return
 }
 

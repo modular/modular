@@ -14,6 +14,8 @@ kgen.func @simd_constants() {
   %4 = kgen.param.constant: !pop.simd<6, ui2> = <#pop.simd<0, 1, 2, 3, 3, 2>>
   // CHECK: !pop.simd<2, index> = <#pop.simd<-54321, 12345>>
   %5 = kgen.param.constant: !pop.simd<2, index> = <#pop.simd<-54321, 12345>>
+  // CHECK: !pop.scalar<f32> = <#pop.simd<"0.100000001">>
+  %6 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"0.1">>
   kgen.return
 }
 
