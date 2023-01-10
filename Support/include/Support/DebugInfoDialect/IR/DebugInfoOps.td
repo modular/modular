@@ -8,6 +8,7 @@
 #define DEBUGINFOOPS_TD
 
 include "Support/DebugInfoDialect/IR/DebugInfoAttrs.td"
+include "Support/Interpreter/InterpreterInterface.td"
 include "mlir/IR/OpBase.td"
 
 //===----------------------------------------------------------------------===//
@@ -22,7 +23,8 @@ class DebugInfoOp<string mnemonic, list<Trait> traits = []>
 // ValueOp
 //===----------------------------------------------------------------------===//
 
-def DebugInfo_ValueOp : DebugInfoOp<"value"> {
+def DebugInfo_ValueOp : DebugInfoOp<"value",
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "debug variable value definition";
   let description = [{
     The `debuginfo.value` operation provides information when a debug info

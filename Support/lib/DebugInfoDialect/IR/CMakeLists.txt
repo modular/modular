@@ -17,4 +17,5 @@ add_modular_dialect_library(DebugInfoDialect
   LINK_LIBS PUBLIC
   LLVMBinaryFormat
   MLIRIR
+  InterpreterInterface
 )

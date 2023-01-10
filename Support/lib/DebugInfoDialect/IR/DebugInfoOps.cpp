@@ -25,6 +25,17 @@ void DebugInfoDialect::registerOperations() {
 }
 
 //===----------------------------------------------------------------------===//
+// ValueOp
+//===----------------------------------------------------------------------===//
+
+/// Implement the interpret hook for this operation. Since the operation has no
+/// results, we cannot use the fold hook.
+ErrorTreeOr<SuccessType> ValueOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

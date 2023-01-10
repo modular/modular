@@ -8,6 +8,7 @@
 #define SUPPORT_DEBUGINFODIALECT_IR_DEBUGINFOOPS_H
 
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
+#include "Support/Interpreter/InterpreterInterface.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpDefinition.h"
