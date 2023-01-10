@@ -652,6 +652,14 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
     /// Return (not x) which is the same as (xor x, true).  The `operand` value
     /// must have type `i1`.
     static TypedAttr getNot(TypedAttr operand);
+
+    /// Return (neg x) which is the same as (mul x, -1).  The `operand` value
+    /// must have `index` type.
+    static TypedAttr getNeg(TypedAttr operand);
+
+    /// Return (x-y) which is the same as (add x, (neg y)).  The `operand` value
+    /// must have `index` type.
+    static TypedAttr getSub(TypedAttr lhs, TypedAttr rhs);
   }];
 }
 

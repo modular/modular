@@ -310,3 +310,13 @@ fn callInParam[callable: __mlir_type.`!kgen.signature<[a : index], [], (index) -
   # CHECK-NEXT: %0 = kgen.call @"takeIndexParam()"<a = apply(:(index) -> index bind_signature(:<a>(index) -> index callable, 1), 1)>() : () -> index
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
+
+
+# CHECK-LABEL: parameterExprs
+fn parameterExprs[a: __mlir_type.index, a2: __mlir_type.index]():
+  # CHECK: kgen.param.declare b = <0>
+  alias b = a-a
+  # CHECK: kgen.param.declare c = <add(a, -42)>
+  alias c = a-42
+  # CHECK: kgen.param.declare d = <add(mul(a2, -1), a)>
+  alias d = a-a2
