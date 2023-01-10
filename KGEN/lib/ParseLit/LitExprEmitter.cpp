@@ -102,13 +102,15 @@ DRValue IREmitter::emitDRValue(RValue rep, SMLoc loc) {
 // Function Calls
 //===----------------------------------------------------------------------===//
 
-/// This helper emits a method call to the named method on `type` with the
-/// provided `operands`. This emits an error if the special function is not
-/// implemented by the type and returns null.
+/// This helper emits a named method call with the provided `argValues`, where
+/// the first arg is the receiver of the call. This emits an error if the
+/// call is invalid and returns null.  The argValues list may not be empty.
 AnyValue
-IREmitter::emitNamedMethodCall(ASTType type, StringRef methodName,
+IREmitter::emitNamedMethodCall(StringRef methodName,
                                ArrayRef<ASTExprAnd<AnyValue>> argValues,
                                SMLoc callLoc) {
+  assert(!argValues.empty() && "Cannot emit a method call without a receiver!");
+  ASTType type = argValues.front().ir.getRValueType();
   CallableValue callee(type, methodName, callLoc, shared);
   return callee.emitFunctionCall(argValues, callLoc, *this);
 }
@@ -190,15 +192,15 @@ DRValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
                      isErroneousDecl, shared)) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __lit_bool.
-    boolResult = emitNamedMethodCall(value.ir.getType(), "__bool__",
-                                     {{value.ir, value.expr}}, valueLoc);
+    boolResult =
+        emitNamedMethodCall("__bool__", {{value.ir, value.expr}}, valueLoc);
     if (!boolResult)
       return {};
   }
 
   // Then we use __lit_bool to convert to an i1 value.
-  AnyValue litBoolCall = emitNamedMethodCall(
-      boolResult.getType(), "__lit_bool", {{boolResult, value.expr}}, valueLoc);
+  AnyValue litBoolCall =
+      emitNamedMethodCall("__lit_bool", {{boolResult, value.expr}}, valueLoc);
   return emitDRValue(litBoolCall, valueLoc);
 }
 

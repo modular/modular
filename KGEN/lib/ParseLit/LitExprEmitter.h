@@ -51,11 +51,11 @@ public:
   //===--------------------------------------------------------------------===//
   // Function Calls
 
-  /// This helper emits a method call to a special function (`kind`) on `type`
-  /// with the provided `operands`. This emits an error if the special function
-  /// is not implemented by the type and returns null.
-  AnyValue emitNamedMethodCall(ASTType type, StringRef methodName,
-                               ArrayRef<ASTExprAnd<AnyValue>> operands,
+  /// This helper emits a named method call with the provided `argValues`, where
+  /// the first operand is the receiver of the call. This emits an error if the
+  /// call is invalid and returns null.  The argValues list may not be empty.
+  AnyValue emitNamedMethodCall(StringRef methodName,
+                               ArrayRef<ASTExprAnd<AnyValue>> argValues,
                                SMLoc callLoc);
 
   /// Convert the specified value to the expected type, invoking implicit

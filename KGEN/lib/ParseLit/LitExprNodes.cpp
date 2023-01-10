@@ -1270,8 +1270,7 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   }
 
   // Emit an error complaining about the forward version of the operator.
-  return emitter.emitNamedMethodCall(lhsRep.getRValueType(), specialFnInfo.name,
-                                     argValues, getLoc());
+  return emitter.emitNamedMethodCall(specialFnInfo.name, argValues, getLoc());
 }
 
 /// This method emits the `x and y`, `x or y` operators.  These are interesting
@@ -1332,8 +1331,8 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
     ifOp->getResult(0).setType(lhsRV.getType());
   } else {
     // Otherwise, check to see if their boolean versions are compatible.
-    auto rhsBool = emitter.emitNamedMethodCall(rhsRV.getType(), "__bool__",
-                                               {{rhsRV, rhs}}, rhs->getLoc());
+    auto rhsBool =
+        emitter.emitNamedMethodCall("__bool__", {{rhsRV, rhs}}, rhs->getLoc());
     if (!rhsBool)
       return {};
     if (!ASTType(lhsBool.getType()).isEqualCanon(rhsBool.getType())) {
@@ -1395,8 +1394,7 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
   // Handle special cases that don't correspond to special function, "not x".
   if (kindToEmit == kBoolNot) {
     // Turn this into a call to __bool__.
-    argValue.ir = emitter.emitNamedMethodCall(exprRep.getType(), "__bool__",
-                                              argValue, getLoc());
+    argValue.ir = emitter.emitNamedMethodCall("__bool__", argValue, getLoc());
     if (!argValue.ir)
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
@@ -1408,8 +1406,7 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
   assert(specialFnInfo.kind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
-  return emitter.emitNamedMethodCall(argValue.ir.getType(), specialFnInfo.name,
-                                     argValue, getLoc());
+  return emitter.emitNamedMethodCall(specialFnInfo.name, argValue, getLoc());
 }
 
 AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
