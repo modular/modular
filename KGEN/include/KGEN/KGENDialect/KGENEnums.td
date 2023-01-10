@@ -91,6 +91,7 @@ def KGEN_ValueInputConvention : I8BitEnumAttr<"ValueInputConvention",
 def KGEN_FnEffects : I8BitEnumAttr<"FnEffects", "Function effects", [
   I8BitEnumAttrCaseNone<"None", "none">,
   I8BitEnumAttrCaseBit<"Throws", 0, "throws">,
+  I8BitEnumAttrCaseBit<"ForceInline", 1, "force_inline">,
   // I8BitEnumAttrCaseBit<"Async", 1, "async">,
 ]> {
   let cppNamespace = "M::KGEN";

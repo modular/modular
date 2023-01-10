@@ -449,8 +449,11 @@ LogicalResult FuncOp::verify() {
   // kgen.func's are not allowed to have input parameter lists.
   if (!getInputParamDecls().empty() || !getResultParamTypes().empty())
     return emitOpError("cannot have input or result parameters");
-  if (!getConventions().isDefault())
-    return emitOpError("can only have default conventions");
+  if (!llvm::all_of(getConventions().getInputConventions(),
+                    [](ValueInputConvention inputConv) {
+                      return inputConv == ValueInputConvention::ByVal;
+                    }))
+    return emitOpError("can only have default value input conventions");
   return success();
 }
 

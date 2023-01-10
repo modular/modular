@@ -1034,10 +1034,20 @@ parseElementsWithConventions(AsmParser &p, function_ref<ParseResult()> parseElt,
   // Parse the function effects. Check for each case to disambiguate the syntax
   // for interfaces.
   auto effect = FnEffects::None;
-  if (succeeded(p.parseOptionalKeyword("throws"))) {
-    effect = FnEffects::Throws;
-  } else if (succeeded(p.parseOptionalKeyword("none"))) {
-    // Swallow the keyword.
+  StringRef kw;
+  while (succeeded(
+      p.parseOptionalKeyword(&kw, {"throws", "none", "force_inline"}))) {
+    if (kw == "throws")
+      effect = effect | FnEffects::Throws;
+    else if (kw == "force_inline")
+      effect = effect | FnEffects::ForceInline;
+    else if (kw == "none")
+      ; // Swallow this keyword
+
+    // No vertical bar? We're done. It's not a parse error, but it does mean we
+    // can't specify more effects.
+    if (failed(p.parseOptionalVerticalBar()))
+      break;
   }
 
   conventions = ConventionsAttr::get(p.getContext(), inputConventions, effect);
