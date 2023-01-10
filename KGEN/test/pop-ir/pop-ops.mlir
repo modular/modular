@@ -1092,15 +1092,13 @@ kgen.generator @inline_asm<type: type, dtype: dtype>(
   kgen.return
 }
 
-// CHECK-LABEL: pop.compiler.global_variable @aGlobal : index
-pop.compiler.global_variable @aGlobal : index
 
 // CHECK-LABEL: @usesAGlobal
 kgen.func @usesAGlobal() {
   %zero = index.constant 0
-  // CHECK: pop.compiler.global_load @aGlobal : index
-  %0 = pop.compiler.global_load @aGlobal : index
-  // CHECK: pop.compiler.global_store @aGlobal, %idx0 : index
-  pop.compiler.global_store @aGlobal, %zero : index
+  // CHECK: pop.compiler.global_load "aGlobal" : index
+  %0 = pop.compiler.global_load "aGlobal" : index
+  // CHECK: pop.compiler.global_store "aGlobal", %idx0 : index
+  pop.compiler.global_store "aGlobal", %zero : index
   kgen.return
 }

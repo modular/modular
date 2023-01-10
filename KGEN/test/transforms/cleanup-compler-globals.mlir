@@ -1,13 +1,11 @@
 // RUN: kgen-opt %s -cleanup-compiler-globals | FileCheck %s
 
-pop.compiler.global_variable @aGlobal : index
-
 // CHECK-LABEL: @useAGlobalForNoReason
 kgen.func @useAGlobalForNoReason() -> index {
   // CHECK-NEXT: index.constant
   %idx0 = index.constant 0
-  pop.compiler.global_store @aGlobal, %idx0 : index
-  %0 = pop.compiler.global_load @aGlobal : index
+  pop.compiler.global_store "aGlobal", %idx0 : index
+  %0 = pop.compiler.global_load "aGlobal" : index
   // CHECK-NEXT: kgen.return
   kgen.return %0 : index
 }
@@ -18,7 +16,7 @@ kgen.func @loadOnly() -> index {
   // CHECK-NEXT: index.constant
   %idx0 = index.constant 0
   // CHECK-NEXT: pop.compiler.global_load
-  %0 = pop.compiler.global_load @aGlobal : index
+  %0 = pop.compiler.global_load "aGlobal" : index
   // CHECK-NEXT: kgen.return
   kgen.return %0 : index
 }
@@ -29,7 +27,7 @@ kgen.func @storeOnly() {
   // CHECK-NEXT: index.constant
   %idx0 = index.constant 0
   // CHECK-NEXT: pop.compiler.global_store
-  pop.compiler.global_store @aGlobal, %idx0 : index
+  pop.compiler.global_store "aGlobal", %idx0 : index
   // CHECK-NEXT: kgen.return
   kgen.return
 }
@@ -38,9 +36,9 @@ kgen.func @storeOnly() {
 kgen.func @multiLoad() -> (index, index) {
   // CHECK-NEXT: index.constant
   %idx0 = index.constant 0
-  pop.compiler.global_store @aGlobal, %idx0 : index
-  %0 = pop.compiler.global_load @aGlobal : index
-  %1 = pop.compiler.global_load @aGlobal : index
+  pop.compiler.global_store "aGlobal", %idx0 : index
+  %0 = pop.compiler.global_load "aGlobal" : index
+  %1 = pop.compiler.global_load "aGlobal" : index
   // CHECK-NEXT: kgen.return
   kgen.return %0, %1 : index, index
 }
