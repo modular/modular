@@ -72,8 +72,8 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   // TODO: In theory we can support casting a scalar type to a vector type (e.g.
   // f64 to a 2xf32) or vice versa. We should support this when the use case
   // arises.
-  Optional<KGENDType> inputDType = inputType.getResolvedDType();
-  Optional<KGENDType> outputDType = outputType.getResolvedDType();
+  std::optional<KGENDType> inputDType = inputType.getResolvedDType();
+  std::optional<KGENDType> outputDType = outputType.getResolvedDType();
 
   // If neither dtype could be resolved, allow the cast.
   if (!inputDType || !outputDType)
@@ -83,7 +83,7 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   ssize_t outputDTypeWidth = outputDType->getWidthInBits();
 
   // If we have a simd type, then the bitwidths must match.
-  Optional<int64_t> inputSize = 1, outputSize = 1;
+  std::optional<int64_t> inputSize = 1, outputSize = 1;
   if (auto inputSimd = dyn_cast<SIMDType>(inputType)) {
     auto outputSimd = outputType.cast<SIMDType>();
     inputSize = inputSimd.getResolvedSize();
@@ -135,7 +135,7 @@ static void printShuffleMask(AsmPrinter &p, Operation *op, TypedAttr mask,
 }
 
 LogicalResult SIMDShuffleOp::verify() {
-  Optional<int64_t> size = getType().getResolvedSize();
+  std::optional<int64_t> size = getType().getResolvedSize();
   if (!size)
     return success();
   auto maskType = cast<ListType>(getMask().getType());
@@ -153,7 +153,7 @@ LogicalResult SIMDShuffleOp::verify() {
   if (lhsType.getDType() != getType().getDType())
     return emitOpError("expected result dtype to match operand dtypes");
 
-  if (Optional<int64_t> size = lhsType.getResolvedSize()) {
+  if (std::optional<int64_t> size = lhsType.getResolvedSize()) {
     for (TypedAttr indexAttr : mask.getValues()) {
       auto index = dyn_cast<IntegerAttr>(indexAttr);
       if (!index)
@@ -172,7 +172,7 @@ LogicalResult SIMDShuffleOp::verify() {
 //===----------------------------------------------------------------------===//
 
 void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
-                   Optional<unsigned> alignment) {
+                   std::optional<unsigned> alignment) {
   build(b, state, ptr, alignment ? b.getIndexAttr(*alignment) : TypedAttr());
 }
 
@@ -188,7 +188,7 @@ void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
 //===----------------------------------------------------------------------===//
 
 void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
-                    Optional<unsigned> alignment) {
+                    std::optional<unsigned> alignment) {
   TypedAttr alignmentAttr;
   if (alignment)
     alignmentAttr = b.getIndexAttr(*alignment);
@@ -347,7 +347,7 @@ void ArrayCreateOp::build(OpBuilder &b, OperationState &state,
 //===----------------------------------------------------------------------===//
 
 LogicalResult ArrayRepeatOp::verify() {
-  Optional<int64_t> size = getType().getResolvedSize();
+  std::optional<int64_t> size = getType().getResolvedSize();
   if (size && *size != 0 && getNumOperands() == 0)
     return emitOpError("requires at least one operand to create an array whose "
                        "size is non-zero");
@@ -361,7 +361,7 @@ LogicalResult ArrayRepeatOp::verify() {
 // If the array has a concrete size, do a bounds check.
 static LogicalResult verifyArrayIndex(Operation *op, TypedAttr indexExpr,
                                       POP::ArrayType arrayType) {
-  Optional<int64_t> size = arrayType.getResolvedSize();
+  std::optional<int64_t> size = arrayType.getResolvedSize();
   auto indexAttr = dyn_cast<IntegerAttr>(indexExpr);
   if (!size || !indexAttr)
     return success();
@@ -689,7 +689,7 @@ void VariantVisitOp::getRegionInvocationBounds(
 
 LogicalResult ListGetOp::verify() {
   auto index = dyn_cast<IntegerAttr>(getIndex());
-  Optional<int64_t> length = getList().getType().getResolvedLength();
+  std::optional<int64_t> length = getList().getType().getResolvedLength();
   if (!index || !length)
     return success();
   if (index.getInt() < 0 || index.getInt() >= *length)

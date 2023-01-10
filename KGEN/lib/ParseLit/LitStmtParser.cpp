@@ -376,7 +376,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   } else {
     // If there was no returned value, then default to "return std::nullopt".
     // This allows type inference to uniformly support all the things that the
-    // None literal coerces to (e.g. an Optional type).
+    // None literal coerces to (e.g. an std::optional type).
     operandExprs.push_back(getNoneExpr(loc));
   }
 

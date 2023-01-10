@@ -176,7 +176,7 @@ public:
   ASTExprAnd<AnyValue> baseVal;
 
   /// If present, this a reference to a fixed symbol or an overload set.
-  Optional<DirectCallable> direct;
+  std::optional<DirectCallable> direct;
 
   CallableValue() {}
   CallableValue(ASTExprAnd<AnyValue> baseVal) : baseVal(baseVal) {}

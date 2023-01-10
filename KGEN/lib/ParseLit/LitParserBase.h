@@ -174,12 +174,13 @@ public:
   /// the current statement.  This can be passed in as None when there is a
   /// trailing punctuator that naturally terminates the expression.
   ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
-                                  Optional<size_t> stmtIndent,
+                                  std::optional<size_t> stmtIndent,
                                   bool *hadTrailingComma);
-  ParseResult parseExpression(ExprNode *&expr, Optional<size_t> stmtIndent);
+  ParseResult parseExpression(ExprNode *&expr,
+                              std::optional<size_t> stmtIndent);
   /// Parse an expression, allowing `=`, and `+=`.
   ParseResult parseExpressionOrAssignmentStmt(ExprNode *&expr,
-                                              Optional<size_t> stmtIndent);
+                                              std::optional<size_t> stmtIndent);
 
   /// Return an expression node for None at the specified location.
   ExprNode *getNoneExpr(SMLoc loc);

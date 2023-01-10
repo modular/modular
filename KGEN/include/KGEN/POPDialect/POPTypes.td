@@ -61,7 +61,7 @@ def POP_ArrayType : POPType<"Array", "array",
 
   let extraClassDeclaration = [{
     /// Try to narrow the size expression of the SIMD type to an integer.
-    Optional<int64_t> getResolvedSize() const;
+    std::optional<int64_t> getResolvedSize() const;
     /// Try to narrow the type expression of the pointer type to an MLIR type.
     Type getResolvedElementType() const;
   }];
@@ -170,9 +170,9 @@ def POP_SIMDType : POPType<"SIMD", "simd",
 
   let extraClassDeclaration = [{
     /// Try to narrow the dtype expression of the SIMD type to a value.
-    Optional<KGENDType> getResolvedDType() const;
+    std::optional<KGENDType> getResolvedDType() const;
     /// Try to narrow the size expression of the SIMD type to an integer.
-    Optional<int64_t> getResolvedSize() const;
+    std::optional<int64_t> getResolvedSize() const;
   }];
 }
 
@@ -376,7 +376,7 @@ def POP_VariantType : POPType<"Variant", "variant",
   let extraClassDeclaration = [{
     /// Returns the index of the type in the variant type list. If the type is
     /// not in the list, returns None.
-    Optional<int64_t> getTypeIndex(Type type) const;
+    std::optional<int64_t> getTypeIndex(Type type) const;
 
     /// Get the element types as parameterized types.
     SmallVector<Type> getParameterizedElementTypes() const;

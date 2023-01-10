@@ -814,7 +814,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   // If this is a list type, parse a comma-separated list of parameter values of
   // the element type surrounded by square brackets.
   if (auto list = dyn_cast<ListType>(type)) {
-    Optional<int64_t> length = list.getResolvedLength();
+    std::optional<int64_t> length = list.getResolvedLength();
     llvm::SMLoc loc = p.getCurrentLocation();
     if (!length)
       return p.emitError(

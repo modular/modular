@@ -235,7 +235,7 @@ void PruneImpossibleVariantsPass::runOnOperation() {
         returns.push_back(op);
     });
 
-    SmallVector<Optional<VariantTypes>> types;
+    SmallVector<std::optional<VariantTypes>> types;
     for (auto [i, type] : llvm::enumerate(func.getResultTypes())) {
       if (!isa<VariantType>(type)) {
         types.push_back(std::nullopt);

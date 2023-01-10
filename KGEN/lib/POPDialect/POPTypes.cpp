@@ -45,7 +45,7 @@ POP::ArrayType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-Optional<int64_t> POP::ArrayType::getResolvedSize() const {
+std::optional<int64_t> POP::ArrayType::getResolvedSize() const {
   if (auto intAttr = llvm::dyn_cast<IntegerAttr>(getSize()))
     return intAttr.getInt();
   return {};
@@ -82,15 +82,16 @@ POP::ArrayType POP::ArrayType::get(ValueRange elements) {
 
 /// The size of the array is the number of elements times the size of each
 /// aligned element.
-Optional<int64_t> POP::ArrayType::getTypeSize(TargetInfoAttr target) const {
+std::optional<int64_t>
+POP::ArrayType::getTypeSize(TargetInfoAttr target) const {
   Type elementType = getResolvedElementType();
-  Optional<int64_t> size = getResolvedSize();
+  std::optional<int64_t> size = getResolvedSize();
   if (!elementType || !size)
     return {};
 
-  Optional<int64_t> elementAlign =
+  std::optional<int64_t> elementAlign =
       DataLayoutInterface::getTypeAlignInBytes(target, elementType);
-  Optional<int64_t> elementSize =
+  std::optional<int64_t> elementSize =
       DataLayoutInterface::getTypeSizeInBytes(target, elementType);
   if (!elementAlign || !elementSize)
     return {};
@@ -99,7 +100,8 @@ Optional<int64_t> POP::ArrayType::getTypeSize(TargetInfoAttr target) const {
 }
 
 /// The alignment of the array is the alignment of the element type.
-Optional<int64_t> POP::ArrayType::getTypeAlign(TargetInfoAttr target) const {
+std::optional<int64_t>
+POP::ArrayType::getTypeAlign(TargetInfoAttr target) const {
   Type elementType = getResolvedElementType();
   if (!elementType)
     return {};
@@ -162,11 +164,11 @@ PointerType PointerType::get(Type elementType) {
   return PointerType::get(TypeConstantAttr::get(elementType));
 }
 
-Optional<int64_t> PointerType::getTypeSize(TargetInfoAttr target) const {
+std::optional<int64_t> PointerType::getTypeSize(TargetInfoAttr target) const {
   return target.getPointerSize();
 }
 
-Optional<int64_t> PointerType::getTypeAlign(TargetInfoAttr target) const {
+std::optional<int64_t> PointerType::getTypeAlign(TargetInfoAttr target) const {
   return target.getPointerSize();
 }
 
@@ -208,13 +210,13 @@ LogicalResult SIMDType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-Optional<KGENDType> SIMDType::getResolvedDType() const {
+std::optional<KGENDType> SIMDType::getResolvedDType() const {
   if (auto dtypeAttr = llvm::dyn_cast<DTypeConstantAttr>(getDType()))
     return dtypeAttr.getDType();
   return {};
 }
 
-Optional<int64_t> SIMDType::getResolvedSize() const {
+std::optional<int64_t> SIMDType::getResolvedSize() const {
   if (auto intAttr = llvm::dyn_cast<IntegerAttr>(getSize()))
     return intAttr.getInt();
   return {};
@@ -231,9 +233,9 @@ SIMDType SIMDType::get(MLIRContext *ctx, int64_t size, KGENDType dtype) {
   return get(size, DTypeConstantAttr::get(ctx, dtype));
 }
 
-Optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
-  Optional<KGENDType> dtype = getResolvedDType();
-  Optional<int64_t> size = getResolvedSize();
+std::optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
+  std::optional<KGENDType> dtype = getResolvedDType();
+  std::optional<int64_t> size = getResolvedSize();
   if (!dtype || !size)
     return {};
 
@@ -246,8 +248,8 @@ Optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
   }
 }
 
-Optional<int64_t> SIMDType::getTypeAlign(TargetInfoAttr target) const {
-  if (Optional<int64_t> size = getTypeSize(target))
+std::optional<int64_t> SIMDType::getTypeAlign(TargetInfoAttr target) const {
+  if (std::optional<int64_t> size = getTypeSize(target))
     return llvm::PowerOf2Ceil(*size);
   return {};
 }
@@ -381,16 +383,16 @@ StructType StructType::get(ArrayRef<Type> elementTypes) {
   return get(elementTypes.front().getContext(), elementTypes);
 }
 
-Optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
+std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
   SmallVector<Type> types;
   if (failed(resolveElementTypes(types)))
     return {};
   int64_t size = 0;
   int64_t strictest = 1;
   for (Type type : types) {
-    Optional<int64_t> typeAlign =
+    std::optional<int64_t> typeAlign =
         DataLayoutInterface::getTypeAlignInBytes(target, type);
-    Optional<int64_t> typeSize =
+    std::optional<int64_t> typeSize =
         DataLayoutInterface::getTypeSizeInBytes(target, type);
     if (!typeAlign || !typeSize)
       return {};
@@ -400,13 +402,13 @@ Optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
   return llvm::alignTo(size, strictest);
 }
 
-Optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
+std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
   SmallVector<Type> types;
   if (failed(resolveElementTypes(types)))
     return {};
   int64_t strictest = 1;
   for (Type type : types) {
-    Optional<int64_t> typeAlign =
+    std::optional<int64_t> typeAlign =
         DataLayoutInterface::getTypeAlignInBytes(target, type);
     if (!typeAlign)
       return {};
@@ -480,7 +482,7 @@ VariantType VariantType::get(ArrayRef<Type> types) {
 /// Return the number of types in the variant.
 size_t VariantType::getNumTypes() { return getTypes().size(); }
 
-Optional<int64_t> VariantType::getTypeIndex(Type type) const {
+std::optional<int64_t> VariantType::getTypeIndex(Type type) const {
   for (auto [idx, variantType] : llvm::enumerate(getTypes()))
     if (ParamRefType::get(variantType) == type)
       return idx;
@@ -502,16 +504,16 @@ Type VariantType::getType(unsigned index) {
 /// Compute the size in bytes of just the content section of a variant. The
 /// content field is the biggest element size rounded up to the nearest multiple
 /// of the pointer width.
-static Optional<int64_t> computeVariantContentSize(VariantType type,
-                                                   TargetInfoAttr target) {
+static std::optional<int64_t> computeVariantContentSize(VariantType type,
+                                                        TargetInfoAttr target) {
   uint64_t maxSize = 0;
   for (TypedAttr typeExpr : type.getTypes()) {
     auto typeCst = llvm::dyn_cast<ConcreteTypeConstantAttr>(typeExpr);
     if (!typeCst)
       return {};
-    Optional<int64_t> typeSize =
+    std::optional<int64_t> typeSize =
         DataLayoutInterface::getTypeSizeInBytes(target, typeCst.getValue());
-    Optional<int64_t> typeAlign =
+    std::optional<int64_t> typeAlign =
         DataLayoutInterface::getTypeAlignInBytes(target, typeCst.getValue());
     if (!typeSize || !typeAlign)
       return {};
@@ -534,17 +536,17 @@ static int64_t getVariantDiscrSize(VariantType type) {
   return llvm::divideCeil(getVariantDiscrSizeInBits(type), CHAR_BIT);
 }
 
-Optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
+std::optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
   // A variant is lowered to a struct that consists of a content field and a
   // discriminator field.
-  Optional<int64_t> contentSize = computeVariantContentSize(*this, target);
+  std::optional<int64_t> contentSize = computeVariantContentSize(*this, target);
   if (!contentSize)
     return {};
   return llvm::alignTo(*contentSize + getVariantDiscrSize(*this),
                        target.getPointerSize());
 }
 
-Optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {
+std::optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {
   // The alignment of the variant type is just the pointer width.
   // FIXME: This is incorrect but the LLVM lowering needs to be fixed.
   return target.getPointerSize();
@@ -729,12 +731,12 @@ static void printArrayOfPrettyTypes(AsmPrinter &p, ArrayRef<TypedAttr> values) {
 // ClosureType
 //===----------------------------------------------------------------------===//
 
-Optional<int64_t> ClosureType::getTypeSize(TargetInfoAttr target) const {
+std::optional<int64_t> ClosureType::getTypeSize(TargetInfoAttr target) const {
   // FIXME: Implement this.
   llvm_unreachable("TODO: unimplemented");
 }
 
-Optional<int64_t> ClosureType::getTypeAlign(TargetInfoAttr target) const {
+std::optional<int64_t> ClosureType::getTypeAlign(TargetInfoAttr target) const {
   // FIXME: Implement this.
   llvm_unreachable("TODO: unimplemented");
 }

@@ -119,14 +119,14 @@ public:
       optLevel = 2;
 
     // Grab the debug-at level.
-    Optional<KGEN::CompilationOptions::DebugAtLevel> debugAt;
+    std::optional<KGEN::CompilationOptions::DebugAtLevel> debugAt;
     if (debugAtLevel.getNumOccurrences())
       debugAt = debugAtLevel;
     return KGEN::CompilationOptions(optLevel, debugInfoLevel, debugAt,
                                     enableXRayInstrumentation);
   }
 
-  Optional<CommandLineFunc> shouldExecuteFunc(StringRef func) const {
+  std::optional<CommandLineFunc> shouldExecuteFunc(StringRef func) const {
     auto found = llvm::find_if(
         funcs, [&](const CommandLineFunc &ek) { return ek.name == func; });
     if (found == funcs.end())

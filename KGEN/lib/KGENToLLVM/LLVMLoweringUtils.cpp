@@ -23,8 +23,9 @@ namespace LLVM = mlir::LLVM;
 // POPToLLVMTypeConverter
 //===----------------------------------------------------------------------===//
 
-Optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype,
-                                            size_t indexBitwidth) {
+std::optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx,
+                                                 KGENDType dtype,
+                                                 size_t indexBitwidth) {
   if (dtype.isBool())
     return IntegerType::get(ctx, 1);
 
@@ -49,7 +50,7 @@ Optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype,
 
 Type M::KGEN::getLLVMPointerTo(MLIRContext *ctx, KGENDType dtype,
                                size_t indexBitwidth) {
-  if (Optional<Type> type = getMLIRTypeForDType(ctx, dtype, indexBitwidth))
+  if (std::optional<Type> type = getMLIRTypeForDType(ctx, dtype, indexBitwidth))
     return LLVM::LLVMPointerType::get(*type);
   return LLVM::LLVMPointerType::get(ctx);
 }
@@ -59,15 +60,15 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
     : LLVMTypeConverter(loc.getContext(), options), loc(loc) {
 
   // Convert a DType expression to an MLIR type.
-  auto convertDType = [&](auto type) -> Optional<Type> {
-    if (Optional<KGENDType> dtype = type.getResolvedDType())
+  auto convertDType = [&](auto type) -> std::optional<Type> {
+    if (std::optional<KGENDType> dtype = type.getResolvedDType())
       return getMLIRTypeForDType(type.getContext(), *dtype,
                                  options.getIndexBitwidth());
     return {};
   };
 
   // Convert a size expression to a C++ unsigned integer.
-  auto convertSize = [&](auto type) -> Optional<uint64_t> {
+  auto convertSize = [&](auto type) -> std::optional<uint64_t> {
     auto size = dyn_cast_if_present<IntegerAttr>(type.getSize());
     if (!size)
       return {};
@@ -79,7 +80,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
 
   // Convert pointer types to LLVM pointer types. If the element type is
   // unspecified, return an opaque pointer.
-  addConversion([=](POP::PointerType pointer) -> Optional<Type> {
+  addConversion([=](POP::PointerType pointer) -> std::optional<Type> {
     if (Type type = pointer.getResolvedElementType())
       if (Type elementType = convertType(type))
         return LLVM::LLVMPointerType::get(elementType);
@@ -87,8 +88,8 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
   });
 
   // Convert array types to LLVM array types.
-  addConversion([=](POP::ArrayType array) -> Optional<Type> {
-    Optional<int64_t> size = array.getResolvedSize();
+  addConversion([=](POP::ArrayType array) -> std::optional<Type> {
+    std::optional<int64_t> size = array.getResolvedSize();
     Type elementType = array.getResolvedElementType();
     if (!size || !elementType)
       return {};
@@ -99,7 +100,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
   });
 
   // Convert struct types to LLVM literal structs.
-  addConversion([=](POP::StructType structType) -> Optional<Type> {
+  addConversion([=](POP::StructType structType) -> std::optional<Type> {
     SmallVector<Type> elementTypes;
     elementTypes.reserve(structType.getNumElements());
     for (TypedAttr elementType : structType.getElementTypes()) {
@@ -115,9 +116,9 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
   });
 
   // Convert SIMD types to vector types.
-  addConversion([=](POP::SIMDType simd) -> Optional<Type> {
-    Optional<Type> dtype = convertDType(simd);
-    Optional<uint64_t> size = convertSize(simd);
+  addConversion([=](POP::SIMDType simd) -> std::optional<Type> {
+    std::optional<Type> dtype = convertDType(simd);
+    std::optional<uint64_t> size = convertSize(simd);
     if (!dtype)
       return {};
     if (!size) {
@@ -134,13 +135,13 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
   });
 
   // Convert data type types to `i8`.
-  addConversion([=](DTypeType dtype) -> Optional<Type> {
+  addConversion([=](DTypeType dtype) -> std::optional<Type> {
     return Builder(&getContext()).getI8Type();
   });
 
   // Convert variant types to a struct with enough space to contain the largest
   // variant type plus a discriminator.
-  addConversion([=](POP::VariantType variant) -> Optional<Type> {
+  addConversion([=](POP::VariantType variant) -> std::optional<Type> {
     // TODO: The generated assembly is sensitive to the content type of the
     // variant type. This needs to be optimized. For now, use an array of
     // word-size integers.
@@ -630,10 +631,10 @@ POPToLLVMDebugInfoTypeConverter::POPToLLVMDebugInfoTypeConverter(
   addUnresolvedConverter(converter);
 
   // Add direct debug info conversions.
-  addConversion([&](POP::SIMDType type) -> Optional<Type> {
+  addConversion([&](POP::SIMDType type) -> std::optional<Type> {
     // We can only build debug info if the dtype and size have been resolved.
-    Optional<KGENDType> dtype = type.getResolvedDType();
-    Optional<int64_t> size = type.getResolvedSize();
+    std::optional<KGENDType> dtype = type.getResolvedDType();
+    std::optional<int64_t> size = type.getResolvedSize();
     if (!dtype || !size)
       return std::nullopt;
 

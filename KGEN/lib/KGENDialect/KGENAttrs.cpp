@@ -1201,8 +1201,8 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands) {
   auto field = dyn_cast<StringAttr>(operands[1]);
   if (!target || !field)
     return {};
-  Optional<ssize_t> result =
-      llvm::StringSwitch<Optional<ssize_t>>(field.getValue())
+  std::optional<ssize_t> result =
+      llvm::StringSwitch<std::optional<ssize_t>>(field.getValue())
           .Case("pointer_size", target.getTarget().getPointerSize())
           .Case("simd_bit_width", target.getTarget().getSimdBitWidth())
           .Default(std::nullopt);
@@ -1271,7 +1271,7 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands) {
   auto target = dyn_cast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
-  Optional<int64_t> size = DataLayoutInterface::getTypeSizeInBytes(
+  std::optional<int64_t> size = DataLayoutInterface::getTypeSizeInBytes(
       target.getTarget(), typeCst.getValue());
   if (!size)
     return {};
@@ -1285,7 +1285,7 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands) {
   auto target = dyn_cast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
-  Optional<int64_t> size = DataLayoutInterface::getTypeAlignInBytes(
+  std::optional<int64_t> size = DataLayoutInterface::getTypeAlignInBytes(
       target.getTarget(), typeCst.getValue());
   if (!size)
     return {};

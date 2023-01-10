@@ -139,7 +139,7 @@ ErrorTreeOr<Attribute> IREvaluator::concretizeParameterExpr(Location loc,
                                                             bool allowUnknown) {
   // FIXME: Refactor ParameterEvaluator for better error propagation.
   errorLoc = loc;
-  Optional<ErrorTree> error;
+  std::optional<ErrorTree> error;
   emitError = [&](ErrorTree err) { error = std::move(err); };
 
   Attribute result = getReboundAttribute(expr);
@@ -167,7 +167,7 @@ ErrorTreeOr<Type> IREvaluator::concretizeParameterExpr(Location loc,
                                                        Type expr) {
   // FIXME: Refactor ParameterEvaluator for better error propagation.
   errorLoc = loc;
-  Optional<ErrorTree> error;
+  std::optional<ErrorTree> error;
   emitError = [&](ErrorTree err) { error = std::move(err); };
 
   Type result = getReboundType(expr);
@@ -187,7 +187,7 @@ ErrorTreeOr<Type> IREvaluator::concretizeParameterExpr(Location loc,
 /// Given a generator or interface declaration operation, evaluate any
 /// constraints against inputParamValues.  If the constraints are met, return
 /// success, otherwise return why they aren't.
-Optional<ErrorTree>
+std::optional<ErrorTree>
 KGEN::evaluateConstraints(ArrayRef<ConstraintAttr> constraints,
                           IREvaluator &evaluator) {
   // Each constraint must be foldable, and must fold to true.

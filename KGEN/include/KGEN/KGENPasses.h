@@ -46,7 +46,8 @@ struct LowerToLLVMOptions
     : public mlir::PassPipelineOptions<LowerToLLVMOptions> {
   LowerToLLVMOptions(
       DebugInfo::EmissionKind diLevel = DebugInfo::EmissionKind::None,
-      Optional<CompilationOptions::DebugAtLevel> diAtLevel = std::nullopt) {
+      std::optional<CompilationOptions::DebugAtLevel> diAtLevel =
+          std::nullopt) {
     debugInfoLevel = diLevel;
     if (diAtLevel)
       debugAtLevel = *diAtLevel;

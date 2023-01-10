@@ -30,9 +30,9 @@ class ZAP_MemoryLikeType<string typeName, string typeMnemonic>
   string classDeclaration = "";
   string baseExtraClassDeclaration = [{
     /// Try to narrow the size expression of the type to an integer.
-    Optional<int64_t> getResolvedSize() const;
+    std::optional<int64_t> getResolvedSize() const;
     /// Try to narrow the dtype expression of the type to a dtype.
-    Optional<KGENDType> getResolvedDType() const;
+    std::optional<KGENDType> getResolvedDType() const;
     /// Get the pointer type for the object.
     POP::PointerType getPointerType() const;
     /// Get the scalar element type for the object.

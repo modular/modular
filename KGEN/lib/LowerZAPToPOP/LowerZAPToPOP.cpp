@@ -343,7 +343,8 @@ struct ConvertZAPNDBufferSize : public mlir::OpRewritePattern<NDBufferSizeOp> {
 
   LogicalResult matchAndRewrite(NDBufferSizeOp op,
                                 PatternRewriter &rewriter) const override {
-    if (Optional<int64_t> size = op.getNDBuffer().getType().getResolvedSize()) {
+    if (std::optional<int64_t> size =
+            op.getNDBuffer().getType().getResolvedSize()) {
       rewriter.replaceOpWithNewOp<ParamConstantOp>(
           op, rewriter.getIndexAttr(*size));
       return success();

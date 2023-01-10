@@ -9,7 +9,6 @@
 
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/LLVMForwardDecls.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -39,7 +38,7 @@ public:
 
   CompilationOptions(unsigned optimizationLevel = 3,
                      DebugInfoLevel debugLevel = kNoDebug,
-                     Optional<DebugAtLevel> debugAtLevel = std::nullopt,
+                     std::optional<DebugAtLevel> debugAtLevel = std::nullopt,
                      bool enableXRayInstrumentation = false)
       : optimizationLevel(optimizationLevel), debugLevel(debugLevel),
         debugAtLevel(debugAtLevel),
@@ -101,7 +100,7 @@ public:
 
   unsigned optimizationLevel : 2;
   DebugInfoLevel debugLevel = kNoDebug;
-  Optional<DebugAtLevel> debugAtLevel;
+  std::optional<DebugAtLevel> debugAtLevel;
   bool enableXRayInstrumentation = false;
 };
 } // namespace M::KGEN

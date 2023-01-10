@@ -513,7 +513,7 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
       resolveAlignment(op.getAlignment()));
 
   // Compute the bytecount of the allocated buffer.
-  Optional<int64_t> byteCount = DataLayoutInterface::getTypeSizeInBytes(
+  std::optional<int64_t> byteCount = DataLayoutInterface::getTypeSizeInBytes(
       TargetInfoAttr::getForHost(op.getContext()),
       cast<PointerType>(op.getType()).getResolvedElementType());
   if (!byteCount)

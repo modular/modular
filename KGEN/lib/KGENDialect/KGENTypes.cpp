@@ -79,7 +79,7 @@ LogicalResult ListType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-Optional<int64_t> ListType::getResolvedLength() const {
+std::optional<int64_t> ListType::getResolvedLength() const {
   if (auto length = llvm::dyn_cast<IntegerAttr>(getLength()))
     return length.getInt();
   return {};
@@ -318,11 +318,11 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
 // DTypeType
 //===----------------------------------------------------------------------===//
 
-Optional<int64_t> DTypeType::getTypeSize(TargetInfoAttr target) const {
+std::optional<int64_t> DTypeType::getTypeSize(TargetInfoAttr target) const {
   return sizeof(uint8_t);
 }
 
-Optional<int64_t> DTypeType::getTypeAlign(TargetInfoAttr target) const {
+std::optional<int64_t> DTypeType::getTypeAlign(TargetInfoAttr target) const {
   return 1;
 }
 

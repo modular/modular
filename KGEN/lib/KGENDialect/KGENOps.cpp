@@ -168,7 +168,7 @@ static ParseResult parseRegionDeclaration(OpAsmParser &p,
 
   OperationState regionBody(p.getEncodedSourceLoc(p.getCurrentLocation()),
                             RegionBodyOp::getOperationName());
-  Optional<Location> bodyLoc = regionBody.location;
+  std::optional<Location> bodyLoc = regionBody.location;
   if (RegionBodyOp::parse(p, regionBody) ||
       p.parseOptionalLocationSpecifier(bodyLoc))
     return failure();
@@ -810,7 +810,7 @@ void ParamConstantOp::build(OpBuilder &b, OperationState &state,
 /// Containers verify that the operands of this ReturnOp match the specified set
 /// of types.
 LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<Type> paramResultTypes,
-                                           Optional<TypeRange> types) {
+                                           std::optional<TypeRange> types) {
   // Check the parameters match up.
   auto returnedParams = getParameters();
   if (returnedParams.size() != paramResultTypes.size())
