@@ -495,6 +495,51 @@ LogicalResult GlobalConstantOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// CompilerGlobal{Variable, Load, Store}Op
+//===----------------------------------------------------------------------===//
+
+/// CompilerGlobalVariable ops are always private visibility - we want them
+/// deleted by SymbolDCE.
+SymbolTable::Visibility CompilerGlobalVariableOp::getVisibility() {
+  return SymbolTable::Visibility::Private;
+}
+
+static LogicalResult
+verifyGlobalVariableSymbolUses(Operation *op, Type t,
+                               mlir::SymbolTableCollection &symtabs) {
+  auto nameAttr = op->getAttrOfType<SymbolRefAttr>("name");
+  Operation *gvOr =
+      symtabs.lookupSymbolIn(op->getParentOfType<ModuleOp>(), nameAttr);
+  if (!gvOr)
+    return op->emitError("could not resolve symbol '") << nameAttr << "'";
+
+  if (!isa<CompilerGlobalVariableOp>(gvOr)) {
+    return op->emitError(
+               "expected to refer to a `pop.compiler.global_variable`")
+           << " not a `" << gvOr->getName() << "`";
+  }
+
+  auto gv = cast<CompilerGlobalVariableOp>(gvOr);
+  if (t != gv.getResult()) {
+    return op->emitError("expected `pop.compiler.global_variable` with type ")
+           << t << " but got " << gv.getResult();
+  }
+
+  return success();
+}
+
+LogicalResult
+CompilerGlobalLoadOp::verifySymbolUses(mlir::SymbolTableCollection &symtabs) {
+  return verifyGlobalVariableSymbolUses(getOperation(), getType(), symtabs);
+}
+
+LogicalResult
+CompilerGlobalStoreOp::verifySymbolUses(mlir::SymbolTableCollection &symtabs) {
+  return verifyGlobalVariableSymbolUses(getOperation(), getValue().getType(),
+                                        symtabs);
+}
+
+//===----------------------------------------------------------------------===//
 // IndexToPointerOp
 //===----------------------------------------------------------------------===//
 

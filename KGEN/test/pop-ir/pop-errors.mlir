@@ -389,3 +389,44 @@ kgen.generator @call_indirect(%arg0: !kgen.signature<[], [], (i8) -> ()>, %arg1:
   pop.call_indirect %arg0(%arg1) : !kgen.signature<[], [], (i8) -> ()>
   kgen.return
 }
+
+// -----
+
+pop.compiler.global_variable @foo : !pop.scalar<ui32>
+
+kgen.generator @wrong_type() {
+  // expected-error @below {{expected `pop.compiler.global_variable` with type '!pop.scalar<si32>' but got '!pop.scalar<ui32>'}}
+  %0 = pop.compiler.global_load @foo : !pop.scalar<si32>
+  kgen.return
+}
+
+// -----
+
+pop.compiler.global_variable @foo : !pop.scalar<ui32>
+
+kgen.generator @wrong_type() {
+  %0 = index.constant 0
+  // expected-error @below {{expected `pop.compiler.global_variable` with type 'index' but got '!pop.scalar<ui32>'}}
+  pop.compiler.global_store @foo, %0 : index
+  kgen.return
+}
+
+// -----
+
+kgen.generator @foo() {
+  kgen.return
+}
+
+kgen.generator @wrong_symbol() {
+  // expected-error @below {{expected to refer to a `pop.compiler.global_variable` not a `kgen.generator`}}
+  %0 = pop.compiler.global_load @foo : !pop.scalar<si32>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @wrong_symbol() {
+  // expected-error @below {{could not resolve symbol '@foo'}}
+  %0 = pop.compiler.global_load @foo : !pop.scalar<si32>
+  kgen.return
+}
