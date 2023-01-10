@@ -853,14 +853,12 @@ kgen.generator @external_call<type: type, dtype: dtype>(%a: !kgen.paramref<type>
 }
 
 // CHECK-LABEL: @global_constant
-kgen.generator @global_constant<type: type, dtype: dtype>() -> !pop.pointer<type> {
-  // CHECK: pop.global_constant(5 : i32) : type
-  %0 = pop.global_constant(5 : i32) : type
-  // CHECK: pop.global_constant(#M.dense_array<0, 1, 2, 3> : !M.array<4xui32>) : !pop.array<4, scalar<ui32>>
-  %1 = pop.global_constant(#M.dense_array<0, 1, 2, 3> : !M.array<4xui32>) : !pop.array<4, scalar<ui32>>
-  // CHECK: pop.global_constant(#M.dense_array<0, 0, 0, 0> : !M.array<4xi32>) : !pop.array<4, scalar<dtype>>
-  %2 = pop.global_constant(#M.dense_array<0, 0, 0, 0> : !M.array<4xi32>) : !pop.array<4, scalar<dtype>>
-  kgen.return %0 : !pop.pointer<type>
+kgen.generator @global_constant() {
+  // CHECK: pop.global_constant: i32 = <5>
+  pop.global_constant: i32 = <5>
+  // CHECK: pop.global_constant: !M.array<4xui32> = <#M.dense_array<0, 1, 2, 3>>
+  pop.global_constant: !M.array<4xui32> = <#M.dense_array<0, 1, 2, 3>>
+  kgen.return
 }
 
 // CHECK-LABEL: @pointer_to_index

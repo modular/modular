@@ -174,62 +174,6 @@ kgen.generator @simd_shuffle<size>(%a: !pop.simd<2, f32>) {
 
 // -----
 
-kgen.func @global_constant() {
-  // expected-error @below {{cannot convert from attribute type 'f32' to dtype f64}}
-  %0 = pop.global_constant(0.0 : f32) : !pop.scalar<f64>
-  kgen.return
-}
-
-// -----
-
-kgen.func @global_constant() {
-  // expected-error @below {{expected array elements attribute for array constant with known size}}
-  %0 = pop.global_constant(0.0 : f32) : !pop.array<4, scalar<f32>>
-  kgen.return
-}
-
-// -----
-
-kgen.func @global_constant() {
-  // expected-error @below {{expected attribute type to be !M.array<2xT>}}
-  %0 = pop.global_constant(#M.dense_array<0.0, 0.0> : vector<2xf32>) : !pop.array<2, scalar<f32>>
-  kgen.return
-}
-
-// -----
-
-kgen.func @global_constant() {
-  // expected-error @below {{expected attribute type to be !M.array<2xT>}}
-  %0 = pop.global_constant(#M.dense_array<0.0, 0.0, 0.0, 0.0> : tensor<2x2xf32>) : !pop.array<2, scalar<f32>>
-  kgen.return
-}
-
-// -----
-
-kgen.func @global_constant() {
-  // expected-error @below {{expected attribute type to be !M.array<2xT>}}
-  %0 = pop.global_constant(#M.dense_array<0.0> : tensor<1xf32>) : !pop.array<2, scalar<f32>>
-  kgen.return
-}
-
-// -----
-
-kgen.generator @global_constant<size>() {
-  // expected-error @below {{expected integer or float attribute for array constant of unspecified size}}
-  %0 = pop.global_constant(#M.dense_array<0.0> : !M.array<1xf32>) : !pop.array<size, scalar<f32>>
-  kgen.return
-}
-
-// -----
-
-kgen.func @global_constant() {
-  // expected-error @below {{convert from attribute type 'f64' to dtype f32}}
-  %0 = pop.global_constant(#M.dense_array<0.0, 0.0> : !M.array<2xf64>) : !pop.array<2, scalar<f32>>
-  kgen.return
-}
-
-// -----
-
 kgen.func @cast_from_builtin_type(%arg0: si32) {
   // expected-error @below {{cannot convert from scalar dtype ui32 to 'si32'}}
   %0 = pop.cast_from_builtin %arg0 : si32 to !pop.scalar<ui32>
@@ -427,14 +371,6 @@ kgen.func @struct_gep_type(%a: !pop.pointer<struct<i32>>) {
 kgen.func @struct_gep_type(%a: !pop.pointer<struct<i32>>) {
   // expected-error @below {{'pop.struct.gep' op result type 'i64' does not match struct element type at index 0: #kgen.concretetype.constant<i32> : !kgen.mlirtype}}
   %0 = "pop.struct.gep"(%a) { index = 0 : index } : (!pop.pointer<struct<i32>>) -> !pop.pointer<i64>
-  kgen.return
-}
-
-// -----
-
-kgen.generator @parametric_global_constant<T:type>() {
-  // expected-error @below {{'pop.global_constant' op array constant must have scalar elements}}
-  %0 = pop.global_constant(#M.dense_array<0> : !M.array<1xi32>) : !pop.array<1, T>
   kgen.return
 }
 

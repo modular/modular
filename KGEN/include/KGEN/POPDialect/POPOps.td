@@ -1970,24 +1970,21 @@ def POP_ExternalCallOp : POPOp<"external_call"> {
 // GlobalConstantOp
 //===----------------------------------------------------------------------===//
 
-def POP_GlobalConstantOp : POPOp<"global_constant",
-    [Pure, DeclareOpInterfaceMethods<ElaboratorOpInterface,
-                                             ["finalizeElaboration"]>]> {
+def POP_GlobalConstantOp : POPOp<"global_constant", [Pure]> {
   let summary = "create a global constant";
   let description = [{
     The `pop.global_constant` operation creates and returns a pointer to a
     global constant value. The returned pointer is read-only. Writing the to
     pointer is undefined behaviour.
 
-    This operation has the same pre and post elaboration constant semantics as
-    `pop.constant`.
-
     Example:
 
     ```mlir
-    %0 = pop.global_constant(5 : i32) : !pop.scalar<ui32>
-    %1 = pop.global_constant(12.0) : type
-    %2 = pop.global_constant(#M.dense_array<4, 2>) : !pop.simd<2, dtype>
+    // SIMD global constant.
+    %0 = pop.global_constant: <simd<2, ui32>> = <#pop.simd<2, 5>>
+    // Parametric global constant.
+    %1 = pop.global_constant: <type> =
+        <apply(:(f32) -> !kgen.paramref<type>, 12.0)>
     ```
   }];
 
@@ -1995,7 +1992,7 @@ def POP_GlobalConstantOp : POPOp<"global_constant",
   let results = (outs POP_PointerType:$result);
 
   let assemblyFormat = [{
-    `(` $value `)` attr-dict `:` custom<PointerOf>(type($result))
+    `` custom<GlobalConstantOpValue>($value, type($result)) attr-dict
   }];
 
   let hasVerifier = 1;
