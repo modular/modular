@@ -29,15 +29,15 @@ void CleanupCompilerGlobalsPass::runOnOperation() {
 
   // When we see a sequence of store->load we can just remove it and replace it
   // with the store argument.
-  DenseMap<SymbolRefAttr, std::pair<POP::CompilerGlobalStoreOp, bool>> stores;
+  DenseMap<StringAttr, std::pair<POP::CompilerGlobalStoreOp, bool>> stores;
   for (Operation &op : llvm::make_early_inc_range(func.getOps())) {
     if (auto store = dyn_cast<POP::CompilerGlobalStoreOp>(op)) {
-      stores[store.getName()] = {store, false};
+      stores[store.getNameAttr()] = {store, false};
       continue;
     }
 
     if (auto load = dyn_cast<POP::CompilerGlobalLoadOp>(op)) {
-      auto found = stores.find(load.getName());
+      auto found = stores.find(load.getNameAttr());
       if (found == stores.end())
         continue;
 

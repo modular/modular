@@ -136,3 +136,54 @@ kgen.generator @do_it() {
 
   kgen.return
 }
+
+// -----
+
+// COM: Structs get ignored.
+kgen.struct.decl @parametrizedClosure_context<T: type> {
+  kgen.struct.field field_0 : !kgen.paramref<T>
+}
+
+// CHECK-LABEL: @"parametrizedClosure_5,T=f32"
+kgen.generator @parametrizedClosure_5<T: type>(%arg0: !kgen.paramref<T>) force_inline -> !kgen.paramref<T> {
+  // CHECK-NEXT: kgen.return %arg0 : f32
+  kgen.return %arg0 : !kgen.paramref<T>
+}
+
+
+// CHECK-LABEL: @"parametrizedClosure_wrapper,T=f32"
+kgen.generator @parametrizedClosure_wrapper<T: type>() force_inline -> !kgen.paramref<T> {
+  // CHECK-NEXT: pop.compiler.global_load "parametrizedClosure_context_var_3" : !kgen.declref<@parametrizedClosure_context<T: type = f32>>
+  %0 = pop.compiler.global_load "parametrizedClosure_context_var_3" : !kgen.declref<@parametrizedClosure_context<T: type = T>>
+  // CHECK-NEXT: kgen.struct.extract %0[field_0] : f32 from !kgen.declref<@parametrizedClosure_context<T: type = f32>>
+  %1 = kgen.struct.extract %0[field_0] : !kgen.paramref<T> from !kgen.declref<@parametrizedClosure_context<T: type = T>>
+  // CHECK-NEXT: kgen.call @"parametrizedClosure_5,T=f32"(%1) : (f32) force_inline -> f32
+  %2 = kgen.call @parametrizedClosure_5<T: type = T>(%1) : (!kgen.paramref<T>) force_inline -> !kgen.paramref<T>
+  // CHECK-NEXT: kgen.return
+  kgen.return %2 : !kgen.paramref<T>
+}
+
+// CHECK-LABEL: @"parametrizedClosure,T=f32"
+kgen.generator @parametrizedClosure<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
+  // CHECK-NEXT: kgen.struct.create(%arg0) : (f32) -> !kgen.declref<@parametrizedClosure_context<T: type = f32>>
+  %0 = kgen.struct.create(%arg0) : (!kgen.paramref<T>) -> !kgen.declref<@parametrizedClosure_context<T: type = T>>
+  // CHECK-NEXT: pop.compiler.global_store "parametrizedClosure_context_var_3", %0 : !kgen.declref<@parametrizedClosure_context<T: type = f32>>
+  pop.compiler.global_store "parametrizedClosure_context_var_3", %0 : !kgen.declref<@parametrizedClosure_context<T: type = T>>
+  // CHECK-NEXT: kgen.call @"parametrizedClosure_wrapper,T=f32"() : () force_inline -> f32
+  kgen.param.declare Fn: <>() force_inline -> !kgen.paramref<T> = <@parametrizedClosure_wrapper<T: type = T>>
+  %1 = kgen.call_param[<>() force_inline -> !kgen.paramref<T>: Fn]()
+  // CHECK-NEXT: kgen.return
+  kgen.return %1 : !kgen.paramref<T>
+}
+
+// CHECK-LABEL: @raiseParamClosure
+kgen.generator @raiseParamClosure() -> f32 {
+  // CHECK-NEXT: kgen.param.constant
+  %cst = kgen.param.constant : !pop.scalar<f32> = <#pop.simd<"0.000000e+00">>
+  // CHECK-NEXT: pop.cast_to_builtin
+  %0 = pop.cast_to_builtin %cst : !pop.scalar<f32> to f32
+  // CHECK-NEXT: kgen.call @"parametrizedClosure,T=f32"
+  %1 = kgen.call @parametrizedClosure<T: type = f32>(%0) : (f32) -> f32
+  // CHECK-NEXT: kgen.return
+  kgen.return %1 : f32
+}

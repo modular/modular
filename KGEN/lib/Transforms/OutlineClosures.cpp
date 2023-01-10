@@ -45,7 +45,7 @@ void OutlineClosuresPass::runOnOperation() {
   OpBuilder b(theModule);
   b.setInsertionPointToStart(theModule.getBody());
 
-  unsigned counter = 0;
+  unsigned counter = 0, varCounter = 0;
   for (auto generator : theModule.getOps<GeneratorOp>()) {
     // Calculate the parameter decls and uses for the region decl's parent.
     ParameterDeclsAndUses uses;
@@ -57,14 +57,21 @@ void OutlineClosuresPass::runOnOperation() {
           (generator.getName() + suffix).str(), symtab, counter));
     };
 
+    auto getUniqueVarName = [&](StringRef suffix) {
+      return b.getStringAttr(generator.getName() + suffix + "_" +
+                             Twine(varCounter++));
+    };
+
     for (auto regionDecl :
          llvm::make_early_inc_range(generator.getOps<ParamDeclareRegionOp>())) {
       LLVM_DEBUG(llvm::dbgs() << "Lifting closure: " << regionDecl << "\n");
       // Value captures are easy (ish)
       SmallVector<Value> captures;
       bool isolated = M::operationIsIsolatedFromAbove(regionDecl, &captures);
-      // Check the captures for any types that refer to parameters.
-      SmallVector<ParamDeclAttr> necessaryDecls;
+      // Check the captures for any types that refer to parameters. For right
+      // now, these are the *only* parameters we care about - we're filling out
+      // the parameter captures for the struct.
+      llvm::SetVector<ParamDeclAttr> necessaryDecls;
       for (Value capture : captures) {
         // Check if the type of the capture is parametrized. If it is, add a
         // decl to the list of necessary decls.
@@ -72,7 +79,7 @@ void OutlineClosuresPass::runOnOperation() {
                 dyn_cast<mlir::SubElementTypeInterface>(capture.getType()))
           subElts.walkSubAttrs([&](Attribute attr) {
             if (auto declRef = dyn_cast<ParamDeclRefAttr>(attr))
-              necessaryDecls.push_back(
+              necessaryDecls.insert(
                   ParamDeclAttr::get(declRef.getName(), declRef.getType()));
           });
       }
@@ -85,7 +92,8 @@ void OutlineClosuresPass::runOnOperation() {
       b.setInsertionPoint(generator);
       auto structDecl = b.create<StructDeclOp>(
           regionDecl.getLoc(), getUniqueName("_context"),
-          ParamDeclArrayAttr::get(regionDecl.getContext(), necessaryDecls));
+          ParamDeclArrayAttr::get(regionDecl.getContext(),
+                                  necessaryDecls.getArrayRef()));
       symtab.insert(structDecl);
 
       // Create a field for each capture.
@@ -96,15 +104,21 @@ void OutlineClosuresPass::runOnOperation() {
                                 b.getStringAttr("field_" + Twine(idx)),
                                 TypeAttr::get(capture.getType()));
       }
+      LLVM_DEBUG(llvm::dbgs()
+                 << "Created capture struct: " << structDecl << "\n");
 
-      // Create a global variable with an instance of the struct decl.
-      auto contextType =
-          DeclRefType::get(SymbolRefAttr::get(structDecl.getNameAttr()));
-      b.setInsertionPointAfter(structDecl);
-      auto globalVar = b.create<POP::CompilerGlobalVariableOp>(
-          regionDecl.getLoc(), getUniqueName("_context_var"),
-          TypeAttr::get(contextType));
-      symtab.insert(globalVar);
+      // 'Create' a global variable with an instance of the struct decl (really
+      // just a StringAttr). We need to get the parameter bindings for each
+      // parameter the struct declares.
+      auto globalVar = getUniqueVarName("_context_var");
+      SmallVector<ParamBindAttr> structTypeBindings;
+      for (ParamDeclAttr decl : structDecl.getInputParamDecls())
+        structTypeBindings.push_back(ParamBindAttr::get(
+            decl, ParamDeclRefAttr::get(decl.getName(), decl.getType())));
+
+      auto globalVarType =
+          DeclRefType::get(SymbolRefAttr::get(structDecl.getNameAttr()),
+                           b.getAttr<ParamBindArrayAttr>(structTypeBindings));
 
       auto body = cast<RegionBodyOp>(regionDecl.getBody().front().front());
 
@@ -115,8 +129,8 @@ void OutlineClosuresPass::runOnOperation() {
       if (regionDeclUses != subregions.end()) {
         for (ParamDeclRefAttr useFromAbove :
              regionDeclUses->getSecond().usesFromAbove) {
-          necessaryDecls.push_back(ParamDeclAttr::get(useFromAbove.getName(),
-                                                      useFromAbove.getType()));
+          necessaryDecls.insert(ParamDeclAttr::get(useFromAbove.getName(),
+                                                   useFromAbove.getType()));
           // Create a binding that just references the attr we already have.
           partialBindings.push_back(useFromAbove);
         }
@@ -138,7 +152,8 @@ void OutlineClosuresPass::runOnOperation() {
 
       // The parameter signature is just the necessary decls + original
       // arguments, and then any of the original results.
-      llvm::append_range(necessaryDecls, body.getInputParamDecls());
+      for (ParamDeclAttr inputParam : body.getInputParamDecls())
+        necessaryDecls.insert(inputParam);
 
       // Pull together the input conventions - all the captures all use the
       // default convention (despite what the enum says).
@@ -150,7 +165,7 @@ void OutlineClosuresPass::runOnOperation() {
       // The lifted generator needs to be force_inline, so we add that to the
       // FnEffects.
       auto liftedSignature = SignatureType::get(
-          b.getAttr<ParamDeclArrayAttr>(necessaryDecls),
+          b.getAttr<ParamDeclArrayAttr>(necessaryDecls.getArrayRef()),
           bodySignature.getResultParamTypes(), liftedValueSignature,
           b.getAttr<ConventionsAttr>(liftedConventions,
                                      bodySignature.getFnEffects()));
@@ -185,6 +200,7 @@ void OutlineClosuresPass::runOnOperation() {
         // Take the body from the param region.
         lifted.getBodyRegion().takeBody(body.getBodyRegion());
       }
+      LLVM_DEBUG(llvm::dbgs() << "Created lifted region: " << lifted << "\n");
 
       // Create a wrapper that knows how to handle the global variable. It has
       // the same parameter signature as the lifted region, but it has the same
@@ -208,8 +224,8 @@ void OutlineClosuresPass::runOnOperation() {
       // Fill the body of the wrapper.
       liftedWrapper.getBodyRegion().push_back(new Block);
       b.setInsertionPointToStart(liftedWrapper.getBody());
-      auto load =
-          b.create<POP::CompilerGlobalLoadOp>(regionDecl.getLoc(), globalVar);
+      auto load = b.create<POP::CompilerGlobalLoadOp>(regionDecl.getLoc(),
+                                                      globalVarType, globalVar);
       // Create accesses for each capture.
       SmallVector<Value> callArgs;
       for (StructFieldOp structField : structDecl.getFieldDecls()) {
@@ -285,10 +301,8 @@ void OutlineClosuresPass::runOnOperation() {
       // wrapper.
       b.setInsertionPoint(regionDecl);
       // Create a container for the struct with all the various captures.
-      auto container = b.create<StructCreateOp>(
-          regionDecl.getLoc(),
-          DeclRefType::get(SymbolRefAttr::get(structDecl.getNameAttr())),
-          captures);
+      auto container = b.create<StructCreateOp>(regionDecl.getLoc(),
+                                                globalVarType, captures);
 
       // Get a pointer to the global and store the container in it.
       b.create<POP::CompilerGlobalStoreOp>(regionDecl.getLoc(), globalVar,

@@ -1560,8 +1560,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   patterns.insert<ConvertPOPGlobalConstant>(symtab, constants, typeConverter);
 
   // pop.compiler.* are all illegal.
-  target.addIllegalOp<CompilerGlobalVariableOp, CompilerGlobalLoadOp,
-                      CompilerGlobalStoreOp>();
+  target.addIllegalOp<CompilerGlobalLoadOp, CompilerGlobalStoreOp>();
 
   DebugInfo::populateTypeConversionPatterns(patterns, typeConverter);
   target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
