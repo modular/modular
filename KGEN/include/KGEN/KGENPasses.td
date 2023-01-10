@@ -261,6 +261,25 @@ def PruneImpossibleVariants: Pass<"prune-impossible-variants",
 }
 
 //===----------------------------------------------------------------------===//
+// CleanupCompilerGlobals
+//===----------------------------------------------------------------------===//
+
+def CleanupCompilerGlobals: Pass<"cleanup-compiler-globals",
+                                 "KGEN::FuncOp"> {
+  let summary = "remove uses of global variables";
+  let description = [{
+    We use global variables to pass captures into lifted region parameters.
+    These lifted regions are marked force_inline, so after inlining we
+    can clean up usages of global variables. This pass is responsible for
+    doing that.
+
+    This pass must run post-elaboration, and after inlining.
+  }];
+
+  let dependentDialects = ["KGENDialect", "POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // Mem2Reg
 //===----------------------------------------------------------------------===//
 
