@@ -38,7 +38,7 @@ void ZAPDialect::registerTypes() {
 //===----------------------------------------------------------------------===//
 
 template <typename Op>
-static Optional<KGENDType> getResolvedDType(Op *op) {
+static std::optional<KGENDType> getResolvedDType(Op *op) {
   if (auto dtype = dyn_cast_if_present<DTypeConstantAttr>(op->getDType()))
     return dtype.getDType();
   return {};
@@ -133,7 +133,7 @@ Type NDBufferType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 
 size_t NDBufferType::getRank() const { return getShape().size(); }
 
-Optional<int64_t> NDBufferType::getResolvedSize() const {
+std::optional<int64_t> NDBufferType::getResolvedSize() const {
   int64_t size = 1;
   for (TypedAttr shape : getShape()) {
     auto intAttr = dyn_cast_if_present<IntegerAttr>(shape);
@@ -144,7 +144,7 @@ Optional<int64_t> NDBufferType::getResolvedSize() const {
   return size;
 }
 
-Optional<KGENDType> NDBufferType::getResolvedDType() const {
+std::optional<KGENDType> NDBufferType::getResolvedDType() const {
   return ::getResolvedDType(this);
 }
 

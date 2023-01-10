@@ -168,8 +168,8 @@ static FailureOr<DTypeValue> parseDTypeValue(AsmParser &p, KGENDType dtype) {
 
 LogicalResult SIMDAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                ArrayRef<DTypeValue> values, SIMDType type) {
-  Optional<KGENDType> dtype = type.getResolvedDType();
-  Optional<int64_t> size = type.getResolvedSize();
+  std::optional<KGENDType> dtype = type.getResolvedDType();
+  std::optional<int64_t> size = type.getResolvedSize();
   if (!dtype || !size)
     return emitError() << "SIMD attribute requires fully-resolved SIMD type";
   if (static_cast<int64_t>(values.size()) != *size)
@@ -193,8 +193,8 @@ bool SIMDAttr::isConstant() const { return true; }
 static ParseResult parseDTypeValues(AsmParser &p,
                                     FailureOr<SmallVector<DTypeValue>> &values,
                                     SIMDType type) {
-  Optional<KGENDType> dtype = type.getResolvedDType();
-  Optional<int64_t> size = type.getResolvedSize();
+  std::optional<KGENDType> dtype = type.getResolvedDType();
+  std::optional<int64_t> size = type.getResolvedSize();
   if (!dtype || !size) {
     return p.emitError(p.getCurrentLocation(),
                        "SIMD constant requires a concrete type");
@@ -245,7 +245,7 @@ static void printDTypeValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
 static ParseResult parseArrayElements(AsmParser &p,
                                       FailureOr<SmallVector<TypedAttr>> &values,
                                       POP::ArrayType type) {
-  Optional<int64_t> size = type.getResolvedSize();
+  std::optional<int64_t> size = type.getResolvedSize();
   Type elementType = type.getResolvedElementType();
   if (!size || !elementType)
     return p.emitError(p.getCurrentLocation(),
@@ -274,7 +274,7 @@ bool POP::ArrayAttr::isConstant() const {
 LogicalResult
 POP::ArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        ArrayRef<TypedAttr> values, ArrayType type) {
-  Optional<int64_t> size = type.getResolvedSize();
+  std::optional<int64_t> size = type.getResolvedSize();
   Type elementType = type.getResolvedElementType();
   if (!size || !elementType)
     return emitError()

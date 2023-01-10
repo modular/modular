@@ -211,7 +211,7 @@ DRValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
 /// null if emission fails.
 MValue ExprEmitter::emitExprMValue(const ExprNode *node, const Twine &message) {
   // Clear the builder to indicate that an MValue must be emitted.
-  llvm::SaveAndRestore<Optional<OpBuilder>> savedBuilder(builder);
+  llvm::SaveAndRestore<std::optional<OpBuilder>> savedBuilder(builder);
   builder.reset();
 
   auto rep = node->emitIR(*this, /*No Contextual Type*/ {});

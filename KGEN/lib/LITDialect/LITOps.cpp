@@ -424,7 +424,7 @@ void TryOp::getEntryTargets(ArrayRef<Attribute> operands,
   targets.emplace_back(0);
 }
 
-ValueRange TryOp::getEntryArguments(Optional<unsigned> target) {
+ValueRange TryOp::getEntryArguments(std::optional<unsigned> target) {
   if (!target)
     return {};
   return getRegion(*target).getArguments();

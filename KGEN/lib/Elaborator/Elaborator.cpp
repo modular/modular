@@ -283,7 +283,7 @@ private:
 
   /// This is the diagnostic explaining the expansion failure if something
   /// goes wrong.
-  Optional<ErrorTree> diagnostic;
+  std::optional<ErrorTree> diagnostic;
 
   /// The evaluator to use.
   IREvaluator evaluator;
@@ -387,7 +387,7 @@ LogicalResult ParameterRewriter::rewriteOps(
   // emitted.
   std::string verificationErrorStr;
   llvm::raw_string_ostream verificationError(verificationErrorStr);
-  Optional<Location> verificationLoc;
+  std::optional<Location> verificationLoc;
   mlir::ScopedDiagnosticHandler diagHandler(
       func.getContext(), [&](Diagnostic &diag) -> LogicalResult {
         // Combine multiple verification errors.
@@ -1468,7 +1468,7 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
   });
 
   // Check the constraints on the declaration.
-  Optional<ErrorTree> err =
+  std::optional<ErrorTree> err =
       evaluateConstraints(decl.getConstraints(), evalCtx.evaluator);
   if (err) {
     LLVM_DEBUG({ llvm::dbgs() << "evaluateConstraints failed\n"; });

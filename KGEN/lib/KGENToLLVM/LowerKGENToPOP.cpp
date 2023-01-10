@@ -221,7 +221,7 @@ void LowerStructsPass::runOnOperation() {
   // Build a converter to handle updating converted types within debug info
   // constructs.
   DebugInfo::DebugInfoTypeConverter debugTypeConverter;
-  debugTypeConverter.addConversion([&](Type type) -> Optional<Type> {
+  debugTypeConverter.addConversion([&](Type type) -> std::optional<Type> {
     Type newType = structLowerer.substituteTypes(type);
     if (newType != type)
       return debugTypeConverter.convertDebugType(newType);
@@ -230,7 +230,7 @@ void LowerStructsPass::runOnOperation() {
   debugTypeConverter.addConversion([&](DeclRefType type) -> DebugInfo::DIType {
     return structLowerer.buildDebugInfoForStructRef(type, debugTypeConverter);
   });
-  debugTypeConverter.addConversion([&](ListType type) -> Optional<Type> {
+  debugTypeConverter.addConversion([&](ListType type) -> std::optional<Type> {
     Type elementType = type.getResolvedElementType();
     if (!elementType)
       return std::nullopt;

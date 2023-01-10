@@ -83,7 +83,7 @@ public:
 class ExprEmitter : public IREmitter {
 public:
   ExprEmitter(LitSharedState &shared, ASTDecl &declScope,
-              Optional<OpBuilder> builder, Operation *varDeclCursor)
+              std::optional<OpBuilder> builder, Operation *varDeclCursor)
       : IREmitter(shared, builder), declScope(declScope),
         varDeclCursor(varDeclCursor) {}
 

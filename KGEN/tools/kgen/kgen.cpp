@@ -374,7 +374,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     foundFuncs.insert(fn.getName());
 
     // If we were asked to handle this func, do so.
-    if (Optional<CommandLineFunc> clFunc =
+    if (std::optional<CommandLineFunc> clFunc =
             clOptions.shouldExecuteFunc(fn.getName())) {
       switch (clOptions.cmd) {
       case Command::kGenLibraryFile:

@@ -456,7 +456,7 @@ OpFoldResult SelectOp::fold(ArrayRef<Attribute> operands) {
 OpFoldResult BitcastOp::fold(ArrayRef<Attribute> operands) {
   // Don't fold if the size changes. This requires knowing the endianness of the
   // target.
-  Optional<KGENDType> dtype = getType().getResolvedDType();
+  std::optional<KGENDType> dtype = getType().getResolvedDType();
   if (!dtype || !getType().getResolvedSize() ||
       getInput().getType().getResolvedSize() != getType().getResolvedSize())
     return {};
@@ -498,7 +498,7 @@ OpFoldResult PointerBitcastOp::fold(ArrayRef<Attribute> operands) {
 
 OpFoldResult CastOp::fold(ArrayRef<Attribute> operands) {
   auto in = dyn_cast_if_present<SIMDAttr>(operands[0]);
-  Optional<KGENDType> dtype = getType().getResolvedDType();
+  std::optional<KGENDType> dtype = getType().getResolvedDType();
   if (!in || !dtype) {
     if (getInput().getType() == getOutput().getType())
       return getInput();
@@ -597,7 +597,7 @@ OpFoldResult SIMDInsertElementOp::fold(ArrayRef<Attribute> operands) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult SIMDSplatOp::fold(ArrayRef<Attribute> operands) {
-  Optional<int64_t> size = getType().getResolvedSize();
+  std::optional<int64_t> size = getType().getResolvedSize();
   auto scalar = dyn_cast_if_present<SIMDAttr>(operands[0]);
   if (!size || !scalar)
     return {};
@@ -632,7 +632,7 @@ ErrorTreeOr<SuccessType> OffsetOp::interpret(ArrayRef<Attribute> operands,
   auto offset = dyn_cast_or_null<IntegerAttr>(operands[1]);
   if (!ptr || !offset)
     return ErrorTree(getLoc(), "non-constant inputs");
-  Optional<int64_t> elSize =
+  std::optional<int64_t> elSize =
       DataLayoutInterface::getTypeSizeInBytes(state.getTarget(), ptr.getType());
   if (!elSize)
     return ErrorTree(getLoc(), "could not query pointer element size");
@@ -652,9 +652,9 @@ StackAllocationOp::interpret(ArrayRef<Attribute> operands,
   Type type = cast<PointerType>(getType()).getResolvedElementType();
   if (!count || !type)
     return ErrorTree(getLoc(), "not concrete");
-  Optional<int64_t> size =
+  std::optional<int64_t> size =
       DataLayoutInterface::getTypeSizeInBytes(state.getTarget(), type);
-  Optional<int64_t> align =
+  std::optional<int64_t> align =
       DataLayoutInterface::getTypeAlignInBytes(state.getTarget(), type);
   if (!size || !align)
     return ErrorTree(getLoc(), "could not query type size");
@@ -758,7 +758,7 @@ OpFoldResult ArrayCreateOp::fold(ArrayRef<Attribute> operands) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult ArrayRepeatOp::fold(ArrayRef<Attribute> operands) {
-  Optional<int64_t> size = getType().getResolvedSize();
+  std::optional<int64_t> size = getType().getResolvedSize();
   if (!size)
     return {};
   SmallVector<TypedAttr> args;
@@ -964,7 +964,7 @@ OpFoldResult CastToBuiltinOp::fold(ArrayRef<Attribute> operands) {
   }
 
   // Conversion to a 1D vector type.
-  Optional<KGENDType> dtype = simd.getType().getResolvedDType();
+  std::optional<KGENDType> dtype = simd.getType().getResolvedDType();
   if (!dtype)
     return {};
   if (auto vector = dyn_cast<VectorType>(getType())) {
@@ -1018,7 +1018,7 @@ OpFoldResult CastFromBuiltinOp::fold(ArrayRef<Attribute> operands) {
     return {};
 
   // Conversion from vector constant.
-  Optional<KGENDType> dtype = getType().getResolvedDType();
+  std::optional<KGENDType> dtype = getType().getResolvedDType();
   if (!dtype)
     return {};
   if (auto vector = dyn_cast<VectorType>(val.getType())) {

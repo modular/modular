@@ -64,7 +64,7 @@ namespace M::KGEN::LIT {
 /// idiom.
 class ExprParser : public LitParserBase {
 public:
-  ExprParser(LitLexer &lexer, Optional<size_t> stmtIndent)
+  ExprParser(LitLexer &lexer, std::optional<size_t> stmtIndent)
       : LitParserBase(lexer), stmtIndent(stmtIndent) {}
 
   ~ExprParser() {}
@@ -106,7 +106,7 @@ private:
   /// expression on the next line - when it is more indented than the start of
   /// the current statement.  This is None when there is a trailing punctuator
   /// that naturally terminates the expression.
-  Optional<size_t> stmtIndent;
+  std::optional<size_t> stmtIndent;
 };
 } // namespace M::KGEN::LIT
 
@@ -494,7 +494,7 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
   // TODO: Handle comprehension arguments, stars, etc.
   if (!consumeIf(LitToken::r_paren, &rparenLoc)) {
     // Expressions continue maximally because we are within ()'s.
-    llvm::SaveAndRestore<Optional<size_t>> X(stmtIndent, std::nullopt);
+    llvm::SaveAndRestore<std::optional<size_t>> X(stmtIndent, std::nullopt);
     if (parseExpressionList(args, LitToken::r_paren) ||
         getLocation(rparenLoc) ||
         parseToken(LitToken::r_paren, "expected ')' in call argument list")) {
@@ -518,7 +518,7 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
 ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
                                              SMLoc lsquareLoc) {
   // Expressions continue maximally because we are within []'s.
-  llvm::SaveAndRestore<Optional<size_t>> X(stmtIndent, std::nullopt);
+  llvm::SaveAndRestore<std::optional<size_t>> X(stmtIndent, std::nullopt);
 
   SmallVector<ExprNode *> indices;
   auto parseExprOrSlice = [&]() -> ParseResult {
@@ -598,7 +598,7 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
 
 ParseResult
 LitParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
-                                   Optional<size_t> stmtIndent,
+                                   std::optional<size_t> stmtIndent,
                                    bool *hadTrailingSep) {
   return ExprParser(getLexer(), stmtIndent)
       .parseExpressionList(results, LitToken::Kind::eof, hadTrailingSep);
@@ -612,7 +612,7 @@ LitParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
 /// the current statement.  This can be passed in as None when there is a
 /// trailing punctuator that naturally terminates the expression.
 ParseResult LitParserBase::parseExpression(ExprNode *&result,
-                                           Optional<size_t> stmtIndent) {
+                                           std::optional<size_t> stmtIndent) {
   return ExprParser(getLexer(), stmtIndent)
       .parseExpression(result, Precedence::kLowestExpr);
 }
@@ -633,9 +633,8 @@ ParseResult LitParserBase::parseExpression(ExprNode *&result,
 ///            | ">>=" | "<<=" | "&=" | "^=" | "|="
 ///
 /// Parse an expression, allowing `=`, and `+=`.
-ParseResult
-LitParserBase::parseExpressionOrAssignmentStmt(ExprNode *&result,
-                                               Optional<size_t> stmtIndent) {
+ParseResult LitParserBase::parseExpressionOrAssignmentStmt(
+    ExprNode *&result, std::optional<size_t> stmtIndent) {
   return ExprParser(getLexer(), stmtIndent)
       .parseExpression(result, Precedence::kAssignStmt);
 }

@@ -955,7 +955,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
   }];
 
   let builders = [
-    OpBuilder<(ins "Value":$ptr, "Optional<unsigned>":$alignment)>,
+    OpBuilder<(ins "Value":$ptr, "std::optional<unsigned>":$alignment)>,
     OpBuilder<(ins "Value":$ptr, "TypedAttr":$alignment)>
   ];
 }
@@ -990,7 +990,8 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
   }];
 
   let builders = [
-    OpBuilder<(ins "Value":$arg, "Value":$ptr, "Optional<unsigned>":$alignment)>
+    OpBuilder<(ins "Value":$arg, "Value":$ptr,
+                   "std::optional<unsigned>":$alignment)>
   ];
 }
 
@@ -1399,7 +1400,7 @@ def VariantCreateOp : POPOp<"variant.create", [Pure]> {
     Example:
 
     ```mlir
-    // Create an `Optional<T>` variant.
+    // Create an `std::optional<T>` variant.
     %none = pop.struct.construct() : !pop.struct<>
     %0 = pop.variant.create %none : !pop.struct<>
         -> !pop.variant<struct<>, T>

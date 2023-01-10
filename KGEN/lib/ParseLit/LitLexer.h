@@ -39,7 +39,7 @@ public:
   StringRef getSpelling() const { return spelling; }
 
   /// Return the indentation of this token.
-  Optional<size_t> getIndentation() const {
+  std::optional<size_t> getIndentation() const {
     if (indentation == -1)
       return std::nullopt;
     return size_t(indentation);

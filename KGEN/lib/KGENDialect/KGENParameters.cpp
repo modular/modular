@@ -291,7 +291,7 @@ struct DeclParameterVerifier final : public ParameterCollector {
 
   /// This is the current operation being scanned during the attribute/type
   /// collection phase.
-  Optional<Location> curLocationCollecting;
+  std::optional<Location> curLocationCollecting;
 
 private:
   /// This is set to true if we find a problem during the collect phase.

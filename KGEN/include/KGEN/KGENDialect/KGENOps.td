@@ -448,7 +448,7 @@ def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
     /// Verify that the operands of this ReturnOp match the specified set of
     /// types. Only check the result types if they were provided.
     LogicalResult checkArgumentTypes(ArrayRef<Type> resultParamTypes,
-                                     Optional<TypeRange> types);
+                                     std::optional<TypeRange> types);
   }];
 }
 
