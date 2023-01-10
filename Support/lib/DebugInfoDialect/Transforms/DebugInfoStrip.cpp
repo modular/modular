@@ -41,7 +41,7 @@ void DebugInfoStrip::runOnOperation() {
 
   getOperation()->walk([&](Operation *op) {
     // Drop all debug info operations.
-    if (isa<DebugInfoDialect>(op->getDialect()))
+    if (isa_and_nonnull<DebugInfoDialect>(op->getDialect()))
       return op->erase();
 
     // For everything else, update the location.
