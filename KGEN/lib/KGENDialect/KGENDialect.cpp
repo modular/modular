@@ -14,6 +14,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/Interfaces/FoldInterfaces.h"
+#include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -37,13 +38,58 @@ struct KGENDialectFoldInterface : public mlir::DialectFoldInterface {
 } // namespace
 
 //===----------------------------------------------------------------------===//
+// KGENDialectInlinerInterface
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct KGENDialectInlinerInterface : public mlir::DialectInlinerInterface {
+  using DialectInlinerInterface::DialectInlinerInterface;
+
+  /// All individual operations are legal to inline.
+  bool isLegalToInline(Operation *, Region *, bool,
+                       BlockAndValueMapping &) const override {
+    return true;
+  }
+
+  /// FuncOp are legal to inline if they have the force_inline FnEffect. Other
+  /// callables we don't want inlined.
+  bool isLegalToInline(Operation *call, Operation *callable,
+                       bool wouldBeCloned) const override {
+    if (auto func = dyn_cast<FuncOp>(callable)) {
+      return bitEnumContainsAny(func.getFullSignature().getFnEffects(),
+                                FnEffects::ForceInline);
+    }
+
+    return !isa<FuncInterface>(callable);
+  }
+
+  /// Region bodies are always able to be inlined assuming the callable check
+  /// passed.
+  bool isLegalToInline(Region *, Region *, bool,
+                       BlockAndValueMapping &) const override {
+    return true;
+  }
+
+  /// For now, we're only inlining kgen.func ops - so we don't have to deal with
+  /// return parameters or anything.
+  void handleTerminator(Operation *op,
+                        ArrayRef<Value> valuesToRepl) const override {
+    auto ret = cast<ReturnOp>(op);
+    assert(ret.getNumOperands() == valuesToRepl.size());
+    for (auto [operand, val] : llvm::zip(ret.getOperands(), valuesToRepl))
+      val.replaceAllUsesWith(operand);
+  }
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
 // Dialect specification.
 //===----------------------------------------------------------------------===//
 
 void KGENDialect::initialize() {
   registerAttributes();
   registerTypes();
-  addInterfaces<KGENDialectFoldInterface>();
+  addInterfaces<KGENDialectFoldInterface, KGENDialectInlinerInterface>();
   injectAttrInterfaces();
 
   // Register operations.
