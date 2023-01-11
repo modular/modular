@@ -108,7 +108,7 @@ struct ConvertPOPAbs : public mlir::ConvertOpToLLVMPattern<AbsOp> {
   matchAndRewrite(AbsOp op, AbsOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     KGENDType dtype = *op.getType().getResolvedDType();
-    if (dtype.isUInt() || dtype.isIndex()) {
+    if (dtype.isUInt()) {
       rewriter.replaceOp(op, adaptor.getOperand());
     } else if (dtype.isSInt()) {
       Type type = adaptor.getOperand().getType();

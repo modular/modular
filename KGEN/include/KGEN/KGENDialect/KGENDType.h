@@ -37,6 +37,10 @@ public:
   constexpr bool isAddress() const { return getValue() == ExtraCases::address; }
   constexpr bool isIndex() const { return getValue() == ExtraCases::index; }
 
+  /// Returns true if the underlying dtype is an integer and is signed. The
+  /// index dtype is signed.
+  constexpr bool isSInt() const { return isIndex() || DType::isSInt(); }
+
   /// Return the element type for it's string representation.
   static FailureOr<KGENDType> getFromString(StringRef str) {
     if (str == "address")

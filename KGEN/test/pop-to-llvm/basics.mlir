@@ -466,6 +466,25 @@ kgen.func @cmp_fp(%lhs: !pop.scalar<f32>, %rhs: !pop.scalar<f32>) {
   kgen.return
 }
 
+// -----
+
+// CHECK-LABEL: @cmp_index
+kgen.func @cmp_index(%lhs: !pop.scalar<index>, %rhs: !pop.scalar<index>) {
+  // CHECK: llvm.icmp "eq"
+  %0 = pop.cmp eq(%lhs, %rhs) : !pop.scalar<index>
+  // CHECK: llvm.icmp "ne"
+  %1 = pop.cmp ne(%lhs, %rhs) : !pop.scalar<index>
+  // CHECK: llvm.icmp "slt"
+  %2 = pop.cmp lt(%lhs, %rhs) : !pop.scalar<index>
+  // CHECK: llvm.icmp "sgt"
+  %3 = pop.cmp gt(%lhs, %rhs) : !pop.scalar<index>
+  // CHECK: llvm.icmp "sle"
+  %4 = pop.cmp le(%lhs, %rhs) : !pop.scalar<index>
+  // CHECK: llvm.icmp "sge"
+  %5 = pop.cmp ge(%lhs, %rhs) : !pop.scalar<index>
+  kgen.return
+}
+
 
 // -----
 
