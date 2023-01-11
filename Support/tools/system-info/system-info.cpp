@@ -69,7 +69,8 @@ int main(int argc, char **argv) {
     os << sys::getDefaultTargetTriple();
     break;
   case QuerySystemProperty::OS:
-    os << llvm::Triple(sys::getDefaultTargetTriple()).getOSName();
+    os << llvm::Triple::getOSTypeName(
+        llvm::Triple(sys::getDefaultTargetTriple()).getOS());
     break;
   case QuerySystemProperty::Arch:
     os << sys::getHostCPUName();
