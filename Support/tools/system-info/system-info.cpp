@@ -12,6 +12,7 @@
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/TargetParser/Triple.h"
 
 using namespace M;
 using namespace llvm;
@@ -19,6 +20,7 @@ using namespace llvm;
 namespace {
 enum class QuerySystemProperty {
   TargetTriple,
+  OS,
   Arch,
   Features,
   CoreCount,
@@ -35,6 +37,7 @@ struct SystemInfoCLIOptions {
       M::cl::values(
           clEnumValN(QuerySystemProperty::TargetTriple, "target-triple",
                      "Host target triple"),
+          clEnumValN(QuerySystemProperty::OS, "os", "Host operating system"),
           clEnumValN(QuerySystemProperty::Arch, "arch",
                      "Host CPU architecture"),
           clEnumValN(QuerySystemProperty::Features, "features",
@@ -64,6 +67,9 @@ int main(int argc, char **argv) {
   switch (cli.QueryProperty) {
   case QuerySystemProperty::TargetTriple:
     os << sys::getDefaultTargetTriple();
+    break;
+  case QuerySystemProperty::OS:
+    os << llvm::Triple(sys::getDefaultTargetTriple()).getOSName();
     break;
   case QuerySystemProperty::Arch:
     os << sys::getHostCPUName();

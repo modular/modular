@@ -1,4 +1,5 @@
 // RUN: system-info --query=target-triple | FileCheck %s --check-prefix=CHECK-TRIPLE
+// RUN: system-info --query=os | FileCheck %s --check-prefix=CHECK-OS
 // RUN: system-info --query=arch | FileCheck %s --check-prefix=CHECK-ARCH
 // RUN: system-info --query=features | FileCheck %s --check-prefix=CHECK-FEATURES
 // RUN: system-info --query=core-count | FileCheck %s --check-prefix=CHECK-CORE-COUNT
@@ -9,6 +10,7 @@
 // RUN: system-info --query=l4-cache-size | FileCheck %s --check-prefix=CHECK-L4-CACHE-SIZE
 
 // CHECK-TRIPLE: {{.*}}
+// CHECK-OS: {{.*}}
 // CHECK-ARCH: {{.*}}
 // CHECK-FEATURES: {{.*}}
 // CHECK-CORE-COUNT: {{[0-9]+}}
