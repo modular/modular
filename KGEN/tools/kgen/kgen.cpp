@@ -168,9 +168,14 @@ static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
 static LogicalResult
 createDependencyFile(const CLOptions &clOptions,
                      SmallVectorImpl<std::string> &includedFiles) {
-  if (clOptions.outputFilename == "-") {
+  // It only makes sense to output a dependency file that can map inputs to
+  // outputs. If the output file already exists and is not a regular file --
+  // like `"-"` for stdout, or a character file like `/dev/null` -- then fail.
+  if (clOptions.outputFilename == "-" ||
+      (llvm::sys::fs::exists(clOptions.outputFilename) &&
+       !llvm::sys::fs::is_regular_file(clOptions.outputFilename))) {
     return failure(clOptions.reportError(
-        "cannot create dependency file when outputting to stdout"));
+        "can only create dependency file for outputs written to files"));
   }
 
   std::string errorMessage;
