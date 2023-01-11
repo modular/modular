@@ -273,7 +273,7 @@ def KGEN_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
 
     /// Check if the operating system matches the provided one.
     bool isOS(StringRef os) const {
-      return getTriple().getOSName() == os;
+      return llvm::Triple::getOSTypeName(getTriple().getOS()) == os;
     }
 
     /// Check if the CPU architecture matches the provided one.
