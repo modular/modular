@@ -104,16 +104,14 @@ bool CommandLineFuncParser::parse(llvm::cl::Option &o, StringRef argName,
   return false;
 }
 
-std::string KGENCLOptions::getOutputPath() const {
-  if (outputFilename.empty() || outputFilename == "-")
-    return "";
+std::optional<std::string> KGENCLOptions::getHeaderOutputPath() const {
+  if (outputFilename.empty() || outputFilename == "-" ||
+      outputFilename == "/dev/null")
+    return {};
 
-  // If the filename is not provided, then default to the current working
-  // directory.
-  std::filesystem::path objPath =
-      std::filesystem::absolute(outputFilename.getValue());
-
-  return objPath.string();
+  return std::filesystem::absolute(outputFilename.getValue())
+      .replace_extension(".h")
+      .string();
 }
 
 LogicalResult KGENCLOptions::emitObject(StringRef object) const {
