@@ -395,7 +395,7 @@ fn testSIMD(a: MySIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: MySIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
   var x = a+a
   var y = b+b
-  var z = b+a  # expected-error {{invalid call to '__add__': argument #1 cannot be converted from '$lit-errors::MySIMD[1, f64]' to '$lit-errors::MySIMD[2, si32]'}}
+  var z = b+a  # expected-error {{invalid call to '__add__': right side cannot be converted from '$lit-errors::MySIMD[1, f64]' to '$lit-errors::MySIMD[2, si32]'}}
 
 fn testAliases(variable: Int):
   # expected-error @+1 {{declaration must have either a type or an initializer}}

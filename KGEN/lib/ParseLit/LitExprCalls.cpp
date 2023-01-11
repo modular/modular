@@ -346,6 +346,10 @@ void OverloadFitness::diagnose(SignatureType signature,
       // tailor the error message.
       assert(payload != 0 && "TODO: unexpected self mismatch");
       diag << "method argument #" << (payload - 1);
+    } else if (syntax == CallSyntax::kOperator && payload == 1) {
+      diag << "right side";
+    } else if (syntax == CallSyntax::kReversedOperator && payload == 0) {
+      diag << "left side";
     } else {
       diag << "argument #" << payload;
     }
