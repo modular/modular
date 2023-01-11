@@ -20,20 +20,6 @@ namespace M::KGEN::LIT {
 using llvm::SMLoc;
 class ASTDecl;
 class IREmitter;
-class ExprNode;
-
-template <typename ValueType>
-struct ASTExprAnd {
-  ValueType ir;
-
-  /// This is the expression a value was produced from, carrying location and
-  /// additional semantic information.
-  const ExprNode *expr;
-
-  bool isNull() const { return ir.isNull(); }
-  bool operator!() const { return !ir; }
-  operator bool() const { return bool(ir); }
-};
 
 //===----------------------------------------------------------------------===//
 // InputParamBindings

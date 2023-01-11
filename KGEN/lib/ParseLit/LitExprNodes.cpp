@@ -574,7 +574,7 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
     // would enable `size.value` in things like:
     //
     // fn f[size: Int](a: SomeType[size.value])
-    DRValue baseRV = emitter.emitDRValue(baseVal, getLoc());
+    DRValue baseRV = emitter.emitDRValue({baseVal, base});
     if (!baseRV)
       return {};
 
@@ -1170,11 +1170,11 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     // Assignment expression (`=`) turns into a store, not into a method call.
     if (kind == kAssign) {
       // Emit the RHS and coerce to the LHS type.
-      auto rv = emitter.emitDRValue(rhsRep, rhs->getLoc());
-      rv = emitter.emitDRValue(emitter.getAsExpectedType(rv, rhs,
-                                                         lhsLV.getRValueType(),
-                                                         " in assignment"),
-                               rhs->getLoc());
+      // auto rv = emitter.emitDRValue(ASTExprAnd<RValue>{rhsRep, rhs});
+      auto rv = emitter.emitDRValue(
+          {emitter.getAsExpectedType(rhsRep, rhs, lhsLV.getRValueType(),
+                                     " in assignment"),
+           rhs});
       if (!rv)
         return {};
 
@@ -1370,13 +1370,13 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
           << lhs->getRange() << rhs->getRange();
       return {};
     }
-    auto rhsBoolDRVal = emitter.emitDRValue(rhsBool, rhs->getLoc());
+    auto rhsBoolDRVal = emitter.emitDRValue({rhsBool, rhs});
     if (!rhsBoolDRVal)
       return {};
     emitter.builder->create<scf::YieldOp>(ifLoc, rhsBoolDRVal);
     // Emit the false side.
     emitter.builder = falseBuilder;
-    auto lhsBoolDRVal = emitter.emitDRValue(lhsBool, lhs->getLoc());
+    auto lhsBoolDRVal = emitter.emitDRValue({lhsBool, lhs});
     if (!lhsBoolDRVal)
       return {};
     emitter.builder->create<scf::YieldOp>(ifLoc, lhsBoolDRVal);

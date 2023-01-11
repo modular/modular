@@ -429,9 +429,9 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // function is a 'raising' function we need to remove the extra variant type
   // to get the normal result type.
   resultValue = emitter.emitDRValue(
-      emitter.getAsExpectedType(DRValue(resultValue), operandExprs[0],
-                                decl.getNormalResultType(), " in return"),
-      loc);
+      {emitter.getAsExpectedType(DRValue(resultValue), operandExprs[0],
+                                 decl.getNormalResultType(), " in return"),
+       operandExprs[0]});
   if (!resultValue)
     return {};
 

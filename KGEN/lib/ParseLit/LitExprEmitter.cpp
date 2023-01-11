@@ -32,21 +32,22 @@ using namespace M::KGEN::LIT;
 /// This helper emits the specified value rep as an SSA value, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
-RValue IREmitter::emitRValue(AnyValue rep, SMLoc loc) {
-  if (!rep) // Already diagnosed error.
+RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value) {
+  if (!value) // Already diagnosed error.
     return {};
 
   // If this is already an RValue, then we are done.
-  if (auto rvRep = rep.getIfRValue())
+  if (auto rvRep = value.ir.getIfRValue())
     return rvRep;
 
   // Finally, if this is an LValue, emit a load.
-  auto pointer = rep.getIfLValue();
+  auto pointer = value.ir.getIfLValue();
   assert(pointer);
 
+  auto loc = value.expr->getLoc();
   if (!builder) {
-    // TODO: Add range.
-    emitError(loc, "context only permits a meta value, not a dynamic one");
+    emitError(loc, "context only permits a meta value, not a dynamic one")
+        << value.expr->getRange();
     return {};
   }
 
@@ -54,19 +55,24 @@ RValue IREmitter::emitRValue(AnyValue rep, SMLoc loc) {
                                               /*alignment=*/std::nullopt));
 }
 
-DRValue IREmitter::emitDRValue(RValue rep, SMLoc loc) {
-  if (!rep)
+DRValue IREmitter::emitDRValue(ASTExprAnd<AnyValue> value) {
+  return emitDRValue(ASTExprAnd<RValue>({emitRValue(value), value.expr}));
+}
+
+DRValue IREmitter::emitDRValue(ASTExprAnd<RValue> value) {
+  if (!value)
     return {};
   // If this is already an DRValue, emit this.
-  if (auto rvalue = rep.getIfDRValue())
+  if (auto rvalue = value.ir.getIfDRValue())
     return rvalue;
 
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
-  auto attr = rep.getIfMValue().get();
+  auto attr = value.ir.getIfMValue().get();
   if (!builder) {
-    // TODO: Add range.
-    emitError(loc, "context only permits a meta value, not a dynamic one");
+    emitError(value.expr->getLoc(),
+              "context only permits a meta value, not a dynamic one")
+        << value.expr->getRange();
     return {};
   }
 
@@ -78,14 +84,15 @@ DRValue IREmitter::emitDRValue(RValue rep, SMLoc loc) {
   if (auto signature = dyn_cast<SignatureType>(attr.getType())) {
     if (!signature.getInputParams().empty() ||
         !signature.getResultParamTypes().empty()) {
-      // TODO: Add range.
-      emitError(loc, "cannot use parameterized function of type ")
-          << ASTType(attr.getType()) << " without binding all its parameters";
+      emitError(value.expr->getLoc(),
+                "cannot use parameterized function of type ")
+          << ASTType(attr.getType()) << " without binding all its parameters"
+          << value.expr->getRange();
       return {};
     }
   }
 
-  auto location = translateLocation(loc);
+  auto location = translateLocation(value.expr->getLoc());
   // Materialize index integer constants as a special case.
   if (auto intAttr = dyn_cast<IntegerAttr>(attr))
     if (intAttr.getType().isIndex()) {
@@ -204,7 +211,7 @@ DRValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
 
   // If this is already an 'i1', then we're done.
   if (value.ir.getType().isInteger(1))
-    return emitDRValue(value.ir, valueLoc);
+    return emitDRValue(value);
 
   // TODO: Python manual includes this off-hand comment:
   // Also, an object that doesn’t define a __bool__() method and whose __len__()
@@ -227,12 +234,26 @@ DRValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
   AnyValue litBoolCall =
       emitNamedMethodCall("__lit_bool", {{boolResult, value.expr}},
                           CallSyntax::kImplicitConvert, valueLoc);
-  return emitDRValue(litBoolCall, valueLoc);
+  return emitDRValue({litBoolCall, value.expr});
 }
 
 //===----------------------------------------------------------------------===//
 // ExprEmitter implementation
 //===----------------------------------------------------------------------===//
+
+/// This helper emits the specified value rep as an RValue.
+RValue ExprEmitter::emitExprRValue(const ExprNode *node) {
+  assert(node && "cannot emit a null node");
+  return emitRValue({node->emitIR(*this, /*No Contextual Type*/ {}), node});
+}
+
+/// This helper emits the specified value rep as an DRValue, materializing
+/// it as a parameter constant if it is a parameter.  This returns null if
+/// emission fails.
+DRValue ExprEmitter::emitExprDRValue(const ExprNode *node) {
+  assert(node && "cannot emit a null node");
+  return emitDRValue({node->emitIR(*this, /*No Contextual Type*/ {}), node});
+}
 
 /// This helper emits the specified expression as a meta value, diagnosing the
 /// problem if the expression is only valid as a runtime value.  This returns
