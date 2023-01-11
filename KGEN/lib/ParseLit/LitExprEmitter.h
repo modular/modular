@@ -118,9 +118,8 @@ public:
                         const Twine &message);
 
   /// This helper emits the specified expression tree as a type, e.g. turning
-  /// "Int" into the type for it.  This never returns null MLIR Types - if the
-  /// expression is erroneous, it is diagnosed and a TypeCheckErrorType is
-  /// returned, along with an erroneous AST type.
+  /// "Int" into the type for it.  This emits an error and returns null on
+  /// failure.
   ASTType emitExprType(const ExprNode *node);
 
   /// Emit the specified expression as a condition, converting it to an MLIR I1
