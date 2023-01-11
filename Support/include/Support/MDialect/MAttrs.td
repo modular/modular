@@ -271,9 +271,9 @@ def KGEN_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
       return getFeatures().contains(feature);
     }
 
-    /// Check if the operating system matches the provided one.
-    bool isOS(StringRef os) const {
-      return llvm::Triple::getOSTypeName(getTriple().getOS()) == os;
+    /// Returns the operating system for the triple.
+    StringRef getOS() const {
+      return llvm::Triple::getOSTypeName(getTriple().getOS());
     }
 
     /// Check if the CPU architecture matches the provided one.

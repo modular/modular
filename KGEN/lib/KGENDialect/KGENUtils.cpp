@@ -539,10 +539,9 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       return failure();
     return success();
   case (uint32_t)POC::TargetHasFeature:
-  case (uint32_t)POC::TargetIsOS:
   case (uint32_t)POC::TargetIsArch:
   case (uint32_t)POC::TargetGetField:
-    // Parse TargetHasFeature, TargetIsOS, TargetIsArch, and TargetGetField --
+    // Parse TargetHasFeature, TargetIsArch, and TargetGetField --
     // the first operand is a TargetType, the second a StringType.
     if (parseParamValue(p, operands.emplace_back(),
                         TargetType::get(p.getContext())) ||
