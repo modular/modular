@@ -744,10 +744,17 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   if (!calleeVal)
     return {};
 
-  // If this is the invocation of an unbound MLIR operator, bind it into an
-  // actual operator!
+  // Figure out how this was spelled.
+  auto syntax = CallSyntax::kDirectCall;
+
+  // If there was a base value, then this is a method or indirect call.
   if (calleeVal.baseVal) {
+    syntax =
+        calleeVal.direct ? CallSyntax::kMethodCall : CallSyntax::kIndirectCall;
+
     if (auto mValue = calleeVal.baseVal.ir.getIfMValue()) {
+      // If this is the invocation of an unbound MLIR operator, bind it into an
+      // actual operator!
       if (auto unboundOperator =
               dyn_cast<UnboundMLIROperationAttr>(mValue.get()))
         return emitMLIROperatorCall(*this, unboundOperator, emitter);
@@ -762,6 +769,8 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
           CallableValue(calledType, "__new__", getLoc(), emitter.shared);
       if (calleeVal.isNull())
         return {};
+
+      syntax = CallSyntax::kTypeCall;
     }
 
   /// Emit a function call for a call node with the specified operands.
@@ -771,7 +780,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     if (!operands.back())
       return {};
   }
-  return calleeVal.emitFunctionCall(operands, this, emitter);
+  return calleeVal.emitFunctionCall(operands, syntax, getLoc(), emitter);
 }
 
 AnyValue SliceNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
@@ -1248,9 +1257,10 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     return {};
   if (callee.direct &&
       succeeded(callee.direct->filterOverloadSet(
-          argValues, /*isMethodSyntax*/ false,
+          argValues, CallSyntax::kOperator,
           /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
-    return callee.emitFunctionCall(argValues, this, emitter);
+    return callee.emitFunctionCall(argValues, CallSyntax::kOperator, getLoc(),
+                                   emitter);
   }
 
   // Check to see if we have the reverse version of this operator.
@@ -1262,9 +1272,10 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
                            isErroneousDecl, emitter.shared);
     if (callee.direct &&
         succeeded(callee.direct->filterOverloadSet(
-            argValues, /*isMethodSyntax*/ false,
+            argValues, CallSyntax::kReversedOperator,
             /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
-      return callee.emitFunctionCall(argValues, this, emitter);
+      return callee.emitFunctionCall(argValues, CallSyntax::kReversedOperator,
+                                     getLoc(), emitter);
     }
 
     // Swap these back so we emit the right error.
@@ -1272,7 +1283,8 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   }
 
   // Emit an error complaining about the forward version of the operator.
-  return emitter.emitNamedMethodCall(specialFnInfo.name, argValues, this);
+  return emitter.emitNamedMethodCall(specialFnInfo.name, argValues,
+                                     CallSyntax::kOperator, getLoc());
 }
 
 /// This method emits the `x and y`, `x or y` operators.  These are interesting
@@ -1333,8 +1345,8 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
     ifOp->getResult(0).setType(lhsRV.getType());
   } else {
     // Otherwise, check to see if their boolean versions are compatible.
-    auto rhsBool =
-        emitter.emitNamedMethodCall("__bool__", {{rhsRV, rhs}}, this);
+    auto rhsBool = emitter.emitNamedMethodCall(
+        "__bool__", {{rhsRV, rhs}}, CallSyntax::kImplicitConvert, getLoc());
     if (!rhsBool)
       return {};
     if (!ASTType(lhsBool.getType()).isEqualCanon(rhsBool.getType())) {
@@ -1395,7 +1407,8 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
   // Handle special cases that don't correspond to special function, "not x".
   if (kindToEmit == kBoolNot) {
     // Turn this into a call to __bool__.
-    argValue.ir = emitter.emitNamedMethodCall("__bool__", argValue, this);
+    argValue.ir = emitter.emitNamedMethodCall(
+        "__bool__", argValue, CallSyntax::kImplicitConvert, getLoc());
     if (!argValue.ir)
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
@@ -1407,7 +1420,8 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
   assert(specialFnInfo.kind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
-  return emitter.emitNamedMethodCall(specialFnInfo.name, argValue, this);
+  return emitter.emitNamedMethodCall(specialFnInfo.name, argValue,
+                                     CallSyntax::kOperator, getLoc());
 }
 
 AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
