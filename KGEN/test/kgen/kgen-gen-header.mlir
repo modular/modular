@@ -19,6 +19,12 @@
 // RUN: kgen %s -emit -func="listOneElem" -o %t.o
 // RUN: cat %t.h | FileCheck %s --check-prefixes=LISTF32
 
+// The following should not generate header files at all:
+// RUN: echo "" | kgen - -emit -o /dev/null
+// RUN: test ! -f /dev/null.h
+// RUN: echo "" | kgen - -emit -o -
+// RUN: test ! -f -.h
+
 kgen.func @someKernel(%arg1: f32, %arg2: index) -> f32 {
   kgen.return %arg1 : f32
 }

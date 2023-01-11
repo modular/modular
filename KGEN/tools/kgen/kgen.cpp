@@ -323,16 +323,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (failed(clOptions.emitObject(standaloneObject->getBuffer())))
       return failure();
 
-    std::string objPath = clOptions.getOutputPath();
+    auto headerPath = clOptions.getHeaderOutputPath();
     // If we have no output path, we can't emit headers so return.
-    if (objPath.empty())
+    if (!headerPath)
       return mlir::success();
 
     // Finish off by producing a header file with the decls.
-    std::string headerFilename =
-        std::filesystem::path(objPath).replace_extension(".h").string();
-
-    return emitHeader(*compiler, headerFilename);
+    return emitHeader(*compiler, *headerPath);
   }
 
   // Now we can load it into the JIT - we're definitely executing the thing.

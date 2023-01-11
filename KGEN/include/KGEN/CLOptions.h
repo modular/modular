@@ -134,7 +134,9 @@ public:
     return *found;
   }
 
-  std::string getOutputPath() const;
+  /// Return a path to which headers can be emitted, or none if headers need not
+  /// be emitted at all.
+  std::optional<std::string> getHeaderOutputPath() const;
 
   LogicalResult emitObject(StringRef object) const;
 
