@@ -514,16 +514,6 @@ LogicalResult DirectCallable::getResultParamDecls(
 //===----------------------------------------------------------------------===//
 
 /// Get a CallableValue for a lookup of a named method on the specified type.
-/// If successful, this provides a non-null CallableValue.  On failure, it
-/// emits an error and returns a null CallableValue.
-CallableValue::CallableValue(ASTType type, StringRef methodName, SMLoc callLoc,
-                             LitSharedState &shared) {
-  bool erroneousDecl = false;
-  lookup(type, methodName, callLoc, /*emitErrorOnFailure=*/true, erroneousDecl,
-         shared);
-}
-
-/// Get a CallableValue for a lookup of a named method on the specified type.
 /// If successful, this provides a non-null CallableValue.
 ///
 /// On failure, this returns a null CallableValue and sets 'erroneousDecl' to
@@ -532,20 +522,7 @@ CallableValue::CallableValue(ASTType type, StringRef methodName, SMLoc callLoc,
 /// does not emit an error on failure.
 CallableValue::CallableValue(ASTType type, StringRef methodName, SMLoc callLoc,
                              bool &erroneousDecl, LitSharedState &shared) {
-  lookup(type, methodName, callLoc, /*emitErrorOnFailure=*/false, erroneousDecl,
-         shared);
-}
 
-/// Get a CallableValue for a lookup of a named method on the specified type.
-/// If successful, this provides a non-null CallableValue.
-///
-/// On failure, this returns a null CallableValue and sets 'erroneousDecl' to
-/// indicate whether there was a problem with the callee that has already been
-/// diagnosed (thus squishing downstream error messages).  If
-/// emitErrorOnFailure is true an error message indicates why the call failed.
-void CallableValue::lookup(ASTType type, StringRef methodName, SMLoc callLoc,
-                           bool emitErrorOnFailure, bool &erroneousDecl,
-                           LitSharedState &shared) {
   erroneousDecl = false;
   // First perform a lookup to see if there are any candidates.
   auto lookupResult = shared.lookupAndResolveDecl(methodName, callLoc, type);
@@ -553,20 +530,13 @@ void CallableValue::lookup(ASTType type, StringRef methodName, SMLoc callLoc,
   if (resultDecls.empty()) {
     if (lookupResult.isErroneous())
       erroneousDecl = true;
-    else if (emitErrorOnFailure)
-      shared.emitError(callLoc, "")
-          << type << " does not implement the '" << methodName << "' method";
     return;
   }
 
   // If we find a vardecl or any other thing, then fail because it cannot be
   // called.
-  if (!isa<LIT::FuncOp>(*resultDecls[0])) {
-    if (emitErrorOnFailure)
-      shared.emitError(callLoc, "member '")
-          << methodName << "' of " << type << " is not a method";
+  if (!isa<LIT::FuncOp>(*resultDecls[0]))
     return;
-  }
 
   // Handle method references, which might be overloaded.
   direct =
@@ -701,8 +671,6 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   if (isNull()) // Base was already diagnosed as an error.
     return {};
 
-  // Set to true if this is a method call like `x.foo(...`.
-  bool isMethodCall = false;
   // Used in some cases below, lifetime needs to exist for this whole method.
   SmallVector<ASTExprAnd<AnyValue>> operandsWithSelf;
 
@@ -729,7 +697,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       operandsWithSelf.append(operands.begin(), operands.end());
       operands = operandsWithSelf;
       baseVal = {};
-      isMethodCall = true;
+      assert(syntax == CallSyntax::kMethodCall && "Unexpected syntax form");
     }
 
     // Check the direct callees to see if they can be unambiguously resolved

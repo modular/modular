@@ -761,14 +761,28 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     }
   }
 
-  // If the returned RValue is a type value (as in `T()` or `T[123]()`), then
-  // this is an invocation of the initializer for the type.
+  // If the callee is a type value (as in `T()` or `T[123]()`), then this is an
+  // invocation of the initializer for the type.
   if (!calleeVal.direct)
     if (ASTType calledType = calleeVal.baseVal.ir.getIfTypeValue()) {
-      calleeVal =
-          CallableValue(calledType, "__new__", getLoc(), emitter.shared);
-      if (calleeVal.isNull())
+      bool isErroneousDecl = false;
+      calleeVal = CallableValue(calledType, "__new__", getLoc(),
+                                isErroneousDecl, emitter.shared);
+      if (calleeVal.isNull()) {
+        if (isErroneousDecl)
+          return {};
+
+        if (calledType.getDecl(emitter.shared)) {
+          emitter.emitError(getLoc(), "")
+              << calledType << " does not have any `__new__` methods"
+              << callee->getRange();
+        } else {
+          emitter.emitError(getLoc(),
+                            "cannot use initializer syntax on MLIR type ")
+              << calledType << callee->getRange();
+        }
         return {};
+      }
 
       syntax = CallSyntax::kTypeCall;
     }
@@ -780,6 +794,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     if (!operands.back())
       return {};
   }
+
   return calleeVal.emitFunctionCall(operands, syntax, getLoc(), emitter);
 }
 

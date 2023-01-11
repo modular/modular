@@ -111,7 +111,31 @@ IREmitter::emitNamedMethodCall(StringRef methodName,
                                CallSyntax syntax, SMLoc callLoc) {
   assert(!argValues.empty() && "Cannot emit a method call without a receiver!");
   ASTType type = argValues.front().ir.getRValueType();
-  CallableValue callee(type, methodName, callLoc, shared);
+  bool isErroneousDecl = false;
+  CallableValue callee(type, methodName, callLoc, isErroneousDecl, shared);
+
+  // If the type doesn't have the specified method, emit an error.
+  if (callee.isNull()) {
+    if (isErroneousDecl)
+      return {};
+    auto diag = emitError(callLoc, "") << type << " does not implement the '"
+                                       << methodName << "' method";
+    switch (syntax) {
+    default:
+      break;
+    case CallSyntax::kMethodCall:
+      diag << argValues[0].expr->getRange();
+      break;
+    case CallSyntax::kOperator:
+      diag << argValues[0].expr->getRange();
+      break;
+    case CallSyntax::kReversedOperator:
+      diag << argValues[1].expr->getRange();
+      break;
+    }
+    return {};
+  }
+
   return callee.emitFunctionCall(argValues, syntax, callLoc, *this);
 }
 
