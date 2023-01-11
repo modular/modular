@@ -486,6 +486,11 @@ void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
 /// the value is ready. Otherwise, add the registration logic to the waiter
 /// list and adds the closure to the work queue when the async value becomes
 /// ready.
+///
+/// CAUTION: A fresh AnyAsyncValueRef to this object will be captured in the
+/// addTask closure, thus incrementing our ref count. Don't use this overload
+/// if the reference is not required by the waiter, otherwise the additional
+/// reference could supress user written 'isUnique' optimizations.
 void AsyncValue::andThenAsyncOutOfLine(Waiter waiter) {
   andThenSync(
       [waiter = std::move(waiter)](const AnyAsyncValueRef &ref) mutable {
@@ -494,6 +499,17 @@ void AsyncValue::andThenAsyncOutOfLine(Waiter waiter) {
               waiter(ref);
             });
       });
+}
+
+/// Add the specific closure to the work queue for asynchronous execution if
+/// the value is ready. Otherwise, add the registration logic to the waiter
+/// list and adds the closure to the work queue when the async value becomes
+/// ready.
+void AsyncValue::andThenAsyncOutOfLine(VoidWaiter waiter) {
+  andThenSync([this, waiter = std::move(waiter)]() mutable {
+    this->getRuntime()->getWorkQueue()->addTask(
+        [waiter = std::move(waiter)]() mutable { waiter(); });
+  });
 }
 
 //===----------------------------------------------------------------------===//
