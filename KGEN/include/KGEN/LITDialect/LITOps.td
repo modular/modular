@@ -82,6 +82,7 @@ def LIT_FuncOp : LITOp<"func", [
                        UnitAttr:$isInterface,
                        UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
                        UnitAttr:$raises,
+                       UnitAttr:$alwaysInline,
                        OptionalAttr<SymbolRefAttr>:$implements,
                        OptionalAttr<KGEN_SymbolConstantAttr>:$evaluator);
   let regions = (region AnyRegion:$bodyRegion);
