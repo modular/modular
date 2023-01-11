@@ -581,9 +581,9 @@ LogicalResult ParamOperatorAttr::verify(
     ArrayRef<TypedAttr> operands, Type type) {
   // All the operand types must match except for 'bind_signature' and 'apply'.
   if (!llvm::is_contained({POC::GetListElement, POC::BindSignature, POC::Apply,
-                           POC::TargetHasFeature, POC::TargetIsOS,
-                           POC::TargetIsArch, POC::TargetGetField,
-                           POC::GetSizeOf, POC::GetAlignOf},
+                           POC::TargetHasFeature, POC::TargetIsArch,
+                           POC::TargetGetField, POC::GetSizeOf,
+                           POC::GetAlignOf},
                           opcode) &&
       !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
@@ -651,7 +651,6 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "target_eq only allowed on target types";
     break;
   case POC::TargetHasFeature:
-  case POC::TargetIsOS:
   case POC::TargetIsArch:
     if (operands.size() != 2)
       return emitError() << "target comparisons must have two operands";
@@ -1197,19 +1196,24 @@ static Attribute simplifyIsArch(SmallVectorImpl<TypedAttr> &operands) {
       .getBoolAttr(target.getTarget().isArch(arch));
 }
 
-static Attribute simplifyIsOS(SmallVectorImpl<TypedAttr> &operands) {
-  auto target = dyn_cast<TargetParamAttr>(operands[0]);
-  auto os = dyn_cast<StringAttr>(operands[1]);
-  if (!target || !os)
-    return {};
-  return Builder(target.getContext()).getBoolAttr(target.getTarget().isOS(os));
-}
-
-static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands) {
+static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
+                                        Type &resultType) {
   auto target = dyn_cast<TargetParamAttr>(operands[0]);
   auto field = dyn_cast<StringAttr>(operands[1]);
-  if (!target || !field)
+  if (!field)
     return {};
+
+  if (field.getValue() == "os")
+    resultType = StringType::get(field.getContext());
+  else
+    resultType = IntegerType::get(field.getContext(), 1);
+
+  if (!target)
+    return {};
+
+  if (field.getValue() == "os")
+    return StringAttr::get(target.getTarget().getOS(), resultType);
+
   std::optional<ssize_t> result =
       llvm::StringSwitch<std::optional<ssize_t>>(field.getValue())
           .Case("pointer_size", target.getTarget().getPointerSize())
@@ -1457,13 +1461,13 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   // All operands must have the same type.  The result type is usually the
   // same as the operands, but is i1 for comparisons (overridden below).
   auto resultType = operandsIn.front().getType();
-  assert(llvm::is_contained({POC::GetListElement, POC::BindSignature,
-                             POC::Apply, POC::TargetHasFeature, POC::TargetIsOS,
-                             POC::TargetIsArch, POC::TargetGetField,
-                             POC::GetSizeOf, POC::GetAlignOf},
-                            opcode) ||
-         llvm::all_of(operandsIn.drop_front(),
-                      [&](auto op) { return op.getType() == resultType; }));
+  assert(
+      llvm::is_contained({POC::GetListElement, POC::BindSignature, POC::Apply,
+                          POC::TargetHasFeature, POC::TargetIsArch,
+                          POC::TargetGetField, POC::GetSizeOf, POC::GetAlignOf},
+                         opcode) ||
+      llvm::all_of(operandsIn.drop_front(),
+                   [&](auto op) { return op.getType() == resultType; }));
 
   SmallVector<TypedAttr, 4> operands(operandsIn.begin(), operandsIn.end());
 
@@ -1522,17 +1526,12 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     result = simplifyHasFeature(operands);
     resultType = IntegerType::get(context, 1);
     break;
-  case POC::TargetIsOS:
-    result = simplifyIsOS(operands);
-    resultType = IntegerType::get(context, 1);
-    break;
   case POC::TargetIsArch:
     result = simplifyIsArch(operands);
     resultType = IntegerType::get(context, 1);
     break;
   case POC::TargetGetField:
-    result = simplifyTargetGetField(operands);
-    resultType = IndexType::get(context);
+    result = simplifyTargetGetField(operands, resultType);
     break;
   case POC::In:
     result = simplifyIn(operands);

@@ -42,21 +42,20 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   // Target comparisons & utilities.
   I32EnumAttrCase<"TargetEq", 14, "target_eq">,
   I32EnumAttrCase<"TargetHasFeature", 15, "target_has_feature">,
-  I32EnumAttrCase<"TargetIsOS", 16, "target_is_os">,
-  I32EnumAttrCase<"TargetIsArch", 17, "target_is_arch">,
-  I32EnumAttrCase<"TargetGetField", 18, "target_get_field">,
+  I32EnumAttrCase<"TargetIsArch", 16, "target_is_arch">,
+  I32EnumAttrCase<"TargetGetField", 17, "target_get_field">,
 
   // Complex variadic operations.
-  I32EnumAttrCase<"In", 19, "in">,
+  I32EnumAttrCase<"In", 18, "in">,
 
   // Unary type expressions.
-  I32EnumAttrCase<"GetSizeOf", 20, "get_sizeof">,
-  I32EnumAttrCase<"GetAlignOf", 21, "get_alignof">,
-  I32EnumAttrCase<"GetListElement", 22, "get_list_element">,
+  I32EnumAttrCase<"GetSizeOf", 19, "get_sizeof">,
+  I32EnumAttrCase<"GetAlignOf", 20, "get_alignof">,
+  I32EnumAttrCase<"GetListElement", 21, "get_list_element">,
 
   // Signature processing.
-  I32EnumAttrCase<"BindSignature", 23, "bind_signature">,
-  I32EnumAttrCase<"Apply", 24, "apply">
+  I32EnumAttrCase<"BindSignature", 22, "bind_signature">,
+  I32EnumAttrCase<"Apply", 23, "apply">
 ]>;
 }
 

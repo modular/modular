@@ -450,7 +450,7 @@ kgen.generator @target_has_feature<t0: target>()
 
 // CHECK-LABEL: kgen.generator @target_is_os<t0: target>()
 kgen.generator @target_is_os<t0: target>()
-  constraints <[target_is_os(t0, "darwin"), "os must be darwin"]> {
+  constraints <[eq(:string target_get_field(t0, "os"), "darwin"), "os must be darwin"]> {
   kgen.return
 }
 
@@ -465,6 +465,8 @@ kgen.generator @target_get_field() {
   kgen.param.assert<le(1, target_get_field(#kgen<target host>,
                                            "simd_bit_width"))>,
                     "simd_bit_width is always greater than 1"
+  kgen.param.assert<eq(:string target_get_field(#kgen<target host>, "os"), "darwin")>,
+                    "target os is darwin"
   kgen.return
 }
 
