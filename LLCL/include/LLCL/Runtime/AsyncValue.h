@@ -118,21 +118,25 @@ public:
   /// Return the `Runtime` instance this is part of.
   CompactRuntimePtr getRuntime() const { return runtime; }
 
+  /// AsyncValue maintains a list of waiters that are waiting for notification
+  /// that this value transitioned to Available or Error.
+  using Waiter = llvm::unique_function<void(const AnyAsyncValueRef &arg)>;
+  using VoidWaiter = llvm::unique_function<void()>;
+
   /// If `IsAsync`, add the specific closure to the work queue for asynchronous
   /// execution if the value is ready, or add the registration logic to
   /// the waiter list and adds the closure to the work queue when the async
   /// value becomes ready. If `IsAsync` is false, call the specified closure if
   /// the value is ready.  Otherwise, add it to the waiter list and calls it
   /// when the value becomes ready.
-  template <bool IsAsync, typename WaiterT>
-  auto andThen(WaiterT &&waiter) -> decltype(waiter(), void());
+  template <bool IsAsync>
+  void andThen(VoidWaiter &&waiter);
 
   /// This overload passes the current value back into the closure as a
   /// `const AnyAsyncValueRef &`.  This eliminates the need to capture the
   /// receiver in the closure and reduces reference count traffic.
-  template <bool IsAsync, typename WaiterT>
-  auto andThen(WaiterT &&waiter)
-      -> decltype(waiter(AnyAsyncValueRef()), void());
+  template <bool IsAsync>
+  void andThen(Waiter &&waiter);
 
   /// This is same as `andThen` with `IsAsync=false`.
   template <typename WaiterT>
@@ -315,10 +319,6 @@ public:
     return totalAllocatedAsyncValues.load(std::memory_order_relaxed);
   }
 
-  /// AsyncValue maintains a list of waiters that are waiting for notification
-  /// that this value transitioned to Available or Error.
-  using Waiter = llvm::unique_function<void(const AnyAsyncValueRef &arg)>;
-
 private:
   // Reference counting, only accessible to RCRef<>.
   template <typename T>
@@ -405,6 +405,7 @@ protected:
   void runWaitersAndDeallocate(WaiterListNode *list, size_t numEntriesValid);
   void andThenOutOfLine(Waiter waiter, WaitersAndState oldValue);
   void andThenAsyncOutOfLine(Waiter waiter);
+  void andThenAsyncOutOfLine(VoidWaiter waiter);
   void destroyWithRefCountZero();
   State notifyReady(State newState, std::optional<Waiter> &extraWaiter);
   void removeAnyInlineWaiter(std::optional<Waiter> &inlineWaiter);
@@ -723,30 +724,32 @@ inline void AsyncValue::dropRef(uint16_t count) {
     destroyWithRefCountZero();
 }
 
-template <bool IsAsync, typename WaiterT>
-auto AsyncValue::andThen(WaiterT &&waiter) -> decltype(waiter(), void()) {
-  andThen<IsAsync>([waiter = std::forward<WaiterT>(waiter)](
-                       const AnyAsyncValueRef &) mutable { return waiter(); });
+template <bool IsAsync>
+void AsyncValue::andThen(VoidWaiter &&waiter) {
+  if constexpr (IsAsync)
+    andThenAsyncOutOfLine(std::forward<VoidWaiter>(waiter));
+  else
+    andThenSync([waiter = std::forward<VoidWaiter>(waiter)](
+                    const AnyAsyncValueRef &) mutable { return waiter(); });
 }
 
-template <bool IsAsync, typename WaiterT>
-auto AsyncValue::andThen(WaiterT &&waiter)
-    -> decltype(waiter(AnyAsyncValueRef()), void()) {
+template <bool IsAsync>
+void AsyncValue::andThen(Waiter &&waiter) {
   if constexpr (IsAsync)
-    andThenAsyncOutOfLine(std::forward<WaiterT>(waiter));
+    andThenAsyncOutOfLine(std::forward<Waiter>(waiter));
   else {
     // Clients generally want to use andThenSync without them each having to
-    // check to see if the value is present. Check for them, and immediately run
-    // the lambda if it is already here.
+    // check to see if the value is present. Check for them, and immediately
+    // run the lambda if it is already here.
     auto waitersAndStateValue = loadWaitersAndState();
     if (isReady(waitersAndStateValue.getInt())) {
       assert(waitersAndStateValue.getPointer() == nullptr &&
              "cannot have waiter nodes when ready");
-      runOneWaiter(std::forward<WaiterT>(waiter));
+      runOneWaiter(std::forward<Waiter>(waiter));
       return;
     }
 
-    andThenOutOfLine(std::forward<WaiterT>(waiter), waitersAndStateValue);
+    andThenOutOfLine(std::forward<Waiter>(waiter), waitersAndStateValue);
   }
 }
 
