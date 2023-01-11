@@ -38,16 +38,14 @@ public:
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 
-  /// This helper emits the specified value rep as an RValue.
-  RValue emitRValue(AnyValue rep, SMLoc loc);
+  /// This helper emits the specified value as an RValue.
+  RValue emitRValue(ASTExprAnd<AnyValue> value);
 
-  /// This helper emits the specified value rep as a DRValue which has an SSA
+  /// This helper emits the specified value as a DRValue which has an SSA
   /// value representation, materializing MValues and loading LValues as
   /// needed.  This returns null if emission fails.
-  DRValue emitDRValue(RValue rep, SMLoc loc);
-  DRValue emitDRValue(AnyValue rep, SMLoc loc) {
-    return emitDRValue(emitRValue(rep, loc), loc);
-  }
+  DRValue emitDRValue(ASTExprAnd<RValue> value);
+  DRValue emitDRValue(ASTExprAnd<AnyValue> value);
 
   //===--------------------------------------------------------------------===//
   // Function Calls
@@ -98,20 +96,12 @@ public:
   // Emission helpers for various value classifications.
 
   /// This helper emits the specified value rep as an RValue.
-  RValue emitExprRValue(const ExprNode *node) {
-    assert(node && "cannot emit a null node");
-    return emitRValue(node->emitIR(*this, /*No Contextual Type*/ {}),
-                      node->getLoc());
-  }
+  RValue emitExprRValue(const ExprNode *node);
 
   /// This helper emits the specified value rep as an DRValue, materializing
   /// it as a parameter constant if it is a parameter.  This returns null if
   /// emission fails.
-  DRValue emitExprDRValue(const ExprNode *node) {
-    assert(node && "cannot emit a null node");
-    return emitDRValue(node->emitIR(*this, /*No Contextual Type*/ {}),
-                       node->getLoc());
-  }
+  DRValue emitExprDRValue(const ExprNode *node);
 
   /// This helper emits the specified expression as a meta value, diagnosing the
   /// problem if the expression is only valid as a runtime value (using the

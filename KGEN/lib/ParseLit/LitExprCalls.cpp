@@ -599,7 +599,7 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   case ValueInputConvention::ByVal:
     // Otherwise we can have either an lvalue or rvalue, but we need to convert
     // to an rvalue if we have an lvalue.
-    firstArgValue = emitter.emitDRValue(baseVal.ir, loc);
+    firstArgValue = emitter.emitDRValue(baseVal);
     if (!firstArgValue)
       return {};
     break;
@@ -611,7 +611,8 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   // For an instance value, we have to partially apply the callee to the first
   // argument of the reference.  Materialize callee as a DRValue for
   // partial_apply.
-  auto calleeDRVal = emitter.emitDRValue(AnyValue(directSymbolAttr), loc);
+  auto calleeDRVal =
+      emitter.emitDRValue({AnyValue(directSymbolAttr), baseVal.expr});
 
   // Partial apply wants to know what operands to bind, we always bind the first
   // one.
@@ -726,7 +727,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     // call it with call_indirect.
     callee = baseVal.ir.getIfMValue();
     if (!callee) {
-      callee = emitter.emitDRValue(baseVal.ir, baseVal.expr->getLoc());
+      callee = emitter.emitDRValue(baseVal);
       if (!callee)
         return {};
     }
@@ -755,11 +756,10 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
          "Type checking should be done");
 
   // Emit all the arguments.
-  SmallVector<std::pair<AnyValue, llvm::SMLoc>> valueArguments;
+  SmallVector<std::pair<AnyValue, const ExprNode *>> valueArguments;
   for (auto [argAnyValueAndExpr, expectedType, convention] :
        llvm::zip(operands, calleeSig.getValueInputs(),
                  calleeSig.getValueInputConventions())) {
-    auto argLoc = argAnyValueAndExpr.expr->getLoc();
     // If the callee takes the operand as a by-ref argument, we require an
     // lvalue.
     AnyValue argVal;
@@ -778,7 +778,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
           return {};
         }
       } else {
-        argVal = emitter.emitDRValue(argAnyValueAndExpr.ir, argLoc);
+        argVal = emitter.emitDRValue(argAnyValueAndExpr);
       }
 
       // Convert the argument to the expected type if needed.
@@ -789,25 +789,25 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       break;
     }
 
-    valueArguments.emplace_back(argVal, argLoc);
+    valueArguments.emplace_back(argVal, argAnyValueAndExpr.expr);
   }
 
   auto &builder = emitter.builder;
   if (!builder) {
     // Emitting a call in a meta context. Generate an apply operator.
     SmallVector<TypedAttr> operands({callee.getIfMValue().get()});
-    for (auto [argVal, loc] : valueArguments)
+    for (auto [argVal, expr] : valueArguments)
       operands.push_back(argVal.getIfMValue().get());
     return MValue(ParamOperatorAttr::get(POC::Apply, operands));
   }
 
   // Otherwise, materialize MValue arguments as DRValues.
   SmallVector<Value> callArgs;
-  for (auto [argVal, loc] : valueArguments) {
+  for (auto [argVal, expr] : valueArguments) {
     if (auto lv = argVal.getIfLValue())
       callArgs.push_back(lv);
     else
-      callArgs.push_back(emitter.emitDRValue(argVal, loc));
+      callArgs.push_back(emitter.emitDRValue({argVal, expr}));
   }
 
   Operation *callOp;

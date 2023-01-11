@@ -30,6 +30,20 @@
 #include "llvm/ADT/PointerUnion.h"
 
 namespace M::KGEN::LIT {
+class ExprNode;
+
+template <typename ValueType>
+struct ASTExprAnd {
+  ValueType ir;
+
+  /// This is the expression a value was produced from, carrying location and
+  /// additional semantic information.
+  const ExprNode *expr;
+
+  bool isNull() const { return ir.isNull(); }
+  bool operator!() const { return !ir; }
+  operator bool() const { return bool(ir); }
+};
 
 /// Instances of DRValue model a dynamic value represented with an SSA value.
 /// It is described with an explicit type to clarify what sort of value it is,
