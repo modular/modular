@@ -108,11 +108,11 @@ DRValue IREmitter::emitDRValue(RValue rep, SMLoc loc) {
 AnyValue
 IREmitter::emitNamedMethodCall(StringRef methodName,
                                ArrayRef<ASTExprAnd<AnyValue>> argValues,
-                               SMLoc callLoc) {
+                               const ExprNode *callExpr) {
   assert(!argValues.empty() && "Cannot emit a method call without a receiver!");
   ASTType type = argValues.front().ir.getRValueType();
-  CallableValue callee(type, methodName, callLoc, shared);
-  return callee.emitFunctionCall(argValues, callLoc, *this);
+  CallableValue callee(type, methodName, callExpr->getLoc(), shared);
+  return callee.emitFunctionCall(argValues, callExpr, *this);
 }
 
 /// Convert the specified value to the expected type, invoking implicit
@@ -151,7 +151,7 @@ AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
   }
 
   // Ok, cool we know it will succeed; do it.
-  return callee.emitFunctionCall(newArg, expr->getLoc(), *this);
+  return callee.emitFunctionCall(newArg, expr, *this);
 }
 
 AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
@@ -193,14 +193,14 @@ DRValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __lit_bool.
     boolResult =
-        emitNamedMethodCall("__bool__", {{value.ir, value.expr}}, valueLoc);
+        emitNamedMethodCall("__bool__", {{value.ir, value.expr}}, value.expr);
     if (!boolResult)
       return {};
   }
 
   // Then we use __lit_bool to convert to an i1 value.
   AnyValue litBoolCall =
-      emitNamedMethodCall("__lit_bool", {{boolResult, value.expr}}, valueLoc);
+      emitNamedMethodCall("__lit_bool", {{boolResult, value.expr}}, value.expr);
   return emitDRValue(litBoolCall, valueLoc);
 }
 

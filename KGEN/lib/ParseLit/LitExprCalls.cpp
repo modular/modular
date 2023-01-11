@@ -134,10 +134,11 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
 
 /// Get a symbol for a direct reference to the specified function in its
 /// enclosing context.  This does not bind any values to arguments.
-DirectCallable::DirectCallable(SMLoc loc, StringRef baseName,
+DirectCallable::DirectCallable(SMLoc nameLoc, StringRef baseName,
                                ArrayRef<ASTDecl *> fnDecls,
                                ParamBindArrayAttr bindingsAttr)
-    : loc(loc), baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()) {
+    : nameLoc(nameLoc), baseName(baseName),
+      fnDecls(fnDecls.begin(), fnDecls.end()) {
   if (bindingsAttr) {
     for (ParamBindAttr bind : bindingsAttr)
       inputParamBindings.add(bind);
@@ -202,7 +203,7 @@ OverloadFitness OverloadFitness::evaluate(
   ssize_t incorrectBindingNo = 0;
   ASTType incorrectBindingExpectedType;
   auto newBindings = callable.inputParamBindings.verifyBindings(
-      signature.getInputParams(), callable.baseName, callable.loc,
+      signature.getInputParams(), callable.baseName, callable.nameLoc,
       incorrectBindingNo, incorrectBindingExpectedType, shared,
       /*don't emit diagnostics*/ {});
 
@@ -377,7 +378,7 @@ LogicalResult DirectCallable::filterOverloadSet(
       // If there is a single callee, emit a specific error about the call.
       if (fnDecls.size() == 1) {
         auto fnDecl = cast<LIT::FuncOp>(*fnDecls[0]);
-        auto diag = shared.emitError(loc, "invalid call to '")
+        auto diag = shared.emitError(nameLoc, "invalid call to '")
                     << baseName << "': ";
         evaluations[0].diagnose(fnDecl.getFullSignature(), *this, operands,
                                 isMethodCall, diag);
@@ -387,7 +388,7 @@ LogicalResult DirectCallable::filterOverloadSet(
 
       // Otherwise emit an error, and a note for what is wrong with each
       // candidate.
-      auto diag = shared.emitError(loc, "no matching function in call to '")
+      auto diag = shared.emitError(nameLoc, "no matching function in call to '")
                   << baseName << "': ";
       for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
         auto fnDecl = cast<LIT::FuncOp>(*candidate);
@@ -425,7 +426,7 @@ LogicalResult DirectCallable::filterOverloadSet(
   // Otherwise, we have multiple viable candidates that are ambiguous because
   // they all require the same number of implicit conversions.
   if (emitDiagnosticOnFailure) {
-    auto diag = shared.emitError(loc, "ambiguous call to '")
+    auto diag = shared.emitError(nameLoc, "ambiguous call to '")
                 << baseName << "', each candidate requires " << minConversions
                 << " implicit conversion" << plural(minConversions)
                 << ", disambiguate with an explicit cast";
@@ -444,7 +445,7 @@ DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
     assert(!fnDecls.empty() && "DirectCallable malformed");
     auto diag =
         shared.emitError(
-            loc, "cannot form a reference to overloaded declaration of '")
+            nameLoc, "cannot form a reference to overloaded declaration of '")
         << baseName << "'";
     for (ASTDecl *candidate : fnDecls) {
       auto funcOp = cast<LIT::FuncOp>(*candidate);
@@ -461,7 +462,7 @@ DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
   ASTType incorrectBindingExpectedType;
 
   auto newBindings = inputParamBindings.verifyBindings(
-      funcOp.getFullSignature().getInputParams(), baseName, loc,
+      funcOp.getFullSignature().getInputParams(), baseName, nameLoc,
       incorrectBindingNo, incorrectBindingExpectedType, shared,
       /*emit diagnostics*/ funcOp);
   if (!newBindings)
@@ -589,7 +590,7 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   // these indirectly.
   SignatureType calleeSignature = directSymbolAttr.getType();
   if (!calleeSignature.getResultParamTypes().empty()) {
-    emitter.emitError(direct->loc,
+    emitter.emitError(direct->nameLoc,
                       "calls with result parameters must be called directly");
     return {};
   }
@@ -696,7 +697,7 @@ static bool isValidErrorContext(Block *block) {
 /// values.  This emits an error and returns null on failure.
 AnyValue
 CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                SMLoc callLoc, IREmitter &emitter) {
+                                const ExprNode *callExpr, IREmitter &emitter) {
   if (isNull()) // Base was already diagnosed as an error.
     return {};
 
@@ -706,7 +707,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   SmallVector<ASTExprAnd<AnyValue>> operandsWithSelf;
 
   auto emitError = [&](const Twine &message) {
-    return emitter.emitError(callLoc, message);
+    return emitter.emitError(callExpr->getLoc(), message);
   };
 
   // Figure out the type of the function to call, which is either symbol or a
@@ -753,7 +754,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     // call it with call_indirect.
     callee = baseVal.ir.getIfMValue();
     if (!callee) {
-      callee = emitter.emitDRValue(baseVal.ir, callLoc);
+      callee = emitter.emitDRValue(baseVal.ir, baseVal.expr->getLoc());
       if (!callee)
         return {};
     }
@@ -766,8 +767,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     }
 
     // Check to see if we can apply these operands to the callee signature.
-    DirectCallable bindings{
-        callLoc, "callee", {}, {}}; // No additional bound parameters.
+    DirectCallable bindings{callExpr->getLoc(), "callee", /*params*/ {}, {}};
     auto fitness = OverloadFitness::evaluate(calleeSig, bindings, operands,
                                              emitter.shared);
     if (fitness.kind != OverloadFitness::kValid) {
@@ -839,8 +839,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   }
 
   Operation *callOp;
-  Location loc = emitter.translateLocation(callLoc);
-  // FIXME: Move result type inference into CallOp/CallIndirectOp.
+  Location loc = emitter.translateLocation(callExpr->getLoc());
   ArrayRef<Type> resultTypes = calleeSig.getValueResults();
   if (auto target = callee.getIfMValue()) {
     // If the callee is a symbol constant, directly emit a call.

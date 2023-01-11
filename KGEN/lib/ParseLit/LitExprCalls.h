@@ -111,7 +111,7 @@ public:
 struct DirectCallable {
   /// This is the location of the direct-callable, e.g. in `x.method(...`, this
   /// is the location of 'method'.
-  llvm::SMLoc loc;
+  llvm::SMLoc nameLoc;
 
   /// This is the basename of the declaration set, used in diagnostics.
   StringRef baseName;
@@ -130,7 +130,7 @@ struct DirectCallable {
   /// argument and parameter values.
   bool disableImplicitConversions = false;
 
-  DirectCallable(SMLoc loc, StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
+  DirectCallable(SMLoc nameLoc, StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
                  ParamBindArrayAttr bindings);
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
@@ -211,7 +211,7 @@ public:
   /// Emit a function call to the specified callee with the specified operand
   /// values.  This emits an error and returns null on failure.
   AnyValue emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                            SMLoc callLoc, IREmitter &emitter);
+                            const ExprNode *callExpr, IREmitter &emitter);
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations.  This does not generate
