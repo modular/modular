@@ -72,6 +72,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     """Defines a Buffer which can be parametrized on a static size and Dtype.
     The Buffer does not own its underlying pointer.
     """
+
     var data: DTypePointer[type]
     var dynamic_size: Int
     var dtype: __mlir_type.`!kgen.dtype`
@@ -358,6 +359,59 @@ fn _compute_ndbuffer_size_rank_5[
     )
 
 
+# Helper function to support both static and dynamic size parameters.
+#  Returns `elem` directly if `elem` is a known static value.
+#  Returns dynamic_shape[index] if `elem` is unknown.
+@interface
+fn _get_dim_helper[
+    rank: __mlir_type.index, elem: __mlir_type.index, index: __mlir_type.index
+](dynamic_shape: StaticTuple[rank, __mlir_type.index]) -> Int:
+    ...
+
+
+# Implementation if elem is statically known.
+@implements(_get_dim_helper)
+fn _get_dim_static[
+    rank: __mlir_type.index, elem: __mlir_type.index, index: __mlir_type.index
+](dynamic_shape: StaticTuple[rank, __mlir_type.index]) -> Int:
+    assert_param[elem != __mlir_attr.`#kgen.unknown : index`]()
+    return elem
+
+
+# Implementation if elem is not statically known.
+@implements(_get_dim_helper)
+fn _get_dim_dynamic[
+    rank: __mlir_type.index, elem: __mlir_type.index, index: __mlir_type.index
+](dynamic_shape: StaticTuple[rank, __mlir_type.index]) -> Int:
+    assert_param[elem == __mlir_attr.`#kgen.unknown : index`]()
+    return dynamic_shape.__getitem__[index]()
+
+
+# Implementation of NDBuffer::get_dim.
+fn _get_dim_impl[
+    # Rank of the ndbuffer.
+    rank: __mlir_type.index,
+    # Static shape info on this ndbuffer, could be unknown.
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    # Index of the dimension to get the dimension value.
+    index: __mlir_type.index,
+](
+    #  Tuple containing the runtime shape of the ndbuffer.
+    dynamic_shape: StaticTuple[rank, __mlir_type.index]
+) -> Int:
+    # First try to extract the static info on this dimension,
+    #  could be either a meta constant or an unknown.
+    alias static_dim_value = __mlir_attr[
+        `#kgen.param.expr<get_list_element, `,
+        shape,
+        `, `,
+        index,
+        `> : index`,
+    ]
+    # Call the helper to resolve unknown by dynamic shape lookup if any.
+    return _get_dim_helper[rank, static_dim_value, index](dynamic_shape)
+
+
 struct NDBuffer[
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
@@ -425,13 +479,4 @@ struct NDBuffer[
         self._offset(idx).simd_store[width](val)
 
     fn dim[index: __mlir_type.index](self) -> Int:
-        alias elem = __mlir_attr[
-            `#kgen.param.expr<get_list_element, `,
-            shape,
-            `, `,
-            index,
-            `> : index`,
-        ]
-        if elem == __mlir_attr.`#kgen.unknown : index`:
-            return self.dynamic_shape.__getitem__[index]()
-        return elem
+        return _get_dim_impl[rank, shape, index](self.dynamic_shape)
