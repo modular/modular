@@ -620,3 +620,8 @@ fn testConversionQoI():
 struct MLIRAttrWithinStruct: # expected-note {{previously used here}}
   # expected-error @+1 {{recursive reference to declaration}}
   __mlir_attr.`#index<cmp_predicate eq>`
+
+# expected-error @+1 {{use of unknown declaration 'InvalidType'}}
+fn badPropertyError(a: InvalidType):
+  _ = a.value
+  return

@@ -294,12 +294,12 @@ LValue ExprEmitter::emitExprLValue(SMLoc loc, const ExprNode *node,
 }
 
 /// This helper emits the specified expression tree as a type, e.g. turning
-/// "Int" into the type for it.  This never returns null - if the expression
-/// is erroneous, it is diagnosed and a TypeCheckErrorType is returned.
+/// "Int" into the type for it.  This emits an error and returns null on
+/// failure.
 ASTType ExprEmitter::emitExprType(const ExprNode *node) {
   auto value = emitExprMValue(node, "expected a type");
   if (!value)
-    return shared.getTypeCheckErrorType();
+    return {};
 
   // If this emitted a type, we can lower it.
   if (auto type = value.getIfTypeValue()) {
@@ -315,7 +315,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *node) {
         emitError(node->getLoc(), "use of type ")
             << structDecl.getNameAttr() << " with " << numMissing
             << " unbound parameter" << plural(numMissing) << node->getRange();
-        return shared.getTypeCheckErrorType();
+        return {};
       }
     }
 
@@ -329,7 +329,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *node) {
     return shared.getNoneType();
 
   emitError(node->getLoc(), "expected a type, not a value"), node->getRange();
-  return shared.getTypeCheckErrorType();
+  return {};
 }
 
 /// Emit the specified expression as a condition, converting it to an MLIR I1

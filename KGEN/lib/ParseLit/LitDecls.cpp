@@ -62,6 +62,9 @@ static ParseResult parseType(LitParserBase &p, ASTType &result,
 
   ExprEmitter emitter(p.shared, declScope, std::nullopt, nullptr);
   result = emitter.emitExprType(expr);
+  if (!result)
+    return failure();
+
   return success();
 }
 
@@ -156,6 +159,16 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
   ASTDecl *decl = shared.allocPersistent<ASTDecl>(
       irValue, loc, parentDecl, cursor, endCursor, indentation);
   parsedDeclList.push_back(decl);
+
+  // If this is a declaration which has a TypeCheckErrorType, then all
+  // references to it are invalid.
+  if (auto rv = decl->getIfRValue()) {
+    if (isa<TypeCheckErrorType>(rv.getType()))
+      decl->hasReferenceError = true;
+  } else if (auto lv = decl->getIfLValue()) {
+    if (isa<TypeCheckErrorType>(lv.getRValueType().mlirType))
+      decl->hasReferenceError = true;
+  }
 
   // If this has a parent and a name, insert it into the parents name table so
   // name lookup will resolve it.  If it does, then we're done.
@@ -547,8 +560,12 @@ struct ParsedMetaSignature {
 
   SmallVector<Type> getResolvedResultTypes(ExprEmitter &emitter) const {
     SmallVector<Type> results;
-    for (ExprNode *expr : resultTypes)
-      results.push_back(emitter.emitExprType(expr));
+    for (ExprNode *expr : resultTypes) {
+      auto type = emitter.emitExprType(expr);
+      if (!type)
+        type = emitter.shared.getTypeCheckErrorType();
+      results.push_back(type);
+    }
     return results;
   }
 };
@@ -1175,13 +1192,20 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   SmallVector<Type> argTypes;
   for (auto &arg : args) {
     // This returns a TypeCheckErrorType on error, no extra check is needed.
-    ASTType type =
-        arg.typeExpr ? typeEmitter.emitExprType(arg.typeExpr) : ASTType();
+    ASTType type;
+    if (arg.typeExpr) {
+      type = typeEmitter.emitExprType(arg.typeExpr);
 
-    // If this is a 'self' argument in a fn that is a method, default to a self
-    // type.  TODO: Should we do this, or default to object in a 'def'?
-    if (!type && arg.name == "self" &&
-        isa<StructDeclOp>(*decl.getParentDecl())) {
+      // If the type couldn't be emitted, mark this function erroneous and put
+      // in a placeholder type so we can continue type checking.
+      if (!type) {
+        decl.hasReferenceError = true;
+        type = shared.getTypeCheckErrorType();
+      }
+
+    } else if (arg.name == "self" && isa<StructDeclOp>(*decl.getParentDecl())) {
+      // If this is a 'self' argument in a fn that is a method, default to a
+      // self type.  TODO: Should we do this, or default to object in a 'def'?
       assert(decl.getParentDecl()->resolvedness ==
              DeclResolvedness::fullyResolved);
       type = decl.getParentDecl()->getSelfType();
@@ -1189,12 +1213,20 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     argTypes.push_back(type);
   }
 
-  ASTType resultType =
-      resultTypeExpr ? typeEmitter.emitExprType(resultTypeExpr) : ASTType();
-  if (!resultType) {
+  ASTType resultType;
+  if (!resultTypeExpr) {
     // TODO: We shouldn't default this to none for 'def's.  This should default
     // to object type.  Our return checker is currently a lame duck.
     resultType = shared.getNoneType();
+  } else {
+    resultType = typeEmitter.emitExprType(resultTypeExpr);
+    // On error, a diagnostic will be emitted, but we don't want to kill the
+    // entire function definition.  We won't be able to correctly type check any
+    // calls to this function though.
+    if (!resultType) {
+      resultType = shared.getTypeCheckErrorType();
+      decl.hasReferenceError = true;
+    }
   }
 
   // Now that we have figured out the lexical structure, allow decorators to
