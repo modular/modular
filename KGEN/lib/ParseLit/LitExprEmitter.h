@@ -52,11 +52,11 @@ public:
   // Function Calls
 
   /// This helper emits a named method call with the provided `argValues`, where
-  /// the first operand is the receiver of the call. This emits an error if the
+  /// the first arg is the receiver of the call. This emits an error if the
   /// call is invalid and returns null.  The argValues list may not be empty.
   AnyValue emitNamedMethodCall(StringRef methodName,
                                ArrayRef<ASTExprAnd<AnyValue>> argValues,
-                               SMLoc callLoc);
+                               const ExprNode *callExpr);
 
   /// Convert the specified value to the expected type, invoking implicit
   /// conversions if necessary.  On error, this diagnoses it and returns null.
