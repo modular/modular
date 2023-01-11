@@ -347,7 +347,7 @@ fn expr_errors():
   # expected-error @+1 {{MLIR attribute has no type: #index<cmp_predicate eq>}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
-  # expected-error @+1 {{'__mlir_type.index' does not implement the '__new__' method}}
+  # expected-error @+1 {{cannot use initializer syntax on MLIR type '__mlir_type.index'}}
   _ = __mlir_type.index(42)
 
 

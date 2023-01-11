@@ -198,12 +198,6 @@ public:
       : direct({loc, baseName, fnDecls, bindings}) {}
 
   /// Get a CallableValue for a lookup of a named method on the specified type.
-  /// If successful, this provides a non-null CallableValue.  On failure, it
-  /// emits an error and returns a null CallableValue.
-  CallableValue(ASTType type, StringRef methodName, SMLoc callLoc,
-                LitSharedState &shared);
-
-  /// Get a CallableValue for a lookup of a named method on the specified type.
   /// If successful, this provides a non-null CallableValue.
   ///
   /// On failure, this returns a null CallableValue and sets 'erroneousDecl' to
@@ -233,11 +227,6 @@ public:
   static bool canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
                                          ASTType requiredType,
                                          LitSharedState &shared);
-
-private:
-  void lookup(ASTType type, StringRef methodName, SMLoc callLoc,
-              bool emitErrorOnFailure, bool &erroneousDecl,
-              LitSharedState &shared);
 };
 
 } // namespace M::KGEN::LIT
