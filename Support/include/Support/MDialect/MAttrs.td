@@ -271,6 +271,11 @@ def KGEN_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
       return getFeatures().contains(feature);
     }
 
+    /// Check if the operating system matches the provided one.
+    bool isOS(StringRef os) const {
+      return getTriple().getOSName() == os;
+    }
+
     /// Check if the CPU architecture matches the provided one.
     bool isArch(StringRef arch) const {
       return getCpu().equals(arch);

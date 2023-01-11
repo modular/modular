@@ -448,6 +448,12 @@ kgen.generator @target_has_feature<t0: target>()
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @target_is_os<t0: target>()
+kgen.generator @target_is_os<t0: target>()
+  constraints <[target_is_os(t0, "darwin"), "os must be darwin"]> {
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.generator @target_is_arch<t0: target>()
 kgen.generator @target_is_arch<t0: target>()
   constraints <[target_is_arch(t0, "apple-m1"), "machine must be apple m1"]> {
