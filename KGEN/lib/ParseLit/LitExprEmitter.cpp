@@ -108,11 +108,11 @@ DRValue IREmitter::emitDRValue(RValue rep, SMLoc loc) {
 AnyValue
 IREmitter::emitNamedMethodCall(StringRef methodName,
                                ArrayRef<ASTExprAnd<AnyValue>> argValues,
-                               const ExprNode *callExpr) {
+                               CallSyntax syntax, SMLoc callLoc) {
   assert(!argValues.empty() && "Cannot emit a method call without a receiver!");
   ASTType type = argValues.front().ir.getRValueType();
-  CallableValue callee(type, methodName, callExpr->getLoc(), shared);
-  return callee.emitFunctionCall(argValues, callExpr, *this);
+  CallableValue callee(type, methodName, callLoc, shared);
+  return callee.emitFunctionCall(argValues, syntax, callLoc, *this);
 }
 
 /// Convert the specified value to the expected type, invoking implicit
@@ -144,14 +144,15 @@ AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
   ASTExprAnd<AnyValue> newArg = {value, expr};
   callee.direct->disableImplicitConversions = true;
   if (failed(callee.direct->filterOverloadSet(
-          {newArg}, /*isMethodSyntax*/ false,
+          {newArg}, CallSyntax::kImplicitConvert,
           /*emitDiagnosticOnFailure=*/false, shared))) {
     errorHandler();
     return {};
   }
 
   // Ok, cool we know it will succeed; do it.
-  return callee.emitFunctionCall(newArg, expr, *this);
+  return callee.emitFunctionCall(newArg, CallSyntax::kImplicitConvert,
+                                 expr->getLoc(), *this);
 }
 
 AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
@@ -192,15 +193,16 @@ DRValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
                      isErroneousDecl, shared)) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __lit_bool.
-    boolResult =
-        emitNamedMethodCall("__bool__", {{value.ir, value.expr}}, value.expr);
+    boolResult = emitNamedMethodCall("__bool__", {{value.ir, value.expr}},
+                                     CallSyntax::kImplicitConvert, valueLoc);
     if (!boolResult)
       return {};
   }
 
   // Then we use __lit_bool to convert to an i1 value.
   AnyValue litBoolCall =
-      emitNamedMethodCall("__lit_bool", {{boolResult, value.expr}}, value.expr);
+      emitNamedMethodCall("__lit_bool", {{boolResult, value.expr}},
+                          CallSyntax::kImplicitConvert, valueLoc);
   return emitDRValue(litBoolCall, valueLoc);
 }
 

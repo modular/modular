@@ -102,6 +102,19 @@ public:
                                     Operation *declOp) const;
 };
 
+/// When emitting a function call, this enum is used to indicate why the call
+/// happened in the first place.  This allows producing better-tuned
+/// diagnostics.
+enum class CallSyntax : uint8_t {
+  kDirectCall,       //< f()
+  kIndirectCall,     //< expr()
+  kMethodCall,       //< x.f()
+  kTypeCall,         //< T()
+  kOperator,         //< -x and x + y
+  kReversedOperator, //< y + x          (where the method was looked up on x).
+  kImplicitConvert,  //< Conversion in an argument context
+};
+
 //===----------------------------------------------------------------------===//
 // DirectCallable
 //===----------------------------------------------------------------------===//
@@ -139,7 +152,7 @@ struct DirectCallable {
   /// return success.  If not, generate a diagnostic (when
   /// `emitDiagnosticOnFailure` is true) and return failure.
   LogicalResult filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                  bool isMethodCall,
+                                  CallSyntax syntax,
                                   bool emitDiagnosticOnFailure,
                                   LitSharedState &shared);
 
@@ -211,7 +224,8 @@ public:
   /// Emit a function call to the specified callee with the specified operand
   /// values.  This emits an error and returns null on failure.
   AnyValue emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                            const ExprNode *callExpr, IREmitter &emitter);
+                            CallSyntax syntax, SMLoc callLoc,
+                            IREmitter &emitter);
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations.  This does not generate

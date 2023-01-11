@@ -18,6 +18,7 @@ template <typename ValueType>
 struct ASTExprAnd;
 enum class SpecialFunctionKind : uint8_t;
 class SpecialFunctionInfo;
+enum class CallSyntax : uint8_t;
 
 /// This class is the main driver for expression emission, providing helper
 /// functions used by the individual node emission hooks.
@@ -56,7 +57,7 @@ public:
   /// call is invalid and returns null.  The argValues list may not be empty.
   AnyValue emitNamedMethodCall(StringRef methodName,
                                ArrayRef<ASTExprAnd<AnyValue>> argValues,
-                               const ExprNode *callExpr);
+                               CallSyntax syntax, SMLoc callLoc);
 
   /// Convert the specified value to the expected type, invoking implicit
   /// conversions if necessary.  On error, this diagnoses it and returns null.

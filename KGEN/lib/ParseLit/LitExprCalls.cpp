@@ -187,7 +187,7 @@ struct OverloadFitness {
   /// Add explaination for why this candidate doesn't work to the specified
   /// diagnostic.
   void diagnose(SignatureType signature, const DirectCallable &callable,
-                ArrayRef<ASTExprAnd<AnyValue>> operands, bool isMethodCall,
+                ArrayRef<ASTExprAnd<AnyValue>> operands, CallSyntax syntax,
                 LitDiagnostic &diag);
 };
 } // namespace
@@ -287,7 +287,7 @@ OverloadFitness OverloadFitness::evaluate(
 void OverloadFitness::diagnose(SignatureType signature,
                                const DirectCallable &callable,
                                ArrayRef<ASTExprAnd<AnyValue>> operands,
-                               bool isMethodCall, LitDiagnostic &diag) {
+                               CallSyntax syntax, LitDiagnostic &diag) {
   // TODO: Would be really nice to range underline the operand in question!
   switch (kind) {
   case kValid:
@@ -321,7 +321,7 @@ void OverloadFitness::diagnose(SignatureType signature,
     diag << "callee expects " << payload << " argument" << plural(payload);
     return;
   case kArgNotLValue:
-    if (isMethodCall && payload == 0) {
+    if (syntax == CallSyntax::kMethodCall && payload == 0) {
       diag << "invalid use of mutating method on rvalue of type "
            << ASTType(type) << operands[0].expr->getRange();
       return;
@@ -341,7 +341,7 @@ void OverloadFitness::diagnose(SignatureType signature,
 
   case kArgWrongType:
     // If this is a method syntax call, don't count the receiver.
-    if (isMethodCall) {
+    if (syntax == CallSyntax::kMethodCall) {
       // it is probably possible for this assert to fire, if it does we should
       // tailor the error message.
       assert(payload != 0 && "TODO: unexpected self mismatch");
@@ -360,7 +360,7 @@ void OverloadFitness::diagnose(SignatureType signature,
 /// arguments.  If so, replace fnDecls with a single entry that works and
 /// return success.  If not, generate a diagnostic and return failure.
 LogicalResult DirectCallable::filterOverloadSet(
-    ArrayRef<ASTExprAnd<AnyValue>> operands, bool isMethodCall,
+    ArrayRef<ASTExprAnd<AnyValue>> operands, CallSyntax syntax,
     bool emitDiagnosticOnFailure, LitSharedState &shared) {
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
@@ -381,7 +381,7 @@ LogicalResult DirectCallable::filterOverloadSet(
         auto diag = shared.emitError(nameLoc, "invalid call to '")
                     << baseName << "': ";
         evaluations[0].diagnose(fnDecl.getFullSignature(), *this, operands,
-                                isMethodCall, diag);
+                                syntax, diag);
         diag.attachNote(fnDecl.getLoc()) << "function declared here";
         return failure();
       }
@@ -393,8 +393,7 @@ LogicalResult DirectCallable::filterOverloadSet(
       for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
         auto fnDecl = cast<LIT::FuncOp>(*candidate);
         diag.attachNote(fnDecl->getLoc()) << "candidate not viable: ";
-        eval.diagnose(fnDecl.getFullSignature(), *this, operands, isMethodCall,
-                      diag);
+        eval.diagnose(fnDecl.getFullSignature(), *this, operands, syntax, diag);
       }
       return failure();
     }
@@ -673,7 +672,7 @@ bool CallableValue::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
   // T -> S -> U in one step.
   callee.direct->disableImplicitConversions = true;
   return succeeded(callee.direct->filterOverloadSet(
-      {value}, /*isMethodSyntax*/ false,
+      {value}, CallSyntax::kImplicitConvert,
       /*emitDiagnosticOnFailure=*/false, shared));
 }
 
@@ -697,7 +696,8 @@ static bool isValidErrorContext(Block *block) {
 /// values.  This emits an error and returns null on failure.
 AnyValue
 CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                const ExprNode *callExpr, IREmitter &emitter) {
+                                CallSyntax syntax, SMLoc callLoc,
+                                IREmitter &emitter) {
   if (isNull()) // Base was already diagnosed as an error.
     return {};
 
@@ -707,7 +707,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   SmallVector<ASTExprAnd<AnyValue>> operandsWithSelf;
 
   auto emitError = [&](const Twine &message) {
-    return emitter.emitError(callExpr->getLoc(), message);
+    return emitter.emitError(callLoc, message);
   };
 
   // Figure out the type of the function to call, which is either symbol or a
@@ -734,7 +734,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
     // Check the direct callees to see if they can be unambiguously resolved
     // with the bindings list and specified arguments.
-    if (failed(direct->filterOverloadSet(operands, isMethodCall,
+    if (failed(direct->filterOverloadSet(operands, syntax,
                                          /*emitDiagnosticOnFailure=*/true,
                                          emitter.shared)))
       return {};
@@ -767,13 +767,13 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     }
 
     // Check to see if we can apply these operands to the callee signature.
-    DirectCallable bindings{callExpr->getLoc(), "callee", /*params*/ {}, {}};
+    DirectCallable bindings{callLoc, "callee", /*params*/ {}, {}};
     auto fitness = OverloadFitness::evaluate(calleeSig, bindings, operands,
                                              emitter.shared);
     if (fitness.kind != OverloadFitness::kValid) {
       // If not, diagnose it with an error.
       auto diag = emitError("invalid indirect call: ");
-      fitness.diagnose(calleeSig, bindings, operands, isMethodCall, diag);
+      fitness.diagnose(calleeSig, bindings, operands, syntax, diag);
       return {};
     }
   }
@@ -839,7 +839,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   }
 
   Operation *callOp;
-  Location loc = emitter.translateLocation(callExpr->getLoc());
+  Location loc = emitter.translateLocation(callLoc);
   ArrayRef<Type> resultTypes = calleeSig.getValueResults();
   if (auto target = callee.getIfMValue()) {
     // If the callee is a symbol constant, directly emit a call.
