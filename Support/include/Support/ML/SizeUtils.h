@@ -62,9 +62,7 @@ constexpr int64_t kUnknownSignedSize = std::numeric_limits<int64_t>::min();
 constexpr size_t kRuntimeUnknownSize = std::numeric_limits<size_t>::max();
 
 /// Returns true if size in plain form is valid.
-inline bool isValidPlainSize(uint64_t size) {
-  return size > 0 && size != kUnknownSize;
-}
+inline bool isValidPlainSize(uint64_t size) { return size != kUnknownSize; }
 
 /// Returns true if size in optional form is specified.
 inline bool hasOptSize(Optional<uint64_t> optSize) {
@@ -79,11 +77,6 @@ inline bool isValidOptSize(Optional<uint64_t> optSize) {
 /// Returns true if size in raw form is specified.
 inline bool hasRawSize(uint64_t rawSize) { return rawSize != kUnknownSize; }
 
-/// Returns true if size in raw form is valid.
-inline bool isValidRawSize(uint64_t rawSize) {
-  return rawSize == kUnknownSize || rawSize > 0;
-}
-
 /// Returns true if size in raw signed form is specified.
 inline bool hasRawSignedSize(int64_t rawSignedSize) {
   return rawSignedSize != kUnknownSignedSize;
@@ -91,17 +84,12 @@ inline bool hasRawSignedSize(int64_t rawSignedSize) {
 
 /// Returns true if size in raw signed form is valid.
 inline bool isValidRawSignedSize(int64_t rawSignedSize) {
-  return rawSignedSize == kUnknownSignedSize || rawSignedSize > 0;
+  return rawSignedSize == kUnknownSignedSize || rawSignedSize >= 0;
 }
 
 /// Returns true if size in runtime form is specified.
 inline bool hasRuntimeSize(size_t runtimeSize) {
   return runtimeSize != kRuntimeUnknownSize;
-}
-
-/// Returns true if size in runtime form is valid.
-inline bool isValidRuntimeSize(size_t runtimeSize) {
-  return runtimeSize == kRuntimeUnknownSize || runtimeSize > 0;
 }
 
 /// Translates size from optional form to raw form.
@@ -132,14 +120,12 @@ inline int64_t optSizeToRawSignedSize(Optional<uint64_t> optSize) {
 /// Translates size from raw form to optional form.
 /// We assert check for validity, so there's no checking in release builds.
 inline Optional<uint64_t> rawSizeToOptSize(uint64_t rawSize) {
-  assert(isValidRawSize(rawSize) && "invalid raw form size");
   return rawSize == kUnknownSize ? Optional<uint64_t>() : rawSize;
 }
 
 /// Translates size from raw signed form to clean form.
 /// We assert check for validity, so there's no checking in release builds.
 inline Optional<uint64_t> rawSignedSizeToOptSize(int64_t rawSignedSize) {
-  assert(isValidRawSignedSize(rawSignedSize) && "invalid raw form size");
   return rawSignedSize == kUnknownSignedSize
              ? Optional<uint64_t>()
              : static_cast<uint64_t>(rawSignedSize);
@@ -162,7 +148,6 @@ inline size_t plainSizeToRuntimeSize(uint64_t size) {
 /// We assert check for validity and no overflow, so there's no checking in
 /// release builds.
 inline size_t rawSizeToRuntimeSize(uint64_t rawSize) {
-  assert(isValidRawSize(rawSize) && "invalid raw form size");
   if (rawSize == kUnknownSize)
     return kRuntimeUnknownSize;
   assert(rawSize <= static_cast<uint64_t>(std::numeric_limits<size_t>::max()) &&
@@ -178,7 +163,6 @@ inline size_t rawSizeToRuntimeSize(uint64_t rawSize) {
 /// We assert check for validity, so there's no checking in release builds.
 inline size_t rawSizeToRuntimeSizeOrDefault(uint64_t rawSize,
                                             size_t defaultSize) {
-  assert(isValidRawSize(rawSize) && "invalid raw form size");
   if (rawSize == kUnknownSize)
     return defaultSize;
   assert(rawSize <= static_cast<uint64_t>(std::numeric_limits<size_t>::max()) &&
