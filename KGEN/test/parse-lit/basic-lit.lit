@@ -99,3 +99,8 @@ def defTests(a: Int, b: Int, untyped):
   # CHECK: [[TMP:%.*]] = pop.load %b_1
   # CHECK-NEXT: pop.store [[TMP]], %a_0
   a = b # Parameters are mutable!
+
+# CHECK: lit.func @"pleaseInline()"() force_inline -> index attributes {alwaysInline} {
+@always_inline
+fn pleaseInline() -> __mlir_type.index:
+  return 1

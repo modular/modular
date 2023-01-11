@@ -1034,6 +1034,8 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
         applyInterface(*declRef);
       else if (declRef->spelling == "raises")
         applyRaises(*declRef);
+      else if (declRef->spelling == "always_inline")
+        funcOp.setAlwaysInline(true);
       else
         processedIt = false;
     }
@@ -1087,6 +1089,16 @@ void FnDecorators::applyLate(SymbolRefAttr symbolName,
     emitError(decorator->getLoc(), "unsupported decorator")
         << decorator->getRange();
   }
+}
+
+/// Given a FuncOp that had its decorator processed, compute the FnEffects.
+static FnEffects computeFnEffects(LIT::FuncOp funcOp) {
+  FnEffects effects = FnEffects::None;
+  if (funcOp.getAlwaysInline())
+    effects = effects | FnEffects::ForceInline;
+  if (funcOp.getRaises())
+    effects = effects | FnEffects::Throws;
+  return effects;
 }
 
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
@@ -1267,8 +1279,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       builder.getAttr<TypeArrayAttr>(resultParamTypes),
       builder.getFunctionType(argTypes, {resultType.mlirType}),
       builder.getAttr<ConventionsAttr>(inputConventions,
-                                       funcOp.getRaises() ? FnEffects::Throws
-                                                          : FnEffects::None)));
+                                       computeFnEffects(funcOp))));
   funcOp.getBody()->addArguments(argTypes, argLocs);
 
   // Interfaces don't have anything else to do.
