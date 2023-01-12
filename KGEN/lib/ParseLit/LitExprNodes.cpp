@@ -231,6 +231,28 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
                                               unboundOp.getName(), attrs));
 }
 
+/// Given a ParamDeclareOp, return the value that should be used in a reference
+/// to it.  This currently fully substitutes members unless they are in a
+/// function definition.
+static MValue resolveParamDeclareValue(ParamDeclareOp param) {
+  // If the param is declared in a function, then just directly use it.
+
+  Operation *parent = param->getParentOp();
+  while (1) {
+    // If this reference is within a function then keep it symbolic.
+    if (parent && isa<LIT::FuncOp>(parent))
+      return MValue(ParamDeclRefAttr::get(param.getName(), param.getType()));
+    // If this is at struct/file scope, inline it.
+    if (!parent || isa<FileModuleOp>(parent) || isa<StructDeclOp>(parent))
+      return param.getValue();
+
+    // Ignore if and other control flow things.
+    parent = parent->getParentOp();
+  }
+
+  return MValue(ParamDeclRefAttr::get(param.getName(), param.getType()));
+}
+
 /// Given an ASTType 'containingType', look up a named member of it and return
 /// the reference to its symbol as an RValue.
 static CallableValue
@@ -326,8 +348,8 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
 
   // Parameters form an meta-value.
   if (auto param = dyn_cast<ParamDeclareOp>(decl))
-    return {{MValue(ParamDeclRefAttr::get(param.getName(), param.getType())),
-             node}};
+    return {{resolveParamDeclareValue(param), node}};
+
   // Use of forward references.
   if (auto param = dyn_cast<AliasForwardDeclOp>(decl))
     return {{MValue(ParamDeclRefAttr::get(param.getName(), param.getType())),
