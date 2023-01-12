@@ -1551,12 +1551,13 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
 
   LLCL::AsyncSideEffectMap asyncMap(runtime);
 
+  std::filesystem::path kgenCachePath(".kgen_cache");
   auto transformCacheBackendOr =
-      Cache::getDefaultBackendChain(runtime, ".kgen_cache/transform");
+      Cache::getDefaultBackendChain(runtime, kgenCachePath / "transform");
   if (failed(transformCacheBackendOr))
     return primary->emitError() << transformCacheBackendOr.getError();
   auto regionCacheBackendOr =
-      Cache::getDefaultBackendChain(runtime, ".kgen_cache/region");
+      Cache::getDefaultBackendChain(runtime, kgenCachePath / "region");
   if (failed(regionCacheBackendOr))
     return primary->emitError() << regionCacheBackendOr.getError();
 
