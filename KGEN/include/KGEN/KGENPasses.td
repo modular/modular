@@ -336,3 +336,22 @@ def Mem2Reg : Pass<"mem-2-reg"> {
               "the number of stores elided">,
   ];
 }
+
+//===----------------------------------------------------------------------===//
+// TestParametricInlinePass
+//===----------------------------------------------------------------------===//
+
+def TestParametricInlinePass : Pass<"test-parametric-inline",
+                                    "mlir::ModuleOp"> {
+  let summary = "parametric inlining test pass";
+  let description = [{
+    The `test-parametric-inline` pass is a test pass for parametric inlining.
+  }];
+
+  let dependentDialects = ["KGENDialect", "HLCF::HLCFDialect"];
+
+  let options = [
+    Option<"parent", "parent", "std::string", "", "parent operation">,
+    Option<"callee", "callee", "std::string", "", "callee to inline">,
+  ];
+}

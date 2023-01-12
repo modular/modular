@@ -6,6 +6,7 @@
 
 add_modular_conversion_library(KGENTransforms
   CleanupCompilerGlobals.cpp
+  Inlining.cpp
   KnownVariant.cpp
   Mem2Reg.cpp
   OutlineClosures.cpp
