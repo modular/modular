@@ -62,9 +62,10 @@ SF(kXor     , "__xor__"     , 2, kXor,    kInstMethod)
 SF(kOr      , "__or__"      , 2, kOr,     kInstMethod)
 
 // Reversed arithmetic operators.
-SF(kRAdd, "__radd__", 2, kAdd, kInstMethod|kReversedOperator)
-SF(kRSub, "__rsub__", 2, kSub, kInstMethod|kReversedOperator)
-SF(kRMul, "__rmul__", 2, kMul, kInstMethod|kReversedOperator)
+SF(kRAdd,      "__radd__",     2, kAdd, kInstMethod|kReversedOperator)
+SF(kRSub,      "__rsub__",     2, kSub, kInstMethod|kReversedOperator)
+SF(kRMul,      "__rmul__",     2, kMul, kInstMethod|kReversedOperator)
+SF(kRTrueDiv,  "__rtruediv__", 2, kTrueDiv, kInstMethod|kReversedOperator)
 // ... more
 
 // In place operators like +=
