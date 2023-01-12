@@ -1,6 +1,7 @@
 from Buffer import Buffer
 from SIMD import SIMD
 from Numerics import neginf
+from Int import Int
 
 # ===----------------------------------------------------------------------===#
 # simd_max
