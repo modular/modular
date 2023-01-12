@@ -9,7 +9,7 @@ from Tuple import StaticTuple
 from Assert import assert_param
 from Int import Int
 from SIMD import SIMD
-from List import create_kgen_list_2, create_kgen_list_4
+from List import create_kgen_list
 
 
 fn _index2D(rows: Int, cols: Int) -> StaticTuple[2, __mlir_type.index]:
@@ -75,7 +75,7 @@ fn transpose_inplace_4x4[
     var buf = __mlir_op.`kgen.rebind`[
         _type : NDBuffer[
             2,
-            create_kgen_list_2[__mlir_type.index, 4, 4](),
+            create_kgen_list[__mlir_type.index](4, 4),
             type,
         ]
     ](buf0)
@@ -86,30 +86,30 @@ fn transpose_inplace_4x4[
     let row3 = buf.simd_load[4](_index2D(3, 0))
 
     let tmp0 = row0.shuffle[
-        4, create_kgen_list_4[__mlir_type.index, 0, 1, 4, 5]()
+        4, create_kgen_list[__mlir_type.index](0, 1, 4, 5)
     ](row1)
     let tmp1 = row2.shuffle[
-        4, create_kgen_list_4[__mlir_type.index, 0, 1, 4, 5]()
+        4, create_kgen_list[__mlir_type.index](0, 1, 4, 5)
     ](row3)
     let tmp2 = row0.shuffle[
-        4, create_kgen_list_4[__mlir_type.index, 2, 3, 6, 7]()
+        4, create_kgen_list[__mlir_type.index](2, 3, 6, 7)
     ](row1)
     let tmp3 = row2.shuffle[
-        4, create_kgen_list_4[__mlir_type.index, 2, 3, 6, 7]()
+        4, create_kgen_list[__mlir_type.index](2, 3, 6, 7)
     ](row3)
 
-    let r0 = tmp0.shuffle[
-        4, create_kgen_list_4[__mlir_type.index, 0, 2, 4, 6]()
-    ](tmp1)
-    let r1 = tmp0.shuffle[
-        4, create_kgen_list_4[__mlir_type.index, 1, 3, 5, 7]()
-    ](tmp1)
-    let r2 = tmp2.shuffle[
-        4, create_kgen_list_4[__mlir_type.index, 0, 2, 4, 6]()
-    ](tmp3)
-    let r3 = tmp2.shuffle[
-        4, create_kgen_list_4[__mlir_type.index, 1, 3, 5, 7]()
-    ](tmp3)
+    let r0 = tmp0.shuffle[4, create_kgen_list[__mlir_type.index](0, 2, 4, 6)](
+        tmp1
+    )
+    let r1 = tmp0.shuffle[4, create_kgen_list[__mlir_type.index](1, 3, 5, 7)](
+        tmp1
+    )
+    let r2 = tmp2.shuffle[4, create_kgen_list[__mlir_type.index](0, 2, 4, 6)](
+        tmp3
+    )
+    let r3 = tmp2.shuffle[4, create_kgen_list[__mlir_type.index](1, 3, 5, 7)](
+        tmp3
+    )
 
     buf.simd_store[4](_index2D(0, 0), r0)
     buf.simd_store[4](_index2D(1, 0), r1)
@@ -145,7 +145,7 @@ fn transpose_inplace_generic[
     var buf = __mlir_op.`kgen.rebind`[
         _type : NDBuffer[
             2,
-            create_kgen_list_2[__mlir_type.index, rows, cols](),
+            create_kgen_list[__mlir_type.index](rows, cols),
             type,
         ]
     ](buf0)

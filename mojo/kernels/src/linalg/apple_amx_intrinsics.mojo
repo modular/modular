@@ -19,7 +19,7 @@ from TargetInfo import sizeof
 from Memory import memset_zero, memcpy
 from IO import print
 from DType import dtype_is_f32
-from List import create_kgen_list_2
+from List import create_kgen_list
 
 
 struct amx_detail:
@@ -383,17 +383,17 @@ struct amx_detail:
     fn dot_at_b(
         c: NDBuffer[
             2,
-            create_kgen_list_2[__mlir_type.index, 16, 16](),
+            create_kgen_list[__mlir_type.index](16, 16),
             __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
         ],
         a: NDBuffer[
             2,
-            create_kgen_list_2[__mlir_type.index, 16, 16](),
+            create_kgen_list[__mlir_type.index](16, 16),
             __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
         ],
         b: NDBuffer[
             2,
-            create_kgen_list_2[__mlir_type.index, 16, 16](),
+            create_kgen_list[__mlir_type.index](16, 16),
             __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
         ],
     ):
