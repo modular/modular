@@ -14,6 +14,7 @@ add_modular_unittest(
   TEST_NAME
   GenericMLTests
 
+  APITest.cpp
   BufferRefTest.cpp
   ContextTest.cpp
   TensorTest.cpp
@@ -22,4 +23,5 @@ add_modular_unittest(
   GenericMLSupport
   LLCLRuntime
   MSupportML
+  modular-framework
 )
