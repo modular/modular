@@ -44,8 +44,8 @@ TEST(KGENInvokeTest, testinvokeFirstAddress) {
             reinterpret_cast<uintptr_t>(arry));
   EXPECT_EQ(KGEN::invoke(getAddr, ArrayRef<int32_t>(arry, std::size(arry))),
             reinterpret_cast<uintptr_t>(arry));
-  EXPECT_EQ(KGEN::invoke(getAddr, llvm::makeMutableArrayRef<int32_t>(
-                                      arry, std::size(arry))),
+  EXPECT_EQ(KGEN::invoke(getAddr,
+                         llvm::MutableArrayRef<int32_t>(arry, std::size(arry))),
             reinterpret_cast<uintptr_t>(arry));
 }
 

@@ -1229,7 +1229,7 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
 static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
   TypedAttr lhs = operands[0];
   MutableArrayRef<TypedAttr> trailing =
-      llvm::makeMutableArrayRef(operands).drop_front();
+      llvm::MutableArrayRef(operands).drop_front();
 
   Builder b(lhs.getContext());
 
