@@ -824,7 +824,11 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
 }
 
 AnyValue SliceNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
-  emitter.emitError(getLoc(), "TODO: SliceNode::emitIR not implemented yet");
+  auto diag =
+      emitter.emitError(getLoc(), "TODO: SliceNode::emitIR not implemented yet")
+      << getRange();
+  diag.attachNote(emitter.translateLocation(getLoc()))
+      << "keyword arguments aren't supported yet";
   return {};
 }
 
