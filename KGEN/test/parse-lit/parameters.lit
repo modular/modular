@@ -58,7 +58,7 @@ struct TestParamStruct[A: __mlir_type.index]:
   fn method[B: __mlir_type.index](self: TestParamStruct[A], other: TestParamStruct[A+B]):
     pass
 
-  # CHECK-LABEL: lit.func @"aliases{{.*}}%x: !kgen.declref<@"$parameters"::@TestParamStruct<A = TypeLevelAlias>>
+  # CHECK-LABEL: lit.func @"aliases{{.*}}%x: !kgen.declref<@"$parameters"::@TestParamStruct<A = mul(A, A)>>
   fn aliases(self, x: TestParamStruct[TypeLevelAlias]):
     # CHECK: kgen.param.declare B = <add(mul(A, A), 1)>
     alias B = A*A+1
@@ -72,7 +72,7 @@ struct TestParamStruct[A: __mlir_type.index]:
     # CHECK: kgen.param.declare intVal: !kgen.declref<@"$Int"::@Int> = <apply(:(index){{.*}}", 42)>
     alias intVal : Int = 42
 
-    # CHECK:  %temp2 = lit.var.decl "temp2" : <@"$parameters"::@TestParamStruct<A = TypeLevelAlias>>
+    # CHECK:  %temp2 = lit.var.decl "temp2" : <@"$parameters"::@TestParamStruct<A = mul(A, A)>>
     var temp2: TestParamStruct[TypeLevelAlias]
 
   # CHECK: kgen.param.declare TypeLevelAlias = <mul(A, A)>
@@ -276,3 +276,25 @@ fn passFunctionParam2():
   #CHECK-SAME: <func: <type: dtype>() -> !lit.none =
   #CHECK-SAME: @"callableWithParam()">() : () -> !lit.none
   takeCallable2[callableWithParam]()
+
+
+##===----------------------------------------------------------------------===##
+# Alias resolution
+##===----------------------------------------------------------------------===##
+
+# CHECK: kgen.param.declare boolDtype: dtype = <bool>
+alias boolDtype = __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`
+# CHECK: kgen.param.declare FOURTY_TWO = <42>
+alias FOURTY_TWO = 42
+
+# CHECK-LABEL: kgen.struct.decl @A<v>
+struct A[v: __mlir_type.index]:
+  # CHECK: kgen.param.declare member = <add(v, 42)>
+  alias member = v + FOURTY_TWO
+
+# CHECK-LABEL: lit.func @"testUseOfAliases
+fn testUseOfAliases(a: Bool):
+  # This type checks.
+  _ = SIMD[4, boolDtype].splat(a.value)
+
+  #let y = A[2].member
