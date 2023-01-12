@@ -15,6 +15,7 @@
 #include "LitExprCalls.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -234,17 +235,31 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 /// Given a ParamDeclareOp, return the value that should be used in a reference
 /// to it.  This currently fully substitutes members unless they are in a
 /// function definition.
-static MValue resolveParamDeclareValue(ParamDeclareOp param) {
+static MValue resolveParamDeclareValue(ParamDeclareOp param, ASTDecl &container,
+                                       ParamBindArrayAttr bindings) {
   // If the param is declared in a function, then just directly use it.
-
   Operation *parent = param->getParentOp();
   while (1) {
     // If this reference is within a function then keep it symbolic.
     if (parent && isa<LIT::FuncOp>(parent))
       return MValue(ParamDeclRefAttr::get(param.getName(), param.getType()));
-    // If this is at struct/file scope, inline it.
-    if (!parent || isa<FileModuleOp>(parent) || isa<StructDeclOp>(parent))
+    // If this is at file scope, inline it.
+    if (!parent || isa<FileModuleOp>(parent))
       return param.getValue();
+
+    // If this is in a struct, then the value may refer to parameters declared
+    // on the struct, whose values come through 'bindings'.  Remap.
+    if (auto structDecl = dyn_cast<StructDeclOp>(parent)) {
+      assert(structDecl.getInputParamDecls().size() == bindings.size() &&
+             "mismatch in # struct parameters and # bindings");
+
+      ParameterEvaluator evaluator;
+      for (ParamBindAttr binding : bindings)
+        evaluator.setParameterValue(binding.getDecl(), binding.getValue());
+
+      auto result = evaluator.getReboundAttribute(param.getValue());
+      return MValue(cast<TypedAttr>(result));
+    }
 
     // Ignore if and other control flow things.
     parent = parent->getParentOp();
@@ -348,7 +363,7 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
 
   // Parameters form an meta-value.
   if (auto param = dyn_cast<ParamDeclareOp>(decl))
-    return {{resolveParamDeclareValue(param), node}};
+    return {{resolveParamDeclareValue(param, container, bindings), node}};
 
   // Use of forward references.
   if (auto param = dyn_cast<AliasForwardDeclOp>(decl))
