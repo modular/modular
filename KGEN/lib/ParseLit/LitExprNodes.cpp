@@ -235,7 +235,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 /// Given a ParamDeclareOp, return the value that should be used in a reference
 /// to it.  This currently fully substitutes members unless they are in a
 /// function definition.
-static MValue resolveParamDeclareValue(ParamDeclareOp param, ASTDecl &container,
+static MValue resolveParamDeclareValue(ParamDeclareOp param,
                                        ParamBindArrayAttr bindings) {
   // If the param is declared in a function, then just directly use it.
   Operation *parent = param->getParentOp();
@@ -363,7 +363,7 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
 
   // Parameters form an meta-value.
   if (auto param = dyn_cast<ParamDeclareOp>(decl))
-    return {{resolveParamDeclareValue(param, container, bindings), node}};
+    return {{resolveParamDeclareValue(param, bindings), node}};
 
   // Use of forward references.
   if (auto param = dyn_cast<AliasForwardDeclOp>(decl))
@@ -624,7 +624,6 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
   }
 
   // Reference to some non-function/struct member of the type.
-  // TODO: Handle aliases.
   emitter.emitError(getLoc(), "reference to unknown member '")
       << attrSpelling << "'" << getRange();
   return {};
@@ -647,10 +646,27 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
   // Emit all the arguments so we can encode them as SSA values.
   SmallVector<Value> opOperands;
-  for (auto operand : call.args) {
-    opOperands.push_back(emitter.emitExprDRValue(operand));
-    if (!opOperands.back())
+  for (ExprNode *operand : call.args) {
+    // We allow clients to use three nested paren expressions to get access to
+    // the address of an lvalue.  This is a gross hack, we might want to use
+    // keyword arguments for this when we have them, e.g.
+    // __mlir_op.`thing`(addr_of = expression)
+    size_t numParens = 0;
+    while (auto *paren = dyn_cast<ParenNode>(operand)) {
+      operand = paren->subExpr;
+      ++numParens;
+    }
+
+    Value value;
+    if (numParens >= 3)
+      value =
+          emitter.emitExprLValue(call.getLoc(), operand, /*contextualType=*/{},
+                                 "((())) operand must be an lvalue");
+    else
+      value = emitter.emitExprDRValue(operand);
+    if (!value)
       return {};
+    opOperands.push_back(value);
   }
 
   // Set up the OperationState for the thing we're building.

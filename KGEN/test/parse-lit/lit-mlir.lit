@@ -80,3 +80,22 @@ fn testAttrConcatWithoutType[
             +2,
             `]>`,
         ]
+
+# Show conversion of lvalue address into a pointer.
+# Issue #6825: Expose a way to get the address of an lvalue
+
+# CHECK-LABEL: kgen.struct.decl @MyPointer
+struct MyPointer[eltType: __mlir_type.`!kgen.mlirtype`]:
+  alias StorageTy = __mlir_type[`!pop.pointer<`, eltType, `>`]
+  # CHECK: kgen.struct.field value : !pop.pointer<eltType>
+  var value: MyPointer[eltType].StorageTy
+
+  fn __new__(value: MyPointer[eltType].StorageTy) -> MyPointer[eltType]:
+    return __mlir_op.`kgen.struct.create`[_type: MyPointer[eltType]](value)
+
+# CHECK-LABEL: getAddressOf{{.*}}"<T: type>(%arg: !pop.pointer<T> byref)
+fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](arg&: T) -> MyPointer[T]:
+  return __mlir_op.`pop.pointer.bitcast`[_type: MyPointer[T].StorageTy]((((arg))))
+
+  # CHECK-NEXT: %0 = kgen.call @"{{.*}}@MyPointer::@"__new__(__mlir_type.!pop.pointer<eltType>)"<eltType: type = T>(%arg)
+  # CHECK-NEXT: kgen.return %0
