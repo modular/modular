@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn create_kgen_list_1[
-    type: __mlir_type.`!kgen.mlirtype`, e0: type
-]() -> __mlir_type[`!kgen.list<`, type, `[1]>`]:
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](e0: type) -> __mlir_type[`!kgen.list<`, type, `[1]>`]:
     """Creates a list given a type and elements.
 
     Args:
@@ -22,9 +22,9 @@ fn create_kgen_list_1[
     ](e0)
 
 
-fn create_kgen_list_2[
-    type: __mlir_type.`!kgen.mlirtype`, e0: type, e1: type
-]() -> __mlir_type[`!kgen.list<`, type, `[2]>`]:
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](e0: type, e1: type) -> __mlir_type[`!kgen.list<`, type, `[2]>`]:
     """Creates a list given a type and elements.
 
     Args:
@@ -40,9 +40,9 @@ fn create_kgen_list_2[
     ](e0, e1)
 
 
-fn create_kgen_list_3[
-    type: __mlir_type.`!kgen.mlirtype`, e0: type, e1: type, e2: type
-]() -> __mlir_type[`!kgen.list<`, type, `[3]>`]:
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](e0: type, e1: type, e2: type) -> __mlir_type[`!kgen.list<`, type, `[3]>`]:
     """Creates a list given a type and elements.
 
     Args:
@@ -59,9 +59,11 @@ fn create_kgen_list_3[
     ](e0, e1, e2)
 
 
-fn create_kgen_list_4[
-    type: __mlir_type.`!kgen.mlirtype`, e0: type, e1: type, e2: type, e3: type
-]() -> __mlir_type[`!kgen.list<`, type, `[4]>`]:
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](e0: type, e1: type, e2: type, e3: type) -> __mlir_type[
+    `!kgen.list<`, type, `[4]>`
+]:
     """Creates a list given a type and elements.
 
     Args:
@@ -79,14 +81,11 @@ fn create_kgen_list_4[
     ](e0, e1, e2, e3)
 
 
-fn create_kgen_list_5[
-    type: __mlir_type.`!kgen.mlirtype`,
-    e0: type,
-    e1: type,
-    e2: type,
-    e3: type,
-    e4: type,
-]() -> __mlir_type[`!kgen.list<`, type, `[5]>`]:
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](e0: type, e1: type, e2: type, e3: type, e4: type,) -> __mlir_type[
+    `!kgen.list<`, type, `[5]>`
+]:
     """Creates a list given a type and elements.
 
     Args:
@@ -105,15 +104,11 @@ fn create_kgen_list_5[
     ](e0, e1, e2, e3, e4)
 
 
-fn create_kgen_list_6[
-    type: __mlir_type.`!kgen.mlirtype`,
-    e0: type,
-    e1: type,
-    e2: type,
-    e3: type,
-    e4: type,
-    e5: type,
-]() -> __mlir_type[`!kgen.list<`, type, `[6]>`]:
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](e0: type, e1: type, e2: type, e3: type, e4: type, e5: type,) -> __mlir_type[
+    `!kgen.list<`, type, `[6]>`
+]:
     """Creates a list given a type and elements.
 
     Args:
@@ -133,8 +128,9 @@ fn create_kgen_list_6[
     ](e0, e1, e2, e3, e4, e5)
 
 
-fn create_kgen_list_7[
-    type: __mlir_type.`!kgen.mlirtype`,
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](
     e0: type,
     e1: type,
     e2: type,
@@ -142,7 +138,7 @@ fn create_kgen_list_7[
     e4: type,
     e5: type,
     e6: type,
-]() -> __mlir_type[`!kgen.list<`, type, `[7]>`]:
+) -> __mlir_type[`!kgen.list<`, type, `[7]>`]:
     """Creates a list given a type and elements.
 
     Args:
@@ -163,8 +159,9 @@ fn create_kgen_list_7[
     ](e0, e1, e2, e3, e4, e5, e6)
 
 
-fn create_kgen_list_8[
-    type: __mlir_type.`!kgen.mlirtype`,
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](
     e0: type,
     e1: type,
     e2: type,
@@ -173,7 +170,7 @@ fn create_kgen_list_8[
     e5: type,
     e6: type,
     e7: type,
-]() -> __mlir_type[`!kgen.list<`, type, `[8]>`]:
+) -> __mlir_type[`!kgen.list<`, type, `[8]>`]:
     """Creates a list given a type and elements.
 
     Args:
@@ -195,8 +192,9 @@ fn create_kgen_list_8[
     ](e0, e1, e2, e3, e4, e5, e6, e7)
 
 
-fn create_kgen_list_9[
-    type: __mlir_type.`!kgen.mlirtype`,
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](
     e0: type,
     e1: type,
     e2: type,
@@ -206,7 +204,7 @@ fn create_kgen_list_9[
     e6: type,
     e7: type,
     e8: type,
-]() -> __mlir_type[`!kgen.list<`, type, `[9]>`]:
+) -> __mlir_type[`!kgen.list<`, type, `[9]>`]:
     """Creates a list given a type and elements.
 
     Args:
@@ -229,8 +227,9 @@ fn create_kgen_list_9[
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8)
 
 
-fn create_kgen_list_10[
-    type: __mlir_type.`!kgen.mlirtype`,
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](
     e0: type,
     e1: type,
     e2: type,
@@ -241,7 +240,7 @@ fn create_kgen_list_10[
     e7: type,
     e8: type,
     e9: type,
-]() -> __mlir_type[`!kgen.list<`, type, `[10]>`]:
+) -> __mlir_type[`!kgen.list<`, type, `[10]>`]:
     """Creates a list given a type and elements.
 
     Args:
