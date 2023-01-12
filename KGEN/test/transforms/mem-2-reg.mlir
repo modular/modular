@@ -108,3 +108,15 @@ kgen.generator @if_empty_block(%arg0: i1, %arg1: index) -> index{
   %2 = pop.load %1 : !pop.pointer<index>
   kgen.return %2 : index
 }
+
+// CHECK-LABEL: @store_alloca
+kgen.func @store_alloca() -> i32 {
+  // CHECK-NEXT: pop.stack_allocation 1 x i32
+  // CHECK-NEXT: pop.load
+  %0 = pop.stack_allocation 1 x !pop.pointer<i32>
+  %1 = pop.stack_allocation 1 x i32
+  pop.store %1, %0 : !pop.pointer<pointer<i32>>
+  %2 = pop.load %0 : !pop.pointer<pointer<i32>>
+  %3 = pop.load %2 : !pop.pointer<i32>
+  kgen.return %3 : i32
+}

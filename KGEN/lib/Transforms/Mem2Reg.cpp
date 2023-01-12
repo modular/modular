@@ -84,6 +84,9 @@ void Mem2RegPass::runOnOperation() {
             users.erase(it);
         }
       }
+      // Using an alloc as the store value invalidates it.
+      if (auto alloc = store.getArg().getDefiningOp<StackAllocationOp>())
+        users.erase(alloc);
       return;
     }
     // Any other use of a stack allocation invalidates it.
