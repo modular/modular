@@ -84,6 +84,16 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT: pop.store [[RES]], %z
   z = 1 + z
 
+  # div tests
+  # CHECK: kgen.call @"$F32"::@F32::@"__truediv__($F32::F32,$F32::F32)"
+  var r0 = F32(33.0) / F32(42.0)
+
+  # CHECK: kgen.call @"$F32"::@F32::@"__truediv__($F32::F32,$F32::F32)"
+  var r1 = F32(33.0) / 42.0
+
+  # CHECK: kgen.call @"$F32"::@F32::@"__rtruediv__($F32::F32,$F32::F32)"
+  var r2 = 33.0 / F32(42.0)
+
 struct M:
   var value : __mlir_type.index
   fn __new__(value: __mlir_type.index) -> M:
