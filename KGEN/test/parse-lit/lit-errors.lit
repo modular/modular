@@ -352,9 +352,13 @@ fn expr_errors():
 
 
 fn slice_expression(a: Int):
+  # expected-note @+1 {{keyword arguments}}
   a[:]    # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
+  # expected-note @+1 {{keyword arguments}}
   a[::]   # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
+  # expected-note @+1 {{keyword arguments}}
   a[1:2]  # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
+  # expected-note @+1 {{keyword arguments}}
   a[:2:3] # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
 
 
