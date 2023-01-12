@@ -196,11 +196,16 @@ public:
 /// and bitpacked-ness of the attribute are handled.
 Attribute convertDenseElements(Attribute attr);
 
-/// Build an attribute to store the given tensor data. Depending on the amount
-/// of data, this might be inlined or stored in a resource blob.
+/// Returns an attribute to store the given tensor data. Depending on the amount
+/// of data and optional alignment, this might be inlined as:
+///  - 'ArrayElementAttr' (small data, no alignment constraint)
+///  - 'AlignedBytes' (small data, alignment constraint)
+///  - 'DenseResourceElementsAttr' (large data, if no alignment constraint then
+///    use the element type's bit width rounded up to whole bytes.
 ElementsAttr
 getAttrForTensorData(ShapedType type, StringRef bufferName, ArrayRef<char> data,
-                     DenseResourceElementsHandleManager &resourceManager);
+                     DenseResourceElementsHandleManager &resourceManager,
+                     Optional<size_t> optAlignment = {});
 
 } // namespace M
 

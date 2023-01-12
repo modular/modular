@@ -520,22 +520,31 @@ Attribute M::convertDenseElements(Attribute attr) {
 ElementsAttr
 M::getAttrForTensorData(ShapedType type, StringRef bufferName,
                         ArrayRef<char> data,
-                        DenseResourceElementsHandleManager &resourceManager) {
-  size_t elementByteAlign =
-      llvm::divideCeil(type.getElementTypeBitWidth(), CHAR_BIT);
-
+                        DenseResourceElementsHandleManager &resourceManager,
+                        Optional<size_t> optAlignment) {
   // When loading in a tensor, we make a distinction between the case where
   // the data is "small" and when it is "large". "large" data is stored as a
   // resource blob, while "small" data is stored inline in the context.
-  if (!shouldUseOutOfLineAttrStorage(type.getNumElements()))
-    return ArrayElementsAttr::get(
-        {reinterpret_cast<const uint8_t *>(data.data()), data.size()}, type);
+  if (!shouldUseOutOfLineAttrStorage(type.getNumElements())) {
+    if (optAlignment) {
+      return AlignedBytesAttr::get(
+          type.getContext(), static_cast<uint64_t>(*optAlignment),
+          ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(data.data()),
+                            data.size()));
+    } else {
+      return ArrayElementsAttr::get(
+          {reinterpret_cast<const uint8_t *>(data.data()), data.size()}, type);
+    }
+  }
 
   // TODO: In many cases we should be able to use `UnmanagedAsmResourceBlob`
   // here and avoid all allocations. In these cases we need to ensure the
   // incoming buffer doesn't die before the generated MLIR.
+  // TODO: This can yield an illegal non power-of-two alignment.
+  size_t elementByteAlign =
+      llvm::divideCeil(type.getElementTypeBitWidth(), CHAR_BIT);
   auto blob = mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
-      data, elementByteAlign);
+      data, optAlignment.value_or(elementByteAlign));
   return DenseResourceElementsAttr::get(
       type, resourceManager.insert(bufferName, std::move(blob)));
 }
