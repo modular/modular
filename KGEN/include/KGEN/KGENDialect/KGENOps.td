@@ -367,7 +367,8 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region",
 //===----------------------------------------------------------------------===//
 
 def KGEN_RegionBodyOp : KGENOp<"region.body", [Terminator, DeclInterface,
-    FuncInterface, SingleBlockImplicitTerminator<"ReturnOp">,
+    FuncInterface, FunctionOpInterface,
+    SingleBlockImplicitTerminator<"ReturnOp">,
     ParentOneOf<["ParamDeclareRegionOp"]>]> {
   let summary = "Define a region parameter body.";
   let description = [{

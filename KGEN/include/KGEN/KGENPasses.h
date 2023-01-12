@@ -26,13 +26,19 @@ class LLVMFuncOp;
 } // namespace LLVM
 } // namespace mlir
 
+namespace M::HLCF {
+class HLCFDialect;
+} // namespace M::HLCF
+
 namespace M::LLCL {
 class Runtime;
 } // namespace M::LLCL
 
 namespace M::KGEN {
+class KGENCallOpInterface;
 class KGENDialect;
 class FuncOp;
+class GeneratorOp;
 namespace POP {
 class POPDialect;
 } // namespace POP
@@ -115,6 +121,23 @@ std::unique_ptr<mlir::Pass>
 createElaborateGenerators(SmallVectorImpl<std::string> &includedFiles,
                           LLCL::Runtime &runtime,
                           const ElaborateGeneratorsOptions &options = {});
+
+//===----------------------------------------------------------------------===//
+// Inlining Utils
+//===----------------------------------------------------------------------===//
+
+/// Inline a parametric call to a parametric function. All operations in the
+/// generator are inlined at the callsite. The results of the call are replaced
+/// with the results of the generator. The generator may have multiple return
+/// sites, in which case the body of the generator is wrapped in a labelled
+/// `hlcf.loop` and all return sites rewritten to `hlcf.break` to that loop.
+/// Result parameters are replaced with new parameter declarations. All nested
+/// parameters are mangled to avoid collisions in the current scope.
+///
+/// This function expects the call to be located inside a generator. The
+/// original generator is not modified. The operations are cloned and inserted
+/// at the callsite. The call is replaced by the results of the callee
+void inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee);
 
 } // namespace M::KGEN
 
