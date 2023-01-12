@@ -114,3 +114,19 @@ lit.func @callIt() {
   kgen.call @A::@B() : () -> ()
   kgen.return
 }
+
+// -----
+
+// CHECK-NOT: kgen.param.declare
+kgen.param.declare A = <1>
+kgen.struct.decl @foo {
+  // CHECK-NOT: kgen.param.declare
+  kgen.param.declare B = <2>
+ // CHECK-LABEL:  @"foo::f"() -> index {
+  lit.func @f() -> index {
+    // CHECK: kgen.param.declare
+    kgen.param.declare C = <3>
+    %0 = kgen.param.constant: index = <1>
+    kgen.return %0 : index
+  }
+}

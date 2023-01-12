@@ -56,3 +56,10 @@ lit.file_module @module {
   }
   lit.export [@module::@foo]
 }
+
+// -----
+
+lit.file_module @module {
+   // CHECK-NOT: kgen.param.declare
+   kgen.param.declare A = <42>
+}
