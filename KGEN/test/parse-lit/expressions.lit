@@ -94,6 +94,10 @@ fn precedence_associativity(a: Int):
   # CHECK: kgen.call @"$F32"::@F32::@"__rtruediv__($F32::F32,$F32::F32)"
   var r2 = 33.0 / F32(42.0)
 
+  # __rlshift__ tests
+  # CHECK: kgen.call @"$Int"::@Int::@"__rlshift__($Int::Int,$Int::Int)"
+  var r3 = 1 << z
+
 struct M:
   var value : __mlir_type.index
   fn __new__(value: __mlir_type.index) -> M:
