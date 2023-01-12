@@ -330,13 +330,14 @@ void OverloadFitness::diagnose(SignatureType signature,
          << " must be mutable in order to pass as a by-ref argument"
          << operands[0].expr->getRange();
     return;
-  case kArgWrongLVType:
+  case kArgWrongLVType: {
+    MValue eltTypeAttr = cast<POP::PointerType>(Type(type)).getElementType();
+    assert(eltTypeAttr.getIfTypeValue() &&
+           "unwrapped value should be a direct type, not a parameter");
     diag << "l-value of type " << operands[payload].ir.getRValueType()
-         << " cannot be converted to reference to expected type "
-         // TODO(QoI): Types are not attributes.  We are printing this as an
-         // attr... not a sugared type.
-         << cast<POP::PointerType>(Type(type)).getElementType()
-         << operands[payload].expr->getRange();
+         << " cannot be converted to reference of type "
+         << eltTypeAttr.getIfTypeValue() << operands[payload].expr->getRange();
+  }
     return;
 
   case kArgWrongType:

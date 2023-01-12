@@ -344,7 +344,7 @@ fn expr_errors():
   # expected-error @+1 {{invalid MLIR attribute:}}
   __mlir_attr.`#index<cmp_predicate xeq>`
 
-  # expected-error @+1 {{MLIR attribute has no type: #index<cmp_predicate eq>}}
+  # expected-error @+1 {{MLIR attribute is not a TypedAttr: #index<cmp_predicate eq>}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
   # expected-error @+1 {{cannot use initializer syntax on MLIR type '__mlir_type.index'}}
@@ -428,7 +428,7 @@ fn cannotRaise(err: Error):
 # expected-note @+1 {{function declared here}}
 fn badRef(val&: Int):
   var x = F32(1.0)
-  # TODO(QoI): expected-error @+1 {{l-value of type '$F32::F32' cannot be converted to reference to expected type #kgen.concretetype.constant<!kgen.declref<@"$Int"::@Int>> : !kgen.mlirtype}}
+  # expected-error @+1 {{invalid call to 'badRef': l-value of type '$F32::F32' cannot be converted to reference of type '$Int::Int'}}
   badRef(x)
 
 fn missingColon()  # expected-error {{expected ':' in function definition}}

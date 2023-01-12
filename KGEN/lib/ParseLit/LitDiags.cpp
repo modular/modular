@@ -289,18 +289,10 @@ void LIT::addToDiagnostic(size_t number, LitDiagnostic &diag) {
   diag.addText(Twine(number));
 }
 
-void LIT::addToDiagnostic(Attribute attr, LitDiagnostic &diag) {
-  if (auto strAttr = dyn_cast<StringAttr>(attr)) {
-    diag.addText(Twine("'"));
-    diag.addText(strAttr.getValue());
-    diag.addText(Twine("'"));
-    return;
-  }
-
-  SmallString<128> str;
-  llvm::raw_svector_ostream os(str);
-  attr.print(os);
-  diag.addText(os.str());
+void LIT::addToDiagnostic(StringAttr attr, LitDiagnostic &diag) {
+  diag.addText(Twine("'"));
+  diag.addText(attr.getValue());
+  diag.addText(Twine("'"));
 }
 
 /// This adds a source range highlight.
