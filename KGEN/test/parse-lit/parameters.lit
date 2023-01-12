@@ -59,7 +59,7 @@ struct TestParamStruct[A: __mlir_type.index]:
     pass
 
   # CHECK-LABEL: lit.func @"aliases{{.*}}%x: !kgen.declref<@"$parameters"::@TestParamStruct<A = mul(A, A)>>
-  fn aliases(self, x: TestParamStruct[TypeLevelAlias]):
+  fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
     # CHECK: kgen.param.declare B = <add(mul(A, A), 1)>
     alias B = A*A+1
     # CHECK: kgen.param.declare C = <mul(A, B)>
@@ -73,7 +73,7 @@ struct TestParamStruct[A: __mlir_type.index]:
     alias intVal : Int = 42
 
     # CHECK:  %temp2 = lit.var.decl "temp2" : <@"$parameters"::@TestParamStruct<A = mul(A, A)>>
-    var temp2: TestParamStruct[TypeLevelAlias]
+    var temp2: TestParamStruct[TestParamStruct[A].TypeLevelAlias]
 
   # CHECK: kgen.param.declare TypeLevelAlias = <mul(A, A)>
   alias TypeLevelAlias = A*A
@@ -296,5 +296,27 @@ struct A[v: __mlir_type.index]:
 fn testUseOfAliases(a: Bool):
   # This type checks.
   _ = SIMD[4, boolDtype].splat(a.value)
+  # CHECK: kgen.param.declare y = <44>
+  alias y = A[2].member
 
-  #let y = A[2].member
+struct MyDType:
+  var state : __mlir_type.ui8
+
+  fn __new__(value: __mlir_type.index) -> MyDType:
+     var result: MyDType
+     # TODO: store 'value' casted to ui8 into result.state
+     return result
+
+  fn __eq__(self, rhs: MyDType) -> Bool:
+     return Bool.true()  # TODO: buggy impl :-)
+
+  alias ui8 = MyDType(1)
+  alias f32 = MyDType(2)
+  alias f64 = MyDType(3)
+
+struct MyVector[size: Int, dtype: MyDType]:
+
+fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.f32],
+                            b: MyVector[4, dt]):
+
+   assert_param[(dt == MyDType.f64).__lit_bool()]()
