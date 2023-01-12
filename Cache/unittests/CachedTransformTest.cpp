@@ -7,6 +7,7 @@
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/Preprocessor.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -62,13 +63,14 @@ TEST(CachedTransformTest, CacheHits) {
   // Register the LogicalResult type.
   AsyncValue::registerType<LogicalResult>();
 
+  std::filesystem::path cacheTestPath(STRINGIFY(CACHE_TEST_DIR));
   auto regionBackendChainOr =
-      getDefaultBackendChain(runtime, "CacheTest/region");
+      getDefaultBackendChain(runtime, cacheTestPath / "region");
   EXPECT_FALSE(failed(regionBackendChainOr));
   auto regionCache = RCRef<BlobCache<RegionCacheKey>>::create(
       regionBackendChainOr.takeValue());
   auto transformBackendChainOr =
-      getDefaultBackendChain(runtime, "CacheTest/xform");
+      getDefaultBackendChain(runtime, cacheTestPath / "xform");
   EXPECT_FALSE(failed(transformBackendChainOr));
   auto transformCache = RCRef<BlobCache<TransformCacheKey>>::create(
       transformBackendChainOr.takeValue());

@@ -10,6 +10,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/RCRef.h"
+#include "Support/Preprocessor.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/SHA256.h"
 #include "llvm/Support/raw_ostream.h"
@@ -21,6 +22,7 @@ using namespace Cache;
 using namespace LLCL;
 
 namespace {
+
 /// Basic string key info.
 struct StringKeyInfo {
   using KeyTy = StringRef;
@@ -39,7 +41,8 @@ protected:
       : runtime(createLeakCheckAllocator(createMallocAllocator()),
                 createSingleThreadWorkQueue()),
         cache(LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
-            getDefaultBackendChain(runtime, "CacheTest").takeValue())) {}
+            getDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR))
+                .takeValue())) {}
 };
 
 } // namespace
@@ -170,7 +173,7 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
 
   // Reset the cache so that we are forced to look it up from the file system.
   auto fsCache = LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
-      getDefaultBackendChain(runtime, "CacheTest").takeValue());
+      getDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR)).takeValue());
 
   // Check that the cache holds the new item, and it's the same data as before.
   auto zerosOr = fsCache->find("zeros");
