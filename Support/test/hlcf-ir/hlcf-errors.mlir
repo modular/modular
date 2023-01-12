@@ -95,3 +95,17 @@ func.func @continue_wrong_types(%arg0: i32, %arg1 : i64) {
     hlcf.continue %arg1 : i64
   }
 }
+
+// -----
+
+func.func @labelled_break_mismatch(%arg0: i32) {
+  // expected-note @below {{to end of parent operation here}}
+  hlcf.loop "foo" () -> index {
+    hlcf.loop () -> i32 {
+      // expected-error @below {{'hlcf.break' op branch input #0 has type 'i32' but target expected 'index' along control-flow edge from here}}
+      hlcf.break "foo" %arg0 : i32
+    }
+    hlcf.continue
+  }
+  return
+}
