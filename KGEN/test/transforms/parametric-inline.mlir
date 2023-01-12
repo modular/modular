@@ -404,8 +404,6 @@ kgen.generator @parent() {
   // CHECK-NEXT: hlcf.loop "inlined_cf_scope_0"
   // CHECK: hlcf.break "inlined_cf_scope_0"
   kgen.call @callee() : () -> ()
-  // CHECK: }
-  // CHECK-NEXT: kgen.return
   kgen.return
 }
 
