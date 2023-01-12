@@ -66,6 +66,7 @@ SF(kRAdd,      "__radd__",     2, kAdd, kInstMethod|kReversedOperator)
 SF(kRSub,      "__rsub__",     2, kSub, kInstMethod|kReversedOperator)
 SF(kRMul,      "__rmul__",     2, kMul, kInstMethod|kReversedOperator)
 SF(kRTrueDiv,  "__rtruediv__", 2, kTrueDiv, kInstMethod|kReversedOperator)
+SF(kRLShift,   "__rlshift__",  2, kLShift, kInstMethod|kReversedOperator)
 // ... more
 
 // In place operators like +=
