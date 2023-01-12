@@ -286,5 +286,5 @@ fn softmax_3_pass[
     let denom = _softmax_3_pass_step2[simd_width, buffer_size, type](
         input, output, maxVal
     )
-    let recip = SIMD[1, type](1.0) / denom
+    let recip = 1 / denom
     _softmax_3_pass_step3[simd_width, buffer_size, type](output, recip)
