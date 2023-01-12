@@ -185,7 +185,7 @@ private:
 void addToDiagnostic(const Twine &text, LitDiagnostic &diag);
 void addToDiagnostic(char text, LitDiagnostic &diag);
 void addToDiagnostic(size_t number, LitDiagnostic &diag);
-void addToDiagnostic(Attribute attr, LitDiagnostic &diag);
+void addToDiagnostic(StringAttr attr, LitDiagnostic &diag);
 
 /// This adds a source range highlight.
 void addToDiagnostic(LitSourceRange range, LitDiagnostic &diag);

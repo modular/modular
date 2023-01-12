@@ -78,7 +78,10 @@ static AnyValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
 
   auto typedAttr = dyn_cast<TypedAttr>(attr);
   if (!typedAttr) {
-    shared.emitError(loc, "MLIR attribute has no type: ") << attr;
+    SmallString<128> str;
+    llvm::raw_svector_ostream os(str);
+    attr.print(os);
+    shared.emitError(loc, "MLIR attribute is not a TypedAttr: ") << os.str();
     return {};
   }
   return MValue(typedAttr);
