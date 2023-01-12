@@ -726,8 +726,10 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
                                     elemType);
       varDecl->erase();
       continue;
+    } else if (auto paramDeclare = dyn_cast<KGEN::ParamDeclareOp>(member)) {
+      paramDeclare.erase();
+      continue;
     }
-
     auto func = dyn_cast<LIT::FuncOp>(member);
     if (!func)
       return member.emitError("unsupported op in lit lowering");
@@ -800,6 +802,8 @@ static LogicalResult lowerModuleDecl(Block *moduleBody,
           fileDecl->getIterator(), fileBody->getOperations(), fileBody->begin(),
           fileBody->end());
       fileDecl->erase();
+    } else if (auto paramDeclare = dyn_cast<KGEN::ParamDeclareOp>(op)) {
+      op.erase();
     }
   }
   return success();
