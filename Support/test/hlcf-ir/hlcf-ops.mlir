@@ -91,3 +91,32 @@ func.func @func_loop_if(%arg0: i1, %arg1: i32, %arg2: i64) -> i32 {
   }
   return %2 : i32
 }
+
+// CHECK-LABEL: @labelled_loops
+func.func @labelled_loops(%cond: i1, %arg0: index, %arg1: i32) {
+  // CHECK-NEXT: hlcf.loop "foo" (%{{.*}} = %{{.*}} : index) -> i32
+  %0 = hlcf.loop "foo" (%a0 = %arg0 : index) -> i32 {
+    // CHECK-NEXT: hlcf.loop "bar" (%{{.*}} = %{{.*}} : i32) -> index
+    %1 = hlcf.loop "bar" (%a1 = %arg1 : i32) -> index {
+      hlcf.if %cond {
+        // CHECK: break %{{.*}} : index
+        hlcf.break %a0 : index
+      } else {
+        // CHECK: break "bar" %{{.*}} : index
+        hlcf.break "bar" %a0 : index
+      }
+      hlcf.if %cond {
+        // CHECK: break "foo" %{{.*}} : i32
+        hlcf.break "foo" %a1 : i32
+      } else {
+        // CHECK: continue %{{.*}} : i32
+        hlcf.continue %a1 : i32
+      }
+      // CHECK: continue "foo" %{{.*}} : index
+      hlcf.continue "foo" %a0 : index
+    }
+    // CHECK: break %{{.*}} : i32
+    hlcf.break %arg1 : i32
+  }
+  return
+}

@@ -128,7 +128,25 @@ ErrorTreeOr<SuccessType> IfOp::interpret(ArrayRef<Attribute> operands,
 // ContinueOp
 //===----------------------------------------------------------------------===//
 
-bool ContinueOp::isParentNode(Operation *op) { return isa<LoopOp>(op); }
+/// Return true if the operation is a loop and has a matching label.
+static bool isMatchingLoop(Operation *op, StringAttr label) {
+  if (auto loop = dyn_cast<LoopOp>(op))
+    return !label || loop.getLabelAttr() == label;
+  return false;
+}
+
+/// Return the nearest enclosing matching loop. This runs on valid IR, so it
+/// must find a matching loop.
+static LoopOp getParentLoop(Operation *op, StringAttr label) {
+  LoopOp loop = op->getParentOfType<LoopOp>();
+  while (!isMatchingLoop(loop, label))
+    loop = loop->getParentOfType<LoopOp>();
+  return loop;
+}
+
+bool ContinueOp::isParentNode(Operation *op) {
+  return isMatchingLoop(op, getLabelAttr());
+}
 
 void ContinueOp::getBranchTargets(ArrayRef<Attribute> operands,
                                   SmallVectorImpl<ControlFlowTarget> &targets) {
@@ -139,7 +157,7 @@ void ContinueOp::getBranchTargets(ArrayRef<Attribute> operands,
 
 ErrorTreeOr<SuccessType> ContinueOp::interpret(ArrayRef<Attribute> operands,
                                                InterpreterState &state) {
-  auto loop = getOperation()->getParentOfType<LoopOp>();
+  LoopOp loop = getParentLoop(*this, getLabelAttr());
   state.transferControlFlowTo(&loop.getBody().front(), operands);
   return success();
 }
@@ -150,17 +168,19 @@ ErrorTreeOr<SuccessType> ContinueOp::interpret(ArrayRef<Attribute> operands,
 
 void BreakOp::getEffects(
     SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
-  if (!isa<LoopOp>((*this)->getParentOp()))
+  if (!isMatchingLoop((*this)->getParentOp(), getLabelAttr()))
     effects.emplace_back(mlir::MemoryEffects::Write::get());
 }
 
 mlir::Speculation::Speculatability BreakOp::getSpeculatability() {
-  return isa<LoopOp>((*this)->getParentOp())
+  return isMatchingLoop((*this)->getParentOp(), getLabelAttr())
              ? mlir::Speculation::Speculatable
              : mlir::Speculation::NotSpeculatable;
 }
 
-bool BreakOp::isParentNode(Operation *op) { return isa<LoopOp>(op); }
+bool BreakOp::isParentNode(Operation *op) {
+  return isMatchingLoop(op, getLabelAttr());
+}
 
 void BreakOp::getBranchTargets(ArrayRef<Attribute> operands,
                                SmallVectorImpl<ControlFlowTarget> &targets) {
@@ -171,7 +191,7 @@ void BreakOp::getBranchTargets(ArrayRef<Attribute> operands,
 
 ErrorTreeOr<SuccessType> BreakOp::interpret(ArrayRef<Attribute> operands,
                                             InterpreterState &state) {
-  auto loop = getOperation()->getParentOfType<LoopOp>();
+  LoopOp loop = getParentLoop(*this, getLabelAttr());
   state.setReturnValues(operands);
   state.transferControlFlowTo(loop);
   return success();

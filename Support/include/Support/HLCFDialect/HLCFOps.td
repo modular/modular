@@ -32,9 +32,7 @@ class HLCFParentOp<string mnemonic> : HLCFOp<mnemonic, [
 class HLCFTerminatorOp<string mnemonic, list<Trait> traits = []> :
     HLCFOp<mnemonic, traits #
            [Terminator, DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
-  let arguments = (ins Variadic<AnyType>:$operands);
-  let assemblyFormat = "$operands attr-dict (`:` type($operands)^)?";
-  let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];
+  let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
 }
 
 //===----------------------------------------------------------------------===//
@@ -90,14 +88,19 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
       hlcf.break %3, %4 : i32, i64
     }
     ```
+
+    The loop may optionally take a "label", with which break and continue
+    operations explicitly target to break or continue from out of inner loops.
   }];
 
-  let arguments = (ins Variadic<AnyType>:$operands);
+  let arguments = (ins Variadic<AnyType>:$operands,
+                       OptionalAttr<StrAttr>:$label);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region MinSizedRegion<1>:$body);
 
   let assemblyFormat = [{
-    `` custom<Loop>($operands, type($operands), type($results), $body) attr-dict
+    ($label^)? ``
+    custom<Loop>($operands, type($operands), type($results), $body) attr-dict
   }];
 
   let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}, {}); }]>];
@@ -203,7 +206,19 @@ def HLCF_ContinueOp : HLCFTerminatorOp<"continue",
 
     This operation is never pure because the control-flow edge from this
     terminator will always lead to an earlier point in the IR.
+
+    The operation can take an optional label, in which case it will continue
+    from the beginning of the labelled loop. A continue without a label will
+    branch to the start of the nearest enclosing loop, regardless of its label.
   }];
+
+  let arguments = (ins Variadic<AnyType>:$operands,
+                       OptionalAttr<StrAttr>:$label);
+
+  let builders =
+    [OpBuilder<(ins), [{ build($_builder, $_state, ValueRange(), {}); }]>];
+
+  let assemblyFormat = "attr-dict ($label^)? ($operands `:` type($operands)^)?";
 }
 
 //===----------------------------------------------------------------------===//
@@ -232,7 +247,19 @@ def HLCF_BreakOp : HLCFTerminatorOp<"break", [
     This operation is conditionally pure. It is always known to be pure if it
     is nested directly beneath a loop operation because the control-flow edge
     from this terminator will always go to after the parent operation.
+
+    The operation can take an optional label, in which case it will branch to
+    after the end of the labelled loop. A break without a label will break out
+    of the nearest enclosing loop, regardless of its label.
   }];
+
+  let arguments = (ins Variadic<AnyType>:$operands,
+                       OptionalAttr<StrAttr>:$label);
+
+  let builders =
+    [OpBuilder<(ins), [{ build($_builder, $_state, ValueRange(), {}); }]>];
+
+  let assemblyFormat = "attr-dict ($label^)? ($operands `:` type($operands)^)?";
 }
 
 //===----------------------------------------------------------------------===//
@@ -261,6 +288,10 @@ def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure, HasParent<"IfOp">,
     This operation can always be marked pure because the control-flow edge from
     this operation leads only to after the parent operation.
   }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];
 }
 
 //===----------------------------------------------------------------------===//
@@ -294,6 +325,10 @@ def HLCF_ReturnOp : HLCFTerminatorOp<"return", [ReturnLike]> {
     control-flow edge from this operation will always escape the parent
     operation; it can never be nested directly below functions.
   }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];
 
   let hasVerifier = 1;
 }
