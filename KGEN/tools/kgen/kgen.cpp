@@ -30,6 +30,7 @@
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/ToolUtilities.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
+#include "mlir/Transforms/InliningUtils.h"
 #include "mlir/Transforms/Passes.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -117,6 +118,27 @@ struct TraceProfiler {
 private:
   bool isActive = false;
   std::filesystem::path outputFilePath;
+};
+
+/// Any dialect that has this interface attached will be legal to inline (by
+/// force).
+struct ForceInlineDialectInterface : public mlir::DialectInlinerInterface {
+  using DialectInlinerInterface::DialectInlinerInterface;
+
+  bool isLegalToInline(Operation *, Region *, bool,
+                       BlockAndValueMapping &) const override {
+    return true;
+  }
+
+  bool isLegalToInline(Operation *, Operation *,
+                       bool wouldBeCloned) const override {
+    return true;
+  }
+
+  bool isLegalToInline(Region *, Region *, bool,
+                       BlockAndValueMapping &) const override {
+    return true;
+  }
 };
 } // namespace
 
@@ -219,6 +241,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Set up the dialects in the context.
   ctx->appendDialectRegistry(registry);
   ctx->loadAllAvailableDialects();
+  // Add a basic inliner interface to the debug info and builtin dialect.
+  ctx->getOrLoadDialect<DebugInfo::DebugInfoDialect>()
+      ->addInterface<ForceInlineDialectInterface>();
+  ctx->getOrLoadDialect<BuiltinDialect>()
+      ->addInterface<ForceInlineDialectInterface>();
+  ctx->getOrLoadDialect<index::IndexDialect>()
+      ->addInterface<ForceInlineDialectInterface>();
   // Allow unregistered dialects, we will verify we know what to do with it
   // later.
   ctx->allowUnregisteredDialects();
@@ -255,9 +284,19 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       LLCL::createSingleThreadWorkQueue());
 
   if (clOptions.cmd != Command::kGenLibraryFile) {
+    // Only outline closures just before elaboration - they aren't really
+    // necessary until elaboration happens.
+    pm.addPass(createOutlineClosures());
+    // The elaborator *is* preserving function effects!
     pm.addPass(createElaborateGenerators(
         includedFiles, runtime,
         {clOptions.searchPaths, clOptions.enableSearch}));
+    // Run the inliner and cleanup the compiler globals.
+    pm.addPass(createInlinerPass());
+    pm.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
+    pm.addPass(createCanonicalizerPass());
+    // Finally, DCE the symbols we don't want.
+    pm.addPass(createEliminateDeadSymbols());
     pm.addPass(createPruneImpossibleVariants());
   }
 
