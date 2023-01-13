@@ -25,3 +25,7 @@ add_modular_unittest(
   MSupportML
   modular-framework
 )
+
+if(MODULAR_BUILD_PYTHON_API_BINDINGS)
+  add_subdirectory(API/python)
+endif()
