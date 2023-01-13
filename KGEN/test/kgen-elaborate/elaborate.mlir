@@ -1411,3 +1411,17 @@ kgen.generator @call_it() {
   kgen.param.constant = <apply(:(i1) -> index @early_return, 1)>
   kgen.return
 }
+
+kgen.generator @rebind_value<dtype: dtype>(%a: !pop.scalar<ui8>) -> !pop.scalar<dtype> {
+  %result = kgen.rebind %a : !pop.scalar<ui8> to !pop.scalar<dtype>
+  kgen.return %result : !pop.scalar<dtype>
+}
+
+// CHECK-LABEL: kgen.func @rebind_it
+kgen.generator @rebind_it() {
+  // CHECK-NEXT: constant: !pop.scalar<ui8> = <#pop.simd<4>>
+  kgen.param.declare Fn: (!pop.scalar<ui8>) -> !pop.scalar<ui8> =
+    <bind_signature(:<dtype: dtype>(!pop.scalar<ui8>) -> !pop.scalar<dtype> @rebind_value, ui8)>
+  kgen.param.constant: !pop.scalar<ui8> = <apply(:(!pop.scalar<ui8>) -> !pop.scalar<ui8> Fn, #pop.simd<4>)>
+  kgen.return
+}
