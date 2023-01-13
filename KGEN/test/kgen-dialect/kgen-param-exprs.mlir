@@ -602,3 +602,14 @@ kgen.generator @partialBindSignature2() -> index {
 
   kgen.return %0 : index
 }
+
+kgen.generator @returnParam<T: type, I>(%arg : !kgen.paramref<T>) -> !kgen.paramref<T> {
+ kgen.return %arg : !kgen.paramref<T>
+}
+
+// CHECK-LABEL: @partialBindSignature3
+kgen.generator @partialBindSignature3<T: type>(%arg : !kgen.paramref<T>) {
+ // CHECK-NEXT: kgen.param.declare fn: <T: type>(!kgen.paramref<T>) -> !kgen.paramref<T> = <@returnParam<T: type = #kgen.unbound, I = 32>>
+ kgen.param.declare fn: <T: type>(!kgen.paramref<T>) -> !kgen.paramref<T> = <bind_signature(:<T: type, I>(!kgen.paramref<T>) -> !kgen.paramref<T> @returnParam, #kgen.unbound, 32)>
+ kgen.return
+}
