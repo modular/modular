@@ -100,7 +100,6 @@ TOK_PUNCTUATION(right_right_equal, ">>=")
 
 // NOTE: Please key these alphabetized to make it easier to find something in
 // this list and to cater to OCD.
-TOK_KEYWORD(__include) // FIXME: Hack until we have import.
 TOK_KEYWORD(alias)
 TOK_KEYWORD(and)
 TOK_KEYWORD(as)

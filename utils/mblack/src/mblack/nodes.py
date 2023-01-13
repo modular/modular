@@ -409,7 +409,7 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
                 return NO
 
         elif t == token.NAME:
-            if v in {"import", "__include"}:
+            if v == "import":
                 return SPACE
 
             if prev and prev.type == token.DOT:
@@ -797,7 +797,6 @@ def is_import(leaf: Leaf) -> bool:
         and (
             (v == "import" and p and p.type == syms.import_name)
             or (v == "from" and p and p.type == syms.import_from)
-            or (v == "__include")
         )
     )
 
