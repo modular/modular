@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Int import Int
+from Bool import Bool
 from Assert import assert_param
 
 
@@ -298,6 +299,51 @@ fn _get_kgen_list_item[
 
 
 # ===----------------------------------------------------------------------===#
+# contains
+# ===----------------------------------------------------------------------===#
+
+
+fn contains[
+    size: __mlir_type.index
+](
+    elem: __mlir_type.index, lst: __mlir_type[`!kgen.list<index[`, size, `]>`]
+) -> __mlir_type.i1:
+    return _contains_impl[0, size](elem, lst)
+
+
+@interface
+fn _contains_impl[
+    idx: __mlir_type.index, size: __mlir_type.index
+](
+    elem: __mlir_type.index, lst: __mlir_type[`!kgen.list<index[`, size, `]>`]
+) -> __mlir_type.i1:
+    ...
+
+
+@implements(_contains_impl)
+fn _contains_impl_base[
+    idx: __mlir_type.index, size: __mlir_type.index
+](
+    elem: __mlir_type.index, lst: __mlir_type[`!kgen.list<index[`, size, `]>`]
+) -> __mlir_type.i1:
+    assert_param[idx == size]()
+    return __mlir_attr.`0:i1`
+
+
+@implements(_contains_impl)
+fn _contains_impl_iter[
+    idx: __mlir_type.index, size: __mlir_type.index
+](
+    elem: __mlir_type.index, lst: __mlir_type[`!kgen.list<index[`, size, `]>`]
+) -> __mlir_type.i1:
+    assert_param[idx < size]()
+    let ok = __mlir_op.`index.cmp`[
+        pred : __mlir_attr.`#index<cmp_predicate eq>`
+    ](_get_kgen_list_item[idx, size, __mlir_type.index](lst), elem)
+    return ok
+
+
+# ===----------------------------------------------------------------------===#
 # product
 # ===----------------------------------------------------------------------===#
 
@@ -331,6 +377,7 @@ fn _product_impl_iter[
     return _get_kgen_list_item[idx, size, __mlir_type.index](
         lst
     ) * _product_impl[idx + 1, size](lst)
+
 
 # ===----------------------------------------------------------------------===#
 # create_kgen_list_unknown

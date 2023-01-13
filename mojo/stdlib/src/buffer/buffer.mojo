@@ -10,6 +10,7 @@ from SIMD import SIMD
 from Assert import assert_param
 from Pointer import DTypePointer
 from Tuple import StaticTuple
+from List import product, contains
 
 
 @interface
@@ -449,9 +450,10 @@ struct NDBuffer[
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     type: __mlir_type.`!kgen.dtype`,
 ]:
+
     var data: DTypePointer[type]
     var dynamic_shape: StaticTuple[rank, __mlir_type.index]
-    var dynamic_rank: Int
+    var dynamic_dtype: Int
 
     fn __new__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
@@ -463,8 +465,6 @@ struct NDBuffer[
         return buf
 
     fn get_rank(self) -> Int:
-        if rank == __mlir_attr.`#kgen.unknown : index`:
-            return self.dynamic_rank
         return rank
 
     fn size(self) -> Int:
@@ -512,3 +512,17 @@ struct NDBuffer[
 
     fn dim[index: __mlir_type.index](self) -> Int:
         return _get_dim_impl[rank, shape, index](self.dynamic_shape)
+
+    fn flatten(self) -> Buffer[__mlir_attr.`#kgen.unknown : index`, type]:
+        assert_param[
+            _neg[contains[rank](__mlir_attr.`#kgen.unknown : index`, shape)]()
+        ]()
+        return Buffer[__mlir_attr.`#kgen.unknown : index`, type](
+            self.data.address, product[rank](shape)
+        )
+
+fn _neg[val : __mlir_type.i1]() -> __mlir_type.i1:
+  """Negates an i1 value"""
+  if val:
+    return __mlir_attr.`0:i1`
+  return __mlir_attr.`1:i1`
