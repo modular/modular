@@ -153,11 +153,10 @@ interpretOpWithFolder(Operation *op, ArrayRef<Attribute> operands,
     return reportFoldError(op, operands, "failed to fold operation ");
   for (auto [i, result, output] : llvm::zip(
            llvm::seq<int>(0, op->getNumResults()), results, op->getResults())) {
-    auto value = result.dyn_cast<Attribute>();
-    if (!value)
-      return reportFoldError(op, operands, "operation evaluation ",
-                             " did not return a value for result #" + Twine(i));
-    state.mapOrOverwrite(output, value);
+    if (auto value = result.dyn_cast<Attribute>())
+      state.mapOrOverwrite(output, value);
+    else
+      state.mapOrOverwrite(output, state.lookupValue(result.get<Value>()));
   }
   return success();
 }

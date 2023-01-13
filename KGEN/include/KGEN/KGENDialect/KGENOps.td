@@ -495,7 +495,7 @@ def KGEN_IncludeOp : KGENOp<"include", []> {
 // RebindOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_RebindOp : KGENOp<"rebind"> {
+def KGEN_RebindOp : KGENOp<"rebind", [Pure]> {
   let summary = "rebind parametric types";
   let description = [{
     The `kgen.rebind` operation rebinds values with parametric types into other
