@@ -14,7 +14,9 @@
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/IR/SubElementInterfaces.h"
+#include "mlir/IR/Verifier.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
@@ -38,7 +40,9 @@ struct OutlineClosuresPass
 
 void OutlineClosuresPass::runOnOperation() {
   ModuleOp theModule = getOperation();
-  SymbolTable symtab(theModule);
+  SymbolTable &symtab =
+      getAnalysis<SymbolTableAnalysis>().getTopLevelSymbolTable();
+  auto &domInfo = getAnalysis<mlir::DominanceInfo>();
 
   // Walk over all the param.declare.region ops and create structs with the SSA
   // captures, use bind_signature to deal with parameter captures.
@@ -62,12 +66,24 @@ void OutlineClosuresPass::runOnOperation() {
                              Twine(varCounter++));
     };
 
-    for (auto regionDecl :
-         llvm::make_early_inc_range(generator.getOps<ParamDeclareRegionOp>())) {
-      LLVM_DEBUG(llvm::dbgs() << "Lifting closure: " << regionDecl << "\n");
+    bool hadError = false;
+    generator.walk([&](ParamDeclareRegionOp regionDecl) {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "//===-----\nLifting closure: " << regionDecl << "\n");
       // Value captures are easy (ish)
       SmallVector<Value> captures;
       bool isolated = M::operationIsIsolatedFromAbove(regionDecl, &captures);
+      auto body = cast<RegionBodyOp>(regionDecl.getBody().front().front());
+
+      // If the body is not isolated from above *and* it's not marked
+      // force_inline, emit an error.
+      if (!isolated && !bitEnumContainsAny(body.getSignature().getFnEffects(),
+                                           FnEffects::ForceInline)) {
+        regionDecl.emitError("non-isolated region must be marked force_inline");
+        hadError = true;
+        return;
+      }
+
       // Check the captures for any types that refer to parameters. For right
       // now, these are the *only* parameters we care about - we're filling out
       // the parameter captures for the struct.
@@ -88,57 +104,42 @@ void OutlineClosuresPass::runOnOperation() {
                  llvm::interleaveComma(captures, llvm::dbgs());
                  llvm::dbgs() << "]\n");
 
-      // Create a struct with the correct parameter decls.
-      b.setInsertionPoint(generator);
-      auto structDecl = b.create<StructDeclOp>(
-          regionDecl.getLoc(), getUniqueName("_context"),
-          ParamDeclArrayAttr::get(regionDecl.getContext(),
-                                  necessaryDecls.getArrayRef()));
-      symtab.insert(structDecl);
+      // Create a struct with the correct parameter decls if needed (i.e. if
+      // there are any captures).
+      StringAttr globalVar = nullptr;
+      POP::StructType structType = nullptr;
+      if (!isolated) {
+        structType = b.getType<POP::StructType>(llvm::to_vector(llvm::map_range(
+            captures, [](Value capture) { return capture.getType(); })));
 
-      // Create a field for each capture.
-      structDecl.getFields().push_back(new Block);
-      b.setInsertionPointToStart(&structDecl.getFields().front());
-      for (auto [idx, capture] : llvm::enumerate(captures)) {
-        b.create<StructFieldOp>(capture.getLoc(),
-                                b.getStringAttr("field_" + Twine(idx)),
-                                TypeAttr::get(capture.getType()));
+        LLVM_DEBUG(llvm::dbgs()
+                   << "Created capture struct: " << structType << "\n");
+
+        // 'Create' a global variable (really just a StringAttr).
+        globalVar = getUniqueVarName("_context_var");
       }
-      LLVM_DEBUG(llvm::dbgs()
-                 << "Created capture struct: " << structDecl << "\n");
-
-      // 'Create' a global variable with an instance of the struct decl (really
-      // just a StringAttr). We need to get the parameter bindings for each
-      // parameter the struct declares.
-      auto globalVar = getUniqueVarName("_context_var");
-      SmallVector<ParamBindAttr> structTypeBindings;
-      for (ParamDeclAttr decl : structDecl.getInputParamDecls())
-        structTypeBindings.push_back(ParamBindAttr::get(
-            decl, ParamDeclRefAttr::get(decl.getName(), decl.getType())));
-
-      auto globalVarType =
-          DeclRefType::get(SymbolRefAttr::get(structDecl.getNameAttr()),
-                           b.getAttr<ParamBindArrayAttr>(structTypeBindings));
-
-      auto body = cast<RegionBodyOp>(regionDecl.getBody().front().front());
 
       // Collect any parameters used from above that we need to capture for the
       // lifted generator.
       auto regionDeclUses = subregions.find(body);
-      SmallVector<TypedAttr> partialBindings;
+      DenseMap<ParamDeclAttr, TypedAttr> parameterCaptures;
       if (regionDeclUses != subregions.end()) {
         for (ParamDeclRefAttr useFromAbove :
              regionDeclUses->getSecond().usesFromAbove) {
-          necessaryDecls.insert(ParamDeclAttr::get(useFromAbove.getName(),
-                                                   useFromAbove.getType()));
+          auto decl = ParamDeclAttr::get(useFromAbove.getName(),
+                                         useFromAbove.getType());
+          necessaryDecls.insert(decl);
           // Create a binding that just references the attr we already have.
-          partialBindings.push_back(useFromAbove);
+          parameterCaptures[decl] = useFromAbove;
         }
       }
 
-      LLVM_DEBUG(llvm::dbgs() << "Found parameter captures: [";
-                 llvm::interleaveComma(partialBindings, llvm::dbgs());
-                 llvm::dbgs() << "]\n");
+      LLVM_DEBUG(
+          llvm::dbgs() << "Found parameter captures: ["; llvm::interleaveComma(
+              llvm::map_range(parameterCaptures,
+                              [&](auto pair) { return pair.getSecond(); }),
+              llvm::dbgs());
+          llvm::dbgs() << "]\n");
 
       SignatureType bodySignature = body.getFullSignature();
 
@@ -146,6 +147,9 @@ void OutlineClosuresPass::runOnOperation() {
       // original arguments.
       SmallVector<Value> liftedInputs = captures;
       llvm::append_range(liftedInputs, body.getBodyRegion().getArguments());
+      LLVM_DEBUG(llvm::dbgs() << "Lifted region will take inputs: [\n\t";
+                 llvm::interleave(liftedInputs, llvm::dbgs(), ",\n\t");
+                 llvm::dbgs() << "\n]\n");
       auto liftedValueSignature =
           FunctionType::get(&getContext(), ValueRange(liftedInputs).getTypes(),
                             bodySignature.getValueResults());
@@ -187,9 +191,15 @@ void OutlineClosuresPass::runOnOperation() {
         // arguments.
         auto *newBody = new Block;
         BlockAndValueMapping map;
+        // Handle the captures first.
         for (Value capture : captures)
           map.map(capture,
                   newBody->addArgument(capture.getType(), capture.getLoc()));
+
+        // Then handle the original SSA arguments.
+        for (Value prevArg : body.getRegion().getArguments())
+          map.map(prevArg,
+                  newBody->addArgument(prevArg.getType(), prevArg.getLoc()));
 
         b.setInsertionPointToStart(newBody);
         for (Operation &op : *body.getBody())
@@ -201,6 +211,11 @@ void OutlineClosuresPass::runOnOperation() {
         lifted.getBodyRegion().takeBody(body.getBodyRegion());
       }
       LLVM_DEBUG(llvm::dbgs() << "Created lifted region: " << lifted << "\n");
+
+      LLVM_DEBUG({
+        if (failed(mlir::verify(lifted)))
+          return signalPassFailure();
+      });
 
       // Create a wrapper that knows how to handle the global variable. It has
       // the same parameter signature as the lifted region, but it has the same
@@ -224,19 +239,25 @@ void OutlineClosuresPass::runOnOperation() {
       // Fill the body of the wrapper.
       liftedWrapper.getBodyRegion().push_back(new Block);
       b.setInsertionPointToStart(liftedWrapper.getBody());
-      auto load = b.create<POP::CompilerGlobalLoadOp>(regionDecl.getLoc(),
-                                                      globalVarType, globalVar);
-      // Create accesses for each capture.
       SmallVector<Value> callArgs;
-      for (StructFieldOp structField : structDecl.getFieldDecls()) {
-        callArgs.push_back(
-            b.create<StructExtractOp>(structField.getLoc(), load, structField));
+      if (!isolated) {
+        assert(globalVar && structType &&
+               "global variable name/type was undefined?");
+        auto load = b.create<POP::CompilerGlobalLoadOp>(regionDecl.getLoc(),
+                                                        structType, globalVar);
+        // Create accesses for each capture.
+        for (size_t i = 0, e = structType.getNumElements(); i < e; ++i) {
+          callArgs.push_back(
+              b.create<POP::StructGetOp>(load.getLoc(), load, i));
+        }
       }
 
-      // Add the original arguments to the call after the captures.
-      for (BlockArgument originalArg : body.getBodyRegion().getArguments()) {
+      // Add the original arguments to the call after the captures. Since the
+      // captures are the first N arguments, we can simply drop them.
+      for (BlockArgument liftedArg :
+           llvm::drop_begin(lifted.getArguments(), captures.size())) {
         callArgs.push_back(liftedWrapper.getBodyRegion().addArgument(
-            originalArg.getType(), originalArg.getLoc()));
+            liftedArg.getType(), liftedArg.getLoc()));
       }
 
       // Create result parameter decls from the lifted region, and get decl refs
@@ -283,30 +304,82 @@ void OutlineClosuresPass::runOnOperation() {
       b.create<ReturnOp>(regionDecl.getLoc(), returnRefs,
                          ValueRange(callResults.getResults()));
 
-      // OK cool, now we need a partial binding. First we insert the lifted
-      // symbol at the beginning of the vector.
-      partialBindings.insert(partialBindings.begin(), wrapperSymbol);
-      // Then we add `#kgen.unbound` for the things we aren't binding.
-      for (size_t i = partialBindings.size() - 1,
-                  e = liftedSignature.getInputParams().size();
-           i < e; ++i) {
-        partialBindings.push_back(
-            UnboundAttr::get(liftedSignature.getInputParams()[i].getType()));
-      }
+      LLVM_DEBUG(llvm::dbgs()
+                 << "Created lifted region wrapper: " << liftedWrapper << "\n");
 
-      Attribute bindSignature =
-          ParamOperatorAttr::get(POC::BindSignature, partialBindings);
+      LLVM_DEBUG({
+        if (failed(mlir::verify(liftedWrapper)))
+          return signalPassFailure();
+      });
+
+      Attribute bindSignature = wrapperSymbol;
+      // If we have parameter captures, create a bind_signature operator.
+      if (!parameterCaptures.empty()) {
+        // OK cool, now we need a partial binding. First we insert the lifted
+        // symbol at the beginning of the vector.
+        SmallVector<TypedAttr> partialBindings = {wrapperSymbol};
+        // Next, add the bindings for the input parameters. If we don't have a
+        // binding for this parameter, add `#kgen.unbound`. We drop the last
+        // parameters off of this because they are the original input
+        // parameters, and we only want to partial_bind the captures.
+        for (ParamDeclAttr decl : liftedWrapper.getInputParamDecls()) {
+          if (TypedAttr value = parameterCaptures.lookup(decl))
+            partialBindings.push_back(value);
+          else
+            partialBindings.push_back(UnboundAttr::get(decl.getType()));
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "Partial bindings: [\n\t";
+                   llvm::interleave(partialBindings, llvm::dbgs(), ",\n\t");
+                   llvm::dbgs() << "\n]\n");
+
+        bindSignature =
+            ParamOperatorAttr::get(POC::BindSignature, partialBindings);
+      }
 
       // Now replace the region decl with a partial binding to the lifted
       // wrapper.
-      b.setInsertionPoint(regionDecl);
       // Create a container for the struct with all the various captures.
-      auto container = b.create<StructCreateOp>(regionDecl.getLoc(),
-                                                globalVarType, captures);
+      if (!isolated) {
+        // We have to find the earliest possible insertion point, so we start
+        // from the beginning of the generator itself.
+        b.setInsertionPointToStart(generator.getBody());
+        OpBuilder::InsertPoint insertPt = b.saveInsertionPoint();
+        // Helper to update the insertion point given a Value.
+        auto updateInsertPt = [&](Value val) {
+          if (auto blockArg = dyn_cast<BlockArgument>(val))
+            b.setInsertionPointToStart(blockArg.getOwner());
+          else
+            b.setInsertionPointAfter(val.getDefiningOp());
+          insertPt = b.saveInsertionPoint();
+        };
 
-      // Get a pointer to the global and store the container in it.
-      b.create<POP::CompilerGlobalStoreOp>(regionDecl.getLoc(), globalVar,
-                                           container);
+        for (Value c : captures) {
+          // If the capture properly dominates the insert point, then we are
+          // fine.
+          if (domInfo.properlyDominates(c, &*insertPt.getPoint()))
+            continue;
+
+          // Otherwise, we need to reset the insert point.
+          updateInsertPt(c);
+        }
+
+        b.restoreInsertionPoint(insertPt);
+
+        assert(globalVar && structType &&
+               "global variable name/type/struct was undefined?");
+
+        auto container = b.create<POP::StructConstructOp>(regionDecl.getLoc(),
+                                                          structType, captures);
+
+        // Get a pointer to the global and store the container in it.
+        b.create<POP::CompilerGlobalStoreOp>(regionDecl.getLoc(), globalVar,
+                                             container);
+      }
+
+      // Set the insertion point to the regionDecl for the parameter
+      // declaration.
+      b.setInsertionPoint(regionDecl);
 
       // Create the decl that replaces the regionDecl with its parameter being
       // this new partial binding.
@@ -316,6 +389,11 @@ void OutlineClosuresPass::runOnOperation() {
 
       // And we can drop the regionDecl now, we're done with it.
       regionDecl->erase();
-    }
+    });
+    if (hadError)
+      return signalPassFailure();
+
+    LLVM_DEBUG(llvm::dbgs() << "Modified generator: " << generator << "\n");
   }
+  LLVM_DEBUG(llvm::dbgs() << "Finished outlining closures\n");
 }
