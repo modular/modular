@@ -47,3 +47,8 @@ struct Foo: # expected-note {{previous definition here}}
 struct Foo: # expected-error {{invalid redefinition of 'Foo'}}
 
 fn x(a: Foo):
+
+// -----
+
+fn test():
+  alias x: __mlir_type.index

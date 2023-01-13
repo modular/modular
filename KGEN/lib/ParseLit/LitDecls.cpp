@@ -1418,6 +1418,19 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,
     }
   }
 
+  // Check that any alias forward declarations have been completed.
+  if (!shared.diags.isErrorEmitted()) {
+    bodyBlock->walk([&](AliasForwardDeclOp aliasFwdDeclOp) {
+      // If the location for the resultParam was never set then this forward
+      // declaration was never defined.
+      if (!aliasFwdDeclOp.getResultParamLoc().has_value()) {
+        emitError(aliasFwdDeclOp.getLoc(), "alias ")
+            << aliasFwdDeclOp.getNameAttr()
+            << " was never defined by a result parameter";
+      }
+    });
+  }
+
   return success();
 }
 
@@ -1644,6 +1657,8 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
     // about how to represent this.
     paramDeclOp->erase();
 
+    // The check that the alias was specified is handled when the function body
+    // has been fully resolved.
     rejectDecorators(decoratorExprs, decl, shared);
     return success();
   }
@@ -1682,16 +1697,6 @@ ParseResult DeclResolver::resolveBody(ParamDeclareOp op, LitLexer &lexer,
 
 ParseResult DeclResolver::resolveBody(AliasForwardDeclOp aliasFwdDeclOp,
                                       LitLexer &lexer, ASTDecl &decl) {
-  // If the location for the resultParam was never set then this forward
-  // declaration was never defined.
-  if (!aliasFwdDeclOp.getResultParamLoc().has_value() &&
-      !decl.hasReferenceError) {
-    emitError(aliasFwdDeclOp.getLoc(), "alias ")
-        << aliasFwdDeclOp.getNameAttr()
-        << " was never defined by a result parameter";
-    return failure();
-  }
-
   return success();
 }
 
