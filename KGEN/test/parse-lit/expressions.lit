@@ -325,7 +325,6 @@ fn callInParam[callable: __mlir_type.`!kgen.signature<[a : index], [], (index) -
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 
-
 # CHECK-LABEL: parameterExprs
 fn parameterExprs[a: __mlir_type.index, a2: __mlir_type.index]():
   # CHECK: kgen.param.declare b = <0>
