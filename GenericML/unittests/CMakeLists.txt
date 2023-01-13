@@ -14,7 +14,6 @@ add_modular_unittest(
   TEST_NAME
   GenericMLTests
 
-  API/c/APITest.cpp
   BufferRefTest.cpp
   ContextTest.cpp
   TensorTest.cpp
@@ -26,6 +25,4 @@ add_modular_unittest(
   modular-framework
 )
 
-if(MODULAR_BUILD_PYTHON_API_BINDINGS)
-  add_subdirectory(API/python)
-endif()
+add_subdirectory(API)
