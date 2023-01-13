@@ -22,7 +22,6 @@ add_modular_unittest(
   GenericMLSupport
   LLCLRuntime
   MSupportML
-  modular-framework
 )
 
 add_subdirectory(API)
