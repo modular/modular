@@ -1,7 +1,5 @@
 # RUN: kgen-translate -import-lit %s -verify-diagnostics -I %stdlibdir | FileCheck %s
 
-__include "../lit-examples/prolog.lit"
-
 # CHECK: lit.func @"mlirMagicTest{{.*}}(%x: bf16, %y: f8E5M2)
 fn mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2) -> __mlir_type.index:
   # CHECK: kgen.param.declare a = <1>

@@ -1,8 +1,8 @@
-# RUN: kgen-translate -import-lit %s -verify-diagnostics -I %stdlibdir | FileCheck %s
+# RUN: kgen-translate -import-lit %s -verify-diagnostics -I %stdlibdir -I %S/../lit-examples/ | FileCheck %s
 
-__include "../lit-examples/prolog.lit"
+from prolog import DType, Error, F32, Int, object, SIMD
 
-# CHECK-LABEL: kgen.struct.decl @OurSIMD<size, dt: !kgen.declref<@"$basic-lit"::@DType>> {
+# CHECK-LABEL: kgen.struct.decl @OurSIMD<size, dt: !kgen.declref<@"$prolog"::@DType>> {
 struct OurSIMD[size: __mlir_type.index, dt: DType]:
   pass
 
@@ -44,20 +44,20 @@ fn patterns():
 
 
 @interface
-# CHECK: lit.func @"func_interface0{{.*}}<type: !kgen.declref<@"$basic-lit"::@DType>>(%x: index) -> index attributes {isInterface}
+# CHECK: lit.func @"func_interface0{{.*}}<type: !kgen.declref<@"$prolog"::@DType>>(%x: index) -> index attributes {isInterface}
 fn func_interface0[type: DType](x: __mlir_type.index) -> __mlir_type.index:
 
 @interface
-# CHECK: lit.func @"func_interface1{{.*}}<type: !kgen.declref<@"$basic-lit"::@DType>>(%x: index) -> index attributes {isInterface}
+# CHECK: lit.func @"func_interface1{{.*}}<type: !kgen.declref<@"$prolog"::@DType>>(%x: index) -> index attributes {isInterface}
 fn func_interface1[type: DType](x: __mlir_type.index) -> __mlir_type.index: pass
 
 @interface
-# CHECK: lit.func @"func_interface2{{.*}}<type: !kgen.declref<@"$basic-lit"::@DType>>(%x: index) -> index attributes {isInterface}
+# CHECK: lit.func @"func_interface2{{.*}}<type: !kgen.declref<@"$prolog"::@DType>>(%x: index) -> index attributes {isInterface}
 fn func_interface2[type: DType](x: __mlir_type.index) -> __mlir_type.index:
   ...
 
 @implements(func_interface2)
-# CHECK: lit.func @"func_impl{{.*}}<type: !kgen.declref<@"$basic-lit"::@DType>>(%x: index) -> index
+# CHECK: lit.func @"func_impl{{.*}}<type: !kgen.declref<@"$prolog"::@DType>>(%x: index) -> index
 # CHECK:    implements @"$basic-lit"::@"func_interface2(__mlir_type.index)" {
 fn func_impl[type: DType](x: __mlir_type.index) -> __mlir_type.index:
   return x
@@ -94,7 +94,7 @@ fn lvaluesAndRValues() -> __mlir_type.`!pop.scalar<index>`:
   # CHECK: kgen.return [[VALUE]] : !pop.scalar<index>
   return Int(4).value
 
-# CHECK: lit.func @"defTests({{.*}}, %untyped: !kgen.declref<@"$basic-lit"::@object>)
+# CHECK: lit.func @"defTests({{.*}}, %untyped: !kgen.declref<@"$prolog"::@object>)
 def defTests(a: Int, b: Int, untyped):
   # CHECK: [[TMP:%.*]] = pop.load %b_1
   # CHECK-NEXT: pop.store [[TMP]], %a_0

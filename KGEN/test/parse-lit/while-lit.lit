@@ -1,6 +1,6 @@
-# RUN: kgen-translate -import-lit %s -I %stdlibdir | FileCheck %s
+# RUN: kgen-translate -import-lit %s -I %stdlibdir -I %S/../lit-examples/ | FileCheck %s
 
-__include "../lit-examples/prolog.lit"
+from prolog import Bool, Error, Int
 
 # CHECK-LABEL: lit.func @"test_while
 # CHECK:       %inside_a = lit.var.decl "inside_a"

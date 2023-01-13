@@ -1,6 +1,6 @@
-# RUN: kgen-translate %s -import-lit -I %stdlibdir | FileCheck %s
+# RUN: kgen-translate %s -import-lit -I %stdlibdir -I %S/../lit-examples/ | FileCheck %s
 
-__include "../lit-examples/prolog.lit"
+from prolog import Bool, Error, Int
 
 # CHECK-LABEL: lit.func @"simpleTryExcept
 fn simpleTryExcept():
@@ -10,7 +10,7 @@ fn simpleTryExcept():
         # CHECK: pop.store
         a = Int(0)
         # CHECK-NEXT: lit.try.yield
-    # CHECK-NEXT: except (%{{.*}}: !kgen.declref<@"$try"::@Error>)
+    # CHECK-NEXT: except (%{{.*}}: !kgen.declref<@"$prolog"::@Error>)
     except:
         # CHECK-NEXT: lit.try.yield
         pass
@@ -39,7 +39,7 @@ fn eatError(err: Error):
 fn tryExceptArg():
     try:
         pass
-    # CHECK: except (%arg0: !kgen.declref<@"$try"::@Error>)
+    # CHECK: except (%arg0: !kgen.declref<@"$prolog"::@Error>)
     except err:
         # CHECK-NEXT: kgen.call @"$try"::@"eatError{{.*}}(%arg0)
         eatError(err)
@@ -48,9 +48,9 @@ fn tryExceptArg():
 def tryExceptArgDef():
     try:
         pass
-    # CHECK: except (%arg0: !kgen.declref<@"$try"::@Error>)
+    # CHECK: except (%arg0: !kgen.declref<@"$prolog"::@Error>)
     except err:
-        # CHECK-NEXT: lit.var.decl "err" : <@"$try"::@Error>
+        # CHECK-NEXT: lit.var.decl "err" : <@"$prolog"::@Error>
         # CHECK: %[[ERRVAL:.*]] = pop.load
         # CHECK: eatError{{.*}}(%[[ERRVAL]])
         eatError(err)
@@ -89,7 +89,7 @@ fn propagateErrorInTry():
 
 # CHECK-LABEL: lit.func @"raiseError
 def raiseErrorInDef(err: Error):
-    # CHECK: %[[ERR:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$try"::@Error> -> !pop.variant<@"$try"::@Error, !lit.none>
+    # CHECK: %[[ERR:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$prolog"::@Error> -> !pop.variant<@"$prolog"::@Error, !lit.none>
     # CHECK-NEXT: kgen.return %[[ERR]]
     raise err
 
@@ -97,7 +97,7 @@ def raiseErrorInDef(err: Error):
 def raiseErrorInIf(cond: Bool, err: Error):
     # CHECK: hlcf.if
     if cond:
-        # CHECK: %[[ERR:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$try"::@Error> -> !pop.variant<@"$try"::@Error, !lit.none>
+        # CHECK: %[[ERR:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$prolog"::@Error> -> !pop.variant<@"$prolog"::@Error, !lit.none>
         # CHECK-NEXT: hlcf.return %[[ERR]]
         raise err
 

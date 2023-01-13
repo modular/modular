@@ -1,8 +1,8 @@
-# RUN: kgen-translate -import-lit %s -I %stdlibdir -verify-diagnostics | FileCheck %s
+# RUN: kgen-translate -import-lit %s -I %stdlibdir -I %S/../lit-examples/ -verify-diagnostics | FileCheck %s
 
-__include "../lit-examples/prolog.lit"
+from prolog import assert_param, Bool, DType, Int, SIMD
 
-# CHECK-LABEL: kgen.struct.decl @OurSIMD<size, dt: !kgen.declref<@"$parameters"::@DType>> {
+# CHECK-LABEL: kgen.struct.decl @OurSIMD<size, dt: !kgen.declref<@"$prolog"::@DType>> {
 struct OurSIMD[size: __mlir_type.index, dt: DType]:
   pass
 
@@ -17,9 +17,9 @@ fn take_3index(a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index)
   return a
 
 # CHECK-LABEL: lit.func @"fancy_signature
-# CHECK-SAME: <dt: !kgen.declref<@"$parameters"::@DType>, size>
-# CHECK-SAME: (%x: !kgen.declref<@"$parameters"::@OurSIMD<size = size, dt: !kgen.declref<@"$parameters"::@DType> = dt>>,
-# CHECK-SAME:  %exp: !kgen.declref<@"$parameters"::@OurSIMD<size = size, dt: !kgen.declref<@"$parameters"::@DType> = dt>>) -> index {
+# CHECK-SAME: <dt: !kgen.declref<@"$prolog"::@DType>, size>
+# CHECK-SAME: (%x: !kgen.declref<@"$parameters"::@OurSIMD<size = size, dt: !kgen.declref<@"$prolog"::@DType> = dt>>,
+# CHECK-SAME:  %exp: !kgen.declref<@"$parameters"::@OurSIMD<size = size, dt: !kgen.declref<@"$prolog"::@DType> = dt>>) -> index {
 fn fancy_signature[dt: DType, size: __mlir_type.index]
   (x: OurSIMD[size, dt], exp: (OurSIMD)[size, dt]) -> __mlir_type.index:
 
@@ -38,14 +38,14 @@ fn fancy_signature[dt: DType, size: __mlir_type.index]
 
 fn generic_fn[a: DType, b: __mlir_type.index, c: __mlir_type.`!kgen.mlirtype`](d : __mlir_type.index):
 
-# CHECK: lit.func @"call_generic()"<dt: !kgen.declref<@"$parameters"::@DType>>()
+# CHECK: lit.func @"call_generic()"<dt: !kgen.declref<@"$prolog"::@DType>>()
 fn call_generic[dt: DType]():
   # CHECK: %idx57 = index.constant 57
-  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}<a: !kgen.declref<@"$parameters"::@DType> = dt, b = 42, c: type = !kgen.declref<@"$parameters"::@DType>>(%idx57)
+  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}<a: !kgen.declref<@"$prolog"::@DType> = dt, b = 42, c: type = !kgen.declref<@"$prolog"::@DType>>(%idx57)
   generic_fn[dt, 42, DType](57)
 
   # CHECK: [[TMP:%.*]] = index.constant 57
-  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}<a: !kgen.declref<@"$parameters"::@DType> = dt, b = 13, c: type = !kgen.declref<@"$parameters"::@OurSIMD<size = 4, dt: !kgen.declref<@"$parameters"::@DType> = dt>>>([[TMP]])
+  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}<a: !kgen.declref<@"$prolog"::@DType> = dt, b = 13, c: type = !kgen.declref<@"$parameters"::@OurSIMD<size = 4, dt: !kgen.declref<@"$prolog"::@DType> = dt>>>([[TMP]])
   generic_fn[dt, 13, OurSIMD[4, dt]](57)
 
 # CHECK-LABEL: kgen.struct.decl @TestParamStruct<A>
@@ -123,14 +123,14 @@ fn paramResolution[size1: Int, a: StructWithIntParam[size1],
 fn implConversion[a: StructWithIntParam[42]]():
   pass
 
-# CHECK-LABEL: kgen.struct.decl @Pair<dt: !kgen.declref<@"$parameters"::@DType>> {
+# CHECK-LABEL: kgen.struct.decl @Pair<dt: !kgen.declref<@"$prolog"::@DType>> {
 struct Pair[dt: DType]:
- # CHECK: kgen.struct.field a : !kgen.declref<@"$parameters"::@OurSIMD<size = 42, dt: !kgen.declref<@"$parameters"::@DType> = dt>>
+ # CHECK: kgen.struct.field a : !kgen.declref<@"$parameters"::@OurSIMD<size = 42, dt: !kgen.declref<@"$prolog"::@DType> = dt>>
  # CHECK: kgen.struct.field b : !kgen.declref<@"$Int"::@Int>
   var a : OurSIMD[42, dt]
   var b : Int
 
-  # CHECK: lit.func @"__new__{{.*}}() -> !kgen.declref<@"$parameters"::@Pair<dt: !kgen.declref<@"$parameters"::@DType> = dt>> attributes {isStatic}
+  # CHECK: lit.func @"__new__{{.*}}() -> !kgen.declref<@"$parameters"::@Pair<dt: !kgen.declref<@"$prolog"::@DType> = dt>> attributes {isStatic}
   fn __new__() -> Pair[dt]:
     var result : Pair[dt]
     # TODO: Fill this in.

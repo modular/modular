@@ -1,6 +1,6 @@
-# RUN: kgen-translate %s -import-lit -I %stdlibdir | FileCheck %s
+# RUN: kgen-translate %s -import-lit -I %stdlibdir -I %S/../lit-examples/ | FileCheck %s
 
-__include "../lit-examples/prolog.lit"
+from prolog import Error, F32, Int
 
 
 ##===----------------------------------------------------------------------===##
@@ -79,20 +79,20 @@ fn testPointerArgs(ptr: __mlir_type.`!pop.pointer<si32>`) -> __mlir_type.si32:
 # @raises decorator.
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@"$decls"::@Error, @"$Int"::@Int> attributes {isDef, raises}
+# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int> attributes {isDef, raises}
 def defAlwaysRaises() -> Int:
-    # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@"$decls"::@Error, @"$Int"::@Int>
+    # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
     # CHECK-NEXT: kgen.return %[[RESULT]]
     return Int(0)
 
-# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<@"$decls"::@Error, @"$Int"::@Int> attributes {raises}
+# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int> attributes {raises}
 @raises
 fn fnThatRaises() -> Int:
-    # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@"$decls"::@Error, @"$Int"::@Int>
+    # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
     # CHECK-NEXT: kgen.return %[[RESULT]]
     return Int(0)
 
-# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<@"$decls"::@Error, !lit.none>
+# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<@"$prolog"::@Error, !lit.none>
 @raises
 fn raisesReturnsNone():
     # CHECK: %0 = kgen.param.constant: !lit.none = <#lit.none>
@@ -101,14 +101,14 @@ fn raisesReturnsNone():
     pass
 
 # COM: We can return an variant of error and index in a non-throwing function.
-# CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<@"$decls"::@Error, index>
-fn raisesReturnsVariant() -> __mlir_type.`!pop.variant<@"$decls"::@Error, index>`:
-    return __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@"$decls"::@Error, index>`](1)
+# CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<@"$prolog"::@Error, index>
+fn raisesReturnsVariant() -> __mlir_type.`!pop.variant<@"$prolog"::@Error, index>`:
+    return __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@"$prolog"::@Error, index>`](1)
 
 # CHECK-LABEL lit.func @"return_impl_convert_raises
 @raises
 fn return_impl_convert_raises(a: Error) -> Error:
-  # CHECK:  %0 = pop.variant.create %a : !kgen.declref<@"$decls"::@Error> -> !pop.variant<@"$decls"::@Error>
+  # CHECK:  %0 = pop.variant.create %a : !kgen.declref<@"$prolog"::@Error> -> !pop.variant<@"$prolog"::@Error>
   # CHECK-NEXT: kgen.return %0
   return a
 
