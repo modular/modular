@@ -131,10 +131,6 @@ public:
     return nullptr;
   }
 
-  const TinyPtrVector<ASTDecl *> *lookup(StringRef name) const {
-    return lookup(StringAttr::get(getContext(), name));
-  }
-
   //===--------------------------------------------------------------------===//
   // Other State management.
   //===--------------------------------------------------------------------===//

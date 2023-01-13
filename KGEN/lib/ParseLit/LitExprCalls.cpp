@@ -530,7 +530,8 @@ CallableValue::CallableValue(ASTType type, StringRef methodName, SMLoc callLoc,
 
   erroneousDecl = false;
   // First perform a lookup to see if there are any candidates.
-  auto lookupResult = shared.lookupAndResolveDecl(methodName, callLoc, type);
+  auto lookupResult = shared.lookupAndResolveDecl(methodName, callLoc, type,
+                                                  /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
   if (resultDecls.empty()) {
     if (lookupResult.isErroneous())

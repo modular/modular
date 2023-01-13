@@ -268,15 +268,15 @@ static MValue resolveParamDeclareValue(ParamDeclareOp param,
   return MValue(ParamDeclRefAttr::get(param.getName(), param.getType()));
 }
 
-/// Given an ASTType 'containingType', look up a named member of it and return
-/// the reference to its symbol as an RValue.
+/// Emit IR for an unqualified declaration reference "x" looked up in the
+/// specified 'containingType'.
 static CallableValue
-emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
-                         StringRef memberName, const ExprNode *node,
-                         ExprEmitter &emitter, ASTType contextualType = {}) {
+emitUnqualifiedDeclMember(ASTDecl &container, ParamBindArrayAttr bindings,
+                          StringRef memberName, const ExprNode *node,
+                          ExprEmitter &emitter, ASTType contextualType = {}) {
   // Perform a lookup of the specified decl in the current container.
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
-      memberName, node->getLoc(), container);
+      memberName, node->getLoc(), container, /*searchParentScopes=*/true);
 
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a contextual type
@@ -330,8 +330,8 @@ emitDeclMemberAsCallable(ASTDecl &container, ParamBindArrayAttr bindings,
     emitter.getDeclResolver().addFullyResolvedDecl(varDecl, node->getLoc(),
                                                    nameAttr, &container);
     // Re-do lookup, making sure we form a uniqued vector that we can reference.
-    lookup = emitter.shared.lookupAndResolveDecl(memberName, node->getLoc(),
-                                                 container);
+    lookup = emitter.shared.lookupAndResolveDecl(
+        memberName, node->getLoc(), container, /*searchParentScopes=*/false);
   }
 
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
@@ -463,7 +463,7 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter,
 /// and return a null value.
 CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
                                         ASTType contextualType) const {
-  return emitDeclMemberAsCallable(
+  return emitUnqualifiedDeclMember(
       emitter.declScope,
       /*no param bindings*/ ParamBindArrayAttr::get(emitter.getContext(), {}),
       spelling, this, emitter, contextualType);
@@ -503,8 +503,8 @@ static CallableValue emitTypeAttributeRef(ASTType baseType,
 
   // Normal member references will have an declaration for the type.
   if (ASTDecl *typeDecl = baseType.getDecl(emitter.shared))
-    return emitDeclMemberAsCallable(*typeDecl, baseType.getParamBindings(),
-                                    attrSpelling, node, emitter);
+    return emitUnqualifiedDeclMember(*typeDecl, baseType.getParamBindings(),
+                                     attrSpelling, node, emitter);
 
   // Handle __mlir_op.`xxx` references, lazily synthesizing values when
   // they are referenced.
@@ -528,8 +528,8 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
   return emitCallable(emitter, contextualType).emitAsValue(emitter);
 }
 
-/// Emit this expression to MLIR as a CallableValue.  On error, emit an error
-/// and return a null value.
+/// Emit a qualified attribute reference to MLIR as a CallableValue.  On error,
+/// emit an error and return a null value.
 CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
                                              ASTType contextualType) const {
 
@@ -560,7 +560,8 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
 
   // Find the member being accessed.
   LookupResult lookup =
-      emitter.shared.lookupAndResolveDecl(attrSpelling, getLoc(), *typeDecl);
+      emitter.shared.lookupAndResolveDecl(attrSpelling, getLoc(), *typeDecl,
+                                          /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> memberDecls = lookup.getIfSuccess();
   if (memberDecls.empty()) {
     // If the error hasn't been diagnosed, handle it now.
@@ -1088,8 +1089,9 @@ CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter,
 
     // Lookup the name.  We must find a forward declared alias that isn't
     // already completed.
-    auto result = emitter.shared.lookupAndResolveDecl(resultName, drn->getLoc(),
-                                                      emitter.declScope);
+    auto result = emitter.shared.lookupAndResolveDecl(
+        resultName, drn->getLoc(), emitter.declScope,
+        /*searchParentScopes=*/false);
 
     // Reject the code if nothing was found.
     ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();

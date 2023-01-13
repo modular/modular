@@ -110,13 +110,14 @@ public:
   // Name Lookup
 
   /// Perform a name lookup in the current scope and return the named
-  /// declaration as a LookupResult.
+  /// declaration as a LookupResult.  If `searchParentScopes` is true, parent
+  /// scopes are searched as well, as in unqualified name lookup.
   LookupResult lookupAndResolveDecl(StringRef name, llvm::SMLoc loc,
-                                    ASTDecl &scope);
+                                    ASTDecl &scope, bool searchParentScopes);
 
   /// Perform a name lookup for a member in the specified type.
   LookupResult lookupAndResolveDecl(StringRef name, llvm::SMLoc loc,
-                                    ASTType scope);
+                                    ASTType scope, bool searchParentScopes);
 
   /// Lookup the specified name, and check that it is a non-parameterized type.
   /// This emits a diagnostic on error and returns null, or returns the type on

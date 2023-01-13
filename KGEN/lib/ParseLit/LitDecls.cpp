@@ -939,7 +939,8 @@ void FnDecorators::applyImplements(const CallNode &node) {
   // Perform a name lookup to find the right symbol.
   const DeclRefNode &nameNode = *cast<DeclRefNode>(node.args.front());
   StringRef interfaceName = nameNode.spelling;
-  auto result = shared.lookupAndResolveDecl(interfaceName, node.getLoc(), decl);
+  auto result = shared.lookupAndResolveDecl(interfaceName, node.getLoc(), decl,
+                                            /*searchParentScopes=*/true);
 
   // Reject the code if the interface wasn't found.
   ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();
@@ -997,7 +998,8 @@ void FnDecorators::applyEvaluator(const CallNode &node) {
   // Perform a name lookup to find the right symbol.
   DeclRefNode &nameNode = *cast<DeclRefNode>(node.args.front());
   StringRef evaluatorName = nameNode.spelling;
-  auto result = shared.lookupAndResolveDecl(evaluatorName, node.getLoc(), decl);
+  auto result = shared.lookupAndResolveDecl(evaluatorName, node.getLoc(), decl,
+                                            /*searchParentScopes=*/true);
 
   // Reject the code if no function was found.
   ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();
