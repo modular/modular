@@ -1684,7 +1684,8 @@ ParseResult DeclResolver::resolveBody(AliasForwardDeclOp aliasFwdDeclOp,
                                       LitLexer &lexer, ASTDecl &decl) {
   // If the location for the resultParam was never set then this forward
   // declaration was never defined.
-  if (!aliasFwdDeclOp.getResultParamLoc().has_value()) {
+  if (!aliasFwdDeclOp.getResultParamLoc().has_value() &&
+      !decl.hasReferenceError) {
     emitError(aliasFwdDeclOp.getLoc(), "alias ")
         << aliasFwdDeclOp.getNameAttr()
         << " was never defined by a result parameter";
