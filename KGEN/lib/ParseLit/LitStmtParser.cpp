@@ -413,22 +413,11 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     }
     for (auto [paramExpr, paramType] :
          llvm::zip(resultParamList->exprs, decl.getResultParamTypes())) {
-      auto result = emitter.emitExprMValue(
-          paramExpr, "dynamic value not allowed in result parameter list");
+      auto result = emitter.emitExprMValue(paramExpr, paramType,
+                                           " in result parameter list");
       if (!result)
         return success();
-
-      // Clear the builder to indicate that an MValue must be emitted.
-      llvm::SaveAndRestore<std::optional<OpBuilder>> savedBuilder(
-          emitter.builder);
-      emitter.builder.reset();
-
-      auto casted = emitter.getAsExpectedType(result, paramExpr, paramType,
-                                              " in parameter return");
-      if (!casted)
-        return success();
-
-      resultParamValues.push_back(casted.getIfMValue());
+      resultParamValues.push_back(result);
     }
   }
 

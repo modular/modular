@@ -116,8 +116,8 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
       indexExpr = cast<UnaryOpNode>(indexExpr)->subExpr;
     }
 
-    auto indexVal = emitter.emitExprMValue(
-        indexExpr, "mlir magic values must resolve to a parameter");
+    auto indexVal =
+        emitter.emitExprMValue(indexExpr, ASTType(), " in MLIR magic");
     if (!indexVal)
       return "";
 
@@ -191,7 +191,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
     // Otherwise emit the value as an MAValue.  This allows references to
     // parameter expressions.
     auto value = emitter.emitExprMValue(
-        node, "attribute value for '" + Twine(name) + "' must be constant");
+        node, ASTType(), " in value for '" + Twine(name) + "' attribute");
     if (!value)
       return {};
     return value.get();
@@ -900,8 +900,8 @@ static CallableValue substituteParametersIntoUserDefinedType(
   for (ExprNode *indexExpr : subscript.indices) {
     // TODO: Slice syntax is the obvious way to support named parameter
     // arguments.
-    auto indexVal = emitter.emitExprMValue(
-        indexExpr, "type parameters may not be a run-time value");
+    auto indexVal =
+        emitter.emitExprMValue(indexExpr, ASTType(), " in type parameter");
     if (!indexVal)
       return {};
     paramBindings.add(indexExpr, indexVal.get());
@@ -941,8 +941,7 @@ static CallableValue bindAttrValuesToDirectCall(CallableValue &callable,
   // Process each subscript entry as a binding.
   // TODO: Support named bindings in addition to positional ones: `A[x: 42]`.
   for (auto idx : indices) {
-    auto val = emitter.emitExprMValue(
-        idx, "declaration bindings may not be a run-time value");
+    auto val = emitter.emitExprMValue(idx, ASTType(), " in parameter binding");
     if (!val)
       return {};
 
@@ -990,9 +989,9 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
             << plural(sig.getInputParams().size()) << getIndexRange();
         return {};
       }
-      for (ExprNode *idx : indices) {
+      for (auto [idx, type] : llvm::zip(indices, sig.getInputParams())) {
         bindOperands.push_back(emitter.emitExprMValue(
-            idx, "declaration parameters may not be a run-time value"));
+            idx, type.getType(), " in call parameter binding"));
         if (!bindOperands.back())
           return {};
       }
@@ -1008,6 +1007,7 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   // If the sub-value is an unbound Type, try binding things to it!
   if (Type typeValue = subValue.baseVal.ir.getIfTypeValue()) {
     // Handle user-defined types.
+    // TODO: This seems wrong, we won't handle things like Type.AssocType[1] ?
     if (auto declRef = dyn_cast<DeclRefType>(typeValue))
       return substituteParametersIntoUserDefinedType(declRef, *this, emitter);
 

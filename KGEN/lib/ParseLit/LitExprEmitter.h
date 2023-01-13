@@ -103,10 +103,13 @@ public:
   /// emission fails.
   DRValue emitExprDRValue(const ExprNode *node);
 
-  /// This helper emits the specified expression as a meta value, diagnosing the
-  /// problem if the expression is only valid as a runtime value (using the
-  /// specified message).  This returns null if emission fails.
-  MValue emitExprMValue(const ExprNode *node, const Twine &message);
+  /// This helper emits the specified expression as a meta value, and optionally
+  /// converts the result to a specified expected type.  This emits an error if
+  /// the expression cannot be emitted, if it cannot be converted to the
+  /// expected type, or if it isn't a valid runtime value.  This returns null if
+  /// emission fails.
+  MValue emitExprMValue(const ExprNode *node, ASTType resultType,
+                        const Twine &errorSuffix);
 
   /// Emit the specified expression as an LValue which can be loaded and stored.
   /// If contextualType is non-null, then an implicitly declared LValue will be

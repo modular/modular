@@ -1501,8 +1501,11 @@ ParsedLetVarDecl::emitInitValue(Operation *declOp, ASTDecl &decl,
 
   // If we had a declared type, coerce the expression value to it.
   if (type) {
+    const char *kind = isa<LetDeclOp>(declOp) ? "let" : "var";
     value = emitter.emitDRValue(
-        {emitter.getAsExpectedType(value, initValue, type, ""), initValue});
+        {emitter.getAsExpectedType(value, initValue, type,
+                                   " in " + Twine(kind) + " declaration"),
+         initValue});
   } else {
     // Infer the type if we lack a declared type (`var x = 42`).
     // TODO(literal autopromotion).
@@ -1654,26 +1657,16 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
   ExprEmitter emitter(shared, parentDecl, /*builder*/ {},
                       /*varDeclCursor*/ nullptr);
 
+  // Emit the value and convert to the expected type if we know it.
   auto rhsValue =
-      emitter.emitExprMValue(initValue, "expected meta parameter value");
+      emitter.emitExprMValue(initValue, type, " in alias declaration");
   if (!rhsValue)
     return failure();
 
-  // If we had a declared type, coerce the expression value to it.
-  // TODO(implicit conversions for parameters).
-  if (!type) {
-    // Infer the type since we lack a declared type (`var x = 42`)
+  // If we had no declared type (`alias x = 42`), infer the type from the
+  // initializer.
+  if (!type)
     type = rhsValue.getType();
-  } else {
-    // Convert the initializer value to the declared type.
-    auto convertedVal =
-        emitter.getAsExpectedType(rhsValue, initValue, type, " in alias");
-    if (!convertedVal)
-      return failure();
-    assert(convertedVal.getIfMValue() &&
-           "converting an mvalue produced a non-mvalue?");
-    rhsValue = convertedVal.getIfMValue();
-  }
 
   // Remember the value, and update the type from UnresolvedType.
   paramDeclOp.setValueAttr(rhsValue.get());
