@@ -1,7 +1,6 @@
 # RUN: kgen-translate -import-lit -verify-diagnostics %s -I %stdlibdir | FileCheck %s
 
-
-__include "prolog.lit"
+from prolog import DType, F32, Scalar, SIMD
 
 # REFERENCE
 #   kgen.generator.interface @erf_scalar<type: dtype>(%in: !pop.scalar<type>) -> !pop.scalar<type>

@@ -1,6 +1,6 @@
 # RUN: kgen %s -execute -func='$exp-scalar::run_me():index()' -I %stdlibdir | FileCheck %s
 
-__include "prolog.lit"
+from prolog import F32, printF32
 
 @interface
 fn exp_scalar_f32(x: F32) -> F32: ...

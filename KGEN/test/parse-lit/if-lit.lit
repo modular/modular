@@ -1,6 +1,6 @@
-# RUN: kgen-translate -import-lit %s -I %stdlibdir | FileCheck %s
+# RUN: kgen-translate -import-lit %s -I %stdlibdir -I %S/../lit-examples/ | FileCheck %s
 
-__include "../lit-examples/prolog.lit"
+from prolog import Bool, Int
 
 # CHECK-LABEL: lit.func @"test_if
 fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:

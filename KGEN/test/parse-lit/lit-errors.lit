@@ -1,6 +1,6 @@
-# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %stdlibdir
+# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %stdlibdir -I %S/../lit-examples/
 
-__include "../lit-examples/prolog.lit"
+from prolog import Bool, DType, Error, F32, Int, object
 
 def bad_exprs(aaaa: Bool, bbbb: F32, cccc: Int):
   # expected-error @+1 {{true value of type '$F32::F32' is not compatible with false value '$Int::Int' in conditional}}
@@ -147,7 +147,7 @@ def generic_fn[a: DType, b: __mlir_type.index](c : __mlir_type.index):
 
 def call_generic[dt: DType]():
   generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 input parameters but 3 were provided}}
-  generic_fn[1, dt](57) # expected-error {{parameter 'a' has '$lit-errors::DType' type, but value has type '__mlir_type.index'}}
+  generic_fn[1, dt](57) # expected-error {{parameter 'a' has '$prolog::DType' type, but value has type '__mlir_type.index'}}
 
 def field_indexes(a: Int):
   a.badField = 42 # expected-error {{'$Int::Int' value has no attribute 'badField'}}

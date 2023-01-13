@@ -2,8 +2,6 @@
 
 # This file contains parsing related bugs.
 
-#__include "../lit-examples/prolog.lit"
-
 # Failed to parse due to indentation.
 fn issue_6291(
     val: __mlir_type.index
