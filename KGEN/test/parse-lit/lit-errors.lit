@@ -630,7 +630,16 @@ fn badPropertyError(a: InvalidType):
   _ = a.value
   return
 
+struct StructWithField:
+  var field: __mlir_type.index
+
 # Issue #6879: Qualified lookup is looking up names wrong
-fn unqualifiedNameLookup(a: ConvertibleFromInt):
-  # expected-error @+1 {{ConvertibleFromInt' value has no attribute 'badPropertyError'}}
+fn unqualifiedNameLookup(a: StructWithField):
+  # expected-error @+1 {{StructWithField' value has no attribute 'badPropertyError'}}
   a.badPropertyError
+
+  # expected-error @+1 {{StructWithField' value has no attribute 'badPropertyError'}}
+  StructWithField.badPropertyError
+
+  # expected-error @+1 {{cannot access instance field 'field' without an instance of '$lit-errors::StructWithField'}}
+  StructWithField.field
