@@ -629,3 +629,8 @@ struct MLIRAttrWithinStruct: # expected-note {{previously used here}}
 fn badPropertyError(a: InvalidType):
   _ = a.value
   return
+
+# Issue #6879: Qualified lookup is looking up names wrong
+fn unqualifiedNameLookup(a: ConvertibleFromInt):
+  # expected-error @+1 {{ConvertibleFromInt' value has no attribute 'badPropertyError'}}
+  a.badPropertyError

@@ -173,7 +173,9 @@ Operation *LitSharedState::setResolvedDeclSymbol(Operation *declOp) {
 /// Perform a name lookup in the specified scope and return the named
 /// declaration as a LookupResult.
 auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
-                                          ASTDecl &scope) -> LookupResult {
+                                          ASTDecl &scope,
+                                          bool searchParentScopes)
+    -> LookupResult {
 
   // Ensure the context is fully resolved, so all its members are known.  It
   // would be bad to look something up in a scope without all members known.
@@ -184,8 +186,15 @@ auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
       return LookupResult::getErroneous();
   }
 
+  auto nameAttr = StringAttr::get(getContext(), name);
+
   // Look up the name.
-  const TinyPtrVector<ASTDecl *> *entry = scope.lookup(name);
+  const TinyPtrVector<ASTDecl *> *entry;
+  if (searchParentScopes)
+    entry = scope.lookup(nameAttr);
+  else
+    entry = scope.lookupInCurrentScope(nameAttr);
+
   // If nothing was found, return a failure.
   if (!entry)
     return LookupResult::getFailure();
@@ -209,9 +218,11 @@ auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
 
 /// Perform a name lookup for a member in the specified type.
 auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
-                                          ASTType scope) -> LookupResult {
+                                          ASTType scope,
+                                          bool searchParentScopes)
+    -> LookupResult {
   if (auto *decl = scope.getDecl(*this))
-    return lookupAndResolveDecl(name, loc, *decl);
+    return lookupAndResolveDecl(name, loc, *decl, searchParentScopes);
   return LookupResult::getFailure();
 }
 
@@ -219,7 +230,7 @@ ASTType LitSharedState::lookupNonparameterizedNamedType(StringRef name,
                                                         llvm::SMLoc loc,
                                                         ASTDecl &context) {
   LookupResult result =
-      lookupAndResolveDecl(StringAttr::get(getContext(), name), loc, context);
+      lookupAndResolveDecl(name, loc, context, /*searchParentScopes=*/true);
   if (result.isErroneous())
     return {};
   if (result.isFailure()) {
