@@ -222,8 +222,11 @@ def KGEN_ConventionsAttr : KGENAttr<"Conventions", "conventions"> {
     `<` `[` (`]`) : ($inputConventions^ `]`)? `,` $fnEffects `>`
   }];
 
-  /// This builder returns the default conventions.
-  let builders = [AttrBuilder<(ins "unsigned":$numInputs)>];
+  /// These builders returns the default conventions.
+  let builders = [
+    AttrBuilder<(ins "unsigned":$numInputs)>,
+    AttrBuilder<(ins "unsigned":$numInputs, "FnEffects":$effects)>
+  ];
 
   let extraClassDeclaration = [{
     /// Returns true if all the input conventions are pass-by-value and there

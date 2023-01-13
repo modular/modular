@@ -63,5 +63,5 @@ lit.func @unwrap_or_propagate(%cond: i1, %err: !kgen.declref<@Error>) throws -> 
 }
 
 // CHECK-LABEL: kgen.generator.interface @removeConventions
-// CHECK-SAME: (!pop.pointer<index>) ->
+// CHECK-SAME: (!pop.pointer<index>) throws ->
 lit.func @removeConventions(%arg0: !pop.pointer<index> byref) throws -> !pop.variant<@Error, index> attributes {isInterface}

@@ -314,9 +314,9 @@ void PruneImpossibleVariantsPass::runOnOperation() {
       result.setType(type);
       types[idx] = type;
     }
+    auto valueType = FunctionType::get(
+        callee.getContext(), callee.getType().getValueInputs(), types);
     call.setCalleeAttr(SymbolConstantAttr::get(
-        callee.getSymbol(),
-        SignatureType::get(call.getContext(), callee.getType().getValueInputs(),
-                           types)));
+        callee.getSymbol(), callee.getType().getWithValuesReplaced(valueType)));
   }
 }
