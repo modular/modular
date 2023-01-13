@@ -11,10 +11,10 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/OperationUtils.h"
-#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dominance.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/SubElementInterfaces.h"
 #include "mlir/IR/Verifier.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -190,7 +190,7 @@ void OutlineClosuresPass::runOnOperation() {
         // Not isolated, so we have to clone the ops in so we can remap
         // arguments.
         auto *newBody = new Block;
-        BlockAndValueMapping map;
+        IRMapping map;
         // Handle the captures first.
         for (Value capture : captures)
           map.map(capture,

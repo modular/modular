@@ -10,7 +10,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "Support/HLCFDialect/HLCFOps.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/IRMapping.h"
 #include "llvm/ADT/StringSet.h"
 
 using namespace M;
@@ -55,12 +55,10 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
   scope.getBody().push_back(new Block);
   b.setInsertionPointToStart(&scope.getBody().front());
 
-  DenseMap<Operation *, Operation *> opMap;
-  BlockAndValueMapping bv;
-
   // Clone the operations in the immediate function body.
+  IRMapping bv;
   for (Operation &op : *callee.getBody())
-    b.insert(cloneOperation(&op, bv, opMap));
+    b.insert(op.clone(bv));
 
   // We only need to mangle delcarations at the top-level scope of the callee.
   // Declarations in nested scopes will shadow. However, we have "un-mangle" in
@@ -96,8 +94,7 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
     // Skip the parent decl. It's handled after.
     if (user == callee)
       continue;
-    Operation *cloned = opMap[user];
-    assert(cloned && "op was not cloned correctly");
+    Operation *cloned = bv.lookup(user);
     replacer.replaceElementsIn(cloned, /*replaceAttrs=*/true,
                                /*replaceLocs=*/true, /*replaceTypes=*/true);
     // Rename declarations.
@@ -111,8 +108,8 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
         else
           newDecls.push_back(decl);
       }
-      opMap[user]->setAttr(paramDeclsAttrName,
-                           ParamDeclArrayAttr::get(b.getContext(), newDecls));
+      cloned->setAttr(paramDeclsAttrName,
+                      ParamDeclArrayAttr::get(b.getContext(), newDecls));
     }
   }
 
@@ -136,8 +133,7 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
     if (cast<DeclInterface>(*nestedScope).isIsolatedFromAbove())
       return WalkResult::skip();
 
-    Operation *clonedScope = opMap[nestedScope];
-    assert(clonedScope && "nested scope not cloned correctly");
+    Operation *clonedScope = bv.lookup(&*nestedScope);
     b.setInsertionPointToStart(
         &cast<FuncInterface>(clonedScope)->getRegions().front().front());
 
@@ -159,7 +155,7 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
   });
 
   // Handle all terminators.
-  auto newReturn = cast<KGEN::ReturnOp>(opMap[callee.getReturnOp()]);
+  auto newReturn = cast<KGEN::ReturnOp>(bv.lookup(callee.getReturnOp()));
   b.setInsertionPoint(newReturn);
   SmallVector<Value> retVals;
   for (auto [retVal, retType] :
@@ -184,7 +180,7 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
     auto returnOp = dyn_cast<HLCF::ReturnOp>(op);
     if (!returnOp)
       return WalkResult::advance();
-    auto cloned = cast<HLCF::ReturnOp>(opMap[returnOp]);
+    auto cloned = cast<HLCF::ReturnOp>(bv.lookup(returnOp));
     b.setInsertionPoint(cloned);
     SmallVector<Value> retVals;
     for (auto [retVal, retType] :

@@ -176,13 +176,6 @@ void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
   build(b, state, ptr, alignment ? b.getIndexAttr(*alignment) : TypedAttr());
 }
 
-void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
-                   TypedAttr alignment) {
-  auto type =
-      ParamRefType::get(ptr.getType().cast<PointerType>().getElementType());
-  build(b, state, type, ptr, alignment);
-}
-
 //===----------------------------------------------------------------------===//
 // StoreOp
 //===----------------------------------------------------------------------===//
