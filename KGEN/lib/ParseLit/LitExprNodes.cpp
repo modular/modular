@@ -361,7 +361,7 @@ emitUnqualifiedDeclMember(ASTDecl &container, ParamBindArrayAttr bindings,
   if (auto var = dyn_cast<VarDeclOp>(decl))
     return {{AnyValue(LValue(var.getResult())), node}};
 
-  // Parameters form an meta-value.
+  // Parameters form a meta-value.
   if (auto param = dyn_cast<ParamDeclareOp>(decl))
     return {{resolveParamDeclareValue(param, bindings), node}};
 
@@ -494,35 +494,6 @@ static Type parseMLIRType(StringRef name, const ExprNode *node,
   return result;
 }
 
-/// Emit an expression 'x.y' where x is known to be a Type value.
-static CallableValue emitTypeAttributeRef(ASTType baseType,
-                                          const AttributeRefNode *node,
-                                          ExprEmitter &emitter) {
-  auto attrSpelling = node->attrSpelling;
-  auto loc = node->getLoc();
-
-  // Normal member references will have an declaration for the type.
-  if (ASTDecl *typeDecl = baseType.getDecl(emitter.shared))
-    return emitUnqualifiedDeclMember(*typeDecl, baseType.getParamBindings(),
-                                     attrSpelling, node, emitter);
-
-  // Handle __mlir_op.`xxx` references, lazily synthesizing values when
-  // they are referenced.
-  if (isa<MagicMLIRAttrType>(baseType.mlirType))
-    return {{synthesizeMLIRAttrFromString(attrSpelling, loc, emitter.shared),
-             node}};
-  if (isa<MagicMLIROpType>(baseType.mlirType))
-    return {{synthesizeMLIROpFromString(attrSpelling, emitter), node}};
-  if (isa<MagicMLIRTypeType>(baseType.mlirType)) {
-    Type result = parseMLIRType(attrSpelling, node, emitter.shared);
-    return {{result ? AnyValue(result) : AnyValue(), node}};
-  }
-
-  emitter.emitError(loc, "MLIR type ")
-      << baseType << " has no attributes" << node->getRange();
-  return {};
-}
-
 AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
                                   ASTType contextualType) const {
   return emitCallable(emitter, contextualType).emitAsValue(emitter);
@@ -537,18 +508,43 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
   if (!baseVal)
     return {};
 
-  // Handle member references on types, like Int.member.
-  if (ASTType baseType = baseVal.getIfTypeValue())
-    return emitTypeAttributeRef(baseType, this, emitter);
+  // Figure out what type is being accessed.  'hasTypeBase' is when the base
+  // expression is itself a type, e.g. `Int.__add__`.
+  ASTType baseRVType;
+  bool hasTypeBase = false;
 
-  // Otherwise, it must be an access to a field of a value.  Emit the value as
-  // an rvalue.
-  ASTType baseRVType = baseVal.getRValueType();
+  // Handle member references on types, like Int.member.
+  if (ASTType baseType = baseVal.getIfTypeValue()) {
+    baseRVType = baseType;
+    hasTypeBase = true;
+  } else {
+    // Otherwise, it must be an access to a field of a value.  Look up in the
+    // RValueType of the value.
+    baseRVType = baseVal.getRValueType();
+  }
+
+  // Find the decl for the type we're looking up into.
   ASTDecl *typeDecl = baseRVType.getDecl(emitter.shared);
   if (!typeDecl) {
+    // If there is no decl, the type is an MLIR type.
+    Type baseMLIRType = baseRVType.mlirType;
+
+    // Handle __mlir_op.`xxx` references, lazily synthesizing values when
+    // they are referenced.
+    if (isa<MagicMLIRAttrType>(baseMLIRType)) {
+      AnyValue result =
+          synthesizeMLIRAttrFromString(attrSpelling, getLoc(), emitter.shared);
+      return {{result, this}};
+    }
+    if (isa<MagicMLIROpType>(baseMLIRType))
+      return {{synthesizeMLIROpFromString(attrSpelling, emitter), this}};
+    if (isa<MagicMLIRTypeType>(baseMLIRType)) {
+      Type result = parseMLIRType(attrSpelling, this, emitter.shared);
+      return {{result ? AnyValue(result) : AnyValue(), this}};
+    }
+
     emitter.emitError(getLoc(), "MLIR type ")
-        << ASTType(baseVal.getType()) << " has no attributes"
-        << base->getRange();
+        << baseRVType << " has no attributes" << base->getRange();
     return {};
   }
 
@@ -585,12 +581,19 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
     // correctly.  What is the actual behavior we want for static methods?
     // Maybe we don't allow overloading static and non-static methods with the
     // same name?
-    if (!fnOp.getIsStatic())
+    if (!fnOp.getIsStatic() && !hasTypeBase)
       fnRef.baseVal = {baseVal, base};
     return fnRef;
   }
   assert(memberDecls.size() == 1 && "only methods may be overloaded");
   ASTDecl &memberDecl = *memberDecls[0];
+
+  // Parameters form a meta-value.
+  if (auto param = dyn_cast<ParamDeclareOp>(memberDecl)) {
+    MValue result =
+        resolveParamDeclareValue(param, baseRVType.getParamBindings());
+    return {{result, this}};
+  }
 
   if (!emitter.builder) {
     emitter.emitError(getLoc(),
@@ -603,6 +606,13 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
 
   // If the field is a variable, emit a reference to it.
   if (auto fieldOp = dyn_cast<StructFieldOp>(memberDecl)) {
+    if (hasTypeBase) {
+      emitter.emitError(getLoc(), "cannot access instance field '")
+          << attrSpelling << "' without an instance of " << baseRVType
+          << getRange();
+      return {};
+    }
+
     // If the base is an lvalue, then we can return an lvalue to the field.
     if (LValue baseLV = baseVal.getIfLValue()) {
       auto fieldPtr =
