@@ -992,10 +992,6 @@
               "include": "#expression"
             }
           ]
-        },
-        {
-          "match": "\\b(__include)\\b",
-          "name": "keyword.control.import.python"
         }
       ]
     },

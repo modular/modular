@@ -297,8 +297,6 @@ fn testMLIR():
   var a : __mlir_type
 
 
-__include "non-existant-file.lit" # expected-error {{could not find file 'non-existant-file.lit'}}
-
 struct SpecialFunctions:
   # expected-error @+1 {{special function must have 2 operands}}
   fn __add__(self):
