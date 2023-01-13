@@ -734,6 +734,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   };
 
   // Fill in any missing arguments or diagnose missing ones in fn's.
+  bool seenInitValue = false;
   for (auto [arg, type] : llvm::zip(args, argTypes)) {
     if (!type) {
       if (funcOp.getIsDef()) {
@@ -748,10 +749,12 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
         type = shared.getTypeCheckErrorType();
       }
     }
-    // TODO: add support for default parameter expressions.
-    if (arg.initValue)
-      shared.emitError(arg.loc, "TODO: No default values yet")
-          << arg.initValue->getRange();
+    if (arg.initValue) {
+      seenInitValue = true;
+    } else if (seenInitValue) {
+      shared.emitError(arg.loc, "non-default argument follows default argument")
+          << arg.typeExpr->getRange();
+    }
   }
 
   // If this definition is a struct/class member, compute the self type.
