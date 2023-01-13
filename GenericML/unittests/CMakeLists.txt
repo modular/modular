@@ -14,7 +14,7 @@ add_modular_unittest(
   TEST_NAME
   GenericMLTests
 
-  APITest.cpp
+  API/c/APITest.cpp
   BufferRefTest.cpp
   ContextTest.cpp
   TensorTest.cpp
