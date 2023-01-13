@@ -200,15 +200,18 @@ SignatureType SignatureType::getSpecializedSignature(
     // If we're attempting to bind to an unknown attribute, we need to update
     // the decl, and keep it around so that we can continue to use it (as in a
     // partial bind).
-    //
-    // isa<UnknownAttr> doesn't work here because it attempts to use it on the
-    // Type overload for some reason.
     if (bind.getValue().isa<UnboundAttr>()) {
       unboundDecls.push_back(
           ParamDeclAttr::get(decl.getName(), remappedDeclType));
+      // Set the binding to a declref of the thing itself - that will keep it
+      // from becoming #kgen.unbound.
+      evaluator.setParameterValue(
+          bind.getDecl(),
+          ParamDeclRefAttr::get(bind.getName(), bind.getType()));
+    } else {
+      evaluator.setParameterValue(bind.getDecl(), bind.getValue());
     }
 
-    evaluator.setParameterValue(bind.getDecl(), bind.getValue());
     ++paramNo;
   }
 
