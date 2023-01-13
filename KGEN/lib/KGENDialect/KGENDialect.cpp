@@ -79,6 +79,9 @@ struct KGENDialectInlinerInterface : public mlir::DialectInlinerInterface {
     for (auto [operand, val] : llvm::zip(ret.getOperands(), valuesToRepl))
       val.replaceAllUsesWith(operand);
   }
+
+  /// If the top level thing can be inlined, assume everything in it can too.
+  bool shouldAnalyzeRecursively(Operation *op) const override { return false; }
 };
 } // namespace
 
