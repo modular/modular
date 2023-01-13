@@ -957,7 +957,6 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
 
   let builders = [
     OpBuilder<(ins "Value":$ptr, "std::optional<unsigned>":$alignment)>,
-    OpBuilder<(ins "Value":$ptr, "TypedAttr":$alignment)>
   ];
 }
 

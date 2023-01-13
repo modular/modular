@@ -31,7 +31,7 @@ class AsmPrinter;
 class Attribute;
 class BFloat16Type;
 class Block;
-class BlockAndValueMapping;
+class IRMapping;
 class BlockArgument;
 class BoolAttr;
 class Builder;
@@ -152,7 +152,6 @@ using mlir::AsmPrinter;
 using mlir::Attribute;
 using mlir::BFloat16Type;
 using mlir::Block;
-using mlir::BlockAndValueMapping;
 using mlir::BlockArgument;
 using mlir::BoolAttr;
 using mlir::Builder;
@@ -165,6 +164,7 @@ using mlir::DenseElementsAttr;
 using mlir::DenseI8ArrayAttr;
 using mlir::DenseIntElementsAttr;
 using mlir::DenseResourceElementsAttr;
+using mlir::IRMapping;
 using DenseResourceElementsHandle =
     mlir::DialectResourceBlobHandle<mlir::BuiltinDialect>;
 using DenseResourceElementsHandleManager =

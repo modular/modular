@@ -23,7 +23,7 @@
 #include "Support/STLExtras.h"
 #include "SymbolicExpressions.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Verifier.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -163,8 +163,7 @@ public:
 
   /// Create a clone of this rewriter, but refer with a clone of the func.
   /// This uses operationMap to remap our state onto the newly created func.
-  ParameterRewriter(const ParameterRewriter &existing,
-                    DenseMap<Operation *, Operation *> &operationMap);
+  ParameterRewriter(const ParameterRewriter &existing, IRMapping &operationMap);
   ParameterRewriter(const ParameterRewriter &) = delete;
 
   /// Process all the `opWorklist`, simplifying this func.  If new variants of
@@ -308,9 +307,8 @@ private:
 
 /// Create a clone of this rewriter, but refer with a clone of the func.
 /// This uses operationMap to remap our state onto the newly created func.
-ParameterRewriter::ParameterRewriter(
-    const ParameterRewriter &existing,
-    DenseMap<Operation *, Operation *> &operationMap)
+ParameterRewriter::ParameterRewriter(const ParameterRewriter &existing,
+                                     IRMapping &operationMap)
     : elaborator(existing.elaborator), sourceModule(existing.sourceModule),
       elaboratedGenerator(existing.elaboratedGenerator),
       evaluator(existing.evaluator), nextRegionID(existing.nextRegionID),
@@ -318,15 +316,12 @@ ParameterRewriter::ParameterRewriter(
       expansionDepth(existing.expansionDepth) {
   // Remap the func operation.
   elaboratedGenerator.func =
-      cast<FuncOp>(operationMap[existing.elaboratedGenerator.func]);
-  assert(elaboratedGenerator.func && "didn't remap func correctly");
+      cast<FuncOp>(operationMap.lookup(existing.elaboratedGenerator.func));
 
   // Remap the operation in the command worklist.
   opWorklist.reserve(existing.opWorklist.size());
-  for (Operation *op : existing.opWorklist) {
-    opWorklist.push_back(operationMap[op]);
-    assert(opWorklist.back() && "didn't clone operation correctly?");
-  }
+  for (Operation *op : existing.opWorklist)
+    opWorklist.push_back(operationMap.lookup(op));
 }
 
 /// Work the `opsToRewrite` worklist.
@@ -528,10 +523,8 @@ void ParameterRewriter::spawnParamSearchClone(
     ParamSearchOp searchOp, Attribute value,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Start by cloning the current WIP func to a new copy of it.
-  BlockAndValueMapping blocksAndValues;
-  DenseMap<Operation *, Operation *> operationMap;
-  auto newFunc = cast<FuncOp>(
-      cloneOperation(elaboratedGenerator.func, blocksAndValues, operationMap));
+  IRMapping operationMap;
+  auto newFunc = cast<FuncOp>(elaboratedGenerator.func->clone(operationMap));
 
   // Insert the func into the output file and auto-unique the symbol.
   elaborator.insertFuncVariant(elaboratedGenerator.func, newFunc);
@@ -542,7 +535,7 @@ void ParameterRewriter::spawnParamSearchClone(
 
   // Change the future of this func by resolving the searchOp in the new func to
   // the specifed value.
-  auto newSearch = cast<ParamSearchOp>(operationMap[searchOp]);
+  auto newSearch = cast<ParamSearchOp>(operationMap.lookup(searchOp));
   newRewriter->completeParamSearchOpProcessing(newSearch, value);
 }
 
@@ -786,7 +779,7 @@ LogicalResult ParameterRewriter::completeGeneratorUserProcessing(
       if (evalCtx.inlinedAtCallsite)
         elaborator.markFuncForRemoval(newCalleeFunc);
       // Inline the callee.
-      BlockAndValueMapping bv;
+      IRMapping bv;
       for (auto [operand, argument] :
            llvm::zip(newCalleeFunc.getArguments(), user->getOperands()))
         bv.map(operand, argument);
@@ -845,10 +838,8 @@ LogicalResult ParameterRewriter::spawnNewFuncClone(
     const ElaboratedGenerator &callee, EvalContext &evalCtx,
     SmallVectorImpl<std::unique_ptr<ParameterRewriter>> &rewriters) {
   // Start by cloning the current WIP func to a new copy of it.
-  BlockAndValueMapping blocksAndValues;
-  DenseMap<Operation *, Operation *> operationMap;
-  auto newFunc = cast<FuncOp>(
-      cloneOperation(elaboratedGenerator.func, blocksAndValues, operationMap));
+  IRMapping operationMap;
+  auto newFunc = cast<FuncOp>(elaboratedGenerator.func->clone(operationMap));
 
   // Insert the func into the output file and auto-unique the symbol.
   elaborator.insertFuncVariant(elaboratedGenerator.func, newFunc);
@@ -864,7 +855,7 @@ LogicalResult ParameterRewriter::spawnNewFuncClone(
   if (llvm::any_of(calleeAndInputParams.second, isTransitivelyInlinedRef)) {
     callee.func->walk([&](Operation *op) {
       for (OpOperand &operand : op->getOpOperands())
-        if (Value remapped = blocksAndValues.lookupOrNull(operand.get()))
+        if (Value remapped = operationMap.lookupOrNull(operand.get()))
           operand.set(remapped);
     });
   }
@@ -875,7 +866,7 @@ LogicalResult ParameterRewriter::spawnNewFuncClone(
 
   // Change the future of this func by resolving the call in the new func to
   // the specifed callee.
-  Operation *newUser = operationMap[user];
+  Operation *newUser = operationMap.lookup(&*user);
   return newRewriter->completeGeneratorUserProcessing(
       newUser, decls, calleeAndInputParams, callee, evalCtx);
 }
@@ -1155,7 +1146,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   asyncMap.await(generator);
 
   // Clone the body of the generator over.
-  BlockAndValueMapping mapper;
+  IRMapping mapper;
   generator.getBodyRegion().cloneInto(&newFunc.getBodyRegion(), mapper);
 
   // Provide definitions of the input parameters in the body block as bound

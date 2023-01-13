@@ -47,7 +47,7 @@ struct KGENDialectInlinerInterface : public mlir::DialectInlinerInterface {
 
   /// All individual operations are legal to inline.
   bool isLegalToInline(Operation *, Region *, bool,
-                       BlockAndValueMapping &) const override {
+                       IRMapping &) const override {
     return true;
   }
 
@@ -65,8 +65,7 @@ struct KGENDialectInlinerInterface : public mlir::DialectInlinerInterface {
 
   /// Region bodies are always able to be inlined assuming the callable check
   /// passed.
-  bool isLegalToInline(Region *, Region *, bool,
-                       BlockAndValueMapping &) const override {
+  bool isLegalToInline(Region *, Region *, bool, IRMapping &) const override {
     return true;
   }
 

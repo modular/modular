@@ -11,13 +11,6 @@
 #include "mlir/IR/Operation.h"
 
 namespace M {
-/// This is like `Operation::clone`, but instead of just keeping track of the
-/// block and value mapping for the copy, it also keeps track of the
-/// operation<->operation mapping.  This matters because not all operations have
-/// results.
-Operation *cloneOperation(Operation *original, BlockAndValueMapping &mapper,
-                          DenseMap<Operation *, Operation *> &operationMap);
-
 /// Given an operation, determine whether any nested operations use values
 /// captured from above. Store those captures in the `captures` pointer if it's
 /// provided.

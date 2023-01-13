@@ -126,7 +126,7 @@ struct ForceInlineDialectInterface : public mlir::DialectInlinerInterface {
   using DialectInlinerInterface::DialectInlinerInterface;
 
   bool isLegalToInline(Operation *, Region *, bool,
-                       BlockAndValueMapping &) const override {
+                       IRMapping &) const override {
     return true;
   }
 
@@ -135,8 +135,7 @@ struct ForceInlineDialectInterface : public mlir::DialectInlinerInterface {
     return true;
   }
 
-  bool isLegalToInline(Region *, Region *, bool,
-                       BlockAndValueMapping &) const override {
+  bool isLegalToInline(Region *, Region *, bool, IRMapping &) const override {
     return true;
   }
 };
