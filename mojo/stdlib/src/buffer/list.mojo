@@ -114,7 +114,7 @@ fn create_kgen_list[
 
 fn create_kgen_list[
     type: __mlir_type.`!kgen.mlirtype`
-](e0: type, e1: type, e2: type, e3: type, e4: type, e5: type,) -> __mlir_type[
+](e0: type, e1: type, e2: type, e3: type, e4: type, e5: type) -> __mlir_type[
     `!kgen.list<`, type, `[6]>`
 ]:
     """Creates a list given a type and elements.
