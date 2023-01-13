@@ -861,11 +861,8 @@ LogicalResult RebindOp::verify() {
 /// Fold away the rebind if the input and output types are the same.
 OpFoldResult RebindOp::fold(ArrayRef<Attribute> operands) {
   assert(operands.size() == 1);
-  if (getInput().getType() == getType()) {
-    if (operands.front())
-      return operands.front();
+  if (getInput().getType() == getType())
     return getInput();
-  }
   return {};
 }
 
