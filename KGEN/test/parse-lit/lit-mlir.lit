@@ -88,9 +88,9 @@ fn testAttrConcatWithoutType[
 struct MyPointer[eltType: __mlir_type.`!kgen.mlirtype`]:
   alias StorageTy = __mlir_type[`!pop.pointer<`, eltType, `>`]
   # CHECK: kgen.struct.field value : !pop.pointer<eltType>
-  var value: MyPointer[eltType].StorageTy
+  var value: StorageTy
 
-  fn __new__(value: MyPointer[eltType].StorageTy) -> MyPointer[eltType]:
+  fn __new__(value: StorageTy) -> MyPointer[eltType]:
     return __mlir_op.`kgen.struct.create`[_type: MyPointer[eltType]](value)
 
 # CHECK-LABEL: getAddressOf{{.*}}"<T: type>(%arg: !pop.pointer<T> byref)
