@@ -46,7 +46,7 @@ RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value) {
 
   auto loc = value.expr->getLoc();
   if (!builder) {
-    emitError(loc, "context only permits a meta value, not a dynamic one")
+    emitError(loc, "cannot use a dynamic value in a parameter context")
         << value.expr->getRange();
     return {};
   }
@@ -71,7 +71,7 @@ DRValue IREmitter::emitDRValue(ASTExprAnd<RValue> value) {
   auto attr = value.ir.getIfMValue().get();
   if (!builder) {
     emitError(value.expr->getLoc(),
-              "context only permits a meta value, not a dynamic one")
+              "cannot use a dynamic value in a parameter context")
         << value.expr->getRange();
     return {};
   }

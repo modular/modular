@@ -771,18 +771,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       assert(argVal && "Call should already be type checked");
       break;
     case ValueInputConvention::ByVal:
-      if (!emitter.builder) {
-        argVal = argAnyValueAndExpr.ir;
-        if (!argVal.getIfMValue()) {
-          emitter.emitError(argAnyValueAndExpr.expr->getLoc(),
-                            "cannot use a dynamic value in meta context")
-              << argAnyValueAndExpr.expr->getRange();
-          return {};
-        }
-      } else {
-        argVal = emitter.emitDRValue(argAnyValueAndExpr);
-      }
-
+      argVal = emitter.emitRValue(argAnyValueAndExpr);
       // Convert the argument to the expected type if needed.
       argVal = emitter.getAsExpectedType(argVal, argAnyValueAndExpr.expr,
                                          expectedType, " in argument");
@@ -798,8 +787,15 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   if (!builder) {
     // Emitting a call in a meta context. Generate an apply operator.
     SmallVector<TypedAttr> operands({callee.getIfMValue().get()});
-    for (auto [argVal, expr] : valueArguments)
+    for (auto [argVal, expr] : valueArguments) {
+      if (!argVal.getIfMValue()) {
+        emitter.emitError(expr->getLoc(),
+                          "cannot use a dynamic value in meta context")
+            << expr->getRange();
+        return {};
+      }
       operands.push_back(argVal.getIfMValue().get());
+    }
     return MValue(ParamOperatorAttr::get(POC::Apply, operands));
   }
 
@@ -810,6 +806,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       callArgs.push_back(lv);
     else
       callArgs.push_back(emitter.emitDRValue({argVal, expr}));
+    if (!callArgs.back())
+      return {};
   }
 
   Operation *callOp;
