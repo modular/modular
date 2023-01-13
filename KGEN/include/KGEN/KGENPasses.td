@@ -280,6 +280,20 @@ def CleanupCompilerGlobals: Pass<"cleanup-compiler-globals",
 }
 
 //===----------------------------------------------------------------------===//
+// EliminateDeadSymbols
+//===----------------------------------------------------------------------===//
+
+def EliminateDeadSymbols: Pass<"eliminate-dead-symbols", "ModuleOp"> {
+  let summary = "remove dead symbols.";
+  let description = [{
+    This pass walks the symbols defined in the module and removes them
+    if they aren't exported and have no uses.
+  }];
+
+  let dependentDialects = ["KGENDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // Mem2Reg
 //===----------------------------------------------------------------------===//
 
