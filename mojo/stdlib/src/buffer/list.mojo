@@ -3,7 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
+from Int import Int
 from Assert import assert_param
+
+
+# ===----------------------------------------------------------------------===#
+# create_kgen_list
+# ===----------------------------------------------------------------------===#
 
 
 fn create_kgen_list[
@@ -263,6 +270,71 @@ fn create_kgen_list[
     return __mlir_op.`pop.list.create`[
         _type : __mlir_type[`!kgen.list<`, type, `[10]>`]
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9)
+
+
+# ===----------------------------------------------------------------------===#
+# _get_kgen_list_item
+# ===----------------------------------------------------------------------===#
+
+
+fn _get_kgen_list_item[
+    index: __mlir_type.index,
+    size: __mlir_type.index,
+    type: __mlir_type.`!kgen.mlirtype`,
+](lst: __mlir_type[`!kgen.list<`, type, `[`, size, `]>`]) -> type:
+    """Gets the list element of an input list at position `index`.
+
+    Args:
+        index (index): the position to get the value from.
+        size (index): the size of the list.
+        type (!kgen.mlirtype): the element type of the list.
+        lst (!pop.list<type[size]>): the list to get the values from.
+
+    Returns:
+        type: The value at position `index` in the list.
+    """
+    assert_param[index <= size]()
+    return __mlir_op.`pop.list.get`[index:index, _type:type](lst)
+
+
+# ===----------------------------------------------------------------------===#
+# product
+# ===----------------------------------------------------------------------===#
+
+
+fn product[
+    size: __mlir_type.index
+](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
+    return _product_impl[0, size](lst)
+
+
+@interface
+fn _product_impl[
+    idx: __mlir_type.index, size: __mlir_type.index
+](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
+    ...
+
+
+@implements(_product_impl)
+fn _product_impl_base[
+    idx: __mlir_type.index, size: __mlir_type.index
+](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
+    assert_param[idx == size]()
+    return 1
+
+
+@implements(_product_impl)
+fn _product_impl_iter[
+    idx: __mlir_type.index, size: __mlir_type.index
+](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
+    assert_param[idx < size]()
+    return _get_kgen_list_item[idx, size, __mlir_type.index](
+        lst
+    ) * _product_impl[idx + 1, size](lst)
+
+# ===----------------------------------------------------------------------===#
+# create_kgen_list_unknown
+# ===----------------------------------------------------------------------===#
 
 
 @interface
