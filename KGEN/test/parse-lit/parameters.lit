@@ -320,3 +320,12 @@ fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.f32],
                             b: MyVector[4, dt]):
 
    assert_param[(dt == MyDType.f64).__lit_bool()]()
+
+# Issue #6828: Unqualified name lookup into structs doesn't work
+# CHECK-LABEL:  kgen.struct.decl @UnqualAliasLookup<param>
+struct UnqualAliasLookup[param: __mlir_type.index]:
+  # CHECK: kgen.param.declare member = <add(param, 1)>
+  alias member = param+1
+  fn get(self) -> __mlir_type.index:
+    # CHECK: %0 = kgen.param.constant = <add(param, 1)>
+    return member

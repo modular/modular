@@ -250,6 +250,14 @@ static MValue resolveParamDeclareValue(ParamDeclareOp param,
     // If this is in a struct, then the value may refer to parameters declared
     // on the struct, whose values come through 'bindings'.  Remap.
     if (auto structDecl = dyn_cast<StructDeclOp>(parent)) {
+      // If the reference is to a member of the struct that has bindings, remap
+      // them.  This allows things like `SomeType[a,b].someAlias` to substitute
+      // the a/b values into the body of `someAlias`.  If we have no bindings,
+      // then we know we're in a context where the body of the alias is still
+      // valid.
+      if (!bindings)
+        return param.getValue();
+
       assert(structDecl.getInputParamDecls().size() == bindings.size() &&
              "mismatch in # struct parameters and # bindings");
 
@@ -436,10 +444,7 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
 
   // Parameters form a meta-value.
   if (auto param = dyn_cast<ParamDeclareOp>(decl)) {
-    // FIXME: This is wrong.
-    auto bindings =
-        /*no param bindings*/ ParamBindArrayAttr::get(emitter.getContext(), {});
-    return {{resolveParamDeclareValue(param, bindings), this}};
+    return {{resolveParamDeclareValue(param, /*bindings=*/{}), this}};
   }
 
   // Use of forward references.
