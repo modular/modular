@@ -394,7 +394,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
 
   assert(operandValues.size() == 1 &&
          "Should have a single returned value now");
-  Value resultValue = operandValues[0];
+  DRValue resultValue = operandValues[0];
 
   // Ok, now that we parsed all the tokens for this statement, do semantic
   // analysis.
@@ -416,12 +416,24 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
           << resultParams->getRange();
       return success();
     }
-    for (ExprNode *paramExpr : resultParamList->exprs) {
+    for (auto [paramExpr, paramType] :
+         llvm::zip(resultParamList->exprs, decl.getResultParamTypes())) {
       auto result = emitter.emitExprMValue(
           paramExpr, "dynamic value not allowed in result parameter list");
       if (!result)
         return success();
-      resultParamValues.push_back(result);
+
+      // Clear the builder to indicate that an MValue must be emitted.
+      llvm::SaveAndRestore<std::optional<OpBuilder>> savedBuilder(
+          emitter.builder);
+      emitter.builder.reset();
+
+      auto casted = emitter.getAsExpectedType(result, paramExpr, paramType,
+                                              " in parameter return");
+      if (!casted)
+        return success();
+
+      resultParamValues.push_back(casted.getIfMValue());
     }
   }
 
@@ -429,7 +441,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // function is a 'raising' function we need to remove the extra variant type
   // to get the normal result type.
   resultValue = emitter.emitDRValue(
-      {emitter.getAsExpectedType(DRValue(resultValue), operandExprs[0],
+      {emitter.getAsExpectedType(resultValue, operandExprs[0],
                                  decl.getNormalResultType(), " in return"),
        operandExprs[0]});
   if (!resultValue)

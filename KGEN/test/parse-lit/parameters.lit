@@ -236,6 +236,12 @@ fn useResultParams(i: Int):
   # CHECK: kgen.call @"$parameters"::@"just_result_params()"<() -> c>()
   just_result_params[() -> c]()
 
+# Issue #6904: Parameter results don't get implicit conversions
+# CHECK: lit.func @"testResultParamConversion
+fn testResultParamConversion[()->Int](a: Int):
+  # CHECK: kgen.return<:!kgen.declref<@"$Int"::@Int> apply(:(index) -> !kgen.declref<@"$Int"::@Int> @"$Int"::@Int::@"__new__(__mlir_type.index)", 4)>
+  return[4]
+
 ##===----------------------------------------------------------------------===##
 # First-class functions as parameters.
 ##===----------------------------------------------------------------------===##
