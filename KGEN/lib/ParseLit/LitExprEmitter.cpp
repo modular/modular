@@ -258,12 +258,19 @@ DRValue ExprEmitter::emitExprDRValue(const ExprNode *node) {
 /// This helper emits the specified expression as a meta value, diagnosing the
 /// problem if the expression is only valid as a runtime value.  This returns
 /// null if emission fails.
-MValue ExprEmitter::emitExprMValue(const ExprNode *node, const Twine &message) {
+MValue ExprEmitter::emitExprMValue(const ExprNode *node, ASTType resultType,
+                                   const Twine &errorSuffix) {
   // Clear the builder to indicate that an MValue must be emitted.
   llvm::SaveAndRestore<std::optional<OpBuilder>> savedBuilder(builder);
   builder.reset();
 
+  // Emit the expression.
   auto rep = node->emitIR(*this, /*No Contextual Type*/ {});
+
+  // If we had an expected type, do a conversion.
+  if (resultType)
+    rep = getAsExpectedType(rep, node, resultType, errorSuffix);
+
   if (!rep)
     return {};
 
@@ -271,7 +278,8 @@ MValue ExprEmitter::emitExprMValue(const ExprNode *node, const Twine &message) {
   if (auto value = rep.getIfMValue())
     return value;
 
-  emitError(node->getLoc(), message);
+  // Otherwise diagnose this as "not a parameter".
+  emitError(node->getLoc(), "cannot use a dynamic value") << errorSuffix;
   return {};
 }
 
@@ -297,7 +305,7 @@ LValue ExprEmitter::emitExprLValue(SMLoc loc, const ExprNode *node,
 /// "Int" into the type for it.  This emits an error and returns null on
 /// failure.
 ASTType ExprEmitter::emitExprType(const ExprNode *node) {
-  auto value = emitExprMValue(node, "expected a type");
+  auto value = emitExprMValue(node, {}, " in type specification");
   if (!value)
     return {};
 
