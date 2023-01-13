@@ -796,6 +796,21 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       }
       operands.push_back(argVal.getIfMValue().get());
     }
+
+    // Calls in parameter context cannot have result parameters.
+    if (!calleeSig.getResultParamTypes().empty()) {
+      assert(direct && "can only have result parameters in direct calls");
+      auto diag =
+          emitter.emitError(callLoc, "cannot call '")
+          << direct->baseName
+          << "' in parameter expression because it has a parameter result";
+      for (auto &resultParam : direct->resultParams) {
+        diag << LitSourceRange(resultParam.second, resultParam.second);
+        resultParam.first->hasReferenceError = true;
+      }
+      return {};
+    }
+
     return MValue(ParamOperatorAttr::get(POC::Apply, operands));
   }
 
