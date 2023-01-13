@@ -119,6 +119,11 @@ ConventionsAttr ConventionsAttr::get(MLIRContext *ctx, unsigned numInputs) {
              FnEffects::None);
 }
 
+ConventionsAttr ConventionsAttr::get(MLIRContext *ctx, unsigned numInputs,
+                                     FnEffects effects) {
+  return get(ctx, SmallVector<ValueInputConvention>(numInputs), effects);
+}
+
 bool ConventionsAttr::isDefault() {
   return getFnEffects() == FnEffects::None &&
          llvm::all_of(getInputConventions(),
@@ -1312,11 +1317,13 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
     return operands[0];
 
   // Otherwise, compute the result type. If an error is producted, just abort.
-  SignatureType resultSig =
-      *verifyBindSignature(operands, []() -> mlir::InFlightDiagnostic {
-        llvm_unreachable("invalid bind_signature operator");
+  auto resultSigOr =
+      verifyBindSignature(operands, [&]() -> mlir::InFlightDiagnostic {
+        return mlir::emitError(UnknownLoc::get(resultType.getContext()));
       });
-  resultType = resultSig;
+  if (failed(resultSigOr))
+    llvm::report_fatal_error("invalid bind_signature operator");
+  resultType = *resultSigOr;
 
   // If the actual operand is a SymbolConstantAttr operand, then we can simplify
   // the bind_signature by folding the parameter values into it directly.
@@ -1356,7 +1363,7 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
     return SymbolConstantAttr::get(
         symbolConstant.getSymbol(),
         ParamBindArrayAttr::get(resultType.getContext(), paramBinds),
-        resultSig);
+        cast<SignatureType>(resultType));
   }
 
   // If the operand is an expression function, substitute the parameter
@@ -1381,7 +1388,8 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
       exprs.push_back(evaluator.getReboundAttribute(expr));
     return ExprFuncAttr::get(
         exprFunc.getInputs(),
-        ParameterExprArrayAttr::get(exprFunc.getContext(), exprs), resultSig);
+        ParameterExprArrayAttr::get(exprFunc.getContext(), exprs),
+        cast<SignatureType>(resultType));
   }
 
   return {};
