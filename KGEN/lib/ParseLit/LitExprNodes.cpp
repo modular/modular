@@ -268,123 +268,6 @@ static MValue resolveParamDeclareValue(ParamDeclareOp param,
   return MValue(ParamDeclRefAttr::get(param.getName(), param.getType()));
 }
 
-/// Emit IR for an unqualified declaration reference "x" looked up in the
-/// specified 'containingType'.
-static CallableValue
-emitUnqualifiedDeclMember(ASTDecl &container, ParamBindArrayAttr bindings,
-                          StringRef memberName, const ExprNode *node,
-                          ExprEmitter &emitter, ASTType contextualType = {}) {
-  // Perform a lookup of the specified decl in the current container.
-  LookupResult lookup = emitter.shared.lookupAndResolveDecl(
-      memberName, node->getLoc(), container, /*searchParentScopes=*/true);
-
-  // If that lookup failed, but we can synthesize a variable declaration in this
-  // scope, do that.  We can only do this if there is a contextual type
-  // available and an insertion point.
-  if (lookup.isFailure() && contextualType && emitter.varDeclCursor) {
-    // Introduce a new lit.var.decl node whose type matches the
-    // implicitDeclType.
-    // TODO(autopromotions): turn infinite integers into concrete ones as
-    // needed.
-    Type declIRType = POP::PointerType::get(contextualType);
-
-    // Use this builder to place any VarDeclOps. In Python there is only one
-    // scope per function and all variables belong to that scope, so builders
-    // should reflect that.
-    auto loc = emitter.translateLocation(node->getLoc());
-    auto nameAttr = StringAttr::get(loc.getContext(), memberName);
-    auto varDecl = OpBuilder(emitter.varDeclCursor)
-                       .create<VarDeclOp>(loc, declIRType, nameAttr);
-
-    // If the unresolved name is `_`, then we have a discard pattern.  Python
-    // supports this by just implicitly declaring a variable named _ and
-    // allowing rewrites, but we cannot take this approach because each discard
-    // could have a different type.  Handle this specially by not inserting the
-    // `_` variable into the name table, so we'll get a new instance on every
-    // use.
-    if (memberName == "_") {
-      // Move it right before the use, like a var decl, instead of leaving it at
-      // the entrypoint of the function.  It won't get reused.
-      varDecl->moveBefore(emitter.builder->getInsertionBlock(),
-                          emitter.builder->getInsertionPoint());
-      return {{AnyValue(LValue(varDecl.getResult())), node}};
-    }
-
-    // By policy in order to produce a more predictable programming model,
-    // implicit declarations of variables are only allowed in `def` contexts,
-    // not in `fn`, structs, or top level.  We could re-evaluate this in the
-    // future if we'd like.
-    auto funcContext =
-        dyn_cast_or_null<LIT::FuncOp>(emitter.declScope.getIfOperation());
-    if (!funcContext || !funcContext.getIsDef()) {
-      auto diag = emitter.emitError(node->getLoc())
-                  << "use of unknown declaration '" << memberName << "'"
-                  << node->getRange();
-      if (funcContext)
-        diag << ", `fn` declarations require explicit variable declarations";
-      return {};
-    }
-
-    // In a normal implicit declaration, we add it to the name table so
-    // subsequent uses find this one.
-    emitter.getDeclResolver().addFullyResolvedDecl(varDecl, node->getLoc(),
-                                                   nameAttr, &container);
-    // Re-do lookup, making sure we form a uniqued vector that we can reference.
-    lookup = emitter.shared.lookupAndResolveDecl(
-        memberName, node->getLoc(), container, /*searchParentScopes=*/false);
-  }
-
-  ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
-  if (decls.empty()) {
-    if (lookup.isFailure()) {
-      auto diag = emitter.emitError(node->getLoc()) << node->getRange();
-      if (auto structDecl = dyn_cast<StructDeclOp>(container))
-        diag << structDecl.getName() << " has no '" << memberName << "' member";
-      else
-        diag << "use of unknown declaration '" << memberName << "'";
-    }
-    return {};
-  }
-
-  // Functions form an address, and may be overloaded.
-  if (isa<LIT::FuncOp>(*decls[0]))
-    return CallableValue(node->getLoc(), memberName, decls, bindings);
-
-  assert(decls.size() == 1 && "Only functions may be overloaded");
-  ASTDecl &decl = *decls[0];
-
-  // Let declarations resolve to an rvalue.
-  if (auto letDecl = dyn_cast<LetDeclOp>(decl))
-    return {{AnyValue(RValue(letDecl.getResult())), node}};
-
-  // Variable references resolve to an lvalue addressing the variable.
-  if (auto var = dyn_cast<VarDeclOp>(decl))
-    return {{AnyValue(LValue(var.getResult())), node}};
-
-  // Parameters form a meta-value.
-  if (auto param = dyn_cast<ParamDeclareOp>(decl))
-    return {{resolveParamDeclareValue(param, bindings), node}};
-
-  // Use of forward references.
-  if (auto param = dyn_cast<AliasForwardDeclOp>(decl))
-    return {{MValue(ParamDeclRefAttr::get(param.getName(), param.getType())),
-             node}};
-
-  // RValue's and LValues always resolve to their known value.
-  if (auto rvalue = decl.getIfRValue())
-    return {{rvalue, node}};
-  if (auto lvalue = decl.getIfLValue())
-    return {{lvalue, node}};
-
-  // If this is a type declaration, return it as a type.
-  if (isa<StructDeclOp>(decl))
-    return {{MValue(DeclRefType::get(decl.getSymbolRef())), node}};
-
-  emitter.emitError(node->getLoc(), "use of declaration \"")
-      << memberName << "\" as a value isn't supported yet" << node->getRange();
-  return {};
-}
-
 //===----------------------------------------------------------------------===//
 // ExprNode Implementation
 //===----------------------------------------------------------------------===//
@@ -459,14 +342,124 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter,
   return emitCallable(emitter, contextualType).emitAsValue(emitter);
 }
 
-/// Emit this expression to MLIR as a CallableValue.  On error, emit an error
-/// and return a null value.
+/// Emit IR for an unqualified declaration reference "x" looked up in current
+/// context.
 CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
                                         ASTType contextualType) const {
-  return emitUnqualifiedDeclMember(
-      emitter.declScope,
-      /*no param bindings*/ ParamBindArrayAttr::get(emitter.getContext(), {}),
-      spelling, this, emitter, contextualType);
+  ASTDecl &container = emitter.declScope;
+
+  // Perform a lookup of the specified decl in the current container.
+  LookupResult lookup = emitter.shared.lookupAndResolveDecl(
+      spelling, getLoc(), container, /*searchParentScopes=*/true);
+
+  // If that lookup failed, but we can synthesize a variable declaration in this
+  // scope, do that.  We can only do this if there is a contextual type
+  // available and an insertion point.
+  if (lookup.isFailure() && contextualType && emitter.varDeclCursor) {
+    // Introduce a new lit.var.decl node whose type matches the
+    // implicitDeclType.
+    // TODO(autopromotions): turn infinite integers into concrete ones as
+    // needed.
+    Type declIRType = POP::PointerType::get(contextualType);
+
+    // Use this builder to place any VarDeclOps. In Python there is only one
+    // scope per function and all variables belong to that scope, so builders
+    // should reflect that.
+    auto loc = emitter.translateLocation(getLoc());
+    auto nameAttr = StringAttr::get(loc.getContext(), spelling);
+    auto varDecl = OpBuilder(emitter.varDeclCursor)
+                       .create<VarDeclOp>(loc, declIRType, nameAttr);
+
+    // If the unresolved name is `_`, then we have a discard pattern.  Python
+    // supports this by just implicitly declaring a variable named _ and
+    // allowing rewrites, but we cannot take this approach because each discard
+    // could have a different type.  Handle this specially by not inserting the
+    // `_` variable into the name table, so we'll get a new instance on every
+    // use.
+    if (spelling == "_") {
+      // Move it right before the use, like a var decl, instead of leaving it at
+      // the entrypoint of the function.  It won't get reused.
+      varDecl->moveBefore(emitter.builder->getInsertionBlock(),
+                          emitter.builder->getInsertionPoint());
+      return {{AnyValue(LValue(varDecl.getResult())), this}};
+    }
+
+    // By policy in order to produce a more predictable programming model,
+    // implicit declarations of variables are only allowed in `def` contexts,
+    // not in `fn`, structs, or top level.  We could re-evaluate this in the
+    // future if we'd like.
+    auto funcContext =
+        dyn_cast_or_null<LIT::FuncOp>(emitter.declScope.getIfOperation());
+    if (!funcContext || !funcContext.getIsDef()) {
+      auto diag = emitter.emitError(getLoc()) << "use of unknown declaration '"
+                                              << spelling << "'" << getRange();
+      if (funcContext)
+        diag << ", `fn` declarations require explicit variable declarations";
+      return {};
+    }
+
+    // In a normal implicit declaration, we add it to the name table so
+    // subsequent uses find this one.
+    emitter.getDeclResolver().addFullyResolvedDecl(varDecl, getLoc(), nameAttr,
+                                                   &container);
+    // Re-do lookup, making sure we form a uniqued vector that we can reference.
+    lookup = emitter.shared.lookupAndResolveDecl(spelling, getLoc(), container,
+                                                 /*searchParentScopes=*/false);
+  }
+
+  ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
+  if (decls.empty()) {
+    if (lookup.isFailure()) {
+      auto diag = emitter.emitError(getLoc()) << getRange();
+      if (auto structDecl = dyn_cast<StructDeclOp>(container))
+        diag << structDecl.getName() << " has no '" << spelling << "' member";
+      else
+        diag << "use of unknown declaration '" << spelling << "'";
+    }
+    return {};
+  }
+
+  // Functions form an address, and may be overloaded.
+  if (isa<LIT::FuncOp>(*decls[0]))
+    return CallableValue(getLoc(), spelling, decls, /*bindings=*/{});
+
+  assert(decls.size() == 1 && "Only functions may be overloaded");
+  ASTDecl &decl = *decls[0];
+
+  // Let declarations resolve to an rvalue.
+  if (auto letDecl = dyn_cast<LetDeclOp>(decl))
+    return {{AnyValue(RValue(letDecl.getResult())), this}};
+
+  // Variable references resolve to an lvalue addressing the variable.
+  if (auto var = dyn_cast<VarDeclOp>(decl))
+    return {{AnyValue(LValue(var.getResult())), this}};
+
+  // Parameters form a meta-value.
+  if (auto param = dyn_cast<ParamDeclareOp>(decl)) {
+    // FIXME: This is wrong.
+    auto bindings =
+        /*no param bindings*/ ParamBindArrayAttr::get(emitter.getContext(), {});
+    return {{resolveParamDeclareValue(param, bindings), this}};
+  }
+
+  // Use of forward references.
+  if (auto param = dyn_cast<AliasForwardDeclOp>(decl))
+    return {{MValue(ParamDeclRefAttr::get(param.getName(), param.getType())),
+             this}};
+
+  // RValue's and LValues always resolve to their known value.
+  if (auto rvalue = decl.getIfRValue())
+    return {{rvalue, this}};
+  if (auto lvalue = decl.getIfLValue())
+    return {{lvalue, this}};
+
+  // If this is a type declaration, return it as a type.
+  if (isa<StructDeclOp>(decl))
+    return {{MValue(DeclRefType::get(decl.getSymbolRef())), this}};
+
+  emitter.emitError(getLoc(), "use of declaration \"")
+      << spelling << "\" as a value isn't supported yet" << getRange();
+  return {};
 }
 
 /// This uses the MLIR parser to turn the specified MLIR type name into an MLIR
