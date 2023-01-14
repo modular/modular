@@ -3,13 +3,25 @@
 from prolog import Int
 import imported_module
 
+# Check that we properly generate functions that get resolved within other functions.
+# This is mostly checking that the scope of the nested function is not another function.
+
+# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "test", linkageName = "test($lit-debuginfo::CalledStruct[param])"
+
+struct CalledStruct[param: __mlir_type.index]:
+    fn test(self):
+      return
+
+fn callerFn[rows: __mlir_type.index](arg0: CalledStruct[rows]):
+    return arg0.test()
+
 # Check single file debug info generation.
 
-# CHECK: ![[INT_TYPE:.*]] = !debuginfo.unresolved<!kgen.declref<@"$Int"::@Int>>
-# CHECK: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(![[INT_TYPE]], ![[INT_TYPE]]) -> (![[INT_TYPE]]): DW_CC_normal>
-# CHECK: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power($Int::Int,$Int::Int)", file = #{{.*}}, line = 15, scopeLine = 15, subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
-# CHECK: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = 15, arg = 1> : ![[INT_TYPE]]
-# CHECK: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = 15, arg = 2> : ![[INT_TYPE]]
+# CHECK-DAG: ![[INT_TYPE:.*]] = !debuginfo.unresolved<!kgen.declref<@"$Int"::@Int>>
+# CHECK-DAG: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(![[INT_TYPE]], ![[INT_TYPE]]) -> (![[INT_TYPE]]): DW_CC_normal>
+# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power($Int::Int,$Int::Int)", file = #{{.*}}, line = 27, scopeLine = 27, subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
+# CHECK-DAG: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = 27, arg = 1> : ![[INT_TYPE]]
+# CHECK-DAG: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = 27, arg = 2> : ![[INT_TYPE]]
 
 # CHECK-LABEL: lit.func @"power($Int::Int,$Int::Int)"(
 fn power(lhs: Int, rhs: Int) -> Int:

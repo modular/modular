@@ -60,8 +60,12 @@ DISubprogramAttr DIBuilder::createSubprogram(StringRef name,
                                              unsigned int scopeLine,
                                              SubprogramFlags subprogramFlags,
                                              DISubroutineType type) {
-  return DISubprogramAttr::get(compileUnit, scopes.back(), name, linkageName,
-                               file, line, scopeLine, subprogramFlags, type);
+  // Get the last non-local scope to use as the parent for the subprogram.
+  auto it = scopes.rbegin();
+  while (isa<DILocalScopeAttr>(*it))
+    ++it;
+  return DISubprogramAttr::get(compileUnit, *it, name, linkageName, file, line,
+                               scopeLine, subprogramFlags, type);
 }
 
 DIFileAttr DIBuilder::createFile(StringRef name, StringRef directory) {
