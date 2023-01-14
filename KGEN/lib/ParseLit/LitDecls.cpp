@@ -600,10 +600,12 @@ ParseResult DeclResolver::resolveBody(ParamDeclRefAttr op, LitLexer &lexer,
 static SmallVector<ExprNode *> parseDecorators(ASTDecl &decl,
                                                LitParserBase &p) {
   SmallVector<ExprNode *> result;
+  ssize_t indentation = decl.getParentDecl()->getIndentation();
+  if (p.getToken().getIndentation())
+    indentation = p.getToken().getIndentation().value();
   while (p.consumeIf(LitToken::at)) {
     ExprNode *decoratorExpr;
-    if (p.parseExpression(decoratorExpr,
-                          decl.getParentDecl()->getIndentation()))
+    if (p.parseExpression(decoratorExpr, indentation))
       break;
     result.push_back(decoratorExpr);
   }
