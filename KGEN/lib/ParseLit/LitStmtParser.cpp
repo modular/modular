@@ -45,15 +45,22 @@ struct LitStmtParser : public LitParserBase {
       : LitParserBase(lexer), containingDecl(containingDecl),
         builder(containingDecl.getDeclEndBuilder()) {
 
-    // Create the varDeclCursor with an arbitrary op.  We delete it on
-    // destruction of this statement parser.
-    varDeclCursor = builder.create<mlir::index::ConstantOp>(
-        mlir::UnknownLoc::get(getContext()), 1234567);
+    // If we are parsing into a 'def', then we need a position to synthesize
+    // variable definitions at the top of the function.
+    if (auto funcOp = dyn_cast<LIT::FuncOp>(containingDecl)) {
+      if (funcOp.getIsDef()) {
+        // Create the varDeclCursor with an arbitrary op.  We delete it on
+        // destruction of this statement parser.
+        varDeclCursor = builder.create<mlir::index::ConstantOp>(
+            mlir::UnknownLoc::get(getContext()), 1234567);
+      }
+    }
   }
 
   ~LitStmtParser() {
     // The varDeclCursor operation is no longer needed.
-    varDeclCursor->erase();
+    if (varDeclCursor)
+      varDeclCursor->erase();
   }
 
   const ASTDecl &getDecl() const { return containingDecl; }
@@ -97,11 +104,12 @@ private:
   /// This is the builder that we are constructing IR into.
   OpBuilder builder;
 
-  /// This is the operation we should install VarDecl's ahead of.  This ensures
-  /// they are emitted ahead of anything else in the region for the decl, and
-  /// in decls with multiple regions (e.g. function bodies with if statements)
-  /// it ensures the decl dominates the whole body.
-  Operation *varDeclCursor;
+  /// This is the operation we should install VarDecl's ahead of if we are
+  /// parsing into a 'def'.  This ensures they are emitted ahead of anything
+  /// else in the region for the decl, and in decls with multiple regions (e.g.
+  /// function bodies with if statements) it ensures the decl dominates the
+  /// whole body.
+  Operation *varDeclCursor = nullptr;
 };
 } // namespace
 

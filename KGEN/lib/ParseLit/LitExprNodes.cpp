@@ -360,42 +360,55 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, getLoc(), container, /*searchParentScopes=*/true);
 
-  // If that lookup failed, but we can synthesize a variable declaration in this
-  // scope, do that.  We can only do this if there is a contextual type
-  // available and an insertion point.
-  if (lookup.isFailure() && contextualType && emitter.varDeclCursor) {
+  auto createVarDeclWithContextualType = [&](OpBuilder &builder) -> VarDeclOp {
+    Type declIRType = POP::PointerType::get(contextualType);
+    auto loc = emitter.translateLocation(getLoc());
+    auto nameAttr = StringAttr::get(loc.getContext(), spelling);
+    return builder.create<VarDeclOp>(loc, declIRType, nameAttr);
+  };
+
+  // If the unresolved name is `_`, then we have a discard pattern.  Python
+  // supports this by just implicitly declaring a variable named _ and
+  // allowing rewrites, but we cannot take this approach because each discard
+  // could have a different type.  Handle this specially by not inserting the
+  // `_` variable into the name table, so we'll get a new instance on every use.
+  if (lookup.isFailure() && contextualType && spelling == "_" &&
+      emitter.builder) {
     // Introduce a new lit.var.decl node whose type matches the
     // implicitDeclType.
     // TODO(autopromotions): turn infinite integers into concrete ones as
     // needed.
-    Type declIRType = POP::PointerType::get(contextualType);
+    auto varDecl = createVarDeclWithContextualType(*emitter.builder);
+    return {{AnyValue(LValue(varDecl.getResult())), this}};
+  }
 
+  // If that lookup failed, but we can synthesize a variable declaration in this
+  // scope, do that.  We can only do this if there is a contextual type
+  // available and an insertion point.
+  if (lookup.isFailure() && contextualType && emitter.varDeclCursor) {
     // Use this builder to place any VarDeclOps. In Python there is only one
     // scope per function and all variables belong to that scope, so builders
     // should reflect that.
-    auto loc = emitter.translateLocation(getLoc());
-    auto nameAttr = StringAttr::get(loc.getContext(), spelling);
-    auto varDecl = OpBuilder(emitter.varDeclCursor)
-                       .create<VarDeclOp>(loc, declIRType, nameAttr);
+    OpBuilder varDeclBuilder(emitter.varDeclCursor);
+    auto varDecl = createVarDeclWithContextualType(varDeclBuilder);
 
-    // If the unresolved name is `_`, then we have a discard pattern.  Python
-    // supports this by just implicitly declaring a variable named _ and
-    // allowing rewrites, but we cannot take this approach because each discard
-    // could have a different type.  Handle this specially by not inserting the
-    // `_` variable into the name table, so we'll get a new instance on every
-    // use.
-    if (spelling == "_") {
-      // Move it right before the use, like a var decl, instead of leaving it at
-      // the entrypoint of the function.  It won't get reused.
-      varDecl->moveBefore(emitter.builder->getInsertionBlock(),
-                          emitter.builder->getInsertionPoint());
-      return {{AnyValue(LValue(varDecl.getResult())), this}};
-    }
+    // In a normal implicit declaration, we add it to the name table so
+    // subsequent uses find this one.
+    emitter.getDeclResolver().addFullyResolvedDecl(
+        varDecl, getLoc(), varDecl.getNameAttr(), &container);
+    // Re-do lookup, making sure we form a uniqued vector that we can reference.
+    lookup = emitter.shared.lookupAndResolveDecl(spelling, getLoc(), container,
+                                                 /*searchParentScopes=*/false);
+  }
+
+  ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
+  if (decls.empty()) {
+    if (lookup.isErroneous())
+      return {}; // Error already diagnosed.
 
     // By policy in order to produce a more predictable programming model,
     // implicit declarations of variables are only allowed in `def` contexts,
-    // not in `fn`, structs, or top level.  We could re-evaluate this in the
-    // future if we'd like.
+    // not in `fn`, structs, or top level.
     auto funcContext =
         dyn_cast_or_null<LIT::FuncOp>(emitter.declScope.getIfOperation());
     if (!funcContext || !funcContext.getIsDef()) {
@@ -406,24 +419,11 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
       return {};
     }
 
-    // In a normal implicit declaration, we add it to the name table so
-    // subsequent uses find this one.
-    emitter.getDeclResolver().addFullyResolvedDecl(varDecl, getLoc(), nameAttr,
-                                                   &container);
-    // Re-do lookup, making sure we form a uniqued vector that we can reference.
-    lookup = emitter.shared.lookupAndResolveDecl(spelling, getLoc(), container,
-                                                 /*searchParentScopes=*/false);
-  }
-
-  ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
-  if (decls.empty()) {
-    if (lookup.isFailure()) {
-      auto diag = emitter.emitError(getLoc()) << getRange();
-      if (auto structDecl = dyn_cast<StructDeclOp>(container))
-        diag << structDecl.getName() << " has no '" << spelling << "' member";
-      else
-        diag << "use of unknown declaration '" << spelling << "'";
-    }
+    auto diag = emitter.emitError(getLoc()) << getRange();
+    if (auto structDecl = dyn_cast<StructDeclOp>(container))
+      diag << structDecl.getName() << " has no '" << spelling << "' member";
+    else
+      diag << "use of unknown declaration '" << spelling << "'";
     return {};
   }
 
