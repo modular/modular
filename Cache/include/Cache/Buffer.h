@@ -62,7 +62,7 @@ protected:
 
   /// Initialize an empty Buffer. This is protected because we don't want to
   /// initialize empty read-only buffers.
-  Buffer() : mallocd(), kind(kMalloc){};
+  Buffer() : mallocd(), kind(kMalloc) {}
 
   /// Construct the Buffer where it has to copy its data.
   Buffer(StringRef data);

@@ -17,12 +17,12 @@ using namespace Cache;
 /// Create a Buffer from an array of data.
 Buffer::Buffer(StringRef data) {
   kind = kMalloc;
-  this->mallocd = AllocatedBuffer(data);
+  new (&this->mallocd) AllocatedBuffer(data);
 }
 
 Buffer::Buffer(llvm::sys::fs::mapped_file_region &&mapped) {
   kind = kMMap;
-  this->mapped = std::move(mapped);
+  new (&this->mapped) llvm::sys::fs::mapped_file_region(std::move(mapped));
 }
 
 Buffer::~Buffer() {
