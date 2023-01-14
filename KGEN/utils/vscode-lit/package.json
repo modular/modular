@@ -23,8 +23,9 @@
     "package": "vsce package --out ./out/vscode-lit.vsix"
   },
   "devDependencies": {
-    "@vscode/vsce": "^2.7.0",
+    "@types/node": "^18.11.18",
     "@types/vscode": "~1.74.0",
+    "@vscode/vsce": "^2.7.0",
     "typescript": "^4.6.4"
   },
   "repository": {
