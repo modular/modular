@@ -20,6 +20,7 @@ namespace M::KGEN::LIT {
 using llvm::SMLoc;
 class ASTDecl;
 class IREmitter;
+class FuncOp;
 
 //===----------------------------------------------------------------------===//
 // InputParamBindings
@@ -213,6 +214,12 @@ public:
   static bool canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
                                          ASTType requiredType,
                                          LitSharedState &shared);
+
+private:
+  AnyValue
+  debugInlineFunctionCall(SMLoc callLoc, ASTDecl &callee,
+                          ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
+                          IREmitter &emitter);
 };
 
 } // namespace M::KGEN::LIT

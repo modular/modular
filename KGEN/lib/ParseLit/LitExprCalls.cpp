@@ -758,43 +758,52 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
          "Type checking should be done");
 
   // Emit all the arguments.
-  SmallVector<std::pair<AnyValue, const ExprNode *>> valueArguments;
-  for (auto [argAnyValueAndExpr, expectedType, convention] :
+  SmallVector<ASTExprAnd<AnyValue>> argumentValues;
+  for (auto [argValueAndExpr, expectedType, convention] :
        llvm::zip(operands, calleeSig.getValueInputs(),
                  calleeSig.getValueInputConventions())) {
-    // If the callee takes the operand as a by-ref argument, we require an
-    // lvalue.
     AnyValue argVal;
     switch (convention) {
     case ValueInputConvention::ByRef:
-      argVal = argAnyValueAndExpr.ir.getIfLValue();
-      assert(argVal && "Call should already be type checked");
+      // By-ref arguments, must be lvalues.
+      argVal = argValueAndExpr.ir;
+      assert(argVal.getIfLValue() && "Call should already be type checked");
       break;
     case ValueInputConvention::ByVal:
-      argVal = emitter.emitRValue(argAnyValueAndExpr);
-      // Convert the argument to the expected type if needed.
-      argVal = emitter.getAsExpectedType(argVal, argAnyValueAndExpr.expr,
+      // by-val arguments are converted to the expected r-value type.
+      argVal = emitter.emitRValue(argValueAndExpr);
+      argVal = emitter.getAsExpectedType(argVal, argValueAndExpr.expr,
                                          expectedType, " in argument");
       if (!argVal)
         return {};
       break;
     }
 
-    valueArguments.emplace_back(argVal, argAnyValueAndExpr.expr);
+    argumentValues.push_back({argVal, argValueAndExpr.expr});
+  }
+
+  // If this is a call to a @nodebug_inline function, look into inlining it.
+  // This can fail in a parameter context if the operations are not all
+  // foldable, in which case we'll fall back to using an 'apply' operator, or
+  // when the function isn't suitable for @nodebug_inline processing.
+  if (direct && cast<LIT::FuncOp>(*direct->fnDecls[0]).getNoDebugInline()) {
+    if (auto result = debugInlineFunctionCall(callLoc, *direct->fnDecls[0],
+                                              argumentValues, emitter))
+      return result;
   }
 
   auto &builder = emitter.builder;
   if (!builder) {
     // Emitting a call in a meta context. Generate an apply operator.
     SmallVector<TypedAttr> operands({callee.getIfMValue().get()});
-    for (auto [argVal, expr] : valueArguments) {
-      if (!argVal.getIfMValue()) {
-        emitter.emitError(expr->getLoc(),
+    for (auto argValAndExpr : argumentValues) {
+      if (!argValAndExpr.ir.getIfMValue()) {
+        emitter.emitError(argValAndExpr.expr->getLoc(),
                           "cannot use a dynamic value in meta context")
-            << expr->getRange();
+            << argValAndExpr.expr->getRange();
         return {};
       }
-      operands.push_back(argVal.getIfMValue().get());
+      operands.push_back(argValAndExpr.ir.getIfMValue().get());
     }
 
     // Calls in parameter context cannot have result parameters.
@@ -816,18 +825,18 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
   // Otherwise, materialize MValue arguments as DRValues.
   SmallVector<Value> callArgs;
-  for (auto [argVal, expr] : valueArguments) {
-    if (auto lv = argVal.getIfLValue())
+  for (auto argValAndExpr : argumentValues) {
+    if (auto lv = argValAndExpr.ir.getIfLValue())
       callArgs.push_back(lv);
     else
-      callArgs.push_back(emitter.emitDRValue({argVal, expr}));
+      callArgs.push_back(emitter.emitDRValue(argValAndExpr));
     if (!callArgs.back())
       return {};
   }
 
   Operation *callOp;
-  Location loc = emitter.translateLocation(callLoc);
   ArrayRef<Type> resultTypes = calleeSig.getValueResults();
+  Location loc = emitter.translateLocation(callLoc);
   if (auto target = callee.getIfMValue()) {
     // If the callee is a symbol constant, directly emit a call.
     if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
@@ -858,4 +867,117 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
   // Value returning call returns its result.
   return DRValue(resultVal);
+}
+
+/// Attempt to process a function call according to the rules of
+/// @nodebug_inline.  On success, this returns the result value to use for the
+/// function call result, on failure this returns null (without producing an
+/// error) and the call is handled normally.
+AnyValue CallableValue::debugInlineFunctionCall(
+    SMLoc callLoc, ASTDecl &callee,
+    ArrayRef<ASTExprAnd<AnyValue>> argumentValues, IREmitter &emitter) {
+  auto funcOp = cast<LIT::FuncOp>(callee);
+
+  // Resolve the body to type check and generate the IR.  This will also check
+  // that the body is suitable for @nodebug_inline processing.
+  if (failed(emitter.getDeclResolver().resolve(
+          callee, DeclResolvedness::fullyResolved, callLoc)) ||
+      // Check for the flag again to make sure the body can be inlined.
+      !funcOp.getNoDebugInline())
+    return {};
+
+  // Ok, we know the the body is simple: no control flow / regions, no
+  // parameters, etc.  Our approach is to try to fold things aggressively if
+  // the inputs are parameters, but drop them out as cloned/inlined operations
+  // at the current insertion point if not.
+  auto &block = *funcOp.getBody();
+  assert(isa<ReturnOp>(block.back()));
+
+  // Keep track of a mapping from the arguments (and interior results of
+  // operations) to their representation.
+  SmallDenseMap<Value, RValue> valueMapping;
+
+  // Prime the arguments of the callee.
+  for (auto [blockArg, value] :
+       llvm::zip(block.getArguments(), argumentValues)) {
+    assert(value.ir.getIfRValue() &&
+           "all arguments are byval and emitted as rvalues");
+    valueMapping[blockArg] = value.ir.getIfRValue();
+  }
+
+  SmallVector<Attribute> operandAttrs;
+  SmallVector<OpFoldResult> foldResults;
+  for (auto &op : block) {
+    // Check to see if we can fold this operation.  The fold hook for an
+    // operation can take a null operand when it isn't constant.
+    operandAttrs.clear();
+    operandAttrs.reserve(op.getNumOperands());
+    for (auto operand : op.getOperands()) {
+      auto &entry = valueMapping[operand];
+      assert(entry && "Value mapping broken");
+      operandAttrs.push_back(entry.getIfMValue().get());
+    }
+
+    // If we successfully folded this, remember the results.
+    if (succeeded(op.fold(operandAttrs, foldResults))) {
+      assert(foldResults.size() == op.getNumResults());
+      for (auto [result, value] : llvm::zip(op.getResults(), foldResults)) {
+        PointerUnion<Attribute, Value> puValue = value;
+        if (auto drVal = dyn_cast<Value>(puValue))
+          valueMapping[result] = DRValue(drVal);
+        else {
+          auto attr = dyn_cast<TypedAttr>(cast<Attribute>(puValue));
+          assert(attr &&
+                 "Folding operation with typed result made untyped attr?");
+          valueMapping[result] = MValue(attr);
+        }
+      }
+      continue;
+    }
+
+    // If we couldn't fold it, check to see if it is one of our special cases.
+
+    // If this is is the return operation then we're done.
+    if (auto returnOp = dyn_cast<ReturnOp>(op)) {
+      assert(returnOp.getNumOperands() == 1 &&
+             "Lit functions always return one value");
+      return valueMapping[returnOp.getOperand(0)];
+    }
+
+    // We always squash let declarations, since they are only useful for debug
+    // information, they are what we are trying to flatten away.
+    if (auto letDecl = dyn_cast<LetDeclOp>(op)) {
+      valueMapping[letDecl.getResult()] = valueMapping[letDecl.getValue()];
+      continue;
+    }
+
+    // Otherwise, we'll have to clone this operation.  If we're in a parameter
+    // context, bail out and allow the normal call procssing logic to produce an
+    // apply of the original function.
+    if (!emitter.builder)
+      return {};
+    auto &builder = *emitter.builder;
+
+    // Otherwise, clone the operation over and rewrite the operands.
+    auto loc = emitter.translateLocation(callLoc);
+    auto newOp = op.clone();
+    newOp->setLoc(loc);
+    for (auto &opOperand : newOp->getOpOperands()) {
+      auto &entry = valueMapping[opOperand.get()];
+      assert(entry && "Value mapping broken");
+      // If the operand was a constant, then we materialize it, and remember the
+      // DRValue for subsequent uses.
+      if (auto mValue = entry.getIfMValue())
+        entry = DRValue(builder.create<ParamConstantOp>(loc, mValue.get()));
+      opOperand.set(entry.getIfDRValue());
+    }
+    builder.insert(newOp);
+
+    // Remember the result mapping.
+    for (auto [result, newVal] :
+         llvm::zip(op.getResults(), newOp->getResults()))
+      valueMapping[result] = DRValue(newVal);
+  }
+
+  llvm_unreachable("didn't find a kgen.return?");
 }
