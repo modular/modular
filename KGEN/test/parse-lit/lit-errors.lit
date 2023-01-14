@@ -669,7 +669,7 @@ fn nodebug_inline2(a: __mlir_type.i1) -> __mlir_type.index:
   else:
     return 2
 
-# expected-error @+2 {{@nodebug_inline does not allow function calls}}
+# expected-error @+2 {{@nodebug_inline does not allow function call to 'nodebug_inline1()'}}
 @nodebug_inline
 fn nodebug_inline3():
   nodebug_inline1() # expected-note {{operation defined here}}
@@ -679,7 +679,7 @@ fn nodebug_inline3():
 fn nodebug_inline4[()->__mlir_type.index]():
   return[4]
 
-# expected-error @+2 {{@nodebug_inline does not allow function calls}}
+# expected-error @+2 {{@nodebug_inline does not allow function call to 'nodebug_inline5()'}}
 @nodebug_inline
 fn nodebug_inline5(): # expected-note {{previously used here}}
   # expected-error @+1 {{recursive reference to declaration}}

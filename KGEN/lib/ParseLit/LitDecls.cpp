@@ -1411,22 +1411,34 @@ static void verifyNoDebugInline(LIT::FuncOp funcOp, LitSharedState &shared) {
       rejectFunc(badThing).attachNote(op.getLoc()) << "operation defined here";
     };
 
-    // Let decls are folded/dropped during inlining so they are free.
-    if (isa<LetDeclOp>(op) ||
+    // Let decls are folded/dropped during inlining so they are free, these
+    // other ops are glue that don't compute anything and generally get folded,
+    // so we treat them as free so abstraction doesn't get in the way of
+    // inlining.
+    if (isa<LetDeclOp, DebugInfo::ValueOp>(op) ||
+        isa<ReturnOp, StructExtractOp, StructCreateOp>(op) ||
         // Constants aren't computation and can often be dropped as well.
         (op.getNumOperands() == 0 && op.getNumResults() == 1 &&
          op.hasTrait<OpTrait::ConstantLike>()))
       continue;
 
+    // Disallow large function bodies.  We only want this to be used for small
+    // constructs.
     if (++numOps == 4)
-      return reject("large function body");
+      return reject("large function body with " +
+                    Twine(std::distance(funcOp.getBody()->begin(),
+                                        funcOp.getBody()->end())) +
+                    " ops");
 
     // We have a disallow-list for specific things we don't want to support.
     // The goal here is to allow simple leaf functions that fold when inlined.
     if (isa<VarDeclOp>(op))
       return reject("var declarations");
-    if (isa<CallOp, CallParamOp, POP::CallIndirectOp>(op))
-      return reject("function calls");
+    if (auto callOp = dyn_cast<CallOp>(op))
+      return reject("function call to '" +
+                    Twine(callOp.getCalleeSymbol().getLeafReference()) + "'");
+    if (isa<CallParamOp, POP::CallIndirectOp>(op))
+      return reject("indirect function calls");
     if (isa<TryRaiseOp>(op))
       return reject("control flow");
     if (!KGEN::getParamDecls(&op).empty())
