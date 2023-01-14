@@ -654,3 +654,33 @@ fn nonDefaultArgumentFollowsDefaultArgument(a: Int = 0, b: Int):
 fn incorrectParameterReturnType[()->__mlir_type.index]():
   # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '__mlir_type.index' in result parameter list}}
   return[4.0]
+
+# expected-error @+2 {{@nodebug_inline does not allow parameter declarations}}
+@nodebug_inline
+fn nodebug_inline1() -> __mlir_type.index:
+  alias x = 4  # expected-note {{operation defined here}}
+  return 1
+
+# expected-error @+2 {{@nodebug_inline does not allow operations with regions}}
+@nodebug_inline
+fn nodebug_inline2(a: __mlir_type.i1) -> __mlir_type.index:
+  if a:  # expected-note {{operation defined here}}
+    return 1
+  else:
+    return 2
+
+# expected-error @+2 {{@nodebug_inline does not allow function calls}}
+@nodebug_inline
+fn nodebug_inline3():
+  nodebug_inline1() # expected-note {{operation defined here}}
+
+# expected-error @+2 {{@nodebug_inline does not allow input or result parameters}}
+@nodebug_inline
+fn nodebug_inline4[()->__mlir_type.index]():
+  return[4]
+
+# expected-error @+2 {{@nodebug_inline does not allow function calls}}
+@nodebug_inline
+fn nodebug_inline5(): # expected-note {{previously used here}}
+  # expected-error @+1 {{recursive reference to declaration}}
+  nodebug_inline5()   # expected-note {{operation defined here}}

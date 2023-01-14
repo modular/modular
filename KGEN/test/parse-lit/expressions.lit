@@ -155,13 +155,11 @@ struct Boolish:
 
 # CHECK-LABEL: @"unary
 fn unary(a: Bool, b: Int, c: Boolish):
-  # CHECK: %0 = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"(%a)
-  # CHECK: %1 = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"(%0)
+  # CHECK: %0 = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"(%a)
   _ = not a
 
   # CHECK: [[EQ:%.*]] = kgen.call @"$Int"::@Int::@"__eq__($Int::Int,$Int::Int)"
-  # CHECK: [[BOOL:%.*]] = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"([[EQ]])
-  # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[BOOL]])
+  # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[EQ]])
   _ = not b == 0
 
   # CHECK: [[BOOL:%.*]] = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%c)
@@ -201,8 +199,7 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # CHECK: %8 = scf.if %7 -> (!kgen.declref<@"$Bool"::@Bool>) {
   # CHECK:   scf.yield %6
   # CHECK: } else {
-  # CHECK:   %10 = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"(%x)
-  # CHECK:   scf.yield %10
+  # CHECK:   scf.yield %x
   # CHECK: }
    _ = a or x
 

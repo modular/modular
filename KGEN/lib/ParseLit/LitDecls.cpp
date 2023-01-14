@@ -1058,6 +1058,8 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
         applyRaises(*declRef);
       else if (declRef->spelling == "always_inline")
         funcOp.setAlwaysInline(true);
+      else if (declRef->spelling == "nodebug_inline")
+        funcOp.setNoDebugInline(true);
       else
         processedIt = false;
     }
@@ -1378,12 +1380,68 @@ static bool isNoneResultType(LIT::FuncOp defOp) {
   return isa<LIT::NoneType>(type);
 }
 
-ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,
+/// Once a @nodebug_inline has been fully parsed and the body is complete, we
+/// check it to see if it is simple enough for inlining.  We intentionally limit
+// it to try to keep this to purely functional stuff that will fold when
+// inlined.
+static void verifyNoDebugInline(LIT::FuncOp funcOp, LitSharedState &shared) {
+  size_t numOps = 0;
+
+  auto rejectFunc = [&](const Twine &badThing) -> LitDiagnostic {
+    funcOp.setNoDebugInline(false);
+    return shared.emitError(funcOp.getLoc(),
+                            "@nodebug_inline does not allow " + badThing);
+  };
+
+  // We don't allow anything other than by-value arguments right now.
+  if (!funcOp.getConventions().isDefault()) {
+    rejectFunc("byref arguments or effects");
+    return;
+  }
+
+  // We don't allow parameters.  TODO: Relax this.
+  if (!funcOp.getInputParamDecls().empty() ||
+      !funcOp.getResultParamTypes().empty()) {
+    rejectFunc("input or result parameters");
+    return;
+  }
+
+  for (Operation &op : *funcOp.getBody()) {
+    auto reject = [&](const Twine &badThing) {
+      rejectFunc(badThing).attachNote(op.getLoc()) << "operation defined here";
+    };
+
+    // Let decls are folded/dropped during inlining so they are free.
+    if (isa<LetDeclOp>(op) ||
+        // Constants aren't computation and can often be dropped as well.
+        (op.getNumOperands() == 0 && op.getNumResults() == 1 &&
+         op.hasTrait<OpTrait::ConstantLike>()))
+      continue;
+
+    if (++numOps == 4)
+      return reject("large function body");
+
+    // We have a disallow-list for specific things we don't want to support.
+    // The goal here is to allow simple leaf functions that fold when inlined.
+    if (isa<VarDeclOp>(op))
+      return reject("var declarations");
+    if (isa<CallOp, CallParamOp, POP::CallIndirectOp>(op))
+      return reject("function calls");
+    if (isa<TryRaiseOp>(op))
+      return reject("control flow");
+    if (!KGEN::getParamDecls(&op).empty())
+      return reject("parameter declarations");
+    if (op.getNumRegions())
+      return reject("operations with regions");
+  }
+}
+
+ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
                                       ASTDecl &decl) {
   // Push the debug scope for this function if necessary so that nested
   // operations have proper debug info.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (auto spAttr = DebugInfo::extractScope(defOp))
+  if (auto spAttr = DebugInfo::extractScope(funcOp))
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
   // Resolve the body of the decl.
@@ -1392,28 +1450,33 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,
 
   // Check to see if we have a kgen.return at the end of function.  If not,
   // complain or add one implicitly if we have no results.
-  Block *bodyBlock = defOp.getBody();
-  bool isInterface = defOp.getIsInterface();
+  Block *bodyBlock = funcOp.getBody();
+  bool isInterface = funcOp.getIsInterface();
 
   if (isInterface) {
     if (!bodyBlock->empty())
-      emitError(defOp.getLoc(), "interfaces must have no body");
+      emitError(funcOp.getLoc(), "interfaces must have no body");
     // Drop the body block so the function becomes external.
     bodyBlock->erase();
+
+    if (funcOp.getNoDebugInline()) {
+      emitError(funcOp.getLoc(), "interfaces may not be @nodebug_inline");
+      funcOp.setNoDebugInline(false);
+    }
     return success();
   }
 
   // Check for a return op at the end of the function.
   // TODO: This should really be moved to a dataflow pass after the parser.
   if (bodyBlock->empty() || !isa<ReturnOp>(bodyBlock->back())) {
-    auto loc = defOp.getLoc();
-    if (isNoneResultType(defOp) && defOp.getResultParamTypes().empty()) {
+    auto loc = funcOp.getLoc();
+    if (isNoneResultType(funcOp) && funcOp.getResultParamTypes().empty()) {
       auto b = OpBuilder::atBlockEnd(bodyBlock);
       Value noneVal =
           b.create<ParamConstantOp>(loc, NoneAttr::get(getContext()));
-      if (defOp.getConventions().getFnEffects() == FnEffects::Throws)
-        noneVal =
-            b.create<POP::VariantCreateOp>(loc, defOp.getResultType(), noneVal);
+      if (funcOp.getConventions().getFnEffects() == FnEffects::Throws)
+        noneVal = b.create<POP::VariantCreateOp>(loc, funcOp.getResultType(),
+                                                 noneVal);
       b.create<ReturnOp>(loc, ArrayRef<TypedAttr>(), noneVal);
     } else if (!shared.diags.isErrorEmitted()) {
       Location endLoc = bodyBlock->empty() ? loc : bodyBlock->back().getLoc();
@@ -1433,6 +1496,10 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp defOp, LitLexer &lexer,
       }
     });
   }
+
+  // If this is a nodebug_inline function, verify its invariants.
+  if (funcOp.getNoDebugInline())
+    verifyNoDebugInline(funcOp, shared);
 
   return success();
 }
