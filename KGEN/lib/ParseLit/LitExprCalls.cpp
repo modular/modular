@@ -16,6 +16,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -947,9 +948,14 @@ AnyValue CallableValue::debugInlineFunctionCall(
     // We always squash let declarations, since they are only useful for debug
     // information, they are what we are trying to flatten away.
     if (auto letDecl = dyn_cast<LetDeclOp>(op)) {
-      valueMapping[letDecl.getResult()] = valueMapping[letDecl.getValue()];
+      auto entry = valueMapping[letDecl.getValue()];
+      valueMapping[letDecl.getResult()] = entry;
       continue;
     }
+
+    // Drop debuginfo.value operations entirely since we're dropping debug info.
+    if (isa<DebugInfo::ValueOp>(op))
+      continue;
 
     // Otherwise, we'll have to clone this operation.  If we're in a parameter
     // context, bail out and allow the normal call procssing logic to produce an
