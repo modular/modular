@@ -1,0 +1,64 @@
+# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %stdlibdir -I %S/../lit-examples/
+
+from prolog import Bool, DType, Error, F32, Int, object
+
+##===----------------------------------------------------------------------===##
+# Lexical Issues
+##===----------------------------------------------------------------------===##
+
+# https://github.com/modularml/modular/issues/4181
+struct Issue4181IndentWeirdness[dt: DType]:
+  var b : Int
+    # expected-error @+1 {{definition isn't on its own line at the correct indentation}}
+    def f():
+      pass
+
+##===----------------------------------------------------------------------===##
+# Return
+##===----------------------------------------------------------------------===##
+
+def foo():
+# expected-error @+1 {{unexpected token in expression}}
+  return pass
+
+return 32 # expected-error {{cannot return from this context}}
+
+##===----------------------------------------------------------------------===##
+# If / While
+##===----------------------------------------------------------------------===##
+
+def elif_parse_error(a: Bool):
+  if a:
+    pass
+ elif a: # expected-error {{unexpected token in expression}}
+    pass
+  else:
+    pass
+
+struct NotBoolConvertible:
+
+def test_bool_context(a: NotBoolConvertible):
+  if a: # expected-error {{::NotBoolConvertible' does not implement the '__bool__' method}}
+     pass
+
+##===----------------------------------------------------------------------===##
+# Raise
+##===----------------------------------------------------------------------===##
+
+def raisingFunction():
+    pass
+
+fn callRaisingFunction():
+    raisingFunction() # expected-error {{cannot call function that may raise in a context that cannot raise}}
+
+fn cannotReRaise():
+    raise # expected-error {{no contextual exception to reraise}}
+
+fn cannotRaise(err: Error):
+    raise err # expected-error {{cannot raise error in a context that cannot raise}}
+
+
+# Issue #6909
+# expected-error @below {{expected name for 'alias' declaration}}
+# expected-note @below {{escape keyword 'True' with backticks to use it as an identifier}}
+alias True = 42

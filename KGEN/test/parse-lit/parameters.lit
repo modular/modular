@@ -2,6 +2,10 @@
 
 from prolog import assert_param, Bool, DType, Int, SIMD
 
+##===----------------------------------------------------------------------===##
+# Input parameters
+##===----------------------------------------------------------------------===##
+
 # CHECK-LABEL: kgen.struct.decl @OurSIMD<size, dt: !kgen.declref<@"$prolog"::@DType>> {
 struct OurSIMD[size: __mlir_type.index, dt: DType]:
   pass

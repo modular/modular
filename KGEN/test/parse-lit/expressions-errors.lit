@@ -1,0 +1,111 @@
+# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %stdlibdir -I %S/../lit-examples/
+
+from prolog import Bool, DType, Error, F32, Int, object
+
+##===----------------------------------------------------------------------===##
+# Conversions
+##===----------------------------------------------------------------------===##
+
+def invalid_conversion(a: Int, b: __mlir_type.index):
+  b = a # expected-error {{'$Int::Int' value cannot be converted to '__mlir_type.index' in assignment}}
+
+struct NotBoolConvertible:
+
+# Issue #6600
+fn negBuiltinType(x: __mlir_type.f64) :
+    # expected-error @+1 {{'__mlir_type.f64' does not implement the '__neg__' method}}
+    _ = -x
+
+##===----------------------------------------------------------------------===##
+# LValue and RValues
+##===----------------------------------------------------------------------===##
+
+42 = 17 # expected-error {{cannot assign to immutable expression}}
+
+struct LValuesRvalues:
+  fn __new__() -> LValuesRvalues:
+    var result : LValuesRvalues
+    return result
+
+  def normalMethod(self):
+  # expected-note @+1 {{function declared here}}
+  def mutatingMethod(self&):
+  # expected-note @+1 {{function declared here}}
+  def takesByRef(self, x&: LValuesRvalues):
+
+  def normalMethod3(self, a: F32):
+
+def testLValuesRvalues():
+  # Test with lvalues
+  var lv: LValuesRvalues
+  lv.normalMethod()
+  lv.mutatingMethod()
+
+  # Partial application.
+  # expected-error @+1 {{TODO: partial application to mutable base isn't supportable without a lifetime model}}
+  lv.mutatingMethod
+
+  # Test with rvalues
+  LValuesRvalues().normalMethod()
+  LValuesRvalues().mutatingMethod()  # expected-error {{invalid use of mutating method on rvalue of type '$expressions-errors::LValuesRvalues'}}
+
+  # expected-error @+1 {{argument #1 must be mutable in order to pass as a by-ref argument}}
+  LValuesRvalues().takesByRef(LValuesRvalues())
+
+  # We can implicitly declare things on the LHS but not on the RHS.
+  unknown1 += unknown2 # expected-error {{use of unknown declaration 'unknown2'}}
+
+  lv.normalMethod3(1.0)
+
+# expected-note @+1 {{function declared here}}
+fn badRef(val&: Int):
+  var x = F32(1.0)
+  # expected-error @+1 {{invalid call to 'badRef': l-value of type '$F32::F32' cannot be converted to reference of type '$Int::Int'}}
+  badRef(x)
+
+##===----------------------------------------------------------------------===##
+# Tuples
+##===----------------------------------------------------------------------===##
+
+fn bad_tuple(a: Int):
+  _ = ()  # expected-error {{FIXME: Cannot emit tuple expressions yet}}
+  _ = (a, a)  # expected-error {{FIXME: Cannot emit tuple expressions yet}}
+  _ = (a,)  # expected-error {{FIXME: Cannot emit tuple expressions yet}}
+  _ = (a, a, b)  # expected-error {{use of unknown declaration 'b'}}
+
+def tuple_return():
+  return 32, 17 # expected-error {{tuple return not supported yet}}
+
+
+##===----------------------------------------------------------------------===##
+# Other Specific expression forms
+##===----------------------------------------------------------------------===##
+
+struct WeirdBoolish:
+  fn __bool__(self) -> Int: return Int(0)
+
+fn badAnd(a: Bool, b: WeirdBoolish):
+  _ = a and b # expected-error {{cannot find common type between '$Bool::Bool' and '$expressions-errors::WeirdBoolish'}}
+
+fn slice_expression(a: Int):
+  # expected-note @+1 {{keyword arguments}}
+  a[:]    # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
+  # expected-note @+1 {{keyword arguments}}
+  a[::]   # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
+  # expected-note @+1 {{keyword arguments}}
+  a[1:2]  # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
+  # expected-note @+1 {{keyword arguments}}
+  a[:2:3] # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
+
+
+def bad_exprs(aaaa: Bool, bbbb: F32, cccc: Int):
+  # expected-error @+1 {{true value of type '$F32::F32' is not compatible with false value '$Int::Int' in conditional}}
+  _ = bbbb if aaaa else cccc
+
+def bad_assignment0(a: Int, b: Int):
+   # expected-error @+1 {{cannot assign to immutable expression}}
+   a = b += b
+
+def bad_assignment1(a: Int, b: Int):
+   # expected-error @+1 {{expected ')' in parenthesized expression}}
+   a = (b += b)
