@@ -2,9 +2,20 @@
 
 # CHECK: module {
 
-from prolog import Bool, Error, F32, Int
+from prolog import Bool, Error, F32, Int, SIMD, object
 
 fn noop():
+
+struct M:
+  var value : __mlir_type.index
+  fn __new__(value: __mlir_type.index) -> M:
+    return M(0)
+  fn __neg__(self) -> M:
+    return M(0)
+  fn __add__(self, rhs: M) -> M:
+    return M(0)
+  fn __matmul__(self, rhs: M) -> M:
+    return M(0)
 
 # CHECK-LABEL: lit.func @"simpleMath
 fn simpleMath(a: Int, b: Int) -> Int:
@@ -98,16 +109,6 @@ fn precedence_associativity(a: Int):
   # CHECK: kgen.call @"$Int"::@Int::@"__rlshift__($Int::Int,$Int::Int)"
   var r3 = 1 << z
 
-struct M:
-  var value : __mlir_type.index
-  fn __new__(value: __mlir_type.index) -> M:
-    return M(0)
-  fn __neg__(self) -> M:
-    return M(0)
-  fn __add__(self, rhs: M) -> M:
-    return M(0)
-  fn __matmul__(self, rhs: M) -> M:
-    return M(0)
 
 # CHECK-LABEL: lit.func @"precedence_matmul
 fn precedence_matmul(z: M) -> M:
@@ -335,3 +336,214 @@ fn parameterExprs[a: __mlir_type.index, a2: __mlir_type.index]():
   alias c = a-42
   # CHECK: kgen.param.declare d = <add(mul(a2, -1), a)>
   alias d = a-a2
+
+##===----------------------------------------------------------------------===##
+# Patterns, LValues and RValues
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.func @"patterns()
+fn patterns():
+  # CHECK: %z2 = lit.var.decl "z2" : <index>
+  var z2: __mlir_type.index
+
+  (((z2))) = 42  # Paren patterns
+  # CHECK: [[TMP:%.*]] = index.constant 42
+  # CHECK: pop.store [[TMP]], %z2
+
+  var someInt : Int
+  (someInt) += someInt
+  # CHECK: %someInt = lit.var.decl "someInt" : <@"$Int"::@Int>
+  # CHECK:  %0 = pop.load %someInt : !pop.pointer<@"$Int"::@Int>
+  # CHECK:  %1 = kgen.call @"$Int"::@Int::@"__iadd__{{.*}}(%someInt, %0)
+
+  # Discard pattern with different types.
+  (_) = someInt
+  # CHECK: %_ = lit.var.decl "_" : <@"$Int"::@Int>
+  # CHECK: pop.store {{.*}}, %_ : !pop.pointer<@"$Int"::@Int>
+
+  (_) = 1.0
+  # CHECK: %__0 = lit.var.decl "_" : <f64>
+  # CHECK: pop.store {{.*}}, %__0 : !pop.pointer<f64>
+
+  # CHECK: %someF32 = lit.var.decl "someF32" : <@"$F32"::@F32>
+  # CHECK: [[F32:%.*]] = pop.load %someF32 : !pop.pointer<@"$F32"::@F32>
+  # CHECK: {{%.*}} = kgen.call @"$F32"::@F32::@"__iadd__{{.*}}(%someF32, [[F32]])
+  var someF32 : F32
+  (someF32) += someF32
+
+  # CHECK: %someSIMD = lit.var.decl "someSIMD" : <@"$SIMD"::@SIMD<size = 4, type: dtype = f64>>
+  # CHECK: [[SIMD:%.*]] = pop.load %someSIMD : !pop.pointer<@"$SIMD"::@SIMD<size = 4, type: dtype = f64>>
+  # CHECK: {{%.*}} = kgen.call @"$SIMD"::@SIMD::@"__iadd__{{.*}}(%someSIMD, [[SIMD]])
+  var someSIMD : SIMD[4, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`]
+  (someSIMD) += someSIMD
+
+# CHECK: lit.func @"byval_byref_function($Int::Int,$Int::Int&)"(%a: !kgen.declref<@"$Int"::@Int>, %b: !pop.pointer<@"$Int"::@Int> byref) -> !lit.none
+fn byval_byref_function(a: Int, b&: Int):
+  # CHECK-NEXT: pop.store %a, %b
+  b = a
+
+  # CHECK-NEXT: %x = lit.var.decl "x"
+  var x : Int
+  # This needs to load 'b' to pass it by value for the first arg, but pass its
+  # address in directly for the second.
+  # CHECK: %0 = pop.load %b : !pop.pointer<@"$Int"::@Int>
+  # CHECK: %1 = kgen.call @{{.*}}::@"byval_byref_function{{.*}}(%0, %b)
+  byval_byref_function(b, b)
+
+# CHECK: lit.func @"lvaluesAndRValues()
+fn lvaluesAndRValues() -> __mlir_type.`!pop.scalar<index>`:
+  # CHECK: [[FOUR:%.*]] = kgen.param.constant: !pop.scalar<index> = <#pop.simd<4>>
+  # CHECK: [[INT:%.*]] = kgen.struct.create([[FOUR]]) :
+  # CHECK: [[VALUE:%.*]] = kgen.struct.extract [[INT]][value] : !pop.scalar<index> from
+  # CHECK: kgen.return [[VALUE]] : !pop.scalar<index>
+  return Int(4).value
+
+# CHECK: lit.func @"defTests({{.*}}, %untyped: !kgen.declref<@"$prolog"::@object>)
+def defTests(a: Int, b: Int, untyped):
+  # CHECK: [[TMP:%.*]] = pop.load %b_1
+  # CHECK-NEXT: pop.store [[TMP]], %a_0
+  a = b # Parameters are mutable!
+
+##===----------------------------------------------------------------------===##
+# Augmented Assignments
+##===----------------------------------------------------------------------===##
+
+def basic_assignments(a: Int, b: Int, c: M, d: M):
+  # CHECK:      %a_0 = lit.var.decl "a"
+  # CHECK:      %b_1 = lit.var.decl "b"
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__iadd__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  a += b
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__isub__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  a -= b
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__imul__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  a *= b
+  # HECK:      %[[LOAD_C:.*]] = pop.load %c_2  : !pop.pointer<@M>
+  # HECK-NEXT: %[[RES:.*]] = kgen.call @M::@"__imatmul__($Int::Int&,$Int::Int)"(%d_3, %[[LOAD_C]])
+  #d @= c
+  # HECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # HECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__itruediv__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  #a /= b
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ifloordiv__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  a //= b
+  # HECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # HECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__imod__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  # a %= b
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ipow__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  a **= b
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__irshift__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  a >>= b
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ilshift__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  a <<= b
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__iand__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  a &= b
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ixor__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  a ^= b
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ior__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  a |= b
+
+
+##===----------------------------------------------------------------------===##
+# Literals
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.func @"tmp
+def tmp():
+    a = 5             # CHECK: 5
+    a = 55            # CHECK: 55
+    a = 10500         # CHECK: 10500
+    a = 12_500        # CHECK: 12500
+    a = 0             # CHECK: 0
+    a = 00            # CHECK: 0
+    a = 0____0__0_0   # CHECK: 0
+    a = 00__0_0       # CHECK: 0
+    a = 1__9_         # CHECK: 19
+    a = 0x123         # CHECK: 291
+    a = 0X123         # CHECK: 291
+    a = 0b10101       # CHECK: 21
+    a = 0B10101       # CHECK: 21
+    a = 0o711         # CHECK: 457
+    a = 0O711         # CHECK: 457
+    b = 1.1           # CHECK: 1.100000e+00
+    b = .1            # CHECK: 1.000000e-01
+    b = 1.            # CHECK: 1.000000e+00
+    b = 1e2           # CHECK: 1.000000e+02
+    b = 1.1e2         # CHECK: 1.100000e+02
+    b = .1e2          # CHECK: 1.000000e+01
+    b = 1.e2          # CHECK: 1.000000e+02
+    b = 1e+2          # CHECK: 1.000000e+02
+    b = 1.1e-2        # CHECK: 1.100000e-02
+    b = .1e+2         # CHECK: 1.000000e+01
+    b = 1.e-2         # CHECK: 1.000000e-02
+    b = 0.1           # CHECK: 1.000000e-01
+    b = 0.            # CHECK: 0.000000e+00
+    b = 0e2           # CHECK: 0.000000e+00
+    b = 0.1e2         # CHECK: 1.000000e+01
+    b = 0.e2          # CHECK: 0.000000e+00
+    b = 0e+2          # CHECK: 0.000000e+00
+    b = 0.1e-2        # CHECK: 1.000000e-03
+    b = 0.e-2         # CHECK: 0.000000e+00
+    b = 12.31e+11     # CHECK: 1.231000e+12
+    b = 1_2.3__1e+1_1 # CHECK: 1.231000e+12
+    b = 12.31E-3      # CHECK: 1.231000e-02
+    c = False         # CHECK: 0
+    c = True          # CHECK: 1
+
+fn strings():
+   """
+      Various tests on strings
+   """
+
+    var a = ""                 # CHECK: ""
+    # CHECK: "hello world"
+    a = "hello \
+world"
+
+    # COM: match newline hex values via regex since they vary between OSs
+    # CHECK: "hello \\\{{[0-9A-Z]+}}world"
+    a = r"hello \
+world"
+
+    # CHECK  "1'\0A2"
+    a = """1'
+2"""
+
+    # CHECK  "1\222"
+    a = '''1"\
+2'''
+
+    # CHECK   "1\22\0A2"
+    a = '''1"
+2'''
+
+    # CHECK   "1\22\0A2"
+    a = '1"\n2'
+
+    a = "Hello"            # CHECK: "Hello"
+    a = "Hello 'world'"    # CHECK: "Hello 'world'"
+    a = "A\x42"            # CHECK: "AB"
+    a = "A\x423"           # CHECK: "AB3"
+    a = "A\102"            # CHECK: "AB"
+    a = "A\1023"           # CHECK: "AB3"
+
+    # COM: the MLIR textual representation escapes strings, so below \ is \\ and " is \"
+    a = 'Hello "world"'    # CHECK: "Hello \22world\22"
+    a = r"A\x42"           # CHECK: "A\\x42"
+    a = R"A\x42"           # CHECK: "A\\x42"
+    a = r"AB\\"            # CHECK: "AB\\\\"
+    a = r"A\x"             # CHECK: "A\\x"
+    a = "AB\\"             # CHECK: "AB\\"
+    a = r"A\"B"            # CHECK: "A\\\22B"
+    a = r'A\'B'            # CHECK: "A\\'B"
+    a = "A\"B"             # CHECK: "A\22B"
+    a = 'A\'B'             # CHECK: "A'B"
+    a = r"A\zB"            # CHECK: "A\\zB"

@@ -13,6 +13,41 @@ struct Issue4181IndentWeirdness[dt: DType]:
     def f():
       pass
 
+# Failed to parse due to indentation.
+fn issue_6291(
+    val: __mlir_type.index
+) -> __mlir_type.index:
+    return val
+
+fn testIndentation6291[index: __mlir_type.index](
+    ptr: __mlir_type.`!pop.pointer<!pop.scalar<index>>`):
+  var result = __mlir_op.`pop.load`[
+            alignment : __mlir_attr.`1: index`,
+            _type : __mlir_type.`!pop.scalar<index>`
+](ptr)
+
+# Failed to parse doc strings.
+struct struct_issue_6526:
+    """
+    foo
+    """
+    pass
+
+fn fn_issue_6526():
+    """
+    foo
+    """
+    pass
+
+# This file contains parsing related bugs.
+
+fn bracketError1():
+  _ = ] # expected-error {{unexpected token in expression}}
+
+fn bracketError2():
+  _ = [[1, 2], }# expected-error {{unexpected token in expression}}
+
+
 ##===----------------------------------------------------------------------===##
 # Return
 ##===----------------------------------------------------------------------===##

@@ -96,6 +96,11 @@ fn useIt(a: __mlir_type.index) -> __mlir_type.index:
   # CHECK: kgen.return %1 : index
   return math(a, math(1, 2))
 
+# CHECK: lit.func @"pleaseInline()"() force_inline -> index attributes {alwaysInline} {
+@always_inline
+fn pleaseInline() -> __mlir_type.index:
+  return 1
+
 ##===----------------------------------------------------------------------===##
 # Default arguments.
 ##===----------------------------------------------------------------------===##
