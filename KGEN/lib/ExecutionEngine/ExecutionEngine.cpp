@@ -144,12 +144,17 @@ ErrorOrSuccess ExecutionEngine::add(StringRef name, BufferRef obj) {
       cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
           jit->getDataLayout().getGlobalPrefix())));
 
-  // Copy the memory into the JIT - we don't know if the BufferRef will go away
-  // cause the JIT doesn't propagate the refcount.
+  // If the addObjectFile succeeds we store a ref to this buffer so the data
+  // won't be deallocated until the JIT is destroyed. This version of
+  // MemoryBuffer::getMemBuffer produces a non-owning buffer.
   std::unique_ptr<llvm::MemoryBuffer> objMemBuf =
-      llvm::MemoryBuffer::getMemBufferCopy(obj->getBuffer());
+      llvm::MemoryBuffer::getMemBuffer(obj->getBuffer(), /*BufferName=*/"",
+                                       /*RequiresNullTerminator=*/false);
   if (auto err = jit->addObjectFile(*dylibOr, std::move(objMemBuf)))
     return M::Error(toString(std::move(err)));
+
+  // Store a ref to the buffer data.
+  objBuffers.push_back(obj.copy());
 
   return success();
 }

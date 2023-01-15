@@ -93,6 +93,10 @@ private:
 
   /// Perf notification listener.
   llvm::JITEventListener *perfListener;
+
+  /// List of buffers that contain object files added to the JIT. This holds
+  /// references to them so they aren't deallocated underneath our feet.
+  SmallVector<Cache::BufferRef> objBuffers;
 };
 } // namespace M::KGEN
 
