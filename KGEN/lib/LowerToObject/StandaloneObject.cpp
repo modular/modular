@@ -8,9 +8,12 @@
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LowerToObjectImpl.h"
+#include "Support/Compiler/MLIRDenseAttrStorage.h"
 #include "Support/TempFile.h"
 #include "Support/TimeProfiler.h"
+#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Bitcode/BitcodeReader.h"
@@ -21,6 +24,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Program.h"
+#include "llvm/Support/SHA256.h"
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
 #include "llvm/Target/TargetMachine.h"
 #include <utility>
@@ -183,6 +187,40 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
   if (output->isError())
     return {std::move(output->takeDiagnostic().getMessage())};
   return {std::move(output->get<BufferRef>())};
+}
+
+ErrorOr<ElementsAttr>
+ObjectCompiler::produceStandaloneObjectAttr(TargetInfoAttr target, bool isJIT) {
+  auto bufferOr = produceStandaloneObject(target, isJIT);
+  if (bufferOr.isError())
+    return bufferOr.takeError();
+  BufferRef buffer = bufferOr.takeValue();
+
+  // Get the standalone object key to use as the object name.
+  WriteableBufferRef produceStandaloneObjectKey = WriteableBuffer::get();
+  options.print(*produceStandaloneObjectKey << "produceStandaloneObject(");
+  *produceStandaloneObjectKey << ")";
+  mlir::writeBytecodeToFile(module.getOperation(), *produceStandaloneObjectKey);
+  // Hash it so the object name isn't enormous.
+  auto hash = llvm::SHA256::hash(
+      ArrayRef((const uint8_t *)produceStandaloneObjectKey->getBufferStart(),
+               produceStandaloneObjectKey->getBufferSize()));
+
+  // Produce a DenseResourceElementsAttr from the object file.
+  auto resourceManager =
+      DenseResourceElementsHandle::getManagerInterface(target.getContext());
+
+  // Pretend this is a "tensor" of data.
+  // TODO (#6986) It would be much nicer if we didn't have to clone this data
+  //   and we could just reference the data already in the CAS. That would also
+  //   prevent us from having to hash the module above.
+  return getAttrForTensorData(
+      RankedTensorType::get(
+          {(int64_t)buffer->getBufferSize()},
+          IntegerType::get(target.getContext(), 8, IntegerType::Unsigned)),
+      "object-" + llvm::toHex(hash, /*LowerCase=*/true),
+      ArrayRef<char>(buffer->getBufferStart(), buffer->getBufferSize()),
+      resourceManager, /*optAlignment=*/8);
 }
 
 //===----------------------------------------------------------------------===//
