@@ -690,3 +690,8 @@ struct DirectInstanceReference:
   fn fxn(self):
     # expected-error @+1 {{cannot access instance field 'value' directly; did you mean `self.`?}}
     var xx = value
+
+# Issue #6909
+# expected-error @below {{expected name for 'alias' declaration}}
+# expected-note @below {{escape keyword 'True' with backticks to use it as an identifier}}
+alias True = 42

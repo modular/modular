@@ -34,10 +34,20 @@ ParseResult LitParserBase::parseToken(LitToken::Kind expectedToken,
 
   // If the current token is on a new line, report the error on the end of the
   // previous line, this is probably where the punctuation was omitted.
+  auto diagLoc = getToken().getLoc();
   if (getToken().getIndentation().has_value())
-    return emitError(lexer.findEndOfPreviousLine(getToken().getLoc()), message);
+    diagLoc = lexer.findEndOfPreviousLine(getToken().getLoc());
 
-  return emitTokenError(message);
+  // Report the error.
+  auto diag = emitError(diagLoc, message);
+
+  // Customize the error if an identifier was expected by a keyword was found.
+  if (expectedToken == LitToken::identifier && getToken().isKeyword())
+    diag.attachNote(translateLocation(diagLoc))
+        << "escape keyword '" << getToken().getSpelling()
+        << "' with backticks to use it as an identifier";
+
+  return failure();
 }
 
 /// Consume an identifier token, binding its name into the specified result
