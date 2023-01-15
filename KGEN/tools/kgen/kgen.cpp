@@ -8,11 +8,10 @@
 #include "EmitFuncHeader.h"
 #include "KGEN/CLOptions.h"
 #include "KGEN/CompilerRT.h"
-#include "KGEN/Elaborator.h"
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/InitAllDialects.h"
+#include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/ParseLit.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -26,12 +25,10 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Parser/Parser.h"
-#include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
-#include "mlir/Support/ToolUtilities.h"
+#include "mlir/Support/Timing.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Transforms/InliningUtils.h"
-#include "mlir/Transforms/Passes.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/ToolOutputFile.h"
@@ -270,37 +267,22 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // dependency file.
   SmallVector<std::string> includedFiles;
 
-  // Set up the pass pipeline.
-  mlir::PassManager pm(ctx);
-  pm.addPass(createLowerLIT());
-  pm.addPass(createLowerStructs());
-  pm.addPass(mlir::createCanonicalizerPass());
-  pm.addNestedPass<GeneratorOp>(createMem2Reg());
-
   // Set up the runtime.
   LLCL::Runtime runtime(
       LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
       LLCL::createSingleThreadWorkQueue());
 
-  if (clOptions.cmd != Command::kGenLibraryFile) {
-    // Only outline closures just before elaboration - they aren't really
-    // necessary until elaboration happens.
-    pm.addPass(createOutlineClosures());
-    // The elaborator *is* preserving function effects!
-    pm.addPass(createElaborateGenerators(
-        includedFiles, runtime,
-        {clOptions.searchPaths, clOptions.enableSearch}));
-    // Run the inliner and cleanup the compiler globals.
-    pm.addPass(createInlinerPass());
-    pm.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
-    pm.addPass(createCanonicalizerPass());
-    // Finally, DCE the symbols we don't want.
-    pm.addPass(createEliminateDeadSymbols());
-    pm.addPass(createPruneImpossibleVariants());
+  // Generate a library file or go all the way through elaboration.
+  LogicalResult result = failure();
+  if (clOptions.cmd == Command::kGenLibraryFile) {
+    result = generateLibraryFile(*theModule);
+  } else {
+    result = elaborateModule(*theModule, runtime,
+                             {clOptions.searchPaths, clOptions.enableSearch},
+                             includedFiles);
   }
 
-  // Run the pass manager.
-  if (failed(pm.run(*theModule)))
+  if (failed(result))
     return failure(clOptions.reportError("compilation failed"));
 
   // If we are generating a dependency file, do so now.

@@ -4,20 +4,26 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(kgen
-  EmitFuncHeader.cpp
-  kgen.cpp
+add_modular_mlir_library(KGENCompiler
+  KGENCompiler.cpp
 
-  LINK_LIBS PRIVATE
-  KGENCLOptions
-  KGENCompiler
-  KGENCompilerRT
+  DEPENDS
+  MLIRKGENPasses
+
+  LINK_LIBS PUBLIC
+  DebugInfoToLLVM
+  DebugInfoTransforms
+
+  KGENElaborator
+  KGENTransforms
+  ParseLit
+  LowerLIT
+  LowerZAPToPOP
+
   KGENDialect
   LITDialect
-  POPDialect
   ZAPDialect
+  POPDialect
 
-  MLIRBytecodeWriter
-  MLIRIndexDialect
-  MLIRParser
+  MLIRIR
   )
