@@ -684,3 +684,9 @@ fn nodebug_inline4[()->__mlir_type.index]():
 fn nodebug_inline5(): # expected-note {{previously used here}}
   # expected-error @+1 {{recursive reference to declaration}}
   nodebug_inline5()   # expected-note {{operation defined here}}
+
+struct DirectInstanceReference:
+  var value: Int
+  fn fxn(self):
+    # expected-error @+1 {{cannot access instance field 'value' directly; did you mean `self.`?}}
+    var xx = value

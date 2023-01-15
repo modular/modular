@@ -462,6 +462,13 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
   if (isa<StructDeclOp>(decl))
     return {{MValue(DeclRefType::get(decl.getSymbolRef())), this}};
 
+  // Reject unqualified struct field references.
+  if (auto fieldOp = dyn_cast<StructFieldOp>(decl)) {
+    emitter.emitError(getLoc(), "cannot access instance field '")
+        << spelling << "' directly; did you mean `self.`?" << getRange();
+    return {};
+  }
+
   emitter.emitError(getLoc(), "use of declaration \"")
       << spelling << "\" as a value isn't supported yet" << getRange();
   return {};
