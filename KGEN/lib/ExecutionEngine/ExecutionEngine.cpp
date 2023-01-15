@@ -133,33 +133,6 @@ ExecutionEngine::ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit,
 ExecutionEngine::~ExecutionEngine() = default;
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 
-/// Add the given module to the execution engine. This slices all public funcs
-/// out of the module with their dependencies to generate self-contained object
-/// files.
-M::ErrorOrSuccess ExecutionEngine::add(LLCL::Runtime &runtime,
-                                       SymbolTable &symtab,
-                                       ArrayRef<FuncOp> exports,
-                                       StringRef libName) {
-  // Create the set of symbols to export.
-  DenseSet<StringAttr> exportedSymbols;
-  for (auto e : exports)
-    exportedSymbols.insert(e.getSymNameAttr());
-
-  auto compilerOr = ObjectCompiler::create(runtime, ".kgen_cache", symtab,
-                                           std::move(exportedSymbols), options);
-  if (failed(compilerOr))
-    return compilerOr.takeError();
-  compiler = std::make_unique<ObjectCompiler>(std::move(*compilerOr));
-
-  // Produce a standalone object for all the exports.
-  auto objOr = compiler->produceStandaloneObject(
-      TargetInfoAttr::getForHost(symtab.getOp()->getContext()), true);
-  if (failed(objOr))
-    return Error("failed to produce standalone object");
-
-  return add(libName, std::move(*objOr));
-}
-
 ErrorOrSuccess ExecutionEngine::add(StringRef name, BufferRef obj) {
   // Create a new dylib so that we don't have ODR violations.
   auto dylibOr = jit->createJITDylib(name.str());
@@ -181,14 +154,15 @@ ErrorOrSuccess ExecutionEngine::add(StringRef name, BufferRef obj) {
   return success();
 }
 
-ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef libName, FuncOp func) {
+ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef libName,
+                                              StringAttr symbol) {
   auto *dylib = jit->getJITDylibByName(libName);
   if (!dylib)
     return Error("could not find JITDylib for " + libName);
 
-  auto addr = jit->lookup(*dylib, func.getName());
+  auto addr = jit->lookup(*dylib, symbol.getValue());
   if (!addr)
     return M::Error(toString(addr.takeError()));
 
-  return CompiledFunc(addr->toPtr<void *>(), func);
+  return CompiledFunc(addr->toPtr<void *>());
 }
