@@ -920,6 +920,7 @@ AnyValue CallableValue::debugInlineFunctionCall(
     }
 
     // If we successfully folded this, remember the results.
+    foldResults.clear();
     if (succeeded(op.fold(operandAttrs, foldResults))) {
       assert(foldResults.size() == op.getNumResults());
       for (auto [result, value] : llvm::zip(op.getResults(), foldResults)) {
