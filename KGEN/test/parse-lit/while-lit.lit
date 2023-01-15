@@ -10,17 +10,17 @@ from prolog import Bool, Error, Int
 # CHECK:         hlcf.if
 # CHECK-NEXT:     hlcf.yield
 # CHECK-NEXT:    } else {
-# CHECK-NEXT:     index.constant 2
-# CHECK-NEXT:     kgen.call @"$Int"::@Int::@"__new__
+# CHECK-NEXT:     kgen.param.constant: !pop.scalar<index> = <#pop.simd<2>>
+# CHECK-NEXT:     kgen.struct.create
 # CHECK-NEXT:     pop.store {{.+}}, %inside_else
 # CHECK-NEXT:     hlcf.break
 # CHECK-NEXT:    }
-# CHECK-NEXT:    index.constant 0
-# CHECK-NEXT:    kgen.call @"$Int"::@Int::@"__new__
+# CHECK-NEXT:    <#pop.simd<0>>
+# CHECK-NEXT:    kgen.struct.create
 # CHECK-NEXT:    pop.store {{.+}}, %inside_a
 # CHECK:         hlcf.if
-# CHECK-NEXT:      {{.+}} = index.constant 1
-# CHECK-NEXT:      kgen.call @"$Int"::@Int::@"__new__
+# CHECK-NEXT:      <#pop.simd<1>>
+# CHECK-NEXT:      kgen.struct.create
 # CHECK-NEXT:      pop.store {{.+}}, %inside_b
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } else {

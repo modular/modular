@@ -88,8 +88,8 @@ fn byval_byref_function(a: Int, b&: Int):
 
 # CHECK: lit.func @"lvaluesAndRValues()
 fn lvaluesAndRValues() -> __mlir_type.`!pop.scalar<index>`:
-  # CHECK: [[FOUR:%.*]] = index.constant 4
-  # CHECK: [[INT:%.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}([[FOUR]])
+  # CHECK: [[FOUR:%.*]] = kgen.param.constant: !pop.scalar<index> = <#pop.simd<4>>
+  # CHECK: [[INT:%.*]] = kgen.struct.create([[FOUR]]) :
   # CHECK: [[VALUE:%.*]] = kgen.struct.extract [[INT]][value] : !pop.scalar<index> from
   # CHECK: kgen.return [[VALUE]] : !pop.scalar<index>
   return Int(4).value

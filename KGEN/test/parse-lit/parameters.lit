@@ -180,8 +180,9 @@ fn no_result_param[a: __mlir_type.index]():
 # CHECK-LABEL: lit.func @"idx_result_params()"<a -> index, index>()
 fn idx_result_params[a: __mlir_type.index -> __mlir_type.index, __mlir_type.index]() -> Int:
   # CHECK: %0 = kgen.param.constant = <add(a, 2)>
-  # CHECK: %1 = kgen.call @"$Int"::@Int::@"__new__(__mlir_type.index)"(%0)
-  # CHECK: kgen.return<a, add(a, 1)> %1
+  # CHECK: %1 = pop.cast_from_builtin %0 : index to !pop.scalar<index>
+  # CHECK: %2 = kgen.struct.create(%1)
+  # CHECK: kgen.return<a, add(a, 1)> %2
   return[a,a+1] a+2
 
 # CHECK-LABEL: lit.func @"just_result_params()"<() -> index>()

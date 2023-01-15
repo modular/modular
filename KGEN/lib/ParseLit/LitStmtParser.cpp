@@ -378,26 +378,16 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     operandExprs.push_back(getNoneExpr(loc));
   }
 
-  // Materialize the expression values into IR.
-  SmallVector<Value> operandValues;
-  for (auto expr : operandExprs) {
-    auto value = getEmitter().emitExprDRValue(expr);
-    if (!value)
-      return failure();
-    operandValues.push_back(value);
-  }
-
   // We don't support formation of tuples / multiple result values yet.
-  if (operandValues.size() > 1) {
+  if (operandExprs.size() != 1) {
     emitError(loc, "tuple return not supported yet")
         << LitSourceRange(operandExprs.front()->getRangeStart(),
                           operandExprs.back()->getRangeEnd());
     return success();
   }
 
-  assert(operandValues.size() == 1 &&
-         "Should have a single returned value now");
-  DRValue resultValue = operandValues[0];
+  // Materialize the expression values into IR.
+  RValue resultValue = getEmitter().emitExprRValue(operandExprs[0]);
 
   // Ok, now that we parsed all the tokens for this statement, do semantic
   // analysis.
@@ -432,26 +422,26 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // Convert the returned value to the returned type of the function.  If the
   // function is a 'raising' function we need to remove the extra variant type
   // to get the normal result type.
-  resultValue = emitter.emitDRValue(
+  auto resultDRValue = emitter.emitDRValue(
       {emitter.getAsExpectedType(resultValue, operandExprs[0],
                                  decl.getNormalResultType(), " in return"),
        operandExprs[0]});
-  if (!resultValue)
+  if (!resultDRValue)
     return {};
 
   // If the enclosing method raises, implicitly wrap the result in a variant.
   Location returnLoc = translateLocation(loc);
   if (decl.getRaises()) {
     auto errorOrType =
-        shared.lookupErrorOrType(resultValue.getType(), loc, containingDecl);
+        shared.lookupErrorOrType(resultDRValue.getType(), loc, containingDecl);
     if (!errorOrType)
       return {};
-    resultValue = builder.create<POP::VariantCreateOp>(
-        returnLoc, Type(errorOrType), resultValue);
+    resultDRValue = builder.create<POP::VariantCreateOp>(
+        returnLoc, Type(errorOrType), resultDRValue);
   }
 
   if (isa<LIT::FuncOp>(builder.getInsertionBlock()->getParentOp())) {
-    builder.create<ReturnOp>(returnLoc, resultParamValues, resultValue);
+    builder.create<ReturnOp>(returnLoc, resultParamValues, resultDRValue);
   } else {
     // FIXME(https://github.com/modularml/modular/issues/6449): HLCF::ReturnOp
     // doesn't support result parameters.
@@ -463,7 +453,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
       return success();
     }
 
-    builder.create<HLCF::ReturnOp>(returnLoc, resultValue);
+    builder.create<HLCF::ReturnOp>(returnLoc, resultDRValue);
   }
   // Split the block here. Subsequent statements are dead code.
   builder.setInsertionPointToStart(
