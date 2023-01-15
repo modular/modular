@@ -1,0 +1,280 @@
+# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %stdlibdir -I %S/../lit-examples/
+
+from prolog import Bool, DType, Error, F32, Int, object
+
+##===----------------------------------------------------------------------===##
+# Var / Let
+##===----------------------------------------------------------------------===##
+
+def var_decl_without_type():
+  # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$decls-errors::ReturnFromStruct'}}
+  var y : ReturnFromStruct = 1.0
+
+  # expected-error @+1 {{declaration must have either a type or an initializer}}
+  var x
+
+def var_decl():
+  x = 123        # expected-note {{previous definition here}}
+  var x : Int  # expected-error {{invalid redefinition of 'x'}}
+  x+4   # no follow-on error.
+
+var globalvar : __mlir_type.index
+def err():
+  var y : globalvar  # expected-error {{cannot use a dynamic value in type specification}}
+
+def missing_type_on_var_decl():
+  var abc :
+  pass # expected-error {{unexpected token in expression}}
+  abc+abc
+
+##===----------------------------------------------------------------------===##
+# Functions
+##===----------------------------------------------------------------------===##
+
+def func():
+  never_declared_fn() # expected-error {{use of unknown declaration 'never_declared_fn'}}
+  pass
+
+# expected-error @+1 {{special function must have 2 operands}}
+def __add__(): pass
+# expected-error @+1 {{special function must be a method}}
+def __sub__(self, a): pass
+
+# Test differences between fn and def.
+fn testFn(a: Int, b): # expected-error {{'fn' parameter type must be specified}}
+  a = a  # expected-error {{cannot assign to immutable expression}}
+  c = a  # expected-error {{use of unknown declaration 'c', `fn` declarations require explicit variable declarations}}
+
+fn missingColon()  # expected-error {{expected ':' in function definition}}
+  # Don't get confused by comments or blank lines!
+
+  var x = 1
+
+# expected-error @+1 {{use of unknown declaration 'InvalidType'}}
+fn badPropertyError(a: InvalidType):
+  _ = a.value
+  return
+
+struct NotBoolConvertible:
+# expected-note @+1 {{function declared here}}
+def test_bool_context(a: NotBoolConvertible): pass
+
+fn voidReturningFn(): pass
+fn badCall():
+  # expected-error @+1 {{invalid call to 'test_bool_context': argument #0 cannot be converted from 'None' to '$decls-errors::NotBoolConvertible'}}
+  test_bool_context(voidReturningFn())
+
+
+fn missing_ret_val() -> __mlir_type.index:
+  return # expected-error {{'None' value cannot be converted to '__mlir_type.index' in return}}
+
+fn ret_type_mismatch() -> __mlir_type.index:
+  return 4.0 # expected-error {{'__mlir_type.f64' value cannot be converted to '__mlir_type.index' in return}}
+
+##===----------------------------------------------------------------------===##
+# Default Arguments and Varargs
+##===----------------------------------------------------------------------===##
+
+# expected-error @+1 {{non-default argument follows default argument}}
+fn nonDefaultArgumentFollowsDefaultArgument(a: Int = 0, b: Int):
+
+##===----------------------------------------------------------------------===##
+# Function Overloading
+##===----------------------------------------------------------------------===##
+
+# expected-note @+1 {{previous definition here}}
+def fn_redecl():
+  pass
+
+# expected-error @+1 {{redefinition of function 'fn_redecl()' with identical signature}}
+def fn_redecl():
+  pass
+
+# expected-note @below {{candidate declared here}}
+# expected-note @below {{candidate not viable: argument #0 cannot be converted from '$decls-errors::TestOverloading' to '$Int::Int'}}
+# expected-note @below {{candidate not viable: callee expects 1 argument}}
+fn overloadIntF32(a: Int):
+
+# expected-note @below {{candidate declared here}}
+# expected-note @below {{candidate not viable: argument #0 cannot be converted from '$decls-errors::TestOverloading' to '$F32::F32'}}
+# expected-note @below {{candidate not viable: callee expects 1 argument}}
+fn overloadIntF32(a: F32):
+
+# expected-note @below {{candidate declared here}}
+# expected-note @below {{candidate not viable: callee expects 2 arguments}}
+# expected-note @below {{candidate not viable: argument #1 cannot be converted from '$F32::F32' to '$Int::Int'}}
+fn overloadIntF32(a: Int, b: Int):
+
+# expected-note @below {{candidate declared here}}
+# expected-note @below {{candidate not viable: callee expects 2 arguments}}
+# expected-note @below {{argument #1 must be mutable in order to pass as a by-ref argument}}
+fn overloadIntF32(a: Int, b&: F32):
+
+struct TestOverloading:
+  var a: Int   # expected-note {{cannot overload with this non-function definition}}
+  fn a(self):  # expected-error {{invalid redefinition of 'a'}}
+
+  fn test(self, a: Int, b: F32):
+    # expected-error @+1 {{cannot form a reference to overloaded declaration}}
+    var bad = overloadIntF32
+
+    # expected-error @+1 {{no matching function in call}}
+    overloadIntF32(self)
+    # expected-error @+1 {{no matching function in call}}
+    overloadIntF32(a, b)
+
+
+struct ConvertibleFromInt:
+  fn __new__(value: Int) -> ConvertibleFromInt:
+    var result: ConvertibleFromInt
+    return result
+
+# expected-note @below {{candidate declared here}}
+# expected-note @below {{candidate not viable: argument #1 cannot be converted from '$decls-errors::ConvertibleFromInt' to '$Int::Int'}}
+fn ambiguousConversions(a: ConvertibleFromInt, b: Int):
+# expected-note @below {{candidate declared here}}
+# expected-note @below {{candidate not viable: argument #0 cannot be converted from '$decls-errors::ConvertibleFromInt' to '$Int::Int'}}
+fn ambiguousConversions(a: Int, b: ConvertibleFromInt):
+
+fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
+  ambiguousConversions(a, b) # ok
+  ambiguousConversions(b, a) # ok
+  # expected-error @+1 {{ambiguous call to 'ambiguousConversions', each candidate requires 1 implicit conversion, disambiguate with an explicit cast}}
+  ambiguousConversions(a, a)
+  # expected-error @+1 {{no matching function in call}}
+  ambiguousConversions(b, b)
+
+  var localFn = testAmbiguousConversions  # ok
+  localFn(a, b)
+  localFn(a, a)
+  localFn(1, b)
+  # expected-error @+1 {{invalid indirect call: argument #0 cannot be converted from '$decls-errors::ConvertibleFromInt' to '$Int::Int'}}
+  localFn(b, b)
+
+##===----------------------------------------------------------------------===##
+# Decorators
+##===----------------------------------------------------------------------===##
+
+@decorator  # expected-error {{decorators not supported on this statement}}
+struct DecoratedStruct:
+
+@decorator # expected-error {{decorators not supported on this statement}}
+var DecoratedVar: Int
+
+@invalidDec # expected-error {{unsupported decorator: invalidDec}}
+def BadDecorator(): pass
+
+@staticmethod # expected-error @+1 {{only methods on structs may be declared static}}
+def StaticMethod(): pass
+
+
+# expected-error @+2 {{@nodebug_inline does not allow parameter declarations}}
+@nodebug_inline
+fn nodebug_inline1() -> __mlir_type.index:
+  alias x = 4  # expected-note {{operation defined here}}
+  return 1
+
+# expected-error @+2 {{@nodebug_inline does not allow operations with regions}}
+@nodebug_inline
+fn nodebug_inline2(a: __mlir_type.i1) -> __mlir_type.index:
+  if a:  # expected-note {{operation defined here}}
+    return 1
+  else:
+    return 2
+
+# expected-error @+2 {{@nodebug_inline does not allow function call to 'nodebug_inline1()'}}
+@nodebug_inline
+fn nodebug_inline3():
+  nodebug_inline1() # expected-note {{operation defined here}}
+
+# expected-error @+2 {{@nodebug_inline does not allow result parameters}}
+@nodebug_inline
+fn nodebug_inline4[()->__mlir_type.index]():
+  return[4]
+
+# expected-error @+2 {{@nodebug_inline does not allow function call to 'nodebug_inline5()'}}
+@nodebug_inline
+fn nodebug_inline5(): # expected-note {{previously used here}}
+  # expected-error @+1 {{recursive reference to declaration}}
+  nodebug_inline5()   # expected-note {{operation defined here}}
+
+##===----------------------------------------------------------------------===##
+# Structs
+##===----------------------------------------------------------------------===##
+
+# FIXME(Issue#5975): This isn't quite right, we shouldn't be able to resolve Rec here.
+struct Rec[param: Rec]:
+  pass
+
+# expected-error @+1 {{'def' statement must be on its own line}}
+struct Struct: def foo(self): pass
+
+struct ReturnFromStruct:
+  # expected-error @+1 {{cannot return from this context}}
+  return 42
+
+struct StructMemberRedefinition:
+  var x : __mlir_type.index  # expected-note {{previous definition here}}
+  var x : __mlir_type.index  # expected-error {{invalid redefinition of 'x'}}
+
+struct SpecialFunctions:
+  # expected-error @+1 {{special function must have 2 operands}}
+  fn __add__(self):
+
+  # expected-error @+1 {{self argument must be passed by reference}}
+  fn __iadd__(a: SpecialFunctions, b: SpecialFunctions) -> SpecialFunctions:
+    return a
+
+  fn failures(self):
+    self+self # Supports this, even though it isn't valid.  Shouldn't crash.
+    self*self # expected-error {{'$decls-errors::SpecialFunctions' does not implement the '__mul__' method}}
+
+struct WrongType:
+  # expected-error @+1 {{__init__ is not allowed on structs, use __new__ instead}}
+  def __init__(self): pass
+
+  # expected-error @+1 {{result type must be '$decls-errors::WrongType'}}
+  def __new__() -> Int: pass
+
+struct WrongSelfType[a: Int]:
+  # expected-error @+1 {{'self' argument must have type '$decls-errors::WrongSelfType[a]'}}
+  def badMethod(self: Int): pass
+  def goodMethod(self&: WrongSelfType[a]): pass
+
+  # expected-error @+1 {{special function must have 2 operands}}
+  def __add__(self): pass
+
+# Issue #6587: [Lit] Recursive constructors crash kgen
+struct BadInit[size: __mlir_type.index]:
+  fn __new__(elem: BadInit[1]) -> BadInit[size]:
+    var x : __mlir_type[`!pop.simd<`, size, `, f32>`]
+    # expected-error @+1 {{'__mlir_type.!pop.simd<size, f32>' value cannot be converted to '$decls-errors::BadInit[size]'}}
+    return x
+
+struct StructWithField:
+  var field: __mlir_type.index
+
+# Issue #6879: Qualified lookup is looking up names wrong
+fn unqualifiedNameLookup(a: StructWithField):
+  # expected-error @+1 {{StructWithField' value has no attribute 'badPropertyError'}}
+  a.badPropertyError
+
+  # expected-error @+1 {{StructWithField' value has no attribute 'badPropertyError'}}
+  StructWithField.badPropertyError
+
+  # expected-error @+1 {{cannot access instance field 'field' without an instance of '$decls-errors::StructWithField'}}
+  StructWithField.field
+
+struct DirectInstanceReference:
+  var value: Int
+  fn fxn(self):
+    # expected-error @+1 {{cannot access instance field 'value' directly; did you mean `self.`?}}
+    var xx = value
+
+def field_indexes(a: DirectInstanceReference):
+  a.badField = 42 # expected-error {{'$decls-errors::DirectInstanceReference' value has no attribute 'badField'}}
+
+# https://github.com/modularml/modular/issues/6701
+struct MLIRAttrWithinStruct: # expected-note {{previously used here}}
+  # expected-error @+1 {{recursive reference to declaration}}
+  __mlir_attr.`#index<cmp_predicate eq>`
