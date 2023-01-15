@@ -1420,8 +1420,7 @@ static void verifyNoDebugInline(LIT::FuncOp funcOp, LitSharedState &shared) {
     if (isa<LetDeclOp, DebugInfo::ValueOp>(op) ||
         isa<ReturnOp, StructExtractOp, StructCreateOp>(op) ||
         // Constants aren't computation and can often be dropped as well.
-        (op.getNumOperands() == 0 && op.getNumResults() == 1 &&
-         op.hasTrait<OpTrait::ConstantLike>()))
+        op.hasTrait<OpTrait::ConstantLike>())
       continue;
 
     // Disallow large function bodies.  We only want this to be used for small
