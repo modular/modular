@@ -1401,10 +1401,9 @@ static void verifyNoDebugInline(LIT::FuncOp funcOp, LitSharedState &shared) {
     return;
   }
 
-  // We don't allow parameters.  TODO: Relax this.
-  if (!funcOp.getInputParamDecls().empty() ||
-      !funcOp.getResultParamTypes().empty()) {
-    rejectFunc("input or result parameters");
+  // We don't allow result parameters.
+  if (!funcOp.getResultParamTypes().empty()) {
+    rejectFunc("result parameters");
     return;
   }
 

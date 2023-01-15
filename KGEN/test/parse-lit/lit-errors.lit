@@ -674,7 +674,7 @@ fn nodebug_inline2(a: __mlir_type.i1) -> __mlir_type.index:
 fn nodebug_inline3():
   nodebug_inline1() # expected-note {{operation defined here}}
 
-# expected-error @+2 {{@nodebug_inline does not allow input or result parameters}}
+# expected-error @+2 {{@nodebug_inline does not allow result parameters}}
 @nodebug_inline
 fn nodebug_inline4[()->__mlir_type.index]():
   return[4]
