@@ -216,10 +216,9 @@ public:
                                          LitSharedState &shared);
 
 private:
-  AnyValue
-  debugInlineFunctionCall(SMLoc callLoc, ASTDecl &callee,
-                          ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
-                          IREmitter &emitter);
+  AnyValue debugInlineFunctionCall(
+      SMLoc callLoc, ASTDecl &callee, ParamBindArrayAttr inputParams,
+      ArrayRef<ASTExprAnd<AnyValue>> argumentValues, IREmitter &emitter);
 };
 
 } // namespace M::KGEN::LIT

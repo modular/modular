@@ -788,8 +788,10 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   // foldable, in which case we'll fall back to using an 'apply' operator, or
   // when the function isn't suitable for @nodebug_inline processing.
   if (direct && cast<LIT::FuncOp>(*direct->fnDecls[0]).getNoDebugInline()) {
-    if (auto result = debugInlineFunctionCall(callLoc, *direct->fnDecls[0],
-                                              argumentValues, emitter))
+    auto calleeSym = cast<SymbolConstantAttr>(callee.getIfMValue().get());
+    ParamBindArrayAttr inputParams = calleeSym.getParamValues();
+    if (auto result = debugInlineFunctionCall(
+            callLoc, *direct->fnDecls[0], inputParams, argumentValues, emitter))
       return result;
   }
 
@@ -875,9 +877,15 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 /// function call result, on failure this returns null (without producing an
 /// error) and the call is handled normally.
 AnyValue CallableValue::debugInlineFunctionCall(
-    SMLoc callLoc, ASTDecl &callee,
+    SMLoc callLoc, ASTDecl &callee, ParamBindArrayAttr inputParams,
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues, IREmitter &emitter) {
   auto funcOp = cast<LIT::FuncOp>(callee);
+
+  // TODO: We currently cannot nodebug_inline calls to parameterized functions
+  // in parameter contexts, we aren't doing the substitution yet.  Just let this
+  // turn into a normal apply.
+  if (!emitter.builder && !inputParams.empty())
+    return {};
 
   // Resolve the body to type check and generate the IR.  This will also check
   // that the body is suitable for @nodebug_inline processing.
@@ -893,6 +901,11 @@ AnyValue CallableValue::debugInlineFunctionCall(
   // at the current insertion point if not.
   auto &block = *funcOp.getBody();
   assert(isa<ReturnOp>(block.back()));
+
+  // Perform parameter substitution if there are input parameters.
+  ParameterEvaluator paramEvaluator;
+  for (auto paramBind : inputParams)
+    paramEvaluator.setParameterValue(paramBind.getDecl(), paramBind.getValue());
 
   // Keep track of a mapping from the arguments (and interior results of
   // operations) to their representation.
@@ -960,6 +973,9 @@ AnyValue CallableValue::debugInlineFunctionCall(
     // This is reasonably straight-forward because we know everything in the
     // mapping with be MValues.
     if (!emitter.builder) {
+      // TODO: Add support for parameter substitution, how do we call fold
+      // though?
+
       // Check to see if we can fold this operation.
       operandAttrs.reserve(op.getNumOperands());
       for (auto operand : op.getOperands()) {
@@ -989,6 +1005,19 @@ AnyValue CallableValue::debugInlineFunctionCall(
     // Otherwise, clone the operation over and rewrite the operands.
     Operation *clonedOp = op.clone();
     clonedOp->setLoc(loc);
+
+    // Remap types and attributes if necessary.
+    if (!paramEvaluator.empty()) {
+      for (auto res : clonedOp->getResults())
+        res.setType(paramEvaluator.getReboundType(res.getType()));
+
+      SmallVector<NamedAttribute, 3> attrs;
+      llvm::append_range(attrs, clonedOp->getAttrs());
+      for (auto &attr : attrs)
+        attr.setValue(paramEvaluator.getReboundAttribute(attr.getValue()));
+      clonedOp->setAttrs(attrs);
+    }
+
     for (auto &opOperand : clonedOp->getOpOperands()) {
       auto &entry = valueMapping[opOperand.get()];
       assert(entry && "Value mapping broken");

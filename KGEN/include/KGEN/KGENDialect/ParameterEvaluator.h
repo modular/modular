@@ -56,6 +56,9 @@ public:
                          DenseMap<StringAttr, Attribute>())
       : paramValues(std::move(paramValues)) {}
 
+  /// Return true if there are no remappings installed.
+  bool empty() const { return paramValues.empty(); }
+
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
   void setParameterValue(StringAttr name, Attribute value) {
