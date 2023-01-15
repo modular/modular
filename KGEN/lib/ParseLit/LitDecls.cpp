@@ -1220,6 +1220,17 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       type = decl.getParentDecl()->getSelfType();
     }
     argTypes.push_back(type);
+
+    // Emit default argument values.
+    // TODO: For now, we don't make use of the emitted values, but emitting them
+    //       does diagnose invalid expressions.
+    if (auto *initValue = arg.initValue) {
+      ExprEmitter emitter(shared, decl, /*builder*/ {},
+                          /*varDeclCursor*/ nullptr);
+      if (!emitter.emitExprMValue(initValue, type,
+                                  " in a default argument initializer"))
+        return failure();
+    }
   }
 
   ASTType resultType;
