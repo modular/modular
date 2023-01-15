@@ -78,6 +78,15 @@ fn ret_type_mismatch() -> __mlir_type.index:
 # expected-error @+1 {{non-default argument follows default argument}}
 fn nonDefaultArgumentFollowsDefaultArgument(a: Int = 0, b: Int):
 
+# expected-error @+1 {{use of unknown declaration 'unknown'}}
+fn defaultArgumentUnknownDeclaration(a: Int = unknown):
+
+# expected-error @+1 {{use of unknown declaration 'a'}}
+fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a):
+
+# expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in a default argument initializer}}
+fn defaultArgumentBadType(a: Int = 1.0):
+
 ##===----------------------------------------------------------------------===##
 # Function Overloading
 ##===----------------------------------------------------------------------===##

@@ -108,6 +108,9 @@ fn pleaseInline() -> __mlir_type.index:
 fn defaultArgument(a: Int, b: Int = 1) -> Int:
   return a + b
 
+fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 1) -> Int:
+  return a
+
 ##===----------------------------------------------------------------------===##
 # @raises decorator.
 ##===----------------------------------------------------------------------===##
