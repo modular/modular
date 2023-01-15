@@ -45,6 +45,13 @@ public:
   ErrorOr<Cache::BufferRef> produceStandaloneObject(TargetInfoAttr target,
                                                     bool isJIT);
 
+  /// Produces a standalone object as an ElementsAttr that can be used as an
+  /// attribute on another operation. Using this function generally implies
+  /// `isJIT`, which is why it defaults to `true`. Clients should prefer this
+  /// method if they intend to store the compiled object in another graph.
+  ErrorOr<ElementsAttr> produceStandaloneObjectAttr(TargetInfoAttr target,
+                                                    bool isJIT = true);
+
   /// Slices the call graph for all exported symbols to produce a standalone
   /// assembly file. The assembly output is written to the provided stream.
   ErrorOrSuccess produceStandaloneAssembly(TargetInfoAttr target,
