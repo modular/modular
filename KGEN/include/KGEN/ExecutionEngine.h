@@ -9,7 +9,6 @@
 
 #include "Cache/Buffer.h"
 #include "KGEN/CompilationOptions.h"
-#include "KGEN/KGENDialect/KGENOps.h"
 #include "Support/ErrorOr.h"
 #include "Support/FunctionExtras.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
@@ -19,12 +18,7 @@ namespace llvm {
 class JITEventListener;
 } // namespace llvm
 
-namespace M::LLCL {
-class Runtime;
-}
-
 namespace M::KGEN {
-class ObjectCompiler;
 class CompilationOptions;
 
 /// This class provides an interface to interact with a compiled func. You
@@ -52,14 +46,11 @@ private:
   /// needs a reference to the cache that the ExecutionEngine holds, so it
   /// should really only be constructed from the ExecutionEngine or something
   /// like it.
-  CompiledFunc(void *ptr, FuncOp func) : fn(ptr), func(func) {}
+  CompiledFunc(void *ptr) : fn(ptr) {}
   friend class ExecutionEngine;
 
   /// Pointer to the function to invoke.
   void *fn;
-
-  /// This handle corresponds to this FuncOp.
-  FuncOp func;
 };
 
 /// This class provides an interface to the LLVM ORCJIT. It can compile
@@ -76,17 +67,11 @@ public:
 
   static ErrorOr<ExecutionEngine> create(const CompilationOptions &options);
 
-  /// Add an MLIR module to the execution engine. This will perform slicing for
-  /// every func and generate self-contained libraries. Uses `libName` as the
-  /// name for the JITDylib to avoid ODR violations.
-  ErrorOrSuccess add(LLCL::Runtime &runtime, SymbolTable &symtab,
-                     ArrayRef<FuncOp> exports, StringRef libName);
-
   /// Add an object to the JIT.
   ErrorOrSuccess add(StringRef libName, Cache::BufferRef obj);
 
   /// Look up a func and return it as a CompiledFunc object if we can find it.
-  ErrorOr<CompiledFunc> lookup(StringRef libName, FuncOp func);
+  ErrorOr<CompiledFunc> lookup(StringRef libName, StringAttr symbol);
 
 private:
   explicit ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit,
@@ -94,9 +79,6 @@ private:
 
   /// This class is not copy-constructible.
   ExecutionEngine(const ExecutionEngine &other) = delete;
-
-  /// Caches required for traversing up/down the compilation chain.
-  std::unique_ptr<ObjectCompiler> compiler;
 
   /// The compilation options to use.
   CompilationOptions options;

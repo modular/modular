@@ -8,6 +8,7 @@
 
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/ExecutionEngine.h"
+#include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/MicroBenchmark.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -17,6 +18,30 @@
 
 using namespace M;
 using namespace KGEN;
+
+static ErrorOr<Cache::BufferRef>
+produceObjectFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
+                         ArrayRef<FuncOp> exports) {
+  // Create the set of symbols to export.
+  DenseSet<StringAttr> exportedSymbols;
+  for (auto e : exports)
+    exportedSymbols.insert(e.getSymNameAttr());
+
+  auto compilerOr =
+      ObjectCompiler::create(runtime, ".kgen_cache", symtab,
+                             std::move(exportedSymbols), CompilationOptions());
+  if (failed(compilerOr))
+    return compilerOr.takeError();
+  auto compiler = std::make_unique<ObjectCompiler>(std::move(*compilerOr));
+
+  // Produce a standalone object for all the exports.
+  auto objOr = compiler->produceStandaloneObject(
+      TargetInfoAttr::getForHost(symtab.getOp()->getContext()), true);
+  if (failed(objOr))
+    return Error("failed to produce standalone object");
+
+  return objOr.takeValue();
+}
 
 ErrorOr<size_t>
 M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
@@ -28,20 +53,24 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
   // We only want the funcs passed-in and the evaluator to be code-generated.
   SmallVector<FuncOp> funcsToCompile(specializations);
   funcsToCompile.push_back(evaluator);
-  if (auto err = engine.add(runtime, symtab, funcsToCompile,
-                            "evaluateSpecializations"))
+  auto objOr = produceObjectFromExports(runtime, symtab, funcsToCompile);
+  if (objOr.isError())
+    return objOr.takeError();
+
+  if (auto err = engine.add("evaluateSpecializations", objOr.takeValue()))
     return err.takeError();
 
   // Get pointers to all the candidates.
   SmallVector<void *> candidatePtrs;
   for (FuncOp candidate : specializations) {
-    UNWRAP_ERROR(func, engine.lookup("evaluateSpecializations", candidate));
+    UNWRAP_ERROR(func, engine.lookup("evaluateSpecializations",
+                                     candidate.getNameAttr()));
     candidatePtrs.push_back(func.getFunctionPointer());
   }
 
   // Lookup the evaluator function
-  UNWRAP_ERROR(evaluatorFunc,
-               engine.lookup("evaluateSpecializations", evaluator));
+  UNWRAP_ERROR(evaluatorFunc, engine.lookup("evaluateSpecializations",
+                                            evaluator.getNameAttr()));
 
   // Invoke the evaluator.
   ssize_t bestIdx = evaluatorFunc.invoke<ssize_t, void **, ssize_t>(
