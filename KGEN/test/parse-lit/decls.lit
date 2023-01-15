@@ -15,8 +15,9 @@ def let_decls():
   # CHECK: %y = lit.let.decl "y" = %0 : f64
   let y = 1.0
 
-  # CHECK: [[TMP:%.*]] = kgen.call @"$Int"::@Int{{.*}}(%x)
-  # CHECK: %z = lit.let.decl "z" = [[TMP]]
+  # CHECK: [[TMP:%.*]] = pop.cast_from_builtin %x : index to !pop.scalar<index>
+  # CHECK: [[TMP2:%.*]] = kgen.struct.create([[TMP]])
+  # CHECK: %z = lit.let.decl "z" = [[TMP2]]
   let z = Int(x)
 
 ##===----------------------------------------------------------------------===##
@@ -32,8 +33,8 @@ def var_decls():
   var y : Int
 
   # CHECK: [[Y:%.*]] = pop.load %y : !pop.pointer<@"$Int"::@Int>
-  # CHECK: %idx1 = index.constant 1
-  # CHECK: [[ONE:%.*]] = kgen.call @"$Int"::@Int::@"__new__(__mlir_type.index)"(%idx1)
+  # CHECK: kgen.param.constant: !pop.scalar<index> = <#pop.simd<1>>
+  # CHECK: [[ONE:%.*]] = kgen.struct.create(
   # CHECK: [[ADD:%.*]] = kgen.call @"$Int"::@Int::@"__add__($Int::Int,$Int::Int)"([[Y]], [[ONE]])
   # CHECK: pop.store [[ADD]], %y : !pop.pointer<@"$Int"::@Int>
   y = y + 1
@@ -94,7 +95,6 @@ fn useIt(a: __mlir_type.index) -> __mlir_type.index:
   # CHECK: %1 = index.add %a, %0
   # CHECK: kgen.return %1 : index
   return math(a, math(1, 2))
-
 
 ##===----------------------------------------------------------------------===##
 # Default arguments.
@@ -162,9 +162,9 @@ struct StructExample:
   # CHECK: lit.func @"static($Int::Int)"(%x: !kgen.declref<@"$Int"::@Int>) -> !lit.none attributes {isStatic} {
   @staticmethod
   fn static(x: Int):
-    # CHECK: %idx4 = index.constant 4
-    # CHECK: %0 = kgen.call @"$Int"::@Int::@"__new__{{.*}}"(%idx4) : (index) -> !kgen.declref<@"$Int"::@Int>
-    # CHECK: %1 = kgen.call @"$decls"::@StructExample::@"static{{.*}}"(%0) : (!kgen.declref<@"$Int"::@Int>) -> !lit.none
+    # CHECK: %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<4>>
+    # CHECK: %1 = kgen.struct.create(%0) : (!pop.scalar<index>) -> !kgen.declref<@"$Int"::@Int>
+    # CHECK: %2 = kgen.call @"$decls"::@StructExample::@"static{{.*}}"(%1) : (!kgen.declref<@"$Int"::@Int>) -> !lit.none
     StructExample.static(Int(4))
     pass
 

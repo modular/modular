@@ -14,26 +14,26 @@ def `pass`():
 ##===----------------------------------------------------------------------===##
 # return
 
-# CHECK-LABEL lit.func @"return_impl_convert
+# CHECK-LABEL: lit.func @"return_impl_convert
 fn return_impl_convert() -> Int:
-  # CHECK: %idx4 = index.constant 4
-  # CHECK: %0 = kgen.call @"$Int"::@Int::@"__new__(__mlir_type.index)"(%idx4)
-  # CHECK: kgen.return %0
+  # CHECK: kgen.param.constant: !pop.scalar<index> = <#pop.simd<4>>
+  # CHECK: %1 = kgen.struct.create(%0)
+  # CHECK: kgen.return %1
   return 4  # Implicit conversion from literal to Int
 
-# CHECK-LABEL lit.func @"return_new_line
+# CHECK-LABEL: lit.func @"return_new_line
 fn return_new_line() -> Int:
-  # CHECK: %idx17 = index.constant 17
+  # CHECK: %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<17>>
   return
      17  # Weird indentation should be fine
 
-# CHECK-LABEL lit.func @"return_impl_convert_raises
+# CHECK-LABEL: lit.func @"return_impl_convert_raises
 @raises
 fn return_impl_convert_raises() -> Int:
-  # CHECK: %idx4 = index.constant 4
-  # CHECK: %0 = kgen.call @"$Int"::@Int::@"__new__(__mlir_type.index)"(%idx4) : (index) -> !kgen.declref<@"$Int"::@Int>
-  # CHECK: %1 = pop.variant.create %0 : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
-  # CHECK: kgen.return %1 : !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
+  # CHECK: %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<4>>
+  # CHECK: %1 = kgen.struct.create(%0)
+  # CHECK: %2 = pop.variant.create %1
+  # CHECK: kgen.return %2 : !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
   return 4  # Implicit conversion from literal to Int
 
 
