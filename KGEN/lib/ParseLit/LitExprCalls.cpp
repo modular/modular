@@ -906,22 +906,42 @@ AnyValue CallableValue::debugInlineFunctionCall(
     valueMapping[blockArg] = value.ir.getIfRValue();
   }
 
+  auto loc = emitter.translateLocation(callLoc);
   SmallVector<Attribute> operandAttrs;
   SmallVector<OpFoldResult> foldResults;
+  SmallVector<ParamConstantOp> materializedConstants;
+
   for (auto &op : block) {
-    // Check to see if we can fold this operation.  The fold hook for an
-    // operation can take a null operand when it isn't constant.
-    operandAttrs.clear();
-    operandAttrs.reserve(op.getNumOperands());
-    for (auto operand : op.getOperands()) {
-      auto &entry = valueMapping[operand];
-      assert(entry && "Value mapping broken");
-      operandAttrs.push_back(entry.getIfMValue().get());
+    // First, check for our special cases.
+
+    // If this is is the return operation then we're done.
+    if (auto returnOp = dyn_cast<ReturnOp>(op)) {
+      assert(returnOp.getNumOperands() == 1 &&
+             "Lit functions always return one value");
+      return valueMapping[returnOp.getOperand(0)];
     }
 
-    // If we successfully folded this, remember the results.
+    // We always squash let declarations, since they are only useful for debug
+    // information, they are what we are trying to flatten away.
+    if (auto letDecl = dyn_cast<LetDeclOp>(op)) {
+      // Note: Do not inline these two C++ statements, the hash table lookups
+      // can invalid each other.
+      auto entry = valueMapping[letDecl.getValue()];
+      valueMapping[letDecl.getResult()] = entry;
+      continue;
+    }
+
+    // Drop debuginfo.value operations entirely since we're dropping debug info.
+    if (isa<DebugInfo::ValueOp>(op))
+      continue;
+
+    // Clear all the vectors that are local state.  We define them outside the
+    // loop just to avoid unneeded reallocation.
+    materializedConstants.clear();
+    operandAttrs.clear();
     foldResults.clear();
-    if (succeeded(op.fold(operandAttrs, foldResults))) {
+
+    auto updateMappingWithFoldSuccess = [&]() {
       assert(foldResults.size() == op.getNumResults());
       for (auto [result, value] : llvm::zip(op.getResults(), foldResults)) {
         PointerUnion<Attribute, Value> puValue = value;
@@ -934,55 +954,81 @@ AnyValue CallableValue::debugInlineFunctionCall(
           valueMapping[result] = MValue(attr);
         }
       }
-      continue;
-    }
+    };
 
-    // If we couldn't fold it, check to see if it is one of our special cases.
+    // If we have no builder, then we're cloning into a parameter expression.
+    // This is reasonably straight-forward because we know everything in the
+    // mapping with be MValues.
+    if (!emitter.builder) {
+      // Check to see if we can fold this operation.
+      operandAttrs.reserve(op.getNumOperands());
+      for (auto operand : op.getOperands()) {
+        auto &entry = valueMapping[operand];
+        assert(entry && entry.getIfMValue() && "Value mapping broken");
+        operandAttrs.push_back(entry.getIfMValue().get());
+      }
 
-    // If this is is the return operation then we're done.
-    if (auto returnOp = dyn_cast<ReturnOp>(op)) {
-      assert(returnOp.getNumOperands() == 1 &&
-             "Lit functions always return one value");
-      return valueMapping[returnOp.getOperand(0)];
-    }
+      // If we successfully folded this, remember the results.
+      if (succeeded(op.fold(operandAttrs, foldResults))) {
+        updateMappingWithFoldSuccess();
+        continue;
+      }
 
-    // We always squash let declarations, since they are only useful for debug
-    // information, they are what we are trying to flatten away.
-    if (auto letDecl = dyn_cast<LetDeclOp>(op)) {
-      auto entry = valueMapping[letDecl.getValue()];
-      valueMapping[letDecl.getResult()] = entry;
-      continue;
-    }
-
-    // Drop debuginfo.value operations entirely since we're dropping debug info.
-    if (isa<DebugInfo::ValueOp>(op))
-      continue;
-
-    // Otherwise, we'll have to clone this operation.  If we're in a parameter
-    // context, bail out and allow the normal call procssing logic to produce an
-    // apply of the original function.
-    if (!emitter.builder)
+      // Otherwise, bail out and allow the normal call procssing logic to
+      // produce an apply of the original function.
       return {};
+    }
+
+    // If we have a builder, clone the operation into place before folding it.
+    // This will ensure that fold hooks who return dynamic operands will do so
+    // referring to the right values.  For example, we might want to fold a
+    // struct_extract that uses a struct_create, but the struct_create exists in
+    // the caller, but not the callee.
     auto &builder = *emitter.builder;
 
     // Otherwise, clone the operation over and rewrite the operands.
-    auto loc = emitter.translateLocation(callLoc);
-    auto newOp = op.clone();
-    newOp->setLoc(loc);
-    for (auto &opOperand : newOp->getOpOperands()) {
+    Operation *clonedOp = op.clone();
+    clonedOp->setLoc(loc);
+    for (auto &opOperand : clonedOp->getOpOperands()) {
       auto &entry = valueMapping[opOperand.get()];
       assert(entry && "Value mapping broken");
-      // If the operand was a constant, then we materialize it, and remember the
-      // DRValue for subsequent uses.
-      if (auto mValue = entry.getIfMValue())
-        entry = DRValue(builder.create<ParamConstantOp>(loc, mValue.get()));
+
+      // Remember the operand for fold hooks.
+      // TODO: We could check to see if the input is a known constant op like
+      // index.constant and fold it here.  This would catch cases where a
+      // constant was materialized in the caller but not in the callee.
+      operandAttrs.push_back(entry.getIfMValue().get());
+
+      // If the operand was a constant, then we materialize it, and remember
+      // the DRValue for subsequent uses.
+      if (auto mValue = entry.getIfMValue()) {
+        auto paramCst = builder.create<ParamConstantOp>(loc, mValue.get());
+        materializedConstants.push_back(paramCst);
+        entry = DRValue(paramCst);
+      }
       opOperand.set(entry.getIfDRValue());
     }
-    builder.insert(newOp);
 
-    // Remember the result mapping.
+    // Put the clone in place.
+    builder.insert(clonedOp);
+
+    // Check to see if we can fold this.
+    if (succeeded(op.fold(operandAttrs, foldResults))) {
+      // If so, we remember the folded results as our results.
+      updateMappingWithFoldSuccess();
+
+      // We can now remove the clone itself and any materialized constants we
+      // synthesized for it.
+      clonedOp->erase();
+      for (auto param : materializedConstants)
+        param->erase();
+      continue;
+    }
+
+    // Otherwise, if folding failed, we keep the operation and remember the
+    // result mapping to the clone's results.
     for (auto [result, newVal] :
-         llvm::zip(op.getResults(), newOp->getResults()))
+         llvm::zip(op.getResults(), clonedOp->getResults()))
       valueMapping[result] = DRValue(newVal);
   }
 
