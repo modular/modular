@@ -90,19 +90,9 @@ kgen.func @other_coroutine_ops(%a: !pop.coroutine<i32>) -> !pop.pointer<struct<i
 
   // CHECK: %[[PROMISE_PTR:.*]] = llvm.call_intrinsic "llvm.coro.promise"(%arg0, %[[ALIGN]], %[[FALSE]])
   // CHECK: %[[PROMISE:.*]] = llvm.bitcast %[[PROMISE_PTR:.*]] : !llvm.ptr<i8> to !llvm.ptr<struct<(i32, struct<(ptr, i8)>)>>
-  // CHECK: %[[CTX:.*]] = llvm.getelementptr inbounds %[[PROMISE]][0, 1]
-  // CHECK: pop.external_call @KGEN_CompilerRT_LLCL_InitializeContext(%[[CTX]]) : (!llvm.ptr<i8>) -> ()
-  pop.coroutine.initialize %a : <i32>
-
-  // CHECK: %[[PROMISE_PTR:.*]] = llvm.call_intrinsic "llvm.coro.promise"(%arg0, %[[ALIGN]], %[[FALSE]])
-  // CHECK: %[[PROMISE:.*]] = llvm.bitcast %[[PROMISE_PTR:.*]] : !llvm.ptr<i8> to !llvm.ptr<struct<(i32, struct<(ptr, i8)>)>>
   // CHECK: %[[PROMISE_RESULT:.*]] = llvm.bitcast %[[PROMISE]] : !llvm.ptr<struct<(i32, struct<(ptr, i8)>)>> to !llvm.ptr<struct<(i32)>>
   %promise = pop.coroutine.promise %a : <i32>
 
-  // CHECK: %[[PROMISE_PTR:.*]] = llvm.call_intrinsic "llvm.coro.promise"(%arg0, %[[ALIGN]], %[[FALSE]])
-  // CHECK: %[[PROMISE:.*]] = llvm.bitcast %[[PROMISE_PTR:.*]] : !llvm.ptr<i8> to !llvm.ptr<struct<(i32, struct<(ptr, i8)>)>>
-  // CHECK: %[[CTX:.*]] = llvm.getelementptr inbounds %[[PROMISE]][0, 1]
-  // CHECK: pop.external_call @KGEN_CompilerRT_LLCL_DestroyContext(%[[CTX]]) : (!llvm.ptr<i8>) -> ()
   // CHECK: llvm.call_intrinsic "llvm.coro.destroy"(%arg0) : (!llvm.ptr<i8>) -> ()
   pop.coroutine.destroy %a : <i32>
 

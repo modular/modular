@@ -1109,8 +1109,6 @@ kgen.func @async_coroutine(%arg0: i32) -> !pop.coroutine<i32> {
   %hdl = pop.coroutine.handle : <i32>
   // CHECK: %[[CALLEE_HDL:.*]] = kgen.call @slow_function
   %calleeHdl = kgen.call @slow_function(%arg0) : (i32) -> !pop.coroutine<i32>
-  // CHECK-NEXT: pop.coroutine.initialize %[[CALLEE_HDL]] : <i32>
-  pop.coroutine.initialize %calleeHdl : <i32>
   // CHECK-NEXT: pop.coroutine.await {
   pop.coroutine.await {
     // CHECK-NEXT: pop.coroutine.resume %[[CALLEE_HDL]] : <i32>

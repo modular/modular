@@ -68,15 +68,6 @@ static LLVMStructType getCoroutinePromiseType(LLVMBuilder &b,
   return LLVMStructType::getLiteral(b.getContext(), promiseTypes);
 }
 
-/// Given the pointer to the coroutine promise, get the pointer to the beginning
-/// of the async context.
-static Value getAsyncCtxPtr(LLVMBuilder &b, const TypeAttrCache &cache,
-                            Value promise, LLVMStructType promiseType) {
-  return b.create<GEPOp>(cache.i8PtrType, promise,
-                         ArrayRef<GEPArg>{0, promiseType.getBody().size() - 1},
-                         /*inbounds=*/true);
-}
-
 /// Convert a function to a coroutine by generating the necessary LLVM coroutine
 /// machinery: set up the promise, allocate the coroutine handle, and insert the
 /// suspend and exit points.
@@ -304,33 +295,6 @@ static void lowerCoroutineResume(LLVMBuilder &b, const TypeAttrCache &cache,
 }
 
 //===----------------------------------------------------------------------===//
-// CoroutineInitializeOp
-
-/// Lower `pop.coroutine.initialize` to a runtime call.
-static LogicalResult lowerCoroutineInitialize(LLVMBuilder &b,
-                                              const TypeAttrCache &cache,
-                                              POP::CoroutineInitializeOp op) {
-  b.setLoc(op.getLoc());
-  b.setInsertionPoint(op);
-  Value hdl = b.create<mlir::UnrealizedConversionCastOp>(cache.i8PtrType,
-                                                         op.getCoroutine())
-                  .getResult(0);
-
-  LLVMStructType promiseType =
-      getCoroutinePromiseType(b, cache, op.getCoroutine().getType());
-  if (!promiseType)
-    return op.emitError("failed to convert coroutine type");
-  Value promise = getCoroutinePromise(b, cache, hdl, promiseType);
-
-  // Call the runtime to allocate the async context.
-  b.create<POP::ExternalCallOp>("KGEN_CompilerRT_LLCL_InitializeContext",
-                                getAsyncCtxPtr(b, cache, promise, promiseType));
-
-  op.erase();
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // CoroutineDestroyOp
 
 /// Lower `pop.coroutine.destroy` to a runtime call and the coroutine destroy
@@ -343,16 +307,6 @@ static LogicalResult lowerCoroutineDestroy(LLVMBuilder &b,
   Value hdl = b.create<mlir::UnrealizedConversionCastOp>(cache.i8PtrType,
                                                          op.getCoroutine())
                   .getResult(0);
-
-  LLVMStructType promiseType =
-      getCoroutinePromiseType(b, cache, op.getCoroutine().getType());
-  if (!promiseType)
-    return op.emitError("failed to convert coroutine type");
-  Value promise = getCoroutinePromise(b, cache, hdl, promiseType);
-
-  // Call the runtime to deallocate the async context.
-  b.create<POP::ExternalCallOp>("KGEN_CompilerRT_LLCL_DestroyContext",
-                                getAsyncCtxPtr(b, cache, promise, promiseType));
 
   // Call the coroutine destroy intrinsic.
   b.create<CallIntrinsicOp>(TypeRange(), "llvm.coro.destroy", hdl);
@@ -414,9 +368,6 @@ void LowerKGENCoroutinesPass::runOnOperation() {
         return signalPassFailure();
     } else if (auto resume = dyn_cast<POP::CoroutineResumeOp>(op)) {
       lowerCoroutineResume(b, cache, resume);
-    } else if (auto initialize = dyn_cast<POP::CoroutineInitializeOp>(op)) {
-      if (failed(lowerCoroutineInitialize(b, cache, initialize)))
-        return signalPassFailure();
     } else if (auto destroy = dyn_cast<POP::CoroutineDestroyOp>(op)) {
       if (failed(lowerCoroutineDestroy(b, cache, destroy)))
         return signalPassFailure();
