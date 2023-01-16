@@ -488,9 +488,8 @@ struct ParsedArgument {
       }
       convention = convention | ValueInputConvention::VarArg;
     } else if (p.consumeIf(LitToken::star_star)) {
-      // We don't support **args yet, so treat them like *args.
-      p.emitError(loc, "keyword argument variadics not supported yet");
-      convention = convention | ValueInputConvention::VarArg;
+      convention = convention | ValueInputConvention::KWVarArg;
+      kwArgHandling = KWArgHandling::kKeywordOnly;
     }
 
     if (p.consumeIf(LitToken::star)) // '*' => variadic
@@ -573,14 +572,14 @@ struct ParsedArgument {
       hasSlashMarker = true;
     };
 
-    // This is invoked when we see a '*' marker.
-    auto handleStarMarker = [&](SMLoc loc) {
+    // This is invoked when we see a '*' marker or '*arg' argument.
+    auto handleStarMarker = [&](SMLoc loc, bool isMarker) {
       if (hasStarMarker)
         p.emitError(loc,
                     "cannot have two '*' markers in the same argument list");
 
-      // Diagnose '*' at end of argument list for completeness.
-      if (p.getToken().isAny(stopTokens))
+      // Diagnose '*' marker at end of argument list for completeness.
+      if (p.getToken().isAny(stopTokens) && isMarker)
         p.emitError(loc, "'*' marker is not allowed at end of argument list");
 
       // From now on, any parsed arguments are keyword only.
@@ -596,11 +595,23 @@ struct ParsedArgument {
       if (arg.parse(p, marker))
         return failure();
 
-      // If this is a marker, process it.
+      // If this argument is just a marker, process it.
       if (marker == KWArgMarkerInfo::kSlash)
         return handleSlashMarker(arg.loc), success();
       if (marker == KWArgMarkerInfo::kStar)
-        return handleStarMarker(arg.loc), success();
+        return handleStarMarker(arg.loc, /*isMarker=*/true), success();
+
+      // Otherwise, if this is a varargs marker, handle it as a marker and an
+      // argument.
+      if (uint8_t(arg.convention & ValueInputConvention::VarArg))
+        handleStarMarker(arg.loc, /*isMarker=*/false);
+
+      // If we have a **arg then it must be the last argument.
+      if (uint8_t(arg.convention & ValueInputConvention::KWVarArg) &&
+          p.getToken().isNot(stopTokens)) {
+        p.emitError(arg.loc, "'**' marker must be at end of argument list");
+        arg.convention = arg.convention & ~ValueInputConvention::KWVarArg;
+      }
 
       // Otherwise just remember the argument.
       args.push_back(arg);
@@ -609,7 +620,15 @@ struct ParsedArgument {
 
     // Parse a list of arguments and keyword argument specifiers.  Each argument
     // will leave its `kwargHandling` default initialized.
-    return p.parseCommaSeparatedList(parseArgument, stopTokens);
+    if (p.parseCommaSeparatedList(parseArgument, stopTokens))
+      return failure();
+
+    // TODO(Keyword Args): now that we parsed a fully generic parameter list,
+    // reject keyword arguments.
+    if (!args.empty() &&
+        args.back().kwArgHandling == KWArgHandling::kKeywordOnly)
+      p.emitError(args.back().loc, "TODO: keyword arguments not supported yet");
+    return success();
   }
 };
 } // namespace

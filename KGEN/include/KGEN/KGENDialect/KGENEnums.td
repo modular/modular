@@ -81,9 +81,13 @@ def KGEN_InputGenKindAttr : I32EnumAttr<"InputGenKind", "Input Generation Kind",
 /// SignatureType.
 def KGEN_ValueInputConvention : I8BitEnumAttr<"ValueInputConvention",
     "Function value input convention", [
-  I8BitEnumAttrCaseNone<"ByVal", "byval">,
-  I8BitEnumAttrCaseBit<"ByRef", 0, "byref">,
-  I8BitEnumAttrCaseBit<"VarArg", 1, "vararg">,
+  // TODO: Modeling this as a bitfield is a hack, this is really two different
+  // non-bitfield enums put together: a varargs marker and an ownership
+  // qualifier.
+  I8BitEnumAttrCaseNone<"ByVal",       "byval">,
+  I8BitEnumAttrCaseBit <"ByRef",    0, "byref">,
+  I8BitEnumAttrCaseBit <"VarArg",   1, "vararg">,
+  I8BitEnumAttrCaseBit <"KWVarArg", 2, "kwvararg">,
 ]> {
   let cppNamespace = "M::KGEN";
 }
