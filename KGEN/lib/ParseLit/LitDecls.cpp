@@ -439,14 +439,14 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// Parsing support for a function argument:
+/// Parsing support for a function argument and input parameter:
 ///
-/// value_param_list   ::= value_param ("," value_param)*
-/// value_param        ::= value_parammarker identifier_opt_type
-///                        value_parampostfix ["=" expression]
-/// value_parammarker  ::= "/" | "*" | "**"
-/// value_parampostfix ::= "&"
-///
+/// argument_list     ::= argument ("," argument)*
+/// argument          ::= "/" | "*"
+/// argument          ::= argument_variadic identifier_opt_type
+///                          argument_ownership ["=" expression]
+/// argument_variadic ::= "*" | "**"
+/// argument_ownership ::= "&"
 struct ParsedArgument {
   SMLoc loc;
   // Specify argument passing convention, e.g. byval/byref etc.
@@ -618,127 +618,90 @@ struct ParsedArgument {
 // Meta signature implementation
 //===----------------------------------------------------------------------===//
 
-namespace {
-/// identifier_opt_type  ::= identifier [":" expression]
-/// meta_signature    ::= "[" [meta_param_list] ("->" meta_result_types)? "]"
-/// meta_signature    ::= "[" "(" ")" ("->" meta_result_types)? "]"
-/// meta_param_list   ::= identifier_opt_type ("," identifier_opt_type)
+/// meta_signature    ::= "[" meta_param_list ("->" meta_result_types)? "]"
+/// meta_param_list   ::= argument_list | "(" ")"
 /// meta_result_types ::= expression ("," expression)*
-struct ParsedMetaSignature {
-  /// This is the function or struct that we're parsing the meta signature for.
-  ASTDecl &decl;
-  /// These are the parsed input parameters.
-  SmallVector<ASTDecl *> parsedInputs;
-  SmallVector<ExprNode *> resultTypes;
+static ParseResult
+parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
+                           SmallVector<ParamDeclAttr> &inputParams,
+                           SmallVector<Type> &resultParamTypes) {
+  if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
+    return success();
 
-  ParsedMetaSignature(ASTDecl &decl) : decl(decl) {}
+  SmallVector<ParsedArgument> args;
 
-  /// If this declaration has a parameter signature, parse it and install the
-  /// prototypes into the
-  ParseResult parseOptionalMetaSignature(LitParserBase &p) {
-    if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
-      return success();
-
-    SmallVector<ParsedArgument> args;
-
-    // Parse the meta parameters.  We either have () or a parameter list.
-    if (p.consumeIf(LitToken::l_paren)) {
-      if (p.parseToken(LitToken::r_paren,
-                       "expected ')' in empty parameter list; try dropping the "
-                       "'(' if you have parameters"))
-        return failure();
-    } else {
-      // Parse an actual parameter list.
-      if (ParsedArgument::parseAndResolvePresentArgumentList(
-              p, args, /*isParameterList=*/true))
-        return failure();
-    }
-
-    // Resolve each of the parameter declarations.
-    auto &declResolver = p.getDeclResolver();
-    {
-      // Mark the decl container as 'fully resolved' temporarily to facilitate
-      // this, so it doesn't attempt to get resolved again.
-      // FIXME(5975): This is a hack and shouldn't be needed.  The problem is
-      // that parameters should be accessible before the body is, and we have
-      // no way to express this currently.
-      assert(decl.resolvedness == DeclResolvedness::unparsed);
-      llvm::SaveAndRestore X(decl.resolvedness,
-                             DeclResolvedness::fullyResolved);
-      ExprEmitter emitter(p.shared, decl, std::nullopt, nullptr);
-
-      for (auto &arg : args) {
-        // Check for things supported in arguments that are not supported in
-        // parameters.
-        if (arg.initValue)
-          p.emitError(arg.loc,
-                      "TODO: default values in parameters not supported");
-        if (arg.convention != ValueInputConvention::ByVal) {
-          if (uint8_t(arg.convention & ValueInputConvention::VarArg))
-            p.emitError(arg.loc,
-                        "TODO: parameter lists do not support variadics");
-          else
-            p.emitError(arg.loc, "parameters must always be passed by-value");
-        }
-
-        ASTType type =
-            arg.typeExpr ? emitter.emitExprType(arg.typeExpr) : ASTType();
-        if (!type) {
-          if (!arg.typeExpr)
-            p.emitError(arg.loc, "parameters must always have a type");
-          type = TypeCheckErrorType::get(p.getContext());
-        }
-
-        // Bind the parsed type expression so references from other parameters
-        // can be resolved.
-        auto tmpDecl = ParamDeclRefAttr::get(arg.name, type);
-        ASTDecl &paramDecl = declResolver.addFullyResolvedDecl(
-            MValue(tmpDecl), arg.name, arg.loc, &decl);
-        parsedInputs.push_back(&paramDecl);
-      }
-    }
-
-    // Parse the meta results if present.
-    if (p.consumeIf(LitToken::minus_greater)) {
-      auto parseResultType = [&]() -> ParseResult {
-        return p.parseExpression(resultTypes.emplace_back(nullptr),
-                                 std::nullopt);
-      };
-      if (p.parseCommaSeparatedList(parseResultType, LitToken::r_square))
-        return failure();
-    }
-    return p.parseToken(LitToken::r_square, "expected ']' for parameter list");
+  // Parse the meta parameters.  We either have () or a parameter list.
+  if (p.consumeIf(LitToken::l_paren)) {
+    if (p.parseToken(LitToken::r_paren,
+                     "expected ')' in empty parameter list; try dropping the "
+                     "'(' if you have parameters"))
+      return failure();
+  } else {
+    // Parse an actual parameter list.
+    if (ParsedArgument::parseAndResolvePresentArgumentList(
+            p, args, /*isParameterList=*/true))
+      return failure();
   }
 
-  /// Given a parsed parameter signature, resolve the types of each of them,
-  /// which can of course be recursively referenced.
-  SmallVector<ParamDeclAttr>
-  getResolvedInputParamDecls(DeclResolver &resolver) {
-    SmallVector<ParamDeclAttr> result;
-    // Force resolve all of the declarations, which could be recursive w.r.t.
-    // each other.
-    for (ASTDecl *paramDecl : parsedInputs) {
-      auto resolvedParam =
-          cast<ParamDeclRefAttr>(cast<MValue>(paramDecl->getIRValue()).get());
-      result.push_back(
-          ParamDeclAttr::get(resolvedParam.getName(), resolvedParam.getType()));
+  // Resolve each of the parameter declarations.
+  auto &declResolver = p.getDeclResolver();
+
+  // Mark the decl container as 'fully resolved' temporarily to facilitate
+  // this, so it doesn't attempt to get resolved again.
+  // FIXME(5975): This is a hack and shouldn't be needed.  The problem is
+  // that parameters should be accessible before the body is, and we have
+  // no way to express this currently.
+  assert(declScope.resolvedness == DeclResolvedness::unparsed);
+  llvm::SaveAndRestore X(declScope.resolvedness,
+                         DeclResolvedness::fullyResolved);
+  ExprEmitter emitter(p.shared, declScope, std::nullopt, nullptr);
+
+  for (auto &arg : args) {
+    // Check for things supported in arguments that are not supported in
+    // parameters.
+    if (arg.initValue)
+      p.emitError(arg.loc, "TODO: default values in parameters not supported");
+    if (arg.convention != ValueInputConvention::ByVal) {
+      if (uint8_t(arg.convention & ValueInputConvention::VarArg))
+        p.emitError(arg.loc, "TODO: parameter lists do not support variadics");
+      else
+        p.emitError(arg.loc, "parameters must always be passed by-value");
     }
 
-    return result;
+    ASTType type =
+        arg.typeExpr ? emitter.emitExprType(arg.typeExpr) : ASTType();
+    if (!type) {
+      if (!arg.typeExpr)
+        p.emitError(arg.loc, "parameters must always have a type");
+      type = TypeCheckErrorType::get(p.getContext());
+    }
+
+    // Bind the parsed type expression so references from other parameters
+    // can be resolved.
+    auto tmpDecl = ParamDeclRefAttr::get(arg.name, type);
+    declResolver.addFullyResolvedDecl(MValue(tmpDecl), arg.name, arg.loc,
+                                      &declScope);
+    inputParams.push_back(ParamDeclAttr::get(arg.name, type));
   }
 
-  SmallVector<Type> getResolvedResultTypes(ExprEmitter &emitter) const {
-    SmallVector<Type> results;
-    for (ExprNode *expr : resultTypes) {
-      auto type = emitter.emitExprType(expr);
+  // Parse the meta results if present.
+  if (p.consumeIf(LitToken::minus_greater)) {
+    auto parseResultType = [&]() -> ParseResult {
+      ExprNode *typeExpr;
+      if (p.parseExpression(typeExpr, std::nullopt))
+        return failure();
+      auto type = emitter.emitExprType(typeExpr);
       if (!type)
         type = emitter.shared.getTypeCheckErrorType();
-      results.push_back(type);
-    }
-    return results;
+      resultParamTypes.push_back(type);
+      return success();
+    };
+
+    if (p.parseCommaSeparatedList(parseResultType, LitToken::r_square))
+      return failure();
   }
-};
-} // namespace
+  return p.parseToken(LitToken::r_square, "expected ']' for parameter list");
+}
 
 //===----------------------------------------------------------------------===//
 // Decorator support logic
@@ -1202,7 +1165,7 @@ void FnDecorators::applyLate(SymbolRefAttr symbolName,
 }
 
 /// funcdef ::=  [decorators] "def" identifier [meta_signature]
-///              "(" [value_param_list] ")" ["->" expression] ":" suite
+///              "(" [argument_list] ")" ["->" expression] ":" suite
 ///
 LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
                                              LitLexer &lexer, ASTDecl &decl) {
@@ -1231,7 +1194,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   }
 
   // Parse declared meta parameters and add them to the current scope.
-  ParsedMetaSignature metaSignature(decl);
+  SmallVector<ParamDeclAttr> inputParamDecls;
+  SmallVector<Type> resultParamTypes;
   SmallVector<ParsedArgument> args;
 
   // Add the meta parameters to the symbol table, and resolve their types.  We
@@ -1239,7 +1203,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  if (metaSignature.parseOptionalMetaSignature(p) ||
+  if (parseOptionalMetaSignature(p, decl, inputParamDecls, resultParamTypes) ||
       p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
     return failure();
 
@@ -1260,15 +1224,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   if (p.parseToken(LitToken::colon, "expected ':' in function definition"))
     return failure();
 
-  // Now that the full signature has been parsed, resolve the meta signature,
-  // arguments types, and result type.
-  SmallVector<ParamDeclAttr> inputParamDecls =
-      metaSignature.getResolvedInputParamDecls(*this);
-
   // Resolve the result parameter types now that the arguments are in scope.
   ExprEmitter typeEmitter(shared, decl, std::nullopt, nullptr);
-  SmallVector<Type> resultParamTypes =
-      metaSignature.getResolvedResultTypes(typeEmitter);
 
   // Resolve the result type and any argument types that are present, leaving
   // any unspecified types null.
@@ -1861,25 +1818,22 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   LitParserBase p(lexer);
   SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
 
-  ParsedMetaSignature metaSignature(decl);
+  SmallVector<ParamDeclAttr> inputParamDecls;
+  SmallVector<Type> resultParamTypes;
   if (p.parseToken(LitToken::kw_struct,
                    "internal error: checked by stmt parser") ||
       p.parseToken(LitToken::identifier,
                    "internal error: checked by stmt parser") ||
-      metaSignature.parseOptionalMetaSignature(p) ||
+      parseOptionalMetaSignature(p, decl, inputParamDecls, resultParamTypes) ||
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
     return failure();
 
-  // Resolve the meta parameters and get their decls.
-  SmallVector<ParamDeclAttr> inputParamDecls =
-      metaSignature.getResolvedInputParamDecls(*this);
   structOp.setInputParamDecls(inputParamDecls);
 
   // Reject result parameters.
-  if (!metaSignature.resultTypes.empty())
-    emitError(metaSignature.resultTypes[0]->getLoc(),
-              "struct declarations do not support result parameters")
-        << metaSignature.resultTypes[0]->getRange();
+  if (!resultParamTypes.empty())
+    emitError(decl.getLoc(),
+              "struct declarations do not support result parameters");
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
