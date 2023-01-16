@@ -676,12 +676,13 @@ bool CallableValue::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
 /// propagation.
 static bool isValidErrorContext(Block *block) {
   for (Operation *op = block->getParentOp(); op; op = op->getParentOp()) {
-    if (isa<TryOp>(op))
+    if (auto tryOp = dyn_cast<TryOp>(op);
+        tryOp && tryOp.getTryRegion().isAncestor(block->getParent()))
       return true;
     if (auto func = dyn_cast<LIT::FuncOp>(op))
       return func.getRaises();
   }
-  return false;
+  llvm_unreachable("block outside of function?");
 }
 
 /// Emit a function call to the specified callee with the specified operand
@@ -877,19 +878,15 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   }
 
   // If the callee can raise an error, try to unwrap it.
-  Value resultVal = callOp->getResult(0);
-  if (calleeSig.getFnEffects() == FnEffects::Throws) {
-    if (!isValidErrorContext(builder->getInsertionBlock())) {
-      emitError("cannot call function that may raise in a context that "
-                "cannot raise");
-      return {};
-    }
-    resultVal = builder->create<UnwrapOrPropagateOp>(
-        loc, cast<POP::VariantType>(resultVal.getType()).getType(1), resultVal);
+  if (bitEnumContainsAny(calleeSig.getFnEffects(), FnEffects::Throws) &&
+      !isValidErrorContext(builder->getInsertionBlock())) {
+    emitError(
+        "cannot call function that may raise in a context that cannot raise");
+    return {};
   }
 
   // Value returning call returns its result.
-  return DRValue(resultVal);
+  return DRValue(callOp->getResult(0));
 }
 
 /// Attempt to process a function call according to the rules of

@@ -133,12 +133,6 @@ public:
   /// otherwise emit an error and return null.
   ASTType lookupErrorType(llvm::SMLoc loc, ASTDecl &context);
 
-  /// Lookup the Error type and wrap it in a variant with the specified normal
-  /// value type.  Return the result, or error if the Error type couldn't be
-  /// found.
-  ASTType lookupErrorOrType(ASTType valueType, llvm::SMLoc loc,
-                            ASTDecl &context);
-
   //===--------------------------------------------------------------------===//
   // Module Resolution
 

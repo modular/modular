@@ -97,21 +97,6 @@ SymbolConstantAttr LIT::FuncOp::getBoundReference(ParamBindArrayAttr bindings) {
                                  resultType);
 }
 
-/// Return the normal result type.  This is the same as getResultType unless
-/// the function throws, in which case this is dug out of the variant.
-Type LIT::FuncOp::getNormalResultType() {
-  Type resultType = getResultType();
-  if (!getRaises())
-    return resultType;
-
-  // We know that the ABI of a raising function will have it return
-  // ErrorOr<NormalType>.  ErrorOr is a Variant<Error, NormalType>, and in the
-  // corner case where we return an error, it will be Variant<Error> only.
-  auto variant = cast<POP::VariantType>(resultType);
-  unsigned normalIdx = std::min(variant.getNumTypes() - 1, size_t(1));
-  return variant.getType(normalIdx);
-}
-
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
@@ -380,22 +365,6 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   result.addAttribute(getConstraintsAttrName(result.name),
                       ConstraintArrayAttr::get(context, {}));
   result.addRegion()->push_back(new Block());
-}
-
-//===----------------------------------------------------------------------===//
-// UnwrapOrPropagateOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult UnwrapOrPropagateOp::verify() {
-  if ((*this)->getParentOfType<TryOp>())
-    return success();
-  auto func = (*this)->getParentOfType<LIT::FuncOp>();
-  if (!func)
-    return emitOpError() << "must be contained in a `lit.func`";
-  if (func.getConventions().getFnEffects() != FnEffects::Throws)
-    return emitOpError()
-           << "cannot propagate error in a function that does not throw";
-  return success();
 }
 
 //===----------------------------------------------------------------------===//

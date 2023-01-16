@@ -322,17 +322,10 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
     }
   }
 
-  // If the function throws an error, make sure the result type is a variant
-  // of one or two types.  It will be one if the function both returns and
-  // throws the same type.
-  if (bitEnumContainsAny(conventions.getFnEffects(), FnEffects::Throws)) {
-    if (values.getNumResults() != 1)
-      return emitError() << "a function that throws should have 1 result";
-    auto errorOrType = llvm::dyn_cast<POP::VariantType>(values.getResult(0));
-    if (!errorOrType || errorOrType.getTypes().size() > 2)
-      return emitError()
-             << "a function that throws should return a variant of two types";
-  }
+  // If the function throws an error, make sure it has one result.
+  if (bitEnumContainsAny(conventions.getFnEffects(), FnEffects::Throws) &&
+      values.getNumResults() != 1)
+    return emitError() << "a function that throws should have 1 result";
   return success();
 }
 

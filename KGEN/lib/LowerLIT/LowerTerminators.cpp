@@ -16,39 +16,33 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
-// LowerTerminators
+// lowerLexicalTerminators
 //===----------------------------------------------------------------------===//
 
-/// Return true if the result type is nominally a none type.
-static bool isNoneResultType(FuncInterface func) {
-  Type type = func.getResultTypes().front();
-  if (bitEnumContainsAny(func.getConventions().getFnEffects(),
-                         FnEffects::Throws))
-    type = cast<POP::VariantType>(type).getType(1);
-  return isa<LIT::NoneType>(type);
-}
-
 /// Lower all lexical terminators in the function and remove dead code.
-static LogicalResult lowerLexicalTerminators(FuncInterface func) {
-  auto funcItf = cast<mlir::FunctionOpInterface>(*func);
-  if (funcItf.getFunctionBody().empty())
+static LogicalResult lowerLexicalTerminators(DeclRefType errType,
+                                             LIT::FuncOp func) {
+  if (func.getBodyRegion().empty())
     return success();
+  if (bitEnumContainsAny(func.getConventions().getFnEffects(),
+                         FnEffects::Throws) &&
+      !errType)
+    return func.emitError("function throws but no 'Error' type was found");
 
-  mlir::IRRewriter b(func.getContext());
-
-  LIT::ReturnOp firstResultParamsReturn;
-  ParameterExprArrayAttr resultParams;
-
+  // Collect all the terminators first to avoid iterator invalidation.
   SmallVector<Operation *> terminators;
-  func.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    // Don't walk into nested functions.
-    if (op != func && isa<FuncInterface>(op))
-      return WalkResult::skip();
+  func.walk([&](Operation *op) {
     if (isa<LIT::ReturnOp, LIT::RaiseOp, LIT::BreakOp, LIT::ContinueOp>(op))
       terminators.push_back(op);
-    return WalkResult::advance();
   });
 
+  // Lower all the terminators as they are encountered.
+  mlir::IRRewriter b(func.getContext());
+  auto getErrorOr = [&] {
+    return POP::VariantType::get({errType, func.getResultType()});
+  };
+  LIT::ReturnOp firstResultParamsReturn;
+  ParameterExprArrayAttr resultParams;
   SmallVector<Block *> deadBlocks;
   for (Operation *op : terminators) {
     // Ignore dead operations.
@@ -67,11 +61,18 @@ static LogicalResult lowerLexicalTerminators(FuncInterface func) {
       firstResultParamsReturn = returnOp;
       resultParams = returnOp.getParametersAttr();
 
+      ValueRange operands = returnOp.getOperands();
+      Value result;
+      if (bitEnumContainsAny(func.getConventions().getFnEffects(),
+                             FnEffects::Throws)) {
+        result = b.create<POP::VariantCreateOp>(op->getLoc(), getErrorOr(),
+                                                operands.front());
+        operands = result;
+      }
       if (op->getParentOp() == func)
-        b.create<KGEN::ReturnOp>(op->getLoc(), resultParams,
-                                 returnOp.getOperands());
+        b.create<KGEN::ReturnOp>(op->getLoc(), resultParams, operands);
       else
-        b.create<HLCF::ReturnOp>(op->getLoc(), returnOp.getOperands());
+        b.create<HLCF::ReturnOp>(op->getLoc(), operands);
 
     } else if (auto raiseOp = dyn_cast<LIT::RaiseOp>(op)) {
       auto tryOp = raiseOp->getParentOfType<LIT::TryOp>();
@@ -80,8 +81,8 @@ static LogicalResult lowerLexicalTerminators(FuncInterface func) {
         b.create<LIT::TryRaiseOp>(op->getLoc(), raiseOp.getError());
       } else {
         // TODO(#6449): Can't have result parameters in a function that raises.
-        Value err = b.create<POP::VariantCreateOp>(
-            op->getLoc(), func.getResultTypes().front(), raiseOp.getError());
+        Value err = b.create<POP::VariantCreateOp>(op->getLoc(), getErrorOr(),
+                                                   raiseOp.getError());
         if (isa<LIT::FuncOp>(op->getParentOp()))
           b.create<KGEN::ReturnOp>(op->getLoc(), ArrayRef<TypedAttr>(), err);
         else
@@ -90,12 +91,9 @@ static LogicalResult lowerLexicalTerminators(FuncInterface func) {
 
     } else if (auto breakOp = dyn_cast<LIT::BreakOp>(op)) {
       b.create<HLCF::BreakOp>(op->getLoc());
-
-    } else if (auto continueOp = dyn_cast<LIT::ContinueOp>(op)) {
-      b.create<HLCF::ContinueOp>(op->getLoc());
-
     } else {
-      llvm_unreachable("unknown terminator");
+      assert(isa<LIT::ContinueOp>(op) && "unknown terminator");
+      b.create<HLCF::ContinueOp>(op->getLoc());
     }
 
     // Check and warn about dead code.
@@ -113,10 +111,11 @@ static LogicalResult lowerLexicalTerminators(FuncInterface func) {
 
   // Check if the function lacks a top-level terminator. If the function
   // nominally returns `!lit.none`, then insert one. Otherwise, emit an error.
-  Operation *terminator = &funcItf.getFunctionBody().front().back();
+  Operation *terminator = func.getBody()->getTerminator();
   if (!isa<LIT::EndFuncOp>(terminator))
     return success();
-  if (!isNoneResultType(func) || !func.getResultParamTypes().empty())
+  if (func.getNumResults() != 1 || !isa<LIT::NoneType>(func.getResultType()) ||
+      !func.getResultParamTypes().empty())
     return terminator->emitError(
         "return expected at end of function with results");
 
@@ -125,9 +124,70 @@ static LogicalResult lowerLexicalTerminators(FuncInterface func) {
       b.create<ParamConstantOp>(func.getLoc(), b.getAttr<LIT::NoneAttr>());
   if (bitEnumContainsAny(func.getConventions().getFnEffects(),
                          FnEffects::Throws))
-    none = b.create<POP::VariantCreateOp>(func.getLoc(),
-                                          func.getResultTypes().front(), none);
+    none = b.create<POP::VariantCreateOp>(func.getLoc(), getErrorOr(), none);
   b.replaceOpWithNewOp<KGEN::ReturnOp>(terminator, ArrayRef<TypedAttr>(), none);
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// lowerThrows
+//===----------------------------------------------------------------------===//
+
+/// Lower `<...>(...) throws -> T` to `<...>(...) -> ErrorOr<T>`. Update all
+/// callsites to signature types to reflect this change.
+static LogicalResult lowerThrows(DeclRefType errType, Operation *op) {
+  // Find every throwing call.
+  SmallVector<KGENCallOpInterface> throwingCalls;
+  op->walk([&](KGENCallOpInterface call) {
+    if (isa<GeneratorInterfaceOp>(*call))
+      return;
+    if (bitEnumContainsAny(
+            cast<SignatureType>(call.getCallee().getType()).getFnEffects(),
+            FnEffects::Throws))
+      throwingCalls.push_back(call);
+  });
+
+  // Replace every throwing signature type with a variant.
+  OpBuilder b(op);
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](SignatureType sigType) {
+    if (!bitEnumContainsAny(sigType.getFnEffects(), FnEffects::Throws))
+      return sigType;
+    // Erase the `throws` bit and alter the result type to be wrapped.
+    return SignatureType::get(
+        sigType.getInputParams(), sigType.getResultParamTypes(),
+        b.getFunctionType(sigType.getValueInputs(),
+                          POP::VariantType::get(
+                              {errType, sigType.getValueResults().front()})),
+        b.getAttr<ConventionsAttr>(
+            sigType.getValueInputConventions(),
+            bitEnumClear(sigType.getFnEffects(), FnEffects::Throws)));
+  });
+  replacer.recursivelyReplaceElementsIn(
+      op, /*replaceAttrs=*/true, /*replaceLocs=*/false, /*replaceTypes=*/true);
+
+  // Update all the callsites.
+  for (KGENCallOpInterface call : throwingCalls) {
+    // FIXME: `kgen.addressof` returns a `FunctionType` (function pointer),
+    // which is an important feature to have, but that means we can't globally
+    // see calls to a throwing function pointer.
+    if (isa<AddressOfOp>(call))
+      return call.emitError("FIXME: cannot take address of throwing function");
+
+    // We need to update the result types of the function, which means
+    // rebuilding the operation.
+    Type resultType = call->getResultTypes().front();
+    OperationState state(call.getLoc(), call->getName(), call->getOperands(),
+                         POP::VariantType::get({errType, resultType}));
+    // Micro-optimization: skip a re-hash by assigning the dictionary attribute.
+    state.attributes = call->getAttrDictionary();
+    b.setInsertionPoint(call);
+    auto newCall = cast<KGENCallOpInterface>(b.create(state));
+    Value value = b.create<LIT::UnwrapOrPropagateOp>(call.getLoc(), resultType,
+                                                     newCall->getResult(0));
+    call->replaceAllUsesWith(ArrayRef(value));
+    call.erase();
+  }
   return success();
 }
 
@@ -146,13 +206,29 @@ struct LowerTerminatorsPass
   using LowerLITTerminatorsBase::LowerLITTerminatorsBase;
 
   void runOnOperation() override {
-    // Walk all top-level functions.
-    WalkResult result = getOperation()->walk([](FuncInterface func) {
-      if (failed(lowerLexicalTerminators(func)))
-        return WalkResult::interrupt();
-      return WalkResult::advance();
+    // Look for an error type declaration.
+    DeclRefType errType;
+    getOperation()->walk([&](StructDeclOp decl) {
+      if (decl.getName() != "Error" || !decl.getInputParamDecls().empty())
+        return;
+      // Reconstruct the full symbol reference.
+      errType = DeclRefType::get(
+          LIT::getFullyResolvedSymbolRef(cast<mlir::SymbolOpInterface>(*decl)));
     });
+    // Walk all top-level functions.
+    WalkResult result =
+        getOperation()->walk<mlir::WalkOrder::PreOrder>([&](LIT::FuncOp func) {
+          if (failed(lowerLexicalTerminators(errType, func)))
+            return WalkResult::interrupt();
+          return WalkResult::skip();
+        });
     if (result.wasInterrupted())
+      return signalPassFailure();
+
+    // Lower all functions that throw.
+    if (!errType)
+      return;
+    if (failed(lowerThrows(errType, getOperation())))
       return signalPassFailure();
   }
 };

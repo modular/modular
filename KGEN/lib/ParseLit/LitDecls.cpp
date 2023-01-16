@@ -981,25 +981,9 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
   // Now that all the types and signature information have been resolved,
   // compute the final MLIR types, mixing in conventions etc.
-  for (auto [arg, argType] : llvm::zip(args, argTypes)) {
+  for (auto [arg, argType] : llvm::zip(args, argTypes))
     if (arg.convention == ValueInputConvention::ByRef)
       argType = POP::PointerType::get(argType);
-  }
-
-  // If the method can raise an exception, wrap the result type in a variant
-  // with the error type.
-  if (funcOp.getRaises()) {
-    auto errorOr = shared.lookupErrorOrType(resultType, decl.getLoc(),
-                                            *decl.getParentDecl());
-    // If we couldn't find an Error type then recover by pretending we didn't
-    // raise.
-    if (!errorOr) {
-      funcOp.setRaises(false);
-      decl.hasReferenceError = true;
-    } else {
-      resultType = errorOr;
-    }
-  }
 }
 
 namespace {

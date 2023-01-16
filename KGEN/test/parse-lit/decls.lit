@@ -115,20 +115,20 @@ fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 1) -> Int:
 # @raises decorator.
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int> attributes {isDef, raises}
+# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !kgen.declref<@"$Int"::@Int> attributes {isDef, raises}
 def defAlwaysRaises() -> Int:
-    # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
-    # CHECK-NEXT: lit.return %[[RESULT]]
+    # CHECK: %[[RESULT:.*]] = kgen.struct.create(%{{.*}})
+    # CHECK-NEXT: lit.return %[[RESULT]] : !kgen.declref<@"$Int"::@Int>
     return Int(0)
 
-# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int> attributes {raises}
+# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !kgen.declref<@"$Int"::@Int> attributes {raises}
 @raises
 fn fnThatRaises() -> Int:
-    # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
-    # CHECK-NEXT: lit.return %[[RESULT]]
+    # CHECK: %[[RESULT:.*]] = kgen.struct.create(%{{.*}})
+    # CHECK-NEXT: lit.return %[[RESULT]] : !kgen.declref<@"$Int"::@Int>
     return Int(0)
 
-# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<@"$prolog"::@Error, !lit.none>
+# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !lit.none
 @raises
 fn raisesReturnsNone():
     # CHECK-NEXT: lit.end_func
@@ -139,11 +139,10 @@ fn raisesReturnsNone():
 fn raisesReturnsVariant() -> __mlir_type.`!pop.variant<@"$prolog"::@Error, index>`:
     return __mlir_op.`pop.variant.create`[_type: __mlir_type.`!pop.variant<@"$prolog"::@Error, index>`](1)
 
-# CHECK-LABEL lit.func @"return_impl_convert_raises
+# CHECK-LABEL: lit.func @"return_impl_convert_raises
 @raises
 fn return_impl_convert_raises(a: Error) -> Error:
-  # CHECK:  %0 = pop.variant.create %a : !kgen.declref<@"$prolog"::@Error> -> !pop.variant<@"$prolog"::@Error>
-  # CHECK-NEXT: lit.return %0
+  # CHECK-NEXT: lit.return %a
   return a
 
 ##===----------------------------------------------------------------------===##

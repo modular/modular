@@ -424,23 +424,13 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // to get the normal result type.
   auto resultDRValue = emitter.emitDRValue(
       {emitter.getAsExpectedType(resultValue, operandExprs[0],
-                                 decl.getNormalResultType(), " in return"),
+                                 decl.getResultType(), " in return"),
        operandExprs[0]});
   if (!resultDRValue)
     return {};
 
-  // If the enclosing method raises, implicitly wrap the result in a variant.
-  Location returnLoc = translateLocation(loc);
-  if (decl.getRaises()) {
-    auto errorOrType =
-        shared.lookupErrorOrType(resultDRValue.getType(), loc, containingDecl);
-    if (!errorOrType)
-      return {};
-    resultDRValue = builder.create<POP::VariantCreateOp>(
-        returnLoc, Type(errorOrType), resultDRValue);
-  }
-
-  builder.create<LIT::ReturnOp>(returnLoc, resultDRValue, resultParamValues);
+  builder.create<LIT::ReturnOp>(translateLocation(loc), resultDRValue,
+                                resultParamValues);
   return success();
 }
 

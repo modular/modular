@@ -913,14 +913,6 @@ kgen.generator @throws() throws {
 
 // -----
 
-// expected-error @below {{custom op 'kgen.generator' a function that throws should return a variant of two types}}
-kgen.generator @throws() throws -> index {
-  %0 = index.constant 0
-  kgen.return %0 : index
-}
-
-// -----
-
 // COM: Make sure these don't crash and emit an error gracefully.
 
 kgen.generator @no_return() {
