@@ -1035,12 +1035,14 @@ parseElementsWithConventions(AsmParser &p, function_ref<ParseResult()> parseElt,
   // for interfaces.
   auto effect = FnEffects::None;
   StringRef kw;
-  while (succeeded(
-      p.parseOptionalKeyword(&kw, {"throws", "none", "force_inline"}))) {
+  while (succeeded(p.parseOptionalKeyword(
+      &kw, {"throws", "none", "force_inline", "async"}))) {
     if (kw == "throws")
       effect = effect | FnEffects::Throws;
     else if (kw == "force_inline")
       effect = effect | FnEffects::ForceInline;
+    else if (kw == "async")
+      effect = effect | FnEffects::Async;
     else if (kw == "none")
       ; // Swallow this keyword
 
