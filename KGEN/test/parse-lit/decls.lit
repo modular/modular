@@ -96,7 +96,7 @@ fn useIt(a: __mlir_type.index) -> __mlir_type.index:
   # CHECK: lit.return %1 : index
   return math(a, math(1, 2))
 
-# CHECK: lit.func @"pleaseInline()"() force_inline -> index attributes {alwaysInline} {
+# CHECK: lit.func @"pleaseInline()"() force_inline -> index {
 @always_inline
 fn pleaseInline() -> __mlir_type.index:
   return 1
@@ -115,13 +115,13 @@ fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 1) -> Int:
 # @raises decorator.
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !kgen.declref<@"$Int"::@Int> attributes {isDef, raises}
+# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !kgen.declref<@"$Int"::@Int> attributes {isDef}
 def defAlwaysRaises() -> Int:
     # CHECK: %[[RESULT:.*]] = kgen.struct.create(%{{.*}})
     # CHECK-NEXT: lit.return %[[RESULT]] : !kgen.declref<@"$Int"::@Int>
     return Int(0)
 
-# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !kgen.declref<@"$Int"::@Int> attributes {raises}
+# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !kgen.declref<@"$Int"::@Int>
 @raises
 fn fnThatRaises() -> Int:
     # CHECK: %[[RESULT:.*]] = kgen.struct.create(%{{.*}})
