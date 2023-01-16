@@ -45,6 +45,13 @@ public:
   /// it.
   operator Runtime &() const { return *get(); }
 
+  /// Get an opaque token for the pointer.
+  uint8_t getAsOpaqueToken() const { return index; }
+  /// Get the pointer from an opaque token.
+  static CompactRuntimePtr getFromOpaqueToken(uint8_t token) {
+    return CompactRuntimePtr(token);
+  }
+
   static constexpr uint8_t kInvalidIndex = 255;
 
 private:
