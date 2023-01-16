@@ -444,13 +444,6 @@ def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
     `` custom<ParameterValues>($parameters) attr-dict
     ($operands^ `:` type($operands))?
   }];
-
-  let extraClassDeclaration = [{
-    /// Verify that the operands of this ReturnOp match the specified set of
-    /// types. Only check the result types if they were provided.
-    LogicalResult checkArgumentTypes(ArrayRef<Type> resultParamTypes,
-                                     std::optional<TypeRange> types);
-  }];
 }
 
 //===----------------------------------------------------------------------===//

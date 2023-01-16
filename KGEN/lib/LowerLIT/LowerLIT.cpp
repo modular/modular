@@ -483,8 +483,8 @@ checkInterfaceConformance(GeneratorOp gen, GeneratorInterfaceOp itf,
     for (auto [result, resultTy] : llvm::zip(callOp.getResults(), itfResTys))
       results.push_back(insertRebindOp(result, resultTy, b));
 
-    b.create<ReturnOp>(b.getAttr<ParameterExprArrayAttr>(returnParams),
-                       results);
+    b.create<KGEN::ReturnOp>(b.getAttr<ParameterExprArrayAttr>(returnParams),
+                             results);
 
     // The thunk is required because there could be direct callers of the
     // original generator, which expect the original signature.  If there

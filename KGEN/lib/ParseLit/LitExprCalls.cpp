@@ -920,7 +920,7 @@ AnyValue CallableValue::debugInlineFunctionCall(
   // the inputs are parameters, but drop them out as cloned/inlined operations
   // at the current insertion point if not.
   auto &block = *funcOp.getBody();
-  assert(isa<ReturnOp>(block.back()));
+  assert(isa<KGEN::ReturnOp>(block.back()));
 
   // Perform parameter substitution if there are input parameters.
   ParameterEvaluator paramEvaluator;
@@ -948,7 +948,7 @@ AnyValue CallableValue::debugInlineFunctionCall(
     // First, check for our special cases.
 
     // If this is is the return operation then we're done.
-    if (auto returnOp = dyn_cast<ReturnOp>(op)) {
+    if (auto returnOp = dyn_cast<KGEN::ReturnOp>(op)) {
       assert(returnOp.getNumOperands() == 1 &&
              "Lit functions always return one value");
       return valueMapping[returnOp.getOperand(0)];

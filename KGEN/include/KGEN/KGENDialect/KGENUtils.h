@@ -151,6 +151,11 @@ void printOptionalParamBindSpec(AsmPrinter &p, ParamBindArrayAttr paramValues);
 void printOptionalParamBindSpec(ParamBindArrayAttr paramValues,
                                 raw_ostream &os);
 
+/// Parse and print a list of parameter values.
+ParseResult parseParameterValues(OpAsmParser &p, ParameterExprArrayAttr &value);
+void printParameterValues(OpAsmPrinter &p, Operation *op,
+                          ParameterExprArrayAttr value);
+
 /// Parse an align parameter if present.
 ParseResult parseOptionalAlignmentParamValue(AsmParser &p, TypedAttr &result);
 void printOptionalAlignmentParamValue(AsmPrinter &p, Operation *op,
@@ -197,6 +202,12 @@ LogicalResult verifyParamDeclsMatch(
 
 /// Check that the op has exactly one block in its region, or it's been cached.
 LogicalResult verifyOneBlockOrCached(Operation *op);
+
+/// Check the value and parameter result types.
+LogicalResult checkResultArgumentTypes(Operation *op,
+                                       ArrayRef<TypedAttr> resultParams,
+                                       ArrayRef<Type> paramResultTypes,
+                                       std::optional<TypeRange> resultTypes);
 
 } // namespace M::KGEN
 

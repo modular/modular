@@ -25,3 +25,51 @@ lit.func @doesntThrow(%arg0: !pop.variant<i32, si32>) {
   %0 = lit.unwrap_or_propagate %arg0 : <i32, si32>
   kgen.return
 }
+
+// -----
+
+kgen.generator @not_lit_func() {
+  // expected-error @below {{'lit.return' op expected to be nested inside a `lit.func` operation}}
+  lit.return
+  kgen.return
+}
+
+// -----
+
+lit.func @mismatched_return_types(%arg0: i64) -> i32 {
+  // expected-error @below {{'lit.return' op operand #0 has type 'i64' but should be 'i32'}}
+  lit.return %arg0 : i64
+  lit.end_func
+}
+
+// -----
+
+lit.func @mismatched_result_parameter<() -> i32>() {
+  // expected-error @below {{'lit.return' op parameter #0 has type 'i64' but should be 'i32'}}
+  lit.return<:i64 0>
+  lit.end_func
+}
+
+// -----
+
+lit.func @does_not_throw(%err: !kgen.declref<@Error>) {
+  // expected-error @below {{'lit.raise' op must be nested inside the 'try' region of a `lit.try` operation or within a `lit.func` that throws}}
+  lit.raise %err : <@Error>
+  lit.end_func
+}
+
+// -----
+
+lit.func @invalid_break() {
+  // expected-error @below {{'lit.break' op must be nested within an `hlcf.loop` operation}}
+  lit.break
+  lit.end_func
+}
+
+// -----
+
+lit.func @invalid_continue() {
+  // expected-error @below {{'lit.continue' op must be nested within an `hlcf.loop` operation}}
+  lit.continue
+  lit.end_func
+}

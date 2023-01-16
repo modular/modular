@@ -14,7 +14,6 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "Support/Compiler/VerifyUtils.h"
 #include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -37,8 +36,9 @@ static LogicalResult checkReturnArguments(T op) {
   // If we have a return op, then we can check the argument types. Otherwise, we
   // just don't have the return op.
   if (ReturnOp returnOp = op.getReturnOp())
-    return returnOp.checkArgumentTypes(op.getResultParamTypes(),
-                                       {op.getResultTypes()});
+    return checkResultArgumentTypes(returnOp, returnOp.getParameters(),
+                                    op.getResultParamTypes(),
+                                    op.getResultTypes());
   return success();
 }
 
@@ -60,44 +60,6 @@ static void printParamConstantOpValue(OpAsmPrinter &p, Operation *,
   p << " = <";
   printParamValue(p, value);
   p << ">";
-}
-
-//===----------------------------------------------------------------------===//
-// custom<ParameterValues>
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseParameterValues(OpAsmParser &p,
-                                        ParameterExprArrayAttr &value) {
-  SmallVector<TypedAttr> elts;
-  if (p.parseCommaSeparatedList(
-          OpAsmParser::Delimiter::OptionalLessGreater, [&]() -> ParseResult {
-            TypedAttr value;
-            if (parseParamValueDefaultingToIndex(p, value))
-              return failure();
-            elts.push_back(value);
-            return success();
-          }))
-    return failure();
-
-  value = ParameterExprArrayAttr::get(p.getContext(), elts);
-  return success();
-}
-
-static void printParameterValues(OpAsmPrinter &p, Operation *op,
-                                 ParameterExprArrayAttr value) {
-  if (value.empty())
-    return;
-  p << '<';
-  llvm::interleaveComma(value, p, [&](TypedAttr value) {
-    auto valType = value.getType();
-    if (!valType.isIndex()) {
-      p << ":";
-      printKGENType(p.getStream(), valType);
-      p << " ";
-    }
-    printParamValue(p, value);
-  });
-  p << '>';
 }
 
 //===----------------------------------------------------------------------===//
@@ -783,9 +745,10 @@ static void printRegionBody(OpAsmPrinter &p, Operation *op, TypeAttr signature,
 }
 
 LogicalResult RegionBodyOp::verifyRegions() {
-  if (failed(cast<ReturnOp>(getBody()->getTerminator())
-                 .checkArgumentTypes(getResultParamTypes(),
-                                     {getSignature().getValueResults()})))
+  auto returnOp = cast<ReturnOp>(getBody()->getTerminator());
+  if (failed(checkResultArgumentTypes(returnOp, returnOp.getParameters(),
+                                      getResultParamTypes(),
+                                      getSignature().getValueResults())))
     return failure();
   if (getBody()->getArgumentTypes() != getSignature().getValueInputs())
     return emitOpError("signature mismatches body");
@@ -804,35 +767,6 @@ OpFoldResult ParamConstantOp::fold(ArrayRef<Attribute> constants) {
 void ParamConstantOp::build(OpBuilder &b, OperationState &state,
                             TypedAttr value) {
   build(b, state, value.getType(), value);
-}
-
-//===----------------------------------------------------------------------===//
-// ReturnOp
-//===----------------------------------------------------------------------===//
-
-/// Containers verify that the operands of this ReturnOp match the specified set
-/// of types.
-LogicalResult ReturnOp::checkArgumentTypes(ArrayRef<Type> paramResultTypes,
-                                           std::optional<TypeRange> types) {
-  // Check the parameters match up.
-  auto returnedParams = getParameters();
-  if (returnedParams.size() != paramResultTypes.size())
-    return emitOpError("expected ")
-           << paramResultTypes.size() << " parameters for enclosing op";
-
-  for (size_t i = 0, e = paramResultTypes.size(); i != e; ++i) {
-    auto expectedTy = paramResultTypes[i];
-    auto actualTy = returnedParams[i].cast<TypedAttr>().getType();
-    if (actualTy != expectedTy)
-      return emitOpError("parameter #") << i << " has type " << actualTy
-                                        << " but should be " << expectedTy;
-  }
-
-  // Verify the result types if they were provided.
-  if (!types)
-    return success();
-
-  return checkResultTypes(getOperation(), *types);
 }
 
 //===----------------------------------------------------------------------===//

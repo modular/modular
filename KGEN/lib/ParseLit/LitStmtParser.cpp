@@ -441,7 +441,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   }
 
   if (isa<LIT::FuncOp>(builder.getInsertionBlock()->getParentOp())) {
-    builder.create<ReturnOp>(returnLoc, resultParamValues, resultDRValue);
+    builder.create<KGEN::ReturnOp>(returnLoc, resultParamValues, resultDRValue);
   } else {
     // FIXME(https://github.com/modularml/modular/issues/6449): HLCF::ReturnOp
     // doesn't support result parameters.
@@ -502,7 +502,8 @@ ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
     Value wrappedErr = builder.create<POP::VariantCreateOp>(
         raiseLoc, func.getResultType(), errorVal);
     if (func == block->getParentOp())
-      builder.create<ReturnOp>(raiseLoc, ArrayRef<TypedAttr>(), wrappedErr);
+      builder.create<KGEN::ReturnOp>(raiseLoc, ArrayRef<TypedAttr>(),
+                                     wrappedErr);
     else
       builder.create<HLCF::ReturnOp>(raiseLoc, wrappedErr);
   }
