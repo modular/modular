@@ -8,8 +8,8 @@ from prolog import Bool, DType, Error, F32, Int, object
 
 struct ParametricOnInt[a: Int]:
 fn Rec2[
-  a: ParametricOnInt[b], # expected-note {{previously used here}}
-  b: ParametricOnInt[a]](): # expected-error {{recursive reference to declaration}}
+  a: ParametricOnInt[b], # expected-error {{use of unknown declaration 'b'}}
+  b: ParametricOnInt[a]]():
   pass
 
 # expected-note @+1 {{'Thing' declared here}}

@@ -34,23 +34,6 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-namespace llvm {
-// Allow (dynamic)casting ASTDecl to ParamDeclRefAttr
-template <>
-struct CastInfo<ParamDeclRefAttr, LIT::ASTDecl>
-    : public NullableValueCastFailed<ParamDeclRefAttr>,
-      public DefaultDoCastIfPossible<ParamDeclRefAttr, ASTDecl &,
-                                     CastInfo<ParamDeclRefAttr, ASTDecl>> {
-  static bool isPossible(ASTDecl &decl) {
-    auto mValue = dyn_cast<MValue>(decl.getIRValue());
-    return mValue && isa<ParamDeclRefAttr>(mValue.get());
-  }
-  static ParamDeclRefAttr doCast(ASTDecl &decl) {
-    return cast<ParamDeclRefAttr>(cast<MValue>(decl.getIRValue()).get());
-  }
-};
-} // namespace llvm
-
 /// Parse an expression and immediately resolve it to a type.  This returns
 /// failure on parse error.
 static ParseResult parseType(LitParserBase &p, ASTType &result,
@@ -389,7 +372,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
         .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, LetDeclOp, VarDeclOp,
-              ParamDeclareOp, ParamDeclRefAttr>([&](auto op) {
+              ParamDeclareOp>([&](auto op) {
           LitLexer lexer(shared, decl.getCursor());
 
           // Resolve the signature: on a parse error, we note that the decl
@@ -430,15 +413,14 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
         .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp, LetDeclOp,
-              VarDeclOp, ParamDeclareOp, ParamDeclRefAttr, AliasForwardDeclOp>(
-            [&](auto op) {
-              // Parse the body of the declaration from the correct point.
-              LitLexer lexer(shared, decl.getCursor());
-              if (resolveBody(op, lexer, decl))
-                return;
+              VarDeclOp, ParamDeclareOp, AliasForwardDeclOp>([&](auto op) {
+          // Parse the body of the declaration from the correct point.
+          LitLexer lexer(shared, decl.getCursor());
+          if (resolveBody(op, lexer, decl))
+            return;
 
-              checkEndOfBodyCursor(lexer);
-            })
+          checkEndOfBodyCursor(lexer);
+        })
         .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
           emitError(decl.getLoc(),
@@ -482,24 +464,36 @@ struct ParsedMetaSignature {
     auto parseMetaParameter = [&]() -> ParseResult {
       auto loc = p.getToken().getLoc();
       StringAttr name;
-      LitLexerCursor typeStartCursor, typeEndCursor;
       ExprNode *typeExpr; // Unused, because we reparse this.
       if (p.parseIdentifier(name, "expected parameter name") ||
           p.parseToken(LitToken::colon,
                        "meta parameters always require a type") ||
-          p.getCursor(typeStartCursor) ||
-          p.parseExpression(typeExpr, std::nullopt) ||
-          p.getCursor(typeEndCursor))
+          p.parseExpression(typeExpr, std::nullopt))
         return failure();
 
-      // Even though we parsed the type expression, we cannot just bind it.  It
-      // could have forward references to other parameters, and the declaration
-      // we're parsing into isn't fully resolved yet.  Instead, add the decls
-      // with unresolved values.
-      auto tmpDecl =
-          ParamDeclRefAttr::get(name, UnresolvedType::get(p.getContext()));
-      ASTDecl &paramDecl = declResolver.addDecl(
-          MValue(tmpDecl), loc, name, &decl, typeStartCursor, typeEndCursor, 0);
+      // TODO: Refactor this.
+      Type type;
+      {
+        // Mark the decl container as 'fully resolved' temporarily to facilitate
+        // this, so it doesn't attempt to get resolved again.
+        // FIXME(5975): This is a hack and shouldn't be needed.  The problem is
+        // that parameters should be accessible before the body is, and we have
+        // no way to express this currently.
+        assert(decl.resolvedness == DeclResolvedness::unparsed);
+        llvm::SaveAndRestore X(decl.resolvedness,
+                               DeclResolvedness::fullyResolved);
+
+        // Bind the parsed type expression so references from other parameters
+        // can be resolved.
+        ExprEmitter emitter(p.shared, decl, std::nullopt, nullptr);
+        type = emitter.emitExprType(typeExpr);
+        if (!type)
+          type = TypeCheckErrorType::get(p.getContext());
+      }
+
+      auto tmpDecl = ParamDeclRefAttr::get(name, type);
+      ASTDecl &paramDecl =
+          declResolver.addFullyResolvedDecl(MValue(tmpDecl), name, loc, &decl);
       parsedInputs.push_back(&paramDecl);
       return success();
     };
@@ -537,18 +531,7 @@ struct ParsedMetaSignature {
     SmallVector<ParamDeclAttr> result;
     // Force resolve all of the declarations, which could be recursive w.r.t.
     // each other.
-
-    // Mark the decl container as 'fully resolved' temporarily to facilitate
-    // this, so it doesn't attempt to get resolved again.
-    // FIXME(5975): This is a hack and shouldn't be needed.  The problem is that
-    // parameters should be accessible before the body is, and we have no way to
-    // express this currently.
-    assert(decl.resolvedness == DeclResolvedness::unparsed);
-    llvm::SaveAndRestore X(decl.resolvedness, DeclResolvedness::fullyResolved);
-
     for (ASTDecl *paramDecl : parsedInputs) {
-      (void)resolver.resolve(*paramDecl, DeclResolvedness::fullyResolved,
-                             paramDecl->getLoc());
       auto resolvedParam =
           cast<ParamDeclRefAttr>(cast<MValue>(paramDecl->getIRValue()).get());
       result.push_back(
@@ -570,28 +553,6 @@ struct ParsedMetaSignature {
   }
 };
 } // namespace
-
-//===----------------------------------------------------------------------===//
-// Meta Parameter Decl implementation
-//===----------------------------------------------------------------------===//
-
-LogicalResult DeclResolver::resolveSignature(ParamDeclRefAttr paramDeclRef,
-                                             LitLexer &lexer, ASTDecl &decl) {
-  LitParserBase p(lexer);
-
-  ASTType type;
-  if (parseType(p, type, *decl.getParentDecl(), std::nullopt))
-    return failure(); // Should never happen, we already checked this.
-
-  // Update the value to the newly resolved type.
-  decl.irValue = MValue(ParamDeclRefAttr::get(paramDeclRef.getName(), type));
-  return success(!isa<TypeCheckErrorType>(type.mlirType));
-}
-
-ParseResult DeclResolver::resolveBody(ParamDeclRefAttr op, LitLexer &lexer,
-                                      ASTDecl &decl) {
-  return success();
-}
 
 //===----------------------------------------------------------------------===//
 // Decorator support logic
