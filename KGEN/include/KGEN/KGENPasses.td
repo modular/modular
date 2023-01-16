@@ -7,6 +7,37 @@
 include "mlir/Pass/PassBase.td"
 
 //===----------------------------------------------------------------------===//
+// LowerLITTerminators
+//===----------------------------------------------------------------------===//
+
+def LowerLITTerminators : Pass<"lower-lit-terminators"> {
+  let summary = "Lower lexical terminators and prune unreachable code.";
+  let description = [{
+    The `lower-lit-terminators` pass will replace lexical Lit terminators with
+    real terminators. It will prune any unreachable code (and warn about it),
+    and verify that return parameters are the same at all return sites.
+
+    Example:
+
+    ```mlir
+    lit.func @foo<() -> index>(%arg0: i32, %arg1: i32) -> i32 {
+      lit.return<2> %arg0 : i32
+      lit.return<2> %arg1 : i32
+      lit.end_func
+    }
+    ```
+
+    Becomes:
+
+    ```mlir
+    lit.func @foo<() -> index>(%arg0: i32, %arg1: i32) -> i32 {
+      kgen.return<2> %arg0 : i32
+    }
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerLIT
 //===----------------------------------------------------------------------===//
 
