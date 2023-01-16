@@ -1232,8 +1232,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
   SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
-  assert(p.getToken().isAny(LitToken::kw_def, LitToken::kw_fn) &&
+  assert(p.getToken().isAny(LitToken::kw_async, LitToken::kw_def,
+                            LitToken::kw_fn) &&
          "not a function definition?");
+  p.consumeIf(LitToken::kw_async);
   p.consumeToken();
 
   StringAttr baseName;

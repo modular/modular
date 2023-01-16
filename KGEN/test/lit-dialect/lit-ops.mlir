@@ -250,3 +250,15 @@ lit.func @lexical_terminators(%cond: i1, %err: !kgen.declref<@Error>) throws -> 
   // CHECK: lit.end_func
   lit.end_func
 }
+
+// CHECK-LABEL: lit.func @async_fn() async
+lit.func @async_fn() async {
+  lit.end_func
+}
+
+// CHECK-LABEL: lit.func @call_async_fn
+lit.func @call_async_fn() {
+  // CHECK-NEXT: lit.async_call[<>() async -> (): @async_fn]()
+  %0 = lit.async_call[<>() async -> (): @async_fn]()
+  lit.end_func
+}

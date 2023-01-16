@@ -643,50 +643,8 @@ mlir::CallInterfaceCallable CallOp::getCallableForCallee() {
 }
 
 //===----------------------------------------------------------------------===//
-// CallParamOp / custom<CallParamCallee>
+// CallParamOp
 //===----------------------------------------------------------------------===//
-
-static ParseResult parseCallParamCallee(OpAsmParser &p, TypedAttr &value,
-                                        ParamDeclArrayAttr &paramResultDecls,
-                                        SmallVectorImpl<Type> &operandTypes,
-                                        SmallVectorImpl<Type> &resultTypes) {
-  Type type;
-  llvm::SMLoc loc = p.getCurrentLocation();
-  if (p.parseLSquare() || parseKGENType(p, type) || p.parseColon() ||
-      parseParamValue(p, value, type) || p.parseRSquare())
-    return failure();
-  if (succeeded(p.parseOptionalLess())) {
-    if (p.parseLParen() || p.parseRParen() || p.parseArrow() ||
-        parseParamDecls(p, paramResultDecls) || p.parseGreater())
-      return failure();
-  } else {
-    paramResultDecls = ParamDeclArrayAttr::get(p.getContext(), {});
-  }
-
-  auto signature = dyn_cast<SignatureType>(value.getType());
-  if (!signature)
-    return p.emitError(loc, "callee parameter type must be a signature type");
-
-  llvm::append_range(operandTypes, signature.getValueInputs());
-  llvm::append_range(resultTypes, signature.getValueResults());
-  return success();
-}
-
-static void printCallParamCallee(OpAsmPrinter &p, Operation *op,
-                                 TypedAttr value, ParamDeclArrayAttr paramDecls,
-                                 OperandRange::type_range operandTypes,
-                                 mlir::ResultRange::type_range resultTypes) {
-  p << "[";
-  printKGENType(p.getStream(), value.getType());
-  p << ": ";
-  printParamValue(p, value);
-  p << "]";
-  if (!paramDecls.empty()) {
-    p << "<() -> ";
-    printParamDecls(paramDecls, p.getStream());
-    p << '>';
-  }
-}
 
 LogicalResult CallParamOp::canonicalize(CallParamOp op,
                                         PatternRewriter &rewriter) {

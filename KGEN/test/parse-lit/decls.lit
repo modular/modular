@@ -187,3 +187,21 @@ fn callStatic(a: Int):
   # CHECK: kgen.call @"$decls"::@StructExample::@"__new__{{.*}}()
   # CHECK: kgen.call @"$decls"::@StructExample::@"static{{.*}}(%a) : (!kgen.declref<@"$Int"::@Int>) -> !lit.none
   StructExample().static(a)
+
+# CHECK-LABEL: lit.func @"coroutine()"() async -> index
+async fn coroutine() -> __mlir_type.index:
+  # CHECK: lit.return %idx0 : index
+  return 0
+
+# CHECK-LABEL: kgen.struct.decl @StructWithAsync
+struct StructWithAsync:
+  # CHECK-LABEL: lit.func @"do_something{{.*}}"({{.*}}) async -> !lit.none
+  async fn do_something(self: StructWithAsync):
+    # CHECK-NEXT: %[[CORO:.*]] = lit.async_call[<>() async -> index: @"$decls"::@"coroutine()"]()
+    # CHECK-NEXT: lit.let.decl "a" = %[[CORO]] : !pop.coroutine<index>
+    let a = coroutine()
+
+# CHECK-LABEL: lit.func @"call_struct_async{{.*}}"({{.*}}) async -> !lit.none
+async fn call_struct_async(f: StructWithAsync):
+    # CHECK-NEXT: lit.async_call[<>({{.*}}) async -> !lit.none: @{{.*}}](%f)
+    f.do_something()

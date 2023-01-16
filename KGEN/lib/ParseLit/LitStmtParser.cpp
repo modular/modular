@@ -263,6 +263,7 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     rejectDecorator(); // Decorators not allowed.
     rejectSimpleStmt();
     return parseTryStmt(stmtIndent);
+  case LitToken::kw_async:
   case LitToken::kw_def:
   case LitToken::kw_fn:
     rejectSimpleStmt(); // Not a simple_stmt.
@@ -790,6 +791,7 @@ ParseResult LitStmtParser::parseImportStmt() {
 
 ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor startCursor,
                                           size_t curIndent) {
+  bool isAsync = consumeIf(LitToken::kw_async);
   // isDef is true when introduced by the 'def' keywords instead of 'fn'.
   bool isDef = getToken().is(LitToken::kw_def);
   SMLoc loc = getToken().getLoc();
@@ -804,11 +806,17 @@ ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor startCursor,
   skipUntilIndentation(curIndent);
 
   auto funcDecl = builder.create<LIT::FuncOp>(translateLocation(loc));
+  // Compute the correct function effects.
+  auto effects = FnEffects::None;
   if (isDef) {
     funcDecl.setIsDef(true);
-    funcDecl.setSignature(
-        funcDecl.getSignature().setFnEffect(FnEffects::Throws));
+    effects = bitEnumSet(effects, FnEffects::Throws);
   }
+  if (isAsync)
+    effects = bitEnumSet(effects, FnEffects::Async);
+  if (effects != FnEffects::None)
+    funcDecl.setSignature(funcDecl.getSignature().setFnEffect(effects));
+
   getDeclResolver().addDecl(funcDecl, loc, baseName, &containingDecl,
                             startCursor, getLexer().getCursor(), curIndent);
   return success();

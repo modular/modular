@@ -156,6 +156,12 @@ ParseResult parseParameterValues(OpAsmParser &p, ParameterExprArrayAttr &value);
 void printParameterValues(OpAsmPrinter &p, Operation *op,
                           ParameterExprArrayAttr value);
 
+/// Parse and print a parametric callee and result parameter declarations.
+ParseResult parseParametricCallee(OpAsmParser &p, TypedAttr &callee,
+                                  ParamDeclArrayAttr &paramDecls);
+void printParametricCallee(OpAsmPrinter &p, Operation *, TypedAttr callee,
+                           ParamDeclArrayAttr paramDecls);
+
 /// Parse an align parameter if present.
 ParseResult parseOptionalAlignmentParamValue(AsmParser &p, TypedAttr &result);
 void printOptionalAlignmentParamValue(AsmPrinter &p, Operation *op,
