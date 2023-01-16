@@ -118,8 +118,7 @@ ExecutionEngine::create(const CompilationOptions &options) {
 
 ExecutionEngine::ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit,
                                  CompilationOptions options)
-    : options(options), ctx(std::make_unique<llvm::LLVMContext>()),
-      jit(std::move(jit)),
+    : options(options), jit(std::move(jit)),
       gdbListener(llvm::JITEventListener::createGDBRegistrationListener()),
       perfListener(nullptr) {
   // Attach the perf listener.
@@ -160,12 +159,12 @@ ErrorOrSuccess ExecutionEngine::add(StringRef name, BufferRef obj) {
 }
 
 ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef libName,
-                                              StringAttr symbol) {
+                                              StringRef symbol) {
   auto *dylib = jit->getJITDylibByName(libName);
   if (!dylib)
     return Error("could not find JITDylib for " + libName);
 
-  auto addr = jit->lookup(*dylib, symbol.getValue());
+  auto addr = jit->lookup(*dylib, symbol);
   if (!addr)
     return M::Error(toString(addr.takeError()));
 
