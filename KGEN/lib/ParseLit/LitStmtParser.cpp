@@ -460,7 +460,7 @@ ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
     inTry = false;
   }
 
-  if (!inTry && !getBlockParentOfType<LIT::FuncOp>(block).getRaises()) {
+  if (!inTry && !getBlockParentOfType<LIT::FuncOp>(block).isThrows()) {
     emitError(loc, "cannot raise error in a context that cannot raise");
     return success();
   }
@@ -806,7 +806,8 @@ ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor startCursor,
   auto funcDecl = builder.create<LIT::FuncOp>(translateLocation(loc));
   if (isDef) {
     funcDecl.setIsDef(true);
-    funcDecl.setRaises(true);
+    funcDecl.setSignature(
+        funcDecl.getSignature().setFnEffect(FnEffects::Throws));
   }
   getDeclResolver().addDecl(funcDecl, loc, baseName, &containingDecl,
                             startCursor, getLexer().getCursor(), curIndent);

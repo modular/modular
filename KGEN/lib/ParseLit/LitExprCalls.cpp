@@ -680,7 +680,7 @@ static bool isValidErrorContext(Block *block) {
         tryOp && tryOp.getTryRegion().isAncestor(block->getParent()))
       return true;
     if (auto func = dyn_cast<LIT::FuncOp>(op))
-      return func.getRaises();
+      return func.isThrows();
   }
   llvm_unreachable("block outside of function?");
 }

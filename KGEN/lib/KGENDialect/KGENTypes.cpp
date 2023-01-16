@@ -138,6 +138,13 @@ SignatureType SignatureType::get(MLIRContext *ctx, TypeRange inputs,
   return get(FunctionType::get(ctx, inputs, results));
 }
 
+SignatureType SignatureType::setFnEffect(FnEffects effect) {
+  return SignatureType::get(
+      getInputParams(), getResultParamTypes(), getValues(),
+      ConventionsAttr::get(getContext(), getValueInputConventions(),
+                           bitEnumSet(getFnEffects(), effect)));
+}
+
 /// Return a signature with the specified parameter bindings substituted
 /// into it as happens in a call.  The types specified in the parameter
 /// bindings affects the type signature of the value input and outputs, and

@@ -220,6 +220,9 @@ def KGEN_SignatureType : KGENType<"Signature", "signature",
       return ValueInputConvention(getValueInputConventions()[inputNo]);
     }
 
+    /// Set a function convention.
+    SignatureType setFnEffect(FnEffects effect);
+
     /// Return a signature with the specified parameter bindings substituted
     /// into it as happens in a call.  The types specified in the parameter
     /// bindings affects the type signature of the value input and outputs, and

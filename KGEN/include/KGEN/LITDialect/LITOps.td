@@ -81,8 +81,6 @@ def LIT_FuncOp : LITOp<"func", [
                        UnitAttr:$isStatic,
                        UnitAttr:$isInterface,
                        UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
-                       UnitAttr:$raises,
-                       UnitAttr:$alwaysInline,
                        UnitAttr:$noDebugInline,
                        OptionalAttr<SymbolRefAttr>:$implements,
                        OptionalAttr<KGEN_SymbolConstantAttr>:$evaluator);
