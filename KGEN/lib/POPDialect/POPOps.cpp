@@ -458,6 +458,21 @@ void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
 }
 
 //===----------------------------------------------------------------------===//
+// ExternalCallOp
+//===---------------------------------------------------------------------===//
+
+void ExternalCallOp::build(OpBuilder &b, OperationState &state, StringRef func,
+                           ValueRange operands) {
+  build(b, state, {}, func, operands);
+}
+
+void ExternalCallOp::build(OpBuilder &b, OperationState &state,
+                           TypeRange results, StringRef func,
+                           ValueRange operands) {
+  build(b, state, results, func, operands, /*variadicType=*/nullptr);
+}
+
+//===----------------------------------------------------------------------===//
 // GlobalConstantOp
 //===----------------------------------------------------------------------===//
 
@@ -1049,6 +1064,15 @@ LogicalResult CallIndirectOp::canonicalize(CallIndirectOp op,
   }
 
   return failure();
+}
+
+//===----------------------------------------------------------------------===//
+// CoroutinePromiseOp
+//===----------------------------------------------------------------------===//
+
+static PointerType getCoroutinePromiseType(Type type) {
+  return PointerType::get(
+      StructType::get(type.getContext(), cast<CoroutineType>(type).getTypes()));
 }
 
 //===----------------------------------------------------------------------===//

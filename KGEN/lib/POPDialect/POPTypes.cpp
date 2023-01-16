@@ -742,6 +742,40 @@ std::optional<int64_t> ClosureType::getTypeAlign(TargetInfoAttr target) const {
 }
 
 //===----------------------------------------------------------------------===//
+// CoroutineType
+//===----------------------------------------------------------------------===//
+
+std::optional<int64_t> CoroutineType::getTypeSize(TargetInfoAttr target) const {
+  // FIXME: Implement this.
+  llvm_unreachable("TODO: unimplemented");
+}
+
+std::optional<int64_t>
+CoroutineType::getTypeAlign(TargetInfoAttr target) const {
+  // FIXME: Implement this.
+  llvm_unreachable("TODO: unimplemented");
+}
+
+SmallVector<Type> CoroutineType::getParameterizedTypes() const {
+  SmallVector<Type> resultTypes;
+  resultTypes.reserve(getTypes().size());
+  for (TypedAttr type : getTypes())
+    resultTypes.push_back(ParamRefType::get(type));
+  return resultTypes;
+}
+
+LogicalResult
+CoroutineType::resolveResultTypes(SmallVectorImpl<Type> &resultTypes) const {
+  for (TypedAttr resultType : getTypes()) {
+    if (auto type = llvm::dyn_cast<TypeConstantAttr>(resultType))
+      resultTypes.push_back(type.getValue());
+    else
+      return failure();
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
