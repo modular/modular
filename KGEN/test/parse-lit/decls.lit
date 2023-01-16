@@ -52,8 +52,7 @@ def var_decls():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"empty_def()"() -> !lit.none {
-# CHECK: %0 = kgen.param.constant: !lit.none = <#lit.none>
-# CHECK: kgen.return %0 : !lit.none
+# CHECK-NEXT: lit.end_func
 fn empty_def():
   # Pass isn't required.
 
@@ -82,6 +81,7 @@ struct NoDebugInlineTest:
   @nodebug_inline
   @staticmethod
   fn test():
+    return
 
 
 # CHECK-LABEL: lit.func @"math{{.*}} attributes {noDebugInline}
@@ -93,7 +93,7 @@ fn math(a: __mlir_type.index, b: __mlir_type.index) -> __mlir_type.index:
 fn useIt(a: __mlir_type.index) -> __mlir_type.index:
   # CHECK: %0 = kgen.param.constant = <3>
   # CHECK: %1 = index.add %a, %0
-  # CHECK: kgen.return %1 : index
+  # CHECK: lit.return %1 : index
   return math(a, math(1, 2))
 
 # CHECK: lit.func @"pleaseInline()"() force_inline -> index attributes {alwaysInline} {
@@ -118,22 +118,20 @@ fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 1) -> Int:
 # CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int> attributes {isDef, raises}
 def defAlwaysRaises() -> Int:
     # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
-    # CHECK-NEXT: kgen.return %[[RESULT]]
+    # CHECK-NEXT: lit.return %[[RESULT]]
     return Int(0)
 
 # CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int> attributes {raises}
 @raises
 fn fnThatRaises() -> Int:
     # CHECK: %[[RESULT:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$Int"::@Int> -> !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
-    # CHECK-NEXT: kgen.return %[[RESULT]]
+    # CHECK-NEXT: lit.return %[[RESULT]]
     return Int(0)
 
 # CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<@"$prolog"::@Error, !lit.none>
 @raises
 fn raisesReturnsNone():
-    # CHECK: %0 = kgen.param.constant: !lit.none = <#lit.none>
-    # CHECK-NEXT: %1 = pop.variant.create %0
-    # CHECK-NEXT: kgen.return %1
+    # CHECK-NEXT: lit.end_func
     pass
 
 # COM: We can return an variant of error and index in a non-throwing function.
@@ -145,7 +143,7 @@ fn raisesReturnsVariant() -> __mlir_type.`!pop.variant<@"$prolog"::@Error, index
 @raises
 fn return_impl_convert_raises(a: Error) -> Error:
   # CHECK:  %0 = pop.variant.create %a : !kgen.declref<@"$prolog"::@Error> -> !pop.variant<@"$prolog"::@Error>
-  # CHECK-NEXT: kgen.return %0
+  # CHECK-NEXT: lit.return %0
   return a
 
 ##===----------------------------------------------------------------------===##

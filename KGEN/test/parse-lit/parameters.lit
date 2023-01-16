@@ -36,7 +36,7 @@ fn fancy_signature[dt: DType, size: __mlir_type.index]
   var local = take_3index(size, size, size)
 
   # CHECK: %[[TMP:.*]] = kgen.param.constant = <add(size, 42)>
-  # CHECK: kgen.return %[[TMP]] : index
+  # CHECK: lit.return %[[TMP]] : index
   return size+42
 
 
@@ -186,12 +186,12 @@ fn idx_result_params[a: __mlir_type.index -> __mlir_type.index, __mlir_type.inde
   # CHECK: %0 = kgen.param.constant = <add(a, 2)>
   # CHECK: %1 = pop.cast_from_builtin %0 : index to !pop.scalar<index>
   # CHECK: %2 = kgen.struct.create(%1)
-  # CHECK: kgen.return<a, add(a, 1)> %2
+  # CHECK: lit.return<a, add(a, 1)> %2
   return[a,a+1] a+2
 
 # CHECK-LABEL: lit.func @"just_result_params()"<() -> index>()
 fn just_result_params[() -> __mlir_type.index]():
-  # CHECK: kgen.return<42>
+  # CHECK: lit.return<42>
   return[42]
 
 
@@ -211,7 +211,7 @@ fn search3[a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index
    ]()
    # CHECK: kgen.param.declare result = <result_hidden>
    alias result = __mlir_attr.`#kgen.param.decl.ref<"result_hidden"> : index`
-   # CHECK: kgen.return<result>
+   # CHECK: lit.return<result>
    return[result]
 
 # CHECK-LABEL: lit.func @"useResultParams
@@ -244,7 +244,7 @@ fn useResultParams(i: Int):
 # Issue #6904: Parameter results don't get implicit conversions
 # CHECK: lit.func @"testResultParamConversion
 fn testResultParamConversion[()->Int](a: Int):
-  # CHECK: kgen.return<:!kgen.declref<@"$Int"::@Int> apply(:(index) -> !kgen.declref<@"$Int"::@Int> @"$Int"::@Int::@"__new__(__mlir_type.index)", 4)>
+  # CHECK: lit.return<:!kgen.declref<@"$Int"::@Int> apply(:(index) -> !kgen.declref<@"$Int"::@Int> @"$Int"::@Int::@"__new__(__mlir_type.index)", 4)>
   return[4]
 
 ##===----------------------------------------------------------------------===##
@@ -256,7 +256,7 @@ fn takeCallable[
      callable: __mlir_type.`!kgen.signature<[], [], (index) -> index>`
    ](a: __mlir_type.index) -> __mlir_type.index:
   # CHECK-NEXT: %0 = kgen.call_param[(index) -> index: callable](%a)
-  # CHECK-NEXT: kgen.return %0
+  # CHECK-NEXT: lit.return %0
   return callable(a)
 
 fn takeAndReturnIndex(x: __mlir_type.index) -> __mlir_type.index:

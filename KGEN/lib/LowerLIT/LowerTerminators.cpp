@@ -30,6 +30,10 @@ static bool isNoneResultType(FuncInterface func) {
 
 /// Lower all lexical terminators in the function and remove dead code.
 static LogicalResult lowerLexicalTerminators(FuncInterface func) {
+  auto funcItf = cast<mlir::FunctionOpInterface>(*func);
+  if (funcItf.getFunctionBody().empty())
+    return success();
+
   mlir::IRRewriter b(func.getContext());
 
   LIT::ReturnOp firstResultParamsReturn;
@@ -109,8 +113,7 @@ static LogicalResult lowerLexicalTerminators(FuncInterface func) {
 
   // Check if the function lacks a top-level terminator. If the function
   // nominally returns `!lit.none`, then insert one. Otherwise, emit an error.
-  Operation *terminator =
-      &cast<mlir::FunctionOpInterface>(*func).getFunctionBody().front().back();
+  Operation *terminator = &funcItf.getFunctionBody().front().back();
   if (!isa<LIT::EndFuncOp>(terminator))
     return success();
   if (!isNoneResultType(func) || !func.getResultParamTypes().empty())

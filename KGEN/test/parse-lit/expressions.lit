@@ -21,7 +21,7 @@ struct M:
 fn simpleMath(a: Int, b: Int) -> Int:
   # CHECK: %0 = kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%b, %a)
   # CHECK: %1 = kgen.call @"$Int"::@Int::@"__sub__{{.*}}(%a, %0)
-  # CHECK: kgen.return %1 : !kgen.declref<@"$Int"::@Int>
+  # CHECK: lit.return %1 : !kgen.declref<@"$Int"::@Int>
   return a-b*a
 
 # CHECK-LABEL: lit.func @"precedence_associativity
@@ -119,7 +119,7 @@ fn precedence_matmul(z: M) -> M:
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$expressions"::@M::@"__neg__{{.*}}(%[[INT_TWO]])
   # CHECK-NEXT:  %[[MATMUL:.*]] = kgen.call @"$expressions"::@M::@"__matmul__{{.*}}(%[[INT_THREE]], %[[NEG]])
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$expressions"::@M::@"__add__{{.*}}(%z, %[[MATMUL]])
-  # CHECK-NEXT:  kgen.return %[[ADD]] : !kgen.declref<@"$expressions"::@M>
+  # CHECK-NEXT:  lit.return %[[ADD]] : !kgen.declref<@"$expressions"::@M>
   return z + M(3) @ -M(2)
 
 # CHECK-LABEL: lit.func @"precedence_bitwise
@@ -132,7 +132,7 @@ fn precedence_bitwise(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %[[INT_FOUR:.*]] = kgen.struct.create{{.*}}(%[[FOUR]])
   # CHECK-NEXT: %[[XOR:.*]] = kgen.call @"$Int"::@Int::@"__xor__{{.*}}(%[[INT_FOUR]], %c)
   # CHECK-NEXT: %[[OR:.*]] = kgen.call @"$Int"::@Int::@"__or__{{.*}}(%[[AND]], %[[XOR]])
-  # CHECK-NEXT: kgen.return %[[OR]]
+  # CHECK-NEXT: lit.return %[[OR]]
   return a * Int(2) & b | Int(4) ^ c
 
 # CHECK-LABEL: @"comparisons
@@ -252,7 +252,7 @@ z
   noop()
 
   # CHECK-NEXT: %[[TMP:.*]] = pop.load %x
-  # CHECK-NEXT: kgen.return %[[TMP]]
+  # CHECK-NEXT: lit.return %[[TMP]]
   return x
 
 # CHECK-LABEL: lit.func @"listValues()"() -> index
@@ -395,7 +395,7 @@ fn lvaluesAndRValues() -> __mlir_type.`!pop.scalar<index>`:
   # CHECK: [[FOUR:%.*]] = kgen.param.constant: !pop.scalar<index> = <#pop.simd<4>>
   # CHECK: [[INT:%.*]] = kgen.struct.create([[FOUR]]) :
   # CHECK: [[VALUE:%.*]] = kgen.struct.extract [[INT]][value] : !pop.scalar<index> from
-  # CHECK: kgen.return [[VALUE]] : !pop.scalar<index>
+  # CHECK: lit.return [[VALUE]] : !pop.scalar<index>
   return Int(4).value
 
 # CHECK: lit.func @"defTests({{.*}}, %untyped: !kgen.declref<@"$prolog"::@object>)

@@ -15,7 +15,7 @@ from prolog import DType, F32, Scalar, SIMD
 #     %x2 = pop.mul %x, %x : !pop.scalar<type>
 #     %t0 = pop.fma %x2, %c1, %c0 : !pop.scalar<type>
 #     %t1 = pop.mul %t0, %x : !pop.scalar<type>
-#     kgen.return %t1 : !pop.scalar<type>
+#     lit.return %t1 : !pop.scalar<type>
 #   }
 
 fn fma[type: DType](x: Scalar[type], y: Scalar[type], z: Scalar[type])->Scalar[type]:
@@ -35,7 +35,7 @@ fn erf_scalar_taylor[type: DType](x: Scalar[type]) -> Scalar[type]:
 fn fma_f32(x: F32, y: F32, z: F32) -> F32:
 # CHECK: %0 = kgen.call @"$F32"::@F32::@"__mul__{{.*}}(%x, %y)
 # CHECK: %1 = kgen.call @"$F32"::@F32::@"__add__{{.*}}(%0, %z)
-# CHECK: kgen.return %1
+# CHECK: lit.return %1
   return x*y+z
 
 @interface
