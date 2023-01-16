@@ -1387,6 +1387,12 @@ void LowerPOPToLLVMPass::runOnOperation() {
   target.addLegalOp<ExternalCallOp>();
   target.addLegalOp<VariantVisitOp>();
   target.addLegalOp<YieldOp>();
+  target.addLegalOp<CoroutineHandleOp>();
+  target.addLegalOp<CoroutineAwaitOp>();
+  target.addLegalOp<CoroutinePromiseOp>();
+  target.addLegalOp<CoroutineResumeOp>();
+  target.addLegalOp<CoroutineInitializeOp>();
+  target.addLegalOp<CoroutineDestroyOp>();
 
   // Set LLVM lowering options.
   mlir::LowerToLLVMOptions options(&getContext());

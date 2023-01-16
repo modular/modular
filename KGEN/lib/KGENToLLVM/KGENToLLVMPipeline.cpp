@@ -19,21 +19,23 @@ using namespace KGEN;
 
 void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
                                        const LowerToLLVMOptions &options) {
+  using mlir::LLVM::LLVMFuncOp;
+
   // Run the canonicalizer before the lowering passes.
   pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass());
   pm.addPass(createLowerKGENToPOP());
 
   // Run all LLVM lowering passes.
   pm.addPass(createLowerKGENToLLVM());
+  pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM());
+  pm.addNestedPass<LLVMFuncOp>(createLowerSCFToLLVM());
+  pm.addNestedPass<LLVMFuncOp>(createLowerKGENCoroutines());
   pm.addPass(createLowerGlobalPOPToLLVM());
-  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(createLowerPOPToLLVM());
-  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(createLowerSCFToLLVM());
-  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(
-      mlir::createConvertIndexToLLVMPass());
+  pm.addNestedPass<LLVMFuncOp>(mlir::createConvertIndexToLLVMPass());
 
   // And finally canonicalize again.
-  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(mlir::createCanonicalizerPass());
-  pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(mlir::createCSEPass());
+  pm.addNestedPass<LLVMFuncOp>(mlir::createCanonicalizerPass());
+  pm.addNestedPass<LLVMFuncOp>(mlir::createCSEPass());
 
   // If requested, generate debug info at the LLVM level.
   if (options.debugAtLevel.hasValue() &&

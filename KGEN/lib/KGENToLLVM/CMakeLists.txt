@@ -6,11 +6,12 @@
 
 add_modular_conversion_library(KGENToLLVM
   KGENToLLVMPipeline.cpp
+  LLVMLoweringUtils.cpp
+  LowerKGENCoroutines.cpp
   LowerKGENToLLVM.cpp
   LowerKGENToPOP.cpp
   LowerPOPToLLVM.cpp
   LowerSCFToLLVM.cpp
-  LLVMLoweringUtils.cpp
 
   DEPENDS
   MLIRKGENPasses

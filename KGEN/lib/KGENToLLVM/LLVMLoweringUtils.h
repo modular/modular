@@ -51,6 +51,22 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// LLVMBuilder
+//===----------------------------------------------------------------------===//
+
+/// This class is a builder, type converter, and data layout bundled together.
+struct LLVMBuilder : public ImplicitLocOpBuilder,
+                     public POPToLLVMTypeConverter,
+                     public mlir::DataLayout {
+  LLVMBuilder(ImplicitLocOpBuilder &b, POPToLLVMTypeConverter &tc,
+              mlir::DataLayout dl)
+      : ImplicitLocOpBuilder(b), POPToLLVMTypeConverter(tc), DataLayout(dl) {}
+
+  using ImplicitLocOpBuilder::getContext;
+  using POPToLLVMTypeConverter::getIndexType;
+};
+
+//===----------------------------------------------------------------------===//
 // VariantHelper
 //===----------------------------------------------------------------------===//
 

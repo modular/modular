@@ -122,6 +122,27 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LowerKGENCoroutines
+//===----------------------------------------------------------------------===//
+
+def LowerKGENCoroutines : Pass<"lower-coroutines", "mlir::LLVM::LLVMFuncOp"> {
+  let summary = "Lowering `pop` coroutine operations to LLVM intrinsics.";
+  let description = [{
+    The `lower-coroutines` pass lowerings KGEN coroutines implemented with
+    POP coroutine operations to LLVM coroutine intrinsics using switched-resume
+    lowering.
+  }];
+
+  let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+
+  let options = [
+    Option<"indexBitwidth", "index-bitwidth", "unsigned",
+           /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
+           "Bitwidth of the index type, 0 to use size of machine word">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerPOPToLLVM
 //===----------------------------------------------------------------------===//
 
