@@ -101,6 +101,19 @@ def param_redef(x: __mlir_type.index, x: __mlir_type.index):
   pass
 
 ##===----------------------------------------------------------------------===##
+# Variadic Parameters
+##===----------------------------------------------------------------------===##
+
+# The keyword argument flags work in parameter lists.
+fn funnyArgs[a: Int, /, b: Int, *, c: Int]():
+  funnyArgs[1, 2, 3]()
+
+# expected-error @+1 {{TODO: parameter lists do not support variadics}}
+fn variadic[*a: Int]():
+
+
+
+##===----------------------------------------------------------------------===##
 # Result parameters
 ##===----------------------------------------------------------------------===##
 
