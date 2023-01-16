@@ -247,7 +247,13 @@ OverloadFitness OverloadFitness::evaluate(
   for (auto [argAnyValueAndExpr, expectedType, convention] :
        llvm::zip(operands, signature.getValueInputs(),
                  signature.getValueInputConventions())) {
-    switch (convention) {
+    assert(!uint8_t(convention & ValueInputConvention::VarArg) &&
+           "TODO: Varargs not handled yet");
+
+    switch (convention & ~ValueInputConvention::VarArg) {
+    case ValueInputConvention::VarArg:
+      assert(0 && "not reachable");
+      break;
     case ValueInputConvention::ByRef: {
       // The actual value must be an lvalue if callee takes things by-ref.
       auto argVal = argAnyValueAndExpr.ir.getIfLValue();
@@ -581,7 +587,15 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   // to apply to it.  Partially apply it to form a result closure.
   Type firstArgIRType = calleeSignature.getValueInputs()[0];
   Value firstArgValue;
-  switch (calleeSignature.getInputConvention(0)) {
+  ValueInputConvention selfConvention = calleeSignature.getInputConvention(0);
+
+  assert(!uint8_t(selfConvention & ValueInputConvention::VarArg) &&
+         "Error: self shouldn't be able to be varargs");
+
+  switch (selfConvention) {
+  case ValueInputConvention::VarArg:
+    assert(0 && "unreachable");
+    [[fallthrough]];
   case ValueInputConvention::ByRef: {
     LValue baseLV = baseVal.ir.getIfLValue();
     if (!baseLV) {
@@ -764,7 +778,13 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
        llvm::zip(operands, calleeSig.getValueInputs(),
                  calleeSig.getValueInputConventions())) {
     AnyValue argVal;
-    switch (convention) {
+    assert(!uint8_t(convention & ValueInputConvention::VarArg) &&
+           "TODO: implement varargs passing");
+
+    switch (convention & ~ValueInputConvention::VarArg) {
+    case ValueInputConvention::VarArg:
+      assert(0 && "TODO: unimp varargs");
+      break;
     case ValueInputConvention::ByRef:
       // By-ref arguments, must be lvalues.
       argVal = argValueAndExpr.ir;

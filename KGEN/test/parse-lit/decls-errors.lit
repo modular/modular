@@ -88,6 +88,17 @@ fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a):
 fn defaultArgumentBadType(a: Int = 1.0):
 
 ##===----------------------------------------------------------------------===##
+# Keyword Arguments
+##===----------------------------------------------------------------------===##
+
+def kw1(a, *, *, b): # expected-error {{cannot have two '*' markers in the same argument list}}
+def kw2(a, /, /, b): # expected-error {{cannot have two '/' markers in the same argument list}}
+def kw3(a, /, *, b): # OK
+def kw4(a, *, /, b): # expected-error {{cannot specify '/' marker after '*' marker}}
+def kw5(/, a):       # expected-error {{'/' marker cannot be used at the start of the argument list}}
+def kw6(a, *):       # expected-error {{'*' marker is not allowed at end of argument list}}
+
+##===----------------------------------------------------------------------===##
 # Function Overloading
 ##===----------------------------------------------------------------------===##
 

@@ -82,7 +82,8 @@ def KGEN_InputGenKindAttr : I32EnumAttr<"InputGenKind", "Input Generation Kind",
 def KGEN_ValueInputConvention : I8BitEnumAttr<"ValueInputConvention",
     "Function value input convention", [
   I8BitEnumAttrCaseNone<"ByVal", "byval">,
-  I8BitEnumAttrCaseBit<"ByRef", 0, "byref">
+  I8BitEnumAttrCaseBit<"ByRef", 0, "byref">,
+  I8BitEnumAttrCaseBit<"VarArg", 1, "vararg">,
 ]> {
   let cppNamespace = "M::KGEN";
 }

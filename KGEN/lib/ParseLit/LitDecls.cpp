@@ -639,26 +639,56 @@ struct ParsedArgument {
   // Specify argument passing convention, e.g. byval/byref etc.
   ValueInputConvention convention = ValueInputConvention::ByVal;
   StringAttr name;
-  ExprNode *typeExpr;
+  ExprNode *typeExpr = nullptr;
   ExprNode *initValue = nullptr;
 
-  ParseResult parse(LitParserBase &p, ASTDecl &declScope) {
-    // TODO: Implement support for variadic parameter markers:
-    // Python's parameter grammar embeds checking for `/` and `*` and `**` into
-    // the grammar, we can just check for it using ad-hoc logic for simplicity,
-    // according to the following rules:
-    //   1) Only one /, *, and ** parameter may exist in the parameter list.
-    //   2) They are specified in that order.
-    //   3) These do not permit default arguments.
+  /// This specifies the handling of keyword arguments for this.  After
+  enum class KWArgHandling {
+    kPositionalOnly,      //< before a standalone '/'
+    kPositionalOrKeyword, //< before a standalone '*'
+    kKeywordOnly          //< after a standalone '*'
+  } kwArgHandling = KWArgHandling::kPositionalOrKeyword;
+
+  enum class KWArgMarkerInfo {
+    kNotMarker, //< This is a normal argument.
+    kSlash,     //< This argument is a standalone '/' marker.
+    kStar,      //< This argument is a standalone '*' marker.
+  };
+
+  ParseResult parse(LitParserBase &p, KWArgMarkerInfo &markerInfo) {
     loc = p.getToken().getLoc();
+
+    markerInfo = KWArgMarkerInfo::kNotMarker;
+
+    // The first token of an argument may be a standalone '*' or '/' marker, and
+    // the '*' may also be part of a varargs specification.  Check for these
+    // first.
+    if (p.consumeIf(LitToken::slash)) {
+      markerInfo = KWArgMarkerInfo::kSlash;
+      return success();
+    }
+    if (p.consumeIf(LitToken::star)) {
+      if (p.getToken().isAny(LitToken::comma, LitToken::r_paren)) {
+        markerInfo = KWArgMarkerInfo::kStar;
+        return success();
+      }
+      convention = convention | ValueInputConvention::VarArg;
+    } else if (p.consumeIf(LitToken::star_star)) {
+      // We don't support **args yet, so treat them like *args.
+      p.emitError(loc, "keyword argument variadics not supported yet");
+      convention = convention | ValueInputConvention::VarArg;
+    }
+
+    if (p.consumeIf(LitToken::star)) // '*' => variadic
+      convention = convention | ValueInputConvention::VarArg;
 
     if (p.parseIdentifier(name, "expected parameter name"))
       // TODO: Scan ahead for better recovery.
       return failure();
 
-    // Handle & for by-ref arguments.
-    if (p.consumeIf(LitToken::amp))
-      convention = ValueInputConvention::ByRef;
+    // Process any convention markers.
+    if (p.consumeIf(LitToken::amp)) // '&' => by-ref
+      convention = convention | ValueInputConvention::ByRef;
 
     if (p.consumeIf(LitToken::colon)) {
       if (p.parseExpression(typeExpr, std::nullopt))
@@ -670,6 +700,99 @@ struct ParsedArgument {
     }
     return success();
   };
+
+  /// This method handles the function argument list for a Python function.
+  /// Python has some pretty interesting rules where standalone '*' and '/'
+  /// markers (when used in place of an argument) actually change the
+  /// interpretation of other argument definitions by specifying how they behave
+  /// w.r.t. keyword arguments.  We resolve these here so the client doesn't
+  /// have to deal with them.
+  ///
+  /// This classification logic is described here:
+  ///   https://peps.python.org/pep-0570/#how-to-teach-this
+  ///
+  static ParseResult
+  parseAndResolvePresentArgumentList(LitParserBase &p,
+                                     SmallVectorImpl<ParsedArgument> &args) {
+    // As we parse all of the arguments and the keyword arguments and markers,
+    // we resolve the markers and check the invariants.  Python's parameter
+    // grammar embeds checking for `/` and `*` into it, but we do this ad-hoc
+    // for simplicity, according to the following rules:
+    //
+    //   1) Only one '/' and '*' marker may exist in the parameter list.
+    //   2) They are specified in that order.
+    //   3) `/` cannot be first, and '*' cannot be last in the list.
+    //
+    // See this for more information:
+    // https://peps.python.org/pep-0570/#how-to-teach-this
+    bool hasSlashMarker = false, hasStarMarker = false;
+    auto defaultKWArgHandling = KWArgHandling::kPositionalOrKeyword;
+
+    // This is invoked when we see a '/' marker.
+    auto handleSlashMarker = [&](SMLoc loc) {
+      if (hasSlashMarker) {
+        p.emitError(loc,
+                    "cannot have two '/' markers in the same argument list");
+        return;
+      }
+      if (hasStarMarker) {
+        p.emitError(loc, "cannot specify '/' marker after '*' marker");
+        return;
+      }
+
+      if (args.empty())
+        p.emitError(
+            loc, "'/' marker cannot be used at the start of the argument list");
+
+      // Ok, process it by changing all arguments we've seen to be positional
+      // only.  The remaining ones will stay kPositionalOrKeyword though.
+      for (auto &arg : args)
+        arg.kwArgHandling = KWArgHandling::kPositionalOnly;
+      hasSlashMarker = true;
+    };
+
+    // This is invoked when we see a '*' marker.
+    auto handleStarMarker = [&](SMLoc loc) {
+      if (hasStarMarker)
+        p.emitError(loc,
+                    "cannot have two '*' markers in the same argument list");
+
+      // Diagnose '*' at end of argument list for completeness.
+      if (p.getToken().is(LitToken::r_paren))
+        p.emitError(loc, "'*' marker is not allowed at end of argument list");
+
+      // From now on, any parsed arguments are keyword only.
+      defaultKWArgHandling = KWArgHandling::kKeywordOnly;
+      hasStarMarker = true;
+    };
+
+    // This parses either an argument or a keyword argument specifier.
+    auto parseArgument = [&]() -> ParseResult {
+      KWArgMarkerInfo marker = KWArgMarkerInfo::kNotMarker;
+      ParsedArgument arg;
+      arg.kwArgHandling = defaultKWArgHandling;
+      if (arg.parse(p, marker))
+        return failure();
+
+      // If this is a marker, process it.
+      if (marker == KWArgMarkerInfo::kSlash)
+        return handleSlashMarker(arg.loc), success();
+      if (marker == KWArgMarkerInfo::kStar)
+        return handleStarMarker(arg.loc), success();
+
+      // Otherwise just remember the argument.
+      args.push_back(arg);
+      return success();
+    };
+
+    // Parse a list of arguments and keyword argument specifiers.  Each argument
+    // will leave its `kwargHandling` default initialized.
+    if (p.parseCommaSeparatedList(parseArgument, LitToken::r_paren) ||
+        p.parseToken(LitToken::r_paren, "expected ')' for parameter list"))
+      return failure();
+
+    return success();
+  }
 };
 } // namespace
 
@@ -1158,22 +1281,18 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   ParsedMetaSignature metaSignature(decl);
   SmallVector<ParsedArgument> args;
 
-  if (metaSignature.parseOptionalMetaSignature(p) ||
-      p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
-    return failure();
-
   // Add the meta parameters to the symbol table, and resolve their types.  We
   // add all of these after generic signature parsing so types used in the
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
+  if (metaSignature.parseOptionalMetaSignature(p) ||
+      p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
+    return failure();
+
+  // Parse the argument list next if present.
   if (!p.consumeIf(LitToken::r_paren)) {
-    if (p.parseCommaSeparatedList(
-            [&]() {
-              return args.emplace_back(ParsedArgument()).parse(p, decl);
-            },
-            LitToken::r_paren) ||
-        p.parseToken(LitToken::r_paren, "expected ')' for parameter list"))
+    if (ParsedArgument::parseAndResolvePresentArgumentList(p, args))
       return failure();
   }
 
