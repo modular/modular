@@ -406,8 +406,45 @@ def POP_ClosureType : POPType<"Closure", "closure"> {
   }];
 
   let parameters = (ins "FunctionType": $func);
-  let assemblyFormat = " `<` $func `>` ";
+  let assemblyFormat = "`<` $func `>`";
 }
 
+//===----------------------------------------------------------------------===//
+// CoroutineType
+//===----------------------------------------------------------------------===//
+
+def POP_CoroutineType : POPType<"Coroutine", "coroutine"> {
+  let summary = "A coroutine handle.";
+  let description = [{
+    The `!pop.coroutine` type represents the handle to a coroutine. The
+    underlying type is an opaque pointer. This type contains the return types
+    of the coroutine.
+
+    Example:
+
+    ```mlir
+    // A coroutine that returns two results: an index and a 32-bit integer.
+    !pop.coroutine<index, i32>
+    ```
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$types);
+  let assemblyFormat = [{
+    `<` (`>`) : (custom<ArrayOfPrettyTypes>($types)^ `>`)?
+  }];
+
+  let extraClassDeclaration = [{
+    /// Get the element types as parameterized types.
+    SmallVector<Type> getParameterizedTypes() const;
+
+    /// Try to narrow all the result type expressions to MLIR types.
+    LogicalResult
+    resolveResultTypes(SmallVectorImpl<Type> &elementTypes) const;
+  }];
+}
+
+class CoroutineResultTypes<string name, string ref> : TypesMatchWith<
+    name # " types match coroutine result types", "coroutine", ref,
+    "$_self.cast<CoroutineType>().getParameterizedTypes()">;
 
 #endif // POPTYPES_TD

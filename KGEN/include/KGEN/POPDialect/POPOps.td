@@ -1878,6 +1878,12 @@ def POP_ExternalCallOp : POPOp<"external_call"> {
     $func `(` operands `)` ($variadicType^)? attr-dict `:`
     functional-type(operands, results)
   }];
+
+  let builders = [
+    OpBuilder<(ins "StringRef":$func, "ValueRange":$operands)>,
+    OpBuilder<(ins "TypeRange":$results, "StringRef":$func,
+                   "ValueRange":$operands)>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -2248,4 +2254,145 @@ def POP_CallIndirectOp : POPOp<"call_indirect"> {
   }];
 
   let hasCanonicalizeMethod = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// CoroutineHandleOp
+//===----------------------------------------------------------------------===//
+
+def POP_CoroutineHandleOp : POPOp<"coroutine.handle"> {
+  let summary = "Get the handle to the current coroutine.";
+  let description = [{
+    The `pop.coroutine.handle` operation returns the handle to the current
+    coroutine.
+
+    Example:
+
+    ```mlir
+    %hdl = pop.coroutine.handle : <i32, index>
+    ```
+  }];
+
+  let results = (outs POP_CoroutineType:$coroutine);
+  let assemblyFormat = "attr-dict `:` type($coroutine)";
+}
+
+//===----------------------------------------------------------------------===//
+// CoroutineAwaitOp
+//===----------------------------------------------------------------------===//
+
+def POP_CoroutineAwaitOp : POPOp<"coroutine.await", [NoTerminator]> {
+  let summary = "Suspend the current coroutine and await resumption.";
+  let description = [{
+    The `pop.coroutine.await` operation suspends the current coroutine function
+    at the site of the operation and executes a region. The code in the region
+    must resume the coroutine at some point. This operation can only be used
+    inside an async function.
+
+    Example:
+
+    ```mlir
+    %hdl = pop.coroutine.handle : <i32, index>
+    pop.coroutine.await {
+      pop.coroutine.resume %hdl : <i32>
+    }
+    ```
+  }];
+
+  let regions = (region SizedRegion<1>:$body);
+  let assemblyFormat = "$body attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// CoroutinePromiseOp
+//===----------------------------------------------------------------------===//
+
+def POP_CoroutinePromiseOp : POPOp<"coroutine.promise",
+    [TypesMatchWith<"result is pointer to coroutine promise", "coroutine",
+                    "promise", "getCoroutinePromiseType($_self)">]> {
+  let summary = "Get the coroutine promise.";
+  let description = [{
+    The `pop.coroutine.promise` operation returns the pointer to the coroutine
+    promise, which contains the result values of the promise. Located at the
+    end of the promise is the async context.
+
+    Example:
+
+    ```mlir
+    %promise = pop.coroutine.promise %hdl : <i32, i64>
+    ```
+  }];
+
+  let arguments = (ins POP_CoroutineType:$coroutine);
+  let results = (outs PointerOf<POP_StructType>:$promise);
+  let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
+}
+
+//===----------------------------------------------------------------------===//
+// CoroutineResumeOp
+//===----------------------------------------------------------------------===//
+
+def POP_CoroutineResumeOp : POPOp<"coroutine.resume"> {
+  let summary = "Resume execution of a coroutine.";
+  let description = [{
+    The `pop.coroutine.resume` operation resumes execution of a suspended
+    coroutine. Resuming a coroutine that is not suspended or that is
+    uninitialized is undefined behaviour.
+
+    Example:
+
+    ```mlir
+    pop.coroutine.resume %hdl : <i32>
+    ```
+  }];
+
+  let arguments = (ins POP_CoroutineType:$coroutine);
+  let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
+}
+
+//===----------------------------------------------------------------------===//
+// CoroutineInitializeOp
+//===----------------------------------------------------------------------===//
+
+def POP_CoroutineInitializeOp : POPOp<"coroutine.initialize"> {
+  let summary = "Initialize a coroutine context.";
+  let description = [{
+    The `pop.coroutine.initialize` operation takes a coroutine handle and
+    initializes and necessary components of the frame and async context. A
+    coroutine must be initialized before it can be resumed for the first time.
+
+    Example:
+
+    ```mlir
+    pop.coroutine.initialize %hdl : <i32>
+    ```
+  }];
+
+  let arguments = (ins POP_CoroutineType:$coroutine);
+  let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
+}
+
+//===----------------------------------------------------------------------===//
+// CoroutineDestroyOp
+//===----------------------------------------------------------------------===//
+
+def POP_CoroutineDestroyOp : POPOp<"coroutine.destroy"> {
+  let summary = "Destroy the memory associated with a coroutine.";
+  let description = [{
+    The `pop.coroutine.destroy` operation destroys any memory associated with
+    a coroutine handle. A coroutine handle may or may not have any dynamic
+    memory associated with it. A call to a coroutine function returns a
+    coroutine handle and that handle must be deallocated with this operation.
+    Doing anything with a coroutine handle after it is destroyed is undefined
+    behaviour.
+
+    Example:
+
+    ```mlir
+    pop.coroutine.destroy %hdl : <i32>
+    ```
+  }];
+
+  let arguments = (ins POP_CoroutineType:$coroutine);
+  let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
 }
