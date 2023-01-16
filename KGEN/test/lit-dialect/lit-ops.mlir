@@ -215,3 +215,38 @@ lit.func @main(%a: !pop.pointer<@module::@A>, %b: !kgen.declref<@module::@B>) {
   kgen.call_param[(!kgen.declref<@module::@B>, !pop.pointer<@module::@A>) -> (): @module::@B::@foo](%b, %a)
   kgen.return
 }
+
+kgen.struct.decl @Error {}
+
+// CHECK-LABEL: @lexical_terminators
+lit.func @lexical_terminators(%cond: i1, %err: !kgen.declref<@Error>) throws -> !pop.variant<i32, i64> {
+  // CHECK: hlcf.loop
+  hlcf.loop {
+    // CHECK: hlcf.if
+    hlcf.if %cond {
+      // CHECK-NEXT: lit.break
+      lit.break
+      hlcf.yield
+    // CHECK: else
+    } else {
+      // CHECK-NEXT: lit.continue
+      lit.continue
+      hlcf.yield
+    }
+    hlcf.continue
+  }
+  // CHECK: lit.try
+  lit.try {
+    // CHECK-NEXT: lit.raise %err : <@Error>
+    lit.raise %err : <@Error>
+    lit.try.yield
+  } except (%e: !kgen.declref<@Error>) {
+    lit.try.yield
+  } else {
+    lit.try.yield
+  }
+  // CHECK: lit.raise %err : <@Error>
+  lit.raise %err : <@Error>
+  // CHECK: lit.end_func
+  lit.end_func
+}

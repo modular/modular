@@ -16,6 +16,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "Support/Compiler/VerifyUtils.h"
 #include "Support/ML/DType.h"
 #include "mlir/IR/FunctionImplementation.h"
 
@@ -1412,6 +1413,40 @@ void KGEN::printOptionalParamBindSpec(AsmPrinter &p,
   printOptionalParamBindSpec(paramValues, p.getStream());
 }
 
+ParseResult KGEN::parseParameterValues(OpAsmParser &p,
+                                       ParameterExprArrayAttr &value) {
+  SmallVector<TypedAttr> elts;
+  if (p.parseCommaSeparatedList(
+          OpAsmParser::Delimiter::OptionalLessGreater, [&]() -> ParseResult {
+            TypedAttr value;
+            if (parseParamValueDefaultingToIndex(p, value))
+              return failure();
+            elts.push_back(value);
+            return success();
+          }))
+    return failure();
+
+  value = ParameterExprArrayAttr::get(p.getContext(), elts);
+  return success();
+}
+
+void KGEN::printParameterValues(OpAsmPrinter &p, Operation *op,
+                                ParameterExprArrayAttr value) {
+  if (value.empty())
+    return;
+  p << '<';
+  llvm::interleaveComma(value, p, [&](TypedAttr value) {
+    auto valType = value.getType();
+    if (!valType.isIndex()) {
+      p << ":";
+      printKGENType(p.getStream(), valType);
+      p << " ";
+    }
+    printParamValue(p, value);
+  });
+  p << '>';
+}
+
 /// Parse an align parameter if present.
 void KGEN::printOptionalAlignmentParamValue(AsmPrinter &p, Operation *op,
                                             TypedAttr alignment) {
@@ -1603,4 +1638,28 @@ LogicalResult KGEN::verifyOneBlockOrCached(Operation *op) {
     return op->emitError() << "does not support > 1 block in its body";
 
   return success();
+}
+
+LogicalResult
+KGEN::checkResultArgumentTypes(Operation *op, ArrayRef<TypedAttr> resultParams,
+                               ArrayRef<Type> paramResultTypes,
+                               std::optional<TypeRange> resultTypes) {
+  // Check the parameters match up.
+  if (resultParams.size() != paramResultTypes.size())
+    return op->emitOpError("expected ")
+           << paramResultTypes.size() << " parameters for enclosing op";
+
+  for (size_t i = 0, e = paramResultTypes.size(); i != e; ++i) {
+    auto expectedTy = paramResultTypes[i];
+    auto actualTy = resultParams[i].cast<TypedAttr>().getType();
+    if (actualTy != expectedTy)
+      return op->emitOpError("parameter #") << i << " has type " << actualTy
+                                            << " but should be " << expectedTy;
+  }
+
+  // Verify the result types if they were provided.
+  if (!resultTypes)
+    return success();
+
+  return checkResultTypes(op, *resultTypes);
 }

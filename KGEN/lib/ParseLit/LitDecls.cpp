@@ -1547,7 +1547,7 @@ static void verifyNoDebugInline(LIT::FuncOp funcOp, LitSharedState &shared) {
     // so we treat them as free so abstraction doesn't get in the way of
     // inlining.
     if (isa<LetDeclOp, DebugInfo::ValueOp>(op) ||
-        isa<ReturnOp, StructExtractOp, StructCreateOp>(op) ||
+        isa<KGEN::ReturnOp, StructExtractOp, StructCreateOp>(op) ||
         // Constants aren't computation and can often be dropped as well.
         op.hasTrait<OpTrait::ConstantLike>())
       continue;
@@ -1610,7 +1610,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
 
   // Check for a return op at the end of the function.
   // TODO: This should really be moved to a dataflow pass after the parser.
-  if (bodyBlock->empty() || !isa<ReturnOp>(bodyBlock->back())) {
+  if (bodyBlock->empty() || !isa<KGEN::ReturnOp>(bodyBlock->back())) {
     auto loc = funcOp.getLoc();
     if (isNoneResultType(funcOp) && funcOp.getResultParamTypes().empty()) {
       auto b = OpBuilder::atBlockEnd(bodyBlock);
@@ -1619,7 +1619,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
       if (funcOp.getConventions().getFnEffects() == FnEffects::Throws)
         noneVal = b.create<POP::VariantCreateOp>(loc, funcOp.getResultType(),
                                                  noneVal);
-      b.create<ReturnOp>(loc, ArrayRef<TypedAttr>(), noneVal);
+      b.create<KGEN::ReturnOp>(loc, ArrayRef<TypedAttr>(), noneVal);
     } else if (!shared.diags.isErrorEmitted()) {
       Location endLoc = bodyBlock->empty() ? loc : bodyBlock->back().getLoc();
       emitError(endLoc, "return expected at end of 'def' with results");

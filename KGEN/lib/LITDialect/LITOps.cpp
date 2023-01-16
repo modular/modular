@@ -15,6 +15,8 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/Compiler/VerifyUtils.h"
+#include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/IR/FunctionImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -93,13 +95,6 @@ SymbolConstantAttr LIT::FuncOp::getBoundReference(ParamBindArrayAttr bindings) {
 
   return SymbolConstantAttr::get(getFullyResolvedSymbolRef(*this), bindings,
                                  resultType);
-}
-
-ReturnOp LIT::FuncOp::getReturnOp() {
-  // Tolerate malformed IR because this is used by the printer.
-  if (isExternal() || getBody()->empty())
-    return {};
-  return dyn_cast<ReturnOp>(getBody()->back());
 }
 
 /// Return the normal result type.  This is the same as getResultType unless
@@ -315,12 +310,8 @@ LogicalResult LIT::FuncOp::verifyRegions() {
     return emitOpError("expected non-empty function body");
   if (!getBody()->back().hasTrait<OpTrait::IsTerminator>())
     return emitOpError("expected a terminator");
-  ReturnOp returnOp = getReturnOp();
-  if (!returnOp)
-    return emitOpError("should have a return");
 
-  // Check result types match the ReturnOp.
-  return returnOp.checkArgumentTypes(getResultParamTypes(), {getResultTypes()});
+  return success();
 }
 
 LogicalResult
@@ -512,6 +503,51 @@ void VarDeclOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
   setNameFn(getResult(), getName());
 }
+
+//===----------------------------------------------------------------------===//
+// ReturnOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult LIT::ReturnOp::verify() {
+  auto func = (*this)->getParentOfType<LIT::FuncOp>();
+  if (!func)
+    return emitOpError("expected to be nested inside a `lit.func` operation");
+  return checkResultArgumentTypes(*this, getParameters(),
+                                  func.getResultParamTypes(),
+                                  func.getResultTypes());
+}
+
+//===----------------------------------------------------------------------===//
+// RaiseOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult RaiseOp::verify() {
+  Operation *op = *this;
+  auto func = op->getParentOfType<LIT::FuncOp>();
+  if (func &&
+      bitEnumContainsAny(func.getSignature().getFnEffects(), FnEffects::Throws))
+    return success();
+
+  auto tryOp = op->getParentOfType<TryOp>();
+  if (tryOp && tryOp.getTryRegion().isAncestor(op->getBlock()->getParent()))
+    return success();
+
+  return emitOpError("must be nested inside the 'try' region of a `lit.try` "
+                     "operation or within a `lit.func` that throws");
+}
+
+//===----------------------------------------------------------------------===//
+// BreakOp / ContinueOp
+//===----------------------------------------------------------------------===//
+
+static LogicalResult verifyBreakOrContinueOp(Operation *op) {
+  if (op->getParentOfType<HLCF::LoopOp>())
+    return success();
+  return op->emitOpError("must be nested within an `hlcf.loop` operation");
+}
+
+LogicalResult BreakOp::verify() { return verifyBreakOrContinueOp(*this); }
+LogicalResult ContinueOp::verify() { return verifyBreakOrContinueOp(*this); }
 
 //===----------------------------------------------------------------------===//
 // TableGen generated logic.
