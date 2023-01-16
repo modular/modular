@@ -7,6 +7,7 @@
 set(CMAKE_CXX_VISIBILITY_PRESET default)
 
 add_modular_mlir_library(KGENCompilerRT SHARED
+  Async.cpp
   Benchmark.cpp
   DebugAssert.cpp
   Initialize.cpp
@@ -15,4 +16,5 @@ add_modular_mlir_library(KGENCompilerRT SHARED
 
   LINK_LIBS PUBLIC
   MSupport
+  LLCLRuntime
 )
