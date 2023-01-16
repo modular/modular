@@ -55,10 +55,8 @@ struct KGENDialectInlinerInterface : public mlir::DialectInlinerInterface {
   /// callables we don't want inlined.
   bool isLegalToInline(Operation *call, Operation *callable,
                        bool wouldBeCloned) const override {
-    if (auto func = dyn_cast<FuncOp>(callable)) {
-      return bitEnumContainsAny(func.getFullSignature().getFnEffects(),
-                                FnEffects::ForceInline);
-    }
+    if (auto func = dyn_cast<FuncOp>(callable))
+      return func.isForceInline();
 
     return !isa<FuncInterface>(callable);
   }

@@ -77,8 +77,7 @@ void OutlineClosuresPass::runOnOperation() {
 
       // If the body is not isolated from above *and* it's not marked
       // force_inline, emit an error.
-      if (!isolated && !bitEnumContainsAny(body.getSignature().getFnEffects(),
-                                           FnEffects::ForceInline)) {
+      if (!isolated && !body.isForceInline()) {
         regionDecl.emitError("non-isolated region must be marked force_inline");
         hadError = true;
         return;

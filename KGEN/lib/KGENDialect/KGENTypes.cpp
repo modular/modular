@@ -312,7 +312,7 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
 
     // Found a signature, if it is force_inline then this must also be
     // force_inline.
-    if (bitEnumContainsAny(sig.getFnEffects(), FnEffects::ForceInline)) {
+    if (sig.isForceInline()) {
       if (!bitEnumContainsAny(conventions.getFnEffects(),
                               FnEffects::ForceInline)) {
         return emitError() << "signature input parameter " << decl

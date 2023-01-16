@@ -878,7 +878,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   }
 
   // If the callee can raise an error, try to unwrap it.
-  if (bitEnumContainsAny(calleeSig.getFnEffects(), FnEffects::Throws) &&
+  if (calleeSig.isThrows() &&
       !isValidErrorContext(builder->getInsertionBlock())) {
     emitError(
         "cannot call function that may raise in a context that cannot raise");
