@@ -713,7 +713,7 @@ LogicalResult ListCreateOp::verify() {
   if (getResult().getType().getLength() !=
       Builder(getContext()).getIndexAttr(getNumOperands()))
     return emitOpError("expected result list to have ")
-           << getNumOperands() << "elements";
+           << getNumOperands() << " elements";
   return success();
 }
 
