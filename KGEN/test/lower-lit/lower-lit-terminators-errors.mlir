@@ -35,3 +35,10 @@ lit.func @no_return_result<() -> index>() -> !lit.none {
   // expected-error @below {{return expected at end of function with results}}
   lit.end_func
 }
+
+// -----
+
+// expected-error @below {{function throws but no 'Error' type was found}}
+lit.func @throws() throws -> !lit.none {
+  lit.end_func
+}

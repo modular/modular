@@ -34,8 +34,7 @@ fn return_new_line() -> Int:
 fn return_impl_convert_raises() -> Int:
   # CHECK: %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<4>>
   # CHECK: %1 = kgen.struct.create(%0)
-  # CHECK: %2 = pop.variant.create %1
-  # CHECK: lit.return %2 : !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
+  # CHECK: lit.return %1 : !kgen.declref<@"$Int"::@Int>
   return 4  # Implicit conversion from literal to Int
 
 
@@ -288,8 +287,7 @@ def maybeRaises() -> Int:
 
 # CHECK-LABEL: lit.func @"propagateErrorInDef
 def propagateErrorInDef():
-    # CHECK: %[[MAYBE_ERR:.*]] = kgen.call @"{{.*}}"::@"maybeRaises
-    # CHECK-NEXT: %[[VALUE:.*]] = lit.unwrap_or_propagate %[[MAYBE_ERR]]
+    # CHECK: %[[VALUE:.*]] = kgen.call @"{{.*}}"::@"maybeRaises
     # CHECK-NEXT: pop.store %[[VALUE]], %a
     a = maybeRaises()
 
@@ -297,8 +295,7 @@ def propagateErrorInDef():
 @raises
 fn propagateErrorInRaisingFn():
     var a: Int
-    # CHECK: %[[MAYBE_ERR:.*]] = kgen.call @"{{.*}}"::@"maybeRaises
-    # CHECK-NEXT: %[[VALUE:.*]] = lit.unwrap_or_propagate %[[MAYBE_ERR]]
+    # CHECK: %[[VALUE:.*]] = kgen.call @"{{.*}}"::@"maybeRaises
     # CHECK-NEXT: pop.store %[[VALUE]], %a
     a = maybeRaises()
 
@@ -307,8 +304,7 @@ fn propagateErrorInTry():
     var a: Int
     # CHECK: lit.try
     try:
-        # CHECK: %[[MAYBE_ERR:.*]] = kgen.call @"{{.*}}"::@"maybeRaises
-        # CHECK-NEXT: %[[VALUE:.*]] = lit.unwrap_or_propagate %[[MAYBE_ERR]]
+        # CHECK: %[[VALUE:.*]] = kgen.call @"{{.*}}"::@"maybeRaises
         # CHECK-NEXT: pop.store %[[VALUE]], %a
         a = maybeRaises()
         # CHECK-NEXT: lit.try.yield

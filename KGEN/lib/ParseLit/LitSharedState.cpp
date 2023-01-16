@@ -269,16 +269,6 @@ ASTType LitSharedState::lookupErrorType(SMLoc loc, ASTDecl &context) {
   return lookupNonparameterizedNamedType("Error", loc, context);
 }
 
-/// Lookup the Error type and wrap it in a variant with the specified normal
-/// value type.  Return the result, or error if the Error type couldn't be
-/// found.
-ASTType LitSharedState::lookupErrorOrType(ASTType valueType, SMLoc loc,
-                                          ASTDecl &context) {
-  if (auto errorType = lookupErrorType(loc, context))
-    return POP::VariantType::get({errorType, valueType});
-  return {};
-}
-
 /// Resolve the absolute path for a given module name. Returns nullopt if the
 /// module cannot be found.
 static std::optional<std::string> resolveModulePath(StringRef moduleName,

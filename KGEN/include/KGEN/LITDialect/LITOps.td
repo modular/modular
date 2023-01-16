@@ -94,10 +94,6 @@ def LIT_FuncOp : LITOp<"func", [
     /// Returns the result type, which is guaranteed to be present.
     Type getResultType() { return getFunctionType().getResults()[0]; }
 
-    /// Return the normal result type.  This is the same as getResultType unless
-    /// the function throws, in which case this is dug out of the variant.
-    Type getNormalResultType();
-
     /// Return a SymbolConstantAttr for this function, optionally bound to a set
     /// of parameter bindings.
     SymbolConstantAttr getBoundReference(ParamBindArrayAttr bindings = {});
@@ -170,8 +166,6 @@ def LIT_UnwrapOrPropagateOp : LITOp<"unwrap_or_propagate", [
   let results = (outs AnyType:$result);
 
   let assemblyFormat = "$value attr-dict `:` type($value)";
-
-  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
