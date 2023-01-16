@@ -2351,28 +2351,6 @@ def POP_CoroutineResumeOp : POPOp<"coroutine.resume"> {
 }
 
 //===----------------------------------------------------------------------===//
-// CoroutineInitializeOp
-//===----------------------------------------------------------------------===//
-
-def POP_CoroutineInitializeOp : POPOp<"coroutine.initialize"> {
-  let summary = "Initialize a coroutine context.";
-  let description = [{
-    The `pop.coroutine.initialize` operation takes a coroutine handle and
-    initializes and necessary components of the frame and async context. A
-    coroutine must be initialized before it can be resumed for the first time.
-
-    Example:
-
-    ```mlir
-    pop.coroutine.initialize %hdl : <i32>
-    ```
-  }];
-
-  let arguments = (ins POP_CoroutineType:$coroutine);
-  let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
-}
-
-//===----------------------------------------------------------------------===//
 // CoroutineDestroyOp
 //===----------------------------------------------------------------------===//
 

@@ -43,7 +43,7 @@ kgen.func @async_coroutine(%arg0: index) -> !pop.coroutine<index> {
   %calleeRuntimePtr = pop.struct.gep %calleeCtx[1] : <struct<pointer<scalar<invalid>>, i8>>
   %runtime = pop.load %runtimePtr : !pop.pointer<i8>
   pop.store %runtime, %calleeRuntimePtr : !pop.pointer<i8>
-  pop.coroutine.initialize %calleeHdl : <index>
+  pop.external_call @KGEN_CompilerRT_LLCL_InitializeContext(%calleeOpaqueCtx) : (!pop.pointer<i8>) -> ()
 
   %resumeFn = kgen.addressof @__kgen_coro_resume : (!llvm.ptr<i8>) -> ()
   pop.coroutine.await {
@@ -60,6 +60,7 @@ kgen.func @async_coroutine(%arg0: index) -> !pop.coroutine<index> {
   pop.store %result, %resPtr : !pop.pointer<index>
   pop.external_call @KGEN_CompilerRT_LLCL_Complete(%ctxOpaque) : (!pop.pointer<i8>) -> ()
 
+  pop.external_call @KGEN_CompilerRT_LLCL_DestroyContext(%calleeOpaqueCtx) : (!pop.pointer<i8>) -> ()
   pop.coroutine.destroy %calleeHdl : <index>
 
   kgen.return %hdl : !pop.coroutine<index>
@@ -89,6 +90,7 @@ kgen.func @call_it() -> index {
   %resultPtr = pop.struct.gep %promise[0] : <struct<index>>
   %result = pop.load %resultPtr : !pop.pointer<index>
 
+  pop.external_call @KGEN_CompilerRT_LLCL_DestroyContext(%ctxPtrVoid) : (!pop.pointer<i8>) -> ()
   pop.coroutine.destroy %hdl : <index>
 
   pop.external_call @KGEN_CompilerRT_LLCL_DestroyRuntime(%runtime) : (i8) -> ()
