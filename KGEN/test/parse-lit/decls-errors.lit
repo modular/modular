@@ -87,13 +87,20 @@ fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a):
 # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in a default argument initializer}}
 fn defaultArgumentBadType(a: Int = 1.0):
 
+# expected-error @+1 {{'**' marker must be at end of argument list}}
+fn starStarLast(**a: Int, b: Int):
+
+
 ##===----------------------------------------------------------------------===##
 # Keyword Arguments
 ##===----------------------------------------------------------------------===##
 
+# expected-error @+1 {{TODO: keyword arguments not supported yet}}
 def kw1(a, *, *, b): # expected-error {{cannot have two '*' markers in the same argument list}}
 def kw2(a, /, /, b): # expected-error {{cannot have two '/' markers in the same argument list}}
+# expected-error @+1 {{TODO: keyword arguments not supported yet}}
 def kw3(a, /, *, b): # OK
+# expected-error @+1 {{TODO: keyword arguments not supported yet}}
 def kw4(a, *, /, b): # expected-error {{cannot specify '/' marker after '*' marker}}
 def kw5(/, a):       # expected-error {{'/' marker cannot be used at the start of the argument list}}
 def kw6(a, *):       # expected-error {{'*' marker is not allowed at end of argument list}}

@@ -251,6 +251,9 @@ OverloadFitness OverloadFitness::evaluate(
            "TODO: Varargs not handled yet");
 
     switch (convention & ~ValueInputConvention::VarArg) {
+    case ValueInputConvention::KWVarArg:
+      assert(0 && "keyword arguments and `**arg` variadics not supported yet");
+      break;
     case ValueInputConvention::VarArg:
       assert(0 && "not reachable");
       break;
@@ -593,6 +596,10 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
          "Error: self shouldn't be able to be varargs");
 
   switch (selfConvention) {
+  case ValueInputConvention::KWVarArg:
+    emitter.emitError(
+        loc, "keyword arguments and `**arg` variadics not supported yet");
+    return {};
   case ValueInputConvention::VarArg:
     assert(0 && "unreachable");
     [[fallthrough]];
@@ -783,6 +790,9 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
            "TODO: implement varargs passing");
 
     switch (convention & ~ValueInputConvention::VarArg) {
+    case ValueInputConvention::KWVarArg:
+      emitError("keyword arguments and `**arg` variadics not supported yet");
+      break;
     case ValueInputConvention::VarArg:
       assert(0 && "TODO: unimp varargs");
       break;

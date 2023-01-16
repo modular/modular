@@ -60,7 +60,7 @@ public:
   }
 
   /// Return true if this token is any one of the specified token kinds.
-  bool isAny(ArrayRef<LitToken::Kind> kinds) const {
+  bool isAny(ArrayRef<Kind> kinds) const {
     for (auto k : kinds)
       if (kind == k)
         return true;
@@ -68,6 +68,7 @@ public:
   }
 
   bool isNot(Kind k) const { return kind != k; }
+  bool isNot(ArrayRef<Kind> kinds) const { return !isAny(kinds); }
 
   /// Return true if this token isn't one of the specified kinds.
   template <typename... T>
