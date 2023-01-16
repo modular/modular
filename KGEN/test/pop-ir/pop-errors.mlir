@@ -389,3 +389,11 @@ kgen.generator @call_indirect(%arg0: !kgen.signature<[], [], (i8) -> ()>, %arg1:
   pop.call_indirect %arg0(%arg1) : !kgen.signature<[], [], (i8) -> ()>
   kgen.return
 }
+
+// -----
+
+kgen.func @invalid_list_create_arg_num_mismatch(%idx: index) {
+  // expected-error @below {{'pop.list.create' op expected result list to have 2 elements}}
+  %0 = pop.list.create(%idx, %idx) : <index[3]>
+  kgen.return
+}
