@@ -127,6 +127,15 @@ def FuncInterface : OpInterface<"FuncInterface"> {
       return $_op.getSignature().getValues();
     }
 
+    /// Return true if the function throws.
+    bool isThrows() {
+      return $_op.getSignature().isThrows();
+    }
+    /// Return true if the function is forcibly inlnied.
+    bool isForceInline() {
+      return $_op.getSignature().isForceInline();
+    }
+
     //===------------------------------------------------------------------===//
     // FunctionOpInterface Implementation
     //===------------------------------------------------------------------===//

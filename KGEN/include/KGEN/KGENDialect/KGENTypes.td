@@ -197,12 +197,22 @@ def KGEN_SignatureType : KGENType<"Signature", "signature",
     ArrayRef<Type> getValueInputs();
     ArrayRef<Type> getValueResults();
 
+    /// Get the callable function effects.
     FnEffects getFnEffects() {
       return getConventions().getFnEffects();
     }
-
+    /// Get the function input argument conventions.
     ArrayRef<ValueInputConvention> getValueInputConventions() {
       return getConventions().getInputConventions();
+    }
+
+    /// Return true if the function throws.
+    bool isThrows() {
+      return bitEnumContainsAny(getFnEffects(), FnEffects::Throws);
+    }
+    /// Return true if the function is forcibly inlnied.
+    bool isForceInline() {
+      return bitEnumContainsAny(getFnEffects(), FnEffects::ForceInline);
     }
 
     /// Return the convention for the specified value input parameter.

@@ -176,8 +176,7 @@ struct ConvertKGENCall : public mlir::ConvertOpToLLVMPattern<CallOp> {
   matchAndRewrite(CallOp op, CallOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Don't do anything else if we hit a ForceInline call that wasn't inlined.
-    if (bitEnumContainsAny(op.getCallee().getType().getFnEffects(),
-                           FnEffects::ForceInline))
+    if (op.getCallee().getType().isForceInline())
       return emitError(op.getLoc(), "cannot lower call with force_inline, it "
                                     "should have been removed by now");
 

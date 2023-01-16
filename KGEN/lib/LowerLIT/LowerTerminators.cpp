@@ -10,7 +10,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/HLCFDialect/HLCFOps.h"
-#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
 
 using namespace M;
 using namespace KGEN;
@@ -24,9 +24,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
                                              LIT::FuncOp func) {
   if (func.getBodyRegion().empty())
     return success();
-  if (bitEnumContainsAny(func.getConventions().getFnEffects(),
-                         FnEffects::Throws) &&
-      !errType)
+  if (func.isThrows() && !errType)
     return func.emitError("function throws but no 'Error' type was found");
 
   // Collect all the terminators first to avoid iterator invalidation.
@@ -37,7 +35,6 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   });
 
   // Lower all the terminators as they are encountered.
-  mlir::IRRewriter b(func.getContext());
   auto getErrorOr = [&] {
     return POP::VariantType::get({errType, func.getResultType()});
   };
@@ -49,7 +46,13 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
     if (op->getBlock() != &op->getParentRegion()->front())
       continue;
 
-    b.setInsertionPoint(op);
+    ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
+    auto createReturn = [&](ArrayRef<TypedAttr> params, ValueRange operands) {
+      if (op->getParentOp() == func)
+        b.create<KGEN::ReturnOp>(params, operands);
+      else
+        b.create<HLCF::ReturnOp>(operands);
+    };
     if (auto returnOp = dyn_cast<LIT::ReturnOp>(op)) {
       if (resultParams && returnOp.getParametersAttr() != resultParams) {
         return returnOp
@@ -63,37 +66,29 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
 
       ValueRange operands = returnOp.getOperands();
       Value result;
-      if (bitEnumContainsAny(func.getConventions().getFnEffects(),
-                             FnEffects::Throws)) {
-        result = b.create<POP::VariantCreateOp>(op->getLoc(), getErrorOr(),
-                                                operands.front());
+      if (func.isThrows()) {
+        result = b.create<POP::VariantCreateOp>(getErrorOr(), operands.front());
         operands = result;
       }
-      if (op->getParentOp() == func)
-        b.create<KGEN::ReturnOp>(op->getLoc(), resultParams, operands);
-      else
-        b.create<HLCF::ReturnOp>(op->getLoc(), operands);
+      createReturn(resultParams, operands);
 
     } else if (auto raiseOp = dyn_cast<LIT::RaiseOp>(op)) {
       auto tryOp = raiseOp->getParentOfType<LIT::TryOp>();
       if (tryOp &&
           tryOp.getTryRegion().isAncestor(raiseOp->getBlock()->getParent())) {
-        b.create<LIT::TryRaiseOp>(op->getLoc(), raiseOp.getError());
+        b.create<LIT::TryRaiseOp>(raiseOp.getError());
       } else {
         // TODO(#6449): Can't have result parameters in a function that raises.
-        Value err = b.create<POP::VariantCreateOp>(op->getLoc(), getErrorOr(),
-                                                   raiseOp.getError());
-        if (isa<LIT::FuncOp>(op->getParentOp()))
-          b.create<KGEN::ReturnOp>(op->getLoc(), ArrayRef<TypedAttr>(), err);
-        else
-          b.create<HLCF::ReturnOp>(op->getLoc(), err);
+        Value err =
+            b.create<POP::VariantCreateOp>(getErrorOr(), raiseOp.getError());
+        createReturn({}, err);
       }
 
     } else if (auto breakOp = dyn_cast<LIT::BreakOp>(op)) {
-      b.create<HLCF::BreakOp>(op->getLoc());
+      b.create<HLCF::BreakOp>();
     } else {
       assert(isa<LIT::ContinueOp>(op) && "unknown terminator");
-      b.create<HLCF::ContinueOp>(op->getLoc());
+      b.create<HLCF::ContinueOp>();
     }
 
     // Check and warn about dead code.
@@ -119,13 +114,12 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
     return terminator->emitError(
         "return expected at end of function with results");
 
-  b.setInsertionPoint(terminator);
-  Value none =
-      b.create<ParamConstantOp>(func.getLoc(), b.getAttr<LIT::NoneAttr>());
-  if (bitEnumContainsAny(func.getConventions().getFnEffects(),
-                         FnEffects::Throws))
-    none = b.create<POP::VariantCreateOp>(func.getLoc(), getErrorOr(), none);
-  b.replaceOpWithNewOp<KGEN::ReturnOp>(terminator, ArrayRef<TypedAttr>(), none);
+  ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(terminator));
+  Value none = b.create<ParamConstantOp>(b.getAttr<LIT::NoneAttr>());
+  if (func.isThrows())
+    none = b.create<POP::VariantCreateOp>(getErrorOr(), none);
+  b.create<KGEN::ReturnOp>(ArrayRef<TypedAttr>(), none);
+  terminator->erase();
   return success();
 }
 
@@ -141,9 +135,7 @@ static LogicalResult lowerThrows(DeclRefType errType, Operation *op) {
   op->walk([&](KGENCallOpInterface call) {
     if (isa<GeneratorInterfaceOp>(*call))
       return;
-    if (bitEnumContainsAny(
-            cast<SignatureType>(call.getCallee().getType()).getFnEffects(),
-            FnEffects::Throws))
+    if (cast<SignatureType>(call.getCallee().getType()).isThrows())
       throwingCalls.push_back(call);
   });
 
@@ -151,7 +143,7 @@ static LogicalResult lowerThrows(DeclRefType errType, Operation *op) {
   OpBuilder b(op);
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](SignatureType sigType) {
-    if (!bitEnumContainsAny(sigType.getFnEffects(), FnEffects::Throws))
+    if (!sigType.isThrows())
       return sigType;
     // Erase the `throws` bit and alter the result type to be wrapped.
     return SignatureType::get(

@@ -493,8 +493,7 @@ LogicalResult LIT::ReturnOp::verify() {
 LogicalResult RaiseOp::verify() {
   Operation *op = *this;
   auto func = op->getParentOfType<LIT::FuncOp>();
-  if (func &&
-      bitEnumContainsAny(func.getSignature().getFnEffects(), FnEffects::Throws))
+  if (func && func.isThrows())
     return success();
 
   auto tryOp = op->getParentOfType<TryOp>();
