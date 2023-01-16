@@ -302,11 +302,11 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
   case LitToken::kw_continue:
     rejectDecorator(); // Decorators not allowed.
     return parseBreakOrContinueStmt(LitToken::kw_continue, "continue",
-                                    HLCF::ContinueOp::getOperationName());
+                                    LIT::ContinueOp::getOperationName());
   case LitToken::kw_break:
     rejectDecorator(); // Decorators not allowed.
     return parseBreakOrContinueStmt(LitToken::kw_break, "break",
-                                    HLCF::BreakOp::getOperationName());
+                                    LIT::BreakOp::getOperationName());
   default:
     break;
   }
@@ -440,24 +440,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
         returnLoc, Type(errorOrType), resultDRValue);
   }
 
-  if (isa<LIT::FuncOp>(builder.getInsertionBlock()->getParentOp())) {
-    builder.create<KGEN::ReturnOp>(returnLoc, resultParamValues, resultDRValue);
-  } else {
-    // FIXME(https://github.com/modularml/modular/issues/6449): HLCF::ReturnOp
-    // doesn't support result parameters.
-    if (!resultParamValues.empty()) {
-      emitError(resultParams->getLoc(),
-                "FIXME(Issue#6449): don't support result parameters in nested "
-                "returns yet")
-          << resultParams->getRange();
-      return success();
-    }
-
-    builder.create<HLCF::ReturnOp>(returnLoc, resultDRValue);
-  }
-  // Split the block here. Subsequent statements are dead code.
-  builder.setInsertionPointToStart(
-      builder.getInsertionBlock()->splitBlock(builder.getInsertionPoint()));
+  builder.create<LIT::ReturnOp>(returnLoc, resultDRValue, resultParamValues);
   return success();
 }
 
@@ -474,7 +457,6 @@ ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
     if (parseExpression(errorExpr, raiseIndent))
       return failure();
     errorVal = getEmitter().emitExprDRValue(errorExpr);
-
     // Determine whether we are raising an error inside a 'try'.
     inTry = tryOp && tryOp.getTryRegion().findAncestorBlockInRegion(*block);
   } else {
@@ -488,28 +470,12 @@ ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
     inTry = false;
   }
 
-  // If we are raising inside a 'try', just emit a branch to the except region.
-  Location raiseLoc = translateLocation(loc);
-  if (inTry) {
-    builder.create<TryRaiseOp>(raiseLoc, errorVal);
-  } else {
-    // Wrap the error and propagate it.
-    auto func = getBlockParentOfType<LIT::FuncOp>(block);
-    if (!func.getRaises()) {
-      emitError(loc, "cannot raise error in a context that cannot raise");
-      return success();
-    }
-    Value wrappedErr = builder.create<POP::VariantCreateOp>(
-        raiseLoc, func.getResultType(), errorVal);
-    if (func == block->getParentOp())
-      builder.create<KGEN::ReturnOp>(raiseLoc, ArrayRef<TypedAttr>(),
-                                     wrappedErr);
-    else
-      builder.create<HLCF::ReturnOp>(raiseLoc, wrappedErr);
+  if (!inTry && !getBlockParentOfType<LIT::FuncOp>(block).getRaises()) {
+    emitError(loc, "cannot raise error in a context that cannot raise");
+    return success();
   }
-  // Split the block here. Subsequent statements are dead code.
-  builder.setInsertionPointToStart(
-      block->splitBlock(builder.getInsertionPoint()));
+  Location raiseLoc = translateLocation(loc);
+  builder.create<LIT::RaiseOp>(raiseLoc, errorVal);
   return success();
 }
 
@@ -519,21 +485,17 @@ ParseResult LitStmtParser::parseBreakOrContinueStmt(LitToken::Kind kind,
                                                     StringRef name,
                                                     StringRef opName) {
   llvm::SMLoc loc = consumeToken(kind).getLoc();
-  Block *block = builder.getInsertionBlock();
 
   // Ensure the break statement is being parsed within a loop context.
-  if (!getBlockParentOfType<HLCF::LoopOp>(block)) {
+  if (!getBlockParentOfType<HLCF::LoopOp>(builder.getInsertionBlock())) {
     emitError(loc, "'" + name + "' not inside a loop");
     return success();
   }
 
   // Split the block at the insertion point. Any subsequent statements are dead
   // code. Let region DCE handle it.
-  Block *after = block->splitBlock(builder.getInsertionPoint());
-  builder.setInsertionPointToEnd(block);
   OperationState state(translateLocation(loc), opName);
   builder.create(state);
-  builder.setInsertionPointToStart(after);
   return success();
 }
 
@@ -969,10 +931,5 @@ ParseResult LitParserBase::parseSuite(ASTDecl &containingDecl,
   if (failed(LitStmtParser(lexer, containingDecl)
                  .parseSuite(containingDecl.getIndentation())))
     return failure();
-  // Run region DCE to remove dead code.
-  mlir::IRRewriter rewriter(containingDecl.getContext());
-  containingDecl.getIfOperation()->walk([&](Operation *op) {
-    (void)mlir::eraseUnreachableBlocks(rewriter, op->getRegions());
-  });
   return success();
 }

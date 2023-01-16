@@ -194,7 +194,7 @@ fn nodebug_inline1() -> __mlir_type.index:
   alias x = 4  # expected-note {{operation defined here}}
   return 1
 
-# expected-error @+2 {{@nodebug_inline does not allow operations with regions}}
+# expected-error @+2 {{@nodebug_inline does not allow control flow}}
 @nodebug_inline
 fn nodebug_inline2(a: __mlir_type.i1) -> __mlir_type.index:
   if a:  # expected-note {{operation defined here}}

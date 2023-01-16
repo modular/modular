@@ -10,7 +10,7 @@ from prolog import Error, Int, Bool
 # CHECK-LABEL: lit.func @"pass()
 def `pass`():
   pass
-  # CHECK-NEXT : kgen.return
+  # CHECK-NEXT: lit.end_func
 
 ##===----------------------------------------------------------------------===##
 # return
@@ -20,7 +20,7 @@ def `pass`():
 fn return_impl_convert() -> Int:
   # CHECK: kgen.param.constant: !pop.scalar<index> = <#pop.simd<4>>
   # CHECK: %1 = kgen.struct.create(%0)
-  # CHECK: kgen.return %1
+  # CHECK: lit.return %1
   return 4  # Implicit conversion from literal to Int
 
 # CHECK-LABEL: lit.func @"return_new_line
@@ -35,7 +35,7 @@ fn return_impl_convert_raises() -> Int:
   # CHECK: %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<4>>
   # CHECK: %1 = kgen.struct.create(%0)
   # CHECK: %2 = pop.variant.create %1
-  # CHECK: kgen.return %2 : !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
+  # CHECK: lit.return %2 : !pop.variant<@"$prolog"::@Error, @"$Int"::@Int>
   return 4  # Implicit conversion from literal to Int
 
 
@@ -136,7 +136,8 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
 # CHECK-NEXT:    }
 # CHECK-NEXT:    hlcf.continue
 # CHECK-NEXT:  }
-# CHECK-NEXT:  kgen.return
+# CHECK-NEXT:  lit.return
+# CHECK-NEXT:  lit.end_func
 # CHECK-NEXT:  }
 fn test_while(a: Bool, b: Bool) -> Bool:
     var inside_a: Int
@@ -160,8 +161,7 @@ fn test_while(a: Bool, b: Bool) -> Bool:
 # CHECK-NEXT:     }
 # CHECK-NEXT:     hlcf.continue
 # CHECK-NEXT:   }
-# CHECK-NEXT:   [[NONE:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
-# CHECK-NEXT:   kgen.return [[NONE]]
+# CHECK-NEXT:   lit.end_func
 # CHECK-NEXT: }
 fn test_simple(a: Bool):
     while a:
@@ -183,7 +183,7 @@ def test_else_outside_while(a: Bool, b: Bool) -> Bool:
         # CHECK: pop.store {{.+}}, %inside_else
         inside_else = Int(2)
     # CHECK: }
-    # CHECK: kgen.return
+    # CHECK: lit.return
     return a
 
 # CHECK-LABEL: lit.func @"test_break_continue_inside_while
@@ -193,19 +193,16 @@ def test_break_continue_inside_while(a: Bool) -> Bool:
     while a:
         # CHECK:      hlcf.if
         if a:
-            # CHECK-NEXT:   hlcf.break
+            # CHECK-NEXT:   lit.break
             break
-            # CHECK-NOT: ^bb1:
-            # CHECK-NOT:   index.constant 1
-            # CHECK-NOT:   pop.store
-            # CHECK-NOT:   hlcf.yield
+            # CHECK:   pop.store
+            # CHECK-NEXT:   hlcf.yield
             c = 1
         else:
             # CHECK-NEXT: } else {
-            # CHECK-NEXT:   hlcf.continue
+            # CHECK-NEXT:   lit.continue
             continue
-            # CHECK-NOT: ^bb1:
-            # CHECK-NOT:   hlcf.yield
+            # CHECK-NEXT:   hlcf.yield
         # CHECK: hlcf.continue
     return a
 
@@ -214,17 +211,20 @@ def test_early_return():
     # CHECK: hlcf.if
     var a: Bool
     if a:
-        # CHECK: hlcf.return
+        # CHECK: lit.return
         return
-        # CHECK-NOT: hlcf.yield
+        # CHECK: pop.store
         b = 2
+        # CHECK-NEXT: hlcf.yield
     # CHECK: else
     # CHECK-NEXT: yield
-    # CHECK: kgen.return
+    # CHECK: lit.return
     return
-    # CHECK-NEXT: }
+    # CHECK: pop.store
     c = 3
+    # CHECK: lit.return
     return
+    # CHECK-NEXT: lit.end_func
 
 ##===----------------------------------------------------------------------===##
 # Raise and Try
@@ -244,7 +244,7 @@ fn simpleTryExcept():
         pass
     # CHECK-NEXT: else
     # CHECK-NEXT: lit.try.yield
-    # CHECK: kgen.return
+    # CHECK: lit.end_func
 
 # CHECK-LABEL: lit.func @"tryExceptElse
 fn tryExceptElse():
@@ -317,23 +317,21 @@ fn propagateErrorInTry():
 
 # CHECK-LABEL: lit.func @"raiseError
 def raiseErrorInDef(err: Error):
-    # CHECK: %[[ERR:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$prolog"::@Error> -> !pop.variant<@"$prolog"::@Error, !lit.none>
-    # CHECK-NEXT: kgen.return %[[ERR]]
+    # CHECK: lit.raise %0
     raise err
 
 # CHECK-LABEL: lit.func @"raiseErrorInIf
 def raiseErrorInIf(cond: Bool, err: Error):
     # CHECK: hlcf.if
     if cond:
-        # CHECK: %[[ERR:.*]] = pop.variant.create %{{.*}} : !kgen.declref<@"$prolog"::@Error> -> !pop.variant<@"$prolog"::@Error, !lit.none>
-        # CHECK-NEXT: hlcf.return %[[ERR]]
+        # CHECK: lit.raise
         raise err
 
 # CHECK-LABEL: lit.func @"raiseErrorInTry
 fn raiseErrorInTry(err: Error):
     # CHECK: lit.try
     try:
-        # CHECK-NEXT: lit.try.raise %err
+        # CHECK-NEXT: lit.raise %err
         raise err
     except:
         pass

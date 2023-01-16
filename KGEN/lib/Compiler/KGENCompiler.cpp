@@ -15,6 +15,7 @@ using namespace M;
 using namespace KGEN;
 
 static void populatePreElaborationPipeline(mlir::PassManager &pm) {
+  pm.addPass(createLowerLITTerminators());
   pm.addPass(createLowerLIT());
   pm.addPass(createLowerStructs());
   pm.addPass(mlir::createCanonicalizerPass());

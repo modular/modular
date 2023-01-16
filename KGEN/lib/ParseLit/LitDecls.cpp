@@ -1504,14 +1504,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   return success();
 }
 
-/// Return true if the result type is nominally a none type.
-static bool isNoneResultType(LIT::FuncOp defOp) {
-  Type type = defOp.getResultType();
-  if (defOp.getConventions().getFnEffects() == FnEffects::Throws)
-    type = cast<POP::VariantType>(type).getType(1);
-  return isa<LIT::NoneType>(type);
-}
-
 /// Once a @nodebug_inline has been fully parsed and the body is complete, we
 /// check it to see if it is simple enough for inlining.  We intentionally limit
 // it to try to keep this to purely functional stuff that will fold when
@@ -1554,7 +1546,7 @@ static void verifyNoDebugInline(LIT::FuncOp funcOp, LitSharedState &shared) {
 
     // Disallow large function bodies.  We only want this to be used for small
     // constructs.
-    if (++numOps == 4)
+    if (++numOps == 5)
       return reject("large function body with " +
                     Twine(std::distance(funcOp.getBody()->begin(),
                                         funcOp.getBody()->end())) +
@@ -1569,13 +1561,17 @@ static void verifyNoDebugInline(LIT::FuncOp funcOp, LitSharedState &shared) {
                     Twine(callOp.getCalleeSymbol().getLeafReference()) + "'");
     if (isa<CallParamOp, POP::CallIndirectOp>(op))
       return reject("indirect function calls");
-    if (isa<TryRaiseOp>(op))
+    if (isa<TryRaiseOp, RaiseOp, HLCF::ControlFlowNode>(op))
       return reject("control flow");
     if (!KGEN::getParamDecls(&op).empty())
       return reject("parameter declarations");
     if (op.getNumRegions())
       return reject("operations with regions");
   }
+
+  // Require a return statement.
+  if (numOps < 2 || !isa<LIT::ReturnOp>(funcOp.getBody()->back().getPrevNode()))
+    rejectFunc("no return statement");
 }
 
 ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
@@ -1608,23 +1604,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
     return success();
   }
 
-  // Check for a return op at the end of the function.
-  // TODO: This should really be moved to a dataflow pass after the parser.
-  if (bodyBlock->empty() || !isa<KGEN::ReturnOp>(bodyBlock->back())) {
-    auto loc = funcOp.getLoc();
-    if (isNoneResultType(funcOp) && funcOp.getResultParamTypes().empty()) {
-      auto b = OpBuilder::atBlockEnd(bodyBlock);
-      Value noneVal =
-          b.create<ParamConstantOp>(loc, NoneAttr::get(getContext()));
-      if (funcOp.getConventions().getFnEffects() == FnEffects::Throws)
-        noneVal = b.create<POP::VariantCreateOp>(loc, funcOp.getResultType(),
-                                                 noneVal);
-      b.create<KGEN::ReturnOp>(loc, ArrayRef<TypedAttr>(), noneVal);
-    } else if (!shared.diags.isErrorEmitted()) {
-      Location endLoc = bodyBlock->empty() ? loc : bodyBlock->back().getLoc();
-      emitError(endLoc, "return expected at end of 'def' with results");
-    }
-  }
+  // Insert the default end terminator.
+  OpBuilder::atBlockEnd(bodyBlock).create<LIT::EndFuncOp>(funcOp.getLoc());
 
   // Check that any alias forward declarations have been completed.
   if (!shared.diags.isErrorEmitted()) {
