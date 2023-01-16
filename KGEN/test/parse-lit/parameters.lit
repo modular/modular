@@ -115,10 +115,10 @@ fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
 # CHECK-LABEL: lit.func @"paramResolution()"<
 # CHECK-SAME: size1: !kgen.declref<@"$Int"::@Int>,
 # CHECK-SAME: a: !kgen.declref<@"$parameters"::@StructWithIntParam<size: !kgen.declref<@"$Int"::@Int> = size1>>,
-# CHECK-SAME: b: !kgen.declref<@"$parameters"::@StructWithIntParam<size: !kgen.declref<@"$Int"::@Int> = size2>>,
-# CHECK-SAME:  size2: !kgen.declref<@"$Int"::@Int>>()
+# CHECK-SAME: size2: !kgen.declref<@"$Int"::@Int>,
+# CHECK-SAME: b: !kgen.declref<@"$parameters"::@StructWithIntParam<size: !kgen.declref<@"$Int"::@Int> = size2>>>()
 fn paramResolution[size1: Int, a: StructWithIntParam[size1],
-                   b: StructWithIntParam[size2], size2: Int]():
+                   size2: Int, b: StructWithIntParam[size2]]():
   pass
 
 # Show that we can implicitly convert from 42's literal type to Int.

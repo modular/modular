@@ -22,7 +22,6 @@ class StructDeclOp;
 class StructFieldOp;
 class ParamBindArrayAttr;
 class ParamDeclAttr;
-class ParamDeclRefAttr;
 class ParamDeclareOp;
 } // namespace M::KGEN
 
@@ -115,10 +114,6 @@ private:
   /// check the signature for the operation.  On parse failure, these should
   /// return a failure, which will cause the driver to mark the decl as invalid
   /// for further references.
-  LogicalResult resolveSignature(ParamDeclRefAttr paramDeclRef, LitLexer &lexer,
-                                 ASTDecl &decl);
-  ParseResult resolveBody(ParamDeclRefAttr paramDeclRef, LitLexer &lexer,
-                          ASTDecl &decl);
   LogicalResult resolveSignature(LIT::FuncOp op, LitLexer &lexer,
                                  ASTDecl &decl);
   ParseResult resolveBody(LIT::FuncOp op, LitLexer &lexer, ASTDecl &decl);
