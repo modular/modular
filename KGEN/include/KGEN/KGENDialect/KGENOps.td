@@ -217,7 +217,8 @@ def KGEN_CallOp : KGENOp<"call", [KGEN_CallOpInterface,
 // CallParamOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CallParamOp : KGENOp<"call_param", [KGEN_CallOpInterface]> {
+def KGEN_CallParamOp : KGENOp<"call_param", [KGEN_CallOpInterface,
+    CalleeArgumentTypes, CalleeResultTypes]> {
   let summary = "Call declaration specified by a parameter expression";
   let description = [{
     The `kgen.call_param` operation invokes a parametric callee. The callee is
@@ -243,9 +244,8 @@ def KGEN_CallParamOp : KGENOp<"call_param", [KGEN_CallOpInterface]> {
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
-    `` custom<CallParamCallee>($callee, $paramDecls, type($operands),
-                               type($results))
-    `(` $operands `)` attr-dict
+    `` custom<ParametricCallee>($callee, $paramDecls) `(` $operands `)`
+    attr-dict
   }];
 
   let extraClassDeclaration = [{

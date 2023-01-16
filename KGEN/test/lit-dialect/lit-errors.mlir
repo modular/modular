@@ -57,3 +57,11 @@ lit.func @invalid_continue() {
   lit.continue
   lit.end_func
 }
+
+// -----
+
+lit.func @not_async() {
+  // expected-error @below {{'lit.async_call' op callable must be 'async'}}
+  %0 = lit.async_call[() -> (): @not_async]()
+  lit.end_func
+}

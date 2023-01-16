@@ -433,6 +433,12 @@ def POP_CoroutineType : POPType<"Coroutine", "coroutine"> {
     `<` (`>`) : (custom<ArrayOfPrettyTypes>($types)^ `>`)?
   }];
 
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$type), [{
+      return get(type.getContext(), TypeConstantAttr::get(type));
+    }]>
+  ];
+
   let extraClassDeclaration = [{
     /// Get the element types as parameterized types.
     SmallVector<Type> getParameterizedTypes() const;

@@ -289,6 +289,40 @@ def LIT_VarDeclOp : LITOp<"var.decl",
 }
 
 //===----------------------------------------------------------------------===//
+// AsyncCallOp
+//===----------------------------------------------------------------------===//
+
+def LIT_AsyncCallOp : LITOp<"async_call", [CalleeArgumentTypes,
+    TypesMatchWith<"coroutine of callee result types", "callee", "coroutine",
+                    "getCoroutineOfResultTypes($_self)">]> {
+  let summary = "Call to an async function.";
+  let description = [{
+    The `lit.async_call` operation calls an `async` parametric callable. It
+    returns a `!pop.coroutine` of the callable's result types.
+
+    Example:
+
+    ```mlir
+    // `%coro` has type `!pop.coroutine<index>`.
+    %coro = lit.async_call<() -> bar>[:<() -> index>() -> index: @foo]()
+    ```
+  }];
+
+  let arguments = (ins
+    AttrOfType<KGEN_SignatureType>:$callee,
+    KGEN_ParamDeclArrayAttr:$paramDecls,
+    Variadic<AnyType>:$operands);
+  let results = (outs POP_CoroutineType:$coroutine);
+
+  let assemblyFormat = [{
+    `` custom<ParametricCallee>($callee, $paramDecls) `(` $operands `)`
+    attr-dict
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // EndFuncOp
 //===----------------------------------------------------------------------===//
 

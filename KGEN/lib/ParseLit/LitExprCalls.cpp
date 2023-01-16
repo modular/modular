@@ -858,12 +858,16 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       return {};
   }
 
-  Operation *callOp;
   ArrayRef<Type> resultTypes = calleeSig.getValueResults();
+  Operation *callOp;
   Location loc = emitter.translateLocation(callLoc);
   if (auto target = callee.getIfMValue()) {
-    // If the callee is a symbol constant, directly emit a call.
-    if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
+    if (cast<SignatureType>(target.getType()).getAsync()) {
+      // If the callee is an async function, emit an async call.
+      callOp = builder->create<AsyncCallOp>(loc, target.get(), resultParamDecls,
+                                            callArgs);
+    } else if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
+      // If the callee is a symbol constant, directly emit a call.
       callOp = builder->create<CallOp>(loc, resultTypes, symbol,
                                        resultParamDecls, callArgs);
     } else {
@@ -872,9 +876,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     }
   } else {
     // Otherwise emit calls to SSA values with call_indirect.
-    callOp = builder->create<POP::CallIndirectOp>(loc, resultTypes,
-                                                  callee.getIfDRValue(),
-                                                  /*operands*/ callArgs);
+    callOp = builder->create<POP::CallIndirectOp>(
+        loc, resultTypes, callee.getIfDRValue(), callArgs);
   }
 
   // If the callee can raise an error, try to unwrap it.

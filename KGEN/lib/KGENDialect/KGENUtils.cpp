@@ -1447,6 +1447,40 @@ void KGEN::printParameterValues(OpAsmPrinter &p, Operation *op,
   p << '>';
 }
 
+ParseResult KGEN::parseParametricCallee(OpAsmParser &p, TypedAttr &callee,
+                                        ParamDeclArrayAttr &paramDecls) {
+  Type type;
+  llvm::SMLoc loc = p.getCurrentLocation();
+  if (p.parseLSquare() || parseKGENType(p, type) || p.parseColon() ||
+      parseParamValue(p, callee, type) || p.parseRSquare())
+    return failure();
+  if (succeeded(p.parseOptionalLess())) {
+    if (p.parseLParen() || p.parseRParen() || p.parseArrow() ||
+        parseParamDecls(p, paramDecls) || p.parseGreater())
+      return failure();
+  } else {
+    paramDecls = ParamDeclArrayAttr::get(p.getContext(), {});
+  }
+
+  if (!isa<SignatureType>(callee.getType()))
+    return p.emitError(loc, "callee parameter type must be a signature type");
+  return success();
+}
+
+void KGEN::printParametricCallee(OpAsmPrinter &p, Operation *, TypedAttr callee,
+                                 ParamDeclArrayAttr paramDecls) {
+  p << "[";
+  printKGENType(p.getStream(), callee.getType());
+  p << ": ";
+  printParamValue(p, callee);
+  p << "]";
+  if (!paramDecls.empty()) {
+    p << "<() -> ";
+    printParamDecls(paramDecls, p.getStream());
+    p << '>';
+  }
+}
+
 /// Parse an align parameter if present.
 void KGEN::printOptionalAlignmentParamValue(AsmPrinter &p, Operation *op,
                                             TypedAttr alignment) {

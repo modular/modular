@@ -214,6 +214,10 @@ def KGEN_SignatureType : KGENType<"Signature", "signature",
     bool isForceInline() {
       return bitEnumContainsAny(getFnEffects(), FnEffects::ForceInline);
     }
+    /// Return true if the function is async.
+    bool getAsync() {
+      return bitEnumContainsAny(getFnEffects(), FnEffects::Async);
+    }
 
     /// Return the convention for the specified value input parameter.
     ValueInputConvention getInputConvention(size_t inputNo) {
@@ -249,6 +253,11 @@ def KGEN_SignatureType : KGENType<"Signature", "signature",
 
   let genVerifyDecl = 1;
 }
+
+def CalleeArgumentTypes : TypesMatchWith<"operands match callee argument types",
+    "callee", "operands", "cast<SignatureType>($_self).getValueInputs()">;
+def CalleeResultTypes : TypesMatchWith<"results match callee result types",
+    "callee", "results", "cast<SignatureType>($_self).getValueResults()">;
 
 //===----------------------------------------------------------------------===//
 // DeclRefType

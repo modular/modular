@@ -474,6 +474,24 @@ void VarDeclOp::getAsmResultNames(
 }
 
 //===----------------------------------------------------------------------===//
+// AsyncCallOp
+//===----------------------------------------------------------------------===//
+
+/// Return a coroutine whose elements types are the callable's result types.
+static POP::CoroutineType getCoroutineOfResultTypes(Type type) {
+  SmallVector<TypedAttr> types;
+  for (Type resultType : cast<SignatureType>(type).getValueResults())
+    types.push_back(TypeConstantAttr::get(resultType));
+  return POP::CoroutineType::get(type.getContext(), types);
+}
+
+LogicalResult AsyncCallOp::verify() {
+  if (cast<SignatureType>(getCallee().getType()).getAsync())
+    return success();
+  return emitOpError("callable must be 'async'");
+}
+
+//===----------------------------------------------------------------------===//
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
