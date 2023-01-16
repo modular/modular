@@ -12,7 +12,6 @@
 #include "Support/ErrorOr.h"
 #include "Support/FunctionExtras.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
-#include <functional>
 
 namespace llvm {
 class JITEventListener;
@@ -71,7 +70,7 @@ public:
   ErrorOrSuccess add(StringRef libName, Cache::BufferRef obj);
 
   /// Look up a func and return it as a CompiledFunc object if we can find it.
-  ErrorOr<CompiledFunc> lookup(StringRef libName, StringAttr symbol);
+  ErrorOr<CompiledFunc> lookup(StringRef libName, StringRef symbol);
 
 private:
   explicit ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit,
@@ -84,9 +83,7 @@ private:
   CompilationOptions options;
 
   /// Objects required for the ORCJIT.
-  llvm::orc::ThreadSafeContext ctx;
   std::unique_ptr<llvm::orc::LLJIT> jit;
-  std::vector<llvm::orc::ThreadSafeModule> compiledModules;
 
   /// GDB notification listener.
   llvm::JITEventListener *gdbListener;
