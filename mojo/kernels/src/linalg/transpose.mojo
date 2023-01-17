@@ -26,18 +26,16 @@ fn transpose_inplace[
     type: __mlir_type.`!kgen.dtype`,
 ](
     buf: NDBuffer[
-        rank,
+        2,
         __mlir_attr[
-            `#kgen.list<`,
+            `#kgen<list[`,
             rows,
             `, `,
             cols,
-            `> : `,
+            `]> : `,
             `!kgen.list<`,
             __mlir_type.index,
-            `[`,
-            rank,
-            `]>`,
+            `[2]>`,
         ],
         type,
     ]
@@ -53,18 +51,16 @@ fn transpose_inplace_4x4[
     type: __mlir_type.`!kgen.dtype`,
 ](
     buf0: NDBuffer[
-        rank,
+        2,
         __mlir_attr[
-            `#kgen.list<`,
+            `#kgen<list[`,
             rows,
             `, `,
             cols,
-            `> : `,
+            `]> : `,
             `!kgen.list<`,
             __mlir_type.index,
-            `[`,
-            rank,
-            `]>`,
+            `[2]>`,
         ],
         type,
     ]
@@ -125,18 +121,16 @@ fn transpose_inplace_generic[
     type: __mlir_type.`!kgen.dtype`,
 ](
     buf0: NDBuffer[
-        rank,
+        2,
         __mlir_attr[
-            `#kgen.list<`,
+            `#kgen<list[`,
             rows,
             `, `,
             cols,
-            `> : `,
+            `]> : `,
             `!kgen.list<`,
             __mlir_type.index,
-            `[`,
-            rank,
-            `]>`,
+            `[2]>`,
         ],
         type,
     ]
