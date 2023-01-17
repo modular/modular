@@ -78,6 +78,9 @@ std::string ASTType::getAsString() const {
   std::string result;
   llvm::raw_string_ostream os(result);
   os << *this;
+  // Having "@" in mangled names confuses gnu ld and triggers error at linking
+  // stage. See issue #6918. So replacing "@" with "_".
+  std::replace(result.begin(), result.end(), '@', '_');
   return os.str();
 }
 
