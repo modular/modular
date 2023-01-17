@@ -17,16 +17,20 @@ include "mlir/IR/BuiltinAttributeInterfaces.td"
 
 /// An attribute in the LIT dialect.
 class LITAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
-    : AttrDef<LITDialect, attrName, [TypedAttrInterface] # traits> {
+    : AttrDef<LITDialect, attrName, traits> {
   let mnemonic = attrMnemonic;
 }
+
+/// A typed attribute in the LIT dialect.
+class LITTypedAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
+    : LITAttr<attrName, attrMnemonic, [TypedAttrInterface] # traits>;
 
 //===----------------------------------------------------------------------===//
 // UnboundMLIROperationAttr
 //===----------------------------------------------------------------------===//
 
 def UnboundMLIROperationAttr
-  : LITAttr<"UnboundMLIROperation", "unbound_mlir_operation"> {
+  : LITTypedAttr<"UnboundMLIROperation", "unbound_mlir_operation"> {
   let summary = "An unbound mlir operation";
   let description = [{
     This attribute is used by the Lit parser as a reference to an MLIR
@@ -43,7 +47,7 @@ def UnboundMLIROperationAttr
 // NoneAttr
 //===----------------------------------------------------------------------===//
 
-def NoneAttr : LITAttr<"None", "none"> {
+def NoneAttr : LITTypedAttr<"None", "none"> {
   let summary = "A None value";
   let description = [{
     This attribute represents None values.
@@ -62,7 +66,7 @@ def NoneAttr : LITAttr<"None", "none"> {
 //===----------------------------------------------------------------------===//
 
 def UnresolvedAliasValueAttr
-  : LITAttr<"UnresolvedAliasValue", "unresolved.alias"> {
+  : LITTypedAttr<"UnresolvedAliasValue", "unresolved.alias"> {
   let summary = "The value of an 'alias' before it is bound to a value";
 
   let parameters = (ins AttributeSelfTypeParameter<"">:$type);
@@ -73,6 +77,40 @@ def UnresolvedAliasValueAttr
       return get(type.getContext(), type);
     }]>,
   ];
+}
+
+//===----------------------------------------------------------------------===//
+// DefaultArgumentAttr
+//===----------------------------------------------------------------------===//
+
+def DefaultArgumentAttr : LITAttr<"DefaultArgument", "default.argument"> {
+  let summary = "A default argument, such as for a function.";
+  let description = [{
+    This attribute represents a default argument (such as for a function that
+    takes arguments), which is a pair of (1) the index of the argument with a
+    default value, and (2) the value that is used by default.
+  }];
+
+  let parameters = (ins "IntegerAttr":$index, "TypedAttr":$value);
+  let assemblyFormat = "`<` $index `=` $value `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "int64_t":$index,
+                                        "TypedAttr":$value), [{
+      auto *context = value.getContext();
+      return get(context, IntegerAttr::get(IndexType::get(context), index),
+                 value);
+    }]>,
+  ];
+
+  let genVerifyDecl = 1;
+}
+
+/// An array of DefaultArgumentAttr's.
+def DefaultArgumentArrayAttr
+    : ArrayOfAttr<LITDialect, "DefaultArgumentArray", "default.arguments",
+                  "DefaultArgumentAttr"> {
+  let genVerifyDecl = 1;
 }
 
 #endif // KGEN_LITDIALECT_LITATTRS_TD

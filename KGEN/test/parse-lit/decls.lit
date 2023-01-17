@@ -105,10 +105,12 @@ fn pleaseInline() -> __mlir_type.index:
 # Default arguments.
 ##===----------------------------------------------------------------------===##
 
-fn defaultArgument(a: Int, b: Int = 1) -> Int:
+# CHECK: lit.func @"defaultArgument{{.*}}{defaults = #lit<default.arguments[<1 : index = #kgen.param.expr<apply, #kgen.symbol.constant<@"$Int"::@Int::@"__new__(__mlir_type.index)" > : !kgen.signature<[], [],  (index) -> !kgen.declref<@"$Int"::@Int>>, 42 : index> : !kgen.declref<@"$Int"::@Int>>]>}
+fn defaultArgument(a: Int, b: Int = 42) -> Int:
   return a + b
 
-fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 1) -> Int:
+# CHECK: lit.func @"defaultArgumentReferencesParameter{{.*}}{defaults = #lit<default.arguments[<0 : index = #kgen.param.expr<apply, #kgen.symbol.constant<@"$Int"::@Int::@"__add__($Int::Int,$Int::Int)" > : !kgen.signature<[], [],  (!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int>>, #kgen.param.decl.ref<"p"> : !kgen.declref<@"$Int"::@Int>, #kgen.param.expr<apply, #kgen.symbol.constant<@"$Int"::@Int::@"__new__(__mlir_type.index)" > : !kgen.signature<[], [],  (index) -> !kgen.declref<@"$Int"::@Int>>, 87 : index> : !kgen.declref<@"$Int"::@Int>> : !kgen.declref<@"$Int"::@Int>>]>
+fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
   return a
 
 ##===----------------------------------------------------------------------===##

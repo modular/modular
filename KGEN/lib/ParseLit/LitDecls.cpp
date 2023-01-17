@@ -1248,7 +1248,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // Resolve the result type and any argument types that are present, leaving
   // any unspecified types null.
   SmallVector<Type> argTypes;
-  for (auto &arg : args) {
+  SmallVector<DefaultArgumentAttr> defaults;
+  for (auto [idx, arg] : llvm::enumerate(args)) {
     // This returns a TypeCheckErrorType on error, no extra check is needed.
     ASTType type;
     if (arg.typeExpr) {
@@ -1271,14 +1272,15 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     argTypes.push_back(type);
 
     // Emit default argument values.
-    // TODO: For now, we don't make use of the emitted values, but emitting them
-    //       does diagnose invalid expressions.
     if (auto *initValue = arg.initValue) {
       ExprEmitter emitter(shared, decl, /*builder*/ {},
                           /*varDeclCursor*/ nullptr);
-      if (!emitter.emitExprMValue(initValue, type,
-                                  " in a default argument initializer"))
+      MValue value = emitter.emitExprMValue(
+          initValue, type, " in a default argument initializer");
+      if (!value)
         return failure();
+
+      defaults.push_back(DefaultArgumentAttr::get(idx, value));
     }
   }
 
@@ -1383,6 +1385,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
           inputConventions, funcOp.getConventions().getFnEffects())));
 
   funcOp.getBody()->addArguments(argTypes, argLocs);
+  if (!defaults.empty())
+    funcOp.setDefaultsAttr(builder.getAttr<DefaultArgumentArrayAttr>(defaults));
 
   // Interfaces don't have anything else to do.
   if (funcOp.getIsInterface())
