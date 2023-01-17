@@ -872,7 +872,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   Operation *callOp;
   Location loc = emitter.translateLocation(callLoc);
   if (auto target = callee.getIfMValue()) {
-    if (cast<SignatureType>(target.getType()).getAsync()) {
+    if (cast<SignatureType>(target.getType()).isAsync()) {
       // If the callee is an async function, emit an async call.
       callOp = builder->create<AsyncCallOp>(loc, target.get(), resultParamDecls,
                                             callArgs);
@@ -891,7 +891,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   }
 
   // If the callee can raise an error, try to unwrap it.
-  if (calleeSig.isThrows() &&
+  if (calleeSig.isThrows() && !calleeSig.isAsync() &&
       !isValidErrorContext(builder->getInsertionBlock())) {
     emitError(
         "cannot call function that may raise in a context that cannot raise");

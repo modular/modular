@@ -956,7 +956,8 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
   }];
 
   let builders = [
-    OpBuilder<(ins "Value":$ptr, "std::optional<unsigned>":$alignment)>,
+    OpBuilder<(ins "Value":$ptr,
+                   CArg<"std::optional<unsigned>", "{}">:$alignment)>,
   ];
 }
 
@@ -991,7 +992,7 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
 
   let builders = [
     OpBuilder<(ins "Value":$arg, "Value":$ptr,
-                   "std::optional<unsigned>":$alignment)>
+                   CArg<"std::optional<unsigned>", "{}">:$alignment)>
   ];
 }
 
@@ -1206,6 +1207,12 @@ def POP_StructGEPOp : POPOp<"struct.gep", [Pure,
   let assemblyFormat = [{
     $container `[` $index `]` attr-dict `:` type($container)
   }];
+
+  let builders = [
+    OpBuilder<(ins "Value":$container, "int64_t":$index), [{
+      build($_builder, $_state, container, $_builder.getIndexAttr(index));
+    }]>
+  ];
 
   let hasVerifier = 1;
 }

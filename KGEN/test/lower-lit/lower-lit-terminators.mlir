@@ -180,3 +180,33 @@ lit.file_module @Module {
     }
   }
 }
+
+// CHECK-LABEL: lit.func @coroutine() -> !pop.coroutine<index>
+lit.func @coroutine() async -> index {
+  // CHECK-NEXT: %[[HDL:.*]] = pop.coroutine.handle
+  %idx0 = index.constant 0
+  // CHECK: %[[PROMISE:.*]] = pop.coroutine.promise %[[HDL]]
+  // CHECK-NEXT: %[[RES:.*]] = pop.struct.gep %[[PROMISE:.*]][0]
+  // CHECK-NEXT: pop.store %idx0, %[[RES:.*]]
+  // CHECK: external_call @KGEN_CompilerRT_LLCL_Complete
+  // CHECK-NEXT: return %[[HDL]]
+  lit.return %idx0 : index
+  lit.end_func
+}
+
+// CHECK-LABEL: lit.func @call_coroutine
+// CHECK-SAME: coro: () -> !pop.coroutine<!lit.none>
+// CHECK-SAME: ) -> !pop.coroutine<!lit.none>
+lit.func @call_coroutine<coro: <>() async -> !lit.none>() async -> !lit.none {
+  // CHECK-NEXT: %[[CURHDL:.*]] = pop.coroutine.handle
+  // CHECK-NEXT: %[[HDL:.*]] = kgen.call_param[() -> !pop.coroutine<!lit.none>: coro]()
+  lit.async_call[<>() async -> !lit.none: coro]()
+  // CHECK: %[[PTR:.*]] = pop.load
+  // CHECK: pop.store %[[PTR]]
+  // CHECK: external_call @KGEN_CompilerRT_LLCL_InitializeContext
+
+  // CHECK: pop.store
+  // CHECK: external_call @KGEN_CompilerRT_LLCL_Complete
+  // CHECK-NEXT: return %[[CURHDL]]
+  lit.end_func
+}
