@@ -159,7 +159,7 @@ struct ParamSubst[
 # CHECK-LABEL: lit.func @"testParamSubst
 fn testParamSubst():
   # CHECK: %xx = lit.var.decl "xx" : <@"$parameters"::@ParamSubst<rank = 2, shape: list<index[2]> = [1, 2]>>
-  var xx : ParamSubst[2, __mlir_attr.`#kgen.list<1, 2> : !kgen.list<index[2]>`]
+  var xx : ParamSubst[2, __mlir_attr.`#kgen<list[1, 2]> : !kgen.list<index[2]>`]
 
 
 # Test parameter substitution.

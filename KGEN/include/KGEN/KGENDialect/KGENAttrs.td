@@ -255,7 +255,7 @@ def KGEN_ListAttr : KGEN_ExprAttr<"List", "list"> {
   let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values,
                         AttributeSelfTypeParameter<"", "ListType">:$type);
   let assemblyFormat = [{
-    `<` (`>`) : (custom<ListValue>($values, ref($type))^ `>`)?
+    `[` (`]`) : (custom<ListValue>($values, ref($type))^ `]`)?
   }];
 
   let builders = [
