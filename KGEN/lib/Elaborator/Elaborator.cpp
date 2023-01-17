@@ -1018,6 +1018,10 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
     os << ',' << inputDecl.getName().str() << '=';
     printParameterValue(value, os);
   }
+
+  // Having "@" in mangled names confuses gnu ld and triggers error at linking
+  // stage. See issue #6918. So replacing "@" with "_".
+  std::replace(result.begin(), result.end(), '@', '_');
   return b.getStringAttr(result);
 }
 

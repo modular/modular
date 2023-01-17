@@ -1,0 +1,16 @@
+# RUN: kgen-translate %s -import-lit | FileCheck %s
+
+struct SomeStructWithSize[size: __mlir_type.index]:
+     pass
+
+fn getSize() -> __mlir_type.index:
+    return 0
+
+# COM: Check that the mangled function name doesn't contain "@"
+# CHECK: lit.func @"testMangledName
+# CHECK-NOT: {{.*}}@{{.*}}
+# COM: Match the first argument of the function.
+# CHECK-SAME: "(%{{.*}}:
+@export
+fn testMangledName(x: SomeStructWithSize[getSize()]):
+  return
