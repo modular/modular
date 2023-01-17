@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/POPDialect/POPAttrs.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -245,18 +246,10 @@ static void printDTypeValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
 static ParseResult parseArrayElements(AsmParser &p,
                                       FailureOr<SmallVector<TypedAttr>> &values,
                                       POP::ArrayType type) {
-  std::optional<int64_t> size = type.getResolvedSize();
-  Type elementType = type.getResolvedElementType();
-  if (!size || !elementType)
-    return p.emitError(p.getCurrentLocation(),
-                       "array attribute expected a fully-resolved array type");
+  auto elementType = ParamRefType::get(type.getElementType());
   values.emplace();
-  return failableInterleave(
-      llvm::seq<unsigned>(0, *size),
-      [&](unsigned) {
-        return parseParamValue(p, values->emplace_back(), elementType);
-      },
-      [&] { return p.parseComma(); });
+  return p.parseCommaSeparatedList(
+      [&] { return parseParamValue(p, values->emplace_back(), elementType); });
 }
 
 static void printArrayElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
@@ -275,10 +268,9 @@ LogicalResult
 POP::ArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        ArrayRef<TypedAttr> values, ArrayType type) {
   std::optional<int64_t> size = type.getResolvedSize();
-  Type elementType = type.getResolvedElementType();
-  if (!size || !elementType)
-    return emitError()
-           << "array attribute expected a fully-resolved array type";
+  if (!size)
+    return emitError() << "array attribute expected a concrete size";
+  auto elementType = ParamRefType::get(type.getElementType());
   if (*size != static_cast<int64_t>(values.size()))
     return emitError() << "array attribute type requires " << *size
                        << " elements but value has " << values.size();
@@ -296,17 +288,12 @@ POP::ArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 static ParseResult
 parseStructElements(AsmParser &p, FailureOr<SmallVector<TypedAttr>> &values,
                     StructType type) {
-  SmallVector<Type> types;
-  if (failed(type.resolveElementTypes(types)))
-    return p.emitError(
-        p.getCurrentLocation(),
-        "struct attribute expected a fully-resolved struct type");
-
   values.emplace();
   return failableInterleave(
-      types,
-      [&](Type type) {
-        return parseParamValue(p, values->emplace_back(), type);
+      type.getElementTypes(),
+      [&](TypedAttr type) {
+        return parseParamValue(p, values->emplace_back(),
+                               ParamRefType::get(type));
       },
       [&] { return p.parseComma(); });
 }
@@ -323,19 +310,26 @@ bool POP::StructAttr::isConstant() const {
   return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant);
 }
 
+/// Compare a type between value domains.
+static bool compareTypeToTypeExpr(Type type, TypedAttr expr) {
+  if (auto refType = dyn_cast<ParamRefType>(type))
+    return refType.getParam() == expr;
+  if (auto typeCst = dyn_cast<TypeConstantAttr>(expr))
+    return typeCst.getValue() == type;
+  // `expr` is a parameter expresion but `type` is not.
+  return false;
+}
+
 LogicalResult
 POP::StructAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                         ArrayRef<TypedAttr> values, StructType type) {
-  SmallVector<Type> types;
-  if (failed(type.resolveElementTypes(types)))
-    return emitError()
-           << "struct attribute expected a fully-resolved struct type";
+  ArrayRef<TypedAttr> types = type.getElementTypes();
   if (types.size() != values.size())
     return emitError() << "struct attribute type requires " << types.size()
                        << " elements but value has " << values.size();
   for (auto [idx, value, type] :
        llvm::zip(llvm::seq<unsigned>(0, types.size()), values, types))
-    if (value.getType() != type)
+    if (!compareTypeToTypeExpr(value.getType(), type))
       return emitError() << "struct element #" << idx << " has type "
                          << value.getType() << " but expected " << type;
   return success();

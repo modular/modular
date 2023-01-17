@@ -1,4 +1,4 @@
-// RUN: kgen-opt -verify-diagnostics -split-input-file %s
+// RUN: kgen-opt -verify-diagnostics -split-input-file -allow-unregistered-dialect %s
 
 kgen.func @simd_constant() {
   // expected-error @below {{integer value doesn't fit into 4 bits: 128}}
@@ -49,23 +49,14 @@ kgen.generator @simd_constant<size>() {
 // -----
 
 kgen.generator @array_constant<size>() {
-  // expected-error @below {{array attribute expected a fully-resolved array type}}
+  // expected-error @below {{array attribute expected a concrete size}}
   %0 = kgen.param.constant: !pop.array<size, index> = <#pop.array<0>>
 }
 
 // -----
 
-kgen.generator @array_constant<T: type>() {
-  // expected-error @below {{array attribute expected a fully-resolved array type}}
-  %0 = kgen.param.constant: !pop.array<1, T> = <#pop.array<0>>
-}
-
-// -----
-
-kgen.generator @struct_constant<T: type>() {
-  // expected-error @below {{struct attribute expected a fully-resolved struct type}}
-  %0 = kgen.param.constant: !pop.struct<T> = <#pop.struct<0>>
-}
+// expected-error @below {{array attribute type requires 2 elements but value has 1}}
+"some.op"() {a = #pop.array<1> : !pop.array<2, index>} : () -> ()
 
 // -----
 

@@ -20,15 +20,19 @@ kgen.func @simd_constants() {
 }
 
 // CHECK-LABEL: @array_struct_constants
-kgen.generator @array_struct_constants<value: !pop.scalar<f32>>() {
+kgen.generator @array_struct_constants<T: type, A: !kgen.paramref<T>, value: !pop.scalar<f32>>() {
   // CHECK: !pop.struct<index, f32> = <#pop.struct<1, 2.5{{0+}}e+00>>
-  %0 = kgen.param.constant: !pop.struct<index, f32> = <#pop.struct<1, 2.5>>
+  kgen.param.constant: !pop.struct<index, f32> = <#pop.struct<1, 2.5>>
   // CHECK: !pop.array<2, index> = <#pop.array<1, 2>>
-  %1 = kgen.param.constant: !pop.array<2, index> = <#pop.array<1, 2>>
+  kgen.param.constant: !pop.array<2, index> = <#pop.array<1, 2>>
   // CHECK: !pop.struct<scalar<f32>> = <#pop.struct<value>>
-  %2 = kgen.param.constant: !pop.struct<scalar<f32>> = <#pop.struct<value>>
+  kgen.param.constant: !pop.struct<scalar<f32>> = <#pop.struct<value>>
   // CHECK: !pop.array<2, dtype> = <#pop.array<ui4, si4>>
-  %3 = kgen.param.constant: !pop.array<2, dtype> = <#pop.array<ui4, si4>>
+  kgen.param.constant: !pop.array<2, dtype> = <#pop.array<ui4, si4>>
+  // CHECK: !pop.struct<T> = <#pop.struct<A>>
+  kgen.param.constant: !pop.struct<T> = <#pop.struct<A>>
+  // CHECK: !pop.array<2, T> = <#pop.array<A, A>>
+  kgen.param.constant: !pop.array<2, T> = <#pop.array<A, A>>
   kgen.return
 }
 
