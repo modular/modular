@@ -219,3 +219,9 @@ kgen.func @two_lists_in_variant(%list: !kgen.list<i1[1]>, %var: !pop.variant<!kg
   // CHECK-NEXT: return %[[L0]], %[[VAR]]
   kgen.return %1, %0 : !kgen.list<i2[1]>, !pop.variant<!kgen.list<i1[1]>, !kgen.list<i2[1]>>
 }
+
+// CHECK-LABEL: @list_in_coroutine
+// CHECK-SAME: !pop.coroutine<() -> ()>
+kgen.func @list_in_coroutine(%coro: !pop.coroutine<() -> !kgen.list<index[0]>>) {
+  kgen.return
+}

@@ -1071,8 +1071,8 @@ LogicalResult CallIndirectOp::canonicalize(CallIndirectOp op,
 //===----------------------------------------------------------------------===//
 
 static PointerType getCoroutinePromiseType(Type type) {
-  return PointerType::get(
-      StructType::get(type.getContext(), cast<CoroutineType>(type).getTypes()));
+  return PointerType::get(StructType::get(
+      type.getContext(), cast<CoroutineType>(type).getResultTypes()));
 }
 
 //===----------------------------------------------------------------------===//

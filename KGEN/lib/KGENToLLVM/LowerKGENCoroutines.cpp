@@ -55,8 +55,7 @@ static LLVMStructType getCoroutinePromiseType(LLVMBuilder &b,
                                               const TypeAttrCache &cache,
                                               POP::CoroutineType coroType) {
   // Pack the result types into a struct.
-  SmallVector<Type> promiseTypes;
-  (void)coroType.resolveResultTypes(promiseTypes);
+  SmallVector<Type> promiseTypes(coroType.getResultTypes());
   for (Type &type : promiseTypes) {
     type = b.convertType(type);
     if (!type)
@@ -112,8 +111,7 @@ createCoroutineFunction(LLVMBuilder &b, const TypeAttrCache &cache,
   // coroutine frame allocators.
   // TODO: Switch this to an aligned alloc.
   b.setInsertionPointToStart(coroAlloc);
-  Value coroSize =
-      b.create<CoroSizeOp>(b.getIntegerType(b.getIndexTypeBitwidth()));
+  Value coroSize = b.create<CoroSizeOp>(b.getIndexType());
   auto allocCall =
       b.create<POP::ExternalCallOp>(cache.ptrType, "malloc", coroSize);
   auto allocMemCast =

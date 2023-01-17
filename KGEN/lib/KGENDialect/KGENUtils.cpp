@@ -184,6 +184,10 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
   }
 }
 
+void KGEN::printKGENType(AsmPrinter &p, Type type) {
+  printKGENType(p.getStream(), type);
+}
+
 static OptionalParseResult parseOptionalColonType(AsmParser &parser,
                                                   Type &type) {
   if (failed(parser.parseOptionalColon()))

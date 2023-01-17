@@ -424,33 +424,33 @@ def POP_CoroutineType : POPType<"Coroutine", "coroutine"> {
 
     ```mlir
     // A coroutine that returns two results: an index and a 32-bit integer.
-    !pop.coroutine<index, i32>
+    !pop.coroutine<() -> (index, i32)>
+    // A coroutine that throws.
+    !pop.coroutine<<>() throws -> i32>
     ```
   }];
 
-  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$types);
+  let parameters = (ins KGEN_SignatureType:$signature);
   let assemblyFormat = [{
-    `<` (`>`) : (custom<ArrayOfPrettyTypes>($types)^ `>`)?
+    `<` custom<KGENType>($signature) `>`
   }];
 
   let builders = [
+    TypeBuilderWithInferredContext<(ins "SignatureType":$sig)>,
     TypeBuilderWithInferredContext<(ins "Type":$type), [{
-      return get(type.getContext(), TypeConstantAttr::get(type));
+      return get(
+        type.getContext(), SignatureType::get(type.getContext(), {}, type));
     }]>
   ];
 
   let extraClassDeclaration = [{
-    /// Get the element types as parameterized types.
-    SmallVector<Type> getParameterizedTypes() const;
-
-    /// Try to narrow all the result type expressions to MLIR types.
-    LogicalResult
-    resolveResultTypes(SmallVectorImpl<Type> &elementTypes) const;
+    /// Get the result types of the coroutine.
+    ArrayRef<Type> getResultTypes() { return getSignature().getValueResults(); }
   }];
 }
 
 class CoroutineResultTypes<string name, string ref> : TypesMatchWith<
     name # " types match coroutine result types", "coroutine", ref,
-    "$_self.cast<CoroutineType>().getParameterizedTypes()">;
+    "$_self.cast<CoroutineType>().getResultTypes()">;
 
 #endif // POPTYPES_TD

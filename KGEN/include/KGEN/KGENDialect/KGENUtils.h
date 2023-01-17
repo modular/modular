@@ -29,8 +29,21 @@ std::string getParamAsString(Attribute value);
 /// "!kgen.dtype" etc.
 ParseResult parseKGENType(AsmParser &parser, Type &type);
 
+/// Try to parse a specific KGEN type.
+template <typename T>
+ParseResult parseKGENType(AsmParser &parser, FailureOr<T> &type) {
+  Type value;
+  llvm::SMLoc loc = parser.getCurrentLocation();
+  if (failed(parseKGENType(parser, value)))
+    return failure();
+  if (auto expectedType = dyn_cast<T>(value))
+    return type = expectedType, success();
+  return parser.emitError(loc, "wrong KGEN type");
+}
+
 /// Print `type` using KGEN specific type sugars.
 void printKGENType(raw_ostream &os, Type type);
+void printKGENType(AsmPrinter &p, Type type);
 
 /// Parse a "colon type" production if present or default to `index` type if
 /// not.  This is commonly used in our parameter representation.
