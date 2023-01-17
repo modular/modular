@@ -259,7 +259,7 @@ ArrayRef<Type> LIT::FuncOp::getCallableResults() { return getResultTypes(); }
 /// Reject functions with default arguments whose type does not match the type
 /// of the argument they're specifying a default for.
 LogicalResult LIT::FuncOp::verify() {
-  auto defaults = getDefaults();
+  std::optional<ArrayRef<DefaultArgumentAttr>> defaults = getDefaults();
   if (!defaults)
     return success();
 
