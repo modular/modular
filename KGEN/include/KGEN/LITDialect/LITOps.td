@@ -60,6 +60,7 @@ def LIT_FuncOp : LITOp<"func", [
                        UnitAttr:$isInterface,
                        UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
                        UnitAttr:$noDebugInline,
+                       OptionalAttr<DefaultArgumentArrayAttr>:$defaults,
                        OptionalAttr<SymbolRefAttr>:$implements,
                        OptionalAttr<KGEN_SymbolConstantAttr>:$evaluator);
   let regions = (region AnyRegion:$bodyRegion);
@@ -81,6 +82,7 @@ def LIT_FuncOp : LITOp<"func", [
   ];
 
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
   let hasRegionVerifier = 1;
 }
 

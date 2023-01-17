@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_dialect_library(LITDialect
+  LITAttrs.cpp
   LITDialect.cpp
   LITOps.cpp
 

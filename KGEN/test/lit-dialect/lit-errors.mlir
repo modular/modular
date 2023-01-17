@@ -60,6 +60,13 @@ lit.func @invalid_continue() {
 
 // -----
 
+// expected-error @+1 {{argument #0 has type 'f32' but default argument has type 'index'}}
+lit.func @mismatched_default_argument_type(%a: f32) attributes {defaults = #lit<default.arguments[<0 : index = 1 : index>]>} {
+  lit.end_func
+}
+
+// -----
+
 lit.func @not_async() {
   // expected-error @below {{'lit.async_call' op callable must be 'async'}}
   %0 = lit.async_call[() -> (): @not_async]()
