@@ -335,7 +335,8 @@ AnyValue BoolLiteralNode::emitIR(ExprEmitter &emitter,
 AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter,
                                    ASTType contextualType) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
-  auto attr = StringAttr::get(emitter.getContext(), value);
+  auto attr =
+      StringAttr::get(value, KGEN::StringType::get(emitter.getContext()));
   return AnyValue(attr);
 }
 
