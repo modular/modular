@@ -8,6 +8,7 @@
 #define KGEN_POPDIALECT_POPTYPES_H
 
 #include "KGEN/KGENDialect/KGENDType.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/Interpreter/InterpreterInterface.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/IR/SubElementInterfaces.h"

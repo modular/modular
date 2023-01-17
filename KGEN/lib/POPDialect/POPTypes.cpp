@@ -756,23 +756,16 @@ CoroutineType::getTypeAlign(TargetInfoAttr target) const {
   llvm_unreachable("TODO: unimplemented");
 }
 
-SmallVector<Type> CoroutineType::getParameterizedTypes() const {
-  SmallVector<Type> resultTypes;
-  resultTypes.reserve(getTypes().size());
-  for (TypedAttr type : getTypes())
-    resultTypes.push_back(ParamRefType::get(type));
-  return resultTypes;
-}
-
-LogicalResult
-CoroutineType::resolveResultTypes(SmallVectorImpl<Type> &resultTypes) const {
-  for (TypedAttr resultType : getTypes()) {
-    if (auto type = llvm::dyn_cast<TypeConstantAttr>(resultType))
-      resultTypes.push_back(type.getValue());
-    else
-      return failure();
-  }
-  return success();
+CoroutineType CoroutineType::get(SignatureType sig) {
+  // Return a coroutine type whose result types match the signature type but
+  // which inherits the `throws` bit.
+  MLIRContext *ctx = sig.getContext();
+  auto coroSig = SignatureType::get(
+      ParamDeclArrayAttr::get(ctx, {}), TypeArrayAttr::get(ctx, {}),
+      FunctionType::get(ctx, {}, sig.getValueResults()),
+      ConventionsAttr::get(
+          ctx, 0, sig.isThrows() ? FnEffects::Throws : FnEffects::None));
+  return POP::CoroutineType::get(ctx, coroSig);
 }
 
 //===----------------------------------------------------------------------===//

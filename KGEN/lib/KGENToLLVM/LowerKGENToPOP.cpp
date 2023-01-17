@@ -323,6 +323,9 @@ static Type expandListsInType(Type type) {
         nextType = expandListsInStruct(structType).first;
       else if (auto sigType = dyn_cast<SignatureType>(type))
         nextType = expandListsInSignature(sigType);
+      else if (auto coroType = dyn_cast<POP::CoroutineType>(type))
+        nextType = POP::CoroutineType::get(
+            expandListsInSignature(coroType.getSignature()));
       else
         return type;
       if (nextType == type)
@@ -340,7 +343,7 @@ static Type expandListsInType(Type type) {
   if (!itf)
     return type;
   return itf.replaceSubElements([&](Type type) -> Type {
-    if (isa<POP::StructType, FunctionType>(type))
+    if (isa<POP::CoroutineType, POP::StructType, FunctionType>(type))
       return flattenFirst(type);
     if (auto list = dyn_cast<ListType>(type))
       return convertListToArrayType(list);

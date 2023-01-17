@@ -3,7 +3,7 @@
 // CHECK-LABEL: llvm.func @coroutine
 // CHECK-SAME: -> !llvm.ptr<i8>
 // CHECK-SAME: attributes {passthrough = ["presplitcoroutine"]}
-kgen.func @coroutine(%arg0: i32) -> !pop.coroutine<i32> {
+kgen.func @coroutine(%arg0: i32) -> !pop.coroutine<() -> i32> {
   // CHECK-DAG: %[[TRUE:.*]] = llvm.mlir.constant(true)
   // CHECK-DAG: %[[FALSE:.*]] = llvm.mlir.constant(false)
   // CHECK-DAG: %[[C0_i64:.*]] = llvm.mlir.constant(0 : i64)
@@ -24,7 +24,7 @@ kgen.func @coroutine(%arg0: i32) -> !pop.coroutine<i32> {
 
 // CHECK: ^[[BEGIN]](%[[FRAME:.*]]: !llvm.ptr<i8>):
   // CHECK-NEXT: %[[HDL:.*]] = llvm.intr.coro.begin %[[ID]], %[[FRAME]]
-  %hdl = pop.coroutine.handle : <i32>
+  %hdl = pop.coroutine.handle : <() -> i32>
   // CHECK-NEXT: %[[TOK:.*]] = llvm.intr.coro.save %[[HDL]]
   // CHECK-NEXT: %[[STATE:.*]] = llvm.intr.coro.suspend %[[TOK]], %[[FALSE]] : i8
   // CHECK-NEXT: llvm.switch %[[STATE]] : i8, ^[[SUSPEND_BLOCK:.*]] [
@@ -55,13 +55,13 @@ kgen.func @coroutine(%arg0: i32) -> !pop.coroutine<i32> {
 // CHECK: ^[[SUSPEND_BLOCK]]:
   // CHECK-NEXT: %{{.*}} = llvm.intr.coro.end %[[NULLPTR]], %[[FALSE]] : i1
   // CHECK-NEXT: llvm.return %[[HDL]] : !llvm.ptr<i8>
-  kgen.return %hdl : !pop.coroutine<i32>
+  kgen.return %hdl : !pop.coroutine<() -> i32>
 }
 
 // CHECK-LABEL: @coroutine_await
-kgen.func @coroutine_await() -> !pop.coroutine<i32> {
+kgen.func @coroutine_await() -> !pop.coroutine<() -> i32> {
   // CHECK: %[[FALSE:.*]] = llvm.mlir.constant(false)
-  %hdl = pop.coroutine.handle : <i32>
+  %hdl = pop.coroutine.handle : <() -> i32>
   // CHECK: %[[HDL:.*]] = llvm.intr.coro.begin
   // CHECK-NEXT: llvm.intr.coro.save
   // CHECK-NEXT: llvm.intr.coro.suspend
@@ -78,23 +78,23 @@ kgen.func @coroutine_await() -> !pop.coroutine<i32> {
   // CHECK-NEXT:   1: ^[[CLEANUP]]
   // CHECK-NEXT: ]
   pop.coroutine.await {
-    pop.coroutine.resume %hdl : <i32>
+    pop.coroutine.resume %hdl : <() -> i32>
   }
-  kgen.return %hdl : !pop.coroutine<i32>
+  kgen.return %hdl : !pop.coroutine<() -> i32>
 }
 
 // CHECK-LABEL: @other_coroutine_ops
-kgen.func @other_coroutine_ops(%a: !pop.coroutine<i32>) -> !pop.pointer<struct<i32>> {
+kgen.func @other_coroutine_ops(%a: !pop.coroutine<() -> i32>) -> !pop.pointer<struct<i32>> {
   // CHECK: %[[FALSE:.*]] = llvm.mlir.constant(false)
   // CHECK: %[[ALIGN:.*]] = llvm.mlir.constant(8 : i32)
 
   // CHECK: %[[PROMISE_PTR:.*]] = llvm.call_intrinsic "llvm.coro.promise"(%arg0, %[[ALIGN]], %[[FALSE]])
   // CHECK: %[[PROMISE:.*]] = llvm.bitcast %[[PROMISE_PTR:.*]] : !llvm.ptr<i8> to !llvm.ptr<struct<(i32, struct<(ptr, i8)>)>>
   // CHECK: %[[PROMISE_RESULT:.*]] = llvm.bitcast %[[PROMISE]] : !llvm.ptr<struct<(i32, struct<(ptr, i8)>)>> to !llvm.ptr<struct<(i32)>>
-  %promise = pop.coroutine.promise %a : <i32>
+  %promise = pop.coroutine.promise %a : <() -> i32>
 
   // CHECK: llvm.call_intrinsic "llvm.coro.destroy"(%arg0) : (!llvm.ptr<i8>) -> ()
-  pop.coroutine.destroy %a : <i32>
+  pop.coroutine.destroy %a : <() -> i32>
 
   // CHECK: llvm.return %[[PROMISE_RESULT]] : !llvm.ptr<struct<(i32)>>
   kgen.return %promise : !pop.pointer<struct<i32>>

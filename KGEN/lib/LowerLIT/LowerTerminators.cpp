@@ -25,11 +25,25 @@ static StringLiteral completeFnName = "KGEN_CompilerRT_LLCL_Complete";
 static StringLiteral initializeFnName =
     "KGEN_CompilerRT_LLCL_InitializeContext";
 
+/// Generate the code to get the coroutine promise, checking the coroutine
+/// throws.
+static Value getCoroutinePromise(ImplicitLocOpBuilder &b, DeclRefType errType,
+                                 TypedValue<CoroutineType> hdl) {
+  StructType promiseType;
+  if (hdl.getType().getSignature().isThrows())
+    promiseType = StructType::get(
+        VariantType::get({errType, hdl.getType().getResultTypes().front()}));
+  else
+    promiseType = b.getType<StructType>(hdl.getType().getResultTypes());
+  return b.create<CoroutinePromiseOp>(PointerType::get(promiseType), hdl);
+}
+
 /// Generate the code to store the results of the coroutine into the coroutine
 /// promise. This code is inserted at every return site.
-static void createCoroutineFinalize(ImplicitLocOpBuilder &b, Value hdl,
+static void createCoroutineFinalize(ImplicitLocOpBuilder &b,
+                                    DeclRefType errType, Value hdl,
                                     ValueRange results) {
-  Value promise = b.create<CoroutinePromiseOp>(hdl);
+  Value promise = getCoroutinePromise(b, errType, hdl);
   for (auto [idx, result] : llvm::enumerate(results))
     b.create<StoreOp>(result, b.create<POP::StructGEPOp>(promise, idx));
 
@@ -43,13 +57,13 @@ static void createCoroutineFinalize(ImplicitLocOpBuilder &b, Value hdl,
 
 /// Generate the code to propagate the runtime pointer in the async context and
 /// runtime call to initialize the async chain.
-static void createCoroutineInitialize(Operation *call, Value curHdl,
-                                      Value hdl) {
+static void createCoroutineInitialize(Operation *call, DeclRefType errType,
+                                      Value curHdl, Value hdl) {
   ImplicitLocOpBuilder b(call->getLoc(), call->getContext());
   b.setInsertionPointAfter(call);
   Value one = b.create<mlir::index::ConstantOp>(1);
   auto isAsyncCtx = [&](Value hdl) {
-    Value promise = b.create<CoroutinePromiseOp>(hdl);
+    Value promise = getCoroutinePromise(b, errType, hdl);
     Value ctxPtr = b.create<OffsetOp>(promise, one);
     return b.create<PointerBitcastOp>(
         PointerType::get(StructType::get({b.getIndexType(), b.getI8Type()})),
@@ -82,7 +96,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   if (func.isAsync()) {
     auto b = OpBuilder::atBlockBegin(func.getBody());
     coroHdl = b.create<CoroutineHandleOp>(
-        func.getLoc(), CoroutineType::get(func.getResultType()));
+        func.getLoc(), CoroutineType::get(func.getSignature()));
   }
 
   // Collect all the terminators first to avoid iterator invalidation.
@@ -94,7 +108,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
     // If we see a coroutine call from within another coroutine, insert the
     // initialization machinery.
     if (auto call = dyn_cast<LIT::AsyncCallOp>(op); call && func.isAsync())
-      createCoroutineInitialize(op, coroHdl, call.getResult());
+      createCoroutineInitialize(op, errType, coroHdl, call.getResult());
   });
 
   // Lower all the terminators as they are encountered.
@@ -113,7 +127,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
     auto createReturn = [&](ArrayRef<TypedAttr> params, ValueRange operands) {
       // In a coroutine, materialize the finalize machinery.
       if (func.isAsync()) {
-        createCoroutineFinalize(b, coroHdl, operands);
+        createCoroutineFinalize(b, errType, coroHdl, operands);
         operands = coroHdl;
       }
       if (op->getParentOp() == func)
@@ -186,7 +200,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   if (func.isThrows())
     none = b.create<VariantCreateOp>(getErrorOr(), none);
   if (func.isAsync()) {
-    createCoroutineFinalize(b, coroHdl, none);
+    createCoroutineFinalize(b, errType, coroHdl, none);
     none = coroHdl;
   }
   b.create<KGEN::ReturnOp>(ArrayRef<TypedAttr>(), none);
@@ -205,7 +219,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
 static LogicalResult lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
   // Find every throwing and async call. Track async calls that also throw.
   SmallVector<KGENCallOpInterface> throwingCalls;
-  SmallVector<std::pair<LIT::AsyncCallOp, bool>> asyncCalls;
+  SmallVector<LIT::AsyncCallOp> asyncCalls;
   op->walk([&](Operation *op) {
     if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
       if (isa<GeneratorInterfaceOp>(*call))
@@ -213,8 +227,7 @@ static LogicalResult lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
       if (cast<SignatureType>(call.getCallee().getType()).isThrows())
         throwingCalls.push_back(call);
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
-      asyncCalls.emplace_back(
-          call, cast<SignatureType>(call.getCallee().getType()).isThrows());
+      asyncCalls.push_back(call);
     }
   });
 
@@ -247,17 +260,13 @@ static LogicalResult lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
   // Process async calls. Async calls implicitly wrap the function result type
   // in a coroutine, but now that the signatures are rewritten, they aren't
   // needed anymore.
-  for (auto [call, throws] : asyncCalls) {
+  for (LIT::AsyncCallOp call : asyncCalls) {
     // Replace the async call with a `call_param`.
     b.setInsertionPoint(call);
     auto newCall = b.create<CallParamOp>(
         call.getLoc(), call->getResultTypes(), call.getCallee(),
         call.getParamDeclsAttr(), call.getOperands());
     Value result = newCall.getResult(0);
-    // FIXME: Support throwing calls. The coroutine type needs to know if it
-    // throws.
-    if (throws)
-      return call.emitError("async throw calls are unsupported");
     call.replaceAllUsesWith(result);
     call.erase();
   }
@@ -270,19 +279,13 @@ static LogicalResult lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
     if (isa<AddressOfOp>(call))
       return call.emitError("FIXME: cannot take address of throwing function");
 
-    // We need to update the result types of the function, which means
-    // rebuilding the operation.
+    // We need to update the result types of the function.
     Type resultType = call->getResultTypes().front();
-    OperationState state(call.getLoc(), call->getName(), call->getOperands(),
-                         VariantType::get({errType, resultType}));
-    // Micro-optimization: skip a re-hash by assigning the dictionary attribute.
-    state.attributes = call->getAttrDictionary();
-    b.setInsertionPoint(call);
-    auto newCall = cast<KGENCallOpInterface>(b.create(state));
-    Value value = b.create<LIT::UnwrapOrPropagateOp>(call.getLoc(), resultType,
-                                                     newCall->getResult(0));
-    call->replaceAllUsesWith(ArrayRef(value));
-    call.erase();
+    call->getResult(0).setType(VariantType::get({errType, resultType}));
+    b.setInsertionPointAfter(call);
+    auto unwrap = b.create<LIT::UnwrapOrPropagateOp>(call.getLoc(), resultType,
+                                                     call->getResult(0));
+    call->getResult(0).replaceAllUsesExcept(unwrap, unwrap);
   }
   return success();
 }

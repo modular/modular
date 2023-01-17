@@ -181,7 +181,7 @@ lit.file_module @Module {
   }
 }
 
-// CHECK-LABEL: lit.func @coroutine() -> !pop.coroutine<index>
+// CHECK-LABEL: lit.func @coroutine() -> !pop.coroutine<() -> index>
 lit.func @coroutine() async -> index {
   // CHECK-NEXT: %[[HDL:.*]] = pop.coroutine.handle
   %idx0 = index.constant 0
@@ -195,11 +195,11 @@ lit.func @coroutine() async -> index {
 }
 
 // CHECK-LABEL: lit.func @call_coroutine
-// CHECK-SAME: coro: () -> !pop.coroutine<!lit.none>
-// CHECK-SAME: ) -> !pop.coroutine<!lit.none>
+// CHECK-SAME: coro: () -> !pop.coroutine<() -> !lit.none>
+// CHECK-SAME: ) -> !pop.coroutine<() -> !lit.none>
 lit.func @call_coroutine<coro: <>() async -> !lit.none>() async -> !lit.none {
   // CHECK-NEXT: %[[CURHDL:.*]] = pop.coroutine.handle
-  // CHECK-NEXT: %[[HDL:.*]] = kgen.call_param[() -> !pop.coroutine<!lit.none>: coro]()
+  // CHECK-NEXT: %[[HDL:.*]] = kgen.call_param[() -> !pop.coroutine<() -> !lit.none>: coro]()
   lit.async_call[<>() async -> !lit.none: coro]()
   // CHECK: %[[PTR:.*]] = pop.load
   // CHECK: pop.store %[[PTR]]
@@ -208,5 +208,40 @@ lit.func @call_coroutine<coro: <>() async -> !lit.none>() async -> !lit.none {
   // CHECK: pop.store
   // CHECK: external_call @KGEN_CompilerRT_LLCL_Complete
   // CHECK-NEXT: return %[[CURHDL]]
+  lit.end_func
+}
+
+// CHECK-LABEL: lit.func @throwing_coro
+// CHECK-SAME: ) -> !pop.coroutine<() -> !pop.variant<@Error, index>>
+lit.func @throwing_coro<cond: i1, a>(%err: !kgen.declref<@Error>) async|throws -> index {
+  // CHECK: %[[HDL:.*]] = pop.coroutine.handle : <() -> !pop.variant<@Error, index>>
+  %c = kgen.param.constant: i1 = <cond>
+  hlcf.if %c {
+    // CHECK: %[[A:.*]] = kgen.param.constant = <a>
+    %a = kgen.param.constant = <a>
+    // CHECK-NEXT: %[[RESULT:.*]] = pop.variant.create %[[A]]
+    // CHECK: pop.store %[[RESULT]]
+    // CHECK: external_call @KGEN_CompilerRT_LLCL_Complete
+    // CHECK-NEXT: hlcf.return %[[HDL]]
+    lit.return %a : index
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  // CHECK: %[[ERR:.*]] = pop.variant.create %err
+  // CHECK: pop.store
+  // CHECK: external_call @KGEN_CompilerRT_LLCL_Complete
+  // CHECK-NEXT: kgen.return %[[HDL]]
+  lit.raise %err : !kgen.declref<@Error>
+  lit.end_func
+}
+
+// CHECK-LABEL: lit.func @call_throwing_coro
+lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async -> !lit.none {
+  kgen.param.declare callee: <>(!kgen.declref<@Error>) async|throws -> index =
+    <bind_signature(:<cond: i1, a>(!kgen.declref<@Error>) async|throws -> index @throwing_coro,
+                    1, 0)>
+  // CHECK: kgen.call_param[(!kgen.declref<@Error>) -> !pop.coroutine<() -> !pop.variant<@Error, index>>: callee](%err)
+  %hdl = lit.async_call[<>(!kgen.declref<@Error>) async|throws -> index: callee](%err)
   lit.end_func
 }
