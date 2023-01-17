@@ -490,7 +490,7 @@ static POP::CoroutineType getCoroutineOfResultTypes(Type type) {
 }
 
 LogicalResult AsyncCallOp::verify() {
-  if (cast<SignatureType>(getCallee().getType()).getAsync())
+  if (cast<SignatureType>(getCallee().getType()).isAsync())
     return success();
   return emitOpError("callable must be 'async'");
 }

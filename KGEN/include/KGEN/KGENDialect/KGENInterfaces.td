@@ -136,8 +136,8 @@ def FuncInterface : OpInterface<"FuncInterface"> {
       return $_op.getSignature().isForceInline();
     }
     /// Return true if the function is async.
-    bool getAsync() {
-      return $_op.getSignature().getAsync();
+    bool isAsync() {
+      return $_op.getSignature().isAsync();
     }
 
     //===------------------------------------------------------------------===//
