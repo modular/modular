@@ -118,7 +118,7 @@ public:
 
   /// Bind the result parameters of a fully-specialized function and clear them
   /// from the function.
-  void bindResultParameters(FuncOp func);
+  ErrorTreeOr<SuccessType> bindResultParameters(FuncOp func);
 
   /// Lookup bound result parameters of a function.
   ParameterExprArrayAttr lookupResultParameters(FuncOp func) {

@@ -103,13 +103,15 @@ void Elaborator::insertFuncVariant(FuncOp existing, FuncOp newFunc) {
   analysis.getTopLevelSymbolTable().insert(newFunc, ++insertPt);
 }
 
-void Elaborator::bindResultParameters(FuncOp func) {
+ErrorTreeOr<SuccessType> Elaborator::bindResultParameters(FuncOp func) {
   // Make sure the function is inflated - this is a fast no-op if the function
   // has not been deflated.
   asyncMap.mapChained(func, [&](auto ch) {
     return Cache::inflateOp(func, regionCache.copy(), std::move(ch));
   });
-  asyncMap.await(func);
+  auto err = asyncMap.await(func);
+  if (err.isError())
+    return ErrorTree(func.getLoc(), err.takeError());
 
   ParameterExprArrayAttr &values = resultParams[func];
   assert(!values && "results for function already bound");
@@ -121,6 +123,7 @@ void Elaborator::bindResultParameters(FuncOp func) {
       /*clear resultParams=*/TypeArrayAttr::get(func.getContext(), {}),
       func.getFunctionType(), func.getConventions()));
   func.getReturnOp().setParameters({});
+  return success();
 }
 
 void Elaborator::setEvalContext(SymbolRefAttr ref, EvalContext evalCtx) {
@@ -1147,7 +1150,11 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   asyncMap.mapChained(generator, [&](auto ch) {
     return Cache::inflateOp(generator, regionCache.copy(), std::move(ch));
   });
-  asyncMap.await(generator);
+  SmallVector<ErrorTreeOr<ElaboratedGenerator>> result;
+  if (auto err = asyncMap.await(generator)) {
+    result.emplace_back(ErrorTree(generator.getLoc(), err.takeError()));
+    return result;
+  }
 
   // Clone the body of the generator over.
   IRMapping mapper;
@@ -1160,7 +1167,7 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   // Now that we have a new synthesized generic func, run the rewriter
   // over it to specialize its body.
   auto sourceModule = generator->getParentOfType<ModuleOp>();
-  auto result = specializeFunc(newFunc, sourceModule, expansionDepth, evalCtx);
+  result = specializeFunc(newFunc, sourceModule, expansionDepth, evalCtx);
 
   // If the generator had no parameters, then we want to reuse the same name as
   // the original generator.  We can't do that when we are building the concrete

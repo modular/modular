@@ -122,16 +122,21 @@ static ErrorTree reportFoldError(Operation *op, ArrayRef<Attribute> operands,
 }
 
 /// Interpret a call operation.
-static void interpretCallOp(mlir::CallOpInterface op,
-                            ArrayRef<Attribute> operands,
-                            InterpreterState &state) {
+static ErrorTreeOr<SuccessType> interpretCallOp(mlir::CallOpInterface op,
+                                                ArrayRef<Attribute> operands,
+                                                InterpreterState &state) {
   auto callee = op.getCallableForCallee().get<SymbolRefAttr>();
-  Region &body = state.lookupFunctionBody(callee);
+  auto bodyOr = state.lookupFunctionBody(callee);
+  if (bodyOr.isError())
+    return ErrorTree(op->getLoc(), bodyOr.takeError());
+
+  Region &body = **bodyOr;
 
   // Function regions are isolated from above, so push a new stack frame. Then,
   // transfer control flow to the beginning of the function body.
   state.pushFrame(op, body.getParentOp());
   state.transferControlFlowTo(&body.front(), operands);
+  return success();
 }
 
 /// Interpreter a return-like operation.
@@ -199,7 +204,11 @@ ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
 
     // Check for a builtin interface.
     if (auto call = dyn_cast<mlir::CallOpInterface>(pc)) {
-      interpretCallOp(call, operands, *this);
+      auto err = interpretCallOp(call, operands, *this);
+      if (err.isError()) {
+        return reportFoldError(pc, operands, "failed to interpret call ")
+            .addCause(err.takeError());
+      }
     } else if (pc->hasTrait<OpTrait::ReturnLike>()) {
       interpretReturnOp(pc, operands, *this);
 

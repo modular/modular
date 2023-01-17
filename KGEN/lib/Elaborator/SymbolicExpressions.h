@@ -44,7 +44,7 @@ public:
 
   /// Lookup the body of the referenced function. Ensure the function is
   /// inflated as well.
-  Region &lookupFunctionBody(SymbolRefAttr symbol) override;
+  ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
 
 private:
   Attribute getReboundAttribute(Attribute attr) {
