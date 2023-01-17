@@ -84,14 +84,12 @@ def KGEN_DTypeType : KGENType<"DType", "dtype",
 // StringType
 //===----------------------------------------------------------------------===//
 
-def KGEN_StringType : KGENType<"String", "string"> {
+def KGEN_StringType : KGENType<"String", "string",
+    [DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
   let summary = "String type for parameters";
   let description = [{
     This kgen type represents an string value, used for parameterizing
     generators and working with string-returning expressions.
-
-    It cannot be materialized into an SSA value, because it has no runtime
-    representation.
   }];
 }
 

@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/Compiler/OperationUtils.h"
@@ -468,6 +469,8 @@ void LowerKGENToLLVMPass::runOnOperation() {
   mlir::ConversionTarget target(getContext());
   target.addIllegalDialect<KGENDialect>();
   target.addLegalDialect<LLVM::LLVMDialect>();
+  target.addLegalDialect<POP::POPDialect>();
+  target.addLegalOp<mlir::UnrealizedConversionCastOp>();
 
   // Capture all the public symbols declared by kgen.export declarations.
   SmallVector<StringAttr> publicSymbols;

@@ -368,6 +368,22 @@ DeclRefType DeclRefType::get(SymbolRefAttr name) {
 }
 
 //===----------------------------------------------------------------------===//
+// StringType
+//===----------------------------------------------------------------------===//
+
+// A StringType is implemented as struct {char *address; size_t size;}.
+// An index type as same alignment and size of a pointer type.
+std::optional<int64_t>
+KGEN::StringType::getTypeSize(TargetInfoAttr target) const {
+  auto foo = llvm::alignTo(target.getPointerSize(), target.getPointerSize());
+  return 2 * target.getPointerSize();
+}
+std::optional<int64_t>
+KGEN::StringType::getTypeAlign(TargetInfoAttr target) const {
+  return target.getPointerSize();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

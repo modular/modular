@@ -107,8 +107,8 @@ private:
 
 /// Generate the LLVM IR to materialize a constant of the given value. This is
 /// used to convert attribute values in `kgen.param.constant`.
-Value convertParameterToLLVM(ImplicitLocOpBuilder &b, TypeConverter &tc,
-                             TypedAttr attr);
+Value convertParameterToLLVM(ImplicitLocOpBuilder &b,
+                             mlir::LLVMTypeConverter &tc, TypedAttr attr);
 
 //===----------------------------------------------------------------------===//
 // POPToLLVMDebugInfoTypeConverter

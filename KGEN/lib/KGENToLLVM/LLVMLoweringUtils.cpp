@@ -7,6 +7,7 @@
 #include "LLVMLoweringUtils.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
+#include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/MDialect/MAttrs.h"
@@ -18,6 +19,15 @@
 using namespace M;
 using namespace KGEN;
 namespace LLVM = mlir::LLVM;
+
+/// Since !kgen.string type is not parameterized on the size of the string,
+/// we lower it as struct with a pointer field holding the data and a index
+/// field holding the string size.
+static Type getLLVMTypeForKGENStringType(MLIRContext *ctx, Type strSizeType) {
+  SmallVector<Type> elementTypes{
+      LLVM::LLVMPointerType::get(IntegerType::get(ctx, 8)), strSizeType};
+  return LLVM::LLVMStructType::getLiteral(ctx, elementTypes);
+}
 
 //===----------------------------------------------------------------------===//
 // POPToLLVMTypeConverter
@@ -97,6 +107,13 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
     if (!elementType)
       return {};
     return LLVM::LLVMArrayType::get(elementType, *size);
+  });
+
+  // Convert string types to LLVM literal structs: struct{ptr, size} of type
+  // !llvm.struct<(ptr<i8>, index).
+  addConversion([=](KGEN::StringType stringType) -> std::optional<Type> {
+    return getLLVMTypeForKGENStringType(stringType.getContext(),
+                                        getIndexType());
   });
 
   // Convert struct types to LLVM literal structs.
@@ -473,7 +490,40 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b, TypeConverter &tc,
       values));
 }
 
-Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b, TypeConverter &tc,
+/// Lower the string to a pop.global_constant and create a llvm struct of type
+/// !llvm.struct<(ptr<i8>, i64)> holding the pointer to the global string and
+/// its size.
+static Value lowerStringToGlobalConstant(StringAttr strAttr,
+                                         ImplicitLocOpBuilder &b,
+                                         Type strSizeType) {
+  SmallVector<TypedAttr> values;
+  StringRef str = strAttr.getValue();
+  auto charType = b.getType<POP::SIMDType>(1, DType::si8);
+  for (char c : str)
+    values.push_back(POP::SIMDAttr::get(
+        {APSInt(APInt(CHAR_BIT, c), /*isUnsigned=*/false), DType::si8},
+        charType));
+  auto arrayType = POP::ArrayType::get(str.size(), charType);
+  Value globalConst = b.create<POP::GlobalConstantOp>(
+      POP::PointerType::get(arrayType), POP::ArrayAttr::get(values, arrayType));
+  IntegerType byteType = b.getI8Type();
+  Value ptrBitcast = b.create<POP::PointerBitcastOp>(
+      b.getLoc(), POP::PointerType::get(byteType), globalConst);
+  Value unrealizedCast =
+      b.create<mlir::UnrealizedConversionCastOp>(
+           b.getLoc(), LLVM::LLVMPointerType::get(byteType), ptrBitcast)
+          .getResult(0);
+  Value sizeVal =
+      b.create<LLVM::ConstantOp>(b.getLoc(), b.getI64IntegerAttr(str.size()));
+  Value undefOp = b.create<LLVM::UndefOp>(
+      b.getLoc(), getLLVMTypeForKGENStringType(b.getContext(), strSizeType));
+  Value structVal0 =
+      b.create<LLVM::InsertValueOp>(b.getLoc(), undefOp, unrealizedCast, 0);
+  return b.create<LLVM::InsertValueOp>(b.getLoc(), structVal0, sizeVal, 1);
+}
+
+Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
+                                   mlir::LLVMTypeConverter &tc,
                                    TypedAttr attr) {
   //===--------------------------------------------------------------------===//
   // Builtin
@@ -493,6 +543,11 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b, TypeConverter &tc,
   if (auto dtypeCst = dyn_cast<DTypeConstantAttr>(attr))
     return b.create<LLVM::ConstantOp>(
         b.getI8IntegerAttr(dtypeCst.getDType().getValue()));
+
+  // Convert string constant to a struct{ptr, size} of type
+  // !llvm.struct<(ptr<i8>, index).
+  if (auto stringAttr = dyn_cast<StringAttr>(attr))
+    return lowerStringToGlobalConstant(stringAttr, b, tc.getIndexType());
 
   //===--------------------------------------------------------------------===//
   // POP

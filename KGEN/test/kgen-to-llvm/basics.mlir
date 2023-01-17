@@ -86,3 +86,18 @@ kgen.extern.func @an_extern_func(si32, !pop.simd<4, f32>) -> !pop.simd<8, f32>
 // CHECK-LABEL: llvm.mlir.global external @foo
 // CHECK-SAME: {addr_space = 0 : i32} : f64
 kgen.extern.variable @foo : f64
+
+// -----
+
+kgen.func @constant_str() -> !kgen.string {
+  // CHECK: %[[GLOBAL_STR:.*]] = pop.global_constant: !pop.array<5, scalar<si8>>
+  // CHECK: %[[BITCAST:.*]] = pop.pointer.bitcast %[[GLOBAL_STR]] : !pop.pointer<array<5, scalar<si8>>> to !pop.pointer<i8>
+  // CHECK: %[[CONV_CAST:.*]] = builtin.unrealized_conversion_cast %[[BITCAST]] : !pop.pointer<i8> to !llvm.ptr<i8>
+  // CHECK: %[[LENGTH:.*]] = llvm.mlir.constant(5 : i64) : i64
+  // CHECK: %[[STRUCT:.*]] = llvm.mlir.undef : !llvm.struct<(ptr<i8>, i64)>
+  // CHECK: %[[VAL0:.*]] = llvm.insertvalue %[[CONV_CAST]], %[[STRUCT]][0] : !llvm.struct<(ptr<i8>, i64)>
+  // CHECK: %[[VAL1:.*]] = llvm.insertvalue %[[LENGTH]], %[[VAL0]][1] : !llvm.struct<(ptr<i8>, i64)>
+  %0 = kgen.param.constant: string = <"hello">
+  // CHECK: llvm.return %[[VAL1]] : !llvm.struct<(ptr<i8>, i64)>
+  kgen.return %0 : !kgen.string
+}
