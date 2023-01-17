@@ -764,7 +764,7 @@ def KGEN_ExportOp : KGENOp<"export", [
     ```
   }];
 
-  let arguments = (ins FlatSymbolRefArrayAttr:$exports);
+  let arguments = (ins SymbolRefArrayAttr:$exports);
   let results = (outs);
   let assemblyFormat = "$exports attr-dict";
 }

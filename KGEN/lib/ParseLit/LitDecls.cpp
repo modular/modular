@@ -1159,8 +1159,7 @@ void FnDecorators::applyLateExport(SymbolRefAttr symbolName) {
 
   ASTDecl *containingDecl = decl.getParentDecl();
   auto builder = containingDecl->getDeclEndBuilder();
-  builder.create<LIT::ExportOp>(funcOp.getLoc(),
-                                builder.getArrayAttr(symbolName));
+  builder.create<ExportOp>(funcOp.getLoc(), builder.getArrayAttr(symbolName));
 }
 
 void FnDecorators::applyLate(SymbolRefAttr symbolName,

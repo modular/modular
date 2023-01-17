@@ -967,7 +967,7 @@ LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // Just ensure we're exporting symbols we can see.
   auto module = KGENModule::from(*this, symbolTable);
-  for (auto e : getExports().getAsRange<FlatSymbolRefAttr>()) {
+  for (auto e : getExports().getAsRange<SymbolRefAttr>()) {
     if (!module.lookup<FuncInterface>(e))
       return emitOpError("could not find referenced symbol '") << e << "'";
   }

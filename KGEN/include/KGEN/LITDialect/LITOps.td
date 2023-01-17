@@ -29,28 +29,6 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
     Op<LITDialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
-// ExportOp
-//===----------------------------------------------------------------------===//
-
-def LIT_ExportOp : LITOp<"export", [
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-  let summary = "Declare a list of exported symbols.";
-  let description = [{
-    The `lit.export` operation specifies a list of exported symbols from a
-    given module. The list must not be empty.
-
-    Example:
-
-    ```mlir
-    lit.export [@foo, @module::@bar]
-    ```
-  }];
-
-  let arguments = (ins SymbolRefArrayAttr:$exports);
-  let assemblyFormat = "$exports attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
 // LITFuncOp
 //===----------------------------------------------------------------------===//
 

@@ -54,7 +54,7 @@ lit.file_module @module {
   lit.func @foo() {
     kgen.return
   }
-  lit.export [@module::@foo]
+  kgen.export [@module::@foo]
 }
 
 // -----
