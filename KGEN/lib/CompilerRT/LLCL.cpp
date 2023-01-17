@@ -9,7 +9,6 @@
 #include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
-#include "llvm/Support/CBindingWrapping.h"
 
 using namespace M;
 
@@ -93,4 +92,20 @@ extern "C" int8_t KGEN_CompilerRT_LLCL_CreateRuntime(int8_t numThreads) {
 /// Given a compact pointer to an LLCL runtime, destroy it.
 extern "C" void KGEN_CompilerRT_LLCL_DestroyRuntime(int8_t ptr) {
   delete LLCL::CompactRuntimePtr::getFromOpaqueToken(ptr).get();
+}
+
+/// Given a compact pointer to an LLCL runtime, get the number of threads in it.
+extern "C" uint32_t KGEN_CompilerRT_LLCL_ParallelismLevel(int8_t ptr) {
+  return LLCL::CompactRuntimePtr::getFromOpaqueToken(ptr)
+      ->getWorkQueue()
+      ->getParallelismLevel();
+}
+
+/// Executes the elementFn in parallel using numTasks when given a compact
+/// pointer to an LLCL runtime.
+extern "C" void
+KGEN_CompilerRT_LLCL_ParallelForEachN(int8_t ptr, uint32_t numTasks,
+                                      void (*elementFn)(size_t taskId)) {
+  LLCL::parallelForEachN(LLCL::CompactRuntimePtr::getFromOpaqueToken(ptr),
+                         numTasks, [=](size_t taskId) { elementFn(taskId); });
 }
