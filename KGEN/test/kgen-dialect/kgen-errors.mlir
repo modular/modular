@@ -852,6 +852,11 @@ kgen.generator @apply_error<fn: () -> ()>() {
 
 // -----
 
+// expected-error @below {{list attribute type requires 2 elements but value has 1}}
+"some.op"() {a = #kgen<list[1]> : !kgen.list<index[2]>} : () -> ()
+
+// -----
+
 kgen.generator @get_list_element() {
   // expected-error @below {{custom op 'kgen.param.constant' expected a list type for 'get_list_element'}}
   %0 = kgen.param.constant = <get_list_element(:i32 0, 0)>

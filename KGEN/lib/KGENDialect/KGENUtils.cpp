@@ -18,6 +18,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/ML/DType.h"
+#include "Support/STLExtras.h"
 #include "mlir/IR/FunctionImplementation.h"
 
 using namespace M;
@@ -815,31 +816,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   // If this is a list type, parse a comma-separated list of parameter values of
   // the element type surrounded by square brackets.
   if (auto list = dyn_cast<ListType>(type)) {
-    std::optional<int64_t> length = list.getResolvedLength();
-    llvm::SMLoc loc = p.getCurrentLocation();
-    if (!length)
-      return p.emitError(
-          loc, "cannot parse a list constant for a list with unknown size");
-
-    if (p.parseLSquare())
-      return failure();
-    if (succeeded(p.parseOptionalRSquare())) {
-      value = ListAttr::get(p.getContext(), {}, list);
-      return success();
-    }
-    SmallVector<TypedAttr> values;
-    auto type = ParamRefType::get(list.getElementType());
-    if (p.parseCommaSeparatedList(
-            [&] { return parseParamValue(p, values.emplace_back(), type); }) ||
-        p.parseRSquare())
-      return failure();
-    value = ListAttr::get(p.getContext(), values, list);
-
-    int64_t numParsedElements = cast<ListAttr>(value).getValues().size();
-    if (numParsedElements != *length)
-      return p.emitError(loc, "expected ")
-             << *length << " list elements but got " << numParsedElements;
-    return success();
+    value = ListAttr::parse(p, list);
+    return failure(!value);
   }
 
   // Otherwise, we support other typed attributes as well, including dialect

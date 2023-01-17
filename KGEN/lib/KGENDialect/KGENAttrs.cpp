@@ -153,7 +153,13 @@ static void printListValue(AsmPrinter &p, ArrayRef<TypedAttr> values,
 
 LogicalResult ListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                ArrayRef<TypedAttr> values, ListType type) {
+  std::optional<int64_t> length = type.getResolvedLength();
+  if (!length)
+    return emitError() << "list attribute expected a concrete length";
   auto elementType = ParamRefType::get(type.getElementType());
+  if (*length != static_cast<int64_t>(values.size()))
+    return emitError() << "list attribute type requires " << *length
+                       << " elements but value has " << values.size();
   for (TypedAttr value : values) {
     if (value.getType() != elementType)
       return emitError() << "expected all list elements to have type "

@@ -46,17 +46,17 @@ static LogicalResult checkReturnArguments(T op) {
 // custom<ParamConstantOpValue>
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseParamConstantOpValue(OpAsmParser &p, TypedAttr &value,
-                                             Type &resultType) {
-  if (parseColonTypeOrIndex(p, resultType) || p.parseEqual() || p.parseLess() ||
-      parseParamValue(p, value, resultType) || p.parseGreater())
+static ParseResult parseParamConstantOpValue(OpAsmParser &p, TypedAttr &value) {
+  Type type;
+  if (parseColonTypeOrIndex(p, type) || p.parseEqual() || p.parseLess() ||
+      parseParamValue(p, value, type) || p.parseGreater())
     return failure();
   return success();
 }
 
 static void printParamConstantOpValue(OpAsmPrinter &p, Operation *,
-                                      TypedAttr value, Type type) {
-  printColonTypeOrIndex(p.getStream(), type);
+                                      TypedAttr value) {
+  printColonTypeOrIndex(p.getStream(), value.getType());
   p << " = <";
   printParamValue(p, value);
   p << ">";
@@ -83,13 +83,11 @@ static ParseResult parseParamDeclareOpValue(OpAsmParser &p,
                                             ParamDeclArrayAttr &paramDecls,
                                             TypedAttr &value) {
   std::string varname;
-  Type valTy;
-  if (p.parseKeywordOrString(&varname) ||
-      parseParamConstantOpValue(p, value, valTy))
+  if (p.parseKeywordOrString(&varname) || parseParamConstantOpValue(p, value))
     return failure();
 
   paramDecls = p.getBuilder().getAttr<ParamDeclArrayAttr>(
-      ParamDeclAttr::get(varname, valTy));
+      ParamDeclAttr::get(varname, value.getType()));
   return success();
 }
 
@@ -98,7 +96,7 @@ static void printParamDeclareOpValue(OpAsmPrinter &p, Operation *,
                                      TypedAttr value) {
   ParamDeclAttr variable = paramDecls.front();
   printParamName(p, variable.getName().getValue());
-  printParamConstantOpValue(p, nullptr, value, value.getType());
+  printParamConstantOpValue(p, nullptr, value);
 }
 
 void ParamDeclareOp::build(OpBuilder &builder, OperationState &result,
@@ -720,11 +718,6 @@ LogicalResult RegionBodyOp::verifyRegions() {
 OpFoldResult ParamConstantOp::fold(ArrayRef<Attribute> constants) {
   assert(constants.empty() && "kgen.param.constant has no operands");
   return getValueAttr();
-}
-
-void ParamConstantOp::build(OpBuilder &b, OperationState &state,
-                            TypedAttr value) {
-  build(b, state, value.getType(), value);
 }
 
 //===----------------------------------------------------------------------===//

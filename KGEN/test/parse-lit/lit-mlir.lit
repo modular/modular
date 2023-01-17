@@ -73,7 +73,7 @@ fn testAttrConcatWithoutType[
 ]():
   # CHECK: kgen.param.declare x: list<index[2]> = <[1, length]>
   alias x = __mlir_attr[
-            `#kgen.list<`, +1, `,`, length, `> : `,
+            `#kgen<list[`, +1, `,`, length, `]> : `,
             `!kgen.list<index[`,
             +2,
             `]>`,

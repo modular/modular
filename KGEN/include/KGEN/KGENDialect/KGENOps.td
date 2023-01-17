@@ -260,8 +260,7 @@ def KGEN_CallParamOp : KGENOp<"call_param", [KGEN_CallOpInterface,
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamConstantOp : KGENOp<"param.constant",
-                             [FirstAttrDerivedResultType, Pure,
-                              ConstantLike]> {
+    [AllTypesMatch<["value", "result"]>, Pure, ConstantLike]> {
   let summary = [{
     Return the value of a parameter expression as an SSA value that may be used
     by other ops.
@@ -269,13 +268,9 @@ def KGEN_ParamConstantOp : KGENOp<"param.constant",
 
   let arguments = (ins TypedAttrInterface:$value);
   let results = (outs AnyType:$result);
-  let assemblyFormat = [{
-    `` custom<ParamConstantOpValue>($value, type($result)) attr-dict
-  }];
+  let assemblyFormat = "`` custom<ParamConstantOpValue>($value) attr-dict";
 
-  let builders = [OpBuilder<(ins "TypedAttr":$value)>];
-
-  let hasFolder = true;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
