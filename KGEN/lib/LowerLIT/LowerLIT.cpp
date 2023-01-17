@@ -790,7 +790,7 @@ static LogicalResult lowerModuleDecl(Block *moduleBody,
     // If we are already in the symbol table, use the the operations iterator.
     auto opSymTableIt = isTopLevel ? op.getIterator() : symTableIt;
 
-    if (auto exportOp = dyn_cast<LIT::ExportOp>(op)) {
+    if (auto exportOp = dyn_cast<ExportOp>(op)) {
       OpBuilder(&op).create<KGEN::ExportOp>(exportOp.getLoc(),
                                             exportOp.getExportsAttr());
       exportOp->erase();
