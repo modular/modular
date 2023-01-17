@@ -43,7 +43,7 @@ public:
   /// Lookup the body of the referenced function. This method is made virtual so
   /// that implementors that don't have a monolithic module available can
   /// implement it differently than a symbol table lookup.
-  virtual Region &lookupFunctionBody(SymbolRefAttr symbol) = 0;
+  virtual ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) = 0;
 
   //===--------------------------------------------------------------------===//
   // Interpreter Memory Management

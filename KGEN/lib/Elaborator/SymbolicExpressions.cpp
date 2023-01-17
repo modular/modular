@@ -22,7 +22,7 @@ using namespace KGEN;
 // IR Interpreter
 //===----------------------------------------------------------------------===//
 
-Region &IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
+ErrorOr<Region *> IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
   auto func = getSymbolTable().lookup<FuncOp>(
       cast<FlatSymbolRefAttr>(symbol).getAttr());
 
@@ -30,10 +30,11 @@ Region &IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
   elaborator.asyncMap.mapChained(func, [&](LLCL::AnyAsyncValueRef ch) {
     return Cache::inflateOp(func, elaborator.regionCache.copy(), std::move(ch));
   });
-  elaborator.asyncMap.await(func);
+  if (auto err = elaborator.asyncMap.await(func))
+    return err.takeError();
 
   // Now we can return the function body.
-  return func.getBodyRegion();
+  return &func.getBodyRegion();
 }
 
 ErrorTreeOr<TypedAttr>
@@ -42,7 +43,8 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   elaborator.asyncMap.mapChained(func, [&](LLCL::AnyAsyncValueRef ch) {
     return Cache::inflateOp(func, elaborator.regionCache.copy(), std::move(ch));
   });
-  elaborator.asyncMap.await(func);
+  if (auto err = elaborator.asyncMap.await(func))
+    return ErrorTree(func.getLoc(), err.takeError());
 
   // Evaluate the function body.
   SmallVector<Attribute> arguments;
