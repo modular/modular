@@ -62,15 +62,15 @@ static void createCoroutineInitialize(Operation *call, DeclRefType errType,
   ImplicitLocOpBuilder b(call->getLoc(), call->getContext());
   b.setInsertionPointAfter(call);
   Value one = b.create<mlir::index::ConstantOp>(1);
-  auto isAsyncCtx = [&](Value hdl) {
+  auto getAsyncCtx = [&](Value hdl) {
     Value promise = getCoroutinePromise(b, errType, hdl);
     Value ctxPtr = b.create<OffsetOp>(promise, one);
     return b.create<PointerBitcastOp>(
         PointerType::get(StructType::get({b.getIndexType(), b.getI8Type()})),
         ctxPtr);
   };
-  Value curCtx = isAsyncCtx(curHdl);
-  Value ctx = isAsyncCtx(hdl);
+  Value curCtx = getAsyncCtx(curHdl);
+  Value ctx = getAsyncCtx(hdl);
   b.create<StoreOp>(b.create<LoadOp>(b.create<POP::StructGEPOp>(curCtx, 1)),
                     b.create<POP::StructGEPOp>(ctx, 1));
   b.create<ExternalCallOp>(
@@ -199,11 +199,11 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
           b, func, newCall->getResult(0), errType, resultType, coroHdl)));
       toErase.push_back(call);
 
-    } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op);
-               call && func.isAsync()) {
+    } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
       // If we see a coroutine call from within another coroutine, insert the
       // initialization machinery.
-      createCoroutineInitialize(op, errType, coroHdl, call.getResult());
+      if (func.isAsync())
+        createCoroutineInitialize(op, errType, coroHdl, call.getResult());
       // Replace the async call with a `call_param`.
       ImplicitLocOpBuilder b(call.getLoc(), OpBuilder(call));
       auto newCall = b.create<CallParamOp>(

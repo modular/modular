@@ -272,5 +272,12 @@ lit.func @await_coro() async -> !lit.none {
   lit.end_func
 }
 
+// CHECK-LABEL: @call_coro_from_sync
+lit.func @call_coro_from_sync() -> !lit.none {
+  // CHECK-NEXT: kgen.call_param[() -> !pop.coroutine<() -> !lit.none>: @await_coro]()
+  %hdl = lit.async_call[<>() async -> !lit.none: @await_coro]()
+  lit.end_func
+}
+
 // CHECK-LABEL: kgen.generator @__kgen_coro_resume
 // CHECK: pop.coroutine.resume
