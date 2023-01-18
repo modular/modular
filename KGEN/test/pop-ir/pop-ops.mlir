@@ -1150,7 +1150,6 @@ kgen.func @usesAGlobal() {
   kgen.return
 }
 
-
 // CHECK-LABEL: kgen.func @atomic_cmpxchg
 // CHECK-SAME: %[[PTR:.*]]: !pop.pointer<scalar<index>>,
 // CHECK-SAME: %[[CMP:.*]]: !pop.scalar<index>,
@@ -1164,5 +1163,23 @@ kgen.func @atomic_cmpxchg(%ptr: !pop.pointer<scalar<index>>,
   // CHECK: pop.atomic.cmpxchg %[[PTR]], %[[CMP]], %[[NEW]] seq_cst acq_rel
   %1 = pop.atomic.cmpxchg %ptr, %cmp, %new seq_cst acq_rel :
                     !pop.pointer<scalar<index>>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @atomic_rmw
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<scalar<index>>,
+// CHECK-SAME: %[[VAL:.*]]: !pop.scalar<index>
+kgen.func @atomic_rmw(%ptr: !pop.pointer<scalar<index>>,
+                      %val: !pop.scalar<index>) {
+  // CHECK: pop.atomic.rmw add(%[[PTR]], %[[VAL]]) monotonic
+  %0 = pop.atomic.rmw add(%ptr, %val) monotonic : !pop.pointer<scalar<index>>
+  // CHECK: pop.atomic.rmw sub(%[[PTR]], %[[VAL]]) monotonic
+  %1 = pop.atomic.rmw sub(%ptr, %val) monotonic : !pop.pointer<scalar<index>>
+  // CHECK: pop.atomic.rmw xor(%[[PTR]], %[[VAL]]) monotonic
+  %2 = pop.atomic.rmw xor(%ptr, %val) monotonic : !pop.pointer<scalar<index>>
+  // CHECK: pop.atomic.rmw min(%[[PTR]], %[[VAL]]) monotonic
+  %3 = pop.atomic.rmw min(%ptr, %val) monotonic : !pop.pointer<scalar<index>>
+  // CHECK: pop.atomic.rmw max(%[[PTR]], %[[VAL]]) monotonic
+  %4 = pop.atomic.rmw max(%ptr, %val) monotonic : !pop.pointer<scalar<index>>
   kgen.return
 }
