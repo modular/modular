@@ -15,7 +15,6 @@ from Functional import reduce
 # ===----------------------------------------------------------------------===#
 
 
-# @nodebug_inline
 fn _simd_max[
     simd_width: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
@@ -25,7 +24,6 @@ fn _simd_max[
     return x.reduce_max()
 
 
-# @nodebug_inline
 fn _simd_max_elementwise[
     simd_width: __mlir_type.index,
     acc_type: __mlir_type.`!kgen.dtype`,
@@ -58,7 +56,6 @@ fn max[
 # ===----------------------------------------------------------------------===#
 
 
-# @nodebug_inline
 fn _simd_min[
     simd_width: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
@@ -68,7 +65,6 @@ fn _simd_min[
     return x.reduce_min()
 
 
-# @nodebug_inline
 fn _simd_min_elementwise[
     simd_width: __mlir_type.index,
     acc_type: __mlir_type.`!kgen.dtype`,
@@ -101,7 +97,6 @@ fn min[
 # ===----------------------------------------------------------------------===#
 
 
-# @nodebug_inline
 fn _simd_sum[
     simd_width: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
@@ -111,7 +106,6 @@ fn _simd_sum[
     return x.reduce_add()
 
 
-# @nodebug_inline
 fn _simd_sum_elementwise[
     simd_width: __mlir_type.index,
     acc_type: __mlir_type.`!kgen.dtype`,
@@ -144,7 +138,6 @@ fn sum[
 # ===----------------------------------------------------------------------===#
 
 
-# @nodebug_inline
 fn _simd_product[
     simd_width: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
@@ -154,7 +147,6 @@ fn _simd_product[
     return x.reduce_mul()
 
 
-# @nodebug_inline
 fn _simd_product_elementwise[
     simd_width: __mlir_type.index,
     acc_type: __mlir_type.`!kgen.dtype`,

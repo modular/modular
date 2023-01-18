@@ -19,9 +19,9 @@ fn map[
     func: __mlir_type[
         `!kgen.signature<[type : !kgen.dtype], [],`,
         `(`,
-        SIMD[1, type],
+        SIMD[1, `type`],
         `) -> `,
-        SIMD[1, type],
+        SIMD[1, `type`],
         `>`,
     ],
 ](dest: Buffer[size, type], src: Buffer[size, type]):
@@ -41,11 +41,11 @@ fn map[
     func: __mlir_type[
         `!kgen.signature<[type : !kgen.dtype], [],`,
         `(`,
-        SIMD[1, type],
+        SIMD[1, `type`],
         `,`,
-        SIMD[1, type],
+        SIMD[1, `type`],
         `) -> `,
-        SIMD[1, type],
+        SIMD[1, `type`],
         `>`,
     ],
 ](dest: Buffer[size, type], lhs: Buffer[size, type], rhs: Buffer[size, type]):
@@ -71,9 +71,9 @@ fn vectorize[
     func: __mlir_type[
         `!kgen.signature<[simd_width : index, type : !kgen.dtype], [],`,
         `(`,
-        SIMD[simd_width, type],
+        SIMD[simd_width, `type`],
         `) -> `,
-        SIMD[simd_width, type],
+        SIMD[simd_width, `type`],
         `>`,
     ],
 ](dest: Buffer[buffer_size, type], src: Buffer[buffer_size, type]):
@@ -101,11 +101,11 @@ fn vectorize[
     func: __mlir_type[
         `!kgen.signature<[simd_width : index, type : !kgen.dtype], [],`,
         `(`,
-        SIMD[simd_width, type],
+        SIMD[simd_width, `type`],
         `,`,
-        SIMD[simd_width, type],
+        SIMD[simd_width, `type`],
         `) -> `,
-        SIMD[simd_width, type],
+        SIMD[simd_width, `type`],
         `>`,
     ],
 ](
@@ -152,22 +152,22 @@ fn reduce[
     map_fn: __mlir_type[
         `!kgen.signature<[simd_width: index, acc_type : !kgen.dtype, type: !kgen.dtype], [],`,
         `(`,
-        SIMD[simd_width, acc_type],
+        SIMD[simd_width, `acc_type`],
         `,`,
-        SIMD[simd_width, type],
+        SIMD[simd_width, `type`],
         `) -> `,
-        SIMD[simd_width, acc_type],
+        SIMD[simd_width, `acc_type`],
         `>`,
     ],
     reduce_fn: __mlir_type[
         `!kgen.signature<[simd_width: index, type : !kgen.dtype], [],`,
         `(`,
-        SIMD[simd_width, type],
+        SIMD[simd_width, `type`],
         `) -> `,
-        SIMD[1, type],
+        SIMD[1, `type`],
         `>`,
     ],
-](src: Buffer[size, type], init: SIMD[1, acc_type]) -> __mlir_type[
+](src: Buffer[size, `type`], init: SIMD[1, `acc_type`]) -> __mlir_type[
     `!pop.scalar<`, acc_type, `>`
 ]:
     var i: Int = 0
