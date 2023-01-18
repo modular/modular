@@ -15,8 +15,8 @@ from Math import erf, tanh
 
 
 fn gelu[
-    size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
-](x: SIMD[size, type]) -> SIMD[size, type]:
+    simd_width: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
     """Compute the GELU Op using the equation
     $0.5 * x * (1 + erf(x / sqrt(2)))$.
 
@@ -28,7 +28,7 @@ fn gelu[
     """
     alias SQRT_2 = 1.4142135623730950488
     assert_param[is_floating_point[type]()]()
-    return 0.5 * x * (1 + erf[size, type](x / SQRT_2))
+    return 0.5 * x * (1 + erf[simd_width, type](x / SQRT_2))
 
 
 # ===----------------------------------------------------------------------===#
@@ -37,8 +37,8 @@ fn gelu[
 
 
 fn gelu_approximate[
-    size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
-](x: SIMD[size, type]) -> SIMD[size, type]:
+    simd_width: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
     """Compute the approximate GELU Op using the equation
     $0.5 * x * (1 + tanh(sqrt(2 / pi) * (x + 0.044715 * x^3)))$.
 
@@ -51,4 +51,8 @@ fn gelu_approximate[
     alias SQRT_TWO_OVER_PI = 0.797884560802865
     assert_param[is_floating_point[type]()]()
     let x3 = x * x * x
-    return 0.5 * x * (1 + tanh[size, type](SQRT_TWO_OVER_PI * (x + 0.044715 * x3)))
+    return (
+        0.5
+        * x
+        * (1 + tanh[simd_width, type](SQRT_TWO_OVER_PI * (x + 0.044715 * x3)))
+    )
