@@ -140,10 +140,12 @@ class Line:
     @property
     def is_class(self) -> bool:
         """Is this line a class definition?"""
-        return (
-            bool(self)
-            and self.leaves[0].type == token.NAME
-            and self.leaves[0].value in {"class", "struct"}
+        return bool(self) and (
+            (
+                self.leaves[0].type == token.NAME
+                and self.leaves[0].value == "class"
+            )
+            or self.leaves[0].type == token.STRUCT
         )
 
     @property
@@ -165,13 +167,12 @@ class Line:
             second_leaf: Optional[Leaf] = self.leaves[1]
         except IndexError:
             second_leaf = None
-        return (
-            first_leaf.type == token.NAME and first_leaf.value in {"def", "fn"}
-        ) or (
+
+        leaf_is_def = lambda leaf : leaf.type == token.NAME and leaf.value == "def"
+        return first_leaf.type == token.FN or leaf_is_def(first_leaf) or (
             first_leaf.type == token.ASYNC
             and second_leaf is not None
-            and second_leaf.type == token.NAME
-            and second_leaf.value in {"def", "fn"}
+            and (second_leaf.type == token.FN or leaf_is_def(second_leaf))
         )
 
     @property

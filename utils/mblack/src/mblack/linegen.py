@@ -174,7 +174,7 @@ class LineGenerator(Visitor[Line]):
         yield from self.line(-1)
 
     def visit_stmt(
-        self, node: Node, keywords: Set[str], parens: Set[str]
+        self, node: Node, keywords: Set[str], parens: Set[str], nodeTypes: Set[int] = set()
     ) -> Iterator[Line]:
         """Visit a statement.
 
@@ -189,7 +189,7 @@ class LineGenerator(Visitor[Line]):
         """
         normalize_invisible_parens(node, parens_after=parens, preview=self.mode.preview)
         for child in node.children:
-            if is_name_token(child) and child.value in keywords:
+            if child.type in nodeTypes or (is_name_token(child) and child.value in keywords):
                 yield from self.line()
 
             yield from self.visit(child)
@@ -197,7 +197,7 @@ class LineGenerator(Visitor[Line]):
     def visit_funcdef(self, node: Node) -> Iterator[Line]:
         """Visit function definition."""
         if Preview.annotation_parens not in self.mode:
-            yield from self.visit_stmt(node, keywords={"def", "fn"}, parens=set())
+            yield from self.visit_stmt(node, keywords={"def"}, parens=set(), nodeTypes={token.FN})
         else:
             yield from self.line()
 
@@ -448,7 +448,7 @@ class LineGenerator(Visitor[Line]):
         else:
             self.visit_except_clause = partial(v, keywords={"except"}, parens=Ø)
             self.visit_with_stmt = partial(v, keywords={"with"}, parens=Ø)
-        self.visit_classdef = partial(v, keywords={"class", "struct"}, parens=Ø)
+        self.visit_classdef = partial(v, keywords={"class"}, parens=Ø, nodeTypes={token.STRUCT})
         self.visit_expr_stmt = partial(v, keywords=Ø, parens=ASSIGNMENTS)
         self.visit_return_stmt = partial(v, keywords={"return"}, parens={"return"})
         self.visit_import_from = partial(v, keywords=Ø, parens={"import"})

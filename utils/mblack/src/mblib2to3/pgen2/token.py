@@ -88,6 +88,13 @@ ASYNC: Final = 57
 ERRORTOKEN: Final = 58
 COLONEQUAL: Final = 59
 N_TOKENS: Final = 60
+
+# Lit constants
+FN: Final = 61
+STRUCT: Final = 62
+ALIAS: Final = 63
+LET: Final = 64
+VAR: Final = 65
 NT_OFFSET: Final = 256
 # --end constants--
 
