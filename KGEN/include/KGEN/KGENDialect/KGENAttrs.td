@@ -107,7 +107,13 @@ def KGEN_ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl", [
 /// An array of ParamDeclAttr's typically used on a kgen.generator and other
 /// ops that define parameters.
 def KGEN_ParamDeclArrayAttr
-    : KGEN_ArrayOfAttrsAttr<"ParamDeclArray", "param.decls", "ParamDeclAttr">;
+    : KGEN_ArrayOfAttrsAttr<"ParamDeclArray", "param.decls", "ParamDeclAttr"> {
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "ParamDeclAttr":$paramDecl), [{
+      return get(paramDecl.getContext(), paramDecl);
+    }]>
+  ];
+}
 
 /// An array of ParamDeclAttr of size 1.
 def ParamDeclSize1ArrayAttr
