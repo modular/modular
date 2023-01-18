@@ -28,6 +28,7 @@ SF(kInit,    "__init__"  , -1, kInvalid, kInstMethod)
 
 SF(kBool,    "__bool__"  ,  1, kInvalid, kInstMethod)
 SF(kLitBool, "__lit_bool",  1, kInvalid, kInstMethod)
+SF(kAwait,   "__await__",   1, kAwait,   kInstMethod)
 
 // Unary arithmetic operators.
 SF(kNeg,     "__neg__"   ,  1, kNeg,    kInstMethod)

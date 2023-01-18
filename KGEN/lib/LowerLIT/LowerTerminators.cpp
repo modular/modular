@@ -117,6 +117,35 @@ static SmallVector<Value> getCoroutineResults(ImplicitLocOpBuilder &b,
   return results;
 }
 
+/// Given the result of a throwable call, generate the code to check if the
+/// result type is an error, and if so, propagate the error.
+static Value createUnwrapOrPropagate(ImplicitLocOpBuilder &b, LIT::FuncOp func,
+                                     Value errOr, DeclRefType errType,
+                                     Type type, Value coroHdl) {
+  auto ifOp =
+      b.create<HLCF::IfOp>(type, b.create<POP::VariantIsOp>(errOr, errType));
+
+  b.createBlock(&ifOp.getElseRegion());
+  Value value = b.create<POP::VariantGetOp>(type, errOr);
+  b.create<HLCF::YieldOp>(b.getLoc(), value);
+
+  b.createBlock(&ifOp.getThenRegion());
+  Value err = b.create<POP::VariantGetOp>(errType, errOr);
+  if (auto tryOp = ifOp->getParentOfType<LIT::TryOp>();
+      tryOp && tryOp.getTryRegion().findAncestorOpInRegion(*ifOp)) {
+    b.create<LIT::TryRaiseOp>(err);
+  } else {
+    Value result = b.create<POP::VariantCreateOp>(
+        POP::VariantType::get({errType, func.getResultType()}), err);
+    if (func.isAsync()) {
+      createCoroutineFinalize(b, errType, coroHdl, result);
+      result = coroHdl;
+    }
+    b.create<HLCF::ReturnOp>(result);
+  }
+  return ifOp.getResult(0);
+}
+
 //===----------------------------------------------------------------------===//
 // lowerLexicalTerminators
 //===----------------------------------------------------------------------===//
@@ -140,27 +169,61 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
 
   // Collect all the terminators first to avoid iterator invalidation.
   SmallVector<Operation *> terminators;
-  func.walk([&](Operation *op) {
+  WalkResult result = func.walk([&](Operation *op) {
     if (isa<LIT::ReturnOp, LIT::RaiseOp, LIT::BreakOp, LIT::ContinueOp>(op)) {
       terminators.push_back(op);
+
+    } else if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
+      if (!cast<SignatureType>(call.getCallee().getType()).isThrows())
+        return WalkResult::advance();
+      // FIXME: `kgen.addressof` returns a `FunctionType` (function pointer),
+      // which is an important feature to have, but that means we can't globally
+      // see calls to a throwing function pointer.
+      if (isa<AddressOfOp>(call)) {
+        call.emitError("FIXME: cannot take address of throwing function");
+        return WalkResult::interrupt();
+      }
+
+      // We need to update the result types of the function.
+      ImplicitLocOpBuilder b(call.getLoc(), OpBuilder(call->getNextNode()));
+      Operation *newCall = b.clone(*call);
+      Type resultType = call->getResultTypes().front();
+      newCall->getResult(0).setType(VariantType::get({errType, resultType}));
+      call->replaceAllUsesWith(ArrayRef(createUnwrapOrPropagate(
+          b, func, newCall->getResult(0), errType, resultType, coroHdl)));
+      call.erase();
+
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op);
                call && func.isAsync()) {
       // If we see a coroutine call from within another coroutine, insert the
       // initialization machinery.
       createCoroutineInitialize(op, errType, coroHdl, call.getResult());
+      // Replace the async call with a `call_param`.
+      ImplicitLocOpBuilder b(call.getLoc(), OpBuilder(call));
+      auto newCall = b.create<CallParamOp>(
+          call.getLoc(), call->getResultTypes(), call.getCallee(),
+          call.getParamDeclsAttr(), call.getOperands());
+      Value result = newCall.getResult(0);
+      call.replaceAllUsesWith(result);
+      call.erase();
+
     } else if (auto await = dyn_cast<LIT::AsyncAwaitOp>(op)) {
       ImplicitLocOpBuilder b(await.getLoc(), OpBuilder(await));
       SmallVector<Value> results =
           getCoroutineResults(b, resumeFnRef, errType, coroHdl, await);
       auto coroSig = await.getCoroutine().getType().getSignature();
-      if (coroSig.isThrows())
-        results.assign(1,
-                       b.create<LIT::UnwrapOrPropagateOp>(
-                           coroSig.getValueResults().front(), results.front()));
+      if (coroSig.isThrows()) {
+        results.assign(1, createUnwrapOrPropagate(
+                              b, func, results.front(), errType,
+                              coroSig.getValueResults().front(), coroHdl));
+      }
       await.replaceAllUsesWith(results);
       await.erase();
     }
+    return WalkResult::advance();
   });
+  if (result.wasInterrupted())
+    return failure();
 
   // Lower all the terminators as they are encountered.
   auto errorOr = [&] {
@@ -268,24 +331,10 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
 /// `<...>(...) async -> T` to `<...>(...) -> Task<T>` in that order.
 /// So, an `async|throws` function will become `Task<ErrorOr<T>>`. Update all
 /// callsites to signature types to reflect this change.
-static LogicalResult lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
-  // Find every throwing and async call. Track async calls that also throw.
-  SmallVector<KGENCallOpInterface> throwingCalls;
-  SmallVector<LIT::AsyncCallOp> asyncCalls;
-  op->walk([&](Operation *op) {
-    if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
-      if (isa<GeneratorInterfaceOp>(*call))
-        return;
-      if (cast<SignatureType>(call.getCallee().getType()).isThrows())
-        throwingCalls.push_back(call);
-    } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
-      asyncCalls.push_back(call);
-    }
-  });
-
+static void lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
   // Replace every throwing signature type with a variant result type and
   // every async signature type with a coroutine handle result type.
-  OpBuilder b(op);
+  Builder b(op->getContext());
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](SignatureType sigType) {
     if (!bitEnumContainsAny(sigType.getFnEffects(),
@@ -309,38 +358,6 @@ static LogicalResult lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
   replacer.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
                                         /*replaceLocs=*/false,
                                         /*replaceTypes=*/true);
-
-  // Process async calls. Async calls implicitly wrap the function result type
-  // in a coroutine, but now that the signatures are rewritten, they aren't
-  // needed anymore.
-  for (LIT::AsyncCallOp call : asyncCalls) {
-    // Replace the async call with a `call_param`.
-    b.setInsertionPoint(call);
-    auto newCall = b.create<CallParamOp>(
-        call.getLoc(), call->getResultTypes(), call.getCallee(),
-        call.getParamDeclsAttr(), call.getOperands());
-    Value result = newCall.getResult(0);
-    call.replaceAllUsesWith(result);
-    call.erase();
-  }
-
-  // Process throwing calls.
-  for (KGENCallOpInterface call : throwingCalls) {
-    // FIXME: `kgen.addressof` returns a `FunctionType` (function pointer),
-    // which is an important feature to have, but that means we can't globally
-    // see calls to a throwing function pointer.
-    if (isa<AddressOfOp>(call))
-      return call.emitError("FIXME: cannot take address of throwing function");
-
-    // We need to update the result types of the function.
-    Type resultType = call->getResultTypes().front();
-    call->getResult(0).setType(VariantType::get({errType, resultType}));
-    b.setInsertionPointAfter(call);
-    auto unwrap = b.create<LIT::UnwrapOrPropagateOp>(call.getLoc(), resultType,
-                                                     call->getResult(0));
-    call->getResult(0).replaceAllUsesExcept(unwrap, unwrap);
-  }
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -402,8 +419,7 @@ struct LowerTerminatorsPass
     // Lower all functions that throw.
     if (!errType)
       return;
-    if (failed(lowerThrowsAndAsync(errType, getOperation())))
-      return signalPassFailure();
+    lowerThrowsAndAsync(errType, getOperation());
   }
 };
 } // namespace

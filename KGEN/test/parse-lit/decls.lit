@@ -222,3 +222,16 @@ async fn await_coroutine():
   # CHECK-NEXT: %[[RESULT:.*]] = lit.async_await %[[CORO]] : <() -> index>
   # CHECK-NEXT: lit.let.decl "a" = %[[RESULT]] : index
   let a = await coroutine()
+
+struct Awaitable:
+  fn __new__() -> Awaitable:
+    return __mlir_op.`kgen.struct.create`[_type: Awaitable]()
+
+  fn __await__(self: Awaitable) -> __mlir_type.index:
+    return 0
+
+# CHECK-LABEL: lit.func @"awaitable()"
+async fn awaitable() -> __mlir_type.index:
+  # CHECK: call @"$decls"::@Awaitable::@"__await__($decls::Awaitable)"(%aw)
+  let aw = Awaitable()
+  return await aw
