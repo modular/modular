@@ -1092,6 +1092,24 @@ kgen.generator @inline_asm<type: type, dtype: dtype>(
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @variadics
+kgen.generator @variadics<type: type>(
+    %arg0: !pop.scalar<f32>,
+    %arg1: !pop.scalar<f32>,
+    %arg2: !pop.struct<>,
+    %arg3: !pop.struct<>,
+    %arg4: !kgen.paramref<type>) {
+  // CHECK: pop.variadic.create [%arg0, %arg1] : !pop.variadic<scalar<f32>>
+  %0 = pop.variadic.create [%arg0, %arg1] : !pop.variadic<scalar<f32>>
+  // CHECK: pop.variadic.create [] : !pop.variadic<scalar<f32>>
+  %1 = pop.variadic.create [] : !pop.variadic<scalar<f32>>
+  // CHECK: pop.variadic.create [%arg2, %arg3] : !pop.variadic<struct<>>
+  %2 = pop.variadic.create [%arg2, %arg3] : !pop.variadic<struct<>>
+  // CHECK: pop.variadic.create [%arg4] : !pop.variadic<type>
+  %3 = pop.variadic.create [%arg4] : !pop.variadic<type>
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.func @slow_function
 kgen.func @slow_function(%arg0: i32) -> !pop.coroutine<() -> i32> {
   // CHECK-NEXT: %[[HDL:.*]] = pop.coroutine.handle : <() -> i32>

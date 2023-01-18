@@ -2264,6 +2264,45 @@ def POP_CallIndirectOp : POPOp<"call_indirect"> {
 }
 
 //===----------------------------------------------------------------------===//
+// VariadicCreateOp
+//===----------------------------------------------------------------------===//
+
+def POP_VariadicCreateOp : POPOp<"variadic.create", [Pure,
+    VariadicElementType<"result", "operands">]> {
+  let summary = "create a value of variadic type from a sequence of values";
+  let description = [{
+    The `pop.variadic.create` operation creates a `!pop.variadic` populated with
+    the given SSA values. The input values must all have the same type.
+
+    Example:
+
+    ```mlir
+    // Create a variadic sequence of 2 scalar floats.
+    %0 = pop.variadic.create [%arg0, %arg1] : !pop.variadic<scalar<f32>>
+
+    // Create an empty variadic sequence of scalar floats.
+    %1 = pop.variadic.create [] : !pop.variadic<scalar<f32>>
+
+    // Create a variadic sequence of structs.
+    %2 = pop.variadic.create [%arg2, %arg3] : !pop.variadic<struct<>>
+
+    // Create a variadic sequence of parametric types.
+    %3 = pop.variadic.create [%arg4] : !pop.variadic<T>
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let results = (outs POP_VariadicType:$result);
+  let assemblyFormat = [{
+    ` ` `[` $operands `]` attr-dict `:` qualified(type($result))
+  }];
+
+  let builders = [
+    OpBuilder<(ins "ValueRange":$elements)>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // CoroutineHandleOp
 //===----------------------------------------------------------------------===//
 

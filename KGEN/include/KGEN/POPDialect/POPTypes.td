@@ -446,6 +446,14 @@ def POP_VariadicType : POPType<"Variadic", "variadic"> {
 }
 
 //===----------------------------------------------------------------------===//
+// Type Constraints
+
+class VariadicElementType<string lhs, string rhs> : TypesMatchWith<
+    "value type matches variadic element type", lhs, rhs,
+    "ParamRefType::get($_self.cast<POP::VariadicType>().getElementType())",
+    "typeRangeMatches">;
+
+//===----------------------------------------------------------------------===//
 // CoroutineType
 //===----------------------------------------------------------------------===//
 
