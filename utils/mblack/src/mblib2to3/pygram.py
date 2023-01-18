@@ -144,6 +144,7 @@ class _python_symbols(Symbols):
     try_stmt: int
     typedargslist: int
     varargslist: int
+    var_stmt: int
     vfpdef: int
     vfplist: int
     vname: int
@@ -172,6 +173,7 @@ python_grammar_no_print_statement_no_exec_statement_async_keywords: Grammar
 python_grammar_no_exec_statement: Grammar
 pattern_grammar: Grammar
 python_grammar_soft_keywords: Grammar
+lit_grammar: Grammar
 
 python_symbols: _python_symbols
 pattern_symbols: _pattern_symbols
@@ -183,6 +185,7 @@ def initialize(cache_dir: Union[str, "os.PathLike[str]", None] = None) -> None:
     global python_grammar_no_print_statement_no_exec_statement
     global python_grammar_no_print_statement_no_exec_statement_async_keywords
     global python_grammar_soft_keywords
+    global lit_grammar
     global python_symbols
     global pattern_grammar
     global pattern_symbols
@@ -232,6 +235,15 @@ def initialize(cache_dir: Union[str, "os.PathLike[str]", None] = None) -> None:
     )
     python_grammar_soft_keywords.soft_keywords = soft_keywords
     python_grammar_soft_keywords.version = (3, 10)
+
+    # Lit+
+    lit_grammar = (
+        python_grammar_soft_keywords.copy()
+    )
+    lit_grammar.lit_keywords = (
+        True
+    )
+    lit_grammar.version = (0, 1)
 
     pattern_grammar = driver.load_packaged_grammar(
         "mblib2to3", _PATTERN_GRAMMAR_FILE, cache_dir

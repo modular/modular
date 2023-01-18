@@ -465,6 +465,17 @@ def generate_tokens(
     async_def = False
     async_def_indent = 0
     async_def_nl = False
+    # If we know we're parsing lit, we can unconditionally parse various
+    # identifiers, like `fn`, as keywords.
+    has_lit_keywords = False if grammar is None else grammar.lit_keywords
+    def_keywords = ("def", "fn") if has_lit_keywords else ("def")
+    lit_keyword_tokens = {
+        "fn": FN,
+        "struct": STRUCT,
+        "alias": ALIAS,
+        "var": VAR,
+        "let": LET,
+    }
 
     strstart: Tuple[int, int]
     endprog: Pattern[str]
@@ -656,6 +667,16 @@ def generate_tokens(
                         yield (NAME, token, spos, epos, line)
                         # raise TokenError("Missing matching ` in metaparam!")
                 elif initial.isidentifier():  # ordinary name
+                    if has_lit_keywords and token in lit_keyword_tokens:
+                        yield (
+                            lit_keyword_tokens[token],
+                            token,
+                            spos,
+                            epos,
+                            line,
+                        )
+                        continue
+
                     if token in ("async", "await"):
                         if async_keywords or async_def:
                             yield (
@@ -672,14 +693,14 @@ def generate_tokens(
                         stashed = tok
                         continue
 
-                    if token in ("def", "fn", "for"):
+                    if token == "for" or token in def_keywords:
                         if (
                             stashed
                             and stashed[0] == NAME
                             and stashed[1] == "async"
                         ):
 
-                            if token in ("def", "fn"):
+                            if token in def_keywords:
                                 async_def = True
                                 async_def_indent = indents[-1]
 

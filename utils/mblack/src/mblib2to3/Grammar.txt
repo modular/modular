@@ -31,7 +31,7 @@ decorator: '@' namedexpr_test NEWLINE
 decorators: decorator+
 decorated: decorators (classdef | funcdef | async_funcdef)
 async_funcdef: ASYNC funcdef
-funcdef: 'def' NAME parameters ['->' test] ':' suite | 'fn' NAME [metaparams] parameters ['->' test] ':' suite
+funcdef: ('def' | FN) NAME [metaparams] parameters ['->' test] ':' suite
 metaparams: '[' [typedargslist] ']'
 parameters: '(' [typedargslist] ')'
 
@@ -121,7 +121,7 @@ dotted_name: NAME ('.' NAME)*
 global_stmt: ('global' | 'nonlocal') NAME (',' NAME)*
 exec_stmt: 'exec' expr ['in' test [',' test]]
 assert_stmt: 'assert' test [',' test]
-var_stmt: ('alias' | 'let' | 'var') expr_stmt
+var_stmt: (ALIAS | LET | VAR) expr_stmt
 
 compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | match_stmt
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
@@ -191,7 +191,7 @@ dictsetmaker: ( ((test ':' asexpr_test | '**' expr)
                 ((test [':=' test] | star_expr)
 		 (comp_for | (',' (test [':=' test] | star_expr))* [','])) )
 
-classdef: ('class' | 'struct') NAME [metaparams] ['(' [arglist] ')'] ':' suite
+classdef: ('class' | STRUCT) NAME [metaparams] ['(' [arglist] ')'] ':' suite
 
 arglist: argument (',' argument)* [',']
 

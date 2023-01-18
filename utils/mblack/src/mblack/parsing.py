@@ -72,6 +72,8 @@ def get_grammars(target_versions: Set[TargetVersion]) -> List[Grammar]:
             # Python 3.10+
             pygram.python_grammar_soft_keywords,
         ]
+    if TargetVersion.LIT in target_versions:
+        return [pygram.lit_grammar]
 
     grammars = []
     # If we have to parse both, try to parse async as a keyword first

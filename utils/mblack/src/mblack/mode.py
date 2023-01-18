@@ -45,6 +45,7 @@ class TargetVersion(Enum):
     PY39 = 9
     PY310 = 10
     PY311 = 11
+    LIT = 99
 
 
 class Feature(Enum):
@@ -157,6 +158,23 @@ VERSION_TO_FEATURES: Dict[TargetVersion, Set[Feature]] = {
         Feature.EXCEPT_STAR,
         Feature.VARIADIC_GENERICS,
     },
+    TargetVersion.LIT: {
+        Feature.F_STRINGS,
+        Feature.DEBUG_F_STRINGS,
+        Feature.NUMERIC_UNDERSCORES,
+        Feature.TRAILING_COMMA_IN_CALL,
+        Feature.TRAILING_COMMA_IN_DEF,
+        Feature.ASYNC_KEYWORDS,
+        Feature.FUTURE_ANNOTATIONS,
+        Feature.ASSIGNMENT_EXPRESSIONS,
+        Feature.RELAXED_DECORATORS,
+        Feature.POS_ONLY_ARGUMENTS,
+        Feature.UNPACKING_ON_FLOW,
+        Feature.ANN_ASSIGN_EXTENDED_RHS,
+        Feature.PATTERN_MATCHING,
+        Feature.EXCEPT_STAR,
+        Feature.VARIADIC_GENERICS,
+    }
 }
 
 
