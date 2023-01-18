@@ -28,7 +28,7 @@ fn gather[
         __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`,
     ],
 ):
-    pass
+    ...
 
 
 @implements(gather)
