@@ -1081,14 +1081,14 @@ struct ConvertPOPVariantGet : mlir::ConvertOpToLLVMPattern<VariantGetOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPIndirectCall
+// ConvertPOPCallIndirect
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPIndirectCall : mlir::ConvertOpToLLVMPattern<IndirectCallOp> {
+struct ConvertPOPCallIndirect : mlir::ConvertOpToLLVMPattern<CallIndirectOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(IndirectCallOp op, IndirectCallOpAdaptor adaptor,
+  matchAndRewrite(CallIndirectOp op, CallIndirectOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Convert the result types.
     SmallVector<Type> types;
@@ -1373,7 +1373,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPDiv,
       ConvertPOPFMA,
       ConvertPOPIndexToPointer,
-      ConvertPOPIndirectCall,
+      ConvertPOPCallIndirect,
       ConvertPOPInlineAsm,
       ConvertPOPLoad,
       ConvertPOPMax,

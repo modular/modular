@@ -1628,36 +1628,6 @@ def POP_ListCreateOp : POPOp<"list.create", [Pure,
   let hasFolder = 1;
 }
 
-
-//===----------------------------------------------------------------------===//
-// IndirectCallOp
-//===----------------------------------------------------------------------===//
-
-def POP_IndirectCallOp : POPOp<"indirect_call", [
-    TypesMatchWith<"operand types match callee argument types", "callee",
-                   "arguments", "$_self.cast<FunctionType>().getInputs()">,
-    TypesMatchWith<"result types match callee result types", "callee",
-                   "results", "$_self.cast<FunctionType>().getResults()">]> {
-  let summary = "indirect call";
-  let description = [{
-    The `pop.indirect_call` operation invokes the function pointer contained
-    in an SSA value. This call operation is not involved in elaboration.
-
-    Example:
-
-    ```mlir
-    kgen.func @call_this(%fn: (index) -> index) {
-      %0 = index.constant 1
-      %1 = pop.indirect_call %fn(%0) : (index) -> index
-    }
-    ```
-  }];
-
-  let arguments = (ins FunctionType:$callee, Variadic<AnyType>:$arguments);
-  let results = (outs Variadic<AnyType>:$results);
-  let assemblyFormat = "$callee `(` $arguments `)` attr-dict `:` type($callee)";
-}
-
 //===----------------------------------------------------------------------===//
 // StackAllocationOp
 //===----------------------------------------------------------------------===//
