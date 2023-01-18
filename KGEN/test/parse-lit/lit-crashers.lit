@@ -40,7 +40,6 @@ fn x(a: Foo):
 fn test():
   alias x: __mlir_type.index
 
-
 // -----
 
 # Issue #6874: Cannot use aliased variables as return value
