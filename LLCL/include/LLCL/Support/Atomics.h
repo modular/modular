@@ -75,7 +75,7 @@ static void atomicMul(std::atomic<T> &prodValue, const T &prod) {
   // addition via a compare_exchange_weak loop.
   T prevProdValue = prodValue;
 
-  LLCL::SpinWaiter<> waiter;
+  SpinWaiter<> waiter;
   while (
       !prodValue.compare_exchange_weak(prevProdValue, prevProdValue * prod)) {
     // Wait a bit and retry.
@@ -84,7 +84,7 @@ static void atomicMul(std::atomic<T> &prodValue, const T &prod) {
 }
 
 /// This method atomically updates 'maxValue' to 'value' if it is less than it
-/// is already.  This exists because std::atomic doesn't provide a native max
+/// is already. This exists because std::atomic doesn't provide a native max
 /// operation.
 template <typename T>
 static void atomicMax(std::atomic<T> &maxValue, const T &value) {
@@ -100,14 +100,14 @@ static void atomicMax(std::atomic<T> &maxValue, const T &value) {
 }
 
 /// This method atomically updates 'minValue' to 'value' if it is greater than
-/// it is already.  This exists because std::atomic doesn't provide a native min
+/// it is already. This exists because std::atomic doesn't provide a native min
 /// operation.
 template <typename T>
 static void atomicMin(std::atomic<T> &minValue, const T &value) {
   T previousMin = minValue;
 
   // Note that compare_exchange_weak updates `previousMin` on failure.
-  LLCL::SpinWaiter<> waiter;
+  SpinWaiter<> waiter;
   while (previousMin > value &&
          !minValue.compare_exchange_weak(previousMin, value)) {
     // Wait a bit and retry.
