@@ -747,8 +747,7 @@ std::optional<int64_t> ClosureType::getTypeAlign(TargetInfoAttr target) const {
 
 LogicalResult VariadicType::verify(function_ref<InFlightDiagnostic()> emitError,
                                    TypedAttr type) {
-  if (!type)
-    return emitError() << "type cannot be null";
+  assert(type && "type cannot be null");
   if (!type.getType().isa<MLIRTypeType>())
     return emitError() << "type parameter for pointer must be a !kgen.mlirtype";
   return success();
