@@ -28,3 +28,13 @@ kgen.generator @struct<size, dtype: dtype, type: type>(
 ) {
   kgen.return
 }
+
+// CHECK-LABEL: @variadic
+kgen.generator @variadic<type: type>(
+  // CHECK-SAME: !pop.variadic<scalar<f32>>
+  %arg0: !pop.variadic<scalar<f32>>,
+  // CHECK-SAME: !pop.variadic<type>
+  %arg1: !pop.variadic<type>
+) {
+  kgen.return
+}

@@ -43,6 +43,7 @@ class CoroutineType;
 class PointerType;
 class SIMDType;
 class StructType;
+class VariadicType;
 class VariantType;
 } // namespace M::KGEN::POP
 
