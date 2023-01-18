@@ -452,8 +452,10 @@ struct NDBuffer[
 ]:
 
     var data: DTypePointer[type]
+    # This is added just to make it aligned with the zap.ndbuffer
+    var _rank : Int
     var dynamic_shape: StaticTuple[rank, __mlir_type.index]
-    var dynamic_dtype: Int
+    var dynamic_dtype: __mlir_type.`!pop.scalar<ui8>`
 
     fn __new__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
@@ -462,6 +464,7 @@ struct NDBuffer[
         # TODO: Verify that the shape is valid (i.e. does not have #kgen.unknown)
         var buf: NDBuffer[rank, shape, type]
         buf.data = DTypePointer[type](ptr)
+        buf._rank = rank
         return buf
 
     fn get_rank(self) -> Int:
@@ -521,8 +524,9 @@ struct NDBuffer[
             self.data.address, product[rank](shape)
         )
 
-fn _neg[val : __mlir_type.i1]() -> __mlir_type.i1:
-  """Negates an i1 value"""
-  if val:
-    return __mlir_attr.`0:i1`
-  return __mlir_attr.`1:i1`
+
+fn _neg[val: __mlir_type.i1]() -> __mlir_type.i1:
+    """Negates an i1 value"""
+    if val:
+        return __mlir_attr.`0:i1`
+    return __mlir_attr.`1:i1`
