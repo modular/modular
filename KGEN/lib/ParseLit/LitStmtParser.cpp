@@ -801,10 +801,6 @@ ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor startCursor,
   if (parseIdentifier(baseName, "expected function name"))
     return failure();
 
-  // Skip the body of this definition: go to a token the starts a line at the
-  // same indent level (or less) as the current definition.
-  skipUntilIndentation(curIndent);
-
   auto funcDecl = builder.create<LIT::FuncOp>(translateLocation(loc));
   // Compute the correct function effects.
   auto effects = FnEffects::None;
@@ -817,6 +813,9 @@ ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor startCursor,
   if (effects != FnEffects::None)
     funcDecl.setSignature(funcDecl.getSignature().setFnEffect(effects));
 
+  // Skip the body of this definition: go to a token at the start of the next
+  // line at the same indent level (or less) as the current definition.
+  skipUntilIndentation(curIndent);
   getDeclResolver().addDecl(funcDecl, loc, baseName, &containingDecl,
                             startCursor, getLexer().getCursor(), curIndent);
   return success();

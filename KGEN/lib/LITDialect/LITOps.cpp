@@ -94,7 +94,7 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
 
   // Parse the name as a symbol.
   StringAttr nameAttr;
-  if (parser.parseSymbolName(nameAttr, SymbolTable::getSymbolAttrName(),
+  if (parser.parseSymbolName(nameAttr, getSymNameAttrName(result.name),
                              result.attributes))
     return failure();
 
@@ -111,7 +111,7 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   ConstraintArrayAttr constraints;
   if (parseOptionalConstraints(parser, constraints))
     return failure();
-  result.addAttribute("constraints", constraints);
+  result.addAttribute(getConstraintsAttrName(result.name), constraints);
 
   SmallVector<Type> argTypes;
   argTypes.reserve(entryArgs.size());
@@ -152,9 +152,9 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   // If this function implements an interface.
   if (succeeded(parser.parseOptionalKeyword("implements"))) {
     SymbolRefAttr implementsAttr;
-    if (parser.parseAttribute(implementsAttr,
-                              parser.getBuilder().getType<::mlir::NoneType>(),
-                              "implements", result.attributes))
+    if (parser.parseAttribute(implementsAttr, {},
+                              getImplementsAttrName(result.name),
+                              result.attributes))
       return failure();
   }
 
@@ -172,10 +172,20 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   // Parse the required function body.
   Region *region = result.addRegion();
 
-  // If this is a generator interface, no body block is allowed.
-  if (!isa_and_nonnull<mlir::UnitAttr>(parsedAttributes.get("isInterface")) &&
-      parser.parseRegion(*region, entryArgs, /*enableNameShadowing=*/true))
-    return failure();
+  mlir::OptionalParseResult regionResult =
+      parser.parseOptionalRegion(*region, entryArgs);
+  if (regionResult.has_value()) {
+    if (failed(*regionResult))
+      return failure();
+  } else {
+    if (!result.attributes.get(getIsInterfaceAttrName(result.name)))
+      return parser.emitError(sigLoc, "expected a function body");
+    auto *body = new Block;
+    body->addArguments(
+        argTypes, SmallVector<Location>(argTypes.size(),
+                                        parser.getEncodedSourceLoc(sigLoc)));
+    region->push_back(body);
+  }
 
   // Parse an optional evaluator.
   if (parser.parseOptionalKeyword("evaluator"))
@@ -186,8 +196,7 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   if (parseKGENType(parser, sigType) || parser.parseEqual() ||
       parseParamValue(parser, evaluator, sigType))
     return failure();
-  result.addAttribute(LIT::FuncOp::getEvaluatorAttrName(result.name),
-                      evaluator);
+  result.addAttribute(getEvaluatorAttrName(result.name), evaluator);
   return success();
 }
 
@@ -207,7 +216,7 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   printFunctionSignature(p, func.getFunctionBody(), argTypes,
                          op.getResultTypes(), op.getConventions(),
-                         op->getAttrOfType<StringArrayAttr>("valueParamNames"));
+                         getValueParamNamesAttr());
 
   // Don't print the following in lit.func.
   SmallVector<StringRef> ignoredAttrNames(
@@ -218,13 +227,13 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
 
   // If this is a generator implementing a generator.interface, include the
   // symbol for the generator interface.
-  if (auto implementsAttr = getImplementsAttr()) {
+  if (SymbolRefAttr implementsAttr = getImplementsAttr()) {
     p.printNewline();
     p << "  implements " << implementsAttr;
   }
 
   p << ' ';
-  if (!func.isExternal())
+  if (!func.getFunctionBody().front().empty())
     p.printRegion(func.getFunctionBody(), /*printEntryBlockArgs=*/false);
   if (SymbolConstantAttr evaluator = getEvaluatorAttr()) {
     p << " evaluator ";
@@ -286,8 +295,6 @@ LogicalResult LIT::FuncOp::verifyRegions() {
 
   // Interfaces must have empty bodies and cannot have an implements attribute.
   if (getIsInterface()) {
-    if (!isExternal())
-      return emitOpError("interface expected an empty function body");
     if (getImplementsAttr())
       return emitOpError("@interface and @implements decorators "
                          "cannot be set at the same time");
@@ -295,7 +302,7 @@ LogicalResult LIT::FuncOp::verifyRegions() {
   }
 
   // Generators must have non-empty bodies terminated by a return.
-  if (getFunctionBody().empty() || getBody()->empty())
+  if (getFunctionBody().empty())
     return emitOpError("expected non-empty function body");
   if (!getBody()->back().hasTrait<OpTrait::IsTerminator>())
     return emitOpError("expected a terminator");

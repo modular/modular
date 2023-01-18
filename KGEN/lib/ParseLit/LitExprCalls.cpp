@@ -601,8 +601,7 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
         loc, "keyword arguments and `**arg` variadics not supported yet");
     return {};
   case ValueInputConvention::VarArg:
-    assert(0 && "unreachable");
-    [[fallthrough]];
+    llvm_unreachable("unreachable");
   case ValueInputConvention::ByRef: {
     LValue baseLV = baseVal.ir.getIfLValue();
     if (!baseLV) {
