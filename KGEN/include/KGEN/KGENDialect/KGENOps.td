@@ -301,7 +301,7 @@ def KGEN_ParamDeclareOp : KGENOp<"param.declare"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ParamDeclareRegion
+// ParamDeclareRegionOp
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region",
@@ -355,6 +355,12 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region",
   let assemblyFormat = [{
     custom<RegionDeclaration>($paramDecls, $body) attr-dict
   }];
+
+  let builders = [
+    OpBuilder<(ins "ParamDeclAttr":$paramDecl), [{
+      build($_builder, $_state, ParamDeclArrayAttr::get(paramDecl));
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//

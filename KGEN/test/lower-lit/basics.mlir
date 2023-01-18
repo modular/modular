@@ -185,3 +185,37 @@ lit.func @aliasFwdDecl() {
   lit.alias.fwd.decl "xyz" : index
   kgen.return
 }
+
+//===----------------------------------------------------------------------===//
+// Nested Functions
+//===----------------------------------------------------------------------===//
+
+kgen.struct.decl @StructWithNestedFn {
+  // CHECK-LABEL: kgen.generator @"StructWithNestedFn::topLevelFunction"
+  lit.func @topLevelFunction() -> index {
+    // CHECK: %[[A:.*]] = pop.stack_allocation
+    %a = lit.var.decl "a" : <index>
+    %idx0 = index.constant 0
+    pop.store %idx0, %a : !pop.pointer<index>
+
+    // CHECK: kgen.param.declare.region nestedFunction = () -> index
+    lit.func @nestedFunction() -> index {
+      // CHECK-NEXT: pop.load %[[A]]
+      %0 = pop.load %a : !pop.pointer<index>
+      kgen.return %0 : index
+    }
+    // CHECK: kgen.param.declare b: () -> index = <nestedFunction>
+    kgen.param.declare b: () -> index = <@StructWithNestedFn::@topLevelFunction::@nestedFunction>
+
+    // CHECK: kgen.param.declare.region paramNestedFunc = <b_param -> index>()
+    lit.func @paramNestedFunc<b_param -> index>() {
+      // CHECK-NEXT: return<b_param>
+      kgen.return<b_param>
+    }
+    // CHECK: kgen.param.declare c: <() -> index>() -> () = <bind_signature(:<b_param -> index>() -> () paramNestedFunc, 2)>
+    kgen.param.declare c: <() -> index>() -> () = <@StructWithNestedFn::@topLevelFunction::@paramNestedFunc<b_param = 2>>
+
+    %idx0_0 = index.constant 0
+    kgen.return %idx0_0 : index
+  }
+}

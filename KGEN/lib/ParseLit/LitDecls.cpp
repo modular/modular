@@ -1376,13 +1376,18 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   }
 
   OpBuilder builder = decl.getDeclEndBuilder();
-  funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(argNames));
-  funcOp.setSignature(SignatureType::get(
+  auto signature = SignatureType::getChecked(
+      [&] { return mlir::emitError(funcOp.getLoc()); },
       builder.getAttr<ParamDeclArrayAttr>(inputParamDecls),
       builder.getAttr<TypeArrayAttr>(resultParamTypes),
       builder.getFunctionType(argTypes, {resultType.mlirType}),
-      builder.getAttr<ConventionsAttr>(
-          inputConventions, funcOp.getConventions().getFnEffects())));
+      builder.getAttr<ConventionsAttr>(inputConventions,
+                                       funcOp.getConventions().getFnEffects()));
+  if (!signature)
+    return failure();
+
+  funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(argNames));
+  funcOp.setSignature(signature);
 
   funcOp.getBody()->addArguments(argTypes, argLocs);
   if (!defaults.empty())

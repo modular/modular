@@ -95,23 +95,40 @@ Type ListType::getResolvedElementType() const {
 // SignatureType
 //===----------------------------------------------------------------------===//
 
+static void getSignatureDefaults(ParamDeclArrayAttr &inputParams,
+                                 TypeArrayAttr &resultParamTypes,
+                                 FunctionType values,
+                                 ConventionsAttr &conventions) {
+  MLIRContext *ctx = values.getContext();
+  if (!inputParams)
+    inputParams = ParamDeclArrayAttr::get(ctx, {});
+  if (!resultParamTypes)
+    resultParamTypes = TypeArrayAttr::get(ctx, {});
+  if (!conventions) {
+    // Default valueConventions to zero.
+    conventions = ConventionsAttr::get(
+        ctx, SmallVector<ValueInputConvention>(values.getNumInputs()),
+        FnEffects::None);
+  }
+}
+
 SignatureType SignatureType::get(ParamDeclArrayAttr inputParams,
                                  TypeArrayAttr resultParamTypes,
                                  FunctionType values,
                                  ConventionsAttr conventions) {
-  auto *context = values.getContext();
-  if (!inputParams)
-    inputParams = ParamDeclArrayAttr::get(context, {});
-  if (!resultParamTypes)
-    resultParamTypes = TypeArrayAttr::get(context, {});
-  if (!conventions) {
-    // Default valueConventions to zero.
-    conventions = ConventionsAttr::get(
-        context, SmallVector<ValueInputConvention>(values.getNumInputs()),
-        FnEffects::None);
-  }
+  getSignatureDefaults(inputParams, resultParamTypes, values, conventions);
+  return get(values.getContext(), inputParams, resultParamTypes, values,
+             conventions);
+}
 
-  return get(context, inputParams, resultParamTypes, values, conventions);
+SignatureType
+SignatureType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                          ParamDeclArrayAttr inputParams,
+                          TypeArrayAttr resultParamTypes, FunctionType values,
+                          ConventionsAttr conventions) {
+  getSignatureDefaults(inputParams, resultParamTypes, values, conventions);
+  return getChecked(emitError, values.getContext(), inputParams,
+                    resultParamTypes, values, conventions);
 }
 
 SignatureType SignatureType::get(ParamBindArrayAttr inputParams,
@@ -322,7 +339,7 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
     if (sig.isForceInline()) {
       if (!bitEnumContainsAny(conventions.getFnEffects(),
                               FnEffects::ForceInline)) {
-        return emitError() << "signature input parameter " << decl
+        return emitError() << "signature input parameter " << decl.getName()
                            << " specified force_inline, and so expected "
                               "force_inline on this signature as well";
       }

@@ -510,12 +510,28 @@ static void buildDebugInfoValue(Operation *insertPt, Location loc,
   OpBuilder(insertPt).create<DebugInfo::ValueOp>(loc, value, varAttr);
 }
 
+/// Flatten the given symbol reference, collapsing all nested scopes into one
+/// mangled name.
+static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
+  // If the symbol is already flat, there is nothing to do.
+  if (auto flatSym = dyn_cast<FlatSymbolRefAttr>(ref))
+    return flatSym;
+
+  // Flatten the symbol name into a single string.
+  SmallString<32> name = ref.getRootReference().getValue();
+  llvm::raw_svector_ostream nameOS(name);
+  for (FlatSymbolRefAttr sym : ref.getNestedReferences())
+    nameOS << "::" << sym.getValue();
+  return SymbolRefAttr::get(ref.getContext(), nameOS.str());
+}
+
 static void lowerLITOps(LIT::FuncOp func,
                         DebugInfo::DISubprogramAttr funcSpAttr) {
   // Check if we are building debug info for source variables.
   bool buildingDebugVars =
       funcSpAttr && funcSpAttr.getCompileUnit().getEmissionKind() ==
                         DebugInfo::EmissionKind::Full;
+  SmallDenseMap<StringAttr, ParamDeclRefAttr> nestedFuncRenames;
   func.walk([&](Operation *op) {
     mlir::IRRewriter b{OpBuilder(op)};
     if (isa<AliasForwardDeclOp>(op)) {
@@ -546,8 +562,45 @@ static void lowerLITOps(LIT::FuncOp func,
         buildDebugInfoValue(allocOp->getNextNode(), allocOp.getLoc(), varName,
                             funcSpAttr.getFile(), allocOp, varType);
       }
+    } else if (auto nestedFunc = dyn_cast<LIT::FuncOp>(op);
+               nestedFunc && nestedFunc != func) {
+      // Process a nested function by lowering it straight to a
+      // `kgen.param.declare.region`. We need to replace all the symbol
+      // references within the function. The parser ensures that the symbol name
+      // is unique with parameters.
+      auto region = b.create<ParamDeclareRegionOp>(
+          op->getLoc(), ParamDeclAttr::get(nestedFunc.getSymNameAttr(),
+                                           nestedFunc.getSignature()));
+      b.createBlock(&region.getBody());
+      auto body = b.create<RegionBodyOp>(
+          op->getLoc(), nestedFunc.getSignature(), ArrayRef<ConstraintAttr>());
+      body.getBodyRegion().takeBody(nestedFunc.getBodyRegion());
+      nestedFuncRenames.try_emplace(
+          b.getStringAttr(func.getName() + "::" + nestedFunc.getName()),
+          ParamDeclRefAttr::get(nestedFunc.getSymNameAttr(),
+                                nestedFunc.getSignature()));
+      b.eraseOp(nestedFunc);
     }
   });
+
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](SymbolConstantAttr ref) -> Attribute {
+    ParamDeclRefAttr newRef = nestedFuncRenames.lookup(
+        flattenSymbolRefAttr(ref.getSymbol()).getAttr());
+    if (!newRef)
+      return ref;
+    if (ref.getParamValues().empty())
+      return newRef;
+    // If the symbol constant had bindings, create a `bind_signature`.
+    SmallVector<TypedAttr> operands;
+    operands.push_back(newRef);
+    for (ParamBindAttr bind : ref.getParamValues())
+      operands.push_back(bind.getValue());
+    return ParamOperatorAttr::get(POC::BindSignature, operands);
+  });
+  replacer.recursivelyReplaceElementsIn(func, /*replaceAttrs=*/true,
+                                        /*replaceLocs=*/false,
+                                        /*replaceTypes=*/true);
 }
 
 /// Flatten the name of the given symbol operation and insert it in the given
@@ -573,21 +626,6 @@ static StringAttr flattenAndRenameSymbol(T op, const Twine &parentPrefix,
   op.setSymNameAttr(newName);
   symbolTable.insert(op, symbolTableIt);
   return newName;
-}
-
-/// Flatten the given symbol reference, collapsing all nested scopes into one
-/// mangled name.
-static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
-  // If the symbol is already flat, there is nothing to do.
-  if (auto flatSym = dyn_cast<FlatSymbolRefAttr>(ref))
-    return flatSym;
-
-  // Flatten the symbol name into a single string.
-  SmallString<32> name = ref.getRootReference().getValue();
-  llvm::raw_svector_ostream nameOS(name);
-  for (FlatSymbolRefAttr sym : ref.getNestedReferences())
-    nameOS << "::" << sym.getValue();
-  return SymbolRefAttr::get(ref.getContext(), nameOS.str());
 }
 
 /// Lower an lit.func to kgen.generator.
