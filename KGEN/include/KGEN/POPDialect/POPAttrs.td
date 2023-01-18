@@ -44,6 +44,25 @@ def POP_CmpPredicate : POP_Enum<
 def POP_CmpPredicateAttr : EnumAttr<POPDialect, POP_CmpPredicate, "cmp_pred">;
 
 //===----------------------------------------------------------------------===//
+// AtomicOrdering
+//===----------------------------------------------------------------------===//
+
+def POP_AtomicOrdering : POP_Enum<
+    "AtomicOrdering", "pop.atomic_cmp_xchg atomic ordering", [
+      POP_EnumCase<"NOT_ATOMIC", 0, "not_atomic">,
+      POP_EnumCase<"UNORDERED", 1, "unordered">,
+      POP_EnumCase<"MONOTONIC", 2, "monotonic">,
+      POP_EnumCase<"ACQUIRE", 3, "acquire">,
+      POP_EnumCase<"RELEASE", 4, "release">,
+      POP_EnumCase<"ACQUIRE_RELEASE", 5, "acq_rel">,
+      POP_EnumCase<"SEQUENTIALLY_CONSISTENT", 6, "seq_cst">
+    ]>;
+
+def POP_AtomicOrderingAttr : EnumAttr<POPDialect,
+                                      POP_AtomicOrdering,
+                                      "atomic_ordering">;
+
+//===----------------------------------------------------------------------===//
 // PrefetchTag
 //===----------------------------------------------------------------------===//
 

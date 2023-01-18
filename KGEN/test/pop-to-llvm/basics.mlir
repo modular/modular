@@ -1030,3 +1030,23 @@ kgen.func @inline_asm(
     (!pop.scalar<si32>, !pop.scalar<si64>) -> i8
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @atomic_cmpxchg
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<scalar<index>>,
+// CHECK-SAME: %[[CMP:.*]]: !pop.scalar<index>,
+// CHECK-SAME: %[[NEW:.*]]: !pop.scalar<index>
+kgen.func @atomic_cmpxchg(%ptr: !pop.pointer<scalar<index>>,
+                          %cmp: !pop.scalar<index>,
+                          %new: !pop.scalar<index>) {
+  // CHECK: llvm.cmpxchg {{.*}} monotonic monotonic
+  %0 = pop.atomic.cmpxchg %ptr, %cmp, %new monotonic monotonic :
+                    !pop.pointer<scalar<index>>
+
+  // CHECK: llvm.cmpxchg {{.*}} acq_rel monotonic
+  %1 = pop.atomic.cmpxchg %ptr, %cmp, %new acq_rel monotonic :
+                    !pop.pointer<scalar<index>>
+
+  kgen.return
+}

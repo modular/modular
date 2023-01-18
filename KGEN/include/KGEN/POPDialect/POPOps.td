@@ -2420,3 +2420,70 @@ def POP_CoroutineDestroyOp : POPOp<"coroutine.destroy"> {
   let arguments = (ins POP_CoroutineType:$coroutine);
   let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
 }
+
+//===----------------------------------------------------------------------===//
+// AtomicCmpXchgOp
+//===----------------------------------------------------------------------===//
+
+def POP_AtomicCmpXchgResultType : Type<And<[
+  POP_StructType.predicate,
+  CPred<"$_self.cast<StructType>().getNumElements() == 2">,
+  SubstLeaves<"$_self",
+              "$_self.cast<StructType>().getParameterizedElementTypes()[0]",
+              UnboundOrIndexOrInt.predicate>,
+  SubstLeaves<"$_self",
+              "$_self.cast<StructType>().getParameterizedElementTypes()[1]",
+              BoolScalar.predicate>]>,
+ "an KGEN struct type with any integer or pointer followed by a boolean">;
+
+def POP_AtomicCmpXchgOp : POPOp<"atomic.cmpxchg", [
+    PointerElementType<"ptr", "cmp">,
+    PointerElementType<"ptr", "val">,
+    AllTypesMatch<["cmp", "val"]>,
+    TypesMatchWith<
+      "an KGEN struct type with any integer or pointer followed by a boolean",
+      "ptr", "result", "getCmpXChgResultType($_self)">]> {
+  let summary = "comparison";
+  let description = [{
+    The `pop.atomic.cmpxchg` operation is used to atomically modify memory. It
+    loads a value in memory and compares it to a given value. If they are equal,
+    it tries to store a new value into the memory.
+
+    There are three arguments to the `atomic.cmpxchg` instruction are:
+
+      - an address to operate on
+      - a value to compare to the value currently be at that address
+      - a new value to place at that address if the compared values are equal.
+
+    The type of `cmp` must be an integer or pointer type whose bit width is a
+    power of two greater than or equal to eight and less than or equal to a
+    target-specific size limit. `cmp` and `val` must have the same type, and
+    the type of `pointer` must be a pointer to that type.
+
+    The success and failure ordering arguments specify how this cmpxchg
+    synchronizes with other atomic operations. Both ordering parameters must be
+    at least monotonic, the failure ordering cannot be either release or acq_rel.
+
+    The return type is a KGEN struct type with any integer or pointer followed
+    by a boolean value.
+
+    Example:
+
+    ```mlir
+    %b0 = pop.atomic.cmpxchg %ptr, %cmp, %val monotonic monotonic :
+        !pop.pointer<scalar<index>>
+    ```
+  }];
+
+  let arguments = (ins PointerOf<UnboundOrIndexOrInt>:$ptr,
+                       UnboundOrIndexOrInt:$cmp,
+                       UnboundOrIndexOrInt:$val,
+                       POP_AtomicOrderingAttr:$success_ordering,
+                       POP_AtomicOrderingAttr:$failure_ordering);
+  let results = (outs POP_AtomicCmpXchgResultType:$result);
+
+  let assemblyFormat = [{
+    $ptr `,` $cmp `,` $val `` $success_ordering `` $failure_ordering
+    attr-dict `:` qualified(type($ptr))
+  }];
+}
