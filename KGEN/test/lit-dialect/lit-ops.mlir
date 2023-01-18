@@ -140,13 +140,8 @@ lit.func @raises_error(%raise: i1, %err: !kgen.declref<@Error>, %value: !kgen.de
 lit.func @try_op(%err: !kgen.declref<@Error>, %int: !kgen.declref<@Int>) -> !kgen.declref<@Int> {
   // CHECK-NEXT: lit.try
   lit.try {
-    %raise = kgen.param.constant: i1 = <1>
-    %result = kgen.call @raises_error(%raise, %err, %int)
-      : (i1, !kgen.declref<@Error>, !kgen.declref<@Int>) -> !pop.variant<@Error, @Int>
-    // CHECK: %[[VAL:.*]] = lit.unwrap_or_propagate %{{.*}} : <@Error, @Int>
-    %value = lit.unwrap_or_propagate %result : <@Error, @Int>
-    // CHECK: return %[[VAL]] : !kgen.declref<@Int>
-    hlcf.return %value : !kgen.declref<@Int>
+    // CHECK-NEXT: lit.try.yield
+    lit.try.yield
   // CHECK-NEXT: } except (%{{.*}}: !kgen.declref<@Error>) {
   } except (%exception: !kgen.declref<@Error>) {
     // CHECK-NEXT: lit.try.yield

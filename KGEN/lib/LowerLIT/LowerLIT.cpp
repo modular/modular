@@ -546,32 +546,6 @@ static void lowerLITOps(LIT::FuncOp func,
         buildDebugInfoValue(allocOp->getNextNode(), allocOp.getLoc(), varName,
                             funcSpAttr.getFile(), allocOp, varType);
       }
-    } else if (auto unwrap = dyn_cast<UnwrapOrPropagateOp>(op)) {
-      // Lower a lit.unwrap_or_propagate to a conditional.
-      Location loc = op->getLoc();
-      Type type = unwrap.getType();
-      Value errorOrValue = unwrap.getValue();
-      Value isValue = b.create<POP::VariantIsOp>(loc, errorOrValue, type);
-      auto ifOp = b.create<HLCF::IfOp>(unwrap.getLoc(), type, isValue);
-
-      b.createBlock(&ifOp.getThenRegion());
-      Value value = b.create<POP::VariantGetOp>(loc, type, errorOrValue);
-      b.create<HLCF::YieldOp>(loc, value);
-
-      b.createBlock(&ifOp.getElseRegion());
-      Type errorType =
-          errorOrValue.getType().cast<POP::VariantType>().getType(0);
-      Value err = b.create<POP::VariantGetOp>(loc, errorType, errorOrValue);
-      if (auto tryOp = ifOp->getParentOfType<TryOp>();
-          tryOp && tryOp.getTryRegion().findAncestorOpInRegion(*ifOp)) {
-        b.create<TryRaiseOp>(unwrap.getLoc(), err);
-      } else {
-        Value wrapped =
-            b.create<POP::VariantCreateOp>(loc, func.getResultType(), err);
-        b.create<HLCF::ReturnOp>(loc, wrapped);
-      }
-
-      b.replaceOp(unwrap, ifOp.getResults());
     }
   });
 }

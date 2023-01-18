@@ -225,3 +225,22 @@ kgen.func @two_lists_in_variant(%list: !kgen.list<i1[1]>, %var: !pop.variant<!kg
 kgen.func @list_in_coroutine(%coro: !pop.coroutine<() -> !kgen.list<index[0]>>) {
   kgen.return
 }
+
+// CHECK-LABEL: @list_attr_in_attr
+kgen.func @list_attr_in_attr() {
+  // CHECK-NEXT: !pop.struct<index, index, i32, i32, i32> = <#pop.struct<1, 2, 5, 6, 7>>
+  %0 = kgen.param.constant: !pop.struct<!kgen.list<index[2]>, !kgen.list<i32[3]>>
+    = <#pop.struct<[1, 2], [5, 6, 7]>>
+  // CHECK-NEXT: !pop.struct<index, index, index, index> = <#pop.struct<1, 2, 3, 4>>
+  %1 = kgen.param.constant: !pop.struct<!kgen.list<!kgen.list<index[2]>[2]>> = <#pop.struct<[[1, 2], [3, 4]]>>
+  // CHECK-NEXT: !pop.variant<array<0, i1>, array<2, array<2, i32>>> = <#pop.variant<:!pop.array<0, i1> #pop.array<>>>
+  %2 = kgen.param.constant: !pop.variant<!kgen.list<i1[0]>, array<2, !kgen.list<i32[2]>>> = <#pop.variant<:!kgen.list<i1[0]> []>>
+
+  "use"(%0, %1, %2) : (
+    !pop.struct<!kgen.list<index[2]>, !kgen.list<i32[3]>>,
+    !pop.struct<!kgen.list<!kgen.list<index[2]>[2]>>,
+    !pop.variant<!kgen.list<i1[0]>, array<2, !kgen.list<i32[2]>>>
+  ) -> ()
+
+  kgen.return
+}

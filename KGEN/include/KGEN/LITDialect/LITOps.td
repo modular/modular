@@ -117,36 +117,6 @@ def FileModuleOp : LITOp<"file_module", [
 }
 
 //===----------------------------------------------------------------------===//
-// UnwrapOrPropagateOp
-//===----------------------------------------------------------------------===//
-
-def LIT_OrVariant : ConfinedType<POP_VariantType,
-    [CPred<"cast<POP::VariantType>($_self).getTypes().size() == 2">],
-    "variant with 2 subtypes", "POP::VariantType">;
-
-def LIT_UnwrapOrPropagateOp : LITOp<"unwrap_or_propagate", [
-    TypesMatchWith<"value type", "value", "result",
-                   "cast<POP::VariantType>($_self).getType(1)">]> {
-  let summary = "Unwrap a value or propagate an error.";
-  let description = [{
-    The `lit.unwrap_or_propagate` operation takes a variant of error and value
-    and returns the unwrapped value if it is not an error and propagates the
-    error if it is one.
-
-    Example:
-
-    ```mlir
-    %value = lit.unwrap_or_propagate %maybeErr : <@Error, @Int>
-    ```
-  }];
-
-  let arguments = (ins LIT_OrVariant:$value);
-  let results = (outs AnyType:$result);
-
-  let assemblyFormat = "$value attr-dict `:` type($value)";
-}
-
-//===----------------------------------------------------------------------===//
 // TryOp
 //===----------------------------------------------------------------------===//
 
@@ -163,8 +133,7 @@ def LIT_TryOp : LITOp<"try", [RecursivelySpeculatable, RecursiveMemoryEffects,
 
     ```mlir
     lit.try {
-      %0 = kgen.call @maybeRaises() : () -> !pop.variant<@Error, @Int>
-      %1 = lit.unwrap_or_propagate %0 : <@Error, @Int>
+      %0 = kgen.call @maybeRaises() : () throws -> !kgen.declref<@Int>
       lit.try.yield
     } except (%err: !kgen.declref<@Error>) {
       lit.try.yield

@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENPasses.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -351,6 +352,60 @@ static Type expandListsInType(Type type) {
   });
 }
 
+/// Expand list attributes nested inside struct attributes.
+static Attribute expandListsInStruct(POP::StructAttr attr) {
+  SmallVector<Type> elementTypes;
+  SmallVector<TypedAttr> elements;
+  for (TypedAttr value : attr.getValues()) {
+    if (auto list = dyn_cast<ListAttr>(value)) {
+      llvm::append_range(elements, list.getValues());
+      elementTypes.append(list.getValues().size(),
+                          list.getType().getResolvedElementType());
+    } else {
+      elements.push_back(value);
+      elementTypes.push_back(value.getType());
+    }
+  }
+  return POP::StructAttr::get(
+      elements, POP::StructType::get(attr.getContext(), elementTypes));
+}
+
+/// Expand or rewrite list element types.
+static Attribute expandListsInAttr(Attribute attr) {
+  auto flattenFirst = [](Attribute attr) {
+    Attribute nextAttr;
+    while (true) {
+      if (auto structAttr = dyn_cast<POP::StructAttr>(attr))
+        nextAttr = expandListsInStruct(structAttr);
+      else
+        return attr;
+      if (nextAttr == attr)
+        break;
+      attr = nextAttr;
+    }
+    return attr;
+  };
+  attr = flattenFirst(attr);
+
+  if (auto list = dyn_cast<ListAttr>(attr))
+    return POP::ArrayAttr::get(list.getValues(),
+                               convertListToArrayType(list.getType()));
+
+  auto itf = dyn_cast<mlir::SubElementAttrInterface>(attr);
+  if (!itf)
+    return attr;
+  return itf.replaceSubElements(
+      [&](Attribute attr) -> Attribute {
+        if (isa<POP::StructAttr>(attr))
+          return flattenFirst(attr);
+        if (auto list = dyn_cast<ListAttr>(attr))
+          return POP::ArrayAttr::get(list.getValues(),
+                                     convertListToArrayType(list.getType()));
+        return attr;
+      },
+      [&](Type type) -> Type { return expandListsInType(type); });
+}
+
 /// Materialize a 1-to-N destination conversion for lists.
 static ValueRange materializeListDestConversion(mlir::RewriterBase &b,
                                                 TypedValue<ListType> list) {
@@ -401,8 +456,13 @@ struct ExpandListConstantOp : public mlir::OpRewritePattern<ParamConstantOp> {
   LogicalResult matchAndRewrite(ParamConstantOp op,
                                 PatternRewriter &b) const override {
     auto list = dyn_cast<ListType>(op.getType());
-    if (!list)
-      return failure();
+    if (!list) {
+      auto expanded = cast<TypedAttr>(expandListsInAttr(op.getValue()));
+      if (expanded == op.getValue())
+        return failure();
+      b.updateRootInPlace(op, [&] { op.setValueAttr(expanded); });
+      return success();
+    }
     SmallVector<Value> values;
     values.reserve(*list.getResolvedLength());
     for (TypedAttr value : cast<ListAttr>(op.getValue()).getValues())

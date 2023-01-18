@@ -134,7 +134,13 @@ lit.func @ref(%e: !kgen.declref<@Error>,
               %f: !kgen.signature<[], [], () throws -> !lit.none>) throws -> !lit.none {
   lit.try {
     // CHECK: %[[MAYBE_ERR:.*]] = kgen.call @throws
-    // CHECK-NEXT: lit.unwrap_or_propagate %[[MAYBE_ERR]]
+    // CHECK-NEXT: %[[IS_ERR:.*]] = pop.variant.is !kgen.declref<@Error>, %[[MAYBE_ERR]]
+    // CHECK-NEXT: %[[VAL:.*]] = hlcf.if %[[IS_ERR]]
+    // CHECK-NEXT:   %[[UNWRAP:.*]] = pop.variant.get %[[MAYBE_ERR]] : !pop.variant<@Error, index> as !kgen.declref<@Error>
+    // CHECK-NEXT:   lit.try.raise %[[UNWRAP]]
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT:   %[[UNWRAP:.*]] = pop.variant.get %[[MAYBE_ERR]] : !pop.variant<@Error, index> as index
+    // CHECK-NEXT:   hlcf.yield %[[UNWRAP]]
     kgen.call @throws(%e) : (!kgen.declref<@Error>) throws -> index
     lit.try.yield
   } except (%err: !kgen.declref<@Error>) {
@@ -159,7 +165,7 @@ lit.func @ref(%e: !kgen.declref<@Error>,
 // CHECK-SAME: fn: () -> !pop.variant<@Error, !lit.none>
 lit.func @parametric_throws<fn: <>() throws -> !lit.none>() throws -> !lit.none {
   // CHECK-NEXT: %[[MAYBE_ERR:.*]] = kgen.call_param[() -> !pop.variant<@Error, !lit.none>: fn]()
-  // CHECK-NEXT: lit.unwrap_or_propagate %[[MAYBE_ERR]]
+  // CHECK-NEXT: pop.variant.is !kgen.declref<@Error>, %[[MAYBE_ERR]]
   kgen.call_param[<>() throws -> !lit.none: fn]()
   lit.end_func
 }
@@ -237,7 +243,7 @@ lit.func @throwing_coro<cond: i1, a>(%err: !kgen.declref<@Error>) async|throws -
 }
 
 // CHECK-LABEL: lit.func @call_throwing_coro
-lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async -> !lit.none {
+lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async|throws -> !lit.none {
   kgen.param.declare callee: <>(!kgen.declref<@Error>) async|throws -> index =
     <bind_signature(:<cond: i1, a>(!kgen.declref<@Error>) async|throws -> index @throwing_coro,
                     1, 0)>
