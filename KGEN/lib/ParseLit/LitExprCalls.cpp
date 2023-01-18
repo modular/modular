@@ -1009,7 +1009,11 @@ AnyValue CallableValue::debugInlineFunctionCall(
       operandAttrs.reserve(op.getNumOperands());
       for (auto operand : op.getOperands()) {
         auto &entry = valueMapping[operand];
-        assert(entry && entry.getIfMValue() && "Value mapping broken");
+        assert(entry && "Value mapping broken");
+        // If the input isn't an MValue then it is an error, let the caller
+        // diagnose it.
+        if (!entry.getIfMValue())
+          return {};
         operandAttrs.push_back(entry.getIfMValue().get());
       }
 

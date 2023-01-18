@@ -205,3 +205,11 @@ struct BadAliasStruct:
 fn testConversionQoI():
   # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in alias}}
   alias intVal : Int = 1.2
+
+
+@nodebug_inline
+fn crash1_callee(a: __mlir_type.index, rhs: __mlir_type.index) -> __mlir_type.index:
+  return __mlir_op.`index.add`(a, rhs)
+
+fn crash1_caller[p: __mlir_type.index](a: __mlir_type.index):
+  alias y = crash1_callee(a, p) # expected-error {{cannot use a dynamic value in meta context}}
