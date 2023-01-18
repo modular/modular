@@ -742,6 +742,46 @@ std::optional<int64_t> ClosureType::getTypeAlign(TargetInfoAttr target) const {
 }
 
 //===----------------------------------------------------------------------===//
+// VariadicType
+//===----------------------------------------------------------------------===//
+
+LogicalResult VariadicType::verify(function_ref<InFlightDiagnostic()> emitError,
+                                   TypedAttr type) {
+  if (!type)
+    return emitError() << "type cannot be null";
+  if (!type.getType().isa<MLIRTypeType>())
+    return emitError() << "type parameter for pointer must be a !kgen.mlirtype";
+  return success();
+}
+
+Type VariadicType::getResolvedElementType() const {
+  if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(getElementType()))
+    return typeCst.getValue();
+  return nullptr;
+}
+
+VariadicType VariadicType::get(TypedAttr elementType) {
+  return VariadicType::get(elementType.getContext(), elementType);
+}
+
+VariadicType VariadicType::get(Type elementType) {
+  return VariadicType::get(TypeConstantAttr::get(elementType));
+}
+
+/// A variadic type is like an `llvm::ArrayRef`: a pointer to the start of the
+/// contiguous sequence, and the size of that seqeunce. So, its size would be
+/// the size of a pointer, plus the size of the size type (which has the same
+/// size and alignment as a pointer type).
+std::optional<int64_t> VariadicType::getTypeSize(TargetInfoAttr target) const {
+  return 2 * target.getPointerSize();
+}
+
+/// The alignment of the variadic type is that its pointer and size.
+std::optional<int64_t> VariadicType::getTypeAlign(TargetInfoAttr target) const {
+  return target.getPointerSize();
+}
+
+//===----------------------------------------------------------------------===//
 // CoroutineType
 //===----------------------------------------------------------------------===//
 
