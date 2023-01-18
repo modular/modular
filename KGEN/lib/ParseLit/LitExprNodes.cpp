@@ -27,6 +27,7 @@
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Verifier.h"
 
@@ -708,6 +709,48 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       hadTypeSpec = true;
       continue;
     }
+    if (attr.getName() == "_region") {
+      // A region is specified for an MLIR operation by using the `_region`
+      // special attribute to refer to a function declaration.
+      auto bodyRef = dyn_cast<StringAttr>(attr.getValue());
+      if (!bodyRef) {
+        emitter.emitError(call.getLoc(),
+                          "MLIR operation region must be a function reference");
+        return {};
+      }
+      // Lookup the operation body.
+      LookupResult result = emitter.shared.lookupAndResolveDecl(
+          bodyRef, call.getLoc(), emitter.declScope,
+          /*searchParentScopes=*/false);
+      ArrayRef<ASTDecl *> results = result.getIfSuccess();
+      if (result.isFailure() || results.size() != 1 ||
+          !isa<LIT::FuncOp>(*results.front())) {
+        emitter.emitError(call.getLoc(), "MLIR operation region reference did "
+                                         "not resolve to a function body");
+        return {};
+      }
+      // Resolve the body before using it.
+      ASTDecl &body = *results.front();
+      if (failed(emitter.shared.declResolver->resolve(
+              body, DeclResolvedness::fullyResolved, call.getLoc()))) {
+        emitter.emitError(body.getLoc(),
+                          "failed to immediately resolve MLIR operation region")
+                .attachNote(emitter.translateLocation(call.getLoc()))
+            << "see MLIR operation here";
+        return {};
+      }
+      // SUPER-MEGA-HACK: The body is single-use. Move it in, because otherwise
+      // the function will not verify. Make sure to replace the terminator.
+      auto func = cast<LIT::FuncOp>(body);
+      auto region = std::make_unique<Region>();
+      region->takeBody(func.getBodyRegion());
+      region->front()
+          .splitBlock(--Block::iterator(region->front().back()))
+          ->erase();
+      func.erase();
+      state.addRegion(std::move(region));
+      continue;
+    }
     state.addAttributes(attr);
   }
 
@@ -754,8 +797,10 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   // Explicitly run the verifier on the new operation so we make sure to
   // catch problems early.
   std::string errorMessage;
-  bool verificationError;
-  {
+  bool verificationError = false;
+  // FIXME: Terminators expect certain parent operations and are only valid when
+  // inlined into an operation's region. Don't verify them.
+  if (!resultOp->hasTrait<OpTrait::IsTerminator>()) {
     // FIXME: This doesn't silence errors!
     mlir::ScopedDiagnosticHandler handler(
         context, [&](Diagnostic &diag) { errorMessage = diag.str(); });

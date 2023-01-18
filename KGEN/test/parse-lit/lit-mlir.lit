@@ -97,3 +97,13 @@ fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](arg&: T) -> MyPointer[T]:
 
   # CHECK-NEXT: %0 = kgen.call @"{{.*}}@MyPointer::@"__new__(__mlir_type.!pop.pointer<eltType>)"<eltType: type = T>(%arg)
   # CHECK-NEXT: lit.return %0
+
+# CHECK-LABEL: lit.func @"structured_for_loop()"
+fn structured_for_loop() -> __mlir_type.index:
+  # CHECK: %0 = scf.for %arg0 = %idx0 to %idx10 step %idx1 iter_args(%arg1 = %idx2) -> (index) {
+  fn loop_body(i: __mlir_type.index, acc: __mlir_type.index):
+    # CHECK-NEXT: %1 = index.add %arg0, %arg1
+    # CHECK-NEXT: scf.yield %1 : index
+    __mlir_op.`scf.yield`(__mlir_op.`index.add`(i, acc))
+  # CHECK: return %0 : index
+  return __mlir_op.`scf.for`[_type: [__mlir_type.index], _region: ["loop_body"]](0, 10, 1, 2)
