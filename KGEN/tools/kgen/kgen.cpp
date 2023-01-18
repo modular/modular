@@ -25,6 +25,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/Timing.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
@@ -252,14 +253,17 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   OwningOpRef<ModuleOp> theModule;
   auto inputFileName = llvm::StringRef(clOptions.inputFilename.getValue());
   mlir::TimingScope ts;
-  if (inputFileName.ends_with(".lit"))
+  mlir::PassManager pm(ctx);
+  if (inputFileName.ends_with(".lit")) {
     theModule = importLitFile(mgr, ctx, ts, compilationOptions,
                               clOptions.enableMLIRDiagnostics);
-  else if (compilationOptions.getDebugInfoLevelForInput())
+    pm.addPass(createLowerLITTerminators());
+  } else if (compilationOptions.getDebugInfoLevelForInput()) {
     theModule = DebugInfo::parseSourceFileWithDebugInfo(
         mgr, ctx, compilationOptions.getDIEmissionKind());
-  else
+  } else {
     theModule = parseSourceFile<ModuleOp>(mgr, ctx);
+  }
   if (!theModule)
     return failure(clOptions.reportError("could not parse the module"));
 
@@ -273,16 +277,15 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       LLCL::createSingleThreadWorkQueue());
 
   // Generate a library file or go all the way through elaboration.
-  LogicalResult result = failure();
   if (clOptions.cmd == Command::kGenLibraryFile) {
-    result = generateLibraryFile(*theModule);
+    generateLibraryFile(pm);
   } else {
-    result = elaborateModule(*theModule, runtime,
-                             {clOptions.searchPaths, clOptions.enableSearch},
-                             includedFiles);
+    elaborateModule(pm, runtime,
+                    {clOptions.searchPaths, clOptions.enableSearch},
+                    includedFiles);
   }
 
-  if (failed(result))
+  if (failed(pm.run(*theModule)))
     return failure(clOptions.reportError("compilation failed"));
 
   // If we are generating a dependency file, do so now.

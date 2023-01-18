@@ -54,6 +54,7 @@ enum class Precedence {
   kTerm,       // infix: *, @, /, //, %
   kFactor,     // prefix: +, -, ~
   kPower,      // infix: **
+  kAwait,      // prefix: await
   kPrimary,    // prefix: foo, "123", 123, 1.23, True, False, foo(1),
                //         foo.bar, foo[bar]
   kHighest = kPrimary
@@ -234,6 +235,8 @@ struct InfixInfo {
       return {Precedence::kIfElse, ExprNode::kIfElse, false};
     case LitToken::star_star:
       return {Precedence::kPower, ExprNode::kPow, true};
+    case LitToken::kw_await:
+      return {Precedence::kAwait, ExprNode::kAwait, false};
     }
   }
 };
@@ -299,6 +302,8 @@ static ExprNode::Kind getUnaryOpKind(LitToken::Kind tokKind) {
   switch (tokKind) {
   default:
     llvm_unreachable("invalid unary token");
+  case LitToken::kw_await:
+    return ExprNode::kAwait;
   case LitToken::kw_not:
     return ExprNode::kBoolNot;
   case LitToken::plus:
@@ -332,12 +337,11 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
   case LitToken::plus:
   case LitToken::minus:
   case LitToken::tilde:
+  case LitToken::kw_await:
   case LitToken::kw_not: { // u_expr
     auto unaryLoc = consumeToken().getLoc();
     ExprNode *expr;
-    Precedence precedence = Precedence::kFactor;
-    if (tokKind == LitToken::kw_not) // not expr.
-      precedence = Precedence::kBoolNot;
+    Precedence precedence = InfixInfo::get(tokKind).precedence;
     if (parseExpression(expr, precedence))
       return failure();
     result = alloc<UnaryOpNode>(getUnaryOpKind(tokKind), unaryLoc, expr);

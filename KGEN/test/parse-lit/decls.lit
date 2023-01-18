@@ -215,3 +215,10 @@ struct StructWithAsync:
 async fn call_struct_async(f: StructWithAsync):
     # CHECK-NEXT: lit.async_call[<>({{.*}}) async -> !lit.none: @{{.*}}](%f)
     f.do_something()
+
+# CHECK-LABEL: lit.func @"await_coroutine()"
+async fn await_coroutine():
+  # CHECK-NEXT: %[[CORO:.*]] = lit.async_call[<>() async -> index: @{{.*}}]()
+  # CHECK-NEXT: %[[RESULT:.*]] = lit.async_await %[[CORO]] : <() -> index>
+  # CHECK-NEXT: lit.let.decl "a" = %[[RESULT]] : index
+  let a = await coroutine()

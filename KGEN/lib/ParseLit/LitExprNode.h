@@ -53,8 +53,9 @@ public:
     kPos,     // +x
     kInvert,  // ~x
     kBoolNot, // not x
+    kAwait,   // await x
     kFirstUnaryOp = kNeg,
-    klastUnaryOp = kBoolNot,
+    klastUnaryOp = kAwait,
 
     // Binary expressions.
     kAdd,

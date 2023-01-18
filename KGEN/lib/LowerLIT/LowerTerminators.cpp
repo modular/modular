@@ -79,12 +79,51 @@ static void createCoroutineInitialize(Operation *call, DeclRefType errType,
           .getResult());
 }
 
+/// Retrieve the results of a coroutine.
+static SmallVector<Value> getCoroutineResults(ImplicitLocOpBuilder &b,
+                                              SymbolConstantAttr resumeFnRef,
+                                              DeclRefType errType, Value curHdl,
+                                              LIT::AsyncAwaitOp op) {
+  Value promise = getCoroutinePromise(b, errType, op.getCoroutine());
+  Value one = b.create<mlir::index::ConstantOp>(1);
+  Value ctxPtr = b.create<OffsetOp>(promise, one);
+  Value ctx =
+      b.create<PointerBitcastOp>(PointerType::get(b.getI8Type()), ctxPtr);
+  Value resumeFn =
+      b.create<AddressOfOp>(resumeFnRef.getType().getValues(), resumeFnRef,
+                            ParamDeclArrayAttr::get(b.getContext(), {}));
+  auto awaitOp = b.create<CoroutineAwaitOp>();
+  auto toOpaqueHdl = [&](Value hdl) {
+    // FIXME: We need an op to convert to opaque pointer.
+    return b
+        .create<mlir::UnrealizedConversionCastOp>(
+            PointerType::get(b.getI8Type()), hdl)
+        .getResult(0);
+  };
+  {
+    OpBuilder::InsertionGuard guard(b);
+    b.createBlock(&awaitOp.getBody());
+    b.create<ExternalCallOp>("KGEN_CompilerRT_LLCL_ExecuteAndResume",
+                             ValueRange{resumeFn,
+                                        toOpaqueHdl(op.getCoroutine()), ctx,
+                                        toOpaqueHdl(curHdl)});
+  }
+
+  SmallVector<Value> results;
+  for (auto [idx, resultType] :
+       llvm::enumerate(op.getCoroutine().getType().getResultTypes()))
+    results.push_back(
+        b.create<LoadOp>(b.create<POP::StructGEPOp>(promise, idx)));
+  return results;
+}
+
 //===----------------------------------------------------------------------===//
 // lowerLexicalTerminators
 //===----------------------------------------------------------------------===//
 
 /// Lower all lexical terminators in the function and remove dead code.
 static LogicalResult lowerLexicalTerminators(DeclRefType errType,
+                                             SymbolConstantAttr resumeFnRef,
                                              LIT::FuncOp func) {
   if (func.getBodyRegion().empty())
     return success();
@@ -102,17 +141,29 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   // Collect all the terminators first to avoid iterator invalidation.
   SmallVector<Operation *> terminators;
   func.walk([&](Operation *op) {
-    if (isa<LIT::ReturnOp, LIT::RaiseOp, LIT::BreakOp, LIT::ContinueOp>(op))
+    if (isa<LIT::ReturnOp, LIT::RaiseOp, LIT::BreakOp, LIT::ContinueOp>(op)) {
       terminators.push_back(op);
-
-    // If we see a coroutine call from within another coroutine, insert the
-    // initialization machinery.
-    if (auto call = dyn_cast<LIT::AsyncCallOp>(op); call && func.isAsync())
+    } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op);
+               call && func.isAsync()) {
+      // If we see a coroutine call from within another coroutine, insert the
+      // initialization machinery.
       createCoroutineInitialize(op, errType, coroHdl, call.getResult());
+    } else if (auto await = dyn_cast<LIT::AsyncAwaitOp>(op)) {
+      ImplicitLocOpBuilder b(await.getLoc(), OpBuilder(await));
+      SmallVector<Value> results =
+          getCoroutineResults(b, resumeFnRef, errType, coroHdl, await);
+      auto coroSig = await.getCoroutine().getType().getSignature();
+      if (coroSig.isThrows())
+        results.assign(1,
+                       b.create<LIT::UnwrapOrPropagateOp>(
+                           coroSig.getValueResults().front(), results.front()));
+      await.replaceAllUsesWith(results);
+      await.erase();
+    }
   });
 
   // Lower all the terminators as they are encountered.
-  auto getErrorOr = [&] {
+  auto errorOr = [&] {
     return VariantType::get({errType, func.getResultType()});
   };
   LIT::ReturnOp firstResultParamsReturn;
@@ -149,7 +200,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
       ValueRange operands = returnOp.getOperands();
       Value result;
       if (func.isThrows()) {
-        result = b.create<VariantCreateOp>(getErrorOr(), operands.front());
+        result = b.create<VariantCreateOp>(errorOr(), operands.front());
         operands = result;
       }
       createReturn(resultParams, operands);
@@ -160,8 +211,9 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
           tryOp.getTryRegion().isAncestor(raiseOp->getBlock()->getParent())) {
         b.create<LIT::TryRaiseOp>(raiseOp.getError());
       } else {
-        // TODO(#6449): Can't have result parameters in a function that raises.
-        Value err = b.create<VariantCreateOp>(getErrorOr(), raiseOp.getError());
+        // TODO(#6449): Can't have result parameters in a function that
+        // raises.
+        Value err = b.create<VariantCreateOp>(errorOr(), raiseOp.getError());
         createReturn({}, err);
       }
 
@@ -198,7 +250,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(terminator));
   Value none = b.create<ParamConstantOp>(b.getAttr<LIT::NoneAttr>());
   if (func.isThrows())
-    none = b.create<VariantCreateOp>(getErrorOr(), none);
+    none = b.create<VariantCreateOp>(errorOr(), none);
   if (func.isAsync()) {
     createCoroutineFinalize(b, errType, coroHdl, none);
     none = coroHdl;
@@ -231,8 +283,8 @@ static LogicalResult lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
     }
   });
 
-  // Replace every throwing signature type with a variant result type and every
-  // async signature type with a coroutine handle result type.
+  // Replace every throwing signature type with a variant result type and
+  // every async signature type with a coroutine handle result type.
   OpBuilder b(op);
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](SignatureType sigType) {
@@ -254,8 +306,9 @@ static LogicalResult lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
             bitEnumClear(sigType.getFnEffects(),
                          FnEffects::Throws | FnEffects::Async)));
   });
-  replacer.recursivelyReplaceElementsIn(
-      op, /*replaceAttrs=*/true, /*replaceLocs=*/false, /*replaceTypes=*/true);
+  replacer.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
+                                        /*replaceLocs=*/false,
+                                        /*replaceTypes=*/true);
 
   // Process async calls. Async calls implicitly wrap the function result type
   // in a coroutine, but now that the signatures are rewritten, they aren't
@@ -305,9 +358,31 @@ struct LowerTerminatorsPass
   using LowerLITTerminatorsBase::LowerLITTerminatorsBase;
 
   void runOnOperation() override {
+    // FIXME: We need to generate a resume function to pass to the LLCL shim.
+    // It would be better to construct and pass a closure.
+    ImplicitLocOpBuilder b(getOperation().getLoc(), &getContext());
+    auto i8Ptr = PointerType::get(b.getI8Type());
+    auto resumeFn = b.create<GeneratorOp>(
+        "__kgen_coro_resume",
+        SignatureType::get(&getContext(), PointerType::get(b.getI8Type()), {}),
+        ArrayRef<ConstraintAttr>(), nullptr);
+    b.createBlock(&resumeFn.getBodyRegion());
+    auto opaqueHdl = b.create<mlir::UnrealizedConversionCastOp>(
+        CoroutineType::get(NoneType::get(&getContext())),
+        resumeFn.getBody()->addArgument(i8Ptr, b.getLoc()));
+    b.create<CoroutineResumeOp>(opaqueHdl.getResult(0));
+    b.create<KGEN::ReturnOp>(ArrayRef<TypedAttr>(), ValueRange());
+    StringAttr resumeFnName =
+        getAnalysis<SymbolTableAnalysis>().getTopLevelSymbolTable().insert(
+            resumeFn);
+    if (resumeFnName != resumeFn.getSymNameAttr())
+      resumeFn.setSymNameAttr(resumeFnName);
+    auto resumeFnRef = SymbolConstantAttr::get(
+        FlatSymbolRefAttr::get(resumeFnName), resumeFn.getSignature());
+
     // Look for an error type declaration.
     DeclRefType errType;
-    getOperation()->walk([&](StructDeclOp decl) {
+    getOperation().walk([&](StructDeclOp decl) {
       if (decl.getName() != "Error" || !decl.getInputParamDecls().empty())
         return;
       // Reconstruct the full symbol reference.
@@ -316,8 +391,8 @@ struct LowerTerminatorsPass
     });
     // Walk all top-level functions.
     WalkResult result =
-        getOperation()->walk<mlir::WalkOrder::PreOrder>([&](LIT::FuncOp func) {
-          if (failed(lowerLexicalTerminators(errType, func)))
+        getOperation().walk<mlir::WalkOrder::PreOrder>([&](LIT::FuncOp func) {
+          if (failed(lowerLexicalTerminators(errType, resumeFnRef, func)))
             return WalkResult::interrupt();
           return WalkResult::skip();
         });
