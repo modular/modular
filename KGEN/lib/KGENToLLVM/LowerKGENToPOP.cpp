@@ -298,16 +298,9 @@ static SmallVector<Type> expandInList(TypeRange types) {
 }
 
 /// Expand lists in a function type.
-static SignatureType expandListsInSignature(SignatureType sigType) {
-  auto newFn = FunctionType::get(sigType.getContext(),
-                                 expandInList(sigType.getValueInputs()),
-                                 expandInList(sigType.getValueResults()));
-  if (newFn == sigType.getValues())
-    return sigType;
-
-  return SignatureType::get(
-      sigType.getInputParams(), sigType.getResultParamTypes(), newFn,
-      ConventionsAttr::get(sigType.getContext(), newFn.getNumInputs()));
+static FunctionType expandListsInFunction(FunctionType fn) {
+  return FunctionType::get(fn.getContext(), expandInList(fn.getInputs()),
+                           expandInList(fn.getResults()));
 }
 
 /// Convert a list type to an array type of the same length.
@@ -322,11 +315,11 @@ static Type expandListsInType(Type type) {
     while (true) {
       if (auto structType = dyn_cast<POP::StructType>(type))
         nextType = expandListsInStruct(structType).first;
+      else if (auto fnType = dyn_cast<FunctionType>(type))
+        nextType = expandListsInFunction(fnType);
       else if (auto sigType = dyn_cast<SignatureType>(type))
-        nextType = expandListsInSignature(sigType);
-      else if (auto coroType = dyn_cast<POP::CoroutineType>(type))
-        nextType = POP::CoroutineType::get(
-            expandListsInSignature(coroType.getSignature()));
+        nextType =
+            SignatureType::get(expandListsInFunction(sigType.getValues()));
       else
         return type;
       if (nextType == type)
@@ -603,7 +596,10 @@ struct ExpandStructGEPOp : public mlir::OpRewritePattern<POP::StructGEPOp> {
     if (auto list = dyn_cast<ListType>(op.getType().getResolvedElementType())) {
       // If the list is empty, then we point to nothing. Generate a nullptr...
       if (!*list.getResolvedLength()) {
-        Value zero = b.create<mlir::index::ConstantOp>(op.getLoc(), 0);
+        Value zero = b.create<ParamConstantOp>(
+            op.getLoc(),
+            POP::SIMDAttr::get(POP::DTypeValue(int64_t(), KGENDType::index),
+                               b.getType<POP::SIMDType>(1, KGENDType::index)));
         b.replaceOpWithNewOp<POP::IndexToPointerOp>(op, op.getType(), zero);
         return success();
       }
@@ -761,7 +757,10 @@ struct ExpandListDebugValue
     ValueRange elements =
         materializeListDestConversion(b, TypedValue<ListType>(op.getValue()));
     b.updateRootInPlace(op, [&] {
-      op.setOperand(b.create<POP::ArrayCreateOp>(op.getLoc(), elements));
+      op.setOperand(b.create<POP::ArrayCreateOp>(
+          op.getLoc(),
+          POP::ArrayType::get(elements.size(), list.getResolvedElementType()),
+          elements));
     });
     return success();
   }

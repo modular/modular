@@ -108,11 +108,16 @@ kgen.func @list_pointer(%ptr: !pop.pointer<!kgen.list<index[2]>>) -> !kgen.list<
 
 // CHECK-LABEL: @struct_list_gep
 // CHECK-SAME: %arg0: !pop.pointer<struct<index, index>>
-kgen.func @struct_list_gep(%ptr: !pop.pointer<struct<!kgen.list<index[2]>>>) -> !pop.pointer<!kgen.list<index[2]>> {
-  // CHECK-NEXT: %0 = pop.struct.gep %arg0[0] : <struct<index, index>>
-  // CHECK-NEXT: %1 = pop.pointer.bitcast %0 : !pop.pointer<index> to !pop.pointer<array<2, index>>
+kgen.func @struct_list_gep(%ptr: !pop.pointer<struct<!kgen.list<index[2]>>>,
+                           %empty: !pop.pointer<struct<!kgen.list<i1[0]>>>) -> !pop.pointer<!kgen.list<index[2]>> {
+  // CHECK-NEXT: %0 = kgen.param.constant: !pop.pointer<array<0, i1>> = <#M.pointer<0>>
+  // CHECK-NEXT: %1 = pop.struct.gep %arg0[0] : <struct<index, index>>
+  // CHECK-NEXT: %2 = pop.pointer.bitcast %1 : !pop.pointer<index> to !pop.pointer<array<2, index>>
   %0 = pop.struct.gep %ptr[0] : <struct<!kgen.list<index[2]>>>
-  // CHECK-NEXT: return %1
+  %1 = pop.struct.gep %empty[0] : <struct<!kgen.list<i1[0]>>>
+  // CHECK-NEXT: "use"(%0)
+  "use"(%1) : (!pop.pointer<!kgen.list<i1[0]>>) -> ()
+  // CHECK-NEXT: return %2
   kgen.return %0 : !pop.pointer<!kgen.list<index[2]>>
 }
 
@@ -243,4 +248,18 @@ kgen.func @list_attr_in_attr() {
   ) -> ()
 
   kgen.return
+}
+
+// CHECK-LABEL: @return_none
+kgen.func @return_none() -> !kgen.list<i1[0]> {
+  %list = pop.list.create() : <i1[0]>
+  kgen.return %list : !kgen.list<i1[0]>
+}
+
+// CHECK-LABEL: @list_in_fn_type
+kgen.func @list_in_fn_type() -> (() -> !kgen.list<i1[0]>) {
+  // CHECK-NEXT: kgen.addressof @return_none : () -> ()
+  %0 = kgen.addressof @return_none : () -> !kgen.list<i1[0]>
+  // CHECK-NEXT: return %0 : () -> ()
+  kgen.return %0 : () -> !kgen.list<i1[0]>
 }
