@@ -32,6 +32,12 @@ using namespace M;
 using namespace KGEN;
 using namespace POP;
 
+/// This is used by the `ArrayElementType` and `VariadicElementType`
+/// constraints to match a type range against a single type.
+static bool typeRangeMatches(Type type, TypeRange range) {
+  return llvm::all_of(range, [&](Type e) { return type == e; });
+}
+
 //===----------------------------------------------------------------------===//
 // CmpOp
 //===----------------------------------------------------------------------===//
@@ -315,12 +321,6 @@ LogicalResult StructGEPOp::inferReturnTypes(
 //===----------------------------------------------------------------------===//
 // ArrayCreateOp
 //===----------------------------------------------------------------------===//
-
-/// This is used by the `ArrayElementType` constraint to match a type range
-/// against a single type.
-static bool typeRangeMatches(Type type, TypeRange range) {
-  return llvm::all_of(range, [&](Type e) { return type == e; });
-}
 
 LogicalResult ArrayCreateOp::verify() {
   int64_t size = *getType().getResolvedSize();
