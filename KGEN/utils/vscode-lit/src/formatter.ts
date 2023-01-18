@@ -23,7 +23,8 @@ export function registerFormatter(outputChannel: vscode.OutputChannel) {
 
       return new Promise<vscode.TextEdit[]>((resolve, reject) => {
         const originalDocumentText = document.getText();
-        const command = "mblack --fast --quiet " + blackArgs.join(' ') + ' -';
+        const command =
+            "mblack --fast --quiet " + blackArgs.join(' ') + ' -t lit -';
         const process = exec(command, {cwd}, (error, stdout, stderr) => {
           // Process any errors/warnings during formatting. These aren't all
           // necessarily fatal, so this doesn't prevent edits from being
