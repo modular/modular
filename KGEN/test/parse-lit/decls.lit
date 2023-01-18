@@ -198,6 +198,10 @@ fn callStatic(a: Int):
   # CHECK: kgen.call @"$decls"::@StructExample::@"static{{.*}}(%a) : (!kgen.declref<@"$Int"::@Int>) -> !lit.none
   StructExample().static(a)
 
+##===----------------------------------------------------------------------===##
+# async/await
+##===----------------------------------------------------------------------===##
+
 # CHECK-LABEL: lit.func @"coroutine()"() async -> index
 async fn coroutine() -> __mlir_type.index:
   # CHECK: lit.return %idx0 : index
@@ -235,3 +239,33 @@ async fn awaitable() -> __mlir_type.index:
   # CHECK: call @"$decls"::@Awaitable::@"__await__($decls::Awaitable)"(%aw)
   let aw = Awaitable()
   return await aw
+
+##===----------------------------------------------------------------------===##
+# Nested Functions
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.func @"topLevelFunction()"
+fn topLevelFunction() -> __mlir_type.index:
+  var a = 0
+  # CHECK: lit.func @"nestedFunction()"
+  fn nestedFunction() -> __mlir_type.index:
+    # CHECK-NEXT: pop.load %a
+    return a
+  # CHECK: declare b: () -> index = <@"$decls"::@"topLevelFunction()"::@"nestedFunction()">
+  alias b = nestedFunction
+  # CHECK: call @"$decls"::@"topLevelFunction()"::@"nestedFunction()"()
+  return nestedFunction()
+
+# CHECK-LABEL: kgen.struct.decl @ParamStruct
+struct ParamStruct:
+  # CHECK-LABEL: @"someMethod({{.*}})"
+  fn someMethod(self) -> __mlir_type.index:
+    var a = 0
+    # CHECK: lit.func @"nestedFunction()"
+    fn nestedFunction() -> __mlir_type.index:
+      # CHECK-NEXT: pop.load %a
+      return a
+    # CHECK: declare b: () -> index = <@"$decls"::@ParamStruct::@"someMethod({{.*}})"::@"nestedFunction()">
+    alias b = nestedFunction
+    # CHECK: call @"$decls"::@ParamStruct::@"someMethod($decls::ParamStruct)"::@"nestedFunction()"()
+    return nestedFunction()

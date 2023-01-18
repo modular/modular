@@ -154,7 +154,7 @@ static Value createUnwrapOrPropagate(ImplicitLocOpBuilder &b, LIT::FuncOp func,
 static LogicalResult lowerLexicalTerminators(DeclRefType errType,
                                              SymbolConstantAttr resumeFnRef,
                                              LIT::FuncOp func) {
-  if (func.getBodyRegion().empty())
+  if (func.getIsInterface())
     return success();
   if (func.isThrows() && !errType)
     return func.emitError("function throws but no 'Error' type was found");
@@ -169,8 +169,14 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
 
   // Collect all the terminators first to avoid iterator invalidation.
   SmallVector<Operation *> terminators;
-  WalkResult result = func.walk([&](Operation *op) {
-    if (isa<LIT::ReturnOp, LIT::RaiseOp, LIT::BreakOp, LIT::ContinueOp>(op)) {
+  // In a pre-order walk, we cannot erase as we walk.
+  SmallVector<Operation *> toErase;
+  WalkResult result = func.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    if (op != func && isa<LIT::FuncOp>(op)) {
+      return WalkResult::skip();
+
+    } else if (isa<LIT::ReturnOp, LIT::RaiseOp, LIT::BreakOp, LIT::ContinueOp>(
+                   op)) {
       terminators.push_back(op);
 
     } else if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
@@ -191,7 +197,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
       newCall->getResult(0).setType(VariantType::get({errType, resultType}));
       call->replaceAllUsesWith(ArrayRef(createUnwrapOrPropagate(
           b, func, newCall->getResult(0), errType, resultType, coroHdl)));
-      call.erase();
+      toErase.push_back(call);
 
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op);
                call && func.isAsync()) {
@@ -205,7 +211,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
           call.getParamDeclsAttr(), call.getOperands());
       Value result = newCall.getResult(0);
       call.replaceAllUsesWith(result);
-      call.erase();
+      toErase.push_back(call);
 
     } else if (auto await = dyn_cast<LIT::AsyncAwaitOp>(op)) {
       ImplicitLocOpBuilder b(await.getLoc(), OpBuilder(await));
@@ -218,12 +224,14 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
                               coroSig.getValueResults().front(), coroHdl));
       }
       await.replaceAllUsesWith(results);
-      await.erase();
+      toErase.push_back(await);
     }
     return WalkResult::advance();
   });
   if (result.wasInterrupted())
     return failure();
+  for (Operation *op : toErase)
+    op->erase();
 
   // Lower all the terminators as they are encountered.
   auto errorOr = [&] {
@@ -406,13 +414,12 @@ struct LowerTerminatorsPass
       errType = DeclRefType::get(
           LIT::getFullyResolvedSymbolRef(cast<mlir::SymbolOpInterface>(*decl)));
     });
-    // Walk all top-level functions.
-    WalkResult result =
-        getOperation().walk<mlir::WalkOrder::PreOrder>([&](LIT::FuncOp func) {
-          if (failed(lowerLexicalTerminators(errType, resumeFnRef, func)))
-            return WalkResult::interrupt();
-          return WalkResult::skip();
-        });
+    // Walk all functions.
+    WalkResult result = getOperation().walk([&](LIT::FuncOp func) {
+      if (failed(lowerLexicalTerminators(errType, resumeFnRef, func)))
+        return WalkResult::interrupt();
+      return WalkResult::advance();
+    });
     if (result.wasInterrupted())
       return signalPassFailure();
 
