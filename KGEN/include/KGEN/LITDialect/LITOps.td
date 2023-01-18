@@ -303,6 +303,30 @@ def LIT_AsyncCallOp : LITOp<"async_call", [CalleeArgumentTypes,
 }
 
 //===----------------------------------------------------------------------===//
+// AsyncAwaitOp
+//===----------------------------------------------------------------------===//
+
+def LIT_AsyncAwaitOp : LITOp<"async_await", [TypesMatchWith<
+    "results match coroutine result types", "coroutine", "results",
+    "$_self.cast<POP::CoroutineType>().getSignature().getValueResults()">]> {
+  let summary = "Await a coroutine.";
+  let description = [{
+    The `lit.async_await` operation awaits a coroutine.
+
+    Example:
+
+    ```mlir
+    %res0, %res1 = lit.async_await %hdl : <() -> (i32, index)>
+    %errOr = lit.async_await %hdl : <() throws -> i64>
+    ```
+  }];
+
+  let arguments = (ins POP_CoroutineType:$coroutine);
+  let results = (outs Variadic<AnyType>:$results);
+  let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
+}
+
+//===----------------------------------------------------------------------===//
 // EndFuncOp
 //===----------------------------------------------------------------------===//
 

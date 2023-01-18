@@ -10,7 +10,7 @@ include "mlir/Pass/PassBase.td"
 // LowerLITTerminators
 //===----------------------------------------------------------------------===//
 
-def LowerLITTerminators : Pass<"lower-lit-terminators"> {
+def LowerLITTerminators : Pass<"lower-lit-terminators", "mlir::ModuleOp"> {
   let summary = "Lower lexical terminators and prune unreachable code.";
   let description = [{
     The `lower-lit-terminators` pass will replace lexical Lit terminators with

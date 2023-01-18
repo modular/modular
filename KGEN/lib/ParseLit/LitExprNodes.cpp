@@ -1500,6 +1500,16 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
     kindToEmit = kInvert;
+  } else if (auto coroType = dyn_cast<POP::CoroutineType>(exprRep.getType());
+             coroType && kindToEmit == kAwait) {
+    // Awaiting a builtin coroutine results in a `lit.async_lit` op.
+    DRValue awaitable = emitter.emitDRValue(argValue);
+    if (!awaitable)
+      return {};
+    auto awaitOp = emitter.builder->create<LIT::AsyncAwaitOp>(
+        emitter.translateLocation(getLoc()), coroType.getResultTypes(),
+        awaitable);
+    return DRValue(awaitOp.getResult(0));
   }
 
   // If this operator maps onto a special function, attempt to lower it.

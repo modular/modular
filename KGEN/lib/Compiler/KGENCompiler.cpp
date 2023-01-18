@@ -15,25 +15,20 @@ using namespace M;
 using namespace KGEN;
 
 static void populatePreElaborationPipeline(mlir::PassManager &pm) {
-  pm.addPass(createLowerLITTerminators());
   pm.addPass(createLowerLIT());
   pm.addPass(createLowerStructs());
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addNestedPass<GeneratorOp>(createMem2Reg());
 }
 
-LogicalResult KGEN::generateLibraryFile(ModuleOp theModule) {
+void KGEN::generateLibraryFile(mlir::PassManager &pm) {
   // Set up the pass pipeline.
-  mlir::PassManager pm(theModule->getContext());
   populatePreElaborationPipeline(pm);
-  return pm.run(theModule);
 }
 
-LogicalResult
-KGEN::elaborateModule(ModuleOp theModule, LLCL::Runtime &runtime,
-                      const ElaborateGeneratorsOptions &elaborateOptions,
-                      SmallVectorImpl<std::string> &includedFiles) {
-  mlir::PassManager pm(theModule->getContext());
+void KGEN::elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
+                           const ElaborateGeneratorsOptions &elaborateOptions,
+                           SmallVectorImpl<std::string> &includedFiles) {
   populatePreElaborationPipeline(pm);
   // Only outline closures just before elaboration - they aren't really
   // necessary until elaboration happens.
@@ -47,6 +42,4 @@ KGEN::elaborateModule(ModuleOp theModule, LLCL::Runtime &runtime,
   // Finally, DCE the symbols we don't want.
   pm.addPass(createEliminateDeadSymbols());
   pm.addPass(createPruneImpossibleVariants());
-
-  return pm.run(theModule);
 }

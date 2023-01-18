@@ -245,3 +245,26 @@ lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async -> !lit.none {
   %hdl = lit.async_call[<>(!kgen.declref<@Error>) async|throws -> index: callee](%err)
   lit.end_func
 }
+
+// CHECK-LABEL: lit.func @await_coro() -> !pop.coroutine<() -> !lit.none>
+lit.func @await_coro() async -> !lit.none {
+  // CHECK: %[[PARENT_HDL:.*]] = pop.coroutine.handle : <() -> !lit.none>
+  // CHECK: %[[CALLEE_HDL:.*]] = kgen.call_param[() -> !pop.coroutine<() -> index>: @coroutine]()
+  %0 = lit.async_call[<>() async -> index: @coroutine]()
+  // CHECK: KGEN_CompilerRT_LLCL_InitializeContext
+  // CHECK: %[[CALLEE_PROMISE:.*]] = pop.coroutine.promise %[[CALLEE_HDL]]
+  // CHECK: %[[IDX1:.*]] = index.constant 1
+  // CHECK: %[[CTX_PTR:.*]] = pop.offset %[[CALLEE_PROMISE]][%[[IDX1]]]
+  // CHECK: %[[CTX:.*]] = pop.pointer.bitcast %[[CTX_PTR]] : !pop.pointer<struct<index>> to !pop.pointer<i8>
+  // CHECK: %[[RESUME:.*]] = kgen.addressof @__kgen_coro_resume : (!pop.pointer<i8>) -> ()
+  // CHECK: pop.coroutine.await {
+  // CHECK:   pop.external_call @KGEN_CompilerRT_LLCL_ExecuteAndResume(%[[RESUME]], %{{.*}}, %[[CTX]], %{{.*}})
+  // CHECK: }
+  // CHECK: %[[RES:.*]] = pop.struct.gep %[[CALLEE_PROMISE]][0] : <struct<index>>
+  // CHECK: pop.load %[[RES]] : !pop.pointer<index>
+  %1 = lit.async_await %0 : <() -> index>
+  lit.end_func
+}
+
+// CHECK-LABEL: kgen.generator @__kgen_coro_resume
+// CHECK: pop.coroutine.resume
