@@ -65,7 +65,7 @@ void KGENDialect::registerAttributes() {
 /// operation has it, or an empty array otherwise.
 ArrayRef<ParamDeclAttr> KGEN::getParamDecls(Operation *op) {
   if (auto declItf = dyn_cast<DeclInterface>(op))
-    return declItf.getInputParamDeclsAttr();
+    return declItf.getInputParamDecls();
   if (auto paramDeclsArray =
           op->getAttrOfType<ParamDeclArrayAttr>("paramDecls"))
     return paramDeclsArray;

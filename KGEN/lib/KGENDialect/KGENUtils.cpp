@@ -1614,10 +1614,10 @@ LogicalResult KGEN::verifyDeclMatchesInterface(
 static void collectContextParameters(Operation *op,
                                      SmallVector<ParamDeclAttr> &params) {
   auto decl = dyn_cast_or_null<DeclInterface>(op);
-  if (!decl)
+  if (!decl || isa<FuncInterface>(*decl))
     return;
   collectContextParameters(op->getParentOp(), params);
-  llvm::append_range(params, decl.getInputParamDeclsAttr());
+  llvm::append_range(params, decl.getInputParamDecls());
 }
 
 /// Return the full signature of this declaration, including parameters from

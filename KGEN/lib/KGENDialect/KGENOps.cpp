@@ -82,12 +82,12 @@ static void printParamAssertOpValue(OpAsmPrinter &p, Operation *,
 static ParseResult parseParamDeclareOpValue(OpAsmParser &p,
                                             ParamDeclArrayAttr &paramDecls,
                                             TypedAttr &value) {
-  std::string varname;
-  if (p.parseKeywordOrString(&varname) || parseParamConstantOpValue(p, value))
+  StringAttr name;
+  if (parseParamName(p, name) || parseParamConstantOpValue(p, value))
     return failure();
 
   paramDecls = p.getBuilder().getAttr<ParamDeclArrayAttr>(
-      ParamDeclAttr::get(varname, value.getType()));
+      ParamDeclAttr::get(name, value.getType()));
   return success();
 }
 
@@ -223,8 +223,7 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   auto parent = op->getParentOfType<DeclInterface>();
   if (parent) {
     collectParameterReferences(cond, parameterRefs);
-    ArrayRef<ParamDeclAttr> generatorInputParams =
-        parent.getInputParamDeclsAttr();
+    ArrayRef<ParamDeclAttr> generatorInputParams = parent.getInputParamDecls();
 
     // Check to see if the parameters referenced by the condition are all
     // defined by the generator.  If so, we can fold this into the constraint
@@ -782,7 +781,7 @@ LogicalResult StructDeclOp::verifyRegions() {
 /// Verify parameter uses.
 LogicalResult
 StructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  return ParameterDeclsAndUses().calculateAndVerify(*this, symbolTable);
+  return verifyIfTopLevel(symbolTable);
 }
 
 void StructDeclOp::build(OpBuilder &builder, OperationState &result,

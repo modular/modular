@@ -91,7 +91,9 @@ def LIT_FuncOp : LITOp<"func", [
 //===----------------------------------------------------------------------===//
 
 def FileModuleOp : LITOp<"file_module", [
-    IsolatedFromAbove, NoRegionArguments, SymbolTable, Symbol
+    IsolatedFromAbove, NoRegionArguments, SymbolTable, Symbol,
+    DeclareOpInterfaceMethods<DeclInterface>,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>
   ] # GraphRegionNoTerminator.traits> {
   let summary = "source file module";
   let description = [{

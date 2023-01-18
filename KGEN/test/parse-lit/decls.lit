@@ -256,8 +256,8 @@ fn topLevelFunction() -> __mlir_type.index:
   # CHECK: call @"$decls"::@"topLevelFunction()"::@"nestedFunction()"()
   return nestedFunction()
 
-# CHECK-LABEL: kgen.struct.decl @ParamStruct
-struct ParamStruct:
+# CHECK-LABEL: kgen.struct.decl @SomeStruct
+struct SomeStruct:
   # CHECK-LABEL: @"someMethod({{.*}})"
   fn someMethod(self) -> __mlir_type.index:
     var a = 0
@@ -265,7 +265,29 @@ struct ParamStruct:
     fn nestedFunction() -> __mlir_type.index:
       # CHECK-NEXT: pop.load %a
       return a
-    # CHECK: declare b: () -> index = <@"$decls"::@ParamStruct::@"someMethod({{.*}})"::@"nestedFunction()">
+    # CHECK: declare b: () -> index = <@"$decls"::@SomeStruct::@"someMethod({{.*}})"::@"nestedFunction()">
     alias b = nestedFunction
-    # CHECK: call @"$decls"::@ParamStruct::@"someMethod($decls::ParamStruct)"::@"nestedFunction()"()
+    # CHECK: call @"$decls"::@SomeStruct::@"someMethod({{.*}})"::@"nestedFunction()"()
     return nestedFunction()
+
+# CHECK-LABEL: lit.func @"topLevelParamFn()"<a_param>
+fn topLevelParamFn[a_param: __mlir_type.index]():
+  # CHECK: lit.func @"nestedFunction()"<b_param>
+  fn nestedFunction[b_param: __mlir_type.index]():
+    return
+  # CHECK: declare ref: <b_param>() -> !lit.none = <@"$decls"::@"topLevelParamFn()"::@"nestedFunction()">
+  alias ref = nestedFunction
+  # CHECK: call @"$decls"::@"topLevelParamFn()"::@"nestedFunction()"<b_param = 2>
+  nestedFunction[2]()
+
+# CHECK-LABEL: kgen.struct.decl @SomeParamStruct<c_param>
+struct SomeParamStruct[c_param: __mlir_type.index]:
+  # CHECK-LABEL: lit.func @"topLevelParamFn({{.*}})"<a_param>
+  fn topLevelParamFn[a_param: __mlir_type.index](self):
+    # CHECK: lit.func @"nestedFunction()"<b_param>
+    fn nestedFunction[b_param: __mlir_type.index]():
+      return
+    # CHECK: declare ref: <b_param>() -> !lit.none = <@"$decls"::@SomeParamStruct::@"topLevelParamFn({{.*}})"::@"nestedFunction()"
+    alias ref = nestedFunction
+    # CHECK: call @"$decls"::@SomeParamStruct::@"topLevelParamFn({{.*}})"::@"nestedFunction()"<b_param = 2>()
+    nestedFunction[2]()

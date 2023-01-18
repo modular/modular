@@ -48,7 +48,7 @@ def DeclInterface : OpInterface<"DeclInterface"> {
       are visible to the operations at or below the parameter scope defined by
       this operation. The `DeclInterface` is allowed to have a circular
       reference to these parameters only.
-    }], "ParamDeclArrayAttr", "getInputParamDeclsAttr">,
+    }], "ArrayRef<ParamDeclAttr>", "getInputParamDecls">,
 
     InterfaceMethod<[{
       Return the constraints on the input parameters at this `DeclInterface`
@@ -65,6 +65,13 @@ def DeclInterface : OpInterface<"DeclInterface"> {
                        "constraints to");
     }]>,
   ];
+
+  let extraTraitClassDeclaration = [{
+    /// Verify the current parameter scope if it is the top-level scope.
+    LogicalResult verifyIfTopLevel(SymbolTableCollection &symtab) {
+      return impl::verifyIfTopLevel(cast<DeclInterface>(*$_op), symtab);
+    }
+  }];
 }
 
 def FuncInterface : OpInterface<"FuncInterface"> {

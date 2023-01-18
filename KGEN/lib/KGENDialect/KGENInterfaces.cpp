@@ -7,7 +7,7 @@
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 
 using namespace M;
 using namespace KGEN;
@@ -15,6 +15,13 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 // Verification
 //===----------------------------------------------------------------------===//
+
+LogicalResult impl::verifyIfTopLevel(DeclInterface decl,
+                                     SymbolTableCollection &symtab) {
+  if (isa<DeclInterface>(decl->getParentOp()))
+    return success();
+  return ParameterDeclsAndUses().calculateAndVerify(decl, symtab);
+}
 
 LogicalResult impl::verifyCallOp(KGENCallOpInterface op) {
   if (!op.getCallee())

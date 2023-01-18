@@ -16,10 +16,13 @@
 #include "mlir/IR/Region.h"
 
 namespace M::KGEN {
+class DeclInterface;
 class KGENCallOpInterface;
 
 namespace impl {
 LogicalResult verifyCallOp(KGENCallOpInterface op);
+LogicalResult verifyIfTopLevel(DeclInterface decl,
+                               SymbolTableCollection &symtab);
 } // namespace impl
 } // namespace M::KGEN
 
