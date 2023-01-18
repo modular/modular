@@ -65,3 +65,10 @@ kgen.func @variant_constant_2() -> !pop.variant<i1, i2, i3, i4, i5, i6> {
   %0 = kgen.param.constant: !pop.variant<i1, i2, i3, i4, i5, i6> = <#pop.variant<:i4 1>>
   kgen.return %0 : !pop.variant<i1, i2, i3, i4, i5, i6>
 }
+
+// CHECK-LABEL: @pointer_constant
+kgen.func @pointer_constant() -> !pop.pointer<?> {
+  // CHECK-NEXT: ptr null
+  %null = kgen.param.constant: !pop.pointer<?> = <#M.pointer<0>>
+  kgen.return %null : !pop.pointer<?>
+}
