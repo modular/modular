@@ -330,11 +330,12 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
 
     // If this is a DeclInterface, the declared parameters are stored in the
     // signature.
-    ParamDeclArrayAttr paramDeclsAttr;
+    std::optional<ArrayRef<ParamDeclAttr>> paramDecls;
     if (bodyDeclInterface)
-      paramDeclsAttr = bodyDeclInterface.getInputParamDeclsAttr();
-    else
-      paramDeclsAttr = bodyOp->getAttrOfType<ParamDeclArrayAttr>("paramDecls");
+      paramDecls = bodyDeclInterface.getInputParamDecls();
+    else if (auto attr =
+                 bodyOp->getAttrOfType<ParamDeclArrayAttr>("paramDecls"))
+      paramDecls = attr;
 
     // Check the types of results to find any parameters embedded in their
     // types.  We don't have to check operands because they are always checked
@@ -356,7 +357,7 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
     curLocationCollecting = std::nullopt;
 
     // If this operation had any parameter uses or decls, remember them.
-    if (!uses.empty() || paramDeclsAttr) {
+    if (!uses.empty() || paramDecls) {
       parameters.usersAndDeclarers.push_back({bodyOp, std::move(uses)});
     } else if (hasConstExpr) {
       // If this operation contains only constant expressions, remember it.
@@ -364,10 +365,10 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
     }
 
     // Ok, check parameter declarations if present.
-    if (!paramDeclsAttr)
+    if (!paramDecls)
       return WalkResult::advance();
 
-    for (ParamDeclAttr param : paramDeclsAttr) {
+    for (ParamDeclAttr param : *paramDecls) {
       // We cannot have any redefinitions of parameters in this scope.
       auto &[op, decl] = parameters.decls[param.getName()];
       if (op && (op == topLevelOp ||
@@ -448,22 +449,37 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
     return;
   }
 
-  // The symbol reference may refer to a nested symbol, in which case we build
-  // the signature by concatenating the parameter signature down to the leaf
-  // symbol.
-  SmallVector<ParamDeclAttr> inputParams;
-  for (Operation *op : symbolOps)
-    if (auto decl = dyn_cast<DeclInterface>(op))
-      llvm::append_range(inputParams, decl.getInputParamDeclsAttr());
-
   // The leaf symbol must refer to a function.
   auto func = dyn_cast<FuncInterface>(symbolOps.back());
   if (!func) {
     hadError = true;
     emitError(*curLocationCollecting)
-        << symbol << " does not reference a function";
+        << symbol << " does not reference a KGEN function";
     return;
   }
+  // Everything else must be a declaration.
+  for (Operation *op : llvm::drop_end(symbolOps)) {
+    if (!isa<DeclInterface>(op)) {
+      emitError(*curLocationCollecting)
+          << "symbol @" << cast<mlir::SymbolOpInterface>(op).getName()
+          << " does not reference a KGEN declaration";
+      return;
+    }
+  }
+
+  // If the symbol refers to a function nested inside any number of
+  // declarations, build the full signature by concatenating the input
+  // parameters down to the function. For functions nested inside another
+  // function, it captures parameters contextually.
+  SmallVector<ParamDeclAttr> inputParams;
+  auto startIt = std::prev(symbolOps.end());
+  while (startIt != symbolOps.begin() &&
+         !isa<FuncInterface>(*std::prev(startIt)))
+    --startIt;
+  for (Operation *op : llvm::make_range(startIt, symbolOps.end()))
+    llvm::append_range(inputParams,
+                       cast<DeclInterface>(op).getInputParamDecls());
+
   auto declSignature = SignatureType::get(
       ParamDeclArrayAttr::get(func.getContext(), inputParams),
       TypeArrayAttr::get(func.getContext(), func.getResultParamTypes()),
@@ -517,11 +533,11 @@ void DeclParameterVerifier::verifyRefType(DeclRefType refType) {
   // We have to specialize the type's parameter decls.
   ParameterEvaluator evaluator;
   for (auto [value, decl] :
-       llvm::zip(refType.getParamValues(), decl.getInputParamDeclsAttr()))
+       llvm::zip(refType.getParamValues(), decl.getInputParamDecls()))
     evaluator.setParameterValue(decl, value.getValue());
   SmallVector<ParamDeclAttr> specializedDecls;
   specializedDecls.reserve(refType.getParamValues().size());
-  for (ParamDeclAttr decl : decl.getInputParamDeclsAttr())
+  for (ParamDeclAttr decl : decl.getInputParamDecls())
     specializedDecls.push_back(
         cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl)));
 

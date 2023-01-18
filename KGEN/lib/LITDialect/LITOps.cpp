@@ -52,6 +52,14 @@ void FileModuleOp::build(OpBuilder &odsBuilder, OperationState &state,
   state.addRegion()->push_back(new Block());
 }
 
+LogicalResult
+FileModuleOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  return verifyIfTopLevel(symbolTable);
+}
+
+/// Modules don't have input parameters but do define a parameter scope.
+ArrayRef<ParamDeclAttr> FileModuleOp::getInputParamDecls() { return {}; }
+
 //===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
@@ -314,8 +322,7 @@ LogicalResult
 LIT::FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // If this function is top-level, see if the parameter definitions and uses
   // within the generator are structured correctly.
-  if (isa<ModuleOp>((*this)->getParentOp()) &&
-      failed(ParameterDeclsAndUses().calculateAndVerify(*this, symbolTable)))
+  if (failed(verifyIfTopLevel(symbolTable)))
     return failure();
 
   // If the generator is implementing a generator interface, check that they

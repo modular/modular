@@ -583,6 +583,17 @@ static void lowerLITOps(LIT::FuncOp func,
     }
   });
 
+  // Demote direct calls to nested functions to `call_param` so the callee can
+  // be rewritten.
+  func.walk([&](CallOp call) {
+    if (!nestedFuncRenames.lookup(
+            flattenSymbolRefAttr(call.getCallee().getSymbol()).getAttr()))
+      return;
+    mlir::IRRewriter b{OpBuilder(call)};
+    b.replaceOpWithNewOp<CallParamOp>(
+        call, call.getResultTypes(), call.getCallee(), call.getParamDeclsAttr(),
+        call.getOperands());
+  });
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](SymbolConstantAttr ref) -> Attribute {
     ParamDeclRefAttr newRef = nestedFuncRenames.lookup(
