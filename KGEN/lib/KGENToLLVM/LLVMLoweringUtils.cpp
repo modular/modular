@@ -423,8 +423,8 @@ Value VariantHelper::materializeLLVMVariant(Type type, Value value,
 //===----------------------------------------------------------------------===//
 
 /// Convert a SIMD vector constant.
-static Value convertSIMDAttr(ImplicitLocOpBuilder &b, TypeConverter &tc,
-                             POP::SIMDAttr simd) {
+static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
+                             mlir::LLVMTypeConverter &tc, POP::SIMDAttr simd) {
   KGENDType dtype = *simd.getType().getResolvedDType();
   auto asConst = [&](TypedAttr value) {
     return b.create<LLVM::ConstantOp>(value);
@@ -439,8 +439,8 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b, TypeConverter &tc,
       return asConst(b.getIntegerAttr(
           b.getIntegerType(dtype.getIntegerWidthInBits()), value.getIntVal()));
     if (dtype.isIndex() || dtype.isAddress()) {
-      Value addr = asConst(b.getIntegerAttr(tc.convertType(b.getIndexType()),
-                                            value.getIndexVal()));
+      Value addr =
+          asConst(b.getIntegerAttr(tc.getIndexType(), value.getIndexVal()));
       if (dtype.isIndex())
         return addr;
       return b.create<LLVM::IntToPtrOp>(
@@ -469,7 +469,7 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b, TypeConverter &tc,
   }
   if (dtype.isIndex() || dtype.isAddress()) {
     SmallVector<APInt> values;
-    auto indexType = cast<IntegerType>(tc.convertType(b.getIndexType()));
+    auto indexType = cast<IntegerType>(tc.getIndexType());
     for (const POP::DTypeValue &value : simd.getValues())
       values.push_back(APInt(indexType.getWidth(), value.getIndexVal()));
     Value addr = asConst(IntArrayElementsAttr::get(
@@ -543,6 +543,14 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
   if (auto dtypeCst = dyn_cast<DTypeConstantAttr>(attr))
     return b.create<LLVM::ConstantOp>(
         b.getI8IntegerAttr(dtypeCst.getDType().getValue()));
+
+  // Convert pointer attributes (usually null pointers).
+  if (auto ptr = dyn_cast<PointerAttr>(attr)) {
+    return b.create<LLVM::IntToPtrOp>(
+        tc.convertType(ptr.getType()),
+        b.create<LLVM::ConstantOp>(
+            b.getIntegerAttr(tc.getIndexType(), ptr.getAddr())));
+  }
 
   // Convert string constant to a struct{ptr, size} of type
   // !llvm.struct<(ptr<i8>, index).
