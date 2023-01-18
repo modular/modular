@@ -1023,14 +1023,6 @@ kgen.generator @list_create(%arg0: index) -> !kgen.list<index[1]> {
   kgen.return %0 : !kgen.list<index[1]>
 }
 
-// CHECK-LABEL: @indirect_call
-kgen.generator @indirect_call(%a: i32, %fn: (i32) -> index) -> index {
-  // CHECK: pop.indirect_call %arg1(%arg0) : (i32) -> index
-  %0 = pop.indirect_call %fn(%a) : (i32) -> index
-  // CHECK: return %0 : index
-  kgen.return %0 : index
-}
-
 // CHECK-LABEL: @call_indirect
 kgen.generator @call_indirect(%arg0: (index) -> index, %arg1 : !pop.closure<(index) -> index>) {
   %idx0 = index.constant 0
