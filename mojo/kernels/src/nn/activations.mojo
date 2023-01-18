@@ -10,6 +10,26 @@ from TypeTraits import is_floating_point
 from Math import erf, tanh
 
 # ===----------------------------------------------------------------------===#
+# relu
+# ===----------------------------------------------------------------------===#
+
+
+fn relu[
+    simd_width: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
+    """Compute the Relu Op using the equation
+    $max(0, x)$.
+
+    Args:
+        x (SIMD[simd_width, type]): The value to compute the RELU operation on.
+
+    Returns:
+        SIMD[simd_width, type]: The result of the RELU operation.
+    """
+    return x.max(0)
+
+
+# ===----------------------------------------------------------------------===#
 # gelu
 # ===----------------------------------------------------------------------===#
 
