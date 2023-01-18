@@ -1223,6 +1223,26 @@ struct ConvertPOPInlineAsm : mlir::ConvertOpToLLVMPattern<InlineAsmOp> {
 // ConvertPOPAtomicCmpXchg
 //===----------------------------------------------------------------------===//
 
+static LLVM::AtomicOrdering getAtomicOrdering(AtomicOrdering ordering) {
+  switch (ordering) {
+  case AtomicOrdering::NOT_ATOMIC:
+    return LLVM::AtomicOrdering::not_atomic;
+  case AtomicOrdering::UNORDERED:
+    return LLVM::AtomicOrdering::unordered;
+  case AtomicOrdering::MONOTONIC:
+    return LLVM::AtomicOrdering::monotonic;
+  case AtomicOrdering::ACQUIRE:
+    return LLVM::AtomicOrdering::acquire;
+  case AtomicOrdering::RELEASE:
+    return LLVM::AtomicOrdering::release;
+  case AtomicOrdering::ACQUIRE_RELEASE:
+    return LLVM::AtomicOrdering::acq_rel;
+  case AtomicOrdering::SEQUENTIALLY_CONSISTENT:
+    return LLVM::AtomicOrdering::seq_cst;
+  }
+  llvm_unreachable("unknown atomic ordering");
+}
+
 class ConvertPOPAtomicCmpXchg
     : public mlir::ConvertOpToLLVMPattern<AtomicCmpXchgOp> {
 public:
@@ -1238,24 +1258,48 @@ public:
         getAtomicOrdering(op.getFailureOrdering()));
     return success();
   }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPAtomicRMW
+//===----------------------------------------------------------------------===//
+
+class ConvertPOPAtomicRMW : public mlir::ConvertOpToLLVMPattern<AtomicRMWOp> {
+public:
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(AtomicRMWOp op, AtomicRMWOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    KGENDType dtype = *cast<SIMDType>(op.getType()).getResolvedDType();
+    Type type = getTypeConverter()->convertType(op.getType());
+    rewriter.replaceOpWithNewOp<LLVM::AtomicRMWOp>(
+        op, type, getAtomicBinOp(dtype, adaptor.getBinOp()), adaptor.getPtr(),
+        adaptor.getVal(), getAtomicOrdering(op.getOrdering()));
+    return success();
+  }
 
 private:
-  static LLVM::AtomicOrdering getAtomicOrdering(AtomicOrdering ordering) {
-    switch (ordering) {
-    case AtomicOrdering::NOT_ATOMIC:
-      return LLVM::AtomicOrdering::not_atomic;
-    case AtomicOrdering::UNORDERED:
-      return LLVM::AtomicOrdering::unordered;
-    case AtomicOrdering::MONOTONIC:
-      return LLVM::AtomicOrdering::monotonic;
-    case AtomicOrdering::ACQUIRE:
-      return LLVM::AtomicOrdering::acquire;
-    case AtomicOrdering::RELEASE:
-      return LLVM::AtomicOrdering::release;
-    case AtomicOrdering::ACQUIRE_RELEASE:
-      return LLVM::AtomicOrdering::acq_rel;
-    case AtomicOrdering::SEQUENTIALLY_CONSISTENT:
-      return LLVM::AtomicOrdering::seq_cst;
+  static LLVM::AtomicBinOp getAtomicBinOp(KGENDType dtype, AtomicBinOp binOp) {
+    switch (binOp) {
+    case AtomicBinOp::XCHG:
+      return LLVM::AtomicBinOp::xchg;
+    case AtomicBinOp::ADD:
+      return dtype.isFloat() ? LLVM::AtomicBinOp::fadd : LLVM::AtomicBinOp::add;
+    case AtomicBinOp::SUB:
+      return dtype.isFloat() ? LLVM::AtomicBinOp::fsub : LLVM::AtomicBinOp::sub;
+    case AtomicBinOp::AND:
+      return LLVM::AtomicBinOp::_and;
+    case AtomicBinOp::NAND:
+      return LLVM::AtomicBinOp::nand;
+    case AtomicBinOp::OR:
+      return LLVM::AtomicBinOp::_or;
+    case AtomicBinOp::XOR:
+      return LLVM::AtomicBinOp::_xor;
+    case AtomicBinOp::MAX:
+      return dtype.isSInt() ? LLVM::AtomicBinOp::max : LLVM::AtomicBinOp::umax;
+    case AtomicBinOp::MIN:
+      return dtype.isSInt() ? LLVM::AtomicBinOp::min : LLVM::AtomicBinOp::umin;
     }
     llvm_unreachable("unknown atomic ordering");
   }
@@ -1318,6 +1362,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPArrayRepeat,
       ConvertPOPArrayReplace,
       ConvertPOPAtomicCmpXchg,
+      ConvertPOPAtomicRMW,
       ConvertPOPBitcast,
       ConvertPOPCallLLVMIntrinsic,
       ConvertPOPCast,

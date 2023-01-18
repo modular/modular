@@ -63,6 +63,27 @@ def POP_AtomicOrderingAttr : EnumAttr<POPDialect,
                                       "atomic_ordering">;
 
 //===----------------------------------------------------------------------===//
+// AtomicBinOp
+//===----------------------------------------------------------------------===//
+
+def POP_AtomicBinOp : POP_Enum<
+    "AtomicBinOp", "pop.atomic.rmw operator", [
+      POP_EnumCase<"XCHG", 0, "xchg">,
+      POP_EnumCase<"ADD", 1, "add">,
+      POP_EnumCase<"SUB", 2, "sub">,
+      POP_EnumCase<"AND", 3, "and">,
+      POP_EnumCase<"NAND", 4, "nand">,
+      POP_EnumCase<"OR", 5, "or">,
+      POP_EnumCase<"XOR", 6, "xor">,
+      POP_EnumCase<"MAX", 7, "max">,
+      POP_EnumCase<"MIN", 8, "min">
+    ]>;
+
+def POP_AtomicBinOpAttr : EnumAttr<POPDialect,
+                                   POP_AtomicBinOp,
+                                   "bin_op">;
+
+//===----------------------------------------------------------------------===//
 // PrefetchTag
 //===----------------------------------------------------------------------===//
 

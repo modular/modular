@@ -2487,3 +2487,52 @@ def POP_AtomicCmpXchgOp : POPOp<"atomic.cmpxchg", [
     attr-dict `:` qualified(type($ptr))
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// AtomicRMWOp
+//===----------------------------------------------------------------------===//
+
+def POP_AtomicRMWOp : POPOp<"atomic.rmw", [
+    PointerElementType<"ptr", "val">,
+    PointerElementType<"ptr", "result">,
+    AllTypesMatch<["val", "result"]>]> {
+  let summary = "used to atomically modify memory using a specified binop";
+  let description = [{
+    The `pop.atomic.rmw` op is used to atomically modify memory.
+
+    There are three arguments to the `pop.atomic.rmw` op are: an operation to
+    apply, an address whose value to modify, an argument to the operation.
+
+    The contents of memory at the location specified by the `ptr` operand are
+    atomically read, modified, and written back. The original value at the
+    location is returned. The modification is specified by the operation
+    argument:
+
+    - xchg: `*ptr = val`
+    - add: `*ptr = *ptr + val`
+    - sub: `*ptr = *ptr - val`
+    - and: `*ptr = *ptr & val`
+    - nand: `*ptr = ~(*ptr & val)`
+    - or: `*ptr = *ptr | val`
+    - xor: `*ptr = *ptr ^ val`
+    - max: `*ptr = *ptr > val ? *ptr : val`
+    - min: `*ptr = *ptr < val ? *ptr : val`
+
+    Example:
+
+    ```mlir
+    %0 = pop.atomic.rmw add(%ptr, %val) monotonic : !pop.pointer<scalar<index>>
+    ```
+  }];
+
+  let arguments = (ins POP_AtomicBinOpAttr:$bin_op,
+                       PointerOf<UnboundOrArithmeticScalar>:$ptr,
+                       UnboundOrArithmeticScalar:$val,
+                       POP_AtomicOrderingAttr:$ordering);
+  let results = (outs UnboundOrArithmeticScalar:$result);
+
+  let assemblyFormat = [{
+    `` $bin_op `(` $ptr `,` $val `)` `` $ordering attr-dict `:`
+    qualified(type($ptr))
+  }];
+}

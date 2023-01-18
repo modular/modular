@@ -254,6 +254,8 @@ class ScalarOfDType<DTypeConstraint constraint, string desc> :
 
 def BoolScalar : ScalarOfDType<BoundAnd<BoolDType>, "!pop.simd<1, bool>">,
     BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get($_builder.getContext(), KGENDType::bool))">;
+def UnboundOrArithmeticScalar : ScalarOfDType<UnboundOr<ArithmeticDType>,
+    "whose type is an arithmetic dtype">;
 
 def UI8Scalar : ScalarOfDType<BoundAnd<UI8DType>, "!pop.simd<1, ui8>">,
     BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get($_builder.getContext(), KGENDType::ui8))">;
