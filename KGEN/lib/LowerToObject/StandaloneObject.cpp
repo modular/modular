@@ -218,7 +218,7 @@ ObjectCompiler::produceStandaloneObjectAttr(TargetInfoAttr target, bool isJIT) {
       RankedTensorType::get(
           {(int64_t)buffer->getBufferSize()},
           IntegerType::get(target.getContext(), 8, IntegerType::Unsigned)),
-      "object-" + llvm::toHex(hash, /*LowerCase=*/true),
+      "object_" + llvm::toHex(hash, /*LowerCase=*/true),
       ArrayRef<char>(buffer->getBufferStart(), buffer->getBufferSize()),
       resourceManager, /*optAlignment=*/8);
 }
