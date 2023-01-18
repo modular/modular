@@ -1220,6 +1220,48 @@ struct ConvertPOPInlineAsm : mlir::ConvertOpToLLVMPattern<InlineAsmOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPAtomicCmpXchg
+//===----------------------------------------------------------------------===//
+
+class ConvertPOPAtomicCmpXchg
+    : public mlir::ConvertOpToLLVMPattern<AtomicCmpXchgOp> {
+public:
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(AtomicCmpXchgOp op, AtomicCmpXchgOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type type = getTypeConverter()->convertType(op.getType());
+    rewriter.replaceOpWithNewOp<LLVM::AtomicCmpXchgOp>(
+        op, type, adaptor.getPtr(), adaptor.getCmp(), adaptor.getVal(),
+        getAtomicOrdering(op.getSuccessOrdering()),
+        getAtomicOrdering(op.getFailureOrdering()));
+    return success();
+  }
+
+private:
+  static LLVM::AtomicOrdering getAtomicOrdering(AtomicOrdering ordering) {
+    switch (ordering) {
+    case AtomicOrdering::NOT_ATOMIC:
+      return LLVM::AtomicOrdering::not_atomic;
+    case AtomicOrdering::UNORDERED:
+      return LLVM::AtomicOrdering::unordered;
+    case AtomicOrdering::MONOTONIC:
+      return LLVM::AtomicOrdering::monotonic;
+    case AtomicOrdering::ACQUIRE:
+      return LLVM::AtomicOrdering::acquire;
+    case AtomicOrdering::RELEASE:
+      return LLVM::AtomicOrdering::release;
+    case AtomicOrdering::ACQUIRE_RELEASE:
+      return LLVM::AtomicOrdering::acq_rel;
+    case AtomicOrdering::SEQUENTIALLY_CONSISTENT:
+      return LLVM::AtomicOrdering::seq_cst;
+    }
+    llvm_unreachable("unknown atomic ordering");
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -1275,6 +1317,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPArrayGet,
       ConvertPOPArrayRepeat,
       ConvertPOPArrayReplace,
+      ConvertPOPAtomicCmpXchg,
       ConvertPOPBitcast,
       ConvertPOPCallLLVMIntrinsic,
       ConvertPOPCast,

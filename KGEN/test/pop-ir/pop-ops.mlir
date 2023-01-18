@@ -1149,3 +1149,20 @@ kgen.func @usesAGlobal() {
   pop.compiler.global_store "aGlobal", %zero : index
   kgen.return
 }
+
+
+// CHECK-LABEL: kgen.func @atomic_cmpxchg
+// CHECK-SAME: %[[PTR:.*]]: !pop.pointer<scalar<index>>,
+// CHECK-SAME: %[[CMP:.*]]: !pop.scalar<index>,
+// CHECK-SAME: %[[NEW:.*]]: !pop.scalar<index>
+kgen.func @atomic_cmpxchg(%ptr: !pop.pointer<scalar<index>>,
+                          %cmp: !pop.scalar<index>,
+                          %new: !pop.scalar<index>) {
+  // CHECK: pop.atomic.cmpxchg %[[PTR]], %[[CMP]], %[[NEW]] monotonic monotonic
+  %0 = pop.atomic.cmpxchg %ptr, %cmp, %new monotonic monotonic :
+                    !pop.pointer<scalar<index>>
+  // CHECK: pop.atomic.cmpxchg %[[PTR]], %[[CMP]], %[[NEW]] seq_cst acq_rel
+  %1 = pop.atomic.cmpxchg %ptr, %cmp, %new seq_cst acq_rel :
+                    !pop.pointer<scalar<index>>
+  kgen.return
+}

@@ -252,11 +252,19 @@ def ScalarType : ConfinedType<POP_SIMDType,
 class ScalarOfDType<DTypeConstraint constraint, string desc> :
   AllOfType<[SIMDOfDType<constraint, desc>, ScalarType], desc>;
 
+def BoolScalar : ScalarOfDType<BoundAnd<BoolDType>, "!pop.simd<1, bool>">,
+    BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get($_builder.getContext(), KGENDType::bool))">;
+
 def UI8Scalar : ScalarOfDType<BoundAnd<UI8DType>, "!pop.simd<1, ui8>">,
     BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get($_builder.getContext(), KGENDType::ui8))">;
 
 def UnboundOrPointerOrSIMDAddressType : AnyTypeOf<
     [POP_PointerType, AddressSIMD, UnboundSIMD]>;
+
+
+def UnboundOrIndexOrInt : AnyTypeOf<[
+    ScalarOfDType<UnboundOr<OrDType<[IndexDType, IntDType]>>,
+                  "whose type is unbound, index, or integral dtype">]>;
 
 //===----------------------------------------------------------------------===//
 // Type Constraint Traits

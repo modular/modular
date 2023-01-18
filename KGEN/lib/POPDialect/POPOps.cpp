@@ -1076,6 +1076,22 @@ static PointerType getCoroutinePromiseType(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
+// AtomicCmpXchgOp
+//===----------------------------------------------------------------------===//
+
+/// Return an KGEN struct type with any integer or pointer followed by a
+/// boolean.
+static Type getCmpXChgResultType(Type type) {
+  auto pointerType = dyn_cast<PointerType>(type);
+  if (!pointerType)
+    return nullptr;
+  auto eltType = pointerType.getResolvedElementType();
+  auto boolType =
+      SIMDType::get(1, DTypeConstantAttr::get(type.getContext(), DType::kBool));
+  return POP::StructType::get({eltType, boolType});
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 
