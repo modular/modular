@@ -149,7 +149,7 @@ struct ElaboratorImpl : public Elaborator {
 
   /// Get the evaluation context of the base symbol reference, or set it to the
   /// default context.
-  EvalContext &getEvalContext(SymbolRefAttr ref);
+  const EvalContext &getEvalContext(SymbolRefAttr ref);
 
   /// Instantiate a new evaluator with the given parameters.
   IREvaluator createEvaluator(DenseMap<StringAttr, Attribute> values =
@@ -266,7 +266,7 @@ void ElaboratorImpl::setEvalContext(SymbolRefAttr ref, EvalContext evalCtx) {
   evaluationContext.try_emplace(ref, std::move(evalCtx));
 }
 
-EvalContext &ElaboratorImpl::getEvalContext(SymbolRefAttr ref) {
+const EvalContext &ElaboratorImpl::getEvalContext(SymbolRefAttr ref) {
   auto it = evaluationContext.find(ref);
   if (it != evaluationContext.end())
     return it->second;
@@ -1657,7 +1657,7 @@ ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
   SmallVector<Attribute> inputParams;
   for (ParamBindAttr bind : paramValues)
     inputParams.push_back(bind.getValue());
-  EvalContext &evalCtx = getEvalContext(symbolRef);
+  EvalContext evalCtx = getEvalContext(symbolRef);
 
   auto vals = ArrayAttr::get(symbolRef.getContext(), inputParams);
   for (auto [decl, value] : llvm::zip(func.getInputParamDecls(), vals))
