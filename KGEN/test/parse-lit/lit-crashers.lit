@@ -48,3 +48,11 @@ struct XDType[_type: __mlir_type.`!kgen.dtype`]:
 
     fn getType(self) -> __mlir_type.`!kgen.dtype`:
       return type
+
+// -----
+
+# The octal escape sequence in string literals \ooo can have variable length.
+fn testOctal():
+  var x = "A\0"
+  x = "A\01"
+  x = "A\012"

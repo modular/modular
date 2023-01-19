@@ -716,7 +716,7 @@ std::string LitLexer::getStringLiteralValue(StringRef spelling) {
     case '7': {
       size_t startDigit = i - 1;
       // At most 3 digits
-      while (i < (startDigit + 3) && isOctalDigit(bytes[i]))
+      while (i < (startDigit + 3) && i < bytes.size() && isOctalDigit(bytes[i]))
         i++;
       unsigned int num;
       bool failed = bytes.slice(startDigit, i).getAsInteger(8, num);
