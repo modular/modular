@@ -90,14 +90,14 @@ kgen.extern.variable @foo : f64
 // -----
 
 kgen.func @constant_str() -> !kgen.string {
-  // CHECK: %[[GLOBAL_STR:.*]] = pop.global_constant: !pop.array<5, scalar<si8>>
-  // CHECK: %[[BITCAST:.*]] = pop.pointer.bitcast %[[GLOBAL_STR]] : !pop.pointer<array<5, scalar<si8>>> to !pop.pointer<i8>
+  // CHECK: %[[GLOBAL_STR:.*]] = pop.global_constant: !pop.array<3, scalar<si8>> = <#pop.array<#pop.simd<65>, #pop.simd<66>, #pop.simd<0>>>
+  // CHECK: %[[BITCAST:.*]] = pop.pointer.bitcast %[[GLOBAL_STR]] : !pop.pointer<array<3, scalar<si8>>> to !pop.pointer<i8>
   // CHECK: %[[CONV_CAST:.*]] = builtin.unrealized_conversion_cast %[[BITCAST]] : !pop.pointer<i8> to !llvm.ptr<i8>
-  // CHECK: %[[LENGTH:.*]] = llvm.mlir.constant(5 : i64) : i64
+  // CHECK: %[[LENGTH:.*]] = llvm.mlir.constant(2 : i64) : i64
   // CHECK: %[[STRUCT:.*]] = llvm.mlir.undef : !llvm.struct<(ptr<i8>, i64)>
   // CHECK: %[[VAL0:.*]] = llvm.insertvalue %[[CONV_CAST]], %[[STRUCT]][0] : !llvm.struct<(ptr<i8>, i64)>
   // CHECK: %[[VAL1:.*]] = llvm.insertvalue %[[LENGTH]], %[[VAL0]][1] : !llvm.struct<(ptr<i8>, i64)>
-  %0 = kgen.param.constant: string = <"hello">
+  %0 = kgen.param.constant: string = <"AB">
   // CHECK: llvm.return %[[VAL1]] : !llvm.struct<(ptr<i8>, i64)>
   kgen.return %0 : !kgen.string
 }
