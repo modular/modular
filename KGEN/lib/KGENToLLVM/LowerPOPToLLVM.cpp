@@ -1306,6 +1306,50 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPStringAddress
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPStringAddress
+    : public mlir::ConvertOpToLLVMPattern<StringAddressOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(StringAddressOp op, StringAddressOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
+    // The first operand is a !kgen.string lowered to
+    // !llvm.struct<(ptr<i8>, index)>, grab the the first field: the address
+    // of the string.
+    Value extractedAddr =
+        b.create<LLVM::ExtractValueOp>(adaptor.getOperands().front(), 0);
+    rewriter.replaceOp(op, extractedAddr);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPStringAddress
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPStringSize
+    : public mlir::ConvertOpToLLVMPattern<StringSizeOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(StringSizeOp op, StringSizeOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
+    // The first operand is a !kgen.string lowered to
+    // !llvm.struct<(ptr<i8>, index)>, grab the the second field: the size
+    // of the string.
+    Value extractedAddr =
+        b.create<LLVM::ExtractValueOp>(adaptor.getOperands().front(), 1);
+    rewriter.replaceOp(op, extractedAddr);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -1402,6 +1446,8 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPSIMDShuffle,
       ConvertPOPSIMDSplat,
       ConvertPOPStore,
+      ConvertPOPStringAddress,
+      ConvertPOPStringSize,
       ConvertPOPStructConstruct,
       ConvertPOPStructGEP,
       ConvertPOPStructGet,

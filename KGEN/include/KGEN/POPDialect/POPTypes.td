@@ -142,6 +142,8 @@ class PointerOf<Type type> : ConfinedType<POP_PointerType,
       type.predicate>],
     "pointer to " # type.summary> {
   let cppClassName = "::M::KGEN::POP::PointerType";
+  let builderCall = !if(!empty(type.builderCall), "",
+                       "PointerType::get(" # type.builderCall #")");
 }
 
 //===----------------------------------------------------------------------===//
@@ -197,6 +199,7 @@ def IntDType : DTypeConstraint<"$_self->isInt()">;
 def SIntDType : DTypeConstraint<"$_self->isSInt()">;
 def FloatDType : DTypeConstraint<"$_self->isFloat()">;
 def UI8DType : DTypeConstraint<"*$_self == KGENDType::ui8">;
+def SI8DType : DTypeConstraint<"*$_self == KGENDType::si8">;
 def AddressDType : DTypeConstraint<"$_self->isAddress()">;
 def ArithmeticDType : DTypeConstraint<"$_self->isArithmetic()">;
 
@@ -253,12 +256,17 @@ class ScalarOfDType<DTypeConstraint constraint, string desc> :
   AllOfType<[SIMDOfDType<constraint, desc>, ScalarType], desc>;
 
 def BoolScalar : ScalarOfDType<BoundAnd<BoolDType>, "!pop.simd<1, bool>">,
-    BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get($_builder.getContext(), KGENDType::bool))">;
+    BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get("
+                                  "$_builder.getContext(), KGENDType::bool))">;
 def UnboundOrArithmeticScalar : ScalarOfDType<UnboundOr<ArithmeticDType>,
     "whose type is an arithmetic dtype">;
 
 def UI8Scalar : ScalarOfDType<BoundAnd<UI8DType>, "!pop.simd<1, ui8>">,
-    BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get($_builder.getContext(), KGENDType::ui8))">;
+    BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get("
+                                   "$_builder.getContext(), KGENDType::ui8))">;
+def SI8Scalar : ScalarOfDType<BoundAnd<SI8DType>, "!pop.simd<1, si8>">,
+    BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get("
+                                   "$_builder.getContext(), KGENDType::si8))">;
 
 def UnboundOrPointerOrSIMDAddressType : AnyTypeOf<
     [POP_PointerType, AddressSIMD, UnboundSIMD]>;
