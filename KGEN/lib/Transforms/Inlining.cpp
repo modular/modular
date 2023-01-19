@@ -10,11 +10,17 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "Support/HLCFDialect/HLCFOps.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/IRMapping.h"
+#include "mlir/IR/PatternMatch.h"
 #include "llvm/ADT/StringSet.h"
 
 using namespace M;
 using namespace KGEN;
+
+//===----------------------------------------------------------------------===//
+// Parameteric Inlining
+//===----------------------------------------------------------------------===//
 
 void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
   auto parent = call->getParentOfType<GeneratorOp>();
@@ -199,6 +205,10 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
   call.erase();
 }
 
+//===----------------------------------------------------------------------===//
+// TestParametricInlinePass
+//===----------------------------------------------------------------------===//
+
 namespace M::KGEN {
 #define GEN_PASS_DEF_TESTPARAMETRICINLINEPASS
 #include "KGEN/KGENPasses.h.inc"
@@ -242,3 +252,117 @@ public:
   }
 };
 } // namespace
+
+//===----------------------------------------------------------------------===//
+// ForceInlinePass
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_FORCEINLINE
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
+namespace {
+struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
+  using ForceInlineBase::ForceInlineBase;
+
+  void runOnOperation() override;
+};
+} // namespace
+
+void ForceInlinePass::runOnOperation() {
+  SymbolTable &symtab =
+      getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
+
+  for (auto func : getOperation().getOps<FuncOp>()) {
+    // Skip over functions that are force inlined. Start inlining from the tips.
+    if (func.isForceInline())
+      continue;
+
+    // Collect all calls that inline in this function.
+    struct EndStack {};
+    SmallVector<SmartVariant<Operation *, EndStack>> calls;
+    func.walk([&](CallOp call) {
+      if (call.getCallee().getType().isForceInline())
+        calls.emplace_back(call);
+    });
+
+    // Process them. Keep a callstack for a nice error when cycles are detected.
+    SmallVector<CallOp, 16> callstack;
+    llvm::SetVector<Operation *, SmallVector<Operation *, 16>,
+                    SmallPtrSet<Operation *, 16>>
+        seenFuncs;
+    unsigned labelCounter = 0;
+    while (!calls.empty()) {
+      SmartVariant<Operation *, EndStack> next = calls.pop_back_val();
+      if (isa<EndStack>(next)) {
+        callstack.pop_back();
+        seenFuncs.pop_back();
+        continue;
+      }
+      auto call = cast<CallOp>(cast<Operation *>(next));
+
+      auto callee = symtab.lookup<FuncOp>(
+          cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
+
+      // If we recursed onto the same function, give up and emit an error.
+      if (!seenFuncs.insert(callee)) {
+        InFlightDiagnostic diag = mlir::emitError(
+            func.getLoc(),
+            "function has recursive call to 'force_inline' function");
+        assert(callstack.size() == seenFuncs.size());
+        for (auto [call, func] : llvm::zip(callstack, seenFuncs)) {
+          diag.attachNote(call.getLoc()) << "through call here";
+          diag.attachNote(func->getLoc())
+              << "to function marked 'force_inline' here";
+        }
+        diag.attachNote(call.getLoc()) << "function call here recurses";
+        diag.attachNote(callee.getLoc()) << "back to function here";
+        return signalPassFailure();
+      }
+      callstack.push_back(call);
+      calls.emplace_back(EndStack{});
+
+      mlir::IRRewriter b{OpBuilder(call)};
+      StringAttr label =
+          b.getStringAttr(func.getSymName() + "_inlined_cf_" +
+                          callee.getSymName() + "_" + Twine(labelCounter++));
+      auto scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
+                                          ValueRange(), label);
+      b.createBlock(&scope.getBody());
+
+      IRMapping map;
+      for (auto [value, arg] :
+           llvm::zip(call.getOperands(), callee.getArguments()))
+        map.map(arg, value);
+      for (Operation &op : *callee.getBody())
+        b.clone(op, map);
+      unsigned numReturns = 0;
+      scope.walk([&](Operation *op) {
+        if (op != scope)
+          op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), call.getLoc()));
+        if (auto call = dyn_cast<CallOp>(op))
+          if (call.getCallee().getType().isForceInline())
+            calls.emplace_back(call);
+        if (!isa<KGEN::ReturnOp, HLCF::ReturnOp>(op))
+          return;
+        b.setInsertionPoint(op);
+        b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
+        ++numReturns;
+      });
+      b.replaceOp(call, scope.getResults());
+      // If the scope was trivial (one return), fold it away.
+      // FIXME: This is required to work around a bug (?) in one of LLVM's
+      // IRTranslator passes when compiling with `kgen -O0 -debug-level=full`.
+      assert(numReturns > 0);
+      if (numReturns == 1) {
+        for (Operation &op : llvm::make_early_inc_range(
+                 scope.getBody().front().without_terminator()))
+          op.moveBefore(scope);
+        b.replaceOp(scope,
+                    scope.getBody().front().getTerminator()->getOperands());
+      }
+    }
+    assert(callstack.empty() && seenFuncs.empty());
+  }
+}

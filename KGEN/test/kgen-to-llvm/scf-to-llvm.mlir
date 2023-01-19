@@ -68,7 +68,7 @@ kgen.func @while(%init: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
 
 // SWITCH-LABEL: @scf_index_switch
 kgen.func @scf_index_switch(%i: index, %a: i32, %b: i32, %c: i32) -> i32 {
-  // SWITCH: llvm.switch %arg0 : i64, ^bb3 [
+  // SWITCH: llvm.switch %1 : i64, ^bb3 [
   // SWITCH-NEXT: 0: ^bb1
   // SWITCH-NEXT: 1: ^bb2
   %0 = scf.index_switch %i -> i32

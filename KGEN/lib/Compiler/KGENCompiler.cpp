@@ -36,7 +36,7 @@ void KGEN::elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
   pm.addPass(
       createElaborateGenerators(includedFiles, runtime, elaborateOptions));
   // Run the inliner and cleanup the compiler globals.
-  pm.addPass(mlir::createInlinerPass());
+  pm.addPass(createForceInline());
   pm.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
   pm.addPass(mlir::createCanonicalizerPass());
   // Finally, DCE the symbols we don't want.
