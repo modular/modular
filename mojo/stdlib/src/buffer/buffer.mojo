@@ -151,8 +151,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
             SIMD[width, type]: The simd value starting at the `idx` position
             and ending at `idx+width`.
         """
-        let offset = self.data.offset(idx)
-        return offset.simd_load[width]()
+        return self.data.simd_load[width](idx)
 
     fn __setitem__(
         self,
@@ -188,8 +187,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
             idx (Idx): The index into the Buffer.
             val (SIMD[width, type]): The value to store.
         """
-        let offset = self.data.offset(idx)
-        offset.simd_store[width](val)
+        self.data.simd_store[width](idx, val)
 
 
 fn _compute_ndbuffer_offset[
@@ -453,7 +451,7 @@ struct NDBuffer[
 
     var data: DTypePointer[type]
     # This is added just to make it aligned with the zap.ndbuffer
-    var _rank : Int
+    var _rank: Int
     var dynamic_shape: StaticTuple[rank, __mlir_type.index]
     var dynamic_dtype: __mlir_type.`!pop.scalar<ui8>`
 
