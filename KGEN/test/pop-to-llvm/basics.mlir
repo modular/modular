@@ -1061,6 +1061,47 @@ kgen.func @atomic_rmw(%ptr0: !pop.pointer<scalar<index>>,
 
   // CHECK: llvm.atomicrmw umax {{.*}} monotonic
   %6 = pop.atomic.rmw max(%ptr2, %val2) monotonic : !pop.pointer<scalar<ui32>>
+  kgen.return
+}
 
+// -----
+
+// CHECK-LABEL: @variadic_create
+// CHECK-SAME: %[[A0:.*]]: i32
+kgen.func @variadic_create(%a: i32) {
+  // CHECK: %[[ALLOCA_SIZE:.*]] = llvm.mlir.constant(2 : i64)
+  // CHECK: %[[ALLOCA:.*]] = llvm.alloca %[[ALLOCA_SIZE]] x i32 {alignment = 8 : i64} : (i64) -> !llvm.ptr<i32>
+  // CHECK: llvm.intr.lifetime.start 8, %[[ALLOCA]] : !llvm.ptr<i32>
+  // CHECK: %[[GEPI0:.*]] = llvm.mlir.constant(0 : i64)
+  // CHECK: %[[GEP0:.*]] = llvm.getelementptr %[[ALLOCA]][0, %[[GEPI0]]] : (!llvm.ptr<i32>, i64) -> !llvm.ptr<i32>
+  // CHECK: llvm.store %[[A0]], %[[GEP0]] : !llvm.ptr<i32>
+  // CHECK: %[[GEPI1:.*]] = llvm.mlir.constant(1 : i64)
+  // CHECK: %[[GEP1:.*]] = llvm.getelementptr %[[ALLOCA]][0, %[[GEPI1]]]
+  // CHECK: llvm.store %[[A0]], %[[GEP1]]
+  // CHECK: %[[SIZE:.*]] = llvm.mlir.constant(2 : i64)
+  // CHECK: %[[STRUCT1:.*]] = llvm.mlir.undef : !llvm.struct<(ptr<i32>, i64)>
+  // CHECK: %[[STRUCT2:.*]] = llvm.insertvalue %[[ALLOCA]], %[[STRUCT1]][0]
+  // CHECK: llvm.insertvalue %[[SIZE]], %[[STRUCT2]][1]
+  // CHECK: llvm.intr.lifetime.end 8, %[[ALLOCA]]
+  %0 = pop.variadic.create [%a, %a] : !pop.variadic<i32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @variadic_create_empty
+kgen.func @variadic_create_empty() {
+  // CHECK: llvm.mlir.undef : !llvm.struct<(ptr<i32>, i64)>
+  %0 = pop.variadic.create [] : !pop.variadic<i32>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: @variadic_create_index
+kgen.func @variadic_create_index() {
+  %0 = index.constant 64
+  // CHECK: llvm.mlir.undef : !llvm.struct<(ptr<i64>, i64)>
+  %1 = pop.variadic.create [%0] : !pop.variadic<index>
   kgen.return
 }
