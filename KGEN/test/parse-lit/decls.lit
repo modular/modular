@@ -104,6 +104,16 @@ fn useIt(a: __mlir_type.index) -> __mlir_type.index:
   # CHECK: lit.return %1 : index
   return math(a, math(1, 2))
 
+@nodebug_inline
+fn returnParameter[a: __mlir_type.index]() -> __mlir_type.index:
+  return a
+
+# CHECK-LABEL: lit.func @"callReturnParam
+fn callReturnParam() -> __mlir_type.index:
+  # CHECK-NEXT: %idx3 = index.constant 3
+  # CHECK-NEXT: return %idx3
+  return returnParameter[3]()
+
 # CHECK: lit.func @"pleaseInline()"() force_inline -> index {
 @always_inline
 fn pleaseInline() -> __mlir_type.index:

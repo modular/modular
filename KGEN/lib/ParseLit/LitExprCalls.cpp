@@ -1074,7 +1074,7 @@ AnyValue CallableValue::debugInlineFunctionCall(
     builder.insert(clonedOp);
 
     // Check to see if we can fold this.
-    if (succeeded(op.fold(operandAttrs, foldResults))) {
+    if (succeeded(clonedOp->fold(operandAttrs, foldResults))) {
       // If so, we remember the folded results as our results.
       updateMappingWithFoldSuccess();
 
