@@ -62,22 +62,26 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
     return copy;
   };
 
-  std::function<void(Type)> checkForRefType = [&](Type type) {
+  // TODO(#5018): We should simplify the walk API to make this easier and more
+  // efficient.
+  auto checkForRefType = [&](Type type) {
     if (auto ref = dyn_cast<DeclRefType>(type)) {
-      Operation *decl = extractDependency(ref.getName());
       // Recurse on the type declaration.
-      if (decl)
+      if (Operation *decl = extractDependency(ref.getName()))
         sliceDependencies(decl, sliceSymtab, symtab);
-    } else if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type)) {
-      itf.walkSubTypes(checkForRefType);
     }
+  };
+  auto checkForRefTypeAndRecurse = [&](Type type) {
+    checkForRefType(type);
+    if (auto interface = dyn_cast<mlir::SubElementTypeInterface>(type))
+      interface.walkSubTypes(checkForRefType);
   };
   auto extractDependencies = [&](Operation *op) {
     // Extract references to type declarations.
     op->getAttrDictionary().walkSubTypes(checkForRefType);
-    llvm::for_each(op->getResultTypes(), checkForRefType);
+    llvm::for_each(op->getResultTypes(), checkForRefTypeAndRecurse);
     for (Region &region : op->getRegions())
-      llvm::for_each(region.getArgumentTypes(), checkForRefType);
+      llvm::for_each(region.getArgumentTypes(), checkForRefTypeAndRecurse);
 
     // Extract references to functions. Mark copied functions as module private
     // and recurse.
