@@ -1,0 +1,224 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+from Int import Int
+from Error import Error
+from Pointer import Pointer
+
+alias typename = __mlir_type.`!kgen.mlirtype`
+
+
+# ===----------------------------------------------------------------------===#
+# num_cores
+# ===----------------------------------------------------------------------===#
+
+
+fn num_cores() -> Int:
+    """Returns the number of cores on the system.
+
+    Returns:
+        Int: The number of cores on the system
+    """
+    return __mlir_op.`pop.external_call`[
+        func : __mlir_attr.`@KGEN_CompilerRT_CoreCount`,
+        _type : __mlir_type.index,
+    ]()
+
+
+# ===----------------------------------------------------------------------===#
+# Async Context
+# ===----------------------------------------------------------------------===#
+
+
+struct AsyncContext:
+    var chain: __mlir_type.index
+    var runtime: __mlir_type.i8
+
+
+# ===----------------------------------------------------------------------===#
+# CoroutineRef
+# ===----------------------------------------------------------------------===#
+
+
+struct CoroutineRef[type: typename]:
+    alias _handle_type = __mlir_type[`!pop.coroutine<() -> `, type, `>`]
+    alias _promise_type = __mlir_type[`!pop.struct<`, type, `>`]
+    var _handle: _handle_type
+
+    fn __new__(_handle: _handle_type) -> CoroutineRef[type]:
+        """Create a reference to a coroutine from a builtin handle."""
+        return __mlir_op.`kgen.struct.create`[_type : [CoroutineRef[type]]](
+            _handle
+        )
+
+    fn get_promise(self) -> Pointer[type]:
+        """Get the pointer to the coroutine promise."""
+        let promise: Pointer[_promise_type] = __mlir_op.`pop.coroutine.promise`(
+            self._handle
+        )
+        return promise.bitcast[type]()
+
+    fn get_async_ctx(self) -> Pointer[AsyncContext]:
+        """Returns the pointer to the async context."""
+        return (self.get_promise() + 1).bitcast[AsyncContext]()
+
+    fn get_opaque_ctx(self) -> Pointer[__mlir_type.i8]:
+        """Returns the pointer to the async context as an opaque pointer."""
+        return self.get_async_ctx().bitcast[__mlir_type.i8]()
+
+
+# ===----------------------------------------------------------------------===#
+# Utility Functions
+# ===----------------------------------------------------------------------===#
+
+
+fn _coro_resume_fn(handle: __mlir_type.`!pop.coroutine<() -> ()>`):
+    """This function is a generic coroutine resume function."""
+    __mlir_op.`pop.coroutine.resume`(handle)
+
+
+fn _get_coro_resume_fn() -> __mlir_type.`(!pop.coroutine<() -> ()>) -> !lit.none`:
+    """Return the address to the generic coroutine resume function."""
+    return __mlir_op.`kgen.addressof`[
+        _type : [__mlir_type.`(!pop.coroutine<() -> ()>) -> !lit.none`],
+        callee:_coro_resume_fn,
+        paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
+    ]()
+
+
+# ===----------------------------------------------------------------------===#
+# Runtime
+# ===----------------------------------------------------------------------===#
+
+
+struct Runtime:
+    alias _id_type = __mlir_type.i8
+    var _id: _id_type
+
+    fn __new__() -> Runtime:
+        """Construct an LLCL Runtime with the same number of threads as
+        processor cores.
+        """
+        return Runtime(num_cores())
+
+    fn __new__(numThreads: Int) -> Runtime:
+        """Construct an LLCL Runtime with the specified number of threads."""
+        let numThreadsI8 = __mlir_op.`pop.cast`[
+            _type : __mlir_type.`!pop.scalar<si8>`
+        ](numThreads.value)
+        return __mlir_op.`pop.external_call`[
+            _type : [__mlir_type.i8],
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_CreateRuntime`,
+        ](numThreadsI8)
+
+    fn __new__(compactPtr: __mlir_type.i8) -> Runtime:
+        return __mlir_op.`kgen.struct.create`[_type:Runtime](compactPtr)
+
+    fn __del__(self):
+        """Destroys the LLCL Runtime. Note that this must be explicitly called
+        when the Runtime goes out of scope.
+        """
+        __mlir_op.`pop.external_call`[
+            _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_DestroyRuntime`
+        ](self._id)
+
+    fn parallelism_level(self) -> Int:
+        """Gets the parallism level of the Runtime."""
+        return __mlir_op.`pop.external_call`[
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_ParallelismLevel`,
+            _type : __mlir_type.`!pop.scalar<si32>`,
+        ](self._id)
+
+    fn run_task[
+        type: typename
+    ](self, handle: CoroutineRef[type]) -> Future[type]:
+        """Run the coroutine as a task on the LLCL Runtime."""
+        __mlir_op.`pop.external_call`[
+            _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_Execute`
+        ](_get_coro_resume_fn(), handle, self._id)
+        return handle
+
+    fn init_and_run[
+        type: typename
+    ](self, handle: CoroutineRef[type]) -> Future[type]:
+        """Run the coroutine as a task on the LLCL Runtime, scheduling it from a
+        sync context.
+        """
+        var asyncCtx = handle.get_async_ctx().load()
+        asyncCtx.runtime = self._id
+        handle.get_async_ctx().store(asyncCtx)
+        __mlir_op.`pop.external_call`[
+            _type:[],
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_InitializeContext`,
+        ](handle.get_opaque_ctx().address)
+        return self.run_task[type](handle)
+
+    @staticmethod
+    @always_inline
+    fn get_current() -> Runtime:
+        """When in an async context, retrieve the current active Runtime."""
+        let curHdl: CoroutineRef[
+            __mlir_type.index
+        ] = __mlir_op.`pop.coroutine.handle`[
+            _type : __mlir_type.`!pop.coroutine<() -> index>`
+        ]()
+        return curHdl.get_async_ctx().load().runtime
+
+
+# ===----------------------------------------------------------------------===#
+# Future
+# ===----------------------------------------------------------------------===#
+
+
+struct Future[type: typename]:
+    var handle: CoroutineRef[type]
+
+    fn get(self) -> type:
+        """Get the future value."""
+        return self.handle.get_promise().load()
+
+    @nodebug_inline
+    fn __new__(handle: CoroutineRef[type]) -> Future[type]:
+        """Create a future from a coroutine handle."""
+        return __mlir_op.`kgen.struct.create`[_type : Future[type]](handle)
+
+    fn __del__(self):
+        """Destroy the memory associated with a future. This must be manually
+        called when a future goes out of scope.
+        """
+        __mlir_op.`pop.external_call`[
+            _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_DestroyContext`
+        ](self.handle.get_opaque_ctx())
+        __mlir_op.`pop.coroutine.destroy`(self.handle._handle)
+
+    @always_inline
+    fn __await__(self) -> type:
+        """Suspend the current async function until the future value becomes
+        available. This function must be force inlined into the calling async
+        function.
+        """
+        let curHdl = __mlir_op.`pop.coroutine.handle`[
+            _type : __mlir_type.`!pop.coroutine<() -> ()>`
+        ]()
+
+        fn await_body():
+            __mlir_op.`pop.external_call`[
+                _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_AndThen`
+            ](
+                _get_coro_resume_fn(),
+                self.handle.get_opaque_ctx(),
+                curHdl,
+            )
+
+        __mlir_op.`pop.coroutine.await`[_region:["await_body"]]()
+        return self.get()
+
+    fn wait(self) -> type:
+        """Block the current thread until the future value becomes available."""
+        __mlir_op.`pop.external_call`[
+            _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_Wait`
+        ](_get_coro_resume_fn(), self.handle.get_opaque_ctx())
+        return self.get()
