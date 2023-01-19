@@ -193,6 +193,21 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
                                             {contentType, discrType});
   });
 
+  // Variadic types are converted to a struct representing a pointer to the
+  // elements of the sequence, and the sequence size.
+  addConversion([=](POP::VariadicType variadic) -> std::optional<Type> {
+    Type elementType = variadic.getResolvedElementType();
+    if (!elementType)
+      return {};
+    Type convertedType = convertType(elementType);
+    if (!convertedType)
+      return {};
+
+    return LLVM::LLVMStructType::getLiteral(
+        &getContext(),
+        {LLVM::LLVMPointerType::get(convertedType), getIndexType()});
+  });
+
   // Coroutine handles are always lowered to opaque pointers.
   addConversion([](POP::CoroutineType coro) {
     return LLVM::LLVMPointerType::get(Builder(coro.getContext()).getI8Type());
