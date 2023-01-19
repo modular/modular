@@ -2506,3 +2506,47 @@ def POP_AtomicRMWOp : POPOp<"atomic.rmw", [
     qualified(type($ptr))
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// StringAddressOp
+//===----------------------------------------------------------------------===//
+
+def POP_StringAddressOp : POPOp<"string.address", [Pure]> {
+  let summary = "Get the address of a string.";
+  let description = [{
+    The `pop.string.address` operation gets the pointer of the first byte of a
+    string.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.param.constant: string = <"hello">
+    %1 = pop.string.address %0
+    ```
+  }];
+  let arguments = (ins KGEN_StringType:$str);
+  let results = (outs PointerOf<SI8Scalar>:$result);
+  let assemblyFormat = "$str attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// StringSizeOp
+//===----------------------------------------------------------------------===//
+
+def POP_StringSizeOp : POPOp<"string.size", [Pure]> {
+  let summary = "Get the size of a string.";
+  let description = [{
+    The `pop.string.size` operation gets the size of string.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.param.constant: string = <"hello">
+    %1 = pop.string.size %0  // size = 5
+    ```
+  }];
+
+  let arguments = (ins KGEN_StringType:$str);
+  let results = (outs Index:$result);
+  let assemblyFormat = "$str attr-dict";
+}

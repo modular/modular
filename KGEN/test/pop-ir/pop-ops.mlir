@@ -1175,3 +1175,12 @@ kgen.func @atomic_rmw(%ptr: !pop.pointer<scalar<index>>,
   %4 = pop.atomic.rmw max(%ptr, %val) monotonic : !pop.pointer<scalar<index>>
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @string_ops(%arg0: !kgen.string) -> index
+kgen.func @string_ops(%a: !kgen.string) ->  index {
+  // CHECK: pop.string.address %arg0
+  %0 = pop.string.address %a
+  // CHECK: pop.string.size %arg0
+  %1 = pop.string.size %a
+  kgen.return %1: index
+}
