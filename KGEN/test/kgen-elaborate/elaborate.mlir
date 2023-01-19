@@ -1425,3 +1425,28 @@ kgen.generator @rebind_it() {
   kgen.param.constant: !pop.scalar<ui8> = <apply(:(!pop.scalar<ui8>) -> !pop.scalar<ui8> Fn, #pop.simd<4>)>
   kgen.return
 }
+
+kgen.generator.interface @interpretedItf<I>() -> index
+
+// CHECK-LABEL: kgen.func @"interpretedItf.1,I=0"
+kgen.generator @interpretedItf.1<I>() -> index constraints <[eq(I, 0), "0"]> implements @interpretedItf {
+  // CHECK-NEXT: index.constant 0
+  %0 = index.constant 0
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @"interpretedItf.2,I=1"
+kgen.generator @interpretedItf.2<I>() -> index constraints <[eq(I, 1), "1"]> implements @interpretedItf {
+  // CHECK-NEXT: index.constant 1
+  %0 = index.constant 1
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @interpretInterfaceCall
+kgen.generator @interpretInterfaceCall() {
+  // CHECK-NEXT: <0>
+  kgen.param.constant = <apply(:() -> index bind_signature(:<I>() -> index @interpretedItf, 0))>
+  // CHECK-NEXT: <1>
+  kgen.param.constant = <apply(:() -> index bind_signature(:<I>() -> index @interpretedItf, 1))>
+  kgen.return
+}
