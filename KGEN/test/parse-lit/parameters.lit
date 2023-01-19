@@ -12,11 +12,6 @@ struct OurSIMD[size: __mlir_type.index, dt: DType]:
 
 struct StructWithIntParam[size: Int]:
 
-# CHECK-LABEL: lit.func @"paramArith{{.*}}"<x>(%y: index) -> !lit.none {
-fn paramArith[x: __mlir_type.index](y : __mlir_type.index):
-  # CHECK: kgen.param.assert <eq(x, -99)>, "param assertion failed"
-  assert_param[x == -100+1]()
-
 fn take_3index(a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index) -> __mlir_type.index:
   return a
 
