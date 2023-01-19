@@ -215,6 +215,26 @@ def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LowerPOPClosuresToLLVM
+//===----------------------------------------------------------------------===//
+
+def LowerPOPClosuresToLLVM : Pass<"lower-pop-closures-to-llvm", "mlir::ModuleOp"> {
+  let summary = "Lower `pop` dialect closures to the `llvm` dialect.";
+  let description = [{
+    Lowers ops that contain `!pop.closure` type into LLVM dialect. For now,
+    those ops are `!pop.partial_apply` and `!pop.call_indirect`.
+  }];
+
+  let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+
+  let options = [
+    Option<"indexBitwidth", "index-bitwidth", "unsigned",
+           /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
+           "Bitwidth of the index type, 0 to use size of machine word">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerSCFToLLVM
 //===----------------------------------------------------------------------===//
 

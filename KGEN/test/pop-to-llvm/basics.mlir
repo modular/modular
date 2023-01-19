@@ -900,18 +900,6 @@ kgen.func @array_gep(%a: !pop.pointer<array<2, i32>>, %i: index) -> !pop.pointer
 
 // -----
 
-kgen.func @call_indirect(%fn: (i32, i64) -> (f32, f64), %a: i32, %b: i64) -> (f32, f64) {
-  // CHECK: %[[FN:.*]] = builtin.unrealized_conversion_cast %arg0 : (i32, i64) -> (f32, f64) to !llvm.ptr<func<struct<(f32, f64)> (i32, i64)>>
-  // CHECK: %[[RESULT:.*]] = llvm.call %[[FN]](%arg1, %arg2) : (i32, i64) -> !llvm.struct<(f32, f64)>
-  // CHECK: %[[R0:.*]] = llvm.extractvalue %[[RESULT]][0]
-  // CHECK: %[[R1:.*]] = llvm.extractvalue %[[RESULT]][1]
-  %0:2 = pop.call_indirect %fn(%a, %b) : (i32, i64) -> (f32, f64)
-  // CHECK: return %[[R0]], %[[R1]] : f32, f64
-  kgen.return %0#0, %0#1 : f32, f64
-}
-
-// -----
-
 // CHECK-LABEL: @memcpy
 kgen.func @memcpy(%dest: !pop.pointer<scalar<si32>>,
                   %src: !pop.pointer<scalar<si32>>,

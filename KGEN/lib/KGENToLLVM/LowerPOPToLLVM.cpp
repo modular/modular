@@ -1081,48 +1081,6 @@ struct ConvertPOPVariantGet : mlir::ConvertOpToLLVMPattern<VariantGetOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPCallIndirect
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPCallIndirect : mlir::ConvertOpToLLVMPattern<CallIndirectOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(CallIndirectOp op, CallIndirectOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // Convert the result types.
-    SmallVector<Type> types;
-    if (op.getNumResults()) {
-      types.assign(
-          {getTypeConverter()->packFunctionResults(op.getResultTypes())});
-      if (!types.back())
-        return emitError(op.getLoc(), "failed to convert call result types");
-    }
-
-    // Create the LLVM call operation.
-    auto llvmCall = rewriter.create<LLVM::CallOp>(
-        op.getLoc(), types, FlatSymbolRefAttr(), adaptor.getOperands());
-
-    if (op.getNumResults() <= 1) {
-      rewriter.replaceOp(op, llvmCall.getResults());
-      return success();
-    }
-
-    // Unpack the struct if necessary.
-    SmallVector<Value> results;
-    results.reserve(op.getNumResults());
-    for (unsigned i = 0, e = op.getNumResults(); i < e; ++i) {
-      results.push_back(rewriter.create<LLVM::ExtractValueOp>(
-          op.getLoc(), llvmCall.getResult(), i));
-    }
-
-    // Replace the call operation.
-    rewriter.replaceOp(op, results);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPCastToBuiltin
 //===----------------------------------------------------------------------===//
 
@@ -1417,7 +1375,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPDiv,
       ConvertPOPFMA,
       ConvertPOPIndexToPointer,
-      ConvertPOPCallIndirect,
       ConvertPOPInlineAsm,
       ConvertPOPLoad,
       ConvertPOPMax,
