@@ -244,7 +244,6 @@ fn broadcast_impl_iter[
     rightmost_broadcast_axis: Int,
 ):
     """Recursive case for `broadcast_impl`"""
-    var i: Int = 0  # placed here because we don't have local scopes yet
     assert_param[axis < rank]()
     let input_axis_stride = input_prev_axis_stride // input.dim[axis]()
     let output_axis_stride = output_prev_axis_stride // output.dim[axis]()
@@ -260,7 +259,7 @@ fn broadcast_impl_iter[
         alias next_axis = axis + 1
         var next_input_offset = input_offset
         var next_output_offset = output_offset
-        i = 0
+        var i: Int = 0
         while i < input.dim[axis]():
             broadcast_impl[next_axis, rank, output_shape, input_shape, type](
                 output,
@@ -280,11 +279,12 @@ fn broadcast_impl_iter[
         # --> [[1, 1, 1], [0, 0, 0]]   after recursive call to next axis
         # --> [[1, 1, 1], [1, 1, 1]]   after duplicating data in output
         if input.dim[axis]() != output.dim[axis]():
+            let output_tile_start = output.data.offset(output_offset)
             _tile_1d[type](
-                output.data.offset(
+                output_tile_start.offset(
                     output_axis_stride
                 ),  # 1st tile is already there
-                output.data.offset(output_offset),
+                output_tile_start,
                 output_axis_stride,  # elems_to_copy
                 output.dim[axis]() - 1,  # 1st tile is already there
             )
