@@ -52,6 +52,29 @@ extern "C" void KGEN_CompilerRT_LLCL_DestroyContext(int8_t *asyncCtx) {
   unwrap(asyncCtx)->chain.~AsyncValueRef<Chain>();
 }
 
+/// Execute a coroutine.
+extern "C" void KGEN_CompilerRT_LLCL_Execute(void (*resume)(int8_t *),
+                                             int8_t *hdl, int8_t runtime) {
+  LLCL::CompactRuntimePtr::getFromOpaqueToken(runtime)
+      .get()
+      ->getWorkQueue()
+      ->addTask([resume, hdl] { resume(hdl); });
+}
+
+/// Resume a coroutine when the currenet one completes.
+extern "C" void KGEN_CompilerRT_LLCL_AndThen(void (*resume)(int8_t *),
+                                             int8_t *asyncCtx, int8_t *hdl) {
+  AsyncContext *ctx = unwrap(asyncCtx);
+  ctx->chain.getPointer()->andThenAsync([hdl, resume]() { resume(hdl); });
+}
+
+/// Block until the coroutine is done.
+extern "C" void KGEN_CompilerRT_LLCL_Wait(void (*resume)(int8_t *),
+                                          int8_t *asyncCtx) {
+  AsyncContext *ctx = unwrap(asyncCtx);
+  LLCL::await(ctx->chain);
+}
+
 /// Execute a coroutine and block the current routine until it is complete.
 extern "C" void KGEN_CompilerRT_LLCL_ExecuteAndWait(void (*resume)(int8_t *),
                                                     int8_t *hdl,
@@ -81,7 +104,7 @@ extern "C" void KGEN_CompilerRT_LLCL_Complete(int8_t *asyncCtx) {
 }
 
 /// Create an LLCL runtime and return it as a compact pointer.
-extern "C" int8_t KGEN_CompilerRT_LLCL_CreateRuntime(int8_t numThreads) {
+extern "C" int8_t KGEN_CompilerRT_LLCL_CreateRuntime(uint8_t numThreads) {
   auto *runtime = new LLCL::Runtime(
       LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
       LLCL::createThreadPoolWorkQueue(numThreads));
