@@ -87,23 +87,160 @@ void ElaboratedGenerator::addOneBinding(
   entry = result;
 }
 
+namespace {
+/// This struct provides an implementation of the Elaborator interface.
+struct ElaboratorImpl : public Elaborator {
+  using Elaborator::Elaborator;
+
+  ErrorTreeOr<FuncOp>
+  getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
+                      ArrayRef<ParamBindAttr> paramValues) override;
+
+  /// Scan the primary and library module to collect all the interfaces,
+  /// verifying that any common interfaces are the same.
+  ParseResult collectInterfaces();
+
+  /// Return the operation that defines the specified symbol.
+  FuncInterface lookupCallee(SymbolRefAttr symbolRef);
+
+  /// Return all instantiations of the specified declaration (a func,
+  /// generator, or interface) with the specified input parameter values.
+  ArrayRef<ErrorTreeOr<ElaboratedGenerator>>
+  getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
+                       size_t expansionDepth, EvalContext &evalCtx);
+
+  /// Insert a variant of an existing func into the primary file.
+  void insertFuncVariant(FuncOp existing, FuncOp newFunc);
+
+  /// Indicate that a function should be removed from the module at the end of
+  /// elaboration. These functions are either invalid instantiations or
+  /// inlined.
+  void markFuncForRemoval(FuncOp func) { funcsToRemove.insert(func); }
+
+  /// Return true if the function was invalid or inlined and should be removed
+  /// from the module.
+  bool shouldRemoveFunc(FuncOp func) { return funcsToRemove.contains(func); }
+
+  /// Returns true if search is enabled.
+  bool isSearchEnabled() { return enableSearch; }
+
+  ArrayRef<GeneratorOp> getGeneratorsImplementing(GeneratorInterfaceOp itf) {
+    auto it = interfaceImpls.find(itf.getNameAttr());
+    return it == interfaceImpls.end() ? ArrayRef<GeneratorOp>() : it->second;
+  }
+
+  const DenseMap<GeneratorOp, FuncOp> &
+  getFirstConcreteFuncForGenerator() const {
+    return firstConcreteFuncForGenerator;
+  }
+
+  /// Bind the result parameters of a fully-specialized function and clear them
+  /// from the function.
+  ErrorTreeOr<SuccessType> bindResultParameters(FuncOp func);
+
+  /// Lookup bound result parameters of a function.
+  ParameterExprArrayAttr lookupResultParameters(FuncOp func) {
+    auto it = resultParams.find(func);
+    assert(it != resultParams.end() && "results parameters not bound");
+    return it->second;
+  }
+
+  /// Set the evaluation context of a region body.
+  void setEvalContext(SymbolRefAttr ref, EvalContext evalCtx);
+
+  /// Get the evaluation context of the base symbol reference, or set it to the
+  /// default context.
+  EvalContext &getEvalContext(SymbolRefAttr ref);
+
+  /// Instantiate a new evaluator with the given parameters.
+  IREvaluator createEvaluator(DenseMap<StringAttr, Attribute> values =
+                                  DenseMap<StringAttr, Attribute>());
+
+  /// Get the symbol table analysis.
+  SymbolTableAnalysis &getAnalysis() const { return analysis; }
+
+private:
+  /// Specialize a func body, generating one variant or each viable
+  /// instantiation of that body.  Funcs do not have input parameters, but
+  /// they can invoke interfaces etc which can cause them to produce multiple
+  /// variants.
+  ///
+  /// SourceModule indicates which module in the included library this
+  /// originally came from (likely not the primary module).
+  SmallVector<ErrorTreeOr<ElaboratedGenerator>>
+  specializeFunc(FuncOp func, ModuleOp sourceModule, size_t expansionDepth,
+                 EvalContext &evalCtx);
+
+  /// Specialize a generator with the specified input parameters and return
+  /// the generated func.
+  SmallVector<ErrorTreeOr<ElaboratedGenerator>>
+  specializeGenerator(DeclAndInputParamsPair declAndInputParams,
+                      size_t expansionDepth, EvalContext &evalCtx);
+
+  /// Specialize a generator interface with the specified input parameters and
+  /// return the generated func.
+  SmallVector<ErrorTreeOr<ElaboratedGenerator>>
+  specializeInterface(DeclAndInputParamsPair declAndInputParams,
+                      size_t expansionDepth, EvalContext &evalCtx);
+
+  /// Report an error given an interface and an error string - just reduces
+  /// boilerplate around CalleeExpansionError creation.
+  ErrorTreeOr<ElaboratedGenerator>
+  reportCalleeExpansionError(GeneratorInterfaceOp itf, Twine err) {
+    return ErrorTree(itf.getLoc(), err);
+  };
+
+  /// This collects all of the generator implementations of generator
+  /// interfaces, across both the primary module and the library.
+  DenseMap<StringAttr, SmallVector<GeneratorOp, 4>> interfaceImpls;
+
+  /// This map contains bindings for result parameteres from specialized
+  /// functions.
+  DenseMap<FuncOp, ParameterExprArrayAttr> resultParams;
+
+  /// This is a cache of already-instantiated declarations.  The key is the
+  /// generator/interface and input parameters, the result are all-possible
+  /// funcs that could be generated from this.
+  DenseMap<DeclAndInputParamsPair,
+           SmallVector<ErrorTreeOr<ElaboratedGenerator>>>
+      generatedFuncs;
+
+  /// This keeps tracks the evaluation context of region bodies. It keeps a flag
+  /// of whether the region is isolated from above (and thus all nodes along the
+  /// callgraph down to the callsite need to be inlined) and the parameter
+  /// context.
+  DenseMap<SymbolRefAttr, EvalContext> evaluationContext;
+
+  /// This map keeps track of the first func that a generator with no
+  /// parameters expanded into.  We rename it to have the same symbol as the
+  /// original generator in a post-pass.
+  DenseMap<GeneratorOp, FuncOp> firstConcreteFuncForGenerator;
+
+  /// This tracks generated functions that should be removed after
+  /// elaboration. These functions were either inlined by a parameter rewriter
+  /// or are malformed. These functions need to be cleaned up at the end of
+  /// the pass.
+  DenseSet<FuncOp> funcsToRemove;
+};
+} // namespace
+
 //===----------------------------------------------------------------------===//
 // Elaborator
 //===----------------------------------------------------------------------===//
 
-FuncInterface Elaborator::lookupCallee(SymbolRefAttr symbolRef) {
+FuncInterface ElaboratorImpl::lookupCallee(SymbolRefAttr symbolRef) {
   assert(isa<FlatSymbolRefAttr>(symbolRef) &&
          "Elaborator doesn't support nested symbols");
   return cast<FuncInterface>(
       analysis.getTopLevelSymbolTable().lookup(symbolRef.getRootReference()));
 }
 
-void Elaborator::insertFuncVariant(FuncOp existing, FuncOp newFunc) {
+void ElaboratorImpl::insertFuncVariant(FuncOp existing, FuncOp newFunc) {
   auto insertPt = Block::iterator(existing.getOperation());
   analysis.getTopLevelSymbolTable().insert(newFunc, ++insertPt);
 }
 
-ErrorTreeOr<SuccessType> Elaborator::bindResultParameters(FuncOp func) {
+ErrorTreeOr<SuccessType> ElaboratorImpl::bindResultParameters(FuncOp func) {
   // Make sure the function is inflated - this is a fast no-op if the function
   // has not been deflated.
   asyncMap.mapChained(func, [&](auto ch) {
@@ -126,11 +263,11 @@ ErrorTreeOr<SuccessType> Elaborator::bindResultParameters(FuncOp func) {
   return success();
 }
 
-void Elaborator::setEvalContext(SymbolRefAttr ref, EvalContext evalCtx) {
+void ElaboratorImpl::setEvalContext(SymbolRefAttr ref, EvalContext evalCtx) {
   evaluationContext.try_emplace(ref, std::move(evalCtx));
 }
 
-EvalContext &Elaborator::getEvalContext(SymbolRefAttr ref) {
+EvalContext &ElaboratorImpl::getEvalContext(SymbolRefAttr ref) {
   auto it = evaluationContext.find(ref);
   if (it != evaluationContext.end())
     return it->second;
@@ -139,7 +276,7 @@ EvalContext &Elaborator::getEvalContext(SymbolRefAttr ref) {
 }
 
 IREvaluator
-Elaborator::createEvaluator(DenseMap<StringAttr, Attribute> values) {
+ElaboratorImpl::createEvaluator(DenseMap<StringAttr, Attribute> values) {
   return {*this, std::move(values)};
 }
 
@@ -154,8 +291,8 @@ namespace {
 /// returned.
 class ParameterRewriter {
 public:
-  ParameterRewriter(Elaborator &elaborator, FuncOp func, EvalContext &evalCtx,
-                    SmallVector<Operation *> opsToRewrite,
+  ParameterRewriter(ElaboratorImpl &elaborator, FuncOp func,
+                    EvalContext &evalCtx, SmallVector<Operation *> opsToRewrite,
                     size_t expansionDepth)
       : elaborator(elaborator),
         sourceModule(cast<ModuleOp>(elaborator.getAnalysis().getModule())),
@@ -273,7 +410,7 @@ private:
 
   /// This is maintains global information about the file we're generating
   /// into.
-  Elaborator &elaborator;
+  ElaboratorImpl &elaborator;
 
   /// This indicates which module this func originally came from (e.g. one of
   /// the imported files).  This is important to know so we can correctly
@@ -970,7 +1107,7 @@ ErrorTree ParameterRewriter::takeDiagnosticAndEraseFunc() {
 }
 
 //===----------------------------------------------------------------------===//
-// Elaborator::getAllInstantiations
+// ElaboratorImpl::getAllInstantiations
 //===----------------------------------------------------------------------===//
 
 static void printParameterValue(TypedAttr value, llvm::raw_ostream &os) {
@@ -1032,8 +1169,8 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
 /// instantiation of that body.  funcs do not have parameters, but they can
 /// invoke interfaces etc which can cause them to produce multiple variants.
 SmallVector<ErrorTreeOr<ElaboratedGenerator>>
-Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
-                           size_t expansionDepth, EvalContext &evalCtx) {
+ElaboratorImpl::specializeFunc(FuncOp func, ModuleOp sourceModule,
+                               size_t expansionDepth, EvalContext &evalCtx) {
   LLVM_DEBUG({
     llvm::dbgs() << std::string(expansionDepth, ' ') << "specializeFunc "
                  << func.getName() << "\n";
@@ -1119,8 +1256,9 @@ Elaborator::specializeFunc(FuncOp func, ModuleOp sourceModule,
 /// symbol name to use for the result, along with an array of ParamBindAttrs for
 /// the result attributes.
 SmallVector<ErrorTreeOr<ElaboratedGenerator>>
-Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
-                                size_t expansionDepth, EvalContext &evalCtx) {
+ElaboratorImpl::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
+                                    size_t expansionDepth,
+                                    EvalContext &evalCtx) {
   auto generator = cast<GeneratorOp>(declAndInputParams.first);
   LLVM_DEBUG({
     llvm::dbgs() << std::string(expansionDepth, ' ') << "specializeGenerator "
@@ -1239,8 +1377,9 @@ Elaborator::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
 /// any of the implementations change, a new one is added, one is removed, the
 /// evaluator changes, or the target changes, we need to redo search.
 SmallVector<ErrorTreeOr<ElaboratedGenerator>>
-Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
-                                size_t expansionDepth, EvalContext &evalCtx) {
+ElaboratorImpl::specializeInterface(DeclAndInputParamsPair declAndInputParams,
+                                    size_t expansionDepth,
+                                    EvalContext &evalCtx) {
   auto itf = cast<GeneratorInterfaceOp>(declAndInputParams.first);
   LLVM_DEBUG({
     llvm::dbgs() << std::string(expansionDepth, ' ') << "specializeInterface "
@@ -1448,8 +1587,9 @@ Elaborator::specializeInterface(DeclAndInputParamsPair declAndInputParams,
 /// Return all instantiations of the specified declaration (a  generator or
 /// interface) with the specified input parameter values.
 ArrayRef<ErrorTreeOr<ElaboratedGenerator>>
-Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
-                                 size_t expansionDepth, EvalContext &evalCtx) {
+ElaboratorImpl::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
+                                     size_t expansionDepth,
+                                     EvalContext &evalCtx) {
   // Check the global cache of instantiations so we only ever instantiate a
   // generator once.
   auto cacheIt = generatedFuncs.find(declAndInputParams);
@@ -1505,9 +1645,48 @@ Elaborator::getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
 // Elaborator Driver
 //===----------------------------------------------------------------------===//
 
+ErrorTreeOr<FuncOp>
+ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
+                                    ArrayRef<ParamBindAttr> paramValues) {
+  FuncInterface func = lookupCallee(symbolRef);
+  if (auto funcOp = dyn_cast<FuncOp>(*func))
+    return funcOp;
+
+  // The symbol does not refer to a concrete function. Ask the elaborator to
+  // instantiate the callee.
+  SmallVector<Attribute> inputParams;
+  for (ParamBindAttr bind : paramValues)
+    inputParams.push_back(bind.getValue());
+  EvalContext &evalCtx = getEvalContext(symbolRef);
+
+  auto vals = ArrayAttr::get(symbolRef.getContext(), inputParams);
+  for (auto [decl, value] : llvm::zip(func.getInputParamDecls(), vals))
+    evalCtx.evaluator.setOrOverwriteParameterValue(decl, value);
+
+  ArrayRef<ErrorTreeOr<ElaboratedGenerator>> results =
+      getAllInstantiations({cast<DeclInterface>(*func), vals},
+                           /*expansionDepth=*/0, evalCtx);
+
+  // Since we are evaluating the callee at compile time, just pick the first
+  // viable candidate.
+  ErrorTree err(loc, "unable to evaluate generator or interface");
+  for (const ErrorTreeOr<ElaboratedGenerator> &result : results) {
+    if (result.isError()) {
+      err.addCause(result.getError().copy());
+      continue;
+    }
+    func = result.getValue().func;
+    break;
+  }
+  if (!isa<FuncOp>(*func))
+    return err;
+
+  return cast<FuncOp>(*func);
+}
+
 /// Scan the primary and library modules to collect all the interfaces,
 /// verifying that any common interfaces are the same.
-ParseResult Elaborator::collectInterfaces() {
+ParseResult ElaboratorImpl::collectInterfaces() {
   // Collect all the generator interfaces in the library modules, which will
   // allow cross-checking them below. Also, collect all the generators
   // that implement a given interface, starting with the libraries.  These will
@@ -1586,7 +1765,7 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
   }
 
   // TODO: Pipe the compilation target through the pipeline.
-  Elaborator elaborator(
+  ElaboratorImpl elaborator(
       analysis, TargetInfoAttr::getForHost(primary.getContext()), runtime,
       asyncMap, transformCache.copy(), regionCache.copy(), enableSearch);
 

@@ -27,10 +27,7 @@ ErrorOr<Region *> IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
       cast<FlatSymbolRefAttr>(symbol).getAttr());
 
   // Make sure the function is inflated.
-  elaborator.asyncMap.mapChained(func, [&](LLCL::AnyAsyncValueRef ch) {
-    return Cache::inflateOp(func, elaborator.regionCache.copy(), std::move(ch));
-  });
-  if (auto err = elaborator.asyncMap.await(func))
+  if (auto err = elaborator.inflateFunc(func))
     return err.takeError();
 
   // Now we can return the function body.
@@ -40,10 +37,7 @@ ErrorOr<Region *> IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
 ErrorTreeOr<TypedAttr>
 IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   // Make sure the function is inflated.
-  elaborator.asyncMap.mapChained(func, [&](LLCL::AnyAsyncValueRef ch) {
-    return Cache::inflateOp(func, elaborator.regionCache.copy(), std::move(ch));
-  });
-  if (auto err = elaborator.asyncMap.await(func))
+  if (auto err = elaborator.inflateFunc(func))
     return ErrorTree(func.getLoc(), err.takeError());
 
   // Evaluate the function body.
@@ -70,8 +64,8 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
 IREvaluator::IREvaluator(Elaborator &elaborator,
                          DenseMap<StringAttr, Attribute> paramValues)
     : ParameterEvaluator(std::move(paramValues)),
-      InterpreterState(elaborator.analysis, elaborator.target),
-      symtab(elaborator.analysis.getTopLevelSymbolTable()),
+      InterpreterState(elaborator.getAnalysis(), elaborator.getTarget()),
+      symtab(elaborator.getAnalysis().getTopLevelSymbolTable()),
       elaborator(elaborator) {}
 
 FailureOr<TypedAttr>
@@ -87,43 +81,15 @@ IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
     if (!llvm::all_of(operands, ParameterAttr::isSimpleConstant) || !ref)
       return failure();
 
-    // Lookup the symbol reference.
-    FuncInterface func = elaborator.lookupCallee(ref);
-    if (!isa<FuncOp>(*func)) {
-      // The symbol does not refer to a concrete function. Ask the elaborator to
-      // instantiate the callee.
-      SmallVector<Attribute> inputParams;
-      for (ParamBindAttr bind : symbol.getParamValues())
-        inputParams.push_back(bind.getValue());
-      EvalContext &evalCtx = elaborator.getEvalContext(ref);
-      auto paramValues = ArrayAttr::get(op.getContext(), inputParams);
-      for (auto [decl, value] :
-           llvm::zip(func.getInputParamDecls(), paramValues))
-        evalCtx.evaluator.setOrOverwriteParameterValue(decl, value);
-      ArrayRef<ErrorTreeOr<ElaboratedGenerator>> results =
-          elaborator.getAllInstantiations(
-              {cast<DeclInterface>(*func), paramValues},
-              /*expansionDepth=*/0, evalCtx);
-
-      // Since we are evaluating the callee at compile time, just pick the first
-      // viable candidate.
-      ErrorTree err(*errorLoc, "unable to evaluate generator or interface");
-      for (const ErrorTreeOr<ElaboratedGenerator> &result : results) {
-        if (result.isError()) {
-          err.addCause(result.getError().copy());
-          continue;
-        }
-        func = result.getValue().func;
-        break;
-      }
-      if (!isa<FuncOp>(*func)) {
-        emitError(std::move(err));
-        return failure();
-      }
+    // Lookup the symbol reference and resolve it.
+    ErrorTreeOr<FuncOp> func = elaborator.getConcreteFunction(
+        *errorLoc, ref, symbol.getParamValues().getValue());
+    if (func.isError()) {
+      emitError(func.takeError());
+      return failure();
     }
 
-    ErrorTreeOr<TypedAttr> result =
-        evaluateFunction(cast<FuncOp>(*func), operands);
+    ErrorTreeOr<TypedAttr> result = evaluateFunction(*func, operands);
     if (TypedAttr value = result.tryGetValue())
       return value;
     emitError(result.takeError());

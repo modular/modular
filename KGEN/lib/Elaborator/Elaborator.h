@@ -78,100 +78,30 @@ public:
         transformCache(std::move(transformCache)),
         regionCache(std::move(regionCache)), enableSearch(enableSearch) {}
 
-  /// Scan the primary and library module to collect all the interfaces,
-  /// verifying that any common interfaces are the same.
-  ParseResult collectInterfaces();
+  virtual ~Elaborator() = default;
 
-  /// Return the operation that defines the specified symbol.
-  FuncInterface lookupCallee(SymbolRefAttr symbolRef);
+  /// Look up the callee symbol. If it's a FuncOp, return it. Otherwise,
+  /// elaborate the generator or interface and return the first concrete
+  /// implementation.
+  virtual ErrorTreeOr<FuncOp>
+  getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
+                      ArrayRef<ParamBindAttr> paramValues) = 0;
 
-  /// Return all instantiations of the specified declaration (a func,
-  /// generator, or interface) with the specified input parameter values.
-  ArrayRef<ErrorTreeOr<ElaboratedGenerator>>
-  getAllInstantiations(DeclAndInputParamsPair declAndInputParams,
-                       size_t expansionDepth, EvalContext &evalCtx);
+  /// Get the SymbolTableAnalysis object associated with this instance of the
+  /// elaborator.
+  SymbolTableAnalysis &getAnalysis() { return analysis; }
+  /// Get the target associated with this instance of the elaborator.
+  TargetInfoAttr getTarget() { return target; }
 
-  /// Insert a variant of an existing func into the primary file.
-  void insertFuncVariant(FuncOp existing, FuncOp newFunc);
-
-  /// Indicate that a function should be removed from the module at the end of
-  /// elaboration. These functions are either invalid instantiations or
-  /// inlined.
-  void markFuncForRemoval(FuncOp func) { funcsToRemove.insert(func); }
-
-  /// Return true if the function was invalid or inlined and should be removed
-  /// from the module.
-  bool shouldRemoveFunc(FuncOp func) { return funcsToRemove.contains(func); }
-
-  /// Returns true if search is enabled.
-  bool isSearchEnabled() { return enableSearch; }
-
-  ArrayRef<GeneratorOp> getGeneratorsImplementing(GeneratorInterfaceOp itf) {
-    auto it = interfaceImpls.find(itf.getNameAttr());
-    return it == interfaceImpls.end() ? ArrayRef<GeneratorOp>() : it->second;
+  /// Inflate the provided function.
+  ErrorOrSuccess inflateFunc(FuncOp func) {
+    asyncMap.mapChained(func, [&](LLCL::AnyAsyncValueRef ch) {
+      return Cache::inflateOp(func, regionCache.copy(), std::move(ch));
+    });
+    return asyncMap.await(func);
   }
 
-  const DenseMap<GeneratorOp, FuncOp> &
-  getFirstConcreteFuncForGenerator() const {
-    return firstConcreteFuncForGenerator;
-  }
-
-  /// Bind the result parameters of a fully-specialized function and clear them
-  /// from the function.
-  ErrorTreeOr<SuccessType> bindResultParameters(FuncOp func);
-
-  /// Lookup bound result parameters of a function.
-  ParameterExprArrayAttr lookupResultParameters(FuncOp func) {
-    auto it = resultParams.find(func);
-    assert(it != resultParams.end() && "results parameters not bound");
-    return it->second;
-  }
-
-  /// Set the evaluation context of a region body.
-  void setEvalContext(SymbolRefAttr ref, EvalContext evalCtx);
-
-  /// Get the evaluation context of the base symbol reference, or set it to the
-  /// default context.
-  EvalContext &getEvalContext(SymbolRefAttr ref);
-
-  /// Instantiate a new evaluator with the given parameters.
-  IREvaluator createEvaluator(DenseMap<StringAttr, Attribute> values =
-                                  DenseMap<StringAttr, Attribute>());
-
-  /// Get the symbol table analysis.
-  SymbolTableAnalysis &getAnalysis() const { return analysis; }
-
-private:
-  /// Specialize a func body, generating one variant or each viable
-  /// instantiation of that body.  Funcs do not have input parameters, but
-  /// they can invoke interfaces etc which can cause them to produce multiple
-  /// variants.
-  ///
-  /// SourceModule indicates which module in the included library this
-  /// originally came from (likely not the primary module).
-  SmallVector<ErrorTreeOr<ElaboratedGenerator>>
-  specializeFunc(FuncOp func, ModuleOp sourceModule, size_t expansionDepth,
-                 EvalContext &evalCtx);
-
-  /// Specialize a generator with the specified input parameters and return
-  /// the generated func.
-  SmallVector<ErrorTreeOr<ElaboratedGenerator>>
-  specializeGenerator(DeclAndInputParamsPair declAndInputParams,
-                      size_t expansionDepth, EvalContext &evalCtx);
-
-  /// Specialize a generator interface with the specified input parameters and
-  /// return the generated func.
-  SmallVector<ErrorTreeOr<ElaboratedGenerator>>
-  specializeInterface(DeclAndInputParamsPair declAndInputParams,
-                      size_t expansionDepth, EvalContext &evalCtx);
-
-  /// Report an error given an interface and an error string - just reduces
-  /// boilerplate around CalleeExpansionError creation.
-  ErrorTreeOr<ElaboratedGenerator>
-  reportCalleeExpansionError(GeneratorInterfaceOp itf, Twine err) {
-    return ErrorTree(itf.getLoc(), err);
-  };
-
+protected:
   /// This symbol table analysis allows efficient lookups across the module.
   SymbolTableAnalysis &analysis;
 
@@ -191,44 +121,9 @@ private:
   LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
   LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache;
 
-  /// This collects all of the generator implementations of generator
-  /// interfaces, across both the primary module and the library.
-  DenseMap<StringAttr, SmallVector<GeneratorOp, 4>> interfaceImpls;
-
-  /// This map contains bindings for result parameteres from specialized
-  /// functions.
-  DenseMap<FuncOp, ParameterExprArrayAttr> resultParams;
-
-  /// This is a cache of already-instantiated declarations.  The key is the
-  /// generator/interface and input parameters, the result are all-possible
-  /// funcs that could be generated from this.
-  DenseMap<DeclAndInputParamsPair,
-           SmallVector<ErrorTreeOr<ElaboratedGenerator>>>
-      generatedFuncs;
-
-  /// This keeps tracks the evaluation context of region bodies. It keeps a flag
-  /// of whether the region is isolated from above (and thus all nodes along the
-  /// callgraph down to the callsite need to be inlined) and the parameter
-  /// context.
-  DenseMap<SymbolRefAttr, EvalContext> evaluationContext;
-
-  /// This map keeps track of the first func that a generator with no
-  /// parameters expanded into.  We rename it to have the same symbol as the
-  /// original generator in a post-pass.
-  DenseMap<GeneratorOp, FuncOp> firstConcreteFuncForGenerator;
-
-  /// This tracks generated functions that should be removed after
-  /// elaboration. These functions were either inlined by a parameter rewriter
-  /// or are malformed. These functions need to be cleaned up at the end of
-  /// the pass.
-  DenseSet<FuncOp> funcsToRemove;
-
   /// Enable search during interface elaboration. This defaults to `false`
   /// because we want search to be opt-in.
   bool enableSearch = false;
-
-  /// Allow the evaluator to access elaborator internals.
-  friend class IREvaluator;
 };
 
 } // namespace M::KGEN
