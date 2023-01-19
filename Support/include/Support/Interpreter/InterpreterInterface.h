@@ -8,9 +8,9 @@
 #define SUPPORT_INTERPRETER_INTERPRETERINTERFACE_H
 
 #include "Support/Compiler/ErrorTree.h"
-#include "Support/Compiler/SymbolTableAnalysis.h"
 #include "Support/ErrorOr.h"
 #include "Support/MDialect/MAttrs.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Support/DebugStringHelper.h"
 
@@ -21,7 +21,7 @@
 namespace M {
 class InterpreterState {
 public:
-  InterpreterState(SymbolTableAnalysis &analysis, TargetInfoAttr target)
+  InterpreterState(mlir::SymbolTableAnalysis &analysis, TargetInfoAttr target)
       : analysis(analysis), target(target) {}
 
   virtual ~InterpreterState() = default;
@@ -150,7 +150,7 @@ private:
   ErrorTreeOr<SmallVector<Attribute>> runInterpreter();
 
   /// The cached symbol table.
-  SymbolTableAnalysis &analysis;
+  mlir::SymbolTableAnalysis &analysis;
 
   /// The interpreter targt configuration.
   TargetInfoAttr target;

@@ -41,7 +41,7 @@ struct OutlineClosuresPass
 void OutlineClosuresPass::runOnOperation() {
   ModuleOp theModule = getOperation();
   SymbolTable &symtab =
-      getAnalysis<SymbolTableAnalysis>().getTopLevelSymbolTable();
+      getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &domInfo = getAnalysis<mlir::DominanceInfo>();
 
   // Walk over all the param.declare.region ops and create structs with the SSA

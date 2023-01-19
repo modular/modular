@@ -18,7 +18,6 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "SelectFastestFunction.h"
 #include "Support/Compiler/OperationUtils.h"
-#include "Support/Compiler/SymbolTableAnalysis.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/STLExtras.h"
 #include "SymbolicExpressions.h"
@@ -157,7 +156,7 @@ struct ElaboratorImpl : public Elaborator {
                                   DenseMap<StringAttr, Attribute>());
 
   /// Get the symbol table analysis.
-  SymbolTableAnalysis &getAnalysis() const { return analysis; }
+  mlir::SymbolTableAnalysis &getAnalysis() const { return analysis; }
 
 private:
   /// Specialize a func body, generating one variant or each viable
@@ -295,7 +294,8 @@ public:
                     EvalContext &evalCtx, SmallVector<Operation *> opsToRewrite,
                     size_t expansionDepth)
       : elaborator(elaborator),
-        sourceModule(cast<ModuleOp>(elaborator.getAnalysis().getModule())),
+        sourceModule(
+            cast<ModuleOp>(elaborator.getAnalysis().getTopLevelOp<ModuleOp>())),
         elaboratedGenerator(func), evaluator(std::move(evalCtx.evaluator)),
         opWorklist(std::move(opsToRewrite)), nextRegionID(0),
         inlinedCallee(evalCtx.transitivelyInlined),
@@ -1695,7 +1695,7 @@ ParseResult ElaboratorImpl::collectInterfaces() {
 
   // Scan the specified module collecting all the generators that implement an
   // interface and checking the interfaces between library files line up.
-  for (Operation &op : analysis.getModule().getOps()) {
+  for (Operation &op : analysis.getTopLevelOp<ModuleOp>().getOps()) {
     // Collect interfaces.
     if (auto itf = dyn_cast<GeneratorInterfaceOp>(op)) {
       if (auto [it, inserted] =
@@ -1718,7 +1718,7 @@ ParseResult ElaboratorImpl::collectInterfaces() {
 
 /// Elaborate generators in the specified module, incorporating implementation
 /// logic from the specified library.
-LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
+LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &analysis,
                                      LLCL::Runtime &runtime,
                                      ArrayRef<GeneratorOp> primaryGenerators,
                                      bool enableSearch) {
@@ -1728,7 +1728,7 @@ LogicalResult M::elaborateGenerators(SymbolTableAnalysis &analysis,
       llvm::dbgs() << " * " << generator.getNameAttr() << "\n";
   });
   TimeTraceScope<> traceScope("elaborate-generators");
-  ModuleOp primary = analysis.getModule();
+  ModuleOp primary = analysis.getTopLevelOp<ModuleOp>();
 
   LLCL::AsyncSideEffectMap asyncMap(runtime);
 
@@ -1936,7 +1936,7 @@ struct ElaborateGeneratorsPass
       if (gen.getInputParamDecls().empty())
         primaryGenerators.push_back(gen);
 
-    auto &analysis = getAnalysis<SymbolTableAnalysis>();
+    auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     if (failed(resolveIncludes(analysis.getTopLevelSymbolTable(), paths,
                                includedFiles)))
       return signalPassFailure();
@@ -1962,7 +1962,7 @@ struct ResolveIncludesPass
       paths.push_back(p);
     paths.push_back(std::filesystem::path("."));
 
-    auto &analysis = getAnalysis<SymbolTableAnalysis>();
+    auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     if (failed(resolveIncludes(analysis.getTopLevelSymbolTable(), paths)))
       return signalPassFailure();
   }

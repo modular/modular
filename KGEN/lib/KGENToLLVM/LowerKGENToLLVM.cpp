@@ -14,10 +14,10 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/Compiler/OperationUtils.h"
-#include "Support/Compiler/SymbolTableAnalysis.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "Support/HLCFToLLVM/HLCFToLLVM.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -489,7 +489,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
   SymbolTable symtab =
-      getAnalysis<SymbolTableAnalysis>().getTopLevelSymbolTable();
+      getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   populateKGENToLLVMPatterns(typeConverter, patterns, symtab);
   DebugInfo::populateTypeConversionPatterns(patterns, typeConverter);
   target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(

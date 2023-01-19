@@ -397,9 +397,9 @@ struct LowerTerminatorsPass
         resumeFn.getBody()->addArgument(i8Ptr, b.getLoc()));
     b.create<CoroutineResumeOp>(opaqueHdl.getResult(0));
     b.create<KGEN::ReturnOp>(ArrayRef<TypedAttr>(), ValueRange());
-    StringAttr resumeFnName =
-        getAnalysis<SymbolTableAnalysis>().getTopLevelSymbolTable().insert(
-            resumeFn);
+    StringAttr resumeFnName = getAnalysis<mlir::SymbolTableAnalysis>()
+                                  .getTopLevelSymbolTable()
+                                  .insert(resumeFn);
     if (resumeFnName != resumeFn.getSymNameAttr())
       resumeFn.setSymNameAttr(resumeFnName);
     auto resumeFnRef = SymbolConstantAttr::get(

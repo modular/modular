@@ -13,9 +13,9 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "Support/Compiler/SymbolTableAnalysis.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/HLCFDialect/HLCFOps.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/PatternMatch.h"
@@ -854,7 +854,7 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
     // the module, but we could trivially parallelize this within the pass.
     ModuleOp module = getOperation();
     SymbolTable &symbolTable =
-        getAnalysis<SymbolTableAnalysis>().getTopLevelSymbolTable();
+        getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
     if (failed(lowerModuleDecl(module.getBody(), symbolTable)))
       return signalPassFailure();
     lowerAttributesAndTypes(module);

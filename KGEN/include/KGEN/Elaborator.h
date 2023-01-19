@@ -10,9 +10,11 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <filesystem>
 
-namespace M {
+namespace mlir {
 class SymbolTableAnalysis;
+} // namespace mlir
 
+namespace M {
 namespace LLCL {
 class Runtime;
 } // namespace LLCL
@@ -33,7 +35,7 @@ resolveIncludes(SymbolTable &symtab,
 /// Elaborate generators in the specified module, incorporating implementation
 /// logic from the specified library.  On error, diagnostics are emitted and the
 /// primary file isn't completely lowered.
-LogicalResult elaborateGenerators(SymbolTableAnalysis &symtab,
+LogicalResult elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
                                   LLCL::Runtime &runtime,
                                   ArrayRef<KGEN::GeneratorOp> generators,
                                   bool enableSearch = false);
