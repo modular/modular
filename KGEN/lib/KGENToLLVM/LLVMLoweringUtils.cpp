@@ -525,7 +525,11 @@ static Value lowerStringToGlobalConstant(StringAttr strAttr,
     values.push_back(POP::SIMDAttr::get(
         {APSInt(APInt(CHAR_BIT, c), /*isUnsigned=*/false), DType::si8},
         charType));
-  auto arrayType = POP::ArrayType::get(str.size(), charType);
+  values.push_back(POP::SIMDAttr::get(
+      {APSInt(APInt(CHAR_BIT, '\0'), /*isUnsigned=*/false), DType::si8},
+      charType));
+  // Accommodate for an additional \0 in the global constant for C interop.
+  auto arrayType = POP::ArrayType::get(str.size() + 1, charType);
   Value globalConst = b.create<POP::GlobalConstantOp>(
       POP::PointerType::get(arrayType), POP::ArrayAttr::get(values, arrayType));
   IntegerType byteType = b.getI8Type();
@@ -535,6 +539,7 @@ static Value lowerStringToGlobalConstant(StringAttr strAttr,
       b.create<mlir::UnrealizedConversionCastOp>(
            b.getLoc(), LLVM::LLVMPointerType::get(byteType), ptrBitcast)
           .getResult(0);
+  // The actual string size does not include \0.
   Value sizeVal =
       b.create<LLVM::ConstantOp>(b.getLoc(), b.getI64IntegerAttr(str.size()));
   Value undefOp = b.create<LLVM::UndefOp>(
