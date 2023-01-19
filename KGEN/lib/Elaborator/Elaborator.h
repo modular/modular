@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
 #include "Support/Compiler/ErrorTree.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
 
 namespace M::KGEN {
 struct EvalContext;
@@ -69,7 +70,7 @@ class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
   Elaborator(
-      SymbolTableAnalysis &analysis, TargetInfoAttr target,
+      mlir::SymbolTableAnalysis &analysis, TargetInfoAttr target,
       LLCL::Runtime &runtime, LLCL::AsyncSideEffectMap &map,
       LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache,
       LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache,
@@ -89,7 +90,7 @@ public:
 
   /// Get the SymbolTableAnalysis object associated with this instance of the
   /// elaborator.
-  SymbolTableAnalysis &getAnalysis() { return analysis; }
+  mlir::SymbolTableAnalysis &getAnalysis() { return analysis; }
   /// Get the target associated with this instance of the elaborator.
   TargetInfoAttr getTarget() { return target; }
 
@@ -103,7 +104,7 @@ public:
 
 protected:
   /// This symbol table analysis allows efficient lookups across the module.
-  SymbolTableAnalysis &analysis;
+  mlir::SymbolTableAnalysis &analysis;
 
   /// The target we are compiling code for.
   TargetInfoAttr target;

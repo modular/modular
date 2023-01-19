@@ -8,9 +8,9 @@
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "Support/Compiler/SymbolTableAnalysis.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "Support/STLExtras.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
@@ -112,7 +112,7 @@ void EmitLLVMPass::runOnOperation() {
   // TODO: Populate compilation options from pass options.
   auto compiler = ObjectCompiler::create(
       *rt, ".kgen_cache",
-      getAnalysis<SymbolTableAnalysis>().getTopLevelSymbolTable(),
+      getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable(),
       CompilationOptions());
   if (failed(compiler)) {
     getOperation()->emitError()

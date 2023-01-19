@@ -6,7 +6,7 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
-#include "Support/Compiler/SymbolTableAnalysis.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
 
 using namespace M;
 using namespace KGEN;
@@ -31,7 +31,7 @@ void EliminateDeadSymbolsPass::runOnOperation() {
     return signalPassFailure();
   }
 
-  auto &analysis = getAnalysis<SymbolTableAnalysis>();
+  auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
 
   DenseSet<StringAttr> usedSymbols;
   // The base of the export set is the used symbols.
