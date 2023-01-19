@@ -119,6 +119,230 @@ def FileModuleOp : LITOp<"file_module", [
 }
 
 //===----------------------------------------------------------------------===//
+// StructDeclOp
+//===----------------------------------------------------------------------===//
+
+def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>, DeclInterface,
+    SingleBlock, NoTerminator]> {
+  let summary = "Struct declaration.";
+  let description = [{
+    The `lit.struct.decl` operation is a top-level operation used to declare
+    parametric LIT struct types. Struct declarations are named with a symbol
+    and have a parameter declaration list. The body contains
+    `lit.struct.field` operations that declare the contents of the struct.
+
+    Example:
+
+    ```mlir
+    lit.struct.decl @Buffer<size, dtype: dtype> {
+      lit.struct.field size : index
+      lit.struct.field ptr : !pop.pointer<scalar<dtype>>
+      lit.struct.field dtype : !kgen.dtype
+    }
+    ```
+
+    The parameters of the declaration can be constraints with optional
+    constraints.
+
+    Example:
+
+    ```mlir
+    lit.struct.decl @SmallString<size>
+        constraints <[le(size, 8), "string must be small"]> {
+      lit.struct.field data : !pop.array<size, scalar<si8>>
+    }
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       KGEN_ParamDeclArrayAttr:$inputParamDecls);
+  let regions = (region SizedRegion<1>:$fields);
+  let assemblyFormat = [{
+    $sym_name `` custom<OptionalParameterSpec>($inputParamDecls)
+    attr-dict-with-keyword
+    $fields
+  }];
+
+  let extraClassDeclaration = [{
+    /// Get the field declarations.
+    auto getFieldDecls() { return getFields().getOps<StructFieldOp>(); }
+    auto field_begin() { return getFieldDecls().begin(); }
+    auto field_end() { return getFieldDecls().end(); }
+  }];
+
+  let builders = [
+    // Create a struct with a region but no body block. The caller must create
+    // it and fill it in.
+    OpBuilder<(ins "StringAttr":$name)>,
+  ];
+
+  let hasVerifier = 1;
+  let hasRegionVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// StructFieldOp
+//===----------------------------------------------------------------------===//
+
+def LIT_StructFieldOp : LITOp<"struct.field", [HasParent<"StructDeclOp">]> {
+  let summary = "Struct field declaration.";
+  let description = [{
+    The `lit.struct.field` operations declares a named struct field and type.
+
+    Example:
+
+    ```mlir
+    // Declare a field named "foo".
+    lit.struct.field foo : !pop.scalar<f32>
+    ```
+  }];
+
+  let arguments = (ins StrAttr:$name, TypeAttr:$type);
+  let assemblyFormat = "custom<KeywordAsString>($name) attr-dict `:` $type";
+}
+
+//===----------------------------------------------------------------------===//
+// StructCreateOp
+//===----------------------------------------------------------------------===//
+
+def LIT_StructCreateOp : LITOp<"struct.create", [Pure,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Create a parametric struct.";
+  let description = [{
+    The `lit.struct.create` operation creates a struct of the referred type
+    with the provided values as fields. The operands must match the fields in
+    the order they are declared.
+
+    Example:
+
+    ```mlir
+    lit.struct.decl @MyStruct<T: dtype> {
+      lit.struct.field a : !pop.scalar<T>
+      lit.struct.field b : !pop.scalar<f32>
+      lit.struct.field c : !pop.simd<2, T>
+    }
+
+    %0 = lit.struct.create(%a, %b, %c) :
+      (!pop.scalar<type>, !pop.scalar<f32>, !pop.simd<2, type>)
+      -> !kgen.declref<@MyStruct<T: dtype = type>>
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let results = (outs KGEN_DeclRefType:$result);
+  let assemblyFormat = [{
+    `(` operands `)` attr-dict `:` functional-type(operands, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// StructInsertOp
+//===----------------------------------------------------------------------===//
+
+def LIT_StructInsertOp : LITOp<"struct.insert", [Pure,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+    AllTypesMatch<["container", "result"]>]> {
+  let summary = "Insert a value into a struct.";
+  let description = [{
+    The `lit.struct.insert` operation inserts a value into a parametric struct.
+    The original struct is immutable, so a new copy with the inserted value is
+    returned.
+
+    Example:
+
+    ```mlir
+    lit.struct.decl @MyStruct<T: dtype> {
+      lit.struct.field a : !pop.scalar<T>
+    }
+
+    %0 = lit.struct.insert %fieldVal, %struct[a]
+      : !pop.scalar<f64> into !kgen.declref<@MyStruct<T: dtype = f64>>
+    ```
+  }];
+
+  let arguments = (ins StrAttr:$field, AnyType:$value,
+                       KGEN_DeclRefType:$container);
+  let results = (outs KGEN_DeclRefType:$result);
+  let assemblyFormat = [{
+    $value `,` $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
+    type($value) `into` qualified(type($container))
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// StructExtractOp
+//===----------------------------------------------------------------------===//
+
+def LIT_StructExtractOp : LITOp<"struct.extract", [Pure,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Extract a value from a struct.";
+  let description = [{
+    The `lit.struct.extract` operation extracts the value of a field by name
+    from a parametric struct.
+
+    Example:
+
+    ```mlir
+    lit.struct.decl @MyStruct<T: dtype> {
+      lit.struct.field a : !pop.scalar<T>
+    }
+
+    %0 = lit.struct.extract %struct[a]
+      : !pop.scalar<f64> from !kgen.declref<@MyStruct<T: dtype = f64>>
+    ```
+  }];
+
+  let arguments = (ins StrAttr:$field, KGEN_DeclRefType:$container);
+  let results = (outs AnyType:$value);
+  let assemblyFormat = [{
+    $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
+    type($value) `from` qualified(type($container))
+  }];
+
+  let builders = [
+    // Infer the result type based on the result of lookup.
+    OpBuilder<(ins "Value":$structBase, "StructFieldOp":$field)>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// StructGEPOp
+//===----------------------------------------------------------------------===//
+
+def LIT_StructGEPOp : LITOp<"struct.gep", [Pure,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Get a pointer to a struct field.";
+  let description = [{
+    The `lit.struct.gep` operation computes a pointer to a struct field by
+    name from a parametric struct.
+
+    Example:
+
+    ```mlir
+    lit.struct.decl @MyStruct<T: dtype> {
+      lit.struct.field a : !pop.scalar<T>
+    }
+
+    %0 = lit.struct.gep %struct[a]
+      : <scalar<f64>> from <@MyStruct<T: dtype = f64>>
+    ```
+  }];
+
+  let arguments = (ins StrAttr:$field, PointerOf<KGEN_DeclRefType>:$container);
+  let results = (outs POP_PointerType:$result);
+  let assemblyFormat = [{
+    $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
+    type($result) `from` type($container)
+  }];
+
+  let builders = [
+    // Infer the result type based on the result of lookup.
+    OpBuilder<(ins "Value":$structBasePtr, "StructFieldOp":$field)>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // TryOp
 //===----------------------------------------------------------------------===//
 

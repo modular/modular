@@ -48,13 +48,13 @@ kgen.func @someMetaScalarKernel(%arg0: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
 }
 // SCALARMETA: extern float someMetaScalarKernel_c(float);
 
-kgen.struct.decl @Foo<DT:dtype> {
-  kgen.struct.field value : !pop.scalar<DT>
+lit.struct.decl @Foo<DT:dtype> {
+  lit.struct.field value : !pop.scalar<DT>
 }
 
-kgen.struct.decl @Bar {
-  kgen.struct.field a : !kgen.declref<@Foo<DT:dtype=f32>>
-  kgen.struct.field b : !pop.scalar<f64>
+lit.struct.decl @Bar {
+  lit.struct.field a : !kgen.declref<@Foo<DT:dtype=f32>>
+  lit.struct.field b : !pop.scalar<f64>
 }
 
 kgen.func @nestedParametricStruct(%a: !kgen.declref<@Bar>) {

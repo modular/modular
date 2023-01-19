@@ -1,9 +1,9 @@
 // RUN: kgen-opt %s -lower-lit-terminators | FileCheck %s
 
-kgen.struct.decl @Error {}
+lit.struct.decl @Error {}
 
-// CHECK-LABEL: kgen.struct.decl @SomeStruct
-kgen.struct.decl @SomeStruct {
+// CHECK-LABEL: lit.struct.decl @SomeStruct
+lit.struct.decl @SomeStruct {
   // CHECK-LABEL: lit.func @dead_returns
   lit.func @dead_returns(%c: i1, %a: i32, %b: i32) -> i32 {
     // CHECK: hlcf.if %c
@@ -26,8 +26,8 @@ kgen.struct.decl @SomeStruct {
 
 // CHECK-LABEL: lit.file_module @FileModule
 lit.file_module @FileModule {
-  // CHECK-LABEL: kgen.struct.decl @SomeStruct
-  kgen.struct.decl @SomeStruct {
+  // CHECK-LABEL: lit.struct.decl @SomeStruct
+  lit.struct.decl @SomeStruct {
     // CHECK-LABEL: lit.func @try_and_raise
     // CHECK-SAME: ) -> !pop.variant<@Error, i32>
     lit.func @try_and_raise(%a: i32, %b: !kgen.declref<@Error>) throws -> i32 {
@@ -172,15 +172,15 @@ lit.func @parametric_throws<fn: <>() throws -> !lit.none>() throws -> !lit.none 
 
 // CHECK-LABEL: lit.file_module @Module
 lit.file_module @Module {
-  // CHECK-LABEL: kgen.struct.decl @Struct
-  kgen.struct.decl @Struct {
+  // CHECK-LABEL: lit.struct.decl @Struct
+  lit.struct.decl @Struct {
     // CHECK-NEXT: field x : !kgen.signature<[], [], () -> !pop.variant<@Error, !lit.none>>
-    kgen.struct.field x : !kgen.signature<[], [], () throws -> !lit.none>
+    lit.struct.field x : !kgen.signature<[], [], () throws -> !lit.none>
 
     // CHECK-LABEL: lit.func @throws
     lit.func @throws(%self: !kgen.declref<@Module::@Struct>) throws -> !lit.none {
       // CHECK-NEXT: !kgen.signature<[], [], () -> !pop.variant<@Error, !lit.none>> from
-      %x = kgen.struct.extract %self[x] : !kgen.signature<[], [], () throws -> !lit.none>
+      %x = lit.struct.extract %self[x] : !kgen.signature<[], [], () throws -> !lit.none>
         from !kgen.declref<@Module::@Struct>
       lit.end_func
     }

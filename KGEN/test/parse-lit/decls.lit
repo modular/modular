@@ -16,7 +16,7 @@ def let_decls():
   let y = 1.0
 
   # CHECK: [[TMP:%.*]] = pop.cast_from_builtin %x : index to !pop.scalar<index>
-  # CHECK: [[TMP2:%.*]] = kgen.struct.create([[TMP]])
+  # CHECK: [[TMP2:%.*]] = lit.struct.create([[TMP]])
   # CHECK: %z = lit.let.decl "z" = [[TMP2]]
   let z = Int(x)
 
@@ -34,7 +34,7 @@ def var_decls():
 
   # CHECK: [[Y:%.*]] = pop.load %y : !pop.pointer<@"$Int"::@Int>
   # CHECK: kgen.param.constant: !pop.scalar<index> = <#pop.simd<1>>
-  # CHECK: [[ONE:%.*]] = kgen.struct.create(
+  # CHECK: [[ONE:%.*]] = lit.struct.create(
   # CHECK: [[ADD:%.*]] = kgen.call @"$Int"::@Int::@"__add__($Int::Int,$Int::Int)"([[Y]], [[ONE]])
   # CHECK: pop.store [[ADD]], %y : !pop.pointer<@"$Int"::@Int>
   y = y + 1
@@ -127,14 +127,14 @@ fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
 
 # CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !kgen.declref<@"$Int"::@Int> attributes {isDef}
 def defAlwaysRaises() -> Int:
-    # CHECK: %[[RESULT:.*]] = kgen.struct.create(%{{.*}})
+    # CHECK: %[[RESULT:.*]] = lit.struct.create(%{{.*}})
     # CHECK-NEXT: lit.return %[[RESULT]] : !kgen.declref<@"$Int"::@Int>
     return Int(0)
 
 # CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !kgen.declref<@"$Int"::@Int>
 @raises
 fn fnThatRaises() -> Int:
-    # CHECK: %[[RESULT:.*]] = kgen.struct.create(%{{.*}})
+    # CHECK: %[[RESULT:.*]] = lit.struct.create(%{{.*}})
     # CHECK-NEXT: lit.return %[[RESULT]] : !kgen.declref<@"$Int"::@Int>
     return Int(0)
 
@@ -159,16 +159,16 @@ fn return_impl_convert_raises(a: Error) -> Error:
 # Structs
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: kgen.struct.decl @EmptyStruct {
+# CHECK-LABEL: lit.struct.decl @EmptyStruct {
 struct EmptyStruct:
   # No body
 # CHECK-NEXT: }
 
-# CHECK-LABEL: kgen.struct.decl @OneLineStruct<size: !kgen.declref<@"$Int"::@Int>> {
+# CHECK-LABEL: lit.struct.decl @OneLineStruct<size: !kgen.declref<@"$Int"::@Int>> {
 struct OneLineStruct[size: Int]: pass; pass
 # CHECK-NEXT: }
 
-# CHECK-LABEL: kgen.struct.decl @StructExample {
+# CHECK-LABEL: lit.struct.decl @StructExample {
 struct StructExample:
   fn __new__() -> StructExample:
     var result : StructExample
@@ -178,7 +178,7 @@ struct StructExample:
   @staticmethod
   fn static(x: Int):
     # CHECK: %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<4>>
-    # CHECK: %1 = kgen.struct.create(%0) : (!pop.scalar<index>) -> !kgen.declref<@"$Int"::@Int>
+    # CHECK: %1 = lit.struct.create(%0) : (!pop.scalar<index>) -> !kgen.declref<@"$Int"::@Int>
     # CHECK: %2 = kgen.call @"$decls"::@StructExample::@"static{{.*}}"(%1) : (!kgen.declref<@"$Int"::@Int>) -> !lit.none
     StructExample.static(Int(4))
     pass
@@ -207,7 +207,7 @@ async fn coroutine() -> __mlir_type.index:
   # CHECK: lit.return %idx0 : index
   return 0
 
-# CHECK-LABEL: kgen.struct.decl @StructWithAsync
+# CHECK-LABEL: lit.struct.decl @StructWithAsync
 struct StructWithAsync:
   # CHECK-LABEL: lit.func @"do_something{{.*}}"({{.*}}) async -> !lit.none
   async fn do_something(self: StructWithAsync):
@@ -229,7 +229,7 @@ async fn await_coroutine():
 
 struct Awaitable:
   fn __new__() -> Awaitable:
-    return __mlir_op.`kgen.struct.create`[_type: Awaitable]()
+    return __mlir_op.`lit.struct.create`[_type: Awaitable]()
 
   fn __await__(self: Awaitable) -> __mlir_type.index:
     return 0
@@ -256,7 +256,7 @@ fn topLevelFunction() -> __mlir_type.index:
   # CHECK: call @"$decls"::@"topLevelFunction()"::@"nestedFunction()"()
   return nestedFunction()
 
-# CHECK-LABEL: kgen.struct.decl @SomeStruct
+# CHECK-LABEL: lit.struct.decl @SomeStruct
 struct SomeStruct:
   # CHECK-LABEL: @"someMethod({{.*}})"
   fn someMethod(self) -> __mlir_type.index:
@@ -280,7 +280,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
   # CHECK: call @"$decls"::@"topLevelParamFn()"::@"nestedFunction()"<b_param = 2>
   nestedFunction[2]()
 
-# CHECK-LABEL: kgen.struct.decl @SomeParamStruct<c_param>
+# CHECK-LABEL: lit.struct.decl @SomeParamStruct<c_param>
 struct SomeParamStruct[c_param: __mlir_type.index]:
   # CHECK-LABEL: lit.func @"topLevelParamFn({{.*}})"<a_param>
   fn topLevelParamFn[a_param: __mlir_type.index](self):

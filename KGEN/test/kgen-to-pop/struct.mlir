@@ -1,8 +1,8 @@
 // RUN: kgen-opt %s -lower-structs | FileCheck %s
 
-// CHECK-NOT: kgen.struct.decl
-kgen.struct.decl @SmallVector<N, T: type> {
-  kgen.struct.field data: !pop.array<N, T>
+// CHECK-NOT: lit.struct.decl
+lit.struct.decl @SmallVector<N, T: type> {
+  lit.struct.field data: !pop.array<N, T>
 }
 
 !size2 = !kgen.declref<@SmallVector<N = 2, T:type = !pop.simd<4, f32>>>
@@ -14,27 +14,27 @@ kgen.func @two_vectors(
   %arg1: !pop.array<4, simd<1, f64>>
 ) -> (!size2, !size4) {
   // CHECK: pop.struct.construct(%arg0) : !pop.struct<array<2, simd<4, f32>>>
-  %0 = kgen.struct.create(%arg0) : (!pop.array<2, simd<4, f32>>) -> !size2
+  %0 = lit.struct.create(%arg0) : (!pop.array<2, simd<4, f32>>) -> !size2
   // CHECK: pop.struct.construct(%arg1) : !pop.struct<array<4, scalar<f64>>>
-  %1 = kgen.struct.create(%arg1) : (!pop.array<4, simd<1, f64>>) -> !size4
+  %1 = lit.struct.create(%arg1) : (!pop.array<4, simd<1, f64>>) -> !size4
   kgen.return %0, %1 : !size2, !size4
 }
 
-// CHECK-NOT: kgen.struct.decl
-kgen.struct.decl @Box<T: type> {
-  kgen.struct.field value: !kgen.paramref<T>
+// CHECK-NOT: lit.struct.decl
+lit.struct.decl @Box<T: type> {
+  lit.struct.field value: !kgen.paramref<T>
 }
 
-// CHECK-NOT: kgen.struct.decl
-kgen.struct.decl @Pair<T1: type, T2: type> {
-  kgen.struct.field first: !kgen.paramref<T1>
-  kgen.struct.field second: !kgen.paramref<T2>
+// CHECK-NOT: lit.struct.decl
+lit.struct.decl @Pair<T1: type, T2: type> {
+  lit.struct.field first: !kgen.paramref<T1>
+  lit.struct.field second: !kgen.paramref<T2>
 }
 
 // CHECK-LABEL: @make_box
 kgen.func @make_box(%v: f32) -> !kgen.declref<@Box<T:type = f32>> {
   // CHECK: pop.struct.construct(%arg0) : !pop.struct<f32>
-  %0 = kgen.struct.create(%v) : (f32) -> !kgen.declref<@Box<T:type = f32>>
+  %0 = lit.struct.create(%v) : (f32) -> !kgen.declref<@Box<T:type = f32>>
   kgen.return %0 : !kgen.declref<@Box<T:type = f32>>
 }
 
@@ -44,7 +44,7 @@ kgen.func @make_box(%v: f32) -> !kgen.declref<@Box<T:type = f32>> {
 // CHECK: %[[A:.*]]: i8, %[[B:.*]]: i8
 kgen.func @make_pair(%a: i8, %b: i8) -> !i8Pair {
   // CHECK: pop.struct.construct(%arg1, %arg0) : !pop.struct<i8, i8>
-  %0 = kgen.struct.create(%b, %a) : (i8, i8) -> !i8Pair
+  %0 = lit.struct.create(%b, %a) : (i8, i8) -> !i8Pair
   kgen.return %0 : !i8Pair
 }
 
@@ -52,32 +52,32 @@ kgen.func @make_pair(%a: i8, %b: i8) -> !i8Pair {
 kgen.func @struct_insert(%pair: !i8Pair) -> !i8Pair {
   %c1 = llvm.mlir.constant(2 : i8) : i8
   // CHECK: pop.struct.replace %{{.*}}, %{{.*}}[1]
-  %0 = kgen.struct.insert %c1, %pair[second] : i8 into !i8Pair
+  %0 = lit.struct.insert %c1, %pair[second] : i8 into !i8Pair
   kgen.return %0 : !i8Pair
 }
 
 // CHECK-LABEL: @struct_extract
 kgen.func @struct_extract(%pair: !i8Pair) -> i8 {
   // CHECK: pop.struct.get %{{.*}}[1]
-  %0 = kgen.struct.extract %pair[second] : i8 from !i8Pair
+  %0 = lit.struct.extract %pair[second] : i8 from !i8Pair
   kgen.return %0 : i8
 }
 
 // CHECK-LABEL: @struct_gep
 kgen.func @struct_gep(%pair: !pop.pointer<!i8Pair>) -> !pop.pointer<i8> {
   // CHECK: pop.struct.gep %{{.*}}[1]
-  %0 = kgen.struct.gep %pair[second] : <i8> from <!i8Pair>
+  %0 = lit.struct.gep %pair[second] : <i8> from <!i8Pair>
   kgen.return %0 : !pop.pointer<i8>
 }
 
-kgen.struct.decl @NestedA<T: type> {
-  kgen.struct.field v: !kgen.paramref<T>
+lit.struct.decl @NestedA<T: type> {
+  lit.struct.field v: !kgen.paramref<T>
 }
-kgen.struct.decl @NestedB<t: dtype> {
-  kgen.struct.field a: !kgen.declref<@NestedA<T:type = !pop.simd<1, t>>>
+lit.struct.decl @NestedB<t: dtype> {
+  lit.struct.field a: !kgen.declref<@NestedA<T:type = !pop.simd<1, t>>>
 }
-kgen.struct.decl @NestedC {
-  kgen.struct.field b: !kgen.declref<@NestedB<t:dtype = f32>>
+lit.struct.decl @NestedC {
+  lit.struct.field b: !kgen.declref<@NestedB<t:dtype = f32>>
 }
 
 // CHECK-LABEL: @use_nested

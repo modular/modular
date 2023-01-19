@@ -21,7 +21,7 @@
 #sp = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "varDecl", linkageName = "varDecl", file = #file, line = 1, scopeLine = 1, subprogramFlags = "Definition"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #module_sp = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "fn", linkageName = "fn", file = #file, line = 1, scopeLine = 1, subprogramFlags = "Definition"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
-kgen.struct.decl @Int {
+lit.struct.decl @Int {
   lit.func @varDecl(%arg0: index) -> index {
     %a = lit.var.decl "a" : <index> loc(fused<#sp>["test.mlir":10:10])
     %let_value = lit.let.decl "let_value" = %arg0 : index loc(fused<#sp>["test.mlir":11:10])

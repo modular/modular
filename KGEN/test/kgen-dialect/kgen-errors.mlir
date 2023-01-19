@@ -554,13 +554,13 @@ kgen.func @rebind(%a: !pop.scalar<f32>) {
 
 // -----
 
-// expected-error @below {{custom op 'kgen.struct.decl' expected no result parameters}}
-kgen.struct.decl @StructReturns<() -> dtype> {}
+// expected-error @below {{custom op 'lit.struct.decl' expected no result parameters}}
+lit.struct.decl @StructReturns<() -> dtype> {}
 
 // -----
 
 // expected-error @below {{expected declaration body to have no arguments}}
-"kgen.struct.decl"() ({
+"lit.struct.decl"() ({
 ^bb0(%arg0: i32):
 }) {sym_name = "StructArgs", constraints = #kgen<constraints[]>,
     inputParamDecls = #kgen<param.decls[]>
@@ -584,17 +584,17 @@ kgen.generator @target_params<t0: i1, t1: i1>()
 
 // -----
 
-kgen.struct.decl @StructDuplicate {
+lit.struct.decl @StructDuplicate {
   // expected-note @below {{see previous declaration here}}
-  kgen.struct.field x : i32
-  kgen.struct.field y : i32
+  lit.struct.field x : i32
+  lit.struct.field y : i32
   // expected-error @below {{duplicate struct field "x"}}
-  kgen.struct.field x : i32
+  lit.struct.field x : i32
 }
 
 // -----
 
-kgen.struct.decl @SomeType<v, b> {}
+lit.struct.decl @SomeType<v, b> {}
 
 // expected-error @below {{'kgen.generator.interface' op invalid use of parameter with no declaration "c"}}
 kgen.generator.interface @InvalidTypeParamValue<a>() -> !kgen.declref<@SomeType<v = a, b = c>>
@@ -602,7 +602,7 @@ kgen.generator.interface @InvalidTypeParamValue<a>() -> !kgen.declref<@SomeType<
 // -----
 
 // expected-note @below {{@SomeType declared here}}
-kgen.struct.decl @SomeType<v, d> {}
+lit.struct.decl @SomeType<v, d> {}
 
 // expected-error @below {{!kgen.declref symbol use input parameter #1 has name "b" but @SomeType expected name "d"}}
 kgen.generator.interface @InvalidTypeParamValue<a, c>() ->
@@ -610,63 +610,63 @@ kgen.generator.interface @InvalidTypeParamValue<a, c>() ->
 
 // -----
 
-kgen.struct.decl @Bar<a: type> {
-  kgen.struct.field x : !pop.array<32, a>
+lit.struct.decl @Bar<a: type> {
+  lit.struct.field x : !pop.array<32, a>
 }
 
 kgen.generator @invalid_field_type<c: type>(%a: !kgen.paramref<c>) {
   // expected-error @below {{perand #0 has type '!kgen.paramref<c>' but corresponding struct field "x" expected '!pop.array<32, a>'}}
-  %0 = kgen.struct.create(%a) : (!kgen.paramref<c>) -> !kgen.declref<@Bar<a: type = index>>
+  %0 = lit.struct.create(%a) : (!kgen.paramref<c>) -> !kgen.declref<@Bar<a: type = index>>
   kgen.return
 }
 
 // -----
 
-kgen.struct.decl @Bar {
+lit.struct.decl @Bar {
 }
 
 kgen.generator @invalid_num_fields(%a: index) {
-  // expected-error @below {{'kgen.struct.create' op expected 0 operands but got 1}}
-  %0 = kgen.struct.create(%a) : (index) -> !kgen.declref<@Bar>
+  // expected-error @below {{'lit.struct.create' op expected 0 operands but got 1}}
+  %0 = lit.struct.create(%a) : (index) -> !kgen.declref<@Bar>
   kgen.return
 }
 
 // -----
 
-kgen.struct.decl @Bar {}
+lit.struct.decl @Bar {}
 
 kgen.generator @invalid_field_name(%a: index, %container: !kgen.declref<@Bar>) {
   // expected-error @below {{struct @Bar has no field named "a"}}
-  %0 = kgen.struct.insert %a, %container[a] : index into !kgen.declref<@Bar>
+  %0 = lit.struct.insert %a, %container[a] : index into !kgen.declref<@Bar>
   kgen.return
 }
 
 // -----
 
-kgen.struct.decl @Bar {
-  kgen.struct.field a : i32
+lit.struct.decl @Bar {
+  lit.struct.field a : i32
 }
 
 kgen.generator @invalid_field_name(%a: index, %container: !kgen.declref<@Bar>) {
   // expected-error @below {{cannot insert value of type 'index' into struct field "a" which expected 'i32'}}
-  %0 = kgen.struct.insert %a, %container[a] : index into !kgen.declref<@Bar>
+  %0 = lit.struct.insert %a, %container[a] : index into !kgen.declref<@Bar>
   kgen.return
 }
 
 // -----
 
-kgen.struct.decl @Bar {}
+lit.struct.decl @Bar {}
 
 kgen.generator @invalid_field_name(%a: index, %container: !kgen.declref<@Bar>) {
   // expected-error @below {{struct @Bar has no field named "a"}}
-  %0 = kgen.struct.extract %container[a] : index from !kgen.declref<@Bar>
+  %0 = lit.struct.extract %container[a] : index from !kgen.declref<@Bar>
   kgen.return
 }
 
 // -----
 
 // expected-note @below {{@ParamNamedA declared here}}
-kgen.struct.decl @ParamNamedA<A> {}
+lit.struct.decl @ParamNamedA<A> {}
 
 kgen.generator @give_it_B<C>() {
   // expected-error @below {{!kgen.declref symbol use input parameter #0 has name "B" but @ParamNamedA expected name "A"}}
@@ -712,16 +712,6 @@ kgen.func @addressof_parametric_in_func() {
 // expected-error @below {{@evaluator does not reference a KGEN declaration}}
 kgen.generator.interface @evaluateMe(index) -> index
   evaluator (!pop.pointer<(index) -> index>, index) -> index = @evaluator<N=4>
-
-// -----
-
-// expected-note @below {{referenced evaluator declared here}}
-kgen.generator.interface @evaluator<N>(
-    %funcs: (index) -> index, %size: index) -> index
-
-// expected-error @below {{interface evaluator argument #0 has type '!pop.pointer<(index) -> index>' but referenced evaluator expected type '(index) -> index'}}
-kgen.generator.interface @evaluateMe(index) -> index
-  evaluator ((index) -> index, index) -> index = @evaluator<N=4>
 
 // -----
 
@@ -868,13 +858,6 @@ kgen.generator @get_list_element() {
 kgen.generator @get_list_element() {
   // expected-error @below {{custom op 'kgen.param.constant' 'get_list_element' result should match list element type}}
   %0 = kgen.param.constant: i32 = <get_list_element(:list<index[1]> [0], 0)>
-  kgen.return
-}
-
-// -----
-
-// expected-error @+1 {{argument #0 must have pointer type to have byref convention}}
-kgen.func @bad(%byval: i32 byref) {
   kgen.return
 }
 

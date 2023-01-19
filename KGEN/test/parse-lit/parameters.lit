@@ -6,7 +6,7 @@ from prolog import assert_param, Bool, DType, Int, SIMD
 # Input parameters
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: kgen.struct.decl @OurSIMD<size, dt: !kgen.declref<@"$prolog"::@DType>> {
+# CHECK-LABEL: lit.struct.decl @OurSIMD<size, dt: !kgen.declref<@"$prolog"::@DType>> {
 struct OurSIMD[size: __mlir_type.index, dt: DType]:
   pass
 
@@ -52,7 +52,7 @@ fn call_generic[dt: DType]():
   # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}<a: !kgen.declref<@"$prolog"::@DType> = dt, b = 13, c: type = !kgen.declref<@"$parameters"::@OurSIMD<size = 4, dt: !kgen.declref<@"$prolog"::@DType> = dt>>>([[TMP]])
   generic_fn[dt, 13, OurSIMD[4, dt]](57)
 
-# CHECK-LABEL: kgen.struct.decl @TestParamStruct<A>
+# CHECK-LABEL: lit.struct.decl @TestParamStruct<A>
 struct TestParamStruct[A: __mlir_type.index]:
   fn __new__() -> TestParamStruct[A]:
     var result: TestParamStruct[A]
@@ -127,10 +127,10 @@ fn paramResolution[size1: Int, a: StructWithIntParam[size1],
 fn implConversion[a: StructWithIntParam[42]]():
   pass
 
-# CHECK-LABEL: kgen.struct.decl @Pair<dt: !kgen.declref<@"$prolog"::@DType>> {
+# CHECK-LABEL: lit.struct.decl @Pair<dt: !kgen.declref<@"$prolog"::@DType>> {
 struct Pair[dt: DType]:
- # CHECK: kgen.struct.field a : !kgen.declref<@"$parameters"::@OurSIMD<size = 42, dt: !kgen.declref<@"$prolog"::@DType> = dt>>
- # CHECK: kgen.struct.field b : !kgen.declref<@"$Int"::@Int>
+ # CHECK: lit.struct.field a : !kgen.declref<@"$parameters"::@OurSIMD<size = 42, dt: !kgen.declref<@"$prolog"::@DType> = dt>>
+ # CHECK: lit.struct.field b : !kgen.declref<@"$Int"::@Int>
   var a : OurSIMD[42, dt]
   var b : Int
 
@@ -143,14 +143,14 @@ struct Pair[dt: DType]:
 
 # CHECK: }
 
-# CHECK-LABEL: kgen.struct.decl @TypeParameter
+# CHECK-LABEL: lit.struct.decl @TypeParameter
 struct TypeParameter[type: __mlir_type.`!kgen.mlirtype`]:
   # CHECK: @"bar($parameters::TypeParameter{{.*}})"(%self: {{.*}}, %val: !kgen.paramref<type>)
   fn bar(self, val: type):
     pass
 
 # Test that parameter decls can refine subsequent ones in the same param list.
-# CHECK-LABEL: kgen.struct.decl @ParamSubst<rank, shape: list<index[rank]>>
+# CHECK-LABEL: lit.struct.decl @ParamSubst<rank, shape: list<index[rank]>>
 struct ParamSubst[
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
@@ -193,7 +193,7 @@ fn no_result_param[a: __mlir_type.index]():
 fn idx_result_params[a: __mlir_type.index -> __mlir_type.index, __mlir_type.index]() -> Int:
   # CHECK: %0 = kgen.param.constant = <add(a, 2)>
   # CHECK: %1 = pop.cast_from_builtin %0 : index to !pop.scalar<index>
-  # CHECK: %2 = kgen.struct.create(%1)
+  # CHECK: %2 = lit.struct.create(%1)
   # CHECK: lit.return<a, add(a, 1)> %2
   return[a,a+1] a+2
 
@@ -306,7 +306,7 @@ alias boolDtype = __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`
 # CHECK: kgen.param.declare FOURTY_TWO = <42>
 alias FOURTY_TWO = 42
 
-# CHECK-LABEL: kgen.struct.decl @A<v>
+# CHECK-LABEL: lit.struct.decl @A<v>
 struct A[v: __mlir_type.index]:
   # CHECK: kgen.param.declare member = <add(v, 42)>
   alias member = v + FOURTY_TWO
@@ -341,7 +341,7 @@ fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.f32],
    assert_param[(dt == MyDType.f64).__lit_bool()]()
 
 # Issue #6828: Unqualified name lookup into structs doesn't work
-# CHECK-LABEL:  kgen.struct.decl @UnqualAliasLookup<param>
+# CHECK-LABEL:  lit.struct.decl @UnqualAliasLookup<param>
 struct UnqualAliasLookup[param: __mlir_type.index]:
   # CHECK: kgen.param.declare member = <add(param, 1)>
   alias member = param+1

@@ -531,8 +531,8 @@ kgen.generator @mlir_builtin_types<*"index": type>(
   kgen.return %0, %1 : index, !kgen.paramref<*"index">
 }
 
-kgen.struct.decl @A {}
-kgen.struct.decl @B {}
+lit.struct.decl @A {}
+lit.struct.decl @B {}
 
 // CHECK-LABEL: @symbol_exprs
 kgen.generator @symbol_exprs() {

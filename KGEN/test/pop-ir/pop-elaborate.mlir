@@ -140,8 +140,8 @@ kgen.generator @do_it() {
 // -----
 
 // COM: Structs get ignored.
-kgen.struct.decl @parametrizedClosure_context<T: type> {
-  kgen.struct.field field_0 : !kgen.paramref<T>
+lit.struct.decl @parametrizedClosure_context<T: type> {
+  lit.struct.field field_0 : !kgen.paramref<T>
 }
 
 // CHECK-LABEL: @"parametrizedClosure_5,T=f32"
@@ -155,8 +155,8 @@ kgen.generator @parametrizedClosure_5<T: type>(%arg0: !kgen.paramref<T>) force_i
 kgen.generator @parametrizedClosure_wrapper<T: type>() force_inline -> !kgen.paramref<T> {
   // CHECK-NEXT: pop.compiler.global_load "parametrizedClosure_context_var_3" : !kgen.declref<@parametrizedClosure_context<T: type = f32>>
   %0 = pop.compiler.global_load "parametrizedClosure_context_var_3" : !kgen.declref<@parametrizedClosure_context<T: type = T>>
-  // CHECK-NEXT: kgen.struct.extract %0[field_0] : f32 from !kgen.declref<@parametrizedClosure_context<T: type = f32>>
-  %1 = kgen.struct.extract %0[field_0] : !kgen.paramref<T> from !kgen.declref<@parametrizedClosure_context<T: type = T>>
+  // CHECK-NEXT: lit.struct.extract %0[field_0] : f32 from !kgen.declref<@parametrizedClosure_context<T: type = f32>>
+  %1 = lit.struct.extract %0[field_0] : !kgen.paramref<T> from !kgen.declref<@parametrizedClosure_context<T: type = T>>
   // CHECK-NEXT: kgen.call @"parametrizedClosure_5,T=f32"(%1) : (f32) force_inline -> f32
   %2 = kgen.call @parametrizedClosure_5<T: type = T>(%1) : (!kgen.paramref<T>) force_inline -> !kgen.paramref<T>
   // CHECK-NEXT: kgen.return
@@ -165,8 +165,8 @@ kgen.generator @parametrizedClosure_wrapper<T: type>() force_inline -> !kgen.par
 
 // CHECK-LABEL: @"parametrizedClosure,T=f32"
 kgen.generator @parametrizedClosure<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
-  // CHECK-NEXT: kgen.struct.create(%arg0) : (f32) -> !kgen.declref<@parametrizedClosure_context<T: type = f32>>
-  %0 = kgen.struct.create(%arg0) : (!kgen.paramref<T>) -> !kgen.declref<@parametrizedClosure_context<T: type = T>>
+  // CHECK-NEXT: lit.struct.create(%arg0) : (f32) -> !kgen.declref<@parametrizedClosure_context<T: type = f32>>
+  %0 = lit.struct.create(%arg0) : (!kgen.paramref<T>) -> !kgen.declref<@parametrizedClosure_context<T: type = T>>
   // CHECK-NEXT: pop.compiler.global_store "parametrizedClosure_context_var_3", %0 : !kgen.declref<@parametrizedClosure_context<T: type = f32>>
   pop.compiler.global_store "parametrizedClosure_context_var_3", %0 : !kgen.declref<@parametrizedClosure_context<T: type = T>>
   // CHECK-NEXT: kgen.call @"parametrizedClosure_wrapper,T=f32"() : () force_inline -> f32

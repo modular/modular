@@ -8,7 +8,7 @@ lit.file_module @module {
     kgen.return
   }
 
-  kgen.struct.decl @Adder<size> {
+  lit.struct.decl @Adder<size> {
     %base = lit.var.decl "base" : <index>
 
     // CHECK-LABEL: kgen.generator @"module::Adder::__add__"<size>(%arg0: !kgen.declref<@"module::Adder"<size = size>>) {
@@ -19,7 +19,7 @@ lit.file_module @module {
     }
   }
 
-  // CHECK-LABEL: kgen.struct.decl @"module::Adder"<size> {
+  // CHECK-LABEL: lit.struct.decl @"module::Adder"<size> {
 }
 
 // CHECK-LABEL: kgen.generator @caller(%arg0: !kgen.declref<@"module::Adder"<size = 10>>)
