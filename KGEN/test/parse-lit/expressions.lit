@@ -30,19 +30,19 @@ fn precedence_associativity(a: Int):
   var z: Int = 0
 
   # CHECK: [[SEVENTEEN:%.*]] = kgen.param.constant: !pop.scalar<index> = <#pop.simd<17>>
-  # CHECK: [[SEVENTEENINT:%.*]] = kgen.struct.create([[SEVENTEEN]])
+  # CHECK: [[SEVENTEENINT:%.*]] = lit.struct.create([[SEVENTEEN]])
   # CHECK-NEXT: pop.store [[SEVENTEENINT]], %z
   z = 17  # Implicit conversion
 
   # CHECK:      %[[TWO:.*]] = {{.*}} <#pop.simd<2>>
-  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen.struct.create(%[[TWO]])
+  # CHECK-NEXT: %[[INT_TWO:.*]] = lit.struct.create(%[[TWO]])
   # CHECK-NEXT: %[[Z:.*]] = pop.load %z
   # CHECK-NEXT: %[[POW0:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%a, %[[Z]])
   # CHECK-NEXT: %[[POW1:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
   # CHECK-NEXT: pop.store %[[POW1]], %z
   z = Int(2)**(a**z)
   # CHECK-NEXT: %[[TWO:.*]] = {{.*}} <#pop.simd<2>>
-  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen.struct.create(%[[TWO]])
+  # CHECK-NEXT: %[[INT_TWO:.*]] = lit.struct.create(%[[TWO]])
   # CHECK-NEXT: %[[Z:.*]] = pop.load %z
   # CHECK-NEXT: %[[POW0:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%a, %[[Z]])
   # CHECK-NEXT: %[[POW1:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
@@ -50,9 +50,9 @@ fn precedence_associativity(a: Int):
   z = Int(2)**a**z
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} <#pop.simd<3>>
-  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.struct.create(%[[THREE]])
+  # CHECK-NEXT:  %[[INT_THREE:.*]] = lit.struct.create(%[[THREE]])
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} <#pop.simd<2>>
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.struct.create(%[[TWO]])
+  # CHECK-NEXT:  %[[INT_TWO:.*]] = lit.struct.create(%[[TWO]])
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$Int"::@Int::@"__neg__{{.*}}(%[[INT_TWO]])
   # CHECK-NEXT:  %[[MUL:.*]] = kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%[[INT_THREE]], %[[NEG]])
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[MUL]])
@@ -60,9 +60,9 @@ fn precedence_associativity(a: Int):
   z = z + Int(3) * -Int(2)
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} <#pop.simd<3>>
-  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.struct.create(%[[THREE]])
+  # CHECK-NEXT:  %[[INT_THREE:.*]] = lit.struct.create(%[[THREE]])
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} <#pop.simd<2>>
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.struct.create(%[[TWO]])
+  # CHECK-NEXT:  %[[INT_TWO:.*]] = lit.struct.create(%[[TWO]])
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$Int"::@Int::@"__neg__{{.*}}(%[[INT_TWO]])
   # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = kgen.call @"$Int"::@Int::@"__floordiv__{{.*}}(%[[INT_THREE]], %[[NEG]])
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[FLOOR_DIV]])
@@ -70,17 +70,17 @@ fn precedence_associativity(a: Int):
   z = z + Int(3) // -Int(2)
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[THREE:.*]] = {{.*}} <#pop.simd<3>>
-  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen.struct.create(%[[THREE]])
+  # CHECK-NEXT:  %[[INT_THREE:.*]] = lit.struct.create(%[[THREE]])
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[INT_THREE]])
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} <#pop.simd<2>>
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.struct.create(%[[TWO]])
+  # CHECK-NEXT:  %[[INT_TWO:.*]] = lit.struct.create(%[[TWO]])
   # CHECK-NEXT:  %[[POS:.*]] = kgen.call @"$Int"::@Int::@"__pos__{{.*}}(%[[INT_TWO]])
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$Int"::@Int::@"__neg__{{.*}}(%[[POS]])
   # CHECK-NEXT:  %[[MUL:.*]] =  kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%[[ADD]], %[[NEG]])
   # CHECK-NEXT:  pop.store %[[MUL]], %z
   z = (z + 3) * -+Int(2)
   # CHECK-NEXT:  %[[TWO:.*]] = {{.*}} <#pop.simd<2>>
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen.struct.create(%[[TWO]])
+  # CHECK-NEXT:  %[[INT_TWO:.*]] = lit.struct.create(%[[TWO]])
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[POW:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[Z]])
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$Int"::@Int::@"__neg__{{.*}}(%[[POW]])
@@ -90,7 +90,7 @@ fn precedence_associativity(a: Int):
   # radd test
   # CHECK-NEXT: [[Z:%.*]] = pop.load %z : !pop.pointer<@"$Int"::@Int>
   # CHECK-NEXT: <#pop.simd<1>>
-  # CHECK-NEXT: [[ONE:%.*]] = kgen.struct.create
+  # CHECK-NEXT: [[ONE:%.*]] = lit.struct.create
   # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__radd__($Int::Int,$Int::Int)"([[Z]], [[ONE]])
   # CHECK-NEXT: pop.store [[RES]], %z
   z = 1 + z
@@ -125,11 +125,11 @@ fn precedence_matmul(z: M) -> M:
 # CHECK-LABEL: lit.func @"precedence_bitwise
 fn precedence_bitwise(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %[[TWO:.*]] = {{.*}} <#pop.simd<2>>
-  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen.struct.create(%[[TWO]])
+  # CHECK-NEXT: %[[INT_TWO:.*]] = lit.struct.create(%[[TWO]])
   # CHECK-NEXT: %[[MUL:.*]] = kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%a, %[[INT_TWO]])
   # CHECK-NEXT: %[[AND:.*]] = kgen.call @"$Int"::@Int::@"__and__{{.*}}(%[[MUL]], %b)
   # CHECK-NEXT: %[[FOUR:.*]] = {{.*}} <#pop.simd<4>>
-  # CHECK-NEXT: %[[INT_FOUR:.*]] = kgen.struct.create{{.*}}(%[[FOUR]])
+  # CHECK-NEXT: %[[INT_FOUR:.*]] = lit.struct.create{{.*}}(%[[FOUR]])
   # CHECK-NEXT: %[[XOR:.*]] = kgen.call @"$Int"::@Int::@"__xor__{{.*}}(%[[INT_FOUR]], %c)
   # CHECK-NEXT: %[[OR:.*]] = kgen.call @"$Int"::@Int::@"__or__{{.*}}(%[[AND]], %[[XOR]])
   # CHECK-NEXT: lit.return %[[OR]]
@@ -173,7 +173,7 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # otherwise.
 
   # CHECK: %0 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
-  # CHECK: %1 = kgen.struct.extract %0[value]
+  # CHECK: %1 = lit.struct.extract %0[value]
   # CHECK: %2 = pop.cast_to_builtin %1 : !pop.scalar<bool> to i1
   # CHECK: %3 = scf.if %2 -> (!kgen.declref<@"$expressions"::@Boolish>) {
   # CHECK:   scf.yield %b
@@ -186,7 +186,7 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # otherwise.
 
   # CHECK: %4 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
-  # CHECK: %5 = kgen.struct.extract %4[value]
+  # CHECK: %5 = lit.struct.extract %4[value]
   # CHECK: %6 = pop.cast_to_builtin %5 : !pop.scalar<bool> to i1
   # CHECK: %7 = scf.if %6 -> (!kgen.declref<@"$expressions"::@Boolish>) {
   # CHECK:   scf.yield %a
@@ -198,7 +198,7 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # Testing two different logic'y types returns the common bool type if present.
 
   # CHECK: %8 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
-  # CHECK: %9 = kgen.struct.extract %8[value]
+  # CHECK: %9 = lit.struct.extract %8[value]
   # CHECK: %10 = pop.cast_to_builtin %9 : !pop.scalar<bool> to i1
   # CHECK: %11 = scf.if %10 -> (!kgen.declref<@"$Bool"::@Bool>) {
   # CHECK:   scf.yield %8
@@ -232,9 +232,9 @@ fn do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %z = lit.var.decl "z"
   var z : Int
   # CHECK-NEXT:  %[[I42:.*]] = {{.*}} <#pop.simd<42>>
-  # CHECK-NEXT:  %[[INT_42:.*]] = kgen.struct.create(%[[I42]])
+  # CHECK-NEXT:  %[[INT_42:.*]] = lit.struct.create(%[[I42]])
   # CHECK-NEXT:  %[[I5:.*]] = {{.*}} <#pop.simd<5>>
-  # CHECK-NEXT:  %[[INT_5:.*]] = kgen.struct.create(%[[I5]])
+  # CHECK-NEXT:  %[[INT_5:.*]] = lit.struct.create(%[[I5]])
   # CHECK-NEXT: %[[MUL:.*]] = kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%[[INT_5]], %a)
   # CHECK-NEXT: %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[INT_42]], %[[MUL]])
   # CHECK-NEXT: pop.store %[[ADD]], %z
@@ -276,22 +276,22 @@ fn listValues() -> __mlir_type.index:
 def test_if_cond(cond: Bool):
     # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@"$Int"::@Int>
     # CHECK-NEXT: %[[COND:.*]] = pop.load %cond_0
-    # CHECK: %[[LIT_BOOL:.*]] = kgen.struct.extract %[[COND]][value]
+    # CHECK: %[[LIT_BOOL:.*]] = lit.struct.extract %[[COND]][value]
     # CHECK: %[[LIT_BOOLI1:.*]] = pop.cast_to_builtin %[[LIT_BOOL]] : !pop.scalar<bool> to i1
     # CHECK-NEXT: %[[IF_RES:.*]] = scf.if %[[LIT_BOOLI1]]
     # CHECK-NEXT:   %[[TWO:.*]] = {{.*}} <#pop.simd<2>>
-    # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen.struct.create(%[[TWO]])
+    # CHECK-NEXT:   %[[INT_TWO:.*]] = lit.struct.create(%[[TWO]])
     # CHECK-NEXT:   scf.yield %[[INT_TWO]]
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   %[[THREE:.*]] = {{.*}} <#pop.simd<3>>
-    # CHECK-NEXT:   %[[INT_THREE:.*]] = kgen.struct.create(%[[THREE]])
+    # CHECK-NEXT:   %[[INT_THREE:.*]] = lit.struct.create(%[[THREE]])
     # CHECK-NEXT:   scf.yield %[[INT_THREE]]
     # CHECK-NEXT: }
     # CHECK-NEXT: pop.store %[[IF_RES]], %i
     var i: Int = Int(2) if cond else Int(3)
 
     # CHECK: [[TRUE:%.+]] = kgen.param.constant: !pop.scalar<bool> = <#pop.simd<true>>
-    # CHECK: [[TRUEB:%.+]] = kgen.struct.create([[TRUE]]) : (!pop.scalar<bool>) -> !kgen.declref<@"$Bool"::@Bool>
+    # CHECK: [[TRUEB:%.+]] = lit.struct.create([[TRUE]]) : (!pop.scalar<bool>) -> !kgen.declref<@"$Bool"::@Bool>
      # CHECK-NEXT: pop.store [[TRUEB]], %cond
     cond = Bool.true()
     i += i
@@ -393,8 +393,8 @@ fn byval_byref_function(a: Int, b&: Int):
 # CHECK: lit.func @"lvaluesAndRValues()
 fn lvaluesAndRValues() -> __mlir_type.`!pop.scalar<index>`:
   # CHECK: [[FOUR:%.*]] = kgen.param.constant: !pop.scalar<index> = <#pop.simd<4>>
-  # CHECK: [[INT:%.*]] = kgen.struct.create([[FOUR]]) :
-  # CHECK: [[VALUE:%.*]] = kgen.struct.extract [[INT]][value] : !pop.scalar<index> from
+  # CHECK: [[INT:%.*]] = lit.struct.create([[FOUR]]) :
+  # CHECK: [[VALUE:%.*]] = lit.struct.extract [[INT]][value] : !pop.scalar<index> from
   # CHECK: lit.return [[VALUE]] : !pop.scalar<index>
   return Int(4).value
 

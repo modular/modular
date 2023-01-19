@@ -7,6 +7,7 @@
 add_modular_conversion_library(LowerLIT
   ConstraintSet.cpp
   LowerLIT.cpp
+  LowerStructs.cpp
   LowerTerminators.cpp
 
   DEPENDS

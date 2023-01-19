@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s | kgen-opt | FileCheck %s
 
-kgen.struct.decl @MyStruct<a, b: dtype, c: type> {}
+lit.struct.decl @MyStruct<a, b: dtype, c: type> {}
 
 // CHECK-LABEL: @UseStruct
 kgen.generator.interface @UseStruct<a, b: dtype, c: type>() ->

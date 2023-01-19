@@ -31,8 +31,8 @@ lit.func @vardecl<ty : dtype>(%x : i32) {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.struct.decl @SomeStruct<ty: dtype> {
-kgen.struct.decl @SomeStruct<ty: dtype> {
+// CHECK-LABEL: lit.struct.decl @SomeStruct<ty: dtype> {
+lit.struct.decl @SomeStruct<ty: dtype> {
   // CHECK-NEXT: lit.func @foo() {
   lit.func @foo() {
     kgen.return
@@ -65,16 +65,16 @@ lit.func @noneTypeAndValue() -> !lit.none {
 
 // -----
 
-// CHECK-LABEL: kgen.struct.decl @A
-kgen.struct.decl @A {
+// CHECK-LABEL: lit.struct.decl @A
+lit.struct.decl @A {
   // CHECK-NEXT: lit.func @foo
   lit.func @foo(%self: !kgen.declref<@A>) {
     kgen.return
   }
 }
 
-// CHECK-LABEL: kgen.struct.decl @B
-kgen.struct.decl @B {
+// CHECK-LABEL: lit.struct.decl @B
+lit.struct.decl @B {
   // CHECK-NEXT: lit.func @foo
   lit.func @foo(%self: !kgen.declref<@B>, %a: !kgen.declref<@A>) {
     // CHECK-NEXT: call_param[(!kgen.declref<@A>) -> (): @A::@foo]
@@ -96,8 +96,8 @@ lit.func @main(%a: !kgen.declref<@A>, %b: !kgen.declref<@B>) {
 
 // -----
 
-// CHECK-LABEL: kgen.struct.decl @A<N>
-kgen.struct.decl @A<N> {
+// CHECK-LABEL: lit.struct.decl @A<N>
+lit.struct.decl @A<N> {
   // CHECK-NEXT: lit.func @foo<M>
   lit.func @foo<M>(%self: !kgen.declref<@A<N = N>>) -> index {
     %0 = kgen.param.constant = <add(N, M)>
@@ -112,13 +112,13 @@ lit.func @main(%a: !kgen.declref<@A<N = 1>>) {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.struct.decl @NoFields {
+// CHECK-LABEL: lit.struct.decl @NoFields {
 // CHECK-NEXT: }
-kgen.struct.decl @NoFields {}
+lit.struct.decl @NoFields {}
 
 // COM: Types from the standard library.
-kgen.struct.decl @Error {}
-kgen.struct.decl @Int {}
+lit.struct.decl @Error {}
+lit.struct.decl @Int {}
 
 // CHECK-LABEL: @raises_error
 lit.func @raises_error(%raise: i1, %err: !kgen.declref<@Error>, %value: !kgen.declref<@Int>) -> !pop.variant<@Error, @Int> {
@@ -192,11 +192,11 @@ lit.func @try_in_loop(%cond: i1) {
 
 // CHECK-LABEL: lit.file_module @module
 lit.file_module @module {
-  // CHECK: kgen.struct.decl @A
-  kgen.struct.decl @A {}
+  // CHECK: lit.struct.decl @A
+  lit.struct.decl @A {}
 
-  // CHECK: kgen.struct.decl @B
-  kgen.struct.decl @B {
+  // CHECK: lit.struct.decl @B
+  lit.struct.decl @B {
     // CHECK-NEXT: lit.func @foo(%{{.*}}: !kgen.declref<@module::@B>, %{{.*}}: !pop.pointer<@module::@A>
     lit.func @foo(%self: !kgen.declref<@module::@B>, %a: !pop.pointer<@module::@A>) {
       kgen.return
@@ -211,7 +211,7 @@ lit.func @main(%a: !pop.pointer<@module::@A>, %b: !kgen.declref<@module::@B>) {
   kgen.return
 }
 
-kgen.struct.decl @Error {}
+lit.struct.decl @Error {}
 
 // CHECK-LABEL: @lexical_terminators
 lit.func @lexical_terminators(%cond: i1, %err: !kgen.declref<@Error>) throws -> !pop.variant<i32, i64> {

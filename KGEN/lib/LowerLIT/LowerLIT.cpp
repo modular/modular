@@ -736,7 +736,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
   return checkInterfaceConformance(result, itf, symbolTable, implementsAttr);
 }
 
-/// Lower nested structures in kgen.struct.decl away.
+/// Lower nested structures in lit.struct.decl away.
 static LogicalResult lowerStructDecl(StructDeclOp structDecl,
                                      SymbolTable &symbolTable,
                                      Block::iterator symTableIt,
@@ -749,14 +749,13 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
   SmallVector<LIT::VarDeclOp> opsToErase;
   for (Operation &member : llvm::make_early_inc_range(
            structDecl.getFields().front().getOperations())) {
-    if (isa<KGEN::StructFieldOp>(member))
+    if (isa<StructFieldOp>(member))
       continue; // Already lowered field.
 
     if (auto varDecl = dyn_cast<LIT::VarDeclOp>(member)) {
       Type elemType = ParamRefType::get(varDecl.getType().getElementType());
       OpBuilder b(&member);
-      b.create<KGEN::StructFieldOp>(member.getLoc(), varDecl.getName(),
-                                    elemType);
+      b.create<StructFieldOp>(member.getLoc(), varDecl.getName(), elemType);
       varDecl->erase();
       continue;
     } else if (auto paramDeclare = dyn_cast<KGEN::ParamDeclareOp>(member)) {
@@ -820,7 +819,7 @@ static LogicalResult lowerModuleDecl(Block *moduleBody,
     } else if (auto func = dyn_cast<LIT::FuncOp>(op)) {
       if (failed(lowerLITFunc(func, symbolTable, opSymTableIt, parentPrefix)))
         return failure();
-    } else if (auto structDecl = dyn_cast<KGEN::StructDeclOp>(op)) {
+    } else if (auto structDecl = dyn_cast<StructDeclOp>(op)) {
       if (failed(lowerStructDecl(structDecl, symbolTable, opSymTableIt,
                                  parentPrefix)))
         return failure();

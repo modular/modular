@@ -7,15 +7,6 @@ kgen.generator.interface @unary_add<size>(f32) -> si32
 
 // -----
 
-kgen.include "struct-test.mlir"
-
-kgen.struct.decl @FooStruct<T:type> {
-  // expected-error @below {{struct @FooStruct field #0 redeclared with different name "y"}}
-  kgen.struct.field y : !kgen.paramref<T>
-}
-
-// -----
-
 // This yields a verification error when elaborated.
 // expected-error @+1 {{no viable implementations found}}
 kgen.generator @local_verif_error() {
@@ -180,8 +171,8 @@ kgen.generator.interface @itf() -> index
 
 // -----
 
-kgen.struct.decl @Unknown {
-  kgen.struct.field value : !opaque<"type">
+lit.struct.decl @Unknown {
+  lit.struct.field value : !opaque<"type">
 }
 
 // expected-error @below {{no viable implementations found}}

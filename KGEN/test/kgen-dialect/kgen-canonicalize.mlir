@@ -128,7 +128,7 @@ kgen.generator @call_param_bound_symbol() {
 
 // -----
 
-kgen.struct.decl @Struct {
+lit.struct.decl @Struct {
   lit.func @Nested() {
     kgen.return
   }

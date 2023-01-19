@@ -105,7 +105,7 @@ There are a few different components of this, which we explain here:
 **Types**
 
 User defined types in Lightning are defined as structs (and eventually classes,
-variants, etc).  These all turn into an MLIR `kgen.struct.decl` operation, and
+variants, etc).  These all turn into an MLIR `lit.struct.decl` operation, and
 references to them use the `!kgen.declref<@Symbol>` type, e.g. this:
 
 ```python
@@ -116,7 +116,7 @@ fn test(a: EmptyStruct): pass
 compiles into:
 
 ```mlir
-kgen.struct.decl @EmptyStruct {}
+lit.struct.decl @EmptyStruct {}
 lit.func @static(%x: !kgen.declref<@EmptyStruct>) {..}
 ```
 

@@ -18,8 +18,6 @@
 #include "llvm/ADT/DenseSet.h"
 
 namespace M::KGEN {
-class StructDeclOp;
-class StructFieldOp;
 class ParamBindArrayAttr;
 class ParamDeclAttr;
 class ParamDeclareOp;
@@ -36,6 +34,8 @@ class LitParserBase;
 class LitSharedState;
 class LetDeclOp;
 class VarDeclOp;
+class StructDeclOp;
+class StructFieldOp;
 
 //===----------------------------------------------------------------------===//
 // DeclResolver

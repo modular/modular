@@ -386,6 +386,205 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
 }
 
 //===----------------------------------------------------------------------===//
+// StructDeclOp
+//===----------------------------------------------------------------------===//
+
+/// Verify that the body has no arguments.
+LogicalResult StructDeclOp::verify() {
+  if (getFields().getNumArguments())
+    return emitOpError("expected declaration body to have no arguments");
+  return success();
+}
+
+/// Verify that there are no duplicate field names.
+LogicalResult StructDeclOp::verifyRegions() {
+  SmallDenseMap<StringAttr, StructFieldOp, 8> seenFields;
+  for (Operation &op : getFields().front()) {
+    auto field = dyn_cast<StructFieldOp>(&op);
+    if (!field)
+      continue;
+    auto [it, inserted] = seenFields.try_emplace(field.getNameAttr(), field);
+    if (!inserted) {
+      return (field.emitError("duplicate struct field ") << field.getNameAttr())
+                 .attachNote(it->second.getLoc())
+             << "see previous declaration here";
+    }
+  }
+  return success();
+}
+
+/// Verify parameter uses.
+LogicalResult
+StructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  return verifyIfTopLevel(symbolTable);
+}
+
+void StructDeclOp::build(OpBuilder &builder, OperationState &result,
+                         StringAttr name) {
+  auto context = builder.getContext();
+  build(builder, result, name, ParamDeclArrayAttr::get(context, {}));
+  result.regions[0]->push_back(new Block());
+}
+
+//===----------------------------------------------------------------------===//
+// StructFieldOp
+//===----------------------------------------------------------------------===//
+
+/// Parse the struct field name as a keyword literal.
+static ParseResult parseKeywordAsString(OpAsmParser &p, StringAttr &name) {
+  StringRef value;
+  if (p.parseKeyword(&value))
+    return failure();
+  name = p.getBuilder().getStringAttr(value);
+  return success();
+}
+
+/// Print the struct field name as a keyword literal.
+static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
+                                 StringAttr name) {
+  p << name.getValue();
+}
+
+//===----------------------------------------------------------------------===//
+// StructCreateOp
+//===----------------------------------------------------------------------===//
+
+static ParameterEvaluator getEvaluatorForBoundStructType(DeclRefType refType) {
+  ParameterEvaluator evaluator;
+  for (ParamBindAttr bind : refType.getParamValues())
+    evaluator.setParameterValue(bind.getDecl(), bind.getValue());
+  return evaluator;
+}
+
+/// Lookup the declaration for the struct. When checking field types, we can't
+/// directly compare operation types to the struct field types because they are
+/// parameterized under different domains. We have to rebind them.
+static StructDeclOp lookupStructDecl(SymbolTableCollection &symbolTable,
+                                     Operation *user, DeclRefType ref) {
+  auto module = KGENModule::from(user, symbolTable);
+  auto structDecl = module.lookup<StructDeclOp>(ref.getSymbol());
+  // Currently, this is impossible to fail because the symbol use was verified
+  // by the parameter verifier.
+  assert(structDecl && "expected a struct declaration");
+  return structDecl;
+}
+
+/// Verify the reference struct type.
+LogicalResult
+StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  // Verify the types of the fields in the operands match those in the
+  // struct declaration.
+  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(getType());
+  StructDeclOp structDecl = lookupStructDecl(symbolTable, *this, getType());
+  auto fields = structDecl.getFieldDecls();
+  unsigned numFields = std::distance(fields.begin(), fields.end());
+  if (numFields != getNumOperands())
+    return emitOpError("expected ")
+           << numFields << " operands but got " << getNumOperands();
+  for (auto [fieldDecl, operand, i] :
+       llvm::zip(fields, getOperands(), llvm::seq<unsigned>(0, numFields))) {
+    Type reboundType = evaluator.getReboundType(fieldDecl.getType());
+    if (reboundType != operand.getType()) {
+      return emitOpError("operand #")
+             << i << " has type " << operand.getType()
+             << " but corresponding struct field " << fieldDecl.getNameAttr()
+             << " expected " << fieldDecl.getType();
+    }
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// StructInsertOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(getType());
+  StructDeclOp structDecl = lookupStructDecl(symbolTable, *this, getType());
+
+  for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
+    if (fieldDecl.getName() != getFieldAttr())
+      continue;
+    Type reboundType = evaluator.getReboundType(fieldDecl.getType());
+    if (reboundType != getValue().getType())
+      return emitOpError("cannot insert value of type ")
+             << getValue().getType() << " into struct field " << getFieldAttr()
+             << " which expected " << reboundType;
+    return success();
+  }
+
+  return emitOpError("struct ")
+         << getType().getSymbol() << " has no field named " << getFieldAttr();
+}
+
+//===----------------------------------------------------------------------===//
+// StructExtractOp
+//===----------------------------------------------------------------------===//
+
+static LogicalResult
+verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
+                         DeclRefType ref, StringAttr fieldName, Type type) {
+  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(ref);
+  StructDeclOp structDecl = lookupStructDecl(symbolTable, op, ref);
+
+  for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
+    if (fieldDecl.getName() != fieldName)
+      continue;
+    Type reboundType = evaluator.getReboundType(fieldDecl.getType());
+    if (reboundType != type)
+      return op->emitOpError("cannot extract value of type ")
+             << type << " from struct field " << fieldName << " which has type "
+             << reboundType;
+    return success();
+  }
+
+  return op->emitOpError("struct ")
+         << ref.getSymbol() << " has no field named " << fieldName;
+}
+
+LogicalResult
+StructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  return verifyStructFieldAndType(symbolTable, *this, getContainer().getType(),
+                                  getFieldAttr(), getValue().getType());
+}
+
+void StructExtractOp::build(OpBuilder &builder, OperationState &result,
+                            Value structBase, StructFieldOp field) {
+  auto structType = cast<DeclRefType>(structBase.getType());
+  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(structType);
+  build(builder, result, evaluator.getReboundType(field.getType()),
+        field.getNameAttr(), structBase);
+}
+
+//===----------------------------------------------------------------------===//
+// StructGEPOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+StructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  TypedAttr refExpr = getContainer().getType().getElementType();
+  return verifyStructFieldAndType(
+      symbolTable, *this,
+      cast<DeclRefType>(cast<TypeConstantAttr>(refExpr).getValue()),
+      getFieldAttr(),
+      ParamRefType::get(getResult().getType().getElementType()));
+}
+
+void StructGEPOp::build(OpBuilder &builder, OperationState &result,
+                        Value structBasePtr, StructFieldOp field) {
+  TypedAttr refExpr =
+      cast<POP::PointerType>(structBasePtr.getType()).getElementType();
+  auto structType =
+      cast<DeclRefType>(cast<TypeConstantAttr>(refExpr).getValue());
+
+  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(structType);
+  build(builder, result,
+        POP::PointerType::get(evaluator.getReboundType(field.getType())),
+        field.getNameAttr(), structBasePtr);
+}
+
+//===----------------------------------------------------------------------===//
 // TryOp
 //===----------------------------------------------------------------------===//
 

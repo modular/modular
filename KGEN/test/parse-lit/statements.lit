@@ -19,7 +19,7 @@ def `pass`():
 # CHECK-LABEL: lit.func @"return_impl_convert
 fn return_impl_convert() -> Int:
   # CHECK: kgen.param.constant: !pop.scalar<index> = <#pop.simd<4>>
-  # CHECK: %1 = kgen.struct.create(%0)
+  # CHECK: %1 = lit.struct.create(%0)
   # CHECK: lit.return %1
   return 4  # Implicit conversion from literal to Int
 
@@ -33,7 +33,7 @@ fn return_new_line() -> Int:
 @raises
 fn return_impl_convert_raises() -> Int:
   # CHECK: %0 = kgen.param.constant: !pop.scalar<index> = <#pop.simd<4>>
-  # CHECK: %1 = kgen.struct.create(%0)
+  # CHECK: %1 = lit.struct.create(%0)
   # CHECK: lit.return %1 : !kgen.declref<@"$Int"::@Int>
   return 4  # Implicit conversion from literal to Int
 
@@ -74,7 +74,7 @@ fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
 
 # CHECK-LABEL: lit.func @"test_if_nested
 fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
-  # CHECK-NEXT:   %[[LIT_BOOL:.*]] = kgen.struct.extract %a[value]
+  # CHECK-NEXT:   %[[LIT_BOOL:.*]] = lit.struct.extract %a[value]
   # CHECK-NEXT:   %[[I1:.*]] = pop.cast_to_builtin %[[LIT_BOOL]] : !pop.scalar<bool> to i1
   # CHECK-NEXT:              hlcf.if %[[I1]]
   if a:
@@ -118,16 +118,16 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
 # CHECK-NEXT:     hlcf.yield
 # CHECK-NEXT:    } else {
 # CHECK-NEXT:     kgen.param.constant: !pop.scalar<index> = <#pop.simd<2>>
-# CHECK-NEXT:     kgen.struct.create
+# CHECK-NEXT:     lit.struct.create
 # CHECK-NEXT:     pop.store {{.+}}, %inside_else
 # CHECK-NEXT:     hlcf.break
 # CHECK-NEXT:    }
 # CHECK-NEXT:    <#pop.simd<0>>
-# CHECK-NEXT:    kgen.struct.create
+# CHECK-NEXT:    lit.struct.create
 # CHECK-NEXT:    pop.store {{.+}}, %inside_a
 # CHECK:         hlcf.if
 # CHECK-NEXT:      <#pop.simd<1>>
-# CHECK-NEXT:      kgen.struct.create
+# CHECK-NEXT:      lit.struct.create
 # CHECK-NEXT:      pop.store {{.+}}, %inside_b
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } else {

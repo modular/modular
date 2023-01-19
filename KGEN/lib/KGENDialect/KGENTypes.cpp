@@ -14,9 +14,6 @@
 #include "mlir/IR/Types.h"
 #include "llvm/ADT/TypeSwitch.h"
 
-// FIXME(5742): KGENDialect should not depend on POPDialect.
-#include "KGEN/POPDialect/POPTypes.h"
-
 using namespace M;
 using namespace KGEN;
 
@@ -315,17 +312,6 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   // Check we have the right number of conventions.
   if (conventions.getInputConventions().size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
-
-  // Check that any by-ref arguments are pointer type.
-  size_t argNo = 0;
-  for (auto [argTy, conv] :
-       llvm::zip(values.getInputs(), conventions.getInputConventions())) {
-    if (conv == ValueInputConvention::ByRef &&
-        !llvm::isa<POP::PointerType>(argTy))
-      return emitError() << "argument #" << argNo
-                         << " must have pointer type to have byref convention";
-    ++argNo;
-  }
 
   // If any signature parameters are force_inline, this signature must be as
   // well.

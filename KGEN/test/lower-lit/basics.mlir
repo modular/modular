@@ -190,7 +190,7 @@ lit.func @aliasFwdDecl() {
 // Nested Functions
 //===----------------------------------------------------------------------===//
 
-kgen.struct.decl @StructWithNestedFn<a_param> {
+lit.struct.decl @StructWithNestedFn<a_param> {
   // CHECK-LABEL: kgen.generator @"StructWithNestedFn::topLevelFunction"<a_param, b_param>
   lit.func @topLevelFunction<b_param>() -> index {
     // CHECK: %[[A:.*]] = pop.stack_allocation

@@ -1,6 +1,6 @@
 // RUN: kgen-opt -lower-lit -allow-unregistered-dialect %s | FileCheck %s
 
-kgen.struct.decl @Error {}
+lit.struct.decl @Error {}
 
 // CHECK-LABEL: kgen.generator @return_raise_or
 // CHECK-SAME: -> !pop.variant<@Error, !kgen.list<i1[0]>>

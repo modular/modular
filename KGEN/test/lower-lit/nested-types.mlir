@@ -46,7 +46,7 @@ lit.func @struct_inf
 
 // -----
 
-kgen.struct.decl @Foo<N> {}
+lit.struct.decl @Foo<N> {}
 
 kgen.generator.interface @doFoo<N>(%a: !kgen.declref<@Foo<N = N>>)
 

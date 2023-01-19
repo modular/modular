@@ -85,67 +85,6 @@ static LogicalResult reconcileDuplicateSymbol(StringRef name, Operation *symbol,
     return success();
   }
 
-  // Structs can be redeclared. Ensure parameters and fields match.
-  if (auto type = dyn_cast<StructDeclOp>(symbol)) {
-    auto incType = cast<StructDeclOp>(included);
-
-    // Emit nice diagnostics for for the obvious possible differences: input
-    // parameters.
-    if (failed(verifyParamDeclsMatch(
-            "struct redeclaration", type.getInputParamDecls(), type.getLoc(),
-            "previous struct declaration", incType.getInputParamDecls(),
-            incType.getLoc())))
-      return failure();
-
-    // Check other attributes.
-    if (symbol->getAttrDictionary() != included->getAttrDictionary()) {
-      InFlightDiagnostic diag =
-          symbol->emitError("redeclaration of interface @")
-          << name << " has different attributes";
-      return diag.attachNote(included->getLoc())
-             << "see previous declaration here";
-    }
-
-    // Check that the fields match.
-    unsigned numFields = std::distance(type.field_begin(), type.field_end());
-    unsigned incNumFields =
-        std::distance(incType.field_begin(), incType.field_end());
-    if (numFields != incNumFields) {
-      InFlightDiagnostic diag = symbol->emitError("type @")
-                                << name << " redeclared with " << numFields
-                                << " fields";
-      diag.attachNote(included->getLoc())
-          << "previously declared with " << incNumFields << " fields here";
-      return failure();
-    }
-
-    unsigned i = 0;
-    auto checkStructField = [&](StructFieldOp lhs, StructFieldOp rhs, auto lhsE,
-                                auto rhsE, StringRef kind) {
-      if (lhsE == rhsE)
-        return false;
-      InFlightDiagnostic diag = lhs->emitError("struct @")
-                                << name << " field #" << i
-                                << " redeclared with different " << kind << " "
-                                << lhsE;
-      diag.attachNote(rhs.getLoc())
-          << "previously declared as " << rhsE << " here";
-      return true;
-    };
-    for (auto [lhs, rhs] :
-         llvm::zip(type.getFieldDecls(), incType.getFieldDecls())) {
-      if (checkStructField(lhs, rhs, lhs.getNameAttr(), rhs.getNameAttr(),
-                           "name") ||
-          checkStructField(lhs, rhs, lhs.getType(), rhs.getType(), "type") ||
-          checkStructField(lhs, rhs, lhs->getAttrDictionary(),
-                           rhs->getAttrDictionary(), "attributes"))
-        return failure();
-      ++i;
-    }
-
-    return success();
-  }
-
   return included->emitError("included symbol @")
          << name
          << " is something other than a function, generator, interface, or "

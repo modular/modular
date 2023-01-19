@@ -17,11 +17,11 @@ kgen.generator @call_with_region() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.struct.decl @Struct
-kgen.struct.decl @Struct {
-  // CHECK-NEXT: kgen.struct.field x : i32 loc(#[[LOC2:.*]])
+// CHECK-LABEL: lit.struct.decl @Struct
+lit.struct.decl @Struct {
+  // CHECK-NEXT: lit.struct.field x : i32 loc(#[[LOC2:.*]])
   // NDEBUG-NOT: loc(#{{.*}})
-  kgen.struct.field x : i32 loc("im_a_field")
+  lit.struct.field x : i32 loc("im_a_field")
 }
 
 // CHECK: #[[LOC2]] = loc("im_a_field")

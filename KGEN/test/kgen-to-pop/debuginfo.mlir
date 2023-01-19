@@ -9,8 +9,8 @@
 // CHECK-DAG: ![[MEMBER_TYPE:.*]] = !debuginfo.unresolved<!pop.array<2, simd<4, f32>>>
 // CHECK-DAG: ![[MEMBER:.*]] = !debuginfo.member<data: ![[MEMBER_TYPE]]>
 // CHECK-DAG: ![[STRUCT:.*]] = !debuginfo.struct<SmallVector(![[MEMBER]])>
-kgen.struct.decl @SmallVector<N, T: type> {
-  kgen.struct.field data: !pop.array<N, T>
+lit.struct.decl @SmallVector<N, T: type> {
+  lit.struct.field data: !pop.array<N, T>
 }
 !structTest = !kgen.declref<@SmallVector<N = 2, T:type = !pop.simd<4, f32>>>
 

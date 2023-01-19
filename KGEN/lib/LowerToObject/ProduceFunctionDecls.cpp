@@ -4,9 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/LowerToObject.h"
-
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/LowerToObject.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ZAPDialect/ZAPTypes.h"
 #include "Support/Compiler/OperationUtils.h"
@@ -109,22 +108,6 @@ static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
       return success();
     }
 
-    if (auto ref = dyn_cast<DeclRefType>(t)) {
-      auto decl = symtab.lookup<StructDeclOp>(ref.getName());
-      ParameterEvaluator evaluator;
-      for (ParamBindAttr bind : ref.getParamValues())
-        evaluator.setParameterValue(bind.getDecl(), bind.getValue());
-      assert(decl && "expected a valid type reference");
-      return failableInterleave(
-          decl.getFieldDecls(),
-          [&](StructFieldOp field) {
-            return printTypeAsC(evaluator.getReboundType(field.getType()));
-          },
-          [&] {
-            os << ", ";
-            return mlir::success();
-          });
-    }
     // Check for !kgen.list<i1[0]> which the lowering of !lit.none and it
     // corresponds to void.
     if (auto listType = dyn_cast<ListType>(t)) {
