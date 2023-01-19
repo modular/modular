@@ -1105,3 +1105,12 @@ kgen.func @variadic_create_index() {
   %1 = pop.variadic.create [%0] : !pop.variadic<index>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @variadic_size
+kgen.func @variadic_size(%arg0: !pop.variadic<f32>) -> index {
+  // CHECK: llvm.extractvalue %{{.*}}[1] : !llvm.struct<(ptr<f32>, i64)>
+  %0 = pop.variadic.size %arg0 : !pop.variadic<f32>
+  kgen.return %0 : index
+}

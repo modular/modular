@@ -2273,6 +2273,43 @@ def POP_VariadicCreateOp : POPOp<"variadic.create", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// VariadicSizeOp
+//===----------------------------------------------------------------------===//
+
+def POP_VariadicSizeOp : POPOp<"variadic.size"> {
+  let summary = "given a sequence of variadic type, return its size";
+  let description = [{
+    The `pop.variadic.size` operation takes an operand of `!pop.variadic` type
+    and returns a size that represents the number of elements in the variadic
+    sequence.
+
+    Example:
+
+    ```mlir
+    // A function that takes a variadic sequence of arguments.
+    kgen.func @f(%arg0: f32, %arg1: !pop.variadic<f32>) {
+      // Determine the number of arguments.
+      %0 = pop.variadic.size %arg1 : !pop.variadic<f32>
+
+      // Create a variadic sequence of 2 floats.
+      %1 = pop.variadic.create [%arg0, %arg0] : !pop.variadic<f32>
+      // Determine the number of arguments (this returns 2).
+      %2 = pop.variadic.size %1 : !pop.variadic<f32>
+
+      kgen.return
+    }
+    ```
+  }];
+
+  let arguments = (ins POP_VariadicType:$operand);
+  let results = (outs Index:$result);
+
+  let assemblyFormat = [{
+    $operand attr-dict `:` qualified(type($operand))
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // CoroutineHandleOp
 //===----------------------------------------------------------------------===//
 
