@@ -313,6 +313,19 @@ def PruneImpossibleVariants: Pass<"prune-impossible-variants",
 }
 
 //===----------------------------------------------------------------------===//
+// ForceInline
+//===----------------------------------------------------------------------===//
+
+def ForceInline : Pass<"force-inline", "mlir::ModuleOp"> {
+  let summary = "Process all 'force_inline' functions";
+  let description = [{
+    The `force-inline` pass will process all calls to 'force_inline` functions
+    and inline them. If a cycle is encountered during inlining, the pass emits
+    an error and fails to inline the cycle.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // CleanupCompilerGlobals
 //===----------------------------------------------------------------------===//
 

@@ -960,8 +960,14 @@ LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Just ensure we're exporting symbols we can see.
   auto module = KGENModule::from(*this, symbolTable);
   for (auto e : getExports().getAsRange<SymbolRefAttr>()) {
-    if (!module.lookup<FuncInterface>(e))
+    auto func = module.lookup<FuncInterface>(e);
+    if (!func)
       return emitOpError("could not find referenced symbol '") << e << "'";
+    if (func.isForceInline()) {
+      return func.emitError("function marked 'force_inline' cannot be exported")
+                 .attachNote(getLoc())
+             << "function exported here";
+    }
   }
 
   return success();

@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-generators -inline -cleanup-compiler-globals | FileCheck %s
+// RUN: kgen-opt %s -elaborate-generators -force-inline -cleanup-compiler-globals | FileCheck %s
 
 kgen.generator @call_region<fn: <A -> index>() force_inline -> index -> index>() force_inline -> index {
   kgen.param.declare BoundFn: <() -> index>() force_inline -> index = <bind_signature(:<A -> index>() force_inline -> index fn, 2)>
@@ -28,14 +28,15 @@ kgen.generator @raiseClosure_wrapper<C, A, B -> index>() force_inline -> index {
 
 // COM: All this should be inlined and all that we care about is the raiseClosure func.
 // CHECK-LABEL: @raiseClosure() -> (index, index)
-// CHECK-NEXT: kgen.param.constant{{.*}}<16>
-// CHECK-NEXT: kgen.param.constant = <13>
 // CHECK-NEXT: %idx0 = index.constant 0
 // CHECK-NEXT: kgen.struct.create(%idx0)
-// CHECK-NEXT: kgen.struct.extract {{%[0-9]}}[field_0]
+// CHECK: kgen.struct.extract {{%[0-9]}}[field_0]
+// CHECK: kgen.param.constant{{.*}}<16>
+// CHECK-NEXT: pop.cast_from_builtin
 // CHECK-NEXT: pop.cast_from_builtin
 // CHECK-NEXT: pop.add
 // CHECK-NEXT: pop.cast_to_builtin
+// CHECK: kgen.param.constant = <13>
 // CHECK-NEXT: kgen.return
 
 kgen.generator @raiseClosure<() -> index>() -> (index, index) {
