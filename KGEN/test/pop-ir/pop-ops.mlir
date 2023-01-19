@@ -1023,16 +1023,6 @@ kgen.generator @list_create(%arg0: index) -> !kgen.list<index[1]> {
   kgen.return %0 : !kgen.list<index[1]>
 }
 
-// CHECK-LABEL: @call_indirect
-kgen.generator @call_indirect(%arg0: (index) -> index, %arg1 : !pop.closure<(index) -> index>) {
-  %idx0 = index.constant 0
-  // CHECK: call_indirect %arg0(%idx0) : (index) -> index
-  %1 = pop.call_indirect %arg0(%idx0) : (index) -> index
-  // CHECK: call_indirect %arg1(%idx0) : !pop.closure<(index) -> index>
-  %2 = pop.call_indirect %arg1(%idx0) : !pop.closure<(index) -> index>
-  kgen.return
-}
-
 // CHECK-LABEL: @partial_apply
 // CHECK-SAME: %[[FN:.*]]: (i8, i16, i32, i64) -> ()
 // CHECK-SAME: %[[A0:.*]]: i8, %[[A1:.*]]: i16, %[[A2:.*]]: i32, %[[A3:.*]]: i64

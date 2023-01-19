@@ -132,6 +132,13 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
     return LLVM::LLVMStructType::getLiteral(&getContext(), elementTypes);
   });
 
+  // Convert closure type to a struct of two pointers
+  addConversion([=](POP::ClosureType closureType) -> std::optional<Type> {
+    MLIRContext *ctx = closureType.getContext();
+    auto pointerTy = LLVM::LLVMPointerType::get(ctx);
+    return LLVM::LLVMStructType::getLiteral(ctx, {pointerTy, pointerTy});
+  });
+
   // Convert SIMD types to vector types.
   addConversion([=](POP::SIMDType simd) -> std::optional<Type> {
     std::optional<Type> dtype = convertDType(simd);

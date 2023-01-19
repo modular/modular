@@ -2204,7 +2204,7 @@ def POP_PartialApplyOp : POPOp<"partial_apply",
 //===----------------------------------------------------------------------===//
 
 def POP_CallIndirectOp : POPOp<"call_indirect"> {
-  let summary = "call a signature-typed value";
+  let summary = "call a function-typed or closure-typed value";
   let description = [{
     The `pop.call_indirect` operation takes an SSA value of `!pop.closure` type
     or function type and invokes it with the provided operands as arguments.
