@@ -1073,10 +1073,10 @@ kgen.func @variadic_create(%a: i32) {
   // CHECK: %[[ALLOCA:.*]] = llvm.alloca %[[ALLOCA_SIZE]] x i32 {alignment = 8 : i64} : (i64) -> !llvm.ptr<i32>
   // CHECK: llvm.intr.lifetime.start 8, %[[ALLOCA]] : !llvm.ptr<i32>
   // CHECK: %[[GEPI0:.*]] = llvm.mlir.constant(0 : i64)
-  // CHECK: %[[GEP0:.*]] = llvm.getelementptr %[[ALLOCA]][0, %[[GEPI0]]] : (!llvm.ptr<i32>, i64) -> !llvm.ptr<i32>
+  // CHECK: %[[GEP0:.*]] = llvm.getelementptr %[[ALLOCA]][%[[GEPI0]]] : (!llvm.ptr<i32>, i64) -> !llvm.ptr<i32>
   // CHECK: llvm.store %[[A0]], %[[GEP0]] : !llvm.ptr<i32>
   // CHECK: %[[GEPI1:.*]] = llvm.mlir.constant(1 : i64)
-  // CHECK: %[[GEP1:.*]] = llvm.getelementptr %[[ALLOCA]][0, %[[GEPI1]]]
+  // CHECK: %[[GEP1:.*]] = llvm.getelementptr %[[ALLOCA]][%[[GEPI1]]]
   // CHECK: llvm.store %[[A0]], %[[GEP1]]
   // CHECK: %[[SIZE:.*]] = llvm.mlir.constant(2 : i64)
   // CHECK: %[[STRUCT1:.*]] = llvm.mlir.undef : !llvm.struct<(ptr<i32>, i64)>

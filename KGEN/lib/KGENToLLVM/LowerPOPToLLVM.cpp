@@ -1070,7 +1070,7 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
         op.getLoc(), rewriter.getIntegerAttr(indexType, index));
     Value destination = rewriter.create<LLVM::GEPOp>(
         op.getLoc(), LLVM::LLVMPointerType::get(elementType), alloca,
-        ArrayRef<LLVM::GEPArg>{0, indexConstant});
+        ArrayRef<LLVM::GEPArg>{indexConstant});
     rewriter.create<LLVM::StoreOp>(op.getLoc(), operand, destination);
   }
 
