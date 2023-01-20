@@ -96,7 +96,6 @@ static StringRef disallowedAttrNames[] = {
 /// Parses a LIT Generator.
 ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   SmallVector<OpAsmParser::Argument> entryArgs;
-  SmallVector<DictionaryAttr> resultAttrs;
   SmallVector<Type> resultTypes;
   Builder &builder = parser.getBuilder();
 
