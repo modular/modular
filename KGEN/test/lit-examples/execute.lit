@@ -2,8 +2,9 @@
 
 from prolog import F32, printF32
 
+
 @export
 fn run_me() -> __mlir_type.index:
-   # CHECK: 2.0
-   printF32(F32(1.0) + 1.0)
-   return 0
+    # CHECK: 2.0
+    printF32(F32(1.0) + 1.0)
+    return 0

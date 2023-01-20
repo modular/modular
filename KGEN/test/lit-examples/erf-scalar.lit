@@ -18,39 +18,50 @@ from prolog import DType, F32, Scalar, SIMD
 #     lit.return %t1 : !pop.scalar<type>
 #   }
 
-fn fma[type: DType](x: Scalar[type], y: Scalar[type], z: Scalar[type])->Scalar[type]:
-  # use lower level library here, the impl depend on the type of DType, i.e, f32, f64...
-  return x
+
+fn fma[
+    type: DType
+](x: Scalar[type], y: Scalar[type], z: Scalar[type]) -> Scalar[type]:
+    # use lower level library here, the impl depend on the type of DType, i.e, f32, f64...
+    return x
+
 
 @interface
-fn erf_scalar[type: DType](x: Scalar[type]) -> Scalar[type]: ...
+fn erf_scalar[type: DType](x: Scalar[type]) -> Scalar[type]:
+    ...
+
 
 @implements(erf_scalar)
 fn erf_scalar_taylor[type: DType](x: Scalar[type]) -> Scalar[type]:
-#  TODO: return x * fma[type](x*x, -0.37612638903183752463, 1.1283791670955125739)
-  return x
+    #  TODO: return x * fma[type](x*x, -0.37612638903183752463, 1.1283791670955125739)
+    return x
 
 
 # CHECK-LABEL: lit.func @"fma_f32
 fn fma_f32(x: F32, y: F32, z: F32) -> F32:
-# CHECK: %0 = kgen.call @"$F32"::@F32::@"__mul__{{.*}}(%x, %y)
-# CHECK: %1 = kgen.call @"$F32"::@F32::@"__add__{{.*}}(%0, %z)
-# CHECK: lit.return %1
-  return x*y+z
+    # CHECK: %0 = kgen.call @"$F32"::@F32::@"__mul__{{.*}}(%x, %y)
+    # CHECK: %1 = kgen.call @"$F32"::@F32::@"__add__{{.*}}(%0, %z)
+    # CHECK: lit.return %1
+    return x * y + z
+
 
 @interface
-fn erf_scalar_f32(x: F32) -> F32: ...
+fn erf_scalar_f32(x: F32) -> F32:
+    ...
+
 
 # CHECK-LABEL: lit.func @"erf_scalar_taylor_f32
 @implements(erf_scalar_f32)
 fn erf_scalar_taylor_f32(x: F32) -> F32:
-  # CHECK: = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"-0.376126379">>
-  return x * fma_f32(x*x, -0.37612638903183752463, 1.1283791670955125739)
+    # CHECK: = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"-0.376126379">>
+    return x * fma_f32(x * x, -0.37612638903183752463, 1.1283791670955125739)
 
 
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"erf_taylor_vector{{.*}}"<size, type: dtype>(%x: !kgen.declref<@"$SIMD"::@SIMD<size = size, type: dtype = type>>) -> !kgen.declref<@"$SIMD"::@SIMD<size = size, type: dtype = type>> {
-fn erf_taylor_vector[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`](x: SIMD[size, type]) -> SIMD[size, type]:
-  # CHECK: = kgen.param.constant: f64 = <-0.37612638903183754>
-  return x * (x*x).fma(-0.37612638903183752463, 1.1283791670955125739)
+fn erf_taylor_vector[
+    size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+](x: SIMD[size, type]) -> SIMD[size, type]:
+    # CHECK: = kgen.param.constant: f64 = <-0.37612638903183754>
+    return x * (x * x).fma(-0.37612638903183752463, 1.1283791670955125739)
