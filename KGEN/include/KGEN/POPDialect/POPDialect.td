@@ -34,6 +34,9 @@ def POPDialect : Dialect {
     /// Custom printer for POP types.
     void printType(Type type, DialectAsmPrinter &p) const override;
   }];
+
+  // https://discourse.llvm.org/t/psa-new-improved-fold-method-signature-has-landed-please-update-your-downstream-projects/67618
+  let useFoldAPI = kEmitFoldAdaptorFolder;
 }
 
 #endif // KGEN_POPDIALECT_POPDIALECT_TD

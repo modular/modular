@@ -206,16 +206,17 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIStructType type) {
 LLVM::DISubroutineTypeAttr
 MetadataConverter::convertTypeImpl(DISubroutineType type) {
   // Grab the result type if we have one.
-  LLVM::DITypeAttr resultType;
-  if (type.getResultTypes().size() == 1)
-    resultType = convertType(type.getResultTypes()[0]);
-
   SmallVector<LLVM::DITypeAttr> convertedTypes;
+  if (type.getResultTypes().size() == 1)
+    convertedTypes.push_back(convertType(type.getResultTypes()[0]));
+  else
+    convertedTypes.push_back(
+        LLVM::DIVoidResultTypeAttr::get(type.getContext()));
+
   for (auto argType : type.getArgumentTypes())
     convertedTypes.push_back(convertType(argType));
-  return LLVM::DISubroutineTypeAttr::get(type.getContext(),
-                                         type.getCallingConvention(),
-                                         resultType, convertedTypes);
+  return LLVM::DISubroutineTypeAttr::get(
+      type.getContext(), type.getCallingConvention(), convertedTypes);
 }
 
 LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIUnresolvedMLIRType type) {

@@ -5,8 +5,6 @@
 // CHECK: #[[FILE:.*]] = #llvm.di_file<"foo.c" in "/mlir/">
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 
-// CHECK: #[[SP_TYPE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal>
-
 // CHECK: #[[CU:.*]] = #llvm.di_compile_unit<
 // CHECK-SAME:   sourceLanguage = DW_LANG_C,
 // CHECK-SAME:   file = #[[FILE]],
@@ -14,6 +12,8 @@
 // CHECK-SAME:   isOptimized = true,
 // CHECK-SAME:   emissionKind = Full
 // CHECK-SAME: >
+
+// CHECK: #[[SP_TYPE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, types = #di_void_result_type>
 #compile_unit = #debuginfo.compile_unit<
   sourceLanguage = DW_LANG_C,
   file = #file,

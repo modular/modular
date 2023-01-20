@@ -39,6 +39,9 @@ def ZAPDialect : Dialect {
     /// Register all dialect types.
     void registerTypes();
   }];
+
+  // https://discourse.llvm.org/t/psa-new-improved-fold-method-signature-has-landed-please-update-your-downstream-projects/67618
+  let useFoldAPI = kEmitFoldAdaptorFolder;
 }
 
 #endif // ZAPDIALECT_TD
