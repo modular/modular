@@ -18,7 +18,7 @@ kgen.generator @impl<lb, ub, step>(%buf: !pop.pointer<scalar<si64>>) {
 }
 
 kgen.generator @test_print() {
-  %0 = pop.global_constant: !pop.array<4, scalar<si64>> =
+  %0 = pop.global_constant: array<4, scalar<si64>> =
     <[<0>, <11>, <22>, <33>]>
   %1 = pop.pointer.bitcast %0 : !pop.pointer<array<4, scalar<si64>>> to !pop.pointer<scalar<si64>>
   kgen.call @impl<lb = 0, ub = 4, step = 2>(%1) : (!pop.pointer<scalar<si64>>) -> ()

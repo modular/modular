@@ -2,52 +2,52 @@
 
 // CHECK-LABEL: @simd_constants
 kgen.generator @simd_constants<N, value: !pop.simd<N, si32>>() {
-  // CHECK: !pop.simd<2, f32> = <<"12.375", "77">>
-  %0 = kgen.param.constant: !pop.simd<2, f32> = <<"12.375", "77">>
-  // CHECK: !pop.scalar<si64> = <1234>
-  %1 = kgen.param.constant: !pop.scalar<si64> = <1234>
-  // CHECK: !pop.simd<2, bool> = <<true, false>>
-  %2 = kgen.param.constant: !pop.simd<2, bool> = <<true, false>>
-  // CHECK: !pop.scalar<f64> = <"0.01171875">
-  %3 = kgen.param.constant: !pop.scalar<f64> = <"0.01171875">
-  // CHECK: !pop.simd<6, ui2> = <<0, 1, 2, 3, 3, 2>>
-  %4 = kgen.param.constant: !pop.simd<6, ui2> = <<0, 1, 2, 3, 3, 2>>
-  // CHECK: !pop.simd<2, index> = <<-54321, 12345>>
-  %5 = kgen.param.constant: !pop.simd<2, index> = <<-54321, 12345>>
-  // CHECK: !pop.scalar<f32> = <"0.100000001">
-  %6 = kgen.param.constant: !pop.scalar<f32> = <"0.1">
+  // CHECK: simd<2, f32> = <<"12.375", "77">>
+  %0 = kgen.param.constant: simd<2, f32> = <<"12.375", "77">>
+  // CHECK: scalar<si64> = <1234>
+  %1 = kgen.param.constant: scalar<si64> = <1234>
+  // CHECK: simd<2, bool> = <<true, false>>
+  %2 = kgen.param.constant: simd<2, bool> = <<true, false>>
+  // CHECK: scalar<f64> = <"0.01171875">
+  %3 = kgen.param.constant: scalar<f64> = <"0.01171875">
+  // CHECK: simd<6, ui2> = <<0, 1, 2, 3, 3, 2>>
+  %4 = kgen.param.constant: simd<6, ui2> = <<0, 1, 2, 3, 3, 2>>
+  // CHECK: simd<2, index> = <<-54321, 12345>>
+  %5 = kgen.param.constant: simd<2, index> = <<-54321, 12345>>
+  // CHECK: scalar<f32> = <"0.100000001">
+  %6 = kgen.param.constant: scalar<f32> = <"0.1">
 
   // CHECK: #pop.simd<1, 2>
   "simd.const"() {a = #pop.simd<1, 2> : !pop.simd<2, si32>} : () -> ()
   // CHECK: #pop<simd 1>
   "simd.const"() {a = #pop<simd 1> : !pop.simd<2, si32>} : () -> ()
-  // CHECK: !pop.simd<N, si32> = <value>
-  kgen.param.constant: !pop.simd<N, si32> = <value>
+  // CHECK: simd<N, si32> = <value>
+  kgen.param.constant: simd<N, si32> = <value>
   kgen.return
 }
 
 // CHECK-LABEL: @array_struct_constants
 kgen.generator @array_struct_constants<T: type, A: !kgen.paramref<T>, value: !pop.scalar<f32>>() {
-  // CHECK: !pop.struct<index, f32> = <{ 1, 2.5{{0+}}e+00 }>
-  kgen.param.constant: !pop.struct<index, f32> = <{ 1, 2.5 }>
-  // CHECK: !pop.array<2, index> = <[1, 2]>
-  kgen.param.constant: !pop.array<2, index> = <[1, 2]>
-  // CHECK: !pop.struct<scalar<f32>> = <{ value }>
-  kgen.param.constant: !pop.struct<scalar<f32>> = <{ value }>
-  // CHECK: !pop.array<2, dtype> = <[ui4, si4]>
-  kgen.param.constant: !pop.array<2, dtype> = <[ui4, si4]>
-  // CHECK: !pop.struct<T> = <{ A }>
-  kgen.param.constant: !pop.struct<T> = <{ A }>
-  // CHECK: !pop.array<2, T> = <[A, A]>
-  kgen.param.constant: !pop.array<2, T> = <[A, A]>
+  // CHECK: struct<index, f32> = <{ 1, 2.5{{0+}}e+00 }>
+  kgen.param.constant: struct<index, f32> = <{ 1, 2.5 }>
+  // CHECK: array<2, index> = <[1, 2]>
+  kgen.param.constant: array<2, index> = <[1, 2]>
+  // CHECK: struct<scalar<f32>> = <{ value }>
+  kgen.param.constant: struct<scalar<f32>> = <{ value }>
+  // CHECK: array<2, dtype> = <[ui4, si4]>
+  kgen.param.constant: array<2, dtype> = <[ui4, si4]>
+  // CHECK: struct<T> = <{ A }>
+  kgen.param.constant: struct<T> = <{ A }>
+  // CHECK: array<2, T> = <[A, A]>
+  kgen.param.constant: array<2, T> = <[A, A]>
   kgen.return
 }
 
 // CHECK-LABEL: @variant_constants
 kgen.generator @variant_constants<T: type, U: type, value: !kgen.paramref<T>>() {
-  // CHECK: !pop.variant<f32, f64> = <#pop.variant<:f32 2.5{{0+}}e+00>>
-  %0 = kgen.param.constant: !pop.variant<f32, f64> = <#pop.variant<:f32 2.5>>
-  // CHECK: !pop.variant<T, U> = <#pop.variant<:!kgen.paramref<T> value>>
-  %1 = kgen.param.constant: !pop.variant<T, U> = <#pop.variant<:!kgen.paramref<T> value>>
+  // CHECK: variant<f32, f64> = <#pop.variant<:f32 2.5{{0+}}e+00>>
+  %0 = kgen.param.constant: variant<f32, f64> = <#pop.variant<:f32 2.5>>
+  // CHECK: variant<T, U> = <#pop.variant<:!kgen.paramref<T> value>>
+  %1 = kgen.param.constant: variant<T, U> = <#pop.variant<:!kgen.paramref<T> value>>
   kgen.return
 }

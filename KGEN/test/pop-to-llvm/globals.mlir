@@ -31,7 +31,7 @@ kgen.func @global_constant() {
   // CHECK: llvm.mlir.addressof @global_constant_0
   %1 = pop.global_constant: ui32 = <5>
   // CHECK: llvm.mlir.addressof @global_constant_1
-  %2 = pop.global_constant: !pop.simd<2, si32> = <<2, 5>>
+  %2 = pop.global_constant: simd<2, si32> = <<2, 5>>
   kgen.return
 }
 
@@ -40,7 +40,7 @@ kgen.func @global_constant() {
 // CHECK-LABEL: @global_array_constant
 kgen.func @global_array_constant() {
   // CHECK: llvm.mlir.addressof @global_constant
-  %0 = pop.global_constant: !pop.array<4, ui32> = <[1, 2, 3, 4]>
+  %0 = pop.global_constant: array<4, ui32> = <[1, 2, 3, 4]>
   kgen.return
 }
 

@@ -21,17 +21,6 @@ using namespace KGEN;
 using namespace POP;
 
 //===----------------------------------------------------------------------===//
-// POPDialect
-//===----------------------------------------------------------------------===//
-
-void POPDialect::registerTypes() {
-  addTypes<
-#define GET_TYPEDEF_LIST
-#include "KGEN/POPDialect/POPTypes.cpp.inc"
-      >();
-}
-
-//===----------------------------------------------------------------------===//
 // ArrayType
 //===----------------------------------------------------------------------===//
 
@@ -252,14 +241,6 @@ std::optional<int64_t> SIMDType::getTypeAlign(TargetInfoAttr target) const {
   if (std::optional<int64_t> size = getTypeSize(target))
     return llvm::PowerOf2Ceil(*size);
   return {};
-}
-
-bool M::KGEN::POP::isSIMDSizeOneType(Type type) {
-  if (auto simd = dyn_cast_or_null<POP::SIMDType>(type)) {
-    auto resolvedSize = simd.getResolvedSize();
-    return (resolvedSize && *resolvedSize == 1);
-  }
-  return false;
 }
 
 ErrorOrSuccess SIMDType::writeTo(TypedAttr value, intptr_t addr,
@@ -592,6 +573,86 @@ ErrorOr<TypedAttr> VariantType::readFrom(intptr_t addr,
 }
 
 //===----------------------------------------------------------------------===//
+// ClosureType
+//===----------------------------------------------------------------------===//
+
+std::optional<int64_t> ClosureType::getTypeSize(TargetInfoAttr target) const {
+  // FIXME: Implement this.
+  llvm_unreachable("TODO: unimplemented");
+}
+
+std::optional<int64_t> ClosureType::getTypeAlign(TargetInfoAttr target) const {
+  // FIXME: Implement this.
+  llvm_unreachable("TODO: unimplemented");
+}
+
+//===----------------------------------------------------------------------===//
+// VariadicType
+//===----------------------------------------------------------------------===//
+
+LogicalResult VariadicType::verify(function_ref<InFlightDiagnostic()> emitError,
+                                   TypedAttr type) {
+  assert(type && "type cannot be null");
+  if (!type.getType().isa<MLIRTypeType>())
+    return emitError() << "type parameter for pointer must be a !kgen.mlirtype";
+  return success();
+}
+
+Type VariadicType::getResolvedElementType() const {
+  if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(getElementType()))
+    return typeCst.getValue();
+  return nullptr;
+}
+
+VariadicType VariadicType::get(TypedAttr elementType) {
+  return VariadicType::get(elementType.getContext(), elementType);
+}
+
+VariadicType VariadicType::get(Type elementType) {
+  return VariadicType::get(TypeConstantAttr::get(elementType));
+}
+
+/// A variadic type is like an `llvm::ArrayRef`: a pointer to the start of the
+/// contiguous sequence, and the size of that seqeunce. So, its size would be
+/// the size of a pointer, plus the size of the size type (which has the same
+/// size and alignment as a pointer type).
+std::optional<int64_t> VariadicType::getTypeSize(TargetInfoAttr target) const {
+  return 2 * target.getPointerSize();
+}
+
+/// The alignment of the variadic type is that its pointer and size.
+std::optional<int64_t> VariadicType::getTypeAlign(TargetInfoAttr target) const {
+  return target.getPointerSize();
+}
+
+//===----------------------------------------------------------------------===//
+// CoroutineType
+//===----------------------------------------------------------------------===//
+
+std::optional<int64_t> CoroutineType::getTypeSize(TargetInfoAttr target) const {
+  // FIXME: Implement this.
+  llvm_unreachable("TODO: unimplemented");
+}
+
+std::optional<int64_t>
+CoroutineType::getTypeAlign(TargetInfoAttr target) const {
+  // FIXME: Implement this.
+  llvm_unreachable("TODO: unimplemented");
+}
+
+CoroutineType CoroutineType::get(SignatureType sig) {
+  // Return a coroutine type whose result types match the signature type but
+  // which inherits the `throws` bit.
+  MLIRContext *ctx = sig.getContext();
+  auto coroSig = SignatureType::get(
+      ParamDeclArrayAttr::get(ctx, {}), TypeArrayAttr::get(ctx, {}),
+      FunctionType::get(ctx, {}, sig.getValueResults()),
+      ConventionsAttr::get(
+          ctx, 0, sig.isThrows() ? FnEffects::Throws : FnEffects::None));
+  return POP::CoroutineType::get(ctx, coroSig);
+}
+
+//===----------------------------------------------------------------------===//
 // Pretty Type Parsing and Printing
 //===----------------------------------------------------------------------===//
 
@@ -693,7 +754,7 @@ void POP::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
         popType.print(p);
       })
       .Case([&](SIMDType popType) {
-        if (isSIMDSizeOneType(popType)) {
+        if (popType.isScalar()) {
           p << "scalar<";
           printDTypeParamValue(p, popType.getDType());
           p << ">";
@@ -727,85 +788,6 @@ static void printArrayOfPrettyTypes(AsmPrinter &p, ArrayRef<TypedAttr> values) {
   llvm::interleaveComma(values, p,
                         [&](TypedAttr value) { printPrettyType(p, value); });
 }
-//===----------------------------------------------------------------------===//
-// ClosureType
-//===----------------------------------------------------------------------===//
-
-std::optional<int64_t> ClosureType::getTypeSize(TargetInfoAttr target) const {
-  // FIXME: Implement this.
-  llvm_unreachable("TODO: unimplemented");
-}
-
-std::optional<int64_t> ClosureType::getTypeAlign(TargetInfoAttr target) const {
-  // FIXME: Implement this.
-  llvm_unreachable("TODO: unimplemented");
-}
-
-//===----------------------------------------------------------------------===//
-// VariadicType
-//===----------------------------------------------------------------------===//
-
-LogicalResult VariadicType::verify(function_ref<InFlightDiagnostic()> emitError,
-                                   TypedAttr type) {
-  assert(type && "type cannot be null");
-  if (!type.getType().isa<MLIRTypeType>())
-    return emitError() << "type parameter for pointer must be a !kgen.mlirtype";
-  return success();
-}
-
-Type VariadicType::getResolvedElementType() const {
-  if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(getElementType()))
-    return typeCst.getValue();
-  return nullptr;
-}
-
-VariadicType VariadicType::get(TypedAttr elementType) {
-  return VariadicType::get(elementType.getContext(), elementType);
-}
-
-VariadicType VariadicType::get(Type elementType) {
-  return VariadicType::get(TypeConstantAttr::get(elementType));
-}
-
-/// A variadic type is like an `llvm::ArrayRef`: a pointer to the start of the
-/// contiguous sequence, and the size of that seqeunce. So, its size would be
-/// the size of a pointer, plus the size of the size type (which has the same
-/// size and alignment as a pointer type).
-std::optional<int64_t> VariadicType::getTypeSize(TargetInfoAttr target) const {
-  return 2 * target.getPointerSize();
-}
-
-/// The alignment of the variadic type is that its pointer and size.
-std::optional<int64_t> VariadicType::getTypeAlign(TargetInfoAttr target) const {
-  return target.getPointerSize();
-}
-
-//===----------------------------------------------------------------------===//
-// CoroutineType
-//===----------------------------------------------------------------------===//
-
-std::optional<int64_t> CoroutineType::getTypeSize(TargetInfoAttr target) const {
-  // FIXME: Implement this.
-  llvm_unreachable("TODO: unimplemented");
-}
-
-std::optional<int64_t>
-CoroutineType::getTypeAlign(TargetInfoAttr target) const {
-  // FIXME: Implement this.
-  llvm_unreachable("TODO: unimplemented");
-}
-
-CoroutineType CoroutineType::get(SignatureType sig) {
-  // Return a coroutine type whose result types match the signature type but
-  // which inherits the `throws` bit.
-  MLIRContext *ctx = sig.getContext();
-  auto coroSig = SignatureType::get(
-      ParamDeclArrayAttr::get(ctx, {}), TypeArrayAttr::get(ctx, {}),
-      FunctionType::get(ctx, {}, sig.getValueResults()),
-      ConventionsAttr::get(
-          ctx, 0, sig.isThrows() ? FnEffects::Throws : FnEffects::None));
-  return POP::CoroutineType::get(ctx, coroSig);
-}
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
@@ -815,8 +797,36 @@ CoroutineType CoroutineType::get(SignatureType sig) {
 #include "KGEN/POPDialect/POPTypes.cpp.inc"
 
 //===----------------------------------------------------------------------===//
-// Custom parser and printer
+// POPDialect
 //===----------------------------------------------------------------------===//
+
+void POPDialect::registerTypes() {
+  addTypes<
+#define GET_TYPEDEF_LIST
+#include "KGEN/POPDialect/POPTypes.cpp.inc"
+      >();
+
+  auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
+  dialect->registerMnemonicType<ArrayType>();
+  dialect->registerMnemonicType<PointerType>();
+  dialect->registerMnemonicType<StructType>();
+  dialect->registerMnemonicType<VariantType>();
+
+  dialect->registerKeywordParser("scalar", parseScalarType);
+  dialect->registerPrettyType(
+      "simd", &SIMDType::parse, TypeID::get<SIMDType>(),
+      +[](AsmPrinter &p, Type type) {
+        auto simd = cast<SIMDType>(type);
+        if (simd.isScalar()) {
+          p << "scalar<";
+          printDTypeParamValue(p, simd.getDType());
+          p << ">";
+        } else {
+          p << "simd";
+          simd.print(p);
+        }
+      });
+}
 
 /// Parse a type registered to this dialect.
 /// For most cases we rely on the default `generatedTypeParser`, but we have a
@@ -842,9 +852,9 @@ Type POPDialect::parseType(DialectAsmParser &p) const {
 /// For most cases we rely on the default `generatedTypePrinter`, but we sugar
 /// "simd<1, t>" to "scalar<t>".
 void POPDialect::printType(Type type, DialectAsmPrinter &p) const {
-  if (isSIMDSizeOneType(type)) {
+  if (auto simd = dyn_cast<SIMDType>(type); simd && simd.isScalar()) {
     p << "scalar<";
-    printDTypeParamValue(p, cast<SIMDType>(type).getDType());
+    printDTypeParamValue(p, simd.getDType());
     p << ">";
     return;
   }

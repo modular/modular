@@ -178,6 +178,8 @@ def POP_SIMDType : POPType<"SIMD", "simd", [
     std::optional<KGENDType> getResolvedDType() const;
     /// Try to narrow the size expression of the SIMD type to an integer.
     std::optional<int64_t> getResolvedSize() const;
+    /// Returns true if this is known to be a scalar type.
+    bool isScalar() const { return getResolvedSize() == 1; }
   }];
 }
 

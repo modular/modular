@@ -33,7 +33,7 @@ def var_decls():
   var y : Int
 
   # CHECK: [[Y:%.*]] = pop.load %y : !pop.pointer<@"$Int"::@Int>
-  # CHECK: kgen.param.constant: !pop.scalar<index> = <1>
+  # CHECK: kgen.param.constant: scalar<index> = <1>
   # CHECK: [[ONE:%.*]] = lit.struct.create(
   # CHECK: [[ADD:%.*]] = kgen.call @"$Int"::@Int::@"__add__($Int::Int,$Int::Int)"([[Y]], [[ONE]])
   # CHECK: pop.store [[ADD]], %y : !pop.pointer<@"$Int"::@Int>
@@ -187,7 +187,7 @@ struct StructExample:
   # CHECK: lit.func @"static($Int::Int)"(%x: !kgen.declref<@"$Int"::@Int>) -> !lit.none attributes {isStatic} {
   @staticmethod
   fn static(x: Int):
-    # CHECK: %0 = kgen.param.constant: !pop.scalar<index> = <4>
+    # CHECK: %0 = kgen.param.constant: scalar<index> = <4>
     # CHECK: %1 = lit.struct.create(%0) : (!pop.scalar<index>) -> !kgen.declref<@"$Int"::@Int>
     # CHECK: %2 = kgen.call @"$decls"::@StructExample::@"static{{.*}}"(%1) : (!kgen.declref<@"$Int"::@Int>) -> !lit.none
     StructExample.static(Int(4))

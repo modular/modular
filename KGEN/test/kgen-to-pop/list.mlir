@@ -110,7 +110,7 @@ kgen.func @list_pointer(%ptr: !pop.pointer<!kgen.list<index[2]>>) -> !kgen.list<
 // CHECK-SAME: %arg0: !pop.pointer<struct<index, index>>
 kgen.func @struct_list_gep(%ptr: !pop.pointer<struct<!kgen.list<index[2]>>>,
                            %empty: !pop.pointer<struct<!kgen.list<i1[0]>>>) -> !pop.pointer<!kgen.list<index[2]>> {
-  // CHECK-NEXT: %0 = kgen.param.constant: !pop.pointer<array<0, i1>> = <#M.pointer<0>>
+  // CHECK-NEXT: %0 = kgen.param.constant: pointer<array<0, i1>> = <#M.pointer<0>>
   // CHECK-NEXT: %1 = pop.struct.gep %arg0[0] : <struct<index, index>>
   // CHECK-NEXT: %2 = pop.pointer.bitcast %1 : !pop.pointer<index> to !pop.pointer<array<2, index>>
   %0 = pop.struct.gep %ptr[0] : <struct<!kgen.list<index[2]>>>
@@ -206,7 +206,7 @@ kgen.func @variant_of_list(%list: !kgen.list<index[2]>, %var: !pop.variant<i1, !
 
 // CHECK-LABEL: @variant_of_empty_list
 kgen.func @variant_of_empty_list(%list: !kgen.list<i0[0]>, %var: !pop.variant<i1, !kgen.list<i0[0]>>) -> (!kgen.list<i0[0]>, !pop.variant<i1, !kgen.list<i0[0]>>) {
-  // CHECK-NEXT: %[[VAR:.*]] = kgen.param.constant: !pop.variant<i1, array<0, i0>> = <#pop.variant<:!pop.array<0, i0> []>
+  // CHECK-NEXT: %[[VAR:.*]] = kgen.param.constant: variant<i1, array<0, i0>> = <#pop.variant<:array<0, i0> []>
   %0 = pop.variant.create %list : !kgen.list<i0[0]> -> !pop.variant<i1, !kgen.list<i0[0]>>
   %1 = pop.variant.get %var : !pop.variant<i1, !kgen.list<i0[0]>> as !kgen.list<i0[0]>
   // CHECK-NEXT: return %[[VAR]]
@@ -233,13 +233,13 @@ kgen.func @list_in_coroutine(%coro: !pop.coroutine<() -> !kgen.list<index[0]>>) 
 
 // CHECK-LABEL: @list_attr_in_attr
 kgen.func @list_attr_in_attr() {
-  // CHECK-NEXT: !pop.struct<index, index, i32, i32, i32> = <{ 1, 2, 5, 6, 7 }>
-  %0 = kgen.param.constant: !pop.struct<!kgen.list<index[2]>, !kgen.list<i32[3]>>
+  // CHECK-NEXT: struct<index, index, i32, i32, i32> = <{ 1, 2, 5, 6, 7 }>
+  %0 = kgen.param.constant: struct<!kgen.list<index[2]>, !kgen.list<i32[3]>>
     = <{ [1, 2], [5, 6, 7] }>
-  // CHECK-NEXT: !pop.struct<index, index, index, index> = <{ 1, 2, 3, 4 }>
-  %1 = kgen.param.constant: !pop.struct<!kgen.list<!kgen.list<index[2]>[2]>> = <{ [[1, 2], [3, 4]] }>
-  // CHECK-NEXT: !pop.variant<array<0, i1>, array<2, array<2, i32>>> = <#pop.variant<:!pop.array<0, i1> []>>
-  %2 = kgen.param.constant: !pop.variant<!kgen.list<i1[0]>, array<2, !kgen.list<i32[2]>>> = <#pop.variant<:!kgen.list<i1[0]> []>>
+  // CHECK-NEXT: struct<index, index, index, index> = <{ 1, 2, 3, 4 }>
+  %1 = kgen.param.constant: struct<!kgen.list<!kgen.list<index[2]>[2]>> = <{ [[1, 2], [3, 4]] }>
+  // CHECK-NEXT: variant<array<0, i1>, array<2, array<2, i32>>> = <#pop.variant<:array<0, i1> []>>
+  %2 = kgen.param.constant: variant<!kgen.list<i1[0]>, array<2, !kgen.list<i32[2]>>> = <#pop.variant<:!kgen.list<i1[0]> []>>
 
   "use"(%0, %1, %2) : (
     !pop.struct<!kgen.list<index[2]>, !kgen.list<i32[3]>>,

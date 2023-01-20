@@ -124,7 +124,7 @@ kgen.generator @raise2Closures() {
 // CHECK-NEXT:    kgen.return %1 : !kgen.paramref<T>
 
 // CHECK-LABEL: kgen.generator @raiseParamClosure() -> f32
-// CHECK-NEXT:    %0 = kgen.param.constant: !pop.scalar<f32> = <"0">
+// CHECK-NEXT:    %0 = kgen.param.constant: scalar<f32> = <"0">
 // CHECK-NEXT:    %1 = pop.cast_to_builtin %0 : !pop.scalar<f32> to f32
 // CHECK-NEXT:    %2 = kgen.call @parametrizedClosure<T: type = f32>(%1) : (f32) -> f32
 // CHECK-NEXT:    kgen.return %2 : f32
