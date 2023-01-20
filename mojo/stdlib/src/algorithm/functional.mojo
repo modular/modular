@@ -12,9 +12,12 @@ from SIMD import SIMD
 # Map
 # ===----------------------------------------------------------------------===#
 
+
 @always_inline
 fn map[
-    func: __mlir_type[`!kgen.signature<[], [],`, `(`, Int, `) force_inline -> !lit.none>`],
+    func: __mlir_type[
+        `!kgen.signature<[], [],`, `(`, Int, `) force_inline -> !lit.none>`
+    ],
 ](size: Int):
     """
     Map a unary function.
@@ -23,6 +26,7 @@ fn map[
     while i < size:
         func(i)
         i += 1
+
 
 # ===----------------------------------------------------------------------===#
 # Vectorize
