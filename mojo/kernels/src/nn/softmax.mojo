@@ -4,13 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Math import exp
-from SIMD import SIMD
+from Assert import assert_param
 from Buffer import Buffer
+from Functional import vectorize
 from Int import Int
-from Tuple import StaticTuple
+from Math import exp
 from Numerics import neginf
 from Reductions import max
+from SIMD import SIMD
+from Tuple import StaticTuple
 
 # ===----------------------------------------------------------------------===#
 # Softmax 2 Pass
@@ -183,6 +185,60 @@ fn _softmax_3_pass_step1[
     return max[simd_width, buffer_size, type](input)
 
 
+@interface
+fn reduce_add_simd[
+    simd_width: __mlir_type.index,
+    step_simd_width: __mlir_type.index,
+    type: __mlir_type.`!kgen.dtype`,
+](
+    scalar&: SIMD[1, type],
+    vector&: SIMD[simd_width, type],
+    val: SIMD[step_simd_width, type],
+):
+    """This functions adds val to either the scalar value or the vector value
+    depending on the step_simd_width. This is useful when the simd_width varies
+    between iterations as in vectorize.
+    """
+    ...
+
+
+@implements(reduce_add_simd)
+fn reduce_add_simd_scalar_case[
+    simd_width: __mlir_type.index,
+    step_simd_width: __mlir_type.index,
+    type: __mlir_type.`!kgen.dtype`,
+](
+    scalar&: SIMD[1, type],
+    vector&: SIMD[simd_width, type],
+    val: SIMD[step_simd_width, type],
+):
+    """When the step_simd_width is 1, then we add to the scalar value."""
+    assert_param[step_simd_width == 1]()
+    scalar += val.__getitem__(0)
+
+
+@implements(reduce_add_simd)
+fn reduce_add_simd_vector_case[
+    simd_width: __mlir_type.index,
+    step_simd_width: __mlir_type.index,
+    type: __mlir_type.`!kgen.dtype`,
+](
+    scalar&: SIMD[1, type],
+    vector&: SIMD[simd_width, type],
+    val: SIMD[step_simd_width, type],
+):
+    """When the step_simd_Width is the same as the simd_width, then we add to
+    the vector value.
+    """
+    assert_param[step_simd_width == simd_width]()
+    vector += __mlir_op.`kgen.rebind`[
+        _type : SIMD[
+            simd_width,
+            type,
+        ]
+    ](val)
+
+
 fn _softmax_3_pass_step2[
     simd_width: __mlir_type.index,
     buffer_size: __mlir_type.index,
@@ -190,62 +246,55 @@ fn _softmax_3_pass_step2[
 ](
     input: Buffer[buffer_size, type],
     output: Buffer[buffer_size, type],
-    max: SIMD[1, type],
+    max_val: SIMD[1, type],
 ) -> SIMD[1, type]:
     # STEP 2: compute the exponential for each batch
     # for i = 0 to N do
     #   Output[i] = exp(Input[i] - maxVal)
     #   denom += Output[i]
     # end for
-    var i: Int = 0
-    var denom_simd = SIMD[simd_width, type].splat(0.0)
-    var max_simd = SIMD[simd_width, type].splat(max)
-    let len = input.__len__()
-    # TODO: manually replicating vectorize logic. Replace with transform_reduce()
-    # once closures are supported and transform_reduce implemented since max needs
-    # to be captured.
-    let vector_end = (len // simd_width) * simd_width
-    while i < vector_end:
-        let simd_elem = exp[simd_width, type](
-            input.simd_load[simd_width](i) - max_simd
-        )
-        output.simd_store[simd_width](i, simd_elem)
-        denom_simd += simd_elem
-        i += simd_width
-    i = vector_end
-    var denom = denom_simd.reduce_add()
-    while i < len:
-        let elem = exp[1, type](input.__getitem__(i) - max)
-        output.__setitem__(i, elem)
-        denom += elem
-        i += 1
 
-    return denom
+    alias outer_simd_width = simd_width
+
+    var denom_scalar: SIMD[1, type] = 0
+    var denom_simd: SIMD[outer_simd_width, type] = 0
+
+    @always_inline
+    fn step_2[simd_width: __mlir_type.index](idx: Int):
+        let elem = exp[simd_width, type](
+            input.simd_load[simd_width](idx)
+            - SIMD[simd_width, type].splat(max_val)
+        )
+        output.simd_store[simd_width](idx, elem)
+        reduce_add_simd[outer_simd_width, simd_width, type](
+            denom_scalar, denom_simd, elem
+        )
+
+    vectorize[simd_width, step_2](output.__len__())
+
+    # Reduce the values from both the scalar and vector denom.
+    return denom_scalar + denom_simd.reduce_add()
 
 
 fn _softmax_3_pass_step3[
     simd_width: __mlir_type.index,
     buffer_size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
-](output: Buffer[buffer_size, type], recip: SIMD[1, type]):
+](output: Buffer[buffer_size, type], denom: SIMD[1, type]):
     # STEP 3: normalize each batch
     # for i = 0 to N do
     #   Output[b, i] /= denom
     # end for
-    var i: Int = 0
-    let len = output.__len__()
-    let simd_recip = SIMD[simd_width, type].splat(recip)
-    # TODO: manually replicating vectorize() logic. Replace with vectorize() once
-    # closures are supported since recip needs to be captured.
-    let vector_end = (len // simd_width) * simd_width
-    while i < vector_end:
-        let simd_elem = output.simd_load[simd_width](i) * simd_recip
-        output.simd_store[simd_width](i, simd_elem)
-        i += simd_width
-    i = vector_end
-    while i < len:
-        output.__setitem__(i, output.__getitem__(i) * recip)
-        i += 1
+    let recip = 1 / denom
+
+    @always_inline
+    fn div[simd_width: __mlir_type.index](idx: Int):
+        let simd_recip = SIMD[simd_width, type].splat(recip)
+        output.simd_store[simd_width](
+            idx, output.simd_load[simd_width](idx) * simd_recip
+        )
+
+    vectorize[simd_width, div](output.__len__())
 
 
 fn softmax_3_pass[
@@ -282,9 +331,8 @@ fn softmax_3_pass[
     Returns:
         None
     """
-    let maxVal = _softmax_3_pass_step1[simd_width, buffer_size, type](input)
+    let max_val = _softmax_3_pass_step1[simd_width, buffer_size, type](input)
     let denom = _softmax_3_pass_step2[simd_width, buffer_size, type](
-        input, output, maxVal
+        input, output, max_val
     )
-    let recip = 1 / denom
-    _softmax_3_pass_step3[simd_width, buffer_size, type](output, recip)
+    _softmax_3_pass_step3[simd_width, buffer_size, type](output, denom)
