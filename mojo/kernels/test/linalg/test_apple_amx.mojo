@@ -98,7 +98,7 @@ fn print_matrix(
 # CHECK-LABEL: test_amx_matmul
 fn test_amx_matmul():
     if has_m1_amx():
-        __mlir_op.`zap.print`[fmt:"== test_amx_matmul\n"]()
+        print("== test_amx_matmul\n")
 
     # Create a buffer of size 256 f32 elements.
     var a_buffer = __mlir_op.`pop.stack_allocation`[
