@@ -46,7 +46,7 @@ struct Benchmark:
 
     fn run[
         func: __mlir_type[
-            `!kgen.signature<[], [],() -> !lit.none>`,
+            `!kgen.signature<() -> !lit.none>`,
         ],
     ](self) -> Int:
         """benchmark the given function until min_tims_ns has elapsed and either
