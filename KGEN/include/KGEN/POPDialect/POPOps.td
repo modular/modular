@@ -2306,7 +2306,7 @@ def POP_VariadicGetOp : POPOp<"variadic.get", [Pure,
 // VariadicSizeOp
 //===----------------------------------------------------------------------===//
 
-def POP_VariadicSizeOp : POPOp<"variadic.size"> {
+def POP_VariadicSizeOp : POPOp<"variadic.size", [Pure]> {
   let summary = "given a sequence of variadic type, return its size";
   let description = [{
     The `pop.variadic.size` operation takes an operand of `!pop.variadic` type
