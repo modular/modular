@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$lit_stdlib_map::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$test_map::main():index()' -I %stdlibdir | FileCheck %s
 
 from Buffer import Buffer
 from Int import Int
