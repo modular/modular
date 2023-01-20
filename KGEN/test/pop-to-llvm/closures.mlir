@@ -7,7 +7,7 @@ kgen.func @my_fn(%arg0: index, %arg1: !pop.scalar<f32>) -> !pop.scalar<f32> {
 
 // CHECK-LABEL: @partial_apply
 kgen.func @partial_apply() -> !pop.closure<(index) -> !pop.scalar<f32>> {
-  // CHECK:  %[[CONST:.*]] = kgen.param.constant: !pop.scalar<f32> = <<"1.20000005">>
+  // CHECK:  %[[CONST:.*]] = kgen.param.constant: !pop.scalar<f32> = <"1.20000005">
   // CHECK:  %[[BOUNDARG:.*]] = builtin.unrealized_conversion_cast %[[CONST]] : !pop.scalar<f32> to f32
   // CHECK:  %[[FN:.*]] = kgen.addressof @my_fn : (index, !pop.scalar<f32>) -> !pop.scalar<f32>
   %0 = kgen.param.constant: !pop.scalar<f32> = <<"1.2">>
