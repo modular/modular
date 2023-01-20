@@ -99,7 +99,9 @@ def KGEN_StringType : KGENType<"String", "string",
 // ListType
 //===----------------------------------------------------------------------===//
 
-def KGEN_ListType : KGENType<"List", "list", [SubElementTypeInterface]> {
+def KGEN_ListType : KGENType<"List", "list", [
+    SubElementTypeInterface,
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "homogenous list type";
   let description = [{
     The `!kgen.list` type represents a homogenous sized list. The list type is

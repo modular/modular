@@ -151,6 +151,34 @@ static void printListValue(AsmPrinter &p, ArrayRef<TypedAttr> values,
                         [&](TypedAttr value) { printParamValue(p, value); });
 }
 
+OptionalParseResult ListType::parseValue(AsmParser &p, TypedAttr &value) const {
+  if (failed(p.parseOptionalLSquare()))
+    return std::nullopt;
+  if (!getResolvedLength())
+    return p.emitError(p.getCurrentLocation(),
+                       "list attribute expected a concrete size");
+  if (succeeded(p.parseOptionalRSquare())) {
+    value = ListAttr::get({}, *this);
+    return mlir::success();
+  }
+  FailureOr<SmallVector<TypedAttr>> values;
+  if (failed(parseListValue(p, values, *this)))
+    return failure();
+  value = ListAttr::get(*values, *this);
+  return p.parseRSquare();
+}
+
+LogicalResult ListType::printValue(raw_ostream &os, TypedAttr value) const {
+  auto list = value.dyn_cast<ListAttr>();
+  if (!list)
+    return failure();
+  os << '[';
+  llvm::interleaveComma(list.getValues(), os,
+                        [&](TypedAttr value) { printParamValue(value, os); });
+  os << ']';
+  return success();
+}
+
 LogicalResult ListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                ArrayRef<TypedAttr> values, ListType type) {
   std::optional<int64_t> length = type.getResolvedLength();

@@ -781,13 +781,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     return success();
   }
 
-  // If this is a list type, parse a comma-separated list of parameter values of
-  // the element type surrounded by square brackets.
-  if (auto list = dyn_cast<ListType>(type)) {
-    value = ListAttr::parse(p, list);
-    return failure(!value);
-  }
-
   // Otherwise, we support other typed attributes as well, including dialect
   // define attributes, integers, strings, etc.
   return p.parseAttribute(value, type);
@@ -919,14 +912,6 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
       os << (intAttr.getValue().isZero() ? 0 : 1);
       return;
     }
-  }
-
-  if (auto list = dyn_cast<ListAttr>(value)) {
-    os << '[';
-    llvm::interleaveComma(list.getValues(), os,
-                          [&](TypedAttr value) { printParamValue(value, os); });
-    os << ']';
-    return;
   }
 
   value.print(os, /*elideType=*/true);

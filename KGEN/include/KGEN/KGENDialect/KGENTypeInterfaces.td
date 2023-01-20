@@ -32,7 +32,10 @@ def ParameterTypeInterface : TypeInterface<"ParameterTypeInterface"> {
       - `?` denotes an unknown parameter value
       - barewords are parameter references or parameter operators
 
-      The type may use any other token to guard its attribute pretty parsing.
+      The type may use any other token to guard its attribute pretty parsing. If
+      the attribute's pretty format contains commas (e.g. a sequence of
+      elements), its format must be surrounded by a delimiter to disambiguate
+      from operator operand lists.
     }], "OptionalParseResult", "parseValue", (ins "AsmParser &":$p,
                                                   "TypedAttr &":$value)>,
     InterfaceMethod<[{
