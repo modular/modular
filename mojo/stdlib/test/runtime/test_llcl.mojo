@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$lit_stdlib_llcl::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$test_llcl::main():index()' -I %stdlibdir | FileCheck %s
 
 from IO import print
 from Int import Int
