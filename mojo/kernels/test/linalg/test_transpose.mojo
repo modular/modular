@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$lit_stdlib_transpose::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$test_transpose::main():index()' -I %stdlibdir | FileCheck %s
 
 from Int import Int
 from IO import print
