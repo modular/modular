@@ -16,7 +16,7 @@ from SIMD import SIMD
 @always_inline
 fn map[
     func: __mlir_type[
-        `!kgen.signature<[], [],`, `(`, Int, `) force_inline -> !lit.none>`
+        `!kgen.signature<(`, Int, `) force_inline -> !lit.none>`
     ],
 ](size: Int):
     """
@@ -37,8 +37,7 @@ fn map[
 fn vectorize[
     simd_width: __mlir_type.index,
     func: __mlir_type[
-        `!kgen.signature<[simd_width : index], [],`,
-        `(`,
+        `!kgen.signature<<simd_width>(`,
         Int,
         `) force_inline -> !lit.none>`,
     ],
@@ -72,8 +71,7 @@ fn reduce[
     type: __mlir_type.`!kgen.dtype`,
     acc_type: __mlir_type.`!kgen.dtype`,
     map_fn: __mlir_type[
-        `!kgen.signature<[simd_width: index, acc_type : !kgen.dtype, type: !kgen.dtype], [],`,
-        `(`,
+        `!kgen.signature<<simd_width, acc_type: dtype, type: dtype>(`,
         SIMD[simd_width, `acc_type`],
         `,`,
         SIMD[simd_width, `type`],
@@ -82,8 +80,7 @@ fn reduce[
         `>`,
     ],
     reduce_fn: __mlir_type[
-        `!kgen.signature<[simd_width: index, type : !kgen.dtype], [],`,
-        `(`,
+        `!kgen.signature<<simd_width, type: dtype>(`,
         SIMD[simd_width, `type`],
         `) -> `,
         SIMD[1, `type`],
