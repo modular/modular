@@ -26,7 +26,7 @@ from List import create_kgen_list
 fn fill_a(
     buf: NDBuffer[
         2,
-        create_kgen_list[__mlir_type.index ](16, 16),
+        create_kgen_list[__mlir_type.index](16, 16),
         __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
     ]
 ):
@@ -46,7 +46,7 @@ fn fill_a(
 fn fill_b(
     buf: NDBuffer[
         2,
-        create_kgen_list[__mlir_type.index ](16, 16),
+        create_kgen_list[__mlir_type.index](16, 16),
         __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
     ]
 ):
@@ -66,7 +66,7 @@ fn fill_b(
 fn clear_c(
     buf: NDBuffer[
         2,
-        create_kgen_list[__mlir_type.index ](16, 16),
+        create_kgen_list[__mlir_type.index](16, 16),
         __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
     ]
 ):
@@ -79,7 +79,7 @@ fn clear_c(
 fn print_matrix(
     buf: NDBuffer[
         2,
-        create_kgen_list[__mlir_type.index ](16, 16),
+        create_kgen_list[__mlir_type.index](16, 16),
         __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
     ]
 ):
