@@ -163,13 +163,13 @@ fn testParamSubst():
 
 
 # Test parameter substitution.
-# CHECK-LABEL: lit.func @"fnToCall()"<size, array: !pop.array<size, f32>>()
+# CHECK-LABEL: lit.func @"fnToCall()"<size, array: array<size, f32>>()
 fn fnToCall[size: __mlir_type.index, array: __mlir_type[`!pop.array<`, size, `, f32>`]]():
   pass
 
 # CHECK: lit.func @"fnWithCall
 fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
-   # CHECK:  kgen.call @"$parameters"::@"fnToCall()"<size = 10, array: !pop.array<10, f32> = array>()
+   # CHECK:  kgen.call @"$parameters"::@"fnToCall()"<size = 10, array: array<10, f32> = array>()
    fnToCall[10, array]()
 
 # CHECK-LABEL: lit.func @"meta_str()"<type: string>() -> !lit.none {

@@ -2,8 +2,8 @@
 
 // CHECK: kgen/assert.mlir:8:kgen.func: failed assertion 'assert failure!!!'
 kgen.generator @assert_false() {
-  %zero = kgen.param.constant: !pop.scalar<si8> = <<0>>
-  %one = kgen.param.constant: !pop.scalar<si8> = <<1>>
+  %zero = kgen.param.constant: scalar<si8> = <<0>>
+  %one = kgen.param.constant: scalar<si8> = <<1>>
   %false = pop.cmp eq(%zero, %one) : !pop.simd<1, si8>
   zap.debug_assert %false, "assert failure!!!" : !pop.simd<1, bool>
   kgen.return

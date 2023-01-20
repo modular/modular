@@ -4,8 +4,8 @@
 kgen.func @abs() -> (!pop.simd<2, si8>, !pop.simd<2, f32>) {
   // CHECK-DAG: <1>
   // CHECK-DAG: <"1.25">
-  %0 = kgen.param.constant: !pop.simd<2, si8> = <<-1, 1>>
-  %1 = kgen.param.constant: !pop.simd<2, f32> = <<"-1.25", "1.25">>
+  %0 = kgen.param.constant: simd<2, si8> = <<-1, 1>>
+  %1 = kgen.param.constant: simd<2, f32> = <<"-1.25", "1.25">>
   %2 = pop.abs %0 : !pop.simd<2, si8>
   %3 = pop.abs %1 : !pop.simd<2, f32>
   kgen.return %2, %3 : !pop.simd<2, si8>, !pop.simd<2, f32>
@@ -15,8 +15,8 @@ kgen.func @abs() -> (!pop.simd<2, si8>, !pop.simd<2, f32>) {
 kgen.func @neg() -> (!pop.simd<2, si8>, !pop.simd<2, f32>) {
   // CHECK-DAG: <1, -1>
   // CHECK-DAG: <"1.25", "-1.25">
-  %0 = kgen.param.constant: !pop.simd<2, si8> = <<-1, 1>>
-  %1 = kgen.param.constant: !pop.simd<2, f32> = <<"-1.25", "1.25">>
+  %0 = kgen.param.constant: simd<2, si8> = <<-1, 1>>
+  %1 = kgen.param.constant: simd<2, f32> = <<"-1.25", "1.25">>
   %2 = pop.neg %0 : !pop.simd<2, si8>
   %3 = pop.neg %1 : !pop.simd<2, f32>
   kgen.return %2, %3 : !pop.simd<2, si8>, !pop.simd<2, f32>
@@ -26,8 +26,8 @@ kgen.func @neg() -> (!pop.simd<2, si8>, !pop.simd<2, f32>) {
 kgen.func @add() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
   // CHECK-DAG: <4>
   // CHECK-DAG: <"-2.5">
-  %0 = kgen.param.constant: !pop.scalar<si8> = <<2>>
-  %1 = kgen.param.constant: !pop.scalar<f32> = <<"-1.25">>
+  %0 = kgen.param.constant: scalar<si8> = <<2>>
+  %1 = kgen.param.constant: scalar<f32> = <<"-1.25">>
   %2 = pop.add %0, %0 : !pop.scalar<si8>
   %3 = pop.add %1, %1 : !pop.scalar<f32>
   kgen.return %2, %3 : !pop.scalar<si8>, !pop.scalar<f32>
@@ -37,10 +37,10 @@ kgen.func @add() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
 kgen.func @sub() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
   // CHECK-DAG: <-2>
   // CHECK-DAG: <"-1.25">
-  %0 = kgen.param.constant: !pop.scalar<si8> = <<2>>
-  %1 = kgen.param.constant: !pop.scalar<si8> = <<4>>
-  %2 = kgen.param.constant: !pop.scalar<f32> = <<"1.25">>
-  %3 = kgen.param.constant: !pop.scalar<f32> = <<"2.5">>
+  %0 = kgen.param.constant: scalar<si8> = <<2>>
+  %1 = kgen.param.constant: scalar<si8> = <<4>>
+  %2 = kgen.param.constant: scalar<f32> = <<"1.25">>
+  %3 = kgen.param.constant: scalar<f32> = <<"2.5">>
   %4 = pop.sub %0, %1 : !pop.scalar<si8>
   %5 = pop.sub %2, %3 : !pop.scalar<f32>
   kgen.return %4, %5 : !pop.scalar<si8>, !pop.scalar<f32>
@@ -50,8 +50,8 @@ kgen.func @sub() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
 kgen.func @mul() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
   // CHECK-DAG: <4>
   // CHECK-DAG: <"6.25">
-  %0 = kgen.param.constant: !pop.scalar<si8> = <<2>>
-  %1 = kgen.param.constant: !pop.scalar<f32> = <<"2.5">>
+  %0 = kgen.param.constant: scalar<si8> = <<2>>
+  %1 = kgen.param.constant: scalar<f32> = <<"2.5">>
   %2 = pop.mul %0, %0 : !pop.scalar<si8>
   %3 = pop.mul %1, %1 : !pop.scalar<f32>
   kgen.return %2, %3 : !pop.scalar<si8>, !pop.scalar<f32>
@@ -62,12 +62,12 @@ kgen.func @div() -> (!pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>) {
   // CHECK-DAG: <si4> = <-3
   // CHECK-DAG: <ui4> = <0>
   // CHECK-DAG: <"1.25">
-  %0 = kgen.param.constant: !pop.scalar<si4> = <7>
-  %1 = kgen.param.constant: !pop.scalar<si4> = <-2>
-  %2 = kgen.param.constant: !pop.scalar<ui4> = <7>
-  %3 = kgen.param.constant: !pop.scalar<ui4> = <-2>
-  %4 = kgen.param.constant: !pop.scalar<f32> = <"2.5">
-  %5 = kgen.param.constant: !pop.scalar<f32> = <"2">
+  %0 = kgen.param.constant: scalar<si4> = <7>
+  %1 = kgen.param.constant: scalar<si4> = <-2>
+  %2 = kgen.param.constant: scalar<ui4> = <7>
+  %3 = kgen.param.constant: scalar<ui4> = <-2>
+  %4 = kgen.param.constant: scalar<f32> = <"2.5">
+  %5 = kgen.param.constant: scalar<f32> = <"2">
   %6 = pop.div %0, %1 : !pop.scalar<si4>
   %7 = pop.div %2, %3 : !pop.scalar<ui4>
   %8 = pop.div %4, %5 : !pop.scalar<f32>
@@ -76,8 +76,8 @@ kgen.func @div() -> (!pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>) {
 
 // CHECK-LABEL: @div_zero
 kgen.func @div_zero() -> (!pop.scalar<si4>, !pop.scalar<f32>) {
-  %0 = kgen.param.constant: !pop.scalar<si4> = <0>
-  %1 = kgen.param.constant: !pop.scalar<f32> = <"0">
+  %0 = kgen.param.constant: scalar<si4> = <0>
+  %1 = kgen.param.constant: scalar<f32> = <"0">
   // CHECK: pop.div
   %2 = pop.div %0, %0 : !pop.scalar<si4>
   // CHECK: pop.div
@@ -90,12 +90,12 @@ kgen.func @rem() -> (!pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>) {
   // CHECK-DAG: <si4> = <1
   // CHECK-DAG: <ui4> = <7>
   // CHECK-DAG: <"0.5">
-  %0 = kgen.param.constant: !pop.scalar<si4> = <7>
-  %1 = kgen.param.constant: !pop.scalar<si4> = <-2>
-  %2 = kgen.param.constant: !pop.scalar<ui4> = <7>
-  %3 = kgen.param.constant: !pop.scalar<ui4> = <-2>
-  %4 = kgen.param.constant: !pop.scalar<f32> = <"2.5">
-  %5 = kgen.param.constant: !pop.scalar<f32> = <"2">
+  %0 = kgen.param.constant: scalar<si4> = <7>
+  %1 = kgen.param.constant: scalar<si4> = <-2>
+  %2 = kgen.param.constant: scalar<ui4> = <7>
+  %3 = kgen.param.constant: scalar<ui4> = <-2>
+  %4 = kgen.param.constant: scalar<f32> = <"2.5">
+  %5 = kgen.param.constant: scalar<f32> = <"2">
   %6 = pop.rem %0, %1 : !pop.scalar<si4>
   %7 = pop.rem %2, %3 : !pop.scalar<ui4>
   %8 = pop.rem %4, %5 : !pop.scalar<f32>
@@ -106,10 +106,10 @@ kgen.func @rem() -> (!pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>) {
 kgen.func @max() -> (!pop.scalar<si4>, !pop.scalar<f32>) {
   // CHECK-DAG: <-1>
   // CHECK-DAG: <"2">
-  %0 = kgen.param.constant: !pop.scalar<si4> = <-2>
-  %1 = kgen.param.constant: !pop.scalar<si4> = <-1>
-  %2 = kgen.param.constant: !pop.scalar<f32> = <"1.25">
-  %3 = kgen.param.constant: !pop.scalar<f32> = <"2">
+  %0 = kgen.param.constant: scalar<si4> = <-2>
+  %1 = kgen.param.constant: scalar<si4> = <-1>
+  %2 = kgen.param.constant: scalar<f32> = <"1.25">
+  %3 = kgen.param.constant: scalar<f32> = <"2">
   %4 = pop.max %0, %1 : !pop.scalar<si4>
   %5 = pop.max %2, %3 : !pop.scalar<f32>
   kgen.return %4, %5 : !pop.scalar<si4>, !pop.scalar<f32>
@@ -119,10 +119,10 @@ kgen.func @max() -> (!pop.scalar<si4>, !pop.scalar<f32>) {
 kgen.func @min() -> (!pop.scalar<ui4>, !pop.scalar<f32>) {
   // CHECK-DAG: <0>
   // CHECK-DAG: <"-2">
-  %0 = kgen.param.constant: !pop.scalar<ui4> = <0>
-  %1 = kgen.param.constant: !pop.scalar<ui4> = <-1>
-  %2 = kgen.param.constant: !pop.scalar<f32> = <"1.25">
-  %3 = kgen.param.constant: !pop.scalar<f32> = <"-2">
+  %0 = kgen.param.constant: scalar<ui4> = <0>
+  %1 = kgen.param.constant: scalar<ui4> = <-1>
+  %2 = kgen.param.constant: scalar<f32> = <"1.25">
+  %3 = kgen.param.constant: scalar<f32> = <"-2">
   %4 = pop.min %0, %1 : !pop.scalar<ui4>
   %5 = pop.min %2, %3 : !pop.scalar<f32>
   kgen.return %4, %5 : !pop.scalar<ui4>, !pop.scalar<f32>
@@ -131,8 +131,8 @@ kgen.func @min() -> (!pop.scalar<ui4>, !pop.scalar<f32>) {
 // CHECK-LABEL: @shl
 kgen.func @shl() -> !pop.scalar<ui4> {
   // CHECK-NEXT: <12>
-  %0 = kgen.param.constant: !pop.scalar<ui4> = <6>
-  %1 = kgen.param.constant: !pop.scalar<ui4> = <1>
+  %0 = kgen.param.constant: scalar<ui4> = <6>
+  %1 = kgen.param.constant: scalar<ui4> = <1>
   %2 = pop.shl %0, %1 : !pop.scalar<ui4>
   kgen.return %2 : !pop.scalar<ui4>
 }
@@ -141,10 +141,10 @@ kgen.func @shl() -> !pop.scalar<ui4> {
 kgen.func @shr() -> (!pop.scalar<ui4>, !pop.scalar<si4>) {
   // CHECK-DAG: <3>
   // CHECK-DAG: <-4>
-  %0 = kgen.param.constant: !pop.scalar<ui4> = <7>
-  %1 = kgen.param.constant: !pop.scalar<ui4> = <1>
-  %2 = kgen.param.constant: !pop.scalar<si4> = <-7>
-  %3 = kgen.param.constant: !pop.scalar<si4> = <1>
+  %0 = kgen.param.constant: scalar<ui4> = <7>
+  %1 = kgen.param.constant: scalar<ui4> = <1>
+  %2 = kgen.param.constant: scalar<si4> = <-7>
+  %3 = kgen.param.constant: scalar<si4> = <1>
   %4 = pop.shr %0, %1 : !pop.scalar<ui4>
   %5 = pop.shr %2, %3 : !pop.scalar<si4>
   kgen.return %4, %5 : !pop.scalar<ui4>, !pop.scalar<si4>
@@ -153,8 +153,8 @@ kgen.func @shr() -> (!pop.scalar<ui4>, !pop.scalar<si4>) {
 // CHECK-LABEL: @copysign
 kgen.func @copysign() -> !pop.scalar<f32> {
   // CHECK-NEXT: <"-1.25">
-  %0 = kgen.param.constant: !pop.scalar<f32> = <"1.25">
-  %1 = kgen.param.constant: !pop.scalar<f32> = <"-2">
+  %0 = kgen.param.constant: scalar<f32> = <"1.25">
+  %1 = kgen.param.constant: scalar<f32> = <"-2">
   %2 = pop.copysign %0, %1 : !pop.scalar<f32>
   kgen.return %2 : !pop.scalar<f32>
 }
@@ -163,8 +163,8 @@ kgen.func @copysign() -> !pop.scalar<f32> {
 kgen.func @fma() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
   // CHECK-DAG: <6>
   // CHECK-DAG: <"8.75">
-  %0 = kgen.param.constant: !pop.scalar<si8> = <2>
-  %1 = kgen.param.constant: !pop.scalar<f32> = <"2.5">
+  %0 = kgen.param.constant: scalar<si8> = <2>
+  %1 = kgen.param.constant: scalar<f32> = <"2.5">
   %2 = pop.fma %0, %0, %0 : !pop.scalar<si8>
   %3 = pop.fma %1, %1, %1 : !pop.scalar<f32>
   kgen.return %2, %3 : !pop.scalar<si8>, !pop.scalar<f32>
@@ -180,9 +180,9 @@ kgen.func @index_folds() -> (!pop.scalar<index>, !pop.scalar<index>) {
   // CHECK-DAG: %[[FOLDED:.*]] = kgen{{.*}}<4294967297>
   // CHECK: %[[R2:.*]] = pop.div %[[DNF_LHS]], %[[DNF_RHS]]
   // CHECK-NEXT: return %[[FOLDED]], %[[R2]]
-  %0 = kgen.param.constant: !pop.scalar<index> = <8589934594>
-  %1 = kgen.param.constant: !pop.scalar<index> = <4294967298>
-  %2 = kgen.param.constant: !pop.scalar<index> = <2>
+  %0 = kgen.param.constant: scalar<index> = <8589934594>
+  %1 = kgen.param.constant: scalar<index> = <4294967298>
+  %2 = kgen.param.constant: scalar<index> = <2>
   %3 = pop.div %0, %2 : !pop.scalar<index>
   %4 = pop.div %1, %2 : !pop.scalar<index>
   kgen.return %3, %4 : !pop.scalar<index>, !pop.scalar<index>
@@ -192,11 +192,11 @@ kgen.func @index_folds() -> (!pop.scalar<index>, !pop.scalar<index>) {
 kgen.func @cmp_eq() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
   // CHECK-DAG: <false, true>
   // CHECK-DAG: <false>
-  %0 = kgen.param.constant: !pop.simd<2, si8> = <<1, 2>>
-  %1 = kgen.param.constant: !pop.simd<2, si8> = <<-2, 2>>
+  %0 = kgen.param.constant: simd<2, si8> = <<1, 2>>
+  %1 = kgen.param.constant: simd<2, si8> = <<-2, 2>>
   %2 = pop.cmp eq(%0, %1) : !pop.simd<2, si8>
-  %3 = kgen.param.constant: !pop.scalar<f32> = <"1">
-  %4 = kgen.param.constant: !pop.scalar<f32> = <"2">
+  %3 = kgen.param.constant: scalar<f32> = <"1">
+  %4 = kgen.param.constant: scalar<f32> = <"2">
   %5 = pop.cmp eq(%3, %4) : !pop.scalar<f32>
   kgen.return %2, %5 : !pop.simd<2, bool>, !pop.scalar<bool>
 }
@@ -205,11 +205,11 @@ kgen.func @cmp_eq() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
 kgen.func @cmp_ne() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
   // CHECK-DAG: <true, false>
   // CHECK-DAG: <true>
-  %0 = kgen.param.constant: !pop.simd<2, si8> = <<1, 2>>
-  %1 = kgen.param.constant: !pop.simd<2, si8> = <<-2, 2>>
+  %0 = kgen.param.constant: simd<2, si8> = <<1, 2>>
+  %1 = kgen.param.constant: simd<2, si8> = <<-2, 2>>
   %2 = pop.cmp ne(%0, %1) : !pop.simd<2, si8>
-  %3 = kgen.param.constant: !pop.scalar<f32> = <"1">
-  %4 = kgen.param.constant: !pop.scalar<f32> = <"2">
+  %3 = kgen.param.constant: scalar<f32> = <"1">
+  %4 = kgen.param.constant: scalar<f32> = <"2">
   %5 = pop.cmp ne(%3, %4) : !pop.scalar<f32>
   kgen.return %2, %5 : !pop.simd<2, bool>, !pop.scalar<bool>
 }
@@ -218,11 +218,11 @@ kgen.func @cmp_ne() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
 kgen.func @cmp_lt() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
   // CHECK-DAG: <false>
   // CHECK-DAG: <true>
-  %0 = kgen.param.constant: !pop.simd<2, si8> = <<1, 2>>
-  %1 = kgen.param.constant: !pop.simd<2, si8> = <<-2, 2>>
+  %0 = kgen.param.constant: simd<2, si8> = <<1, 2>>
+  %1 = kgen.param.constant: simd<2, si8> = <<-2, 2>>
   %2 = pop.cmp lt(%0, %1) : !pop.simd<2, si8>
-  %3 = kgen.param.constant: !pop.scalar<f32> = <"1">
-  %4 = kgen.param.constant: !pop.scalar<f32> = <"2">
+  %3 = kgen.param.constant: scalar<f32> = <"1">
+  %4 = kgen.param.constant: scalar<f32> = <"2">
   %5 = pop.cmp lt(%3, %4) : !pop.scalar<f32>
   kgen.return %2, %5 : !pop.simd<2, bool>, !pop.scalar<bool>
 }
@@ -231,11 +231,11 @@ kgen.func @cmp_lt() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
 kgen.func @cmp_gt() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
   // CHECK-DAG: <true, false>
   // CHECK-DAG: <false>
-  %0 = kgen.param.constant: !pop.simd<2, si8> = <<1, 2>>
-  %1 = kgen.param.constant: !pop.simd<2, si8> = <<-2, 2>>
+  %0 = kgen.param.constant: simd<2, si8> = <<1, 2>>
+  %1 = kgen.param.constant: simd<2, si8> = <<-2, 2>>
   %2 = pop.cmp gt(%0, %1) : !pop.simd<2, si8>
-  %3 = kgen.param.constant: !pop.scalar<f32> = <"1">
-  %4 = kgen.param.constant: !pop.scalar<f32> = <"2">
+  %3 = kgen.param.constant: scalar<f32> = <"1">
+  %4 = kgen.param.constant: scalar<f32> = <"2">
   %5 = pop.cmp gt(%3, %4) : !pop.scalar<f32>
   kgen.return %2, %5 : !pop.simd<2, bool>, !pop.scalar<bool>
 }
@@ -244,11 +244,11 @@ kgen.func @cmp_gt() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
 kgen.func @cmp_le() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
   // CHECK-DAG: <false, true>
   // CHECK-DAG: <true>
-  %0 = kgen.param.constant: !pop.simd<2, si8> = <<1, 2>>
-  %1 = kgen.param.constant: !pop.simd<2, si8> = <<-2, 2>>
+  %0 = kgen.param.constant: simd<2, si8> = <<1, 2>>
+  %1 = kgen.param.constant: simd<2, si8> = <<-2, 2>>
   %2 = pop.cmp le(%0, %1) : !pop.simd<2, si8>
-  %3 = kgen.param.constant: !pop.scalar<f32> = <"1">
-  %4 = kgen.param.constant: !pop.scalar<f32> = <"2">
+  %3 = kgen.param.constant: scalar<f32> = <"1">
+  %4 = kgen.param.constant: scalar<f32> = <"2">
   %5 = pop.cmp le(%3, %4) : !pop.scalar<f32>
   kgen.return %2, %5 : !pop.simd<2, bool>, !pop.scalar<bool>
 }
@@ -257,11 +257,11 @@ kgen.func @cmp_le() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
 kgen.func @cmp_ge() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
   // CHECK-DAG: <true>
   // CHECK-DAG: <false>
-  %0 = kgen.param.constant: !pop.simd<2, si8> = <<1, 2>>
-  %1 = kgen.param.constant: !pop.simd<2, si8> = <<-2, 2>>
+  %0 = kgen.param.constant: simd<2, si8> = <<1, 2>>
+  %1 = kgen.param.constant: simd<2, si8> = <<-2, 2>>
   %2 = pop.cmp ge(%0, %1) : !pop.simd<2, si8>
-  %3 = kgen.param.constant: !pop.scalar<f32> = <"1">
-  %4 = kgen.param.constant: !pop.scalar<f32> = <"2">
+  %3 = kgen.param.constant: scalar<f32> = <"1">
+  %4 = kgen.param.constant: scalar<f32> = <"2">
   %5 = pop.cmp ge(%3, %4) : !pop.scalar<f32>
   kgen.return %2, %5 : !pop.simd<2, bool>, !pop.scalar<bool>
 }
@@ -269,8 +269,8 @@ kgen.func @cmp_ge() -> (!pop.simd<2, bool>, !pop.scalar<bool>) {
 // CHECK-LABEL: @cmp_index
 kgen.func @cmp_index() -> !pop.scalar<bool> {
   // CHECK: pop.cmp
-  %0 = kgen.param.constant: !pop.scalar<index> = <4294967296>
-  %1 = kgen.param.constant: !pop.scalar<index> = <8589934592>
+  %0 = kgen.param.constant: scalar<index> = <4294967296>
+  %1 = kgen.param.constant: scalar<index> = <8589934592>
   %2 = pop.cmp eq(%0, %1) : !pop.scalar<index>
   kgen.return %2 : !pop.scalar<bool>
 }
@@ -278,8 +278,8 @@ kgen.func @cmp_index() -> !pop.scalar<bool> {
 // CHECK-LABEL: @and
 kgen.func @and() -> !pop.scalar<ui4> {
   // CHECK-NEXT <1>
-  %0 = kgen.param.constant: !pop.scalar<ui4> = <7>
-  %1 = kgen.param.constant: !pop.scalar<ui4> = <9>
+  %0 = kgen.param.constant: scalar<ui4> = <7>
+  %1 = kgen.param.constant: scalar<ui4> = <9>
   %2 = pop.and %0, %1 : !pop.scalar<ui4>
   kgen.return %2 : !pop.scalar<ui4>
 }
@@ -287,8 +287,8 @@ kgen.func @and() -> !pop.scalar<ui4> {
 // CHECK-LABEL: @or
 kgen.func @or() -> !pop.scalar<ui4> {
   // CHECK-NEXT <15>
-  %0 = kgen.param.constant: !pop.scalar<ui4> = <6>
-  %1 = kgen.param.constant: !pop.scalar<ui4> = <9>
+  %0 = kgen.param.constant: scalar<ui4> = <6>
+  %1 = kgen.param.constant: scalar<ui4> = <9>
   %2 = pop.or %0, %1 : !pop.scalar<ui4>
   kgen.return %2 : !pop.scalar<ui4>
 }
@@ -296,8 +296,8 @@ kgen.func @or() -> !pop.scalar<ui4> {
 // CHECK-LABEL: @xor
 kgen.func @xor() -> !pop.scalar<ui4> {
   // CHECK-NEXT <2>
-  %0 = kgen.param.constant: !pop.scalar<ui4> = <5>
-  %1 = kgen.param.constant: !pop.scalar<ui4> = <7>
+  %0 = kgen.param.constant: scalar<ui4> = <5>
+  %1 = kgen.param.constant: scalar<ui4> = <7>
   %2 = pop.xor %0, %1 : !pop.scalar<ui4>
   kgen.return %2 : !pop.scalar<ui4>
 }
@@ -305,9 +305,9 @@ kgen.func @xor() -> !pop.scalar<ui4> {
 // CHECK-LABEL: @select
 kgen.func @select() -> !pop.simd<2, si4> {
   // CHECK-NEXT: <1, 4>
-  %0 = kgen.param.constant: !pop.simd<2, si4> = <<1, 3>>
-  %1 = kgen.param.constant: !pop.simd<2, si4> = <<2, 4>>
-  %2 = kgen.param.constant: !pop.simd<2, bool> = <<true, false>>
+  %0 = kgen.param.constant: simd<2, si4> = <<1, 3>>
+  %1 = kgen.param.constant: simd<2, si4> = <<2, 4>>
+  %2 = kgen.param.constant: simd<2, bool> = <<true, false>>
   %3 = pop.select %2, %0, %1 : !pop.simd<2, si4>
   kgen.return %3 : !pop.simd<2, si4>
 }
@@ -316,8 +316,8 @@ kgen.func @select() -> !pop.simd<2, si4> {
 kgen.func @bitcast() -> (!pop.simd<2, bf16>, !pop.simd<2, f16>) {
   // CHECK-DAG: <"0.125", "8">
   // CHECK-DAG: <"5.9605E-8", "1.1921E-7">
-  %0 = kgen.param.constant: !pop.simd<2, si16> = <<1, 2>>
-  %1 = kgen.param.constant: !pop.simd<2, f16> = <<"1.5", "2.5">>
+  %0 = kgen.param.constant: simd<2, si16> = <<1, 2>>
+  %1 = kgen.param.constant: simd<2, f16> = <<"1.5", "2.5">>
   %2 = pop.bitcast %0 : !pop.simd<2, si16> to !pop.simd<2, f16>
   %3 = pop.bitcast %1 : !pop.simd<2, f16> to !pop.simd<2, bf16>
   kgen.return %3, %2 : !pop.simd<2, bf16>, !pop.simd<2, f16>
@@ -326,15 +326,15 @@ kgen.func @bitcast() -> (!pop.simd<2, bf16>, !pop.simd<2, f16>) {
 // CHECK-LABEL: @bitcast_size_change
 kgen.func @bitcast_size_change() -> (!pop.simd<4, si16>) {
   // CHECK: pop.bitcast
-  %0 = kgen.param.constant: !pop.simd<2, si32> = <<1, 2>>
+  %0 = kgen.param.constant: simd<2, si32> = <<1, 2>>
   %1 = pop.bitcast %0 : !pop.simd<2, si32> to !pop.simd<4, si16>
   kgen.return %1 : !pop.simd<4, si16>
 }
 
 // CHECK-LABEL: @pointer_bitcast
 kgen.func @pointer_bitcast() -> !pop.pointer<si32> {
-  // CHECK-NEXT: !pop.pointer<si32> = <#M.pointer<0>>
-  %0 = kgen.param.constant: !pop.pointer<si64> = <#M.pointer<0>>
+  // CHECK-NEXT: pointer<si32> = <#M.pointer<0>>
+  %0 = kgen.param.constant: pointer<si64> = <#M.pointer<0>>
   %1 = pop.pointer.bitcast %0 : !pop.pointer<si64> to !pop.pointer<si32>
   kgen.return %1 : !pop.pointer<si32>
 }
@@ -355,9 +355,9 @@ kgen.func @cast() -> (
   // CHECK-DAG: %[[C6:.*]] = kgen{{.*}}index{{.*}}<10>
   // CHECK-DAG: %[[C7:.*]] = kgen{{.*}}index{{.*}}<500>
   // CHECK-DAG: %[[C8:.*]] = kgen{{.*}}index{{.*}}<1>
-  %0 = kgen.param.constant: !pop.scalar<bf16> = <"10.125">
-  %1 = kgen.param.constant: !pop.scalar<si32> = <500>
-  %2 = kgen.param.constant: !pop.scalar<bool> = <true>
+  %0 = kgen.param.constant: scalar<bf16> = <"10.125">
+  %1 = kgen.param.constant: scalar<si32> = <500>
+  %2 = kgen.param.constant: scalar<bool> = <true>
 
   %3 = pop.cast %0 : !pop.scalar<bf16> to !pop.scalar<f16>
   %4 = pop.cast %1 : !pop.scalar<si32> to !pop.scalar<f16>
@@ -388,8 +388,8 @@ kgen.func @cast() -> (
 kgen.func @cast_fp_too_big() -> (!pop.scalar<si2>, !pop.scalar<si2>) {
   // CHECK-DAG: <1>
   // CHECK-DAG: <"7">
-  %0 = kgen.param.constant: !pop.scalar<f16> = <"1.5">
-  %1 = kgen.param.constant: !pop.scalar<f16> = <"7">
+  %0 = kgen.param.constant: scalar<f16> = <"1.5">
+  %1 = kgen.param.constant: scalar<f16> = <"7">
   %2 = pop.cast %0 : !pop.scalar<f16> to !pop.scalar<si2>
   // CHECK: %[[TOO_BIG:.*]] = pop.cast
   %3 = pop.cast %1 : !pop.scalar<f16> to !pop.scalar<si2>
@@ -399,17 +399,17 @@ kgen.func @cast_fp_too_big() -> (!pop.scalar<si2>, !pop.scalar<si2>) {
 
 // CHECK-LABEL: @cast_index_to_int
 kgen.func @cast_index_to_int() -> !pop.scalar<si32> {
-  // CHECK-NEXT: !pop.scalar<si32> = <-2>
-  %0 = kgen.param.constant: !pop.scalar<index> = <-2>
+  // CHECK-NEXT: scalar<si32> = <-2>
+  %0 = kgen.param.constant: scalar<index> = <-2>
   %1 = pop.cast %0 : !pop.scalar<index> to !pop.scalar<si32>
   kgen.return %1 : !pop.scalar<si32>
 }
 
 // CHECK-LABEL: @cast_index_to_index
 kgen.func @cast_index_to_index() -> !pop.scalar<index> {
-  // CHECK-NEXT: !pop.scalar<index> = <99999999999>
+  // CHECK-NEXT: scalar<index> = <99999999999>
   // CHECK-NOT: pop.cast
-  %0 = kgen.param.constant: !pop.scalar<index> = <99999999999>
+  %0 = kgen.param.constant: scalar<index> = <99999999999>
   %1 = pop.cast %0 : !pop.scalar<index> to !pop.scalar<index>
   kgen.return %1 : !pop.scalar<index>
 }
@@ -418,7 +418,7 @@ kgen.func @cast_index_to_index() -> !pop.scalar<index> {
 kgen.func @simd_extractelement() -> (!pop.scalar<si8>) {
   // CHECK-NEXT: <20>
   %idx1 = index.constant 1
-  %0 = kgen.param.constant: !pop.simd<2, si8> = <<10, 20>>
+  %0 = kgen.param.constant: simd<2, si8> = <<10, 20>>
   %1 = pop.simd.extractelement %0[%idx1] : !pop.simd<2, si8>
   kgen.return %1 : !pop.scalar<si8>
 }
@@ -427,8 +427,8 @@ kgen.func @simd_extractelement() -> (!pop.scalar<si8>) {
 kgen.func @simd_insertelement() -> (!pop.simd<2, si8>) {
   // CHECK-NEXT: <30, 20>
   %idx0 = index.constant 0
-  %0 = kgen.param.constant: !pop.simd<2, si8> = <<10, 20>>
-  %1 = kgen.param.constant: !pop.scalar<si8> = <30>
+  %0 = kgen.param.constant: simd<2, si8> = <<10, 20>>
+  %1 = kgen.param.constant: scalar<si8> = <30>
   %2 = pop.simd.insertelement %1, %0[%idx0] : !pop.simd<2, si8>
   kgen.return %2 : !pop.simd<2, si8>
 }
@@ -436,14 +436,14 @@ kgen.func @simd_insertelement() -> (!pop.simd<2, si8>) {
 // CHECK-LABEL: @simd_splat
 kgen.func @simd_splat() -> !pop.simd<2, si8> {
   // CHECK-NEXT: <2>
-  %0 = kgen.param.constant: !pop.scalar<si8> = <<2>>
+  %0 = kgen.param.constant: scalar<si8> = <<2>>
   %1 = pop.simd.splat %0 : !pop.simd<2, si8>
   kgen.return %1 : !pop.simd<2, si8>
 }
 
 // CHECK-LABEL: @struct_construct
 kgen.func @struct_construct() -> !pop.struct<si4, ui4> {
-  // CHECK-NEXT: constant: !pop.struct<si4, ui4> = <{ -3, 7 }>
+  // CHECK-NEXT: constant: struct<si4, ui4> = <{ -3, 7 }>
   %0 = kgen.param.constant: si4 = <-3>
   %1 = kgen.param.constant: ui4 = <7>
   %2 = pop.struct.construct(%0, %1) : !pop.struct<si4, ui4>
@@ -453,23 +453,23 @@ kgen.func @struct_construct() -> !pop.struct<si4, ui4> {
 // CHECK-LABEL: @struct_get
 kgen.func @struct_get() -> si4 {
   // CHECK-NEXT: constant: si4 = <-3>
-  %0 = kgen.param.constant: !pop.struct<si4, ui4> = <{ -3, 7 }>
+  %0 = kgen.param.constant: struct<si4, ui4> = <{ -3, 7 }>
   %1 = pop.struct.get %0[0] : !pop.struct<si4, ui4>
   kgen.return %1 : si4
 }
 
 // CHECK-LABEL: @struct_replace
 kgen.func @struct_replace() -> !pop.struct<si4, ui4> {
-  // CHECK-NEXT: constant: !pop.struct<si4, ui4> = <{ -5, 7 }>
+  // CHECK-NEXT: constant: struct<si4, ui4> = <{ -5, 7 }>
   %0 = kgen.param.constant: si4 = <-5>
-  %1 = kgen.param.constant: !pop.struct<si4, ui4> = <{ -3, 7 }>
+  %1 = kgen.param.constant: struct<si4, ui4> = <{ -3, 7 }>
   %2 = pop.struct.replace %0, %1[0] : !pop.struct<si4, ui4>
   kgen.return %2 : !pop.struct<si4, ui4>
 }
 
 // CHECK-LABEL: @array_create
 kgen.func @array_create() -> !pop.array<2, index> {
-  // CHECK-NEXT: constant: !pop.array<2, index> = <[0, 0]>
+  // CHECK-NEXT: constant: array<2, index> = <[0, 0]>
   %idx0 = index.constant 0
   %0 = pop.array.create [%idx0, %idx0] : !pop.array<2, index>
   kgen.return %0 : !pop.array<2, index>
@@ -477,7 +477,7 @@ kgen.func @array_create() -> !pop.array<2, index> {
 
 // CHECK-LABEL: @array_repeat
 kgen.func @array_repeat() -> !pop.array<3, index> {
-  // CHECK-NEXT: constant: !pop.array<3, index> = <[0, 1, 0]>
+  // CHECK-NEXT: constant: array<3, index> = <[0, 1, 0]>
   %idx0 = index.constant 0
   %idx1 = index.constant 1
   %0 = pop.array.repeat [%idx0, %idx1] : !pop.array<3, index>
@@ -487,15 +487,15 @@ kgen.func @array_repeat() -> !pop.array<3, index> {
 // CHECK-LABEL: @array_get
 kgen.func @array_get() -> index {
   // CHECK-NEXT: constant = <1>
-  %0 = kgen.param.constant: !pop.array<2, index> = <[0, 1]>
+  %0 = kgen.param.constant: array<2, index> = <[0, 1]>
   %1 = pop.array.get %0[1] : !pop.array<2, index>
   kgen.return %1 : index
 }
 
 // CHECK-LABEL: @array_replace
 kgen.func @array_replace() -> !pop.array<2, index> {
-  // CHECK-NEXT: constant: !pop.array<2, index> = <[0, 1]>
-  %0 = kgen.param.constant: !pop.array<2, index> = <[0, 0]>
+  // CHECK-NEXT: constant: array<2, index> = <[0, 1]>
+  %0 = kgen.param.constant: array<2, index> = <[0, 0]>
   %1 = index.constant 1
   %2 = pop.array.replace %1, %0[1] : !pop.array<2, index>
   kgen.return %2 : !pop.array<2, index>
@@ -503,7 +503,7 @@ kgen.func @array_replace() -> !pop.array<2, index> {
 
 // CHECK-LABEL: @variant_create
 kgen.func @variant_create() -> !pop.variant<si4, ui4> {
-  // CHECK-NEXT: constant: !pop.variant<si4, ui4> = <#pop.variant<:ui4 7>>
+  // CHECK-NEXT: constant: variant<si4, ui4> = <#pop.variant<:ui4 7>>
   %0 = kgen.param.constant: ui4 = <7>
   %1 = pop.variant.create %0 : ui4 -> !pop.variant<si4, ui4>
   kgen.return %1 : !pop.variant<si4, ui4>
@@ -512,7 +512,7 @@ kgen.func @variant_create() -> !pop.variant<si4, ui4> {
 // CHECK-LABEL: @variant_is
 kgen.func @variant_is() -> i1 {
   // CHECK-NEXT: constant: i1 = <1>
-  %0 = kgen.param.constant: !pop.variant<si4, ui4> = <#pop.variant<:ui4 7>>
+  %0 = kgen.param.constant: variant<si4, ui4> = <#pop.variant<:ui4 7>>
   %1 = pop.variant.is ui4, %0 : !pop.variant<si4, ui4>
   kgen.return %1 : i1
 }
@@ -520,7 +520,7 @@ kgen.func @variant_is() -> i1 {
 // CHECK-LABEL: @variant_get
 kgen.func @variant_get() -> ui4 {
   // CHECK-NEXT: constant: ui4 = <7>
-  %0 = kgen.param.constant: !pop.variant<si4, ui4> = <#pop.variant<:ui4 7>>
+  %0 = kgen.param.constant: variant<si4, ui4> = <#pop.variant<:ui4 7>>
   %1 = pop.variant.get %0 : !pop.variant<si4, ui4> as ui4
   kgen.return %1 : ui4
 }
@@ -528,7 +528,7 @@ kgen.func @variant_get() -> ui4 {
 // CHECK-LABEL: @variant_get_ub
 kgen.func @variant_get_ub() -> si4 {
   // CHECK: pop.variant.get
-  %0 = kgen.param.constant: !pop.variant<si4, ui4> = <#pop.variant<:ui4 7>>
+  %0 = kgen.param.constant: variant<si4, ui4> = <#pop.variant<:ui4 7>>
   %1 = pop.variant.get %0 : !pop.variant<si4, ui4> as si4
   kgen.return %1 : si4
 }
@@ -569,9 +569,9 @@ kgen.func @list_get_create(%arg0: i32, %arg1: i32) -> i32 {
 // CHECK-LABEL: @index_to_pointer
 kgen.func @index_to_pointer() -> (!pop.pointer<i8>, !pop.scalar<address>) {
   // CHECK-DAG: #M.pointer<1>
-  // CHECK-DAG: !pop.scalar<address> = <2>
-  %0 = kgen.param.constant: !pop.scalar<index> = <<1>>
-  %1 = kgen.param.constant: !pop.scalar<index> = <<2>>
+  // CHECK-DAG: scalar<address> = <2>
+  %0 = kgen.param.constant: scalar<index> = <<1>>
+  %1 = kgen.param.constant: scalar<index> = <<2>>
   %2 = pop.index_to_pointer %0 : !pop.scalar<index> to !pop.pointer<i8>
   %3 = pop.index_to_pointer %1 : !pop.scalar<index> to !pop.scalar<address>
   kgen.return %2, %3 : !pop.pointer<i8>, !pop.scalar<address>
@@ -581,8 +581,8 @@ kgen.func @index_to_pointer() -> (!pop.pointer<i8>, !pop.scalar<address>) {
 kgen.func @pointer_to_index() -> (!pop.scalar<index>, !pop.scalar<index>) {
   // CHECK-DAG: <1>
   // CHECK-DAG: <2>
-  %0 = kgen.param.constant: !pop.pointer<i8> = <#M.pointer<1>>
-  %1 = kgen.param.constant: !pop.scalar<address> = <<2>>
+  %0 = kgen.param.constant: pointer<i8> = <#M.pointer<1>>
+  %1 = kgen.param.constant: scalar<address> = <<2>>
   %2 = pop.pointer_to_index %0 : !pop.pointer<i8> to !pop.scalar<index>
   %3 = pop.pointer_to_index %1 : !pop.scalar<address> to !pop.scalar<index>
   kgen.return %2, %3 : !pop.scalar<index>, !pop.scalar<index>
@@ -600,14 +600,14 @@ kgen.func @cast_to_builtin() -> (
   // CHECK-DAG: %[[C5:.*]] = kgen{{.*}}constant = <10>
   // CHECK-DAG: %[[C6:.*]] = kgen{{.*}}ui8 = <66>
   // CHECK-DAG: %[[C7:.*]] = kgen{{.*}}f16 = <5.5{{0+}}e+00>
-  %0 = kgen.param.constant: !pop.simd<2, bool> = <<true, false>>
-  %1 = kgen.param.constant: !pop.simd<2, index> = <<1, 2>>
-  %2 = kgen.param.constant: !pop.simd<2, si4> = <<3, 4>>
-  %3 = kgen.param.constant: !pop.simd<2, bf16> = <<"1.5", "2.5">>
-  %4 = kgen.param.constant: !pop.scalar<bool> = <<true>>
-  %5 = kgen.param.constant: !pop.scalar<index> = <<10>>
-  %6 = kgen.param.constant: !pop.scalar<ui8> = <<66>>
-  %7 = kgen.param.constant: !pop.scalar<f16> = <<"5.5">>
+  %0 = kgen.param.constant: simd<2, bool> = <<true, false>>
+  %1 = kgen.param.constant: simd<2, index> = <<1, 2>>
+  %2 = kgen.param.constant: simd<2, si4> = <<3, 4>>
+  %3 = kgen.param.constant: simd<2, bf16> = <<"1.5", "2.5">>
+  %4 = kgen.param.constant: scalar<bool> = <<true>>
+  %5 = kgen.param.constant: scalar<index> = <<10>>
+  %6 = kgen.param.constant: scalar<ui8> = <<66>>
+  %7 = kgen.param.constant: scalar<f16> = <<"5.5">>
 
   %a0 = pop.cast_to_builtin %0 : !pop.simd<2, bool> to vector<2xi1>
   %a1 = pop.cast_to_builtin %1 : !pop.simd<2, index> to vector<2xindex>
@@ -629,15 +629,15 @@ kgen.func @cast_from_builtin() -> (
     !pop.simd<2, bool>, !pop.simd<2, index>, !pop.simd<2, si4>, !pop.simd<2, bf16>,
     !pop.scalar<bool>, !pop.scalar<index>, !pop.scalar<ui8>, !pop.scalar<f16>,
     !pop.scalar<index>) {
-  // CHECK-DAG: %[[C0:.*]] = kgen{{.*}}!pop.simd<2, bool> = <<true, false>>
-  // CHECK-DAG: %[[C1:.*]] = kgen{{.*}}!pop.simd<2, index> = <<1, 2>>
-  // CHECK-DAG: %[[C2:.*]] = kgen{{.*}}!pop.simd<2, si4> = <<3, 4>>
-  // CHECK-DAG: %[[C3:.*]] = kgen{{.*}}!pop.simd<2, bf16> = <<"1.5", "2.5">>
-  // CHECK-DAG: %[[C4:.*]] = kgen{{.*}}!pop.scalar<bool> = <true>
-  // CHECK-DAG: %[[C5:.*]] = kgen{{.*}}!pop.scalar<index> = <10>
-  // CHECK-DAG: %[[C6:.*]] = kgen{{.*}}!pop.scalar<ui8> = <66>
-  // CHECK-DAG: %[[C7:.*]] = kgen{{.*}}!pop.scalar<f16> = <"5.5">
-  // CHECK-DAG: %[[C8:.*]] = kgen{{.*}}!pop.scalar<index> = <8>
+  // CHECK-DAG: %[[C0:.*]] = kgen{{.*}}simd<2, bool> = <<true, false>>
+  // CHECK-DAG: %[[C1:.*]] = kgen{{.*}}simd<2, index> = <<1, 2>>
+  // CHECK-DAG: %[[C2:.*]] = kgen{{.*}}simd<2, si4> = <<3, 4>>
+  // CHECK-DAG: %[[C3:.*]] = kgen{{.*}}simd<2, bf16> = <<"1.5", "2.5">>
+  // CHECK-DAG: %[[C4:.*]] = kgen{{.*}}scalar<bool> = <true>
+  // CHECK-DAG: %[[C5:.*]] = kgen{{.*}}scalar<index> = <10>
+  // CHECK-DAG: %[[C6:.*]] = kgen{{.*}}scalar<ui8> = <66>
+  // CHECK-DAG: %[[C7:.*]] = kgen{{.*}}scalar<f16> = <"5.5">
+  // CHECK-DAG: %[[C8:.*]] = kgen{{.*}}scalar<index> = <8>
   %0 = kgen.param.constant: vector<2xi1> = <#M.dense_array<true, false>>
   %1 = kgen.param.constant: vector<2xindex> = <#M.dense_array<1, 2>>
   %2 = kgen.param.constant: vector<2xi4> = <#M.dense_array<3, 4>>

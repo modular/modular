@@ -25,9 +25,6 @@ ParseResult parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr);
 /// Try to print a pretty type or a standard MLIR type. A pretty type is a POP
 /// type without the dialect prefix.
 void printPrettyType(AsmPrinter &p, TypedAttr typeExpr);
-
-/// Check if the type is !pop.simd<1, ?>.
-bool isSIMDSizeOneType(Type type);
 } // namespace M::KGEN::POP
 
 //===----------------------------------------------------------------------===//

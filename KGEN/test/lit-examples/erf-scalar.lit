@@ -53,7 +53,7 @@ fn erf_scalar_f32(x: F32) -> F32:
 # CHECK-LABEL: lit.func @"erf_scalar_taylor_f32
 @implements(erf_scalar_f32)
 fn erf_scalar_taylor_f32(x: F32) -> F32:
-    # CHECK: = kgen.param.constant: !pop.scalar<f32> = <"-0.376126379">
+    # CHECK: = kgen.param.constant: scalar<f32> = <"-0.376126379">
     return x * fma_f32(x * x, -0.37612638903183752463, 1.1283791670955125739)
 
 

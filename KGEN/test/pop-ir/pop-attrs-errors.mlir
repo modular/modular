@@ -2,7 +2,7 @@
 
 kgen.func @simd_constant() {
   // expected-error @below {{integer value doesn't fit into 4 bits: 128}}
-  %0 = kgen.param.constant: !pop.scalar<ui4> = <<128>>
+  %0 = kgen.param.constant: scalar<ui4> = <<128>>
   kgen.return
 }
 
@@ -10,7 +10,7 @@ kgen.func @simd_constant() {
 
 kgen.func @simd_constant() {
   // expected-error @below {{failed to parse floating point value}}
-  %0 = kgen.param.constant: !pop.scalar<f16> = <<"e">>
+  %0 = kgen.param.constant: scalar<f16> = <<"e">>
   kgen.return
 }
 
@@ -18,7 +18,7 @@ kgen.func @simd_constant() {
 
 kgen.func @simd_constant() {
   // expected-error @below {{cannot convert 1e+100 to f16}}
-  %0 = kgen.param.constant: !pop.scalar<f16> = <<"1e+100">>
+  %0 = kgen.param.constant: scalar<f16> = <<"1e+100">>
   kgen.return
 }
 
@@ -26,7 +26,7 @@ kgen.func @simd_constant() {
 
 kgen.func @simd_constant() {
   // expected-error @below {{expected 'true' or 'false' for bool literal}}
-  %0 = kgen.param.constant: !pop.scalar<bool> = <<e>>
+  %0 = kgen.param.constant: scalar<bool> = <<e>>
   kgen.return
 }
 
@@ -34,7 +34,7 @@ kgen.func @simd_constant() {
 
 kgen.generator @simd_constant<size>() {
   // expected-error @below {{SIMD constant requires a concrete type}}
-  %0 = kgen.param.constant: !pop.simd<size, bool> = <<true>>
+  %0 = kgen.param.constant: simd<size, bool> = <<true>>
   kgen.return
 }
 
@@ -42,7 +42,7 @@ kgen.generator @simd_constant<size>() {
 
 kgen.generator @simd_constant<size>() {
   // expected-error @below {{only integer, float, bool, and index dtype constants can be parsed}}
-  %0 = kgen.param.constant: !pop.scalar<f8> = <<0>>
+  %0 = kgen.param.constant: scalar<f8> = <<0>>
   kgen.return
 }
 
@@ -50,7 +50,7 @@ kgen.generator @simd_constant<size>() {
 
 kgen.generator @array_constant<size>() {
   // expected-error @below {{array attribute expected a concrete size}}
-  %0 = kgen.param.constant: !pop.array<size, index> = <#pop.array<0>>
+  %0 = kgen.param.constant: array<size, index> = <#pop.array<0>>
 }
 
 // -----
@@ -62,5 +62,5 @@ kgen.generator @array_constant<size>() {
 
 kgen.generator @variant_constant<value: i32>() {
   // expected-error @below {{variant attribute value type 'i32' is not a possible variant subtype}}
-  %0 = kgen.param.constant: !pop.variant<f32, f64> = <#pop.variant<:i32 value>>
+  %0 = kgen.param.constant: variant<f32, f64> = <#pop.variant<:i32 value>>
 }

@@ -29,7 +29,7 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT: %z = lit.var.decl "z"
   var z: Int = 0
 
-  # CHECK: [[SEVENTEEN:%.*]] = kgen.param.constant: !pop.scalar<index> = <17>
+  # CHECK: [[SEVENTEEN:%.*]] = kgen.param.constant: scalar<index> = <17>
   # CHECK: [[SEVENTEENINT:%.*]] = lit.struct.create([[SEVENTEEN]])
   # CHECK-NEXT: pop.store [[SEVENTEENINT]], %z
   z = 17  # Implicit conversion
@@ -290,7 +290,7 @@ def test_if_cond(cond: Bool):
     # CHECK-NEXT: pop.store %[[IF_RES]], %i
     var i: Int = Int(2) if cond else Int(3)
 
-    # CHECK: [[TRUE:%.+]] = kgen.param.constant: !pop.scalar<bool> = <true>
+    # CHECK: [[TRUE:%.+]] = kgen.param.constant: scalar<bool> = <true>
     # CHECK: [[TRUEB:%.+]] = lit.struct.create([[TRUE]]) : (!pop.scalar<bool>) -> !kgen.declref<@"$Bool"::@Bool>
      # CHECK-NEXT: pop.store [[TRUEB]], %cond
     cond = Bool.true()
@@ -392,7 +392,7 @@ fn byval_byref_function(a: Int, b&: Int):
 
 # CHECK: lit.func @"lvaluesAndRValues()
 fn lvaluesAndRValues() -> __mlir_type.`!pop.scalar<index>`:
-  # CHECK: [[FOUR:%.*]] = kgen.param.constant: !pop.scalar<index> = <4>
+  # CHECK: [[FOUR:%.*]] = kgen.param.constant: scalar<index> = <4>
   # CHECK: [[INT:%.*]] = lit.struct.create([[FOUR]]) :
   # CHECK: [[VALUE:%.*]] = lit.struct.extract [[INT]][value] : !pop.scalar<index> from
   # CHECK: lit.return [[VALUE]] : !pop.scalar<index>

@@ -334,7 +334,7 @@ struct ConvertPOPSIMDSplat : public mlir::ConvertOpToLLVMPattern<SIMDSplatOp> {
   matchAndRewrite(SIMDSplatOp op, SIMDSplatOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // If the vector is size 1, skip the shuffle.
-    if (isSIMDSizeOneType(op.getType())) {
+    if (op.getType().isScalar()) {
       rewriter.replaceOp(op, adaptor.getScalar());
       return success();
     }
@@ -365,7 +365,7 @@ struct ConvertPOPSIMDInsertElement
   LogicalResult
   matchAndRewrite(SIMDInsertElementOp op, SIMDInsertElementOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    if (isSIMDSizeOneType(op.getVector().getType())) {
+    if (op.getVector().getType().isScalar()) {
       // If the vector is size 1, return the value as is - it's a scalar.
       rewriter.replaceOp(op, adaptor.getValue());
       return success();
@@ -440,7 +440,7 @@ struct ConvertPOPSIMDExtractElement
   matchAndRewrite(SIMDExtractElementOp op, SIMDExtractElementOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Special handling for scalars
-    if (isSIMDSizeOneType(op.getVector().getType())) {
+    if (op.getVector().getType().isScalar()) {
       rewriter.replaceOp(op, adaptor.getVector());
       return success();
     }
@@ -556,7 +556,7 @@ struct ConvertPOPSIMDReduceAdd
   matchAndRewrite(SIMDReduceAddOp op, SIMDReduceAddOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Handle 1 element vector, i.e. scalar, case
-    if (isSIMDSizeOneType(op.getOperand().getType())) {
+    if (op.getOperand().getType().isScalar()) {
       rewriter.replaceOp(op, adaptor.getOperand());
       return success();
     }
@@ -591,7 +591,7 @@ struct ConvertPOPSIMDReduceMul
   matchAndRewrite(SIMDReduceMulOp op, SIMDReduceMulOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Handle 1 element vector, i.e. scalar, case
-    if (isSIMDSizeOneType(op.getOperand().getType())) {
+    if (op.getOperand().getType().isScalar()) {
       rewriter.replaceOp(op, adaptor.getOperand());
       return success();
     }
@@ -626,7 +626,7 @@ struct ConvertPOPSIMDReduceMax
   matchAndRewrite(SIMDReduceMaxOp op, SIMDReduceMaxOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Handle 1 element vector, i.e. scalar, case
-    if (isSIMDSizeOneType(op.getOperand().getType())) {
+    if (op.getOperand().getType().isScalar()) {
       rewriter.replaceOp(op, adaptor.getOperand());
       return success();
     }
@@ -660,7 +660,7 @@ struct ConvertPOPSIMDReduceMin
   matchAndRewrite(SIMDReduceMinOp op, SIMDReduceMinOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Handle 1 element vector, i.e. scalar, case
-    if (isSIMDSizeOneType(op.getOperand().getType())) {
+    if (op.getOperand().getType().isScalar()) {
       rewriter.replaceOp(op, adaptor.getOperand());
       return success();
     }
