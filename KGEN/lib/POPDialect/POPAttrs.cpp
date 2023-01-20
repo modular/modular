@@ -110,15 +110,28 @@ inline llvm::hash_code hash_value(const DTypeValue &value) {
 }
 } // namespace M::KGEN::POP
 
-/// Parse a value of a particular DType.
-static FailureOr<DTypeValue> parseDTypeValue(AsmParser &p, KGENDType dtype) {
+/// Parse a value of a particular DType. If `optionalParse` is set and no valid
+/// token was found, then `std::nullopt` is returned. Otherwise, the parser
+/// emits and error and returns `failure`.
+template <bool optionalParse>
+static std::conditional_t<optionalParse, std::optional<FailureOr<DTypeValue>>,
+                          FailureOr<DTypeValue>>
+parseDTypeValue(AsmParser &p, KGENDType dtype) {
   llvm::SMLoc loc = p.getCurrentLocation();
 
   // Handle integers.
   if (dtype.isInt()) {
     APInt apInt;
-    if (p.parseInteger(apInt))
-      return failure();
+    if constexpr (optionalParse) {
+      OptionalParseResult result = p.parseOptionalInteger(apInt);
+      if (!result.has_value())
+        return std::nullopt;
+      if (failed(*result))
+        return failure();
+    } else {
+      if (p.parseInteger(apInt))
+        return failure();
+    }
     APSInt apsInt(apInt, /*isUnsigned=*/dtype.isUInt());
     APSInt fitted = apsInt.extOrTrunc(dtype.getIntegerWidthInBits());
     if (fitted.extOrTrunc(apsInt.getBitWidth()) != apsInt) {
@@ -137,8 +150,13 @@ static FailureOr<DTypeValue> parseDTypeValue(AsmParser &p, KGENDType dtype) {
     // float literals. Make sure we can parse and print arbitrary precision
     // floats losslessly.
     std::string strVal;
-    if (p.parseString(&strVal))
-      return failure();
+    if constexpr (optionalParse) {
+      if (p.parseOptionalString(&strVal))
+        return std::nullopt;
+    } else {
+      if (p.parseString(&strVal))
+        return failure();
+    }
     APFloat apFp(DTypeValue::getFloatSemantics(dtype));
     llvm::Expected<APFloat::opStatus> status =
         apFp.convertFromString(strVal, APFloat::rmNearestTiesToEven);
@@ -156,14 +174,25 @@ static FailureOr<DTypeValue> parseDTypeValue(AsmParser &p, KGENDType dtype) {
       return DTypeValue(true, dtype);
     if (succeeded(p.parseOptionalKeyword("false")))
       return DTypeValue(false, dtype);
-    return p.emitError(loc, "expected 'true' or 'false' for bool literal");
+    if constexpr (optionalParse)
+      return std::nullopt;
+    else
+      return p.emitError(loc, "expected 'true' or 'false' for bool literal");
   }
 
   // Handle indices.
   assert(dtype.isIndex() || dtype.isAddress());
   int64_t indexVal;
-  if (p.parseInteger(indexVal))
-    return failure();
+  if constexpr (optionalParse) {
+    OptionalParseResult result = p.parseOptionalInteger(indexVal);
+    if (!result.has_value())
+      return std::nullopt;
+    if (failed(*result))
+      return failure();
+  } else {
+    if (p.parseInteger(indexVal))
+      return failure();
+  }
   return DTypeValue(indexVal, dtype);
 }
 
@@ -191,76 +220,148 @@ bool SIMDAttr::isConstant() const { return true; }
 // custom<DTypeValues>
 //===----------------------------------------------------------------------===//
 
+/// Parse a list of dtype values.
 static ParseResult parseDTypeValues(AsmParser &p,
                                     FailureOr<SmallVector<DTypeValue>> &values,
-                                    SIMDType type) {
-  std::optional<KGENDType> dtype = type.getResolvedDType();
-  std::optional<int64_t> size = type.getResolvedSize();
-  if (!dtype || !size) {
-    return p.emitError(p.getCurrentLocation(),
-                       "SIMD constant requires a concrete type");
-  }
-  if (!dtype->isInt() && !DTypeValue::isValidFloatDType(*dtype) &&
-      !dtype->isBool() && !dtype->isIndex() && !dtype->isAddress()) {
-    return p.emitError(
-        p.getCurrentLocation(),
-        "only integer, float, bool, and index dtype constants can be parsed");
-  }
-
+                                    KGENDType dtype, int64_t size) {
   values.emplace();
   auto parseElt = [&](int64_t) -> ParseResult {
-    FailureOr<DTypeValue> value = parseDTypeValue(p, *dtype);
+    FailureOr<DTypeValue> value =
+        parseDTypeValue</*optionalParse=*/false>(p, dtype);
     if (failed(value))
       return failure();
     values->push_back(*value);
     return success();
   };
-  return failableInterleave(llvm::seq<int64_t>(0, *size), parseElt,
+  return failableInterleave(llvm::seq<int64_t>(0, size), parseElt,
                             [&] { return p.parseComma(); });
+}
+
+/// Print a single DType value.
+static void printDTypeValue(raw_ostream &os, const DTypeValue &value,
+                            KGENDType dtype) {
+  if (dtype.isInt()) {
+    os << value.getIntVal();
+  } else if (dtype.isFloat()) {
+    SmallString<256> strVal;
+    value.getFloatVal().toString(strVal);
+    os << '"' << StringRef(strVal.data(), strVal.size()) << '"';
+  } else if (dtype.isBool()) {
+    os << (value.getBoolVal() ? "true" : "false");
+  } else {
+    assert(dtype.isIndex() || dtype.isAddress());
+    os << value.getIndexVal();
+  }
 }
 
 static void printDTypeValues(raw_ostream &os, ArrayRef<DTypeValue> values,
                              SIMDType type) {
   KGENDType dtype = *type.getResolvedDType();
-  auto printElt = [&](const DTypeValue &value) {
-    if (dtype.isInt()) {
-      os << value.getIntVal();
-    } else if (dtype.isFloat()) {
-      SmallVector<char, 256> strVal;
-      value.getFloatVal().toString(strVal);
-      os << '"' << StringRef(strVal.data(), strVal.size()) << '"';
-    } else if (dtype.isBool()) {
-      os << (value.getBoolVal() ? "true" : "false");
-    } else {
-      assert(dtype.isIndex() || dtype.isAddress());
-      os << value.getIndexVal();
-    }
-  };
-  llvm::interleaveComma(values, os, printElt);
+  llvm::interleaveComma(values, os, [&](const DTypeValue &value) {
+    printDTypeValue(os, value, dtype);
+  });
 }
 
-static void printDTypeValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
-                             SIMDType type) {
-  printDTypeValues(p.getStream(), values, type);
+/// Parse a splat or a list of values deliminated as by `<` and `>`. If
+/// `optionalParse` is set and no valid tokens were found, then `std::nullopt`
+/// is returned, otherwise failure.
+template <bool optionalParse>
+static std::conditional_t<optionalParse, OptionalParseResult, ParseResult>
+parseSplatOrVector(AsmParser &p, FailureOr<SmallVector<DTypeValue>> &values,
+                   SIMDType type) {
+  std::optional<KGENDType> dtype = type.getResolvedDType();
+  std::optional<int64_t> size = type.getResolvedSize();
+  auto checkDType = [&]() -> ParseResult {
+    if (dtype->isInt() || DTypeValue::isValidFloatDType(*dtype) ||
+        dtype->isBool() || dtype->isIndex() || dtype->isAddress())
+      return success();
+    return p.emitError(
+        p.getCurrentLocation(),
+        "only integer, float, bool, and index dtype constants can be parsed");
+  };
+
+  // If the size and dtype are both known, try to parse a splat value.
+  if (dtype && size) {
+    if (checkDType())
+      return failure();
+    std::optional<FailureOr<DTypeValue>> splat =
+        parseDTypeValue</*optionalParse=*/true>(p, *dtype);
+    if (splat.has_value()) {
+      if (failed(*splat))
+        return failure();
+      values = SmallVector<DTypeValue>(*size, **splat);
+      return mlir::success();
+    }
+  }
+
+  // Otherwise, look for the opening brace.
+  if constexpr (optionalParse) {
+    if (p.parseOptionalLess())
+      return std::nullopt;
+  } else {
+    if (p.parseLess())
+      return failure();
+  }
+
+  // Make sure the SIMD type is concrete.
+  if (!dtype || !size)
+    return p.emitError(p.getCurrentLocation(),
+                       "SIMD constant requires a concrete type");
+  if (checkDType())
+    return failure();
+
+  if (failed(parseDTypeValues(p, values, *dtype, *size)))
+    return failure();
+  return p.parseGreater();
+}
+
+/// Print the values of a SIMD vector as either a splat if they're all the same
+/// or a list of values deliminated by `<` and `>`.
+template <bool inAttr>
+static void printSplatOrVector(raw_ostream &os, ArrayRef<DTypeValue> values,
+                               SIMDType type) {
+  // Check if all values are equal, in which case we print as a splat.
+  if (!values.empty() && llvm::all_equal(values)) {
+    // Make sure to add a space after the attribute mnemonic.
+    if constexpr (inAttr)
+      os << ' ';
+    printDTypeValue(os, values.front(), values.front().getDType());
+    return;
+  }
+
+  os << '<';
+  printDTypeValues(os, values, type);
+  os << '>';
+}
+
+/// Custom directive parse hook for SIMDAttr assembly format.
+static ParseResult parseSIMDValues(AsmParser &p,
+                                   FailureOr<SmallVector<DTypeValue>> &values,
+                                   SIMDType type) {
+  return parseSplatOrVector</*optionalParse=*/false>(p, values, type);
+}
+
+/// Custom directive print hook for SIMDAttr assembly format.
+static void printSIMDValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
+                            SIMDType type) {
+  printSplatOrVector</*inAttr=*/true>(p.getStream(), values, type);
 }
 
 OptionalParseResult SIMDType::parseValue(AsmParser &p, TypedAttr &value) const {
-  if (failed(p.parseOptionalLess()))
-    return std::nullopt;
   FailureOr<SmallVector<DTypeValue>> values;
-  if (failed(parseDTypeValues(p, values, *this)))
-    return failure();
-  value = SIMDAttr::get(*values, *this);
-  return p.parseGreater();
+  OptionalParseResult result =
+      parseSplatOrVector</*optionalParse=*/true>(p, values, *this);
+  if (result.has_value() && succeeded(*result))
+    value = SIMDAttr::get(*values, *this);
+  return result;
 }
 
 LogicalResult SIMDType::printValue(raw_ostream &os, TypedAttr value) const {
   auto simd = ::dyn_cast<SIMDAttr>(value);
   if (!simd)
     return failure();
-  os << '<';
-  printDTypeValues(os, simd.getValues(), *this);
-  os << '>';
+
+  printSplatOrVector</*inAttr=*/false>(os, simd.getValues(), *this);
   return mlir::success();
 }
 

@@ -1,21 +1,28 @@
-// RUN: kgen-opt %s | kgen-opt | FileCheck %s
+// RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: @simd_constants
-kgen.func @simd_constants() {
+kgen.generator @simd_constants<N, value: !pop.simd<N, si32>>() {
   // CHECK: !pop.simd<2, f32> = <<"12.375", "77">>
   %0 = kgen.param.constant: !pop.simd<2, f32> = <<"12.375", "77">>
-  // CHECK: !pop.scalar<si64> = <<1234>>
-  %1 = kgen.param.constant: !pop.scalar<si64> = <<1234>>
+  // CHECK: !pop.scalar<si64> = <1234>
+  %1 = kgen.param.constant: !pop.scalar<si64> = <1234>
   // CHECK: !pop.simd<2, bool> = <<true, false>>
   %2 = kgen.param.constant: !pop.simd<2, bool> = <<true, false>>
-  // CHECK: !pop.scalar<f64> = <<"0.01171875">>
-  %3 = kgen.param.constant: !pop.scalar<f64> = <<"0.01171875">>
+  // CHECK: !pop.scalar<f64> = <"0.01171875">
+  %3 = kgen.param.constant: !pop.scalar<f64> = <"0.01171875">
   // CHECK: !pop.simd<6, ui2> = <<0, 1, 2, 3, 3, 2>>
   %4 = kgen.param.constant: !pop.simd<6, ui2> = <<0, 1, 2, 3, 3, 2>>
   // CHECK: !pop.simd<2, index> = <<-54321, 12345>>
   %5 = kgen.param.constant: !pop.simd<2, index> = <<-54321, 12345>>
-  // CHECK: !pop.scalar<f32> = <<"0.100000001">>
-  %6 = kgen.param.constant: !pop.scalar<f32> = <<"0.1">>
+  // CHECK: !pop.scalar<f32> = <"0.100000001">
+  %6 = kgen.param.constant: !pop.scalar<f32> = <"0.1">
+
+  // CHECK: #pop.simd<1, 2>
+  "simd.const"() {a = #pop.simd<1, 2> : !pop.simd<2, si32>} : () -> ()
+  // CHECK: #pop<simd 1>
+  "simd.const"() {a = #pop<simd 1> : !pop.simd<2, si32>} : () -> ()
+  // CHECK: !pop.simd<N, si32> = <value>
+  kgen.param.constant: !pop.simd<N, si32> = <value>
   kgen.return
 }
 

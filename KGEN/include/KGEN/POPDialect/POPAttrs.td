@@ -133,17 +133,24 @@ def POP_SIMDAttr : POP_Attr<"SIMD", "simd", [TypedAttrInterface,
     Example:
 
     ```mlir
-    <1, 2> : !pop.simd<2, si32>
-    <1.5, 2.5> : !pop.simd<2, f64>
-    <true, false> : !pop.simd<2, bool>
+    #pop.simd<1, 2> : !pop.simd<2, si32>
+    #pop.simd<1.5, 2.5> : !pop.simd<2, f64>
+    #pop.simd<true, false> : !pop.simd<2, bool>
+    ```
+
+    When all values of the SIMD vector are equal, the attribute has a special
+    splat syntax:
+
+    ```mlir
+    #pop<simd 0> : !pop.simd<4, si32>
+    #pop<simd "1.5"> : !pop.simd<4, f32>
+    #pop<simd false> : !pop.simd<4, bool>
     ```
   }];
 
   let parameters = (ins OptionalArrayRefParameter<"DTypeValue">:$values,
                         AttributeSelfTypeParameter<"", "SIMDType">:$type);
-  let assemblyFormat = [{
-    `<` (`>`) : (custom<DTypeValues>($values, ref($type))^ `>`)?
-  }];
+  let assemblyFormat = "`` custom<SIMDValues>($values, ref($type))";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "ArrayRef<DTypeValue>":$values,
