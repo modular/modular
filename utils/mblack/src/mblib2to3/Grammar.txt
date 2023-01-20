@@ -160,7 +160,8 @@ asexpr_test: test ['as' test]
 test: or_test ['if' or_test 'else' test] | lambdef
 or_test: and_test ('or' and_test)*
 and_test: not_test ('and' not_test)*
-not_test: 'not' not_test | comparison
+not_test: 'not' not_test | arrow_test
+arrow_test: comparison ['->' comparison]
 comparison: expr (comp_op expr)*
 comp_op: '<'|'>'|'=='|'>='|'<='|'<>'|'!='|'in'|'not' 'in'|'is'|'is' 'not'
 star_expr: '*' expr

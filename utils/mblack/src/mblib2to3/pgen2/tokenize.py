@@ -124,6 +124,7 @@ Number = group(Imagnumber, Floatnumber, Intnumber)
 Single = r"[^'\\]*(?:\\.[^'\\]*)*'"
 # Tail end of " string.
 Double = r'[^"\\]*(?:\\.[^"\\]*)*"'
+# Tail end of ` expr.
 Backtick = r"[^`\\]*(?:\\.[^`\\]*)*`"
 # Tail end of ''' string.
 Single3 = r"[^'\\]*(?:(?:\\.|'(?!''))[^'\\]*)*'''"
@@ -131,11 +132,11 @@ Single3 = r"[^'\\]*(?:(?:\\.|'(?!''))[^'\\]*)*'''"
 Double3 = r'[^"\\]*(?:(?:\\.|"(?!""))[^"\\]*)*"""'
 _litprefix = r"(?:[uUrRbBfF]|[rR][fFbB]|[fFbBuU][rR])?"
 Triple = group(_litprefix + "'''", _litprefix + '"""')
-# Single-line ' or " string.
+# Single-line ' or " string or ` expr.
 String = group(
     _litprefix + r"'[^\n'\\]*(?:\\.[^\n'\\]*)*'",
     _litprefix + r'"[^\n"\\]*(?:\\.[^\n"\\]*)*"',
-    _litprefix + r'`[^\n"\\]*(?:\\.[^\n"\\]*)*`',
+    _litprefix + r'`[^\n`\\]*(?:\\.[^\n`\\]*)*`',
 )
 
 # Because of leftmost-then-longest match semantics, be sure to put the
@@ -161,6 +162,7 @@ Funny = group(Operator, Bracket, Special)
 ContStr = group(
     _litprefix + r"'[^\n'\\]*(?:\\.[^\n'\\]*)*" + group("'", r"\\\r?\n"),
     _litprefix + r'"[^\n"\\]*(?:\\.[^\n"\\]*)*' + group('"', r"\\\r?\n"),
+    _litprefix + r'`[^\n`\\]*(?:\\.[^\n`\\]*)*' + group('`', r"\\\r?\n"),
 )
 PseudoExtras = group(r"\\\r?\n", Comment, Triple)
 PseudoToken = Whitespace + group(PseudoExtras, Number, Funny, ContStr, Name)
@@ -659,13 +661,7 @@ def generate_tokens(
                 elif token.startswith("`"):
                     endprog = endprogs["`"]
                     endmatch = endprog.match(line, pos)
-                    if endmatch:
-                        pos = endmatch.end(0)
-                        token = line[start:pos]
-                        yield (NAME, token, spos, (lnum, pos), line)
-                    else:
-                        yield (NAME, token, spos, epos, line)
-                        # raise TokenError("Missing matching ` in metaparam!")
+                    yield (NAME, token, spos, epos, line)
                 elif initial.isidentifier():  # ordinary name
                     if has_lit_keywords and token in lit_keyword_tokens:
                         yield (
