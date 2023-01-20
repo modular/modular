@@ -99,9 +99,8 @@ struct SharedThreadState {
                                                  newSuspendedThreads)) {
         // When we succeed, that means we were successful in clearing the
         // lowermost bit.  Map that bit back into a workerID and return it.
-        return llvm::countTrailingZeros(
-            loadedSuspendedThreads ^ newSuspendedThreads,
-            /*SuspendedThreads is not zero: */ llvm::ZB_Undefined);
+        return llvm::countTrailingZeros(loadedSuspendedThreads ^
+                                        newSuspendedThreads);
       }
 
       spinner.wait();
