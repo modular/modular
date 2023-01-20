@@ -48,7 +48,7 @@ struct ImageData[
     fn __new__(
         data: NDBuffer[4, shape, type]
     ) -> ImageData[shape, type, static_layout]:
-        assert_param[static_layout!=Layout_unknown]
+        assert_param[static_layout != Layout_unknown]
         var image: ImageData[shape, type, static_layout]
         image.data = data
         return image
