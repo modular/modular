@@ -31,7 +31,7 @@ class [[nodiscard]] Error final {
   enum StorageMode : uint8_t {
     kStaticError, // This contains a pointer to static data.  No allocation.
     kMallocError, // This contains a malloc'd string.
-    kValue,       // This is a normal a value (used by ErrorOr).
+    kValue,       // This is a normal value (used by ErrorOr).
   };
 
 public:
@@ -74,12 +74,6 @@ public:
 
   /// Return the message this contains as a nul-terminated string.
   const char *get() const { return value; }
-
-  /// Return the message this contains and release ownership of it.
-  const char *release() {
-    storageMode = kStaticError;
-    return value;
-  }
 
   // Explicit copy operation.
   Error copy() const {

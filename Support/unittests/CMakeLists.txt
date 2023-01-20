@@ -19,6 +19,8 @@ add_modular_unittest(
   AlignedAllocTest.cpp
   BCastTest.cpp
   DTypeTest.cpp
+  ErrorTest.cpp
+  ErrorOrTest.cpp
   FunctionExtrasTest.cpp
   HMACTest.cpp
   MathExtras.cpp

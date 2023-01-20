@@ -85,8 +85,9 @@ public:
   }
 
   /// Construct from an error value produced by `error("string")`.
-  ErrorOr(Error &&errorValue) : storageMode(errorValue.storageMode) {
-    errorStorage = errorValue.release();
+  ErrorOr(Error &&errorValue)
+      : errorStorage(errorValue.value), storageMode(errorValue.storageMode) {
+    errorValue.storageMode = Error::StorageMode::kStaticError;
   }
 
   /// Move constructor from value.
