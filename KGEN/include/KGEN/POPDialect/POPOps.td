@@ -2273,6 +2273,36 @@ def POP_VariadicCreateOp : POPOp<"variadic.create", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// VariadicGetOp
+//===----------------------------------------------------------------------===//
+
+def POP_VariadicGetOp : POPOp<"variadic.get", [Pure,
+    VariadicElementType<"variadic", "result">]> {
+  let summary = "returns the element at the given index in a variadic sequence";
+  let description = [{
+    The `pop.variadic.get` operation takes a `!pop.variadic` sequence and an
+    index, and returns the element at that index in the sequence.
+
+    Example:
+
+    ```mlir
+    // Create a variadic sequence of 2 scalar floats.
+    %0 = pop.variadic.create [%arg0, %arg1] : !pop.variadic<scalar<f32>>
+
+    // Get the 2nd float (the value of `%arg1`).
+    %1 = index.constant 1
+    %2 = pop.variadic.get %0[%1] : !pop.variadic<f32>
+    ```
+  }];
+
+  let arguments = (ins POP_VariadicType:$variadic, Index:$index);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = [{
+    $variadic `[` $index `]` attr-dict `:` qualified(type($variadic))
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // VariadicSizeOp
 //===----------------------------------------------------------------------===//
 
