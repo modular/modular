@@ -475,7 +475,7 @@ def POP_XOrOp : POP_BitwiseOp<"xor"> {
     The XOr is used to implement the `not` operation. For example:
 
     ```mlir
-    %neg_one_si64 = kgen.param.constant: !pop.scalar<si64> = <#pop.simd<-1>>
+    %neg_one_si64 = kgen.param.constant: !pop.scalar<si64> = <<-1>>
     %neg_one = pop.cast %neg_one_si64 : !pop.scalar<si64> to !pop.scalar<type>
     %not = pop.xor %val, %neg_one : !pop.scalar<type> // returns ~(%val)
     ```
@@ -841,7 +841,7 @@ def POP_SIMDGatherOp : POPOp<"simd.gather", [
     ```mlir
     %0 = load %p0 : !pop.scalar<type>
     %1 = load %p2 : !pop.scalar<type>
-    %c0 = kgen.param.constant: !pop.simd<4, si64> = <#pop.simd<0, 0, 0, 0>>
+    %c0 = kgen.param.constant: !pop.simd<4, si64> = <<0, 0, 0, 0>>
     %2 = pop.cast %c0 : !pop.simd<4, si64> to !pop.simd<4, type>
     %3 = pop.simd.insertelement %0, %2[0] : !pop.simd<4, type>
     %4 = pop.simd.insertelement %d0, %3[1] : !pop.simd<4, type>
@@ -1413,7 +1413,7 @@ def VariantCreateOp : POPOp<"variant.create", [Pure]> {
         -> !pop.variant<struct<>, T>
 
     // Create a variant of either a scalar float or integer.
-    %1 = kgen.param.constant: !pop.scalar<f64> = <#pop.simd<"0.0">>
+    %1 = kgen.param.constant: !pop.scalar<f64> = <<"0.0">>
     %2 = pop.variant.create %1 : !pop.scalar<f64>
         -> !pop.variant<scalar<i64>, scalar<f64>>
     ```
@@ -1878,7 +1878,7 @@ def POP_GlobalConstantOp : POPOp<"global_constant", [Pure]> {
 
     ```mlir
     // SIMD global constant.
-    %0 = pop.global_constant: <simd<2, ui32>> = <#pop.simd<2, 5>>
+    %0 = pop.global_constant: <simd<2, ui32>> = <<2, 5>>
     // Parametric global constant.
     %1 = pop.global_constant: <type> =
         <apply(:(f32) -> !kgen.paramref<type>, 12.0)>

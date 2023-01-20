@@ -232,7 +232,7 @@ kgen.generator @genItf3_impl0<ty: dtype>() implements @genItf3 {
 // deleted.
 // CHECK-NOT: genItf3_impl1
 kgen.generator @genItf3_impl1<ty: dtype>() implements @genItf3 {
-  %one = kgen.param.constant: !pop.scalar<si64> = <#pop.simd<1>>
+  %one = kgen.param.constant: !pop.scalar<si64> = <<1>>
   %0 = pop.cast %one : !pop.scalar<si64> to !pop.scalar<ty>
   %1 = pop.cast_to_builtin %0: !pop.scalar<ty> to i8
   kgen.return
@@ -399,7 +399,7 @@ kgen.generator @parametricTypes(%arg0: !pop.scalar<ui64>, %arg1: !pop.simd<2, f3
 kgen.generator @takeUnary
   <dt: dtype, fn: <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt>>() {
 
-  %one = kgen.param.constant: !pop.scalar<si64> = <#pop.simd<1>>
+  %one = kgen.param.constant: !pop.scalar<si64> = <<1>>
   %0 = pop.cast %one : !pop.scalar<si64> to !pop.scalar<dt>
   %1 = kgen.call_param[(!pop.scalar<dt>) -> !pop.scalar<dt>:
     bind_signature(:<dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt> fn, dt)](%0)
@@ -423,7 +423,7 @@ kgen.generator @takeParametricBinary
    fn: <sz, dt: dtype>(!pop.simd<sz,dt>, !pop.simd<sz,dt>) -> !pop.simd<sz,dt>
   >() {
 
-  %one = kgen.param.constant: !pop.scalar<si64> = <#pop.simd<1>>
+  %one = kgen.param.constant: !pop.scalar<si64> = <<1>>
   %0 = pop.cast %one : !pop.scalar<si64> to !pop.scalar<dt>
 
   %1 = kgen.call_param[(!pop.scalar<dt>, !pop.scalar<dt>) -> !pop.scalar<dt>:
@@ -454,7 +454,7 @@ kgen.generator @test_symbol() {
 
 // This function is instantiated with regions defined below.
 kgen.generator @take_non_parametric_f32<fn: (!pop.scalar<f32>) -> !pop.scalar<f32>>() {
-  %0 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"1.0">>
+  %0 = kgen.param.constant: !pop.scalar<f32> = <<"1.0">>
   %1 = kgen.call_param[(!pop.scalar<f32>) -> !pop.scalar<f32>: fn](%0)
   %2 = kgen.call_param[(!pop.scalar<f32>) -> !pop.scalar<f32>: fn](%1)
   kgen.return
@@ -529,7 +529,7 @@ kgen.generator @test_region_insanity() {
     kgen.return
   }
   kgen.param.declare.region littleFn = <dt: dtype->index>() {
-    %one = kgen.param.constant: !pop.scalar<si64> = <#pop.simd<1>>
+    %one = kgen.param.constant: !pop.scalar<si64> = <<1>>
     %0 = pop.cast %one : !pop.scalar<si64> to !pop.scalar<dt>
     kgen.return<123>
   }
@@ -557,7 +557,7 @@ kgen.generator @takeParametricBinary
    fn: <ty: type>(!kgen.paramref<ty>, !kgen.paramref<ty>) -> !kgen.paramref<ty>
   >() {
 
-  %one = kgen.param.constant: !pop.scalar<si64> = <#pop.simd<1>>
+  %one = kgen.param.constant: !pop.scalar<si64> = <<1>>
   %0 = pop.cast %one : !pop.scalar<si64> to !pop.scalar<dt>
 
   // CHECK: kgen.call @"parametricBinOp,ty=!pop.scalar<f32>"
@@ -1419,10 +1419,10 @@ kgen.generator @rebind_value<dtype: dtype>(%a: !pop.scalar<ui8>) -> !pop.scalar<
 
 // CHECK-LABEL: kgen.func @rebind_it
 kgen.generator @rebind_it() {
-  // CHECK-NEXT: constant: !pop.scalar<ui8> = <#pop.simd<4>>
+  // CHECK-NEXT: constant: !pop.scalar<ui8> = <<4>>
   kgen.param.declare Fn: (!pop.scalar<ui8>) -> !pop.scalar<ui8> =
     <bind_signature(:<dtype: dtype>(!pop.scalar<ui8>) -> !pop.scalar<dtype> @rebind_value, ui8)>
-  kgen.param.constant: !pop.scalar<ui8> = <apply(:(!pop.scalar<ui8>) -> !pop.scalar<ui8> Fn, #pop.simd<4>)>
+  kgen.param.constant: !pop.scalar<ui8> = <apply(:(!pop.scalar<ui8>) -> !pop.scalar<ui8> Fn, <4>)>
   kgen.return
 }
 

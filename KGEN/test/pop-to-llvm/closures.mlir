@@ -7,10 +7,10 @@ kgen.func @my_fn(%arg0: index, %arg1: !pop.scalar<f32>) -> !pop.scalar<f32> {
 
 // CHECK-LABEL: @partial_apply
 kgen.func @partial_apply() -> !pop.closure<(index) -> !pop.scalar<f32>> {
-  // CHECK:  %[[CONST:.*]] = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"1.20000005">>
+  // CHECK:  %[[CONST:.*]] = kgen.param.constant: !pop.scalar<f32> = <<"1.20000005">>
   // CHECK:  %[[BOUNDARG:.*]] = builtin.unrealized_conversion_cast %[[CONST]] : !pop.scalar<f32> to f32
   // CHECK:  %[[FN:.*]] = kgen.addressof @my_fn : (index, !pop.scalar<f32>) -> !pop.scalar<f32>
-  %0 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"1.2">>
+  %0 = kgen.param.constant: !pop.scalar<f32> = <<"1.2">>
   %1 = kgen.addressof @my_fn : (index, !pop.scalar<f32>) -> !pop.scalar<f32>
   // CHECK:  %[[FNPTR:.*]] = builtin.unrealized_conversion_cast %[[FN]] : (index, !pop.scalar<f32>) -> !pop.scalar<f32> to !llvm.ptr<func<f32 (i64, f32)>>
   // CHECK:  %[[STRUCT:.*]] = llvm.mlir.undef : !llvm.struct<(ptr, ptr)>
@@ -126,7 +126,7 @@ kgen.func @test_lifetimes(%arg0: (index, f32) -> index, %arg1: f32, %cond: i1) -
     // CHECK: %[[CONSTANT:.*]] = kgen.param.constant
     // CHECK: llvm.intr.lifetime.end 16, %[[STRUCT]]
     %0 = pop.partial_apply %arg0(?, %arg1) : (index, f32) -> index
-    %1 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"1.0">>
+    %1 = kgen.param.constant: !pop.scalar<f32> = <<"1.0">>
     scf.yield
   }
   kgen.return

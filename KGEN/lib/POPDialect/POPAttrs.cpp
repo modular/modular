@@ -219,24 +219,49 @@ static ParseResult parseDTypeValues(AsmParser &p,
                             [&] { return p.parseComma(); });
 }
 
-static void printDTypeValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
+static void printDTypeValues(raw_ostream &os, ArrayRef<DTypeValue> values,
                              SIMDType type) {
   KGENDType dtype = *type.getResolvedDType();
   auto printElt = [&](const DTypeValue &value) {
     if (dtype.isInt()) {
-      p << value.getIntVal();
+      os << value.getIntVal();
     } else if (dtype.isFloat()) {
       SmallVector<char, 256> strVal;
       value.getFloatVal().toString(strVal);
-      p << '"' << StringRef(strVal.data(), strVal.size()) << '"';
+      os << '"' << StringRef(strVal.data(), strVal.size()) << '"';
     } else if (dtype.isBool()) {
-      p << (value.getBoolVal() ? "true" : "false");
+      os << (value.getBoolVal() ? "true" : "false");
     } else {
       assert(dtype.isIndex() || dtype.isAddress());
-      p << value.getIndexVal();
+      os << value.getIndexVal();
     }
   };
-  llvm::interleaveComma(values, p, printElt);
+  llvm::interleaveComma(values, os, printElt);
+}
+
+static void printDTypeValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
+                             SIMDType type) {
+  printDTypeValues(p.getStream(), values, type);
+}
+
+OptionalParseResult SIMDType::parseValue(AsmParser &p, TypedAttr &value) const {
+  if (failed(p.parseOptionalLess()))
+    return std::nullopt;
+  FailureOr<SmallVector<DTypeValue>> values;
+  if (failed(parseDTypeValues(p, values, *this)))
+    return failure();
+  value = SIMDAttr::get(*values, *this);
+  return p.parseGreater();
+}
+
+LogicalResult SIMDType::printValue(raw_ostream &os, TypedAttr value) const {
+  auto simd = ::dyn_cast<SIMDAttr>(value);
+  if (!simd)
+    return failure();
+  os << '<';
+  printDTypeValues(os, simd.getValues(), *this);
+  os << '>';
+  return mlir::success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -257,6 +282,36 @@ static void printArrayElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
   llvm::interleaveComma(values, p, [&](TypedAttr value) {
     printParamValue(value, p.getStream());
   });
+}
+
+OptionalParseResult POP::ArrayType::parseValue(AsmParser &p,
+                                               TypedAttr &value) const {
+  if (failed(p.parseOptionalLSquare()))
+    return std::nullopt;
+  if (!getResolvedSize())
+    return p.emitError(p.getCurrentLocation(),
+                       "array attribute expected a concrete size");
+  if (succeeded(p.parseOptionalRSquare())) {
+    value = POP::ArrayAttr::get({}, *this);
+    return mlir::success();
+  }
+  FailureOr<SmallVector<TypedAttr>> values;
+  if (failed(parseArrayElements(p, values, *this)))
+    return failure();
+  value = POP::ArrayAttr::get(*values, *this);
+  return p.parseRSquare();
+}
+
+LogicalResult POP::ArrayType::printValue(raw_ostream &os,
+                                         TypedAttr value) const {
+  auto array = ::dyn_cast<POP::ArrayAttr>(value);
+  if (!array)
+    return failure();
+  os << '[';
+  llvm::interleaveComma(array.getValues(), os,
+                        [&](TypedAttr value) { printParamValue(value, os); });
+  os << ']';
+  return mlir::success();
 }
 
 /// The array attribute is a constant if all element values are constants.
@@ -303,6 +358,28 @@ static void printStructElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
   llvm::interleaveComma(values, p, [&](TypedAttr value) {
     printParamValue(value, p.getStream());
   });
+}
+
+OptionalParseResult StructType::parseValue(AsmParser &p,
+                                           TypedAttr &value) const {
+  if (failed(p.parseOptionalLBrace()))
+    return std::nullopt;
+  FailureOr<SmallVector<TypedAttr>> values;
+  if (failed(parseStructElements(p, values, *this)))
+    return failure();
+  value = StructAttr::get(*values, *this);
+  return p.parseRBrace();
+}
+
+LogicalResult StructType::printValue(raw_ostream &os, TypedAttr value) const {
+  auto structAttr = ::dyn_cast<StructAttr>(value);
+  if (!structAttr)
+    return failure();
+  os << "{ ";
+  llvm::interleaveComma(structAttr.getValues(), os,
+                        [&](TypedAttr value) { printParamValue(value, os); });
+  os << " }";
+  return mlir::success();
 }
 
 /// The struct attribute is a constant if all element values are constants.

@@ -7,6 +7,7 @@
 #ifndef POPTYPES_TD
 #define POPTYPES_TD
 
+include "KGEN/KGENDialect/KGENTypeInterfaces.td"
 include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/POPDialect/POPDialect.td"
 include "Support/MDialect/MTypeInterfaces.td"
@@ -25,8 +26,9 @@ class POPType<string typeName, string typeMnemonic, list<Trait> traits = []>
 // ArrayType
 //===----------------------------------------------------------------------===//
 
-def POP_ArrayType : POPType<"Array", "array",
-    [DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
+def POP_ArrayType : POPType<"Array", "array", [
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "parameterized array type";
   let description = [{
     This type represents a statically-sized array of elements. The size and
@@ -150,8 +152,9 @@ class PointerOf<Type type> : ConfinedType<POP_PointerType,
 // SIMDType
 //===----------------------------------------------------------------------===//
 
-def POP_SIMDType : POPType<"SIMD", "simd",
-    [DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
+def POP_SIMDType : POPType<"SIMD", "simd", [
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "parameterized SIMD vector type";
   let description = [{
     This type is parameterized with a size and a !kgen.dtype type.
@@ -304,8 +307,9 @@ class BoolSIMDOfSameSize<string operand, string value> : TypesMatchWith<
 // StructType
 //===----------------------------------------------------------------------===//
 
-def POP_StructType : POPType<"Struct", "struct",
-    [DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
+def POP_StructType : POPType<"Struct", "struct", [
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "parameterized struct type";
   let description = [{
     This type represents a struct. A struct contains element types arranged in

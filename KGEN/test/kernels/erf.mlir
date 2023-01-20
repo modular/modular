@@ -13,8 +13,8 @@ lit.func @erf_scalar_taylor<type: dtype>(%x: !pop.scalar<type>) -> !pop.scalar<t
   // Compute erf(x) = (2.0*x)/Sqrt(Pi) - (2*x^3)/(3.0*Sqrt(Pi)) in Horner form as
   // = x * (- 0.37612638903183752463 * x^2 + 1.1283791670955125739)
   // = x * fma(x^2, -0.37612638903183752463, 1.1283791670955125739)
-  %c0_f64 = kgen.param.constant: !pop.scalar<f64> = <#pop.simd<"1.1283791670955125739">>
-  %c1_f64 = kgen.param.constant: !pop.scalar<f64> = <#pop.simd<"-0.37612638903183752463">>
+  %c0_f64 = kgen.param.constant: !pop.scalar<f64> = <<"1.1283791670955125739">>
+  %c1_f64 = kgen.param.constant: !pop.scalar<f64> = <<"-0.37612638903183752463">>
   %c0 = pop.cast %c0_f64 : !pop.scalar<f64> to !pop.scalar<type>
   %c1 = pop.cast %c1_f64 : !pop.scalar<f64> to !pop.scalar<type>
   %x2 = pop.mul %x, %x : !pop.scalar<type>

@@ -2,9 +2,9 @@
 
 // CHECK-LABEL: llvm.func internal @hlcf_and_scf
 kgen.func @hlcf_and_scf(%arg0: !pop.scalar<si32>, %arg1: !pop.simd<2, si64>) -> (!pop.scalar<si32>, !pop.simd<2, si64>) {
-  %c10 = kgen.param.constant: !pop.scalar<si32> = <#pop.simd<10>>
-  %c1 = kgen.param.constant: !pop.scalar<si32> = <#pop.simd<1>>
-  %c12 = kgen.param.constant: !pop.simd<2, si64> = <#pop.simd<1, 2>>
+  %c10 = kgen.param.constant: !pop.scalar<si32> = <<10>>
+  %c1 = kgen.param.constant: !pop.scalar<si32> = <<1>>
+  %c12 = kgen.param.constant: !pop.simd<2, si64> = <<1, 2>>
   // CHECK: llvm.br ^bb1(%arg0, %arg1 : i32, vector<2xi64>)
   %0 = hlcf.loop (%0 = %arg0 : !pop.scalar<si32>, %1 = %arg1 : !pop.simd<2, si64>) -> !pop.simd<2, si64> {
     // CHECK: ^bb1(%{{.*}}: i32, %{{.*}}: vector<2xi64>):

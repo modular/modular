@@ -27,7 +27,7 @@ lit.func @matmaul_naive<type: dtype>(
   %one = index.constant 1
   scf.for %i = %zero to %M step %one {
     scf.for %j = %zero to %N step %one {
-      %zero_si64 = kgen.param.constant: !pop.scalar<si64> = <#pop.simd<0>>
+      %zero_si64 = kgen.param.constant: !pop.scalar<si64> = <<0>>
       %init = pop.cast %zero_si64 : !pop.scalar<si64> to !pop.scalar<type>
       %acc = scf.for %k = %zero to %K step %one iter_args(%sum = %init) -> (!pop.simd<1, type>) {
         %aikIndex = kgen.call @index2D(%i, %k, %N) : (index, index, index) -> index

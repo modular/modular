@@ -133,9 +133,9 @@ def POP_SIMDAttr : POP_Attr<"SIMD", "simd", [TypedAttrInterface,
     Example:
 
     ```mlir
-    #pop.simd<1, 2> : !pop.simd<2, si32>
-    #pop.simd<1.5, 2.5> : !pop.simd<2, f64>
-    #pop.simd<true, false> : !pop.simd<2, bool>
+    <1, 2> : !pop.simd<2, si32>
+    <1.5, 2.5> : !pop.simd<2, f64>
+    <true, false> : !pop.simd<2, bool>
     ```
   }];
 
