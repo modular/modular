@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$lit_stdlib_exp::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$test_exp::main():index()' -I %stdlibdir | FileCheck %s
 
 from SIMD import SIMD
 from IO import print

@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$lit_stdlib_erf::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$test_erf::main():index()' -I %stdlibdir | FileCheck %s
 
 
 from IO import print
