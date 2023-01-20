@@ -411,8 +411,10 @@ def ZAP_NDBufferBitCastOp : ZAPOp<"ndbuffer.bitcast", [Pure,
 //===----------------------------------------------------------------------===//
 
 def ZAP_PrintOp : ZAPOp<"print"> {
-  let summary = "print format operation";
+  let summary = "!!!DEPRECATED!!! print format operation";
   let description = [{
+    !!!DEPRECATED!!! When programming in Lit use the functions in IO.lit
+                     instead.
     Print a series of values formatted according to the provided string. This
     function is meant for debugging. The format string is the same as `printf`
     and may not be supported on all targets.
