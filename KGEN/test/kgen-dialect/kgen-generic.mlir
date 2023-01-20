@@ -2,7 +2,7 @@
 
 // CHECK: "kgen.generator"
 // CHECK: constraints = #kgen<constraints[]>
-// CHECK-SAME: signature = !kgen.signature<[], [], () -> ()>
+// CHECK-SAME: signature = !kgen.signature<() -> ()>
 kgen.generator @kernel<>() {
   kgen.return
 }

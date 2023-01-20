@@ -261,7 +261,7 @@ fn testResultParamConversion[()->Int](a: Int):
 
 # CHECK-LABEL: lit.func @"takeCallable(__mlir_type.index)"<callable: (index) -> index>(%a: index) -> index
 fn takeCallable[
-     callable: __mlir_type.`!kgen.signature<[], [], (index) -> index>`
+     callable: __mlir_type.`!kgen.signature<(index) -> index>`
    ](a: __mlir_type.index) -> __mlir_type.index:
   # CHECK-NEXT: %0 = kgen.call_param[(index) -> index: callable](%a)
   # CHECK-NEXT: lit.return %0
@@ -285,7 +285,7 @@ fn callableWithParam[type: __mlir_type.`!kgen.dtype`]():
 
 # CHECK-LABEL: lit.func @"takeCallable2
 fn takeCallable2[
-      func: __mlir_type.`!kgen.signature<[type : !kgen.dtype], [], () -> !lit.none>`
+      func: __mlir_type.`!kgen.signature<<type: dtype>() -> !lit.none>`
   ]():
       pass
 

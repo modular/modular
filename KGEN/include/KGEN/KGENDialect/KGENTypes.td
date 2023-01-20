@@ -178,10 +178,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
                         "TypeArrayAttr":$resultParamTypes,
                         "FunctionType":$values,
                         "ConventionsAttr":$conventions);
-  let assemblyFormat = [{
-    `<` $inputParams `,` $resultParamTypes `,`
-    custom<ValuesAndOptionalConventions>($values, $conventions) `>`
-  }];
+  let hasCustomAssemblyFormat = 1;
 
   let builders = [
     /// This builder allows everything other than the function type to be null.
@@ -197,8 +194,8 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
 
   let extraClassDeclaration = [{
     /// Helper to return the value input and result types.
-    ArrayRef<Type> getValueInputs();
-    ArrayRef<Type> getValueResults();
+    ArrayRef<Type> getValueInputs() const;
+    ArrayRef<Type> getValueResults() const;
 
     /// Get the callable function effects.
     FnEffects getFnEffects() {

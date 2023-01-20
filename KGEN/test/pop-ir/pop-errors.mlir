@@ -368,7 +368,7 @@ kgen.generator @partial_apply_syntax(%arg0: (i8) -> ()) {
 
 // -----
 
-kgen.generator @partial_apply_syntax(%arg0: !kgen.signature<[], [], (i8) -> ()>, %arg1: i8, %arg2: i8) {
+kgen.generator @partial_apply_syntax(%arg0: !kgen.signature<(i8) -> ()>, %arg1: i8, %arg2: i8) {
   // expected-error @below {{custom op 'pop.partial_apply' there are more bound inputs than arguments}}
   pop.partial_apply %arg0(%arg1, %arg2) : (i8) -> ()
   kgen.return
@@ -376,17 +376,17 @@ kgen.generator @partial_apply_syntax(%arg0: !kgen.signature<[], [], (i8) -> ()>,
 
 // -----
 
-kgen.generator @partial_apply_syntax(%arg0: !kgen.signature<[], [], (i8) -> ()>, %arg1: i8) {
+kgen.generator @partial_apply_syntax(%arg0: !kgen.signature<(i8) -> ()>, %arg1: i8) {
   // expected-error @below {{custom op 'pop.partial_apply' expected callee type to be a function type or closure type.}}
-  pop.partial_apply %arg0(%arg1) : !kgen.signature<[], [], (i8) -> ()>
+  pop.partial_apply %arg0(%arg1) : !kgen.signature<(i8) -> ()>
   kgen.return
 }
 
 // -----
 
-kgen.generator @call_indirect(%arg0: !kgen.signature<[], [], (i8) -> ()>, %arg1: i8) {
+kgen.generator @call_indirect(%arg0: !kgen.signature<(i8) -> ()>, %arg1: i8) {
   // expected-error @below {{custom op 'pop.call_indirect' the callee type must be a function type or a closure type.}}
-  pop.call_indirect %arg0(%arg1) : !kgen.signature<[], [], (i8) -> ()>
+  pop.call_indirect %arg0(%arg1) : !kgen.signature<(i8) -> ()>
   kgen.return
 }
 

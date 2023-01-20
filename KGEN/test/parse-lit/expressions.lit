@@ -299,12 +299,12 @@ def test_if_cond(cond: Bool):
         i = i+i
 
 # CHECK-LABEL: lit.func @"callable_mv{{.*}}"<callable: (index) -> index>(%a: index) -> index
-fn callable_mv[callable: __mlir_type.`!kgen.signature<[], [], (index) -> index>`](a: __mlir_type.index) -> __mlir_type.index:
+fn callable_mv[callable: __mlir_type.`!kgen.signature<(index) -> index>`](a: __mlir_type.index) -> __mlir_type.index:
   # CHECK-NEXT: kgen.call_param[(index) -> index: callable](%a)
   return callable(a)
 
 # CHECK-LABEL: lit.func @"callable_mv_inputs{{.*}}"<callable: <M>(index) -> index, b>(%a: index) -> index
-fn callable_mv_inputs[callable: __mlir_type.`!kgen.signature<[M : index], [], (index) -> index>`, b: __mlir_type.index](a: __mlir_type.index) -> __mlir_type.index:
+fn callable_mv_inputs[callable: __mlir_type.`!kgen.signature<<M>(index) -> index>`, b: __mlir_type.index](a: __mlir_type.index) -> __mlir_type.index:
   # CHECK-NEXT: kgen.call_param[(index) -> index: bind_signature(:<M>(index) -> index callable, b)](%a)
   return callable[b](a)
 
@@ -323,7 +323,7 @@ fn returnIndex2() -> __mlir_type.index:
   return takeIndexParam[returnIndex()]()
 
 # CHECK-LABEL: lit.func @"callInParam()"<callable: <a>(index) -> index>() -> index
-fn callInParam[callable: __mlir_type.`!kgen.signature<[a : index], [], (index) -> index>`]() -> __mlir_type.index:
+fn callInParam[callable: __mlir_type.`!kgen.signature<<a>(index) -> index>`]() -> __mlir_type.index:
   # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam()"<a = apply(:(index) -> index bind_signature(:<a>(index) -> index callable, 1), 1)>() : () -> index
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()

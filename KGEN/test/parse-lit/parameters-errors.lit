@@ -79,7 +79,7 @@ fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
   # expected-error @+1 {{invalid call to 'badReboundType': callee parameter 'val' has '__mlir_type.!pop.scalar<f64>' type, but value has type '__mlir_type.!pop.scalar<f32>'}}
   badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
 
-fn partialBindSignature[callable: __mlir_type.`!kgen.signature<[a: index, b: index], [], () -> ()>`, a: __mlir_type.index]():
+fn partialBindSignature[callable: __mlir_type.`!kgen.signature<<a, b>() -> ()>`, a: __mlir_type.index]():
   # expected-error @below {{parametric callable expected 2 parameters}}
   return callable[a]
 
@@ -161,7 +161,7 @@ fn useResultParams():
   # expected-error @+1 {{calls with result parameters must be called directly}}
   _ = hasResultParam
 
-  # expected-error @+1 {{cannot use parameterized function of type '__mlir_type.!kgen.signature<[a : index], [],  () -> !lit.none>' without binding all its parameters}}
+  # expected-error @+1 {{cannot use parameterized function of type '__mlir_type.!kgen.signature<<a>() -> !lit.none>' without binding all its parameters}}
   _ = hasInputParam
 
   # expected-error @+1 {{invalid call to 'hasInputParam': callee expects 1 input parameter but 0 were provided}}
