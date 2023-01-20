@@ -701,7 +701,8 @@ LogicalResult RegionBodyOp::verifyRegions() {
 // ParamConstantOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult ParamConstantOp::fold(ArrayRef<Attribute> constants) {
+OpFoldResult ParamConstantOp::fold(FoldAdaptor adaptor) {
+  auto constants = adaptor.getOperands();
   assert(constants.empty() && "kgen.param.constant has no operands");
   return getValueAttr();
 }
@@ -730,7 +731,8 @@ LogicalResult RebindOp::verify() {
 }
 
 /// Fold away the rebind if the input and output types are the same.
-OpFoldResult RebindOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   assert(operands.size() == 1);
   if (getInput().getType() == getType())
     return getInput();

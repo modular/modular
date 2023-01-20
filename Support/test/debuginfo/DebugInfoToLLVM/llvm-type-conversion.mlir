@@ -2,6 +2,8 @@
 
 // Test conversions for building debug information for LLVM types.
 
+// CHECK-DAG: #[[VOID:.+]] = #llvm.di_void_result_type
+
 // CHECK-DAG: #[[OPAQUE_BASE:.*]] = #llvm.di_basic_type<tag = DW_TAG_unspecified_type, name = "opaque">
 // CHECK-DAG: #[[OPAQUE_PTR:.*]] = #llvm.di_derived_type<tag = DW_TAG_pointer_type, baseType = #[[OPAQUE_BASE]], sizeInBits = {{.*}}, alignInBits = {{.*}}>
 !opaquePointer = !debuginfo.unresolved<!llvm.ptr>
@@ -27,7 +29,7 @@
 // CHECK-DAG: #[[VECTOR:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "", baseType = #[[PTR]], flags = Vector, sizeInBits = {{.*}}, elements = #llvm.di_subrange<count = 10 : i64>>
 !vector = !debuginfo.unresolved<!llvm.vec<10 x ptr<i32>>>
 
-// CHECK-DAG: #[[SUBROUTINE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, argumentTypes = #[[OPAQUE_PTR]], #[[PTR]], #[[STRUCT]], #[[NAMED_STRUCT]], #[[ARRAY]], #[[VECTOR]]>
+// CHECK-DAG: #[[SUBROUTINE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, types = #[[VOID]], #[[OPAQUE_PTR]], #[[PTR]], #[[STRUCT]], #[[NAMED_STRUCT]], #[[ARRAY]], #[[VECTOR]]>
 !subroutineType = !debuginfo.subroutine<(
   !opaquePointer, !pointer, !struct, !namedStruct,
   !array, !vector

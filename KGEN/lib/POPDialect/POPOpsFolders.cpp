@@ -246,13 +246,15 @@ static SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, OpFns &&...ops) {
 //===----------------------------------------------------------------------===//
 // Unary Operations
 
-OpFoldResult AbsOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult AbsOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(
       operands, [](APSInt val) { return val.abs(); },
       [](APFloat val) { return llvm::abs(val); });
 }
 
-OpFoldResult NegOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult NegOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(
       operands, [](APSInt val) { return -val; },
       [](APFloat val) { return llvm::neg(val); });
@@ -261,25 +263,29 @@ OpFoldResult NegOp::fold(ArrayRef<Attribute> operands) {
 //===----------------------------------------------------------------------===//
 // Binary Operations
 
-OpFoldResult AddOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult AddOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(
       operands, [](APSInt lhs, APSInt rhs) { return lhs + rhs; },
       [](APFloat lhs, APFloat rhs) { return lhs + rhs; });
 }
 
-OpFoldResult SubOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult SubOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(
       operands, [](APSInt lhs, APSInt rhs) { return lhs - rhs; },
       [](APFloat lhs, APFloat rhs) { return lhs - rhs; });
 }
 
-OpFoldResult MulOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult MulOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(
       operands, [](APSInt lhs, APSInt rhs) { return lhs * rhs; },
       [](APFloat lhs, APFloat rhs) { return lhs * rhs; });
 }
 
-OpFoldResult DivOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult DivOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(
       operands,
       [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
@@ -294,7 +300,8 @@ OpFoldResult DivOp::fold(ArrayRef<Attribute> operands) {
       });
 }
 
-OpFoldResult RemOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult RemOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(
       operands,
       [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
@@ -310,19 +317,22 @@ OpFoldResult RemOp::fold(ArrayRef<Attribute> operands) {
       });
 }
 
-OpFoldResult MaxOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult MaxOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(
       operands, [](APSInt lhs, APSInt rhs) { return lhs > rhs ? lhs : rhs; },
       [](APFloat lhs, APFloat rhs) { return llvm::maximum(lhs, rhs); });
 }
 
-OpFoldResult MinOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult MinOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(
       operands, [](APSInt lhs, APSInt rhs) { return lhs < rhs ? lhs : rhs; },
       [](APFloat lhs, APFloat rhs) { return llvm::minimum(lhs, rhs); });
 }
 
-OpFoldResult ShlOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult ShlOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(operands,
                     [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
                       if (rhs.uge(lhs.getBitWidth()))
@@ -331,7 +341,8 @@ OpFoldResult ShlOp::fold(ArrayRef<Attribute> operands) {
                     });
 }
 
-OpFoldResult ShrOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult ShrOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(
       operands, [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
         if (rhs.uge(lhs.getBitWidth()))
@@ -341,7 +352,8 @@ OpFoldResult ShrOp::fold(ArrayRef<Attribute> operands) {
       });
 }
 
-OpFoldResult CopySignOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult CopySignOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(operands, [](APFloat lhs, APFloat rhs) {
     return rhs.isNegative() ? -llvm::abs(lhs) : llvm::abs(lhs);
   });
@@ -350,7 +362,8 @@ OpFoldResult CopySignOp::fold(ArrayRef<Attribute> operands) {
 //===----------------------------------------------------------------------===//
 // Ternary Operations
 
-OpFoldResult FMAOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult FMAOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(
       operands, [](APSInt a, APSInt b, APSInt c) { return a * b + c; },
       [](APFloat a, APFloat b, APFloat c) { return a * b + c; });
@@ -396,7 +409,8 @@ static bool compareConstants(CmpPredicate pred, ArgT lhs, ArgT rhs) {
   }
 }
 
-OpFoldResult CmpOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOpResult<::detail::kOtherResult>(
       operands, KGENDType::kBool,
       [&](APSInt lhs, APSInt rhs) {
@@ -414,19 +428,22 @@ OpFoldResult CmpOp::fold(ArrayRef<Attribute> operands) {
 // Bitwise Operation Folders
 //===----------------------------------------------------------------------===//
 
-OpFoldResult AndOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult AndOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(
       operands, [](APSInt lhs, APSInt rhs) { return lhs & rhs; },
       [](bool lhs, bool rhs) { return lhs && rhs; });
 }
 
-OpFoldResult OrOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult OrOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(
       operands, [](APSInt lhs, APSInt rhs) { return lhs | rhs; },
       [](bool lhs, bool rhs) { return lhs || rhs; });
 }
 
-OpFoldResult XOrOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult XOrOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return foldSIMDOp(
       operands, [](APSInt lhs, APSInt rhs) { return lhs ^ rhs; },
       [](bool lhs, bool rhs) -> bool { return lhs ^ rhs; });
@@ -436,7 +453,8 @@ OpFoldResult XOrOp::fold(ArrayRef<Attribute> operands) {
 // SelectOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult SelectOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult SelectOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto condVals = dyn_cast_or_null<SIMDAttr>(operands[0]);
   auto trueVals = dyn_cast_or_null<SIMDAttr>(operands[1]);
   auto falseVals = dyn_cast_or_null<SIMDAttr>(operands[2]);
@@ -453,7 +471,8 @@ OpFoldResult SelectOp::fold(ArrayRef<Attribute> operands) {
 // BitcastOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult BitcastOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   // Don't fold if the size changes. This requires knowing the endianness of the
   // target.
   std::optional<KGENDType> dtype = getType().getResolvedDType();
@@ -482,7 +501,8 @@ OpFoldResult BitcastOp::fold(ArrayRef<Attribute> operands) {
 // PointerBitcastOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult PointerBitcastOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult PointerBitcastOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   if (auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]))
     return PointerAttr::get(ptr.getAddr(), getType());
 
@@ -496,7 +516,8 @@ OpFoldResult PointerBitcastOp::fold(ArrayRef<Attribute> operands) {
 // CastOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult CastOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto in = dyn_cast_if_present<SIMDAttr>(operands[0]);
   std::optional<KGENDType> dtype = getType().getResolvedDType();
   if (!in || !dtype) {
@@ -569,7 +590,8 @@ OpFoldResult CastOp::fold(ArrayRef<Attribute> operands) {
 // SIMDExtractElementOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult SIMDExtractElementOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult SIMDExtractElementOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto vec = dyn_cast_if_present<SIMDAttr>(operands[0]);
   auto idx = dyn_cast_if_present<IntegerAttr>(operands[1]);
   if (!vec || !idx)
@@ -581,7 +603,8 @@ OpFoldResult SIMDExtractElementOp::fold(ArrayRef<Attribute> operands) {
 // SIMDInsertElementOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult SIMDInsertElementOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult SIMDInsertElementOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto vec = dyn_cast_if_present<SIMDAttr>(operands[0]);
   auto val = dyn_cast_if_present<SIMDAttr>(operands[1]);
   auto idx = dyn_cast_if_present<IntegerAttr>(operands[2]);
@@ -596,7 +619,8 @@ OpFoldResult SIMDInsertElementOp::fold(ArrayRef<Attribute> operands) {
 // SIMDSplatOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult SIMDSplatOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult SIMDSplatOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   std::optional<int64_t> size = getType().getResolvedSize();
   auto scalar = dyn_cast_if_present<SIMDAttr>(operands[0]);
   if (!size || !scalar)
@@ -668,7 +692,8 @@ StackAllocationOp::interpret(ArrayRef<Attribute> operands,
 // StructConstructOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult StructConstructOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult StructConstructOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   SmallVector<TypedAttr> values;
   values.reserve(operands.size());
   for (Attribute operand : operands) {
@@ -684,7 +709,8 @@ OpFoldResult StructConstructOp::fold(ArrayRef<Attribute> operands) {
 // StructGetOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult StructGetOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult StructGetOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto container = dyn_cast_or_null<StructAttr>(operands[0]);
   if (!container)
     return {};
@@ -695,7 +721,8 @@ OpFoldResult StructGetOp::fold(ArrayRef<Attribute> operands) {
 // StructReplaceOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult StructReplaceOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult StructReplaceOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto value = llvm::cast_if_present<TypedAttr>(operands[0]);
   auto container = dyn_cast_if_present<StructAttr>(operands[1]);
   if (!value || !container)
@@ -741,7 +768,8 @@ POP::StructGEPOp::interpret(ArrayRef<Attribute> operands,
 // ArrayCreateOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult ArrayCreateOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult ArrayCreateOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   SmallVector<TypedAttr> values;
   values.reserve(operands.size());
   for (Attribute operand : operands) {
@@ -757,7 +785,8 @@ OpFoldResult ArrayCreateOp::fold(ArrayRef<Attribute> operands) {
 // ArrayRepeatOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult ArrayRepeatOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult ArrayRepeatOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   std::optional<int64_t> size = getType().getResolvedSize();
   if (!size)
     return {};
@@ -780,7 +809,8 @@ OpFoldResult ArrayRepeatOp::fold(ArrayRef<Attribute> operands) {
 // ArrayGetOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult ArrayGetOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult ArrayGetOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto array = dyn_cast_if_present<POP::ArrayAttr>(operands[0]);
   auto index = dyn_cast<IntegerAttr>(getIndex());
   if (!array || !index)
@@ -792,7 +822,8 @@ OpFoldResult ArrayGetOp::fold(ArrayRef<Attribute> operands) {
 // ArrayReplaceOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult ArrayReplaceOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult ArrayReplaceOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto value = llvm::cast_if_present<TypedAttr>(operands[0]);
   auto array = dyn_cast_if_present<POP::ArrayAttr>(operands[1]);
   auto index = dyn_cast<IntegerAttr>(getIndex());
@@ -828,7 +859,8 @@ ErrorTreeOr<SuccessType> ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult VariantCreateOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult VariantCreateOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto value = llvm::cast_if_present<TypedAttr>(operands[0]);
   if (!value)
     return {};
@@ -839,7 +871,8 @@ OpFoldResult VariantCreateOp::fold(ArrayRef<Attribute> operands) {
 // VariantIsOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult VariantIsOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult VariantIsOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto variant = dyn_cast_if_present<VariantAttr>(operands[0]);
   if (!variant)
     return {};
@@ -851,7 +884,8 @@ OpFoldResult VariantIsOp::fold(ArrayRef<Attribute> operands) {
 // VariantGetOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult VariantGetOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult VariantGetOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   if (auto variant = dyn_cast_if_present<VariantAttr>(operands[0])) {
     // If the variant value type is not equal to the result type, this is
     // undefined behaviour.
@@ -871,7 +905,8 @@ OpFoldResult VariantGetOp::fold(ArrayRef<Attribute> operands) {
 // ListGetOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult ListGetOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult ListGetOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto index = dyn_cast<IntegerAttr>(getIndex());
   if (!index)
     return {};
@@ -890,7 +925,8 @@ OpFoldResult ListGetOp::fold(ArrayRef<Attribute> operands) {
 // ListCreateOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult ListCreateOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult ListCreateOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   SmallVector<TypedAttr> values;
   for (Attribute operand : operands) {
     if (!operand)
@@ -904,7 +940,8 @@ OpFoldResult ListCreateOp::fold(ArrayRef<Attribute> operands) {
 // IndexToPointerOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult IndexToPointerOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult IndexToPointerOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto index = dyn_cast_if_present<SIMDAttr>(operands[0]);
   if (!index)
     return {};
@@ -923,7 +960,8 @@ OpFoldResult IndexToPointerOp::fold(ArrayRef<Attribute> operands) {
 // PointerToIndexOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult PointerToIndexOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult PointerToIndexOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   // Check for a pointer input. The result must be a scalar index.
   if (auto ptr = dyn_cast_if_present<PointerAttr>(operands[0])) {
     DTypeValue index(static_cast<int64_t>(ptr.getAddr()), KGENDType::index);
@@ -953,7 +991,8 @@ static ArrayElementsAttr convertSIMDToVectorAttr(SIMDAttr simd, VectorType type,
   return AttrT::get(type, values);
 }
 
-OpFoldResult CastToBuiltinOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult CastToBuiltinOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto simd = dyn_cast_if_present<SIMDAttr>(operands[0]);
   if (!simd) {
     // Fold A->B->A cast.
@@ -1002,7 +1041,8 @@ OpFoldResult CastToBuiltinOp::fold(ArrayRef<Attribute> operands) {
 // CastFromBuiltinOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult CastFromBuiltinOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult CastFromBuiltinOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto val = llvm::cast_if_present<TypedAttr>(operands[0]);
   if (!val) {
     // Fold A->B->A cast.

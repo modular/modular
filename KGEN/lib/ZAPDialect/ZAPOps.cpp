@@ -120,7 +120,8 @@ LogicalResult NDBufferDimOp::verify() {
          << rank << "'";
 }
 
-OpFoldResult NDBufferDimOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult NDBufferDimOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   assert(operands.size() == 1 && "zap.ndbuffer.dim has one operand");
   // A null size indicates ? size (unknown size). Since returning null
   // indicates that we don't fold anything, we don't need to check if
@@ -132,7 +133,8 @@ OpFoldResult NDBufferDimOp::fold(ArrayRef<Attribute> operands) {
 // NDBufferDTypeOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult NDBufferDTypeOp::fold(ArrayRef<Attribute> constants) {
+OpFoldResult NDBufferDTypeOp::fold(FoldAdaptor adaptor) {
+  auto constants = adaptor.getOperands();
   assert(constants.size() == 1 && "zap.ndbuffer.dtype has one operand");
   // A null dtype indicates ? dtype (unknown dtype). Since returning null
   // indicates that we don't fold anything, we don't need to check if dtype is
@@ -144,7 +146,8 @@ OpFoldResult NDBufferDTypeOp::fold(ArrayRef<Attribute> constants) {
 // NDBufferRankOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult NDBufferRankOp::fold(ArrayRef<Attribute> constants) {
+OpFoldResult NDBufferRankOp::fold(FoldAdaptor adaptor) {
+  auto constants = adaptor.getOperands();
   assert(constants.size() == 1 && "zap.ndbuffer.dtype has one operand");
   // The rank is always known for a ndbuffer.
   return IntegerAttr::get(IndexType::get(getContext()),
@@ -155,7 +158,8 @@ OpFoldResult NDBufferRankOp::fold(ArrayRef<Attribute> constants) {
 // NDBufferSizeOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult NDBufferSizeOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult NDBufferSizeOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   assert(operands.size() == 1 && "zap.ndbuffer.size has a single operand");
   if (auto size = getNDBuffer().getType().getResolvedSize())
     return IntegerAttr::get(IndexType::get(getContext()), *size);
@@ -166,7 +170,8 @@ OpFoldResult NDBufferSizeOp::fold(ArrayRef<Attribute> operands) {
 // NDBufferBitCastOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult NDBufferBitCastOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult NDBufferBitCastOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   assert(operands.size() == 1 && "ndbuffer convert expected 1 operand");
   // Fold A->B->C casts into a cast of the original cast's operand.
   if (auto castOperand = getOperand().getDefiningOp<NDBufferBitCastOp>()) {

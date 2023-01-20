@@ -24,7 +24,7 @@
 // CHECK-DAG: #[[VECTOR:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type, name = "", baseType = #[[BASIC]], flags = Vector, sizeInBits = 320, elements = #llvm.di_subrange<count = 10 : i64>>
 !vectorType = !debuginfo.vector<10 x !f32Type>
 
-// CHECK: #[[SUBROUTINE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, resultType = #[[BASIC]], argumentTypes = #[[ARRAY]], #[[PTR]], #[[STRUCT]], #[[UNRESOLVED]], #[[UNSPECIFIED]], #[[VECTOR]]>
+// CHECK: #[[SUBROUTINE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, types = #[[BASIC]], #[[ARRAY]], #[[PTR]], #[[STRUCT]], #[[UNRESOLVED]], #[[UNSPECIFIED]], #[[VECTOR]]>
 !subroutineType = !debuginfo.subroutine<(
   !arrayType, !pointerType, !structType,
   !unresolvedType, !unspecifiedType, !vectorType

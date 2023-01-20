@@ -73,6 +73,9 @@ def DebugInfoDialect : Dialect {
 
   let useDefaultAttributePrinterParser = 1;
   let useDefaultTypePrinterParser = 1;
+
+  // https://discourse.llvm.org/t/psa-new-improved-fold-method-signature-has-landed-please-update-your-downstream-projects/67618
+  let useFoldAPI = kEmitFoldAdaptorFolder;
 }
 
 //===----------------------------------------------------------------------===//
@@ -86,7 +89,7 @@ class DIDwarfParameter<string summary, string underlyingType, string parseName,
                        string printName = parseName>
     : AttrOrTypeParameter<underlyingType, "debug info " # summary> {
   let parser = [{ [&]() -> FailureOr<unsigned> {
-    llvm::SMLoc tagLoc = $_parser.getCurrentLocation(); 
+    llvm::SMLoc tagLoc = $_parser.getCurrentLocation();
     StringRef name;
     if ($_parser.parseKeyword(&name))
       return failure();
@@ -100,7 +103,7 @@ class DIDwarfParameter<string summary, string underlyingType, string parseName,
 }
 
 def DICallingConventionParameter : DIDwarfParameter<
-  "calling convention", "unsigned", "CallingConvention", "Convention" 
+  "calling convention", "unsigned", "CallingConvention", "Convention"
 >;
 
 def DIEncodingParameter : DIDwarfParameter<
