@@ -314,10 +314,10 @@ SignatureType SignatureType::getSpecializedSignature(
   return getSpecializedSignature(inputParams.getValue(), emitErrorFn);
 }
 
-ArrayRef<Type> SignatureType::getValueInputs() {
+ArrayRef<Type> SignatureType::getValueInputs() const {
   return getValues().getInputs();
 }
-ArrayRef<Type> SignatureType::getValueResults() {
+ArrayRef<Type> SignatureType::getValueResults() const {
   return getValues().getResults();
 }
 
@@ -337,25 +337,32 @@ bool SignatureType::isConcrete() {
          getResultParamTypes().empty();
 }
 
-static ParseResult
-parseValuesAndOptionalConventions(AsmParser &p,
-                                  FailureOr<FunctionType> &valueFnSpec,
-                                  FailureOr<ConventionsAttr> &conventions) {
+Type SignatureType::parse(AsmParser &p) {
+  if (p.parseLess())
+    return {};
+  llvm::SMLoc loc = p.getCurrentLocation();
+  ParamDeclArrayAttr inputParams;
+  TypeArrayAttr resultParamTypes;
+  if (parseOptionalParameterSpec(p, inputParams, resultParamTypes))
+    return {};
   SmallVector<Type> inputs, outputs;
-  ConventionsAttr conv;
-  if (parseTypesWithConventions(p, inputs, outputs, conv))
-    return failure();
-  valueFnSpec = p.getBuilder().getFunctionType(inputs, outputs);
-  conventions = conv;
-  return success();
+  ConventionsAttr conventions;
+  if (parseTypesWithConventions(p, inputs, outputs, conventions))
+    return {};
+  if (p.parseGreater())
+    return {};
+  return getChecked(
+      [&] { return p.emitError(loc); }, inputParams, resultParamTypes,
+      p.getBuilder().getFunctionType(inputs, outputs), conventions);
 }
 
-static void printValuesAndOptionalConventions(AsmPrinter &p,
-                                              FunctionType valueFnSpec,
-                                              ConventionsAttr conventions) {
-  p << ' ';
-  printTypesWithConventions(p.getStream(), valueFnSpec.getInputs(),
-                            valueFnSpec.getResults(), conventions);
+void SignatureType::print(AsmPrinter &p) const {
+  p << '<';
+  printOptionalParameterSpec(getInputParams(), getResultParamTypes(),
+                             p.getStream());
+  printTypesWithConventions(p.getStream(), getValueInputs(), getValueResults(),
+                            getConventions());
+  p << '>';
 }
 
 LogicalResult

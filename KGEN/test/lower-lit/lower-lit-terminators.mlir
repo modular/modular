@@ -129,9 +129,9 @@ lit.func @throws(%e: !kgen.declref<@Error>) throws -> index {
 }
 
 // CHECK-LABEL: lit.func @ref
-// CHECK-SAME: !kgen.signature<[], [], () -> !pop.variant<@Error, !lit.none>>
+// CHECK-SAME: !kgen.signature<() -> !pop.variant<@Error, !lit.none>>
 lit.func @ref(%e: !kgen.declref<@Error>,
-              %f: !kgen.signature<[], [], () throws -> !lit.none>) throws -> !lit.none {
+              %f: !kgen.signature<() throws -> !lit.none>) throws -> !lit.none {
   lit.try {
     // CHECK: %[[MAYBE_ERR:.*]] = kgen.call @throws
     // CHECK-NEXT: %[[IS_ERR:.*]] = pop.variant.is !kgen.declref<@Error>, %[[MAYBE_ERR]]
@@ -174,13 +174,13 @@ lit.func @parametric_throws<fn: <>() throws -> !lit.none>() throws -> !lit.none 
 lit.file_module @Module {
   // CHECK-LABEL: lit.struct.decl @Struct
   lit.struct.decl @Struct {
-    // CHECK-NEXT: field x : !kgen.signature<[], [], () -> !pop.variant<@Error, !lit.none>>
-    lit.struct.field x : !kgen.signature<[], [], () throws -> !lit.none>
+    // CHECK-NEXT: field x : !kgen.signature<() -> !pop.variant<@Error, !lit.none>>
+    lit.struct.field x : !kgen.signature<() throws -> !lit.none>
 
     // CHECK-LABEL: lit.func @throws
     lit.func @throws(%self: !kgen.declref<@Module::@Struct>) throws -> !lit.none {
-      // CHECK-NEXT: !kgen.signature<[], [], () -> !pop.variant<@Error, !lit.none>> from
-      %x = lit.struct.extract %self[x] : !kgen.signature<[], [], () throws -> !lit.none>
+      // CHECK-NEXT: !kgen.signature<() -> !pop.variant<@Error, !lit.none>> from
+      %x = lit.struct.extract %self[x] : !kgen.signature<() throws -> !lit.none>
         from !kgen.declref<@Module::@Struct>
       lit.end_func
     }

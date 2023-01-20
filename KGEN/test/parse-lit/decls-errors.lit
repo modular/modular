@@ -72,7 +72,7 @@ fn ret_type_mismatch() -> __mlir_type.index:
   return 4.0 # expected-error {{'__mlir_type.f64' value cannot be converted to '__mlir_type.index' in return}}
 
 # expected-error @below {{signature input parameter "func" specified force_inline, and so expected force_inline on this signature as well}}
-fn invalid_signature[func: __mlir_type.`!kgen.signature<[], [], () force_inline -> ()>`]():
+fn invalid_signature[func: __mlir_type.`!kgen.signature<() force_inline -> ()>`]():
 
 ##===----------------------------------------------------------------------===##
 # Default Arguments and Varargs

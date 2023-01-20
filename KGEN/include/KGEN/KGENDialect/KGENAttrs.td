@@ -496,10 +496,10 @@ def KGEN_ExprFuncAttr : KGEN_ExprAttr<"ExprFunc", "expr.func"> {
 
     ```mlir
     #kgen.expr.func<(A, B) -> add(mul(N, A), B)>
-        : !kgen.signature<[N : index], [], (index, index) -> index)>
+        : !kgen.signature<<N>(index, index) -> index)>
 
     #kgen.expr.func<(A) -> (add(A, 1), add(A, 2))>
-        : !kgen.signature<[], [], (index) -> (index, index)>
+        : !kgen.signature<(index) -> (index, index)>
     ```
   }];
 

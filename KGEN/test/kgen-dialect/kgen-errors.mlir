@@ -778,32 +778,32 @@ kgen.export [@doesNotExist]
 // -----
 
 // expected-error @below {{too many input declarations}}
-"someop"() {f = #kgen.expr.func<(A, B) -> A> : !kgen.signature<[], [], (index) -> index>} : () -> ()
+"someop"() {f = #kgen.expr.func<(A, B) -> A> : !kgen.signature<(index) -> index>} : () -> ()
 
 // -----
 
 // expected-error @below {{not enough input declarations}}
-"someop"() {f = #kgen.expr.func<() -> A> : !kgen.signature<[], [], (index) -> index>} : () -> ()
+"someop"() {f = #kgen.expr.func<() -> A> : !kgen.signature<(index) -> index>} : () -> ()
 
 // -----
 
 // expected-error @below {{"B" parameter not defined in function}}
-"someop"() {f = #kgen.expr.func<(A) -> B> : !kgen.signature<[], [], (index) -> index>} : () -> ()
+"someop"() {f = #kgen.expr.func<(A) -> B> : !kgen.signature<(index) -> index>} : () -> ()
 
 // -----
 
 // expected-error @below {{use of "B" with incorrect type in function}}
-"someop"() {f = #kgen.expr.func<(A) -> add(:i32 B, B)> : !kgen.signature<[B : index], [], (index) -> i32>} : () -> ()
+"someop"() {f = #kgen.expr.func<(A) -> add(:i32 B, B)> : !kgen.signature<<B>(index) -> i32>} : () -> ()
 
 // -----
 
 // expected-error @below {{too many result expressions}}
-"someop"() {f = #kgen.expr.func<(A) -> (A, B)> : !kgen.signature<[B : index], [], (index) -> i32>} : () -> ()
+"someop"() {f = #kgen.expr.func<(A) -> (A, B)> : !kgen.signature<<B>(index) -> i32>} : () -> ()
 
 // -----
 
 // expected-error @below {{not enough result expressions}}
-"someop"() {f = #kgen.expr.func<(A) -> ()> : !kgen.signature<[B : index], [], (index) -> i32>} : () -> ()
+"someop"() {f = #kgen.expr.func<(A) -> ()> : !kgen.signature<<B>(index) -> i32>} : () -> ()
 
 // -----
 
