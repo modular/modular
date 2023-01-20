@@ -217,8 +217,8 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   p << ' ';
 
   p.printSymbolName(func.getName());
-  printOptionalParameterSpec(op.getInputParamDeclsAttr(),
-                             op.getResultParamTypesAttr(), p.getStream());
+  printOptionalParameterSpec(p, op.getInputParamDeclsAttr(),
+                             op.getResultParamTypesAttr());
 
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   printFunctionSignature(p, func.getFunctionBody(), argTypes,
@@ -244,9 +244,9 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
     p.printRegion(func.getFunctionBody(), /*printEntryBlockArgs=*/false);
   if (SymbolConstantAttr evaluator = getEvaluatorAttr()) {
     p << " evaluator ";
-    printKGENType(p.getStream(), evaluator.getType());
+    printKGENType(p, evaluator.getType());
     p << " = ";
-    printParamValue(evaluator, p.getStream());
+    printParamValue(p, evaluator);
   }
 }
 

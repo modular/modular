@@ -168,14 +168,14 @@ OptionalParseResult ListType::parseValue(AsmParser &p, TypedAttr &value) const {
   return p.parseRSquare();
 }
 
-LogicalResult ListType::printValue(raw_ostream &os, TypedAttr value) const {
+LogicalResult ListType::printValue(AsmPrinter &p, TypedAttr value) const {
   auto list = value.dyn_cast<ListAttr>();
   if (!list)
     return failure();
-  os << '[';
-  llvm::interleaveComma(list.getValues(), os,
-                        [&](TypedAttr value) { printParamValue(value, os); });
-  os << ']';
+  p << '[';
+  llvm::interleaveComma(list.getValues(), p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
+  p << ']';
   return success();
 }
 
@@ -482,8 +482,8 @@ static void printExprFunc(AsmPrinter &p, ParamDeclArrayAttr paramDecls,
   p << ") -> ";
   if (exprs.size() != 1)
     p << '(';
-  llvm::interleaveComma(
-      exprs, p, [&](TypedAttr expr) { printParamValue(expr, p.getStream()); });
+  llvm::interleaveComma(exprs, p,
+                        [&](TypedAttr expr) { printParamValue(p, expr); });
   if (exprs.size() != 1)
     p << ')';
 }

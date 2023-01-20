@@ -42,7 +42,6 @@ ParseResult parseKGENType(AsmParser &parser, FailureOr<T> &type) {
 }
 
 /// Print `type` using KGEN specific type sugars.
-void printKGENType(raw_ostream &os, Type type);
 void printKGENType(AsmPrinter &p, Type type);
 
 /// Parse a "colon type" production if present or default to `index` type if
@@ -50,7 +49,7 @@ void printKGENType(AsmPrinter &p, Type type);
 ParseResult parseColonTypeOrIndex(AsmParser &parser, Type &type);
 
 /// Print `: <type>` or elide it entirely if type is an `index` type.
-void printColonTypeOrIndex(raw_ostream &os, Type type);
+void printColonTypeOrIndex(AsmPrinter &p, Type type);
 
 //===----------------------------------------------------------------------===//
 // Parameter Printing and Parsing
@@ -58,7 +57,6 @@ void printColonTypeOrIndex(raw_ostream &os, Type type);
 
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
-void printParamName(StringRef name, raw_ostream &os);
 void printParamName(AsmPrinter &p, StringRef name);
 
 /// Parse a parameter name as either a keyword or double quoted string.
@@ -68,7 +66,6 @@ ParseResult parseParamName(AsmParser &p, FailureOr<StringAttr> &name);
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok.
 void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {});
-void printParamValue(TypedAttr value, raw_ostream &os);
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
@@ -103,12 +100,11 @@ void printColonTypeParamValue(AsmPrinter &p, TypedAttr value);
 /// Parse and print a ParamDeclAttr which has syntactic form `name (: type)?`.
 ParseResult parseParamDecl(AsmParser &p, FailureOr<ParamDeclAttr> &result);
 ParseResult parseParamDecl(AsmParser &p, ParamDeclAttr &result);
-void printParamDecl(ParamDeclAttr decl, raw_ostream &os);
 void printParamDecl(AsmPrinter &p, ParamDeclAttr decl);
 
 /// Parse and print ParamDeclArrayAttr as a canonical list of comma separated
 /// information.
-void printParamDecls(ArrayRef<ParamDeclAttr> decls, raw_ostream &os);
+void printParamDecls(AsmPrinter &p, ArrayRef<ParamDeclAttr> decls);
 ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result);
 
 /// Parse and print a parameter specification on a generator or region type.
@@ -117,18 +113,18 @@ ParseResult parseOptionalParameterSpec(AsmParser &parser,
 ParseResult parseOptionalParameterSpec(AsmParser &parser,
                                        ParamDeclArrayAttr &inputParamDecls,
                                        TypeArrayAttr &resultParamTypes);
+void printOptionalParameterSpec(AsmPrinter &p,
+                                ArrayRef<ParamDeclAttr> inputParamDecls,
+                                ArrayRef<Type> resultParamTypes = {});
 void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
-                                ParamDeclArrayAttr inputParamDecls);
-void printOptionalParameterSpec(ParamDeclArrayAttr inputParamDecls,
-                                TypeArrayAttr resultParamTypes,
-                                raw_ostream &os);
+                                ArrayRef<ParamDeclAttr> inputParamDecls);
 
 /// Parse and print an operand and result type list with conventions.
 ParseResult parseTypesWithConventions(AsmParser &p,
                                       SmallVectorImpl<Type> &operandTypes,
                                       SmallVectorImpl<Type> &resultTypes,
                                       ConventionsAttr &conventions);
-void printTypesWithConventions(raw_ostream &os, TypeRange operandTypes,
+void printTypesWithConventions(AsmPrinter &p, TypeRange operandTypes,
                                TypeRange resultTypes,
                                ConventionsAttr conventions);
 
@@ -154,15 +150,12 @@ void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
 /// Parse and print a parameter binding list if present.
 ParseResult parseParamBinds(AsmParser &p, ParamBindArrayAttr &paramBinds);
 void printParamBinds(AsmPrinter &p, ArrayRef<ParamBindAttr> paramBinds);
-void printParamBinds(ArrayRef<ParamBindAttr> paramBinds, raw_ostream &os);
 
 /// Parse a list of parameter bindings without result parameters in <>'s
 ParseResult
 parseOptionalParamBindSpec(AsmParser &p,
                            FailureOr<ParamBindArrayAttr> &paramValues);
 void printOptionalParamBindSpec(AsmPrinter &p, ParamBindArrayAttr paramValues);
-void printOptionalParamBindSpec(ParamBindArrayAttr paramValues,
-                                raw_ostream &os);
 
 /// Parse and print a list of parameter values.
 ParseResult parseParameterValues(OpAsmParser &p, ParameterExprArrayAttr &value);

@@ -35,6 +35,36 @@ def KGENDialect : Dialect {
     void registerTypes();
     /// Inject any external attribute models.
     void injectAttrInterfaces();
+
+    using TypeParseFn = Type (*)(AsmParser &);
+    using TypePrintFn = void (*)(AsmPrinter &, Type);
+
+    /// Register a keyword parser. A keyword can only be registered once.
+    /// Conflicts are up to dialect users to manage. The only restriction on
+    /// which keywords can be registered is that they cannot collide with
+    /// builtin MLIR types: `i32`, `index`, etc, which are also identified with
+    /// keywords.
+    void registerKeywordParser(StringRef keyword, TypeParseFn parse);
+
+    /// Register a keyword parser and printer. The dialect will try to parse
+    /// a pretty type indicated by a keyword when parsing a parameter type.
+    void registerPrettyType(StringRef keyword, TypeParseFn parse, TypeID id,
+                            TypePrintFn print);
+
+    /// Register a custom type parser using the type's mnemonic.
+    template <typename TypeT>
+    void registerMnemonicType();
+
+  private:
+    /// The map of keyword parsers.
+    llvm::StringMap<TypeParseFn> typeParseFns;
+    /// A map of pretty type printers.
+    DenseMap<TypeID, TypePrintFn> typePrintFns;
+
+    /// Allow the type pretty printer and parser utilities to access the
+    /// pretty functions.
+    friend ParseResult parseKGENType(AsmParser &, Type &);
+    friend void printKGENType(AsmPrinter &, Type);
   }];
 
   // https://discourse.llvm.org/t/psa-new-improved-fold-method-signature-has-landed-please-update-your-downstream-projects/67618

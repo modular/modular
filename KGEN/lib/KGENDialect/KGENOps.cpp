@@ -53,7 +53,7 @@ static ParseResult parseParamConstantOpValue(OpAsmParser &p, TypedAttr &value) {
 
 static void printParamConstantOpValue(OpAsmPrinter &p, Operation *,
                                       TypedAttr value) {
-  printColonTypeOrIndex(p.getStream(), value.getType());
+  printColonTypeOrIndex(p, value.getType());
   p << " = <";
   printParamValue(p, value);
   p << ">";
@@ -184,7 +184,7 @@ static void printParamSearchOpValue(OpAsmPrinter &p, Operation *,
   ParamDeclAttr variable = paramDecls.front();
   printParamName(p, variable.getName().getValue());
 
-  printColonTypeOrIndex(p.getStream(), variable.getType());
+  printColonTypeOrIndex(p, variable.getType());
   p << " = <";
   llvm::interleaveComma(values, p,
                         [&](TypedAttr elt) { printParamValue(p, elt); });
@@ -292,7 +292,7 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
   printParamBinds(p, paramValues);
   if (!paramDecls.empty()) {
     p << " -> ";
-    printParamDecls(paramDecls, p.getStream());
+    printParamDecls(p, paramDecls);
   }
   p << ">";
 }
@@ -474,16 +474,16 @@ void GeneratorInterfaceOp::print(OpAsmPrinter &p) {
   printGeneratorOrFunc(p, *this);
   if (SymbolConstantAttr evaluator = getEvaluatorAttr()) {
     p << " evaluator ";
-    printKGENType(p.getStream(), evaluator.getType());
+    printKGENType(p, evaluator.getType());
     p << " = ";
-    printParamValue(evaluator, p.getStream());
+    printParamValue(p, evaluator);
   }
 
   if (SymbolConstantAttr defaultImpl = getDefaultImplAttr()) {
     p << " defaultImpl ";
-    printKGENType(p.getStream(), defaultImpl.getType());
+    printKGENType(p, defaultImpl.getType());
     p << " = ";
-    printParamValue(defaultImpl, p.getStream());
+    printParamValue(p, defaultImpl);
   }
 }
 
@@ -574,7 +574,7 @@ static void printAddressOfOp(OpAsmPrinter &p, Operation *op,
   p << calleeCst.getSymbol();
   printCallOpParams(p, op, calleeCst.getParamValues(), paramDecls);
   p << " : ";
-  printTypesWithConventions(p.getStream(), calleeCst.getType().getValueInputs(),
+  printTypesWithConventions(p, calleeCst.getType().getValueInputs(),
                             calleeCst.getType().getValueResults(),
                             calleeCst.getType().getConventions());
 }
@@ -616,7 +616,7 @@ static void printCallOp(OpAsmPrinter &p, Operation *op,
   p << '(';
   p.printOperands(operands);
   p << ") : ";
-  printTypesWithConventions(p.getStream(), operandTypes, resultTypes,
+  printTypesWithConventions(p, operandTypes, resultTypes,
                             calleeCst.getType().getConventions());
 }
 
@@ -677,8 +677,8 @@ static void printRegionBody(OpAsmPrinter &p, Operation *op, TypeAttr signature,
                             ConstraintArrayAttr constraints, Region &body) {
   auto sig = cast<SignatureType>(signature.getValue());
 
-  printOptionalParameterSpec(sig.getInputParams(), sig.getResultParamTypes(),
-                             p.getStream());
+  printOptionalParameterSpec(p, sig.getInputParams(),
+                             sig.getResultParamTypes());
   printFunctionSignature(p, body, sig.getValueInputs(), sig.getValueResults(),
                          sig.getConventions());
   printOptionalConstraints(p, op, constraints);

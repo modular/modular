@@ -99,6 +99,18 @@ void KGENDialect::initialize() {
       >();
 }
 
+void KGENDialect::registerKeywordParser(StringRef keyword, TypeParseFn parse) {
+  if (!typeParseFns.try_emplace(keyword, parse).second)
+    llvm::report_fatal_error("duplicate pretty type keyword: " + keyword);
+}
+
+void KGENDialect::registerPrettyType(StringRef keyword, TypeParseFn parse,
+                                     TypeID id, TypePrintFn print) {
+  registerKeywordParser(keyword, parse);
+  if (!typePrintFns.try_emplace(id, print).second)
+    llvm::report_fatal_error("duplicate printer for: " + keyword);
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

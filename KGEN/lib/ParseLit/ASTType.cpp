@@ -61,7 +61,7 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
     if (!params.empty()) {
       os << '[';
       llvm::interleaveComma(params, os, [&](ParamBindAttr bind) {
-        printParamValue(bind.getValue(), os);
+        os << getParamAsString(bind.getValue());
       });
       os << ']';
     }

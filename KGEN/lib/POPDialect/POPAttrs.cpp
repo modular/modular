@@ -238,27 +238,27 @@ static ParseResult parseDTypeValues(AsmParser &p,
 }
 
 /// Print a single DType value.
-static void printDTypeValue(raw_ostream &os, const DTypeValue &value,
+static void printDTypeValue(AsmPrinter &p, const DTypeValue &value,
                             KGENDType dtype) {
   if (dtype.isInt()) {
-    os << value.getIntVal();
+    p << value.getIntVal();
   } else if (dtype.isFloat()) {
     SmallString<256> strVal;
     value.getFloatVal().toString(strVal);
-    os << '"' << StringRef(strVal.data(), strVal.size()) << '"';
+    p << '"' << StringRef(strVal.data(), strVal.size()) << '"';
   } else if (dtype.isBool()) {
-    os << (value.getBoolVal() ? "true" : "false");
+    p << (value.getBoolVal() ? "true" : "false");
   } else {
     assert(dtype.isIndex() || dtype.isAddress());
-    os << value.getIndexVal();
+    p << value.getIndexVal();
   }
 }
 
-static void printDTypeValues(raw_ostream &os, ArrayRef<DTypeValue> values,
+static void printDTypeValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
                              SIMDType type) {
   KGENDType dtype = *type.getResolvedDType();
-  llvm::interleaveComma(values, os, [&](const DTypeValue &value) {
-    printDTypeValue(os, value, dtype);
+  llvm::interleaveComma(values, p, [&](const DTypeValue &value) {
+    printDTypeValue(p, value, dtype);
   });
 }
 
@@ -318,20 +318,20 @@ parseSplatOrVector(AsmParser &p, FailureOr<SmallVector<DTypeValue>> &values,
 /// Print the values of a SIMD vector as either a splat if they're all the same
 /// or a list of values deliminated by `<` and `>`.
 template <bool inAttr>
-static void printSplatOrVector(raw_ostream &os, ArrayRef<DTypeValue> values,
+static void printSplatOrVector(AsmPrinter &p, ArrayRef<DTypeValue> values,
                                SIMDType type) {
   // Check if all values are equal, in which case we print as a splat.
   if (!values.empty() && llvm::all_equal(values)) {
     // Make sure to add a space after the attribute mnemonic.
     if constexpr (inAttr)
-      os << ' ';
-    printDTypeValue(os, values.front(), values.front().getDType());
+      p << ' ';
+    printDTypeValue(p, values.front(), values.front().getDType());
     return;
   }
 
-  os << '<';
-  printDTypeValues(os, values, type);
-  os << '>';
+  p << '<';
+  printDTypeValues(p, values, type);
+  p << '>';
 }
 
 /// Custom directive parse hook for SIMDAttr assembly format.
@@ -344,7 +344,7 @@ static ParseResult parseSIMDValues(AsmParser &p,
 /// Custom directive print hook for SIMDAttr assembly format.
 static void printSIMDValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
                             SIMDType type) {
-  printSplatOrVector</*inAttr=*/true>(p.getStream(), values, type);
+  printSplatOrVector</*inAttr=*/true>(p, values, type);
 }
 
 OptionalParseResult SIMDType::parseValue(AsmParser &p, TypedAttr &value) const {
@@ -356,12 +356,12 @@ OptionalParseResult SIMDType::parseValue(AsmParser &p, TypedAttr &value) const {
   return result;
 }
 
-LogicalResult SIMDType::printValue(raw_ostream &os, TypedAttr value) const {
+LogicalResult SIMDType::printValue(AsmPrinter &p, TypedAttr value) const {
   auto simd = ::dyn_cast<SIMDAttr>(value);
   if (!simd)
     return failure();
 
-  printSplatOrVector</*inAttr=*/false>(os, simd.getValues(), *this);
+  printSplatOrVector</*inAttr=*/false>(p, simd.getValues(), *this);
   return mlir::success();
 }
 
@@ -380,9 +380,8 @@ static ParseResult parseArrayElements(AsmParser &p,
 
 static void printArrayElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
                                POP::ArrayType type) {
-  llvm::interleaveComma(values, p, [&](TypedAttr value) {
-    printParamValue(value, p.getStream());
-  });
+  llvm::interleaveComma(values, p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
 }
 
 OptionalParseResult POP::ArrayType::parseValue(AsmParser &p,
@@ -403,15 +402,14 @@ OptionalParseResult POP::ArrayType::parseValue(AsmParser &p,
   return p.parseRSquare();
 }
 
-LogicalResult POP::ArrayType::printValue(raw_ostream &os,
-                                         TypedAttr value) const {
+LogicalResult POP::ArrayType::printValue(AsmPrinter &p, TypedAttr value) const {
   auto array = ::dyn_cast<POP::ArrayAttr>(value);
   if (!array)
     return failure();
-  os << '[';
-  llvm::interleaveComma(array.getValues(), os,
-                        [&](TypedAttr value) { printParamValue(value, os); });
-  os << ']';
+  p << '[';
+  llvm::interleaveComma(array.getValues(), p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
+  p << ']';
   return mlir::success();
 }
 
@@ -456,9 +454,8 @@ parseStructElements(AsmParser &p, FailureOr<SmallVector<TypedAttr>> &values,
 
 static void printStructElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
                                 StructType type) {
-  llvm::interleaveComma(values, p, [&](TypedAttr value) {
-    printParamValue(value, p.getStream());
-  });
+  llvm::interleaveComma(values, p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
 }
 
 OptionalParseResult StructType::parseValue(AsmParser &p,
@@ -472,14 +469,14 @@ OptionalParseResult StructType::parseValue(AsmParser &p,
   return p.parseRBrace();
 }
 
-LogicalResult StructType::printValue(raw_ostream &os, TypedAttr value) const {
+LogicalResult StructType::printValue(AsmPrinter &p, TypedAttr value) const {
   auto structAttr = ::dyn_cast<StructAttr>(value);
   if (!structAttr)
     return failure();
-  os << "{ ";
-  llvm::interleaveComma(structAttr.getValues(), os,
-                        [&](TypedAttr value) { printParamValue(value, os); });
-  os << " }";
+  p << "{ ";
+  llvm::interleaveComma(structAttr.getValues(), p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
+  p << " }";
   return mlir::success();
 }
 
