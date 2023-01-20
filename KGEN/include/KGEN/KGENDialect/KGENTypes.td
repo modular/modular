@@ -12,6 +12,7 @@
 #define KGEN_KGENDIALECT_KGENTYPES_TD
 
 include "KGEN/KGENDialect/KGENDialect.td"
+include "KGEN/KGENDialect/KGENTypeInterfaces.td"
 include "Support/MDialect/MTypeInterfaces.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/SubElementInterfaces.td"
@@ -56,7 +57,8 @@ def KGEN_ParamRefType : KGENType<"ParamRef", "paramref", [
 // MLIRTypeType
 //===----------------------------------------------------------------------===//
 
-def KGEN_MLIRTypeType : KGENType<"MLIRType", "mlirtype"> {
+def KGEN_MLIRTypeType : KGENType<"MLIRType", "mlirtype",
+    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "Arbitrary MLIR type";
   let description = [{
     This kgen type represents an arbitrary MLIR type, used for parameterizing
@@ -155,8 +157,9 @@ def KGEN_ListType : KGENType<"List", "list", [SubElementTypeInterface]> {
 // SignatureType
 //===----------------------------------------------------------------------===//
 
-def KGEN_SignatureType : KGENType<"Signature", "signature",
-    [SubElementTypeInterface]> {
+def KGEN_SignatureType : KGENType<"Signature", "signature", [
+    SubElementTypeInterface,
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "The signature for a parameterized declaration";
   let description = [{
     This type describes the signature for a parameterized declaration, which

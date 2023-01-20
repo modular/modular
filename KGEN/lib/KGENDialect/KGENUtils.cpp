@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/Compiler/VerifyUtils.h"
@@ -23,7 +24,6 @@
 
 using namespace M;
 using namespace KGEN;
-using mlir::OptionalParseResult;
 
 /// Return the string form for an attribute value that is printed in a <>
 /// context in the .mlir file.
@@ -631,6 +631,13 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   assert(type && "always have a contextual type");
   llvm::SMLoc loc = p.getCurrentLocation();
 
+  // If the type provides a pretty parsing hook, use it.
+  if (auto typeItf = dyn_cast<ParameterTypeInterface>(type)) {
+    OptionalParseResult result = typeItf.parseValue(p, value);
+    if (result.has_value())
+      return *result;
+  }
+
   // If this is a '*'-prefixed double quoted string, then this is a simple
   // parameter reference.
   if (succeeded(p.parseOptionalStar())) {
@@ -639,22 +646,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       return failure();
     value = ParamDeclRefAttr::get(name, type);
     return success();
-  }
-
-  // If this parameter is a type, parse it as such here to catch MLIR builtin
-  // types that look like keywords.
-  if (type.isa<MLIRTypeType>()) {
-    Type result;
-    OptionalParseResult parseResult = p.parseOptionalType(result);
-    if (parseResult.has_value()) {
-      if (failed(parseResult.value()))
-        return failure();
-      // We always parse this as a parameterized type, but the builder will form
-      // a concrete type if there are no type parameters in it.  We could add
-      // specific syntax to differentiate them if there is a reason to.
-      value = TypeConstantAttr::get(result);
-      return success();
-    }
   }
 
   // A '?' represents an unknown parameter.
@@ -703,9 +694,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
       switch (opcode) {
       case (uint32_t)POCAliases::NEG:
       case (uint32_t)POCAliases::SUB:
-        // The subtraction operation defaults to index type for its operands.
-        operandType = p.getBuilder().getIndexType();
-        break;
       case (uint32_t)POC::EQ:
       case (uint32_t)POC::LT:
       case (uint32_t)POC::LE:
@@ -793,30 +781,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     return success();
   }
 
-  // If this is a SignatureType, we expect a symbol name or a
-  // SymbolConstantAttr.  We need special parsing logic here because
-  // FlatSymbolRefAttr isn't a TypedAttr.
-  if (auto sigType = dyn_cast<SignatureType>(type)) {
-    Attribute attr;
-    if (p.parseAttribute(attr, type))
-      return failure();
-
-    if (auto symbol = dyn_cast<SymbolRefAttr>(attr)) {
-      // Parse any trailing parameter bindings.
-      FailureOr<ParamBindArrayAttr> paramValues;
-      if (parseOptionalParamBindSpec(p, paramValues))
-        return failure();
-      value = SymbolConstantAttr::get(symbol, *paramValues, sigType);
-      return success();
-    }
-
-    if (auto typedAttr = dyn_cast<TypedAttr>(attr)) {
-      value = typedAttr;
-      return success();
-    }
-    return p.emitError(loc, "invalid signature parameter attribute");
-  }
-
   // If this is a list type, parse a comma-separated list of parameter values of
   // the element type surrounded by square brackets.
   if (auto list = dyn_cast<ListType>(type)) {
@@ -887,6 +851,11 @@ static void printOperatorOperands(raw_ostream &os, POC opcode,
 /// dealing with a parameter specifically.  This utilize syntactic shortcuts to
 /// make the printed syntax easier to grok.
 void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
+  // If the attribute's type provides a pretty printing hook, try to use it.
+  if (auto typeItf = dyn_cast<ParameterTypeInterface>(value.getType()))
+    if (succeeded(typeItf.printValue(os, value)))
+      return;
+
   if (isa<UnknownAttr>(value)) {
     os << '?';
     return;
@@ -894,15 +863,6 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
 
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(value)) {
     printParamName(declRef.getName(), os);
-    return;
-  }
-
-  // If this is a type constant, print it as a bare type.
-  if (auto typeConstant = dyn_cast<TypeConstantAttr>(value)) {
-    if (auto paramRef = dyn_cast<ParamRefType>(typeConstant.getValue()))
-      printParamValue(paramRef.getParam(), os);
-    else
-      os << typeConstant.getValue();
     return;
   }
 
@@ -917,13 +877,6 @@ void KGEN::printParamValue(TypedAttr value, raw_ostream &os) {
       os << stringRep;
       return;
     }
-  }
-
-  // Symbol constants print as just the symbol followed by parameter bindings.
-  if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(value)) {
-    os << symbolConstant.getSymbol();
-    printOptionalParamBindSpec(symbolConstant.getParamValues(), os);
-    return;
   }
 
   // Handle expressions.
