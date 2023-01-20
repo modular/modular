@@ -13,6 +13,29 @@ from Tuple import StaticTuple
 from List import product, contains
 
 
+@always_inline
+fn raw_stack_allocation[
+    count: __mlir_type.index,
+    type: __mlir_type.`!kgen.dtype`,
+    alignment: __mlir_type.index,
+]() -> DTypePointer[type]:
+    """Allocates data buffer space on the stack given a data type and number of elements.
+
+    Args:
+        count: number of elements to allocate memory for.
+        type: the data type of each element.
+        alignment: address alignment of the allocated data.
+
+    Returns:
+        A data pointer of the given dtype pointing to the allocated space.
+    """
+    return __mlir_op.`pop.stack_allocation`[
+        count:count,
+        _type : __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
+        alignment:alignment,
+    ]()
+
+
 @interface
 fn _get_buffer_len[size: __mlir_type.index](dynamic_size: Int) -> Int:
     """Gets the size if it is a known constant, otherwise it gets the
@@ -188,6 +211,19 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
             val (SIMD[width, type]): The value to store.
         """
         self.data.simd_store[width](idx, val)
+
+    @staticmethod
+    @always_inline
+    fn stack_allocation[alignment: __mlir_type.index]() -> Buffer[size, type]:
+        """Constructs a buffer instance backed by stack allocated memory space.
+
+        Args:
+            alignment: address alignment requirement for the allocation.
+        Returns:
+            Constructed buffer with the allocated space.
+        """
+        var data_pointer = raw_stack_allocation[size, type, alignment]()
+        return Buffer[size, type](data_pointer.address)
 
 
 fn _compute_ndbuffer_offset[
@@ -522,9 +558,124 @@ struct NDBuffer[
             self.data.address, product[rank](shape)
         )
 
+    @staticmethod
+    @always_inline
+    fn stack_allocation[
+        alignment: __mlir_type.index
+    ]() -> NDBuffer[rank, shape, type]:
+        """Constructs an ndbuffer instance backed by stack allocated memory space.
+
+        Args:
+            alignment: address alignment requirement for the allocation.
+        Returns:
+            Constructed ndbuffer with the allocated space.
+        """
+        var data_pointer = raw_stack_allocation[
+            product[rank](shape).__as_mlir_index(), type, alignment
+        ]()
+        return NDBuffer[rank, shape, type](data_pointer.address)
+
 
 fn _neg[val: __mlir_type.i1]() -> __mlir_type.i1:
     """Negates an i1 value"""
     if val:
         return __mlir_attr.`0:i1`
     return __mlir_attr.`1:i1`
+
+
+fn partial_simd_load[
+    width: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+](
+    storage: DTypePointer[type],
+    lbound: Int,
+    rbound: Int,
+    pad_value: SIMD[1, type],
+) -> SIMD[width, type]:
+    """Loads a vector with dynamic bound, out of bound data will be filled
+    with pad value. Data is valid if lbound <= idx < rbound for idx from 0
+    to (simd_width-1).
+
+        e.g.
+            addr 0 1   2  3
+            data x 42 43  x
+
+            partial_simd_load[4](addr0,1,3) #gives [0 42 43 0]
+
+        Args:
+            width (mlir_index): The system simd vector size.
+            type (dtype): The underlying dtype of computation.
+            storage (DtypePointer): Pointer to the address to perform load.
+            lbound: lower bound of valid index within simd (inclusive).
+            rbound: upper bound of valid index within simd (non-inclusive).
+            pad_value: value to fill for out of bound indices.
+
+        Returns:
+            The SIMD vector loaded and zero-filled.
+    """
+    # Create a buffer view of the allocated space.
+    let vector = Buffer[width, type].stack_allocation[
+        # alignment
+        1
+    ]()
+
+    # Initialize vector with pad values.
+    vector.simd_store[width](0, SIMD[width, type].splat(pad_value))
+
+    # Compute intersection of given bound and the vector range.
+    let effective_lbound = Int.max(0, lbound)
+    let effective_rbound = Int.min(width, rbound)
+
+    # Fill values in valid range.
+    var idx: Int = effective_lbound
+    while idx < effective_rbound:
+        let storageVal = storage.load(idx)
+        vector.__setitem__(idx, storageVal)
+        idx += 1
+
+    # Return the resulting vector.
+    return vector.simd_load[width](0)
+
+
+fn partial_simd_store[
+    width: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+](
+    storage: DTypePointer[type],
+    lbound: Int,
+    rbound: Int,
+    data: SIMD[width, type],
+):
+    """Stores a vector with dynamic bound, out of bound data will ignored.
+    Data is valid if lbound <= idx < rbound for idx from 0 to (simd_width-1).
+        e.g.
+            addr 0 1 2  3
+            data 0 0 0  0
+
+            partial_simd_load[4](addr0,1,3, [-1, 42,43, -1]) #gives [0 42 43 0]
+
+        Args:
+            width (mlir_index): The system simd vector size.
+            type (dtype): The underlying dtype of computation.
+            storage (DtypePointer): Pointer to the address to perform load.
+            lbound: lower bound of valid index within simd (inclusive).
+            rbound: upper bound of valid index within simd (non-inclusive).
+            data: The vector value to store.
+    """
+    # Create a buffer view of the storage space.
+    let vector = Buffer[width, type,].stack_allocation[
+        # alignment
+        1
+    ]()
+
+    # Put the given vector data in the allocated buffer.
+    vector.simd_store[width](0, data)
+
+    # Compute intersection of valid bound and the simd vector range.
+    let effective_lbound = Int.max(0, lbound)
+    let effective_rbound = Int.min(width, rbound)
+
+    # Store the valid on the valid range.
+    var idx: Int = effective_lbound
+    while idx < effective_rbound:
+        let storageVal = vector.__getitem__(idx)
+        storage.store(idx, storageVal)
+        idx += 1
