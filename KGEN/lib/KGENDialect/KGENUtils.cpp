@@ -1186,7 +1186,6 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
                                        OperationState &result,
                                        GeneratorOrFuncKind opKind) {
   SmallVector<OpAsmParser::Argument> entryArgs;
-  SmallVector<DictionaryAttr> resultAttrs;
   SmallVector<Type> resultTypes;
   Builder &builder = parser.getBuilder();
 
