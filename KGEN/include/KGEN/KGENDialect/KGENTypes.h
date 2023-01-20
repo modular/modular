@@ -13,6 +13,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
+#include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "Support/ForwardDecls.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 

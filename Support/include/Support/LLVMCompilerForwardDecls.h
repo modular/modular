@@ -24,7 +24,7 @@ namespace mlir {
 namespace detail {
 template <typename T>
 class DenseArrayAttrImpl;
-}
+} // namespace detail
 class ArrayAttr;
 class AsmParser;
 class AsmPrinter;
@@ -89,6 +89,7 @@ class OperandRange;
 class Operation;
 class OpFoldResult;
 class OpOperand;
+class OptionalParseResult;
 class OpResult;
 class Pass;
 class PatternRewriter;
@@ -215,6 +216,7 @@ using mlir::OpFoldResult;
 using mlir::OpOperand;
 using mlir::OpResult;
 using mlir::OpRewritePattern;
+using mlir::OptionalParseResult;
 using mlir::OwningOpRef;
 using mlir::Pass;
 using mlir::PatternRewriter;

@@ -50,6 +50,30 @@ Type ParamRefType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
 }
 
 //===----------------------------------------------------------------------===//
+// MLIRTypeType
+//===----------------------------------------------------------------------===//
+
+OptionalParseResult MLIRTypeType::parseValue(AsmParser &p,
+                                             TypedAttr &value) const {
+  Type type;
+  OptionalParseResult result = p.parseOptionalType(type);
+  if (!result.has_value())
+    return {};
+  if (failed(*result))
+    return failure();
+  value = TypeConstantAttr::get(type);
+  return mlir::success();
+}
+
+LogicalResult MLIRTypeType::printValue(raw_ostream &os, TypedAttr value) const {
+  auto type = ::dyn_cast<TypeConstantAttr>(value);
+  if (!type)
+    return failure();
+  os << type.getValue();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ListType
 //===----------------------------------------------------------------------===//
 
@@ -91,6 +115,36 @@ Type ListType::getResolvedElementType() const {
 //===----------------------------------------------------------------------===//
 // SignatureType
 //===----------------------------------------------------------------------===//
+
+OptionalParseResult SignatureType::parseValue(AsmParser &p,
+                                              TypedAttr &value) const {
+  Attribute attr;
+  OptionalParseResult result = p.parseOptionalAttribute(attr, *this);
+  if (!result.has_value())
+    return std::nullopt;
+
+  // Parse a symbol reference as a signature type attribute.
+  if (auto symbol = attr.dyn_cast<SymbolRefAttr>()) {
+    // Parse any trailing parameter bindings.
+    FailureOr<ParamBindArrayAttr> paramValues;
+    if (parseOptionalParamBindSpec(p, paramValues))
+      return failure();
+    value = SymbolConstantAttr::get(symbol, *paramValues, *this);
+  } else {
+    value = attr.cast<TypedAttr>();
+  }
+  return mlir::success();
+}
+
+LogicalResult SignatureType::printValue(raw_ostream &os,
+                                        TypedAttr value) const {
+  auto symbolCst = ::dyn_cast<SymbolConstantAttr>(value);
+  if (!symbolCst)
+    return failure();
+  os << symbolCst.getSymbol();
+  printOptionalParamBindSpec(symbolCst.getParamValues(), os);
+  return success();
+}
 
 static void getSignatureDefaults(ParamDeclArrayAttr &inputParams,
                                  TypeArrayAttr &resultParamTypes,

@@ -1,0 +1,46 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef KGEN_KGENDIALECT_KGENTYPEINTERFACES_TD
+#define KGEN_KGENDIALECT_KGENTYPEINTERFACES_TD
+
+include "mlir/IR/OpBase.td"
+
+//===----------------------------------------------------------------------===//
+// ParameterTypeInterface
+//===----------------------------------------------------------------------===//
+
+def ParameterTypeInterface : TypeInterface<"ParameterTypeInterface"> {
+  let description = [{
+    The `ParameterTypeInterface` can be used by types to plug into various parts
+    of the KGEN parameter system, including pretty parsing of attribute values.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Parse an attribute of this type, using pretty syntax if desired. This
+      method should return none if the syntax guard does not match the expected
+      pretty syntax of an attribute of this type. The KGEN parameter parser
+      reserves several tokens to guard generic parameter attributes:
+
+      - `*` denotes the beginning of an escaped parameter reference.
+      - `?` denotes an unknown parameter value
+      - barewords are parameter references or parameter operators
+
+      The type may use any other token to guard its attribute pretty parsing.
+    }], "OptionalParseResult", "parseValue", (ins "AsmParser &":$p,
+                                                  "TypedAttr &":$value)>,
+    InterfaceMethod<[{
+      Print an attribute of this type, using pretty syntax if desired. Return
+      false if the attribute is not one the type knows how to print.
+    }], "LogicalResult", "printValue", (ins "raw_ostream &":$os,
+                                            "TypedAttr":$value)>
+  ];
+}
+
+#endif // KGEN_KGENDIALECT_KGENTYPEINTERFACES_TD
