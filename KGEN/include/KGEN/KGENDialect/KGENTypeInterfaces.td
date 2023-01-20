@@ -41,7 +41,7 @@ def ParameterTypeInterface : TypeInterface<"ParameterTypeInterface"> {
     InterfaceMethod<[{
       Print an attribute of this type, using pretty syntax if desired. Return
       false if the attribute is not one the type knows how to print.
-    }], "LogicalResult", "printValue", (ins "raw_ostream &":$os,
+    }], "LogicalResult", "printValue", (ins "AsmPrinter &":$p,
                                             "TypedAttr":$value)>
   ];
 }

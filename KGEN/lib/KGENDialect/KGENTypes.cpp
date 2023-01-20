@@ -27,6 +27,15 @@ void KGENDialect::registerTypes() {
 #define GET_TYPEDEF_LIST
 #include "KGEN/KGENDialect/KGENTypes.cpp.inc"
       >();
+
+  // Register custom type parser and printers for KGEN types.
+  registerPrettyType(
+      "type", &MLIRTypeType::parse, TypeID::get<MLIRTypeType>(),
+      +[](AsmPrinter &p, Type) { p << "type"; });
+  registerMnemonicType<DTypeType>();
+  registerMnemonicType<StringType>();
+  registerMnemonicType<ListType>();
+  registerMnemonicType<TargetType>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -65,11 +74,11 @@ OptionalParseResult MLIRTypeType::parseValue(AsmParser &p,
   return mlir::success();
 }
 
-LogicalResult MLIRTypeType::printValue(raw_ostream &os, TypedAttr value) const {
+LogicalResult MLIRTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
   auto type = ::dyn_cast<TypeConstantAttr>(value);
   if (!type)
     return failure();
-  os << type.getValue();
+  p << type.getValue();
   return success();
 }
 
@@ -136,13 +145,12 @@ OptionalParseResult SignatureType::parseValue(AsmParser &p,
   return mlir::success();
 }
 
-LogicalResult SignatureType::printValue(raw_ostream &os,
-                                        TypedAttr value) const {
+LogicalResult SignatureType::printValue(AsmPrinter &p, TypedAttr value) const {
   auto symbolCst = ::dyn_cast<SymbolConstantAttr>(value);
   if (!symbolCst)
     return failure();
-  os << symbolCst.getSymbol();
-  printOptionalParamBindSpec(symbolCst.getParamValues(), os);
+  p << symbolCst.getSymbol();
+  printOptionalParamBindSpec(p, symbolCst.getParamValues());
   return success();
 }
 
@@ -358,9 +366,8 @@ Type SignatureType::parse(AsmParser &p) {
 
 void SignatureType::print(AsmPrinter &p) const {
   p << '<';
-  printOptionalParameterSpec(getInputParams(), getResultParamTypes(),
-                             p.getStream());
-  printTypesWithConventions(p.getStream(), getValueInputs(), getValueResults(),
+  printOptionalParameterSpec(p, getInputParams(), getResultParamTypes());
+  printTypesWithConventions(p, getValueInputs(), getValueResults(),
                             getConventions());
   p << '>';
 }

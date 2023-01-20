@@ -67,6 +67,8 @@ def KGEN_MLIRTypeType : KGENType<"MLIRType", "mlirtype",
     It cannot be materialized into an SSA value, because it has no runtime
     representation.
   }];
+
+  let assemblyFormat = "";
 }
 
 //===----------------------------------------------------------------------===//
@@ -80,6 +82,8 @@ def KGEN_DTypeType : KGENType<"DType", "dtype",
     This type corresponds to the DType runtime class, representing an
     element type (aka "dtype") specifier for a data storage types.
   }];
+
+  let assemblyFormat = "";
 }
 
 //===----------------------------------------------------------------------===//
@@ -93,6 +97,8 @@ def KGEN_StringType : KGENType<"String", "string",
     This kgen type represents an string value, used for parameterizing
     generators and working with string-returning expressions.
   }];
+
+  let assemblyFormat = "";
 }
 
 //===----------------------------------------------------------------------===//
@@ -315,6 +321,8 @@ def KGEN_TargetType : KGENType<"Target", "target"> {
     }
     ```
   }];
+
+  let assemblyFormat = "";
 }
 
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

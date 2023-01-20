@@ -137,7 +137,7 @@ static ParseResult parseShuffleMask(AsmParser &p, TypedAttr &mask,
 
 static void printShuffleMask(AsmPrinter &p, Operation *op, TypedAttr mask,
                              Type resultType) {
-  printParamValue(mask, p.getStream());
+  printParamValue(p, mask);
 }
 
 LogicalResult SIMDShuffleOp::verify() {
@@ -489,8 +489,7 @@ static ParseResult parseGlobalConstantOpValue(OpAsmParser &p, TypedAttr &value,
 
 static void printGlobalConstantOpValue(OpAsmPrinter &p, Operation *,
                                        TypedAttr value, Type type) {
-  printColonTypeOrIndex(p.getStream(),
-                        cast<PointerType>(type).getResolvedElementType());
+  printColonTypeOrIndex(p, cast<PointerType>(type).getResolvedElementType());
   p << " = <";
   printParamValue(p, value);
   p << ">";
