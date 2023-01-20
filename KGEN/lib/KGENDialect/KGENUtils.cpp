@@ -168,6 +168,19 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
     return failure(!type);
   }
 
+  // Parse symbol references as decl reference types.
+  SymbolRefAttr symbol;
+  OptionalParseResult result = parser.parseOptionalAttribute(symbol);
+  if (result.has_value()) {
+    if (failed(*result))
+      return failure();
+    FailureOr<ParamBindArrayAttr> values;
+    if (parseOptionalParamBindSpec(parser, values))
+      return failure();
+    type = DeclRefType::get(symbol, *values);
+    return success();
+  }
+
   // Helper for building (and checking) a Signature type.
   auto returnSignatureType = [&](ParamDeclArrayAttr inputParams,
                                  TypeArrayAttr resultParamTypes,
@@ -224,6 +237,9 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
   if (auto it = dialect->typePrintFns.find(type.getTypeID());
       it != dialect->typePrintFns.end()) {
     it->second(p, type);
+  } else if (auto ref = dyn_cast<DeclRefType>(type)) {
+    p << ref.getSymbol();
+    printOptionalParamBindSpec(p, ref.getParamValues());
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     // If there are no parameters and no effects, print a SignatureType as a
     // function type to keep things concise.

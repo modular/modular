@@ -3,20 +3,20 @@
 from prolog import DType, Error, F32, Int, object, SIMD
 
 @interface
-# CHECK: lit.func @"func_interface0{{.*}}<type: !kgen.declref<@"$prolog"::@DType>>(%x: index) -> index attributes {isInterface}
+# CHECK: lit.func @"func_interface0{{.*}}<type: @"$prolog"::@DType>(%x: index) -> index attributes {isInterface}
 fn func_interface0[type: DType](x: __mlir_type.index) -> __mlir_type.index:
 
 @interface
-# CHECK: lit.func @"func_interface1{{.*}}<type: !kgen.declref<@"$prolog"::@DType>>(%x: index) -> index attributes {isInterface}
+# CHECK: lit.func @"func_interface1{{.*}}<type: @"$prolog"::@DType>(%x: index) -> index attributes {isInterface}
 fn func_interface1[type: DType](x: __mlir_type.index) -> __mlir_type.index: pass
 
 @interface
-# CHECK: lit.func @"func_interface2{{.*}}<type: !kgen.declref<@"$prolog"::@DType>>(%x: index) -> index attributes {isInterface}
+# CHECK: lit.func @"func_interface2{{.*}}<type: @"$prolog"::@DType>(%x: index) -> index attributes {isInterface}
 fn func_interface2[type: DType](x: __mlir_type.index) -> __mlir_type.index:
   ...
 
 @implements(func_interface2)
-# CHECK: lit.func @"func_impl{{.*}}<type: !kgen.declref<@"$prolog"::@DType>>(%x: index) -> index
+# CHECK: lit.func @"func_impl{{.*}}<type: @"$prolog"::@DType>(%x: index) -> index
 # CHECK:    implements @"{{.*}}"::@"func_interface2(__mlir_type.index)" {
 fn func_impl[type: DType](x: __mlir_type.index) -> __mlir_type.index:
   return x
