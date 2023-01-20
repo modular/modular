@@ -1091,6 +1091,28 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
 }
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPVariadicGet
+//===----------------------------------------------------------------------===//
+
+/// Converts a `pop.variadic.get` into LLVM ops that load one of the elements of
+/// the underlying struct that represents the `!pop.variadic` type.
+struct ConvertPOPVariadicGet
+    : public mlir::ConvertOpToLLVMPattern<VariadicGetOp> {
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(VariadicGetOp op, VariadicGetOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Value ptr = rewriter.create<LLVM::ExtractValueOp>(op.getLoc(),
+                                                      adaptor.getVariadic(), 0);
+    Value gep = rewriter.create<LLVM::GEPOp>(op.getLoc(), ptr.getType(), ptr,
+                                             adaptor.getIndex());
+    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, gep);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPVariadicSize
 //===----------------------------------------------------------------------===//
 
@@ -1528,6 +1550,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPStructGet,
       ConvertPOPStructReplace,
       ConvertPOPSub,
+      ConvertPOPVariadicGet,
       ConvertPOPVariadicSize,
       ConvertPOPVariantCreate,
       ConvertPOPVariantGet,

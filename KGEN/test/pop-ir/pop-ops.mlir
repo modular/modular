@@ -1085,6 +1085,9 @@ kgen.generator @variadics<type: type>(
   %v0 = pop.variadic.create [%arg0, %arg1] : !pop.variadic<scalar<f32>>
   // CHECK: pop.variadic.size %[[V0]] : !pop.variadic<scalar<f32>>
   %s0 = pop.variadic.size %v0 : !pop.variadic<scalar<f32>>
+  // CHECK: pop.variadic.get %[[V0]][%{{[a-zA-Z0-9]+}}] : !pop.variadic<scalar<f32>>
+  %i0 = index.constant 2
+  %g0 = pop.variadic.get %v0[%i0] : !pop.variadic<scalar<f32>>
 
   // CHECK: %[[V1:.*]] = pop.variadic.create [] : !pop.variadic<scalar<f32>>
   %v1 = pop.variadic.create [] : !pop.variadic<scalar<f32>>

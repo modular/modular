@@ -1114,3 +1114,15 @@ kgen.func @variadic_size(%arg0: !pop.variadic<f32>) -> index {
   %0 = pop.variadic.size %arg0 : !pop.variadic<f32>
   kgen.return %0 : index
 }
+
+// -----
+
+// CHECK-LABEL: @variadic_get
+kgen.func @variadic_get(%arg0: !pop.variadic<f32>) -> f32 {
+  %0 = index.constant 3
+  // CHECK: %[[ALLOCA:.*]] = llvm.extractvalue %{{.*}}[0] : !llvm.struct<(ptr<f32>, i64)>
+  // CHECK: %[[GEP:.*]] = llvm.getelementptr %[[ALLOCA]][%{{[0-9]+}}]
+  // CHECK: %[[LOAD:.*]] = llvm.load %[[GEP]]
+  %1 = pop.variadic.get %arg0[%0] : !pop.variadic<f32>
+  kgen.return %1 : f32
+}
