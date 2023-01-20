@@ -20,7 +20,7 @@ fn map[
     ],
 ](size: Int):
     """
-    Map a unary function.
+    Map a function over a range from 0 to size.
     """
     var i: Int = 0
     while i < size:
@@ -33,74 +33,27 @@ fn map[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn vectorize[
     simd_width: __mlir_type.index,
-    buffer_size: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
     func: __mlir_type[
-        `!kgen.signature<[simd_width : index, type : !kgen.dtype], [],`,
+        `!kgen.signature<[simd_width : index], [],`,
         `(`,
-        SIMD[simd_width, `type`],
-        `) -> `,
-        SIMD[simd_width, `type`],
-        `>`,
+        Int,
+        `) force_inline -> !lit.none>`,
     ],
-](dest: Buffer[buffer_size, type], src: Buffer[buffer_size, type]):
-    """
-    Vectorize a unary function over a buffer.
+](size: Int):
+    """Map a function which is parametrized over a simd_Width over a range
+    from 0 to size in simd fashion.
     """
     var i: Int = 0
-    let len = dest.__len__()
-    let vector_end = (len // simd_width) * simd_width
+    let vector_end = (size // simd_width) * simd_width
     while i < vector_end:
-        dest.simd_store[simd_width](
-            i, func[simd_width, type](src.simd_load[simd_width](i))
-        )
+        func[simd_width](i)
         i += simd_width
     i = vector_end
-    while i < len:
-        dest.__setitem__(i, func[1, type](src.__getitem__(i)))
-        i += 1
-
-
-fn vectorize[
-    simd_width: __mlir_type.index,
-    buffer_size: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-    func: __mlir_type[
-        `!kgen.signature<[simd_width : index, type : !kgen.dtype], [],`,
-        `(`,
-        SIMD[simd_width, `type`],
-        `,`,
-        SIMD[simd_width, `type`],
-        `) -> `,
-        SIMD[simd_width, `type`],
-        `>`,
-    ],
-](
-    dest: Buffer[buffer_size, type],
-    lhs: Buffer[buffer_size, type],
-    rhs: Buffer[buffer_size, type],
-):
-    """
-    Vectorize a binary function over a buffer.
-    """
-    var i: Int = 0
-    let len = dest.__len__()
-    let vector_end = (len // simd_width) * simd_width
-    while i < vector_end:
-        dest.simd_store[simd_width](
-            i,
-            func[simd_width, type](
-                lhs.simd_load[simd_width](i), rhs.simd_load[simd_width](i)
-            ),
-        )
-        i += simd_width
-    i = vector_end
-    while i < len:
-        dest.__setitem__(
-            i, func[1, type](lhs.__getitem__(i), rhs.__getitem__(i))
-        )
+    while i < size:
+        func[1](i)
         i += 1
 
 
@@ -136,7 +89,7 @@ fn reduce[
         SIMD[1, `type`],
         `>`,
     ],
-](src: Buffer[size, `type`], init: SIMD[1, `acc_type`]) -> __mlir_type[
+](src: Buffer[size, type], init: SIMD[1, acc_type]) -> __mlir_type[
     `!pop.scalar<`, acc_type, `>`
 ]:
     var i: Int = 0
