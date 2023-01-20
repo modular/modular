@@ -1,11 +1,11 @@
 # RUN: kgen-translate -import-lit -verify-diagnostics %s -I %stdlibdir | FileCheck %s
-#===------------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 #
 # Standard Prolog(ue) for Lit.
 #
 # This file implements basic datatypes used commonly across lit programs.
 #
-#===------------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 from Bool import Bool
 from Int import Int
@@ -15,133 +15,164 @@ from Assert import assert_param
 
 # CHECK: lit.func @"printF32
 fn printF32(x: F32):
-  let f64 = __mlir_op.`pop.cast`[_type: __mlir_type.`!pop.scalar<f64>`](x.value)
-  __mlir_op.`zap.print`[fmt: "%f\n"](f64)
+    let f64 = __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<f64>`](
+        x.value
+    )
+    __mlir_op.`zap.print`[fmt:"%f\n"](f64)
+
 
 fn printInt(x: Int):
-  __mlir_op.`zap.print`[fmt: "%ld\n"](x.value)
+    __mlir_op.`zap.print`[fmt:"%ld\n"](x.value)
 
-#===------------------------------------------------------------------------===#
+
+# ===----------------------------------------------------------------------=== #
 # WIP Types
-#===------------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 # NOTE: This would be more naturally modeled as an enum, but this works for now.
 struct DType:
-  var value : __mlir_type.`!kgen.dtype`
+    var value: __mlir_type.`!kgen.dtype`
 
-  fn __new__(value: __mlir_type.`!kgen.dtype`) -> DType:
-    return __mlir_op.`lit.struct.create`[_type: DType](value)
+    fn __new__(value: __mlir_type.`!kgen.dtype`) -> DType:
+        return __mlir_op.`lit.struct.create`[_type:DType](value)
 
-  # TODO: This should be something like:
-  # @static var f32 = DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
-  @staticmethod
-  fn getF32() -> DType:
-    return DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
+    # TODO: This should be something like:
+    # @static var f32 = DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
+    @staticmethod
+    fn getF32() -> DType:
+        return DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
 
-  @staticmethod
-  fn getF64() -> DType:
-    return DType(__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`)
+    @staticmethod
+    fn getF64() -> DType:
+        return DType(__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`)
 
-  @staticmethod
-  fn getSI32() -> DType:
-    return DType(__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`)
+    @staticmethod
+    fn getSI32() -> DType:
+        return DType(__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`)
 
-  @staticmethod
-  fn getSI64() -> DType:
-    return DType(__mlir_attr.`#kgen.dtype.constant<si64> : !kgen.dtype`)
+    @staticmethod
+    fn getSI64() -> DType:
+        return DType(__mlir_attr.`#kgen.dtype.constant<si64> : !kgen.dtype`)
+
 
 struct Scalar[type: DType]:
-  pass
+    pass
 
-#===------------------------------------------------------------------------===#
+
+# ===----------------------------------------------------------------------=== #
 # Error
-#===------------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
+
 
 struct StringRef:
     var data: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`
     var size: Int
 
-    fn __new__(data: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`, size : Int) -> StringRef:
-      return __mlir_op.`lit.struct.create`[_type: StringRef](data, size)
+    fn __new__(
+        data: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`, size: Int
+    ) -> StringRef:
+        return __mlir_op.`lit.struct.create`[_type:StringRef](data, size)
 
     @staticmethod
     fn empty() -> StringRef:
-      let nullptr = __mlir_op.`pop.cast_from_builtin`[_type: __mlir_type.`!pop.scalar<index>`](
-        __mlir_op.`index.constant`[value: 0]())
-      let size = Int(0)
-      return StringRef(
-        __mlir_op.`pop.index_to_pointer`[_type: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`](nullptr),
-        size
-      )
+        let nullptr = __mlir_op.`pop.cast_from_builtin`[
+            _type : __mlir_type.`!pop.scalar<index>`
+        ](__mlir_op.`index.constant`[value:0]())
+        let size = Int(0)
+        return StringRef(
+            __mlir_op.`pop.index_to_pointer`[
+                _type : __mlir_type.`!pop.pointer<!pop.scalar<si8>>`
+            ](nullptr),
+            size,
+        )
+
 
 struct Error:
     var msg: StringRef
 
     fn __new__(msg: StringRef) -> Error:
-        return __mlir_op.`lit.struct.create`[_type: Error](msg)
+        return __mlir_op.`lit.struct.create`[_type:Error](msg)
+
 
 struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
     var value: __mlir_type[`!pop.variant<`, Error, `, `, type, `>>`]
 
-    fn __new__(value: __mlir_type[`!pop.variant<`, Error, `, `, type, `>>`])
-      -> ErrorOr[type]:
-        return __mlir_op.`lit.struct.create`[_type: ErrorOr[type]](value)
+    fn __new__(
+        value: __mlir_type[`!pop.variant<`, Error, `, `, type, `>>`]
+    ) -> ErrorOr[type]:
+        return __mlir_op.`lit.struct.create`[_type : ErrorOr[type]](value)
 
     fn __new__(err: Error) -> ErrorOr[type]:
-        return __mlir_op.`lit.struct.create`[_type: ErrorOr[type]](
-          __mlir_op.`pop.variant.create`[_type: __mlir_type[`!pop.variant<`, Error, `, `, type, `>`]](err))
+        return __mlir_op.`lit.struct.create`[_type : ErrorOr[type]](
+            __mlir_op.`pop.variant.create`[
+                _type : __mlir_type[`!pop.variant<`, Error, `, `, type, `>`]
+            ](err)
+        )
 
     fn __new__(value: type) -> ErrorOr[type]:
-        return __mlir_op.`lit.struct.create`[_type: ErrorOr[type]](
-           __mlir_op.`pop.variant.create`[_type: __mlir_type[`!pop.variant<`, Error, `, `, type, `>`]](value))
+        return __mlir_op.`lit.struct.create`[_type : ErrorOr[type]](
+            __mlir_op.`pop.variant.create`[
+                _type : __mlir_type[`!pop.variant<`, Error, `, `, type, `>`]
+            ](value)
+        )
 
     fn __bool__(self: ErrorOr[type]) -> Bool:
-        return Bool.false()
-           if __mlir_op.`pop.variant.is`[testType: __mlir_attr[Error]](self.value)
-           else Bool.true()
+        return (
+            Bool.false()
+            if __mlir_op.`pop.variant.is`[testType : __mlir_attr[Error]](
+                self.value
+            )
+            else Bool.true()
+        )
 
     fn getValue(self: ErrorOr[type]) -> type:
-        return __mlir_op.`pop.variant.get`[_type: type](self.value)
+        return __mlir_op.`pop.variant.get`[_type:type](self.value)
 
     fn getError(self: ErrorOr[type]) -> Error:
-        return __mlir_op.`pop.variant.get`[_type: Error](self.value)
+        return __mlir_op.`pop.variant.get`[_type:Error](self.value)
 
-#===------------------------------------------------------------------------===#
+
+# ===----------------------------------------------------------------------=== #
 # object
-#===------------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 # TODO: This should eventually model a dynamic object base class.  For now, this
 # is just a placeholder to be used by untyped 'def' operands.
 struct object:
+    ...
 
-#===------------------------------------------------------------------------===#
+
+# ===----------------------------------------------------------------------=== #
 # range
-#===------------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
+
 
 struct range:
-  var start : Int
-  var end : Int
-  var step : Int
+    var start: Int
+    var end: Int
+    var step: Int
 
-  fn __new__(start : Int, end : Int, step : Int) -> range:
-    return __mlir_op.`lit.struct.create`[_type: range](start, end, step)
+    fn __new__(start: Int, end: Int, step: Int) -> range:
+        return __mlir_op.`lit.struct.create`[_type:range](start, end, step)
 
-  fn __iter__(self : range) -> range:
-    return self
+    fn __iter__(self: range) -> range:
+        return self
 
-  fn __next__(self& : range) -> ErrorOr[Int]:
-    if self.start >= self.end:
-      return ErrorOr[Int](StringRef.empty()) # TODO: should raise StopIteration
-    let result : Int = self.start
-    self.start += self.step
-    return ErrorOr[Int](result)
+    fn __next__(self&: range) -> ErrorOr[Int]:
+        if self.start >= self.end:
+            return ErrorOr[Int](
+                StringRef.empty()
+            )  # TODO: should raise StopIteration
+        let result: Int = self.start
+        self.start += self.step
+        return ErrorOr[Int](result)
 
-  fn __len__(self : range) -> Int:
-    if self.step > 0 and self.start < self.end:
-      return 1 + (self.end - self.start - 1) // self.step
-    if self.step < 0 and self.start > self.end:
-      return 1 - (self.start - self.end - 1) // self.step
-    return 1
+    fn __len__(self: range) -> Int:
+        if self.step > 0 and self.start < self.end:
+            return 1 + (self.end - self.start - 1) // self.step
+        if self.step < 0 and self.start > self.end:
+            return 1 - (self.start - self.end - 1) // self.step
+        return 1
 
-  fn __getitem__(self : range, idx : Int) -> Int:
-    return self.start + idx * self.step
+    fn __getitem__(self: range, idx: Int) -> Int:
+        return self.start + idx * self.step
