@@ -90,7 +90,7 @@ kgen.extern.variable @foo : f64
 // -----
 
 kgen.func @constant_str() -> !kgen.string {
-  // CHECK: %[[GLOBAL_STR:.*]] = pop.global_constant: !pop.array<3, scalar<si8>> = <#pop.array<#pop.simd<65>, #pop.simd<66>, #pop.simd<0>>>
+  // CHECK: %[[GLOBAL_STR:.*]] = pop.global_constant: !pop.array<3, scalar<si8>> = <[<65>, <66>, <0>]>
   // CHECK: %[[BITCAST:.*]] = pop.pointer.bitcast %[[GLOBAL_STR]] : !pop.pointer<array<3, scalar<si8>>> to !pop.pointer<i8>
   // CHECK: %[[CONV_CAST:.*]] = builtin.unrealized_conversion_cast %[[BITCAST]] : !pop.pointer<i8> to !llvm.ptr<i8>
   // CHECK: %[[LENGTH:.*]] = llvm.mlir.constant(2 : i64) : i64

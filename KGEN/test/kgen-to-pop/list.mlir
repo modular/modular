@@ -206,7 +206,7 @@ kgen.func @variant_of_list(%list: !kgen.list<index[2]>, %var: !pop.variant<i1, !
 
 // CHECK-LABEL: @variant_of_empty_list
 kgen.func @variant_of_empty_list(%list: !kgen.list<i0[0]>, %var: !pop.variant<i1, !kgen.list<i0[0]>>) -> (!kgen.list<i0[0]>, !pop.variant<i1, !kgen.list<i0[0]>>) {
-  // CHECK-NEXT: %[[VAR:.*]] = kgen.param.constant: !pop.variant<i1, array<0, i0>> = <#pop.variant<:!pop.array<0, i0> #pop.array<>>
+  // CHECK-NEXT: %[[VAR:.*]] = kgen.param.constant: !pop.variant<i1, array<0, i0>> = <#pop.variant<:!pop.array<0, i0> []>
   %0 = pop.variant.create %list : !kgen.list<i0[0]> -> !pop.variant<i1, !kgen.list<i0[0]>>
   %1 = pop.variant.get %var : !pop.variant<i1, !kgen.list<i0[0]>> as !kgen.list<i0[0]>
   // CHECK-NEXT: return %[[VAR]]
@@ -233,12 +233,12 @@ kgen.func @list_in_coroutine(%coro: !pop.coroutine<() -> !kgen.list<index[0]>>) 
 
 // CHECK-LABEL: @list_attr_in_attr
 kgen.func @list_attr_in_attr() {
-  // CHECK-NEXT: !pop.struct<index, index, i32, i32, i32> = <#pop.struct<1, 2, 5, 6, 7>>
+  // CHECK-NEXT: !pop.struct<index, index, i32, i32, i32> = <{ 1, 2, 5, 6, 7 }>
   %0 = kgen.param.constant: !pop.struct<!kgen.list<index[2]>, !kgen.list<i32[3]>>
-    = <#pop.struct<[1, 2], [5, 6, 7]>>
-  // CHECK-NEXT: !pop.struct<index, index, index, index> = <#pop.struct<1, 2, 3, 4>>
-  %1 = kgen.param.constant: !pop.struct<!kgen.list<!kgen.list<index[2]>[2]>> = <#pop.struct<[[1, 2], [3, 4]]>>
-  // CHECK-NEXT: !pop.variant<array<0, i1>, array<2, array<2, i32>>> = <#pop.variant<:!pop.array<0, i1> #pop.array<>>>
+    = <{ [1, 2], [5, 6, 7] }>
+  // CHECK-NEXT: !pop.struct<index, index, index, index> = <{ 1, 2, 3, 4 }>
+  %1 = kgen.param.constant: !pop.struct<!kgen.list<!kgen.list<index[2]>[2]>> = <{ [[1, 2], [3, 4]] }>
+  // CHECK-NEXT: !pop.variant<array<0, i1>, array<2, array<2, i32>>> = <#pop.variant<:!pop.array<0, i1> []>>
   %2 = kgen.param.constant: !pop.variant<!kgen.list<i1[0]>, array<2, !kgen.list<i32[2]>>> = <#pop.variant<:!kgen.list<i1[0]> []>>
 
   "use"(%0, %1, %2) : (

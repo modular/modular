@@ -12,7 +12,7 @@ kgen.generator.interface @unary_add<size>(f32) -> si32
 kgen.generator @local_verif_error() {
 
   kgen.param.declare ty : dtype = <f32>
-  %one = kgen.param.constant: !pop.scalar<si64> = <#pop.simd<1>>
+  %one = kgen.param.constant: !pop.scalar<si64> = <<1>>
   %0 = pop.cast %one : !pop.scalar<si64> to !pop.scalar<ty>
 
   // expected-note @+1 {{verification error: 'pop.cast_to_builtin' op cannot convert from scalar dtype f32 to 'i8'}}

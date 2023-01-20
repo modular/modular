@@ -60,8 +60,8 @@ lit.struct.decl @SmallVector<N, T: type> {
 > : !debuginfo.unresolved<!kgen.list<i32[3]>>
 
 kgen.func @foo() {
-  // CHECK-DAG: %[[LIST:.*]] = kgen.param.constant: !pop.array<3, i32> = <#pop.array<1, 2, 3>>
-  // CHECK-DAG: %[[EMPTY:.*]] = kgen.param.constant: !pop.array<0, i32> = <#pop.array<>>
+  // CHECK-DAG: %[[LIST:.*]] = kgen.param.constant: !pop.array<3, i32> = <[1, 2, 3]>
+  // CHECK-DAG: %[[EMPTY:.*]] = kgen.param.constant: !pop.array<0, i32> = <[]>
 
   // CHECK: debuginfo.value #local_variable = %[[LIST]] : !pop.array<3, i32>
   %values = kgen.param.constant: list<i32[3]> = <[1, 2, 3]>

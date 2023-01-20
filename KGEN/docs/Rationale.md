@@ -280,7 +280,7 @@ kgen.generator @foo
 }
 
 kgen.generator @bar() {
-  %a = kgen.param.constant: !pop.simd<4, f32> = <#pop.simd<"2.0", "2.0", "2.0", "2.0">>
+  %a = kgen.param.constant: !pop.simd<4, f32> = <<"2.0", "2.0", "2.0", "2.0">>
 
   // Call example 1
   kgen.call @foo
@@ -296,7 +296,7 @@ kgen.generator @bar() {
       kgen.return %res : !pop.simd<size, dt>
     }
 
-  %b = kgen.param.constant: !pop.simd<8, si32> = <#pop.simd<3, 3, ...>>
+  %b = kgen.param.constant: !pop.simd<8, si32> = <<3, 3, ...>>
 
   // Call example 2
   kgen.call @foo
@@ -332,9 +332,9 @@ module {
     kgen.return %0 : !pop.simd<8, si32>
   }
   kgen.func @bar() {
-    %cst = kgen.param.constant: !pop.simd<4, f32> = <#pop.simd<"2.0", "2.0", ...>>
+    %cst = kgen.param.constant: !pop.simd<4, f32> = <<"2.0", "2.0", ...>>
     %0 = kgen.call @"foo,size=4,dt=f32,fn=bar_concrete_region_0"(%cst) : (!pop.simd<4, f32>) -> !pop.simd<4, f32>
-    %cst_0 = kgen.param.constant: !pop.simd<8, si32> = <#pop.simd<3, 3, ...>>
+    %cst_0 = kgen.param.constant: !pop.simd<8, si32> = <<3, 3, ...>>
     %1 = kgen.call @"foo,size=8,dt=si32,fn=bar_concrete_region_1"(%cst_0) : (!pop.simd<8, si32>) -> !pop.simd<8, si32>
     kgen.return
   }

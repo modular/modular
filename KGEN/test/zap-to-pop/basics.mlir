@@ -2,7 +2,7 @@
 
 // CHECK-LABEL: @zap_print
 kgen.generator @zap_print(%a: !pop.scalar<f32>) {
-  // CHECK: %[[FMT:.*]] = pop.global_constant: !pop.array<7, scalar<si8>> = <#pop.array<#pop.simd<102>, {{.*}}>>
+  // CHECK: %[[FMT:.*]] = pop.global_constant: !pop.array<7, scalar<si8>> = <[<102>, {{.*}}]>
   // CHECK: %[[C_STR:.*]] = pop.pointer.bitcast %[[FMT]] : !pop.pointer<array{{.*}}> to !pop.pointer<scalar<si8>>
   // CHECK: pop.external_call @KGEN_CompilerRT_PrintFormat(%[[C_STR]], %{{.*}}) (!pop.pointer<scalar<si8>>) -> ()
   zap.print "foo %f"(%a) : !pop.scalar<f32>

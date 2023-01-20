@@ -3,8 +3,8 @@
 // RUN: kgen-execute %s -execute -func="while_accum_loop:f32()" | FileCheck %s --check-prefix=WHILE_ACCUM
 
 kgen.func @for_loop() -> f32 {
-  %av = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"1.0">>
-  %c10 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"10.0">>
+  %av = kgen.param.constant: !pop.scalar<f32> = <<"1.0">>
+  %c10 = kgen.param.constant: !pop.scalar<f32> = <<"10.0">>
   %lb = index.constant 0
   %ub = index.constant 10
   %step = index.constant 1
@@ -17,8 +17,8 @@ kgen.func @for_loop() -> f32 {
 }
 
 kgen.func @while_loop() -> f32 {
-  %init = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"1.2">>
-  %limit = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"10.0">>
+  %init = kgen.param.constant: !pop.scalar<f32> = <<"1.2">>
+  %limit = kgen.param.constant: !pop.scalar<f32> = <<"10.0">>
   %result = scf.while (%v = %init) : (!pop.simd<1, f32>) -> !pop.simd<1, f32> {
     %cmp = pop.cmp lt(%v, %limit) : !pop.simd<1, f32>
     %cond = pop.cast_to_builtin %cmp : !pop.simd<1, bool> to i1
@@ -55,7 +55,7 @@ kgen.func @while_accum_loop() -> f32 {
   %eight = index.constant 8
   %iter_init = index.constant 0
   %size_minus_8 = index.sub %size, %eight
-  %accum_init = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"0.0">>
+  %accum_init = kgen.param.constant: !pop.scalar<f32> = <<"0.0">>
   // while (iter+8 < size) {
   //     int ii = iter;
   //     while (ii < iter + 8) {
