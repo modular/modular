@@ -14,6 +14,66 @@ from Reductions import max
 from SIMD import SIMD
 from Tuple import StaticTuple
 
+
+# ===----------------------------------------------------------------------===#
+# Utilities
+# ===----------------------------------------------------------------------===#
+
+
+@interface
+fn reduce_add_simd[
+    simd_width: __mlir_type.index,
+    step_simd_width: __mlir_type.index,
+    type: __mlir_type.`!kgen.dtype`,
+](
+    scalar&: SIMD[1, type],
+    vector&: SIMD[simd_width, type],
+    val: SIMD[step_simd_width, type],
+):
+    """This functions adds val to either the scalar value or the vector value
+    depending on the step_simd_width. This is useful when the simd_width varies
+    between iterations as in vectorize.
+    """
+    ...
+
+
+@implements(reduce_add_simd)
+fn reduce_add_simd_scalar_case[
+    simd_width: __mlir_type.index,
+    step_simd_width: __mlir_type.index,
+    type: __mlir_type.`!kgen.dtype`,
+](
+    scalar&: SIMD[1, type],
+    vector&: SIMD[simd_width, type],
+    val: SIMD[step_simd_width, type],
+):
+    """When the step_simd_width is 1, then we add to the scalar value."""
+    assert_param[step_simd_width == 1]()
+    scalar += val.__getitem__(0)
+
+
+@implements(reduce_add_simd)
+fn reduce_add_simd_vector_case[
+    simd_width: __mlir_type.index,
+    step_simd_width: __mlir_type.index,
+    type: __mlir_type.`!kgen.dtype`,
+](
+    scalar&: SIMD[1, type],
+    vector&: SIMD[simd_width, type],
+    val: SIMD[step_simd_width, type],
+):
+    """When the step_simd_Width is the same as the simd_width, then we add to
+    the vector value.
+    """
+    assert_param[step_simd_width == simd_width]()
+    vector += __mlir_op.`kgen.rebind`[
+        _type : SIMD[
+            simd_width,
+            type,
+        ]
+    ](val)
+
+
 # ===----------------------------------------------------------------------===#
 # Softmax 2 Pass
 # ===----------------------------------------------------------------------===#
@@ -92,32 +152,18 @@ fn _softmax_2_pass_step2[
     #     Output[i] = exp(Input[i] - runningMax) / runningSum
     #   end for
 
-    # TODO: Because vectorize cannot currently capture values from outside
-    # scope, we therefore replicate the logic of Functional.vectorize here.
-    # In the future (once we have non-isolated-from-above regions) we can
-    # just reuse the Functional.vectorize code.
-    let len = output.__len__()
-    let vector_end = (len // simd_width) * simd_width
-
-    var i: Int = 0
-    let running_max_vec = SIMD[simd_width, type].splat(running_max)
-    let running_sum_vec = SIMD[simd_width, type].splat(running_sum)
-    while i < vector_end:
-        let simd_elem = input.simd_load[simd_width](i)
+    @always_inline
+    fn _step_2[simd_width: __mlir_type.index](idx: Int):
+        let running_max_simd = SIMD[simd_width, type].splat(running_max)
+        let running_sum_simd = SIMD[simd_width, type].splat(running_sum)
+        let input_val = input.simd_load[simd_width](idx)
         output.simd_store[simd_width](
-            i,
-            exp[simd_width, type](simd_elem - running_max_vec)
-            / running_sum_vec,
+            idx,
+            exp[simd_width, type](input_val - running_max_simd)
+            / running_sum_simd,
         )
-        i += simd_width
-    i = vector_end
-    while i < len:
-        let elem = input.__getitem__(i)
-        output.__setitem__(
-            i,
-            exp[1, type](elem - running_max) / running_sum,
-        )
-        i += 1
+
+    vectorize[simd_width, _step_2](output.__len__())
 
 
 fn softmax_2_pass[
@@ -183,60 +229,6 @@ fn _softmax_3_pass_step1[
     #   maxVal = max(maxVal, Input[i])
     # end for
     return max[simd_width, buffer_size, type](input)
-
-
-@interface
-fn reduce_add_simd[
-    simd_width: __mlir_type.index,
-    step_simd_width: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-](
-    scalar&: SIMD[1, type],
-    vector&: SIMD[simd_width, type],
-    val: SIMD[step_simd_width, type],
-):
-    """This functions adds val to either the scalar value or the vector value
-    depending on the step_simd_width. This is useful when the simd_width varies
-    between iterations as in vectorize.
-    """
-    ...
-
-
-@implements(reduce_add_simd)
-fn reduce_add_simd_scalar_case[
-    simd_width: __mlir_type.index,
-    step_simd_width: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-](
-    scalar&: SIMD[1, type],
-    vector&: SIMD[simd_width, type],
-    val: SIMD[step_simd_width, type],
-):
-    """When the step_simd_width is 1, then we add to the scalar value."""
-    assert_param[step_simd_width == 1]()
-    scalar += val.__getitem__(0)
-
-
-@implements(reduce_add_simd)
-fn reduce_add_simd_vector_case[
-    simd_width: __mlir_type.index,
-    step_simd_width: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-](
-    scalar&: SIMD[1, type],
-    vector&: SIMD[simd_width, type],
-    val: SIMD[step_simd_width, type],
-):
-    """When the step_simd_Width is the same as the simd_width, then we add to
-    the vector value.
-    """
-    assert_param[step_simd_width == simd_width]()
-    vector += __mlir_op.`kgen.rebind`[
-        _type : SIMD[
-            simd_width,
-            type,
-        ]
-    ](val)
 
 
 fn _softmax_3_pass_step2[
