@@ -19,6 +19,8 @@ execute_process (
 
 set(version_inc "${MODULAR_BINARY_DIR}/Config/include/Config/Version.h.inc")
 
+string(TOLOWER ${MODULAR_BUILD_TYPE} MODULAR_BUILD_TYPE_LOWER)
+
 file(APPEND "${version_inc}.tmp"
   "/* Major version */\n"
   "#define MODULAR_VERSION_MAJOR ${MODULAR_VERSION_MAJOR}\n\n"
@@ -33,10 +35,10 @@ file(APPEND "${version_inc}.tmp"
   "#define MODULAR_VERSION_REVISION \"${MODULAR_VERSION_REVISION}\"\n\n"
 
   "/* Build type */\n"
-  "#define MODULAR_BUILD_TYPE \"${MODULAR_BUILD_TYPE}\"\n\n"
+  "#define MODULAR_BUILD_TYPE \"${MODULAR_BUILD_TYPE_LOWER}\"\n\n"
 
   "/* Version string */\n"
-  "#define MODULAR_VERSION_STRING \"${MODULAR_VERSION_MAJOR}.${MODULAR_VERSION_MINOR}.${MODULAR_VERSION_PATCH}-${MODULAR_VERSION_REVISION}-${MODULAR_BUILD_TYPE}\"\n"
+  "#define MODULAR_VERSION_STRING \"${MODULAR_VERSION_MAJOR}.${MODULAR_VERSION_MINOR}.${MODULAR_VERSION_PATCH}-${MODULAR_VERSION_REVISION}-${MODULAR_BUILD_TYPE_LOWER}\"\n"
   )
 
 # Copy the file only if it has changed.
