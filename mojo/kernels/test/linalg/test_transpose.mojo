@@ -14,11 +14,6 @@ from Transpose import transpose_inplace, _index2D
 fn test_transpose_4x4():
     print("== test_transpose_4x4\n")
 
-    # Create a buffer of size 16
-    var buffer = __mlir_op.`pop.stack_allocation`[
-        count:16, _type : __mlir_type.`!pop.pointer<scalar<index>>`
-    ]()
-
     # Create a matrix of the form
     # [[0, 1, 2, 3],
     #  [4, 5, 6, 7],
@@ -28,7 +23,7 @@ fn test_transpose_4x4():
         2,
         __mlir_attr.`#kgen<list[4, 4]> : !kgen.list<index[2]>`,
         __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`,
-    ](buffer)
+    ].stack_allocation()
 
     matrix.__setitem__(_index2D(0, 0), 0)
     matrix.__setitem__(_index2D(0, 1), 1)
@@ -104,16 +99,11 @@ fn test_transpose_4x4():
 fn test_transpose_8x8():
     print("== test_transpose_8x8\n")
 
-    # Create a buffer of size 8x8
-    var buffer = __mlir_op.`pop.stack_allocation`[
-        count:64, _type : __mlir_type.`!pop.pointer<scalar<index>>`
-    ]()
-
     var matrix = NDBuffer[
         2,
         __mlir_attr.`#kgen<list[8, 8]> : !kgen.list<index[2]>`,
         __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`,
-    ](buffer)
+    ].stack_allocation()
 
     alias num_rows = 8
     alias num_cols = 8

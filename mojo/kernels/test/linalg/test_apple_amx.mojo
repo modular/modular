@@ -100,32 +100,21 @@ fn test_amx_matmul():
     if has_m1_amx():
         print("== test_amx_matmul\n")
 
-    # Create a buffer of size 256 f32 elements.
-    var a_buffer = __mlir_op.`pop.stack_allocation`[
-        count:256, _type : __mlir_type.`!pop.pointer<scalar<f32>>`
-    ]()
-    var b_buffer = __mlir_op.`pop.stack_allocation`[
-        count:256, _type : __mlir_type.`!pop.pointer<scalar<f32>>`
-    ]()
-    var c_buffer = __mlir_op.`pop.stack_allocation`[
-        count:256, _type : __mlir_type.`!pop.pointer<scalar<f32>>`
-    ]()
-
     var a_matrix = NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
         __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
-    ](a_buffer)
+    ].stack_allocation()
     var b_matrix = NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
         __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
-    ](b_buffer)
+    ].stack_allocation()
     var c_matrix = NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
         __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
-    ](c_buffer)
+    ].stack_allocation()
 
     fill_a(a_matrix)
     fill_b(b_matrix)
