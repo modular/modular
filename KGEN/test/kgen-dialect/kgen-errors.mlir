@@ -616,7 +616,7 @@ lit.struct.decl @Bar<a: type> {
 
 kgen.generator @invalid_field_type<c: type>(%a: !kgen.paramref<c>) {
   // expected-error @below {{perand #0 has type '!kgen.paramref<c>' but corresponding struct field "x" expected '!pop.array<32, a>'}}
-  %0 = lit.struct.create(%a) : (!kgen.paramref<c>) -> !kgen.declref<@Bar<a: type = index>>
+  %0 = lit.struct.create(x=%a) : (!kgen.paramref<c>) -> !kgen.declref<@Bar<a: type = index>>
   kgen.return
 }
 
@@ -627,7 +627,7 @@ lit.struct.decl @Bar {
 
 kgen.generator @invalid_num_fields(%a: index) {
   // expected-error @below {{'lit.struct.create' op expected 0 operands but got 1}}
-  %0 = lit.struct.create(%a) : (index) -> !kgen.declref<@Bar>
+  %0 = lit.struct.create(a=%a) : (index) -> !kgen.declref<@Bar>
   kgen.return
 }
 

@@ -16,7 +16,7 @@ def let_decls():
   let y = 1.0
 
   # CHECK: [[TMP:%.*]] = pop.cast_from_builtin %x : index to !pop.scalar<index>
-  # CHECK: [[TMP2:%.*]] = lit.struct.create([[TMP]])
+  # CHECK: [[TMP2:%.*]] = lit.struct.create(value=[[TMP]])
   # CHECK: %z = lit.let.decl "z" = [[TMP2]]
   let z = Int(x)
 
@@ -137,14 +137,14 @@ fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
 
 # CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !kgen.declref<@"$Int"::@Int> attributes {isDef}
 def defAlwaysRaises() -> Int:
-    # CHECK: %[[RESULT:.*]] = lit.struct.create(%{{.*}})
+    # CHECK: %[[RESULT:.*]] = lit.struct.create(value=%{{.*}})
     # CHECK-NEXT: lit.return %[[RESULT]] : !kgen.declref<@"$Int"::@Int>
     return Int(0)
 
 # CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !kgen.declref<@"$Int"::@Int>
 @raises
 fn fnThatRaises() -> Int:
-    # CHECK: %[[RESULT:.*]] = lit.struct.create(%{{.*}})
+    # CHECK: %[[RESULT:.*]] = lit.struct.create(value=%{{.*}})
     # CHECK-NEXT: lit.return %[[RESULT]] : !kgen.declref<@"$Int"::@Int>
     return Int(0)
 
@@ -188,7 +188,7 @@ struct StructExample:
   @staticmethod
   fn static(x: Int):
     # CHECK: %0 = kgen.param.constant: scalar<index> = <4>
-    # CHECK: %1 = lit.struct.create(%0) : (!pop.scalar<index>) -> !kgen.declref<@"$Int"::@Int>
+    # CHECK: %1 = lit.struct.create(value=%0) : (!pop.scalar<index>) -> !kgen.declref<@"$Int"::@Int>
     # CHECK: %2 = kgen.call @"$decls"::@StructExample::@"static{{.*}}"(%1) : (!kgen.declref<@"$Int"::@Int>) -> !lit.none
     StructExample.static(Int(4))
     pass
@@ -239,7 +239,7 @@ async fn await_coroutine():
 
 struct Awaitable:
   fn __new__() -> Awaitable:
-    return __mlir_op.`lit.struct.create`[_type: Awaitable]()
+    return __mlir_op.`lit.struct.create`[_type: Awaitable, fields:__mlir_attr.`#kgen<strings[]>`]()
 
   fn __await__(self: Awaitable) -> __mlir_type.index:
     return 0

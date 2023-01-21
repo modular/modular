@@ -53,7 +53,7 @@ def LIT_FuncOp : LITOp<"func", [
   /// If the `implements` attribute is present then this generator is an
   /// implementation of the specified generator.interface.
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       KGEN_StringArrayAtrr:$valueParamNames,
+                       KGEN_StringArrayAttr:$valueParamNames,
                        TypeAttrOf<KGEN_SignatureType>:$signature,
                        ConstraintArrayAttr:$constraints,
                        UnitAttr:$isStatic,
@@ -223,17 +223,15 @@ def LIT_StructCreateOp : LITOp<"struct.create", [Pure,
       lit.struct.field c : !pop.simd<2, T>
     }
 
-    %0 = lit.struct.create(%a, %b, %c) :
+    %0 = lit.struct.create(a=%a, b=%b, c=%c) :
       (!pop.scalar<type>, !pop.scalar<f32>, !pop.simd<2, type>)
       -> !kgen.declref<@MyStruct<T: dtype = type>>
     ```
   }];
 
-  let arguments = (ins Variadic<AnyType>:$operands);
+  let arguments = (ins Variadic<AnyType>:$operands, KGEN_StringArrayAttr:$fields);
   let results = (outs KGEN_DeclRefType:$result);
-  let assemblyFormat = [{
-    `(` operands `)` attr-dict `:` functional-type(operands, results)
-  }];
+  let hasCustomAssemblyFormat = 1;
 }
 
 //===----------------------------------------------------------------------===//

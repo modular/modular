@@ -57,7 +57,7 @@ def KGEN_ParameterExprArrayAttr
 // StringArrayAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_StringArrayAtrr
+def KGEN_StringArrayAttr
     : ArrayOfAttr<KGENDialect, "StringArray", "strings", "StringAttr">;
 
 //===----------------------------------------------------------------------===//

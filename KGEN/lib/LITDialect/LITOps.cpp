@@ -493,6 +493,54 @@ StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return success();
 }
 
+ParseResult LIT::StructCreateOp::parse(OpAsmParser &parser,
+                                       OperationState &result) {
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
+  auto ctx = parser.getContext();
+
+  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
+
+  SmallVector<StringAttr> fieldNames;
+  if (parser.parseCommaSeparatedList(
+          OpAsmParser::Delimiter::Paren, [&]() -> ParseResult {
+            std::string fieldNameStr;
+            OpAsmParser::UnresolvedOperand opnd;
+            if (parser.parseKeywordOrString(&fieldNameStr) ||
+                parser.parseEqual() || parser.parseOperand(opnd))
+              return failure();
+            allOperands.push_back(opnd);
+            fieldNames.push_back(StringAttr::get(ctx, fieldNameStr));
+            return success();
+          }))
+    return failure();
+
+  result.addAttribute("fields", StringArrayAttr::get(ctx, fieldNames));
+
+  FunctionType functionType;
+  if (parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
+      parser.parseType(functionType))
+    return failure();
+
+  result.addTypes(functionType.getResults());
+  return parser.resolveOperands(allOperands, functionType.getInputs(),
+                                allOperandLoc, result.operands);
+}
+
+void StructCreateOp::print(OpAsmPrinter &p) {
+  p << "(";
+  auto op = getOperation();
+  llvm::interleaveComma(
+      llvm::zip(getFieldsAttr().getValue(), op->getOperands()), p,
+      [&](const auto &val) {
+        p << std::get<0>(val).str() << "=" << std::get<1>(val);
+      });
+
+  p << ")";
+  p.printOptionalAttrDict((*this)->getAttrs(), /*elidedAttrs=*/{"fields"});
+  p << " : ";
+  p.printFunctionalType(op->getOperandTypes(), op->getResultTypes());
+}
+
 //===----------------------------------------------------------------------===//
 // StructInsertOp
 //===----------------------------------------------------------------------===//
