@@ -99,3 +99,27 @@ fn vectorize[
     while i < size:
         func[1](i)
         i += 1
+
+
+# ===----------------------------------------------------------------------===#
+# Parallelize
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn div_ceil(numerator: Int, denominator: Int) -> Int:
+    return (numerator + denominator - 1) // denominator
+
+
+@always_inline
+fn parallelize[
+    func: __mlir_type[
+        `!kgen.signature<(`, Int, `,`, Int, `) force_inline -> !lit.none>`
+    ],
+](num_work_items: Int, size: Int):
+    let chunk_size = div_ceil(size, num_work_items)
+    var start: Int = 0
+    while start < size:
+        let end = Int.min(start + chunk_size, size)
+        func(start, end)
+        start += chunk_size
