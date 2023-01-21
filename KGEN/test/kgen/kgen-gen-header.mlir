@@ -19,6 +19,12 @@
 // RUN: kgen %s -emit -func="listOneElem" -o %t.o
 // RUN: cat %t.h | FileCheck %s --check-prefixes=LISTF32
 
+// RUN: kgen %s -emit -func="oneElemStruct" -o %t.o
+// RUN: cat %t.h | FileCheck %s --check-prefixes=ONESTRUCT
+
+// RUN: kgen %s -emit -func="twoElemStruct" -o %t.o
+// RUN: cat %t.h | FileCheck %s --check-prefixes=TWOSTRUCT
+
 // The following should not generate header files at all:
 // RUN: echo "" | kgen - -emit -o /dev/null
 // RUN: test ! -f /dev/null.h
@@ -77,6 +83,20 @@ kgen.func @listOneElem() -> !kgen.list<f32[1]> {
 
 // LISTF32: extern float listOneElem_c();
 
+kgen.func @oneElemStruct(%arg0: i32) -> !pop.struct<i32> {
+  %0 = kgen.param.constant: struct<i32> = <{ 0 }>
+  kgen.return %0 : !pop.struct<i32>
+}
+
+// ONESTRUCT: extern int32_t oneElemStruct_c(int32_t);
+
+kgen.func @twoElemStruct(%arg0: i32) -> !pop.struct<i32, i32> {
+  %0 = kgen.param.constant: struct<i32, i32> = <{ 0, 0 }>
+  kgen.return %0 : !pop.struct<i32, i32>
+}
+
+// TWOSTRUCT: extern void twoElemStruct_c(int32_t, int32_t *, int32_t *);
+
 kgen.export [@someKernel, @someBufferKernel, @someNDBufferKernel,
              @someMetaScalarKernel, @nestedParametricStruct, @litNoneKernel,
-             @listOneElem]
+             @listOneElem, @oneElemStruct, @twoElemStruct]
