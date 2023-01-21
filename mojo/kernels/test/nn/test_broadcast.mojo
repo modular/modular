@@ -30,16 +30,6 @@ fn _index5D(
 fn test_broadcast_same_shape():
     print("== test_broadcast_same_shape\n")
 
-    # Create an input buffer of size 2
-    var input_buffer = __mlir_op.`pop.stack_allocation`[
-        count:2, _type : __mlir_type.`!pop.pointer<scalar<index>>`
-    ]()
-
-    # Create an output buffer of size 16
-    var output_buffer = __mlir_op.`pop.stack_allocation`[
-        count:16, _type : __mlir_type.`!pop.pointer<scalar<index>>`
-    ]()
-
     # parameters
     alias input_shape = create_kgen_list[__mlir_type.index](1, 2, 1)
     alias output_shape = create_kgen_list[__mlir_type.index](1, 2, 1)
@@ -50,7 +40,7 @@ fn test_broadcast_same_shape():
         3,
         input_shape,
         __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`,
-    ](input_buffer)
+    ].stack_allocation()
     input.__setitem__(_index3D(0, 0, 0), 1)
     input.__setitem__(_index3D(0, 1, 0), 2)
 
@@ -59,7 +49,8 @@ fn test_broadcast_same_shape():
         3,
         output_shape,
         __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`,
-    ](output_buffer)
+    ].stack_allocation()
+
     memset_zero[__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`](
         output.data, 2
     )
@@ -88,16 +79,6 @@ fn test_broadcast_same_shape():
 fn test_broadcast_single_axis():
     print("== test_broadcast_single_axis\n")
 
-    # Create an input buffer of size 2
-    var input_buffer = __mlir_op.`pop.stack_allocation`[
-        count:2, _type : __mlir_type.`!pop.pointer<scalar<index>>`
-    ]()
-
-    # Create an output buffer of size 6
-    var output_buffer = __mlir_op.`pop.stack_allocation`[
-        count:6, _type : __mlir_type.`!pop.pointer<scalar<index>>`
-    ]()
-
     # parameters
     alias input_shape = create_kgen_list[__mlir_type.index](1, 2)
     alias output_shape = create_kgen_list[__mlir_type.index](3, 2)
@@ -108,7 +89,8 @@ fn test_broadcast_single_axis():
         2,
         input_shape,
         __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`,
-    ](input_buffer)
+    ].stack_allocation()
+
     input.__setitem__(_index2D(0, 0), 1)
     input.__setitem__(_index2D(0, 1), 2)
 
@@ -117,7 +99,8 @@ fn test_broadcast_single_axis():
         2,
         output_shape,
         __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`,
-    ](output_buffer)
+    ].stack_allocation()
+
     memset_zero[__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`](
         output.data, 6
     )
@@ -154,16 +137,6 @@ fn test_broadcast_single_axis():
 fn test_broadcast_multi_axes():
     print("== test_broadcast_multi_axes\n")
 
-    # Create an input buffer of size 2
-    var input_buffer = __mlir_op.`pop.stack_allocation`[
-        count:2, _type : __mlir_type.`!pop.pointer<scalar<index>>`
-    ]()
-
-    # Create an output buffer of size 16
-    var output_buffer = __mlir_op.`pop.stack_allocation`[
-        count:16, _type : __mlir_type.`!pop.pointer<scalar<index>>`
-    ]()
-
     # parameters
     alias input_shape = create_kgen_list[__mlir_type.index](1, 2, 1)
     alias output_shape = create_kgen_list[__mlir_type.index](2, 2, 3)
@@ -174,7 +147,8 @@ fn test_broadcast_multi_axes():
         3,
         input_shape,
         __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`,
-    ](input_buffer)
+    ].stack_allocation()
+
     input.__setitem__(_index3D(0, 0, 0), 1)
     input.__setitem__(_index3D(0, 1, 0), 2)
 
@@ -183,7 +157,8 @@ fn test_broadcast_multi_axes():
         3,
         output_shape,
         __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`,
-    ](output_buffer)
+    ].stack_allocation()
+
     memset_zero[__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`](
         output.data, 16
     )
@@ -230,15 +205,6 @@ fn test_broadcast_multi_axes():
 
 
 fn test_broadcast_multi_axes_nested():
-    # Create an input buffer of size 8
-    var input_buffer = __mlir_op.`pop.stack_allocation`[
-        count:8, _type : __mlir_type.`!pop.pointer<scalar<index>>`
-    ]()
-
-    # Create an output buffer of size 32
-    var output_buffer = __mlir_op.`pop.stack_allocation`[
-        count:32, _type : __mlir_type.`!pop.pointer<scalar<index>>`
-    ]()
 
     # parameters
     alias input_shape = create_kgen_list[__mlir_type.index](2, 1, 2, 1, 2)
@@ -250,7 +216,8 @@ fn test_broadcast_multi_axes_nested():
         5,
         input_shape,
         __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`,
-    ](input_buffer)
+    ].stack_allocation()
+
     input.__setitem__(_index5D(0, 0, 0, 0, 0), 1)
     input.__setitem__(_index5D(0, 0, 0, 0, 1), 2)
     input.__setitem__(_index5D(0, 0, 1, 0, 0), 3)
@@ -265,7 +232,8 @@ fn test_broadcast_multi_axes_nested():
         5,
         output_shape,
         __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`,
-    ](output_buffer)
+    ].stack_allocation()
+
     memset_zero[__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`](
         output.data, 32
     )
