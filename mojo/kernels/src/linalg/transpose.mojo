@@ -10,6 +10,7 @@ from Assert import assert_param
 from Int import Int
 from SIMD import SIMD
 from List import create_kgen_list
+from TypeUtilities import rebind
 
 
 fn _index2D(rows: Int, cols: Int) -> StaticTuple[2, __mlir_type.index]:
@@ -24,22 +25,7 @@ fn transpose_inplace[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
-](
-    buf: NDBuffer[
-        2,
-        __mlir_attr[
-            `#kgen<list[`,
-            rows,
-            `, `,
-            cols,
-            `]> : `,
-            `!kgen.list<`,
-            __mlir_type.index,
-            `[2]>`,
-        ],
-        type,
-    ]
-):
+](buf: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
     ...
 
 
@@ -49,31 +35,21 @@ fn transpose_inplace_4x4[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
-](
-    buf0: NDBuffer[
-        2,
-        __mlir_attr[
-            `#kgen<list[`,
-            rows,
-            `, `,
-            cols,
-            `]> : `,
-            `!kgen.list<`,
-            __mlir_type.index,
-            `[2]>`,
-        ],
-        type,
-    ]
-):
+](buf0: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
     assert_param[rank == 2]()
     assert_param[rows == 4]()
     assert_param[cols == 4]()
-    var buf = __mlir_op.`kgen.rebind`[
-        _type : NDBuffer[
+    var buf = rebind[
+        NDBuffer[
+            2,
+            create_kgen_list[__mlir_type.index](rows, cols),
+            type,
+        ],
+        NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](4, 4),
             type,
-        ]
+        ],
     ](buf0)
 
     let row0 = buf.simd_load[4](_index2D(0, 0))
@@ -119,31 +95,21 @@ fn transpose_inplace_8x8[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
-](
-    buf0: NDBuffer[
-        2,
-        __mlir_attr[
-            `#kgen<list[`,
-            rows,
-            `, `,
-            cols,
-            `]> : `,
-            `!kgen.list<`,
-            __mlir_type.index,
-            `[2]>`,
-        ],
-        type,
-    ]
-):
+](buf0: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
     assert_param[rank == 2]()
     assert_param[rows == 8]()
     assert_param[cols == 8]()
-    var buf = __mlir_op.`kgen.rebind`[
-        _type : NDBuffer[
+    var buf = rebind[
+        NDBuffer[
+            2,
+            create_kgen_list[__mlir_type.index](rows, cols),
+            type,
+        ],
+        NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](8, 8),
             type,
-        ]
+        ],
     ](buf0)
 
     let row0 = buf.simd_load[8](_index2D(0, 0))
@@ -219,30 +185,8 @@ fn transpose_inplace_generic[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
-](
-    buf0: NDBuffer[
-        2,
-        __mlir_attr[
-            `#kgen<list[`,
-            rows,
-            `, `,
-            cols,
-            `]> : `,
-            `!kgen.list<`,
-            __mlir_type.index,
-            `[2]>`,
-        ],
-        type,
-    ]
-):
+](buf: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
     assert_param[rank == 2]()
-    var buf = __mlir_op.`kgen.rebind`[
-        _type : NDBuffer[
-            2,
-            create_kgen_list[__mlir_type.index](rows, cols),
-            type,
-        ]
-    ](buf0)
     var i: Int = 0
     while i < rows:
         var j: Int = i + 1

@@ -9,6 +9,7 @@ from Int import Int
 from IO import print
 from Buffer import NDBuffer
 from Transpose import transpose_inplace, _index2D
+from List import create_kgen_list
 
 # CHECK-LABEL: test_transpose_4x4
 fn test_transpose_4x4():
@@ -21,7 +22,7 @@ fn test_transpose_4x4():
     #  [12, 13, 14, 15]]
     var matrix = NDBuffer[
         2,
-        __mlir_attr.`#kgen<list[4, 4]> : !kgen.list<index[2]>`,
+        create_kgen_list[__mlir_type.index](4, 4),
         __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`,
     ].stack_allocation()
 
@@ -101,7 +102,7 @@ fn test_transpose_8x8():
 
     var matrix = NDBuffer[
         2,
-        __mlir_attr.`#kgen<list[8, 8]> : !kgen.list<index[2]>`,
+        create_kgen_list[__mlir_type.index](8, 8),
         __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`,
     ].stack_allocation()
 
