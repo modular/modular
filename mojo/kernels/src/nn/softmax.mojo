@@ -13,6 +13,7 @@ from Numerics import neginf
 from Reductions import max
 from SIMD import SIMD
 from Tuple import StaticTuple
+from TypeUtilities import rebind
 
 
 # ===----------------------------------------------------------------------===#
@@ -66,12 +67,7 @@ fn reduce_add_simd_vector_case[
     the vector value.
     """
     assert_param[step_simd_width == simd_width]()
-    vector += __mlir_op.`kgen.rebind`[
-        _type : SIMD[
-            simd_width,
-            type,
-        ]
-    ](val)
+    vector += rebind[SIMD[step_simd_width, type], SIMD[simd_width, type]](val)
 
 
 # ===----------------------------------------------------------------------===#

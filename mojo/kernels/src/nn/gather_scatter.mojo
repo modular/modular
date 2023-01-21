@@ -9,6 +9,7 @@ from Index import Index
 from Assert import assert_param
 from Buffer import NDBuffer
 from Tuple import StaticTuple
+from TypeUtilities import rebind
 
 
 @interface
@@ -63,27 +64,39 @@ fn gather_2D_axis_0[
         while iter1 < j:
             var iter2: Int = 0
             let idx: Int = indices.__getitem__(
-                __mlir_op.`kgen.rebind`[
-                    _type : StaticTuple[
+                rebind[
+                    StaticTuple[
+                        2,
+                        __mlir_type.index,
+                    ],
+                    StaticTuple[
                         input_rank,
                         __mlir_type.index,
-                    ]
+                    ],
                 ](Index(iter0, iter1).as_tuple())
             ).value
             while iter2 < k:
                 output.__setitem__(
-                    __mlir_op.`kgen.rebind`[
-                        _type : StaticTuple[
+                    rebind[
+                        StaticTuple[
+                            3,
+                            __mlir_type.index,
+                        ],
+                        StaticTuple[
                             output_rank,
                             __mlir_type.index,
-                        ]
+                        ],
                     ](Index(iter0, iter1, iter2).as_tuple()),
                     input.__getitem__(
-                        __mlir_op.`kgen.rebind`[
-                            _type : StaticTuple[
+                        rebind[
+                            StaticTuple[
+                                2,
+                                __mlir_type.index,
+                            ],
+                            StaticTuple[
                                 input_rank,
                                 __mlir_type.index,
-                            ]
+                            ],
                         ](Index(idx, iter2).as_tuple())
                     ),
                 )
@@ -125,26 +138,38 @@ fn gather_2D_axis_1[
             var iter2: Int = 0
             while iter2 < k:
                 let idx: Int = indices.__getitem__(
-                    __mlir_op.`kgen.rebind`[
-                        _type : StaticTuple[
+                    rebind[
+                        StaticTuple[
+                            2,
+                            __mlir_type.index,
+                        ],
+                        StaticTuple[
                             input_rank,
                             __mlir_type.index,
-                        ]
+                        ],
                     ](Index(iter1, iter2).as_tuple())
                 ).value
                 output.__setitem__(
-                    __mlir_op.`kgen.rebind`[
-                        _type : StaticTuple[
+                    rebind[
+                        StaticTuple[
+                            3,
+                            __mlir_type.index,
+                        ],
+                        StaticTuple[
                             output_rank,
                             __mlir_type.index,
-                        ]
+                        ],
                     ](Index(iter0, iter1, iter2).as_tuple()),
                     input.__getitem__(
-                        __mlir_op.`kgen.rebind`[
-                            _type : StaticTuple[
+                        rebind[
+                            StaticTuple[
+                                2,
+                                __mlir_type.index,
+                            ],
+                            StaticTuple[
                                 input_rank,
                                 __mlir_type.index,
-                            ]
+                            ],
                         ](Index(iter0, idx).as_tuple())
                     ),
                 )
