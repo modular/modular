@@ -26,6 +26,54 @@ fn map[
 
 
 # ===----------------------------------------------------------------------===#
+# repeat
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn repeat[
+    count: __mlir_type.index,
+    func: __mlir_type[`!kgen.signature<<idx>() force_inline -> !lit.none>`],
+]():
+    """
+    Reateadly evaluate a function `count` times.
+    """
+    _repeat_impl[0, count, func]()
+
+
+@always_inline
+@interface
+fn _repeat_impl[
+    idx: __mlir_type.index,
+    count: __mlir_type.index,
+    func: __mlir_type[`!kgen.signature<<idx>() force_inline -> !lit.none>`],
+]():
+    ...
+
+
+@always_inline
+@implements(_repeat_impl)
+fn _repeat_impl_base[
+    idx: __mlir_type.index,
+    count: __mlir_type.index,
+    func: __mlir_type[`!kgen.signature<<idx>() force_inline -> !lit.none>`],
+]():
+    assert_param[idx >= count]()
+
+
+@always_inline
+@implements(_repeat_impl)
+fn _repeat_impl_iter[
+    idx: __mlir_type.index,
+    count: __mlir_type.index,
+    func: __mlir_type[`!kgen.signature<<idx>() force_inline -> !lit.none>`],
+]():
+    assert_param[idx < count]()
+    func[idx]()
+    _repeat_impl[idx + 1, count, func]()
+
+
+# ===----------------------------------------------------------------------===#
 # Vectorize
 # ===----------------------------------------------------------------------===#
 
