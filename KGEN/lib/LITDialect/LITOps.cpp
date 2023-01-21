@@ -619,6 +619,31 @@ void StructExtractOp::build(OpBuilder &builder, OperationState &result,
         field.getNameAttr(), structBase);
 }
 
+OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
+  // Fold
+  //  %S = lit.struct.create(a=%a, b=%b)
+  //  %x = lit.struct.extract %S[a]
+  // into %a.
+  if (auto create = getContainer().getDefiningOp<StructCreateOp>()) {
+    for (size_t i = 0, e = create->getNumOperands(); i < e; i++) {
+      if (create.getFieldsAttr()[i] == getFieldAttr())
+        return create.getOperand(i);
+    }
+    // A field referred to in the struct.extract op must appear in the previous
+    // struct.create op that we're scanning in the loop above.
+    llvm_unreachable("Didn't find the field to extract in struct.create op.");
+  }
+  // Fold
+  //    %S = lit.struct.insert %x, %S0[a]
+  //    %y = lit.struct.extract %S[a]
+  // into %x
+  if (auto insert = getContainer().getDefiningOp<StructInsertOp>()) {
+    if (insert.getFieldAttr() == getFieldAttr())
+      return insert.getOperand(0);
+  }
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // StructGEPOp
 //===----------------------------------------------------------------------===//
