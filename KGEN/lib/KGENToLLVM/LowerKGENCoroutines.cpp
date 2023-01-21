@@ -262,14 +262,13 @@ static LogicalResult lowerCoroutinePromise(LLVMBuilder &b,
 
   LLVMStructType promiseType =
       getCoroutinePromiseType(b, cache, op.getCoroutine().getType());
-  if (!promiseType)
+  Type ptrType = b.convertType(op.getType());
+  if (!promiseType || !ptrType)
     return op.emitError("failed to convert coroutine type");
 
   // Cast it to just the promise results.
   Value promise = b.create<BitcastOp>(
-      LLVMPointerType::get(LLVMStructType::getLiteral(
-          b.getContext(), promiseType.getBody().drop_back())),
-      getCoroutinePromise(b, cache, hdl, promiseType));
+      ptrType, getCoroutinePromise(b, cache, hdl, promiseType));
 
   op.replaceAllUsesWith(promise);
   op.erase();

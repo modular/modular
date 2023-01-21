@@ -690,6 +690,9 @@ struct ConvertPOPSIMDReduceMin
 /// and insert the given element values into the struct.
 static Value materializeLLVMStruct(OpBuilder &b, Location loc, Type structType,
                                    ValueRange elements) {
+  // Elide the struct for single-element structs.
+  if (elements.size() == 1)
+    return elements.front();
   Value container = b.create<LLVM::UndefOp>(loc, structType);
   for (auto [index, element] : llvm::enumerate(elements))
     container = b.create<LLVM::InsertValueOp>(loc, container, element, index);
@@ -724,6 +727,11 @@ struct ConvertPOPStructReplace : mlir::ConvertOpToLLVMPattern<StructReplaceOp> {
   LogicalResult
   matchAndRewrite(StructReplaceOp op, StructReplaceOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    // If the struct has one element, just return the new value.
+    if (op.getType().getNumElements() == 1) {
+      rewriter.replaceOp(op, adaptor.getValue());
+      return success();
+    }
     rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
         op, adaptor.getContainer(), adaptor.getValue(),
         op.getIndexAttr().getInt());
@@ -741,6 +749,12 @@ struct ConvertPOPStructGet : mlir::ConvertOpToLLVMPattern<StructGetOp> {
   LogicalResult
   matchAndRewrite(StructGetOp op, StructGetOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    // If the struct has one element, just return it.
+    if (op.getContainer().getType().getNumElements() == 1) {
+      rewriter.replaceOp(op, adaptor.getContainer());
+      return success();
+    }
+
     rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
         op, adaptor.getContainer(), op.getIndexAttr().getInt());
     return success();
@@ -760,6 +774,11 @@ struct ConvertPOPStructGEP : mlir::ConvertOpToLLVMPattern<POP::StructGEPOp> {
     Type ptrType = getTypeConverter()->convertType(op.getType());
     if (!ptrType)
       return op.emitError("failed to convert result type");
+    auto type = op.getContainer().getType().getElementTypeAs<StructType>();
+    if (type.getNumElements() == 1) {
+      rewriter.replaceOp(op, adaptor.getContainer());
+      return success();
+    }
     rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
         op, ptrType, adaptor.getContainer(),
         ArrayRef<LLVM::GEPArg>{

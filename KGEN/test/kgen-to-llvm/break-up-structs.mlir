@@ -26,15 +26,12 @@ kgen.export [@kernel]
 
 // CHECK-LABEL: @kernel_c
 // CHECK-SAME: %[[V:.*]]: f32, %[[V_OUT:.*]]: !llvm.ptr<f32>
-// CHECK: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(struct<()>, struct<(f32)>)>
+// CHECK: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(struct<()>, f32)>
 // CHECK: %[[EMPTY:.*]] = llvm.mlir.undef : !llvm.struct<()>
 // CHECK: %[[S1:.*]] = llvm.insertvalue %[[EMPTY]], %[[S0]][0]
-// CHECK: %[[FP:.*]] = llvm.mlir.undef : !llvm.struct<(f32)>
-// CHECK: %[[FP0:.*]] = llvm.insertvalue %[[V]], %[[FP]][0]
-// CHECK: %[[ARG:.*]] = llvm.insertvalue %[[FP0]], %[[S1]][1]
+// CHECK: %[[ARG:.*]] = llvm.insertvalue %[[V]], %[[S1]][1]
 // CHECK: %[[RES:.*]] = llvm.call @kernel(%[[ARG]])
-// CHECK: %[[R0:.*]] = llvm.extractvalue %[[RES]][1]
-// CHECK: %[[V_RESULT:.*]] = llvm.extractvalue %[[R0]][0]
+// CHECK: %[[V_RESULT:.*]] = llvm.extractvalue %[[RES]][1]
 // CHECK: llvm.store %[[V_RESULT]], %[[V_OUT]]
 
 !nestedStruct = !pop.struct<struct<>, struct<f32>>
