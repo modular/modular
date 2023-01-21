@@ -480,8 +480,23 @@ StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   if (numFields != getNumOperands())
     return emitOpError("expected ")
            << numFields << " operands but got " << getNumOperands();
-  for (auto [fieldDecl, operand, i] :
-       llvm::zip(fields, getOperands(), llvm::seq<unsigned>(0, numFields))) {
+  if (getFieldsAttr().size() != numFields)
+    return emitOpError("expected ")
+           << numFields << " based on the declaration, but got "
+           << getFieldsAttr().size();
+
+  for (auto [fieldDecl, fieldAttrInOp, operand, i] :
+       llvm::zip(fields, getFieldsAttr(), getOperands(),
+                 llvm::seq<unsigned>(0, numFields))) {
+    auto nameInDecl = fieldDecl.getNameAttr();
+    auto nameInOp = fieldAttrInOp;
+    if (nameInDecl != nameInOp) {
+      return emitOpError("the field name '")
+             << nameInOp << "' at the position #" << i
+             << " did not match the name '" << nameInDecl
+             << "' in the op declaration.";
+    }
+
     Type reboundType = evaluator.getReboundType(fieldDecl.getType());
     if (reboundType != operand.getType()) {
       return emitOpError("operand #")
