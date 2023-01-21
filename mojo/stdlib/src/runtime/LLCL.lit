@@ -50,9 +50,10 @@ struct CoroutineRef[type: typename]:
 
     fn __new__(_handle: _handle_type) -> CoroutineRef[type]:
         """Create a reference to a coroutine from a builtin handle."""
-        return __mlir_op.`lit.struct.create`[_type : [CoroutineRef[type]]](
-            _handle
-        )
+        return __mlir_op.`lit.struct.create`[
+            _type : [CoroutineRef[type]],
+            fields : __mlir_attr.`#kgen<strings["_handle"]>`,
+        ](_handle)
 
     fn get_promise(self) -> Pointer[type]:
         """Get the pointer to the coroutine promise."""
@@ -115,7 +116,9 @@ struct Runtime:
         ](numThreadsI8)
 
     fn __new__(compactPtr: __mlir_type.i8) -> Runtime:
-        return __mlir_op.`lit.struct.create`[_type:Runtime](compactPtr)
+        return __mlir_op.`lit.struct.create`[
+            _type:Runtime, fields : __mlir_attr.`#kgen<strings["_id"]>`
+        ](compactPtr)
 
     fn __del__(self):
         """Destroys the LLCL Runtime. Note that this must be explicitly called
@@ -183,7 +186,10 @@ struct Future[type: typename]:
     @nodebug_inline
     fn __new__(handle: CoroutineRef[type]) -> Future[type]:
         """Create a future from a coroutine handle."""
-        return __mlir_op.`lit.struct.create`[_type : Future[type]](handle)
+        return __mlir_op.`lit.struct.create`[
+            _type : Future[type],
+            fields : __mlir_attr.`#kgen<strings["handle"]>`,
+        ](handle)
 
     fn __del__(self):
         """Destroy the memory associated with a future. This must be manually
