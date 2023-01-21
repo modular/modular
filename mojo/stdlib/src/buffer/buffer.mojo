@@ -11,6 +11,7 @@ from Assert import assert_param
 from Pointer import DTypePointer
 from Tuple import StaticTuple
 from List import product, contains
+from MemoryUtilities import stack_allocation
 
 
 # ===----------------------------------------------------------------------===#
@@ -34,11 +35,10 @@ fn _raw_stack_allocation[
     Returns:
         A data pointer of the given dtype pointing to the allocated space.
     """
-    return __mlir_op.`pop.stack_allocation`[
-        count:count,
-        _type : __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
-        alignment:alignment,
+    let ptr = stack_allocation[
+        count, __mlir_type[`!pop.scalar<`, type, `>`], alignment
     ]()
+    return ptr.address
 
 
 @interface
@@ -224,7 +224,9 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
 
     @staticmethod
     @always_inline
-    fn stack_allocation[alignment: __mlir_type.index]() -> Buffer[size, type]:
+    fn aligned_stack_allocation[
+        alignment: __mlir_type.index
+    ]() -> Buffer[size, type]:
         """Constructs a buffer instance backed by stack allocated memory space.
 
         Args:
@@ -234,6 +236,16 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         """
         var data_pointer = _raw_stack_allocation[size, type, alignment]()
         return Buffer[size, type](data_pointer.address)
+
+    @staticmethod
+    @always_inline
+    fn stack_allocation[]() -> Buffer[size, type]:
+        """Constructs a buffer instance backed by stack allocated memory space.
+
+        Returns:
+            Constructed buffer with the allocated space.
+        """
+        return Buffer[size, type].aligned_stack_allocation[1]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -580,7 +592,7 @@ struct NDBuffer[
 
     @staticmethod
     @always_inline
-    fn stack_allocation[
+    fn aligned_stack_allocation[
         alignment: __mlir_type.index
     ]() -> NDBuffer[rank, shape, type]:
         """Constructs an ndbuffer instance backed by stack allocated memory space.
@@ -594,6 +606,16 @@ struct NDBuffer[
             product[rank](shape).__as_mlir_index(), type, alignment
         ]()
         return NDBuffer[rank, shape, type](data_pointer.address)
+
+    @staticmethod
+    @always_inline
+    fn stack_allocation() -> NDBuffer[rank, shape, type]:
+        """Constructs an ndbuffer instance backed by stack allocated memory space.
+
+        Returns:
+            Constructed ndbuffer with the allocated space.
+        """
+        return NDBuffer[rank, shape, type].aligned_stack_allocation[1]()
 
 
 fn _neg[val: __mlir_type.i1]() -> __mlir_type.i1:
@@ -633,10 +655,7 @@ fn partial_simd_load[
             The SIMD vector loaded and zero-filled.
     """
     # Create a buffer view of the allocated space.
-    let vector = Buffer[width, type].stack_allocation[
-        # alignment
-        1
-    ]()
+    let vector = Buffer[width, type].stack_allocation()
 
     # Initialize vector with pad values.
     vector.simd_store[width](0, SIMD[width, type].splat(pad_value))
@@ -681,10 +700,7 @@ fn partial_simd_store[
             data: The vector value to store.
     """
     # Create a buffer view of the storage space.
-    let vector = Buffer[width, type,].stack_allocation[
-        # alignment
-        1
-    ]()
+    let vector = Buffer[width, type].stack_allocation()
 
     # Put the given vector data in the allocated buffer.
     vector.simd_store[width](0, data)
