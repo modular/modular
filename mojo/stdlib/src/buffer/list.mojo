@@ -7,6 +7,7 @@
 from Int import Int
 from Bool import Bool
 from Assert import assert_param
+from Functional import repeat
 
 
 # ===----------------------------------------------------------------------===#
@@ -351,32 +352,14 @@ fn _contains_impl_iter[
 fn product[
     size: __mlir_type.index
 ](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
-    return _product_impl[0, size](lst)
+    var product: Int = 1
 
+    @always_inline
+    fn mul[idx: __mlir_type.index]():
+        product *= _get_kgen_list_item[idx, size, __mlir_type.index](lst)
 
-@interface
-fn _product_impl[
-    idx: __mlir_type.index, size: __mlir_type.index
-](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
-    ...
-
-
-@implements(_product_impl)
-fn _product_impl_base[
-    idx: __mlir_type.index, size: __mlir_type.index
-](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
-    assert_param[idx == size]()
-    return 1
-
-
-@implements(_product_impl)
-fn _product_impl_iter[
-    idx: __mlir_type.index, size: __mlir_type.index
-](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
-    assert_param[idx < size]()
-    return _get_kgen_list_item[idx, size, __mlir_type.index](
-        lst
-    ) * _product_impl[idx + 1, size](lst)
+    repeat[size, mul]()
+    return product
 
 
 # ===----------------------------------------------------------------------===#
