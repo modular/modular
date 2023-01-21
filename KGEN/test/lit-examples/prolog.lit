@@ -34,7 +34,9 @@ struct DType:
     var value: __mlir_type.`!kgen.dtype`
 
     fn __new__(value: __mlir_type.`!kgen.dtype`) -> DType:
-        return __mlir_op.`lit.struct.create`[_type:DType](value)
+        return __mlir_op.`lit.struct.create`[
+            _type:DType, fields : __mlir_attr.`#kgen<strings["value"]>`
+        ](value)
 
     # TODO: This should be something like:
     # @static var f32 = DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
@@ -71,7 +73,10 @@ struct StringRef:
     fn __new__(
         data: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`, size: Int
     ) -> StringRef:
-        return __mlir_op.`lit.struct.create`[_type:StringRef](data, size)
+        return __mlir_op.`lit.struct.create`[
+            _type:StringRef,
+            fields : __mlir_attr.`#kgen<strings["data", "size"]>`,
+        ](data, size)
 
     @staticmethod
     fn empty() -> StringRef:
@@ -91,7 +96,9 @@ struct Error:
     var msg: StringRef
 
     fn __new__(msg: StringRef) -> Error:
-        return __mlir_op.`lit.struct.create`[_type:Error](msg)
+        return __mlir_op.`lit.struct.create`[
+            _type:Error, fields : __mlir_attr.`#kgen<strings["msg"]>`
+        ](msg)
 
 
 struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
@@ -100,17 +107,26 @@ struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
     fn __new__(
         value: __mlir_type[`!pop.variant<`, Error, `, `, type, `>>`]
     ) -> ErrorOr[type]:
-        return __mlir_op.`lit.struct.create`[_type : ErrorOr[type]](value)
+        return __mlir_op.`lit.struct.create`[
+            _type : ErrorOr[type],
+            fields : __mlir_attr.`#kgen<strings["value"]>`,
+        ](value)
 
     fn __new__(err: Error) -> ErrorOr[type]:
-        return __mlir_op.`lit.struct.create`[_type : ErrorOr[type]](
+        return __mlir_op.`lit.struct.create`[
+            _type : ErrorOr[type],
+            fields : __mlir_attr.`#kgen<strings["value"]>`,
+        ](
             __mlir_op.`pop.variant.create`[
                 _type : __mlir_type[`!pop.variant<`, Error, `, `, type, `>`]
             ](err)
         )
 
     fn __new__(value: type) -> ErrorOr[type]:
-        return __mlir_op.`lit.struct.create`[_type : ErrorOr[type]](
+        return __mlir_op.`lit.struct.create`[
+            _type : ErrorOr[type],
+            fields : __mlir_attr.`#kgen<strings["value"]>`,
+        ](
             __mlir_op.`pop.variant.create`[
                 _type : __mlir_type[`!pop.variant<`, Error, `, `, type, `>`]
             ](value)
@@ -153,7 +169,10 @@ struct range:
     var step: Int
 
     fn __new__(start: Int, end: Int, step: Int) -> range:
-        return __mlir_op.`lit.struct.create`[_type:range](start, end, step)
+        return __mlir_op.`lit.struct.create`[
+            _type:range,
+            fields : __mlir_attr.`#kgen<strings["start", "end", "step"]>`,
+        ](start, end, step)
 
     fn __iter__(self: range) -> range:
         return self

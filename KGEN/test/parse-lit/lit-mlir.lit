@@ -1,68 +1,76 @@
 # RUN: kgen-translate -import-lit %s -verify-diagnostics -I %stdlibdir | FileCheck %s
 
 # CHECK: lit.func @"mlirMagicTest{{.*}}(%x: bf16, %y: f8E5M2)
-fn mlirMagicTest(x: __mlir_type.bf16, y: __mlir_type.f8E5M2) -> __mlir_type.index:
-  # CHECK: kgen.param.declare a = <1>
-  alias a : __mlir_type.index = 1
-  # CHECK: %b = lit.var.decl "b" : <f64>
-  var b : __mlir_type.f64
-  # CHECK: %c = lit.var.decl "c" : <pointer<pointer<f32>>>
-  var c : __mlir_type.`!pop.pointer<!pop.pointer<f32>>`
+fn mlirMagicTest(
+    x: __mlir_type.bf16, y: __mlir_type.f8E5M2
+) -> __mlir_type.index:
+    # CHECK: kgen.param.declare a = <1>
+    alias a: __mlir_type.index = 1
+    # CHECK: %b = lit.var.decl "b" : <f64>
+    var b: __mlir_type.f64
+    # CHECK: %c = lit.var.decl "c" : <pointer<pointer<f32>>>
+    var c: __mlir_type.`!pop.pointer<!pop.pointer<f32>>`
 
-  # CHECK: %d = lit.var.decl "d" : <i17>
-  # CHECK: [[TMP:%.*]] = kgen.param.constant: i17 = <4>
-  # CHECK: pop.store [[TMP]], %d : !pop.pointer<i17>
-  var d = __mlir_attr.`4: i17`
+    # CHECK: %d = lit.var.decl "d" : <i17>
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: i17 = <4>
+    # CHECK: pop.store [[TMP]], %d : !pop.pointer<i17>
+    var d = __mlir_attr.`4: i17`
 
-  # CHECK: %dt = lit.var.decl "dt" : <dtype>
-  # CHECK: [[TMP:%.*]] = kgen.param.constant: dtype = <f32>
-  # CHECK: pop.store [[TMP]], %dt  : !pop.pointer<dtype>
-  var dt = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype `
+    # CHECK: %dt = lit.var.decl "dt" : <dtype>
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: dtype = <f32>
+    # CHECK: pop.store [[TMP]], %dt  : !pop.pointer<dtype>
+    var dt = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype `
 
-  # CHECK: %idxConstant = lit.var.decl
-  # CHECK-NEXT: index.constant 42
-  var idxConstant = __mlir_op.`index.constant`[value: 42]()
+    # CHECK: %idxConstant = lit.var.decl
+    # CHECK-NEXT: index.constant 42
+    var idxConstant = __mlir_op.`index.constant`[value:42]()
 
-  # CHECK: [[TMP:%.*]] = pop.load %idxConstant
-  # CHECK: [[TMP2:%.*]] = index.castu [[TMP:%.*]] : index to i1
-  var i1Cast = __mlir_op.`index.castu`[_type: __mlir_type.i1](idxConstant)
+    # CHECK: [[TMP:%.*]] = pop.load %idxConstant
+    # CHECK: [[TMP2:%.*]] = index.castu [[TMP:%.*]] : index to i1
+    var i1Cast = __mlir_op.`index.castu`[_type : __mlir_type.i1](idxConstant)
 
-  # CHECK: kgen.param.declare new_lower = <max(a, 42)>
-  alias new_lower = __mlir_attr[`#kgen.param.expr<max, `, a, `, `, 42, `> : index`]
+    # CHECK: kgen.param.declare new_lower = <max(a, 42)>
+    alias new_lower = __mlir_attr[
+        `#kgen.param.expr<max, `, a, `, `, 42, `> : index`
+    ]
 
-  # CHECK: [[TMP1:%.*]] = kgen.param.constant = <new_lower>
-  # CHECK: [[TMP2:%.*]] = index.constant 1
-  # CHECK: [[SHRU:%.*]] = index.shru [[TMP1]], [[TMP2]]
-  # CHECK: lit.return [[SHRU]] : index
-  return __mlir_op.`index.shru`(new_lower, 1)
+    # CHECK: [[TMP1:%.*]] = kgen.param.constant = <new_lower>
+    # CHECK: [[TMP2:%.*]] = index.constant 1
+    # CHECK: [[SHRU:%.*]] = index.shru [[TMP1]], [[TMP2]]
+    # CHECK: lit.return [[SHRU]] : index
+    return __mlir_op.`index.shru`(new_lower, 1)
+
 
 # CHECK-LABEL: lit.func @"mlirTypesAndAttrs
-fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`] ():
-  # CHECK: %a = lit.var.decl "a" : <scalar<dtype>>
-  var a : __mlir_type[`!pop.scalar<`, dtype, `>`]
-  # CHECK: %b = lit.var.decl "b" : <simd<4, dtype>>
-  var b : __mlir_type[`!pop.simd<4, `, dtype, `>`]
+fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`]():
+    # CHECK: %a = lit.var.decl "a" : <scalar<dtype>>
+    var a: __mlir_type[`!pop.scalar<`, dtype, `>`]
+    # CHECK: %b = lit.var.decl "b" : <simd<4, dtype>>
+    var b: __mlir_type[`!pop.simd<4, `, dtype, `>`]
 
 
 # Issue #6282: [Lit] Placeholder substitution does not work on nested types
 struct ComplexSubstitution[type: __mlir_type.`!kgen.dtype`]:
-  # CHECK: lit.struct.field pointer : !pop.pointer<scalar<type>>
-  var pointer: __mlir_type[`!pop.pointer<!pop.scalar<`, type, `>>`]
+    # CHECK: lit.struct.field pointer : !pop.pointer<scalar<type>>
+    var pointer: __mlir_type[`!pop.pointer<!pop.scalar<`, type, `>>`]
+
 
 # Issue #6374: [Lit] Add support for type placeholder
 fn typePlaceholder():
-  # CHECK: %x = lit.var.decl "x" : <!kgen.list<i32[2]>>
-  var x : __mlir_type[`!kgen.list<`, __mlir_type.i32, `[2]>`]
+    # CHECK: %x = lit.var.decl "x" : <!kgen.list<i32[2]>>
+    var x: __mlir_type[`!kgen.list<`, __mlir_type.i32, `[2]>`]
+
 
 # CHECK-LABEL: lit.func @"fancierSubstitutions
 fn fancierSubstitutions():
-  # CHECK: = lit.var.decl "complexInt" : <complex<i32>>
-  var complexInt : __mlir_type[`complex<`, __mlir_type.i32, `>`]
+    # CHECK: = lit.var.decl "complexInt" : <complex<i32>>
+    var complexInt: __mlir_type[`complex<`, __mlir_type.i32, `>`]
 
-  alias a : __mlir_type.index = 1
-  # CHECK: kgen.param.declare new_lower = <max(a, 42)>
-  alias new_lower = __mlir_attr[`#kgen.param.expr<max,`,
-         a, `, `, 42, `> : index`]
+    alias a: __mlir_type.index = 1
+    # CHECK: kgen.param.declare new_lower = <max(a, 42)>
+    alias new_lower = __mlir_attr[
+        `#kgen.param.expr<max,`, a, `, `, 42, `> : index`
+    ]
 
 
 # This shows that we can use unary+ to make the printer avoid printing types.
@@ -71,39 +79,54 @@ fn fancierSubstitutions():
 fn testAttrConcatWithoutType[
     length: __mlir_type.index,
 ]():
-  # CHECK: kgen.param.declare x: list<index[2]> = <[1, length]>
-  alias x = __mlir_attr[
-            `#kgen<list[`, +1, `,`, length, `]> : `,
-            `!kgen.list<index[`,
-            +2,
-            `]>`,
-        ]
+    # CHECK: kgen.param.declare x: list<index[2]> = <[1, length]>
+    alias x = __mlir_attr[
+        `#kgen<list[`,
+        +1,
+        `,`,
+        length,
+        `]> : `,
+        `!kgen.list<index[`,
+        +2,
+        `]>`,
+    ]
+
 
 # Show conversion of lvalue address into a pointer.
 # Issue #6825: Expose a way to get the address of an lvalue
 
 # CHECK-LABEL: lit.struct.decl @MyPointer
 struct MyPointer[eltType: __mlir_type.`!kgen.mlirtype`]:
-  alias StorageTy = __mlir_type[`!pop.pointer<`, eltType, `>`]
-  # CHECK: lit.struct.field value : !pop.pointer<eltType>
-  var value: StorageTy
+    alias StorageTy = __mlir_type[`!pop.pointer<`, eltType, `>`]
+    # CHECK: lit.struct.field value : !pop.pointer<eltType>
+    var value: StorageTy
 
-  fn __new__(value: StorageTy) -> MyPointer[eltType]:
-    return __mlir_op.`lit.struct.create`[_type: MyPointer[eltType]](value)
+    fn __new__(value: StorageTy) -> MyPointer[eltType]:
+        return __mlir_op.`lit.struct.create`[
+            _type : MyPointer[eltType],
+            fields : __mlir_attr.`#kgen<strings["value"]>`,
+        ](value)
+
 
 # CHECK-LABEL: getAddressOf{{.*}}"<T: type>(%arg: !pop.pointer<T> byref)
 fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](arg&: T) -> MyPointer[T]:
-  return __mlir_op.`pop.pointer.bitcast`[_type: MyPointer[T].StorageTy]((((arg))))
+    return __mlir_op.`pop.pointer.bitcast`[_type : MyPointer[T].StorageTy](
+        (((arg)))
+    )
 
-  # CHECK-NEXT: %0 = kgen.call @"{{.*}}@MyPointer::@"__new__(__mlir_type.!pop.pointer<eltType>)"<eltType: type = T>(%arg)
-  # CHECK-NEXT: lit.return %0
+    # CHECK-NEXT: %0 = kgen.call @"{{.*}}@MyPointer::@"__new__(__mlir_type.!pop.pointer<eltType>)"<eltType: type = T>(%arg)
+    # CHECK-NEXT: lit.return %0
+
 
 # CHECK-LABEL: lit.func @"structured_for_loop()"
 fn structured_for_loop() -> __mlir_type.index:
-  # CHECK: %0 = scf.for %arg0 = %idx0 to %idx10 step %idx1 iter_args(%arg1 = %idx2) -> (index) {
-  fn loop_body(i: __mlir_type.index, acc: __mlir_type.index):
-    # CHECK-NEXT: %1 = index.add %arg0, %arg1
-    # CHECK-NEXT: scf.yield %1 : index
-    __mlir_op.`scf.yield`(__mlir_op.`index.add`(i, acc))
-  # CHECK: return %0 : index
-  return __mlir_op.`scf.for`[_type: [__mlir_type.index], _region: ["loop_body"]](0, 10, 1, 2)
+    # CHECK: %0 = scf.for %arg0 = %idx0 to %idx10 step %idx1 iter_args(%arg1 = %idx2) -> (index) {
+    fn loop_body(i: __mlir_type.index, acc: __mlir_type.index):
+        # CHECK-NEXT: %1 = index.add %arg0, %arg1
+        # CHECK-NEXT: scf.yield %1 : index
+        __mlir_op.`scf.yield`(__mlir_op.`index.add`(i, acc))
+
+    # CHECK: return %0 : index
+    return __mlir_op.`scf.for`[
+        _type : [__mlir_type.index], _region:["loop_body"]
+    ](0, 10, 1, 2)

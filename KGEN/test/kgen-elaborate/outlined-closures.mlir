@@ -29,7 +29,7 @@ kgen.generator @raiseClosure_wrapper<C, A, B -> index>() force_inline -> index {
 // COM: All this should be inlined and all that we care about is the raiseClosure func.
 // CHECK-LABEL: @raiseClosure() -> (index, index)
 // CHECK-NEXT: %idx0 = index.constant 0
-// CHECK-NEXT: lit.struct.create(%idx0)
+// CHECK-NEXT: lit.struct.create(field_0=%idx0)
 // CHECK: lit.struct.extract {{%[0-9]}}[field_0]
 // CHECK: kgen.param.constant{{.*}}<16>
 // CHECK-NEXT: pop.cast_from_builtin
@@ -42,7 +42,7 @@ kgen.generator @raiseClosure_wrapper<C, A, B -> index>() force_inline -> index {
 kgen.generator @raiseClosure<() -> index>() -> (index, index) {
   %idx0 = index.constant 0
   kgen.param.declare C = <15>
-  %0 = lit.struct.create(%idx0) : (index) -> !kgen.declref<@raiseClosure_context>
+  %0 = lit.struct.create(field_0=%idx0) : (index) -> !kgen.declref<@raiseClosure_context>
   pop.compiler.global_store "raiseClosure_context_var", %0 : !kgen.declref<@raiseClosure_context>
   kgen.param.declare Fn: <A, B -> index>() force_inline -> index = <@raiseClosure_wrapper<C = C, A = #kgen.unbound, B = #kgen.unbound>>
   kgen.param.declare BoundFn: <A -> index>() force_inline -> index = <bind_signature(:<A, B -> index>() force_inline -> index Fn, #kgen.unbound, 1)>

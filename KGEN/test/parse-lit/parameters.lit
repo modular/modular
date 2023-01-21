@@ -193,7 +193,7 @@ fn no_result_param[a: __mlir_type.index]():
 fn idx_result_params[a: __mlir_type.index -> __mlir_type.index, __mlir_type.index]() -> Int:
   # CHECK: %0 = kgen.param.constant = <add(a, 2)>
   # CHECK: %1 = pop.cast_from_builtin %0 : index to !pop.scalar<index>
-  # CHECK: %2 = lit.struct.create(%1)
+  # CHECK: %2 = lit.struct.create(value=%1)
   # CHECK: lit.return<a, add(a, 1)> %2
   return[a,a+1] a+2
 
