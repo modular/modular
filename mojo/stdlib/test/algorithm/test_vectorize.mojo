@@ -15,14 +15,10 @@ from Int import Int
 fn test_vectorize():
     __mlir_op.`zap.print`[fmt:"== test_vectorize\n"]()
 
-    # Create a mem of size 16
-    let buffer = __mlir_op.`pop.stack_allocation`[
-        count:5, _type : __mlir_type.`!pop.pointer<scalar<f32>>`
-    ]()
+    # Create a mem of size 5
     let vector = Buffer[
-        5,
-        __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
-    ](buffer)
+        5, __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
+    ].stack_allocation()
 
     vector.__setitem__(0, 1.0)
     vector.__setitem__(1, 2.0)
