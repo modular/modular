@@ -15,155 +15,163 @@
 using namespace M;
 using namespace KGEN;
 
+/// Get the C type string for the dtype.
+LogicalResult getCTypeForDType(FuncOp func, KGENDType dt,
+                               SmallVectorImpl<std::string> &types) {
+  if (dt.isFloat()) {
+    switch (dt.getValue()) {
+    case DType::f32:
+      types.push_back("float");
+      return success();
+    case DType::f64:
+      types.push_back("double");
+      return success();
+    }
+    return func.emitError("unhandled floating point dtype: ")
+           << dt.getAsString();
+  }
+  if (dt.isInt()) {
+    types.push_back(((dt.isUInt() ? "u" : "") + StringRef("int") +
+                     Twine(dt.getWidthInBits()) + "_t")
+                        .str());
+    return success();
+  }
+  if (dt == DType::invalid) {
+    types.push_back("void");
+    return success();
+  }
+  if (dt.isBool()) {
+    types.push_back("bool");
+    return success();
+  }
+  if (dt.isIndex()) {
+    types.push_back("ssize_t");
+    return success();
+  }
+  return func.emitError("unhandled dtype for header generation ")
+         << dt.getAsString();
+};
+
+/// Get the C types for the given type.
+LogicalResult getCTypeForType(FuncOp func, Type t,
+                              SmallVectorImpl<std::string> &types) {
+  if (auto simd = dyn_cast<POP::SIMDType>(t)) {
+    // Since the vector_size attribute only works on GNU and CLANG compilers,
+    // we pass in an array.
+    if (failed(getCTypeForDType(func, *simd.getResolvedDType(), types)))
+      return failure();
+    auto size = *simd.getResolvedSize();
+    // size == 1 is a scalar
+    if (size != 1)
+      types.back() += ("[" + Twine(size) + "]").str();
+    return success();
+  }
+
+  if (auto ptr = dyn_cast<POP::PointerType>(t)) {
+    if (Type type = ptr.getResolvedElementType()) {
+      if (failed(getCTypeForType(func, type, types)))
+        return failure();
+    } else {
+      types.push_back("void");
+    }
+    types.back() += " *";
+    return success();
+  }
+
+  if (auto array = dyn_cast<POP::ArrayType>(t)) {
+    if (failed(getCTypeForType(func, array.getResolvedElementType(), types)))
+      return failure();
+    types.back() += ("[" + Twine(*array.getResolvedSize()) + "]").str();
+    return success();
+  }
+
+  if (auto ndbuffer = dyn_cast<ZAP::NDBufferType>(t)) {
+    types.append({"void *", "size_t", "ssize_t[5]", "uint8_t"});
+    return success();
+  }
+
+  if (auto structType = dyn_cast<POP::StructType>(t)) {
+    SmallVector<Type> elementTypes;
+    elementTypes.reserve(structType.getElementTypes().size());
+    if (failed(structType.resolveElementTypes(elementTypes)))
+      return failure();
+    for (Type elTy : elementTypes)
+      if (failed(getCTypeForType(func, elTy, types)))
+        return failure();
+    return success();
+  }
+
+  if (t.isa<DTypeType>()) {
+    types.push_back("uint8_t");
+    return success();
+  }
+
+  // Check for !kgen.list<i1[0]> which the lowering of !lit.none and it
+  // corresponds to void.
+  if (auto listType = dyn_cast<ListType>(t)) {
+    SmallVector<std::string> elType;
+    if (failed(
+            getCTypeForType(func, listType.getResolvedElementType(), elType)))
+      return failure();
+    for (int64_t i = 0, e = *listType.getResolvedLength(); i != e; ++i)
+      types.append(elType);
+    return success();
+  }
+  if (!t.isa<IndexType, IntegerType, FloatType>())
+    return func.emitError("unsupported argument type: ") << t;
+  if (!t.isIndex() && !llvm::isPowerOf2_64(t.getIntOrFloatBitWidth()))
+    return func.emitError("integer or float bitwidth must be a power of 2");
+
+  // Elementary type, just print it.
+  if (t.isa<IntegerType>())
+    if (auto bitWidth = t.getIntOrFloatBitWidth(); bitWidth > 1)
+      types.push_back(("int" + Twine(bitWidth) + "_t").str());
+    else
+      types.push_back("bool");
+  else if (t.isa<IndexType>())
+    types.push_back("ssize_t");
+  else if (t.isF16())
+    llvm::report_fatal_error("no support for fp16 yet");
+  else if (t.isF32())
+    types.push_back("float");
+  else if (t.isF64())
+    types.push_back("double");
+  else
+    return func.emitError("unhandled float type: ") << t;
+  return success();
+};
+
 /// Emit the C signature of a KGEN func.
 static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
                                    FuncOp func) {
-  auto printDTypeAsC = [&](KGENDType dt) -> LogicalResult {
-    if (dt.isFloat()) {
-      switch (dt.getValue()) {
-      case DType::f32:
-        os << "float";
-        return success();
-      case DType::f64:
-        os << "double";
-        return success();
-      }
-      return func.emitError("unhandled floating point dtype: ")
-             << dt.getAsString();
-    }
-    if (dt.isInt()) {
-      os << (dt.isUInt() ? "u" : "") << "int" << dt.getWidthInBits() << "_t";
-      return success();
-    }
-    if (dt == DType::invalid) {
-      os << "void";
-      return success();
-    }
-    if (dt.isBool()) {
-      os << "bool";
-      return success();
-    }
-    if (dt.isIndex()) {
-      os << "ssize_t";
-      return success();
-    }
-    return func.emitError("unhandled dtype for header generation ")
-           << dt.getAsString();
-  };
+  SmallVector<std::string> argTys, resTys;
+  for (Type type : func.getArgumentTypes())
+    if (failed(getCTypeForType(func, type, argTys)))
+      return failure();
+  for (Type type : func.getResultTypes())
+    if (failed(getCTypeForType(func, type, resTys)))
+      return failure();
 
-  // Helper to print a function as a C type.
-  std::function<LogicalResult(Type)> printTypeAsC =
-      [&](Type t) -> LogicalResult {
-    if (auto simd = dyn_cast<POP::SIMDType>(t)) {
-      // Since the vector_size attribute only works on GNU and CLANG compilers,
-      // we pass in an array.
-      if (failed(printDTypeAsC(*simd.getResolvedDType())))
-        return failure();
-      auto size = *simd.getResolvedSize();
-      // size == 1 is a scalar
-      if (size != 1)
-        os << "[" << size << "]";
-      return success();
-    }
-
-    if (auto ptr = dyn_cast<POP::PointerType>(t)) {
-      if (Type type = ptr.getResolvedElementType()) {
-        if (failed(printTypeAsC(type)))
-          return failure();
-      } else {
-        os << "void";
-      }
-      os << " *";
-      return success();
-    }
-
-    if (auto array = dyn_cast<POP::ArrayType>(t)) {
-      if (failed(printTypeAsC(array.getResolvedElementType())))
-        return failure();
-      os << "[" << *array.getResolvedSize() << "]";
-      return success();
-    }
-
-    if (auto ndbuffer = dyn_cast<ZAP::NDBufferType>(t)) {
-      os << "void *, ssize_t, ssize_t[5], uint8_t";
-      return success();
-    }
-
-    if (auto structType = dyn_cast<POP::StructType>(t)) {
-      SmallVector<Type> elementTypes;
-      elementTypes.reserve(structType.getElementTypes().size());
-      if (failed(structType.resolveElementTypes(elementTypes)))
-        return failure();
-      for (auto &elTy : llvm::enumerate(elementTypes)) {
-        if (elTy.index() != 0)
-          os << ", ";
-        if (failed(printTypeAsC(elTy.value())))
-          return failure();
-      }
-      return success();
-    }
-
-    if (t.isa<DTypeType>()) {
-      os << "uint8_t";
-      return success();
-    }
-
-    // Check for !kgen.list<i1[0]> which the lowering of !lit.none and it
-    // corresponds to void.
-    if (auto listType = dyn_cast<ListType>(t)) {
-      Optional<int64_t> length = listType.getResolvedLength();
-      if (!length.has_value() || length.value() > 1)
-        return func.emitError("unsupported argument type: ") << t;
-      if (length.value() == 0) {
-        os << "void";
-        return success();
-      }
-      if (failed(printTypeAsC(listType.getResolvedElementType())))
-        return failure();
-      return success();
-    }
-    if (!t.isa<IndexType, IntegerType, FloatType>())
-      return func.emitError("unsupported argument type: ") << t;
-    if (!t.isIndex() && !llvm::isPowerOf2_64(t.getIntOrFloatBitWidth()))
-      return func.emitError("integer or float bitwidth must be a power of 2");
-
-    // Elementary type, just print it.
-    if (t.isa<IntegerType>())
-      if (auto bitWidth = t.getIntOrFloatBitWidth(); bitWidth > 1)
-        os << "int" << bitWidth << "_t";
-      else
-        os << "bool";
-    else if (t.isa<IndexType>())
-      os << "ssize_t";
-    else if (t.isF16())
-      llvm::report_fatal_error("no support for fp16 yet");
-    else if (t.isF32())
-      os << "float";
-    else if (t.isF64())
-      os << "double";
-    else
-      return func.emitError("unhandled float type: ") << t;
-    return success();
-  };
-
-  // Now print the function declaration.
+  // Print the function declaration.
   os << "extern ";
-  if (func.getNumResults() > 1)
-    return func.emitError("functions with more than 1 result unsupported");
-  if (func.getNumResults() == 0)
+
+  // If there is exactly one result type, return it. If there are multiple,
+  // return them as pointers.
+  if (resTys.size() == 1)
+    os << resTys.front();
+  else
     os << "void";
-  else if (failed(printTypeAsC(func.getResultTypes().front())))
-    return failure();
 
   // FIXME: This assumes the C wrapper that eventually gets generated is not
   // renamed due to a symbol name conflict. Header emission happens too early in
   // the pipeline.
-  os << " " << makeCIdentifier(func.getName()) << "_c(";
-  for (auto &it : llvm::enumerate(func.getFunctionType().getInputs())) {
-    if (it.index() != 0)
+  os << ' ' << makeCIdentifier(func.getName()) << "_c(";
+  llvm::interleaveComma(argTys, os);
+  if (resTys.size() > 1) {
+    if (!argTys.empty())
       os << ", ";
-    if (failed(printTypeAsC(it.value())))
-      return failure();
+    llvm::interleaveComma(resTys, os,
+                          [&](StringRef type) { os << type << " *"; });
   }
   os << ");";
   return success();
