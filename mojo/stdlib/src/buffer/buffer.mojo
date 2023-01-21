@@ -13,8 +13,13 @@ from Tuple import StaticTuple
 from List import product, contains
 
 
+# ===----------------------------------------------------------------------===#
+# Utilities
+# ===----------------------------------------------------------------------===#
+
+
 @always_inline
-fn raw_stack_allocation[
+fn _raw_stack_allocation[
     count: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
     alignment: __mlir_type.index,
@@ -90,6 +95,11 @@ fn _get_buffer_len_static[size: __mlir_type.index](dynamic_size: Int) -> Int:
     """
     assert_param[size != __mlir_attr.`#kgen.unknown : index`]()
     return size
+
+
+# ===----------------------------------------------------------------------===#
+# Buffer
+# ===----------------------------------------------------------------------===#
 
 
 struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
@@ -222,8 +232,13 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         Returns:
             Constructed buffer with the allocated space.
         """
-        var data_pointer = raw_stack_allocation[size, type, alignment]()
+        var data_pointer = _raw_stack_allocation[size, type, alignment]()
         return Buffer[size, type](data_pointer.address)
+
+
+# ===----------------------------------------------------------------------===#
+# NDBuffer Utilities
+# ===----------------------------------------------------------------------===#
 
 
 fn _compute_ndbuffer_offset[
@@ -479,6 +494,11 @@ fn _get_dim_impl[
     return _get_dim_helper[rank, static_dim_value, index](dynamic_shape)
 
 
+# ===----------------------------------------------------------------------===#
+# NDBuffer
+# ===----------------------------------------------------------------------===#
+
+
 struct NDBuffer[
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
@@ -570,7 +590,7 @@ struct NDBuffer[
         Returns:
             Constructed ndbuffer with the allocated space.
         """
-        var data_pointer = raw_stack_allocation[
+        var data_pointer = _raw_stack_allocation[
             product[rank](shape).__as_mlir_index(), type, alignment
         ]()
         return NDBuffer[rank, shape, type](data_pointer.address)
