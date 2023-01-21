@@ -1,34 +1,49 @@
 // RUN: kgen-opt -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' %s | FileCheck %s
 
-!struct1 = !pop.struct<struct<simd<1, f32>>, array<4, simd<1, f32>>>
+!struct1 = !pop.struct<struct<f32>, array<4, f32>>
 
 // CHECK-LABEL: @struct_construct
-kgen.func @struct_construct(
-    %a: !pop.struct<simd<1, f32>>,
-    %b: !pop.array<4, simd<1, f32>>
-) -> !struct1 {
-  // CHECK: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(struct<(f32)>, array<4 x f32>)>
+kgen.func @struct_construct(%a: !pop.struct<f32>, %b: !pop.array<4, f32>) -> !struct1 {
+  // CHECK: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(f32, array<4 x f32>)>
   // CHECK: %[[S1:.*]] = llvm.insertvalue %{{.*}}, %[[S0]][0]
   // CHECK: %[[S2:.*]] = llvm.insertvalue %{{.*}}, %[[S1]][1]
   %0 = pop.struct.construct(%a, %b) : !struct1
   kgen.return %0 : !struct1
 }
 
+// CHECK-LABEL: @struct_construct_one
+kgen.func @struct_construct_one(%a: f32) -> !pop.struct<f32> {
+  // CHECK: unrealized_conversion_cast %arg0 : f32 to !pop.struct<f32>
+  %0 = pop.struct.construct(%a) : !pop.struct<f32>
+  kgen.return %0 : !pop.struct<f32>
+}
+
 // CHECK-LABEL: @struct_insert
-kgen.func @struct_insert(
-    %a: !pop.struct<simd<1, f32>>,
-    %b: !pop.simd<1, f32>
-) -> !pop.struct<simd<1, f32>> {
-  // CHECK: llvm.insertvalue %{{.*}}, %{{.*}}[0] : !llvm.struct<(f32)>
-  %0 = pop.struct.replace %b, %a[0] : !pop.struct<simd<1, f32>>
-  kgen.return %0 : !pop.struct<simd<1, f32>>
+kgen.func @struct_insert(%a: !pop.struct<f32, f32>, %b: f32) -> !pop.struct<f32, f32> {
+  // CHECK: llvm.insertvalue %{{.*}}, %{{.*}}[0] : !llvm.struct<(f32, f32)>
+  %0 = pop.struct.replace %b, %a[0] : !pop.struct<f32, f32>
+  kgen.return %0 : !pop.struct<f32, f32>
+}
+
+// CHECK-LABEL: @struct_insert_one
+kgen.func @struct_insert_one(%a: !pop.struct<f32>, %b: f32) -> !pop.struct<f32> {
+  // CHECK: unrealized_conversion_cast %arg1 : f32 to !pop.struct<f32>
+  %0 = pop.struct.replace %b, %a[0] : !pop.struct<f32>
+  kgen.return %0 : !pop.struct<f32>
 }
 
 // CHECK-LABEL: @struct_extract
-kgen.func @struct_extract(%a: !pop.struct<simd<1, f32>>) -> !pop.simd<1, f32> {
+kgen.func @struct_extract(%a: !pop.struct<f32, f32>) -> f32 {
   // CHECK: llvm.extractvalue %{{.*}}[0]
-  %0 = pop.struct.get %a[0] : !pop.struct<simd<1, f32>>
-  kgen.return %0 : !pop.simd<1, f32>
+  %0 = pop.struct.get %a[0] : !pop.struct<f32, f32>
+  kgen.return %0 : f32
+}
+
+// CHECK-LABEL: @struct_extract_one
+kgen.func @struct_extract_one(%a: !pop.struct<f32>) -> f32 {
+  // CHECK: unrealized_conversion_cast %arg0 : !pop.struct<f32> to f32
+  %0 = pop.struct.get %a[0] : !pop.struct<f32>
+  kgen.return %0 : f32
 }
 
 // CHECK-LABEL: @struct_gep
@@ -36,4 +51,11 @@ kgen.func @struct_gep(%a: !pop.pointer<struct<i32, i64>>) -> !pop.pointer<i64> {
   // CHECK: llvm.getelementptr %{{.*}}[0, 1] : (!llvm.ptr<struct<(i32, i64)>>) -> !llvm.ptr<i64>
   %0 = pop.struct.gep %a[1] : <struct<i32, i64>>
   kgen.return %0 : !pop.pointer<i64>
+}
+
+// CHECK-LABEL: @struct_gep_one
+kgen.func @struct_gep_one(%a: !pop.pointer<struct<i32>>) -> !pop.pointer<i32> {
+  // CHECK: unrealized_conversion_cast %arg0 : !pop.pointer<struct<i32>> to !llvm.ptr<i32>
+  %0 = pop.struct.gep %a[0] : <struct<i32>>
+  kgen.return %0 : !pop.pointer<i32>
 }

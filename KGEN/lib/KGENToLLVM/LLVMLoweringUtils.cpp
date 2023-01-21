@@ -118,6 +118,14 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
 
   // Convert struct types to LLVM literal structs.
   addConversion([=](POP::StructType structType) -> std::optional<Type> {
+    // Unwrap structs with just one element.
+    if (structType.getNumElements() == 1) {
+      Type type = convertType(structType.getConcreteElementType(0));
+      if (!type)
+        return {};
+      return type;
+    }
+
     SmallVector<Type> elementTypes;
     elementTypes.reserve(structType.getNumElements());
     for (TypedAttr elementType : structType.getElementTypes()) {
@@ -604,6 +612,10 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
       Value element = convertParameterToLLVM(b, tc, value);
       if (!element)
         return {};
+      // If this is a struct with one element, return it directly.
+      if (auto structAttr = dyn_cast<POP::StructAttr>(attr);
+          structAttr && structAttr.getValues().size() == 1)
+        return element;
       aggregate = b.create<LLVM::InsertValueOp>(aggregate, element, idx);
     }
     return aggregate;

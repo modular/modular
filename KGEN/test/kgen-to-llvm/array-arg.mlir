@@ -19,9 +19,7 @@ kgen.func @array_in_struct(%s: !pop.struct<array<4, i32>>) {
 
 // CHECK-LABEL: llvm.func @array_in_struct_c
 // CHECK-SAME: %[[ARR_PTR:.*]]: !llvm.ptr<array<4 x i32>>
-// CHECK-NEXT: %[[S:.*]] = llvm.mlir.undef
 // CHECK-NEXT: %[[ARR:.*]] = llvm.load %[[ARR_PTR]]
-// CHECK-NEXT: %[[ARG:.*]] = llvm.insertvalue %[[ARR]], %[[S]][0]
-// CHECK-NEXT: llvm.call @array_in_struct(%[[ARG]])
+// CHECK-NEXT: llvm.call @array_in_struct(%[[ARR]])
 
 kgen.export [@array_arg, @array_in_struct]
