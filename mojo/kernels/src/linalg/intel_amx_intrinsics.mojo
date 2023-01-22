@@ -9,21 +9,22 @@
 #
 # ===----------------------------------------------------------------------===#
 
-from SIMD import SIMD
+from DType import DType
 from Int import Int
+from SIMD import SIMD
 
 
 struct __tile:
     """An AMX tile representation"""
 
     var buf: __mlir_type[`!pop.array<1024, si32>`]
-    var rows: SIMD[1, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]
-    var cols: SIMD[1, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]
+    var rows: SIMD[1, DType.si32.value]
+    var cols: SIMD[1, DType.si32.value]
 
 
 fn to_si8(
     val: Int,
-) -> SIMD[1, __mlir_attr.`#kgen.dtype.constant<si8> : !kgen.dtype`]:
+) -> SIMD[1, DType.si8.value]:
     """Converts an input integer to an si8 value"""
     return __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](
         val.value

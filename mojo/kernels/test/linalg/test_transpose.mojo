@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen %s -execute -func='$test_transpose::main():index()' -I %stdlibdir | FileCheck %s
 
+from Buffer import NDBuffer
+from DType import DType
 from Int import Int
 from IO import print
-from Buffer import NDBuffer
-from Transpose import transpose_inplace, _index2D
 from List import create_kgen_list
+from Transpose import transpose_inplace, _index2D
 
 # CHECK-LABEL: test_transpose_4x4
 fn test_transpose_4x4():
@@ -23,7 +24,7 @@ fn test_transpose_4x4():
     var matrix = NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](4, 4),
-        __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`,
+        DType.index.value,
     ].stack_allocation()
 
     matrix.__setitem__(_index2D(0, 0), 0)
@@ -43,9 +44,7 @@ fn test_transpose_4x4():
     matrix.__setitem__(_index2D(3, 2), 14)
     matrix.__setitem__(_index2D(3, 3), 15)
 
-    transpose_inplace[
-        2, 4, 4, __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`
-    ](matrix)
+    transpose_inplace[2, 4, 4, DType.index.value](matrix)
 
     # CHECK: 0
     print(matrix.__getitem__(_index2D(0, 0)))
@@ -103,7 +102,7 @@ fn test_transpose_8x8():
     var matrix = NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](8, 8),
-        __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`,
+        DType.index.value,
     ].stack_allocation()
 
     alias num_rows = 8
@@ -119,9 +118,7 @@ fn test_transpose_8x8():
             j += 1
         i += 1
 
-    transpose_inplace[
-        2, 8, 8, __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`
-    ](matrix)
+    transpose_inplace[2, 8, 8, DType.index.value](matrix)
 
     i = 0
     while i < num_rows:

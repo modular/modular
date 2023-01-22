@@ -11,23 +11,24 @@
 # REQUIRES: apple-m1
 # RUN: kgen %s -execute -func='$test_apple_amx::main():index()' -I %stdlibdir | FileCheck %s
 
-from Int import Int
-from F32 import F32
-from SIMD import SIMD
-from Buffer import NDBuffer
-from Transpose import transpose_inplace, _index2D
-from TargetInfo import has_m1_amx, sizeof
-from Memory import memset_zero
 from AppleAMX import amx_detail
+from Buffer import NDBuffer
+from DType import DType
+from F32 import F32
+from Int import Int
 from IO import print
 from List import create_kgen_list
+from Memory import memset_zero
+from SIMD import SIMD
+from TargetInfo import has_m1_amx, sizeof
+from Transpose import transpose_inplace, _index2D
 
 
 fn fill_a(
     buf: NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
-        __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
+        DType.f32.value,
     ]
 ):
     # Fills the A matrix with the following values row + 2*col
@@ -47,7 +48,7 @@ fn fill_b(
     buf: NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
-        __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
+        DType.f32.value,
     ]
 ):
     # Fills the A matrix with the following values row/(col + 1) + col
@@ -67,20 +68,18 @@ fn clear_c(
     buf: NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
-        __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
+        DType.f32.value,
     ]
 ):
     let buffer_bytecount = buf.size() * sizeof[__mlir_type.f32]()
-    memset_zero[__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`](
-        buf.data, buffer_bytecount
-    )
+    memset_zero[DType.f32.value](buf.data, buffer_bytecount)
 
 
 fn print_matrix(
     buf: NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
-        __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
+        DType.f32.value,
     ]
 ):
     # Fills the A matrix with the following values row/(col + 1) + col + 3
@@ -103,17 +102,17 @@ fn test_amx_matmul():
     var a_matrix = NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
-        __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
+        DType.f32.value,
     ].stack_allocation()
     var b_matrix = NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
-        __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
+        DType.f32.value,
     ].stack_allocation()
     var c_matrix = NDBuffer[
         2,
         create_kgen_list[__mlir_type.index](16, 16),
-        __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
+        DType.f32.value,
     ].stack_allocation()
 
     fill_a(a_matrix)

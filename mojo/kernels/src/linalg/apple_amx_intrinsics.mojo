@@ -10,16 +10,16 @@
 #
 # ===----------------------------------------------------------------------===#
 
-from Pointer import DTypePointer
-from Int import Int
 from Assert import assert_param
 from Bool import Bool
 from Buffer import NDBuffer
-from TargetInfo import sizeof
-from Memory import memset_zero, memcpy
+from DType import DType, dtype_is_f32
+from Int import Int
 from IO import print
-from DType import dtype_is_f32
 from List import create_kgen_list
+from Memory import memset_zero, memcpy
+from Pointer import DTypePointer
+from TargetInfo import sizeof
 
 
 struct amx_detail:
@@ -384,17 +384,17 @@ struct amx_detail:
         c: NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](16, 16),
-            __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
+            DType.f32.value,
         ],
         a: NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](16, 16),
-            __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
+            DType.f32.value,
         ],
         b: NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](16, 16),
-            __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`,
+            DType.f32.value,
         ],
     ):
         # Performs a 16x16x16 matrix multiply on the given matrices storing the
@@ -415,36 +415,30 @@ struct amx_detail:
         let buffer_bytecount = c.size() * sizeof[__mlir_type.f32]()
 
         let a_buffer: DTypePointer[
-            __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
+            DType.f32.value
         ] = __mlir_op.`pop.stack_allocation`[
             count:256,
             alignment:128,
             _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
         ]()
         let b_buffer: DTypePointer[
-            __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
+            DType.f32.value
         ] = __mlir_op.`pop.stack_allocation`[
             count:256,
             alignment:128,
             _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
         ]()
         let c_buffer: DTypePointer[
-            __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
+            DType.f32.value
         ] = __mlir_op.`pop.stack_allocation`[
             count:256,
             alignment:128,
             _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
         ]()
 
-        memcpy[__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`](
-            a_buffer, a_pointer, buffer_bytecount
-        )
-        memcpy[__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`](
-            b_buffer, b_pointer, buffer_bytecount
-        )
-        memset_zero[__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`](
-            c_buffer, buffer_bytecount
-        )
+        memcpy[DType.f32.value](a_buffer, a_pointer, buffer_bytecount)
+        memcpy[DType.f32.value](b_buffer, b_pointer, buffer_bytecount)
+        memset_zero[DType.f32.value](c_buffer, buffer_bytecount)
 
         _set()
 
@@ -479,6 +473,4 @@ struct amx_detail:
 
         _clr()
 
-        memcpy[__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`](
-            c_pointer, c_buffer, buffer_bytecount
-        )
+        memcpy[DType.f32.value](c_pointer, c_buffer, buffer_bytecount)

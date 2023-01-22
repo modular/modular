@@ -9,6 +9,7 @@
 #
 # ===----------------------------------------------------------------------===#
 
+from DType import DType
 from SIMD import SIMD
 
 # ===----------------------------------------------------------------------===#
@@ -17,10 +18,10 @@ from SIMD import SIMD
 
 
 fn vpdpwssd(
-    src: SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    a: SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    b: SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-) -> SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]:
+    src: SIMD[16, DType.si32.value],
+    a: SIMD[16, DType.si32.value],
+    b: SIMD[16, DType.si32.value],
+) -> SIMD[16, DType.si32.value]:
     return __mlir_op.`pop.call_llvm_intrinsic`[
         intrin:"llvm.x86.avx512.vpdpwssd.512",
         _type : __mlir_type.`!pop.simd<16, si32>`,
@@ -28,10 +29,10 @@ fn vpdpwssd(
 
 
 fn vpdpwssd(
-    src: SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    a: SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    b: SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-) -> SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]:
+    src: SIMD[8, DType.si32.value],
+    a: SIMD[8, DType.si32.value],
+    b: SIMD[8, DType.si32.value],
+) -> SIMD[8, DType.si32.value]:
     return __mlir_op.`pop.call_llvm_intrinsic`[
         intrin:"llvm.x86.avx512.vpdpwssd.256",
         _type : __mlir_type.`!pop.simd<8, si32>`,
@@ -39,10 +40,10 @@ fn vpdpwssd(
 
 
 fn vpdpwssd(
-    src: SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    a: SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    b: SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-) -> SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]:
+    src: SIMD[4, DType.si32.value],
+    a: SIMD[4, DType.si32.value],
+    b: SIMD[4, DType.si32.value],
+) -> SIMD[4, DType.si32.value]:
     return __mlir_op.`pop.call_llvm_intrinsic`[
         intrin:"llvm.x86.avx512.vpdpwssd.128",
         _type : __mlir_type.`!pop.simd<4, si32>`,
@@ -55,10 +56,10 @@ fn vpdpwssd(
 
 
 fn vpdpwssds(
-    src: SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    a: SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    b: SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-) -> SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]:
+    src: SIMD[16, DType.si32.value],
+    a: SIMD[16, DType.si32.value],
+    b: SIMD[16, DType.si32.value],
+) -> SIMD[16, DType.si32.value]:
     return __mlir_op.`pop.call_llvm_intrinsic`[
         intrin:"llvm.x86.avx512.vpdpwssds.512",
         _type : __mlir_type.`!pop.simd<16, si32>`,
@@ -66,10 +67,10 @@ fn vpdpwssds(
 
 
 fn vpdpwssds(
-    src: SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    a: SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    b: SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-) -> SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]:
+    src: SIMD[8, DType.si32.value],
+    a: SIMD[8, DType.si32.value],
+    b: SIMD[8, DType.si32.value],
+) -> SIMD[8, DType.si32.value]:
     return __mlir_op.`pop.call_llvm_intrinsic`[
         intrin:"llvm.x86.avx512.vpdpwssds.256",
         _type : __mlir_type.`!pop.simd<8, si32>`,
@@ -77,10 +78,10 @@ fn vpdpwssds(
 
 
 fn vpdpwssds(
-    src: SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    a: SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    b: SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-) -> SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]:
+    src: SIMD[4, DType.si32.value],
+    a: SIMD[4, DType.si32.value],
+    b: SIMD[4, DType.si32.value],
+) -> SIMD[4, DType.si32.value]:
     return __mlir_op.`pop.call_llvm_intrinsic`[
         intrin:"llvm.x86.avx512.vpdpwssds.128",
         _type : __mlir_type.`!pop.simd<4, si32>`,
@@ -93,10 +94,10 @@ fn vpdpwssds(
 
 
 fn vpdpbusd(
-    src: SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    a: SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    b: SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-) -> SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]:
+    src: SIMD[16, DType.si32.value],
+    a: SIMD[16, DType.si32.value],
+    b: SIMD[16, DType.si32.value],
+) -> SIMD[16, DType.si32.value]:
     return __mlir_op.`pop.call_llvm_intrinsic`[
         intrin:"llvm.x86.avx512.vpdpbusd.512",
         _type : __mlir_type.`!pop.simd<16, si32>`,
@@ -104,10 +105,10 @@ fn vpdpbusd(
 
 
 fn vpdpbusd(
-    src: SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    a: SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    b: SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-) -> SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]:
+    src: SIMD[8, DType.si32.value],
+    a: SIMD[8, DType.si32.value],
+    b: SIMD[8, DType.si32.value],
+) -> SIMD[8, DType.si32.value]:
     return __mlir_op.`pop.call_llvm_intrinsic`[
         intrin:"llvm.x86.avx512.vpdpbusd.256",
         _type : __mlir_type.`!pop.simd<8, si32>`,
@@ -115,10 +116,10 @@ fn vpdpbusd(
 
 
 fn vpdpbusd(
-    src: SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    a: SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    b: SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-) -> SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]:
+    src: SIMD[4, DType.si32.value],
+    a: SIMD[4, DType.si32.value],
+    b: SIMD[4, DType.si32.value],
+) -> SIMD[4, DType.si32.value]:
     return __mlir_op.`pop.call_llvm_intrinsic`[
         intrin:"llvm.x86.avx512.vpdpbusd.128",
         _type : __mlir_type.`!pop.simd<4, si32>`,
@@ -131,10 +132,10 @@ fn vpdpbusd(
 
 
 fn vpdpbusds(
-    src: SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    a: SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    b: SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-) -> SIMD[16, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]:
+    src: SIMD[16, DType.si32.value],
+    a: SIMD[16, DType.si32.value],
+    b: SIMD[16, DType.si32.value],
+) -> SIMD[16, DType.si32.value]:
     return __mlir_op.`pop.call_llvm_intrinsic`[
         intrin:"llvm.x86.avx512.vpdpbusds.512",
         _type : __mlir_type.`!pop.simd<16, si32>`,
@@ -142,10 +143,10 @@ fn vpdpbusds(
 
 
 fn vpdpbusds(
-    src: SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    a: SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    b: SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-) -> SIMD[8, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]:
+    src: SIMD[8, DType.si32.value],
+    a: SIMD[8, DType.si32.value],
+    b: SIMD[8, DType.si32.value],
+) -> SIMD[8, DType.si32.value]:
     return __mlir_op.`pop.call_llvm_intrinsic`[
         intrin:"llvm.x86.avx512.vpdpbusds.256",
         _type : __mlir_type.`!pop.simd<8, si32>`,
@@ -153,10 +154,10 @@ fn vpdpbusds(
 
 
 fn vpdpbusds(
-    src: SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    a: SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-    b: SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`],
-) -> SIMD[4, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]:
+    src: SIMD[4, DType.si32.value],
+    a: SIMD[4, DType.si32.value],
+    b: SIMD[4, DType.si32.value],
+) -> SIMD[4, DType.si32.value]:
     return __mlir_op.`pop.call_llvm_intrinsic`[
         intrin:"llvm.x86.avx512.vpdpbusds.128",
         _type : __mlir_type.`!pop.simd<4, si32>`,
