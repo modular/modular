@@ -40,10 +40,12 @@ struct Benchmark:
             min_time_ns(Int): upper bound on benchmarking time in ns.
             max_time_ns(Int): lower bound on benchmarking time in ns.
         """
-        return __mlir_op.`lit.struct.create`[
-            _type:Benchmark,
-            fields : __mlir_attr.`#kgen<strings["num_warmup", "max_iters", "min_time_ns", "max_time_ns"]>`,
-        ](num_warmup, max_iters, min_time_ns, max_time_ns)
+        return Benchmark {
+            num_warmup: num_warmup,
+            max_iters: max_iters,
+            min_time_ns: min_time_ns,
+            max_time_ns: max_time_ns,
+        }
 
     fn run[
         func: __mlir_type[
