@@ -1726,6 +1726,26 @@ LogicalResult MLIROpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 bool MLIROpAttr::isConstant() const { return getType().isConcrete(); }
 
+TypedAttr KGEN::emitMLIROperationCall(
+    StringRef opName,
+    ArrayRef<std::pair<StringAttr (*)(mlir::OperationName), Attribute>> attrs,
+    ArrayRef<TypedAttr> operands, Type resultType) {
+  MLIRContext *ctx = resultType.getContext();
+  mlir::OperationName name(opName, ctx);
+  NamedAttrList attrList;
+  for (auto [attrName, value] : attrs)
+    attrList.append(attrName(name), value);
+  SmallVector<Type> operandTypes;
+  for (TypedAttr operand : operands)
+    operandTypes.push_back(operand.getType());
+  SmallVector<TypedAttr> applyOperands;
+  applyOperands.push_back(
+      MLIROpAttr::get(name.getIdentifier(), attrList.getDictionary(ctx),
+                      SignatureType::get(ctx, operandTypes, resultType)));
+  llvm::append_range(applyOperands, operands);
+  return ParamOperatorAttr::get(POC::Apply, applyOperands);
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

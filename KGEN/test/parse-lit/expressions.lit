@@ -401,6 +401,14 @@ fn lvaluesAndRValues() -> __mlir_type.`!pop.scalar<index>`:
   # CHECK: lit.return [[VALUE]] : !pop.scalar<index>
   return Int(4).value
 
+# CHECK-LABEL: lit.func @"mvalueStructField()"
+fn mvalueStructField():
+  alias int = Int(4)
+  # CHECK: value: scalar<index> = <
+  # CHECK-SAME: apply(:(!kgen.declref<@"$Int"::@Int>) -> !pop.scalar<index>
+  # CHECK-SAME: #kgen.param.mlir_op<"lit.struct.extract", {field = "value"}>, int)>
+  alias value = int.value
+
 # CHECK: lit.func @"defTests({{.*}}, %untyped: !kgen.declref<@"$prolog"::@object>)
 def defTests(a: Int, b: Int, untyped):
   # CHECK: [[TMP:%.*]] = pop.load %b_1

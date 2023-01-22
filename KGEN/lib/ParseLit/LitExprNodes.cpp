@@ -607,13 +607,6 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
     return {{result, this}};
   }
 
-  if (!emitter.builder) {
-    emitter.emitError(getLoc(),
-                      "TODO: cannot access member in parameter context yet")
-        << getRange();
-    return {};
-  }
-
   auto mlirLoc = getLocation(emitter);
 
   // If the field is a variable, emit a reference to it.
@@ -632,11 +625,16 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
       return {{LValue(fieldPtr), this}};
     }
 
+    // If the base is an mvalue, emit a field extract
+    if (MValue baseMV = baseVal.getIfMValue()) {
+      return {{emitMLIROperationCall(
+                   StructExtractOp::getOperationName(),
+                   {{StructExtractOp::getFieldAttrName, fieldOp.getNameAttr()}},
+                   baseMV.get(), fieldOp.getType()),
+               this}};
+    }
+
     // Otherwise, it must be an rvalue.
-    // TODO: If this is an MValue, emit as a parameter field access, this
-    // would enable `size.value` in things like:
-    //
-    // fn f[size: Int](a: SomeType[size.value])
     DRValue baseRV = emitter.emitDRValue({baseVal, base});
     if (!baseRV)
       return {};
