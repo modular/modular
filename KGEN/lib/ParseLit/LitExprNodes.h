@@ -300,6 +300,29 @@ struct ListNode final : public ExprNode {
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
 
+/// This represents `{key1: value1, key2: value2, **dictunpack}` expressions.
+/// The dictionary unpacking syntax is represented with a null key and with the
+/// unpack expression as the value.
+struct DictionaryNode final : public ExprNode {
+  DictionaryNode(SMLoc lbraceLoc,
+                 ArrayRef<std::pair<ExprNode *, ExprNode *>> values,
+                 SMLoc rbraceLoc)
+      : ExprNode(kDictionary), lbraceLoc(lbraceLoc), values(values),
+        rbraceLoc(rbraceLoc) {}
+
+  const SMLoc lbraceLoc;
+  const ArrayRef<std::pair<ExprNode *, ExprNode *>> values;
+  const SMLoc rbraceLoc;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kDictionary;
+  }
+  SMLoc getLoc() const override { return lbraceLoc; }
+  LitSourceRange getRange() const override { return {lbraceLoc, rbraceLoc}; }
+
+  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+};
+
 // trueExpr 'if' condition 'else' falseExpr
 struct IfElseOpNode final : public ExprNode {
   IfElseOpNode(ExprNode *trueExpr, SMLoc ifLoc, ExprNode *condExpr,

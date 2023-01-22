@@ -88,7 +88,23 @@ fn badAnd(a: Bool, b: WeirdBoolish):
   _ = a and b # expected-error {{cannot find common type between '$Bool::Bool' and '$expressions-errors::WeirdBoolish'}}
 
 fn slice_expression(a: Int):
-  # expected-note @+1 {{keyword arguments}}
+  # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
+  _ = {}
+  # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
+  _ = {a: 4}
+  # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
+  let dict = {a: 4, "b": 17}
+  # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
+  _ = {a: 4, **dict, "b": 17}
+
+  # expected-error @+1 {{dictionary comprehension must start with single key:value pair}}
+  _ = {key:value, key:value for (key,value) in dict.items()}
+
+  let comprehension = {key:value for (key,value) in dict.items()}
+
+
+fn dict_expression(a: Int):
+  # expected-note @+1 {{keyword arguments aren't supported yet}}
   a[:]    # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
   # expected-note @+1 {{keyword arguments}}
   a[::]   # expected-error {{TODO: SliceNode::emitIR not implemented yet}}

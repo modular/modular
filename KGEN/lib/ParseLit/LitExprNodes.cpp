@@ -1235,6 +1235,13 @@ AnyValue ListNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   return MValue(noneAttr);
 }
 
+AnyValue DictionaryNode::emitIR(ExprEmitter &emitter,
+                                ASTType contextualType) const {
+  emitter.emitError(getLoc(), "TODO: cannot emit dictionary literals yet")
+      << getRange();
+  return {};
+}
+
 /// Given an operator, return the SpecialFunctionInfo that implements it.
 static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
                                                  bool isReversed) {

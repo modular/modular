@@ -97,6 +97,7 @@ private:
   ParseResult parsePrefixExpr(ExprNode *&result);
   ParseResult parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parsePrefixLSquare(ExprNode *&result, SMLoc lsquareLoc);
+  ParseResult parsePrefixLBrace(ExprNode *&result, SMLoc lbraceLoc);
   ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
   ParseResult parseCallSuffix(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
@@ -383,6 +384,10 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     if (parsePrefixLSquare(result, consumeToken(LitToken::l_square).getLoc()))
       return failure();
     break;
+  case LitToken::l_brace: // dict_display
+    if (parsePrefixLBrace(result, consumeToken(LitToken::l_brace).getLoc()))
+      return failure();
+    break;
   default:
     emitTokenError("unexpected token in expression");
     result = nullptr;
@@ -452,19 +457,66 @@ ParseResult ExprParser::parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc) {
 ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
                                            SMLoc lsquareLoc) {
   SMLoc rsquareLoc;
+  SmallVector<ExprNode *> exprs;
   // Handle empty list: []
   if (consumeIf(LitToken::r_square, &rsquareLoc)) {
-    result = alloc<ListNode>(lsquareLoc, ArrayRef<ExprNode *>(), rsquareLoc);
+    result = alloc<ListNode>(lsquareLoc, exprs, rsquareLoc);
     return success();
   }
 
-  SmallVector<ExprNode *> exprs;
   if (parseExpressionList(exprs, LitToken::r_square) ||
       getLocation(rsquareLoc) ||
       parseToken(LitToken::r_square, "expected ']' in list expression"))
     return failure();
   result =
       alloc<ListNode>(lsquareLoc, copyArrayRef<ExprNode *>(exprs), rsquareLoc);
+  return success();
+}
+
+/// dict_display       ::=  "{" [key_datum_list | dict_comprehension] "}"
+/// key_datum_list     ::=  key_datum ("," key_datum)* [","]
+/// key_datum          ::=  expression ":" expression | "**" or_expr
+/// dict_comprehension ::=  expression ":" expression comp_for
+ParseResult ExprParser::parsePrefixLBrace(ExprNode *&result, SMLoc lbraceLoc) {
+  SMLoc rbraceLoc;
+  // Handle empty dict: {}
+  SmallVector<std::pair<ExprNode *, ExprNode *>> elements;
+
+  // Parse all the comma separated elements.
+  while ((elements.empty() && getToken().isNot(LitToken::r_brace)) ||
+         consumeIf(LitToken::comma)) {
+    ExprNode *key = nullptr, *value = nullptr;
+    // Handle normal key:value and dictionary unpacking.  The later has a null
+    // key in the DictionaryNode representation.
+    if (!consumeIf(LitToken::star_star)) {
+      if (parseExpression(key) ||
+          parseToken(LitToken::colon, "expected ':' in dictionary literal"))
+        return failure();
+    }
+    if (parseExpression(value))
+      return failure();
+    elements.push_back({key, value});
+  }
+
+  // Handle dict_comprehension, reusing rbraceLoc for the location of the 'for'.
+  if (consumeIf(LitToken::kw_for, &rbraceLoc)) {
+    if (elements.size() != 1 || !elements[0].first)
+      emitError(
+          rbraceLoc,
+          "dictionary comprehension must start with single key:value pair");
+    else
+      emitError(rbraceLoc, "TODO: dictionary comprehension parsing");
+    return failure();
+  }
+
+  // Otherwise we must be out of elements.
+  if (parseToken(LitToken::r_brace, "expected '}' at end of dictionary",
+                 &rbraceLoc))
+    return failure();
+
+  result = alloc<DictionaryNode>(
+      lbraceLoc, copyArrayRef<std::pair<ExprNode *, ExprNode *>>(elements),
+      rbraceLoc);
   return success();
 }
 
