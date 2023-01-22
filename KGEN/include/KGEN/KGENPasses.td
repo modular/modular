@@ -52,6 +52,26 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LiftMLIROperations
+//===----------------------------------------------------------------------===//
+
+def LiftMLIROperations : Pass<"lift-mlir-ops", "mlir::ModuleOp"> {
+  let summary = "lift MLIR operation attributes into real IR";
+  let description = [{
+    The ability to define MLIR operations as a parameter expression via
+    `#kgen.param.mlir_op` means that all MLIR infrastructure may need to be
+    duplicated -- pattern matching and rewriting, for example. This pass lifts
+    all `MLIROpAttr`'s into KGEN generators containing just the MLIR
+    operation described in its body, and it deduplicates bodies across all
+    instances of this attribute.
+
+    This is advantageous because it means re-use of existing MLIR infrastructure
+    for operations, and all these operations will have to be materialized as
+    real IR at some point anyways.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // OutlineClosures
 //===----------------------------------------------------------------------===//
 
