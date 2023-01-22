@@ -14,6 +14,7 @@
 include "KGEN/LITDialect/LITDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
+include "mlir/IR/SubElementInterfaces.td"
 
 /// An attribute in the LIT dialect.
 class LITAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
@@ -57,7 +58,7 @@ def NoneAttr : LITTypedAttr<"None", "none"> {
   let assemblyFormat = "";
 
   let builders = [AttrBuilder<(ins), [{
-    return get(context, NoneType::get(context));
+    return get(context, LIT::NoneType::get(context));
   }]>];
 }
 
@@ -111,6 +112,30 @@ def DefaultArgumentArrayAttr
     : ArrayOfAttr<LITDialect, "DefaultArgumentArray", "default.arguments",
                   "DefaultArgumentAttr"> {
   let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// StructAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_StructAttr : LITAttr<"Struct", "struct", [TypedAttrInterface,
+    SubElementAttrInterface]> {
+  let summary = "A constant struct value";
+  let description = [{
+    The `#lit.struct` attribute represents a constant struct value. It stores
+    the names of the fields and its values.
+
+    Example:
+
+    ```mlir
+    #lit.struct<{foo = 5, bar: dtype = dt}> : !kgen.declref<@Struct>
+    ```
+  }];
+
+  let parameters = (ins
+    OptionalArrayRefParameter<"std::pair<StringAttr, TypedAttr>">:$values,
+    AttributeSelfTypeParameter<"", "DeclRefType">:$type);
+  let assemblyFormat = "`<` custom<StructElements>($values) `>`";
 }
 
 #endif // KGEN_LITDIALECT_LITATTRS_TD

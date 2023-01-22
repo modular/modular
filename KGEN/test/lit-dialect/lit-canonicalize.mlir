@@ -60,3 +60,19 @@ lit.func @struct_extract_no_fold_insert(%struct0: !kgen.declref<@FooStruct>) -> 
   %field = lit.struct.extract %struct1[b] : index from !kgen.declref<@FooStruct>
   kgen.return %field : index
 }
+
+lit.func @struct_ops_fold() -> (!kgen.declref<@FooStruct>, !kgen.declref<@FooStruct>, index) {
+  // CHECK-DAG: %[[V0:.*]] = {{.*}} @FooStruct = <#lit.struct<{a = 0, b = 0}>>
+  // CHECK-DAG: %[[V1:.*]] = {{.*}} @FooStruct = <#lit.struct<{a = 0, b = 3}>>
+  // CHECK-DAG: %[[V2:.*]] = {{.*}} = <3>
+  %idx0 = index.constant 0
+  %0 = lit.struct.create(a=%idx0, b=%idx0) : (index, index) -> !kgen.declref<@FooStruct>
+
+  %1 = kgen.param.constant: !kgen.declref<@FooStruct> = <#lit.struct<{a = 2, b = 3}>>
+  %2 = lit.struct.insert %idx0, %1[a] : index into !kgen.declref<@FooStruct>
+
+  %3 = lit.struct.extract %1[b] : index from !kgen.declref<@FooStruct>
+
+  // CHECK: return %[[V0]], %[[V1]], %[[V2]]
+  kgen.return %0, %2, %3 : !kgen.declref<@FooStruct>, !kgen.declref<@FooStruct>, index
+}

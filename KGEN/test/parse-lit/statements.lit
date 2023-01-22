@@ -19,15 +19,14 @@ def `pass`():
 
 # CHECK-LABEL: lit.func @"return_impl_convert
 fn return_impl_convert() -> Int:
-    # CHECK: kgen.param.constant: scalar<index> = <4>
-    # CHECK: %1 = lit.struct.create(value=%0)
-    # CHECK: lit.return %1
+    # CHECK: %0 = kgen{{.*}}= 4}
+    # CHECK: lit.return %0
     return 4  # Implicit conversion from literal to Int
 
 
 # CHECK-LABEL: lit.func @"return_new_line
 fn return_new_line() -> Int:
-    # CHECK: %0 = kgen.param.constant: scalar<index> = <17>
+    # CHECK: %0 = kgen{{.*}}= 17}
     return
         17  # Weird indentation should be fine
 
@@ -35,9 +34,8 @@ fn return_new_line() -> Int:
 # CHECK-LABEL: lit.func @"return_impl_convert_raises
 @raises
 fn return_impl_convert_raises() -> Int:
-    # CHECK: %0 = kgen.param.constant: scalar<index> = <4>
-    # CHECK: %1 = lit.struct.create(value=%0)
-    # CHECK: lit.return %1 : !kgen.declref<@"$Int"::@Int>
+    # CHECK: %0 = kgen{{.*}}= 4}
+    # CHECK: lit.return %0 : !kgen.declref<@"$Int"::@Int>
     return 4  # Implicit conversion from literal to Int
 
 
@@ -121,17 +119,14 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
 # CHECK:         hlcf.if
 # CHECK-NEXT:     hlcf.yield
 # CHECK-NEXT:    } else {
-# CHECK-NEXT:     kgen.param.constant: scalar<index> = <2>
-# CHECK-NEXT:     lit.struct.create
+# CHECK-NEXT:     kgen.param.constant: {{.*}} = <#lit.struct<{value: scalar<index> = 2}>>
 # CHECK-NEXT:     pop.store {{.+}}, %inside_else
 # CHECK-NEXT:     hlcf.break
 # CHECK-NEXT:    }
-# CHECK-NEXT:    <0>
-# CHECK-NEXT:    lit.struct.create
+# CHECK-NEXT:    kgen.param.constant: {{.*}} = <#lit.struct<{value: scalar<index> = 0}>>
 # CHECK-NEXT:    pop.store {{.+}}, %inside_a
 # CHECK:         hlcf.if
-# CHECK-NEXT:      <1>
-# CHECK-NEXT:      lit.struct.create
+# CHECK-NEXT:      kgen.param.constant: {{.*}} = <#lit.struct<{value: scalar<index> = 1}>>
 # CHECK-NEXT:      pop.store {{.+}}, %inside_b
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } else {
