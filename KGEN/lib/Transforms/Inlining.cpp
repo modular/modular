@@ -95,6 +95,9 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
   replacer.addReplacement([&](ExprFuncAttr exprFunc) {
     return std::make_pair(exprFunc, WalkResult::skip());
   });
+  replacer.addReplacement([&](MLIROpAttr opExpr) {
+    return std::make_pair(opExpr, WalkResult::skip());
+  });
   auto paramDeclsAttrName = b.getStringAttr("paramDecls");
   for (auto &[user, uses] : calleeParams.usersAndDeclarers) {
     // Skip the parent decl. It's handled after.

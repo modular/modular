@@ -131,6 +131,8 @@ OptionalParseResult SignatureType::parseValue(AsmParser &p,
   OptionalParseResult result = p.parseOptionalAttribute(attr, *this);
   if (!result.has_value())
     return std::nullopt;
+  if (failed(*result))
+    return failure();
 
   // Parse a symbol reference as a signature type attribute.
   if (auto symbol = attr.dyn_cast<SymbolRefAttr>()) {
