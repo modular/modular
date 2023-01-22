@@ -47,6 +47,7 @@ public:
     kParen,          // (x+y)
     kTuple,          // (), (x,), (x, y), etc
     kList,           // [x, y]
+    kDictionary,     // {a: 1, b: 2, **dictUnpack}
 
     // Unary expressions.
     kNeg,     // -x

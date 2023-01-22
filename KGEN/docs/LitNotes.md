@@ -64,6 +64,12 @@ In addition to specific differences, we support the following extensions:
    continuation so long as the continuation is more indented than the start of
    the expression.
 
+9) We support arrows in subscripts, used for returned parameters the
+   `expr[a, b -> c]` syntax.
+
+10) We support "dictionary subscripts" of the form
+    `expr{key: value, key2: value2}`, used for type constructors.
+
 ## Various Design notes
 
 ### New `fn` introducer
