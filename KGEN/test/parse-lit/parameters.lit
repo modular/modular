@@ -55,8 +55,7 @@ fn call_generic[dt: DType]():
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<A>
 struct TestParamStruct[A: __mlir_type.index]:
   fn __new__() -> TestParamStruct[A]:
-    var result: TestParamStruct[A]
-    return result
+    return TestParamStruct[A]{}
 
   # CHECK: lit.func @"method{{.*}}<B>(%self: !kgen.declref<@"$parameters"::@TestParamStruct<A = A>>, %other: !kgen.declref<@"$parameters"::@TestParamStruct<A = add(A, B)>>) -> !lit.none {
   fn method[B: __mlir_type.index](self: TestParamStruct[A], other: TestParamStruct[A+B]):
