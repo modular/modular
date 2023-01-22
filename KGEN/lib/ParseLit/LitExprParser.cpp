@@ -97,7 +97,8 @@ private:
   ParseResult parsePrefixExpr(ExprNode *&result);
   ParseResult parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parsePrefixLSquare(ExprNode *&result, SMLoc lsquareLoc);
-  ParseResult parsePrefixLBrace(ExprNode *&result, SMLoc lbraceLoc);
+  ParseResult parsePrefixLBrace(DictionaryNode *&result, SMLoc lbraceLoc,
+                                bool isSubscript);
   ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
   ParseResult parseCallSuffix(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
@@ -384,10 +385,14 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     if (parsePrefixLSquare(result, consumeToken(LitToken::l_square).getLoc()))
       return failure();
     break;
-  case LitToken::l_brace: // dict_display
-    if (parsePrefixLBrace(result, consumeToken(LitToken::l_brace).getLoc()))
+  case LitToken::l_brace: { // dict_display
+    DictionaryNode *dict = nullptr;
+    if (parsePrefixLBrace(dict, consumeToken(LitToken::l_brace).getLoc(),
+                          /*isSubscript=*/false))
       return failure();
+    result = dict;
     break;
+  }
   default:
     emitTokenError("unexpected token in expression");
     result = nullptr;
@@ -420,6 +425,13 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
       continue;
     }
 
+    // Handle dictionary indexing.
+    if (consumeIf(LitToken::l_brace)) {
+      DictionaryNode *dict = nullptr;
+      if (parsePrefixLBrace(dict, loc, /*isSubscript=*/true))
+        return failure();
+      result = alloc<DictSubscriptNode>(result, dict);
+    }
     break;
   }
 
@@ -477,7 +489,8 @@ ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
 /// key_datum_list     ::=  key_datum ("," key_datum)* [","]
 /// key_datum          ::=  expression ":" expression | "**" or_expr
 /// dict_comprehension ::=  expression ":" expression comp_for
-ParseResult ExprParser::parsePrefixLBrace(ExprNode *&result, SMLoc lbraceLoc) {
+ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
+                                          SMLoc lbraceLoc, bool isSubscript) {
   SMLoc rbraceLoc;
   // Handle empty dict: {}
   SmallVector<std::pair<ExprNode *, ExprNode *>> elements;
@@ -490,7 +503,7 @@ ParseResult ExprParser::parsePrefixLBrace(ExprNode *&result, SMLoc lbraceLoc) {
     // key in the DictionaryNode representation.
     if (!consumeIf(LitToken::star_star)) {
       if (parseExpression(key) ||
-          parseToken(LitToken::colon, "expected ':' in dictionary literal"))
+          parseToken(LitToken::colon, "expected ':' in dictionary"))
         return failure();
     }
     if (parseExpression(value))
@@ -498,14 +511,15 @@ ParseResult ExprParser::parsePrefixLBrace(ExprNode *&result, SMLoc lbraceLoc) {
     elements.push_back({key, value});
   }
 
-  // Handle dict_comprehension, reusing rbraceLoc for the location of the 'for'.
-  if (consumeIf(LitToken::kw_for, &rbraceLoc)) {
+  // Handle dict_comprehension if present
+  SMLoc forLoc;
+  if (consumeIf(LitToken::kw_for, &forLoc)) {
     if (elements.size() != 1 || !elements[0].first)
       emitError(
-          rbraceLoc,
+          forLoc,
           "dictionary comprehension must start with single key:value pair");
     else
-      emitError(rbraceLoc, "TODO: dictionary comprehension parsing");
+      emitError(forLoc, "TODO: dictionary comprehension parsing");
     return failure();
   }
 
