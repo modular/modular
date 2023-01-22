@@ -239,7 +239,7 @@ async fn await_coroutine():
 
 struct Awaitable:
   fn __new__() -> Awaitable:
-    return __mlir_op.`lit.struct.create`[_type: Awaitable, fields:__mlir_attr.`#kgen<strings[]>`]()
+    return Awaitable{}
 
   fn __await__(self: Awaitable) -> __mlir_type.index:
     return 0

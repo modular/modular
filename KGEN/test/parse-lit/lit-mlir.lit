@@ -102,10 +102,7 @@ struct MyPointer[eltType: __mlir_type.`!kgen.mlirtype`]:
     var value: StorageTy
 
     fn __new__(value: StorageTy) -> MyPointer[eltType]:
-        return __mlir_op.`lit.struct.create`[
-            _type : MyPointer[eltType],
-            fields : __mlir_attr.`#kgen<strings["value"]>`,
-        ](value)
+        return MyPointer[eltType]{value: value}
 
 
 # CHECK-LABEL: getAddressOf{{.*}}"<T: type>(%arg: !pop.pointer<T> byref)
