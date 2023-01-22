@@ -16,6 +16,7 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <functional>
+#include <string>
 
 namespace llvm {
 class SourceMgr;
@@ -28,6 +29,7 @@ using llvm::SMLoc;
 using llvm::SourceMgr;
 class LitDiagnostic;
 class LitSourceRange;
+class LitFixIt;
 
 class LitDiags {
 public:
@@ -63,10 +65,6 @@ public:
     tokenEndPointAdjustmentFn = std::move(fn);
   }
 
-private:
-  friend class LitDiagnostic;
-  LitDiags(const LitDiags &) = delete;
-
   std::function<void(SMLoc &)> tokenEndPointAdjustmentFn;
 
   /// This is the StringAttr for the main buffer identifier.  It is type erased
@@ -77,6 +75,10 @@ private:
   /// -verify-diagnostics and other MLIR testing features), but we prefer
   /// llvm::SourceMgr for better QoI: it supports source ranges and FixIt hints.
   const bool useMLIRDiagnostics;
+
+private:
+  friend class LitDiagnostic;
+  LitDiags(const LitDiags &) = delete;
 
   /// This is set to true if an error occurred at any point processing the
   /// file.
@@ -126,7 +128,7 @@ public:
   /// diagnostic.
   void addText(const Twine &text);
   void addSourceRange(LitSourceRange range);
-  void addFixIt(const SMFixIt &range);
+  void addFixIt(LitFixIt fixIt);
 
 private:
   void emitMLIRDiagnostic();
@@ -181,6 +183,21 @@ private:
   bool byteLevel = false;
 };
 
+/// A FixIt hint is a source rewrite that some IDEs can apply automatically when
+/// errors occur.  Generation of FixIt hints is great for QoI.  Error recovery
+/// in the parser must always follow the logic that would have happened if the
+/// FixIt was applied so the user doesn't get a different downstream error after
+/// applyign the FixIt hint.
+class LitFixIt {
+public:
+  LitFixIt(LitSourceRange range, const Twine &replacement);
+
+  /// This is the source range to remove.
+  LitSourceRange range;
+  /// This is what to replace it with.
+  std::string replacement;
+};
+
 // These methods enable adding common types to the current diagnostic.
 void addToDiagnostic(const Twine &text, LitDiagnostic &diag);
 void addToDiagnostic(char text, LitDiagnostic &diag);
@@ -190,7 +207,7 @@ void addToDiagnostic(StringAttr attr, LitDiagnostic &diag);
 /// This adds a source range highlight.
 void addToDiagnostic(LitSourceRange range, LitDiagnostic &diag);
 /// This adds a fixit hint.
-void addToDiagnostic(SMFixIt fixIt, LitDiagnostic &diag);
+void addToDiagnostic(LitFixIt fixIt, LitDiagnostic &diag);
 
 } // namespace M::KGEN::LIT
 

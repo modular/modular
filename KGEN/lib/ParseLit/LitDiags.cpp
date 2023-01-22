@@ -255,22 +255,29 @@ void LitDiagnostic::addText(const Twine &text) {
   messages.back().text += text.str();
 }
 
-void LitDiagnostic::addSourceRange(LitSourceRange range) {
+static SMRange translateToSMRange(LitSourceRange range, LitDiags *diags) {
   SMRange byteLevelRange{range.getStart(), range.getEnd()};
 
   // LitSourceRange typically represents the end of range in terms of the start
   // of the end location.  Convert to a SMRange with a byte-level end position
   // if needed.
-  if (!range.isByteLevel() && diags && !diags->useMLIRDiagnostics &&
+  if (diags && !range.isByteLevel() && diags && !diags->useMLIRDiagnostics &&
       diags->tokenEndPointAdjustmentFn)
     diags->tokenEndPointAdjustmentFn(byteLevelRange.End);
-
-  messages.back().ranges.push_back(byteLevelRange);
+  return byteLevelRange;
 }
 
-void LitDiagnostic::addFixIt(const SMFixIt &fixIt) {
-  messages.back().fixIts.push_back(fixIt);
+void LitDiagnostic::addSourceRange(LitSourceRange range) {
+  messages.back().ranges.push_back(translateToSMRange(range, diags));
 }
+
+void LitDiagnostic::addFixIt(LitFixIt fixIt) {
+  messages.back().fixIts.push_back(
+      SMFixIt(translateToSMRange(fixIt.range, diags), fixIt.replacement));
+}
+
+LitFixIt::LitFixIt(LitSourceRange range, const Twine &replacement)
+    : range(range), replacement(replacement.str()) {}
 
 //===----------------------------------------------------------------------===//
 // addToDiagnostic helpers
@@ -301,6 +308,6 @@ void LIT::addToDiagnostic(LitSourceRange range, LitDiagnostic &diag) {
 }
 
 /// This adds a fixit hint.
-void LIT::addToDiagnostic(SMFixIt fixIt, LitDiagnostic &diag) {
+void LIT::addToDiagnostic(LitFixIt fixIt, LitDiagnostic &diag) {
   diag.addFixIt(fixIt);
 }
