@@ -495,6 +495,18 @@ ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
   // Handle empty dict: {}
   SmallVector<std::pair<ExprNode *, ExprNode *>> elements;
 
+  /// Parse either a colon or an equal sign.  If we have an equal sign,
+  /// diagnose it as a typo error.
+  auto parseColonOrEqual = [&]() -> ParseResult {
+    auto loc = getToken().getLoc();
+    if (consumeIf(LitToken::equal)) {
+      emitTokenError("expected ':' after dictionary key, not '='")
+          << LitFixIt({loc, loc}, ":");
+      return success();
+    }
+    return parseToken(LitToken::colon, "expected ':' in dictionary");
+  };
+
   // Parse all the comma separated elements.
   while ((elements.empty() && getToken().isNot(LitToken::r_brace)) ||
          consumeIf(LitToken::comma)) {
@@ -502,8 +514,7 @@ ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
     // Handle normal key:value and dictionary unpacking.  The later has a null
     // key in the DictionaryNode representation.
     if (!consumeIf(LitToken::star_star)) {
-      if (parseExpression(key) ||
-          parseToken(LitToken::colon, "expected ':' in dictionary"))
+      if (parseExpression(key) || parseColonOrEqual())
         return failure();
     }
     if (parseExpression(value))
@@ -591,6 +602,19 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   llvm::SaveAndRestore<std::optional<size_t>> X(stmtIndent, std::nullopt);
 
   SmallVector<ExprNode *> indices;
+
+  /// Consume either a colon or an equal sign.  If we have an equal sign,
+  /// diagnose it as a typo error.
+  auto consumeColonOrEqual = [&]() -> SMLoc {
+    assert(getToken().isAny(LitToken::colon, LitToken::equal));
+    auto loc = getToken().getLoc();
+    if (getToken().is(LitToken::equal))
+      emitTokenError("expected ':' in subscript slice, not '='")
+          << LitFixIt({loc, loc}, ":");
+    consumeToken();
+    return loc;
+  };
+
   auto parseExprOrSlice = [&]() -> ParseResult {
     ExprNode *firstExpr = nullptr;
     // If this has a leading expr it could be an expr only or could be the first
@@ -600,26 +624,26 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
         return failure();
       // If we had an expr with no trailing colon, then we are done with the
       // expr case.
-      if (getToken().isNot(LitToken::colon)) {
+      if (getToken().isNot(LitToken::colon, LitToken::equal)) {
         indices.push_back(firstExpr);
         return success();
       }
     }
 
     // Okay we have at least one colon, so we have a slice.
-    SMLoc colon1Loc = consumeToken(LitToken::colon).getLoc(), colon2Loc;
+    SMLoc colon1Loc = consumeColonOrEqual(), colon2Loc;
     ExprNode *secondExpr = nullptr, *thirdExpr = nullptr;
 
     // Parse the second expr if present.
-    if (getToken().isNot(LitToken::colon, LitToken::comma,
+    if (getToken().isNot(LitToken::colon, LitToken::equal, LitToken::comma,
                          LitToken::r_square)) {
       if (parseExpression(secondExpr))
         return failure();
     }
 
     // Parse a second colon if present and stride expression.
-    if (getToken().is(LitToken::colon)) {
-      colon2Loc = consumeToken(LitToken::colon).getLoc();
+    if (getToken().isAny(LitToken::colon, LitToken::equal)) {
+      colon2Loc = consumeColonOrEqual();
       if (getToken().isNot(LitToken::comma, LitToken::r_square)) {
         if (parseExpression(thirdExpr))
           return failure();
