@@ -79,6 +79,12 @@ def KGEN_GeneratorOp
     ReturnOp getReturnOp();
   }];
 
+  let builders = [
+    OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature), [{
+      build($_builder, $_state, name, signature, {}, {});
+    }]>
+  ];
+
   let hasCustomAssemblyFormat = 1;
   let hasRegionVerifier = 1;
 }
