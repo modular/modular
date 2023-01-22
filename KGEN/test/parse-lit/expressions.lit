@@ -260,6 +260,15 @@ fn listValues() -> __mlir_type.index:
   var b = []
   return a
 
+# CHECK-LABEL: lit.func @"initializers
+fn initializers():
+  # CHECK: %0 = kgen.param.constant: scalar<index> = <42>
+  # CHECK: %1 = lit.struct.create(value=%0)
+  _ = Int{value: Int(42).value}
+
+  # Issue #7343: Trailing comma ok too.
+  _ = Int{value: Int(42).value,}
+
 # CHECK-LABEL: lit.func @"test_if_cond
 def test_if_cond(cond: Bool):
     # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@"$Int"::@Int>
