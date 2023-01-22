@@ -556,6 +556,16 @@ void StructCreateOp::print(OpAsmPrinter &p) {
   p.printFunctionalType(op->getOperandTypes(), op->getResultTypes());
 }
 
+OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
+  SmallVector<std::pair<StringAttr, TypedAttr>> values;
+  for (auto [name, value] : llvm::zip(getFields(), adaptor.getOperands())) {
+    if (!value)
+      return {};
+    values.emplace_back(name, cast<TypedAttr>(value));
+  }
+  return StructAttr::get(getContext(), values, getType());
+}
+
 //===----------------------------------------------------------------------===//
 // StructInsertOp
 //===----------------------------------------------------------------------===//
@@ -578,6 +588,21 @@ StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   return emitOpError("struct ")
          << getType().getSymbol() << " has no field named " << getFieldAttr();
+}
+
+OpFoldResult StructInsertOp::fold(FoldAdaptor adaptor) {
+  auto value = dyn_cast_if_present<StructAttr>(adaptor.getContainer());
+  if (!value || !adaptor.getValue())
+    return {};
+  auto it = llvm::find_if(value.getValues(), [&](const auto &p) {
+    return p.first == getFieldAttr();
+  });
+  if (it == value.getValues().end())
+    return {};
+  SmallVector<std::pair<StringAttr, TypedAttr>> values(value.getValues());
+  values[std::distance(value.getValues().begin(), it)].second =
+      cast<TypedAttr>(adaptor.getValue());
+  return StructAttr::get(getContext(), values, getType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -620,6 +645,15 @@ void StructExtractOp::build(OpBuilder &builder, OperationState &result,
 }
 
 OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
+  if (auto value = dyn_cast_if_present<StructAttr>(adaptor.getContainer())) {
+    auto it = llvm::find_if(value.getValues(), [&](const auto &p) {
+      return p.first == getFieldAttr();
+    });
+    if (it == value.getValues().end())
+      return {};
+    return it->second;
+  }
+
   // Fold
   //  %S = lit.struct.create(a=%a, b=%b)
   //  %x = lit.struct.extract %S[a]

@@ -5,12 +5,29 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LITDialect/LITAttrs.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/LITDialect/LITDialect.h"
+#include "KGEN/LITDialect/LITTypes.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
+
+//===----------------------------------------------------------------------===//
+// LITDialect
+//===----------------------------------------------------------------------===//
+
+void LITDialect::registerAttributes() {
+  addAttributes<
+#define GET_ATTRDEF_LIST
+#include "KGEN/LITDialect/LITAttrs.cpp.inc"
+      >();
+}
 
 //===----------------------------------------------------------------------===//
 // ArgumentDefaultAttr
@@ -42,3 +59,45 @@ DefaultArgumentArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// StructAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseStructElements(
+    AsmParser &p,
+    FailureOr<SmallVector<std::pair<StringAttr, TypedAttr>>> &values) {
+  values.emplace();
+  StringAttr name;
+  Type type;
+  TypedAttr value;
+  auto parseElt = [&]() -> ParseResult {
+    if (parseParamName(p, name) || parseColonTypeOrIndex(p, type) ||
+        p.parseEqual() || parseParamValue(p, value, type))
+      return failure();
+    values->emplace_back(name, value);
+    return success();
+  };
+  return p.parseCommaSeparatedList(AsmParser::Delimiter::Braces, parseElt);
+}
+
+static void
+printStructElements(AsmPrinter &p,
+                    ArrayRef<std::pair<StringAttr, TypedAttr>> values) {
+  p << '{';
+  llvm::interleaveComma(values, p,
+                        [&](const std::pair<StringAttr, TypedAttr> &value) {
+                          printParamName(p, value.first);
+                          printColonTypeOrIndex(p, value.second.getType());
+                          p << " = ";
+                          printParamValue(p, value.second);
+                        });
+  p << '}';
+}
+
+//===----------------------------------------------------------------------===//
+// ODS-Generated Definitions
+//===----------------------------------------------------------------------===//
+
+#define GET_ATTRDEF_CLASSES
+#include "KGEN/LITDialect/LITAttrs.cpp.inc"

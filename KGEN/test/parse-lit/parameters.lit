@@ -72,7 +72,7 @@ struct TestParamStruct[A: __mlir_type.index]:
     # CHECK: %temp = lit.var.decl "temp" : <@"$parameters"::@TestParamStruct<A = C>>
     var temp: TestParamStruct[C]
 
-    # CHECK: kgen.param.declare intVal: @"$Int"::@Int = <apply(:(index){{.*}}", 42)>
+    # CHECK: kgen.param.declare intVal: @"$Int"::@Int = <#lit.struct<{value: scalar<index> = 42}>>
     alias intVal : Int = 42
 
     # CHECK:  %temp2 = lit.var.decl "temp2" : <@"$parameters"::@TestParamStruct<A = mul(A, A)>>
@@ -122,7 +122,7 @@ fn paramResolution[size1: Int, a: StructWithIntParam[size1],
 
 # Show that we can implicitly convert from 42's literal type to Int.
 # CHECK-LABEL: lit.func @"implConversion
-# CHECK: <a: @"$parameters"::@StructWithIntParam<size: @"$Int"::@Int = apply(:(index) {{.*}}", 42)>
+# CHECK: <a: @"$parameters"::@StructWithIntParam<size: @"$Int"::@Int = #lit.struct<{{.*}}42}>>
 fn implConversion[a: StructWithIntParam[42]]():
   pass
 
@@ -135,9 +135,8 @@ struct Pair[dt: DType]:
 
   # CHECK: lit.func @"__new__{{.*}} -> !kgen.declref<@"$parameters"::@Pair<dt: @"$prolog"::@DType = dt>> attributes {isStatic}
   fn __new__(a: OurSIMD[42, dt]) -> Pair[dt]:
-    # CHECK: %0 = {{.*}} = <4>
-    # CHECK: %1 = lit.struct.create{{.*}} -> !kgen.declref<@"$Int"::@Int>
-    # CHECK: %2 = lit.struct.create(a=%a, b=%1) : (!kgen.declref<@"$parameters"::@OurSIMD<size = 42, dt: @"$prolog"::@DType = dt>>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$parameters"::@Pair<dt: @"$prolog"::@DType = dt>>
+    # CHECK: %0 = kgen.param.constant: @"$Int"::@Int = <#lit.struct<{value: scalar<index> = 4}>>
+    # CHECK: %1 = lit.struct.create(a=%a, b=%0) : (!kgen.declref<@"$parameters"::@OurSIMD<size = 42, dt: @"$prolog"::@DType = dt>>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$parameters"::@Pair<dt: @"$prolog"::@DType = dt>>
     return Pair[dt]{a: a, b: 4}
   # CHECK: }
 
@@ -257,7 +256,7 @@ fn useResultParams(i: Int):
 # Issue #6904: Parameter results don't get implicit conversions
 # CHECK: lit.func @"testResultParamConversion
 fn testResultParamConversion[()->Int](a: Int):
-  # CHECK: lit.return<:@"$Int"::@Int apply(:(index) -> !kgen.declref<@"$Int"::@Int> @"$Int"::@Int::@"__new__(__mlir_type.index)", 4)>
+  # CHECK: lit.return<:@"$Int"::@Int #lit.struct<{{.*}}4}
   return[4]
 
 ##===----------------------------------------------------------------------===##

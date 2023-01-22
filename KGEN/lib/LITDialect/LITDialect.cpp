@@ -16,11 +16,29 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/Interfaces/FoldInterfaces.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
+
+//===----------------------------------------------------------------------===//
+// LITDialectFoldInterface
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct LITDialectFoldInterface : public mlir::DialectFoldInterface {
+  using DialectFoldInterface::DialectFoldInterface;
+
+  /// Never hoist a constant out of a declaration scope. We could scan the
+  /// parameters declarations to find the highest scope a constant could be
+  /// hoisted into, but that is expensive to do.
+  bool shouldMaterializeInto(Region *region) const override {
+    return isa<DeclInterface>(region->getParentOp());
+  }
+};
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // Dialect specification.
@@ -29,15 +47,10 @@ using namespace LIT;
 // Pull in the dialect definition.
 #include "KGEN/LITDialect/LITDialect.cpp.inc"
 
-#define GET_ATTRDEF_CLASSES
-#include "KGEN/LITDialect/LITAttrs.cpp.inc"
-
 void LITDialect::initialize() {
   // Register attributes.
-  addAttributes<
-#define GET_ATTRDEF_LIST
-#include "KGEN/LITDialect/LITAttrs.cpp.inc"
-      >();
+  registerAttributes();
+  addInterfaces<LITDialectFoldInterface>();
 
   // Register types.
   addTypes<
@@ -54,3 +67,8 @@ void LITDialect::initialize() {
 
 #define GET_TYPEDEF_CLASSES
 #include "KGEN/LITDialect/LITTypes.cpp.inc"
+
+Operation *LITDialect::materializeConstant(OpBuilder &b, Attribute value,
+                                           Type type, Location loc) {
+  return b.create<ParamConstantOp>(loc, type, cast<TypedAttr>(value));
+}

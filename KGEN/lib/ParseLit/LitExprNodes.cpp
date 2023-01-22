@@ -348,7 +348,6 @@ AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter,
 
 AnyValue NoneLiteralNode::emitIR(ExprEmitter &emitter,
                                  ASTType contextualType) const {
-  // auto noneMLIRType = KGEN::NoneType::get(emitter.getContext());
   return MValue(NoneAttr::get(emitter.getContext()));
 }
 

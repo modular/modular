@@ -33,8 +33,7 @@ def var_decls():
   var y : Int
 
   # CHECK: [[Y:%.*]] = pop.load %y : !pop.pointer<@"$Int"::@Int>
-  # CHECK: kgen.param.constant: scalar<index> = <1>
-  # CHECK: [[ONE:%.*]] = lit.struct.create(
+  # CHECK: [[ONE:%.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 1}>
   # CHECK: [[ADD:%.*]] = kgen.call @"$Int"::@Int::@"__add__($Int::Int,$Int::Int)"([[Y]], [[ONE]])
   # CHECK: pop.store [[ADD]], %y : !pop.pointer<@"$Int"::@Int>
   y = y + 1
@@ -123,11 +122,11 @@ fn pleaseInline() -> __mlir_type.index:
 # Default arguments.
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.func @"defaultArgument{{.*}}{defaults = #lit<default.arguments[<1 : index = #kgen.param.expr<apply, #kgen.symbol.constant<@"$Int"::@Int::@"__new__(__mlir_type.index)" > : !kgen.signature<(index) -> !kgen.declref<@"$Int"::@Int>>, 42 : index> : !kgen.declref<@"$Int"::@Int>>]>}
+# CHECK: lit.func @"defaultArgument{{.*}}{defaults = #lit<default.arguments[<1 : index = #lit.struct<{value: scalar<index> = 42}> : !kgen.declref<@"$Int"::@Int>>]>}
 fn defaultArgument(a: Int, b: Int = 42) -> Int:
   return a + b
 
-# CHECK: lit.func @"defaultArgumentReferencesParameter{{.*}}{defaults = #lit<default.arguments[<0 : index = #kgen.param.expr<apply, #kgen.symbol.constant<@"$Int"::@Int::@"__add__($Int::Int,$Int::Int)" > : !kgen.signature<(!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int>>, #kgen.param.decl.ref<"p"> : !kgen.declref<@"$Int"::@Int>, #kgen.param.expr<apply, #kgen.symbol.constant<@"$Int"::@Int::@"__new__(__mlir_type.index)" > : !kgen.signature<(index) -> !kgen.declref<@"$Int"::@Int>>, 87 : index> : !kgen.declref<@"$Int"::@Int>> : !kgen.declref<@"$Int"::@Int>>]>
+# CHECK: lit.func @"defaultArgumentReferencesParameter{{.*}}{defaults = #lit<default.arguments[<0 : index = #kgen.param.expr<apply, #kgen.symbol.constant<@"$Int"::@Int::@"__add__($Int::Int,$Int::Int)" > : !kgen.signature<(!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int>>, #kgen.param.decl.ref<"p"> : !kgen.declref<@"$Int"::@Int>, #lit.struct<{value: scalar<index> = 87}> : !kgen.declref<@"$Int"::@Int>> : !kgen.declref<@"$Int"::@Int>>]>}
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
   return a
 
@@ -137,14 +136,14 @@ fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
 
 # CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !kgen.declref<@"$Int"::@Int> attributes {isDef}
 def defAlwaysRaises() -> Int:
-    # CHECK: %[[RESULT:.*]] = lit.struct.create(value=%{{.*}})
+    # CHECK: %[[RESULT:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 0}>
     # CHECK-NEXT: lit.return %[[RESULT]] : !kgen.declref<@"$Int"::@Int>
     return Int(0)
 
 # CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !kgen.declref<@"$Int"::@Int>
 @raises
 fn fnThatRaises() -> Int:
-    # CHECK: %[[RESULT:.*]] = lit.struct.create(value=%{{.*}})
+    # CHECK: %[[RESULT:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 0}>
     # CHECK-NEXT: lit.return %[[RESULT]] : !kgen.declref<@"$Int"::@Int>
     return Int(0)
 
@@ -187,9 +186,8 @@ struct StructExample:
   # CHECK: lit.func @"static($Int::Int)"(%x: !kgen.declref<@"$Int"::@Int>) -> !lit.none attributes {isStatic} {
   @staticmethod
   fn static(x: Int):
-    # CHECK: %0 = kgen.param.constant: scalar<index> = <4>
-    # CHECK: %1 = lit.struct.create(value=%0) : (!pop.scalar<index>) -> !kgen.declref<@"$Int"::@Int>
-    # CHECK: %2 = kgen.call @"$decls"::@StructExample::@"static{{.*}}"(%1) : (!kgen.declref<@"$Int"::@Int>) -> !lit.none
+    # CHECK: %0 = {{.*}}#lit.struct<{value: scalar<index> = 4}>
+    # CHECK: %1 = kgen.call @"$decls"::@StructExample::@"static{{.*}}"(%0) : (!kgen.declref<@"$Int"::@Int>) -> !lit.none
     StructExample.static(Int(4))
     pass
 

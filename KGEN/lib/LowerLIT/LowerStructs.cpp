@@ -7,6 +7,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -242,8 +243,17 @@ void LowerStructsPass::runOnOperation() {
   // Type references can be used in nested types. Walk through all the types and
   // rewrite them in-place to use the lowered types.
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement(
-      [&](Type type) -> Type { return structLowerer.substituteTypes(type); });
+  replacer.addReplacement([&](DeclRefType type) -> Type {
+    return structLowerer.substituteStructRef(type);
+  });
+  replacer.addReplacement([&](LIT::StructAttr type) {
+    SmallVector<TypedAttr> values;
+    for (auto [name, value] : type.getValues())
+      values.push_back(value);
+    return POP::StructAttr::get(
+        values, cast<POP::StructType>(
+                    structLowerer.substituteStructRef(type.getType())));
+  });
   replacer.addReplacement([&](DebugInfo::DIType type) -> Type {
     return debugTypeConverter.convertDebugType(type);
   });

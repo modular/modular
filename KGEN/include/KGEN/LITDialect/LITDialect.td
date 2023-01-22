@@ -26,6 +26,11 @@ def LITDialect : Dialect {
   let dependentDialects = ["::M::KGEN::KGENDialect"];
   let useDefaultTypePrinterParser = 1;
   let useDefaultAttributePrinterParser = 1;
+  let hasConstantMaterializer = 1;
+
+  let extraClassDeclaration = [{
+    void registerAttributes();
+  }];
 
   // https://discourse.llvm.org/t/psa-new-improved-fold-method-signature-has-landed-please-update-your-downstream-projects/67618
   let useFoldAPI = kEmitFoldAdaptorFolder;

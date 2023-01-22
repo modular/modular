@@ -232,6 +232,8 @@ def LIT_StructCreateOp : LITOp<"struct.create", [Pure,
   let arguments = (ins Variadic<AnyType>:$operands, KGEN_StringArrayAttr:$fields);
   let results = (outs KGEN_DeclRefType:$result);
   let hasCustomAssemblyFormat = 1;
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -266,6 +268,8 @@ def LIT_StructInsertOp : LITOp<"struct.insert", [Pure,
     $value `,` $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
     type($value) `into` qualified(type($container))
   }];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -303,6 +307,8 @@ def LIT_StructExtractOp : LITOp<"struct.extract", [Pure,
     // Infer the result type based on the result of lookup.
     OpBuilder<(ins "Value":$structBase, "StructFieldOp":$field)>
   ];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

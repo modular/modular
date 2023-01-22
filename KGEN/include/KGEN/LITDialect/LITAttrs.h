@@ -10,6 +10,10 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
+namespace M::KGEN {
+class DeclRefType;
+} // namespace M::KGEN
+
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/LITDialect/LITAttrs.h.inc"
 
