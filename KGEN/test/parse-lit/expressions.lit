@@ -6,10 +6,13 @@ from prolog import Bool, Error, F32, Int, SIMD, object
 
 fn noop():
 
+# CHECK-LABEL: lit.struct.decl @M
 struct M:
   var value : __mlir_type.index
+  # CHECK-LABEL: lit.func @"__new__
   fn __new__(value: __mlir_type.index) -> M:
-    return M(0)
+  # CHECK-NEXT: %0 = lit.struct.create(value=%value) : (index) -> !kgen.declref<@"$expressions"::@M>
+    return M{value: value}
   fn __neg__(self) -> M:
     return M(0)
   fn __add__(self, rhs: M) -> M:
