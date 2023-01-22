@@ -641,7 +641,7 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   // one.
   auto zeroAttr = emitter.builder->getAttr<mlir::DenseI64ArrayAttr>(0);
   return DRValue(emitter.builder->create<POP::PartialApplyOp>(
-      emitter.translateLocation(loc), calleeDRVal,
+      baseVal.expr->getLocation(emitter), calleeDRVal,
       mlir::ValueRange(firstArgValue), zeroAttr));
 }
 
@@ -918,8 +918,7 @@ AnyValue CallableValue::debugInlineFunctionCall(
 
   // Resolve the body to type check and generate the IR.  This will also check
   // that the body is suitable for @nodebug_inline processing.
-  if (failed(emitter.getDeclResolver().resolve(
-          callee, DeclResolvedness::fullyResolved, callLoc)) ||
+  if (failed(emitter.getDeclResolver().resolveFully(callee, callLoc)) ||
       // Check for the flag again to make sure the body can be inlined.
       !funcOp.getNoDebugInline())
     return {};

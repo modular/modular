@@ -242,8 +242,7 @@ void DeclResolver::importDeclsFromModule(
     return;
 
   // Make sure the body of the module has been resolved.
-  if (failed(resolve(module, DeclResolvedness::fullyResolved,
-                     std::get<2>(importList[0]))))
+  if (failed(resolveFully(module, std::get<2>(importList[0]))))
     return;
 
   // Process the import list.
@@ -276,7 +275,7 @@ void DeclResolver::importWildCardDeclsFromModule(ASTDecl &module,
                                                  ASTDecl &context,
                                                  llvm::SMLoc loc) {
   // Make sure the body of the module has been resolved.
-  if (failed(resolve(module, DeclResolvedness::fullyResolved, loc)))
+  if (failed(resolveFully(module, loc)))
     return;
 
   // Wildcard imports don't import decls with a leading '_'.
@@ -335,8 +334,7 @@ void DeclResolver::resolveAll() {
   // discovered so diagnostics are mostly top-down.  Resolving declarations
   // may cause more entries to be added to this list.
   for (size_t i = 0; i != parsedDeclList.size(); ++i) {
-    (void)resolve(*parsedDeclList[i], DeclResolvedness::fullyResolved,
-                  parsedDeclList[i]->getLoc());
+    (void)resolveFully(*parsedDeclList[i], parsedDeclList[i]->getLoc());
   }
 }
 
