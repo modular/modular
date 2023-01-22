@@ -183,8 +183,7 @@ auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
   // would be bad to look something up in a scope without all members known.
   // FIXME(Issue#5975): FuncOp shouldn't be special cased.
   if (!isa<FuncOp>(scope)) {
-    if (failed(
-            declResolver->resolve(scope, DeclResolvedness::fullyResolved, loc)))
+    if (failed(declResolver->resolveFully(scope, loc)))
       return LookupResult::getErroneous();
   }
 

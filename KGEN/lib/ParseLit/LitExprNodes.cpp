@@ -299,6 +299,11 @@ CallableValue ExprNode::emitCallable(ExprEmitter &emitter,
   return CallableValue({calleeVal, this});
 }
 
+/// Return the 'loc' for this node translated to an MLIR location.
+Location ExprNode::getLocation(IREmitter &emitter) const {
+  return emitter.translateLocation(getLoc());
+}
+
 //===----------------------------------------------------------------------===//
 // ExprNode implementations
 //===----------------------------------------------------------------------===//
@@ -364,7 +369,7 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
 
   auto createVarDeclWithContextualType = [&](OpBuilder &builder) -> VarDeclOp {
     Type declIRType = POP::PointerType::get(contextualType);
-    auto loc = emitter.translateLocation(getLoc());
+    auto loc = getLocation(emitter);
     auto nameAttr = StringAttr::get(loc.getContext(), spelling);
     return builder.create<VarDeclOp>(loc, declIRType, nameAttr);
   };
@@ -609,7 +614,7 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
     return {};
   }
 
-  auto mlirLoc = emitter.translateLocation(getLoc());
+  auto mlirLoc = getLocation(emitter);
 
   // If the field is a variable, emit a reference to it.
   if (auto fieldOp = dyn_cast<StructFieldOp>(memberDecl)) {
@@ -688,8 +693,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   }
 
   // Set up the OperationState for the thing we're building.
-  OperationState state(emitter.translateLocation(call.getLoc()),
-                       unboundOp.getName());
+  OperationState state(call.getLocation(emitter), unboundOp.getName());
   state.addOperands(opOperands);
 
   // Process the attributes and figure out the result type if specified.
@@ -731,11 +735,11 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       }
       // Resolve the body before using it.
       ASTDecl &body = *results.front();
-      if (failed(emitter.shared.declResolver->resolve(
-              body, DeclResolvedness::fullyResolved, call.getLoc()))) {
+      if (failed(
+              emitter.shared.declResolver->resolveFully(body, call.getLoc()))) {
         emitter.emitError(body.getLoc(),
                           "failed to immediately resolve MLIR operation region")
-                .attachNote(emitter.translateLocation(call.getLoc()))
+                .attachNote(call.getLocation(emitter))
             << "see MLIR operation here";
         return {};
       }
@@ -914,7 +918,7 @@ AnyValue SliceNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   auto diag =
       emitter.emitError(getLoc(), "TODO: SliceNode::emitIR not implemented yet")
       << getRange();
-  diag.attachNote(emitter.translateLocation(getLoc()))
+  diag.attachNote(getLocation(emitter))
       << "keyword arguments aren't supported yet";
   return {};
 }
@@ -1182,7 +1186,7 @@ CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter,
 
     // Set the location for this definition so we can know it was defined
     // correctly, and diagnose subsequent attempts to redefine it.
-    aliasDecl.setResultParamLocAttr(emitter.translateLocation(drn->getLoc()));
+    aliasDecl.setResultParamLocAttr(drn->getLocation(emitter));
     subValue.direct->resultParams.push_back({resultDecls[0], drn->getLoc()});
   }
 
@@ -1347,7 +1351,7 @@ AnyValue DictSubscriptNode::emitIR(ExprEmitter &emitter,
     }
 
     return DRValue(emitter.builder->create<StructCreateOp>(
-        emitter.translateLocation(getLoc()), typeValue.mlirType, fieldValues,
+        getLocation(emitter), typeValue.mlirType, fieldValues,
         StringArrayAttr::get(emitter.getContext(), fieldNames)));
   }
 
@@ -1418,8 +1422,7 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
 
       // If everything worked out, store the resultant value into the lvalue for
       // the destination.  If things didn't work, just drop this on the floor.
-      emitter.builder->create<POP::StoreOp>(emitter.translateLocation(getLoc()),
-                                            rv, lhsLV,
+      emitter.builder->create<POP::StoreOp>(getLocation(emitter), rv, lhsLV,
                                             /*alignment=*/std::nullopt);
       return rv;
     }
@@ -1557,7 +1560,7 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
 /// common superclass.
 ///
 AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
-  Location ifLoc = emitter.translateLocation(getLoc());
+  Location ifLoc = getLocation(emitter);
 
   if (!emitter.builder) {
     emitter.emitError(
@@ -1673,8 +1676,7 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
     if (!awaitable)
       return {};
     auto awaitOp = emitter.builder->create<LIT::AsyncAwaitOp>(
-        emitter.translateLocation(getLoc()), coroType.getResultTypes(),
-        awaitable);
+        getLocation(emitter), coroType.getResultTypes(), awaitable);
     return DRValue(awaitOp.getResult(0));
   }
 
@@ -1700,7 +1702,7 @@ AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
     return {};
   }
 
-  Location ifLoc = emitter.translateLocation(getLoc());
+  Location ifLoc = getLocation(emitter);
   // At this point we don't know the type of trueExpr / falseExpr, use
   // a dummy one and fix it later.
   auto ifOp = emitter.builder->create<scf::IfOp>(

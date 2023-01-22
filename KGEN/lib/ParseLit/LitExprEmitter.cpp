@@ -44,14 +44,14 @@ RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value) {
   auto pointer = value.ir.getIfLValue();
   assert(pointer);
 
-  auto loc = value.expr->getLoc();
+  auto loc = value.expr->getLocation(*this);
   if (!builder) {
     emitError(loc, "cannot use a dynamic value in a parameter context")
         << value.expr->getRange();
     return {};
   }
 
-  return DRValue(builder->create<POP::LoadOp>(translateLocation(loc), pointer,
+  return DRValue(builder->create<POP::LoadOp>(loc, pointer,
                                               /*alignment=*/std::nullopt));
 }
 
@@ -92,7 +92,7 @@ DRValue IREmitter::emitDRValue(ASTExprAnd<RValue> value) {
     }
   }
 
-  auto location = translateLocation(value.expr->getLoc());
+  auto location = value.expr->getLocation(*this);
   // Materialize index integer constants as a special case.
   if (auto intAttr = dyn_cast<IntegerAttr>(attr))
     if (intAttr.getType().isIndex()) {
