@@ -16,6 +16,10 @@
 #include "KGEN/KGENDialect/KGENAttrInterfaces.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
+namespace mlir {
+class OperationName;
+} // namespace mlir
+
 namespace M {
 class TargetInfoAttr;
 
@@ -88,6 +92,12 @@ namespace M::KGEN {
 /// Return the `paramDecls` array of ParamDeclAttr values if the specified
 /// operation has it, or an empty array otherwise.
 ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
+
+/// Emit an MLIR operation call in a parameter context.
+TypedAttr emitMLIROperationCall(
+    StringRef opName,
+    ArrayRef<std::pair<StringAttr (*)(mlir::OperationName), Attribute>> attrs,
+    ArrayRef<TypedAttr> operands, Type resultType);
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_H
