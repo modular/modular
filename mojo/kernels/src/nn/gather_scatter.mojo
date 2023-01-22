@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Int import Int
-from Index import Index
 from Assert import assert_param
 from Buffer import NDBuffer
+from DType import DType
+from Index import Index
+from Int import Int
 from Tuple import StaticTuple
 from TypeUtilities import rebind
 
@@ -26,7 +27,7 @@ fn gather[
     indices: NDBuffer[
         input_rank,
         input_shape,
-        __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`,
+        DType.si32.value,
     ],
 ):
     ...
@@ -46,7 +47,7 @@ fn gather_2D_axis_0[
     indices: NDBuffer[
         input_rank,
         input_shape,
-        __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`,
+        DType.si32.value,
     ],
 ):
     """Computes output[i, j, k] = input[indices[i, j], k]"""
@@ -119,7 +120,7 @@ fn gather_2D_axis_1[
     indices: NDBuffer[
         input_rank,
         input_shape,
-        __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`,
+        DType.si32.value,
     ],
 ):
     """Computes output[i, j, k] = input[i, indices[j, k]]"""
