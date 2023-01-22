@@ -508,8 +508,11 @@ ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
   };
 
   // Parse all the comma separated elements.
-  while ((elements.empty() && getToken().isNot(LitToken::r_brace)) ||
-         consumeIf(LitToken::comma)) {
+  while (elements.empty() || consumeIf(LitToken::comma)) {
+    // Allow empty initializers and trailing comma in the initializer.
+    if (getToken().is(LitToken::r_brace))
+      break;
+
     ExprNode *key = nullptr, *value = nullptr;
     // Handle normal key:value and dictionary unpacking.  The later has a null
     // key in the DictionaryNode representation.
