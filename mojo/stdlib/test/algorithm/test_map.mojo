@@ -6,17 +6,16 @@
 # RUN: kgen %s -execute -func='$test_map::main():index()' -I %stdlibdir | FileCheck %s
 
 from Buffer import Buffer
+from DType import DType
+from Functional import map
 from Int import Int
 from IO import print
-from Functional import map
 
 # CHECK-LABEL: test_map
 fn test_map():
     print("== test_map\n")
 
-    let vector = Buffer[
-        5, __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
-    ].stack_allocation()
+    let vector = Buffer[5, DType.f32.value].stack_allocation()
 
     vector.__setitem__(0, 1.0)
     vector.__setitem__(1, 2.0)

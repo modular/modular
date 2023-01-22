@@ -6,11 +6,12 @@
 # RUN: kgen %s -execute -func='$test_parallelize::main():index()' -I %stdlibdir | FileCheck %s
 
 from Buffer import Buffer
+from DType import DType
+from Functional import parallelize
 from Int import Int
 from IO import print
-from Functional import parallelize
-from SIMD import SIMD
 from LLCL import num_cores
+from SIMD import SIMD
 
 # CHECK-LABEL: test_parallelize
 fn test_parallelize():
@@ -18,9 +19,7 @@ fn test_parallelize():
 
     alias size = 20
 
-    let vector = Buffer[
-        size, __mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`
-    ].stack_allocation()
+    let vector = Buffer[size, DType.index.value].stack_allocation()
 
     var i: Int = 0
     while i < vector.__len__():
