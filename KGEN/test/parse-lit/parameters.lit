@@ -133,14 +133,20 @@ struct Pair[dt: DType]:
   var a : OurSIMD[42, dt]
   var b : Int
 
-  # CHECK: lit.func @"__new__{{.*}}() -> !kgen.declref<@"$parameters"::@Pair<dt: @"$prolog"::@DType = dt>> attributes {isStatic}
-  fn __new__() -> Pair[dt]:
-    var result : Pair[dt]
-    # TODO: Fill this in.
-    return result
+  # CHECK: lit.func @"__new__{{.*}} -> !kgen.declref<@"$parameters"::@Pair<dt: @"$prolog"::@DType = dt>> attributes {isStatic}
+  fn __new__(a: OurSIMD[42, dt]) -> Pair[dt]:
+    # CHECK: %0 = {{.*}} = <4>
+    # CHECK: %1 = lit.struct.create{{.*}} -> !kgen.declref<@"$Int"::@Int>
+    # CHECK: %2 = lit.struct.create(a=%a, b=%1) : (!kgen.declref<@"$parameters"::@OurSIMD<size = 42, dt: @"$prolog"::@DType = dt>>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$parameters"::@Pair<dt: @"$prolog"::@DType = dt>>
+    return Pair[dt]{a: a, b: 4}
   # CHECK: }
 
 # CHECK: }
+
+# CHECK-LABEL: lit.func @"makePair
+fn makePair(a: OurSIMD[42, DType.getF32()], b: Int) -> Pair[DType.getF32()]:
+  # CHECK: %0 = lit.struct.create(a=%a, b=%b)
+  return Pair[DType.getF32()]{a: a, b: b}
 
 # CHECK-LABEL: lit.struct.decl @TypeParameter
 struct TypeParameter[type: __mlir_type.`!kgen.mlirtype`]:

@@ -1246,6 +1246,114 @@ AnyValue DictionaryNode::emitIR(ExprEmitter &emitter,
   return {};
 }
 
+/// Emit a DictSubscriptNode when the base is a Type expression.
+AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
+                                                ExprEmitter &emitter) const {
+  auto *decl = initType.getDecl(emitter.shared);
+  if (!decl) {
+    emitter.emitError(getLoc(),
+                      "MLIR types may not be initialized with this syntax")
+        << base->getRange();
+    return {};
+  }
+
+  // The type must be fully parsed to understand what fields it contains.
+  if (failed(emitter.getDeclResolver().resolveFully(*decl, base->getLoc())))
+    return {};
+
+  auto structOp = dyn_cast<StructDeclOp>(*decl);
+  if (!structOp) {
+    emitter.emitError(getLoc(),
+                      "can only initialize struct types with this syntax")
+        << base->getRange();
+    return {};
+  }
+
+  // Perform parameter substitution if there are input parameters.
+  ParameterEvaluator paramEvaluator;
+  for (auto paramBind : initType.getParamBindings())
+    paramEvaluator.setParameterValue(paramBind.getDecl(), paramBind.getValue());
+
+  // While we use general dictionary syntax, the keys are syntactically
+  // limited to being keywords.  The values may be arbitrary RValues
+  // though, and are emitted in lexical order.
+  DenseMap<StringAttr, ASTExprAnd<RValue>> fieldMapping;
+  for (auto &keyValue : indices->values) {
+    // We don't support `**dict` syntax.
+    if (!keyValue.first) {
+      emitter.emitError(keyValue.second->getLoc(),
+                        "cannot expand into initializer list")
+          << keyValue.second->getRange();
+      return {};
+    }
+
+    auto fieldName = dyn_cast<DeclRefNode>(keyValue.first);
+    if (!fieldName) {
+      emitter.emitError(keyValue.first->getLoc(),
+                        "type initializer requires keys to be bare field names")
+          << keyValue.first->getRange() << base->getRange();
+      return {};
+    }
+    StringAttr fieldNameAttr =
+        StringAttr::get(emitter.getContext(), fieldName->spelling);
+
+    auto value = emitter.emitExprRValue(keyValue.second);
+    if (!value)
+      return {};
+
+    auto mapResult =
+        fieldMapping.insert({fieldNameAttr, {value, keyValue.second}});
+    if (!mapResult.second) {
+      emitter.emitError(keyValue.first->getLoc(), "field ")
+          << fieldNameAttr << " specified multiple times"
+          << keyValue.first->getRange() << base->getRange()
+          << mapResult.first->second.expr->getRange();
+      return {};
+    }
+  }
+
+  // Now that we have all the values, generate the initializers for
+  // StructCreate.
+  if (!emitter.builder) {
+    emitter.emitError(getLoc(), "TODO: Don't have #lit.struct.attr yet");
+    return {};
+  }
+
+  SmallVector<StringAttr> fieldNames;
+  SmallVector<Value> fieldValues;
+  for (StructFieldOp field : structOp.getFieldDecls()) {
+    ASTExprAnd<RValue> fieldVal = fieldMapping[field.getNameAttr()];
+    if (!fieldVal) {
+      emitter.emitError(indices->rbraceLoc, "no value for field ")
+          << field.getNameAttr() << " specified";
+      return {};
+    }
+
+    // The field must be fully parsed to understand its type etc.  Do a lookup
+    // to find its decl and resolve it.
+    for (ASTDecl *fieldDecl :
+         *decl->lookupInCurrentScope(field.getNameAttr())) {
+      if (failed(emitter.getDeclResolver().resolveFully(
+              *fieldDecl, fieldVal.expr->getLoc())))
+        return {};
+    }
+
+    auto value = emitter.getAsExpectedType(
+        fieldVal.ir, fieldVal.expr,
+        paramEvaluator.getReboundType(field.getType()),
+        " in field initialization");
+    auto drValue = emitter.emitDRValue({value, fieldVal.expr});
+    if (!drValue)
+      return {};
+    fieldNames.push_back(field.getNameAttr());
+    fieldValues.push_back(drValue);
+  }
+
+  return DRValue(emitter.builder->create<StructCreateOp>(
+      getLocation(emitter), initType.mlirType, fieldValues,
+      StringArrayAttr::get(emitter.getContext(), fieldNames)));
+}
+
 AnyValue DictSubscriptNode::emitIR(ExprEmitter &emitter,
                                    ASTType contextualType) const {
 
@@ -1254,106 +1362,8 @@ AnyValue DictSubscriptNode::emitIR(ExprEmitter &emitter,
     return {};
 
   // Subscripting a type constructs it with lit.struct.create.
-  if (ASTType typeValue = baseValue.getIfTypeValue()) {
-    auto *decl = typeValue.getDecl(emitter.shared);
-    if (!decl) {
-      emitter.emitError(getLoc(),
-                        "MLIR types may not be initialized with this syntax")
-          << base->getRange();
-      return {};
-    }
-
-    // The type must be fully parsed to understand what fields it contains.
-    if (failed(emitter.getDeclResolver().resolveFully(*decl, base->getLoc())))
-      return {};
-
-    auto structOp = dyn_cast<StructDeclOp>(*decl);
-    if (!structOp) {
-      emitter.emitError(getLoc(),
-                        "can only initialize struct types with this syntax")
-          << base->getRange();
-      return {};
-    }
-
-    // While we use general dictionary syntax, the keys are syntactically
-    // limited to being keywords.  The values may be arbitrary RValues
-    // though, and are emitted in lexical order.
-    DenseMap<StringAttr, ASTExprAnd<RValue>> fieldMapping;
-    for (auto &keyValue : indices->values) {
-      // We don't support `**dict` syntax.
-      if (!keyValue.first) {
-        emitter.emitError(keyValue.second->getLoc(),
-                          "cannot expand into initializer list")
-            << keyValue.second->getRange();
-        return {};
-      }
-
-      auto fieldName = dyn_cast<DeclRefNode>(keyValue.first);
-      if (!fieldName) {
-        emitter.emitError(
-            keyValue.first->getLoc(),
-            "type initializer requires keys to be bare field names")
-            << keyValue.first->getRange() << base->getRange();
-        return {};
-      }
-      StringAttr fieldNameAttr =
-          StringAttr::get(emitter.getContext(), fieldName->spelling);
-
-      auto value = emitter.emitExprRValue(keyValue.second);
-      if (!value)
-        return {};
-
-      auto mapResult =
-          fieldMapping.insert({fieldNameAttr, {value, keyValue.second}});
-      if (!mapResult.second) {
-        emitter.emitError(keyValue.first->getLoc(), "field ")
-            << fieldNameAttr << " specified multiple times"
-            << keyValue.first->getRange() << base->getRange()
-            << mapResult.first->second.expr->getRange();
-        return {};
-      }
-    }
-
-    // Now that we have all the values, generate the initializers for
-    // StructCreate.
-    if (!emitter.builder) {
-      emitter.emitError(getLoc(), "TODO: Don't have #lit.struct.attr yet");
-      return {};
-    }
-
-    SmallVector<StringAttr> fieldNames;
-    SmallVector<Value> fieldValues;
-    for (StructFieldOp field : structOp.getFieldDecls()) {
-      ASTExprAnd<RValue> fieldVal = fieldMapping[field.getNameAttr()];
-      if (!fieldVal) {
-        emitter.emitError(indices->rbraceLoc, "no value for field ")
-            << field.getNameAttr() << " specified";
-        return {};
-      }
-
-      // The field must be fully parsed to understand its type etc.  Do a lookup
-      // to find its decl and resolve it.
-      for (ASTDecl *fieldDecl :
-           *decl->lookupInCurrentScope(field.getNameAttr())) {
-        if (failed(emitter.getDeclResolver().resolveFully(
-                *fieldDecl, fieldVal.expr->getLoc())))
-          return {};
-      }
-
-      auto value =
-          emitter.getAsExpectedType(fieldVal.ir, fieldVal.expr, field.getType(),
-                                    " in field initialization");
-      auto drValue = emitter.emitDRValue({value, fieldVal.expr});
-      if (!drValue)
-        return {};
-      fieldNames.push_back(field.getNameAttr());
-      fieldValues.push_back(drValue);
-    }
-
-    return DRValue(emitter.builder->create<StructCreateOp>(
-        getLocation(emitter), typeValue.mlirType, fieldValues,
-        StringArrayAttr::get(emitter.getContext(), fieldNames)));
-  }
+  if (ASTType typeValue = baseValue.getIfTypeValue())
+    return emitTypeSubscriptIR(typeValue, emitter);
 
   emitter.emitError(getLoc(), "TODO: cannot emit dictionary subscripts yet")
       << getRange();
