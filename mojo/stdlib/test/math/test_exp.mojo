@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen %s -execute -func='$test_exp::main():index()' -I %stdlibdir | FileCheck %s
 
-from SIMD import SIMD
+from DType import DType
 from IO import print
 from Math import exp
+from SIMD import SIMD
 
 
 # CHECK-LABEL: test_exp
@@ -15,11 +16,7 @@ fn test_exp():
     print("== test_exp\n")
 
     # CHECK: 7.389056
-    print(
-        exp[1, __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`](
-            SIMD[1, __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`](2)
-        )
-    )
+    print(exp[1, DType.f32.value](SIMD[1, DType.f32.value](2)))
 
 
 @export
