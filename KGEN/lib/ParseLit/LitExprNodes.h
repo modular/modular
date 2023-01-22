@@ -340,6 +340,7 @@ struct DictSubscriptNode final : public ExprNode {
   }
 
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitTypeSubscriptIR(ASTType initType, ExprEmitter &emitter) const;
 };
 
 // trueExpr 'if' condition 'else' falseExpr
