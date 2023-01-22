@@ -40,14 +40,15 @@ public:
     kNoneLiteral,    // None
     kDeclRef,        // x
     kAttributeRef,   // x.y
-    kCall,           // thing(a, b)
-    kSubscript,      // thing[a, b:c]
-    kSubscriptArrow, // thing[x, y -> a, b]
-    kSlice,          // :, a:, :a, ::, a:b:c, etc.  Only valid in subscripts.
     kParen,          // (x+y)
     kTuple,          // (), (x,), (x, y), etc
     kList,           // [x, y]
     kDictionary,     // {a: 1, b: 2, **dictUnpack}
+    kCall,           // thing(a, b)
+    kSubscript,      // thing[a, b:c]
+    kSubscriptArrow, // thing[x, y -> a, b]
+    kSlice,          // :, a:, :a, ::, a:b:c, etc.  Only valid in subscripts.
+    kDictSubscript,  // thing{a: 1, x: 2}
 
     // Unary expressions.
     kNeg,     // -x

@@ -87,7 +87,7 @@ struct WeirdBoolish:
 fn badAnd(a: Bool, b: WeirdBoolish):
   _ = a and b # expected-error {{cannot find common type between '$Bool::Bool' and '$expressions-errors::WeirdBoolish'}}
 
-fn slice_expression(a: Int):
+fn dict_expression(a: Int):
   # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
   _ = {}
   # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
@@ -97,13 +97,19 @@ fn slice_expression(a: Int):
   # expected-error @+1 {{TODO: cannot emit dictionary literals yet}}
   _ = {a: 4, **dict, "b": 17}
 
+  # expected-error @+1 {{TODO: dictionary comprehension parsing}}
+  let comprehension = {key:value for (key,value) in dict.items()}
+
+  # Dictionary subscripts.
+
+  # expected-error @+1 {{TODO: cannot emit dictionary subscripts yet}}
+  _ = a{1: 2, **dict}
+
+fn dict_parse_errors(a: Int):
   # expected-error @+1 {{dictionary comprehension must start with single key:value pair}}
   _ = {key:value, key:value for (key,value) in dict.items()}
 
-  let comprehension = {key:value for (key,value) in dict.items()}
-
-
-fn dict_expression(a: Int):
+fn slice_expression(a: Int):
   # expected-note @+1 {{keyword arguments aren't supported yet}}
   a[:]    # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
   # expected-note @+1 {{keyword arguments}}
@@ -112,6 +118,7 @@ fn dict_expression(a: Int):
   a[1:2]  # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
   # expected-note @+1 {{keyword arguments}}
   a[:2:3] # expected-error {{TODO: SliceNode::emitIR not implemented yet}}
+
 
 
 def bad_exprs(aaaa: Bool, bbbb: F32, cccc: Int):

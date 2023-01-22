@@ -1242,6 +1242,13 @@ AnyValue DictionaryNode::emitIR(ExprEmitter &emitter,
   return {};
 }
 
+AnyValue DictSubscriptNode::emitIR(ExprEmitter &emitter,
+                                   ASTType contextualType) const {
+  emitter.emitError(getLoc(), "TODO: cannot emit dictionary subscripts yet")
+      << getRange();
+  return {};
+}
+
 /// Given an operator, return the SpecialFunctionInfo that implements it.
 static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
                                                  bool isReversed) {
