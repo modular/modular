@@ -93,6 +93,25 @@ fn defaultArgumentBadType(a: Int = 1.0):
 # expected-error @+1 {{'**' marker must be at end of argument list}}
 fn starStarLast(**a: Int, b: Int):
 
+# expected-note @+1 {{function declared here}}
+fn exampleVariadic(a: F32, *b: Int):
+# expected-note @+1 {{function declared here}}
+fn exampleByRefVariadic(a: F32, *b&: Int):
+
+fn badCalls(arg: Int):
+  # expected-error @+1 {{argument #1 cannot be converted from '__mlir_type.f64' to '$Int::Int'}}
+  exampleVariadic(1.0, 1.0)
+  # expected-error @+1 {{argument #3 cannot be converted from '__mlir_type.f64' to '$Int::Int'}}
+  exampleVariadic(1.0, 1, 2, 1.0)
+
+  var x: Int
+  var y: F32
+  # expected-error @+1 {{invalid call to 'exampleByRefVariadic': argument #2 must be mutable in order to pass as a by-ref argument}}
+  exampleByRefVariadic(1.0, x, arg)
+  # expected-error @+1 {{l-value of type '$F32::F32' cannot be converted to reference of type '$Int::Int'}}
+  exampleByRefVariadic(1.0, x, y)
+  # expected-error @+1 {{argument #2 must be mutable in order to pass as a by-ref argument}}
+  exampleByRefVariadic(1.0, x, 1)
 
 ##===----------------------------------------------------------------------===##
 # Keyword Arguments
