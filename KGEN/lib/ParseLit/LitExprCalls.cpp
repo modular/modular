@@ -22,6 +22,17 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// Given the MLIR type for a variadic argument, return the element type as an
+/// MLIR type.
+static Type getVariadicElementType(Type variadicType) {
+  auto mValue = MValue(cast<POP::VariadicType>(variadicType).getElementType());
+  // POP::VariadicType allows arbitrary parameter expressions, but we only ever
+  // use concrete types for variadic syntax.
+  assert(mValue.getIfTypeValue() &&
+         "variadic convention never has parameteric element");
+  return mValue.getIfTypeValue();
+}
+
 //===----------------------------------------------------------------------===//
 // InputParamBindings Implementation
 //===----------------------------------------------------------------------===//
@@ -349,12 +360,9 @@ OverloadFitness OverloadFitness::evaluate(
     } else {
       // If we have a varargs argument, then it will eat the rest of the
       // arguments, but we have to check each of them.
-      auto varArgsEltType =
-          MValue(cast<POP::VariadicType>(expectedType).getElementType());
-      assert(varArgsEltType.getIfTypeValue() &&
-             "variadic convention never has element type parameter");
+      auto varArgsEltType = getVariadicElementType(expectedType);
       while (providedValueIdx != operands.size()) {
-        auto result = checkOneOperand(varArgsEltType.getIfTypeValue());
+        auto result = checkOneOperand(varArgsEltType);
         if (result.kind != kValid)
           return result;
       }
@@ -862,42 +870,108 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   }
 
   assert(calleeSig.getResultParamTypes().size() == resultParamDecls.size() &&
-         calleeSig.getValues().getNumInputs() == operands.size() &&
          "Type checking should be done");
 
-  // Emit all the arguments.
+  // Emit all the arguments.  We iterate by expected arguments since we're
+  // building the argument list of the call.  Default arguments and variadics
+  // get filled in here.
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
-  for (auto [argValueAndExpr, expectedType, convention] :
-       llvm::zip(operands, calleeSig.getValueInputs(),
-                 calleeSig.getValueInputConventions())) {
-    AnyValue argVal;
-    assert(!uint8_t(convention & ValueInputConvention::VarArg) &&
-           "TODO: implement varargs passing");
+  size_t nextOperandIdx = 0;
+  for (auto [expectedTypeX, conventionX] : llvm::zip(
+           calleeSig.getValueInputs(), calleeSig.getValueInputConventions())) {
+    // Work around lambda not being able to reference bindings.
+    auto expectedType = expectedTypeX;
+    auto convention = conventionX;
+    // If we ran out of operands, fulfill this with a default value or empty
+    // variadic list.
+    if (nextOperandIdx == operands.size()) {
+      Location loc = emitter.translateLocation(callLoc);
+      // TODO: Default arguments.  Note that variadics cannot be defaulted.
 
-    switch (convention & ~ValueInputConvention::VarArg) {
-    case ValueInputConvention::KWVarArg:
-      emitError("keyword arguments and `**arg` variadics not supported yet");
-      break;
-    case ValueInputConvention::VarArg:
-      assert(0 && "TODO: unimp varargs");
-      break;
-    case ValueInputConvention::ByRef:
-      // By-ref arguments, must be lvalues.
-      argVal = argValueAndExpr.ir;
-      assert(argVal.getIfLValue() && "Call should already be type checked");
-      break;
-    case ValueInputConvention::ByVal:
-      // by-val arguments are converted to the expected r-value type.
-      argVal = emitter.emitRValue(argValueAndExpr);
-      argVal = emitter.getAsExpectedType(argVal, argValueAndExpr.expr,
-                                         expectedType, " in argument");
-      if (!argVal)
-        return {};
-      break;
+      // Varargs arguments are fulfilled with an empty !pop.variadic list.
+      if (uint8_t(convention & ValueInputConvention::VarArg)) {
+        if (!emitter.builder) {
+          // TODO(Issue #7366): We need a #pop.variadic<a,b,c> attribute.
+          emitter.emitError(
+              callLoc,
+              "TODO: cannot emit empty variadic pack in parameter context yet");
+          return {};
+        }
+        Value argVal = emitter.builder->create<POP::VariadicCreateOp>(
+            loc, expectedType, ArrayRef<Value>());
+        argumentValues.push_back({RValue(argVal), nullptr});
+        continue;
+      }
+      llvm_unreachable("must have a value");
     }
 
-    argumentValues.push_back({argVal, argValueAndExpr.expr});
+    // Otherwise, we're applying one or more arguments to this.
+    auto emitOneArgVal = [&](ASTExprAnd<AnyValue> operand) -> AnyValue {
+      switch (convention & ~ValueInputConvention::VarArg) {
+      case ValueInputConvention::KWVarArg:
+        llvm_unreachable("keyword args and `**arg` not supported yet");
+        break;
+      case ValueInputConvention::VarArg:
+        llvm_unreachable("varargs handled separately");
+      case ValueInputConvention::ByRef:
+        // By-ref arguments, must be lvalues.
+        assert(operand.ir.getIfLValue() &&
+               "Call should already be type checked");
+        return operand.ir;
+        break;
+      case ValueInputConvention::ByVal:
+        // by-val arguments are converted to the expected r-value type.
+        auto argVal = emitter.emitRValue(operand);
+        // In the case of a variadic argument, we need to remove the
+        // !pop.varadic<> wrapper to get the type to convert to.
+        Type expectedArgType = expectedType;
+        if (uint8_t(convention & ValueInputConvention::VarArg))
+          expectedArgType = getVariadicElementType(expectedArgType);
+
+        return emitter.getAsExpectedType(argVal, operand.expr, expectedArgType,
+                                         " in argument");
+      }
+    };
+
+    // For a normal non-vararg argument, we just emit it and add it to our list.
+    if (!uint8_t(convention & ValueInputConvention::VarArg)) {
+      auto operand = operands[nextOperandIdx++];
+      AnyValue argVal = emitOneArgVal(operand);
+      if (!argVal)
+        return {};
+      argumentValues.push_back({argVal, operand.expr});
+      continue;
+    }
+
+    // For variadic list, we need to emit all of the remaining operands.
+    size_t firstVariadicOperand = nextOperandIdx;
+    if (!emitter.builder) {
+      // TODO(Issue #7366): We need a #pop.variadic<a,b,c> attribute.
+      emitter.emitError(
+          callLoc,
+          "TODO: cannot emit empty variadic pack in parameter context yet");
+      return {};
+    }
+    SmallVector<Value> variadicArgs;
+    for (size_t e = operands.size(); nextOperandIdx != e; ++nextOperandIdx) {
+      auto operand = operands[nextOperandIdx];
+      DRValue argVal =
+          emitter.emitDRValue({emitOneArgVal(operand), operand.expr});
+      if (!argVal)
+        return {};
+      variadicArgs.push_back(argVal);
+    }
+
+    Location loc = emitter.translateLocation(callLoc);
+    Value argVal = emitter.builder->create<POP::VariadicCreateOp>(
+        loc, expectedType, variadicArgs);
+
+    argumentValues.push_back(
+        {RValue(argVal), operands[firstVariadicOperand].expr});
   }
+
+  assert(nextOperandIdx == operands.size() &&
+         "typechecking confirmed that we would use up all operands");
 
   // If this is a call to a @nodebug_inline function, look into inlining it.
   // This can fail in a parameter context if the operations are not all

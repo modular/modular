@@ -2266,10 +2266,6 @@ def POP_VariadicCreateOp : POPOp<"variadic.create", [Pure,
   let assemblyFormat = [{
     ` ` `[` $operands `]` attr-dict `:` qualified(type($result))
   }];
-
-  let builders = [
-    OpBuilder<(ins "ValueRange":$elements)>
-  ];
 }
 
 //===----------------------------------------------------------------------===//
