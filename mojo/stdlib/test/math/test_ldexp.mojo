@@ -1,0 +1,39 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: kgen %s -execute -func='$test_ldexp::main():index()' -I %stdlibdir | FileCheck %s
+
+from Assert import assert_param
+from DType import DType
+from Int import Int
+from IO import print
+from Math import ldexp, _bits_to_float
+from Numerics import FPUtils
+from SIMD import SIMD
+
+
+# CHECK-LABEL: test_ldexp
+fn test_ldexp():
+    print("== test_ldexp\n")
+
+    # CHECK: 24.0
+    print(
+        ldexp[1, DType.f32.value](
+            SIMD[1, DType.f32.value](1.5), SIMD[1, DType.si32.value](4)
+        )
+    )
+
+    # CHECK: 24.0
+    print(
+        ldexp[1, DType.f64.value](
+            SIMD[1, DType.f64.value](1.5), SIMD[1, DType.si32.value](4)
+        )
+    )
+
+
+@export
+fn main() -> __mlir_type.index:
+    test_ldexp()
+    return 0
