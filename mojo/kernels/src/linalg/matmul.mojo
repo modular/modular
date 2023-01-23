@@ -53,33 +53,29 @@ struct GemmShape[
 struct _Matrix[
     shape: __mlir_type[`!kgen.list<index[2]>`],
     type: __mlir_type.`!kgen.dtype`,
+    transposed: Bool,
 ]:
     """Utility to access matrix across layouts with
     unified indexing interface.
     """
 
     var data: NDBuffer[2, shape, type]
-    var transposed: Bool
 
     fn __new__(
-        data: NDBuffer[2, shape, type], transposed: Bool
-    ) -> _Matrix[shape, type]:
+        data: NDBuffer[2, shape, type]
+    ) -> _Matrix[shape, type, transposed]:
         """Constructor of a matrix based on a buffer and a transpose flag.
 
         Args:
             data: The buffer containing the matrix data.
-            transposed: Indicates if the matrix is in transposed layout.
 
         Returns:
             The constructed matrix.
         """
 
-        var matrix: _Matrix[shape, type]
-        matrix.data = data
-        matrix.transposed = transposed
-        return matrix
+        return _Matrix[shape, type, transposed] {data: data}
 
-    fn __getitem__(self: _Matrix[shape, type], x: Int, y: Int) -> SIMD[1, type]:
+    fn __getitem__(self, x: Int, y: Int) -> SIMD[1, type]:
         """Returns the data stored at the given untransposed coordinate.
 
         Args:
@@ -89,13 +85,11 @@ struct _Matrix[
         Returns:
             The value stored at the coordinate.
         """
-        if self.transposed:
+        if transposed:
             return self.data.__getitem__(_index2D(y, x))
         return self.data.__getitem__(_index2D(x, y))
 
-    fn __setitem__(
-        self: _Matrix[shape, type], x: Int, y: Int, val: SIMD[1, type]
-    ):
+    fn __setitem__(self, x: Int, y: Int, val: SIMD[1, type]):
         """Stores the data stored at the given untransposed coordinate.
 
         Args:
@@ -106,7 +100,7 @@ struct _Matrix[
         Returns:
             The value stored at the coordinate.
         """
-        if self.transposed:
+        if transposed:
             self.data.__setitem__(_index2D(y, x), val)
         else:
             self.data.__setitem__(_index2D(x, y), val)
@@ -115,12 +109,12 @@ struct _Matrix[
 fn naive_matmul[
     shape: __mlir_type[`!kgen.list<index[2]>`],
     type: __mlir_type.`!kgen.dtype`,
+    transposeA: Bool,
+    transposeB: Bool,
 ](
     c: NDBuffer[2, shape, type],
     a: NDBuffer[2, shape, type],
     b: NDBuffer[2, shape, type],
-    transposeA: Bool,
-    transposeB: Bool,
 ):
     """Computes matrix multiplication with a naive algorithm.
 
@@ -132,9 +126,9 @@ fn naive_matmul[
         transposeB: indicates if b is transposed.
     """
     var gemmShape = GemmShape[shape, type](c, a, b, transposeA, transposeB)
-    var matrixA = _Matrix[shape, type](a, transposeA)
-    var matrixB = _Matrix[shape, type](b, transposeB)
-    var matrixC = _Matrix[shape, type](c, Bool(False))
+    var matrixA = _Matrix[shape, type, transposeA](a)
+    var matrixB = _Matrix[shape, type, transposeB](b)
+    var matrixC = _Matrix[shape, type, False](c)
 
     var m: Int = 0
     while m < gemmShape.M:
