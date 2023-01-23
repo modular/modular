@@ -119,7 +119,7 @@ fn pleaseInline() -> __mlir_type.index:
   return 1
 
 ##===----------------------------------------------------------------------===##
-# Default arguments.
+# Default arguments and variadics.
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.func @"defaultArgument{{.*}}{defaults = #lit<default.arguments[<1 : index = #lit.struct<{value: scalar<index> = 42}> : !kgen.declref<@"$Int"::@Int>>]>}
@@ -129,6 +129,26 @@ fn defaultArgument(a: Int, b: Int = 42) -> Int:
 # CHECK: lit.func @"defaultArgumentReferencesParameter{{.*}}{defaults = #lit<default.arguments[<0 : index = #kgen.param.expr<apply, #kgen.symbol.constant<@"$Int"::@Int::@"__add__($Int::Int,$Int::Int)" > : !kgen.signature<(!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int>>, #kgen.param.decl.ref<"p"> : !kgen.declref<@"$Int"::@Int>, #lit.struct<{value: scalar<index> = 87}> : !kgen.declref<@"$Int"::@Int>> : !kgen.declref<@"$Int"::@Int>>]>}
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
   return a
+
+struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
+  alias StorageType =  __mlir_type[`!pop.variadic<`, EltType, `>`]
+  var value: StorageType
+  fn __new__(value: StorageType) -> VaList[EltType]:
+    return VaList[EltType]{value: value}
+
+  fn size(self) -> __mlir_type.index:
+    return __mlir_op.`pop.variadic.size`(self.value)
+
+  fn __getitem__(self, index: Int) -> EltType:
+    return __mlir_op.`pop.variadic.get`(self.value, index.__as_mlir_index())
+
+
+# CHECK: lit.func @"variadics($Int::Int*)"(%a: !pop.variadic<@"$Int"::@Int> vararg)
+fn variadics(*a: Int):
+  let vaArgs = VaList[Int](a)
+  let size = vaArgs.size()
+  let elt0 = vaArgs.__getitem__(0)
+  let elt1 = vaArgs.__getitem__(1)
 
 ##===----------------------------------------------------------------------===##
 # @raises decorator.
