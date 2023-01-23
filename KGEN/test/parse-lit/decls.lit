@@ -151,10 +151,18 @@ fn variadics(*a: Int):
   let elt0 = vaArgs.__getitem__(0)
   let elt1 = vaArgs.__getitem__(1)
 
+# CHECK: lit.func @"callVariadic
 fn callVariadic(x: Int):
-  # TODO: variadics()
-  # TODO: variadics(1)
-  # TODO: variadics(x, 1)
+  # CHECK: %0 = pop.variadic.create [] : !pop.variadic<@"$Int"::@Int>
+  # CHECK: %1 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%0)
+  variadics()
+  # CHECK: %2 = pop.variadic.create [%x]
+  # CHECK: %3 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%2)
+  variadics(x)
+  # CHECK: %4 = kgen.param.constant: @"$Int
+  # CHECK: %5 = pop.variadic.create [%x, %4]
+  # CHECK: %6 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%5)
+  variadics(x, 1)
 
 
 
