@@ -102,7 +102,7 @@ fn max[
     """Computes the max element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_max_elementwise, _simd_max
-    ](src, neginf[type]())
+    ](src, src.__getitem__(0))
 
 
 # ===----------------------------------------------------------------------===#
@@ -145,7 +145,7 @@ fn min[
     """Computes the min element in a buffer."""
     return reduce[
         simd_width, size, type, type, _simd_min_elementwise, _simd_min
-    ](src, inf[type]())
+    ](src, src.__getitem__(0))
 
 
 # ===----------------------------------------------------------------------===#
