@@ -466,8 +466,8 @@ private:
     static EmptyReturnType get() { return EmptyReturnType{}; }
   };
   using CallableReturnType =
-      llvm::Optional<std::conditional_t<std::is_void_v<ResultType>,
-                                        EmptyReturnType, ResultType>>;
+      std::optional<std::conditional_t<std::is_void_v<ResultType>,
+                                       EmptyReturnType, ResultType>>;
 
   /// DTypeSwitch is not a value.
   DTypeSwitch(const DTypeSwitch &) = delete;
