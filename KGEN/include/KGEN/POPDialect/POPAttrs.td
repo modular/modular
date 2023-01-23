@@ -189,7 +189,7 @@ def POP_ArrayAttr : POP_Attr<"Array", "array", [
                         AttributeSelfTypeParameter<"", "ArrayType">:$type);
 
   let assemblyFormat = [{
-    `<` (`>`) : (custom<ArrayElements>($values, ref($type))^ `>`)?
+    `<` (`>`) : (custom<SequenceElements>($values, ref($type))^ `>`)?
   }];
 
   let builders = [
@@ -267,6 +267,42 @@ def POP_VariantAttr : POP_Attr<"Variant", "variant", [
     AttrBuilderWithInferredContext<(ins "TypedAttr":$value,
                                         "VariantType":$type), [{
       return get(type.getContext(), value, type);
+    }]>
+  ];
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// VariadicAttr
+//===----------------------------------------------------------------------===//
+
+def POP_VariadicAttr : POP_Attr<"Variadic", "variadic", [
+    TypedAttrInterface, SubElementAttrInterface,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+  let summary = "A parameterized variadic attribute.";
+  let description = [{
+    The `#pop.variadic` attribute contains a homogeneous list of elements of an
+    variadic type. It is used to represent constant variadic sequence values.
+
+    Example:
+
+    ```mlir
+    #pop.variadic<1, 2> : !pop.variadic<index>
+    ```
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values,
+                        AttributeSelfTypeParameter<"", "VariadicType">:$type);
+
+  let assemblyFormat = [{
+    `<` (`>`) : (custom<SequenceElements>($values, ref($type))^ `>`)?
+  }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
+                                        "VariadicType":$type), [{
+      return get(type.getContext(), values, type);
     }]>
   ];
 
