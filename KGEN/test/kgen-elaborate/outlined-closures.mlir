@@ -1,8 +1,8 @@
 // RUN: kgen-opt %s -elaborate-generators -force-inline -cleanup-compiler-globals | FileCheck %s
 
-kgen.generator @call_region<fn: <A -> index>() force_inline -> index -> index>() force_inline -> index {
-  kgen.param.declare BoundFn: <() -> index>() force_inline -> index = <bind_signature(:<A -> index>() force_inline -> index fn, 2)>
-  %0 = kgen.call_param[<() -> index>() force_inline -> index: BoundFn]<() -> Result>()
+kgen.generator @call_region<fn: <A -> E>() force_inline -> index -> E>() force_inline -> index {
+  kgen.param.declare BoundFn: <() -> E>() force_inline -> index = <bind_signature(:<A -> E>() force_inline -> index fn, 2)>
+  %0 = kgen.call_param[<() -> E>() force_inline -> index: BoundFn]<() -> Result>()
   kgen.return<Result> %0 : index
 }
 
@@ -10,7 +10,7 @@ lit.struct.decl @raiseClosure_context {
   lit.struct.field field_0 : index
 }
 
-kgen.generator @raiseClosure_0<C, A, B -> index>(%arg0: index) force_inline -> index {
+kgen.generator @raiseClosure_0<C, A, B -> E>(%arg0: index) force_inline -> index {
   %0 = kgen.param.constant = <add(mul(B, -1), A, C)>
   %1 = pop.cast_from_builtin %0 : index to !pop.scalar<index>
   %2 = pop.cast_from_builtin %arg0 : index to !pop.scalar<index>
@@ -19,10 +19,10 @@ kgen.generator @raiseClosure_0<C, A, B -> index>(%arg0: index) force_inline -> i
   kgen.return<add(mul(A, -1), C)> %4 : index
 }
 
-kgen.generator @raiseClosure_wrapper<C, A, B -> index>() force_inline -> index {
+kgen.generator @raiseClosure_wrapper<C, A, B -> E>() force_inline -> index {
   %0 = pop.compiler.global_load "raiseClosure_context_var" : !kgen.declref<@raiseClosure_context>
   %1 = lit.struct.extract %0[field_0] : index from !kgen.declref<@raiseClosure_context>
-  %2 = kgen.call @raiseClosure_0<C = C, A = A, B = B -> __resultParam_0>(%1) : (index) force_inline -> index
+  %2 = kgen.call @raiseClosure_0<C = C, A = A, B = B -> __resultParam_0 = E>(%1) : (index) force_inline -> index
   kgen.return<__resultParam_0> %2 : index
 }
 
@@ -39,14 +39,14 @@ kgen.generator @raiseClosure_wrapper<C, A, B -> index>() force_inline -> index {
 // CHECK: kgen.param.constant = <13>
 // CHECK-NEXT: kgen.return
 
-kgen.generator @raiseClosure<() -> index>() -> (index, index) {
+kgen.generator @raiseClosure<() -> E>() -> (index, index) {
   %idx0 = index.constant 0
   kgen.param.declare C = <15>
   %0 = lit.struct.create(field_0=%idx0) : (index) -> !kgen.declref<@raiseClosure_context>
   pop.compiler.global_store "raiseClosure_context_var", %0 : !kgen.declref<@raiseClosure_context>
-  kgen.param.declare Fn: <A, B -> index>() force_inline -> index = <@raiseClosure_wrapper<C = C, A = #kgen.unbound, B = #kgen.unbound>>
-  kgen.param.declare BoundFn: <A -> index>() force_inline -> index = <bind_signature(:<A, B -> index>() force_inline -> index Fn, #kgen.unbound, 1)>
-  %1 = kgen.call @call_region<fn: <A -> index>() force_inline -> index = BoundFn -> Result>() : () force_inline -> index
+  kgen.param.declare Fn: <A, B -> E>() force_inline -> index = <@raiseClosure_wrapper<C = C, A = #kgen.unbound, B = #kgen.unbound>>
+  kgen.param.declare BoundFn: <A -> E>() force_inline -> index = <bind_signature(:<A, B -> E>() force_inline -> index Fn, #kgen.unbound, 1)>
+  %1 = kgen.call @call_region<fn: <A -> E>() force_inline -> index = BoundFn -> Result = E>() : () force_inline -> index
   %2 = kgen.param.constant = <Result>
   kgen.return<Result> %1, %2 : index, index
 }

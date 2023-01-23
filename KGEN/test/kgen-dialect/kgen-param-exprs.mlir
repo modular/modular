@@ -491,8 +491,8 @@ kgen.generator @region_params
   // CHECK-SAME: r1: (si32) -> si32,
   <r1: <()>(si32) -> si32,
    // This has an input and output parameter.
-   // CHECK-SAME: r2: <() -> i1>() -> (),
-   r2: <() -> i1>() -> (),
+   // CHECK-SAME: r2: <() -> result: i1>() -> (),
+   r2: <() -> result: i1>() -> (),
    // This uses a different parameter.
    // CHECK-SAME: r3: <dt: dtype>() -> !pop.scalar<dt>
    r3: <dt: dtype>() -> !pop.scalar<dt>

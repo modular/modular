@@ -106,11 +106,10 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
     return failure();
 
   // Parse the function signature.
-  ParamDeclArrayAttr inputParamDecls;
-  TypeArrayAttr resultParamTypes;
+  ParamDeclArrayAttr inputParamDecls, resultParamDecls;
   ConventionsAttr conventions;
   llvm::SMLoc sigLoc;
-  if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamTypes) ||
+  if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamDecls) ||
       parser.getCurrentLocation(&sigLoc) ||
       parseFunctionSignature(parser, entryArgs, resultTypes, conventions))
     return failure();
@@ -127,7 +126,7 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   FunctionType type = builder.getFunctionType(argTypes, resultTypes);
   auto signature =
       parser.getChecked<SignatureType>(parser.getContext(), inputParamDecls,
-                                       resultParamTypes, type, conventions);
+                                       resultParamDecls, type, conventions);
   if (!signature)
     return failure();
 
@@ -218,7 +217,7 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
 
   p.printSymbolName(func.getName());
   printOptionalParameterSpec(p, op.getInputParamDeclsAttr(),
-                             op.getResultParamTypesAttr());
+                             op.getResultParamsAttr());
 
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   printFunctionSignature(p, func.getFunctionBody(), argTypes,
@@ -337,13 +336,13 @@ LIT::FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   if (!interface && (!funcInterface || !funcInterface.getIsInterface()))
     return emitError() << interfaceSym
                        << " does not reference a generator interface";
-  TypeArrayAttr interfaceResultParamTypesAttr;
+  ParamDeclArrayAttr itfResultParams;
   if (funcInterface)
-    interfaceResultParamTypesAttr = funcInterface.getResultParamTypesAttr();
+    itfResultParams = funcInterface.getResultParamsAttr();
   else
-    interfaceResultParamTypesAttr = interface.getResultParamTypesAttr();
+    itfResultParams = interface.getResultParamsAttr();
   // Result parameters need to match, but input parameters may be inferred.
-  if (getResultParamTypesAttr() != interfaceResultParamTypesAttr)
+  if (getResultParamsAttr() != itfResultParams)
     return emitError() << "lit.func result parameter types must match "
                           "interface types";
 
@@ -820,9 +819,8 @@ LogicalResult LIT::ReturnOp::verify() {
   auto func = (*this)->getParentOfType<LIT::FuncOp>();
   if (!func)
     return emitOpError("expected to be nested inside a `lit.func` operation");
-  return checkResultArgumentTypes(*this, getParameters(),
-                                  func.getResultParamTypes(),
-                                  func.getResultTypes());
+  return checkResultArgumentTypes(
+      *this, getParameters(), func.getResultParams(), func.getResultTypes());
 }
 
 //===----------------------------------------------------------------------===//

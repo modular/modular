@@ -179,26 +179,26 @@ kgen.generator @g2<()>() {
 // -----
 
 // expected-note @below {{@only_returns declared here}}
-kgen.generator @only_returns<p1 -> index>() {
+kgen.generator @only_returns<p1 -> p2>() {
   kgen.return<p1>
 }
 
 kgen.func @test_only_returns() {
   // expected-error @below {{symbol use has 0 input parameters but @only_returns expects 1}}
-  kgen.call @only_returns<()->p2>() : () -> ()
+  kgen.call @only_returns<() -> p2 = p2>() : () -> ()
   kgen.return
 }
 
 // -----
 
 // expected-note @below {{@only_returns declared here}}
-kgen.generator @only_returns<() -> i4>() {
+kgen.generator @only_returns<() -> p1: i4>() {
   kgen.return <:i4 2>
 }
 
 kgen.func @test_only_returns() {
   // expected-error @below {{symbol use result parameter #0 has type 'index' but @only_returns expected type 'i4'}}
-  kgen.call @only_returns<()->p2>() : () -> ()
+  kgen.call @only_returns<() -> p2 = p1>() : () -> ()
   kgen.return
 }
 
@@ -276,28 +276,28 @@ kgen.generator @bad<barf>() implements @itf {
 
 // -----
 
-kgen.generator.interface @take_and_return<p1 -> index>()
+kgen.generator.interface @take_and_return<p1 -> p2>()
 
 // expected-error @+1 {{invalid cyclic reference between operations defining and using parameters}}
 kgen.generator @self_cyclic() {
   // Uses r1 and defines r1
-  kgen.call @take_and_return<p1 = r1 -> r1>() : () -> ()
+  kgen.call @take_and_return<p1 = r1 -> r1 = p2>() : () -> ()
   // expected-note @-1 {{this operation uses parameter "r1", which is defined by itself}}
   kgen.return
 }
 
 // -----
 
-kgen.generator.interface @take_and_return<p1 -> index>()
+kgen.generator.interface @take_and_return<p1 -> r1>()
 
 // expected-error @+1 {{invalid cyclic reference between operations defining and using parameters}}
 kgen.generator @mutually_recursive() {
   // Uses r2 and defines r1
-  kgen.call @take_and_return<p1 = r2 -> r1>() : () -> ()
+  kgen.call @take_and_return<p1 = r2 -> r1 = r1>() : () -> ()
   // expected-note @-1 {{this operation uses parameter "r2", which is defined by the first operation}}
 
   // Uses r1 and defines r2
-  kgen.call @take_and_return<p1 = r1 -> r2>() : () -> ()
+  kgen.call @take_and_return<p1 = r1 -> r2 = r1>() : () -> ()
   // expected-note @-1 {{this operation uses parameter "r1", which is defined by:}}
 
   kgen.return
@@ -383,13 +383,13 @@ kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
 kgen.generator @hasInputParam<param>() {
   kgen.return
 }
-kgen.generator @nothing<() -> index>() {
+kgen.generator @nothing<() -> param>() {
   kgen.return<42>
 }
 
 kgen.func @test() {  // expected-note {{within 'kgen.func' @test}}
   // ok
-  kgen.call @hasResultParam<() -> result>() : () -> ()
+  kgen.call @hasResultParam<() -> result = param>() : () -> ()
 
   // expected-error@+1 {{cannot reference generator with input parameters from within a concrete 'kgen.func'}}
   kgen.call @hasInputParam<param = 42>() : () -> ()
@@ -531,7 +531,7 @@ kgen.generator @test2() {
 // -----
 
 // expected-error @below {{nested parameter "x" redefined}}
-kgen.generator @test<ty: type, p : <x,x>()->()>
+kgen.generator @test<ty: type, p : <x, x>() -> ()>
 () {
   kgen.return
 }

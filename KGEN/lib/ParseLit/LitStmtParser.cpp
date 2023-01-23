@@ -353,8 +353,8 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // ambiguity where there may be result parameters /and/ a list-display in
   // square brackets may also be used as a normal result.
   ExprNode *resultParams = nullptr;
-  if (decl && !decl.getResultParamTypes().empty()) {
-    auto numResultParams = decl.getResultParamTypes().size();
+  if (decl && !decl.getResultParams().empty()) {
+    auto numResultParams = decl.getResultParams().size();
     // Catch obvious missed parameter list.
     if (getToken().isNot(LitToken::l_square)) {
       emitError(loc, "expected '[' in function that returns ")
@@ -403,16 +403,16 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   SmallVector<TypedAttr> resultParamValues;
   if (resultParams) {
     auto resultParamList = dyn_cast<ListNode>(resultParams);
-    size_t numResultParams = decl.getResultParamTypes().size();
+    size_t numResultParams = decl.getResultParams().size();
     if (!resultParamList || resultParamList->exprs.size() != numResultParams) {
       emitError(resultParamList->getLoc(), "expected ")
           << numResultParams << " result parameter" << plural(numResultParams)
           << resultParams->getRange();
       return success();
     }
-    for (auto [paramExpr, paramType] :
-         llvm::zip(resultParamList->exprs, decl.getResultParamTypes())) {
-      auto result = emitter.emitExprMValue(paramExpr, paramType,
+    for (auto [paramExpr, param] :
+         llvm::zip(resultParamList->exprs, decl.getResultParams())) {
+      auto result = emitter.emitExprMValue(paramExpr, param.getType(),
                                            " in result parameter list");
       if (!result)
         return success();

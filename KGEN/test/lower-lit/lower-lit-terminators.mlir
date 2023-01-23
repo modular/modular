@@ -88,7 +88,7 @@ lit.file_module @FileModule {
 }
 
 // CHECK-LABEL: lit.func @result_parameters
-lit.func @result_parameters<() -> i32, i64>(%c: i1) {
+lit.func @result_parameters<() -> r1: i32, r2: i64>(%c: i1) {
   // CHECK: hlcf.if
   hlcf.if %c {
     // CHECK-NEXT: hlcf.return

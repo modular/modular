@@ -83,7 +83,7 @@ DRValue IREmitter::emitDRValue(ASTExprAnd<RValue> value) {
   // parameter utilities.
   if (auto signature = dyn_cast<SignatureType>(attr.getType())) {
     if (!signature.getInputParams().empty() ||
-        !signature.getResultParamTypes().empty()) {
+        !signature.getResultParams().empty()) {
       emitError(value.expr->getLoc(),
                 "cannot use parameterized function of type ")
           << ASTType(attr.getType()) << " without binding all its parameters"

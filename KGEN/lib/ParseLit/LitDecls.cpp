@@ -651,7 +651,7 @@ struct ParsedArgument {
 static ParseResult
 parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
                            SmallVector<ParamDeclAttr> &inputParams,
-                           SmallVector<Type> &resultParamTypes) {
+                           SmallVector<ParamDeclAttr> &resultParams) {
   if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
     return success();
 
@@ -683,49 +683,49 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
                          DeclResolvedness::fullyResolved);
   ExprEmitter emitter(p.shared, declScope, std::nullopt, nullptr);
 
-  for (auto &arg : args) {
-    // Check for things supported in arguments that are not supported in
-    // parameters.
-    if (arg.initValue)
-      p.emitError(arg.loc, "TODO: default values in parameters not supported");
-    if (arg.convention != ValueInputConvention::ByVal) {
-      if (uint8_t(arg.convention & ValueInputConvention::VarArg))
-        p.emitError(arg.loc, "TODO: parameter lists do not support variadics");
-      else
-        p.emitError(arg.loc, "parameters must always be passed by-value");
-    }
+  auto processParameterArgs = [&p, &declResolver, &declScope, &emitter](
+                                  ArrayRef<ParsedArgument> args,
+                                  SmallVectorImpl<ParamDeclAttr> &params) {
+    for (auto &arg : args) {
+      // Check for things supported in arguments that are not supported in
+      // parameters.
+      if (arg.initValue)
+        p.emitError(arg.loc,
+                    "TODO: default values in parameters not supported");
+      if (arg.convention != ValueInputConvention::ByVal) {
+        if (uint8_t(arg.convention & ValueInputConvention::VarArg))
+          p.emitError(arg.loc,
+                      "TODO: parameter lists do not support variadics");
+        else
+          p.emitError(arg.loc, "parameters must always be passed by-value");
+      }
 
-    ASTType type =
-        arg.typeExpr ? emitter.emitExprType(arg.typeExpr) : ASTType();
-    if (!type) {
-      if (!arg.typeExpr)
-        p.emitError(arg.loc, "parameters must always have a type");
-      type = TypeCheckErrorType::get(p.getContext());
-    }
+      ASTType type =
+          arg.typeExpr ? emitter.emitExprType(arg.typeExpr) : ASTType();
+      if (!type) {
+        if (!arg.typeExpr)
+          p.emitError(arg.loc, "parameters must always have a type");
+        type = TypeCheckErrorType::get(p.getContext());
+      }
 
-    // Bind the parsed type expression so references from other parameters
-    // can be resolved.
-    auto tmpDecl = ParamDeclRefAttr::get(arg.name, type);
-    declResolver.addFullyResolvedDecl(MValue(tmpDecl), arg.name, arg.loc,
-                                      &declScope);
-    inputParams.push_back(ParamDeclAttr::get(arg.name, type));
-  }
+      // Bind the parsed type expression so references from other parameters
+      // can be resolved.
+      auto tmpDecl = ParamDeclRefAttr::get(arg.name, type);
+      declResolver.addFullyResolvedDecl(MValue(tmpDecl), arg.name, arg.loc,
+                                        &declScope);
+      params.push_back(ParamDeclAttr::get(arg.name, type));
+    }
+  };
+  processParameterArgs(args, inputParams);
 
   // Parse the meta results if present.
   if (p.consumeIf(LitToken::minus_greater)) {
-    auto parseResultType = [&]() -> ParseResult {
-      ExprNode *typeExpr;
-      if (p.parseExpression(typeExpr, std::nullopt))
-        return failure();
-      auto type = emitter.emitExprType(typeExpr);
-      if (!type)
-        type = emitter.shared.getTypeCheckErrorType();
-      resultParamTypes.push_back(type);
-      return success();
-    };
-
-    if (p.parseCommaSeparatedList(parseResultType, LitToken::r_square))
+    args.clear();
+    // Parse a result parameter list.
+    if (ParsedArgument::parseAndResolvePresentArgumentList(
+            p, args, /*isParameterList=*/true))
       return failure();
+    processParameterArgs(args, resultParams);
   }
   return p.parseToken(LitToken::r_square, "expected ']' for parameter list");
 }
@@ -1225,8 +1225,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   }
 
   // Parse declared meta parameters and add them to the current scope.
-  SmallVector<ParamDeclAttr> inputParamDecls;
-  SmallVector<Type> resultParamTypes;
+  SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
   SmallVector<ParsedArgument> args;
 
   // Add the meta parameters to the symbol table, and resolve their types.  We
@@ -1234,7 +1233,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  if (parseOptionalMetaSignature(p, decl, inputParamDecls, resultParamTypes) ||
+  if (parseOptionalMetaSignature(p, decl, inputParamDecls, resultParamDecls) ||
       p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
     return failure();
 
@@ -1391,7 +1390,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   auto signature = SignatureType::getChecked(
       [&] { return mlir::emitError(funcOp.getLoc()); },
       builder.getAttr<ParamDeclArrayAttr>(inputParamDecls),
-      builder.getAttr<TypeArrayAttr>(resultParamTypes),
+      builder.getAttr<ParamDeclArrayAttr>(resultParamDecls),
       builder.getFunctionType(argTypes, {resultType.mlirType}),
       builder.getAttr<ConventionsAttr>(inputConventions,
                                        funcOp.getConventions().getFnEffects()));
@@ -1479,7 +1478,7 @@ static void verifyNoDebugInline(LIT::FuncOp funcOp, LitSharedState &shared) {
   }
 
   // We don't allow result parameters.
-  if (!funcOp.getResultParamTypes().empty()) {
+  if (!funcOp.getResultParams().empty()) {
     rejectFunc("result parameters");
     return;
   }
@@ -1858,19 +1857,19 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
 
   SmallVector<ParamDeclAttr> inputParamDecls;
-  SmallVector<Type> resultParamTypes;
+  SmallVector<ParamDeclAttr> resultParamDecls;
   if (p.parseToken(LitToken::kw_struct,
                    "internal error: checked by stmt parser") ||
       p.parseToken(LitToken::identifier,
                    "internal error: checked by stmt parser") ||
-      parseOptionalMetaSignature(p, decl, inputParamDecls, resultParamTypes) ||
+      parseOptionalMetaSignature(p, decl, inputParamDecls, resultParamDecls) ||
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
     return failure();
 
   structOp.setInputParamDecls(inputParamDecls);
 
   // Reject result parameters.
-  if (!resultParamTypes.empty())
+  if (!resultParamDecls.empty())
     emitError(decl.getLoc(),
               "struct declarations do not support result parameters");
 

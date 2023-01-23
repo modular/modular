@@ -277,7 +277,7 @@ kgen.generator @callee<B>() {
 kgen.generator @parent<A>() {
   // CHECK: hlcf.loop
   // CHECK-NEXT: declare B = <A>
-  // CHECK-NEXT: call @result_params<() -> A0>()
+  // CHECK-NEXT: call @result_params<() -> A0 = A>()
   // CHECK-NEXT: constant = <A0>
   // CHECK-NOT: kgen.call @callee
   kgen.call @callee<B = A>() : () -> ()
@@ -286,12 +286,12 @@ kgen.generator @parent<A>() {
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee<B>() {
-  kgen.call @result_params<() -> A>() : () -> ()
+  kgen.call @result_params<() -> A = A>() : () -> ()
   kgen.param.constant = <A>
   kgen.return
 }
 
-kgen.generator @result_params<() -> index>() {
+kgen.generator @result_params<() -> A>() {
   kgen.return<0>
 }
 
@@ -303,13 +303,13 @@ kgen.generator @parent<B>() {
   // CHECK-NEXT: declare A0 = <B>
   // CHECK-NEXT: declare A = <A0>
   // CHECK-NOT: kgen.call @callee
-  kgen.call @callee<A = B -> A>() : () -> ()
+  kgen.call @callee<A = B -> A = B>() : () -> ()
   kgen.param.constant = <A>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A -> index>() {
+kgen.generator @callee<A -> B>() {
   kgen.return<A>
 }
 
@@ -324,14 +324,14 @@ kgen.generator @parent<B>() {
   // CHECK-NEXT: constant = <B>
   // CHECK: declare A = <A0>
   // CHECK-NOT: kgen.call @callee
-  kgen.call @callee<A = B -> A>() : () -> ()
+  kgen.call @callee<A = B -> A = B>() : () -> ()
   // CHECK: constant = <A>
   kgen.param.constant = <A>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A -> index>() {
+kgen.generator @callee<A -> B>() {
   kgen.param.declare.region F = <A, B>() {
     kgen.param.constant = <A>
     kgen.param.constant = <B>
@@ -352,14 +352,14 @@ kgen.generator @parent<B>() {
   // CHECK-NEXT: constant = <B>
   // CHECK: declare A = <A0>
   // CHECK-NOT: kgen.call @callee
-  kgen.call @callee<A = B -> A>() : () -> ()
+  kgen.call @callee<A = B -> A = B>() : () -> ()
   // CHECK: constant = <A>
   kgen.param.constant = <A>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A -> index>() {
+kgen.generator @callee<A -> B>() {
   kgen.param.declare.region F = <B>() {
     kgen.param.constant = <A>
     kgen.param.constant = <B>

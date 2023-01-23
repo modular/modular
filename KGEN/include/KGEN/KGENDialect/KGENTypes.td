@@ -181,7 +181,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
   }];
 
   let parameters = (ins "ParamDeclArrayAttr":$inputParams,
-                        "TypeArrayAttr":$resultParamTypes,
+                        "ParamDeclArrayAttr":$resultParams,
                         "FunctionType":$values,
                         "ConventionsAttr":$conventions);
   let hasCustomAssemblyFormat = 1;
@@ -189,10 +189,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
   let builders = [
     /// This builder allows everything other than the function type to be null.
     TypeBuilderWithInferredContext<(ins
-      "ParamDeclArrayAttr":$inputParams, "TypeArrayAttr":$resultParamTypes,
-      "FunctionType":$values, "ConventionsAttr":$conventions)>,
-    TypeBuilderWithInferredContext<(ins
-      "ParamBindArrayAttr":$inputParams, "ParamDeclArrayAttr":$resultParams,
+      "ParamDeclArrayAttr":$inputParams, "ParamDeclArrayAttr":$resultParams,
       "FunctionType":$values, "ConventionsAttr":$conventions)>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>,
     TypeBuilderWithInferredContext<(ins "FunctionType":$values)>

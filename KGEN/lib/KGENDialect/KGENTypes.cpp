@@ -158,14 +158,14 @@ LogicalResult SignatureType::printValue(AsmPrinter &p, TypedAttr value) const {
 }
 
 static void getSignatureDefaults(ParamDeclArrayAttr &inputParams,
-                                 TypeArrayAttr &resultParamTypes,
+                                 ParamDeclArrayAttr &resultParams,
                                  FunctionType values,
                                  ConventionsAttr &conventions) {
   MLIRContext *ctx = values.getContext();
   if (!inputParams)
     inputParams = ParamDeclArrayAttr::get(ctx, {});
-  if (!resultParamTypes)
-    resultParamTypes = TypeArrayAttr::get(ctx, {});
+  if (!resultParams)
+    resultParams = ParamDeclArrayAttr::get(ctx, {});
   if (!conventions) {
     // Default valueConventions to zero.
     conventions = ConventionsAttr::get(
@@ -175,37 +175,22 @@ static void getSignatureDefaults(ParamDeclArrayAttr &inputParams,
 }
 
 SignatureType SignatureType::get(ParamDeclArrayAttr inputParams,
-                                 TypeArrayAttr resultParamTypes,
+                                 ParamDeclArrayAttr resultParams,
                                  FunctionType values,
                                  ConventionsAttr conventions) {
-  getSignatureDefaults(inputParams, resultParamTypes, values, conventions);
-  return get(values.getContext(), inputParams, resultParamTypes, values,
+  getSignatureDefaults(inputParams, resultParams, values, conventions);
+  return get(values.getContext(), inputParams, resultParams, values,
              conventions);
 }
 
 SignatureType
 SignatureType::getChecked(function_ref<InFlightDiagnostic()> emitError,
                           ParamDeclArrayAttr inputParams,
-                          TypeArrayAttr resultParamTypes, FunctionType values,
+                          ParamDeclArrayAttr resultParams, FunctionType values,
                           ConventionsAttr conventions) {
-  getSignatureDefaults(inputParams, resultParamTypes, values, conventions);
-  return getChecked(emitError, values.getContext(), inputParams,
-                    resultParamTypes, values, conventions);
-}
-
-SignatureType SignatureType::get(ParamBindArrayAttr inputParams,
-                                 ParamDeclArrayAttr resultParams,
-                                 FunctionType values,
-                                 ConventionsAttr conventions) {
-  SmallVector<ParamDeclAttr> inputParamDecls;
-  SmallVector<Type> resultParamTypes;
-  for (ParamBindAttr inputParam : inputParams)
-    inputParamDecls.push_back(inputParam.getDecl());
-  for (ParamDeclAttr resultParam : resultParams)
-    resultParamTypes.push_back(resultParam.getType());
-  return get(ParamDeclArrayAttr::get(values.getContext(), inputParamDecls),
-             TypeArrayAttr::get(values.getContext(), resultParamTypes), values,
-             conventions);
+  getSignatureDefaults(inputParams, resultParams, values, conventions);
+  return getChecked(emitError, values.getContext(), inputParams, resultParams,
+                    values, conventions);
 }
 
 SignatureType SignatureType::get(FunctionType values) {
@@ -219,7 +204,7 @@ SignatureType SignatureType::get(MLIRContext *ctx, TypeRange inputs,
 
 SignatureType SignatureType::setFnEffect(FnEffects effect) {
   return SignatureType::get(
-      getInputParams(), getResultParamTypes(), getValues(),
+      getInputParams(), getResultParams(), getValues(),
       ConventionsAttr::get(getContext(), getValueInputConventions(),
                            bitEnumSet(getFnEffects(), effect)));
 }
@@ -258,6 +243,7 @@ SignatureType SignatureType::getSpecializedSignature(
 
   // We do this with with ParameterEvaluator which can do the remapping for us.
   ParameterEvaluator evaluator;
+
   auto remapType = [&](Type type) -> Type {
     return evaluator.getReboundType(type);
   };
@@ -301,10 +287,13 @@ SignatureType SignatureType::getSpecializedSignature(
     ++paramNo;
   }
 
-  // Remap the parameter decls and result types.
-  SmallVector<Type> newParamResultTypes;
-  llvm::append_range(newParamResultTypes,
-                     llvm::map_range(getResultParamTypes(), remapType));
+  // Remap the parameter decls and result parameter types.
+  SmallVector<ParamDeclAttr> newParamResults;
+  llvm::append_range(
+      newParamResults,
+      llvm::map_range(getResultParams(), [&](ParamDeclAttr param) {
+        return ParamDeclAttr::get(param.getName(), remapType(param.getType()));
+      }));
 
   // Remap the value types.
   SmallVector<Type> inputTypes, resultTypes;
@@ -314,7 +303,7 @@ SignatureType SignatureType::getSpecializedSignature(
 
   return SignatureType::get(
       ParamDeclArrayAttr::get(getContext(), unboundDecls),
-      TypeArrayAttr::get(getContext(), newParamResultTypes),
+      ParamDeclArrayAttr::get(getContext(), newParamResults),
       FunctionType::get(getContext(), inputTypes, resultTypes),
       getConventions());
 }
@@ -334,27 +323,26 @@ ArrayRef<Type> SignatureType::getValueResults() const {
 
 /// Return this signature type with the value signature replaced.
 SignatureType SignatureType::getWithValuesReplaced(FunctionType fnType) {
-  return SignatureType::get(getInputParams(), getResultParamTypes(), fnType,
+  return SignatureType::get(getInputParams(), getResultParams(), fnType,
                             getConventions());
 }
 
 SignatureType SignatureType::dropParamValues() {
-  return get(ParamDeclArrayAttr::get(getContext(), {}), getResultParamTypes(),
+  return get(ParamDeclArrayAttr::get(getContext(), {}), getResultParams(),
              getValues(), getConventions());
 }
 
 bool SignatureType::isConcrete() {
   return getConventions().isDefault() && getInputParams().empty() &&
-         getResultParamTypes().empty();
+         getResultParams().empty();
 }
 
 Type SignatureType::parse(AsmParser &p) {
   if (p.parseLess())
     return {};
   llvm::SMLoc loc = p.getCurrentLocation();
-  ParamDeclArrayAttr inputParams;
-  TypeArrayAttr resultParamTypes;
-  if (parseOptionalParameterSpec(p, inputParams, resultParamTypes))
+  ParamDeclArrayAttr inputParams, resultParams;
+  if (parseOptionalParameterSpec(p, inputParams, resultParams))
     return {};
   SmallVector<Type> inputs, outputs;
   ConventionsAttr conventions;
@@ -362,14 +350,14 @@ Type SignatureType::parse(AsmParser &p) {
     return {};
   if (p.parseGreater())
     return {};
-  return getChecked(
-      [&] { return p.emitError(loc); }, inputParams, resultParamTypes,
-      p.getBuilder().getFunctionType(inputs, outputs), conventions);
+  return getChecked([&] { return p.emitError(loc); }, inputParams, resultParams,
+                    p.getBuilder().getFunctionType(inputs, outputs),
+                    conventions);
 }
 
 void SignatureType::print(AsmPrinter &p) const {
   p << '<';
-  printOptionalParameterSpec(p, getInputParams(), getResultParamTypes());
+  printOptionalParameterSpec(p, getInputParams(), getResultParams());
   printTypesWithConventions(p, getValueInputs(), getValueResults(),
                             getConventions());
   p << '>';
@@ -378,7 +366,7 @@ void SignatureType::print(AsmPrinter &p) const {
 LogicalResult
 SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                       ParamDeclArrayAttr inputParams,
-                      TypeArrayAttr resultParamTypes, FunctionType values,
+                      ParamDeclArrayAttr resultParams, FunctionType values,
                       ConventionsAttr conventions) {
   // Check we have the right number of conventions.
   if (conventions.getInputConventions().size() != values.getInputs().size())

@@ -146,9 +146,10 @@ void ParameterCollector::collectUsesFromTypes(
   // Signature types define nested parameters.
   if (auto sig = dyn_cast<SignatureType>(type)) {
     SmallPtrSet<StringAttr, 4> nestedParams;
-    for (ParamDeclAttr inputParam : sig.getInputParams())
-      if (!nestedParams.insert(inputParam.getName()).second)
-        return reportDuplicateNestedDecl(inputParam);
+    for (ParamDeclAttr param : llvm::concat<const ParamDeclAttr>(
+             sig.getInputParams(), sig.getResultParams()))
+      if (!nestedParams.insert(param.getName()).second)
+        return reportDuplicateNestedDecl(param);
     SmallVector<ParamDeclRefAttr> nestedUses;
     collectUsesFromTypesImpl(type, nestedUses, hasConstExpr);
     // Filter the nested uses and determine which belong to the higher scope.
@@ -511,7 +512,7 @@ void DeclParameterVerifier::verifySymbolConstantAttr(
 
   auto declSignature = SignatureType::get(
       ParamDeclArrayAttr::get(func.getContext(), inputParams),
-      TypeArrayAttr::get(func.getContext(), func.getResultParamTypes()),
+      ParamDeclArrayAttr::get(func.getContext(), func.getResultParams()),
       func.getSignature().getValues(), func.getConventions());
 
   // If this SymbolConstant binds the parameters for the symbol, then remap its
@@ -573,7 +574,7 @@ void DeclParameterVerifier::verifyRefType(DeclRefType refType) {
   SmallString<32> paramName("@");
   paramName.append(refType.getSymbol().getLeafReference());
   if (failed(verifyParamDeclsMatch(
-          "!kgen.declref symbol use",
+          "input parameter", "!kgen.declref symbol use",
           llvm::to_vector(llvm::map_range(
               refType.getParamValues(),
               [](ParamBindAttr value) { return value.getDecl(); })),
@@ -765,10 +766,13 @@ struct GraphTraits<DeclParameterVerifier *> {
 /// cycle is tolerable.
 static LogicalResult diagnoseCycle(ArrayRef<ParameterUseDefGraphNode> nodes,
                                    Operation *topLevelOp) {
-  // Ignore self cycle in the top level op itself, this is because it is
-  // defining parameters and using those parameters in its own argument
+  // It is valid for an operation that declares parameters but which don't
+  // define them to use those parameters. In such cases, it is guaranteed that
+  // there are no internal cycles in the operation. For example, a decl
+  // operation can declare parameters and use them in its signature, and a call
+  // operation can declare parameters and use them in its operand and result
   // types.
-  if (nodes.size() == 1 && nodes[0].getOperation() == topLevelOp)
+  if (nodes.size() == 1 && isa<DeclInterface>(nodes[0].getOperation()))
     return success();
 
   // Build a set of the nodes in the SCC so we can do efficient queries.

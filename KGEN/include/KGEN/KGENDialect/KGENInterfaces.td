@@ -121,12 +121,12 @@ def FuncInterface : OpInterface<"FuncInterface"> {
 
     /// Return the result parameter declarations returned from the function
     /// body.
-    TypeArrayAttr getResultParamTypesAttr() {
-      return $_op.getSignature().getResultParamTypes();
+    ParamDeclArrayAttr getResultParamsAttr() {
+      return $_op.getSignature().getResultParams();
     }
-    /// Return the list of output parameter types.
-    ArrayRef<Type> getResultParamTypes() {
-      return getResultParamTypesAttr().getValue();
+    /// Return the list of output parameters.
+    ArrayRef<ParamDeclAttr> getResultParams() {
+      return getResultParamsAttr().getValue();
     }
 
     /// Return the `FunctionType` for input/result SSA values.
