@@ -505,9 +505,19 @@ struct ParsedArgument {
       if (p.parseExpression(typeExpr, std::nullopt))
         return failure();
     }
-    if (p.consumeIf(LitToken::equal)) {
+
+    SMLoc equalLoc;
+    if (p.consumeIf(LitToken::equal, &equalLoc)) {
       if (p.parseExpression(initValue, std::nullopt))
         return failure();
+
+      // Default args and varargs don't mix.
+      if (uint8_t(convention & (ValueInputConvention::VarArg |
+                                ValueInputConvention::KWVarArg))) {
+        p.emitError(equalLoc, "variadic arguments may not have defaults")
+            << initValue->getRange();
+        initValue = nullptr;
+      }
     }
     return success();
   };

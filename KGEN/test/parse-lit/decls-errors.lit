@@ -93,6 +93,9 @@ fn defaultArgumentBadType(a: Int = 1.0):
 # expected-error @+1 {{'**' marker must be at end of argument list}}
 fn starStarLast(**a: Int, b: Int):
 
+# expected-error @+1 {{variadic arguments may not have defaults}}
+fn noDefaultVariadics(*a: Int = 42):
+
 # expected-note @+1 {{function declared here}}
 fn exampleVariadic(a: F32, *b: Int):
 # expected-note @+1 {{function declared here}}
