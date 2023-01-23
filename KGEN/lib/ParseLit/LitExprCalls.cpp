@@ -281,60 +281,84 @@ OverloadFitness OverloadFitness::evaluate(
   for (auto [expectedArgIdx, expectedType] :
        llvm::enumerate(signature.getValueInputs())) {
     auto expectedConvention = signature.getInputConvention(expectedArgIdx);
-    assert(!uint8_t(expectedConvention & ValueInputConvention::VarArg) &&
-           "TODO: Varargs not handled yet");
 
     // Handle case when there are no more provided arguments.
     if (providedValueIdx == operands.size()) {
+      // If the argument is a varargs argument list, then it can be initialized
+      // with zero values no problem.
+      if (uint8_t(expectedConvention & ValueInputConvention::VarArg))
+        break;
       // TODO: If this argument is defaulted, take the value.
-      // TODO: If this argument is varargs, fill it with empty list.
-
       llvm_unreachable("should count argument mismatches above");
     }
 
-    // We'll bind the next provided value.
-    auto argAnyValueAndExpr = operands[providedValueIdx];
-
-    switch (expectedConvention & ~ValueInputConvention::VarArg) {
-    case ValueInputConvention::KWVarArg:
-      assert(0 && "keyword arguments and `**arg` variadics not supported yet");
-      break;
-    case ValueInputConvention::VarArg:
-      assert(0 && "not reachable");
-      break;
-    case ValueInputConvention::ByRef: {
-      // The actual value must be an lvalue if callee takes things by-ref.
-      auto argVal = argAnyValueAndExpr.ir.getIfLValue();
-      if (!argVal)
-        return {kArgNotLValue, providedValueIdx,
-                argAnyValueAndExpr.ir.getType()};
-
-      // By-ref argument types must exactly match, no conversions are allowed.
-      if (!ASTType(argVal.getType()).isEqualCanon(ASTType(expectedType)))
-        return {kArgWrongLVType, providedValueIdx, expectedType};
-      break;
-    }
-    case ValueInputConvention::ByVal:
-      auto argType = argAnyValueAndExpr.ir.getRValueType();
-      // Otherwise, we pass as an r-value.  If the argument types match, then
-      // they are good.
-      if (argType.isEqualCanon(expectedType))
+    // Otherwise we'll check the expected type against one (or more in the case
+    // of varargs) provided values.
+    auto checkOneOperand = [&](ASTType expectedType) -> OverloadFitness {
+      // We'll bind the next provided value.
+      auto operand = operands[providedValueIdx];
+      switch (expectedConvention & ~ValueInputConvention::VarArg) {
+      case ValueInputConvention::KWVarArg:
+        assert(0 &&
+               "keyword arguments and `**arg` variadics not supported yet");
         break;
+      case ValueInputConvention::VarArg:
+        llvm_unreachable("not reachable");
+      case ValueInputConvention::ByRef: {
+        // The actual value must be an lvalue if callee takes things by-ref.
+        auto argVal = operand.ir.getIfLValue();
+        if (!argVal)
+          return {kArgNotLValue, providedValueIdx, operand.ir.getType()};
 
-      // If we lack an exact match and conversions are disabled, this
-      // candidate fails.
-      if (callable.disableImplicitConversions ||
-          !CallableValue::canImplicitlyConvertToType(argAnyValueAndExpr,
-                                                     expectedType, shared))
-        return {kArgWrongType, providedValueIdx, expectedType};
+        // By-ref argument types must exactly match, no conversions are allowed.
+        if (!ASTType(argVal.getType()).isEqualCanon(expectedType))
+          return {kArgWrongLVType, providedValueIdx, expectedType};
+        break;
+      }
+      case ValueInputConvention::ByVal:
+        auto argType = operand.ir.getRValueType();
+        // Otherwise, we pass as an r-value.  If the argument types match, then
+        // they are good.
+        if (argType.isEqualCanon(expectedType))
+          break;
 
-      // If we had one, this bumps our # implicit conversions.
-      ++numImplicitConversions;
-      break;
+        // If we lack an exact match and conversions are disabled, this
+        // candidate fails.
+        if (callable.disableImplicitConversions ||
+            !CallableValue::canImplicitlyConvertToType(operand, expectedType,
+                                                       shared))
+          return {kArgWrongType, providedValueIdx, expectedType};
+
+        // If we had one, this bumps our # implicit conversions.
+        ++numImplicitConversions;
+        break;
+      }
+
+      // This provided value has been used up.
+      ++providedValueIdx;
+      return {kValid, 0, ASTType()};
+    };
+
+    // In the typical case, this argument isn't varargs, just check it.
+    if (!uint8_t(expectedConvention & ValueInputConvention::VarArg)) {
+      // If there was a problem, report it, otherwise continue on to the next
+      // expected argument to check.
+      auto result = checkOneOperand(expectedType);
+      if (result.kind != kValid)
+        return result;
+    } else {
+      // If we have a varargs argument, then it will eat the rest of the
+      // arguments, but we have to check each of them.
+      auto varArgsEltType =
+          MValue(cast<POP::VariadicType>(expectedType).getElementType());
+      assert(varArgsEltType.getIfTypeValue() &&
+             "variadic convention never has element type parameter");
+      while (providedValueIdx != operands.size()) {
+        auto result = checkOneOperand(varArgsEltType.getIfTypeValue());
+        if (result.kind != kValid)
+          return result;
+      }
     }
-
-    // This provided value has been used up.
-    ++providedValueIdx;
   }
 
   assert(providedValueIdx == operands.size() &&
