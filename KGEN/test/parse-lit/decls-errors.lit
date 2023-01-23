@@ -140,6 +140,11 @@ fn overloadIntF32(a: Int, b: Int):
 # expected-note @below {{argument #1 must be mutable in order to pass as a by-ref argument}}
 fn overloadIntF32(a: Int, b&: F32):
 
+# expected-note @below {{callee expects at least 3 arguments, but only 1 specified}}
+# expected-note @below {{callee expects at least 3 arguments, but only 2 specified}}
+# expected-note @below {{candidate declared here}}
+fn overloadIntF32(a: Int, b&: F32, c: Int, *args: Int):
+
 struct TestOverloading:
   var a: Int   # expected-note {{cannot overload with this non-function definition}}
   fn a(self):  # expected-error {{invalid redefinition of 'a'}}
