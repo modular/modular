@@ -924,8 +924,10 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       [&](auto argAndArgType) {
         auto [arg, argType] = argAndArgType;
         mangledName += ASTType(argType).getAsString();
-        if (arg.convention == ValueInputConvention::ByRef)
+        if (int8_t(arg.convention & ValueInputConvention::ByRef))
           mangledName += '&';
+        if (int8_t(arg.convention & ValueInputConvention::VarArg))
+          mangledName += '*';
       },
       [&]() { mangledName += ","; });
   mangledName += ')';
@@ -937,9 +939,12 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
   // Now that all the types and signature information have been resolved,
   // compute the final MLIR types, mixing in conventions etc.
-  for (auto [arg, argType] : llvm::zip(args, argTypes))
-    if (arg.convention == ValueInputConvention::ByRef)
+  for (auto [arg, argType] : llvm::zip(args, argTypes)) {
+    if (int8_t(arg.convention & ValueInputConvention::ByRef))
       argType = POP::PointerType::get(argType);
+    if (int8_t(arg.convention & ValueInputConvention::VarArg))
+      argType = POP::VariadicType::get(argType);
+  }
 }
 
 namespace {
@@ -1248,7 +1253,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   SmallVector<Type> argTypes;
   SmallVector<DefaultArgumentAttr> defaults;
   for (auto [idx, arg] : llvm::enumerate(args)) {
-    // This returns a TypeCheckErrorType on error, no extra check is needed.
     ASTType type;
     if (arg.typeExpr) {
       type = typeEmitter.emitExprType(arg.typeExpr);
@@ -1415,15 +1419,18 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   for (auto [bbArg, parsedArg] :
        llvm::zip(funcOp.getBody()->getArguments(), args)) {
     // Arguments passed by-reference can be directly used.
-    if (parsedArg.convention == ValueInputConvention::ByRef) {
+    if (int8_t(parsedArg.convention & ValueInputConvention::ByRef) &&
+        !int8_t(parsedArg.convention & ValueInputConvention::VarArg)) {
       buildArgDIInfo(bbArg, parsedArg.name, bbArg.getArgNumber());
       addFullyResolvedDecl(LValue(bbArg), parsedArg.name, parsedArg.loc, &decl);
       continue;
     }
-    assert(parsedArg.convention == ValueInputConvention::ByVal &&
-           "Unknown convention");
+
+    // Otherwise it must be a by-value convention, or varargs of by-ref.
+    // TODO: Varargs of by-ref really needs liftimes.
 
     // If this was passed by-value, then it becomes an rvalue in a `fn`.
+    // TODO: Project homogenous varargs into a homogenous tuple type.
     if (!funcOp.getIsDef()) {
       buildArgDIInfo(bbArg, parsedArg.name, bbArg.getArgNumber());
       addFullyResolvedDecl(DRValue(bbArg), parsedArg.name, parsedArg.loc,
