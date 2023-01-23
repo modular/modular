@@ -127,9 +127,19 @@ public:
   T &get() const { return value->get<T>(); }
 
   /// Construct the payload of a ConcreteAsyncValue and change its state to
+  /// `available`. Requires that the AsyncValue's state is `unconstructed`.
+  /// This reference is consumed just before any downstream waiters are
+  /// triggered. See AsyncValue::emplace for more details.
+  template <typename... Args>
+  void emplace(Args &&...args) && {
+    AsyncValue::emplace<T, Args...>(std::move(value),
+                                    std::forward<Args>(args)...);
+  }
+
+  /// Construct the payload of a ConcreteAsyncValue and change its state to
   /// `available`.  Requires that the AsyncValue's state is `unconstructed`.
   template <typename... Args>
-  void emplace(Args &&...args) const {
+  void emplace(Args &&...args) const & {
     value->emplace<T>(std::forward<Args>(args)...);
   }
 
@@ -138,39 +148,43 @@ public:
     value->setToError(std::move(diagnostic));
   }
 
-  /// Perform an 'andThenSync' operation on the current typed AsyncValueRef<>
-  /// and get no argument value passed in.
-  template <typename WaiterT>
-  auto andThenSync(WaiterT &&waiter) -> decltype(waiter(), void()) {
-    // Standard andThenSync works here!
-    getPointer()->andThenSync(std::forward<WaiterT>(waiter));
+  using Waiter = AsyncValue::Waiter;
+  using ConsumingWaiter = llvm::unique_function<void(AsyncValueRef<T> &&ref)>;
+
+  /// Perform an 'andThen' operation on this AsyncValueRef. This reference
+  /// is consumed in order to be made available to the waiter.
+  /// See AsyncValue::andThen for more details.
+  template <bool IsAsync>
+  void andThen(ConsumingWaiter &&waiter) && {
+    // TODO(#7399): The compiler and runtime are happy without this eta
+    // expansion of waiter -- check it's doing the right thing and remove.
+    AsyncValue::andThen<IsAsync>(
+        std::move(value),
+        [waiter = std::move(waiter)](AnyAsyncValueRef &&ref) mutable {
+          waiter(AsyncValueRef<T>(std::move(ref)));
+        });
   }
 
-  /// Perform an 'andThenSync' operation on the current typed AsyncValueRef<>
-  /// and get the current value passed in as `const AnyAsyncValueRef&` when the
-  /// closure is invoked.
-  template <typename WaiterT>
-  auto andThenSync(WaiterT &&waiter)
-      -> decltype(waiter(std::declval<const AnyAsyncValueRef &>()), void()) {
-    // Standard andThenSync works here!
-    getPointer()->andThenSync(std::forward<WaiterT>(waiter));
+  void andThenSync(ConsumingWaiter &&waiter) && {
+    std::move(*this).template andThen</*IsAsync=*/false>(std::move(waiter));
   }
 
-  /// Perform an 'andThenSync' operation on the current typed AsyncValueRef<>
-  /// and get the current value passed in as `const AsyncValueRef&` when the
-  /// closure is invoked.
-  template <typename WaiterT>
-  auto andThenSync(WaiterT &&waiter)
-      -> decltype(waiter(std::declval<const AsyncValueRef<T> &>()), void()) {
-    getPointer()->andThenSync([fn = std::forward<WaiterT>(waiter)](
-                                  const AnyAsyncValueRef &ref) mutable {
-      // Carefully form a AsyncValueRef without additional refcount
-      // operations, given we know the value will be live for the duration
-      // of our invocation.
-      auto ourRef = AsyncValueRef<T>::take(ref.getPointer());
-      fn(const_cast<const AsyncValueRef<T> &>(ourRef));
-      (void)ourRef.release();
-    });
+  void andThenAsync(ConsumingWaiter &&waiter) && {
+    std::move(*this).template andThen</*IsAsync=*/true>(std::move(waiter));
+  }
+
+  /// Perform an 'andThen' operation on this AsyncValueRef.
+  template <bool IsAsync>
+  void andThen(Waiter &&waiter) {
+    getPointer()->template andThen<IsAsync>(std::move(waiter));
+  }
+
+  void andThenSync(Waiter &&waiter) {
+    andThen</*IsAsync=*/false>(std::move(waiter));
+  }
+
+  void andThenAsync(Waiter &&waiter) {
+    andThen</*IsAsync=*/true>(std::move(waiter));
   }
 
 private:
