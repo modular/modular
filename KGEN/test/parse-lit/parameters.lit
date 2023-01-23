@@ -300,6 +300,26 @@ fn passFunctionParam2():
   #CHECK-SAME: @"callableWithParam()">() : () -> !lit.none
   takeCallable2[callableWithParam]()
 
+# CHECK-LABEL: lit.func @"my_assert_param()"<cond: i1, message: string>() -> !lit.none {
+fn my_assert_param[cond: __mlir_type.i1, message: __mlir_type.`!kgen.string`]():
+    #CHECK: kgen.param.assert <cond>, message
+    __mlir_op.`kgen.param.assert`[cond:cond, message:message]()
+    return
+
+# CHECK-LABEL: lit.func @"my_assert_param_inline{{.*}} attributes {noDebugInline} {
+@nodebug_inline
+fn my_assert_param_inline[cond: __mlir_type.i1, message: __mlir_type.`!kgen.string`]():
+    #CHECK: kgen.param.assert <cond>, message
+    __mlir_op.`kgen.param.assert`[cond:cond, message:message]()
+    return
+
+
+# CHECK-LABEL: lit.func @"pass_str_param
+fn pass_str_param():
+    # CHECK: kgen.call {{.+}}my_assert_param()"<cond: i1 = 1, message: string = "foo">() : () -> !lit.none
+    my_assert_param[1==1, "foo"]()
+    # CHECK: kgen.param.assert <1>, "foo2"
+    my_assert_param_inline[2==2, "foo2"]()
 
 ##===----------------------------------------------------------------------===##
 # Alias resolution

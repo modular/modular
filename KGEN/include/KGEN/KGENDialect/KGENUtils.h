@@ -25,6 +25,12 @@ class GeneratorInterfaceOp;
 /// context in the .mlir file.
 std::string getParamAsString(Attribute value);
 
+/// Parse a parameter of type kgen.string.
+ParseResult parseStringParam(AsmParser &p, TypedAttr &value);
+
+/// Print a parameter of type kgen.string.
+void printStringParam(AsmPrinter &p, Operation *, Attribute value);
+
 /// Parse a type in a KGEN context, handling sugar like "dtype" for
 /// "!kgen.dtype" etc.
 ParseResult parseKGENType(AsmParser &parser, Type &type);
@@ -66,6 +72,8 @@ ParseResult parseParamName(AsmParser &p, FailureOr<StringAttr> &name);
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok.
 void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {});
+void printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
+                     Type type = {});
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.

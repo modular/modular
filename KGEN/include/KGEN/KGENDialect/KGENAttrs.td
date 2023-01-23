@@ -195,6 +195,8 @@ def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint", [
       return $_get(expr.getContext(), expr, message, loc);
     }]>
   ];
+
+  let genVerifyDecl = 1;
 }
 
 /// An array of ConstraintAttr's.
