@@ -560,6 +560,34 @@ void TargetParamAttr::print(AsmPrinter &p) const { getTarget().print(p); }
 bool TargetParamAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
+// BuildInfoParamAttr
+//===----------------------------------------------------------------------===//
+
+Attribute BuildInfoParamAttr::parse(AsmParser &p, Type type) {
+  auto buildType = llvm::dyn_cast_or_null<BuildInfoType>(type);
+  if (!buildType) {
+    p.emitError(p.getCurrentLocation(),
+                "target parameter expected a build info type");
+    return {};
+  }
+  // Check for a special host attribute.
+  if (succeeded(p.parseOptionalKeyword("host")))
+    return BuildInfoParamAttr::get(
+        BuildInfoAttr::getForCurrentBuild(p.getContext()), buildType);
+
+  // Otherwise, parse the whole build info attribute.
+  BuildInfoAttr buildInfo;
+  if (p.parseCustomAttributeWithFallback(buildInfo))
+    return {};
+  return BuildInfoParamAttr::get(buildInfo, buildType);
+}
+
+void BuildInfoParamAttr::print(AsmPrinter &p) const { getBuildInfo().print(p); }
+
+/// Always a constant.
+bool BuildInfoParamAttr::isConstant() const { return true; }
+
+//===----------------------------------------------------------------------===//
 // ParamOperatorAttr
 //===----------------------------------------------------------------------===//
 
@@ -623,8 +651,8 @@ LogicalResult ParamOperatorAttr::verify(
   // All the operand types must match except for 'bind_signature' and 'apply'.
   if (!llvm::is_contained({POC::GetListElement, POC::BindSignature, POC::Apply,
                            POC::TargetHasFeature, POC::TargetIsArch,
-                           POC::TargetGetField, POC::GetSizeOf,
-                           POC::GetAlignOf},
+                           POC::TargetGetField, POC::BuildInfoGetField,
+                           POC::GetSizeOf, POC::GetAlignOf},
                           opcode) &&
       !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
@@ -709,6 +737,16 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "target_get_field operand 0 must be a target type";
     if (!operands[1].getType().isa<StringType>())
       return emitError() << "target_get_field operand 1 must be a string type";
+    break;
+  case POC::BuildInfoGetField:
+    if (operands.size() != 2)
+      return emitError() << "build_info_get_field must have two operands";
+    if (!operands[0].getType().isa<BuildInfoType>())
+      return emitError()
+             << "build_info_get_field operand 0 must be a build_info type";
+    if (!operands[1].getType().isa<StringType>())
+      return emitError()
+             << "build_info_get_field operand 1 must be a string type";
     break;
   case POC::In:
     if (operands.empty())
@@ -1265,6 +1303,19 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
   return Builder(target.getContext()).getIndexAttr(*result);
 }
 
+static Attribute simplifyBuildInfoGetField(SmallVectorImpl<TypedAttr> &operands,
+                                           Type &resultType) {
+  auto buildInfo = dyn_cast<BuildInfoParamAttr>(operands[0]);
+  auto field = dyn_cast<StringAttr>(operands[1]);
+
+  if (field == "type") {
+    resultType = StringType::get(field.getContext());
+    return StringAttr::get(buildInfo.getBuildInfo().getBuildType(), resultType);
+  }
+
+  return {};
+}
+
 /// Simplifies an `in` (also `in(:dtype`) operator.  We know the all the
 /// operands have the same type.
 static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
@@ -1555,13 +1606,13 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   // All operands must have the same type.  The result type is usually the
   // same as the operands, but is i1 for comparisons (overridden below).
   auto resultType = operandsIn.front().getType();
-  assert(
-      llvm::is_contained({POC::GetListElement, POC::BindSignature, POC::Apply,
-                          POC::TargetHasFeature, POC::TargetIsArch,
-                          POC::TargetGetField, POC::GetSizeOf, POC::GetAlignOf},
-                         opcode) ||
-      llvm::all_of(operandsIn.drop_front(),
-                   [&](auto op) { return op.getType() == resultType; }));
+  assert(llvm::is_contained(
+             {POC::GetListElement, POC::BindSignature, POC::Apply,
+              POC::TargetHasFeature, POC::TargetIsArch, POC::TargetGetField,
+              POC::BuildInfoGetField, POC::GetSizeOf, POC::GetAlignOf},
+             opcode) ||
+         llvm::all_of(operandsIn.drop_front(),
+                      [&](auto op) { return op.getType() == resultType; }));
 
   SmallVector<TypedAttr, 4> operands(operandsIn.begin(), operandsIn.end());
 
@@ -1626,6 +1677,9 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     break;
   case POC::TargetGetField:
     result = simplifyTargetGetField(operands, resultType);
+    break;
+  case POC::BuildInfoGetField:
+    result = simplifyBuildInfoGetField(operands, resultType);
     break;
   case POC::In:
     result = simplifyIn(operands);

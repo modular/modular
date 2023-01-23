@@ -286,4 +286,35 @@ def KGEN_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// BuildInfoAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_BuildInfoAttr : MAttr<"BuildInfo", "build_info"> {
+  let summary = "Build configuration attribute.";
+  let description = [{
+    The `#M.build_info` attribute represents a compilation build configuration.
+    It contains information how the compiler was built (in debug mode, with
+    debug symbols, etc.).
+
+    Example:
+
+    ```mlir
+    #M.build<type="debug">
+    ```
+  }];
+
+  let parameters = (ins StringRefParameter<"">:$buildType);
+
+  let assemblyFormat = "`<` struct(params) `>`";
+
+  let extraClassDeclaration = [{
+    /// Provides a stable hash function for use as part of a cache key.
+    llvm::hash_code hash() const;
+
+    /// Get the build configuration attribute for the current build.
+    static BuildInfoAttr getForCurrentBuild(MLIRContext *ctx);
+  }];
+}
+
 #endif // MATTRS_TD

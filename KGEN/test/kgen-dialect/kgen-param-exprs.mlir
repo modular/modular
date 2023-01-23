@@ -470,6 +470,20 @@ kgen.generator @target_get_field() {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @build_param<b: build_info>()
+kgen.generator @build_param<b: build_info>() {
+  kgen.return
+}
+
+
+// CHECK-LABEL: kgen.generator @build_info_is_debug()
+kgen.generator @build_info_is_debug() {
+  kgen.param.assert<
+    eq(:string build_info_get_field(#kgen<build_info host>, "type"), "debug")>,
+    "build is debug"
+  kgen.return
+}
+
 
 // REGION TYPES
 // CHECK-LABEL: kgen.generator @region_params<

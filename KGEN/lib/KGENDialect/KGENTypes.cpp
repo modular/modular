@@ -36,6 +36,7 @@ void KGENDialect::registerTypes() {
   registerMnemonicType<StringType>();
   registerMnemonicType<ListType>();
   registerMnemonicType<TargetType>();
+  registerMnemonicType<BuildInfoType>();
 }
 
 //===----------------------------------------------------------------------===//
