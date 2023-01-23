@@ -720,7 +720,8 @@ LogicalResult ParameterRewriter::processParamAssertOp(ParamAssertOp op) {
                  "constraint evaluation didn't return true or false");
   // If the constraint evaluated to zero then the assert fails.
   if (resultInt.getValue().isZero())
-    return error(op.getLoc(), "constraint failed: " + op.getMessage());
+    return error(op.getLoc(), "constraint failed: " +
+                                  cast<StringAttr>(op.getMessage()).getValue());
 
   // The kgen.param.assert op serves no further purpose, so we can remove it.
   op->erase();

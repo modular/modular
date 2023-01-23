@@ -465,9 +465,12 @@ def KGEN_ParamAssertOp : KGENOp<"param.assert", []> {
     on a generator.
   }];
 
-  let arguments = (ins AttrOfType<I1>:$cond, StrAttr:$message);
-  let assemblyFormat =
-    "` ` `<` custom<ParamAssertOpValue>($cond) `>` `,` $message attr-dict";
+  let arguments = (ins AttrOfType<I1>:$cond,
+                       AttrOfType<KGEN_StringType>:$message);
+  let assemblyFormat = [{
+    ` ` `<` custom<ParamValue>($cond, "$_builder.getI1Type()") `>` `,`
+    custom<StringParam>($message) attr-dict
+  }];
 
   let hasCanonicalizeMethod = 1;
 }

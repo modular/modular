@@ -131,6 +131,16 @@ std::string KGEN::getParamAsString(Attribute value) {
   return std::string(result.data(), result.size());
 }
 
+/// Parse a parameter of type kgen.string.
+ParseResult KGEN::parseStringParam(AsmParser &p, TypedAttr &value) {
+  return parseParamValue(p, value, KGEN::StringType::get(p.getContext()));
+}
+
+/// Print a parameter of type kgen.string.
+void KGEN::printStringParam(AsmPrinter &p, Operation *op, Attribute value) {
+  return printParamValue(p, value);
+}
+
 /// Parse a non-empty parameter list without the surrounding braces.
 static ParseResult parseParameterSpec(AsmParser &parser,
                                       ParamDeclArrayAttr &inputParamDecls,
@@ -992,6 +1002,11 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
   }
 
   p.printAttributeWithoutType(value);
+}
+
+void KGEN::printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
+                           Type type) {
+  printParamValue(p, value, type);
 }
 
 //===----------------------------------------------------------------------===//

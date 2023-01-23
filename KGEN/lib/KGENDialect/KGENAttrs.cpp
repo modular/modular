@@ -135,6 +135,18 @@ bool ConventionsAttr::isDefault() {
 }
 
 //===----------------------------------------------------------------------===//
+// ConstraintAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+ConstraintAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                       TypedAttr expr, StringAttr message, Location loc) {
+  if (!expr.getType().isSignlessInteger(1))
+    return emitError() << "expected an expression of type i1";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ListAttr
 //===----------------------------------------------------------------------===//
 

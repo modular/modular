@@ -60,19 +60,6 @@ static void printParamConstantOpValue(OpAsmPrinter &p, Operation *,
 }
 
 //===----------------------------------------------------------------------===//
-// custom<ParamAssertOpValue>
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseParamAssertOpValue(OpAsmParser &p, TypedAttr &value) {
-  return parseParamValue(p, value, p.getBuilder().getI1Type());
-}
-
-static void printParamAssertOpValue(OpAsmPrinter &p, Operation *,
-                                    Attribute value) {
-  printParamValue(p, value);
-}
-
-//===----------------------------------------------------------------------===//
 // ParamDeclareOp
 //===----------------------------------------------------------------------===//
 
@@ -232,8 +219,11 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
         })) {
       // Ok, great, add this to the trait list of the enclosing operation.
       SmallVector<ConstraintAttr> constraints(parent.getConstraints());
-      constraints.push_back(
-          ConstraintAttr::get(cond, op.getMessageAttr(), op.getLoc()));
+      auto typedStringAttr = dyn_cast<StringAttr>(op.getMessageAttr());
+      if (!typedStringAttr)
+        return failure();
+      auto msg = StringAttr::get(op->getContext(), typedStringAttr.getValue());
+      constraints.push_back(ConstraintAttr::get(cond, msg, op.getLoc()));
       parent.setConstraints(constraints);
       op.erase();
       return success();
