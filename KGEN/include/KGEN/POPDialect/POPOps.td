@@ -2100,7 +2100,7 @@ def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [Pure]> {
 // CallLLVMIntrinsicOp
 //===----------------------------------------------------------------------===//
 
-def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic", [Pure]> {
+def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic"> {
   let summary = "Call to an LLVM intrinsic function.";
   let description = [{
     The `pop.call_llvm_intrinsic` operation calls an llvm intrinsic using the
