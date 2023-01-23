@@ -133,7 +133,7 @@ def LIT_StructAttr : LITAttr<"Struct", "struct", [TypedAttrInterface,
   }];
 
   let parameters = (ins
-    OptionalArrayRefParameter<"std::pair<StringAttr, TypedAttr>">:$values,
+    ArrayRefParameter<"std::pair<StringAttr, TypedAttr>">:$values,
     AttributeSelfTypeParameter<"", "DeclRefType">:$type);
   let assemblyFormat = "`<` custom<StructElements>($values) `>`";
 }

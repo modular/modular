@@ -1544,7 +1544,11 @@ static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
         loc, {opExpr.getName(), func.getContext()},
         opExpr.getType().getValueResults(), fakeOperands, opExpr.getAttrs());
     block->push_back(*op);
-    // Verify the operation, although there is no way to report the error.
+    // Verify the operation. Fail to fold if the operation is invalid. Silence
+    // the error, since there is no way to report it.
+    mlir::ScopedDiagnosticHandler handler(
+        func.getContext(),
+        [&](Diagnostic &diag) -> LogicalResult { return success(); });
     if (failed(mlir::verify(*op)))
       return {};
     SmallVector<OpFoldResult> results;
