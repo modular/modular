@@ -89,9 +89,9 @@ kgen.generator @k2() {
 
 // -----
 
-kgen.generator.interface @getSIMDLength<dt: dtype -> index>()
+kgen.generator.interface @getSIMDLength<dt: dtype -> length>()
 
-kgen.generator @getSIMDLengthF32<dt: dtype -> index>()
+kgen.generator @getSIMDLengthF32<dt: dtype -> length>()
      implements @getSIMDLength {
   // This could be implemented as a constraint.
   kgen.param.assert <eq(:dtype dt, f32)>, "this only works for f32"
@@ -100,7 +100,7 @@ kgen.generator @getSIMDLengthF32<dt: dtype -> index>()
 
 // expected-error @+1 {{no viable implementations found}}
 kgen.generator @brokenVLenAssert() {
-  kgen.call @getSIMDLength<dt : dtype = f32 -> flen>() : () -> ()
+  kgen.call @getSIMDLength<dt : dtype = f32 -> flen = length>() : () -> ()
 
   // expected-note @+1 {{vector length should be 3}}
   kgen.param.assert <eq(flen, 3)>, "vector length should be 3"

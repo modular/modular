@@ -7,7 +7,7 @@ kgen.include "library-test.mlir"
 // CHECK-NEXT: %[[V0:.*]] = kgen.param.constant = <1>
 // CHECK-NEXT:  kgen.return %[[V0]] : index
 // CHECK-NEXT: }
-kgen.generator @test0<() -> index>() -> index {
+kgen.generator @test0<() -> result>() -> index {
   %0 = kgen.param.constant = <1>
   kgen.return <123456> %0 : index
 }
@@ -48,7 +48,7 @@ kgen.generator @trivial_generator(%arg0: si32) -> si32 {
 // CHECK-NEXT:    kgen.return %[[ARG0]] : si32
 // CHECK-NEXT: }
 
-kgen.generator @genA<size, type: dtype, val: f32 -> index>(%arg0: si32) -> si32 {
+kgen.generator @genA<size, type: dtype, val: f32 -> result: index>(%arg0: si32) -> si32 {
 
   %0 = kgen.param.constant = <add(size, 4)>
   %1 = kgen.param.constant: dtype = <type>
@@ -89,13 +89,13 @@ kgen.generator @call_generator_test(%arg0: si32, %arg1: si32)
   kgen.param.declare our_size = <42>
 
   // Can invoke parameterized generators directly.
-  %1 = kgen.call @genA<size = our_size, type : dtype = f32, val : f32 = 2.0 -> resultSizeA>(%arg0) : (si32) -> si32
+  %1 = kgen.call @genA<size = our_size, type : dtype = f32, val : f32 = 2.0 -> resultSizeA = result>(%arg0) : (si32) -> si32
   // CHECK-NEXT: %{{.*}} = kgen.call @"genA,size=42,type=f32,val=2"(%[[ARG0]]) : (si32) -> si32
 
-  %2 = kgen.call @genA<size = 19, type : dtype = si8, val : f32 = 1.5 -> resultSizeB>(%arg1) : (si32) -> si32
+  %2 = kgen.call @genA<size = 19, type : dtype = si8, val : f32 = 1.5 -> resultSizeB = result>(%arg1) : (si32) -> si32
   // CHECK-NEXT: %{{.*}} = kgen.call @"genA,size=19,type=si8,val=1.5"(%[[ARG1]]) : (si32) -> si32
 
-  %3 = kgen.call @genA<size = 19, type : dtype = si8, val : f32 = 1.5 -> resultSizeC>(%arg1) : (si32) -> si32
+  %3 = kgen.call @genA<size = 19, type : dtype = si8, val : f32 = 1.5 -> resultSizeC = result>(%arg1) : (si32) -> si32
   // CHECK-NEXT: %{{.*}} = kgen.call @"genA,size=19,type=si8,val=1.5"(%[[ARG1]]) : (si32) -> si32
 
 
@@ -108,7 +108,7 @@ kgen.generator @call_generator_test(%arg0: si32, %arg1: si32)
   %6 = kgen.param.constant = <resultSizeC>
   // CHECK-NEXT: %{{.*}} = kgen.param.constant = <38>
 
-  %7 = kgen.call @test0<() -> kernelResult>() : () -> index
+  %7 = kgen.call @test0<() -> kernelResult = result>() : () -> index
   // CHECK-NEXT: %{{.*}} = kgen.call @test0()
 
   %8 = kgen.param.constant = <kernelResult>
@@ -120,14 +120,14 @@ kgen.generator @call_generator_test(%arg0: si32, %arg1: si32)
 //===----------------------------------------------------------------------===//
 
 // CHECK-NOT: kgen.generator.interface @genItf
-kgen.generator.interface @genItf<x -> index>(si32) -> si32
+kgen.generator.interface @genItf<x -> result>(si32) -> si32
 
 // CHECK-LABEL: kgen.func @"genItf_impl1,x=42"
 // CHECK-SAME: %[[ARG0:.*]]: si32
 // CHECK-NEXT:   "genItf.impl1"() {value = 42 : index} : () -> ()
 // CHECK-NEXT:   kgen.return %[[ARG0]] : si32
 // CHECK-NEXT: }
-kgen.generator @genItf_impl1<x -> index>(%arg0: si32) -> si32
+kgen.generator @genItf_impl1<x -> result>(%arg0: si32) -> si32
   implements @genItf {
   "genItf.impl1"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
   kgen.return<add(x, 1)> %arg0 : si32
@@ -138,7 +138,7 @@ kgen.generator @genItf_impl1<x -> index>(%arg0: si32) -> si32
 // CHECK-NEXT:   "genItf.impl2"() {value = 42 : index} : () -> ()
 // CHECK-NEXT:   kgen.return %[[ARG0]] : si32
 // CHECK-NEXT: }
-kgen.generator @genItf_impl2<x -> index>(%arg0: si32) -> si32
+kgen.generator @genItf_impl2<x -> result>(%arg0: si32) -> si32
   implements @genItf {
   "genItf.impl2"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
   kgen.return<mul(x, 2)> %arg0 : si32
@@ -154,7 +154,7 @@ kgen.generator @genItf_impl2<x -> index>(%arg0: si32) -> si32
 // CHECK-NEXT:    %{{.*}} = kgen.call @"genItf_impl2,x=42"(%[[ARG0]]) : (si32) -> si32
 // CHECK-NEXT:     %{{.*}} = kgen.param.constant = <84>
 kgen.generator @use_interface(%arg0: si32) -> index {
-  %0 = kgen.call @genItf<x = 42 -> out>(%arg0) : (si32) -> si32
+  %0 = kgen.call @genItf<x = 42 -> out = result>(%arg0) : (si32) -> si32
   %1 = kgen.param.constant = <out>
   kgen.return %1 : index
 }
@@ -270,8 +270,8 @@ kgen.generator @use_Itf3() {
 
 kgen.generator @track_expansions(%arg0: si32) {
   // Within any generated kernel genItf should expand the same way.
-  %0 = kgen.call @genItf<x = 42 -> out>(%arg0) : (si32) -> si32
-  %1 = kgen.call @genItf<x = 42 -> out1>(%arg0) : (si32) -> si32
+  %0 = kgen.call @genItf<x = 42 -> out = result>(%arg0) : (si32) -> si32
+  %1 = kgen.call @genItf<x = 42 -> out1 = result>(%arg0) : (si32) -> si32
 
   // Even if deeply nested within other generator/kernel invocations
   %2 = kgen.call @use_interface(%arg0) : (si32) -> index
@@ -312,9 +312,9 @@ kgen.generator @test_f32() -> f32 {
 // Test that we can do static assertions on computed parameter expressions (e.g.
 // those that are the result of a sub-generator invocation.
 
-kgen.generator.interface @getSIMDLength<dt: dtype -> index>()
+kgen.generator.interface @getSIMDLength<dt: dtype -> length>()
 
-kgen.generator @getSIMDLengthF32<dt: dtype -> index>()
+kgen.generator @getSIMDLengthF32<dt: dtype -> length>()
      implements @getSIMDLength {
   // This could be implemented as a constraint.
   kgen.param.assert <eq(:dtype dt, f32)>, "this only works for f32"
@@ -322,7 +322,7 @@ kgen.generator @getSIMDLengthF32<dt: dtype -> index>()
   kgen.return <4>
 }
 
-kgen.generator @getSIMDLengthF64<dt: dtype -> index>()
+kgen.generator @getSIMDLengthF64<dt: dtype -> length>()
      implements @getSIMDLength {
   // This could be implemented as a constraint.
   kgen.param.assert <eq(:dtype dt, f64)>, "this only works for f32"
@@ -334,7 +334,7 @@ kgen.generator @getSIMDLengthF64<dt: dtype -> index>()
 // CHECK-NEXT:    kgen.call @"getSIMDLengthF32,dt=f32"()
 // CHECK-NEXT:    kgen.return
 kgen.generator @paramAssertExample() {
-  kgen.call @getSIMDLength<dt : dtype = f32 -> flen>() : () -> ()
+  kgen.call @getSIMDLength<dt : dtype = f32 -> flen = length>() : () -> ()
 
   // Should succeed.
   kgen.param.assert <eq(flen, 4)>, "vector length should be 4 for floats"
@@ -597,7 +597,7 @@ kgen.generator @bar<T:type>(%a: !kgen.paramref<T>) -> !kgen.paramref<T> {
   kgen.return %a : !kgen.paramref<T>
 }
 
-kgen.generator @baz<() -> index>() {
+kgen.generator @baz<() -> result>() {
   kgen.return<50>
 }
 
@@ -610,7 +610,7 @@ kgen.generator @parametric_addressof() {
   // CHECK-NEXT: kgen.addressof @"bar,T=i32" : (i32) -> i32
   %2 = kgen.addressof @bar<T:type = i32> : (i32) -> i32
   // CHECK-NEXT: kgen.addressof @baz : () -> ()
-  %3 = kgen.addressof @baz<() -> result> : () -> ()
+  %3 = kgen.addressof @baz<() -> result = result> : () -> ()
   kgen.return
 }
 
@@ -959,7 +959,7 @@ kgen.generator @doIt() {
 
 // -----
 
-kgen.generator @hasReturn<() -> index>() {
+kgen.generator @hasReturn<() -> ParamResult>() {
   kgen.return<2>
 }
 
@@ -973,7 +973,7 @@ kgen.generator @placeholder<fn: () -> index>() -> index {
 kgen.generator @returnValueOverwritesParameter<SomeParam: dtype>() {
   kgen.param.declare.region fn = () -> index {
     %0 = kgen.param.constant = <SomeParam>
-    kgen.call @hasReturn<() -> SomeParam>() : () -> ()
+    kgen.call @hasReturn<() -> SomeParam = ParamResult>() : () -> ()
     kgen.return %0 : index
   }
   %0 = kgen.call @placeholder<fn: () -> index = fn>() : () -> index
@@ -1035,14 +1035,14 @@ kgen.generator @pasteTwice<fn: () -> ()>() {
 
 kgen.generator @bindResult() {
   kgen.param.declare.region fn = () {
-    kgen.call @makeResult<() -> ResultParam>() : () -> ()
+    kgen.call @makeResult<() -> ResultParam = ResultParam>() : () -> ()
     kgen.return
   }
   kgen.call @pasteTwice<fn: () -> () = fn>() : () -> ()
   kgen.return
 }
 
-kgen.generator @makeResult<() -> index>() {
+kgen.generator @makeResult<() -> ResultParam>() {
   kgen.return<0>
 }
 
@@ -1075,7 +1075,7 @@ kgen.generator @passTypeList() {
 // -----
 
 // CHECK-LABEL: @"param_apply,fn=#kgen.expr.func
-kgen.generator @param_apply<fn: (index) -> index -> index>() {
+kgen.generator @param_apply<fn: (index) -> index -> result_param>() {
   kgen.param.declare result: index = <apply(:(index) -> index fn, 1)>
   kgen.return<result>
 }
@@ -1083,7 +1083,7 @@ kgen.generator @param_apply<fn: (index) -> index -> index>() {
 // CHECK-LABEL: @do_it
 kgen.generator @do_it() -> index {
   // CHECK-NEXT: kgen.call @"param_apply,fn=#kgen.expr.func
-  kgen.call @param_apply<fn: (index) -> index = #kgen.expr.func<(A) -> add(A, 1)> -> result>() : () -> ()
+  kgen.call @param_apply<fn: (index) -> index = #kgen.expr.func<(A) -> add(A, 1)> -> result = result_param>() : () -> ()
   // CHECK-NEXT: kgen.param.constant = <2>
   %0 = kgen.param.constant = <result>
   kgen.return %0 : index
@@ -1091,13 +1091,13 @@ kgen.generator @do_it() -> index {
 
 // -----
 
-kgen.generator @type_of_unknown<T: type, value: !kgen.paramref<T> -> i1>() {
+kgen.generator @type_of_unknown<T: type, value: !kgen.paramref<T> -> is_unknown: i1>() {
   kgen.return<:i1 eq(:!kgen.paramref<T> value, ?)>
 }
 
 // CHECK-LABEL: @check
 kgen.generator @check() {
-  kgen.call @type_of_unknown<T: type = i32, value: i32 = 1 -> result: i1>() : () -> ()
+  kgen.call @type_of_unknown<T: type = i32, value: i32 = 1 -> result = is_unknown: i1>() : () -> ()
   // CHECK: = <0>
   %0 = kgen.param.constant: i1 = <result>
   kgen.return

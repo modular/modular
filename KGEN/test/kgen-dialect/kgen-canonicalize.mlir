@@ -38,7 +38,7 @@ kgen.func @cast_to_folds(%arg0: f32) -> f32 {
   kgen.return %2 : f32
 }
 
-kgen.generator @producesResultParam<() -> index>() {
+kgen.generator @producesResultParam<() -> r1>() {
   kgen.return<42>
 }
 
@@ -58,7 +58,7 @@ kgen.generator @param_assert_simplify<p1 : i1, p2>() {
   kgen.param.assert <eq(42, 41)>, "failing asserts must be kept"
 
   // CHECK-NEXT: kgen.call @producesResultParam
-  kgen.call @producesResultParam<() -> result>() : () -> ()
+  kgen.call @producesResultParam<() -> result = r1>() : () -> ()
 
   // CHECK-NEXT: kgen.param.assert <eq(result, 12)>, "this stays"
   kgen.param.assert <eq(result, 12)>, "this stays"

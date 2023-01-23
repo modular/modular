@@ -169,7 +169,7 @@ void OutlineClosuresPass::runOnOperation() {
       // FnEffects.
       auto liftedSignature = SignatureType::get(
           b.getAttr<ParamDeclArrayAttr>(necessaryDecls.getArrayRef()),
-          bodySignature.getResultParamTypes(), liftedValueSignature,
+          bodySignature.getResultParams(), liftedValueSignature,
           b.getAttr<ConventionsAttr>(liftedConventions,
                                      bodySignature.getFnEffects()));
 
@@ -221,9 +221,8 @@ void OutlineClosuresPass::runOnOperation() {
       // value signature as the original parameter region (no captures - those
       // come from global variables).
       auto wrapperSignature = SignatureType::get(
-          liftedSignature.getInputParams(),
-          liftedSignature.getResultParamTypes(), bodySignature.getValues(),
-          bodySignature.getConventions());
+          liftedSignature.getInputParams(), liftedSignature.getResultParams(),
+          bodySignature.getValues(), bodySignature.getConventions());
 
       b.setInsertionPoint(generator);
       auto liftedWrapper = b.create<GeneratorOp>(
@@ -263,8 +262,8 @@ void OutlineClosuresPass::runOnOperation() {
       // for the actual ReturnOp.
       SmallVector<ParamDeclAttr> resultDecls;
       SmallVector<TypedAttr> returnRefs;
-      for (auto [idx, resultParamTy] :
-           llvm::enumerate(lifted.getResultParamTypes())) {
+      for (auto [idx, resultParam] :
+           llvm::enumerate(lifted.getResultParams())) {
         auto declName = b.getStringAttr("__resultParam_" + Twine(idx));
         // If something is somehow named __resultParam_0 then just increment the
         // counter till it works.
@@ -275,8 +274,10 @@ void OutlineClosuresPass::runOnOperation() {
           declName = b.getStringAttr("__resultParam_" + Twine(++idx));
         }
 
-        resultDecls.push_back(ParamDeclAttr::get(declName, resultParamTy));
-        returnRefs.push_back(ParamDeclRefAttr::get(declName, resultParamTy));
+        resultDecls.push_back(
+            ParamDeclAttr::get(declName, resultParam.getType()));
+        returnRefs.push_back(
+            ParamDeclRefAttr::get(declName, resultParam.getType()));
       }
 
       // We need to set the parameter bindings for the call to the lifted

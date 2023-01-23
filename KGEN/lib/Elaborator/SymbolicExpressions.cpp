@@ -74,7 +74,7 @@ IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
   // to emit an error during the evaluation attempt.
   if (op.getOpcode() == POC::Apply) {
     auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
-    if (!symbol || !symbol.getType().getResultParamTypes().empty())
+    if (!symbol || !symbol.getType().getResultParams().empty())
       return failure();
     ArrayRef<TypedAttr> operands = op.getOperands().drop_front();
     auto ref = dyn_cast<FlatSymbolRefAttr>(symbol.getSymbol());

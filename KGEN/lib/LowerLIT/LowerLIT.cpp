@@ -146,9 +146,8 @@ LogicalResult SignatureUnifier::verifyInputParameters() {
   // Finally after all this checking, we know the generator has the same
   // input parameters as the interface so we can just take it directly!
   generatorOp.setSignature(SignatureType::get(
-      interfaceOp.getInputParamDeclsAttr(),
-      generatorOp.getResultParamTypesAttr(), generatorOp.getFunctionType(),
-      generatorOp.getConventions()));
+      interfaceOp.getInputParamDeclsAttr(), generatorOp.getResultParamsAttr(),
+      generatorOp.getFunctionType(), generatorOp.getConventions()));
   return success();
 }
 
@@ -456,16 +455,17 @@ checkInterfaceConformance(GeneratorOp gen, GeneratorInterfaceOp itf,
     SmallVector<TypedAttr> returnParams;
 
     unsigned paramNo = 0;
-    for (Type resultParamType : gen.getResultParamTypes()) {
+    for (ParamDeclAttr resultParam : gen.getResultParams()) {
       auto paramName = b.getStringAttr("resultParam" + Twine(paramNo++));
 
       // The call returns the same thing as the generator.
       callResultParams.push_back(
-          ParamDeclAttr::get(paramName, resultParamType));
+          ParamDeclAttr::get(paramName, resultParam.getType()));
 
       // The output binds each result from the call into the return value of the
       // generator thunk.
-      returnParams.push_back(ParamDeclRefAttr::get(paramName, resultParamType));
+      returnParams.push_back(
+          ParamDeclRefAttr::get(paramName, resultParam.getType()));
     }
 
     // Create the call.
@@ -679,7 +679,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
 
     gen.setSignature(SignatureType::get(
         ParamDeclArrayAttr::get(gen.getContext(), paramDecls),
-        gen.getResultParamTypesAttr(), gen.getSignature().getValues(),
+        gen.getResultParamsAttr(), gen.getSignature().getValues(),
         gen.getConventions()));
   }
 

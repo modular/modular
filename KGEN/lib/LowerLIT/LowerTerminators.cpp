@@ -314,7 +314,7 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   if (!isa<LIT::EndFuncOp>(terminator))
     return success();
   if (func.getNumResults() != 1 || !isa<LIT::NoneType>(func.getResultType()) ||
-      !func.getResultParamTypes().empty())
+      !func.getResultParams().empty())
     return terminator->emitError(
         "return expected at end of function with results");
 
@@ -356,7 +356,7 @@ static void lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
       type = CoroutineType::get(type);
     // Clear the `throws` and `async` bits.
     return SignatureType::get(
-        sigType.getInputParams(), sigType.getResultParamTypes(),
+        sigType.getInputParams(), sigType.getResultParams(),
         b.getFunctionType(sigType.getValueInputs(), type),
         b.getAttr<ConventionsAttr>(
             sigType.getValueInputConventions(),

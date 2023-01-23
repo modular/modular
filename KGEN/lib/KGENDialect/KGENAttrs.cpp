@@ -436,7 +436,7 @@ static ParseResult parseExprFunc(AsmParser &p,
                                  FailureOr<ParamDeclArrayAttr> &inputs,
                                  FailureOr<ParameterExprArrayAttr> &exprs,
                                  SignatureType type) {
-  if (!type.getResultParamTypes().empty())
+  if (!type.getResultParams().empty())
     return p.emitError(p.getCurrentLocation())
            << "cannot have result parameters";
 
@@ -507,7 +507,7 @@ LogicalResult ExprFuncAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                    ParamDeclArrayAttr inputs,
                                    ParameterExprArrayAttr exprs,
                                    SignatureType type) {
-  if (!type.getResultParamTypes().empty())
+  if (!type.getResultParams().empty())
     return emitError() << "cannot have result parameters";
   if (exprs.size() != type.getValues().getNumResults())
     return emitError() << "has " << exprs.size() << " expressions but expected "
@@ -643,7 +643,7 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
     return emitError() << "'apply' expected a function parameter";
 
   auto signature = cast<SignatureType>(operands.front().getType());
-  if (!signature.getResultParamTypes().empty() ||
+  if (!signature.getResultParams().empty() ||
       !signature.getInputParams().empty())
     return emitError() << "'apply' function cannot be parametric";
 

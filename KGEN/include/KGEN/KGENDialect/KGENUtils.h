@@ -115,15 +115,17 @@ void printParamDecl(AsmPrinter &p, ParamDeclAttr decl);
 void printParamDecls(AsmPrinter &p, ArrayRef<ParamDeclAttr> decls);
 ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result);
 
-/// Parse and print a parameter specification on a generator or region type.
+/// Parse and print a parameter specification on a generator or region type. The
+/// parameter spec includes input parameter declarations and types and
+/// optionally result parameter declarations and types.
 ParseResult parseOptionalParameterSpec(AsmParser &parser,
                                        ParamDeclArrayAttr &inputParamDecls);
 ParseResult parseOptionalParameterSpec(AsmParser &parser,
                                        ParamDeclArrayAttr &inputParamDecls,
-                                       TypeArrayAttr &resultParamTypes);
+                                       ParamDeclArrayAttr &resultParamDecls);
 void printOptionalParameterSpec(AsmPrinter &p,
                                 ArrayRef<ParamDeclAttr> inputParamDecls,
-                                ArrayRef<Type> resultParamTypes = {});
+                                ArrayRef<ParamDeclAttr> resultParams = {});
 void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
                                 ArrayRef<ParamDeclAttr> inputParamDecls);
 
@@ -215,10 +217,12 @@ LogicalResult verifyDeclSignaturesMatch(const char *originatorName,
                                         Location targetLoc);
 
 /// Check that the parameter declarations match.
-LogicalResult verifyParamDeclsMatch(
-    const char *originatorName, ArrayRef<ParamDeclAttr> originatorParamDecls,
-    Location originatorLoc, const char *targetName,
-    ArrayRef<ParamDeclAttr> targetParamDecls, Location targetLoc);
+LogicalResult
+verifyParamDeclsMatch(StringRef paramKind, const char *originatorName,
+                      ArrayRef<ParamDeclAttr> originatorParamDecls,
+                      Location originatorLoc, const char *targetName,
+                      ArrayRef<ParamDeclAttr> targetParamDecls,
+                      Location targetLoc);
 
 /// Check that the op has exactly one block in its region, or it's been cached.
 LogicalResult verifyOneBlockOrCached(Operation *op);
@@ -226,8 +230,8 @@ LogicalResult verifyOneBlockOrCached(Operation *op);
 /// Check the value and parameter result types.
 LogicalResult checkResultArgumentTypes(Operation *op,
                                        ArrayRef<TypedAttr> resultParams,
-                                       ArrayRef<Type> paramResultTypes,
-                                       std::optional<TypeRange> resultTypes);
+                                       ArrayRef<ParamDeclAttr> paramResults,
+                                       TypeRange resultTypes);
 
 } // namespace M::KGEN
 

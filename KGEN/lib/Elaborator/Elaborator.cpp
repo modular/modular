@@ -256,7 +256,7 @@ ErrorTreeOr<SuccessType> ElaboratorImpl::bindResultParameters(FuncOp func) {
   // Set a new signature that drops the result parameter type list.
   func.setSignature(SignatureType::get(
       func.getInputParamDeclsAttr(),
-      /*clear resultParams=*/TypeArrayAttr::get(func.getContext(), {}),
+      /*clear resultParams=*/ParamDeclArrayAttr::get(func.getContext(), {}),
       func.getFunctionType(), func.getConventions()));
   func.getReturnOp().setParameters({});
   return success();
@@ -1277,7 +1277,7 @@ ElaboratorImpl::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
   auto newFunc = b.create<FuncOp>(
       generator.getLoc(), mangleParameterValues(generator, inputParamValues),
       SignatureType::get(ParamDeclArrayAttr::get(generator.getContext(), {}),
-                         generator.getResultParamTypesAttr(),
+                         generator.getResultParamsAttr(),
                          generator.getFunctionType(),
                          generator.getConventions()));
 

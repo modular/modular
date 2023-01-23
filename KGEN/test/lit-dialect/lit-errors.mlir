@@ -28,7 +28,7 @@ lit.func @mismatched_return_types(%arg0: i64) -> i32 {
 
 // -----
 
-lit.func @mismatched_result_parameter<() -> i32>() {
+lit.func @mismatched_result_parameter<() -> r1: i32>() {
   // expected-error @below {{'lit.return' op parameter #0 has type 'i64' but should be 'i32'}}
   lit.return<:i64 0>
   lit.end_func

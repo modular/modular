@@ -37,8 +37,8 @@ struct Parameterized[p1: __mlir_type.index]:
   # expected-error @+1 {{invalid redefinition of 'p1'}}
   fn a[p1: Int](self):  # Cannot shadow parameter names.
 
-  # expected-error @+2 {{invalid redefinition of 'p2'}}
-  # expected-note @+1 {{previous definition here}}
+  # expected-error @below {{invalid redefinition of 'p2'}}
+  # expected-note @below {{previous definition here}}
   fn b[p2: Int, p2: Int, p3: Int](self):  # Cannot shadow parameter names.
 
   fn __new__() -> Parameterized[p1]:
@@ -119,10 +119,10 @@ fn variadic[*a: Int]():
 ##===----------------------------------------------------------------------===##
 
 # expected-error @+1 {{struct declarations do not support result parameters}}
-struct ResultParams[a: Int -> Int, F32]:
+struct ResultParams[a: Int -> b: Int, c: F32]:
 
 # expected-note @+1 {{function declared here}}
-fn hasResultParam[a: __mlir_type.index -> __mlir_type.index]():
+fn hasResultParam[a: __mlir_type.index -> b: __mlir_type.index]():
   return[a]
 
 # expected-note @+1 {{function declared here}}
@@ -172,7 +172,7 @@ fn useResultParams():
   # expected-error @+1 {{cannot call 'hasResultParam' in parameter expression because it has a parameter result}}
   alias x = hasResultParam[1 -> h]()
 
-fn incorrectParameterReturnType[()->__mlir_type.index]():
+fn incorrectParameterReturnType[()-> a: __mlir_type.index]():
   # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '__mlir_type.index' in result parameter list}}
   return[4.0]
 

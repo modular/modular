@@ -239,7 +239,7 @@ OverloadFitness OverloadFitness::evaluate(
     return {kParamCount, 0, ASTType()};
 
   // Check the result parameter count.
-  if (signature.getResultParamTypes().size() != callable.resultParams.size())
+  if (signature.getResultParams().size() != callable.resultParams.size())
     return {kResultParamCount, 0, ASTType()};
 
   // If anything was bound, apply it to the signature so the expected argument
@@ -405,10 +405,9 @@ void OverloadFitness::diagnose(SignatureType signature,
     return;
   }
   case kResultParamCount:
-    diag << "callee expects " << signature.getResultParamTypes().size()
-         << " result parameter"
-         << plural(signature.getResultParamTypes().size()) << " but "
-         << callable.resultParams.size()
+    diag << "callee expects " << signature.getResultParams().size()
+         << " result parameter" << plural(signature.getResultParams().size())
+         << " but " << callable.resultParams.size()
          << plural(callable.resultParams.size(), " was", " were")
          << " provided";
     return;
@@ -586,7 +585,7 @@ DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
 LogicalResult DirectCallable::getResultParamDecls(
     SignatureType signature, SmallVectorImpl<ParamDeclAttr> &resultParamDecls,
     IREmitter &emitter) {
-  assert(signature.getResultParamTypes().size() == resultParams.size() &&
+  assert(signature.getResultParams().size() == resultParams.size() &&
          "We know that the callee is type checked");
 
   // If there is nothing to do, then we are done.
@@ -599,21 +598,22 @@ LogicalResult DirectCallable::getResultParamDecls(
   //
   // TODO: We don't remap input parameters types into output parameter types.
   // We surely handle this wrong: `fn x[a: type -> a]():` for example.
-  for (auto [type, declAndLoc] :
-       llvm::zip(signature.getResultParamTypes(), resultParams)) {
+  for (auto [param, declAndLoc] :
+       llvm::zip(signature.getResultParams(), resultParams)) {
     auto forwardDecl = cast<AliasForwardDeclOp>(*declAndLoc.first);
 
     // Verify the types match.
     // TODO: Move this to overload resolution.
-    if (!ASTType(forwardDecl.getType()).isEqualCanon(type)) {
+    if (!ASTType(forwardDecl.getType()).isEqualCanon(param.getType())) {
       auto diag =
           emitter.emitError(declAndLoc.second, "result parameter returns type ")
-          << type << " but forward declaration is of type "
+          << param.getType() << " but forward declaration is of type "
           << ASTType(forwardDecl.getType());
       diag.attachNote(forwardDecl.getLoc()) << "alias forward declared here";
       return failure();
     }
-    resultParamDecls.push_back(ParamDeclAttr::get(forwardDecl.getName(), type));
+    resultParamDecls.push_back(
+        ParamDeclAttr::get(forwardDecl.getName(), param.getType()));
   }
   return success();
 }
@@ -668,7 +668,7 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   // Verify that the target has no result parameters.  We have no way to bind
   // these indirectly.
   SignatureType calleeSignature = directSymbolAttr.getType();
-  if (!calleeSignature.getResultParamTypes().empty()) {
+  if (!calleeSignature.getResultParams().empty()) {
     emitter.emitError(direct->nameLoc,
                       "calls with result parameters must be called directly");
     return {};
@@ -869,7 +869,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     }
   }
 
-  assert(calleeSig.getResultParamTypes().size() == resultParamDecls.size() &&
+  assert(calleeSig.getResultParams().size() == resultParamDecls.size() &&
          "Type checking should be done");
 
   // Emit all the arguments.  We iterate by expected arguments since we're
@@ -1000,7 +1000,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     }
 
     // Calls in parameter context cannot have result parameters.
-    if (!calleeSig.getResultParamTypes().empty()) {
+    if (!calleeSig.getResultParams().empty()) {
       assert(direct && "can only have result parameters in direct calls");
       auto diag =
           emitter.emitError(callLoc, "cannot call '")

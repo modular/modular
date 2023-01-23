@@ -193,16 +193,16 @@ fn str_input_param():
 fn no_result_param[a: __mlir_type.index]():
   return
 
-# CHECK-LABEL: lit.func @"idx_result_params()"<a -> index, index>()
-fn idx_result_params[a: __mlir_type.index -> __mlir_type.index, __mlir_type.index]() -> Int:
+# CHECK-LABEL: lit.func @"idx_result_params()"<a -> b, c>()
+fn idx_result_params[a: __mlir_type.index -> b: __mlir_type.index, c: __mlir_type.index]() -> Int:
   # CHECK: %0 = kgen.param.constant = <add(a, 2)>
   # CHECK: %1 = pop.cast_from_builtin %0 : index to !pop.scalar<index>
   # CHECK: %2 = lit.struct.create(value=%1)
   # CHECK: lit.return<a, add(a, 1)> %2
   return[a,a+1] a+2
 
-# CHECK-LABEL: lit.func @"just_result_params()"<() -> index>()
-fn just_result_params[() -> __mlir_type.index]():
+# CHECK-LABEL: lit.func @"just_result_params()"<() -> a>()
+fn just_result_params[() -> a: __mlir_type.index]():
   # CHECK: lit.return<42>
   return[42]
 
@@ -211,9 +211,9 @@ fn just_result_params[() -> __mlir_type.index]():
 # values.  This should be made variadic and generic and moved to the standard
 # library at some point.
 
-# CHECK-LABEL: lit.func @"search3()"<a, b, c -> index>()
+# CHECK-LABEL: lit.func @"search3()"<a, b, c -> d>()
 fn search3[a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index
-              -> __mlir_type.index]():
+              -> d: __mlir_type.index]():
 
    # Grotty but effective way to pull a param decl out and return it.
    # CHECK-NEXT: kgen.param.search result_hidden = <a, b, c>
@@ -236,13 +236,13 @@ fn useResultParams(i: Int):
   alias xyz : __mlir_type.index
 
   # Normal result and multi parameter results.  This forward references xyz
-  # CHECK: [[TMP:%.*]] = kgen.call @"$parameters"::@"idx_result_params()"<a = mul(xyz, 2) -> a, b>() : () -> !kgen.declref<@"$Int"::@Int>
+  # CHECK: [[TMP:%.*]] = kgen.call @"$parameters"::@"idx_result_params()"<a = mul(xyz, 2) -> a = b, b = c>() : () -> !kgen.declref<@"$Int"::@Int>
   # CHECK-NEXT: kgen.call @"$Int"::@Int::@"__mul__($Int::Int,$Int::Int)"([[TMP]], %i)
   alias a : __mlir_type.index
   alias b : __mlir_type.index
   _ = idx_result_params[xyz*2 -> a, b]() * i
 
-  # CHECK: kgen.call @"$parameters"::@"search3()"<a = 1, b = 2, c = 3 -> xyz>()
+  # CHECK: kgen.call @"$parameters"::@"search3()"<a = 1, b = 2, c = 3 -> xyz = d>()
   search3[1,2,3-> xyz]()
 
   # CHECK: kgen.call @"$parameters"::@"no_result_param()"<a = add(xyz, 1)>()
@@ -250,12 +250,12 @@ fn useResultParams(i: Int):
 
   # Function call with only a result parameter.
   alias c : __mlir_type.index
-  # CHECK: kgen.call @"$parameters"::@"just_result_params()"<() -> c>()
+  # CHECK: kgen.call @"$parameters"::@"just_result_params()"<() -> c = a>()
   just_result_params[() -> c]()
 
 # Issue #6904: Parameter results don't get implicit conversions
 # CHECK: lit.func @"testResultParamConversion
-fn testResultParamConversion[()->Int](a: Int):
+fn testResultParamConversion[() -> b: Int](a: Int):
   # CHECK: lit.return<:@"$Int"::@Int #lit.struct<{{.*}}4}
   return[4]
 

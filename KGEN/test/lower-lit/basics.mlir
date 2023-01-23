@@ -74,10 +74,10 @@ lit.func @add_64<ty: dtype>(%arg0 : !pop.scalar<f64>, %arg1 : !pop.scalar<f64>)
 // Infer argument constraints.
 //===----------------------------------------------------------------------===//
 
-kgen.generator.interface @bufitf<size, ty: dtype -> index>(!pop.array<size, scalar<ty>>) -> index
+kgen.generator.interface @bufitf<size, ty: dtype -> result>(!pop.array<size, scalar<ty>>) -> index
 
 // This implementation infers that the ty argument must be f32.
-lit.func @arg_inf<size, ty: dtype -> index>(%arg0: !pop.array<size, scalar<f32>>) -> index
+lit.func @arg_inf<size, ty: dtype -> result>(%arg0: !pop.array<size, scalar<f32>>) -> index
   implements @bufitf {
   %0 = kgen.param.constant = <size>
   kgen.return<add(size, 2)> %0 : index
@@ -85,16 +85,16 @@ lit.func @arg_inf<size, ty: dtype -> index>(%arg0: !pop.array<size, scalar<f32>>
 
 // This causes synthesization of a thunk for impl1 that adapts the calling convention.
 
-// CHECK-LABEL: kgen.generator @arg_inf_thunk<size, ty: dtype -> index>
+// CHECK-LABEL: kgen.generator @arg_inf_thunk<size, ty: dtype -> result>
 // CHECK-SAME: (%[[ARG0:.*]]: !pop.array<size, scalar<ty>>) -> index
 // CHECK-NEXT:  constraints <[eq(:dtype ty, f32), "argument #0 specifies 'ty' = f32", #
 // CHECK-NEXT:  implements @bufitf {
 // CHECK-NEXT:    %[[V0:.*]] = kgen.rebind %[[ARG0]] : !pop.array<size, scalar<ty>> to !pop.array<size, scalar<f32>>
-// CHECK-NEXT:    %[[V1:.*]] = kgen.call @arg_inf<size = size, ty: dtype = ty -> resultParam0>(%[[V0]]) : (!pop.array<size, scalar<f32>>) -> index
+// CHECK-NEXT:    %[[V1:.*]] = kgen.call @arg_inf<size = size, ty: dtype = ty -> resultParam0 = result>(%[[V0]]) : (!pop.array<size, scalar<f32>>) -> index
 // CHECK-NEXT:    kgen.return<resultParam0> %[[V1]] : index
 // CHECK-NEXT:  }
 
-// CHECK-LABEL: kgen.generator @arg_inf<size, ty: dtype -> index>
+// CHECK-LABEL: kgen.generator @arg_inf<size, ty: dtype -> result>
 // CHECK-SAME: (%[[ARG0:.*]]: !pop.array<size, scalar<f32>>) -> index
 // CHECK-NEXT: constraints <[eq(:dtype ty, f32), "argument #0 specifies 'ty' = f32", #
 // CHECK: %{{.*}} = kgen.param.constant = <size>
@@ -209,14 +209,14 @@ lit.struct.decl @StructWithNestedFn<a_param> {
     // CHECK: kgen.call_param[() -> index: nestedFunction]()
     kgen.call @StructWithNestedFn::@topLevelFunction::@nestedFunction() : () -> index
 
-    // CHECK: kgen.param.declare.region paramNestedFunc = <b_param -> index>()
-    lit.func @paramNestedFunc<b_param -> index>() {
+    // CHECK: kgen.param.declare.region paramNestedFunc = <b_param -> c_param>()
+    lit.func @paramNestedFunc<b_param -> c_param>() {
       // CHECK-NEXT: return<b_param>
       kgen.return<b_param>
     }
-    // CHECK: kgen.param.declare c: <() -> index>() -> () = <bind_signature(:<b_param -> index>() -> () paramNestedFunc, 2)>
-    kgen.param.declare c: <() -> index>() -> () = <@StructWithNestedFn::@topLevelFunction::@paramNestedFunc<b_param = 2>>
-    kgen.call @StructWithNestedFn::@topLevelFunction::@paramNestedFunc<b_param = 3 -> out_param>() : () -> ()
+    // CHECK: kgen.param.declare c: <() -> c_param>() -> () = <bind_signature(:<b_param -> c_param>() -> () paramNestedFunc, 2)>
+    kgen.param.declare c: <() -> c_param>() -> () = <@StructWithNestedFn::@topLevelFunction::@paramNestedFunc<b_param = 2>>
+    kgen.call @StructWithNestedFn::@topLevelFunction::@paramNestedFunc<b_param = 3 -> out_param = c_param>() : () -> ()
 
     %idx0_0 = index.constant 0
     kgen.return %idx0_0 : index

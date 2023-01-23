@@ -1287,7 +1287,7 @@ def POP_ArrayRepeatOp : POPOp<"array.repeat", [Pure,
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands);
-  let results = (outs ArrayKnownSize:$result);
+  let results = (outs POP_ArrayType:$result);
   let assemblyFormat = [{
     ` ` `[` $operands `]` attr-dict `:` qualified(type($result))
   }];
