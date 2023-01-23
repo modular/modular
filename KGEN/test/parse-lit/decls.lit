@@ -140,6 +140,7 @@ struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
     return __mlir_op.`pop.variadic.size`(self.value)
 
   fn __getitem__(self, index: Int) -> EltType:
+    # TODO: Should assert the index is in-range.
     return __mlir_op.`pop.variadic.get`(self.value, index.__as_mlir_index())
 
 
@@ -149,6 +150,13 @@ fn variadics(*a: Int):
   let size = vaArgs.size()
   let elt0 = vaArgs.__getitem__(0)
   let elt1 = vaArgs.__getitem__(1)
+
+fn callVariadic(x: Int):
+  # TODO: variadics()
+  # TODO: variadics(1)
+  # TODO: variadics(x, 1)
+
+
 
 ##===----------------------------------------------------------------------===##
 # @raises decorator.

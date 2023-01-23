@@ -157,7 +157,9 @@ struct OverloadFitness {
     kParamCount,       //< Invalid due to a parameter count mismatch
     kParamWrongType,   //< A parameter value not convertible to expected type
     kResultParamCount, //< Incorrect number of result params.
-    kArgCount,         //< Invalid due to a argument count mismatch
+    kArgCount,         //< Incorrect number of arguments passed.
+    kArgTooFewAtLeast, //< Variadic but too few values were specified.
+    kArgTooManyAtMost, //< Default args, but too many values were specified.
     kArgNotLValue,     //< By-ref argument requires an lvalue, but got an rvalue
     kArgWrongLVType,   //< By-ref argument and provided l-value types mismatch.
     kArgWrongType,     //< An argument value not convertible to expected type
@@ -168,7 +170,9 @@ struct OverloadFitness {
   ///  kParamCount:       not used.
   ///  kParamWrongType:   the parameter # that mismatches.
   ///  kResultParamCount: not used.
-  ///  kArgCount:         number of arguments expected.
+  ///  kArgCount:         the number of arguments expected.
+  ///  kArgTooFewAtLeast: the minimum number of arguments expected.
+  ///  kArgTooManyAtMost: the maximum number of arguments allowed.
   ///  kArgNotLValue:     the argument # that mismatches.
   ///  kArgWrongLVType:   the argument # that mismatches.
   ///  kArgWrongType:     the argument # that mismatches.
@@ -237,20 +241,61 @@ OverloadFitness OverloadFitness::evaluate(
     assert(signature && "bad bindings went undetected");
   }
 
-  // Ok, the parameters all line up, check the argument list.
-  size_t numArgs = signature.getValues().getNumInputs();
-  if (numArgs != operands.size())
-    return {kArgCount, numArgs, ASTType()};
+  // Ok, the parameters all line up, check the argument list.  We generally want
+  // to diagnose problems where too few or too many arguments are passed if that
+  // is the problem, rather than complaining about a type error of some argument
+  // that doesn't work out.  Check for that first.
+  size_t minRequiredArgs = 0;
+  size_t maxAllowedargs = 0;
+  for (auto convention : signature.getValueInputConventions()) {
+    // Varargs arguments don't require a value, but allow any number of them.
+    if (uint8_t(convention & ValueInputConvention::VarArg)) {
+      maxAllowedargs = ~size_t(0);
+      continue;
+    }
 
-  size_t argIdx = 0;
+    // TODO: Consider default arguments as well, it bumps # allowed, but not #
+    // required arguments.
+    ++minRequiredArgs;
+    ++maxAllowedargs;
+  }
+
+  if (operands.size() < minRequiredArgs) {
+    // Tailor the diagnostic when more args are allowed.
+    auto problem =
+        minRequiredArgs != maxAllowedargs ? kArgTooFewAtLeast : kArgCount;
+    return {problem, minRequiredArgs, ASTType()};
+  }
+  if (operands.size() > maxAllowedargs) {
+    // Tailor the diagnostic when more args are allowed.
+    auto problem =
+        minRequiredArgs != maxAllowedargs ? kArgTooManyAtMost : kArgCount;
+    return {problem, maxAllowedargs, ASTType()};
+  }
+
+  // As we walk through the values provided as part of the argument list, we
+  // match them up against arguments expected by the signature of the callee and
+  // count how many implicit conversions are required for a match.
+  size_t providedValueIdx = 0;
   size_t numImplicitConversions = 0;
-  for (auto [argAnyValueAndExpr, expectedType, convention] :
-       llvm::zip(operands, signature.getValueInputs(),
-                 signature.getValueInputConventions())) {
-    assert(!uint8_t(convention & ValueInputConvention::VarArg) &&
+  for (auto [expectedArgIdx, expectedType] :
+       llvm::enumerate(signature.getValueInputs())) {
+    auto expectedConvention = signature.getInputConvention(expectedArgIdx);
+    assert(!uint8_t(expectedConvention & ValueInputConvention::VarArg) &&
            "TODO: Varargs not handled yet");
 
-    switch (convention & ~ValueInputConvention::VarArg) {
+    // Handle case when there are no more provided arguments.
+    if (providedValueIdx == operands.size()) {
+      // TODO: If this argument is defaulted, take the value.
+      // TODO: If this argument is varargs, fill it with empty list.
+
+      llvm_unreachable("should count argument mismatches above");
+    }
+
+    // We'll bind the next provided value.
+    auto argAnyValueAndExpr = operands[providedValueIdx];
+
+    switch (expectedConvention & ~ValueInputConvention::VarArg) {
     case ValueInputConvention::KWVarArg:
       assert(0 && "keyword arguments and `**arg` variadics not supported yet");
       break;
@@ -261,11 +306,12 @@ OverloadFitness OverloadFitness::evaluate(
       // The actual value must be an lvalue if callee takes things by-ref.
       auto argVal = argAnyValueAndExpr.ir.getIfLValue();
       if (!argVal)
-        return {kArgNotLValue, argIdx, argAnyValueAndExpr.ir.getType()};
+        return {kArgNotLValue, providedValueIdx,
+                argAnyValueAndExpr.ir.getType()};
 
       // By-ref argument types must exactly match, no conversions are allowed.
       if (!ASTType(argVal.getType()).isEqualCanon(ASTType(expectedType)))
-        return {kArgWrongLVType, argIdx, expectedType};
+        return {kArgWrongLVType, providedValueIdx, expectedType};
       break;
     }
     case ValueInputConvention::ByVal:
@@ -280,14 +326,21 @@ OverloadFitness OverloadFitness::evaluate(
       if (callable.disableImplicitConversions ||
           !CallableValue::canImplicitlyConvertToType(argAnyValueAndExpr,
                                                      expectedType, shared))
-        return {kArgWrongType, argIdx, expectedType};
+        return {kArgWrongType, providedValueIdx, expectedType};
 
       // If we had one, this bumps our # implicit conversions.
       ++numImplicitConversions;
+      break;
     }
-    ++argIdx;
+
+    // This provided value has been used up.
+    ++providedValueIdx;
   }
 
+  assert(providedValueIdx == operands.size() &&
+         "should handle argument mismatch above");
+
+  // Otherwise we succeeded!
   return {kValid, numImplicitConversions, ASTType()};
 }
 
@@ -328,7 +381,16 @@ void OverloadFitness::diagnose(SignatureType signature,
          << " provided";
     return;
   case kArgCount:
-    diag << "callee expects " << payload << " argument" << plural(payload);
+    diag << "callee expects " << payload << " arguments, but "
+         << operands.size() << " specified";
+    return;
+  case kArgTooFewAtLeast:
+    diag << "callee expects at least " << payload << " arguments, but only "
+         << operands.size() << " specified";
+    return;
+  case kArgTooManyAtMost:
+    diag << "callee expects at most " << payload << " arguments, but "
+         << operands.size() << " were specified";
     return;
   case kArgNotLValue:
     if (syntax == CallSyntax::kMethodCall && payload == 0) {
