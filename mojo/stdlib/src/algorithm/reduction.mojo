@@ -8,6 +8,7 @@ from Buffer import Buffer
 from SIMD import SIMD
 from Numerics import inf, neginf
 from Int import Int
+from TypeUtilities import rebind
 
 # ===----------------------------------------------------------------------===#
 # reduce
@@ -18,6 +19,7 @@ from Int import Int
 #   2. Reduce the simd accumulator into a single scalar using reduce_fn.
 #   3. Iterate over the remainder of src and apply the map_fn on simd elements
 #      with simd_width=1.
+@always_inline
 fn reduce[
     simd_width: __mlir_type.index,
     size: __mlir_type.index,
@@ -28,14 +30,14 @@ fn reduce[
         SIMD[simd_width, `acc_type`],
         `,`,
         SIMD[simd_width, `type`],
-        `) -> `,
+        `) force_inline -> `,
         SIMD[simd_width, `acc_type`],
         `>`,
     ],
     reduce_fn: __mlir_type[
         `!kgen.signature<<simd_width, type: dtype>(`,
         SIMD[simd_width, `type`],
-        `) -> `,
+        `) force_inline -> `,
         SIMD[1, `type`],
         `>`,
     ],
@@ -65,6 +67,7 @@ fn reduce[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn _simd_max[
     simd_width: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
@@ -74,6 +77,7 @@ fn _simd_max[
     return x.reduce_max()
 
 
+@always_inline
 fn _simd_max_elementwise[
     simd_width: __mlir_type.index,
     acc_type: __mlir_type.`!kgen.dtype`,
@@ -106,6 +110,7 @@ fn max[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn _simd_min[
     simd_width: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
@@ -115,6 +120,7 @@ fn _simd_min[
     return x.reduce_min()
 
 
+@always_inline
 fn _simd_min_elementwise[
     simd_width: __mlir_type.index,
     acc_type: __mlir_type.`!kgen.dtype`,
@@ -147,6 +153,7 @@ fn min[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn _simd_sum[
     simd_width: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
@@ -156,6 +163,7 @@ fn _simd_sum[
     return x.reduce_add()
 
 
+@always_inline
 fn _simd_sum_elementwise[
     simd_width: __mlir_type.index,
     acc_type: __mlir_type.`!kgen.dtype`,
@@ -188,6 +196,7 @@ fn sum[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn _simd_product[
     simd_width: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
@@ -197,6 +206,7 @@ fn _simd_product[
     return x.reduce_mul()
 
 
+@always_inline
 fn _simd_product_elementwise[
     simd_width: __mlir_type.index,
     acc_type: __mlir_type.`!kgen.dtype`,
@@ -222,3 +232,19 @@ fn product[
     return reduce[
         simd_width, size, type, type, _simd_product_elementwise, _simd_product
     ](src, 1)
+
+
+# ===----------------------------------------------------------------------===#
+# mean
+# ===----------------------------------------------------------------------===#
+
+
+fn mean[
+    simd_width: __mlir_type.index,
+    size: __mlir_type.index,
+    type: __mlir_type.`!kgen.dtype`,
+](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
+    """Computes the mean value of the elements in a buffer."""
+    return (
+        SIMD[1, type](sum[simd_width, size, type](src)) / src.__len__()
+    ).__getitem__(0)
