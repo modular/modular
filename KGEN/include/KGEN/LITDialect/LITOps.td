@@ -229,11 +229,14 @@ def LIT_StructCreateOp : LITOp<"struct.create", [Pure,
     ```
   }];
 
-  let arguments = (ins Variadic<AnyType>:$operands, KGEN_StringArrayAttr:$fields);
+  let arguments = (ins Variadic<AnyType>:$operands,
+                       KGEN_StringArrayAttr:$fields);
   let results = (outs KGEN_DeclRefType:$result);
-  let hasCustomAssemblyFormat = 1;
-
   let hasFolder = 1;
+  let assemblyFormat = [{
+    `` custom<OperandsAndFields>($operands,$fields) attr-dict `:`
+    functional-type(operands, results)
+  }];
 }
 
 //===----------------------------------------------------------------------===//

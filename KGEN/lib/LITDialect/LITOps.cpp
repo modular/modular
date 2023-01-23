@@ -488,13 +488,13 @@ StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   for (auto [fieldDecl, fieldAttrInOp, operand, i] :
        llvm::zip(fields, getFieldsAttr(), getOperands(),
                  llvm::seq<unsigned>(0, numFields))) {
-    auto nameInDecl = fieldDecl.getNameAttr();
-    auto nameInOp = fieldAttrInOp;
+    StringAttr nameInDecl = fieldDecl.getNameAttr();
+    StringAttr nameInOp = fieldAttrInOp;
     if (nameInDecl != nameInOp) {
-      return emitOpError("the field name '")
-             << nameInOp << "' at the position #" << i
-             << " did not match the name '" << nameInDecl
-             << "' in the op declaration.";
+      return emitOpError("the field name ")
+             << nameInOp << " at the position #" << i
+             << " did not match the name " << nameInDecl
+             << " in the op declaration.";
     }
 
     Type reboundType = evaluator.getReboundType(fieldDecl.getType());
@@ -508,52 +508,38 @@ StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return success();
 }
 
-ParseResult LIT::StructCreateOp::parse(OpAsmParser &parser,
-                                       OperationState &result) {
-  SmallVector<OpAsmParser::UnresolvedOperand, 4> allOperands;
-  auto ctx = parser.getContext();
-
-  llvm::SMLoc allOperandLoc = parser.getCurrentLocation();
-
+/// Parse a sequence of "field_name=operand" entries.
+static ParseResult
+parseOperandsAndFields(OpAsmParser &p,
+                       SmallVector<OpAsmParser::UnresolvedOperand, 4> &operands,
+                       StringArrayAttr &fields) {
   SmallVector<StringAttr> fieldNames;
-  if (parser.parseCommaSeparatedList(
+  if (p.parseCommaSeparatedList(
           OpAsmParser::Delimiter::Paren, [&]() -> ParseResult {
             std::string fieldNameStr;
-            OpAsmParser::UnresolvedOperand opnd;
-            if (parser.parseKeywordOrString(&fieldNameStr) ||
-                parser.parseEqual() || parser.parseOperand(opnd))
+            if (p.parseKeywordOrString(&fieldNameStr) || p.parseEqual() ||
+                p.parseOperand(operands.emplace_back()))
               return failure();
-            allOperands.push_back(opnd);
-            fieldNames.push_back(StringAttr::get(ctx, fieldNameStr));
+            fieldNames.push_back(StringAttr::get(p.getContext(), fieldNameStr));
             return success();
           }))
     return failure();
 
-  result.addAttribute("fields", StringArrayAttr::get(ctx, fieldNames));
-
-  FunctionType functionType;
-  if (parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
-      parser.parseType(functionType))
-    return failure();
-
-  result.addTypes(functionType.getResults());
-  return parser.resolveOperands(allOperands, functionType.getInputs(),
-                                allOperandLoc, result.operands);
+  fields = StringArrayAttr::get(p.getContext(), fieldNames);
+  return success();
 }
 
-void StructCreateOp::print(OpAsmPrinter &p) {
+/// Print a sequence of "field_name=operand" entries.
+static void printOperandsAndFields(OpAsmPrinter &p, Operation *op,
+                                   OperandRange operands,
+                                   StringArrayAttr fields) {
   p << "(";
-  auto op = getOperation();
-  llvm::interleaveComma(
-      llvm::zip(getFieldsAttr().getValue(), op->getOperands()), p,
-      [&](const auto &val) {
-        p << std::get<0>(val).str() << "=" << std::get<1>(val);
-      });
-
+  llvm::interleaveComma(llvm::zip(fields.getValue(), op->getOperands()), p,
+                        [&](const std::tuple<StringAttr, Value> &val) {
+                          auto &[fieldName, operand] = val;
+                          p << fieldName.getValue() << "=" << operand;
+                        });
   p << ")";
-  p.printOptionalAttrDict((*this)->getAttrs(), /*elidedAttrs=*/{"fields"});
-  p << " : ";
-  p.printFunctionalType(op->getOperandTypes(), op->getResultTypes());
 }
 
 OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
@@ -663,9 +649,10 @@ OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
       if (create.getFieldsAttr()[i] == getFieldAttr())
         return create.getOperand(i);
     }
-    // A field referred to in the struct.extract op must appear in the previous
-    // struct.create op that we're scanning in the loop above.
-    llvm_unreachable("Didn't find the field to extract in struct.create op.");
+    // A field referred to in the struct.extract op didn't appear in the
+    // previous struct.create op - the IR is probably malformed, do not fold
+    // anything.
+    return {};
   }
   // Fold
   //    %S = lit.struct.insert %x, %S0[a]

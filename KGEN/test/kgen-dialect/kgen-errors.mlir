@@ -627,7 +627,7 @@ lit.struct.decl @Baz {
 }
 
 kgen.generator @invalid_field_name(%a: i32) {
-  // expected-error @below {{'lit.struct.create' op the field name '"y"' at the position #0 did not match the name '"x"' in the op declaration}}
+  // expected-error @below {{'lit.struct.create' op the field name "y" at the position #0 did not match the name "x" in the op declaration}}
   %0 = lit.struct.create(y=%a) : (i32) -> !kgen.declref<@Baz>
   kgen.return
 }
