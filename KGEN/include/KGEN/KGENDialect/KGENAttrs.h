@@ -21,9 +21,11 @@ class OperationName;
 } // namespace mlir
 
 namespace M {
+class BuildInfoAttr;
 class TargetInfoAttr;
 
 namespace KGEN {
+class BuildInfoType;
 class KGENDType;
 class ListType;
 class SignatureType;

@@ -325,4 +325,25 @@ def KGEN_TargetType : KGENType<"Target", "target"> {
   let assemblyFormat = "";
 }
 
+//===----------------------------------------------------------------------===//
+// BuildInfoType
+//===----------------------------------------------------------------------===//
+
+def KGEN_BuildInfoType : KGENType<"BuildInfo", "build_info"> {
+  let summary = "The type of a build info.";
+  let description = [{
+    A `!kgen.build_inof` is the type of a build info. It is used for
+    parameterizing kernels by how they are built.
+
+    Example:
+    ```mlir
+    kgen.generator @target_params<bi: !kgen.build_info>() {
+      ...
+    }
+    ```
+  }];
+
+  let assemblyFormat = "";
+}
+
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

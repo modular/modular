@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MDialect/MAttrs.h"
+#include "Config/Config.h"
 #include "Support/Compiler/MLIRDenseAttrStorage.h"
 #include "Support/Host.h"
 #include "Support/MDialect/MDialect.h"
@@ -681,7 +682,20 @@ static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
   os << '"' << triple.normalize() << '"';
   return os;
 }
+
 } // namespace llvm
+
+//===----------------------------------------------------------------------===//
+// BuildInfoAttr
+//===----------------------------------------------------------------------===//
+
+llvm::hash_code BuildInfoAttr::hash() const {
+  return llvm::hash_combine(MODULAR_BUILD_TYPE);
+}
+
+BuildInfoAttr BuildInfoAttr::getForCurrentBuild(MLIRContext *ctx) {
+  return BuildInfoAttr::get(ctx, MODULAR_BUILD_TYPE);
+}
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions

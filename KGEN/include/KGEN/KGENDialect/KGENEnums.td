@@ -45,17 +45,20 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"TargetIsArch", 16, "target_is_arch">,
   I32EnumAttrCase<"TargetGetField", 17, "target_get_field">,
 
+  // BuildInfo comparisons & utilities.
+  I32EnumAttrCase<"BuildInfoGetField", 18, "build_info_get_field">,
+
   // Complex variadic operations.
-  I32EnumAttrCase<"In", 18, "in">,
+  I32EnumAttrCase<"In", 19, "in">,
 
   // Unary type expressions.
-  I32EnumAttrCase<"GetSizeOf", 19, "get_sizeof">,
-  I32EnumAttrCase<"GetAlignOf", 20, "get_alignof">,
-  I32EnumAttrCase<"GetListElement", 21, "get_list_element">,
+  I32EnumAttrCase<"GetSizeOf", 20, "get_sizeof">,
+  I32EnumAttrCase<"GetAlignOf", 21, "get_alignof">,
+  I32EnumAttrCase<"GetListElement", 22, "get_list_element">,
 
   // Signature processing.
-  I32EnumAttrCase<"BindSignature", 22, "bind_signature">,
-  I32EnumAttrCase<"Apply", 23, "apply">
+  I32EnumAttrCase<"BindSignature", 23, "bind_signature">,
+  I32EnumAttrCase<"Apply", 24, "apply">
 ]>;
 }
 

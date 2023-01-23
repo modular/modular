@@ -548,7 +548,7 @@ def KGEN_TargetParamAttr : KGEN_ExprAttr<"TargetParam", "target"> {
     The `#kgen.target` is an attribute representing a target of type
     `!kgen.target`. It contains the target configuration information.
 
-    There are two text formats that represent this attribute:
+    There are two textual formats that represent this attribute:
 
     ```mlir
     #kgen<target host>
@@ -588,6 +588,58 @@ def KGEN_TargetParamAttr : KGEN_ExprAttr<"TargetParam", "target"> {
     AttrBuilderWithInferredContext<(ins "TargetInfoAttr":$target,
                                         "TargetType":$type), [{
       return get(type.getContext(), target, type);
+    }]>
+  ];
+
+  let hasCustomAssemblyFormat = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// BuildInfoParamAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_BuildInfoParamAttr : KGEN_ExprAttr<"BuildInfoParam", "build_info"> {
+  let summary = "Build configuration parameter attribute.";
+  let description = [{
+    The `#kgen.build_info` is an contains the build configuration information.
+
+    There are two textual formats that represent this attribute:
+
+    ```mlir
+    #kgen<build_info host>
+    #kgen.build_info<type="debug">
+    ```
+
+    `#kgen<build_info>` is sugar for the build parameter corresponding to the
+    build configuration of the modular codebase. It will be fully resolved when
+    printed, and therefore it will NOT be printed as `kgen<build_info>`.
+
+    Example:
+
+    ```mlir
+    kgen.generator @build_is_debug()
+      constraints <[
+        eq(:i1 build_info_get_field(#kgen<build_info host>, "debug"), 0),
+        "Must be built in release mode!"]> {
+      kgen.return
+    }
+
+    kgen.generator @build_is_debug()
+      constraints <[
+        eq(:i1 build_info_get_field(#kgen.build_info<type="debug">, "debug"), 0),
+        "Must be built in release mode!"]> {
+      kgen.return
+    }
+    ```
+  }];
+
+  let parameters = (ins "BuildInfoAttr":$buildInfo,
+                         AttributeSelfTypeParameter<"", "BuildInfoType">:$type);
+
+  let builders =[
+    AttrBuilderWithInferredContext<(ins "BuildInfoAttr":$buildInfo,
+                                        "BuildInfoType":$type), [{
+      return get(type.getContext(), buildInfo, type);
     }]>
   ];
 
