@@ -168,10 +168,12 @@ inline static void andThenArrayImpl(ArrayRefType values,
     completionFn(values);
     return;
   }
+
   if (values.size() == 1) {
-    values[0]->template andThen<IsAsync>(
+    AsyncValue::andThen<IsAsync>(
+        copyOrMoveFn(values[0]),
         [completionFn = std::forward<CompletionFn>(completionFn)](
-            const AnyAsyncValueRef &value) mutable {
+            AnyAsyncValueRef &&value) mutable {
           AnyAsyncValueRef mutableValue = value.copy();
           completionFn(mutableValue);
         });
@@ -317,7 +319,7 @@ template <typename FnTy, typename ResultTy = Detail::ResultType<FnTy>,
 
   addTask(runtime,
           [result = result.copy(), work = std::forward<FnTy>(work)]() mutable {
-            result.emplace(work());
+            std::move(result).template emplace<ResultTy>(work());
           });
   return result;
 }

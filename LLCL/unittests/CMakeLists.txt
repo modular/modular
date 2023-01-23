@@ -11,7 +11,7 @@ add_modular_unittest(
   TEST_NAME
   LLCLTests
 
-  AndThenTest.cpp
+  AsyncValueTest.cpp
 
   LINK_LIBS PRIVATE
   LLCLRuntime

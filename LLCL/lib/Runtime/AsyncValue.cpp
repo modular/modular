@@ -103,9 +103,9 @@ void AsyncValue::removeAnyInlineWaiter(std::optional<Waiter> &inlineWaiter) {
     case State::kUnconstructed: {
       assert(oldValue.getPointer() == nullptr &&
              "how'd we get out of line waiters without an inline waiter?");
-      // We need to avoid races with other threads "andThenSync'ing" the async
+      // We need to avoid races with other threads "andThen'ing" the async
       // value which would try to set up an inline waiter.  We do this by moving
-      // our state to kUnconstructed4ValidOOLWaiterSlots because any andThenSync
+      // our state to kUnconstructed4ValidOOLWaiterSlots because any andThen
       // would put the waiter on the waiter list if we get to that state.  We
       // have to be careful though because we might not successfully get to that
       // state!
@@ -127,6 +127,7 @@ void AsyncValue::removeAnyInlineWaiter(std::optional<Waiter> &inlineWaiter) {
       // If someone is actively constructing a waiter, spin for a few cycles
       // until it resolves.
       spinWaiter.wait();
+      // TODO: Should test result of wait here?
       oldValue = loadWaitersAndState();
       continue;
 
@@ -403,26 +404,30 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
   }
 }
 
-/// Transition to a ready state and notify all waiters about this.  This
-/// returns the old state.
-AsyncValue::State AsyncValue::notifyReady(State newState,
-                                          std::optional<Waiter> &extraWaiter) {
+AsyncValue::State AsyncValue::notifyReady(AnyAsyncValueRef &&ref,
+                                          State newState,
+                                          std::optional<Waiter> &&extraWaiter) {
+  AsyncValue *ptr = ref.getPointer();
   assert((newState == State::kAvailable || newState == State::kError) &&
          "new state isn't a ready state!");
 
   // Mark the value as available, ensuring that new queries for the state see
   // the value that got filled in.
-  auto oldValue = exchangeWaiterAndState(WaitersAndState(nullptr, newState));
+  auto oldValue =
+      ptr->exchangeWaiterAndState(WaitersAndState(nullptr, newState));
 
-  // If there was an inline waiter, run it first.
-  if (extraWaiter.has_value())
-    runOneWaiter(std::move(*extraWaiter));
+  // The remainder of the method does not depend on the AsyncValue. We can
+  // drop the reference, possibly causing the AsyncValue to be deleted.
+  ref.reset();
 
   // Figure out how many waiters are valid in the first node of the list.
   size_t numEntriesValid = getNumWaitersValid(oldValue.getInt());
 
-  //  Then run the rest of the waiter list.
+  if (extraWaiter.has_value())
+    runOneWaiter(std::move(*extraWaiter));
+
   runWaitersAndDeallocate(oldValue.getPointer(), numEntriesValid);
+
   return oldValue.getInt();
 }
 
@@ -455,8 +460,9 @@ AnyAsyncValueRef AsyncValue::createError(CompactRuntimePtr runtime,
   return takeRCRef(result);
 }
 
-/// Mark an "unconstructed" AsyncValue as an error.
 void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
+  auto thisRef = AnyAsyncValueRef::copy(this);
+
   if (getSubclassKind() != SubclassKind::kConcrete) {
     resolveIndirect(createError(getRuntime(), std::move(diagnostic)));
     return;
@@ -468,7 +474,8 @@ void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
   auto *concrete = static_cast<Detail::SomeConcreteAsyncValue *>(this);
   auto *diagPtr = concrete->getDiagnosticPointer();
   new (diagPtr) EncodedDiagnostic(std::move(diagnostic));
-  auto oldState = notifyReady(State::kError, inlineWaiter);
+  auto oldState =
+      notifyReady(std::move(thisRef), State::kError, std::move(inlineWaiter));
 
   // This must have been in one of the unconstructed states, but couldn't have
   // been in kUnconstructed because that would allow a race for another inline
@@ -486,28 +493,9 @@ void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
 /// the value is ready. Otherwise, add the registration logic to the waiter
 /// list and adds the closure to the work queue when the async value becomes
 /// ready.
-///
-/// CAUTION: A fresh AnyAsyncValueRef to this object will be captured in the
-/// addTask closure, thus incrementing our ref count. Don't use this overload
-/// if the reference is not required by the waiter, otherwise the additional
-/// reference could supress user written 'isUnique' optimizations.
 void AsyncValue::andThenAsyncOutOfLine(Waiter waiter) {
-  andThenSync(
-      [waiter = std::move(waiter)](const AnyAsyncValueRef &ref) mutable {
-        ref->getRuntime()->getWorkQueue()->addTask(
-            [waiter = std::move(waiter), ref = ref.copy()]() mutable {
-              waiter(ref);
-            });
-      });
-}
-
-/// Add the specific closure to the work queue for asynchronous execution if
-/// the value is ready. Otherwise, add the registration logic to the waiter
-/// list and adds the closure to the work queue when the async value becomes
-/// ready.
-void AsyncValue::andThenAsyncOutOfLine(VoidWaiter waiter) {
-  andThenSync([this, waiter = std::move(waiter)]() mutable {
-    this->getRuntime()->getWorkQueue()->addTask(
+  andThenSync([waiter = std::move(waiter), runtime = getRuntime()]() mutable {
+    runtime->getWorkQueue()->addTask(
         [waiter = std::move(waiter)]() mutable { waiter(); });
   });
 }
@@ -521,6 +509,7 @@ void AsyncValue::andThenAsyncOutOfLine(VoidWaiter waiter) {
 void AsyncValue::resolveIndirect(AnyAsyncValueRef newValue) {
   assert(getSubclassKind() == SubclassKind::kIndirect && !isReady(getState()) &&
          "Can only resolve indirect async values");
+  auto thisRef = AnyAsyncValueRef::copy(this);
   auto *thisIndirect = static_cast<Detail::IndirectAsyncValue *>(this);
 
   // If the newValue is already itself ready, we can resolve this indirect
@@ -548,7 +537,8 @@ void AsyncValue::resolveIndirect(AnyAsyncValueRef newValue) {
     new (&thisIndirect->value) AnyAsyncValueRef(std::move(newValue));
 
     // Finally, notify our waiters and switch to kAvailable or kError state.
-    auto oldState = notifyReady(newValueState, inlineWaiter);
+    auto oldState =
+        notifyReady(std::move(thisRef), newValueState, std::move(inlineWaiter));
     assert(!isReady(oldState) &&
            "resolving an IndirectAsyncValue that was already set up?");
     (void)oldState;
@@ -557,10 +547,10 @@ void AsyncValue::resolveIndirect(AnyAsyncValueRef newValue) {
 
   // Otherwise, the new value is still unresolved.  That's ok, we'll just wait
   // until it becomes ready and then try again.
-  newValue->andThenSync(
-      [this2 = copyRCRef(this)](const AnyAsyncValueRef &newValue) mutable {
-        this2->resolveIndirect(newValue.copy());
-      });
+  andThenSync(std::move(newValue),
+              [this2 = copyRCRef(this)](AnyAsyncValueRef &&newValue) mutable {
+                this2->resolveIndirect(std::move(newValue));
+              });
 }
 
 /// Create an IndirectAsyncValue that may be filled in with any AsyncValue in
