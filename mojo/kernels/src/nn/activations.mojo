@@ -7,7 +7,7 @@
 from Assert import assert_param
 from SIMD import SIMD
 from TypeTraits import is_floating_point
-from Math import erf, tanh
+from Math import erf, exp, tanh
 
 # ===----------------------------------------------------------------------===#
 # relu
@@ -113,3 +113,24 @@ fn gelu_approximate[
         * x
         * (1 + tanh[simd_width, type](SQRT_TWO_OVER_PI * (x + 0.044715 * x3)))
     )
+
+
+# ===----------------------------------------------------------------------===#
+# sigmoid
+# ===----------------------------------------------------------------------===#
+
+
+fn sigmoid[
+    simd_width: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
+    """Compute the Sigmoid Op using the equation $e^x / (e^x + 1)$
+
+    Args:
+        x (SIMD[size, type]): The value to compute the sigmoid operation on.
+
+    Returns:
+        SIMD[size, type]: The result of the approximate sigmoid operation.
+    """
+
+    let ex = exp[simd_width, type](x)
+    return ex / (ex + 1)
