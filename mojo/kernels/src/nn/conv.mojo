@@ -53,7 +53,7 @@ struct ImageData[
         image.data = data
         return image
 
-    fn getLayout(self) -> Int:
+    fn get_layout(self) -> Int:
         """The getter function of the underlying data layout, resolving from
         either staticall or dynamicall information.
             Returns:
@@ -63,7 +63,7 @@ struct ImageData[
             return self.dynamic_layout
         return static_layout
 
-    fn _getIndex(self, n: Int, c: Int, h: Int, w: Int) -> StaticIntTuple[4]:
+    fn _get_index(self, n: Int, c: Int, h: Int, w: Int) -> StaticIntTuple[4]:
         """Converts the general index to the actual index into the underlying
         data based on the tensor layout.
 
@@ -77,7 +77,7 @@ struct ImageData[
                 An StaticIntTuple containing the index based on the underlying
             data layout.
         """
-        if self.getLayout() == Layout_NCHW:
+        if self.get_layout() == Layout_NCHW:
             return Index(n, c, h, w)
         return Index(n, h, w, c)
 
@@ -94,7 +94,7 @@ struct ImageData[
             Returns:
                 The value stored at the given index position.
         """
-        return self.data.__getitem__(self._getIndex(n, c, h, w).as_tuple())
+        return self.data.__getitem__(self._get_index(n, c, h, w).as_tuple())
 
     fn __setitem__(self, n: Int, c: Int, h: Int, w: Int, value: SIMD[1, type]):
         """Writes the underlying data buffer based on the tensor index and under-
@@ -107,7 +107,7 @@ struct ImageData[
                 w(Int): Index on the width dimension.
                 value(SIMD[1]): The value to store at the given index position.
         """
-        self.data.__setitem__(self._getIndex(n, c, h, w).as_tuple(), value)
+        self.data.__setitem__(self._get_index(n, c, h, w).as_tuple(), value)
 
 
 struct ImageShape:
@@ -122,62 +122,62 @@ struct ImageShape:
         shape: __mlir_type[`!kgen.list<index[4]>`],
         type: __mlir_type.`!kgen.dtype`,
         layout: __mlir_type.index,
-    ](imageData: ImageData[shape, type, layout]) -> ImageShape:
+    ](image_data: ImageData[shape, type, layout]) -> ImageShape:
         """Constructor of an ImageShape instance from an ImageData.
 
         Args:
-            imageData (ImageData): The imageData instance to extract shape
+            image_data (ImageData): The image_data instance to extract shape
         info from.
 
         Returns:
             An ImageShape instance containing the shape info.
         """
-        var imageShape: ImageShape
-        imageShape.N = imageData.data.dim[0]()
+        var image_shape: ImageShape
+        image_shape.N = image_data.data.dim[0]()
 
-        if imageData.getLayout() == Layout_NCHW:
-            imageShape.C = imageData.data.dim[1]()
-            imageShape.H = imageData.data.dim[2]()
-            imageShape.W = imageData.data.dim[3]()
+        if image_data.get_layout() == Layout_NCHW:
+            image_shape.C = image_data.data.dim[1]()
+            image_shape.H = image_data.data.dim[2]()
+            image_shape.W = image_data.data.dim[3]()
 
-        elif imageData.getLayout() == Layout_NHWC:
-            imageShape.C = imageData.data.dim[3]()
-            imageShape.H = imageData.data.dim[1]()
-            imageShape.W = imageData.data.dim[2]()
-        return imageShape
+        elif image_data.get_layout() == Layout_NHWC:
+            image_shape.C = image_data.data.dim[3]()
+            image_shape.H = image_data.data.dim[1]()
+            image_shape.W = image_data.data.dim[2]()
+        return image_shape
 
 
 struct Naive2dConvolution[
-    ShapeOutput: __mlir_type[`!kgen.list<index[4]>`],
-    ShapeFilter: __mlir_type[`!kgen.list<index[4]>`],
-    ShapeInput: __mlir_type[`!kgen.list<index[4]>`],
+    static_output_shape: __mlir_type[`!kgen.list<index[4]>`],
+    static_filter_shape: __mlir_type[`!kgen.list<index[4]>`],
+    static_input_shape: __mlir_type[`!kgen.list<index[4]>`],
     type: __mlir_type.`!kgen.dtype`,
-    LayoutData: __mlir_type.index,
-    LayoutFilter: __mlir_type.index,
+    static_data_layout: __mlir_type.index,
+    static_filter_layout: __mlir_type.index,
 ]:
     """Struct wrapper for naive 2d convolution implementation."""
 
     # Input params.
-    var output: ImageData[ShapeOutput, type, LayoutData]
-    var input: ImageData[ShapeInput, type, LayoutData]
-    var filter: ImageData[ShapeFilter, type, LayoutFilter]
-    var padH: StaticIntTuple[2]
-    var padW: StaticIntTuple[2]
+    var output: ImageData[static_output_shape, type, static_data_layout]
+    var input: ImageData[static_input_shape, type, static_data_layout]
+    var filter: ImageData[static_filter_shape, type, static_filter_layout]
+    var pad_h: StaticIntTuple[2]
+    var pad_w: StaticIntTuple[2]
     var stride: StaticIntTuple[2]
     var dilation: StaticIntTuple[2]
 
     # Derived params.
-    var outputShape: ImageShape
-    var inputShape: ImageShape
-    var filterShape: ImageShape
+    var output_shape: ImageShape
+    var input_shape: ImageShape
+    var filter_shape: ImageShape
 
     @staticmethod
     fn run(
-        output: ImageData[ShapeOutput, type, LayoutData],
-        input: ImageData[ShapeInput, type, LayoutData],
-        filter: ImageData[ShapeFilter, type, LayoutFilter],
-        padH: StaticIntTuple[2],
-        padW: StaticIntTuple[2],
+        output: ImageData[static_output_shape, type, static_data_layout],
+        input: ImageData[static_input_shape, type, static_data_layout],
+        filter: ImageData[static_filter_shape, type, static_filter_layout],
+        pad_h: StaticIntTuple[2],
+        pad_w: StaticIntTuple[2],
         stride: StaticIntTuple[2],
         dilation: StaticIntTuple[2],
     ):
@@ -188,33 +188,43 @@ struct Naive2dConvolution[
                 output(ImageData): Pre-allocated output tensor space.
                 input(ImageData): Batched image input to the conv2d operator.
                 filter(ImageData): Filters to apply in the conv2d operator.
-                padH(StaticIntTuple): Padding on the height dimension with assu-
+                pad_h(StaticIntTuple): Padding on the height dimension with assu-
                     med tuple def (PadOnLowerIdx, PadOnHigherIdx).
-                padW(StaticIntTuple): Padding on the width dimension with assum-
+                pad_w(StaticIntTuple): Padding on the width dimension with assum-
                     ed tuple def (PadOnLowerIdx, PadOnHigherIdx).
                 stride(StaticIntTuple): Strides on height and width dimensions
                     with assumed tuple def (StrideH, StrideW).
                 dilation(StaticIntTuple): Dilations on height and width dimensi-
-                    ons with assumed tuple def (dilationH, dilationW).
+                    ons with assumed tuple def (dilation_h, dilation_w).
         """
         # Create an instance of the convolution op.
-        var naive2dConvolution = Naive2dConvolution[
-            ShapeOutput, ShapeFilter, ShapeInput, type, LayoutData, LayoutFilter
-        ](output, input, filter, padH, padW, stride, dilation)
+        var naive2d_convolution = Naive2dConvolution[
+            static_output_shape,
+            static_filter_shape,
+            static_input_shape,
+            type,
+            static_data_layout,
+            static_filter_layout,
+        ](output, input, filter, pad_h, pad_w, stride, dilation)
 
         # Run the actual loops and computations.
-        naive2dConvolution._outerLoop()
+        naive2d_convolution._outer_loop()
 
     fn __new__(
-        output: ImageData[ShapeOutput, type, LayoutData],
-        input: ImageData[ShapeInput, type, LayoutData],
-        filter: ImageData[ShapeFilter, type, LayoutFilter],
-        padH: StaticIntTuple[2],
-        padW: StaticIntTuple[2],
+        output: ImageData[static_output_shape, type, static_data_layout],
+        input: ImageData[static_input_shape, type, static_data_layout],
+        filter: ImageData[static_filter_shape, type, static_filter_layout],
+        pad_h: StaticIntTuple[2],
+        pad_w: StaticIntTuple[2],
         stride: StaticIntTuple[2],
         dilation: StaticIntTuple[2],
     ) -> Naive2dConvolution[
-        ShapeOutput, ShapeFilter, ShapeInput, type, LayoutData, LayoutFilter
+        static_output_shape,
+        static_filter_shape,
+        static_input_shape,
+        type,
+        static_data_layout,
+        static_filter_layout,
     ]:
         """Constructor of a convolution op instance on the given input and
         filter tensor and stores the result in the give output tensor.
@@ -223,136 +233,145 @@ struct Naive2dConvolution[
                 output(ImageData): Pre-allocated output tensor space.
                 input(ImageData): Batched image input to the conv2d operator.
                 filter(ImageData): Filters to apply in the conv2d operator.
-                padH(StaticIntTuple): Padding on the height dimension with assu-
+                pad_h(StaticIntTuple): Padding on the height dimension with assu-
                     med tuple def (PadOnLowerIdx, PadOnHigherIdx).
-                padW(StaticIntTuple): Padding on the width dimension with assum-
+                pad_w(StaticIntTuple): Padding on the width dimension with assum-
                     ed tuple def (PadOnLowerIdx, PadOnHigherIdx).
                 stride(StaticIntTuple): Strides on height and width dimensions
                     with assumed tuple def (StrideH, StrideW).
                 dilation(StaticIntTuple): Dilations on height and width dimensi-
-                    ons with assumed tuple def (dilationH, dilationW).
+                    ons with assumed tuple def (dilation_h, dilation_w).
             Returns:
                 An instance of the convolution operator with the input and outp-
                     ut buffers registered.
         """
-        var naive2dConvolution: Naive2dConvolution[
-            ShapeOutput, ShapeFilter, ShapeInput, type, LayoutData, LayoutFilter
+        var naive2d_convolution: Naive2dConvolution[
+            static_output_shape,
+            static_filter_shape,
+            static_input_shape,
+            type,
+            static_data_layout,
+            static_filter_layout,
         ]
         # Register input/output buffers and parameters.
-        naive2dConvolution.output = output
-        naive2dConvolution.input = input
-        naive2dConvolution.filter = filter
-        naive2dConvolution.padH = padH
-        naive2dConvolution.padW = padW
-        naive2dConvolution.stride = stride
-        naive2dConvolution.dilation = dilation
+        naive2d_convolution.output = output
+        naive2d_convolution.input = input
+        naive2d_convolution.filter = filter
+        naive2d_convolution.pad_h = pad_h
+        naive2d_convolution.pad_w = pad_w
+        naive2d_convolution.stride = stride
+        naive2d_convolution.dilation = dilation
 
         # Derive layout agnostic shape information.
-        naive2dConvolution.outputShape = ImageShape.__new__[
-            ShapeOutput, type, LayoutData
+        naive2d_convolution.output_shape = ImageShape.__new__[
+            static_output_shape, type, static_data_layout
         ](output)
-        naive2dConvolution.inputShape = ImageShape.__new__[
-            ShapeInput, type, LayoutData
+        naive2d_convolution.input_shape = ImageShape.__new__[
+            static_input_shape, type, static_data_layout
         ](input)
-        naive2dConvolution.filterShape = ImageShape.__new__[
-            ShapeFilter, type, LayoutFilter
+        naive2d_convolution.filter_shape = ImageShape.__new__[
+            static_filter_shape, type, static_filter_layout
         ](filter)
-        return naive2dConvolution
+        return naive2d_convolution
 
-    fn _outerLoop(self):
+    fn _outer_loop(self):
         """Implementation of the outermost loop of a convolution operator with
         loops covering the iteration space of batch, filter count, height and wi-
         dth dimensions.
         """
-        var nOIdx: Int = 0  # Iterate on output batch dimension.
-        while nOIdx < self.outputShape.N:
-            var fIdx: Int = 0  # Iterate on filter dimension.
-            while fIdx < self.outputShape.C:
-                var hoIdx: Int = 0  # Iterate on output H dimension.
-                while hoIdx < self.outputShape.H:
-                    var woIdx: Int = 0  # Iterate on output W dimension.
-                    while woIdx < self.outputShape.W:
+        var no_idx: Int = 0  # Iterate on output batch dimension.
+        while no_idx < self.output_shape.N:
+            var f_idx: Int = 0  # Iterate on filter dimension.
+            while f_idx < self.output_shape.C:
+                var ho_idx: Int = 0  # Iterate on output H dimension.
+                while ho_idx < self.output_shape.H:
+                    var wo_idx: Int = 0  # Iterate on output W dimension.
+                    while wo_idx < self.output_shape.W:
                         # Compute the result value at this specific output posit-
                         #  ion.
-                        self._computePoint(Index(nOIdx, fIdx, hoIdx, woIdx))
-                        woIdx += 1
-                    hoIdx += 1
-                fIdx += 1
-            nOIdx += 1
+                        self._compute_point(
+                            Index(no_idx, f_idx, ho_idx, wo_idx)
+                        )
+                        wo_idx += 1
+                    ho_idx += 1
+                f_idx += 1
+            no_idx += 1
 
-    fn _computePoint(
+    fn _compute_point(
         self,
         # Output index [N,C,H,W]
-        outputIdx: StaticIntTuple[4],
+        output_idx: StaticIntTuple[4],
     ):
         """Implementation of the inner loop computation of a conv2d operator
         producing a single scalar value at the given output tensor index.
             Args:
-                outputIndex(StaticIntTuple): Index vector specifying which
+                output_index(StaticIntTuple): Index vector specifying which
             value of the output tensor to produce.
         """
         # Initialize the result of this point.
         var value: SIMD[1, type] = 0
 
         # Extract the H and W size of the input image.
-        let imageBound = Index(self.inputShape.H, self.inputShape.W)
+        let image_bound = Index(self.input_shape.H, self.input_shape.W)
 
-        var rIdx: Int = 0
-        while rIdx < self.filterShape.H:  # Iterate on filter height dimension.
-            var sIdx: Int = 0
+        var r_idx: Int = 0
+        while (
+            r_idx < self.filter_shape.H
+        ):  # Iterate on filter height dimension.
+            var s_idx: Int = 0
             while (
-                sIdx < self.filterShape.W
+                s_idx < self.filter_shape.W
             ):  # Iterate on filter width dimension.
                 # Compute input access index, on the H and W dimension.
-                let inputImageIndex = (
+                let input_image_index = (
                     # Output HxW with striding.
                     (
                         Index(
-                            outputIdx.__getitem__[2](),
-                            outputIdx.__getitem__[3](),
+                            output_idx.__getitem__[2](),
+                            output_idx.__getitem__[3](),
                         )
                         * self.stride
                     )
                     +
                     # Filter RxS with dilation.
-                    (Index(rIdx, sIdx) * self.dilation)
+                    (Index(r_idx, s_idx) * self.dilation)
                     -
                     # Padding offset, using the left padding only here.
                     Index(
-                        self.padH.__getitem__[0](), self.padW.__getitem__[0]()
+                        self.pad_h.__getitem__[0](), self.pad_w.__getitem__[0]()
                     )
                 )
 
                 if (
                     # Check that the current image index is within valid range
                     #  on the input image data tensor.
-                    Index(0, 0) <= inputImageIndex
-                    and inputImageIndex < imageBound
+                    Index(0, 0) <= input_image_index
+                    and input_image_index < image_bound
                 ):
-                    var cIdx: Int = 0
+                    var c_idx: Int = 0
                     # Iterate on channels dimension.
-                    while cIdx < self.inputShape.C:
+                    while c_idx < self.input_shape.C:
                         # Accumulate product of input data filter data.
                         value += self.input.__getitem__(
-                            outputIdx.__getitem__[0](),  # N
-                            cIdx,  # C
-                            inputImageIndex.__getitem__[0](),  # H
-                            inputImageIndex.__getitem__[1](),  # W
+                            output_idx.__getitem__[0](),  # N
+                            c_idx,  # C
+                            input_image_index.__getitem__[0](),  # H
+                            input_image_index.__getitem__[1](),  # W
                         ) * self.filter.__getitem__(
-                            outputIdx.__getitem__[1](),
-                            cIdx,
-                            rIdx,
-                            sIdx,  # F  # C  # R  # S
+                            output_idx.__getitem__[1](),
+                            c_idx,
+                            r_idx,
+                            s_idx,  # F  # C  # R  # S
                         )
-                        cIdx += 1
-                sIdx += 1
-            rIdx += 1
+                        c_idx += 1
+                s_idx += 1
+            r_idx += 1
 
         # Store the computed output at the given output position..
         self.output.__setitem__(
-            outputIdx.__getitem__[0](),
-            outputIdx.__getitem__[1](),
-            outputIdx.__getitem__[2](),
-            outputIdx.__getitem__[3](),
+            output_idx.__getitem__[0](),
+            output_idx.__getitem__[1](),
+            output_idx.__getitem__[2](),
+            output_idx.__getitem__[3](),
             value,
         )
