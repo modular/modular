@@ -83,22 +83,6 @@ void OutlineClosuresPass::runOnOperation() {
         return;
       }
 
-      // Check the captures for any types that refer to parameters. For right
-      // now, these are the *only* parameters we care about - we're filling out
-      // the parameter captures for the struct.
-      llvm::SetVector<ParamDeclAttr> necessaryDecls;
-      for (Value capture : captures) {
-        // Check if the type of the capture is parametrized. If it is, add a
-        // decl to the list of necessary decls.
-        if (auto subElts =
-                dyn_cast<mlir::SubElementTypeInterface>(capture.getType()))
-          subElts.walkSubAttrs([&](Attribute attr) {
-            if (auto declRef = dyn_cast<ParamDeclRefAttr>(attr))
-              necessaryDecls.insert(
-                  ParamDeclAttr::get(declRef.getName(), declRef.getType()));
-          });
-      }
-
       LLVM_DEBUG(llvm::dbgs() << "Found value captures: [";
                  llvm::interleaveComma(captures, llvm::dbgs());
                  llvm::dbgs() << "]\n");
@@ -120,17 +104,17 @@ void OutlineClosuresPass::runOnOperation() {
 
       // Collect any parameters used from above that we need to capture for the
       // lifted generator.
+      llvm::SetVector<ParamDeclAttr> necessaryDecls;
       auto regionDeclUses = subregions.find(body);
+      assert(regionDeclUses != subregions.end());
       DenseMap<ParamDeclAttr, TypedAttr> parameterCaptures;
-      if (regionDeclUses != subregions.end()) {
-        for (ParamDeclRefAttr useFromAbove :
-             regionDeclUses->getSecond().usesFromAbove) {
-          auto decl = ParamDeclAttr::get(useFromAbove.getName(),
-                                         useFromAbove.getType());
-          necessaryDecls.insert(decl);
-          // Create a binding that just references the attr we already have.
-          parameterCaptures[decl] = useFromAbove;
-        }
+      for (ParamDeclRefAttr useFromAbove :
+           regionDeclUses->getSecond().usesFromAbove) {
+        auto decl =
+            ParamDeclAttr::get(useFromAbove.getName(), useFromAbove.getType());
+        necessaryDecls.insert(decl);
+        // Create a binding that just references the attr we already have.
+        parameterCaptures[decl] = useFromAbove;
       }
 
       LLVM_DEBUG(
@@ -155,8 +139,10 @@ void OutlineClosuresPass::runOnOperation() {
 
       // The parameter signature is just the necessary decls + original
       // arguments, and then any of the original results.
-      for (ParamDeclAttr inputParam : body.getInputParamDecls())
-        necessaryDecls.insert(inputParam);
+      for (ParamDeclAttr inputParam : body.getInputParamDecls()) {
+        bool inserted = necessaryDecls.insert(inputParam);
+        assert(inserted && "nested parameter declaration was duplicated?");
+      }
 
       // Pull together the input conventions - all the captures all use the
       // default convention (despite what the enum says).
@@ -316,31 +302,21 @@ void OutlineClosuresPass::runOnOperation() {
       });
 
       Attribute bindSignature = wrapperSymbol;
-      // OK cool, now we need a partial binding. First we insert the lifted
-      // symbol at the beginning of the vector.
-      SmallVector<TypedAttr> partialBindings = {wrapperSymbol};
-      // Next, add the bindings for the input parameters. If we don't have a
-      // binding for this parameter, add `#kgen.unbound`. We drop the last
-      // parameters off of this because they are the original input
-      // parameters, and we only want to partial_bind the captures.
-      for (ParamDeclAttr decl : liftedWrapper.getInputParamDecls()) {
-        // Don't do anything if this was already an input parameter - don't
-        // partial bind it.
-        if (llvm::is_contained(body.getInputParamDecls(), decl)) {
-          partialBindings.push_back(UnboundAttr::get(decl.getType()));
-        } else if (TypedAttr value = parameterCaptures.lookup(decl)) {
-          partialBindings.push_back(value);
-        } else if (uses.decls.count(decl.getName())) {
-          if (uses.decls[decl.getName()].first == generator)
-            partialBindings.push_back(
-                ParamDeclRefAttr::get(decl.getName(), decl.getType()));
-        } else {
-          partialBindings.push_back(UnboundAttr::get(decl.getType()));
+      // If we have parameter captures, create a bind_signature operator.
+      if (!parameterCaptures.empty()) {
+        // OK cool, now we need a partial binding. First we insert the lifted
+        // symbol at the beginning of the vector.
+        SmallVector<TypedAttr> partialBindings = {wrapperSymbol};
+        // Next, add the bindings for the input parameters. If we don't have a
+        // binding for this parameter, add `#kgen.unbound`. We drop the last
+        // parameters off of this because they are the original input
+        // parameters, and we only want to partial_bind the captures.
+        for (ParamDeclAttr decl : liftedWrapper.getInputParamDecls()) {
+          if (TypedAttr value = parameterCaptures.lookup(decl))
+            partialBindings.push_back(value);
+          else
+            partialBindings.push_back(UnboundAttr::get(decl.getType()));
         }
-      }
-
-      // Only create a bind_signature if we have some partial bindings to apply.
-      if (partialBindings.size() > 1) {
         LLVM_DEBUG(llvm::dbgs() << "Partial bindings: [\n\t";
                    llvm::interleave(partialBindings, llvm::dbgs(), ",\n\t");
                    llvm::dbgs() << "\n]\n");

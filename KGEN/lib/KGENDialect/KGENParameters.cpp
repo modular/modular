@@ -368,8 +368,9 @@ LogicalResult DeclParameterVerifier::collectParameterDefsAndUses() {
       paramDecls = attr;
 
     // Check the types of results to find any parameters embedded in their
-    // types.  We don't have to check operands because they are always checked
-    // when being defined.
+    // types.
+    for (Type type : bodyOp->getOperandTypes())
+      collectUsesFromTypes(type, uses, hasConstExpr);
     for (Type type : bodyOp->getResultTypes())
       collectUsesFromTypes(type, uses, hasConstExpr);
 

@@ -241,6 +241,15 @@ kgen.generator @nested2() -> index {
   kgen.return %res : index
 }
 
+// CHECK-LABEL: kgen.generator @capture_crosses_parameter_domain
+kgen.generator @capture_crosses_parameter_domain<T: type>(%arg0: !kgen.paramref<T>) {
+  // CHECK: declare Fn: <A, T: type>
+  kgen.param.declare.region Fn = <A, T: type>() force_inline -> !kgen.paramref<T> {
+    kgen.return %arg0: !kgen.paramref<T>
+  }
+  kgen.return
+}
+
 // COM: We have to parametrize the wrapper on captured SSA values as well, check that this actually happens.
 // CHECK-LABEL: @parametrizedSSACapture_wrapper<T: type>
 // CHECK-LABEL: @parametrizedSSACapture
