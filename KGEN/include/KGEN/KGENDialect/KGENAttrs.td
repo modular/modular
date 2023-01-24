@@ -621,14 +621,16 @@ def KGEN_BuildInfoParamAttr : KGEN_ExprAttr<"BuildInfoParam", "build_info"> {
     ```mlir
     kgen.generator @build_is_debug()
       constraints <[
-        eq(:i1 build_info_get_field(#kgen<build_info host>, "debug"), 0),
+        eq(:string build_info_get_field(#kgen<build_info host>, "type"),
+                   "debug"),
         "Must be built in release mode!"]> {
       kgen.return
     }
 
     kgen.generator @build_is_debug()
       constraints <[
-        eq(:i1 build_info_get_field(#kgen.build_info<type="debug">, "debug"), 0),
+        eq(:string build_info_get_field(#kgen.build_info<type="debug">, "type"),
+                   "release"),
         "Must be built in release mode!"]> {
       kgen.return
     }
