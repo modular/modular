@@ -75,7 +75,7 @@ fn test_mean_variance():
     # CHECK: 50.500000
     print(mean[simd_width, size, DType.f32.value](vector))
 
-    # CHECK: 841.667
+    # CHECK: 841.666687
     print(variance[simd_width, size, DType.f32.value](vector))
 
 
