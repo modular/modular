@@ -672,7 +672,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
   // Prepend the parameters from the parent decl if present.
   if (!parentInputParams.empty()) {
     SmallVector<ParamDeclAttr> paramDecls;
-    ArrayRef<M::KGEN::ParamDeclAttr> genParamDecls = gen.getInputParamDecls();
+    ArrayRef<ParamDeclAttr> genParamDecls = gen.getInputParamDecls();
     paramDecls.reserve(parentInputParams.size() + genParamDecls.size());
     llvm::append_range(paramDecls, parentInputParams);
     llvm::append_range(paramDecls, genParamDecls);

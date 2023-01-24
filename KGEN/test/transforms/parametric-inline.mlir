@@ -1,22 +1,25 @@
-// RUN: kgen-opt -test-parametric-inline='parent=parent callee=callee' -split-input-file -allow-unregistered-dialect %s | FileCheck %s
+// RUN: kgen-opt -test-parametric-inline='parent=parent callee=callee' -split-input-file -allow-unregistered-dialect %s -mlir-print-debuginfo | FileCheck %s
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent() -> index {
   // CHECK: %[[RES:.*]] = hlcf.loop "inlined_cf_scope" () -> index
-    // CHECK-NEXT: index.constant 0
+    // CHECK-NEXT: index.constant 0 loc(#[[INLINED_LOC:.*]])
     // CHECK-NEXT: hlcf.break "inlined_cf_scope" %idx0 : index
-  // CHECK-NEXT: }
+  // CHECK-NEXT: } loc(#[[CALL_LOC:.*]])
   // CHECK-NOT: kgen.call @callee
   %0 = kgen.call @callee() : () -> index
   // CHECK: return %[[RES]]
   kgen.return %0 : index
 }
 
-// CHECK-LABEL: kgen.generator @callee
+// CHECK: kgen.generator @callee
 kgen.generator @callee() -> index {
+  // CHECK: index.constant 0 loc(#[[CALLEE_LOC:.*]])
   %0 = index.constant 0
   kgen.return %0 : index
 }
+
+// CHECK: #[[INLINED_LOC]] = loc(callsite(#[[CALLEE_LOC]] at #[[CALL_LOC]]))
 
 // -----
 

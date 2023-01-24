@@ -1,4 +1,4 @@
-// RUN: kgen-opt -force-inline -allow-unregistered-dialect %s | FileCheck %s
+// RUN: kgen-opt -force-inline -allow-unregistered-dialect -mlir-print-debuginfo -split-input-file %s | FileCheck %s
 
 kgen.func @inline_me.a() force_inline {
   "inline.a"() : () -> ()
@@ -62,3 +62,23 @@ kgen.func @top2() -> index {
   // CHECK: return %1
   kgen.return %1 : index
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @inline_me.a
+kgen.func @inline_me.a() force_inline {
+  // CHECK-NEXT: inline.a
+  // CHECK-SAME: loc(#[[CALLEE_LOC:.*]])
+  "inline.a"() : () -> ()
+  kgen.return
+}
+
+// CHECK: kgen.func @top0
+kgen.func @top0() {
+  // CHECK-NEXT: inline.a
+  // CHECK-SAME: loc(#[[INLINED_LOC:.*]])
+  kgen.call @inline_me.a() : () force_inline -> ()
+  kgen.return
+}
+
+// CHECK: #[[INLINED_LOC]] = loc(callsite(#[[CALLEE_LOC]] at #{{.*}}))
