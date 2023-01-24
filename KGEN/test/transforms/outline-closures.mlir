@@ -240,3 +240,31 @@ kgen.generator @nested2() -> index {
   // CHECK: kgen.return
   kgen.return %res : index
 }
+
+// COM: We have to parametrize the wrapper on captured SSA values as well, check that this actually happens.
+// CHECK-LABEL: @parametrizedSSACapture_wrapper<T: type>
+// CHECK-LABEL: @parametrizedSSACapture
+kgen.generator @parametrizedSSACapture<T: type>(%arg0 : !kgen.paramref<T>) -> index {
+  %0 = kgen.call_param[<>() force_inline -> index: fn]()
+  // CHECK: kgen.param.declare fn: <>() force_inline -> index = <@parametrizedSSACapture_wrapper<T: type = T>>
+  kgen.param.declare.region fn = () force_inline -> index {
+    "op.use"(%arg0) : (!kgen.paramref<T>) -> ()
+    %1 = kgen.param.constant = <0>
+    kgen.return %1 : index
+  }
+  kgen.return %0 : index
+}
+
+// COM: We should not try and capture input parameters.
+// CHECK-LABEL: @dontBindInputParameters_wrapper<T: type, I>
+// CHECK-LABEL: @dontBindInputParameters
+kgen.generator @dontBindInputParameters<T: type, I>(%arg0 : !kgen.paramref<T>) -> index {
+  %0 = kgen.call_param[<>() force_inline -> index: bind_signature(: <I>() force_inline -> index fn, I)]()
+  // CHECK: kgen.param.declare fn: <I>() force_inline -> index = <@dontBindInputParameters_wrapper<T: type = T, I = #kgen.unbound>>
+  kgen.param.declare.region fn = <I>() force_inline -> index {
+    %1 = kgen.param.constant = <I>
+    "use.op"(%arg0) : (!kgen.paramref<T>) -> ()
+    kgen.return %1 : index
+  }
+  kgen.return %0 : index
+}

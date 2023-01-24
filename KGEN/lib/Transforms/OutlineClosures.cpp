@@ -288,6 +288,9 @@ void OutlineClosuresPass::runOnOperation() {
         symbolBindings.push_back(ParamBindAttr::get(
             decl, ParamDeclRefAttr::get(decl.getName(), decl.getType())));
       }
+      LLVM_DEBUG(llvm::dbgs() << "Bindings: [\n\t";
+                 llvm::interleave(symbolBindings, llvm::dbgs(), ",\n\t");
+                 llvm::dbgs() << "\n]");
 
       // Create the specialized call to the lifted region.
       auto liftedCallSymbol = SymbolConstantAttr::get(
@@ -313,26 +316,34 @@ void OutlineClosuresPass::runOnOperation() {
       });
 
       Attribute bindSignature = wrapperSymbol;
-      // If we have parameter captures, create a bind_signature operator.
-      if (!parameterCaptures.empty()) {
-        // OK cool, now we need a partial binding. First we insert the lifted
-        // symbol at the beginning of the vector.
-        SmallVector<TypedAttr> partialBindings = {wrapperSymbol};
-        // Next, add the bindings for the input parameters. If we don't have a
-        // binding for this parameter, add `#kgen.unbound`. We drop the last
-        // parameters off of this because they are the original input
-        // parameters, and we only want to partial_bind the captures.
-        for (ParamDeclAttr decl : liftedWrapper.getInputParamDecls()) {
-          if (TypedAttr value = parameterCaptures.lookup(decl))
-            partialBindings.push_back(value);
-          else
-            partialBindings.push_back(UnboundAttr::get(decl.getType()));
+      // OK cool, now we need a partial binding. First we insert the lifted
+      // symbol at the beginning of the vector.
+      SmallVector<TypedAttr> partialBindings = {wrapperSymbol};
+      // Next, add the bindings for the input parameters. If we don't have a
+      // binding for this parameter, add `#kgen.unbound`. We drop the last
+      // parameters off of this because they are the original input
+      // parameters, and we only want to partial_bind the captures.
+      for (ParamDeclAttr decl : liftedWrapper.getInputParamDecls()) {
+        // Don't do anything if this was already an input parameter - don't
+        // partial bind it.
+        if (llvm::is_contained(body.getInputParamDecls(), decl)) {
+          partialBindings.push_back(UnboundAttr::get(decl.getType()));
+        } else if (TypedAttr value = parameterCaptures.lookup(decl)) {
+          partialBindings.push_back(value);
+        } else if (uses.decls.count(decl.getName())) {
+          if (uses.decls[decl.getName()].first == generator)
+            partialBindings.push_back(
+                ParamDeclRefAttr::get(decl.getName(), decl.getType()));
+        } else {
+          partialBindings.push_back(UnboundAttr::get(decl.getType()));
         }
+      }
 
+      // Only create a bind_signature if we have some partial bindings to apply.
+      if (partialBindings.size() > 1) {
         LLVM_DEBUG(llvm::dbgs() << "Partial bindings: [\n\t";
                    llvm::interleave(partialBindings, llvm::dbgs(), ",\n\t");
                    llvm::dbgs() << "\n]\n");
-
         bindSignature =
             ParamOperatorAttr::get(POC::BindSignature, partialBindings);
       }
