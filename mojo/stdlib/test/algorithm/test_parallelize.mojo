@@ -7,7 +7,7 @@
 
 from Buffer import Buffer
 from DType import DType
-from Functional import parallelize
+from Functional import parallelize, map
 from Int import Int
 from IO import print
 from LLCL import num_cores
@@ -17,9 +17,7 @@ from SIMD import SIMD
 fn test_parallelize():
     print("== test_parallelize\n")
 
-    alias size = 20
-
-    let vector = Buffer[size, DType.index.value].stack_allocation()
+    let vector = Buffer[20, DType.index.value].stack_allocation()
 
     var i: Int = 0
     while i < vector.__len__():
@@ -28,20 +26,13 @@ fn test_parallelize():
 
     @always_inline
     fn parallel_fn(start: Int, end: Int):
-        #######################################################################
-        # TODO (7316): Want to be able to not have to write a loop and instead
-        # write
-        # @always_inline
-        # fn add_two(idx: Int):
-        #     vector.__setitem__(start + idx, vector.__getitem__(start + idx) + 2)
-        # map[add_two](end - start)
-        #######################################################################
-        var i = start
-        while i < end:
-            vector.__setitem__(i, vector.__getitem__(i) + 2)
-            i += 1
+        @always_inline
+        fn add_two(idx: Int):
+            vector.__setitem__(start + idx, vector.__getitem__(start + idx) + 2)
 
-    parallelize[parallel_fn](num_cores(), size)
+        map[add_two](end - start)
+
+    parallelize[parallel_fn](num_cores(), 20)
 
     i = 0
     # CHECK-NOT: ERROR
