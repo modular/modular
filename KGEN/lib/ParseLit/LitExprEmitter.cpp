@@ -347,3 +347,27 @@ DRValue ExprEmitter::emitExprConditionValueAsI1(ExprNode *condExpr) {
   AnyValue boolTmp; // we don't care about the intermediate Bool value.
   return emitConditionValueAsI1({emitExprRValue(condExpr), condExpr}, boolTmp);
 }
+
+DRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
+                                             ExprNode *source) {
+  if (numberValue.getType().isIndex()) {
+    return DRValue(builder->create<POP::CastFromBuiltinOp>(
+        translateLocation(source->getLoc()),
+        POP::SIMDType::get(builder->getContext(), 1,
+                           KGENDType(KGENDType::index)),
+        numberValue));
+  }
+  assert(numberValue.getType().isa<KGEN::DeclRefType>() &&
+         "number value must be a struct");
+  AnyValue index =
+      emitNamedMethodCall("__as_mlir_index", {{DRValue(numberValue), source}},
+                          CallSyntax::kImplicitConvert, source->getLoc());
+  if (!index) {
+    return {};
+  }
+  auto popscalar = builder->create<POP::CastFromBuiltinOp>(
+      translateLocation(source->getLoc()),
+      POP::SIMDType::get(builder->getContext(), 1, KGENDType(KGENDType::index)),
+      index.getIfDRValue());
+  return DRValue(popscalar);
+}

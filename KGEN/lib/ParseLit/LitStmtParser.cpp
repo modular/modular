@@ -18,8 +18,10 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/POPDialect/POPEnums.h.inc"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "LitExprCalls.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
@@ -81,6 +83,7 @@ struct LitStmtParser : public LitParserBase {
   // Compound statements.
   ParseResult parseIfStmt(size_t curIndent);
   ParseResult parseWhileStmt(size_t curIndent);
+  ParseResult parseForStmt(size_t curIndent);
   ParseResult parseTryStmt(size_t curIndent);
 
   // Simple statements.
@@ -255,6 +258,10 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     rejectDecorator();  // Decorators not allowed.
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseIfStmt(stmtIndent);
+  case LitToken::kw_for:
+    rejectDecorator();  // Decorators not allowed.
+    rejectSimpleStmt(); // Not a simple_stmt.
+    return parseForStmt(stmtIndent);
   case LitToken::kw_while:
     rejectDecorator();  // Decorators not allowed.
     rejectSimpleStmt(); // Not a simple_stmt.
@@ -529,6 +536,109 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
   if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
   builder.create<HLCF::ContinueOp>(whileLoc);
+
+  // The 'else' block is executed only when the condition check fails.
+  if (getToken().getIndentation().has_value() &&
+      *getToken().getIndentation() >= curIndent &&
+      consumeIf(LitToken::kw_else)) {
+    builder.setInsertionPointToStart(exit);
+    if (parseToken(LitToken::colon, "expected ':' after else") ||
+        parseLocalScopeSuite(curIndent))
+      return failure();
+  }
+  return success();
+}
+
+/// for_stmt ::=  "for" target_list "in" starred_list ":" suite
+///              ["else" ":" suite]
+ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
+  Location forLoc = translateLocation(consumeToken(LitToken::kw_for).getLoc());
+
+  // parse [target_list] in [starred_list]
+  // for now, we expect target_list to be an identifier
+  // the [starred_list] needs to be a sequence with a __iter__ method that
+  // returns a type that defines __len__ and __next__
+  StringAttr target = StringAttr::get(getContext(), getToken().getSpelling());
+  SMLoc identifierLocation;
+  if (parseToken(LitToken::identifier, "expected identifier for target in for",
+                 &identifierLocation))
+    return failure();
+  if (parseToken(LitToken::kw_in, "expected 'in' after target identifier. Note "
+                                  "that target lists are not yet supported."))
+    return failure();
+
+  ExprNode *seqExp = nullptr;
+  if (parseExpression(seqExp, std::nullopt) ||
+      parseToken(LitToken::colon, "expected ':' after expression"))
+    return failure();
+
+  // We will be moving the builder into sub-regions that are created, make sure
+  // we end up after it when this is done.
+  llvm::SaveAndRestore builderSaver(builder);
+
+  // retrieve the iterator object from the sequence expression
+  ASTExprAnd<AnyValue> loadedSeq = {getEmitter().emitExprRValue(seqExp),
+                                    seqExp};
+  AnyValue rangeValue = getEmitter().emitNamedMethodCall(
+      "__iter__", {loadedSeq}, CallSyntax::kImplicitConvert, seqExp->getLoc());
+  if (!rangeValue)
+    return {};
+  LIT::VarDeclOp range_ref = builder.create<LIT::VarDeclOp>(
+      forLoc, POP::PointerType::get(rangeValue.getType()), "$RANGE");
+  builder.create<POP::StoreOp>(forLoc, rangeValue.getIfDRValue(), range_ref,
+                               std::nullopt);
+
+  HLCF::LoopOp loopOp = builder.create<HLCF::LoopOp>(forLoc);
+  Block *body = builder.createBlock(&loopOp.getBody());
+  builder = OpBuilder::atBlockEnd(body);
+
+  // For Loop condition: if the length of the range is greater than zero,
+  // continue. Otherwise break
+  DRValue loaded_range = DRValue(builder.create<POP::LoadOp>(
+      translateLocation(seqExp->getLoc()), range_ref, std::nullopt));
+  AnyValue current_length = getEmitter().emitNamedMethodCall(
+      "__len__", {{loaded_range, seqExp}}, CallSyntax::kImplicitConvert,
+      seqExp->getLoc());
+  if (!current_length)
+    return {};
+  DRValue pop_length = getEmitter().emitBoxedIntAsPopScalar(
+      current_length.getIfDRValue(), seqExp);
+  if (!pop_length)
+    return {};
+  Value pop_zero = builder.create<POP::CastFromBuiltinOp>(
+      translateLocation(seqExp->getLoc()),
+      POP::SIMDType::get(builder.getContext(), 1,
+                         KGENDType(KGENDType::ExtraCases::index)),
+      builder.create<mlir::index::ConstantOp>(forLoc, 0));
+  POP::CmpOp cmpOp = builder.create<POP::CmpOp>(
+      forLoc, KGEN::POP::CmpPredicate::GT, pop_length, pop_zero);
+  POP::CastToBuiltinOp should_continue =
+      builder.create<POP::CastToBuiltinOp>(forLoc, builder.getI1Type(), cmpOp);
+
+  if (!should_continue)
+    return success(); // IRGen error already emitted; parse succeeded!
+
+  // Generate the for condition check.
+  auto condOp = builder.create<HLCF::IfOp>(forLoc, should_continue);
+  builder.createBlock(&condOp.getThenRegion());
+  builder.create<HLCF::YieldOp>(forLoc);
+  Block *exit = builder.createBlock(&condOp.getElseRegion());
+  builder.create<HLCF::BreakOp>(forLoc);
+
+  // Create the body. Add Target element to the continue block by calling next
+  builder.setInsertionPointAfter(condOp);
+  AnyValue nextCall = getEmitter().emitNamedMethodCall(
+      "__next__", {{LValue(range_ref), seqExp}}, CallSyntax::kImplicitConvert,
+      seqExp->getLoc());
+  if (!nextCall) {
+    return {};
+  }
+  shared.declResolver->addFullyResolvedDecl(
+      nextCall.getIfDRValue(), target, identifierLocation,
+      getEmitter().declScope.getParentDecl());
+  if (failed(parseLocalScopeSuite(curIndent)))
+    return failure();
+  builder.create<HLCF::ContinueOp>(forLoc);
 
   // The 'else' block is executed only when the condition check fails.
   if (getToken().getIndentation().has_value() &&

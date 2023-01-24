@@ -145,21 +145,17 @@ struct range:
     fn __iter__(self: range) -> range:
         return self
 
-    fn __next__(self&: range) -> ErrorOr[Int]:
-        if self.start >= self.end:
-            return ErrorOr[Int](
-                StringRef.empty()
-            )  # TODO: should raise StopIteration
+    fn __next__(self&: range) -> Int:
         let result: Int = self.start
         self.start += self.step
-        return ErrorOr[Int](result)
+        return result
 
     fn __len__(self: range) -> Int:
         if self.step > 0 and self.start < self.end:
-            return 1 + (self.end - self.start - 1) // self.step
+            return self.end - self.start
         if self.step < 0 and self.start > self.end:
-            return 1 - (self.start - self.end - 1) // self.step
-        return 1
+            return self.start - self.end
+        return 0
 
     fn __getitem__(self: range, idx: Int) -> Int:
         return self.start + idx * self.step
