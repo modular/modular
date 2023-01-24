@@ -29,10 +29,10 @@ void CleanupCompilerGlobalsPass::runOnOperation() {
 
   // When we see a sequence of store->load we can just remove it and replace it
   // with the store argument.
-  DenseMap<StringAttr, std::pair<POP::CompilerGlobalStoreOp, bool>> stores;
+  DenseMap<StringAttr, POP::CompilerGlobalStoreOp> stores;
   // First we collect all the store ops.
   func.walk([&](POP::CompilerGlobalStoreOp store) {
-    stores[store.getNameAttr()] = {store, false};
+    stores.try_emplace(store.getNameAttr(), store);
   });
 
   // Then we can walk all the load ops.
@@ -41,13 +41,11 @@ void CleanupCompilerGlobalsPass::runOnOperation() {
     if (found == stores.end())
       return;
 
-    load.replaceAllUsesWith(found->getSecond().first.getValue());
-    found->getSecond().second = true;
+    load.replaceAllUsesWith(found->getSecond().getValue());
     load.erase();
   });
 
   // Clean up all the stores we were able to elide.
   for (auto [_, store] : stores)
-    if (store.second)
-      store.first.erase();
+    store.erase();
 }
