@@ -1956,6 +1956,9 @@ struct ElaborateGeneratorsPass
 struct ResolveIncludesPass
     : public KGEN::impl::ResolveIncludesBase<ResolveIncludesPass> {
   using ResolveIncludesBase::ResolveIncludesBase;
+  ResolveIncludesPass(SmallVectorImpl<std::string> &includedFiles,
+                      const ResolveIncludesOptions &options)
+      : ResolveIncludesBase(options), includedFiles(&includedFiles) {}
 
   void runOnOperation() override {
     SmallVector<std::filesystem::path> paths;
@@ -1964,9 +1967,12 @@ struct ResolveIncludesPass
     paths.push_back(std::filesystem::path("."));
 
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
-    if (failed(resolveIncludes(analysis.getTopLevelSymbolTable(), paths)))
+    if (failed(resolveIncludes(analysis.getTopLevelSymbolTable(), paths,
+                               includedFiles)))
       return signalPassFailure();
   }
+
+  SmallVectorImpl<std::string> *includedFiles = nullptr;
 };
 } // namespace
 
@@ -1976,4 +1982,10 @@ KGEN::createElaborateGenerators(SmallVectorImpl<std::string> &includedFiles,
                                 const ElaborateGeneratorsOptions &options) {
   return std::make_unique<ElaborateGeneratorsPass>(includedFiles, runtime,
                                                    options);
+}
+
+std::unique_ptr<mlir::Pass>
+KGEN::createResolveIncludes(SmallVectorImpl<std::string> &includedFiles,
+                            const ResolveIncludesOptions &options) {
+  return std::make_unique<ResolveIncludesPass>(includedFiles, options);
 }
