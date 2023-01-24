@@ -557,6 +557,18 @@ static Value lowerStringToGlobalConstant(StringAttr strAttr,
   return b.create<LLVM::InsertValueOp>(b.getLoc(), structVal0, sizeVal, 1);
 }
 
+Value KGEN::materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
+                                  ValueRange elements) {
+  // Elide the struct for single-element structs.
+  if (elements.size() == 1)
+    return elements.front();
+
+  Value container = b.create<LLVM::UndefOp>(structType);
+  for (auto [index, element] : llvm::enumerate(elements))
+    container = b.create<LLVM::InsertValueOp>(container, element, index);
+  return container;
+}
+
 Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
                                    mlir::LLVMTypeConverter &tc,
                                    TypedAttr attr) {
@@ -635,6 +647,40 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
     return helper.materializeLLVMVariant(
         variantType, value,
         *variant.getType().getTypeIndex(variant.getValue().getType()));
+  }
+
+  // Convert variadic sequence constants to an LLVM struct constant.
+  if (auto variadic = dyn_cast<POP::VariadicAttr>(attr)) {
+    // 1. Allocate space for an array of elements.
+    Type elementType =
+        tc.convertType(variadic.getType().getResolvedElementType());
+    if (!elementType)
+      return {};
+
+    Value size = b.create<LLVM::ConstantOp>(
+        b.getI64IntegerAttr(variadic.getValues().size()));
+    Value ptr = b.create<LLVM::AllocaOp>(
+        LLVM::LLVMPointerType::get(elementType), elementType, size);
+
+    // 2. Store elements of the sequence into the allocated space.
+    for (auto [idx, value] : llvm::enumerate(variadic.getValues())) {
+      Value element = convertParameterToLLVM(b, tc, value);
+      if (!element)
+        return {};
+
+      Value destination =
+          b.create<LLVM::GEPOp>(LLVM::LLVMPointerType::get(elementType), ptr,
+                                ArrayRef<LLVM::GEPArg>{idx});
+      b.create<LLVM::StoreOp>(element, destination);
+    }
+
+    // 3. Create a struct with a pointer to the allocation & the sequence size.
+    auto variadicType = llvm::cast_if_present<LLVM::LLVMStructType>(
+        tc.convertType(variadic.getType()));
+    if (!variadicType)
+      return {};
+
+    return materializeLLVMStruct(b, variadicType, ValueRange{ptr, size});
   }
 
   // Unknown attribute to convert.

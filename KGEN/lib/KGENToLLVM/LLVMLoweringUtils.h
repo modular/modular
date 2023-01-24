@@ -102,6 +102,15 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// Struct Conversion
+//===----------------------------------------------------------------------===//
+
+/// Generate the LLVM IR to materialize a struct of the given LLVM struct type,
+/// and insert the given element values into the struct.
+Value materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
+                            ValueRange elements);
+
+//===----------------------------------------------------------------------===//
 // Attribute Conversion
 //===----------------------------------------------------------------------===//
 

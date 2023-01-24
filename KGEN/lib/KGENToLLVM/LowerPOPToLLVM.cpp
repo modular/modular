@@ -686,19 +686,6 @@ struct ConvertPOPSIMDReduceMin
 // ConvertPOPStructConstruct
 //===----------------------------------------------------------------------===//
 
-/// Generate the LLVM IR to materialize a struct of the given LLVM struct type,
-/// and insert the given element values into the struct.
-static Value materializeLLVMStruct(OpBuilder &b, Location loc, Type structType,
-                                   ValueRange elements) {
-  // Elide the struct for single-element structs.
-  if (elements.size() == 1)
-    return elements.front();
-  Value container = b.create<LLVM::UndefOp>(loc, structType);
-  for (auto [index, element] : llvm::enumerate(elements))
-    container = b.create<LLVM::InsertValueOp>(loc, container, element, index);
-  return container;
-}
-
 struct ConvertPOPStructConstruct
     : mlir::ConvertOpToLLVMPattern<StructConstructOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
@@ -710,8 +697,9 @@ struct ConvertPOPStructConstruct
     if (!structType)
       return rewriter.notifyMatchFailure(op.getLoc(),
                                          "failed to convert struct type");
-    Value container = materializeLLVMStruct(rewriter, op.getLoc(), structType,
-                                            adaptor.getOperands());
+    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
+    Value container =
+        materializeLLVMStruct(b, structType, adaptor.getOperands());
     rewriter.replaceOp(op, container);
     return success();
   }
@@ -1098,8 +1086,9 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
   Type structType = getTypeConverter()->convertType(op.getType());
   if (!structType)
     return op.emitError("failed to convert variadic type");
+  ImplicitLocOpBuilder b(op.getLoc(), rewriter);
   Value container = materializeLLVMStruct(
-      rewriter, op.getLoc(), structType,
+      b, structType,
       ValueRange{ptr,
                  rewriter.create<LLVM::ConstantOp>(
                      op.getLoc(), rewriter.getIntegerAttr(indexType, count))
