@@ -248,3 +248,42 @@ fn mean[
     return (
         SIMD[1, type](sum[simd_width, size, type](src)) / src.__len__()
     ).__getitem__(0)
+
+
+# ===----------------------------------------------------------------------===#
+# variance
+# ===----------------------------------------------------------------------===#
+
+
+fn variance[
+    simd_width: __mlir_type.index,
+    size: __mlir_type.index,
+    type: __mlir_type.`!kgen.dtype`,
+](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
+    """Computes the variance value of the elements in a buffer."""
+    let mean_value = mean[simd_width, size, type](src)
+
+    @always_inline
+    fn _simd_variance_elementwise[
+        simd_width: __mlir_type.index,
+        acc_type: __mlir_type.`!kgen.dtype`,
+        type: __mlir_type.`!kgen.dtype`,
+    ](x: SIMD[simd_width, acc_type], y0: SIMD[simd_width, type]) -> SIMD[
+        simd_width, acc_type
+    ]:
+        """Helper function that computes the equation $sum (x_i - u)^2 + y$"""
+        let y: SIMD[simd_width, acc_type] = __mlir_op.`pop.cast`[
+            _type : __mlir_type[`!pop.simd<`, simd_width, `,`, acc_type, `>`]
+        ](y0.value)
+        let mean_simd = SIMD[simd_width, acc_type].splat(
+            __mlir_op.`pop.cast`[
+                _type : __mlir_type[`!pop.scalar<`, acc_type, `>`]
+            ](mean_value)
+        )
+        let diff = y - mean_simd
+        return x + diff * diff
+
+    let numerator: SIMD[1, type] = reduce[
+        simd_width, size, type, type, _simd_variance_elementwise, _simd_sum
+    ](src, 0)
+    return (numerator / (src.__len__() - 1)).__getitem__(0)

@@ -7,7 +7,7 @@
 
 from Buffer import Buffer
 from DType import DType
-from Reductions import sum, product, max, min, mean
+from Reductions import sum, product, max, min, mean, variance
 from Int import Int
 from IO import print
 
@@ -57,9 +57,9 @@ fn test_product():
     print(product[simd_width, size, DType.f32.value](vector))
 
 
-# CHECK-LABEL: test_mean
-fn test_mean():
-    __mlir_op.`zap.print`[fmt:"== test_mean\n"]()
+# CHECK-LABEL: test_mean_variance
+fn test_mean_variance():
+    __mlir_op.`zap.print`[fmt:"== test_mean_variance\n"]()
 
     alias simd_width = 4
     alias size = 100
@@ -75,10 +75,13 @@ fn test_mean():
     # CHECK: 50.500000
     print(mean[simd_width, size, DType.f32.value](vector))
 
+    # CHECK: 841.667
+    print(variance[simd_width, size, DType.f32.value](vector))
+
 
 @export
 fn main() -> __mlir_type.index:
     test_reductions()
     test_product()
-    test_mean()
+    test_mean_variance()
     return 0
