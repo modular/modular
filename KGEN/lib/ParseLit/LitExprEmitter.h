@@ -129,6 +129,10 @@ public:
   /// value that we can test directly.  This reports and error and returns null
   /// on error.
   DRValue emitExprConditionValueAsI1(ExprNode *condExpr);
+
+  /// Given a value convertable to a pop int via index conversion, emit
+  /// the casting code and return the pop scalar index value
+  DRValue emitBoxedIntAsPopScalar(Value numberValue, ExprNode *source);
 };
 
 } // namespace M::KGEN::LIT

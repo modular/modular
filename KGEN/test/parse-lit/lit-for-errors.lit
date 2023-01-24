@@ -1,0 +1,220 @@
+# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %stdlibdir
+
+from Pointer import Pointer
+from Int import Int
+
+
+struct my_iter_no_len:
+    var start: Int
+    var end: Int
+    var list: MyList_range_no_len
+
+    fn __new__(list: MyList_range_no_len) -> my_iter_no_len:
+        var result: my_iter_no_len
+        result.start = 0
+        result.end = list.size
+        result.list = list
+        return result
+
+    fn __next__(self&: my_iter_no_len) -> Int:
+        let result: Int = self.start
+        self.start += 1
+        return self.list.__getitem__(result)
+
+
+struct MyList_range_no_len:
+    var start: Pointer[Int]
+    var size: Int
+
+    fn __new__(ptr: Pointer[Int], size: Int) -> MyList_range_no_len:
+        var result: MyList_range_no_len
+        result.start = ptr
+        result.size = size
+        return result
+
+    fn __setitem__(self, idx: Int, val: Int):
+        let ptr = self.start + idx
+        ptr.store(val)
+
+    fn __getitem__(self, idx: Int) -> Int:
+        let ptr = self.start + idx
+        return ptr.load()
+
+    fn __iter__(self) -> my_iter_no_len:
+        return my_iter_no_len(self)
+
+
+struct my_iter_no_next:
+    var start: Int
+    var end: Int
+    var list: MyList_range_no_next
+
+    fn __new__(list: MyList_range_no_next) -> my_iter_no_next:
+        var result: my_iter_no_next
+        result.start = 0
+        result.end = list.size
+        result.list = list
+        return result
+
+    fn __len__(self: my_iter_no_next) -> Int:
+        if self.start < self.end:
+            return self.end - self.start
+        return 0
+
+
+struct MyList_range_no_next:
+    var start: Pointer[Int]
+    var size: Int
+
+    fn __new__(ptr: Pointer[Int], size: Int) -> MyList_range_no_next:
+        var result: MyList_range_no_next
+        result.start = ptr
+        result.size = size
+        return result
+
+    fn __setitem__(self, idx: Int, val: Int):
+        let ptr = self.start + idx
+        ptr.store(val)
+
+    fn __getitem__(self, idx: Int) -> Int:
+        let ptr = self.start + idx
+        return ptr.load()
+
+    fn __iter__(self) -> my_iter_no_next:
+        return my_iter_no_next(self)
+
+
+struct MyList_no_iter:
+    var start: Pointer[Int]
+    var size: Int
+
+    fn __new__(ptr: Pointer[Int], size: Int) -> MyList_no_iter:
+        var result: MyList_no_iter
+        result.start = ptr
+        result.size = size
+        return result
+
+    fn __setitem__(self, idx: Int, val: Int):
+        let ptr = self.start + idx
+        ptr.store(val)
+
+    fn __getitem__(self, idx: Int) -> Int:
+        let ptr = self.start + idx
+        return ptr.load()
+
+
+struct MyInteger:
+    var value: __mlir_type.`!pop.scalar<index>`
+
+    fn __new__(value: __mlir_type.index) -> MyInteger:
+        let t0 = __mlir_op.`pop.cast_from_builtin`[
+            _type : __mlir_type.`!pop.scalar<index>`
+        ](value)
+        return MyInteger {value: t0}
+
+    fn __new__(value: __mlir_type.`!pop.scalar<index>`) -> MyInteger:
+        return MyInteger {value: value}
+
+
+struct my_iter_wrong_int:
+    var start: Int
+    var end: Int
+    var list: MyList_invalid_boxed_type
+
+    fn __new__(list: MyList_invalid_boxed_type) -> my_iter_wrong_int:
+        var result: my_iter_wrong_int
+        result.start = 0
+        result.end = list.size
+        result.list = list
+        return result
+
+    fn __next__(self&: my_iter_wrong_int) -> Int:
+        let result: Int = self.start
+        self.start += 1
+        return self.list.__getitem__(result)
+
+    fn __len__(self: my_iter_wrong_int) -> MyInteger:
+        if self.start < self.end:
+            return MyInteger((self.end - self.start).value)
+        return MyInteger(0)
+
+
+struct MyList_invalid_boxed_type:
+    var start: Pointer[Int]
+    var size: Int
+
+    fn __new__(ptr: Pointer[Int], size: Int) -> MyList_invalid_boxed_type:
+        var result: MyList_invalid_boxed_type
+        result.start = ptr
+        result.size = size
+        return result
+
+    fn __setitem__(self, idx: Int, val: Int):
+        let ptr = self.start + idx
+        ptr.store(val)
+
+    fn __getitem__(self, idx: Int) -> Int:
+        let ptr = self.start + idx
+        return ptr.load()
+
+    fn __iter__(self) -> my_iter_wrong_int:
+        return my_iter_wrong_int(self)
+
+
+fn printInt(x: Int):
+    __mlir_op.`zap.print`[fmt:"%ld\n"](x.value)
+
+
+@export
+fn main() -> __mlir_type.index:
+    let buffer = __mlir_op.`pop.stack_allocation`[
+        count:3, _type : __mlir_type[`!pop.pointer<`, Int, `>`]
+    ]()
+    var my_pointer: Pointer[Int]
+    my_pointer.address = buffer
+
+    let my_list_no_len = MyList_range_no_len(my_pointer, Int(3))
+    my_list_no_len.__setitem__(0, 25)
+    my_list_no_len.__setitem__(1, 23)
+    my_list_no_len.__setitem__(2, 19)
+
+    let my_list_no_next = MyList_range_no_next(my_pointer, Int(3))
+    my_list_no_next.__setitem__(0, 25)
+    my_list_no_next.__setitem__(1, 23)
+    my_list_no_next.__setitem__(2, 19)
+
+    let my_list_no_iter = MyList_no_iter(my_pointer, Int(3))
+    my_list_no_iter.__setitem__(0, 25)
+    my_list_no_iter.__setitem__(1, 23)
+    my_list_no_iter.__setitem__(2, 19)
+
+    let my_list_invalid_int = MyList_invalid_boxed_type(my_pointer, Int(3))
+    my_list_invalid_int.__setitem__(0, 25)
+    my_list_invalid_int.__setitem__(1, 23)
+    my_list_invalid_int.__setitem__(2, 19)
+
+    # expected-error @+1 {{'$lit-for-errors::my_iter_no_len' does not implement the '__len__' method}}
+    for item in my_list_no_len:
+        # expected-error @+1 {{use of unknown declaration 'item', `fn` declarations require explicit variable declarations}}
+        printInt(item)
+
+    # expected-error @+1 {{'$lit-for-errors::my_iter_no_next' does not implement the '__next__' method}}
+    for item in my_list_no_next:
+        # expected-error @+1 {{use of unknown declaration 'item', `fn` declarations require explicit variable declarations}}
+        printInt(item)
+
+    # expected-error @+1 {{'$lit-for-errors::MyList_no_iter' does not implement the '__iter__' method}}
+    for item in my_list_no_iter:
+        # expected-error @+1 {{use of unknown declaration 'item', `fn` declarations require explicit variable declarations}}
+        printInt(item)
+
+    # expected-error @+1 {{'$lit-for-errors::MyInteger' does not implement the '__as_mlir_index' method}}
+    for item in my_list_invalid_int:
+        # expected-error @+1 {{use of unknown declaration 'item', `fn` declarations require explicit variable declarations}}
+        printInt(item)
+
+    # expected-error @+1 {{expected 'in' after target identifier. Note that target lists are not yet supported.}}
+    for key, item in my_list_no_next:
+        printInt(item)
+
+    return 0

@@ -1,0 +1,25 @@
+# RUN: kgen %s -execute -func='$lit-for-range::main():index()' -I %stdlibdir | FileCheck %s
+
+from prolog import Int, printInt, range
+
+
+@export
+fn main() -> __mlir_type.index:
+    # CHECK: 0
+    # CHECK: 1
+    # CHECK: 2
+    for x in range(0, 3, 1):
+        printInt(x)
+
+    # CHECK: 9
+    # CHECK: 6
+    # CHECK: 3
+    for y in range(9, 0, -3):
+        printInt(y)
+
+    # CHECK: 42
+    for z in range(0, 0, -3):
+        printInt(z)
+    else:
+        printInt(Int(42))
+    return 0
