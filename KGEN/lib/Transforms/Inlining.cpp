@@ -63,8 +63,11 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
 
   // Clone the operations in the immediate function body.
   IRMapping bv;
-  for (Operation &op : *callee.getBody())
-    b.insert(op.clone(bv));
+  for (Operation &op : *callee.getBody()) {
+    b.insert(op.clone(bv))->walk([&](Operation *op) {
+      op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), call.getLoc()));
+    });
+  }
 
   // We only need to mangle delcarations at the top-level scope of the callee.
   // Declarations in nested scopes will shadow. However, we have "un-mangle" in
