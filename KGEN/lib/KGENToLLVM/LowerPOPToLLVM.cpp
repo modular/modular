@@ -507,7 +507,7 @@ static Value materializeLLVMAlloca(OpBuilder &b, Type allocaType, int64_t count,
   Value countVal =
       b.create<LLVM::ConstantOp>(op->getLoc(), b.getI64IntegerAttr(count));
 
-  Value alloca = b.create<LLVM::AllocaOp>(
+  Value ptr = b.create<LLVM::AllocaOp>(
       op->getLoc(), allocaType,
       allocaType.cast<LLVM::LLVMPointerType>().getElementType(), countVal,
       typeAlignmentInBytes);
@@ -515,12 +515,12 @@ static Value materializeLLVMAlloca(OpBuilder &b, Type allocaType, int64_t count,
   // Insert lifetime markers starting from the op to the end of its block.
   b.setInsertionPoint(op);
   auto start = b.create<LLVM::LifetimeStartOp>(op->getLoc(),
-                                               typeSizeInBytes * count, alloca);
+                                               typeSizeInBytes * count, ptr);
   b.setInsertionPoint(op->getBlock(), --op->getBlock()->end());
-  b.create<LLVM::LifetimeEndOp>(op->getLoc(), typeSizeInBytes * count, alloca);
+  b.create<LLVM::LifetimeEndOp>(op->getLoc(), typeSizeInBytes * count, ptr);
   b.setInsertionPointAfter(start);
 
-  return alloca;
+  return ptr;
 }
 
 LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
@@ -1078,7 +1078,7 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
     return op.emitError("failed to convert element type");
 
   size_t count = op.getOperands().size();
-  Value alloca = materializeLLVMAlloca(
+  Value ptr = materializeLLVMAlloca(
       rewriter, LLVM::LLVMPointerType::get(elementType), count, body, op, *size,
       count * llvm::alignTo(*size, *align));
 
@@ -1088,7 +1088,7 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
     Value indexConstant = rewriter.create<LLVM::ConstantOp>(
         op.getLoc(), rewriter.getIntegerAttr(indexType, index));
     Value destination = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(), LLVM::LLVMPointerType::get(elementType), alloca,
+        op.getLoc(), LLVM::LLVMPointerType::get(elementType), ptr,
         ArrayRef<LLVM::GEPArg>{indexConstant});
     rewriter.create<LLVM::StoreOp>(op.getLoc(), operand, destination);
   }
@@ -1100,7 +1100,7 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
     return op.emitError("failed to convert variadic type");
   Value container = materializeLLVMStruct(
       rewriter, op.getLoc(), structType,
-      ValueRange{alloca,
+      ValueRange{ptr,
                  rewriter.create<LLVM::ConstantOp>(
                      op.getLoc(), rewriter.getIntegerAttr(indexType, count))
 
