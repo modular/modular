@@ -12,6 +12,7 @@
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/PatternMatch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -369,6 +370,74 @@ static void lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
 }
 
 //===----------------------------------------------------------------------===//
+// lowerNestedFunctions
+//===----------------------------------------------------------------------===//
+
+/// Get a top-level function, lower all functions nested inside that function.
+static void lowerNestedFunctions(LIT::FuncOp topLevelFunc,
+                                 mlir::SymbolTableAnalysis &analysis) {
+  auto getNestedFuncRef = [&](SymbolRefAttr ref) -> LIT::FuncOp {
+    // Perform the symbol lookup and check if the referenced symbol lives inside
+    // this function.
+    SmallVector<Operation *> symbols;
+    if (failed(analysis.getSymbolTables().lookupSymbolIn(
+            analysis.getTopLevelOp<ModuleOp>(), ref, symbols)) ||
+        !llvm::is_contained(symbols, topLevelFunc))
+      return {};
+    return cast<LIT::FuncOp>(symbols.back());
+  };
+
+  // Demote direct calls to nested functions to `call_param` so the callee can
+  // be rewritten.
+  topLevelFunc.walk([&](CallOp call) {
+    if (!getNestedFuncRef(call.getCalleeSymbol()))
+      return;
+    mlir::IRRewriter b{OpBuilder(call)};
+    b.replaceOpWithNewOp<CallParamOp>(
+        call, call.getResultTypes(), call.getCallee(), call.getParamDeclsAttr(),
+        call.getOperands());
+  });
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](SymbolConstantAttr ref) -> Attribute {
+    LIT::FuncOp nestedFunc = getNestedFuncRef(ref.getSymbol());
+    if (!nestedFunc)
+      return ref;
+    // Take the leaf reference as the parameter name. The parser guarntees it
+    // has no collisions with parameters.
+    TypedAttr newRef = ParamDeclRefAttr::get(ref.getSymbol().getLeafReference(),
+                                             nestedFunc.getSignature());
+    if (ref.getParamValues().empty())
+      return newRef;
+    // If the symbol constant had bindings, create a `bind_signature`.
+    SmallVector<TypedAttr> operands;
+    operands.push_back(newRef);
+    for (ParamBindAttr bind : ref.getParamValues())
+      operands.push_back(bind.getValue());
+    return ParamOperatorAttr::get(POC::BindSignature, operands);
+  });
+  replacer.recursivelyReplaceElementsIn(topLevelFunc, /*replaceAttrs=*/true,
+                                        /*replaceLocs=*/false,
+                                        /*replaceTypes=*/true);
+
+  topLevelFunc.walk([&](LIT::FuncOp func) {
+    if (func == topLevelFunc)
+      return;
+    // Process a nested function by lowering it straight to a
+    // `kgen.param.declare.region`. We need to replace all the symbol
+    // references within the function. The parser ensures that the symbol name
+    // is unique with parameters.
+    ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(func));
+    auto region = b.create<ParamDeclareRegionOp>(
+        ParamDeclAttr::get(func.getSymNameAttr(), func.getSignature()));
+    b.createBlock(&region.getBody());
+    auto body =
+        b.create<RegionBodyOp>(func.getSignature(), ArrayRef<ConstraintAttr>());
+    body.getBodyRegion().takeBody(func.getBodyRegion());
+    func.erase();
+  });
+}
+
+//===----------------------------------------------------------------------===//
 // Pass Definition
 //===----------------------------------------------------------------------===//
 
@@ -424,9 +493,16 @@ struct LowerTerminatorsPass
       return signalPassFailure();
 
     // Lower all functions that throw.
-    if (!errType)
-      return;
-    lowerThrowsAndAsync(errType, getOperation());
+    if (errType)
+      lowerThrowsAndAsync(errType, getOperation());
+
+    // Lower nested functions by converting them to region declarations. Walk
+    // all top-level functions and gather nested functions.
+    auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
+    getOperation()->walk<mlir::WalkOrder::PreOrder>([&](LIT::FuncOp func) {
+      lowerNestedFunctions(func, analysis);
+      return WalkResult::skip();
+    });
   }
 };
 } // namespace

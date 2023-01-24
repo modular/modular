@@ -562,56 +562,8 @@ static void lowerLITOps(LIT::FuncOp func,
         buildDebugInfoValue(allocOp->getNextNode(), allocOp.getLoc(), varName,
                             funcSpAttr.getFile(), allocOp, varType);
       }
-    } else if (auto nestedFunc = dyn_cast<LIT::FuncOp>(op);
-               nestedFunc && nestedFunc != func) {
-      // Process a nested function by lowering it straight to a
-      // `kgen.param.declare.region`. We need to replace all the symbol
-      // references within the function. The parser ensures that the symbol name
-      // is unique with parameters.
-      auto region = b.create<ParamDeclareRegionOp>(
-          op->getLoc(), ParamDeclAttr::get(nestedFunc.getSymNameAttr(),
-                                           nestedFunc.getSignature()));
-      b.createBlock(&region.getBody());
-      auto body = b.create<RegionBodyOp>(
-          op->getLoc(), nestedFunc.getSignature(), ArrayRef<ConstraintAttr>());
-      body.getBodyRegion().takeBody(nestedFunc.getBodyRegion());
-      nestedFuncRenames.try_emplace(
-          b.getStringAttr(func.getName() + "::" + nestedFunc.getName()),
-          ParamDeclRefAttr::get(nestedFunc.getSymNameAttr(),
-                                nestedFunc.getSignature()));
-      b.eraseOp(nestedFunc);
     }
   });
-
-  // Demote direct calls to nested functions to `call_param` so the callee can
-  // be rewritten.
-  func.walk([&](CallOp call) {
-    if (!nestedFuncRenames.lookup(
-            flattenSymbolRefAttr(call.getCallee().getSymbol()).getAttr()))
-      return;
-    mlir::IRRewriter b{OpBuilder(call)};
-    b.replaceOpWithNewOp<CallParamOp>(
-        call, call.getResultTypes(), call.getCallee(), call.getParamDeclsAttr(),
-        call.getOperands());
-  });
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](SymbolConstantAttr ref) -> Attribute {
-    ParamDeclRefAttr newRef = nestedFuncRenames.lookup(
-        flattenSymbolRefAttr(ref.getSymbol()).getAttr());
-    if (!newRef)
-      return ref;
-    if (ref.getParamValues().empty())
-      return newRef;
-    // If the symbol constant had bindings, create a `bind_signature`.
-    SmallVector<TypedAttr> operands;
-    operands.push_back(newRef);
-    for (ParamBindAttr bind : ref.getParamValues())
-      operands.push_back(bind.getValue());
-    return ParamOperatorAttr::get(POC::BindSignature, operands);
-  });
-  replacer.recursivelyReplaceElementsIn(func, /*replaceAttrs=*/true,
-                                        /*replaceLocs=*/false,
-                                        /*replaceTypes=*/true);
 }
 
 /// Flatten the name of the given symbol operation and insert it in the given

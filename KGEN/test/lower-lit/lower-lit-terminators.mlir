@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-lit-terminators | FileCheck %s
+// RUN: kgen-opt %s -lower-lit-terminators -split-input-file | FileCheck %s
 
 lit.struct.decl @Error {}
 
@@ -281,3 +281,59 @@ lit.func @call_coro_from_sync() -> !lit.none {
 
 // CHECK-LABEL: kgen.generator @__kgen_coro_resume
 // CHECK: pop.coroutine.resume
+
+//===----------------------------------------------------------------------===//
+// Nested Functions
+//===----------------------------------------------------------------------===//
+
+// -----
+
+// CHECK-LABEL: lit.struct.decl @StructWithNestedFn<a_param>
+lit.struct.decl @StructWithNestedFn<a_param> {
+  // CHECK-NEXT: lit.func @topLevelFunction<b_param>() -> index
+  lit.func @topLevelFunction<b_param>() -> index {
+    %a = lit.var.decl "a" : <index>
+    %idx0 = index.constant 0
+    pop.store %idx0, %a : !pop.pointer<index>
+
+    // CHECK: kgen.param.declare.region nestedFunction = () -> index
+    lit.func @nestedFunction() -> index {
+      // CHECK-NEXT: pop.load %a
+      %0 = pop.load %a : !pop.pointer<index>
+      kgen.return %0 : index
+    }
+    // CHECK: kgen.param.declare b: () -> index = <nestedFunction>
+    kgen.param.declare b: () -> index = <@StructWithNestedFn::@topLevelFunction::@nestedFunction>
+    // CHECK: kgen.call_param[() -> index: nestedFunction]()
+    kgen.call @StructWithNestedFn::@topLevelFunction::@nestedFunction() : () -> index
+
+    // CHECK: kgen.param.declare.region paramNestedFunc = <b_param -> c_param>()
+    lit.func @paramNestedFunc<b_param -> c_param>() {
+      // CHECK-NEXT: return<b_param>
+      kgen.return<b_param>
+    }
+    // CHECK: kgen.param.declare c: <() -> c_param>() -> () = <bind_signature(:<b_param -> c_param>() -> () paramNestedFunc, 2)>
+    kgen.param.declare c: <() -> c_param>() -> () = <@StructWithNestedFn::@topLevelFunction::@paramNestedFunc<b_param = 2>>
+    kgen.call @StructWithNestedFn::@topLevelFunction::@paramNestedFunc<b_param = 3 -> out_param = c_param>() : () -> ()
+
+    %idx0_0 = index.constant 0
+    kgen.return %idx0_0 : index
+  }
+}
+
+// CHECK-LABEL: lit.func @topFunc
+lit.func @topFunc() -> !lit.none {
+  // CHECK: kgen.param.declare.region midFunc
+  lit.func @midFunc() -> !lit.none {
+    // CHECK: kgen.param.declare.region botFunc
+    lit.func @botFunc() -> !lit.none {
+      lit.end_func
+    }
+    // CHECK: declare bot: () -> !lit.none = <botFunc>
+    kgen.param.declare bot: () -> !lit.none = <@topFunc::@midFunc::@botFunc>
+    lit.end_func
+  }
+  // CHECK: declare mid: () -> !lit.none = <midFunc>
+  kgen.param.declare mid: () -> !lit.none = <@topFunc::@midFunc>
+  lit.end_func
+}
