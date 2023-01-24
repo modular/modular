@@ -12,9 +12,10 @@ from SIMD import SIMD
 from Assert import assert_param
 
 # Data layout encoding.
-alias Layout_unknown = -1  # statically unknown layout.
-alias Layout_NHWC = 0  # channels last layout.
-alias Layout_NCHW = 1  # channels first layout.
+struct Conv2DLayout:
+    alias unknown = -1  # statically unknown layout.
+    alias NHWC = 0  # channels last layout.
+    alias NCHW = 1  # channels first layout.
 
 
 struct ImageData[
@@ -39,7 +40,7 @@ struct ImageData[
         Returns:
             An ImageData instance constructed.
         """
-        assert_param[static_layout == Layout_unknown]
+        assert_param[static_layout == Conv2DLayout.unknown]
         var image: ImageData[shape, type, static_layout]
         image.data = data
         image.dynamic_layout = layout
@@ -48,10 +49,21 @@ struct ImageData[
     fn __new__(
         data: NDBuffer[4, shape, type]
     ) -> ImageData[shape, type, static_layout]:
-        assert_param[static_layout != Layout_unknown]
+        assert_param[static_layout != Conv2DLayout.unknown]
         var image: ImageData[shape, type, static_layout]
         image.data = data
         return image
+
+    fn to_static_layout[
+        new_static_layout: __mlir_type.index
+    ](self) -> ImageData[shape, type, new_static_layout]:
+        """Conversion utility from a fully dynamic data structure, e.g. from c
+        shim to one with compile-time known data layout.
+            Returns:
+                The image data with static data layout.
+        """
+        assert_param[static_layout == Conv2DLayout.unknown]
+        return ImageData[shape, type, new_static_layout](self.data)
 
     fn get_layout(self) -> Int:
         """The getter function of the underlying data layout, resolving from
@@ -59,7 +71,7 @@ struct ImageData[
             Returns:
                 The resolved data layout tag for this image instance.
         """
-        if static_layout == Layout_unknown:
+        if static_layout == Conv2DLayout.unknown:
             return self.dynamic_layout
         return static_layout
 
@@ -77,7 +89,7 @@ struct ImageData[
                 An StaticIntTuple containing the index based on the underlying
             data layout.
         """
-        if self.get_layout() == Layout_NCHW:
+        if self.get_layout() == Conv2DLayout.NCHW:
             return Index(n, c, h, w)
         return Index(n, h, w, c)
 
@@ -135,12 +147,12 @@ struct ImageShape:
         var image_shape: ImageShape
         image_shape.N = image_data.data.dim[0]()
 
-        if image_data.get_layout() == Layout_NCHW:
+        if image_data.get_layout() == Conv2DLayout.NCHW:
             image_shape.C = image_data.data.dim[1]()
             image_shape.H = image_data.data.dim[2]()
             image_shape.W = image_data.data.dim[3]()
 
-        elif image_data.get_layout() == Layout_NHWC:
+        elif image_data.get_layout() == Conv2DLayout.NHWC:
             image_shape.C = image_data.data.dim[3]()
             image_shape.H = image_data.data.dim[1]()
             image_shape.W = image_data.data.dim[2]()
