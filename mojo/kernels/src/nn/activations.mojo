@@ -5,9 +5,11 @@
 # ===----------------------------------------------------------------------===#
 
 from Assert import assert_param
+from List import create_kgen_list
+from Math import erf, exp, tanh, clamp
+from Polynomial import polynomial_evaluate
 from SIMD import SIMD
 from TypeTraits import is_floating_point
-from Math import erf, exp, tanh
 
 # ===----------------------------------------------------------------------===#
 # relu
@@ -122,8 +124,16 @@ fn gelu_approximate[
 
 fn sigmoid[
     simd_width: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
-](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
+](x0: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
     """Compute the Sigmoid Op using the equation $e^x / (e^x + 1)$
+
+    We implement the sigmoid in terms of the approximation:
+
+    $$
+    \frac{0.248288 x + 0.00851377 x^3 + 0.0000608575 x^5 + 1.15627\times10^{-7} x^7 +
+    4.37031\times10^{-11} x^9}{0.993152 + 0.116818 x^2 + 0.00170199 x^4 + 6.29107\times10^{-6} x^6 +
+    5.76102\times10^{-9} x^8 + 6.10247*10^{-13} x^{10}} + 0.5
+    $$
 
     Args:
         x (SIMD[size, type]): The value to compute the sigmoid operation on.
@@ -132,5 +142,36 @@ fn sigmoid[
         SIMD[size, type]: The result of the approximate sigmoid operation.
     """
 
-    let ex = exp[simd_width, type](x)
-    return ex / (ex + 1)
+    let x = clamp[simd_width, type](x0, -18, 18)
+    let x2 = x * x
+
+    let numerator = x * polynomial_evaluate[
+        __mlir_type.f64,
+        type,
+        simd_width,
+        5,
+        create_kgen_list[__mlir_type.f64](
+            2.48287947061529e-01,
+            8.51377133304701e-03,
+            6.08574864600143e-05,
+            1.15627324459942e-07,
+            4.37031012579801e-11,
+        ),
+    ](x2)
+
+    let denominator = polynomial_evaluate[
+        __mlir_type.f64,
+        type,
+        simd_width,
+        6,
+        create_kgen_list[__mlir_type.f64](
+            9.93151921023180e-01,
+            1.16817656904453e-01,
+            1.70198817374094e-03,
+            6.29106785017040e-06,
+            5.76102136993427e-09,
+            6.10247389755681e-13,
+        ),
+    ](x2)
+
+    return numerator / denominator + 0.5
