@@ -85,12 +85,22 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
 
     // Extract references to functions. Mark copied functions as module private
     // and recurse.
-    llvm::TypeSwitch<Operation *>(op).Case<CallOp, AddressOfOp>([&](auto op) {
-      Operation *symbol =
-          extractDependency(op.getCalleeSymbol().getRootReference());
+    StringAttr ref =
+        llvm::TypeSwitch<Operation *, StringAttr>(op)
+            .Case<CallOp, AddressOfOp>([&](auto op) {
+              return op.getCalleeSymbol().getRootReference();
+            })
+            .Case([&](ParamConstantOp op) {
+              if (auto symbol = dyn_cast<SymbolConstantAttr>(op.getValue()))
+                return symbol.getSymbol().getRootReference();
+              return StringAttr();
+            })
+            .Default({});
+    if (ref) {
+      Operation *symbol = extractDependency(ref);
       if (auto func = dyn_cast_if_present<FuncOp>(symbol))
         sliceDependencies(func, sliceSymtab, symtab);
-    });
+    }
   };
   op->walk(extractDependencies);
 }
