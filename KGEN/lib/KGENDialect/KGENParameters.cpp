@@ -96,6 +96,7 @@ void ParameterCollector::collectUsesFromAttr(
 
   // Collect parameter references.
   if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr)) {
+    collectUsesFromTypes(paramRef.getType(), uses, hasConstExpr);
     uses.push_back(paramRef);
     return;
   }
