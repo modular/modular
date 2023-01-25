@@ -18,7 +18,7 @@ static void populatePreElaborationPipeline(mlir::PassManager &pm) {
   pm.addPass(createLowerLIT());
   pm.addPass(createLiftMLIROperations());
   pm.addPass(createLowerStructs());
-  pm.addPass(mlir::createCanonicalizerPass());
+  pm.addNestedPass<GeneratorOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<GeneratorOp>(createMem2Reg());
 }
 
@@ -39,7 +39,7 @@ void KGEN::elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
   // Run the inliner and cleanup the compiler globals.
   pm.addPass(createForceInline());
   pm.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
-  pm.addPass(mlir::createCanonicalizerPass());
+  pm.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
   // Finally, DCE the symbols we don't want.
   pm.addPass(createEliminateDeadSymbols());
   pm.addPass(createPruneImpossibleVariants());
