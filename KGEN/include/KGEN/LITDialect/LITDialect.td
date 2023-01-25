@@ -23,7 +23,7 @@ def LITDialect : Dialect {
   }];
 
   let cppNamespace = "::M::KGEN::LIT";
-  let dependentDialects = ["::M::KGEN::KGENDialect"];
+  let dependentDialects = ["KGENDialect", "POP::POPDialect"];
   let useDefaultTypePrinterParser = 1;
   let useDefaultAttributePrinterParser = 1;
   let hasConstantMaterializer = 1;
