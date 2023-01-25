@@ -1467,8 +1467,9 @@ static void verifyNoDebugInline(LIT::FuncOp funcOp, LitSharedState &shared) {
 
   auto rejectFunc = [&](const Twine &badThing) -> LitDiagnostic {
     funcOp.setNoDebugInline(false);
-    return shared.emitError(funcOp.getLoc(),
-                            "@nodebug_inline does not allow " + badThing);
+    return shared.emitError(
+        funcOp.getLoc(), "@nodebug_inline does not allow " + badThing +
+                             " for the '" + funcOp.getSymName() + "' function");
   };
 
   // We don't allow anything other than by-value arguments right now.
