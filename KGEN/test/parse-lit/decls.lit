@@ -152,17 +152,25 @@ fn variadics(*a: Int):
   let elt1 = vaArgs.__getitem__(1)
 
 # CHECK: lit.func @"callVariadic
-fn callVariadic(x: Int):
-  # CHECK: %0 = pop.variadic.create [] : !pop.variadic<@"$Int"::@Int>
+fn callVariadic[p: Int](x: Int):
+  # CHECK: %0 = kgen.param.constant: !pop.variadic<@"$Int"::@Int> = <#pop.variadic<>>
   # CHECK: %1 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%0)
   variadics()
-  # CHECK: %2 = pop.variadic.create [%x]
+  # CHECK: %2 = kgen.param.constant: !pop.variadic<@"$Int"::@Int> = <#pop.variadic<{{.*}}7{{.*}}11{{.*}}13{{.*}}>>
   # CHECK: %3 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%2)
+  variadics(7, 11, 13)
+  # CHECK: %4 = pop.variadic.create [%x]
+  # CHECK: %5 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%4)
   variadics(x)
-  # CHECK: %4 = kgen.param.constant: @"$Int
-  # CHECK: %5 = pop.variadic.create [%x, %4]
-  # CHECK: %6 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%5)
+  # CHECK: %6 = kgen.param.constant: @"$Int
+  # CHECK: %7 = pop.variadic.create [%x, %6]
+  # CHECK: %8 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%7)
   variadics(x, 1)
+
+  # CHECK: @"variadics($Int::Int*)", #pop.variadic<>
+  alias EmptyVariadic = variadics()
+  # CHECK: @"variadics($Int::Int*)", #pop.variadic<p, {{.*}}scalar<index> = 1{{.*}}>
+  alias NonEmptyVariadic = variadics(p, 1)
 
 ##===----------------------------------------------------------------------===##
 # @raises decorator.

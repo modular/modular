@@ -15,6 +15,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 
@@ -886,21 +887,13 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     // If we ran out of operands, fulfill this with a default value or empty
     // variadic list.
     if (nextOperandIdx == operands.size()) {
-      Location loc = emitter.translateLocation(callLoc);
       // TODO: Default arguments.  Note that variadics cannot be defaulted.
 
       // Varargs arguments are fulfilled with an empty !pop.variadic list.
       if (uint8_t(convention & ValueInputConvention::VarArg)) {
-        if (!emitter.builder) {
-          // TODO(Issue #7366): We need a #pop.variadic<a,b,c> attribute.
-          emitter.emitError(
-              callLoc,
-              "TODO: cannot emit empty variadic pack in parameter context yet");
-          return {};
-        }
-        Value argVal = emitter.builder->create<POP::VariadicCreateOp>(
-            loc, expectedType, ArrayRef<Value>());
-        argumentValues.push_back({RValue(argVal), nullptr});
+        auto variadic = POP::VariadicAttr::get(
+            ArrayRef<TypedAttr>(), expectedType.cast<POP::VariadicType>());
+        argumentValues.push_back({MValue(variadic), callNode});
         continue;
       }
       llvm_unreachable("must have a value");
@@ -946,13 +939,29 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
     // For variadic list, we need to emit all of the remaining operands.
     size_t firstVariadicOperand = nextOperandIdx;
-    if (!emitter.builder) {
-      // TODO(Issue #7366): We need a #pop.variadic<a,b,c> attribute.
-      emitter.emitError(
-          callLoc,
-          "TODO: cannot emit empty variadic pack in parameter context yet");
-      return {};
+    if (std::all_of(operands.begin() + nextOperandIdx, operands.end(),
+                    [](auto operand) { return operand.ir.getIfMValue(); })) {
+      // If all of the operands are compile-time values, then we can represent
+      // the variadic sequence as an attribute.
+      SmallVector<TypedAttr> variadicArgs;
+      for (size_t e = operands.size(); nextOperandIdx != e; ++nextOperandIdx) {
+        auto operand = operands[nextOperandIdx];
+        AnyValue value = emitter.getAsExpectedType(
+            operand.ir, operand.expr, getVariadicElementType(expectedType),
+            " in variadic argument");
+        variadicArgs.push_back(value.getIfMValue().get());
+      }
+
+      auto argAttr =
+          POP::VariadicAttr::get(ArrayRef<TypedAttr>(variadicArgs),
+                                 expectedType.cast<POP::VariadicType>());
+      argumentValues.push_back(
+          {MValue(argAttr), operands[firstVariadicOperand].expr});
+      continue;
     }
+
+    // If not all operands are compile-time values, use an operation to create a
+    // variadic sequence.
     SmallVector<Value> variadicArgs;
     for (size_t e = operands.size(); nextOperandIdx != e; ++nextOperandIdx) {
       auto operand = operands[nextOperandIdx];
