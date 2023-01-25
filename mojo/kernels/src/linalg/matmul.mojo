@@ -21,11 +21,40 @@ from Int import Int
 from SIMD import SIMD
 from Tuple import StaticTuple
 from Pointer import DTypePointer
-from Assert import assert_param
+from Assert import assert_param, assert_param_bool
 from Transpose import transpose_inplace
 from Index import Index, StaticIntTuple
 from TargetInfo import simd_byte_width
 from List import create_kgen_list
+from BuildInfo import is_debug_build
+
+
+@interface
+fn get_pack_data_size() -> Int:
+    """Utility to compute the number of elements to pack in each tile.
+    Returns:
+        The number of elements to pack.
+    """
+    ...
+
+
+@implements(get_pack_data_size)
+fn get_pack_data_size_debug() -> Int:
+    """Pack element counts in debug build. Use a small number to avoid
+    stack overflow in asan builds.
+    """
+    assert_param_bool[is_debug_build()]
+    return 1024
+
+
+@implements(get_pack_data_size)
+fn get_pack_data_size_release() -> Int:
+    assert_param_bool[not is_debug_build()]
+    """Pack element counts. Use a number that's proportion to the cache size.
+    """
+    # PackCacheSize (hard code to 512kB of f32,
+    #  TODO: integrate cache size in sysinfo)
+    return 131_072
 
 
 struct GemmShape:
