@@ -204,8 +204,13 @@ public:
 
   /// Emit a function call to the specified callee with the specified operand
   /// values.  This emits an error and returns null on failure.
+  ///
+  /// `callNode` is the call like expression (e.g. a CallNode, binary operator,
+  /// etc) that results in the call, or potentially a random value that is being
+  /// fed into an implicit conversion.  This should only be used for location
+  /// information.
   AnyValue emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                            CallSyntax syntax, SMLoc callLoc,
+                            CallSyntax syntax, const ExprNode *callNode,
                             IREmitter &emitter);
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'

@@ -580,7 +580,7 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   ASTExprAnd<AnyValue> loadedSeq = {getEmitter().emitExprRValue(seqExp),
                                     seqExp};
   AnyValue rangeValue = getEmitter().emitNamedMethodCall(
-      "__iter__", {loadedSeq}, CallSyntax::kImplicitConvert, seqExp->getLoc());
+      "__iter__", {loadedSeq}, CallSyntax::kImplicitConvert, seqExp);
   if (!rangeValue)
     return {};
   LIT::VarDeclOp range_ref = builder.create<LIT::VarDeclOp>(
@@ -596,9 +596,9 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   // continue. Otherwise break
   DRValue loaded_range = DRValue(builder.create<POP::LoadOp>(
       translateLocation(seqExp->getLoc()), range_ref, std::nullopt));
-  AnyValue current_length = getEmitter().emitNamedMethodCall(
-      "__len__", {{loaded_range, seqExp}}, CallSyntax::kImplicitConvert,
-      seqExp->getLoc());
+  AnyValue current_length =
+      getEmitter().emitNamedMethodCall("__len__", {{loaded_range, seqExp}},
+                                       CallSyntax::kImplicitConvert, seqExp);
   if (!current_length)
     return {};
   DRValue pop_length = getEmitter().emitBoxedIntAsPopScalar(
@@ -629,7 +629,7 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   builder.setInsertionPointAfter(condOp);
   AnyValue nextCall = getEmitter().emitNamedMethodCall(
       "__next__", {{LValue(range_ref), seqExp}}, CallSyntax::kImplicitConvert,
-      seqExp->getLoc());
+      seqExp);
   if (!nextCall) {
     return {};
   }

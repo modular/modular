@@ -112,21 +112,28 @@ DRValue IREmitter::emitDRValue(ASTExprAnd<RValue> value) {
 /// This helper emits a named method call with the provided `argValues`, where
 /// the first arg is the receiver of the call. This emits an error if the
 /// call is invalid and returns null.  The argValues list may not be empty.
+///
+/// `callNode` is the call like expression (e.g. a CallNode, binary operator,
+/// etc) that results in the call, or potentially a random value that is being
+/// fed into an implicit conversion.  This should only be used for location
+/// information.
 AnyValue
 IREmitter::emitNamedMethodCall(StringRef methodName,
                                ArrayRef<ASTExprAnd<AnyValue>> argValues,
-                               CallSyntax syntax, SMLoc callLoc) {
+                               CallSyntax syntax, const ExprNode *callNode) {
   assert(!argValues.empty() && "Cannot emit a method call without a receiver!");
   ASTType type = argValues.front().ir.getRValueType();
   bool isErroneousDecl = false;
-  CallableValue callee(type, methodName, callLoc, isErroneousDecl, shared);
+  CallableValue callee(type, methodName, callNode->getLoc(), isErroneousDecl,
+                       shared);
 
   // If the type doesn't have the specified method, emit an error.
   if (callee.isNull()) {
     if (isErroneousDecl)
       return {};
-    auto diag = emitError(callLoc, "") << type << " does not implement the '"
-                                       << methodName << "' method";
+    auto diag = emitError(callNode->getLoc(), "")
+                << type << " does not implement the '" << methodName
+                << "' method";
     switch (syntax) {
     default:
       break;
@@ -143,7 +150,7 @@ IREmitter::emitNamedMethodCall(StringRef methodName,
     return {};
   }
 
-  return callee.emitFunctionCall(argValues, syntax, callLoc, *this);
+  return callee.emitFunctionCall(argValues, syntax, callNode, *this);
 }
 
 /// Convert the specified value to the expected type, invoking implicit
@@ -182,8 +189,8 @@ AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
   }
 
   // Ok, cool we know it will succeed; do it.
-  return callee.emitFunctionCall(newArg, CallSyntax::kImplicitConvert,
-                                 expr->getLoc(), *this);
+  return callee.emitFunctionCall(newArg, CallSyntax::kImplicitConvert, expr,
+                                 *this);
 }
 
 AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
@@ -206,7 +213,6 @@ DRValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
   if (!value.ir)
     return {};
 
-  SMLoc valueLoc = value.expr->getLoc();
   boolResult = value.ir;
 
   // If this is already an 'i1', then we're done.
@@ -220,12 +226,12 @@ DRValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
   // Check for the presence of a __lit_bool method.  If it exists, we can avoid
   // a redundant call to __bool__ for Bool types.
   bool isErroneousDecl = false;
-  if (!CallableValue(value.ir.getType(), "__lit_bool", valueLoc,
+  if (!CallableValue(value.ir.getType(), "__lit_bool", value.expr->getLoc(),
                      isErroneousDecl, shared)) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __lit_bool.
     boolResult = emitNamedMethodCall("__bool__", {{value.ir, value.expr}},
-                                     CallSyntax::kImplicitConvert, valueLoc);
+                                     CallSyntax::kImplicitConvert, value.expr);
     if (!boolResult)
       return {};
   }
@@ -233,7 +239,7 @@ DRValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
   // Then we use __lit_bool to convert to an i1 value.
   AnyValue litBoolCall =
       emitNamedMethodCall("__lit_bool", {{boolResult, value.expr}},
-                          CallSyntax::kImplicitConvert, valueLoc);
+                          CallSyntax::kImplicitConvert, value.expr);
   return emitDRValue({litBoolCall, value.expr});
 }
 
@@ -343,13 +349,13 @@ ASTType ExprEmitter::emitExprType(const ExprNode *node) {
 /// Emit the specified expression as a condition, converting it to an MLIR I1
 /// value that we can test directly.  This reports and error and returns null on
 /// error.
-DRValue ExprEmitter::emitExprConditionValueAsI1(ExprNode *condExpr) {
+DRValue ExprEmitter::emitExprConditionValueAsI1(const ExprNode *condExpr) {
   AnyValue boolTmp; // we don't care about the intermediate Bool value.
   return emitConditionValueAsI1({emitExprRValue(condExpr), condExpr}, boolTmp);
 }
 
 DRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
-                                             ExprNode *source) {
+                                             const ExprNode *source) {
   if (numberValue.getType().isIndex()) {
     return DRValue(builder->create<POP::CastFromBuiltinOp>(
         translateLocation(source->getLoc()),
@@ -361,7 +367,7 @@ DRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
          "number value must be a struct");
   AnyValue index =
       emitNamedMethodCall("__as_mlir_index", {{DRValue(numberValue), source}},
-                          CallSyntax::kImplicitConvert, source->getLoc());
+                          CallSyntax::kImplicitConvert, source);
   if (!index) {
     return {};
   }

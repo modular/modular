@@ -789,13 +789,14 @@ static bool isValidErrorContext(Block *block) {
 /// values.  This emits an error and returns null on failure.
 AnyValue
 CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                CallSyntax syntax, SMLoc callLoc,
+                                CallSyntax syntax, const ExprNode *callNode,
                                 IREmitter &emitter) {
   if (isNull()) // Base was already diagnosed as an error.
     return {};
 
   // Used in some cases below, lifetime needs to exist for this whole method.
   SmallVector<ASTExprAnd<AnyValue>> operandsWithSelf;
+  SMLoc callLoc = callNode->getLoc();
 
   auto emitError = [&](const Twine &message) {
     return emitter.emitError(callLoc, message);
