@@ -53,9 +53,14 @@ public:
   /// This helper emits a named method call with the provided `argValues`, where
   /// the first arg is the receiver of the call. This emits an error if the
   /// call is invalid and returns null.  The argValues list may not be empty.
+  ///
+  /// `callNode` is the call like expression (e.g. a CallNode, binary operator,
+  /// etc) that results in the call, or potentially a random value that is being
+  /// fed into an implicit conversion.  This should only be used for location
+  /// information.
   AnyValue emitNamedMethodCall(StringRef methodName,
                                ArrayRef<ASTExprAnd<AnyValue>> argValues,
-                               CallSyntax syntax, SMLoc callLoc);
+                               CallSyntax syntax, const ExprNode *callNode);
 
   /// Convert the specified value to the expected type, invoking implicit
   /// conversions if necessary.  On error, this diagnoses it and returns null.
@@ -128,11 +133,11 @@ public:
   /// Emit the specified expression as a condition, converting it to an MLIR I1
   /// value that we can test directly.  This reports and error and returns null
   /// on error.
-  DRValue emitExprConditionValueAsI1(ExprNode *condExpr);
+  DRValue emitExprConditionValueAsI1(const ExprNode *condExpr);
 
   /// Given a value convertable to a pop int via index conversion, emit
   /// the casting code and return the pop scalar index value
-  DRValue emitBoxedIntAsPopScalar(Value numberValue, ExprNode *source);
+  DRValue emitBoxedIntAsPopScalar(Value numberValue, const ExprNode *source);
 };
 
 } // namespace M::KGEN::LIT
