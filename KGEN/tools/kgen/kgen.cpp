@@ -81,6 +81,11 @@ public:
       "enable-mlir-diagnostics",
       cl::desc("Print .lit parser diagnostics through MLIR."), cl::init(false)};
 
+  cl::opt<bool> enableMLIRCrashReproducer{
+      "enable-mlir-crash-repro",
+      cl::desc("Enable MLIR pass manager crash reproducer generation."),
+      cl::init(false)};
+
   /// Add all the input files provided on the command line to the SourceMgr.
   /// This is how MLIR parses multiple files.
   ErrorOrSuccess addInputFilesToSourceMgr(llvm::SourceMgr &mgr);
@@ -254,6 +259,12 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   auto inputFileName = llvm::StringRef(clOptions.inputFilename.getValue());
   mlir::TimingScope ts;
   mlir::PassManager pm(ctx);
+  if (clOptions.enableMLIRCrashReproducer.getValue()) {
+    ctx->disableMultithreading();
+    pm.enableCrashReproducerGeneration(clOptions.inputFilename.getValue() +
+                                           ".repro.mlir",
+                                       /*genLocalReproducer=*/true);
+  }
   if (inputFileName.ends_with(".lit")) {
     theModule = importLitFile(mgr, ctx, ts, compilationOptions,
                               clOptions.enableMLIRDiagnostics);
