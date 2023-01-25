@@ -56,7 +56,7 @@ void OutlineClosuresPass::runOnOperation() {
     auto subregions = uses.calculate(generator);
 
     // We'll use this a lot here - pull it out into a little lambda.
-    auto getUniqueName = [&](StringRef suffix) {
+    auto getUniqueName = [&](const Twine &suffix) {
       return b.getStringAttr(getUniqueSymbolName(
           (generator.getName() + suffix).str(), symtab, counter));
     };
@@ -70,6 +70,8 @@ void OutlineClosuresPass::runOnOperation() {
     generator.walk([&](ParamDeclareRegionOp regionDecl) {
       LLVM_DEBUG(llvm::dbgs()
                  << "//===-----\nLifting closure: " << regionDecl << "\n");
+      StringRef regionName = regionDecl.getParamDecls().front().getName();
+
       // Value captures are easy (ish)
       SmallVector<Value> captures;
       bool isolated = M::operationIsIsolatedFromAbove(regionDecl, &captures);
@@ -162,7 +164,7 @@ void OutlineClosuresPass::runOnOperation() {
       // Now lift the body out into its own generator.
       b.setInsertionPoint(generator);
       auto lifted = b.create<GeneratorOp>(
-          regionDecl.getLoc(), getUniqueName(""),
+          regionDecl.getLoc(), getUniqueName("_" + regionName),
           TypeAttr::get(liftedSignature),
           b.getAttr<ConstraintArrayAttr>(ArrayRef<ConstraintAttr>{}),
           FlatSymbolRefAttr());
@@ -212,7 +214,7 @@ void OutlineClosuresPass::runOnOperation() {
 
       b.setInsertionPoint(generator);
       auto liftedWrapper = b.create<GeneratorOp>(
-          regionDecl.getLoc(), getUniqueName("_wrapper"),
+          regionDecl.getLoc(), getUniqueName("_" + regionName + "_wrapper"),
           TypeAttr::get(wrapperSignature),
           b.getAttr<ConstraintArrayAttr>(ArrayRef<ConstraintAttr>{}),
           FlatSymbolRefAttr());

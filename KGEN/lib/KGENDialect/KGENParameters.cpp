@@ -928,15 +928,22 @@ ParameterDeclsAndUses::calculateAndPotentiallyVerify(
     // Nested scopes can use parameters defined from above. To ensure the graph
     // is ordered correctly and to catch cycles wherein a region uses a
     // parameter defined by its parent operation, make the parent operation a
-    // use of all nested parameters used within the region.
-    if (isa<ParamDeclareRegionOp>(nestedDecl->getParentOp())) {
+    // user of all nested parameters used within the region.
+    if (auto decl = dyn_cast<ParamDeclareRegionOp>(nestedDecl->getParentOp())) {
       // If there were no uses from above, notify the nested declaration that
       // it is isolated. Do not do this during verification.
       if (!symbolTable && nested.usesFromAbove.empty())
         nestedDecl.notifyKnownIsolatedFromAbove();
-      llvm::append_range(
-          verifier.getUsesForOperation(nestedDecl->getParentOp()),
-          nested.usesFromAbove);
+      llvm::append_range(verifier.getUsesForOperation(decl),
+                         nested.usesFromAbove);
+      // If the nested use from above was not defined at this scope, propagate
+      // it to the current uses from above.
+      for (ParamDeclRefAttr useFromAbove : nested.usesFromAbove) {
+        auto it = decls.find(useFromAbove.getName());
+        assert(it != decls.end() && "nested use has no declaration?");
+        if (!topLevelOp->isAncestor(it->second.first))
+          usesFromAbove.insert(useFromAbove);
+      }
     }
   }
 
