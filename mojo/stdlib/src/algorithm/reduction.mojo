@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from Assert import debug_assert
 from Buffer import Buffer
 from SIMD import SIMD
 from Numerics import inf, neginf
@@ -245,6 +246,9 @@ fn mean[
     type: __mlir_type.`!kgen.dtype`,
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
     """Computes the mean value of the elements in a buffer."""
+
+    debug_assert(src.__len__() != 0)
+
     return (
         SIMD[1, type](sum[simd_width, size, type](src)) / src.__len__()
     ).__getitem__(0)
@@ -261,6 +265,9 @@ fn variance[
     type: __mlir_type.`!kgen.dtype`,
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
     """Computes the variance value of the elements in a buffer."""
+
+    debug_assert(src.__len__() > 1)
+
     let mean_value = mean[simd_width, size, type](src)
 
     @always_inline
