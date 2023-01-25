@@ -12,6 +12,7 @@ from Int import Int
 from SIMD import SIMD
 from F32 import F32
 from Assert import assert_param
+from Range import range
 
 # CHECK: lit.func @"printF32
 fn printF32(x: F32):
@@ -127,35 +128,3 @@ struct ErrorOr[type: __mlir_type.`!kgen.mlirtype`]:
 # is just a placeholder to be used by untyped 'def' operands.
 struct object:
     ...
-
-
-# ===----------------------------------------------------------------------=== #
-# range
-# ===----------------------------------------------------------------------=== #
-
-
-struct range:
-    var start: Int
-    var end: Int
-    var step: Int
-
-    fn __new__(start: Int, end: Int, step: Int) -> range:
-        return range {start: start, end: end, step: step}
-
-    fn __iter__(self: range) -> range:
-        return self
-
-    fn __next__(self&: range) -> Int:
-        let result: Int = self.start
-        self.start += self.step
-        return result
-
-    fn __len__(self: range) -> Int:
-        if self.step > 0 and self.start < self.end:
-            return self.end - self.start
-        if self.step < 0 and self.start > self.end:
-            return self.start - self.end
-        return 0
-
-    fn __getitem__(self: range, idx: Int) -> Int:
-        return self.start + idx * self.step
