@@ -118,8 +118,8 @@ void registerEmitLLVMPass(LLCL::Runtime &rt);
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.
 std::unique_ptr<mlir::Pass>
-createElaborateGenerators(SmallVectorImpl<std::string> &includedFiles,
-                          LLCL::Runtime &runtime,
+createElaborateGenerators(LLCL::Runtime &runtime, bool oldImpl,
+                          SmallVectorImpl<std::string> &includedFiles,
                           const ElaborateGeneratorsOptions &options = {});
 
 //===----------------------------------------------------------------------===//

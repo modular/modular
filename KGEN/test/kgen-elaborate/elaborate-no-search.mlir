@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-generators="search-path=%S enable-search=false" | FileCheck %s
+// RUN: kgen-opt %s -elaborate-generators="enable-search=false" | FileCheck %s
 
 /// This evaluator returns a constant index 0.
 kgen.generator @first<FN:type>(%funcs: !pop.pointer<FN>, %size: index) -> index {
