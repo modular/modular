@@ -7,8 +7,9 @@
 from Assert import assert_param
 from Bool import Bool
 from Int import Int
-from LLCL import Runtime, TaskGroup
+from LLCL import Future, Runtime, TaskGroup
 from Range import range
+from Vector import UnsafeFixedVector
 
 # ===----------------------------------------------------------------------===#
 # Map
@@ -108,19 +109,25 @@ fn vectorize[
 # Parallelize
 # ===----------------------------------------------------------------------===#
 
+alias none = __mlir_type.`!lit.none`
+
 
 fn parallelForEachNChain[
     argsType: __mlir_type.`!kgen.mlirtype`,
     func: __mlir_type[
         `!kgen.signature<(`, Int, `,`, argsType, `) async -> !lit.none>`
     ],
-](rt: Runtime, totalCount: Int, args: argsType) -> TaskGroup:
-    var tg = TaskGroup(rt)
+](
+    rt: Runtime,
+    totalCount: Int,
+    args: argsType,
+    tasks&: UnsafeFixedVector[Future[none]],
+    tg&: TaskGroup,
+):
     for i in range(totalCount):
-        tg.add_task[__mlir_type.`!lit.none`](
-            rt.init_and_run[__mlir_type.`!lit.none`](func(i, args))
-        )
-    return tg
+        let task = rt.init_and_run[none](func(i, args))
+        tasks.append(task)
+        tg.add_task[none](task)
 
 
 fn parallelForEachN[
@@ -133,13 +140,18 @@ fn parallelForEachN[
         return
 
     var tg: TaskGroup
+    var tasks: UnsafeFixedVector[Future[none]]
     var b = Bool(False)
     if totalCount > 1:
 
         async fn task_fn(i: Int, args: argsType):
             func(i, args)
 
-        tg = parallelForEachNChain[argsType, task_fn](rt, totalCount, args)
+        tasks = UnsafeFixedVector[Future[none]](totalCount - 1)
+        tg = TaskGroup(rt)
+        parallelForEachNChain[argsType, task_fn](
+            rt, totalCount - 1, args, tasks, tg
+        )
         b = True
 
     func(totalCount - 1, args)
@@ -147,6 +159,9 @@ fn parallelForEachN[
     if b:
         tg.wait()
         tg.__del__()
+        for j in range(tasks.size):
+            tasks.__getitem__(j).__del__()
+        tasks.__del__()
 
 
 @always_inline
