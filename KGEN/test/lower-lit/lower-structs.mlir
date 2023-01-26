@@ -91,3 +91,21 @@ kgen.func @use_nested(%a: !kgen.declref<@NestedC>) {
 kgen.func @struct_element(%a: !pop.pointer<!kgen.declref<@NestedA<T:type = !pop.simd<2, f32>>>>) {
   kgen.return
 }
+
+
+lit.struct.decl @IndexStruct {
+  lit.struct.field value : index
+}
+
+lit.struct.decl @StructInsideStruct {
+  lit.struct.field x : !kgen.declref<@IndexStruct>
+}
+
+// CHECK-LABEL: @passStructAsLValue
+kgen.func @passStructAsLValue(%s: !pop.pointer<@StructInsideStruct>) {
+  // CHECK: pop.struct.gep %{{.*}}[0] : <struct<struct<index>>>
+  %0 = lit.struct.gep %s[x] : <@IndexStruct> from <@StructInsideStruct>
+  // CHECK: pop.struct.gep %{{.*}}[0] : <struct<index>>
+  %1 = lit.struct.gep %0[value] : <index> from <@IndexStruct>
+  kgen.return
+}
