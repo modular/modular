@@ -145,11 +145,3 @@ extern "C" void KGEN_CompilerRT_LLCL_AddTaskToGroup(
     unwrap(tg)->chain.emplace();
   });
 }
-
-extern "C" void
-KGEN_CompilerRT_LLCL_TaskGroupWait(int8_t *tg,
-                                   ssize_t (*tgCounterDecr)(void *)) {
-  if (tgCounterDecr(tg) == 0)
-    unwrap(tg)->chain.emplace();
-  LLCL::await(unwrap(tg)->chain);
-}

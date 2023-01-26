@@ -160,7 +160,10 @@ Operation *LitSharedState::setResolvedDeclSymbol(Operation *declOp) {
 
   // Insert the operation into the symbol table and see if it got renamed.
   auto origName = SymbolTable::getSymbolName(declOp);
-  Block::iterator insertPt(declOp->getNextNode());
+  Operation *insertAfter = declOp;
+  while (insertAfter->getParentOp() != parentSymbolTableOp)
+    insertAfter = insertAfter->getParentOp();
+  Block::iterator insertPt(insertAfter->getNextNode());
   declOp->remove();
   if (symTab.insert(declOp, insertPt) == origName)
     return nullptr; // No conflict, done.
