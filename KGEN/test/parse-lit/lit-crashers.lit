@@ -56,3 +56,10 @@ fn testOctal():
   var x = "A\0"
   x = "A\01"
   x = "A\012"
+
+// -----
+
+fn testTripleQuote():
+  # expected-error @below {{invalid escape sequence}}
+  # expected-error @below {{unterminated string}}
+  var x = """$\s$"""
