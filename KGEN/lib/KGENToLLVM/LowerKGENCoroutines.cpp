@@ -376,6 +376,13 @@ void LowerKGENCoroutinesPass::runOnOperation() {
   if (handles.empty())
     return;
 
+  // FIXME!!!! CoroSplit pass does not play well with LLVM lifetime markers.
+  // Just strip them, because I don't want to debug an LLVM pass.
+  func.walk([&](Operation *op) {
+    if (isa<LifetimeStartOp, LifetimeEndOp>(op))
+      op->erase();
+  });
+
   POP::CoroutineType coroType = handles.front().getType();
   b.setLoc(func.getLoc());
   FailureOr<Coroutine> coroutine =

@@ -12,6 +12,10 @@
 
 using namespace M;
 
+//===----------------------------------------------------------------------===//
+// AsyncContext
+//===----------------------------------------------------------------------===//
+
 namespace {
 /// The async context contains information for marshalling the execution of
 /// coroutines on an LLCL runtime. This context is stored in the coroutine
@@ -52,13 +56,15 @@ extern "C" void KGEN_CompilerRT_LLCL_DestroyContext(int8_t *asyncCtx) {
   unwrap(asyncCtx)->chain.~AsyncValueRef<Chain>();
 }
 
+//===----------------------------------------------------------------------===//
+// Coroutine / Future
+//===----------------------------------------------------------------------===//
+
 /// Execute a coroutine.
 extern "C" void KGEN_CompilerRT_LLCL_Execute(void (*resume)(int8_t *),
                                              int8_t *hdl, int8_t runtime) {
-  LLCL::CompactRuntimePtr::getFromOpaqueToken(runtime)
-      .get()
-      ->getWorkQueue()
-      ->addTask([resume, hdl] { resume(hdl); });
+  LLCL::CompactRuntimePtr::getFromOpaqueToken(runtime)->getWorkQueue()->addTask(
+      [resume, hdl] { resume(hdl); });
 }
 
 /// Resume a coroutine when the currenet one completes.
@@ -69,8 +75,7 @@ extern "C" void KGEN_CompilerRT_LLCL_AndThen(void (*resume)(int8_t *),
 }
 
 /// Block until the coroutine is done.
-extern "C" void KGEN_CompilerRT_LLCL_Wait(void (*resume)(int8_t *),
-                                          int8_t *asyncCtx) {
+extern "C" void KGEN_CompilerRT_LLCL_Wait(int8_t *asyncCtx) {
   AsyncContext *ctx = unwrap(asyncCtx);
   LLCL::await(ctx->chain);
 }
@@ -80,7 +85,7 @@ extern "C" void KGEN_CompilerRT_LLCL_ExecuteAndWait(void (*resume)(int8_t *),
                                                     int8_t *hdl,
                                                     int8_t *asyncCtx) {
   AsyncContext *ctx = unwrap(asyncCtx);
-  ctx->runtime.get()->getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
+  ctx->runtime->getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
   LLCL::await(ctx->chain);
 }
 
@@ -91,7 +96,7 @@ extern "C" void KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *),
                                                       int8_t *asyncCtx,
                                                       int8_t *resumeHdl) {
   AsyncContext *ctx = unwrap(asyncCtx);
-  ctx->runtime.get()->getWorkQueue()->addTask(
+  ctx->runtime->getWorkQueue()->addTask(
       [resume, execHdl]() { resume(execHdl); });
   ctx->chain.getPointer()->andThenAsync(
       [resumeHdl, resume]() { resume(resumeHdl); });
@@ -102,6 +107,10 @@ extern "C" void KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *),
 extern "C" void KGEN_CompilerRT_LLCL_Complete(int8_t *asyncCtx) {
   unwrap(asyncCtx)->chain.emplace();
 }
+
+//===----------------------------------------------------------------------===//
+// Runtime
+//===----------------------------------------------------------------------===//
 
 /// Create an LLCL runtime and return it as a compact pointer.
 extern "C" int8_t KGEN_CompilerRT_LLCL_CreateRuntime(uint8_t numThreads) {
@@ -124,11 +133,23 @@ extern "C" uint32_t KGEN_CompilerRT_LLCL_ParallelismLevel(int8_t ptr) {
       ->getParallelismLevel();
 }
 
-/// Executes the elementFn in parallel using numTasks when given a compact
-/// pointer to an LLCL runtime.
+//===----------------------------------------------------------------------===//
+// TaskGroup
+//===----------------------------------------------------------------------===//
+
+extern "C" void KGEN_CompilerRT_LLCL_AddTaskToGroup(
+    int8_t *tg, ssize_t (*tgCounterDecr)(void *), int8_t *taskCtx) {
+  unwrap(taskCtx)->chain.andThenAsync([tg, tgCounterDecr] {
+    if (tgCounterDecr(tg) != 0)
+      return;
+    unwrap(tg)->chain.emplace();
+  });
+}
+
 extern "C" void
-KGEN_CompilerRT_LLCL_ParallelForEachN(int8_t ptr, uint32_t numTasks,
-                                      void (*elementFn)(size_t taskId)) {
-  LLCL::parallelForEachN(LLCL::CompactRuntimePtr::getFromOpaqueToken(ptr),
-                         numTasks, [=](size_t taskId) { elementFn(taskId); });
+KGEN_CompilerRT_LLCL_TaskGroupWait(int8_t *tg,
+                                   ssize_t (*tgCounterDecr)(void *)) {
+  if (tgCounterDecr(tg) == 0)
+    unwrap(tg)->chain.emplace();
+  LLCL::await(unwrap(tg)->chain);
 }
