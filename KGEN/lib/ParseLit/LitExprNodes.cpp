@@ -745,9 +745,15 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       auto func = cast<LIT::FuncOp>(body);
       auto region = std::make_unique<Region>();
       region->takeBody(func.getBodyRegion());
-      region->front()
-          .splitBlock(--Block::iterator(region->front().back()))
-          ->erase();
+      for (Operation &op : region->front()) {
+        if (!op.hasTrait<OpTrait::IsTerminator>())
+          continue;
+        if (isa<EndFuncOp>(op)) {
+          op.erase();
+          break;
+        }
+        op.getBlock()->splitBlock(++Block::iterator(&op))->erase();
+      }
       func.erase();
       state.addRegion(std::move(region));
       continue;

@@ -281,13 +281,13 @@ struct Awaitable:
   fn __new__() -> Awaitable:
     return Awaitable{}
 
-  fn __await__(self: Awaitable) -> __mlir_type.index:
+  fn __await__(self&) -> __mlir_type.index:
     return 0
 
 # CHECK-LABEL: lit.func @"awaitable()"
 async fn awaitable() -> __mlir_type.index:
-  # CHECK: call @"$decls"::@Awaitable::@"__await__($decls::Awaitable)"(%aw)
-  let aw = Awaitable()
+  # CHECK: call @"$decls"::@Awaitable::@"__await__($decls::Awaitable&)"(%aw)
+  var aw = Awaitable()
   return await aw
 
 ##===----------------------------------------------------------------------===##
