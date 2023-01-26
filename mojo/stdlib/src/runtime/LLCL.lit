@@ -4,8 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Int import Int
+from Atomic import Atomic
+from DType import DType
 from Error import Error
+from Int import Int
 from Pointer import Pointer
 
 alias typename = __mlir_type.`!kgen.mlirtype`
@@ -35,7 +37,7 @@ fn num_cores() -> Int:
 
 struct AsyncContext:
     var chain: __mlir_type.index
-    var runtime: __mlir_type.i8
+    var runtime: Runtime
 
 
 # ===----------------------------------------------------------------------===#
@@ -85,6 +87,34 @@ fn _get_coro_resume_fn() -> __mlir_type.`(!pop.coroutine<() -> ()>) -> !lit.none
         callee:_coro_resume_fn,
         paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
     ]()
+
+
+fn _init_async_ctx(ptr: Pointer[AsyncContext]):
+    __mlir_op.`pop.external_call`[
+        _type:[],
+        func : __mlir_attr.`@KGEN_CompilerRT_LLCL_InitializeContext`,
+    ](ptr.bitcast[__mlir_type.i8]().address)
+
+
+fn _del_async_ctx(ptr: Pointer[AsyncContext]):
+    __mlir_op.`pop.external_call`[
+        _type:[],
+        func : __mlir_attr.`@KGEN_CompilerRT_LLCL_DestroyContext`,
+    ](ptr.bitcast[__mlir_type.i8]().address)
+
+
+fn _async_and_then(
+    hdl: __mlir_type.`!pop.coroutine<() -> ()>`, ptr: Pointer[AsyncContext]
+):
+    __mlir_op.`pop.external_call`[
+        _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_AndThen`
+    ](_get_coro_resume_fn(), ptr.bitcast[__mlir_type.i8]().address, hdl)
+
+
+fn _async_wait(ptr: Pointer[AsyncContext]):
+    __mlir_op.`pop.external_call`[
+        _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_Wait`
+    ](ptr.bitcast[__mlir_type.i8]().address)
 
 
 # ===----------------------------------------------------------------------===#
@@ -146,12 +176,9 @@ struct Runtime:
         sync context.
         """
         var asyncCtx = handle.get_async_ctx().load()
-        asyncCtx.runtime = self._id
+        asyncCtx.runtime = self
         handle.get_async_ctx().store(asyncCtx)
-        __mlir_op.`pop.external_call`[
-            _type:[],
-            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_InitializeContext`,
-        ](handle.get_opaque_ctx().address)
+        _init_async_ctx(handle.get_async_ctx())
         return self.run_task[type](handle)
 
     @staticmethod
@@ -187,13 +214,11 @@ struct Future[type: typename]:
         """Destroy the memory associated with a future. This must be manually
         called when a future goes out of scope.
         """
-        __mlir_op.`pop.external_call`[
-            _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_DestroyContext`
-        ](self.handle.get_opaque_ctx())
+        _del_async_ctx(self.handle.get_async_ctx())
         __mlir_op.`pop.coroutine.destroy`(self.handle._handle)
 
     @always_inline
-    fn __await__(self) -> type:
+    fn __await__(self&) -> type:
         """Suspend the current async function until the future value becomes
         available. This function must be force inlined into the calling async
         function.
@@ -203,20 +228,80 @@ struct Future[type: typename]:
         ]()
 
         fn await_body():
-            __mlir_op.`pop.external_call`[
-                _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_AndThen`
-            ](
-                _get_coro_resume_fn(),
-                self.handle.get_opaque_ctx(),
-                curHdl,
-            )
+            _async_and_then(curHdl, self.handle.get_async_ctx())
 
         __mlir_op.`pop.coroutine.await`[_region:["await_body"]]()
         return self.get()
 
     fn wait(self) -> type:
         """Block the current thread until the future value becomes available."""
-        __mlir_op.`pop.external_call`[
-            _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_Wait`
-        ](_get_coro_resume_fn(), self.handle.get_opaque_ctx())
+        _async_wait(self.handle.get_async_ctx())
         return self.get()
+
+
+# ===----------------------------------------------------------------------===#
+# TaskGroup
+# ===----------------------------------------------------------------------===#
+
+
+struct TaskGroup:
+    var ctx: AsyncContext
+    var counter: Atomic[DType.index.value]
+
+    fn __new__(rt: Runtime) -> TaskGroup:
+        var ctx: AsyncContext
+        ctx.runtime = rt
+        _init_async_ctx(Pointer[AsyncContext].address_of(ctx))
+        return TaskGroup {counter: 1, ctx: ctx}
+
+    fn __del__(self&):
+        _del_async_ctx(Pointer[AsyncContext].address_of(self.ctx))
+
+    @staticmethod
+    fn _get_decr_callback() -> __mlir_type[
+        `(!pop.pointer<`, TaskGroup, `>) -> `, Int
+    ]:
+        return __mlir_op.`kgen.addressof`[
+            _type : [__mlir_type[`(!pop.pointer<`, TaskGroup, `>) -> `, Int]],
+            callee:_counter_decr,
+            paramDecls : __mlir_attr.`#kgen<param.decls[]>`,
+        ]()
+
+    fn add_task[type: typename](self&, task: Future[type]):
+        self.counter += 1
+        __mlir_op.`pop.external_call`[
+            _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_AddTaskToGroup`
+        ](
+            Pointer[AsyncContext].address_of(self.ctx),
+            _get_decr_callback(),
+            task.handle.get_opaque_ctx(),
+        )
+
+    @always_inline
+    fn _counter_decr(self&) -> Int:
+        self.counter -= 1
+        return self.counter.value
+
+    @staticmethod
+    fn await_body_impl(
+        hdl: __mlir_type.`!pop.coroutine<() -> ()>`, tg&: TaskGroup
+    ):
+        _async_and_then(hdl, Pointer[AsyncContext].address_of(tg.ctx))
+        if tg._counter_decr() == 0:
+            _coro_resume_fn(hdl)
+
+    @always_inline
+    fn __await__(self&):
+        let curHdl = __mlir_op.`pop.coroutine.handle`[
+            _type : __mlir_type.`!pop.coroutine<() -> ()>`
+        ]()
+
+        fn await_body():
+            await_body_impl(curHdl, self)
+
+        __mlir_op.`pop.coroutine.await`[_region:["await_body"]]()
+
+    fn wait(self&):
+        if self._counter_decr() == 0:
+            return
+        _async_wait(Pointer[AsyncContext].address_of(self.ctx))
