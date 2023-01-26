@@ -79,15 +79,15 @@ fn test_runtime_parallel_for():
     alias chunk_size: Int = 32
     alias num_tasks: Int = 32
 
-    fn task_fn(i: Int, ptr: Pointer[__mlir_type.index]):
+    fn task_fn(i: Int, ptr: Pointer[Int]):
         for j in range(chunk_size):
             (ptr + i * chunk_size + j).store(i.__as_mlir_index())
 
-    let ptr: Pointer[__mlir_type.index] = stack_allocation[
-        (chunk_size * num_tasks).__as_mlir_index(), __mlir_type.index, 0
+    let ptr: Pointer[Int] = stack_allocation[
+        (chunk_size * num_tasks).__as_mlir_index(), Int, 0
     ]()
     let rt = Runtime(4)
-    parallelForEachN[Pointer[__mlir_type.index], task_fn](rt, num_tasks, ptr)
+    parallelForEachN[Pointer[Int], task_fn](rt, num_tasks, ptr)
 
     var sum: Int = 0
     for i in range(chunk_size * num_tasks):
