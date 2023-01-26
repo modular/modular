@@ -4,8 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Int import Int
 from Assert import assert_param
+from Bool import Bool
+from Int import Int
+from LLCL import Runtime, TaskGroup
+from Range import range
 
 # ===----------------------------------------------------------------------===#
 # Map
@@ -104,6 +107,46 @@ fn vectorize[
 # ===----------------------------------------------------------------------===#
 # Parallelize
 # ===----------------------------------------------------------------------===#
+
+
+fn parallelForEachNChain[
+    argsType: __mlir_type.`!kgen.mlirtype`,
+    func: __mlir_type[
+        `!kgen.signature<(`, Int, `,`, argsType, `) async -> !lit.none>`
+    ],
+](rt: Runtime, totalCount: Int, args: argsType) -> TaskGroup:
+    var tg = TaskGroup(rt)
+    for i in range(totalCount):
+        tg.add_task[__mlir_type.`!lit.none`](
+            rt.init_and_run[__mlir_type.`!lit.none`](func(i, args))
+        )
+    return tg
+
+
+fn parallelForEachN[
+    argsType: __mlir_type.`!kgen.mlirtype`,
+    func: __mlir_type[
+        `!kgen.signature<(`, Int, `,`, argsType, `) -> !lit.none>`
+    ],
+](rt: Runtime, totalCount: Int, args: argsType):
+    if totalCount == 0:
+        return
+
+    var tg: TaskGroup
+    var b = Bool(False)
+    if totalCount > 1:
+
+        async fn task_fn(i: Int, args: argsType):
+            func(i, args)
+
+        tg = parallelForEachNChain[argsType, task_fn](rt, totalCount, args)
+        b = True
+
+    func(totalCount - 1, args)
+
+    if b:
+        tg.wait()
+        tg.__del__()
 
 
 @always_inline
