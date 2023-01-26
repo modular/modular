@@ -1934,7 +1934,7 @@ struct ElaborateGeneratorsPass
     // These are the only generators that will be elaborated.
     SmallVector<GeneratorOp> primaryGenerators;
     for (auto gen : theModule.getOps<GeneratorOp>())
-      if (gen.getInputParamDecls().empty())
+      if (gen.getInputParamDecls().empty() && !gen.getImplementsAttr())
         primaryGenerators.push_back(gen);
 
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
