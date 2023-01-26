@@ -40,13 +40,13 @@ fn get_pack_data_size_debug() -> Int:
     """Pack element counts in debug build. Use a small number to avoid
     stack overflow in asan builds.
     """
-    assert_param_bool[is_debug_build()]
+    assert_param_bool[is_debug_build()]()
     return 1024
 
 
 @implements(get_pack_data_size)
 fn get_pack_data_size_release() -> Int:
-    assert_param_bool[not is_debug_build()]
+    assert_param_bool[not is_debug_build()]()
     """Pack element counts. Use a number that's proportion to the cache size.
     """
     # PackCacheSize (hard code to 512kB of f32,
