@@ -8,6 +8,10 @@
 from IO import print
 from Int import Int
 from LLCL import TaskGroup, Runtime
+from Functional import parallelForEachN
+from Pointer import Pointer
+from MemoryUtilities import stack_allocation
+from Range import range
 
 # CHECK-LABEL: test_runtime_future
 fn test_runtime_future():
@@ -69,8 +73,34 @@ fn test_runtime_taskgroup():
     rt.__del__()
 
 
+fn test_runtime_parallel_for():
+    print("== test_runtime_parallel_for\n")
+
+    alias chunk_size: Int = 32
+    alias num_tasks: Int = 32
+
+    fn task_fn(i: Int, ptr: Pointer[__mlir_type.index]):
+        for j in range(chunk_size):
+            (ptr + i * chunk_size + j).store(i.__as_mlir_index())
+
+    let ptr: Pointer[__mlir_type.index] = stack_allocation[
+        (chunk_size * num_tasks).__as_mlir_index(), __mlir_type.index, 0
+    ]()
+    let rt = Runtime(4)
+    parallelForEachN[Pointer[__mlir_type.index], task_fn](rt, num_tasks, ptr)
+
+    var sum: Int = 0
+    for i in range(chunk_size * num_tasks):
+        sum += (ptr + i).load()
+    # COM: sum(0, 31) * 32
+    # CHECK: 15872
+    print(sum)
+    rt.__del__()
+
+
 @export
 fn main() -> __mlir_type.index:
     test_runtime_future()
     test_runtime_taskgroup()
+    test_runtime_parallel_for()
     return 0
