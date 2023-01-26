@@ -630,14 +630,12 @@ std::optional<int64_t> VariadicType::getTypeAlign(TargetInfoAttr target) const {
 //===----------------------------------------------------------------------===//
 
 std::optional<int64_t> CoroutineType::getTypeSize(TargetInfoAttr target) const {
-  // FIXME: Implement this.
-  llvm_unreachable("TODO: unimplemented");
+  return target.getPointerSize();
 }
 
 std::optional<int64_t>
 CoroutineType::getTypeAlign(TargetInfoAttr target) const {
-  // FIXME: Implement this.
-  llvm_unreachable("TODO: unimplemented");
+  return target.getPointerSize();
 }
 
 CoroutineType CoroutineType::get(SignatureType sig) {
