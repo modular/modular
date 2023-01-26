@@ -12,6 +12,7 @@ add_modular_mlir_library(KGENCompilerRT SHARED
   Initialize.cpp
   LLCL.cpp
   Print.cpp
+  Tracing.cpp
   Random.cpp
   System.cpp
 
