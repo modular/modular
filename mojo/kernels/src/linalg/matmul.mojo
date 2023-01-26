@@ -4,10 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# ===----------------------------------------------------------------------=== #
-#  This file contains matmul kernel implementation details and utilities.
-# ===----------------------------------------------------------------------=== #
-
+from Assert import assert_param, assert_param_bool
+from Bool import Bool
 from Buffer import (
     NDBuffer,
     Buffer,
@@ -15,18 +13,17 @@ from Buffer import (
     partial_simd_store,
     _raw_stack_allocation,
 )
-from MemoryUtilities import stack_allocation
-from Bool import Bool
-from Int import Int
-from SIMD import SIMD
-from Tuple import StaticTuple
-from Pointer import DTypePointer
-from Assert import assert_param, assert_param_bool
-from Transpose import transpose_inplace
-from Index import Index, StaticIntTuple
-from TargetInfo import simd_byte_width
-from List import create_kgen_list
 from BuildInfo import is_debug_build
+from Index import Index, StaticIntTuple
+from Int import Int
+from List import create_kgen_list
+from Matrix import Matrix
+from MemoryUtilities import stack_allocation
+from Pointer import DTypePointer
+from SIMD import SIMD
+from TargetInfo import simd_byte_width
+from Transpose import transpose_inplace
+from Tuple import StaticTuple
 
 
 @interface
@@ -65,17 +62,18 @@ struct GemmShape:
     var K: Int
 
     # Construct from dynamic shaped input.
-    fn __new__[
+    @staticmethod
+    fn get[
         shape_c: __mlir_type[`!kgen.list<index[2]>`],
         shape_a: __mlir_type[`!kgen.list<index[2]>`],
         shape_b: __mlir_type[`!kgen.list<index[2]>`],
         type: __mlir_type.`!kgen.dtype`,
+        transpose_a: Bool,
+        transpose_b: Bool,
     ](
         c: NDBuffer[2, shape_c, type],
         a: NDBuffer[2, shape_a, type],
         b: NDBuffer[2, shape_b, type],
-        transpose_a: Bool,
-        transpose_b: Bool,
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -139,62 +137,6 @@ struct GemmShape:
         return self.as_index() + rhs.as_index()
 
 
-struct _Matrix[
-    shape: __mlir_type[`!kgen.list<index[2]>`],
-    type: __mlir_type.`!kgen.dtype`,
-    transposed: Bool,
-]:
-    """Utility to access matrix across layouts with
-    unified indexing interface.
-    """
-
-    var data: NDBuffer[2, shape, type]
-
-    fn __new__(
-        data: NDBuffer[2, shape, type]
-    ) -> _Matrix[shape, type, transposed]:
-        """Constructor of a matrix based on a buffer and a transpose flag.
-
-        Args:
-            data: The buffer containing the matrix data.
-
-        Returns:
-            The constructed matrix.
-        """
-
-        return _Matrix[shape, type, transposed] {data: data}
-
-    fn __getitem__(self, x: Int, y: Int) -> SIMD[1, type]:
-        """Returns the data stored at the given untransposed coordinate.
-
-        Args:
-            x: The untransposed x coordinate.
-            y: The untransposed y coordinate.
-
-        Returns:
-            The value stored at the coordinate.
-        """
-        if transposed:
-            return self.data.__getitem__(Index(y, x).as_tuple())
-        return self.data.__getitem__(Index(x, y).as_tuple())
-
-    fn __setitem__(self, x: Int, y: Int, val: SIMD[1, type]):
-        """Stores the data stored at the given untransposed coordinate.
-
-        Args:
-            x: The untransposed x coordinate.
-            y: The untransposed y coordinate.
-            val: The value to store.
-
-        Returns:
-            The value stored at the coordinate.
-        """
-        if transposed:
-            self.data.__setitem__(Index(y, x).as_tuple(), val)
-        else:
-            self.data.__setitem__(Index(x, y).as_tuple(), val)
-
-
 fn naive_matmul[
     shape_a: __mlir_type[`!kgen.list<index[2]>`],
     shape_b: __mlir_type[`!kgen.list<index[2]>`],
@@ -216,12 +158,12 @@ fn naive_matmul[
         transpose_a: indicates if a is transposed.
         transpose_b: indicates if b is transposed.
     """
-    var gemm_shape = GemmShape.__new__[shape_c, shape_a, shape_b, type](
-        c, a, b, transpose_a, transpose_b
-    )
-    var matrix_a = _Matrix[shape_a, type, transpose_a](a)
-    var matrix_b = _Matrix[shape_b, type, transpose_b](b)
-    var matrix_c = _Matrix[shape_c, type, False](c)
+    var gemm_shape = GemmShape.get[
+        shape_c, shape_a, shape_b, type, transpose_a, transpose_b
+    ](c, a, b)
+    let matrix_a = Matrix[shape_a, type, transpose_a](a)
+    let matrix_b = Matrix[shape_b, type, transpose_b](b)
+    let matrix_c = Matrix[shape_c, type, False](c)
 
     var m: Int = 0
     while m < gemm_shape.M:
@@ -259,7 +201,7 @@ fn round_down_to_block[
     Returns:
         The rounded data size.
     """
-    let num_of_blocks: Int = original_size // block_size
+    let num_of_blocks = original_size // block_size
     return num_of_blocks * block_size
 
 
@@ -285,7 +227,7 @@ struct PackMatrixRows[
     # packed matrix
     var packed_matrix: NDBuffer[3, packed_shape, type]
     # original matrix:
-    var orig_matrix: NDBuffer[2, original_shape, type]
+    var original_matrix: NDBuffer[2, original_shape, type]
     # offsets in original matrix
     var global_offset: StaticIntTuple[2]
     # number of Row and Col to pack.
@@ -301,7 +243,7 @@ struct PackMatrixRows[
     @staticmethod
     fn run(
         packed_matrix: NDBuffer[3, packed_shape, type],
-        orig_matrix: NDBuffer[2, original_shape, type],
+        original_matrix: NDBuffer[2, original_shape, type],
         global_offset: StaticIntTuple[2],
         pack_tile_dim: StaticIntTuple[2],
     ):
@@ -309,7 +251,7 @@ struct PackMatrixRows[
         Args:
             packed_matrix(NDBuffer): pre-allocated buffer space for packed
                 data.
-            orig_matrix(NDBuffer): data buffer containing the original matrix
+            original_matrix(NDBuffer): data buffer containing the original matrix
                 to pack.
             global_offset(StaticIntTuple): offset to use when indexing the
                 original matrix.
@@ -318,12 +260,12 @@ struct PackMatrixRows[
         """
         let instance = PackMatrixRows[
             original_shape, packed_shape, type, simd_size, row_inner_size
-        ](packed_matrix, orig_matrix, global_offset, pack_tile_dim)
+        ](packed_matrix, original_matrix, global_offset, pack_tile_dim)
         instance._pack()
 
     fn __new__(
         packed_matrix: NDBuffer[3, packed_shape, type],
-        orig_matrix: NDBuffer[2, original_shape, type],
+        original_matrix: NDBuffer[2, original_shape, type],
         global_offset: StaticIntTuple[2],
         pack_tile_dim: StaticIntTuple[2],
     ) -> PackMatrixRows[
@@ -333,7 +275,7 @@ struct PackMatrixRows[
         Args:
             packed_matrix(NDBuffer): pre-allocated buffer space for packed
                 data.
-            orig_matrix(NDBuffer): data buffer containing the original matrix
+            original_matrix(NDBuffer): data buffer containing the original matrix
                 to pack.
             global_offset(StaticIntTuple): offset to use when indexing the
                 original matrix.
@@ -343,18 +285,11 @@ struct PackMatrixRows[
         assert_param[row_inner_size % simd_size == 0]()
         # Assumes NumberOfRowToPack is divisible by row_inner_size
         # TODO: add dynamic checks.
-        var packed: PackMatrixRows[
-            original_shape, packed_shape, type, simd_size, row_inner_size
-        ]
-        packed.packed_matrix = packed_matrix
-        packed.orig_matrix = orig_matrix
-        packed.global_offset = global_offset
-        packed.pack_tile_dim = pack_tile_dim
 
         # Calculate bound of valid data in original matrix.
         let valid_data_dim = Index(
-            orig_matrix.dim[0]() - global_offset.__getitem__[0](),
-            orig_matrix.dim[1]() - global_offset.__getitem__[1](),
+            original_matrix.dim[0]() - global_offset.__getitem__[0](),
+            original_matrix.dim[1]() - global_offset.__getitem__[1](),
         )
         # Calculate multiple-of-simd bound of valid data.
         let valid_simd_dim = Index(
@@ -372,9 +307,16 @@ struct PackMatrixRows[
             ),
         )
 
-        packed.valid_data_dim = valid_data_dim
-        packed.valid_simd_dim = valid_simd_dim
-        return packed
+        return PackMatrixRows[
+            original_shape, packed_shape, type, simd_size, row_inner_size
+        ] {
+            packed_matrix: packed_matrix,
+            original_matrix: original_matrix,
+            global_offset: global_offset,
+            pack_tile_dim: pack_tile_dim,
+            valid_data_dim: valid_data_dim,
+            valid_simd_dim: valid_simd_dim,
+        }
 
     fn _transpose_pack_helper[
         skip_row_bound: Bool,
@@ -412,7 +354,7 @@ struct PackMatrixRows[
         let write_bound = self.pack_tile_dim - local_off_set
 
         # Global index the packing is starting from.
-        var start_idx_global = local_off_set + self.global_offset
+        let start_idx_global = local_off_set + self.global_offset
 
         # Fill the simd_size x simd_size transpose buffer
         #  with un-transposed data.
@@ -420,7 +362,7 @@ struct PackMatrixRows[
         while inner_row_idx < simd_size:
             # Check that the current row has valid data.
             if skip_row_bound or (inner_row_idx < read_bound.__getitem__[0]()):
-                var row_gloal_index = Index(
+                let row_gloal_index = Index(
                     start_idx_global.__getitem__[0]() + inner_row_idx,
                     start_idx_global.__getitem__[1](),
                 ).as_tuple()
@@ -429,17 +371,17 @@ struct PackMatrixRows[
                     # This is fastest path where both row and col bounds
                     #  are skipped so the code path is simd-in and simd-out
                     #  without any predicate.
-                    row_data = self.orig_matrix.simd_load[simd_size](
+                    row_data = self.original_matrix.simd_load[simd_size](
                         row_gloal_index
                     )
                 else:
                     # Not skipping col bound, need to to a partial fill of
                     #  the transpose buffer row.
                     row_data = partial_simd_load[simd_size, type](
-                        self.orig_matrix._offset(row_gloal_index),
+                        self.original_matrix._offset(row_gloal_index),
                         0,  # no left bound.
                         read_bound.__getitem__[1](),
-                        SIMD[1, type](0),
+                        0,
                     )
 
                 transpose_buffer.simd_store[simd_size](
@@ -597,7 +539,7 @@ struct PackMatrixCols[
     # packed matrix
     var packed_matrix: NDBuffer[3, packed_shape, type]
     # original matrix:
-    var orig_matrix: NDBuffer[2, original_shape, type]
+    var original_matrix: NDBuffer[2, original_shape, type]
     # offsets in original matrix:
     var global_offset: StaticIntTuple[2]
     # number of Row and Col to pack.
@@ -610,7 +552,7 @@ struct PackMatrixCols[
     @staticmethod
     fn run(
         packed_matrix: NDBuffer[3, packed_shape, type],
-        orig_matrix: NDBuffer[2, original_shape, type],
+        original_matrix: NDBuffer[2, original_shape, type],
         global_offset: StaticIntTuple[2],
         pack_tile_dim: StaticIntTuple[2],
     ):
@@ -618,7 +560,7 @@ struct PackMatrixCols[
         Args:
             packed_matrix(NDBuffer): pre-allocated buffer space for packed
                 data.
-            orig_matrix(NDBuffer): data buffer containing the original matrix
+            original_matrix(NDBuffer): data buffer containing the original matrix
                 to pack.
             global_offset(StaticIntTuple): offset to use when indexing the
                 original matrix.
@@ -627,12 +569,12 @@ struct PackMatrixCols[
         """
         let instance = PackMatrixCols[
             original_shape, packed_shape, type, simd_size, column_inner_size
-        ](packed_matrix, orig_matrix, global_offset, pack_tile_dim)
+        ](packed_matrix, original_matrix, global_offset, pack_tile_dim)
         instance._pack()
 
     fn __new__(
         packed_matrix: NDBuffer[3, packed_shape, type],
-        orig_matrix: NDBuffer[2, original_shape, type],
+        original_matrix: NDBuffer[2, original_shape, type],
         global_offset: StaticIntTuple[2],
         pack_tile_dim: StaticIntTuple[2],
     ) -> PackMatrixCols[
@@ -642,7 +584,7 @@ struct PackMatrixCols[
         Args:
             packed_matrix(NDBuffer): pre-allocated buffer space for packed
                 data.
-            orig_matrix(NDBuffer): data buffer containing the original matrix
+            original_matrix(NDBuffer): data buffer containing the original matrix
                 to pack.
             global_offset(StaticIntTuple): offset to use when indexing the
                 original matrix.
@@ -653,12 +595,12 @@ struct PackMatrixCols[
             original_shape, packed_shape, type, simd_size, column_inner_size
         ]
         pack.packed_matrix = packed_matrix
-        pack.orig_matrix = orig_matrix
+        pack.original_matrix = original_matrix
         pack.global_offset = global_offset
         pack.pack_tile_dim = pack_tile_dim
         pack.valid_data_dim = Index(
-            orig_matrix.dim[0]() - global_offset.__getitem__[0](),
-            orig_matrix.dim[1]() - global_offset.__getitem__[1](),
+            original_matrix.dim[0]() - global_offset.__getitem__[0](),
+            original_matrix.dim[1]() - global_offset.__getitem__[1](),
         )
 
         assert_param[column_inner_size % simd_size == 0]()
@@ -703,7 +645,7 @@ struct PackMatrixCols[
                 col_idx + simd_size <= self.valid_data_dim.__getitem__[1]()
             ):
                 # Whole SIMD vector within bound.
-                data = self.orig_matrix.simd_load[simd_size](global_idx)
+                data = self.original_matrix.simd_load[simd_size](global_idx)
             elif col_idx >= self.valid_data_dim.__getitem__[1]():
                 # Starting point out of bound. Fill a zero vector.
                 data = SIMD[simd_size, type](0)
@@ -711,7 +653,7 @@ struct PackMatrixCols[
                 # Starting point within bound but cannot load a whole
                 #  vector. Do a partial load.
                 data = partial_simd_load[simd_size, type](
-                    self.orig_matrix._offset(global_idx),
+                    self.original_matrix._offset(global_idx),
                     0,
                     self.valid_data_dim.__getitem__[1]() - col_idx,
                     SIMD[1, type](0),
@@ -930,16 +872,16 @@ struct MatmulInnerLoopBPacked[
         while row_idx < a_row_size:
             var col_idx: Int = 0
             while col_idx < pack_inner_size:
-                var global_idx_pair = (
+                let global_idx_pair = (
                     Index(self.global_offset.M, self.global_offset.N)
                     + tile_idx
                     + Index(row_idx, col_idx)
                 )
-                var global_idx = Index(
+                let global_idx = Index(
                     global_idx_pair.__getitem__[0](),
                     global_idx_pair.__getitem__[1](),
                 ).as_tuple()
-                var local_idx = Index(row_idx, col_idx).as_tuple()
+                let local_idx = Index(row_idx, col_idx).as_tuple()
 
                 # Load data from original matrix C.
                 var c_data = SIMD[simd_size, type](0)
@@ -995,16 +937,16 @@ struct MatmulInnerLoopBPacked[
         while row_idx < a_row_size:
             var col_idx: Int = 0
             while col_idx < pack_inner_size:
-                var global_idx_pair = (
+                let global_idx_pair = (
                     Index(self.global_offset.M, self.global_offset.N)
                     + tile_idx
                     + Index(row_idx, col_idx)
                 )
-                var global_idx = Index(
+                let global_idx = Index(
                     global_idx_pair.__getitem__[0](),
                     global_idx_pair.__getitem__[1](),
                 ).as_tuple()
-                var local_idx = Index(row_idx, col_idx).as_tuple()
+                let local_idx = Index(row_idx, col_idx).as_tuple()
 
                 # Load data from original matrix C.
                 var c_data = c_local.simd_load[simd_size](local_idx)
@@ -1087,17 +1029,13 @@ struct MatmulInnerLoopBPacked[
         (a_row_size, TileN, TileK) tile.
         """
         # Allocate accumulation buffer.
-        var _c_data = _raw_stack_allocation[
-            a_row_size * pack_inner_size * simd_size, type, 1
-        ]()
-
         var c_local = NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](
                 a_row_size, pack_inner_size * simd_size
             ),
             type,
-        ](_c_data.address)
+        ].stack_allocation()
 
         var idx_n: Int = 0
         while idx_n < self.tile_n_k.__getitem__[0]():
@@ -1219,7 +1157,7 @@ struct TiledMatmul[
             transpose_a: True if a is in transposed layout.
             transpose_b: True if b is in transposed layout.
         """
-        var matmul = TiledMatmul[
+        let matmul = TiledMatmul[
             shape_a,
             shape_b,
             shape_c,
@@ -1260,7 +1198,13 @@ struct TiledMatmul[
             transpose_a: True if a is in transposed layout.
             transpose_b: True if b is in transposed layout.
         """
-        var matmul: TiledMatmul[
+        let gemm_shape = GemmShape.get[
+            shape_c, shape_a, shape_b, type, transpose_a, transpose_b
+        ](c, a, b)
+        let tile_n_k = calculate_tile_n_k[pack_cache_size, pack_inner_size](
+            gemm_shape
+        )
+        return TiledMatmul[
             shape_a,
             shape_b,
             shape_c,
@@ -1272,18 +1216,7 @@ struct TiledMatmul[
             pack_cache_size,
             transpose_a,
             transpose_b,
-        ]
-        matmul.c = c
-        matmul.a = a
-        matmul.b = b
-        let _gemm_shape = GemmShape.__new__[shape_c, shape_a, shape_b, type](
-            c, a, b, transpose_a, transpose_b
-        )
-        matmul.gemm_shape = _gemm_shape
-        matmul.tile_n_k = calculate_tile_n_k[pack_cache_size, pack_inner_size](
-            _gemm_shape
-        )
-        return matmul
+        ] {c: c, a: a, b: b, tile_n_k: tile_n_k, gemm_shape: gemm_shape}
 
     fn _outer_m_loop_row_helper[
         skip_col_bound: Bool,
