@@ -234,7 +234,7 @@ ObjectCompiler::produceStandaloneObjectAttr(TargetInfoAttr target, bool isJIT) {
           IntegerType::get(target.getContext(), 8, IntegerType::Unsigned)),
       "object_" + llvm::toHex(hash, /*LowerCase=*/true),
       ArrayRef<char>(buffer->getBufferStart(), buffer->getBufferSize()),
-      resourceManager, /*optAlignment=*/8);
+      resourceManager, /*optAlignment=*/8, /*forceOutOfLine=*/true);
 }
 
 //===----------------------------------------------------------------------===//
