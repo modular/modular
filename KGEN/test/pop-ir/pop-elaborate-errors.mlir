@@ -6,7 +6,7 @@ kgen.generator @invalid_bitcast<size, type: dtype>(%a: !pop.simd<4, f32>) -> !po
   kgen.return %0 : !pop.simd<size, type>
 }
 
-// expected-error @below {{no viable implementations}}
+// expected-error @below {{no viable expansions}}
 kgen.generator @impl(%a: !pop.simd<4, f32>) {
   // expected-note @below {{call expansion failed}}
   %0 = kgen.call @invalid_bitcast<size = 2, type: dtype = ui32>(%a) : (!pop.simd<4, f32>) -> (!pop.simd<2, ui32>)
@@ -24,7 +24,7 @@ kgen.func @out_of_range_read() -> i32 {
   kgen.return %1 : i32
 }
 
-// expected-error @below {{no viable implementations found}}
+// expected-error @below {{no viable expansions found}}
 kgen.generator @call_it() {
   // expected-note @below {{failed to evaluate 'apply'}}
   %0 = kgen.param.constant: i32 = <apply(:() -> i32 @out_of_range_read)>

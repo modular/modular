@@ -1722,7 +1722,12 @@ ParseResult ElaboratorImpl::collectInterfaces() {
 LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &analysis,
                                      LLCL::Runtime &runtime,
                                      ArrayRef<GeneratorOp> primaryGenerators,
-                                     bool enableSearch) {
+                                     bool useOldImpl, bool enableSearch) {
+  // If we want to use the new impl, use it and return immediately.
+  if (!useOldImpl)
+    return elaborateGeneratorsV2(analysis, runtime, primaryGenerators,
+                                 enableSearch);
+
   LLVM_DEBUG({
     llvm::dbgs() << "Elaborating top level generators:\n";
     for (auto generator : primaryGenerators)
@@ -1911,10 +1916,11 @@ namespace {
 /// resolved, so first resolve imports and then elaborate.
 struct ElaborateGeneratorsPass
     : public KGEN::impl::ElaborateGeneratorsBase<ElaborateGeneratorsPass> {
-  ElaborateGeneratorsPass(SmallVectorImpl<std::string> &includedFiles,
-                          LLCL::Runtime &runtime,
+  ElaborateGeneratorsPass(LLCL::Runtime &runtime, bool oldImpl,
+                          SmallVectorImpl<std::string> &includedFiles,
                           const ElaborateGeneratorsOptions &options)
-      : ElaborateGeneratorsBase(options), includedFiles(&includedFiles) {}
+      : ElaborateGeneratorsBase(options), runtime(&runtime), oldImpl(oldImpl),
+        includedFiles(&includedFiles) {}
   using ElaborateGeneratorsBase::ElaborateGeneratorsBase;
 
   void runOnOperation() override {
@@ -1938,18 +1944,22 @@ struct ElaborateGeneratorsPass
         primaryGenerators.push_back(gen);
 
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
+    // TODO: This should not be happening inside the elaborate-generators pass.
     if (failed(resolveIncludes(analysis.getTopLevelSymbolTable(), paths,
                                includedFiles)))
       return signalPassFailure();
 
-    if (failed(elaborateGenerators(analysis, *rt, primaryGenerators,
+    if (failed(elaborateGenerators(analysis, *rt, primaryGenerators, oldImpl,
                                    shouldDoSearch)))
       return signalPassFailure();
   }
 
-  /// An optional set of included files that were found during processing.
-  SmallVectorImpl<std::string> *includedFiles = nullptr;
+  /// An optional LLCL runtime pointer.
   LLCL::Runtime *runtime = nullptr;
+  /// Whether to use the new or the old elaborator implementation.
+  bool oldImpl = false;
+  /// Vector of files we included.
+  SmallVectorImpl<std::string> *includedFiles = nullptr;
 };
 
 /// Resolve includes in a pass. This pass only does include resolution.
@@ -1977,11 +1987,11 @@ struct ResolveIncludesPass
 } // namespace
 
 std::unique_ptr<mlir::Pass>
-KGEN::createElaborateGenerators(SmallVectorImpl<std::string> &includedFiles,
-                                LLCL::Runtime &runtime,
+KGEN::createElaborateGenerators(LLCL::Runtime &runtime, bool oldImpl,
+                                SmallVectorImpl<std::string> &includedFiles,
                                 const ElaborateGeneratorsOptions &options) {
-  return std::make_unique<ElaborateGeneratorsPass>(includedFiles, runtime,
-                                                   options);
+  return std::make_unique<ElaborateGeneratorsPass>(runtime, oldImpl,
+                                                   includedFiles, options);
 }
 
 std::unique_ptr<mlir::Pass>

@@ -18,6 +18,15 @@ struct EvalContext;
 class IREvaluator;
 
 //===----------------------------------------------------------------------===//
+// New elaborator entry point
+//===----------------------------------------------------------------------===//
+
+LogicalResult elaborateGeneratorsV2(mlir::SymbolTableAnalysis &analysis,
+                                    LLCL::Runtime &runtime,
+                                    ArrayRef<GeneratorOp> primaryGenerators,
+                                    bool enableSearch);
+
+//===----------------------------------------------------------------------===//
 // ElaboratedGenerator
 //===----------------------------------------------------------------------===//
 
