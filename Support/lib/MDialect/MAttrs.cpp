@@ -522,11 +522,12 @@ ElementsAttr
 M::getAttrForTensorData(ShapedType type, StringRef bufferName,
                         ArrayRef<char> data,
                         DenseResourceElementsHandleManager &resourceManager,
-                        Optional<size_t> optAlignment) {
+                        Optional<size_t> optAlignment, bool forceOutOfLine) {
   // When loading in a tensor, we make a distinction between the case where
   // the data is "small" and when it is "large". "large" data is stored as a
   // resource blob, while "small" data is stored inline in the context.
-  if (!shouldUseOutOfLineAttrStorage(type.getNumElements())) {
+  if (!(forceOutOfLine ||
+        shouldUseOutOfLineAttrStorage(type.getNumElements()))) {
     if (optAlignment) {
       return AlignedBytesAttr::get(
           type.getContext(), static_cast<uint64_t>(*optAlignment),

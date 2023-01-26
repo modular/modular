@@ -196,8 +196,9 @@ public:
 /// and bitpacked-ness of the attribute are handled.
 Attribute convertDenseElements(Attribute attr);
 
-/// Returns an attribute to store the given tensor data. Depending on the amount
-/// of data and optional alignment, this might be inlined as:
+/// Returns an attribute to store the given tensor data. Using forceOutOfLine
+/// will force the binary to be stored as a dialect resource. Depending on the
+/// amount of data and optional alignment, this might be inlined as:
 ///  - 'ArrayElementAttr' (small data, no alignment constraint)
 ///  - 'AlignedBytes' (small data, alignment constraint)
 ///  - 'DenseResourceElementsAttr' (large data, if no alignment constraint then
@@ -205,7 +206,8 @@ Attribute convertDenseElements(Attribute attr);
 ElementsAttr
 getAttrForTensorData(ShapedType type, StringRef bufferName, ArrayRef<char> data,
                      DenseResourceElementsHandleManager &resourceManager,
-                     Optional<size_t> optAlignment = {});
+                     Optional<size_t> optAlignment = {},
+                     bool forceOutOfLine = false);
 
 } // namespace M
 
