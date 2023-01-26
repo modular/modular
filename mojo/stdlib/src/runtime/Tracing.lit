@@ -1,0 +1,81 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+from StringRef import StringRef
+from Bool import Bool
+from Assert import assert_param_bool
+
+alias PROFILING_ON: Bool = False
+
+
+@interface
+@always_inline
+fn trace_range_push(name: StringRef, detail: StringRef):
+    """Push a trace event onto a per-thread stack of traces.
+    Should be paired with calls to trace_range_pop().
+
+    PROFILING_ON must be set to True otherwise this is a noop that will be
+    folded away.
+
+    Currently DMODULAR_LLCL_MAX_PROFILING_LEVEL must also be > 1 in the cmake build.
+
+    Args:
+        name: name of the trace event (will be copied).
+        detail: additional details about the trace event (will be copied).
+
+    """
+    ...
+
+
+@implements(trace_range_push)
+@always_inline
+fn _trace_range_push(name: StringRef, detail: StringRef):
+    assert_param_bool[PROFILING_ON]()
+    __mlir_op.`pop.external_call`[
+        func : __mlir_attr.`@KGEN_CompilerRT_TimeTraceProfilerBegin`,
+        _type:[],
+    ](
+        name.data.address,
+        name.length.value,
+        detail.data.address,
+        detail.length.value,
+    )
+
+
+@implements(trace_range_push)
+@always_inline
+fn _trace_range_push_noop(name: StringRef, detail: StringRef):
+    assert_param_bool[not PROFILING_ON]
+
+
+@interface
+@always_inline
+fn trace_range_pop():
+    """Pop a trace event off a per-thread stack of traces.
+    Should be paired with calls to trace_range_push().
+
+    PROFILING_ON must be set to True otherwise this is a noop that will be
+    folded away.
+
+    Currently DMODULAR_LLCL_MAX_PROFILING_LEVEL must also be > 1 in the cmake build.
+    """
+    ...
+
+
+@implements(trace_range_pop)
+@always_inline
+fn _trace_range_pop():
+    assert_param_bool[PROFILING_ON]()
+    __mlir_op.`pop.external_call`[
+        func : __mlir_attr.`@KGEN_CompilerRT_TimeTraceProfilerEnd`,
+        _type:[],
+    ]()
+
+
+@implements(trace_range_pop)
+@always_inline
+fn _trace_range_pop_noop():
+    assert_param_bool[not PROFILING_ON]()
