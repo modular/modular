@@ -589,7 +589,7 @@ void KGEN::printParamName(AsmPrinter &p, StringRef name) {
                      !isLegalMLIRIdentifier(name) || isMLIRBuiltinType(name);
   if (needsQuotes)
     p << "*\"";
-  p << name;
+  llvm::printEscapedString(name, p.getStream());
   if (needsQuotes)
     p << '"';
 }
