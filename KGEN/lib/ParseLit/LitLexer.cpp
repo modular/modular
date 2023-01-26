@@ -473,7 +473,7 @@ LitToken LitLexer::lexString(const char *tokStart, ssize_t indentation) {
       // newline isn't allowed in a short string.
       if (!isTripleQuote)
         return emitErrorAt(tokStart, "unterminated string");
-      ++curPtr;
+      // Skip new line
       break;
     default:
       // Skip over other characters.
