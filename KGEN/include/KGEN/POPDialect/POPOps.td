@@ -2266,6 +2266,8 @@ def POP_VariadicCreateOp : POPOp<"variadic.create", [Pure,
   let assemblyFormat = [{
     ` ` `[` $operands `]` attr-dict `:` qualified(type($result))
   }];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2296,6 +2298,8 @@ def POP_VariadicGetOp : POPOp<"variadic.get", [Pure,
   let assemblyFormat = [{
     $variadic `[` $index `]` attr-dict `:` qualified(type($variadic))
   }];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2333,6 +2337,8 @@ def POP_VariadicSizeOp : POPOp<"variadic.size", [Pure]> {
   let assemblyFormat = [{
     $operand attr-dict `:` qualified(type($operand))
   }];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

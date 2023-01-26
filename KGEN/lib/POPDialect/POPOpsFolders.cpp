@@ -1089,3 +1089,61 @@ OpFoldResult CastFromBuiltinOp::fold(FoldAdaptor adaptor) {
   assert(dtype->isFloat() && "unexpected dtype");
   return SIMDAttr::get({cast<FloatAttr>(val).getValue(), *dtype}, getType());
 }
+
+//===----------------------------------------------------------------------===//
+// VariadicCreateOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult VariadicCreateOp::fold(FoldAdaptor adaptor) {
+  SmallVector<TypedAttr> values;
+  values.reserve(adaptor.getOperands().size());
+  for (Attribute operand : adaptor.getOperands()) {
+    auto value = llvm::cast_if_present<TypedAttr>(operand);
+    if (!value)
+      return {};
+    values.push_back(value);
+  }
+  return POP::VariadicAttr::get(values, getType());
+}
+
+//===----------------------------------------------------------------------===//
+// VariadicGetOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult VariadicGetOp::fold(FoldAdaptor adaptor) {
+  auto indexAttr = dyn_cast_or_null<IntegerAttr>(adaptor.getIndex());
+  if (!indexAttr)
+    return {};
+  auto index = static_cast<size_t>(indexAttr.getInt());
+
+  if (auto variadic = dyn_cast_or_null<VariadicAttr>(adaptor.getVariadic())) {
+    if (index >= variadic.getValues().size())
+      return {};
+    return variadic.getValues()[index];
+  }
+
+  // Canonicalize `get(create(x)) -> x`.
+  if (auto create = getVariadic().getDefiningOp<VariadicCreateOp>()) {
+    if (index >= create.getOperands().size())
+      return {};
+    return create.getOperands()[index];
+  }
+
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// VariadicSizeOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult VariadicSizeOp::fold(FoldAdaptor adaptor) {
+  auto indexType = IndexType::get(getContext());
+  if (auto variadic =
+          dyn_cast_if_present<POP::VariadicAttr>(adaptor.getOperand()))
+    return IntegerAttr::get(indexType, variadic.getValues().size());
+
+  if (auto create = getOperand().getDefiningOp<VariadicCreateOp>())
+    return IntegerAttr::get(indexType, create.getOperands().size());
+
+  return {};
+}
