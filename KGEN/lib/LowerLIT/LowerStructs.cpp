@@ -52,7 +52,7 @@ public:
   }
 
   /// Replace a KGEN struct with a POP struct.
-  Type substituteStructRef(DeclRefType ref);
+  POP::StructType substituteStructRef(DeclRefType ref);
 
   /// Try to build debug informatino for the given struct ref.
   DebugInfo::DIType
@@ -74,7 +74,7 @@ private:
 };
 } // namespace
 
-Type StructOperationLowerer::substituteStructRef(DeclRefType ref) {
+POP::StructType StructOperationLowerer::substituteStructRef(DeclRefType ref) {
   auto it = structDecls.fields.find(ref.getName());
   assert(it != structDecls.fields.end());
 
@@ -130,36 +130,39 @@ void StructOperationLowerer::replaceOp(Operation *op, ValueRange values) {
   IRRewriter::replaceOp(op, source.getResult(0));
 }
 
-static void lowerStructOp(StructCreateOp op, StructCreateOpAdaptor adaptor,
-                          StructOperationLowerer &lowerer) {
-  lowerer.replaceOpWithNewOp<POP::StructConstructOp>(
-      op, lowerer.substituteStructRef(op.getType()), op.getOperands());
+static Operation *lowerStructOp(StructCreateOp op,
+                                StructCreateOpAdaptor adaptor,
+                                StructOperationLowerer &lowerer) {
+  return lowerer.create<POP::StructConstructOp>(
+      op.getLoc(), lowerer.substituteStructRef(op.getType()), op.getOperands());
 }
 
-static void lowerStructOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
-                          StructOperationLowerer &lowerer) {
+static Operation *lowerStructOp(StructInsertOp op,
+                                StructInsertOpAdaptor adaptor,
+                                StructOperationLowerer &lowerer) {
   int64_t index =
       lowerer.getField(op.getFieldAttr(), op.getContainer().getType());
-  lowerer.replaceOpWithNewOp<POP::StructReplaceOp>(op, adaptor.getValue(),
-                                                   adaptor.getContainer(),
-                                                   lowerer.getIndexAttr(index));
+  return lowerer.create<POP::StructReplaceOp>(op.getLoc(), adaptor.getValue(),
+                                              adaptor.getContainer(),
+                                              lowerer.getIndexAttr(index));
 }
 
-static void lowerStructOp(StructExtractOp op, StructExtractOpAdaptor adaptor,
-                          StructOperationLowerer &lowerer) {
+static Operation *lowerStructOp(StructExtractOp op,
+                                StructExtractOpAdaptor adaptor,
+                                StructOperationLowerer &lowerer) {
   int64_t index =
       lowerer.getField(op.getFieldAttr(), op.getContainer().getType());
-  lowerer.replaceOpWithNewOp<POP::StructGetOp>(op, adaptor.getContainer(),
-                                               lowerer.getIndexAttr(index));
+  return lowerer.create<POP::StructGetOp>(op.getLoc(), adaptor.getContainer(),
+                                          lowerer.getIndexAttr(index));
 }
 
-static void lowerStructOp(StructGEPOp op, StructGEPOpAdaptor adaptor,
-                          StructOperationLowerer &lowerer) {
+static Operation *lowerStructOp(StructGEPOp op, StructGEPOpAdaptor adaptor,
+                                StructOperationLowerer &lowerer) {
   Type structType = op.getContainer().getType().getResolvedElementType();
   int64_t index =
       lowerer.getField(op.getFieldAttr(), cast<DeclRefType>(structType));
-  lowerer.replaceOpWithNewOp<POP::StructGEPOp>(op, adaptor.getContainer(),
-                                               lowerer.getIndexAttr(index));
+  return lowerer.create<POP::StructGEPOp>(op.getLoc(), adaptor.getContainer(),
+                                          lowerer.getIndexAttr(index));
 }
 
 template <typename OpT>
@@ -173,7 +176,15 @@ void StructOperationLowerer::materializeLowering(OpT op) {
     values.push_back(dest.getResult(0));
   }
   typename OpT::Adaptor adaptor(values, op->getAttrDictionary());
-  lowerStructOp(op, adaptor, *this);
+  Operation *newOp = lowerStructOp(op, adaptor, *this);
+  values.clear();
+  for (auto [result, type] :
+       llvm::zip(newOp->getResults(), op->getResultTypes())) {
+    auto src =
+        create<mlir::UnrealizedConversionCastOp>(op->getLoc(), type, result);
+    values.push_back(src.getResult(0));
+  }
+  replaceOp(op, values);
 }
 
 //===----------------------------------------------------------------------===//
@@ -251,8 +262,7 @@ void LowerStructsPass::runOnOperation() {
     for (auto [name, value] : type.getValues())
       values.push_back(value);
     return POP::StructAttr::get(
-        values, cast<POP::StructType>(
-                    structLowerer.substituteStructRef(type.getType())));
+        values, structLowerer.substituteStructRef(type.getType()));
   });
   replacer.addReplacement([&](DebugInfo::DIType type) -> Type {
     return debugTypeConverter.convertDebugType(type);
