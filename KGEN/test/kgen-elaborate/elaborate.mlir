@@ -1450,3 +1450,12 @@ kgen.generator @interpretInterfaceCall() {
   kgen.param.constant = <apply(:() -> index bind_signature(:<I>() -> index @interpretedItf, 1))>
   kgen.return
 }
+
+// CHECK-NOT: @itfIsNeverCalled
+// CHECK-NOT: @alwaysBadImpl
+kgen.generator.interface @itfIsNeverCalled()
+kgen.generator @alwaysBadImpl()
+    constraints <[0, "always bad"]>
+    implements @itfIsNeverCalled {
+  kgen.return
+}
