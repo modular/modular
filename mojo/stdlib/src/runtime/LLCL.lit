@@ -117,6 +117,12 @@ fn _async_wait(ptr: Pointer[AsyncContext]):
     ](ptr.bitcast[__mlir_type.i8]().address)
 
 
+fn _async_complete(ptr: Pointer[AsyncContext]):
+    __mlir_op.`pop.external_call`[
+        _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_Complete`
+    ](ptr.bitcast[__mlir_type.i8]().address)
+
+
 # ===----------------------------------------------------------------------===#
 # Runtime
 # ===----------------------------------------------------------------------===#
@@ -279,8 +285,8 @@ struct TaskGroup:
 
     @always_inline
     fn _counter_decr(self&) -> Int:
-        self.counter -= 1
-        return self.counter.value
+        let prev: Int = self.counter.__isub__(1).value
+        return prev - 1
 
     @staticmethod
     fn await_body_impl(
@@ -288,7 +294,7 @@ struct TaskGroup:
     ):
         _async_and_then(hdl, Pointer[AsyncContext].address_of(tg.ctx))
         if tg._counter_decr() == 0:
-            _coro_resume_fn(hdl)
+            _async_complete(Pointer[AsyncContext].address_of(tg.ctx))
 
     @always_inline
     fn __await__(self&):
@@ -303,5 +309,5 @@ struct TaskGroup:
 
     fn wait(self&):
         if self._counter_decr() == 0:
-            return
+            _async_complete(Pointer[AsyncContext].address_of(self.ctx))
         _async_wait(Pointer[AsyncContext].address_of(self.ctx))
