@@ -3,5 +3,8 @@
 // CHECK: #kgen.conventions<[byref, byval], throws>
 "someop"() {conventions = #kgen.conventions<[byref, byval], throws>} : () -> ()
 
-// CHECL: #kgen.conventions<[], none>
+// CHECK: #kgen.conventions<[], none>
 "someop"() {conventions = #kgen.conventions<[], none>} : () -> ()
+
+// CHECK: *"mangled_fn{{.*}}$Int
+"someop"() {decl = #kgen<param.decl *"mangled_fn(Pointer[!kgen.declref<_\22$Int\22::_Int>])" : index>} : () -> ()
