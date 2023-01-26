@@ -67,13 +67,14 @@ struct GemmShape:
         shape_c: __mlir_type[`!kgen.list<index[2]>`],
         shape_a: __mlir_type[`!kgen.list<index[2]>`],
         shape_b: __mlir_type[`!kgen.list<index[2]>`],
-        type: __mlir_type.`!kgen.dtype`,
+        accum_type: __mlir_type.`!kgen.dtype`,
+        value_type: __mlir_type.`!kgen.dtype`,
         transpose_a: Bool,
         transpose_b: Bool,
     ](
-        c: NDBuffer[2, shape_c, type],
-        a: NDBuffer[2, shape_a, type],
-        b: NDBuffer[2, shape_b, type],
+        c: NDBuffer[2, shape_c, accum_type],
+        a: NDBuffer[2, shape_a, value_type],
+        b: NDBuffer[2, shape_b, value_type],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -141,13 +142,14 @@ fn naive_matmul[
     shape_a: __mlir_type[`!kgen.list<index[2]>`],
     shape_b: __mlir_type[`!kgen.list<index[2]>`],
     shape_c: __mlir_type[`!kgen.list<index[2]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    accum_type: __mlir_type.`!kgen.dtype`,
+    value_type: __mlir_type.`!kgen.dtype`,
     transpose_a: Bool,
     transpose_b: Bool,
 ](
-    c: NDBuffer[2, shape_c, type],
-    a: NDBuffer[2, shape_a, type],
-    b: NDBuffer[2, shape_b, type],
+    c: NDBuffer[2, shape_c, accum_type],
+    a: NDBuffer[2, shape_a, value_type],
+    b: NDBuffer[2, shape_b, value_type],
 ):
     """Computes matrix multiplication with a naive algorithm.
 
@@ -159,21 +161,27 @@ fn naive_matmul[
         transpose_b: indicates if b is transposed.
     """
     var gemm_shape = GemmShape.get[
-        shape_c, shape_a, shape_b, type, transpose_a, transpose_b
+        shape_c,
+        shape_a,
+        shape_b,
+        accum_type,
+        value_type,
+        transpose_a,
+        transpose_b,
     ](c, a, b)
-    let matrix_a = Matrix[shape_a, type, transpose_a](a)
-    let matrix_b = Matrix[shape_b, type, transpose_b](b)
-    let matrix_c = Matrix[shape_c, type, False](c)
+    let matrix_a = Matrix[shape_a, value_type, transpose_a](a)
+    let matrix_b = Matrix[shape_b, value_type, transpose_b](b)
+    let matrix_c = Matrix[shape_c, accum_type, False](c)
 
     var m: Int = 0
     while m < gemm_shape.M:
         var n: Int = 0
         while n < gemm_shape.N:
-            var c_val: SIMD[1, type] = 0
+            var c_val: SIMD[1, accum_type] = 0
             var k: Int = 0
             while k < gemm_shape.K:
-                var a_val = matrix_a.__getitem__(m, k)
-                var b_val = matrix_b.__getitem__(k, n)
+                let a_val = matrix_a.__getitem__(m, k).cast[accum_type]()
+                let b_val = matrix_b.__getitem__(k, n).cast[accum_type]()
                 c_val += a_val * b_val
                 k += 1
             matrix_c.__setitem__(m, n, c_val)
@@ -720,7 +728,8 @@ struct MatmulInnerLoopBPacked[
     shape_a: __mlir_type[`!kgen.list<index[2]>`],
     shape_c: __mlir_type[`!kgen.list<index[2]>`],
     packed_shape: __mlir_type[`!kgen.list<index[3]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    accum_type: __mlir_type.`!kgen.dtype`,
+    value_type: __mlir_type.`!kgen.dtype`,
     simd_size: __mlir_type.index,
     a_row_size: __mlir_type.index,
     pack_inner_size: __mlir_type.index,
@@ -732,9 +741,9 @@ struct MatmulInnerLoopBPacked[
     """
 
     # Parameters for global reference.
-    var c: NDBuffer[2, shape_c, type]
-    var a: NDBuffer[2, shape_a, type]
-    var b_packed: NDBuffer[3, packed_shape, type]
+    var c: NDBuffer[2, shape_c, accum_type]
+    var a: NDBuffer[2, shape_a, value_type]
+    var b_packed: NDBuffer[3, packed_shape, value_type]
     # 3D global offset within the whole matmul problem space.
     var global_offset: GemmShape
     # Dynamic tiling parameter for this inner loop
@@ -746,9 +755,9 @@ struct MatmulInnerLoopBPacked[
 
     @staticmethod
     fn run(
-        c: NDBuffer[2, shape_c, type],
-        a: NDBuffer[2, shape_a, type],
-        b_packed: NDBuffer[3, packed_shape, type],
+        c: NDBuffer[2, shape_c, accum_type],
+        a: NDBuffer[2, shape_a, value_type],
+        b_packed: NDBuffer[3, packed_shape, value_type],
         global_offset: GemmShape,
         tile_n_k: StaticIntTuple[2],
     ):
@@ -766,7 +775,8 @@ struct MatmulInnerLoopBPacked[
             shape_a,
             shape_c,
             packed_shape,
-            type,
+            accum_type,
+            value_type,
             simd_size,
             a_row_size,
             pack_inner_size,
@@ -775,16 +785,17 @@ struct MatmulInnerLoopBPacked[
         instance._run_inner_loop()
 
     fn __new__(
-        c: NDBuffer[2, shape_c, type],
-        a: NDBuffer[2, shape_a, type],
-        b_packed: NDBuffer[3, packed_shape, type],
+        c: NDBuffer[2, shape_c, accum_type],
+        a: NDBuffer[2, shape_a, value_type],
+        b_packed: NDBuffer[3, packed_shape, value_type],
         global_offset: GemmShape,
         tile_n_k: StaticIntTuple[2],
     ) -> MatmulInnerLoopBPacked[
         shape_a,
         shape_c,
         packed_shape,
-        type,
+        accum_type,
+        value_type,
         simd_size,
         a_row_size,
         pack_inner_size,
@@ -804,7 +815,8 @@ struct MatmulInnerLoopBPacked[
             shape_a,
             shape_c,
             packed_shape,
-            type,
+            accum_type,
+            value_type,
             simd_size,
             a_row_size,
             pack_inner_size,
@@ -827,11 +839,12 @@ struct MatmulInnerLoopBPacked[
             create_kgen_list[__mlir_type.index](
                 a_row_size, pack_inner_size * simd_size
             ),
-            type,
+            accum_type,
         ],
     ):
         """Utility funcion on the inner loop. Initializes a local c buffer with
         all zeros.
+
             Args:
                 c_local(NDBuffer): pre-allocated local buffer for c partial
                     sums.
@@ -841,7 +854,8 @@ struct MatmulInnerLoopBPacked[
             var col_idx: Int = 0
             while col_idx < pack_inner_size:
                 c_local.simd_store[simd_size](
-                    Index(row_idx, col_idx).as_tuple(), SIMD[simd_size, type](0)
+                    Index(row_idx, col_idx).as_tuple(),
+                    SIMD[simd_size, accum_type](0),
                 )
                 col_idx += simd_size
             row_idx += 1
@@ -853,7 +867,7 @@ struct MatmulInnerLoopBPacked[
             create_kgen_list[__mlir_type.index](
                 a_row_size, pack_inner_size * simd_size
             ),
-            type,
+            accum_type,
         ],
         # indexing within tile, in (m,n)
         tile_idx: StaticIntTuple[2],
@@ -884,7 +898,7 @@ struct MatmulInnerLoopBPacked[
                 let local_idx = Index(row_idx, col_idx).as_tuple()
 
                 # Load data from original matrix C.
-                var c_data = SIMD[simd_size, type](0)
+                var c_data: SIMD[simd_size, accum_type] = 0
                 if skip_boundary_check or (
                     Index(row_idx, col_idx + simd_size)
                     <= (self.c_bound - tile_idx)
@@ -896,17 +910,17 @@ struct MatmulInnerLoopBPacked[
                 ) < self.c_bound.__getitem__[0]():
                     # Use partial load if row inbound but col not
                     #  in simd bound.
-                    c_data = partial_simd_load[simd_size, type](
+                    c_data = partial_simd_load[simd_size, accum_type](
                         self.c._offset(global_idx),
                         0,
                         self.c_bound.__getitem__[1]()
                         - tile_idx.__getitem__[1]()
                         - col_idx,
-                        SIMD[1, type](0),
+                        0,
                     )
                 else:
                     # Fill zero if row out of bound
-                    c_data = SIMD[simd_size, type](0)
+                    c_data = SIMD[simd_size, accum_type](0)
 
                 # Store data to local buffer.
                 c_local.simd_store[simd_size](local_idx, c_data)
@@ -920,7 +934,7 @@ struct MatmulInnerLoopBPacked[
             create_kgen_list[__mlir_type.index](
                 a_row_size, pack_inner_size * simd_size
             ),
-            type,
+            accum_type,
         ],
         tile_idx: StaticIntTuple[2],
     ):
@@ -962,7 +976,7 @@ struct MatmulInnerLoopBPacked[
                 ):
                     # Use partial store if row in bound but col not
                     #  in simd bound.
-                    partial_simd_store[simd_size, type](
+                    partial_simd_store[simd_size, accum_type](
                         self.c._offset(global_idx),
                         0,
                         self.c_bound.__getitem__[1]()
@@ -980,7 +994,7 @@ struct MatmulInnerLoopBPacked[
             create_kgen_list[__mlir_type.index](
                 a_row_size, pack_inner_size * simd_size
             ),
-            type,
+            accum_type,
         ],
         tile_n_k_idx: StaticIntTuple[2],
     ):
@@ -1007,14 +1021,16 @@ struct MatmulInnerLoopBPacked[
                 Index(
                     n_outer_idx, tile_n_k_idx.__getitem__[1](), col_idx
                 ).as_tuple()
-            )
+            ).cast[accum_type]()
             var row_idx: Int = 0
             while row_idx < a_row_size:
                 var global_m = self.global_offset.M + row_idx
                 let a_val_scalar = self.a.simd_load[1](
                     Index(global_m, global_k).as_tuple()
                 )
-                let a_val = SIMD[simd_size, type](a_val_scalar)
+                let a_val = SIMD[simd_size, value_type](a_val_scalar).cast[
+                    accum_type
+                ]()
 
                 var c_idx = Index(row_idx, col_idx).as_tuple()
                 var c_val = c_local.simd_load[simd_size](c_idx)
@@ -1034,7 +1050,7 @@ struct MatmulInnerLoopBPacked[
             create_kgen_list[__mlir_type.index](
                 a_row_size, pack_inner_size * simd_size
             ),
-            type,
+            accum_type,
         ].stack_allocation()
 
         var idx_n: Int = 0
@@ -1115,7 +1131,8 @@ struct TiledMatmul[
     shape_b: __mlir_type[`!kgen.list<index[2]>`],
     shape_c: __mlir_type[`!kgen.list<index[2]>`],
     packed_shape: __mlir_type[`!kgen.list<index[3]>`],
-    type: __mlir_type.`!kgen.dtype`,
+    accum_type: __mlir_type.`!kgen.dtype`,
+    value_type: __mlir_type.`!kgen.dtype`,
     simd_size: __mlir_type.index,
     a_row_size: __mlir_type.index,
     pack_inner_size: __mlir_type.index,
@@ -1133,9 +1150,9 @@ struct TiledMatmul[
     TODO: add fusion hooks.
     """
 
-    var c: NDBuffer[2, shape_c, type]
-    var a: NDBuffer[2, shape_a, type]
-    var b: NDBuffer[2, shape_b, type]
+    var c: NDBuffer[2, shape_c, accum_type]
+    var a: NDBuffer[2, shape_a, value_type]
+    var b: NDBuffer[2, shape_b, value_type]
     # Dynamic tile parameter.
     var tile_n_k: StaticIntTuple[2]
     var gemm_shape: GemmShape
@@ -1143,9 +1160,9 @@ struct TiledMatmul[
     # Interface method
     @staticmethod
     fn run(
-        c: NDBuffer[2, shape_c, type],
-        a: NDBuffer[2, shape_a, type],
-        b: NDBuffer[2, shape_b, type],
+        c: NDBuffer[2, shape_c, accum_type],
+        a: NDBuffer[2, shape_a, value_type],
+        b: NDBuffer[2, shape_b, value_type],
     ):
         """Interface function to run tiled matmul on a given set of operands,
         pre-allocated output space and data layout tag.
@@ -1162,7 +1179,8 @@ struct TiledMatmul[
             shape_b,
             shape_c,
             packed_shape,
-            type,
+            accum_type,
+            value_type,
             simd_size,
             a_row_size,
             pack_inner_size,
@@ -1173,15 +1191,16 @@ struct TiledMatmul[
         matmul._run()
 
     fn __new__(
-        c: NDBuffer[2, shape_c, type],
-        a: NDBuffer[2, shape_a, type],
-        b: NDBuffer[2, shape_b, type],
+        c: NDBuffer[2, shape_c, accum_type],
+        a: NDBuffer[2, shape_a, value_type],
+        b: NDBuffer[2, shape_b, value_type],
     ) -> TiledMatmul[
         shape_a,
         shape_b,
         shape_c,
         packed_shape,
-        type,
+        accum_type,
+        value_type,
         simd_size,
         a_row_size,
         pack_inner_size,
@@ -1199,7 +1218,13 @@ struct TiledMatmul[
             transpose_b: True if b is in transposed layout.
         """
         let gemm_shape = GemmShape.get[
-            shape_c, shape_a, shape_b, type, transpose_a, transpose_b
+            shape_c,
+            shape_a,
+            shape_b,
+            accum_type,
+            value_type,
+            transpose_a,
+            transpose_b,
         ](c, a, b)
         let tile_n_k = calculate_tile_n_k[pack_cache_size, pack_inner_size](
             gemm_shape
@@ -1209,7 +1234,8 @@ struct TiledMatmul[
             shape_b,
             shape_c,
             packed_shape,
-            type,
+            accum_type,
+            value_type,
             simd_size,
             a_row_size,
             pack_inner_size,
@@ -1224,7 +1250,7 @@ struct TiledMatmul[
         RowSize: __mlir_type.index,
     ](
         self,
-        b_packed: NDBuffer[3, packed_shape, type],
+        b_packed: NDBuffer[3, packed_shape, value_type],
         global_offset: GemmShape,
         sub_tile_n_k: StaticIntTuple[2],
         start_idx: Int,
@@ -1256,7 +1282,8 @@ struct TiledMatmul[
                 shape_a,
                 shape_c,
                 packed_shape,
-                type,
+                accum_type,
+                value_type,
                 simd_size,
                 RowSize,
                 m_loop_pack_inner_size,
@@ -1275,7 +1302,7 @@ struct TiledMatmul[
         skip_col_bound: Bool, m_loop_pack_inner_size: __mlir_type.index
     ](
         self,
-        b_packed: NDBuffer[3, packed_shape, type],
+        b_packed: NDBuffer[3, packed_shape, value_type],
         global_offset: GemmShape,
         sub_tile_n: Int,
         sub_tile_k: Int,
@@ -1298,7 +1325,11 @@ struct TiledMatmul[
         # pack B:
         if transpose_b:
             PackMatrixRows[
-                shape_b, packed_shape, type, simd_size, m_loop_pack_inner_size
+                shape_b,
+                packed_shape,
+                value_type,
+                simd_size,
+                m_loop_pack_inner_size,
             ].run(
                 b_packed,
                 self.b,
@@ -1308,7 +1339,11 @@ struct TiledMatmul[
             )
         else:
             PackMatrixCols[
-                shape_b, packed_shape, type, simd_size, m_loop_pack_inner_size
+                shape_b,
+                packed_shape,
+                value_type,
+                simd_size,
+                m_loop_pack_inner_size,
             ].run(
                 b_packed,
                 self.b,
@@ -1349,7 +1384,7 @@ struct TiledMatmul[
         m_loop_pack_inner_size: __mlir_type.index
     ](
         self,
-        b_packed: NDBuffer[3, packed_shape, type],
+        b_packed: NDBuffer[3, packed_shape, value_type],
         global_offset: GemmShape,
         sub_tile_n: Int,
         sub_tile_k: Int,
@@ -1392,7 +1427,7 @@ struct TiledMatmul[
         m_loop_pack_inner_size: __mlir_type.index
     ](
         self,
-        b_packed: NDBuffer[3, packed_shape, type],
+        b_packed: NDBuffer[3, packed_shape, value_type],
         global_offset: GemmShape,
         sub_tile_n: Int,
         sub_tile_k: Int,
@@ -1428,7 +1463,7 @@ struct TiledMatmul[
     # Iterate on the N dimension of the gemm space.
     fn _outer_n_loop(
         self,
-        b_packed: NDBuffer[3, packed_shape, type],
+        b_packed: NDBuffer[3, packed_shape, value_type],
         global_offset: GemmShape,
         sub_tile_k: Int,
     ):
@@ -1484,7 +1519,7 @@ struct TiledMatmul[
             )
 
     # Iterate over the K dimension of the gemm space.
-    fn _outer_k_loop(self, b_packed: NDBuffer[3, packed_shape, type]):
+    fn _outer_k_loop(self, b_packed: NDBuffer[3, packed_shape, value_type]):
         """Iterate on the K dimension of the whole problem space.
 
         Args:
@@ -1515,11 +1550,11 @@ struct TiledMatmul[
     #  need to remap every time K and pack_inner_size changes.
     fn _view_buffer_as(
         self,
-        b_packed: NDBuffer[3, packed_shape, type],
+        b_packed: NDBuffer[3, packed_shape, value_type],
         tile_n: Int,
         tile_k: Int,
         n_inner_size: Int,
-    ) -> NDBuffer[3, packed_shape, type]:
+    ) -> NDBuffer[3, packed_shape, value_type]:
         """Utility function to use to map the allocated packing workspace into
         an n-dimensional buffer.
 
@@ -1546,11 +1581,13 @@ struct TiledMatmul[
         # Allocate pack_b buffer.
         var _bpacked_data = _raw_stack_allocation[
             pack_cache_size,  # Count.
-            type,  # Data type.
+            value_type,  # Data type.
             simd_byte_width().__as_mlir_index(),  # Alignment.
         ]()
 
-        var b_packed = NDBuffer[3, packed_shape, type](_bpacked_data.address)
+        var b_packed = NDBuffer[3, packed_shape, value_type](
+            _bpacked_data.address
+        )
 
         # Manually set the shape of packed B buffer:
         let mapped_bpacked = self._view_buffer_as(
