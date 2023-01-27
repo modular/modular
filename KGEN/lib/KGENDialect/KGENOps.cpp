@@ -766,8 +766,9 @@ LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     auto func = module.lookup<FuncInterface>(e);
     if (!func)
       return emitOpError("could not find referenced symbol '") << e << "'";
-    if (func.isForceInline()) {
-      return func.emitError("function marked 'force_inline' cannot be exported")
+    if (func.isAlwaysInline()) {
+      return func.emitError(
+                     "function marked 'always_inline' cannot be exported")
                  .attachNote(getLoc())
              << "function exported here";
     }
