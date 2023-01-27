@@ -444,11 +444,11 @@ LitToken LitLexer::lexString(const char *tokStart, ssize_t indentation) {
           return emitErrorAt(
               tokStart,
               "invalid hex escape sequence: exactly two hex digits needed");
+      } else if (!llvm::is_contained({'\\', '"', '\'', '\n', '\r', 'a', 'b',
+                                      'f', 'n', 'r', 't', 'v'},
+                                     *curPtr)) {
+        emitErrorAt(curPtr - 1, "invalid escape sequence");
       } else {
-        if (!llvm::is_contained({'\\', '"', '\'', '\n', '\r', 'a', 'b', 'f',
-                                 'n', 'r', 't', 'v'},
-                                *curPtr))
-          return emitErrorAt(tokStart, "invalid escape sequence");
         if (*curPtr == '\r' && curPtr[1] == '\n') // Windows new line
           ++curPtr;
         ++curPtr;
@@ -725,8 +725,10 @@ std::string LitLexer::getStringLiteralValue(StringRef spelling) {
       continue;
     }
     default:
-      llvm_unreachable(
-          "invalid escape sequence: this should have been caught by lexString");
+      // Otherwise it is an invalid escape.  It will already have been diagnosed
+      // at lexer time.
+      result.push_back(c1);
+      continue;
     }
   }
   return result;
