@@ -154,7 +154,7 @@ fn naive_matmul[
         Int,  # Col
         `,`,
         SIMD[1, `accum_type`],
-        `) force_inline -> `,
+        `) always_inline -> `,
         SIMD[1, `accum_type`],
         `>`,
     ],
@@ -166,7 +166,7 @@ fn naive_matmul[
             __mlir_attr.`#kgen.unknown : index`,
             `accum_type`,
         ],
-        `) force_inline -> !lit.none>`,
+        `) always_inline -> !lit.none>`,
     ],
 ](
     c: NDBuffer[2, shape_c, accum_type],
