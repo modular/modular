@@ -18,7 +18,9 @@ from Vector import UnsafeFixedVector
 
 @always_inline
 fn map[
-    func: __mlir_type[`!kgen.signature<(`, Int, `) always_inline -> !lit.none>`],
+    func: __mlir_type[
+        `!kgen.signature<(`, Int, `) always_inline -> !lit.none>`
+    ],
 ](size: Int):
     """
     Map a function over a range from 0 to size.
