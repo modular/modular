@@ -893,16 +893,13 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
   // Check other invariants based on method flags.
   if (fnInfo.isInstMethod()) {
-    auto convent = fnInfo.isByRefSelfInstMethod() ? ValueInputConvention::ByRef
-                                                  : ValueInputConvention::ByVal;
     if (!selfType)
       emitError("special function must be a method");
     else if (funcOp.getIsStatic())
       emitError("special method may not be a static method");
-    else if (convent != args[0].convention)
-      emitErrorLoc(args[0].loc, "self argument must ")
-          << (convent == ValueInputConvention::ByRef ? "" : "not ")
-          << "be passed by reference";
+    else if (!fnInfo.allowsByRefSelfInstMethod() &&
+             args[0].convention != ValueInputConvention::ByVal)
+      emitErrorLoc(args[0].loc, "self argument cannot be passed by reference");
   }
 
   switch (fnInfo.kind) {

@@ -43,9 +43,10 @@ public:
     /// This must be an instance method of a type.
     kInstMethod = 1 << 1,
 
-    /// On a method of struct, the self must be passed ByRef.  This is true for
-    /// in-place operators like += / __iadd__.  This implies an instance method.
-    kByRefSelfInstMethod = (1 << 2) | kInstMethod,
+    /// On a method of struct, the self may be passed ByVal or ByRef.  This is
+    /// true for in-place operators like += / __iadd__.  This implies an
+    /// instance method.
+    kAllowByRefSelfInstMethod = (1 << 2) | kInstMethod,
 
     /// This is true when this represents a "reversed" operator like __radd__.
     kReversedOperator = 1 << 3,
@@ -57,8 +58,8 @@ public:
   /// Return true if this is any kind of instance method.
   bool isInstMethod() const { return (flags & kInstMethod) != 0; }
 
-  bool isByRefSelfInstMethod() const {
-    return (flags & kByRefSelfInstMethod) == kByRefSelfInstMethod;
+  bool allowsByRefSelfInstMethod() const {
+    return (flags & kAllowByRefSelfInstMethod) == kAllowByRefSelfInstMethod;
   }
 
   /// Return true if this is a reversed operator.
