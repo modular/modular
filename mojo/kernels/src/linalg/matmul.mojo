@@ -40,13 +40,13 @@ fn get_pack_data_size_debug() -> Int:
     """Pack element counts in debug build. Use a small number to avoid
     stack overflow in asan builds.
     """
-    assert_param_bool[is_debug_build()]()
+    assert_param_bool[is_debug_build()]
     return 1024
 
 
 @implements(get_pack_data_size)
 fn get_pack_data_size_release() -> Int:
-    assert_param_bool[not is_debug_build()]()
+    assert_param_bool[not is_debug_build()]
     """Pack element counts. Use a number that's proportion to the cache size.
     """
     # PackCacheSize (hard code to 512kB of f32,
@@ -138,6 +138,7 @@ struct GemmShape:
         return self.as_index() + rhs.as_index()
 
 
+@always_inline
 fn naive_matmul[
     shape_a: __mlir_type[`!kgen.list<index[2]>`],
     shape_b: __mlir_type[`!kgen.list<index[2]>`],
@@ -146,6 +147,27 @@ fn naive_matmul[
     value_type: __mlir_type.`!kgen.dtype`,
     transpose_a: Bool,
     transpose_b: Bool,
+    epilogue_elemwise_func: __mlir_type[
+        `!kgen.signature<<accum_type: dtype>(`,
+        Int,  # Row
+        `,`,
+        Int,  # Col
+        `,`,
+        SIMD[1, `accum_type`],
+        `) force_inline -> `,
+        SIMD[1, `accum_type`],
+        `>`,
+    ],
+    epilogue_rowise_func: __mlir_type[
+        `!kgen.signature<<accum_type: dtype>(`,
+        Int,  # Row
+        `,`,
+        Buffer[
+            __mlir_attr.`#kgen.unknown : index`,
+            `accum_type`,
+        ],
+        `) force_inline -> !lit.none>`,
+    ],
 ](
     c: NDBuffer[2, shape_c, accum_type],
     a: NDBuffer[2, shape_a, value_type],
@@ -160,7 +182,7 @@ fn naive_matmul[
         transpose_a: indicates if a is transposed.
         transpose_b: indicates if b is transposed.
     """
-    var gemm_shape = GemmShape.get[
+    let gemm_shape = GemmShape.get[
         shape_c,
         shape_a,
         shape_b,
@@ -184,8 +206,13 @@ fn naive_matmul[
                 let b_val = matrix_b.__getitem__(k, n).cast[accum_type]()
                 c_val += a_val * b_val
                 k += 1
+            c_val = epilogue_elemwise_func[accum_type](m, n, c_val)
             matrix_c.__setitem__(m, n, c_val)
             n += 1
+        let row = Buffer[__mlir_attr.`#kgen.unknown : index`, accum_type](
+            c.data.offset(m * gemm_shape.N).address, n
+        )
+        epilogue_rowise_func[accum_type](m, row)
         m += 1
 
 
