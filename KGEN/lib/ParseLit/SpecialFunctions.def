@@ -24,7 +24,7 @@
 //   FLAGS are various flags used to customize type checking behavior.
 
 SF(kNew,     "__new__"   , -1, kInvalid, kImplicitlyStaticMethod)
-SF(kInit,    "__init__"  , -1, kInvalid, kInstMethod)
+SF(kInit,    "__init__"  , -1, kInvalid, kInstMethod|kNoneResult)
 
 SF(kBool,    "__bool__"  ,  1, kInvalid, kInstMethod)
 SF(kLitBool, "__lit_bool",  1, kInvalid, kInstMethod)
@@ -71,21 +71,21 @@ SF(kRLShift,   "__rlshift__",  2, kLShift, kInstMethod|kReversedOperator)
 // ... more
 
 // In place operators like +=
-SF(kIAdd     , "__iadd__"     , 2, kIAdd,      kByRefSelfInstMethod)
-SF(kISub     , "__isub__"     , 2, kISub,      kByRefSelfInstMethod)
-SF(kIMul     , "__imul__"     , 2, kIMul,      kByRefSelfInstMethod)
-SF(kIMatmul  , "__imatmul__"  , 2, kIMatMul,   kByRefSelfInstMethod)
-SF(kITrueDiv , "__itruediv__" , 2, kITrueDiv,  kByRefSelfInstMethod)
-SF(kIFloorDiv, "__ifloordiv__", 2, kIFloorDiv, kByRefSelfInstMethod)
-SF(kIMod     , "__imod__"     , 2, kIMod,      kByRefSelfInstMethod)
+SF(kIAdd     , "__iadd__"     , 2, kIAdd,      kByRefSelfInstMethod|kNoneResult)
+SF(kISub     , "__isub__"     , 2, kISub,      kByRefSelfInstMethod|kNoneResult)
+SF(kIMul     , "__imul__"     , 2, kIMul,      kByRefSelfInstMethod|kNoneResult)
+SF(kIMatmul  , "__imatmul__"  , 2, kIMatMul,   kByRefSelfInstMethod|kNoneResult)
+SF(kITrueDiv , "__itruediv__" , 2, kITrueDiv,  kByRefSelfInstMethod|kNoneResult)
+SF(kIFloorDiv, "__ifloordiv__", 2, kIFloorDiv, kByRefSelfInstMethod|kNoneResult)
+SF(kIMod     , "__imod__"     , 2, kIMod,      kByRefSelfInstMethod|kNoneResult)
 // TODO: ipow has 3 arguments: __ipow__(base, exp[, mod])
 // Only the two-argument form pow(base, exp) is equivalent
 // to using the power operator: base ** exp. Once we have default parameters
 // we can support mod=None, but for now we keep it as 2 arguments definition.
-SF(kIPow     , "__ipow__"     , 2, kIPow,      kByRefSelfInstMethod)
-SF(kILShift  , "__ilshift__"  , 2, kILShift,   kByRefSelfInstMethod)
-SF(kIRShift  , "__irshift__"  , 2, kIRShift,   kByRefSelfInstMethod)
-SF(kIAnd     , "__iand__"     , 2, kIAnd,      kByRefSelfInstMethod)
-SF(kIXor     , "__ixor__"     , 2, kIXor,      kByRefSelfInstMethod)
-SF(kIOr      , "__ior__"      , 2, kIOr,       kByRefSelfInstMethod)
+SF(kIPow     , "__ipow__"     , 2, kIPow,      kByRefSelfInstMethod|kNoneResult)
+SF(kILShift  , "__ilshift__"  , 2, kILShift,   kByRefSelfInstMethod|kNoneResult)
+SF(kIRShift  , "__irshift__"  , 2, kIRShift,   kByRefSelfInstMethod|kNoneResult)
+SF(kIAnd     , "__iand__"     , 2, kIAnd,      kByRefSelfInstMethod|kNoneResult)
+SF(kIXor     , "__ixor__"     , 2, kIXor,      kByRefSelfInstMethod|kNoneResult)
+SF(kIOr      , "__ior__"      , 2, kIOr,       kByRefSelfInstMethod|kNoneResult)
 #undef SF

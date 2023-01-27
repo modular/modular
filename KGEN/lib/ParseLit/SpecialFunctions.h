@@ -49,7 +49,13 @@ public:
 
     /// This is true when this represents a "reversed" operator like __radd__.
     kReversedOperator = 1 << 3,
+
+    /// This is true when the operation is supposed to return None.
+    kNoneResult = 1 << 4,
   };
+
+  /// Return true if this is any kind of instance method.
+  bool isInstMethod() const { return (flags & kInstMethod) != 0; }
 
   bool isByRefSelfInstMethod() const {
     return (flags & kByRefSelfInstMethod) == kByRefSelfInstMethod;
@@ -57,6 +63,9 @@ public:
 
   /// Return true if this is a reversed operator.
   bool isReversed() const { return (flags & kReversedOperator) != 0; }
+
+  /// Return true if this special function must return None.
+  bool hasNoneResult() const { return (flags & kNoneResult) != 0; }
 
   /// Return a record that describes special functions like __init__.  The
   /// kind field identifies it.

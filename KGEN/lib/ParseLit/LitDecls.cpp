@@ -892,7 +892,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   }
 
   // Check other invariants based on method flags.
-  if (fnInfo.flags & SpecialFunctionInfo::kInstMethod) {
+  if (fnInfo.isInstMethod()) {
     auto convent = fnInfo.isByRefSelfInstMethod() ? ValueInputConvention::ByRef
                                                   : ValueInputConvention::ByVal;
     if (!selfType)
@@ -913,8 +913,6 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     if (isa<StructDeclOp>(*decl.getParentDecl())) {
       emitError("__init__ is not allowed on structs, use __new__ instead");
       // __init__ on classes must return NoneType.
-    } else if (!resultType.isEqualCanon(shared.getNoneType())) {
-      emitError("__init__ result type must be elided (or None)");
     }
     break;
 
@@ -924,6 +922,13 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     if (!resultType.isEqualCanon(selfType))
       emitError("result type must be ") << selfType;
     break;
+  }
+
+  // If the function is required to return None, verify that.
+  if (fnInfo.hasNoneResult() &&
+      !resultType.isEqualCanon(shared.getNoneType())) {
+    emitError("") << name << " result type must be elided (or None)";
+    resultType = shared.getNoneType();
   }
 
   // Mangle 'name', ensuring that overloaded methods get unique symbol names.
