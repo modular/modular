@@ -55,6 +55,10 @@ fn badPropertyError(a: InvalidType):
   _ = a.value
   return
 
+struct BadInplace:
+  # expected-error @+1 {{'__iadd__' result type must be elided (or None)}}
+  fn __iadd__(self&, rhs: BadInplace) -> BadInplace:
+
 struct NotBoolConvertible:
 # expected-note @+1 {{function declared here}}
 def test_bool_context(a: NotBoolConvertible): pass
