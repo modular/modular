@@ -10,7 +10,7 @@ from DType import DType
 from Int import Int
 from IO import print
 from List import create_kgen_list
-from Transpose import transpose_inplace, _index2D
+from Transpose import transpose, transpose_inplace, _index2D
 
 # CHECK-LABEL: test_transpose_4x4
 fn test_transpose_4x4():
@@ -133,8 +133,48 @@ fn test_transpose_8x8():
         i += 1
 
 
+# CHECK-LABEL: test_transpose_4x2_out_of_place
+fn test_transpose_4x2_out_of_place():
+    print("== test_transpose_4x2_out_of_place\n")
+    let src = NDBuffer[
+        2, create_kgen_list[__mlir_type.index](4, 2), DType.index.value
+    ].stack_allocation()
+    let dst = NDBuffer[
+        2, create_kgen_list[__mlir_type.index](2, 4), DType.index.value
+    ].stack_allocation()
+
+    src.__setitem__(_index2D(0, 0), 0)
+    src.__setitem__(_index2D(1, 0), 1)
+    src.__setitem__(_index2D(2, 0), 2)
+    src.__setitem__(_index2D(3, 0), 3)
+    src.__setitem__(_index2D(0, 1), 4)
+    src.__setitem__(_index2D(1, 1), 5)
+    src.__setitem__(_index2D(2, 1), 6)
+    src.__setitem__(_index2D(3, 1), 7)
+    # transpose a from 4x2 to 2x4
+    transpose[2, 2, 4, DType.index.value](dst, src)
+
+    # CHECK: 0
+    print(dst.__getitem__(_index2D(0, 0)))
+    # CHECK: 1
+    print(dst.__getitem__(_index2D(0, 1)))
+    # CHECK: 2
+    print(dst.__getitem__(_index2D(0, 2)))
+    # CHECK: 3
+    print(dst.__getitem__(_index2D(0, 3)))
+    # CHECK: 4
+    print(dst.__getitem__(_index2D(1, 0)))
+    # CHECK: 5
+    print(dst.__getitem__(_index2D(1, 1)))
+    # CHECK: 6
+    print(dst.__getitem__(_index2D(1, 2)))
+    # CHECK: 7
+    print(dst.__getitem__(_index2D(1, 3)))
+
+
 @export
 fn main() -> __mlir_type.index:
     test_transpose_4x4()
     test_transpose_8x8()
+    test_transpose_4x2_out_of_place()
     return 0
