@@ -14,6 +14,7 @@
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
 #include "LLCL/Support/Profiling.h"
+#include "Support/TimeProfiler.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -74,10 +75,7 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
   AsyncValue::registerTypes<bool, int8_t, uint8_t, int16_t, uint16_t, int32_t,
                             uint32_t, int64_t, uint64_t, float, double>();
 
-  // Establish the time profiler if requested.
-  if (!this->profileFilename.empty()) {
-    TIME_PROFILER_MAIN_INIT;
-  }
+  timeTraceProfilerLLCLMainInitialize();
 }
 
 Runtime::~Runtime() {
@@ -98,8 +96,11 @@ Runtime::~Runtime() {
 
   // We're done with profiling.
   if (!profileFilename.empty()) {
-    TIME_PROFILER_MAIN_WRAPUP(profileFilename);
+    if (auto E = M::timeTraceProfilerWrite(profileFilename, "-"))
+      llvm::report_fatal_error("Unable to write time trace profile");
   }
+
+  M::timeTraceProfilerCleanup();
 }
 
 /// Cancel the current BEF Execution. This transitions this Runtime to the
