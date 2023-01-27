@@ -16,6 +16,7 @@ struct Conv2DLayout:
     alias unknown = -1  # statically unknown layout.
     alias NHWC = 0  # channels last layout.
     alias NCHW = 1  # channels first layout.
+    alias RSCF = 2  # TF filter layout for channels last input.
 
 
 struct ImageData[
@@ -91,6 +92,8 @@ struct ImageData[
         """
         if self.get_layout() == Conv2DLayout.NCHW:
             return Index(n, c, h, w)
+        elif self.get_layout() == Conv2DLayout.RSCF:
+            return Index(h, w, c, n)
         return Index(n, h, w, c)
 
     fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> SIMD[1, type]:
@@ -145,17 +148,25 @@ struct ImageShape:
             An ImageShape instance containing the shape info.
         """
         var image_shape: ImageShape
-        image_shape.N = image_data.data.dim[0]()
 
         if image_data.get_layout() == Conv2DLayout.NCHW:
+            image_shape.N = image_data.data.dim[0]()
             image_shape.C = image_data.data.dim[1]()
             image_shape.H = image_data.data.dim[2]()
             image_shape.W = image_data.data.dim[3]()
 
         elif image_data.get_layout() == Conv2DLayout.NHWC:
+            image_shape.N = image_data.data.dim[0]()
             image_shape.C = image_data.data.dim[3]()
             image_shape.H = image_data.data.dim[1]()
             image_shape.W = image_data.data.dim[2]()
+
+        elif image_data.get_layout() == Conv2DLayout.RSCF:
+            image_shape.N = image_data.data.dim[3]()
+            image_shape.C = image_data.data.dim[2]()
+            image_shape.H = image_data.data.dim[0]()
+            image_shape.W = image_data.data.dim[1]()
+
         return image_shape
 
 
