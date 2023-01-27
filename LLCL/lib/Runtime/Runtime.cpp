@@ -75,7 +75,10 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
   AsyncValue::registerTypes<bool, int8_t, uint8_t, int16_t, uint16_t, int32_t,
                             uint32_t, int64_t, uint64_t, float, double>();
 
-  timeTraceProfilerLLCLMainInitialize();
+  // can't pass in profileFilename AND use timeTraceProfilerInitialize() in the
+  // caller
+  if (!profileFilename.empty())
+    timeTraceProfilerLLCLMainInitialize();
 }
 
 Runtime::~Runtime() {
@@ -98,9 +101,8 @@ Runtime::~Runtime() {
   if (!profileFilename.empty()) {
     if (auto E = M::timeTraceProfilerWrite(profileFilename, "-"))
       llvm::report_fatal_error("Unable to write time trace profile");
+    M::timeTraceProfilerCleanup();
   }
-
-  M::timeTraceProfilerCleanup();
 }
 
 /// Cancel the current BEF Execution. This transitions this Runtime to the

@@ -137,13 +137,6 @@ namespace M {
 void timeTraceProfilerInitialize(unsigned TimeTraceGranularity,
                                  StringRef ProcName);
 
-/// If the time trace profiler is not already initialized,
-/// this sets up the global \p TimeTraceProfilerInstance
-/// variable to be the profiler instance.
-/// Otherwise, it does nothing.
-void timeTraceProfilerInitializeIf(unsigned TimeTraceGranularity,
-                                   StringRef ProcName);
-
 /// Cleanup the time trace profiler, if it was initialized.
 /// Cleanup the time trace profiler for all threads that have
 /// called timeTraceProfilerFinishThread().
