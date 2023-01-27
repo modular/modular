@@ -286,19 +286,30 @@ void M::timeTraceProfilerInitialize(unsigned TimeTraceGranularity,
       TimeTraceGranularity, llvm::sys::path::filename(ProcName));
 }
 
-// Removes all TimeTraceProfilerInstances.
-// Called from main thread.
-void M::timeTraceProfilerCleanup() {
-  assert(TimeTraceProfilerInstance != nullptr &&
-         "Profiler should be initialized");
-  delete TimeTraceProfilerInstance;
-  TimeTraceProfilerInstance = nullptr;
+void M::timeTraceProfilerInitializeIf(unsigned TimeTraceGranularity,
+                                      StringRef ProcName) {
+  if (TimeTraceProfilerInstance)
+    return;
+  TimeTraceProfilerInstance = new TimeTraceProfiler(
+      TimeTraceGranularity, llvm::sys::path::filename(ProcName));
+}
 
+static void timeTraceProfilerDeleteWorkerInstances() {
   auto &Instances = getTimeTraceProfilerInstances();
   std::lock_guard<std::mutex> Lock(Instances.Lock);
   for (auto *TTP : Instances.List)
     delete TTP;
   Instances.List.clear();
+};
+
+// Removes all TimeTraceProfilerInstances.
+// Called from main thread.
+void M::timeTraceProfilerCleanup() {
+  if (TimeTraceProfilerInstance != nullptr) {
+    delete TimeTraceProfilerInstance;
+    TimeTraceProfilerInstance = nullptr;
+  }
+  timeTraceProfilerDeleteWorkerInstances();
 }
 
 // Finish TimeTraceProfilerInstance on a worker thread.

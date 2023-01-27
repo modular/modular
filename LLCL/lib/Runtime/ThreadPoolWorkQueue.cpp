@@ -165,7 +165,7 @@ struct WorkQueueThread {
 
 void WorkQueueThread::runOnThread() {
   if (sharedState.profilingEnabled) {
-    TIME_PROFILER_WORKER_INIT;
+    timeTraceProfilerLLCLWorkerInitialize();
   }
 
   // Set the current workerID in thread local storage so we can find it later
@@ -192,7 +192,7 @@ void WorkQueueThread::runOnThread() {
   TIME_PROFILER_END(4);
 
   if (sharedState.profilingEnabled) {
-    TIME_PROFILER_WORKER_WRAPUP;
+    M::timeTraceProfilerFinishThread();
   }
 }
 
