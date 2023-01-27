@@ -4,13 +4,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Buffer import NDBuffer
+from Buffer import Buffer, NDBuffer
 from Tuple import StaticTuple
 from Assert import assert_param
 from Int import Int
 from SIMD import SIMD
 from List import create_kgen_list
+from Pointer import DTypePointer
+from DType import DType
+from Range import range
 from TypeUtilities import rebind
+from Functional import unroll
 
 
 fn _index2D(rows: Int, cols: Int) -> StaticTuple[2, __mlir_type.index]:
@@ -220,3 +224,198 @@ fn transpose[
             dst.__setitem__(pos_tr, src.__getitem__(pos))
             j += 1
         i += 1
+
+
+fn _permute_data[
+    size: __mlir_type.index,
+    type: __mlir_type.`!kgen.dtype`,
+](
+    input: DTypePointer[type],
+    output: DTypePointer[type],
+    perms: DTypePointer[DType.index.value],
+):
+    """
+    Ensures that output[i] = input[perms[i]] for i ∈ [0, size)
+    """
+    for axis in range(size):
+        let perm_axis = perms.load(axis).__getitem__(0)
+        let perm_data = input.load(perm_axis)
+        output.store(axis, perm_data)
+
+
+fn _fill_strides[
+    rank: __mlir_type.index,
+    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](
+    buf: NDBuffer[rank, input_shape, type],
+    strides: Buffer[rank, DType.index.value],
+):
+    """
+    Fill `strides`, which will be an array of strides indexed by axis, assuming
+    `buf` contains contiguous buf.
+
+    Note that `buf` is only used for querying its dimensions.
+    """
+    assert_param[rank > 0]()
+    strides.__setitem__(rank - 1, 1)
+
+    @always_inline
+    fn _fill_stride_at_idx[idx: __mlir_type.index]():
+        alias axis = rank - idx - 2
+        let next_axis_stride = strides.__getitem__(axis + 1)
+        let next_axis_dim = buf.dim[axis + 1]()
+        let curr_axis_stride = next_axis_stride * next_axis_dim
+        strides.__setitem__(axis, curr_axis_stride)
+
+    unroll[rank - 1, _fill_stride_at_idx]()
+
+
+fn transpose_nd[
+    rank: __mlir_type.index,
+    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: NDBuffer[rank, input_shape, type],
+    perms: DTypePointer[DType.index.value],
+):
+    """
+    Permute the axis of `input` based on `perms`, and place the result in
+    `output`.
+
+    Args:
+        output (NDBuffer): the output buffer
+        input (NDBuffer): the input buffer
+        perms (DTypePointer): permutation of the input axes
+
+    Example:
+        transpose(output, input, [2, 0, 1])
+        # guarantees output[x, y, z] = input[z, x, y]
+    """
+    # Compute `permuted_input_strides_buf`
+    let input_strides_buf = Buffer[rank, DType.index.value].stack_allocation()
+    let permuted_input_strides_buf = Buffer[
+        rank, DType.index.value
+    ].stack_allocation()
+    _fill_strides[rank, input_shape, type](input, input_strides_buf)
+    _permute_data[rank, DType.index.value](
+        input_strides_buf.data, permuted_input_strides_buf.data, perms
+    )
+    # Compute `output_strides_buf `
+    let output_strides_buf = Buffer[rank, DType.index.value].stack_allocation()
+    _fill_strides[rank, output_shape, type](output, output_strides_buf)
+    # Kickoff; for intuition on permuted input strides, note that
+    #   transpose(output, input, [2, 0, 1])
+    # guarantees
+    #   (let isx denote input_stride_x, etc.)
+    #   output[x, y, z] = input[z, x, y]
+    # ~ output.at(offset(x*isx + y*isy + z*isz)) = input.at(offset(z*osx + x*osy + y*osz))
+    # ~ output.at(offset(x*isx + y*isy + z*isz)) = input.at(offset(x*osy + y*osz + z*osx))
+    # ~ output.at(offset([x, y, z], output_strides)) = input.at(offset([x, y, z], permuted_input_strides))
+    # ~ output.at(offset(index, output_strides)) = input.at(offset(index, permuted_input_strides))
+    alias init_axis = 0
+    _copy_with_strides[init_axis, rank, output_shape, type](
+        output,
+        input.data,
+        permuted_input_strides_buf.data,
+        output_strides_buf.data,
+        0,  # input_offset
+        0,  # output_offset
+    )
+
+
+@interface
+fn _copy_with_strides[
+    axis: __mlir_type.index,
+    rank: __mlir_type.index,
+    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: DTypePointer[type],
+    input_strides: DTypePointer[DType.index.value],
+    output_strides: DTypePointer[DType.index.value],
+    input_offset: Int,
+    output_offset: Int,
+):
+    """
+    Copy data from `input` to `output`, starting at corresponding offsets,
+    based on given strides.
+
+    Args:
+        output (NDBuffer): the output buffer
+        input (NDBuffer): the input buffer
+        input_strides (DTypePointer): the stride at each input axis
+        output_strides (DTypePointer): the stride at each output axis
+        input_offset (Int): The offset at which input data starts
+        output_offset (Int): The offset at which output data starts
+    """
+    ...
+
+
+@implements(_copy_with_strides)
+fn _copy_with_strides_base[
+    axis: __mlir_type.index,
+    rank: __mlir_type.index,
+    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: DTypePointer[type],
+    input_strides: DTypePointer[DType.index.value],
+    output_strides: DTypePointer[DType.index.value],
+    input_offset: Int,
+    output_offset: Int,
+):
+    """Base case for `_copy_with_strides`"""
+    assert_param[axis + 1 == rank]()
+
+    # TODO speed this up if output_axis_stride is 1, i.e., contiguous?
+    let axis_dim = output.dim[axis]()
+    let output_axis_stride: Int = output_strides.load(axis).__getitem__(0)
+    let input_axis_stride: Int = input_strides.load(axis).__getitem__(0)
+    var src_ptr = input.offset(input_offset)
+    var dst_ptr = output.data.offset(output_offset)
+    for _ in range(axis_dim):
+        dst_ptr.store(0, src_ptr.load(0))
+        src_ptr = src_ptr.offset(input_axis_stride)
+        dst_ptr = dst_ptr.offset(output_axis_stride)
+    return
+
+
+@implements(_copy_with_strides)
+fn _copy_with_strides_iter[
+    axis: __mlir_type.index,
+    rank: __mlir_type.index,
+    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    type: __mlir_type.`!kgen.dtype`,
+](
+    output: NDBuffer[rank, output_shape, type],
+    input: DTypePointer[type],
+    input_strides: DTypePointer[DType.index.value],
+    output_strides: DTypePointer[DType.index.value],
+    input_offset: Int,
+    output_offset: Int,
+):
+    """Recursive case for `_copy_with_strides`"""
+    assert_param[axis + 1 < rank]()
+
+    let axis_dim = output.dim[axis]()
+    let input_axis_stride = input_strides.load(axis).__getitem__(0)
+    let output_axis_stride = output_strides.load(axis).__getitem__(0)
+    alias next_axis = axis + 1
+    var next_input_offset = input_offset
+    var next_output_offset = output_offset
+    for __ in range(axis_dim):  # TODO(#7452) change to `_`
+        _copy_with_strides[next_axis, rank, output_shape, type](
+            output,
+            input,
+            input_strides,
+            output_strides,
+            next_input_offset,
+            next_output_offset,
+        )
+        next_input_offset += input_axis_stride
+        next_output_offset += output_axis_stride

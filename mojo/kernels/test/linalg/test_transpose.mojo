@@ -5,12 +5,22 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen %s -execute -func='$test_transpose::main():index()' -I %stdlibdir | FileCheck %s
 
-from Buffer import NDBuffer
+from Buffer import Buffer, NDBuffer
 from DType import DType
+from Index import Index
 from Int import Int
 from IO import print
 from List import create_kgen_list
-from Transpose import transpose, transpose_inplace, _index2D
+from Memory import memset_zero
+from Transpose import transpose, transpose_inplace, transpose_nd, _index2D
+from Tuple import StaticTuple
+
+
+# TODO Refactor with `test_broadcast.lit`, e.g., put them into a common file or
+# allow NDBuffer to accept StaticIntTuple
+fn _index3D(x: Int, y: Int, z: Int) -> StaticTuple[3, __mlir_type.index]:
+    return Index(x, y, z).as_tuple()
+
 
 # CHECK-LABEL: test_transpose_4x4
 fn test_transpose_4x4():
@@ -172,9 +182,297 @@ fn test_transpose_4x2_out_of_place():
     print(dst.__getitem__(_index2D(1, 3)))
 
 
+# CHECK-LABEL: test_transpose_2d_identity
+fn test_transpose_2d_identity():
+    print("== test_transpose_2d_identity\n")
+
+    alias in_shape = create_kgen_list[__mlir_type.index](3, 3)
+    # Create an input matrix of the form
+    # [[1, 2, 3],
+    #  [4, 5, 6],
+    #  [7, 8, 9]]
+    var input = NDBuffer[2, in_shape, DType.index.value].stack_allocation()
+    input.__setitem__(_index2D(0, 0), 1)
+    input.__setitem__(_index2D(0, 1), 2)
+    input.__setitem__(_index2D(0, 2), 3)
+    input.__setitem__(_index2D(1, 0), 4)
+    input.__setitem__(_index2D(1, 1), 5)
+    input.__setitem__(_index2D(1, 2), 6)
+    input.__setitem__(_index2D(2, 0), 7)
+    input.__setitem__(_index2D(2, 1), 8)
+    input.__setitem__(_index2D(2, 2), 9)
+
+    # Create an identity permutation array of the form
+    # [0, 1]
+    var perm = Buffer[2, DType.index.value].stack_allocation()
+    perm.__setitem__(0, 0)
+    perm.__setitem__(1, 1)
+
+    # Create an output matrix of the form
+    # [[-1, -1, -1],
+    #  [-1, -1, -1],
+    #  [-1, -1, -1]]
+    alias out_shape = create_kgen_list[__mlir_type.index](3, 3)
+    var output = NDBuffer[2, out_shape, DType.index.value].stack_allocation()
+    memset_zero[DType.index.value](output.data, output.size())
+
+    # transpose
+    transpose_nd[2, out_shape, in_shape, DType.index.value](
+        output, input, perm.data
+    )
+
+    # output should have form
+    # [[1, 2, 3],
+    #  [4, 5, 6],
+    #  [7, 8, 9]]
+
+    # check: 1
+    print(output.__getitem__(_index2D(0, 0)))
+    # check: 2
+    print(output.__getitem__(_index2D(0, 1)))
+    # check: 3
+    print(output.__getitem__(_index2D(0, 2)))
+    # check: 4
+    print(output.__getitem__(_index2D(1, 0)))
+    # check: 5
+    print(output.__getitem__(_index2D(1, 1)))
+    # check: 6
+    print(output.__getitem__(_index2D(1, 2)))
+    # check: 7
+    print(output.__getitem__(_index2D(2, 0)))
+    # check: 8
+    print(output.__getitem__(_index2D(2, 1)))
+    # check: 9
+    print(output.__getitem__(_index2D(2, 2)))
+
+
+# CHECK-LABEL: test_transpose_2d
+fn test_transpose_2d():
+    print("== test_transpose_2d\n")
+
+    alias in_shape = create_kgen_list[__mlir_type.index](3, 3)
+    # Create an input matrix of the form
+    # [[1, 2, 3],
+    #  [4, 5, 6],
+    #  [7, 8, 9]]
+    var input = NDBuffer[2, in_shape, DType.index.value].stack_allocation()
+    input.__setitem__(_index2D(0, 0), 1)
+    input.__setitem__(_index2D(0, 1), 2)
+    input.__setitem__(_index2D(0, 2), 3)
+    input.__setitem__(_index2D(1, 0), 4)
+    input.__setitem__(_index2D(1, 1), 5)
+    input.__setitem__(_index2D(1, 2), 6)
+    input.__setitem__(_index2D(2, 0), 7)
+    input.__setitem__(_index2D(2, 1), 8)
+    input.__setitem__(_index2D(2, 2), 9)
+
+    # Create a permutation array of the form
+    # [1, 0]
+    var perm = Buffer[2, DType.index.value].stack_allocation()
+    perm.__setitem__(0, 1)
+    perm.__setitem__(1, 0)
+
+    # Create an output matrix of the form
+    # [[-1, -1, -1],
+    #  [-1, -1, -1],
+    #  [-1, -1, -1]]
+    alias out_shape = create_kgen_list[__mlir_type.index](3, 3)
+    var output = NDBuffer[2, out_shape, DType.index.value].stack_allocation()
+    memset_zero[DType.index.value](output.data, output.size())
+
+    # transpose
+    transpose_nd[2, out_shape, in_shape, DType.index.value](
+        output, input, perm.data
+    )
+
+    # output should have form
+    # [[1, 4, 7],
+    #  [2, 5, 8],
+    #  [3, 6, 9]]
+
+    # check: 1
+    print(output.__getitem__(_index2D(0, 0)))
+    # check: 4
+    print(output.__getitem__(_index2D(0, 1)))
+    # check: 7
+    print(output.__getitem__(_index2D(0, 2)))
+    # check: 2
+    print(output.__getitem__(_index2D(1, 0)))
+    # check: 5
+    print(output.__getitem__(_index2D(1, 1)))
+    # check: 8
+    print(output.__getitem__(_index2D(1, 2)))
+    # check: 3
+    print(output.__getitem__(_index2D(2, 0)))
+    # check: 6
+    print(output.__getitem__(_index2D(2, 1)))
+    # check: 9
+    print(output.__getitem__(_index2D(2, 2)))
+
+
+# CHECK-LABEL: test_transpose_3d_identity
+fn test_transpose_3d_identity():
+    print("== test_transpose_3d_identity\n")
+
+    alias in_shape = create_kgen_list[__mlir_type.index](2, 2, 3)
+    # Create an input matrix of the form
+    # [[[1, 2, 3],
+    #   [4, 5, 6]],
+    #  [[7, 8, 9],
+    #   [10, 11, 12]]]
+    var input = NDBuffer[3, in_shape, DType.index.value].stack_allocation()
+    input.__setitem__(_index3D(0, 0, 0), 1)
+    input.__setitem__(_index3D(0, 0, 1), 2)
+    input.__setitem__(_index3D(0, 0, 2), 3)
+    input.__setitem__(_index3D(0, 1, 0), 4)
+    input.__setitem__(_index3D(0, 1, 1), 5)
+    input.__setitem__(_index3D(0, 1, 2), 6)
+    input.__setitem__(_index3D(1, 0, 0), 7)
+    input.__setitem__(_index3D(1, 0, 1), 8)
+    input.__setitem__(_index3D(1, 0, 2), 9)
+    input.__setitem__(_index3D(1, 1, 0), 10)
+    input.__setitem__(_index3D(1, 1, 1), 11)
+    input.__setitem__(_index3D(1, 1, 2), 12)
+
+    # Create an identity permutation array of the form
+    # [0, 1, 2]
+    var perm = Buffer[3, DType.index.value].stack_allocation()
+    perm.__setitem__(0, 0)
+    perm.__setitem__(1, 1)
+    perm.__setitem__(2, 2)
+
+    # Create an output matrix of the form
+    # [[[-1, -1, -1],
+    #   [-1, -1, -1]],
+    #  [[-1, -1, -1],
+    #   [-1, -1, -1]]]
+    alias out_shape = create_kgen_list[__mlir_type.index](2, 2, 3)
+    var output = NDBuffer[3, out_shape, DType.index.value].stack_allocation()
+    memset_zero[DType.index.value](output.data, output.size())
+
+    # transpose
+    transpose_nd[3, out_shape, in_shape, DType.index.value](
+        output, input, perm.data
+    )
+
+    # output should have form
+    # [[[1, 2, 3],
+    #   [4, 5, 6]],
+    #  [[7, 8, 9],
+    #   [10, 11, 12]]]
+
+    # check: 1
+    print(output.__getitem__(_index3D(0, 0, 0)))
+    # check: 2
+    print(output.__getitem__(_index3D(0, 0, 1)))
+    # check: 3
+    print(output.__getitem__(_index3D(0, 0, 2)))
+    # check: 4
+    print(output.__getitem__(_index3D(0, 1, 0)))
+    # check: 5
+    print(output.__getitem__(_index3D(0, 1, 1)))
+    # check: 6
+    print(output.__getitem__(_index3D(0, 1, 2)))
+    # check: 7
+    print(output.__getitem__(_index3D(1, 0, 0)))
+    # check: 8
+    print(output.__getitem__(_index3D(1, 0, 1)))
+    # check: 9
+    print(output.__getitem__(_index3D(1, 0, 2)))
+    # check: 10
+    print(output.__getitem__(_index3D(1, 1, 0)))
+    # check: 11
+    print(output.__getitem__(_index3D(1, 1, 1)))
+    # check: 12
+    print(output.__getitem__(_index3D(1, 1, 2)))
+
+
+# CHECK-LABEL: test_transpose_3d
+fn test_transpose_3d():
+    print("== test_transpose_3d\n")
+
+    alias in_shape = create_kgen_list[__mlir_type.index](2, 2, 3)
+    # Create an input matrix of the form
+    # [[[1, 2, 3],
+    #   [4, 5, 6]],
+    #  [[7, 8, 9],
+    #   [10, 11, 12]]]
+    var input = NDBuffer[3, in_shape, DType.index.value].stack_allocation()
+    input.__setitem__(_index3D(0, 0, 0), 1)
+    input.__setitem__(_index3D(0, 0, 1), 2)
+    input.__setitem__(_index3D(0, 0, 2), 3)
+    input.__setitem__(_index3D(0, 1, 0), 4)
+    input.__setitem__(_index3D(0, 1, 1), 5)
+    input.__setitem__(_index3D(0, 1, 2), 6)
+    input.__setitem__(_index3D(1, 0, 0), 7)
+    input.__setitem__(_index3D(1, 0, 1), 8)
+    input.__setitem__(_index3D(1, 0, 2), 9)
+    input.__setitem__(_index3D(1, 1, 0), 10)
+    input.__setitem__(_index3D(1, 1, 1), 11)
+    input.__setitem__(_index3D(1, 1, 2), 12)
+
+    # Create a identity permutation array of the form
+    # [2, 0, 1]
+    var perm = Buffer[3, DType.index.value].stack_allocation()
+    perm.__setitem__(0, 2)
+    perm.__setitem__(1, 0)
+    perm.__setitem__(2, 1)
+
+    # Create an output matrix of the form
+    # [[[-1, -1, -1],
+    #   [-1, -1, -1]],
+    #  [[-1, -1, -1],
+    #   [-1, -1, -1]]]
+    alias out_shape = create_kgen_list[__mlir_type.index](3, 2, 2)
+    var output = NDBuffer[3, out_shape, DType.index.value].stack_allocation()
+    memset_zero[DType.index.value](output.data, output.size())
+
+    # transpose
+    transpose_nd[3, out_shape, in_shape, DType.index.value](
+        output, input, perm.data
+    )
+
+    # output should have form (easily verifiable via numpy)
+    # [[[1, 4],
+    #   [7, 10]],
+    #  [[2, 5],
+    #   [8, 11]]
+    #  [[3, 6],
+    #   [9, 12]]]
+
+    # check: 1
+    print(output.__getitem__(_index3D(0, 0, 0)))
+    # check: 4
+    print(output.__getitem__(_index3D(0, 0, 1)))
+    # check: 7
+    print(output.__getitem__(_index3D(0, 1, 0)))
+    # check: 10
+    print(output.__getitem__(_index3D(0, 1, 1)))
+    # check: 2
+    print(output.__getitem__(_index3D(1, 0, 0)))
+    # check: 5
+    print(output.__getitem__(_index3D(1, 0, 1)))
+    # check: 8
+    print(output.__getitem__(_index3D(1, 1, 0)))
+    # check: 11
+    print(output.__getitem__(_index3D(1, 1, 1)))
+    # check: 3
+    print(output.__getitem__(_index3D(2, 0, 0)))
+    # check: 6
+    print(output.__getitem__(_index3D(2, 0, 1)))
+    # check: 9
+    print(output.__getitem__(_index3D(2, 1, 0)))
+    # check: 12
+    print(output.__getitem__(_index3D(2, 1, 1)))
+
+
 @export
 fn main() -> __mlir_type.index:
     test_transpose_4x4()
     test_transpose_8x8()
     test_transpose_4x2_out_of_place()
+    test_transpose_2d_identity()
+    test_transpose_2d()
+    test_transpose_3d_identity()
+    test_transpose_3d()
     return 0
