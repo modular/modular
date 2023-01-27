@@ -121,7 +121,7 @@ struct TimeTraceProfiler {
 
   // Write events from this TimeTraceProfilerInstance and
   // ThreadTimeTraceProfilerInstances.
-  void write(llvm::raw_pwrite_stream &OS) {
+  void writeTrace(llvm::raw_pwrite_stream &OS) {
     // Acquire Mutex as reading ThreadTimeTraceProfilerInstances.
     auto &Instances = getTimeTraceProfilerInstances();
     std::lock_guard<std::mutex> Lock(Instances.Lock);
@@ -171,60 +171,6 @@ struct TimeTraceProfiler {
       for (const TimeTraceProfilerEntry<true> &E : TTP->Entries)
         writeEvent(E, TTP->Tid);
 
-    // Emit totals by section name as additional "thread" events, sorted from
-    // longest one.
-    // Find highest used thread id.
-    uint64_t MaxTid = this->Tid;
-    for (const TimeTraceProfiler *TTP : Instances.List)
-      MaxTid = std::max(MaxTid, TTP->Tid);
-
-    // Combine all CountAndTotalPerName from threads into one.
-    llvm::StringMap<CountAndDurationType> AllCountAndTotalPerName;
-    auto combineStat = [&](const auto &Stat) {
-      StringRef Key = Stat.getKey();
-      auto Value = Stat.getValue();
-      auto &CountAndTotal = AllCountAndTotalPerName[Key];
-      CountAndTotal.first += Value.first;
-      CountAndTotal.second += Value.second;
-    };
-    for (const auto &Stat : CountAndTotalPerName)
-      combineStat(Stat);
-    for (const TimeTraceProfiler *TTP : Instances.List)
-      for (const auto &Stat : TTP->CountAndTotalPerName)
-        combineStat(Stat);
-
-    std::vector<NameAndCountAndDurationType> SortedTotals;
-    SortedTotals.reserve(AllCountAndTotalPerName.size());
-    for (const auto &Total : AllCountAndTotalPerName)
-      SortedTotals.emplace_back(std::string(Total.getKey()), Total.getValue());
-
-    llvm::sort(SortedTotals, [](const NameAndCountAndDurationType &A,
-                                const NameAndCountAndDurationType &B) {
-      return A.second.second > B.second.second;
-    });
-
-    // Report totals on separate threads of tracing file.
-    uint64_t TotalTid = MaxTid + 1;
-    for (const NameAndCountAndDurationType &Total : SortedTotals) {
-      auto DurUs = duration_cast<microseconds>(Total.second.second).count();
-      auto Count = AllCountAndTotalPerName[Total.first].first;
-
-      J.object([&] {
-        J.attribute("pid", Pid);
-        J.attribute("tid", int64_t(TotalTid));
-        J.attribute("ph", "X");
-        J.attribute("ts", 0);
-        J.attribute("dur", DurUs);
-        J.attribute("name", "Total " + Total.first);
-        J.attributeObject("args", [&] {
-          J.attribute("count", int64_t(Count));
-          J.attribute("avg ms", int64_t(DurUs / Count / 1000));
-        });
-      });
-
-      ++TotalTid;
-    }
-
     auto writeMetadataEvent = [&](const char *Name, uint64_t Tid,
                                   StringRef arg) {
       J.object([&] {
@@ -255,6 +201,43 @@ struct TimeTraceProfiler {
                     .count());
 
     J.objectEnd();
+  }
+
+  // Write timing statistics from this TimeTraceProfilerInstance and
+  // ThreadTimeTraceProfilerInstances.
+  void writeStat(llvm::raw_pwrite_stream &OS) {
+    // Acquire Mutex as reading ThreadTimeTraceProfilerInstances.
+    auto &Instances = getTimeTraceProfilerInstances();
+    std::lock_guard<std::mutex> Lock(Instances.Lock);
+
+    // Write call counts and cost by thread.
+    auto writeThreadTimeStat = [&](const auto &Statistics, uint64_t Tid) {
+      // Sort the statistics by time cost.
+      std::vector<NameAndCountAndDurationType> SortedStats;
+      SortedStats.reserve(Statistics.size());
+      for (const auto &Stat : Statistics)
+        SortedStats.emplace_back(std::string(Stat.getKey()), Stat.getValue());
+      llvm::sort(SortedStats, [](const NameAndCountAndDurationType &A,
+                                 const NameAndCountAndDurationType &B) {
+        return A.second.second > B.second.second;
+      });
+
+      for (const auto &Stat : SortedStats) {
+        StringRef Name = Stat.first;
+        auto Count = Stat.second.first;
+        auto DurUs = duration_cast<microseconds>(Stat.second.second).count();
+        OS << Tid << ", " << Name << ", " << Count << ", " << DurUs << "\n";
+      }
+    };
+
+    // Write header line.
+    OS << "Tid, Name, Count, Cost (us)\n";
+    // Write statistics
+    writeThreadTimeStat(this->CountAndTotalPerName, this->Tid);
+    for (const TimeTraceProfiler *TTP : Instances.List) {
+      OS << "\n";
+      writeThreadTimeStat(TTP->CountAndTotalPerName, TTP->Tid);
+    }
   }
 
   SmallVector<TimeTraceProfilerEntry<true>, 16> Stack;
@@ -323,10 +306,16 @@ void M::timeTraceProfilerFinishThread() {
   TimeTraceProfilerInstance = nullptr;
 }
 
-void M::timeTraceProfilerWrite(llvm::raw_pwrite_stream &OS) {
+void M::timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &OS) {
   assert(TimeTraceProfilerInstance != nullptr &&
          "Profiler should be initialized");
-  TimeTraceProfilerInstance->write(OS);
+  TimeTraceProfilerInstance->writeTrace(OS);
+}
+
+void M::timeTraceProfilerWriteStat(llvm::raw_pwrite_stream &OS) {
+  assert(TimeTraceProfilerInstance != nullptr &&
+         "Profiler should be initialized");
+  TimeTraceProfilerInstance->writeStat(OS);
 }
 
 ErrorOrSuccess M::timeTraceProfilerWrite(StringRef PreferredFileName,
@@ -334,19 +323,28 @@ ErrorOrSuccess M::timeTraceProfilerWrite(StringRef PreferredFileName,
   assert(TimeTraceProfilerInstance != nullptr &&
          "Profiler should be initialized");
 
+  // Set up filename base.
   std::string Path = PreferredFileName.str();
-  if (Path.empty()) {
+  if (Path.empty())
     Path = FallbackFileName == "-" ? "out" : FallbackFileName.str();
-    Path += ".time-trace";
-  }
 
+  // Write time trace.
+  std::string TracePath = Path + ".time-trace";
   std::error_code EC;
-  llvm::raw_fd_ostream OS(Path, EC, llvm::sys::fs::OF_TextWithCRLF);
+  llvm::raw_fd_ostream OSTrace(TracePath, EC, llvm::sys::fs::OF_TextWithCRLF);
   if (EC)
-    return Error(Twine("Could not open ") + Path + "(" + Twine(EC.message()) +
-                 ")");
+    return Error(Twine("Could not open ") + TracePath + "(" +
+                 Twine(EC.message()) + ")");
+  timeTraceProfilerWriteTrace(OSTrace);
 
-  timeTraceProfilerWrite(OS);
+  // Write time statistics.
+  std::string StatPath = Path + ".time-stat.csv";
+  llvm::raw_fd_ostream OSStat(StatPath, EC, llvm::sys::fs::OF_TextWithCRLF);
+  if (EC)
+    return Error(Twine("Could not open ") + StatPath + "(" +
+                 Twine(EC.message()) + ")");
+  timeTraceProfilerWriteStat(OSStat);
+
   return success();
 }
 

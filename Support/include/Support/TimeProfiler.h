@@ -155,7 +155,11 @@ void timeTraceProfilerFinishThread();
 /// Write profiling data to output stream.
 /// Data produced is JSON, in Chrome "Trace Event" format, see
 /// https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview
-void timeTraceProfilerWrite(llvm::raw_pwrite_stream &OS);
+void timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &OS);
+
+/// Write profiling statistics to output stream.
+/// Data produced is in CSV format.
+void timeTraceProfilerWriteStat(llvm::raw_pwrite_stream &OS);
 
 /// Write profiling data to a file.
 /// The function will write to \p PreferredFileName if provided, if not

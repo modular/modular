@@ -99,13 +99,16 @@ private:
       "time-profile",
       llvm::cl::desc(
           kIsProfilingEnabled
-              ? "Specify the filename into which time profiling data should be"
-                " written. This will be JSON text in the standard profiling"
-                " format. An empty filename disabled profiling (the default)."
-              : "Specify the filename into which time profiling data should be"
-                " written. WARNING: This option is ignored in this build."
-                " Rebuild with MAX_PROFILING_LEVEL greater than 0 to enable"
-                " it."),
+              ? "Specify the filename base for profiling output. The tracing "
+                "data will be written to a file named by <base>.time-trace. "
+                "This will be a JSON text in the standard profiling format. "
+                "The profiling statistics will be written to a CSV file named "
+                "by <base>.time-stat.csv. An empty filename base disables "
+                "profiling (the default)."
+              : "Specify the filename base for profiling output. WARNING: This "
+                "option is ignored in this build. Rebuild with "
+                "MODULAR_LLCL_MAX_PROFILING_LEVEL greater than 0 to enable "
+                "it."),
       llvm::cl::init("")};
 
   // Return the workqueue type to use, resolving kDefault into a concrete kind.
