@@ -285,7 +285,7 @@ struct TaskGroup:
 
     @always_inline
     fn _counter_decr(self&) -> Int:
-        let prev: Int = self.counter.__isub__(1).value
+        let prev: Int = self.counter.isub(1).value
         return prev - 1
 
     @staticmethod
