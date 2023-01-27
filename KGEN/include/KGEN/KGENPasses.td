@@ -357,9 +357,9 @@ def PruneImpossibleVariants: Pass<"prune-impossible-variants",
 //===----------------------------------------------------------------------===//
 
 def ForceInline : Pass<"force-inline", "mlir::ModuleOp"> {
-  let summary = "Process all 'force_inline' functions";
+  let summary = "Process all 'always_inline' functions";
   let description = [{
-    The `force-inline` pass will process all calls to 'force_inline` functions
+    The `force-inline` pass will process all calls to 'always_inline` functions
     and inline them. If a cycle is encountered during inlining, the pass emits
     an error and fails to inline the cycle.
   }];
@@ -374,7 +374,7 @@ def CleanupCompilerGlobals: Pass<"cleanup-compiler-globals",
   let summary = "remove uses of global variables";
   let description = [{
     We use global variables to pass captures into lifted region parameters.
-    These lifted regions are marked force_inline, so after inlining we
+    These lifted regions are marked always_inline, so after inlining we
     can clean up usages of global variables. This pass is responsible for
     doing that.
 

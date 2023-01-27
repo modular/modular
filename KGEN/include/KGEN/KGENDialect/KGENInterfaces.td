@@ -139,8 +139,8 @@ def FuncInterface : OpInterface<"FuncInterface"> {
       return $_op.getSignature().isThrows();
     }
     /// Return true if the function is forcibly inlnied.
-    bool isForceInline() {
-      return $_op.getSignature().isForceInline();
+    bool isAlwaysInline() {
+      return $_op.getSignature().isAlwaysInline();
     }
     /// Return true if the function is async.
     bool isAsync() {

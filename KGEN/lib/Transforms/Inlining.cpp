@@ -282,14 +282,14 @@ void ForceInlinePass::runOnOperation() {
 
   for (auto func : getOperation().getOps<FuncOp>()) {
     // Skip over functions that are force inlined. Start inlining from the tips.
-    if (func.isForceInline())
+    if (func.isAlwaysInline())
       continue;
 
     // Collect all calls that inline in this function.
     struct EndStack {};
     SmallVector<SmartVariant<Operation *, EndStack>> calls;
     func.walk([&](CallOp call) {
-      if (call.getCallee().getType().isForceInline())
+      if (call.getCallee().getType().isAlwaysInline())
         calls.emplace_back(call);
     });
 
@@ -315,12 +315,12 @@ void ForceInlinePass::runOnOperation() {
       if (!seenFuncs.insert(callee)) {
         InFlightDiagnostic diag = mlir::emitError(
             func.getLoc(),
-            "function has recursive call to 'force_inline' function");
+            "function has recursive call to 'always_inline' function");
         assert(callstack.size() == seenFuncs.size());
         for (auto [call, func] : llvm::zip(callstack, seenFuncs)) {
           diag.attachNote(call.getLoc()) << "through call here";
           diag.attachNote(func->getLoc())
-              << "to function marked 'force_inline' here";
+              << "to function marked 'always_inline' here";
         }
         diag.attachNote(call.getLoc()) << "function call here recurses";
         diag.attachNote(callee.getLoc()) << "back to function here";
@@ -348,7 +348,7 @@ void ForceInlinePass::runOnOperation() {
         if (op != scope)
           op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), call.getLoc()));
         if (auto call = dyn_cast<CallOp>(op))
-          if (call.getCallee().getType().isForceInline())
+          if (call.getCallee().getType().isAlwaysInline())
             calls.emplace_back(call);
         if (!isa<KGEN::ReturnOp, HLCF::ReturnOp>(op))
           return;

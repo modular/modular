@@ -214,8 +214,8 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
       return bitEnumContainsAny(getFnEffects(), FnEffects::Throws);
     }
     /// Return true if the function is forcibly inlnied.
-    bool isForceInline() {
-      return bitEnumContainsAny(getFnEffects(), FnEffects::ForceInline);
+    bool isAlwaysInline() {
+      return bitEnumContainsAny(getFnEffects(), FnEffects::AlwaysInline);
     }
     /// Return true if the function is async.
     bool isAsync() {

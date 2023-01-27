@@ -113,7 +113,7 @@ fn callReturnParam() -> __mlir_type.index:
   # CHECK-NEXT: return %idx3
   return returnParameter[3]()
 
-# CHECK: lit.func @"pleaseInline()"() force_inline -> index {
+# CHECK: lit.func @"pleaseInline()"() always_inline -> index {
 @always_inline
 fn pleaseInline() -> __mlir_type.index:
   return 1

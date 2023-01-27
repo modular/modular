@@ -78,9 +78,10 @@ void OutlineClosuresPass::runOnOperation() {
       auto body = cast<RegionBodyOp>(regionDecl.getBody().front().front());
 
       // If the body is not isolated from above *and* it's not marked
-      // force_inline, emit an error.
-      if (!isolated && !body.isForceInline()) {
-        regionDecl.emitError("non-isolated region must be marked force_inline");
+      // always_inline, emit an error.
+      if (!isolated && !body.isAlwaysInline()) {
+        regionDecl.emitError(
+            "non-isolated region must be marked always_inline");
         hadError = true;
         return;
       }
@@ -153,7 +154,7 @@ void OutlineClosuresPass::runOnOperation() {
       llvm::append_range(liftedConventions,
                          bodySignature.getValueInputConventions());
 
-      // The lifted generator needs to be force_inline, so we add that to the
+      // The lifted generator needs to be always_inline, so we add that to the
       // FnEffects.
       auto liftedSignature = SignatureType::get(
           b.getAttr<ParamDeclArrayAttr>(necessaryDecls.getArrayRef()),

@@ -929,8 +929,8 @@ kgen.func @no_return() {
 
 // -----
 
-// expected-error @below {{specified force_inline, and so expected force_inline on this signature as well}}
-kgen.generator @bad_signature<fn: <>() force_inline -> ()>() {
-  kgen.call_param[fn: ()force_inline -> ()]() : () -> ()
+// expected-error @below {{specified always_inline, and so expected always_inline on this signature as well}}
+kgen.generator @bad_signature<fn: <>() always_inline -> ()>() {
+  kgen.call_param[fn: ()always_inline -> ()]() : () -> ()
   kgen.return
 }

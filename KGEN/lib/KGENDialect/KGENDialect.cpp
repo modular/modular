@@ -51,12 +51,12 @@ struct KGENDialectInlinerInterface : public mlir::DialectInlinerInterface {
     return true;
   }
 
-  /// FuncOp are legal to inline if they have the force_inline FnEffect. Other
+  /// FuncOp are legal to inline if they have the always_inline FnEffect. Other
   /// callables we don't want inlined.
   bool isLegalToInline(Operation *call, Operation *callable,
                        bool wouldBeCloned) const override {
     if (auto func = dyn_cast<FuncOp>(callable))
-      return func.isForceInline();
+      return func.isAlwaysInline();
 
     return !isa<FuncInterface>(callable);
   }
