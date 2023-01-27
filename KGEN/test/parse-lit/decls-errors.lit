@@ -55,10 +55,6 @@ fn badPropertyError(a: InvalidType):
   _ = a.value
   return
 
-struct BadInplace:
-  # expected-error @+1 {{'__iadd__' result type must be elided (or None)}}
-  fn __iadd__(self&, rhs: BadInplace) -> BadInplace:
-
 struct NotBoolConvertible:
 # expected-note @+1 {{function declared here}}
 def test_bool_context(a: NotBoolConvertible): pass
@@ -282,9 +278,12 @@ struct SpecialFunctions:
   # expected-error @+1 {{special function must have 2 operands}}
   fn __add__(self):
 
-  # expected-error @+1 {{self argument must be passed by reference}}
-  fn __iadd__(a: SpecialFunctions, b: SpecialFunctions) -> SpecialFunctions:
-    return a
+  # This is ok, SpecialFunctions may be a reference semantic struct like Object.
+  # Issue #7573: Cannot have LValue or RValue overloads of special methods
+  fn __iadd__(a: SpecialFunctions, b: SpecialFunctions):
+
+  # expected-error @+1 {{'__iadd__' result type must be elided (or None)}}
+  fn __iadd__(self&, rhs: SpecialFunctions) -> SpecialFunctions:
 
   fn failures(self):
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
