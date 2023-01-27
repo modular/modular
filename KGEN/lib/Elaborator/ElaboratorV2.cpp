@@ -1569,7 +1569,7 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   // generator.
   auto newFuncNode =
       ExpansionTreeNode::create(newFunc, genNode->inputParams, genNode,
-                                std::move(evaluator), genNode->expansionDepth);
+                                evaluator, genNode->expansionDepth);
 
   // Inflate the function and then specialize it.
   asyncMap.mapChained(
@@ -1740,26 +1740,26 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
                                      Cache::WriteableBufferRef toCache,
                                      AnyAsyncValueRef chain) {
     auto out = LLCL::AsyncValueRef<FuncOp>::allocate(runtime);
-    chain->andThenSync([this, evalFunc, concrete, itfOp, chain = chain.copy(),
-                        out = out.copy(),
-                        toCache = std::move(toCache)]() mutable {
-      auto itf = cast<GeneratorInterfaceOp>(itfOp);
+    std::move(chain).andThenSync(
+        [this, evalFunc, concrete, itfOp, out = out.copy(),
+         toCache = std::move(toCache)](AnyAsyncValueRef &&chain) mutable {
+          auto itf = cast<GeneratorInterfaceOp>(itfOp);
 
-      ErrorOr<size_t> bestSpecializationIdxOr = evaluateSpecializations(
-          evalFunc, analysis.getTopLevelSymbolTable(), runtime, concrete);
+          ErrorOr<size_t> bestSpecializationIdxOr = evaluateSpecializations(
+              evalFunc, analysis.getTopLevelSymbolTable(), runtime, concrete);
 
-      if (failed(bestSpecializationIdxOr)) {
-        return out.setToError(getMLIRDiagnostic(
-            bestSpecializationIdxOr.takeError(), itf.getLoc()));
-      }
+          if (failed(bestSpecializationIdxOr)) {
+            return out.setToError(getMLIRDiagnostic(
+                bestSpecializationIdxOr.takeError(), itf.getLoc()));
+          }
 
-      // Find the fastest one and return just that one.
-      FuncOp bestResult = concrete[*bestSpecializationIdxOr];
+          // Find the fastest one and return just that one.
+          FuncOp bestResult = concrete[*bestSpecializationIdxOr];
 
-      // Finally, cache the result.
-      *toCache << bestResult.getName();
-      return out.emplace(bestResult);
-    });
+          // Finally, cache the result.
+          *toCache << bestResult.getName();
+          return std::move(out).emplace(bestResult);
+        });
     return out;
   };
 
@@ -1779,10 +1779,10 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
           Error("could not find " + fastestFuncName.getValue()),
           itfOp->getLoc()));
     } else {
-      out.emplace(*fastest);
+      out.copy().emplace(*fastest);
     }
 
-    return out;
+    return std::move(out);
   };
 
   // Run the transform with the functions we just defined.
@@ -1792,10 +1792,10 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
                              std::move(keyBuf), doSpecialization, onCacheHit);
 
   LLCL::await(xform);
-  if (xform->isError())
-    return ErrorTree(itf.getLoc(), xform->getDiagnostic().getMessage().copy());
+  if (xform.isError())
+    return ErrorTree(itf.getLoc(), xform.getDiagnostic().getMessage().copy());
   else
-    concrete = {std::move(xform->get<FuncOp>())};
+    concrete = {std::move(xform.get<FuncOp>())};
 
   // Trim the nodes that we don't want. If the op is not in the `concrete`
   // list or it cannot be concretized, we don't want it!

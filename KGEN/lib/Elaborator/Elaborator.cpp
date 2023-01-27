@@ -1522,27 +1522,28 @@ ElaboratorImpl::specializeInterface(DeclAndInputParamsPair declAndInputParams,
                                        AnyAsyncValueRef chain) {
     auto out = LLCL::AsyncValueRef<ErrorTreeOr<ElaboratedGenerator>>::allocate(
         runtime);
-    chain->andThenSync([this, evalFunc, searchInputs, &candidates, itfOp,
-                        chain = chain.copy(), out = out.copy(),
-                        toCache = std::move(toCache)]() mutable {
-      auto itf = cast<GeneratorInterfaceOp>(itfOp);
+    std::move(chain).andThenSync(
+        [this, evalFunc, searchInputs, &candidates, itfOp, out = out.copy(),
+         toCache = std::move(toCache)](AnyAsyncValueRef &&chain) mutable {
+          auto itf = cast<GeneratorInterfaceOp>(itfOp);
 
-      ErrorOr<size_t> bestSpecializationIdxOr = evaluateSpecializations(
-          evalFunc, analysis.getTopLevelSymbolTable(), runtime, searchInputs);
-      if (failed(bestSpecializationIdxOr)) {
-        return out.emplace(reportCalleeExpansionError(
-            itf, bestSpecializationIdxOr.getError()));
-      }
+          ErrorOr<size_t> bestSpecializationIdxOr = evaluateSpecializations(
+              evalFunc, analysis.getTopLevelSymbolTable(), runtime,
+              searchInputs);
+          if (failed(bestSpecializationIdxOr)) {
+            return std::move(out).emplace(reportCalleeExpansionError(
+                itf, bestSpecializationIdxOr.getError()));
+          }
 
-      // Find the fastest one and return just that one.
-      const ElaboratedGenerator &bestResult =
-          candidates[*bestSpecializationIdxOr];
+          // Find the fastest one and return just that one.
+          const ElaboratedGenerator &bestResult =
+              candidates[*bestSpecializationIdxOr];
 
-      // Finally, cache the result.
-      FuncOp resultFunc = bestResult.func;
-      *toCache << resultFunc.getName();
-      return out.emplace(std::move(bestResult));
-    });
+          // Finally, cache the result.
+          FuncOp resultFunc = bestResult.func;
+          *toCache << resultFunc.getName();
+          return std::move(out).emplace(std::move(bestResult));
+        });
     return out;
   };
 
@@ -1563,10 +1564,10 @@ ElaboratorImpl::specializeInterface(DeclAndInputParamsPair declAndInputParams,
           Error("could not find " + fastestFuncName.getValue()),
           itfOp->getLoc()));
     } else {
-      out.emplace(*fastest);
+      out.copy().emplace(*fastest);
     }
 
-    return out;
+    return std::move(out);
   };
 
   // Run the transform with the functions we just defined.
@@ -1577,11 +1578,11 @@ ElaboratorImpl::specializeInterface(DeclAndInputParamsPair declAndInputParams,
 
   LLCL::await(xform);
   result.clear();
-  if (xform->isError())
+  if (xform.isError())
     result.push_back(reportCalleeExpansionError(
-        itf, xform->getDiagnostic().getMessage().get()));
+        itf, xform.getDiagnostic().getMessage().get()));
   else
-    result.push_back(std::move(xform->get<ErrorTreeOr<ElaboratedGenerator>>()));
+    result.push_back(std::move(xform.get<ErrorTreeOr<ElaboratedGenerator>>()));
   return result;
 }
 

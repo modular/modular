@@ -135,7 +135,7 @@ cachedTransform(Operation *target, LLCL::RCRef<TransformCache> transformCache,
       result.setToError(
           LLCL::getMLIRDiagnostic(resultOr.takeError(), target->getLoc()));
     else
-      result.emplace(resultOr.takeValue());
+      result.copy().emplace(resultOr.takeValue());
 
     // Return the async value result.
     return result;
@@ -166,7 +166,7 @@ cachedTransform(Operation *target, LLCL::RCRef<TransformCache> transformCache,
                                                              BufferRef buf) {
     auto result =
         LLCL::AsyncValueRef<Detail::ResultT<CacheHitFnT>>::allocate(rt);
-    result.emplace(cacheHitFn(op, std::move(buf)));
+    result.copy().emplace(cacheHitFn(op, std::move(buf)));
     return result;
   };
 

@@ -6,7 +6,7 @@
 
 #include "LLCL/Runtime/WorkQueue.h"
 
-#include "LLCL/Runtime/AsyncValue.h"
+#include "LLCL/Runtime/AnyAsyncValueRef.h"
 #include "LLCL/Support/ConcurrentQueue.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -51,7 +51,7 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
 
   // As each value becomes available, we can decrement our counts.
   for (auto &value : values)
-    value->andThenSync([&numRemaining]() { --numRemaining; });
+    value.andThenSync([&numRemaining]() { --numRemaining; });
 
   if (numRemaining == 0)
     return;

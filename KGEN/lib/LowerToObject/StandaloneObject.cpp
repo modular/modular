@@ -157,8 +157,8 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
   auto runTransformation = [&](Operation *op, WriteableBufferRef buf,
                                LLCL::AnyAsyncValueRef chain) {
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
-    chain->andThenSync([this, op, target, isJIT, &ctx, output = output.copy(),
-                        buf = buf.copy()] {
+    chain.andThenSync([this, op, target, isJIT, &ctx, output = output.copy(),
+                       buf = buf.copy()]() mutable {
       auto llvmModule = lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
       if (!llvmModule) {
         return output.setToError(LLCL::getMLIRDiagnostic(
@@ -181,7 +181,7 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
         return output.setToError(LLCL::getMLIRDiagnostic(
             "failed to lower LLVM IR to object file", op->getLoc()));
       }
-      output.emplace(buf.copy());
+      std::move(output).emplace(buf.copy());
     });
     return output;
   };
@@ -198,9 +198,9 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
       std::move(produceStandaloneObjectKey), runTransformation, onCacheHit);
   await(output);
 
-  if (output->isError())
-    return {std::move(output->takeDiagnostic().getMessage())};
-  return {std::move(output->get<BufferRef>())};
+  if (output.isError())
+    return {std::move(output.takeDiagnostic().getMessage())};
+  return {std::move(output.get<BufferRef>())};
 }
 
 ErrorOr<ElementsAttr>

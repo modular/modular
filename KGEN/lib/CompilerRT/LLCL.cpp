@@ -105,7 +105,7 @@ extern "C" void KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *),
 /// Given the async context of a coroutine, indicate that it is complete by
 /// setting its token value.
 extern "C" void KGEN_CompilerRT_LLCL_Complete(int8_t *asyncCtx) {
-  unwrap(asyncCtx)->chain.emplace();
+  unwrap(asyncCtx)->chain.copy().emplace();
 }
 
 //===----------------------------------------------------------------------===//
@@ -142,6 +142,6 @@ extern "C" void KGEN_CompilerRT_LLCL_AddTaskToGroup(
   unwrap(taskCtx)->chain.andThenAsync([tg, tgCounterDecr] {
     if (tgCounterDecr(tg) != 0)
       return;
-    unwrap(tg)->chain.emplace();
+    unwrap(tg)->chain.copy().emplace();
   });
 }

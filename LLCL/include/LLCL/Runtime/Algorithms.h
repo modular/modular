@@ -47,7 +47,7 @@ using ResultType = typename UnwrapErrorOr<std::invoke_result_t<F>>::type;
 /// are ready.
 inline static void await(ArrayRef<AnyAsyncValueRef> values) {
   if (!values.empty())
-    values[0]->getRuntime()->getWorkQueue()->await(values);
+    values[0].getRuntime()->getWorkQueue()->await(values);
 }
 
 template <typename T>
@@ -56,7 +56,7 @@ inline static void await(const AsyncValueRef<T> &value) {
   // bumping reference counts.
   AnyAsyncValueRef ref = takeRCRef(value.getPointer());
   await(ref);
-  (void)ref.release();
+  (void)ref.releasePointer();
 }
 
 //===----------------------------------------------------------------------===//
@@ -170,8 +170,7 @@ inline static void andThenArrayImpl(ArrayRefType values,
   }
 
   if (values.size() == 1) {
-    AsyncValue::andThen<IsAsync>(
-        copyOrMoveFn(values[0]),
+    copyOrMoveFn(values[0]).template andThen<IsAsync>(
         [completionFn = std::forward<CompletionFn>(completionFn)](
             AnyAsyncValueRef &&value) mutable {
           AnyAsyncValueRef mutableValue = value.copy();
@@ -205,10 +204,10 @@ inline static void andThenArrayImpl(ArrayRefType values,
   // the last one.
   WorkQueue *asyncWorkQueue = nullptr;
   if constexpr (IsAsync)
-    asyncWorkQueue = values[0]->getRuntime()->getWorkQueue();
+    asyncWorkQueue = values[0].getRuntime()->getWorkQueue();
   for (auto &v : values) {
     state->values.push_back(copyOrMoveFn(v));
-    state->values.back()->andThenSync([state, asyncWorkQueue]() {
+    state->values.back().andThenSync([state, asyncWorkQueue]() {
       // Once that is done we can decrement the count and trigger completion
       // when the last element is done.
       if (--state->numElementsLeft != 0)
@@ -430,10 +429,10 @@ parallelForEachNCompleteChain(Runtime &runtime, size_t totalCount,
                               ElementFn &&elementFn, CaptureTys &&...captures) {
   parallelForEachNCustomCompletion(
       runtime, totalCount, std::forward<ElementFn>(elementFn),
-      [readyChain = std::move(readyChain)](auto &&...args) {
+      [readyChain = std::move(readyChain)](auto &&...args) mutable {
         // When all the elements are ready, complete the `readyChain`,
         // unblocking other work.
-        readyChain.emplace();
+        std::move(readyChain).emplace();
       },
       std::forward<CaptureTys...>(captures)...);
 }
@@ -453,10 +452,10 @@ parallelForEachNFinishing(Runtime &runtime, size_t totalCount,
                           CaptureTys &&...captures) {
   parallelForEachNCustomCompletion(
       runtime, totalCount, std::forward<ElementFn>(elementFn),
-      [resultAV = std::move(resultAV)](EltTy &result, auto &&...args) {
+      [resultAV = std::move(resultAV)](EltTy &result, auto &&...args) mutable {
         // When all the elements are ready, emplace the result value into the
         // result AV.
-        resultAV.emplace(std::move(result));
+        std::move(resultAV).emplace(std::move(result));
       },
       std::forward<EltTy>(initialResultValue),
       std::forward<CaptureTys...>(captures)...);

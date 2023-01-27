@@ -28,20 +28,23 @@ AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::insert(BufferRef keyHash,
                                                        BufferRef obj) {
   auto result = AsyncValueRef<ErrorOrSuccess>::allocate(runtime);
   addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
-                    obj = obj.copy(), result = result.copy()]() {
+                    obj = obj.copy(), result = result.copy()]() mutable {
     if (auto err = thisRef->insertImpl(keyHash->getBuffer(), obj.copy()))
-      return result.emplace(err.takeError());
+      return std::move(result).emplace(err.takeError());
 
     if (!thisRef->delegate)
-      return result.emplace(success());
+      return std::move(result).emplace(success());
 
     auto insert = thisRef->delegate->insert(keyHash.copy(), obj.copy());
-    insert.andThenSync([thisRef = thisRef.copy(), result = result.copy(),
-                        insert = insert.copy()] {
-      if (failed(*insert))
-        return result.emplace(insert->takeError());
-      result.emplace(success());
-    });
+    std::move(insert).andThenSync(
+        [thisRef = thisRef.copy(),
+         // Safe to move local copy of result.
+         result = std::move(result)](
+            const AsyncValueRef<ErrorOrSuccess> &&insert) mutable {
+          if (failed(*insert))
+            return std::move(result).emplace(insert->takeError());
+          std::move(result).emplace(success());
+        });
   });
   return result;
 }
@@ -49,75 +52,82 @@ AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::insert(BufferRef keyHash,
 AsyncValueRef<bool> BlobCacheBackend::contains(BufferRef keyHash) {
   auto result = AsyncValueRef<bool>::allocate(runtime);
   addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
-                    result = result.copy()]() {
+                    result = result.copy()]() mutable {
     if (thisRef->containsImpl(keyHash->getBuffer()))
-      return result.emplace(true);
+      return std::move(result).emplace(true);
 
     if (!thisRef->delegate)
-      return result.emplace(false);
+      return std::move(result).emplace(false);
 
     auto contains = thisRef->delegate->contains(keyHash.copy());
-    contains.andThenSync(
-        [thisRef = thisRef.copy(), result = result.copy(),
-         contains = contains.copy()] { return result.emplace(*contains); });
+    std::move(contains).andThenSync(
+        [thisRef = thisRef.copy(),
+         // Safe to move local copy of result.
+         result = std::move(result)](AsyncValueRef<bool> &&contains) mutable {
+          return std::move(result).emplace(*contains);
+        });
   });
   return result;
 }
 
 AsyncValueRef<CacheFindResult> BlobCacheBackend::find(BufferRef keyHash) {
   auto result = AsyncValueRef<CacheFindResult>::allocate(runtime);
-  addTask(
-      runtime,
-      [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
-       result = result.copy()]() -> void {
-        if (thisRef->containsImpl(keyHash->getBuffer()))
-          return result.emplace(thisRef->findImpl(keyHash->getBuffer()));
+  addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
+                    result = result.copy()]() mutable {
+    if (thisRef->containsImpl(keyHash->getBuffer()))
+      return std::move(result).emplace(thisRef->findImpl(keyHash->getBuffer()));
 
-        if (!thisRef->delegate)
-          return result.emplace(CacheFindResult::notInCache());
+    if (!thisRef->delegate)
+      return std::move(result).emplace(CacheFindResult::notInCache());
 
-        auto itemOr = thisRef->delegate->find(keyHash.copy());
-        itemOr.andThenSync([thisRef = thisRef.copy(), keyHash = keyHash.copy(),
-                            result = result.copy(), itemOr = itemOr.copy()]() {
+    auto itemOr = thisRef->delegate->find(keyHash.copy());
+    std::move(itemOr).andThenSync(
+        [thisRef = thisRef.copy(), keyHash = keyHash.copy(),
+         // Safe to move local copy of result.
+         result = std::move(result)](
+            AsyncValueRef<CacheFindResult> &&itemOr) mutable {
           if (itemOr->isError())
-            return result.emplace(CacheFindResult::error(itemOr->takeError()));
+            return std::move(result).emplace(
+                CacheFindResult::error(itemOr->takeError()));
 
           // Delegate doesn't have it either!
           if (!itemOr->hasValue())
-            return result.emplace(CacheFindResult::notInCache());
+            return std::move(result).emplace(CacheFindResult::notInCache());
 
           BufferRef item = itemOr->takeValue();
 
           // Store the item in our cache level so we can get a cache hit
           // later.
           if (auto err = thisRef->insertImpl(keyHash->getBuffer(), item.copy()))
-            return result.emplace(CacheFindResult::error(err.takeError()));
+            return std::move(result).emplace(
+                CacheFindResult::error(err.takeError()));
 
           // Return the item.
-          return result.emplace(CacheFindResult::value(std::move(item)));
+          return std::move(result).emplace(
+              CacheFindResult::value(std::move(item)));
         });
-      });
+  });
 
   return result;
 }
 
 AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::clear() {
   auto result = AsyncValueRef<ErrorOrSuccess>::allocate(runtime);
-  addTask(runtime, [thisRef = copyRCRef(this), result = result.copy()]() {
-    if (auto err = thisRef->clearImpl())
-      return result.emplace(err.takeError());
+  addTask(runtime,
+          [thisRef = copyRCRef(this), result = result.copy()]() mutable {
+            if (auto err = thisRef->clearImpl())
+              return std::move(result).emplace(err.takeError());
 
-    if (!thisRef->delegate)
-      return result.emplace(success());
+            if (!thisRef->delegate)
+              return std::move(result).emplace(success());
 
-    auto clear = thisRef->delegate->clear();
-    clear.andThenSync([thisRef = thisRef.copy(), result = result.copy(),
-                       clear = clear.copy()] {
-      if (failed(*clear))
-        return result.emplace(clear->takeError());
-      result.emplace(success());
-    });
-  });
+            auto clear = thisRef->delegate->clear();
+            std::move(clear).andThenSync(
+                [thisRef = thisRef.copy(), result = result.copy()](
+                    AsyncValueRef<ErrorOrSuccess> &&clear) mutable {
+                  std::move(result).emplace(std::move(*clear));
+                });
+          });
   return result;
 }
 
