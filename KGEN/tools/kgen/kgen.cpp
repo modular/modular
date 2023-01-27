@@ -257,8 +257,14 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   CompilationOptions compilationOptions = clOptions.getCompilationOptions();
   OwningOpRef<ModuleOp> theModule;
   auto inputFileName = llvm::StringRef(clOptions.inputFilename.getValue());
-  mlir::TimingScope ts;
+
+  // Initialize the timing manager.
+  DefaultTimingManager tm;
+  applyDefaultTimingManagerCLOptions(tm);
+  TimingScope timing = tm.getRootScope();
+
   mlir::PassManager pm(ctx);
+  pm.enableTiming(timing);
   if (clOptions.enableMLIRCrashReproducer.getValue()) {
     ctx->disableMultithreading();
     pm.enableCrashReproducerGeneration(clOptions.inputFilename.getValue() +
@@ -266,7 +272,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                                        /*genLocalReproducer=*/true);
   }
   if (inputFileName.ends_with(".lit")) {
-    theModule = importLitFile(mgr, ctx, ts, compilationOptions,
+    TimingScope litScope = timing.nest("Import Lit");
+    theModule = importLitFile(mgr, ctx, litScope, compilationOptions,
                               clOptions.enableMLIRDiagnostics);
     pm.addPass(createLowerLITTerminators());
   } else if (compilationOptions.getDebugInfoLevelForInput()) {
@@ -447,6 +454,8 @@ int main(int argc, char **argv) {
 
   // Enable command line options for various MLIR internals.
   registerAsmPrinterCLOptions();
+  registerDefaultTimingManagerCLOptions();
+  registerPassManagerCLOptions();
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   // Set up the input file(s).
