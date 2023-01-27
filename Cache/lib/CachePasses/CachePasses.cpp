@@ -60,8 +60,8 @@ public:
 
     await(results);
     for (auto &r : results)
-      if (r->isError()) {
-        getOperation()->emitError() << r->getDiagnostic().getMessage();
+      if (r.isError()) {
+        getOperation()->emitError() << r.getDiagnostic().getMessage();
         signalPassFailure();
       }
   }
@@ -116,8 +116,8 @@ public:
 
     await(results);
     for (auto &r : results)
-      if (r->isError()) {
-        getOperation()->emitError() << r->getDiagnostic().getMessage();
+      if (r.isError()) {
+        getOperation()->emitError() << r.getDiagnostic().getMessage();
         signalPassFailure();
       }
   }
@@ -171,8 +171,8 @@ public:
 
     await(results);
     for (auto &r : results)
-      if (r->isError()) {
-        getOperation()->emitError() << r->getDiagnostic().getMessage();
+      if (r.isError()) {
+        getOperation()->emitError() << r.getDiagnostic().getMessage();
         signalPassFailure();
       }
   }
@@ -227,8 +227,8 @@ public:
 
     await(results);
     for (auto &r : results)
-      if (r->isError()) {
-        getOperation()->emitError() << r->getDiagnostic().getMessage();
+      if (r.isError()) {
+        getOperation()->emitError() << r.getDiagnostic().getMessage();
         signalPassFailure();
       }
   }

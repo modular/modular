@@ -57,20 +57,21 @@ std::string DataCacheKey::hashKey(DataCacheKey::KeyTy key) {
 AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
                                             RCRef<DataCache> cache,
                                             AnyAsyncValueRef chain) {
-  auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
+  auto out = AsyncValueRef<Chain>::allocate(chain.getRuntime());
   // Hang the actual deflation off the input chain. This will allow users to not
   // worry about sequencing w.r.t. this operation, they can just pass in the
   // chain.
-  chain->andThenSync([constant, cache = cache.copy(), out = out.copy(),
-                      chain = chain.copy()] {
-    if (chain->isError())
-      return out.setToError(chain->takeDiagnostic());
+  std::move(chain).andThenSync([constant, cache = cache.copy(),
+                                out = out.copy()](
+                                   AsyncValueRef<Chain> &&chain) mutable {
+    if (chain.isError())
+      return out.setToError(chain.takeDiagnostic());
 
-    // Use the replacer strategy to replace "large" attributes with the hashed
-    // version.
+    // Use the replacer strategy to replace "large" attributes with the
+    // hashed version.
     mlir::AttrTypeReplacer replacer;
-    // For now, we only care about DenseResourceElementsAttr because that's how
-    // we handle large attributes.
+    // For now, we only care about DenseResourceElementsAttr because that's
+    // how we handle large attributes.
     replacer.addReplacement(
         [&](DenseResourceElementsAttr resourceAttr) -> Attribute {
           mlir::AsmResourceBlob *blob = resourceAttr.getRawHandle().getBlob();
@@ -106,7 +107,7 @@ AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
 
     // Do the replacement now.
     replacer.replaceElementsIn(constant);
-    out.emplace();
+    std::move(out).emplace();
   });
 
   return out;
@@ -115,14 +116,15 @@ AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
 AsyncValueRef<Chain> Cache::inflateConstant(Operation *constant,
                                             RCRef<DataCache> cache,
                                             AnyAsyncValueRef chain) {
-  auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
+  auto out = AsyncValueRef<Chain>::allocate(chain.getRuntime());
   // Hang the actual deflation off the input chain. This will allow users to not
   // worry about sequencing w.r.t. this operation, they can just pass in the
   // chain.
-  chain->andThenSync([constant, cache = cache.copy(), out = out.copy(),
-                      chain = chain.copy()] {
-    if (chain->isError())
-      return out.setToError(chain->takeDiagnostic());
+  std::move(chain).andThenSync([constant, cache = cache.copy(),
+                                out = out.copy()](
+                                   AsyncValueRef<Chain> &&chain) mutable {
+    if (chain.isError())
+      return out.setToError(chain.takeDiagnostic());
 
     // Use the replacer strategy to replace "large" attributes with the hashed
     // version.
@@ -181,7 +183,7 @@ AsyncValueRef<Chain> Cache::inflateConstant(Operation *constant,
     // If out has not been set to failure (or something else), then set it to
     // success.
     if (!out.getPointer()->isReady())
-      out.emplace();
+      std::move(out).emplace();
   });
 
   return out;
@@ -318,40 +320,41 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
   auto out = AsyncValueRef<Chain>::allocate(hashOr.getRuntime());
   // Keeping references is safe here because all the memory is owned by the
   // MLIRContext, which is guaranteed to live longer than any of this.
-  hashOr.andThenSync([&r, op, container,
-                      uniqueSymbolRefs = std::move(uniqueSymbolRefs),
-                      uniqueHashRefs = std::move(uniqueHashRefs),
-                      hashOr = hashOr.copy(), out = out.copy()]() mutable {
-    // Create a new builder because this may run well after the rest of this
-    // function.
-    OpBuilder builder(op);
-    if (failed(*hashOr)) {
-      return out.setToError(getMLIRDiagnostic(hashOr->takeError(), r.getLoc()));
-    }
+  std::move(hashOr).andThenSync(
+      [&r, op, container, uniqueSymbolRefs = std::move(uniqueSymbolRefs),
+       uniqueHashRefs = std::move(uniqueHashRefs),
+       out = out.copy()](AsyncValueRef<ErrorOr<std::string>> &&hashOr) mutable {
+        // Create a new builder because this may run well after the rest of this
+        // function.
+        OpBuilder builder(op);
+        if (failed(*hashOr)) {
+          return out.setToError(
+              getMLIRDiagnostic(hashOr->takeError(), r.getLoc()));
+        }
 
-    SmallVector<RegionHashAttr> hashVec;
-    // If we already have some hashes, we have to append to the end of that
-    // array.
-    auto hashes =
-        op->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
-    if (hashes)
-      hashVec = SmallVector<RegionHashAttr>(hashes.begin(), hashes.end());
+        SmallVector<RegionHashAttr> hashVec;
+        // If we already have some hashes, we have to append to the end of that
+        // array.
+        auto hashes =
+            op->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
+        if (hashes)
+          hashVec = SmallVector<RegionHashAttr>(hashes.begin(), hashes.end());
 
-    hashVec.push_back(builder.getAttr<RegionHashAttr>(
-        **hashOr,
-        ArrayRef<SymbolRefAttr>(&*uniqueSymbolRefs.begin(),
-                                uniqueSymbolRefs.size()),
-        ArrayRef<ConstantHashAttr>(&*uniqueHashRefs.begin(),
-                                   uniqueHashRefs.size())));
+        hashVec.push_back(builder.getAttr<RegionHashAttr>(
+            **hashOr,
+            ArrayRef<SymbolRefAttr>(&*uniqueSymbolRefs.begin(),
+                                    uniqueSymbolRefs.size()),
+            ArrayRef<ConstantHashAttr>(&*uniqueHashRefs.begin(),
+                                       uniqueHashRefs.size())));
 
-    auto hashVecAttr = builder.getAttr<RegionHashArrayAttr>(hashVec);
-    op->setAttr(getRegionHashAttrName(), hashVecAttr);
+        auto hashVecAttr = builder.getAttr<RegionHashArrayAttr>(hashVec);
+        op->setAttr(getRegionHashAttrName(), hashVecAttr);
 
-    // Finally, erase the container.
-    container.erase();
+        // Finally, erase the container.
+        container.erase();
 
-    out.emplace();
-  });
+        std::move(out).emplace();
+      });
 
   return out;
 }
@@ -359,18 +362,18 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
 AsyncValueRef<Chain> M::Cache::deflateOp(Operation *op,
                                          RCRef<RegionCache> cache,
                                          AnyAsyncValueRef chain) {
-  auto out = AsyncValueRef<Chain>::allocate(chain->getRuntime());
+  auto out = AsyncValueRef<Chain>::allocate(chain.getRuntime());
   // Hang the actual deflation off the input chain. This will allow users to
   // not worry about sequencing w.r.t. this operation, they can just pass in
   // the chain.
-  chain->andThenSync([op, cache = cache.copy(), out = out.copy(),
-                      chain = chain.copy()] {
-    if (chain->isError())
-      return out.setToError(chain->takeDiagnostic());
+  std::move(chain).andThenSync([op, cache = cache.copy(), out = out.copy()](
+                                   AnyAsyncValueRef &&chain) mutable {
+    if (chain.isError())
+      return out.setToError(chain.takeDiagnostic());
 
     // If the op is already deflated, we're done!
     if (op->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName())) {
-      out.emplace();
+      std::move(out).emplace();
       return;
     }
 
@@ -380,12 +383,13 @@ AsyncValueRef<Chain> M::Cache::deflateOp(Operation *op,
       results.push_back(cacheSingleRegion(r, op, cache.copy()));
 
     andThenSyncMoving(
-        results, [out = out.copy()](MutableArrayRef<AnyAsyncValueRef> values) {
+        results,
+        [out = out.copy()](MutableArrayRef<AnyAsyncValueRef> values) mutable {
           for (auto &v : values)
-            if (v->isError())
-              return out.setToError(v->takeDiagnostic());
+            if (v.isError())
+              return out.setToError(v.takeDiagnostic());
 
-          out.emplace();
+          std::move(out).emplace();
         });
   });
 
@@ -398,57 +402,60 @@ static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
   auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
 
   auto foundOr = cache->find(regionHash.getHash());
-  foundOr.andThenSync([r, regionHash, foundOr = foundOr.copy(),
-                       out = out.copy()] {
-    if (foundOr->isError()) {
-      return out.setToError(
-          getMLIRDiagnostic(foundOr->takeError(), r->getLoc()));
-    }
-    if (!foundOr->hasValue()) {
-      return out.setToError(getMLIRDiagnostic(
-          Error("hash '" + llvm::encodeBase64(regionHash.getHash()) +
-                "' could not be found in the cache"),
-          r->getLoc()));
-    }
+  std::move(foundOr).andThenSync(
+      [r, regionHash,
+       out = out.copy()](AsyncValueRef<CacheFindResult> &&foundOr) mutable {
+        if (foundOr->isError()) {
+          return out.setToError(
+              getMLIRDiagnostic(foundOr->takeError(), r->getLoc()));
+        }
+        if (!foundOr->hasValue()) {
+          return out.setToError(getMLIRDiagnostic(
+              Error("hash '" + llvm::encodeBase64(regionHash.getHash()) +
+                    "' could not be found in the cache"),
+              r->getLoc()));
+        }
 
-    // Parse the bytecode for the region.
-    BufferRef bytecodeBuf = foundOr->takeValue();
-    std::unique_ptr<llvm::MemoryBuffer> bytecode =
-        llvm::MemoryBuffer::getMemBuffer(bytecodeBuf->getBuffer(),
-                                         /*BufferName=*/"",
-                                         /*RequiresNullTerminator=*/false);
+        // Parse the bytecode for the region.
+        BufferRef bytecodeBuf = foundOr->takeValue();
+        std::unique_ptr<llvm::MemoryBuffer> bytecode =
+            llvm::MemoryBuffer::getMemBuffer(bytecodeBuf->getBuffer(),
+                                             /*BufferName=*/"",
+                                             /*RequiresNullTerminator=*/false);
 
-    // Create a dummy block that we can use to inflate container ops.
-    Block b;
-    if (failed(mlir::readBytecodeFile(
-            *bytecode, &b,
-            mlir::ParserConfig(r->getContext(),
-                               /*verifyAfterParse=*/false)))) {
-      return out.setToError(getMLIRDiagnostic(
-          Error("reading bytecode file failed"), r->getLoc()));
-    }
+        // Create a dummy block that we can use to inflate container ops.
+        Block b;
+        if (failed(mlir::readBytecodeFile(
+                *bytecode, &b,
+                mlir::ParserConfig(r->getContext(),
+                                   /*verifyAfterParse=*/false)))) {
+          return out.setToError(getMLIRDiagnostic(
+              Error("reading bytecode file failed"), r->getLoc()));
+        }
 
-    // Get the container and take its body.
-    ContainerOp container = cast<ContainerOp>(b.front());
-    r->takeBody(container.getBodyRegion());
+        // Get the container and take its body.
+        ContainerOp container = cast<ContainerOp>(b.front());
+        r->takeBody(container.getBodyRegion());
 
-    // Finish up by replacing symbols/hashes with their original attrs.
-    mlir::AttrTypeReplacer replacer;
-    replacer.addReplacement([&](SymbolRefAttr symRef) -> SymbolRefAttr {
-      size_t index;
-      bool err = symRef.getLeafReference().getValue().getAsInteger(10, index);
-      assert(!err && "Must have parsed the symbol ref as an integer!");
-      return regionHash.getSymbols()[index];
-    });
-    replacer.addReplacement([&](HashIndexAttr hashRef) {
-      return regionHash.getHashes()[hashRef.getIndex()];
-    });
-    r->walk([&](Operation *op) {
-      replacer.replaceElementsIn(op, /*replaceAttrs=*/true,
-                                 /*replaceLocs=*/true, /*replaceTypes=*/true);
-    });
-    out.emplace();
-  });
+        // Finish up by replacing symbols/hashes with their original attrs.
+        mlir::AttrTypeReplacer replacer;
+        replacer.addReplacement([&](SymbolRefAttr symRef) -> SymbolRefAttr {
+          size_t index;
+          bool err =
+              symRef.getLeafReference().getValue().getAsInteger(10, index);
+          assert(!err && "Must have parsed the symbol ref as an integer!");
+          return regionHash.getSymbols()[index];
+        });
+        replacer.addReplacement([&](HashIndexAttr hashRef) {
+          return regionHash.getHashes()[hashRef.getIndex()];
+        });
+        r->walk([&](Operation *op) {
+          replacer.replaceElementsIn(op, /*replaceAttrs=*/true,
+                                     /*replaceLocs=*/true,
+                                     /*replaceTypes=*/true);
+        });
+        std::move(out).emplace();
+      });
 
   return out;
 }
@@ -459,16 +466,16 @@ AsyncValueRef<Chain> M::Cache::inflateOp(Operation *cached,
   auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
 
   // Hang the inflation off the input chain.
-  chain->andThenSync([cached, cache = cache.copy(), chain = chain.copy(),
-                      out = out.copy()] {
-    if (chain->isError())
-      return out.setToError(chain->takeDiagnostic());
+  std::move(chain).andThenSync([cached, cache = cache.copy(), out = out.copy()](
+                                   AnyAsyncValueRef &&chain) mutable {
+    if (chain.isError())
+      return out.setToError(chain.takeDiagnostic());
 
     auto hashes =
         cached->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
     // If the op doesn't have any region hashes on it, we're done.
     if (!hashes)
-      return out.emplace();
+      return std::move(out).emplace();
 
     // Fill in the regions on the operation.
     SmallVector<AnyAsyncValueRef> results;
@@ -477,17 +484,20 @@ AsyncValueRef<Chain> M::Cache::inflateOp(Operation *cached,
 
     // Once all the regions are cached, remove the region hash attr and
     // resolve success/failure.
-    andThenSyncMoving(results, [cached, out = out.copy()](
-                                   MutableArrayRef<AnyAsyncValueRef> values) {
-      for (auto &v : values)
-        if (v->isError())
-          return out.setToError(v->takeDiagnostic());
+    andThenSyncMoving(results,
+                      [cached,
+                       // Safe to move our copy of out.
+                       out = std::move(out)](
+                          MutableArrayRef<AnyAsyncValueRef> values) mutable {
+                        for (auto &v : values)
+                          if (v.isError())
+                            return out.setToError(v.takeDiagnostic());
 
-      // Remove the region hash attr.
-      cached->removeAttr(getRegionHashAttrName());
-      // Done!
-      out.emplace();
-    });
+                        // Remove the region hash attr.
+                        cached->removeAttr(getRegionHashAttrName());
+                        // Done!
+                        std::move(out).emplace();
+                      });
   });
 
   return out;

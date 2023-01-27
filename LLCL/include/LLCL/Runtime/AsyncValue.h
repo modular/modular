@@ -30,10 +30,6 @@ template <typename T>
 class ConcreteAsyncValue;
 }
 
-/// AnyAsyncValueRef is a using declaration that keeps typed and untyped
-/// reference counted references to AsyncValue more syntactically similar.
-using AnyAsyncValueRef = RCRef<AsyncValue>;
-
 /// This is a future of the specified value type. Arbitrary C++ types may be
 /// used here, even non-copyable types and expensive ones like "your database".
 /// All AsyncValues are allocated out of a specific `Runtime` instance and can
@@ -52,8 +48,10 @@ using AnyAsyncValueRef = RCRef<AsyncValue>;
 /// not, the more general IndirectAsyncValue class adds a level of indirection
 /// that allows the payload type to be resolved later.
 ///
-/// TODO(#7399): In general much of the public API on AsyncValue should be moved
-/// to AnyAsyncValueRef / AsyncValueRef<T>.
+/// The primary API for AsyncValues is provided by AnyAsyncValueRef and
+/// AsyncValueRef<T> smart pointer classes. The public methods in this class
+/// are intended for advanced users who which to explicitly manage reference
+/// counting.
 class AsyncValue {
 public:
   /// Type registration - AsyncValue requires that each static type be
@@ -73,83 +71,49 @@ public:
 
   /// Create an AsyncValue for the specified type in an "unconstructed" state.
   /// This should be `emplace`'d, `construct`'d, or finalized with an error.
+  /// The result will have ref count 1.
   template <typename T>
-  static AnyAsyncValueRef allocate(CompactRuntimePtr runtime);
+  static AsyncValue *allocate(CompactRuntimePtr runtime);
 
   /// Create an AsyncValue for the specified type in "available" and ready
   /// state. This is a terminal state for an AsyncValue, it can never change out
-  /// of this state.
+  /// of this state. The result will have ref count 1.
   template <typename T, typename... Args>
-  static AnyAsyncValueRef createReady(CompactRuntimePtr runtime,
-                                      Args &&...args);
+  static AsyncValue *createReady(CompactRuntimePtr runtime, Args &&...args);
 
   /// Create an IndirectAsyncValue that may be filled in with any AsyncValue in
-  /// the future.
-  static AnyAsyncValueRef createIndirect(CompactRuntimePtr runtime);
+  /// the future. The result will have ref count 1.
+  static AsyncValue *createIndirect(CompactRuntimePtr runtime);
 
   /// Create an AsyncValue that has already been turned into an error with the
-  /// specified message.
-  static AnyAsyncValueRef createError(CompactRuntimePtr runtime,
-                                      EncodedDiagnostic diagnostic);
+  /// specified message. The result will have ref count 1.
+  static AsyncValue *createError(CompactRuntimePtr runtime,
+                                 EncodedDiagnostic diagnostic);
 
   //===--------------------------------------------------------------------===//
   // State change methods.
   //===--------------------------------------------------------------------===//
 
-  /// Constructs the payload of the AsyncValue given by ref in place, and
-  /// changes its state to kConcrete. Requires that the AsyncValue is a
-  /// ConcreteAsyncValue in state kUnconstructed. The given ref will be
-  /// destroyed just before any existing waiters are triggered. It is valid
-  /// for ref to be unique.
+  /// Constructs the payload of the AsyncValue in place, and changes its state
+  /// to "available". Requires that the AsyncValue is a ConcreteAsyncValue in
+  /// state "unconstructed".
   ///
-  /// This method is appropriate when downstream consumers of the emplaced
-  /// value hold their own AnyAsyncValueRef/AsyncValueRef<T>s, and wish to
-  /// to use isUnique on that reference to guide copy-vs-move or copy-on-write
-  /// optimizations on the held value. If the producer is in a task then it
-  /// will hold its own reference within the task's (mutable) function closure,
-  /// and there's no way to synchronize on that closure's destruction. By
-  /// consuming the producer's reference before any consumers fire we thus
-  /// guarantee consumers will never see an additional, all be it short lived,
-  /// reference.
-  ///
-  /// An idiomatic example:
-  ///
-  /// AnyAsyncValueRef producer() {
-  ///   AnyAsyncValueRef result = AsyncValue::allocate<int>();
-  ///   addTask(runtime, [result = result.copy()]() {
-  ///      AsyncValue::emplace<int>(std::move(result), 0);
-  ///   });
-  ///   return result;
-  /// );
-  ///
-  /// void consumer(AnyAsyncValueRef result) {
-  ///   AsyncValue::andThenSync(std::move(result),
-  ///                          [](AnyAsyncValueRef &&result) {
-  ///                            printf("%d\n", result.get<int>());
-  ///                          });
-  /// }
-  ///
-  /// TODO(#7399): Make member of AnyAsyncValueRef (once promoted to class).
+  /// One ref count will be removed from the AsyncValue just before any
+  /// existing waiters are triggered. It is valid for the AsyncValue to have
+  /// only a single remaining reference, and thus the waiters may be triggered
+  /// after the AsyncValue is deleted.
   template <typename T, typename... Args>
-  static void emplace(AnyAsyncValueRef &&ref, Args &&...args);
+  void emplaceAndDecRef(Args &&...args);
 
-  /// Constructs the payload of this AsyncValue in place, and changes its state
-  /// to kConcrete. Requires that this is a ConcreteAsyncValue in state
-  /// kUnconstructed.
-  ///
-  /// TODO(#7399): Deprecate in favor of 'consuming' version.
-  template <typename T, typename... Args>
-  void emplace(Args &&...args) {
-    auto thisRef = AnyAsyncValueRef::copy(this);
-    emplace<T, Args...>(std::move(thisRef), std::forward<Args>(args)...);
-  }
+  // TODO(#7399): Should the following methods also follow the '*AndDecRef'
+  // pattern?
 
   /// Mark an "unconstructed" AsyncValue as an error.
   void setToError(EncodedDiagnostic diagnostic);
 
   /// Resolve an IndirectAsyncValue to point to the specified new value,
   /// resolving any waiters whenever newValue becomes ready.
-  void resolveIndirect(AnyAsyncValueRef newValue);
+  void resolveIndirect(RCRef<AsyncValue> &&newValue);
 
   /// Resolve an IndirectAsyncValue to contain a concrete AsyncValue with a
   /// newly initialized value, resolving any waiters.
@@ -167,15 +131,12 @@ public:
   /// that this value transitioned to Available or Error.
   using Waiter = llvm::unique_function<void()>;
 
-  /// As a convenience users may supply waiter functions which consume the
-  /// reference to the AsyncValue on which the addThen was called.
-  using ConsumingWaiter = llvm::unique_function<void(AnyAsyncValueRef &&ref)>;
-
   /// Register that waiter should be run when this AsyncValue is ready
-  /// (with an emplaced value or an error). It is possible for this AsyncValue
-  /// to have been deleted by the time the waiter is executed. Prefer
-  /// the 'consuming' version of andThen if the waiter needs access to this
-  /// AsyncValue.
+  /// (with an emplaced value or an error).
+  ///
+  /// It is possible for this AsyncValue to have been deleted by the time
+  /// the waiter is executed. Prefer the 'ConsumingWaiter' versions of andThen
+  /// if the waiter needs access to this AsyncValue.
   ///
   /// If `IsAsync` is true, the waiter will be run as an asynchronous task,
   /// using the work queue for this object's runtime. Otherwise, the waiter
@@ -192,48 +153,19 @@ public:
     andThen</*IsAsync=*/true>(std::forward<Waiter>(waiter));
   }
 
-  /// Register that waiter should be run when the AsyncValue given by ref is
-  /// ready (with an emplaced value or an error). The ref will be captured
-  /// and passed to the waiter. Prefer the non-'consuming' version of andThen
-  /// if the waiter does not need access to ref.
-  ///
-  /// If `IsAsync` is true, the waiter will be run as an asynchronous task,
-  /// using the work queue for the AsyncValue's runtime. Otherwise, the waiter
-  /// will be run either on the callers thread or the eventually
-  /// emplace/setError callers thread.
-  ///
-  /// TODO(#7399): Move to method of AnyAsyncValueRef (after promoting to
-  /// class).
-  template <bool IsAsync>
-  static void andThen(AnyAsyncValueRef &&ref, ConsumingWaiter &&waiter) {
-    AsyncValue *ptr = ref.getPointer();
-    ptr->andThen<IsAsync>(
-        [ref = std::move(ref), waiter = std::move(waiter)]() mutable {
-          waiter(std::move(ref));
-        });
-  }
-
-  static void andThenSync(AnyAsyncValueRef &&ref, ConsumingWaiter &&waiter) {
-    andThen</*IsAsync=*/false>(std::move(ref), std::move(waiter));
-  }
-
-  static void andThenAsync(AnyAsyncValueRef &&ref, ConsumingWaiter &&waiter) {
-    andThen</*IsAsync=*/true>(std::move(ref), std::move(waiter));
-  }
-
   /// Return the stored value as type T.
   ///
-  ///  This requires that the AsyncValue is either constructed or is a fully
-  ///  concrete value, and that T be the exact type (or a base type) of the
-  ///  actual payload type. When T is a base type of the payload type, the
-  ///  following additional conditions are required:
+  /// This requires that the AsyncValue is either constructed or is a fully
+  /// concrete value, and that T be the exact type (or a base type) of the
+  /// actual payload type. When T is a base type of the payload type, the
+  /// following additional conditions are required:
   ///
-  ///     1) Both the payload type and T are polymorphic (have virtual function)
-  ///        or neither are.
-  ///     2) The payload type does not use multiple inheritance.
+  /// 1) Both the payload type and T are polymorphic (have virtual function)
+  ///    or neither are.
+  /// 2) The payload type does not use multiple inheritance.
   ///
   /// The above conditions are required since we store the value at a fixed
-  /// from the start of AsyncValue. Violation of either 1) or 2) requires
+  /// offset from the start of AsyncValue. Violation of either 1) or 2) requires
   /// additional pointer adjustments to get the proper pointer for the base
   /// type, which we do not have sufficient information to perform at runtime.
   template <typename T>
@@ -288,17 +220,28 @@ public:
   /// not set for IndirectAsyncValue's until they are resolved to a value.
   uint16_t getTypeID() const { return typeID; }
 
-  // Return the ID of the given type. Note that at most 2^16-2 (approx. 64K)
-  // unique types can be used in AsyncValues, since the ID is 16 bits, and 0 and
-  // 2^16-1 are not allowed to be used as type IDs.
+  /// Return the ID of the given type. Note that at most 2^16-2 (approx. 64K)
+  /// unique types can be used in AsyncValues, since the ID is 16 bits, and 0
+  /// and 2^16-1 are not allowed to be used as type IDs.
+  ///
+  /// CAUTION: This id will not be stable across compilation units.
   template <typename T>
   static uint16_t getTypeID() {
-    return Detail::ConcreteAsyncValue<T>::staticTypeID;
+    return Detail::ConcreteAsyncValue<T>::getRegisteredTypeID();
   }
 
+  /// Returns true if this AsyncValue is a ConcreteAsyncValue for type T, or
+  /// an IndirectAsyncValue which has been resolved to a ConcreteAsyncValue
+  /// of type T.
   template <typename T>
   bool isType() const {
     return getTypeID<T>() == typeID;
+  }
+
+  /// Return true if this AsyncValue is a unresolved IndirectAsyncValue.
+  bool isIndirect() const {
+    return getSubclassKind() == SubclassKind::kIndirect &&
+           getTypeID() == uint16_t(~0U);
   }
 
   //===--------------------------------------------------------------------===//
@@ -354,7 +297,7 @@ public:
   State getState() const { return loadWaitersAndState().getInt(); }
 
   /// Return true if the specified AsyncValue state is ready, which means the
-  /// waiters have all been notiveid.
+  /// waiters have all been notified.
   static bool isReady(State state) {
     return state == State::kAvailable || state == State::kError;
   }
@@ -394,6 +337,10 @@ private:
   // Reference counting, only accessible to RCRef<>.
   template <typename T>
   friend class RCRef;
+
+  // Most of the API is accessible via AnyAsyncValueRef and its subclass
+  // AsyncValueRef<T>.
+  friend class AnyAsyncValueRef;
 
   /// Increase the reference count.
   void addRef();
@@ -479,11 +426,11 @@ protected:
   void andThenAsyncOutOfLine(Waiter waiter);
   void destroyWithRefCountZero();
 
-  /// Transitions the AsyncValue given by ref to a ready state, and notify
-  /// all waiters. Returns the original state. The given reference is destroyed
-  /// just before invoking any waiters.
-  static State notifyReady(AnyAsyncValueRef &&ref, State newState,
-                           std::optional<Waiter> &&extraWaiter);
+  /// Transitions the AsyncValue to a ready state, and notifies all waiters.
+  /// Returns the original state. One ref count to the AsyncValue will be
+  /// removed just before the first waiter is triggered.
+  State notifyReadyAndDecRef(State newState,
+                             std::optional<Waiter> &&extraWaiter);
 
   void removeAnyInlineWaiter(std::optional<Waiter> &inlineWaiter);
   Waiter *getInlineWaiterPointer();
@@ -588,7 +535,7 @@ private:
     return reinterpret_cast<EncodedDiagnostic *>(this + 1);
   }
 
-  /// The waiter value is always the firstthing in our derived class.
+  /// The waiter value is always the first thing in our derived class.
   Waiter *getInlineWaiterPointer() {
     return reinterpret_cast<Waiter *>(this + 1);
   }
@@ -613,16 +560,15 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
   friend class AsyncValue;
   friend class SomeConcreteAsyncValue;
   /// Allocate an instance of ConcreteAsyncValue in the specified state, but
-  /// with the payload uninitialized.
+  /// with the payload uninitialized. The result will have ref count 1.
   static ConcreteAsyncValue<T> *allocate(State state,
                                          CompactRuntimePtr runtime) {
-    assert(ConcreteAsyncValue<T>::staticTypeID.load(
-               std::memory_order_relaxed) != uint16_t(~0U) &&
+    assert(getRegisteredTypeID() != uint16_t(~0U) &&
            "AsyncValue type not registered");
     auto *ptr = (ConcreteAsyncValue<T> *)alignedAlloc(
         alignof(ConcreteAsyncValue<T>), sizeof(ConcreteAsyncValue<T>));
     new (ptr) ConcreteAsyncValue<T>(state, std::is_polymorphic_v<T>,
-                                    getTypeID<T>(), runtime);
+                                    getRegisteredTypeID(), runtime);
     return ptr;
   }
 
@@ -634,6 +580,10 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
       return;
     doTypeRegistration(&ConcreteAsyncValue<T>::staticTypeID,
                        SomeConcreteAsyncValue::destructorFnPtr<T>);
+  }
+
+  static uint16_t getRegisteredTypeID() {
+    return staticTypeID.load(std::memory_order_relaxed);
   }
 
 private:
@@ -676,6 +626,7 @@ private:
 
 template <typename T>
 std::atomic<uint16_t> ConcreteAsyncValue<T>::staticTypeID(uint16_t(~0));
+
 } // namespace Detail.
 
 namespace Detail {
@@ -693,7 +644,7 @@ class IndirectAsyncValue : public AsyncValue {
     // If the IndirectAsyncValue is ready, then the RCRef to the resolved
     // pointer has been constructed, destroy it.
     if (isReady(getState())) {
-      value.~AnyAsyncValueRef();
+      value.reset();
     } else {
       // Otherwise, we must be in a plain unconstructed case with no waiters.
       // This can happen when an IndirectAsyncValue is created and immediately
@@ -711,7 +662,7 @@ class IndirectAsyncValue : public AsyncValue {
     // This field is present when in kUnconstructedInlineWaiter* state.
     Waiter waiter;
     // This field is present when resolved to another AsyncValue.
-    AnyAsyncValueRef value;
+    RCRef<AsyncValue> value;
   };
 };
 } // namespace Detail
@@ -737,21 +688,21 @@ void AsyncValue::registerTypes() {
 
 /// Create an AsyncValue for the specified type in "unconstructed" state.
 template <typename T>
-inline AnyAsyncValueRef AsyncValue::allocate(CompactRuntimePtr runtime) {
-  return takeRCRef(
-      Detail::ConcreteAsyncValue<T>::allocate(State::kUnconstructed, runtime));
+inline AsyncValue *AsyncValue::allocate(CompactRuntimePtr runtime) {
+  return Detail::ConcreteAsyncValue<T>::allocate(State::kUnconstructed,
+                                                 runtime);
 }
 
 /// Create an AsyncValue for the specified type in "available" and ready state.
 /// This is a terminal state for an AsyncValue, it can never change out of this
 /// state.
 template <typename T, typename... Args>
-inline AnyAsyncValueRef AsyncValue::createReady(CompactRuntimePtr runtime,
-                                                Args &&...args) {
+inline AsyncValue *AsyncValue::createReady(CompactRuntimePtr runtime,
+                                           Args &&...args) {
   auto *result =
       Detail::ConcreteAsyncValue<T>::allocate(State::kAvailable, runtime);
   new (&result->payload) T(std::forward<Args>(args)...);
-  return takeRCRef(result);
+  return result;
 }
 
 inline void AsyncValue::addRef() {
@@ -813,11 +764,10 @@ void AsyncValue::andThen(Waiter &&waiter) {
 }
 
 template <typename T, typename... Args>
-inline void AsyncValue::emplace(AnyAsyncValueRef &&ref, Args &&...args) {
-  AsyncValue *ptr = ref.getPointer();
-  assert(ptr->getSubclassKind() == SubclassKind::kConcrete &&
+inline void AsyncValue::emplaceAndDecRef(Args &&...args) {
+  assert(getSubclassKind() == SubclassKind::kConcrete &&
          "Cannot 'emplace' an IndirectValue, use 'emplaceIndirect' instead");
-  assert(getTypeID<T>() == ptr->typeID && "Incorrect accessor");
+  assert(getTypeID<T>() == typeID && "Incorrect accessor");
 
   // NOTE: At this point we could stap tracking the ref and instead just inc/dec
   // our own ref count. However the explicit ref passing makes the chain of
@@ -825,15 +775,15 @@ inline void AsyncValue::emplace(AnyAsyncValueRef &&ref, Args &&...args) {
 
   // Take any inline waiters out of the payload area so we can construct it.
   std::optional<Waiter> inlineWaiter;
-  ptr->removeAnyInlineWaiter(inlineWaiter);
+  removeAnyInlineWaiter(inlineWaiter);
 
   // Initialize the payload.
-  auto *concrete = static_cast<Detail::ConcreteAsyncValue<T> *>(ptr);
+  auto *concrete = static_cast<Detail::ConcreteAsyncValue<T> *>(this);
   new (&concrete->payload) T(std::forward<Args>(args)...);
 
   // Change state and notify the waiters.
   auto oldState =
-      notifyReady(std::move(ref), State::kAvailable, std::move(inlineWaiter));
+      notifyReadyAndDecRef(State::kAvailable, std::move(inlineWaiter));
   // This must have been in one of the unconstructed states, but couldn't have
   // been in kUnconstructed because that would allow a race for another inline
   // waiter to be added. `removeAnyInlineWaiter` ensures this isn't possible.
@@ -848,8 +798,8 @@ inline void AsyncValue::emplace(AnyAsyncValueRef &&ref, Args &&...args) {
 template <typename T, typename... Args>
 inline void AsyncValue::emplaceIndirect(Args &&...args) {
   assert(getSubclassKind() == SubclassKind::kIndirect);
-  resolveIndirect(
-      createReady<T, Args...>(getRuntime(), std::forward<Args>(args)...));
+  resolveIndirect(takeRCRef(
+      createReady<T, Args...>(getRuntime(), std::forward<Args>(args)...)));
 }
 
 template <typename T>
@@ -880,23 +830,5 @@ inline AsyncValue::Waiter *AsyncValue::getInlineWaiterPointer() {
 }
 
 } // namespace M::LLCL
-
-namespace llvm {
-
-template <typename To>
-struct CastInfo<To, const ::M::LLCL::AnyAsyncValueRef> {
-  using From = ::M::LLCL::AnyAsyncValueRef;
-
-  static inline bool isPossible(const From &f) { return f->isType<To>(); }
-  static inline To *doCast(const From &t) { return &t->get<To>(); }
-  static inline To *castFailed() { return nullptr; }
-  static inline To *doCastIfPossible(const From &f) {
-    if (isa<To>(f))
-      return doCast(f);
-    return castFailed();
-  }
-};
-
-} // namespace llvm
 
 #endif // LLCL_RUNTIME_ASYNCVALUE_H

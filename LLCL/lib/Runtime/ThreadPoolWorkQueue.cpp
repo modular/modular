@@ -8,6 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "LLCL/Runtime/AnyAsyncValueRef.h"
 #include "LLCL/Runtime/AsyncValue.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Atomics.h"
@@ -380,7 +381,7 @@ void ThreadPoolWorkQueue::addTask(TaskFunction work) {
 
 void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   // If all the values are ready, then we don't have to do anything.
-  if (llvm::all_of(values, [](auto &av) { return av->isReady(); }))
+  if (llvm::all_of(values, [](auto &av) { return av.isReady(); }))
     return;
   TIME_PROFILER_SCOPE(2, "await");
 
@@ -397,7 +398,7 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   // we signal the semaphore for this worker to make sure to wake it up if it
   // fell asleep.
   for (auto &value : values)
-    value->andThenSync([&numRemaining, thisWorker, this]() {
+    value.andThenSync([&numRemaining, thisWorker, this]() {
       TIME_PROFILER_SCOPE(3, "await andThenSync");
       // Decremenet the count of async values that we're waiting on.
       // TODO: This can probably use more relaxed memory consistency!

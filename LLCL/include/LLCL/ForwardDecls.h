@@ -39,10 +39,10 @@ class LocationDecoder;
 
 class Allocator;
 class AsyncValue;
+class AnyAsyncValueRef;
 template <typename T>
 class AsyncValueRef;
 class Runtime;
-using AnyAsyncValueRef = RCRef<AsyncValue>;
 
 } // namespace M::LLCL
 

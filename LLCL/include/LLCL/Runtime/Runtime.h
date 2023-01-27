@@ -16,6 +16,7 @@
 #define LLCL_RUNTIME_H
 
 #include "LLCL/Runtime/Allocator.h"
+#include "LLCL/Runtime/AnyAsyncValueRef.h"
 #include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
