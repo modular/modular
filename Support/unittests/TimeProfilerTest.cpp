@@ -43,11 +43,17 @@ void setupProfiler() {
   timeTraceProfilerInitialize(/*TimeTraceGranularity=*/0, "test");
 }
 
-std::string teardownProfiler() {
+std::string teardownTrace() {
   SmallVector<char, 1024> smallVector;
   llvm::raw_svector_ostream os(smallVector);
-  timeTraceProfilerWrite(os);
-  timeTraceProfilerCleanup();
+  timeTraceProfilerWriteTrace(os);
+  return os.str().str();
+}
+
+std::string teardownStat() {
+  SmallVector<char, 1024> smallVector;
+  llvm::raw_svector_ostream os(smallVector);
+  timeTraceProfilerWriteStat(os);
   return os.str().str();
 }
 
@@ -56,9 +62,14 @@ TEST(TimeProfiler, Scope_Smoke) {
 
   { TimeTraceScope</*Enabled=*/true> scope("event", "detail"); }
 
-  std::string json = teardownProfiler();
+  std::string json = teardownTrace();
   ASSERT_TRUE(json.find(R"("name":"event")") != std::string::npos);
   ASSERT_TRUE(json.find(R"("detail":"detail")") != std::string::npos);
+
+  std::string csv = teardownStat();
+  ASSERT_TRUE(csv.find(R"(event, 1)") != std::string::npos);
+
+  timeTraceProfilerCleanup();
 }
 
 TEST(TimeProfiler, Begin_End_Smoke) {
@@ -67,9 +78,14 @@ TEST(TimeProfiler, Begin_End_Smoke) {
   timeTraceProfilerBegin("event", "detail");
   timeTraceProfilerEnd();
 
-  std::string json = teardownProfiler();
+  std::string json = teardownTrace();
   ASSERT_TRUE(json.find(R"("name":"event")") != std::string::npos);
   ASSERT_TRUE(json.find(R"("detail":"detail")") != std::string::npos);
+
+  std::string csv = teardownStat();
+  ASSERT_TRUE(csv.find(R"(event, 1)") != std::string::npos);
+
+  timeTraceProfilerCleanup();
 }
 
 TEST(TimeProfiler, Begin_End_Disabled) {
@@ -86,9 +102,11 @@ TEST(TimeProfiler, Entry_Smoke) {
   timeTraceProfilerStartEntry(entry);
   timeTraceProfilerEndEntry(std::move(entry));
 
-  std::string json = teardownProfiler();
+  std::string json = teardownTrace();
   ASSERT_TRUE(json.find(R"("name":"event")") != std::string::npos);
   ASSERT_TRUE(json.find(R"("detail":"detail")") != std::string::npos);
+
+  timeTraceProfilerCleanup();
 }
 
 TEST(TimeProfiler, Entry_Disabled) {
