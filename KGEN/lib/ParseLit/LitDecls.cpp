@@ -100,7 +100,7 @@ ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
     // We're using the parameter from the type declaration scope in the
     // parameter binding list.
     TypedAttr ref = ParamDeclRefAttr::get(decl.getName(), decl.getType());
-    parameters.push_back(ParamBindAttr::get(decl, ref));
+    parameters.push_back(ParamBindAttr::get(decl.getName(), ref));
   }
 
   // Methods on structs (but not classes) take the struct implicitly by

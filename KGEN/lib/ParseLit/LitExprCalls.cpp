@@ -94,7 +94,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
     // If this value was already bound and checked, use it.
     auto prebound = dyn_cast<ParamBindAttr>(bound.bindingOrValue);
     if (prebound) {
-      evaluator.setParameterValue(prebound.getDecl(), prebound.getValue());
+      evaluator.setParameterValue(prebound.getName(), prebound.getValue());
       newBindings.push_back(prebound);
       continue;
     }
@@ -131,11 +131,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
     evaluator.setParameterValue(decl, argMValue);
 
     // Update the decl's type if we remapped the type.
-    ParamDeclAttr boundDecl = decl;
-    if (decl.getType() != expectedType)
-      boundDecl = ParamDeclAttr::get(decl.getName(), expectedType);
-
-    newBindings.push_back(ParamBindAttr::get(boundDecl, argMValue));
+    newBindings.push_back(ParamBindAttr::get(decl.getName(), argMValue));
   }
 
   return ParamBindArrayAttr::get(shared.getContext(), newBindings);
@@ -1102,7 +1098,7 @@ AnyValue CallableValue::debugInlineFunctionCall(
   // Perform parameter substitution if there are input parameters.
   ParameterEvaluator paramEvaluator;
   for (auto paramBind : inputParams)
-    paramEvaluator.setParameterValue(paramBind.getDecl(), paramBind.getValue());
+    paramEvaluator.setParameterValue(paramBind.getName(), paramBind.getValue());
 
   // Keep track of a mapping from the arguments (and interior results of
   // operations) to their representation.

@@ -275,7 +275,8 @@ void OutlineClosuresPass::runOnOperation() {
       SmallVector<ParamBindAttr> symbolBindings;
       for (ParamDeclAttr decl : liftedWrapper.getInputParamDecls()) {
         symbolBindings.push_back(ParamBindAttr::get(
-            decl, ParamDeclRefAttr::get(decl.getName(), decl.getType())));
+            decl.getName(),
+            ParamDeclRefAttr::get(decl.getName(), decl.getType())));
       }
       LLVM_DEBUG(llvm::dbgs() << "Bindings: [\n\t";
                  llvm::interleave(symbolBindings, llvm::dbgs(), ",\n\t");

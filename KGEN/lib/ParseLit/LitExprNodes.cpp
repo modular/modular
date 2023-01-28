@@ -264,7 +264,7 @@ static MValue resolveParamDeclareValue(ParamDeclareOp param,
 
       ParameterEvaluator evaluator;
       for (ParamBindAttr binding : bindings)
-        evaluator.setParameterValue(binding.getDecl(), binding.getValue());
+        evaluator.setParameterValue(binding.getName(), binding.getValue());
 
       auto result = evaluator.getReboundAttribute(param.getValue());
       return MValue(cast<TypedAttr>(result));
@@ -1275,7 +1275,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   // Perform parameter substitution if there are input parameters.
   ParameterEvaluator paramEvaluator;
   for (auto paramBind : initType.getParamBindings())
-    paramEvaluator.setParameterValue(paramBind.getDecl(), paramBind.getValue());
+    paramEvaluator.setParameterValue(paramBind.getName(), paramBind.getValue());
 
   // While we use general dictionary syntax, the keys are syntactically
   // limited to being keywords.  The values may be arbitrary RValues

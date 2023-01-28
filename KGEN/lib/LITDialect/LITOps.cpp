@@ -450,7 +450,7 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
 static ParameterEvaluator getEvaluatorForBoundStructType(DeclRefType refType) {
   ParameterEvaluator evaluator;
   for (ParamBindAttr bind : refType.getParamValues())
-    evaluator.setParameterValue(bind.getDecl(), bind.getValue());
+    evaluator.setParameterValue(bind.getName(), bind.getValue());
   return evaluator;
 }
 

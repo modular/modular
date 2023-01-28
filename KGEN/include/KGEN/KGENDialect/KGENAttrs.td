@@ -126,37 +126,41 @@ def ParamDeclSize1ArrayAttr
 // ParamBindAttr
 //===----------------------------------------------------------------------===//
 
-/// This attribute binds a concrete value to a named parameter, for example a
-/// kgen.return uses it to bind returned parameters the the enclosing generators
-/// parameter declarations.
 def KGEN_ParamBindAttr : KGENAttr<"ParamBind", "param.bind", [
     DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
   let summary = "Bind a value to a parameter declaration.";
-  let parameters = (ins "ParamDeclAttr":$decl, "TypedAttr":$value);
+  let description = [{
+    The `#kgen.param.bind` attribute binds a concrete value to a named
+    parameter, for example a `kgen.return` uses it to bind returned parameters
+    to the enclosing generator's parameter declaration. Call operations use
+    it to bind values to the input parameters of the callee.
 
-  let assemblyFormat = "custom<ParamDecl>($decl) `=` $value";
+    Example:
+
+    ```mlir
+    #kgen<param.bind foo: dtype = f32>
+    ```
+  }];
+
+  let parameters = (ins "StringAttr":$name, "TypedAttr":$value);
+
+  let assemblyFormat = "custom<ParamName>($name) `=` $value";
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "ParamDeclAttr":$decl,
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
                                         "TypedAttr":$value), [{
-      return get(decl.getContext(), decl, value);
+      return get(name.getContext(), name, value);
     }]>,
     AttrBuilderWithInferredContext<(ins "StringRef":$name, "TypedAttr":$value),
     [{
-      return get(ParamDeclAttr::get(name, value.getType()), value);
+      return get(StringAttr::get(value.getContext(), name), value);
     }]>,
   ];
 
   let extraClassDeclaration = [{
-    // Return the name of the declaration being initialized.
-    StringAttr getName() const;
     // Return the type of the value being bound.
     Type getType() const { return getValue().getType(); }
   }];
-  let extraClassDefinition = [{
-    StringAttr ParamBindAttr::getName() const { return getDecl().getName(); }
-  }];
-  let genVerifyDecl = 1;
 }
 
 /// An array of ParamBindAttr's.
@@ -326,7 +330,7 @@ def KGEN_UnboundAttr : KGEN_ExprAttr<"Unbound", "unbound"> {
 def KGEN_ParamDeclRefAttr : KGEN_ExprAttr<"ParamDeclRef", "param.decl.ref",
     [DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>]> {
   let summary = "A reference to a parameter value.";
-  let parameters = (ins "::mlir::StringAttr":$name,
+  let parameters = (ins "StringAttr":$name,
                         AttributeSelfTypeParameter<"">:$type);
 
   let builders = [

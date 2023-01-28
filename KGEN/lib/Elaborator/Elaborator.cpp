@@ -803,7 +803,7 @@ LogicalResult ParameterRewriter::processGeneratorUserImpl(
                                                       bind.getValue());
         if (value.isError())
           return error(value.takeError());
-        itfCtx.evaluator.setParameterValue(bind.getDecl(), *value);
+        itfCtx.evaluator.setParameterValue(bind.getName(), *value);
         itfParams.push_back(*value);
       }
       DeclAndInputParamsPair itfKey{

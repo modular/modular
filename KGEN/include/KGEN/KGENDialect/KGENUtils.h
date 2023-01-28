@@ -221,10 +221,17 @@ LogicalResult verifyDeclSignaturesMatch(const char *originatorName,
 
 /// Check that the parameter declarations match.
 LogicalResult
-verifyParamDeclsMatch(StringRef paramKind, const char *originatorName,
+verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
                       ArrayRef<ParamDeclAttr> originatorParamDecls,
-                      Location originatorLoc, const char *targetName,
+                      Location originatorLoc, StringRef targetName,
                       ArrayRef<ParamDeclAttr> targetParamDecls,
+                      Location targetLoc);
+
+/// Check that the parameter bindings match the declarations.
+LogicalResult
+verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
+                      ArrayRef<ParamBindAttr> binds, Location originatorLoc,
+                      StringRef targetName, ArrayRef<ParamDeclAttr> decls,
                       Location targetLoc);
 
 /// Check that the op has exactly one block in its region, or it's been cached.

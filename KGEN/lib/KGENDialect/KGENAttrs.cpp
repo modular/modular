@@ -75,20 +75,6 @@ ArrayRef<ParamDeclAttr> KGEN::getParamDecls(Operation *op) {
 }
 
 //===----------------------------------------------------------------------===//
-// ParamBindAttr
-//===----------------------------------------------------------------------===//
-
-LogicalResult
-ParamBindAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
-                      ParamDeclAttr decl, TypedAttr value) {
-  if (decl.getType() == value.getType())
-    return success();
-
-  return emitError() << "value has incorrect type, expected " << decl.getType()
-                     << " but got " << value.getType();
-}
-
-//===----------------------------------------------------------------------===//
 // ConstraintAttr
 //===----------------------------------------------------------------------===//
 
