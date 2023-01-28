@@ -60,21 +60,6 @@ void KGENDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
-// Parameter Helper Functions
-//===----------------------------------------------------------------------===//
-
-/// Return the `paramDecls` array of ParamDeclAttr values if the specified
-/// operation has it, or an empty array otherwise.
-ArrayRef<ParamDeclAttr> KGEN::getParamDecls(Operation *op) {
-  if (auto declItf = dyn_cast<DeclInterface>(op))
-    return declItf.getInputParamDecls();
-  if (auto paramDeclsArray =
-          op->getAttrOfType<ParamDeclArrayAttr>("paramDecls"))
-    return paramDeclsArray;
-  return {};
-}
-
-//===----------------------------------------------------------------------===//
 // ConstraintAttr
 //===----------------------------------------------------------------------===//
 

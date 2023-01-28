@@ -629,9 +629,14 @@ static std::optional<ErrorTree> processGenericOp(IREvaluator &evaluator,
   // know how to calculate the new value for a defined parameter. If there is a
   // reason to allow open extension of operations that define parameters, we
   // could genericize this into an op interface.
-  if (!getParamDecls(op).empty())
-    return ErrorTree(op->getLoc(),
-                     "unknown parameter-defining operator in elaboration");
+  if (!isa<DeclInterface>(op)) {
+    bool hasDecls = false;
+    op->getAttrDictionary().walkSubAttrs(
+        [&](Attribute attr) { hasDecls |= isa<ParamDeclAttr>(attr); });
+    if (hasDecls)
+      return ErrorTree(op->getLoc(),
+                       "unknown parameter-defining operator in elaboration");
+  }
 
   // Scan all the attributes and types to look for uses of parameters.  We let
   // the walker scan the region hierarchy.

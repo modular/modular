@@ -1029,12 +1029,17 @@ LogicalResult ParameterRewriter::processCallParamOp(
 /// references.  Substitute in concrete values for their references.
 LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   // We can rewrite generic references and /uses/ of parameters, but we don't
-  // don't know how to calculate the new value for a defined parameter.  If
-  // there is a reason to allow open extension of operations that define
-  // parameters, we could genericize this into a op interface.
-  if (!getParamDecls(op).empty())
-    return error(op->getLoc(),
-                 "unknown parameter-defining operator in elaboration");
+  // know how to calculate the new value for a defined parameter. If there is a
+  // reason to allow open extension of operations that define parameters, we
+  // could genericize this into an op interface.
+  if (!isa<DeclInterface>(op)) {
+    bool hasDecls = false;
+    op->getAttrDictionary().walkSubAttrs(
+        [&](Attribute attr) { hasDecls |= isa<ParamDeclAttr>(attr); });
+    if (hasDecls)
+      return error(op->getLoc(),
+                   "unknown parameter-defining operator in elaboration");
+  }
 
   // Scan all the attributes and types to look for uses of parameters.  We let
   // the walker scan the region hierarchy.
