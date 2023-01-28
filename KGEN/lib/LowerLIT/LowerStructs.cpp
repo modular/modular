@@ -54,7 +54,7 @@ public:
   /// Replace a KGEN struct with a POP struct.
   POP::StructType substituteStructRef(DeclRefType ref);
 
-  /// Try to build debug informatino for the given struct ref.
+  /// Try to build debug information for the given struct ref.
   DebugInfo::DIType
   buildDebugInfoForStructRef(DeclRefType ref,
                              DebugInfo::DebugInfoTypeConverter &converter);
@@ -252,12 +252,19 @@ void LowerStructsPass::runOnOperation() {
   replacer.addReplacement([&](DeclRefType type) -> Type {
     return structLowerer.substituteStructRef(type);
   });
-  replacer.addReplacement([&](LIT::StructAttr type) {
+  replacer.addReplacement([&](LIT::StructAttr attr) {
     SmallVector<TypedAttr> values;
-    for (auto [name, value] : type.getValues())
+    for (auto [name, value] : attr.getValues())
       values.push_back(value);
     return POP::StructAttr::get(
-        values, structLowerer.substituteStructRef(type.getType()));
+        values, structLowerer.substituteStructRef(attr.getType()));
+  });
+  replacer.addReplacement([&](LIT::StructExtractAttr attr) {
+    auto litStructType = cast<DeclRefType>(attr.getStructValue().getType());
+    int64_t fieldNo = structLowerer.getField(attr.getField(), litStructType);
+    return POP::StructExtractAttr::get(
+        replacer.replace(attr.getStructValue()),
+        IntegerAttr::get(IndexType::get(attr.getContext()), fieldNo));
   });
   replacer.addReplacement([&](DebugInfo::DIType type) -> Type {
     return debugTypeConverter.convertDebugType(type);

@@ -394,8 +394,7 @@ fn lvaluesAndRValues() -> __mlir_type.`!pop.scalar<index>`:
 fn mvalueStructField():
   alias int = Int(4)
   # CHECK: value: scalar<index> = <
-  # CHECK-SAME: apply(:(!kgen.declref<@"$Int"::@Int>) -> !pop.scalar<index>
-  # CHECK-SAME: #kgen.param.mlir_op<"lit.struct.extract", {field = "value"}>, int)>
+  # CHECK-SAME: #lit.struct.extract<:@"$Int"::@Int int, "value">>
   alias value = int.value
   alias foldToValue = Int(5).value
 

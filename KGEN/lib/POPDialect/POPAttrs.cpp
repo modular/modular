@@ -513,6 +513,41 @@ POP::StructAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// StructExtractAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr StructExtractAttr::get(TypedAttr structValue, IntegerAttr fieldNo) {
+  auto structType = ::cast<StructType>(structValue.getType());
+  auto field = size_t(fieldNo.getInt());
+  assert(field < structType.getElementTypes().size() &&
+         "struct extract index out of range");
+  return get(structValue.getContext(), structValue, fieldNo,
+             ParamRefType::get(structType.getElementTypes()[field]));
+}
+
+TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
+                                 IntegerAttr fieldNo, Type resultType) {
+  if (auto value = dyn_cast_if_present<StructAttr>(structValue))
+    return value.getValues()[fieldNo.getInt()];
+
+  return Base::get(context, structValue, fieldNo, resultType);
+}
+
+// FIXME(Issue #7779): this shouldn't be needed.
+// https://github.com/modularml/modular/issues/7779
+Attribute
+StructExtractAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                               ArrayRef<Type> replTypes) const {
+  assert(replAttrs.size() == 2 && replTypes.size() == 1);
+  auto structAttr = ::dyn_cast<TypedAttr>(replAttrs[0]);
+  auto fieldAttr = ::dyn_cast<IntegerAttr>(replAttrs[1]);
+  if (!structAttr || !fieldAttr)
+    return {};
+  return StructExtractAttr::get(getContext(), structAttr, fieldAttr,
+                                replTypes[0]);
+}
+
+//===----------------------------------------------------------------------===//
 // VariantAttr
 //===----------------------------------------------------------------------===//
 

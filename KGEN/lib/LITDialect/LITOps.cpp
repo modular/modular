@@ -623,14 +623,8 @@ void StructExtractOp::build(OpBuilder &builder, OperationState &result,
 }
 
 OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
-  if (auto value = dyn_cast_if_present<StructAttr>(adaptor.getContainer())) {
-    auto it = llvm::find_if(value.getValues(), [&](const auto &p) {
-      return p.first == getFieldAttr();
-    });
-    if (it == value.getValues().end())
-      return {};
-    return it->second;
-  }
+  if (auto value = adaptor.getContainer())
+    return StructExtractAttr::get(value, getFieldAttr(), getType());
 
   // Fold
   //  %S = lit.struct.create(a=%a, b=%b)

@@ -710,11 +710,9 @@ OpFoldResult StructConstructOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
-  auto operands = adaptor.getOperands();
-  auto container = dyn_cast_or_null<StructAttr>(operands[0]);
-  if (!container)
-    return {};
-  return container.getValues()[getIndexAttr().getInt()];
+  if (auto container = adaptor.getContainer())
+    return StructExtractAttr::get(container, getIndexAttr());
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
