@@ -213,13 +213,12 @@ public:
 
   /// Take the provided node as a child and set the parent to `this`.
   void takeChild(ExpansionTreeNode *child) {
-    // Take the child pointer.
-    children.push_back(child);
     // Erase the child from the vector of its original parent.
     auto found = llvm::find(child->parent->children, child);
     child->parent->children.erase(found);
     // Re-parent it under this parent.
     child->parent = this;
+    children.push_back(*found);
   }
 
   /// Update the debug info on the concretization of the current node. This
@@ -292,8 +291,8 @@ ExpansionTreeNode::ExpansionTreeNode(Operation *op, ArrayAttr inputParams,
                                      const IREvaluator &evaluator,
                                      unsigned expansionDepth)
     : op(op), inputParams(inputParams), evaluator(evaluator), parent(parent),
-      alloc(parent->alloc), expansionDepth(expansionDepth),
-      logger(parent->logger) {
+      bindings(parent->bindings), alloc(parent->alloc),
+      expansionDepth(expansionDepth), logger(parent->logger) {
   // TODO: make this configurable?
   if (expansionDepth > 128) {
     error = ErrorTree(
@@ -693,6 +692,14 @@ static void completeGeneratorUserProcessing(KGENCallOpInterface user,
                                             ArrayRef<ParamDeclAttr> decls,
                                             ExpansionTreeNode *thisNode,
                                             ExpansionTreeNode *parentNode) {
+  // Add the callee's bindings to the parent of the call. This ensures that we
+  // don't re-bind something we've already bound.
+  for (const auto &[k, v] : thisNode->bindings) {
+    auto &oldV = parentNode->bindings[k];
+    assert(!oldV || oldV == v);
+    oldV = v;
+  }
+
   ErrorTreeOr<FuncOp> newCalleeFuncOr = thisNode->getFirstConcrete();
   if (newCalleeFuncOr.isError())
     return;
@@ -1066,6 +1073,10 @@ ElaboratorImpl::processParamSearchOp(ExpansionTreeNode *parent,
     // Otherwise, spawn a clone for this value.
     if (auto err = spawnParamSearchClone(op, value, parent, remainingWorklist))
       errors.push_back(std::move(*err));
+
+    // If search is disabled, break after the first parameter.
+    if (!enableSearch)
+      break;
   }
 
   // If the expansions failed, then this call fails overall.
@@ -1140,6 +1151,8 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     ArrayRef<Operation *> remainingWorklist) {
   auto _ = logger.scope("Processing Generator User");
   LLVM_DEBUG(logger.logOp("User", user));
+
+  assert(remainingWorklist.empty() || remainingWorklist.front() != user);
 
   // Add in the mapping for parameters in the calls.
   auto resolvedCallParamsOr =
@@ -1234,6 +1247,11 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     return std::move(out);
   }
 
+  // If we called into an interface, and search was off, use the first concrete
+  // node.
+  if (isa<GeneratorInterfaceOp>(calleeOp) && !enableSearch)
+    concrete.erase(concrete.begin() + 1, concrete.end());
+
   LLVM_DEBUG({
     auto _ = logger.scope("Concrete Implementations, n=", concrete.size());
     for (auto &impl : concrete)
@@ -1257,7 +1275,7 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     auto newNode =
         ExpansionTreeNode::create(newOp, parent->inputParams, parent->parent,
                                   parent->evaluator, parent->expansionDepth);
-
+    newNode->bindings = parent->bindings;
     // Bind this concrete impl to this callee for this node.
     newNode->bindings[{calleeOp, inputParamKey}] = c;
 
@@ -1282,7 +1300,8 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
   // Bind this concrete impl to this callee for this node.
   parent->bindings[{calleeOp, inputParamKey}] = concrete.front();
 
-  // Call completeGeneratorUserProcessing on the first concrete thing.
+  // Call completeGeneratorUserProcessing on the first concrete thing. This will
+  // flow nested bindings upward correctly.
   completeGeneratorUserProcessing(user, decls, concrete.front(), parent);
 
   return std::nullopt;
@@ -1653,15 +1672,15 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
   std::vector<FuncOp> concrete;
   itfNode->getAllConcrete(concrete);
 
-  // Only one implementation, we're done.
-  if (concrete.size() == 1)
+  // Only one implementation, or search is off, so we're done.
+  if (concrete.size() == 1 || !enableSearch)
     return std::nullopt;
 
   SymbolConstantAttr evaluator = itf.getEvaluatorAttr();
   LLVM_DEBUG(logger << "Evaluator: " << evaluator << "\n");
 
-  // If we don't want to do search, or there's no evaluator, we're done.
-  if (!enableSearch || !evaluator)
+  // There's no evaluator, we're done.
+  if (!evaluator)
     return std::nullopt;
 
   auto keyBuf = Cache::WriteableBuffer::get();
@@ -1854,10 +1873,6 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
     if (!exports.empty() && !exports.contains(gen))
       continue;
 
-    // Don't use an interface implementation as the root.
-    if (gen.getImplements())
-      continue;
-
     LLVM_DEBUG(logger.logOp("Elaborating primary generator", gen));
     // This has no input parameters, so we can create the expansion node with
     // no input parameters.
@@ -1879,18 +1894,15 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   // generators - everything else we don't care about.
   DenseMap<StringAttr, StringAttr> funcsToRename;
   bool failed = !root.isConcrete();
-  for (auto gen : primaryGenerators) {
+  for (auto gen : primary.getOps<GeneratorOp>()) {
     auto genNode = root.find(gen, emptyInputParamKey);
     if (!genNode)
       continue;
 
     // If this primary generator failed (or we already knew we failed), then the
-    // whole thing has failed. Just stop processing at this point. We have to
-    // check if the parent is the root because this might be a "primary
-    // generator" even though it implements an interface, and generators that
-    // implement an interface *are* allowed to fail.
+    // whole thing has failed. Just stop processing at this point.
     if (failed || !genNode->isConcrete()) {
-      if (genNode->parent != &root) {
+      if (!llvm::is_contained(primaryGenerators, gen)) {
         continue;
       } else {
         failed = true;
