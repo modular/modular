@@ -22,4 +22,5 @@ kgen.func @array_in_struct(%s: !pop.struct<array<4, i32>>) {
 // CHECK-NEXT: %[[ARR:.*]] = llvm.load %[[ARR_PTR]]
 // CHECK-NEXT: llvm.call @array_in_struct(%[[ARR]])
 
-kgen.export [@array_arg, @array_in_struct]
+kgen.export @array_arg
+kgen.export @array_in_struct

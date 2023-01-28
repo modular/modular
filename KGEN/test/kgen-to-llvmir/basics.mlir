@@ -23,4 +23,4 @@ kgen.func @convert_call(%arg0: !pop.simd<1, f32>) {
   kgen.return
 }
 
-kgen.export [@convert_call]
+kgen.export @convert_call

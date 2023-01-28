@@ -9,4 +9,4 @@ kgen.generator @assert_false() {
   kgen.return
 }
 
-kgen.export [@assert_false]
+kgen.export @assert_false

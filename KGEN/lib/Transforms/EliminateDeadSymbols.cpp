@@ -36,8 +36,8 @@ void EliminateDeadSymbolsPass::runOnOperation() {
   DenseSet<StringAttr> usedSymbols;
   // The base of the export set is the used symbols.
   theModule.walk([&](ExportOp exportOp) {
-    for (auto e : exportOp.getExports().getAsRange<SymbolRefAttr>())
-      usedSymbols.insert(e.getRootReference());
+    usedSymbols.insert(
+        cast<FlatSymbolRefAttr>(exportOp.getExported()).getAttr());
   });
 
   // Now walk the used symbols and find symbols that they use.

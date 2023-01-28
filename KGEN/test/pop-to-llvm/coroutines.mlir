@@ -100,4 +100,4 @@ kgen.func @other_coroutine_ops(%a: !pop.coroutine<() -> i32>) -> !pop.pointer<st
   kgen.return %promise : !pop.pointer<struct<i32>>
 }
 
-kgen.export [@coroutine]
+kgen.export @coroutine

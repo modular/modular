@@ -102,4 +102,4 @@ kgen.func @__kgen_coro_resume(%hdl: !llvm.ptr<i8>) {
   kgen.return
 }
 
-kgen.export [@call_it]
+kgen.export @call_it

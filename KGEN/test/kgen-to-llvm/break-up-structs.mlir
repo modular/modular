@@ -20,7 +20,7 @@ kgen.func @kernel(%a: !pop.struct<index, pointer<simd<1, invalid>>, dtype>) -> !
   kgen.return %a : !pop.struct<index, pointer<simd<1, invalid>>, !kgen.dtype>
 }
 
-kgen.export [@kernel]
+kgen.export @kernel
 
 // -----
 
@@ -39,7 +39,7 @@ kgen.func @kernel(%a: !nestedStruct) -> !nestedStruct {
   kgen.return %a : !nestedStruct
 }
 
-kgen.export [@kernel]
+kgen.export @kernel
 
 // -----
 
@@ -51,7 +51,7 @@ kgen.func @kernel(%i: f32, %a: !pop.struct<index, pointer<simd<1, f32>>, dtype>)
   kgen.return
 }
 
-kgen.export [@kernel]
+kgen.export @kernel
 
 // -----
 
@@ -65,7 +65,7 @@ kgen.func @kernel(%a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) -> i64 {
   kgen.return %0 : i64
 }
 
-kgen.export [@kernel]
+kgen.export @kernel
 
 // -----
 
@@ -77,7 +77,7 @@ kgen.func @kernel(%a: f32) -> f32 {
   kgen.return %a : f32
 }
 
-kgen.export [@kernel]
+kgen.export @kernel
 
 // -----
 
@@ -95,7 +95,8 @@ kgen.func @call_foo() {
   kgen.return
 }
 
-kgen.export [@foo, @call_foo]
+kgen.export @foo
+kgen.export @call_foo
 
 // -----
 
@@ -111,4 +112,4 @@ kgen.func @cheeky() {
   kgen.return
 }
 
-kgen.export [@cheeky]
+kgen.export @cheeky

@@ -10,6 +10,7 @@
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/MicroBenchmark.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/Support/Debug.h"
@@ -23,9 +24,12 @@ static ErrorOr<Cache::BufferRef>
 produceObjectFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
                          ArrayRef<FuncOp> exports) {
   // Create the set of symbols to export.
-  DenseSet<StringAttr> exportedSymbols;
-  for (auto e : exports)
-    exportedSymbols.insert(e.getSymNameAttr());
+  DenseMap<StringAttr, StringAttr> exportedSymbols;
+  for (auto e : exports) {
+    std::string aliasName = makeCIdentifier(e.getSymNameAttr());
+    exportedSymbols.insert(
+        {e.getSymNameAttr(), StringAttr::get(e.getContext(), aliasName)});
+  }
 
   auto compilerOr =
       ObjectCompiler::create(runtime, ".kgen_cache", symtab,

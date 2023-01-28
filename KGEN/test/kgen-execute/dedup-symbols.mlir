@@ -21,6 +21,6 @@ kgen.func @kernel() {
   kgen.return
 }
 
-kgen.export [@kernel]
+kgen.export @kernel
 
 // CHECK: --- 'kernel' finished

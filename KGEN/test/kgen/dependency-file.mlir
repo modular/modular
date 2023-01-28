@@ -10,7 +10,7 @@ kgen.generator @run() {
   kgen.return
 }
 
-kgen.export [@run]
+kgen.export @run
 
 // CHECK: {{.*}}.o:
 // CHECK-SAME: kernels/library.mlir

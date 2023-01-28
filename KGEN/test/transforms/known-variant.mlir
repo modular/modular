@@ -19,7 +19,7 @@ kgen.func @known_true_or_false(%arg0: i32, %arg1: f32, %arg2: i8) -> i1 {
   kgen.return %5 : i1
 }
 
-kgen.export [@known_true_or_false]
+kgen.export @known_true_or_false
 
 // -----
 
@@ -38,7 +38,7 @@ kgen.func @known_false(%arg0: i32, %arg1: i8, %arg2: i1) -> i1 {
   kgen.return %2 : i1
 }
 
-kgen.export [@known_false]
+kgen.export @known_false
 
 // -----
 
@@ -75,7 +75,7 @@ kgen.func @entry() -> !pop.variant<i8, i32> {
   kgen.return %2 : !pop.variant<i8, i32>
 }
 
-kgen.export [@public]
+kgen.export @public
 
 // CHECK-LABEL: kgen.func @public
 kgen.func @public() {
@@ -101,7 +101,7 @@ kgen.func @call() {
   kgen.return
 }
 
-kgen.export [@call]
+kgen.export @call
 
 // -----
 
@@ -120,7 +120,7 @@ kgen.func @call() {
   kgen.return
 }
 
-kgen.export [@call]
+kgen.export @call
 
 // -----
 
@@ -160,7 +160,7 @@ kgen.func @variant_visit(%a: i32, %b: i64, %c: f64) -> !pop.variant<i64, f64> {
   kgen.return %1 : !pop.variant<i64, f64>
 }
 
-kgen.export [@public]
+kgen.export @public
 
 // CHECK-LABEL: kgen.func @public
 kgen.func @public(%a: i32, %b: i64, %c: f64) {
@@ -186,7 +186,7 @@ kgen.func @entry_state(%a: !pop.variant<i32, f32>) -> !pop.variant<index, i1> {
   kgen.return %2 : !pop.variant<index, i1>
 }
 
-kgen.export [@public]
+kgen.export @public
 
 // CHECK-LABEL: kgen.func @public
 kgen.func @public(%a: !pop.variant<i32, f32>) {
@@ -217,7 +217,7 @@ kgen.func @variant_visit(%a: i32, %b: i64, %c: f64) -> !pop.variant<i64, f64> {
   kgen.return %1 : !pop.variant<i64, f64>
 }
 
-kgen.export [@public]
+kgen.export @public
 
 // CHECK-LABEL: kgen.func @public
 kgen.func @public(%a: i32, %b: i64, %c: f64) {
@@ -250,7 +250,8 @@ kgen.func @second_callsite(%a: i32) {
   kgen.return
 }
 
-kgen.export [@first_callsite, @second_callsite]
+kgen.export @first_callsite
+kgen.export @second_callsite
 
 // -----
 
@@ -288,4 +289,4 @@ kgen.func @call_it(%a: i32, %b: i64) {
   kgen.return
 }
 
-kgen.export [@call_it]
+kgen.export @call_it

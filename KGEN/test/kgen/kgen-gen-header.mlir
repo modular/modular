@@ -97,6 +97,12 @@ kgen.func @twoElemStruct(%arg0: i32) -> !pop.struct<i32, i32> {
 
 // TWOSTRUCT: extern void twoElemStruct_c(int32_t, int32_t *, int32_t *);
 
-kgen.export [@someKernel, @someBufferKernel, @someNDBufferKernel,
-             @someMetaScalarKernel, @nestedParametricStruct, @litNoneKernel,
-             @listOneElem, @oneElemStruct, @twoElemStruct]
+kgen.export @someKernel
+kgen.export @someBufferKernel
+kgen.export @someNDBufferKernel
+kgen.export @someMetaScalarKernel
+kgen.export @nestedParametricStruct
+kgen.export @litNoneKernel
+kgen.export @listOneElem
+kgen.export @oneElemStruct
+kgen.export @twoElemStruct

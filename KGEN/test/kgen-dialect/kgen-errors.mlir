@@ -779,13 +779,8 @@ kgen.generator.interface @pickFirst()
 
 // -----
 
-// expected-error @below {{exports must not be empty}}
-kgen.export []
-
-// -----
-
 // expected-error @below {{could not find referenced symbol '@doesNotExist'}}
-kgen.export [@doesNotExist]
+kgen.export @doesNotExist
 
 // -----
 

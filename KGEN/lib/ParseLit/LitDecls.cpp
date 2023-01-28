@@ -24,6 +24,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LitSharedState.h"
 #include "SpecialFunctions.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -1174,7 +1175,15 @@ void FnDecorators::applyLateExport(SymbolRefAttr symbolName) {
 
   ASTDecl *containingDecl = decl.getParentDecl();
   auto builder = containingDecl->getDeclEndBuilder();
-  builder.create<ExportOp>(funcOp.getLoc(), builder.getArrayAttr(symbolName));
+  // FIXME: the chosen aliasName matches the original one before aliases were
+  // introduced. A follow up PR will use the user provided alias name via
+  // export("my_alias").
+  std::string aliasName =
+      makeCIdentifier((Twine(symbolName.getRootReference().getValue()) + "__" +
+                       symbolName.getLeafReference().getValue())
+                          .str());
+  builder.create<ExportOp>(funcOp.getLoc(), symbolName,
+                           StringAttr::get(getContext(), aliasName));
 }
 
 void FnDecorators::applyLate(SymbolRefAttr symbolName,

@@ -108,7 +108,9 @@ kgen.func @while_accum_loop() -> f32 {
   kgen.return %res : f32
 }
 
-kgen.export [@for_loop, @while_loop, @while_accum_loop]
+kgen.export @for_loop
+kgen.export @while_loop
+kgen.export @while_accum_loop
 
 // FOR: --- 'for_loop' returned 101.{{[0-9]+}}
 // WHILE: --- 'while_loop' returned 18.4{{[0-9]+}}
