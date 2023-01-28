@@ -238,6 +238,46 @@ def POP_StructAttr : POP_Attr<"Struct", "struct", [
   let genVerifyDecl = 1;
 }
 
+
+//===----------------------------------------------------------------------===//
+// StructExtractAttr
+//===----------------------------------------------------------------------===//
+
+def POP_StructExtractAttr : POP_Attr<"StructExtract", "struct.extract",
+    [TypedAttrInterface,
+     DeclareAttrInterfaceMethods<SubElementAttrInterface, ["replaceImmediateSubElements"]>
+    ]> {
+  let summary = "Extract an element from a struct value";
+  let description = [{
+    The `#pop.struct.extract` attribute represents a field reference from a
+    constant struct, which may be parametric.
+
+    Example:
+
+    ```mlir
+    #pop.struct.extract<p, 4> : index
+    ```
+  }];
+
+  let parameters = (ins "TypedAttr":$structValue, "IntegerAttr":$fieldNo,
+                        AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat =
+    "`<` custom<ColonTypeParamValue>($structValue) `,` $fieldNo `>`";
+
+  let skipDefaultBuilders = 1;
+
+  let builders = [
+    // Override the default builder used by the generated parser.  This computes
+    // the result type correctly and performs inline folding.
+    AttrBuilderWithInferredContext<
+                (ins "TypedAttr":$structValue, "IntegerAttr":$fieldNO),
+                     "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$structValue, "IntegerAttr":$fieldNo,
+                     "Type":$resultType), "", "TypedAttr">
+
+  ];
+}
+
 //===----------------------------------------------------------------------===//
 // VariantAttr
 //===----------------------------------------------------------------------===//

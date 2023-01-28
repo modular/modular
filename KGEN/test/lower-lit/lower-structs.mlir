@@ -109,3 +109,14 @@ kgen.func @passStructAsLValue(%s: !pop.pointer<@StructInsideStruct>) {
   %1 = lit.struct.gep %0[value] : <index> from <@IndexStruct>
   kgen.return
 }
+
+lit.struct.decl @IndexField {
+  lit.struct.field first: index
+  lit.struct.field second: index
+}
+
+// CHECK-LABEL: @structExtract
+kgen.generator @structExtract<p: !kgen.declref<@IndexField> -> res: index>() {
+  // CHECK: kgen.return<#pop.struct.extract<:struct<index, index> p, 1 : index>>
+  kgen.return<#lit.struct.extract<:!kgen.declref<@IndexField> p, "second">>
+}

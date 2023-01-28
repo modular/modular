@@ -14,6 +14,10 @@ namespace M::KGEN {
 class DeclRefType;
 } // namespace M::KGEN
 
+namespace M::KGEN::LIT {
+class StructFieldOp;
+}
+
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/LITDialect/LITAttrs.h.inc"
 

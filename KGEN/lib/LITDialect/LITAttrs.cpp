@@ -7,7 +7,9 @@
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITDialect.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -93,6 +95,51 @@ printStructElements(AsmPrinter &p,
                           printParamValue(p, value.second);
                         });
   p << '}';
+}
+
+//===----------------------------------------------------------------------===//
+// StructExtractAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr StructExtractAttr::get(TypedAttr structValue, StructFieldOp fieldOp) {
+  auto structType = ::cast<DeclRefType>(structValue.getType());
+  ParameterEvaluator evaluator(structType.getParamValues());
+  auto resultType = evaluator.getReboundType(fieldOp.getType());
+  return get(structValue, fieldOp.getNameAttr(), resultType);
+}
+
+TypedAttr StructExtractAttr::get(TypedAttr structValue, StringAttr field,
+                                 Type resultType) {
+  return get(structValue.getContext(), structValue, field, resultType);
+}
+
+TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
+                                 StringAttr field, Type resultType) {
+  if (auto value = dyn_cast_if_present<StructAttr>(structValue)) {
+    auto it = llvm::find_if(value.getValues(),
+                            [&](const auto &p) { return p.first == field; });
+    if (it != value.getValues().end())
+      return it->second;
+  }
+
+  return Base::get(context, structValue, field, resultType);
+}
+
+// FIXME(Issue #7779): this shouldn't be needed.
+// https://github.com/modularml/modular/issues/7779
+Attribute
+StructExtractAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
+                                               ArrayRef<Type> replTypes) const {
+  assert(replAttrs.size() == 2 && replTypes.size() == 1);
+  auto structAttr = ::dyn_cast<TypedAttr>(replAttrs[0]);
+  auto fieldAttr = ::dyn_cast<StringAttr>(replAttrs[1]);
+  if (!structAttr || !fieldAttr)
+    return {};
+  if (structAttr == getStructValue() && fieldAttr == getField())
+    return *this;
+  assert(::isa<DeclRefType>(structAttr.getType()));
+  return StructExtractAttr::get(getContext(), structAttr, fieldAttr,
+                                replTypes[0]);
 }
 
 //===----------------------------------------------------------------------===//

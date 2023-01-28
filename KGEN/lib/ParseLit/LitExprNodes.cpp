@@ -624,16 +624,10 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
       return {{LValue(fieldPtr), this}};
     }
 
-    // If the base is an mvalue, emit a field extract
+    // If the base is an MValue, emit a field extract as an MValue.
     if (MValue baseMV = baseVal.getIfMValue()) {
-      auto structType = cast<DeclRefType>(baseMV.getType());
-      ParameterEvaluator evaluator(structType.getParamValues());
-      auto extractType = evaluator.getReboundType(fieldOp.getType());
-      return {{emitMLIROperationCall(
-                   StructExtractOp::getOperationName(),
-                   {{StructExtractOp::getFieldAttrName, fieldOp.getNameAttr()}},
-                   baseMV.get(), extractType),
-               this}};
+      auto extractVal = LIT::StructExtractAttr::get(baseMV.get(), fieldOp);
+      return {{MValue(extractVal), this}};
     }
 
     // Otherwise, it must be an rvalue.

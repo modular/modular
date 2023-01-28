@@ -138,4 +138,47 @@ def LIT_StructAttr : LITAttr<"Struct", "struct", [TypedAttrInterface,
   let assemblyFormat = "`<` custom<StructElements>($values) `>`";
 }
 
+
+//===----------------------------------------------------------------------===//
+// StructExtractAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract",
+    [TypedAttrInterface,
+     DeclareAttrInterfaceMethods<SubElementAttrInterface, ["replaceImmediateSubElements"]>
+    ]> {
+  let summary = "Extract an element from a struct value";
+  let description = [{
+    The `#lit.struct.extract` attribute represents a field reference from a
+    constant struct, which may be parametric.
+
+    Example:
+
+    ```mlir
+    #lit.struct.extract<p, "indexfield"> : index
+    ```
+  }];
+
+  let parameters = (ins "TypedAttr":$structValue, "StringAttr":$field,
+                        AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat =
+    "`<` custom<ColonTypeParamValue>($structValue) `,` $field `>`";
+
+  let skipDefaultBuilders = 1;
+
+  let builders = [
+    // Override the default builder used by the generated parser.  This computes
+    // the result type correctly and performs inline folding.
+    AttrBuilderWithInferredContext<
+                (ins "TypedAttr":$structValue, "StructFieldOp":$fieldOp),
+                "", "TypedAttr">,
+    AttrBuilderWithInferredContext<
+                (ins "TypedAttr":$structValue, "StringAttr":$field,
+                     "Type":$resultType), "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$structValue, "StringAttr":$field,
+                     "Type":$resultType), "", "TypedAttr">
+
+  ];
+}
+
 #endif // KGEN_LITDIALECT_LITATTRS_TD
