@@ -364,6 +364,11 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region",
       build($_builder, $_state, ParamDeclArrayAttr::get(paramDecl));
     }]>
   ];
+
+  let extraClassDeclaration = [{
+    /// Return the single parameter declaration.
+    ParamDeclAttr getParamDecl();
+  }];
 }
 
 //===----------------------------------------------------------------------===//

@@ -17,62 +17,91 @@
 #include "llvm/ADT/SmallPtrSet.h"
 
 namespace M::KGEN {
-/// This class holds descriptions about parameter definitions and uses in a
-/// func or generator context.
-class ParameterDeclsAndUses {
-public:
-  ParameterDeclsAndUses() = default;
+/// The definition of a parameter. The parameter definition contains its value
+/// and the operation which contains the value attribute. Not all declared
+/// parameters have definitions. Input parameters to a function, for example,
+/// have no definition within the function, and are treated as leaves.
+struct ParamDefinition {
+  /// The value of the parameter, if it has a resolved one.
+  Attribute value;
+  /// The index of the parameter into the operation's result parameters.
+  std::optional<ssize_t> index;
+  /// The defining operation.
+  Operation *defOp = nullptr;
+  /// The dependent parameters of the definition.
+  SmallVector<ParamDeclRefAttr> uses;
+};
 
-  /// Collect information about the parameter definitions and uses in the
-  /// specified operation.  This assumes the IR is in a valid state. Returns the
-  /// declarations and uses for the top-level operation and those of any nested
-  /// scopes.
-  DenseMap<DeclInterface, ParameterDeclsAndUses> calculate(DeclInterface op);
+/// The declaration of a parameter. The parameter declaration contains the type
+/// of the parameter and the operation that declares it. A parameter can be
+/// declared and defined by different operations: a return parameter, for
+/// example, is declared by the surrounding function but defined by its return
+/// operation.
+struct ParamDeclaration {
+  /// The type of the parameter as it was declared.
+  Type type;
+  /// the operation that declares the parameter.
+  Operation *declOp;
+};
 
-  /// Check deep invariants for a func/generator decl body, used by the
-  /// verifiers for these operations.  If a problem is detected, this emits an
-  /// error and returns failure. Return the declarations and uses for the
-  /// top-level operation.
-  LogicalResult calculateAndVerify(DeclInterface op,
-                                   SymbolTableCollection &symbolTables);
+/// This class defines the use-def graph for parameters. There are two types of
+/// parameter uses: operations and parameter definitions. The use-def graph of
+/// parameter declarations and definitions is of most interest: there can be
+/// no cycles in this graph.
+///
+/// The elaborator must first resolve this graph by providing values for the
+/// leaf nodes (input parameters) and computing all the parameter definition
+/// expressions to a simple constant value. Then, all operations that use
+/// parameters (in an attribute, type, or location) can be concretized in any
+/// order.
+struct ParameterUseDefGraph {
+  ParameterUseDefGraph(DeclInterface scope) : scope(scope) {}
 
-  /// This defines the operation and the ParamDeclAttr inside of it that defines
-  /// a parameter of a specified name.
-  SmallDenseMap<StringAttr, std::pair<Operation *, ParamDeclAttr>> decls;
+  /// Map of parameter name to its declaration.
+  DenseMap<StringAttr, ParamDeclaration> decls;
+  /// Map of parameter name to its definition.
+  DenseMap<StringAttr, ParamDefinition> defs;
 
-  /// A single operation may define and use multiple parameter declarations,
-  /// either directly or through types on attributes and SSA operands/results.
-  ///
-  /// This list keeps track of all of the operations that define and use
-  /// parameter declarations.  It is ordered in a topological order "top down"
-  /// in the parameter dependence graph.  Each operation will only have a single
-  /// entry in this list.
-  ///
-  /// This provides a handy list of parameter uses that the operation refers to,
-  /// which will be empty if the operation just defines parameters but doesn't
-  /// use any.  You can get its parameter declarations directly from its
-  /// attribute list.
-  ///
-  /// Note that operations that use parameter expressions but not a
-  /// ParamDeclRefAttr will not appear in this list.
-  SmallVector<std::pair<Operation *, SmallVector<ParamDeclRefAttr>>, 8>
-      usersAndDeclarers;
+  /// The scope at which this graph is computed.
+  DeclInterface scope;
 
-  /// Keep track of the operations which contain parameter expressions but which
-  /// do not use or declare parameters themselves. These expressions need to be
-  /// evaluated during elaboration.
-  SmallVector<Operation *> constExprOps;
+  /// A list of parametric operations. These are the operations that must be
+  /// concretized by the elaborator once all parameters in the scope have been
+  /// computed to simple constant values.
+  std::vector<Operation *> paramOps;
 
-  /// Keep track of any nested parameter scopes encountered.
-  SmallVector<DeclInterface> nestedDecls;
+  /// A list of all parameters defined within the scope.
+  SmallVector<StringAttr> params;
 
-  /// Keep track of uses of parameters that were defined in a higher scope.
+  /// These are the parameter uses in the current scope that were captured from
+  /// a higher scope.
   SmallPtrSet<ParamDeclRefAttr, 8> usesFromAbove;
 
+  /// Track the operations that reference parameters. Use this information to
+  /// diagnose references to parameters without declarations.
+  DenseMap<Operation *, SmallVector<ParamDeclRefAttr>> opUses;
+
+  /// A list of nested parameter scopes.
+  SmallVector<DeclInterface> nestedDecls;
+
+  /// A map of nested scopes to their use-def graph.
+  DenseMap<DeclInterface, ParameterUseDefGraph> nestedScopes;
+
+  /// Compute the parameter declarations, definitions, and uses within the
+  /// provided parameter declaration scope. If the the root scope is not
+  /// isolated from above, the use-def graph expects to be primed with the
+  /// parent scope's declarations before this function is called.
+  void calculate();
+
+  /// Verify the validity of the parameter declarations, uses, and definitions
+  /// within the current scope.
+  LogicalResult verify(SymbolTableCollection &symtab);
+
 private:
-  FailureOr<DenseMap<DeclInterface, ParameterDeclsAndUses>>
-  calculateAndPotentiallyVerify(DeclInterface op,
-                                SymbolTableCollection *symbolTable);
+  /// Calculate the parameter use-def graph and perform verification if a symbol
+  /// table is provided.
+  LogicalResult calculateOrVerify(ModuleOp module,
+                                  SymbolTableCollection *symtab);
 };
 } // namespace M::KGEN
 

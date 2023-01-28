@@ -14,6 +14,7 @@ add_modular_mlir_library(KGENElaborator
   LINK_LIBS PUBLIC
   DebugInfoDialect
   CacheDialect
+  KGENCompilerRT
   KGENDialect
   KGENExecutionEngine
   InterpreterInterface

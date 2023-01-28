@@ -625,19 +625,6 @@ static std::optional<ErrorTree> processLocation(IREvaluator &evaluator,
 /// references.  Substitute in concrete values for their references.
 static std::optional<ErrorTree> processGenericOp(IREvaluator &evaluator,
                                                  Operation *op) {
-  // We can rewrite generic references and /uses/ of parameters, but we don't
-  // know how to calculate the new value for a defined parameter. If there is a
-  // reason to allow open extension of operations that define parameters, we
-  // could genericize this into an op interface.
-  if (!isa<DeclInterface>(op)) {
-    bool hasDecls = false;
-    op->getAttrDictionary().walkSubAttrs(
-        [&](Attribute attr) { hasDecls |= isa<ParamDeclAttr>(attr); });
-    if (hasDecls)
-      return ErrorTree(op->getLoc(),
-                       "unknown parameter-defining operator in elaboration");
-  }
-
   // Scan all the attributes and types to look for uses of parameters.  We let
   // the walker scan the region hierarchy.
   SmallVector<NamedAttribute> newAttrs;
@@ -654,9 +641,8 @@ static std::optional<ErrorTree> processGenericOp(IREvaluator &evaluator,
   if (changedAttrs)
     op->setAttrs(newAttrs);
 
-  auto err = processLocation(evaluator, op);
-  if (err)
-    return err;
+  if (std::optional<ErrorTree> err = processLocation(evaluator, op))
+    return std::move(*err);
 
   // Check the types of results to find any parameters embedded in their
   // types.  We don't have to check operands because they are always checked
@@ -1196,6 +1182,8 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     auto calleeNode =
         ExpansionTreeNode::create(calleeOp, inputParamKey, &root,
                                   IREvaluator(*this), parent->expansionDepth);
+    if (calleeNode->error)
+      return std::move(calleeNode->error);
 
     if (isa<GeneratorOp>(calleeOp)) {
       if (auto err = specializeGenerator(calleeNode))
@@ -1415,7 +1403,7 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
       result = processGenericOp(parentNode->evaluator, op);
     }
 
-    // Just set the node to an error - we don't want to fail the whole
+    // st set the node to an error - we don't want to fail the whole
     // process.
     if (result) {
       LLVM_DEBUG(logger.scope("Result: Failure") << result->getError());
@@ -1444,23 +1432,38 @@ ElaboratorImpl::specializeFunction(ExpansionTreeNode *funcNode,
   logger.logOp("Function", func);
 
   // Get a partial ordering of parameter definitions and uses that are listed
-  // "top down" in our evaluation order.
-  ParameterDeclsAndUses uses;
-  // Bind the decls so ParameterUsesAndDecls doesn't complain.
-  for (auto [decl, val] : llvm::zip(paramDecls, funcNode->inputParams))
+  // "top down" in our evaluation order. Plug in the input parameter values.
+  ParameterUseDefGraph uses(func);
+  for (auto [decl, val] : llvm::zip(paramDecls, funcNode->inputParams)) {
     uses.decls.try_emplace(decl.getName(),
-                           std::make_pair(func->getParentOp(), decl));
-  uses.calculate(func);
+                           ParamDeclaration{decl.getType(), func});
+    uses.defs.try_emplace(decl.getName(), ParamDefinition{val, {}, func, {}});
+  }
+  uses.calculate();
 
-  // Rewrite all the parameter-using ops in this scope only.
-  SmallVector<Operation *> opsToRewrite;
-  opsToRewrite.reserve(uses.constExprOps.size() +
-                       uses.usersAndDeclarers.size());
-
-  // Process operations with constant expressions first.
-  llvm::append_range(opsToRewrite, uses.constExprOps);
-  for (auto &[op, _] : uses.usersAndDeclarers)
-    opsToRewrite.push_back(op);
+  // FIXME: The elaborator does not correctly handle the new parameter use-def
+  // graph. Process the parameters in reverse: the same operation can define
+  // multiple parameters, so punt those according to their most dominated
+  // definition.
+  std::vector<Operation *> opsToRewrite;
+  opsToRewrite.reserve(uses.params.size() + uses.paramOps.size());
+  llvm::SetVector<Operation *, SmallVector<Operation *, 8>,
+                  SmallPtrSet<Operation *, 8>>
+      defOps;
+  for (StringAttr param : llvm::reverse(uses.params)) {
+    auto it = uses.defs.find(param);
+    assert(it != uses.defs.end());
+    defOps.insert(it->second.defOp);
+  }
+  // The only acceptable leaf nodes are input parameters.
+  for (auto &[param, decl] : uses.decls) {
+    if (uses.defs.find(param) != uses.defs.end())
+      continue;
+    return ErrorTree(decl.declOp->getLoc(),
+                     "unknown parameter-defining operator");
+  }
+  llvm::append_range(opsToRewrite, llvm::reverse(defOps.takeVector()));
+  llvm::append_range(opsToRewrite, uses.paramOps);
 
   // Process the worklist.
   processScope(funcNode, opsToRewrite);

@@ -1456,8 +1456,7 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
     }
     // Bind inputs to themselves.
     for (ParamDeclAttr input : exprFunc.getInputs())
-      evaluator.setParameterValue(
-          input, ParamDeclRefAttr::get(input.getName(), input.getType()));
+      evaluator.setParameterValue(input, ParamDeclRefAttr::get(input));
 
     SmallVector<TypedAttr> exprs;
     exprs.reserve(exprFunc.getExprs().size());

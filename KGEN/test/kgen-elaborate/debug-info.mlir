@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-generators="search-path=%S" -verify-diagnostics -o /dev/null -split-input-file -allow-unregistered-dialect -mlir-print-debuginfo
+// RUN: kgen-opt %s -elaborate-generators -mlir-print-debuginfo
 
 // Check that debug info gets resolved during elaboration.
 

@@ -20,7 +20,9 @@ LogicalResult impl::verifyIfTopLevel(DeclInterface decl,
                                      SymbolTableCollection &symtab) {
   if (isa<DeclInterface>(decl->getParentOp()))
     return success();
-  return ParameterDeclsAndUses().calculateAndVerify(decl, symtab);
+  if (failed(ParameterUseDefGraph(decl).verify(symtab)))
+    return failure();
+  return success();
 }
 
 LogicalResult impl::verifyCallOp(KGENCallOpInterface op) {
@@ -39,6 +41,21 @@ LogicalResult impl::verifyCallOp(KGENCallOpInterface op) {
 
   if (!op.isAllowedInFunc() && func)
     return op.emitOpError("is only allowed in generators pre-elaboration");
+
+  ArrayRef<ParamDeclAttr> params = op.getCalleeType().getResultParams();
+  if (op.getParamDecls().size() != params.size()) {
+    return op->emitOpError("declares ")
+           << op.getParamDecls().size() << " result parameters, but callee has "
+           << params.size();
+  }
+  for (auto [decl, result, idx] : llvm::zip(
+           op.getParamDecls(), params, llvm::seq<unsigned>(0, params.size()))) {
+    if (decl.getType() == result.getType())
+      continue;
+    return op.emitOpError("result parameter #")
+           << idx << " declared with type " << decl.getType()
+           << " but callee has " << result.getType();
+  }
 
   return success();
 }

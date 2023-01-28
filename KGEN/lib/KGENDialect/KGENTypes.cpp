@@ -277,15 +277,18 @@ SignatureType SignatureType::getSpecializedSignature(
           ParamDeclAttr::get(decl.getName(), remappedDeclType));
       // Set the binding to a declref of the thing itself - that will keep it
       // from becoming #kgen.unbound.
-      evaluator.setParameterValue(
-          bind.getName(),
-          ParamDeclRefAttr::get(bind.getName(), bind.getType()));
+      evaluator.setParameterValue(decl, ParamDeclRefAttr::get(decl));
     } else {
       evaluator.setParameterValue(bind.getName(), bind.getValue());
     }
 
     ++paramNo;
   }
+
+  // FIXME: Signature typed attributes need to contain result parameter
+  // declarations. For now, just bind them to themselves.
+  for (ParamDeclAttr decl : getResultParams())
+    evaluator.setParameterValue(decl, ParamDeclRefAttr::get(decl));
 
   // Remap the parameter decls and result parameter types.
   SmallVector<ParamDeclAttr> newParamResults;

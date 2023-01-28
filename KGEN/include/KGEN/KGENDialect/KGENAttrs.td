@@ -334,13 +334,15 @@ def KGEN_ParamDeclRefAttr : KGEN_ExprAttr<"ParamDeclRef", "param.decl.ref",
                         AttributeSelfTypeParameter<"">:$type);
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "::mlir::StringAttr":$name,
-                                        "::mlir::Type":$type), [{
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name, "Type":$type), [{
       return get(name.getContext(), name, type);
     }]>,
-    AttrBuilderWithInferredContext<(ins "::mlir::StringRef":$name,
-                                         "::mlir::Type":$type),
-      "return get(StringAttr::get(type.getContext(), name), type);">,
+    AttrBuilderWithInferredContext<(ins "StringRef":$name, "Type":$type), [{
+      return get(StringAttr::get(type.getContext(), name), type);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "ParamDeclAttr":$decl), [{
+      return get(decl.getName(), decl.getType());
+    }]>
   ];
 
   let assemblyFormat = "`<` $name `>`";

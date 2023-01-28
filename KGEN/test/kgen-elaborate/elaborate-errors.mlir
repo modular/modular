@@ -22,26 +22,10 @@ kgen.generator @local_verif_error() {
 
 // -----
 
-kgen.generator.interface @genItf2<x>()
-
-kgen.generator @genItf2_impl0<x>()
-// expected-note @below {{constraint failed: x must be zarooo}}
-  constraints <[eq(x, 0), "x must be zarooo"]> implements @genItf2 {
-  "impl0"() : () -> ()
-  kgen.return
-}
-
-kgen.generator @genItf2_impl1<x>() implements @genItf2 {
-  // expected-note @below {{unknown parameter-defining operator}}
+kgen.generator @unknownDecl() {
+  // expected-error @below {{unknown parameter-defining operator}}
   "impl1" () { paramDecls = #kgen<param.decls[badaram : index]> } : () -> ()
-  kgen.return
-}
-
-// This has no expansions, so it should generate an error message.
-// expected-error @below {{no viable expansions found}}
-kgen.generator @use_Itf2two() {
-  // expected-note @below {{call expansion failed}}
-  kgen.call @genItf2<x = 2>() : () -> ()
+  kgen.param.constant = <badaram>
   kgen.return
 }
 
@@ -49,9 +33,9 @@ kgen.generator @use_Itf2two() {
 
 // Recursive expansions.
 
+// expected-note @+1 {{elaborator expansion is 129 levels deep - infinite recursion?}}
 kgen.generator.interface @genItf3<x>()
 
-// expected-note @+1 {{elaborator expansion is 129 levels deep - infinite recursion?}}
 kgen.generator @genItf3_impl<x>() implements @genItf3 {
   // expected-note @+1 {{call expansion failed}}
   kgen.call @genItf3<x = add(x, 1)>() : () -> ()

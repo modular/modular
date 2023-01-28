@@ -518,3 +518,18 @@ kgen.generator @callee() {
   }
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.generator @parent
+kgen.generator @parent<A: dtype>() {
+  %0 = kgen.call @callee<A = 1>() : () -> index
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @callee
+kgen.generator @callee<A>() -> index {
+  kgen.param.declare B = <A>
+  %0 = kgen.param.constant = <B>
+  kgen.return %0 : index
+}
