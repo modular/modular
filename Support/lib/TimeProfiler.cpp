@@ -321,7 +321,7 @@ ErrorOrSuccess M::timeTraceProfilerWrite(StringRef PreferredFileName,
     Path = FallbackFileName == "-" ? "out" : FallbackFileName.str();
 
   // Write time trace.
-  std::string TracePath = Path + ".time-trace";
+  std::string TracePath = Path == "-" ? Path : Path + ".time-trace";
   std::error_code EC;
   llvm::raw_fd_ostream OSTrace(TracePath, EC, llvm::sys::fs::OF_TextWithCRLF);
   if (EC)
@@ -330,7 +330,7 @@ ErrorOrSuccess M::timeTraceProfilerWrite(StringRef PreferredFileName,
   timeTraceProfilerWriteTrace(OSTrace);
 
   // Write time statistics.
-  std::string StatPath = Path + ".time-stat.csv";
+  std::string StatPath = Path == "-" ? Path : Path + ".time-stat.csv";
   llvm::raw_fd_ostream OSStat(StatPath, EC, llvm::sys::fs::OF_TextWithCRLF);
   if (EC)
     return Error(Twine("Could not open ") + StatPath + "(" +
