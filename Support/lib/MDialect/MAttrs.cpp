@@ -691,11 +691,12 @@ static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
 //===----------------------------------------------------------------------===//
 
 llvm::hash_code BuildInfoAttr::hash() const {
-  return llvm::hash_combine(MODULAR_BUILD_TYPE);
+  return llvm::hash_combine(getBuildType(), getLLCLMaxProfilingLevel());
 }
 
 BuildInfoAttr BuildInfoAttr::getForCurrentBuild(MLIRContext *ctx) {
-  return BuildInfoAttr::get(ctx, MODULAR_BUILD_TYPE);
+  return BuildInfoAttr::get(ctx, MODULAR_BUILD_TYPE,
+                            MODULAR_LLCL_MAX_PROFILING_LEVEL);
 }
 
 //===----------------------------------------------------------------------===//

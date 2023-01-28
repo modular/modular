@@ -300,11 +300,12 @@ def KGEN_BuildInfoAttr : MAttr<"BuildInfo", "build_info"> {
     Example:
 
     ```mlir
-    #M.build<type="debug">
+    #M.build<type="debug", profile_level=2>
     ```
   }];
 
-  let parameters = (ins StringRefParameter<"">:$buildType);
+  let parameters = (ins StringRefParameter<"">:$buildType,
+                        "int64_t":$lLCLMaxProfilingLevel);
 
   let assemblyFormat = "`<` struct(params) `>`";
 
