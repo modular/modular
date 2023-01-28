@@ -1352,13 +1352,14 @@ ParseResult KGEN::parseParamBinds(AsmParser &p,
 
   SmallVector<ParamBindAttr> values;
   auto parseParamBind = [&]() -> ParseResult {
-    ParamDeclAttr decl;
+    StringAttr name;
+    Type type;
     TypedAttr value;
 
-    if (parseParamDecl(p, decl) || p.parseEqual() ||
-        parseParamValue(p, value, decl.getType()))
+    if (parseParamName(p, name) || parseColonTypeOrIndex(p, type) ||
+        p.parseEqual() || parseParamValue(p, value, type))
       return failure();
-    values.push_back(ParamBindAttr::get(decl, value));
+    values.push_back(ParamBindAttr::get(name, value));
     return success();
   };
 
@@ -1374,7 +1375,8 @@ void KGEN::printParamBinds(AsmPrinter &p, ArrayRef<ParamBindAttr> paramBinds) {
     p << "()";
   } else {
     llvm::interleaveComma(paramBinds, p, [&](ParamBindAttr bind) {
-      printParamDecl(p, bind.getDecl());
+      printParamName(p, bind.getName());
+      printColonTypeOrIndex(p, bind.getType());
       p << " = ";
       printParamValue(p, bind.getValue());
     });
@@ -1502,8 +1504,8 @@ ParseResult KGEN::parseOptionalAlignmentParamValue(AsmParser &p,
 template <typename TargetRange, typename OriginatorRange>
 static ParseResult verifyMatchingLists(
     const OriginatorRange &originatorRange, const TargetRange &targetRange,
-    const char *originatorName, Location originatorLoc, const char *targetName,
-    Location targetLoc, StringRef itemName, const char *propertyName) {
+    StringRef originatorName, Location originatorLoc, StringRef targetName,
+    Location targetLoc, StringRef itemName, StringRef propertyName) {
   // Check that the ranges have the same size.  If not, diagnose this.
   size_t numOriginator =
       std::distance(originatorRange.begin(), originatorRange.end());
@@ -1589,9 +1591,9 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
 }
 
 LogicalResult
-KGEN::verifyParamDeclsMatch(StringRef paramKind, const char *originatorName,
+KGEN::verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
                             ArrayRef<ParamDeclAttr> originatorParamDecls,
-                            Location originatorLoc, const char *targetName,
+                            Location originatorLoc, StringRef targetName,
                             ArrayRef<ParamDeclAttr> targetParamDecls,
                             Location targetLoc) {
   using llvm::map_range;
@@ -1606,6 +1608,25 @@ KGEN::verifyParamDeclsMatch(StringRef paramKind, const char *originatorName,
                           map_range(targetParamDecls, getType), originatorName,
                           originatorLoc, targetName, targetLoc, paramKind,
                           "type"))
+    return failure();
+  return success();
+}
+
+LogicalResult
+KGEN::verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
+                            ArrayRef<ParamBindAttr> binds,
+                            Location originatorLoc, StringRef targetName,
+                            ArrayRef<ParamDeclAttr> decls, Location targetLoc) {
+  using llvm::map_range;
+  auto getType = [](auto attr) -> Type { return attr.getType(); };
+  auto getName = [](auto attr) -> StringAttr { return attr.getName(); };
+
+  if (verifyMatchingLists(map_range(binds, getName), map_range(decls, getName),
+                          originatorName, originatorLoc, targetName, targetLoc,
+                          paramKind, "name") ||
+      verifyMatchingLists(map_range(binds, getType), map_range(decls, getType),
+                          originatorName, originatorLoc, targetName, targetLoc,
+                          paramKind, "type"))
     return failure();
   return success();
 }

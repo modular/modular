@@ -70,8 +70,11 @@ public:
   }
 
   /// Set or overwrite the value of a parameter.
+  void setOrOverwriteParameterValue(StringAttr name, Attribute value) {
+    paramValues[name] = value;
+  }
   void setOrOverwriteParameterValue(ParamDeclAttr decl, Attribute value) {
-    paramValues[decl.getName()] = value;
+    setOrOverwriteParameterValue(decl.getName(), value);
   }
 
   /// Iterate over the current parameter values.

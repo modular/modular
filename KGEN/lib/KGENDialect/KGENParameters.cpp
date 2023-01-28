@@ -300,7 +300,7 @@ struct DeclParameterVerifier final : public ParameterCollector {
 
   void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) override;
 
-  void verifyRefType(DeclRefType typeDef) override;
+  void verifyRefType(DeclRefType refType) override;
 
   void verifyNestedParameterUse(ParamDeclAttr decl,
                                 ParamDeclRefAttr use) override;
@@ -577,11 +577,8 @@ void DeclParameterVerifier::verifyRefType(DeclRefType refType) {
   paramName.append(refType.getSymbol().getLeafReference());
   if (failed(verifyParamDeclsMatch(
           "input parameter", "!kgen.declref symbol use",
-          llvm::to_vector(llvm::map_range(
-              refType.getParamValues(),
-              [](ParamBindAttr value) { return value.getDecl(); })),
-          *curLocationCollecting, paramName.c_str(), specializedDecls,
-          decl.getLoc())))
+          refType.getParamValues(), *curLocationCollecting, paramName,
+          specializedDecls, decl.getLoc())))
     hadError = true;
 }
 

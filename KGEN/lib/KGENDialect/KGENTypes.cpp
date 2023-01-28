@@ -278,10 +278,10 @@ SignatureType SignatureType::getSpecializedSignature(
       // Set the binding to a declref of the thing itself - that will keep it
       // from becoming #kgen.unbound.
       evaluator.setParameterValue(
-          bind.getDecl(),
+          bind.getName(),
           ParamDeclRefAttr::get(bind.getName(), bind.getType()));
     } else {
-      evaluator.setParameterValue(bind.getDecl(), bind.getValue());
+      evaluator.setParameterValue(bind.getName(), bind.getValue());
     }
 
     ++paramNo;
