@@ -298,7 +298,7 @@ def LIT_StructExtractOp : LITOp<"struct.extract", [Pure,
     ```
   }];
 
-  let arguments = (ins StrAttr:$field, KGEN_DeclRefType:$container);
+  let arguments = (ins KGEN_DeclRefType:$container, StrAttr:$field);
   let results = (outs AnyType:$value);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
