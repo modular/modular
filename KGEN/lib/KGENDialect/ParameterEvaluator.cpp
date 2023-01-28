@@ -69,6 +69,11 @@ bool KGEN::isParameterizedType(Type type) {
 // ParameterEvaluator core implementation.
 //===----------------------------------------------------------------------===//
 
+ParameterEvaluator::ParameterEvaluator(ArrayRef<ParamBindAttr> paramValues) {
+  for (ParamBindAttr bind : paramValues)
+    setParameterValue(bind.getName(), bind.getValue());
+}
+
 /// Get the specified attribute with any nested parameter expressions rewritten.
 Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   // These are common leaf attributes that we know are never parameterized.
