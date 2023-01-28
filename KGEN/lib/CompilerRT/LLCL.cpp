@@ -113,12 +113,23 @@ extern "C" void KGEN_CompilerRT_LLCL_Complete(int8_t *asyncCtx) {
 //===----------------------------------------------------------------------===//
 
 /// Create an LLCL runtime and return it as a compact pointer.
-extern "C" int8_t KGEN_CompilerRT_LLCL_CreateRuntime(uint8_t numThreads) {
+extern "C" int8_t
+KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(ssize_t numThreads,
+                                              const char *profileFilenamePtr,
+                                              ssize_t profileFilenameLen) {
+  StringRef profileFilename{profileFilenamePtr,
+                            static_cast<size_t>(profileFilenameLen)};
   auto *runtime = new LLCL::Runtime(
       LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-      LLCL::createThreadPoolWorkQueue(numThreads));
+      LLCL::createThreadPoolWorkQueue(numThreads, {}, !profileFilename.empty()),
+      profileFilename);
   AsyncValue::registerType<LLCL::Chain>();
   return runtime->getCompactPtr().getAsOpaqueToken();
+}
+
+/// Create an LLCL runtime and return it as a compact pointer.
+extern "C" int8_t KGEN_CompilerRT_LLCL_CreateRuntime(ssize_t numThreads) {
+  return KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(numThreads, nullptr, 0);
 }
 
 /// Given a compact pointer to an LLCL runtime, destroy it.
