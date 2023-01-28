@@ -33,7 +33,7 @@ public:
   /// Construct an ObjectCompiler with a specific set of exports.
   static ErrorOr<ObjectCompiler>
   create(LLCL::Runtime &runtime, StringRef basePath, SymbolTable &symtab,
-         DenseMap<StringAttr, StringAttr> exports,
+         const DenseMap<StringAttr, StringAttr> &exports,
          const CompilationOptions &options);
 
   /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on
@@ -66,7 +66,7 @@ public:
 private:
   /// Construct an ObjectCompiler with a specific set of exports.
   ObjectCompiler(LLCL::Runtime &runtime, SymbolTable &symtab,
-                 DenseMap<StringAttr, StringAttr> exports,
+                 const DenseMap<StringAttr, StringAttr> &exports,
                  LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
                  const CompilationOptions &options);
 

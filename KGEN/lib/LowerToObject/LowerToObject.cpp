@@ -35,26 +35,27 @@ using namespace KGEN;
 ErrorOr<ObjectCompiler>
 ObjectCompiler::create(LLCL::Runtime &runtime, StringRef basePath,
                        SymbolTable &symtab, const CompilationOptions &options) {
-  return create(runtime, basePath, symtab,
-                getExportedSymbols(cast<ModuleOp>(symtab.getOp())), options);
+  DenseMap<StringAttr, StringAttr> exports =
+      getExportedSymbols(cast<ModuleOp>(symtab.getOp()));
+  return create(runtime, basePath, symtab, exports, options);
 }
 
 ErrorOr<ObjectCompiler>
 ObjectCompiler::create(LLCL::Runtime &runtime, StringRef basePath,
                        SymbolTable &symtab,
-                       DenseMap<StringAttr, StringAttr> exports,
+                       const DenseMap<StringAttr, StringAttr> &exports,
                        const CompilationOptions &options) {
   auto transformCache = Cache::getDefaultBackendChain(
       runtime, (std::filesystem::path(basePath.str()) / "transform").string());
   if (failed(transformCache))
     return transformCache.takeError();
-  return ObjectCompiler(runtime, symtab, std::move(exports),
-                        std::move(*transformCache), options);
+  return ObjectCompiler(runtime, symtab, exports, std::move(*transformCache),
+                        options);
 }
 
 ObjectCompiler::ObjectCompiler(
     LLCL::Runtime &runtime, SymbolTable &symtab,
-    DenseMap<StringAttr, StringAttr> exports,
+    const DenseMap<StringAttr, StringAttr> &exports,
     LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
     const CompilationOptions &options)
     : transformCache(
