@@ -484,6 +484,14 @@ kgen.generator @build_info_is_debug() {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @build_info_profile_level_2()
+kgen.generator @build_info_profile_level_2() {
+  kgen.param.assert<
+    eq(build_info_get_field(#kgen<build_info host>,
+                            "llcl_max_profiling_level"), 2)>,
+    "build is using llcl profile level 2"
+  kgen.return
+}
 
 // REGION TYPES
 // CHECK-LABEL: kgen.generator @region_params<
