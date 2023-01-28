@@ -1496,3 +1496,30 @@ kgen.generator @multiVersion() -> index {
   %0 = kgen.call @add<x = x, y = y>() : () -> index
   kgen.return %0 : index
 }
+
+// -----
+
+// CHECK-LABEL: @"g1,size=5"
+// CHECK-LABEL: @"g1,size=3"
+kgen.generator @g1<size>() -> index {
+  %0 = kgen.param.constant = <size>
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: @"g2,size=3,width=5"
+kgen.generator @g2<size, width>() -> index {
+  // CHECK-NEXT: call @"g1,size=5"
+  %0 = kgen.call @g1<size = width>() : () -> index
+  // CHECK-NEXT: call @"g1,size=3"
+  %1 = kgen.call @g1<size = size>() : () -> index
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: @root
+kgen.generator @root() {
+  kgen.param.declare q = <3>
+  kgen.param.declare w = <5>
+  // CHECK-NEXT: kgen.call @"g2,size=3,width=5"
+  %0 = kgen.call @g2<size = q, width = w>() : () -> index
+  kgen.return
+}

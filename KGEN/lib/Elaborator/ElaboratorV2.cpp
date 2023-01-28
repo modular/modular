@@ -1161,10 +1161,6 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     return resolvedCallParamsOr.takeError();
   auto inputParamKey = *resolvedCallParamsOr;
 
-  // Handle all the input params.
-  for (auto [bind, val] : llvm::zip(user.getParamValues(), inputParamKey))
-    parent->evaluator.setOrOverwriteParameterValue(bind.getDecl(), val);
-
   // Lookup the callee.
   auto calleeOp = lookup(calleeSymbol.getSymbol());
   if (!calleeOp) {
@@ -1442,16 +1438,13 @@ ElaboratorImpl::specializeFunction(ExpansionTreeNode *funcNode,
   auto _ = logger.scope("Specializing Function: @", func.getName());
   logger.logOp("Function", func);
 
-  // Bind definitions of the input parameters within the body block, and set
-  // their values.
-  OpBuilder b(func);
-  b.setInsertionPoint(&func.getBody()->front());
-  for (auto [decl, val] : llvm::zip(paramDecls, funcNode->inputParams))
-    b.create<ParamDeclareOp>(func.getLoc(), decl, val);
-
   // Get a partial ordering of parameter definitions and uses that are listed
   // "top down" in our evaluation order.
   ParameterDeclsAndUses uses;
+  // Bind the decls so ParameterUsesAndDecls doesn't complain.
+  for (auto [decl, val] : llvm::zip(paramDecls, funcNode->inputParams))
+    uses.decls.try_emplace(decl.getName(),
+                           std::make_pair(func->getParentOp(), decl));
   uses.calculate(func);
 
   // Rewrite all the parameter-using ops in this scope only.
@@ -1529,7 +1522,7 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   auto inputParamDecls = generator.getInputParamDecls();
   assert(inputParamValues.size() == inputParamDecls.size() &&
          "incorrect # input parameter values");
-  IREvaluator evaluator = genNode->evaluator;
+  IREvaluator &evaluator = genNode->evaluator;
   for (auto [decl, val] : llvm::zip(inputParamDecls, inputParamValues))
     evaluator.setOrOverwriteParameterValue(decl, val);
 
@@ -1868,11 +1861,13 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   // Trim the expansion tree and erase ops we don't need/want.
   DenseSet<Operation *> toErase;
 
-  for (auto gen : primaryGenerators) {
-    // We want to root off exported generators.
-    if (!exports.empty() && !exports.contains(gen))
-      continue;
+  // Don't bother with generators that aren't in the export list.
+  auto primaryGeneratorList =
+      llvm::make_filter_range(primaryGenerators, [&](GeneratorOp gen) {
+        return exports.empty() || exports.contains(gen);
+      });
 
+  for (auto gen : primaryGeneratorList) {
     LLVM_DEBUG(logger.logOp("Elaborating primary generator", gen));
     // This has no input parameters, so we can create the expansion node with
     // no input parameters.
@@ -1894,6 +1889,8 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   // generators - everything else we don't care about.
   DenseMap<StringAttr, StringAttr> funcsToRename;
   bool failed = !root.isConcrete();
+  // We have to walk all the generators in the module because we have to rename
+  // each one to its first implementation.
   for (auto gen : primary.getOps<GeneratorOp>()) {
     auto genNode = root.find(gen, emptyInputParamKey);
     if (!genNode)
@@ -1921,7 +1918,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
 
   // If we have failed, emit your errors and return failure.
   if (failed) {
-    for (auto gen : primaryGenerators) {
+    for (auto gen : primaryGeneratorList) {
       auto genNode = root.find(gen, emptyInputParamKey);
       assert(genNode && "We must have a node for a primary generator");
       genNode->trimFailedChildren(toErase);
