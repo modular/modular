@@ -140,15 +140,15 @@ kgen.func @zap_ndbuffer_dim(
   %ndbuffer2: !zap.ndbuffer<[?, ?, ?], ?>) {
   // CHECK: kgen.param.constant  = <4>
   %0 = zap.ndbuffer.dim %ndbuffer0[0] : !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: %[[ARRAY0:.*]] = pop.struct.get %[[NDBUFFER1]][2] : !pop.struct<
+  // CHECK: %[[ARRAY0:.*]] = pop.struct.extract %[[NDBUFFER1]][2] : !pop.struct<
   // CHECK: pop.array.get %[[ARRAY0]][0] : !pop.array<5, index>
   %1 = zap.ndbuffer.dim %ndbuffer1[0] : !zap.ndbuffer<[?, 4, ?], si32>
   // CHECK: kgen.param.constant  = <4>
   %2 = zap.ndbuffer.dim %ndbuffer1[1] : !zap.ndbuffer<[?, 4, ?], si32>
-  // CHECK: %[[ARRAY1:.*]] = pop.struct.get %[[NDBUFFER2]][2] : !pop.struct<
+  // CHECK: %[[ARRAY1:.*]] = pop.struct.extract %[[NDBUFFER2]][2] : !pop.struct<
   // CHECK: pop.array.get %[[ARRAY1]][0] : !pop.array<5, index>
   %3 = zap.ndbuffer.dim %ndbuffer2[0] : !zap.ndbuffer<[?, ?, ?], ?>
-  // CHECK: %[[ARRAY2:.*]] = pop.struct.get %[[NDBUFFER2]][2] : !pop.struct<
+  // CHECK: %[[ARRAY2:.*]] = pop.struct.extract %[[NDBUFFER2]][2] : !pop.struct<
   // CHECK: pop.array.get %[[ARRAY2]][2] : !pop.array<5, index>
   %4 = zap.ndbuffer.dim %ndbuffer2[2] : !zap.ndbuffer<[?, ?, ?], ?>
   kgen.return
@@ -183,11 +183,11 @@ kgen.func @zap_ndbuffer_address(
   %ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>,
   %ndbuffer1: !zap.ndbuffer<[?], si32>,
   %ndbuffer2: !zap.ndbuffer<[?, ?, ?, ?], ?>) {
-  // CHECK: pop.struct.get %[[NDBUFFER0]][0]
+  // CHECK: pop.struct.extract %[[NDBUFFER0]][0]
   %0 = zap.ndbuffer.address %ndbuffer0 : !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK: pop.struct.get %[[NDBUFFER1]][0]
+  // CHECK: pop.struct.extract %[[NDBUFFER1]][0]
   %1 = zap.ndbuffer.address %ndbuffer1 : !zap.ndbuffer<[?], si32>
-  // CHECK: pop.struct.get %[[NDBUFFER2]][0]
+  // CHECK: pop.struct.extract %[[NDBUFFER2]][0]
   %2 = zap.ndbuffer.address %ndbuffer2 : !zap.ndbuffer<[?, ?, ?, ?], ?>
   kgen.return
 }
@@ -206,7 +206,7 @@ kgen.func @zap_ndbuffer_dtype(
   %0 = zap.ndbuffer.dtype %ndbuffer0 : !zap.ndbuffer<[4, 5, 3], f32>
   // CHECK: kgen.param.constant: dtype = <si32>
   %1 = zap.ndbuffer.dtype %ndbuffer1 : !zap.ndbuffer<[?], si32>
-  // CHECK: pop.struct.get %[[NDBUFFER2]][3]
+  // CHECK: pop.struct.extract %[[NDBUFFER2]][3]
   %2 = zap.ndbuffer.dtype %ndbuffer2 : !zap.ndbuffer<[?, ?, ?, ?], ?>
   kgen.return
 }
@@ -226,7 +226,7 @@ kgen.func @zap_ndbuffer_size(%ndbuffer0: !zap.ndbuffer<[4, 5, 3], f32>) {
 // CHECK-LABEL: @zap_ndbuffer_size
 // CHECK-SAME: %[[NDBUFFER:.*]]: !pop.struct<pointer<scalar<f32>>
 kgen.func @zap_ndbuffer_size(%ndbuffer0: !zap.ndbuffer<[4, ?, 3], f32>) {
-  // CHECK: %[[STRUCT:.*]] = pop.struct.get %[[NDBUFFER]][2]
+  // CHECK: %[[STRUCT:.*]] = pop.struct.extract %[[NDBUFFER]][2]
   // CHECK: %[[DIM0:.*]] = index.constant 4
   // CHECK: %[[DIM1:.*]] = pop.array.get %[[STRUCT]][1] : !pop.array<5, index>
   // CHECK: %[[PARTIAL:.*]] = index.mul %[[DIM0]], %[[DIM1]]
@@ -250,8 +250,8 @@ kgen.func @zap_ndbuffer_load(
   %idx0: index,
   %idx1: index,
   %idx2: index) {
-  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[NDBUFFER0]][2]
-  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[NDBUFFER0]][0]
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.extract %[[NDBUFFER0]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.extract %[[NDBUFFER0]][0]
   // CHECK-DAG: %[[SIZE1:.*]] = index.constant 5
   // CHECK-DAG: %[[SIZE2:.*]] = index.constant 3
   // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
@@ -262,8 +262,8 @@ kgen.func @zap_ndbuffer_load(
   // CHECK-DAG: %[[SIMD_OFFSET:.*]] = pop.pointer.bitcast %[[POP_OFFSET]]
   // CHECK: pop.load %[[SIMD_OFFSET]] : !pop.pointer<scalar<f32>>
   %0 = zap.ndbuffer.load %ndbuffer0[%idx0, %idx1, %idx2] : !zap.ndbuffer<[4, 5, 3], f32>, !pop.scalar<f32>
-  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[NDBUFFER1]][2]
-  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[NDBUFFER1]][0]
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.extract %[[NDBUFFER1]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.extract %[[NDBUFFER1]][0]
   // CHECK-DAG: %[[SIZE1:.*]] = index.constant 99
   // CHECK-DAG: %[[SIZE2:.*]] = pop.array.get %[[SHAPEARRAY]][2]
   // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
@@ -293,8 +293,8 @@ kgen.func @zap_ndbuffer_store(
   %idx0: index,
   %idx1: index,
   %idx2: index) {
-  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[NDBUFFER0]][2]
-  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[NDBUFFER0]][0]
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.extract %[[NDBUFFER0]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.extract %[[NDBUFFER0]][0]
   // CHECK-DAG: %[[SIZE1:.*]] = index.constant 5
   // CHECK-DAG: %[[SIZE2:.*]] = index.constant 3
   // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
@@ -305,8 +305,8 @@ kgen.func @zap_ndbuffer_store(
   // CHECK-DAG: %[[SIMD_OFFSET:.*]] = pop.pointer.bitcast %[[POP_OFFSET]]
   // CHECK: pop.store %[[VAL]], %[[SIMD_OFFSET]] : !pop.pointer<scalar<f32>>
   zap.ndbuffer.store %val, %ndbuffer0[%idx0, %idx1, %idx2] : !pop.scalar<f32>, !zap.ndbuffer<[4, 5, 3], f32>
-  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[NDBUFFER1]][2]
-  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[NDBUFFER1]][0]
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.extract %[[NDBUFFER1]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.extract %[[NDBUFFER1]][0]
   // CHECK-DAG: %[[SIZE1:.*]] = index.constant 99
   // CHECK-DAG: %[[SIZE2:.*]] = pop.array.get %[[SHAPEARRAY]][2]
   // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
@@ -332,8 +332,8 @@ kgen.func @zap_ndbuffer_aligned_load(
   %idx0: index,
   %idx1: index,
   %idx2: index) {
-  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[NDBUFFER0]][2]
-  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[NDBUFFER0]][0]
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.extract %[[NDBUFFER0]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.extract %[[NDBUFFER0]][0]
   // CHECK-DAG: %[[SIZE1:.*]] = index.constant 5
   // CHECK-DAG: %[[SIZE2:.*]] = pop.array.get %[[SHAPEARRAY]][2]
   // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
@@ -361,8 +361,8 @@ kgen.func @zap_ndbuffer_store_aligned(
   %idx0: index,
   %idx1: index,
   %idx2: index) {
-  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[NDBUFFER0]][2]
-  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[NDBUFFER0]][0]
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.extract %[[NDBUFFER0]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.extract %[[NDBUFFER0]][0]
   // CHECK-DAG: %[[SIZE1:.*]] = index.constant 5
   // CHECK-DAG: %[[SIZE2:.*]] = pop.array.get %[[SHAPEARRAY]][2]
   // CHECK-DAG: %[[MUL1:.*]] = index.mul %[[IDX0]], %[[SIZE1]]
@@ -387,8 +387,8 @@ kgen.generator @zap_ndbuffer_loadstore_with_param<size, type: dtype>(
   ) {
   // CHECK: %[[IDX:.*]] =  index.constant
   %idx = index.constant 2
-  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[BUFFER]][2]
-  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[BUFFER]][0]
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.extract %[[BUFFER]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.extract %[[BUFFER]][0]
   // CHECK-DAG: %[[SIZE:.*]] = kgen.param.constant = <size>
   // CHECK-DAG: %[[MUL:.*]] = index.mul %[[IDX]], %[[SIZE]]
   // CHECK-DAG: %[[ADD:.*]] = index.add %[[MUL]], %[[IDX]]
@@ -396,8 +396,8 @@ kgen.generator @zap_ndbuffer_loadstore_with_param<size, type: dtype>(
   // CHECK-DAG: %[[SIMD_OFFSET:.*]] = pop.pointer.bitcast %[[OFFSET]]
   // CHECK-DAG: pop.load %[[SIMD_OFFSET]]
   %u = zap.ndbuffer.load %buffer[%idx, %idx] : !zap.ndbuffer<[size, size], type>, !pop.scalar<type>
-  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[BUFFER]][2]
-  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[BUFFER]][0]
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.extract %[[BUFFER]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.extract %[[BUFFER]][0]
   // CHECK-DAG: %[[SIZE:.*]] = kgen.param.constant = <size>
   // CHECK-DAG: %[[MUL:.*]] = index.mul %[[IDX]], %[[SIZE]]
   // CHECK-DAG: %[[ADD:.*]] = index.add %[[MUL]], %[[IDX]]
@@ -420,8 +420,8 @@ kgen.generator @zap_ndbuffer_loadstore_aligned_with_param<size, type: dtype>(
   ) {
   // CHECK: %[[IDX:.*]] =  index.constant
   %idx = index.constant 2
-  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[BUFFER]][2]
-  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[BUFFER]][0]
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.extract %[[BUFFER]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.extract %[[BUFFER]][0]
   // CHECK-DAG: %[[SIZE:.*]] = kgen.param.constant = <size>
   // CHECK-DAG: %[[MUL:.*]] = index.mul %[[IDX]], %[[SIZE]]
   // CHECK-DAG: %[[ADD:.*]] = index.add %[[MUL]], %[[IDX]]
@@ -429,8 +429,8 @@ kgen.generator @zap_ndbuffer_loadstore_aligned_with_param<size, type: dtype>(
   // CHECK-DAG: %[[SIMD_OFFSET:.*]] = pop.pointer.bitcast %[[OFFSET]]
   // CHECK-DAG: pop.load %[[SIMD_OFFSET]] align size
   %u = zap.ndbuffer.load %buffer[%idx, %idx] align size : !zap.ndbuffer<[size, size], type>, !pop.scalar<type>
-  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.get %[[BUFFER]][2]
-  // CHECK-DAG: %[[BASE:.*]] = pop.struct.get %[[BUFFER]][0]
+  // CHECK-DAG: %[[SHAPEARRAY:.*]] = pop.struct.extract %[[BUFFER]][2]
+  // CHECK-DAG: %[[BASE:.*]] = pop.struct.extract %[[BUFFER]][0]
   // CHECK-DAG: %[[SIZE:.*]] = kgen.param.constant = <size>
   // CHECK-DAG: %[[MUL:.*]] = index.mul %[[IDX]], %[[SIZE]]
   // CHECK-DAG: %[[ADD:.*]] = index.add %[[MUL]], %[[IDX]]
@@ -446,7 +446,7 @@ kgen.generator @zap_ndbuffer_loadstore_aligned_with_param<size, type: dtype>(
 // CHECK-LABEL: @ndbuffer_bitcast
 // CHECK-SAME: %[[A:.*]]:
 kgen.func @ndbuffer_bitcast(%a: !zap.ndbuffer<[4], f32>) -> !zap.ndbuffer<[32], f32> {
-  // CHECK-DAG: %[[PTR:.*]] = pop.struct.get %[[A]][0]
+  // CHECK-DAG: %[[PTR:.*]] = pop.struct.extract %[[A]][0]
   // CHECK-DAG: %[[ZERO:.*]] = index.constant 0
   // CHECK-DAG: %[[SIZE:.*]] = index.constant 32
   // CHECK-DAG: %[[SHAPE:.*]] = pop.array.create [%[[SIZE]], %[[ZERO]]
@@ -463,9 +463,9 @@ kgen.func @ndbuffer_bitcast(%a: !zap.ndbuffer<[4], f32>) -> !zap.ndbuffer<[32], 
 // CHECK-LABEL: @ndbuffer_bitcast
 // CHECK-SAME: %[[A:.*]]:
 kgen.func @ndbuffer_bitcast(%a: !zap.ndbuffer<[4], f32>) -> !zap.ndbuffer<[?], f64> {
-  // CHECK-DAG: %[[PTR0:.*]] = pop.struct.get %[[A]][0]
+  // CHECK-DAG: %[[PTR0:.*]] = pop.struct.extract %[[A]][0]
   // CHECK-DAG: %[[PTR:.*]] = pop.pointer.bitcast %[[PTR0]]
-  // CHECK-DAG: %[[SHAPE_ARRAY:.*]] = pop.struct.get %[[A]][2]
+  // CHECK-DAG: %[[SHAPE_ARRAY:.*]] = pop.struct.extract %[[A]][2]
   // CHECK-DAG: %[[SIZE:.*]] = pop.array.get %[[SHAPE_ARRAY]][0]
   // CHECK-DAG: %[[ZERO:.*]] = index.constant 0
   // CHECK-DAG: %[[SHAPE:.*]] = pop.array.create [%[[SIZE]], %[[ZERO]]
@@ -482,9 +482,9 @@ kgen.func @ndbuffer_bitcast(%a: !zap.ndbuffer<[4], f32>) -> !zap.ndbuffer<[?], f
 // CHECK-LABEL: @ndbuffer_bitcast
 // CHECK-SAME: %[[A:.*]]:
 kgen.func @ndbuffer_bitcast(%a: !zap.ndbuffer<[4], f32>) -> !zap.ndbuffer<[?], ?> {
-  // CHECK-DAG: %[[PTR0:.*]] = pop.struct.get %[[A]][0]
+  // CHECK-DAG: %[[PTR0:.*]] = pop.struct.extract %[[A]][0]
   // CHECK-DAG: %[[PTR:.*]] = pop.pointer.bitcast %[[PTR0]]
-  // CHECK-DAG: %[[SHAPE_ARRAY:.*]] = pop.struct.get %[[A]][2]
+  // CHECK-DAG: %[[SHAPE_ARRAY:.*]] = pop.struct.extract %[[A]][2]
   // CHECK-DAG: %[[SIZE:.*]] = pop.array.get %[[SHAPE_ARRAY]][0]
   // CHECK-DAG: %[[ZERO:.*]] = index.constant 0
   // CHECK-DAG: %[[SHAPE:.*]] = pop.array.create [%[[SIZE]], %[[ZERO]]
@@ -501,9 +501,9 @@ kgen.func @ndbuffer_bitcast(%a: !zap.ndbuffer<[4], f32>) -> !zap.ndbuffer<[?], ?
 // CHECK-LABEL: @ndbuffer_bitcast
 // CHECK-SAME: %[[A:.*]]:
 kgen.func @ndbuffer_bitcast(%a: !zap.ndbuffer<[4], ?>) -> !zap.ndbuffer<[?], f32> {
-  // CHECK-DAG: %[[PTR0:.*]] = pop.struct.get %[[A]][0]
+  // CHECK-DAG: %[[PTR0:.*]] = pop.struct.extract %[[A]][0]
   // CHECK-DAG: %[[PTR:.*]] = pop.pointer.bitcast %[[PTR0]]
-  // CHECK-DAG: %[[SHAPE_ARRAY:.*]] = pop.struct.get %[[A]][2]
+  // CHECK-DAG: %[[SHAPE_ARRAY:.*]] = pop.struct.extract %[[A]][2]
   // CHECK-DAG: %[[SIZE:.*]] = pop.array.get %[[SHAPE_ARRAY]][0]
   // CHECK-DAG: %[[ZERO:.*]] = index.constant 0
   // CHECK-DAG: %[[SHAPE:.*]] = pop.array.create [%[[SIZE]], %[[ZERO]]

@@ -235,7 +235,7 @@ void OutlineClosuresPass::runOnOperation() {
         // Create accesses for each capture.
         for (size_t i = 0, e = structType.getNumElements(); i < e; ++i) {
           callArgs.push_back(
-              b.create<POP::StructGetOp>(load.getLoc(), load, i));
+              b.create<POP::StructExtractOp>(load.getLoc(), load, i));
         }
       }
 

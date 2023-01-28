@@ -731,11 +731,11 @@ struct ConvertPOPStructReplace : mlir::ConvertOpToLLVMPattern<StructReplaceOp> {
 // ConvertPOPStructGet
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPStructGet : mlir::ConvertOpToLLVMPattern<StructGetOp> {
+struct ConvertPOPStructGet : mlir::ConvertOpToLLVMPattern<StructExtractOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(StructGetOp op, StructGetOpAdaptor adaptor,
+  matchAndRewrite(StructExtractOp op, StructExtractOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // If the struct has one element, just return it.
     if (op.getContainer().getType().getNumElements() == 1) {

@@ -266,8 +266,8 @@ struct ConvertZAPNDBufferAddress
   LogicalResult matchAndRewrite(NDBufferAddressOp op,
 
                                 PatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<StructGetOp>(op, convertValue(op.getNDBuffer()),
-                                             kNDBufferAddressPosition);
+    rewriter.replaceOpWithNewOp<StructExtractOp>(
+        op, convertValue(op.getNDBuffer()), kNDBufferAddressPosition);
     return success();
   }
 };
@@ -303,7 +303,7 @@ struct ConvertZAPNDBufferDim : public mlir::OpRewritePattern<NDBufferDimOp> {
     if (!isa<UnknownAttr>(dim)) {
       rewriter.replaceOpWithNewOp<ParamConstantOp>(op, dim);
     } else {
-      Value shape = rewriter.create<StructGetOp>(
+      Value shape = rewriter.create<StructExtractOp>(
           op->getLoc(), convertValue(op.getNDBuffer()), kNDBufferShapePosition);
       rewriter.replaceOpWithNewOp<ArrayGetOp>(op, op.getType(), shape,
                                               op.getIndexAttr());
@@ -352,7 +352,7 @@ struct ConvertZAPNDBufferSize : public mlir::OpRewritePattern<NDBufferSizeOp> {
 
     Location loc = op->getLoc();
     NDBufferType ndBufferType = op.getNDBuffer().getType();
-    Value shape = rewriter.create<StructGetOp>(
+    Value shape = rewriter.create<StructExtractOp>(
         loc, convertValue(op.getNDBuffer()), kNDBufferShapePosition);
     Value product = getDimensionAtIndex(rewriter, loc, ndBufferType, shape, 0);
     for (size_t i = 1, e = ndBufferType.getRank(); i < e; ++i) {
@@ -379,7 +379,7 @@ struct ConvertZAPNDBufferDType
     if (!isa<UnknownAttr>(dtype))
       rewriter.replaceOpWithNewOp<ParamConstantOp>(op, dtype);
     else
-      rewriter.replaceOpWithNewOp<StructGetOp>(
+      rewriter.replaceOpWithNewOp<StructExtractOp>(
           op, convertValue(op.getNDBuffer()), kNDBufferDTypePosition);
     return success();
   }
@@ -447,10 +447,10 @@ struct ConvertZAPNDBufferLoad : public mlir::OpRewritePattern<NDBufferLoadOp> {
                                 PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
     Value popBuf = convertValue(op.getNDBuffer());
-    Value shapeArray = rewriter.create<StructGetOp>(op->getLoc(), popBuf,
-                                                    kNDBufferShapePosition);
-    Value base = rewriter.create<StructGetOp>(op.getLoc(), popBuf,
-                                              kNDBufferAddressPosition);
+    Value shapeArray = rewriter.create<StructExtractOp>(op->getLoc(), popBuf,
+                                                        kNDBufferShapePosition);
+    Value base = rewriter.create<StructExtractOp>(op.getLoc(), popBuf,
+                                                  kNDBufferAddressPosition);
     Value offset = linearizeContiguousIndices(
         rewriter, loc, op.getNDBuffer().getType().cast<NDBufferType>(),
         shapeArray, op.getPositions());
@@ -478,10 +478,10 @@ struct ConvertZAPNDBufferStore
                                 PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
     Value popBuf = convertValue(op.getNDBuffer());
-    Value shapeArray = rewriter.create<StructGetOp>(op->getLoc(), popBuf,
-                                                    kNDBufferShapePosition);
-    Value base = rewriter.create<StructGetOp>(op.getLoc(), popBuf,
-                                              kNDBufferAddressPosition);
+    Value shapeArray = rewriter.create<StructExtractOp>(op->getLoc(), popBuf,
+                                                        kNDBufferShapePosition);
+    Value base = rewriter.create<StructExtractOp>(op.getLoc(), popBuf,
+                                                  kNDBufferAddressPosition);
     Value offset = linearizeContiguousIndices(
         rewriter, loc, op.getNDBuffer().getType().cast<NDBufferType>(),
         shapeArray, op.getPositions());
@@ -509,8 +509,8 @@ struct ConvertZAPNDBufferBitCast
 
     // Bitcast the pointer if needed.
     Value ndBuffer = convertValue(op.getInput());
-    Value ptr = rewriter.create<StructGetOp>(op.getLoc(), ndBuffer,
-                                             kNDBufferAddressPosition);
+    Value ptr = rewriter.create<StructExtractOp>(op.getLoc(), ndBuffer,
+                                                 kNDBufferAddressPosition);
 
     if (type.getDType() != inputType.getDType())
       ptr = rewriter.create<PointerBitcastOp>(
@@ -526,8 +526,8 @@ struct ConvertZAPNDBufferBitCast
     if (dtypeExpr)
       dtype = rewriter.create<ParamConstantOp>(op.getLoc(), dtypeExpr);
     else
-      dtype = rewriter.create<StructGetOp>(op.getLoc(), ndBuffer,
-                                           kNDBufferDTypePosition);
+      dtype = rewriter.create<StructExtractOp>(op.getLoc(), ndBuffer,
+                                               kNDBufferDTypePosition);
 
     // Query the source ndbuffer for the dynamic shape information.
     Value shapeArray;
@@ -536,8 +536,8 @@ struct ConvertZAPNDBufferBitCast
       if (!isa<UnknownAttr>(shape))
         continue;
       if (!shapeArray)
-        shapeArray = rewriter.create<StructGetOp>(op.getLoc(), ndBuffer,
-                                                  kNDBufferShapePosition);
+        shapeArray = rewriter.create<StructExtractOp>(op.getLoc(), ndBuffer,
+                                                      kNDBufferShapePosition);
       dynamicShapeValues.emplace_back(
           rewriter.create<ArrayGetOp>(op.getLoc(), shapeArray, idx));
     }

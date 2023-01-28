@@ -147,8 +147,8 @@ static Operation *lowerStructOp(StructExtractOp op,
                                 StructOperationLowerer &lowerer) {
   int64_t index =
       lowerer.getField(op.getFieldAttr(), op.getContainer().getType());
-  return lowerer.create<POP::StructGetOp>(op.getLoc(), adaptor.getContainer(),
-                                          lowerer.getIndexAttr(index));
+  return lowerer.create<POP::StructExtractOp>(
+      op.getLoc(), adaptor.getContainer(), lowerer.getIndexAttr(index));
 }
 
 static Operation *lowerStructOp(StructGEPOp op, StructGEPOpAdaptor adaptor,

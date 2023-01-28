@@ -284,11 +284,13 @@ struct ExpandStructConstructOp
   }
 };
 
-/// %list = get %struct[2] -> %li = get %struct[2 + i] for each i.
-struct ExpandStructGetOp : public mlir::OpRewritePattern<POP::StructGetOp> {
-  ExpandStructGetOp(MLIRContext *ctx) : OpRewritePattern(ctx, /*benefit=*/2) {}
+/// %list = extract %struct[2] -> %li = extract %struct[2 + i] for each i.
+struct ExpandStructExtractOp
+    : public mlir::OpRewritePattern<POP::StructExtractOp> {
+  ExpandStructExtractOp(MLIRContext *ctx)
+      : OpRewritePattern(ctx, /*benefit=*/2) {}
 
-  LogicalResult matchAndRewrite(POP::StructGetOp op,
+  LogicalResult matchAndRewrite(POP::StructExtractOp op,
                                 PatternRewriter &b) const override {
     if (!structHasListElement(op.getContainer().getType()))
       return failure();
@@ -302,7 +304,7 @@ struct ExpandStructGetOp : public mlir::OpRewritePattern<POP::StructGetOp> {
       results.reserve(length);
       for (int64_t i = 0; i < length; ++i)
         results.push_back(
-            b.create<POP::StructGetOp>(op.getLoc(), container, i + index));
+            b.create<POP::StructExtractOp>(op.getLoc(), container, i + index));
       b.replaceOp(
           op, materializeListSourceConversion(b, op.getLoc(), results, list));
     } else {
@@ -668,7 +670,7 @@ void LowerKGENToPOPPass::runOnOperation() {
   config.maxIterations = mlir::GreedyRewriteConfig::kNoLimit;
   RewritePatternSet patterns(&getContext());
   patterns.insert<ExpandListConstantOp, ExpandListGetOp, ExpandListCreateOp,
-                  ExpandStructConstructOp, ExpandStructGetOp,
+                  ExpandStructConstructOp, ExpandStructExtractOp,
                   ExpandStructReplaceOp, ExpandStructGEPOp, ExpandListStore,
                   ExpandListLoad, ExpandVariantGet, ExpandVariantCreate,
                   ExpandListDebugValue, ExpandGenericOperation>(&getContext());

@@ -25,8 +25,8 @@ kgen.generator @call_region<fn: <A -> E>() always_inline ->index -> E>() always_
 // COM: This is the wrapper that loads values from the global variable.
 // CHECK-LABEL: kgen.generator @raiseClosure_Fn_wrapper<C, Jefffffffffff, A, B -> E>() always_inline -> index
 // CHECK-NEXT:   [[PTR:%[0-9]+]] = pop.compiler.global_load "raiseClosure_context_var_0" : !pop.struct<index, scalar<index>>
-// CHECK-NEXT:   [[VAL:%[0-9]+]] = pop.struct.get [[PTR]][0] : !pop.struct<index, scalar<index>>
-// CHECK-NEXT:   [[ARG:%[0-9]+]] = pop.struct.get [[PTR]][1] : !pop.struct<index, scalar<index>>
+// CHECK-NEXT:   [[VAL:%[0-9]+]] = pop.struct.extract [[PTR]][0] : !pop.struct<index, scalar<index>>
+// CHECK-NEXT:   [[ARG:%[0-9]+]] = pop.struct.extract [[PTR]][1] : !pop.struct<index, scalar<index>>
 // CHECK-NEXT:   [[RES:%[0-9]+]] = kgen.call @raiseClosure_Fn<C = C, Jefffffffffff = Jefffffffffff, A = A, B = B -> __resultParam_0 = E>([[VAL]], [[ARG]]) : (index, !pop.scalar<index>) always_inline -> index
 // CHECK-NEXT:   kgen.return<__resultParam_0> [[RES]] : index
 
@@ -72,7 +72,7 @@ kgen.generator @raiseClosure<Jefffffffffff -> index>(%arg0: !pop.scalar<index>) 
 
 // CHECK-LABEL: kgen.generator @raise2Closures_Fn_wrapper<C, A -> E>() always_inline -> index
 // CHECK-NEXT:    %0 = pop.compiler.global_load "raise2Closures_context_var_1" : !pop.struct<index>
-// CHECK-NEXT:    %1 = pop.struct.get %0[0] :
+// CHECK-NEXT:    %1 = pop.struct.extract %0[0] :
 // CHECK-NEXT:    %2 = kgen.call @raise2Closures_Fn<C = C, A = A -> __resultParam_0 = E>(%1) : (index) always_inline -> index
 // CHECK-NEXT:    kgen.return<__resultParam_0> %2 : index
 
@@ -112,7 +112,7 @@ kgen.generator @raise2Closures() {
 
 // CHECK-LABEL: kgen.generator @parametrizedClosure_Fn_wrapper<T: type>() always_inline -> !kgen.paramref<T>
 // CHECK-NEXT:    %0 = pop.compiler.global_load "parametrizedClosure_context_var_2" : !pop.struct<T>
-// CHECK-NEXT:    %1 = pop.struct.get %0[0] : !pop.struct<T>
+// CHECK-NEXT:    %1 = pop.struct.extract %0[0] : !pop.struct<T>
 // CHECK-NEXT:    %2 = kgen.call @parametrizedClosure_Fn<T: type = T>(%1) : (!kgen.paramref<T>) always_inline -> !kgen.paramref<T>
 // CHECK-NEXT:    kgen.return %2 : !kgen.paramref<T>
 
