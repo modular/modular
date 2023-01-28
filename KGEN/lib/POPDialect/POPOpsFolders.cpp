@@ -706,10 +706,10 @@ OpFoldResult StructConstructOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// StructGetOp
+// StructExtractOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult StructGetOp::fold(FoldAdaptor adaptor) {
+OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
   auto operands = adaptor.getOperands();
   auto container = dyn_cast_or_null<StructAttr>(operands[0]);
   if (!container)

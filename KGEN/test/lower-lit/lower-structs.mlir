@@ -58,7 +58,7 @@ kgen.func @struct_insert(%pair: !i8Pair) -> !i8Pair {
 
 // CHECK-LABEL: @struct_extract
 kgen.func @struct_extract(%pair: !i8Pair) -> i8 {
-  // CHECK: pop.struct.get %{{.*}}[1]
+  // CHECK: pop.struct.extract %{{.*}}[1]
   %0 = lit.struct.extract %pair[second] : i8 from !i8Pair
   kgen.return %0 : i8
 }

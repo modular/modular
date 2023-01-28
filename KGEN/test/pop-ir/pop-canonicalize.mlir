@@ -454,7 +454,7 @@ kgen.func @struct_construct() -> !pop.struct<si4, ui4> {
 kgen.func @struct_get() -> si4 {
   // CHECK-NEXT: constant: si4 = <-3>
   %0 = kgen.param.constant: struct<si4, ui4> = <{ -3, 7 }>
-  %1 = pop.struct.get %0[0] : !pop.struct<si4, ui4>
+  %1 = pop.struct.extract %0[0] : !pop.struct<si4, ui4>
   kgen.return %1 : si4
 }
 

@@ -195,7 +195,7 @@ void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
 }
 
 //===----------------------------------------------------------------------===//
-// StructGetOp
+// StructExtractOp
 //===----------------------------------------------------------------------===//
 
 /// Verify the value type matches the struct element type at the given index.
@@ -216,7 +216,7 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
   return success();
 }
 
-LogicalResult StructGetOp::verify() {
+LogicalResult StructExtractOp::verify() {
   return verifyStructValueType(*this, getContainer().getType(), getIndexAttr(),
                                getType(), "result");
 }
@@ -238,7 +238,7 @@ inferStructElementType(function_ref<LogicalResult(const Twine &)> emitError,
   return structType.getElementTypes()[index];
 }
 
-LogicalResult StructGetOp::inferReturnTypes(
+LogicalResult StructExtractOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> loc, ValueRange operands,
     DictionaryAttr attrs, RegionRange regions, SmallVectorImpl<Type> &types) {
   auto emitError = [&](const Twine &msg) -> LogicalResult {
@@ -248,14 +248,14 @@ LogicalResult StructGetOp::inferReturnTypes(
     return emitError("expected 1 operand");
   auto structType = dyn_cast<StructType>(operands.front().getType());
   FailureOr<TypedAttr> type =
-      inferStructElementType<StructGetOp>(emitError, structType, attrs);
+      inferStructElementType<StructExtractOp>(emitError, structType, attrs);
   if (succeeded(type))
     types.push_back(ParamRefType::get(*type));
   return type;
 }
 
-void StructGetOp::build(OpBuilder &b, OperationState &state, Value container,
-                        int64_t index) {
+void StructExtractOp::build(OpBuilder &b, OperationState &state,
+                            Value container, int64_t index) {
   return build(b, state, container, b.getIndexAttr(index));
 }
 
@@ -312,7 +312,7 @@ LogicalResult StructGEPOp::inferReturnTypes(
     return emitError("expected pointer operand");
   auto structType = dyn_cast<StructType>(pointerType.getResolvedElementType());
   FailureOr<TypedAttr> type =
-      inferStructElementType<StructGetOp>(emitError, structType, attrs);
+      inferStructElementType<StructExtractOp>(emitError, structType, attrs);
   if (succeeded(type))
     types.push_back(PointerType::get(*type));
   return type;

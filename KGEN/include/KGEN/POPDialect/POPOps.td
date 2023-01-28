@@ -1097,25 +1097,25 @@ def POP_StructConstructOp : POPOp<"struct.construct", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
-// StructGetOp
+// StructExtractOp
 //===----------------------------------------------------------------------===//
 
-def POP_StructGetOp : POPOp<"struct.get", [Pure,
+def POP_StructExtractOp : POPOp<"struct.extract", [Pure,
     DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "struct extract value";
   let description = [{
-    The `pop.struct.get` operation gets the struct element at the given
+    The `pop.struct.extract` operation gets the struct element at the given
     index from the provided struct.
 
     Example:
 
     ```mlir
     // Extract the !pop.scalar<f32> at index 0.
-    %0 = pop.struct.get %struct[0]
+    %0 = pop.struct.extract %struct[0]
       : !pop.struct<scalar<f32>, scalar<f64>>
 
     // Extract the !pop.scalar<f64> at index 1.
-    %1 = pop.struct.get %struct[1]
+    %1 = pop.struct.extract %struct[1]
       : !pop.struct<scalar<f32>, scalar<f64>>
     ```
   }];

@@ -35,14 +35,14 @@ kgen.func @struct_insert_one(%a: !pop.struct<f32>, %b: f32) -> !pop.struct<f32> 
 // CHECK-LABEL: @struct_extract
 kgen.func @struct_extract(%a: !pop.struct<f32, f32>) -> f32 {
   // CHECK: llvm.extractvalue %{{.*}}[0]
-  %0 = pop.struct.get %a[0] : !pop.struct<f32, f32>
+  %0 = pop.struct.extract %a[0] : !pop.struct<f32, f32>
   kgen.return %0 : f32
 }
 
 // CHECK-LABEL: @struct_extract_one
 kgen.func @struct_extract_one(%a: !pop.struct<f32>) -> f32 {
   // CHECK: unrealized_conversion_cast %arg0 : !pop.struct<f32> to f32
-  %0 = pop.struct.get %a[0] : !pop.struct<f32>
+  %0 = pop.struct.extract %a[0] : !pop.struct<f32>
   kgen.return %0 : f32
 }
 
