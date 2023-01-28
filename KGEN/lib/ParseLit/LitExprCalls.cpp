@@ -1096,9 +1096,7 @@ AnyValue CallableValue::debugInlineFunctionCall(
   auto &block = *funcOp.getBody();
 
   // Perform parameter substitution if there are input parameters.
-  ParameterEvaluator paramEvaluator;
-  for (auto paramBind : inputParams)
-    paramEvaluator.setParameterValue(paramBind.getName(), paramBind.getValue());
+  ParameterEvaluator paramEvaluator(inputParams);
 
   // Keep track of a mapping from the arguments (and interior results of
   // operations) to their representation.

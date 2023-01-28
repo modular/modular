@@ -447,13 +447,6 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
 // StructCreateOp
 //===----------------------------------------------------------------------===//
 
-static ParameterEvaluator getEvaluatorForBoundStructType(DeclRefType refType) {
-  ParameterEvaluator evaluator;
-  for (ParamBindAttr bind : refType.getParamValues())
-    evaluator.setParameterValue(bind.getName(), bind.getValue());
-  return evaluator;
-}
-
 /// Lookup the declaration for the struct. When checking field types, we can't
 /// directly compare operation types to the struct field types because they are
 /// parameterized under different domains. We have to rebind them.
@@ -472,7 +465,7 @@ LogicalResult
 StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Verify the types of the fields in the operands match those in the
   // struct declaration.
-  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(getType());
+  ParameterEvaluator evaluator(getType().getParamValues());
   StructDeclOp structDecl = lookupStructDecl(symbolTable, *this, getType());
   auto fields = structDecl.getFieldDecls();
   unsigned numFields = std::distance(fields.begin(), fields.end());
@@ -557,7 +550,7 @@ OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
 
 LogicalResult
 StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(getType());
+  ParameterEvaluator evaluator(getType().getParamValues());
   StructDeclOp structDecl = lookupStructDecl(symbolTable, *this, getType());
 
   for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
@@ -597,7 +590,7 @@ OpFoldResult StructInsertOp::fold(FoldAdaptor adaptor) {
 static LogicalResult
 verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
                          DeclRefType ref, StringAttr fieldName, Type type) {
-  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(ref);
+  ParameterEvaluator evaluator(ref.getParamValues());
   StructDeclOp structDecl = lookupStructDecl(symbolTable, op, ref);
 
   for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
@@ -624,7 +617,7 @@ StructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 void StructExtractOp::build(OpBuilder &builder, OperationState &result,
                             Value structBase, StructFieldOp field) {
   auto structType = cast<DeclRefType>(structBase.getType());
-  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(structType);
+  ParameterEvaluator evaluator(structType.getParamValues());
   build(builder, result, evaluator.getReboundType(field.getType()),
         field.getNameAttr(), structBase);
 }
@@ -685,7 +678,7 @@ void StructGEPOp::build(OpBuilder &builder, OperationState &result,
   auto structType =
       cast<DeclRefType>(cast<TypeConstantAttr>(refExpr).getValue());
 
-  ParameterEvaluator evaluator = getEvaluatorForBoundStructType(structType);
+  ParameterEvaluator evaluator(structType.getParamValues());
   build(builder, result,
         POP::PointerType::get(evaluator.getReboundType(field.getType())),
         field.getNameAttr(), structBasePtr);

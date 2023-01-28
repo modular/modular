@@ -79,10 +79,7 @@ POP::StructType StructOperationLowerer::substituteStructRef(DeclRefType ref) {
   assert(it != structDecls.fields.end());
 
   // Substitute parameters into the field types.
-  ParameterEvaluator evaluator;
-  for (ParamBindAttr bind : ref.getParamValues())
-    evaluator.setParameterValue(bind.getName(), bind.getValue());
-
+  ParameterEvaluator evaluator(ref.getParamValues());
   SmallVector<Type> elementTypes;
   for (Type type : llvm::make_second_range(it->second))
     elementTypes.push_back(evaluator.getReboundType(type));
@@ -96,9 +93,7 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
     return {};
 
   // Substitute parameters into the field types.
-  ParameterEvaluator evaluator;
-  for (ParamBindAttr bind : ref.getParamValues())
-    evaluator.setParameterValue(bind.getName(), bind.getValue());
+  ParameterEvaluator evaluator(ref.getParamValues());
 
   SmallVector<DebugInfo::DIMemberType> elementTypes;
   for (auto [name, type] : it->second) {

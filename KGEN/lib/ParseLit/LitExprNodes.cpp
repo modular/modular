@@ -1272,11 +1272,6 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     return {};
   }
 
-  // Perform parameter substitution if there are input parameters.
-  ParameterEvaluator paramEvaluator;
-  for (auto paramBind : initType.getParamBindings())
-    paramEvaluator.setParameterValue(paramBind.getName(), paramBind.getValue());
-
   // While we use general dictionary syntax, the keys are syntactically
   // limited to being keywords.  The values may be arbitrary RValues
   // though, and are emitted in lexical order.
@@ -1321,6 +1316,9 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     emitter.emitError(getLoc(), "TODO: Don't have #lit.struct.attr yet");
     return {};
   }
+
+  // Perform parameter substitution if there are input parameters.
+  ParameterEvaluator paramEvaluator(initType.getParamBindings());
 
   SmallVector<StringAttr> fieldNames;
   SmallVector<Value> fieldValues;
