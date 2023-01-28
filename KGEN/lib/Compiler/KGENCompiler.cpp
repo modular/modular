@@ -37,8 +37,8 @@ void KGEN::elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
   // Only outline closures just before elaboration - they aren't really
   // necessary until elaboration happens.
   pm.addPass(createOutlineClosures());
-  pm.addPass(createElaborateGenerators(runtime, /*oldImpl=*/true, includedFiles,
-                                       elaborateOptions));
+  pm.addPass(createElaborateGenerators(runtime, /*oldImpl=*/false,
+                                       includedFiles, elaborateOptions));
   // Run the inliner and cleanup the compiler globals.
   pm.addPass(createForceInline());
   pm.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
