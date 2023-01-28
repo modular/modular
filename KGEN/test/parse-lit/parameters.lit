@@ -142,6 +142,12 @@ struct Pair[dt: DType]:
 
 # CHECK: }
 
+# CHECK: useParameterizedField
+fn useParameterizedField[x: Pair[DType.f32]]():
+  # CHECK: kgen.param.declare y:
+  alias y : OurSIMD[42, DType.f32] = x.a
+
+
 # CHECK-LABEL: lit.func @"makePair
 fn makePair(a: OurSIMD[42, DType.f32], b: Int) -> Pair[DType.f32]:
   # CHECK: %0 = lit.struct.create(a=%a, b=%b)
