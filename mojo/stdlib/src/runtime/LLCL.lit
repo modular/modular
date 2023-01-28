@@ -9,6 +9,7 @@ from DType import DType
 from Error import Error
 from Int import Int
 from Pointer import Pointer
+from StringRef import StringRef
 
 alias typename = __mlir_type.`!kgen.mlirtype`
 
@@ -140,13 +141,23 @@ struct Runtime:
 
     fn __new__(numThreads: Int) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads."""
-        let numThreadsI8 = __mlir_op.`pop.cast`[
-            _type : __mlir_type.`!pop.scalar<si8>`
-        ](numThreads.value)
         return __mlir_op.`pop.external_call`[
             _type : [__mlir_type.i8],
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_CreateRuntime`,
-        ](numThreadsI8)
+        ](numThreads)
+
+    fn __new__(numThreads: Int, profileFilename: StringRef) -> Runtime:
+        """Construct an LLCL Runtime with the specified number of threads
+        that writes tracing events to profileFilename.
+        """
+        return __mlir_op.`pop.external_call`[
+            _type : [__mlir_type.i8],
+            func : __mlir_attr.`@KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile`,
+        ](
+            numThreads,
+            profileFilename.data.address,
+            profileFilename.length.value,
+        )
 
     fn __new__(compact_ptr: __mlir_type.i8) -> Runtime:
         return Runtime {_id: compact_ptr}
