@@ -91,10 +91,6 @@ struct PointerLikeTypeTraits<M::KGEN::ParamBindAttr>
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN {
-/// Return the `paramDecls` array of ParamDeclAttr values if the specified
-/// operation has it, or an empty array otherwise.
-ArrayRef<ParamDeclAttr> getParamDecls(Operation *op);
-
 /// Emit an MLIR operation call in a parameter context.
 TypedAttr emitMLIROperationCall(
     StringRef opName,

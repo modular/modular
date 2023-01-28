@@ -1529,7 +1529,7 @@ static void verifyNoDebugInline(LIT::FuncOp funcOp, LitSharedState &shared) {
       return reject("indirect function calls");
     if (isa<TryRaiseOp, RaiseOp, HLCF::ControlFlowNode>(op))
       return reject("control flow");
-    if (!KGEN::getParamDecls(&op).empty())
+    if (isa<ParamDeclareOp>(op))
       return reject("parameter declarations");
     if (op.getNumRegions())
       return reject("operations with regions");
