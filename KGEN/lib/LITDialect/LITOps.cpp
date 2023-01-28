@@ -618,8 +618,8 @@ void StructExtractOp::build(OpBuilder &builder, OperationState &result,
                             Value structBase, StructFieldOp field) {
   auto structType = cast<DeclRefType>(structBase.getType());
   ParameterEvaluator evaluator(structType.getParamValues());
-  build(builder, result, evaluator.getReboundType(field.getType()),
-        field.getNameAttr(), structBase);
+  build(builder, result, evaluator.getReboundType(field.getType()), structBase,
+        field.getNameAttr());
 }
 
 OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
