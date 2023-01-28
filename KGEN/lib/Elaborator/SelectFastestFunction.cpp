@@ -31,9 +31,8 @@ produceObjectFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
         {e.getSymNameAttr(), StringAttr::get(e.getContext(), aliasName)});
   }
 
-  auto compilerOr =
-      ObjectCompiler::create(runtime, ".kgen_cache", symtab,
-                             std::move(exportedSymbols), CompilationOptions());
+  auto compilerOr = ObjectCompiler::create(
+      runtime, ".kgen_cache", symtab, exportedSymbols, CompilationOptions());
   if (failed(compilerOr))
     return compilerOr.takeError();
   auto compiler = std::make_unique<ObjectCompiler>(std::move(*compilerOr));
