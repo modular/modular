@@ -278,11 +278,11 @@ kgen.generator @bad<barf>() implements @itf {
 
 kgen.generator.interface @take_and_return<p1 -> p2>()
 
-// expected-error @+1 {{invalid cyclic reference between operations defining and using parameters}}
+// expected-error @below {{cyclic reference between expressions defining and using parameters}}
 kgen.generator @self_cyclic() {
   // Uses r1 and defines r1
+  // expected-note @below {{parameter "r1" is defined here, which references itself}}
   kgen.call @take_and_return<p1 = r1 -> r1 = p2>() : () -> ()
-  // expected-note @-1 {{this operation uses parameter "r1", which is defined by itself}}
   kgen.return
 }
 
@@ -290,24 +290,24 @@ kgen.generator @self_cyclic() {
 
 kgen.generator.interface @take_and_return<p1 -> r1>()
 
-// expected-error @+1 {{invalid cyclic reference between operations defining and using parameters}}
+// expected-error @below {{cyclic reference between expressions defining and using parameters}}
 kgen.generator @mutually_recursive() {
   // Uses r2 and defines r1
+  // expected-note @below {{parameter "r1" is defined here, which references the first expression}}
   kgen.call @take_and_return<p1 = r2 -> r1 = r1>() : () -> ()
-  // expected-note @-1 {{this operation uses parameter "r2", which is defined by the first operation}}
 
   // Uses r1 and defines r2
+  // expected-note @below {{parameter "r2" is defined here, which references the expression:}}
   kgen.call @take_and_return<p1 = r1 -> r2 = r1>() : () -> ()
-  // expected-note @-1 {{this operation uses parameter "r1", which is defined by:}}
 
   kgen.return
 }
 
 // -----
 
-// expected-error @below {{invalid cyclic reference between operations defining and using parameters}}
+// expected-error @below {{cyclic reference between expressions defining and using parameters}}
 kgen.generator @use_itself() {
-  // expected-note @below {{this operation uses parameter "F", which is defined by itself}}
+  // expected-note @below {{parameter "F" is defined here, which references itself}}
   kgen.param.declare.region F = (){
     kgen.call_param[() -> (): F]()
     kgen.return
@@ -317,14 +317,14 @@ kgen.generator @use_itself() {
 
 // -----
 
-// expected-error @below {{invalid cyclic reference between operations defining and using parameters}}
+// expected-error @below {{cyclic reference between expressions defining and using parameters}}
 kgen.generator @region_cycle() {
-  // expected-note @below {{this operation uses parameter "N", which is defined by the first operation}}
+  // expected-note @below {{parameter "F" is defined here, which references the first expression}}
   kgen.param.declare.region F = () -> index {
     %0 = kgen.param.constant = <N>
     kgen.return %0 : index
   }
-  // expected-note @below {{this operation uses parameter "F", which is defined by:}}
+  // expected-note @below {{parameter "N" is defined here, which references the expression:}}
   kgen.param.declare N = <apply(:() -> index F)>
   kgen.return
 }

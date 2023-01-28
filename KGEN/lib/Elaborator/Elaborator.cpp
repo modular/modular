@@ -291,7 +291,7 @@ namespace {
 class ParameterRewriter {
 public:
   ParameterRewriter(ElaboratorImpl &elaborator, FuncOp func,
-                    EvalContext &evalCtx, SmallVector<Operation *> opsToRewrite,
+                    EvalContext &evalCtx, std::vector<Operation *> opsToRewrite,
                     size_t expansionDepth)
       : elaborator(elaborator),
         sourceModule(
@@ -430,7 +430,7 @@ private:
   /// These are the commands that still need to get performed before this func
   /// has been fully evaluated.  These are mostly operations that need to be
   /// rewritten.
-  SmallVector<Operation *> opWorklist;
+  std::vector<Operation *> opWorklist;
 
   /// This is a counter that gives each declared region parameter a unique
   /// number (and therefore, unique name).
@@ -478,7 +478,13 @@ LogicalResult ParameterRewriter::rewriteOps(
   // be created and known where to pick up from.
   while (!opWorklist.empty()) {
     // Most commands in the worklist are operations that need to be rewritten.
-    Operation *op = opWorklist.pop_back_val();
+    Operation *op = opWorklist.back();
+    opWorklist.pop_back();
+
+    // Substitute parameters in any locations.
+    if (failed(processLocation(op)))
+      return failure();
+
     LogicalResult result = success();
     // Process an operation that needs to be rewritten/lowered based on the
     // context of the parameter values we know are defined.
@@ -1028,19 +1034,6 @@ LogicalResult ParameterRewriter::processCallParamOp(
 /// Unknown operations are allowed to use types and attributes with parameter
 /// references.  Substitute in concrete values for their references.
 LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
-  // We can rewrite generic references and /uses/ of parameters, but we don't
-  // know how to calculate the new value for a defined parameter. If there is a
-  // reason to allow open extension of operations that define parameters, we
-  // could genericize this into an op interface.
-  if (!isa<DeclInterface>(op)) {
-    bool hasDecls = false;
-    op->getAttrDictionary().walkSubAttrs(
-        [&](Attribute attr) { hasDecls |= isa<ParamDeclAttr>(attr); });
-    if (hasDecls)
-      return error(op->getLoc(),
-                   "unknown parameter-defining operator in elaboration");
-  }
-
   // Scan all the attributes and types to look for uses of parameters.  We let
   // the walker scan the region hierarchy.
   SmallVector<NamedAttribute> newAttrs;
@@ -1056,9 +1049,6 @@ LogicalResult ParameterRewriter::processGenericOp(Operation *op) {
   }
   if (changedAttrs)
     op->setAttrs(newAttrs);
-
-  if (failed(processLocation(op)))
-    return failure();
 
   // Check the types of results to find any parameters embedded in their
   // types.  We don't have to check operands because they are always checked
@@ -1183,24 +1173,30 @@ ElaboratorImpl::specializeFunc(FuncOp func, ModuleOp sourceModule,
   });
   // Get a partial ordering of parameter definitions and uses that is listed
   // "top down" in our evaluation order.
-  ParameterDeclsAndUses uses;
+  ParameterUseDefGraph uses(func);
   for (auto [name, value] : evalCtx.evaluator.getParameterValues()) {
-    uses.decls.try_emplace(
-        name, std::make_pair(
-                  func->getParentOp(),
-                  ParamDeclAttr::get(name, cast<TypedAttr>(value).getType())));
+    uses.decls.try_emplace(name,
+                           ParamDeclaration{cast<TypedAttr>(value).getType(),
+                                            func->getParentOp()});
   }
-  uses.calculate(func);
+  uses.calculate();
 
   // Rewrite all the parameter-using ops in this scope only. We are going to use
   // opsToRewrite as a worklist, so reverse it for efficient pop_back.
-  SmallVector<Operation *> opsToRewrite;
-  opsToRewrite.reserve(uses.constExprOps.size() +
-                       uses.usersAndDeclarers.size());
-  for (auto &[op, _] : llvm::reverse(uses.usersAndDeclarers))
-    opsToRewrite.push_back(op);
-  // Rewrite ops with only constant parameter expressions too.
-  llvm::append_range(opsToRewrite, uses.constExprOps);
+  // FIXME: The elaboratod does not correctly handle the new parameter use-def
+  // graph.
+  std::vector<Operation *> opsToRewrite;
+  opsToRewrite.reserve(uses.params.size() + uses.paramOps.size());
+  llvm::append_range(opsToRewrite, llvm::reverse(uses.paramOps));
+  llvm::SetVector<Operation *, SmallVector<Operation *, 8>,
+                  SmallPtrSet<Operation *, 8>>
+      defOps;
+  for (StringAttr param : llvm::reverse(uses.params)) {
+    auto it = uses.defs.find(param);
+    assert(it != uses.defs.end());
+    defOps.insert(it->second.defOp);
+  }
+  opsToRewrite.insert(opsToRewrite.end(), defOps.begin(), defOps.end());
 
   // Start by rewriting this func. Use `unique_ptr` for the stack to prevent
   // invalidation.

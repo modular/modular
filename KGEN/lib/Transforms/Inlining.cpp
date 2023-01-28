@@ -26,16 +26,15 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
   auto parent = call->getParentOfType<GeneratorOp>();
   assert(parent && "expected call to be inlined to be inside a generator");
   // Compute parameter uses from the top-level.
-  ParameterDeclsAndUses parentParams, calleeParams;
-  DenseMap<DeclInterface, ParameterDeclsAndUses> parentScopes =
-      parentParams.calculate(parent);
-  DenseMap<DeclInterface, ParameterDeclsAndUses> calleeScopes =
-      calleeParams.calculate(callee);
+  ParameterUseDefGraph parentParams(parent), calleeParams(callee);
+  parentParams.calculate();
+  calleeParams.calculate();
 
   // Get the parameters in-scope at the callsite.
   auto callDecl = call->getParentOfType<DeclInterface>();
-  ParameterDeclsAndUses &callScope =
-      callDecl == parent ? parentParams : parentScopes.find(callDecl)->second;
+  ParameterUseDefGraph &callScope =
+      callDecl == parent ? parentParams
+                         : parentParams.nestedScopes.find(callDecl)->second;
 
   // Wrap the callee in a loop with a unique label.
   StringSet<> takenLabels;
@@ -102,16 +101,24 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
     return std::make_pair(opExpr, WalkResult::skip());
   });
   auto paramDeclsAttrName = b.getStringAttr("paramDecls");
-  for (auto &[user, uses] : calleeParams.usersAndDeclarers) {
+  for (Operation *user : calleeParams.paramOps) {
     // Skip the parent decl. It's handled after.
     if (user == callee)
       continue;
     Operation *cloned = bv.lookup(user);
     replacer.replaceElementsIn(cloned, /*replaceAttrs=*/true,
                                /*replaceLocs=*/true, /*replaceTypes=*/true);
+  }
+  for (auto &[name, decl] : calleeParams.decls) {
+    // Skip the parent decl. It's handled after.
+    if (decl.declOp == callee)
+      continue;
+    Operation *cloned = bv.lookup(decl.declOp);
+    replacer.replaceElementsIn(cloned, /*replaceAttrs=*/true,
+                               /*replaceLocs=*/true, /*replaceTypes=*/true);
     // Rename declarations.
-    if (auto paramDecls =
-            user->getAttrOfType<ParamDeclArrayAttr>(paramDeclsAttrName)) {
+    if (auto paramDecls = decl.declOp->getAttrOfType<ParamDeclArrayAttr>(
+            paramDeclsAttrName)) {
       SmallVector<ParamDeclAttr> newDecls;
       for (ParamDeclAttr decl : paramDecls) {
         if (auto it = mangledDecls.find(decl.getName());
@@ -151,8 +158,9 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
 
     // Determine which decls are captured from above and map them from their
     // mangled declaration.
-    ParameterDeclsAndUses &nestedUses =
-        calleeScopes.find(cast<DeclInterface>(*nestedScope))->second;
+    ParameterUseDefGraph &nestedUses =
+        calleeParams.nestedScopes.find(cast<DeclInterface>(*nestedScope))
+            ->second;
     for (ParamDeclRefAttr nestedUse : nestedUses.usesFromAbove) {
       auto it = mangledDecls.find(nestedUse.getName());
       if (it == mangledDecls.end())

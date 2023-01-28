@@ -46,9 +46,7 @@ static SymbolConstantAttr materializeOperation(Location loc,
                        opExpr.getType().getValueResults(),
                        opExpr.getAttrs().getValue());
   for (ParamDeclAttr param : opExpr.getType().getInputParams())
-    state.attributes.set(
-        param.getName(),
-        ParamDeclRefAttr::get(param.getName(), param.getType()));
+    state.attributes.set(param.getName(), ParamDeclRefAttr::get(param));
 
   Operation *op = b.create(state);
   b.create<ReturnOp>(ArrayRef<TypedAttr>(), op->getResults());

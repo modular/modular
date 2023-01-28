@@ -52,8 +52,8 @@ void OutlineClosuresPass::runOnOperation() {
   unsigned counter = 0, varCounter = 0;
   for (auto generator : theModule.getOps<GeneratorOp>()) {
     // Calculate the parameter decls and uses for the region decl's parent.
-    ParameterDeclsAndUses uses;
-    auto subregions = uses.calculate(generator);
+    ParameterUseDefGraph uses(generator);
+    uses.calculate();
 
     // We'll use this a lot here - pull it out into a little lambda.
     auto getUniqueName = [&](const Twine &suffix) {
@@ -108,8 +108,8 @@ void OutlineClosuresPass::runOnOperation() {
       // Collect any parameters used from above that we need to capture for the
       // lifted generator.
       llvm::SetVector<ParamDeclAttr> necessaryDecls;
-      auto regionDeclUses = subregions.find(body);
-      assert(regionDeclUses != subregions.end());
+      auto regionDeclUses = uses.nestedScopes.find(body);
+      assert(regionDeclUses != uses.nestedScopes.end());
       DenseMap<ParamDeclAttr, TypedAttr> parameterCaptures;
       for (ParamDeclRefAttr useFromAbove :
            regionDeclUses->getSecond().usesFromAbove) {
@@ -274,9 +274,8 @@ void OutlineClosuresPass::runOnOperation() {
       // a ref.
       SmallVector<ParamBindAttr> symbolBindings;
       for (ParamDeclAttr decl : liftedWrapper.getInputParamDecls()) {
-        symbolBindings.push_back(ParamBindAttr::get(
-            decl.getName(),
-            ParamDeclRefAttr::get(decl.getName(), decl.getType())));
+        symbolBindings.push_back(
+            ParamBindAttr::get(decl.getName(), ParamDeclRefAttr::get(decl)));
       }
       LLVM_DEBUG(llvm::dbgs() << "Bindings: [\n\t";
                  llvm::interleave(symbolBindings, llvm::dbgs(), ",\n\t");

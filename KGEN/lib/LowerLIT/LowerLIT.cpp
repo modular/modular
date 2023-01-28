@@ -445,7 +445,7 @@ checkInterfaceConformance(GeneratorOp gen, GeneratorInterfaceOp itf,
     // The call will need to passes on all the input parameters unmodified.
     SmallVector<ParamBindAttr> callInputParams;
     for (ParamDeclAttr inParam : gen.getInputParamDecls()) {
-      auto value = ParamDeclRefAttr::get(inParam.getName(), inParam.getType());
+      auto value = ParamDeclRefAttr::get(inParam);
       callInputParams.push_back(ParamBindAttr::get(inParam.getName(), value));
     }
 

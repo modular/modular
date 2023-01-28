@@ -99,7 +99,7 @@ ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
   for (auto decl : structOp.getInputParamDecls()) {
     // We're using the parameter from the type declaration scope in the
     // parameter binding list.
-    TypedAttr ref = ParamDeclRefAttr::get(decl.getName(), decl.getType());
+    TypedAttr ref = ParamDeclRefAttr::get(decl);
     parameters.push_back(ParamBindAttr::get(decl.getName(), ref));
   }
 
@@ -1230,7 +1230,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   if (auto structDecl = dyn_cast<StructDeclOp>(*decl.getParentDecl())) {
     auto parentLoc = decl.getParentDecl()->getLoc();
     for (auto param : structDecl.getInputParamDecls()) {
-      auto paramRef = ParamDeclRefAttr::get(param.getName(), param.getType());
+      auto paramRef = ParamDeclRefAttr::get(param);
       addFullyResolvedDecl(MValue(paramRef), param.getName(), parentLoc, &decl);
     }
   }

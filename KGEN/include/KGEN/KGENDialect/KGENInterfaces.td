@@ -189,8 +189,20 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
       Returns whether this call flavour is allowed to exist post-elaboration as
       a child of a `kgen.func` operation. If so, its callee's signature must
       have no input and output parameters.
-    }], "bool", "isAllowedInFunc", (ins), [{}], [{ return true; }]>
+    }], "bool", "isAllowedInFunc", (ins), [{}], [{ return true; }]>,
+    InterfaceMethod<[{
+      Return the declarations of the result parameters bound to the result
+      parameters of the callee.
+    }], "ArrayRef<ParamDeclAttr>", "getParamDecls", (ins), [{}],
+    [{ return {}; }]>
   ];
+
+  let extraSharedClassDeclaration = [{
+    /// Get the signature type of the callee.
+    SignatureType getCalleeType() {
+      return cast<SignatureType>(getCallee().getType());
+    }
+  }];
 
   let verify = [{ return impl::verifyCallOp($_op); }];
   let verifyWithRegions = 1;

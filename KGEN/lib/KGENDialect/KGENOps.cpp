@@ -89,11 +89,7 @@ void ParamDeclareOp::build(OpBuilder &builder, OperationState &result,
         builder.getAttr<ParamDeclArrayAttr>(decl), value);
 }
 
-ParamDeclAttr ParamDeclareOp::getParamDecl() {
-  assert(getParamDecls().size() == 1 &&
-         "ParamDeclareOp only allows a single parameter decl.");
-  return *getParamDecls().begin();
-}
+ParamDeclAttr ParamDeclareOp::getParamDecl() { return getParamDecls().front(); }
 
 void ParamDeclareOp::setParamDecl(ParamDeclAttr decl) {
   setParamDeclsAttr(ParamDeclArrayAttr::get(decl.getContext(), decl));
@@ -134,6 +130,10 @@ static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
   auto body = cast<RegionBodyOp>(region.front().front());
   body.print(p);
   p.printOptionalLocationSpecifier(body.getLoc());
+}
+
+ParamDeclAttr ParamDeclareRegionOp::getParamDecl() {
+  return getParamDecls().front();
 }
 
 //===----------------------------------------------------------------------===//
@@ -329,7 +329,7 @@ LogicalResult
 GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // See if the parameter definitions and uses within the generator are
   // structured correctly.
-  if (failed(ParameterDeclsAndUses().calculateAndVerify(*this, symbolTable)))
+  if (failed(ParameterUseDefGraph(*this).verify(symbolTable)))
     return failure();
 
   // If the generator is implementing a generator interface, check that they
@@ -387,8 +387,8 @@ void FuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // See if the parameter definitions and uses within the func are
   // structured correctly.
-  ParameterDeclsAndUses paramInfo;
-  if (failed(paramInfo.calculateAndVerify(*this, symbolTable)))
+  ParameterUseDefGraph graph(*this);
+  if (failed(graph.verify(symbolTable)))
     return failure();
 
   // In a kgen.func, parameters are allowed to be defined (e.g. by calls with
@@ -399,7 +399,7 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // allow-list of operations that can use parameters.  This could be useful if
   // we want something to be able to use the result parameters of a call or
   // something.  Until then, a blanket ban on parameter use is sufficient.
-  for (auto &[usingOp, uses] : paramInfo.usersAndDeclarers) {
+  for (auto &[usingOp, uses] : graph.opUses) {
     if (!uses.empty()) {
       auto diag = usingOp->emitError("invalid use of parameter ")
                   << uses[0].getName() << " in kgen.func";
@@ -503,7 +503,7 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // See if the parameter definitions and uses within the generator are
   // structured correctly.  These are only defined in the interface and used
   // in the argument list or constraints list.
-  if (failed(ParameterDeclsAndUses().calculateAndVerify(*this, symbolTable)))
+  if (failed(ParameterUseDefGraph(*this).verify(symbolTable)))
     return failure();
 
   // If an evaluator was specified, verify its signature.
