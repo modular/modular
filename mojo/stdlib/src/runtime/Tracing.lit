@@ -20,7 +20,8 @@ fn trace_range_push(name: StringRef, detail: StringRef):
     PROFILING_ON must be set to True otherwise this is a noop that will be
     folded away.
 
-    Currently DMODULAR_LLCL_MAX_PROFILING_LEVEL must also be > 1 in the cmake build.
+    The trace events will be written to the profiling file passed to the
+    LLCL Runtime ctor.
 
     Args:
         name: name of the trace event (will be copied).
@@ -30,10 +31,36 @@ fn trace_range_push(name: StringRef, detail: StringRef):
     ...
 
 
+@interface
+@always_inline
+fn trace_range_pop():
+    """Pop a trace event off a per-thread stack of traces.
+    Should be paired with calls to trace_range_push().
+
+    PROFILING_ON must be set to True otherwise this is a noop that will be
+    folded away.
+
+    The trace events will be written to the profiling file passed to the
+    LLCL Runtime ctor.
+    """
+    ...
+
+
 @implements(trace_range_push)
 @always_inline
-fn _trace_range_push(name: StringRef, detail: StringRef):
+fn _trace_range_push_wrapper(name: StringRef, detail: StringRef):
+    """wrapper needed so that _trace_range_push can be tested without modifying PROFILING_ON."""
     assert_param_bool[PROFILING_ON]()
+    _trace_range_push(name, detail)
+
+
+@always_inline
+fn _trace_range_push(name: StringRef, detail: StringRef):
+    """trace range is pushed regardless of value of PROFILING_ON.
+
+    trace_range_push() should be used instead if tracing needs to be conditionally
+    enabled.
+    """
     __mlir_op.`pop.external_call`[
         func : __mlir_attr.`@KGEN_CompilerRT_TimeTraceProfilerBegin`,
         _type:[],
@@ -51,24 +78,21 @@ fn _trace_range_push_noop(name: StringRef, detail: StringRef):
     assert_param_bool[not PROFILING_ON]
 
 
-@interface
-@always_inline
-fn trace_range_pop():
-    """Pop a trace event off a per-thread stack of traces.
-    Should be paired with calls to trace_range_push().
-
-    PROFILING_ON must be set to True otherwise this is a noop that will be
-    folded away.
-
-    Currently DMODULAR_LLCL_MAX_PROFILING_LEVEL must also be > 1 in the cmake build.
-    """
-    ...
-
-
 @implements(trace_range_pop)
 @always_inline
-fn _trace_range_pop():
+fn _trace_range_pop_wrapper():
+    """wrapper needed so that _trace_range_pop can be tested without modifying PROFILING_ON."""
     assert_param_bool[PROFILING_ON]()
+    _trace_range_pop()
+
+
+@always_inline
+fn _trace_range_pop():
+    """trace range is popped regardless of value of PROFILING_ON.
+
+    trace_range_pop() should be used instead if tracing needs to be conditionally
+    enabled.
+    """
     __mlir_op.`pop.external_call`[
         func : __mlir_attr.`@KGEN_CompilerRT_TimeTraceProfilerEnd`,
         _type:[],
