@@ -6,4 +6,4 @@ kgen.func @unhandled() -> i31 {
   kgen.return %0 : i31
 }
 
-kgen.export [@unhandled]
+kgen.export @unhandled

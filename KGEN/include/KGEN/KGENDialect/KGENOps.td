@@ -538,21 +538,29 @@ def KGEN_RebindOp : KGENOp<"rebind", [Pure]> {
 
 def KGEN_ExportOp : KGENOp<"export", [
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-  let summary = "Declare a list of exported symbols.";
+  let summary = "Declare an exported symbol.";
   let description = [{
-    The `kgen.export` operation specifies a list of exported symbols from a
-    given module. The list must not be empty.
+    The `kgen.export` operation specifies an exported symbol from a
+    given module. The provided alias name will be used as the actual
+    symbol name in the C header and object file generation.
 
     Example:
 
     ```mlir
-    kgen.export [@foo, @bar]
+    kgen.export @foo as @my_foo
+
+    // The two examples below are equivalent.
+    kgen.export @foo as @foo
+    kgen.export @foo
     ```
   }];
 
-  let arguments = (ins SymbolRefArrayAttr:$exports);
+  let arguments = (ins SymbolRefAttr:$exported, SymbolNameAttr:$alias);
   let results = (outs);
-  let assemblyFormat = "$exports attr-dict";
+  let assemblyFormat = [{
+      $exported custom<ExportOp>(ref($exported), $alias) attr-dict
+  }];
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

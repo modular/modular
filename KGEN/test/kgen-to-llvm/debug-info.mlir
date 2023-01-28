@@ -23,4 +23,4 @@ kgen.func @"kernel()"() {
 // CHECK: #[[SP1:.*]] = #debuginfo.subprogram<{{.*}} "kernel", linkageName = "kernel___c"
 // CHECK: #[[LOC]] = loc(fused<#[[SP1]]>[#{{.*}}])
 
-kgen.export [@"kernel()"]
+kgen.export @"kernel()"

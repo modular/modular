@@ -15,6 +15,7 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -756,24 +757,47 @@ OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
 // ExportOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  if (getExports().empty())
-    return emitOpError("exports must not be empty");
-
-  // Just ensure we're exporting symbols we can see.
-  auto module = KGENModule::from(*this, symbolTable);
-  for (auto e : getExports().getAsRange<SymbolRefAttr>()) {
-    auto func = module.lookup<FuncInterface>(e);
-    if (!func)
-      return emitOpError("could not find referenced symbol '") << e << "'";
-    if (func.isAlwaysInline()) {
-      return func.emitError(
-                     "function marked 'always_inline' cannot be exported")
-                 .attachNote(getLoc())
-             << "function exported here";
-    }
+static ParseResult parseExportOp(OpAsmParser &p, SymbolRefAttr &exported,
+                                 StringAttr &alias) {
+  if (p.parseOptionalKeyword("as")) {
+    alias = StringAttr::get(
+        p.getContext(),
+        makeCIdentifier(exported.getLeafReference().getValue()));
+    return success();
   }
+  if (p.parseSymbolName(alias))
+    return failure();
+  return success();
+}
 
+static void printExportOp(OpAsmPrinter &p, Operation *op,
+                          SymbolRefAttr exported, StringAttr alias) {
+  if (exported.getLeafReference().getValue() == alias)
+    return;
+  p << " as ";
+  p << alias;
+}
+
+LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+
+  // Just ensure we're exporting a symbol we can see.
+  auto module = KGENModule::from(*this, symbolTable);
+  SymbolRefAttr exported = getExported();
+  auto func = module.lookup<FuncInterface>(exported);
+  if (!func)
+    return emitOpError("could not find referenced symbol '") << exported << "'";
+  if (func.isAlwaysInline()) {
+    return func.emitError("function marked 'always_inline' cannot be exported")
+               .attachNote(getLoc())
+           << "function exported here";
+  }
+  return success();
+}
+
+LogicalResult ExportOp::verify() {
+  if (!isCIdentifier(getAlias()))
+    return emitError("The alias name is not a valid C identifier, allowed "
+                     "characters: [a-zA-Z0-9_]");
   return success();
 }
 

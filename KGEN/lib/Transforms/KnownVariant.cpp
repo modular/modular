@@ -168,8 +168,7 @@ void PruneImpossibleVariantsPass::runOnOperation() {
   // so the dead code analysis understands them correctly.
   SmallPtrSet<StringAttr, 4> exportedSymbols;
   for (auto e : getOperation().getOps<ExportOp>())
-    for (auto sym : e.getExports().getAsRange<FlatSymbolRefAttr>())
-      exportedSymbols.insert(sym.getAttr());
+    exportedSymbols.insert(cast<FlatSymbolRefAttr>(e.getExported()).getAttr());
 
   std::vector<FuncOp> funcs;
   for (auto func : getOperation().getOps<FuncOp>()) {

@@ -15,7 +15,7 @@ kgen.func @e2e_lower(%a: !pop.simd<1, f32>, %b: !pop.simd<1, f32>, %cond: i1) ->
   kgen.return %r : !pop.simd<1, f32>
 }
 
-kgen.export [@exported]
+kgen.export @exported
 // CHECK: llvm.func @exported
 kgen.generator @exported() {
   kgen.return

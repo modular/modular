@@ -29,7 +29,8 @@ kgen.func @add_things() -> f32 {
   kgen.return %1 : f32
 }
 
-kgen.export[@simple_partial_apply, @add_things]
+kgen.export @simple_partial_apply
+kgen.export @add_things
 
 // CHECK: --- 'simple_partial_apply' returned 1.2{{[0-9]+}}
 // CHECK: --- 'add_things' returned 3.0{{[0-9]+}}

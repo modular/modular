@@ -1828,10 +1828,9 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
 
   DenseSet<GeneratorOp> exports;
   for (auto e : primary.getOps<ExportOp>())
-    for (auto sym : e.getExports().getAsRange<SymbolRefAttr>())
-      if (auto gen = analysis.getTopLevelSymbolTable().lookup<GeneratorOp>(
-              sym.getRootReference()))
-        exports.insert(gen);
+    if (auto gen = analysis.getTopLevelSymbolTable().lookup<GeneratorOp>(
+            cast<FlatSymbolRefAttr>(e.getExported()).getValue()))
+      exports.insert(gen);
 
   auto emptyInputParamKey = ArrayAttr::get(primary.getContext(), {});
   {

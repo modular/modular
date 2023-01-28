@@ -30,9 +30,9 @@ kgen.func @void() {
   kgen.return
 }
 
-kgen.export [@exec_exp, @void]
+kgen.export @exec_exp
+kgen.export @void
 
 // COM: exec_exp computes exp(1.0)
 // CHECK: --- 'exec_exp' returned 2.7{{[0-9]+}}
 // CHECK: --- 'void' finished
-

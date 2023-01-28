@@ -21,6 +21,9 @@ namespace M::KGEN {
 class FuncInterface;
 class GeneratorInterfaceOp;
 
+/// Given a module operation, return its exported symbols and aliases.
+DenseMap<StringAttr, StringAttr> getExportedSymbols(ModuleOp module);
+
 /// Return the string form for an attribute value that is printed in a <>
 /// context in the .mlir file.
 std::string getParamAsString(Attribute value);

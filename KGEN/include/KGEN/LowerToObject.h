@@ -31,10 +31,10 @@ public:
                                         const CompilationOptions &options);
 
   /// Construct an ObjectCompiler with a specific set of exports.
-  static ErrorOr<ObjectCompiler> create(LLCL::Runtime &runtime,
-                                        StringRef basePath, SymbolTable &symtab,
-                                        DenseSet<StringAttr> exports,
-                                        const CompilationOptions &options);
+  static ErrorOr<ObjectCompiler>
+  create(LLCL::Runtime &runtime, StringRef basePath, SymbolTable &symtab,
+         DenseMap<StringAttr, StringAttr> exports,
+         const CompilationOptions &options);
 
   /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on
   /// success, and nullptr on failure.
@@ -63,16 +63,10 @@ public:
   /// Get access to the module held by the compiler.
   ModuleOp getModule() { return module; }
 
-  /// Returns true if the symbol is exported with a `kgen.export` op in this
-  /// module. This is the equivalent of a context-sensitive "public".
-  bool isSymbolExported(StringAttr symbol) {
-    return exportedSymbols.contains(symbol);
-  }
-
 private:
   /// Construct an ObjectCompiler with a specific set of exports.
   ObjectCompiler(LLCL::Runtime &runtime, SymbolTable &symtab,
-                 DenseSet<StringAttr> exports,
+                 DenseMap<StringAttr, StringAttr> exports,
                  LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
                  const CompilationOptions &options);
 
@@ -97,9 +91,9 @@ private:
   /// This is a symbol table we maintain for easy lookups.
   SymbolTable &symtab;
 
-  /// This is a list of exported symbol names so we don't constantly recompute
-  /// it.
-  DenseSet<StringAttr> exportedSymbols;
+  /// This is a list of exported symbol names and respective aliases so we
+  /// don't constantly recompute it.
+  DenseMap<StringAttr, StringAttr> exportedSymbols;
 
   /// The compilation options to use.
   CompilationOptions options;

@@ -6,6 +6,7 @@
 
 #include "KGEN/LowerToObject.h"
 #include "KGEN/CompilationOptions.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "LowerToObjectImpl.h"
 #include "Support/TempFile.h"
 #include "Support/TimeProfiler.h"
@@ -31,15 +32,6 @@ using namespace KGEN;
 // ObjectCompiler
 //===----------------------------------------------------------------------===//
 
-/// Given a module operation, return its exported symbols.
-static DenseSet<StringAttr> getExportedSymbols(ModuleOp module) {
-  DenseSet<StringAttr> exportedSymbols;
-  for (auto e : module.getOps<ExportOp>())
-    for (auto sym : e.getExports().getAsRange<FlatSymbolRefAttr>())
-      exportedSymbols.insert(sym.getAttr());
-  return exportedSymbols;
-}
-
 ErrorOr<ObjectCompiler>
 ObjectCompiler::create(LLCL::Runtime &runtime, StringRef basePath,
                        SymbolTable &symtab, const CompilationOptions &options) {
@@ -49,7 +41,8 @@ ObjectCompiler::create(LLCL::Runtime &runtime, StringRef basePath,
 
 ErrorOr<ObjectCompiler>
 ObjectCompiler::create(LLCL::Runtime &runtime, StringRef basePath,
-                       SymbolTable &symtab, DenseSet<StringAttr> exports,
+                       SymbolTable &symtab,
+                       DenseMap<StringAttr, StringAttr> exports,
                        const CompilationOptions &options) {
   auto transformCache = Cache::getDefaultBackendChain(
       runtime, (std::filesystem::path(basePath.str()) / "transform").string());
@@ -60,7 +53,8 @@ ObjectCompiler::create(LLCL::Runtime &runtime, StringRef basePath,
 }
 
 ObjectCompiler::ObjectCompiler(
-    LLCL::Runtime &runtime, SymbolTable &symtab, DenseSet<StringAttr> exports,
+    LLCL::Runtime &runtime, SymbolTable &symtab,
+    DenseMap<StringAttr, StringAttr> exports,
     LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
     const CompilationOptions &options)
     : transformCache(

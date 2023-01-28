@@ -28,7 +28,7 @@ kgen.func @exported() {
   kgen.return
 }
 
-kgen.export [@exported]
+kgen.export @exported
 
 // CHECK: @A
 kgen.func @A() {
@@ -42,4 +42,4 @@ kgen.func @B() {
   kgen.return
 }
 
-kgen.export [@A]
+kgen.export @A

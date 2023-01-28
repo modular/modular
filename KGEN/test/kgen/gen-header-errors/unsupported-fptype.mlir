@@ -7,4 +7,4 @@ kgen.func @kernel(%a: i24) -> i24 {
   kgen.return %a : i24
 }
 
-kgen.export [@kernel]
+kgen.export @kernel

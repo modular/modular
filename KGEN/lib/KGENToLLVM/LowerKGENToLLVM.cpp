@@ -9,6 +9,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -392,11 +393,12 @@ convertCallingConvention(Location loc, Block *body,
 /// Emit a wrapper for a function with the calling convention converted to C
 /// calling convention. The wrapper constructs the necessary structs and
 /// forwards them to the actual function.
-static void emitCWrapper(LLVM::LLVMFuncOp func, SymbolTable &symtab) {
+static void emitCWrapper(LLVM::LLVMFuncOp func, StringAttr symbolName,
+                         SymbolTable &symtab) {
   // Generate a unique wrapper name to use.
   unsigned counter = 0;
-  std::string wrapperName = getUniqueSymbolName(
-      makeCIdentifier(func.getName()) + "_c", symtab, counter);
+  std::string wrapperName =
+      getUniqueSymbolName((Twine(symbolName) + "_c").str(), symtab, counter);
 
   // Generate a new subprogram scope if necessary.
   Location loc = func.getLoc();
@@ -473,10 +475,8 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addLegalOp<mlir::UnrealizedConversionCastOp>();
 
   // Capture all the public symbols declared by kgen.export declarations.
-  SmallVector<StringAttr> publicSymbols;
-  for (auto e : theModule.getOps<ExportOp>())
-    for (auto sym : e.getExports().getAsRange<FlatSymbolRefAttr>())
-      publicSymbols.push_back(sym.getAttr());
+  DenseMap<StringAttr, StringAttr> publicSymbols =
+      getExportedSymbols(theModule);
 
   // Set LLVM lowering options.
   mlir::LowerToLLVMOptions options(&getContext());
@@ -500,11 +500,11 @@ void LowerKGENToLLVMPass::runOnOperation() {
     return signalPassFailure();
 
   // Set the linkage of symbols marked as public to external.
-  for (StringAttr sym : publicSymbols) {
+  for (auto [sym, alias] : publicSymbols) {
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(sym);
     func.setLinkage(LLVM::Linkage::External);
     // And emit a C wrapper for it.
-    emitCWrapper(func, symtab);
+    emitCWrapper(func, alias, symtab);
   }
 
   // Convert the debug info within the IR.

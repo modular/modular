@@ -48,13 +48,13 @@ lit.func @implementor() implements @module::@interface {
 
 // CHECK-NOT: lit.
 // CHECK: kgen.generator @"module::foo"()
-// CHECK: kgen.export [@"module::foo"]
+// CHECK: kgen.export @"module::foo"
 
 lit.file_module @module {
   lit.func @foo() {
     kgen.return
   }
-  kgen.export [@module::@foo]
+  kgen.export @module::@foo
 }
 
 // -----

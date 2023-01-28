@@ -1687,3 +1687,11 @@ KGEN::checkResultArgumentTypes(Operation *op, ArrayRef<TypedAttr> resultParams,
 
   return checkResultTypes(op, resultTypes);
 }
+
+DenseMap<StringAttr, StringAttr> KGEN::getExportedSymbols(ModuleOp module) {
+  DenseMap<StringAttr, StringAttr> exportedSymbols;
+  for (auto e : module.getOps<ExportOp>())
+    exportedSymbols.insert(
+        {cast<FlatSymbolRefAttr>(e.getExported()).getAttr(), e.getAliasAttr()});
+  return exportedSymbols;
+}

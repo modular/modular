@@ -14,4 +14,4 @@ kgen.generator @exp_f32(%arg0: f32) -> (f32, f32) {
   kgen.return %2, %2 : f32, f32
 }
 
-kgen.export [@exp_f32]
+kgen.export @exp_f32

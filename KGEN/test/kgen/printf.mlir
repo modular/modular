@@ -26,7 +26,7 @@ kgen.generator @test_print() {
   kgen.return
 }
 
-kgen.export [@test_print]
+kgen.export @test_print
 
 // CHECK: values:
 // CHECK-NEXT: buf[0] = 0

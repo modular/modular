@@ -117,17 +117,9 @@ OwningOpRef<ModuleOp> ObjectCompiler::produceStandaloneModule() {
   auto builder = OpBuilder::atBlockBegin(singleModule->getBody());
 
   SmallVector<FlatSymbolRefAttr> exportedSymbolVec;
-  for (auto exportedSym : exportedSymbols)
-    exportedSymbolVec.push_back(FlatSymbolRefAttr::get(exportedSym));
-
-  if (!exportedSymbolVec.empty()) {
-    builder.create<ExportOp>(
-        module->getLoc(),
-        builder.getArrayAttr(ArrayRef<Attribute>{exportedSymbolVec.begin(),
-                                                 exportedSymbolVec.end()}));
-  }
-
-  for (auto sym : exportedSymbols) {
+  for (auto [sym, alias] : exportedSymbols) {
+    builder.create<ExportOp>(module->getLoc(), FlatSymbolRefAttr::get(sym),
+                             alias);
     auto func = symtab.lookup<FuncOp>(sym);
     assert(func && "Unknown exported symbol");
 

@@ -23,12 +23,13 @@ kgen.generator @exp_f64(%arg0: f64) -> f64 {
   kgen.return %2 : f64
 }
 
-kgen.export [@exp_f32]
+kgen.export @exp_f32 as @my_exp_f32
 
 // COM: We have exp_f32 compute exp(1.0) for this test.
 // EXEC: --- 'exp_f32' returned 2.7{{[0-9]+}}
 
 // OBJ-LABEL: SYMBOL TABLE
-// OBJ-DAG: F {{.*}}exp
+// OBJ-DAG: F {{.*}}exp_f32
+// OBJ-DAG: F {{.*}}my_exp_f32_c
 
-// HDR-LABEL: extern float exp_f32_c(float);
+// HDR-LABEL: extern float my_exp_f32_c(float);

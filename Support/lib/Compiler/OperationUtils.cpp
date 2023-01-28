@@ -52,9 +52,21 @@ std::string M::getUniqueSymbolName(std::string baseName, SymbolTable &symtab,
 
 std::string M::makeCIdentifier(StringRef ident) {
   std::string res(ident.str());
+  if (!ident.empty() && !llvm::isAlnum(res[0]))
+    res[0] = 'x';
   for (char &c : res)
     // Only allow [0-9a-zA-Z_].
     if (!llvm::isAlnum(c) && c != '_')
       c = '_';
   return res;
+}
+
+bool M::isCIdentifier(StringRef ident) {
+  if (ident.empty() || !llvm::isAlnum(ident[0]))
+    return false;
+  for (char c : ident)
+    // Only allow [0-9a-zA-Z_].
+    if (!llvm::isAlnum(c) && c != '_')
+      return false;
+  return true;
 }
