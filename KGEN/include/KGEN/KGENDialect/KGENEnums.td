@@ -14,10 +14,9 @@ include "mlir/IR/EnumAttr.td"
 // POCAttr
 //===----------------------------------------------------------------------===//
 
-/// Parameter Expression Opcodes.
-let cppNamespace = "M::KGEN" in {
-
-/// This defines the Parameter Operator Code enum attribute.
+/// Parameter Expression Opcodes: This defines the Parameter Operator Code enum
+/// attribute.
+let cppNamespace = "M::KGEN" in
 def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   /// Fully associative variadic expressions.
   I32EnumAttrCase<"Add", 0, "add">,
@@ -60,7 +59,6 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"BindSignature", 23, "bind_signature">,
   I32EnumAttrCase<"Apply", 24, "apply">
 ]>;
-}
 
 //===----------------------------------------------------------------------===//
 // InputGenKindAttr
@@ -74,6 +72,21 @@ def KGEN_InputGenKindAttr : I32EnumAttr<"InputGenKind", "Input Generation Kind",
 ]> {
   let cppNamespace = "M::KGEN";
   let genSpecializedAttr = 0;
+}
+
+//===----------------------------------------------------------------------===//
+// AlwaysInlineLevelAttr
+//===----------------------------------------------------------------------===//
+
+/// This defines the Input Generation Kind enum attribute.
+def KGEN_AlwaysInlineLevelAttr : I32EnumAttr<"AlwaysInlineLevel",
+          "Whether and how to always_inline this function", [
+  I32EnumAttrCase<"Disabled", 0, "disabled">,
+  I32EnumAttrCase<"Enabled", 1, "enabled">,
+  I32EnumAttrCase<"EnabledNoDebug", 2, "enabled_nodebug">,
+]> {
+  let cppNamespace = "M::KGEN";
+  let genSpecializedAttr = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -99,8 +112,7 @@ def KGEN_ValueInputConvention : I8BitEnumAttr<"ValueInputConvention",
 def KGEN_FnEffects : I8BitEnumAttr<"FnEffects", "Function effects", [
   I8BitEnumAttrCaseNone<"None", "none">,
   I8BitEnumAttrCaseBit<"Throws", 0, "throws">,
-  I8BitEnumAttrCaseBit<"AlwaysInline", 1, "always_inline">,
-  I8BitEnumAttrCaseBit<"Async", 2, "async">,
+  I8BitEnumAttrCaseBit<"Async", 1, "async">,
 ]> {
   let cppNamespace = "M::KGEN";
 }

@@ -599,10 +599,10 @@ ParameterRewriter::processParamDeclareRegionOp(ParamDeclareRegionOp op) {
 
   // Create the generator and move the body over.
   OpBuilder b(op.getContext());
-  auto gen =
-      b.create<GeneratorOp>(op.getLoc(), symbolRef.getAttr(),
-                            TypeAttr::get(sig), body.getConstraintsAttr(),
-                            /*implements=*/FlatSymbolRefAttr());
+  auto gen = b.create<GeneratorOp>(
+      op.getLoc(), symbolRef.getAttr(), TypeAttr::get(sig),
+      body.getConstraintsAttr(),
+      /*implements=*/FlatSymbolRefAttr(), body.getAlwaysInlineLevelAttr());
   gen.getBodyRegion().takeBody(body.getBodyRegion());
   symtab.insert(gen, Block::iterator(elaboratedGenerator.func));
 
@@ -1280,7 +1280,8 @@ ElaboratorImpl::specializeGenerator(DeclAndInputParamsPair declAndInputParams,
       SignatureType::get(ParamDeclArrayAttr::get(generator.getContext(), {}),
                          generator.getResultParamsAttr(),
                          generator.getFunctionType(),
-                         generator.getConventions()));
+                         generator.getConventions()),
+      generator.getAlwaysInlineLevel());
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.

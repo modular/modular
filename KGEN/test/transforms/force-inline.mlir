@@ -7,7 +7,7 @@ kgen.func @inline_me.a() always_inline {
 
 kgen.func @inline_me.b() always_inline {
   "inline.b"() : () -> ()
-  kgen.call @inline_me.a() : () always_inline -> ()
+  kgen.call @inline_me.a() : () -> ()
   kgen.return
 }
 
@@ -15,17 +15,17 @@ kgen.func @inline_me.b() always_inline {
 kgen.func @top0() {
   // CHECK-NEXT: inline.a
   // CHECK-NOT: kgen.call
-  kgen.call @inline_me.a() : () always_inline -> ()
+  kgen.call @inline_me.a() : () -> ()
   // CHECK: label
   "label"() : () -> ()
   // CHECK-NEXT: inline.b
   // CHECK-NEXT: inline.a
   // CHECK-NOT: kgen.call
-  kgen.call @inline_me.b() : () always_inline -> ()
+  kgen.call @inline_me.b() : () -> ()
   kgen.return
 }
 
-kgen.func @has_arg(%arg0: index) always_inline -> index {
+kgen.func @has_arg(%arg0: index) -> index always_inline {
   "use"(%arg0) : (index) -> ()
   %0 = "new"() : () -> index
   kgen.return %0 : index
@@ -37,12 +37,12 @@ kgen.func @top1() -> index {
   // CHECK: "use"(%0)
   // CHECK-NOT: kgen.call
   // CHECK: %1 = "new"
-  %1 = kgen.call @has_arg(%0) : (index) always_inline -> index
+  %1 = kgen.call @has_arg(%0) : (index) -> index
   // CHECK: return %1
   kgen.return %1 : index
 }
 
-kgen.func @two_returns(%a: i1, %b: index, %c: index) always_inline -> index {
+kgen.func @two_returns(%a: i1, %b: index, %c: index) -> index always_inline {
   hlcf.if %a {
     hlcf.return %b : index
   } else {
@@ -57,7 +57,7 @@ kgen.func @top2() -> index {
   // CHECK: %1 = hlcf.loop
     // CHECK-NEXT: hlcf.if %0#0
       // CHECK-NEXT: hlcf.break "{{.*}}" %0#1
-  %1 = kgen.call @two_returns(%0#0, %0#1, %0#2) : (i1, index, index) always_inline -> index
+  %1 = kgen.call @two_returns(%0#0, %0#1, %0#2) : (i1, index, index) -> index
     // CHECK: hlcf.break "{{.*}}" %0#2
   // CHECK: return %1
   kgen.return %1 : index
@@ -77,7 +77,7 @@ kgen.func @inline_me.a() always_inline {
 kgen.func @top0() {
   // CHECK-NEXT: inline.a
   // CHECK-SAME: loc(#[[INLINED_LOC:.*]])
-  kgen.call @inline_me.a() : () always_inline -> ()
+  kgen.call @inline_me.a() : () -> ()
   kgen.return
 }
 

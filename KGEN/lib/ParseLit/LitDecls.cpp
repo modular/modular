@@ -1147,8 +1147,7 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
       else if (declRef->spelling == "raises")
         applyRaises(*declRef);
       else if (declRef->spelling == "always_inline")
-        funcOp.setSignature(
-            funcOp.getSignature().setFnEffect(FnEffects::AlwaysInline));
+        funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::Enabled);
       else if (declRef->spelling == "nodebug_inline")
         funcOp.setNoDebugInline(true);
       else

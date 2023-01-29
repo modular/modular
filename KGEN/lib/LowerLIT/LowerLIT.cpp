@@ -400,7 +400,8 @@ checkInterfaceConformance(GeneratorOp gen, GeneratorInterfaceOp itf,
                               // Take the signature from the interface.
                               itf.getSignatureAttr(),
                               // Take the constraints from the generator.
-                              gen.getConstraintsAttr(), implementsAttr);
+                              gen.getConstraintsAttr(), implementsAttr,
+                              gen.getAlwaysInlineLevelAttr());
     // The thunk implements the interface, not the original generator.
     gen.removeImplementsAttr();
 
@@ -641,9 +642,9 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
     implementsAttr = flattenSymbolRefAttr(fullImplementsAttr);
 
   // Directly lower since these operations are exactly identical right now.
-  auto result = b.create<GeneratorOp>(gen.getLoc(), gen.getSymNameAttr(),
-                                      gen.getSignatureAttr(),
-                                      gen.getConstraintsAttr(), implementsAttr);
+  auto result = b.create<GeneratorOp>(
+      gen.getLoc(), gen.getSymNameAttr(), gen.getSignatureAttr(),
+      gen.getConstraintsAttr(), implementsAttr, gen.getAlwaysInlineLevelAttr());
 
   // Move over the body.
   auto *bodyBlock = gen.getBody();

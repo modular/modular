@@ -921,11 +921,3 @@ kgen.func @no_return() {
   // expected-error @below {{block with no terminator}}
   kgen.param.declare A = <1>
 }
-
-// -----
-
-// expected-error @below {{specified always_inline, and so expected always_inline on this signature as well}}
-kgen.generator @bad_signature<fn: <>() always_inline -> ()>() {
-  kgen.call_param[fn: ()always_inline -> ()]() : () -> ()
-  kgen.return
-}

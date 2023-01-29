@@ -145,20 +145,20 @@ lit.struct.decl @parametrizedClosure_context<T: type> {
 }
 
 // CHECK-LABEL: @"parametrizedClosure_5,T=f32"
-kgen.generator @parametrizedClosure_5<T: type>(%arg0: !kgen.paramref<T>) always_inline -> !kgen.paramref<T> {
+kgen.generator @parametrizedClosure_5<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> always_inline {
   // CHECK-NEXT: kgen.return %arg0 : f32
   kgen.return %arg0 : !kgen.paramref<T>
 }
 
 
 // CHECK-LABEL: @"parametrizedClosure_wrapper,T=f32"
-kgen.generator @parametrizedClosure_wrapper<T: type>() always_inline -> !kgen.paramref<T> {
+kgen.generator @parametrizedClosure_wrapper<T: type>() -> !kgen.paramref<T> always_inline {
   // CHECK-NEXT: pop.compiler.global_load "parametrizedClosure_context_var_3" : !kgen.declref<@parametrizedClosure_context<T: type = f32>>
   %0 = pop.compiler.global_load "parametrizedClosure_context_var_3" : !kgen.declref<@parametrizedClosure_context<T: type = T>>
   // CHECK-NEXT: lit.struct.extract %0[field_0] : f32 from !kgen.declref<@parametrizedClosure_context<T: type = f32>>
   %1 = lit.struct.extract %0[field_0] : !kgen.paramref<T> from !kgen.declref<@parametrizedClosure_context<T: type = T>>
-  // CHECK-NEXT: kgen.call @"parametrizedClosure_5,T=f32"(%1) : (f32) always_inline -> f32
-  %2 = kgen.call @parametrizedClosure_5<T: type = T>(%1) : (!kgen.paramref<T>) always_inline -> !kgen.paramref<T>
+  // CHECK-NEXT: kgen.call @"parametrizedClosure_5,T=f32"(%1) : (f32) -> f32
+  %2 = kgen.call @parametrizedClosure_5<T: type = T>(%1) : (!kgen.paramref<T>) -> !kgen.paramref<T>
   // CHECK-NEXT: kgen.return
   kgen.return %2 : !kgen.paramref<T>
 }
@@ -169,9 +169,9 @@ kgen.generator @parametrizedClosure<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.
   %0 = lit.struct.create(field_0=%arg0) : (!kgen.paramref<T>) -> !kgen.declref<@parametrizedClosure_context<T: type = T>>
   // CHECK-NEXT: pop.compiler.global_store "parametrizedClosure_context_var_3", %0 : !kgen.declref<@parametrizedClosure_context<T: type = f32>>
   pop.compiler.global_store "parametrizedClosure_context_var_3", %0 : !kgen.declref<@parametrizedClosure_context<T: type = T>>
-  // CHECK-NEXT: kgen.call @"parametrizedClosure_wrapper,T=f32"() : () always_inline -> f32
-  kgen.param.declare Fn: <>() always_inline -> !kgen.paramref<T> = <@parametrizedClosure_wrapper<T: type = T>>
-  %1 = kgen.call_param[<>() always_inline -> !kgen.paramref<T>: Fn]()
+  // CHECK-NEXT: kgen.call @"parametrizedClosure_wrapper,T=f32"() : () -> f32
+  kgen.param.declare Fn: <>() -> !kgen.paramref<T> = <@parametrizedClosure_wrapper<T: type = T>>
+  %1 = kgen.call_param[<>() -> !kgen.paramref<T>: Fn]()
   // CHECK-NEXT: kgen.return
   kgen.return %1 : !kgen.paramref<T>
 }

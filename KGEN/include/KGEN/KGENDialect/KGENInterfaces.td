@@ -88,6 +88,10 @@ def FuncInterface : OpInterface<"FuncInterface"> {
     InterfaceMethod<[{
       Return the function's parameter and SSA value signature.
     }], "SignatureType", "getSignature", (ins)>,
+    InterfaceMethod<[{
+      Return whether the function should be always_inline'd, and whether it
+      should maintain debug info when inlined.
+    }], "AlwaysInlineLevel", "getAlwaysInlineLevel", (ins)>,
   ];
 
   let extraSharedClassDeclaration = [{
@@ -137,10 +141,6 @@ def FuncInterface : OpInterface<"FuncInterface"> {
     /// Return true if the function throws.
     bool isThrows() {
       return $_op.getSignature().isThrows();
-    }
-    /// Return true if the function is forcibly inlnied.
-    bool isAlwaysInline() {
-      return $_op.getSignature().isAlwaysInline();
     }
     /// Return true if the function is async.
     bool isAsync() {

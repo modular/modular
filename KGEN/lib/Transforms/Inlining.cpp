@@ -290,14 +290,16 @@ void ForceInlinePass::runOnOperation() {
 
   for (auto func : getOperation().getOps<FuncOp>()) {
     // Skip over functions that are force inlined. Start inlining from the tips.
-    if (func.isAlwaysInline())
+    if (func.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
       continue;
 
     // Collect all calls that inline in this function.
     struct EndStack {};
     SmallVector<SmartVariant<Operation *, EndStack>> calls;
     func.walk([&](CallOp call) {
-      if (call.getCallee().getType().isAlwaysInline())
+      auto callee = symtab.lookup<FuncOp>(
+          cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
+      if (callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
         calls.emplace_back(call);
     });
 
@@ -355,9 +357,12 @@ void ForceInlinePass::runOnOperation() {
       scope.walk([&](Operation *op) {
         if (op != scope)
           op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), call.getLoc()));
-        if (auto call = dyn_cast<CallOp>(op))
-          if (call.getCallee().getType().isAlwaysInline())
+        if (auto call = dyn_cast<CallOp>(op)) {
+          auto callee = symtab.lookup<FuncOp>(
+              cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
+          if (callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
             calls.emplace_back(call);
+        }
         if (!isa<KGEN::ReturnOp, HLCF::ReturnOp>(op))
           return;
         b.setInsertionPoint(op);
