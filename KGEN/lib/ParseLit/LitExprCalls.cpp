@@ -48,26 +48,26 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
     ssize_t &incorrectBindingNo, ASTType &incorrectBindingExpectedType,
     LitSharedState &shared, Operation *declOp) const {
 
-  // We require an exact match for the actualParamDecls right now, we don't
-  // allow inference or other fancy things.
-  auto actualNumParams = bindings.size();
-  auto expectedNumParams = actualParamDecls.size();
-  if (actualNumParams != expectedNumParams) {
-    if (declOp) {
-      auto diag = shared.emitError(loc, "'")
-                  << baseName << "' expects " << expectedNumParams
-                  << " input parameter" << plural(expectedNumParams) << " but "
-                  << actualNumParams << plural(actualNumParams, " was", " were")
-                  << " provided";
-      diag.attachNote(declOp->getLoc()) << "'" << baseName << "' declared here";
-    }
+  // If we have an incorrect number of bindings specified, this lambda reports
+  // the problem.
+  auto complainAboutParameterCount = [&]() {
+    // Tell the caller what went wrong.
     incorrectBindingNo = -1;
-    return {};
-  }
+    if (!declOp)
+      return;
+    auto expectedNumParams = actualParamDecls.size();
+    auto actualNumParams = bindings.size();
+    auto diag = shared.emitError(loc, "'")
+                << baseName << "' expects " << expectedNumParams
+                << " input parameter" << plural(expectedNumParams) << " but "
+                << actualNumParams << plural(actualNumParams, " was", " were")
+                << " provided";
+    diag.attachNote(declOp->getLoc()) << "'" << baseName << "' declared here";
+  };
 
   // If we have bound parameters, type check them now and bind names to them.
   SmallVector<ParamBindAttr> newBindings;
-  newBindings.reserve(actualNumParams);
+  newBindings.reserve(actualParamDecls.size());
 
   // This is the IR emitter we use for emitting implicit conversions when
   // needed.
@@ -80,12 +80,29 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
   // value of 'rank'.  We use a ParameterEvaluator to keep track of the mapping
   // so far and remap types on demand.
   ParameterEvaluator evaluator;
-  for (auto [boundX, declX] : llvm::zip(bindings, actualParamDecls)) {
-    // Work around: "reference to local binding 'decl' declared in enclosing
-    // function"
-    auto bound = boundX;
-    auto &decl = declX;
+  size_t nextBinding = 0;
+  for (auto &decl : actualParamDecls) {
+    // Check to see if we ran out of bindings to provide to this param decl.
+    if (nextBinding == bindings.size()) {
+      // If the parameter decl is a variadic parameter list, we can fulfill it
+      // with an empty list.  We know it must be the last parameter decl.
+      if (auto variadicType = dyn_cast<POP::VariadicType>(decl.getType())) {
+        auto emptyVariadic =
+            POP::VariadicAttr::get(ArrayRef<TypedAttr>(), variadicType);
+        evaluator.setParameterValue(decl, emptyVariadic);
 
+        // Update the decl's type if we remapped the type.
+        newBindings.push_back(
+            ParamBindAttr::get(decl.getName(), emptyVariadic));
+        continue;
+      }
+
+      // Otherwise, we're simply missing bindings.
+      complainAboutParameterCount();
+      return {};
+    }
+
+    auto bound = bindings[nextBinding++];
     // If this value was already bound and checked, use it.
     auto prebound = dyn_cast<ParamBindAttr>(bound.bindingOrValue);
     if (prebound) {
@@ -127,6 +144,12 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
 
     // Update the decl's type if we remapped the type.
     newBindings.push_back(ParamBindAttr::get(decl.getName(), argMValue));
+  }
+
+  // Check and complain if we have bindings that didn't get used.
+  if (nextBinding != bindings.size()) {
+    complainAboutParameterCount();
+    return {};
   }
 
   return ParamBindArrayAttr::get(shared.getContext(), newBindings);

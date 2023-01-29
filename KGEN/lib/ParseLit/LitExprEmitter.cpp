@@ -68,7 +68,6 @@ DRValue IREmitter::emitDRValue(ASTExprAnd<RValue> value) {
 
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
-  auto attr = value.ir.getIfMValue().get();
   if (!builder) {
     emitError(value.expr->getLoc(),
               "cannot use a dynamic value in a parameter context")
@@ -76,18 +75,48 @@ DRValue IREmitter::emitDRValue(ASTExprAnd<RValue> value) {
     return {};
   }
 
+  auto attr = value.ir.getIfMValue().get();
+
   // If the value being materialized is itself parameterized, then we cannot
   // materialize it as an SSA value - there will be no way to bind parameters to
   // it.
   // TODO: We should have a general predicate from this provided by the KGEN
   // parameter utilities.
   if (auto signature = dyn_cast<SignatureType>(attr.getType())) {
-    if (!signature.getInputParams().empty() ||
-        !signature.getResultParams().empty()) {
+    // If the value has any unbound parameters, they might be default arguments
+    // or an variadic list that should be bound to an empty list.
+    if (!signature.getInputParams().empty()) {
+      InputParamBindings paramBindings;
+      ssize_t incorrectBindingNo = 0;
+      ASTType incorrectBindingExpectedType;
+      auto bindingAttr = paramBindings.verifyBindings(
+          signature.getInputParams(), "<<UNUSED>>", value.expr->getLoc(),
+          incorrectBindingNo, incorrectBindingExpectedType, shared, nullptr);
+      if (!bindingAttr) {
+        // If it didn't work out, then it is an error because parameterized
+        // values cannot be used in a dynamic context.
+        emitError(value.expr->getLoc(),
+                  "cannot use parameterized function of type ")
+            << ASTType(attr.getType()) << " without binding all its parameters"
+            << value.expr->getRange();
+        return {};
+      }
+
+      // Apply whatever it produced to the attr of signature type to resolve the
+      // remaining arguments.
+      SmallVector<TypedAttr> bindOperands;
+      bindOperands.push_back(attr);
+      for (auto bind : bindingAttr)
+        bindOperands.push_back(bind.getValue());
+      // bindOperands.push_back(bindingAttr);
+      attr = ParamOperatorAttr::get(POC::BindSignature, bindOperands);
+    }
+
+    // Reject unbound result parameters.
+    if (!signature.getResultParams().empty()) {
       emitError(value.expr->getLoc(),
-                "cannot use parameterized function of type ")
-          << ASTType(attr.getType()) << " without binding all its parameters"
-          << value.expr->getRange();
+                "cannot use parameterized function with result parameters ")
+          << ASTType(attr.getType()) << value.expr->getRange();
       return {};
     }
   }
