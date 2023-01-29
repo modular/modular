@@ -378,3 +378,15 @@ struct UnqualAliasLookup[param: __mlir_type.index]:
   fn get(self) -> __mlir_type.index:
     # CHECK: %0 = kgen.param.constant = <add(param, 1)>
     return member
+
+##===----------------------------------------------------------------------===##
+# Variadic parameters
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.func @"fnWithVariadics
+# CHECK-SAME: <b: !pop.variadic<@"$Int"::@Int>>
+fn fnWithVariadics[*b: Int]():
+
+# CHECK-LABEL: lit.struct.decl @StructWithVariadics
+# CHECK-SAME: <b: !pop.variadic<@"$Int"::@Int>>
+struct StructWithVariadics[*b: Int]:
