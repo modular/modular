@@ -47,11 +47,6 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
     ParamDeclArrayAttr actualParamDecls, StringRef baseName, SMLoc loc,
     ssize_t &incorrectBindingNo, ASTType &incorrectBindingExpectedType,
     LitSharedState &shared, Operation *declOp) const {
-  // If there are no bindings, exit early.
-  // FIXME: This all or nothing thing is really weird and needs to be fixed when
-  // we start infering parameter bindings from arguments etc.
-  if (bindings.empty())
-    return ParamBindArrayAttr::get(shared.getContext(), {});
 
   // We require an exact match for the actualParamDecls right now, we don't
   // allow inference or other fancy things.
@@ -212,7 +207,9 @@ OverloadFitness OverloadFitness::evaluate(
     SignatureType signature, const DirectCallable &callable,
     ArrayRef<ASTExprAnd<AnyValue>> operands, LitSharedState &shared) {
 
-  // Check that the signature can be rebound with our set of bindings.
+  // TODO: Infer missing parameters.
+
+  // Check that the signature can be rebound with this set of bindings.
   ssize_t incorrectBindingNo = 0;
   ASTType incorrectBindingExpectedType;
   auto newBindings = callable.inputParamBindings.verifyBindings(
@@ -227,13 +224,6 @@ OverloadFitness OverloadFitness::evaluate(
     return {kParamWrongType, static_cast<size_t>(incorrectBindingNo),
             incorrectBindingExpectedType};
   }
-
-  // Check that we bound all the input parameters.  verifyBindings checks
-  // bindings that are present, but doesn't check that they were all here.
-  // TODO: We'll need to refactor this when infering parameter bindings from
-  // arguments.
-  if (newBindings.size() != signature.getInputParams().size())
-    return {kParamCount, 0, ASTType()};
 
   // Check the result parameter count.
   if (signature.getResultParams().size() != callable.resultParams.size())
@@ -544,7 +534,8 @@ LogicalResult DirectCallable::filterOverloadSet(
 /// Generate a reference to the specified function, checking that any supplied
 /// parameters are correct and match expectations.
 SymbolConstantAttr
-DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
+DirectCallable::getBoundConstantAttr(LitSharedState &shared,
+                                     bool allowUnboundSymbol) const {
   if (fnDecls.size() != 1) {
     assert(!fnDecls.empty() && "DirectCallable malformed");
     auto diag =
@@ -560,6 +551,11 @@ DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
   }
 
   auto funcOp = cast<LIT::FuncOp>(*fnDecls[0]);
+
+  // If there are no input parameters specified and if we allow unbound symbols,
+  // just return the unbound symbol.
+  if (inputParamBindings.bindings.empty() && allowUnboundSymbol)
+    return funcOp.getBoundReference();
 
   // Check that the signature can be rebound with our set of bindings.
   ssize_t incorrectBindingNo = 0;
@@ -658,7 +654,12 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   if (!direct)
     return baseVal.ir;
 
-  auto directSymbolAttr = direct->getBoundConstantAttr(emitter.shared);
+  // We allow unbound symbols here which can be emitted as an MValue.  In the
+  // case where we are partially applying, that will force the unbound symbol
+  // into a DRValue which will catch symbols that are not fully bound.
+  auto directSymbolAttr =
+      direct->getBoundConstantAttr(emitter.shared,
+                                   /*allowUnboundSymbol=*/true);
   if (!directSymbolAttr)
     return {};
 

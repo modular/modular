@@ -81,6 +81,8 @@ public:
   /// parameters do not work, this emits an diagnostic (if `declOp` is non-null)
   /// and set `incorrectBindingNo/Expectedtype` to the bad binding (or -1 if
   /// there is a count mismatch).
+  ///
+  /// This rejects the signature list if all the parameters are not bound.
   ParamBindArrayAttr verifyBindings(ParamDeclArrayAttr actualParamDecls,
                                     StringRef baseName, SMLoc loc,
                                     ssize_t &incorrectBindingNo,
@@ -146,7 +148,13 @@ struct DirectCallable {
   /// Perform subsitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
   /// returning null.
-  SymbolConstantAttr getBoundConstantAttr(LitSharedState &shared) const;
+  ///
+  /// When allowUnboundSymbol is true, this will allow producing a reference to
+  /// a parameterized function without the parmaeters specified.  They can be
+  /// bound later.
+  SymbolConstantAttr
+  getBoundConstantAttr(LitSharedState &shared,
+                       bool allowUnboundSymbol = false) const;
 
   /// Check declarations for the result parameters and add them to
   /// resultParamDecls.  This emits and error and returns failure if an error is
