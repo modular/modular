@@ -49,9 +49,7 @@ struct Benchmark:
 
     @always_inline
     fn run[
-        func: __mlir_type[
-            `!kgen.signature<() always_inline -> !lit.none>`,
-        ],
+        func: __mlir_type.`!kgen.signature<() -> !lit.none>`,
     ](self) -> Int:
         """benchmark the given function until min_tims_ns has elapsed and either
         max_time_ns OR max_iters is hit.
