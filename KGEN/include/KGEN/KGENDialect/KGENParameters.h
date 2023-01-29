@@ -14,6 +14,8 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
+#include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 
 namespace M::KGEN {
@@ -22,10 +24,11 @@ namespace M::KGEN {
 /// parameters have definitions. Input parameters to a function, for example,
 /// have no definition within the function, and are treated as leaves.
 struct ParamDefinition {
-  /// The value of the parameter, if it has a resolved one.
+  /// If the expression that defines the parameter can be narrowed to a simple
+  /// attribute, this field will contain that expression.
   Attribute value;
   /// The index of the parameter into the operation's result parameters.
-  std::optional<ssize_t> index;
+  ssize_t index = -1;
   /// The defining operation.
   Operation *defOp = nullptr;
   /// The dependent parameters of the definition.
@@ -75,11 +78,13 @@ struct ParameterUseDefGraph {
 
   /// These are the parameter uses in the current scope that were captured from
   /// a higher scope.
-  SmallPtrSet<ParamDeclRefAttr, 8> usesFromAbove;
+  llvm::SetVector<ParamDeclRefAttr, SmallVector<ParamDeclRefAttr, 8>,
+                  SmallPtrSet<ParamDeclRefAttr, 8>>
+      usesFromAbove;
 
   /// Track the operations that reference parameters. Use this information to
   /// diagnose references to parameters without declarations.
-  DenseMap<Operation *, SmallVector<ParamDeclRefAttr>> opUses;
+  llvm::MapVector<Operation *, SmallVector<ParamDeclRefAttr>> opUses;
 
   /// A list of nested parameter scopes.
   SmallVector<DeclInterface> nestedDecls;

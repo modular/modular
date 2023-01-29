@@ -16,8 +16,6 @@
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Verifier.h"
-#include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 
 using namespace M;
@@ -110,18 +108,9 @@ void OutlineClosuresPass::runOnOperation() {
       auto regionDeclUses = uses.nestedScopes.find(body);
       assert(regionDeclUses != uses.nestedScopes.end());
 
-      // Sort usesFromAbove by name to make it stable.
-      SmallVector<ParamDeclRefAttr> usesFromAboveVec;
-      llvm::append_range(usesFromAboveVec,
-                         regionDeclUses->getSecond().usesFromAbove);
-      llvm::array_pod_sort(
-          usesFromAboveVec.begin(), usesFromAboveVec.end(),
-          [](const ParamDeclRefAttr *lhs, const ParamDeclRefAttr *rhs) -> int {
-            return lhs->getName().compare(rhs->getName());
-          });
-
       DenseMap<ParamDeclAttr, TypedAttr> parameterCaptures;
-      for (ParamDeclRefAttr useFromAbove : usesFromAboveVec) {
+      for (ParamDeclRefAttr useFromAbove :
+           regionDeclUses->second.usesFromAbove) {
         auto decl =
             ParamDeclAttr::get(useFromAbove.getName(), useFromAbove.getType());
         necessaryDecls.insert(decl);
