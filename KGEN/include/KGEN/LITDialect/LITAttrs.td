@@ -138,15 +138,14 @@ def LIT_StructAttr : LITAttr<"Struct", "struct", [TypedAttrInterface,
   let assemblyFormat = "`<` custom<StructElements>($values) `>`";
 }
 
-
 //===----------------------------------------------------------------------===//
 // StructExtractAttr
 //===----------------------------------------------------------------------===//
 
 def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract",
     [TypedAttrInterface,
-     DeclareAttrInterfaceMethods<SubElementAttrInterface, ["replaceImmediateSubElements"]>
-    ]> {
+     DeclareAttrInterfaceMethods<SubElementAttrInterface,
+                                 ["replaceImmediateSubElements"]>]> {
   let summary = "Extract an element from a struct value";
   let description = [{
     The `#lit.struct.extract` attribute represents a field reference from a
