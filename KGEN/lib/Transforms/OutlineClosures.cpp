@@ -110,9 +110,19 @@ void OutlineClosuresPass::runOnOperation() {
       llvm::SetVector<ParamDeclAttr> necessaryDecls;
       auto regionDeclUses = uses.nestedScopes.find(body);
       assert(regionDeclUses != uses.nestedScopes.end());
+
+      // Sort usesFromAbove by name to make it stable.
+      SmallVector<ParamDeclRefAttr> usesFromAboveVec;
+      llvm::append_range(usesFromAboveVec,
+                         regionDeclUses->getSecond().usesFromAbove);
+      llvm::array_pod_sort(
+          usesFromAboveVec.begin(), usesFromAboveVec.end(),
+          [](const ParamDeclRefAttr *lhs, const ParamDeclRefAttr *rhs) -> int {
+            return lhs->getName().compare(rhs->getName());
+          });
+
       DenseMap<ParamDeclAttr, TypedAttr> parameterCaptures;
-      for (ParamDeclRefAttr useFromAbove :
-           regionDeclUses->getSecond().usesFromAbove) {
+      for (ParamDeclRefAttr useFromAbove : usesFromAboveVec) {
         auto decl =
             ParamDeclAttr::get(useFromAbove.getName(), useFromAbove.getType());
         necessaryDecls.insert(decl);
@@ -120,12 +130,14 @@ void OutlineClosuresPass::runOnOperation() {
         parameterCaptures[decl] = useFromAbove;
       }
 
-      LLVM_DEBUG(
-          llvm::dbgs() << "Found parameter captures: ["; llvm::interleaveComma(
-              llvm::map_range(parameterCaptures,
-                              [&](auto pair) { return pair.getSecond(); }),
-              llvm::dbgs());
-          llvm::dbgs() << "]\n");
+      LLVM_DEBUG(llvm::dbgs() << "Found parameter captures: [";
+                 llvm::interleaveComma(
+                     llvm::map_range(necessaryDecls,
+                                     [&](auto paramDecl) {
+                                       return parameterCaptures[paramDecl];
+                                     }),
+                     llvm::dbgs());
+                 llvm::dbgs() << "]\n");
 
       SignatureType bodySignature = body.getFullSignature();
 
