@@ -76,7 +76,8 @@ void OutlineClosuresPass::runOnOperation() {
 
       // If the body is not isolated from above *and* it's not marked
       // always_inline, emit an error.
-      if (!isolated && !body.isAlwaysInline()) {
+      if (!isolated &&
+          body.getAlwaysInlineLevel() == AlwaysInlineLevel::Disabled) {
         regionDecl.emitError(
             "non-isolated region must be marked always_inline");
         hadError = true;
@@ -168,7 +169,7 @@ void OutlineClosuresPass::runOnOperation() {
           regionDecl.getLoc(), getUniqueName("_" + regionName),
           TypeAttr::get(liftedSignature),
           b.getAttr<ConstraintArrayAttr>(ArrayRef<ConstraintAttr>{}),
-          FlatSymbolRefAttr());
+          FlatSymbolRefAttr(), body.getAlwaysInlineLevelAttr());
       symtab.insert(lifted);
       auto liftedSymbol = SymbolConstantAttr::get(
           SymbolRefAttr::get(lifted.getSymNameAttr()), liftedSignature);
@@ -218,7 +219,7 @@ void OutlineClosuresPass::runOnOperation() {
           regionDecl.getLoc(), getUniqueName("_" + regionName + "_wrapper"),
           TypeAttr::get(wrapperSignature),
           b.getAttr<ConstraintArrayAttr>(ArrayRef<ConstraintAttr>{}),
-          FlatSymbolRefAttr());
+          FlatSymbolRefAttr(), body.getAlwaysInlineLevelAttr());
       symtab.insert(liftedWrapper);
       auto wrapperSymbol = SymbolConstantAttr::get(
           SymbolRefAttr::get(liftedWrapper.getNameAttr()), wrapperSignature);

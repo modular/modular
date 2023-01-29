@@ -56,7 +56,7 @@ struct KGENDialectInlinerInterface : public mlir::DialectInlinerInterface {
   bool isLegalToInline(Operation *call, Operation *callable,
                        bool wouldBeCloned) const override {
     if (auto func = dyn_cast<FuncOp>(callable))
-      return func.isAlwaysInline();
+      return func.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled;
 
     return !isa<FuncInterface>(callable);
   }

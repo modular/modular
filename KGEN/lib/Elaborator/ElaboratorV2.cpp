@@ -1562,7 +1562,8 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
       SignatureType::get(ParamDeclArrayAttr::get(generator.getContext(), {}),
                          generator.getResultParamsAttr(),
                          generator.getFunctionType(),
-                         generator.getConventions()));
+                         generator.getConventions()),
+      generator.getAlwaysInlineLevel());
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.

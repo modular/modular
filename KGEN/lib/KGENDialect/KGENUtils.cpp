@@ -995,12 +995,9 @@ parseElementsWithConventions(AsmParser &p, function_ref<ParseResult()> parseElt,
   // for interfaces.
   auto effect = FnEffects::None;
   StringRef kw;
-  while (succeeded(p.parseOptionalKeyword(
-      &kw, {"throws", "none", "always_inline", "async"}))) {
+  while (succeeded(p.parseOptionalKeyword(&kw, {"throws", "none", "async"}))) {
     if (kw == "throws")
       effect = effect | FnEffects::Throws;
-    else if (kw == "always_inline")
-      effect = effect | FnEffects::AlwaysInline;
     else if (kw == "async")
       effect = effect | FnEffects::Async;
     else if (kw == "none")
@@ -1157,6 +1154,29 @@ void KGEN::printOptionalConstraints(OpAsmPrinter &p, Operation *op,
   return printOptionalConstraints(p, op, constraints.getValue());
 }
 
+/// Parse the always_inline related keywords if present.
+ParseResult KGEN::parseOptionalAlwaysInline(OpAsmParser &parser,
+                                            AlwaysInlineLevelAttr &attr) {
+  // Handle always_inline.
+  AlwaysInlineLevel alwaysInlineLevel;
+  if (succeeded(parser.parseOptionalKeyword("always_inline")))
+    alwaysInlineLevel = AlwaysInlineLevel::Enabled;
+  else if (succeeded(parser.parseOptionalKeyword("always_inline_no_debug")))
+    alwaysInlineLevel = AlwaysInlineLevel::EnabledNoDebug;
+  else
+    alwaysInlineLevel = AlwaysInlineLevel::Disabled;
+  attr = AlwaysInlineLevelAttr::get(parser.getContext(), alwaysInlineLevel);
+  return success();
+}
+
+void KGEN::printOptionalAlwaysInline(OpAsmPrinter &p,
+                                     AlwaysInlineLevelAttr level) {
+  if (level.getValue() == AlwaysInlineLevel::Enabled)
+    p << " always_inline";
+  else if (level.getValue() == AlwaysInlineLevel::EnabledNoDebug)
+    p << " always_inline_no_debug";
+}
+
 /// Parse either a kgen.generator or kgen.func declaration, depending on what
 /// `isGenerator` is set to.
 ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
@@ -1176,11 +1196,18 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   ParamDeclArrayAttr inputParamDecls;
   ParamDeclArrayAttr resultParamDecls;
   ConventionsAttr conventions;
+  AlwaysInlineLevelAttr alwaysInline;
   llvm::SMLoc sigLoc;
   if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamDecls) ||
       parser.getCurrentLocation(&sigLoc) ||
       parseFunctionSignature(parser, entryArgs, resultTypes, conventions))
     return failure();
+
+  if (opKind != GeneratorOrFuncKind::interface) {
+    if (parseOptionalAlwaysInline(parser, alwaysInline))
+      return failure();
+    result.addAttribute("alwaysInlineLevel", alwaysInline);
+  }
 
   // Funcs cannot have constraint specifications.
   if (opKind != GeneratorOrFuncKind::func) {
@@ -1260,6 +1287,10 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   printFunctionSignature(p, func.getFunctionBody(), argTypes,
                          op.getResultTypes(), op.getConventions());
+
+  if (isa<GeneratorOp, FuncOp>(*op))
+    printOptionalAlwaysInline(
+        p, op->getAttrOfType<AlwaysInlineLevelAttr>("alwaysInlineLevel"));
 
   SmallVector<StringRef> ignoredAttrNames(
       GeneratorOp::getAttributeNames().begin(),

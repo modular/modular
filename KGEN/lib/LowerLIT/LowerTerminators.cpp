@@ -432,7 +432,8 @@ static void lowerNestedFunctions(LIT::FuncOp topLevelFunc,
         ParamDeclAttr::get(func.getSymNameAttr(), func.getSignature()));
     b.createBlock(&region.getBody());
     auto body =
-        b.create<RegionBodyOp>(func.getSignature(), ArrayRef<ConstraintAttr>());
+        b.create<RegionBodyOp>(func.getSignature(), ArrayRef<ConstraintAttr>(),
+                               /*isolated*/ false, func.getAlwaysInlineLevel());
     body.getBodyRegion().takeBody(func.getBodyRegion());
     func.erase();
   });
@@ -460,7 +461,7 @@ struct LowerTerminatorsPass
     auto resumeFn = b.create<GeneratorOp>(
         "__kgen_coro_resume",
         SignatureType::get(&getContext(), PointerType::get(b.getI8Type()), {}),
-        ArrayRef<ConstraintAttr>(), nullptr);
+        ArrayRef<ConstraintAttr>(), nullptr, AlwaysInlineLevel::Disabled);
     b.createBlock(&resumeFn.getBodyRegion());
     auto opaqueHdl = b.create<mlir::UnrealizedConversionCastOp>(
         CoroutineType::get(NoneType::get(&getContext())),

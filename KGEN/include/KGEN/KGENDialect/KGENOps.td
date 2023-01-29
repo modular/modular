@@ -38,7 +38,8 @@ def KGEN_FuncOp
   let summary = "concrete function definition";
 
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<KGEN_SignatureType>:$signature);
+                       TypeAttrOf<KGEN_SignatureType>:$signature,
+                       KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel);
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
@@ -70,7 +71,8 @@ def KGEN_GeneratorOp
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<KGEN_SignatureType>:$signature,
                        ConstraintArrayAttr:$constraints,
-                       OptionalAttr<FlatSymbolRefAttr>:$implements);
+                       OptionalAttr<FlatSymbolRefAttr>:$implements,
+                       KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel);
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
@@ -81,7 +83,7 @@ def KGEN_GeneratorOp
 
   let builders = [
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature), [{
-      build($_builder, $_state, name, signature, {}, {});
+      build($_builder, $_state, name, signature, {}, {}, {});
     }]>
   ];
 
@@ -115,6 +117,13 @@ def KGEN_GeneratorInterfaceOp : KGENOp<"generator.interface", [
   let regions = (region SizedRegion<0>:$body);
 
   let hasCustomAssemblyFormat = 1;
+
+  let extraClassDeclaration = [{
+    /// Interfaces cannot be `always_inline` because they have no body.
+    AlwaysInlineLevel getAlwaysInlineLevel() {
+      return AlwaysInlineLevel::Disabled;
+    }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -388,11 +397,13 @@ def KGEN_RegionBodyOp : KGENOp<"region.body", [Terminator, DeclInterface,
 
   let arguments = (ins TypeAttrOf<KGEN_SignatureType>:$signature,
                        ConstraintArrayAttr:$constraints,
-                       UnitAttr:$isolated);
+                       UnitAttr:$isolated,
+                       KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel);
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    custom<RegionBody>($signature, $constraints, $bodyRegion) attr-dict
+    custom<RegionBody>($signature, $constraints, $alwaysInlineLevel,
+                       $bodyRegion) attr-dict
   }];
 
   let extraClassDeclaration = [{

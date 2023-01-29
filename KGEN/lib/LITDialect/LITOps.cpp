@@ -90,8 +90,8 @@ SymbolConstantAttr LIT::FuncOp::getBoundReference(ParamBindArrayAttr bindings) {
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
-    "constraints",     "implements", "signature",  "sym_name",
-    "valueParamNames", "evaluator",  "defaultImpl"};
+    "constraints",     "implements", "signature",   "sym_name",
+    "valueParamNames", "evaluator",  "defaultImpl", "alwaysInlineLevel"};
 
 /// Parses a LIT Generator.
 ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
@@ -109,14 +109,15 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   ParamDeclArrayAttr inputParamDecls, resultParamDecls;
   ConventionsAttr conventions;
   llvm::SMLoc sigLoc;
+  ConstraintArrayAttr constraints;
+  AlwaysInlineLevelAttr alwaysInline;
   if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamDecls) ||
       parser.getCurrentLocation(&sigLoc) ||
-      parseFunctionSignature(parser, entryArgs, resultTypes, conventions))
+      parseFunctionSignature(parser, entryArgs, resultTypes, conventions) ||
+      parseOptionalAlwaysInline(parser, alwaysInline) ||
+      parseOptionalConstraints(parser, constraints))
     return failure();
-
-  ConstraintArrayAttr constraints;
-  if (parseOptionalConstraints(parser, constraints))
-    return failure();
+  result.addAttribute(getAlwaysInlineLevelAttrName(result.name), alwaysInline);
   result.addAttribute(getConstraintsAttrName(result.name), constraints);
 
   SmallVector<Type> argTypes;
@@ -223,6 +224,7 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   printFunctionSignature(p, func.getFunctionBody(), argTypes,
                          op.getResultTypes(), op.getConventions(),
                          getValueParamNamesAttr());
+  printOptionalAlwaysInline(p, getAlwaysInlineLevelAttr());
 
   // Don't print the following in lit.func.
   SmallVector<StringRef> ignoredAttrNames(
@@ -380,6 +382,10 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
                       TypeAttr::get(signatureType));
   result.addAttribute(getConstraintsAttrName(result.name),
                       ConstraintArrayAttr::get(context, {}));
+  result.addAttribute(
+      getAlwaysInlineLevelAttrName(result.name),
+      AlwaysInlineLevelAttr::get(context, AlwaysInlineLevel::Disabled));
+
   result.addRegion()->push_back(new Block());
 }
 

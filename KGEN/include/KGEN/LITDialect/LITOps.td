@@ -62,7 +62,8 @@ def LIT_FuncOp : LITOp<"func", [
                        UnitAttr:$noDebugInline,
                        OptionalAttr<DefaultArgumentArrayAttr>:$defaults,
                        OptionalAttr<SymbolRefAttr>:$implements,
-                       OptionalAttr<KGEN_SymbolConstantAttr>:$evaluator);
+                       OptionalAttr<KGEN_SymbolConstantAttr>:$evaluator,
+                       KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel);
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{

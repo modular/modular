@@ -369,25 +369,6 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   if (conventions.getInputConventions().size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
 
-  // If any signature parameters are always_inline, this signature must be as
-  // well.
-  for (ParamDeclAttr decl : inputParams) {
-    auto sig = decl.getType().dyn_cast<SignatureType>();
-    if (!sig)
-      continue;
-
-    // Found a signature, if it is always_inline then this must also be
-    // always_inline.
-    if (sig.isAlwaysInline()) {
-      if (!bitEnumContainsAny(conventions.getFnEffects(),
-                              FnEffects::AlwaysInline)) {
-        return emitError() << "signature input parameter " << decl.getName()
-                           << " specified always_inline, and so expected "
-                              "always_inline on this signature as well";
-      }
-    }
-  }
-
   // If the function throws an error, make sure it has one result.
   if (bitEnumContainsAny(conventions.getFnEffects(), FnEffects::Throws) &&
       values.getNumResults() != 1)

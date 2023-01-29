@@ -665,6 +665,7 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
 /// Parse a single-block isolated from above region.
 static ParseResult parseRegionBody(OpAsmParser &p, TypeAttr &signature,
                                    ConstraintArrayAttr &constraints,
+                                   AlwaysInlineLevelAttr &alwaysInlineLevel,
                                    Region &body) {
   SmallVector<OpAsmParser::Argument> args;
   ParamDeclArrayAttr inputParamDecls, resultParamDecls;
@@ -673,6 +674,7 @@ static ParseResult parseRegionBody(OpAsmParser &p, TypeAttr &signature,
   llvm::SMLoc bodyLoc;
   if (parseOptionalParameterSpec(p, inputParamDecls, resultParamDecls) ||
       parseFunctionSignature(p, args, resultTypes, conventions) ||
+      parseOptionalAlwaysInline(p, alwaysInlineLevel) ||
       parseOptionalConstraints(p, constraints) ||
       p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
     return failure();
@@ -689,12 +691,15 @@ static ParseResult parseRegionBody(OpAsmParser &p, TypeAttr &signature,
 
 /// Print a single-block isolated from above region.
 static void printRegionBody(OpAsmPrinter &p, Operation *op, TypeAttr signature,
-                            ConstraintArrayAttr constraints, Region &body) {
+                            ConstraintArrayAttr constraints,
+                            AlwaysInlineLevelAttr alwaysInlineLevel,
+                            Region &body) {
   auto sig = cast<SignatureType>(signature.getValue());
 
   printOptionalParameterSpec(p, sig.getInputParams(), sig.getResultParams());
   printFunctionSignature(p, body, sig.getValueInputs(), sig.getValueResults(),
                          sig.getConventions());
+  printOptionalAlwaysInline(p, alwaysInlineLevel);
   printOptionalConstraints(p, op, constraints);
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
@@ -786,7 +791,7 @@ LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   auto func = module.lookup<FuncInterface>(exported);
   if (!func)
     return emitOpError("could not find referenced symbol '") << exported << "'";
-  if (func.isAlwaysInline()) {
+  if (func.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled) {
     return func.emitError("function marked 'always_inline' cannot be exported")
                .attachNote(getLoc())
            << "function exported here";
