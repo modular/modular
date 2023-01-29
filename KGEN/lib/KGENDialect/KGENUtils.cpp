@@ -181,10 +181,10 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
   if (result.has_value()) {
     if (failed(*result))
       return failure();
-    FailureOr<ParamBindArrayAttr> values;
+    ParamBindArrayAttr values;
     if (parseOptionalParamBindSpec(parser, values))
       return failure();
-    type = DeclRefType::get(symbol, *values);
+    type = DeclRefType::get(symbol, values);
     return success();
   }
 
@@ -324,13 +324,8 @@ void KGEN::printDTypeParamValue(AsmPrinter &p, Attribute value) {
 }
 
 /// Parse a parameter value that is known to have `dtype` type.
-ParseResult KGEN::parseDTypeParamValue(AsmParser &p,
-                                       FailureOr<TypedAttr> &value) {
-  TypedAttr result;
-  if (parseParamValue(p, result, DTypeType::get(p.getContext())))
-    return failure();
-  value = result;
-  return success();
+ParseResult KGEN::parseDTypeParamValue(AsmParser &p, TypedAttr &value) {
+  return parseParamValue(p, value, DTypeType::get(p.getContext()));
 }
 
 /// Print a parameter value that is known to have `type` type.
@@ -339,13 +334,8 @@ void KGEN::printTypeParamValue(AsmPrinter &p, Attribute value) {
 }
 
 /// Parse a parameter value that is known to have `type` type.
-ParseResult KGEN::parseTypeParamValue(AsmParser &p,
-                                      FailureOr<TypedAttr> &value) {
-  TypedAttr result;
-  if (parseParamValue(p, result, MLIRTypeType::get(p.getContext())))
-    return failure();
-  value = result;
-  return success();
+ParseResult KGEN::parseTypeParamValue(AsmParser &p, TypedAttr &value) {
+  return parseParamValue(p, value, MLIRTypeType::get(p.getContext()));
 }
 
 /// Print an attribute value that is known to have index type.
@@ -359,22 +349,10 @@ void KGEN::printIndexParamValue(AsmPrinter &p, Attribute value) {
 
 /// Parse a parameter value that is known to be an index type.
 ParseResult KGEN::parseIndexParamValue(AsmParser &p, TypedAttr &value) {
-  if (parseParamValue(p, value, p.getBuilder().getIndexType()))
-    return failure();
-  return success();
+  return parseParamValue(p, value, p.getBuilder().getIndexType());
 }
 
-ParseResult KGEN::parseIndexParamValue(AsmParser &p,
-                                       FailureOr<TypedAttr> &value) {
-  TypedAttr result;
-  if (parseIndexParamValue(p, result))
-    return failure();
-  value = result;
-  return success();
-}
-
-ParseResult KGEN::parseColonTypeParamValue(AsmParser &p,
-                                           FailureOr<TypedAttr> &value) {
+ParseResult KGEN::parseColonTypeParamValue(AsmParser &p, TypedAttr &value) {
   Type type;
   if (parseColonTypeOrIndex(p, type) || parseParamValue(p, value, type))
     return failure();
@@ -385,17 +363,6 @@ ParseResult KGEN::parseColonTypeParamValue(AsmParser &p,
 void KGEN::printColonTypeParamValue(AsmPrinter &p, TypedAttr value) {
   printColonTypeOrIndexPrefix(p, value.getType());
   printParamValue(p, value);
-}
-
-/// We need this for an ODS reason, it doesn't know that ParamDeclAttr is
-/// nullable or something :-/.
-ParseResult KGEN::parseParamDecl(AsmParser &p,
-                                 FailureOr<ParamDeclAttr> &result) {
-  ParamDeclAttr pResult;
-  if (failed(parseParamDecl(p, pResult)))
-    return failure();
-  result = pResult;
-  return success();
 }
 
 ParseResult KGEN::parseParamDecl(AsmParser &p, ParamDeclAttr &result) {
@@ -573,11 +540,6 @@ ParseResult KGEN::parseParamName(AsmParser &p, StringAttr &name) {
     name = StringAttr::get(p.getContext(), keyword);
   }
   return success();
-}
-
-ParseResult KGEN::parseParamName(AsmParser &p, FailureOr<StringAttr> &name) {
-  name.emplace();
-  return parseParamName(p, *name);
 }
 
 /// Print a parameter name correctly, using a double quoted syntax if it
@@ -870,14 +832,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   // Otherwise, we support other typed attributes as well, including dialect
   // define attributes, integers, strings, etc.
   return p.parseAttribute(value, type);
-}
-
-ParseResult KGEN::parseParamValue(AsmParser &p, FailureOr<TypedAttr> &result,
-                                  Type type) {
-  result.emplace();
-  if (parseParamValue(p, *result, type))
-    return failure();
-  return success();
 }
 
 static void printOperatorOperands(AsmPrinter &p, POC opcode,
@@ -1384,19 +1338,16 @@ void KGEN::printParamBinds(AsmPrinter &p, ArrayRef<ParamBindAttr> paramBinds) {
 }
 
 /// Parse a list of parameter bindings without result parameters in <>'s
-ParseResult
-KGEN::parseOptionalParamBindSpec(AsmParser &p,
-                                 FailureOr<ParamBindArrayAttr> &paramValues) {
+ParseResult KGEN::parseOptionalParamBindSpec(AsmParser &p,
+                                             ParamBindArrayAttr &paramValues) {
   // If there are no parameter declarations, return an empty array.
   if (p.parseOptionalLess()) {
     paramValues = ParamBindArrayAttr::get(p.getContext(), {});
     return success();
   }
 
-  ParamBindArrayAttr result;
-  if (parseParamBinds(p, result))
+  if (parseParamBinds(p, paramValues))
     return failure();
-  paramValues = result;
   return p.parseGreater();
 }
 

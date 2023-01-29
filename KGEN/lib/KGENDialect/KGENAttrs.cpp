@@ -121,13 +121,11 @@ ConstraintAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 // ListAttr
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseListValue(AsmParser &p,
-                                  FailureOr<SmallVector<TypedAttr>> &values,
+static ParseResult parseListValue(AsmParser &p, SmallVector<TypedAttr> &values,
                                   ListType type) {
   auto elementType = ParamRefType::get(type.getElementType());
-  values.emplace();
   return p.parseCommaSeparatedList(
-      [&] { return parseParamValue(p, values->emplace_back(), elementType); });
+      [&] { return parseParamValue(p, values.emplace_back(), elementType); });
 }
 
 static void printListValue(AsmPrinter &p, ArrayRef<TypedAttr> values,
@@ -146,10 +144,10 @@ OptionalParseResult ListType::parseValue(AsmParser &p, TypedAttr &value) const {
     value = ListAttr::get({}, *this);
     return mlir::success();
   }
-  FailureOr<SmallVector<TypedAttr>> values;
+  SmallVector<TypedAttr> values;
   if (failed(parseListValue(p, values, *this)))
     return failure();
-  value = ListAttr::get(*values, *this);
+  value = ListAttr::get(values, *this);
   return p.parseRSquare();
 }
 
@@ -259,13 +257,6 @@ bool ConcreteTypeConstantAttr::isConstant() const { return true; }
 //===----------------------------------------------------------------------===//
 // ParameterizedTypeConstantAttr
 //===----------------------------------------------------------------------===//
-
-Attribute ParameterizedTypeConstantAttr::replaceImmediateSubElements(
-    ArrayRef<Attribute> replAttrs, ArrayRef<Type> replTypes) const {
-  // NOTE: This will automatically convert to ConcreteTypeConstantAttr if the
-  // subtype is non-parametric.
-  return get(replTypes[0]);
-}
 
 TypedAttr ParameterizedTypeConstantAttr::getChecked(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
@@ -402,10 +393,9 @@ bool DTypeConstantAttr::isLessThan(Attribute rhs) const {
 // ExprFuncAttr
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseExprFunc(AsmParser &p,
-                                 FailureOr<ParamDeclArrayAttr> &paramDecls,
-                                 FailureOr<ParamDeclArrayAttr> &inputs,
-                                 FailureOr<ParameterExprArrayAttr> &exprs,
+static ParseResult parseExprFunc(AsmParser &p, ParamDeclArrayAttr &paramDecls,
+                                 ParamDeclArrayAttr &inputs,
+                                 ParameterExprArrayAttr &exprs,
                                  SignatureType type) {
   if (!type.getResultParams().empty())
     return p.emitError(p.getCurrentLocation())
@@ -1702,27 +1692,6 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     return result;
 
   return Base::get(context, opcode, operands, resultType);
-}
-
-void ParamOperatorAttr::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  for (auto operand : getOperands())
-    walkAttrsFn(operand);
-}
-
-Attribute
-ParamOperatorAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                               ArrayRef<Type> replTypes) const {
-  assert(!replAttrs.empty() && replTypes.empty());
-  SmallVector<TypedAttr> castedAttrs;
-  for (auto attr : replAttrs) {
-    castedAttrs.push_back(llvm::dyn_cast<TypedAttr>(attr));
-    // Reject attempts to change an operand to something that isn't a TypedAttr.
-    if (!castedAttrs.back())
-      return {};
-  }
-  return ParamOperatorAttr::get(getOpcode(), castedAttrs);
 }
 
 /// Parameter operators are the basis of parameter expressions and are never

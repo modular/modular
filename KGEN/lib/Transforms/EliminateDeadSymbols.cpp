@@ -51,11 +51,9 @@ void EliminateDeadSymbolsPass::runOnOperation() {
     // Walk the callee and add any symbol uses to the worklist as long as
     // we haven't already seen them.
     callee.walk([&](Operation *op) {
-      op->getAttrDictionary().walkSubAttrs([&](Attribute attr) {
-        if (auto symbolRef = dyn_cast<SymbolRefAttr>(attr)) {
-          if (usedSymbols.insert(symbolRef.getRootReference()).second)
-            worklist.insert(symbolRef.getRootReference());
-        }
+      op->getAttrDictionary().walk([&](SymbolRefAttr attr) {
+        if (usedSymbols.insert(attr.getRootReference()).second)
+          worklist.insert(attr.getRootReference());
       });
     });
   }

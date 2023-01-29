@@ -222,15 +222,14 @@ bool SIMDAttr::isConstant() const { return true; }
 
 /// Parse a list of dtype values.
 static ParseResult parseDTypeValues(AsmParser &p,
-                                    FailureOr<SmallVector<DTypeValue>> &values,
+                                    SmallVector<DTypeValue> &values,
                                     KGENDType dtype, int64_t size) {
-  values.emplace();
   auto parseElt = [&](int64_t) -> ParseResult {
     FailureOr<DTypeValue> value =
         parseDTypeValue</*optionalParse=*/false>(p, dtype);
     if (failed(value))
       return failure();
-    values->push_back(*value);
+    values.push_back(*value);
     return success();
   };
   return failableInterleave(llvm::seq<int64_t>(0, size), parseElt,
@@ -267,7 +266,7 @@ static void printDTypeValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
 /// is returned, otherwise failure.
 template <bool optionalParse>
 static std::conditional_t<optionalParse, OptionalParseResult, ParseResult>
-parseSplatOrVector(AsmParser &p, FailureOr<SmallVector<DTypeValue>> &values,
+parseSplatOrVector(AsmParser &p, SmallVector<DTypeValue> &values,
                    SIMDType type) {
   std::optional<KGENDType> dtype = type.getResolvedDType();
   std::optional<int64_t> size = type.getResolvedSize();
@@ -289,7 +288,7 @@ parseSplatOrVector(AsmParser &p, FailureOr<SmallVector<DTypeValue>> &values,
     if (splat.has_value()) {
       if (failed(*splat))
         return failure();
-      values = SmallVector<DTypeValue>(*size, **splat);
+      values.assign(*size, **splat);
       return mlir::success();
     }
   }
@@ -335,9 +334,8 @@ static void printSplatOrVector(AsmPrinter &p, ArrayRef<DTypeValue> values,
 }
 
 /// Custom directive parse hook for SIMDAttr assembly format.
-static ParseResult parseSIMDValues(AsmParser &p,
-                                   FailureOr<SmallVector<DTypeValue>> &values,
-                                   SIMDType type) {
+static ParseResult
+parseSIMDValues(AsmParser &p, SmallVector<DTypeValue> &values, SIMDType type) {
   return parseSplatOrVector</*optionalParse=*/false>(p, values, type);
 }
 
@@ -348,11 +346,11 @@ static void printSIMDValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
 }
 
 OptionalParseResult SIMDType::parseValue(AsmParser &p, TypedAttr &value) const {
-  FailureOr<SmallVector<DTypeValue>> values;
+  SmallVector<DTypeValue> values;
   OptionalParseResult result =
       parseSplatOrVector</*optionalParse=*/true>(p, values, *this);
   if (result.has_value() && succeeded(*result))
-    value = SIMDAttr::get(*values, *this);
+    value = SIMDAttr::get(values, *this);
   return result;
 }
 
@@ -370,13 +368,12 @@ LogicalResult SIMDType::printValue(AsmPrinter &p, TypedAttr value) const {
 //===----------------------------------------------------------------------===//
 
 template <typename SequenceType>
-static ParseResult
-parseSequenceElements(AsmParser &p, FailureOr<SmallVector<TypedAttr>> &values,
-                      SequenceType type) {
+static ParseResult parseSequenceElements(AsmParser &p,
+                                         SmallVector<TypedAttr> &values,
+                                         SequenceType type) {
   auto elementType = ParamRefType::get(type.getElementType());
-  values.emplace();
   return p.parseCommaSeparatedList(
-      [&] { return parseParamValue(p, values->emplace_back(), elementType); });
+      [&] { return parseParamValue(p, values.emplace_back(), elementType); });
 }
 
 template <typename SequenceType>
@@ -397,10 +394,10 @@ OptionalParseResult POP::ArrayType::parseValue(AsmParser &p,
     value = POP::ArrayAttr::get({}, *this);
     return mlir::success();
   }
-  FailureOr<SmallVector<TypedAttr>> values;
+  SmallVector<TypedAttr> values;
   if (failed(parseSequenceElements(p, values, *this)))
     return failure();
-  value = POP::ArrayAttr::get(*values, *this);
+  value = POP::ArrayAttr::get(values, *this);
   return p.parseRSquare();
 }
 
@@ -441,14 +438,13 @@ POP::ArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 // StructAttr
 //===----------------------------------------------------------------------===//
 
-static ParseResult
-parseStructElements(AsmParser &p, FailureOr<SmallVector<TypedAttr>> &values,
-                    StructType type) {
-  values.emplace();
+static ParseResult parseStructElements(AsmParser &p,
+                                       SmallVector<TypedAttr> &values,
+                                       StructType type) {
   return failableInterleave(
       type.getElementTypes(),
       [&](TypedAttr type) {
-        return parseParamValue(p, values->emplace_back(),
+        return parseParamValue(p, values.emplace_back(),
                                ParamRefType::get(type));
       },
       [&] { return p.parseComma(); });
@@ -464,10 +460,10 @@ OptionalParseResult StructType::parseValue(AsmParser &p,
                                            TypedAttr &value) const {
   if (failed(p.parseOptionalLBrace()))
     return std::nullopt;
-  FailureOr<SmallVector<TypedAttr>> values;
+  SmallVector<TypedAttr> values;
   if (failed(parseStructElements(p, values, *this)))
     return failure();
-  value = StructAttr::get(*values, *this);
+  value = StructAttr::get(values, *this);
   return p.parseRBrace();
 }
 
@@ -531,20 +527,6 @@ TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
     return value.getValues()[fieldNo.getInt()];
 
   return Base::get(context, structValue, fieldNo, resultType);
-}
-
-// FIXME(Issue #7779): this shouldn't be needed.
-// https://github.com/modularml/modular/issues/7779
-Attribute
-StructExtractAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                               ArrayRef<Type> replTypes) const {
-  assert(replAttrs.size() == 2 && replTypes.size() == 1);
-  auto structAttr = ::dyn_cast<TypedAttr>(replAttrs[0]);
-  auto fieldAttr = ::dyn_cast<IntegerAttr>(replAttrs[1]);
-  if (!structAttr || !fieldAttr)
-    return {};
-  return StructExtractAttr::get(getContext(), structAttr, fieldAttr,
-                                replTypes[0]);
 }
 
 //===----------------------------------------------------------------------===//

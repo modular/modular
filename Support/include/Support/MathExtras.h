@@ -8,6 +8,7 @@
 #define SUPPORT_MATHEXTRAS_H
 
 #include "Support/LLVMForwardDecls.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Compiler.h"
 

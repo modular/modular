@@ -15,7 +15,6 @@ include "KGEN/KGENDialect/KGENAttrInterfaces.td"
 include "KGEN/KGENDialect/KGENDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
-include "mlir/IR/SubElementInterfaces.td"
 
 class AttrOfType<Type type> : ConfinedAttr<TypedAttrInterface, [
   AttrConstraint<SubstLeaves<"$_self", "$_self.cast<TypedAttr>().getType()",
@@ -32,7 +31,7 @@ class KGENAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 class KGEN_ExprAttr<string attrName, string attrMnemonic,
                     list<Trait> traits = []>
     : KGENAttr<attrName, attrMnemonic,
-               [TypedAttrInterface, SubElementAttrInterface,
+               [TypedAttrInterface,
                 DeclareAttrInterfaceMethods<ParameterAttrInterface>] # traits>;
 
 //===----------------------------------------------------------------------===//
@@ -43,8 +42,7 @@ class KGEN_ExprAttr<string attrName, string attrMnemonic,
 /// interface.
 class KGEN_ArrayOfAttrsAttr<string attrName, string attrMnemonic,
                             string eltName>
-    : ArrayOfAttr<KGENDialect, attrName, attrMnemonic, eltName,
-                  [SubElementAttrInterface]>;
+    : ArrayOfAttr<KGENDialect, attrName, attrMnemonic, eltName>;
 
 //===----------------------------------------------------------------------===//
 // ParameterExprArrayAttr
@@ -76,9 +74,7 @@ def KGEN_TypeArrayAttr
 //===----------------------------------------------------------------------===//
 
 /// Declaration of a named parameter.
-def KGEN_ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl", [
-    SubElementAttrInterface
-  ]> {
+def KGEN_ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl"> {
   let summary = "Parameter declaration";
   let description = [{
     This is a declaration of a parameter in the meta-programming domain for
@@ -126,8 +122,7 @@ def ParamDeclSize1ArrayAttr
 // ParamBindAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamBindAttr : KGENAttr<"ParamBind", "param.bind", [
-    DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
+def KGEN_ParamBindAttr : KGENAttr<"ParamBind", "param.bind"> {
   let summary = "Bind a value to a parameter declaration.";
   let description = [{
     The `#kgen.param.bind` attribute binds a concrete value to a named
@@ -171,9 +166,7 @@ def ParamBindArrayAttr
 // ConstraintAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint", [
-    SubElementAttrInterface
-  ]> {
+def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint"> {
   let summary = "kgen constraint";
   let description = [{
     A constraint attribute represents a constraint on a generator or
@@ -389,9 +382,7 @@ def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
 /// `TypeAttr` (an attribute referring to a type) but is a `TypedAttr` that
 /// refers to an MLIR type and has 'kgen.type' itself.
 def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
-    "ParameterizedTypeConstant", "parameterizedtype.constant",
-    [DeclareAttrInterfaceMethods<SubElementAttrInterface,
-                                 ["replaceImmediateSubElements"]>]> {
+    "ParameterizedTypeConstant", "parameterizedtype.constant"> {
   let summary = "Constant !kgen.type MLIR type with parameter references";
   let description = [{
     This represents a parameter whose value is an MLIR type.  It is similar to
@@ -673,10 +664,8 @@ def KGEN_BuildInfoParamAttr : KGEN_ExprAttr<"BuildInfoParam", "build_info"> {
 // associative operations are take arbitrary arity, also to make
 // canonicalization simpler.
 def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
-    DeclareAttrInterfaceMethods<SubElementAttrInterface, [
-      "walkImmediateSubElements", "replaceImmediateSubElements"
-    ]>,
-    DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>]> {
+    DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>
+  ]> {
   let summary = "Parameter expression";
   let parameters = (ins "POC":$opcode,
                         ArrayRefParameter<"TypedAttr">:$operands,

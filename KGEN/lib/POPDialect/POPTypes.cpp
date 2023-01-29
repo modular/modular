@@ -655,8 +655,7 @@ CoroutineType CoroutineType::get(SignatureType sig) {
 //===----------------------------------------------------------------------===//
 
 template <typename TypeT>
-static ParseResult parsePrettyTypeImpl(AsmParser &p,
-                                       FailureOr<TypedAttr> &typeExpr) {
+static ParseResult parsePrettyTypeImpl(AsmParser &p, TypedAttr &typeExpr) {
   Type type = TypeT::parse(p);
   if (!type)
     return failure();
@@ -665,18 +664,17 @@ static ParseResult parsePrettyTypeImpl(AsmParser &p,
 }
 
 static Type parseScalarType(AsmParser &p) {
-  FailureOr<TypedAttr> resultDType;
+  TypedAttr resultDType;
 
   // Parse literal '<' + dtype + literal '>'
   if (p.parseLess() || failed(parseDTypeParamValue(p, resultDType)) ||
       p.parseGreater())
     return {};
 
-  return SIMDType::get(1, *resultDType);
+  return SIMDType::get(1, resultDType);
 }
 
-static ParseResult parsePrettyScalarType(AsmParser &p,
-                                         FailureOr<TypedAttr> &typeExpr) {
+static ParseResult parsePrettyScalarType(AsmParser &p, TypedAttr &typeExpr) {
   Type t = parseScalarType(p);
   if (isa<SIMDType>(t)) {
     typeExpr = TypeConstantAttr::get(t);
@@ -687,7 +685,7 @@ static ParseResult parsePrettyScalarType(AsmParser &p,
 
 /// Try to parse a pretty type or a standard MLIR type. A pretty type is a POP
 /// type without the dialect prefix or a symbol reference.
-ParseResult POP::parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr) {
+ParseResult POP::parsePrettyType(AsmParser &p, TypedAttr &typeExpr) {
   // Try to parse a symbol name as sugar for [LIT]DeclRefType.
   {
     SymbolRefAttr ref;
@@ -696,10 +694,10 @@ ParseResult POP::parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr) {
       if (failed(*refResult))
         return failure();
 
-      FailureOr<ParamBindArrayAttr> paramValues;
+      ParamBindArrayAttr paramValues;
       if (parseOptionalParamBindSpec(p, paramValues))
         return failure();
-      Type result = DeclRefType::get(ref, *paramValues);
+      Type result = DeclRefType::get(ref, paramValues);
       typeExpr = TypeConstantAttr::get(result);
       return success();
     }
@@ -769,15 +767,13 @@ void POP::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
       .Default([&](auto) { printTypeParamValue(p, typeExpr); });
 }
 
-static ParseResult
-parseArrayOfPrettyTypes(AsmParser &p,
-                        FailureOr<SmallVector<TypedAttr>> &values) {
-  values.emplace();
+static ParseResult parseArrayOfPrettyTypes(AsmParser &p,
+                                           SmallVector<TypedAttr> &values) {
   return p.parseCommaSeparatedList([&]() -> ParseResult {
-    FailureOr<TypedAttr> value;
+    TypedAttr value;
     if (failed(parsePrettyType(p, value)))
       return failure();
-    values->push_back(*value);
+    values.push_back(value);
     return success();
   });
 }

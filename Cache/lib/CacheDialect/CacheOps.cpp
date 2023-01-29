@@ -230,11 +230,13 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
         hashTypeOrAttr(arg);
 
     // And finally, attribute values.
-    op->getAttrDictionary().walkSubAttrs([&](Attribute attr) {
-      if (isa<SymbolRefAttr, ConstantHashAttr, RegionHashAttr>(attr))
-        return;
-      hashTypeOrAttr(attr);
-    });
+    op->getAttrDictionary().walkImmediateSubElements(
+        [&](Attribute attr) {
+          if (isa<SymbolRefAttr, ConstantHashAttr, RegionHashAttr>(attr))
+            return;
+          hashTypeOrAttr(attr);
+        },
+        [](Type) {});
   });
 
   // Finalize the hash.
@@ -256,21 +258,20 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
   SmallVector<SymbolRefAttr> refs;
 
   // Now we walk the symbol and collect all symbol references.
-  auto collectRefs = [&](Attribute attr) {
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([&](Attribute attr) {
     if (auto symbolRef = dyn_cast<SymbolRefAttr>(attr))
       symbolReferences.push_back(symbolRef);
     else if (auto hash = dyn_cast<ConstantHashAttr>(attr))
       hashReferences.push_back(hash);
-  };
+  });
 
   r.walk([&](Operation *op) {
-    op->getAttrDictionary().walkSubAttrs(collectRefs);
+    walker.walk(op->getAttrDictionary());
     for (auto t : op->getOperandTypes())
-      if (auto subElements = dyn_cast<mlir::SubElementTypeInterface>(t))
-        subElements.walkSubAttrs(collectRefs);
+      walker.walk(t);
     for (auto t : op->getResultTypes())
-      if (auto subElements = dyn_cast<mlir::SubElementTypeInterface>(t))
-        subElements.walkSubAttrs(collectRefs);
+      walker.walk(t);
   });
 
   // Create a unique set of symbol references while maintaining the order.

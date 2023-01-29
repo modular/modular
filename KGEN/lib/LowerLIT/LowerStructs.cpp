@@ -106,14 +106,8 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
 Type StructOperationLowerer::substituteTypes(Type type) {
   if (auto ref = dyn_cast<DeclRefType>(type))
     type = substituteStructRef(ref);
-  auto itf = dyn_cast<mlir::SubElementTypeInterface>(type);
-  if (!itf)
-    return type;
-  return itf.replaceSubElements([&](Type type) -> Type {
-    if (auto ref = dyn_cast<DeclRefType>(type))
-      return substituteStructRef(ref);
-    return type;
-  });
+  return type.replace(
+      [&](DeclRefType type) { return substituteStructRef(type); });
 }
 
 void StructOperationLowerer::replaceOp(Operation *op, ValueRange values) {

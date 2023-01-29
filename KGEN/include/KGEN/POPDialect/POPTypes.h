@@ -11,7 +11,6 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/Interpreter/InterpreterInterface.h"
 #include "Support/MDialect/MTypeInterfaces.h"
-#include "mlir/IR/SubElementInterfaces.h"
 #include "mlir/IR/Types.h"
 
 //===----------------------------------------------------------------------===//
@@ -21,7 +20,7 @@
 namespace M::KGEN::POP {
 /// Try to parse a pretty type or a standard MLIR type. A pretty type is a POP
 /// type without the dialect prefix.
-ParseResult parsePrettyType(AsmParser &p, FailureOr<TypedAttr> &typeExpr);
+ParseResult parsePrettyType(AsmParser &p, TypedAttr &typeExpr);
 /// Try to print a pretty type or a standard MLIR type. A pretty type is a POP
 /// type without the dialect prefix.
 void printPrettyType(AsmPrinter &p, TypedAttr typeExpr);

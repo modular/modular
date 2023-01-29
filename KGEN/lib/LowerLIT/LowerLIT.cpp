@@ -221,21 +221,12 @@ ParseResult SignatureUnifier::tryUnifyingTypeParameters(Attribute itfParam,
     if (auto genType = dyn_cast<TypeConstantAttr>(genParam))
       return tryUnifyingTypes(itfType.getValue(), genType.getValue());
 
-  auto itfElems = dyn_cast<mlir::SubElementAttrInterface>(itfParam);
-  if (!itfElems) {
-    auto diag = emitError(inferenceLoc, inferenceContext)
-                << ": cannot unify : '" << genParam << "'";
-    diag.attachNote(interfaceOp->getLoc()) << "interface declared here";
-    return failure();
-  }
-  auto genElems = cast<mlir::SubElementAttrInterface>(genParam);
-
   SmallVector<Attribute> itfParams, genParams;
   SmallVector<Type> itfTypes, genTypes;
-  itfElems.walkImmediateSubElements(
+  itfParam.walkImmediateSubElements(
       [&](Attribute attr) { itfParams.push_back(attr); },
       [&](Type type) { itfTypes.push_back(type); });
-  genElems.walkImmediateSubElements(
+  genParam.walkImmediateSubElements(
       [&](Attribute attr) { genParams.push_back(attr); },
       [&](Type type) { genTypes.push_back(type); });
   assert(itfParams.size() == genParams.size() &&
@@ -275,20 +266,12 @@ ParseResult SignatureUnifier::tryUnifyingTypes(Type itfArgTy, Type genArgTy) {
   }
 
   // Try to unify their nested parameter expressions.
-  auto itfElems = dyn_cast<mlir::SubElementTypeInterface>(itfArgTy);
-  if (!itfElems) {
-    return emitError(inferenceLoc, inferenceContext)
-           << " has type " << genArgTy << " not equal to interface type "
-           << itfArgTy << " but does not implement SubElementTypeInterface";
-  }
-  auto genElems = genArgTy.cast<mlir::SubElementTypeInterface>();
-
   SmallVector<Attribute> itfParams, genParams;
   SmallVector<Type> itfTypes, genTypes;
-  itfElems.walkImmediateSubElements(
+  itfArgTy.walkImmediateSubElements(
       [&](Attribute attr) { itfParams.push_back(attr); },
       [&](Type type) { itfTypes.push_back(type); });
-  genElems.walkImmediateSubElements(
+  genArgTy.walkImmediateSubElements(
       [&](Attribute attr) { genParams.push_back(attr); },
       [&](Type type) { genTypes.push_back(type); });
   assert(itfParams.size() == genParams.size() &&

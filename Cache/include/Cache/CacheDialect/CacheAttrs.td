@@ -10,7 +10,6 @@
 include "Cache/CacheDialect/CacheDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
-include "mlir/IR/SubElementInterfaces.td"
 
 class CacheAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
     : AttrDef<CacheDialect, attrName, traits> {
@@ -56,8 +55,7 @@ def SymbolListParameter : OptionalArrayRefParameter<"SymbolRefAttr",
 def ConstantHashListParameter : OptionalArrayRefParameter<"ConstantHashAttr",
     "hashes in region">;
 
-def Cache_RegionHashAttr : CacheAttr<"RegionHash", "region_hash",
-    [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
+def Cache_RegionHashAttr : CacheAttr<"RegionHash", "region_hash"> {
   let summary = "A parametrized hash of an MLIR region.";
   let description = [{
     This attribute holds a hash of an MLIR region parametrized by the symbols
@@ -89,16 +87,14 @@ def Cache_RegionHashAttr : CacheAttr<"RegionHash", "region_hash",
 
 /// An array of RegionHashAttrs.
 def Cache_RegionHashArrayAttr :
-    ArrayOfAttr<CacheDialect, "RegionHashArray", "regions", "RegionHashAttr",
-                [SubElementAttrInterface]>;
+    ArrayOfAttr<CacheDialect, "RegionHashArray", "regions", "RegionHashAttr">;
 
 //===----------------------------------------------------------------------===//
 // ParametrizedIndexAttrBase
 //===----------------------------------------------------------------------===//
 
 class Cache_ParametrizedIndexAttrBase<string attrName, string mnemonic>
-  : CacheAttr<attrName, mnemonic,
-    [DeclareAttrInterfaceMethods<SubElementAttrInterface>]> {
+  : CacheAttr<attrName, mnemonic> {
   let parameters = (ins "uint64_t":$index);
   let assemblyFormat = "`<` $index `>`";
 }

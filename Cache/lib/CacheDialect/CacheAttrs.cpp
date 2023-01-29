@@ -24,8 +24,7 @@ static void printBase64(AsmPrinter &printer, StringRef hash) {
 }
 
 /// Parse the base64 hash string and store it into the attr.
-static ParseResult parseBase64(AsmParser &parser,
-                               FailureOr<std::string> &hash) {
+static ParseResult parseBase64(AsmParser &parser, std::string &hash) {
   // Decode the base64 bytes. Hashes are often 256 bits (32 bytes) so we can use
   // this as a reasonable default.
   std::vector<char> outBytes;
@@ -35,7 +34,7 @@ static ParseResult parseBase64(AsmParser &parser,
 
   // Hashes are almost always <= 64 bytes, so this copy is (while not ideal) not
   // too bad.
-  hash = std::string(outBytes.begin(), outBytes.end());
+  hash.assign(outBytes.begin(), outBytes.end());
   return success();
 }
 

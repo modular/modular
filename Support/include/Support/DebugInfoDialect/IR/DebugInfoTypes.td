@@ -9,7 +9,6 @@
 
 include "Support/DebugInfoDialect/IR/DebugInfoDialect.td"
 include "mlir/IR/AttrTypeBase.td"
-include "mlir/IR/SubElementInterfaces.td"
 
 //===----------------------------------------------------------------------===//
 // DIType
@@ -18,7 +17,7 @@ include "mlir/IR/SubElementInterfaces.td"
 // Base class for debug info dialect types.
 class DIType<string name, string typeMnemonic, list<Trait> traits = [],
              string baseCppClass = "DIType">
-    : TypeDef<DebugInfoDialect, name, traits # [SubElementTypeInterface], baseCppClass> {
+    : TypeDef<DebugInfoDialect, name, traits, baseCppClass> {
   let mnemonic = typeMnemonic;
   let assemblyFormat = "`` `<` struct(params) `>` ``";
 }
@@ -203,9 +202,7 @@ def DebugInfo_DIStructType : DIType<"DIStruct", "struct"> {
 // DISubroutineType
 //===----------------------------------------------------------------------===//
 
-def DebugInfo_DISubroutineType : DIType<"DISubroutine", "subroutine", [
-    SubElementTypeInterface
-  ]> {
+def DebugInfo_DISubroutineType : DIType<"DISubroutine", "subroutine"> {
   let summary = "Subroutine type debug info description";
   let description = [{
     The `debuginfo.subroutine` type represents the debug information for a

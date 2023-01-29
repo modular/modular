@@ -17,7 +17,7 @@ using namespace M;
 //===----------------------------------------------------------------------===//
 
 /// Parse rank 1 dimension followed by an 'x'.
-static ParseResult parseSizeX(AsmParser &p, FailureOr<int64_t> &size) {
+static ParseResult parseSizeX(AsmParser &p, int64_t &size) {
   SmallVector<int64_t> dims;
   llvm::SMLoc curLoc = p.getCurrentLocation();
   if (p.parseDimensionList(dims, /*allowDynamic=*/false))

@@ -122,15 +122,11 @@ void ParameterCollector::collectUsesFromAttr(
 
   // Recursively check for any nested types/attributes, e.g. the elements of an
   // array attribute.
-  if (auto itf = dyn_cast<mlir::SubElementAttrInterface>(attr)) {
-    itf.walkImmediateSubElements(
-        [&](Attribute attr) {
-          collectUsesFromAttr(attr, uses, hasNestedConstExpr);
-        },
-        [&](Type type) {
-          collectUsesFromType(type, uses, hasNestedConstExpr);
-        });
-  }
+  attr.walkImmediateSubElements(
+      [&](Attribute attr) {
+        collectUsesFromAttr(attr, uses, hasNestedConstExpr);
+      },
+      [&](Type type) { collectUsesFromType(type, uses, hasNestedConstExpr); });
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
   // in the future.
@@ -183,15 +179,11 @@ void ParameterCollector::collectUsesFromTypesImpl(
 
   // Recursively check for any nested types, e.g. the input/outputs of a
   // function type, types like !pop.scalar<ty> etc.
-  if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type)) {
-    itf.walkImmediateSubElements(
-        [&](Attribute attr) {
-          collectUsesFromAttr(attr, uses, hasNestedConstExpr);
-        },
-        [&](Type type) {
-          collectUsesFromType(type, uses, hasNestedConstExpr);
-        });
-  }
+  type.walkImmediateSubElements(
+      [&](Attribute attr) {
+        collectUsesFromAttr(attr, uses, hasNestedConstExpr);
+      },
+      [&](Type type) { collectUsesFromType(type, uses, hasNestedConstExpr); });
 
   // If the type had parameter uses or constant expressions, don't consider it
   // "parameterless".  We want other operations using the same type to record

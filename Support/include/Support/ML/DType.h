@@ -16,6 +16,7 @@
 
 #include "Support/FunctionExtras.h"
 #include "Support/LLVMForwardDecls.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/MathExtras.h"
 

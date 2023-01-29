@@ -133,7 +133,7 @@ uint32_t DIStructType::getAlignInBits() const {
 // AsmFormat Utilities
 //===----------------------------------------------------------------------===//
 
-static LogicalResult parseName(AsmParser &p, FailureOr<StringAttr> &result) {
+static LogicalResult parseName(AsmParser &p, StringAttr &result) {
   std::string name;
   if (failed(p.parseKeywordOrString(&name)))
     return failure();
