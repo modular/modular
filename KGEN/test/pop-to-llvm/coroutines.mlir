@@ -8,8 +8,8 @@ kgen.func @coroutine(%arg0: i32) -> !pop.coroutine<() -> i32> {
   // CHECK-DAG: %[[FALSE:.*]] = llvm.mlir.constant(false)
   // CHECK-DAG: %[[C0_i64:.*]] = llvm.mlir.constant(0 : i64)
   // CHECK-DAG: %[[C1_i32:.*]] = llvm.mlir.constant(1 : i32)
-  // CHECK-NEXT: %[[PROMISE_MEM:.*]] = llvm.alloca %[[C1_i32]] x !llvm.struct<(i32, struct<(ptr, i8)>)> {alignment = 8 : i64}
-  // CHECK-NEXT: %[[PROMISE:.*]] = llvm.bitcast %[[PROMISE_MEM]] : !llvm.ptr<struct<(i32, struct<(ptr, i8)>)>> to !llvm.ptr<i8>
+  // CHECK-NEXT: %[[PROMISE_MEM:.*]] = llvm.alloca %[[C1_i32]] x !llvm.struct<(i32, struct<(ptr, ptr)>)> {alignment = 8 : i64}
+  // CHECK-NEXT: %[[PROMISE:.*]] = llvm.bitcast %[[PROMISE_MEM]] : !llvm.ptr<struct<(i32, struct<(ptr, ptr)>)>> to !llvm.ptr<i8>
   // CHECK-NEXT: %[[NULLPTR:.*]] = llvm.inttoptr %[[C0_i64]] : i64 to !llvm.ptr<i8>
   // CHECK-NEXT: %[[CORO_ALIGN:.*]] = llvm.intr.coro.align : i32
   // CHECK-NEXT: %[[ID:.*]] = llvm.intr.coro.id %[[CORO_ALIGN]], %[[PROMISE]], %[[NULLPTR]], %[[NULLPTR]]
@@ -89,8 +89,8 @@ kgen.func @other_coroutine_ops(%a: !pop.coroutine<() -> i32>) -> !pop.pointer<st
   // CHECK: %[[ALIGN:.*]] = llvm.mlir.constant(8 : i32)
 
   // CHECK: %[[PROMISE_PTR:.*]] = llvm.call_intrinsic "llvm.coro.promise"(%arg0, %[[ALIGN]], %[[FALSE]])
-  // CHECK: %[[PROMISE:.*]] = llvm.bitcast %[[PROMISE_PTR:.*]] : !llvm.ptr<i8> to !llvm.ptr<struct<(i32, struct<(ptr, i8)>)>>
-  // CHECK: %[[PROMISE_RESULT:.*]] = llvm.bitcast %[[PROMISE]] : !llvm.ptr<struct<(i32, struct<(ptr, i8)>)>> to !llvm.ptr<i32>
+  // CHECK: %[[PROMISE:.*]] = llvm.bitcast %[[PROMISE_PTR:.*]] : !llvm.ptr<i8> to !llvm.ptr<struct<(i32, struct<(ptr, ptr)>)>>
+  // CHECK: %[[PROMISE_RESULT:.*]] = llvm.bitcast %[[PROMISE]] : !llvm.ptr<struct<(i32, struct<(ptr, ptr)>)>> to !llvm.ptr<i32>
   %promise = pop.coroutine.promise %a : <() -> i32>
 
   // CHECK: llvm.call_intrinsic "llvm.coro.destroy"(%arg0) : (!llvm.ptr<i8>) -> ()
