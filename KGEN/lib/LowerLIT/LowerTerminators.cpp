@@ -67,7 +67,8 @@ static void createCoroutineInitialize(Operation *call, DeclRefType errType,
     Value promise = getCoroutinePromise(b, errType, hdl);
     Value ctxPtr = b.create<OffsetOp>(promise, one);
     return b.create<PointerBitcastOp>(
-        PointerType::get(StructType::get({b.getIndexType(), b.getI8Type()})),
+        PointerType::get(StructType::get(
+            {b.getIndexType(), PointerType::get(b.getI8Type())})),
         ctxPtr);
   };
   Value curCtx = getAsyncCtx(curHdl);

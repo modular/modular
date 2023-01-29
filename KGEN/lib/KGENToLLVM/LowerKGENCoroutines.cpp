@@ -61,9 +61,9 @@ static LLVMStructType getCoroutinePromiseType(LLVMBuilder &b,
     if (!type)
       return {};
   }
-  // Add the async context: a ref-counted pointer and a compact runtime pointer.
+  // Add the async context: a ref-counted pointer and a runtime pointer.
   promiseTypes.push_back(LLVMStructType::getLiteral(
-      b.getContext(), {cache.ptrType, cache.i8Type}));
+      b.getContext(), {cache.ptrType, cache.ptrType}));
   return LLVMStructType::getLiteral(b.getContext(), promiseTypes);
 }
 
@@ -86,7 +86,7 @@ createCoroutineFunction(LLVMBuilder &b, const TypeAttrCache &cache,
   LLVMStructType promiseType = getCoroutinePromiseType(b, cache, coroType);
   if (!promiseType)
     return func.emitError("failed to convert coroutine type");
-  // Explicitly specify the alignemnt.
+  // Explicitly specify the alignment.
   Value promiseMem = b.create<AllocaOp>(LLVMPointerType::get(promiseType),
                                         b.create<ConstantOp>(cache.i32Type, 1),
                                         b.getTypeABIAlignment(promiseType));

@@ -25,35 +25,52 @@ struct alignas(8) AsyncContext {
   /// the coroutine is done, its results are available in its promise memory.
   /// The lifetime of the reference is tied to the lifetime of the coroutine.
   AsyncValueRef<Chain> chain;
-  /// This is a compact runtime pointer. When executing an async coroutine from
+  /// This is a runtime pointer. When executing an async coroutine from
   /// a synchronous context, a runtime pointer must be explicitly provided. The
   /// runtime pointer is implicitly propagated through nested async coroutines.
-  LLCL::CompactRuntimePtr runtime;
+  Runtime *runtime;
 };
-
-/// C binding unwrapper for `AsyncContext`.
-inline AsyncContext *unwrap(int8_t *ptr) {
-  return reinterpret_cast<AsyncContext *>(ptr);
-}
 
 // Enforce invariants between the LLCL C shim and KGEN.
 static_assert(sizeof(LLCL::CompactRuntimePtr) == 1,
               "expected CompactRuntimePtr to be 1 byte");
 static_assert(sizeof(AsyncValueRef<Chain>) == sizeof(void *),
               "expected AsyncValueRef to be the size of a pointer");
+
 } // namespace
+
+/// AsyncContextRef is an opaque wrapper around AsyncContext.
+using AsyncContextRef = void *;
+
+/// LLCLRuntimeRef is an opaque wrapper around LLCL::Runtime.
+using LLCLRuntimeRef = void *;
+
+/// C binding unwrapper for `AsyncContextRef` and `LLCLRuntimeRef`.
+template <typename T>
+static inline T *unwrap(void *ptr) {
+  return reinterpret_cast<T *>(ptr);
+}
+
+static inline LLCLRuntimeRef wrap(const Runtime *ptr) {
+  return reinterpret_cast<LLCLRuntimeRef>(const_cast<Runtime *>(ptr));
+}
+
+//===----------------------------------------------------------------------===//
+// Initialization
+//===----------------------------------------------------------------------===//
 
 /// Given the async context of a coroutine, initialize its token value. The
 /// runtime pointer must have already been set.
-extern "C" void KGEN_CompilerRT_LLCL_InitializeContext(int8_t *asyncCtx) {
-  AsyncContext *ctx = unwrap(asyncCtx);
+extern "C" void
+KGEN_CompilerRT_LLCL_InitializeContext(AsyncContextRef asyncCtx) {
+  auto *ctx = ::unwrap<AsyncContext>(asyncCtx);
   new (&ctx->chain)
       AsyncValueRef<Chain>(AsyncValueRef<Chain>::allocate(ctx->runtime));
 }
 
 /// Given the async context of a coroutine, destroy its token value.
-extern "C" void KGEN_CompilerRT_LLCL_DestroyContext(int8_t *asyncCtx) {
-  unwrap(asyncCtx)->chain.~AsyncValueRef<Chain>();
+extern "C" void KGEN_CompilerRT_LLCL_DestroyContext(AsyncContextRef asyncCtx) {
+  ::unwrap<AsyncContext>(asyncCtx)->chain.~AsyncValueRef<Chain>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -62,29 +79,31 @@ extern "C" void KGEN_CompilerRT_LLCL_DestroyContext(int8_t *asyncCtx) {
 
 /// Execute a coroutine.
 extern "C" void KGEN_CompilerRT_LLCL_Execute(void (*resume)(int8_t *),
-                                             int8_t *hdl, int8_t runtime) {
-  LLCL::CompactRuntimePtr::getFromOpaqueToken(runtime)->getWorkQueue()->addTask(
+                                             int8_t *hdl,
+                                             LLCLRuntimeRef runtime) {
+  ::unwrap<Runtime>(runtime)->getWorkQueue()->addTask(
       [resume, hdl] { resume(hdl); });
 }
 
 /// Resume a coroutine when the currenet one completes.
 extern "C" void KGEN_CompilerRT_LLCL_AndThen(void (*resume)(int8_t *),
-                                             int8_t *asyncCtx, int8_t *hdl) {
-  AsyncContext *ctx = unwrap(asyncCtx);
+                                             AsyncContextRef asyncCtx,
+                                             int8_t *hdl) {
+  auto *ctx = ::unwrap<AsyncContext>(asyncCtx);
   ctx->chain.getPointer()->andThenAsync([hdl, resume]() { resume(hdl); });
 }
 
 /// Block until the coroutine is done.
-extern "C" void KGEN_CompilerRT_LLCL_Wait(int8_t *asyncCtx) {
-  AsyncContext *ctx = unwrap(asyncCtx);
+extern "C" void KGEN_CompilerRT_LLCL_Wait(AsyncContextRef asyncCtx) {
+  auto *ctx = ::unwrap<AsyncContext>(asyncCtx);
   LLCL::await(ctx->chain);
 }
 
 /// Execute a coroutine and block the current routine until it is complete.
 extern "C" void KGEN_CompilerRT_LLCL_ExecuteAndWait(void (*resume)(int8_t *),
                                                     int8_t *hdl,
-                                                    int8_t *asyncCtx) {
-  AsyncContext *ctx = unwrap(asyncCtx);
+                                                    AsyncContextRef asyncCtx) {
+  auto *ctx = ::unwrap<AsyncContext>(asyncCtx);
   ctx->runtime->getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
   LLCL::await(ctx->chain);
 }
@@ -93,9 +112,9 @@ extern "C" void KGEN_CompilerRT_LLCL_ExecuteAndWait(void (*resume)(int8_t *),
 /// coroutine when the scheduled coroutine completes.
 extern "C" void KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *),
                                                       int8_t *execHdl,
-                                                      int8_t *asyncCtx,
+                                                      AsyncContextRef asyncCtx,
                                                       int8_t *resumeHdl) {
-  AsyncContext *ctx = unwrap(asyncCtx);
+  auto *ctx = ::unwrap<AsyncContext>(asyncCtx);
   ctx->runtime->getWorkQueue()->addTask(
       [resume, execHdl]() { resume(execHdl); });
   ctx->chain.getPointer()->andThenAsync(
@@ -104,8 +123,8 @@ extern "C" void KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *),
 
 /// Given the async context of a coroutine, indicate that it is complete by
 /// setting its token value.
-extern "C" void KGEN_CompilerRT_LLCL_Complete(int8_t *asyncCtx) {
-  unwrap(asyncCtx)->chain.copy().emplace();
+extern "C" void KGEN_CompilerRT_LLCL_Complete(AsyncContextRef asyncCtx) {
+  ::unwrap<AsyncContext>(asyncCtx)->chain.copy().emplace();
 }
 
 //===----------------------------------------------------------------------===//
@@ -113,7 +132,7 @@ extern "C" void KGEN_CompilerRT_LLCL_Complete(int8_t *asyncCtx) {
 //===----------------------------------------------------------------------===//
 
 /// Create an LLCL runtime and return it as a compact pointer.
-extern "C" int8_t
+extern "C" LLCLRuntimeRef
 KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(ssize_t numThreads,
                                               const char *profileFilenamePtr,
                                               ssize_t profileFilenameLen) {
@@ -124,35 +143,36 @@ KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(ssize_t numThreads,
       LLCL::createThreadPoolWorkQueue(numThreads, {}, !profileFilename.empty()),
       profileFilename);
   AsyncValue::registerType<LLCL::Chain>();
-  return runtime->getCompactPtr().getAsOpaqueToken();
+  return wrap(runtime);
 }
 
 /// Create an LLCL runtime and return it as a compact pointer.
-extern "C" int8_t KGEN_CompilerRT_LLCL_CreateRuntime(ssize_t numThreads) {
+extern "C" LLCLRuntimeRef
+KGEN_CompilerRT_LLCL_CreateRuntime(ssize_t numThreads) {
   return KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(numThreads, nullptr, 0);
 }
 
 /// Given a compact pointer to an LLCL runtime, destroy it.
-extern "C" void KGEN_CompilerRT_LLCL_DestroyRuntime(int8_t ptr) {
-  delete LLCL::CompactRuntimePtr::getFromOpaqueToken(ptr).get();
+extern "C" void KGEN_CompilerRT_LLCL_DestroyRuntime(LLCLRuntimeRef ptr) {
+  delete ::unwrap<Runtime>(ptr);
 }
 
 /// Given a compact pointer to an LLCL runtime, get the number of threads in it.
-extern "C" uint32_t KGEN_CompilerRT_LLCL_ParallelismLevel(int8_t ptr) {
-  return LLCL::CompactRuntimePtr::getFromOpaqueToken(ptr)
-      ->getWorkQueue()
-      ->getParallelismLevel();
+extern "C" uint32_t KGEN_CompilerRT_LLCL_ParallelismLevel(LLCLRuntimeRef ptr) {
+  return ::unwrap<Runtime>(ptr)->getWorkQueue()->getParallelismLevel();
 }
 
 //===----------------------------------------------------------------------===//
 // TaskGroup
 //===----------------------------------------------------------------------===//
 
-extern "C" void KGEN_CompilerRT_LLCL_AddTaskToGroup(
-    int8_t *tg, ssize_t (*tgCounterDecr)(void *), int8_t *taskCtx) {
-  unwrap(taskCtx)->chain.andThenAsync([tg, tgCounterDecr] {
+extern "C" void
+KGEN_CompilerRT_LLCL_AddTaskToGroup(AsyncContextRef tg,
+                                    ssize_t (*tgCounterDecr)(AsyncContextRef),
+                                    AsyncContextRef taskCtx) {
+  ::unwrap<AsyncContext>(taskCtx)->chain.andThenAsync([tg, tgCounterDecr] {
     if (tgCounterDecr(tg) != 0)
       return;
-    unwrap(tg)->chain.copy().emplace();
+    ::unwrap<AsyncContext>(tg)->chain.copy().emplace();
   });
 }
