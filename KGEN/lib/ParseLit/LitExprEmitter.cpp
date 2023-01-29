@@ -320,17 +320,32 @@ ASTType ExprEmitter::emitExprType(const ExprNode *node) {
     // Verify that all of the parameters for this type are bound.  We allow
     // MValues to refer to parameteric type, but anything calling `emitType` can
     // only handle fully bound types.
-    if (auto *decl = type.getDecl(shared)) {
-      auto structDecl = cast<StructDeclOp>(*decl);
-      if (type.getParamBindings().size() !=
-          structDecl.getInputParamDecls().size()) {
-        size_t numMissing = structDecl.getInputParamDecls().size() -
-                            type.getParamBindings().size();
-        emitError(node->getLoc(), "use of type ")
-            << structDecl.getNameAttr() << " with " << numMissing
-            << " unbound parameter" << plural(numMissing) << node->getRange();
-        return {};
-      }
+    auto *decl = type.getDecl(shared);
+    if (!decl) // MLIR types are never parameterized.
+      return type;
+
+    auto structDecl = cast<StructDeclOp>(*decl);
+
+    // Build up a InputParamBindings set to validate and check the bindings.
+    InputParamBindings paramBindings;
+    for (auto binding : type.getParamBindings())
+      paramBindings.add(binding);
+
+    // Check the bindings.
+    ssize_t incorrectBindingNo = 0;
+    ASTType incorrectBindingExpectedType;
+    auto bindingAttr = paramBindings.verifyBindings(
+        structDecl.getInputParamDeclsAttr(), structDecl.getName(),
+        node->getLoc(), incorrectBindingNo, incorrectBindingExpectedType,
+        shared, structDecl);
+    if (!bindingAttr)
+      return {};
+
+    // If verifyBindings changed the bindings set, then we may have had an
+    // empty varargs list or something.  Rebind the DeclRefType.
+    if (bindingAttr != type.getParamBindings()) {
+      auto symbol = cast<DeclRefType>(type.mlirType).getSymbol();
+      type = DeclRefType::get(symbol, bindingAttr);
     }
 
     return type;
