@@ -8,7 +8,7 @@ from Assert import assert_param
 from Bool import Bool
 from DType import DType
 from Int import Int
-from List import product, contains
+from List import product, contains, _get_kgen_list_item
 from MemoryUtilities import stack_allocation
 from Pointer import DTypePointer
 from SIMD import SIMD
@@ -496,13 +496,9 @@ fn _get_dim_impl[
 ) -> Int:
     # First try to extract the static info on this dimension,
     #  could be either a meta constant or an unknown.
-    alias static_dim_value = __mlir_attr[
-        `#kgen.param.expr<get_list_element, `,
-        shape,
-        `, `,
-        index,
-        `> : index`,
-    ]
+    alias static_dim_value = _get_kgen_list_item[
+        index, rank, __mlir_type.index
+    ](shape)
     # Call the helper to resolve unknown by dynamic shape lookup if any.
     return _get_dim_helper[rank, static_dim_value, index](dynamic_shape)
 
