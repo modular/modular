@@ -14,7 +14,6 @@
 include "KGEN/LITDialect/LITDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
-include "mlir/IR/SubElementInterfaces.td"
 
 /// An attribute in the LIT dialect.
 class LITAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
@@ -118,8 +117,7 @@ def DefaultArgumentArrayAttr
 // StructAttr
 //===----------------------------------------------------------------------===//
 
-def LIT_StructAttr : LITAttr<"Struct", "struct", [TypedAttrInterface,
-    SubElementAttrInterface]> {
+def LIT_StructAttr : LITAttr<"Struct", "struct", [TypedAttrInterface]> {
   let summary = "A constant struct value";
   let description = [{
     The `#lit.struct` attribute represents a constant struct value. It stores
@@ -142,10 +140,9 @@ def LIT_StructAttr : LITAttr<"Struct", "struct", [TypedAttrInterface,
 // StructExtractAttr
 //===----------------------------------------------------------------------===//
 
-def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract",
-    [TypedAttrInterface,
-     DeclareAttrInterfaceMethods<SubElementAttrInterface,
-                                 ["replaceImmediateSubElements"]>]> {
+def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract", [
+    TypedAttrInterface
+  ]> {
   let summary = "Extract an element from a struct value";
   let description = [{
     The `#lit.struct.extract` attribute represents a field reference from a

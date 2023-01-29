@@ -201,7 +201,7 @@ private:
 
 /// Parse the elements of a primitive array.
 static ParseResult parsePrimitiveArray(AsmParser &p,
-                                       FailureOr<std::vector<uint8_t>> &values,
+                                       std::vector<uint8_t> &values,
                                        Type elementType) {
   auto intOrFp = elementType.dyn_cast<ArithmeticType>();
   if (!intOrFp)
@@ -209,10 +209,8 @@ static ParseResult parsePrimitiveArray(AsmParser &p,
                        "expected integer, index, or float element type");
 
   // The array is empty if there are no colons.
-  if (p.parseOptionalColon()) {
-    values.emplace();
+  if (p.parseOptionalColon())
     return success();
-  }
 
   PrimitiveElementParser handler(intOrFp);
   if (handler.parseElements(p))
@@ -572,15 +570,13 @@ copyIntoBytes(mlir::StorageUniquer::StorageAllocator &allocator,
 static_assert(sizeof(uint8_t) == sizeof(char));
 
 /// Parses a hex string into data. The empty string denotes no data.
-static ParseResult
-parseAlignedBytesData(AsmParser &p, FailureOr<SmallVector<uint8_t>> &data) {
+static ParseResult parseAlignedBytesData(AsmParser &p,
+                                         SmallVector<uint8_t> &data) {
   std::string encoded;
   if (p.parseString(&encoded))
-    return mlir::failure();
-  if (encoded.empty()) {
-    data.emplace();
+    return failure();
+  if (encoded.empty())
     return success();
-  }
   StringRef encodedRef = encoded;
   std::string decoded;
   auto startLoc = p.getCurrentLocation();
@@ -588,8 +584,8 @@ parseAlignedBytesData(AsmParser &p, FailureOr<SmallVector<uint8_t>> &data) {
       (encodedRef.size() & 1) || !llvm::tryGetFromHex(encodedRef, decoded)) {
     return p.emitError(startLoc, "invalid hex string for aligned_bytes");
   }
-  data.emplace(decoded.size());
-  memcpy(data->data(), decoded.data(), decoded.size());
+  data.resize(decoded.size());
+  memcpy(data.data(), decoded.data(), decoded.size());
   return success();
 }
 

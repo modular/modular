@@ -79,16 +79,10 @@ void printIndicesParamValue(AsmPrinter &p, ArrayRef<TypedAttr> value) {
 /// Parse an array of parameter values that is known to be an index type or a
 /// `?` which results in a null attribute.
 ParseResult parseIndicesParamValue(AsmParser &p,
-                                   FailureOr<SmallVector<TypedAttr>> &result) {
-  result.emplace();
-  return p.parseCommaSeparatedList(
-      AsmParser::Delimiter::Square, [&]() -> ParseResult {
-        FailureOr<TypedAttr> attr;
-        if (auto err = parseIndexParamValue(p, attr); failed(err))
-          return err;
-        result->emplace_back(*attr);
-        return success();
-      });
+                                   SmallVector<TypedAttr> &result) {
+  return p.parseCommaSeparatedList(AsmParser::Delimiter::Square, [&]() {
+    return parseIndexParamValue(p, result.emplace_back());
+  });
 }
 
 LogicalResult
@@ -110,25 +104,6 @@ NDBufferType::verify(function_ref<mlir::InFlightDiagnostic()> emitError,
   if (dtype && !dtype.getType().isa<DTypeType>())
     return emitError() << "type parameter for ndbuffer must be a !kgen.dtype";
   return success();
-}
-
-void NDBufferType::walkImmediateSubElements(
-    function_ref<void(Attribute)> walkAttrsFn,
-    function_ref<void(Type)> walkTypesFn) const {
-  for (TypedAttr shape : getShape())
-    walkAttrsFn(shape);
-  walkAttrsFn(getDType());
-}
-
-Type NDBufferType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                               ArrayRef<Type> replTypes) const {
-  assert(replAttrs.size() == (getRank() + 1) && replTypes.empty());
-  SmallVector<TypedAttr, 5> shapeAttrs;
-  shapeAttrs.reserve(replAttrs.size() - 1);
-  for (auto attr : llvm::drop_end(replAttrs))
-    shapeAttrs.push_back(attr);
-
-  return NDBufferType::get(getContext(), shapeAttrs, replAttrs.back());
 }
 
 size_t NDBufferType::getRank() const { return getShape().size(); }

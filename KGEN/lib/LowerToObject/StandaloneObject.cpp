@@ -62,26 +62,22 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
     return copy;
   };
 
-  // TODO(#5018): We should simplify the walk API to make this easier and more
-  // efficient.
-  auto checkForRefType = [&](Type type) {
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([&](Type type) {
     if (auto ref = dyn_cast<DeclRefType>(type)) {
       // Recurse on the type declaration.
       if (Operation *decl = extractDependency(ref.getName()))
         sliceDependencies(decl, sliceSymtab, symtab);
     }
-  };
-  auto checkForRefTypeAndRecurse = [&](Type type) {
-    checkForRefType(type);
-    if (auto interface = dyn_cast<mlir::SubElementTypeInterface>(type))
-      interface.walkSubTypes(checkForRefType);
-  };
+  });
   auto extractDependencies = [&](Operation *op) {
     // Extract references to type declarations.
-    op->getAttrDictionary().walkSubTypes(checkForRefType);
-    llvm::for_each(op->getResultTypes(), checkForRefTypeAndRecurse);
+    walker.walk(op->getAttrDictionary());
+    for (Type type : op->getResultTypes())
+      walker.walk(type);
     for (Region &region : op->getRegions())
-      llvm::for_each(region.getArgumentTypes(), checkForRefTypeAndRecurse);
+      for (Type type : region.getArgumentTypes())
+        walker.walk(type);
 
     // Extract references to functions. Mark copied functions as module private
     // and recurse.

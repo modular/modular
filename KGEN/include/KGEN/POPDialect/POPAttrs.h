@@ -11,7 +11,6 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
-#include "mlir/IR/SubElementInterfaces.h"
 #include "llvm/ADT/APSInt.h"
 
 //===----------------------------------------------------------------------===//

@@ -98,10 +98,7 @@ static Type expandListsInType(Type type) {
   if (auto list = dyn_cast<ListType>(type))
     return convertListToArrayType(list);
 
-  auto itf = dyn_cast<mlir::SubElementTypeInterface>(type);
-  if (!itf)
-    return type;
-  return itf.replaceSubElements([&](Type type) -> Type {
+  return type.replace([&](Type type) -> Type {
     if (isa<POP::CoroutineType, POP::StructType, FunctionType>(type))
       return flattenFirst(type);
     if (auto list = dyn_cast<ListType>(type))
@@ -149,10 +146,7 @@ static Attribute expandListsInAttr(Attribute attr) {
     return POP::ArrayAttr::get(list.getValues(),
                                convertListToArrayType(list.getType()));
 
-  auto itf = dyn_cast<mlir::SubElementAttrInterface>(attr);
-  if (!itf)
-    return attr;
-  return itf.replaceSubElements(
+  return attr.replace(
       [&](Attribute attr) -> Attribute {
         if (isa<POP::StructAttr>(attr))
           return flattenFirst(attr);
@@ -686,7 +680,7 @@ void LowerKGENToPOPPass::runOnOperation() {
 
     // Expand any lists in signature attributes.
     op->setAttrs(op->getAttrDictionary()
-                     .replaceSubElements([](SignatureType signature) {
+                     .replace([](SignatureType signature) {
                        return expandListsInType(signature);
                      })
                      .cast<DictionaryAttr>());

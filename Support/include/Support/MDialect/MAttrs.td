@@ -10,7 +10,6 @@
 include "Support/MDialect/MDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
-include "mlir/IR/SubElementInterfaces.td"
 
 class MAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
     : AttrDef<MDialect, attrName, traits> {
@@ -210,8 +209,7 @@ def UI64ArrayElementsAttr : ConfinedAttr<IntArrayElementsAttr, [AttrConstraint<C
 // PointerAttr
 //===----------------------------------------------------------------------===//
 
-def M_PointerAttr : MAttr<"Pointer", "pointer",
-    [SubElementAttrInterface, TypedAttrInterface]> {
+def M_PointerAttr : MAttr<"Pointer", "pointer", [TypedAttrInterface]> {
   let summary = "an opaque pointer attribute";
   let description = [{
     The `#M.pointer` attribute represents an opaque pointer value as an address.

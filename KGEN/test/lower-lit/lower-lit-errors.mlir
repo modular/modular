@@ -20,15 +20,6 @@ lit.func @impl(%arg0 : f32) implements @itf {
 
 // -----
 
-kgen.generator.interface @itf(%arg0: i32)
-
-// expected-error @+1 {{argument #0 has type 'i12' not equal to interface type 'i32' but does not implement SubElementTypeInterface}}
-lit.func @impl(%arg0 : i12) implements @itf {
-  kgen.return
-}
-
-// -----
-
 // expected-note @+1 {{interface declared here}}
 kgen.generator.interface @itf(%arg0: !zap.ndbuffer<[?], f32>)
 

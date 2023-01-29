@@ -11,7 +11,6 @@ include "KGEN/KGENDialect/KGENAttrInterfaces.td"
 include "KGEN/POPDialect/POPDialect.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/EnumAttr.td"
-include "mlir/IR/SubElementInterfaces.td"
 
 class POP_Enum<string name, string summary, list<I32EnumAttrCase> cases> :
   I32EnumAttr<name, summary, cases> {
@@ -171,7 +170,7 @@ def POP_SIMDAttr : POP_Attr<"SIMD", "simd", [TypedAttrInterface,
 //===----------------------------------------------------------------------===//
 
 def POP_ArrayAttr : POP_Attr<"Array", "array", [
-    TypedAttrInterface, SubElementAttrInterface,
+    TypedAttrInterface,
     DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
   let summary = "An array attribute.";
   let description = [{
@@ -207,7 +206,7 @@ def POP_ArrayAttr : POP_Attr<"Array", "array", [
 //===----------------------------------------------------------------------===//
 
 def POP_StructAttr : POP_Attr<"Struct", "struct", [
-    TypedAttrInterface, SubElementAttrInterface,
+    TypedAttrInterface,
     DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
   let summary = "A heterogeneous list of elements.";
   let description = [{
@@ -243,9 +242,7 @@ def POP_StructAttr : POP_Attr<"Struct", "struct", [
 //===----------------------------------------------------------------------===//
 
 def POP_StructExtractAttr : POP_Attr<"StructExtract", "struct.extract",
-    [TypedAttrInterface,
-     DeclareAttrInterfaceMethods<SubElementAttrInterface, ["replaceImmediateSubElements"]>
-    ]> {
+    [TypedAttrInterface]> {
   let summary = "Extract an element from a struct value";
   let description = [{
     The `#pop.struct.extract` attribute represents a field reference from a
@@ -282,7 +279,7 @@ def POP_StructExtractAttr : POP_Attr<"StructExtract", "struct.extract",
 //===----------------------------------------------------------------------===//
 
 def POP_VariantAttr : POP_Attr<"Variant", "variant", [
-    TypedAttrInterface, SubElementAttrInterface,
+    TypedAttrInterface,
     DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
   let summary = "A variant constant value.";
   let description = [{
@@ -317,7 +314,7 @@ def POP_VariantAttr : POP_Attr<"Variant", "variant", [
 //===----------------------------------------------------------------------===//
 
 def POP_VariadicAttr : POP_Attr<"Variadic", "variadic", [
-    TypedAttrInterface, SubElementAttrInterface,
+    TypedAttrInterface,
     DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
   let summary = "A parameterized variadic attribute.";
   let description = [{

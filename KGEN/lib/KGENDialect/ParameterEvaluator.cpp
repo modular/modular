@@ -32,10 +32,7 @@ void KGEN::collectParameterReferences(Attribute attr,
     return;
   }
 
-  auto itf = dyn_cast<mlir::SubElementAttrInterface>(attr);
-  if (!itf)
-    return;
-  itf.walkImmediateSubElements(
+  attr.walkImmediateSubElements(
       [&](Attribute attr) { collectParameterReferences(attr, results); },
       [&](Type type) { collectParameterReferences(type, results); });
 }
@@ -44,10 +41,7 @@ void KGEN::collectParameterReferences(Attribute attr,
 /// references to named parameters.
 void KGEN::collectParameterReferences(Type type,
                                       SmallVector<ParamDeclRefAttr> &results) {
-  auto itf = dyn_cast_or_null<mlir::SubElementTypeInterface>(type);
-  if (!itf)
-    return;
-  itf.walkImmediateSubElements(
+  type.walkImmediateSubElements(
       [&](Attribute attr) { collectParameterReferences(attr, results); },
       [&](Type type) { collectParameterReferences(type, results); });
 }
@@ -94,13 +88,13 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   } else if (isa<ExprFuncAttr, MLIROpAttr>(attr)) {
     // Expression functions and MLIR operation expressions are isolated from
     // above, so don't collect from them.
-  } else if (auto itf = dyn_cast<mlir::SubElementAttrInterface>(attr)) {
+  } else {
     SmallVector<Attribute> newAttrs;
     SmallVector<Type> newTypes;
-    itf.walkImmediateSubElements(
+    attr.walkImmediateSubElements(
         [&](Attribute attr) { newAttrs.push_back(getReboundAttribute(attr)); },
         [&](Type type) { newTypes.push_back(getReboundType(type)); });
-    result = itf.replaceImmediateSubElements(newAttrs, newTypes);
+    result = attr.replaceImmediateSubElements(newAttrs, newTypes);
   }
 
   // If an operator persisted, try to simplify it with the symbol table.
@@ -127,17 +121,13 @@ Type ParameterEvaluator::getReboundType(Type type) {
   // "isolated from above" with respect to their contexts, so we don't rebind
   // within them.
   if (!signature || signature.getInputParams().empty()) {
-    if (auto itf = dyn_cast<mlir::SubElementTypeInterface>(type)) {
-      SmallVector<Attribute> newAttrs;
-      SmallVector<Type> newTypes;
+    SmallVector<Attribute> newAttrs;
+    SmallVector<Type> newTypes;
 
-      itf.walkImmediateSubElements(
-          [&](Attribute attr) {
-            newAttrs.push_back(getReboundAttribute(attr));
-          },
-          [&](Type type) { newTypes.push_back(getReboundType(type)); });
-      result = itf.replaceImmediateSubElements(newAttrs, newTypes);
-    }
+    type.walkImmediateSubElements(
+        [&](Attribute attr) { newAttrs.push_back(getReboundAttribute(attr)); },
+        [&](Type type) { newTypes.push_back(getReboundType(type)); });
+    result = type.replaceImmediateSubElements(newAttrs, newTypes);
   }
 
   return rewrittenTypes[type] = result;

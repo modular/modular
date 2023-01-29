@@ -66,10 +66,9 @@ DefaultArgumentArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 // StructAttr
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseStructElements(
-    AsmParser &p,
-    FailureOr<SmallVector<std::pair<StringAttr, TypedAttr>>> &values) {
-  values.emplace();
+static ParseResult
+parseStructElements(AsmParser &p,
+                    SmallVector<std::pair<StringAttr, TypedAttr>> &values) {
   StringAttr name;
   Type type;
   TypedAttr value;
@@ -77,7 +76,7 @@ static ParseResult parseStructElements(
     if (parseParamName(p, name) || parseColonTypeOrIndex(p, type) ||
         p.parseEqual() || parseParamValue(p, value, type))
       return failure();
-    values->emplace_back(name, value);
+    values.emplace_back(name, value);
     return success();
   };
   return p.parseCommaSeparatedList(AsmParser::Delimiter::Braces, parseElt);
@@ -123,23 +122,6 @@ TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
   }
 
   return Base::get(context, structValue, field, resultType);
-}
-
-// FIXME(Issue #7779): this shouldn't be needed.
-// https://github.com/modularml/modular/issues/7779
-Attribute
-StructExtractAttr::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                               ArrayRef<Type> replTypes) const {
-  assert(replAttrs.size() == 2 && replTypes.size() == 1);
-  auto structAttr = ::dyn_cast<TypedAttr>(replAttrs[0]);
-  auto fieldAttr = ::dyn_cast<StringAttr>(replAttrs[1]);
-  if (!structAttr || !fieldAttr)
-    return {};
-  if (structAttr == getStructValue() && fieldAttr == getField())
-    return *this;
-  assert(::isa<DeclRefType>(structAttr.getType()));
-  return StructExtractAttr::get(getContext(), structAttr, fieldAttr,
-                                replTypes[0]);
 }
 
 //===----------------------------------------------------------------------===//

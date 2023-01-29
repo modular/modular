@@ -53,12 +53,6 @@ Type ParamRefType::get(TypedAttr param) {
   return Base::get(param.getContext(), param);
 }
 
-Type ParamRefType::replaceImmediateSubElements(ArrayRef<Attribute> replAttrs,
-                                               ArrayRef<Type> replTypes) const {
-  assert(replAttrs.size() == 1 && replTypes.empty());
-  return ParamRefType::get(replAttrs[0]);
-}
-
 //===----------------------------------------------------------------------===//
 // MLIRTypeType
 //===----------------------------------------------------------------------===//
@@ -138,10 +132,10 @@ OptionalParseResult SignatureType::parseValue(AsmParser &p,
   // Parse a symbol reference as a signature type attribute.
   if (auto symbol = attr.dyn_cast<SymbolRefAttr>()) {
     // Parse any trailing parameter bindings.
-    FailureOr<ParamBindArrayAttr> paramValues;
+    ParamBindArrayAttr paramValues;
     if (parseOptionalParamBindSpec(p, paramValues))
       return failure();
-    value = SymbolConstantAttr::get(symbol, *paramValues, *this);
+    value = SymbolConstantAttr::get(symbol, paramValues, *this);
   } else {
     value = attr.cast<TypedAttr>();
   }

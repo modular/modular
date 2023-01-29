@@ -9,7 +9,6 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/MDialect/MTypeInterfaces.h"
-#include "mlir/IR/SubElementInterfaces.h"
 #include "mlir/IR/Types.h"
 
 namespace M::KGEN {

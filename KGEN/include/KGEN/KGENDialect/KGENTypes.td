@@ -15,7 +15,6 @@ include "KGEN/KGENDialect/KGENDialect.td"
 include "KGEN/KGENDialect/KGENTypeInterfaces.td"
 include "Support/MDialect/MTypeInterfaces.td"
 include "mlir/IR/AttrTypeBase.td"
-include "mlir/IR/SubElementInterfaces.td"
 
 // Base class for other typedefs. Provides dialact-specific defaults.
 class KGENType<string name, string typeMnemonic, list<Trait> traits = []>
@@ -27,9 +26,7 @@ class KGENType<string name, string typeMnemonic, list<Trait> traits = []>
 // ParamRefType
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamRefType : KGENType<"ParamRef", "paramref", [
-    DeclareTypeInterfaceMethods<SubElementTypeInterface, ["replaceImmediateSubElements"]>
-  ]> {
+def KGEN_ParamRefType : KGENType<"ParamRef", "paramref"> {
   let summary = "Type specified by a parameter expression";
   let description = [{
     This is a symbolic type represented with a parameter expression that is
@@ -106,7 +103,6 @@ def KGEN_StringType : KGENType<"String", "string",
 //===----------------------------------------------------------------------===//
 
 def KGEN_ListType : KGENType<"List", "list", [
-    SubElementTypeInterface,
     DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "homogenous list type";
   let description = [{
@@ -166,7 +162,6 @@ def KGEN_ListType : KGENType<"List", "list", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_SignatureType : KGENType<"Signature", "signature", [
-    SubElementTypeInterface,
     DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "The signature for a parameterized declaration";
   let description = [{
@@ -266,8 +261,7 @@ def CalleeResultTypes : TypesMatchWith<"results match callee result types",
 // DeclRefType
 //===----------------------------------------------------------------------===//
 
-def KGEN_DeclRefType : KGENType<"DeclRef", "declref",
-    [DeclareTypeInterfaceMethods<SubElementTypeInterface>]> {
+def KGEN_DeclRefType : KGENType<"DeclRef", "declref"> {
   let summary = "Reference to a type declaration.";
   let description = [{
     A `!kgen.declref` type references a type declaration and binds parameter values

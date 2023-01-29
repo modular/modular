@@ -16,7 +16,7 @@
 // NESTED-LABEL: @trivial
 // NESTED-SAME: attributes {region_hashes = #cache<regions[
 // COM: First the hash of the region itself.
-// NESTED-SAME:   "YDK1chEjmwb+fbZXjMrNcLogGGxYc6zNQxK+pQGCATw="
+// NESTED-SAME:   "DGJKX1OE49WJI2neuccHvVNBt08Qulaaz8neT820CWU="
 // COM: Next, the symbols referred-to inside the region
 // NESTED-SAME:   symbols = [@external]
 // COM: Next, the hashes inside (from the deflated constant).

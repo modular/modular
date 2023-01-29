@@ -10,7 +10,6 @@
 include "Support/DebugInfoDialect/IR/DebugInfoDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
-include "mlir/IR/SubElementInterfaces.td"
 
 //===----------------------------------------------------------------------===//
 // DIAttr
@@ -37,9 +36,7 @@ class DILocalScopeAttr<string name, string attrMnemonic, list<Trait> traits = []
 // DICompileUnitAttr
 //===----------------------------------------------------------------------===//
 
-def DebugInfo_DICompileUnitAttr : DIScopeAttr<"DICompileUnit", "compile_unit", [
-    SubElementAttrInterface
-  ]> {
+def DebugInfo_DICompileUnitAttr : DIScopeAttr<"DICompileUnit", "compile_unit"> {
   let summary = "A single file compilation unit description.";
   let description = [{
     The `debuginfo.compile_unit` attribute represents a compilation scope for
@@ -109,9 +106,8 @@ def DebugInfo_DIFileAttr : DIScopeAttr<"DIFile", "file"> {
 //===----------------------------------------------------------------------===//
 
 def DebugInfo_DILexicalBlockAttr : DILocalScopeAttr<
-  "DILexicalBlock", "lexical_block", [
-    SubElementAttrInterface
-  ]> {
+    "DILexicalBlock", "lexical_block"
+  > {
   let summary = "A lexical block scope.";
   let description = [{
     The `debuginfo.lexical_block` attribute represents a lexical block debug
@@ -151,7 +147,7 @@ def DebugInfo_DILexicalBlockAttr : DILocalScopeAttr<
 //===----------------------------------------------------------------------===//
 
 def DebugInfo_DILocalVariableAttr : DIAttr<"DILocalVariable", "local_variable", [
-    SubElementAttrInterface, TypedAttrInterface
+    TypedAttrInterface
   ]> {
   let summary = "A variable or subprogram argument description.";
   let description = [{
@@ -199,8 +195,7 @@ def DebugInfo_DILocalVariableAttr : DIAttr<"DILocalVariable", "local_variable", 
 //===----------------------------------------------------------------------===//
 
 def DebugInfo_DISubprogramAttr : DILocalScopeAttr<"DISubprogram", "subprogram", [
-  SubElementAttrInterface,
-  TypedAttrInterface
+    TypedAttrInterface
   ]> {
   let summary = "A subprogram, i.e., function, description.";
   let description = [{
@@ -236,9 +231,9 @@ def DebugInfo_DISubprogramAttr : DILocalScopeAttr<"DISubprogram", "subprogram", 
   );
   let builders = [
     AttrBuilderWithInferredContext<(ins
-      "DICompileUnitAttr":$compileUnit, "DIScopeAttr":$scope, "StringRef":$name, 
-      "StringRef":$linkageName, "DIFileAttr":$file, "unsigned":$line, 
-      "unsigned":$scopeLine, "SubprogramFlags":$subprogramFlags, 
+      "DICompileUnitAttr":$compileUnit, "DIScopeAttr":$scope, "StringRef":$name,
+      "StringRef":$linkageName, "DIFileAttr":$file, "unsigned":$line,
+      "unsigned":$scopeLine, "SubprogramFlags":$subprogramFlags,
       "DISubroutineType":$type
     ), [{
       MLIRContext *ctx = file.getContext();

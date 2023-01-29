@@ -40,7 +40,7 @@ ParseResult parseKGENType(AsmParser &parser, Type &type);
 
 /// Try to parse a specific KGEN type.
 template <typename T>
-ParseResult parseKGENType(AsmParser &parser, FailureOr<T> &type) {
+ParseResult parseKGENType(AsmParser &parser, T &type) {
   Type value;
   llvm::SMLoc loc = parser.getCurrentLocation();
   if (failed(parseKGENType(parser, value)))
@@ -70,7 +70,6 @@ void printParamName(AsmPrinter &p, StringRef name);
 
 /// Parse a parameter name as either a keyword or double quoted string.
 ParseResult parseParamName(AsmParser &p, StringAttr &name);
-ParseResult parseParamName(AsmParser &p, FailureOr<StringAttr> &name);
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok.
@@ -81,8 +80,6 @@ void printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
 ParseResult parseParamValue(AsmParser &p, TypedAttr &value, Type type);
-ParseResult parseParamValue(AsmParser &p, FailureOr<TypedAttr> &result,
-                            Type type);
 
 /// Parse ":type 42" or "42" and default to index type.
 ParseResult parseParamValueDefaultingToIndex(AsmParser &p, TypedAttr &value);
@@ -90,26 +87,24 @@ ParseResult parseParamValueDefaultingToIndex(AsmParser &p, TypedAttr &value);
 /// Print a parameter value that is known to have `dtype` type.
 void printDTypeParamValue(AsmPrinter &p, Attribute value);
 /// Parse a parameter value that is known to have `dtype` type.
-ParseResult parseDTypeParamValue(AsmParser &p, FailureOr<TypedAttr> &value);
+ParseResult parseDTypeParamValue(AsmParser &p, TypedAttr &value);
 
 /// Print a parameter value that is known to have `type` type.
 void printTypeParamValue(AsmPrinter &p, Attribute value);
 /// Parse a parameter value that is known to have `type` type.
-ParseResult parseTypeParamValue(AsmParser &p, FailureOr<TypedAttr> &value);
+ParseResult parseTypeParamValue(AsmParser &p, TypedAttr &value);
 
 /// Print a parameter value that is known to have `index` type.
 void printIndexParamValue(AsmPrinter &p, Operation *op, Attribute value);
 void printIndexParamValue(AsmPrinter &p, Attribute value);
 /// Parse a parameter value that is known to have `index` type.
 ParseResult parseIndexParamValue(AsmParser &p, TypedAttr &value);
-ParseResult parseIndexParamValue(AsmParser &p, FailureOr<TypedAttr> &value);
 
 /// Parse a index-or-colon-type and then a parameter value of that type.
-ParseResult parseColonTypeParamValue(AsmParser &p, FailureOr<TypedAttr> &value);
+ParseResult parseColonTypeParamValue(AsmParser &p, TypedAttr &value);
 void printColonTypeParamValue(AsmPrinter &p, TypedAttr value);
 
 /// Parse and print a ParamDeclAttr which has syntactic form `name (: type)?`.
-ParseResult parseParamDecl(AsmParser &p, FailureOr<ParamDeclAttr> &result);
 ParseResult parseParamDecl(AsmParser &p, ParamDeclAttr &result);
 void printParamDecl(AsmPrinter &p, ParamDeclAttr decl);
 
@@ -165,9 +160,8 @@ ParseResult parseParamBinds(AsmParser &p, ParamBindArrayAttr &paramBinds);
 void printParamBinds(AsmPrinter &p, ArrayRef<ParamBindAttr> paramBinds);
 
 /// Parse a list of parameter bindings without result parameters in <>'s
-ParseResult
-parseOptionalParamBindSpec(AsmParser &p,
-                           FailureOr<ParamBindArrayAttr> &paramValues);
+ParseResult parseOptionalParamBindSpec(AsmParser &p,
+                                       ParamBindArrayAttr &paramValues);
 void printOptionalParamBindSpec(AsmPrinter &p, ParamBindArrayAttr paramValues);
 
 /// Parse and print a list of parameter values.

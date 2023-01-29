@@ -434,10 +434,10 @@ LogicalResult VariantGetOp::verify() {
 
 /// Parse the element type of the allocated pointer type.
 static ParseResult parsePointerOf(AsmParser &p, Type &result) {
-  FailureOr<TypedAttr> elementType;
+  TypedAttr elementType;
   if (parseTypeParamValue(p, elementType))
     return failure();
-  result = PointerType::get(*elementType);
+  result = PointerType::get(elementType);
   return success();
 }
 

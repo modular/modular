@@ -20,7 +20,7 @@ func.func private @empty1()
 // CHECK-LABEL: func.func private @empty2() attributes {region_hashes = #cache<regions[<"47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=">]>}
 func.func private @empty2()
 
-// CHECK-LABEL: func.func private @caller(i32) attributes {region_hashes = #cache<regions[<"A+5v4ZGYMclDMrA4OL2d+rd28V+ERy9/jLvTnw+jTe0=" symbols = [@trivial]>]>}
+// CHECK-LABEL: func.func private @caller(i32) attributes {region_hashes = #cache<regions[<"P1eRy0kAHwiHWQw3MozcuEZDGvUrtx8JZy94Am7uoAE=" symbols = [@trivial]>]>}
 
 // ROUNDTRIP: func.func private @caller(%arg0: i32) {
 // ROUNDTRIP:   call @trivial(%arg0) : (i32) -> ()
@@ -32,7 +32,7 @@ func.func private @caller(%arg0: i32) {
   return loc("foo":1:0)
 }
 
-// CHECK-LABEL: func.func private @multi_caller(i32) attributes {region_hashes = #cache<regions[<"vHPTJ2UIB98hG+obnXbxm/U7+jkxWTW9KGDQyB7GiXM=" symbols = [@trivial, @caller]>]>}
+// CHECK-LABEL: func.func private @multi_caller(i32) attributes {region_hashes = #cache<regions[<"04mZUfztnN3+ATh+yMxeoJJ7Sy0zpuvLEdsqDai2Aas=" symbols = [@trivial, @caller]>]>}
 
 // ROUNDTRIP: func.func private @multi_caller(%arg0: i32) {
 // ROUNDTRIP:   call @trivial(%arg0) : (i32) -> ()
@@ -55,12 +55,12 @@ func.func private @another_trivial(%arg0: i32) {
 // CHECK-NEXT:  }, {
 // CHECK-NEXT:  }, {
 // CHECK-NEXT:  }) {region0_type = (i32) -> (), region_hashes = #cache<regions[
-// CHECK-SAME: <"fGXOPpj0hfczNrKloYp6qFF/dvzv8dUGTNbI6F0eKHA=" symbols = [@trivial]>
+// CHECK-SAME: <"re/A0Or06yFJ0dIkDWbS3qj+zTzGnWLGKhwPWw8evz0=" symbols = [@trivial]>
 // COM: These two are the same because we put in the same locations and they have the same ops.
-// CHECK-SAME: <"aMHTL9MhjHJonpIuLQzuEawWvNSs7Mgk9wuvH/sxpu8=" symbols = [@trivial, @caller]>
-// CHECK-SAME: <"aMHTL9MhjHJonpIuLQzuEawWvNSs7Mgk9wuvH/sxpu8=" symbols = [@another_trivial, @caller]>
+// CHECK-SAME: <"TxaT38NUJwp9ViiwoBR/P2dJ43yomddgiFVp8mh06HY=" symbols = [@trivial, @caller]>
+// CHECK-SAME: <"TxaT38NUJwp9ViiwoBR/P2dJ43yomddgiFVp8mh06HY=" symbols = [@another_trivial, @caller]>
 // COM: This one should be different because the cache indices are different.
-// CHECK-SAME: <"eiFeLEEcDiPwXwmbwmSwahkHT+Ys6xqr8pH/Y6nscF8=" symbols = [@trivial]>
+// CHECK-SAME: <"ESfQG5LCnzjuIpYIPqTgXSs0SuOreBMafgMzm+tz+s8=" symbols = [@trivial]>
 // CHECK-SAME: sym_name = "multi_region"} : () -> ()
 
 // ROUNDTRIP: "some.symbol.op"() ({
