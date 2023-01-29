@@ -102,48 +102,77 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       return {};
     }
 
-    auto bound = bindings[nextBinding++];
+    auto binding = bindings[nextBinding++];
     // If this value was already bound and checked, use it.
-    auto prebound = dyn_cast<ParamBindAttr>(bound.bindingOrValue);
-    if (prebound) {
+    if (auto prebound = dyn_cast<ParamBindAttr>(binding.bindingOrValue)) {
       evaluator.setParameterValue(prebound.getName(), prebound.getValue());
       newBindings.push_back(prebound);
       continue;
     }
 
-    assert(bound.expr &&
-           "should always have an expr tree for unchecked bindings");
+    auto handleSingleParameterValue = [&](Binding binding,
+                                          ASTType expectedType) -> MValue {
+      assert(binding.expr &&
+             "should always have an expr tree for unchecked bindings");
 
-    // Check the type matches what is expected, and perform an implicit
-    // conversion if needed.
-    auto expectedType = ASTType(evaluator.getReboundType(decl.getType()));
-    auto argValue = emitter.getAsExpectedType(
-        MValue(bound.getValue()), bound.expr, expectedType, [&]() {
-          if (declOp) {
-            auto diag = shared.emitError(bound.expr->getLoc(), "'")
-                        << baseName << "' parameter " << decl.getName()
-                        << " has " << expectedType
-                        << " type, but value has type "
-                        << ASTType(bound.getValue().getType())
-                        << bound.expr->getRange();
-            diag.attachNote(declOp->getLoc())
-                << "'" << baseName << "' declared here";
-          }
-          incorrectBindingNo = newBindings.size();
-          incorrectBindingExpectedType = expectedType;
-        });
-    if (!argValue)
-      return {};
+      // Check the type matches what is expected, and perform an implicit
+      // conversion if needed.
+      expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
 
-    auto argMValue = argValue.getIfMValue();
-    assert(argMValue && "cannot emit a dynamic value in parameter context");
+      auto errorHandler = [&]() {
+        if (declOp) {
+          auto diag = shared.emitError(binding.expr->getLoc(), "'")
+                      << baseName << "' parameter " << decl.getName() << " has "
+                      << expectedType << " type, but value has type "
+                      << ASTType(binding.getValue().getType())
+                      << binding.expr->getRange();
+          diag.attachNote(declOp->getLoc())
+              << "'" << baseName << "' declared here";
+        }
+        incorrectBindingNo = newBindings.size();
+        incorrectBindingExpectedType = expectedType;
+      };
+
+      auto argValue = emitter.getAsExpectedType(
+          MValue(binding.getValue()), binding.expr, expectedType, errorHandler);
+      if (!argValue)
+        return {};
+
+      assert(argValue.getIfMValue() &&
+             "cannot emit a dynamic value in parameter context");
+      return argValue.getIfMValue();
+    };
+
+    // If the parameter is a variadic list, it may consume many values, and they
+    // all get packed up into a VariadicAttr.
+    MValue paramValue;
+    if (auto variadicType = dyn_cast<POP::VariadicType>(decl.getType())) {
+      SmallVector<TypedAttr> elements;
+      Type expectedType = ParamRefType::get(variadicType.getElementType());
+      elements.push_back(handleSingleParameterValue(binding, expectedType));
+      if (!elements.back())
+        return {};
+      while (nextBinding != bindings.size()) {
+        binding = bindings[nextBinding++];
+        elements.push_back(handleSingleParameterValue(binding, expectedType));
+        if (!elements.back())
+          return {};
+      }
+      paramValue = POP::VariadicAttr::get(elements, variadicType);
+
+    } else {
+      // Otherwise we get a signel value.
+      paramValue = handleSingleParameterValue(binding, decl.getType());
+      if (!paramValue)
+        return {};
+    }
 
     // Any reference between parameters to this parameter will get our bound and
     // potentially type-converted value.
-    evaluator.setParameterValue(decl, argMValue);
+    evaluator.setParameterValue(decl, paramValue);
 
     // Update the decl's type if we remapped the type.
-    newBindings.push_back(ParamBindAttr::get(decl.getName(), argMValue));
+    newBindings.push_back(ParamBindAttr::get(decl.getName(), paramValue));
   }
 
   // Check and complain if we have bindings that didn't get used.

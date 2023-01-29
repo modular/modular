@@ -395,19 +395,24 @@ struct StructWithVariadics[*b: Int]:
 fn useParamVariadics():
   # CHECK-NEXT: kgen.call @"$parameters"::@"fnWithVariadics()"<b: !pop.variadic<@"$Int"::@Int> = #pop.variadic<>>()
   fnWithVariadics()
-  #fnWithVariadics[1]()
-  #fnWithVariadics[1, 2]()
+
+  # CHECK: kgen.call @"$parameters"::@"fnWithVariadics()"<b: !pop.variadic<@"$Int"::@Int> = #pop.variadic<#lit.struct<{value: scalar<index> = 1}>>>()
+  fnWithVariadics[1]()
+  # CHECK: kgen.call @"$parameters"::@"fnWithVariadics()"<b: !pop.variadic<@"$Int"::@Int> = #pop.variadic<#lit.struct<{value: scalar<index> = 1}>, #lit.struct<{value: scalar<index> = 2}>>>()
+  fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
   # CHECK-NEXT: kgen.param.declare fnAlias: <b: !pop.variadic<@"$Int"::@Int>>() -> !lit.none = <@"$parameters"::@"fnWithVariadics()">
   alias fnAlias = fnWithVariadics
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
-  # CHECK-NEXT: %1 = kgen.param.constant: () -> !lit.none = <@"$parameters"::@"fnWithVariadics()"<b: !pop.variadic<@"$Int"::@Int> = #pop.variadic<>>>
-  # CHECK-NEXT:  %fnLet = lit.let.decl "fnLet" = %1 : !kgen.signature<() -> !lit.none>
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: () -> !lit.none = <@"$parameters"::@"fnWithVariadics()"<b: !pop.variadic<@"$Int"::@Int> = #pop.variadic<>>>
+  # CHECK-NEXT:  %fnLet = lit.let.decl "fnLet" = [[TMP]] : !kgen.signature<() -> !lit.none>
   let fnLet = fnWithVariadics
 
-  # CHECK-NEXT: %a = lit.var.decl "a" : <@"{{.*}}@StructWithVariadics<b: !pop.variadic<@"$Int"::@Int> = #pop.variadic<>>>
+  # CHECK-NEXT: %a = lit.var.decl "a" : <@"{{.*}}::@StructWithVariadics<b: !pop.variadic<@"$Int"::@Int> = #pop.variadic<>>>
   var a: StructWithVariadics
-  #var b: StructWithVariadics[1]
-  #var c: StructWithVariadics[1, 2]
+  # CHECK-NEXT: %b = lit.var.decl "b" : <@{{.*}}::@StructWithVariadics<b: !pop.variadic<@"$Int"::@Int> = #pop.variadic<#lit.struct<{value: scalar<index> = 1}>>>>
+  var b: StructWithVariadics[1]
+  # CHECK-NEXT: %c = lit.var.decl "c" : <@"$parameters"::@StructWithVariadics<b: !pop.variadic<@"$Int"::@Int> = #pop.variadic<#lit.struct<{value: scalar<index> = 1}>, #lit.struct<{value: scalar<index> = 2}>>>>
+  var c: StructWithVariadics[1, 2]
