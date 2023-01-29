@@ -4,15 +4,20 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from StringRef import StringRef
-from Bool import Bool
 from Assert import assert_param_bool
+from Bool import Bool
 from BuildInfo import is_llcl_profiling_enabled, is_llcl_profiling_disabled
+from Int import Int
+from StringRef import StringRef
+
+# ===----------------------------------------------------------------------===#
+# trace_range_push
+# ===----------------------------------------------------------------------===#
 
 
 @interface
 @always_inline
-fn trace_range_push(name: StringRef, detail: StringRef):
+fn trace_range_push[level: Int](name: StringRef, detail: StringRef):
     """Push a trace event onto a per-thread stack of traces.
     Should be paired with calls to trace_range_pop().
 
@@ -30,28 +35,21 @@ fn trace_range_push(name: StringRef, detail: StringRef):
     ...
 
 
-@interface
+@implements(trace_range_push)
 @always_inline
-fn trace_range_pop():
-    """Pop a trace event off a per-thread stack of traces.
-    Should be paired with calls to trace_range_push().
-
-    PROFILING_ON must be set to True otherwise this is a noop that will be
-    folded away.
-
-    The trace events will be written to the profiling file passed to the
-    LLCL Runtime ctor.
-    """
-    ...
+fn _trace_range_push_maybe_enabled[
+    level: Int
+](name: StringRef, detail: StringRef):
+    """Pushes the trace range from the stack. This is only enabled if the LLCL
+    profiling is enabled."""
+    assert_param_bool[is_llcl_profiling_enabled[level.__as_mlir_index()]()]()
+    _trace_range_push(name, detail)
 
 
 @implements(trace_range_push)
 @always_inline
-fn _trace_range_push_wrapper(name: StringRef, detail: StringRef):
-    """Pushes the trace range from the stack. This is only enabled if the LLCL
-    profiling is enabled."""
-    assert_param_bool[is_llcl_profiling_enabled[1]()]()
-    _trace_range_push(name, detail)
+fn _trace_range_push_disabled[level: Int](name: StringRef, detail: StringRef):
+    assert_param_bool[is_llcl_profiling_disabled[level.__as_mlir_index()]()]
 
 
 @always_inline
@@ -73,19 +71,39 @@ fn _trace_range_push(name: StringRef, detail: StringRef):
     )
 
 
-@implements(trace_range_push)
+# ===----------------------------------------------------------------------===#
+# trace_range_pop
+# ===----------------------------------------------------------------------===#
+
+
+@interface
 @always_inline
-fn _trace_range_push_noop(name: StringRef, detail: StringRef):
-    assert_param_bool[is_llcl_profiling_disabled()]
+fn trace_range_pop[level: Int]():
+    """Pop a trace event off a per-thread stack of traces.
+    Should be paired with calls to trace_range_push().
+
+    PROFILING_ON must be set to True otherwise this is a noop that will be
+    folded away.
+
+    The trace events will be written to the profiling file passed to the
+    LLCL Runtime ctor.
+    """
+    ...
 
 
 @implements(trace_range_pop)
 @always_inline
-fn _trace_range_pop_wrapper():
+fn _trace_range_pop_maybe_enabled[level: Int]():
     """Pops the trace range from the stack. This is only enabled if the LLCL
     profiling is enabled."""
-    assert_param_bool[is_llcl_profiling_enabled[1]()]()
+    assert_param_bool[is_llcl_profiling_enabled[level.__as_mlir_index()]()]()
     _trace_range_pop()
+
+
+@implements(trace_range_pop)
+@always_inline
+fn _trace_range_pop_disabled[level: Int]():
+    assert_param_bool[is_llcl_profiling_disabled[level.__as_mlir_index()]()]()
 
 
 @always_inline
@@ -101,7 +119,18 @@ fn _trace_range_pop():
     ]()
 
 
-@implements(trace_range_pop)
-@always_inline
-fn _trace_range_pop_noop():
-    assert_param_bool[is_llcl_profiling_disabled()]()
+# ===----------------------------------------------------------------------===#
+# Trace
+# ===----------------------------------------------------------------------===#
+
+
+struct Trace[level: Int]:
+    fn __new__(name: StringRef) -> Trace[level]:
+        return Trace[level](name, "")
+
+    fn __new__(name: StringRef, detail: StringRef) -> Trace[level]:
+        trace_range_push[level](name, detail)
+        return Trace[level] {}
+
+    fn __del__(self):
+        trace_range_pop[level]()
