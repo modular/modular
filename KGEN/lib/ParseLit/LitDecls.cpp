@@ -684,22 +684,16 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
                          DeclResolvedness::fullyResolved);
   ExprEmitter emitter(p.shared, declScope, std::nullopt, nullptr);
 
-  auto processParameterArgs = [&p, &declResolver, &declScope, &emitter](
-                                  ArrayRef<ParsedArgument> args,
-                                  SmallVectorImpl<ParamDeclAttr> &params) {
+  auto processParameterArgs = [&p, &declResolver, &declScope,
+                               &emitter](ArrayRef<ParsedArgument> args,
+                                         SmallVectorImpl<ParamDeclAttr> &params,
+                                         bool isResultParams) {
     for (auto &arg : args) {
       // Check for things supported in arguments that are not supported in
       // parameters.
       if (arg.initValue)
         p.emitError(arg.loc,
                     "TODO: default values in parameters not supported");
-      if (arg.convention != ValueInputConvention::ByVal) {
-        if (uint8_t(arg.convention & ValueInputConvention::VarArg))
-          p.emitError(arg.loc,
-                      "TODO: parameter lists do not support variadics");
-        else
-          p.emitError(arg.loc, "parameters must always be passed by-value");
-      }
 
       ASTType type =
           arg.typeExpr ? emitter.emitExprType(arg.typeExpr) : ASTType();
@@ -709,6 +703,19 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
         type = TypeCheckErrorType::get(p.getContext());
       }
 
+      auto convention = arg.convention;
+      if (uint8_t(convention & ValueInputConvention::VarArg)) {
+        if (isResultParams)
+          p.emitError(arg.loc, "result parameters may not be variadic");
+        else if (!isa<TypeCheckErrorType>(type.mlirType))
+          type = POP::VariadicType::get(type);
+        // Notice that we handle the variadics.
+        convention = convention & ~ValueInputConvention::VarArg;
+      }
+
+      if (convention != ValueInputConvention::ByVal)
+        p.emitError(arg.loc, "parameters must always be passed by-value");
+
       // Bind the parsed type expression so references from other parameters
       // can be resolved.
       auto tmpDecl = ParamDeclRefAttr::get(arg.name, type);
@@ -717,7 +724,7 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
       params.push_back(ParamDeclAttr::get(arg.name, type));
     }
   };
-  processParameterArgs(args, inputParams);
+  processParameterArgs(args, inputParams, /*isResultParams=*/false);
 
   // Parse the meta results if present.
   if (p.consumeIf(LitToken::minus_greater)) {
@@ -726,7 +733,7 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
     if (ParsedArgument::parseAndResolvePresentArgumentList(
             p, args, /*isParameterList=*/true))
       return failure();
-    processParameterArgs(args, resultParams);
+    processParameterArgs(args, resultParams, /*isResultParams=*/true);
   }
   return p.parseToken(LitToken::r_square, "expected ']' for parameter list");
 }

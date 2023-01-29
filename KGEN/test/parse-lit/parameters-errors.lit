@@ -109,9 +109,8 @@ fn funnyArgs[a: Int, /, b: Int, *,
              c: Int](): # expected-error {{TODO: keyword arguments not supported yet}}
   funnyArgs[1, 2, 3]()
 
-# expected-error @+1 {{TODO: parameter lists do not support variadics}}
-fn variadic[*a: Int]():
-
+# expected-error @+1 {{result parameters may not be variadic}}
+fn variadicResultParams[() -> *b: Int]():
 
 
 ##===----------------------------------------------------------------------===##
