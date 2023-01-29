@@ -11,17 +11,17 @@ from IO import print
 from Time import now
 
 
-fn time_me():
-    var i: Int = 0
-    while i < 100:
-        print("")
-        i += 1
-    return
-
-
 # CHECK-LABEL: test_benchmark
 fn test_benchmark():
     print("== test_benchmark\n")
+
+    @always_inline
+    fn time_me():
+        var i: Int = 0
+        while i < 100:
+            print("")
+            i += 1
+        return
 
     # check that benchmark_function returns after max_time_ns is hit.
     let lb_ns = 20_000_000  # 20ms
