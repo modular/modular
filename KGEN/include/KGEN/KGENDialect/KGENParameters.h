@@ -27,7 +27,8 @@ struct ParamDefinition {
   /// If the expression that defines the parameter can be narrowed to a simple
   /// attribute, this field will contain that expression.
   Attribute value;
-  /// The index of the parameter into the operation's result parameters.
+  /// The index of the parameter into the operation's result parameters. This is
+  /// -1 for a parameter that is not a result parameter.
   ssize_t index = -1;
   /// The defining operation.
   Operation *defOp = nullptr;
@@ -78,9 +79,7 @@ struct ParameterUseDefGraph {
 
   /// These are the parameter uses in the current scope that were captured from
   /// a higher scope.
-  llvm::SetVector<ParamDeclRefAttr, SmallVector<ParamDeclRefAttr, 8>,
-                  SmallPtrSet<ParamDeclRefAttr, 8>>
-      usesFromAbove;
+  llvm::SetVector<ParamDeclRefAttr> usesFromAbove;
 
   /// Track the operations that reference parameters. Use this information to
   /// diagnose references to parameters without declarations.
