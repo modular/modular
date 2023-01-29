@@ -393,16 +393,21 @@ struct StructWithVariadics[*b: Int]:
 
 # CHECK-LABEL: lit.func @"useParamVariadics
 fn useParamVariadics():
-  #fnWithVariadics()
+  # CHECK-NEXT: kgen.call @"$parameters"::@"fnWithVariadics()"<b: !pop.variadic<@"$Int"::@Int> = #pop.variadic<>>()
+  fnWithVariadics()
   #fnWithVariadics[1]()
   #fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
   # CHECK-NEXT: kgen.param.declare fnAlias: <b: !pop.variadic<@"$Int"::@Int>>() -> !lit.none = <@"$parameters"::@"fnWithVariadics()">
   alias fnAlias = fnWithVariadics
-  # This immediately binds to an empty variadic list.
-  #let fn = fnWithVariadics
 
-  #var a: StructWithVariadics
+  # Use of an unbound thing in a DRValue context binds an empty variadic list.
+  # CHECK-NEXT: %1 = kgen.param.constant: () -> !lit.none = <@"$parameters"::@"fnWithVariadics()"<b: !pop.variadic<@"$Int"::@Int> = #pop.variadic<>>>
+  # CHECK-NEXT:  %fnLet = lit.let.decl "fnLet" = %1 : !kgen.signature<() -> !lit.none>
+  let fnLet = fnWithVariadics
+
+  # CHECK-NEXT: %a = lit.var.decl "a" : <@"{{.*}}@StructWithVariadics<b: !pop.variadic<@"$Int"::@Int> = #pop.variadic<>>>
+  var a: StructWithVariadics
   #var b: StructWithVariadics[1]
   #var c: StructWithVariadics[1, 2]
