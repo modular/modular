@@ -12,7 +12,7 @@ kgen.generator @call_region<fn: <A -> E>() always_inline ->index -> E>() always_
 }
 
 // COM: This is the region hoisted out into a generator.
-// CHECK-LABEL: kgen.generator @raiseClosure_Fn<C, Jefffffffffff, A, B -> E>(
+// CHECK-LABEL: kgen.generator @raiseClosure_Fn<Jefffffffffff, C, A, B -> E>(
 // CHECK-SAME:                   [[ARG:%arg[0-9]+]]: index, [[ARGARG:%arg[0-9]+]]: !pop.scalar<index>) always_inline -> index
 // CHECK-NEXT: [[CST:%[0-9]+]] = kgen.param.constant = <add(mul(B, Jefffffffffff, -1), mul(A, Jefffffffffff), mul(C, Jefffffffffff))>
 // CHECK-NEXT: [[CASTCST:%[0-9]+]] = pop.cast_from_builtin [[CST]] : index to !pop.scalar<index>
@@ -23,11 +23,11 @@ kgen.generator @call_region<fn: <A -> E>() always_inline ->index -> E>() always_
 // CHECK-NEXT: kgen.return<add(mul(A, -1), C)> [[CASTRES]]
 
 // COM: This is the wrapper that loads values from the global variable.
-// CHECK-LABEL: kgen.generator @raiseClosure_Fn_wrapper<C, Jefffffffffff, A, B -> E>() always_inline -> index
+// CHECK-LABEL: kgen.generator @raiseClosure_Fn_wrapper<Jefffffffffff, C, A, B -> E>() always_inline -> index
 // CHECK-NEXT:   [[PTR:%[0-9]+]] = pop.compiler.global_load "raiseClosure_context_var_0" : !pop.struct<index, scalar<index>>
 // CHECK-NEXT:   [[VAL:%[0-9]+]] = pop.struct.extract [[PTR]][0] : !pop.struct<index, scalar<index>>
 // CHECK-NEXT:   [[ARG:%[0-9]+]] = pop.struct.extract [[PTR]][1] : !pop.struct<index, scalar<index>>
-// CHECK-NEXT:   [[RES:%[0-9]+]] = kgen.call @raiseClosure_Fn<C = C, Jefffffffffff = Jefffffffffff, A = A, B = B -> __resultParam_0 = E>([[VAL]], [[ARG]]) : (index, !pop.scalar<index>) always_inline -> index
+// CHECK-NEXT:   [[RES:%[0-9]+]] = kgen.call @raiseClosure_Fn<Jefffffffffff = Jefffffffffff, C = C, A = A, B = B -> __resultParam_0 = E>([[VAL]], [[ARG]]) : (index, !pop.scalar<index>) always_inline -> index
 // CHECK-NEXT:   kgen.return<__resultParam_0> [[RES]] : index
 
 // CHECK-LABEL: kgen.generator @raiseClosure
@@ -45,7 +45,7 @@ kgen.generator @raiseClosure<Jefffffffffff -> index>(%arg0: !pop.scalar<index>) 
   }
   // CHECK: [[STRUCT:%[0-9]+]] = pop.struct.construct(%idx0, %arg0) : !pop.struct<index, scalar<index>>
   // CHECK-NEXT: pop.compiler.global_store "raiseClosure_context_var_0", [[STRUCT]] : !pop.struct<index, scalar<index>>
-  // CHECK: kgen.param.declare Fn: <A, B -> E>() always_inline -> index = <@raiseClosure_Fn_wrapper<C = C, Jefffffffffff = Jefffffffffff, A = #kgen.unbound, B = #kgen.unbound>>
+  // CHECK: kgen.param.declare Fn: <A, B -> E>() always_inline -> index = <@raiseClosure_Fn_wrapper<Jefffffffffff = Jefffffffffff, C = C, A = #kgen.unbound, B = #kgen.unbound>>
   // CHECK: kgen.param.declare BoundFn: <A -> E>() always_inline -> index = <bind_signature(:<A, B -> E>() always_inline -> index Fn, #kgen.unbound, 1)>
   kgen.param.declare BoundFn: <A -> E>() always_inline -> index = <bind_signature(:<A, B -> E>() always_inline -> index Fn, #kgen.unbound, 1)>
   // CHECK: kgen.call @call_region<fn: <A -> E>() always_inline -> index = BoundFn -> Result = E>() : () always_inline -> index
@@ -305,6 +305,28 @@ kgen.generator @innermostCapturesThroughMid<A>() {
 kgen.generator @paramCaptureNestedInParamRefType<N, Vs: list<i32[N]>>() {
   kgen.param.declare.region Fn = () {
     kgen.param.constant: i32 = <get_list_element(:list<i32[N]> Vs, 0)>
+    kgen.return
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @left_to_right_dependency_CaptureThemAll
+// CHECK-SAME: <F: type, G: type, H: type, I: type, J: type, A,
+// CHECK-SAME:  L: list<!pop.struct<F, G, H, I, J>[A]>, B: type,
+// CHECK-SAME:  E: list<!kgen.list<!kgen.list<B[A]>[A]>[A]>,
+// CHECK-SAME:  D: list<!kgen.list<B[A]>[A]>, C: list<B[A]>
+kgen.generator @left_to_right_dependency<
+    A, B: type, C: list<B[A]>, D: list<!kgen.list<B[A]>[A]>,
+    E: list<!kgen.list<!kgen.list<B[A]>[A]>[A]>,
+    F: type, G: type, H: type, I: type, J: type,
+    K: struct<F, G, H, I, J>, L: list<!pop.struct<F, G, H, I, J>[A]>>() {
+  kgen.param.declare.region CaptureThemAll = () {
+    "use"() {
+      a = #kgen.param.decl.ref<"L"> : !kgen.list<!pop.struct<F, G, H, I, J>[A]>,
+      b = #kgen.param.decl.ref<"E"> : !kgen.list<!kgen.list<!kgen.list<B[A]>[A]>[A]>,
+      c = #kgen.param.decl.ref<"D"> : !kgen.list<!kgen.list<B[A]>[A]>,
+      d = #kgen.param.decl.ref<"C"> : !kgen.list<B[A]>
+    } : () -> ()
     kgen.return
   }
   kgen.return

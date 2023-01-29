@@ -323,6 +323,19 @@ def KGEN_UnboundAttr : KGEN_ExprAttr<"Unbound", "unbound"> {
 def KGEN_ParamDeclRefAttr : KGEN_ExprAttr<"ParamDeclRef", "param.decl.ref",
     [DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>]> {
   let summary = "A reference to a parameter value.";
+  let description = [{
+    The `#kgen.param.decl.ref` attribute is a typed attribute that represents
+    a reference to a declared parameter. It contains the type of the referenced
+    parameter and its name.
+
+    Example:
+
+    ```mlir
+    // A reference to parameter "p" with type "i1".
+    #kgen.param.decl.ref<"p"> : i1
+    ```
+  }];
+
   let parameters = (ins "StringAttr":$name,
                         AttributeSelfTypeParameter<"">:$type);
 
