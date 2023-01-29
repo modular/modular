@@ -4,14 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Bool import Bool
-from Int import Int
-from SIMD import SIMD
 from Assert import assert_param
-from Pointer import DTypePointer
-from Tuple import StaticTuple
+from Bool import Bool
+from DType import DType
+from Int import Int
 from List import product, contains
 from MemoryUtilities import stack_allocation
+from Pointer import DTypePointer
+from SIMD import SIMD
+from Tuple import StaticTuple
 
 
 # ===----------------------------------------------------------------------===#
@@ -521,7 +522,7 @@ struct NDBuffer[
     # This is added just to make it aligned with the zap.ndbuffer
     var _rank: Int
     var dynamic_shape: StaticTuple[rank, __mlir_type.index]
-    var dynamic_dtype: __mlir_type.`!pop.scalar<ui8>`
+    var dynamic_dtype: DType
 
     fn __new__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
@@ -532,6 +533,18 @@ struct NDBuffer[
         buf.data = DTypePointer[type](ptr)
         buf._rank = rank
         return buf
+
+    fn __new__(
+        ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
+        dynamic_shape: StaticTuple[rank, __mlir_type.index],
+        dynamic_dtype: DType,
+    ) -> NDBuffer[rank, shape, type]:
+        return NDBuffer[rank, shape, type] {
+            data: ptr,
+            _rank: rank,
+            dynamic_shape: dynamic_shape,
+            dynamic_dtype: dynamic_dtype,
+        }
 
     fn get_rank(self) -> Int:
         return rank
