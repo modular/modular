@@ -8,7 +8,7 @@ from Atomic import Atomic
 from DType import DType
 from Error import Error
 from Int import Int
-from Pointer import Pointer
+from Pointer import Pointer, DTypePointer
 from StringRef import StringRef
 
 alias typename = __mlir_type.`!kgen.mlirtype`
@@ -130,8 +130,8 @@ fn _async_complete(ptr: Pointer[AsyncContext]):
 
 
 struct Runtime:
-    alias _id_type = __mlir_type.i8
-    var _id: _id_type
+    alias ptr_type = DTypePointer[DType.invalid.value]
+    var ptr: ptr_type
 
     fn __new__() -> Runtime:
         """Construct an LLCL Runtime with the same number of threads as
@@ -142,7 +142,7 @@ struct Runtime:
     fn __new__(numThreads: Int) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads."""
         return __mlir_op.`pop.external_call`[
-            _type : [__mlir_type.i8],
+            _type:[ptr_type],
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_CreateRuntime`,
         ](numThreads)
 
@@ -151,7 +151,7 @@ struct Runtime:
         that writes tracing events to profileFilename.
         """
         return __mlir_op.`pop.external_call`[
-            _type : [__mlir_type.i8],
+            _type:[ptr_type],
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile`,
         ](
             numThreads,
@@ -159,8 +159,8 @@ struct Runtime:
             profileFilename.length.value,
         )
 
-    fn __new__(compact_ptr: __mlir_type.i8) -> Runtime:
-        return Runtime {_id: compact_ptr}
+    fn __new__(ptr: ptr_type) -> Runtime:
+        return Runtime {ptr: ptr}
 
     fn __del__(self):
         """Destroys the LLCL Runtime. Note that this must be explicitly called
@@ -168,14 +168,14 @@ struct Runtime:
         """
         __mlir_op.`pop.external_call`[
             _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_DestroyRuntime`
-        ](self._id)
+        ](self.ptr)
 
     fn parallelism_level(self) -> Int:
         """Gets the parallism level of the Runtime."""
         return __mlir_op.`pop.external_call`[
             func : __mlir_attr.`@KGEN_CompilerRT_LLCL_ParallelismLevel`,
             _type : __mlir_type.`!pop.scalar<si32>`,
-        ](self._id)
+        ](self.ptr)
 
     fn run_task[
         type: typename
@@ -183,7 +183,7 @@ struct Runtime:
         """Run the coroutine as a task on the LLCL Runtime."""
         __mlir_op.`pop.external_call`[
             _type:[], func : __mlir_attr.`@KGEN_CompilerRT_LLCL_Execute`
-        ](_get_coro_resume_fn(), handle, self._id)
+        ](_get_coro_resume_fn(), handle, self.ptr)
         return handle
 
     fn init_and_run[
