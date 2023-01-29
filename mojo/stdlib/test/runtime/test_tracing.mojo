@@ -8,16 +8,16 @@
 from IO import print
 from Int import Int
 from LLCL import Runtime
-from Tracing import _trace_range_push, _trace_range_pop
+from Tracing import Trace, TraceLevel
 
 
 fn test_tracing():
     print("== test_tracing\n")
 
     async fn test_tracing_add[lhs: Int](rhs: Int) -> Int:
-        _trace_range_push("trace event 2", "detail event 2")
+        let trace = Trace[TraceLevel.ALWAYS]("trace event 2", "detail event 2")
         let res = lhs + rhs
-        _trace_range_pop()
+        trace.__del__()
         return res
 
     async fn test_tracing_add_two_of_them(a: Int, b: Int) -> Int:
@@ -30,10 +30,10 @@ fn test_tracing():
         return result
 
     let rt = Runtime(4, "-")
-    _trace_range_push("trace event 1", "detail event 1")
+    let trace = Trace[TraceLevel.ALWAYS]("trace event 1", "detail event 1")
     let task = rt.init_and_run[Int](test_tracing_add_two_of_them(10, 20))
     task.wait()
-    _trace_range_pop()
+    trace.__del__()
     # CHECK: "trace event 1"
     # CHECK-SAME: "detail event 1"
     # CHECK-SAME: "trace event 2"

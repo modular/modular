@@ -37,29 +37,10 @@ fn trace_range_push[level: Int](name: StringRef, detail: StringRef):
 
 @implements(trace_range_push)
 @always_inline
-fn _trace_range_push_maybe_enabled[
-    level: Int
-](name: StringRef, detail: StringRef):
+fn _trace_range_push[level: Int](name: StringRef, detail: StringRef):
     """Pushes the trace range from the stack. This is only enabled if the LLCL
     profiling is enabled."""
     assert_param_bool[is_llcl_profiling_enabled[level.__as_mlir_index()]()]()
-    _trace_range_push(name, detail)
-
-
-@implements(trace_range_push)
-@always_inline
-fn _trace_range_push_disabled[level: Int](name: StringRef, detail: StringRef):
-    assert_param_bool[is_llcl_profiling_disabled[level.__as_mlir_index()]()]
-
-
-@always_inline
-fn _trace_range_push(name: StringRef, detail: StringRef):
-    """trace range is pushed regardless of value of wither profiling is enabled.
-    This is useful during testings.
-
-    trace_range_push() should be used instead if tracing needs to be
-    conditionally enabled.
-    """
     __mlir_op.`pop.external_call`[
         func : __mlir_attr.`@KGEN_CompilerRT_TimeTraceProfilerBegin`,
         _type:[],
@@ -69,6 +50,12 @@ fn _trace_range_push(name: StringRef, detail: StringRef):
         detail.data.address,
         detail.length.value,
     )
+
+
+@implements(trace_range_push)
+@always_inline
+fn _trace_range_push_disabled[level: Int](name: StringRef, detail: StringRef):
+    assert_param_bool[is_llcl_profiling_disabled[level.__as_mlir_index()]()]
 
 
 # ===----------------------------------------------------------------------===#
@@ -93,11 +80,14 @@ fn trace_range_pop[level: Int]():
 
 @implements(trace_range_pop)
 @always_inline
-fn _trace_range_pop_maybe_enabled[level: Int]():
+fn _trace_range_pop[level: Int]():
     """Pops the trace range from the stack. This is only enabled if the LLCL
     profiling is enabled."""
     assert_param_bool[is_llcl_profiling_enabled[level.__as_mlir_index()]()]()
-    _trace_range_pop()
+    __mlir_op.`pop.external_call`[
+        func : __mlir_attr.`@KGEN_CompilerRT_TimeTraceProfilerEnd`,
+        _type:[],
+    ]()
 
 
 @implements(trace_range_pop)
@@ -106,26 +96,13 @@ fn _trace_range_pop_disabled[level: Int]():
     assert_param_bool[is_llcl_profiling_disabled[level.__as_mlir_index()]()]()
 
 
-@always_inline
-fn _trace_range_pop():
-    """trace range is popped regardless of value of the profile_level.
-
-    trace_range_pop() should be used instead if tracing needs to be
-    conditionally enabled.
-    """
-    __mlir_op.`pop.external_call`[
-        func : __mlir_attr.`@KGEN_CompilerRT_TimeTraceProfilerEnd`,
-        _type:[],
-    ]()
-
-
 # ===----------------------------------------------------------------------===#
 # TraceLevel
 # ===----------------------------------------------------------------------===#
 
 
 struct TraceLevel:
-    alias DISABLED = 0
+    alias ALWAYS = 0
     alias OP = 1
     alias THREAD = 2
 
