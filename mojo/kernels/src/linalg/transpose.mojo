@@ -245,12 +245,10 @@ fn _permute_data[
 
 fn _fill_strides[
     rank: __mlir_type.index,
-    # FIXME(Issue #7794): this parameter has to have a name lexically after
-    # 'rank' due to a bug in outline closures.
-    sInput_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     type: __mlir_type.`!kgen.dtype`,
 ](
-    buf: NDBuffer[rank, sInput_shape, type],
+    buf: NDBuffer[rank, input_shape, type],
     strides: Buffer[rank, DType.index.value],
 ):
     """
