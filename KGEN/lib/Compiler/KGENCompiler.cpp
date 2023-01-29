@@ -45,5 +45,12 @@ void KGEN::elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
   pm.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
   // Finally, DCE the symbols we don't want.
   pm.addPass(createEliminateDeadSymbols());
+
+#if 0
+  // TODO(Issue #7158): This pass is causing a compile time explosion and needs
+  // to be investigated.  It is "just" a performance optimization for raised
+  // exceptions, so disable it until we can investigate it more.
+  // See: https://github.com/modularml/modular/issues/7158
   pm.addPass(createPruneImpossibleVariants());
+#endif
 }
