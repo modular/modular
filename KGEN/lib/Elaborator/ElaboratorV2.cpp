@@ -207,19 +207,19 @@ public:
   /// useful for looking at the final state of a tree after resolution has
   /// occurred - specifically in cases where we may have a failed expansion due
   /// to a param.assert, for example.
-  void trimFailedChildren(DenseSet<Operation *> &toErase);
+  void trimFailedExpansions(DenseSet<Operation *> &toErase);
 
   /// Collect all the errors in my subtree into a single error tree.
   void collectSubtreeErrors(ErrorTree &tree);
 
   /// Take the provided node as a child and set the parent to `this`.
-  void takeChild(ExpansionTreeNode *child) {
+  void takeExpansion(ExpansionTreeNode *child) {
     // Erase the child from the vector of its original parent.
-    auto found = llvm::find(child->parent->children, child);
-    child->parent->children.erase(found);
+    auto found = llvm::find(child->parent->expansions, child);
+    child->parent->expansions.erase(found);
     // Re-parent it under this parent.
     child->parent = this;
-    children.push_back(*found);
+    expansions.push_back(*found);
   }
 
   /// Update the debug info on the concretization of the current node. This
@@ -259,7 +259,7 @@ public:
   /// The children of a node are specializations. They may not be fully concrete
   /// in the case of e.g. an interface - where the children are generators that
   /// themselves have children.
-  std::vector<ExpansionTreeNode *> children;
+  std::vector<ExpansionTreeNode *> expansions;
 
   /// The allocator to use for allocating new children.
   llvm::SpecificBumpPtrAllocator<ExpansionTreeNode> &alloc;
@@ -283,8 +283,8 @@ ExpansionTreeNode *ExpansionTreeNode::create(Operation *op,
       ExpansionTreeNode(op, inputParams, parent, evaluator, expansionDepth + 1);
   assert(out->distanceFromRoot() <= 3 &&
          "Should have at most 3 hops to the root");
-  parent->children.push_back(out);
-  return parent->children.back();
+  parent->expansions.push_back(out);
+  return parent->expansions.back();
 }
 
 ExpansionTreeNode::ExpansionTreeNode(Operation *op, ArrayAttr inputParams,
@@ -317,7 +317,7 @@ ExpansionTreeNode *ExpansionTreeNode::find(Operation *op,
   // Do a depth-limited DFS search of the children.
   std::stack<std::pair<ExpansionTreeNode *, unsigned>> toExplore;
   toExplore.emplace(this, 0);
-  for (auto &child : children)
+  for (auto &child : expansions)
     toExplore.emplace(child, 1);
 
   while (!toExplore.empty()) {
@@ -333,7 +333,7 @@ ExpansionTreeNode *ExpansionTreeNode::find(Operation *op,
       continue;
 
     // Otherwise, put the children of this child onto the stack.
-    for (auto child : front->children)
+    for (auto child : front->expansions)
       toExplore.emplace(child, depth + 1);
   }
 
@@ -341,10 +341,10 @@ ExpansionTreeNode *ExpansionTreeNode::find(Operation *op,
 }
 
 bool ExpansionTreeNode::isConcrete() {
-  if (children.empty())
+  if (expansions.empty())
     return !error.has_value();
 
-  for (auto &c : children)
+  for (auto &c : expansions)
     if (c->isConcrete())
       return true;
 
@@ -371,14 +371,14 @@ size_t ExpansionTreeNode::distanceFromRoot() {
 
 ErrorTreeOr<ExpansionTreeNode *> ExpansionTreeNode::getFirstConcreteNode() {
   // If I have no children, then I am error or concrete myself.
-  if (children.empty()) {
+  if (expansions.empty()) {
     if (error)
       return error->copy();
     return this;
   }
 
   // Return the first successful child.
-  for (auto &c : children) {
+  for (auto &c : expansions) {
     auto concNode = c->getFirstConcreteNode();
     if (!concNode.isError())
       return concNode;
@@ -386,7 +386,7 @@ ErrorTreeOr<ExpansionTreeNode *> ExpansionTreeNode::getFirstConcreteNode() {
 
   // Otherwise, collect up all the errors in my children and report them.
   ErrorTree out(op.getLoc(), "no successful concrete nodes");
-  for (auto &c : children)
+  for (auto &c : expansions)
     out.addCause(c->error->copy());
 
   return out;
@@ -397,28 +397,28 @@ void ExpansionTreeNode::getAllConcreteNodes(
     std::vector<ExpansionTreeNode *> &concrete) {
   // Only deal with leaves - we have to check and see if the error has been
   // set for this leaf.
-  if (children.empty() && !error)
+  if (expansions.empty() && !error)
     return concrete.push_back(this);
 
-  for (auto &ch : children)
+  for (auto &ch : expansions)
     ch->getAllConcreteNodes(concrete);
 }
 
 void ExpansionTreeNode::getAllConcrete(std::vector<FuncOp> &concrete) {
   // If I am concrete, add my concrete impl and return. If I have an error,
   // then do nothing.
-  if (children.empty() && !error)
+  if (expansions.empty() && !error)
     return concrete.push_back(cast<FuncOp>(op));
 
   // Otherwise, recurse into my children.
-  for (auto &ch : children)
+  for (auto &ch : expansions)
     ch->getAllConcrete(concrete);
 }
 
-void ExpansionTreeNode::trimFailedChildren(DenseSet<Operation *> &toErase) {
+void ExpansionTreeNode::trimFailedExpansions(DenseSet<Operation *> &toErase) {
   // If I am concrete, hold an error, and am unique, then erase my op and move
   // along.
-  if (children.empty()) {
+  if (expansions.empty()) {
     if (!error)
       return;
     LLVM_DEBUG(print(logger.scope("Erasing Failed Node")));
@@ -429,39 +429,39 @@ void ExpansionTreeNode::trimFailedChildren(DenseSet<Operation *> &toErase) {
   LLVM_DEBUG(logger.logOp("Op", op));
 
   // Post-order trimming here - visit children first.
-  for (auto &ch : children)
-    ch->trimFailedChildren(toErase);
+  for (auto &ch : expansions)
+    ch->trimFailedExpansions(toErase);
 
-  size_t numChildren = children.size();
+  size_t numChildren = expansions.size();
   // Erase children that failed.
-  auto newEnd =
-      llvm::remove_if(children, [](auto &ch) { return ch->error.has_value(); });
+  auto newEnd = llvm::remove_if(expansions,
+                                [](auto &ch) { return ch->error.has_value(); });
 
   // If I've just erased all my children, then I have failed. Propagate the
   // error up.
-  if (newEnd == children.begin() && numChildren != 0) {
+  if (newEnd == expansions.begin() && numChildren != 0) {
     error = ErrorTree(op.getLoc(), "no viable expansions found");
     collectSubtreeErrors(*error);
   }
 
   // Finally, actually erase the vector.
-  children.erase(newEnd, children.end());
+  expansions.erase(newEnd, expansions.end());
 }
 
 void ExpansionTreeNode::collectSubtreeErrors(ErrorTree &tree) {
-  if (children.empty() && error) {
+  if (expansions.empty() && error) {
     tree.addCause(error->copy());
   }
 
-  for (auto &ch : children)
+  for (auto &ch : expansions)
     ch->collectSubtreeErrors(tree);
 }
 
 void ExpansionTreeNode::updateDebugInfo() {
-  for (auto &child : children)
+  for (auto &child : expansions)
     child->updateDebugInfo();
 
-  if (!children.empty())
+  if (!expansions.empty())
     return;
 
   auto oldFuncSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(op);
@@ -518,9 +518,9 @@ void ExpansionTreeNode::print(mlir::raw_indented_ostream &os) {
   }
 
   // Print the children.
-  if (!children.empty()) {
+  if (!expansions.empty()) {
     auto childrenScope = os.scope("Children: {\n", "}\n");
-    for (auto &child : children)
+    for (auto &child : expansions)
       child->print(os);
   }
 }
@@ -1558,7 +1558,7 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
 
       // If we have the node, then take it as a child.
       if (found->parent != genNode)
-        genNode->takeChild(found);
+        genNode->takeExpansion(found);
       return std::nullopt;
     }
   }
@@ -1656,7 +1656,7 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
           defaultImplCallee, itfNode->inputParams, itfNode, IREvaluator(*this),
           itfNode->expansionDepth);
     } else if (genNode->parent != itfNode) {
-      itfNode->takeChild(genNode);
+      itfNode->takeExpansion(genNode);
     }
     return specializeGenerator(genNode);
   }
@@ -1672,7 +1672,7 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
                                           IREvaluator(*this),
                                           itfNode->expansionDepth);
     } else if (genNode->parent != itfNode) {
-      itfNode->takeChild(genNode);
+      itfNode->takeExpansion(genNode);
     }
 
     if (auto err = specializeGenerator(genNode))
@@ -1833,11 +1833,11 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
   // and ensure that only the one(s) that we chose are in the expansion tree.
   // Mark the others as having errored so they are removed properly at the end
   // of elaboration.
-  for (auto *child : itfNode->children) {
+  for (auto *child : itfNode->expansions) {
     if (!child->isConcrete())
       child->error = ErrorTree(itf.getLoc(), "no viable expansions found");
 
-    for (auto *c : child->children) {
+    for (auto *c : child->expansions) {
       if (!llvm::is_contained(concrete, c->op))
         c->error = ErrorTree(itf.getLoc(), "not chosen in search");
     }
@@ -1944,7 +1944,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
     for (auto gen : primaryGeneratorList) {
       auto genNode = root.find(gen, emptyInputParamKey);
       assert(genNode && "We must have a node for a primary generator");
-      genNode->trimFailedChildren(toErase);
+      genNode->trimFailedExpansions(toErase);
       if (genNode->error)
         genNode->error->emit([](Location loc) { return mlir::emitError(loc); });
     }
@@ -1952,7 +1952,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   }
 
   LLVM_DEBUG(root.print(logger.scope("Expansion Tree")));
-  root.trimFailedChildren(toErase);
+  root.trimFailedExpansions(toErase);
   LLVM_DEBUG(root.print(logger.scope("Trimmed Expansion Tree")));
 
   for (auto op : toErase)
