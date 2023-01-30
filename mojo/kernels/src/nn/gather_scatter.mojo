@@ -19,14 +19,16 @@ fn gather[
     output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
     input_rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
+    indices_rank: __mlir_type.index,
+    indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
     type: __mlir_type.`!kgen.dtype`,
     axis: __mlir_type.index,
 ](
     output: NDBuffer[output_rank, output_shape, type],
     input: NDBuffer[input_rank, input_shape, type],
     indices: NDBuffer[
-        input_rank,
-        input_shape,
+        indices_rank,
+        indices_shape,
         DType.si32.value,
     ],
 ):
@@ -39,20 +41,23 @@ fn gather_2D_axis_0[
     output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
     input_rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
+    indices_rank: __mlir_type.index,
+    indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
     type: __mlir_type.`!kgen.dtype`,
     axis: __mlir_type.index,
 ](
     output: NDBuffer[output_rank, output_shape, type],
     input: NDBuffer[input_rank, input_shape, type],
     indices: NDBuffer[
-        input_rank,
-        input_shape,
+        indices_rank,
+        indices_shape,
         DType.si32.value,
     ],
 ):
     """Computes output[i, j, k] = input[indices[i, j], k]"""
     assert_param[output_rank == 3]()
     assert_param[input_rank == 2]()
+    assert_param[indices_rank == 2]()
     assert_param[axis == 0]()
 
     let i = output.dim[0]()
@@ -71,7 +76,7 @@ fn gather_2D_axis_0[
                         __mlir_type.index,
                     ],
                     StaticTuple[
-                        input_rank,
+                        indices_rank,
                         __mlir_type.index,
                     ],
                 ](Index(iter0, iter1).as_tuple())
@@ -112,20 +117,23 @@ fn gather_2D_axis_1[
     output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
     input_rank: __mlir_type.index,
     input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
+    indices_rank: __mlir_type.index,
+    indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
     type: __mlir_type.`!kgen.dtype`,
     axis: __mlir_type.index,
 ](
     output: NDBuffer[output_rank, output_shape, type],
     input: NDBuffer[input_rank, input_shape, type],
     indices: NDBuffer[
-        input_rank,
-        input_shape,
+        indices_rank,
+        indices_shape,
         DType.si32.value,
     ],
 ):
     """Computes output[i, j, k] = input[i, indices[j, k]]"""
     assert_param[output_rank == 3]()
     assert_param[input_rank == 2]()
+    assert_param[indices_rank == 2]()
     assert_param[axis == 1]()
 
     let i = output.dim[0]()
@@ -145,7 +153,7 @@ fn gather_2D_axis_1[
                             __mlir_type.index,
                         ],
                         StaticTuple[
-                            input_rank,
+                            indices_rank,
                             __mlir_type.index,
                         ],
                     ](Index(iter1, iter2).as_tuple())
