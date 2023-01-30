@@ -433,14 +433,17 @@ fn callee4[T: __mlir_type.`!kgen.mlirtype`]
    (v:  __mlir_type[`!pop.pointer<`, T, `>`]):
 
 # CHECK-LABEL: lit.func @"testParamInference
-fn testParamInference[sizeX: index](a: StaticVec[4], b: StaticVec[sizeX],
-                                    c: __mlir_type.`!pop.simd<17, f32>`,
-                                    d: __mlir_type.`!pop.pointer<f32>`):
+fn testParamInference[size: index](a: StaticVec[4], b: StaticVec[size],
+                                   b2: StaticVec[size*2],
+                                   c: __mlir_type.`!pop.simd<17, f32>`,
+                                   d: __mlir_type.`!pop.pointer<f32>`):
   # CHECK-NEXT: kgen.call @{{.*}}callee1{{.*}}<size = 4>(%a)
   callee1(a)
-  # CHECK-NEXT: kgen.call @{{.*}}callee1{{.*}}<size = sizeX>(%b)
+  # CHECK-NEXT: kgen.call @{{.*}}callee1{{.*}}<size = size>(%b)
   callee1(b)
-  # CHECK-NEXT: kgen.call @{{.*}}callee2{{.*}}<T: type = !kgen.declref<@"$parameters"::@StaticVec<size = sizeX>>>(%b)
+  # CHECK-NEXT: kgen.call @{{.*}}callee1{{.*}}<size = mul(size, 2)>(%b2)
+  callee1(b2)
+  # CHECK-NEXT: kgen.call @{{.*}}callee2{{.*}}<T: type = !kgen.declref<@"$parameters"::@StaticVec<size = size>>>(%b)
   callee2(b)
   # CHECK-NEXT: kgen.call @{{.*}}callee3{{.*}}<size = 17, type: dtype = f32>(%c)
   callee3(c)
