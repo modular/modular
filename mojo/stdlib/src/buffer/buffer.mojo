@@ -802,7 +802,7 @@ struct DynamicRankBuffer:
     ](self) -> NDBuffer[rank, create_kgen_list_unknown[rank](), type]:
         return NDBuffer[rank, create_kgen_list_unknown[rank](), type](
             self.data.bitcast[type](),
-            _shape_to_static_tuple[rank](self.shape),
+            self._shape_to_static_tuple[rank](),
             self.type,
         )
 
@@ -832,18 +832,22 @@ struct DynamicRankBuffer:
             func[5]()
             return
 
+    fn num_elements(self) -> Int:
+        return pointer_product(self.shape, self.rank)
 
-fn _shape_to_static_tuple[
-    rank: __mlir_type.index
-](ptr: DTypePointer[DType.index.value]) -> StaticTuple[rank, __mlir_type.index]:
-    var result: StaticTuple[rank, __mlir_type.index]
+    fn dim(self, idx: Int) -> Int:
+        debug_assert(idx < self.rank)
+        return self.shape.load(idx).__getitem__(0)
 
-    @always_inline
-    fn _fill[idx: __mlir_type.index]():
-        result.__setitem__[idx](
-            Int(ptr.load(idx).__getitem__(0)).__as_mlir_index()
-        )
+    fn _shape_to_static_tuple[
+        rank: __mlir_type.index
+    ](self) -> StaticTuple[rank, __mlir_type.index]:
+        var result: StaticTuple[rank, __mlir_type.index]
 
-    unroll[rank, _fill]()
+        @always_inline
+        fn _fill[idx: __mlir_type.index]():
+            result.__setitem__[idx](self.dim(idx).__as_mlir_index())
 
-    return result
+        unroll[rank, _fill]()
+
+        return result
