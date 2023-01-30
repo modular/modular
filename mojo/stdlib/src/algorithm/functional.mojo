@@ -113,48 +113,48 @@ alias none = __mlir_type.`!lit.none`
 
 
 fn parallelForEachNChain[
-    argsType: __mlir_type.`!kgen.mlirtype`,
+    args_type: __mlir_type.`!kgen.mlirtype`,
     func: __mlir_type[
-        `!kgen.signature<(`, Int, `,`, argsType, `) async -> !lit.none>`
+        `!kgen.signature<(`, Int, `,`, args_type, `) async -> !lit.none>`
     ],
 ](
     rt: Runtime,
-    totalCount: Int,
-    args: argsType,
+    total_count: Int,
+    args: args_type,
     tasks&: UnsafeFixedVector[Future[none]],
     tg&: TaskGroup,
 ):
-    for i in range(totalCount):
+    for i in range(total_count):
         let task = rt.init_and_run[none](func(i, args))
         tasks.append(task)
         tg.add_task[none](task)
 
 
 fn parallelForEachN[
-    argsType: __mlir_type.`!kgen.mlirtype`,
+    args_type: __mlir_type.`!kgen.mlirtype`,
     func: __mlir_type[
-        `!kgen.signature<(`, Int, `,`, argsType, `) -> !lit.none>`
+        `!kgen.signature<(`, Int, `,`, args_type, `) -> !lit.none>`
     ],
-](rt: Runtime, totalCount: Int, args: argsType):
-    if totalCount == 0:
+](rt: Runtime, total_count: Int, args: args_type):
+    if total_count == 0:
         return
 
     var tg: TaskGroup
     var tasks: UnsafeFixedVector[Future[none]]
     var b = Bool(False)
-    if totalCount > 1:
+    if total_count > 1:
 
-        async fn task_fn(i: Int, args: argsType):
+        async fn task_fn(i: Int, args: args_type):
             func(i, args)
 
-        tasks = UnsafeFixedVector[Future[none]](totalCount - 1)
+        tasks = UnsafeFixedVector[Future[none]](total_count - 1)
         tg = TaskGroup(rt)
-        parallelForEachNChain[argsType, task_fn](
-            rt, totalCount - 1, args, tasks, tg
+        parallelForEachNChain[args_type, task_fn](
+            rt, total_count - 1, args, tasks, tg
         )
         b = True
 
-    func(totalCount - 1, args)
+    func(total_count - 1, args)
 
     if b:
         tg.wait()
