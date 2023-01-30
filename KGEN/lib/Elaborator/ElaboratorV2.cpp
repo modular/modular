@@ -2007,7 +2007,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   root.updateDebugInfo();
 
   if (root.isConcrete())
-    LLVM_DEBUG(logger << "Finished successfully.\n");
+    LLVM_DEBUG(logger.logOp("Finished successfully", primary));
 
   // We were only successful if the root could be concretized.
   return success(root.isConcrete());

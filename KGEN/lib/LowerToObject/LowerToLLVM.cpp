@@ -16,6 +16,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Target/LLVMIR/Export.h"
+#include "mlir/Transforms/Passes.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
@@ -58,6 +59,12 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx) {
 std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   mlir::PassManager pm(module->getContext());
+
+  // TODO (#7846): Remove this once the elaborator does inlining. Maybe keep
+  //   `force-inline`.
+  pm.addPass(createForceInline());
+  pm.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
+  pm.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
 
   // If we aren't generating debug information, make sure it's been stripped.
   if (options.debugLevel == CompilationOptions::kNoDebug)
