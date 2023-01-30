@@ -28,13 +28,13 @@ fn test_reductions():
         i += 1
 
     # CHECK: 1.000000
-    print(min[simd_width, size, DType.f32.value](vector))
+    print(min[simd_width](vector))
 
     # CHECK: 100.000000
-    print(max[simd_width, size, DType.f32.value](vector))
+    print(max[simd_width](vector))
 
     # CHECK: 5050.000000
-    print(sum[simd_width, size, DType.f32.value](vector))
+    print(sum[simd_width](vector))
 
 
 # We use a smaller vector so that we do not overflow
@@ -54,7 +54,7 @@ fn test_product():
         i += 1
 
     # CHECK: 3628800.000000
-    print(product[simd_width, size, DType.f32.value](vector))
+    print(product[simd_width](vector))
 
 
 # CHECK-LABEL: test_mean_variance
@@ -73,10 +73,10 @@ fn test_mean_variance():
         i += 1
 
     # CHECK: 50.500000
-    print(mean[simd_width, size, DType.f32.value](vector))
+    print(mean[simd_width](vector))
 
     # CHECK: 841.666687
-    print(variance[simd_width, size, DType.f32.value](vector))
+    print(variance[simd_width](vector))
 
 
 @export
