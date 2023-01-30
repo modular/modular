@@ -2,12 +2,14 @@
 
 from prolog import assert_param, Bool, DType, Int, SIMD
 
+alias index = __mlir_type.index
+
 ##===----------------------------------------------------------------------===##
 # Input parameters
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.struct.decl @OurSIMD<size, dt: @"$prolog"::@DType> {
-struct OurSIMD[size: __mlir_type.index, dt: DType]:
+struct OurSIMD[size: index, dt: DType]:
   pass
 
 struct StructWithIntParam[size: Int]:
@@ -416,3 +418,31 @@ fn useParamVariadics():
   var b: StructWithVariadics[1]
   # CHECK-NEXT: %c = lit.var.decl "c" : <@"$parameters"::@StructWithVariadics<b: !pop.variadic<@"$Int"::@Int> = #pop.variadic<#lit.struct<{value: scalar<index> = 1}>, #lit.struct<{value: scalar<index> = 2}>>>>
   var c: StructWithVariadics[1, 2]
+
+##===----------------------------------------------------------------------===##
+# Parameter Inference
+##===----------------------------------------------------------------------===##
+
+struct StaticVec[size: index]:
+
+fn callee1[size: index](v: StaticVec[size]):
+fn callee2[T: __mlir_type.`!kgen.mlirtype`](v: T):
+fn callee3[size: index, type: __mlir_type.`!kgen.dtype`]
+   (v:  __mlir_type[`!pop.simd<`, size, `, `, type, `>`]):
+fn callee4[T: __mlir_type.`!kgen.mlirtype`]
+   (v:  __mlir_type[`!pop.pointer<`, T, `>`]):
+
+# CHECK-LABEL: lit.func @"testParamInference
+fn testParamInference[sizeX: index](a: StaticVec[4], b: StaticVec[sizeX],
+                                    c: __mlir_type.`!pop.simd<17, f32>`,
+                                    d: __mlir_type.`!pop.pointer<f32>`):
+  # CHECK-NEXT: kgen.call @{{.*}}callee1{{.*}}<size = 4>(%a)
+  callee1(a)
+  # CHECK-NEXT: kgen.call @{{.*}}callee1{{.*}}<size = sizeX>(%b)
+  callee1(b)
+  # CHECK-NEXT: kgen.call @{{.*}}callee2{{.*}}<T: type = !kgen.declref<@"$parameters"::@StaticVec<size = sizeX>>>(%b)
+  callee2(b)
+  # CHECK-NEXT: kgen.call @{{.*}}callee3{{.*}}<size = 17, type: dtype = f32>(%c)
+  callee3(c)
+  # CHECK-NEXT: kgen.call @{{.*}}callee4{{.*}}<T: type = f32>(%d)
+  callee4(d)
