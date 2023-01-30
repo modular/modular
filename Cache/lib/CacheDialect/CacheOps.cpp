@@ -253,17 +253,11 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
 static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
                                               RCRef<RegionCache> cache) {
   OpBuilder builder(op);
-  SmallVector<SymbolRefAttr> symbolReferences;
-  SmallVector<ConstantHashAttr> hashReferences;
-  SmallVector<SymbolRefAttr> refs;
-
-  // Now we walk the symbol and collect all symbol references.
+  llvm::SetVector<Attribute> attrs;
   mlir::AttrTypeWalker walker;
   walker.addWalk([&](Attribute attr) {
-    if (auto symbolRef = dyn_cast<SymbolRefAttr>(attr))
-      symbolReferences.push_back(symbolRef);
-    else if (auto hash = dyn_cast<ConstantHashAttr>(attr))
-      hashReferences.push_back(hash);
+    if (auto replaceable = dyn_cast<ReplaceableAttr>(attr))
+      attrs.insert(replaceable);
   });
 
   r.walk([&](Operation *op) {
@@ -274,33 +268,14 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
       walker.walk(t);
   });
 
-  // Create a unique set of symbol references while maintaining the order.
-  llvm::SetVector<SymbolRefAttr> uniqueSymbolRefs(symbolReferences.begin(),
-                                                  symbolReferences.end());
-  llvm::SetVector<ConstantHashAttr> uniqueHashRefs(hashReferences.begin(),
-                                                   hashReferences.end());
-
-  // Now we'll take the uniqued list of symbols we have and replace attributes
-  // with the appropriate (renamed) SymbolRefAttr.
-  auto replaceSymbolRef = [&](SymbolRefAttr symRef) {
-    auto found = llvm::find(uniqueSymbolRefs, symRef);
-    assert(found != uniqueSymbolRefs.end());
-    return builder.getAttr<SymbolRefAttr>(builder.getStringAttr(
-        std::to_string(std::distance(uniqueSymbolRefs.begin(), found))));
-  };
-
-  auto replaceHashRef = [&](ConstantHashAttr hashRef) {
-    auto found = llvm::find(uniqueHashRefs, hashRef);
-    assert(found != uniqueHashRefs.end());
-    return builder.getAttr<HashIndexAttr>(
-        std::distance(uniqueHashRefs.begin(), found));
-  };
-
   // Walk all the ops and replace their symbol refs with symbol indices, and
   // their hash refs with hash indices.
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement(replaceSymbolRef);
-  replacer.addReplacement(replaceHashRef);
+  replacer.addReplacement([&](ReplaceableAttr repl) {
+    auto found = llvm::find(attrs, repl);
+    assert(found != attrs.end());
+    return repl.convertToIndex(std::distance(attrs.begin(), found));
+  });
 
   r.walk([&](Operation *op) {
     replacer.replaceElementsIn(op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
@@ -322,8 +297,7 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
   // Keeping references is safe here because all the memory is owned by the
   // MLIRContext, which is guaranteed to live longer than any of this.
   std::move(hashOr).andThenSync(
-      [&r, op, container, uniqueSymbolRefs = std::move(uniqueSymbolRefs),
-       uniqueHashRefs = std::move(uniqueHashRefs),
+      [&r, op, container, attrs = std::move(attrs),
        out = out.copy()](AsyncValueRef<ErrorOr<std::string>> &&hashOr) mutable {
         // Create a new builder because this may run well after the rest of this
         // function.
@@ -341,12 +315,8 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
         if (hashes)
           hashVec = SmallVector<RegionHashAttr>(hashes.begin(), hashes.end());
 
-        hashVec.push_back(builder.getAttr<RegionHashAttr>(
-            **hashOr,
-            ArrayRef<SymbolRefAttr>(&*uniqueSymbolRefs.begin(),
-                                    uniqueSymbolRefs.size()),
-            ArrayRef<ConstantHashAttr>(&*uniqueHashRefs.begin(),
-                                       uniqueHashRefs.size())));
+        hashVec.push_back(
+            builder.getAttr<RegionHashAttr>(**hashOr, attrs.getArrayRef()));
 
         auto hashVecAttr = builder.getAttr<RegionHashArrayAttr>(hashVec);
         op->setAttr(getRegionHashAttrName(), hashVecAttr);
@@ -440,16 +410,10 @@ static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
 
         // Finish up by replacing symbols/hashes with their original attrs.
         mlir::AttrTypeReplacer replacer;
-        replacer.addReplacement([&](SymbolRefAttr symRef) -> SymbolRefAttr {
-          size_t index;
-          bool err =
-              symRef.getLeafReference().getValue().getAsInteger(10, index);
-          assert(!err && "Must have parsed the symbol ref as an integer!");
-          return regionHash.getSymbols()[index];
-        });
-        replacer.addReplacement([&](HashIndexAttr hashRef) {
-          return regionHash.getHashes()[hashRef.getIndex()];
-        });
+        replacer.addReplacement(
+            [&](ReplaceableAttrIndex ref) -> ReplaceableAttr {
+              return ref.convertFromIndex(regionHash.getParams());
+            });
         r->walk([&](Operation *op) {
           replacer.replaceElementsIn(op, /*replaceAttrs=*/true,
                                      /*replaceLocs=*/true,

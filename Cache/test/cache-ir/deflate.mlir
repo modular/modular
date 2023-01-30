@@ -1,5 +1,6 @@
 // RUN: mkdir -p %t.dir && cache-opt -deflate-symbols="cache-dir=%t.dir" -allow-unregistered-dialect %s | FileCheck %s
 // RUN: cache-opt -deflate-symbols="cache-dir=%t.dir" -allow-unregistered-dialect %s | cache-opt -inflate-symbols="cache-dir=%t.dir" -allow-unregistered-dialect | FileCheck %s -check-prefix=ROUNDTRIP
+// RUN: cache-opt -deflate-symbols="cache-dir=%t.dir" -allow-unregistered-dialect %s | cache-opt -inflate-symbols="cache-dir=%t.dir" -allow-unregistered-dialect | cache-opt -inflate-symbols="cache-dir=%t.dir" -allow-unregistered-dialect | FileCheck %s -check-prefix=ROUNDTRIP-2
 
 // CHECK-LABEL: func.func private @trivial(i32) attributes {region_hashes = #cache<regions[<"3AaDGffw22m3n1KI45nWbQrhVcILBpo7JmW0cfuu3Ks=">]>}
 
@@ -20,7 +21,7 @@ func.func private @empty1()
 // CHECK-LABEL: func.func private @empty2() attributes {region_hashes = #cache<regions[<"47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=">]>}
 func.func private @empty2()
 
-// CHECK-LABEL: func.func private @caller(i32) attributes {region_hashes = #cache<regions[<"P1eRy0kAHwiHWQw3MozcuEZDGvUrtx8JZy94Am7uoAE=" symbols = [@trivial]>]>}
+// CHECK-LABEL: func.func private @caller(i32) attributes {region_hashes = #cache<regions[<"P1eRy0kAHwiHWQw3MozcuEZDGvUrtx8JZy94Am7uoAE=" params = [@trivial]>]>}
 
 // ROUNDTRIP: func.func private @caller(%arg0: i32) {
 // ROUNDTRIP:   call @trivial(%arg0) : (i32) -> ()
@@ -32,7 +33,7 @@ func.func private @caller(%arg0: i32) {
   return loc("foo":1:0)
 }
 
-// CHECK-LABEL: func.func private @multi_caller(i32) attributes {region_hashes = #cache<regions[<"04mZUfztnN3+ATh+yMxeoJJ7Sy0zpuvLEdsqDai2Aas=" symbols = [@trivial, @caller]>]>}
+// CHECK-LABEL: func.func private @multi_caller(i32) attributes {region_hashes = #cache<regions[<"04mZUfztnN3+ATh+yMxeoJJ7Sy0zpuvLEdsqDai2Aas=" params = [@trivial, @caller]>]>}
 
 // ROUNDTRIP: func.func private @multi_caller(%arg0: i32) {
 // ROUNDTRIP:   call @trivial(%arg0) : (i32) -> ()
@@ -55,12 +56,12 @@ func.func private @another_trivial(%arg0: i32) {
 // CHECK-NEXT:  }, {
 // CHECK-NEXT:  }, {
 // CHECK-NEXT:  }) {region0_type = (i32) -> (), region_hashes = #cache<regions[
-// CHECK-SAME: <"re/A0Or06yFJ0dIkDWbS3qj+zTzGnWLGKhwPWw8evz0=" symbols = [@trivial]>
+// CHECK-SAME: <"re/A0Or06yFJ0dIkDWbS3qj+zTzGnWLGKhwPWw8evz0=" params = [@trivial]>
 // COM: These two are the same because we put in the same locations and they have the same ops.
-// CHECK-SAME: <"TxaT38NUJwp9ViiwoBR/P2dJ43yomddgiFVp8mh06HY=" symbols = [@trivial, @caller]>
-// CHECK-SAME: <"TxaT38NUJwp9ViiwoBR/P2dJ43yomddgiFVp8mh06HY=" symbols = [@another_trivial, @caller]>
+// CHECK-SAME: <"TxaT38NUJwp9ViiwoBR/P2dJ43yomddgiFVp8mh06HY=" params = [@trivial, @caller]>
+// CHECK-SAME: <"TxaT38NUJwp9ViiwoBR/P2dJ43yomddgiFVp8mh06HY=" params = [@another_trivial, @caller]>
 // COM: This one should be different because the cache indices are different.
-// CHECK-SAME: <"ESfQG5LCnzjuIpYIPqTgXSs0SuOreBMafgMzm+tz+s8=" symbols = [@trivial]>
+// CHECK-SAME: <"ESfQG5LCnzjuIpYIPqTgXSs0SuOreBMafgMzm+tz+s8=" params = [@trivial]>
 // CHECK-SAME: sym_name = "multi_region"} : () -> ()
 
 // ROUNDTRIP: "some.symbol.op"() ({
@@ -110,3 +111,35 @@ func.func private @another_trivial(%arg0: i32) {
    "some.other.op"() {} : () -> () loc("foo":12:0)
    func.call @trivial(%arg0) : (i32) -> () loc("foo":13:0)
  }) {sym_name = "multi_region", region0_type = (i32) -> ()} : () -> ()
+
+// COM: This ensures we can handle nested objects.
+// CHECK-LABEL: "some.symbol.op"() ({
+// CHECK-NEXT:  }) {region_hashes = #cache<regions[<"rl8UIBhacqkbohDCuIkD0CHLxthh7yUVkuOP88TgDiU=" params = [@trivial, @nested::@trivial]>]>, sym_name = "nested"}
+
+// ROUNDTRIP: "some.symbol.op"() ({
+// ROUNDTRIP:   func.func private @trivial(i32) attributes {region_hashes = #cache<regions[<"3AaDGffw22m3n1KI45nWbQrhVcILBpo7JmW0cfuu3Ks=">]>}
+// ROUNDTRIP:   func.func private @multi_caller(i32) attributes {region_hashes = #cache<regions[<"urzocRNwyPy5mzbHNwGRkt0LmwsHVD+FwCvepPmpWwI=" params = [@trivial, @nested::@trivial]>]>}
+// ROUNDTRIP: }) {sym_name = "nested"} : () -> ()
+
+// ROUNDTRIP-2: "some.symbol.op"() ({
+// ROUNDTRIP-2:   func.func private @trivial(%arg0: i32) {
+// ROUNDTRIP-2:     "some.op"(%arg0) : (i32) -> ()
+// ROUNDTRIP-2:     return
+// ROUNDTRIP-2:   }
+// ROUNDTRIP-2:   func.func private @multi_caller(%arg0: i32) {
+// ROUNDTRIP-2:     "someop.call"(%arg0) {callee = @nested::@trivial} : (i32) -> ()
+// ROUNDTRIP-2:     return
+// ROUNDTRIP-2:   }
+// ROUNDTRIP-2: }) {sym_name = "nested"} : () -> ()
+
+"some.symbol.op"() ({
+  func.func private @trivial(%arg0: i32) {
+    "some.op"(%arg0) {} : (i32) -> () loc("foo":0:0)
+    return loc("foo":1:0)
+  } loc("foo":2:0)
+
+  func.func private @multi_caller(%arg0: i32) {
+    "someop.call"(%arg0) {callee = @nested::@trivial} : (i32) -> () loc("foo":3:0)
+    return loc("foo":4:0)
+  } loc("foo":5:0)
+}) {sym_name = "nested"} : () -> ()

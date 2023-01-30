@@ -27,6 +27,8 @@ def CacheDialect : Dialect {
     void registerAttributes();
     /// Register all dialect ops.
     void registerOps();
+    /// Inject attribute interfaces.
+    void injectAttrInterfaces();
   }];
 
   let cppNamespace = "::M::Cache";

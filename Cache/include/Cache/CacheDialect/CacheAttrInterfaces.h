@@ -4,21 +4,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef CACHE_CACHEDIALECT_CACHEATTRS_H
-#define CACHE_CACHEDIALECT_CACHEATTRS_H
+#ifndef CACHE_CACHEDIALECT_CACHEATTRINTERFACES_H
+#define CACHE_CACHEDIALECT_CACHEATTRINTERFACES_H
 
-#include "Cache/CacheDialect/CacheAttrInterfaces.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "Support/MDialect/MTypes.h"
 #include "mlir/IR/Attributes.h"
-#include "mlir/IR/BuiltinAttributeInterfaces.h"
-#include "mlir/IR/BuiltinTypes.h"
+
+namespace M::Cache {
+class ReplaceableAttrIndex;
+class ReplaceableAttr;
+} // namespace M::Cache
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
-#define GET_ATTRDEF_CLASSES
-#include "Cache/CacheDialect/CacheAttrs.h.inc"
+#include "Cache/CacheDialect/CacheAttrInterfaces.h.inc"
 
-#endif // CACHE_CACHEDIALECT_CACHEATTRS_H
+#endif // CACHE_CACHEDIALECT_CACHEATTRINTERFACES_H

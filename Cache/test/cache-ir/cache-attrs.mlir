@@ -28,18 +28,18 @@ func.func private @afunc()
 
 // CHECK-LABEL: with.callees
 // CHECK-SAME: cache.region_hash
-// CHECK-SAME: "YWI1MzBhMTNlNDU5MTQ5ODJiNzlmOWI3ZTNmYmE5OTRjZmQxZjNmYjIyZjcxY2VhMWFmYmYwMmI0NjBjNmQxZAo=" symbols = [@afunc]
+// CHECK-SAME: "YWI1MzBhMTNlNDU5MTQ5ODJiNzlmOWI3ZTNmYmE5OTRjZmQxZjNmYjIyZjcxY2VhMWFmYmYwMmI0NjBjNmQxZAo=" params = [@afunc]
 "with.callees"() {
-  attr = #cache.region_hash<"YWI1MzBhMTNlNDU5MTQ5ODJiNzlmOWI3ZTNmYmE5OTRjZmQxZjNmYjIyZjcxY2VhMWFmYmYwMmI0NjBjNmQxZAo=" symbols=[@afunc]>
+  attr = #cache.region_hash<"YWI1MzBhMTNlNDU5MTQ5ODJiNzlmOWI3ZTNmYmE5OTRjZmQxZjNmYjIyZjcxY2VhMWFmYmYwMmI0NjBjNmQxZAo=" params=[@afunc]>
 } : () -> ()
 
 // CHECK-LABEL: with.callees
 // CHECK-SAME: cache.region_hash
-// CHECK-SAME: "YWI1MzBhMTNlNDU5MTQ5ODJiNzlmOWI3ZTNmYmE5OTRjZmQxZjNmYjIyZjcxY2VhMWFmYmYwMmI0NjBjNmQxZAo=" symbols = [@afunc]
-// CHECK-SAME: hashes = [<"ZTA5YjE2ODExNDQ0NDAxYjM1Yzk0MDgxZWU4YzgyYTc2MWJjZDNjZmQ3MjYwY2YwNjNlM2ZlYzUyMGY1ZjVlOQo=" : tensor<1234x1234xf32>>]
+// CHECK-SAME: "YWI1MzBhMTNlNDU5MTQ5ODJiNzlmOWI3ZTNmYmE5OTRjZmQxZjNmYjIyZjcxY2VhMWFmYmYwMmI0NjBjNmQxZAo=" params = [@afunc,
+// CHECK-SAME: #cache.constant_hash<"ZTA5YjE2ODExNDQ0NDAxYjM1Yzk0MDgxZWU4YzgyYTc2MWJjZDNjZmQ3MjYwY2YwNjNlM2ZlYzUyMGY1ZjVlOQo=" : tensor<1234x1234xf32>> : tensor<1234x1234xf32>]>
 "with.callees.and.hashes"() {
   attr = #cache.region_hash<"YWI1MzBhMTNlNDU5MTQ5ODJiNzlmOWI3ZTNmYmE5OTRjZmQxZjNmYjIyZjcxY2VhMWFmYmYwMmI0NjBjNmQxZAo="
-                            symbols=[@afunc] hashes=[#cache.constant_hash<"ZTA5YjE2ODExNDQ0NDAxYjM1Yzk0MDgxZWU4YzgyYTc2MWJjZDNjZmQ3MjYwY2YwNjNlM2ZlYzUyMGY1ZjVlOQo=" : tensor<1234x1234xf32>>]>
+                            params=[@afunc, #cache.constant_hash<"ZTA5YjE2ODExNDQ0NDAxYjM1Yzk0MDgxZWU4YzgyYTc2MWJjZDNjZmQ3MjYwY2YwNjNlM2ZlYzUyMGY1ZjVlOQo=" : tensor<1234x1234xf32>>]>
 } : () -> ()
 
 // CHECK-LABEL: hash.ref

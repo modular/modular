@@ -8,6 +8,7 @@
 #define CACHEATTRS_TD
 
 include "Cache/CacheDialect/CacheDialect.td"
+include "Cache/CacheDialect/CacheAttrInterfaces.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 
@@ -21,7 +22,8 @@ class CacheAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 //===----------------------------------------------------------------------===//
 
 def Cache_ConstantHashAttr : CacheAttr<"ConstantHash", "constant_hash",
-    [ElementsAttrInterface, TypedAttrInterface]> {
+    [ElementsAttrInterface, TypedAttrInterface,
+     DeclareAttrInterfaceMethods<ReplaceableAttrInterface>]> {
   let summary = "A non-parametrized hash.";
   let description = [{
     This attribute holds a simple hash - it cannot be parametrized. This is
@@ -49,39 +51,30 @@ def Cache_ConstantHashAttr : CacheAttr<"ConstantHash", "constant_hash",
 // RegionHashAttr
 //===----------------------------------------------------------------------===//
 
-def SymbolListParameter : OptionalArrayRefParameter<"SymbolRefAttr",
-    "symbols in region">;
-
-def ConstantHashListParameter : OptionalArrayRefParameter<"ConstantHashAttr",
-    "hashes in region">;
-
 def Cache_RegionHashAttr : CacheAttr<"RegionHash", "region_hash"> {
   let summary = "A parametrized hash of an MLIR region.";
   let description = [{
-    This attribute holds a hash of an MLIR region parametrized by the symbols
-    referenced inside that region.
+    This attribute holds a hash of an MLIR region parametrized by the special
+    attributes contained within that region.
 
     For example:
     ```mlir
     /// When the region refers to symbols:
-    #cache.region_hash<"REGIONHASH", symbols=[@callee1, @callee2]>
+    #cache.region_hash<"REGIONHASH", params=[@callee1, @callee2]>
 
     /// When the region contains other hashes:
-    #cache.region_hash<"REGIONHASH", symbols=[@callee1, @callee2],
-                       hashes=["HASHCONSTANT"]>
+    #cache.region_hash<"REGIONHASH",
+                       params=[@callee1, @callee2, "HASHCONSTANT"]>
 
-    /// When the region has no symbol references:
+    /// When the region has no parameter references:
     #cache.region_hash<"REGIONHASH">
     ```
   }];
 
   let parameters = (ins StringRefParameter<"">:$hash,
-                        SymbolListParameter:$symbols,
-                        ConstantHashListParameter:$hashes);
+                        OptionalArrayRefParameter<"Attribute">:$params);
   let assemblyFormat = [{
-    `<` custom<Base64>($hash)
-        (` ` `symbols` `=` `[` $symbols^ `]`)?
-        (` ` `hashes` `=` `[` $hashes^ `]`)? `>`
+    `<` custom<Base64>($hash) (` ` `params` `=` `[` $params^ `]`)? `>`
   }];
 }
 
@@ -94,7 +87,8 @@ def Cache_RegionHashArrayAttr :
 //===----------------------------------------------------------------------===//
 
 class Cache_ParametrizedIndexAttrBase<string attrName, string mnemonic>
-  : CacheAttr<attrName, mnemonic> {
+  : CacheAttr<attrName, mnemonic,
+    [DeclareAttrInterfaceMethods<ReplaceableAttrIndexInterface>]> {
   let parameters = (ins "uint64_t":$index);
   let assemblyFormat = "`<` $index `>`";
 }
