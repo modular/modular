@@ -6,6 +6,7 @@
 # RUN: kgen %s -execute -func='$test_erf::main():index()' -I %stdlibdir | FileCheck %s
 
 
+from DType import DType
 from IO import print
 from Math import erf
 from SIMD import SIMD
@@ -17,11 +18,7 @@ fn test_erf():
 
     # CHECK: 0.995322
     # CHECK: 0.995322
-    print(
-        erf[2, __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`](
-            SIMD[2, __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`](2)
-        )
-    )
+    print(erf(SIMD[2, DType.f32.value](2)))
 
 
 @export

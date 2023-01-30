@@ -16,7 +16,7 @@ fn test_exp():
     print("== test_exp\n")
 
     # CHECK: 7.389056
-    print(exp[1, DType.f32.value](SIMD[1, DType.f32.value](2)))
+    print(exp(SIMD[1, DType.f32.value](2)))
 
 
 @export
