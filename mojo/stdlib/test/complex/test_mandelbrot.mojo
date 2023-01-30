@@ -18,11 +18,13 @@ from Range import range
 from SIMD import SIMD
 
 
-struct Complex[type: __mlir_type.`!kgen.dtype`]:
-    var re: SIMD[1, type]
-    var im: SIMD[1, type]
+struct Complex[type: DType]:
+    var re: SIMD[1, type.value]
+    var im: SIMD[1, type.value]
 
-    fn __new__(re: SIMD[1, type], im: SIMD[1, type]) -> Complex[type]:
+    fn __new__(
+        re: SIMD[1, type.value], im: SIMD[1, type.value]
+    ) -> Complex[type]:
         return Complex[type] {re: re, im: im}
 
     fn __add__(self, rhs: Complex[type]) -> Complex[type]:
@@ -34,7 +36,7 @@ struct Complex[type: __mlir_type.`!kgen.dtype`]:
             im: self.re * rhs.im + self.im * rhs.re,
         }
 
-    fn abs(self) -> SIMD[1, type]:
+    fn abs(self) -> SIMD[1, type.value]:
         return self.re * self.re + self.im * self.im
 
 
@@ -50,7 +52,7 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
     let minY = -0.5 - yRange
     let maxY = -0.5 + yRange
 
-    let c = Complex[DType.f32.value](
+    let c = Complex[DType.f32](
         minX + col * xRange / width, maxY - row * yRange / height
     )
 
