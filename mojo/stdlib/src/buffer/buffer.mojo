@@ -560,6 +560,18 @@ struct NDBuffer[
             dynamic_dtype: dynamic_dtype,
         }
 
+    fn __new__(
+        ptr: DTypePointer[type],
+        dynamic_shape: StaticTuple[rank, __mlir_type.index],
+        dynamic_dtype: DType,
+    ) -> NDBuffer[rank, shape, type]:
+        return NDBuffer[rank, shape, type] {
+            data: ptr,
+            _rank: rank,
+            dynamic_shape: dynamic_shape,
+            dynamic_dtype: dynamic_dtype,
+        }
+
     fn get_rank(self) -> Int:
         return rank
 
