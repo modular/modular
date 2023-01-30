@@ -15,6 +15,7 @@ add_modular_mlir_library(KGENCompilerRT SHARED
   Tracing.cpp
   Random.cpp
   System.cpp
+  InitIntelAMX.cpp
 
   LINK_LIBS PUBLIC
   MSupport
