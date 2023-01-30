@@ -16,8 +16,6 @@ class Error;
 } // namespace M
 
 namespace M::KGEN {
-class DeclInterface;
-class FuncInterface;
 
 //===----------------------------------------------------------------------===//
 // Helper methods for inspecting possibly-parameterized attributes and types.
