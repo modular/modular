@@ -255,10 +255,7 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
   OpBuilder builder(op);
   llvm::SetVector<Attribute> attrs;
   mlir::AttrTypeWalker walker;
-  walker.addWalk([&](Attribute attr) {
-    if (auto replaceable = dyn_cast<ReplaceableAttr>(attr))
-      attrs.insert(replaceable);
-  });
+  walker.addWalk([&](ReplaceableAttr attr) { attrs.insert(attr); });
 
   r.walk([&](Operation *op) {
     walker.walk(op->getAttrDictionary());
