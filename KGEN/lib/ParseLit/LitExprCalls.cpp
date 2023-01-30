@@ -18,6 +18,9 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "llvm/Support/Debug.h"
+
+#define DEBUG_TYPE "LITEXPRCALLS"
 
 using namespace M;
 using namespace M::KGEN;
@@ -35,6 +38,212 @@ static Type getVariadicElementType(Type variadicType) {
 }
 
 //===----------------------------------------------------------------------===//
+// Parameter Inference Implementation
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This class provides the implementation details that help to infer
+/// information about the specified parameter.
+class ParameterInferenceState {
+public:
+  ParameterInferenceState(ParamDeclAttr decl) : parameterName(decl.getName()) {}
+
+  /// Given an incomplete parameter binding set for a call to the specified
+  /// signature, try to infer the value of the next 'decl' parameter.  This
+  /// should always return null /without/ an error if it cannot be inferred, and
+  /// return a specific value if unambiguously determined.
+  MValue infer(SignatureType signature, ArrayRef<ParamBindAttr> bindingsSoFar,
+               ArrayRef<ASTExprAnd<AnyValue>> operands);
+
+private:
+  LogicalResult matchTypes(Type actualType, Type expectedType);
+  LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
+
+  StringAttr parameterName;
+  SmallVector<MValue> inferredValues;
+};
+} // namespace
+
+LogicalResult ParameterInferenceState::matchTypes(Type actualType,
+                                                  Type expectedType) {
+  // If the types trivial match then we're done and there is no inference to do.
+  if (actualType == expectedType)
+    return success();
+
+  // If the expected type is a parameter ref, then we're binding the specified
+  // type to an attribute parameter.
+  if (auto expectedParamRef = dyn_cast<ParamRefType>(expectedType))
+    return matchParams(ParameterizedTypeConstantAttr::get(actualType),
+                       expectedParamRef.getParam());
+
+  // Handle when both are DeclRefTypes.
+  if (auto actualDRT = dyn_cast<DeclRefType>(actualType))
+    if (auto expectedDRT = dyn_cast<DeclRefType>(expectedType)) {
+      // Fail if this is to two fundamentally different symbols.
+      if (actualDRT.getSymbol() != expectedDRT.getSymbol())
+        return failure();
+
+      // Fail if the parameter lists fundamentally mismatch.
+      // TODO: Defaulted parameters could make this ok?
+      if (actualDRT.getParamValues().size() !=
+          expectedDRT.getParamValues().size())
+        return failure();
+
+      // Match up the parameter bindings.
+      for (auto [actual, expected] : llvm::zip(actualDRT.getParamValues(),
+                                               expectedDRT.getParamValues())) {
+        assert(actual.getName() == expected.getName());
+        if (failed(matchParams(actual.getValue(), expected.getValue())))
+          return failure();
+      }
+      return success();
+    }
+
+  // Handle various common POP types for convenience, starting with SIMDType.
+  if (auto actual = dyn_cast<POP::SIMDType>(actualType))
+    if (auto expected = dyn_cast<POP::SIMDType>(expectedType))
+      return failure(
+          failed(matchParams(actual.getSize(), expected.getSize())) ||
+          failed(matchParams(actual.getDType(), expected.getDType())));
+
+  // POP::ArrayType.
+  if (auto actual = dyn_cast<POP::ArrayType>(actualType))
+    if (auto expected = dyn_cast<POP::ArrayType>(expectedType))
+      return failure(
+          failed(matchParams(actual.getSize(), expected.getSize())) ||
+          failed(
+              matchParams(actual.getElementType(), expected.getElementType())));
+
+  // Handle POP::PointerType.
+  if (auto actual = dyn_cast<POP::PointerType>(actualType))
+    if (auto expected = dyn_cast<POP::PointerType>(expectedType))
+      return matchParams(actual.getElementType(), expected.getElementType());
+
+  // TODO: Could do StructType and VariantType?
+  LLVM_DEBUG(llvm::errs() << "CANNOT INFER MISMATCH TYPES:\n";
+             actualType.dump(); expectedType.dump(); parameterName.dump());
+  return success();
+}
+
+LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
+                                                   TypedAttr expectedAttr) {
+  // If the attrs trivial match then we're done and there is no inference to do.
+  if (actualAttr == expectedAttr)
+    return success();
+
+  // We can only match up these values if their types match.
+  if (actualAttr.getType() != expectedAttr.getType() &&
+      failed(matchTypes(actualAttr.getType(), expectedAttr.getType())))
+    return failure();
+
+  // If the expected value is the parameter declaration in question, remember
+  // this value!
+  if (auto dre = dyn_cast<ParamDeclRefAttr>(expectedAttr)) {
+    // If the name mismatches, then it is some other parameter, assume it is
+    // fine.
+    if (dre.getName() == parameterName)
+      inferredValues.push_back(actualAttr);
+    return success();
+  }
+
+  LLVM_DEBUG(llvm::errs() << "CANNOT INFER MISMATCHING ATTRS:\n";
+             actualAttr.dump(); expectedAttr.dump(); parameterName.dump());
+  return success();
+}
+
+/// Given an incomplete parameter binding set for a call to the specified
+/// signature, try to infer the value of the next 'decl' parameter.  This should
+/// always return null /without/ an error if it cannot be inferred, and return
+/// a specific value if unambiguously determined.
+///
+MValue ParameterInferenceState::infer(SignatureType signature,
+                                      ArrayRef<ParamBindAttr> bindingsSoFar,
+                                      ArrayRef<ASTExprAnd<AnyValue>> operands) {
+  // TODO: Apply the bindings so far (plus a distinct new attribute relating
+  // back to the original decls for ones that are missing) to the signature with
+  // getSpecializedSignature so we benefit from the already-fixed subsitutions
+  // being applied to the input types.  This can make them more concrete and
+  // help with inferring dependent types based on already-bound parameters.
+  //
+  // signature = signature.getSpecializedSignature(bindingsSoFar + placeholders)
+
+  // Match up the operands provided by the call to the input arguments.  Keep in
+  // mind that the callee signature might not match at all, so we have to be
+  // careful here!
+  size_t providedValueIdx = 0;
+  for (auto [expectedArgIdx, expectedType] :
+       llvm::enumerate(signature.getValueInputs())) {
+    auto expectedConvention = signature.getInputConvention(expectedArgIdx);
+
+    // Handle case when there are no more provided arguments.
+    if (providedValueIdx == operands.size()) {
+      // If the argument is a varargs argument list, then it can be initialized
+      // with zero values no problem.
+      if (uint8_t(expectedConvention & ValueInputConvention::VarArg))
+        break;
+
+      // TODO: If this argument is defaulted, infer against it.
+
+      // Otherwise we have an argument count mismatch, just fail.
+      return {};
+    }
+
+    // Otherwise we'll check the expected type against one (or more in the case
+    // of varargs) provided values.
+    auto checkOneOperand = [&](ASTType expectedType) -> LogicalResult {
+      // We'll bind the next provided value.
+      auto operand = operands[providedValueIdx++];
+      switch (expectedConvention & ~ValueInputConvention::VarArg) {
+      default:
+        llvm_unreachable("not reachable");
+      case ValueInputConvention::ByRef: {
+        // The actual value must be an lvalue if callee takes things by-ref.
+        auto argVal = operand.ir.getIfLValue();
+        if (!argVal)
+          return failure();
+
+        // By-ref argument types must exactly match, no conversions are allowed.
+        return matchTypes(argVal.getType(), expectedType);
+      }
+      case ValueInputConvention::ByVal:
+        // Otherwise, we pass as an r-value.
+        // TODO: Consider implicit conversions?
+        return matchTypes(operand.ir.getRValueType(), expectedType);
+      }
+    };
+
+    // In the typical case, this argument isn't varargs, just check it.
+    if (!uint8_t(expectedConvention & ValueInputConvention::VarArg)) {
+      // If there was a problem, report it, otherwise continue on to the next
+      // expected argument to check.
+      if (failed(checkOneOperand(expectedType)))
+        return {};
+    } else {
+      // If we have a varargs argument, then it will eat the rest of the
+      // arguments, but we have to check each of them.
+      auto varArgsEltType = getVariadicElementType(expectedType);
+      while (providedValueIdx != operands.size()) {
+        if (failed(checkOneOperand(varArgsEltType)))
+          return {};
+      }
+    }
+  }
+
+  // If we have left over operands, then this signature cannot match.
+  if (providedValueIdx != operands.size())
+    return {};
+
+  // If we have no inferred values or if they disagree, then we fail to infer.
+  if (inferredValues.empty() ||
+      !llvm::all_of(inferredValues, [&](MValue v) -> bool {
+        return v.get() == inferredValues.front().get();
+      }))
+    return {};
+
+  return inferredValues.front();
+}
+
+//===----------------------------------------------------------------------===//
 // InputParamBindings Implementation
 //===----------------------------------------------------------------------===//
 
@@ -46,7 +255,8 @@ static Type getVariadicElementType(Type variadicType) {
 ParamBindArrayAttr InputParamBindings::verifyBindings(
     ParamDeclArrayAttr actualParamDecls, StringRef baseName, SMLoc loc,
     ssize_t &incorrectBindingNo, ASTType &incorrectBindingExpectedType,
-    LitSharedState &shared, Operation *declOp) const {
+    LitSharedState &shared, Operation *declOp,
+    ParameterInferenceHookTy parameterInferenceHook) const {
 
   // If we have an incorrect number of bindings specified, this lambda reports
   // the problem.
@@ -81,7 +291,14 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
   // so far and remap types on demand.
   ParameterEvaluator evaluator;
   size_t nextBinding = 0;
-  for (auto &decl : actualParamDecls) {
+  for (ParamDeclAttr decl : actualParamDecls) {
+    // This lambda installs the decl's value in the parameter evaluator and new
+    // binding array.
+    auto setParamValue = [&](TypedAttr value) {
+      evaluator.setParameterValue(decl, value);
+      newBindings.push_back(ParamBindAttr::get(decl.getName(), value));
+    };
+
     // Check to see if we ran out of bindings to provide to this param decl.
     if (nextBinding == bindings.size()) {
       // If the parameter decl is a variadic parameter list, we can fulfill it
@@ -89,13 +306,22 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       if (auto variadicType = dyn_cast<POP::VariadicType>(decl.getType())) {
         auto emptyVariadic =
             POP::VariadicAttr::get(ArrayRef<TypedAttr>(), variadicType);
-        evaluator.setParameterValue(decl, emptyVariadic);
-
-        // Update the decl's type if we remapped the type.
-        newBindings.push_back(
-            ParamBindAttr::get(decl.getName(), emptyVariadic));
+        setParamValue(emptyVariadic);
         continue;
       }
+
+      // If we have a method to infer parameter values, invoke it to see if we
+      // can get an inferred value for the parameter.
+      if (parameterInferenceHook) {
+        if (auto value = parameterInferenceHook(decl, newBindings)) {
+          assert(value.getType() == evaluator.getReboundType(decl.getType()) &&
+                 "inferred a default parameter value of wrong type");
+          setParamValue(value);
+          continue;
+        }
+      }
+
+      // TODO: Apply default values for parameters.
 
       // Otherwise, we're simply missing bindings.
       complainAboutParameterCount();
@@ -105,8 +331,8 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
     auto binding = bindings[nextBinding++];
     // If this value was already bound and checked, use it.
     if (auto prebound = dyn_cast<ParamBindAttr>(binding.bindingOrValue)) {
-      evaluator.setParameterValue(prebound.getName(), prebound.getValue());
-      newBindings.push_back(prebound);
+      assert(decl.getName() == prebound.getName());
+      setParamValue(prebound.getValue());
       continue;
     }
 
@@ -143,36 +369,32 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       return argValue.getIfMValue();
     };
 
+    // Scalar parameter values are installed directly.
+    MValue paramValue;
+    auto variadicType = dyn_cast<POP::VariadicType>(decl.getType());
+    if (!variadicType) {
+      // Otherwise we get a single value.
+      MValue paramValue = handleSingleParameterValue(binding, decl.getType());
+      if (!paramValue)
+        return {};
+      setParamValue(paramValue);
+      continue;
+    }
+
     // If the parameter is a variadic list, it may consume many values, and they
     // all get packed up into a VariadicAttr.
-    MValue paramValue;
-    if (auto variadicType = dyn_cast<POP::VariadicType>(decl.getType())) {
-      SmallVector<TypedAttr> elements;
-      Type expectedType = ParamRefType::get(variadicType.getElementType());
+    SmallVector<TypedAttr> elements;
+    Type expectedType = ParamRefType::get(variadicType.getElementType());
+    elements.push_back(handleSingleParameterValue(binding, expectedType));
+    if (!elements.back())
+      return {};
+    while (nextBinding != bindings.size()) {
+      binding = bindings[nextBinding++];
       elements.push_back(handleSingleParameterValue(binding, expectedType));
       if (!elements.back())
         return {};
-      while (nextBinding != bindings.size()) {
-        binding = bindings[nextBinding++];
-        elements.push_back(handleSingleParameterValue(binding, expectedType));
-        if (!elements.back())
-          return {};
-      }
-      paramValue = POP::VariadicAttr::get(elements, variadicType);
-
-    } else {
-      // Otherwise we get a signel value.
-      paramValue = handleSingleParameterValue(binding, decl.getType());
-      if (!paramValue)
-        return {};
     }
-
-    // Any reference between parameters to this parameter will get our bound and
-    // potentially type-converted value.
-    evaluator.setParameterValue(decl, paramValue);
-
-    // Update the decl's type if we remapped the type.
-    newBindings.push_back(ParamBindAttr::get(decl.getName(), paramValue));
+    setParamValue(POP::VariadicAttr::get(elements, variadicType));
   }
 
   // Check and complain if we have bindings that didn't get used.
@@ -262,15 +484,17 @@ OverloadFitness OverloadFitness::evaluate(
     SignatureType signature, const DirectCallable &callable,
     ArrayRef<ASTExprAnd<AnyValue>> operands, LitSharedState &shared) {
 
-  // TODO: Infer missing parameters.
-
   // Check that the signature can be rebound with this set of bindings.
   ssize_t incorrectBindingNo = 0;
   ASTType incorrectBindingExpectedType;
   auto newBindings = callable.inputParamBindings.verifyBindings(
       signature.getInputParams(), callable.baseName, callable.nameLoc,
       incorrectBindingNo, incorrectBindingExpectedType, shared,
-      /*don't emit diagnostics*/ {});
+      /*don't emit diagnostics*/ nullptr,
+      [&](ParamDeclAttr decl, ArrayRef<ParamBindAttr> bindingsSoFar) -> MValue {
+        return ParameterInferenceState(decl).infer(signature, bindingsSoFar,
+                                                   operands);
+      });
 
   // If there is an error, return the problem.
   if (!newBindings) {

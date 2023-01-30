@@ -76,6 +76,9 @@ public:
     bindings.push_back({expr, Attribute(value)});
   }
 
+  using ParameterInferenceHookTy =
+      std::function<MValue(ParamDeclAttr, ArrayRef<ParamBindAttr> bindings)>;
+
   /// Check that our set of parameter bindings work with the specified input
   /// parameters, returning a checked ParamBindArrayAttr if so.  If the
   /// parameters do not work, this emits an diagnostic (if `declOp` is non-null)
@@ -83,12 +86,12 @@ public:
   /// there is a count mismatch).
   ///
   /// This rejects the signature list if all the parameters are not bound.
-  ParamBindArrayAttr verifyBindings(ParamDeclArrayAttr actualParamDecls,
-                                    StringRef baseName, SMLoc loc,
-                                    ssize_t &incorrectBindingNo,
-                                    ASTType &incorrectBindingExpectedType,
-                                    LitSharedState &shared,
-                                    Operation *declOp) const;
+  ParamBindArrayAttr
+  verifyBindings(ParamDeclArrayAttr actualParamDecls, StringRef baseName,
+                 SMLoc loc, ssize_t &incorrectBindingNo,
+                 ASTType &incorrectBindingExpectedType, LitSharedState &shared,
+                 Operation *declOp,
+                 ParameterInferenceHookTy parameterInferenceHook = {}) const;
 };
 
 /// When emitting a function call, this enum is used to indicate why the call
