@@ -22,6 +22,7 @@ add_modular_mlir_library(KGENEmitObject
   DebugInfoToLLVM
   KGENDialect
   KGENToLLVM
+  KGENTransforms
   LowerZAPToPOP
 
   MCache
