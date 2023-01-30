@@ -513,7 +513,7 @@ void OverloadFitness::diagnose(SignatureType signature,
 LogicalResult DirectCallable::filterOverloadSet(
     ArrayRef<ASTExprAnd<AnyValue>> operands, CallSyntax syntax,
     bool emitDiagnosticOnFailure, LitSharedState &shared,
-    ParamBindArrayAttr *validCandidateBindings) {
+    SymbolConstantAttr *validCandidate) {
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
@@ -572,9 +572,17 @@ LogicalResult DirectCallable::filterOverloadSet(
 
   // If we found exactly one viable candidate, then we succeed.
   if (newFnDecls.size() == 1) {
+    // If the caller wanted to know about the valid symbol, return it.
+    if (validCandidate)
+      *validCandidate = cast<LIT::FuncOp>(*newFnDecls[0])
+                            .getBoundReference(oneFitness.paramBindings);
+    // Mutate our state to represent what we've learned.  We have one callee
+    // and we have valid predetermined parameter bindings.
     fnDecls = std::move(newFnDecls);
-    if (validCandidateBindings)
-      *validCandidateBindings = oneFitness.paramBindings;
+    inputParamBindings.bindings.clear();
+    for (auto bind : oneFitness.paramBindings)
+      inputParamBindings.add(bind);
+
     return success();
   }
 
@@ -884,17 +892,11 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
     // Check the direct callees to see if they can be unambiguously resolved
     // with the bindings list and specified arguments.
-    ParamBindArrayAttr bindings;
+    SymbolConstantAttr symbol;
     if (failed(direct->filterOverloadSet(operands, syntax,
                                          /*emitDiagnosticOnFailure=*/true,
-                                         emitter.shared, &bindings)))
+                                         emitter.shared, &symbol)))
       return {};
-
-    // Given that our filter worked, we know we have a valid binding and one
-    // function.
-    assert(direct->fnDecls.size() == 1);
-    SymbolConstantAttr symbol =
-        cast<LIT::FuncOp>(*direct->fnDecls[0]).getBoundReference(bindings);
 
     calleeSig = symbol.getType();
     callee = MValue(symbol);
