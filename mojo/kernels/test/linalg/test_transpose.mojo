@@ -15,7 +15,6 @@ from Memory import memset_zero
 from Transpose import transpose, transpose_inplace, transpose_nd, _index2D
 from Tuple import StaticTuple
 
-
 # TODO Refactor with `test_broadcast.lit`, e.g., put them into a common file or
 # allow NDBuffer to accept StaticIntTuple
 fn _index3D(x: Int, y: Int, z: Int) -> StaticTuple[3, __mlir_type.index]:
@@ -143,27 +142,33 @@ fn test_transpose_8x8():
         i += 1
 
 
-# CHECK-LABEL: test_transpose_4x2_out_of_place
-fn test_transpose_4x2_out_of_place():
-    print("== test_transpose_4x2_out_of_place\n")
+# CHECK-LABEL: test_transpose_3x2_out_of_place
+fn test_transpose_3x2_out_of_place():
+    print("== test_transpose_3x2_out_of_place\n")
+    let p1 = Buffer[9, DType.index.value].stack_allocation()
+    let p2 = Buffer[9, DType.index.value].stack_allocation()
+    var i: Int = 0
+    while i < 9:
+        p1.__setitem__(i, 0)
+        p2.__setitem__(i, 0)
+        i += 1
+
     let src = NDBuffer[
-        2, create_kgen_list[__mlir_type.index](4, 2), DType.index.value
-    ].stack_allocation()
+        2, create_kgen_list[__mlir_type.index](3, 2), DType.index.value
+    ](p1.data.address)
+
     let dst = NDBuffer[
-        2, create_kgen_list[__mlir_type.index](2, 4), DType.index.value
-    ].stack_allocation()
+        2, create_kgen_list[__mlir_type.index](2, 3), DType.index.value
+    ](p2.data.address)
 
     src.__setitem__(_index2D(0, 0), 0)
     src.__setitem__(_index2D(1, 0), 1)
     src.__setitem__(_index2D(2, 0), 2)
-    src.__setitem__(_index2D(3, 0), 3)
-    src.__setitem__(_index2D(0, 1), 4)
-    src.__setitem__(_index2D(1, 1), 5)
-    src.__setitem__(_index2D(2, 1), 6)
-    src.__setitem__(_index2D(3, 1), 7)
+    src.__setitem__(_index2D(0, 1), 3)
+    src.__setitem__(_index2D(1, 1), 4)
+    src.__setitem__(_index2D(2, 1), 5)
     # transpose a from 4x2 to 2x4
-    transpose[2, 2, 4, DType.index.value](dst, src)
-
+    transpose[2, 2, 3, DType.index.value](dst, src)
     # CHECK: 0
     print(dst.__getitem__(_index2D(0, 0)))
     # CHECK: 1
@@ -171,15 +176,14 @@ fn test_transpose_4x2_out_of_place():
     # CHECK: 2
     print(dst.__getitem__(_index2D(0, 2)))
     # CHECK: 3
-    print(dst.__getitem__(_index2D(0, 3)))
-    # CHECK: 4
     print(dst.__getitem__(_index2D(1, 0)))
-    # CHECK: 5
+    # CHECK: 4
     print(dst.__getitem__(_index2D(1, 1)))
-    # CHECK: 6
+    # CHECK: 5
     print(dst.__getitem__(_index2D(1, 2)))
-    # CHECK: 7
-    print(dst.__getitem__(_index2D(1, 3)))
+    # Overflow should be zero
+    # CHECK: 0
+    print(dst.__getitem__(_index2D(2, 0)))
 
 
 # CHECK-LABEL: test_transpose_2d_identity
@@ -470,7 +474,7 @@ fn test_transpose_3d():
 fn main() -> __mlir_type.index:
     test_transpose_4x4()
     test_transpose_8x8()
-    test_transpose_4x2_out_of_place()
+    test_transpose_3x2_out_of_place()
     test_transpose_2d_identity()
     test_transpose_2d()
     test_transpose_3d_identity()

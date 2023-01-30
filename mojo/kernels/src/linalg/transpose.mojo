@@ -216,12 +216,11 @@ fn transpose[
     assert_param[rank == 2]()
     var i: Int = 0
     while i < rows:
-        var j: Int = i
+        var j: Int = 0
         while j < cols:
             let pos = _index2D(i, j)
             let pos_tr = _index2D(j, i)
             dst.__setitem__(pos, src.__getitem__(pos_tr))
-            dst.__setitem__(pos_tr, src.__getitem__(pos))
             j += 1
         i += 1
 
