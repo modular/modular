@@ -120,3 +120,10 @@ kgen.generator @structExtract<p: !kgen.declref<@IndexField> -> res: index>() {
   // CHECK: kgen.return<#pop.struct.extract<:struct<index, index> p, 1 : index>>
   kgen.return<#lit.struct.extract<:!kgen.declref<@IndexField> p, "second">>
 }
+
+kgen.generator @structExtractInsideStruct<p: @IndexField>(
+    %arg0: !kgen.declref<@SmallVector<N = #lit.struct.extract<:@IndexField p, "second">, T: type = index>>) {
+  %0 = lit.struct.extract %arg0[data] : !pop.array<#lit.struct.extract<:@IndexField p, "second">, index> from
+    !kgen.declref<@SmallVector<N = #lit.struct.extract<:@IndexField p, "second">, T: type = index>>
+  kgen.return
+}

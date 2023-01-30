@@ -104,10 +104,14 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
 }
 
 Type StructOperationLowerer::substituteTypes(Type type) {
-  if (auto ref = dyn_cast<DeclRefType>(type))
-    type = substituteStructRef(ref);
-  return type.replace(
-      [&](DeclRefType type) { return substituteStructRef(type); });
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement(
+      [&](DeclRefType ref) { return substituteStructRef(ref); });
+  // Walk over struct extract attributes. Those will be replaced later.
+  replacer.addReplacement([](LIT::StructExtractAttr attr) {
+    return std::make_pair(attr, WalkResult::skip());
+  });
+  return replacer.replace(type);
 }
 
 void StructOperationLowerer::replaceOp(Operation *op, ValueRange values) {
