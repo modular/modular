@@ -21,6 +21,7 @@
 #include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
+#include "LLCL/Support/Semaphore.h"
 #include "SelectFastestFunction.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
@@ -862,7 +863,8 @@ public:
       : Elaborator(analysis, target, runtime, map, transformCache.copy(),
                    regionCache.copy(), enableSearch),
         root(analysis.getTopLevelOp<ModuleOp>(), IREvaluator(*this), alloc,
-             logger) {}
+             logger),
+        evalSemaphore(1) {}
 
   ErrorTreeOr<FuncOp>
   getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
@@ -980,6 +982,13 @@ private:
   llvm::SpecificBumpPtrAllocator<ExpansionTreeNode> alloc;
   /// The root of the expansion tree.
   ExpansionTreeNode root;
+
+  /// Evaluation semaphore - this ensures we benchmark one thing at a time. We
+  /// initialize it to 1 so that the first thing to evaluate something doesn't
+  /// block.
+  // TODO (#7826): Make this a NamedSemaphore so it's unique across processes
+  //               too.
+  Semaphore evalSemaphore;
 };
 } // namespace
 
@@ -1766,8 +1775,10 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
          toCache = std::move(toCache)](AnyAsyncValueRef &&chain) mutable {
           auto itf = cast<GeneratorInterfaceOp>(itfOp);
 
+          evalSemaphore.wait();
           ErrorOr<size_t> bestSpecializationIdxOr = evaluateSpecializations(
               evalFunc, analysis.getTopLevelSymbolTable(), runtime, concrete);
+          evalSemaphore.post();
 
           if (failed(bestSpecializationIdxOr)) {
             return out.setToError(getMLIRDiagnostic(
@@ -1818,17 +1829,20 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
   else
     concrete = {std::move(xform.get<FuncOp>())};
 
-  // Trim the nodes that we don't want. If the op is not in the `concrete`
-  // list or it cannot be concretized, we don't want it!
-  auto end = llvm::remove_if(itfNode->children, [&](auto &child) {
-    auto concOr = child->getFirstConcrete();
-    if (concOr.isError())
-      return true;
+  // Trim the nodes that we don't want. Check all the concrete implementations
+  // and ensure that only the one(s) that we chose are in the expansion tree.
+  // Mark the others as having errored so they are removed properly at the end
+  // of elaboration.
+  for (auto *child : itfNode->children) {
+    if (!child->isConcrete())
+      child->error = ErrorTree(itf.getLoc(), "no viable expansions found");
 
-    return !llvm::is_contained(concrete, *concOr);
-  });
-  // Erase the other children.
-  itfNode->children.erase(end, itfNode->children.end());
+    for (auto *c : child->children) {
+      if (!llvm::is_contained(concrete, c->op))
+        c->error = ErrorTree(itf.getLoc(), "not chosen in search");
+    }
+  }
+
   LLVM_DEBUG(itfNode->print(logger << "Post Search Interface "));
 
   return std::nullopt;
