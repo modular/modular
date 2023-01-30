@@ -424,6 +424,9 @@ fn useParamVariadics():
 ##===----------------------------------------------------------------------===##
 
 struct StaticVec[size: index]:
+  fn __new__[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size, `, `, type, `>`]) -> StaticVec[size]:
+  @staticmethod
+  fn thing[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size, `, `, type, `>`]):
 
 fn callee1[size: index](v: StaticVec[size]):
 fn callee2[T: __mlir_type.`!kgen.mlirtype`](v: T):
@@ -449,3 +452,8 @@ fn testParamInference[size: index](a: StaticVec[4], b: StaticVec[size],
   callee3(c)
   # CHECK-NEXT: kgen.call @{{.*}}callee4{{.*}}<T: type = f32>(%d)
   callee4(d)
+
+  # CHECK-NEXT: kgen.call @{{.*}}@"__new__{{.*}}<size = 17, type: dtype = f32>(%c)
+  StaticVec(c)
+  # CHECK-NEXT: kgen.call @{{.*}}@"thing{{.*}}<size = 17, type: dtype = f32>(%c)
+  StaticVec.thing(c)
