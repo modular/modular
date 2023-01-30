@@ -66,10 +66,6 @@ private:
 
 LogicalResult ParameterInferenceState::matchTypes(Type actualType,
                                                   Type expectedType) {
-  // If the types trivial match then we're done and there is no inference to do.
-  if (actualType == expectedType)
-    return success();
-
   // If the expected type is a parameter ref, then we're binding the specified
   // type to an attribute parameter.
   if (auto expectedParamRef = dyn_cast<ParamRefType>(expectedType))
@@ -119,6 +115,10 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
     if (auto expected = dyn_cast<POP::PointerType>(expectedType))
       return matchParams(actual.getElementType(), expected.getElementType());
 
+  // If the types trivial match then we're done and there is no inference to do.
+  if (actualType == expectedType)
+    return success();
+
   // TODO: Could do StructType and VariantType?
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER MISMATCH TYPES:\n";
              actualType.dump(); expectedType.dump(); parameterName.dump());
@@ -127,9 +127,6 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
 
 LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
                                                    TypedAttr expectedAttr) {
-  // If the attrs trivial match then we're done and there is no inference to do.
-  if (actualAttr == expectedAttr)
-    return success();
 
   // We can only match up these values if their types match.
   if (actualAttr.getType() != expectedAttr.getType() &&
@@ -145,6 +142,10 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       inferredValues.push_back(actualAttr);
     return success();
   }
+
+  // If the attrs trivial match then we're done and there is no inference to do.
+  if (actualAttr == expectedAttr)
+    return success();
 
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER MISMATCHING ATTRS:\n";
              actualAttr.dump(); expectedAttr.dump(); parameterName.dump());
