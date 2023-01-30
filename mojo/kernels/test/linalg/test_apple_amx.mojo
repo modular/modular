@@ -72,7 +72,7 @@ fn clear_c(
     ]
 ):
     let buffer_bytecount = buf.size() * sizeof[__mlir_type.f32]()
-    memset_zero[DType.f32.value](buf.data, buffer_bytecount)
+    memset_zero(buf.data, buffer_bytecount)
 
 
 fn print_matrix(
