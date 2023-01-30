@@ -4,13 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param
+from Assert import assert_param, debug_assert
 from Bool import Bool
 from DType import DType
+from Functional import unroll
 from Int import Int
-from List import product, contains, _get_kgen_list_item
+from List import (
+    product,
+    contains,
+    _get_kgen_list_item,
+    create_kgen_list_unknown,
+)
 from MemoryUtilities import stack_allocation
-from Pointer import DTypePointer
+from Pointer import DTypePointer, product as pointer_product
 from SIMD import SIMD
 from Tuple import StaticTuple
 
@@ -754,3 +760,90 @@ fn partial_simd_store[
         let storageVal = vector.__getitem__(idx)
         storage.store(idx, storageVal)
         idx += 1
+
+
+# ===----------------------------------------------------------------------===#
+# DynamicRankBuffer
+# ===----------------------------------------------------------------------===#
+
+
+struct DynamicRankBuffer:
+    """This buffer struct does not assume the rank to be static. It is not as
+    efficient as the statically ranked buffer, but is useful when interacting
+    with external functions"""
+
+    var data: DTypePointer[DType.invalid.value]
+    var rank: Int
+    var shape: DTypePointer[DType.index.value]
+    var type: DType
+
+    fn __new__(
+        data: DTypePointer[DType.invalid.value],
+        rank: Int,
+        shape: DTypePointer[DType.index.value],
+        type: DType,
+    ) -> DynamicRankBuffer:
+        return DynamicRankBuffer {
+            data: data,
+            rank: rank,
+            shape: shape,
+            type: type,
+        }
+
+    fn to_buffer[
+        type: __mlir_type.`!kgen.dtype`
+    ](self) -> Buffer[__mlir_attr.`#kgen.unknown : index`, type]:
+        return Buffer[__mlir_attr.`#kgen.unknown : index`, type](
+            self.data.bitcast[type](), pointer_product(self.shape, self.rank)
+        )
+
+    fn to_ndbuffer[
+        rank: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
+    ](self) -> NDBuffer[rank, create_kgen_list_unknown[rank](), type]:
+        return NDBuffer[rank, create_kgen_list_unknown[rank](), type](
+            self.data.bitcast[type](),
+            _shape_to_static_tuple[rank](self.shape),
+            self.type,
+        )
+
+    @always_inline
+    fn rank_dispatch[
+        func: __mlir_type.`!kgen.signature<<rank:index>() -> !lit.none>`
+    ](self):
+        debug_assert(self.rank > 0 and self.rank <= 5)
+
+        if self.rank == 1:
+            func[1]()
+            return
+
+        if self.rank == 2:
+            func[2]()
+            return
+
+        if self.rank == 3:
+            func[3]()
+            return
+
+        if self.rank == 4:
+            func[4]()
+            return
+
+        if self.rank == 5:
+            func[5]()
+            return
+
+
+fn _shape_to_static_tuple[
+    rank: __mlir_type.index
+](ptr: DTypePointer[DType.index.value]) -> StaticTuple[rank, __mlir_type.index]:
+    var result: StaticTuple[rank, __mlir_type.index]
+
+    @always_inline
+    fn _fill[idx: __mlir_type.index]():
+        result.__setitem__[idx](
+            Int(ptr.load(idx).__getitem__(0)).__as_mlir_index()
+        )
+
+    unroll[rank, _fill]()
+
+    return result
