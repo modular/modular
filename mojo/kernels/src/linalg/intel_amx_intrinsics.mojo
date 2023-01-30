@@ -12,6 +12,7 @@
 from DType import DType
 from Int import Int
 from SIMD import SIMD
+from Bool import Bool
 
 
 struct __tile:
@@ -48,3 +49,10 @@ fn _tile_dpbssd(dst: Int, a: Int, b: Int):
         intrin:"llvm.x86.tdpbssd",
         _type:[],
     ](dst_si8.value, a_si8.value, b_si8.value)
+
+
+fn init_intel_amx() -> Bool:
+    return __mlir_op.`pop.external_call`[
+        func : __mlir_attr.`@KGEN_CompilerRT_Init_Intel_AMX`,
+        _type : __mlir_type[`!pop.scalar<bool>`],
+    ]()
