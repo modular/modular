@@ -72,8 +72,8 @@ fn relu_n1[
 
 
 fn gelu[
-    simd_width: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
-](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
+    simd_widthX: __mlir_type.index, typeX: __mlir_type.`!kgen.dtype`
+](x: SIMD[simd_widthX, typeX]) -> SIMD[simd_widthX, typeX]:
     """Compute the GELU Op using the equation
     $0.5 * x * (1 + erf(x / sqrt(2)))$.
 
@@ -84,8 +84,8 @@ fn gelu[
         SIMD[size, type]: The result of the GELU operation.
     """
     alias SQRT_2 = 1.4142135623730950488
-    assert_param[is_floating_point[type]()]()
-    return 0.5 * x * (1 + erf[simd_width, type](x / SQRT_2))
+    assert_param[is_floating_point[typeX]()]()
+    return 0.5 * x * (1 + erf(x / SQRT_2))
 
 
 # ===----------------------------------------------------------------------===#
