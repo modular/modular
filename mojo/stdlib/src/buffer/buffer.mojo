@@ -128,11 +128,9 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         """
         # Construct a Buffer type with statically known size
         assert_param[size != __mlir_attr.`#kgen.unknown : index`]()
-        var result: Buffer[size, type]
-        result.data = DTypePointer[type](ptr)
-        result.dynamic_size = size
-        result.dtype = type
-        return result
+        return Buffer[size, type] {
+            data: DTypePointer[type](ptr), dynamic_size: size, dtype: type
+        }
 
     fn __new__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
@@ -151,10 +149,30 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
             Buffer[size, type]: The buffer object.
         """
         assert_param[size == __mlir_attr.`#kgen.unknown : index`]()
-        var result: Buffer[size, type]
-        result.data = DTypePointer[type](ptr)
-        result.dynamic_size = in_size
-        return result
+        return Buffer[size, type] {
+            data: DTypePointer[type](ptr), dynamic_size: in_size, dtype: type
+        }
+
+    fn __new__(
+        ptr: DTypePointer[type],
+        in_size: Int,
+    ) -> Buffer[size, type]:
+        """Constructor for a Buffer with statically known type.
+
+        Constraints:
+            The size is unknown.
+
+        Args:
+            ptr (DTypePointer[type]): Pointer to the data.
+            size (Int): Dynamic size of the buffer.
+
+        Returns:
+            Buffer[size, type]: The buffer object.
+        """
+        assert_param[size == __mlir_attr.`#kgen.unknown : index`]()
+        return Buffer[size, type] {
+            data: ptr, dynamic_size: in_size, dtype: type
+        }
 
     fn __len__(self) -> Int:
         """Returns the dynamic size if the buffer is not statically known,
