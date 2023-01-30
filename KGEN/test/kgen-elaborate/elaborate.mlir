@@ -1523,3 +1523,48 @@ kgen.generator @root() {
   %0 = kgen.call @g2<size = q, width = w>() : () -> index
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: @top
+kgen.generator @top() {
+  // CHECK-NEXT: call @top_impl
+  kgen.call @top_itf() : () -> ()
+  kgen.return
+}
+
+// COM: This interface has an evaluator, so we will be picking the best candidate
+// COM: for it.
+kgen.generator.interface @top_itf() -> ()
+evaluator (!pop.pointer<() -> ()>, index) -> index = @eval
+
+
+// COM: An evaluator: simply return non-zeroth option. Picking 0th candidate
+// COM: works fine.
+// CHECK-LABEL: @eval
+kgen.generator @eval(%funcs: !pop.pointer<() -> ()>, %size: index) -> index {
+  // CHECK-NEXT: index.constant 1
+  %res = index.constant 1
+  // CHECK-NEXT: return %idx1
+  kgen.return %res : index
+}
+
+// COM: A single implementation of top_itf where we just call another interface.
+// CHECK-LABEL: @top_impl()
+kgen.generator @top_impl() -> () implements @top_itf {
+  // CHECK-NEXT: call @itf_impl_1
+  kgen.call @itf(): ()->()
+  kgen.return
+}
+
+// COM: This interface has just two implementations but we choose the second
+// COM: through the evaluator.
+kgen.generator.interface @itf() -> ()
+
+kgen.generator @itf_impl_0() -> () implements @itf {
+  kgen.return
+}
+
+kgen.generator @itf_impl_1() -> () implements @itf {
+  kgen.return
+}
