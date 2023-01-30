@@ -236,6 +236,9 @@ struct OverloadFitness {
   /// For type mismatches, this is the actual or expected type, otherwise null.
   ASTType type;
 
+  /// For valid candidates, this defines the parameter bindings to use.
+  ParamBindArrayAttr paramBindings;
+
   /// Determine whether the specified signature can be invoked with the
   /// parameter bindings specified in `callable` and the arguments specified in
   /// `operands`.
@@ -272,14 +275,14 @@ OverloadFitness OverloadFitness::evaluate(
   // If there is an error, return the problem.
   if (!newBindings) {
     if (incorrectBindingNo == -1)
-      return {kParamCount, 0, ASTType()};
+      return {kParamCount, 0, ASTType(), newBindings};
     return {kParamWrongType, static_cast<size_t>(incorrectBindingNo),
-            incorrectBindingExpectedType};
+            incorrectBindingExpectedType, newBindings};
   }
 
   // Check the result parameter count.
   if (signature.getResultParams().size() != callable.resultParams.size())
-    return {kResultParamCount, 0, ASTType()};
+    return {kResultParamCount, 0, ASTType(), newBindings};
 
   // If anything was bound, apply it to the signature so the expected argument
   // types are updated.
@@ -314,13 +317,13 @@ OverloadFitness OverloadFitness::evaluate(
     // Tailor the diagnostic when more args are allowed.
     auto problem =
         minRequiredArgs != maxAllowedargs ? kArgTooFewAtLeast : kArgCount;
-    return {problem, minRequiredArgs, ASTType()};
+    return {problem, minRequiredArgs, ASTType(), newBindings};
   }
   if (operands.size() > maxAllowedargs) {
     // Tailor the diagnostic when more args are allowed.
     auto problem =
         minRequiredArgs != maxAllowedargs ? kArgTooManyAtMost : kArgCount;
-    return {problem, maxAllowedargs, ASTType()};
+    return {problem, maxAllowedargs, ASTType(), newBindings};
   }
 
   // As we walk through the values provided as part of the argument list, we
@@ -358,11 +361,12 @@ OverloadFitness OverloadFitness::evaluate(
         // The actual value must be an lvalue if callee takes things by-ref.
         auto argVal = operand.ir.getIfLValue();
         if (!argVal)
-          return {kArgNotLValue, providedValueIdx, operand.ir.getType()};
+          return {kArgNotLValue, providedValueIdx, operand.ir.getType(),
+                  newBindings};
 
         // By-ref argument types must exactly match, no conversions are allowed.
         if (!ASTType(argVal.getType()).isEqualCanon(expectedType))
-          return {kArgWrongLVType, providedValueIdx, expectedType};
+          return {kArgWrongLVType, providedValueIdx, expectedType, newBindings};
         break;
       }
       case ValueInputConvention::ByVal:
@@ -377,7 +381,7 @@ OverloadFitness OverloadFitness::evaluate(
         if (callable.disableImplicitConversions ||
             !CallableValue::canImplicitlyConvertToType(operand, expectedType,
                                                        shared))
-          return {kArgWrongType, providedValueIdx, expectedType};
+          return {kArgWrongType, providedValueIdx, expectedType, newBindings};
 
         // If we had one, this bumps our # implicit conversions.
         ++numImplicitConversions;
@@ -386,7 +390,7 @@ OverloadFitness OverloadFitness::evaluate(
 
       // This provided value has been used up.
       ++providedValueIdx;
-      return {kValid, 0, ASTType()};
+      return {kValid, 0, ASTType(), newBindings};
     };
 
     // In the typical case, this argument isn't varargs, just check it.
@@ -412,7 +416,7 @@ OverloadFitness OverloadFitness::evaluate(
          "should handle argument mismatch above");
 
   // Otherwise we succeeded!
-  return {kValid, numImplicitConversions, ASTType()};
+  return {kValid, numImplicitConversions, ASTType(), newBindings};
 }
 
 /// Add explaination for why this candidate doesn't work to the specified
@@ -508,7 +512,8 @@ void OverloadFitness::diagnose(SignatureType signature,
 /// return success.  If not, generate a diagnostic and return failure.
 LogicalResult DirectCallable::filterOverloadSet(
     ArrayRef<ASTExprAnd<AnyValue>> operands, CallSyntax syntax,
-    bool emitDiagnosticOnFailure, LitSharedState &shared) {
+    bool emitDiagnosticOnFailure, LitSharedState &shared,
+    ParamBindArrayAttr *validCandidateBindings) {
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
@@ -550,6 +555,7 @@ LogicalResult DirectCallable::filterOverloadSet(
   // the lowest number of implicit conversions required.
   size_t minConversions = ~0U;
   SmallVector<ASTDecl *, 1> newFnDecls;
+  OverloadFitness oneFitness = evaluations[0];
   for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
     // Ignore failures or candidates that have more conversions.
     if (eval.kind != OverloadFitness::kValid || eval.payload > minConversions)
@@ -561,11 +567,14 @@ LogicalResult DirectCallable::filterOverloadSet(
       minConversions = eval.payload;
     }
     newFnDecls.push_back(candidate);
+    oneFitness = eval;
   }
 
   // If we found exactly one viable candidate, then we succeed.
   if (newFnDecls.size() == 1) {
     fnDecls = std::move(newFnDecls);
+    if (validCandidateBindings)
+      *validCandidateBindings = oneFitness.paramBindings;
     return success();
   }
 
@@ -583,11 +592,12 @@ LogicalResult DirectCallable::filterOverloadSet(
   return failure();
 }
 
-/// Generate a reference to the specified function, checking that any supplied
-/// parameters are correct and match expectations.
+/// Perform subsitutions of the specified bindings into the symbol, returning
+/// the resultant LITSymbolConstant attr or producing an error message and
+/// returning null. This allows producing a reference to a parameterized
+/// function without the parmaeters specified.  They can be bound later.
 SymbolConstantAttr
-DirectCallable::getBoundConstantAttr(LitSharedState &shared,
-                                     bool allowUnboundSymbol) const {
+DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
   if (fnDecls.size() != 1) {
     assert(!fnDecls.empty() && "DirectCallable malformed");
     auto diag =
@@ -606,7 +616,7 @@ DirectCallable::getBoundConstantAttr(LitSharedState &shared,
 
   // If there are no input parameters specified and if we allow unbound symbols,
   // just return the unbound symbol.
-  if (inputParamBindings.bindings.empty() && allowUnboundSymbol)
+  if (inputParamBindings.bindings.empty())
     return funcOp.getBoundReference();
 
   // Check that the signature can be rebound with our set of bindings.
@@ -709,9 +719,7 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   // We allow unbound symbols here which can be emitted as an MValue.  In the
   // case where we are partially applying, that will force the unbound symbol
   // into a DRValue which will catch symbols that are not fully bound.
-  auto directSymbolAttr =
-      direct->getBoundConstantAttr(emitter.shared,
-                                   /*allowUnboundSymbol=*/true);
+  auto directSymbolAttr = direct->getBoundConstantAttr(emitter.shared);
   if (!directSymbolAttr)
     return {};
 
@@ -876,13 +884,17 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
     // Check the direct callees to see if they can be unambiguously resolved
     // with the bindings list and specified arguments.
+    ParamBindArrayAttr bindings;
     if (failed(direct->filterOverloadSet(operands, syntax,
                                          /*emitDiagnosticOnFailure=*/true,
-                                         emitter.shared)))
+                                         emitter.shared, &bindings)))
       return {};
-    SymbolConstantAttr symbol = direct->getBoundConstantAttr(emitter.shared);
-    if (!symbol)
-      return {};
+
+    // Given that our filter worked, we know we have a valid binding and one
+    // function.
+    assert(direct->fnDecls.size() == 1);
+    SymbolConstantAttr symbol =
+        cast<LIT::FuncOp>(*direct->fnDecls[0]).getBoundReference(bindings);
 
     calleeSig = symbol.getType();
     callee = MValue(symbol);

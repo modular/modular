@@ -140,21 +140,20 @@ struct DirectCallable {
   /// arguments.  If so, replace fnDecls with a single entry that works and
   /// return success.  If not, generate a diagnostic (when
   /// `emitDiagnosticOnFailure` is true) and return failure.
-  LogicalResult filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                  CallSyntax syntax,
-                                  bool emitDiagnosticOnFailure,
-                                  LitSharedState &shared);
+  ///
+  /// On success and when `validCandidateBindings` is non-null,
+  /// `*validCandidateBindings` is filled in with information about the
+  /// successful match.
+  LogicalResult
+  filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands, CallSyntax syntax,
+                    bool emitDiagnosticOnFailure, LitSharedState &shared,
+                    ParamBindArrayAttr *validCandidateBindings = nullptr);
 
   /// Perform subsitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
-  /// returning null.
-  ///
-  /// When allowUnboundSymbol is true, this will allow producing a reference to
-  /// a parameterized function without the parmaeters specified.  They can be
-  /// bound later.
-  SymbolConstantAttr
-  getBoundConstantAttr(LitSharedState &shared,
-                       bool allowUnboundSymbol = false) const;
+  /// returning null. This allows producing a reference to a parameterized
+  /// function without the parmaeters specified.  They can be bound later.
+  SymbolConstantAttr getBoundConstantAttr(LitSharedState &shared) const;
 
   /// Check declarations for the result parameters and add them to
   /// resultParamDecls.  This emits and error and returns failure if an error is
