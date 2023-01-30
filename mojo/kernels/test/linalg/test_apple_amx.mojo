@@ -20,7 +20,7 @@ from IO import print
 from List import create_kgen_list
 from Memory import memset_zero
 from SIMD import SIMD
-from TargetInfo import has_m1_amx, sizeof
+from TargetInfo import is_apple_m1, sizeof
 from Transpose import transpose_inplace, _index2D
 
 
@@ -96,7 +96,7 @@ fn print_matrix(
 
 # CHECK-LABEL: test_amx_matmul
 fn test_amx_matmul():
-    if has_m1_amx():
+    if is_apple_m1():
         print("== test_amx_matmul\n")
 
     var a_matrix = NDBuffer[
