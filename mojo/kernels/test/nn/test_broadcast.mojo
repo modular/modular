@@ -100,7 +100,7 @@ fn test_broadcast_single_axis():
         DType.index.value,
     ].stack_allocation()
 
-    memset_zero[DType.index.value](output.data, 6)
+    memset_zero(output.data, 6)
 
     broadcast[
         2,
@@ -156,7 +156,7 @@ fn test_broadcast_multi_axes():
         DType.index.value,
     ].stack_allocation()
 
-    memset_zero[DType.index.value](output.data, 16)
+    memset_zero(output.data, 16)
 
     broadcast[
         3,
@@ -229,7 +229,7 @@ fn test_broadcast_multi_axes_nested():
         DType.index.value,
     ].stack_allocation()
 
-    memset_zero[DType.index.value](output.data, 32)
+    memset_zero(output.data, 32)
 
     broadcast[
         5,
