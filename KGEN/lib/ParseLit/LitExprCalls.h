@@ -141,13 +141,14 @@ struct DirectCallable {
   /// return success.  If not, generate a diagnostic (when
   /// `emitDiagnosticOnFailure` is true) and return failure.
   ///
-  /// On success and when `validCandidateBindings` is non-null,
-  /// `*validCandidateBindings` is filled in with information about the
-  /// successful match.
-  LogicalResult
-  filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands, CallSyntax syntax,
-                    bool emitDiagnosticOnFailure, LitSharedState &shared,
-                    ParamBindArrayAttr *validCandidateBindings = nullptr);
+  /// On success and when `validCandidate` is non-null, `*validCandidate` is
+  /// filled in with symbol for the valid callee along with its parameter
+  /// bindings.
+  LogicalResult filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                  CallSyntax syntax,
+                                  bool emitDiagnosticOnFailure,
+                                  LitSharedState &shared,
+                                  SymbolConstantAttr *validCandidate = nullptr);
 
   /// Perform subsitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
