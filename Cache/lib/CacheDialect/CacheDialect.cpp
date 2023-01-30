@@ -9,6 +9,7 @@
 void M::Cache::CacheDialect::initialize() {
   registerAttributes();
   registerOps();
+  injectAttrInterfaces();
 }
 
 //===----------------------------------------------------------------------===//

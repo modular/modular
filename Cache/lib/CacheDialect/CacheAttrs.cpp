@@ -76,6 +76,15 @@ void ConstantHashAttr::print(AsmPrinter &printer) const {
   printer << " : " << getType() << ">";
 }
 
+ReplaceableAttrIndex ConstantHashAttr::convertToIndex(size_t idx) const {
+  return HashIndexAttr::get(getContext(), idx);
+}
+
+ReplaceableAttr
+HashIndexAttr::convertFromIndex(ArrayRef<Attribute> attrs) const {
+  return attrs[getIndex()];
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

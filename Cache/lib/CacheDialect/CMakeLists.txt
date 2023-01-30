@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_dialect_library(CacheDialect
+  CacheAttrInterfaces.cpp
   CacheAttrs.cpp
   CacheDialect.cpp
   CacheOps.cpp

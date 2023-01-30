@@ -50,15 +50,16 @@ public:
         getFilesystemBackend(*rt, std::filesystem::path(cacheDir.getValue())));
     // Deflate each symbol.
     SmallVector<AnyAsyncValueRef> results;
-    for (auto &op : getOperation()) {
-      if (!op.hasAttr(SymbolTable::getSymbolAttrName()))
-        continue;
+    getOperation().walk([&](Operation *op) {
+      if (!op->hasAttr(SymbolTable::getSymbolAttrName()))
+        return;
 
       results.push_back(
-          deflateOp(&op, cache.copy(), AsyncValueRef<Chain>::createReady(*rt)));
-    }
+          deflateOp(op, cache.copy(), AsyncValueRef<Chain>::createReady(*rt)));
+      // Gotta wait cause it could be nested.
+      await(results.back());
+    });
 
-    await(results);
     for (auto &r : results)
       if (r.isError()) {
         getOperation()->emitError() << r.getDiagnostic().getMessage();
@@ -106,15 +107,16 @@ public:
         getFilesystemBackend(*rt, std::filesystem::path(cacheDir.getValue())));
     // Inflate each deflated op.
     SmallVector<AnyAsyncValueRef> results;
-    for (auto &sym : getOperation()) {
-      if (!sym.hasAttr(getRegionHashAttrName()))
-        continue;
+    getOperation().walk([&](Operation *op) {
+      if (!op->hasAttr(getRegionHashAttrName()))
+        return;
 
-      results.push_back(inflateOp(&sym, cache.copy(),
-                                  AsyncValueRef<Chain>::createReady(*rt)));
-    }
+      results.push_back(
+          inflateOp(op, cache.copy(), AsyncValueRef<Chain>::createReady(*rt)));
+      // Gotta wait cause it could be nested.
+      await(results.back());
+    });
 
-    await(results);
     for (auto &r : results)
       if (r.isError()) {
         getOperation()->emitError() << r.getDiagnostic().getMessage();
