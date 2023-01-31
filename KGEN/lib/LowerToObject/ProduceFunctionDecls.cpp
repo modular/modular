@@ -165,7 +165,7 @@ static LogicalResult emitSignature(raw_ostream &os, SymbolTable &symtab,
   // FIXME: This assumes the C wrapper that eventually gets generated is not
   // renamed due to a symbol name conflict. Header emission happens too early in
   // the pipeline.
-  os << ' ' << symName.getValue() << '(';
+  os << ' ' << symName.getValue() << "_c(";
   llvm::interleaveComma(argTys, os);
   if (resTys.size() > 1) {
     if (!argTys.empty())

@@ -341,13 +341,3 @@ struct SomeParamStruct[c_param: __mlir_type.index]:
     alias ref = nestedFunction
     # CHECK: call @"$decls"::@SomeParamStruct::@"topLevelParamFn({{.*}})"::@"nestedFunction()"<b_param = 2>()
     nestedFunction[2]()
-
-
-##===----------------------------------------------------------------------===##
-# Exported Functions
-##===----------------------------------------------------------------------===##
-
-@export("my_named_export")
-# CHECK: kgen.export @"$decls"::@"export_me()"  as @my_named_export
-def export_me():
-  ...

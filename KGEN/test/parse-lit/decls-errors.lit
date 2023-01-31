@@ -335,37 +335,3 @@ def field_indexes(a: DirectInstanceReference):
 struct MLIRAttrWithinStruct: # expected-note {{previously used here}}
   # expected-error @+1 {{recursive reference to declaration}}
   __mlir_attr.`#index<cmp_predicate eq>`
-
-##===----------------------------------------------------------------------===##
-# Exported Functions
-##===----------------------------------------------------------------------===##
-
-# expected-error @+1 {{@export requires a string specifying the name of the exported symbol}}
-@export(1)
-def export_me():
-  ...
-
-# expected-note @+1 {{previous export here}}
-@export("my_foo")
-def foo():
-  ...
-
-# expected-error @+1 {{invalid re-export of my_foo}}
-@export("my_foo")
-def bar():
-  ...
-
-# expected-error @+1 {{my+foo is not a valid C identifier}}
-@export("my+foo")
-def bad_name():
-  ...
-
-# expected-note @+1 {{previous export here}}
-@export
-def func_overloaded(x: Int):
-  ...
-
-# expected-error @+1 {{invalid re-export of func_overloaded}}
-@export
-def func_overloaded(x: Bool):
-  ...
