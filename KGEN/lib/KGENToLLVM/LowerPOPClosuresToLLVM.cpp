@@ -71,7 +71,7 @@ public:
         LLVM::LLVMStructType::getLiteral(context, boundArgTypes);
     auto envStructType = LLVM::LLVMStructType::getLiteral(
         context, {erasedPtrType, boundArgStructTy});
-    auto envStructPtrTy = LLVM::LLVMPointerType::get(context, envStructType, 0);
+    auto envStructPtrTy = LLVM::LLVMPointerType::get(envStructType);
 
     // Create the wrapper function type
     // Wrapper function has the type (!llvm.ptr, unboundArgTy0, ...
@@ -113,11 +113,13 @@ public:
       wrapperFnBody->addArgument(argTy, op.getLoc());
 
     Value env = wrapperFnBody->getArgument(0);
+    Type envCalleeType = adaptor.getCallee().getType();
     Value envStructPtr =
         rewriter.create<LLVM::BitcastOp>(op.getLoc(), envStructPtrTy, env);
-    Value callee = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(), adaptor.getCallee().getType(), envStructPtr,
+    Value calleePtr = rewriter.create<LLVM::GEPOp>(
+        op.getLoc(), LLVM::LLVMPointerType::get(envCalleeType), envStructPtr,
         ArrayRef<LLVM::GEPArg>({0, 0}));
+    Value callee = rewriter.create<LLVM::LoadOp>(op.getLoc(), calleePtr);
 
     // Create the call to the callee
     SmallVector<Value>
@@ -135,7 +137,7 @@ public:
         // llvmCallArgs
         Type boundArgType = boundArgTypes[boundArgIdx];
         LLVM::LLVMPointerType boundArgPtrType =
-            LLVM::LLVMPointerType::get(context, boundArgType, 0);
+            LLVM::LLVMPointerType::get(boundArgType);
         Value boundArgPtr = rewriter.create<LLVM::GEPOp>(
             op.getLoc(), boundArgPtrType, envStructPtr,
             ArrayRef<LLVM::GEPArg>({0, 1, boundArgIdx}));
@@ -179,8 +181,8 @@ public:
         rewriter.create<LLVM::AddressOfOp>(op.getLoc(), wrapperFn);
     Value erasedWrapperFnPtr = rewriter.create<LLVM::BitcastOp>(
         op.getLoc(), erasedPtrType, wrapperFnPtr);
-    rewriter.create<LLVM::InsertValueOp>(op.getLoc(), closureStruct,
-                                         erasedWrapperFnPtr, 0);
+    closureStruct = rewriter.create<LLVM::InsertValueOp>(
+        op.getLoc(), closureStruct, erasedWrapperFnPtr, 0);
 
     // Allocate the env struct
     Value one = rewriter.create<LLVM::ConstantOp>(
@@ -199,15 +201,14 @@ public:
     for (auto [argIdx, boundArgValue] : llvm::enumerate(adaptor.getInputs())) {
       Type boundArgTy = boundArgTypes[argIdx];
       Value boundArgPtr = rewriter.create<LLVM::GEPOp>(
-          op.getLoc(), LLVM::LLVMPointerType::get(context, boundArgTy, 0),
-          envStruct, ArrayRef<LLVM::GEPArg>({0, 1, argIdx}));
+          op.getLoc(), LLVM::LLVMPointerType::get(boundArgTy), envStruct,
+          ArrayRef<LLVM::GEPArg>({0, 1, argIdx}));
       rewriter.create<LLVM::StoreOp>(op.getLoc(), boundArgValue, boundArgPtr);
     }
 
     // Add the pointer to the original callee to the environment struct
     Value originalCalleePtr = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(),
-        LLVM::LLVMPointerType::get(context, adaptor.getCallee().getType(), 0),
+        op.getLoc(), LLVM::LLVMPointerType::get(adaptor.getCallee().getType()),
         envStruct, ArrayRef<LLVM::GEPArg>({0, 0}));
     rewriter.create<LLVM::StoreOp>(op.getLoc(), adaptor.getCallee(),
                                    originalCalleePtr);
@@ -215,8 +216,8 @@ public:
     // Add the environment struct to the closure struct
     LLVM::BitcastOp erasedEnvStructPtr =
         rewriter.create<LLVM::BitcastOp>(op.getLoc(), erasedPtrType, envStruct);
-    rewriter.create<LLVM::InsertValueOp>(op.getLoc(), closureStruct,
-                                         erasedEnvStructPtr, 1);
+    closureStruct = rewriter.create<LLVM::InsertValueOp>(
+        op.getLoc(), closureStruct, erasedEnvStructPtr, 1);
 
     // Insert lifetime marker at the end of the struct
     oldInsertionBlock = rewriter.getInsertionBlock();
@@ -285,8 +286,7 @@ struct ConvertPOPCallIndirect : mlir::ConvertOpToLLVMPattern<CallIndirectOp> {
       auto wrapperFnType = LLVM::LLVMFunctionType::get(context, resultType,
                                                        wrapperFnArgTypes, 0);
       Value castWrapperFn = rewriter.create<LLVM::BitcastOp>(
-          op.getLoc(), LLVM::LLVMPointerType::get(context, wrapperFnType, 0),
-          wrapperFnPtr);
+          op.getLoc(), LLVM::LLVMPointerType::get(wrapperFnType), wrapperFnPtr);
 
       // Create the call to the wrapper function
       SmallVector<Value> llvmCallArgs;

@@ -24,19 +24,21 @@ kgen.func @partial_apply() -> !pop.closure<(index) -> !pop.scalar<f32>> {
   // CHECK: %[[CALLEEPTR:.*]] = llvm.getelementptr %[[ENV_STRUCT]][0, 0] : (!llvm.ptr<struct<(ptr, struct<(f32)>)>>) -> !llvm.ptr<ptr<func<f32 (i64, f32)>>>
   // CHECK:  llvm.store %[[FNPTR]], %[[CALLEEPTR]] : !llvm.ptr<ptr<func<f32 (i64, f32)>>>
   // CHECK:  %[[ERASED_ENV:.*]] = llvm.bitcast %[[ENV_STRUCT]] : !llvm.ptr<struct<(ptr, struct<(f32)>)>> to !llvm.ptr
-  // CHECK:  %[[INSERT:.*]] = llvm.insertvalue %[[ERASED_ENV]], %[[STRUCT]][1]
-  // CHECK:  %[[CAST:.*]] = builtin.unrealized_conversion_cast %[[STRUCT]] : !llvm.struct<(ptr, ptr)> to !pop.closure<(index) -> !pop.scalar<f32>>
+  // CHECK:  %[[INSERT:.*]] = llvm.insertvalue %[[ERASED_ENV]], %[[INSERT_WRAPPER]][1]
+  // CHECK:  %[[CAST:.*]] = builtin.unrealized_conversion_cast %[[INSERT]] : !llvm.struct<(ptr, ptr)> to !pop.closure<(index) -> !pop.scalar<f32>>
   // CHECK:  kgen.return %[[CAST]] : !pop.closure<(index) -> !pop.scalar<f32>>
   %2 = pop.partial_apply %1(?, %0) : (index, !pop.scalar<f32>) -> !pop.scalar<f32>
   kgen.return %2 : !pop.closure<(index) -> !pop.scalar<f32>>
 }
-// CHECK: llvm.func @closure_wrapper_fn(%arg0: !llvm.ptr, %arg1: i64) -> f32 {
-// CHECK:    %[[ENV_STRUCT:.*]] = llvm.bitcast %arg0 : !llvm.ptr to !llvm.ptr<struct<(ptr, struct<(f32)>)>>
-// CHECK:    %[[CALLEE:.*]] = llvm.getelementptr %[[ENV_STRUCT]][0, 0] : (!llvm.ptr<struct<(ptr, struct<(f32)>)>>) -> !llvm.ptr<func<f32 (i64, f32)>>
-// CHECK:    %[[BOUNDARGPTR0:.*]] = llvm.getelementptr %[[ENV_STRUCT]][0, 1, 0] : (!llvm.ptr<struct<(ptr, struct<(f32)>)>>) -> !llvm.ptr<f32>
-// CHECK:    %[[BOUNDARG0:.*]] = llvm.load %[[BOUNDARGPTR0]]
-// CHECK:    %[[RESULT:.*]] = llvm.call %[[CALLEE]](%arg1, %[[BOUNDARG0]]) : (i64, f32) -> f32
-// CHECK:    llvm.return %[[RESULT]] : f32
+
+// CHECK:  llvm.func @closure_wrapper_fn(%arg0: !llvm.ptr, %arg1: i64) -> f32 {
+// CHECK:   %[[ENV_STRUCT:.*]] = llvm.bitcast %arg0 : !llvm.ptr to !llvm.ptr<struct<(ptr, struct<(f32)>)>>
+// CHECK:   %[[CALLEEPTR:.*]] = llvm.getelementptr %[[ENV_STRUCT]][0, 0] : (!llvm.ptr<struct<(ptr, struct<(f32)>)>>) -> !llvm.ptr<ptr<func<f32 (i64, f32)>>>
+// CHECK:   %[[CALLEE:.*]] = llvm.load %[[CALLEEPTR]] : !llvm.ptr<ptr<func<f32 (i64, f32)>>>
+// CHECK:   %[[BOUNDARGPTR:.*]] = llvm.getelementptr %[[ENV_STRUCT]][0, 1, 0] : (!llvm.ptr<struct<(ptr, struct<(f32)>)>>) -> !llvm.ptr<f32>
+// CHECK:   %[[BOUNDARG0:.*]] = llvm.load %[[BOUNDARGPTR]] : !llvm.ptr<f32>
+// CHECK:   %[[RESULT:.*]] = llvm.call %[[CALLEE]](%arg1, %[[BOUNDARG0]]) : (i64, f32) -> f32
+// CHECK:   llvm.return %[[RESULT]] : f32
 // CHECK:  }
 
 // -----
@@ -83,9 +85,9 @@ kgen.func @call_indirect_closure(%arg0: (index, f32) -> index, %arg1 : f32, %arg
   // CHECK: %[[CALLEE:.*]] = llvm.getelementptr %[[ENVSTRUCT]][0, 0]
   // CHECK: llvm.store %[[FN]], %[[CALLEE]] : !llvm.ptr<ptr<func<i64 (i64, f32)>>>
   // CHECK: %[[ENVSTRUCTCAST:.*]] = llvm.bitcast %[[ENVSTRUCT]]
-  // CHECK: %[[INSERT1:.*]] = llvm.insertvalue %[[ENVSTRUCTCAST]], %[[CLOSURE]][1]
-  // CHECK: %[[WRAPPERFNPTR:.*]] = llvm.extractvalue %[[CLOSURE]][0]
-  // CHECK: %[[ENVPTR:.*]] = llvm.extractvalue %[[CLOSURE]][1]
+  // CHECK: %[[INSERT1:.*]] = llvm.insertvalue %[[ENVSTRUCTCAST]], %[[INSERT0]][1]
+  // CHECK: %[[WRAPPERFNPTR:.*]] = llvm.extractvalue %[[INSERT1]][0]
+  // CHECK: %[[ENVPTR:.*]] = llvm.extractvalue %[[INSERT1]][1]
   // CHECK: %[[CASTWRAPPERFNPTR:.*]] = llvm.bitcast %[[WRAPPERFNPTR]] : !llvm.ptr to !llvm.ptr<func<i64 (ptr, i64)>>
   // CHECK: %[[RESULT:.*]] = llvm.call %[[CASTWRAPPERFNPTR]](%[[ENVPTR]], %[[INDEX]]) : (!llvm.ptr, i64) -> i64
   // CHECK: %[[CASTRESULT:.*]] = builtin.unrealized_conversion_cast %[[RESULT]]
@@ -97,7 +99,8 @@ kgen.func @call_indirect_closure(%arg0: (index, f32) -> index, %arg1 : f32, %arg
 
 // CHECK: llvm.func @closure_wrapper_fn(%arg0: !llvm.ptr, %arg1: i64) -> i64 {
 // CHECK:  %[[ENV:.*]] = llvm.bitcast %arg0 : !llvm.ptr to !llvm.ptr<struct<(ptr, struct<(f32)>)>>
-// CHECK:  %[[CALLEE:.*]] = llvm.getelementptr %[[ENV]][0, 0] : (!llvm.ptr<struct<(ptr, struct<(f32)>)>>) -> !llvm.ptr<func<i64 (i64, f32)>>
+// CHECK:  %[[CALLEEPTR:.*]] = llvm.getelementptr %[[ENV]][0, 0] : (!llvm.ptr<struct<(ptr, struct<(f32)>)>>) -> !llvm.ptr<ptr<func<i64 (i64, f32)>>>
+// CHECK:  %[[CALLEE:.*]] = llvm.load %[[CALLEEPTR]] : !llvm.ptr<ptr<func<i64 (i64, f32)>>>
 // CHECK:  %[[BOUNDARG0PTR:.*]] = llvm.getelementptr %[[ENV]][0, 1, 0]
 // CHECK:  %[[BOUNDARG0:.*]] = llvm.load %[[BOUNDARG0PTR]] : !llvm.ptr<f32>
 // CHECK:  %[[RESULT:.*]] = llvm.call %[[CALLEE]](%arg1, %[[BOUNDARG0]]) : (i64, f32) -> i64
@@ -113,7 +116,7 @@ kgen.func @test_lifetimes(%arg0: (index, f32) -> index, %arg1: f32, %cond: i1) -
     // CHECK: %[[CLOSURE:.*]] = llvm.mlir.undef : !llvm.struct<(ptr, ptr)>
     // CHECK: %[[WRAPPERFN:.*]] = llvm.mlir.addressof @closure_wrapper_fn
     // CHECK: %[[WRAPPERFNCAST:.*]] = llvm.bitcast %[[WRAPPERFN]]
-    // CHECK: %[[INSERT:.*]] = llvm.insertvalue %[[WRAPPERFNCAST]], %[[CLOSURE]][0]
+    // CHECK: %[[INSERT0:.*]] = llvm.insertvalue %[[WRAPPERFNCAST]], %[[CLOSURE]][0]
     // CHECK: %[[ONE:.*]] = llvm.mlir.constant(1 : i8) : i8
     // CHECK: %[[STRUCT:.*]] = llvm.alloca %[[ONE]] x !llvm.struct<(ptr, struct<(f32)>)>
     // CHECK: llvm.intr.lifetime.start 16, %[[STRUCT]] : !llvm.ptr<struct<(ptr, struct<(f32)>)>>
@@ -122,7 +125,7 @@ kgen.func @test_lifetimes(%arg0: (index, f32) -> index, %arg1: f32, %cond: i1) -
     // CHECK: %[[CALLEEPTR:.*]] = llvm.getelementptr %[[STRUCT]][0, 0]
     // CHECK: llvm.store %[[CALLEE]], %[[CALLEEPTR]]
     // CHECK: %[[ERASEDSTRUCT:.*]] = llvm.bitcast %[[STRUCT]]
-    // CHECK: %[[INSERT2:.*]] = llvm.insertvalue %[[ERASEDSTRUCT]], %[[CLOSURE]][1]
+    // CHECK: %[[INSERT1:.*]] = llvm.insertvalue %[[ERASEDSTRUCT]], %[[INSERT0]][1]
     // CHECK: %[[CONSTANT:.*]] = kgen.param.constant
     // CHECK: llvm.intr.lifetime.end 16, %[[STRUCT]]
     %0 = pop.partial_apply %arg0(?, %arg1) : (index, f32) -> index
