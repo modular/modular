@@ -58,6 +58,7 @@ std::string M::makeCIdentifier(StringRef ident) {
     // Only allow [0-9a-zA-Z_].
     if (!llvm::isAlnum(c) && c != '_')
       c = '_';
+  res.append("_c");
   return res;
 }
 
