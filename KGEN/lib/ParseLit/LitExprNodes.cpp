@@ -1091,18 +1091,57 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
            this}};
   }
 
-  // Emit each of the index values to generate error messages.
-  SmallVector<RValue> indexValues;
+  // Emit each of the index values, which will be passed to the __getitem__ and
+  // __setitem__ calls.
+  SmallVector<ASTExprAnd<AnyValue>> indexValues;
+  indexValues.push_back(subValue.baseVal);
   for (ExprNode *index : indices) {
-    indexValues.push_back(emitter.emitExprRValue(index));
+    indexValues.push_back(
+        {index->emitIR(emitter, /*No Contextual Type*/ {}), index});
     if (!indexValues.back())
       return {};
   }
 
-  emitter.emitError(getLoc(),
-                    "TODO: Subscript irgen not implemented for base of type ")
-      << ASTType(subValue.baseVal.ir.getType()) << base->getRange();
-  return {};
+  // Okay, we're doing a normal value subscript.  We expect at least a
+  // __getitem__ method.
+  auto baseType = subValue.baseVal.ir.getRValueType();
+  bool isErroneousDecl = false;
+  auto getItem = CallableValue(baseType, "__getitem__", getLoc(),
+                               isErroneousDecl, emitter.shared);
+  // If there is no __getitem__ at all, then this is not a subscriptable type.
+  if (getItem.isNull()) {
+    if (isErroneousDecl)
+      return {};
+    emitter.emitError(getLoc(), "")
+        << baseType << " does not implement the `__getitem__` method"
+        << subValue.baseVal.expr->getRange();
+    return {};
+  }
+
+  // Okay, we have one, that's a positive sign. In the case of multiple index
+  // values, we could either pass this as a Python style tuple, or could pass as
+  // multiple arguments.
+
+  // TODO: If we have multiple indexes, package up the values in a tuple value
+  // and try to see if this works.
+  if (indexValues.size() > 2) {
+    // TODO(Tuples). need tuples :-)
+  }
+
+  // Next, check the multiple argument path.
+  if (getItem.direct &&
+      succeeded(getItem.direct->filterOverloadSet(
+          indexValues, CallSyntax::kSubscript,
+          /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
+    // Ok, this looks like it will work.
+    // TODO(Computed LValues): We need to look up __setitem__ and have a better
+    // model for computed LValues.
+  }
+
+  // Finally, just emit the call to __getitem__.
+  auto result = getItem.emitFunctionCall(indexValues, CallSyntax::kSubscript,
+                                         this, emitter);
+  return CallableValue({result, this});
 }
 
 AnyValue SubscriptArrowNode::emitIR(ExprEmitter &emitter,

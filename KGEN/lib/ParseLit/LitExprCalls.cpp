@@ -708,8 +708,8 @@ void OverloadFitness::diagnose(SignatureType signature,
     diag << "l-value of type " << operands[payload].ir.getRValueType()
          << " cannot be converted to reference of type "
          << eltTypeAttr.getIfTypeValue() << operands[payload].expr->getRange();
-  }
     return;
+  }
 
   case kArgWrongType:
     // If this is a method syntax call, don't count the receiver.
@@ -722,6 +722,11 @@ void OverloadFitness::diagnose(SignatureType signature,
       diag << "right side";
     } else if (syntax == CallSyntax::kReversedOperator && payload == 0) {
       diag << "left side";
+    } else if (syntax == CallSyntax::kSubscript && payload != 0) {
+      if (payload == 1 && operands.size() == 2)
+        diag << "index";
+      else
+        diag << "index #" << (payload - 1);
     } else {
       diag << "argument #" << payload;
     }
