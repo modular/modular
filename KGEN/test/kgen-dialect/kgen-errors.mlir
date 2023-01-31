@@ -921,3 +921,63 @@ kgen.func @no_return() {
   // expected-error @below {{block with no terminator}}
   kgen.param.declare A = <1>
 }
+
+// -----
+
+kgen.generator @evaluator() {
+  kgen.return
+}
+
+kgen.generator @noOptions() {
+  // expected-error @below {{expected attribute value}}
+  // expected-error @below {{expected a symbol attribute}}
+  kgen.param.declare chosenImpl : () -> () = <evaluate(:() -> () :() -> ()@evaluator)>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @evaluator<N>() {
+  kgen.return
+}
+
+kgen.generator @f1() {
+  kgen.return
+}
+
+kgen.generator @parametricEvaluator() {
+  // expected-error @below {{'evaluate' evaluator cannot be parametric}}
+  kgen.param.declare chosenImpl : () -> () = <evaluate(:() -> () @f1, :<N>() -> ()@evaluator)>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @evaluator() -> (index, index) {
+  %0 = kgen.param.constant = <0>
+  %1 = kgen.param.constant = <1>
+  kgen.return %0, %1 : index, index
+}
+
+kgen.generator @f1() {
+  kgen.return
+}
+
+kgen.generator @multiReturnEvaluator() {
+  // expected-error @below {{'evaluate' evaluator must return one result}}
+  kgen.param.declare chosenImpl : () -> () = <evaluate(:() -> () @f1, :() -> (index, index) @evaluator)>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @evaluator() -> index {
+  kgen.return
+}
+
+kgen.generator @differentType() {
+  kgen.param.declare bad = <3>
+  // expected-error @below {{expected a signature type for 'evaluate'}}
+  kgen.param.declare chosenImpl : () -> () = <evaluate(:index bad, :() -> index @evaluator)>
+  kgen.return
+}

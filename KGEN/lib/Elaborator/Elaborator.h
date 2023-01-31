@@ -97,6 +97,14 @@ public:
   getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
                       ArrayRef<ParamBindAttr> paramValues) = 0;
 
+  /// Get all the concrete functions for the given symbol. If the symbol is a
+  /// function already, append it to the list and move on, otherwise, elaborate
+  /// it and append all the concrete implementations.
+  virtual std::optional<ErrorTree>
+  getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
+                          ArrayRef<ParamBindAttr> paramValues,
+                          std::vector<FuncOp> &funcs) = 0;
+
   /// Get the SymbolTableAnalysis object associated with this instance of the
   /// elaborator.
   mlir::SymbolTableAnalysis &getAnalysis() { return analysis; }
@@ -110,6 +118,9 @@ public:
     });
     return asyncMap.await(func);
   }
+
+  /// Return the LLCL runtime.
+  LLCL::Runtime &getRuntime() { return runtime; }
 
 protected:
   /// This symbol table analysis allows efficient lookups across the module.

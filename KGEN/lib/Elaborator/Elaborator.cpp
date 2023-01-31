@@ -95,6 +95,13 @@ struct ElaboratorImpl : public Elaborator {
   getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
                       ArrayRef<ParamBindAttr> paramValues) override;
 
+  std::optional<ErrorTree>
+  getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
+                          ArrayRef<ParamBindAttr> paramValues,
+                          std::vector<FuncOp> &funcs) override {
+    return ErrorTree(loc, "unimplemented");
+  }
+
   /// Scan the primary and library module to collect all the interfaces,
   /// verifying that any common interfaces are the same.
   ParseResult collectInterfaces();

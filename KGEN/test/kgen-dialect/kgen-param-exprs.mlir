@@ -663,3 +663,26 @@ kgen.generator @mlirOperationExpr() {
     :(index, index) -> i1 #kgen.param.mlir_op<"index.cmp", {pred = #index<cmp_predicate eq>}>, 3, 3)>
   kgen.return
 }
+
+kgen.generator @evaluator(%funcs: !pop.pointer<!kgen.signature<() -> ()>>, %num: index) -> index {
+  %0 = kgen.param.constant = <2>
+  kgen.return %0 : index
+}
+
+kgen.generator @f1() {
+  kgen.return
+}
+
+kgen.generator @f2() {
+  kgen.return
+}
+
+// CHECK-LABEL: @itf
+kgen.generator @itf() {
+  // CHECK-NEXT: chosenImpl
+  // CHECK-SAME: evaluate(:() -> () @f1, @f2,
+  // CHECK-SAME:          :(!pop.pointer<!kgen.signature<() -> ()>>, index) -> index @evaluator
+  kgen.param.declare chosenImpl : () -> () = <evaluate(:() -> () @f1, @f2, :(!pop.pointer<!kgen.signature<() -> ()>>, index) -> index @evaluator)>
+  kgen.call_param[()->(): chosenImpl]()
+  kgen.return
+}
