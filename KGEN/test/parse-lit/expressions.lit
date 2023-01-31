@@ -558,12 +558,18 @@ struct WeirdArray:
     return 2
   fn __getitem__(self, x: Int, y: Int, z: Int) -> Int:
     return 3
+  fn __getitem__(self, x: F32, *ints: Int) -> F32:
+    return x
+
 
 # CHECK-LABEL: lit.func @"testWeirdArray
-fn testWeirdArray(a: WeirdArray, idx: Int):
+fn testWeirdArray(a: WeirdArray, idx: Int, f: F32):
   # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx)
   _ = a[idx]
   # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx, %idx)
   _ = a[idx, idx]
   # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx, %idx, %idx)
   _ = a[idx, idx, idx]
+  # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [%idx, %idx, %idx, %idx]
+  # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %f, [[VARIADIC]])
+  _ = a[f, idx, idx, idx, idx]
