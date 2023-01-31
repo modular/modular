@@ -9,13 +9,23 @@ from IO import print
 from Int import Int
 from LLCL import Runtime
 from Tracing import Trace, TraceLevel
+from BuildInfo import _build_info_llcl_max_profiling_level
 
 
-fn test_tracing():
-    print("== test_tracing\n")
+@always_inline
+fn _max_profiling_level_plus_one() -> Int:
+    return __mlir_attr[
+        `#kgen.param.expr<add,`,
+        _build_info_llcl_max_profiling_level(),
+        `,`,
+        1,
+        `> : index`,
+    ]
 
+
+fn test_tracing[level: Int]():
     async fn test_tracing_add[lhs: Int](rhs: Int) -> Int:
-        let trace = Trace[TraceLevel.ALWAYS]("trace event 2", "detail event 2")
+        let trace = Trace[level]("trace event 2", "detail event 2")
         let res = lhs + rhs
         trace.__del__()
         return res
@@ -30,19 +40,29 @@ fn test_tracing():
         return result
 
     let rt = Runtime(4, "-")
-    let trace = Trace[TraceLevel.ALWAYS]("trace event 1", "detail event 1")
+    let trace = Trace[level]("trace event 1", "detail event 1")
     let task = rt.init_and_run[Int](test_tracing_add_two_of_them(10, 20))
     task.wait()
     trace.__del__()
-    # CHECK: "trace event 1"
-    # CHECK-SAME: "detail event 1"
-    # CHECK-SAME: "trace event 2"
-    # CHECK-SAME: "detail event 2"
     task.__del__()
     rt.__del__()
 
 
 @export
 fn main() -> __mlir_type.index:
-    test_tracing()
+    # CHECK-LABEL: test_tracing_enabled
+    print("== test_tracing_enabled")
+    test_tracing[TraceLevel.ALWAYS]()
+    # CHECK: "trace event 1"
+    # CHECK-SAME: "detail event 1"
+    # CHECK-SAME: "trace event 2"
+    # CHECK-SAME: "detail event 2"
+
+    # CHECK-LABEL: test_tracing_disabled
+    print("== test_tracing_disabled")
+    test_tracing[_max_profiling_level_plus_one()]()
+    # CHECK-NOT: "trace event 1"
+    # CHECK-NOT: "detail event 1"
+    # CHECK-NOT: "trace event 2"
+    # CHECK-NOT: "detail event 2"
     return 0
