@@ -25,7 +25,7 @@ extern "C" bool KGEN_CompilerRT_Init_Intel_AMX() {
   unsigned long bitmask = 0;
   if (syscall(SYS_arch_prctl, ARCH_GET_XCOMP_PERM, &bitmask))
     return false;
-  if (bitmask & static_cast<unsigned long>(XFeature::kXTileData))
+  if (bitmask & static_cast<unsigned long>(XFeature::kMask_XTileData))
     return true;
 
   if (syscall(SYS_arch_prctl, ARCH_REQ_XCOMP_PERM, XFeature::kXTileData))
