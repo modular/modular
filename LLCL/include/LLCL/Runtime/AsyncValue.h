@@ -18,6 +18,8 @@
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/TypeName.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <atomic>
 
@@ -563,6 +565,13 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
   /// with the payload uninitialized. The result will have ref count 1.
   static ConcreteAsyncValue<T> *allocate(State state,
                                          CompactRuntimePtr runtime) {
+#ifdef MODULAR_DEBUG
+    // Print a helpful error message about which type is not in the registry.
+    // If the condition holds, then the subsequent statement would assert.
+    if (getRegisteredTypeID() == uint16_t(~0U))
+      llvm::errs() << "The AsyncValue type " << llvm::getTypeName<T>()
+                   << " is not registered within the current runtime.\n";
+#endif // MODULAR_DEBUG
     assert(getRegisteredTypeID() != uint16_t(~0U) &&
            "AsyncValue type not registered");
     auto *ptr = (ConcreteAsyncValue<T> *)alignedAlloc(
