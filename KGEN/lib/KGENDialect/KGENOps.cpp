@@ -780,7 +780,7 @@ static void printExportOp(OpAsmPrinter &p, Operation *op,
   if (exported.getLeafReference().getValue() == alias)
     return;
   p << " as ";
-  p << alias;
+  p.printSymbolName(alias);
 }
 
 LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {

@@ -339,6 +339,18 @@ void DeclResolver::resolveAll() {
   }
 }
 
+void DeclResolver::registerAndCheckExport(ExportOp exportOp) {
+  StringAttr aliasName = exportOp.getAliasAttr();
+  auto it = exportedSymbolNames.find(aliasName);
+  if (it != exportedSymbolNames.end()) {
+    auto diag = emitError(exportOp.getLoc(), "invalid re-export of ")
+                << aliasName.getValue();
+    diag.attachNote(it->getSecond()) << "previous export here";
+    return;
+  }
+  exportedSymbolNames.insert({aliasName, exportOp.getLoc()});
+}
+
 /// Resolve the specified declaration to at least the specified level of
 /// resolution, performing incremental type checking as appropriate.
 LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
@@ -974,7 +986,7 @@ struct FnDecorators : public LitSharedStateUser {
         isMethod(isa<StructDeclOp>(*decl.getParentDecl())) {}
 
   void apply(SmallVector<ExprNode *> &decoratorExprs);
-  void applyLate(SymbolRefAttr symbolName,
+  void applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
                  SmallVector<ExprNode *> &decoratorExprs);
 
 private:
@@ -982,7 +994,10 @@ private:
   void applyRaises(const DeclRefNode &node);
   void applyImplements(const CallNode &callNode);
   void applyEvaluator(const CallNode &callNode);
-  void applyLateExport(SymbolRefAttr symbolName);
+  void applyLateExport(Location loc, SymbolRefAttr symbolName,
+                       StringRef aliasName);
+  void applyLateExport(Location loc, SymbolRefAttr symbolName,
+                       const CallNode &callNode);
 
   ASTDecl &decl;
   LIT::FuncOp funcOp;
@@ -1173,7 +1188,8 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
   decoratorExprs = unprocessed;
 }
 
-void FnDecorators::applyLateExport(SymbolRefAttr symbolName) {
+void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
+                                   StringRef aliasName) {
   if (isMethod) {
     emitError(funcOp.getLoc(), "methods cannot be exported");
     return;
@@ -1181,31 +1197,50 @@ void FnDecorators::applyLateExport(SymbolRefAttr symbolName) {
 
   ASTDecl *containingDecl = decl.getParentDecl();
   auto builder = containingDecl->getDeclEndBuilder();
-  // FIXME: the chosen aliasName matches the original one before aliases were
-  // introduced. A follow up PR will use the user provided alias name via
-  // export("my_alias").
-  std::string aliasName =
-      makeCIdentifier((Twine(symbolName.getRootReference().getValue()) + "__" +
-                       symbolName.getLeafReference().getValue())
-                          .str());
-  builder.create<ExportOp>(funcOp.getLoc(), symbolName,
-                           StringAttr::get(getContext(), aliasName));
+  auto exportOp = builder.create<ExportOp>(
+      loc, symbolName, StringAttr::get(getContext(), aliasName));
+  getDeclResolver().registerAndCheckExport(exportOp);
 }
 
-void FnDecorators::applyLate(SymbolRefAttr symbolName,
+void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
+                                   const CallNode &node) {
+  if (node.args.size() != 1 || !isa<StringLiteralNode>(node.args.front())) {
+    emitError(
+        node.getLoc(),
+        "@export requires a string specifying the name of the exported symbol")
+        << node.getParenRange();
+    return;
+  }
+  const auto &strNode = *cast<StringLiteralNode>(node.args.front());
+  std::string aliasName = LitLexer::getStringLiteralValue(strNode.spelling);
+  if (!isCIdentifier(aliasName)) {
+    emitError(loc, aliasName) << " is not a valid C identifier";
+    return;
+  }
+  applyLateExport(loc, symbolName, aliasName);
+}
+
+void FnDecorators::applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
                              SmallVector<ExprNode *> &decoratorExprs) {
   // Scan through and process decorator expressions that are in the late pass.
   for (ExprNode *decorator : decoratorExprs) {
+    Location loc = translateLocation(decorator->getLoc());
     // Process all the decorators we know about.
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
       if (declRef->spelling == "export") {
-        applyLateExport(symbolName);
+        applyLateExport(loc, symbolName, unmangledName);
         continue;
       }
 
       emitError(decorator->getLoc(), "unsupported decorator: ")
           << declRef->spelling << declRef->getRange();
       continue;
+    } else if (auto callNode = dyn_cast<CallNode>(decorator)) {
+      if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee))
+        if (declRef->spelling == "export") {
+          applyLateExport(loc, symbolName, *callNode);
+          continue;
+        }
     }
     emitError(decorator->getLoc(), "unsupported decorator")
         << decorator->getRange();
@@ -1361,7 +1396,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // TODO: Handle the export attribute somehow else.  It should be a 'body
   // decorator' that is handled after the decl is fully resolved.
   SymbolRefAttr symbolName = getFullyResolvedSymbolRef(funcOp);
-  FnDecorators(decl, shared).applyLate(symbolName, decoratorExprs);
+  FnDecorators(decl, shared).applyLate(symbolName, baseName, decoratorExprs);
 
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;

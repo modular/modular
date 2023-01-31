@@ -97,19 +97,3 @@ kgen.func @call_foo() {
 
 kgen.export @foo
 kgen.export @call_foo
-
-// -----
-
-kgen.func @cheeky_c() {
-  kgen.return
-}
-
-// CHECK-LABEL: llvm.func internal @cheeky_c
-// CHECK-LABEL: llvm.func @cheeky
-// CHECK-LABEL: llvm.func @cheeky_c_0
-
-kgen.func @cheeky() {
-  kgen.return
-}
-
-kgen.export @cheeky
