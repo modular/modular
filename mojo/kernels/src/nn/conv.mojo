@@ -7,11 +7,23 @@
 from Index import Index, StaticIntTuple
 from Int import Int
 from Bool import Bool
-from Buffer import NDBuffer, Buffer, _raw_stack_allocation
+from Buffer import (
+    NDBuffer,
+    Buffer,
+    _raw_stack_allocation,
+    partial_simd_load,
+    partial_simd_store,
+)
 from SIMD import SIMD
 from Assert import assert_param, debug_assert
-from Matmul import GemmShape, MatmulInnerLoopBPacked, calculate_tile_n_k
-from List import create_kgen_list_unknown
+from Matmul import (
+    GemmShape,
+    MatmulInnerLoopBPacked,
+    calculate_tile_n_k,
+    PackMatrixCols,
+    PackMatrixRows,
+)
+from List import create_kgen_list_unknown, create_kgen_list
 from TargetInfo import simd_byte_width
 
 # Data layout encoding.
@@ -146,8 +158,8 @@ struct ConvShape:
     # Convolution parameters.
     var stride: StaticIntTuple[2]  # Stride on [H, W]
     var dilation: StaticIntTuple[2]  # Dilation on [H, W]
-    var padH: StaticIntTuple[2]  # Padding on H dimension in (Low, High)
-    var padW: StaticIntTuple[2]  # Padding on W dimension in (Low, High)
+    var pad_h: StaticIntTuple[2]  # Padding on H dimension in (Low, High)
+    var pad_w: StaticIntTuple[2]  # Padding on W dimension in (Low, High)
 
 
 @interface
@@ -203,8 +215,82 @@ fn get_conv2d_shape_nchw[
         s: filter.data.dim[3](),
         stride: stride,
         dilation: dilation,
-        padH: pad_h,
-        padW: pad_w,
+        pad_h: pad_h,
+        pad_w: pad_w,
+    }
+
+
+@implements(get_conv2d_shape)
+fn get_conv2d_shape_nhwc[
+    output_shape: __mlir_type[`!kgen.list<index[4]>`],
+    input_shape: __mlir_type[`!kgen.list<index[4]>`],
+    filter_shape: __mlir_type[`!kgen.list<index[4]>`],
+    type: __mlir_type.`!kgen.dtype`,
+    data_layout: __mlir_type.index,
+    filter_layout: __mlir_type.index,
+](
+    output: ImageData[output_shape, type, Conv2DLayout.unknown],
+    input: ImageData[input_shape, type, Conv2DLayout.unknown],
+    filter: ImageData[filter_shape, type, Conv2DLayout.unknown],
+    pad_h: StaticIntTuple[2],
+    pad_w: StaticIntTuple[2],
+    stride: StaticIntTuple[2],
+    dilation: StaticIntTuple[2],
+) -> ConvShape:
+    assert_param[data_layout == Conv2DLayout.NHWC]()
+    assert_param[filter_layout == Conv2DLayout.NHWC]()
+
+    return ConvShape {
+        n: input.data.dim[0](),
+        h: input.data.dim[1](),
+        w: input.data.dim[2](),
+        c: input.data.dim[3](),
+        out_h: output.data.dim[1](),
+        out_w: output.data.dim[2](),
+        f: filter.data.dim[0](),
+        r: filter.data.dim[1](),
+        s: filter.data.dim[2](),
+        stride: stride,
+        dilation: dilation,
+        pad_h: pad_h,
+        pad_w: pad_w,
+    }
+
+
+@implements(get_conv2d_shape)
+fn get_conv2d_shape_nhwc_rscf[
+    output_shape: __mlir_type[`!kgen.list<index[4]>`],
+    input_shape: __mlir_type[`!kgen.list<index[4]>`],
+    filter_shape: __mlir_type[`!kgen.list<index[4]>`],
+    type: __mlir_type.`!kgen.dtype`,
+    data_layout: __mlir_type.index,
+    filter_layout: __mlir_type.index,
+](
+    output: ImageData[output_shape, type, Conv2DLayout.unknown],
+    input: ImageData[input_shape, type, Conv2DLayout.unknown],
+    filter: ImageData[filter_shape, type, Conv2DLayout.unknown],
+    pad_h: StaticIntTuple[2],
+    pad_w: StaticIntTuple[2],
+    stride: StaticIntTuple[2],
+    dilation: StaticIntTuple[2],
+) -> ConvShape:
+    assert_param[data_layout == Conv2DLayout.NHWC]()
+    assert_param[filter_layout == Conv2DLayout.RSCF]()
+
+    return ConvShape {
+        n: input.data.dim[0](),
+        h: input.data.dim[1](),
+        w: input.data.dim[2](),
+        c: input.data.dim[3](),
+        out_h: output.data.dim[1](),
+        out_w: output.data.dim[2](),
+        f: filter.data.dim[3](),
+        r: filter.data.dim[0](),
+        s: filter.data.dim[1](),
+        stride: stride,
+        dilation: dilation,
+        pad_h: pad_h,
+        pad_w: pad_w,
     }
 
 
@@ -1059,11 +1145,13 @@ struct ConvIm2ColNCHW[
         filter: NDBuffer[4, shape_filter, type],
         conv_shape: ConvShape,
     ):
-        """Interface function to run tiled matmul on a given set of operands,
-        pre-allocated output space and data layout tag.
-
+        """Interface function to run im2col convolution on the given images and
+        filters.
         Args:
-
+            out(NDBuffer): Pre-allocated output space.
+            input(NDBuffer): The input to the convolution op.
+            filter(NDBuffer): The filter to convolve the input with.
+            conv_shape: Struct describing the convolution dimensions.
         """
         # TODO: Support stride and dilation.
         # debug_assertions on the runtime shapes to guard against
@@ -1105,10 +1193,13 @@ struct ConvIm2ColNCHW[
         pack_inner_size,
         pack_cache_size,
     ]:
-        """Constructor of a tiled matmul instance with parameter derivation.
+        """Constructor of an instance of the im2col conv2d operator.
 
         Args:
-
+            out(NDBuffer): Pre-allocated output space.
+            input(NDBuffer): The input to the convolution op.
+            filter(NDBuffer): The filter to convolve the input with.
+            conv_shape: Struct describing the convolution dimensions.
         """
         var conv: ConvIm2ColNCHW[
             shape_input,
@@ -1164,7 +1255,7 @@ struct ConvIm2ColNCHW[
         self.batch_idx = 0
         while self.batch_idx < self.conv_shape.n:
             # Generate buffer view of the output matrix.
-            self._output_buffer_view()
+            self._initialize_buffer_view()
             self._outer_k_loop(mapped_bpacked)
             self.batch_idx += 1
 
@@ -1457,7 +1548,10 @@ struct ConvIm2ColNCHW[
             row_idx += RowSize
         return row_idx
 
-    fn _output_buffer_view(self&):
+    fn _initialize_buffer_view(self&):
+        """Initializes the internal gemm operand tensors with the translated
+        dynamic gemm shapes from convolution shapes.
+        """
         # Ouput shape [N, F, Ho, Wo]
         let c_pointer = self.out._offset(
             Index(self.batch_idx, 0, 0, 0).as_tuple()
@@ -1476,6 +1570,943 @@ struct ConvIm2ColNCHW[
         )
         self.a.dynamic_shape.__setitem__[0](self.gemm_shape.M.__as_mlir_index())
         self.a.dynamic_shape.__setitem__[1](self.gemm_shape.K.__as_mlir_index())
+
+    # Utility to reshape the dynamic buffer:
+    #  need to remap every time K and pack_inner_size changes.
+    fn _view_buffer_as(
+        self,
+        b_packed: NDBuffer[3, packed_shape, type],
+        tile_n: Int,
+        tile_k: Int,
+        n_inner_size: Int,
+    ) -> NDBuffer[3, packed_shape, type]:
+        """Utility function to use to map the allocated packing workspace into
+        an n-dimensional buffer.
+
+            Args:
+                b_packed(NDBuffer): B matrix in packed layout.
+                tile_n(Int): Dynamic tile size to use on N dimension.
+                tile_k(Int): Dynamic tile size to use on K dimension.
+                n_inner_size(Int): Inner dimension size to use for the packed
+                    data layout.
+        """
+        var new_b_packed = b_packed
+        let n_outer = tile_n // n_inner_size
+        new_b_packed.dynamic_shape.__setitem__[0](n_outer.__as_mlir_index())
+        new_b_packed.dynamic_shape.__setitem__[1](tile_k.__as_mlir_index())
+        new_b_packed.dynamic_shape.__setitem__[2](
+            n_inner_size.__as_mlir_index()
+        )
+        return new_b_packed
+
+
+# TODO (Fixel): This class has massive code duplication with matmul kernels.
+#  Could drastically clean up when non-inlined closure is supported or without
+#   language support the conv op and matmul op should share a "gemm skeleton"
+#   library to de-duplicate.
+struct ConvNHWCInnerLoopFilterPacked[
+    shape_input: __mlir_type[`!kgen.list<index[4]>`],
+    shape_c: __mlir_type[`!kgen.list<index[2]>`],
+    packed_shape: __mlir_type[`!kgen.list<index[3]>`],
+    accum_type: __mlir_type.`!kgen.dtype`,
+    value_type: __mlir_type.`!kgen.dtype`,
+    simd_size: __mlir_type.index,
+    a_row_size: __mlir_type.index,
+    pack_inner_size: __mlir_type.index,
+    skip_boundary_check: Bool,
+]:
+    """Inner loop implementation for mlas-style tiled inner loops for a NHWC
+    im2col convolution. Accumulates a gemm tile of input defined by (M, N, K) of
+    (a_row_size, TileN, TileK).
+    """
+
+    # Parameters for global reference.
+    var c: NDBuffer[2, shape_c, accum_type]
+    var input: NDBuffer[4, shape_input, value_type]
+    var b_packed: NDBuffer[3, packed_shape, value_type]
+    # 3D global offset within the whole matmul problem space.
+    var global_offset: GemmShape
+    # Dynamic tiling parameter for this inner loop
+    #  in (TileN, TileK).
+    var tile_n_k: StaticIntTuple[2]
+    # Boundary of valid output space within the
+    #  local tile, in (a_row_size, TileN).
+    var c_bound: StaticIntTuple[2]
+
+    # Convolution shape parameters.
+    var conv_shape: ConvShape
+
+    @staticmethod
+    fn run(
+        c: NDBuffer[2, shape_c, accum_type],
+        input: NDBuffer[4, shape_input, value_type],
+        b_packed: NDBuffer[3, packed_shape, value_type],
+        global_offset: GemmShape,
+        tile_n_k: StaticIntTuple[2],
+        conv_shape: ConvShape,
+    ):
+        """Interface function to run the packing routine.
+        Args:
+            c(NDBuffer): pre-allocated buffer space for packed result.
+            a(NDBuffer): data buffer operand A.
+            b(NDBuffer): data buffer operand B in packed layout.
+            global_offset(StaticIntTuple): offset to use when indexing the
+                original matrix.
+            tile_n_k(StaticIntTuple): 2D dimension tuple describing the
+                size of the packed tile of B.
+        """
+        var instance = ConvNHWCInnerLoopFilterPacked[
+            shape_input,
+            shape_c,
+            packed_shape,
+            accum_type,
+            value_type,
+            simd_size,
+            a_row_size,
+            pack_inner_size,
+            skip_boundary_check,
+        ] {
+            c: c,
+            input: input,
+            b_packed: b_packed,
+            global_offset: global_offset,
+            tile_n_k: tile_n_k,
+            c_bound: (
+                Index(c.dim[0](), c.dim[1]())
+                - Index(global_offset.M, global_offset.N)
+            ),
+            conv_shape: conv_shape,
+        }
+
+        instance._run_inner_loop()
+
+    fn _initialize_c_tile(
+        self,
+        c_local: NDBuffer[
+            2,
+            create_kgen_list[__mlir_type.index](
+                a_row_size, pack_inner_size * simd_size
+            ),
+            accum_type,
+        ],
+    ):
+        """Utility funcion on the inner loop. Initializes a local c buffer with
+        all zeros.
+
+            Args:
+                c_local(NDBuffer): pre-allocated local buffer for c partial
+                    sums.
+        """
+        var row_idx: Int = 0
+        while row_idx < a_row_size:
+            var col_idx: Int = 0
+            while col_idx < pack_inner_size:
+                c_local.simd_store[simd_size](
+                    Index(row_idx, col_idx).as_tuple(),
+                    SIMD[simd_size, accum_type](0),
+                )
+                col_idx += simd_size
+            row_idx += 1
+
+    fn _load_c_tile(
+        self,
+        c_local: NDBuffer[
+            2,
+            create_kgen_list[__mlir_type.index](
+                a_row_size, pack_inner_size * simd_size
+            ),
+            accum_type,
+        ],
+        # indexing within tile, in (m,n)
+        tile_idx: StaticIntTuple[2],
+    ):
+        """Utility funcion on the inner loop. Loads a local c_buffer with the
+        value stored in the output buffer space, given the indices within the
+        tile being processed.
+
+            Args:
+                c_local(NDBuffer): pre-allocated local buffer for c partial
+                    sums.
+                tile_idx(StaticIntTuple): index tuple with (m,n) coordinates
+                    within the current processing tile.
+        """
+        var row_idx: Int = 0
+        while row_idx < a_row_size:
+            var col_idx: Int = 0
+            while col_idx < pack_inner_size:
+                let global_idx_pair = (
+                    Index(self.global_offset.M, self.global_offset.N)
+                    + tile_idx
+                    + Index(row_idx, col_idx)
+                )
+                let global_idx = Index(
+                    global_idx_pair.__getitem__[0](),
+                    global_idx_pair.__getitem__[1](),
+                ).as_tuple()
+                let local_idx = Index(row_idx, col_idx).as_tuple()
+
+                # Load data from original matrix C.
+                var c_data: SIMD[simd_size, accum_type] = 0
+                if skip_boundary_check or (
+                    Index(row_idx, col_idx + simd_size)
+                    <= (self.c_bound - tile_idx)
+                ):
+                    # Use simd load if all within bound
+                    c_data = self.c.simd_load[simd_size](global_idx)
+                elif (
+                    row_idx + tile_idx.__getitem__[0]()
+                ) < self.c_bound.__getitem__[0]():
+                    # Use partial load if row inbound but col not
+                    #  in simd bound.
+                    c_data = partial_simd_load[simd_size, accum_type](
+                        self.c._offset(global_idx),
+                        0,
+                        self.c_bound.__getitem__[1]()
+                        - tile_idx.__getitem__[1]()
+                        - col_idx,
+                        0,
+                    )
+                else:
+                    # Fill zero if row out of bound
+                    c_data = SIMD[simd_size, accum_type](0)
+
+                # Store data to local buffer.
+                c_local.simd_store[simd_size](local_idx, c_data)
+                col_idx += simd_size
+            row_idx += 1
+
+    fn _store_c_tile(
+        self,
+        c_local: NDBuffer[
+            2,
+            create_kgen_list[__mlir_type.index](
+                a_row_size, pack_inner_size * simd_size
+            ),
+            accum_type,
+        ],
+        tile_idx: StaticIntTuple[2],
+    ):
+        """Utility funcion on the inner loop. Stores the value of a local c
+        buffer to the corresponding position in the output buffer space.
+
+            Args:
+                c_local(NDBuffer): pre-allocated local buffer for c partial
+                    sums.
+                tile_idx(StaticIntTuple): index tuple with (m,n) coordinates
+                    within the current processing tile.
+        """
+        var row_idx: Int = 0
+        while row_idx < a_row_size:
+            var col_idx: Int = 0
+            while col_idx < pack_inner_size:
+                let global_idx_pair = (
+                    Index(self.global_offset.M, self.global_offset.N)
+                    + tile_idx
+                    + Index(row_idx, col_idx)
+                )
+                let global_idx = Index(
+                    global_idx_pair.__getitem__[0](),
+                    global_idx_pair.__getitem__[1](),
+                ).as_tuple()
+                let local_idx = Index(row_idx, col_idx).as_tuple()
+
+                # Load data from original matrix C.
+                var c_data = c_local.simd_load[simd_size](local_idx)
+
+                if skip_boundary_check or (
+                    Index(row_idx, col_idx + simd_size)
+                    <= (self.c_bound - tile_idx)
+                ):
+                    # Use simd store if all within bound
+                    self.c.simd_store[simd_size](global_idx, c_data)
+                elif row_idx < (
+                    self.c_bound.__getitem__[0]() - tile_idx.__getitem__[0]()
+                ):
+                    # Use partial store if row in bound but col not
+                    #  in simd bound.
+                    partial_simd_store[simd_size, accum_type](
+                        self.c._offset(global_idx),
+                        0,
+                        self.c_bound.__getitem__[1]()
+                        - tile_idx.__getitem__[1]()
+                        - col_idx,
+                        c_data,
+                    )
+                col_idx += simd_size
+            row_idx += 1
+
+    @always_inline
+    fn _m_to_n_ho_wo(self, m: Int) -> StaticIntTuple[3]:
+        """Converts post-im2col m dimension index to pre-im2col coordinates on
+        (N, Hout, Wout) dimensions.
+            Args:
+                m (Int): Index on M dimension.
+
+            Returns (StaticIntTuple):
+                The translated 3d indices in (N, Hout, Wout) format.
+        TODO(Fixel): This utilty should be generalized into a im2col util
+        class with some additional layout agnostic logic.
+        """
+        let n = m // (self.conv_shape.out_h * self.conv_shape.out_w)
+        let ho = (
+            Int.remu(m, self.conv_shape.out_h * self.conv_shape.out_w)
+            // self.conv_shape.out_w
+        )
+        let wo = Int.remu(m, self.conv_shape.out_w)
+        return Index(n, ho, wo)
+
+    fn _k_to_r_s_c(self, k: Int) -> StaticIntTuple[3]:
+        """Converts post-im2col k dimension index to pre-im2col coordinates on
+        (R, S, C) dimensions.
+            Args:
+                m (Int): Index on M dimension.
+
+            Returns (StaticIntTuple):
+                The translated 3d indices in (R, S, C) format.
+        TODO(Fixel): This utilty should be generalized into a im2col util
+        class with some additional layout agnostic logic.
+        """
+        let r = k // (self.conv_shape.s * self.conv_shape.c)
+        let s = Int.remu(k // self.conv_shape.c, self.conv_shape.s)
+        let c = Int.remu(k, self.conv_shape.c)
+        return Index(r, s, c)
+
+    # TODO: This can be lifted to common utility.
+    fn _ho_wo_to_hi_wi(
+        self, ho_wo: StaticIntTuple[2], r_s: StaticIntTuple[2]
+    ) -> StaticIntTuple[2]:
+        """Converts index on the output images to index on the input images.
+            Args:
+                ho_wo (StaticIntTuple): Index on output image in (Hout, Wout).
+                r_s (StaticIntTuple): Index on filter dimensions in (R, S).
+
+            Returns (StaticIntTuple):
+                Index on input image in (H, W).
+
+            Returns (StaticIntTuple):
+                The translated 3d indices in (R, S, C) format.
+        TODO(Fixel): This utilty should be generalized into a conv util
+        class with some additional layout agnostic logic.
+        """
+        let pad_left = Index(
+            self.conv_shape.pad_h.__getitem__[0](),
+            self.conv_shape.pad_w.__getitem__[0](),
+        )
+        return ho_wo - pad_left + r_s
+
+    @always_inline
+    fn _load_a(self, index_m_k: StaticIntTuple[2]) -> SIMD[1, value_type]:
+        """Utility to load one value of Im2col transformed matrix from the
+        pre-transformed image.
+            Args:
+                index_m_k (StaticIntTuple): Index into the post im2col operandA
+                    in (M, K) format.
+            Returns (SIMD):
+                Value loaded from the translated address of image input.
+        """
+        let n_ho_wo = self._m_to_n_ho_wo(index_m_k.__getitem__[0]())
+        let rsc = self._k_to_r_s_c(index_m_k.__getitem__[1]())
+        let hi_wi = self._ho_wo_to_hi_wi(
+            Index(n_ho_wo.__getitem__[1](), n_ho_wo.__getitem__[2]()),
+            Index(rsc.__getitem__[0](), rsc.__getitem__[1]()),
+        )
+
+        if hi_wi < Index(
+            self.conv_shape.h, self.conv_shape.w
+        ) and hi_wi >= Index(0, 0):
+            return self.input.simd_load[1](
+                Index(
+                    # N
+                    n_ho_wo.__getitem__[0](),
+                    # H
+                    hi_wi.__getitem__[0](),
+                    # W
+                    hi_wi.__getitem__[1](),
+                    # C
+                    rsc.__getitem__[2](),
+                ).as_tuple()
+            )
+
+        return SIMD[1, value_type](0)
+
+    fn _accumulate(
+        self,
+        c_local: NDBuffer[
+            2,
+            create_kgen_list[__mlir_type.index](
+                a_row_size, pack_inner_size * simd_size
+            ),
+            accum_type,
+        ],
+        tile_n_k_idx: StaticIntTuple[2],
+    ):
+        """Utility funcion on the inner loop. Launch one tile of fma on the
+        local accumulation buffer.
+
+        Args:
+            c_local(NDBuffer): pre-allocated local buffer for c partial
+                sums.
+            tile_n_k_idx(StaticIntTuple): index tuple with (n, k)
+                coordinates within the current processing tile to index the
+                packed B matrix.
+        """
+        # Seek outer indices in packed layout.
+        let n_outer_idx = tile_n_k_idx.__getitem__[0]() // pack_inner_size
+
+        # Global K index.
+        var global_k = self.global_offset.K + tile_n_k_idx.__getitem__[1]()
+
+        # Loop over local accumulator tiles.
+        var col_idx: Int = 0
+        while col_idx < pack_inner_size:
+            let b_val = self.b_packed.simd_load[simd_size](
+                Index(
+                    n_outer_idx, tile_n_k_idx.__getitem__[1](), col_idx
+                ).as_tuple()
+            ).cast[accum_type]()
+            var row_idx: Int = 0
+            while row_idx < a_row_size:
+                var global_m = self.global_offset.M + row_idx
+                let a_val_scalar = self._load_a(
+                    Index(global_m, global_k).as_tuple()
+                )
+                let a_val = SIMD[simd_size, value_type](a_val_scalar).cast[
+                    accum_type
+                ]()
+
+                var c_idx = Index(row_idx, col_idx).as_tuple()
+                var c_val = c_local.simd_load[simd_size](c_idx)
+
+                c_val = a_val.fma(b_val, c_val)
+                c_local.simd_store[simd_size](c_idx, c_val)
+                row_idx += 1
+            col_idx += simd_size
+
+    fn _run_inner_loop(self):
+        """Utility funcion on the inner loop. Run the inner kernel on the whole
+        (a_row_size, TileN, TileK) tile.
+        """
+        # Allocate accumulation buffer.
+        var c_local = NDBuffer[
+            2,
+            create_kgen_list[__mlir_type.index](
+                a_row_size, pack_inner_size * simd_size
+            ),
+            accum_type,
+        ].stack_allocation()
+
+        var idx_n: Int = 0
+        while idx_n < self.tile_n_k.__getitem__[0]():
+            # Initialize accumulation buffer
+            #  either zero filling or load existing value.
+            if self.global_offset.K == 0:
+                self._initialize_c_tile(c_local)
+            else:
+                self._load_c_tile(c_local, Index(0, idx_n))
+
+            # Iterate on tile K dimension.
+            var idx_k: Int = 0
+
+            # Not unrolled on K path.
+            while idx_k < self.tile_n_k.__getitem__[1]():
+                # accumulate data for this (n, k) index
+                self._accumulate(c_local, Index(idx_n, idx_k))
+                idx_k += 1
+
+            self._store_c_tile(c_local, Index(0, idx_n))
+            idx_n += pack_inner_size
+
+
+# TODO (Fixel): This class has massive code duplication with matmul kernels.
+#  Could drastically clean up when non-inlined closure is supported or without
+#   language support the conv op and matmul op should share a "gemm skeleton"
+#   library to de-duplicate.
+struct ConvIm2ColNHWC[
+    shape_input: __mlir_type[`!kgen.list<index[4]>`],
+    shape_filter: __mlir_type[`!kgen.list<index[4]>`],
+    shape_output: __mlir_type[`!kgen.list<index[4]>`],
+    packed_shape: __mlir_type[`!kgen.list<index[3]>`],
+    type: __mlir_type.`!kgen.dtype`,
+    simd_size: __mlir_type.index,
+    a_row_size: __mlir_type.index,
+    pack_inner_size: __mlir_type.index,
+    pack_cache_size: __mlir_type.index,
+    filter_layout: __mlir_type.index,
+]:
+    var out: NDBuffer[4, shape_output, type]
+    var input: NDBuffer[4, shape_input, type]
+    var filter: NDBuffer[4, shape_filter, type]
+
+    # Dynamic tile parameter.
+    var tile_n_k: StaticIntTuple[2]
+    var gemm_shape: GemmShape
+    var conv_shape: ConvShape
+
+    # The current active batch index.
+    var batch_idx: Int
+
+    # 2D view of the tensors as implicit matmul input.
+    var c: NDBuffer[2, create_kgen_list_unknown[2](), type]
+    var a: NDBuffer[2, create_kgen_list_unknown[2](), type]
+    var b: NDBuffer[2, create_kgen_list_unknown[2](), type]
+
+    # Interface method
+    @staticmethod
+    fn run(
+        out: NDBuffer[4, shape_output, type],
+        input: NDBuffer[4, shape_input, type],
+        filter: NDBuffer[4, shape_filter, type],
+        conv_shape: ConvShape,
+    ):
+        """Interface function to run im2col convolution on the given images and
+        filters.
+        Args:
+            out(NDBuffer): Pre-allocated output space.
+            input(NDBuffer): The input to the convolution op.
+            filter(NDBuffer): The filter to convolve the input with.
+            conv_shape: Struct describing the convolution dimensions.
+        """
+        # Assert on supported convolution dimensions.
+
+        # Assert same padding.
+        debug_assert(conv_shape.out_h == conv_shape.h)
+        debug_assert(conv_shape.out_w == conv_shape.w)
+        # Assert unit stride and padding.
+        debug_assert(conv_shape.stride == Index(1, 1))
+        debug_assert(conv_shape.dilation == Index(1, 1))
+        var conv = ConvIm2ColNHWC[
+            shape_input,
+            shape_filter,
+            shape_output,
+            packed_shape,
+            type,
+            simd_size,
+            a_row_size,
+            pack_inner_size,
+            pack_cache_size,
+            filter_layout,
+        ](out, input, filter, conv_shape)
+
+        conv._run_implicit_matmul()
+
+    fn __new__(
+        out: NDBuffer[4, shape_output, type],
+        input: NDBuffer[4, shape_input, type],
+        filter: NDBuffer[4, shape_filter, type],
+        conv_shape: ConvShape,
+    ) -> ConvIm2ColNHWC[
+        shape_input,
+        shape_filter,
+        shape_output,
+        packed_shape,
+        type,
+        simd_size,
+        a_row_size,
+        pack_inner_size,
+        pack_cache_size,
+        filter_layout,
+    ]:
+        """Constructor of an instance of the im2col conv2d operator.
+
+        Args:
+            out(NDBuffer): Pre-allocated output space.
+            input(NDBuffer): The input to the convolution op.
+            filter(NDBuffer): The filter to convolve the input with.
+            conv_shape: Struct describing the convolution dimensions.
+        """
+        var conv: ConvIm2ColNHWC[
+            shape_input,
+            shape_filter,
+            shape_output,
+            packed_shape,
+            type,
+            simd_size,
+            a_row_size,
+            pack_inner_size,
+            pack_cache_size,
+            filter_layout,
+        ]
+
+        conv.out = out
+        conv.input = input
+        conv.filter = filter
+        conv.conv_shape = conv_shape
+
+        # Translate conv shape to gemm shape for computation mapping.
+        #  For NHWC data layout.
+        let gemm_shape = GemmShape {
+            M: (conv_shape.n * conv_shape.out_h * conv_shape.out_w),
+            N: (conv_shape.f),
+            K: (conv_shape.r * conv_shape.s * conv_shape.c),
+        }
+
+        conv.gemm_shape = gemm_shape
+        conv.tile_n_k = calculate_tile_n_k[pack_cache_size, pack_inner_size](
+            gemm_shape
+        )
+
+        return conv
+
+    fn _run_implicit_matmul(self&):
+        """Wrapper utility funciton: Allocates packing space on the stack and
+        run the matmul routine on the whole problem space.
+        """
+        # Allocate buffer to pack transformed image.
+        var _bpacked_data = _raw_stack_allocation[
+            pack_cache_size,  # Count.
+            type,  # Data type.
+            simd_byte_width().__as_mlir_index(),  # Alignment.
+        ]()
+
+        var b_packed = NDBuffer[3, packed_shape, type](_bpacked_data.address)
+        # Manually set the shape of packed B buffer:
+        let mapped_bpacked = self._view_buffer_as(
+            b_packed,
+            self.tile_n_k.__getitem__[0](),
+            self.tile_n_k.__getitem__[1](),
+            pack_inner_size,
+        )
+
+        self._initialize_buffer_view()
+        self._outer_k_loop(mapped_bpacked)
+
+    # Iterate over the K dimension of the gemm space.
+    fn _outer_k_loop(self&, b_packed: NDBuffer[3, packed_shape, type]):
+        """Iterate on the K dimension of the whole problem space.
+
+        Args:
+            b_packed(NDBuffer): B matrix in packed layout.
+        """
+        let tile_k = self.tile_n_k.__getitem__[1]()
+        let valid_k_count = self.gemm_shape.K
+        var k_idx: Int = 0
+
+        # Iterate on batch dimension:
+
+        # Proceed with the largest K tile until crossing
+        #  valid boundary.
+        while k_idx <= (valid_k_count - tile_k):
+            self._outer_n_loop(b_packed, GemmShape(0, 0, k_idx), tile_k)
+            k_idx += tile_k
+
+        # Launch another k tile to clean up the residue:
+        let remaining_k = valid_k_count - k_idx
+
+        # Do a residue tile if original gemm shape K is not
+        #  a multiple of tile K.
+        if remaining_k > 0:
+            # TODO: possibly need to re-adjust N tile here, if the
+            #  residue K is small then could use L2 cache better by
+            #  having a wider N.
+            self._outer_n_loop(b_packed, GemmShape(0, 0, k_idx), remaining_k)
+
+    fn _outer_n_loop(
+        self,
+        b_packed: NDBuffer[3, packed_shape, type],
+        global_offset: GemmShape,
+        sub_tile_k: Int,
+    ):
+        """Iterate on the N dimension of the whole problem space.
+
+        Args:
+            b_packed(NDBuffer): B matrix in packed layout.
+            global_offset(GemmShape): 3D global offset within the whole
+                matmul problem space.
+            sub_tile_k(Int): Dynamic tile size to use on K dimension.
+        """
+        let valid_col_count: Int = self.gemm_shape.N - global_offset.N
+        let tile_n: Int = self.tile_n_k.__getitem__[0]()
+
+        # Remap buffer indices for current tile.
+        var remapped_bpacked = self._view_buffer_as(
+            b_packed, tile_n, sub_tile_k, Int(pack_inner_size)
+        )
+
+        var col_idx: Int = 0
+        # Proceed with the large tile:
+        col_idx = self._outer_n_loop_helper[pack_inner_size](
+            remapped_bpacked,
+            global_offset,
+            tile_n,
+            sub_tile_k,
+            col_idx,
+            valid_col_count,
+        )
+
+        # Cover residual tiles.
+        if col_idx < valid_col_count:
+            remapped_bpacked = self._view_buffer_as(
+                b_packed, simd_size, sub_tile_k, simd_size
+            )
+            col_idx = self._outer_n_loop_helper[simd_size](
+                remapped_bpacked,
+                global_offset,
+                simd_size,
+                sub_tile_k,
+                col_idx,
+                valid_col_count,
+            )
+
+        # Cover the last sub simdsize tile:
+        # This call will handle the sub-simd size boundary.
+        if col_idx < valid_col_count:
+            self._outer_m_loop[simd_size](
+                remapped_bpacked,
+                global_offset + GemmShape(0, col_idx, 0),
+                simd_size,
+                sub_tile_k,
+            )
+
+    fn _outer_n_loop_helper[
+        m_loop_pack_inner_size: __mlir_type.index
+    ](
+        self,
+        b_packed: NDBuffer[3, packed_shape, type],
+        global_offset: GemmShape,
+        sub_tile_n: Int,
+        sub_tile_k: Int,
+        start_idx: Int,
+        valid_col_count: Int,
+    ) -> Int:
+        """Helper function: Iterate on the N dimension by steps of size
+            sub_tile_n without crossing valid boundary.
+
+        Args:
+            m_loop_pack_inner_size(index): Inner dimension of the packed data
+                layout.
+            b_packed(NDBuffer): B matrix in packed layout.
+            global_offset(GemmShape): 3D global offset within the whole
+                matmul problem space.
+            sub_tile_n(Int): Dynamic tile size to use on N dimension.
+            sub_tile_k(Int): Dynamic tile size to use on K dimension.
+            start_idx(Int): Starting index on N dimension.
+            valid_col_count(Int): Number of valid columns remaining on the
+                current processing tile.
+        """
+        var col_idx = start_idx
+        while col_idx <= (valid_col_count - sub_tile_n):
+            self._outer_m_loop[m_loop_pack_inner_size](
+                b_packed,
+                global_offset + GemmShape(0, col_idx, 0),
+                sub_tile_n,
+                sub_tile_k,
+            )
+            col_idx += sub_tile_n
+        return col_idx
+
+    fn _outer_m_loop[
+        m_loop_pack_inner_size: __mlir_type.index
+    ](
+        self,
+        b_packed: NDBuffer[3, packed_shape, type],
+        global_offset: GemmShape,
+        sub_tile_n: Int,
+        sub_tile_k: Int,
+    ):
+        """Pack a subtile of B and iterate through all the rows
+        of C.
+
+        Args:
+            m_loop_pack_inner_size(index): Inner dimension of the packed data
+                layout.
+            b_packed(NDBuffer): B matrix in packed layout.
+            global_offset(GemmShape): 3D global offset within the whole
+                matmul problem space.
+            sub_tile_n(Int): Dynamic tile size to use on N dimension.
+            sub_tile_k(Int): Dynamic tile size to use on K dimension.
+        """
+        let valid_col_count = self.c.dim[1]() - global_offset.N
+
+        # The whole subtile is within valid columns,
+        #  no need to check boundary when loading C
+        #  on this tile.
+        # TODO: this could be in finer granularity.
+        if valid_col_count >= sub_tile_n:
+            self._outer_m_loop_helper[
+                # skip_col_bound
+                True,
+                m_loop_pack_inner_size,
+            ](b_packed, global_offset, sub_tile_n, sub_tile_k)
+        else:
+            self._outer_m_loop_helper[
+                # skip_col_bound
+                False,
+                m_loop_pack_inner_size,
+            ](b_packed, global_offset, sub_tile_n, sub_tile_k)
+
+    fn _outer_m_loop_helper[
+        skip_col_bound: Bool, m_loop_pack_inner_size: __mlir_type.index
+    ](
+        self,
+        b_packed: NDBuffer[3, packed_shape, type],
+        global_offset: GemmShape,
+        sub_tile_n: Int,
+        sub_tile_k: Int,
+    ):
+        """
+        Helper function: Pack a subtile of B and iterate through all the rows
+            of C.
+
+            Args:
+                skip_col_bound(i1): Column dimension boundary check will be
+                    statically skipped if true.
+                m_loop_pack_inner_size(index): Inner dimension of the packed data
+                    layout.
+                b_packed(NDBuffer): B matrix in packed layout.
+                global_offset(GemmShape): 3D global offset within the whole
+                    matmul problem space.
+                sub_tile_n(Int): Dynamic tile size to use on N dimension.
+                sub_tile_k(Int): Dynamic tile size to use on K dimension.
+        """
+        # pack B:
+        if filter_layout == Conv2DLayout.NHWC:
+            PackMatrixRows[
+                create_kgen_list_unknown[2](),
+                packed_shape,
+                type,
+                simd_size,
+                m_loop_pack_inner_size,
+            ].run(
+                b_packed,
+                self.b,
+                # Input is [N, K]:
+                Index(global_offset.N, global_offset.K),
+                Index(sub_tile_n, sub_tile_k),
+            )
+        else:  # TODO: add assert, filter layout should be RSCF.
+            PackMatrixCols[
+                create_kgen_list_unknown[2](),
+                packed_shape,
+                type,
+                simd_size,
+                m_loop_pack_inner_size,
+            ].run(
+                b_packed,
+                self.b,
+                # Input is [K, N]:
+                Index(global_offset.K, global_offset.N),
+                Index(sub_tile_k, sub_tile_n),
+            )
+
+        # Launch the MLoop
+        let sub_tile_n_k = Index(sub_tile_n, sub_tile_k)
+        let valid_row_count = self.c.dim[0]() - global_offset.M
+
+        # Launch largest row blocks possible and
+        #  then reduce row size to maximizing unrolled tiles.
+        var row_idx: Int = 0
+        row_idx = self._outer_m_loop_row_helper[
+            skip_col_bound, m_loop_pack_inner_size, a_row_size
+        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
+
+        row_idx = self._outer_m_loop_row_helper[
+            skip_col_bound, m_loop_pack_inner_size, 4
+        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
+
+        row_idx = self._outer_m_loop_row_helper[
+            skip_col_bound, m_loop_pack_inner_size, 3
+        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
+
+        row_idx = self._outer_m_loop_row_helper[
+            skip_col_bound, m_loop_pack_inner_size, 2
+        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
+
+        row_idx = self._outer_m_loop_row_helper[
+            skip_col_bound, m_loop_pack_inner_size, 1
+        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
+
+    fn _outer_m_loop_row_helper[
+        skip_col_bound: Bool,
+        m_loop_pack_inner_size: __mlir_type.index,
+        RowSize: __mlir_type.index,
+    ](
+        self,
+        b_packed: NDBuffer[3, packed_shape, type],
+        global_offset: GemmShape,
+        sub_tile_n_k: StaticIntTuple[2],
+        start_idx: Int,
+        valid_row_count: Int,
+    ) -> Int:
+        """
+        Helper function: Process blocks of rows of the gemm space with the given
+          RowBlock size until the given row block does not completely fit in
+          valid operand bound.
+
+            Args:
+                skip_col_bound(i1): Column dimension boundary check will be
+                    statically skipped if true.
+                m_loop_pack_inner_size(index): Inner dimension of the packed data
+                    layout.
+                RowSize(index): Size of row blocks to proceed with on the tile.
+                b_packed(NDBuffer): B matrix in packed layout.
+                global_offset(GemmShape): 3D global offset within the whole
+                    matmul problem space.
+                sub_tile_n_k(StaticTuple): Dynamic tile size to use, in
+                    (TileN, TileK).
+                start_idx(Int): row idx to start from.
+                valid_row_count(Int): number of valid rows to process from the
+                    start_idx.
+        """
+        var row_idx = start_idx
+        while row_idx <= (valid_row_count - RowSize):
+            ConvNHWCInnerLoopFilterPacked[
+                shape_input,
+                create_kgen_list_unknown[2](),
+                packed_shape,
+                type,
+                type,
+                simd_size,
+                RowSize,
+                m_loop_pack_inner_size,
+                skip_col_bound,
+            ].run(
+                self.c,
+                self.input,
+                b_packed,
+                global_offset + GemmShape(row_idx, 0, 0),
+                sub_tile_n_k,
+                self.conv_shape,
+            )
+            row_idx += RowSize
+        return row_idx
+
+    fn _initialize_buffer_view(self&):
+        """Initializes the internal gemm operand tensors with the translated
+        dynamic gemm shapes from convolution shapes.
+        """
+        # Ouput shape [N, F, Ho, Wo]
+        let c_pointer = self.out._offset(Index(0, 0, 0, 0).as_tuple())
+        self.c = NDBuffer[2, create_kgen_list_unknown[2](), type](
+            c_pointer.address
+        )
+        self.c.dynamic_shape.__setitem__[0](self.gemm_shape.M.__as_mlir_index())
+        self.c.dynamic_shape.__setitem__[1](self.gemm_shape.N.__as_mlir_index())
+
+        # Create 2D view for input.
+        self.a = NDBuffer[2, create_kgen_list_unknown[2](), type](
+            self.input.data.address
+        )
+        self.a.dynamic_shape.__setitem__[0](self.gemm_shape.M.__as_mlir_index())
+        self.a.dynamic_shape.__setitem__[1](self.gemm_shape.K.__as_mlir_index())
+
+        # Create 2D view for filter.
+        self.b = NDBuffer[2, create_kgen_list_unknown[2](), type](
+            self.filter.data.address
+        )
+        if filter_layout == Conv2DLayout.NHWC:  # FRSC layout
+            self.b.dynamic_shape.__setitem__[0](
+                self.gemm_shape.N.__as_mlir_index()
+            )
+            self.b.dynamic_shape.__setitem__[1](
+                self.gemm_shape.K.__as_mlir_index()
+            )
+        elif filter_layout == Conv2DLayout.RSCF:  # RSCF layout
+            self.b.dynamic_shape.__setitem__[0](
+                self.gemm_shape.K.__as_mlir_index()
+            )
+            self.b.dynamic_shape.__setitem__[1](
+                self.gemm_shape.N.__as_mlir_index()
+            )
 
     # Utility to reshape the dynamic buffer:
     #  need to remap every time K and pack_inner_size changes.
