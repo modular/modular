@@ -50,7 +50,7 @@ fn reduce_add_simd_scalar_case[
 ):
     """When the step_simd_width is 1, then we add to the scalar value."""
     assert_param[step_simd_width == 1]()
-    scalar += val.__getitem__(0)
+    scalar += val[0]
 
 
 @implements(reduce_add_simd)
@@ -120,7 +120,7 @@ fn _softmax_2_pass_step1[
 
     i = vector_end
     while i < len:
-        let elem = input.__getitem__(i)
+        let elem = input[i]
         let new_max = running_max.max(elem)
         running_sum = running_sum * exp[1, type](running_max - new_max) + exp[
             1, type
@@ -129,7 +129,7 @@ fn _softmax_2_pass_step1[
         i += 1
 
     return StaticTuple[2, __mlir_type[`!pop.scalar<`, type, `>`]].pair(
-        running_max.__getitem__(0), running_sum.__getitem__(0)
+        running_max[0], running_sum[0]
     )
 
 
