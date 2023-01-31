@@ -277,7 +277,7 @@ uint64_t measureScore(memset_ty *fn, ssize_t size) {
 // Benchmark the given memset implementation on the given distribution of input
 // data.
 uint64_t
-benchMemsetFn(void (*fn)(uint8_t *, uint8_t, ssize_t),
+benchMemsetFn(memset_ty *fn,
               const SmallVector<std::pair<ssize_t, ssize_t>> &inputSpec) {
   uint64_t result = 0;
   for (size_t i = 0; i < inputSpec.size(); i++) {
