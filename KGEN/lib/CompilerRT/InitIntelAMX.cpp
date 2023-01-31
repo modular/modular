@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifdef __linux__
+#if defined(__x86_64__) && defined(__linux__)
 #include <asm/prctl.h>   /* Definition of ARCH_* constants */
 #include <sys/syscall.h> /* Definition of SYS_* constants */
 #include <unistd.h>
