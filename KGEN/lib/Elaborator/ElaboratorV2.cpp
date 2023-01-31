@@ -870,6 +870,11 @@ public:
   getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
                       ArrayRef<ParamBindAttr> paramValues) override;
 
+  std::optional<ErrorTree>
+  getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
+                          ArrayRef<ParamBindAttr> paramValues,
+                          std::vector<FuncOp> &funcs) override;
+
   /// Lookup a symbol of type T in the symbol table collection.
   template <typename T>
   T lookup(SymbolRefAttr symbol) {
@@ -1033,6 +1038,55 @@ ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
   }
 
   return node->getFirstConcrete();
+}
+
+//===----------------------------------------------------------------------===//
+// ElaboratorImpl::getAllConcreteFunctions
+//===----------------------------------------------------------------------===//
+
+std::optional<ErrorTree>
+ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
+                                        ArrayRef<ParamBindAttr> paramValues,
+                                        std::vector<FuncOp> &funcs) {
+  auto funcItf = lookup<FuncInterface>(symbolRef);
+  if (auto func = dyn_cast<FuncOp>(funcItf.getOperation())) {
+    funcs.push_back(func);
+    return std::nullopt;
+  }
+
+  SmallVector<Attribute> inputParams;
+  for (ParamBindAttr bind : paramValues)
+    inputParams.push_back(cast<Attribute>(bind.getValue()));
+
+  auto vals = ArrayAttr::get(symbolRef.getContext(), inputParams);
+
+  // Lookup the node if it already exists.
+  ExpansionTreeNode *node = root.find(funcItf, vals);
+  // If the node has already been elaborated, just use that result.
+  if (node && node->isConcrete()) {
+    node->getAllConcrete(funcs);
+    return std::nullopt;
+  }
+
+  // Otherwise, if the node doesn't exist, then create a new one.
+  if (!node)
+    node =
+        ExpansionTreeNode::create(funcItf, vals, &root, IREvaluator(*this), 0);
+
+  for (auto [decl, value] : llvm::zip(funcItf.getInputParamDecls(), vals))
+    node->evaluator.setOrOverwriteParameterValue(decl, value);
+
+  if (auto gen = dyn_cast<GeneratorOp>(funcItf.getOperation())) {
+    if (auto err = specializeGenerator(node))
+      return std::move(*err);
+  } else if (auto itf =
+                 dyn_cast<GeneratorInterfaceOp>(funcItf.getOperation())) {
+    if (auto err = specializeInterface(node, implementsMap[itf]))
+      return std::move(*err);
+  }
+
+  node->getAllConcrete(funcs);
+  return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//

@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "SelectFastestFunction.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -94,6 +95,44 @@ IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
       return value;
     emitError(result.takeError());
     return failure();
+  }
+
+  if (op.getOpcode() == POC::Evaluate) {
+    // Pull out the evaluator and ensure it's concretized.
+    auto symbol =
+        cast<SymbolConstantAttr>(op.getOperand(op.getNumOperands() - 1));
+    ErrorTreeOr<FuncOp> evaluator = elaborator.getConcreteFunction(
+        *errorLoc, symbol.getSymbol(), symbol.getParamValues().getValue());
+    if (evaluator.isError()) {
+      emitError(evaluator.takeError());
+      return failure();
+    }
+
+    // Pull out the concrete functions from each option and evaluate them all.
+    std::vector<FuncOp> options;
+    for (TypedAttr option : llvm::drop_end(op.getOperands())) {
+      auto optionSym = cast<SymbolConstantAttr>(option);
+      if (auto err = elaborator.getAllConcreteFunctions(
+              *errorLoc, optionSym.getSymbol(),
+              optionSym.getParamValues().getValue(), options)) {
+        emitError(err->copy());
+        return failure();
+      }
+    }
+
+    auto bestOr = evaluateSpecializations(*evaluator, symtab,
+                                          elaborator.getRuntime(), options);
+    if (bestOr.isError()) {
+      emitError(
+          ErrorTree(UnknownLoc::get(op.getContext()), bestOr.takeError()));
+      return failure();
+    }
+
+    // Have to create a new symbol constant because the best one could be an
+    // implementation of one of the options.
+    FuncOp best = options[*bestOr];
+    return cast<TypedAttr>(SymbolConstantAttr::get(
+        SymbolRefAttr::get(best.getSymNameAttr()), best.getFullSignature()));
   }
 
   return failure();

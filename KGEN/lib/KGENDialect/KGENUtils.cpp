@@ -633,7 +633,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     }
     return success();
   }
-  case (uint32_t)POC::Apply:
+  case (uint32_t)POC::Apply: {
     auto sig = dyn_cast_or_null<SignatureType>(type);
     if (!sig)
       return p.emitError(p.getCurrentLocation(),
@@ -644,6 +644,29 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     for (Type type : sig.getValueInputs())
       if (p.parseComma() || parseParamValue(p, operands.emplace_back(), type))
         return failure();
+    return success();
+  }
+  case (uint32_t)POC::Evaluate:
+    auto sig = dyn_cast_or_null<SignatureType>(type);
+    if (!sig)
+      return p.emitError(p.getCurrentLocation(),
+                         "expected a signature type for 'evaluate'");
+
+    if (parseParamValue(p, operands.emplace_back(), type))
+      return p.emitError(p.getCurrentLocation(), "expected a symbol attribute");
+
+    while (succeeded(p.parseOptionalComma())) {
+      // This one might be the evaluator, which is preceeded by a type.
+      Type evaluatorType;
+      auto evaluatorTy = parseOptionalColonType(p, evaluatorType);
+      if (evaluatorTy.has_value()) {
+        return parseParamValue(p, operands.emplace_back(), evaluatorType);
+      }
+      // Otherwise, parse the parameter.
+      if (parseParamValue(p, operands.emplace_back(), type))
+        return failure();
+    }
+
     return success();
   }
   llvm_unreachable("unknown operator");
@@ -877,6 +900,18 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
       printParamValue(p, operand);
     });
     break;
+  case POC::Evaluate:
+    // Print the return type of the parameter itself.
+    printColonTypeOrIndexPrefix(p, operands[1].getType());
+    p << " ";
+    // Then print the operands.
+    for (TypedAttr operand : operands.drop_back()) {
+      printParamValue(p, operand);
+      p << ", ";
+    }
+    // Then print the type of the evaluator and the evaluator.
+    printColonTypeOrIndexPrefix(p, operands.back().getType());
+    printParamValue(p, operands.back());
   }
 }
 

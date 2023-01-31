@@ -57,7 +57,10 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
 
   // Signature processing.
   I32EnumAttrCase<"BindSignature", 23, "bind_signature">,
-  I32EnumAttrCase<"Apply", 24, "apply">
+  I32EnumAttrCase<"Apply", 24, "apply">,
+
+  // Evaluating a set of candidates.
+  I32EnumAttrCase<"Evaluate", 25, "evaluate">
 ]>;
 
 //===----------------------------------------------------------------------===//

@@ -618,15 +618,42 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
   return success();
 }
 
+static LogicalResult
+verifyEvaluate(ArrayRef<TypedAttr> operands, Type type,
+               function_ref<InFlightDiagnostic()> emitError) {
+  if (operands.size() < 2)
+    return emitError() << "'evaluate' expected at least an evaluator and one "
+                          "implementation to evaluate";
+
+  auto evaluatorSignature = cast<SignatureType>(operands.back().getType());
+  if (!evaluatorSignature.getResultParams().empty() ||
+      !evaluatorSignature.getInputParams().empty())
+    return emitError() << "'evaluate' evaluator cannot be parametric";
+
+  FunctionType func = evaluatorSignature.getValues();
+  if (func.getNumResults() != 1)
+    return emitError() << "'evaluate' evaluator must return one result";
+
+  for (TypedAttr operand : operands.drop_back()) {
+    if (operand.getType() != type) {
+      return emitError() << "'evaluate' expected all operands to have the same "
+                            "type, expected "
+                         << type << " but got " << operand.getType();
+    }
+  }
+
+  return success();
+}
+
 LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
   // All the operand types must match except for 'bind_signature' and 'apply'.
-  if (!llvm::is_contained({POC::GetListElement, POC::BindSignature, POC::Apply,
-                           POC::TargetHasFeature, POC::TargetIsArch,
-                           POC::TargetGetField, POC::BuildInfoGetField,
-                           POC::GetSizeOf, POC::GetAlignOf},
-                          opcode) &&
+  if (!llvm::is_contained(
+          {POC::GetListElement, POC::BindSignature, POC::Apply, POC::Evaluate,
+           POC::TargetHasFeature, POC::TargetIsArch, POC::TargetGetField,
+           POC::BuildInfoGetField, POC::GetSizeOf, POC::GetAlignOf},
+          opcode) &&
       !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
       }))
@@ -774,6 +801,10 @@ LogicalResult ParamOperatorAttr::verify(
   }
   case POC::Apply:
     if (failed(verifyApply(operands, type, emitError)))
+      return failure();
+    break;
+  case POC::Evaluate:
+    if (failed(verifyEvaluate(operands, type, emitError)))
       return failure();
     break;
   }
@@ -1589,11 +1620,12 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   // All operands must have the same type.  The result type is usually the
   // same as the operands, but is i1 for comparisons (overridden below).
   auto resultType = operandsIn.front().getType();
-  assert(llvm::is_contained(
-             {POC::GetListElement, POC::BindSignature, POC::Apply,
-              POC::TargetHasFeature, POC::TargetIsArch, POC::TargetGetField,
-              POC::BuildInfoGetField, POC::GetSizeOf, POC::GetAlignOf},
-             opcode) ||
+  assert(llvm::is_contained({POC::GetListElement, POC::BindSignature,
+                             POC::Apply, POC::Evaluate, POC::TargetHasFeature,
+                             POC::TargetIsArch, POC::TargetGetField,
+                             POC::BuildInfoGetField, POC::GetSizeOf,
+                             POC::GetAlignOf},
+                            opcode) ||
          llvm::all_of(operandsIn.drop_front(),
                       [&](auto op) { return op.getType() == resultType; }));
 
@@ -1684,6 +1716,9 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     break;
   case POC::Apply:
     result = simplifyApply(operands, resultType);
+    break;
+  case POC::Evaluate:
+    // Don't need to do anything.
     break;
   }
 
