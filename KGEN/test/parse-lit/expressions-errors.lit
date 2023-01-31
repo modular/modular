@@ -154,3 +154,19 @@ def bad_assignment0(a: Int, b: Int):
 def bad_assignment1(a: Int, b: Int):
    # expected-error @+1 {{expected ')' in parenthesized expression}}
    a = (b += b)
+
+##===----------------------------------------------------------------------===##
+# Computed Properties and Subscripts
+##===----------------------------------------------------------------------===##
+
+struct WeirdArray:
+  # expected-note @+1 {{function declared here}}
+  fn __getitem__(self, x: Int) -> Int:
+    return 1
+
+fn testWeirdArray(a: WeirdArray, idx: Int):
+  # expected-error @+1 {{invalid call to '__getitem__': index cannot be converted from '__mlir_type.f64' to '$Int::Int'}}
+  _ = a[1.0]
+
+  # expected-error @+1 {{invalid call to '__getitem__': callee expects 2 arguments, but 3 specified}}
+  _ = a[1, 2]

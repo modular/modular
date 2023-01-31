@@ -104,6 +104,7 @@ enum class CallSyntax : uint8_t {
   kTypeCall,         //< T()
   kOperator,         //< -x and x + y
   kReversedOperator, //< y + x          (where the method was looked up on x).
+  kSubscript,        // v[1, 2]
   kImplicitConvert,  //< Conversion in an argument context
 };
 

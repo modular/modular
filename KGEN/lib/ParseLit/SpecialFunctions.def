@@ -23,12 +23,15 @@
 //   EXPRNODE is the normal ExprNode::Kind this corresponds to.
 //   FLAGS are various flags used to customize type checking behavior.
 
-SF(kNew,     "__new__"   , -1, kInvalid, kImplicitlyStaticMethod)
-SF(kInit,    "__init__"  , -1, kInvalid, kInstMethod|kNoneResult)
+SF(kNew,     "__new__"   ,  -1, kInvalid, kImplicitlyStaticMethod)
+SF(kInit,    "__init__"  ,  -1, kInvalid, kInstMethod|kNoneResult)
 
-SF(kBool,    "__bool__"  ,  1, kInvalid, kInstMethod)
-SF(kLitBool, "__lit_bool",  1, kInvalid, kInstMethod)
-SF(kAwait,   "__await__",   1, kAwait,   kAllowByRefSelfInstMethod)
+SF(kBool,    "__bool__"  ,   1, kInvalid, kInstMethod)
+SF(kLitBool, "__lit_bool",   1, kInvalid, kInstMethod)
+SF(kAwait,   "__await__",    1, kAwait,   kAllowByRefSelfInstMethod)
+
+SF(kGetItem, "__getitem__", -1, kInvalid,kInstMethod)
+
 
 // Unary arithmetic operators.
 SF(kNeg,     "__neg__"   ,  1, kNeg,    kInstMethod)

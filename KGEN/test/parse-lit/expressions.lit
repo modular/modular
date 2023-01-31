@@ -451,7 +451,6 @@ def basic_assignments(a: Int, b: Int, c: M, d: M):
   # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ior__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   a |= b
 
-
 ##===----------------------------------------------------------------------===##
 # Literals
 ##===----------------------------------------------------------------------===##
@@ -547,3 +546,24 @@ world"
     a = "A\"B"             # CHECK: "A\22B"
     a = 'A\'B'             # CHECK: "A'B"
     a = r"A\zB"            # CHECK: "A\\zB"
+
+##===----------------------------------------------------------------------===##
+# Computed Properties and Subscripts
+##===----------------------------------------------------------------------===##
+
+struct WeirdArray:
+  fn __getitem__(self, x: Int) -> Int:
+    return 1
+  fn __getitem__(self, x: Int, y: Int) -> Int:
+    return 2
+  fn __getitem__(self, x: Int, y: Int, z: Int) -> Int:
+    return 3
+
+# CHECK-LABEL: lit.func @"testWeirdArray
+fn testWeirdArray(a: WeirdArray, idx: Int):
+  # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx)
+  _ = a[idx]
+  # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx, %idx)
+  _ = a[idx, idx]
+  # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx, %idx, %idx)
+  _ = a[idx, idx, idx]
