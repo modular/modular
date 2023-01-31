@@ -21,7 +21,6 @@ namespace M::KGEN {
 class ParamBindArrayAttr;
 class ParamDeclAttr;
 class ParamDeclareOp;
-class ExportOp;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
@@ -113,8 +112,6 @@ public:
     return *it->second;
   }
 
-  void registerAndCheckExport(ExportOp exportOp);
-
 private:
   /// The resolveSignature methods are invoked on an operation to parse and type
   /// check the signature for the operation.  On parse failure, these should
@@ -147,12 +144,6 @@ private:
   /// This does not include functions, only things that may be referred to by a
   /// DeclRefType: StructTypes, aliases, etc.
   DenseMap<SymbolRefAttr, ASTDecl *> declForTypeSymbol;
-
-  /// This map tracks the exported function names and their locations so that
-  /// we can check if they are unique.
-  /// Note: these StringRef keys cannot dangle because they point to the parsed
-  //  source buffer, we don't need to use StringMap here.
-  DenseMap<StringRef, Location> exportedSymbolNames;
 
   /// This array holds all of the parsed declarations in a deterministic order.
   std::vector<ASTDecl *> parsedDeclList;

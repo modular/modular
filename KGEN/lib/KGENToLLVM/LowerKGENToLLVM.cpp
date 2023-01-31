@@ -388,11 +388,14 @@ convertCallingConvention(Location loc, Block *body,
 /// Emit a wrapper for a function with the calling convention converted to C
 /// calling convention. The wrapper constructs the necessary structs and
 /// forwards them to the actual function.
-/// The wrapper name is assumed to be unique.
-static void emitCWrapper(LLVM::LLVMFuncOp func, StringAttr wrapperName,
+static void emitCWrapper(LLVM::LLVMFuncOp func, StringAttr symbolName,
                          SymbolTable &symtab) {
+  // Generate a unique wrapper name to use.
+  unsigned counter = 0;
+  std::string wrapperName =
+      getUniqueSymbolName((Twine(symbolName) + "_c").str(), symtab, counter);
+
   // Generate a new subprogram scope if necessary.
-  assert(symtab.lookup(wrapperName) == nullptr && "wrapperName is not unique");
   Location loc = func.getLoc();
   if (auto funcSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(loc)) {
     mlir::AttrTypeReplacer replacer;
