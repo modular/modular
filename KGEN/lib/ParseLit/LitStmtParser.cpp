@@ -35,6 +35,14 @@ using namespace M::KGEN::LIT;
 using namespace M::KGEN;
 using namespace M;
 
+/// Return the nearest parent operation of the block of the given kind.
+template <typename OpT>
+static OpT getBlockParentOfType(Block *block) {
+  if (auto op = dyn_cast<OpT>(block->getParentOp()))
+    return op;
+  return block->getParentOp()->getParentOfType<OpT>();
+}
+
 //===----------------------------------------------------------------------===//
 // LitStmtParser
 //===----------------------------------------------------------------------===//
@@ -184,6 +192,51 @@ ParseResult LitStmtParser::parseStmts(size_t minIndent) {
   return success();
 }
 
+/// Emit a warning when an expression is emitted at statement context, and it
+/// returns a result.
+static void diagnoseIgnoredResult(const ExprNode *expr, AnyValue value,
+                                  LitSharedState &shared) {
+  ASTType valueType = value.getRValueType();
+
+  // Return true if the specified type can be implicitly ignored.
+  // TODO: Should have a better way to say that it is safe to implicily ignore a
+  // value of a type (e.g. a type decorator)
+  auto isImplicitlyIgnorableType = [&](ASTType type) -> bool {
+    // TODO: This is incorrect for throwing functions that return None.
+    return type.isEqualCanon(shared.getNoneType()) ||
+           type.isEqualCanon(shared.getTypeCheckErrorType());
+  };
+
+  if (isImplicitlyIgnorableType(valueType))
+    return;
+
+  // If this type is a function with no arguments and an ignorable type, we
+  // emit a warning with a fix it hint suggesting that it get called.
+  if (auto sig = dyn_cast<SignatureType>(valueType.mlirType)) {
+    // TODO: This is incorrect for default arguments and varargs.
+    assert(sig.getValueResults().size() == 1);
+    if (sig.getValueInputs().size() == 0 &&
+        isImplicitlyIgnorableType(sig.getValueResults()[0])) {
+      // Find end of token.  TODO: Gross.
+      auto endLoc = expr->getRange().getEnd();
+      size_t tokenSize = LitLexer::getTokenLength(shared, endLoc);
+      endLoc = SMLoc::getFromPointer(endLoc.getPointer() + tokenSize);
+      auto insertRange = LitSourceRange::getByteLevel(endLoc, endLoc);
+
+      shared.emitWarning(expr->getLoc())
+          << "function pointer was formed but not called, did you forget '()'s?"
+          << expr->getRange() << LitFixIt(insertRange, "()");
+      return;
+    }
+  }
+
+  // Otherwise emit a warning, and suggest assigning to _.
+  auto startLoc = expr->getRange().getStart();
+  shared.emitWarning(expr->getLoc())
+      << valueType << " value is unused" << expr->getRange()
+      << LitFixIt(LitSourceRange(startLoc, startLoc), "_ = ");
+}
+
 /// When `isSimpleStmt` is true, this parses the simple_stmt production,
 /// otherwise it parses the broader `statment` production that includes compound
 /// statements.
@@ -329,21 +382,21 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
 
   // If this wasn't an assignment statement, it is just a freestanding
   // expression.  Emit it and ignore the results.
-  (void)getEmitter(/*allowImplicitVarDecl=*/true).emitExprDRValue(expr);
+  auto emitter = getEmitter(/*allowImplicitVarDecl=*/true);
+  auto result = expr->emitIR(emitter, /*No Contextual Type*/ {});
+  if (!result)
+    return success();
+
+  // Emit a warning if the result is a value we should warn when unused.
+  if (!getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock())
+           .getIsDef())
+    diagnoseIgnoredResult(expr, result, shared);
   return success();
 }
 
 //===----------------------------------------------------------------------===//
 // Simple statements.
 //===----------------------------------------------------------------------===//
-
-/// Return the nearest parent operation of the block of the given kind.
-template <typename OpT>
-static OpT getBlockParentOfType(Block *block) {
-  if (auto op = dyn_cast<OpT>(block->getParentOp()))
-    return op;
-  return block->getParentOp()->getParentOfType<OpT>();
-}
 
 /// return_stmt ::= "return"(return_param_spec)? [expression_list]
 /// return_param_spec ::= "[" expression ("," expression)* "]"

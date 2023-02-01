@@ -1474,7 +1474,9 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
       // the destination.  If things didn't work, just drop this on the floor.
       emitter.builder->create<POP::StoreOp>(getLocation(emitter), rv, lhsLV,
                                             /*alignment=*/std::nullopt);
-      return rv;
+      // Assignments are not actually expressions in Python.  We treat them this
+      // way for consistency, but model them as returning None.
+      return MValue(NoneAttr::get(emitter.getContext()));
     }
 
     // Otherwise, handle as a normal binary operator.

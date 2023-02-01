@@ -104,8 +104,8 @@ fn testSIMD(a: SIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
   var field2 = ref.value
 
   # Test calls to methods and operators on parameterized type.
-  a.fma(a, a)
-  b.fma(b, b)
+  _ = a.fma(a, a)
+  _ = b.fma(b, b)
   # CHECK: kgen.call @"$SIMD"::@SIMD::@"__add__{{.*}}<size = 1, type: dtype = f64>(%a, %a)
   var x = a+a
   # CHECK: kgen.call @"$SIMD"::@SIMD::@"__add__{{.*}}<size = 1, type: dtype = si32>(%b, %b)
@@ -454,6 +454,6 @@ fn testParamInference[size: index](a: StaticVec[4], b: StaticVec[size],
   callee4(d)
 
   # CHECK-NEXT: kgen.call @{{.*}}@"__new__{{.*}}<size = 17, type: dtype = f32>(%c)
-  StaticVec(c)
-  # CHECK-NEXT: kgen.call @{{.*}}@"thing{{.*}}<size = 17, type: dtype = f32>(%c)
+  _ = StaticVec(c)
+  # CHECK: kgen.call @{{.*}}@"thing{{.*}}<size = 17, type: dtype = f32>(%c)
   StaticVec.thing(c)
