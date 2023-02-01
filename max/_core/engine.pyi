@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from pathlib import Path
 
 class Model:
     def execute(self, *args) -> None: ...
@@ -10,4 +11,4 @@ class Model:
 
 class InferenceSession:
     def __init__(self, config: dict = ...) -> None: ...
-    def compile(self, model_path: str, config: dict = ...) -> Model: ...
+    def compile(self, model_path: Path, config: dict = ...) -> Model: ...
