@@ -775,10 +775,13 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     auto inferTypesItf = opNameInfo->getInterface<mlir::InferTypeOpInterface>();
     if (!inferTypesItf)
       return failure();
-    return inferTypesItf->inferReturnTypes(
-        context, state.location, state.operands,
-        DictionaryAttr::get(context, state.attributes), state.regions,
-        state.types);
+    if (failed(inferTypesItf->inferReturnTypes(
+            context, state.location, state.operands,
+            DictionaryAttr::get(context, state.attributes), state.regions,
+            state.types)))
+      return failure();
+    return success(
+        llvm::all_of(state.types, [](Type t) { return t != Type(); }));
   };
 
   if (!hadTypeSpec) {
