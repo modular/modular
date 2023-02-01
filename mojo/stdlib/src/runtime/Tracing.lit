@@ -55,7 +55,7 @@ fn _trace_range_push[level: Int](name: StringRef, detail: StringRef):
 @implements(trace_range_push)
 @always_inline
 fn _trace_range_push_disabled[level: Int](name: StringRef, detail: StringRef):
-    assert_param_bool[is_llcl_profiling_disabled[level.__as_mlir_index()]()]
+    assert_param_bool[is_llcl_profiling_disabled[level.__as_mlir_index()]()]()
 
 
 # ===----------------------------------------------------------------------===#
