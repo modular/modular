@@ -61,7 +61,7 @@ static LLVMStructType getCoroutinePromiseType(LLVMBuilder &b,
     if (!type)
       return {};
   }
-  // Add the async context: a ref-counted pointer and a runtime pointer.
+  // Add the async context: the callback function and a context pointer.
   promiseTypes.push_back(LLVMStructType::getLiteral(
       b.getContext(), {cache.ptrType, cache.ptrType}));
   return LLVMStructType::getLiteral(b.getContext(), promiseTypes);
@@ -201,16 +201,6 @@ static Value getCoroutinePromise(LLVMBuilder &b, const TypeAttrCache &cache,
 }
 
 //===----------------------------------------------------------------------===//
-// CoroutineHandleOp
-
-/// Replace `pop.coroutine.handle` with the current coroutine handle.
-static void lowerCoroutineHandle(const Coroutine &coroutine,
-                                 POP::CoroutineHandleOp op) {
-  op.replaceAllUsesWith(coroutine.handle);
-  op.erase();
-}
-
-//===----------------------------------------------------------------------===//
 // CoroutineAwaitOp
 
 /// Lower a `pop.coroutine.await` to a non-final suspend and inline the region.
@@ -294,8 +284,7 @@ static void lowerCoroutineResume(LLVMBuilder &b, const TypeAttrCache &cache,
 //===----------------------------------------------------------------------===//
 // CoroutineDestroyOp
 
-/// Lower `pop.coroutine.destroy` to a runtime call and the coroutine destroy
-/// intrinsic.
+/// Lower `pop.coroutine.destroy` to the coroutine destroy intrinsic.
 static LogicalResult lowerCoroutineDestroy(LLVMBuilder &b,
                                            const TypeAttrCache &cache,
                                            POP::CoroutineDestroyOp op) {
@@ -354,10 +343,13 @@ void LowerKGENCoroutinesPass::runOnOperation() {
 
   // Collect all the relevant ops.
   SmallVector<POP::CoroutineHandleOp> handles;
+  SmallVector<POP::CoroutineOpaqueHandleOp> opaques;
   SmallVector<POP::CoroutineAwaitOp> awaits;
   func.walk([&](Operation *op) {
     if (auto handle = dyn_cast<POP::CoroutineHandleOp>(op)) {
       handles.push_back(handle);
+    } else if (auto opaque = dyn_cast<POP::CoroutineOpaqueHandleOp>(op)) {
+      opaques.push_back(opaque);
     } else if (auto await = dyn_cast<POP::CoroutineAwaitOp>(op)) {
       awaits.push_back(await);
     } else if (auto promise = dyn_cast<POP::CoroutinePromiseOp>(op)) {
@@ -373,8 +365,17 @@ void LowerKGENCoroutinesPass::runOnOperation() {
 
   // The presence of `pop.coroutine.handle` inside a function indicates
   // that it is a coroutine.
-  if (handles.empty())
+  if (handles.empty()) {
+    // Replace opaque handles with a null pointer.
+    for (POP::CoroutineOpaqueHandleOp opaque : opaques) {
+      b.setInsertionPoint(opaque);
+      Value cstNullPtr = b.create<IntToPtrOp>(
+          cache.i8PtrType, b.create<ConstantOp>(b.getIndexType(), 0));
+      opaque.replaceAllUsesWith(cstNullPtr);
+      opaque.erase();
+    }
     return;
+  }
 
   // FIXME!!!! CoroSplit pass does not play well with LLVM lifetime markers.
   // Just strip them, because I don't want to debug an LLVM pass.
@@ -390,8 +391,14 @@ void LowerKGENCoroutinesPass::runOnOperation() {
   if (failed(coroutine))
     return signalPassFailure();
 
-  for (POP::CoroutineHandleOp op : handles)
-    lowerCoroutineHandle(*coroutine, op);
+  for (POP::CoroutineHandleOp op : handles) {
+    op.replaceAllUsesWith(coroutine->handle);
+    op.erase();
+  }
+  for (POP::CoroutineOpaqueHandleOp op : opaques) {
+    op.replaceAllUsesWith(coroutine->handle);
+    op.erase();
+  }
   for (POP::CoroutineAwaitOp op : awaits)
     lowerCoroutineAwait(b, cache, *coroutine, op);
 }

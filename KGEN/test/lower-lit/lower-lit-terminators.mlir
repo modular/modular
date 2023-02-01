@@ -194,7 +194,7 @@ lit.func @coroutine() async -> index {
   // CHECK: %[[PROMISE:.*]] = pop.coroutine.promise %[[HDL]]
   // CHECK-NEXT: %[[RES:.*]] = pop.struct.gep %[[PROMISE:.*]][0]
   // CHECK-NEXT: pop.store %idx0, %[[RES:.*]]
-  // CHECK: external_call @KGEN_CompilerRT_LLCL_Complete
+  // CHECK: pop.call_indirect
   // CHECK-NEXT: return %[[HDL]]
   lit.return %idx0 : index
   lit.end_func
@@ -207,12 +207,7 @@ lit.func @call_coroutine<coro: <>() async -> !lit.none>() async -> !lit.none {
   // CHECK-NEXT: %[[CURHDL:.*]] = pop.coroutine.handle
   // CHECK-NEXT: %[[HDL:.*]] = kgen.call_param[() -> !pop.coroutine<() -> !lit.none>: coro]()
   lit.async_call[<>() async -> !lit.none: coro]()
-  // CHECK: %[[PTR:.*]] = pop.load
-  // CHECK: pop.store %[[PTR]]
-  // CHECK: external_call @KGEN_CompilerRT_LLCL_InitializeContext
-
-  // CHECK: pop.store
-  // CHECK: external_call @KGEN_CompilerRT_LLCL_Complete
+  // CHECK: pop.call_indirect
   // CHECK-NEXT: return %[[CURHDL]]
   lit.end_func
 }
@@ -227,7 +222,7 @@ lit.func @throwing_coro<cond: i1, a>(%err: !kgen.declref<@Error>) async|throws -
     %a = kgen.param.constant = <a>
     // CHECK-NEXT: %[[RESULT:.*]] = pop.variant.create %[[A]]
     // CHECK: pop.store %[[RESULT]]
-    // CHECK: external_call @KGEN_CompilerRT_LLCL_Complete
+    // CHECK: pop.call_indirect
     // CHECK-NEXT: hlcf.return %[[HDL]]
     lit.return %a : index
     hlcf.yield
@@ -236,7 +231,7 @@ lit.func @throwing_coro<cond: i1, a>(%err: !kgen.declref<@Error>) async|throws -
   }
   // CHECK: %[[ERR:.*]] = pop.variant.create %err
   // CHECK: pop.store
-  // CHECK: external_call @KGEN_CompilerRT_LLCL_Complete
+  // CHECK: pop.call_indirect
   // CHECK-NEXT: kgen.return %[[HDL]]
   lit.raise %err : !kgen.declref<@Error>
   lit.end_func
@@ -251,36 +246,6 @@ lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async|throws -> !lit.n
   %hdl = lit.async_call[<>(!kgen.declref<@Error>) async|throws -> index: callee](%err)
   lit.end_func
 }
-
-// CHECK-LABEL: lit.func @await_coro() -> !pop.coroutine<() -> !lit.none>
-lit.func @await_coro() async -> !lit.none {
-  // CHECK: %[[PARENT_HDL:.*]] = pop.coroutine.handle : <() -> !lit.none>
-  // CHECK: %[[CALLEE_HDL:.*]] = kgen.call_param[() -> !pop.coroutine<() -> index>: @coroutine]()
-  %0 = lit.async_call[<>() async -> index: @coroutine]()
-  // CHECK: KGEN_CompilerRT_LLCL_InitializeContext
-  // CHECK: %[[CALLEE_PROMISE:.*]] = pop.coroutine.promise %[[CALLEE_HDL]]
-  // CHECK: %[[IDX1:.*]] = index.constant 1
-  // CHECK: %[[CTX_PTR:.*]] = pop.offset %[[CALLEE_PROMISE]][%[[IDX1]]]
-  // CHECK: %[[CTX:.*]] = pop.pointer.bitcast %[[CTX_PTR]] : !pop.pointer<struct<index>> to !pop.pointer<i8>
-  // CHECK: %[[RESUME:.*]] = kgen.addressof @__kgen_coro_resume : (!pop.pointer<i8>) -> ()
-  // CHECK: pop.coroutine.await {
-  // CHECK:   pop.external_call @KGEN_CompilerRT_LLCL_ExecuteAndResume(%[[RESUME]], %{{.*}}, %[[CTX]], %{{.*}})
-  // CHECK: }
-  // CHECK: %[[RES:.*]] = pop.struct.gep %[[CALLEE_PROMISE]][0] : <struct<index>>
-  // CHECK: pop.load %[[RES]] : !pop.pointer<index>
-  %1 = lit.async_await %0 : <() -> index>
-  lit.end_func
-}
-
-// CHECK-LABEL: @call_coro_from_sync
-lit.func @call_coro_from_sync() -> !lit.none {
-  // CHECK-NEXT: kgen.call_param[() -> !pop.coroutine<() -> !lit.none>: @await_coro]()
-  %hdl = lit.async_call[<>() async -> !lit.none: @await_coro]()
-  lit.end_func
-}
-
-// CHECK-LABEL: kgen.generator @__kgen_coro_resume
-// CHECK: pop.coroutine.resume
 
 //===----------------------------------------------------------------------===//
 // Nested Functions

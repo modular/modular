@@ -2363,6 +2363,28 @@ def POP_CoroutineHandleOp : POPOp<"coroutine.handle"> {
 }
 
 //===----------------------------------------------------------------------===//
+// CoroutineOpaqueHandleOp
+//===----------------------------------------------------------------------===//
+
+def POP_CoroutineOpaqueHandleOp : POPOp<"coroutine.opaque_handle", [Pure]> {
+  let summary = "Get an opaque handle to the current coroutine, if it is one.";
+  let description = [{
+    The `pop.coroutine.opaque_handle` returns an opaque handle to the current
+    coroutine, if it is one. If the function in which this operation resides is
+    not a coroutine, the result is a null pointer.
+
+    Example:
+
+    ```mlir
+    %hdl = pop.coroutine.opaque_handle
+    ```
+  }];
+
+  let results = (outs OpaqueCoroutineHandle:$hdl);
+  let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // CoroutineAwaitOp
 //===----------------------------------------------------------------------===//
 
@@ -2427,11 +2449,12 @@ def POP_CoroutineResumeOp : POPOp<"coroutine.resume"> {
     Example:
 
     ```mlir
-    pop.coroutine.resume %hdl : <i32>
+    pop.coroutine.resume %hdl
     ```
   }];
 
-  let arguments = (ins POP_CoroutineType:$coroutine);
+  let arguments = (ins AnyTypeOf<[POP_CoroutineType,
+                                  OpaqueCoroutineHandle]>:$coroutine);
   let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
 }
 

@@ -22,10 +22,6 @@ using namespace POP;
 // Coroutine Machinery
 //===----------------------------------------------------------------------===//
 
-static StringLiteral completeFnName = "KGEN_CompilerRT_LLCL_Complete";
-static StringLiteral initializeFnName =
-    "KGEN_CompilerRT_LLCL_InitializeContext";
-
 /// Generate the code to get the coroutine promise, checking the coroutine
 /// throws.
 static Value getCoroutinePromise(ImplicitLocOpBuilder &b, DeclRefType errType,
@@ -48,75 +44,16 @@ static void createCoroutineFinalize(ImplicitLocOpBuilder &b,
   for (auto [idx, result] : llvm::enumerate(results))
     b.create<StoreOp>(result, b.create<POP::StructGEPOp>(promise, idx));
 
-  // Insert the runtime call to indicate that the coroutine is complete.
-  Value ctxPtr =
+  // Insert the callback function invocation.
+  Value asyncCtxPtr =
       b.create<OffsetOp>(promise, b.create<mlir::index::ConstantOp>(1));
-  Value ctx =
-      b.create<PointerBitcastOp>(PointerType::get(b.getI8Type()), ctxPtr);
-  b.create<ExternalCallOp>(completeFnName, ctx);
-}
-
-/// Generate the code to propagate the runtime pointer in the async context and
-/// runtime call to initialize the async chain.
-static void createCoroutineInitialize(Operation *call, DeclRefType errType,
-                                      Value curHdl, Value hdl) {
-  ImplicitLocOpBuilder b(call->getLoc(), call->getContext());
-  b.setInsertionPointAfter(call);
-  Value one = b.create<mlir::index::ConstantOp>(1);
-  auto getAsyncCtx = [&](Value hdl) {
-    Value promise = getCoroutinePromise(b, errType, hdl);
-    Value ctxPtr = b.create<OffsetOp>(promise, one);
-    return b.create<PointerBitcastOp>(
-        PointerType::get(StructType::get(
-            {b.getIndexType(), PointerType::get(b.getI8Type())})),
-        ctxPtr);
-  };
-  Value curCtx = getAsyncCtx(curHdl);
-  Value ctx = getAsyncCtx(hdl);
-  b.create<StoreOp>(b.create<LoadOp>(b.create<POP::StructGEPOp>(curCtx, 1)),
-                    b.create<POP::StructGEPOp>(ctx, 1));
-  b.create<ExternalCallOp>(
-      initializeFnName,
-      b.create<PointerBitcastOp>(PointerType::get(b.getI8Type()), ctx)
-          .getResult());
-}
-
-/// Retrieve the results of a coroutine.
-static SmallVector<Value> getCoroutineResults(ImplicitLocOpBuilder &b,
-                                              SymbolConstantAttr resumeFnRef,
-                                              DeclRefType errType, Value curHdl,
-                                              LIT::AsyncAwaitOp op) {
-  Value promise = getCoroutinePromise(b, errType, op.getCoroutine());
-  Value one = b.create<mlir::index::ConstantOp>(1);
-  Value ctxPtr = b.create<OffsetOp>(promise, one);
-  Value ctx =
-      b.create<PointerBitcastOp>(PointerType::get(b.getI8Type()), ctxPtr);
-  Value resumeFn =
-      b.create<AddressOfOp>(resumeFnRef.getType().getValues(), resumeFnRef,
-                            ParamDeclArrayAttr::get(b.getContext(), {}));
-  auto awaitOp = b.create<CoroutineAwaitOp>();
-  auto toOpaqueHdl = [&](Value hdl) {
-    // FIXME: We need an op to convert to opaque pointer.
-    return b
-        .create<mlir::UnrealizedConversionCastOp>(
-            PointerType::get(b.getI8Type()), hdl)
-        .getResult(0);
-  };
-  {
-    OpBuilder::InsertionGuard guard(b);
-    b.createBlock(&awaitOp.getBody());
-    b.create<ExternalCallOp>("KGEN_CompilerRT_LLCL_ExecuteAndResume",
-                             ValueRange{resumeFn,
-                                        toOpaqueHdl(op.getCoroutine()), ctx,
-                                        toOpaqueHdl(curHdl)});
-  }
-
-  SmallVector<Value> results;
-  for (auto [idx, resultType] :
-       llvm::enumerate(op.getCoroutine().getType().getResultTypes()))
-    results.push_back(
-        b.create<LoadOp>(b.create<POP::StructGEPOp>(promise, idx)));
-  return results;
+  auto i8PtrType = PointerType::get(b.getType<SIMDType>(1, DType::ui8));
+  auto ctxType = PointerType::get(
+      StructType::get({b.getFunctionType(i8PtrType, {}), i8PtrType}));
+  Value ctx = b.create<PointerBitcastOp>(ctxType, asyncCtxPtr);
+  Value callbackFn = b.create<LoadOp>(b.create<StructGEPOp>(ctx, 0));
+  Value ctxPtr = b.create<LoadOp>(b.create<StructGEPOp>(ctx, 1));
+  b.create<CallIndirectOp>(TypeRange(), callbackFn, ctxPtr);
 }
 
 /// Given the result of a throwable call, generate the code to check if the
@@ -154,7 +91,6 @@ static Value createUnwrapOrPropagate(ImplicitLocOpBuilder &b, LIT::FuncOp func,
 
 /// Lower all lexical terminators in the function and remove dead code.
 static LogicalResult lowerLexicalTerminators(DeclRefType errType,
-                                             SymbolConstantAttr resumeFnRef,
                                              LIT::FuncOp func) {
   if (func.getIsInterface())
     return success();
@@ -202,10 +138,6 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
       toErase.push_back(call);
 
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
-      // If we see a coroutine call from within another coroutine, insert the
-      // initialization machinery.
-      if (func.isAsync())
-        createCoroutineInitialize(op, errType, coroHdl, call.getResult());
       // Replace the async call with a `call_param`.
       ImplicitLocOpBuilder b(call.getLoc(), OpBuilder(call));
       auto newCall = b.create<CallParamOp>(
@@ -214,19 +146,6 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
       Value result = newCall.getResult(0);
       call.replaceAllUsesWith(result);
       toErase.push_back(call);
-
-    } else if (auto await = dyn_cast<LIT::AsyncAwaitOp>(op)) {
-      ImplicitLocOpBuilder b(await.getLoc(), OpBuilder(await));
-      SmallVector<Value> results =
-          getCoroutineResults(b, resumeFnRef, errType, coroHdl, await);
-      auto coroSig = await.getCoroutine().getType().getSignature();
-      if (coroSig.isThrows()) {
-        results.assign(1, createUnwrapOrPropagate(
-                              b, func, results.front(), errType,
-                              coroSig.getValueResults().front(), coroHdl));
-      }
-      await.replaceAllUsesWith(results);
-      toErase.push_back(await);
     }
     return WalkResult::advance();
   });
@@ -454,28 +373,6 @@ struct LowerTerminatorsPass
   using LowerLITTerminatorsBase::LowerLITTerminatorsBase;
 
   void runOnOperation() override {
-    // FIXME: We need to generate a resume function to pass to the LLCL shim.
-    // It would be better to construct and pass a closure.
-    ImplicitLocOpBuilder b(getOperation().getLoc(), &getContext());
-    auto i8Ptr = PointerType::get(b.getI8Type());
-    auto resumeFn = b.create<GeneratorOp>(
-        "__kgen_coro_resume",
-        SignatureType::get(&getContext(), PointerType::get(b.getI8Type()), {}),
-        ArrayRef<ConstraintAttr>(), nullptr, AlwaysInlineLevel::Disabled);
-    b.createBlock(&resumeFn.getBodyRegion());
-    auto opaqueHdl = b.create<mlir::UnrealizedConversionCastOp>(
-        CoroutineType::get(NoneType::get(&getContext())),
-        resumeFn.getBody()->addArgument(i8Ptr, b.getLoc()));
-    b.create<CoroutineResumeOp>(opaqueHdl.getResult(0));
-    b.create<KGEN::ReturnOp>(ArrayRef<TypedAttr>(), ValueRange());
-    StringAttr resumeFnName = getAnalysis<mlir::SymbolTableAnalysis>()
-                                  .getTopLevelSymbolTable()
-                                  .insert(resumeFn);
-    if (resumeFnName != resumeFn.getSymNameAttr())
-      resumeFn.setSymNameAttr(resumeFnName);
-    auto resumeFnRef = SymbolConstantAttr::get(
-        FlatSymbolRefAttr::get(resumeFnName), resumeFn.getSignature());
-
     // Look for an error type declaration.
     DeclRefType errType;
     getOperation().walk([&](LIT::StructDeclOp decl) {
@@ -487,7 +384,7 @@ struct LowerTerminatorsPass
     });
     // Walk all functions.
     WalkResult result = getOperation().walk([&](LIT::FuncOp func) {
-      if (failed(lowerLexicalTerminators(errType, resumeFnRef, func)))
+      if (failed(lowerLexicalTerminators(errType, func)))
         return WalkResult::interrupt();
       return WalkResult::advance();
     });
