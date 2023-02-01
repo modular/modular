@@ -8,7 +8,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: linux, intel_amx
-# RUN: kgen %s -execute -func='$test_intel_amx::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$test_intel_amx::main():index()' | FileCheck %s
 
 from DType import DType
 from Bool import Bool

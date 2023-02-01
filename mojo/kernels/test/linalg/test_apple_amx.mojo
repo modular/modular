@@ -9,7 +9,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: apple-m1
-# RUN: kgen %s -execute -func='$test_apple_amx::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$test_apple_amx::main():index()' | FileCheck %s
 
 from AppleAMX import amx_detail
 from Buffer import NDBuffer
