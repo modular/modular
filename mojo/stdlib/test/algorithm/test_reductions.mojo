@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_reductions::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$test_reductions::main():index()' | FileCheck %s
 
 from Buffer import Buffer
 from DType import DType
