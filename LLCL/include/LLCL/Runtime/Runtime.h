@@ -20,6 +20,7 @@
 #include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
+#include "LLCL/Support/Chain.h"
 #include "llvm/ADT/StringRef.h"
 #include <atomic>
 
@@ -53,6 +54,11 @@ public:
   /// This can be used by logic that needs to flag that a side effect has
   /// already happened, without doing an extraneous memory allocation.
   const AsyncValueRef<Chain> &getReadyChain() const { return readyChain; }
+
+  /// Returns what should be the unique 'address' representing the type id for
+  /// the Chain type in the Modular runtime.
+  /// For debugging only.
+  intptr_t getChainTypeIdAddress() const { return chainTypeIdAddress; }
 
   //===--------------------------------------------------------------------===//
   // Memory Management
@@ -147,10 +153,27 @@ private:
   /// getReadyChain.
   AsyncValueRef<Chain> readyChain;
 
+  /// The 'address' of Chain type id, captured at the point the readyChain
+  /// was created.
+  /// For debugging only. This serves as a, hopefully, unique identifier
+  /// for 'the Modular runtime'. The checkTypeIdsAreCoherent function
+  /// below can be inserted at critical points to ensure a Runtime created
+  /// in one context (executable, dylib) does not accidentally get used
+  /// in a different context (executable, dylib).
+  intptr_t chainTypeIdAddress;
+
   /// If execution is cancelled, this holds the error value to forward into the
   /// results of computations.
   std::atomic<AsyncValue *> cancelValue{nullptr};
 };
+
+/// Returns false if the caller's binary appears to include incoherent
+/// representations for AsyncValue type ids.
+/// For debugging only.
+inline bool checkTypeIdsAreCoherent(const Runtime &runtime) {
+  return AsyncValue::getTypeIDAddress<Chain>() ==
+         runtime.getChainTypeIdAddress();
+}
 
 } // namespace M::LLCL
 

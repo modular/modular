@@ -44,6 +44,7 @@ static inline LLCLRuntimeRef wrap(const Runtime *ptr) {
 /// runtime pointer must have already been set.
 extern "C" void KGEN_CompilerRT_LLCL_InitializeChain(LLCLRuntimeRef rt,
                                                      AsyncChainRef chain) {
+  assert(checkTypeIdsAreCoherent(*unwrap(rt)) && "type ids are not coherent");
   new (&unwrap(chain))
       AsyncValueRef<Chain>(AsyncValueRef<Chain>::allocate(unwrap(rt)));
 }

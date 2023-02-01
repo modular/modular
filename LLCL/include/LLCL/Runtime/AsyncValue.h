@@ -232,6 +232,14 @@ public:
     return Detail::ConcreteAsyncValue<T>::getRegisteredTypeID();
   }
 
+  /// Returns what should be the unique 'address' representing the type id for
+  /// type T in the Modular runtime.
+  /// For debugging only.
+  template <typename T>
+  static intptr_t getTypeIDAddress() {
+    return Detail::ConcreteAsyncValue<T>::getRegisteredTypeIdAddress();
+  }
+
   /// Returns true if this AsyncValue is a ConcreteAsyncValue for type T, or
   /// an IndirectAsyncValue which has been resolved to a ConcreteAsyncValue
   /// of type T.
@@ -593,6 +601,13 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
 
   static uint16_t getRegisteredTypeID() {
     return staticTypeID.load(std::memory_order_relaxed);
+  }
+
+  /// Returns what should be the unique 'address' representing the type id for
+  /// type T in the Modular runtime.
+  /// For debugging only.
+  static intptr_t getRegisteredTypeIdAddress() {
+    return reinterpret_cast<intptr_t>(&staticTypeID);
   }
 
 private:
