@@ -22,6 +22,7 @@
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/IR/Location.h"
 #include "llvm/BinaryFormat/Dwarf.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/SourceMgr.h"
 #include <filesystem>
 
@@ -34,9 +35,33 @@ using llvm::SourceMgr;
 
 static void adjustTokenEndPoint(LitSharedState &shared, SMLoc &loc);
 
+/// Return the path containing the standard library. Returns nullopt if the
+/// standard library cannot be found.
+static std::optional<std::string> getStandardLibraryPath() {
+  // TODO: Eventually we should resolve the standard library path to an actual
+  // install of lit, for now though try to resolve the standard library path
+  // within modular.
+
+  // Check if we already have the path set.
+  if (auto envDir = llvm::sys::Process::GetEnv("MODULAR_PATH"))
+    return std::filesystem::path(*envDir) / "Kernels" / "lit-stdlib";
+
+  // Otherwise, try to find modular relative to the current directory.
+  std::filesystem::path path = std::filesystem::current_path();
+  while (!path.empty()) {
+    if (path.stem() == "modular")
+      return (path / "Kernels" / "lit-stdlib").string();
+    path = path.parent_path();
+  }
+  return std::nullopt;
+}
+
 class LitSharedState::Impl {
 public:
   SymbolTableCollection symbolTables;
+
+  /// The path of the standard library, or nullopt if it is not available.
+  std::optional<std::string> stdlibPath;
 
   /// The top-level decl containing everything being parsed.
   ASTDecl *topLevelDecl = nullptr;
@@ -56,6 +81,7 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
     : diags(sourceMgr, context, useMLIRDiagnostics), options(options),
       declResolver(std::make_unique<DeclResolver>(*this)),
       impl(std::make_unique<Impl>()) {
+  impl->stdlibPath = getStandardLibraryPath();
 
   // Tell the diagnostics machinery how to find the end of a token lazily when
   // it needs it.
@@ -284,9 +310,9 @@ ASTType LitSharedState::lookupErrorType(SMLoc loc, ASTDecl &context) {
 
 /// Resolve the absolute path for a given module name. Returns nullopt if the
 /// module cannot be found.
-static std::optional<std::string> resolveModulePath(StringRef moduleName,
-                                                    llvm::SourceMgr &sourceMgr,
-                                                    llvm::SMLoc includeLoc) {
+static std::optional<std::string>
+resolveModulePath(StringRef moduleName, const Optional<std::string> &stdLibDir,
+                  llvm::SourceMgr &sourceMgr, llvm::SMLoc includeLoc) {
   // Python has lots of magic rules surrounding how modules get resolved. For
   // now, we just use the available include directories within the source
   // manager and the working directory of where the module is included.
@@ -297,7 +323,13 @@ static std::optional<std::string> resolveModulePath(StringRef moduleName,
     return std::nullopt;
   };
 
-  // Check the working directory first.
+  // Check the standard library first.
+  if (stdLibDir) {
+    if (auto path = checkPath(*stdLibDir))
+      return path;
+  }
+
+  // Check the working directory.
   const llvm::MemoryBuffer *includeBuffer =
       sourceMgr.getMemoryBuffer(sourceMgr.FindBufferContainingLoc(includeLoc));
   assert(includeBuffer && "must be in a source buffer");
@@ -332,7 +364,7 @@ ASTDecl &LitSharedState::importModule(StringRef moduleName, llvm::SMLoc loc) {
 
   // Resolve the path for this module.
   std::optional<std::string> modulePath =
-      resolveModulePath(moduleName, getSourceMgr(), loc);
+      resolveModulePath(moduleName, impl->stdlibPath, getSourceMgr(), loc);
   if (!modulePath) {
     emitError(loc, "unable to locate module '") << moduleName << "'";
 
