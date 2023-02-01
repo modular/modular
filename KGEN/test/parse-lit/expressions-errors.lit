@@ -63,6 +63,33 @@ fn badRef(val&: Int):
   # expected-error @+1 {{invalid call to 'badRef': l-value of type '$F32::F32' cannot be converted to reference of type '$Int::Int'}}
   badRef(x)
 
+fn unused_values():
+  var x : Int = 42
+
+  _ = 4+4 # OK: Explicitly ignored.
+  # expected-warning @+1 {{'__mlir_type.index' value is unused}}
+  4+4  # MValue
+
+  _ = x # OK: Explicitly ignored.
+  # expected-warning @+1 {{'$Int::Int' value is unused}}
+  x  # LValue
+
+  _ = x+1 # OK: Explicitly ignored.
+  # expected-warning @+1 {{'$Int::Int' value is unused}}
+  x+1 # DRValue
+
+  # expected-warning @+1 {{function pointer was formed but not called, did you forget '()'s?}}
+  testLValuesRvalues
+  _ = testLValuesRvalues # OK
+
+
+def no_unused_values_in_def():
+  var x : Int = 42
+  4+4  # MValue
+  x  # LValue
+  x+1 # DRValue
+  testLValuesRvalues
+
 ##===----------------------------------------------------------------------===##
 # Tuples
 ##===----------------------------------------------------------------------===##
