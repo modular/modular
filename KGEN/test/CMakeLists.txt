@@ -19,4 +19,6 @@ add_modular_testsuite(check-kgen
   kgen
   kgen-opt
   kgen-execute
-  kgen-translate)
+  kgen-translate
+  lit-lsp-server
+)
