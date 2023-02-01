@@ -51,10 +51,11 @@ macro(_setup_libs)
   endforeach ()
 endmacro()
 
-# This function reads the CMAKE_BUILD_TYPE and sets up the KGEN optimization and
-# debug flags into KGEN_OPTIMIZATION_LEVEL and KGEN_DEBUG_LEVEL respectively.
+# This function reads the MODULAR_KERNELS_BUILD_TYPE and sets up the KGEN
+# optimization and debug flags into KGEN_OPTIMIZATION_LEVEL and KGEN_DEBUG_LEVEL
+# respectively.
 macro(_setup_debug_flags)
-  string(TOLOWER ${CMAKE_BUILD_TYPE} build_type)
+  string(TOLOWER ${MODULAR_KERNELS_BUILD_TYPE} build_type)
   set(KGEN_OPTIMIZATION_LEVEL 3)
   set(KGEN_DEBUG_LEVEL "none")
   if (build_type STREQUAL "debug")
