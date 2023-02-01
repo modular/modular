@@ -17,39 +17,21 @@ using namespace M::LLCL;
 // AsyncContext
 //===----------------------------------------------------------------------===//
 
-namespace {
-/// The async context contains information for marshalling the execution of
-/// coroutines on an LLCL runtime. This context is stored in the coroutine
-/// promise.
-struct alignas(8) AsyncContext {
-  /// This is the async token that indicates whether the coroutine is done. When
-  /// the coroutine is done, its results are available in its promise memory.
-  /// The lifetime of the reference is tied to the lifetime of the coroutine.
-  AsyncValueRef<Chain> chain;
-  /// This is a runtime pointer. When executing an async coroutine from
-  /// a synchronous context, a runtime pointer must be explicitly provided. The
-  /// runtime pointer is implicitly propagated through nested async coroutines.
-  Runtime *runtime;
+/// AsyncChainRef is an opaque wrapper around an `AsyncValueRef<Chain>`.
+struct AsyncChainRef {
+  void *storage;
 };
 
-// Enforce invariants between the LLCL C shim and KGEN.
-static_assert(sizeof(AsyncValueRef<Chain>) == sizeof(void *),
-              "expected AsyncValueRef to be the size of a pointer");
-
-} // namespace
-
-/// AsyncContextRef is an opaque wrapper around AsyncContext.
-using AsyncContextRef = void *;
-
-/// LLCLRuntimeRef is an opaque wrapper around Runtime.
-using LLCLRuntimeRef = void *;
-
-/// C binding unwrapper for `AsyncContextRef` and `LLCLRuntimeRef`.
-template <typename T>
-static inline T *unwrap(void *ptr) {
-  return reinterpret_cast<T *>(ptr);
+static inline AsyncValueRef<Chain> &unwrap(AsyncChainRef ptr) {
+  return *reinterpret_cast<AsyncValueRef<Chain> *>(ptr.storage);
 }
 
+/// LLCLRuntimeRef is an opaque wrapper around an `LLCL::Runtime`.
+using LLCLRuntimeRef = void *;
+
+static inline Runtime *unwrap(LLCLRuntimeRef ptr) {
+  return reinterpret_cast<Runtime *>(ptr);
+}
 static inline LLCLRuntimeRef wrap(const Runtime *ptr) {
   return reinterpret_cast<LLCLRuntimeRef>(const_cast<Runtime *>(ptr));
 }
@@ -60,16 +42,15 @@ static inline LLCLRuntimeRef wrap(const Runtime *ptr) {
 
 /// Given the async context of a coroutine, initialize its token value. The
 /// runtime pointer must have already been set.
-extern "C" void
-KGEN_CompilerRT_LLCL_InitializeContext(AsyncContextRef asyncCtx) {
-  auto *ctx = unwrap<AsyncContext>(asyncCtx);
-  new (&ctx->chain)
-      AsyncValueRef<Chain>(AsyncValueRef<Chain>::allocate(ctx->runtime));
+extern "C" void KGEN_CompilerRT_LLCL_InitializeChain(LLCLRuntimeRef rt,
+                                                     AsyncChainRef chain) {
+  new (&unwrap(chain))
+      AsyncValueRef<Chain>(AsyncValueRef<Chain>::allocate(unwrap(rt)));
 }
 
 /// Given the async context of a coroutine, destroy its token value.
-extern "C" void KGEN_CompilerRT_LLCL_DestroyContext(AsyncContextRef asyncCtx) {
-  unwrap<AsyncContext>(asyncCtx)->chain.~AsyncValueRef<Chain>();
+extern "C" void KGEN_CompilerRT_LLCL_DestroyChain(AsyncChainRef chain) {
+  unwrap(chain).~AsyncValueRef<Chain>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -80,50 +61,45 @@ extern "C" void KGEN_CompilerRT_LLCL_DestroyContext(AsyncContextRef asyncCtx) {
 extern "C" void KGEN_CompilerRT_LLCL_Execute(void (*resume)(int8_t *),
                                              int8_t *hdl,
                                              LLCLRuntimeRef runtime) {
-  unwrap<Runtime>(runtime)->getWorkQueue()->addTask(
-      [resume, hdl] { resume(hdl); });
+  unwrap(runtime)->getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
 }
 
 /// Resume a coroutine when the current one completes.
 extern "C" void KGEN_CompilerRT_LLCL_AndThen(void (*resume)(int8_t *),
-                                             AsyncContextRef asyncCtx,
-                                             int8_t *hdl) {
-  auto *ctx = unwrap<AsyncContext>(asyncCtx);
-  ctx->chain.getPointer()->andThenAsync([hdl, resume]() { resume(hdl); });
+                                             AsyncChainRef chain, int8_t *hdl) {
+  unwrap(chain).getPointer()->andThenAsync([hdl, resume]() { resume(hdl); });
 }
 
 /// Block until the coroutine is done.
-extern "C" void KGEN_CompilerRT_LLCL_Wait(AsyncContextRef asyncCtx) {
-  auto *ctx = unwrap<AsyncContext>(asyncCtx);
-  await(ctx->chain);
+extern "C" void KGEN_CompilerRT_LLCL_Wait(AsyncChainRef chain) {
+  await(unwrap(chain));
 }
 
 /// Execute a coroutine and block the current routine until it is complete.
 extern "C" void KGEN_CompilerRT_LLCL_ExecuteAndWait(void (*resume)(int8_t *),
                                                     int8_t *hdl,
-                                                    AsyncContextRef asyncCtx) {
-  auto *ctx = unwrap<AsyncContext>(asyncCtx);
-  ctx->runtime->getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
-  await(ctx->chain);
+                                                    LLCLRuntimeRef rt,
+                                                    AsyncChainRef chain) {
+  unwrap(rt)->getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
+  await(unwrap(chain));
 }
 
 /// Execute a coroutine. Register a completion handler to resume another
 /// coroutine when the scheduled coroutine completes.
 extern "C" void KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *),
                                                       int8_t *execHdl,
-                                                      AsyncContextRef asyncCtx,
+                                                      AsyncChainRef chain,
+                                                      LLCLRuntimeRef rt,
                                                       int8_t *resumeHdl) {
-  auto *ctx = unwrap<AsyncContext>(asyncCtx);
-  ctx->runtime->getWorkQueue()->addTask(
-      [resume, execHdl]() { resume(execHdl); });
-  ctx->chain.getPointer()->andThenAsync(
+  unwrap(rt)->getWorkQueue()->addTask([resume, execHdl]() { resume(execHdl); });
+  unwrap(chain).getPointer()->andThenAsync(
       [resumeHdl, resume]() { resume(resumeHdl); });
 }
 
 /// Given the async context of a coroutine, indicate that it is complete by
 /// setting its token value.
-extern "C" void KGEN_CompilerRT_LLCL_Complete(AsyncContextRef asyncCtx) {
-  unwrap<AsyncContext>(asyncCtx)->chain.copy().emplace();
+extern "C" void KGEN_CompilerRT_LLCL_Complete(AsyncChainRef chain) {
+  unwrap(chain).copy().emplace();
 }
 
 //===----------------------------------------------------------------------===//
@@ -153,27 +129,10 @@ KGEN_CompilerRT_LLCL_CreateRuntime(ssize_t numThreads) {
 
 /// Given a compact pointer to an LLCL runtime, destroy it.
 extern "C" void KGEN_CompilerRT_LLCL_DestroyRuntime(LLCLRuntimeRef ptr) {
-  delete unwrap<Runtime>(ptr);
+  delete unwrap(ptr);
 }
 
 /// Given a compact pointer to an LLCL runtime, get the number of threads in it.
 extern "C" uint32_t KGEN_CompilerRT_LLCL_ParallelismLevel(LLCLRuntimeRef ptr) {
-  return unwrap<Runtime>(ptr)->getWorkQueue()->getParallelismLevel();
-}
-
-//===----------------------------------------------------------------------===//
-// TaskGroup
-//===----------------------------------------------------------------------===//
-
-extern "C" void
-KGEN_CompilerRT_LLCL_AddTaskToGroup(AsyncContextRef tg,
-                                    ssize_t (*tgCounterDecr)(AsyncContextRef),
-                                    AsyncContextRef taskCtx) {
-  unwrap<AsyncContext>(taskCtx)->chain.andThenAsync(
-      [tg, tgCounterDecr,
-       resultChain = unwrap<AsyncContext>(tg)->chain.copy()]() mutable {
-        if (tgCounterDecr(tg))
-          return;
-        std::move(resultChain).emplace();
-      });
+  return unwrap(ptr)->getWorkQueue()->getParallelismLevel();
 }

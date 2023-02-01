@@ -77,8 +77,9 @@ kgen.func @coroutine_await() -> !pop.coroutine<() -> i32> {
   // CHECK-NEXT:   0: ^{{.*}},
   // CHECK-NEXT:   1: ^[[CLEANUP]]
   // CHECK-NEXT: ]
+  %opaque = pop.coroutine.opaque_handle
   pop.coroutine.await {
-    pop.coroutine.resume %hdl : <() -> i32>
+    pop.coroutine.resume %opaque : !pop.pointer<i8>
   }
   kgen.return %hdl : !pop.coroutine<() -> i32>
 }

@@ -1129,14 +1129,16 @@ kgen.func @slow_function(%arg0: i32) -> !pop.coroutine<() -> i32> {
 kgen.func @async_coroutine(%arg0: i32) -> !pop.coroutine<() -> i32> {
   // CHECK: %[[HDL:.*]] = pop.coroutine.handle : <() -> i32>
   %hdl = pop.coroutine.handle : <() -> i32>
+  // CHECK: %[[OPAQUE:.*]] = pop.coroutine.opaque_handle
+  %opaque = pop.coroutine.opaque_handle
   // CHECK: %[[CALLEE_HDL:.*]] = kgen.call @slow_function
   %calleeHdl = kgen.call @slow_function(%arg0) : (i32) -> !pop.coroutine<() -> i32>
   // CHECK-NEXT: pop.coroutine.await {
   pop.coroutine.await {
-    // CHECK-NEXT: pop.coroutine.resume %[[CALLEE_HDL]] : <() -> i32>
-    pop.coroutine.resume %calleeHdl : <() -> i32>
-    // CHECK-NEXT: pop.coroutine.resume %[[HDL]] : <() -> i32>
-    pop.coroutine.resume %hdl : <() -> i32>
+    // CHECK-NEXT: pop.coroutine.resume %[[CALLEE_HDL]] : !pop.coroutine<() -> i32>
+    pop.coroutine.resume %calleeHdl : !pop.coroutine<() -> i32>
+    // CHECK-NEXT: pop.coroutine.resume %[[OPAQUE]] : !pop.pointer<i8>
+    pop.coroutine.resume %opaque : !pop.pointer<i8>
   // CHECK-NEXT: }
   }
   // CHECK-NEXT: pop.coroutine.destroy %[[CALLEE_HDL]] : <() -> i32>

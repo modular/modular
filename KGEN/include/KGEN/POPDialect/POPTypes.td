@@ -519,4 +519,6 @@ class CoroutineResultTypes<string name, string ref> : TypesMatchWith<
     name # " types match coroutine result types", "coroutine", ref,
     "$_self.cast<CoroutineType>().getResultTypes()">;
 
+def OpaqueCoroutineHandle : PointerOf<I8>;
+
 #endif // POPTYPES_TD

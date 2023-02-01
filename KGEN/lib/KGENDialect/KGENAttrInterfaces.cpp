@@ -7,6 +7,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "Support/MDialect/MAttrs.h"
 
 using namespace M;
 using namespace KGEN;
@@ -50,6 +51,11 @@ struct TypeParameterAttr
     return !isParameterizedType(cast<TypeAttr>(attr).getValue());
   }
 };
+
+struct PointerParameterAttr
+    : public ParameterAttr::ExternalModel<PointerParameterAttr, PointerAttr> {
+  bool isConstant(Attribute attr) const { return true; }
+};
 } // namespace
 
 void KGENDialect::injectAttrInterfaces() {
@@ -57,6 +63,7 @@ void KGENDialect::injectAttrInterfaces() {
   FloatAttr::attachInterface<FloatParameterAttr>(*getContext());
   StringAttr::attachInterface<StringParameterAttr>(*getContext());
   TypeAttr::attachInterface<TypeParameterAttr>(*getContext());
+  PointerAttr::attachInterface<PointerParameterAttr>(*getContext());
 }
 
 bool ParameterAttr::isSimpleConstant(Attribute attr) {
