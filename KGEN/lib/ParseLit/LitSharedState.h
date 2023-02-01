@@ -68,11 +68,13 @@ public:
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType getNoneType() const;
 
-  /// Emit an error through the parser's logic.
-  LitDiagnostic emitError(Location loc, const Twine &twine);
+  /// Emit an error.
+  LitDiagnostic emitError(Location loc, const Twine &message = {});
+  LitDiagnostic emitError(llvm::SMLoc loc, const Twine &message = {});
 
-  /// Emit an error through the parser's logic.
-  LitDiagnostic emitError(llvm::SMLoc loc, const Twine &twine);
+  /// Emit a warning.
+  LitDiagnostic emitWarning(Location loc, const Twine &message = {});
+  LitDiagnostic emitWarning(llvm::SMLoc loc, const Twine &message = {});
 
   /// Inflate a lightweight SMLoc into an MLIR Location object for addition
   /// into the IR.
@@ -177,15 +179,20 @@ public:
     return shared.translateLocation(loc);
   }
 
-  /// Emit an error and notice that so we don't verify the IR at the end of
-  /// compilation.
+  /// Emit an error.
   LitDiagnostic emitError(Location loc, const Twine &message = {}) {
     return shared.emitError(loc, message);
   }
-
-  /// Emit an error at a specific lexer location.
   LitDiagnostic emitError(llvm::SMLoc loc, const Twine &message = {}) {
     return shared.emitError(loc, message);
+  }
+
+  /// Emit a warning.
+  LitDiagnostic emitWarning(Location loc, const Twine &message = {}) {
+    return shared.emitWarning(loc, message);
+  }
+  LitDiagnostic emitWarning(llvm::SMLoc loc, const Twine &message = {}) {
+    return shared.emitWarning(loc, message);
   }
 };
 

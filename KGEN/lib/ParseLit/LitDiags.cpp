@@ -146,12 +146,20 @@ StringAttr LitDiags::getBufferNameIdentifier() const {
 /// Emit an error through the parser's logic.
 LitDiagnostic LitDiags::emitError(Location loc, const Twine &message) {
   errorEmitted = true;
-  return LitDiagnostic(loc, *this) << message;
+  return LitDiagnostic(loc, *this, /*isWarning=*/false) << message;
 }
 
 /// Emit an error through the parser's logic.
 LitDiagnostic LitDiags::emitError(llvm::SMLoc loc, const Twine &message) {
   return emitError(translateLocation(loc), message);
+}
+
+/// Emit a warning.
+LitDiagnostic LitDiags::emitWarning(Location loc, const Twine &message) {
+  return LitDiagnostic(loc, *this, /*isWarning=*/true) << message;
+}
+LitDiagnostic LitDiags::emitWarning(llvm::SMLoc loc, const Twine &message) {
+  return emitWarning(translateLocation(loc), message);
 }
 
 /// Encode the specified source location information into a Location object
@@ -186,12 +194,14 @@ struct LitDiagnostic::Message {
 };
 
 LitDiagnostic::LitDiagnostic(LitDiagnostic &&other)
-    : messages(std::move(other.messages)), diags(other.diags) {
+    : messages(std::move(other.messages)), diags(other.diags),
+      isWarning(other.isWarning) {
   // Do not emit the other diagnostic.
   other.diags = nullptr;
 }
 
-LitDiagnostic::LitDiagnostic(Location loc, LitDiags &diags) : diags(&diags) {
+LitDiagnostic::LitDiagnostic(Location loc, LitDiags &diags, bool isWarning)
+    : diags(&diags), isWarning(isWarning) {
   messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{}});
 }
 
@@ -208,8 +218,9 @@ LitDiagnostic::~LitDiagnostic() {
 
 /// Build the MLIR diagnostic and hand it off to its diagnostic machinery.
 void LitDiagnostic::emitMLIRDiagnostic() {
-  // TODO: Support warnings.
-  Diagnostic mlirDiag(messages.front().loc, mlir::DiagnosticSeverity::Error);
+  auto kind = isWarning ? mlir::DiagnosticSeverity::Warning
+                        : mlir::DiagnosticSeverity::Error;
+  Diagnostic mlirDiag(messages.front().loc, kind);
   mlirDiag << messages.front().text;
   for (auto &note : llvm::drop_begin(messages))
     mlirDiag.attachNote(note.loc) << note.text;
@@ -222,8 +233,8 @@ void LitDiagnostic::emitMLIRDiagnostic() {
 void LitDiagnostic::emitSourceMgrDiagnostic() {
   auto &sourceMgr = diags->sourceMgr;
 
-  // TODO: Support warnings.
-  SourceMgr::DiagKind kind = SourceMgr::DK_Error;
+  SourceMgr::DiagKind kind =
+      isWarning ? SourceMgr::DK_Warning : SourceMgr::DK_Error;
   for (auto &message : messages) {
     auto loc =
         diags->sourceMgrMapper->convertLocToSMLoc(sourceMgr, message.loc);

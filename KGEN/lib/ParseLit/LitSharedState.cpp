@@ -100,13 +100,22 @@ void LitSharedState::initialize(ASTDecl &topLevelDecl) {
   topLevelDecl.resolvedness = DeclResolvedness::fullyResolved;
 }
 
-LitDiagnostic LitSharedState::emitError(Location loc, const Twine &twine) {
-  return diags.emitError(loc, twine);
+LitDiagnostic LitSharedState::emitError(Location loc, const Twine &message) {
+  return diags.emitError(loc, message);
 }
 
 /// Emit an error through the parser's logic.
-LitDiagnostic LitSharedState::emitError(llvm::SMLoc loc, const Twine &twine) {
-  return diags.emitError(loc, twine);
+LitDiagnostic LitSharedState::emitError(llvm::SMLoc loc, const Twine &message) {
+  return diags.emitError(loc, message);
+}
+
+/// Emit a warning.
+LitDiagnostic LitSharedState::emitWarning(Location loc, const Twine &message) {
+  return diags.emitWarning(loc, message);
+}
+LitDiagnostic LitSharedState::emitWarning(llvm::SMLoc loc,
+                                          const Twine &message) {
+  return diags.emitWarning(loc, message);
 }
 
 /// Inflate a lightweight SMLoc into an MLIR Location object for addition

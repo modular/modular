@@ -44,11 +44,13 @@ public:
 
   bool isErrorEmitted() const { return errorEmitted; }
 
-  /// Emit an error through the parser's logic.
+  /// Emit an error.
   LitDiagnostic emitError(Location loc, const Twine &message);
-
-  /// Emit an error through the parser's logic.
   LitDiagnostic emitError(llvm::SMLoc loc, const Twine &message);
+
+  /// Emit a warning.
+  LitDiagnostic emitWarning(Location loc, const Twine &message);
+  LitDiagnostic emitWarning(llvm::SMLoc loc, const Twine &message);
 
   /// Encode the specified source location information into a Location object
   /// for attachment to the IR or error reporting.  This always returns a
@@ -93,7 +95,7 @@ private:
 /// by any number of note messages.
 class LitDiagnostic {
 public:
-  LitDiagnostic(Location loc, LitDiags &diags);
+  LitDiagnostic(Location loc, LitDiags &diags, bool isWarning);
   ~LitDiagnostic();
   LitDiagnostic(LitDiagnostic &&other);
 
@@ -146,6 +148,9 @@ private:
 
   /// This is the diagnostic object to emit to, or null if abandoned.
   LitDiags *diags;
+
+  /// True if this is a warning, false if this is an error.
+  bool isWarning;
 };
 
 /// Represents a range in source code.  The default use-case for this class is
