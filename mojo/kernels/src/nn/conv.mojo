@@ -13,6 +13,7 @@ from Buffer import (
     _raw_stack_allocation,
     partial_simd_load,
     partial_simd_store,
+    _compute_ndbuffer_offset,
 )
 from SIMD import SIMD
 from Assert import assert_param, debug_assert
@@ -25,6 +26,8 @@ from Matmul import (
 )
 from List import create_kgen_list_unknown, create_kgen_list
 from TargetInfo import simd_byte_width
+from Pointer import DTypePointer
+from DType import DType
 
 # Data layout encoding.
 struct Conv2DLayout:
@@ -1612,6 +1615,7 @@ struct ConvNHWCInnerLoopFilterPacked[
     a_row_size: __mlir_type.index,
     pack_inner_size: __mlir_type.index,
     skip_boundary_check: Bool,
+    same_channel_index: Bool,
 ]:
     """Inner loop implementation for mlas-style tiled inner loops for a NHWC
     im2col convolution. Accumulates a gemm tile of input defined by (M, N, K) of
@@ -1634,6 +1638,11 @@ struct ConvNHWCInnerLoopFilterPacked[
     # Convolution shape parameters.
     var conv_shape: ConvShape
 
+    # Table of pointers for all the rows.
+    var offset_table: Buffer[a_row_size, DType.index.value]
+
+    var input_base_pointer: DTypePointer[value_type]
+
     @staticmethod
     fn run(
         c: NDBuffer[2, shape_c, accum_type],
@@ -1653,6 +1662,9 @@ struct ConvNHWCInnerLoopFilterPacked[
             tile_n_k(StaticIntTuple): 2D dimension tuple describing the
                 size of the packed tile of B.
         """
+        let offset_table = Buffer[
+            a_row_size, DType.index.value
+        ].stack_allocation()
         var instance = ConvNHWCInnerLoopFilterPacked[
             shape_input,
             shape_c,
@@ -1663,6 +1675,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             a_row_size,
             pack_inner_size,
             skip_boundary_check,
+            same_channel_index,
         ] {
             c: c,
             input: input,
@@ -1674,9 +1687,49 @@ struct ConvNHWCInnerLoopFilterPacked[
                 - Index(global_offset.M, global_offset.N)
             ),
             conv_shape: conv_shape,
+            offset_table: offset_table,
+            input_base_pointer: input.data,
         }
 
+        # Allocate offset table.
+        if same_channel_index:
+            instance._initialize_offset_table()
+
         instance._run_inner_loop()
+
+    fn _initialize_offset_table(self):
+        var row_idx: Int = 0
+        let k_offset = self.global_offset.K
+        let r_s_c = _k_to_r_s_c_nhwc(k_offset, self.conv_shape)
+        let r_s = Index(r_s_c.__getitem__[0](), r_s_c.__getitem__[1]())
+
+        while row_idx < a_row_size:
+            let m_offset = self.global_offset.M + row_idx
+            let n_ho_wo = _m_to_n_ho_wo_nhwc(m_offset, self.conv_shape)
+            let ho_wo = Index(
+                n_ho_wo.__getitem__[1](), n_ho_wo.__getitem__[2]()
+            )
+            let hi_wi = _ho_wo_to_hi_wi(ho_wo, r_s, self.conv_shape)
+
+            let linear_offset = _compute_ndbuffer_offset(
+                self.input,
+                Index(
+                    n_ho_wo.__getitem__[0](),
+                    hi_wi.__getitem__[0](),
+                    hi_wi.__getitem__[1](),
+                    r_s_c.__getitem__[2](),
+                ).as_tuple(),
+            )
+
+            if hi_wi >= Index(0, 0) and hi_wi < Index(
+                self.conv_shape.h, self.conv_shape.w
+            ):
+                self.offset_table.__setitem__(
+                    row_idx, linear_offset.__as_mlir_index()
+                )
+            else:
+                self.offset_table.__setitem__(row_idx, -1)
+            row_idx += 1
 
     fn _initialize_c_tile(
         self,
@@ -1833,67 +1886,12 @@ struct ConvNHWCInnerLoopFilterPacked[
                 col_idx += simd_size
             row_idx += 1
 
-    @always_inline
-    fn _m_to_n_ho_wo(self, m: Int) -> StaticIntTuple[3]:
-        """Converts post-im2col m dimension index to pre-im2col coordinates on
-        (N, Hout, Wout) dimensions.
-            Args:
-                m (Int): Index on M dimension.
-
-            Returns (StaticIntTuple):
-                The translated 3d indices in (N, Hout, Wout) format.
-        TODO(Fixel): This utilty should be generalized into a im2col util
-        class with some additional layout agnostic logic.
-        """
-        let n = m // (self.conv_shape.out_h * self.conv_shape.out_w)
-        let ho = (
-            Int.remu(m, self.conv_shape.out_h * self.conv_shape.out_w)
-            // self.conv_shape.out_w
-        )
-        let wo = Int.remu(m, self.conv_shape.out_w)
-        return Index(n, ho, wo)
-
-    fn _k_to_r_s_c(self, k: Int) -> StaticIntTuple[3]:
-        """Converts post-im2col k dimension index to pre-im2col coordinates on
-        (R, S, C) dimensions.
-            Args:
-                m (Int): Index on M dimension.
-
-            Returns (StaticIntTuple):
-                The translated 3d indices in (R, S, C) format.
-        TODO(Fixel): This utilty should be generalized into a im2col util
-        class with some additional layout agnostic logic.
-        """
-        let r = k // (self.conv_shape.s * self.conv_shape.c)
-        let s = Int.remu(k // self.conv_shape.c, self.conv_shape.s)
-        let c = Int.remu(k, self.conv_shape.c)
-        return Index(r, s, c)
-
     # TODO: This can be lifted to common utility.
-    fn _ho_wo_to_hi_wi(
-        self, ho_wo: StaticIntTuple[2], r_s: StaticIntTuple[2]
-    ) -> StaticIntTuple[2]:
-        """Converts index on the output images to index on the input images.
-            Args:
-                ho_wo (StaticIntTuple): Index on output image in (Hout, Wout).
-                r_s (StaticIntTuple): Index on filter dimensions in (R, S).
-
-            Returns (StaticIntTuple):
-                Index on input image in (H, W).
-
-            Returns (StaticIntTuple):
-                The translated 3d indices in (R, S, C) format.
-        TODO(Fixel): This utilty should be generalized into a conv util
-        class with some additional layout agnostic logic.
-        """
-        let pad_left = Index(
-            self.conv_shape.pad_h.__getitem__[0](),
-            self.conv_shape.pad_w.__getitem__[0](),
-        )
-        return ho_wo - pad_left + r_s
 
     @always_inline
-    fn _load_a(self, index_m_k: StaticIntTuple[2]) -> SIMD[1, value_type]:
+    fn _load_a(
+        self, index_m_k: StaticIntTuple[2], row_idx: Int
+    ) -> SIMD[1, value_type]:
         """Utility to load one value of Im2col transformed matrix from the
         pre-transformed image.
             Args:
@@ -1902,28 +1900,45 @@ struct ConvNHWCInnerLoopFilterPacked[
             Returns (SIMD):
                 Value loaded from the translated address of image input.
         """
-        let n_ho_wo = self._m_to_n_ho_wo(index_m_k.__getitem__[0]())
-        let rsc = self._k_to_r_s_c(index_m_k.__getitem__[1]())
-        let hi_wi = self._ho_wo_to_hi_wi(
-            Index(n_ho_wo.__getitem__[1](), n_ho_wo.__getitem__[2]()),
-            Index(rsc.__getitem__[0](), rsc.__getitem__[1]()),
-        )
-
-        if hi_wi < Index(
-            self.conv_shape.h, self.conv_shape.w
-        ) and hi_wi >= Index(0, 0):
-            return self.input.simd_load[1](
-                Index(
-                    # N
-                    n_ho_wo.__getitem__[0](),
-                    # H
-                    hi_wi.__getitem__[0](),
-                    # W
-                    hi_wi.__getitem__[1](),
-                    # C
-                    rsc.__getitem__[2](),
-                ).as_tuple()
+        if same_channel_index:
+            let linear_offset: Int = Int(
+                self.offset_table.__getitem__(row_idx).value
             )
+            if linear_offset == -1:
+                return SIMD[1, value_type](0)
+            else:
+                self.offset_table.__setitem__(
+                    row_idx, (linear_offset + 1).__as_mlir_index()
+                )
+                return self.input_base_pointer.load(linear_offset)
+        else:
+            let n_ho_wo = _m_to_n_ho_wo_nhwc(
+                index_m_k.__getitem__[0](), self.conv_shape
+            )
+            let rsc = _k_to_r_s_c_nhwc(
+                index_m_k.__getitem__[1](), self.conv_shape
+            )
+            let hi_wi = _ho_wo_to_hi_wi(
+                Index(n_ho_wo.__getitem__[1](), n_ho_wo.__getitem__[2]()),
+                Index(rsc.__getitem__[0](), rsc.__getitem__[1]()),
+                self.conv_shape,
+            )
+
+            if hi_wi < Index(
+                self.conv_shape.h, self.conv_shape.w
+            ) and hi_wi >= Index(0, 0):
+                return self.input.simd_load[1](
+                    Index(
+                        # N
+                        n_ho_wo.__getitem__[0](),
+                        # H
+                        hi_wi.__getitem__[0](),
+                        # W
+                        hi_wi.__getitem__[1](),
+                        # C
+                        rsc.__getitem__[2](),
+                    ).as_tuple()
+                )
 
         return SIMD[1, value_type](0)
 
@@ -1954,6 +1969,21 @@ struct ConvNHWCInnerLoopFilterPacked[
         # Global K index.
         var global_k = self.global_offset.K + tile_n_k_idx.__getitem__[1]()
 
+        let local_a = Buffer[
+            simd_size * a_row_size,
+            value_type,
+        ].stack_allocation()
+
+        var fill_a_idx: Int = 0
+        while fill_a_idx < a_row_size:
+            var global_m = self.global_offset.M + fill_a_idx
+            let a_val_scalar = self._load_a(
+                Index(global_m, global_k).as_tuple(), fill_a_idx
+            )
+            let a_fill_val = SIMD[simd_size, value_type](a_val_scalar)
+            local_a.simd_store[simd_size](fill_a_idx * simd_size, a_fill_val)
+            fill_a_idx += 1
+
         # Loop over local accumulator tiles.
         var col_idx: Int = 0
         while col_idx < pack_inner_size:
@@ -1964,14 +1994,9 @@ struct ConvNHWCInnerLoopFilterPacked[
             ).cast[accum_type]()
             var row_idx: Int = 0
             while row_idx < a_row_size:
-                var global_m = self.global_offset.M + row_idx
-                let a_val_scalar = self._load_a(
-                    Index(global_m, global_k).as_tuple()
-                )
-                let a_val = SIMD[simd_size, value_type](a_val_scalar).cast[
-                    accum_type
-                ]()
-
+                let a_val = local_a.simd_load[simd_size](
+                    row_idx * simd_size
+                ).cast[accum_type]()
                 var c_idx = Index(row_idx, col_idx).as_tuple()
                 var c_val = c_local.simd_load[simd_size](c_idx)
 
@@ -2013,6 +2038,71 @@ struct ConvNHWCInnerLoopFilterPacked[
 
             self._store_c_tile(c_local, Index(0, idx_n))
             idx_n += pack_inner_size
+
+
+@always_inline
+fn _m_to_n_ho_wo_nhwc(m: Int, conv_shape: ConvShape) -> StaticIntTuple[3]:
+    """Converts post-im2col m dimension index to pre-im2col coordinates on
+    (N, Hout, Wout) dimensions.
+        Args:
+            m (Int): Index on M dimension.
+            conv_shape (ConvShape): convolution dimension description.
+
+        Returns (StaticIntTuple):
+            The translated 3d indices in (N, Hout, Wout) format.
+    TODO(Fixel): This utilty should be generalized into a im2col util
+    class with some additional layout agnostic logic.
+    """
+    let n = m // (conv_shape.out_h * conv_shape.out_w)
+    let ho = (
+        Int.remu(m, conv_shape.out_h * conv_shape.out_w) // conv_shape.out_w
+    )
+    let wo = Int.remu(m, conv_shape.out_w)
+    return Index(n, ho, wo)
+
+
+fn _k_to_r_s_c_nhwc(k: Int, conv_shape: ConvShape) -> StaticIntTuple[3]:
+    """Converts post-im2col k dimension index to pre-im2col coordinates on
+    (R, S, C) dimensions.
+        Args:
+            m (Int): Index on M dimension.
+            conv_shape (ConvShape): convolution dimension description.
+
+        Returns (StaticIntTuple):
+            The translated 3d indices in (R, S, C) format.
+    TODO(Fixel): This utilty should be generalized into a im2col util
+    class with some additional layout agnostic logic.
+    """
+    let r = k // (conv_shape.s * conv_shape.c)
+    let s = Int.remu(k // conv_shape.c, conv_shape.s)
+    let c = Int.remu(k, conv_shape.c)
+    return Index(r, s, c)
+
+
+fn _ho_wo_to_hi_wi(
+    ho_wo: StaticIntTuple[2],
+    r_s: StaticIntTuple[2],
+    conv_shape: ConvShape,
+) -> StaticIntTuple[2]:
+    """Converts index on the output images to index on the input images.
+        Args:
+            ho_wo (StaticIntTuple): Index on output image in (Hout, Wout).
+            r_s (StaticIntTuple): Index on filter dimensions in (R, S).
+            conv_shape (ConvShape): convolution dimension description.
+
+        Returns (StaticIntTuple):
+            Index on input image in (H, W).
+
+        Returns (StaticIntTuple):
+            The translated 3d indices in (R, S, C) format.
+    TODO(Fixel): This utilty should be generalized into a conv util
+    class with some additional layout agnostic logic.
+    """
+    let pad_left = Index(
+        conv_shape.pad_h.__getitem__[0](),
+        conv_shape.pad_w.__getitem__[0](),
+    )
+    return ho_wo - pad_left + r_s
 
 
 # TODO (Fixel): This class has massive code duplication with matmul kernels.
@@ -2140,7 +2230,11 @@ struct ConvIm2ColNHWC[
 
         conv.gemm_shape = gemm_shape
         conv.tile_n_k = calculate_tile_n_k[pack_cache_size, pack_inner_size](
-            gemm_shape
+            GemmShape(
+                gemm_shape.M,
+                gemm_shape.N,
+                conv_shape.c,  # Do not yet pack more than C.
+            )
         )
 
         return conv
@@ -2179,24 +2273,30 @@ struct ConvIm2ColNHWC[
         let valid_k_count = self.gemm_shape.K
         var k_idx: Int = 0
 
-        # Iterate on batch dimension:
+        # Assume starting at multiple of channel count always.
+        # TODO: relax this assumption for perf coverage.
+        while k_idx < valid_k_count:
+            var processed_k: Int = 0
+            # Proceed with the largest K tile until crossing
+            #  valid boundary.
+            while processed_k <= (self.conv_shape.c - tile_k):
+                self._outer_n_loop(b_packed, GemmShape(0, 0, k_idx), tile_k)
+                k_idx += tile_k
+                processed_k += tile_k
 
-        # Proceed with the largest K tile until crossing
-        #  valid boundary.
-        while k_idx <= (valid_k_count - tile_k):
-            self._outer_n_loop(b_packed, GemmShape(0, 0, k_idx), tile_k)
-            k_idx += tile_k
+            # Launch another k tile to clean up the residue to the c boundary.
+            let remaining_k = self.conv_shape.c - processed_k
 
-        # Launch another k tile to clean up the residue:
-        let remaining_k = valid_k_count - k_idx
-
-        # Do a residue tile if original gemm shape K is not
-        #  a multiple of tile K.
-        if remaining_k > 0:
-            # TODO: possibly need to re-adjust N tile here, if the
-            #  residue K is small then could use L2 cache better by
-            #  having a wider N.
-            self._outer_n_loop(b_packed, GemmShape(0, 0, k_idx), remaining_k)
+            # Do a residue tile if original gemm shape K is not
+            #  a multiple of tile K.
+            if remaining_k > 0:
+                # TODO: possibly need to re-adjust N tile here, if the
+                #  residue K is small then could use L2 cache better by
+                #  having a wider N.
+                self._outer_n_loop(
+                    b_packed, GemmShape(0, 0, k_idx), remaining_k
+                )
+                k_idx += remaining_k
 
     fn _outer_n_loop(
         self,
@@ -2413,6 +2513,44 @@ struct ConvIm2ColNHWC[
             skip_col_bound, m_loop_pack_inner_size, 1
         ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
 
+    fn _can_skip_hw_check(
+        self, row_start_index: Int, number_of_rows: Int
+    ) -> Bool:
+        """Checks that the current block of rows are perfectly within image
+        boundary so the check on H and W dimensions can be skipped.
+        """
+        var row_index = row_start_index
+        while row_index < row_start_index + number_of_rows:
+            let n_ho_wo = _m_to_n_ho_wo_nhwc(row_index, self.conv_shape)
+            let ho_wo = Index(
+                n_ho_wo.__getitem__[1](), n_ho_wo.__getitem__[2]()
+            )
+
+            let corner_lower_left = _ho_wo_to_hi_wi(
+                # Output index.
+                ho_wo,
+                # Filter offset r,s.
+                Index(0, 0),
+                self.conv_shape,
+            )
+            let corner_upper_right = _ho_wo_to_hi_wi(
+                # Output index.
+                ho_wo,
+                # Filter offset r,s.
+                Index(self.conv_shape.r - 1, self.conv_shape.s - 1),
+                self.conv_shape,
+            )
+
+            if corner_lower_left >= Index(0, 0) and corner_upper_right < Index(
+                self.conv_shape.h, self.conv_shape.w
+            ):
+                # Continue only if this is within boundary.
+                row_index += 1
+                continue
+            return False
+        # All rows are checked in the group.
+        return True
+
     fn _outer_m_loop_row_helper[
         skip_col_bound: Bool,
         m_loop_pack_inner_size: __mlir_type.index,
@@ -2447,6 +2585,7 @@ struct ConvIm2ColNHWC[
         """
         var row_idx = start_idx
         while row_idx <= (valid_row_count - RowSize):
+            let current_offset = global_offset + GemmShape(row_idx, 0, 0)
             ConvNHWCInnerLoopFilterPacked[
                 shape_input,
                 create_kgen_list_unknown[2](),
@@ -2457,11 +2596,12 @@ struct ConvIm2ColNHWC[
                 RowSize,
                 m_loop_pack_inner_size,
                 skip_col_bound,
+                True,  # same_channel_index
             ].run(
                 self.c,
                 self.input,
                 b_packed,
-                global_offset + GemmShape(row_idx, 0, 0),
+                current_offset,
                 sub_tile_n_k,
                 self.conv_shape,
             )
