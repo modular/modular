@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_broadcast::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$test_broadcast::main():index()' | FileCheck %s
 
 from Broadcast import broadcast
 from Buffer import NDBuffer
