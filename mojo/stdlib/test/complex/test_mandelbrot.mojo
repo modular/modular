@@ -8,7 +8,7 @@
 # together.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_mandelbrot::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$test_mandelbrot::main():index()' | FileCheck %s
 
 from Bool import Bool
 from DType import DType
