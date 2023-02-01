@@ -187,7 +187,7 @@ fn main() -> __mlir_type.index:
 
         _tile_loadconfig(tc_ptr)
         # _tile_storeconfig(tc_ptr)
-        _tile_zero[0]
+        _tile_zero[0]()
         _tile_loadd[1](a.data.bitcast[void](), 64)
         _tile_loadd[2](b.data.bitcast[void](), 64)
         _tile_dpbssd[0, 1, 2]()
