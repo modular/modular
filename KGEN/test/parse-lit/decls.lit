@@ -1,4 +1,4 @@
-# RUN: kgen-translate %s -import-lit -I %stdlibdir -I %S/../lit-examples/ | FileCheck %s
+# RUN: kgen-translate %s -import-lit -I %S/../lit-examples/ | FileCheck %s
 
 from prolog import Error, F32, Int
 

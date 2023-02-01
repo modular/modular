@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit %s -I %stdlibdir -I %S/../lit-examples/ -verify-diagnostics | FileCheck %s
+# RUN: kgen-translate -import-lit %s -I %S/../lit-examples/ -verify-diagnostics | FileCheck %s
 
 from prolog import assert_param, Bool, DType, Int, SIMD
 

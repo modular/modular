@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %stdlibdir | FileCheck %s
+# RUN: kgen-translate -import-lit -verify-diagnostics %s | FileCheck %s
 # ===----------------------------------------------------------------------=== #
 #
 # Standard Prolog(ue) for Lit.

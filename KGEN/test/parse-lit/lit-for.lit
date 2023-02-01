@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit %s -I %stdlibdir | FileCheck %s
+# RUN: kgen-translate -import-lit %s | FileCheck %s
 from Pointer import Pointer
 from Int import Int
 

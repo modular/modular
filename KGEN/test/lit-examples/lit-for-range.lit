@@ -1,4 +1,4 @@
-# RUN: kgen %s -execute -func='$lit-for-range::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$lit-for-range::main():index()' | FileCheck %s
 
 from prolog import Int, printInt, range
 
