@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 class Model:
+    def execute(self, *args) -> None: ...
     def load(self) -> None: ...
 
 class InferenceSession:
