@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %stdlibdir
+# RUN: kgen-translate -import-lit -verify-diagnostics %s
 
 from Pointer import Pointer
 from Int import Int

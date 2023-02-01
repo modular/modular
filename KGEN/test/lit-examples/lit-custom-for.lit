@@ -1,4 +1,4 @@
-# RUN: kgen %s -execute -func='$lit-custom-for::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$lit-custom-for::main():index()' | FileCheck %s
 
 from Pointer import Pointer
 from Int import Int

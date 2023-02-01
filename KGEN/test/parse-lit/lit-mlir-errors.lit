@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %stdlibdir -I %S/../lit-examples/
+# RUN: kgen-translate -import-lit -verify-diagnostics %s -I %S/../lit-examples/
 
 from prolog import Bool, DType, Error, F32, Int, object
 

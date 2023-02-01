@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit %s -verify-diagnostics -I %stdlibdir | FileCheck %s
+# RUN: kgen-translate -import-lit %s -verify-diagnostics | FileCheck %s
 
 # CHECK: lit.func @"mlirMagicTest{{.*}}(%x: bf16, %y: f8E5M2)
 fn mlirMagicTest(

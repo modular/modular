@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit %s -I %stdlibdir -I %S/../lit-examples/ | FileCheck %s
+# RUN: kgen-translate -import-lit %s -I %S/../lit-examples/ | FileCheck %s
 
 # CHECK: module {
 
