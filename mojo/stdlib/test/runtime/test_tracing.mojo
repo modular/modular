@@ -30,10 +30,9 @@ fn test_tracing[level: Int]():
         trace.__del__()
         return res
 
-    async fn test_tracing_add_two_of_them(a: Int, b: Int) -> Int:
-        let rt = Runtime.get_current()
-        var t0 = rt.run_task[Int](test_tracing_add[1](a))
-        var t1 = rt.run_task[Int](test_tracing_add[2](b))
+    async fn test_tracing_add_two_of_them(rt: Runtime, a: Int, b: Int) -> Int:
+        var t0 = rt.create_task[Int](test_tracing_add[1](a))
+        var t1 = rt.create_task[Int](test_tracing_add[2](b))
         let result = await t0 + await t1
         t0.__del__()
         t1.__del__()
@@ -41,7 +40,7 @@ fn test_tracing[level: Int]():
 
     let rt = Runtime(4, "-")
     let trace = Trace[level]("trace event 1", "detail event 1")
-    let task = rt.init_and_run[Int](test_tracing_add_two_of_them(10, 20))
+    let task = rt.create_task[Int](test_tracing_add_two_of_them(rt, 10, 20))
     task.wait()
     trace.__del__()
     task.__del__()
