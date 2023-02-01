@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_activations::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$test_activations::main():index()' | FileCheck %s
 
 from Activations import relu, relu_n1, prelu, gelu, gelu_approximate
 from DType import DType
