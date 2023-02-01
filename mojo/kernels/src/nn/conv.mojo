@@ -2102,7 +2102,7 @@ fn _ho_wo_to_hi_wi(
         conv_shape.pad_h.__getitem__[0](),
         conv_shape.pad_w.__getitem__[0](),
     )
-    return ho_wo - pad_left + r_s
+    return ho_wo * conv_shape.stride - pad_left + r_s * conv_shape.dilation
 
 
 # TODO (Fixel): This class has massive code duplication with matmul kernels.
@@ -2156,12 +2156,6 @@ struct ConvIm2ColNHWC[
         """
         # Assert on supported convolution dimensions.
 
-        # Assert same padding.
-        debug_assert(conv_shape.out_h == conv_shape.h)
-        debug_assert(conv_shape.out_w == conv_shape.w)
-        # Assert unit stride and padding.
-        debug_assert(conv_shape.stride == Index(1, 1))
-        debug_assert(conv_shape.dilation == Index(1, 1))
         var conv = ConvIm2ColNHWC[
             shape_input,
             shape_filter,
