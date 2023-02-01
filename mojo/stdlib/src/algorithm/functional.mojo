@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, assert_param_bool_msg
+from Coroutine import Coroutine
 from Bool import Bool
 from Int import Int
-from LLCL import Future, Runtime, TaskGroup
+from LLCL import Runtime, TaskGroup
 from Range import range
 from Vector import UnsafeFixedVector
 
@@ -123,16 +124,15 @@ fn parallelForEachNChain[
         `!kgen.signature<(`, Int, `,`, args_type, `) async -> !lit.none>`
     ],
 ](
-    rt: Runtime,
     total_count: Int,
     args: args_type,
-    tasks&: UnsafeFixedVector[Future[none]],
+    tasks&: UnsafeFixedVector[Coroutine[none]],
     tg&: TaskGroup,
 ):
     for i in range(total_count):
-        let task = rt.init_and_run[none](func(i, args))
+        let task: Coroutine[__mlir_type.`!lit.none`] = func(i, args)
+        tg.create_task[none](task)
         tasks.append(task)
-        tg.add_task[none](task)
 
 
 @interface
@@ -179,17 +179,17 @@ fn parallelForEachN_enabled[
         return
 
     var tg: TaskGroup
-    var tasks: UnsafeFixedVector[Future[none]]
+    var tasks: UnsafeFixedVector[Coroutine[none]]
     var b = Bool(False)
     if total_count > 1:
 
         async fn task_fn(i: Int, args: args_type):
             func(i, args)
 
-        tasks = UnsafeFixedVector[Future[none]](total_count - 1)
+        tasks = UnsafeFixedVector[Coroutine[none]](total_count - 1)
         tg = TaskGroup(rt)
         parallelForEachNChain[args_type, task_fn](
-            rt, total_count - 1, args, tasks, tg
+            total_count - 1, args, tasks, tg
         )
         b = True
 
