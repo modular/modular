@@ -90,6 +90,10 @@ struct NoDebugInlineTest:
   fn test():
     return
 
+# CHECK-LABEL: lit.func @"testAlwaysInlineNoDebug
+# CHECK-SAME: always_inline_no_debug {
+@always_inline("nodebug")
+fn testAlwaysInlineNoDebug():
 
 # CHECK-LABEL: lit.func @"math{{.*}} attributes {noDebugInline}
 @nodebug_inline

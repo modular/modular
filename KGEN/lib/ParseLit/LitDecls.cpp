@@ -1177,6 +1177,13 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
           applyImplements(*callNode);
         else if (declRef->spelling == "evaluator")
           applyEvaluator(*callNode);
+        // always_inline("nodebug")
+        else if (declRef->spelling == "always_inline" &&
+                 callNode->args.size() == 1 &&
+                 isa<StringLiteralNode>(callNode->args[0]) &&
+                 cast<StringLiteralNode>(callNode->args[0])->spelling ==
+                     "\"nodebug\"")
+          funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::EnabledNoDebug);
         else
           processedIt = false;
       }
