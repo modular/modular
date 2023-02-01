@@ -390,9 +390,11 @@ LogicalResult ArrayReplaceOp::verify() {
 //===----------------------------------------------------------------------===//
 
 static Type getPointerToArrayElementType(Type arrayPtr) {
-  return PointerType::get(
-      cast<POP::ArrayType>(cast<PointerType>(arrayPtr).getResolvedElementType())
-          .getElementType());
+  auto ptr = dyn_cast<PointerType>(arrayPtr);
+  if (!ptr)
+    return Type();
+  auto array = dyn_cast<POP::ArrayType>(ptr.getResolvedElementType());
+  return array ? PointerType::get(array.getElementType()) : Type();
 }
 
 //===----------------------------------------------------------------------===//
