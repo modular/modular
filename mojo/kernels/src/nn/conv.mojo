@@ -56,7 +56,7 @@ struct ImageData[
         Returns:
             An ImageData instance constructed.
         """
-        assert_param[static_layout == Conv2DLayout.unknown]
+        assert_param[static_layout == Conv2DLayout.unknown]()
         var image: ImageData[shape, type, static_layout]
         image.data = data
         image.dynamic_layout = layout
@@ -65,7 +65,7 @@ struct ImageData[
     fn __new__(
         data: NDBuffer[4, shape, type]
     ) -> ImageData[shape, type, static_layout]:
-        assert_param[static_layout != Conv2DLayout.unknown]
+        assert_param[static_layout != Conv2DLayout.unknown]()
         var image: ImageData[shape, type, static_layout]
         image.data = data
         return image
@@ -78,7 +78,7 @@ struct ImageData[
             Returns:
                 The image data with static data layout.
         """
-        assert_param[static_layout == Conv2DLayout.unknown]
+        assert_param[static_layout == Conv2DLayout.unknown]()
         return ImageData[shape, type, new_static_layout](self.data)
 
     fn get_layout(self) -> Int:
@@ -853,7 +853,7 @@ struct PackIm2ColNCHW[
         local_tile_nk_offset: StaticIntTuple[2],
         # Offset on whole image [Ho, Wo].
         global_out_image_offset: StaticIntTuple[2],
-    ) -> StaticIntTuple[2]:
+    ):
         """Fills a simd vector of image data, handling padding and wrap around.
         Args:
             c_idx (Int): Input channel index.
@@ -914,8 +914,6 @@ struct PackIm2ColNCHW[
 
         # Write the simd vector into the packed matrix.
         self._pack_vector(local_tile_nk_offset, vec_data)
-
-        return Index(h_o_idx, w_o_idx)
 
     fn _pack_zeros_for_k(self, k_idx: Int):
         """Fills zero for the given k index on the packed output.
