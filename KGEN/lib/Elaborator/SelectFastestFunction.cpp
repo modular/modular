@@ -26,7 +26,7 @@ produceObjectFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
   // Create the set of symbols to export.
   DenseMap<StringAttr, StringAttr> exportedSymbols;
   for (auto e : exports) {
-    std::string aliasName = makeCIdentifier(e.getSymNameAttr());
+    std::string aliasName = makeCWrapperName(e.getSymNameAttr());
     exportedSymbols.insert(
         {e.getSymNameAttr(), StringAttr::get(e.getContext(), aliasName)});
   }

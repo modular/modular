@@ -50,7 +50,7 @@ std::string M::getUniqueSymbolName(std::string baseName, SymbolTable &symtab,
   return uniqueName;
 }
 
-std::string M::makeCIdentifier(StringRef ident) {
+std::string M::makeCWrapperName(StringRef ident) {
   std::string res(ident.str());
   if (!ident.empty() && !llvm::isAlnum(res[0]))
     res[0] = 'x';
