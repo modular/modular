@@ -767,7 +767,7 @@ static ParseResult parseExportOp(OpAsmParser &p, SymbolRefAttr &exported,
   if (p.parseOptionalKeyword("as")) {
     alias = StringAttr::get(
         p.getContext(),
-        makeCIdentifier(exported.getLeafReference().getValue()));
+        makeCWrapperName(exported.getLeafReference().getValue()));
     return success();
   }
   if (p.parseSymbolName(alias))
