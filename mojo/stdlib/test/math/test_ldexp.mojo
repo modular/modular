@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_ldexp::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$test_ldexp::main():index()' | FileCheck %s
 
 from Assert import assert_param
 from DType import DType

@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_tanh::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: kgen %s -execute -func='$test_tanh::main():index()' | FileCheck %s
 
 from DType import DType
 from IO import print
