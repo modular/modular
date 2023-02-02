@@ -215,6 +215,23 @@ getAttrForTensorData(ShapedType type, StringRef bufferName, ArrayRef<char> data,
                      Optional<size_t> optAlignment = {},
                      bool forceOutOfLine = false, bool mustBeAligned = false);
 
+//===----------------------------------------------------------------------===//
+// TargetInfoAttr
+//===----------------------------------------------------------------------===//
+
+/// Look for a target info specification inside the provided module. Returns
+/// null if there is not one.
+TargetInfoAttr getTargetInfo(ModuleOp module);
+/// Set the target info specification on the provided module. The module cannot
+/// already have a target specification.
+void setTargetInfo(ModuleOp module, TargetInfoAttr target);
+/// Look for a target info specification in the nearest surrounding module from
+/// the provided operation. Returns null if one cannot be found.
+TargetInfoAttr lookupTargetInfo(Operation *from);
+/// Get the target specification from the module. If one is not present, assume
+/// the host target and attach the relevant target.
+TargetInfoAttr getTargetInfoOrHost(ModuleOp module);
+
 } // namespace M
 
 #endif // SUPPORT_MDIALECT_MATTRS_H

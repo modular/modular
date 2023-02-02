@@ -11,6 +11,7 @@
 #include "Support/MDialect/MDialect.h"
 #include "Support/SIMD.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "llvm/ADT/APSInt.h"
@@ -628,19 +629,6 @@ ShapedType AlignedBytesAttr::getType() const {
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
 
-namespace mlir {
-/// Allow target triples to be parsed by MLIR.
-template <>
-struct FieldParser<llvm::Triple> {
-  static FailureOr<llvm::Triple> parse(AsmParser &p) {
-    std::string tripleStr;
-    if (failed(p.parseString(&tripleStr)))
-      return failure();
-    return llvm::Triple(tripleStr);
-  }
-};
-} // namespace mlir
-
 llvm::hash_code TargetInfoAttr::hash() const {
   return llvm::hash_combine(getTripleStr(), getCpu(), getFeatures(),
                             getPointerSize(), getSimdBitWidth());
@@ -666,6 +654,49 @@ TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
   return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu, os.str(),
                              sizeof(ssize_t), kPreferredSIMDBitWidth);
 }
+
+/// The dialect attribute name used to attached target info to a module.
+static constexpr llvm::StringLiteral targetInfoAttrName = "M.target_info";
+
+TargetInfoAttr M::getTargetInfo(ModuleOp module) {
+  return module->getAttrOfType<TargetInfoAttr>(targetInfoAttrName);
+}
+
+void M::setTargetInfo(ModuleOp module, TargetInfoAttr target) {
+  assert(!getTargetInfo(module) && "module already has a target specification");
+  module->setAttr(targetInfoAttrName, target);
+}
+
+TargetInfoAttr M::lookupTargetInfo(Operation *from) {
+  if (auto module = dyn_cast<ModuleOp>(from))
+    return getTargetInfo(module);
+  auto module = from->getParentOfType<ModuleOp>();
+  if (!module)
+    return {};
+  return getTargetInfo(module);
+}
+
+TargetInfoAttr M::getTargetInfoOrHost(ModuleOp module) {
+  TargetInfoAttr target = getTargetInfo(module);
+  if (!target) {
+    target = TargetInfoAttr::getForHost(module.getContext());
+    setTargetInfo(module, target);
+  }
+  return target;
+}
+
+namespace mlir {
+/// Allow target triples to be parsed by MLIR.
+template <>
+struct FieldParser<llvm::Triple> {
+  static FailureOr<llvm::Triple> parse(AsmParser &p) {
+    std::string tripleStr;
+    if (failed(p.parseString(&tripleStr)))
+      return failure();
+    return llvm::Triple(tripleStr);
+  }
+};
+} // namespace mlir
 
 namespace llvm {
 /// Provide the ability to hash triples for attribute uniquing.
