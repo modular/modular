@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CacheDialect/CacheDialect.h"
+#include "KGEN/CompilerRT.h"
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENPasses.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -53,6 +54,9 @@ int main(int argc, char **argv) {
 
   KGEN::registerPasses();
   KGEN::registerLowerToLLVMPipeline();
+
+  // Init CompilerRT.
+  KGEN_CompilerRT_Initialize();
 
   return failed(mlir::MlirOptMain(argc, argv, "kgen optimizer driver", registry,
                                   /*preloadDialectsInContext=*/true));

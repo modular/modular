@@ -164,6 +164,7 @@ function(add_kgen_kernel target)
   )
 
   add_library(${target} ${object_file_name})
+  target_link_libraries(${target} PRIVATE KGENCompilerRT)
   add_dependencies(${target} ${KGEN_LIB_DEPENDS} kgen)
   set_target_properties(${target}
     PROPERTIES LINKER_LANGUAGE C

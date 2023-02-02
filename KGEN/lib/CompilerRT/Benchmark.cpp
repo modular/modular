@@ -4,9 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/CompilerRT.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/MathExtras.h"
 #include "Support/MicroBenchmark.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
@@ -33,8 +35,8 @@ struct OpaqueFunction {
 /// This function takes a nullary function and benchmarks it using the
 /// micrbenchmarking framework. It returns the mean runtime of the function in
 /// nanoseconds.
-extern "C" double KGEN_CompilerRT_Benchmark(double fastestDuration,
-                                            OpaqueFunction func) {
+MODULAR_EXPORT double KGEN_CompilerRT_Benchmark(double fastestDuration,
+                                                OpaqueFunction func) {
   MicroBenchmark benchmark("kgen benchmark function",
                            [func](MicroBenchmark::State &state) {
                              for (auto _ : state)
@@ -96,7 +98,7 @@ extern "C" double KGEN_CompilerRT_Benchmark(double fastestDuration,
 ///
 /// If the function ever fails, `emitErrorFn` is invoked with a basic error
 /// message indicating the nature of the failure.
-extern "C" ssize_t KGEN_CompilerRT_SelectFastestFunction(
+MODULAR_EXPORT ssize_t KGEN_CompilerRT_SelectFastestFunction(
     ArrayRef<OpaqueFunction> functions, ArrayRef<int64_t> weights,
     ArrayRef<void *> configs, void *(*populateFn)(void *),
     bool (*compareFn)(void *, void *, void *, void *),
@@ -247,7 +249,7 @@ static constexpr size_t SAMPLES = 20;
 
 using memset_ty = void(uint8_t *, uint8_t, ssize_t);
 
-uint64_t measureScore(memset_ty *fn, ssize_t size) {
+static uint64_t measureScore(memset_ty *fn, ssize_t size) {
   auto ptr = M::makeAlignedUniquePtr<uint8_t>(kPreferredMemoryAlignment, size);
 
   std::vector<uint64_t> samples;
@@ -276,7 +278,7 @@ uint64_t measureScore(memset_ty *fn, ssize_t size) {
 
 // Benchmark the given memset implementation on the given distribution of input
 // data.
-uint64_t
+static uint64_t
 benchMemsetFn(memset_ty *fn,
               const SmallVector<std::pair<ssize_t, ssize_t>> &inputSpec) {
   uint64_t result = 0;
@@ -290,8 +292,8 @@ benchMemsetFn(memset_ty *fn,
   return result;
 }
 
-extern "C" ssize_t KGEN_CompilerRT_SelectFastestMemset(memset_ty **fns,
-                                                       ssize_t num) {
+MODULAR_EXPORT ssize_t KGEN_CompilerRT_SelectFastestMemset(memset_ty **fns,
+                                                           ssize_t num) {
   // Make it static to avoid parsing the string every time
   static SmallVector<std::pair<ssize_t, ssize_t>> v =
       parseMemsetDataHistogramString();
@@ -307,4 +309,14 @@ extern "C" ssize_t KGEN_CompilerRT_SelectFastestMemset(memset_ty **fns,
       best_idx = fn_idx;
   }
   return best_idx;
+}
+
+void M::KGEN::registerBenchmark(
+    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
+  funcs.push_back(
+      {"KGEN_CompilerRT_Benchmark", (void *)&KGEN_CompilerRT_Benchmark});
+  funcs.push_back({"KGEN_CompilerRT_SelectFastestFunction",
+                   (void *)&KGEN_CompilerRT_SelectFastestFunction});
+  funcs.push_back({"KGEN_CompilerRT_SelectFastestMemset",
+                   (void *)&KGEN_CompilerRT_SelectFastestMemset});
 }

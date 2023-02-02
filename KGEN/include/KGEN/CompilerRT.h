@@ -7,6 +7,133 @@
 #ifndef KGEN_COMPILER_RT_H
 #define KGEN_COMPILER_RT_H
 
-bool KGEN_CompilerRT_Initialize();
+#include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
+
+/// This file includes at least one declaration from each .cpp file in the
+/// CompilerRT directory. This is used to ensure that the functions defined are
+/// marked as 'used' in a linked executable, and can be accessed by the JIT in
+/// that process.
+
+//===----------------------------------------------------------------------===//
+// Initialize.cpp
+//===----------------------------------------------------------------------===//
+
+MODULAR_EXPORT MODULAR_ATTRIBUTE_USED bool KGEN_CompilerRT_Initialize();
+
+//===----------------------------------------------------------------------===//
+// Benchmark.cpp
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+/// Register the benchmarking functions.
+void registerBenchmark(
+    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
+//===----------------------------------------------------------------------===//
+// DebugAssert.cpp
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+/// Register the debug assert functions.
+void registerDebugAssert(
+    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
+MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void
+KGEN_CompilerRT_DebugAssert(bool cond, const char *funcName,
+                            const char *fileName, const char *message);
+
+//===----------------------------------------------------------------------===//
+// InitIntelAMX.cpp
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+/// Register the intel AMX functions.
+void registerIntelAMX(
+    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
+#if defined(__x86_64__) && defined(__linux__)
+MODULAR_EXPORT MODULAR_ATTRIBUTE_USED bool KGEN_CompilerRT_Init_Intel_AMX();
+#endif
+
+//===----------------------------------------------------------------------===//
+// LLCL.cpp
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+/// Register the LLCL functions.
+void registerLLCL(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
+MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void
+KGEN_CompilerRT_LLCL_DestroyRuntime(void *runtimeRef);
+
+//===----------------------------------------------------------------------===//
+// Print.cpp
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+/// Register the Print functions.
+void registerPrint(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
+MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void
+KGEN_CompilerRT_PrintToStdErr(const char *data, ssize_t size);
+
+//===----------------------------------------------------------------------===//
+// Random.cpp
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+/// Register the Random functions.
+void registerRandom(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
+MODULAR_EXPORT MODULAR_ATTRIBUTE_USED double
+KGEN_CompilerRT_RandomDouble(double min, double max);
+
+//===----------------------------------------------------------------------===//
+// System.cpp
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+/// Register the system functions.
+void registerSystem(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
+MODULAR_EXPORT MODULAR_ATTRIBUTE_USED size_t KGEN_CompilerRT_CoreCount();
+
+//===----------------------------------------------------------------------===//
+// Tracing.cpp
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+/// Register the Tracing functions.
+void registerTracing(
+    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
+MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void
+KGEN_CompilerRT_TimeTraceProfilerEnd();
+
+/// This declaration is used to ensure that the individual .o files are linked
+/// into things that include this header. We only need to 'call' one function
+/// from each .cpp file. Note that this function should never actually be
+/// called!
+MODULAR_VISIBILITY_EXPORT MODULAR_ATTRIBUTE_USED static void init() {
+  KGEN_CompilerRT_Initialize();
+  KGEN_CompilerRT_DebugAssert(false, "", "", "");
+#if defined(__x86_64__) && defined(__linux__)
+  KGEN_CompilerRT_Init_Intel_AMX();
+#endif
+  KGEN_CompilerRT_LLCL_DestroyRuntime(nullptr);
+  KGEN_CompilerRT_PrintToStdErr(nullptr, 0);
+  KGEN_CompilerRT_RandomDouble(0, 0);
+  KGEN_CompilerRT_CoreCount();
+  KGEN_CompilerRT_TimeTraceProfilerEnd();
+}
 
 #endif // KGEN_COMPILER_RT_H

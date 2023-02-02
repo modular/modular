@@ -69,6 +69,11 @@ public:
   /// Add an object to the JIT.
   ErrorOrSuccess add(StringRef libName, Cache::BufferRef obj);
 
+  /// Add a function pointer to the JIT to participate in symbol resolution.
+  // TODO (8082): This should not be necessary - the JIT should resolve things
+  //   in the current process.
+  ErrorOrSuccess add(StringRef libName, StringRef functionName, void *fn);
+
   /// Look up a func and return it as a CompiledFunc object if we can find it.
   ErrorOr<CompiledFunc> lookup(StringRef libName, StringRef symbol);
 

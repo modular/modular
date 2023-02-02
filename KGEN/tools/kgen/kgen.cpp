@@ -387,6 +387,20 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return failure(clOptions.reportError(engineOr.getError()));
   ExecutionEngine engine = std::move(*engineOr);
 
+  // TODO (8082): This should not be necessary.
+  std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
+  KGEN::registerBenchmark(compilerRTFunctions);
+  KGEN::registerDebugAssert(compilerRTFunctions);
+  KGEN::registerIntelAMX(compilerRTFunctions);
+  KGEN::registerLLCL(compilerRTFunctions);
+  KGEN::registerPrint(compilerRTFunctions);
+  KGEN::registerRandom(compilerRTFunctions);
+  KGEN::registerSystem(compilerRTFunctions);
+  KGEN::registerTracing(compilerRTFunctions);
+  for (auto [name, ptr] : compilerRTFunctions)
+    if (auto err = engine.add("exec", name, ptr))
+      return failure(clOptions.reportError(err.getError()));
+
   if (auto err = engine.add("exec", std::move(standaloneObject)))
     return failure(clOptions.reportError(err.getError()));
 

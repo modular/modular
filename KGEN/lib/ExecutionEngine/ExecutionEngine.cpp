@@ -133,15 +133,19 @@ ExecutionEngine::~ExecutionEngine() = default;
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 
 ErrorOrSuccess ExecutionEngine::add(StringRef name, BufferRef obj) {
-  // Create a new dylib so that we don't have ODR violations.
-  auto dylibOr = jit->createJITDylib(name.str());
-  if (!dylibOr)
-    return M::Error(toString(dylibOr.takeError()));
+  llvm::orc::JITDylib *dylib = jit->getJITDylibByName(name);
+  if (!dylib) {
+    // Create a new dylib so that we don't have ODR violations.
+    auto dylibOr = jit->createJITDylib(name.str());
+    if (!dylibOr)
+      return M::Error(toString(dylibOr.takeError()));
+    dylib = &*dylibOr;
 
-  // Resolve symbols that are statically linked in the current process.
-  dylibOr->addGenerator(
-      cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-          jit->getDataLayout().getGlobalPrefix())));
+    // Resolve symbols that are statically linked in the current process.
+    dylib->addGenerator(
+        cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+            jit->getDataLayout().getGlobalPrefix())));
+  }
 
   // If the addObjectFile succeeds we store a ref to this buffer so the data
   // won't be deallocated until the JIT is destroyed. This version of
@@ -149,11 +153,39 @@ ErrorOrSuccess ExecutionEngine::add(StringRef name, BufferRef obj) {
   std::unique_ptr<llvm::MemoryBuffer> objMemBuf =
       llvm::MemoryBuffer::getMemBuffer(obj->getBuffer(), /*BufferName=*/"",
                                        /*RequiresNullTerminator=*/false);
-  if (auto err = jit->addObjectFile(*dylibOr, std::move(objMemBuf)))
+  if (auto err = jit->addObjectFile(*dylib, std::move(objMemBuf)))
     return M::Error(toString(std::move(err)));
 
   // Store a ref to the buffer data.
   objBuffers.push_back(obj.copy());
+
+  return success();
+}
+
+// TODO (8082): This should not be necessary.
+ErrorOrSuccess ExecutionEngine::add(StringRef libName, StringRef functionName,
+                                    void *fn) {
+  llvm::orc::JITDylib *dylib = jit->getJITDylibByName(libName);
+  if (!dylib) {
+    // Create a new dylib so that we don't have ODR violations.
+    auto dylibOr = jit->createJITDylib(libName.str());
+    if (!dylibOr)
+      return M::Error(toString(dylibOr.takeError()));
+    dylib = &*dylibOr;
+
+    // Resolve symbols that are statically linked in the current process.
+    dylib->addGenerator(
+        cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+            jit->getDataLayout().getGlobalPrefix())));
+  }
+
+  if (auto err = dylib->define(llvm::orc::absoluteSymbols(
+          {{jit->mangleAndIntern(functionName),
+            {llvm::pointerToJITTargetAddress(fn),
+             llvm::JITSymbolFlags::Exported |
+                 llvm::JITSymbolFlags::Absolute}}}))) {
+    return Error(toString(std::move(err)));
+  }
 
   return success();
 }
