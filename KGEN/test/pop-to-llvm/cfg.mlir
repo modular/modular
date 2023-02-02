@@ -1,8 +1,10 @@
 // RUN: kgen-opt %s -split-input-file -pass-pipeline='builtin.module(lower-kgen-to-llvm,llvm.func(lower-pop-to-llvm,lower-scf-to-llvm),llvm.func(reconcile-unrealized-casts))' | FileCheck %s
 
-// CHECK-LABEL: @variant_visit
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+
+// CHECK-LABEL: @variant_visit_no_default
 // CHECK-SAME: %[[A:.*]]:
-kgen.func @variant_visit(%a: !pop.variant<i32, f32>) -> !pop.scalar<si32> {
+kgen.func @variant_visit_no_default(%a: !pop.variant<i32, f32>) -> !pop.scalar<si32> {
   // CHECK-NEXT: %[[CONTENT:.*]] = llvm.extractvalue %[[A]][0]
   // CHECK-NEXT: %[[V0:.*]] = llvm.extractvalue %[[CONTENT]][0]
   // CHECK-NEXT: %[[DISCR:.*]] = llvm.extractvalue %[[A]][1]
@@ -35,10 +37,8 @@ kgen.func @variant_visit(%a: !pop.variant<i32, f32>) -> !pop.scalar<si32> {
   kgen.return %0 : !pop.scalar<si32>
 }
 
-// -----
-
-// CHECK-LABEL: @variant_visit
-kgen.func @variant_visit(%a: !pop.variant<scalar<si32>, f32>) -> !pop.scalar<si32> {
+// CHECK-LABEL: @variant_visit_default
+kgen.func @variant_visit_default(%a: !pop.variant<scalar<si32>, f32>) -> !pop.scalar<si32> {
   %0 = kgen.param.constant: scalar<si32> = <<1>>
   // CHECK: llvm.switch %{{.*}} : i1, ^bb2
   // CHECK-NEXT: 0: ^bb1
@@ -59,10 +59,8 @@ kgen.func @variant_visit(%a: !pop.variant<scalar<si32>, f32>) -> !pop.scalar<si3
   kgen.return %1 : !pop.scalar<si32>
 }
 
-// -----
-
-// CHECK-LABEL: @variant_visit
-kgen.func @variant_visit(%a: !pop.variant<i1, i2, i3, i4>) {
+// CHECK-LABEL: @variant_visit_many
+kgen.func @variant_visit_many(%a: !pop.variant<i1, i2, i3, i4>) {
   // CHECK: llvm.switch %{{.*}} : i2, ^bb3
   // CHECK-NEXT: 1: ^bb1
   // CHECK-NEXT: 3: ^bb2
@@ -78,8 +76,6 @@ kgen.func @variant_visit(%a: !pop.variant<i1, i2, i3, i4>) {
   }
   kgen.return
 }
-
-// -----
 
 // Ensure `pop.variant.visit` nested inside SCF ops can be lowered.
 
@@ -99,4 +95,6 @@ kgen.func @visit_in_if(%cond: i1, %variant: !pop.variant<i32, i64>, %a: index, %
     scf.yield %a : index
   }
   kgen.return %0 : index
+}
+
 }

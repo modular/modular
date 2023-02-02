@@ -1,5 +1,7 @@
 // RUN: kgen-opt %s -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm,canonicalize))' | FileCheck %s
 
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+
 // CHECK-LABEL: @variant_create_0
 kgen.func @variant_create_0(%arg0: i32) -> !pop.variant<i32> {
   // CHECK-DAG: %[[DISCR:.*]] = llvm.mlir.constant(false) : i1
@@ -294,4 +296,6 @@ kgen.func @variant_get_5(%arg0: !pop.variant<pointer<index>>) -> !pop.pointer<in
   // CHECK: llvm.inttoptr
   %0 = pop.variant.get %arg0 : !pop.variant<pointer<index>> as !pop.pointer<index>
   kgen.return %0 : !pop.pointer<index>
+}
+
 }

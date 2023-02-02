@@ -106,6 +106,11 @@ OwningOpRef<ModuleOp> ObjectCompiler::produceStandaloneModule() {
   // of this function.
   OwningOpRef<ModuleOp> singleModule = ModuleOp::create(module->getLoc());
 
+  // Propagate the target info.
+  TargetInfoAttr target = getTargetInfo(module);
+  assert(target && "module to compile is missing target specification");
+  setTargetInfo(*singleModule, target);
+
   // Create a new symbol table for the sliced module.
   SymbolTable sliceSymtab(*singleModule);
 

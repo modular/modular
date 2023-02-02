@@ -61,6 +61,10 @@ struct ProcessBuffer {
     if (!module)
       return failure(clOptions.reportError("could not parse input file"));
 
+    // The IR module is being compiled to an object file. Find a target
+    // specification or use the host target.
+    TargetInfoAttr target = getTargetInfoOrHost(*module);
+
     SymbolTable symtab(*module);
     auto compiler = KGEN::ObjectCompiler::create(runtime, ".kgen_cache", symtab,
                                                  compilationOptions);
@@ -68,13 +72,9 @@ struct ProcessBuffer {
       return failure(clOptions.reportError("could not create compiler: " +
                                            Twine(compiler.getError())));
 
-    // Lower the input to an object.
-    auto attr = TargetInfoAttr::getForHost(ctx);
-
     // Produce a single standalone .o
     auto standaloneOr = compiler->produceStandaloneObject(
-        attr,
-        /*isJIT=*/clOptions.cmd == Command::kExecute);
+        target, /*isJIT=*/clOptions.cmd == Command::kExecute);
     if (failed(standaloneOr))
       return failure();
     Cache::BufferRef standaloneObject = std::move(*standaloneOr);

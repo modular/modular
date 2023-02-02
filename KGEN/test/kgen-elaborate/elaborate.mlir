@@ -1568,3 +1568,13 @@ kgen.generator @itf_impl_0() -> () implements @itf {
 kgen.generator @itf_impl_1() -> () implements @itf {
   kgen.return
 }
+
+// -----
+
+// COM: Check that `elaborate-generators` attaches the host target info.
+
+// CHECK: module attributes {M.target_info = #M.target<{{.*}}>}
+
+kgen.generator @some_func() {
+  kgen.return
+}

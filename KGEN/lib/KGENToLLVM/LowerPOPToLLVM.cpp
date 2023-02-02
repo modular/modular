@@ -477,8 +477,8 @@ class ConvertPOPStackAllocation
     : public mlir::ConvertOpToLLVMPattern<StackAllocationOp> {
 public:
   explicit ConvertPOPStackAllocation(mlir::LLVMTypeConverter &typeConverter,
-                                     Block *body)
-      : ConvertOpToLLVMPattern(typeConverter), body(body) {}
+                                     Block *body, TargetInfoAttr target)
+      : ConvertOpToLLVMPattern(typeConverter), body(body), target(target) {}
 
   LogicalResult
   matchAndRewrite(StackAllocationOp op, StackAllocationOpAdaptor adaptor,
@@ -487,8 +487,10 @@ public:
 private:
   /// The enclosing function body.
   Block *body;
+  /// The target info.
+  TargetInfoAttr target;
 
-  unsigned resolveAlignment(std::optional<TypedAttr> alignment) const {
+  static unsigned resolveAlignment(std::optional<TypedAttr> alignment) {
     if (!alignment)
       return 0;
     return alignment->cast<IntegerAttr>().getInt();
@@ -532,8 +534,7 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
 
   // Compute the bytecount of the allocated buffer.
   std::optional<int64_t> byteCount = DataLayoutInterface::getTypeSizeInBytes(
-      TargetInfoAttr::getForHost(op.getContext()),
-      cast<PointerType>(op.getType()).getResolvedElementType());
+      target, cast<PointerType>(op.getType()).getResolvedElementType());
   if (!byteCount)
     return op.emitError("could not get size of pointer element size");
 
@@ -1036,8 +1037,8 @@ class ConvertPOPVariadicCreate
     : public mlir::ConvertOpToLLVMPattern<VariadicCreateOp> {
 public:
   explicit ConvertPOPVariadicCreate(mlir::LLVMTypeConverter &typeConverter,
-                                    Block *body)
-      : ConvertOpToLLVMPattern(typeConverter), body(body) {}
+                                    Block *body, TargetInfoAttr target)
+      : ConvertOpToLLVMPattern(typeConverter), body(body), target(target) {}
 
   LogicalResult
   matchAndRewrite(VariadicCreateOp op, VariadicCreateOpAdaptor adaptor,
@@ -1046,6 +1047,8 @@ public:
 private:
   /// The enclosing function body.
   Block *body;
+  /// The target info.
+  TargetInfoAttr target;
 };
 
 LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
@@ -1053,11 +1056,10 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
     ConversionPatternRewriter &rewriter) const {
   // 1. Allocate space for an array of elements.
   Type opElementType = op.getType().getResolvedElementType();
-  auto targetInfo = TargetInfoAttr::getForHost(getContext());
   std::optional<int64_t> size =
-      DataLayoutInterface::getTypeSizeInBytes(targetInfo, opElementType);
+      DataLayoutInterface::getTypeSizeInBytes(target, opElementType);
   std::optional<int64_t> align =
-      DataLayoutInterface::getTypeAlignInBytes(targetInfo, opElementType);
+      DataLayoutInterface::getTypeAlignInBytes(target, opElementType);
   if (!size || !align)
     return op.emitError("failed to get element type size and alignment");
 
@@ -1641,13 +1643,19 @@ void LowerPOPToLLVMPass::runOnOperation() {
     options.overrideIndexBitwidth(indexBitwidth);
   POPToLLVMTypeConverter typeConverter(func->getLoc(), options);
 
+  // Lookup the nearest target info specification.
+  TargetInfoAttr targetInfo = lookupTargetInfo(*func);
+  if (!targetInfo) {
+    mlir::emitError(func->getLoc(),
+                    "could not find an enclosing target specification");
+    return signalPassFailure();
+  }
+
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
   populatePOPToLLVMPatterns(typeConverter, patterns);
-  patterns.insert<ConvertPOPStackAllocation>(typeConverter,
-                                             &func->getFunctionBody().front());
-  patterns.insert<ConvertPOPVariadicCreate>(typeConverter,
-                                            &func->getFunctionBody().front());
+  patterns.insert<ConvertPOPStackAllocation, ConvertPOPVariadicCreate>(
+      typeConverter, &func->getFunctionBody().front(), targetInfo);
   DebugInfo::populateTypeConversionPatterns(patterns, typeConverter);
   target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
       [&](Operation *op) { return typeConverter.isLegal(op); });

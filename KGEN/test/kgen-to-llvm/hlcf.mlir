@@ -1,5 +1,7 @@
 // RUN: kgen-opt -lower-to-llvm %s | FileCheck %s
 
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+
 // CHECK-LABEL: llvm.func internal @hlcf_and_scf
 kgen.func @hlcf_and_scf(%arg0: !pop.scalar<si32>, %arg1: !pop.simd<2, si64>) -> (!pop.scalar<si32>, !pop.simd<2, si64>) {
   %c10 = kgen.param.constant: scalar<si32> = <<10>>
@@ -50,4 +52,6 @@ kgen.func @hlcf_and_scf(%arg0: !pop.scalar<si32>, %arg1: !pop.simd<2, si64>) -> 
   }
   // CHECK: ^bb10(%{{.*}}: vector<2xi64>):
   kgen.return %c10, %0 : !pop.scalar<si32>, !pop.simd<2, si64>
+}
+
 }
