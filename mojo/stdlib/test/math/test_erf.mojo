@@ -3,10 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_erf::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 
 from DType import DType
+from Int import Int
 from IO import print
 from Math import erf
 from SIMD import SIMD
@@ -37,6 +38,6 @@ fn test_erf():
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     test_erf()
     return 0

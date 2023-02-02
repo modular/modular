@@ -3,9 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_tanh::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from DType import DType
+from Int import Int
 from IO import print
 from Math import tanh, iota
 
@@ -24,6 +25,6 @@ fn test_tanh():
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     test_tanh()
     return 0

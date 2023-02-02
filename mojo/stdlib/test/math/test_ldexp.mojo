@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_ldexp::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from Assert import assert_param
 from DType import DType
@@ -26,6 +26,6 @@ fn test_ldexp():
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     test_ldexp()
     return 0
