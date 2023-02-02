@@ -64,14 +64,14 @@ fn test_broadcast_same_shape():
     # [[[1], [2]]]
 
     # CHECK: 1
-    print(input.__getitem__(_index3D(0, 0, 0)))
+    print(input[0, 0, 0])
     # CHECK: 2
-    print(input.__getitem__(_index3D(0, 1, 0)))
+    print(input[0, 1, 0])
 
     # CHECK: 1
-    print(output.__getitem__(_index3D(0, 0, 0)))
+    print(output[0, 0, 0])
     # CHECK: 2
-    print(output.__getitem__(_index3D(0, 1, 0)))
+    print(output[0, 1, 0])
 
 
 # CHECK-LABEL: test_broadcast_single_axis
@@ -112,22 +112,22 @@ fn test_broadcast_single_axis():
     # [[1, 2], [1, 2], [1, 2]]
 
     # CHECK: 1
-    print(input.__getitem__(_index2D(0, 0)))
+    print(input[0, 0])
     # CHECK: 2
-    print(input.__getitem__(_index2D(0, 1)))
+    print(input[0, 1])
 
     # CHECK: 1
-    print(output.__getitem__(_index2D(0, 0)))
+    print(output[0, 0])
     # CHECK: 2
-    print(output.__getitem__(_index2D(0, 1)))
+    print(output[0, 1])
     # CHECK: 1
-    print(output.__getitem__(_index2D(1, 0)))
+    print(output[1, 0])
     # CHECK: 2
-    print(output.__getitem__(_index2D(1, 1)))
+    print(output[1, 1])
     # CHECK: 1
-    print(output.__getitem__(_index2D(2, 0)))
+    print(output[2, 0])
     # CHECK: 2
-    print(output.__getitem__(_index2D(2, 1)))
+    print(output[2, 1])
 
 
 # CHECK-LABEL: test_broadcast_multi_axes
@@ -169,34 +169,34 @@ fn test_broadcast_multi_axes():
     #  [[1, 1, 1], [2, 2, 2]]]
 
     # CHECK: 1
-    print(input.__getitem__(_index3D(0, 0, 0)))
+    print(input[0, 0, 0])
     # CHECK: 2
-    print(input.__getitem__(_index3D(0, 1, 0)))
+    print(input[0, 1, 0])
 
     # CHECK: 1
-    print(output.__getitem__(_index3D(0, 0, 0)))
+    print(output[0, 0, 0])
     # CHECK: 2
-    print(output.__getitem__(_index3D(0, 1, 0)))
+    print(output[0, 1, 0])
     # CHECK: 1
-    print(output.__getitem__(_index3D(0, 0, 1)))
+    print(output[0, 0, 1])
     # CHECK: 2
-    print(output.__getitem__(_index3D(0, 1, 1)))
+    print(output[0, 1, 1])
     # CHECK: 1
-    print(output.__getitem__(_index3D(0, 0, 2)))
+    print(output[0, 0, 2])
     # CHECK: 2
-    print(output.__getitem__(_index3D(0, 1, 2)))
+    print(output[0, 1, 2])
     # CHECK: 1
-    print(output.__getitem__(_index3D(1, 0, 0)))
+    print(output[1, 0, 0])
     # CHECK: 2
-    print(output.__getitem__(_index3D(1, 1, 0)))
+    print(output[1, 1, 0])
     # CHECK: 1
-    print(output.__getitem__(_index3D(1, 0, 1)))
+    print(output[1, 0, 1])
     # CHECK: 2
-    print(output.__getitem__(_index3D(1, 1, 1)))
+    print(output[1, 1, 1])
     # CHECK: 1
-    print(output.__getitem__(_index3D(1, 0, 2)))
+    print(output[1, 0, 2])
     # CHECK: 2
-    print(output.__getitem__(_index3D(1, 1, 2)))
+    print(output[1, 1, 2])
 
 
 fn test_broadcast_multi_axes_nested():
@@ -239,72 +239,72 @@ fn test_broadcast_multi_axes_nested():
     ](output, input)
 
     # CHECK: 1
-    print(output.__getitem__(_index5D(0, 0, 0, 0, 0)))
+    print(output[0, 0, 0, 0, 0])
     # CHECK: 2
-    print(output.__getitem__(_index5D(0, 0, 0, 0, 1)))
+    print(output[0, 0, 0, 0, 1])
     # CHECK: 1
-    print(output.__getitem__(_index5D(0, 0, 0, 1, 0)))
+    print(output[0, 0, 0, 1, 0])
     # CHECK: 2
-    print(output.__getitem__(_index5D(0, 0, 0, 1, 1)))
+    print(output[0, 0, 0, 1, 1])
     # CHECK: 3
-    print(output.__getitem__(_index5D(0, 0, 1, 0, 0)))
+    print(output[0, 0, 1, 0, 0])
     # CHECK: 4
-    print(output.__getitem__(_index5D(0, 0, 1, 0, 1)))
+    print(output[0, 0, 1, 0, 1])
     # CHECK: 3
-    print(output.__getitem__(_index5D(0, 0, 1, 1, 0)))
+    print(output[0, 0, 1, 1, 0])
     # CHECK: 4
-    print(output.__getitem__(_index5D(0, 0, 1, 1, 1)))
+    print(output[0, 0, 1, 1, 1])
 
     # CHECK: 1
-    print(output.__getitem__(_index5D(0, 1, 0, 0, 0)))
+    print(output[0, 1, 0, 0, 0])
     # CHECK: 2
-    print(output.__getitem__(_index5D(0, 1, 0, 0, 1)))
+    print(output[0, 1, 0, 0, 1])
     # CHECK: 1
-    print(output.__getitem__(_index5D(0, 1, 0, 1, 0)))
+    print(output[0, 1, 0, 1, 0])
     # CHECK: 2
-    print(output.__getitem__(_index5D(0, 1, 0, 1, 1)))
+    print(output[0, 1, 0, 1, 1])
     # CHECK: 3
-    print(output.__getitem__(_index5D(0, 1, 1, 0, 0)))
+    print(output[0, 1, 1, 0, 0])
     # CHECK: 4
-    print(output.__getitem__(_index5D(0, 1, 1, 0, 1)))
+    print(output[0, 1, 1, 0, 1])
     # CHECK: 3
-    print(output.__getitem__(_index5D(0, 1, 1, 1, 0)))
+    print(output[0, 1, 1, 1, 0])
     # CHECK: 4
-    print(output.__getitem__(_index5D(0, 1, 1, 1, 1)))
+    print(output[0, 1, 1, 1, 1])
 
     # CHECK: 5
-    print(output.__getitem__(_index5D(1, 0, 0, 0, 0)))
+    print(output[1, 0, 0, 0, 0])
     # CHECK: 6
-    print(output.__getitem__(_index5D(1, 0, 0, 0, 1)))
+    print(output[1, 0, 0, 0, 1])
     # CHECK: 5
-    print(output.__getitem__(_index5D(1, 0, 0, 1, 0)))
+    print(output[1, 0, 0, 1, 0])
     # CHECK: 6
-    print(output.__getitem__(_index5D(1, 0, 0, 1, 1)))
+    print(output[1, 0, 0, 1, 1])
     # CHECK: 7
-    print(output.__getitem__(_index5D(1, 0, 1, 0, 0)))
+    print(output[1, 0, 1, 0, 0])
     # CHECK: 8
-    print(output.__getitem__(_index5D(1, 0, 1, 0, 1)))
+    print(output[1, 0, 1, 0, 1])
     # CHECK: 7
-    print(output.__getitem__(_index5D(1, 0, 1, 1, 0)))
+    print(output[1, 0, 1, 1, 0])
     # CHECK: 8
-    print(output.__getitem__(_index5D(1, 0, 1, 1, 1)))
+    print(output[1, 0, 1, 1, 1])
 
     # CHECK: 5
-    print(output.__getitem__(_index5D(1, 1, 0, 0, 0)))
+    print(output[1, 1, 0, 0, 0])
     # CHECK: 6
-    print(output.__getitem__(_index5D(1, 1, 0, 0, 1)))
+    print(output[1, 1, 0, 0, 1])
     # CHECK: 5
-    print(output.__getitem__(_index5D(1, 1, 0, 1, 0)))
+    print(output[1, 1, 0, 1, 0])
     # CHECK: 6
-    print(output.__getitem__(_index5D(1, 1, 0, 1, 1)))
+    print(output[1, 1, 0, 1, 1])
     # CHECK: 7
-    print(output.__getitem__(_index5D(1, 1, 1, 0, 0)))
+    print(output[1, 1, 1, 0, 0])
     # CHECK: 8
-    print(output.__getitem__(_index5D(1, 1, 1, 0, 1)))
+    print(output[1, 1, 1, 0, 1])
     # CHECK: 7
-    print(output.__getitem__(_index5D(1, 1, 1, 1, 0)))
+    print(output[1, 1, 1, 1, 0])
     # CHECK: 8
-    print(output.__getitem__(_index5D(1, 1, 1, 1, 1)))
+    print(output[1, 1, 1, 1, 1])
 
 
 @export

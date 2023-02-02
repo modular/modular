@@ -47,17 +47,17 @@ fn test_pad_1d():
     # [5, 1, 2, 3, 5, 5]
 
     # check: 5
-    print(output[Index(0).as_tuple()])
+    print(output[0])
     # check: 1
-    print(output[Index(1).as_tuple()])
+    print(output[1])
     # check: 2
-    print(output[Index(2).as_tuple()])
+    print(output[2])
     # check: 3
-    print(output[Index(3).as_tuple()])
+    print(output[3])
     # check: 5
-    print(output[Index(4).as_tuple()])
+    print(output[4])
     # check: 4
-    print(output[Index(5).as_tuple()])
+    print(output[5])
 
 
 # CHECK-LABEL: test_pad_2d
@@ -100,29 +100,29 @@ fn test_pad_2d():
     #  [6, 3, 4, 6]]
 
     # check: 6
-    print(output[Index(0, 0).as_tuple()])
+    print(output[0, 0])
     # check: 6
-    print(output[Index(0, 1).as_tuple()])
+    print(output[0, 1])
     # check: 6
-    print(output[Index(0, 2).as_tuple()])
+    print(output[0, 2])
     # check: 6
-    print(output[Index(0, 3).as_tuple()])
+    print(output[0, 3])
     # check: 6
-    print(output[Index(1, 0).as_tuple()])
+    print(output[1, 0])
     # check: 1
-    print(output[Index(1, 1).as_tuple()])
+    print(output[1, 1])
     # check: 2
-    print(output[Index(1, 2).as_tuple()])
+    print(output[1, 2])
     # check: 6
-    print(output[Index(1, 3).as_tuple()])
+    print(output[1, 3])
     # check: 6
-    print(output[Index(2, 0).as_tuple()])
+    print(output[2, 0])
     # check: 3
-    print(output[Index(2, 1).as_tuple()])
+    print(output[2, 1])
     # check: 4
-    print(output[Index(2, 2).as_tuple()])
+    print(output[2, 2])
     # check: 6
-    print(output[Index(2, 3).as_tuple()])
+    print(output[2, 3])
 
 
 # CHECK-LABEL: test_pad_3d
@@ -173,41 +173,41 @@ fn test_pad_3d():
     #   [7, 7, 7]]]
 
     # check: 7
-    print(output[Index(0, 0, 0).as_tuple()])
+    print(output[0, 0, 0])
     # check: 7
-    print(output[Index(0, 0, 1).as_tuple()])
+    print(output[0, 0, 1])
     # check: 7
-    print(output[Index(0, 0, 2).as_tuple()])
+    print(output[0, 0, 2])
     # check: 7
-    print(output[Index(0, 1, 0).as_tuple()])
+    print(output[0, 1, 0])
     # check: 7
-    print(output[Index(0, 1, 1).as_tuple()])
+    print(output[0, 1, 1])
     # check: 7
-    print(output[Index(0, 1, 2).as_tuple()])
+    print(output[0, 1, 2])
     # check: 7
-    print(output[Index(0, 2, 0).as_tuple()])
+    print(output[0, 2, 0])
     # check: 7
-    print(output[Index(0, 2, 1).as_tuple()])
+    print(output[0, 2, 1])
     # check: 7
-    print(output[Index(0, 2, 2).as_tuple()])
+    print(output[0, 2, 2])
     # check: 7
-    print(output[Index(1, 0, 0).as_tuple()])
+    print(output[1, 0, 0])
     # check: 1
-    print(output[Index(1, 0, 1).as_tuple()])
+    print(output[1, 0, 1])
     # check: 2
-    print(output[Index(1, 0, 2).as_tuple()])
+    print(output[1, 0, 2])
     # check: 7
-    print(output[Index(1, 1, 0).as_tuple()])
+    print(output[1, 1, 0])
     # check: 3
-    print(output[Index(1, 1, 1).as_tuple()])
+    print(output[1, 1, 1])
     # check: 4
-    print(output[Index(1, 1, 2).as_tuple()])
+    print(output[1, 1, 2])
     # check: 7
-    print(output[Index(1, 2, 0).as_tuple()])
+    print(output[1, 2, 0])
     # check: 7
-    print(output[Index(1, 2, 1).as_tuple()])
+    print(output[1, 2, 1])
     # check: 7
-    print(output[Index(1, 2, 2).as_tuple()])
+    print(output[1, 2, 2])
 
 
 @export
