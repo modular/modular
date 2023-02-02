@@ -1,99 +1,112 @@
 // RUN: kgen-opt %s -split-input-file -lower-kgen-to-llvm | FileCheck %s
 
-// CHECK-LABEL: @kernel_c
-// CHECK-SAME: %[[SIZE:.*]]: [[INDEXTY:.*]], %[[PTR:.*]]: !llvm.ptr, %[[DTYPE:.*]]: i8
-// CHECK-SAME: %[[SIZE_OUT:.*]]: !llvm.ptr<[[INDEXTY]]>, %[[PTR_OUT:.*]]: !llvm.ptr<ptr>, %[[DTYPE_OUT:.*]]: !llvm.ptr<i8>
-// CHECK: %[[BUFFER:.*]] = llvm.mlir.undef
-// CHECK: %[[B0:.*]] = llvm.insertvalue %[[SIZE]], %[[BUFFER]][0]
-// CHECK: %[[B1:.*]] = llvm.insertvalue %[[PTR]], %[[B0]][1]
-// CHECK: %[[RESULT_BUFFER:.*]] = llvm.insertvalue %[[DTYPE]], %[[B1]][2]
-// CHECK: %[[CALL_RESULT:.*]] = llvm.call @kernel(%[[RESULT_BUFFER]])
-// CHECK: %[[SIZE_RESULT:.*]] = llvm.extractvalue %[[CALL_RESULT]][0]
-// CHECK: llvm.store %[[SIZE_RESULT]], %[[SIZE_OUT]]
-// CHECK: %[[PTR_RESULT:.*]] = llvm.extractvalue %[[CALL_RESULT]][1]
-// CHECK: llvm.store %[[PTR_RESULT]], %[[PTR_OUT]]
-// CHECK: %[[DTYPE_RESULT:.*]] = llvm.extractvalue %[[CALL_RESULT]][2]
-// CHECK: llvm.store %[[DTYPE_RESULT]], %[[DTYPE_OUT]]
-// CHECK: llvm.return
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+  // CHECK-LABEL: @kernel_c
+  // CHECK-SAME: %[[SIZE:.*]]: [[INDEXTY:.*]], %[[PTR:.*]]: !llvm.ptr, %[[DTYPE:.*]]: i8
+  // CHECK-SAME: %[[SIZE_OUT:.*]]: !llvm.ptr<[[INDEXTY]]>, %[[PTR_OUT:.*]]: !llvm.ptr<ptr>, %[[DTYPE_OUT:.*]]: !llvm.ptr<i8>
+  // CHECK: %[[BUFFER:.*]] = llvm.mlir.undef
+  // CHECK: %[[B0:.*]] = llvm.insertvalue %[[SIZE]], %[[BUFFER]][0]
+  // CHECK: %[[B1:.*]] = llvm.insertvalue %[[PTR]], %[[B0]][1]
+  // CHECK: %[[RESULT_BUFFER:.*]] = llvm.insertvalue %[[DTYPE]], %[[B1]][2]
+  // CHECK: %[[CALL_RESULT:.*]] = llvm.call @kernel(%[[RESULT_BUFFER]])
+  // CHECK: %[[SIZE_RESULT:.*]] = llvm.extractvalue %[[CALL_RESULT]][0]
+  // CHECK: llvm.store %[[SIZE_RESULT]], %[[SIZE_OUT]]
+  // CHECK: %[[PTR_RESULT:.*]] = llvm.extractvalue %[[CALL_RESULT]][1]
+  // CHECK: llvm.store %[[PTR_RESULT]], %[[PTR_OUT]]
+  // CHECK: %[[DTYPE_RESULT:.*]] = llvm.extractvalue %[[CALL_RESULT]][2]
+  // CHECK: llvm.store %[[DTYPE_RESULT]], %[[DTYPE_OUT]]
+  // CHECK: llvm.return
 
-kgen.func @kernel(%a: !pop.struct<index, pointer<simd<1, invalid>>, dtype>) -> !pop.struct<index, pointer<simd<1, invalid>>, dtype> {
-  kgen.return %a : !pop.struct<index, pointer<simd<1, invalid>>, !kgen.dtype>
+  kgen.func @kernel(%a: !pop.struct<index, pointer<simd<1, invalid>>, dtype>) -> !pop.struct<index, pointer<simd<1, invalid>>, dtype> {
+    kgen.return %a : !pop.struct<index, pointer<simd<1, invalid>>, !kgen.dtype>
+  }
+
+  kgen.export @kernel
 }
 
-kgen.export @kernel
-
 // -----
-
-// CHECK-LABEL: @kernel_c
-// CHECK-SAME: %[[V:.*]]: f32, %[[V_OUT:.*]]: !llvm.ptr<f32>
-// CHECK: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(struct<()>, f32)>
-// CHECK: %[[EMPTY:.*]] = llvm.mlir.undef : !llvm.struct<()>
-// CHECK: %[[S1:.*]] = llvm.insertvalue %[[EMPTY]], %[[S0]][0]
-// CHECK: %[[ARG:.*]] = llvm.insertvalue %[[V]], %[[S1]][1]
-// CHECK: %[[RES:.*]] = llvm.call @kernel(%[[ARG]])
-// CHECK: %[[V_RESULT:.*]] = llvm.extractvalue %[[RES]][1]
-// CHECK: llvm.store %[[V_RESULT]], %[[V_OUT]]
 
 !nestedStruct = !pop.struct<struct<>, struct<f32>>
-kgen.func @kernel(%a: !nestedStruct) -> !nestedStruct {
-  kgen.return %a : !nestedStruct
-}
 
-kgen.export @kernel
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+  // CHECK-LABEL: @kernel_c
+  // CHECK-SAME: %[[V:.*]]: f32, %[[V_OUT:.*]]: !llvm.ptr<f32>
+  // CHECK: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(struct<()>, f32)>
+  // CHECK: %[[EMPTY:.*]] = llvm.mlir.undef : !llvm.struct<()>
+  // CHECK: %[[S1:.*]] = llvm.insertvalue %[[EMPTY]], %[[S0]][0]
+  // CHECK: %[[ARG:.*]] = llvm.insertvalue %[[V]], %[[S1]][1]
+  // CHECK: %[[RES:.*]] = llvm.call @kernel(%[[ARG]])
+  // CHECK: %[[V_RESULT:.*]] = llvm.extractvalue %[[RES]][1]
+  // CHECK: llvm.store %[[V_RESULT]], %[[V_OUT]]
+
+  kgen.func @kernel(%a: !nestedStruct) -> !nestedStruct {
+    kgen.return %a : !nestedStruct
+  }
+
+  kgen.export @kernel
+}
 
 // -----
 
-// CHECK-LABEL: @kernel_c
-// CHECK-SAME: %[[I:.*]]: f32
-// CHECK: llvm.return
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+  // CHECK-LABEL: @kernel_c
+  // CHECK-SAME: %[[I:.*]]: f32
+  // CHECK: llvm.return
 
-kgen.func @kernel(%i: f32, %a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) {
-  kgen.return
+  kgen.func @kernel(%i: f32, %a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) {
+    kgen.return
+  }
+
+  kgen.export @kernel
 }
-
-kgen.export @kernel
 
 // -----
 
-// CHECK-LABEL: @kernel_c
-// CHECK-SAME: -> i64
-// CHECK: %[[RESULT:.*]] = llvm.call @kernel(%{{.*}})
-// CHECK: llvm.return %[[RESULT]]
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+  // CHECK-LABEL: @kernel_c
+  // CHECK-SAME: -> i64
+  // CHECK: %[[RESULT:.*]] = llvm.call @kernel(%{{.*}})
+  // CHECK: llvm.return %[[RESULT]]
 
-kgen.func @kernel(%a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) -> i64 {
-  %0 = llvm.mlir.constant(1 : i64) : i64
-  kgen.return %0 : i64
+  kgen.func @kernel(%a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) -> i64 {
+    %0 = llvm.mlir.constant(1 : i64) : i64
+    kgen.return %0 : i64
+  }
+
+  kgen.export @kernel
 }
-
-kgen.export @kernel
 
 // -----
 
-// CHECK-LABEL: @kernel_c
-// CHECK-SAME: (%{{.*}}: f32) -> f32
-// CHECK-NEXT: llvm.call @kernel(%{{.*}}) : (f32) -> f32
-// CHECK-NEXT: return %{{.*}}: f32
-kgen.func @kernel(%a: f32) -> f32 {
-  kgen.return %a : f32
-}
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+  // CHECK-LABEL: @kernel_c
+  // CHECK-SAME: (%{{.*}}: f32) -> f32
+  // CHECK-NEXT: llvm.call @kernel(%{{.*}}) : (f32) -> f32
+  // CHECK-NEXT: return %{{.*}}: f32
+  kgen.func @kernel(%a: f32) -> f32 {
+    kgen.return %a : f32
+  }
 
-kgen.export @kernel
+  kgen.export @kernel
+}
 
 // -----
 
-kgen.func @foo() {
-  kgen.return
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+  kgen.func @foo() {
+    kgen.return
+  }
+
+  // CHECK-LABEL: llvm.func @foo
+  // CHECK-LABEL: llvm.func @foo_c
+  // CHECK-LABEL: llvm.func @call_foo
+  // CHECK-LABEL: llvm.func @call_foo_c
+
+  kgen.func @call_foo() {
+    kgen.call @foo() : () -> ()
+    kgen.return
+  }
+
+  kgen.export @foo
+  kgen.export @call_foo
 }
-
-// CHECK-LABEL: llvm.func @foo
-// CHECK-LABEL: llvm.func @foo_c
-// CHECK-LABEL: llvm.func @call_foo
-// CHECK-LABEL: llvm.func @call_foo_c
-
-kgen.func @call_foo() {
-  kgen.call @foo() : () -> ()
-  kgen.return
-}
-
-kgen.export @foo
-kgen.export @call_foo

@@ -322,13 +322,12 @@ struct LowerKGENCoroutinesPass
 void LowerKGENCoroutinesPass::runOnOperation() {
   LLVMFuncOp func = getOperation();
 
-  // Set LLVM lowering options.
-  mlir::LowerToLLVMOptions options(&getContext());
-  if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
-    options.overrideIndexBitwidth(indexBitwidth);
-
   // Configure the builder.
-  POPToLLVMTypeConverter typeConverter(func.getLoc(), options);
+  FailureOr<mlir::LowerToLLVMOptions> options = getTargetLoweringOptions(func);
+  if (failed(options))
+    return signalPassFailure();
+  POPToLLVMTypeConverter typeConverter(func.getLoc(), *options);
+
   mlir::DataLayout dl;
   ImplicitLocOpBuilder opBuilder(getOperation()->getLoc(), &getContext());
   LLVMBuilder b(opBuilder, typeConverter, dl);

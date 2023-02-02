@@ -1,5 +1,7 @@
 // RUN: kgen-opt -pass-pipeline='builtin.module(lower-kgen-to-llvm, llvm.func(lower-coroutines, canonicalize))' %s | FileCheck %s
 
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+
 // CHECK-LABEL: llvm.func @coroutine
 // CHECK-SAME: -> !llvm.ptr<i8>
 // CHECK-SAME: attributes {passthrough = ["presplitcoroutine"]}
@@ -102,3 +104,5 @@ kgen.func @other_coroutine_ops(%a: !pop.coroutine<() -> i32>) -> !pop.pointer<st
 }
 
 kgen.export @coroutine
+
+}

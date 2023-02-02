@@ -50,6 +50,9 @@ private:
   mlir::DataLayout dl;
 };
 
+/// Derived LLVM lowering options from the nearest target info specification.
+FailureOr<mlir::LowerToLLVMOptions> getTargetLoweringOptions(Operation *op);
+
 //===----------------------------------------------------------------------===//
 // LLVMBuilder
 //===----------------------------------------------------------------------===//

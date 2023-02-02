@@ -1,5 +1,7 @@
 // RUN: kgen-opt %s -lower-kgen-to-llvm | kgen-translate -mlir-to-llvmir | FileCheck %s
 
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+
 // COM: Checking the LLVMIR is easier since the constants are collapsed.
 
 // CHECK-LABEL: @array_constant
@@ -89,4 +91,6 @@ kgen.func @pointer_constant() -> !pop.pointer<?> {
   // CHECK-NEXT: ptr null
   %null = kgen.param.constant: pointer<?> = <#M.pointer<0>>
   kgen.return %null : !pop.pointer<?>
+}
+
 }

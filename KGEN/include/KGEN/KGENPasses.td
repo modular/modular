@@ -164,12 +164,6 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
 
   // We generate the LLVM dialect.
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-
-  let options = [
-    Option<"indexBitwidth", "index-bitwidth", "unsigned",
-           /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
-           "Bitwidth of the index type, 0 to use size of machine word">
-  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -185,12 +179,6 @@ def LowerKGENCoroutines : Pass<"lower-coroutines", "mlir::LLVM::LLVMFuncOp"> {
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-
-  let options = [
-    Option<"indexBitwidth", "index-bitwidth", "unsigned",
-           /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
-           "Bitwidth of the index type, 0 to use size of machine word">,
-  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -205,12 +193,6 @@ def LowerPOPToLLVM : Pass<"lower-pop-to-llvm"> {
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-
-  let options = [
-    Option<"indexBitwidth", "index-bitwidth", "unsigned",
-           /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
-           "Bitwidth of the index type, 0 to use size of machine word">,
-  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -226,12 +208,6 @@ def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-
-  let options = [
-    Option<"indexBitwidth", "index-bitwidth", "unsigned",
-           /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
-           "Bitwidth of the index type, 0 to use size of machine word">,
-  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -246,12 +222,6 @@ def LowerPOPClosuresToLLVM : Pass<"lower-pop-closures-to-llvm", "mlir::ModuleOp"
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-
-  let options = [
-    Option<"indexBitwidth", "index-bitwidth", "unsigned",
-           /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
-           "Bitwidth of the index type, 0 to use size of machine word">,
-  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -267,12 +237,6 @@ def LowerSCFToLLVM : Pass<"lower-scf-to-llvm"> {
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-
-  let options = [
-    Option<"indexBitwidth", "index-bitwidth", "unsigned",
-           /*default=kDeriveIndexBitwidthFromDataLayout*/"0",
-           "Bitwidth of the index type, 0 to use size of machine word">,
-  ];
 }
 
 //===----------------------------------------------------------------------===//
