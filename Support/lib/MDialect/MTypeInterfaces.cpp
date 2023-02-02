@@ -28,7 +28,7 @@ struct IntegerLayout
   /// nearest power of 2, but capped at the pointer width.
   Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
     return std::min<int64_t>(llvm::PowerOf2Ceil(*getTypeSize(type, target)),
-                             target.getPointerSize());
+                             target.getPointerWidth());
   }
 };
 
@@ -43,7 +43,7 @@ struct FloatLayout
   /// nearest power of 2, but capped at the pointer width.
   Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
     return std::min<int64_t>(llvm::PowerOf2Ceil(*getTypeSize(type, target)),
-                             target.getPointerSize());
+                             target.getPointerWidth());
   }
 };
 
@@ -51,12 +51,12 @@ struct FunctionLayout
     : public DataLayoutInterface::ExternalModel<FunctionLayout, FunctionType> {
   /// The size of a function type is the pointer width.
   Optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
-    return target.getPointerSize();
+    return target.getPointerWidth();
   }
 
   /// The align of a function type is the pointer width.
   Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
-    return target.getPointerSize();
+    return target.getPointerWidth();
   }
 };
 
@@ -64,12 +64,12 @@ struct IndexLayout
     : public DataLayoutInterface::ExternalModel<IndexLayout, IndexType> {
   /// The size of an index type is the pointer width.
   Optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
-    return target.getPointerSize();
+    return target.getPointerWidth();
   }
 
   /// The align of an index type is the pointer width.
   Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
-    return target.getPointerSize();
+    return target.getPointerWidth();
   }
 };
 } // namespace

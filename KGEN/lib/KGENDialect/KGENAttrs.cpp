@@ -1276,7 +1276,7 @@ static Attribute simplifyIsArch(SmallVectorImpl<TypedAttr> &operands) {
   if (!target || !arch)
     return {};
   return Builder(target.getContext())
-      .getBoolAttr(target.getTarget().isArch(arch));
+      .getBoolAttr(target.getTarget().getCpu().equals(arch));
 }
 
 static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
@@ -1299,7 +1299,7 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
 
   std::optional<ssize_t> result =
       llvm::StringSwitch<std::optional<ssize_t>>(field.getValue())
-          .Case("pointer_size", target.getTarget().getPointerSize())
+          .Case("pointer_bit_width", target.getTarget().getPointerBitWidth())
           .Case("simd_bit_width", target.getTarget().getSimdBitWidth())
           .Default(std::nullopt);
   if (!result)

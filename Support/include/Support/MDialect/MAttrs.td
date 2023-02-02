@@ -243,13 +243,17 @@ def KGEN_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
 
     ```mlir
     #M.target<triple="arm64-apple-darwin21.6.0", cpu="apple-m1", features="",
-              pointer_size=8, simd_bit_width=128>
+              pointer_bit_width=64, simd_bit_width=128>
     ```
   }];
 
-  let parameters = (ins "llvm::Triple":$triple, StringRefParameter<"">:$cpu,
-                        StringRefParameter<"">:$features,
-                        "int64_t":$pointer_size, "int64_t":$simd_bit_width);
+  let parameters = (ins
+    "llvm::Triple":$triple,
+    StringRefParameter<"">:$cpu,
+    StringRefParameter<"">:$features,
+    "int64_t":$pointer_bit_width,
+    "int64_t":$simd_bit_width
+  );
 
   let assemblyFormat = "`<` struct(params) `>`";
 
@@ -262,9 +266,7 @@ def KGEN_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
       return getTriple().normalize();
     }
 
-    /// Check if the target supports a specific hardware feature. Note that to
-    /// check if a feature is supported, its feature name should be prefixed
-    /// with a "+", e.g. "+avx".
+    /// Check if the target supports a specific hardware feature.
     bool hasFeature(StringRef feature) const {
       return getFeatures().contains(feature);
     }
@@ -274,9 +276,9 @@ def KGEN_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
       return llvm::Triple::getOSTypeName(getTriple().getOS());
     }
 
-    /// Check if the CPU architecture matches the provided one.
-    bool isArch(StringRef arch) const {
-      return getCpu().equals(arch);
+    /// Get the pointer width rounded up to the nearest byte.
+    int64_t getPointerWidth() const {
+      return llvm::divideCeil(getPointerBitWidth(), 8);
     }
 
     /// Get the host target configuration attribute.

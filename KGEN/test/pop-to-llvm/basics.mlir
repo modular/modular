@@ -1,6 +1,6 @@
 // RUN: kgen-opt -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' %s | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
 
 // CHECK-LABEL: @abs_f32
 kgen.func @abs_f32(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {

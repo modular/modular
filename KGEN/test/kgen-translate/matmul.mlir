@@ -1,6 +1,6 @@
 // RUN: kgen-opt -pass-pipeline='builtin.module(lower-zap-to-pop,lower-to-llvm)' %s | kgen-translate -mlir-to-llvmir | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
 
 // CHECK-LABEL: define internal void @naive_matmul
 kgen.func @naive_matmul(%a: !zap.ndbuffer<[?, ?], f32>,

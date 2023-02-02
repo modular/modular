@@ -1,6 +1,6 @@
 // RUN: kgen-opt -lower-kgen-to-llvm -verify-diagnostics -split-input-file %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
   // expected-error@+2 {{failed to convert func signature}}
   // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
   kgen.func @unsupported(%arg0: tensor<4xf32>) -> tensor<4xf32> {

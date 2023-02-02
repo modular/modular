@@ -631,7 +631,7 @@ ShapedType AlignedBytesAttr::getType() const {
 
 llvm::hash_code TargetInfoAttr::hash() const {
   return llvm::hash_combine(getTripleStr(), getCpu(), getFeatures(),
-                            getPointerSize(), getSimdBitWidth());
+                            getPointerBitWidth(), getSimdBitWidth());
 }
 
 TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
@@ -652,7 +652,7 @@ TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
 
   //  Return a TargetInfoAttr built for the host.
   return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu, os.str(),
-                             sizeof(ssize_t), kPreferredSIMDBitWidth);
+                             sizeof(void *) * 8, kPreferredSIMDBitWidth);
 }
 
 /// The dialect attribute name used to attached target info to a module.
