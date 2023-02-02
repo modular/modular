@@ -1,10 +1,10 @@
-# RUN: kgen %s -execute -func='$lit-for-range::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from prolog import Int, printInt, range
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     # CHECK: 0
     # CHECK: 1
     # CHECK: 2
