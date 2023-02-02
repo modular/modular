@@ -174,14 +174,12 @@ kgen.generator @driver() {
 
 // -----
 
-lit.struct.decl @Unknown {
-  lit.struct.field value : !opaque<"type">
-}
+#target = #kgen.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128> : !kgen.target
 
 // expected-error @below {{no viable expansions found}}
 kgen.generator @sizeof_unknown() {
   // expected-note @below {{could not simplify operator get_sizeof}}
-  %0 = kgen.param.constant = <get_sizeof(!kgen.declref<@Unknown>, #kgen<target host>)>
+  %0 = kgen.param.constant = <get_sizeof(!opaque<"type">, #target)>
   kgen.return
 }
 
