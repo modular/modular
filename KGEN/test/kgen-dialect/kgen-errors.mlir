@@ -572,22 +572,6 @@ lit.struct.decl @StructReturns<() -> dtype> {}
 
 // -----
 
-kgen.generator @target_params<t0: i1, t1: i1>()
-  // expected-error @+1 {{custom op 'kgen.generator' target_eq only allowed on target types}}
-  constraints <[target_eq(:i1 t0, t1), "must support target!!"]> {
-  kgen.return
-}
-
-// -----
-
-kgen.generator @target_params<t0: i1, t1: i1>()
-  // expected-error @+1 {{custom op 'kgen.generator' target_eq must have two operands}}
-  constraints <[target_eq(:i1 t0), "must support target!!"]> {
-  kgen.return
-}
-
-// -----
-
 lit.struct.decl @StructDuplicate {
   // expected-note @below {{see previous declaration here}}
   lit.struct.field x : i32
@@ -892,7 +876,7 @@ kgen.generator @caller(%arg: !pop.pointer<i32>) {
 
 kgen.generator @target_params2<t0: target>()
  // expected-error @below {{expected '='}}
-  constraints <[target_eq(:target t0, #kgen.target<triple"triple", "cpu", "features", 3, 4>), "must support target!!"]> {
+  constraints <[eq(:target t0, #kgen.target<triple"triple", "cpu", "features", 3, 4>), "must support target!!"]> {
   kgen.return
 }
 

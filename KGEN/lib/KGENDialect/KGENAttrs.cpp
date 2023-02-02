@@ -709,16 +709,6 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "relational comparisons only allowed on index or "
                             "integer values";
     break;
-  case POC::TargetEq:
-    if (operands.size() != 2)
-      return emitError() << "target_eq must have two operands";
-    if (!type.isInteger(1))
-      return emitError() << "target_eq returns i1";
-    // TargetEq only work on target types.
-    if (!operands[0].getType().isa<TargetType>() ||
-        !operands[1].getType().isa<TargetType>())
-      return emitError() << "target_eq only allowed on target types";
-    break;
   case POC::TargetHasFeature:
   case POC::TargetIsArch:
     if (operands.size() != 2)
@@ -1249,18 +1239,6 @@ simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
       [](auto a, auto b) { return a.sle(b); });
 }
 
-static Attribute simplifyTargetEq(SmallVectorImpl<TypedAttr> &operands) {
-  // TODO: Make simplifyTargetEq more granular than just checking that the
-  // TargetAttrInfos are the same.
-  if (operands[0].isa<TargetParamAttr>() &&
-      operands[1].isa<TargetParamAttr>()) {
-    bool targetsAreSame = (operands[0] == operands[1]);
-    return IntegerAttr::get(IntegerType::get(operands[0].getContext(), 1),
-                            targetsAreSame);
-  }
-  return {};
-}
-
 static Attribute simplifyHasFeature(SmallVectorImpl<TypedAttr> &operands) {
   auto target = dyn_cast<TargetParamAttr>(operands[0]);
   auto feature = dyn_cast<StringAttr>(operands[1]);
@@ -1676,10 +1654,6 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   case POC::LT:
   case POC::LE:
     result = simplifyRelationalCompare(opcode, operands);
-    resultType = IntegerType::get(context, 1);
-    break;
-  case POC::TargetEq:
-    result = simplifyTargetEq(operands);
     resultType = IntegerType::get(context, 1);
     break;
   case POC::TargetHasFeature:
