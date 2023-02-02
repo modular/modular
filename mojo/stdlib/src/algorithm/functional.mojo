@@ -115,7 +115,7 @@ alias none = __mlir_type.`!lit.none`
 # TODO: Because of the inability to share Runtimes across libraries we cannot
 # call run a true parallelForEachN here. Instead of crashing, we run sequential,
 # will revert this once the Runtime ids issue is fixed.
-alias DISABLE_MULTI_THREADING: Bool = False
+alias DISABLE_MULTI_THREADING: Bool = True
 
 
 fn parallelForEachNChain[
