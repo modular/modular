@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_pad::main():index()' -I %stdlibdir | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from Buffer import Buffer, NDBuffer
 from DType import DType
@@ -211,7 +211,7 @@ fn test_pad_3d():
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     test_pad_1d()
     test_pad_2d()
     test_pad_3d()

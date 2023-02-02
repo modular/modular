@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_broadcast::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from Broadcast import broadcast
 from Buffer import NDBuffer
@@ -308,7 +308,7 @@ fn test_broadcast_multi_axes_nested():
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     test_broadcast_same_shape()
     test_broadcast_single_axis()
     test_broadcast_multi_axes()

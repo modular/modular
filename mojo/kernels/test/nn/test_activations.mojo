@@ -3,10 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_activations::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from Activations import relu, relu_n1, prelu, gelu, gelu_approximate
 from DType import DType
+from Int import Int
 from IO import print
 from Math import iota
 
@@ -79,7 +80,7 @@ fn test_gelu():
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     test_relu()
     test_relu_n1()
     test_prelu()
