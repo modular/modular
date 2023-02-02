@@ -195,11 +195,9 @@ fn transpose_inplace_generic[
     while i < rows:
         var j: Int = i + 1
         while j < cols:
-            let pos = _index2D(i, j)
-            let pos_tr = _index2D(j, i)
-            let tmp = buf.__getitem__(pos)
-            buf.__setitem__(pos, buf.__getitem__(pos_tr))
-            buf.__setitem__(pos_tr, tmp)
+            let tmp = buf[i, j]
+            buf.__setitem__(_index2D(i, j), buf[j, i])
+            buf.__setitem__(_index2D(j, i), tmp)
             j += 1
         i += 1
 
@@ -218,9 +216,7 @@ fn transpose[
     while i < rows:
         var j: Int = 0
         while j < cols:
-            let pos = _index2D(i, j)
-            let pos_tr = _index2D(j, i)
-            dst.__setitem__(pos, src.__getitem__(pos_tr))
+            dst.__setitem__(_index2D(i, j), src[j, i])
             j += 1
         i += 1
 
@@ -237,7 +233,7 @@ fn _permute_data[
     Ensures that output[i] = input[perms[i]] for i ∈ [0, size)
     """
     for axis in range(size):
-        let perm_axis = perms.load(axis).__getitem__(0)
+        let perm_axis = perms.load(axis)[0]
         let perm_data = input.load(perm_axis)
         output.store(axis, perm_data)
 
@@ -262,7 +258,7 @@ fn _fill_strides[
     @always_inline
     fn _fill_stride_at_idx[idx: __mlir_type.index]():
         alias axis = rank - idx - 2
-        let next_axis_stride = strides.__getitem__(axis + 1)
+        let next_axis_stride = strides[axis + 1]
         let next_axis_dim = buf.dim[axis + 1]()
         let curr_axis_stride = next_axis_stride * next_axis_dim
         strides.__setitem__(axis, curr_axis_stride)
@@ -373,8 +369,8 @@ fn _copy_with_strides_base[
 
     # TODO speed this up if output_axis_stride is 1, i.e., contiguous?
     let axis_dim = output.dim[axis]()
-    let output_axis_stride: Int = output_strides.load(axis).__getitem__(0)
-    let input_axis_stride: Int = input_strides.load(axis).__getitem__(0)
+    let output_axis_stride: Int = output_strides.load(axis)[0]
+    let input_axis_stride: Int = input_strides.load(axis)[0]
     var src_ptr = input.offset(input_offset)
     var dst_ptr = output.data.offset(output_offset)
     for _ in range(axis_dim):
@@ -402,8 +398,8 @@ fn _copy_with_strides_iter[
     assert_param[axis + 1 < rank]()
 
     let axis_dim = output.dim[axis]()
-    let input_axis_stride = input_strides.load(axis).__getitem__(0)
-    let output_axis_stride = output_strides.load(axis).__getitem__(0)
+    let input_axis_stride = input_strides.load(axis)[0]
+    let output_axis_stride = output_strides.load(axis)[0]
     alias next_axis = axis + 1
     var next_input_offset = input_offset
     var next_output_offset = output_offset

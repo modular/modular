@@ -89,7 +89,7 @@ fn print_matrix(
     while i < rows:
         var j: Int = 0
         while j < cols:
-            print(buf.__getitem__(_index2D(i, j)))
+            print(buf[i, j])
             j += 1
         i += 1
 

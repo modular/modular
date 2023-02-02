@@ -56,52 +56,52 @@ fn test_transpose_4x4():
     transpose_inplace[2, 4, 4, DType.index.value](matrix)
 
     # CHECK: 0
-    print(matrix.__getitem__(_index2D(0, 0)))
+    print(matrix[0, 0])
 
     # CHECK: 4
-    print(matrix.__getitem__(_index2D(0, 1)))
+    print(matrix[0, 1])
 
     # CHECK: 8
-    print(matrix.__getitem__(_index2D(0, 2)))
+    print(matrix[0, 2])
 
     # CHECK: 12
-    print(matrix.__getitem__(_index2D(0, 3)))
+    print(matrix[0, 3])
 
     # CHECK: 1
-    print(matrix.__getitem__(_index2D(1, 0)))
+    print(matrix[1, 0])
 
     # CHECK: 5
-    print(matrix.__getitem__(_index2D(1, 1)))
+    print(matrix[1, 1])
 
     # CHECK: 9
-    print(matrix.__getitem__(_index2D(1, 2)))
+    print(matrix[1, 2])
 
     # CHECK: 13
-    print(matrix.__getitem__(_index2D(1, 3)))
+    print(matrix[1, 3])
 
     # CHECK: 2
-    print(matrix.__getitem__(_index2D(2, 0)))
+    print(matrix[2, 0])
 
     # CHECK: 6
-    print(matrix.__getitem__(_index2D(2, 1)))
+    print(matrix[2, 1])
 
     # CHECK: 10
-    print(matrix.__getitem__(_index2D(2, 2)))
+    print(matrix[2, 2])
 
     # CHECK: 14
-    print(matrix.__getitem__(_index2D(2, 3)))
+    print(matrix[2, 3])
 
     # CHECK: 3
-    print(matrix.__getitem__(_index2D(3, 0)))
+    print(matrix[3, 0])
 
     # CHECK: 7
-    print(matrix.__getitem__(_index2D(3, 1)))
+    print(matrix[3, 1])
 
     # CHECK: 11
-    print(matrix.__getitem__(_index2D(3, 2)))
+    print(matrix[3, 2])
 
     # CHECK: 15
-    print(matrix.__getitem__(_index2D(3, 3)))
+    print(matrix[3, 3])
 
 
 # CHECK-LABEL: test_transpose_8x8
@@ -134,7 +134,7 @@ fn test_transpose_8x8():
         j = 0
         while j < num_cols:
             let expected: Int = j * num_rows + i
-            let actual = matrix.__getitem__(_index2D(i, j)).__getitem__(0)
+            let actual = matrix[i, j][0]
             # CHECK-NOT: Transpose 16x16 failed
             if expected != actual:
                 print("Transpose 16x16 failed\n")
@@ -170,20 +170,20 @@ fn test_transpose_3x2_out_of_place():
     # transpose a from 4x2 to 2x4
     transpose[2, 2, 3, DType.index.value](dst, src)
     # CHECK: 0
-    print(dst.__getitem__(_index2D(0, 0)))
+    print(dst[0, 0])
     # CHECK: 1
-    print(dst.__getitem__(_index2D(0, 1)))
+    print(dst[0, 1])
     # CHECK: 2
-    print(dst.__getitem__(_index2D(0, 2)))
+    print(dst[0, 2])
     # CHECK: 3
-    print(dst.__getitem__(_index2D(1, 0)))
+    print(dst[1, 0])
     # CHECK: 4
-    print(dst.__getitem__(_index2D(1, 1)))
+    print(dst[1, 1])
     # CHECK: 5
-    print(dst.__getitem__(_index2D(1, 2)))
+    print(dst[1, 2])
     # Overflow should be zero
     # CHECK: 0
-    print(dst.__getitem__(_index2D(2, 0)))
+    print(dst[2, 0])
 
 
 # CHECK-LABEL: test_transpose_2d_identity
@@ -231,23 +231,23 @@ fn test_transpose_2d_identity():
     #  [7, 8, 9]]
 
     # check: 1
-    print(output.__getitem__(_index2D(0, 0)))
+    print(output[0, 0])
     # check: 2
-    print(output.__getitem__(_index2D(0, 1)))
+    print(output[0, 1])
     # check: 3
-    print(output.__getitem__(_index2D(0, 2)))
+    print(output[0, 2])
     # check: 4
-    print(output.__getitem__(_index2D(1, 0)))
+    print(output[1, 0])
     # check: 5
-    print(output.__getitem__(_index2D(1, 1)))
+    print(output[1, 1])
     # check: 6
-    print(output.__getitem__(_index2D(1, 2)))
+    print(output[1, 2])
     # check: 7
-    print(output.__getitem__(_index2D(2, 0)))
+    print(output[2, 0])
     # check: 8
-    print(output.__getitem__(_index2D(2, 1)))
+    print(output[2, 1])
     # check: 9
-    print(output.__getitem__(_index2D(2, 2)))
+    print(output[2, 2])
 
 
 # CHECK-LABEL: test_transpose_2d
@@ -295,23 +295,23 @@ fn test_transpose_2d():
     #  [3, 6, 9]]
 
     # check: 1
-    print(output.__getitem__(_index2D(0, 0)))
+    print(output[0, 0])
     # check: 4
-    print(output.__getitem__(_index2D(0, 1)))
+    print(output[0, 1])
     # check: 7
-    print(output.__getitem__(_index2D(0, 2)))
+    print(output[0, 2])
     # check: 2
-    print(output.__getitem__(_index2D(1, 0)))
+    print(output[1, 0])
     # check: 5
-    print(output.__getitem__(_index2D(1, 1)))
+    print(output[1, 1])
     # check: 8
-    print(output.__getitem__(_index2D(1, 2)))
+    print(output[1, 2])
     # check: 3
-    print(output.__getitem__(_index2D(2, 0)))
+    print(output[2, 0])
     # check: 6
-    print(output.__getitem__(_index2D(2, 1)))
+    print(output[2, 1])
     # check: 9
-    print(output.__getitem__(_index2D(2, 2)))
+    print(output[2, 2])
 
 
 # CHECK-LABEL: test_transpose_3d_identity
@@ -366,29 +366,29 @@ fn test_transpose_3d_identity():
     #   [10, 11, 12]]]
 
     # check: 1
-    print(output.__getitem__(_index3D(0, 0, 0)))
+    print(output[0, 0, 0])
     # check: 2
-    print(output.__getitem__(_index3D(0, 0, 1)))
+    print(output[0, 0, 1])
     # check: 3
-    print(output.__getitem__(_index3D(0, 0, 2)))
+    print(output[0, 0, 2])
     # check: 4
-    print(output.__getitem__(_index3D(0, 1, 0)))
+    print(output[0, 1, 0])
     # check: 5
-    print(output.__getitem__(_index3D(0, 1, 1)))
+    print(output[0, 1, 1])
     # check: 6
-    print(output.__getitem__(_index3D(0, 1, 2)))
+    print(output[0, 1, 2])
     # check: 7
-    print(output.__getitem__(_index3D(1, 0, 0)))
+    print(output[1, 0, 0])
     # check: 8
-    print(output.__getitem__(_index3D(1, 0, 1)))
+    print(output[1, 0, 1])
     # check: 9
-    print(output.__getitem__(_index3D(1, 0, 2)))
+    print(output[1, 0, 2])
     # check: 10
-    print(output.__getitem__(_index3D(1, 1, 0)))
+    print(output[1, 1, 0])
     # check: 11
-    print(output.__getitem__(_index3D(1, 1, 1)))
+    print(output[1, 1, 1])
     # check: 12
-    print(output.__getitem__(_index3D(1, 1, 2)))
+    print(output[1, 1, 2])
 
 
 # CHECK-LABEL: test_transpose_3d
@@ -445,29 +445,29 @@ fn test_transpose_3d():
     #   [9, 12]]]
 
     # check: 1
-    print(output.__getitem__(_index3D(0, 0, 0)))
+    print(output[0, 0, 0])
     # check: 4
-    print(output.__getitem__(_index3D(0, 0, 1)))
+    print(output[0, 0, 1])
     # check: 7
-    print(output.__getitem__(_index3D(0, 1, 0)))
+    print(output[0, 1, 0])
     # check: 10
-    print(output.__getitem__(_index3D(0, 1, 1)))
+    print(output[0, 1, 1])
     # check: 2
-    print(output.__getitem__(_index3D(1, 0, 0)))
+    print(output[1, 0, 0])
     # check: 5
-    print(output.__getitem__(_index3D(1, 0, 1)))
+    print(output[1, 0, 1])
     # check: 8
-    print(output.__getitem__(_index3D(1, 1, 0)))
+    print(output[1, 1, 0])
     # check: 11
-    print(output.__getitem__(_index3D(1, 1, 1)))
+    print(output[1, 1, 1])
     # check: 3
-    print(output.__getitem__(_index3D(2, 0, 0)))
+    print(output[2, 0, 0])
     # check: 6
-    print(output.__getitem__(_index3D(2, 0, 1)))
+    print(output[2, 0, 1])
     # check: 9
-    print(output.__getitem__(_index3D(2, 1, 0)))
+    print(output[2, 1, 0])
     # check: 12
-    print(output.__getitem__(_index3D(2, 1, 1)))
+    print(output[2, 1, 1])
 
 
 @export
