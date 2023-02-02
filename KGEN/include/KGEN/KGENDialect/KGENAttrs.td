@@ -575,14 +575,13 @@ def KGEN_TargetParamAttr : KGEN_ExprAttr<"TargetParam", "target"> {
 
     ```mlir
     kgen.generator @target_host<t0: target>()
-      constraints <[target_eq(:target #kgen<target host>, t0),
+      constraints <[eq(:target #kgen<target host>, t0),
                     "Must support the target!"]> {
       kgen.return
     }
 
     kgen.generator @target_host<t0: target>()
-        constraints <[
-          target_eq(:target
+        constraints <[eq(:target
             #kgen.target<triple="triple", cpu="cpu", features="features",
                          pointer_bit_width=64, simd_bit_width=128>,
             t0),

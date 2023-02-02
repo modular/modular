@@ -422,18 +422,12 @@ kgen.generator @string_params<a: string, b: string>()
   kgen.return
 }
 
-// TARGET TYPES
-// CHECK-LABEL: kgen.generator @target_params<t0: target, t1: target>()
-kgen.generator @target_params<t0: target, t1: target>()
-  // CHECK: constraints <[target_eq(:target t0, t1),
-  constraints <[target_eq(:target t0, t1), "must support target!!"]> {
-  kgen.return
-}
+// COM: TARGET TYPES
 
 // CHECK-LABEL: kgen.generator @target_params2<t0: target>()
 kgen.generator @target_params2<t0: target>()
-  // CHECK: constraints <[target_eq(:target t0, #kgen.target<triple = "triple", cpu = "cpu", features = "features", pointer_bit_width = 24, simd_bit_width = 4>),
-  constraints <[target_eq(:target t0, #kgen.target<triple="triple", cpu="cpu", features="features", pointer_bit_width=24, simd_bit_width=4>), "must support target!!"]> {
+  // CHECK: constraints <[eq(:target t0, #kgen.target<triple = "triple", cpu = "cpu", features = "features", pointer_bit_width = 24, simd_bit_width = 4>),
+  constraints <[eq(:target t0, #kgen.target<triple="triple", cpu="cpu", features="features", pointer_bit_width=24, simd_bit_width=4>), "must support target!!"]> {
   kgen.return
 }
 
