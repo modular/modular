@@ -28,14 +28,31 @@ class KGENOp<string mnemonic, list<Trait> traits = []> :
 // FuncOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_FuncOp
-  : KGENOp<"func", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
-                    Symbol, IsolatedFromAbove,
-                    SingleBlockImplicitTerminator<"ReturnOp">,
-                    DeclareOpInterfaceMethods<CallableOpInterface>,
-                    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                    DeclInterface, FuncInterface]> {
-  let summary = "concrete function definition";
+def KGEN_FuncOp : KGENOp<"func", [
+    HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
+    SingleBlockImplicitTerminator<"ReturnOp">,
+    DeclareOpInterfaceMethods<CallableOpInterface>,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>, DeclInterface,
+    FuncInterface]> {
+  let summary = "Concrete function definition.";
+  let description = [{
+    The `kgen.func` operation represents a concrete KGEN function. It has no
+    input parameters, no results parameters, and cannot contain any parametric
+    operations. A `kgen.func` represents an elaborated `kgen.generator` that can
+    be lowered and compiled to an executable.
+
+    The body of a `kgen.func` is a single block region terminated by a
+    `kgen.return` whose operands represent the return values of the function.
+
+    Example:
+
+    ```mlir
+    kgen.func @kernel(%arg0: index, %arg1: index) -> index {
+      %0 = index.add %arg0, %arg1
+      kgen.return %0 : index
+    }
+    ```
+  }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<KGEN_SignatureType>:$signature,
@@ -43,7 +60,8 @@ def KGEN_FuncOp
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
-    using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<FuncOp>::getBody;
+    using OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<
+        FuncOp>::getBody;
 
     ReturnOp getReturnOp();
   }];
@@ -57,14 +75,32 @@ def KGEN_FuncOp
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_GeneratorOp
-  : KGENOp<"generator", [HasParent<"mlir::ModuleOp">, FunctionOpInterface,
-                         Symbol, IsolatedFromAbove,
-                         SingleBlockImplicitTerminator<"ReturnOp">,
-                         DeclareOpInterfaceMethods<CallableOpInterface>,
-                         DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                         DeclInterface, FuncInterface]> {
-  let summary = "Function generator definition";
+def KGEN_GeneratorOp : KGENOp<"generator", [
+    HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
+    SingleBlockImplicitTerminator<"ReturnOp">,
+    DeclareOpInterfaceMethods<CallableOpInterface>,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>, DeclInterface,
+    FuncInterface]> {
+  let summary = "Function generator definition.";
+  let description = [{
+    The `kgen.generator` operation defines a function generator. A generator is
+    a parametric template for a function. It can have input parameters and
+    result parameters. Uses of parameters inside the function must obey the
+    parameter use-def graph; there can be no cycles. Each input parameter as it
+    is declared in the signature of the generator can be used in the declaration
+    of subsequent parameters only and in the declaration of all function
+    arguments and results.
+
+    Example:
+
+    ```mlir
+    kgen.generator @add<rhs>(%lhs: index) -> index {
+      %0 = kgen.param.constant = <rhs>
+      %1 = index.add %lhs, %0
+      kgen.return %1 : index
+    }
+    ```
+  }];
 
   /// If the `implements` attribute is present then this generator is an
   /// implementation of the specified generator.interface.
@@ -76,7 +112,8 @@ def KGEN_GeneratorOp
   let regions = (region AnyRegion:$bodyRegion);
 
   let extraClassDeclaration = [{
-    using mlir::OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<GeneratorOp>::getBody;
+    using OpTrait::SingleBlockImplicitTerminator<ReturnOp>::Impl<
+        GeneratorOp>::getBody;
 
     ReturnOp getReturnOp();
   }];
@@ -274,8 +311,17 @@ def KGEN_CallParamOp : KGENOp<"call_param", [KGEN_CallOpInterface,
 def KGEN_ParamConstantOp : KGENOp<"param.constant",
     [AllTypesMatch<["value", "result"]>, Pure, ConstantLike]> {
   let summary = [{
-    Return the value of a parameter expression as an SSA value that may be used
-    by other ops.
+    The `kgen.param.constant` operation materializes the value of a parameter
+    expression as an SSA value that may be used by other operations.
+    Conceptually, it bridges the parameter/compile-time value domain to the
+    dynamic/runtime value domain.
+
+    Example:
+
+    ```mlir
+    %cst0 = kgen.param.constant: scalar<f32> = <"1.5">
+    %cst1 = kgen.param.constant = <apply(:() -> index @makeIndex)>
+    ```
   }];
 
   let arguments = (ins TypedAttrInterface:$value);
@@ -291,7 +337,16 @@ def KGEN_ParamConstantOp : KGENOp<"param.constant",
 
 def KGEN_ParamDeclareOp : KGENOp<"param.declare"> {
   let summary = [{
-    Declare a new parameter with a value.
+    The `kgen.param.declare` operation declares a single parameter and binds
+    its value to a parameter expression. The parameter is visible within and
+    below the scope of the enclosing `DeclInterface` operation.
+
+    Example:
+
+    ```mlir
+    kgen.param.declare A = <5>
+    kgen.param.declare A_plus_one = <add(A, 1)>
+    ```
   }];
 
   let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls,
@@ -423,8 +478,18 @@ def KGEN_RegionBodyOp : KGENOp<"region.body", [Terminator, DeclInterface,
 
 def KGEN_ParamSearchOp : KGENOp<"param.search"> {
   let summary = [{
-    Declare a new parameter that gets one out of a set of values at elaboration
-    time.
+    The `kgen.param.search` operation declares a single parameter and binds its
+    value to one of a set values at elaboration time. This operation represents
+    a fork of the current generator by multi-versioning the generator based on
+    the possible values of the declared parameter.
+
+    Example:
+
+    ```mlir
+    // Fork the current generator into 3 children, each a different one of the
+    // possible values of `A`.
+    kgen.param.search A = <1, 2, 3>
+    ```
   }];
 
   let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls,
@@ -477,7 +542,7 @@ def KGEN_ParamAssertOp : KGENOp<"param.assert", []> {
   let summary = "check a parameter expression at elaboration time";
   let description = [{
     The `kgen.param.assert` operation ensures that a parameter expression is
-    true at elaboration time.  It is a more flexible form of the constraint list
+    true at elaboration time. It is a more flexible form of the constraint list
     on a generator.
   }];
 
