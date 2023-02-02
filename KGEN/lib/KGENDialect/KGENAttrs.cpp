@@ -649,11 +649,11 @@ LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
   // All the operand types must match except for 'bind_signature' and 'apply'.
-  if (!llvm::is_contained(
-          {POC::GetListElement, POC::BindSignature, POC::Apply, POC::Evaluate,
-           POC::TargetHasFeature, POC::TargetIsArch, POC::TargetGetField,
-           POC::BuildInfoGetField, POC::GetSizeOf, POC::GetAlignOf},
-          opcode) &&
+  if (!llvm::is_contained({POC::GetListElement, POC::BindSignature, POC::Apply,
+                           POC::Evaluate, POC::TargetHasFeature,
+                           POC::TargetGetField, POC::BuildInfoGetField,
+                           POC::GetSizeOf, POC::GetAlignOf},
+                          opcode) &&
       !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
       }))
@@ -710,16 +710,6 @@ LogicalResult ParamOperatorAttr::verify(
                             "integer values";
     break;
   case POC::TargetHasFeature:
-  case POC::TargetIsArch:
-    if (operands.size() != 2)
-      return emitError() << "target comparisons must have two operands";
-    if (!type.isInteger(1))
-      return emitError() << "target comparison returns i1";
-    if (!operands[0].getType().isa<TargetType>())
-      return emitError() << "target comparison operand 0 must be a target type";
-    if (!operands[1].getType().isa<StringType>())
-      return emitError() << "target comparison operand 1 must be a string type";
-    break;
   case POC::TargetGetField:
     if (operands.size() != 2)
       return emitError() << "target_get_field must have two operands";
@@ -1248,15 +1238,6 @@ static Attribute simplifyHasFeature(SmallVectorImpl<TypedAttr> &operands) {
       .getBoolAttr(target.getTarget().hasFeature(feature));
 }
 
-static Attribute simplifyIsArch(SmallVectorImpl<TypedAttr> &operands) {
-  auto target = dyn_cast<TargetParamAttr>(operands[0]);
-  auto arch = dyn_cast<StringAttr>(operands[1]);
-  if (!target || !arch)
-    return {};
-  return Builder(target.getContext())
-      .getBoolAttr(target.getTarget().getCpu().equals(arch));
-}
-
 static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
                                         Type &resultType) {
   auto target = dyn_cast<TargetParamAttr>(operands[0]);
@@ -1264,16 +1245,19 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
   if (!field)
     return {};
 
-  if (field.getValue() == "os")
-    resultType = StringType::get(field.getContext());
+  Builder b(field.getContext());
+  if (llvm::is_contained<StringRef>({"os", "cpu"}, field))
+    resultType = b.getType<StringType>();
   else
-    resultType = IntegerType::get(field.getContext(), 1);
+    resultType = b.getIndexType();
 
   if (!target)
     return {};
 
   if (field.getValue() == "os")
     return StringAttr::get(target.getTarget().getOS(), resultType);
+  if (field.getValue() == "cpu")
+    return StringAttr::get(target.getTarget().getCpu(), resultType);
 
   std::optional<ssize_t> result =
       llvm::StringSwitch<std::optional<ssize_t>>(field.getValue())
@@ -1282,7 +1266,7 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
           .Default(std::nullopt);
   if (!result)
     return {};
-  return Builder(target.getContext()).getIndexAttr(*result);
+  return b.getIndexAttr(*result);
 }
 
 static Attribute simplifyBuildInfoGetField(SmallVectorImpl<TypedAttr> &operands,
@@ -1600,9 +1584,8 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   auto resultType = operandsIn.front().getType();
   assert(llvm::is_contained({POC::GetListElement, POC::BindSignature,
                              POC::Apply, POC::Evaluate, POC::TargetHasFeature,
-                             POC::TargetIsArch, POC::TargetGetField,
-                             POC::BuildInfoGetField, POC::GetSizeOf,
-                             POC::GetAlignOf},
+                             POC::TargetGetField, POC::BuildInfoGetField,
+                             POC::GetSizeOf, POC::GetAlignOf},
                             opcode) ||
          llvm::all_of(operandsIn.drop_front(),
                       [&](auto op) { return op.getType() == resultType; }));
@@ -1658,10 +1641,6 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     break;
   case POC::TargetHasFeature:
     result = simplifyHasFeature(operands);
-    resultType = IntegerType::get(context, 1);
-    break;
-  case POC::TargetIsArch:
-    result = simplifyIsArch(operands);
     resultType = IntegerType::get(context, 1);
     break;
   case POC::TargetGetField:
