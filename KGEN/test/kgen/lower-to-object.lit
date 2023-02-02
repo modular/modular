@@ -1,8 +1,11 @@
-# RUN: kgen -execute -func='$lower-to-object::main():index()' -enable-search %s | FileCheck %s
+# RUN: lit -execute -enable-search %s | FileCheck %s
+
+from Int import Int
+from IO import print
 
 # COM: We expect this to return 1 because the implementation chosen should be
 # COM: the second impl of the inner interface.
-# CHECK: --- '$lower-to-object::main()' returned 1
+# CHECK: 1
 
 
 struct Foo:
@@ -60,7 +63,8 @@ fn inner_itf_impl2() -> __mlir_type.index:
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     let f = Foo()
     let result = top(f)
-    return result
+    print(result)
+    return 0
