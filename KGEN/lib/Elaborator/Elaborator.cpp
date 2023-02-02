@@ -21,10 +21,11 @@ using namespace KGEN;
 /// logic from the specified library.
 LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &analysis,
                                      LLCL::Runtime &runtime,
+                                     TargetInfoAttr target,
                                      ArrayRef<GeneratorOp> primaryGenerators,
                                      bool useOldImpl, bool enableSearch) {
   // If we want to use the new impl, use it and return immediately.
-  return elaborateGeneratorsV2(analysis, runtime, primaryGenerators,
+  return elaborateGeneratorsV2(analysis, runtime, target, primaryGenerators,
                                enableSearch);
 }
 
@@ -76,8 +77,9 @@ struct ElaborateGeneratorsPass
                                includedFiles)))
       return signalPassFailure();
 
-    if (failed(elaborateGenerators(analysis, *rt, primaryGenerators, oldImpl,
-                                   shouldDoSearch)))
+    if (failed(elaborateGenerators(analysis, *rt,
+                                   TargetInfoAttr::getForHost(&getContext()),
+                                   primaryGenerators, oldImpl, shouldDoSearch)))
       return signalPassFailure();
   }
 
