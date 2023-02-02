@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -lower-kgen-to-llvm | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
 
 // CHECK-LABEL: @nested_ops
 kgen.func @nested_ops(%cond: i1) -> index {

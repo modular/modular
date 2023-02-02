@@ -415,12 +415,12 @@ DeclRefType DeclRefType::get(SymbolRefAttr name) {
 // An index type as same alignment and size of a pointer type.
 std::optional<int64_t>
 KGEN::StringType::getTypeSize(TargetInfoAttr target) const {
-  return 2 * target.getPointerSize();
+  return 2 * target.getPointerWidth();
 }
 
 std::optional<int64_t>
 KGEN::StringType::getTypeAlign(TargetInfoAttr target) const {
-  return target.getPointerSize();
+  return target.getPointerWidth();
 }
 
 //===----------------------------------------------------------------------===//

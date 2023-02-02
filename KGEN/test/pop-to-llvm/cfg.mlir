@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -split-input-file -pass-pipeline='builtin.module(lower-kgen-to-llvm,llvm.func(lower-pop-to-llvm,lower-scf-to-llvm),llvm.func(reconcile-unrealized-casts))' | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
 
 // CHECK-LABEL: @variant_visit_no_default
 // CHECK-SAME: %[[A:.*]]:

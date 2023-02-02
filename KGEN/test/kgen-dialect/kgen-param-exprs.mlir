@@ -430,14 +430,14 @@ kgen.generator @target_params<t0: target, t1: target>()
 
 // CHECK-LABEL: kgen.generator @target_params2<t0: target>()
 kgen.generator @target_params2<t0: target>()
-  // CHECK: constraints <[target_eq(:target t0, #kgen.target<triple = "triple", cpu = "cpu", features = "features", pointer_size = 3, simd_bit_width = 4>),
-  constraints <[target_eq(:target t0, #kgen.target<triple="triple", cpu="cpu", features="features", pointer_size=3, simd_bit_width=4>), "must support target!!"]> {
+  // CHECK: constraints <[target_eq(:target t0, #kgen.target<triple = "triple", cpu = "cpu", features = "features", pointer_bit_width = 24, simd_bit_width = 4>),
+  constraints <[target_eq(:target t0, #kgen.target<triple="triple", cpu="cpu", features="features", pointer_bit_width=24, simd_bit_width=4>), "must support target!!"]> {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @target_host<t0: target>()
 kgen.generator @target_host<t0: target>()
-  // CHECK: constraints <[target_eq(:target #kgen.target<triple = "{{.*}}", cpu = "{{.*}}", features = "{{.*}}", pointer_size = {{[0-9]+}}, simd_bit_width = {{[0-9]+}}>
+  // CHECK: constraints <[target_eq(:target #kgen.target<triple = "{{.*}}", cpu = "{{.*}}", features = "{{.*}}", pointer_bit_width = {{[0-9]+}}, simd_bit_width = {{[0-9]+}}>
   constraints <[target_eq(:target #kgen<target host>, t0), "must support target!!"]> {
   kgen.return
 }

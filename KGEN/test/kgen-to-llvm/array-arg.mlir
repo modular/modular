@@ -1,6 +1,6 @@
 // RUN: kgen-opt -allow-unregistered-dialect -lower-kgen-to-llvm %s | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
 
 // CHECK-LABEL: llvm.func @array_arg
 kgen.func @array_arg(%arr: !pop.array<4, i32>) {
