@@ -516,17 +516,16 @@ Attribute M::convertDenseElements(Attribute attr) {
   return IntArrayElementsAttr::get(denseElements.getType(), values);
 }
 
-ElementsAttr
-M::getAttrForTensorData(ShapedType type, StringRef bufferName,
-                        ArrayRef<char> data,
-                        DenseResourceElementsHandleManager &resourceManager,
-                        Optional<size_t> optAlignment, bool forceOutOfLine) {
+ElementsAttr M::getAttrForTensorData(
+    ShapedType type, StringRef bufferName, ArrayRef<char> data,
+    DenseResourceElementsHandleManager &resourceManager,
+    Optional<size_t> optAlignment, bool forceOutOfLine, bool mustBeAligned) {
   // When loading in a tensor, we make a distinction between the case where
   // the data is "small" and when it is "large". "large" data is stored as a
   // resource blob, while "small" data is stored inline in the context.
   if (!(forceOutOfLine ||
         shouldUseOutOfLineAttrStorage(type.getNumElements()))) {
-    if (optAlignment) {
+    if (optAlignment && mustBeAligned) {
       return AlignedBytesAttr::get(
           type.getContext(), static_cast<uint64_t>(*optAlignment),
           ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(data.data()),
