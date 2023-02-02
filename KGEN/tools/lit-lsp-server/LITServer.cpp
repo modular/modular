@@ -72,50 +72,6 @@ getLocationFromDiag(llvm::SourceMgr &mgr, const llvm::SMDiagnostic &diag,
   return lsp::Location(*diagUri, getRangeFromDiag(mgr, diag));
 }
 
-/// Convert the given MLIR diagnostic to the LSP form.
-static std::optional<lsp::Diagnostic>
-getLspDiagnoticFromSMDiagnostic(llvm::SourceMgr &sourceMgr,
-                                ArrayRef<llvm::SMDiagnostic> diags,
-                                const lsp::URIForFile &uri) {
-  const llvm::SMDiagnostic &mainDiag = diags[0];
-
-  // Skip diagnostics that weren't emitted within the main file.
-  if (!isMainFileLoc(sourceMgr, mainDiag.getLoc()))
-    return std::nullopt;
-
-  lsp::Diagnostic lspDiag;
-  lspDiag.source = "lit";
-  lspDiag.category = "Parse Error";
-  lspDiag.range = getRangeFromDiag(sourceMgr, mainDiag);
-
-  // Convert the severity for the diagnostic.
-  switch (mainDiag.getKind()) {
-  case llvm::SourceMgr::DK_Note:
-    llvm_unreachable("expected notes to be handled separately");
-  case llvm::SourceMgr::DK_Warning:
-    lspDiag.severity = lsp::DiagnosticSeverity::Warning;
-    break;
-  case llvm::SourceMgr::DK_Error:
-    lspDiag.severity = lsp::DiagnosticSeverity::Error;
-    break;
-  case llvm::SourceMgr::DK_Remark:
-    lspDiag.severity = lsp::DiagnosticSeverity::Information;
-    break;
-  }
-  lspDiag.message = mainDiag.getMessage().str();
-
-  // Attach any notes to the main diagnostic as related information.
-  if (diags.size() > 1) {
-    std::vector<lsp::DiagnosticRelatedInformation> relatedDiags;
-    for (const llvm::SMDiagnostic &note : diags.drop_front())
-      if (auto loc = getLocationFromDiag(sourceMgr, note, uri))
-        relatedDiags.emplace_back(*loc, note.getMessage().str());
-    lspDiag.relatedInformation = std::move(relatedDiags);
-  }
-
-  return lspDiag;
-}
-
 //===----------------------------------------------------------------------===//
 // LITDocument
 //===----------------------------------------------------------------------===//
@@ -143,6 +99,25 @@ struct LITDocument {
                        std::vector<lsp::Diagnostic> &diagnostics);
 
   //===--------------------------------------------------------------------===//
+  // LSP Queries
+  //===--------------------------------------------------------------------===//
+
+  //===--------------------------------------------------------------------===//
+  // Diagnostics
+
+  std::optional<lsp::Diagnostic>
+  buildLspDiagnoticFromSMDiagnostic(llvm::SourceMgr &sourceMgr,
+                                    ArrayRef<llvm::SMDiagnostic> diags,
+                                    const lsp::URIForFile &uri);
+
+  //===--------------------------------------------------------------------===//
+  // Code Actions
+
+  void getCodeActions(const lsp::URIForFile &uri, const lsp::Range &pos,
+                      const lsp::CodeActionContext &context,
+                      std::vector<lsp::CodeAction> &actions);
+
+  //===--------------------------------------------------------------------===//
   // Fields
   //===--------------------------------------------------------------------===//
 
@@ -151,6 +126,11 @@ struct LITDocument {
 
   /// The version of this file.
   int64_t version = 0;
+
+  /// An ordered set of fixits for diagnostics emitted for the current version
+  /// of the file.
+  std::map<std::pair<lsp::Range, std::string>, std::vector<lsp::CodeAction>>
+      fixits;
 };
 } // namespace
 
@@ -203,7 +183,7 @@ void LITDocument::initialize(const lsp::URIForFile &uri,
 
   // Process the collected diagnostics.
   for (ArrayRef<llvm::SMDiagnostic> diags : handlerCtx.smDiagnostics) {
-    if (auto lspDiag = getLspDiagnoticFromSMDiagnostic(sourceMgr, diags, uri))
+    if (auto lspDiag = buildLspDiagnoticFromSMDiagnostic(sourceMgr, diags, uri))
       diagnostics.push_back(*lspDiag);
   }
 }
@@ -217,12 +197,168 @@ LITDocument::update(const lsp::URIForFile &uri, int64_t newVersion,
     return failure();
   }
   version = newVersion;
+  fixits.clear();
 
   // If the file contents were properly changed, reinitialize the text file.
   // TODO: We shouldn't need to reinitialize the entire file here, we should be
   // able to selectively update the parts that actually changed.
   initialize(uri, diagnostics);
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// LITDocument: Diagnostics
+//===----------------------------------------------------------------------===//
+
+/// Sanitizes a piece for presenting it in a synthesized fix message. Ensures
+/// the result is not too large and does not contain newlines.
+static void writeCodeToFixMessage(raw_ostream &os, StringRef code) {
+  constexpr unsigned kMaxLen = 50;
+  if (code == "\n") {
+    os << "\\n";
+    return;
+  }
+
+  // Only show the first line if there are many.
+  StringRef result = code.split('\n').first;
+
+  // Shorten the message if it's too long.
+  result = result.take_front(kMaxLen);
+
+  os << result;
+  if (result.size() != result.size())
+    os << "…";
+}
+
+static std::optional<lsp::CodeAction>
+buildCodeActionFromSMFixit(const llvm::SMFixIt &fixit, llvm::SourceMgr &mgr,
+                           const lsp::URIForFile &mainFileURI) {
+  llvm::SMRange range = fixit.getRange();
+  if (!range.isValid())
+    return std::nullopt;
+
+  // Get the file this fixit is in.
+  auto uri = getURIFromLoc(mgr, range.Start, mainFileURI);
+  if (!uri)
+    return std::nullopt;
+
+  // Build the code action.
+  lsp::CodeAction action;
+  action.kind = lsp::CodeAction::kQuickFix.str();
+
+  // Construct a title based on what the fixit is doing.
+  {
+    llvm::raw_string_ostream titleOS(action.title);
+
+    StringRef removedText(range.Start.getPointer(),
+                          range.End.getPointer() - range.Start.getPointer());
+    StringRef insertedText = fixit.getText();
+    if (!removedText.empty() && !insertedText.empty()) {
+      titleOS << "change '";
+      writeCodeToFixMessage(titleOS, removedText);
+      titleOS << "' to '";
+      writeCodeToFixMessage(titleOS, insertedText);
+      titleOS << "'";
+    } else if (!removedText.empty()) {
+      titleOS << "remove '";
+      writeCodeToFixMessage(titleOS, removedText);
+      titleOS << "'";
+    } else if (!insertedText.empty()) {
+      titleOS << "insert '";
+      writeCodeToFixMessage(titleOS, insertedText);
+      titleOS << "'";
+    }
+
+    // Don't allow source code to inject newlines into diagnostics.
+    std::replace(action.title.begin(), action.title.end(), '\n', ' ');
+  }
+
+  // Build the edit.
+  action.edit.emplace();
+  action.edit->changes[uri->uri().str()].push_back(
+      {lsp::Range(mgr, range), fixit.getText().str()});
+  return action;
+}
+
+/// Convert the given MLIR diagnostic to the LSP form.
+std::optional<lsp::Diagnostic> LITDocument::buildLspDiagnoticFromSMDiagnostic(
+    llvm::SourceMgr &sourceMgr, ArrayRef<llvm::SMDiagnostic> diags,
+    const lsp::URIForFile &uri) {
+  const llvm::SMDiagnostic &mainDiag = diags[0];
+
+  // Skip diagnostics that weren't emitted within the main file.
+  if (!isMainFileLoc(sourceMgr, mainDiag.getLoc()))
+    return std::nullopt;
+
+  lsp::Diagnostic lspDiag;
+  lspDiag.source = "lit";
+  lspDiag.category = "Parse Error";
+  lspDiag.range = getRangeFromDiag(sourceMgr, mainDiag);
+
+  // Convert the severity for the diagnostic.
+  switch (mainDiag.getKind()) {
+  case llvm::SourceMgr::DK_Note:
+    llvm_unreachable("expected notes to be handled separately");
+  case llvm::SourceMgr::DK_Warning:
+    lspDiag.severity = lsp::DiagnosticSeverity::Warning;
+    break;
+  case llvm::SourceMgr::DK_Error:
+    lspDiag.severity = lsp::DiagnosticSeverity::Error;
+    break;
+  case llvm::SourceMgr::DK_Remark:
+    lspDiag.severity = lsp::DiagnosticSeverity::Information;
+    break;
+  }
+  lspDiag.message = mainDiag.getMessage().str();
+
+  // Attach any notes to the main diagnostic as related information.
+  if (diags.size() > 1) {
+    std::vector<lsp::DiagnosticRelatedInformation> relatedDiags;
+    for (const llvm::SMDiagnostic &note : diags.drop_front())
+      if (auto loc = getLocationFromDiag(sourceMgr, note, uri))
+        relatedDiags.emplace_back(*loc, note.getMessage().str());
+    lspDiag.relatedInformation = std::move(relatedDiags);
+  }
+
+  // Collect fixits for the diagnostic.
+  std::vector<lsp::CodeAction> diagFixits;
+  for (const llvm::SMFixIt &fixit : mainDiag.getFixIts())
+    if (auto action = buildCodeActionFromSMFixit(fixit, sourceMgr, uri))
+      diagFixits.push_back(*action);
+  if (!diagFixits.empty()) {
+    // If there is only one fixit, mark it as preferred.
+    if (diagFixits.size() == 1)
+      diagFixits[0].isPreferred = true;
+
+    fixits.emplace(std::make_pair(lspDiag.range, lspDiag.message),
+                   std::move(diagFixits));
+  }
+
+  return lspDiag;
+}
+
+//===----------------------------------------------------------------------===//
+// LITDocument: Code Action
+//===----------------------------------------------------------------------===//
+
+void LITDocument::getCodeActions(const lsp::URIForFile &uri,
+                                 const lsp::Range &pos,
+                                 const lsp::CodeActionContext &context,
+                                 std::vector<lsp::CodeAction> &actions) {
+  // Create actions for any diagnostics in this file.
+  for (auto &diag : context.diagnostics) {
+    if (diag.source != "lit")
+      continue;
+
+    // Find the fixits for this diagnostic.
+    auto it = fixits.find(std::make_pair(diag.range, diag.message));
+    if (it == fixits.end())
+      continue;
+    for (auto &action : it->second) {
+      actions.emplace_back(action);
+      actions.back().diagnostics = {diag};
+    }
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -270,4 +406,13 @@ std::optional<int64_t> LITServer::removeDocument(const lsp::URIForFile &uri) {
   int64_t version = it->second->getVersion();
   impl->files.erase(it);
   return version;
+}
+
+void LITServer::getCodeActions(const lsp::URIForFile &uri,
+                               const lsp::Range &pos,
+                               const lsp::CodeActionContext &context,
+                               std::vector<lsp::CodeAction> &actions) {
+  auto fileIt = impl->files.find(uri.file());
+  if (fileIt != impl->files.end())
+    fileIt->second->getCodeActions(uri, pos, context, actions);
 }
