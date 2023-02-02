@@ -199,6 +199,12 @@ public:
   std::unique_ptr<llvm::ToolOutputFile>
   getIntermediateFile(StringRef inputName, StringRef ext) const;
 
+  /// Return a path to which headers can be emitted, or none if headers need not
+  /// be emitted at all.
+  std::optional<std::string> getHeaderOutputPath() const;
+
+  LogicalResult emitObject(StringRef object) const;
+
 private:
   /// Default alignment for input files.
   /// Used only when both client code and CLI do not specify alignment.

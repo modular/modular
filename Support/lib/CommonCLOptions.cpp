@@ -79,3 +79,25 @@ CommonCLOptions::getIntermediateFile(StringRef inputName, StringRef ext) const {
     exit(reportError(errorMessage));
   return result;
 }
+
+std::optional<std::string> CommonCLOptions::getHeaderOutputPath() const {
+  if (outputFilename.empty() || outputFilename == "-" ||
+      outputFilename == "/dev/null")
+    return {};
+
+  return std::filesystem::absolute(outputFilename.getValue())
+      .replace_extension(".h")
+      .string();
+}
+
+LogicalResult CommonCLOptions::emitObject(StringRef object) const {
+  std::unique_ptr<llvm::ToolOutputFile> outFile =
+      getOutputFile(/*hasBinaryOutput=*/true);
+  if (!outFile)
+    return failure();
+
+  outFile->os().write(object.begin(), object.size());
+  outFile->keep();
+
+  return mlir::success();
+}

@@ -5,9 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CacheDialect/CacheDialect.h"
-#include "EmitFuncHeader.h"
 #include "KGEN/CLOptions.h"
 #include "KGEN/CompilerRT.h"
+#include "KGEN/EmitFuncHeader.h"
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENCompiler.h"
