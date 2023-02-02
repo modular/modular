@@ -8,7 +8,7 @@
 # together.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_mandelbrot::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from Bool import Bool
 from DType import DType
@@ -85,6 +85,6 @@ fn test_mandelbrot_iter():
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     test_mandelbrot_iter()
     return 0
