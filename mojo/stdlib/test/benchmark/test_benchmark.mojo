@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_benchmark::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from Benchmark import Benchmark
 from Int import Int
@@ -67,6 +67,6 @@ fn test_benchmark():
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     test_benchmark()
     return 0
