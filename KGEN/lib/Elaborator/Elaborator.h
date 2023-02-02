@@ -23,6 +23,7 @@ class IREvaluator;
 
 LogicalResult elaborateGeneratorsV2(mlir::SymbolTableAnalysis &analysis,
                                     LLCL::Runtime &runtime,
+                                    TargetInfoAttr target,
                                     ArrayRef<GeneratorOp> primaryGenerators,
                                     bool enableSearch);
 

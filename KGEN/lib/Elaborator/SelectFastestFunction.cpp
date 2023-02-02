@@ -23,7 +23,7 @@ using namespace KGEN;
 
 static ErrorOr<Cache::BufferRef>
 produceObjectFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
-                         ArrayRef<FuncOp> exports) {
+                         TargetInfoAttr target, ArrayRef<FuncOp> exports) {
   // Create the set of symbols to export.
   DenseMap<StringAttr, StringAttr> exportedSymbols;
   for (auto e : exports) {
@@ -39,8 +39,7 @@ produceObjectFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
   auto compiler = std::make_unique<ObjectCompiler>(std::move(*compilerOr));
 
   // Produce a standalone object for all the exports.
-  auto objOr = compiler->produceStandaloneObject(
-      TargetInfoAttr::getForHost(symtab.getOp()->getContext()), true);
+  auto objOr = compiler->produceStandaloneObject(target, true);
   if (failed(objOr))
     return Error("failed to produce standalone object");
 
@@ -49,7 +48,7 @@ produceObjectFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
 
 ErrorOr<size_t>
 M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
-                                 LLCL::Runtime &runtime,
+                                 LLCL::Runtime &runtime, TargetInfoAttr target,
                                  ArrayRef<FuncOp> specializations) {
   // Create the execution engine.
   UNWRAP_ERROR(engine, ExecutionEngine::create(CompilationOptions()));
@@ -71,7 +70,8 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
   // We only want the funcs passed-in and the evaluator to be code-generated.
   SmallVector<FuncOp> funcsToCompile(specializations);
   funcsToCompile.push_back(evaluator);
-  auto objOr = produceObjectFromExports(runtime, symtab, funcsToCompile);
+  auto objOr =
+      produceObjectFromExports(runtime, symtab, target, funcsToCompile);
   if (objOr.isError())
     return objOr.takeError();
 

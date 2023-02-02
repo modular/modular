@@ -15,6 +15,7 @@ class SymbolTableAnalysis;
 } // namespace mlir
 
 namespace M {
+class TargetInfoAttr;
 namespace LLCL {
 class Runtime;
 } // namespace LLCL
@@ -36,7 +37,7 @@ resolveIncludes(SymbolTable &symtab,
 /// logic from the specified library.  On error, diagnostics are emitted and the
 /// primary file isn't completely lowered.
 LogicalResult elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
-                                  LLCL::Runtime &runtime,
+                                  LLCL::Runtime &runtime, TargetInfoAttr target,
                                   ArrayRef<KGEN::GeneratorOp> generators,
                                   bool useOldImpl = false,
                                   bool enableSearch = false);

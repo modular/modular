@@ -120,8 +120,9 @@ IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
       }
     }
 
-    auto bestOr = evaluateSpecializations(*evaluator, symtab,
-                                          elaborator.getRuntime(), options);
+    auto bestOr =
+        evaluateSpecializations(*evaluator, symtab, elaborator.getRuntime(),
+                                elaborator.getTarget(), options);
     if (bestOr.isError()) {
       emitError(
           ErrorTree(UnknownLoc::get(op.getContext()), bestOr.takeError()));

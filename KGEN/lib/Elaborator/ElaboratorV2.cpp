@@ -1831,7 +1831,8 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
 
           evalSemaphore.wait();
           ErrorOr<size_t> bestSpecializationIdxOr = evaluateSpecializations(
-              evalFunc, analysis.getTopLevelSymbolTable(), runtime, concrete);
+              evalFunc, analysis.getTopLevelSymbolTable(), runtime, target,
+              concrete);
           evalSemaphore.post();
 
           if (failed(bestSpecializationIdxOr)) {
@@ -2071,9 +2072,11 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
 // M::KGEN::elaborateGeneratorsV2
 //===----------------------------------------------------------------------===//
 
-LogicalResult M::KGEN::elaborateGeneratorsV2(
-    mlir::SymbolTableAnalysis &analysis, LLCL::Runtime &runtime,
-    ArrayRef<GeneratorOp> primaryGenerators, bool enableSearch) {
+LogicalResult
+M::KGEN::elaborateGeneratorsV2(mlir::SymbolTableAnalysis &analysis,
+                               LLCL::Runtime &runtime, TargetInfoAttr target,
+                               ArrayRef<GeneratorOp> primaryGenerators,
+                               bool enableSearch) {
   TimeTraceScope<> traceScope("elaborate-generators");
   ModuleOp primary = analysis.getTopLevelOp<ModuleOp>();
 
@@ -2104,9 +2107,7 @@ LogicalResult M::KGEN::elaborateGeneratorsV2(
   }
 
   // Now, construct and run the elaborator.
-  ElaboratorImpl impl(analysis,
-                      TargetInfoAttr::getForHost(primary.getContext()),
-                      transformCache->getRuntime(), asyncMap,
+  ElaboratorImpl impl(analysis, target, transformCache->getRuntime(), asyncMap,
                       transformCache.copy(), regionCache.copy(), enableSearch);
   return impl.run(primaryGenerators);
 }
