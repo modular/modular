@@ -21,4 +21,5 @@ add_modular_testsuite(check-kgen
   kgen-execute
   kgen-translate
   lit-lsp-server
+  lit
 )
