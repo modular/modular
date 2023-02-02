@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_llcl::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from Coroutine import Coroutine
 from IO import print
@@ -98,7 +98,7 @@ fn test_runtime_parallel_for():
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     test_runtime_task()
     test_runtime_taskgroup()
     test_runtime_parallel_for()

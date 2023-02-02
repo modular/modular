@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_tracing::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from IO import print
 from Int import Int
@@ -48,7 +48,7 @@ fn test_tracing[level: Int]():
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     # CHECK-LABEL: test_tracing_enabled
     print("== test_tracing_enabled")
     test_tracing[TraceLevel.ALWAYS]()
