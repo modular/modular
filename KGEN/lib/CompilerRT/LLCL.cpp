@@ -49,7 +49,7 @@ MODULAR_EXPORT void KGEN_CompilerRT_LLCL_InitializeChain(LLCLRuntimeRef rt,
                                                          AsyncChainRef chain) {
   assert(checkTypeIdsAreCoherent(*unwrap(rt)) && "type ids are not coherent");
   new (&unwrap(chain))
-      AsyncValueRef<Chain>(AsyncValueRef<Chain>::allocate(unwrap(rt)));
+      AsyncValueRef<Chain>(takeRCRef(AsyncValue::allocate<Chain>(unwrap(rt))));
 }
 
 /// Given the async context of a coroutine, destroy its token value.
@@ -72,7 +72,7 @@ MODULAR_EXPORT void KGEN_CompilerRT_LLCL_Execute(void (*resume)(int8_t *),
 MODULAR_EXPORT void KGEN_CompilerRT_LLCL_AndThen(void (*resume)(int8_t *),
                                                  AsyncChainRef chain,
                                                  int8_t *hdl) {
-  unwrap(chain).getPointer()->andThenAsync([hdl, resume]() { resume(hdl); });
+  unwrap(chain).andThenAsync([hdl, resume]() { resume(hdl); });
 }
 
 /// Block until the coroutine is done.
@@ -95,8 +95,7 @@ KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *), int8_t *execHdl,
                                       AsyncChainRef chain, LLCLRuntimeRef rt,
                                       int8_t *resumeHdl) {
   unwrap(rt)->getWorkQueue()->addTask([resume, execHdl]() { resume(execHdl); });
-  unwrap(chain).getPointer()->andThenAsync(
-      [resumeHdl, resume]() { resume(resumeHdl); });
+  unwrap(chain).andThenAsync([resumeHdl, resume]() { resume(resumeHdl); });
 }
 
 /// Given the async context of a coroutine, indicate that it is complete by
@@ -119,7 +118,6 @@ MODULAR_EXPORT LLCLRuntimeRef KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(
       createLeakCheckAllocator(createMallocAllocator()),
       createThreadPoolWorkQueue(numThreads, {}, !profileFilename.empty()),
       profileFilename);
-  AsyncValue::registerType<Chain>();
   return wrap(runtime);
 }
 
