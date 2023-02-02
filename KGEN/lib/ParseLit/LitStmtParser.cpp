@@ -686,9 +686,8 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   if (!nextCall) {
     return {};
   }
-  shared.declResolver->addFullyResolvedDecl(
-      nextCall.getIfDRValue(), target, identifierLocation,
-      getEmitter().declScope.getParentDecl());
+  getDeclResolver().addFullyResolvedDecl(nextCall.getIfDRValue(), target,
+                                         identifierLocation, &containingDecl);
   if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
   builder.create<HLCF::ContinueOp>(forLoc);
