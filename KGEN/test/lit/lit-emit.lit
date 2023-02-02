@@ -1,0 +1,19 @@
+# RUN: lit %s -emit -o %t.o
+# RUN: cat %t.h | FileCheck %s
+
+from F32 import F32
+from Int import Int
+from IO import print
+
+
+@export
+# CHECK: extern float call_me();
+fn call_me() -> F32:
+    return 1.0
+
+
+@export
+# CHECK: extern ssize_t main();
+fn main() -> Int:
+    call_me()
+    return 0

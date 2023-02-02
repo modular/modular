@@ -1,10 +1,10 @@
-# RUN: kgen %s -execute -func='$execute::run_me():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
-from prolog import F32, printF32
+from prolog import F32, Int, printF32
 
 
 @export
-fn run_me() -> __mlir_type.index:
+fn main() -> Int:
     # CHECK: 2.0
     printF32(F32(1.0) + 1.0)
     return 0

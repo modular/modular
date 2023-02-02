@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "EmitFuncHeader.h"
+#include "KGEN/EmitFuncHeader.h"
 #include "KGEN/LowerToObject.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/Support/FormatAdapters.h"

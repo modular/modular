@@ -9,7 +9,6 @@
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/Support/Regex.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include <filesystem>
 
 using namespace M;
 
@@ -102,26 +101,4 @@ bool CommandLineFuncParser::parse(llvm::cl::Option &o, StringRef argName,
   // Otherwise, if we don't have a signature, the value is the name.
   val.name = argValue;
   return false;
-}
-
-std::optional<std::string> KGENCLOptions::getHeaderOutputPath() const {
-  if (outputFilename.empty() || outputFilename == "-" ||
-      outputFilename == "/dev/null")
-    return {};
-
-  return std::filesystem::absolute(outputFilename.getValue())
-      .replace_extension(".h")
-      .string();
-}
-
-LogicalResult KGENCLOptions::emitObject(StringRef object) const {
-  std::unique_ptr<llvm::ToolOutputFile> outFile =
-      getOutputFile(/*hasBinaryOutput=*/true);
-  if (!outFile)
-    return failure();
-
-  outFile->os().write(object.begin(), object.size());
-  outFile->keep();
-
-  return mlir::success();
 }

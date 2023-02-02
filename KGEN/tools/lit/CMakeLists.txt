@@ -4,8 +4,8 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(kgen
-  kgen.cpp
+add_modular_tool(lit
+  lit.cpp
 
   LINK_LIBS PRIVATE
   KGENCLOptions
