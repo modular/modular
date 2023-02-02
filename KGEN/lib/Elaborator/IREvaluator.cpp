@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "SymbolicExpressions.h"
+#include "IREvaluator.h"
 #include "Elaborator.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
@@ -69,8 +69,7 @@ IREvaluator::IREvaluator(Elaborator &elaborator,
       symtab(elaborator.getAnalysis().getTopLevelSymbolTable()),
       elaborator(elaborator) {}
 
-FailureOr<TypedAttr>
-IREvaluator::evaluateSymbolicExpression(ParamOperatorAttr op) {
+FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
   // Try to narrow this operator to an expression we can evaluate. We only need
   // to emit an error during the evaluation attempt.
   if (op.getOpcode() == POC::Apply) {

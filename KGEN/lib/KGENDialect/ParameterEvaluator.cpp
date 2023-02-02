@@ -99,8 +99,7 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
 
   // If an operator persisted, try to simplify it with the symbol table.
   if (auto op = dyn_cast<ParamOperatorAttr>(result))
-    if (FailureOr<TypedAttr> expr = evaluateSymbolicExpression(op);
-        succeeded(expr))
+    if (FailureOr<TypedAttr> expr = evaluateExpression(op); succeeded(expr))
       result = *expr;
 
   return rewrittenAttrs[attr] = result;
