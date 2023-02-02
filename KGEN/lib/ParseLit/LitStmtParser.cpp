@@ -234,7 +234,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, AnyValue value,
   auto startLoc = expr->getRange().getStart();
   shared.emitWarning(expr->getLoc())
       << valueType << " value is unused" << expr->getRange()
-      << LitFixIt(LitSourceRange(startLoc, startLoc), "_ = ");
+      << LitFixIt(LitSourceRange::getByteLevel(startLoc, startLoc), "_ = ");
 }
 
 /// When `isSimpleStmt` is true, this parses the simple_stmt production,

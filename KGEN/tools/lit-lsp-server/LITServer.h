@@ -39,6 +39,12 @@ public:
   /// within the server.
   std::optional<int64_t> removeDocument(const mlir::lsp::URIForFile &uri);
 
+  /// Get the set of code actions within the file.
+  void getCodeActions(const mlir::lsp::URIForFile &uri,
+                      const mlir::lsp::Range &pos,
+                      const mlir::lsp::CodeActionContext &context,
+                      std::vector<mlir::lsp::CodeAction> &actions);
+
 private:
   struct Impl;
   std::unique_ptr<Impl> impl;
