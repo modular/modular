@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_ELABORATOR_SYMBOLICEXPRESSIONS_H
-#define KGEN_ELABORATOR_SYMBOLICEXPRESSIONS_H
+#ifndef KGEN_ELABORATOR_IREVALUATOR_H
+#define KGEN_ELABORATOR_IREVALUATOR_H
 
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -30,8 +30,7 @@ public:
                   DenseMap<StringAttr, Attribute>());
 
   /// Evaluate symbolic expressions using the symbol table.
-  FailureOr<TypedAttr>
-  evaluateSymbolicExpression(ParamOperatorAttr op) override;
+  FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
 
   /// Given a generic parameter expression, substitute known values for
   /// parameters into it and fold it down to a simple constant. This returns an
@@ -93,4 +92,4 @@ evaluateConstraints(ArrayRef<ConstraintAttr> constraints,
 
 } // namespace M::KGEN
 
-#endif // KGEN_ELABORATOR_SYMBOLICEXPRESSIONS_H
+#endif // KGEN_ELABORATOR_IREVALUATOR_H

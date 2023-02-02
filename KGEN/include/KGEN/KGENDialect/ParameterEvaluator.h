@@ -94,8 +94,7 @@ public:
   /// Evaluate a potentially symbolic expression. This hook should be overridden
   /// to process symbol expressions using some global state, including a symbol
   /// table.
-  virtual FailureOr<TypedAttr>
-  evaluateSymbolicExpression(ParamOperatorAttr op) {
+  virtual FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) {
     return failure();
   }
 

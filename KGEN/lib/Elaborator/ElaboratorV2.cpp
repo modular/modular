@@ -13,6 +13,7 @@
 
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "Elaborator.h"
+#include "IREvaluator.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -26,7 +27,6 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/STLExtras.h"
-#include "SymbolicExpressions.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
