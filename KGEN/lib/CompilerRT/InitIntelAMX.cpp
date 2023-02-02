@@ -4,7 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/CompilerRT.h"
+#include "llvm/ADT/StringRef.h"
+
 #if defined(__x86_64__) && defined(__linux__)
+#include "Support/SymbolExport.h"
 #include <asm/prctl.h>   /* Definition of ARCH_* constants */
 #include <sys/syscall.h> /* Definition of SYS_* constants */
 #include <unistd.h>
@@ -21,7 +25,7 @@ enum class XFeature : size_t {
 };
 
 // This funciton must be called before using Intel AMX
-extern "C" bool KGEN_CompilerRT_Init_Intel_AMX() {
+MODULAR_EXPORT bool KGEN_CompilerRT_Init_Intel_AMX() {
   unsigned long bitmask = 0;
   if (syscall(SYS_arch_prctl, ARCH_GET_XCOMP_PERM, &bitmask))
     return false;
@@ -41,3 +45,12 @@ extern "C" bool KGEN_CompilerRT_Init_Intel_AMX() {
   return true;
 }
 #endif
+
+/// Register the intel AMX functions.
+void M::KGEN::registerIntelAMX(
+    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
+#if defined(__x86_64__) && defined(__linux__)
+  funcs.push_back({"KGEN_CompilerRT_Init_Intel_AMX",
+                   (void *)&KGEN_CompilerRT_Init_Intel_AMX});
+#endif
+}

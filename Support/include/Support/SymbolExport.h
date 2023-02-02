@@ -17,6 +17,12 @@
 #define MODULAR_VISIBILITY_EXPORT __attribute__((visibility("default")))
 #endif
 
+#if __has_attribute(used)
+#define MODULAR_ATTRIBUTE_USED __attribute__((__used__))
+#else
+#define MODULAR_ATTRIBUTE_USED
+#endif
+
 #define MODULAR_EXPORT extern "C" MODULAR_VISIBILITY_EXPORT
 #define MODULAR_CXX_EXPORT MODULAR_VISIBILITY_EXPORT
 

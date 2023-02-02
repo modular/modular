@@ -4,4 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-bool KGEN_CompilerRT_Initialize() { return true; }
+#include "Support/SymbolExport.h"
+
+MODULAR_EXPORT bool KGEN_CompilerRT_Initialize() { return true; }

@@ -6,11 +6,13 @@
 
 add_modular_tool(kgen-opt
   kgen-opt.cpp
+
   LINK_LIBS PRIVATE
   DebugInfoToLLVM
   LITDialect
   KGENDialect
   KGENEmitObject
+  KGENCompilerRT
   ZAPDialect
   POPDialect
   KGENToLLVM

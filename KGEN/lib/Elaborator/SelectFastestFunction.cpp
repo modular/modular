@@ -7,6 +7,7 @@
 #include "SelectFastestFunction.h"
 
 #include "KGEN/CompilationOptions.h"
+#include "KGEN/CompilerRT.h"
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -52,6 +53,20 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
                                  ArrayRef<FuncOp> specializations) {
   // Create the execution engine.
   UNWRAP_ERROR(engine, ExecutionEngine::create(CompilationOptions()));
+
+  // TODO (8082): This should not be necessary.
+  std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
+  KGEN::registerBenchmark(compilerRTFunctions);
+  KGEN::registerDebugAssert(compilerRTFunctions);
+  KGEN::registerIntelAMX(compilerRTFunctions);
+  KGEN::registerLLCL(compilerRTFunctions);
+  KGEN::registerPrint(compilerRTFunctions);
+  KGEN::registerRandom(compilerRTFunctions);
+  KGEN::registerSystem(compilerRTFunctions);
+  KGEN::registerTracing(compilerRTFunctions);
+  for (auto [name, ptr] : compilerRTFunctions)
+    if (auto err = engine.add("evaluateSpecializations", name, ptr))
+      return err.takeError();
 
   // We only want the funcs passed-in and the evaluator to be code-generated.
   SmallVector<FuncOp> funcsToCompile(specializations);
