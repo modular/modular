@@ -1,5 +1,7 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
+#target = #kgen.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128> : !kgen.target
+
 // CHECK-LABEL: kgen.generator @param_expr
 kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype, mlirType: type, fn: (index) -> index>()  {
   // Generic attr syntax in generic ops
@@ -91,10 +93,10 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   %22 = kgen.param.constant: i1 = <le(5, 9)>
 
   // CHECK: = kgen.param.constant = <get_sizeof(mlirType, #kgen.target<{{.*}}>)>
-  %23 = kgen.param.constant = <get_sizeof(mlirType, #kgen<target host>)>
+  %23 = kgen.param.constant = <get_sizeof(mlirType, #target)>
 
   // CHECK: = kgen.param.constant = <get_alignof(mlirType, #kgen.target<{{.*}}>)>
-  %24 = kgen.param.constant = <get_alignof(mlirType, #kgen<target host>)>
+  %24 = kgen.param.constant = <get_alignof(mlirType, #target)>
 
 
   // CHECK: = kgen.param.constant = <max(p1, 2)>
@@ -342,22 +344,22 @@ kgen.generator @param_canonicalize<p1, p2>() {
 // CHECK-LABEL: kgen.generator @datalayout_operators()
 kgen.generator @datalayout_operators() {
   // CHECK-NEXT: <4>
-  %0 = kgen.param.constant = <get_sizeof(i32, #kgen<target host>)>
+  %0 = kgen.param.constant = <get_sizeof(i32, #target)>
   // CHECK-NEXT: <3>
-  %1 = kgen.param.constant = <get_sizeof(i20, #kgen<target host>)>
+  %1 = kgen.param.constant = <get_sizeof(i20, #target)>
   // CHECK-NEXT: <8>
-  %2 = kgen.param.constant = <get_sizeof(f64, #kgen<target host>)>
+  %2 = kgen.param.constant = <get_sizeof(f64, #target)>
   // CHECK-NEXT: <8>
-  %3 = kgen.param.constant = <get_sizeof(index, #kgen<target host>)>
+  %3 = kgen.param.constant = <get_sizeof(index, #target)>
 
   // CHECK-NEXT: <4>
-  %4 = kgen.param.constant = <get_alignof(i32, #kgen<target host>)>
+  %4 = kgen.param.constant = <get_alignof(i32, #target)>
   // CHECK-NEXT: <4>
-  %5 = kgen.param.constant = <get_alignof(i20, #kgen<target host>)>
+  %5 = kgen.param.constant = <get_alignof(i20, #target)>
   // CHECK-NEXT: <8>
-  %6 = kgen.param.constant = <get_alignof(f64, #kgen<target host>)>
+  %6 = kgen.param.constant = <get_alignof(f64, #target)>
   // CHECK-NEXT: <8>
-  %7 = kgen.param.constant = <get_alignof(index, #kgen<target host>)>
+  %7 = kgen.param.constant = <get_alignof(index, #target)>
 
   kgen.return
 }
@@ -435,13 +437,6 @@ kgen.generator @target_params2<t0: target>()
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @target_host<t0: target>()
-kgen.generator @target_host<t0: target>()
-  // CHECK: constraints <[target_eq(:target #kgen.target<triple = "{{.*}}", cpu = "{{.*}}", features = "{{.*}}", pointer_bit_width = {{[0-9]+}}, simd_bit_width = {{[0-9]+}}>
-  constraints <[target_eq(:target #kgen<target host>, t0), "must support target!!"]> {
-  kgen.return
-}
-
 // CHECK-LABEL: kgen.generator @target_has_feature<t0: target>()
 kgen.generator @target_has_feature<t0: target>()
   constraints <[target_has_feature(t0, "avx"), "must support avx!"]> {
@@ -462,10 +457,9 @@ kgen.generator @target_is_arch<t0: target>()
 
 // CHECK-LABEL: kgen.generator @target_get_field()
 kgen.generator @target_get_field() {
-  kgen.param.assert<le(1, target_get_field(#kgen<target host>,
-                                           "simd_bit_width"))>,
+  kgen.param.assert<le(1, target_get_field(#target, "simd_bit_width"))>,
                     "simd_bit_width is always greater than 1"
-  kgen.param.assert<eq(:string target_get_field(#kgen<target host>, "os"), "darwin")>,
+  kgen.param.assert<eq(:string target_get_field(#target, "os"), "darwin")>,
                     "target os is darwin"
   kgen.return
 }
@@ -558,8 +552,10 @@ lit.struct.decl @B {}
 
 // CHECK-LABEL: @symbol_exprs
 kgen.generator @symbol_exprs() {
-  // CHECK: <add(get_sizeof(!kgen.declref<@A>, #kgen.target<{{.*}}>), get_sizeof(!kgen.declref<@B>, #kgen.target<{{.*}}>))>
-  %0 = kgen.param.constant = <add(get_sizeof(!kgen.declref<@A>, #kgen<target host>), get_sizeof(!kgen.declref<@B>, #kgen<target host>))>
+  // CHECK: <add(get_sizeof(!kgen.declref<@A>, #kgen.target<{{.*}}>),
+  // CHECK-SAME: get_sizeof(!kgen.declref<@B>, #kgen.target<{{.*}}>))>
+  %0 = kgen.param.constant = <add(get_sizeof(!kgen.declref<@A>, #target),
+                                  get_sizeof(!kgen.declref<@B>, #target))>
   kgen.return
 }
 
