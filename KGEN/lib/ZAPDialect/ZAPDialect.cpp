@@ -12,19 +12,6 @@
 using namespace M;
 using namespace M::KGEN;
 
-namespace {
-/// This class defines the interface for handling inlining for zap
-/// dialect operations.
-struct ZAPInlinerInterface : public mlir::DialectInlinerInterface {
-  using DialectInlinerInterface::DialectInlinerInterface;
-
-  /// All zap dialect ops can be inlined.
-  bool isLegalToInline(Operation *, Region *, bool, IRMapping &) const final {
-    return true;
-  }
-};
-} // namespace
-
 //===----------------------------------------------------------------------===//
 // ZAPDialect
 //===----------------------------------------------------------------------===//
@@ -32,7 +19,6 @@ struct ZAPInlinerInterface : public mlir::DialectInlinerInterface {
 void ZAP::ZAPDialect::initialize() {
   registerOperations();
   registerTypes();
-  addInterface<ZAPInlinerInterface>();
 }
 
 Operation *ZAP::ZAPDialect::materializeConstant(OpBuilder &b, Attribute value,

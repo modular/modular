@@ -122,26 +122,6 @@ private:
   bool isActive = false;
   std::filesystem::path outputFilePath;
 };
-
-/// Any dialect that has this interface attached will be legal to inline (by
-/// force).
-struct ForceInlineDialectInterface : public mlir::DialectInlinerInterface {
-  using DialectInlinerInterface::DialectInlinerInterface;
-
-  bool isLegalToInline(Operation *, Region *, bool,
-                       IRMapping &) const override {
-    return true;
-  }
-
-  bool isLegalToInline(Operation *, Operation *,
-                       bool wouldBeCloned) const override {
-    return true;
-  }
-
-  bool isLegalToInline(Region *, Region *, bool, IRMapping &) const override {
-    return true;
-  }
-};
 } // namespace
 
 ErrorOrSuccess CLOptions::addInputFilesToSourceMgr(llvm::SourceMgr &mgr) {
@@ -243,13 +223,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Set up the dialects in the context.
   ctx->appendDialectRegistry(registry);
   ctx->loadAllAvailableDialects();
-  // Add a basic inliner interface to the debug info and builtin dialect.
-  ctx->getOrLoadDialect<DebugInfo::DebugInfoDialect>()
-      ->addInterface<ForceInlineDialectInterface>();
-  ctx->getOrLoadDialect<BuiltinDialect>()
-      ->addInterface<ForceInlineDialectInterface>();
-  ctx->getOrLoadDialect<index::IndexDialect>()
-      ->addInterface<ForceInlineDialectInterface>();
   // Allow unregistered dialects, we will verify we know what to do with it
   // later.
   ctx->allowUnregisteredDialects();

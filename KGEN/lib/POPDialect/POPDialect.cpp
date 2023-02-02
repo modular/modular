@@ -23,19 +23,6 @@ using namespace POP;
 // Dialect specification.
 //===----------------------------------------------------------------------===//
 
-namespace {
-/// This class defines the interface for handling inlining for pop
-/// dialect operations.
-struct POPInlinerInterface : public mlir::DialectInlinerInterface {
-  using DialectInlinerInterface::DialectInlinerInterface;
-
-  /// All pop dialect ops can be inlined.
-  bool isLegalToInline(Operation *, Region *, bool, IRMapping &) const final {
-    return true;
-  }
-};
-} // namespace
-
 // Pull in the dialect definition.
 #include "KGEN/POPDialect/POPDialect.cpp.inc"
 
@@ -48,5 +35,4 @@ void POPDialect::initialize() {
 #define GET_OP_LIST
 #include "KGEN/POPDialect/POP.cpp.inc"
       >();
-  addInterfaces<POPInlinerInterface>();
 }
