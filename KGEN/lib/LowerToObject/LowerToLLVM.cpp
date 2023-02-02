@@ -116,6 +116,12 @@ void EmitLLVMPass::runOnOperation() {
       runtime, createLeakCheckAllocator(createMallocAllocator()),
       createSingleThreadWorkQueue());
 
+  if (!getTargetInfo(getOperation())) {
+    mlir::emitError(getOperation().getLoc(),
+                    "could not find an enclosing target specification");
+    return signalPassFailure();
+  }
+
   // TODO: Populate compilation options from pass options.
   auto compiler = ObjectCompiler::create(
       *rt, ".kgen_cache",

@@ -1,5 +1,7 @@
 // RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm),lower-kgen-to-llvm,canonicalize)' %s | FileCheck %s
 
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+
 // CHECK-LABEL: @scalar_bitcast
 // CHECK-SAME: %[[UI32:[a-z0-9]+]]:
 // CHECK-SAME: %[[F32:[a-z0-9]+]]:
@@ -208,4 +210,6 @@ kgen.func @simd_cast(
     !pop.simd<2, f64>,
     !pop.simd<2, f32>,
     !pop.simd<2, f32>
+}
+
 }

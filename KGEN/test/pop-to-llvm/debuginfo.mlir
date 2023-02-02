@@ -30,6 +30,8 @@
   subprogramFlags = Definition
 > : !test
 
-kgen.func @foo() {
-  kgen.return
-} loc(fused<#subprogram>["foo.mlir":10:10])
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+  kgen.func @foo() {
+    kgen.return
+  } loc(fused<#subprogram>["foo.mlir":10:10])
+}

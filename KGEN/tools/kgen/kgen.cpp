@@ -319,6 +319,10 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       clOptions.cmd == Command::kElaborate)
     return emitModuleIR(*theModule, clOptions);
 
+  // The IR module is being compiled to an object file. Find a target
+  // specification or use the host target.
+  TargetInfoAttr target = getTargetInfoOrHost(*theModule);
+
   SymbolTable symtab(*theModule);
   auto compiler = ObjectCompiler::create(runtime, ".kgen_cache", symtab,
                                          compilationOptions);
@@ -326,8 +330,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return failure(clOptions.reportError(
         Twine("could not create object compiler: ") + compiler.getError()));
   }
-
-  TargetInfoAttr attr = TargetInfoAttr::getForHost(ctx);
 
   // Handle LLVM output.
   if (clOptions.cmd == Command::kEmitLLVM) {
@@ -351,7 +353,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       return failure();
 
     auto standaloneOr =
-        compiler->produceStandaloneAssembly(attr, outFile->os());
+        compiler->produceStandaloneAssembly(target, outFile->os());
     if (failed(standaloneOr))
       return failure();
     outFile->keep();
@@ -360,7 +362,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // This produces a standalone object for all the objects we requested.
   auto standaloneOr = compiler->produceStandaloneObject(
-      attr, /*isJIT=*/clOptions.cmd == Command::kExecute);
+      target, /*isJIT=*/clOptions.cmd == Command::kExecute);
   if (failed(standaloneOr) && !clOptions.ignoreFailures)
     return failure();
   Cache::BufferRef standaloneObject = std::move(*standaloneOr);

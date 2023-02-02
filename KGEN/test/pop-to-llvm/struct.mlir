@@ -2,6 +2,8 @@
 
 !struct1 = !pop.struct<struct<f32>, array<4, f32>>
 
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+
 // CHECK-LABEL: @struct_construct
 kgen.func @struct_construct(%a: !pop.struct<f32>, %b: !pop.array<4, f32>) -> !struct1 {
   // CHECK: %[[S0:.*]] = llvm.mlir.undef : !llvm.struct<(f32, array<4 x f32>)>
@@ -58,4 +60,6 @@ kgen.func @struct_gep_one(%a: !pop.pointer<struct<i32>>) -> !pop.pointer<i32> {
   // CHECK: unrealized_conversion_cast %arg0 : !pop.pointer<struct<i32>> to !llvm.ptr<i32>
   %0 = pop.struct.gep %a[0] : <struct<i32>>
   kgen.return %0 : !pop.pointer<i32>
+}
+
 }

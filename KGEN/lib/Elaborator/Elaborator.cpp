@@ -72,14 +72,20 @@ struct ElaborateGeneratorsPass
         primaryGenerators.push_back(gen);
 
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
-    // TODO: This should not be happening inside the elaborate-generators pass.
     if (failed(resolveIncludes(analysis.getTopLevelSymbolTable(), paths,
                                includedFiles)))
       return signalPassFailure();
 
-    if (failed(elaborateGenerators(analysis, *rt,
-                                   TargetInfoAttr::getForHost(&getContext()),
-                                   primaryGenerators, oldImpl, shouldDoSearch)))
+    // Elaboration is the compilation phase in which the IR goes from
+    // target-non-specific to target-specific: in order to fully concretize the
+    // IR, we must evaluate compile-time expressions, which is a target-specific
+    // operation. Make the IR target-specific by attaching the required target
+    // specification. For now, assume compilation for the host target.
+    auto target = TargetInfoAttr::getForHost(&getContext());
+    setTargetInfo(theModule, target);
+
+    if (failed(elaborateGenerators(analysis, *rt, target, primaryGenerators,
+                                   oldImpl, shouldDoSearch)))
       return signalPassFailure();
   }
 
