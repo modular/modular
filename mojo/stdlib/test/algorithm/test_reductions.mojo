@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_reductions::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from Buffer import Buffer
 from DType import DType
@@ -80,7 +80,7 @@ fn test_mean_variance():
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     test_reductions()
     test_product()
     test_mean_variance()

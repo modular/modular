@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_map::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from Buffer import Buffer
 from DType import DType
@@ -61,6 +61,6 @@ fn test_map():
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     test_map()
     return 0
