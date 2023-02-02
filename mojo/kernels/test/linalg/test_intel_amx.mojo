@@ -8,7 +8,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: linux, intel_amx
-# RUN: kgen %s -execute -func='$test_intel_amx::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from DType import DType
 from Bool import Bool
@@ -157,7 +157,7 @@ fn setup_tile_config() -> tileconfig:
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     let a = Buffer[1024, DType.si8.value].stack_allocation()
     let b = Buffer[1024, DType.si8.value].stack_allocation()
     let c = Buffer[256, DType.si32.value].stack_allocation()

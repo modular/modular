@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -execute -func='$test_transpose::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from Buffer import Buffer, NDBuffer
 from DType import DType
@@ -471,7 +471,7 @@ fn test_transpose_3d():
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     test_transpose_4x4()
     test_transpose_8x8()
     test_transpose_3x2_out_of_place()

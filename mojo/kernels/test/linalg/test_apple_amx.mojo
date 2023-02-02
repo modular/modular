@@ -9,7 +9,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: apple-m1
-# RUN: kgen %s -execute -func='$test_apple_amx::main():index()' | FileCheck %s
+# RUN: lit %s -execute | FileCheck %s
 
 from AppleAMX import amx_detail
 from Buffer import NDBuffer
@@ -381,6 +381,6 @@ fn test_amx_matmul():
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     test_amx_matmul()
     return 0
