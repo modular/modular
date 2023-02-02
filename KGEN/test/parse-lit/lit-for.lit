@@ -1,6 +1,8 @@
 # RUN: kgen-translate -import-lit %s | FileCheck %s
+
 from Pointer import Pointer
 from Int import Int
+from Range import range
 
 
 struct my_iter:
@@ -71,3 +73,9 @@ fn main() -> __mlir_type.index:
     for item in my_list:
         printInt(item)
     return 0
+
+# CHECK-LABEL: @"induction_var_scope()"
+fn induction_var_scope():
+    for item in range(0):
+      # CHECK: "g" = %{{.*}}
+      let g = item
