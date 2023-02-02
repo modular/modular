@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import modular.engine.core as mdcore
+import modular.engine.core as mecore
 from modular.engine.core import InferenceSession, Model
 
-__version__ = mdcore.__version__
+__version__ = mecore.__version__
