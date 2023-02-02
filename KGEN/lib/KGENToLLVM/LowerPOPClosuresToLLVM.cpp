@@ -48,15 +48,21 @@ public:
   LogicalResult
   matchAndRewrite(PartialApplyOp op, PartialApplyOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    auto calleeType = dyn_cast<FunctionType>(op.getCallee().getType());
-    if (!calleeType)
-      return emitError(op.getLoc(), "nested closures are not supported");
+    FunctionType calleeType;
+    ClosureType calleeClosureType =
+        dyn_cast<ClosureType>(op.getCallee().getType());
+    if (calleeClosureType)
+      calleeType = calleeClosureType.getFunc();
+    else
+      calleeType = dyn_cast<FunctionType>(op.getCallee().getType());
+
     // Create the type of the "environment" struct
     size_t numBoundArgs = op.getBoundInputs().size();
     size_t numCalleeInputs = calleeType.getInputs().size();
 
     SmallVector<Type> boundArgTypes;
     boundArgTypes.reserve(numBoundArgs);
+
     for (Value arg : op.getInputs()) {
       Type ty = getTypeConverter()->convertType(arg.getType());
       if (!ty)
@@ -65,8 +71,15 @@ public:
                << " with type " << arg.getType();
       boundArgTypes.push_back(ty);
     }
-
     auto erasedPtrType = LLVM::LLVMPointerType::get(context);
+    auto erasedEnvPtrType =
+        LLVM::LLVMPointerType::get(LLVM::LLVMStructType::getLiteral(
+            context, {erasedPtrType, erasedPtrType}));
+
+    if (calleeClosureType) {
+      // Add the type of the parent closure's environment struct
+      boundArgTypes.push_back(erasedEnvPtrType);
+    }
     auto boundArgStructTy =
         LLVM::LLVMStructType::getLiteral(context, boundArgTypes);
     auto envStructType = LLVM::LLVMStructType::getLiteral(
@@ -88,6 +101,7 @@ public:
         return emitError(op.getLoc()) << "could not convert type " << inpTy;
       wrapperFnArgTypes.push_back(ty);
     }
+
     // Convert the result types.
     SmallVector<Type> resultTypes;
     Type packedResTy = getVoidType();
@@ -113,22 +127,60 @@ public:
       wrapperFnBody->addArgument(argTy, op.getLoc());
 
     Value env = wrapperFnBody->getArgument(0);
-    Type envCalleeType = adaptor.getCallee().getType();
     Value envStructPtr =
         rewriter.create<LLVM::BitcastOp>(op.getLoc(), envStructPtrTy, env);
+
+    Type envCalleeType;
+    if (calleeClosureType) {
+      SmallVector<Type> inpTypes;
+      inpTypes.push_back(erasedEnvPtrType);
+      for (Type inpType : calleeType.getInputs()) {
+        Type ty = getTypeConverter()->convertType(inpType);
+        if (!ty)
+          return emitError(op.getLoc())
+                 << "could not convert input type " << inpType;
+        inpTypes.push_back(ty);
+      }
+
+      // If there are no result types, set it to void. Otherwise, set the result
+      // type to the packed result types.
+      Type resultType;
+      if (resultTypes.empty())
+        resultType = getVoidType();
+      else
+        resultType = resultTypes[0];
+
+      envCalleeType = LLVM::LLVMPointerType::get(
+          LLVM::LLVMFunctionType::get(context, resultType, inpTypes, 0));
+    } else {
+      envCalleeType = adaptor.getCallee().getType();
+    }
+
+    // This implicitly bitcasts the pointer to a function
     Value calleePtr = rewriter.create<LLVM::GEPOp>(
         op.getLoc(), LLVM::LLVMPointerType::get(envCalleeType), envStructPtr,
         ArrayRef<LLVM::GEPArg>({0, 0}));
+
     Value callee = rewriter.create<LLVM::LoadOp>(op.getLoc(), calleePtr);
 
     // Create the call to the callee
-    SmallVector<Value>
-        llvmCallArgs; // list of callee followed by bound and unbound args
+    SmallVector<Value> llvmCallArgs;
     llvmCallArgs.push_back(callee);
+
+    if (calleeClosureType) {
+      // The parent closure's environment struct is at the end of the bound
+      // arguments
+      Value boundEnvPtr = rewriter.create<LLVM::GEPOp>(
+          op.getLoc(), LLVM::LLVMPointerType::get(erasedEnvPtrType),
+          envStructPtr, ArrayRef<LLVM::GEPArg>({0, 1, numBoundArgs}));
+      Value boundEnv = rewriter.create<LLVM::LoadOp>(op.getLoc(), boundEnvPtr);
+      llvmCallArgs.push_back(boundEnv);
+    }
 
     // Unpack the bound and unbound arguments into the call args
     size_t boundArgIdx = 0;
-    size_t wrapperFnArgIdx = 1; // env is the 0 argument to wrapperFn
+    // The environment is the 0 argument to wrapperFn.
+    size_t wrapperFnArgIdx = 1;
     ArrayRef<int64_t> boundInputs = op.getBoundInputs();
     for (size_t i = 0; i < numCalleeInputs; i++) {
       if (boundArgIdx < numBoundArgs &&
@@ -205,14 +257,31 @@ public:
           ArrayRef<LLVM::GEPArg>({0, 1, argIdx}));
       rewriter.create<LLVM::StoreOp>(op.getLoc(), boundArgValue, boundArgPtr);
     }
+    if (calleeClosureType) {
+      Value parentEnvPtr = rewriter.create<LLVM::ExtractValueOp>(
+          op.getLoc(), adaptor.getCallee(), 1);
+      Value boundParentEnvPtr = rewriter.create<LLVM::GEPOp>(
+          op.getLoc(), LLVM::LLVMPointerType::get(erasedPtrType), envStruct,
+          ArrayRef<LLVM::GEPArg>({0, 1, numBoundArgs}));
+      rewriter.create<LLVM::StoreOp>(op.getLoc(), parentEnvPtr,
+                                     boundParentEnvPtr);
+    }
 
     // Add the pointer to the original callee to the environment struct
-    Value originalCalleePtr = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(), LLVM::LLVMPointerType::get(adaptor.getCallee().getType()),
-        envStruct, ArrayRef<LLVM::GEPArg>({0, 0}));
-    rewriter.create<LLVM::StoreOp>(op.getLoc(), adaptor.getCallee(),
-                                   originalCalleePtr);
+    Value calleePtrValue;
 
+    if (calleeClosureType) {
+      calleePtrValue = rewriter.create<LLVM::ExtractValueOp>(
+          op.getLoc(), adaptor.getCallee(), 0);
+      calleePtrValue = rewriter.create<LLVM::BitcastOp>(
+          op.getLoc(), envCalleeType, calleePtrValue);
+    } else {
+      calleePtrValue = adaptor.getCallee();
+    }
+    Value envCalleePtr = rewriter.create<LLVM::GEPOp>(
+        op.getLoc(), LLVM::LLVMPointerType::get(envCalleeType), envStruct,
+        ArrayRef<LLVM::GEPArg>({0, 0}));
+    rewriter.create<LLVM::StoreOp>(op.getLoc(), calleePtrValue, envCalleePtr);
     // Add the environment struct to the closure struct
     LLVM::BitcastOp erasedEnvStructPtr =
         rewriter.create<LLVM::BitcastOp>(op.getLoc(), erasedPtrType, envStruct);
@@ -254,6 +323,8 @@ struct ConvertPOPCallIndirect : mlir::ConvertOpToLLVMPattern<CallIndirectOp> {
         return emitError(op.getLoc(), "failed to convert call result types");
     }
     Type resultType;
+    // If there are no result types, set it to void. Otherwise, set the result
+    // type to the packed result types.
     if (resultTypes.empty())
       resultType = getVoidType();
     else
@@ -262,7 +333,7 @@ struct ConvertPOPCallIndirect : mlir::ConvertOpToLLVMPattern<CallIndirectOp> {
     Value callee = op.getCallee();
     LLVM::CallOp llvmCall;
     if (isa<ClosureType>(callee.getType())) {
-      // Unpack the struct representation of the closure
+      // Unpack the struct representation of the closure.
       auto pointerType = LLVM::LLVMPointerType::get(context);
       Value wrapperFnPtr = rewriter.create<LLVM::ExtractValueOp>(
           op.getLoc(), adaptor.getCallee(), 0);
@@ -288,7 +359,7 @@ struct ConvertPOPCallIndirect : mlir::ConvertOpToLLVMPattern<CallIndirectOp> {
       Value castWrapperFn = rewriter.create<LLVM::BitcastOp>(
           op.getLoc(), LLVM::LLVMPointerType::get(wrapperFnType), wrapperFnPtr);
 
-      // Create the call to the wrapper function
+      // Create the call to the wrapper function.
       SmallVector<Value> llvmCallArgs;
       llvmCallArgs.push_back(castWrapperFn);
       llvmCallArgs.push_back(envStruct);
@@ -299,10 +370,9 @@ struct ConvertPOPCallIndirect : mlir::ConvertOpToLLVMPattern<CallIndirectOp> {
           op.getLoc(), resultTypes, FlatSymbolRefAttr(), llvmCallArgs);
     } else {
       // Create the LLVM call operation.
+      // Note: adaptor.getOperands() is a list of callee followed by inputs.
       llvmCall = rewriter.create<LLVM::CallOp>(
-          op.getLoc(), resultTypes, FlatSymbolRefAttr(),
-          adaptor.getOperands()); // adaptor.getOperands() is a list of callee
-                                  // followed by inputs
+          op.getLoc(), resultTypes, FlatSymbolRefAttr(), adaptor.getOperands());
     }
 
     if (op.getNumResults() <= 1) {
