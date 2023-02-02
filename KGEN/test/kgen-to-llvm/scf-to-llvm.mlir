@@ -1,5 +1,7 @@
-// RUN: kgen-opt %s -allow-unregistered-dialect -lower-kgen-to-llvm=index-bitwidth=64 -lower-scf-to-llvm=index-bitwidth=64 -canonicalize | FileCheck %s
-// RUN: kgen-opt %s -allow-unregistered-dialect -lower-kgen-to-llvm=index-bitwidth=64 -lower-scf-to-llvm=index-bitwidth=64 | FileCheck %s --check-prefix=SWITCH
+// RUN: kgen-opt %s -allow-unregistered-dialect -lower-kgen-to-llvm -lower-scf-to-llvm  -canonicalize | FileCheck %s
+// RUN: kgen-opt %s -allow-unregistered-dialect -lower-kgen-to-llvm -lower-scf-to-llvm | FileCheck %s --check-prefix=SWITCH
+
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
 
 llvm.func @get(i32) -> i32
 
@@ -97,4 +99,6 @@ kgen.func @arith_select(%c: i1, %a: !pop.simd<1, si64>, %b: !pop.simd<1, si64>) 
   // CHECK: llvm.select {{.*}} : i1, i64
   %0 = arith.select %c, %a, %b : !pop.simd<1, si64>
   kgen.return %0 : !pop.simd<1, si64>
+}
+
 }

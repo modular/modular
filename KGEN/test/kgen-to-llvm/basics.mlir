@@ -1,4 +1,6 @@
-// RUN: kgen-opt -split-input-file -lower-kgen-to-llvm="index-bitwidth=64" %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -lower-kgen-to-llvm %s | FileCheck %s
+
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
 
 // CHECK-LABEL: llvm.func internal @trivial
 // CHECK-SAME: (%[[ARG0:.*]]: i32)
@@ -6,8 +8,6 @@
 kgen.func @trivial(%arg0: si32) -> si32 {
   kgen.return %arg0 : si32
 }
-
-// -----
 
 // CHECK-LABEL: llvm.func internal @convert_pop_types
 // CHECK-SAME: %{{.*}}: f32
@@ -21,9 +21,7 @@ kgen.func @convert_pop_types(
   kgen.return
 }
 
-// -----
-
-kgen.func @trivial(%arg0: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
+kgen.func @trivial_simd(%arg0: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
   kgen.return %arg0 : !pop.simd<1, f32>
 }
 
@@ -38,8 +36,8 @@ kgen.func @two_results(%arg0: !pop.simd<1, f32>) -> (!pop.simd<1, f32>, !pop.sim
 // CHECK-LABEL: llvm.func internal @convert_call
 // CHECK-SAME: %[[ARG0:.*]]: f32
 kgen.func @convert_call(%arg0: !pop.simd<1, f32>) {
-  // CHECK: llvm.call @trivial(%[[ARG0]]) : (f32) -> f32
-  %0 = kgen.call @trivial(%arg0) : (!pop.simd<1, f32>) -> !pop.simd<1, f32>
+  // CHECK: llvm.call @trivial_simd(%[[ARG0]]) : (f32) -> f32
+  %0 = kgen.call @trivial_simd(%arg0) : (!pop.simd<1, f32>) -> !pop.simd<1, f32>
   // CHECK: llvm.call @no_result(%[[ARG0]]) : (f32) -> ()
   kgen.call @no_result(%arg0) : (!pop.simd<1, f32>) -> ()
   // CHECK: %[[PACK:.*]] = llvm.call @two_results(%[[ARG0]]) : (f32) -> !llvm.struct<(f32, f32)>
@@ -48,8 +46,6 @@ kgen.func @convert_call(%arg0: !pop.simd<1, f32>) {
   // CHECK: llvm.extractvalue %[[PACK]][1]
   kgen.return
 }
-
-// -----
 
 kgen.func @reference_me(%a: i64) -> i64 {
   kgen.return %a : i64
@@ -63,8 +59,6 @@ kgen.func @addressof() -> ((i64) -> i64) {
   kgen.return %0 : (i64) -> i64
 }
 
-// -----
-
 // CHECK-LABEL: @address_dtype
 // CHECK-SAME: %[[ARG0:.*]]: !llvm.ptr,
 // CHECK-SAME: %[[ARG1:.*]]: !llvm.vec<4 x ptr>
@@ -72,22 +66,14 @@ kgen.func @address_dtype(%arg0 : !pop.simd<1, address>, %arg1 : !pop.simd<4, add
   kgen.return
 }
 
-// -----
-
 // CHECK-LABEL: llvm.func @an_extern_func
 // CHECK-SAME:  (i32, vector<4xf32>) -> vector<8xf32>
-// COM: Check that the next line closes the module - we don't want a body for this!
-// CHECK-NEXT: }
 
 kgen.extern.func @an_extern_func(si32, !pop.simd<4, f32>) -> !pop.simd<8, f32>
-
-// -----
 
 // CHECK-LABEL: llvm.mlir.global external @foo
 // CHECK-SAME: {addr_space = 0 : i32} : f64
 kgen.extern.variable @foo : f64
-
-// -----
 
 kgen.func @constant_str() -> !kgen.string {
   // CHECK: %[[GLOBAL_STR:.*]] = pop.global_constant: array<3, scalar<si8>> = <[65, 66, 0]>
@@ -100,4 +86,6 @@ kgen.func @constant_str() -> !kgen.string {
   %0 = kgen.param.constant: string = <"AB">
   // CHECK: llvm.return %[[VAL1]] : !llvm.struct<(ptr<i8>, i64)>
   kgen.return %0 : !kgen.string
+}
+
 }

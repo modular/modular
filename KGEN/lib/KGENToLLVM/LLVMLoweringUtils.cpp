@@ -222,6 +222,18 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
   });
 }
 
+FailureOr<mlir::LowerToLLVMOptions>
+KGEN::getTargetLoweringOptions(Operation *op) {
+  TargetInfoAttr target = lookupTargetInfo(op);
+  if (!target)
+    return mlir::emitError(op->getLoc(),
+                           "could not find an enclosing target specification");
+
+  mlir::LowerToLLVMOptions options(op->getContext());
+  options.overrideIndexBitwidth(target.getPointerSize() * CHAR_BIT);
+  return options;
+}
+
 //===----------------------------------------------------------------------===//
 // VariantHelper
 //===----------------------------------------------------------------------===//

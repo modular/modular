@@ -443,11 +443,12 @@ void LowerPOPClosuresToLLVMPass::runOnOperation() {
   mlir::ConversionTarget target(getContext());
   target.addLegalDialect<LLVM::LLVMDialect>();
 
-  // Set LLVM lowering options.
-  mlir::LowerToLLVMOptions options(&getContext());
-  if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
-    options.overrideIndexBitwidth(indexBitwidth);
-  POPToLLVMTypeConverter typeConverter(theModule->getLoc(), options);
+  // Configure the type converter.
+  FailureOr<mlir::LowerToLLVMOptions> options =
+      getTargetLoweringOptions(theModule);
+  if (failed(options))
+    return signalPassFailure();
+  POPToLLVMTypeConverter typeConverter(theModule.getLoc(), *options);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
@@ -460,9 +461,6 @@ void LowerPOPClosuresToLLVMPass::runOnOperation() {
   target.addIllegalOp<CallIndirectOp>();
   patterns.insert<ConvertPOPCallIndirect>(typeConverter);
 
-  DebugInfo::populateTypeConversionPatterns(patterns, typeConverter);
-  target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
-      [&](Operation *op) { return typeConverter.isLegal(op); });
   if (failed(
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
     return signalPassFailure();

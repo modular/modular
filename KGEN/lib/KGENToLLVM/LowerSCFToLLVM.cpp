@@ -510,10 +510,11 @@ static LogicalResult lowerOperation(OpT op, mlir::IRRewriter &b,
 
 void LowerSCFToLLVMPass::runOnOperation() {
   // Set LLVM lowering options.
-  mlir::LowerToLLVMOptions options(&getContext());
-  if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
-    options.overrideIndexBitwidth(indexBitwidth);
-  POPToLLVMTypeConverter typeConverter(getOperation()->getLoc(), options);
+  FailureOr<mlir::LowerToLLVMOptions> options =
+      getTargetLoweringOptions(getOperation());
+  if (failed(options))
+    return signalPassFailure();
+  POPToLLVMTypeConverter typeConverter(getOperation()->getLoc(), *options);
 
   SmallVector<Operation *> ops;
   getOperation()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {

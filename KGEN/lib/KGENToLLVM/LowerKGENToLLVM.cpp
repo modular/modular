@@ -470,13 +470,12 @@ void LowerKGENToLLVMPass::runOnOperation() {
   DenseMap<StringAttr, StringAttr> publicSymbols =
       getExportedSymbols(theModule);
 
-  // Set LLVM lowering options.
-  mlir::LowerToLLVMOptions options(&getContext());
-  if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
-    options.overrideIndexBitwidth(indexBitwidth);
-
   // Configure the type converter.
-  POPToLLVMTypeConverter typeConverter(theModule->getLoc(), options);
+  FailureOr<mlir::LowerToLLVMOptions> options =
+      getTargetLoweringOptions(theModule);
+  if (failed(options))
+    return signalPassFailure();
+  POPToLLVMTypeConverter typeConverter(theModule.getLoc(), *options);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());

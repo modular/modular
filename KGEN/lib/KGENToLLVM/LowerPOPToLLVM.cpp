@@ -1638,10 +1638,10 @@ void LowerPOPToLLVMPass::runOnOperation() {
   target.addLegalOp<CoroutineDestroyOp>();
 
   // Set LLVM lowering options.
-  mlir::LowerToLLVMOptions options(&getContext());
-  if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
-    options.overrideIndexBitwidth(indexBitwidth);
-  POPToLLVMTypeConverter typeConverter(func->getLoc(), options);
+  FailureOr<mlir::LowerToLLVMOptions> options = getTargetLoweringOptions(*func);
+  if (failed(options))
+    return signalPassFailure();
+  POPToLLVMTypeConverter typeConverter(func->getLoc(), *options);
 
   // Lookup the nearest target info specification.
   TargetInfoAttr targetInfo = lookupTargetInfo(*func);
@@ -1799,10 +1799,11 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   target.addLegalDialect<LLVM::LLVMDialect>();
 
   // Set LLVM lowering options.
-  mlir::LowerToLLVMOptions options(&getContext());
-  if (indexBitwidth != mlir::kDeriveIndexBitwidthFromDataLayout)
-    options.overrideIndexBitwidth(indexBitwidth);
-  POPToLLVMTypeConverter typeConverter(theModule->getLoc(), options);
+  FailureOr<mlir::LowerToLLVMOptions> options =
+      getTargetLoweringOptions(theModule);
+  if (failed(options))
+    return signalPassFailure();
+  POPToLLVMTypeConverter typeConverter(theModule.getLoc(), *options);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());

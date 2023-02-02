@@ -1,5 +1,7 @@
 // RUN: kgen-opt -lower-global-pop-to-llvm -verify-diagnostics %s
 
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+
 kgen.func @external_call(%a: !pop.simd<1, ui32>) {
   // expected-note @below {{see function declaration here}}
   pop.external_call @foo(%a) : (!pop.simd<1, ui32>) -> ()
@@ -7,4 +9,6 @@ kgen.func @external_call(%a: !pop.simd<1, ui32>) {
   // expected-error @below {{failed to legalize}}
   %0 = pop.external_call @foo(%a) : (!pop.simd<1, ui32>) -> !pop.simd<4, f64>
   kgen.return
+}
+
 }

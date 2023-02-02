@@ -1,5 +1,7 @@
 // RUN: kgen-opt -allow-unregistered-dialect -lower-kgen-to-llvm %s | FileCheck %s
 
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_size=8, simd_bit_width=128>} {
+
 // CHECK-LABEL: llvm.func @array_arg
 kgen.func @array_arg(%arr: !pop.array<4, i32>) {
   "use"(%arr) : (!pop.array<4, i32>) -> ()
@@ -24,3 +26,5 @@ kgen.func @array_in_struct(%s: !pop.struct<array<4, i32>>) {
 
 kgen.export @array_arg
 kgen.export @array_in_struct
+
+}
