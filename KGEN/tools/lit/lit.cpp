@@ -160,11 +160,12 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return clOptions.reportError(Twine("could not create object compiler: ") +
                                  compiler.getError());
 
-  TargetInfoAttr attr = TargetInfoAttr::getForHost(ctx);
+  TargetInfoAttr target = getTargetInfo(*theModule);
+  assert(target && "no target after elaboration?");
 
   // This produces a standalone object for all the objects we requested.
   auto standaloneOr = compiler->produceStandaloneObject(
-      attr, /*isJIT=*/clOptions.cmd == Command::kExecute);
+      target, /*isJIT=*/clOptions.cmd == Command::kExecute);
   if (failed(standaloneOr))
     return clOptions.reportError("compiler error");
   Cache::BufferRef standaloneObject = std::move(*standaloneOr);
