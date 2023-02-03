@@ -515,10 +515,6 @@ Attribute TargetParamAttr::parse(AsmParser &p, Type type) {
                 "target parameter expected a target type");
     return {};
   }
-  // Check for a special host attribute.
-  if (succeeded(p.parseOptionalKeyword("host")))
-    return TargetParamAttr::get(TargetInfoAttr::getForHost(p.getContext()),
-                                targetType);
 
   // Otherwise, parse the whole target info attribute.
   TargetInfoAttr target;
@@ -708,6 +704,12 @@ LogicalResult ParamOperatorAttr::verify(
     if (!operands[0].getType().isIntOrIndex())
       return emitError() << "relational comparisons only allowed on index or "
                             "integer values";
+    break;
+  case POC::CurrentTarget:
+    if (!operands.empty())
+      return emitError() << "'current_target' expected no operands";
+    if (!type.isa<TargetType>())
+      return emitError() << "'current_target' must return a target type";
     break;
   case POC::TargetHasFeature:
   case POC::TargetGetField:
@@ -1540,59 +1542,11 @@ static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
   return {};
 }
 
-TypedAttr ParamOperatorAttr::get(MLIRContext *context, POC opcode,
-                                 ArrayRef<TypedAttr> operandsIn, Type type) {
-  auto result = get(opcode, operandsIn);
-  assert((!type || type == result.getType()) && "unexpected type");
-  return result;
-}
-
-TypedAttr
-ParamOperatorAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                              MLIRContext *context, POC opcode,
-                              ArrayRef<TypedAttr> operandsIn, Type type) {
-  if (failed(verify(emitError, opcode, operandsIn, type)))
-    return {};
-  return get(context, opcode, operandsIn, type);
-}
-
-/// Return (not x) which is the same as (xor x, true).  The `operand` value
-/// must have type `i1`.
-TypedAttr ParamOperatorAttr::getNot(TypedAttr operand) {
-  TypedAttr one = BoolAttr::get(operand.getContext(), true);
-  return ParamOperatorAttr::get(POC::Xor, {operand, one});
-}
-
-/// Return (neg x) which is the same as (mul x, -1).  The `operand` value
-/// must have `index` type.
-TypedAttr ParamOperatorAttr::getNeg(TypedAttr operand) {
-  IntegerAttr minusOne =
-      IntegerAttr::get(IndexType::get(operand.getContext()), APInt(64, -1ULL));
-  return ParamOperatorAttr::get(POC::Mul, operand, minusOne);
-}
-
-/// Return (x-y) which is the same as (add x, (neg y)).  The `operand` value
-/// must have `index` type.
-TypedAttr ParamOperatorAttr::getSub(TypedAttr lhs, TypedAttr rhs) {
-  return get(POC::Add, lhs, getNeg(rhs));
-}
-
-TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
-  assert(!operandsIn.empty() && "Cannot have expr with no operands");
-  // All operands must have the same type.  The result type is usually the
-  // same as the operands, but is i1 for comparisons (overridden below).
-  auto resultType = operandsIn.front().getType();
-  assert(llvm::is_contained({POC::GetListElement, POC::BindSignature,
-                             POC::Apply, POC::Evaluate, POC::TargetHasFeature,
-                             POC::TargetGetField, POC::BuildInfoGetField,
-                             POC::GetSizeOf, POC::GetAlignOf},
-                            opcode) ||
-         llvm::all_of(operandsIn.drop_front(),
-                      [&](auto op) { return op.getType() == resultType; }));
-
+/// Construct a parameter operator attribute, folding it if possible.
+static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
+                                  ArrayRef<TypedAttr> operandsIn,
+                                  Type resultType) {
   SmallVector<TypedAttr, 4> operands(operandsIn.begin(), operandsIn.end());
-
-  auto *context = operandsIn[0].getContext();
 
   // Verify and canonicalize parameter expressions.
   Attribute result;
@@ -1639,6 +1593,9 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     result = simplifyRelationalCompare(opcode, operands);
     resultType = IntegerType::get(context, 1);
     break;
+  case POC::CurrentTarget:
+    resultType = TargetType::get(context);
+    break;
   case POC::TargetHasFeature:
     result = simplifyHasFeature(operands);
     resultType = IntegerType::get(context, 1);
@@ -1679,7 +1636,61 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   if (result)
     return result;
 
-  return Base::get(context, opcode, operands, resultType);
+  return ParamOperatorAttr::Base::get(context, opcode, operands, resultType);
+}
+
+TypedAttr ParamOperatorAttr::get(MLIRContext *context, POC opcode,
+                                 ArrayRef<TypedAttr> operandsIn, Type type) {
+  auto result = getParamOperator(context, opcode, operandsIn, type);
+  assert((!type || type == result.getType()) && "unexpected type");
+  return result;
+}
+
+TypedAttr
+ParamOperatorAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                              MLIRContext *context, POC opcode,
+                              ArrayRef<TypedAttr> operandsIn, Type type) {
+  if (failed(verify(emitError, opcode, operandsIn, type)))
+    return {};
+  return get(context, opcode, operandsIn, type);
+}
+
+TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
+  assert(!operandsIn.empty() && "Cannot have expr with no operands");
+  // All operands must have the same type.  The result type is usually the
+  // same as the operands, but is i1 for comparisons (overridden below).
+  auto resultType = operandsIn.front().getType();
+  assert(llvm::is_contained({POC::GetListElement, POC::BindSignature,
+                             POC::Apply, POC::Evaluate, POC::TargetHasFeature,
+                             POC::TargetGetField, POC::BuildInfoGetField,
+                             POC::GetSizeOf, POC::GetAlignOf},
+                            opcode) ||
+         llvm::all_of(operandsIn.drop_front(),
+                      [&](auto op) { return op.getType() == resultType; }));
+
+  return getParamOperator(operandsIn.front().getContext(), opcode, operandsIn,
+                          resultType);
+}
+
+/// Return (not x) which is the same as (xor x, true).  The `operand` value
+/// must have type `i1`.
+TypedAttr ParamOperatorAttr::getNot(TypedAttr operand) {
+  TypedAttr one = BoolAttr::get(operand.getContext(), true);
+  return ParamOperatorAttr::get(POC::Xor, {operand, one});
+}
+
+/// Return (neg x) which is the same as (mul x, -1).  The `operand` value
+/// must have `index` type.
+TypedAttr ParamOperatorAttr::getNeg(TypedAttr operand) {
+  IntegerAttr minusOne =
+      IntegerAttr::get(IndexType::get(operand.getContext()), APInt(64, -1ULL));
+  return ParamOperatorAttr::get(POC::Mul, operand, minusOne);
+}
+
+/// Return (x-y) which is the same as (add x, (neg y)).  The `operand` value
+/// must have `index` type.
+TypedAttr ParamOperatorAttr::getSub(TypedAttr lhs, TypedAttr rhs) {
+  return get(POC::Add, lhs, getNeg(rhs));
 }
 
 /// Parameter operators are the basis of parameter expressions and are never

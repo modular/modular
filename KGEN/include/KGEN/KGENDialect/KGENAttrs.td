@@ -560,26 +560,18 @@ def KGEN_TargetParamAttr : KGEN_ExprAttr<"TargetParam", "target"> {
     The `#kgen.target` is an attribute representing a target of type
     `!kgen.target`. It contains the target configuration information.
 
-    There are two textual formats that represent this attribute:
+    Example:
 
     ```mlir
-    #kgen<target host>
     #kgen.target<triple="triple", cpu="cpu", features="features",
                  pointer_bit_width=64, simd_bit_width=128>
     ```
 
-    `#kgen<target host>` is sugar for the target parameter corresponding to the
-    host machine. It will NOT be printed as `kgen<target host>`.
+    Target types can be manipulated using target operators.
 
     Example:
 
     ```mlir
-    kgen.generator @target_host<t0: target>()
-      constraints <[eq(:target #kgen<target host>, t0),
-                    "Must support the target!"]> {
-      kgen.return
-    }
-
     kgen.generator @target_host<t0: target>()
         constraints <[eq(:target
             #kgen.target<triple="triple", cpu="cpu", features="features",
@@ -680,7 +672,7 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
   ]> {
   let summary = "Parameter expression";
   let parameters = (ins "POC":$opcode,
-                        ArrayRefParameter<"TypedAttr">:$operands,
+                        OptionalArrayRefParameter<"TypedAttr">:$operands,
                         AttributeSelfTypeParameter<"">:$type);
 
   let skipDefaultBuilders = 1;
@@ -705,7 +697,7 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
     }], "TypedAttr">
   ];
 
-  let assemblyFormat = "`<` $opcode `,` $operands `>`";
+  let assemblyFormat = "`<` $opcode (`,` $operands^)? `>`";
   let genVerifyDecl = 1;  // Generate getChecked/verify.
 
   let extraClassDeclaration = [{
