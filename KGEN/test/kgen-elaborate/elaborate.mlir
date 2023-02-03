@@ -1583,3 +1583,12 @@ kgen.generator @itf_impl_1() -> () implements @itf {
 kgen.generator @some_func() {
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @substitute_current_target
+kgen.generator @substitute_current_target() {
+  // CHECK-NEXT: constant: target = <#kgen.target<triple = {{.*}}>>
+  kgen.param.constant: target = <current_target()>
+  kgen.return
+}

@@ -72,6 +72,12 @@ IREvaluator::IREvaluator(Elaborator &elaborator,
 FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
   // Try to narrow this operator to an expression we can evaluate. We only need
   // to emit an error during the evaluation attempt.
+  if (op.getOpcode() == POC::CurrentTarget) {
+    // Retrieve the contextual compilation target info.
+    return {TargetParamAttr::get(elaborator.getTarget(),
+                                 TargetType::get(op.getContext()))};
+  }
+
   if (op.getOpcode() == POC::Apply) {
     auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
     if (!symbol || !symbol.getType().getResultParams().empty())

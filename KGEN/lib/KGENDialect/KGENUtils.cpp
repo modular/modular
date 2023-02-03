@@ -839,7 +839,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
             (POC)opcode, operands, type)))
       return failure();
     // All is good, let's move!
-    value = ParamOperatorAttr::get((POC)opcode, operands);
+    value =
+        ParamOperatorAttr::get(type.getContext(), (POC)opcode, operands, type);
 
     // If we need to invert this, do so.
     if (needsInvert)
