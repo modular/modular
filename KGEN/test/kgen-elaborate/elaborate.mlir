@@ -175,8 +175,13 @@ kgen.generator @use_using_interface(%arg0: si32) -> index {
 
 //===----------------------------------------------------------------------===//
 
-// CHECK-NOT: @genItf2<x>()
-kgen.generator.interface @genItf2<x>()
+// CHECK-LABEL: @"genItf2,x=0_2"()
+kgen.generator @genItf2<x>() {
+  // CHECK-NEXT: kgen.call @"genItf2_impl0,x=0"
+  kgen.param.search impl : () -> () = <@genItf2_impl0<x = x>, @genItf2_impl1<x = x>>
+  kgen.call_param[() -> () : impl]()
+  kgen.return
+}
 
 // CHECK-NOT: kgen.func @"genItf2_impl0,x=1"() {
 // CHECK-LABEL: kgen.func @"genItf2_impl0,x=0"() {
@@ -184,7 +189,7 @@ kgen.generator.interface @genItf2<x>()
 // CHECK-NEXT:   kgen.return
 // CHECK-NOT: kgen.func @"genItf2_impl0,x=1"() {
 kgen.generator @genItf2_impl0<x>()
-  constraints <[eq(x, 0), "x must be zero"]> implements @genItf2 {
+  constraints <[eq(x, 0), "x must be zero"]> {
   "impl.0"() : () -> ()
   kgen.return
 }
@@ -195,13 +200,13 @@ kgen.generator @genItf2_impl0<x>()
 // CHECK-NEXT:   kgen.return
 // CHECK-NOT: kgen.func @"genItf2_impl1,x=0"()
 kgen.generator @genItf2_impl1<x>()
-  constraints <[eq(x, 1), "x must be 1"]> implements @genItf2 {
+  constraints <[eq(x, 1), "x must be 1"]> {
   "impl.1"() : () -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @use_Itf2zero() {
-// CHECK-NEXT:   kgen.call @"genItf2_impl0,x=0"() : () -> ()
+// CHECK-NEXT:   kgen.call @"genItf2,x=0_2"() : () -> ()
 // CHECK-NEXT:   kgen.return
 kgen.generator @use_Itf2zero() {
   kgen.call @genItf2<x = 0>() : () -> ()
@@ -209,7 +214,7 @@ kgen.generator @use_Itf2zero() {
 }
 
 // CHECK-LABEL: kgen.func @use_Itf2one() {
-// CHECK-NEXT:   kgen.call @"genItf2_impl1,x=1"() : () -> ()
+// CHECK-NEXT:   kgen.call @"genItf2,x=1_5"() : () -> ()
 // CHECK-NEXT:   kgen.return
 // CHECK-NEXT: }
 kgen.generator @use_Itf2one() {
@@ -260,7 +265,7 @@ kgen.generator @use_Itf3() {
 
 // CHECK-NOT: kgen.func @track_expansions
 
-// CHECK-LABEL: kgen.func @track_expansions_concrete_2
+// CHECK-LABEL: kgen.func @track_expansions_concrete_6
 // CHECK-SAME: (%[[ARG0:.*]]: si32)
 // CHECK-NEXT: kgen.call @"genItf_impl2,x=42"
 // CHECK-NEXT: kgen.call @"genItf_impl2,x=42"
