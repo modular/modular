@@ -1108,6 +1108,7 @@ ElaboratorImpl::processParamSearchOp(ExpansionTreeNode *parent,
   if (op.getValues().empty())
     return ErrorTree(op.getLoc(), "no candidates found");
 
+  bool atLeastOneSuccessful = false;
   for (Attribute candidate : op.getValues()) {
     // Simplify the input expressions.
     auto errorOrValue =
@@ -1124,17 +1125,21 @@ ElaboratorImpl::processParamSearchOp(ExpansionTreeNode *parent,
     if (!seenValues.insert(value).second)
       continue;
 
-    // Otherwise, spawn a clone for this value.
-    if (auto err = spawnParamSearchClone(op, value, parent, remainingWorklist))
+    // Otherwise, spawn a clone for this value. If that fails, continue.
+    if (auto err =
+            spawnParamSearchClone(op, value, parent, remainingWorklist)) {
       errors.push_back(std::move(*err));
+      continue;
+    }
 
-    // If search is disabled, break after the first parameter.
+    // If search is disabled, break after the first successful parameter.
+    atLeastOneSuccessful = true;
     if (!enableSearch)
       break;
   }
 
-  // If the expansions failed, then this call fails overall.
-  if (!errors.empty())
+  // If we don't have at least one successful candidate, fail.
+  if (!atLeastOneSuccessful)
     return ErrorTree(op.getLoc(), "some expansions failed", errors);
 
   // The parent has to be deleted.
@@ -1184,9 +1189,10 @@ ElaboratorImpl::spawnParamSearchClone(ParamSearchOp searchOp, Attribute value,
   // And finally, process the rest of the worklist in this new scope.
   processScope(newFuncNode, remaining);
 
-  // If we've hit an error case, don't try and finish processing.
+  // If we've hit an error case, don't try and finish processing. Return to the
+  // upper function that this hit an error.
   if (newFuncNode->error)
-    return std::nullopt;
+    return newFuncNode->error->copy();
 
   // And handle the return processing.
   completeReturnProcessing(logger, newFunc.getReturnOp(), newFuncNode);
