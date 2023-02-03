@@ -767,7 +767,7 @@ static LogicalResult lowerModuleDecl(Block *moduleBody,
           fileDecl->getIterator(), fileBody->getOperations(), fileBody->begin(),
           fileBody->end());
       fileDecl->erase();
-    } else if (auto paramDeclare = dyn_cast<KGEN::ParamDeclareOp>(op)) {
+    } else if (isa<KGEN::ParamDeclareOp, LIT::UnresolvedImportOp>(op)) {
       op.erase();
     }
   }

@@ -16,6 +16,7 @@
 #include "LitSharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/TinyPtrVector.h"
 
 namespace M::KGEN {
@@ -103,6 +104,11 @@ public:
   /// Given an MLIR op for a struct declaration, return the self type.
   ASTType computeSelfTypeForStruct(LitSharedState &state);
 
+  /// Add an unresolved wild card import into this scope.
+  void addUnresolvedWildCardImport(StringAttr importedModule, SMLoc loc) {
+    unresolvedWildcardImports.insert({importedModule, loc});
+  }
+
   //===--------------------------------------------------------------------===//
   // Name lookup
   //===--------------------------------------------------------------------===//
@@ -188,6 +194,10 @@ private:
 
   /// These are the declarations defined within this scope.
   DenseMap<StringAttr, TinyPtrVector<ASTDecl *>> declsInScope;
+
+  /// A set of modules with unresolved wildcard imports into this decl, mapped
+  /// to the location of the import.
+  llvm::MapVector<StringAttr, SMLoc> unresolvedWildcardImports;
 };
 
 } // namespace M::KGEN::LIT
