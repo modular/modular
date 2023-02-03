@@ -34,6 +34,7 @@ class LitLexerCursor;
 class LitParserBase;
 class LitSharedState;
 class LetDeclOp;
+class UnresolvedImportOp;
 class VarDeclOp;
 class StructDeclOp;
 class StructFieldOp;
@@ -69,17 +70,28 @@ public:
   /// decl).
   void aliasDecls(const TinyPtrVector<ASTDecl *> &decls, StringAttr name,
                   llvm::SMLoc aliasLoc, ASTDecl &context);
+  /// Add a pre-existing set of declarations imported from the given module, as
+  /// children of the specified context, using the provided alias name (which
+  /// may differ from that of the decl).
+  LogicalResult aliasImportDecls(const TinyPtrVector<ASTDecl *> &decls,
+                                 StringAttr name, StringAttr declName,
+                                 StringAttr moduleName, llvm::SMLoc aliasLoc,
+                                 ASTDecl &context);
 
-  /// Import the provided decls from the given module decl, into the provided
+  /// Import the given module into the provided context.
+  LogicalResult importModule(ASTDecl &context, StringAttr moduleName,
+                             StringAttr importName, SMLoc loc);
+  /// Import the provided decl from the given module decl, into the provided
   /// destination context.
-  void importDeclsFromModule(
-      ASTDecl &module, ASTDecl &context,
-      ArrayRef<std::tuple<StringRef, StringRef, llvm::SMLoc>> importList);
-  /// Import decls from the given module decl into the provided destination
-  /// context using a wild-card import (i.e. import all decls that don't start
-  /// with an `_`).
-  void importWildCardDeclsFromModule(ASTDecl &module, ASTDecl &context,
-                                     llvm::SMLoc loc);
+  LogicalResult importDeclFromModule(ASTDecl &context, StringAttr moduleName,
+                                     StringAttr sourceName, StringAttr destName,
+                                     SMLoc loc);
+  /// Import decls from the given module into the provided destination context
+  /// using a wild-card import (i.e. import all decls that don't start with an
+  /// `_`).
+  LogicalResult importWildCardDeclsFromModule(ASTDecl &context,
+                                              StringAttr moduleName,
+                                              llvm::SMLoc loc);
 
   /// Add a declaration that is already fully resolved.
   ASTDecl &addFullyResolvedDecl(Operation *decl, llvm::SMLoc loc,
@@ -126,6 +138,9 @@ private:
 
   ParseResult resolveBody(LIT::FileModuleOp op, LitLexer &lexer, ASTDecl &decl);
 
+  ParseResult resolveSignature(LIT::UnresolvedImportOp op, LitLexer &lexer,
+                               ASTDecl &decl);
+
   LogicalResult resolveSignature(StructDeclOp op, LitLexer &lexer,
                                  ASTDecl &decl);
   ParseResult resolveBody(StructDeclOp op, LitLexer &lexer, ASTDecl &decl);
@@ -143,6 +158,15 @@ private:
                           ASTDecl &decl);
 
 private:
+  /// Add a pre-existing set of declarations, which may optionally be imported
+  /// from a given module, as children of the specified context, using the
+  /// provided alias name (which may differ from that of the decl).
+  LogicalResult aliasDeclsImpl(const TinyPtrVector<ASTDecl *> &decls,
+                               StringAttr name, llvm::SMLoc aliasLoc,
+                               ASTDecl &context,
+                               StringAttr moduleName = StringAttr(),
+                               StringAttr declNameInModule = StringAttr());
+
   /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.
   /// This does not include functions, only things that may be referred to by a
   /// DeclRefType: StructTypes, aliases, etc.

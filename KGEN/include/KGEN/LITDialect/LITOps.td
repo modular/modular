@@ -642,3 +642,34 @@ def LIT_ContinueOp : LITOp<"continue"> {
 
   let hasVerifier = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// UnresolvedImportOp
+//===----------------------------------------------------------------------===//
+
+def LIT_UnresolvedImportOp : LITOp<"unresolved_import"> {
+  let summary = "Lexical unresolved import.";
+  let description = [{
+    The `lit.unresolved_import` operation represents a module import that is yet
+    to be resolved. If a decl name is provided, this operation represents an
+    import of that decl, not the module itself.
+
+    Example:
+
+    ```mlir
+    // Import a module as the given name.
+    lit.unresolved_import @module as @newModule
+    // Import a function within the module as the given name.
+    lit.unresolved_import @module -> @func as @newFunc
+    ```
+  }];
+
+  let arguments = (ins
+    SymbolNameAttr:$moduleName,
+    SymbolNameAttr:$importName,
+    OptionalAttr<SymbolNameAttr>:$declName
+  );
+  let assemblyFormat = [{
+    $moduleName (`->` $declName^)? `as` $importName attr-dict
+  }];
+}

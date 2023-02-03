@@ -865,20 +865,15 @@ ParseResult LitStmtParser::parseFromImportStmt() {
       parseToken(LitToken::kw_import, "expected 'import' after module name"))
     return failure();
 
-  // Import the module.
-  ASTDecl &moduleDecl = shared.importModule(moduleName, importLoc);
-
   // Check for a wildcard import.
   if (consumeIf(LitToken::star)) {
-    getDeclResolver().importWildCardDeclsFromModule(moduleDecl, containingDecl,
-                                                    importLoc);
+    containingDecl.addUnresolvedWildCardImport(
+        builder.getStringAttr(moduleName), importLoc);
     return success();
   }
 
   // Parse the set of constructs to import.
-  SmallVector<std::tuple<StringRef, StringRef, SMLoc>> importList;
   bool isTupleImport = consumeIf(LitToken::l_paren);
-
   do {
     // Parse the next construct to import.
     SMLoc importSourceNameLoc = getToken().getLoc();
@@ -892,8 +887,16 @@ ParseResult LitStmtParser::parseFromImportStmt() {
                      "expected name to import '" + importSourceName + "' as"))
         return failure();
     }
-    importList.emplace_back(importSourceName, importDestName,
-                            importSourceNameLoc);
+
+    // Create an unresolved decl for this import.
+    StringAttr importDestNameAttr = builder.getStringAttr(importDestName);
+    auto importDecl = builder.create<LIT::UnresolvedImportOp>(
+        translateLocation(importSourceNameLoc),
+        builder.getStringAttr(moduleName), importDestNameAttr,
+        builder.getStringAttr(importSourceName));
+    getDeclResolver().addDecl(
+        importDecl, importSourceNameLoc, importDestNameAttr, &containingDecl,
+        getLexer().getCursor(), getLexer().getCursor(), /*indentation=*/-1);
 
     // Check for more elements to import.
     if (!consumeIf(LitToken::comma))
@@ -908,10 +911,6 @@ ParseResult LitStmtParser::parseFromImportStmt() {
   if (isTupleImport &&
       parseToken(LitToken::r_paren, "expected ')' after import list"))
     return failure();
-
-  // Process the import list.
-  getDeclResolver().importDeclsFromModule(moduleDecl, containingDecl,
-                                          importList);
   return success();
 }
 
@@ -938,11 +937,14 @@ ParseResult LitStmtParser::parseImportStmt() {
         return failure();
     }
 
-    // Import the module, and export it using the desired binding name.
-    ASTDecl &moduleDecl = shared.importModule(moduleName, importLoc);
-    getDeclResolver().aliasDecls({&moduleDecl},
-                                 StringAttr::get(getContext(), boundModuleName),
-                                 importLoc, containingDecl);
+    // Create an unresolved decl for the import.
+    StringAttr importDestNameAttr = builder.getStringAttr(boundModuleName);
+    auto importDecl = builder.create<LIT::UnresolvedImportOp>(
+        translateLocation(importLoc), builder.getStringAttr(moduleName),
+        importDestNameAttr, /*declName=*/StringAttr());
+    getDeclResolver().addDecl(importDecl, importLoc, importDestNameAttr,
+                              &containingDecl, getLexer().getCursor(),
+                              getLexer().getCursor(), /*indentation=*/-1);
   } while (consumeIf(LitToken::comma));
   return success();
 }

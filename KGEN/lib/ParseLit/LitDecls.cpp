@@ -205,6 +205,16 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
     return *decl;
   }
 
+  // Check if we are adding an identical unresolved import.
+  if (auto import = dyn_cast<UnresolvedImportOp>(*decl)) {
+    auto prevOp = dyn_cast<UnresolvedImportOp>(*entries.front());
+    if (prevOp && import.getModuleNameAttr() == prevOp.getModuleNameAttr() &&
+        import.getDeclNameAttr() == prevOp.getDeclNameAttr()) {
+      entries.push_back(decl);
+      return *decl;
+    }
+  }
+
   ASTDecl *existing = entries.back();
   auto diag = emitError(decl->getLoc(), "invalid redefinition of ") << name;
   diag.attachNote(translateLocation(existing->getLoc()))
@@ -221,9 +231,37 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
 void DeclResolver::aliasDecls(const TinyPtrVector<ASTDecl *> &decls,
                               StringAttr name, llvm::SMLoc aliasLoc,
                               ASTDecl &context) {
+  (void)aliasDeclsImpl(decls, name, aliasLoc, context);
+}
+
+LogicalResult DeclResolver::aliasImportDecls(
+    const TinyPtrVector<ASTDecl *> &decls, StringAttr name, StringAttr declName,
+    StringAttr moduleName, llvm::SMLoc aliasLoc, ASTDecl &context) {
+  return aliasDeclsImpl(decls, name, aliasLoc, context, moduleName, declName);
+}
+
+LogicalResult
+DeclResolver::aliasDeclsImpl(const TinyPtrVector<ASTDecl *> &decls,
+                             StringAttr name, llvm::SMLoc aliasLoc,
+                             ASTDecl &context, StringAttr moduleName,
+                             StringAttr declNameInModule) {
   auto [it, inserted] = context.declsInScope.try_emplace(name, decls);
   if (inserted)
-    return;
+    return success();
+
+  // We hit an overlap, check to see if this is just resolving a module import.
+  // If so, replace the unresolved import with the real decls.
+  if (moduleName) {
+    auto importOp = dyn_cast<UnresolvedImportOp>(*it->second.back());
+    if (importOp && importOp.getModuleNameAttr() == moduleName &&
+        importOp.getDeclNameAttr() == declNameInModule) {
+      // Mark the placeholder imports as being resolved.
+      for (ASTDecl *decl : it->second)
+        decl->resolvedness = DeclResolvedness::fullyResolved;
+      it->second = decls;
+      return success();
+    }
+  }
 
   // Rejecting overlap is conservative and not what python does, but we can
   // relax this in the future when we know what the right policy should be.
@@ -234,55 +272,62 @@ void DeclResolver::aliasDecls(const TinyPtrVector<ASTDecl *> &decls,
 
   for (ASTDecl *previous : it->second)
     previous->hasReferenceError = true;
+  return failure();
 }
 
-void DeclResolver::importDeclsFromModule(
-    ASTDecl &module, ASTDecl &context,
-    ArrayRef<std::tuple<StringRef, StringRef, llvm::SMLoc>> importList) {
-  if (importList.empty())
-    return;
+LogicalResult DeclResolver::importModule(ASTDecl &context,
+                                         StringAttr moduleName,
+                                         StringAttr importName, SMLoc loc) {
+  ASTDecl &module = shared.importModule(moduleName, loc);
+  return aliasImportDecls(TinyPtrVector<ASTDecl *>(&module), importName,
+                          /*declName=*/StringAttr(), moduleName, loc, context);
+}
 
-  // Make sure the body of the module has been resolved.
-  if (failed(resolveFully(module, std::get<2>(importList[0]))))
-    return;
+LogicalResult DeclResolver::importDeclFromModule(ASTDecl &context,
+                                                 StringAttr moduleName,
+                                                 StringAttr sourceName,
+                                                 StringAttr destName,
+                                                 SMLoc loc) {
+  // Make sure the module has been resolved.
+  ASTDecl &module = shared.importModule(moduleName, loc);
+  if (failed(resolveFully(module, loc)))
+    return failure();
 
-  // Process the import list.
-  for (auto [sourceName, destName, loc] : importList) {
-    StringAttr sourceNameAttr = StringAttr::get(getContext(), sourceName);
-
-    // Check to see if the module has the construct we are importing.
-    const TinyPtrVector<ASTDecl *> *importDecls =
-        module.lookupInCurrentScope(sourceNameAttr);
-    if (importDecls) {
-      StringAttr destNameAttr = StringAttr::get(getContext(), destName);
-      aliasDecls(*importDecls, destNameAttr, loc, context);
-      continue;
-    }
-
+  // Check to see if the module has the construct we are importing.
+  auto result = shared.lookupAndResolveDecl(sourceName, loc, module,
+                                            /*searchParentScopes=*/false);
+  if (result.isErroneous())
+    return failure();
+  if (result.isFailure()) {
     // Emit an error with the module name without the leading `$` mangle.
     StringRef moduleName =
         cast<FileModuleOp>(module.getIfOperation()).getName();
     assert(moduleName.startswith("$") && "unexpected module name mangling");
-    emitError(loc, "module '" + moduleName.drop_front() +
-                       "' does not contain '" + sourceName + "'");
-
-    // If we can't find the decl, recover by adding dummy decl with the dest
-    // name.
-    addErroneousDecl(destName, loc, &context);
+    return emitError(loc, "module '" + moduleName.drop_front() +
+                              "' does not contain '" + sourceName.getValue() +
+                              "'");
   }
+  return aliasImportDecls(TinyPtrVector<ASTDecl *>(result.getIfSuccess()),
+                          destName, sourceName, moduleName, loc, context);
 }
 
-void DeclResolver::importWildCardDeclsFromModule(ASTDecl &module,
-                                                 ASTDecl &context,
-                                                 llvm::SMLoc loc) {
-  // Make sure the body of the module has been resolved.
+LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
+                                                          StringAttr moduleName,
+                                                          llvm::SMLoc loc) {
+  // Make sure the module has been resolved.
+  ASTDecl &module = shared.importModule(moduleName, loc);
   if (failed(resolveFully(module, loc)))
-    return;
+    return failure();
 
   // Wildcard imports don't import decls with a leading '_'.
-  for (const auto &[name, decls] : module.declsInScope)
-    if (name.getValue()[0] != '_')
-      aliasDecls(decls, name, loc, context);
+  LogicalResult result = success();
+  for (const auto &[name, decls] : module.declsInScope) {
+    if (name.getValue()[0] == '_')
+      continue;
+    if (failed(aliasImportDecls(decls, name, name, moduleName, loc, context)))
+      result = failure();
+  }
+  return result;
 }
 
 /// Add a new declaration that needs to be resolved.
@@ -383,7 +428,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
         .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, LetDeclOp, VarDeclOp,
-              ParamDeclareOp>([&](auto op) {
+              ParamDeclareOp, UnresolvedImportOp>([&](auto op) {
           LitLexer lexer(shared, decl.getCursor());
 
           // Resolve the signature: on a parse error, we note that the decl
@@ -432,7 +477,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
           checkEndOfBodyCursor(lexer);
         })
-        .Case<ModuleOp>([&](auto op) { /*Nothing*/ })
+        .Case<ModuleOp, UnresolvedImportOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
           emitError(decl.getLoc(),
                     "do not know how to resolve the body of this decl!");
@@ -1976,4 +2021,22 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
 ParseResult DeclResolver::resolveBody(StructFieldOp op, LitLexer &lexer,
                                       ASTDecl &decl) {
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// UnresolvedImport Decl implementation
+//===----------------------------------------------------------------------===//
+
+ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
+                                           LitLexer &lexer, ASTDecl &decl) {
+  // Check if we are importing a specific decl within the module, or the
+  // module itself.
+  if (auto declName = op.getDeclNameAttr()) {
+    return getDeclResolver().importDeclFromModule(
+        *decl.getParentDecl(), op.getModuleNameAttr(), declName,
+        op.getImportNameAttr(), decl.getLoc());
+  }
+  return getDeclResolver().importModule(*decl.getParentDecl(),
+                                        op.getModuleNameAttr(),
+                                        op.getImportNameAttr(), decl.getLoc());
 }
