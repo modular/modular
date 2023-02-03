@@ -177,7 +177,7 @@ void WorkQueueThread::runOnThread() {
   // up in profilers and debuggers.
   llvm::set_thread_name("LLCL Thread " + llvm::Twine(workerID));
 
-  TIME_PROFILER_BEGIN(4, "runOnThread", "");
+  TIME_PROFILER_PUSH(4, "runOnThread", "");
 
   // Run work items until the system is asked to shut down.
   runItems(/*isAwait*/ false,
@@ -190,7 +190,7 @@ void WorkQueueThread::runOnThread() {
              return sharedState.doneFlag.load(std::memory_order_acquire);
            });
 
-  TIME_PROFILER_END(4);
+  TIME_PROFILER_POP(4);
 
   if (sharedState.profilingEnabled) {
     M::timeTraceProfilerFinishThread();
@@ -214,7 +214,7 @@ KeepRunning:
       continue;
     }
 
-    TIME_PROFILER_BEGIN(3, "spinning", isAwait ? "await thread" : "worker");
+    TIME_PROFILER_PUSH(3, "spinning", isAwait ? "await thread" : "worker");
 
     // If we've run out of work to do, we need to quiesce and ultimately block
     // in the kernel on the semaphore.  However, we don't want to immediately
@@ -229,7 +229,7 @@ KeepRunning:
       // If we ever succeed in finding work to do, go back to running like
       // normal.
       if (auto work = taskList.dequeue()) {
-        TIME_PROFILER_END(3);
+        TIME_PROFILER_POP(3);
         doWork(work, workerID);
         goto KeepRunning;
       }
@@ -238,12 +238,12 @@ KeepRunning:
       // then we're done.  Checking the late stop condition here make sure our
       // threads shut down promptly when a runtime is torn down.
       if (earlyStopPredicate() || lateStopPredicate()) {
-        TIME_PROFILER_END(3);
+        TIME_PROFILER_POP(3);
         return;
       }
     }
 
-    TIME_PROFILER_END(3);
+    TIME_PROFILER_POP(3);
     TIME_PROFILER_SCOPE(3, (isAwait ? "await thread" : "worker") +
                                std::string(" sleeping"));
 
