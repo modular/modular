@@ -264,7 +264,8 @@ struct ExpandStructConstructOp
     SmallVector<Value> operands;
     for (Value value : op.getElements()) {
       if (auto list = dyn_cast<ListType>(value.getType())) {
-        ValueRange elements = materializeListDestConversion(b, value);
+        ValueRange elements =
+            materializeListDestConversion(b, cast<TypedValue<ListType>>(value));
         operands.append(elements.begin(), elements.end());
       } else {
         operands.push_back(value);
@@ -326,8 +327,8 @@ struct ExpandStructReplaceOp
                                              op.getIndexAttr().getInt());
     Value container = materializeConversion(b, op.getContainer(), type);
     if (isa<ListType>(op.getValue().getType())) {
-      for (auto [i, value] :
-           llvm::enumerate(materializeListDestConversion(b, op.getValue())))
+      for (auto [i, value] : llvm::enumerate(materializeListDestConversion(
+               b, cast<TypedValue<ListType>>(op.getValue()))))
         container = b.create<POP::StructReplaceOp>(op.getLoc(), value,
                                                    container, i + index);
     } else {
@@ -429,7 +430,8 @@ struct ExpandListStore : public mlir::OpRewritePattern<POP::StoreOp> {
     Value arrPtr = materializeConversion(b, op.getPtr(), arrPtrType);
     Value elPtr = b.create<POP::PointerBitcastOp>(
         op.getLoc(), POP::PointerType::get(list.getElementType()), arrPtr);
-    ValueRange elements = materializeListDestConversion(b, op.getArg());
+    ValueRange elements = materializeListDestConversion(
+        b, cast<TypedValue<ListType>>(op.getArg()));
     for (auto [idx, element] : llvm::enumerate(elements)) {
       Value offset = b.create<mlir::index::ConstantOp>(op.getLoc(), idx);
       Value curPtr = b.create<POP::OffsetOp>(op.getLoc(), elPtr, offset);
@@ -491,7 +493,8 @@ struct ExpandVariantCreate
     if (!list)
       return failure();
 
-    ValueRange elements = materializeListDestConversion(b, op.getOperand());
+    ValueRange elements = materializeListDestConversion(
+        b, cast<TypedValue<ListType>>(op.getOperand()));
     Value arr = b.create<POP::ArrayCreateOp>(
         op.getLoc(), convertListToArrayType(list), elements);
     Value variant = b.create<POP::VariantCreateOp>(
@@ -515,8 +518,8 @@ struct ExpandListDebugValue
     if (!list)
       return failure();
 
-    ValueRange elements =
-        materializeListDestConversion(b, TypedValue<ListType>(op.getValue()));
+    ValueRange elements = materializeListDestConversion(
+        b, cast<TypedValue<ListType>>(op.getValue()));
     b.updateRootInPlace(op, [&] {
       op.setOperand(b.create<POP::ArrayCreateOp>(
           op.getLoc(),
@@ -545,7 +548,8 @@ struct ExpandGenericOperation : public mlir::RewritePattern {
     for (Value operand : op->getOperands()) {
       if (isa<ListType>(operand.getType())) {
         hasListOperand = true;
-        ValueRange expanded = materializeListDestConversion(b, operand);
+        ValueRange expanded = materializeListDestConversion(
+            b, cast<TypedValue<ListType>>(operand));
         operands.append(expanded.begin(), expanded.end());
       } else {
         operands.push_back(operand);

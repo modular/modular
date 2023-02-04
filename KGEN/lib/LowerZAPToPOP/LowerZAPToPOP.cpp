@@ -211,8 +211,10 @@ static Value constructNDBuffer(PatternRewriter &rewriter, Location loc,
   auto rankVal = rewriter.create<mlir::index::ConstantOp>(loc, type.getRank());
   if (!dtype)
     dtype = rewriter.create<ParamConstantOp>(loc, type.getDType());
-  return rewriter.create<StructConstructOp>(
-      loc, type, ValueRange{ptr, rankVal, shapeArray, dtype});
+  return rewriter
+      .create<StructConstructOp>(loc, type,
+                                 ValueRange{ptr, rankVal, shapeArray, dtype})
+      ->getResult(0);
 }
 
 /// Convert the construction of a buffer to building the underlying struct.
