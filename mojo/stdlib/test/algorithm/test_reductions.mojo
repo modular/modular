@@ -14,7 +14,7 @@ from IO import print
 
 # CHECK-LABEL: test_reductions
 fn test_reductions():
-    __mlir_op.`zap.print`[fmt:"== test_reductions\n"]()
+    print("== test_reductions\n")
 
     alias simd_width = 4
     alias size = 100
@@ -40,7 +40,7 @@ fn test_reductions():
 # We use a smaller vector so that we do not overflow
 # CHECK-LABEL: test_product
 fn test_product():
-    __mlir_op.`zap.print`[fmt:"== test_product\n"]()
+    print("== test_product\n")
 
     alias simd_width = 4
     alias size = 10
@@ -59,7 +59,7 @@ fn test_product():
 
 # CHECK-LABEL: test_mean_variance
 fn test_mean_variance():
-    __mlir_op.`zap.print`[fmt:"== test_mean_variance\n"]()
+    print("== test_mean_variance\n")
 
     alias simd_width = 4
     alias size = 100

@@ -14,7 +14,7 @@ from IO import print
 
 # CHECK-LABEL: test_vectorize
 fn test_vectorize():
-    __mlir_op.`zap.print`[fmt:"== test_vectorize\n"]()
+    print("== test_vectorize\n")
 
     # Create a mem of size 5
     let vector = Buffer[5, DType.f32.value].stack_allocation()
