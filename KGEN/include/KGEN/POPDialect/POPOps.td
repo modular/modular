@@ -1527,7 +1527,7 @@ def POP_VariantVisitOp : POPOp<"variant.visit", [RecursiveMemoryEffects,
     // Switch on the type of a parametric variant. Default case.
     pop.variant.switch %arg1 : !pop.variant<A, B, C>
     case A {
-      zap.print "A!\n"()
+      do_something "A!\n"()
     }
     default {}
     ```

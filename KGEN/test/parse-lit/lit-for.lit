@@ -3,6 +3,7 @@
 from Pointer import Pointer
 from Int import Int
 from Range import range
+from IO import print
 
 
 struct my_iter:
@@ -51,7 +52,7 @@ struct MyList:
 
 
 fn printInt(x: Int):
-    __mlir_op.`zap.print`[fmt:"%ld\n"](x.value)
+    print(x)
 
 
 @export
@@ -74,8 +75,9 @@ fn main() -> __mlir_type.index:
         printInt(item)
     return 0
 
+
 # CHECK-LABEL: @"induction_var_scope()"
 fn induction_var_scope():
     for item in range(0):
-      # CHECK: "g" = %{{.*}}
-      let g = item
+        # CHECK: "g" = %{{.*}}
+        let g = item

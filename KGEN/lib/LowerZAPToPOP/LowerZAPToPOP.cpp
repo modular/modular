@@ -70,7 +70,7 @@ static Value convertValue(Value value) {
 namespace {
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPPrint
+// lowerStringToGlobalConstant
 //===----------------------------------------------------------------------===//
 
 /// Lower the string to a global constant.
@@ -85,37 +85,6 @@ static Value lowerStringToGlobalConstant(Operation *op, StringRef str,
   return b.create<GlobalConstantOp>(op->getLoc(), PointerType::get(arrayType),
                                     POP::ArrayAttr::get(values, arrayType));
 }
-
-/// Lower the string into a global C string. Null-terminate the string and
-/// return an `si8` pointer.
-static Value lowerToCString(Operation *op, StringRef str, OpBuilder &b) {
-  SmallString<256> nullTerminatedStr = str;
-  nullTerminatedStr.push_back('\0');
-  auto charType = b.getType<SIMDType>(1, DType::si8);
-  return b.create<PointerBitcastOp>(
-      op->getLoc(), PointerType::get(charType),
-      lowerStringToGlobalConstant(op, nullTerminatedStr, b));
-}
-
-struct ConvertZAPPrint : mlir::OpRewritePattern<PrintOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(PrintOp op,
-                                PatternRewriter &rewriter) const override {
-    // Lower the format into the a global constant.
-    Value fmt = lowerToCString(op, op.getFmt(), rewriter);
-    // Create the invocation to `printf`. Use the CompilerRT print format to
-    // ensure the output is flushed.
-    SmallVector<Value> operands;
-    operands.reserve(op.getNumOperands() + 1);
-    operands.push_back(fmt);
-    llvm::append_range(operands, op.getOperands());
-    rewriter.replaceOpWithNewOp<ExternalCallOp>(
-        op, TypeRange(), "KGEN_CompilerRT_PrintFormat", operands,
-        TypeAttr::get(rewriter.getFunctionType(fmt.getType(), {})));
-    return success();
-  }
-};
 
 //===----------------------------------------------------------------------===//
 // ConvertZAPGlobalString
@@ -531,8 +500,7 @@ static void populateZAPToPOPPatterns(RewritePatternSet &patterns) {
       ConvertZAPNDBufferRank,
       ConvertZAPNDBufferSize,
       ConvertZAPNDBufferStackAllocation,
-      ConvertZAPNDBufferStore,
-      ConvertZAPPrint
+      ConvertZAPNDBufferStore
       // clang-format on
       >(patterns.getContext());
 }

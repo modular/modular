@@ -4,34 +4,32 @@
 # CHECK-NEXT: second had an error
 # CHECK-NEXT: --- '$error-handling::main()' returned 0
 
-
-struct Error:
-    fn __new__() -> Error:
-        var value: Error
-        return value
+from IO import print
+from Int import Int
+from Error import Error
 
 
 @raises
-fn raiseErrorIf(cond: __mlir_type.i1) -> __mlir_type.index:
+fn raiseErrorIf(cond: __mlir_type.i1) -> Int:
     if cond:
         raise Error()
-    return 1
+    return 0
 
 
-def implicitlyPropagate(cond: __mlir_type.i1) -> __mlir_type.index:
+def implicitlyPropagate(cond: __mlir_type.i1) -> Int:
     return raiseErrorIf(cond)
 
 
 @export
 fn main() -> __mlir_type.index:
     try:
-        implicitlyPropagate(False)
-        __mlir_op.`zap.print`[fmt:"first success\n"]()
+        let a = implicitlyPropagate(False)
+        print("first success\n")
     except e0:
-        __mlir_op.`zap.print`[fmt:"first had an error\n"]()
+        print("first had an error\n")
     try:
-        implicitlyPropagate(True)
-        __mlir_op.`zap.print`[fmt:"second success\n"]()
+        let b = implicitlyPropagate(True)
+        print("second success\n")
     except e1:
-        __mlir_op.`zap.print`[fmt:"second had an error\n"]()
+        print("second had an error\n")
     return 0
