@@ -940,7 +940,10 @@ struct DynamicRankBuffer:
     fn rank_dispatch[
         func: __mlir_type.`!kgen.signature<<rank:index>() -> !lit.none>`
     ](self):
-        debug_assert(self.rank > 0 and self.rank <= 5)
+        debug_assert(
+            self.rank > 0 and self.rank <= 5,
+            "rank be be positive and less or equal to 5",
+        )
 
         if self.rank == 1:
             func[1]()
@@ -966,7 +969,7 @@ struct DynamicRankBuffer:
         return pointer_product(self.shape, self.rank)
 
     fn dim(self, idx: Int) -> Int:
-        debug_assert(idx < self.rank)
+        debug_assert(idx < self.rank, "dimension index is out of bounds")
         return self.shape.load(idx).__getitem__(0)
 
     fn _shape_to_static_tuple[
