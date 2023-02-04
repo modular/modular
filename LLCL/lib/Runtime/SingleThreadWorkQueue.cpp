@@ -47,7 +47,7 @@ private:
 
 void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   // We are done when values_remaining drops to zero.
-  int numRemaining = values.size();
+  size_t numRemaining = values.size();
 
   // As each value becomes available, we can decrement our counts.
   for (auto &value : values)
@@ -58,6 +58,10 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
 
   // Run work items until numRemaining drops to zero.
   doWork([&]() -> bool { return numRemaining == 0; });
+
+  assert(numRemaining == 0 &&
+         "No tasks remaining however still have unconstructed AsyncValues. Are "
+         "all input AsyncValues ready?");
 }
 
 /// Execute blocks of work.  If `stopPredicate` is non-null, then we stop
