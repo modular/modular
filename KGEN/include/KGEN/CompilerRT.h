@@ -32,20 +32,6 @@ void registerBenchmark(
 } // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//
-// DebugAssert.cpp
-//===----------------------------------------------------------------------===//
-
-namespace M::KGEN {
-/// Register the debug assert functions.
-void registerDebugAssert(
-    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
-} // namespace M::KGEN
-
-MODULAR_EXPORT MODULAR_ATTRIBUTE_USED void
-KGEN_CompilerRT_DebugAssert(bool cond, const char *funcName,
-                            const char *fileName, const char *message);
-
-//===----------------------------------------------------------------------===//
 // InitIntelAMX.cpp
 //===----------------------------------------------------------------------===//
 
@@ -125,7 +111,6 @@ KGEN_CompilerRT_TimeTraceProfilerEnd();
 /// called!
 MODULAR_VISIBILITY_EXPORT MODULAR_ATTRIBUTE_USED static void init() {
   KGEN_CompilerRT_Initialize();
-  KGEN_CompilerRT_DebugAssert(false, "", "", "");
 #if defined(__x86_64__) && defined(__linux__)
   KGEN_CompilerRT_Init_Intel_AMX();
 #endif
