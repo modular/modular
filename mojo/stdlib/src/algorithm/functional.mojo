@@ -24,10 +24,8 @@ fn map[
     """
     Map a function over a range from 0 to size.
     """
-    var i: Int = 0
-    while i < size:
+    for i in range(size):
         func(i)
-        i += 1
 
 
 # ===----------------------------------------------------------------------===#
@@ -95,15 +93,11 @@ fn vectorize[
     """Map a function which is parametrized over a simd_Width over a range
     from 0 to size in simd fashion.
     """
-    var i: Int = 0
     let vector_end = (size // simd_width) * simd_width
-    while i < vector_end:
-        func[simd_width](i)
-        i += simd_width
-    i = vector_end
-    while i < size:
+    for simd_idx in range(0, vector_end, simd_width):
+        func[simd_width](simd_idx)
+    for i in range(vector_end, size):
         func[1](i)
-        i += 1
 
 
 # ===----------------------------------------------------------------------===#
