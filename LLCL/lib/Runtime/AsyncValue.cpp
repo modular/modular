@@ -9,6 +9,8 @@
 #include "LLCL/Support/Chain.h"
 #include "LLCL/Support/ConcurrentAppendingVector.h"
 #include "LLCL/Support/SpinWaiter.h"
+#include "llvm/Support/Format.h"
+
 using namespace M::LLCL;
 
 std::atomic<ssize_t> AsyncValue::totalAllocatedAsyncValues{0};
@@ -557,4 +559,63 @@ void AsyncValue::resolveIndirect(RCRef<AsyncValue> &&newValue) {
 /// the future.
 AsyncValue *AsyncValue::createIndirect(CompactRuntimePtr runtime) {
   return new Detail::IndirectAsyncValue(runtime);
+}
+
+static llvm::StringRef subclassToString(AsyncValue::SubclassKind kind) {
+  switch (kind) {
+  case AsyncValue::SubclassKind::kConcrete:
+    return "concrete";
+  case AsyncValue::SubclassKind::kIndirect:
+    return "indirect";
+  }
+  llvm::llvm_unreachable_internal("missing case");
+}
+
+static llvm::StringRef stateToString(AsyncValue::State state) {
+  switch (state) {
+  case AsyncValue::State::kUnconstructed:
+    return "unconstructed";
+  case AsyncValue::State::kUnconstructedInitializingInlineWaiter:
+    return "unconstructed(initializing)";
+  case AsyncValue::State::kUnconstructed1ValidOOLWaiterSlots:
+    return "unconstructed(1)";
+  case AsyncValue::State::kUnconstructed2ValidOOLWaiterSlots:
+    return "unconstructed(2)";
+  case AsyncValue::State::kUnconstructed3ValidOOLWaiterSlots:
+    return "unconstructed(3)";
+  case AsyncValue::State::kUnconstructed4ValidOOLWaiterSlots:
+    return "unconstructed(4)";
+  case AsyncValue::State::kAvailable:
+    return "available";
+  case AsyncValue::State::kError:
+    return "error";
+  }
+  llvm::llvm_unreachable_internal("missing case");
+}
+
+static std::string typeIDToString(uint16_t typeID) {
+  return typeID == (uint16_t)(~0) ? "unk" : std::to_string(typeID);
+}
+
+/// CAUTION: Not thread safe!
+void AsyncValue::printDebug(raw_ostream &os) const {
+  os << "AsyncValue(";
+  os << llvm::format_hex(reinterpret_cast<intptr_t>(this),
+                         2 + 2 * sizeof(intptr_t));
+  os << ", refs=" << refcount;
+  os << ", runtime="
+     << llvm::format_hex(reinterpret_cast<intptr_t>(runtime.get()),
+                         2 + 2 * sizeof(intptr_t));
+  os << ", kind=" << subclassToString(subclassKind);
+  os << ", vtable=" << (hasVTable ? "yes" : "no");
+  os << ", typeID=" << typeIDToString(typeID);
+  os << ", state=" << stateToString(getState());
+
+  if (subclassKind == SubclassKind::kIndirect && typeID != (uint16_t)(~0)) {
+    auto *indirect = static_cast<const Detail::IndirectAsyncValue *>(this);
+    if (indirect->value.getPointer())
+      os << ", value=" << *indirect->value.getPointer();
+  }
+
+  os << ")";
 }

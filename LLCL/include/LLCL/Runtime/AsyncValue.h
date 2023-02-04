@@ -343,6 +343,10 @@ public:
     return totalAllocatedAsyncValues.load(std::memory_order_relaxed);
   }
 
+  /// Print an internal representation of the AsyncValue. For debugging only.
+  /// CAUTION: Not thread safe! The printed state may appear torn.
+  void printDebug(raw_ostream &os) const;
+
 private:
   // Reference counting, only accessible to RCRef<>.
   template <typename T>
@@ -851,6 +855,12 @@ inline AsyncValue::Waiter *AsyncValue::getInlineWaiterPointer() {
     return static_cast<Detail::SomeConcreteAsyncValue *>(this)
         ->getInlineWaiterPointer();
   return &static_cast<Detail::IndirectAsyncValue *>(this)->waiter;
+}
+
+inline llvm::raw_ostream &operator<<(llvm::raw_ostream &os,
+                                     const M::LLCL::AsyncValue &value) {
+  value.printDebug(os);
+  return os;
 }
 
 } // namespace M::LLCL
