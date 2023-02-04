@@ -176,8 +176,7 @@ fn main() -> Int:
     if errors != 0:
         print("Matrices don't agree!\n\n")
     memset_zero[DType.si32.value](c.data, 1024)
-    let is_linux: Bool = os_is_linux()
-    if is_linux & has_intel_amx() & init_intel_amx():
+    if os_is_linux() and has_intel_amx() and init_intel_amx():
         print("Hardware AMX-int8 matmul test.\n")
         var tc = setup_tile_config()
         let ptr = Pointer[tileconfig].address_of(tc)
