@@ -133,45 +133,6 @@ struct ConvertZAPGlobalString : mlir::OpRewritePattern<GlobalStringOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertZAPDebugAssert
-//===----------------------------------------------------------------------===//
-
-struct ConvertZAPDebugAssert : mlir::OpRewritePattern<DebugAssertOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(DebugAssertOp op,
-                                PatternRewriter &rewriter) const override {
-    // Get the function Name.
-    auto functionNameStr = op->getParentOfType<mlir::FunctionOpInterface>()
-                               ->getName()
-                               .getStringRef();
-
-    // Get the file/line information if available.
-    std::string locationStr;
-    if (auto fileLineCol = dyn_cast<mlir::FileLineColLoc>(op->getLoc())) {
-      locationStr = (Twine(fileLineCol.getFilename()) + ":" +
-                     Twine(fileLineCol.getLine()))
-                        .str();
-    } else {
-      llvm::raw_string_ostream os(locationStr);
-      op->getLoc().print(os);
-    }
-
-    // Convert into MLIR Values.
-    Value functionName = lowerToCString(op, functionNameStr, rewriter);
-    Value filenameVal = lowerToCString(op, locationStr, rewriter);
-    Value message = lowerToCString(op, op.getMsg(), rewriter);
-
-    // Call into the CompilerRT assert function.
-    rewriter.replaceOpWithNewOp<ExternalCallOp>(
-        op, TypeRange(), "KGEN_CompilerRT_DebugAssert",
-        ValueRange{op.getCond(), functionName, filenameVal, message}, nullptr);
-
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertZAPNDBufferConstruct
 //===----------------------------------------------------------------------===//
 
@@ -560,7 +521,6 @@ struct ConvertZAPNDBufferBitCast
 static void populateZAPToPOPPatterns(RewritePatternSet &patterns) {
   patterns.insert<
       // clang-format off
-      ConvertZAPDebugAssert,
       ConvertZAPGlobalString,
       ConvertZAPNDBufferAddress,
       ConvertZAPNDBufferBitCast,

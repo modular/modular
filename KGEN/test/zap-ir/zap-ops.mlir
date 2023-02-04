@@ -383,14 +383,6 @@ kgen.generator @zap_print(%a: !pop.scalar<f32>) {
   kgen.return
 }
 
-// CHECK-LABEL: @zap_assert
-// CHECK-SAME: %[[V0:[a-z0-9]+]]:
-kgen.generator @zap_assert(%a: !pop.scalar<bool>) {
-  // CHECK: zap.debug_assert %[[V0]], "my message"
-  zap.debug_assert %a, "my message" : !pop.scalar<bool>
-  kgen.return
-}
-
 // CHECK-LABEL: @global_string
 kgen.generator @global_string() -> !pop.pointer<array<14, scalar<si8>>> {
   // CHECK: %{{.*}} = zap.global_string "hello world!!\00"[14]
