@@ -32,7 +32,7 @@ static thread_local ssize_t workerIDInTLS = 0;
 
 // Execute a single work item with tracing support.
 static void doWork(TaskFunction &workFn, size_t workerID) {
-  TIME_PROFILER_SCOPE(1, "doWork");
+  TIME_PROFILER_SCOPE(Trace::kLLCL, 1, "doWork");
   workFn();
 }
 
@@ -177,7 +177,7 @@ void WorkQueueThread::runOnThread() {
   // up in profilers and debuggers.
   llvm::set_thread_name("LLCL Thread " + llvm::Twine(workerID));
 
-  TIME_PROFILER_PUSH(4, "runOnThread", "");
+  TIME_PROFILER_PUSH(Trace::kLLCL, 4, "runOnThread", "");
 
   // Run work items until the system is asked to shut down.
   runItems(/*isAwait*/ false,
@@ -190,7 +190,7 @@ void WorkQueueThread::runOnThread() {
              return sharedState.doneFlag.load(std::memory_order_acquire);
            });
 
-  TIME_PROFILER_POP(4);
+  TIME_PROFILER_POP(Trace::kLLCL, 4);
 
   if (sharedState.profilingEnabled) {
     M::timeTraceProfilerFinishThread();
@@ -214,7 +214,8 @@ KeepRunning:
       continue;
     }
 
-    TIME_PROFILER_PUSH(3, "spinning", isAwait ? "await thread" : "worker");
+    TIME_PROFILER_PUSH(Trace::kLLCL, 3, "spinning",
+                       isAwait ? "await thread" : "worker");
 
     // If we've run out of work to do, we need to quiesce and ultimately block
     // in the kernel on the semaphore.  However, we don't want to immediately
@@ -229,7 +230,7 @@ KeepRunning:
       // If we ever succeed in finding work to do, go back to running like
       // normal.
       if (auto work = taskList.dequeue()) {
-        TIME_PROFILER_POP(3);
+        TIME_PROFILER_POP(Trace::kLLCL, 3);
         doWork(work, workerID);
         goto KeepRunning;
       }
@@ -238,14 +239,15 @@ KeepRunning:
       // then we're done.  Checking the late stop condition here make sure our
       // threads shut down promptly when a runtime is torn down.
       if (earlyStopPredicate() || lateStopPredicate()) {
-        TIME_PROFILER_POP(3);
+        TIME_PROFILER_POP(Trace::kLLCL, 3);
         return;
       }
     }
 
-    TIME_PROFILER_POP(3);
-    TIME_PROFILER_SCOPE(3, (isAwait ? "await thread" : "worker") +
-                               std::string(" sleeping"));
+    TIME_PROFILER_POP(Trace::kLLCL, 3);
+    TIME_PROFILER_SCOPE(Trace::kLLCL, 3,
+                        (isAwait ? "await thread" : "worker") +
+                            std::string(" sleeping"));
 
     // Otherwise, we we've waited long enough, yield the thread to the OS so we
     // don't burn power and starve other tasks on the system.
@@ -332,7 +334,7 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkers,
 }
 
 void ThreadPoolWorkQueue::shutdown() {
-  TIME_PROFILER_SCOPE(4, "shutdown");
+  TIME_PROFILER_SCOPE(Trace::kLLCL, 4, "shutdown");
   int workerID = workerIDInTLS;
 
   // Donate this thread to help drain the work queue if there's anything left.
@@ -361,7 +363,7 @@ void ThreadPoolWorkQueue::addTask(TaskFunction work) {
   auto workerID = workerIDInTLS;
   (void)workerID;
   // Try to add this work to the RingBuffer.
-  TIME_PROFILER_SCOPE(2, "addTask");
+  TIME_PROFILER_SCOPE(Trace::kLLCL, 2, "addTask");
   if (taskList.enqueue(work)) {
     // If there are any suspended workers, kick one of them now that there is
     // new work to do.
@@ -383,7 +385,7 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   // If all the values are ready, then we don't have to do anything.
   if (llvm::all_of(values, [](auto &av) { return av.isReady(); }))
     return;
-  TIME_PROFILER_SCOPE(2, "await");
+  TIME_PROFILER_SCOPE(Trace::kLLCL, 2, "await");
 
   // Figure out which WorkerThread this is being invoked from.  This could be
   // something in the WorkQueue or could be an external foreign thread (index
@@ -399,7 +401,7 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   // fell asleep.
   for (auto &value : values)
     value.andThenSync([&numRemaining, thisWorker, this]() {
-      TIME_PROFILER_SCOPE(3, "await andThenSync");
+      TIME_PROFILER_SCOPE(Trace::kLLCL, 3, "await andThenSync");
       // Decremenet the count of async values that we're waiting on.
       // TODO: This can probably use more relaxed memory consistency!
       if (numRemaining.fetch_sub(1, std::memory_order_seq_cst) != 1)

@@ -393,7 +393,7 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
   // Enqueue each element of work!
   for (size_t elementIdx = 0; elementIdx != totalCount; ++elementIdx) {
     addTask(runtime, [state, elementIdx]() {
-      TIME_PROFILER_SCOPE(1, "parallelForEach", [&]() {
+      TIME_PROFILER_SCOPE(Trace::kLLCL, 1, "parallelForEach", [&]() {
         return Twine("subtask:").concat(Twine(elementIdx)).str();
       });
       // Invoke the per-element function with the index and all of the captured
@@ -510,7 +510,7 @@ static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
   // said, there is a reasonable likelihood that the last element will be
   // smaller than the rest, so this thread can catch up with the others.
   {
-    TIME_PROFILER_SCOPE(1, "parallelForEach", [&]() {
+    TIME_PROFILER_SCOPE(Trace::kLLCL, 1, "parallelForEach", [&]() {
       return Twine("subtask:").concat(Twine(totalCount - 1)).str();
     });
     elementFn(totalCount - 1, captures...);
