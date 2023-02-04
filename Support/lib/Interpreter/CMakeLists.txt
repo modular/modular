@@ -15,4 +15,5 @@ add_modular_library(InterpreterInterface
   MSupport
   MCompilerSupport
   MDialect
+  MLIRCallInterfaces
 )
