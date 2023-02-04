@@ -6,7 +6,6 @@
 
 add_modular_mlir_library(KGENCompilerRT
   Benchmark.cpp
-  DebugAssert.cpp
   Initialize.cpp
   LLCL.cpp
   Print.cpp

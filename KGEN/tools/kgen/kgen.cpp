@@ -365,7 +365,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // TODO (8082): This should not be necessary.
   std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
   KGEN::registerBenchmark(compilerRTFunctions);
-  KGEN::registerDebugAssert(compilerRTFunctions);
   KGEN::registerIntelAMX(compilerRTFunctions);
   KGEN::registerLLCL(compilerRTFunctions);
   KGEN::registerPrint(compilerRTFunctions);
