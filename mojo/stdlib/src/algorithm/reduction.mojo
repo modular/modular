@@ -247,7 +247,7 @@ fn mean[
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
     """Computes the mean value of the elements in a buffer."""
 
-    debug_assert(src.__len__() != 0)
+    debug_assert(src.__len__() != 0, "input must not be empty")
 
     return (
         SIMD[1, type](sum[simd_width, size, type](src)) / src.__len__()
@@ -266,7 +266,7 @@ fn variance[
 ](src: Buffer[size, type]) -> __mlir_type[`!pop.scalar<`, type, `>`]:
     """Computes the variance value of the elements in a buffer."""
 
-    debug_assert(src.__len__() > 1)
+    debug_assert(src.__len__() > 1, "input length must be greater than 1")
 
     let mean_value = mean[simd_width, size, type](src)
 
