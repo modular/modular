@@ -16,7 +16,6 @@ kgen.func @naive_matmul(%a: !zap.ndbuffer<[?, ?], f32>,
   %BK = zap.ndbuffer.dim %b[0] : !zap.ndbuffer<[?, ?], f32>
   %K_eq_BK0 = index.cmp eq(%K, %BK)
   %K_eq_BK = pop.cast_from_builtin %K_eq_BK0 : i1 to !pop.simd<1, bool>
-  zap.debug_assert %K_eq_BK, "K != BK" : !pop.simd<1, bool>
 
   scf.for %i = %zero to %M step %one {
     scf.for %j = %zero to %N step %one {
