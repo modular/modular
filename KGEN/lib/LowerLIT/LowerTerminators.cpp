@@ -40,7 +40,8 @@ static Value getCoroutinePromise(ImplicitLocOpBuilder &b, DeclRefType errType,
 static void createCoroutineFinalize(ImplicitLocOpBuilder &b,
                                     DeclRefType errType, Value hdl,
                                     ValueRange results) {
-  Value promise = getCoroutinePromise(b, errType, hdl);
+  Value promise =
+      getCoroutinePromise(b, errType, cast<TypedValue<CoroutineType>>(hdl));
   for (auto [idx, result] : llvm::enumerate(results))
     b.create<StoreOp>(result, b.create<POP::StructGEPOp>(promise, idx));
 
