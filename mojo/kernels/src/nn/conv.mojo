@@ -1158,11 +1158,19 @@ struct ConvIm2ColNCHW[
         # debug_assertions on the runtime shapes to guard against
         #  unsupported cases yet.
         # Assert same padding.
-        debug_assert(conv_shape.out_h == conv_shape.h)
-        debug_assert(conv_shape.out_w == conv_shape.w)
+        debug_assert(
+            conv_shape.out_h == conv_shape.h,
+            "output height must be the same as the input height",
+        )
+        debug_assert(
+            conv_shape.out_w == conv_shape.w,
+            "output width must be the same as the input width",
+        )
         # Assert unit stride and padding.
-        debug_assert(conv_shape.stride == Index(1, 1))
-        debug_assert(conv_shape.dilation == Index(1, 1))
+        debug_assert(conv_shape.stride == Index(1, 1), "stride must be [1,1]")
+        debug_assert(
+            conv_shape.dilation == Index(1, 1), "dilation must be [1,1]"
+        )
 
         var conv = ConvIm2ColNCHW[
             shape_input,
