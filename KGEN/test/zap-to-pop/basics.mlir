@@ -1,14 +1,5 @@
 // RUN: kgen-opt -split-input-file -lower-zap-to-pop -allow-unregistered-dialect %s | FileCheck %s
 
-// CHECK-LABEL: @zap_print
-kgen.generator @zap_print(%a: !pop.scalar<f32>) {
-  // CHECK: %[[FMT:.*]] = pop.global_constant: array<7, scalar<si8>> = <[102, 111, {{.*}}]>
-  // CHECK: %[[C_STR:.*]] = pop.pointer.bitcast %[[FMT]] : !pop.pointer<array{{.*}}> to !pop.pointer<scalar<si8>>
-  // CHECK: pop.external_call @KGEN_CompilerRT_PrintFormat(%[[C_STR]], %{{.*}}) (!pop.pointer<scalar<si8>>) -> ()
-  zap.print "foo %f"(%a) : !pop.scalar<f32>
-  kgen.return
-}
-
 // -----
 
 // CHECK-LABEL: @zap_global_string

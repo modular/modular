@@ -376,13 +376,6 @@ kgen.generator @zap_ndbuffer_bitcast<size, size2, dt: dtype>(%arg0: !zap.ndbuffe
   kgen.return
 }
 
-// CHECK-LABEL: @zap_print
-kgen.generator @zap_print(%a: !pop.scalar<f32>) {
-  // CHECK: zap.print "foo %f"(%{{.*}}) : !pop.scalar<f32>
-  zap.print "foo %f"(%a) : !pop.scalar<f32>
-  kgen.return
-}
-
 // CHECK-LABEL: @global_string
 kgen.generator @global_string() -> !pop.pointer<array<14, scalar<si8>>> {
   // CHECK: %{{.*}} = zap.global_string "hello world!!\00"[14]

@@ -10,7 +10,7 @@ struct Crash1[XXX: __mlir_type.index]:
 
 # Forward reference needs to get resolved.
 fn printF32(x: F32):
-  __mlir_op.`zap.print`[fmt: "%f\n"](x.value)
+  pass
 
 struct F32:
   var value : __mlir_type.`!pop.scalar<f32>`
