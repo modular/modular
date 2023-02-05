@@ -18,7 +18,7 @@ from Index import Index, StaticIntTuple
 from Int import Int
 from List import create_kgen_list
 from Matrix import Matrix
-from MemoryUtilities import stack_allocation
+from Memory import stack_allocation
 from Pointer import DTypePointer
 from SIMD import SIMD
 from TargetInfo import simd_byte_width
