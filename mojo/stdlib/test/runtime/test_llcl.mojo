@@ -11,7 +11,7 @@ from Int import Int
 from LLCL import TaskGroup, Runtime
 from Functional import parallelForEachN
 from Pointer import Pointer
-from MemoryUtilities import stack_allocation
+from Memory import stack_allocation
 from Range import range
 
 # CHECK-LABEL: test_runtime_task
