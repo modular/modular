@@ -1231,33 +1231,35 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     }
 
     // For variadic list, we need to emit all of the remaining operands.
-    size_t firstVariadicOperand = nextOperandIdx;
-    if (std::all_of(operands.begin() + nextOperandIdx, operands.end(),
-                    [](auto operand) { return operand.ir.getIfMValue(); })) {
-      // If all of the operands are compile-time values, then we can represent
-      // the variadic sequence as an attribute.
-      SmallVector<TypedAttr> variadicArgs;
-      for (size_t e = operands.size(); nextOperandIdx != e; ++nextOperandIdx) {
-        auto operand = operands[nextOperandIdx];
-        AnyValue value = emitter.getAsExpectedType(
-            operand.ir, operand.expr, getVariadicElementType(expectedType),
-            " in variadic argument");
-        variadicArgs.push_back(value.getIfMValue().get());
-      }
+    // Emit all of the remaining values to make sure they're converted to the
+    // right type.
+    SmallVector<ASTExprAnd<AnyValue>> variadicOperands(
+        operands.begin() + nextOperandIdx, operands.end());
+    for (auto &operand : variadicOperands) {
+      auto emittedArg = emitOneArgVal(operand);
+      if (!emittedArg)
+        return {};
+      operand.ir = emittedArg;
+    }
+    nextOperandIdx = operands.size();
 
-      auto argAttr =
-          POP::VariadicAttr::get(ArrayRef<TypedAttr>(variadicArgs),
-                                 expectedType.cast<POP::VariadicType>());
-      argumentValues.push_back(
-          {MValue(argAttr), operands[firstVariadicOperand].expr});
+    // If all of the operands are compile-time values, then we can represent
+    // the variadic sequence as an attribute.
+    if (std::all_of(variadicOperands.begin(), variadicOperands.end(),
+                    [](auto operand) { return operand.ir.getIfMValue(); })) {
+      SmallVector<TypedAttr> variadicArgs;
+      for (auto operand : variadicOperands)
+        variadicArgs.push_back(operand.ir.getIfMValue().get());
+      auto argAttr = POP::VariadicAttr::get(
+          variadicArgs, expectedType.cast<POP::VariadicType>());
+      argumentValues.push_back({MValue(argAttr), variadicOperands[0].expr});
       continue;
     }
 
     // If not all operands are compile-time values, use an operation to create a
     // variadic sequence.
     SmallVector<Value> variadicArgs;
-    for (size_t e = operands.size(); nextOperandIdx != e; ++nextOperandIdx) {
-      auto operand = operands[nextOperandIdx];
+    for (auto &operand : variadicOperands) {
       DRValue argVal =
           emitter.emitDRValue({emitOneArgVal(operand), operand.expr});
       if (!argVal)
@@ -1268,9 +1270,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     Location loc = emitter.translateLocation(callLoc);
     Value argVal = emitter.builder->create<POP::VariadicCreateOp>(
         loc, expectedType, variadicArgs);
-
-    argumentValues.push_back(
-        {RValue(argVal), operands[firstVariadicOperand].expr});
+    argumentValues.push_back({RValue(argVal), variadicOperands[0].expr});
   }
 
   assert(nextOperandIdx == operands.size() &&
@@ -1280,12 +1280,20 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   // This can fail in a parameter context if the operations are not all
   // foldable, in which case we'll fall back to using an 'apply' operator, or
   // when the function isn't suitable for @nodebug_inline processing.
-  if (direct && cast<LIT::FuncOp>(*direct->fnDecls[0]).getNoDebugInline()) {
-    auto calleeSym = cast<SymbolConstantAttr>(callee.getIfMValue().get());
-    ParamBindArrayAttr inputParams = calleeSym.getParamValues();
-    if (auto result = debugInlineFunctionCall(
-            callLoc, *direct->fnDecls[0], inputParams, argumentValues, emitter))
-      return result;
+  if (direct) {
+    auto calleeFunc = cast<LIT::FuncOp>(*direct->fnDecls[0]);
+    if (calleeFunc.getNoDebugInline() ||
+        calleeFunc.getAlwaysInlineLevel() ==
+            AlwaysInlineLevel::EnabledNoDebug ||
+        (calleeFunc.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled &&
+         !emitter.builder)) {
+      auto calleeSym = cast<SymbolConstantAttr>(callee.getIfMValue().get());
+      ParamBindArrayAttr inputParams = calleeSym.getParamValues();
+      if (auto result =
+              debugInlineFunctionCall(callLoc, *direct->fnDecls[0], inputParams,
+                                      argumentValues, emitter))
+        return result;
+    }
   }
 
   auto &builder = emitter.builder;
@@ -1381,9 +1389,11 @@ AnyValue CallableValue::debugInlineFunctionCall(
 
   // Resolve the body to type check and generate the IR.  This will also check
   // that the body is suitable for @nodebug_inline processing.
-  if (failed(emitter.getDeclResolver().resolveFully(callee, callLoc)) ||
-      // Check for the flag again to make sure the body can be inlined.
-      !funcOp.getNoDebugInline())
+  if (failed(emitter.getDeclResolver().resolveFully(callee, callLoc)))
+    return {};
+  // Check for the flag again to make sure the body can be inlined.
+  if (!funcOp.getNoDebugInline() &&
+      funcOp.getAlwaysInlineLevel() != AlwaysInlineLevel::EnabledNoDebug)
     return {};
 
   // Ok, we know the the body is simple: no control flow / regions, no
@@ -1460,7 +1470,7 @@ AnyValue CallableValue::debugInlineFunctionCall(
     // If we have no builder, then we're cloning into a parameter expression.
     // This is reasonably straight-forward because we know everything in the
     // mapping with be MValues.
-    if (!emitter.builder) {
+    if (!emitter.builder || !funcOp.getNoDebugInline()) {
       // TODO: Add support for parameter substitution, how do we call fold
       // though?
 

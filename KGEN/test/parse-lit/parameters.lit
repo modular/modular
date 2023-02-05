@@ -137,7 +137,7 @@ struct Pair[dt: DType]:
 
   # CHECK: lit.func @"__new__{{.*}} -> !kgen.declref<@"$parameters"::@Pair<dt: @"$prolog"::@DType = dt>> attributes {isStatic}
   fn __new__(a: OurSIMD[42, dt]) -> Pair[dt]:
-    # CHECK: %0 = kgen.param.constant: @"$Int"::@Int = <#lit.struct<{value: scalar<index> = 4}>>
+    # CHECK: %0 = kgen.param.constant: @"$Int"::@Int {{.*}} 4
     # CHECK: %1 = lit.struct.create(a=%a, b=%0) : (!kgen.declref<@"$parameters"::@OurSIMD<size = 42, dt: @"$prolog"::@DType = dt>>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$parameters"::@Pair<dt: @"$prolog"::@DType = dt>>
     return Pair[dt]{a: a, b: 4}
   # CHECK: }
@@ -204,9 +204,8 @@ fn no_result_param[a: __mlir_type.index]():
 # CHECK-LABEL: lit.func @"idx_result_params()"<a -> b, c>()
 fn idx_result_params[a: __mlir_type.index -> b: __mlir_type.index, c: __mlir_type.index]() -> Int:
   # CHECK: %0 = kgen.param.constant = <add(a, 2)>
-  # CHECK: %1 = pop.cast_from_builtin %0 : index to !pop.scalar<index>
-  # CHECK: %2 = lit.struct.create(value=%1)
-  # CHECK: lit.return<a, add(a, 1)> %2
+  # CHECK: %1 = kgen.call{{.*}}__new__{{.*}}(%0)
+  # CHECK: lit.return<a, add(a, 1)> %1
   return[a,a+1] a+2
 
 # CHECK-LABEL: lit.func @"just_result_params()"<() -> a>()

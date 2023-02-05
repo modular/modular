@@ -15,9 +15,8 @@ def let_decls():
   # CHECK: %y = lit.let.decl "y" = %0 : f64
   let y = 1.0
 
-  # CHECK: [[TMP:%.*]] = pop.cast_from_builtin %x : index to !pop.scalar<index>
-  # CHECK: [[TMP2:%.*]] = lit.struct.create(value=[[TMP]])
-  # CHECK: %z = lit.let.decl "z" = [[TMP2]]
+  # CHECK: [[TMP:%.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%x)
+  # CHECK: %z = lit.let.decl "z" = [[TMP]]
   let z = Int(x)
 
 ##===----------------------------------------------------------------------===##
@@ -33,7 +32,7 @@ def var_decls():
   var y : Int
 
   # CHECK: [[Y:%.*]] = pop.load %y : !pop.pointer<@"$Int"::@Int>
-  # CHECK: [[ONE:%.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 1}>
+  # CHECK: [[ONE:%.*]] = kgen.param.constant: @"$Int"::@Int {{.*}} 1
   # CHECK: [[ADD:%.*]] = kgen.call @"$Int"::@Int::@"__add__($Int::Int,$Int::Int)"([[Y]], [[ONE]])
   # CHECK: pop.store [[ADD]], %y : !pop.pointer<@"$Int"::@Int>
   y = y + 1
@@ -72,9 +71,9 @@ fn testThing(a: Int, b: Int) -> Int: return 1
 # CHECK-LABEL: lit.func @"callOverload
 fn callOverload(a: Int):
   # CHECK: %0 = kgen.call @"$decls"::@"testThing($Int::Int)"(%a)
-  testThing(a)
+  _ = testThing(a)
   # CHECK:  %1 = kgen.call @"$decls"::@"testThing($Int::Int,$Int::Int)"(%a, %a)
-  testThing(a, a)
+  _ = testThing(a, a)
 
 # Test that pointers don't get confused with by-ref arguments.
 # CHECK-LABEL: lit.func @"testPointerArgs{{.*}}(%ptr: !pop.pointer<si32>) -> si32 {
@@ -126,7 +125,10 @@ fn pleaseInline() -> __mlir_type.index:
 # Default arguments and variadics.
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.func @"defaultArgument{{.*}}{defaults = #lit<default.arguments[<1 : index = #lit.struct<{value: scalar<index> = 42}> : !kgen.declref<@"$Int"::@Int>>]>}
+# CHECK: lit.func @"defaultArgument{{.*}}{defaults =
+# CHECK-SAME: #lit<default.arguments[<1 : index =
+# CHECK-SAME: #lit.struct<{value: scalar<index> = 42}> :
+# CHECK-SAME: !kgen.declref<@"$Int"::@Int>>]>}
 fn defaultArgument(a: Int, b: Int = 42) -> Int:
   return a + b
 
