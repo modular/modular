@@ -15,7 +15,7 @@ from List import (
     _get_kgen_list_item,
     create_kgen_list_unknown,
 )
-from MemoryUtilities import stack_allocation
+from Memory import stack_allocation
 from Pointer import DTypePointer, product as pointer_product
 from SIMD import SIMD
 from Tuple import StaticTuple
