@@ -1048,8 +1048,8 @@ bool CallableValue::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
   // Otherwise, check to see if we can do an implicit conversion by invoking a
   // `__new__` method on the expected type.
   bool isErroneousDecl = false;
-  CallableValue callee(requiredType, "__new__", SMLoc(), isErroneousDecl,
-                       shared);
+  CallableValue callee(requiredType, "__new__", value.expr->getLoc(),
+                       isErroneousDecl, shared);
 
   // If there are no viable candidates for the implicit conversion, we fail.
   if (!callee.direct)
@@ -1287,6 +1287,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
             AlwaysInlineLevel::EnabledNoDebug ||
         (calleeFunc.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled &&
          !emitter.builder)) {
+
       auto calleeSym = cast<SymbolConstantAttr>(callee.getIfMValue().get());
       ParamBindArrayAttr inputParams = calleeSym.getParamValues();
       if (auto result =
@@ -1393,7 +1394,9 @@ AnyValue CallableValue::debugInlineFunctionCall(
     return {};
   // Check for the flag again to make sure the body can be inlined.
   if (!funcOp.getNoDebugInline() &&
-      funcOp.getAlwaysInlineLevel() != AlwaysInlineLevel::EnabledNoDebug)
+      (funcOp.getAlwaysInlineLevel() != AlwaysInlineLevel::EnabledNoDebug ||
+       // TODO: Support input parameters.
+       !inputParams.empty()))
     return {};
 
   // Ok, we know the the body is simple: no control flow / regions, no
