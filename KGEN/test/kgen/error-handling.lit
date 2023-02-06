@@ -1,8 +1,8 @@
-# RUN: kgen -execute -func='$error-handling::main():index()' %s | FileCheck %s
+# RUN: kgen -execute -func='$error-handling::run_me():index()' %s | FileCheck %s
 
 # CHECK: first success
 # CHECK-NEXT: second had an error
-# CHECK-NEXT: --- '$error-handling::main()' returned 0
+# CHECK-NEXT: --- '$error-handling::run_me()' returned 0
 
 from IO import print
 from Int import Int
@@ -21,7 +21,7 @@ def implicitlyPropagate(cond: __mlir_type.i1) -> Int:
 
 
 @export
-fn main() -> __mlir_type.index:
+fn run_me() -> __mlir_type.index:
     try:
         let a = implicitlyPropagate(False)
         print("first success\n")

@@ -96,6 +96,13 @@ The choice of `fn` for this is arbitrary - we could have picked `func` (like
 Swift/Go) or `function` like Javascript.  `fn` aligns with Rust/Zig which are
 cool kids on the block these days.
 
+### Main
+
+In Lightning the main function has signature `fn main() -> Int`, where `Int`
+comes fom the standard library. That function is exported automatically with
+the unique symbol "main" in the final object file. This is subject to change
+as we close the gap with Python's functionality.
+
 ### The full power of MLIR at your fingertips
 
 A design goal of the Lightning is to provide "syntactic sugar" that makes it

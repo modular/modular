@@ -396,6 +396,20 @@ void DeclResolver::registerAndCheckExport(ExportOp exportOp) {
   exportedSymbolNames.insert({aliasName, exportOp.getLoc()});
 }
 
+void DeclResolver::exportMain(ASTDecl *containingDecl,
+                              SymbolRefAttr symbolName) {
+  StringAttr mainAttr = StringAttr::get(getContext(), kMainSymbolName);
+  // If main has an explicit @export decorator we are done.
+  if (exportedSymbolNames.count(mainAttr))
+    return;
+  // main was not exported explicitly, export it.
+  OpBuilder builder = containingDecl->getDeclEndBuilder();
+  auto exportOp =
+      builder.create<ExportOp>(builder.getUnknownLoc(), symbolName,
+                               StringAttr::get(getContext(), kMainSymbolName));
+  exportedSymbolNames.insert({mainAttr, exportOp.getLoc()});
+}
+
 /// Resolve the specified declaration to at least the specified level of
 /// resolution, performing incremental type checking as appropriate.
 LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
@@ -1032,7 +1046,7 @@ struct FnDecorators : public LitSharedStateUser {
 
   void apply(SmallVector<ExprNode *> &decoratorExprs);
   void applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
-                 SmallVector<ExprNode *> &decoratorExprs);
+                 SmallVector<ExprNode *> &decoratorExprs, bool onMain);
 
 private:
   void applyInterface(const DeclRefNode &node);
@@ -1040,9 +1054,9 @@ private:
   void applyImplements(const CallNode &callNode);
   void applyEvaluator(const CallNode &callNode);
   void applyLateExport(Location loc, SymbolRefAttr symbolName,
-                       StringRef aliasName);
+                       StringRef aliasName, bool onMain);
   void applyLateExport(Location loc, SymbolRefAttr symbolName,
-                       const CallNode &callNode);
+                       const CallNode &callNode, bool onMain);
 
   ASTDecl &decl;
   LIT::FuncOp funcOp;
@@ -1241,12 +1255,16 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
 }
 
 void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
-                                   StringRef aliasName) {
+                                   StringRef aliasName, bool onMain) {
   if (isMethod) {
     emitError(funcOp.getLoc(), "methods cannot be exported");
     return;
   }
-
+  if (!onMain && aliasName == DeclResolver::kMainSymbolName) {
+    emitError(funcOp.getLoc(), "cannot export as main a function with this "
+                               "signature, expected: main() -> Int");
+    return;
+  }
   ASTDecl *containingDecl = decl.getParentDecl();
   auto builder = containingDecl->getDeclEndBuilder();
   auto exportOp = builder.create<ExportOp>(
@@ -1255,11 +1273,16 @@ void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
 }
 
 void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
-                                   const CallNode &node) {
+                                   const CallNode &node, bool onMain) {
   if (node.args.size() != 1 || !isa<StringLiteralNode>(node.args.front())) {
     emitError(
         node.getLoc(),
         "@export requires a string specifying the name of the exported symbol")
+        << node.getParenRange();
+    return;
+  }
+  if (onMain) {
+    emitError(node.getLoc(), "@export cannot alias main()")
         << node.getParenRange();
     return;
   }
@@ -1269,18 +1292,19 @@ void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
     emitError(loc, aliasName) << " is not a valid C identifier";
     return;
   }
-  applyLateExport(loc, symbolName, aliasName);
+  applyLateExport(loc, symbolName, aliasName, onMain);
 }
 
 void FnDecorators::applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
-                             SmallVector<ExprNode *> &decoratorExprs) {
+                             SmallVector<ExprNode *> &decoratorExprs,
+                             bool onMain) {
   // Scan through and process decorator expressions that are in the late pass.
   for (ExprNode *decorator : decoratorExprs) {
     Location loc = translateLocation(decorator->getLoc());
     // Process all the decorators we know about.
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
       if (declRef->spelling == "export") {
-        applyLateExport(loc, symbolName, unmangledName);
+        applyLateExport(loc, symbolName, unmangledName, onMain);
         continue;
       }
 
@@ -1290,7 +1314,7 @@ void FnDecorators::applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
     } else if (auto callNode = dyn_cast<CallNode>(decorator)) {
       if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee))
         if (declRef->spelling == "export") {
-          applyLateExport(loc, symbolName, *callNode);
+          applyLateExport(loc, symbolName, *callNode, onMain);
           continue;
         }
     }
@@ -1320,7 +1344,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // These are /in/ our current scope because we do not want name conflicts with
   // them and they are instance (not type-level) values.
   // TODO: Generalize this to support nested structs and functions.
-  if (auto structDecl = dyn_cast<StructDeclOp>(*decl.getParentDecl())) {
+  bool inAStruct = isa<StructDeclOp>(*decl.getParentDecl());
+  if (inAStruct) {
+    auto structDecl = cast<StructDeclOp>(*decl.getParentDecl());
     auto parentLoc = decl.getParentDecl()->getLoc();
     for (auto param : structDecl.getInputParamDecls()) {
       auto paramRef = ParamDeclRefAttr::get(param);
@@ -1377,7 +1403,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
         type = shared.getTypeCheckErrorType();
       }
 
-    } else if (arg.name == "self" && isa<StructDeclOp>(*decl.getParentDecl())) {
+    } else if (arg.name == "self" && inAStruct) {
       // If this is a 'self' argument in a fn that is a method, default to a
       // self type.  TODO: Should we do this, or default to object in a 'def'?
       assert(decl.getParentDecl()->resolvedness ==
@@ -1445,10 +1471,17 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     decl.hasReferenceError = true;
   }
 
+  bool isMain =
+      !inAStruct && isMainFunction(baseName, inputParamDecls, resultParamDecls,
+                                   argTypes, resultType);
+
   // TODO: Handle the export attribute somehow else.  It should be a 'body
   // decorator' that is handled after the decl is fully resolved.
   SymbolRefAttr symbolName = getFullyResolvedSymbolRef(funcOp);
-  FnDecorators(decl, shared).applyLate(symbolName, baseName, decoratorExprs);
+  FnDecorators(decl, shared)
+      .applyLate(symbolName, baseName, decoratorExprs, isMain);
+  if (isMain)
+    getDeclResolver().exportMain(decl.getParentDecl(), symbolName);
 
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -2039,4 +2072,18 @@ ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
   return getDeclResolver().importModule(*decl.getParentDecl(),
                                         op.getModuleNameAttr(),
                                         op.getImportNameAttr(), decl.getLoc());
+}
+
+bool DeclResolver::isMainFunction(
+    StringAttr &name, SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
+    SmallVectorImpl<ParamDeclAttr> &resultParamDecls,
+    MutableArrayRef<Type> argTypes, ASTType &resultType) {
+  if (name != kMainSymbolName || !inputParamDecls.empty() ||
+      !resultParamDecls.empty() || !argTypes.empty() ||
+      !isa<KGEN::DeclRefType>(resultType.mlirType))
+    return false;
+  auto declRef = cast<KGEN::DeclRefType>(resultType.mlirType);
+  SymbolRefAttr symbol = declRef.getSymbol();
+  return symbol.getRootReference() == "$Int" &&
+         symbol.getLeafReference() == "Int";
 }

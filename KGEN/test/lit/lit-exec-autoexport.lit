@@ -1,0 +1,10 @@
+# RUN: lit %s -execute | FileCheck %s
+
+from Int import Int
+from IO import print
+
+
+fn main() -> Int:
+    # CHECK: OK main() -> Int
+    print("OK main() -> Int")
+    return 0
