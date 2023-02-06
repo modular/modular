@@ -43,10 +43,6 @@ struct Coroutine {
   Block *cleanup;
   /// The coroutine handle value.
   Value handle;
-  /// The value of the coroutine promise.
-  Value promise;
-  /// The type of the promise.
-  LLVMStructType promiseType;
 };
 } // namespace
 
@@ -55,15 +51,17 @@ static LLVMStructType getCoroutinePromiseType(LLVMBuilder &b,
                                               const TypeAttrCache &cache,
                                               POP::CoroutineType coroType) {
   // Pack the result types into a struct.
-  SmallVector<Type> promiseTypes(coroType.getResultTypes());
-  for (Type &type : promiseTypes) {
-    type = b.convertType(type);
-    if (!type)
-      return {};
-  }
+  SmallVector<Type> promiseTypes;
+
   // Add the async context: the callback function and a context pointer.
   promiseTypes.push_back(LLVMStructType::getLiteral(
       b.getContext(), {cache.ptrType, cache.ptrType}));
+  for (Type type : coroType.getResultTypes()) {
+    type = b.convertType(type);
+    if (!type)
+      return {};
+    promiseTypes.push_back(type);
+  }
   return LLVMStructType::getLiteral(b.getContext(), promiseTypes);
 }
 
@@ -184,20 +182,7 @@ createCoroutineFunction(LLVMBuilder &b, const TypeAttrCache &cache,
   func.setPassthroughAttr(b.getArrayAttr(b.getStringAttr("presplitcoroutine")));
 
   // Return the coroutine machinery.
-  return Coroutine{suspend, cleanup, coroHdl, promiseMem, promiseType};
-}
-
-/// Given the coroutine handle, return the pointer to the coroutine promise.
-static Value getCoroutinePromise(LLVMBuilder &b, const TypeAttrCache &cache,
-                                 Value hdl, LLVMStructType promiseType) {
-  auto coroPromiseOp = b.create<CallIntrinsicOp>(
-      cache.i8PtrType, "llvm.coro.promise",
-      ValueRange{hdl,
-                 b.create<ConstantOp>(cache.i32Type,
-                                      b.getTypeABIAlignment(promiseType)),
-                 b.create<ConstantOp>(cache.i1Type, false)});
-  return {b.create<BitcastOp>(LLVMPointerType::get(promiseType),
-                              coroPromiseOp.getResult(0))};
+  return Coroutine{suspend, cleanup, coroHdl};
 }
 
 //===----------------------------------------------------------------------===//
@@ -256,9 +241,19 @@ static LogicalResult lowerCoroutinePromise(LLVMBuilder &b,
   if (!promiseType || !ptrType)
     return op.emitError("failed to convert coroutine type");
 
-  // Cast it to just the promise results.
-  Value promise = b.create<BitcastOp>(
-      ptrType, getCoroutinePromise(b, cache, hdl, promiseType));
+  // Retrieve the pointer to the beginning of the coroutine promise.
+  auto coroPromiseOp = b.create<CallIntrinsicOp>(
+      cache.i8PtrType, "llvm.coro.promise",
+      ValueRange{hdl,
+                 b.create<ConstantOp>(cache.i32Type,
+                                      b.getTypeABIAlignment(promiseType)),
+                 b.create<ConstantOp>(cache.i1Type, false)});
+
+  // The next element is a pair of pointers. Skip over it to get to the results.
+  Value promise = b.create<GEPOp>(
+      ptrType, coroPromiseOp.getResult(0),
+      GEPArg(llvm::divideCeil(b.getIndexTypeBitwidth(), CHAR_BIT) * 2),
+      /*inbounds=*/true);
 
   op.replaceAllUsesWith(promise);
   op.erase();
