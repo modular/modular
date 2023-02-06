@@ -51,12 +51,10 @@ static SymbolConstantAttr materializeOperation(Location loc,
   Operation *op = b.create(state);
   b.create<ReturnOp>(ArrayRef<TypedAttr>(), op->getResults());
 
-  StringAttr newName =
+  StringAttr symName =
       symtab.insert(gen, cast<ModuleOp>(symtab.getOp()).getBody()->begin());
-  if (newName != name)
-    gen.setSymNameAttr(newName);
 
-  return SymbolConstantAttr::get(FlatSymbolRefAttr::get(newName),
+  return SymbolConstantAttr::get(FlatSymbolRefAttr::get(symName),
                                  opExpr.getType());
 }
 
