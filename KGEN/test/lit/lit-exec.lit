@@ -1,4 +1,4 @@
-# RUN: not lit %s -execute | FileCheck %s
+# RUN: not lit %s | FileCheck %s
 
 from F32 import F32
 from Int import Int

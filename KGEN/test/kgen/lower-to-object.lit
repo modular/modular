@@ -1,4 +1,4 @@
-# RUN: lit -execute -enable-search %s | FileCheck %s
+# RUN: lit -enable-search %s | FileCheck %s
 
 from Int import Int
 from IO import print
