@@ -26,7 +26,6 @@ fn exp_scalar_taylor_f32(x: F32) -> F32:
     )
 
 
-@export
 fn main() -> Int:
     let res = exp_scalar_taylor_f32(2.3)
     # CHECK: 9.88

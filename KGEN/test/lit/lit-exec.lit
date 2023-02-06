@@ -5,7 +5,6 @@ from Int import Int
 from IO import print
 
 
-@export
 fn main() -> Int:
     # CHECK: 2.0
     print(F32(1.0) + 1.0)
