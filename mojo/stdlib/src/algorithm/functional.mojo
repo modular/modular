@@ -106,11 +106,6 @@ fn vectorize[
 
 alias none = __mlir_type.`!lit.none`
 
-# TODO: Because of the inability to share Runtimes across libraries we cannot
-# call run a true parallelForEachN here. Instead of crashing, we run sequential,
-# will revert this once the Runtime ids issue is fixed.
-alias DISABLE_MULTI_THREADING: Bool = True
-
 
 fn parallelForEachNChain[
     args_type: __mlir_type.`!kgen.mlirtype`,
@@ -129,46 +124,12 @@ fn parallelForEachNChain[
         tasks.append(task)
 
 
-@interface
 fn parallelForEachN[
     args_type: __mlir_type.`!kgen.mlirtype`,
     func: __mlir_type[
         `!kgen.signature<(`, Int, `,`, args_type, `) -> !lit.none>`
     ],
 ](rt: Runtime, total_count: Int, args: args_type):
-    ...
-
-
-@implements(parallelForEachN)
-fn parallelForEachN_disabled[
-    args_type: __mlir_type.`!kgen.mlirtype`,
-    func: __mlir_type[
-        `!kgen.signature<(`, Int, `,`, args_type, `) -> !lit.none>`
-    ],
-](rt: Runtime, total_count: Int, args: args_type):
-    assert_param_bool_msg[
-        DISABLE_MULTI_THREADING == True,
-        "multi-threading is disabled. This is temporary solution.",
-    ]()
-
-    if total_count == 0:
-        return
-
-    for idx in range(total_count):
-        func(idx, args)
-
-
-@implements(parallelForEachN)
-fn parallelForEachN_enabled[
-    args_type: __mlir_type.`!kgen.mlirtype`,
-    func: __mlir_type[
-        `!kgen.signature<(`, Int, `,`, args_type, `) -> !lit.none>`
-    ],
-](rt: Runtime, total_count: Int, args: args_type):
-    assert_param_bool_msg[
-        DISABLE_MULTI_THREADING == False, "running in multiple threads!!!"
-    ]()
-
     if total_count == 0:
         return
 
