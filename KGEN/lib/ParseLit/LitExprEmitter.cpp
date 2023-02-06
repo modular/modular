@@ -226,11 +226,9 @@ AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
                                       ASTType expectedType,
                                       const Twine &errorSuffix) {
   auto errorHandler = [&]() {
-    if (!isa<TypeCheckErrorType>(value.getType()) &&
-        !isa<TypeCheckErrorType>(expectedType.mlirType))
-      emitError(expr->getLoc())
-          << ASTType(value.getType()) << " value cannot be converted to "
-          << expectedType << errorSuffix << expr->getRange();
+    emitError(expr->getLoc())
+        << ASTType(value.getType()) << " value cannot be converted to "
+        << expectedType << errorSuffix << expr->getRange();
   };
   return getAsExpectedType(value, expr, expectedType, std::move(errorHandler));
 }

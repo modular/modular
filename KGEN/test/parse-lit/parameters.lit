@@ -16,8 +16,7 @@ struct StructWithIntParam[size: Int]:
 
 # CHECK-LABEL: lit.func @"paramArith{{.*}}"<x>(%y: index) -> !lit.none {
 fn paramArith[x: __mlir_type.index](y : __mlir_type.index):
-  # CHECK: kgen.call @"$Assert"::@"assert_param()"<cond: i1 = eq(x, -99)>()
-  # HECK: kgen.param.assert <eq(x, -99)>, "param assertion failed"
+  # CHECK: kgen.param.assert <eq(x, -99)>, "param assertion failed"
   assert_param[x == -100+1]()
 
 fn take_3index(a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index) -> __mlir_type.index:
@@ -314,8 +313,8 @@ fn my_assert_param[cond: __mlir_type.i1, message: __mlir_type.`!kgen.string`]():
     __mlir_op.`kgen.param.assert`[cond:cond, message:message]()
     return
 
-# CHECK-LABEL: lit.func @"my_assert_param_inline{{.*}} always_inline_no_debug {
-@always_inline("nodebug")
+# CHECK-LABEL: lit.func @"my_assert_param_inline{{.*}} attributes {noDebugInline} {
+@nodebug_inline
 fn my_assert_param_inline[cond: __mlir_type.i1, message: __mlir_type.`!kgen.string`]():
     #CHECK: kgen.param.assert <cond>, message
     __mlir_op.`kgen.param.assert`[cond:cond, message:message]()
@@ -326,7 +325,7 @@ fn my_assert_param_inline[cond: __mlir_type.i1, message: __mlir_type.`!kgen.stri
 fn pass_str_param():
     # CHECK: kgen.call {{.+}}my_assert_param()"<cond: i1 = 1, message: string = "foo">() : () -> !lit.none
     my_assert_param[1==1, "foo"]()
-    # HECK: kgen.param.assert <1>, "foo2"
+    # CHECK: kgen.param.assert <1>, "foo2"
     my_assert_param_inline[2==2, "foo2"]()
 
 ##===----------------------------------------------------------------------===##

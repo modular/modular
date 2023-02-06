@@ -75,7 +75,8 @@ fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
 
 # CHECK-LABEL: lit.func @"test_if_nested
 fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
-    # CHECK-NEXT:   %[[I1:.*]] = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%a)
+    # CHECK-NEXT:   %[[LIT_BOOL:.*]] = lit.struct.extract %a[value]
+    # CHECK-NEXT:   %[[I1:.*]] = pop.cast_to_builtin %[[LIT_BOOL]] : !pop.scalar<bool> to i1
     # CHECK-NEXT:              hlcf.if %[[I1]]
     if a:
         # CHECK-NEXT: %inside_a = lit.var.decl "inside_a"

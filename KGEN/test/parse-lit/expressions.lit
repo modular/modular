@@ -163,8 +163,9 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # otherwise.
 
   # CHECK: %0 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
-  # CHECK: %1 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%0)
-  # CHECK: %2 = scf.if %1 -> (!kgen.declref<@"$expressions"::@Boolish>) {
+  # CHECK: %1 = lit.struct.extract %0[value]
+  # CHECK: %2 = pop.cast_to_builtin %1 : !pop.scalar<bool> to i1
+  # CHECK: %3 = scf.if %2 -> (!kgen.declref<@"$expressions"::@Boolish>) {
   # CHECK:   scf.yield %b
   # CHECK: } else {
   # CHECK:   scf.yield %a
@@ -174,9 +175,10 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.
 
-  # CHECK: %3 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
-  # CHECK: %4 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%3)
-  # CHECK: %5 = scf.if %4 -> (!kgen.declref<@"$expressions"::@Boolish>) {
+  # CHECK: %4 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
+  # CHECK: %5 = lit.struct.extract %4[value]
+  # CHECK: %6 = pop.cast_to_builtin %5 : !pop.scalar<bool> to i1
+  # CHECK: %7 = scf.if %6 -> (!kgen.declref<@"$expressions"::@Boolish>) {
   # CHECK:   scf.yield %a
   # CHECK: } else {
   # CHECK:   scf.yield %b
@@ -185,10 +187,11 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
 
   # Testing two different logic'y types returns the common bool type if present.
 
-  # CHECK: %6 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
-  # CHECK: %7 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%6)
-  # CHECK: %8 = scf.if %7 -> (!kgen.declref<@"$Bool"::@Bool>) {
-  # CHECK:   scf.yield %6
+  # CHECK: %8 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
+  # CHECK: %9 = lit.struct.extract %8[value]
+  # CHECK: %10 = pop.cast_to_builtin %9 : !pop.scalar<bool> to i1
+  # CHECK: %11 = scf.if %10 -> (!kgen.declref<@"$Bool"::@Bool>) {
+  # CHECK:   scf.yield %8
   # CHECK: } else {
   # CHECK:   scf.yield %x
   # CHECK: }
@@ -270,7 +273,8 @@ fn initializers():
 def test_if_cond(cond: Bool):
     # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@"$Int"::@Int>
     # CHECK-NEXT: %[[COND:.*]] = pop.load %cond_0
-    # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%[[COND]])
+    # CHECK: %[[LIT_BOOL:.*]] = lit.struct.extract %[[COND]][value]
+    # CHECK: %[[LIT_BOOLI1:.*]] = pop.cast_to_builtin %[[LIT_BOOL]] : !pop.scalar<bool> to i1
     # CHECK-NEXT: %[[IF_RES:.*]] = scf.if %[[LIT_BOOLI1]]
     # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}= 2}
     # CHECK-NEXT:   scf.yield %[[INT_TWO]]
