@@ -48,7 +48,6 @@ fn test_tracing[level: Int]():
     rt.__del__()
 
 
-@export
 fn main() -> Int:
     # CHECK-LABEL: test_tracing_enabled
     print("== test_tracing_enabled")
