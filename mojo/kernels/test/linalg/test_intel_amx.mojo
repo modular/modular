@@ -8,7 +8,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: linux, intel_amx
-# RUN: lit %s -execute | FileCheck %s
+# RUN: lit %s | FileCheck %s
 
 from DType import DType
 from Bool import Bool
