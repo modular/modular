@@ -3,7 +3,6 @@
 from prolog import Int, printInt, range
 
 
-@export
 fn main() -> Int:
     # CHECK: 0
     # CHECK: 1

@@ -62,7 +62,6 @@ fn inner_itf_impl2() -> __mlir_type.index:
     return 1
 
 
-@export
 fn main() -> Int:
     let f = Foo()
     let result = top(f)
