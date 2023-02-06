@@ -221,6 +221,37 @@ def BadDecorator(): pass
 @staticmethod # expected-error @+1 {{only methods on structs may be declared static}}
 def StaticMethod(): pass
 
+
+# expected-error @+2 {{@nodebug_inline does not allow parameter declarations}}
+@nodebug_inline
+fn nodebug_inline1() -> __mlir_type.index:
+  alias x = 4  # expected-note {{operation defined here}}
+  return 1
+
+# expected-error @+2 {{@nodebug_inline does not allow control flow}}
+@nodebug_inline
+fn nodebug_inline2(a: __mlir_type.i1) -> __mlir_type.index:
+  if a:  # expected-note {{operation defined here}}
+    return 1
+  else:
+    return 2
+
+# expected-error @+2 {{@nodebug_inline does not allow function call to 'nodebug_inline1()'}}
+@nodebug_inline
+fn nodebug_inline3():
+  _ = nodebug_inline1() # expected-note {{operation defined here}}
+
+# expected-error @+2 {{@nodebug_inline does not allow result parameters}}
+@nodebug_inline
+fn nodebug_inline4[() -> a: __mlir_type.index]():
+  return[4]
+
+# expected-error @+2 {{@nodebug_inline does not allow function call to 'nodebug_inline5()'}}
+@nodebug_inline
+fn nodebug_inline5(): # expected-note {{previously used here}}
+  # expected-error @+1 {{recursive reference to declaration}}
+  nodebug_inline5()   # expected-note {{operation defined here}}
+
 ##===----------------------------------------------------------------------===##
 # Structs
 ##===----------------------------------------------------------------------===##
