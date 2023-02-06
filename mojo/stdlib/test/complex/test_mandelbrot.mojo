@@ -84,7 +84,6 @@ fn test_mandelbrot_iter():
     print(mandelbrot_iter(100, 100))
 
 
-@export
 fn main() -> Int:
     test_mandelbrot_iter()
     return 0
