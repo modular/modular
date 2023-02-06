@@ -233,7 +233,7 @@ public:
                                          LitSharedState &shared);
 
 private:
-  AnyValue debugInlineFunctionCall(
+  AnyValue inlineFunctionCallIntoMValue(
       SMLoc callLoc, ASTDecl &callee, ParamBindArrayAttr inputParams,
       ArrayRef<ASTExprAnd<AnyValue>> argumentValues, IREmitter &emitter);
 };
