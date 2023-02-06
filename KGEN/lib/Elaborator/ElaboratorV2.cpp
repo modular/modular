@@ -1925,22 +1925,16 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
 LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   LLVM_DEBUG(logger << "Starting Elaboration\n");
 
-  ModuleOp primary = analysis.getTopLevelOp<ModuleOp>();
+  ModuleOp theModule = analysis.getTopLevelOp<ModuleOp>();
   // Detect common errors early and report them cleanly.
-  for (auto &op : primary.getOps())
+  for (auto &op : theModule.getOps())
     if (op.getName().getStringRef() == "lit.func")
       return op.emitError("unlowered lit.func discovered in KGEN elaborator");
 
-  DenseSet<GeneratorOp> exports;
-  for (auto e : primary.getOps<ExportOp>())
-    if (auto gen = analysis.getTopLevelSymbolTable().lookup<GeneratorOp>(
-            cast<FlatSymbolRefAttr>(e.getExported()).getValue()))
-      exports.insert(gen);
-
-  auto emptyInputParamKey = ArrayAttr::get(primary.getContext(), {});
+  auto emptyInputParamKey = ArrayAttr::get(theModule.getContext(), {});
   {
     auto _ = logger.scope("Processing Primary Generator Interfaces");
-    for (auto gen : primary.getOps<GeneratorOp>()) {
+    for (auto gen : theModule.getOps<GeneratorOp>()) {
       if (auto implements = gen.getImplementsAttr()) {
         LLVM_DEBUG(logger << "Found generator '@" << gen.getName()
                           << "' implementing interface '" << implements
@@ -1951,16 +1945,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
     }
   } // The implementsMap map is read-only after *here*.
 
-  // Trim the expansion tree and erase ops we don't need/want.
-  DenseSet<Operation *> toErase;
-
-  // Don't bother with generators that aren't in the export list.
-  auto primaryGeneratorList =
-      llvm::make_filter_range(primaryGenerators, [&](GeneratorOp gen) {
-        return exports.empty() || exports.contains(gen);
-      });
-
-  for (auto gen : primaryGeneratorList) {
+  for (auto gen : primaryGenerators) {
     LLVM_DEBUG(logger.logOp("Elaborating primary generator", gen));
     // This has no input parameters, so we can create the expansion node with
     // no input parameters.
@@ -1984,7 +1969,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   bool failed = !root.isConcrete();
   // We have to walk all the generators in the module because we have to rename
   // each one to its first implementation.
-  for (auto gen : primary.getOps<GeneratorOp>()) {
+  for (auto gen : theModule.getOps<GeneratorOp>()) {
     auto genNode = root.find(gen, emptyInputParamKey);
     if (!genNode)
       continue;
@@ -2009,9 +1994,12 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
     funcsToRename[concreteFuncs.front().getNameAttr()] = genNode->getNameAttr();
   }
 
+  // Trim the expansion tree and erase ops we don't need/want.
+  DenseSet<Operation *> toErase;
+
   // If we have failed, emit your errors and return failure.
   if (failed) {
-    for (auto gen : primaryGeneratorList) {
+    for (auto gen : primaryGenerators) {
       auto genNode = root.find(gen, emptyInputParamKey);
       assert(genNode && "We must have a node for a primary generator");
       genNode->trimFailedExpansions(toErase);
@@ -2029,7 +2017,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
     op->erase();
 
   SymbolTable &symtab = analysis.getTopLevelSymbolTable();
-  for (Operation &op : llvm::make_early_inc_range(primary.getOps())) {
+  for (Operation &op : llvm::make_early_inc_range(theModule.getOps())) {
     if (isa<GeneratorOp, GeneratorInterfaceOp>(op)) {
       symtab.erase(&op);
       continue;
@@ -2048,7 +2036,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   // Perform any renaming at the end.  We cannot use the
   // SymbolTable::replaceAllSymbolUses method, because it doesn't tolerate
   // unregistered operations.  It also doesn't support batch renaming.
-  primary->walk([&](Operation *op) {
+  theModule->walk([&](Operation *op) {
     // If this is a func being renamed, rename it.
     if (auto func = dyn_cast<FuncOp>(op)) {
       if (auto newName = funcsToRename.lookup(func.getNameAttr())) {
@@ -2077,7 +2065,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   root.updateDebugInfo();
 
   if (root.isConcrete())
-    LLVM_DEBUG(logger.logOp("Finished successfully", primary));
+    LLVM_DEBUG(logger.logOp("Finished successfully", theModule));
 
   // We were only successful if the root could be concretized.
   return success(root.isConcrete());
@@ -2093,18 +2081,18 @@ M::KGEN::elaborateGeneratorsV2(mlir::SymbolTableAnalysis &analysis,
                                ArrayRef<GeneratorOp> primaryGenerators,
                                bool enableSearch) {
   TimeTraceScope<> traceScope("elaborate-generators");
-  ModuleOp primary = analysis.getTopLevelOp<ModuleOp>();
+  ModuleOp theModule = analysis.getTopLevelOp<ModuleOp>();
 
   AsyncSideEffectMap asyncMap(runtime);
 
   auto transformCacheBackendOr =
       Cache::getDefaultBackendChain(runtime, ".kgen_cache/transform");
   if (failed(transformCacheBackendOr))
-    return primary->emitError() << transformCacheBackendOr.getError();
+    return theModule->emitError() << transformCacheBackendOr.getError();
   auto regionCacheBackendOr =
       Cache::getDefaultBackendChain(runtime, ".kgen_cache/region");
   if (failed(regionCacheBackendOr))
-    return primary->emitError() << regionCacheBackendOr.getError();
+    return theModule->emitError() << regionCacheBackendOr.getError();
 
   auto transformCache =
       LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>>::create(
@@ -2115,7 +2103,7 @@ M::KGEN::elaborateGeneratorsV2(mlir::SymbolTableAnalysis &analysis,
 
   // Deflate every generator in the primary module.
   // TODO: We should be able to deflate *everything*
-  for (auto op : primary.getOps<GeneratorOp>()) {
+  for (auto op : theModule.getOps<GeneratorOp>()) {
     asyncMap.mapChained(op, [op, regionCache = regionCache.copy()](auto ch) {
       return Cache::deflateOp(op, regionCache.copy(), std::move(ch));
     });
