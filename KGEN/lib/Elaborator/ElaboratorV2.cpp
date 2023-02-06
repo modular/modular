@@ -593,10 +593,19 @@ static std::optional<ErrorTree> processParamAssertOp(IREvaluator &evaluator,
     return ErrorTree(op.getLoc(),
                      "constraint evaluation didn't return true or false");
   // If the constraint evaluated to zero then the assert fails.
-  if (resultInt.getValue().isZero())
+  if (resultInt.getValue().isZero()) {
+    // Evaluate the string to report it.
+    errorOrValue =
+        evaluator.concretizeParameterExpr(op.getLoc(), op.getMessage());
+
+    StringAttr message;
+    if (!errorOrValue.isError())
+      message = dyn_cast<StringAttr>(errorOrValue.takeValue());
+
     return ErrorTree(op.getLoc(),
                      "constraint failed: " +
-                         cast<StringAttr>(op.getMessage()).getValue());
+                         (message ? message.getValue() : "<unknown>"));
+  }
 
   // The kgen.param.assert op serves no further purpose, so we can remove it.
   op->erase();
