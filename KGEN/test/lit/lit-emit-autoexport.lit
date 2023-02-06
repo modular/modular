@@ -1,0 +1,12 @@
+# RUN: lit %s -emit -o %t.o
+# RUN: cat %t.h | FileCheck %s
+
+from F32 import F32
+from IO import print
+
+
+@export("bar")
+# CHECK: extern float bar();
+fn main() -> F32:
+    # OK to alias, not proper main
+    return 0.0

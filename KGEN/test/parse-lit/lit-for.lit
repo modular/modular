@@ -56,7 +56,7 @@ fn printInt(x: Int):
 
 
 @export
-fn main() -> __mlir_type.index:
+fn main() -> Int:
     let buffer = __mlir_op.`pop.stack_allocation`[
         count:3, _type : __mlir_type[`!pop.pointer<`, Int, `>`]
     ]()

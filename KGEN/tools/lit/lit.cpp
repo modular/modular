@@ -60,35 +60,13 @@ public:
 
 /// Look for a main() -> Int in the module. Return it if found, otherwise
 /// return a nullptr.
-static FuncOp findMain(ModuleOp theModule) {
-  for (auto fn : theModule.getOps<FuncOp>()) {
-    if (!fn.getName().endswith("main()"))
+static FuncOp findMain(ModuleOp theModule, SymbolTable &symtab) {
+  for (auto exportOp : theModule.getOps<ExportOp>()) {
+    //  The compiler guarantees there is only one symbol for the function
+    // "main" in the final object file with signature: fn main() -> Int.
+    if (exportOp.getAlias() != "main")
       continue;
-
-    // Check main's signature.
-    mlir::FunctionType funcType = fn.getFunctionType();
-    Type resType = funcType.getResult(0);
-
-    // Is the return type a struct with one field?
-    if (funcType.getNumInputs() != 0 || funcType.getNumResults() != 1 ||
-        !funcType.getResult(0).isa<KGEN::POP::StructType>() ||
-        cast<KGEN::POP::StructType>(resType).getNumElements() != 1)
-      return nullptr;
-
-    Type fieldType =
-        cast<KGEN::POP::StructType>(resType).getConcreteElementType(0);
-
-    // Is the field a scalar?
-    if (!isa<POP::SIMDType>(fieldType) ||
-        !cast<POP::SIMDType>(fieldType).isScalar() ||
-        !isa<DTypeConstantAttr>(cast<POP::SIMDType>(fieldType).getDType()))
-      return nullptr;
-
-    DTypeConstantAttr fieldDType =
-        cast<DTypeConstantAttr>(cast<POP::SIMDType>(fieldType).getDType());
-    if (!fieldDType.getDType().isIndex())
-      return nullptr;
-    return fn;
+    return symtab.lookup<FuncOp>(exportOp.getExported().getRootReference());
   }
   // No main found.
   return nullptr;
@@ -218,7 +196,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return compiledFuncOr->invoke<ssize_t>();
   };
 
-  FuncOp mainFunc = findMain(*theModule);
+  FuncOp mainFunc = findMain(*theModule, symtab);
   if (!mainFunc)
     return clOptions.reportError("could not find fn main() -> Int");
 
