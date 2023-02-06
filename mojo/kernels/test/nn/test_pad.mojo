@@ -210,7 +210,6 @@ fn test_pad_3d():
     print(output[1, 2, 2])
 
 
-@export
 fn main() -> Int:
     test_pad_1d()
     test_pad_2d()

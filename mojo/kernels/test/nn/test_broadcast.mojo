@@ -307,7 +307,6 @@ fn test_broadcast_multi_axes_nested():
     print(output[1, 1, 1, 1, 1])
 
 
-@export
 fn main() -> Int:
     test_broadcast_same_shape()
     test_broadcast_single_axis()

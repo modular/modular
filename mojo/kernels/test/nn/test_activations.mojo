@@ -78,7 +78,6 @@ fn test_gelu():
     print(gelu_approximate(0.5 * simd_val))
 
 
-@export
 fn main() -> Int:
     test_relu()
     test_relu_n1()
