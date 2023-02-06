@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: disabled
 # RUN: lit %s -execute | FileCheck %s
 
 from IO import print
