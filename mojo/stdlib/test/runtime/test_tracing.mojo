@@ -41,7 +41,7 @@ fn test_tracing[level: Int]():
     let rt = Runtime(4, "-")
     let trace = Trace[level]("trace event 1", "detail event 1")
     let task = rt.create_task[Int](test_tracing_add_two_of_them(rt, 10, 20))
-    task.wait()
+    _ = task.wait()
     trace.__del__()
     task.__del__()
     rt.__del__()
