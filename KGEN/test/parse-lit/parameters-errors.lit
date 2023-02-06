@@ -217,7 +217,7 @@ fn testConversionQoI():
   alias intVal : Int = 1.2
 
 
-@always_inline("nodebug")
+@nodebug_inline
 fn crash1_callee(a: __mlir_type.index, rhs: __mlir_type.index) -> __mlir_type.index:
   return __mlir_op.`index.add`(a, rhs)
 
