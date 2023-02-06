@@ -8,7 +8,7 @@
 # together.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: lit %s -execute | FileCheck %s
+# RUN: lit %s | FileCheck %s
 
 from Bool import Bool
 from DType import DType
