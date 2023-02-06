@@ -380,7 +380,6 @@ fn test_amx_matmul():
     print_matrix(c_matrix)
 
 
-@export
 fn main() -> Int:
     test_amx_matmul()
     return 0

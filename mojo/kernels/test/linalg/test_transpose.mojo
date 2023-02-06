@@ -470,7 +470,6 @@ fn test_transpose_3d():
     print(output[2, 1, 1])
 
 
-@export
 fn main() -> Int:
     test_transpose_4x4()
     test_transpose_8x8()

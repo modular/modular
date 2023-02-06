@@ -156,7 +156,6 @@ fn setup_tile_config() -> tileconfig:
     return tc
 
 
-@export
 fn main() -> Int:
     let a = Buffer[1024, DType.si8.value].stack_allocation()
     let b = Buffer[1024, DType.si8.value].stack_allocation()
