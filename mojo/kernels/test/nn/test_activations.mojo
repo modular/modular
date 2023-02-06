@@ -11,7 +11,6 @@ from Int import Int
 from IO import print
 from Math import iota
 
-
 # CHECK-LABEL: test_relu
 fn test_relu():
     print("== test_relu\n")
