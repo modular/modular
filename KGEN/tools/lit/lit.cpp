@@ -47,7 +47,7 @@ public:
                                              "Emit funcs as object files."),
                                   clEnumValN(Command::kExecute, "execute",
                                              "Execute the main function.")),
-                       llvm::cl::Required};
+                       cl::init(Command::kExecute)};
 
   cl::list<std::string> searchPaths{
       "I", cl::desc("Path to use to search for included files.")};

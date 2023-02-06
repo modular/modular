@@ -1,4 +1,4 @@
-# RUN: lit %s -execute | FileCheck %s
+# RUN: lit %s | FileCheck %s
 
 from prolog import F32, Int, printF32
 
