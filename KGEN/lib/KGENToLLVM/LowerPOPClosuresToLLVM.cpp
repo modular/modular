@@ -216,9 +216,7 @@ public:
         op.getLoc(), "closure_wrapper_fn", wrapperFnType);
     wrapperFn.getBody().push_back(wrapperFnBody);
 
-    StringAttr name = symtab.insert(wrapperFn);
-    if (name != wrapperFn.getSymNameAttr())
-      wrapperFn.setSymNameAttr(name);
+    symtab.insert(wrapperFn);
 
     rewriter.setInsertionPoint(oldInsertionBlock, oldInsertionPoint);
 
