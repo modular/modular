@@ -26,7 +26,6 @@ fn test_exp():
     print(exp(SIMD[1, DType.f32.value](2)))
 
 
-@export
 fn main() -> Int:
     test_exp()
     return 0

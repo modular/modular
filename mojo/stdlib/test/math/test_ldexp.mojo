@@ -25,7 +25,6 @@ fn test_ldexp():
     print(ldexp(SIMD[1, DType.f64.value](1.5), SIMD[1, DType.si32.value](4)))
 
 
-@export
 fn main() -> Int:
     test_ldexp()
     return 0

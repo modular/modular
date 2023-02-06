@@ -37,7 +37,6 @@ fn test_erf():
     print(erf[1, DType.f32.value](SIMD[1, DType.f32.value](-2)))
 
 
-@export
 fn main() -> Int:
     test_erf()
     return 0
