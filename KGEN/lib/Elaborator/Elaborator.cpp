@@ -64,14 +64,24 @@ struct ElaborateGeneratorsPass
 
     paths.push_back(std::filesystem::path("."));
 
+    auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
+
+    // Collect exports - we don't want to elaborate generators that are not
+    // exported.
+    DenseSet<GeneratorOp> exports;
+    for (auto e : theModule.getOps<ExportOp>())
+      if (auto gen = analysis.getTopLevelSymbolTable().lookup<GeneratorOp>(
+              cast<FlatSymbolRefAttr>(e.getExported()).getValue()))
+        exports.insert(gen);
+
     // Extract the top-level, parameterless generators from the main module.
     // These are the only generators that will be elaborated.
     SmallVector<GeneratorOp> primaryGenerators;
     for (auto gen : theModule.getOps<GeneratorOp>())
-      if (gen.getInputParamDecls().empty() && !gen.getImplementsAttr())
+      if (gen.getInputParamDecls().empty() && !gen.getImplementsAttr() &&
+          (exports.empty() || exports.contains(gen)))
         primaryGenerators.push_back(gen);
 
-    auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     if (failed(resolveIncludes(analysis.getTopLevelSymbolTable(), paths,
                                includedFiles)))
       return signalPassFailure();
