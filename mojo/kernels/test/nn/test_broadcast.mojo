@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: lit %s -execute | FileCheck %s
+# RUN: lit %s | FileCheck %s
 
 from Broadcast import broadcast
 from Buffer import NDBuffer
