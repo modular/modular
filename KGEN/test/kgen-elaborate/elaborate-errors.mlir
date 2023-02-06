@@ -233,3 +233,15 @@ kgen.generator @call_it() {
   kgen.param.constant = <apply(:() -> index @passthrough)>
   kgen.return
 }
+
+
+// -----
+
+// expected-error @+1 {{no viable expansions found}}
+kgen.generator @brokenVLenAssert() {
+  kgen.param.declare B : !kgen.string = <"foo">
+
+  // expected-note @+1 {{constraint failed: foo}}
+  kgen.param.assert <eq(2, 3)>, B
+  kgen.return
+}
