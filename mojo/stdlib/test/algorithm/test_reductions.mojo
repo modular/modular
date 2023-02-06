@@ -79,7 +79,6 @@ fn test_mean_variance():
     print(variance[simd_width](vector))
 
 
-@export
 fn main() -> Int:
     test_reductions()
     test_product()

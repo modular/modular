@@ -60,7 +60,6 @@ fn test_map():
     print(vector.__getitem__(4))
 
 
-@export
 fn main() -> Int:
     test_map()
     return 0

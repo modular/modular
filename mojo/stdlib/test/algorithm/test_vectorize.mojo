@@ -66,7 +66,6 @@ fn test_vectorize():
     print(vector.__getitem__(4))
 
 
-@export
 fn main() -> Int:
     test_vectorize()
     return 0

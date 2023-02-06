@@ -43,7 +43,6 @@ fn test_parallelize():
         i += 1
 
 
-@export
 fn main() -> Int:
     test_parallelize()
     return 0
