@@ -94,16 +94,16 @@ struct NoDebugInlineTest:
 @always_inline("nodebug")
 fn testAlwaysInlineNoDebug():
 
-# CHECK-LABEL: lit.func @"math{{.*}} always_inline_no_debug
-@always_inline("nodebug")
+# CHECK-LABEL: lit.func @"math{{.*}} attributes {noDebugInline}
+@nodebug_inline
 fn math(a: __mlir_type.index, b: __mlir_type.index) -> __mlir_type.index:
   return __mlir_op.`index.add`(a, b)
 
 # CHECK-LABEL: lit.func @"useIt
 fn useIt(a: __mlir_type.index) -> __mlir_type.index:
-  # CHECK: %idx3 = index.constant 3
-  # CHECK: %0 = kgen.call @"$decls"::@"math(
-  # CHECK: lit.return %0 : index
+  # CHECK: %0 = kgen.param.constant = <3>
+  # CHECK: %1 = index.add %a, %0
+  # CHECK: lit.return %1 : index
   return math(a, math(1, 2))
 
 @always_inline("nodebug")

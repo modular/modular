@@ -1276,17 +1276,23 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   assert(nextOperandIdx == operands.size() &&
          "typechecking confirmed that we would use up all operands");
 
-  // If this is a call to a @always_inline function, see if we can fold its
-  // entire body into an MValue.  This can fail for a number of reasons, in
-  // which case we fall back to emitting normally.
+  // If this is a call to a @nodebug_inline function, look into inlining it.
+  // This can fail in a parameter context if the operations are not all
+  // foldable, in which case we'll fall back to using an 'apply' operator, or
+  // when the function isn't suitable for @nodebug_inline processing.
   if (direct) {
     auto calleeFunc = cast<LIT::FuncOp>(*direct->fnDecls[0]);
-    if (calleeFunc.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled) {
+    if (calleeFunc.getNoDebugInline() ||
+        calleeFunc.getAlwaysInlineLevel() ==
+            AlwaysInlineLevel::EnabledNoDebug ||
+        (calleeFunc.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled &&
+         !emitter.builder)) {
+
       auto calleeSym = cast<SymbolConstantAttr>(callee.getIfMValue().get());
       ParamBindArrayAttr inputParams = calleeSym.getParamValues();
-      if (auto result = inlineFunctionCallIntoMValue(
-              callLoc, *direct->fnDecls[0], inputParams, argumentValues,
-              emitter))
+      if (auto result =
+              debugInlineFunctionCall(callLoc, *direct->fnDecls[0], inputParams,
+                                      argumentValues, emitter))
         return result;
     }
   }
@@ -1367,29 +1373,30 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   return DRValue(callOp->getResult(0));
 }
 
-/// Given a call to an alwaysinline function, check to see if we can resolve it
-/// all the way down to an MValue.  We do this when in a parameter context
-/// (since there is no debug info to ever generate) and when calling a "nodebug"
-/// function.  This is best-effort: when it fails, we fall back to emitting a
-/// normal call or "apply" parameter expression.
-AnyValue CallableValue::inlineFunctionCallIntoMValue(
+/// Attempt to process a function call according to the rules of
+/// @nodebug_inline.  On success, this returns the result value to use for the
+/// function call result, on failure this returns null (without producing an
+/// error) and the call is handled normally.
+AnyValue CallableValue::debugInlineFunctionCall(
     SMLoc callLoc, ASTDecl &callee, ParamBindArrayAttr inputParams,
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues, IREmitter &emitter) {
   auto funcOp = cast<LIT::FuncOp>(callee);
 
   // TODO: We currently cannot nodebug_inline calls to parameterized functions
-  // in parameter contexts, we aren't doing the substitution yet.
-  if (!inputParams.empty())
+  // in parameter contexts, we aren't doing the substitution yet.  Just let this
+  // turn into a normal apply.
+  if (!emitter.builder && !inputParams.empty())
     return {};
 
-  // Resolve the body to type check and generate the IR we need for inlining.
+  // Resolve the body to type check and generate the IR.  This will also check
+  // that the body is suitable for @nodebug_inline processing.
   if (failed(emitter.getDeclResolver().resolveFully(callee, callLoc)))
     return {};
-
-  // We aren't allowed to toss away debug information.  If we have "nodebug" or
-  // are emitting into a parameter context, then we are allowed to try this.
-  if (funcOp.getAlwaysInlineLevel() != AlwaysInlineLevel::EnabledNoDebug &&
-      emitter.builder)
+  // Check for the flag again to make sure the body can be inlined.
+  if (!funcOp.getNoDebugInline() &&
+      (funcOp.getAlwaysInlineLevel() != AlwaysInlineLevel::EnabledNoDebug ||
+       // TODO: Support input parameters.
+       !inputParams.empty()))
     return {};
 
   // Ok, we know the the body is simple: no control flow / regions, no
@@ -1399,7 +1406,7 @@ AnyValue CallableValue::inlineFunctionCallIntoMValue(
   auto &block = *funcOp.getBody();
 
   // Perform parameter substitution if there are input parameters.
-  // TODO: ParameterEvaluator paramEvaluator(inputParams);
+  ParameterEvaluator paramEvaluator(inputParams);
 
   // Keep track of a mapping from the arguments (and interior results of
   // operations) to their representation.
@@ -1413,6 +1420,7 @@ AnyValue CallableValue::inlineFunctionCallIntoMValue(
     valueMapping[blockArg] = value.ir.getIfRValue();
   }
 
+  auto loc = emitter.translateLocation(callLoc);
   SmallVector<Attribute> operandAttrs;
   SmallVector<OpFoldResult> foldResults;
   SmallVector<ParamConstantOp> materializedConstants;
@@ -1462,30 +1470,100 @@ AnyValue CallableValue::inlineFunctionCallIntoMValue(
       }
     };
 
-    // TODO: Add support for parameter substitution, how do we call fold
-    // though?
+    // If we have no builder, then we're cloning into a parameter expression.
+    // This is reasonably straight-forward because we know everything in the
+    // mapping with be MValues.
+    if (!emitter.builder || !funcOp.getNoDebugInline()) {
+      // TODO: Add support for parameter substitution, how do we call fold
+      // though?
 
-    // Check to see if we can fold this operation.
-    operandAttrs.reserve(op.getNumOperands());
-    for (auto operand : op.getOperands()) {
-      auto &entry = valueMapping[operand];
-      assert(entry && "Value mapping broken");
-      // If the input isn't an MValue then it is an error, let the caller
-      // diagnose it.
-      if (!entry.getIfMValue())
-        return {};
-      operandAttrs.push_back(entry.getIfMValue().get());
+      // Check to see if we can fold this operation.
+      operandAttrs.reserve(op.getNumOperands());
+      for (auto operand : op.getOperands()) {
+        auto &entry = valueMapping[operand];
+        assert(entry && "Value mapping broken");
+        // If the input isn't an MValue then it is an error, let the caller
+        // diagnose it.
+        if (!entry.getIfMValue())
+          return {};
+        operandAttrs.push_back(entry.getIfMValue().get());
+      }
+
+      // If we successfully folded this, remember the results.
+      if (succeeded(op.fold(operandAttrs, foldResults))) {
+        updateMappingWithFoldSuccess();
+        continue;
+      }
+
+      // Otherwise, bail out and allow the normal call procssing logic to
+      // produce an apply of the original function.
+      return {};
     }
 
-    // If we successfully folded this, remember the results.
-    if (succeeded(op.fold(operandAttrs, foldResults))) {
+    // If we have a builder, clone the operation into place before folding it.
+    // This will ensure that fold hooks who return dynamic operands will do so
+    // referring to the right values.  For example, we might want to fold a
+    // struct_extract that uses a struct_create, but the struct_create exists in
+    // the caller, but not the callee.
+    auto &builder = *emitter.builder;
+
+    // Otherwise, clone the operation over and rewrite the operands.
+    Operation *clonedOp = op.clone();
+    clonedOp->setLoc(loc);
+
+    // Remap types and attributes if necessary.
+    if (!paramEvaluator.empty()) {
+      for (auto res : clonedOp->getResults())
+        res.setType(paramEvaluator.getReboundType(res.getType()));
+
+      SmallVector<NamedAttribute, 3> attrs;
+      llvm::append_range(attrs, clonedOp->getAttrs());
+      for (auto &attr : attrs)
+        attr.setValue(paramEvaluator.getReboundAttribute(attr.getValue()));
+      clonedOp->setAttrs(attrs);
+    }
+
+    for (auto &opOperand : clonedOp->getOpOperands()) {
+      auto &entry = valueMapping[opOperand.get()];
+      assert(entry && "Value mapping broken");
+
+      // Remember the operand for fold hooks.
+      // TODO: We could check to see if the input is a known constant op like
+      // index.constant and fold it here.  This would catch cases where a
+      // constant was materialized in the caller but not in the callee.
+      operandAttrs.push_back(entry.getIfMValue().get());
+
+      // If the operand was a constant, then we materialize it, and remember
+      // the DRValue for subsequent uses.
+      if (auto mValue = entry.getIfMValue()) {
+        auto paramCst = builder.create<ParamConstantOp>(loc, mValue.get());
+        materializedConstants.push_back(paramCst);
+        entry = DRValue(paramCst);
+      }
+      opOperand.set(entry.getIfDRValue());
+    }
+
+    // Put the clone in place.
+    builder.insert(clonedOp);
+
+    // Check to see if we can fold this.
+    if (succeeded(clonedOp->fold(operandAttrs, foldResults))) {
+      // If so, we remember the folded results as our results.
       updateMappingWithFoldSuccess();
+
+      // We can now remove the clone itself and any materialized constants we
+      // synthesized for it.
+      clonedOp->erase();
+      for (auto param : materializedConstants)
+        param->erase();
       continue;
     }
 
-    // Otherwise, bail out and allow the normal call procssing logic to
-    // produce an apply of the original function.
-    return {};
+    // Otherwise, if folding failed, we keep the operation and remember the
+    // result mapping to the clone's results.
+    for (auto [result, newVal] :
+         llvm::zip(op.getResults(), clonedOp->getResults()))
+      valueMapping[result] = DRValue(newVal);
   }
 
   llvm_unreachable("didn't find a lit.return?");
