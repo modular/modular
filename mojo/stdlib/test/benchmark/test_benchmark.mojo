@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: lit %s -execute | FileCheck %s
+# RUN: lit %s | FileCheck %s
 
 from Benchmark import Benchmark
 from Int import Int
