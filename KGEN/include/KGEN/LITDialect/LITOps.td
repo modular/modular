@@ -59,7 +59,6 @@ def LIT_FuncOp : LITOp<"func", [
                        UnitAttr:$isStatic,
                        UnitAttr:$isInterface,
                        UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
-                       OptionalAttr<DefaultArgumentArrayAttr>:$defaults,
                        OptionalAttr<SymbolRefAttr>:$implements,
                        OptionalAttr<KGEN_SymbolConstantAttr>:$evaluator,
                        KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel);
@@ -82,7 +81,6 @@ def LIT_FuncOp : LITOp<"func", [
   ];
 
   let hasCustomAssemblyFormat = 1;
-  let hasVerifier = 1;
   let hasRegionVerifier = 1;
 }
 

@@ -61,7 +61,7 @@ lit.func @invalid_continue() {
 // -----
 
 // expected-error @+1 {{argument #0 has type 'f32' but default argument has type 'index'}}
-lit.func @mismatched_default_argument_type(%a: f32) attributes {defaults = #lit<default.arguments[<0 : index = 1 : index>]>} {
+lit.func @mismatched_default_argument_type(%a: f32 = 1) {
   lit.end_func
 }
 

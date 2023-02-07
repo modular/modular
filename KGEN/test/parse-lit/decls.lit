@@ -125,16 +125,20 @@ fn pleaseInline() -> __mlir_type.index:
 # Default arguments and variadics.
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.func @"defaultArgument{{.*}}{defaults =
-# CHECK-SAME: #lit<default.arguments[<1 : index =
-# CHECK-SAME: #lit.struct<{value: scalar<index> = 42}> :
-# CHECK-SAME: !kgen.declref<@"$Int"::@Int>>]>}
+# CHECK: lit.func @"defaultArgument
+# CHECK-SAME: %b: !kgen.declref<@"$Int"::@Int> = #lit.struct<{value: scalar<index> = 42}>)
 fn defaultArgument(a: Int, b: Int = 42) -> Int:
   return a + b
 
-# CHECK: lit.func @"defaultArgumentReferencesParameter{{.*}}{defaults = #lit<default.arguments[<0 : index = #kgen.param.expr<apply, #kgen.symbol.constant<@"$Int"::@Int::@"__add__($Int::Int,$Int::Int)" > : !kgen.signature<(!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int>>, #kgen.param.decl.ref<"p"> : !kgen.declref<@"$Int"::@Int>, #lit.struct<{value: scalar<index> = 87}> : !kgen.declref<@"$Int"::@Int>> : !kgen.declref<@"$Int"::@Int>>]>}
+# CHECK: lit.func @"defaultArgumentReferencesParameter
+# CHECK-SAME: (%a: !kgen.declref<@"$Int"::@Int> = apply(:(!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int> @"$Int"::@Int::@"__add__($Int::Int,$Int::Int)", p, #lit.struct<{value: scalar<index> = 87}>))
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
   return a
+
+# CHECK: lit.func @"referencesDefaultArgumentFunction
+fn referencesDefaultArgumentFunction():
+    # CHECK: %f {{.*}} : !kgen.signature<(!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$Int"::@Int> = #lit.struct<{value: scalar<index> = 42}>)
+    let f = defaultArgument
 
 struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
   alias StorageType =  __mlir_type[`!pop.variadic<`, EltType, `>`]

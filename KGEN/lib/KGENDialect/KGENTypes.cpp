@@ -195,6 +195,7 @@ SignatureType SignatureType::setFnEffect(FnEffects effect) {
   return SignatureType::get(
       getInputParams(), getResultParams(), getValues(),
       MetadataAttr::get(getContext(), getValueInputConventions(),
+                        getDefaultArguments(),
                         bitEnumSet(getFnEffects(), effect)));
 }
 
@@ -360,6 +361,21 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   // Check we have the right number of conventions.
   if (metadata.getInputConventions().size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
+
+  DefaultArgumentArrayAttr defaults = metadata.getDefaultArguments();
+  if (defaults) {
+    SmallDenseMap<int64_t, TypedAttr> defaultAttrs;
+    for (const DefaultArgumentAttr &def : defaults)
+      defaultAttrs.insert({def.getIndex().getInt(), def.getValue()});
+
+    for (auto [idx, type] : llvm::enumerate(values.getInputs())) {
+      auto def = defaultAttrs.find(idx);
+      if (def != defaultAttrs.end() && type != def->second.getType())
+        return emitError() << "argument #" << idx << " has type " << type
+                           << " but default argument has type "
+                           << def->second.getType();
+    }
+  }
 
   // If the function throws an error, make sure it has one result.
   if (bitEnumContainsAny(metadata.getFnEffects(), FnEffects::Throws) &&

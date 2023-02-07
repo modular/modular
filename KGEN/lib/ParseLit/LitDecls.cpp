@@ -1527,8 +1527,12 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       builder.getAttr<ParamDeclArrayAttr>(inputParamDecls),
       builder.getAttr<ParamDeclArrayAttr>(resultParamDecls),
       builder.getFunctionType(argTypes, {resultType.mlirType}),
-      builder.getAttr<MetadataAttr>(inputConventions,
-                                    funcOp.getMetadata().getFnEffects()));
+      builder.getAttr<MetadataAttr>(
+          inputConventions,
+          defaults.empty()
+              ? DefaultArgumentArrayAttr{}
+              : builder.getAttr<DefaultArgumentArrayAttr>(defaults),
+          funcOp.getMetadata().getFnEffects()));
   if (!signature)
     return failure();
 
@@ -1536,8 +1540,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   funcOp.setSignature(signature);
 
   funcOp.getBody()->addArguments(argTypes, argLocs);
-  if (!defaults.empty())
-    funcOp.setDefaultsAttr(builder.getAttr<DefaultArgumentArrayAttr>(defaults));
 
   // Interfaces don't have anything else to do.
   if (funcOp.getIsInterface())
