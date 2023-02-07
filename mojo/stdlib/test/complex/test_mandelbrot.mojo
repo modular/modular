@@ -16,28 +16,7 @@ from Int import Int
 from IO import print
 from Range import range
 from SIMD import SIMD
-
-
-struct Complex[type: DType]:
-    var re: SIMD[1, type.value]
-    var im: SIMD[1, type.value]
-
-    fn __new__(
-        re: SIMD[1, type.value], im: SIMD[1, type.value]
-    ) -> Complex[type]:
-        return Complex[type] {re: re, im: im}
-
-    fn __add__(self, rhs: Complex[type]) -> Complex[type]:
-        return Complex[type] {re: self.re + rhs.re, im: self.im + rhs.im}
-
-    fn __mul__(self, rhs: Complex[type]) -> Complex[type]:
-        return Complex[type] {
-            re: self.re * rhs.re - self.im * rhs.im,
-            im: self.re * rhs.im + self.im * rhs.re,
-        }
-
-    fn abs(self) -> SIMD[1, type.value]:
-        return self.re * self.re + self.im * self.im
+from Complex import Complex
 
 
 fn mandelbrot_iter(row: Int, col: Int) -> Int:
@@ -52,7 +31,7 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
     let minY = -0.5 - yRange
     let maxY = -0.5 + yRange
 
-    let c = Complex[DType.f32](
+    let c = Complex[1, DType.f32](
         minX + col * xRange / width, maxY - row * yRange / height
     )
 
@@ -62,7 +41,7 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
     for i in range(10):
         iter += 1
         z = z * z + c
-        if z.abs() > 4:
+        if z.norm() > 4:
             return iter
     return iter
 
