@@ -37,6 +37,9 @@ private:
     kLeakChecker,
     /// Allocator that does profiling (and leak checking).
     kProfiler,
+    /// Allocator that read/write protects every freed block
+    /// to detect use-after-free errors without ASAN.
+    kUseAfterFree,
   };
 
   enum class WorkQueueType {
@@ -73,7 +76,9 @@ private:
           clEnumValN(AllocatorType::kLeakChecker, "leak-checker",
                      "Allocator with leak checking"),
           clEnumValN(AllocatorType::kProfiler, "profiler",
-                     "Allocator with profiling and leak checking")),
+                     "Allocator with profiling and leak checking"),
+          clEnumValN(AllocatorType::kUseAfterFree, "use-after-free",
+                     "Allocator to detect use-after-free errors")),
       llvm::cl::init(AllocatorType::kLeakChecker)};
 
   // Specify the number of threads. If `thread==1`, then we automatically set
@@ -163,6 +168,9 @@ public:
     case AllocatorType::kProfiler:
       printf("profiling");
       break;
+    case AllocatorType::kUseAfterFree:
+      printf("use-after-free");
+      break;
     }
     printf(" allocator, and ");
     switch (getWorkQueueType()) {
@@ -217,6 +225,9 @@ public:
       break;
     case AllocatorType::kProfiler:
       allocator = createProfilingAllocator(createMallocAllocator());
+      break;
+    case AllocatorType::kUseAfterFree:
+      allocator = createUseAfterFreeAllocator();
       break;
     }
     // Create the WorkQueue based on command line settings.
