@@ -189,13 +189,6 @@ kgen.func @rem(%arg0: !pop.scalar<si32>,
                                !pop.scalar<f32>
 }
 
-// CHECK-LABEL: @copysign
-kgen.func @copysign(%arg0: !pop.scalar<f32>, %arg1: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: llvm.intr.copysign
-  %0 = pop.copysign %arg0, %arg1 : !pop.scalar<f32>
-  kgen.return %0 : !pop.scalar<f32>
-}
-
 // CHECK-LABEL: @fma_f32
 kgen.func @fma_f32(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
   // CHECK: llvm.intr.fma

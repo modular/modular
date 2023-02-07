@@ -206,22 +206,6 @@ kgen.func @pop_shifts_simd(%arg0: !pop.simd<4, si32>, %arg1: !pop.simd<4, si32>,
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @pop_copysign
-// CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32>, %[[ARG1:.*]]: !pop.scalar<f32>) -> !pop.scalar<f32> {
-kgen.func @pop_copysign(%arg0: !pop.scalar<f32>, %arg1: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: %[[V0:.*]] = pop.copysign %[[ARG0]], %[[ARG1]] : !pop.scalar<f32>
-  %0 = pop.copysign %arg0, %arg1 : !pop.scalar<f32>
-  kgen.return %0 : !pop.scalar<f32>
-}
-
-// CHECK-LABEL: kgen.func @pop_copysign_simd
-// CHECK-SAME: (%[[ARG0:.*]]: !pop.simd<4, f32>, %[[ARG1:.*]]: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
-kgen.func @pop_copysign_simd(%arg0 : !pop.simd<4, f32>, %arg1 : !pop.simd<4, f32>) -> !pop.simd<4, f32> {
-  // CHECK-NEXT: %[[V0:.*]] = pop.copysign %[[ARG0]], %[[ARG1]] : !pop.simd<4, f32>
-  %0 = pop.copysign %arg0, %arg1 : !pop.simd<4, f32>
-  kgen.return %0 : !pop.simd<4, f32>
-}
-
 // CHECK-LABEL: kgen.func @pop_fma
 // CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32>, %[[ARG1:.*]]: !pop.scalar<f32>, %[[ARG2:.*]]: !pop.scalar<f32>) -> !pop.scalar<f32> {
 kgen.func @pop_fma(%arg0: !pop.scalar<f32>, %arg1: !pop.scalar<f32>, %arg2: !pop.scalar<f32>) -> !pop.scalar<f32> {
@@ -617,19 +601,6 @@ kgen.generator @pop_simd_reduce_max<size, type: dtype>(%a: !pop.simd<4, f32>, %b
   %v = pop.simd.reduce.max %b : !pop.simd<size, type>
   // CHECK: return %[[U]], %[[V]]
   kgen.return %u, %v : !pop.scalar<f32>, !pop.scalar<type>
-}
-
-// CHECK-LABEL: @pop_gather
-// CHECK-SAME: %[[BASE:.*]]: !pop.simd<2, address>
-// CHECK-SAME: %[[MASK:.*]]: !pop.simd<2, bool>
-// CHECK-SAME: %[[PASSTHROUGH:.*]]: !pop.simd<2, f32>
-kgen.generator @pop_gather(%base: !pop.simd<2, address>,
-                           %mask: !pop.simd<2, bool>,
-                           %passthrough: !pop.simd<2, f32>) -> !pop.simd<2, f32> {
-  // CHECK: %[[GATHERED:.*]] = pop.simd.gather %[[BASE]][%[[MASK]]], %[[PASSTHROUGH]] : !pop.simd<2, f32>
-  %0 = pop.simd.gather %base[%mask], %passthrough : !pop.simd<2, f32>
-  // CHECK: kgen.return %[[GATHERED]] : !pop.simd<2, f32>
-  kgen.return %0 : !pop.simd<2, f32>
 }
 
 // CHECK-LABEL: @pop_scatter
