@@ -13,6 +13,7 @@ from Pointer import Pointer, DTypePointer
 from DType import DType
 from List import create_kgen_list
 from Index import Index
+from Math import iota
 
 
 fn test_matrix():
@@ -34,6 +35,11 @@ fn test_matrix():
     # CHECK: [8, 9, 10, 11]
     print(m.simd_load[4](2, 0))
     # CHECK: [12, 13, 14, 15]
+    print(m.simd_load[4](3, 0))
+
+    let v = iota[4, DType.si32.value]()
+    m.simd_store[4](3, 0, v)
+    # CHECK: [0, 1, 2, 3]
     print(m.simd_load[4](3, 0))
 
 
