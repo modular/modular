@@ -14,7 +14,6 @@ add_modular_tool(lit
   KGENDialect
   LITDialect
   POPDialect
-  ZAPDialect
 
   MLIRBytecodeWriter
   MLIRIndexDialect

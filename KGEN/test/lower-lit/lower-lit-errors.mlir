@@ -18,16 +18,6 @@ lit.func @impl(%arg0 : f32) implements @itf {
   kgen.return
 }
 
-// -----
-
-// expected-note @+1 {{interface declared here}}
-kgen.generator.interface @itf(%arg0: !zap.ndbuffer<[?], f32>)
-
-// expected-error @+1 {{argument #0: dynamic `?` value cannot have static constraint: '4 : index'}}
-lit.func @impl(%arg0 : !zap.ndbuffer<[4], f32>) implements @itf {
-  kgen.return
-}
-
 
 // -----
 
