@@ -78,14 +78,12 @@ POP::ArrayType::getTypeSize(TargetInfoAttr target) const {
   if (!elementType || !size)
     return {};
 
-  std::optional<int64_t> elementAlign =
-      DataLayoutInterface::getTypeAlignInBytes(target, elementType);
-  std::optional<int64_t> elementSize =
-      DataLayoutInterface::getTypeSizeInBytes(target, elementType);
-  if (!elementAlign || !elementSize)
+  std::optional<int64_t> elementAllocSize =
+      DataLayoutInterface::getTypeAllocSize(target, elementType);
+  if (!elementAllocSize)
     return {};
 
-  return *size * llvm::alignTo(*elementSize, *elementAlign);
+  return *size * *elementAllocSize;
 }
 
 /// The alignment of the array is the alignment of the element type.
@@ -94,7 +92,7 @@ POP::ArrayType::getTypeAlign(TargetInfoAttr target) const {
   Type elementType = getResolvedElementType();
   if (!elementType)
     return {};
-  return DataLayoutInterface::getTypeAlignInBytes(target, elementType);
+  return DataLayoutInterface::getTypeABIAlign(target, elementType);
 }
 
 ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, intptr_t addr,
@@ -374,9 +372,9 @@ std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
   int64_t strictest = 1;
   for (Type type : types) {
     std::optional<int64_t> typeAlign =
-        DataLayoutInterface::getTypeAlignInBytes(target, type);
+        DataLayoutInterface::getTypeABIAlign(target, type);
     std::optional<int64_t> typeSize =
-        DataLayoutInterface::getTypeSizeInBytes(target, type);
+        DataLayoutInterface::getTypeAllocSize(target, type);
     if (!typeAlign || !typeSize)
       return {};
     size = llvm::alignTo(size, *typeAlign) + *typeSize;
@@ -392,7 +390,7 @@ std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
   int64_t strictest = 1;
   for (Type type : types) {
     std::optional<int64_t> typeAlign =
-        DataLayoutInterface::getTypeAlignInBytes(target, type);
+        DataLayoutInterface::getTypeABIAlign(target, type);
     if (!typeAlign)
       return {};
     strictest = std::max(strictest, *typeAlign);
@@ -489,18 +487,16 @@ Type VariantType::getType(unsigned index) {
 /// of the content element type size, which is i64.
 static std::optional<int64_t> computeVariantContentSize(VariantType type,
                                                         TargetInfoAttr target) {
-  uint64_t maxSize = 0;
+  int64_t maxSize = 0;
   for (TypedAttr typeExpr : type.getTypes()) {
     auto typeCst = llvm::dyn_cast<ConcreteTypeConstantAttr>(typeExpr);
     if (!typeCst)
       return {};
     std::optional<int64_t> typeSize =
-        DataLayoutInterface::getTypeSizeInBytes(target, typeCst.getValue());
-    std::optional<int64_t> typeAlign =
-        DataLayoutInterface::getTypeAlignInBytes(target, typeCst.getValue());
-    if (!typeSize || !typeAlign)
+        DataLayoutInterface::getTypeAllocSize(target, typeCst.getValue());
+    if (!typeSize)
       return {};
-    maxSize = std::max(maxSize, llvm::alignTo(*typeSize, *typeAlign));
+    maxSize = std::max(maxSize, *typeSize);
   }
   return llvm::alignTo(maxSize, target.getDataLayout().getIntegerABIAlign(64));
 }

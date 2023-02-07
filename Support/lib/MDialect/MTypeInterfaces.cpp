@@ -88,15 +88,24 @@ void MDialect::injectAttrInterfaces() {
   IndexType::attachInterface<IndexLayout>(*getContext());
 }
 
-Optional<int64_t>
-M::DataLayoutInterface::getTypeSizeInBytes(TargetInfoAttr target, Type type) {
+std::optional<int64_t>
+DataLayoutInterface::getTypeStoreSize(TargetInfoAttr target, Type type) {
   if (auto iface = llvm::dyn_cast<DataLayoutInterface>(type))
     return iface.getTypeSize(target);
   return {};
 }
 
-Optional<int64_t>
-M::DataLayoutInterface::getTypeAlignInBytes(TargetInfoAttr target, Type type) {
+std::optional<int64_t>
+DataLayoutInterface::getTypeAllocSize(TargetInfoAttr target, Type type) {
+  std::optional<int64_t> typeSize = getTypeStoreSize(target, type);
+  std::optional<int64_t> typeABIAlign = getTypeABIAlign(target, type);
+  if (!typeSize || !typeABIAlign)
+    return {};
+  return llvm::alignTo(*typeSize, *typeABIAlign);
+}
+
+std::optional<int64_t>
+DataLayoutInterface::getTypeABIAlign(TargetInfoAttr target, Type type) {
   if (auto iface = llvm::dyn_cast<DataLayoutInterface>(type))
     return iface.getTypeAlign(target);
   return {};

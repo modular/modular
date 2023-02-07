@@ -502,8 +502,7 @@ private:
 /// markers are inserted at the end of the given operation's block.
 static Value materializeLLVMAlloca(OpBuilder &b, Type allocaType, int64_t count,
                                    Block *block, Operation *op,
-                                   int64_t typeSizeInBytes,
-                                   int64_t typeAlignmentInBytes) {
+                                   int64_t typeAllocSize, int64_t align) {
   // Hoist the alloca to the top of the given block.
   b.setInsertionPointToStart(block);
   Value countVal =
@@ -512,14 +511,14 @@ static Value materializeLLVMAlloca(OpBuilder &b, Type allocaType, int64_t count,
   Value ptr = b.create<LLVM::AllocaOp>(
       op->getLoc(), allocaType,
       allocaType.cast<LLVM::LLVMPointerType>().getElementType(), countVal,
-      typeAlignmentInBytes);
+      align);
 
   // Insert lifetime markers starting from the op to the end of its block.
   b.setInsertionPoint(op);
-  auto start = b.create<LLVM::LifetimeStartOp>(op->getLoc(),
-                                               typeSizeInBytes * count, ptr);
+  auto start =
+      b.create<LLVM::LifetimeStartOp>(op->getLoc(), typeAllocSize * count, ptr);
   b.setInsertionPoint(op->getBlock(), --op->getBlock()->end());
-  b.create<LLVM::LifetimeEndOp>(op->getLoc(), typeSizeInBytes * count, ptr);
+  b.create<LLVM::LifetimeEndOp>(op->getLoc(), typeAllocSize * count, ptr);
   b.setInsertionPointAfter(start);
 
   return ptr;
@@ -530,17 +529,17 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
     ConversionPatternRewriter &rewriter) const {
   Type ptrType = getTypeConverter()->convertType(op.getType());
   if (!ptrType)
-    return op.emitOpError("could not lower pointer element type");
+    return op.emitError("could not lower pointer element type");
 
   // Compute the bytecount of the allocated buffer.
-  std::optional<int64_t> byteCount = DataLayoutInterface::getTypeSizeInBytes(
+  std::optional<int64_t> typeAllocSize = DataLayoutInterface::getTypeAllocSize(
       target, cast<PointerType>(op.getType()).getResolvedElementType());
-  if (!byteCount)
-    return op.emitError("could not get size of pointer element size");
+  if (!typeAllocSize)
+    return op.emitError("could not get size of variadic element");
 
   Value alloca = materializeLLVMAlloca(
       rewriter, ptrType, cast<IntegerAttr>(op.getCount()).getInt(), body, op,
-      *byteCount, resolveAlignment(op.getAlignment()));
+      *typeAllocSize, resolveAlignment(op.getAlignment()));
   rewriter.replaceOp(op, alloca);
   return success();
 }
@@ -1035,11 +1034,11 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
     ConversionPatternRewriter &rewriter) const {
   // 1. Allocate space for an array of elements.
   Type opElementType = op.getType().getResolvedElementType();
-  std::optional<int64_t> size =
-      DataLayoutInterface::getTypeSizeInBytes(target, opElementType);
-  std::optional<int64_t> align =
-      DataLayoutInterface::getTypeAlignInBytes(target, opElementType);
-  if (!size || !align)
+  std::optional<int64_t> typeAllocSize =
+      DataLayoutInterface::getTypeAllocSize(target, opElementType);
+  std::optional<int64_t> typeABIAlign =
+      DataLayoutInterface::getTypeABIAlign(target, opElementType);
+  if (!typeAllocSize || !typeABIAlign)
     return op.emitError("failed to get element type size and alignment");
 
   Type elementType = getTypeConverter()->convertType(opElementType);
@@ -1047,9 +1046,9 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
     return op.emitError("failed to convert element type");
 
   size_t count = op.getOperands().size();
-  Value ptr = materializeLLVMAlloca(
-      rewriter, LLVM::LLVMPointerType::get(elementType), count, body, op, *size,
-      count * llvm::alignTo(*size, *align));
+  Value ptr =
+      materializeLLVMAlloca(rewriter, LLVM::LLVMPointerType::get(elementType),
+                            count, body, op, *typeAllocSize, *typeABIAlign);
 
   // 2. Store elements of the sequence into the allocated space.
   Type indexType = getTypeConverter()->getIndexType();

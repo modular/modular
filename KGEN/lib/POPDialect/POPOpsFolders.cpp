@@ -650,7 +650,7 @@ ErrorTreeOr<SuccessType> OffsetOp::interpret(ArrayRef<Attribute> operands,
   if (!ptr || !offset)
     return ErrorTree(getLoc(), "non-constant inputs");
   std::optional<int64_t> elSize =
-      DataLayoutInterface::getTypeSizeInBytes(state.getTarget(), ptr.getType());
+      DataLayoutInterface::getTypeAllocSize(state.getTarget(), ptr.getType());
   if (!elSize)
     return ErrorTree(getLoc(), "could not query pointer element size");
   state.mapResults(PointerAttr::get(ptr.getAddr() + *elSize * offset.getInt(),
@@ -670,13 +670,10 @@ StackAllocationOp::interpret(ArrayRef<Attribute> operands,
   if (!count || !type)
     return ErrorTree(getLoc(), "not concrete");
   std::optional<int64_t> size =
-      DataLayoutInterface::getTypeSizeInBytes(state.getTarget(), type);
-  std::optional<int64_t> align =
-      DataLayoutInterface::getTypeAlignInBytes(state.getTarget(), type);
-  if (!size || !align)
+      DataLayoutInterface::getTypeAllocSize(state.getTarget(), type);
+  if (!size)
     return ErrorTree(getLoc(), "could not query type size");
-  size_t addr =
-      state.allocateMemory(count.getInt() * llvm::alignTo(*size, *align));
+  size_t addr = state.allocateMemory(count.getInt() * *size);
   state.mapResults(PointerAttr::get(addr, getType()));
   return success();
 }

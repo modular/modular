@@ -1378,7 +1378,7 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands) {
   auto target = dyn_cast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
-  std::optional<int64_t> size = DataLayoutInterface::getTypeSizeInBytes(
+  std::optional<int64_t> size = DataLayoutInterface::getTypeStoreSize(
       target.getTarget(), typeCst.getValue());
   if (!size)
     return {};
@@ -1392,7 +1392,7 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands) {
   auto target = dyn_cast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
-  std::optional<int64_t> size = DataLayoutInterface::getTypeAlignInBytes(
+  std::optional<int64_t> size = DataLayoutInterface::getTypeABIAlign(
       target.getTarget(), typeCst.getValue());
   if (!size)
     return {};
