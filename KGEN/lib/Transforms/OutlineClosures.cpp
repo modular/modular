@@ -160,8 +160,8 @@ void OutlineClosuresPass::runOnOperation() {
       auto liftedSignature = SignatureType::get(
           b.getAttr<ParamDeclArrayAttr>(necessaryDecls.getArrayRef()),
           bodySignature.getResultParams(), liftedValueSignature,
-          b.getAttr<ConventionsAttr>(liftedConventions,
-                                     bodySignature.getFnEffects()));
+          b.getAttr<MetadataAttr>(liftedConventions,
+                                  bodySignature.getFnEffects()));
 
       // Now lift the body out into its own generator.
       b.setInsertionPoint(generator);
@@ -212,7 +212,7 @@ void OutlineClosuresPass::runOnOperation() {
       // come from global variables).
       auto wrapperSignature = SignatureType::get(
           liftedSignature.getInputParams(), liftedSignature.getResultParams(),
-          bodySignature.getValues(), bodySignature.getConventions());
+          bodySignature.getValues(), bodySignature.getMetadata());
 
       b.setInsertionPoint(generator);
       auto liftedWrapper = b.create<GeneratorOp>(

@@ -169,23 +169,23 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     can have input/output parameters as well as input/output value arguments
     and results.
 
-    The first element of the conventions array specifies the FnConventions for
-    the function and every additional element corresponds to a value input
-    argument, indicating the ValueInputConvention parameter conventions.  When
-    all elements are zero, it isn't printed in the textual MLIR format.
+    The metadata attribute is dialect-specific and can be used to store
+    additional information about a function, such as its argument calling
+    conventions and the effects of the function itself. When the metadata only
+    contains default values, it isn't printed in the textual MLIR format.
   }];
 
   let parameters = (ins "ParamDeclArrayAttr":$inputParams,
                         "ParamDeclArrayAttr":$resultParams,
                         "FunctionType":$values,
-                        "ConventionsAttr":$conventions);
+                        "MetadataAttr":$metadata);
   let hasCustomAssemblyFormat = 1;
 
   let builders = [
     /// This builder allows everything other than the function type to be null.
     TypeBuilderWithInferredContext<(ins
       "ParamDeclArrayAttr":$inputParams, "ParamDeclArrayAttr":$resultParams,
-      "FunctionType":$values, "ConventionsAttr":$conventions)>,
+      "FunctionType":$values, "MetadataAttr":$metadata)>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>,
     TypeBuilderWithInferredContext<(ins "FunctionType":$values)>
   ];
@@ -197,11 +197,11 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
 
     /// Get the callable function effects.
     FnEffects getFnEffects() {
-      return getConventions().getFnEffects();
+      return getMetadata().getFnEffects();
     }
     /// Get the function input argument conventions.
     ArrayRef<ValueInputConvention> getValueInputConventions() {
-      return getConventions().getInputConventions();
+      return getMetadata().getInputConventions();
     }
 
     /// Return true if the function throws.

@@ -78,9 +78,13 @@ def FuncInterface : OpInterface<"FuncInterface"> {
   let description = [{
     This interface represents an operation that defines a KGEN function. A KGEN
     function has a `SignatureType`, meaning that it can accept arguments and
-    input parameters and produce results and output parameters, and has calling
-    conventions. Consequently, operations that implement `FuncInterface` must
-    also implement `DeclInterface`.
+    input parameters and produce results and output parameters. Consequently,
+    operations that implement `FuncInterface` must also implement
+    `DeclInterface`.
+
+    KGEN signature types also store metadata for dialect-specific information,
+    such as input argument calling conventions. This interface also provides
+    methods for accessing that metadata.
   }];
   let cppNamespace = "::M::KGEN";
 
@@ -99,13 +103,14 @@ def FuncInterface : OpInterface<"FuncInterface"> {
     /// higher scopes.
     SignatureType getFullSignature() { return KGEN::getFullSignature($_op); }
 
-    /// Return the function and value argument conventions.
-    ConventionsAttr getConventions() {
-      return $_op.getSignature().getConventions();
+    /// Returns the metadata associated with the function, such as function
+    /// effects and value argument conventions.
+    MetadataAttr getMetadata() {
+      return $_op.getSignature().getMetadata();
     }
 
     /// Returns the argument types of this function.
-    ArrayRef<Type>  getArgumentTypes() {
+    ArrayRef<Type> getArgumentTypes() {
       return $_op.getSignature().getValueInputs();
     }
 

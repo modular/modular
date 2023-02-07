@@ -127,22 +127,21 @@ void printOptionalParameterSpec(AsmPrinter &p,
 void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
                                 ArrayRef<ParamDeclAttr> inputParamDecls);
 
-/// Parse and print an operand and result type list with conventions.
-ParseResult parseTypesWithConventions(AsmParser &p,
-                                      SmallVectorImpl<Type> &operandTypes,
-                                      SmallVectorImpl<Type> &resultTypes,
-                                      ConventionsAttr &conventions);
-void printTypesWithConventions(AsmPrinter &p, TypeRange operandTypes,
-                               TypeRange resultTypes,
-                               ConventionsAttr conventions);
+/// Parse and print an operand and result type list with metadata.
+ParseResult parseTypesWithMetadata(AsmParser &p,
+                                   SmallVectorImpl<Type> &operandTypes,
+                                   SmallVectorImpl<Type> &resultTypes,
+                                   MetadataAttr &metadata);
+void printTypesWithMetadata(AsmPrinter &p, TypeRange operandTypes,
+                            TypeRange resultTypes, MetadataAttr metadata);
 
-/// Parse and print a function signature with optional conventions.
+/// Parse and print a function signature with optional metadata.
 ParseResult parseFunctionSignature(OpAsmParser &p,
                                    SmallVectorImpl<OpAsmParser::Argument> &args,
                                    SmallVectorImpl<Type> &resultTypes,
-                                   ConventionsAttr &conventions);
+                                   MetadataAttr &metadata);
 void printFunctionSignature(OpAsmPrinter &p, Region &region, TypeRange argTypes,
-                            TypeRange resultTypes, ConventionsAttr conventions,
+                            TypeRange resultTypes, MetadataAttr metadata,
                             StringArrayAttr valueParamNames = {});
 
 /// Parse the always_inline related keywords if present.

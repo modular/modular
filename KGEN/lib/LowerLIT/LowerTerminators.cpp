@@ -269,7 +269,7 @@ static void lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
     return SignatureType::get(
         sigType.getInputParams(), sigType.getResultParams(),
         b.getFunctionType(sigType.getValueInputs(), type),
-        b.getAttr<ConventionsAttr>(
+        b.getAttr<MetadataAttr>(
             sigType.getValueInputConventions(),
             bitEnumClear(sigType.getFnEffects(),
                          FnEffects::Throws | FnEffects::Async)));

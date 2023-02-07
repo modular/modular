@@ -1029,7 +1029,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   // ABI information form the calling convention.
 
   // Now that all the types and signature information have been resolved,
-  // compute the final MLIR types, mixing in conventions etc.
+  // compute the final MLIR types, mixing in argument conventions, etc.
   for (auto [arg, argType] : llvm::zip(args, argTypes)) {
     if (int8_t(arg.convention & ValueInputConvention::ByRef))
       argType = POP::PointerType::get(argType);
@@ -1527,8 +1527,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       builder.getAttr<ParamDeclArrayAttr>(inputParamDecls),
       builder.getAttr<ParamDeclArrayAttr>(resultParamDecls),
       builder.getFunctionType(argTypes, {resultType.mlirType}),
-      builder.getAttr<ConventionsAttr>(inputConventions,
-                                       funcOp.getConventions().getFnEffects()));
+      builder.getAttr<MetadataAttr>(inputConventions,
+                                    funcOp.getMetadata().getFnEffects()));
   if (!signature)
     return failure();
 

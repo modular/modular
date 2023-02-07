@@ -201,21 +201,20 @@ def ConstraintArrayAttr
     : KGEN_ArrayOfAttrsAttr<"ConstraintArray", "constraints", "ConstraintAttr">;
 
 //===----------------------------------------------------------------------===//
-// ConventionsAttr
+// MetadataAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_ConventionsAttr : KGENAttr<"Conventions", "conventions"> {
-  let summary = "Function call conventions attribute.";
+def KGEN_MetadataAttr : KGENAttr<"Metadata", "metadata"> {
+  let summary = "Function metadata.";
   let description = [{
-    The `#kgen.conventions` attribute contains information about function
-    calling conventions. It determines whether function arguments are
-    pass-by-value or pass-by-reference and the effects of the function itself:
-    none or throws.
+    The `#kgen.metadata` attribute contains additional information about a
+    function, such as its argument calling conventions (pass-by-value or
+    pass-by-reference), and the effects of the function itself: none or throws.
 
     Example:
 
     ```mlir
-    #kgen.conventions<[byval, byref], throws>
+    #kgen.metadata<[byval, byref], throws>
     ```
   }];
 
@@ -227,15 +226,16 @@ def KGEN_ConventionsAttr : KGENAttr<"Conventions", "conventions"> {
     `<` `[` (`]`) : ($inputConventions^ `]`)? `,` $fnEffects `>`
   }];
 
-  /// These builders returns the default conventions.
+  /// These builders returns the default metadata: all input arguments are
+  /// pass-by-value, and there are no function effects.
   let builders = [
     AttrBuilder<(ins "unsigned":$numInputs)>,
     AttrBuilder<(ins "unsigned":$numInputs, "FnEffects":$effects)>
   ];
 
   let extraClassDeclaration = [{
-    /// Returns true if all the input conventions are pass-by-value and there
-    /// are no function effects.
+    /// Returns true if all input argument conventions are pass-by-value, and
+    /// there are no function effects.
     bool isDefault();
   }];
 }

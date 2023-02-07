@@ -787,7 +787,7 @@ completeReturnProcessing(Logger &logger, ReturnOp returnOp,
   func.setSignature(
       SignatureType::get(func.getInputParamDeclsAttr(),
                          ParamDeclArrayAttr::get(func.getContext(), {}),
-                         func.getFunctionType(), func.getConventions()));
+                         func.getFunctionType(), func.getMetadata()));
   returnOp.setParameters({});
   return std::nullopt;
 }
@@ -1639,8 +1639,7 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
       generator.getLoc(), mangledName,
       SignatureType::get(ParamDeclArrayAttr::get(generator.getContext(), {}),
                          generator.getResultParamsAttr(),
-                         generator.getFunctionType(),
-                         generator.getConventions()),
+                         generator.getFunctionType(), generator.getMetadata()),
       generator.getAlwaysInlineLevel());
 
   // Insert the newFunc into the symbol table which will then know about it,
