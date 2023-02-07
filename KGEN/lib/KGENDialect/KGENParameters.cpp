@@ -18,6 +18,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Support/DebugStringHelper.h"
@@ -878,4 +879,45 @@ void ParameterUseDefGraph::calculate() {
 
 LogicalResult ParameterUseDefGraph::verify(SymbolTableCollection &symtab) {
   return calculateOrVerify(scope->getParentOfType<ModuleOp>(), &symtab);
+}
+
+ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) {
+  // Note that we use map.lookupOrDefault here because only a subgraph might
+  // have been copied, so we don't necessarily have the op in the IRMapping.
+
+  ParameterUseDefGraph out(
+      cast<DeclInterface>(map.lookupOrDefault(scope.getOperation())));
+
+  // Copy over decls and defs.
+  for (auto [name, decl] : decls)
+    out.decls[name] =
+        ParamDeclaration{decl.type, map.lookupOrDefault(decl.declOp)};
+  for (auto [name, def] : defs)
+    out.defs[name] = ParamDefinition{def.value, def.index,
+                                     map.lookupOrDefault(def.defOp), def.uses};
+
+  // Copy over param ops.
+  for (auto paramOp : paramOps)
+    out.paramOps.push_back(map.lookupOrDefault(paramOp));
+
+  // These are trivial to copy over.
+  out.params = params;
+  out.usesFromAbove = usesFromAbove;
+
+  // Copy over the op uses.
+  for (auto [op, useVector] : opUses)
+    out.opUses[map.lookupOrDefault(op)] = useVector;
+
+  // Copy the remapped nested decls.
+  for (auto nestedDecl : nestedDecls)
+    out.nestedDecls.push_back(
+        cast<DeclInterface>(map.lookupOrDefault(nestedDecl.getOperation())));
+
+  // And finally, for each nested scope, we'll have to do the same thing.
+  for (auto [decl, graph] : nestedScopes)
+    out.nestedScopes.try_emplace(
+        cast<DeclInterface>(map.lookupOrDefault(decl.getOperation())),
+        graph.copy(map));
+
+  return out;
 }
