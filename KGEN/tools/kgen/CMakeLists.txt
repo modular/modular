@@ -14,7 +14,6 @@ add_modular_tool(kgen
   KGENDialect
   LITDialect
   POPDialect
-  ZAPDialect
 
   MLIRBytecodeWriter
   MLIRIndexDialect

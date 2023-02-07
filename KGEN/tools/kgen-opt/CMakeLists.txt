@@ -13,13 +13,11 @@ add_modular_tool(kgen-opt
   KGENDialect
   KGENEmitObject
   KGENCompilerRT
-  ZAPDialect
   POPDialect
   KGENToLLVM
   KGENElaborator
   KGENTransforms
   LowerLIT
-  LowerZAPToPOP
 
   MLIRIR
   MLIRIndexDialect

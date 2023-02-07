@@ -100,20 +100,6 @@ def LowerStructs : Pass<"lower-structs", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LowerZAPToPOP
-//===----------------------------------------------------------------------===//
-
-def LowerZAPToPOP : Pass<"lower-zap-to-pop", "mlir::ModuleOp"> {
-  let summary = "Lower the `zap` dialect to the `pop` dialect.";
-  let description = [{
-    This pass lowers `zap` dialect operations to `pop` dialect operations. This
-    pass can run pre-elaboration.
-  }];
-
-  let dependentDialects = ["POP::POPDialect"];
-}
-
-//===----------------------------------------------------------------------===//
 // LowerKGENToPOP
 //===----------------------------------------------------------------------===//
 

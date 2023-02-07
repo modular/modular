@@ -15,7 +15,6 @@ add_modular_mlir_library(KGENExecutionEngine
   nativecodegen
 
   LINK_LIBS PUBLIC
-  LowerZAPToPOP
   KGENDialect
   KGENToLLVM
   KGENEmitObject

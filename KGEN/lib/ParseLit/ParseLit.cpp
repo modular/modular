@@ -19,7 +19,6 @@
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
-#include "KGEN/ZAPDialect/ZAPDialect.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -50,7 +49,7 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
 
   context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
                        POP::POPDialect, LITDialect, mlir::index::IndexDialect,
-                       KGENDialect, ZAP::ZAPDialect, mlir::scf::SCFDialect>();
+                       KGENDialect, mlir::scf::SCFDialect>();
 
   // This is the result module we are parsing into.
   auto fileLoc =

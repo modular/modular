@@ -72,7 +72,6 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
 
   LowerToLLVMOptions llvmOptions(options.getDIEmissionKind(),
                                  options.debugAtLevel);
-  pm.addPass(createLowerZAPToPOP());
   buildLowerToLLVMPipeline(pm, llvmOptions);
   if (failed(pm.run(module)))
     return nullptr;

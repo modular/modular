@@ -19,11 +19,9 @@ add_modular_mlir_library(KGENCompiler
   KGENTransforms
   ParseLit
   LowerLIT
-  LowerZAPToPOP
 
   KGENDialect
   LITDialect
-  ZAPDialect
   POPDialect
 
   MLIRIR

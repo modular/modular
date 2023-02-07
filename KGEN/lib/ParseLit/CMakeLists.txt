@@ -28,7 +28,6 @@ add_modular_conversion_library(ParseLit
   LITDialect
   KGENDialect
   POPDialect
-  ZAPDialect
 
   MLIRIndexDialect
   MLIRTranslateLib

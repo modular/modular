@@ -7,7 +7,6 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "KGEN/ZAPDialect/ZAPTypes.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/ML/DType.h"
 #include "Support/STLExtras.h"
@@ -82,11 +81,6 @@ LogicalResult getCTypeForType(FuncOp func, Type t,
     if (failed(getCTypeForType(func, array.getResolvedElementType(), types)))
       return failure();
     types.back() += ("[" + Twine(*array.getResolvedSize()) + "]").str();
-    return success();
-  }
-
-  if (auto ndbuffer = dyn_cast<ZAP::NDBufferType>(t)) {
-    types.append({"void *", "size_t", "ssize_t[5]", "uint8_t"});
     return success();
   }
 
