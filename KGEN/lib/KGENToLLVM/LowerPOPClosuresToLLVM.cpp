@@ -38,12 +38,11 @@ namespace {
 // ConvertPOPPartialApply
 //===----------------------------------------------------------------------===//
 
-class ConvertPOPPartialApply
-    : public mlir::ConvertOpToLLVMPattern<PartialApplyOp> {
+class ConvertPOPPartialApply : public ConvertPOPToLLVMPattern<PartialApplyOp> {
 public:
   ConvertPOPPartialApply(SymbolTable &symtab,
                          mlir::LLVMTypeConverter &typeConverter)
-      : ConvertOpToLLVMPattern(typeConverter), symtab(symtab) {}
+      : ConvertPOPToLLVMPattern(typeConverter), symtab(symtab) {}
 
   LogicalResult
   matchAndRewrite(PartialApplyOp op, PartialApplyOpAdaptor adaptor,
@@ -241,8 +240,7 @@ public:
         rewriter.create<LLVM::AllocaOp>(op.getLoc(), envStructPtrTy, one);
     // TODO: When data layouts are propagated properly, extract the data
     // layout from TargetInfoAttr
-    mlir::DataLayout defaultDL = mlir::DataLayout();
-    size_t envSize = defaultDL.getTypeSize(envStructType);
+    size_t envSize = getTypeConverter()->getTypeAllocSize(envStructType);
 
     // Insert lifetime marker for the env struct
     rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), envSize, envStruct);
@@ -442,11 +440,13 @@ void LowerPOPClosuresToLLVMPass::runOnOperation() {
   target.addLegalDialect<LLVM::LLVMDialect>();
 
   // Configure the type converter.
-  FailureOr<mlir::LowerToLLVMOptions> options =
-      getTargetLoweringOptions(theModule);
-  if (failed(options))
+  TargetInfoAttr targetInfo = lookupTargetInfo(theModule);
+  if (!targetInfo) {
+    mlir::emitError(theModule.getLoc(),
+                    "could not find an enclosing target specification");
     return signalPassFailure();
-  POPToLLVMTypeConverter typeConverter(theModule.getLoc(), *options);
+  }
+  POPToLLVMTypeConverter typeConverter(targetInfo);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());

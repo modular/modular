@@ -1124,8 +1124,8 @@ struct ConvertPOPVariadicSize
 //===----------------------------------------------------------------------===//
 
 struct ConvertPOPVariantCreate
-    : public mlir::ConvertOpToLLVMPattern<VariantCreateOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+    : public ConvertPOPToLLVMPattern<VariantCreateOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(VariantCreateOp op, VariantCreateOpAdaptor adaptor,
@@ -1135,7 +1135,7 @@ struct ConvertPOPVariantCreate
     if (!variantType)
       return failure();
 
-    VariantHelper helper(rewriter, op.getLoc());
+    VariantHelper helper(rewriter, op.getLoc(), *getTypeConverter());
     Value result = helper.materializeLLVMVariant(
         variantType, adaptor.getOperand(),
         *op.getType().getTypeIndex(op.getOperand().getType()));
@@ -1174,8 +1174,8 @@ struct ConvertPOPVariantIs : public mlir::ConvertOpToLLVMPattern<VariantIsOp> {
 // ConvertPOPVariantGet
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPVariantGet : mlir::ConvertOpToLLVMPattern<VariantGetOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPVariantGet : ConvertPOPToLLVMPattern<VariantGetOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(VariantGetOp op, VariantGetOpAdaptor adaptor,
@@ -1196,7 +1196,7 @@ struct ConvertPOPVariantGet : mlir::ConvertOpToLLVMPattern<VariantGetOp> {
       storageValues.push_back(
           rewriter.create<LLVM::ExtractValueOp>(op.getLoc(), content, i));
 
-    VariantHelper helper(rewriter, op.getLoc());
+    VariantHelper helper(rewriter, op.getLoc(), *getTypeConverter());
     ArrayRef<Value>::iterator valueIt = storageValues.begin();
     unsigned storageOffset = 0;
     unsigned offset = 0;
@@ -1612,18 +1612,13 @@ void LowerPOPToLLVMPass::runOnOperation() {
   target.addLegalOp<CoroutineDestroyOp>();
 
   // Set LLVM lowering options.
-  FailureOr<mlir::LowerToLLVMOptions> options = getTargetLoweringOptions(*func);
-  if (failed(options))
-    return signalPassFailure();
-  POPToLLVMTypeConverter typeConverter(func->getLoc(), *options);
-
-  // Lookup the nearest target info specification.
   TargetInfoAttr targetInfo = lookupTargetInfo(*func);
   if (!targetInfo) {
     mlir::emitError(func->getLoc(),
                     "could not find an enclosing target specification");
     return signalPassFailure();
   }
+  POPToLLVMTypeConverter typeConverter(targetInfo);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
@@ -1700,12 +1695,12 @@ private:
 
 /// Lower a global constant. Unique the constant value.
 class ConvertPOPGlobalConstant
-    : public mlir::ConvertOpToLLVMPattern<GlobalConstantOp> {
+    : public ConvertPOPToLLVMPattern<GlobalConstantOp> {
 public:
   ConvertPOPGlobalConstant(SymbolTable &symtab,
                            DenseMap<TypedAttr, LLVM::GlobalOp> &constants,
                            mlir::LLVMTypeConverter &typeConverter)
-      : ConvertOpToLLVMPattern(typeConverter), symtab(symtab),
+      : ConvertPOPToLLVMPattern(typeConverter), symtab(symtab),
         constants(constants) {}
 
   LogicalResult
@@ -1773,11 +1768,13 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   target.addLegalDialect<LLVM::LLVMDialect>();
 
   // Set LLVM lowering options.
-  FailureOr<mlir::LowerToLLVMOptions> options =
-      getTargetLoweringOptions(theModule);
-  if (failed(options))
+  TargetInfoAttr targetInfo = lookupTargetInfo(theModule);
+  if (!targetInfo) {
+    mlir::emitError(theModule.getLoc(),
+                    "could not find an enclosing target specification");
     return signalPassFailure();
-  POPToLLVMTypeConverter typeConverter(theModule.getLoc(), *options);
+  }
+  POPToLLVMTypeConverter typeConverter(targetInfo);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());

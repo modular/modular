@@ -9,12 +9,44 @@
 
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/MDialect/MAttrs.h"
+#include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Value.h"
 
 namespace M::KGEN {
 class KGENDType;
+
+//===----------------------------------------------------------------------===//
+// LLVMDataLayout
+//===----------------------------------------------------------------------===//
+
+/// This class is a helper to compute size and alignment of LLVM-compatible MLIR
+/// types using a data layout specification.
+class LLVMDataLayout {
+public:
+  explicit LLVMDataLayout(TargetInfoAttr target) : target(target) {}
+
+  /// Get the size of the LLVM type in bits.
+  int64_t getTypeSizeInBits(Type type) const;
+  /// Get the maximum number of bytes that can be overwritten by storing the
+  /// type. This is the type size in bits rounded up to the nearest byte.
+  int64_t getTypeStoreSize(Type type) const {
+    return llvm::divideCeil(getTypeSizeInBits(type), CHAR_BIT);
+  }
+  /// Get the alloc size of the type. This is the size of the type plus the
+  /// required alignment padding.
+  int64_t getTypeAllocSize(Type type) const {
+    return llvm::alignTo(getTypeStoreSize(type), getTypeABIAlign(type));
+  }
+  /// Get the ABI alignment of the LLVM type.
+  int64_t getTypeABIAlign(Type type) const;
+
+private:
+  /// The target info with the data layout to use.
+  TargetInfoAttr target;
+};
 
 //===----------------------------------------------------------------------===//
 // POPToLLVMTypeConverter
@@ -31,27 +63,10 @@ Type getLLVMPointerTo(mlir::MLIRContext *ctx, KGENDType dtype,
 
 /// This type converter maps fully-specified pop dialect parametric types and
 /// built-in MLIR types to LLVM types.
-class POPToLLVMTypeConverter : public mlir::LLVMTypeConverter {
-public:
-  POPToLLVMTypeConverter(mlir::Location loc,
-                         const mlir::LowerToLLVMOptions &options);
-
-  /// Report an error or conversion failure.
-  /// TODO: TypeConverter needs an error reporting mechanism.
-  mlir::InFlightDiagnostic emitError(StringRef msg) {
-    return mlir::emitError(loc) << msg;
-  }
-
-private:
-  /// A location used to report conversion failures.
-  Location loc;
-  /// TODO: We don't have a model for target-specific data layout. Use MLIR's
-  /// default data layout.
-  mlir::DataLayout dl;
+struct POPToLLVMTypeConverter : public mlir::LLVMTypeConverter,
+                                public LLVMDataLayout {
+  POPToLLVMTypeConverter(TargetInfoAttr target);
 };
-
-/// Derived LLVM lowering options from the nearest target info specification.
-FailureOr<mlir::LowerToLLVMOptions> getTargetLoweringOptions(Operation *op);
 
 //===----------------------------------------------------------------------===//
 // LLVMBuilder
@@ -59,11 +74,9 @@ FailureOr<mlir::LowerToLLVMOptions> getTargetLoweringOptions(Operation *op);
 
 /// This class is a builder, type converter, and data layout bundled together.
 struct LLVMBuilder : public ImplicitLocOpBuilder,
-                     public POPToLLVMTypeConverter,
-                     public mlir::DataLayout {
-  LLVMBuilder(ImplicitLocOpBuilder &b, POPToLLVMTypeConverter &tc,
-              mlir::DataLayout dl)
-      : ImplicitLocOpBuilder(b), POPToLLVMTypeConverter(tc), DataLayout(dl) {}
+                     public POPToLLVMTypeConverter {
+  LLVMBuilder(ImplicitLocOpBuilder &b, POPToLLVMTypeConverter &tc)
+      : ImplicitLocOpBuilder(b), POPToLLVMTypeConverter(tc) {}
 
   using ImplicitLocOpBuilder::getContext;
   using POPToLLVMTypeConverter::getIndexType;
@@ -76,7 +89,8 @@ struct LLVMBuilder : public ImplicitLocOpBuilder,
 /// A helper for creating variants and extracting from them.
 class VariantHelper {
 public:
-  VariantHelper(OpBuilder &b, Location loc) : b(loc, b) {}
+  VariantHelper(OpBuilder &b, Location loc, const LLVMDataLayout &dl)
+      : b(loc, b), dl(dl) {}
 
   /// Generate the code required to materialize the provided value as a variant
   /// of the given LLVM type.
@@ -101,7 +115,7 @@ private:
   /// The builder to use.
   ImplicitLocOpBuilder b;
   /// The data layout to use.
-  mlir::DataLayout dl;
+  LLVMDataLayout dl;
 };
 
 //===----------------------------------------------------------------------===//
@@ -120,7 +134,7 @@ Value materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
 /// Generate the LLVM IR to materialize a constant of the given value. This is
 /// used to convert attribute values in `kgen.param.constant`.
 Value convertParameterToLLVM(ImplicitLocOpBuilder &b,
-                             mlir::LLVMTypeConverter &tc, TypedAttr attr);
+                             POPToLLVMTypeConverter &tc, TypedAttr attr);
 
 //===----------------------------------------------------------------------===//
 // POPToLLVMDebugInfoTypeConverter
@@ -131,6 +145,20 @@ Value convertParameterToLLVM(ImplicitLocOpBuilder &b,
 struct POPToLLVMDebugInfoTypeConverter
     : public DebugInfo::DebugInfoTypeConverter {
   POPToLLVMDebugInfoTypeConverter(POPToLLVMTypeConverter &converter);
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertOpToLLVMPattern
+//===----------------------------------------------------------------------===//
+
+template <typename OpT>
+struct ConvertPOPToLLVMPattern : public mlir::ConvertOpToLLVMPattern<OpT> {
+  using mlir::ConvertOpToLLVMPattern<OpT>::ConvertOpToLLVMPattern;
+
+  POPToLLVMTypeConverter *getTypeConverter() const {
+    return static_cast<POPToLLVMTypeConverter *>(
+        ConversionPattern::getTypeConverter());
+  }
 };
 
 } // namespace M::KGEN

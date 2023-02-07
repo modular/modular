@@ -28,7 +28,7 @@ namespace LLVM = mlir::LLVM;
 
 /// Convert the block argument types.
 static LogicalResult convertRegionTypes(mlir::IRRewriter &b, Region *region,
-                                        TypeConverter &tc) {
+                                        POPToLLVMTypeConverter &tc) {
   OpBuilder::InsertionGuard guard(b);
   for (Block &block : *region) {
     b.setInsertionPointToStart(&block);
@@ -48,7 +48,7 @@ static LogicalResult convertRegionTypes(mlir::IRRewriter &b, Region *region,
 }
 
 /// Materialize a conversion for the given value.
-static Value getRemappedValue(mlir::IRRewriter &b, TypeConverter &tc,
+static Value getRemappedValue(mlir::IRRewriter &b, POPToLLVMTypeConverter &tc,
                               Value value) {
   OpBuilder::InsertionGuard guard(b);
   Type type = tc.convertType(value.getType());
@@ -63,7 +63,8 @@ static Value getRemappedValue(mlir::IRRewriter &b, TypeConverter &tc,
 }
 
 /// Materialize conversions for the given values.
-static LogicalResult getRemappedValues(mlir::IRRewriter &b, TypeConverter &tc,
+static LogicalResult getRemappedValues(mlir::IRRewriter &b,
+                                       POPToLLVMTypeConverter &tc,
                                        ValueRange values,
                                        SmallVectorImpl<Value> &results) {
   for (Value operand : values) {
@@ -98,7 +99,7 @@ static void replaceOp(mlir::IRRewriter &b, Operation *op, ValueRange values) {
 
 static LogicalResult lowerOpImpl(scf::WhileOp op, scf::WhileOpAdaptor adaptor,
                                  mlir::IRRewriter &rewriter,
-                                 TypeConverter &tc) {
+                                 POPToLLVMTypeConverter &tc) {
   Location loc = op.getLoc();
 
   // Convert the loop body types.
@@ -157,7 +158,7 @@ static LogicalResult lowerOpImpl(scf::WhileOp op, scf::WhileOpAdaptor adaptor,
 
 static LogicalResult lowerOpImpl(scf::ForOp op, scf::ForOpAdaptor adaptor,
                                  mlir::IRRewriter &rewriter,
-                                 TypeConverter &tc) {
+                                 POPToLLVMTypeConverter &tc) {
   Location loc = op.getLoc();
 
   // Convert the induction variable and iteration variable types.
@@ -231,7 +232,7 @@ static LogicalResult lowerOpImpl(scf::ForOp op, scf::ForOpAdaptor adaptor,
 
 static LogicalResult lowerOpImpl(scf::IfOp op, scf::IfOpAdaptor adaptor,
                                  mlir::IRRewriter &rewriter,
-                                 TypeConverter &tc) {
+                                 POPToLLVMTypeConverter &tc) {
   Location loc = op.getLoc();
 
   // Start by splitting the block containing the 'scf.if' into two parts.
@@ -303,7 +304,7 @@ static LogicalResult lowerOpImpl(scf::IfOp op, scf::IfOpAdaptor adaptor,
 static LogicalResult lowerOpImpl(scf::IndexSwitchOp op,
                                  scf::IndexSwitchOpAdaptor adaptor,
                                  mlir::IRRewriter &rewriter,
-                                 TypeConverter &tc) {
+                                 POPToLLVMTypeConverter &tc) {
   // Split the block at the op.
   Block *condBlock = rewriter.getInsertionBlock();
   Block *continueBlock = rewriter.splitBlock(condBlock, Block::iterator(op));
@@ -372,7 +373,7 @@ static LogicalResult lowerOpImpl(scf::IndexSwitchOp op,
 static LogicalResult lowerOpImpl(POP::VariantVisitOp op,
                                  POP::VariantVisitOpAdaptor adaptor,
                                  mlir::IRRewriter &rewriter,
-                                 TypeConverter &tc) {
+                                 POPToLLVMTypeConverter &tc) {
   // Store the contents into a block of memory.
   Value content = rewriter.create<LLVM::ExtractValueOp>(
       op.getLoc(), adaptor.getVariant(), 0);
@@ -418,7 +419,7 @@ static LogicalResult lowerOpImpl(POP::VariantVisitOp op,
     // Load the content and replace the region argument with it.
     rewriter.setInsertionPointToStart(block);
     Type type = tc.convertType(caseType);
-    VariantHelper helper(rewriter, op.getLoc());
+    VariantHelper helper(rewriter, op.getLoc(), tc);
     ArrayRef<Value>::iterator valueIt = storageValues.begin();
     unsigned storageOffset = 0;
     unsigned offset = 0;
@@ -472,7 +473,7 @@ static LogicalResult lowerOpImpl(POP::VariantVisitOp op,
 static LogicalResult lowerOpImpl(mlir::arith::SelectOp op,
                                  mlir::arith::SelectOpAdaptor adaptor,
                                  mlir::IRRewriter &rewriter,
-                                 TypeConverter &tc) {
+                                 POPToLLVMTypeConverter &tc) {
   auto select = rewriter.create<LLVM::SelectOp>(
       op.getLoc(), adaptor.getCondition(), adaptor.getTrueValue(),
       adaptor.getFalseValue());
@@ -500,7 +501,7 @@ struct LowerSCFToLLVMPass
 
 template <typename OpT>
 static LogicalResult lowerOperation(OpT op, mlir::IRRewriter &b,
-                                    TypeConverter &tc) {
+                                    POPToLLVMTypeConverter &tc) {
   SmallVector<Value> converted;
   if (failed(getRemappedValues(b, tc, op->getOperands(), converted)))
     return failure();
@@ -510,11 +511,13 @@ static LogicalResult lowerOperation(OpT op, mlir::IRRewriter &b,
 
 void LowerSCFToLLVMPass::runOnOperation() {
   // Set LLVM lowering options.
-  FailureOr<mlir::LowerToLLVMOptions> options =
-      getTargetLoweringOptions(getOperation());
-  if (failed(options))
+  TargetInfoAttr targetInfo = lookupTargetInfo(getOperation());
+  if (!targetInfo) {
+    mlir::emitError(getOperation()->getLoc(),
+                    "could not find an enclosing target specification");
     return signalPassFailure();
-  POPToLLVMTypeConverter typeConverter(getOperation()->getLoc(), *options);
+  }
+  POPToLLVMTypeConverter typeConverter(targetInfo);
 
   SmallVector<Operation *> ops;
   getOperation()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
