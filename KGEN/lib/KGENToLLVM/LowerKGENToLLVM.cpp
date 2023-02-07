@@ -479,6 +479,16 @@ void LowerKGENToLLVMPass::runOnOperation() {
   }
   POPToLLVMTypeConverter typeConverter(targetInfo);
 
+  // Attach the LLVM data layout and target triple strings to the module so they
+  // are present when exporting to LLVMIR.
+  NamedAttrList moduleAttrs(theModule->getAttrDictionary());
+  moduleAttrs.set(LLVM::LLVMDialect::getTargetTripleAttrName(),
+                  StringAttr::get(&getContext(), targetInfo.getTripleStr()));
+  moduleAttrs.set(
+      LLVM::LLVMDialect::getDataLayoutAttrName(),
+      StringAttr::get(&getContext(), targetInfo.getDataLayout().toString()));
+  theModule->setAttrs(moduleAttrs.getDictionary(&getContext()));
+
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
   SymbolTable symtab =
