@@ -30,6 +30,74 @@ static Type getLLVMTypeForKGENStringType(MLIRContext *ctx, Type strSizeType) {
 }
 
 //===----------------------------------------------------------------------===//
+// LLVMDataLayout
+//===----------------------------------------------------------------------===//
+
+int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
+  assert(LLVM::isCompatibleType(type) && "expected an LLVM type");
+  if (type.isIntOrFloat())
+    return type.getIntOrFloatBitWidth();
+  if (auto ptrType = dyn_cast<LLVM::LLVMPointerType>(type)) {
+    assert(ptrType.getAddressSpace() == 0 &&
+           "only default address space supported");
+    return target.getDataLayout().getPointerBitWidth();
+  }
+  if (auto vecType = dyn_cast<VectorType>(type)) {
+    return target.getDataLayout().getVectorBitWidth(
+        vecType.getNumElements(), vecType.getElementTypeBitWidth());
+  }
+  if (auto vecType = dyn_cast<LLVM::LLVMFixedVectorType>(type)) {
+    return target.getDataLayout().getVectorBitWidth(
+        vecType.getNumElements(), getTypeSizeInBits(vecType.getElementType()));
+  }
+  if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(type)) {
+    return arrayType.getNumElements() *
+           getTypeStoreSize(arrayType.getElementType()) * CHAR_BIT;
+  }
+  if (auto structType = dyn_cast<LLVM::LLVMStructType>(type)) {
+    int64_t size = 0;
+    int64_t strictest = 1;
+    for (Type type : structType.getBody()) {
+      int64_t eltABIAlign = getTypeABIAlign(type);
+      size = llvm::alignTo(size, eltABIAlign) + getTypeAllocSize(type);
+      strictest = std::max(strictest, eltABIAlign);
+    }
+    return llvm::alignTo(size, strictest) * CHAR_BIT;
+  }
+  llvm::report_fatal_error("unsupported LLVM dialect type");
+}
+
+int64_t LLVMDataLayout::getTypeABIAlign(Type type) const {
+  assert(LLVM::isCompatibleType(type) && "expected an LLVM type");
+  if (auto intType = dyn_cast<IntegerType>(type))
+    return target.getDataLayout().getIntegerABIAlign(intType.getWidth());
+  if (auto fpType = dyn_cast<FloatType>(type))
+    return target.getDataLayout().getFloatABIAlign(fpType.getWidth());
+  if (auto ptrType = dyn_cast<LLVM::LLVMPointerType>(type)) {
+    assert(ptrType.getAddressSpace() == 0 &&
+           "only default address space supported");
+    return target.getDataLayout().getPointerABIAlign();
+  }
+  if (auto vecType = dyn_cast<VectorType>(type)) {
+    return target.getDataLayout().getVectorABIAlign(
+        vecType.getNumElements(), vecType.getElementTypeBitWidth());
+  }
+  if (auto vecType = dyn_cast<LLVM::LLVMFixedVectorType>(type)) {
+    return target.getDataLayout().getVectorABIAlign(
+        vecType.getNumElements(), getTypeSizeInBits(vecType.getElementType()));
+  }
+  if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(type))
+    return getTypeABIAlign(arrayType.getElementType());
+  if (auto structType = dyn_cast<LLVM::LLVMStructType>(type)) {
+    int64_t strictest = 1;
+    for (Type type : structType.getBody())
+      strictest = std::max(strictest, getTypeABIAlign(type));
+    return strictest;
+  }
+  llvm::report_fatal_error("unsupported LLVM dialect type");
+}
+
+//===----------------------------------------------------------------------===//
 // POPToLLVMTypeConverter
 //===----------------------------------------------------------------------===//
 
@@ -65,28 +133,17 @@ Type M::KGEN::getLLVMPointerTo(MLIRContext *ctx, KGENDType dtype,
   return LLVM::LLVMPointerType::get(ctx);
 }
 
-POPToLLVMTypeConverter::POPToLLVMTypeConverter(
-    mlir::Location loc, const mlir::LowerToLLVMOptions &options)
-    : LLVMTypeConverter(loc.getContext(), options), loc(loc) {
+/// Build LLVM lowering options for a target.
+static mlir::LowerToLLVMOptions buildLLVMLoweringOpts(TargetInfoAttr target) {
+  mlir::LowerToLLVMOptions opts(target.getContext());
+  opts.overrideIndexBitwidth(target.getDataLayout().getPointerBitWidth());
+  opts.dataLayout.reset(target.getDataLayout().toString());
+  return opts;
+}
 
-  // Convert a DType expression to an MLIR type.
-  auto convertDType = [&](auto type) -> std::optional<Type> {
-    if (std::optional<KGENDType> dtype = type.getResolvedDType())
-      return getMLIRTypeForDType(type.getContext(), *dtype,
-                                 options.getIndexBitwidth());
-    return {};
-  };
-
-  // Convert a size expression to a C++ unsigned integer.
-  auto convertSize = [&](auto type) -> std::optional<uint64_t> {
-    auto size = dyn_cast_if_present<IntegerAttr>(type.getSize());
-    if (!size)
-      return {};
-    const APInt &value = size.getValue();
-    assert(APInt(value.getBitWidth(), value.getLimitedValue()) == value &&
-           "couldn't narrow vector size");
-    return value.getLimitedValue();
-  };
+POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
+    : LLVMTypeConverter(target.getContext(), buildLLVMLoweringOpts(target)),
+      LLVMDataLayout(target) {
 
   // Convert pointer types to LLVM pointer types. If the element type is
   // unspecified, return an opaque pointer.
@@ -149,21 +206,21 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
 
   // Convert SIMD types to vector types.
   addConversion([=](POP::SIMDType simd) -> std::optional<Type> {
-    std::optional<Type> dtype = convertDType(simd);
-    std::optional<uint64_t> size = convertSize(simd);
-    if (!dtype)
+    std::optional<KGENDType> dtype = simd.getResolvedDType();
+    std::optional<uint64_t> size = simd.getResolvedSize();
+    if (!dtype || !size)
       return {};
-    if (!size) {
-      emitError("SIMD size not fully specified: ") << simd;
+    std::optional<Type> type = getMLIRTypeForDType(
+        simd.getContext(), *dtype, getOptions().getIndexBitwidth());
+    if (!type)
       return {};
-    }
 
     // Scalar case, size = 1
     if (*size == 1)
-      return *dtype;
+      return *type;
 
     // Vector case, size != 1
-    return LLVM::getFixedVectorType(*dtype, *size);
+    return LLVM::getFixedVectorType(*type, *size);
   });
 
   // Convert data type types to `i8`.
@@ -177,14 +234,13 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
     // TODO: The generated assembly is sensitive to the content type of the
     // variant type. This needs to be optimized. For now, use an array of
     // word-size integers.
-    uint64_t maxSize = 0;
+    int64_t maxSize = 0;
     for (TypedAttr typeExpr : variant.getTypes()) {
       Type variantType = typeExpr.cast<ConcreteTypeConstantAttr>().getValue();
       Type type = convertType(variantType);
       if (!type)
         return {};
-      maxSize = std::max(maxSize, llvm::alignTo(dl.getTypeSize(type),
-                                                dl.getTypeABIAlignment(type)));
+      maxSize = std::max(maxSize, getTypeAllocSize(type));
     }
     // FIXME: The alignment of the generated type must equal or exceed the
     // greatest alignment requirement of any subtype. Right now it's just the
@@ -222,18 +278,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(
   });
 }
 
-FailureOr<mlir::LowerToLLVMOptions>
-KGEN::getTargetLoweringOptions(Operation *op) {
-  TargetInfoAttr target = lookupTargetInfo(op);
-  if (!target)
-    return mlir::emitError(op->getLoc(),
-                           "could not find an enclosing target specification");
-
-  mlir::LowerToLLVMOptions options(op->getContext());
-  options.overrideIndexBitwidth(target.getDataLayout().getPointerBitWidth());
-  return options;
-}
-
 //===----------------------------------------------------------------------===//
 // VariantHelper
 //===----------------------------------------------------------------------===//
@@ -269,7 +313,7 @@ void VariantHelper::walkAndCreateVariant(
     unsigned &offset, Value value) {
   // Align the storage pointer to the current value being stored.
   addStoragePadding(valueIt, storageOffset, offset,
-                    dl.getTypeABIAlignment(value.getType()));
+                    dl.getTypeABIAlign(value.getType()));
 
   // Aggregate types like structs and arrays are flattened to their leaf types.
   // Leaf types are integers, floats, and pointers.
@@ -352,8 +396,7 @@ Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
                                            unsigned &storageOffset,
                                            unsigned &offset, Type type) {
   // Align the storage pointer to the current value being stored.
-  addStoragePadding(valueIt, storageOffset, offset,
-                    dl.getTypeABIAlignment(type));
+  addStoragePadding(valueIt, storageOffset, offset, dl.getTypeABIAlign(type));
 
   // Given a leaf type, extract a value of that type from the current storage.
   if (isa<IntegerType, FloatType, LLVM::LLVMPointerType>(type)) {
@@ -363,7 +406,7 @@ Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
     else if (auto fpType = dyn_cast<FloatType>(type))
       normalizedType = b.getIntegerType(fpType.getWidth());
     else
-      normalizedType = b.getIntegerType(dl.getTypeSize(type));
+      normalizedType = b.getIntegerType(dl.getTypeAllocSize(type));
 
     unsigned curValueSize = normalizedType.getWidth();
     offset += curValueSize;
@@ -582,8 +625,7 @@ Value KGEN::materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
 }
 
 Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
-                                   mlir::LLVMTypeConverter &tc,
-                                   TypedAttr attr) {
+                                   POPToLLVMTypeConverter &tc, TypedAttr attr) {
   //===--------------------------------------------------------------------===//
   // Builtin
 
@@ -655,7 +697,7 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
     if (!value)
       return {};
 
-    VariantHelper helper(b, b.getLoc());
+    VariantHelper helper(b, b.getLoc(), tc);
     return helper.materializeLLVMVariant(
         variantType, value,
         *variant.getType().getTypeIndex(variant.getValue().getType()));

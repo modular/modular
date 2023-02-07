@@ -498,7 +498,7 @@ static std::optional<int64_t> computeVariantContentSize(VariantType type,
       return {};
     maxSize = std::max(maxSize, *typeSize);
   }
-  return llvm::alignTo(maxSize, target.getDataLayout().getIntegerABIAlign(64));
+  return llvm::alignTo(maxSize, *type.getTypeAlign(target));
 }
 
 /// Get bitwidth of the integer used to represent the discriminator. The
@@ -521,14 +521,18 @@ std::optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
   std::optional<int64_t> contentSize = computeVariantContentSize(*this, target);
   if (!contentSize)
     return {};
+  // Align to the content array element alignment. We don't expect the
+  // discriminator to exceed it in size (at least a 32-bit integer).
   return llvm::alignTo(*contentSize + getVariantDiscrSize(*this),
-                       target.getDataLayout().getIntegerABIAlign(64));
+                       *getTypeAlign(target));
 }
 
 std::optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {
-  // The alignment of the variant type is just the pointer width.
+  // The alignment of the variant type is the alignment of the integer type
+  // equal to the pointer width.
   // FIXME: This is incorrect but the LLVM lowering needs to be fixed.
-  return target.getDataLayout().getIntegerABIAlign(64);
+  return target.getDataLayout().getIntegerABIAlign(
+      target.getDataLayout().getPointerBitWidth());
 }
 
 ErrorOrSuccess VariantType::writeTo(TypedAttr value, intptr_t addr,

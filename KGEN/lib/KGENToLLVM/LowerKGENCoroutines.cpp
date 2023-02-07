@@ -87,7 +87,7 @@ createCoroutineFunction(LLVMBuilder &b, const TypeAttrCache &cache,
   // Explicitly specify the alignment.
   Value promiseMem = b.create<AllocaOp>(LLVMPointerType::get(promiseType),
                                         b.create<ConstantOp>(cache.i32Type, 1),
-                                        b.getTypeABIAlignment(promiseType));
+                                        b.getTypeABIAlign(promiseType));
   Value promiseMemI8 = b.create<BitcastOp>(cache.i8PtrType, promiseMem);
 
   // Initialize the coroutine frame.
@@ -244,10 +244,10 @@ static LogicalResult lowerCoroutinePromise(LLVMBuilder &b,
   // Retrieve the pointer to the beginning of the coroutine promise.
   auto coroPromiseOp = b.create<CallIntrinsicOp>(
       cache.i8PtrType, "llvm.coro.promise",
-      ValueRange{hdl,
-                 b.create<ConstantOp>(cache.i32Type,
-                                      b.getTypeABIAlignment(promiseType)),
-                 b.create<ConstantOp>(cache.i1Type, false)});
+      ValueRange{
+          hdl,
+          b.create<ConstantOp>(cache.i32Type, b.getTypeABIAlign(promiseType)),
+          b.create<ConstantOp>(cache.i1Type, false)});
 
   // The next element is a pair of pointers. Skip over it to get to the results.
   Value promise = b.create<GEPOp>(
@@ -318,14 +318,16 @@ void LowerKGENCoroutinesPass::runOnOperation() {
   LLVMFuncOp func = getOperation();
 
   // Configure the builder.
-  FailureOr<mlir::LowerToLLVMOptions> options = getTargetLoweringOptions(func);
-  if (failed(options))
+  TargetInfoAttr target = lookupTargetInfo(func);
+  if (!target) {
+    mlir::emitError(func.getLoc(),
+                    "could not find an enclosing target specification");
     return signalPassFailure();
-  POPToLLVMTypeConverter typeConverter(func.getLoc(), *options);
+  }
+  POPToLLVMTypeConverter typeConverter(target);
 
-  mlir::DataLayout dl;
   ImplicitLocOpBuilder opBuilder(getOperation()->getLoc(), &getContext());
-  LLVMBuilder b(opBuilder, typeConverter, dl);
+  LLVMBuilder b(opBuilder, typeConverter);
 
   // Initialize the type cache.
   TypeAttrCache cache{b.getI1Type(),

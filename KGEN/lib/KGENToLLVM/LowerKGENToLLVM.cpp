@@ -249,8 +249,8 @@ struct ConvertHLCFReturn : public mlir::ConvertOpToLLVMPattern<HLCF::ReturnOp> {
 //===----------------------------------------------------------------------===//
 
 struct ConvertKGENParamConstant
-    : public mlir::ConvertOpToLLVMPattern<ParamConstantOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+    : public ConvertPOPToLLVMPattern<ParamConstantOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(ParamConstantOp op, ParamConstantOpAdaptor adaptor,
@@ -471,11 +471,13 @@ void LowerKGENToLLVMPass::runOnOperation() {
       getExportedSymbols(theModule);
 
   // Configure the type converter.
-  FailureOr<mlir::LowerToLLVMOptions> options =
-      getTargetLoweringOptions(theModule);
-  if (failed(options))
+  TargetInfoAttr targetInfo = lookupTargetInfo(theModule);
+  if (!targetInfo) {
+    mlir::emitError(theModule.getLoc(),
+                    "could not find an enclosing target specification");
     return signalPassFailure();
-  POPToLLVMTypeConverter typeConverter(theModule.getLoc(), *options);
+  }
+  POPToLLVMTypeConverter typeConverter(targetInfo);
 
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
