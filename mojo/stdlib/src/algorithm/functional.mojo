@@ -130,32 +130,29 @@ fn parallelForEachN[
         `!kgen.signature<(`, Int, `,`, args_type, `) -> !lit.none>`
     ],
 ](rt: Runtime, total_count: Int, args: args_type):
+    # We have no tasks, so do nothing.
     if total_count == 0:
         return
 
-    var tg: TaskGroup
-    var tasks: UnsafeFixedVector[Coroutine[none]]
-    var b = Bool(False)
-    if total_count > 1:
+    # Only have a single task, just run it on the main thread.
+    if total_count == 1:
+        func(0, args)
+        return
 
-        async fn task_fn(i: Int, args: args_type):
-            func(i, args)
+    async fn task_fn(i: Int, args: args_type):
+        func(i, args)
 
-        tasks = UnsafeFixedVector[Coroutine[none]](total_count - 1)
-        tg = TaskGroup(rt)
-        parallelForEachNChain[args_type, task_fn](
-            total_count - 1, args, tasks, tg
-        )
-        b = True
+    var tasks = UnsafeFixedVector[Coroutine[none]](total_count - 1)
+    var tg = TaskGroup(rt)
+    parallelForEachNChain[args_type, task_fn](total_count - 1, args, tasks, tg)
 
     func(total_count - 1, args)
 
-    if b:
-        tg.wait()
-        tg.__del__()
-        for j in range(tasks.size):
-            tasks.__getitem__(j).__del__()
-        tasks.__del__()
+    tg.wait()
+    tg.__del__()
+    for j in range(tasks.size):
+        tasks.__getitem__(j).__del__()
+    tasks.__del__()
 
 
 @always_inline
