@@ -909,11 +909,6 @@ int32_t DataLayout::getVectorABIAlign(int32_t numElts,
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
 
-llvm::hash_code TargetInfoAttr::hash() const {
-  return llvm::hash_combine(getTripleStr(), getCpu(), getFeatures(),
-                            getDataLayout().toString(), getSimdBitWidth());
-}
-
 /// The dialect attribute name used to attached target info to a module.
 static constexpr llvm::StringLiteral targetInfoAttrName = "M.target_info";
 
@@ -978,10 +973,6 @@ static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
 //===----------------------------------------------------------------------===//
 // BuildInfoAttr
 //===----------------------------------------------------------------------===//
-
-llvm::hash_code BuildInfoAttr::hash() const {
-  return llvm::hash_combine(getBuildType(), getLLCLMaxProfilingLevel());
-}
 
 BuildInfoAttr BuildInfoAttr::getForCurrentBuild(MLIRContext *ctx) {
   return BuildInfoAttr::get(ctx, MODULAR_BUILD_TYPE,

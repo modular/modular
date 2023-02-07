@@ -259,9 +259,6 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
   let assemblyFormat = "`<` struct(params) `>`";
 
   let extraClassDeclaration = [{
-    /// Provides a stable hash function for use as part of a cache key.
-    llvm::hash_code hash() const;
-
     /// Get the target triple as a string.
     std::string getTripleStr() const {
       return getTriple().normalize();
@@ -303,9 +300,6 @@ def KGEN_BuildInfoAttr : MAttr<"BuildInfo", "build_info"> {
   let assemblyFormat = "`<` struct(params) `>`";
 
   let extraClassDeclaration = [{
-    /// Provides a stable hash function for use as part of a cache key.
-    llvm::hash_code hash() const;
-
     /// Get the build configuration attribute for the current build.
     static BuildInfoAttr getForCurrentBuild(MLIRContext *ctx);
   }];
