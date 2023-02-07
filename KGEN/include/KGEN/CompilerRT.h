@@ -109,7 +109,8 @@ KGEN_CompilerRT_TimeTraceProfilerEnd();
 /// into things that include this header. We only need to 'call' one function
 /// from each .cpp file. Note that this function should never actually be
 /// called!
-MODULAR_VISIBILITY_EXPORT MODULAR_ATTRIBUTE_USED static void init() {
+MODULAR_VISIBILITY_EXPORT MODULAR_ATTRIBUTE_USED inline void
+KGEN_CompilerRT_dummylinkageinit() {
   KGEN_CompilerRT_Initialize();
 #if defined(__x86_64__) && defined(__linux__)
   KGEN_CompilerRT_Init_Intel_AMX();

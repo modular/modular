@@ -137,9 +137,10 @@ parseDTypeValue(AsmParser &p, KGENDType dtype) {
     if (fitted.extOrTrunc(apsInt.getBitWidth()) != apsInt) {
       SmallVector<char, 256> strVal;
       apsInt.toString(strVal);
-      return p.emitError(loc, "integer value doesn't fit into ")
-             << dtype.getIntegerWidthInBits()
-             << " bits: " << StringRef(strVal.data(), strVal.size());
+      p.emitError(loc, "integer value doesn't fit into ")
+          << dtype.getIntegerWidthInBits()
+          << " bits: " << StringRef(strVal.data(), strVal.size());
+      return failure();
     }
     return DTypeValue(fitted, dtype);
   }
@@ -160,11 +161,15 @@ parseDTypeValue(AsmParser &p, KGENDType dtype) {
     APFloat apFp(DTypeValue::getFloatSemantics(dtype));
     llvm::Expected<APFloat::opStatus> status =
         apFp.convertFromString(strVal, APFloat::rmNearestTiesToEven);
-    if (llvm::errorToBool(status.takeError()))
-      return p.emitError(loc, "failed to parse floating point value");
-    if (*status != APFloat::opOK && *status != APFloat::opInexact)
-      return p.emitError(loc, "cannot convert ")
-             << strVal << " to " << dtype.getAsString();
+    if (llvm::errorToBool(status.takeError())) {
+      p.emitError(loc, "failed to parse floating point value");
+      return failure();
+    }
+    if (*status != APFloat::opOK && *status != APFloat::opInexact) {
+      p.emitError(loc, "cannot convert ")
+          << strVal << " to " << dtype.getAsString();
+      return failure();
+    }
     return DTypeValue(apFp, dtype);
   }
 
