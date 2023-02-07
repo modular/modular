@@ -1222,8 +1222,6 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
         applyRaises(*declRef);
       else if (declRef->spelling == "always_inline")
         funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::Enabled);
-      else if (declRef->spelling == "nodebug_inline")
-        funcOp.setNoDebugInline(true);
       else
         processedIt = false;
     }
@@ -1595,77 +1593,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   return success();
 }
 
-/// Once a @nodebug_inline has been fully parsed and the body is complete, we
-/// check it to see if it is simple enough for inlining.  We intentionally limit
-// it to try to keep this to purely functional stuff that will fold when
-// inlined.
-static void verifyNoDebugInline(LIT::FuncOp funcOp, LitSharedState &shared) {
-  size_t numOps = 0;
-
-  auto rejectFunc = [&](const Twine &badThing) -> LitDiagnostic {
-    funcOp.setNoDebugInline(false);
-    return shared.emitError(
-        funcOp.getLoc(), "@nodebug_inline does not allow " + badThing +
-                             " for the '" + funcOp.getSymName() + "' function");
-  };
-
-  // We don't allow anything other than by-value arguments right now.
-  if (!funcOp.getConventions().isDefault()) {
-    rejectFunc("byref arguments or effects");
-    return;
-  }
-
-  // We don't allow result parameters.
-  if (!funcOp.getResultParams().empty()) {
-    rejectFunc("result parameters");
-    return;
-  }
-
-  for (Operation &op : *funcOp.getBody()) {
-    auto reject = [&](const Twine &badThing) {
-      rejectFunc(badThing).attachNote(op.getLoc()) << "operation defined here";
-    };
-
-    // Let decls are folded/dropped during inlining so they are free, these
-    // other ops are glue that don't compute anything and generally get folded,
-    // so we treat them as free so abstraction doesn't get in the way of
-    // inlining.
-    if (isa<LetDeclOp, DebugInfo::ValueOp>(op) ||
-        isa<KGEN::ReturnOp, StructExtractOp, StructCreateOp>(op) ||
-        // Constants aren't computation and can often be dropped as well.
-        op.hasTrait<OpTrait::ConstantLike>())
-      continue;
-
-    // Disallow large function bodies.  We only want this to be used for small
-    // constructs.
-    if (++numOps == 5)
-      return reject("large function body with " +
-                    Twine(std::distance(funcOp.getBody()->begin(),
-                                        funcOp.getBody()->end())) +
-                    " ops");
-
-    // We have a disallow-list for specific things we don't want to support.
-    // The goal here is to allow simple leaf functions that fold when inlined.
-    if (isa<VarDeclOp>(op))
-      return reject("var declarations");
-    if (auto callOp = dyn_cast<CallOp>(op))
-      return reject("function call to '" +
-                    Twine(callOp.getCalleeSymbol().getLeafReference()) + "'");
-    if (isa<CallParamOp, POP::CallIndirectOp>(op))
-      return reject("indirect function calls");
-    if (isa<TryRaiseOp, RaiseOp, HLCF::ControlFlowNode>(op))
-      return reject("control flow");
-    if (isa<ParamDeclareOp>(op))
-      return reject("parameter declarations");
-    if (op.getNumRegions())
-      return reject("operations with regions");
-  }
-
-  // Require a return statement.
-  if (numOps < 2 || !isa<LIT::ReturnOp>(funcOp.getBody()->back().getPrevNode()))
-    rejectFunc("no return statement");
-}
-
 ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
                                       ASTDecl &decl) {
   // Push the debug scope for this function if necessary so that nested
@@ -1686,10 +1613,6 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
   if (isInterface) {
     if (!bodyBlock->empty())
       emitError(funcOp.getLoc(), "interfaces must have no body");
-    if (funcOp.getNoDebugInline()) {
-      emitError(funcOp.getLoc(), "interfaces may not be @nodebug_inline");
-      funcOp.setNoDebugInline(false);
-    }
     return success();
   }
 
@@ -1708,10 +1631,6 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
       }
     });
   }
-
-  // If this is a nodebug_inline function, verify its invariants.
-  if (funcOp.getNoDebugInline())
-    verifyNoDebugInline(funcOp, shared);
 
   return success();
 }
