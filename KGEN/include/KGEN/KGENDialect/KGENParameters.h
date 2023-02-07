@@ -101,6 +101,10 @@ struct ParameterUseDefGraph {
   /// within the current scope.
   LogicalResult verify(SymbolTableCollection &symtab);
 
+  /// Copy this graph into a new instance, remapping all the operations using
+  /// `map`.
+  ParameterUseDefGraph copy(const IRMapping &map);
+
 private:
   /// Calculate the parameter use-def graph and perform verification if a symbol
   /// table is provided.
