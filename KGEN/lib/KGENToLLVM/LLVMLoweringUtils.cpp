@@ -230,7 +230,7 @@ KGEN::getTargetLoweringOptions(Operation *op) {
                            "could not find an enclosing target specification");
 
   mlir::LowerToLLVMOptions options(op->getContext());
-  options.overrideIndexBitwidth(target.getPointerBitWidth());
+  options.overrideIndexBitwidth(target.getDataLayout().getPointerBitWidth());
   return options;
 }
 

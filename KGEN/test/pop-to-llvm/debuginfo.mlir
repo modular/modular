@@ -30,7 +30,7 @@
   subprogramFlags = Definition
 > : !test
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   kgen.func @foo() {
     kgen.return
   } loc(fused<#subprogram>["foo.mlir":10:10])

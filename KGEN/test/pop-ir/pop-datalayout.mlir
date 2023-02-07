@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s | FileCheck %s
 
-#target = #kgen.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128> : !kgen.target
+#target = #kgen.target<triple="", cpu="", features="", data_layout="i64:64:64", simd_bit_width=128> : !kgen.target
 
 // CHECK-LABEL: @pop_sizeof_alignof
 kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
@@ -75,8 +75,8 @@ kgen.generator @simd_bitpacked() {
   // CHECK-NEXT: <2>
   kgen.param.constant = <get_sizeof(!pop.simd<4, si4>, #target)>
   // CHECK-NEXT: <4>
-  kgen.param.constant = <get_sizeof(!pop.scalar<index>, #kgen.target<triple="", cpu="", features="", pointer_bit_width=32, simd_bit_width=128>)>
+  kgen.param.constant = <get_sizeof(!pop.scalar<index>, #kgen.target<triple="", cpu="", features="", data_layout="p:32:32", simd_bit_width=128>)>
   // CHECK-NEXT: <8>
-  kgen.param.constant = <get_sizeof(!pop.simd<2, address>, #kgen.target<triple="", cpu="", features="", pointer_bit_width=32, simd_bit_width=128>)>
+  kgen.param.constant = <get_sizeof(!pop.simd<2, address>, #kgen.target<triple="", cpu="", features="", data_layout="p:32:32", simd_bit_width=128>)>
   kgen.return
 }

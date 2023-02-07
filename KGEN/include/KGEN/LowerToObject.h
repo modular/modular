@@ -98,6 +98,9 @@ private:
   /// The compilation options to use.
   CompilationOptions options;
 };
+
+/// Get the target info for the host target.
+ErrorOr<TargetInfoAttr> getHostTargetInfo(MLIRContext *ctx);
 } // namespace M::KGEN
 
 #endif // KGEN_LOWERTOOBJECT_H

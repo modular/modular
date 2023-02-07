@@ -294,7 +294,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // The IR module is being compiled to an object file. Find a target
   // specification or use the host target.
-  TargetInfoAttr target = getTargetInfoOrHost(*theModule);
+  TargetInfoAttr target = getTargetInfo(*theModule);
+  if (!target) {
+    ErrorOr<TargetInfoAttr> hostTarget = getHostTargetInfo(ctx);
+    if (hostTarget.isError())
+      return mlir::emitError(theModule->getLoc(), hostTarget.getError());
+    target = hostTarget.takeValue();
+  }
 
   SymbolTable symtab(*theModule);
   auto compiler = ObjectCompiler::create(runtime, ".kgen_cache", symtab,

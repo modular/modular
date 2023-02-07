@@ -1,6 +1,6 @@
 // RUN: kgen-opt -split-input-file -allow-unregistered-dialect -lower-pop-closures-to-llvm %s | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @my_fn
   kgen.func @my_fn(%arg0: index, %arg1: !pop.scalar<f32>) -> !pop.scalar<f32> {
     kgen.return %arg1 : !pop.scalar<f32>
@@ -44,7 +44,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", poi
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @my_fn0
   kgen.func @my_fn0(%arg0: index, %arg1: !pop.scalar<f32>) -> () {
     kgen.return
@@ -94,7 +94,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", poi
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @call_indirect
   kgen.func @call_indirect(%fn: (i32, i64) -> (f32, f64), %a: i32, %b: i64) -> (f32, f64) {
     // CHECK: %[[FN:.*]] = builtin.unrealized_conversion_cast %arg0 : (i32, i64) -> (f32, f64) to !llvm.ptr<func<struct<(f32, f64)> (i32, i64)>>
@@ -109,7 +109,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", poi
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   kgen.func @call_indirect(%fn: !pop.closure<(i32, i64) -> (f32, f64)>, %a: i32, %b: i64) -> (f32, f64) {
     // %[[CLOSURE:.*]] = builtin.unrealized_conversion_cast %arg0 : !pop.closure<(i32, i64) -> (f32, f64)> to !llvm.struct<(ptr, ptr)>
     // %[[WRAPPERFN:.*]] = llvm.extractvalue %[[CLOSURE]][0] : !llvm.struct<(ptr, ptr)>
@@ -126,7 +126,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", poi
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   kgen.func @call_indirect_closure(%arg0: (index, f32) -> index, %arg1 : f32, %arg2 : index) -> index {
     // CHECK: %[[FN:.*]] = builtin.unrealized_conversion_cast %arg0 : (index, f32) -> index to !llvm.ptr<func<i64 (i64, f32)>>
     // CHECK: %[[INDEX:.*]] = builtin.unrealized_conversion_cast %arg2 : index to i64
@@ -166,7 +166,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", poi
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @test_lifetimes
   kgen.func @test_lifetimes(%arg0: (index, f32) -> index, %arg1: f32, %cond: i1) -> () {
     // CHECK: %[[CALLEE:.*]] = builtin.unrealized_conversion_cast %arg0
@@ -196,7 +196,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", poi
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   kgen.func @test_name_collison(%fn0: (f32) -> (), %fn1: (f64) -> (), %arg0: f32, %arg1: f64) -> () {
     %0 = pop.partial_apply %fn0(%arg0) : (f32) -> ()
     %1 = pop.partial_apply %fn1(%arg1) : (f64) -> ()
@@ -209,7 +209,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", poi
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   kgen.func @nested_closures_basic(%closure: !pop.closure<(f32) -> f32>, %arg0: f32) -> () {
     // CHECK: %[[INNER_CLOSURE:.*]] = builtin.unrealized_conversion_cast %arg0 : !pop.closure<(f32) -> f32> to !llvm.struct<(ptr, ptr)>
     // CHECK: %[[OUTER_CLOSURE:.*]] = llvm.mlir.undef : !llvm.struct<(ptr, ptr)>

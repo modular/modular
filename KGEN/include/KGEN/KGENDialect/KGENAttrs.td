@@ -564,7 +564,7 @@ def KGEN_TargetParamAttr : KGEN_ExprAttr<"TargetParam", "target"> {
 
     ```mlir
     #kgen.target<triple="triple", cpu="cpu", features="features",
-                 pointer_bit_width=64, simd_bit_width=128>
+                 data_layout="p:32:32", simd_bit_width=128>
     ```
 
     Target types can be manipulated using target operators.
@@ -575,7 +575,7 @@ def KGEN_TargetParamAttr : KGEN_ExprAttr<"TargetParam", "target"> {
     kgen.generator @target_host<t0: target>()
         constraints <[eq(:target
             #kgen.target<triple="triple", cpu="cpu", features="features",
-                         pointer_bit_width=64, simd_bit_width=128>,
+                         data_layout="", simd_bit_width=128>,
             t0),
           "Must support the target!"
         ]> {

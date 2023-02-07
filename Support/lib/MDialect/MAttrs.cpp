@@ -9,7 +9,6 @@
 #include "Support/Compiler/MLIRDenseAttrStorage.h"
 #include "Support/Host.h"
 #include "Support/MDialect/MDialect.h"
-#include "Support/SIMD.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -18,7 +17,10 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Host.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
 #include <type_traits>
 
 using namespace M;
@@ -626,33 +628,290 @@ ShapedType AlignedBytesAttr::getType() const {
 }
 
 //===----------------------------------------------------------------------===//
+// DataLayout
+//===----------------------------------------------------------------------===//
+
+/// Construct the default data layout and then overwrite the entries when
+/// parsing the data layout string.
+DataLayout::DataLayout(StringRef dlSpecStr)
+    : intAbiAlign{{1, 1}, {8, 1}, {16, 2}, {32, 4}, {64, 4}},
+      fpAbiAlign{{16, 2}, {32, 4}, {64, 8}, {128, 16}}, vecAbiAlign{{64, 8},
+                                                                    {128, 16}},
+      ptrWidth(64), ptrAbiAlign(8), dlSpecStr(dlSpecStr) {}
+
+/// Checked version of split to ensure mandatory subparts.
+static ErrorOr<std::pair<StringRef, StringRef>> checkedSplit(StringRef str,
+                                                             char sep) {
+  assert(!str.empty() && "expected non-empty string");
+  std::pair<StringRef, StringRef> result = str.split(sep);
+  if (result.second.empty() && result.first != str)
+    return Error("trailing separator in datalayout string");
+  if (!result.second.empty() && result.first.empty())
+    return Error("expected token before separator in data layout string");
+  return result;
+}
+
+/// Get an integer, including error checks.
+static ErrorOr<int32_t> getInt(StringRef repr) {
+  int32_t result;
+  if (repr.getAsInteger(10, result))
+    return Error("not an integer");
+  return result;
+}
+
+/// Get an integer representing the number of bits and convert it into bytes.
+/// Error out of not a byte width multiple.
+static ErrorOr<int32_t> getIntInBytes(StringRef repr) {
+  ErrorOr<int32_t> result = getInt(repr);
+  if (result.isError())
+    return result.takeError();
+  if (*result % CHAR_BIT)
+    return Error("number of bits must be a byte width multiple");
+  return *result / CHAR_BIT;
+}
+
+ErrorOr<DataLayout> DataLayout::parse(StringRef desc) {
+  DataLayout dl(desc);
+  RETURN_ERROR(dl.parse());
+  return dl;
+}
+
+/// Set the ABI alignment in the data layout entry list, creating an entry or
+/// overwriting an existing entry.
+static void
+setABIAlignment(SmallVectorImpl<std::pair<int32_t, int32_t>> &entries,
+                int32_t size, int32_t abiAlign) {
+  auto it = llvm::partition_point(
+      entries, [&](const std::pair<int32_t, int32_t> &entry) {
+        return entry.first < size;
+      });
+  if (it != entries.end() && it->first == size) {
+    // Update the alignment in-place.
+    it->second = abiAlign;
+  } else {
+    // Perform a sorted insert.
+    entries.insert(it, {size, abiAlign});
+  }
+}
+
+/// Parse an LLVM data layout specifier. Drop information that our `DataLayout`
+/// specification does not track and take the information it needs. This is a
+/// copy of the LLVM data layout parser found in `llvm/lib/DataLayout.cpp`.
+///
+/// See also https://llvm.org/docs/LangRef.html#langref-datalayout.
+ErrorOrSuccess DataLayout::parse() {
+  StringRef desc = dlSpecStr;
+  std::pair<StringRef, StringRef> split;
+
+  while (!desc.empty()) {
+    // Split at '-'.
+    { UNWRAP_ERROR_OR_SET(split, checkedSplit(desc, '-')); }
+    desc = split.second;
+
+    // Split at ':'.
+    { UNWRAP_ERROR_OR_SET(split, checkedSplit(split.first, ':')); }
+
+    // Aliases used below.
+    StringRef &tok = split.first;   // Current token.
+    StringRef &rest = split.second; // The rest of the string.
+
+    if (tok == "ni") {
+      // Skip non-integral address spaces.
+      continue;
+    }
+
+    char specifier = tok.front();
+    tok = tok.substr(1);
+
+    switch (specifier) {
+    case 'E':
+    case 'e':
+      // Skip endianness.
+      break;
+    case 'p': {
+      // Address space.
+      unsigned addrSpace = 0;
+      if (!tok.empty()) {
+        UNWRAP_ERROR_OR_SET(addrSpace, getInt(tok));
+      }
+      if (addrSpace != 0) {
+        // Skip non-default address spaces.
+        break;
+      }
+
+      // Size.
+      if (rest.empty())
+        return Error("missing pointer size specification");
+      UNWRAP_ERROR_OR_SET(split, checkedSplit(rest, ':'));
+      UNWRAP_ERROR_OR_SET(ptrWidth, getInt(tok));
+      if (!ptrWidth)
+        return Error("invalid pointer size of 0 bytes");
+
+      // ABI alignment.
+      if (rest.empty())
+        return Error("missing pointer ABI alignment specification");
+      { UNWRAP_ERROR_OR_SET(split, checkedSplit(rest, ':')); }
+      UNWRAP_ERROR_OR_SET(ptrAbiAlign, getInt(tok));
+      if (!llvm::isPowerOf2_32(ptrAbiAlign))
+        return Error("pointer ABI alignment must be a power of 2");
+
+      // Skip pointer preferred alignment and index size.
+      break;
+    }
+    case 'i':
+    case 'v':
+    case 'f':
+    case 'a': {
+      if (specifier == 'a') {
+        // Skip aggregate specifier.
+        break;
+      }
+
+      // Bit size.
+      unsigned size = 0;
+      if (!tok.empty()) {
+        UNWRAP_ERROR_OR_SET(size, getInt(tok));
+      }
+
+      // ABI alignment.
+      if (rest.empty())
+        return Error("missing alignment specification");
+      UNWRAP_ERROR_OR_SET(split, checkedSplit(rest, ':'));
+      unsigned abiAlign;
+      UNWRAP_ERROR_OR_SET(abiAlign, getIntInBytes(tok));
+      if (!abiAlign)
+        return Error("ABI alignment specification cannot be zero");
+
+      if (!llvm::isPowerOf2_64(abiAlign))
+        return Error("ABI alignment must be a power of 2");
+      if (specifier == 'i' && size == 8 && abiAlign != 1)
+        return Error("i8 must be naturally aligned");
+
+      // Skip preferred alignment.
+
+      switch (specifier) {
+      case 'i':
+        setABIAlignment(intAbiAlign, size, abiAlign);
+        break;
+      case 'v':
+        setABIAlignment(fpAbiAlign, size, abiAlign);
+        break;
+      case 'f':
+        setABIAlignment(vecAbiAlign, size, abiAlign);
+        break;
+      default:
+        llvm_unreachable("unknown specifier");
+      }
+      break;
+    }
+    case 'n':
+      // Skip native integer types.
+      break;
+    case 'S':
+      // Skip stack natural alignment.
+      break;
+    case 'F':
+      // Skip function pointer alignment.
+      break;
+    case 'P':
+      // Skip function address space.
+      break;
+    case 'A':
+      // Skip default stack/alloca address space.
+      break;
+    case 'G':
+      // Skip default address space for global variables.
+      break;
+    case 'm':
+      // Skip mangling mode.
+      break;
+    default:
+      return Error("unknown specifier in data layout string");
+    }
+  }
+
+  if (intAbiAlign.empty())
+    return Error(
+        "data layout specification requires at least one integer entry");
+
+  return success();
+}
+
+namespace M {
+/// Provide the ability to hash data layout specifications.
+static llvm::hash_code hash_value(const DataLayout &dl) {
+  return hash_value(dl.toString());
+}
+
+/// Allow the attribute parser to print a data layout specification.
+static raw_ostream &operator<<(raw_ostream &os, const DataLayout &dl) {
+  return os << '"' << dl.toString() << '"';
+}
+
+/// Compare data layouts by their string specification. Note that multiple
+/// strings can produce the same data layout.
+static bool operator==(const DataLayout &lhs, const DataLayout &rhs) {
+  return lhs.toString() == rhs.toString();
+}
+} // namespace M
+
+int32_t DataLayout::getIntegerABIAlign(int32_t bitwidth) const {
+  // Binary search for a corresponding entry by bitwidth. This returns the first
+  // entry whose bitwidth is greater than or equal to the type bitwidth.
+  auto it = llvm::partition_point(
+      intAbiAlign, [&](const std::pair<int32_t, int32_t> &entry) {
+        return entry.first < bitwidth;
+      });
+  assert(!intAbiAlign.empty() && "expected at least one integer entry");
+
+  // Use the alignment of the next largest integer type. If there wasn't one,
+  // use the alignment of the largest integer type.
+  if (it == intAbiAlign.end())
+    --it;
+  return it->second;
+}
+
+int32_t DataLayout::getFloatABIAlign(int32_t bitwidth) const {
+  // Binary search for a corresponding entry by float bitwidth.
+  auto it = llvm::partition_point(
+      fpAbiAlign, [&](const std::pair<int32_t, int32_t> &entry) {
+        return entry.first < bitwidth;
+      });
+
+  // If we found an entry, use it.
+  if (it != intAbiAlign.end() && it->first == bitwidth)
+    return it->second;
+
+  // Otherwise, the default alignment is the power of 2 equal to or greater than
+  // the size rounded up to the nearest byte.
+  return llvm::PowerOf2Ceil(bitwidth / CHAR_BIT);
+}
+
+int32_t DataLayout::getVectorABIAlign(int32_t numElts,
+                                      int32_t eltBitWidth) const {
+  int32_t size = numElts * eltBitWidth;
+  // Binary search for a corresponding entry by vector bitwidth.
+  auto it = llvm::partition_point(
+      vecAbiAlign, [&](const std::pair<int32_t, int32_t> &entry) {
+        return entry.first < size;
+      });
+
+  // If we found an entry for the alignment of a vector of this size, use it.
+  if (it != intAbiAlign.end() && it->first == size)
+    return it->second;
+
+  // Otherwise, the default alignment is the power of 2 equal to or greater than
+  // the size rounded up to the nearest byte.
+  return llvm::PowerOf2Ceil(llvm::divideCeil(size, CHAR_BIT));
+}
+
+//===----------------------------------------------------------------------===//
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
 
 llvm::hash_code TargetInfoAttr::hash() const {
   return llvm::hash_combine(getTripleStr(), getCpu(), getFeatures(),
-                            getPointerBitWidth(), getSimdBitWidth());
-}
-
-TargetInfoAttr TargetInfoAttr::getForHost(MLIRContext *ctx) {
-  auto targetTriple = llvm::sys::getDefaultTargetTriple();
-
-  // Get the host CPU and set up to get the features.
-  std::string cpu(llvm::sys::getHostCPUName());
-  llvm::StringMap<bool> hostFeatures;
-
-  // Get the host features.
-  std::string featureStr;
-  llvm::raw_string_ostream os(featureStr);
-  if (llvm::sys::getHostCPUFeatures(hostFeatures)) {
-    llvm::interleave(
-        llvm::make_filter_range(hostFeatures, [](auto &f) { return f.second; }),
-        os, [&](auto &f) { os << '+' << f.first(); }, ",");
-  }
-
-  //  Return a TargetInfoAttr built for the host.
-  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu, os.str(),
-                             sizeof(void *) * 8, kPreferredSIMDBitWidth);
+                            getDataLayout().toString(), getSimdBitWidth());
 }
 
 /// The dialect attribute name used to attached target info to a module.
@@ -676,15 +935,6 @@ TargetInfoAttr M::lookupTargetInfo(Operation *from) {
   return getTargetInfo(module);
 }
 
-TargetInfoAttr M::getTargetInfoOrHost(ModuleOp module) {
-  TargetInfoAttr target = getTargetInfo(module);
-  if (!target) {
-    target = TargetInfoAttr::getForHost(module.getContext());
-    setTargetInfo(module, target);
-  }
-  return target;
-}
-
 namespace mlir {
 /// Allow target triples to be parsed by MLIR.
 template <>
@@ -694,6 +944,21 @@ struct FieldParser<llvm::Triple> {
     if (failed(p.parseString(&tripleStr)))
       return failure();
     return llvm::Triple(tripleStr);
+  }
+};
+
+/// Allow data layout specifications to be parsed.
+template <>
+struct FieldParser<M::DataLayout> {
+  static FailureOr<M::DataLayout> parse(AsmParser &p) {
+    std::string dlSpecStr;
+    llvm::SMLoc loc = p.getCurrentLocation();
+    if (failed(p.parseString(&dlSpecStr)))
+      return failure();
+    ErrorOr<M::DataLayout> dl = M::DataLayout::parse(dlSpecStr);
+    if (dl.isError())
+      return p.emitError(loc, dl.getError());
+    return dl.takeValue();
   }
 };
 } // namespace mlir
@@ -706,10 +971,8 @@ static hash_code hash_value(const llvm::Triple &triple) {
 
 /// Allow the attribute printer to print a target triple.
 static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
-  os << '"' << triple.normalize() << '"';
-  return os;
+  return os << '"' << triple.normalize() << '"';
 }
-
 } // namespace llvm
 
 //===----------------------------------------------------------------------===//

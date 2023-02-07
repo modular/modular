@@ -27,8 +27,8 @@ struct IntegerLayout
   /// The alignment of an integer type is its width in bytes rounded up to the
   /// nearest power of 2, but capped at the pointer width.
   Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
-    return std::min<int64_t>(llvm::PowerOf2Ceil(*getTypeSize(type, target)),
-                             target.getPointerWidth());
+    return target.getDataLayout().getIntegerABIAlign(
+        cast<IntegerType>(type).getWidth());
   }
 };
 
@@ -42,8 +42,8 @@ struct FloatLayout
   /// The alignment of a float type is its width in bytes rounded up to the
   /// nearest power of 2, but capped at the pointer width.
   Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
-    return std::min<int64_t>(llvm::PowerOf2Ceil(*getTypeSize(type, target)),
-                             target.getPointerWidth());
+    return target.getDataLayout().getFloatABIAlign(
+        cast<FloatType>(type).getWidth());
   }
 };
 
@@ -51,12 +51,13 @@ struct FunctionLayout
     : public DataLayoutInterface::ExternalModel<FunctionLayout, FunctionType> {
   /// The size of a function type is the pointer width.
   Optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
-    return target.getPointerWidth();
+    return llvm::divideCeil(target.getDataLayout().getPointerBitWidth(),
+                            CHAR_BIT);
   }
 
   /// The align of a function type is the pointer width.
   Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
-    return target.getPointerWidth();
+    return target.getDataLayout().getPointerABIAlign();
   }
 };
 
@@ -64,12 +65,13 @@ struct IndexLayout
     : public DataLayoutInterface::ExternalModel<IndexLayout, IndexType> {
   /// The size of an index type is the pointer width.
   Optional<int64_t> getTypeSize(Type type, TargetInfoAttr target) const {
-    return target.getPointerWidth();
+    return llvm::divideCeil(target.getDataLayout().getPointerBitWidth(),
+                            CHAR_BIT);
   }
 
   /// The align of an index type is the pointer width.
   Optional<int64_t> getTypeAlign(Type type, TargetInfoAttr target) const {
-    return target.getPointerWidth();
+    return target.getDataLayout().getPointerABIAlign();
   }
 };
 } // namespace

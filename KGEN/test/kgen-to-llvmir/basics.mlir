@@ -1,6 +1,6 @@
 // RUN: kgen-opt -split-input-file -emit-llvm %s | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: define internal float @trivial
 kgen.func @trivial(%arg0: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
