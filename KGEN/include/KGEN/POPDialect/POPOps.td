@@ -301,28 +301,6 @@ def POP_ShrOp : POP_ArithmeticBinaryOp<"shr"> {
 }
 
 //===----------------------------------------------------------------------===//
-// CopySignOp
-//===----------------------------------------------------------------------===//
-
-def POP_CopySignOp : POP_ArithmeticBinaryOp<"copysign"> {
-  let summary = "copy sign";
-  let description = [{
-    The `pop.copysign` operation takes two `!pop.simd` values of floating-point
-    dtype. The `pop.copysign` operation returns a value that has the sign of `b`
-    and the absolute value of `a`. The operand and result types must be the same
-    and must have a floating-point dtype.
-
-    Example:
-
-    ```mlir
-    %c = pop.copysign %a, %b : !pop.scalar<type>
-    %c = pop.copysign %a, %b : !pop.simd<size, type>
-    ```
-  }];
-  let arguments = (ins UnboundOrFloatSIMD:$lhs, UnboundOrFloatSIMD:$rhs);
-}
-
-//===----------------------------------------------------------------------===//
 // TernaryOp
 //===----------------------------------------------------------------------===//
 
@@ -800,82 +778,6 @@ def POP_SIMDReduceMinOp : POP_MetaSIMDReduceOp<"simd.reduce.min"> {
 }
 
 //===----------------------------------------------------------------------===//
-// SIMDGatherOp
-//===----------------------------------------------------------------------===//
-
-def POP_SIMDGatherOp : POPOp<"simd.gather", [
-    AllTypesMatch<["result", "passthrough"]>,
-    AddressSIMDOfSameSize<"passthrough", "base">,
-    BoolSIMDOfSameSize<"passthrough", "mask">]> {
-  let summary = "gathers values from the SIMD vector using the mask";
-  let description = [{
-    The `pop.simd.gather` reads scalar values from a SIMD vector of memory
-    locations and gathers them into one vector. The memory locations are
-    provided in the vector of pointers `base` as addresses. The memory is
-    accessed according to the provided mask. The mask holds a bit for each
-    vector lane, and is used to prevent memory accesses to the masked-off
-    lanes. The masked-off lanes in the result vector are taken from the
-    corresponding lanes of the `passthrough` operand.
-
-    The `pop.simd.gather` is designed for conditional reading of multiple
-    scalar values from arbitrary memory locations in a single IR operation. It
-    is useful for targets that support vector masked gathers and allows
-    vectorizing basic blocks with data and control divergence. Other targets
-    may support this intrinsic differently, for example by lowering it into a
-    sequence of scalar load operations. The semantics of this operation are
-    equivalent to a sequence of conditional scalar loads with subsequent
-    gathering all loaded values into a single vector. The mask restricts memory
-    access to certain lanes and facilitates vectorization of predicated basic
-    blocks.
-
-    Assuming that %base is a vector of pointers [p0, p1, p2, p3] and %mask is a
-    vector of i1 values [true, false, true, false], and the passthrough vector
-    is [d0, d1, d2, d3] then the following op:
-
-    ```mlir
-    %0 = pop.simd.gather %base[%mask], %passthrough : !pop.simd<4, type>
-    ```
-
-    is equivalent to the following sequence of scalar loads:
-
-    ```mlir
-    %0 = load %p0 : !pop.scalar<type>
-    %1 = load %p2 : !pop.scalar<type>
-    %c0 = kgen.param.constant: simd<4, si64> = <<0, 0, 0, 0>>
-    %2 = pop.cast %c0 : !pop.simd<4, si64> to !pop.simd<4, type>
-    %3 = pop.simd.insertelement %0, %2[0] : !pop.simd<4, type>
-    %4 = pop.simd.insertelement %d0, %3[1] : !pop.simd<4, type>
-    %5 = pop.simd.insertelement %1, %4[2] : !pop.simd<4, type>
-    %6 = pop.simd.insertelement %d3, %5[2] : !pop.simd<4, type>
-    ```
-
-    In general, for some vector of pointers %base, mask %mask, and passthrough
-    %pass instructions of the form:
-
-    ```mlir
-    %0 = pop.simd.gather %base[%mask], %passthrough : !pop.simd<N, type>
-    ```
-
-    is equivalent to the following sequence of scalar loads in C++:
-
-    ```cpp
-    for (int i = 0; i < N; i++)
-      result[i] = mask[i] ? *base[i] : passthrough[i];
-    ```
-  }];
-
-  let arguments = (ins Arg<AddressSIMD, "", [MemRead]>:$base,
-                       BoolSIMD:$mask,
-                       POP_SIMDType:$passthrough);
-  let results = (outs POP_SIMDType:$result);
-
-  let assemblyFormat = [{
-    $base `[` $mask `]` `,` $passthrough attr-dict `:`
-    qualified(type($passthrough))
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // SIMDScatterOp
 //===----------------------------------------------------------------------===//
 
@@ -904,7 +806,7 @@ def POP_SIMDScatterOp : POPOp<"simd.scatter", [
     %mask instructions of the form:
 
     ```mlir
-    %0 = pop.simd.gather %value, %base[%mask] : !pop.simd<N, type>
+    %0 = pop.simd.scatter %value, %base[%mask] : !pop.simd<N, type>
     ```
 
     is equivalent to the following sequence of scalar loads in C++:

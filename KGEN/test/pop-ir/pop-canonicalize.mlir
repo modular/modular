@@ -150,15 +150,6 @@ kgen.func @shr() -> (!pop.scalar<ui4>, !pop.scalar<si4>) {
   kgen.return %4, %5 : !pop.scalar<ui4>, !pop.scalar<si4>
 }
 
-// CHECK-LABEL: @copysign
-kgen.func @copysign() -> !pop.scalar<f32> {
-  // CHECK-NEXT: <"-1.25">
-  %0 = kgen.param.constant: scalar<f32> = <"1.25">
-  %1 = kgen.param.constant: scalar<f32> = <"-2">
-  %2 = pop.copysign %0, %1 : !pop.scalar<f32>
-  kgen.return %2 : !pop.scalar<f32>
-}
-
 // CHECK-LABEL: @fma
 kgen.func @fma() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
   // CHECK-DAG: <6>

@@ -939,27 +939,6 @@ struct ConvertPOPStore : mlir::ConvertOpToLLVMPattern<StoreOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPSIMDGather
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPSIMDGather : mlir::ConvertOpToLLVMPattern<SIMDGatherOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(SIMDGatherOp op, SIMDGatherOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Type type = getTypeConverter()->convertType(op.getType());
-    Type ptrType = LLVM::LLVMPointerType::get(
-        adaptor.getPassthrough().getType().cast<VectorType>().getElementType());
-    rewriter.replaceOpWithNewOp<LLVM::masked_gather>(
-        op, type, adaptor.getBase(), adaptor.getMask(),
-        adaptor.getPassthrough(),
-        getAlignment(getTypeConverter()->getDataLayout(), ptrType));
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPSIMDScatter
 //===----------------------------------------------------------------------===//
 
@@ -1464,8 +1443,6 @@ struct ConvertPOPStringSize
 using ConvertPOPAnd = mlir::OneToOneConvertToLLVMPattern<AndOp, LLVM::AndOp>;
 using ConvertPOPOr = mlir::OneToOneConvertToLLVMPattern<OrOp, LLVM::OrOp>;
 using ConvertPOPXOr = mlir::OneToOneConvertToLLVMPattern<XOrOp, LLVM::XOrOp>;
-using ConvertPOPCopySign =
-    mlir::OneToOneConvertToLLVMPattern<CopySignOp, LLVM::CopySignOp>;
 using ConvertPOPAdd =
     OneToOneFloatOrIntConversion<AddOp, LLVM::FAddOp, LLVM::AddOp>;
 using ConvertPOPSub =
@@ -1521,7 +1498,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPCastFromBuiltin,
       ConvertPOPCastToBuiltin,
       ConvertPOPCmp,
-      ConvertPOPCopySign,
       ConvertPOPDiv,
       ConvertPOPFMA,
       ConvertPOPIndexToPointer,
@@ -1543,7 +1519,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPShl,
       ConvertPOPShr,
       ConvertPOPSIMDExtractElement,
-      ConvertPOPSIMDGather,
       ConvertPOPSIMDInsertElement,
       ConvertPOPSIMDReduceAdd,
       ConvertPOPSIMDReduceMax,

@@ -352,13 +352,6 @@ OpFoldResult ShrOp::fold(FoldAdaptor adaptor) {
       });
 }
 
-OpFoldResult CopySignOp::fold(FoldAdaptor adaptor) {
-  auto operands = adaptor.getOperands();
-  return foldSIMDOp(operands, [](APFloat lhs, APFloat rhs) {
-    return rhs.isNegative() ? -llvm::abs(lhs) : llvm::abs(lhs);
-  });
-}
-
 //===----------------------------------------------------------------------===//
 // Ternary Operations
 
