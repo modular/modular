@@ -7,6 +7,7 @@
 #ifndef SUPPORT_MDIALECT_MATTRS_H
 #define SUPPORT_MDIALECT_MATTRS_H
 
+#include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/MDialect/MTypes.h"
 #include "mlir/IR/Attributes.h"
@@ -15,11 +16,95 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "llvm/ADT/Triple.h"
 
+namespace M {
+
+//===----------------------------------------------------------------------===//
+// DataLayout
+//===----------------------------------------------------------------------===//
+
+/// This class defines a data layout specification for "basic" data types:
+/// integers, floats, vectors, and pointers. It defines the bitwidth and ABI
+/// alignment of these types. All other types should implement
+/// `DataLayoutInterface`.
+///
+/// Bitwidth is determined as follows:
+///
+/// - Integers: Bitwidth is the integer bitwidth
+/// - Floats:   Bitwidth is the float bitwidth
+/// - Vectors:  Bitwidth is the number of elements times the element bitwidth
+/// - Pointers: Bitwidth is the width of integers in the default address space.
+///
+/// ABI alignment is determined as follows:
+///
+/// - Integers: The alignment specification array is searched for an entry that
+///             matches the bitwidth of the integer type. If one is not found,
+///             the alignment of the next largest integer type is used. This
+///             requires at least one integer type entry in the data layout
+///             specification.
+/// - Floats:   The alignment specification array is searched for an entry that
+///             matches the bitwidth of the float type. If one is not found, the
+///             alignment is taken as the bitwidth rounded up to the next byte
+///             and then the first power of two at or after that.
+/// - Vectors:  The alignment specification array is searched for an entry that
+///             matches the bitwidth of the vector type. If one is not found,
+///             the alignment is taken as the bitwidth rounded up to the next
+///             byte and then the first power of two at or after that.
+/// - Pointers: The alignment for pointers in the default address space is
+///             returned.
+///
+/// This class covers the minimum surface required to interoperate with LLVM's
+/// data layout. It should be expanded as required. The textual format is
+/// identical to LLVM's data layout specification.
+class DataLayout {
+public:
+  /// Get the default address space pointer bitwidth.
+  int32_t getPointerBitWidth() const { return ptrWidth; }
+  /// Get the bitwidth of a fixed vector type.
+  int32_t getVectorBitWidth(int32_t numElts, int32_t eltBitWidth) {
+    return numElts * eltBitWidth;
+  }
+
+  /// Get the ABI alignment of an integer type.
+  int32_t getIntegerABIAlign(int32_t bitwidth) const;
+  /// Get the ABI alignment of float type.
+  int32_t getFloatABIAlign(int32_t bitwidth) const;
+  /// Get the ABI alignment of a vector type.
+  int32_t getVectorABIAlign(int32_t numElts, int32_t eltBitWidth) const;
+  /// Get the default address space pointer ABI alignment.
+  int32_t getPointerABIAlign() const { return ptrAbiAlign; }
+
+  /// Attempt to parse a data layout from the specification string. Returns an
+  /// error if parsing failed.
+  static ErrorOr<DataLayout> parse(StringRef desc);
+  /// Convert the data layout to its specification string.
+  StringRef toString() const { return dlSpecStr; }
+
+private:
+  DataLayout(StringRef dlSpecStr);
+
+  /// Parse the data layout from its string specification.
+  ErrorOrSuccess parse();
+
+  /// The list of alignment entries for integers.
+  SmallVector<std::pair<int32_t, int32_t>> intAbiAlign;
+  /// The list of alignment entries for floats.
+  SmallVector<std::pair<int32_t, int32_t>> fpAbiAlign;
+  /// The list of alignment entries for vectors.
+  SmallVector<std::pair<int32_t, int32_t>> vecAbiAlign;
+  /// The pointer width.
+  int32_t ptrWidth;
+  /// The pointer ABI alignment.
+  int32_t ptrAbiAlign;
+
+  /// The underlying string representation.
+  std::string dlSpecStr;
+};
+
 //===----------------------------------------------------------------------===//
 // ArrayElementsAttr
 //===----------------------------------------------------------------------===//
 
-namespace M::detail {
+namespace detail {
 class AttrIterator
     : public llvm::indexed_accessor_iterator<AttrIterator, const uint8_t *,
                                              Attribute, Attribute, Attribute> {
@@ -33,7 +118,8 @@ private:
   /// The element type.
   Type elementType;
 };
-} // namespace M::detail
+} // namespace detail
+} // namespace M
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
@@ -228,9 +314,6 @@ void setTargetInfo(ModuleOp module, TargetInfoAttr target);
 /// Look for a target info specification in the nearest surrounding module from
 /// the provided operation. Returns null if one cannot be found.
 TargetInfoAttr lookupTargetInfo(Operation *from);
-/// Get the target specification from the module. If one is not present, assume
-/// the host target and attach the relevant target.
-TargetInfoAttr getTargetInfoOrHost(ModuleOp module);
 
 } // namespace M
 

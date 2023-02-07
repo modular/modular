@@ -232,7 +232,7 @@ def M_PointerAttr : MAttr<"Pointer", "pointer", [TypedAttrInterface]> {
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
+def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
   let summary = "Target configuration attribute.";
   let description = [{
     The `#M.target` attribute represents a compilation target configuration. It
@@ -243,7 +243,7 @@ def KGEN_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
 
     ```mlir
     #M.target<triple="arm64-apple-darwin21.6.0", cpu="apple-m1", features="",
-              pointer_bit_width=64, simd_bit_width=128>
+              data_layout="p:64:64-i64:64:64", simd_bit_width=128>
     ```
   }];
 
@@ -251,7 +251,8 @@ def KGEN_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     "llvm::Triple":$triple,
     StringRefParameter<"">:$cpu,
     StringRefParameter<"">:$features,
-    "int64_t":$pointer_bit_width,
+    AttrParameter<"DataLayout", "data layout", "const DataLayout &">:
+      $data_layout,
     "int64_t":$simd_bit_width
   );
 
@@ -275,14 +276,6 @@ def KGEN_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     StringRef getOS() const {
       return llvm::Triple::getOSTypeName(getTriple().getOS());
     }
-
-    /// Get the pointer width rounded up to the nearest byte.
-    int64_t getPointerWidth() const {
-      return llvm::divideCeil(getPointerBitWidth(), 8);
-    }
-
-    /// Get the host target configuration attribute.
-    static TargetInfoAttr getForHost(MLIRContext *ctx);
   }];
 }
 

@@ -1260,15 +1260,10 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
     return StringAttr::get(target.getTarget().getOS(), resultType);
   if (field.getValue() == "cpu")
     return StringAttr::get(target.getTarget().getCpu(), resultType);
+  if (field.getValue() == "simd_bit_width")
+    return b.getIndexAttr(target.getTarget().getSimdBitWidth());
 
-  std::optional<ssize_t> result =
-      llvm::StringSwitch<std::optional<ssize_t>>(field.getValue())
-          .Case("pointer_bit_width", target.getTarget().getPointerBitWidth())
-          .Case("simd_bit_width", target.getTarget().getSimdBitWidth())
-          .Default(std::nullopt);
-  if (!result)
-    return {};
-  return b.getIndexAttr(*result);
+  return {};
 }
 
 static Attribute simplifyBuildInfoGetField(SmallVectorImpl<TypedAttr> &operands,

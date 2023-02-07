@@ -18,6 +18,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENPasses.h"
+#include "KGEN/LowerToObject.h"
 #include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
@@ -2176,10 +2177,14 @@ struct ElaborateGeneratorsPass
     // IR, we must evaluate compile-time expressions, which is a target-specific
     // operation. Make the IR target-specific by attaching the required target
     // specification. For now, assume compilation for the host target.
-    auto target = TargetInfoAttr::getForHost(&getContext());
-    setTargetInfo(theModule, target);
+    ErrorOr<TargetInfoAttr> target = getHostTargetInfo(&getContext());
+    if (target.isError()) {
+      mlir::emitError(theModule.getLoc(), target.getError());
+      return signalPassFailure();
+    }
+    setTargetInfo(theModule, *target);
 
-    if (failed(elaborateGenerators(analysis, *rt, target, primaryGenerators,
+    if (failed(elaborateGenerators(analysis, *rt, *target, primaryGenerators,
                                    shouldDoSearch)))
       return signalPassFailure();
   }

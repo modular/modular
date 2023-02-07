@@ -13,8 +13,6 @@ add_modular_dialect_library(MDialect
   DEPENDS
   MLIRMIncGen
 
-  LINK_COMPONENTS
-
   LINK_LIBS PUBLIC
   LLVMTargetParser
   MLIRIR

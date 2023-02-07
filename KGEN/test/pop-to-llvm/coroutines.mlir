@@ -1,6 +1,6 @@
 // RUN: kgen-opt -pass-pipeline='builtin.module(lower-kgen-to-llvm, llvm.func(lower-coroutines, canonicalize))' %s | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: llvm.func @coroutine
 // CHECK-SAME: -> !llvm.ptr<i8>

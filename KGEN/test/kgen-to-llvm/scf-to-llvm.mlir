@@ -1,7 +1,7 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect -lower-kgen-to-llvm -lower-scf-to-llvm  -canonicalize | FileCheck %s
 // RUN: kgen-opt %s -allow-unregistered-dialect -lower-kgen-to-llvm -lower-scf-to-llvm | FileCheck %s --check-prefix=SWITCH
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
 
 llvm.func @get(i32) -> i32
 

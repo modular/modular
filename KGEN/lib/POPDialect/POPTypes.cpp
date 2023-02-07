@@ -154,16 +154,17 @@ PointerType PointerType::get(Type elementType) {
 }
 
 std::optional<int64_t> PointerType::getTypeSize(TargetInfoAttr target) const {
-  return target.getPointerWidth();
+  return llvm::divideCeil(target.getDataLayout().getPointerBitWidth(),
+                          CHAR_BIT);
 }
 
 std::optional<int64_t> PointerType::getTypeAlign(TargetInfoAttr target) const {
-  return target.getPointerWidth();
+  return target.getDataLayout().getPointerABIAlign();
 }
 
 ErrorOrSuccess PointerType::writeTo(TypedAttr value, intptr_t addr,
                                     InterpreterState &state) const {
-  int64_t size = state.getTarget().getPointerWidth();
+  int64_t size = *getTypeSize(state.getTarget());
   ErrorOr<void *> mem = state.getMemory(addr, size);
   if (mem.isError())
     return mem.takeError();
@@ -175,7 +176,7 @@ ErrorOrSuccess PointerType::writeTo(TypedAttr value, intptr_t addr,
 
 ErrorOr<TypedAttr> PointerType::readFrom(intptr_t addr,
                                          InterpreterState &state) const {
-  int64_t size = state.getTarget().getPointerWidth();
+  int64_t size = *getTypeSize(state.getTarget());
   ErrorOr<void *> mem = state.getMemory(addr, size);
   if (mem.isError())
     return mem.takeError();
@@ -231,7 +232,8 @@ std::optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
   switch (dtype->getValue()) {
   case KGENDType::address:
   case KGENDType::index:
-    return target.getPointerWidth() * *size;
+    return llvm::divideCeil(target.getDataLayout().getPointerBitWidth() * *size,
+                            CHAR_BIT);
   default:
     return dtype->getSizeInBytes(*size);
   }
@@ -484,7 +486,7 @@ Type VariantType::getType(unsigned index) {
 
 /// Compute the size in bytes of just the content section of a variant. The
 /// content field is the biggest element size rounded up to the nearest multiple
-/// of the pointer width.
+/// of the content element type size, which is i64.
 static std::optional<int64_t> computeVariantContentSize(VariantType type,
                                                         TargetInfoAttr target) {
   uint64_t maxSize = 0;
@@ -500,7 +502,7 @@ static std::optional<int64_t> computeVariantContentSize(VariantType type,
       return {};
     maxSize = std::max(maxSize, llvm::alignTo(*typeSize, *typeAlign));
   }
-  return llvm::alignTo(maxSize, target.getPointerWidth());
+  return llvm::alignTo(maxSize, target.getDataLayout().getIntegerABIAlign(64));
 }
 
 /// Get bitwidth of the integer used to represent the discriminator. The
@@ -524,13 +526,13 @@ std::optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
   if (!contentSize)
     return {};
   return llvm::alignTo(*contentSize + getVariantDiscrSize(*this),
-                       target.getPointerWidth());
+                       target.getDataLayout().getIntegerABIAlign(64));
 }
 
 std::optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {
   // The alignment of the variant type is just the pointer width.
   // FIXME: This is incorrect but the LLVM lowering needs to be fixed.
-  return target.getPointerWidth();
+  return target.getDataLayout().getIntegerABIAlign(64);
 }
 
 ErrorOrSuccess VariantType::writeTo(TypedAttr value, intptr_t addr,
@@ -617,12 +619,15 @@ VariadicType VariadicType::get(Type elementType) {
 /// the size of a pointer, plus the size of the size type (which has the same
 /// size and alignment as a pointer type).
 std::optional<int64_t> VariadicType::getTypeSize(TargetInfoAttr target) const {
-  return 2 * target.getPointerWidth();
+  return 2 * llvm::alignTo(
+                 llvm::divideCeil(target.getDataLayout().getPointerBitWidth(),
+                                  CHAR_BIT),
+                 target.getDataLayout().getPointerABIAlign());
 }
 
 /// The alignment of the variadic type is that its pointer and size.
 std::optional<int64_t> VariadicType::getTypeAlign(TargetInfoAttr target) const {
-  return target.getPointerWidth();
+  return target.getDataLayout().getPointerABIAlign();
 }
 
 //===----------------------------------------------------------------------===//
@@ -630,12 +635,13 @@ std::optional<int64_t> VariadicType::getTypeAlign(TargetInfoAttr target) const {
 //===----------------------------------------------------------------------===//
 
 std::optional<int64_t> CoroutineType::getTypeSize(TargetInfoAttr target) const {
-  return target.getPointerWidth();
+  return llvm::divideCeil(target.getDataLayout().getPointerBitWidth(),
+                          CHAR_BIT);
 }
 
 std::optional<int64_t>
 CoroutineType::getTypeAlign(TargetInfoAttr target) const {
-  return target.getPointerWidth();
+  return target.getDataLayout().getPointerABIAlign();
 }
 
 CoroutineType CoroutineType::get(SignatureType sig) {

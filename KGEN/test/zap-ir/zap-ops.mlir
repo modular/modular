@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s | FileCheck %s
 
-#target = #kgen.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128> : !kgen.target
+#target = #kgen.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // CHECK-LABEL: @zap_ndbuffer
 // CHECK-SAME: %[[NDBUFFER0:.*]]: !zap.ndbuffer<[4, 5, 3], f32>

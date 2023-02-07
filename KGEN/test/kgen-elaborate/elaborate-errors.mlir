@@ -174,7 +174,7 @@ kgen.generator @driver() {
 
 // -----
 
-#target = #kgen.target<triple="", cpu="", features="", pointer_bit_width=64, simd_bit_width=128> : !kgen.target
+#target = #kgen.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // expected-error @below {{no viable expansions found}}
 kgen.generator @sizeof_unknown() {

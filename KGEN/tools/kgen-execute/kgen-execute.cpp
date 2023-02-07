@@ -63,7 +63,14 @@ struct ProcessBuffer {
 
     // The IR module is being compiled to an object file. Find a target
     // specification or use the host target.
-    TargetInfoAttr target = getTargetInfoOrHost(*module);
+    TargetInfoAttr target = getTargetInfo(*module);
+    if (!target) {
+      ErrorOr<TargetInfoAttr> hostTarget = KGEN::getHostTargetInfo(ctx);
+      if (hostTarget.isError())
+        return mlir::emitError(module->getLoc(), hostTarget.getError());
+      target = hostTarget.takeValue();
+      setTargetInfo(*module, target);
+    }
 
     SymbolTable symtab(*module);
     auto compiler = KGEN::ObjectCompiler::create(runtime, ".kgen_cache", symtab,
