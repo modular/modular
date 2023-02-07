@@ -170,3 +170,75 @@ fn parallelize[
         let end = Int.min(start + chunk_size, size)
         func(start, end)
         start += chunk_size
+
+
+# ===----------------------------------------------------------------------===#
+# invoke
+# ===----------------------------------------------------------------------===#
+
+
+fn invoke(func: __mlir_type.`() -> ()`):
+    __mlir_op.`pop.call_indirect`[_type:[]](func)
+
+
+fn invoke(
+    func: __mlir_type.`() -> (!pop.pointer<scalar<si8>>)`,
+) -> __mlir_type.`!pop.pointer<scalar<si8>>`:
+    return __mlir_op.`pop.call_indirect`[
+        _type : [__mlir_type.`!pop.pointer<scalar<si8>>`]
+    ](func)
+
+
+fn invoke[
+    arg_type: __mlir_type.`!kgen.mlirtype`
+](func: __mlir_type[`(`, arg_type, `) -> ()`], arg: arg_type):
+    __mlir_op.`pop.call_indirect`[_type:[]](func, arg)
+
+
+fn invoke[
+    result_type: __mlir_type.`!kgen.mlirtype`,
+    arg_type: __mlir_type.`!kgen.mlirtype`,
+](
+    func: __mlir_type[`(`, arg_type, `) -> (`, result_type, `)`], arg: arg_type
+) -> result_type:
+    return __mlir_op.`pop.call_indirect`[_type:[result_type]](func, arg)
+
+
+fn invoke[
+    result_type: __mlir_type.`!kgen.mlirtype`,
+    arg1_type: __mlir_type.`!kgen.mlirtype`,
+    arg2_type: __mlir_type.`!kgen.mlirtype`,
+](
+    func: __mlir_type[
+        `(`, arg1_type, `,`, arg2_type, `) -> (`, result_type, `)`
+    ],
+    arg1: arg1_type,
+    arg2: arg2_type,
+) -> result_type:
+    return __mlir_op.`pop.call_indirect`[_type:[result_type]](func, arg1, arg2)
+
+
+fn invoke[
+    result_type: __mlir_type.`!kgen.mlirtype`,
+    arg1_type: __mlir_type.`!kgen.mlirtype`,
+    arg2_type: __mlir_type.`!kgen.mlirtype`,
+    arg3_type: __mlir_type.`!kgen.mlirtype`,
+](
+    func: __mlir_type[
+        `(`,
+        arg1_type,
+        `,`,
+        arg2_type,
+        `,`,
+        arg3_type,
+        `) -> (`,
+        result_type,
+        `)`,
+    ],
+    arg1: arg1_type,
+    arg2: arg2_type,
+    arg3: arg3_type,
+) -> result_type:
+    return __mlir_op.`pop.call_indirect`[_type:[result_type]](
+        func, arg1, arg2, arg3
+    )
