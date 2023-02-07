@@ -42,7 +42,7 @@ public:
 
   /// Deallocate the memory for one or more entries of type T.
   template <typename T>
-  void deallocate(T *ptr, size_t numElements) {
+  void deallocate(T *ptr, size_t numElements = 1) {
     deallocateBytes(ptr, sizeof(T) * numElements);
   }
 
@@ -89,6 +89,20 @@ createLeakCheckAllocator(std::unique_ptr<Allocator> baseAllocator);
 /// is destroyed.  This also performs leak checks.
 std::unique_ptr<Allocator>
 createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator);
+
+#if !defined(_WIN64) && !defined(_WIN32)
+#define HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
+#endif
+
+#if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
+/// Returns an allocator which will read/write protect every allocated
+/// block to detect use-after-free errors as soon as they occur
+/// (without depending on ASAN). Allocated blocks are freed only when
+/// the allocator is freed.
+///
+/// For use when ASAN build is not available. Expensive!
+std::unique_ptr<Allocator> createUseAfterFreeAllocator();
+#endif
 
 } // namespace M::LLCL
 

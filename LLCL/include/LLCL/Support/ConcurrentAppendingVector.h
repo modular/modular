@@ -12,6 +12,7 @@
 #ifndef LLCL_SUPPORT_CONCURRENT_APPENDING_VECTOR_H
 #define LLCL_SUPPORT_CONCURRENT_APPENDING_VECTOR_H
 
+#include <assert.h>
 #include <atomic>
 #include <cstdlib>
 #include <mutex>

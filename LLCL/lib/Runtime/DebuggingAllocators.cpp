@@ -10,10 +10,17 @@
 
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Support/Atomics.h"
+#include "LLCL/Support/ConcurrentAppendingVector.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <atomic>
+
+#if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
+#include <sys/mman.h>
+#endif
 
 using namespace M::LLCL;
 
@@ -113,3 +120,44 @@ std::unique_ptr<Allocator>
 M::LLCL::createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator) {
   return std::make_unique<ProfilingAllocator>(std::move(baseAllocator));
 }
+
+//===----------------------------------------------------------------------===//
+// UseAfterFree Allocator
+//===----------------------------------------------------------------------===//
+
+#if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
+
+namespace {
+class UseAfterFreeAllocator : public Allocator {
+public:
+  UseAfterFreeAllocator() : allocations(1024) {}
+
+  void *allocateBytes(size_t size, size_t alignment) override {
+    if (!size)
+      return nullptr;
+    void *ptr = mmap(nullptr, size, PROT_READ | PROT_WRITE,
+                     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    allocations.emplace_back(ptr, size);
+    return ptr;
+  }
+
+  void deallocateBytes(void *ptr, size_t size) override {
+    mprotect(ptr, size, PROT_NONE);
+  }
+
+  ~UseAfterFreeAllocator() override {
+    size_t size = allocations.size();
+    for (size_t i = 0; i < size; ++i)
+      munmap(allocations[i].first, allocations[i].second);
+  }
+
+private:
+  ConcurrentAppendingVector<std::pair<void *, size_t>> allocations;
+};
+} // namespace
+
+std::unique_ptr<Allocator> M::LLCL::createUseAfterFreeAllocator() {
+  return std::make_unique<UseAfterFreeAllocator>();
+}
+
+#endif
