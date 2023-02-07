@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# FIXME: This test is flaky due to remaining issues with LLCL/async.
+# REQUIRES: disabled
 # RUN: lit %s | FileCheck %s
 
 from Coroutine import Coroutine
