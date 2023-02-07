@@ -21,7 +21,7 @@ namespace M {
 class TelemetryContext {
 public:
   /// Initializes metrics
-  TelemetryContext();
+  TelemetryContext(bool enabled = false);
 
   opentelemetry::sdk::metrics::MeterProvider &getMetricsProvider() const;
 
