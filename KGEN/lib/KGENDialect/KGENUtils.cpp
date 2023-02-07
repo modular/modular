@@ -1001,11 +1001,14 @@ void KGEN::printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
 static ParseResult
 parseElementsWithMetadata(AsmParser &p, function_ref<ParseResult()> parseElt,
                           MetadataAttr &metadata) {
-  // Parse an element list with input effects.
+  // Parse an element list with input effects and default values.
   SmallVector<ValueInputConvention> inputConventions;
+  SmallVector<DefaultArgumentAttr> defaults;
   auto parseArg = [&]() -> ParseResult {
     if (parseElt())
       return failure();
+
+    size_t index = inputConventions.size();
     StringRef effectStr;
     llvm::SMLoc loc = p.getCurrentLocation();
     if (succeeded(p.parseOptionalKeyword(&effectStr))) {
@@ -1016,6 +1019,13 @@ parseElementsWithMetadata(AsmParser &p, function_ref<ParseResult()> parseElt,
         return p.emitError(loc, "expected 'byval' or 'byref' for input effect");
     } else {
       inputConventions.push_back(ValueInputConvention::ByVal);
+    }
+
+    if (succeeded(p.parseOptionalEqual())) {
+      TypedAttr value;
+      if (parseParamValueDefaultingToIndex(p, value))
+        return failure();
+      defaults.push_back(DefaultArgumentAttr::get(index, value));
     }
     return success();
   };
@@ -1040,7 +1050,11 @@ parseElementsWithMetadata(AsmParser &p, function_ref<ParseResult()> parseElt,
       break;
   }
 
-  metadata = MetadataAttr::get(p.getContext(), inputConventions, effect);
+  metadata = MetadataAttr::get(p.getContext(), inputConventions,
+                               defaults.empty() ? DefaultArgumentArrayAttr{}
+                                                : DefaultArgumentArrayAttr::get(
+                                                      p.getContext(), defaults),
+                               effect);
   return success();
 }
 
@@ -1054,6 +1068,19 @@ static void printElementsWithMetadata(AsmPrinter &p,
         printElt(it.index());
         if (it.value() != ValueInputConvention::ByVal)
           p << ' ' << stringifyValueInputConvention(it.value());
+
+        // If a default argument value has been provided for the argument at
+        // this index, print an `=`, followed by the value.
+        if (!metadata.getDefaultArguments())
+          return;
+        SmallDenseMap<int64_t, TypedAttr> defaultAttrs;
+        for (const DefaultArgumentAttr &def : metadata.getDefaultArguments())
+          defaultAttrs.insert({def.getIndex().getInt(), def.getValue()});
+        auto attr = defaultAttrs.find(it.index());
+        if (attr != defaultAttrs.end()) {
+          p << " = ";
+          printParamValue(p, attr->getSecond());
+        }
       });
   p << ')';
 

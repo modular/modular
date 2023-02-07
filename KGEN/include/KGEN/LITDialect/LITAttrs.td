@@ -80,40 +80,6 @@ def UnresolvedAliasValueAttr
 }
 
 //===----------------------------------------------------------------------===//
-// DefaultArgumentAttr
-//===----------------------------------------------------------------------===//
-
-def DefaultArgumentAttr : LITAttr<"DefaultArgument", "default.argument"> {
-  let summary = "A default argument, such as for a function.";
-  let description = [{
-    This attribute represents a default argument (such as for a function that
-    takes arguments), which is a pair of (1) the index of the argument with a
-    default value, and (2) the value that is used by default.
-  }];
-
-  let parameters = (ins "IntegerAttr":$index, "TypedAttr":$value);
-  let assemblyFormat = "`<` $index `=` $value `>`";
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "int64_t":$index,
-                                        "TypedAttr":$value), [{
-      auto *context = value.getContext();
-      return get(context, IntegerAttr::get(IndexType::get(context), index),
-                 value);
-    }]>,
-  ];
-
-  let genVerifyDecl = 1;
-}
-
-/// An array of DefaultArgumentAttr's.
-def DefaultArgumentArrayAttr
-    : ArrayOfAttr<LITDialect, "DefaultArgumentArray", "default.arguments",
-                  "DefaultArgumentAttr"> {
-  let genVerifyDecl = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // StructAttr
 //===----------------------------------------------------------------------===//
 

@@ -161,6 +161,7 @@ void OutlineClosuresPass::runOnOperation() {
           b.getAttr<ParamDeclArrayAttr>(necessaryDecls.getArrayRef()),
           bodySignature.getResultParams(), liftedValueSignature,
           b.getAttr<MetadataAttr>(liftedConventions,
+                                  bodySignature.getDefaultArguments(),
                                   bodySignature.getFnEffects()));
 
       // Now lift the body out into its own generator.

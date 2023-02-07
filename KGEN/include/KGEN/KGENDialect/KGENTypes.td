@@ -204,6 +204,11 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
       return getMetadata().getInputConventions();
     }
 
+    /// Get the function default arguments.
+    DefaultArgumentArrayAttr getDefaultArguments() {
+      return getMetadata().getDefaultArguments();
+    }
+
     /// Return true if the function throws.
     bool isThrows() {
       return bitEnumContainsAny(getFnEffects(), FnEffects::Throws);

@@ -272,28 +272,6 @@ Region *LIT::FuncOp::getCallableRegion() {
 
 ArrayRef<Type> LIT::FuncOp::getCallableResults() { return getResultTypes(); }
 
-/// Reject functions with default arguments whose type does not match the type
-/// of the argument they're specifying a default for.
-LogicalResult LIT::FuncOp::verify() {
-  std::optional<ArrayRef<DefaultArgumentAttr>> defaults = getDefaults();
-  if (!defaults)
-    return success();
-
-  SmallDenseMap<int64_t, TypedAttr> defaultAttrs;
-  for (const DefaultArgumentAttr &def : *defaults)
-    defaultAttrs.insert({def.getIndex().getInt(), def.getValue()});
-
-  for (auto [idx, arg] : llvm::enumerate(getArguments())) {
-    auto def = defaultAttrs.find(idx);
-    if (def != defaultAttrs.end() && arg.getType() != def->second.getType())
-      return emitError() << "argument #" << idx << " has type " << arg.getType()
-                         << " but default argument has type "
-                         << def->second.getType();
-  }
-
-  return success();
-}
-
 LogicalResult LIT::FuncOp::verifyRegions() {
   // Check that the number of argument labels matches the number of argument
   // types.

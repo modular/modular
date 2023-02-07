@@ -201,6 +201,40 @@ def ConstraintArrayAttr
     : KGEN_ArrayOfAttrsAttr<"ConstraintArray", "constraints", "ConstraintAttr">;
 
 //===----------------------------------------------------------------------===//
+// DefaultArgumentAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_DefaultArgumentAttr : KGENAttr<"DefaultArgument", "default.argument"> {
+  let summary = "A default argument value, such as for a function argument.";
+  let description = [{
+    This attribute represents a default argument value (such as for a function
+    that takes arguments), which is a pair of (1) the index of the argument with
+    a default value, and (2) the value that is used by default.
+  }];
+
+  let parameters = (ins "IntegerAttr":$index, "TypedAttr":$value);
+  let assemblyFormat = "`<` $index `=` $value `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "int64_t":$index,
+                                        "TypedAttr":$value), [{
+      auto *context = value.getContext();
+      return get(context, IntegerAttr::get(IndexType::get(context), index),
+                 value);
+    }]>,
+  ];
+
+  let genVerifyDecl = 1;
+}
+
+/// An array of DefaultArgumentAttr's.
+def KGEN_DefaultArgumentArrayAttr
+    : KGEN_ArrayOfAttrsAttr<"DefaultArgumentArray", "default.arguments",
+                  "DefaultArgumentAttr"> {
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // MetadataAttr
 //===----------------------------------------------------------------------===//
 
@@ -209,21 +243,31 @@ def KGEN_MetadataAttr : KGENAttr<"Metadata", "metadata"> {
   let description = [{
     The `#kgen.metadata` attribute contains additional information about a
     function, such as its argument calling conventions (pass-by-value or
-    pass-by-reference), and the effects of the function itself: none or throws.
+    pass-by-reference), any default argument values, and the effects of the
+    function itself: none or throws.
 
     Example:
 
     ```mlir
-    #kgen.metadata<[byval, byref], throws>
+    // Metadata specifying input argument #0 is taken by reference,
+    // argument #1 is taken by value and has a default value of `4.2`,
+    // and the function has a "throws" function effect.
+    #kgen.metadata<[byref, byval], [<1 : i64 = 4.2 : f32>], throws>
+
+    // Metadata specifying the default input value conventions, no default
+    // arguments, and a "throws" function effect.
+    #kgen.metadata<[], [], throws>
     ```
   }];
 
   let parameters = (ins
     OptionalArrayRefParameter<"ValueInputConvention">:$inputConventions,
+    OptionalParameter<"DefaultArgumentArrayAttr">:$defaultArguments,
     "FnEffects":$fnEffects
   );
   let assemblyFormat = [{
-    `<` `[` (`]`) : ($inputConventions^ `]`)? `,` $fnEffects `>`
+    `<` `[` (`]`) : ($inputConventions^ `]`)? `,` ($defaultArguments^ `,`)?
+    $fnEffects `>`
   }];
 
   /// These builders returns the default metadata: all input arguments are
