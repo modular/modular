@@ -3,7 +3,7 @@
 // RUN: system-info --query=arch | FileCheck %s --check-prefix=CHECK-ARCH
 // RUN: system-info --query=features | FileCheck %s --check-prefix=CHECK-FEATURES
 // RUN: system-info --query=core-count | FileCheck %s --check-prefix=CHECK-CORE-COUNT
-// RUN: system-info --query=simd-width | FileCheck %s --check-prefix=CHECK-SIMD-WIDTH
+// RUN: system-info --query=simd-bitwidth | FileCheck %s --check-prefix=CHECK-SIMD-WIDTH
 // RUN: system-info --query=l1-cache-size | FileCheck %s --check-prefix=CHECK-L1-CACHE-SIZE
 // RUN: system-info --query=l2-cache-size | FileCheck %s --check-prefix=CHECK-L2-CACHE-SIZE
 // RUN: system-info --query=l3-cache-size | FileCheck %s --check-prefix=CHECK-L3-CACHE-SIZE
