@@ -63,7 +63,7 @@ public:
     boundArgTypes.reserve(numBoundArgs);
 
     for (Value arg : op.getInputs()) {
-      Type ty = getTypeConverter()->convertType(arg.getType());
+      Type ty = convertType(arg.getType());
       if (!ty)
         return emitError(op.getLoc())
                << "could not convert bound argument type for argument " << arg
@@ -95,7 +95,7 @@ public:
     // new function
     ArrayRef<Type> closureFuncInputTys = op.getType().getFunc().getInputs();
     for (Type inpTy : closureFuncInputTys) {
-      Type ty = getTypeConverter()->convertType(inpTy);
+      Type ty = convertType(inpTy);
       if (!ty)
         return emitError(op.getLoc()) << "could not convert type " << inpTy;
       wrapperFnArgTypes.push_back(ty);
@@ -134,7 +134,7 @@ public:
       SmallVector<Type> inpTypes;
       inpTypes.push_back(erasedEnvPtrType);
       for (Type inpType : calleeType.getInputs()) {
-        Type ty = getTypeConverter()->convertType(inpType);
+        Type ty = convertType(inpType);
         if (!ty)
           return emitError(op.getLoc())
                  << "could not convert input type " << inpType;
@@ -304,8 +304,8 @@ private:
 // ConvertPOPCallIndirect
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPCallIndirect : mlir::ConvertOpToLLVMPattern<CallIndirectOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPCallIndirect : ConvertPOPToLLVMPattern<CallIndirectOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(CallIndirectOp op, CallIndirectOpAdaptor adaptor,
@@ -343,7 +343,7 @@ struct ConvertPOPCallIndirect : mlir::ConvertOpToLLVMPattern<CallIndirectOp> {
 
       auto calleeFuncTy = callee.getType().dyn_cast<ClosureType>().getFunc();
       for (Type argTy : calleeFuncTy.getInputs()) {
-        Type ty = getTypeConverter()->convertType(argTy);
+        Type ty = convertType(argTy);
         if (!ty)
           return emitError(op.getLoc())
                  << "could not convert argument type " << argTy;

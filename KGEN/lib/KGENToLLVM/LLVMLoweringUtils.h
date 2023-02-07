@@ -148,17 +148,32 @@ struct POPToLLVMDebugInfoTypeConverter
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertOpToLLVMPattern
+// ConvertPOPToLLVMPattern
 //===----------------------------------------------------------------------===//
 
-template <typename OpT>
-struct ConvertPOPToLLVMPattern : public mlir::ConvertOpToLLVMPattern<OpT> {
-  using mlir::ConvertOpToLLVMPattern<OpT>::ConvertOpToLLVMPattern;
-
+namespace detail {
+/// This is a wrapper class around `ConvertOpToLLVMPattern` that provides
+/// accessors to common lowering functions.
+struct ConvertPOPToLLVMPatternBase {
+  /// Get the type converter.
   POPToLLVMTypeConverter *getTypeConverter() const {
     return static_cast<POPToLLVMTypeConverter *>(
-        ConversionPattern::getTypeConverter());
+        reinterpret_cast<const ConversionPattern *>(this)->getTypeConverter());
   }
+
+  /// Convert a type. Return null if the type conversion failed.
+  Type convertType(Type type) const {
+    return getTypeConverter()->convertType(type);
+  }
+};
+} // namespace detail
+
+/// This is a templated instance of the wrapper class to rewrite a specific op.
+template <typename OpT>
+struct ConvertPOPToLLVMPattern : public mlir::ConvertOpToLLVMPattern<OpT>,
+                                 public detail::ConvertPOPToLLVMPatternBase {
+  using mlir::ConvertOpToLLVMPattern<OpT>::ConvertOpToLLVMPattern;
+  using ConvertPOPToLLVMPatternBase::getTypeConverter;
 };
 
 } // namespace M::KGEN
