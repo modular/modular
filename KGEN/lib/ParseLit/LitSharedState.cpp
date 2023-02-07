@@ -44,7 +44,7 @@ static std::optional<std::string> getStandardLibraryPath() {
 
   // Check if we already have the path set.
   if (auto envDir = llvm::sys::Process::GetEnv("MODULAR_PATH"))
-    return std::filesystem::path(*envDir) / "Kernels" / "lit-stdlib";
+    return (std::filesystem::path(*envDir) / "Kernels" / "lit-stdlib").string();
 
   // Otherwise, try to find modular relative to the current directory.
   std::filesystem::path path = std::filesystem::current_path();
