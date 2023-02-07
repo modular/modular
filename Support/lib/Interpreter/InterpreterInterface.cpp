@@ -50,7 +50,7 @@ ErrorOrSuccess InterpreterState::writeAttributeToMemory(intptr_t addr,
                                                         TypedAttr value) {
   if (isa<IntegerAttr, FloatAttr>(value)) {
     int64_t size =
-        *DataLayoutInterface::getTypeSizeInBytes(target, value.getType());
+        *DataLayoutInterface::getTypeStoreSize(target, value.getType());
     ErrorOr<void *> mem = getMemory(addr, size);
     if (mem.isError())
       return mem.takeError();
@@ -76,7 +76,7 @@ ErrorOrSuccess InterpreterState::writeAttributeToMemory(intptr_t addr,
 ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(intptr_t addr,
                                                              Type type) {
   if (isa<IndexType, IntegerType, FloatType>(type)) {
-    int64_t size = *DataLayoutInterface::getTypeSizeInBytes(target, type);
+    int64_t size = *DataLayoutInterface::getTypeStoreSize(target, type);
     ErrorOr<void *> mem = getMemory(addr, size);
     if (mem.isError())
       return mem.takeError();

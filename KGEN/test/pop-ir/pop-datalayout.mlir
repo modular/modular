@@ -1,6 +1,7 @@
 // RUN: kgen-opt %s | FileCheck %s
 
 #target = #kgen.target<triple="", cpu="", features="", data_layout="i64:64:64", simd_bit_width=128> : !kgen.target
+#i32_align8 = #kgen.target<triple="", cpu="", features="", data_layout="i32:64:64", simd_bit_width=128> : !kgen.target
 
 // CHECK-LABEL: @pop_sizeof_alignof
 kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
@@ -48,6 +49,8 @@ kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
   kgen.param.constant = <get_sizeof(!pop.struct<i8, i32, i64, i32>, #target)>
   // CHECK-NEXT: <4>
   kgen.param.constant = <get_alignof(!pop.struct<i8, i32, i16>, #target)>
+  // CHECK-NEXT: <16>
+  kgen.param.constant = <get_sizeof(!pop.struct<i32, i8>, #i32_align8)>
 
   // CHECK-NEXT: <16>
   kgen.param.constant = <get_sizeof(!pop.variant<i32, i16>, #target)>

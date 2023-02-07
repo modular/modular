@@ -751,7 +751,7 @@ ErrorOrSuccess DataLayout::parse() {
       if (rest.empty())
         return Error("missing pointer ABI alignment specification");
       { UNWRAP_ERROR_OR_SET(split, checkedSplit(rest, ':')); }
-      UNWRAP_ERROR_OR_SET(ptrAbiAlign, getInt(tok));
+      UNWRAP_ERROR_OR_SET(ptrAbiAlign, getIntInBytes(tok));
       if (!llvm::isPowerOf2_32(ptrAbiAlign))
         return Error("pointer ABI alignment must be a power of 2");
 

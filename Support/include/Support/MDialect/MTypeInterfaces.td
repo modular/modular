@@ -30,20 +30,26 @@ def DataLayoutInterface : TypeInterface<"DataLayoutInterface"> {
   let methods = [
     InterfaceMethod<
       /*desc=*/"Get the size in bytes of the type for the given target.",
-      "Optional<int64_t>", "getTypeSize", (ins "TargetInfoAttr":$target)>,
+      "std::optional<int64_t>", "getTypeSize", (ins "TargetInfoAttr":$target)>,
     InterfaceMethod<
       /*desc=*/"Get the alignment in bytes of the type for the given target.",
-      "Optional<int64_t>", "getTypeAlign", (ins "TargetInfoAttr":$target)>,
+      "std::optional<int64_t>", "getTypeAlign", (ins "TargetInfoAttr":$target)>,
   ];
 
   let extraClassDeclaration = [{
-    /// Try to get the size in bytes of the type.
-    static Optional<int64_t>
-    getTypeSizeInBytes(TargetInfoAttr target, Type type);
+    /// Get the store size of the type. This is the maximum number of bytes that
+    /// will be overwritten by a store of this type. It is equal to the type
+    /// bitwidth rounded up to the nearest byte.
+    static std::optional<int64_t>
+    getTypeStoreSize(TargetInfoAttr target, Type type);
+    /// Get the alloc size of the type. This is the number of bytes including
+    /// padding that are occupied by one element of this type.
+    static std::optional<int64_t>
+    getTypeAllocSize(TargetInfoAttr target, Type type);
 
-    /// Try to get the aligment in bytes of the type.
-    static Optional<int64_t>
-    getTypeAlignInBytes(TargetInfoAttr target, Type type);
+    /// Get the ABI alignment of the type in bytes.
+    static std::optional<int64_t>
+    getTypeABIAlign(TargetInfoAttr target, Type type);
   }];
 }
 
