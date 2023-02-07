@@ -43,14 +43,14 @@ namespace {
 /// or floating point LLVM operation one-to-one.
 template <typename Op, typename FloatOp, typename SIntOp,
           typename UIntOp = SIntOp>
-struct OneToOneFloatOrIntConversion : public mlir::ConvertOpToLLVMPattern<Op> {
-  using mlir::ConvertOpToLLVMPattern<Op>::ConvertOpToLLVMPattern;
+struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
+  using ConvertPOPToLLVMPattern<Op>::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(Op op, typename Op::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     KGENDType dtype = *op.getType().getResolvedDType();
-    Type type = this->getTypeConverter()->convertType(op.getType());
+    Type type = this->convertType(op.getType());
 
     if (dtype.isInt() || dtype.isIndex()) {
       if (std::is_same_v<SIntOp, UIntOp> || dtype.isSInt() || dtype.isIndex())
@@ -73,8 +73,8 @@ struct OneToOneFloatOrIntConversion : public mlir::ConvertOpToLLVMPattern<Op> {
 
 /// Convert an integer pop.neg(x) -> 0 - x
 /// and float pop.neg(x) -> llvm.fneg(x)
-struct ConvertPOPNeg : public mlir::ConvertOpToLLVMPattern<NegOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPNeg : public ConvertPOPToLLVMPattern<NegOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(NegOp op, NegOpAdaptor adaptor,
@@ -101,8 +101,8 @@ struct ConvertPOPNeg : public mlir::ConvertOpToLLVMPattern<NegOp> {
 //===----------------------------------------------------------------------===//
 
 /// Convert integer pop.abs x -> llvm.abs
-struct ConvertPOPAbs : public mlir::ConvertOpToLLVMPattern<AbsOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPAbs : public ConvertPOPToLLVMPattern<AbsOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(AbsOp op, AbsOpAdaptor adaptor,
@@ -129,8 +129,8 @@ struct ConvertPOPAbs : public mlir::ConvertOpToLLVMPattern<AbsOp> {
 
 /// Lower to `llvm.ashr` if the result dtype is signed and `llvm.lshr`
 /// otherwise.
-struct ConvertPOPShr : public mlir::ConvertOpToLLVMPattern<ShrOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPShr : public ConvertPOPToLLVMPattern<ShrOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(ShrOp op, ShrOpAdaptor adaptor,
@@ -152,8 +152,8 @@ struct ConvertPOPShr : public mlir::ConvertOpToLLVMPattern<ShrOp> {
 
 /// Convert integer pop.fma(x, y, z) -> x * y + z
 /// and float pop.fma(x, y, a) -> llvm.intr.fma(x, y, z)
-struct ConvertPOPFMA : public mlir::ConvertOpToLLVMPattern<FMAOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPFMA : public ConvertPOPToLLVMPattern<FMAOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(FMAOp op, FMAOpAdaptor adaptor,
@@ -174,9 +174,9 @@ struct ConvertPOPFMA : public mlir::ConvertOpToLLVMPattern<FMAOp> {
 // ConvertPOPCmp
 //===----------------------------------------------------------------------===//
 
-class ConvertPOPCmp : public mlir::ConvertOpToLLVMPattern<CmpOp> {
+class ConvertPOPCmp : public ConvertPOPToLLVMPattern<CmpOp> {
 public:
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(CmpOp op, CmpOpAdaptor adaptor,
@@ -248,8 +248,8 @@ private:
 // ConvertPOPCast
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPCast : public mlir::ConvertOpToLLVMPattern<CastOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPCast : public ConvertPOPToLLVMPattern<CastOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(CastOp op, CastOpAdaptor adaptor,
@@ -307,7 +307,7 @@ struct ConvertPOPCast : public mlir::ConvertOpToLLVMPattern<CastOp> {
     // Create the cast.
     OperationState state(op.getLoc(), opName);
     state.addOperands(adaptor.getInput());
-    state.addTypes(getTypeConverter()->convertType(op.getOutput().getType()));
+    state.addTypes(convertType(op.getOutput().getType()));
     Operation *cast = rewriter.create(state);
     rewriter.replaceOp(op, cast->getResults());
     return success();
@@ -327,8 +327,8 @@ private:
 
 /// Convert a SIMD splat to an `insertelement` into an `undef` and then a
 /// zero-initialized `shufflevector`.
-struct ConvertPOPSIMDSplat : public mlir::ConvertOpToLLVMPattern<SIMDSplatOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPSIMDSplat : public ConvertPOPToLLVMPattern<SIMDSplatOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(SIMDSplatOp op, SIMDSplatOpAdaptor adaptor,
@@ -341,8 +341,8 @@ struct ConvertPOPSIMDSplat : public mlir::ConvertOpToLLVMPattern<SIMDSplatOp> {
 
     SIMDType simdType = op.getType();
     int64_t size = *simdType.getResolvedSize();
-    Value undef = rewriter.create<LLVM::UndefOp>(
-        op.getLoc(), getTypeConverter()->convertType(simdType));
+    Value undef =
+        rewriter.create<LLVM::UndefOp>(op.getLoc(), convertType(simdType));
     Value zero = rewriter.create<LLVM::ConstantOp>(
         op.getLoc(), rewriter.getI32IntegerAttr(0));
     Value vector = rewriter.create<LLVM::InsertElementOp>(
@@ -359,8 +359,8 @@ struct ConvertPOPSIMDSplat : public mlir::ConvertOpToLLVMPattern<SIMDSplatOp> {
 //===----------------------------------------------------------------------===//
 
 struct ConvertPOPSIMDInsertElement
-    : public mlir::ConvertOpToLLVMPattern<SIMDInsertElementOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+    : public ConvertPOPToLLVMPattern<SIMDInsertElementOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(SIMDInsertElementOp op, SIMDInsertElementOpAdaptor adaptor,
@@ -371,8 +371,7 @@ struct ConvertPOPSIMDInsertElement
       return success();
     }
     rewriter.replaceOpWithNewOp<LLVM::InsertElementOp>(
-        op, getTypeConverter()->convertType(op.getType()),
-        adaptor.getOperands());
+        op, convertType(op.getType()), adaptor.getOperands());
     return success();
   }
 };
@@ -381,9 +380,8 @@ struct ConvertPOPSIMDInsertElement
 // ConvertPOPSIMDShuffle
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPSIMDShuffle
-    : public mlir::ConvertOpToLLVMPattern<SIMDShuffleOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPSIMDShuffle : public ConvertPOPToLLVMPattern<SIMDShuffleOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(SIMDShuffleOp op, SIMDShuffleOpAdaptor adaptor,
@@ -433,8 +431,8 @@ struct ConvertPOPSIMDShuffle
 //===----------------------------------------------------------------------===//
 
 struct ConvertPOPSIMDExtractElement
-    : public mlir::ConvertOpToLLVMPattern<SIMDExtractElementOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+    : public ConvertPOPToLLVMPattern<SIMDExtractElementOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(SIMDExtractElementOp op, SIMDExtractElementOpAdaptor adaptor,
@@ -445,7 +443,7 @@ struct ConvertPOPSIMDExtractElement
       return success();
     }
     rewriter.replaceOpWithNewOp<LLVM::ExtractElementOp>(
-        op, getTypeConverter()->convertType(op.getType()), adaptor.getVector(),
+        op, convertType(op.getType()), adaptor.getVector(),
         adaptor.getPosition());
     return success();
   }
@@ -455,8 +453,8 @@ struct ConvertPOPSIMDExtractElement
 // ConvertPOPOffset
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPOffset : public mlir::ConvertOpToLLVMPattern<OffsetOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPOffset : public ConvertPOPToLLVMPattern<OffsetOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(OffsetOp op, OffsetOpAdaptor adaptor,
@@ -474,11 +472,11 @@ struct ConvertPOPOffset : public mlir::ConvertOpToLLVMPattern<OffsetOp> {
 /// A `pop.stack_allocation` is lowered by converting it to an `llvm.alloca`
 /// with lifetime markers and hoisting it to the top of the enclosing function.
 class ConvertPOPStackAllocation
-    : public mlir::ConvertOpToLLVMPattern<StackAllocationOp> {
+    : public ConvertPOPToLLVMPattern<StackAllocationOp> {
 public:
   explicit ConvertPOPStackAllocation(mlir::LLVMTypeConverter &typeConverter,
                                      Block *body, TargetInfoAttr target)
-      : ConvertOpToLLVMPattern(typeConverter), body(body), target(target) {}
+      : ConvertPOPToLLVMPattern(typeConverter), body(body), target(target) {}
 
   LogicalResult
   matchAndRewrite(StackAllocationOp op, StackAllocationOpAdaptor adaptor,
@@ -527,7 +525,7 @@ static Value materializeLLVMAlloca(OpBuilder &b, Type allocaType, int64_t count,
 LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
     StackAllocationOp op, StackAllocationOpAdaptor adaptor,
     ConversionPatternRewriter &rewriter) const {
-  Type ptrType = getTypeConverter()->convertType(op.getType());
+  Type ptrType = convertType(op.getType());
   if (!ptrType)
     return op.emitError("could not lower pointer element type");
 
@@ -548,14 +546,13 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
 // ConvertPOPStructConstruct
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPStructConstruct
-    : mlir::ConvertOpToLLVMPattern<StructConstructOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPStructConstruct : ConvertPOPToLLVMPattern<StructConstructOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(StructConstructOp op, StructConstructOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Type structType = getTypeConverter()->convertType(op.getType());
+    Type structType = convertType(op.getType());
     if (!structType)
       return rewriter.notifyMatchFailure(op.getLoc(),
                                          "failed to convert struct type");
@@ -571,8 +568,8 @@ struct ConvertPOPStructConstruct
 // ConvertPOPStructReplace
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPStructReplace : mlir::ConvertOpToLLVMPattern<StructReplaceOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPStructReplace : ConvertPOPToLLVMPattern<StructReplaceOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(StructReplaceOp op, StructReplaceOpAdaptor adaptor,
@@ -593,8 +590,8 @@ struct ConvertPOPStructReplace : mlir::ConvertOpToLLVMPattern<StructReplaceOp> {
 // ConvertPOPStructGet
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPStructGet : mlir::ConvertOpToLLVMPattern<StructExtractOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPStructGet : ConvertPOPToLLVMPattern<StructExtractOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(StructExtractOp op, StructExtractOpAdaptor adaptor,
@@ -615,13 +612,13 @@ struct ConvertPOPStructGet : mlir::ConvertOpToLLVMPattern<StructExtractOp> {
 // ConvertPOPStructGEP
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPStructGEP : mlir::ConvertOpToLLVMPattern<POP::StructGEPOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPStructGEP : ConvertPOPToLLVMPattern<POP::StructGEPOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(POP::StructGEPOp op, POP::StructGEPOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Type ptrType = getTypeConverter()->convertType(op.getType());
+    Type ptrType = convertType(op.getType());
     if (!ptrType)
       return op.emitError("failed to convert result type");
     auto type = op.getContainer().getType().getElementTypeAs<StructType>();
@@ -641,14 +638,13 @@ struct ConvertPOPStructGEP : mlir::ConvertOpToLLVMPattern<POP::StructGEPOp> {
 // ConvertPOPArrayCreate
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPArrayCreate
-    : public mlir::ConvertOpToLLVMPattern<ArrayCreateOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPArrayCreate : public ConvertPOPToLLVMPattern<ArrayCreateOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(ArrayCreateOp op, ArrayCreateOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Type type = getTypeConverter()->convertType(op.getType());
+    Type type = convertType(op.getType());
     if (!type)
       return op.emitError("failed to convert array type");
 
@@ -665,14 +661,13 @@ struct ConvertPOPArrayCreate
 // ConvertPOPArrayRepeat
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPArrayRepeat
-    : public mlir::ConvertOpToLLVMPattern<ArrayRepeatOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPArrayRepeat : public ConvertPOPToLLVMPattern<ArrayRepeatOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(ArrayRepeatOp op, ArrayRepeatOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Type type = getTypeConverter()->convertType(op.getType());
+    Type type = convertType(op.getType());
     if (!type)
       return op.emitError("failed to convert array type");
 
@@ -696,8 +691,8 @@ struct ConvertPOPArrayRepeat
 // ConvertPOPArrayGet
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPArrayGet : public mlir::ConvertOpToLLVMPattern<ArrayGetOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPArrayGet : public ConvertPOPToLLVMPattern<ArrayGetOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(ArrayGetOp op, ArrayGetOpAdaptor adaptor,
@@ -712,9 +707,8 @@ struct ConvertPOPArrayGet : public mlir::ConvertOpToLLVMPattern<ArrayGetOp> {
 // ConvertPOPArrayReplace
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPArrayReplace
-    : public mlir::ConvertOpToLLVMPattern<ArrayReplaceOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPArrayReplace : public ConvertPOPToLLVMPattern<ArrayReplaceOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(ArrayReplaceOp op, ArrayReplaceOpAdaptor adaptor,
@@ -730,13 +724,13 @@ struct ConvertPOPArrayReplace
 // ConvertPOPArrayGEP
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPArrayGEP : public mlir::ConvertOpToLLVMPattern<ArrayGEPOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPArrayGEP : public ConvertPOPToLLVMPattern<ArrayGEPOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(ArrayGEPOp op, ArrayGEPOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Type ptrType = getTypeConverter()->convertType(op.getType());
+    Type ptrType = convertType(op.getType());
     if (!ptrType)
       return op.emitError("failed to convert result type");
     rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
@@ -767,8 +761,8 @@ static unsigned getAlignment(const llvm::DataLayout &dataLayout, Type ptrType,
 // ConvertPOPLoad
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPLoad : mlir::ConvertOpToLLVMPattern<LoadOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(LoadOp op, LoadOpAdaptor adaptor,
@@ -785,8 +779,8 @@ struct ConvertPOPLoad : mlir::ConvertOpToLLVMPattern<LoadOp> {
 // ConvertPOPStore
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPStore : mlir::ConvertOpToLLVMPattern<StoreOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(StoreOp op, StoreOpAdaptor adaptor,
@@ -803,8 +797,8 @@ struct ConvertPOPStore : mlir::ConvertOpToLLVMPattern<StoreOp> {
 // ConvertPOPSIMDScatter
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPSIMDScatter : mlir::ConvertOpToLLVMPattern<SIMDScatterOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPSIMDScatter : ConvertPOPToLLVMPattern<SIMDScatterOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(SIMDScatterOp op, SIMDScatterOpAdaptor adaptor,
@@ -822,8 +816,8 @@ struct ConvertPOPSIMDScatter : mlir::ConvertOpToLLVMPattern<SIMDScatterOp> {
 // ConvertPOPPrefetch
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPPrefetch : mlir::ConvertOpToLLVMPattern<PrefetchOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPPrefetch : ConvertPOPToLLVMPattern<PrefetchOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(PrefetchOp op, PrefetchOpAdaptor adaptor,
@@ -874,11 +868,11 @@ private:
 /// 3. A struct that holds the pointer to allocated sequence, and the number of
 ///    elements.
 class ConvertPOPVariadicCreate
-    : public mlir::ConvertOpToLLVMPattern<VariadicCreateOp> {
+    : public ConvertPOPToLLVMPattern<VariadicCreateOp> {
 public:
   explicit ConvertPOPVariadicCreate(mlir::LLVMTypeConverter &typeConverter,
                                     Block *body, TargetInfoAttr target)
-      : ConvertOpToLLVMPattern(typeConverter), body(body), target(target) {}
+      : ConvertPOPToLLVMPattern(typeConverter), body(body), target(target) {}
 
   LogicalResult
   matchAndRewrite(VariadicCreateOp op, VariadicCreateOpAdaptor adaptor,
@@ -903,7 +897,7 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
   if (!typeAllocSize || !typeABIAlign)
     return op.emitError("failed to get element type size and alignment");
 
-  Type elementType = getTypeConverter()->convertType(opElementType);
+  Type elementType = convertType(opElementType);
   if (!elementType)
     return op.emitError("failed to convert element type");
 
@@ -925,7 +919,7 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
 
   // 3. Replace the `pop.variadic.create` op with a struct containing the
   //    pointer & the size of the sequence.
-  Type structType = getTypeConverter()->convertType(op.getType());
+  Type structType = convertType(op.getType());
   if (!structType)
     return op.emitError("failed to convert variadic type");
   ImplicitLocOpBuilder b(op.getLoc(), rewriter);
@@ -946,9 +940,8 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
 
 /// Converts a `pop.variadic.get` into LLVM ops that load one of the elements of
 /// the underlying struct that represents the `!pop.variadic` type.
-struct ConvertPOPVariadicGet
-    : public mlir::ConvertOpToLLVMPattern<VariadicGetOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPVariadicGet : public ConvertPOPToLLVMPattern<VariadicGetOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(VariadicGetOp op, VariadicGetOpAdaptor adaptor,
@@ -968,9 +961,8 @@ struct ConvertPOPVariadicGet
 
 /// Converts a `pop.variadic.size` into LLVM ops that load the size member
 /// of the underlying struct representing the `!pop.varaidic` type.
-struct ConvertPOPVariadicSize
-    : public mlir::ConvertOpToLLVMPattern<VariadicSizeOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPVariadicSize : public ConvertPOPToLLVMPattern<VariadicSizeOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(VariadicSizeOp op, VariadicSizeOpAdaptor adaptor,
@@ -992,8 +984,8 @@ struct ConvertPOPVariantCreate
   LogicalResult
   matchAndRewrite(VariantCreateOp op, VariantCreateOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    auto variantType = dyn_cast_if_present<LLVM::LLVMStructType>(
-        getTypeConverter()->convertType(op.getType()));
+    auto variantType =
+        dyn_cast_if_present<LLVM::LLVMStructType>(convertType(op.getType()));
     if (!variantType)
       return failure();
 
@@ -1013,8 +1005,8 @@ struct ConvertPOPVariantCreate
 //===----------------------------------------------------------------------===//
 
 /// Lower `pop.variant.is` to an extract and integer compare.
-struct ConvertPOPVariantIs : public mlir::ConvertOpToLLVMPattern<VariantIsOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPVariantIs : public ConvertPOPToLLVMPattern<VariantIsOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(VariantIsOp op, VariantIsOpAdaptor adaptor,
@@ -1042,7 +1034,7 @@ struct ConvertPOPVariantGet : ConvertPOPToLLVMPattern<VariantGetOp> {
   LogicalResult
   matchAndRewrite(VariantGetOp op, VariantGetOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Type valueType = getTypeConverter()->convertType(op.getType());
+    Type valueType = convertType(op.getType());
     if (!valueType)
       return failure();
     auto variantType =
@@ -1074,8 +1066,8 @@ struct ConvertPOPVariantGet : ConvertPOPToLLVMPattern<VariantGetOp> {
 // ConvertPOPCastToBuiltin
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPCastToBuiltin : mlir::ConvertOpToLLVMPattern<CastToBuiltinOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPCastToBuiltin : ConvertPOPToLLVMPattern<CastToBuiltinOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(CastToBuiltinOp op, CastToBuiltinOpAdaptor adaptor,
@@ -1089,9 +1081,8 @@ struct ConvertPOPCastToBuiltin : mlir::ConvertOpToLLVMPattern<CastToBuiltinOp> {
 // ConvertPOPCastFromBuiltin
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPCastFromBuiltin
-    : mlir::ConvertOpToLLVMPattern<CastFromBuiltinOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPCastFromBuiltin : ConvertPOPToLLVMPattern<CastFromBuiltinOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(CastFromBuiltinOp op, CastFromBuiltinOpAdaptor adaptor,
@@ -1105,8 +1096,8 @@ struct ConvertPOPCastFromBuiltin
 // ConvertPOPMemcpy
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPMemcpy : mlir::ConvertOpToLLVMPattern<MemcpyOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPMemcpy : ConvertPOPToLLVMPattern<MemcpyOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(MemcpyOp op, MemcpyOpAdaptor adaptor,
@@ -1129,8 +1120,8 @@ struct ConvertPOPMemcpy : mlir::ConvertOpToLLVMPattern<MemcpyOp> {
 // ConvertPOPMemset
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPMemset : mlir::ConvertOpToLLVMPattern<MemsetOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPMemset : ConvertPOPToLLVMPattern<MemsetOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(MemsetOp op, MemsetOpAdaptor adaptor,
@@ -1148,8 +1139,8 @@ struct ConvertPOPMemset : mlir::ConvertOpToLLVMPattern<MemsetOp> {
 // ConvertPOPInlineAsm
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPInlineAsm : mlir::ConvertOpToLLVMPattern<InlineAsmOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(InlineAsmOp op, InlineAsmOpAdaptor adaptor,
@@ -1192,14 +1183,14 @@ static LLVM::AtomicOrdering getAtomicOrdering(AtomicOrdering ordering) {
 }
 
 class ConvertPOPAtomicCmpXchg
-    : public mlir::ConvertOpToLLVMPattern<AtomicCmpXchgOp> {
+    : public ConvertPOPToLLVMPattern<AtomicCmpXchgOp> {
 public:
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(AtomicCmpXchgOp op, AtomicCmpXchgOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Type type = getTypeConverter()->convertType(op.getType());
+    Type type = convertType(op.getType());
     rewriter.replaceOpWithNewOp<LLVM::AtomicCmpXchgOp>(
         op, type, adaptor.getPtr(), adaptor.getCmp(), adaptor.getVal(),
         getAtomicOrdering(op.getSuccessOrdering()),
@@ -1212,15 +1203,15 @@ public:
 // ConvertPOPAtomicRMW
 //===----------------------------------------------------------------------===//
 
-class ConvertPOPAtomicRMW : public mlir::ConvertOpToLLVMPattern<AtomicRMWOp> {
+class ConvertPOPAtomicRMW : public ConvertPOPToLLVMPattern<AtomicRMWOp> {
 public:
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(AtomicRMWOp op, AtomicRMWOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     KGENDType dtype = *cast<SIMDType>(op.getType()).getResolvedDType();
-    Type type = getTypeConverter()->convertType(op.getType());
+    Type type = convertType(op.getType());
     rewriter.replaceOpWithNewOp<LLVM::AtomicRMWOp>(
         op, type, getAtomicBinOp(dtype, adaptor.getBinOp()), adaptor.getPtr(),
         adaptor.getVal(), getAtomicOrdering(op.getOrdering()));
@@ -1258,8 +1249,8 @@ private:
 //===----------------------------------------------------------------------===//
 
 struct ConvertPOPStringAddress
-    : public mlir::ConvertOpToLLVMPattern<StringAddressOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+    : public ConvertPOPToLLVMPattern<StringAddressOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(StringAddressOp op, StringAddressOpAdaptor adaptor,
@@ -1279,9 +1270,8 @@ struct ConvertPOPStringAddress
 // ConvertPOPStringAddress
 //===----------------------------------------------------------------------===//
 
-struct ConvertPOPStringSize
-    : public mlir::ConvertOpToLLVMPattern<StringSizeOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertPOPStringSize : public ConvertPOPToLLVMPattern<StringSizeOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(StringSizeOp op, StringSizeOpAdaptor adaptor,
@@ -1504,12 +1494,11 @@ namespace {
 //===----------------------------------------------------------------------===//
 
 /// Lower an external call. Add the callee to the symbol table.
-class ConvertPOPExternalCall
-    : public mlir::ConvertOpToLLVMPattern<ExternalCallOp> {
+class ConvertPOPExternalCall : public ConvertPOPToLLVMPattern<ExternalCallOp> {
 public:
   ConvertPOPExternalCall(SymbolTable &symtab,
                          mlir::LLVMTypeConverter &typeConverter)
-      : ConvertOpToLLVMPattern(typeConverter), symtab(symtab) {}
+      : ConvertPOPToLLVMPattern(typeConverter), symtab(symtab) {}
 
   LogicalResult
   matchAndRewrite(ExternalCallOp op, ExternalCallOpAdaptor adaptor,
@@ -1570,7 +1559,7 @@ public:
       // If the constant doesn't exist, create it and insert it in the module.
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.clearInsertionPoint();
-      Type type = getTypeConverter()->convertType(op.getType());
+      Type type = convertType(op.getType());
       if (!type)
         return rewriter.notifyMatchFailure(
             op.getLoc(), "failed to convert constant result type");

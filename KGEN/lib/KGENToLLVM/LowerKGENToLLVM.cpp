@@ -36,11 +36,11 @@ namespace {
 /// This pattern is used to rewrite symbol operations while keeping the symbol
 /// table up-to-date.
 template <typename OpT>
-class ConvertSymbolOpToLLVM : public mlir::ConvertOpToLLVMPattern<OpT> {
+class ConvertSymbolOpToLLVM : public ConvertPOPToLLVMPattern<OpT> {
 public:
   ConvertSymbolOpToLLVM(mlir::LLVMTypeConverter &typeConverter,
                         SymbolTable &symtab)
-      : mlir::ConvertOpToLLVMPattern<OpT>(typeConverter), symtab(symtab) {}
+      : ConvertPOPToLLVMPattern<OpT>(typeConverter), symtab(symtab) {}
 
 protected:
   /// The symbol table.
@@ -151,8 +151,8 @@ struct ConvertKGENExternVariable
 // ConvertKGENAddressOf
 //===----------------------------------------------------------------------===//
 
-struct ConvertKGENAddressOf : public mlir::ConvertOpToLLVMPattern<AddressOfOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertKGENAddressOf : public ConvertPOPToLLVMPattern<AddressOfOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(AddressOfOp op, AddressOfOpAdaptor adaptor,
@@ -171,8 +171,8 @@ struct ConvertKGENAddressOf : public mlir::ConvertOpToLLVMPattern<AddressOfOp> {
 //===----------------------------------------------------------------------===//
 
 /// Convert `kgen.call` to `llvm.call`, unpacking results if necessary.
-struct ConvertKGENCall : public mlir::ConvertOpToLLVMPattern<CallOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertKGENCall : public ConvertPOPToLLVMPattern<CallOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(CallOp op, CallOpAdaptor adaptor,
@@ -217,8 +217,8 @@ struct ConvertKGENCall : public mlir::ConvertOpToLLVMPattern<CallOp> {
 //===----------------------------------------------------------------------===//
 
 /// Convert `kgen.return` to `llvm.return`, packing the results if necessary.
-struct ConvertKGENReturn : public mlir::ConvertOpToLLVMPattern<ReturnOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertKGENReturn : public ConvertPOPToLLVMPattern<ReturnOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(ReturnOp op, ReturnOpAdaptor adaptor,
@@ -233,8 +233,8 @@ struct ConvertKGENReturn : public mlir::ConvertOpToLLVMPattern<ReturnOp> {
 //===----------------------------------------------------------------------===//
 
 /// Convert `hlcf.return` here as well to maintain correctness.
-struct ConvertHLCFReturn : public mlir::ConvertOpToLLVMPattern<HLCF::ReturnOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+struct ConvertHLCFReturn : public ConvertPOPToLLVMPattern<HLCF::ReturnOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
   matchAndRewrite(HLCF::ReturnOp op, HLCF::ReturnOpAdaptor adaptor,
