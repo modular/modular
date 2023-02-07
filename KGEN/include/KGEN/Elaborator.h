@@ -39,7 +39,6 @@ resolveIncludes(SymbolTable &symtab,
 LogicalResult elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
                                   LLCL::Runtime &runtime, TargetInfoAttr target,
                                   ArrayRef<KGEN::GeneratorOp> generators,
-                                  bool useOldImpl = false,
                                   bool enableSearch = false);
 
 } // namespace M
