@@ -62,6 +62,12 @@ fn test_mandelbrot_iter():
     # CHECK: 3
     print(mandelbrot_iter(100, 100))
 
+    let re = SIMD[1, DType.si32.value].splat(3)
+    let im = SIMD[1, DType.si32.value].splat(4)
+    let z = Complex[1, DType.si32.value](re, im)
+    # CHECK: 25
+    print(z.norm().value)
+
 
 fn main() -> Int:
     test_mandelbrot_iter()
