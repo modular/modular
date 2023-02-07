@@ -341,7 +341,7 @@ void VerifyingParameterCollector::verifySymbolConstantAttr(
   auto declSignature = SignatureType::get(
       ParamDeclArrayAttr::get(func.getContext(), inputParams),
       ParamDeclArrayAttr::get(func.getContext(), func.getResultParams()),
-      func.getSignature().getValues(), func.getConventions());
+      func.getSignature().getValues(), func.getMetadata());
 
   // If this SymbolConstant binds the parameters for the symbol, then remap its
   // signature to include the substitutions.

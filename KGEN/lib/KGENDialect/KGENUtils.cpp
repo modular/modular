@@ -189,13 +189,12 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
   }
 
   // Helper for building (and checking) a Signature type.
-  auto returnSignatureType = [&](ParamDeclArrayAttr inputParams,
-                                 ParamDeclArrayAttr resultParams,
-                                 FunctionType valuesType,
-                                 ConventionsAttr conventions) -> LogicalResult {
+  auto returnSignatureType =
+      [&](ParamDeclArrayAttr inputParams, ParamDeclArrayAttr resultParams,
+          FunctionType valuesType, MetadataAttr metadata) -> LogicalResult {
     type = SignatureType::getChecked([&] { return parser.emitError(typeLoc); },
                                      parser.getContext(), inputParams,
-                                     resultParams, valuesType, conventions);
+                                     resultParams, valuesType, metadata);
     return success(!!type);
   };
 
@@ -211,12 +210,12 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
       return failure();
     }
     SmallVector<Type> inputs, outputs;
-    ConventionsAttr conventions;
-    if (parseTypesWithConventions(parser, inputs, outputs, conventions))
+    MetadataAttr metadata;
+    if (parseTypesWithMetadata(parser, inputs, outputs, metadata))
       return failure();
     return returnSignatureType(
         inputParams, resultParams,
-        parser.getBuilder().getFunctionType(inputs, outputs), conventions);
+        parser.getBuilder().getFunctionType(inputs, outputs), metadata);
   }
 
   if (failed(parser.parseType(type)))
@@ -225,12 +224,13 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
   // We accept function type syntax as sugar for a SignatureType without
   // parameters.
   if (auto valuesType = dyn_cast<FunctionType>(type)) {
-    // Default to empty input/result parameters and no conventions.
+    // Default to empty input/result parameters and pass-by-value argument
+    // conventions.
     auto noInputParams = ParamDeclArrayAttr::get(parser.getContext(), {});
     auto noResultParams = ParamDeclArrayAttr::get(parser.getContext(), {});
     return returnSignatureType(
         noInputParams, noResultParams, valuesType,
-        ConventionsAttr::get(parser.getContext(), valuesType.getNumInputs()));
+        MetadataAttr::get(parser.getContext(), valuesType.getNumInputs()));
   }
 
   return success();
@@ -252,7 +252,7 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
     // function type to keep things concise.
     if (signature.getInputParams().empty() &&
         signature.getResultParams().empty()) {
-      if (signature.getConventions().isDefault()) {
+      if (signature.getMetadata().isDefault()) {
         p << signature.getValues();
         return;
       }
@@ -263,9 +263,9 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
     // Otherwise print it as "p1, p2 -> r3, () -> ())"
     printOptionalParameterSpec(p, signature.getInputParams(),
                                signature.getResultParams());
-    printTypesWithConventions(p, signature.getValueInputs(),
-                              signature.getValueResults(),
-                              signature.getConventions());
+    printTypesWithMetadata(p, signature.getValueInputs(),
+                           signature.getValueResults(),
+                           signature.getMetadata());
   } else {
     p << type;
   }
@@ -997,10 +997,10 @@ void KGEN::printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
 // Logic shared between funcs, generators, and generator interfaces
 //===----------------------------------------------------------------------===//
 
-/// Parse an argument or type list with optional conventions.
+/// Parse an argument or type list with optional metadata.
 static ParseResult
-parseElementsWithConventions(AsmParser &p, function_ref<ParseResult()> parseElt,
-                             ConventionsAttr &conventions) {
+parseElementsWithMetadata(AsmParser &p, function_ref<ParseResult()> parseElt,
+                          MetadataAttr &metadata) {
   // Parse an element list with input effects.
   SmallVector<ValueInputConvention> inputConventions;
   auto parseArg = [&]() -> ParseResult {
@@ -1040,17 +1040,17 @@ parseElementsWithConventions(AsmParser &p, function_ref<ParseResult()> parseElt,
       break;
   }
 
-  conventions = ConventionsAttr::get(p.getContext(), inputConventions, effect);
+  metadata = MetadataAttr::get(p.getContext(), inputConventions, effect);
   return success();
 }
 
-/// Print an argument or type list with optional conventions.
-static void printElementsWithConventions(AsmPrinter &p,
-                                         function_ref<void(unsigned)> printElt,
-                                         ConventionsAttr conventions) {
+/// Print an argument or type list with optional metadata.
+static void printElementsWithMetadata(AsmPrinter &p,
+                                      function_ref<void(unsigned)> printElt,
+                                      MetadataAttr metadata) {
   p << '(';
   llvm::interleaveComma(
-      llvm::enumerate(conventions.getInputConventions()), p, [&](auto it) {
+      llvm::enumerate(metadata.getInputConventions()), p, [&](auto it) {
         printElt(it.index());
         if (it.value() != ValueInputConvention::ByVal)
           p << ' ' << stringifyValueInputConvention(it.value());
@@ -1058,13 +1058,13 @@ static void printElementsWithConventions(AsmPrinter &p,
   p << ')';
 
   // Print the function effects.
-  if (conventions.getFnEffects() != FnEffects::None)
-    p << ' ' << stringifyFnEffects(conventions.getFnEffects());
+  if (metadata.getFnEffects() != FnEffects::None)
+    p << ' ' << stringifyFnEffects(metadata.getFnEffects());
 }
 
 ParseResult KGEN::parseFunctionSignature(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
-    SmallVectorImpl<Type> &resultTypes, ConventionsAttr &conventions) {
+    SmallVectorImpl<Type> &resultTypes, MetadataAttr &metadata) {
   // Parse the argument list with input effects.
   auto parseArg = [&]() -> ParseResult {
     OptionalParseResult result =
@@ -1074,7 +1074,7 @@ ParseResult KGEN::parseFunctionSignature(
     return p.parseType(args.back().type);
   };
 
-  if (parseElementsWithConventions(p, parseArg, conventions) ||
+  if (parseElementsWithMetadata(p, parseArg, metadata) ||
       p.parseOptionalArrowTypeList(resultTypes))
     return failure();
   return success();
@@ -1082,7 +1082,7 @@ ParseResult KGEN::parseFunctionSignature(
 
 void KGEN::printFunctionSignature(OpAsmPrinter &p, Region &region,
                                   TypeRange argTypes, TypeRange resultTypes,
-                                  ConventionsAttr conventions,
+                                  MetadataAttr metadata,
                                   StringArrayAttr valueParamNames) {
   // Print the function arguments.
   auto printElt = [&](unsigned i) {
@@ -1092,7 +1092,7 @@ void KGEN::printFunctionSignature(OpAsmPrinter &p, Region &region,
     else
       p.printRegionArgument(region.getArgument(i));
   };
-  printElementsWithConventions(p, printElt, conventions);
+  printElementsWithMetadata(p, printElt, metadata);
 
   // Print the function results.
   if (resultTypes.empty())
@@ -1107,12 +1107,12 @@ void KGEN::printFunctionSignature(OpAsmPrinter &p, Region &region,
   p << ')';
 }
 
-ParseResult KGEN::parseTypesWithConventions(AsmParser &p,
-                                            SmallVectorImpl<Type> &operandTypes,
-                                            SmallVectorImpl<Type> &resultTypes,
-                                            ConventionsAttr &conventions) {
+ParseResult KGEN::parseTypesWithMetadata(AsmParser &p,
+                                         SmallVectorImpl<Type> &operandTypes,
+                                         SmallVectorImpl<Type> &resultTypes,
+                                         MetadataAttr &metadata) {
   auto parseElt = [&] { return p.parseType(operandTypes.emplace_back()); };
-  if (parseElementsWithConventions(p, parseElt, conventions) || p.parseArrow())
+  if (parseElementsWithMetadata(p, parseElt, metadata) || p.parseArrow())
     return failure();
   if (failed(p.parseOptionalLParen()))
     return p.parseType(resultTypes.emplace_back());
@@ -1123,11 +1123,11 @@ ParseResult KGEN::parseTypesWithConventions(AsmParser &p,
   return success();
 }
 
-void KGEN::printTypesWithConventions(AsmPrinter &p, TypeRange operandTypes,
-                                     TypeRange resultTypes,
-                                     ConventionsAttr conventions) {
+void KGEN::printTypesWithMetadata(AsmPrinter &p, TypeRange operandTypes,
+                                  TypeRange resultTypes,
+                                  MetadataAttr metadata) {
   auto printElt = [&](unsigned i) { p << operandTypes[i]; };
-  printElementsWithConventions(p, printElt, conventions);
+  printElementsWithMetadata(p, printElt, metadata);
   p << " -> ";
   if (resultTypes.size() == 1 && !isa<FunctionType>(resultTypes.front())) {
     p << resultTypes.front();
@@ -1226,12 +1226,12 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   // Parse the function signature.
   ParamDeclArrayAttr inputParamDecls;
   ParamDeclArrayAttr resultParamDecls;
-  ConventionsAttr conventions;
+  MetadataAttr metadata;
   AlwaysInlineLevelAttr alwaysInline;
   llvm::SMLoc sigLoc;
   if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamDecls) ||
       parser.getCurrentLocation(&sigLoc) ||
-      parseFunctionSignature(parser, entryArgs, resultTypes, conventions))
+      parseFunctionSignature(parser, entryArgs, resultTypes, metadata))
     return failure();
 
   if (opKind != GeneratorOrFuncKind::interface) {
@@ -1253,9 +1253,8 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   for (auto &arg : entryArgs)
     argTypes.push_back(arg.type);
   FunctionType type = builder.getFunctionType(argTypes, resultTypes);
-  auto signature =
-      parser.getChecked<SignatureType>(parser.getContext(), inputParamDecls,
-                                       resultParamDecls, type, conventions);
+  auto signature = parser.getChecked<SignatureType>(
+      parser.getContext(), inputParamDecls, resultParamDecls, type, metadata);
   if (!signature)
     return failure();
 
@@ -1317,7 +1316,7 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
 
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   printFunctionSignature(p, func.getFunctionBody(), argTypes,
-                         op.getResultTypes(), op.getConventions());
+                         op.getResultTypes(), op.getMetadata());
 
   if (isa<GeneratorOp, FuncOp>(*op))
     printOptionalAlwaysInline(
@@ -1588,13 +1587,13 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
                           "result", "type"))
     return failure();
 
-  // Check the conventions match up.
-  if (originatorSignature.getConventions() !=
-      targetSignature.getConventions()) {
+  // Check the metadata matches up: input argument conventions and function
+  // effects ought to match.
+  if (originatorSignature.getMetadata() != targetSignature.getMetadata()) {
     auto diag = emitError(originatorLoc, originatorName)
-                << " conventions are " << originatorSignature.getConventions()
+                << " metadata is " << originatorSignature.getMetadata()
                 << " but " << targetName << " expected "
-                << targetSignature.getConventions();
+                << targetSignature.getMetadata();
     if (originatorLoc != targetLoc)
       diag.attachNote(targetLoc) << targetName << " declared here";
     return failure();
@@ -1683,7 +1682,7 @@ SignatureType KGEN::getFullSignature(FuncInterface decl) {
   return SignatureType::get(
       ParamDeclArrayAttr::get(signature.getContext(), inputParams),
       signature.getResultParams(), signature.getValues(),
-      signature.getConventions());
+      signature.getMetadata());
 }
 
 /// Verify that the provided operation has exactly one block in its body

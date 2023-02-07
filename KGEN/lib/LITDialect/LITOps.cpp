@@ -107,13 +107,13 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
 
   // Parse the function signature.
   ParamDeclArrayAttr inputParamDecls, resultParamDecls;
-  ConventionsAttr conventions;
+  MetadataAttr metadata;
   llvm::SMLoc sigLoc;
   ConstraintArrayAttr constraints;
   AlwaysInlineLevelAttr alwaysInline;
   if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamDecls) ||
       parser.getCurrentLocation(&sigLoc) ||
-      parseFunctionSignature(parser, entryArgs, resultTypes, conventions) ||
+      parseFunctionSignature(parser, entryArgs, resultTypes, metadata) ||
       parseOptionalAlwaysInline(parser, alwaysInline) ||
       parseOptionalConstraints(parser, constraints))
     return failure();
@@ -125,9 +125,8 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   for (auto &arg : entryArgs)
     argTypes.push_back(arg.type);
   FunctionType type = builder.getFunctionType(argTypes, resultTypes);
-  auto signature =
-      parser.getChecked<SignatureType>(parser.getContext(), inputParamDecls,
-                                       resultParamDecls, type, conventions);
+  auto signature = parser.getChecked<SignatureType>(
+      parser.getContext(), inputParamDecls, resultParamDecls, type, metadata);
   if (!signature)
     return failure();
 
@@ -222,7 +221,7 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
 
   ArrayRef<Type> argTypes = op.getArgumentTypes();
   printFunctionSignature(p, func.getFunctionBody(), argTypes,
-                         op.getResultTypes(), op.getConventions(),
+                         op.getResultTypes(), op.getMetadata(),
                          getValueParamNamesAttr());
   printOptionalAlwaysInline(p, getAlwaysInlineLevelAttr());
 

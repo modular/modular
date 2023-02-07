@@ -84,20 +84,20 @@ static void printConstraintLoc(AsmPrinter &printer, Location loc) {
 }
 
 //===----------------------------------------------------------------------===//
-// ConventionsAttr
+// MetadataAttr
 //===----------------------------------------------------------------------===//
 
-ConventionsAttr ConventionsAttr::get(MLIRContext *ctx, unsigned numInputs) {
+MetadataAttr MetadataAttr::get(MLIRContext *ctx, unsigned numInputs) {
   return get(ctx, SmallVector<ValueInputConvention>(numInputs),
              FnEffects::None);
 }
 
-ConventionsAttr ConventionsAttr::get(MLIRContext *ctx, unsigned numInputs,
-                                     FnEffects effects) {
+MetadataAttr MetadataAttr::get(MLIRContext *ctx, unsigned numInputs,
+                               FnEffects effects) {
   return get(ctx, SmallVector<ValueInputConvention>(numInputs), effects);
 }
 
-bool ConventionsAttr::isDefault() {
+bool MetadataAttr::isDefault() {
   return getFnEffects() == FnEffects::None &&
          llvm::all_of(getInputConventions(),
                       [](ValueInputConvention inputConv) {

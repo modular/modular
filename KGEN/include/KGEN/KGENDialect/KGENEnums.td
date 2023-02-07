@@ -95,8 +95,8 @@ def KGEN_AlwaysInlineLevelAttr : I32EnumAttr<"AlwaysInlineLevel",
 // Conventions
 //===----------------------------------------------------------------------===//
 
-/// This describes the encoding of the value parameter conventions in a
-/// SignatureType.
+/// This describes the encoding of input argument calling conventions, stored
+/// in the metadata of a SignatureType.
 def KGEN_ValueInputConvention : I8BitEnumAttr<"ValueInputConvention",
     "Function value input convention", [
   // TODO: Modeling this as a bitfield is a hack, this is really two different
@@ -110,7 +110,8 @@ def KGEN_ValueInputConvention : I8BitEnumAttr<"ValueInputConvention",
   let cppNamespace = "M::KGEN";
 }
 
-/// This describes the encoding of the function effects in a SignatureType.
+/// This describes the encoding of the function effects in the metadata of a
+/// SignatureType.
 def KGEN_FnEffects : I8BitEnumAttr<"FnEffects", "Function effects", [
   I8BitEnumAttrCaseNone<"None", "none">,
   I8BitEnumAttrCaseBit<"Throws", 0, "throws">,

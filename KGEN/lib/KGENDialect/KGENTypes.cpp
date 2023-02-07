@@ -153,38 +153,33 @@ LogicalResult SignatureType::printValue(AsmPrinter &p, TypedAttr value) const {
 
 static void getSignatureDefaults(ParamDeclArrayAttr &inputParams,
                                  ParamDeclArrayAttr &resultParams,
-                                 FunctionType values,
-                                 ConventionsAttr &conventions) {
+                                 FunctionType values, MetadataAttr &metadata) {
   MLIRContext *ctx = values.getContext();
   if (!inputParams)
     inputParams = ParamDeclArrayAttr::get(ctx, {});
   if (!resultParams)
     resultParams = ParamDeclArrayAttr::get(ctx, {});
-  if (!conventions) {
-    // Default valueConventions to zero.
-    conventions = ConventionsAttr::get(
-        ctx, SmallVector<ValueInputConvention>(values.getNumInputs()),
-        FnEffects::None);
+  if (!metadata) {
+    // Default value input conventions to take each argument by-value.
+    metadata = MetadataAttr::get(ctx, values.getNumInputs());
   }
 }
 
 SignatureType SignatureType::get(ParamDeclArrayAttr inputParams,
                                  ParamDeclArrayAttr resultParams,
-                                 FunctionType values,
-                                 ConventionsAttr conventions) {
-  getSignatureDefaults(inputParams, resultParams, values, conventions);
-  return get(values.getContext(), inputParams, resultParams, values,
-             conventions);
+                                 FunctionType values, MetadataAttr metadata) {
+  getSignatureDefaults(inputParams, resultParams, values, metadata);
+  return get(values.getContext(), inputParams, resultParams, values, metadata);
 }
 
 SignatureType
 SignatureType::getChecked(function_ref<InFlightDiagnostic()> emitError,
                           ParamDeclArrayAttr inputParams,
                           ParamDeclArrayAttr resultParams, FunctionType values,
-                          ConventionsAttr conventions) {
-  getSignatureDefaults(inputParams, resultParams, values, conventions);
+                          MetadataAttr metadata) {
+  getSignatureDefaults(inputParams, resultParams, values, metadata);
   return getChecked(emitError, values.getContext(), inputParams, resultParams,
-                    values, conventions);
+                    values, metadata);
 }
 
 SignatureType SignatureType::get(FunctionType values) {
@@ -199,8 +194,8 @@ SignatureType SignatureType::get(MLIRContext *ctx, TypeRange inputs,
 SignatureType SignatureType::setFnEffect(FnEffects effect) {
   return SignatureType::get(
       getInputParams(), getResultParams(), getValues(),
-      ConventionsAttr::get(getContext(), getValueInputConventions(),
-                           bitEnumSet(getFnEffects(), effect)));
+      MetadataAttr::get(getContext(), getValueInputConventions(),
+                        bitEnumSet(getFnEffects(), effect)));
 }
 
 /// Return a signature with the specified parameter bindings substituted
@@ -301,8 +296,7 @@ SignatureType SignatureType::getSpecializedSignature(
   return SignatureType::get(
       ParamDeclArrayAttr::get(getContext(), unboundDecls),
       ParamDeclArrayAttr::get(getContext(), newParamResults),
-      FunctionType::get(getContext(), inputTypes, resultTypes),
-      getConventions());
+      FunctionType::get(getContext(), inputTypes, resultTypes), getMetadata());
 }
 
 SignatureType SignatureType::getSpecializedSignature(
@@ -321,16 +315,16 @@ ArrayRef<Type> SignatureType::getValueResults() const {
 /// Return this signature type with the value signature replaced.
 SignatureType SignatureType::getWithValuesReplaced(FunctionType fnType) {
   return SignatureType::get(getInputParams(), getResultParams(), fnType,
-                            getConventions());
+                            getMetadata());
 }
 
 SignatureType SignatureType::dropParamValues() {
   return get(ParamDeclArrayAttr::get(getContext(), {}), getResultParams(),
-             getValues(), getConventions());
+             getValues(), getMetadata());
 }
 
 bool SignatureType::isConcrete() {
-  return getConventions().isDefault() && getInputParams().empty() &&
+  return getMetadata().isDefault() && getInputParams().empty() &&
          getResultParams().empty();
 }
 
@@ -342,21 +336,19 @@ Type SignatureType::parse(AsmParser &p) {
   if (parseOptionalParameterSpec(p, inputParams, resultParams))
     return {};
   SmallVector<Type> inputs, outputs;
-  ConventionsAttr conventions;
-  if (parseTypesWithConventions(p, inputs, outputs, conventions))
+  MetadataAttr metadata;
+  if (parseTypesWithMetadata(p, inputs, outputs, metadata))
     return {};
   if (p.parseGreater())
     return {};
   return getChecked([&] { return p.emitError(loc); }, inputParams, resultParams,
-                    p.getBuilder().getFunctionType(inputs, outputs),
-                    conventions);
+                    p.getBuilder().getFunctionType(inputs, outputs), metadata);
 }
 
 void SignatureType::print(AsmPrinter &p) const {
   p << '<';
   printOptionalParameterSpec(p, getInputParams(), getResultParams());
-  printTypesWithConventions(p, getValueInputs(), getValueResults(),
-                            getConventions());
+  printTypesWithMetadata(p, getValueInputs(), getValueResults(), getMetadata());
   p << '>';
 }
 
@@ -364,13 +356,13 @@ LogicalResult
 SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                       ParamDeclArrayAttr inputParams,
                       ParamDeclArrayAttr resultParams, FunctionType values,
-                      ConventionsAttr conventions) {
+                      MetadataAttr metadata) {
   // Check we have the right number of conventions.
-  if (conventions.getInputConventions().size() != values.getInputs().size())
+  if (metadata.getInputConventions().size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
 
   // If the function throws an error, make sure it has one result.
-  if (bitEnumContainsAny(conventions.getFnEffects(), FnEffects::Throws) &&
+  if (bitEnumContainsAny(metadata.getFnEffects(), FnEffects::Throws) &&
       values.getNumResults() != 1)
     return emitError() << "a function that throws should have 1 result";
   return success();

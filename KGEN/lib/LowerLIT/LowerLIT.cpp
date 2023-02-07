@@ -147,7 +147,7 @@ LogicalResult SignatureUnifier::verifyInputParameters() {
   // input parameters as the interface so we can just take it directly!
   generatorOp.setSignature(SignatureType::get(
       interfaceOp.getInputParamDeclsAttr(), generatorOp.getResultParamsAttr(),
-      generatorOp.getFunctionType(), generatorOp.getConventions()));
+      generatorOp.getFunctionType(), generatorOp.getMetadata()));
   return success();
 }
 
@@ -616,7 +616,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
     gen.setSignature(SignatureType::get(
         ParamDeclArrayAttr::get(gen.getContext(), paramDecls),
         gen.getResultParamsAttr(), gen.getSignature().getValues(),
-        gen.getConventions()));
+        gen.getMetadata()));
   }
 
   lowerLITOps(gen, funcSpAttr);
@@ -728,10 +728,10 @@ static void lowerAttributesAndTypes(Operation *op) {
   });
 
   // Remove all input conventions, but keep function effects.
-  replacer.addReplacement([](ConventionsAttr conventions) {
-    return ConventionsAttr::get(conventions.getContext(),
-                                conventions.getInputConventions().size(),
-                                conventions.getFnEffects());
+  replacer.addReplacement([](MetadataAttr metadata) {
+    return MetadataAttr::get(metadata.getContext(),
+                             metadata.getInputConventions().size(),
+                             metadata.getFnEffects());
   });
 
   replacer.recursivelyReplaceElementsIn(
