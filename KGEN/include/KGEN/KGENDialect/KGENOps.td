@@ -557,6 +557,115 @@ def KGEN_ParamAssertOp : KGENOp<"param.assert", []> {
 }
 
 //===----------------------------------------------------------------------===//
+// ParamIfOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParamIfOp : KGENOp<"param.if",
+    [DeclInterface, SingleBlockImplicitTerminator<"ParamYieldOp">]> {
+  let summary = "compile-time constant if";
+  let description = [{
+    The `kgen.param.if` op provides a compile-time guarantee that if `cond`
+    is false, only the `else` block will be elaborated, and if `cond` is true,
+    only the `then` block will be elaborated. Whichever block is elaborated
+    will be directly inlined into the scope. This op is fully removed
+    during elaboration.
+
+    The result parameter will be resolved by the parameter on the
+    `param.yield` in the branch that is actually elaborated.
+
+    ```mlir
+    %0 = kgen.param.if <condition> -> index {
+      %i0 = index.constant 0
+      kgen.param.yield %i0
+    } else {
+      %i1 = index.constant 1
+      kgen.param.yield %i1
+    }
+
+    kgen.param.if <condition -> result> {
+      kgen.param.yield<1>
+    } else {
+      kgen.param.yield<0>
+    }
+    %0 = kgen.param.constant = <result> // == <condition ? 1 : 0>
+    ```
+  }];
+
+  let arguments = (ins AttrOfType<I1>:$cond,
+                       KGEN_ParamDeclArrayAttr:$paramDecls);
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$then, SizedRegion<1>:$else);
+
+  let extraClassDeclaration = [{
+    Block::OpListType &getThenOps() {
+      return getThen().front().getOperations();
+    }
+    Block::OpListType &getElseOps() {
+      return getElse().front().getOperations();
+    }
+    /// For DeclInterface - this op never defines input parameters.
+    ArrayRef<ParamDeclAttr> getInputParamDecls() { return {}; }
+  }];
+
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ParamYieldOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParamYieldOp : KGENOp<"param.yield",
+    [Pure, HasParent<"ParamIfOp">, Terminator]> {
+  let summary = "conditional yield operation";
+  let description = [{
+    The `kgen.param.yield` operation is used to denote the terminator of a
+    block in the `kgen.param.if` op. Conceptually, it branches to the next
+    op after a `kgen.param.if`, but in reality it's to make sure the IR
+    stays in a reasonable state and is possible to inline directly.
+
+    This op defines the parameter that is used as the result parameter on the
+    enclosing `kgen.param.if`.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.param.if <condition> -> index {
+      kgen.param.yield %arg1 : index
+    } else {
+      kgen.param.yield %arg2 : index
+    }
+
+    kgen.param.if <condition -> result> {
+      kgen.param.yield<1> // `then` definition for `result`
+    } else {
+      kgen.param.yield<0> // `else` definition for `result`
+    }
+    %0 = kgen.param.constant = <result>
+    ```
+
+    This operation can always be marked pure because the control-flow edge from
+    this operation leads only to after the parent operation.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands,
+                       KGEN_ParameterExprArrayAttr:$parameters);
+
+  let builders = [
+    OpBuilder<(ins), [{
+      return build($_builder, $_state, {},
+                   $_builder.getAttr<ParameterExprArrayAttr>(
+                     ArrayRef<TypedAttr>{}));
+    }]>
+  ];
+
+  let assemblyFormat = [{
+    `` custom<ParameterValues>($parameters) attr-dict
+    ($operands^ `:` type($operands))?
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // IncludeOp
 //===----------------------------------------------------------------------===//
 
