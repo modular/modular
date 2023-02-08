@@ -23,5 +23,3 @@ add_modular_unittest(
   LLCLRuntime
   MSupportML
 )
-
-add_subdirectory(API)
