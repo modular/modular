@@ -13,8 +13,6 @@ add_modular_dialect_library(LITDialect
   ${MODULAR_MAIN_INCLUDE_DIR}/LIT/LITDialect
 
   DEPENDS
-  KGENDialect
-  POPDialect
   MLIRKGENIncGen
   MLIRLITIncGen
 
@@ -22,6 +20,9 @@ add_modular_dialect_library(LITDialect
   Support
 
   LINK_LIBS PUBLIC
+  HLCFDialect
+  KGENDialect
+  POPDialect
   MSupport
   MSupportML
   MLIRIR

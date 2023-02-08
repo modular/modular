@@ -26,6 +26,7 @@ add_modular_dialect_library(KGENDialect
   Support
 
   LINK_LIBS PUBLIC
+  HLCFDialect
   MCompilerSupport
   MSupport
   MSupportML
