@@ -1,6 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -elaborate-generators="search-path=%S enable-search=true" -allow-unregistered-dialect | FileCheck %s
-
-kgen.include "library-test.mlir"
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="enable-search=true" -allow-unregistered-dialect | FileCheck %s
 
 // This is left untouched.
 // CHECK-LABEL: kgen.func @test0() -> index {

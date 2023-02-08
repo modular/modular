@@ -116,17 +116,12 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (!theModule)
     return clOptions.reportError("could not parse the module");
 
-  // The set of files included during processing, used to generate the
-  // dependency file.
-  SmallVector<std::string> includedFiles;
-
   // Set up the runtime.
   LLCL::Runtime runtime(
       LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
       LLCL::createSingleThreadWorkQueue());
 
-  elaborateModule(pm, runtime, {clOptions.searchPaths, clOptions.enableSearch},
-                  includedFiles);
+  elaborateModule(pm, runtime, {clOptions.enableSearch});
 
   if (failed(pm.run(*theModule)))
     return clOptions.reportError("compilation failed");
