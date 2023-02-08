@@ -89,8 +89,12 @@ DType M::getEquivalentDType(FloatType fpType) {
 }
 
 DType M::getEquivalentDType(IntegerType intType) {
-  if (intType.isSignless())
-    return {}; // invalid denotes failure
+  if (intType.isSignless()) {
+    if (intType.getWidth() == 1)
+      return DType::kBool;
+    else
+      return {}; // invalid denotes failure
+  }
   FailureOr<DType> optDType =
       DType::getInt(intType.getIntOrFloatBitWidth(), intType.isSignedInteger());
   if (failed(optDType))
