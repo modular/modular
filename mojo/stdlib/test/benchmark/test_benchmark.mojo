@@ -9,6 +9,7 @@ from Benchmark import Benchmark
 from Int import Int
 from IO import print
 from Time import now
+from Range import range
 
 
 # CHECK-LABEL: test_benchmark
@@ -17,10 +18,8 @@ fn test_benchmark():
 
     @always_inline
     fn time_me():
-        var i: Int = 0
-        while i < 100:
+        for i in range(100):
             print("")
-            i += 1
         return
 
     # check that benchmark_function returns after max_time_ns is hit.
