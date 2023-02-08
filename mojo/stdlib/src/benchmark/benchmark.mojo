@@ -6,6 +6,7 @@
 
 from Time import now
 from Int import Int
+from Range import range
 
 
 struct Benchmark:
@@ -63,11 +64,9 @@ struct Benchmark:
         """
 
         # run for specified number of warmup iterations
-        var i: Int = 0
         var tic = now()
-        while i < self.num_warmup:
+        for _ in range(self.num_warmup):
             func()
-            i += 1
         var toc = now()
 
         var prev_iters = self.num_warmup
@@ -95,11 +94,9 @@ struct Benchmark:
             # (This also keeps n in int range on 32 bit platforms.)
             n = Int.min(n, 1000_000_000)
 
-            i = 0
             tic = now()
-            while i < n:
+            for __ in range(n):  # TODO(#8365)
                 func()
-                i += 1
             toc = now()
 
             prev_dur = toc - tic
