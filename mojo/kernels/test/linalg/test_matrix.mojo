@@ -14,6 +14,7 @@ from DType import DType
 from List import create_kgen_list
 from Index import Index
 from Math import iota
+from Range import range
 
 
 fn test_matrix():
@@ -23,10 +24,8 @@ fn test_matrix():
         create_kgen_list[__mlir_type.index](4, 4), DType.si32.value, False
     ](a.data.address)
 
-    var i: Int = 0
-    while i < 16:
+    for i in range(16):
         a.__setitem__(i, i)
-        i += 1
 
     # CHECK: [0, 1, 2, 3]
     print(m.simd_load[4](0, 0))

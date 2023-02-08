@@ -19,6 +19,7 @@ from Int import Int
 from IO import print
 from List import create_kgen_list
 from Memory import memset_zero
+from Range import range
 from SIMD import SIMD
 from TargetInfo import is_apple_m1, sizeof
 from Transpose import transpose_inplace, _index2D
@@ -34,14 +35,10 @@ fn fill_a(
     # Fills the A matrix with the following values row + 2*col
     let rows = 16
     let cols = 16
-    var i: Int = 0
-    while i < rows:
-        var j: Int = 0
-        while j < cols:
+    for i in range(rows):
+        for j in range(cols):
             let val = F32(i + 2 * j)
             buf.__setitem__(_index2D(i, j), val.value)
-            j += 1
-        i += 1
 
 
 fn fill_b(
@@ -54,14 +51,10 @@ fn fill_b(
     # Fills the A matrix with the following values row/(col + 1) + col
     let rows = 16
     let cols = 16
-    var i: Int = 0
-    while i < rows:
-        var j: Int = 0
-        while j < cols:
+    for i in range(rows):
+        for j in range(cols):
             let val = F32(i // (j + 1) + j)
             buf.__setitem__(_index2D(i, j), val.value)
-            j += 1
-        i += 1
 
 
 fn clear_c(
@@ -85,13 +78,9 @@ fn print_matrix(
     # Fills the A matrix with the following values row/(col + 1) + col + 3
     let rows = 16
     let cols = 16
-    var i: Int = 0
-    while i < rows:
-        var j: Int = 0
-        while j < cols:
+    for i in range(rows):
+        for j in range(cols):
             print(buf[i, j])
-            j += 1
-        i += 1
 
 
 # CHECK-LABEL: test_amx_matmul

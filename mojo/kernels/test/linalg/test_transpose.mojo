@@ -14,6 +14,7 @@ from List import create_kgen_list
 from Memory import memset_zero
 from Transpose import transpose, transpose_inplace, transpose_nd, _index2D
 from Tuple import StaticTuple
+from Range import range
 
 # TODO Refactor with `test_broadcast.lit`, e.g., put them into a common file or
 # allow NDBuffer to accept StaticIntTuple
@@ -117,29 +118,21 @@ fn test_transpose_8x8():
     alias num_rows = 8
     alias num_cols = 8
 
-    var i: Int = 0
-    var j: Int = 0
-    while i < num_rows:
-        j = 0
-        while j < num_cols:
+    for i in range(num_rows):
+        for j in range(num_cols):
             let val = i * num_cols + j
             matrix.__setitem__(_index2D(i, j), val.__as_mlir_index())
-            j += 1
-        i += 1
 
     transpose_inplace[2, 8, 8, DType.index.value](matrix)
 
-    i = 0
-    while i < num_rows:
-        j = 0
-        while j < num_cols:
-            let expected: Int = j * num_rows + i
-            let actual = matrix[i, j][0]
+    # TODO(#8365) use `i` and `j`
+    for ii in range(num_rows):
+        for jj in range(num_cols):
+            let expected: Int = jj * num_rows + ii
+            let actual = matrix[ii, jj][0]
             # CHECK-NOT: Transpose 16x16 failed
             if expected != actual:
                 print("Transpose 16x16 failed\n")
-            j += 1
-        i += 1
 
 
 # CHECK-LABEL: test_transpose_3x2_out_of_place
@@ -147,11 +140,9 @@ fn test_transpose_3x2_out_of_place():
     print("== test_transpose_3x2_out_of_place\n")
     let p1 = Buffer[9, DType.index.value].stack_allocation()
     let p2 = Buffer[9, DType.index.value].stack_allocation()
-    var i: Int = 0
-    while i < 9:
+    for i in range(9):
         p1.__setitem__(i, 0)
         p2.__setitem__(i, 0)
-        i += 1
 
     let src = NDBuffer[
         2, create_kgen_list[__mlir_type.index](3, 2), DType.index.value

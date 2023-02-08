@@ -30,6 +30,7 @@ from IntelAMX import _tile_loadconfig, _tile_storeconfig, _tile_release
 from IntelAMX import _tile_zero, _tile_dpbssd, _tile_dpbssd_emulated
 from IntelAMX import _tile_loadd, _tile_stored
 from IntelAMX import init_intel_amx, tileconfig
+from Range import range
 
 alias void = DType.invalid.value
 alias int32_pop = __mlir_type.`!pop.scalar<si32>`
@@ -41,30 +42,24 @@ fn print_buffer[
     n: Int, type: __mlir_type.`!kgen.dtype`
 ](a_ptr: DTypePointer[void]):
     let a = Buffer[kunknown, type](a_ptr.bitcast[type]().address, n)
-    var i: Int = 0
-    while i < n:
+    for i in range(n):
         let v = __mlir_op.`pop.cast`[
             _type:int32_pop,
         ](a.__getitem__(i).value)
         print(v)
-        i += 1
 
 
 fn print_matrix[
     m: Int, n: Int, type: __mlir_type.`!kgen.dtype`
 ](a_ptr: DTypePointer[void]):
     let a = Buffer[kunknown, type](a_ptr.bitcast[type]().address, m * n)
-    var i: Int = 0
-    while i < m:
-        var j: Int = 0
+    for i in range(m):
         print("row\n")
-        while j < n:
+        for j in range(n):
             let ai = __mlir_op.`pop.cast`[
                 _type:int32_pop,
             ](a.__getitem__(n * i + j).value)
             print(ai)
-            j += 1
-        i += 1
 
 
 @always_inline
@@ -94,11 +89,9 @@ fn init_matrices(
     let c2 = Buffer[kunknown, DType.si32.value](c2_ptr.address, 256)
     let b2 = Buffer[1024, DType.si8.value].stack_allocation()
 
-    var i: Int = 0
-    while i < 1024:
+    for i in range(1024):
         a.__setitem__(i, SIMD[1, DType.si8.value](i & 127))
         b2.__setitem__(i, SIMD[1, DType.si8.value](i & 127))
-        i += 1
 
     memset_zero[DType.si32.value](c.data, 1024)
     memset_zero[DType.si32.value](c2.data, 1024)
