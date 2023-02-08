@@ -10,6 +10,7 @@ from DType import DType
 from Reductions import sum, product, max, min, mean, variance
 from Int import Int
 from IO import print
+from Range import range
 
 
 # CHECK-LABEL: test_reductions
@@ -22,10 +23,8 @@ fn test_reductions():
     # Create a mem of size size
     let vector = Buffer[size, DType.f32.value].stack_allocation()
 
-    var i: Int = 0
-    while i < size:
+    for i in range(size):
         vector.__setitem__(i, (i + 1).__as_mlir_index())
-        i += 1
 
     # CHECK: 1.000000
     print(min[simd_width](vector))
@@ -48,10 +47,8 @@ fn test_product():
     # Create a mem of size size
     let vector = Buffer[size, DType.f32.value].stack_allocation()
 
-    var i: Int = 0
-    while i < size:
+    for i in range(size):
         vector.__setitem__(i, (i + 1).__as_mlir_index())
-        i += 1
 
     # CHECK: 3628800.000000
     print(product[simd_width](vector))
@@ -67,10 +64,8 @@ fn test_mean_variance():
     # Create a mem of size size
     let vector = Buffer[size, DType.f32.value].stack_allocation()
 
-    var i: Int = 0
-    while i < size:
+    for i in range(size):
         vector.__setitem__(i, (i + 1).__as_mlir_index())
-        i += 1
 
     # CHECK: 50.500000
     print(mean[simd_width](vector))
