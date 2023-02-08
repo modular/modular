@@ -1511,7 +1511,7 @@ ElaboratorImpl::specializeFunction(ExpansionTreeNode *funcNode,
 
   // Get a partial ordering of parameter definitions and uses that are listed
   // "top down" in our evaluation order. Plug in the input parameter values.
-  ParameterUseDefGraph uses(func);
+  ParameterUseDefGraph uses(func.getBodyRegion());
   for (auto [decl, val] : llvm::zip(paramDecls, funcNode->inputParams)) {
     uses.decls.try_emplace(decl.getName(),
                            ParamDeclaration{decl.getType(), func});

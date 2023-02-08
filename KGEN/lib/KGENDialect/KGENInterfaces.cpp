@@ -20,8 +20,9 @@ LogicalResult impl::verifyIfTopLevel(DeclInterface decl,
                                      SymbolTableCollection &symtab) {
   if (isa<DeclInterface>(decl->getParentOp()))
     return success();
-  if (failed(ParameterUseDefGraph(decl).verify(symtab)))
-    return failure();
+  for (Region &r : decl->getRegions())
+    if (failed(ParameterUseDefGraph(r).verify(symtab)))
+      return failure();
   return success();
 }
 

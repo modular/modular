@@ -59,7 +59,7 @@ struct ParamDeclaration {
 /// parameters (in an attribute, type, or location) can be concretized in any
 /// order.
 struct ParameterUseDefGraph {
-  ParameterUseDefGraph(DeclInterface scope) : scope(scope) {}
+  ParameterUseDefGraph(Region &scope) : scope(scope) {}
 
   /// Map of parameter name to its declaration.
   DenseMap<StringAttr, ParamDeclaration> decls;
@@ -67,7 +67,7 @@ struct ParameterUseDefGraph {
   DenseMap<StringAttr, ParamDefinition> defs;
 
   /// The scope at which this graph is computed.
-  DeclInterface scope;
+  Region &scope;
 
   /// A list of parametric operations. These are the operations that must be
   /// concretized by the elaborator once all parameters in the scope have been
@@ -86,10 +86,10 @@ struct ParameterUseDefGraph {
   llvm::MapVector<Operation *, SmallVector<ParamDeclRefAttr>> opUses;
 
   /// A list of nested parameter scopes.
-  SmallVector<DeclInterface> nestedDecls;
+  SmallVector<Region *> nestedDecls;
 
   /// A map of nested scopes to their use-def graph.
-  DenseMap<DeclInterface, ParameterUseDefGraph> nestedScopes;
+  DenseMap<Region *, ParameterUseDefGraph> nestedScopes;
 
   /// Compute the parameter declarations, definitions, and uses within the
   /// provided parameter declaration scope. If the the root scope is not

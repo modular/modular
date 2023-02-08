@@ -26,15 +26,17 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
   auto parent = call->getParentOfType<GeneratorOp>();
   assert(parent && "expected call to be inlined to be inside a generator");
   // Compute parameter uses from the top-level.
-  ParameterUseDefGraph parentParams(parent), calleeParams(callee);
+  ParameterUseDefGraph parentParams(parent.getBodyRegion()),
+      calleeParams(callee.getBodyRegion());
   parentParams.calculate();
   calleeParams.calculate();
 
   // Get the parameters in-scope at the callsite.
   auto callDecl = call->getParentOfType<DeclInterface>();
   ParameterUseDefGraph &callScope =
-      callDecl == parent ? parentParams
-                         : parentParams.nestedScopes.find(callDecl)->second;
+      callDecl == parent
+          ? parentParams
+          : parentParams.nestedScopes.find(&callDecl->getRegion(0))->second;
 
   // Wrap the callee in a loop with a unique label.
   StringSet<> takenLabels;
@@ -159,8 +161,7 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
     // Determine which decls are captured from above and map them from their
     // mangled declaration.
     ParameterUseDefGraph &nestedUses =
-        calleeParams.nestedScopes.find(cast<DeclInterface>(*nestedScope))
-            ->second;
+        calleeParams.nestedScopes.find(&nestedScope->getRegion(0))->second;
     for (ParamDeclRefAttr nestedUse : nestedUses.usesFromAbove) {
       auto it = mangledDecls.find(nestedUse.getName());
       if (it == mangledDecls.end())
