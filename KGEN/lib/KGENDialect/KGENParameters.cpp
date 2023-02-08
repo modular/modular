@@ -108,7 +108,7 @@ void ParameterCollector::collectUsesFromAttr(
 
   // Expression functions and MLIR operation expressions are isolated from
   // above. They are verified to be self-contained on their own.
-  if (isa<ExprFuncAttr, MLIROpAttr>(attr))
+  if (isa<MLIROpAttr>(attr))
     return;
 
   // Save the number of nested parameters before recursing and check whether the
@@ -196,7 +196,7 @@ void ParameterCollector::collectUsesFromTypesImpl(
 }
 
 //===----------------------------------------------------------------------===//
-// ExprFuncAttr Verification
+// MLIROpAttr Verification
 //===----------------------------------------------------------------------===//
 
 template <typename ElementT>
@@ -221,27 +221,6 @@ checkParameterUsesIn(function_ref<InFlightDiagnostic()> emitError, ElementT el,
   }
   return success();
 }
-
-LogicalResult ExprFuncAttr::checkSelfContained(
-    function_ref<InFlightDiagnostic()> emitError, ParamDeclArrayAttr paramDecls,
-    ParamDeclArrayAttr inputs, ParameterExprArrayAttr exprs) {
-  DenseMap<StringAttr, Type> paramsMap;
-  for (ParamDeclAttr decl : paramDecls)
-    paramsMap.try_emplace(decl.getName(), decl.getType());
-  for (ParamDeclAttr input : inputs) {
-    if (!paramsMap.try_emplace(input.getName(), input.getType()).second)
-      return emitError() << "redefinition of parameter " << input.getName();
-  }
-
-  for (TypedAttr expr : exprs)
-    if (failed(checkParameterUsesIn(emitError, expr, paramsMap, "function")))
-      return failure();
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// MLIROpAttr Verification
-//===----------------------------------------------------------------------===//
 
 LogicalResult
 MLIROpAttr::checkSelfContained(function_ref<InFlightDiagnostic()> emitError,

@@ -537,64 +537,6 @@ def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant",
 }
 
 //===----------------------------------------------------------------------===//
-// ExprFuncAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_ExprFuncAttr : KGEN_ExprAttr<"ExprFunc", "expr.func"> {
-  let summary = "constant expression function";
-  let description = [{
-    A `#kgen.expr.func` attribute is a meta-function defined entirely with
-    parameter expressions. The meta-function accepts any number of input
-    meta-parameters and argument parameters and produces any number of results
-    and no meta-results (due to limitations of parameter expressions).
-
-    Example:
-
-    ```mlir
-    #kgen.expr.func<(A, B) -> add(mul(N, A), B)>
-        : !kgen.signature<<N>(index, index) -> index)>
-
-    #kgen.expr.func<(A) -> (add(A, 1), add(A, 2))>
-        : !kgen.signature<(index) -> (index, index)>
-    ```
-  }];
-
-  let parameters = (ins "ParamDeclArrayAttr":$paramDecls,
-                        "ParamDeclArrayAttr":$inputs,
-                        "ParameterExprArrayAttr":$exprs,
-                        AttributeSelfTypeParameter<"", "SignatureType">:$type);
-
-  let assemblyFormat = [{
-    `<` custom<ExprFunc>($paramDecls, $inputs, $exprs, ref($type)) `>`
-  }];
-
-  let genVerifyDecl = 1;
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins
-        "ParamDeclArrayAttr":$paramDecls, "ParamDeclArrayAttr":$inputs,
-        "ParameterExprArrayAttr":$exprs, "SignatureType":$type), [{
-      return get(type.getContext(), paramDecls, inputs, exprs, type);
-    }]>,
-    AttrBuilderWithInferredContext<(ins "ParamDeclArrayAttr":$inputs,
-                                        "ParameterExprArrayAttr":$exprs,
-                                        "SignatureType":$type), [{
-      return get(ParamDeclArrayAttr::get(type.getContext(), {}), inputs, exprs,
-                 type);
-    }]>
-  ];
-
-  let extraClassDeclaration = [{
-    /// Verify that this expression function is self-contained, all referenced
-    /// parameters are defined within the function.
-    static LogicalResult checkSelfContained(
-        function_ref<InFlightDiagnostic()> emitError,
-        ParamDeclArrayAttr paramDecls, ParamDeclArrayAttr inputs,
-        ParameterExprArrayAttr exprs);
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // TargetParamAttr
 //===----------------------------------------------------------------------===//
 
