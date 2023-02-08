@@ -16,6 +16,7 @@ from Tuple import StaticTuple
 from Matmul import Matrix
 from List import create_kgen_list
 from Bool import Bool
+from Range import range
 from SIMD import SIMD
 
 alias void = DType.invalid.value
@@ -176,12 +177,9 @@ fn _tile_dpbssd_emulated(
         create_kgen_list[__mlir_type.index](16, 16), DType.si32.value, False
     ](cptr.address)
 
-    var i: Int = 0
-    while i < 16:
-        var j: Int = 0
-        while j < 16:
-            var l: Int = 0
-            while l < 16:
+    for i in range(16):
+        for j in range(16):
+            for l in range(16):
                 let ai0 = a.__getitem__(i, 4 * l + 0).cast[DType.si32.value]()
                 let ai1 = a.__getitem__(i, 4 * l + 1).cast[DType.si32.value]()
                 let ai2 = a.__getitem__(i, 4 * l + 2).cast[DType.si32.value]()
@@ -196,6 +194,3 @@ fn _tile_dpbssd_emulated(
                 cv += ai2 * bi2
                 cv += ai3 * bi3
                 c.__setitem__(i, j, cv)
-                l += 1
-            j += 1
-        i += 1

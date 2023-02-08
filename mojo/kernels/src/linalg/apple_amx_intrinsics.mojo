@@ -19,6 +19,7 @@ from IO import print
 from List import create_kgen_list
 from Memory import memset_zero, memcpy
 from Pointer import DTypePointer
+from Range import range
 from TargetInfo import sizeof
 
 
@@ -442,34 +443,32 @@ struct amx_detail:
 
         _set()
 
-        var i: Int = 0
-        while i < 8:
-            ldx((i << 56) | b_buffer.offset(i * b.dim[0]()).__as_index())
-            ldy((i << 56) | a_buffer.offset(i * a.dim[0]()).__as_index())
-            i += 1
+        # TODO(#8365) use `i` in all for loops below
+        for i0 in range(8):
+            ldx((i0 << 56) | b_buffer.offset(i0 * b.dim[0]()).__as_index())
+            ldy((i0 << 56) | a_buffer.offset(i0 * a.dim[0]()).__as_index())
 
         fma32(1 << 27)
 
-        i = 1
-        while i < 8:
-            fma32((i << 6 << 10) | (i << 6))
-            i += 1
+        for i1 in range(1, 8):
+            fma32((i1 << 6 << 10) | (i1 << 6))
 
-        i = 0
-        while i < 8:
-            ldx((i << 56) | b_buffer.offset((i + 8) * b.dim[0]()).__as_index())
-            ldy((i << 56) | a_buffer.offset((i + 8) * a.dim[0]()).__as_index())
-            i += 1
+        for i2 in range(8):
+            ldx(
+                (i2 << 56) | b_buffer.offset((i2 + 8) * b.dim[0]()).__as_index()
+            )
+            ldy(
+                (i2 << 56) | a_buffer.offset((i2 + 8) * a.dim[0]()).__as_index()
+            )
 
-        i = 0
-        while i < 8:
-            fma32((i << 6 << 10) | (i << 6))
-            i += 1
+        for i3 in range(8):
+            fma32((i3 << 6 << 10) | (i3 << 6))
 
-        i = 0
-        while i < 64:
-            stz((i << 56) | c_buffer.offset((i >> 2) * c.dim[0]()).__as_index())
-            i += 4
+        for i4 in range(0, 64, 4):
+            stz(
+                (i4 << 56)
+                | c_buffer.offset((i4 >> 2) * c.dim[0]()).__as_index()
+            )
 
         _clr()
 
