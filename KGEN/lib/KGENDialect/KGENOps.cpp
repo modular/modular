@@ -807,6 +807,35 @@ LogicalResult ParamIfOp::verify() {
   return success();
 }
 
+void ParamIfOp::getEntryTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.empty());
+  targets.emplace_back(0);
+  targets.emplace_back(1);
+}
+
+ValueRange ParamIfOp::getEntryArguments(std::optional<unsigned> target) {
+  if (!target)
+    return getResults();
+  assert(*target == 0 || *target == 1);
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// ParamYieldOp
+//===----------------------------------------------------------------------===//
+
+bool ParamYieldOp::isParentNode(Operation *op) { return isa<ParamIfOp>(op); }
+
+void ParamYieldOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  // Branch to after the if operation.
+  targets.emplace_back(std::nullopt, getOperands());
+}
+
 //===----------------------------------------------------------------------===//
 // RebindOp
 //===----------------------------------------------------------------------===//

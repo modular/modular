@@ -13,6 +13,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
+#include "Support/HLCFDialect/HLCFInterfaces.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/OpImplementation.h"

@@ -13,6 +13,7 @@ include "KGEN/KGENDialect/KGENDialect.td"
 include "KGEN/KGENDialect/KGENEnums.td"
 include "KGEN/KGENDialect/KGENInterfaces.td"
 include "KGEN/KGENDialect/KGENTypes.td"
+include "Support/HLCFDialect/HLCFInterfaces.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
@@ -560,8 +561,8 @@ def KGEN_ParamAssertOp : KGENOp<"param.assert", []> {
 // ParamIfOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamIfOp : KGENOp<"param.if",
-    [DeclInterface, SingleBlockImplicitTerminator<"ParamYieldOp">]> {
+def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
+    DeclareOpInterfaceMethods<ControlFlowNode>]> {
   let summary = "compile-time constant if";
   let description = [{
     The `kgen.param.if` op provides a compile-time guarantee that if `cond`
@@ -615,8 +616,8 @@ def KGEN_ParamIfOp : KGENOp<"param.if",
 // ParamYieldOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamYieldOp : KGENOp<"param.yield",
-    [Pure, HasParent<"ParamIfOp">, Terminator]> {
+def KGEN_ParamYieldOp : KGENOp<"param.yield", [Pure, HasParent<"ParamIfOp">,
+    Terminator, DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let summary = "conditional yield operation";
   let description = [{
     The `kgen.param.yield` operation is used to denote the terminator of a
