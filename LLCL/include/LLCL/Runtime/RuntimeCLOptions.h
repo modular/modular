@@ -51,8 +51,6 @@ private:
     kSingleThread,
     /// Default thread pool that uses std::thread and semaphores.
     kThreadPool,
-    /// Thread pool work queue with sharded semaphores.
-    kShardedSemaphore,
   };
 
   // Enable HostAllocator types to be specified on the command line.
@@ -64,10 +62,7 @@ private:
           clEnumValN(WorkQueueType::kSingleThread, "single-thread",
                      "Work queue that only ever uses one thread"),
           clEnumValN(WorkQueueType::kThreadPool, "thread-pool",
-                     "Default threaded work queue based on std::thread"),
-          clEnumValN(
-              WorkQueueType::kShardedSemaphore, "sharded-semaphore",
-              "Thread pool work queue with sharded semaphore (experimental)")),
+                     "Default threaded work queue based on std::thread")),
       llvm::cl::init(WorkQueueType::kDefault)};
 
   // Enable HostAllocator types to be specified on the command line.
@@ -184,9 +179,6 @@ public:
       break;
     case WorkQueueType::kThreadPool:
       printf("thread pool work queue");
-      break;
-    case WorkQueueType::kShardedSemaphore:
-      printf("thread pool work queue with sharded semaphore (experimental).");
       break;
     }
 

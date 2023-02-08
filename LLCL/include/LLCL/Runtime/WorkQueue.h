@@ -71,12 +71,6 @@ createThreadPoolWorkQueue(size_t numThreads,
                           std::chrono::nanoseconds busyWait = {},
                           bool profilingEnabled = false);
 
-/// Create a thread pool work queue that uses sharded semaphore.
-std::unique_ptr<WorkQueue>
-createShardedSemaphoreWorkQueue(size_t numThreads,
-                                std::chrono::nanoseconds busyWait = {},
-                                bool profilingEnabled = false);
-
 } // namespace M::LLCL
 
 #endif // LLCL_RUNTIME_WORKQUEUE_H

@@ -12,7 +12,6 @@ add_modular_library(LLCLRuntime
   MallocAllocator.cpp
   Runtime.cpp
   RuntimeCLOptions.cpp
-  ShardedSemaphoreWorkQueue.cpp
   SingleThreadWorkQueue.cpp
   ThreadPoolWorkQueue.cpp
 
