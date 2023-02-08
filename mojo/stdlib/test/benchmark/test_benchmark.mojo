@@ -65,6 +65,5 @@ fn test_benchmark():
     print(b5 > 0)
 
 
-fn main() -> Int:
+fn main():
     test_benchmark()
-    return 0
