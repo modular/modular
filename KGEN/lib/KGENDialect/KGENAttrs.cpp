@@ -245,7 +245,7 @@ bool UnboundAttr::isConstant() const { return true; }
 bool ParamDeclRefAttr::isConstant() const { return false; }
 
 /// Sort the parameter references by name.
-bool ParamDeclRefAttr::isLessThan(Attribute rhs) const {
+std::optional<bool> ParamDeclRefAttr::isLessThan(Attribute rhs) const {
   if (auto ref = llvm::dyn_cast<ParamDeclRefAttr>(rhs))
     return getName().getValue() < ref.getName().getValue();
   // Otherwise, named parameters are always to the right.
@@ -421,7 +421,7 @@ bool DTypeConstantAttr::isConvertibleFrom(Type type) {
 bool DTypeConstantAttr::isConstant() const { return true; }
 
 /// Sort by dtype value.
-bool DTypeConstantAttr::isLessThan(Attribute rhs) const {
+std::optional<bool> DTypeConstantAttr::isLessThan(Attribute rhs) const {
   if (auto dtype = llvm::dyn_cast<DTypeConstantAttr>(rhs))
     return getDType().getValue() < dtype.getDType().getValue();
   return true;
@@ -1530,7 +1530,7 @@ bool ParamOperatorAttr::isConstant() const { return false; }
 
 /// Sort operators by opcode, then number of operands, then recursively sort by
 /// operand values.
-bool ParamOperatorAttr::isLessThan(Attribute rhs) const {
+std::optional<bool> ParamOperatorAttr::isLessThan(Attribute rhs) const {
   auto op = llvm::dyn_cast<ParamOperatorAttr>(rhs);
   // Expressions are always to the left of non-expressions.
   if (!op)
@@ -1554,7 +1554,7 @@ bool ParamOperatorAttr::isLessThan(Attribute rhs) const {
       return false;
   }
 
-  llvm_unreachable("unexpected equal parameter expressions");
+  return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//
