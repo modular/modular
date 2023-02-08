@@ -477,7 +477,7 @@ StructCreateOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
       return emitOpError("operand #")
              << i << " has type " << operand.getType()
              << " but corresponding struct field " << fieldDecl.getNameAttr()
-             << " expected " << fieldDecl.getType();
+             << " expected " << reboundType;
     }
   }
   return success();
