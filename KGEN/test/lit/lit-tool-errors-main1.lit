@@ -1,9 +1,0 @@
-# RUN: not lit %s 2>&1 | FileCheck %s
-
-from Int import Int
-
-
-@export("bar")
-# CHECK: @export cannot alias main()
-fn main() -> Int:
-    return 0

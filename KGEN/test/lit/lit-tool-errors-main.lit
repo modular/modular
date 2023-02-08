@@ -2,6 +2,6 @@
 
 from F32 import F32
 
-# CHECK: could not find fn main() -> Int
+# CHECK: could not find fn main()
 fn main() -> F32:
     return 0.0

@@ -1,12 +1,10 @@
-# RUN: not lit %s | FileCheck %s
+# RUN: lit %s | FileCheck %s
 
 from F32 import F32
 from Int import Int
 from IO import print
 
 
-fn main() -> Int:
+fn main():
     # CHECK: 2.0
     print(F32(1.0) + 1.0)
-    # Use a non 0 exit code.
-    return 3

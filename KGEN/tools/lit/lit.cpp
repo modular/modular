@@ -58,15 +58,25 @@ public:
 };
 } // namespace
 
-/// Look for a main() -> Int in the module. Return it if found, otherwise
+/// Look for a main() in the module. Return it if found, otherwise
 /// return a nullptr.
 static FuncOp findMain(ModuleOp theModule, SymbolTable &symtab) {
+  auto emptyListType =
+      KGEN::ListType::get(IntegerType::get(theModule.getContext(), 1), 0);
   for (auto exportOp : theModule.getOps<ExportOp>()) {
-    //  The compiler guarantees there is only one symbol for the function
-    // "main" in the final object file with signature: fn main() -> Int.
+    // Is there an exported "main"?
     if (exportOp.getAlias() != "main")
       continue;
-    return symtab.lookup<FuncOp>(exportOp.getExported().getRootReference());
+    FuncOp func =
+        symtab.lookup<FuncOp>(exportOp.getExported().getRootReference());
+    if (!func)
+      continue;
+    FunctionType funcType = func.getFunctionType();
+    if (funcType.getNumInputs() != 0 || funcType.getNumResults() != 1)
+      continue;
+    if (auto listType = dyn_cast<KGEN::ListType>(funcType.getResult(0));
+        listType == emptyListType)
+      return func;
   }
   // No main found.
   return nullptr;
@@ -156,7 +166,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     // Finish off by producing a header file with the decls.
     if (failed(emitHeader(*compiler, *headerPath)))
       return clOptions.reportError("failed to emit the header file");
-    return 0;
+    return EXIT_SUCCESS;
   }
 
   assert(clOptions.cmd == Command::kExecute);
@@ -188,12 +198,13 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     auto compiledFuncOr = engine.lookup("exec", theFunc.getNameAttr());
     if (failed(compiledFuncOr))
       return clOptions.reportError(compiledFuncOr.getError());
-    return compiledFuncOr->invoke<ssize_t>();
+    compiledFuncOr->invoke<void>();
+    return EXIT_SUCCESS;
   };
 
   FuncOp mainFunc = findMain(*theModule, symtab);
   if (!mainFunc)
-    return clOptions.reportError("could not find fn main() -> Int");
+    return clOptions.reportError("could not find fn main()");
 
   return (execMain(mainFunc));
 }

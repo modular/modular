@@ -1,6 +1,6 @@
 # RUN: lit %s | FileCheck %s
 
-from prolog import F32, Int, printF32
+from prolog import F32, printF32
 
 
 @interface
@@ -26,8 +26,7 @@ fn exp_scalar_taylor_f32(x: F32) -> F32:
     )
 
 
-fn main() -> Int:
+fn main():
     let res = exp_scalar_taylor_f32(2.3)
     # CHECK: 9.88
     printF32(res)
-    return 0

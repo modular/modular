@@ -128,8 +128,6 @@ public:
   void registerAndCheckExport(ExportOp exportOp);
   void exportMain(ASTDecl *containingDecl, SymbolRefAttr symbolName);
 
-  static constexpr const StringLiteral kMainSymbolName = "main";
-
 private:
   /// The resolveSignature methods are invoked on an operation to parse and type
   /// check the signature for the operation.  On parse failure, these should
@@ -160,7 +158,7 @@ private:
   ParseResult resolveBody(AliasForwardDeclOp op, LitLexer &lexer,
                           ASTDecl &decl);
 
-  /// A valid main function must have signature main() -> Int.
+  /// A valid main function must have signature main().
   /// No parameters are allowed and here must be only one main in the final
   /// object file.
   bool isMainFunction(StringAttr &name,
