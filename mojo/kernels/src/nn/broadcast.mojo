@@ -9,6 +9,7 @@ from Buffer import NDBuffer
 from Int import Int
 from Memory import memcpy
 from Pointer import DTypePointer
+from Range import range
 from TargetInfo import sizeof
 
 
@@ -219,12 +220,10 @@ fn _tile_1d[
     """
     let elem_bytes = sizeof[__mlir_type[`!pop.scalar<`, type, `>`]]()
     let bytes_to_copy = tile_num_elems * elem_bytes
-    var i: Int = 0
     var dst_ptr = init_dst_ptr
-    while i < n:
+    for i in range(n):
         memcpy[type](dst_ptr, src_ptr, bytes_to_copy)
         dst_ptr = dst_ptr.offset(tile_num_elems)
-        i += 1
 
 
 @implements(broadcast_impl)
@@ -259,8 +258,7 @@ fn broadcast_impl_iter[
         alias next_axis = axis + 1
         var next_input_offset = input_offset
         var next_output_offset = output_offset
-        var i: Int = 0
-        while i < input.dim[axis]():
+        for i in range(input.dim[axis]()):
             broadcast_impl[next_axis, rank, output_shape, input_shape, type](
                 output,
                 input,
@@ -272,7 +270,6 @@ fn broadcast_impl_iter[
             )
             next_input_offset += input_axis_stride
             next_output_offset += output_axis_stride
-            i += 1
         # dupicate data in output, e.g.,
         #  broadcast([[1]]), shape (1, 1) to shape (2, 3):
         #     [[0, 0, 0], [0, 0, 0]]

@@ -9,6 +9,7 @@ from Buffer import NDBuffer
 from DType import DType
 from Index import Index
 from Int import Int
+from Range import range
 from Tuple import StaticTuple
 from TypeUtilities import rebind
 
@@ -60,17 +61,10 @@ fn gather_2D_axis_0[
     assert_param[indices_rank == 2]()
     assert_param[axis == 0]()
 
-    let i = output.dim[0]()
-    let j = output.dim[1]()
-    let k = output.dim[2]()
-
-    var iter0: Int = 0
-    while iter0 < i:
-        var iter1: Int = 0
-        while iter1 < j:
-            var iter2: Int = 0
-            let idx: Int = indices[iter0, iter1].value
-            while iter2 < k:
+    for i in range(output.dim[0]()):
+        for j in range(output.dim[1]()):
+            let idx: Int = indices[i, j].value
+            for k in range(output.dim[2]()):
                 output.__setitem__(
                     rebind[
                         StaticTuple[
@@ -81,12 +75,9 @@ fn gather_2D_axis_0[
                             output_rank,
                             __mlir_type.index,
                         ],
-                    ](Index(iter0, iter1, iter2).as_tuple()),
-                    input[idx, iter2],
+                    ](Index(i, j, k).as_tuple()),
+                    input[idx, k],
                 )
-                iter2 += 1
-            iter1 += 1
-        iter0 += 1
 
 
 @implements(gather)
@@ -114,17 +105,10 @@ fn gather_2D_axis_1[
     assert_param[indices_rank == 2]()
     assert_param[axis == 1]()
 
-    let i = output.dim[0]()
-    let j = output.dim[1]()
-    let k = output.dim[2]()
-
-    var iter0: Int = 0
-    while iter0 < i:
-        var iter1: Int = 0
-        while iter1 < j:
-            var iter2: Int = 0
-            while iter2 < k:
-                let idx: Int = indices[iter1, iter2].value
+    for i in range(output.dim[0]()):
+        for j in range(output.dim[1]()):
+            for k in range(output.dim[2]()):
+                let idx: Int = indices[j, k].value
                 output.__setitem__(
                     rebind[
                         StaticTuple[
@@ -135,12 +119,9 @@ fn gather_2D_axis_1[
                             output_rank,
                             __mlir_type.index,
                         ],
-                    ](Index(iter0, iter1, iter2).as_tuple()),
-                    input[iter0, idx],
+                    ](Index(i, j, k).as_tuple()),
+                    input[i, idx],
                 )
-                iter2 += 1
-            iter1 += 1
-        iter0 += 1
 
 
 @implements(gather)
@@ -168,15 +149,9 @@ fn gather_2D_input_1D_indices_axis_0[
     assert_param[indices_rank == 1]()
     assert_param[axis == 0]()
 
-    let i = output.dim[0]()
-    let j = output.dim[1]()
-
-    var iter0: Int = 0
-    while iter0 < i:
-        var iter1: Int = 0
-        while iter1 < j:
-            let idx: Int = indices[iter0].value
-
+    for i in range(output.dim[0]()):
+        for j in range(output.dim[1]()):
+            let idx: Int = indices[i].value
             output.__setitem__(
                 rebind[
                     StaticTuple[
@@ -187,11 +162,9 @@ fn gather_2D_input_1D_indices_axis_0[
                         output_rank,
                         __mlir_type.index,
                     ],
-                ](Index(iter0, iter1).as_tuple()),
-                input[idx, iter1],
+                ](Index(i, j).as_tuple()),
+                input[idx, j],
             )
-            iter1 += 1
-        iter0 += 1
 
 
 @implements(gather)
@@ -219,15 +192,9 @@ fn gather_2D_input_1D_indices_axis_1[
     assert_param[indices_rank == 1]()
     assert_param[axis == 1]()
 
-    let i = output.dim[0]()
-    let j = output.dim[1]()
-
-    var iter0: Int = 0
-    while iter0 < i:
-        var iter1: Int = 0
-        while iter1 < j:
-            let idx: Int = indices[iter1].value
-
+    for i in range(output.dim[0]()):
+        for j in range(output.dim[1]()):
+            let idx: Int = indices[j].value
             output.__setitem__(
                 rebind[
                     StaticTuple[
@@ -238,8 +205,6 @@ fn gather_2D_input_1D_indices_axis_1[
                         output_rank,
                         __mlir_type.index,
                     ],
-                ](Index(iter0, iter1).as_tuple()),
-                input[iter0, idx],
+                ](Index(i, j).as_tuple()),
+                input[i, idx],
             )
-            iter1 += 1
-        iter0 += 1
