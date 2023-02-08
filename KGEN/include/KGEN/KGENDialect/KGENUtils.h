@@ -203,6 +203,9 @@ void printSequenceElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
                         [&](TypedAttr value) { printParamValue(p, value); });
 }
 
+ParseResult parsePrettyType(AsmParser &p, TypedAttr &typeExpr);
+void printPrettyType(AsmPrinter &p, TypedAttr typeExpr);
+
 //===----------------------------------------------------------------------===//
 // Logic shared between funcs, generators, and generator interfaces
 //===----------------------------------------------------------------------===//

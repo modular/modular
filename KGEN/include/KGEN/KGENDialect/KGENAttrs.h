@@ -30,6 +30,8 @@ class KGENDType;
 class ListType;
 class SignatureType;
 class TargetType;
+class VariadicType;
+class VariadicAttr;
 
 //===----------------------------------------------------------------------===//
 // TypeConstantAttr

@@ -1537,6 +1537,65 @@ ParseResult KGEN::parseOptionalAlignmentParamValue(AsmParser &p,
   return parseIndexParamValue(p, result);
 }
 
+/// Try to parse a pretty type or a standard MLIR type. A pretty type is a POP
+/// type without the dialect prefix or a symbol reference.
+ParseResult KGEN::parsePrettyType(AsmParser &p, TypedAttr &typeExpr) {
+  // Try to parse a symbol name as sugar for [LIT]DeclRefType.
+  {
+    SymbolRefAttr ref;
+    auto refResult = p.parseOptionalAttribute(ref);
+    if (refResult.has_value()) {
+      if (failed(*refResult))
+        return failure();
+
+      ParamBindArrayAttr paramValues;
+      if (parseOptionalParamBindSpec(p, paramValues))
+        return failure();
+      Type result = DeclRefType::get(ref, paramValues);
+      typeExpr = TypeConstantAttr::get(result);
+      return success();
+    }
+  }
+
+  StringRef typeName;
+  // Try to parse a keyword for a known POP type. Allow `dtype` for
+  // `!kgen.dtype` as well. If this fails, defer to the parameter value parser.
+  if (p.parseOptionalKeyword(
+          &typeName, {ArrayType::getMnemonic(), DTypeType::getMnemonic()}))
+    return parseTypeParamValue(p, typeExpr);
+
+  if (typeName == DTypeType::getMnemonic()) {
+    typeExpr = TypeConstantAttr::get(DTypeType::get(p.getContext()));
+    return success();
+  }
+
+  llvm_unreachable("unknown keyword");
+}
+
+/// Try to print a pretty type or a standard MLIR type. A pretty type is a POP
+/// type without the dialect prefix.
+void KGEN::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
+  // If this isn't a type constant, defer to the parameter value printer.
+  auto typeCst = dyn_cast<TypeConstantAttr>(typeExpr);
+  if (!typeCst)
+    return printTypeParamValue(p, typeExpr);
+
+  // Try to print on the known types. Fallback to the generic type printer
+  // otherwise.
+  if (auto kgenType = dyn_cast_or_null<ArrayType>(typeCst.getValue())) {
+    p << decltype(kgenType)::getMnemonic();
+    kgenType.print(p);
+  } else if (auto kgenType =
+                 dyn_cast_or_null<DeclRefType>(typeCst.getValue())) {
+    p << kgenType.getSymbol();
+    printOptionalParamBindSpec(p, kgenType.getParamValues());
+  } else if (auto kgenType = dyn_cast_or_null<DTypeType>(typeCst.getValue())) {
+    p << DTypeType::getMnemonic();
+  } else {
+    printTypeParamValue(p, typeExpr);
+  }
+}
+
 /// Compare a range of values from an "originator" to a corresponding range of
 /// values from a "target".  If the two mismatch, emit an error that tries to
 /// explain the issue in a nice way.

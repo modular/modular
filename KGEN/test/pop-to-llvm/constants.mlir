@@ -69,21 +69,21 @@ kgen.func @variant_constant_2() -> !pop.variant<i1, i2, i3, i4, i5, i6> {
 }
 
 // CHECK-LABEL: @variadic_constant_0
-kgen.func @variadic_constant_0() -> !pop.variadic<i1> {
+kgen.func @variadic_constant_0() -> !kgen.variadic<i1> {
   // CHECK: %[[ALLOCA:.*]] = alloca i1, i64 3, align 1
   // CHECK: insertvalue { ptr, i64 } undef, ptr %[[ALLOCA]], 0
   // CHECK: insertvalue { ptr, i64 } %{{[0-9]+}}, i64 3, 1
-  %0 = kgen.param.constant: !pop.variadic<i1> = <#pop.variadic<0, 1, 0>>
-  kgen.return %0 : !pop.variadic<i1>
+  %0 = kgen.param.constant: !kgen.variadic<i1> = <#kgen.variadic<0, 1, 0>>
+  kgen.return %0 : !kgen.variadic<i1>
 }
 
 // CHECK-LABEL: @variadic_constant_1
-kgen.func @variadic_constant_1() -> !pop.variadic<i32> {
+kgen.func @variadic_constant_1() -> !kgen.variadic<i32> {
   // CHECK: %[[ALLOCA:.*]] = alloca i32, i64 0, align 4
   // CHECK: insertvalue { ptr, i64 } undef, ptr %[[ALLOCA]], 0
   // CHECK: insertvalue { ptr, i64 } %{{[0-9]+}}, i64 0, 1
-  %0 = kgen.param.constant: !pop.variadic<i32> = <#pop.variadic<>>
-  kgen.return %0 : !pop.variadic<i32>
+  %0 = kgen.param.constant: !kgen.variadic<i32> = <#kgen.variadic<>>
+  kgen.return %0 : !kgen.variadic<i32>
 }
 
 // CHECK-LABEL: @pointer_constant

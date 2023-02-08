@@ -1004,36 +1004,36 @@ kgen.generator @variadics<type: type>(
     %arg2: !pop.struct<>,
     %arg3: !pop.struct<>,
     %arg4: !kgen.paramref<type>) {
-  // CHECK: %[[V0:.*]] = pop.variadic.create [%arg0, %arg1] : !pop.variadic<scalar<f32>>
-  %v0 = pop.variadic.create [%arg0, %arg1] : !pop.variadic<scalar<f32>>
-  // CHECK: pop.variadic.size %[[V0]] : !pop.variadic<scalar<f32>>
-  %s0 = pop.variadic.size %v0 : !pop.variadic<scalar<f32>>
-  // CHECK: pop.variadic.get %[[V0]][%{{[a-zA-Z0-9]+}}] : !pop.variadic<scalar<f32>>
+  // CHECK: %[[V0:.*]] = pop.variadic.create [%arg0, %arg1] : !kgen.variadic<!pop.scalar<f32>>
+  %v0 = pop.variadic.create [%arg0, %arg1] : !kgen.variadic<!pop.scalar<f32>>
+  // CHECK: pop.variadic.size %[[V0]] : !kgen.variadic<!pop.scalar<f32>>
+  %s0 = pop.variadic.size %v0 : !kgen.variadic<!pop.scalar<f32>>
+  // CHECK: pop.variadic.get %[[V0]][%{{[a-zA-Z0-9]+}}] : !kgen.variadic<!pop.scalar<f32>>
   %i0 = index.constant 2
-  %g0 = pop.variadic.get %v0[%i0] : !pop.variadic<scalar<f32>>
+  %g0 = pop.variadic.get %v0[%i0] : !kgen.variadic<!pop.scalar<f32>>
 
-  // CHECK: %[[V1:.*]] = pop.variadic.create [] : !pop.variadic<scalar<f32>>
-  %v1 = pop.variadic.create [] : !pop.variadic<scalar<f32>>
+  // CHECK: %[[V1:.*]] = pop.variadic.create [] : !kgen.variadic<!pop.scalar<f32>>
+  %v1 = pop.variadic.create [] : !kgen.variadic<!pop.scalar<f32>>
   // CHECK: pop.variadic.size %[[V1]]
-  %s1 = pop.variadic.size %v1 : !pop.variadic<scalar<f32>>
+  %s1 = pop.variadic.size %v1 : !kgen.variadic<!pop.scalar<f32>>
 
-  // CHECK: %[[V2:.*]] = pop.variadic.create [%arg2, %arg3] : !pop.variadic<struct<>>
-  %v2 = pop.variadic.create [%arg2, %arg3] : !pop.variadic<struct<>>
+  // CHECK: %[[V2:.*]] = pop.variadic.create [%arg2, %arg3] : !kgen.variadic<!pop.struct<>>
+  %v2 = pop.variadic.create [%arg2, %arg3] : !kgen.variadic<!pop.struct<>>
   // CHECK: pop.variadic.size %[[V2]]
-  %s2 = pop.variadic.size %v2 : !pop.variadic<struct<>>
+  %s2 = pop.variadic.size %v2 : !kgen.variadic<!pop.struct<>>
 
-  // CHECK: %[[V3:.*]] = pop.variadic.create [%arg4] : !pop.variadic<type>
-  %v3 = pop.variadic.create [%arg4] : !pop.variadic<type>
+  // CHECK: %[[V3:.*]] = pop.variadic.create [%arg4] : !kgen.variadic<type>
+  %v3 = pop.variadic.create [%arg4] : !kgen.variadic<type>
   // CHECK: pop.variadic.size %[[V3]]
-  %s3 = pop.variadic.size %v3 : !pop.variadic<type>
+  %s3 = pop.variadic.size %v3 : !kgen.variadic<type>
 
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @variadic_argument
-kgen.func @variadic_argument(%arg0: !pop.variadic<f32>) {
+kgen.func @variadic_argument(%arg0: !kgen.variadic<f32>) {
   // CHECK: pop.variadic.size %arg0
-  %0 = pop.variadic.size %arg0 : !pop.variadic<f32>
+  %0 = pop.variadic.size %arg0 : !kgen.variadic<f32>
   kgen.return
 }
 

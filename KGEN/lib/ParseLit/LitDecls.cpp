@@ -779,7 +779,7 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
         if (isResultParams)
           p.emitError(arg.loc, "result parameters may not be variadic");
         else if (!isa<TypeCheckErrorType>(type.mlirType))
-          type = POP::VariadicType::get(type);
+          type = KGEN::VariadicType::get(type);
         // Notice that we handle the variadics.
         convention = convention & ~ValueInputConvention::VarArg;
       }
@@ -1034,7 +1034,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     if (int8_t(arg.convention & ValueInputConvention::ByRef))
       argType = POP::PointerType::get(argType);
     if (int8_t(arg.convention & ValueInputConvention::VarArg))
-      argType = POP::VariadicType::get(argType);
+      argType = KGEN::VariadicType::get(argType);
   }
 }
 

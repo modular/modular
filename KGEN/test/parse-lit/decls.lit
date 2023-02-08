@@ -141,7 +141,7 @@ fn referencesDefaultArgumentFunction():
     let f = defaultArgument
 
 struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
-  alias StorageType =  __mlir_type[`!pop.variadic<`, EltType, `>`]
+  alias StorageType =  __mlir_type[`!kgen.variadic<`, EltType, `>`]
   var value: StorageType
   fn __new__(value: StorageType) -> VaList[EltType]:
     return VaList[EltType]{value: value}
@@ -154,7 +154,7 @@ struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
     return __mlir_op.`pop.variadic.get`(self.value, index.__as_mlir_index())
 
 
-# CHECK: lit.func @"variadics($Int::Int*)"(%a: !pop.variadic<@"$Int"::@Int> vararg)
+# CHECK: lit.func @"variadics($Int::Int*)"(%a: !kgen.variadic<@"$Int"::@Int> vararg)
 fn variadics(*a: Int):
   let vaArgs = VaList[Int](a)
   let size = vaArgs.size()
@@ -163,10 +163,10 @@ fn variadics(*a: Int):
 
 # CHECK: lit.func @"callVariadic
 fn callVariadic[p: Int](x: Int):
-  # CHECK: %0 = kgen.param.constant: !pop.variadic<@"$Int"::@Int> = <#pop.variadic<>>
+  # CHECK: %0 = kgen.param.constant: !kgen.variadic<@"$Int"::@Int> = <#kgen.variadic<>>
   # CHECK: %1 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%0)
   variadics()
-  # CHECK: %2 = kgen.param.constant: !pop.variadic<@"$Int"::@Int> = <#pop.variadic<{{.*}}7{{.*}}11{{.*}}13{{.*}}>>
+  # CHECK: %2 = kgen.param.constant: !kgen.variadic<@"$Int"::@Int> = <#kgen.variadic<{{.*}}7{{.*}}11{{.*}}13{{.*}}>>
   # CHECK: %3 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%2)
   variadics(7, 11, 13)
   # CHECK: %4 = pop.variadic.create [%x]
@@ -177,9 +177,9 @@ fn callVariadic[p: Int](x: Int):
   # CHECK: %8 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%7)
   variadics(x, 1)
 
-  # CHECK: @"variadics($Int::Int*)", #pop.variadic<>
+  # CHECK: @"variadics($Int::Int*)", #kgen.variadic<>
   alias EmptyVariadic = variadics()
-  # CHECK: @"variadics($Int::Int*)", #pop.variadic<p, {{.*}}scalar<index> = 1{{.*}}>
+  # CHECK: @"variadics($Int::Int*)", #kgen.variadic<p, {{.*}}scalar<index> = 1{{.*}}>
   alias NonEmptyVariadic = variadics(p, 1)
 
 ##===----------------------------------------------------------------------===##

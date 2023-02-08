@@ -1091,7 +1091,7 @@ OpFoldResult VariadicCreateOp::fold(FoldAdaptor adaptor) {
       return {};
     values.push_back(value);
   }
-  return POP::VariadicAttr::get(values, getType());
+  return KGEN::VariadicAttr::get(values, getType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1127,7 +1127,7 @@ OpFoldResult VariadicGetOp::fold(FoldAdaptor adaptor) {
 OpFoldResult VariadicSizeOp::fold(FoldAdaptor adaptor) {
   auto indexType = IndexType::get(getContext());
   if (auto variadic =
-          dyn_cast_if_present<POP::VariadicAttr>(adaptor.getOperand()))
+          dyn_cast_if_present<KGEN::VariadicAttr>(adaptor.getOperand()))
     return IntegerAttr::get(indexType, variadic.getValues().size());
 
   if (auto create = getOperand().getDefiningOp<VariadicCreateOp>())

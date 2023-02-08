@@ -28,6 +28,7 @@ namespace M::KGEN {
 class ListType;
 class StringType;
 class TypeArrayAttr;
+class VariadicType;
 } // namespace M::KGEN
 
 namespace M::KGEN::POP {
@@ -48,7 +49,6 @@ class CoroutineType;
 class PointerType;
 class SIMDType;
 class StructType;
-class VariadicType;
 class VariantType;
 } // namespace M::KGEN::POP
 
