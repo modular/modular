@@ -22,7 +22,7 @@ TestRuntime(std::function<std::unique_ptr<WorkQueue>()> createWorkQueue) {
   AsyncValue::registerType<int>();
   AsyncValue::registerType<char>();
   AsyncValue::registerType<size_t>();
-  return std::move(runtime);
+  return runtime;
 }
 
 std::unique_ptr<Runtime> TestSingleThreadedRuntime() {
