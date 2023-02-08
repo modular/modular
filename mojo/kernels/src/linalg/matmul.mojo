@@ -20,6 +20,7 @@ from List import create_kgen_list
 from Matrix import Matrix
 from Memory import stack_allocation
 from Pointer import DTypePointer
+from Range import range
 from SIMD import SIMD
 from TargetInfo import simd_byte_width
 from Transpose import transpose_inplace
@@ -205,17 +206,14 @@ fn naive_matmul[
     let matrix_b = Matrix[shape_b, value_type, transpose_b](b)
     let matrix_c = Matrix[shape_c, accum_type, False](c)
 
-    var m: Int = 0
-    while m < gemm_shape.M:
+    for m in range(gemm_shape.M):
         var n: Int = 0
         while n < gemm_shape.N:
             var c_val: SIMD[1, accum_type] = 0
-            var k: Int = 0
-            while k < gemm_shape.K:
+            for k in range(gemm_shape.K):
                 let a_val = matrix_a.__getitem__(m, k).cast[accum_type]()
                 let b_val = matrix_b.__getitem__(k, n).cast[accum_type]()
                 c_val += a_val * b_val
-                k += 1
             c_val = epilogue_elemwise_func[accum_type](m, n, c_val)
             matrix_c.__setitem__(m, n, c_val)
             n += 1
@@ -223,7 +221,6 @@ fn naive_matmul[
             c.data.offset(m * gemm_shape.N).address, n
         )
         epilogue_rowise_func[accum_type](m, row)
-        m += 1
 
 
 # ===----------------------------------------------------------------------=== #
@@ -403,8 +400,7 @@ struct PackMatrixRows[
 
         # Fill the simd_size x simd_size transpose buffer
         #  with un-transposed data.
-        var inner_row_idx: Int = 0
-        while inner_row_idx < simd_size:
+        for inner_row_idx in range(simd_size):
             # Check that the current row has valid data.
             if skip_row_bound or (inner_row_idx < read_bound.__getitem__[0]()):
                 let row_gloal_index = Index(
@@ -437,15 +433,13 @@ struct PackMatrixRows[
                 transpose_buffer.simd_store[simd_size](
                     Index(inner_row_idx, 0).as_tuple(), SIMD[simd_size, type](0)
                 )
-            inner_row_idx += 1
 
         # Transpose the buffered data
         transpose_inplace[2, simd_size, simd_size, type](transpose_buffer)
 
         # Write to packed space:
         #  transposed_inner_row_idx now corresponds to the original column idx.
-        var transposed_inner_row_idx: Int = 0
-        while transposed_inner_row_idx < simd_size:
+        for transposed_inner_row_idx in range(simd_size):
             let transposed_data = transpose_buffer.simd_load[simd_size](
                 Index(transposed_inner_row_idx, 0).as_tuple()
             )
@@ -469,7 +463,6 @@ struct PackMatrixRows[
                 )
             # Out of bound columns are discarded as there's no allocation for them
             #  in the packed buffer.
-            transposed_inner_row_idx += 1
 
     fn _pack(self):
         """Helper function: Allocates transpose workspace and launch the
@@ -669,8 +662,7 @@ struct PackMatrixCols[
             tile_row_idx(Int): row index of the row to pack within the tile of
                 data to pack.
         """
-        var col_idx: Int = 0
-        while col_idx < self.pack_tile_dim.__getitem__[1]():
+        for col_idx in range(0, self.pack_tile_dim.__getitem__[1](), simd_size):
             # Decl the data to fill in packed buffer.
             var data: SIMD[simd_size, type]
 
@@ -711,7 +703,6 @@ struct PackMatrixCols[
                 Index(col_idx_outer, tile_row_idx, col_idx_inner).as_tuple(),
                 data,
             )
-            col_idx += simd_size
 
     fn _pack_helper[skip_col_bound: Bool](self):
         """Helper function: packs all the rows within the tile of data to pack
@@ -886,16 +877,12 @@ struct MatmulInnerLoopBPacked[
                 c_local(NDBuffer): pre-allocated local buffer for c partial
                     sums.
         """
-        var row_idx: Int = 0
-        while row_idx < a_row_size:
-            var col_idx: Int = 0
-            while col_idx < pack_inner_size:
+        for row_idx in range(a_row_size):
+            for col_idx in range(0, pack_inner_size, simd_size):
                 c_local.simd_store[simd_size](
                     Index(row_idx, col_idx).as_tuple(),
                     SIMD[simd_size, accum_type](0),
                 )
-                col_idx += simd_size
-            row_idx += 1
 
     fn _load_c_tile(
         self,
@@ -919,10 +906,8 @@ struct MatmulInnerLoopBPacked[
                 tile_idx(StaticIntTuple): index tuple with (m,n) coordinates
                     within the current processing tile.
         """
-        var row_idx: Int = 0
-        while row_idx < a_row_size:
-            var col_idx: Int = 0
-            while col_idx < pack_inner_size:
+        for row_idx in range(a_row_size):
+            for col_idx in range(0, pack_inner_size, simd_size):
                 let global_idx_pair = (
                     Index(self.global_offset.M, self.global_offset.N)
                     + tile_idx
@@ -961,8 +946,6 @@ struct MatmulInnerLoopBPacked[
 
                 # Store data to local buffer.
                 c_local.simd_store[simd_size](local_idx, c_data)
-                col_idx += simd_size
-            row_idx += 1
 
     fn _store_c_tile(
         self,
@@ -984,10 +967,8 @@ struct MatmulInnerLoopBPacked[
                 tile_idx(StaticIntTuple): index tuple with (m,n) coordinates
                     within the current processing tile.
         """
-        var row_idx: Int = 0
-        while row_idx < a_row_size:
-            var col_idx: Int = 0
-            while col_idx < pack_inner_size:
+        for row_idx in range(a_row_size):
+            for col_idx in range(0, pack_inner_size, simd_size):
                 let global_idx_pair = (
                     Index(self.global_offset.M, self.global_offset.N)
                     + tile_idx
@@ -1021,8 +1002,6 @@ struct MatmulInnerLoopBPacked[
                         - col_idx,
                         c_data,
                     )
-                col_idx += simd_size
-            row_idx += 1
 
     fn _accumulate(
         self,
@@ -1052,15 +1031,13 @@ struct MatmulInnerLoopBPacked[
         var global_k = self.global_offset.K + tile_n_k_idx.__getitem__[1]()
 
         # Loop over local accumulator tiles.
-        var col_idx: Int = 0
-        while col_idx < pack_inner_size:
+        for col_idx in range(0, pack_inner_size, simd_size):
             let b_val = self.b_packed.simd_load[simd_size](
                 Index(
                     n_outer_idx, tile_n_k_idx.__getitem__[1](), col_idx
                 ).as_tuple()
             ).cast[accum_type]()
-            var row_idx: Int = 0
-            while row_idx < a_row_size:
+            for row_idx in range(a_row_size):
                 var global_m = self.global_offset.M + row_idx
                 let a_val_scalar = self.a.simd_load[1](
                     Index(global_m, global_k).as_tuple()
@@ -1074,8 +1051,6 @@ struct MatmulInnerLoopBPacked[
 
                 c_val = a_val.fma(b_val, c_val)
                 c_local.simd_store[simd_size](c_idx, c_val)
-                row_idx += 1
-            col_idx += simd_size
 
     fn _run_inner_loop(self):
         """Utility funcion on the inner loop. Run the inner kernel on the whole
@@ -1090,8 +1065,7 @@ struct MatmulInnerLoopBPacked[
             accum_type,
         ].stack_allocation()
 
-        var idx_n: Int = 0
-        while idx_n < self.tile_n_k.__getitem__[0]():
+        for idx_n in range(0, self.tile_n_k.__getitem__[0](), pack_inner_size):
             # Initialize accumulation buffer
             #  either zero filling or load existing value.
             if self.global_offset.K == 0:
@@ -1100,16 +1074,12 @@ struct MatmulInnerLoopBPacked[
                 self._load_c_tile(c_local, Index(0, idx_n))
 
             # Iterate on tile K dimension.
-            var idx_k: Int = 0
-
             # Not unrolled on K path.
-            while idx_k < self.tile_n_k.__getitem__[1]():
+            for idx_k in range(self.tile_n_k.__getitem__[1]()):
                 # accumulate data for this (n, k) index
                 self._accumulate(c_local, Index(idx_n, idx_k))
-                idx_k += 1
 
             self._store_c_tile(c_local, Index(0, idx_n))
-            idx_n += pack_inner_size
 
 
 # Helper heuristic function to decide on tile size
