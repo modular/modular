@@ -666,25 +666,6 @@ def KGEN_ParamYieldOp : KGENOp<"param.yield",
 }
 
 //===----------------------------------------------------------------------===//
-// IncludeOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_IncludeOp : KGENOp<"include", []> {
-  let summary = "include an external file";
-  let description = [{
-    The `kgen.include` operation includes an external file and makes all the
-    symbols contained within available for use.
-
-    This op only exists in the IR before the include is resolved, once it's
-    resolved the IncludeOp is removed. Includes are resolved by the elaborator
-    by providing a list of search paths.
-  }];
-
-  let arguments = (ins StrAttr:$fileName);
-  let assemblyFormat = "$fileName attr-dict-with-keyword";
-}
-
-//===----------------------------------------------------------------------===//
 // RebindOp
 //===----------------------------------------------------------------------===//
 
@@ -751,49 +732,4 @@ def KGEN_ExportOp : KGENOp<"export", [
       $exported custom<ExportOp>(ref($exported), $alias) attr-dict
   }];
   let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// ExternFuncOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ExternFuncOp : KGENOp<"extern.func", [DeclareOpInterfaceMethods<Symbol>]> {
-  let summary = "Declare an external function.";
-  let description = [{
-    The `kgen.extern.func` operation provides a signature for an external function.
-
-    Example:
-
-    ```mlir
-    kgen.extern.func @foo(si32) -> (f32, f32)
-    ```
-  }];
-
-  let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<FunctionType>:$function_type);
-  let results = (outs);
-  let assemblyFormat = "$sym_name `` $function_type attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
-// ExternVariableOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ExternVariableOp : KGENOp<"extern.variable",
-    [DeclareOpInterfaceMethods<Symbol>]> {
-  let summary = "Declare an external variable.";
-  let description = [{
-    The `kgen.extern.variable` operation provides a signature for an
-    external variable.
-
-    Example:
-
-    ```mlir
-    kgen.extern.variable @foo : !foo.someType
-    ```
-  }];
-
-  let arguments = (ins SymbolNameAttr:$sym_name, TypeAttr:$type);
-  let results = (outs);
-  let assemblyFormat = "$sym_name `:` $type attr-dict";
 }

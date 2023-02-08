@@ -85,69 +85,6 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertKGENExternFunc
-//===----------------------------------------------------------------------===//
-
-/// Convert `kgen.extern.func` to an extern `llvm.func`.
-struct ConvertKGENExternFunc : public ConvertSymbolOpToLLVM<ExternFuncOp> {
-  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
-
-  LogicalResult
-  matchAndRewrite(ExternFuncOp op, typename ExternFuncOp::Adaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // Convert the func signature.
-    TypeConverter::SignatureConversion result(
-        op.getFunctionType().getNumInputs());
-    Type funcType = this->getTypeConverter()->convertFunctionSignature(
-        op.getFunctionType(),
-        /*isVariadic=*/false, result);
-    if (!funcType)
-      return emitError(op.getLoc(), "failed to convert func signature");
-
-    // Replace it with an LLVM function that has no body.
-    symtab.remove(op);
-    auto funcOp = rewriter.replaceOpWithNewOp<LLVM::LLVMFuncOp>(
-        op, op.getNameAttr(), funcType, LLVM::Linkage::External);
-    Block::iterator insertPt(funcOp->getNextNode());
-    funcOp->remove();
-    symtab.insert(funcOp, insertPt);
-
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertKGENExternVariable
-//===----------------------------------------------------------------------===//
-
-/// Convert `kgen.extern.variable` to an extern global variable.
-struct ConvertKGENExternVariable
-    : public ConvertSymbolOpToLLVM<ExternVariableOp> {
-  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
-
-  LogicalResult
-  matchAndRewrite(ExternVariableOp op,
-                  typename ExternVariableOp::Adaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // Convert the type of the variable.
-    Type llvmType = this->getTypeConverter()->convertType(op.getType());
-    if (!llvmType)
-      return emitError(op.getLoc(), "failed to convert variable type");
-
-    // Replace it with an LLVM global variable.
-    symtab.remove(op);
-    auto globalOp = rewriter.replaceOpWithNewOp<LLVM::GlobalOp>(
-        op, llvmType, false, LLVM::Linkage::External, op.getName(),
-        /*value=*/nullptr);
-    Block::iterator insertPt(globalOp->getNextNode());
-    globalOp->remove();
-    symtab.insert(globalOp, insertPt);
-
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertKGENAddressOf
 //===----------------------------------------------------------------------===//
 
@@ -288,13 +225,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertHLCFReturn
       // clang-format on
       >(typeConverter);
-  patterns.insert<
-      // clang-format off
-      ConvertKGENFunc,
-      ConvertKGENExternFunc,
-      ConvertKGENExternVariable
-      // clang-format on
-      >(typeConverter, symtab);
+  patterns.insert<ConvertKGENFunc>(typeConverter, symtab);
   // Just remove ExportOps.
   patterns.add(removeExportOps);
 }

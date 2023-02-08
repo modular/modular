@@ -66,15 +66,6 @@ kgen.func @address_dtype(%arg0 : !pop.simd<1, address>, %arg1 : !pop.simd<4, add
   kgen.return
 }
 
-// CHECK-LABEL: llvm.func @an_extern_func
-// CHECK-SAME:  (i32, vector<4xf32>) -> vector<8xf32>
-
-kgen.extern.func @an_extern_func(si32, !pop.simd<4, f32>) -> !pop.simd<8, f32>
-
-// CHECK-LABEL: llvm.mlir.global external @foo
-// CHECK-SAME: {addr_space = 0 : i32} : f64
-kgen.extern.variable @foo : f64
-
 kgen.func @constant_str() -> !kgen.string {
   // CHECK: %[[GLOBAL_STR:.*]] = pop.global_constant: array<3, scalar<si8>> = <[65, 66, 0]>
   // CHECK: %[[BITCAST:.*]] = pop.pointer.bitcast %[[GLOBAL_STR]] : !pop.pointer<array<3, scalar<si8>>> to !pop.pointer<i8>
