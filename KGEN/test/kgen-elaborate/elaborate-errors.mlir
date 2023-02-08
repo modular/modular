@@ -1,11 +1,4 @@
-// RUN: kgen-opt %s -resolve-includes="search-path=%S" -elaborate-generators="search-path=%S enable-search=true" -verify-diagnostics -split-input-file -allow-unregistered-dialect
-
-kgen.include "library-test.mlir"
-
-// expected-error @below {{interface redeclaration argument #0 has type 'f32' but previous interface declaration expected type 'si32'}}
-kgen.generator.interface @unary_add<size>(f32) -> si32
-
-// -----
+// RUN: kgen-opt %s -elaborate-generators="enable-search=true" -verify-diagnostics -split-input-file -allow-unregistered-dialect
 
 // This yields a verification error when elaborated.
 // expected-error @+1 {{no viable expansions found}}
@@ -89,11 +82,6 @@ kgen.generator @brokenVLenAssert() {
   kgen.param.assert <eq(flen, 3)>, "vector length should be 3"
   kgen.return
 }
-
-// -----
-
-// expected-error @+1 {{could not find file 'does-not-exist.mlir'}}
-kgen.include "does-not-exist.mlir"
 
 // -----
 

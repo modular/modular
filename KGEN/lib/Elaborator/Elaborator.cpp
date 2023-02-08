@@ -2130,10 +2130,8 @@ namespace {
 struct ElaborateGeneratorsPass
     : public KGEN::impl::ElaborateGeneratorsBase<ElaborateGeneratorsPass> {
   ElaborateGeneratorsPass(LLCL::Runtime &runtime,
-                          SmallVectorImpl<std::string> &includedFiles,
                           const ElaborateGeneratorsOptions &options)
-      : ElaborateGeneratorsBase(options), runtime(&runtime),
-        includedFiles(&includedFiles) {}
+      : ElaborateGeneratorsBase(options), runtime(&runtime) {}
   using ElaborateGeneratorsBase::ElaborateGeneratorsBase;
 
   void runOnOperation() override {
@@ -2142,12 +2140,6 @@ struct ElaborateGeneratorsPass
         LLCL::createSingleThreadWorkQueue());
 
     ModuleOp theModule = getOperation();
-
-    SmallVector<std::filesystem::path> paths;
-    for (const auto &p : searchPaths)
-      paths.push_back(p);
-
-    paths.push_back(std::filesystem::path("."));
 
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
 
@@ -2166,10 +2158,6 @@ struct ElaborateGeneratorsPass
       if (gen.getInputParamDecls().empty() && !gen.getImplementsAttr() &&
           (exports.empty() || exports.contains(gen)))
         primaryGenerators.push_back(gen);
-
-    if (failed(resolveIncludes(analysis.getTopLevelSymbolTable(), paths,
-                               includedFiles)))
-      return signalPassFailure();
 
     // Elaboration is the compilation phase in which the IR goes from
     // target-non-specific to target-specific: in order to fully concretize the
@@ -2190,44 +2178,11 @@ struct ElaborateGeneratorsPass
 
   /// An optional LLCL runtime pointer.
   LLCL::Runtime *runtime = nullptr;
-  /// Vector of files we included.
-  SmallVectorImpl<std::string> *includedFiles = nullptr;
-};
-
-/// Resolve includes in a pass. This pass only does include resolution.
-struct ResolveIncludesPass
-    : public KGEN::impl::ResolveIncludesBase<ResolveIncludesPass> {
-  using ResolveIncludesBase::ResolveIncludesBase;
-  ResolveIncludesPass(SmallVectorImpl<std::string> &includedFiles,
-                      const ResolveIncludesOptions &options)
-      : ResolveIncludesBase(options), includedFiles(&includedFiles) {}
-
-  void runOnOperation() override {
-    SmallVector<std::filesystem::path> paths;
-    for (const auto &p : searchPaths)
-      paths.push_back(p);
-    paths.push_back(std::filesystem::path("."));
-
-    auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
-    if (failed(resolveIncludes(analysis.getTopLevelSymbolTable(), paths,
-                               includedFiles)))
-      return signalPassFailure();
-  }
-
-  SmallVectorImpl<std::string> *includedFiles = nullptr;
 };
 } // namespace
 
 std::unique_ptr<mlir::Pass>
 KGEN::createElaborateGenerators(LLCL::Runtime &runtime,
-                                SmallVectorImpl<std::string> &includedFiles,
                                 const ElaborateGeneratorsOptions &options) {
-  return std::make_unique<ElaborateGeneratorsPass>(runtime, includedFiles,
-                                                   options);
-}
-
-std::unique_ptr<mlir::Pass>
-KGEN::createResolveIncludes(SmallVectorImpl<std::string> &includedFiles,
-                            const ResolveIncludesOptions &options) {
-  return std::make_unique<ResolveIncludesPass>(includedFiles, options);
+  return std::make_unique<ElaborateGeneratorsPass>(runtime, options);
 }

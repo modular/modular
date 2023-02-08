@@ -28,17 +28,12 @@ void KGEN::generateLibraryFile(mlir::PassManager &pm) {
 }
 
 void KGEN::elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
-                           const ElaborateGeneratorsOptions &elaborateOptions,
-                           SmallVectorImpl<std::string> &includedFiles) {
+                           const ElaborateGeneratorsOptions &elaborateOptions) {
   populatePreElaborationPipeline(pm);
-  // Resolve includes before we outline closures.
-  pm.addPass(createResolveIncludes(
-      includedFiles, ResolveIncludesOptions{elaborateOptions.searchPaths}));
   // Only outline closures just before elaboration - they aren't really
   // necessary until elaboration happens.
   pm.addPass(createOutlineClosures());
-  pm.addPass(
-      createElaborateGenerators(runtime, includedFiles, elaborateOptions));
+  pm.addPass(createElaborateGenerators(runtime, elaborateOptions));
   // Run the inliner and cleanup the compiler globals.
   pm.addPass(createForceInline());
   pm.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());

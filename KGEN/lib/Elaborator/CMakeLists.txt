@@ -6,7 +6,6 @@
 
 add_modular_mlir_library(KGENElaborator
   Elaborator.cpp
-  IncludeResolution.cpp
   IREvaluator.cpp
   SelectFastestFunction.cpp
 
