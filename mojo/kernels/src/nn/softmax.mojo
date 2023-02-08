@@ -10,6 +10,7 @@ from Functional import vectorize
 from Int import Int
 from Math import exp
 from Numerics import neginf
+from Range import range
 from Reductions import max
 from SIMD import SIMD
 from Tuple import StaticTuple
@@ -103,8 +104,7 @@ fn _softmax_2_pass_step1[
     let len = input.__len__()
     let vector_end = (len // simd_width) * simd_width
 
-    var i: Int = 0
-    while i < vector_end:
+    for i in range(0, vector_end, simd_width):
         let simd_elem = input.simd_load[simd_width](i)
         let new_max_vec = SIMD[simd_width, type].splat(
             running_max_vec.max(simd_elem).reduce_max()
@@ -113,20 +113,17 @@ fn _softmax_2_pass_step1[
             running_max_vec - new_max_vec
         ) + exp[simd_width, type](simd_elem - new_max_vec)
         running_max_vec = new_max_vec
-        i += simd_width
 
     var running_max = running_max_vec.reduce_max()
     var running_sum = running_sum_vec.reduce_add()
 
-    i = vector_end
-    while i < len:
-        let elem = input[i]
+    for ii in range(vector_end, len):  # TODO(#8365) use `i`
+        let elem = input[ii]
         let new_max = running_max.max(elem)
         running_sum = running_sum * exp[1, type](running_max - new_max) + exp[
             1, type
         ](elem - new_max)
         running_max = new_max
-        i += 1
 
     return StaticTuple[2, __mlir_type[`!pop.scalar<`, type, `>`]].pair(
         running_max[0], running_sum[0]
