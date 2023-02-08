@@ -431,49 +431,6 @@ def POP_ClosureType : POPType<"Closure", "closure"> {
   let assemblyFormat = "`<` $func `>`";
 }
 
-//===----------------------------------------------------------------------===//
-// VariadicType
-//===----------------------------------------------------------------------===//
-
-def POP_VariadicType : POPType<"Variadic", "variadic"> {
-  let summary = "parameterized variadic type";
-  let description = [{
-    The `!pop.variadic` type represents a homogeneously typed variadic sequence
-    of zero or more elements.
-
-    Example:
-
-    ```mlir
-    // A variadic sequence of scalar floats.
-    !pop.variadic<scalar<f32>>
-
-    // A parameterized variadic sequence.
-    !pop.variadic<type>
-    ```
-  }];
-
-  let parameters = (ins "TypedAttr":$elementType);
-  let assemblyFormat = "`<` custom<PrettyType>($elementType) `>`";
-  let genVerifyDecl = 1;
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType)>,
-    TypeBuilderWithInferredContext<(ins "Type":$elementType)>,
-  ];
-
-  let extraClassDeclaration = [{
-    /// Try to narrow the type expression of the element type to an MLIR type.
-    Type getResolvedElementType() const;
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// Type Constraints
-
-class VariadicElementType<string lhs, string rhs> : TypesMatchWith<
-    "value type matches variadic element type", lhs, rhs,
-    "ParamRefType::get($_self.cast<POP::VariadicType>().getElementType())",
-    "typeRangeMatches">;
 
 //===----------------------------------------------------------------------===//
 // CoroutineType

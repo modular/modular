@@ -2103,7 +2103,7 @@ def POP_VariadicCreateOp : POPOp<"variadic.create", [Pure,
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands);
-  let results = (outs POP_VariadicType:$result);
+  let results = (outs KGEN_VariadicType:$result);
   let assemblyFormat = [{
     ` ` `[` $operands `]` attr-dict `:` qualified(type($result))
   }];
@@ -2134,7 +2134,7 @@ def POP_VariadicGetOp : POPOp<"variadic.get", [Pure,
     ```
   }];
 
-  let arguments = (ins POP_VariadicType:$variadic, Index:$index);
+  let arguments = (ins KGEN_VariadicType:$variadic, Index:$index);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
     $variadic `[` $index `]` attr-dict `:` qualified(type($variadic))
@@ -2172,7 +2172,7 @@ def POP_VariadicSizeOp : POPOp<"variadic.size", [Pure]> {
     ```
   }];
 
-  let arguments = (ins POP_VariadicType:$operand);
+  let arguments = (ins KGEN_VariadicType:$operand);
   let results = (outs Index:$result);
 
   let assemblyFormat = [{

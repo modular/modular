@@ -12,6 +12,7 @@
 #include "ASTDecl.h"
 #include "LitExprEmitter.h"
 
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -29,8 +30,8 @@ using namespace M::KGEN::LIT;
 /// Given the MLIR type for a variadic argument, return the element type as an
 /// MLIR type.
 static Type getVariadicElementType(Type variadicType) {
-  auto mValue = MValue(cast<POP::VariadicType>(variadicType).getElementType());
-  // POP::VariadicType allows arbitrary parameter expressions, but we only ever
+  auto mValue = MValue(cast<KGEN::VariadicType>(variadicType).getElementType());
+  // KGEN::VariadicType allows arbitrary parameter expressions, but we only ever
   // use concrete types for variadic syntax.
   assert(mValue.getIfTypeValue() &&
          "variadic convention never has parameteric element");
@@ -304,9 +305,9 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
     if (nextBinding == bindings.size()) {
       // If the parameter decl is a variadic parameter list, we can fulfill it
       // with an empty list.  We know it must be the last parameter decl.
-      if (auto variadicType = dyn_cast<POP::VariadicType>(decl.getType())) {
+      if (auto variadicType = dyn_cast<KGEN::VariadicType>(decl.getType())) {
         auto emptyVariadic =
-            POP::VariadicAttr::get(ArrayRef<TypedAttr>(), variadicType);
+            KGEN::VariadicAttr::get(ArrayRef<TypedAttr>(), variadicType);
         setParamValue(emptyVariadic);
         continue;
       }
@@ -372,7 +373,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
 
     // Scalar parameter values are installed directly.
     MValue paramValue;
-    auto variadicType = dyn_cast<POP::VariadicType>(decl.getType());
+    auto variadicType = dyn_cast<KGEN::VariadicType>(decl.getType());
     if (!variadicType) {
       // Otherwise we get a single value.
       MValue paramValue = handleSingleParameterValue(binding, decl.getType());
@@ -395,7 +396,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       if (!elements.back())
         return {};
     }
-    setParamValue(POP::VariadicAttr::get(elements, variadicType));
+    setParamValue(KGEN::VariadicAttr::get(elements, variadicType));
   }
 
   // Check and complain if we have bindings that didn't get used.
@@ -1184,8 +1185,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
       // Varargs arguments are fulfilled with an empty !pop.variadic list.
       if (uint8_t(convention & ValueInputConvention::VarArg)) {
-        auto variadic = POP::VariadicAttr::get(
-            ArrayRef<TypedAttr>(), expectedType.cast<POP::VariadicType>());
+        auto variadic = KGEN::VariadicAttr::get(
+            ArrayRef<TypedAttr>(), expectedType.cast<KGEN::VariadicType>());
         argumentValues.push_back({MValue(variadic), callNode});
         continue;
       }
@@ -1250,8 +1251,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       SmallVector<TypedAttr> variadicArgs;
       for (auto operand : variadicOperands)
         variadicArgs.push_back(operand.ir.getIfMValue().get());
-      auto argAttr = POP::VariadicAttr::get(
-          variadicArgs, expectedType.cast<POP::VariadicType>());
+      auto argAttr = KGEN::VariadicAttr::get(
+          variadicArgs, expectedType.cast<KGEN::VariadicType>());
       argumentValues.push_back({MValue(argAttr), variadicOperands[0].expr});
       continue;
     }

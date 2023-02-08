@@ -371,7 +371,6 @@ LogicalResult SIMDType::printValue(AsmPrinter &p, TypedAttr value) const {
 //===----------------------------------------------------------------------===//
 // ArrayAttr
 //===----------------------------------------------------------------------===//
-
 OptionalParseResult POP::ArrayType::parseValue(AsmParser &p,
                                                TypedAttr &value) const {
   if (failed(p.parseOptionalLSquare()))
@@ -533,26 +532,6 @@ LogicalResult VariantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 /// The variant attribute is a constant if the value type is a constant.
 bool VariantAttr::isConstant() const {
   return ParameterAttr::isSimpleConstant(getValue());
-}
-
-//===----------------------------------------------------------------------===//
-// VariadicAttr
-//===----------------------------------------------------------------------===//
-
-/// The variadic attribute is a constant if all element values are constants.
-bool POP::VariadicAttr::isConstant() const {
-  return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant);
-}
-
-LogicalResult
-POP::VariadicAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                          ArrayRef<TypedAttr> values, VariadicType type) {
-  auto elementType = ParamRefType::get(type.getElementType());
-  for (auto [idx, value] : llvm::enumerate(values))
-    if (value.getType() != elementType)
-      return emitError() << "variadic sequence element #" << idx << " has type "
-                         << value.getType() << " but expected " << elementType;
-  return success();
 }
 
 //===----------------------------------------------------------------------===//

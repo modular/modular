@@ -863,14 +863,14 @@ kgen.func @variadic_create(%a: i24) {
   // CHECK: %[[STRUCT2:.*]] = llvm.insertvalue %[[ALLOCA]], %[[STRUCT1]][0]
   // CHECK: llvm.insertvalue %[[SIZE]], %[[STRUCT2]][1]
   // CHECK: llvm.intr.lifetime.end 8, %[[ALLOCA]]
-  %0 = pop.variadic.create [%a, %a] : !pop.variadic<i24>
+  %0 = pop.variadic.create [%a, %a] : !kgen.variadic<i24>
   kgen.return
 }
 
 // CHECK-LABEL: @variadic_create_empty
 kgen.func @variadic_create_empty() {
   // CHECK: llvm.mlir.undef : !llvm.struct<(ptr<i32>, i64)>
-  %0 = pop.variadic.create [] : !pop.variadic<i32>
+  %0 = pop.variadic.create [] : !kgen.variadic<i32>
   kgen.return
 }
 
@@ -878,24 +878,24 @@ kgen.func @variadic_create_empty() {
 kgen.func @variadic_create_index() {
   %0 = index.constant 64
   // CHECK: llvm.mlir.undef : !llvm.struct<(ptr<i64>, i64)>
-  %1 = pop.variadic.create [%0] : !pop.variadic<index>
+  %1 = pop.variadic.create [%0] : !kgen.variadic<index>
   kgen.return
 }
 
 // CHECK-LABEL: @variadic_size
-kgen.func @variadic_size(%arg0: !pop.variadic<f32>) -> index {
+kgen.func @variadic_size(%arg0: !kgen.variadic<f32>) -> index {
   // CHECK: llvm.extractvalue %{{.*}}[1] : !llvm.struct<(ptr<f32>, i64)>
-  %0 = pop.variadic.size %arg0 : !pop.variadic<f32>
+  %0 = pop.variadic.size %arg0 : !kgen.variadic<f32>
   kgen.return %0 : index
 }
 
 // CHECK-LABEL: @variadic_get
-kgen.func @variadic_get(%arg0: !pop.variadic<f32>) -> f32 {
+kgen.func @variadic_get(%arg0: !kgen.variadic<f32>) -> f32 {
   %0 = index.constant 3
   // CHECK: %[[ALLOCA:.*]] = llvm.extractvalue %{{.*}}[0] : !llvm.struct<(ptr<f32>, i64)>
   // CHECK: %[[GEP:.*]] = llvm.getelementptr %[[ALLOCA]][%{{[0-9]+}}]
   // CHECK: %[[LOAD:.*]] = llvm.load %[[GEP]]
-  %1 = pop.variadic.get %arg0[%0] : !pop.variadic<f32>
+  %1 = pop.variadic.get %arg0[%0] : !kgen.variadic<f32>
   kgen.return %1 : f32
 }
 

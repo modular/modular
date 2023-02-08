@@ -1789,6 +1789,42 @@ TypedAttr KGEN::emitMLIROperationCall(
 }
 
 //===----------------------------------------------------------------------===//
+// VariadicAttr
+//===----------------------------------------------------------------------===//
+
+/// The variadic attribute is a constant if all element values are constants.
+bool KGEN::VariadicAttr::isConstant() const {
+  return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant);
+}
+
+LogicalResult
+KGEN::VariadicAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                           ArrayRef<TypedAttr> values, VariadicType type) {
+  auto elementType = ParamRefType::get(type.getElementType());
+  for (auto [idx, value] : llvm::enumerate(values))
+    if (value.getType() != elementType)
+      return emitError() << "variadic sequence element #" << idx << " has type "
+                         << value.getType() << " but expected " << elementType;
+  return success();
+}
+
+template <typename SequenceType>
+static ParseResult parseSequenceElements(AsmParser &p,
+                                         SmallVector<TypedAttr> &values,
+                                         SequenceType type) {
+  auto elementType = ParamRefType::get(type.getElementType());
+  return p.parseCommaSeparatedList(
+      [&] { return parseParamValue(p, values.emplace_back(), elementType); });
+}
+
+template <typename SequenceType>
+static void printSequenceElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
+                                  SequenceType type) {
+  llvm::interleaveComma(values, p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
