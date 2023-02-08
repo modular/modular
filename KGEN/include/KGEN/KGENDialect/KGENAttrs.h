@@ -88,16 +88,4 @@ struct PointerLikeTypeTraits<M::KGEN::ParamBindAttr>
 };
 } // namespace llvm
 
-//===----------------------------------------------------------------------===//
-// Utility Functions
-//===----------------------------------------------------------------------===//
-
-namespace M::KGEN {
-/// Emit an MLIR operation call in a parameter context.
-TypedAttr emitMLIROperationCall(
-    StringRef opName,
-    ArrayRef<std::pair<StringAttr (*)(mlir::OperationName), Attribute>> attrs,
-    ArrayRef<TypedAttr> operands, Type resultType);
-} // namespace M::KGEN
-
 #endif // KGEN_KGENDIALECT_KGENATTRS_H

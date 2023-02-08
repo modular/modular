@@ -16,7 +16,6 @@ using namespace KGEN;
 
 static void populatePreElaborationPipeline(mlir::PassManager &pm) {
   pm.addPass(createLowerLIT());
-  pm.addPass(createLiftMLIROperations());
   pm.addPass(createLowerStructs());
   pm.addNestedPass<GeneratorOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<GeneratorOp>(createMem2Reg());

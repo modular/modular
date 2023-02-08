@@ -9,7 +9,6 @@ add_modular_conversion_library(KGENTransforms
   EliminateDeadSymbols.cpp
   Inlining.cpp
   KnownVariant.cpp
-  LiftMLIROperations.cpp
   Mem2Reg.cpp
   OutlineClosures.cpp
 
