@@ -1493,7 +1493,10 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     bool needsInvert = false;
     switch (kind) {
     default:
-      llvm_unreachable("unknown binary operator");
+      emitter.emitError(
+          getLoc(), "cannot emit this binary operator in parameter context yet")
+          << getRange();
+      return {};
     case kSub:
       return ParamOperatorAttr::getSub(lhsParam, rhsParam);
     case kAdd:
