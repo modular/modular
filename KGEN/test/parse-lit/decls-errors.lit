@@ -71,6 +71,13 @@ fn missing_ret_val() -> __mlir_type.index:
 fn ret_type_mismatch() -> __mlir_type.index:
   return 4.0 # expected-error {{'__mlir_type.f64' value cannot be converted to '__mlir_type.index' in return}}
 
+async fn testAsyncVoid():
+async fn testAsyncInt() -> Int: return 42
+
+fn callsWith():
+  testAsyncVoid() # expected-warning {{coroutine was never awaited}}
+  testAsyncInt() # expected-warning {{coroutine was never awaited}}
+
 ##===----------------------------------------------------------------------===##
 # Default Arguments and Varargs
 ##===----------------------------------------------------------------------===##
