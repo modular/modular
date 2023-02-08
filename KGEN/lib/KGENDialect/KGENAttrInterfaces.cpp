@@ -20,28 +20,30 @@ namespace {
 struct IntegerParameterAttr
     : public ParameterAttr::ExternalModel<IntegerParameterAttr, IntegerAttr> {
   bool isConstant(Attribute attr) const { return true; }
-  bool isLessThan(Attribute attr, Attribute rhs) const {
-    auto intAttr = dyn_cast<IntegerAttr>(rhs);
-    return intAttr &&
-           cast<IntegerAttr>(attr).getValue().slt(intAttr.getValue());
+  std::optional<bool> isLessThan(Attribute attr, Attribute rhs) const {
+    if (auto intAttr = dyn_cast<IntegerAttr>(rhs))
+      return cast<IntegerAttr>(attr).getValue().slt(intAttr.getValue());
+    return std::nullopt;
   }
 };
 
 struct FloatParameterAttr
     : public ParameterAttr::ExternalModel<FloatParameterAttr, FloatAttr> {
   bool isConstant(Attribute attr) const { return true; }
-  bool isLessThan(Attribute attr, Attribute rhs) const {
-    auto fpAttr = dyn_cast<FloatAttr>(rhs);
-    return fpAttr && cast<FloatAttr>(attr).getValue() < fpAttr.getValue();
+  std::optional<bool> isLessThan(Attribute attr, Attribute rhs) const {
+    if (auto fpAttr = dyn_cast<FloatAttr>(rhs))
+      return cast<FloatAttr>(attr).getValue() < fpAttr.getValue();
+    return std::nullopt;
   }
 };
 
 struct StringParameterAttr
     : public ParameterAttr::ExternalModel<StringParameterAttr, StringAttr> {
   bool isConstant(Attribute attr) const { return true; }
-  bool isLessThan(Attribute attr, Attribute rhs) const {
-    auto strAttr = dyn_cast<StringAttr>(rhs);
-    return strAttr && cast<StringAttr>(attr).getValue() < strAttr.getValue();
+  std::optional<bool> isLessThan(Attribute attr, Attribute rhs) const {
+    if (auto strAttr = dyn_cast<StringAttr>(rhs))
+      return cast<StringAttr>(attr).getValue() < strAttr.getValue();
+    return std::nullopt;
   }
 };
 
@@ -89,20 +91,27 @@ bool ParameterAttr::compare(Attribute lhs, Attribute rhs) {
 
     // Otherwise, we must have an interface. Any attribute that doesn't
     // implement one wouldn't be considered a simple constant.
-    return !llvm::cast<ParameterAttr>(rhs).isLessThan(lhs);
+    if (auto result = llvm::cast<ParameterAttr>(lhs).isLessThan(rhs))
+      return *result;
+    if (auto result = llvm::cast<ParameterAttr>(rhs).isLessThan(lhs))
+      return *result;
+    return false;
   }
   if (isSimpleConstant(lhs))
     return false;
 
   // Check for an interface.
-  if (auto itf = llvm::dyn_cast<ParameterAttr>(lhs))
-    return itf.isLessThan(rhs);
-  if (auto itf = llvm::dyn_cast<ParameterAttr>(rhs))
-    return !itf.isLessThan(lhs);
+  if (auto itf = llvm::dyn_cast<ParameterAttr>(lhs)) {
+    if (auto result = itf.isLessThan(rhs))
+      return *result;
+  }
+  if (auto itf = llvm::dyn_cast<ParameterAttr>(rhs)) {
+    if (auto result = itf.isLessThan(lhs))
+      return !(*result);
+  }
 
-  // Otherwise, we don't know how to compare these attributes. Move them all the
-  // way to the left.
-  return true;
+  // Otherwise, we don't know how to compare these attributes.
+  return false;
 }
 
 //===----------------------------------------------------------------------===//

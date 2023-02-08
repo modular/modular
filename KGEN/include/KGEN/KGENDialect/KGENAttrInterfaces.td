@@ -29,13 +29,16 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
     InterfaceMethod<[{
       Compare this parameter attribute with another attribute that may not be of
       the same kind, returning true if this parameter should be considered
-      "less" than the other attribute.
+      "less" than the other attribute. Returns `std::nullopt` if no viable
+      ordering could be established.
 
       Parameters are sorted between those that are simple constants and those
       that aren't, meaning that if `lhs` is a simple constant, then `rhs` will
       also be a simple constant, and if `lhs` is not a simple constant, then
       `rhs` won't be either.
-    }], "bool", "isLessThan", (ins "Attribute":$rhs), [{}], [{ return false; }]>,
+    }], "std::optional<bool>", "isLessThan", (ins "Attribute":$rhs), [{}], [{
+      return std::nullopt;
+    }]>,
   ];
 
   let extraClassDeclaration = [{
