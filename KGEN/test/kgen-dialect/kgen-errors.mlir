@@ -349,6 +349,16 @@ kgen.generator.interface @constrained<width, height>()
 
 // -----
 
+// expected-error @+1 {{index value -1 cannot be negative}}
+"someop" () {defaults = #kgen.default.argument<-1 : i64 = 3 : i64>}
+
+// -----
+
+// expected-error @+1 {{index value of 1 is not in sequential order with previous index value of 1}}
+"someop" () {defaults = #kgen.default.arguments[<1 : i64 = 0 : index>, <1 : i64 = 0 : index>]}
+
+// -----
+
 // expected-error @below {{'kgen.generator.interface' op invalid use of parameter with no declaration "ty2"}}
 kgen.generator.interface @badTypes<ty1 : dtype>(%a : !pop.scalar<ty2>)
 
