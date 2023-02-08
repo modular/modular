@@ -92,23 +92,29 @@ LogicalResult
 DefaultArgumentAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                             IntegerAttr index, TypedAttr value) {
   if (index.getValue().isNegative())
-    return emitError() << "index cannot be negative";
+    return emitError() << "index value " << index.getInt()
+                       << " cannot be negative";
 
   return success();
 }
 
-/// Reject default argument arrays that include multiple defaults for the same
-/// argument index.
+/// Reject any default argument array that does not contain zero or more indices
+/// in sequential ascending order. For example, indices such as `(2, 1)` and
+/// `(0, 0)` are invalid.
 LogicalResult
 DefaultArgumentArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                  ArrayRef<DefaultArgumentAttr> attrs) {
-  llvm::SmallDenseSet<int64_t> indices;
-  for (const DefaultArgumentAttr &attr : attrs) {
-    int64_t index = attr.getIndex().getInt();
-    if (!indices.insert(index).second)
-      return emitError() << "cannot specify more than one default argument for "
-                            "the same index "
-                         << index;
+  for (auto [i, attr] : llvm::enumerate(attrs)) {
+    if (i + 1 == attrs.size())
+      break;
+
+    size_t index = attr.getIndexValue();
+    size_t nextIndex = attrs[i + 1].getIndexValue();
+    if (index + 1 != nextIndex)
+      return emitError()
+             << "default argument index value of " << nextIndex
+             << " is not in sequential order with previous index value of "
+             << index;
   }
 
   return success();

@@ -224,6 +224,12 @@ def KGEN_DefaultArgumentAttr : KGENAttr<"DefaultArgument", "default.argument"> {
     }]>,
   ];
 
+  let extraClassDeclaration = [{
+    /// Returns the argument index this default argument value is meant to apply
+    /// to.
+    size_t getIndexValue() const { return getIndex().getInt(); }
+  }];
+
   let genVerifyDecl = 1;
 }
 

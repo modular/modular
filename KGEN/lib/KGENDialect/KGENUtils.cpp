@@ -1063,6 +1063,8 @@ static void printElementsWithMetadata(AsmPrinter &p,
                                       function_ref<void(unsigned)> printElt,
                                       MetadataAttr metadata) {
   p << '(';
+  DefaultArgumentArrayAttr defaults = metadata.getDefaultArguments();
+  size_t defaultIndex = 0;
   llvm::interleaveComma(
       llvm::enumerate(metadata.getInputConventions()), p, [&](auto it) {
         printElt(it.index());
@@ -1071,15 +1073,13 @@ static void printElementsWithMetadata(AsmPrinter &p,
 
         // If a default argument value has been provided for the argument at
         // this index, print an `=`, followed by the value.
-        if (!metadata.getDefaultArguments())
-          return;
-        SmallDenseMap<int64_t, TypedAttr> defaultAttrs;
-        for (const DefaultArgumentAttr &def : metadata.getDefaultArguments())
-          defaultAttrs.insert({def.getIndex().getInt(), def.getValue()});
-        auto attr = defaultAttrs.find(it.index());
-        if (attr != defaultAttrs.end()) {
-          p << " = ";
-          printParamValue(p, attr->getSecond());
+        if (defaults) {
+          const DefaultArgumentAttr &def = defaults[defaultIndex];
+          if (it.index() == def.getIndexValue()) {
+            p << " = ";
+            printParamValue(p, def.getValue());
+            ++defaultIndex;
+          }
         }
       });
   p << ')';
