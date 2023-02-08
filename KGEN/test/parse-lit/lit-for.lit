@@ -55,7 +55,7 @@ fn printInt(x: Int):
     print(x)
 
 
-fn main() -> Int:
+fn main():
     let buffer = __mlir_op.`pop.stack_allocation`[
         count:3, _type : __mlir_type[`!pop.pointer<`, Int, `>`]
     ]()
@@ -72,7 +72,6 @@ fn main() -> Int:
     # CHECK: pop.store %14, %$RANGE : !pop.pointer<@"$lit-for"::@my_iter>
     for item in my_list:
         printInt(item)
-    return 0
 
 
 # CHECK-LABEL: @"induction_var_scope()"

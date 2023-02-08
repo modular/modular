@@ -3,7 +3,7 @@
 from prolog import Int, printInt, range
 
 
-fn main() -> Int:
+fn main():
     # CHECK: 0
     # CHECK: 1
     # CHECK: 2
@@ -21,4 +21,3 @@ fn main() -> Int:
         printInt(z)
     else:
         printInt(Int(42))
-    return 0

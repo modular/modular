@@ -2,7 +2,6 @@
 # RUN: cat %t.h | FileCheck %s
 
 from F32 import F32
-from Int import Int
 from IO import print
 
 
@@ -13,7 +12,6 @@ fn call_me() -> F32:
 
 
 @export
-# CHECK: extern ssize_t main();
-fn main() -> Int:
+# CHECK: extern void main();
+fn main():
     call_me()
-    return 0

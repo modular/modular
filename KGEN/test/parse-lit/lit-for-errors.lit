@@ -166,7 +166,7 @@ fn printInt(x: Int):
     print(x)
 
 
-fn main() -> Int:
+fn main():
     let buffer = __mlir_op.`pop.stack_allocation`[
         count:3, _type : __mlir_type[`!pop.pointer<`, Int, `>`]
     ]()
@@ -216,5 +216,3 @@ fn main() -> Int:
     # expected-error @+1 {{expected 'in' after target identifier. Note that target lists are not yet supported.}}
     for key, item in my_list_no_next:
         printInt(item)
-
-    return 0
