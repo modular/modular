@@ -191,15 +191,11 @@ fn transpose_inplace_generic[
     type: __mlir_type.`!kgen.dtype`,
 ](buf: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
     assert_param[rank == 2]()
-    var i: Int = 0
-    while i < rows:
-        var j: Int = i + 1
-        while j < cols:
+    for i in range(rows):
+        for j in range(i + 1, cols):
             let tmp = buf[i, j]
             buf.__setitem__(_index2D(i, j), buf[j, i])
             buf.__setitem__(_index2D(j, i), tmp)
-            j += 1
-        i += 1
 
 
 fn transpose[
@@ -212,13 +208,9 @@ fn transpose[
     src: NDBuffer[2, create_kgen_list[__mlir_type.index](cols, rows), type],
 ):
     assert_param[rank == 2]()
-    var i: Int = 0
-    while i < rows:
-        var j: Int = 0
-        while j < cols:
+    for i in range(rows):
+        for j in range(cols):
             dst.__setitem__(_index2D(i, j), src[j, i])
-            j += 1
-        i += 1
 
 
 fn _permute_data[
@@ -403,7 +395,7 @@ fn _copy_with_strides_iter[
     alias next_axis = axis + 1
     var next_input_offset = input_offset
     var next_output_offset = output_offset
-    for __ in range(axis_dim):  # TODO(#7452) change to `_`
+    for _ in range(axis_dim):
         _copy_with_strides[next_axis, rank, output_shape, type](
             output,
             input,
