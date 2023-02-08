@@ -210,8 +210,7 @@ fn test_pad_3d():
     print(output[1, 2, 2])
 
 
-fn main() -> Int:
+fn main():
     test_pad_1d()
     test_pad_2d()
     test_pad_3d()
-    return 0

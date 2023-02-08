@@ -78,9 +78,8 @@ fn test_gelu():
     print(gelu_approximate(0.5 * simd_val))
 
 
-fn main() -> Int:
+fn main():
     test_relu()
     test_relu_n1()
     test_prelu()
     test_gelu()
-    return 0
