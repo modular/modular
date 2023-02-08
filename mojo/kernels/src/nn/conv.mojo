@@ -25,6 +25,7 @@ from Matmul import (
     PackMatrixRows,
 )
 from List import create_kgen_list_unknown, create_kgen_list
+from Range import range
 from TargetInfo import simd_byte_width
 from Pointer import DTypePointer
 from DType import DType
@@ -474,23 +475,19 @@ struct Naive2dConvolution[
         loops covering the iteration space of batch, filter count, height and wi-
         dth dimensions.
         """
-        var no_idx: Int = 0  # Iterate on output batch dimension.
-        while no_idx < self.output_shape.N:
-            var f_idx: Int = 0  # Iterate on filter dimension.
-            while f_idx < self.output_shape.C:
-                var ho_idx: Int = 0  # Iterate on output H dimension.
-                while ho_idx < self.output_shape.H:
-                    var wo_idx: Int = 0  # Iterate on output W dimension.
-                    while wo_idx < self.output_shape.W:
+        # Iterate on output batch dimension.
+        for no_idx in range(self.output_shape.N):
+            # Iterate on filter dimension.
+            for f_idx in range(self.output_shape.C):
+                # Iterate on output H dimension.
+                for ho_idx in range(self.output_shape.H):
+                    # Iterate on output W dimension.
+                    for wo_idx in range(self.output_shape.W):
                         # Compute the result value at this specific output posit-
                         #  ion.
                         self._compute_point(
                             Index(no_idx, f_idx, ho_idx, wo_idx)
                         )
-                        wo_idx += 1
-                    ho_idx += 1
-                f_idx += 1
-            no_idx += 1
 
     fn _compute_point(
         self,
@@ -509,14 +506,10 @@ struct Naive2dConvolution[
         # Extract the H and W size of the input image.
         let image_bound = Index(self.input_shape.H, self.input_shape.W)
 
-        var r_idx: Int = 0
-        while (
-            r_idx < self.filter_shape.H
-        ):  # Iterate on filter height dimension.
-            var s_idx: Int = 0
-            while (
-                s_idx < self.filter_shape.W
-            ):  # Iterate on filter width dimension.
+        # Iterate on filter height dimension.
+        for r_idx in range(self.filter_shape.H):
+            # Iterate on filter width dimension.
+            for s_idx in range(self.filter_shape.W):
                 # Compute input access index, on the H and W dimension.
                 let input_image_index = (
                     # Output HxW with striding.
@@ -543,9 +536,8 @@ struct Naive2dConvolution[
                     Index(0, 0) <= input_image_index
                     and input_image_index < image_bound
                 ):
-                    var c_idx: Int = 0
                     # Iterate on channels dimension.
-                    while c_idx < self.input_shape.C:
+                    for c_idx in range(self.input_shape.C):
                         # Accumulate product of input data filter data.
                         value += self.input.__getitem__(
                             output_idx.__getitem__[0](),  # N
@@ -558,9 +550,6 @@ struct Naive2dConvolution[
                             r_idx,
                             s_idx,  # F  # C  # R  # S
                         )
-                        c_idx += 1
-                s_idx += 1
-            r_idx += 1
 
         # Store the computed output at the given output position..
         self.output.__setitem__(
@@ -665,8 +654,7 @@ struct PackIm2ColNCHW[
     fn _pack(self):
         """Pack the whole k,n tile."""
         # Process the output tile row by row.
-        var k_idx: Int = 0
-        while k_idx < self.pack_tile_kn_dim.__getitem__[0]():
+        for k_idx in range(self.pack_tile_kn_dim.__getitem__[0]()):
             # Check that the current output row corresponds to valid data.
             if k_idx < (
                 self.im2col_output_shape.__getitem__[0]()
@@ -677,7 +665,6 @@ struct PackIm2ColNCHW[
             else:
                 # Fill all zeros for out of bound rows.
                 self._pack_zeros_for_k(k_idx)
-            k_idx += 1
 
     fn __new__(
         origin_image: NDBuffer[4, static_original_shape, type],
@@ -796,8 +783,7 @@ struct PackIm2ColNCHW[
             global_out_image_offset, rs_idx
         )
 
-        var col_idx: Int = 0
-        while col_idx < block_size:
+        for col_idx in range(0, block_size, simd_size):
             # calculate input index
             let global_in_image_idx = global_in_image_offset + Index(0, col_idx)
 
@@ -821,8 +807,6 @@ struct PackIm2ColNCHW[
             self._pack_vector(
                 local_tile_nk_offset + Index(col_idx, 0), image_data
             )
-
-            col_idx += simd_size
 
     # Write a simd vector into packed layout buffer.
     @always_inline
@@ -881,9 +865,7 @@ struct PackIm2ColNCHW[
         var w_o_idx = global_out_image_offset.__getitem__[1]()
 
         # Vector index for filling the simd elements.
-        var vec_idx: Int = 0
-
-        while vec_idx < simd_size:
+        for vec_idx in range(simd_size):
             # Calculate the current output and input indices.
             let o_image_idx = Index(h_o_idx, w_o_idx)
             let i_image_idx = self._output_to_input(o_image_idx, rs_idx)
@@ -904,7 +886,6 @@ struct PackIm2ColNCHW[
             vector.__setitem__(vec_idx, element)
 
             # Increment row index
-            vec_idx += 1
             w_o_idx += 1
 
             # Increment h if w reaches bound and wrap around w.
@@ -923,8 +904,9 @@ struct PackIm2ColNCHW[
         Args:
             k_idx (Int): The k index to fill zero at.
         """
-        var n_idx: Int = 0
-        while n_idx < self.pack_tile_kn_dim.__getitem__[1]():
+        for n_idx in range(
+            0, self.pack_tile_kn_dim.__getitem__[1](), col_inner_size
+        ):
             self._process_contiguous_blocks[
                 # block_size:
                 col_inner_size,
@@ -940,7 +922,6 @@ struct PackIm2ColNCHW[
                 # global read offset (ignored)
                 Index(0, 0),
             )
-            n_idx += col_inner_size
 
     fn _n_to_ho_wo(self, n_idx: Int) -> StaticIntTuple[2]:
         """Map output n index to conv output index in (Ho, Wo).
@@ -1706,12 +1687,11 @@ struct ConvNHWCInnerLoopFilterPacked[
         instance._run_inner_loop()
 
     fn _initialize_offset_table(self):
-        var row_idx: Int = 0
         let k_offset = self.global_offset.K
         let r_s_c = _k_to_r_s_c_nhwc(k_offset, self.conv_shape)
         let r_s = Index(r_s_c.__getitem__[0](), r_s_c.__getitem__[1]())
 
-        while row_idx < a_row_size:
+        for row_idx in range(a_row_size):
             let m_offset = self.global_offset.M + row_idx
             let n_ho_wo = _m_to_n_ho_wo_nhwc(m_offset, self.conv_shape)
             let ho_wo = Index(
@@ -1737,7 +1717,6 @@ struct ConvNHWCInnerLoopFilterPacked[
                 )
             else:
                 self.offset_table.__setitem__(row_idx, -1)
-            row_idx += 1
 
     fn _initialize_c_tile(
         self,
@@ -1756,16 +1735,12 @@ struct ConvNHWCInnerLoopFilterPacked[
                 c_local(NDBuffer): pre-allocated local buffer for c partial
                     sums.
         """
-        var row_idx: Int = 0
-        while row_idx < a_row_size:
-            var col_idx: Int = 0
-            while col_idx < pack_inner_size:
+        for row_idx in range(a_row_size):
+            for col_idx in range(0, pack_inner_size, simd_size):
                 c_local.simd_store[simd_size](
                     Index(row_idx, col_idx).as_tuple(),
                     SIMD[simd_size, accum_type](0),
                 )
-                col_idx += simd_size
-            row_idx += 1
 
     fn _load_c_tile(
         self,
@@ -1789,10 +1764,8 @@ struct ConvNHWCInnerLoopFilterPacked[
                 tile_idx(StaticIntTuple): index tuple with (m,n) coordinates
                     within the current processing tile.
         """
-        var row_idx: Int = 0
-        while row_idx < a_row_size:
-            var col_idx: Int = 0
-            while col_idx < pack_inner_size:
+        for row_idx in range(a_row_size):
+            for col_idx in range(0, pack_inner_size, simd_size):
                 let global_idx_pair = (
                     Index(self.global_offset.M, self.global_offset.N)
                     + tile_idx
@@ -1831,8 +1804,6 @@ struct ConvNHWCInnerLoopFilterPacked[
 
                 # Store data to local buffer.
                 c_local.simd_store[simd_size](local_idx, c_data)
-                col_idx += simd_size
-            row_idx += 1
 
     fn _store_c_tile(
         self,
@@ -1854,10 +1825,8 @@ struct ConvNHWCInnerLoopFilterPacked[
                 tile_idx(StaticIntTuple): index tuple with (m,n) coordinates
                     within the current processing tile.
         """
-        var row_idx: Int = 0
-        while row_idx < a_row_size:
-            var col_idx: Int = 0
-            while col_idx < pack_inner_size:
+        for row_idx in range(a_row_size):
+            for col_idx in range(0, pack_inner_size, simd_size):
                 let global_idx_pair = (
                     Index(self.global_offset.M, self.global_offset.N)
                     + tile_idx
@@ -1891,8 +1860,6 @@ struct ConvNHWCInnerLoopFilterPacked[
                         - col_idx,
                         c_data,
                     )
-                col_idx += simd_size
-            row_idx += 1
 
     # TODO: This can be lifted to common utility.
 
@@ -1982,26 +1949,22 @@ struct ConvNHWCInnerLoopFilterPacked[
             value_type,
         ].stack_allocation()
 
-        var fill_a_idx: Int = 0
-        while fill_a_idx < a_row_size:
+        for fill_a_idx in range(a_row_size):
             var global_m = self.global_offset.M + fill_a_idx
             let a_val_scalar = self._load_a(
                 Index(global_m, global_k).as_tuple(), fill_a_idx
             )
             let a_fill_val = SIMD[simd_size, value_type](a_val_scalar)
             local_a.simd_store[simd_size](fill_a_idx * simd_size, a_fill_val)
-            fill_a_idx += 1
 
         # Loop over local accumulator tiles.
-        var col_idx: Int = 0
-        while col_idx < pack_inner_size:
+        for col_idx in range(0, pack_inner_size, simd_size):
             let b_val = self.b_packed.simd_load[simd_size](
                 Index(
                     n_outer_idx, tile_n_k_idx.__getitem__[1](), col_idx
                 ).as_tuple()
             ).cast[accum_type]()
-            var row_idx: Int = 0
-            while row_idx < a_row_size:
+            for row_idx in range(a_row_size):
                 let a_val = local_a.simd_load[simd_size](
                     row_idx * simd_size
                 ).cast[accum_type]()
@@ -2010,8 +1973,6 @@ struct ConvNHWCInnerLoopFilterPacked[
 
                 c_val = a_val.fma(b_val, c_val)
                 c_local.simd_store[simd_size](c_idx, c_val)
-                row_idx += 1
-            col_idx += simd_size
 
     fn _run_inner_loop(self):
         """Utility funcion on the inner loop. Run the inner kernel on the whole
@@ -2026,8 +1987,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             accum_type,
         ].stack_allocation()
 
-        var idx_n: Int = 0
-        while idx_n < self.tile_n_k.__getitem__[0]():
+        for idx_n in range(0, self.tile_n_k.__getitem__[0](), pack_inner_size):
             # Initialize accumulation buffer
             #  either zero filling or load existing value.
             if self.global_offset.K == 0:
@@ -2036,16 +1996,12 @@ struct ConvNHWCInnerLoopFilterPacked[
                 self._load_c_tile(c_local, Index(0, idx_n))
 
             # Iterate on tile K dimension.
-            var idx_k: Int = 0
-
             # Not unrolled on K path.
-            while idx_k < self.tile_n_k.__getitem__[1]():
+            for idx_k in range(self.tile_n_k.__getitem__[1]()):
                 # accumulate data for this (n, k) index
                 self._accumulate(c_local, Index(idx_n, idx_k))
-                idx_k += 1
 
             self._store_c_tile(c_local, Index(0, idx_n))
-            idx_n += pack_inner_size
 
 
 @always_inline
@@ -2521,8 +2477,9 @@ struct ConvIm2ColNHWC[
         """Checks that the current block of rows are perfectly within image
         boundary so the check on H and W dimensions can be skipped.
         """
-        var row_index = row_start_index
-        while row_index < row_start_index + number_of_rows:
+        for row_index in range(
+            row_start_index, row_start_index + number_of_rows
+        ):
             let n_ho_wo = _m_to_n_ho_wo_nhwc(row_index, self.conv_shape)
             let ho_wo = Index(
                 n_ho_wo.__getitem__[1](), n_ho_wo.__getitem__[2]()
@@ -2547,7 +2504,6 @@ struct ConvIm2ColNHWC[
                 self.conv_shape.h, self.conv_shape.w
             ):
                 # Continue only if this is within boundary.
-                row_index += 1
                 continue
             return False
         # All rows are checked in the group.
