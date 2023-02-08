@@ -12,7 +12,6 @@
 #ifndef LLCL_RUNTIME_RUNTIMECLOPTIONS_H
 #define LLCL_RUNTIME_RUNTIMECLOPTIONS_H
 
-#include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/Profiling.h"
 #include "Support/CommandLine.h"
 #include <chrono>
@@ -20,6 +19,8 @@
 #include <type_traits>
 
 namespace M::LLCL {
+
+class Runtime;
 
 /// Contains a number of command-line options that are shared among binaries
 /// that use the LLCL Runtime and want configurability of Allocator, WorkQueue,
@@ -38,7 +39,8 @@ private:
     /// Allocator that does profiling (and leak checking).
     kProfiler,
     /// Allocator that read/write protects every freed block
-    /// to detect use-after-free errors without ASAN.
+    /// to detect use-after-free errors without ASAN. Nat available
+    /// on all targets.
     kUseAfterFree,
   };
 
@@ -78,7 +80,8 @@ private:
           clEnumValN(AllocatorType::kProfiler, "profiler",
                      "Allocator with profiling and leak checking"),
           clEnumValN(AllocatorType::kUseAfterFree, "use-after-free",
-                     "Allocator to detect use-after-free errors")),
+                     "Allocator to detect use-after-free errors. Not available "
+                     "on all targets.")),
       llvm::cl::init(AllocatorType::kLeakChecker)};
 
   // Specify the number of threads. If `thread==1`, then we automatically set
@@ -213,45 +216,7 @@ public:
   }
 
   /// Create a Runtime based on the CL argument specifications.
-  Runtime createRuntime() const {
-    // Create the allocator based on command line settings.
-    std::unique_ptr<Allocator> allocator;
-    switch (allocatorType) {
-    case AllocatorType::kMalloc:
-      allocator = createMallocAllocator();
-      break;
-    case AllocatorType::kLeakChecker:
-      allocator = createLeakCheckAllocator(createMallocAllocator());
-      break;
-    case AllocatorType::kProfiler:
-      allocator = createProfilingAllocator(createMallocAllocator());
-      break;
-    case AllocatorType::kUseAfterFree:
-      allocator = createUseAfterFreeAllocator();
-      break;
-    }
-    // Create the WorkQueue based on command line settings.
-    std::unique_ptr<WorkQueue> workQueue;
-    switch (getWorkQueueType()) {
-    case WorkQueueType::kDefault:
-      assert(0 && "should be resolved");
-    case WorkQueueType::kSingleThread:
-      workQueue = createSingleThreadWorkQueue();
-      break;
-    case WorkQueueType::kThreadPool:
-      workQueue = createThreadPoolWorkQueue(
-          getNumThreads(), std::chrono::nanoseconds{busyWaitNs},
-          getProfilingEnabled());
-      break;
-    case WorkQueueType::kShardedSemaphore:
-      workQueue = createShardedSemaphoreWorkQueue(
-          getNumThreads(), std::chrono::nanoseconds{busyWaitNs},
-          getProfilingEnabled());
-      break;
-    }
-    return Runtime(std::move(allocator), std::move(workQueue),
-                   getProfileFilename());
-  }
+  std::unique_ptr<Runtime> createRuntime() const;
 
   //===--------------------------------------------------------------------===//
   // Behavior indicating what to do when a test fails.
@@ -277,46 +242,6 @@ public:
 
   /// Returns whether an executor should stop when a model returns an error.
   bool stopOnFirstError() const { return onFailure == OnFailure::kExit; }
-
-  //===--------------------------------------------------------------------===//
-  // Helper methods.
-  //===--------------------------------------------------------------------===//
-
-  /// Run a lambda or other callable with a new Runtime instance configured
-  /// according to the command line argument specification.  Encircle this with
-  /// a AsyncValue leak checker to catch simple bugs in the test suite.
-  template <typename BodyFn>
-  auto runWithLeakCheckedRuntime(const char *testName, BodyFn bodyFn) const {
-    // If we are leak checking, remember how many AsyncValue's we started with.
-    ssize_t numStartingLiveAsyncValues = 0;
-    if constexpr (AsyncValue::isAllocationTrackingEnabled())
-      numStartingLiveAsyncValues = AsyncValue::getNumAllocatedInstances();
-
-    // Check leak status on exit from scope.
-    struct LeakChecker {
-      const char *testName;
-      ssize_t numStartingLiveAsyncValues;
-
-      ~LeakChecker() { // Make sure we're not leaking AsyncValues.
-        if constexpr (AsyncValue::isAllocationTrackingEnabled()) {
-          ssize_t numLiveAsyncValues = AsyncValue::getNumAllocatedInstances();
-          if (numLiveAsyncValues != numStartingLiveAsyncValues) {
-            fprintf(
-                stderr,
-                "Evaluation of testcase '%s' leaked %d async values (before: "
-                "%d, after: %d)!\n",
-                testName, int(numLiveAsyncValues - numStartingLiveAsyncValues),
-                int(numStartingLiveAsyncValues), int(numLiveAsyncValues));
-            abort();
-          }
-        }
-      }
-    } checker{testName, numStartingLiveAsyncValues};
-
-    // Execute the body with a new runtime, which is destroyed when the body is
-    // done.
-    return bodyFn(createRuntime());
-  }
 };
 
 } // namespace M::LLCL

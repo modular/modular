@@ -11,8 +11,9 @@ add_modular_library(LLCLRuntime
   DebuggingAllocators.cpp
   MallocAllocator.cpp
   Runtime.cpp
-  SingleThreadWorkQueue.cpp
+  RuntimeCLOptions.cpp
   ShardedSemaphoreWorkQueue.cpp
+  SingleThreadWorkQueue.cpp
   ThreadPoolWorkQueue.cpp
 
   LINK_LIBS PUBLIC
