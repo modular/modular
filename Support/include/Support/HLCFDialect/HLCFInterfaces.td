@@ -30,7 +30,8 @@ def ControlFlowNode : OpInterface<"ControlFlowNode"> {
     InterfaceMethod<[{
       Return the range of values that should be mapped onto incoming values. By
       default, this returns
-    }], "ValueRange", "getEntryArguments", (ins "Optional<unsigned>":$target)>
+    }], "ValueRange", "getEntryArguments",
+      (ins "std::optional<unsigned>":$target)>
   ];
 
   let verify = [{ return verifyControlFlowNode($_op); }];

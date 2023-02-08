@@ -78,7 +78,7 @@ void LoopOp::getEntryTargets(ArrayRef<Attribute> operands,
   targets.emplace_back(0, getOperands());
 }
 
-ValueRange LoopOp::getEntryArguments(Optional<unsigned> target) {
+ValueRange LoopOp::getEntryArguments(std::optional<unsigned> target) {
   if (!target)
     return getResults();
   assert(*target == 0);
@@ -106,7 +106,7 @@ void IfOp::getEntryTargets(ArrayRef<Attribute> operands,
   }
 }
 
-ValueRange IfOp::getEntryArguments(Optional<unsigned> target) {
+ValueRange IfOp::getEntryArguments(std::optional<unsigned> target) {
   if (!target)
     return getResults();
   assert(*target == 0 || *target == 1);
