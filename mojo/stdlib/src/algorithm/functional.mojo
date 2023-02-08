@@ -165,11 +165,9 @@ fn parallelize[
     func: __mlir_type[`!kgen.signature<(`, Int, `,`, Int, `) -> !lit.none>`],
 ](num_work_items: Int, size: Int):
     let chunk_size = div_ceil(size, num_work_items)
-    var start: Int = 0
-    while start < size:
+    for start in range(0, size, chunk_size):
         let end = Int.min(start + chunk_size, size)
         func(start, end)
-        start += chunk_size
 
 
 # ===----------------------------------------------------------------------===#

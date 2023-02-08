@@ -9,6 +9,7 @@ from Buffer import Buffer
 from SIMD import SIMD
 from Numerics import inf, neginf
 from Int import Int
+from Range import range
 from TypeUtilities import rebind
 
 # ===----------------------------------------------------------------------===#
@@ -45,21 +46,17 @@ fn reduce[
 ](src: Buffer[size, type], init: SIMD[1, acc_type]) -> __mlir_type[
     `!pop.scalar<`, acc_type, `>`
 ]:
-    var i: Int = 0
     var acc_simd = SIMD[simd_width, acc_type].splat(init)
     let len = src.__len__()
     let vector_end = (len // simd_width) * simd_width
-    while i < vector_end:
+    for i in range(0, vector_end, simd_width):
         acc_simd = map_fn[simd_width, acc_type, type](
             acc_simd, src.simd_load[simd_width](i)
         )
-        i += simd_width
 
-    i = vector_end
     var acc = reduce_fn[simd_width, acc_type](acc_simd)
-    while i < len:
-        acc = map_fn[1, acc_type, type](acc, src.__getitem__(i))
-        i += 1
+    for ii in range(vector_end, len):  # TODO(#8365) use `i`
+        acc = map_fn[1, acc_type, type](acc, src.__getitem__(ii))
     return acc.__getitem__(0)
 
 
