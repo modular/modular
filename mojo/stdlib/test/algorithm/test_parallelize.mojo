@@ -40,6 +40,5 @@ fn test_parallelize():
             print("ERROR: Expecting the result to be i + 2")
 
 
-fn main() -> Int:
+fn main():
     test_parallelize()
-    return 0

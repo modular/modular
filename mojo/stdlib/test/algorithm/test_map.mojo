@@ -60,6 +60,5 @@ fn test_map():
     print(vector.__getitem__(4))
 
 
-fn main() -> Int:
+fn main():
     test_map()
-    return 0
