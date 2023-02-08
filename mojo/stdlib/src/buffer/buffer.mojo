@@ -19,6 +19,7 @@ from Memory import stack_allocation
 from Pointer import DTypePointer, product as pointer_product
 from SIMD import SIMD
 from Tuple import StaticTuple
+from Range import range
 
 
 # ===----------------------------------------------------------------------===#
@@ -840,11 +841,9 @@ fn partial_simd_load[
     let effective_rbound = Int.min(width, rbound)
 
     # Fill values in valid range.
-    var idx: Int = effective_lbound
-    while idx < effective_rbound:
+    for idx in range(effective_lbound, effective_rbound):
         let storageVal = storage.load(idx)
         vector.__setitem__(idx, storageVal)
-        idx += 1
 
     # Return the resulting vector.
     return vector.simd_load[width](0)
@@ -885,11 +884,9 @@ fn partial_simd_store[
     let effective_rbound = Int.min(width, rbound)
 
     # Store the valid on the valid range.
-    var idx: Int = effective_lbound
-    while idx < effective_rbound:
+    for idx in range(effective_lbound, effective_rbound):
         let storageVal = vector.__getitem__(idx)
         storage.store(idx, storageVal)
-        idx += 1
 
 
 # ===----------------------------------------------------------------------===#
