@@ -149,7 +149,7 @@ fn setup_tile_config() -> tileconfig:
     return tc
 
 
-fn main() -> Int:
+fn main():
     let a = Buffer[1024, DType.si8.value].stack_allocation()
     let b = Buffer[1024, DType.si8.value].stack_allocation()
     let c = Buffer[256, DType.si32.value].stack_allocation()
@@ -190,5 +190,3 @@ fn main() -> Int:
     print(errors)
     if errors != 0:
         print("\nMatrices don't agree!\n\n")
-
-    return 0

@@ -369,6 +369,5 @@ fn test_amx_matmul():
     print_matrix(c_matrix)
 
 
-fn main() -> Int:
+fn main():
     test_amx_matmul()
-    return 0

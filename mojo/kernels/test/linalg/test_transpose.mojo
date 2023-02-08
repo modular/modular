@@ -461,7 +461,7 @@ fn test_transpose_3d():
     print(output[2, 1, 1])
 
 
-fn main() -> Int:
+fn main():
     test_transpose_4x4()
     test_transpose_8x8()
     test_transpose_3x2_out_of_place()
@@ -469,4 +469,3 @@ fn main() -> Int:
     test_transpose_2d()
     test_transpose_3d_identity()
     test_transpose_3d()
-    return 0

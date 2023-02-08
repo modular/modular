@@ -42,7 +42,5 @@ fn test_matrix():
     print(m.simd_load[4](3, 0))
 
 
-fn main() -> Int:
+fn main():
     test_matrix()
-
-    return 0
