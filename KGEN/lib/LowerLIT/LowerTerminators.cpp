@@ -44,6 +44,17 @@ static void createCoroutineFinalize(ImplicitLocOpBuilder &b,
       getCoroutinePromise(b, errType, cast<TypedValue<CoroutineType>>(hdl));
   for (auto [idx, result] : llvm::enumerate(results))
     b.create<StoreOp>(result, b.create<POP::StructGEPOp>(promise, idx));
+
+  // Insert the callback function invocation.
+  auto i8PtrType = PointerType::get(b.getType<SIMDType>(1, DType::ui8));
+  auto ctxType = PointerType::get(
+      StructType::get({b.getFunctionType(i8PtrType, {}), i8PtrType}));
+  Value asyncCtxPtr = b.create<PointerBitcastOp>(ctxType, promise);
+  Value ctx =
+      b.create<OffsetOp>(asyncCtxPtr, b.create<mlir::index::ConstantOp>(-1));
+  Value callbackFn = b.create<LoadOp>(b.create<StructGEPOp>(ctx, 0));
+  Value ctxPtr = b.create<LoadOp>(b.create<StructGEPOp>(ctx, 1));
+  b.create<CallIndirectOp>(TypeRange(), callbackFn, ctxPtr);
 }
 
 /// Given the result of a throwable call, generate the code to check if the

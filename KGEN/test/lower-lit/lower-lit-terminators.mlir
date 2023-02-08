@@ -194,6 +194,7 @@ lit.func @coroutine() async -> index {
   // CHECK: %[[PROMISE:.*]] = pop.coroutine.promise %[[HDL]]
   // CHECK-NEXT: %[[RES:.*]] = pop.struct.gep %[[PROMISE:.*]][0]
   // CHECK-NEXT: pop.store %idx0, %[[RES:.*]]
+  // CHECK: pop.call_indirect
   // CHECK-NEXT: return %[[HDL]]
   lit.return %idx0 : index
   lit.end_func
@@ -206,7 +207,8 @@ lit.func @call_coroutine<coro: <>() async -> !lit.none>() async -> !lit.none {
   // CHECK-NEXT: %[[CURHDL:.*]] = pop.coroutine.handle
   // CHECK-NEXT: %[[HDL:.*]] = kgen.call_param[() -> !pop.coroutine<() -> !lit.none>: coro]()
   lit.async_call[<>() async -> !lit.none: coro]()
-  // CHECK: return %[[CURHDL]]
+  // CHECK: pop.call_indirect
+  // CHECK-NEXT: return %[[CURHDL]]
   lit.end_func
 }
 
@@ -220,6 +222,7 @@ lit.func @throwing_coro<cond: i1, a>(%err: !kgen.declref<@Error>) async|throws -
     %a = kgen.param.constant = <a>
     // CHECK-NEXT: %[[RESULT:.*]] = pop.variant.create %[[A]]
     // CHECK: pop.store %[[RESULT]]
+    // CHECK: pop.call_indirect
     // CHECK-NEXT: hlcf.return %[[HDL]]
     lit.return %a : index
     hlcf.yield
@@ -228,6 +231,7 @@ lit.func @throwing_coro<cond: i1, a>(%err: !kgen.declref<@Error>) async|throws -
   }
   // CHECK: %[[ERR:.*]] = pop.variant.create %err
   // CHECK: pop.store
+  // CHECK: pop.call_indirect
   // CHECK-NEXT: kgen.return %[[HDL]]
   lit.raise %err : !kgen.declref<@Error>
   lit.end_func
