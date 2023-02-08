@@ -239,8 +239,8 @@ AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
 /// value that we can test directly, and also returning the intermediate
 /// result of calling `__bool__` (which is typically a Bool or object type, but
 /// not guaranteed).  This reports and error and returns null on error.
-DRValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
-                                          AnyValue &boolResult) {
+RValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
+                                         AnyValue &boolResult) {
   if (!value.ir)
     return {};
 
@@ -248,7 +248,7 @@ DRValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
 
   // If this is already an 'i1', then we're done.
   if (value.ir.getType().isInteger(1))
-    return emitDRValue(value);
+    return emitRValue(value);
 
   // TODO: Python manual includes this off-hand comment:
   // Also, an object that doesn’t define a __bool__() method and whose __len__()
@@ -271,7 +271,7 @@ DRValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
   AnyValue litBoolCall =
       emitNamedMethodCall("__lit_bool", {{boolResult, value.expr}},
                           CallSyntax::kImplicitConvert, value.expr);
-  return emitDRValue({litBoolCall, value.expr});
+  return emitRValue({litBoolCall, value.expr});
 }
 
 //===----------------------------------------------------------------------===//
@@ -395,7 +395,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *node) {
 /// Emit the specified expression as a condition, converting it to an MLIR I1
 /// value that we can test directly.  This reports and error and returns null on
 /// error.
-DRValue ExprEmitter::emitExprConditionValueAsI1(const ExprNode *condExpr) {
+RValue ExprEmitter::emitExprConditionValueAsI1(const ExprNode *condExpr) {
   AnyValue boolTmp; // we don't care about the intermediate Bool value.
   return emitConditionValueAsI1({emitExprRValue(condExpr), condExpr}, boolTmp);
 }

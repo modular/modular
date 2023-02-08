@@ -78,8 +78,8 @@ public:
   /// value that we can test directly, and also returning the intermediate
   /// result of calling `__bool__` (which is typically a Bool or object type,
   /// but not guaranteed).  This reports and error and returns null on error.
-  DRValue emitConditionValueAsI1(ASTExprAnd<AnyValue> expr,
-                                 AnyValue &boolResult);
+  RValue emitConditionValueAsI1(ASTExprAnd<AnyValue> expr,
+                                AnyValue &boolResult);
 };
 
 /// ExprEmitter refines IREmitter, providing the additional state needed to
@@ -133,7 +133,7 @@ public:
   /// Emit the specified expression as a condition, converting it to an MLIR I1
   /// value that we can test directly.  This reports and error and returns null
   /// on error.
-  DRValue emitExprConditionValueAsI1(const ExprNode *condExpr);
+  RValue emitExprConditionValueAsI1(const ExprNode *condExpr);
 
   /// Given a value convertable to a pop int via index conversion, emit
   /// the casting code and return the pop scalar index value

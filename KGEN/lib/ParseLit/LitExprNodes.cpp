@@ -1629,12 +1629,13 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
   // need it.
   AnyValue lhsBool;
   DRValue lhsRV = emitter.emitExprDRValue(lhs);
-  auto lhsI1Value = emitter.emitConditionValueAsI1({lhsRV, lhs}, lhsBool);
-  if (!lhsI1Value)
+  RValue lhsI1Value = emitter.emitConditionValueAsI1({lhsRV, lhs}, lhsBool);
+  Value lhsI1DRValue = emitter.emitDRValue({AnyValue(lhsI1Value), lhs});
+  if (!lhsI1DRValue)
     return {};
 
   auto ifOp = emitter.builder->create<scf::IfOp>(
-      ifLoc, TypeRange{lhsBool.getType()}, lhsI1Value, /*withElse=*/true);
+      ifLoc, TypeRange{lhsBool.getType()}, lhsI1DRValue, /*withElse=*/true);
 
   OpBuilder trueBuilder = ifOp.getThenBodyBuilder();
   OpBuilder falseBuilder = ifOp.getElseBodyBuilder();
@@ -1737,7 +1738,9 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
 
 AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
                               ASTType contextualType) const {
-  auto condValue = emitter.emitExprConditionValueAsI1(condExpr);
+  RValue condRVal = emitter.emitExprConditionValueAsI1(condExpr);
+  Value condValue = emitter.emitDRValue({AnyValue(condRVal), condExpr});
+
   if (!condValue)
     return {};
 
