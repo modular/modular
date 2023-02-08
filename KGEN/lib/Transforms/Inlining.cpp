@@ -95,10 +95,6 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
       return ParamDeclRefAttr::get(it->second, ref.getType());
     return ref;
   });
-  // Skip over parametrically isolated attributes.
-  replacer.addReplacement([&](MLIROpAttr opExpr) {
-    return std::make_pair(opExpr, WalkResult::skip());
-  });
   auto paramDeclsAttrName = b.getStringAttr("paramDecls");
   for (Operation *user : calleeParams.paramOps) {
     // Skip the parent decl. It's handled after.
