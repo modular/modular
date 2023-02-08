@@ -15,7 +15,6 @@
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/Triple.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Host.h"
