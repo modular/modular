@@ -1,4 +1,4 @@
-# RUN: kgen-translate %s -import-lit -I %S/../lit-examples/ | FileCheck %s
+# RUN: kgen-translate %s -verify-diagnostics -import-lit -I %S/../lit-examples/ | FileCheck %s
 
 from prolog import Error, F32, Int
 
@@ -278,7 +278,7 @@ struct StructWithAsync:
 # CHECK-LABEL: lit.func @"call_struct_async{{.*}}"({{.*}}) async -> !lit.none
 async fn call_struct_async(f: StructWithAsync):
     # CHECK-NEXT: lit.async_call[<>({{.*}}) async -> !lit.none: @{{.*}}](%f)
-    f.do_something()
+    _ = f.do_something()
 
 struct Awaitable:
   fn __new__() -> Awaitable:

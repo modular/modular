@@ -230,6 +230,17 @@ static void diagnoseIgnoredResult(const ExprNode *expr, AnyValue value,
     }
   }
 
+  // If the expression returned an unevaluated coroutine, then the expression
+  // should be awaited.
+  if (isa<POP::CoroutineType>(valueType.mlirType)) {
+    auto loc = expr->getRange().getStart();
+    auto insertRange = LitSourceRange::getByteLevel(loc, loc);
+    shared.emitWarning(expr->getLoc())
+        << "coroutine was never awaited" << expr->getRange()
+        << LitFixIt(insertRange, "await ");
+    return;
+  }
+
   // Otherwise emit a warning, and suggest assigning to _.
   auto startLoc = expr->getRange().getStart();
   shared.emitWarning(expr->getLoc())
