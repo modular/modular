@@ -45,11 +45,6 @@ std::unique_ptr<Runtime> RuntimeCLOptions::createRuntime() const {
                                           std::chrono::nanoseconds{busyWaitNs},
                                           getProfilingEnabled());
     break;
-  case WorkQueueType::kShardedSemaphore:
-    workQueue = createShardedSemaphoreWorkQueue(
-        getNumThreads(), std::chrono::nanoseconds{busyWaitNs},
-        getProfilingEnabled());
-    break;
   }
   return std::make_unique<Runtime>(std::move(allocator), std::move(workQueue),
                                    getProfileFilename());
