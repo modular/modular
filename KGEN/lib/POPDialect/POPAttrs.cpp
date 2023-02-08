@@ -372,22 +372,6 @@ LogicalResult SIMDType::printValue(AsmPrinter &p, TypedAttr value) const {
 // ArrayAttr
 //===----------------------------------------------------------------------===//
 
-template <typename SequenceType>
-static ParseResult parseSequenceElements(AsmParser &p,
-                                         SmallVector<TypedAttr> &values,
-                                         SequenceType type) {
-  auto elementType = ParamRefType::get(type.getElementType());
-  return p.parseCommaSeparatedList(
-      [&] { return parseParamValue(p, values.emplace_back(), elementType); });
-}
-
-template <typename SequenceType>
-static void printSequenceElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
-                                  SequenceType type) {
-  llvm::interleaveComma(values, p,
-                        [&](TypedAttr value) { printParamValue(p, value); });
-}
-
 OptionalParseResult POP::ArrayType::parseValue(AsmParser &p,
                                                TypedAttr &value) const {
   if (failed(p.parseOptionalLSquare()))

@@ -13,6 +13,7 @@
 #define KGEN_KGENDIALECT_KGENUTILS_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
@@ -186,6 +187,21 @@ void printParametricCallee(OpAsmPrinter &p, Operation *, TypedAttr callee,
 ParseResult parseOptionalAlignmentParamValue(AsmParser &p, TypedAttr &result);
 void printOptionalAlignmentParamValue(AsmPrinter &p, Operation *op,
                                       TypedAttr alignment);
+
+template <typename SequenceType>
+ParseResult parseSequenceElements(AsmParser &p, SmallVector<TypedAttr> &values,
+                                  SequenceType type) {
+  auto elementType = ParamRefType::get(type.getElementType());
+  return p.parseCommaSeparatedList(
+      [&] { return parseParamValue(p, values.emplace_back(), elementType); });
+}
+
+template <typename SequenceType>
+void printSequenceElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
+                           SequenceType type) {
+  llvm::interleaveComma(values, p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
+}
 
 //===----------------------------------------------------------------------===//
 // Logic shared between funcs, generators, and generator interfaces
