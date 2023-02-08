@@ -47,7 +47,7 @@ fn test_tracing[level: Int]():
     rt.__del__()
 
 
-fn main() -> Int:
+fn main():
     # CHECK-LABEL: test_tracing_enabled
     print("== test_tracing_enabled")
     test_tracing[TraceLevel.ALWAYS]()
@@ -63,4 +63,3 @@ fn main() -> Int:
     # CHECK-NOT: "detail event 1"
     # CHECK-NOT: "trace event 2"
     # CHECK-NOT: "detail event 2"
-    return 0

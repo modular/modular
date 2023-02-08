@@ -97,8 +97,7 @@ fn test_runtime_parallel_for():
     rt.__del__()
 
 
-fn main() -> Int:
+fn main():
     test_runtime_task()
     test_runtime_taskgroup()
     test_runtime_parallel_for()
-    return 0
