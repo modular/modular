@@ -1680,10 +1680,6 @@ struct ConvNHWCInnerLoopFilterPacked[
             input_base_pointer: input.data,
         }
 
-        # Allocate offset table.
-        if same_channel_index:
-            instance._initialize_offset_table()
-
         instance._run_inner_loop()
 
     fn _initialize_offset_table(self):
@@ -1996,6 +1992,10 @@ struct ConvNHWCInnerLoopFilterPacked[
                 self._load_c_tile(c_local, Index(0, idx_n))
 
             # Iterate on tile K dimension.
+            # Allocate offset table.
+            if same_channel_index:
+                self._initialize_offset_table()
+
             # Not unrolled on K path.
             for idx_k in range(self.tile_n_k.__getitem__[1]()):
                 # accumulate data for this (n, k) index
