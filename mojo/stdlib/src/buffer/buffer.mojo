@@ -280,7 +280,7 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
 
 
 struct _VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
-    alias StorageType = __mlir_type[`!pop.variadic<`, type, `>`]
+    alias StorageType = __mlir_type[`!kgen.variadic<`, type, `>`]
     var value: StorageType
 
     fn __new__(value: StorageType) -> _VariadicList[type]:
