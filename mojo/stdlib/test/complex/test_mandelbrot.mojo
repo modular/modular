@@ -69,6 +69,5 @@ fn test_mandelbrot_iter():
     print(z.norm().value)
 
 
-fn main() -> Int:
+fn main():
     test_mandelbrot_iter()
-    return 0
