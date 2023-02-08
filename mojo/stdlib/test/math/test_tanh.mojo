@@ -24,6 +24,5 @@ fn test_tanh():
     print(tanh(0.5 * simd_val))
 
 
-fn main() -> Int:
+fn main():
     test_tanh()
-    return 0
