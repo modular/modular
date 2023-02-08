@@ -329,7 +329,7 @@ LogicalResult
 GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // See if the parameter definitions and uses within the generator are
   // structured correctly.
-  if (failed(ParameterUseDefGraph(*this).verify(symbolTable)))
+  if (failed(ParameterUseDefGraph(getBodyRegion()).verify(symbolTable)))
     return failure();
 
   // If the generator is implementing a generator interface, check that they
@@ -387,7 +387,7 @@ void FuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // See if the parameter definitions and uses within the func are
   // structured correctly.
-  ParameterUseDefGraph graph(*this);
+  ParameterUseDefGraph graph(getBodyRegion());
   if (failed(graph.verify(symbolTable)))
     return failure();
 
@@ -503,7 +503,7 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // See if the parameter definitions and uses within the generator are
   // structured correctly.  These are only defined in the interface and used
   // in the argument list or constraints list.
-  if (failed(ParameterUseDefGraph(*this).verify(symbolTable)))
+  if (failed(ParameterUseDefGraph(getBody()).verify(symbolTable)))
     return failure();
 
   // If an evaluator was specified, verify its signature.

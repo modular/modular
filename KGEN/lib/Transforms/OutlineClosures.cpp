@@ -49,7 +49,7 @@ void OutlineClosuresPass::runOnOperation() {
   unsigned counter = 0, varCounter = 0;
   for (auto generator : theModule.getOps<GeneratorOp>()) {
     // Calculate the parameter decls and uses for the region decl's parent.
-    ParameterUseDefGraph uses(generator);
+    ParameterUseDefGraph uses(generator.getBodyRegion());
     uses.calculate();
 
     // We'll use this a lot here - pull it out into a little lambda.
@@ -106,7 +106,7 @@ void OutlineClosuresPass::runOnOperation() {
       // Collect any parameters used from above that we need to capture for the
       // lifted generator.
       llvm::SetVector<ParamDeclAttr> necessaryDecls;
-      auto regionDeclUses = uses.nestedScopes.find(body);
+      auto regionDeclUses = uses.nestedScopes.find(&body.getBodyRegion());
       assert(regionDeclUses != uses.nestedScopes.end());
 
       DenseMap<ParamDeclAttr, TypedAttr> parameterCaptures;

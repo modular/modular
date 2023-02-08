@@ -501,7 +501,7 @@ ParameterUseDefGraphNodeIterator ParameterUseDefGraphNode::end() const {
   if (!param)
     return {*this, g->params.size()};
   // Do not traverse through to parameters in higher scopes.
-  if (!g->scope->isAncestor(g->decls[param].declOp))
+  if (!g->scope.getParentOp()->isAncestor(g->decls[param].declOp))
     return begin();
   // If the used parameter has no definition, this is a leaf node.
   auto it = g->defs.find(param);
@@ -585,7 +585,7 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
 /// declarations. This function ascertains the nature of how parameters are
 /// defined based on the type of the operation.
 static LogicalResult visit(ParameterUseDefGraph &g,
-                           VerifyingParameterCollector &c, DeclInterface scope,
+                           VerifyingParameterCollector &c, Region &scope,
                            Operation *op) {
   bool isDecl = false;
   auto recordDecl = [&](ParamDeclAttr decl) -> LogicalResult {
@@ -594,7 +594,7 @@ static LogicalResult visit(ParameterUseDefGraph &g,
 
     // If this parameter has already been declared in an operation in the same
     // scope, we have an error.
-    if (paramDecl.declOp && scope->isAncestor(paramDecl.declOp)) {
+    if (paramDecl.declOp && scope.getParentOp()->isAncestor(paramDecl.declOp)) {
       return (op->emitError("redeclaration of parameter ") << decl.getName())
                  .attachNote(paramDecl.declOp->getLoc())
              << "previous declaration here";
@@ -677,7 +677,7 @@ static LogicalResult visit(ParameterUseDefGraph &g,
     // A return operation defines the result parameters of the enclosing
     // function.
     auto func = cast<FuncInterface>(returnOp->getParentOp());
-    assert(func == scope && "unknown return operation");
+    assert(&func->getRegion(0) == &scope && "unknown return operation");
     for (auto [index, decl] : llvm::enumerate(func.getResultParams())) {
       assert(g.decls.find(decl.getName()) != g.decls.end());
       ParamDefinition &def = recordDef(decl);
@@ -712,7 +712,7 @@ static void emitCycleError(ParameterUseDefGraph &g,
 
   // Emit the error on the container operation with notes indicating the
   // problem.
-  InFlightDiagnostic diag = g.scope.emitError(
+  InFlightDiagnostic diag = g.scope.getParentOp()->emitError(
       "cyclic reference between expressions defining and using parameters");
 
   // An SCC may contain multiple different cyclic paths.  We diagnose the first
@@ -767,22 +767,26 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
   // The parameter collector to use.
   VerifyingParameterCollector c(module, symtab);
 
-  WalkResult result = scope.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    // Walk over nested scopes. Defer processing of nested scopes until after
-    // this scope has been analyzed.
-    if (auto decl = dyn_cast<DeclInterface>(op); decl && decl != scope) {
-      nestedDecls.push_back(decl);
-      return WalkResult::skip();
-    }
+  WalkResult result =
+      scope.getParentOp()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+        // Walk over nested scopes. Defer processing of nested scopes until
+        // after this scope has been analyzed.
+        if (auto decl = dyn_cast<DeclInterface>(op);
+            decl && scope.getParentOp() != decl) {
+          for (Region &r : decl->getRegions())
+            if (&r != &scope)
+              nestedDecls.push_back(&r);
+          return WalkResult::skip();
+        }
 
-    if (auto region = dyn_cast<ParamDeclareRegionOp>(op))
-      regionParams.push_back(region.getParamDecl().getName());
+        if (auto region = dyn_cast<ParamDeclareRegionOp>(op))
+          regionParams.push_back(region.getParamDecl().getName());
 
-    // Visit the operation inside this scope.
-    if (failed(visit(*this, c, scope, op)))
-      return WalkResult::interrupt();
-    return WalkResult::advance();
-  });
+        // Visit the operation inside this scope.
+        if (failed(visit(*this, c, scope, op)))
+          return WalkResult::interrupt();
+        return WalkResult::advance();
+      });
   if (result.wasInterrupted())
     return failure();
 
@@ -804,9 +808,9 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
                << "parameter defined with type " << it->second.type;
       }
 
-      // If the declaration if the parameter is outside the current scope,
+      // If the declaration of the parameter is outside the current scope,
       // indicate this as a parameter use from above.
-      if (!scope->isAncestor(it->second.declOp))
+      if (!scope.getParentOp()->isAncestor(it->second.declOp))
         usesFromAbove.insert(use);
     }
   }
@@ -816,8 +820,8 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
     return failure();
 
   // Process all nested scopes.
-  for (DeclInterface decl : nestedDecls) {
-    ParameterUseDefGraph nested(decl);
+  for (Region *nestedScope : nestedDecls) {
+    ParameterUseDefGraph nested(*nestedScope);
     // Propagate the current declarations into the nested scope.
     nested.decls = decls;
     if (failed(nested.calculateOrVerify(module, symtab)))
@@ -825,8 +829,10 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
 
     // If there were no uses from above, notify the nested declaration that it
     // is isolated. Do not do this during verification.
-    if (nested.usesFromAbove.empty())
+    if (nested.usesFromAbove.empty()) {
+      auto decl = cast<DeclInterface>(nestedScope->getParentOp());
       decl.notifyKnownIsolatedFromAbove();
+    }
 
     // Bubble up the nested scopes and all nested uses from above.
     for (auto &[scope, g] : nested.nestedScopes)
@@ -834,11 +840,11 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
     for (ParamDeclRefAttr use : nested.usesFromAbove) {
       auto it = decls.find(use.getName());
       assert(it != decls.end() && "nested use has no declaration?");
-      if (!scope->isAncestor(it->second.declOp))
+      if (!scope.getParentOp()->isAncestor(it->second.declOp))
         usesFromAbove.insert(use);
     }
     nested.nestedScopes.clear();
-    nestedScopes.try_emplace(decl, std::move(nested));
+    nestedScopes.try_emplace(nestedScope, std::move(nested));
   }
 
   // The parameter uses that a region parameter declaration depend on are
@@ -847,8 +853,7 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
   for (StringAttr regionParam : regionParams) {
     ParamDefinition &def = defs[regionParam];
     auto region = cast<ParamDeclareRegionOp>(def.defOp);
-    auto it = nestedScopes.find(
-        cast<DeclInterface>(region.getBody().front().front()));
+    auto it = nestedScopes.find(&region.getBody().front().front().getRegion(0));
     assert(it != nestedScopes.end() && "didn't visit nested body?");
     def.uses = llvm::to_vector(it->second.usesFromAbove);
   }
@@ -864,7 +869,8 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
 
     assert(sccIt->size() == 1 && "non-cyclic regions should have one node");
     StringAttr param = sccIt->front().param;
-    if (param && scope->isAncestor(decls.find(param)->second.declOp))
+    if (param &&
+        scope.getParentOp()->isAncestor(decls.find(param)->second.declOp))
       paramSolveOrder.push_back(param);
   }
   params = std::move(paramSolveOrder);
@@ -878,15 +884,18 @@ void ParameterUseDefGraph::calculate() {
 }
 
 LogicalResult ParameterUseDefGraph::verify(SymbolTableCollection &symtab) {
-  return calculateOrVerify(scope->getParentOfType<ModuleOp>(), &symtab);
+  return calculateOrVerify(scope.getParentOp()->getParentOfType<ModuleOp>(),
+                           &symtab);
 }
 
 ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) {
   // Note that we use map.lookupOrDefault here because only a subgraph might
   // have been copied, so we don't necessarily have the op in the IRMapping.
+  auto remapRegion = [&](Region *region) {
+    return map.lookupOrDefault(&region->front())->getParent();
+  };
 
-  ParameterUseDefGraph out(
-      cast<DeclInterface>(map.lookupOrDefault(scope.getOperation())));
+  ParameterUseDefGraph out(*remapRegion(&scope));
 
   // Copy over decls and defs.
   for (auto [name, decl] : decls)
@@ -910,14 +919,11 @@ ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) {
 
   // Copy the remapped nested decls.
   for (auto nestedDecl : nestedDecls)
-    out.nestedDecls.push_back(
-        cast<DeclInterface>(map.lookupOrDefault(nestedDecl.getOperation())));
+    out.nestedDecls.push_back(remapRegion(nestedDecl));
 
   // And finally, for each nested scope, we'll have to do the same thing.
   for (auto [decl, graph] : nestedScopes)
-    out.nestedScopes.try_emplace(
-        cast<DeclInterface>(map.lookupOrDefault(decl.getOperation())),
-        graph.copy(map));
+    out.nestedScopes.try_emplace(remapRegion(decl), graph.copy(map));
 
   return out;
 }
