@@ -422,114 +422,6 @@ bool DTypeConstantAttr::isLessThan(Attribute rhs) const {
 }
 
 //===----------------------------------------------------------------------===//
-// ExprFuncAttr
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseExprFunc(AsmParser &p, ParamDeclArrayAttr &paramDecls,
-                                 ParamDeclArrayAttr &inputs,
-                                 ParameterExprArrayAttr &exprs,
-                                 SignatureType type) {
-  if (!type.getResultParams().empty())
-    return p.emitError(p.getCurrentLocation())
-           << "cannot have result parameters";
-
-  // We can infer the input parameters from the signature.
-  paramDecls = type.getInputParams();
-
-  // Parse the inputs and expression using the types from the signature type.
-  SmallVector<ParamDeclAttr> inputDecls;
-  ArrayRef<Type> inputTypes = type.getValueInputs();
-  auto typeIt = inputTypes.begin(), typeE = inputTypes.end();
-  auto parseInput = [&]() -> ParseResult {
-    if (typeIt == typeE)
-      return p.emitError(p.getCurrentLocation(), "too many input declarations");
-    StringAttr name;
-    if (parseParamName(p, name))
-      return failure();
-    inputDecls.push_back(ParamDeclAttr::get(name, *typeIt++));
-    return success();
-  };
-  if (p.parseCommaSeparatedList(AsmParser::Delimiter::Paren, parseInput))
-    return failure();
-  if (typeIt != typeE)
-    return p.emitError(p.getCurrentLocation(), "not enough input declarations");
-  if (p.parseArrow())
-    return failure();
-
-  SmallVector<TypedAttr> exprVals;
-  ArrayRef<Type> resultTypes = type.getValueResults();
-  auto resultIt = resultTypes.begin(), resultE = resultTypes.end();
-  auto parseExpr = [&]() -> ParseResult {
-    if (resultIt == resultE)
-      return p.emitError(p.getCurrentLocation(), "too many result expressions");
-    return parseParamValue(p, exprVals.emplace_back(), *resultIt++);
-  };
-  if (p.parseOptionalLParen()) {
-    if (failed(parseExpr()))
-      return failure();
-  } else {
-    if (p.parseOptionalRParen())
-      if (p.parseCommaSeparatedList(parseExpr) || p.parseRParen())
-        return failure();
-  }
-  if (resultIt != resultE)
-    return p.emitError(p.getCurrentLocation(), "not enough result expressions");
-
-  inputs = ParamDeclArrayAttr::get(p.getContext(), inputDecls);
-  exprs = ParameterExprArrayAttr::get(p.getContext(), exprVals);
-  return success();
-}
-
-static void printExprFunc(AsmPrinter &p, ParamDeclArrayAttr paramDecls,
-                          ParamDeclArrayAttr inputs,
-                          ParameterExprArrayAttr exprs, SignatureType type) {
-  p << '(';
-  llvm::interleaveComma(
-      inputs, p, [&](ParamDeclAttr input) { p << input.getName().getValue(); });
-  p << ") -> ";
-  if (exprs.size() != 1)
-    p << '(';
-  llvm::interleaveComma(exprs, p,
-                        [&](TypedAttr expr) { printParamValue(p, expr); });
-  if (exprs.size() != 1)
-    p << ')';
-}
-
-LogicalResult ExprFuncAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                   ParamDeclArrayAttr paramDecls,
-                                   ParamDeclArrayAttr inputs,
-                                   ParameterExprArrayAttr exprs,
-                                   SignatureType type) {
-  if (!type.getResultParams().empty())
-    return emitError() << "cannot have result parameters";
-  if (exprs.size() != type.getValues().getNumResults())
-    return emitError() << "has " << exprs.size() << " expressions but expected "
-                       << type.getValues().getNumResults();
-  for (auto [idx, expr, type] : llvm::zip(llvm::seq<unsigned>(0, exprs.size()),
-                                          exprs, type.getValueResults())) {
-    if (expr.getType() != type) {
-      return emitError() << "expected expression result #" << idx
-                         << " type to be " << type << " but got "
-                         << expr.getType();
-    }
-  }
-  if (paramDecls != type.getInputParams())
-    return emitError() << "input parameters do not match signature";
-  if (inputs.size() != type.getValues().getNumInputs())
-    return emitError() << "wrong number of inputs";
-  for (auto [input, sigInputType] : llvm::zip(inputs, type.getValueInputs()))
-    if (input.getType() != sigInputType)
-      return emitError() << "input types do not match";
-
-  return checkSelfContained(emitError, paramDecls, inputs, exprs);
-}
-
-/// The expression function is a simple constant if it has no parameters.
-bool ExprFuncAttr::isConstant() const {
-  return !isParameterizedType(getType()) && getParamDecls().empty();
-}
-
-//===----------------------------------------------------------------------===//
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
 
@@ -1455,31 +1347,6 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
         cast<SignatureType>(resultType));
   }
 
-  // If the operand is an expression function, substitute the parameter
-  // declarations. If any parameter value is not a simple constant, we cannot
-  // simplify the bound function.
-  if (auto exprFunc = dyn_cast<ExprFuncAttr>(operands.front())) {
-    ParameterEvaluator evaluator;
-    for (auto [param, value] :
-         llvm::zip(exprFunc.getParamDecls(), operands.drop_front())) {
-      if (!ParameterAttr::isSimpleConstant(value))
-        return {};
-      evaluator.setParameterValue(param, value);
-    }
-    // Bind inputs to themselves.
-    for (ParamDeclAttr input : exprFunc.getInputs())
-      evaluator.setParameterValue(input, ParamDeclRefAttr::get(input));
-
-    SmallVector<TypedAttr> exprs;
-    exprs.reserve(exprFunc.getExprs().size());
-    for (TypedAttr expr : exprFunc.getExprs())
-      exprs.push_back(evaluator.getReboundAttribute(expr));
-    return ExprFuncAttr::get(
-        exprFunc.getInputs(),
-        ParameterExprArrayAttr::get(exprFunc.getContext(), exprs),
-        cast<SignatureType>(resultType));
-  }
-
   // If the operand is an MLIR operation, substitute its parameters in its
   // operand and result types and bind parameters into its attribute dictionary.
   if (auto opExpr = dyn_cast<MLIROpAttr>(operands.front())) {
@@ -1521,16 +1388,6 @@ static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
   TypedAttr func = operands.front();
   operands = operands.drop_front();
   resultType = cast<SignatureType>(func.getType()).getValues().getResult(0);
-
-  if (auto exprFunc = dyn_cast<ExprFuncAttr>(func)) {
-    // Evalute the function expression. Map the operands to the input
-    // parameters.
-    ParameterEvaluator evaluator;
-    for (auto [param, value] : llvm::zip(exprFunc.getInputs(), operands))
-      evaluator.setParameterValue(param, value);
-
-    return evaluator.getReboundAttribute(exprFunc.getExprs().front());
-  }
 
   if (auto opExpr = dyn_cast<MLIROpAttr>(func)) {
     // Make the operation real by materializing it into a fake block.

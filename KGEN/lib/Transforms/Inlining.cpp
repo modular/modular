@@ -96,9 +96,6 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
     return ref;
   });
   // Skip over parametrically isolated attributes.
-  replacer.addReplacement([&](ExprFuncAttr exprFunc) {
-    return std::make_pair(exprFunc, WalkResult::skip());
-  });
   replacer.addReplacement([&](MLIROpAttr opExpr) {
     return std::make_pair(opExpr, WalkResult::skip());
   });

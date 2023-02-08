@@ -304,15 +304,6 @@ kgen.generator @param_canonicalize<p1, p2>() {
   kgen.param.declare square = <mul(p1, p1)>  // CHECK: kgen.param.declare square = <mul(p1, p1)>
   kgen.param.constant = <square>  // CHECK: kgen.param.constant = <square>
 
-  // CHECK: = <3>
-  kgen.param.constant = <apply(:(index) -> index #kgen.expr.func<(A) -> add(A, 1)>, 2)>
-
-  // CHECK: fn1: (index) -> index = <#kgen.expr.func<(B) -> add(B, 1)>>
-  kgen.param.declare fn1: (index) -> index = <bind_signature(:<A>(index) -> index #kgen.expr.func<(B) -> add(A, B)>, 1)>
-
-  // CHECK: fn2: (index) -> index = <bind_signature(:<A>(index) -> index #kgen.expr.func<(B) -> add(A, B)>, p1)>
-  kgen.param.declare fn2: (index) -> index = <bind_signature(:<A>(index) -> index #kgen.expr.func<(B) -> add(A, B)>, p1)>
-
   // CHECK = <eq(p1, ?)>
   kgen.param.declare unknown: i1 = <eq(?, p1)>
   // CHECK: = <0>
@@ -323,10 +314,6 @@ kgen.generator @param_canonicalize<p1, p2>() {
   kgen.param.declare unknownEqIndex: i1 = <eq(?, 1)>
   // CHECK: = <1>
   kgen.param.declare unknownEqItselfIndex: i1 = <eq(?, ?)>
-
-  // CHECK: <eq(:() -> index fn3, #kgen.expr.func<() -> 0>)>
-  kgen.param.declare fn3: () -> index = <#kgen.expr.func<() -> 1>>
-  kgen.param.declare compareFns: i1 = <eq(:() -> index fn3, #kgen.expr.func<() -> 0>)>
 
   // CHECK: <eq(:list<index[2]> list, [1, 2])>
   kgen.param.declare list: list<index[2]> = <[3, 4]>

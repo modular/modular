@@ -1089,25 +1089,6 @@ kgen.generator @passTypeList() {
   kgen.return
 }
 
-// -----
-
-// CHECK-LABEL: @"param_apply,fn=#kgen.expr.func
-kgen.generator @param_apply<fn: (index) -> index -> result_param>() {
-  kgen.param.declare result: index = <apply(:(index) -> index fn, 1)>
-  kgen.return<result>
-}
-
-// CHECK-LABEL: @do_it
-kgen.generator @do_it() -> index {
-  // CHECK-NEXT: kgen.call @"param_apply,fn=#kgen.expr.func
-  kgen.call @param_apply<fn: (index) -> index = #kgen.expr.func<(A) -> add(A, 1)> -> result = result_param>() : () -> ()
-  // CHECK-NEXT: kgen.param.constant = <2>
-  %0 = kgen.param.constant = <result>
-  kgen.return %0 : index
-}
-
-// -----
-
 kgen.generator @type_of_unknown<T: type, value: !kgen.paramref<T> -> is_unknown: i1>() {
   kgen.return<:i1 eq(:!kgen.paramref<T> value, ?)>
 }

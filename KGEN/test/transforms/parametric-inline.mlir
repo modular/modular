@@ -420,21 +420,6 @@ kgen.generator @callee() {
 
 // -----
 
-// CHECK-LABEL: kgen.generator @parent
-kgen.generator @parent<A, B, C>() {
-  // CHECK: declare A0: <A, C>(index, index) -> index = <#kgen.expr.func<(B, D) -> add(B, D)>>
-  kgen.call @callee() : () -> ()
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee() {
-  kgen.param.declare A: <A, C>(index, index) -> index = <#kgen.expr.func<(B, D) -> add(B, D)>>
-  kgen.return
-}
-
-// -----
-
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent() {
