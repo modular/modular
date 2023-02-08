@@ -573,7 +573,8 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
   Block *body = builder.createBlock(&loopOp.getBody());
   builder = OpBuilder::atBlockEnd(body);
 
-  Value condVal = getEmitter().emitExprConditionValueAsI1(condExp);
+  RValue condRVal = getEmitter().emitExprConditionValueAsI1(condExp);
+  Value condVal = getEmitter().emitDRValue({AnyValue(condRVal), condExp});
   if (!condVal)
     return success(); // IRGen error already emitted; parse succeeded!
 
@@ -797,12 +798,13 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
       parseToken(LitToken::colon, "expected ':' after 'if' expression"))
     return failure();
 
-  Value cond = getEmitter().emitExprConditionValueAsI1(condExp);
-  if (!cond)
+  RValue condRVal = getEmitter().emitExprConditionValueAsI1(condExp);
+  Value condVal = getEmitter().emitDRValue({AnyValue(condRVal), condExp});
+  if (!condVal)
     return success();
 
   // Create the 'if' and parse the body into its "then" region.
-  auto ifOp = builder.create<HLCF::IfOp>(ifLoc, cond);
+  auto ifOp = builder.create<HLCF::IfOp>(ifLoc, condVal);
   builder.createBlock(&ifOp.getThenRegion());
   if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
@@ -818,10 +820,11 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
       return failure();
 
     builder.createBlock(&ifOp.getElseRegion());
-    cond = getEmitter().emitExprConditionValueAsI1(condExp);
-    if (!cond)
+    condRVal = getEmitter().emitExprConditionValueAsI1(condExp);
+    condVal = getEmitter().emitDRValue({AnyValue(condRVal), condExp});
+    if (!condVal)
       return success();
-    ifOp = builder.create<HLCF::IfOp>(elifLoc, cond);
+    ifOp = builder.create<HLCF::IfOp>(elifLoc, condVal);
     builder.create<HLCF::YieldOp>(elifLoc);
     builder.createBlock(&ifOp.getThenRegion());
     if (failed(parseLocalScopeSuite(curIndent)))
