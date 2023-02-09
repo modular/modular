@@ -26,6 +26,7 @@
 #include "SelectFastestFunction.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
+#include "Support/HLCFDialect/HLCFOps.h"
 #include "Support/STLExtras.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/IRMapping.h"
@@ -33,6 +34,7 @@
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "mlir/Support/IndentedOstream.h"
+#include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
@@ -946,9 +948,12 @@ public:
                               ExpansionTreeNode *parent);
 
   /// Process a param.if op by evaluating the condition and elaborating and
-  /// inlining only the branch that was taken.
+  /// inlining only the branch that was taken. If one of the branches had an
+  /// early return, this will split the block after the return and avoid
+  /// elaborating the rest of the function.
   std::optional<ErrorTree> processParamIfOp(ParamIfOp op,
-                                            ExpansionTreeNode *parent);
+                                            ExpansionTreeNode *parent,
+                                            mlir::IRRewriter &b);
 
   /// Process a worklist of ops.
   void processScope(ExpansionTreeNode *parentNode,
@@ -1443,7 +1448,8 @@ ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
 //===----------------------------------------------------------------------===//
 
 std::optional<ErrorTree>
-ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
+ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent,
+                                 mlir::IRRewriter &b) {
   // Check the condition expression.
   auto errorOrValue =
       parent->evaluator.concretizeParameterExpr(op.getLoc(), op.getCond());
@@ -1454,17 +1460,17 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   // then elaborate them. We can do this by splicing the op list into the parent
   // block. We splice it this way to avoid remapping the ops when we process
   // them later.
-  ParamYieldOp terminator;
+  Operation *terminator;
   Region *toProcess = nullptr;
   auto resultInt = cast<IntegerAttr>(errorOrValue.takeValue());
   if (!resultInt.getValue().isZero()) {
     // Get the terminator.
-    terminator = cast<ParamYieldOp>(op.getThen().front().getTerminator());
+    terminator = op.getThen().front().getTerminator();
     // Get the op list
     toProcess = &op.getThen();
   } else {
     // Get the terminator.
-    terminator = cast<ParamYieldOp>(op.getElse().front().getTerminator());
+    terminator = op.getElse().front().getTerminator();
     // Get the op list
     toProcess = &op.getElse();
   }
@@ -1501,23 +1507,46 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   Block::iterator iter = op->getIterator();
   op->getBlock()->getOperations().splice(iter,
                                          toProcess->front().getOperations());
-  // RAUW the op's results with the terminator's inputs.
-  op->getResults().replaceAllUsesWith(terminator->getOperands());
 
-  // Update the values for the result parameters.
-  for (auto [decl, value] :
-       llvm::zip(op.getParamDecls(), terminator.getParameters())) {
-    // Concretize the value.
-    auto concreteVal =
-        parent->evaluator.concretizeParameterExpr(terminator.getLoc(), value);
-    if (concreteVal.isError())
-      return concreteVal.takeError();
+  // Update the values for the result parameters and do other processing
+  // necessary for param.yield.
+  if (auto yieldOp = dyn_cast<ParamYieldOp>(terminator)) {
+    // RAUW the op's results with the terminator's inputs.
+    op->getResults().replaceAllUsesWith(yieldOp.getOperands());
 
-    parent->evaluator.setOrOverwriteParameterValue(decl,
-                                                   concreteVal.takeValue());
+    for (auto [decl, value] :
+         llvm::zip(op.getParamDecls(), yieldOp.getParameters())) {
+      // Concretize the value.
+      auto concreteVal =
+          parent->evaluator.concretizeParameterExpr(yieldOp.getLoc(), value);
+      if (concreteVal.isError())
+        return concreteVal.takeError();
+
+      parent->evaluator.setOrOverwriteParameterValue(decl,
+                                                     concreteVal.takeValue());
+    }
+    // Erase the terminator.
+    terminator->erase();
+  } else if (auto hlcfTerm =
+                 dyn_cast<HLCF::ControlFlowTerminator>(terminator)) {
+    b.setInsertionPoint(hlcfTerm);
+    // If it's an hlcf.return op, we have to split the block after the return.
+    hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
+    // If the terminator is a return op on the func we're elaborating, replace
+    // it with a kgen.return.
+    if (isa<HLCF::ReturnOp>(hlcfTerm) &&
+        hlcfTerm->getParentOp() == parent->op) {
+      b.replaceOpWithNewOp<ReturnOp>(
+          hlcfTerm, b.getAttr<ParameterExprArrayAttr>(ArrayRef<TypedAttr>{}),
+          hlcfTerm->getOperands());
+    }
+    // Drop all uses of the if op because any of its uses will be null and void
+    // at this point.
+    op->dropAllDefinedValueUses();
+  } else {
+    return ErrorTree(terminator->getLoc(),
+                     "unknown terminator kind for kgen.param.if");
   }
-  // Erase the terminator.
-  terminator->erase();
 
   // We always erase this op.
   op->erase();
@@ -1535,6 +1564,9 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
     for (Operation *op : worklist)
       logger << *op << "\n";
   });
+
+  // IR Rewriter we can use for anything we might need later.
+  mlir::IRRewriter b{OpBuilder(parentNode->op)};
 
   // Processing an op may generate more stuff, or even delete the op being
   // processed.
@@ -1557,7 +1589,7 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
     } else if (auto assertOp = dyn_cast<ParamAssertOp>(op)) {
       result = processParamAssertOp(parentNode->evaluator, assertOp);
     } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
-      result = processParamIfOp(ifOp, parentNode);
+      result = processParamIfOp(ifOp, parentNode, b);
     } else if (auto addressof = dyn_cast<AddressOfOp>(op)) {
       result = processGeneratorUser(addressof.getParamDecls(), addressof,
                                     addressof.getCallee(), parentNode,
@@ -1585,6 +1617,8 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
       return;
   }
 
+  // Erase any unreachable blocks created by the scope processing.
+  (void)mlir::eraseUnreachableBlocks(b, parentNode->op->getRegions());
   LLVM_DEBUG(parentNode->print(logger << "Completed processing "));
 }
 
