@@ -1732,6 +1732,64 @@ kgen.generator @caller() {
 
 // -----
 
+// CHECK-LABEL: @constexprIfEarlyExit
+kgen.generator @constexprIfEarlyExit() -> index {
+  kgen.param.declare x = <11>
+  // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
+  %0 = kgen.param.if <gt(x, 10)> -> index {
+    %1 = "should.appear"() : () -> index
+    // CHECK-NEXT: kgen.return [[RES]]
+    hlcf.return %1 : index
+  } else {
+    %3 = "should.not.appear"() : () -> index
+    kgen.param.yield %3 : index
+  }
+  // CHECK-NOT: param.constant = <32>
+  %4 = kgen.param.constant = <32>
+
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: @constexprIfEarlyExitWithParam
+kgen.generator @constexprIfEarlyExitWithParam() -> index {
+  // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
+  %0 = kgen.param.if <gt(x, 10)> -> index {
+    %1 = "should.appear"() : () -> index
+    // CHECK-NEXT: kgen.return [[RES]]
+    hlcf.return %1 : index
+  } else {
+    %3 = "should.not.appear"() : () -> index
+    kgen.param.yield %3 : index
+  }
+  kgen.param.declare x = <11>
+  // CHECK-NOT: param.constant = <32>
+  %4 = kgen.param.constant = <32>
+
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: @constexprIfEarlyExitWithParam2
+kgen.generator @constexprIfEarlyExitWithParam2() -> index {
+  // CHECK-NEXT: param.constant = <11>
+  %0 = kgen.param.constant = <x>
+  // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
+  %1 = kgen.param.if <1> -> index {
+    %2 = "should.appear"() : () -> index
+    // CHECK-NEXT: kgen.return [[RES]]
+    hlcf.return %2 : index
+  } else {
+    %3 = "should.not.appear"() : () -> index
+    kgen.param.yield %3 : index
+  }
+  kgen.param.declare x = <11>
+  // CHECK-NOT: param.constant = <32>
+  %4 = kgen.param.constant = <32>
+
+  kgen.return %1 : index
+}
+
+// -----
+
 // CHECK-LABEL: kgen.func @substitute_current_target
 kgen.generator @substitute_current_target() {
   // CHECK-NEXT: constant: target = <#kgen.target<triple = {{.*}}>>
