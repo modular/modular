@@ -595,14 +595,14 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
   let arguments = (ins AttrOfType<I1>:$cond,
                        KGEN_ParamDeclArrayAttr:$paramDecls);
   let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$then, SizedRegion<1>:$else);
+  let regions = (region SizedRegion<1>:$thenRegion, SizedRegion<1>:$elseRegion);
 
   let extraClassDeclaration = [{
     Block::OpListType &getThenOps() {
-      return getThen().front().getOperations();
+      return getThenRegion().front().getOperations();
     }
     Block::OpListType &getElseOps() {
-      return getElse().front().getOperations();
+      return getElseRegion().front().getOperations();
     }
     /// For DeclInterface - this op never defines input parameters.
     ArrayRef<ParamDeclAttr> getInputParamDecls() { return {}; }
@@ -610,6 +610,11 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
 
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
+
+  let builders = [OpBuilder<(ins "TypedAttr":$cond), [{
+    build($_builder, $_state, {}, cond,
+          ParamDeclArrayAttr::get(cond.getContext(), {}));
+  }]>];
 }
 
 //===----------------------------------------------------------------------===//

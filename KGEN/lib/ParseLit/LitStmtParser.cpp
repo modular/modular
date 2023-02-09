@@ -809,17 +809,47 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
       parseToken(LitToken::colon, "expected ':' after 'if' expression"))
     return failure();
 
-  RValue condRVal = getEmitter().emitExprConditionValueAsI1(condExp);
-  Value condVal = getEmitter().emitDRValue({AnyValue(condRVal), condExp});
-  if (!condVal)
-    return success();
+  // Each if/elif conditions could be dynamic or static, use some helpers to
+  // generate the right structure.
+  SmartVariant<HLCF::IfOp, ParamIfOp> ifOp;
+  auto createIf = [&](Location loc, RValue condRV) {
+    // Create the 'if' and parse the body into its "then" region.
+    if (auto condMVal = condRV.getIfMValue())
+      ifOp = builder.create<ParamIfOp>(loc, condMVal.get());
+    else
+      ifOp = builder.create<HLCF::IfOp>(loc, condRV.getIfDRValue());
+  };
+
+  auto createThenBlock = [&]() {
+    if (auto hifOp = dyn_cast<HLCF::IfOp>(ifOp))
+      builder.createBlock(&hifOp.getThenRegion());
+    else
+      builder.createBlock(&cast<ParamIfOp>(ifOp).getThenRegion());
+  };
+
+  auto createElseBlock = [&]() {
+    if (auto hifOp = dyn_cast<HLCF::IfOp>(ifOp))
+      builder.createBlock(&hifOp.getElseRegion());
+    else
+      builder.createBlock(&cast<ParamIfOp>(ifOp).getElseRegion());
+  };
+
+  auto createYield = [&](Location loc) {
+    if (isa<HLCF::IfOp>(builder.getBlock()->getParentOp()))
+      builder.create<HLCF::YieldOp>(loc);
+    else
+      builder.create<ParamYieldOp>(loc);
+  };
 
   // Create the 'if' and parse the body into its "then" region.
-  auto ifOp = builder.create<HLCF::IfOp>(ifLoc, condVal);
-  builder.createBlock(&ifOp.getThenRegion());
+  RValue condRVal = getEmitter().emitExprConditionValueAsI1(condExp);
+  if (!condRVal)
+    return failure();
+  createIf(ifLoc, condRVal);
+  createThenBlock();
   if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
-  builder.create<HLCF::YieldOp>(ifLoc);
+  createYield(ifLoc);
 
   while (getToken().is(LitToken::kw_elif) &&
          getToken().getIndentation().has_value() &&
@@ -830,20 +860,20 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
         parseToken(LitToken::colon, "expected ':' after 'elif' expression"))
       return failure();
 
-    builder.createBlock(&ifOp.getElseRegion());
+    createElseBlock();
     condRVal = getEmitter().emitExprConditionValueAsI1(condExp);
-    condVal = getEmitter().emitDRValue({AnyValue(condRVal), condExp});
-    if (!condVal)
-      return success();
-    ifOp = builder.create<HLCF::IfOp>(elifLoc, condVal);
-    builder.create<HLCF::YieldOp>(elifLoc);
-    builder.createBlock(&ifOp.getThenRegion());
+    if (!condRVal)
+      return failure();
+    createIf(elifLoc, condRVal);
+    createYield(elifLoc);
+
+    createThenBlock();
     if (failed(parseLocalScopeSuite(curIndent)))
       return failure();
-    builder.create<HLCF::YieldOp>(ifLoc);
+    createYield(elifLoc);
   }
 
-  builder.createBlock(&ifOp.getElseRegion());
+  createElseBlock();
   if (getToken().getIndentation().has_value() &&
       *getToken().getIndentation() >= curIndent &&
       consumeIf(LitToken::kw_else)) {
@@ -852,7 +882,7 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
     if (failed(parseLocalScopeSuite(curIndent)))
       return failure();
   }
-  builder.create<HLCF::YieldOp>(ifLoc);
+  createYield(ifLoc);
   return success();
 }
 
