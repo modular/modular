@@ -144,7 +144,8 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
     if (nestedScope == callee)
       return WalkResult::advance();
     // If we know the scope is parametrically isolated, there's nothing to do.
-    if (cast<DeclInterface>(*nestedScope).isIsolatedFromAbove())
+    // FuncInterface things have one region, so default to zero.
+    if (cast<DeclInterface>(*nestedScope).isIsolatedFromAbove(0))
       return WalkResult::skip();
 
     Operation *clonedScope = bv.lookup(&*nestedScope);

@@ -35,13 +35,18 @@ def DeclInterface : OpInterface<"DeclInterface"> {
 
       Note that `false` does not mean the scope has references to parameters in
       higher scopes but that it *can* have such references.
-    }], "bool", "isIsolatedFromAbove", (ins), [{}], [{ return false; }]>,
+    }], "bool", "isIsolatedFromAbove", (ins "unsigned":$regionNumber), [{}],
+      [{ return false; }]>,
 
     InterfaceMethod<[{
       Notify a declaration scope that allows references to parameters in higher
       scopes that it has no such references in its body. An implementing
       operation may store this knowledge in a state for optimizations.
-    }], "void", "notifyKnownIsolatedFromAbove", (ins), [{}], [{ }]>,
+
+      The region number is passed in because one region may be isolated from
+      above while another may not be.
+    }], "void", "notifyKnownIsolatedFromAbove", (ins "unsigned":$regionNumber),
+      [{}], [{ }]>,
 
     InterfaceMethod<[{
       Return the parameters declared at this parameter scope. These parameters
