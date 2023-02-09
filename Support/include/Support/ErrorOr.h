@@ -64,6 +64,8 @@ class [[nodiscard]] ErrorOr {
   using StorageMode = Error::StorageMode;
 
 public:
+  using value_type = T;
+
   ~ErrorOr() {
     switch (storageMode) {
     case StorageMode::kValue:
