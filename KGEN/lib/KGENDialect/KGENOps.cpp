@@ -804,6 +804,38 @@ LogicalResult ParamIfOp::verify() {
   if (failed(checkTypesMatch(getElse().front().getTerminator()->getOperands())))
     return failure();
 
+  // Check that the result parameters work.
+  auto checkResultParams = [&](Operation *terminator) -> LogicalResult {
+    if (getParamDecls().empty())
+      return success();
+
+    if (!isa<ParamYieldOp>(terminator)) {
+      return emitError("expected a kgen.param.yield in order to return result "
+                       "parameters")
+                 .attachNote(terminator->getLoc())
+             << "unknown terminator defined here";
+    }
+
+    auto yieldOp = cast<ParamYieldOp>(terminator);
+    for (auto [decl, value] :
+         llvm::zip(getParamDecls(), yieldOp.getParameters())) {
+      if (decl.getType() != value.getType())
+        return (mlir::emitError(
+                    terminator->getLoc(),
+                    "result parameter type did not match, expected ")
+                << decl.getType() << " but got " << value.getType())
+                   .attachNote(getLoc())
+               << "result parameter defined here";
+    }
+
+    return success();
+  };
+
+  if (failed(checkResultParams(getThen().front().getTerminator())))
+    return failure();
+  if (failed(checkResultParams(getElse().front().getTerminator())))
+    return failure();
+
   return success();
 }
 

@@ -842,3 +842,56 @@ kgen.generator @differentType() {
   kgen.param.declare chosenImpl : () -> () = <evaluate(:index bad, :() -> index @evaluator)>
   kgen.return
 }
+
+// -----
+
+kgen.generator @fwd<in -> out>() {
+  kgen.return<in>
+}
+
+// expected-error @below {{cyclic reference between expressions}}
+kgen.generator @cyclicIf() {
+  kgen.param.declare cond_var: i1 = <1>
+  // This outputs a single parameter that is either the result of the call
+  // or N itself.
+  // expected-note @below {{parameter "M2" is defined here}}
+  kgen.param.if <cond_var -> M2> {
+    kgen.call @fwd<in = N -> outM = out>() : () -> ()
+    kgen.param.yield<outM>
+  } else {
+    kgen.param.yield<N>
+  }
+  // This forwards the output parameter of the if statement back around to N,
+  // creating a cycle.
+  // expected-note @below {{parameter "N" is defined here}}
+  kgen.call @fwd<in = M2 -> N = out>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+kgen.generator @noResultParam() {
+  kgen.param.declare cond_var: i1 = <1>
+  // expected-error @below {{expected a kgen.param.yield in order to return result parameters}}
+  kgen.param.if <cond_var -> out> {
+    kgen.param.yield<3>
+  } else {
+    // expected-note @below {{unknown terminator defined here}}
+    hlcf.return
+  }
+  kgen.return
+}
+
+// -----
+
+kgen.generator @badResultParam() {
+  kgen.param.declare cond_var: i1 = <1>
+  // expected-note @below {{result parameter defined here}}
+  kgen.param.if <cond_var -> out> {
+    // expected-error @below {{result parameter type did not match, expected 'index' but got 'i1'}}
+    kgen.param.yield<:i1 1>
+  } else {
+    kgen.param.yield<:i1 0>
+  }
+  kgen.return
+}

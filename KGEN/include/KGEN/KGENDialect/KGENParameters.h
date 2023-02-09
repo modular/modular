@@ -59,7 +59,7 @@ struct ParamDeclaration {
 /// parameters (in an attribute, type, or location) can be concretized in any
 /// order.
 struct ParameterUseDefGraph {
-  ParameterUseDefGraph(Region &scope) : scope(scope) {}
+  ParameterUseDefGraph(Region &scope) : scope(&scope) {}
 
   /// Map of parameter name to its declaration.
   DenseMap<StringAttr, ParamDeclaration> decls;
@@ -67,7 +67,7 @@ struct ParameterUseDefGraph {
   DenseMap<StringAttr, ParamDefinition> defs;
 
   /// The scope at which this graph is computed.
-  Region &scope;
+  Region *scope;
 
   /// A list of parametric operations. These are the operations that must be
   /// concretized by the elaborator once all parameters in the scope have been
