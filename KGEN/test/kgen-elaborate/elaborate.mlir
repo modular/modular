@@ -1713,3 +1713,12 @@ kgen.generator @substitute_current_target() {
   kgen.param.constant: target = <current_target()>
   kgen.return
 }
+
+// -----
+
+// CHECK: module
+// CHECK-NOT: kgen.func
+
+kgen.generator @not_a_primary_generator<N>() {
+  kgen.return
+}
