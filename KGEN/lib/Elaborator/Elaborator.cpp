@@ -952,8 +952,7 @@ public:
   /// early return, this will split the block after the return and avoid
   /// elaborating the rest of the function.
   std::optional<ErrorTree> processParamIfOp(ParamIfOp op,
-                                            ExpansionTreeNode *parent,
-                                            mlir::IRRewriter &b);
+                                            ExpansionTreeNode *parent);
 
   /// Process a worklist of ops.
   void processScope(ExpansionTreeNode *parentNode,
@@ -1448,8 +1447,7 @@ ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
 //===----------------------------------------------------------------------===//
 
 std::optional<ErrorTree>
-ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent,
-                                 mlir::IRRewriter &b) {
+ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   // Check the condition expression.
   auto errorOrValue =
       parent->evaluator.concretizeParameterExpr(op.getLoc(), op.getCond());
@@ -1529,13 +1527,13 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent,
     terminator->erase();
   } else if (auto hlcfTerm =
                  dyn_cast<HLCF::ControlFlowTerminator>(terminator)) {
-    b.setInsertionPoint(hlcfTerm);
     // If it's an hlcf.return op, we have to split the block after the return.
     hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
     // If the terminator is a return op on the func we're elaborating, replace
     // it with a kgen.return.
     if (isa<HLCF::ReturnOp>(hlcfTerm) &&
         hlcfTerm->getParentOp() == parent->op) {
+      mlir::IRRewriter b{OpBuilder(hlcfTerm)};
       b.replaceOpWithNewOp<ReturnOp>(
           hlcfTerm, b.getAttr<ParameterExprArrayAttr>(ArrayRef<TypedAttr>{}),
           hlcfTerm->getOperands());
@@ -1565,9 +1563,6 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
       logger << *op << "\n";
   });
 
-  // IR Rewriter we can use for anything we might need later.
-  mlir::IRRewriter b{OpBuilder(parentNode->op)};
-
   // Processing an op may generate more stuff, or even delete the op being
   // processed.
   for (auto iter = worklist.begin(), end = worklist.end(); iter != end;
@@ -1589,7 +1584,7 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
     } else if (auto assertOp = dyn_cast<ParamAssertOp>(op)) {
       result = processParamAssertOp(parentNode->evaluator, assertOp);
     } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
-      result = processParamIfOp(ifOp, parentNode, b);
+      result = processParamIfOp(ifOp, parentNode);
     } else if (auto addressof = dyn_cast<AddressOfOp>(op)) {
       result = processGeneratorUser(addressof.getParamDecls(), addressof,
                                     addressof.getCallee(), parentNode,
@@ -1618,6 +1613,7 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
   }
 
   // Erase any unreachable blocks created by the scope processing.
+  mlir::IRRewriter b{OpBuilder(parentNode->op)};
   (void)mlir::eraseUnreachableBlocks(b, parentNode->op->getRegions());
   LLVM_DEBUG(parentNode->print(logger << "Completed processing "));
 }
