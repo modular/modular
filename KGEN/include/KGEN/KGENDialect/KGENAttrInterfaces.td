@@ -53,4 +53,28 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// DeclRefAttrInterface
+//===----------------------------------------------------------------------===//
+
+def DeclRefAttrInterface : AttrInterface<"DeclRefAttrInterface"> {
+  let description = [{
+    This interface provides a mechanism for attributes of `!kgen.declref` type
+    to implement a verifier hook. `DeclRefType` is a reference to an out-of-line
+    type definition and values of this type require a symbol table to lookup the
+    definition for verification.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Verify whether the value of the attribute matches the type. A symbol table
+      is provided to lookup the type definition.
+    }], "LogicalResult", "verifySymbolUses",
+      (ins "Operation *":$module, "SymbolTableCollection &":$symtab,
+           "Location":$loc)>
+  ];
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRINTERFACES_TD

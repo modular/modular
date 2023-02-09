@@ -55,10 +55,9 @@ private:
                                 SmallVectorImpl<ParamDeclRefAttr> &uses,
                                 bool &hasConstExpr);
 
-  /// The first time we encounter a SymbolConstantAttr, check to see if the
-  /// declaration it refers to agrees with the value and parameter
-  /// specification.
-  virtual void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) {}
+  /// The first time we encounter an attribute with a reference to an
+  /// out-of-line declaration, verify it.
+  virtual void verifyRefAttr(DeclRefAttrInterface refAttr) {}
 
   /// When we encounter a DeclRefType, check that its parameter bindings match
   /// the parameter declarations on the type declaration.
@@ -103,8 +102,8 @@ void ParameterCollector::collectUsesFromAttr(
   }
 
   // Check any SymbolConstantAttr's we encounter.
-  if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(attr))
-    verifySymbolConstantAttr(symbolConstant);
+  if (auto ref = dyn_cast<DeclRefAttrInterface>(attr))
+    verifyRefAttr(ref);
 
   // Save the number of nested parameters before recursing and check whether the
   // attribute has a nested constant expression.
@@ -200,10 +199,9 @@ public:
   VerifyingParameterCollector(ModuleOp module, SymbolTableCollection *symtab)
       : module(module), symtab(symtab) {}
 
-  /// The first time we encounter a SymbolConstantAttr, check to see if the
-  /// declaration it refers to agrees with the value and parameter
-  /// specification.
-  void verifySymbolConstantAttr(SymbolConstantAttr symbolConstant) override;
+  /// The first time we encounter an attribute with a reference to an
+  /// out-of-line declaration, verify it.
+  void verifyRefAttr(DeclRefAttrInterface refAttr) override;
 
   /// The first time we encounter a DeclRefType, check to see if its parameter
   /// bindings agrees with the parameter declarations of the referred type
@@ -230,78 +228,11 @@ private:
 };
 } // namespace
 
-void VerifyingParameterCollector::verifySymbolConstantAttr(
-    SymbolConstantAttr symbolConstant) {
+void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
   // We only check this during the op verification phase.
   if (!symtab)
     return;
-
-  // Build the signature of the referenced symbol.
-  SymbolRefAttr symbol = symbolConstant.getSymbol();
-  SmallVector<Operation *> symbolOps;
-  if (failed(symtab->lookupSymbolIn(module, symbol, symbolOps))) {
-    hadError = true;
-    emitError(op->getLoc())
-        << symbol << " does not reference a KGEN declaration";
-    return;
-  }
-
-  // The leaf symbol must refer to a function.
-  auto func = dyn_cast<FuncInterface>(symbolOps.back());
-  if (!func) {
-    hadError = true;
-    emitError(op->getLoc()) << symbol << " does not reference a KGEN function";
-    return;
-  }
-  // Everything else must be a declaration.
-  for (Operation *op : llvm::drop_end(symbolOps)) {
-    if (!isa<DeclInterface>(op)) {
-      emitError(op->getLoc())
-          << "symbol @" << cast<mlir::SymbolOpInterface>(op).getName()
-          << " does not reference a KGEN declaration";
-      return;
-    }
-  }
-
-  SmallVector<ParamDeclAttr> inputParams;
-  auto startIt = std::prev(symbolOps.end());
-  while (startIt != symbolOps.begin() &&
-         !isa<FuncInterface>(*std::prev(startIt)))
-    --startIt;
-  for (Operation *op : llvm::make_range(startIt, symbolOps.end()))
-    llvm::append_range(inputParams,
-                       cast<DeclInterface>(op).getInputParamDecls());
-
-  auto declSignature = SignatureType::get(
-      ParamDeclArrayAttr::get(func.getContext(), inputParams),
-      ParamDeclArrayAttr::get(func.getContext(), func.getResultParams()),
-      func.getSignature().getValues(), func.getMetadata());
-
-  // If this SymbolConstant binds the parameters for the symbol, then remap its
-  // signature to include the substitutions.
-  if (!symbolConstant.getParamValues().empty()) {
-    auto result = declSignature.getSpecializedSignature(
-        symbolConstant.getParamValues(), [&]() {
-          hadError = true;
-          return emitError(op->getLoc());
-        });
-    if (!result)
-      return;
-
-    // The signature we just got back has all the parameters we just substituted
-    // in as part of the signature and handles the unbound case correctly.
-    declSignature = result;
-  }
-
-  auto symbolSignature = symbolConstant.getType();
-
-  // Parameter types match exactly.  We could support higher order rebinding
-  // if there is a need.
-  SmallString<32> paramName("@");
-  paramName.append(symbol.getLeafReference());
-  if (failed(verifyDeclSignaturesMatch("symbol use", symbolSignature,
-                                       op->getLoc(), paramName.c_str(),
-                                       declSignature, func->getLoc())))
+  if (failed(refAttr.verifySymbolUses(module, *symtab, op->getLoc())))
     hadError = true;
 }
 

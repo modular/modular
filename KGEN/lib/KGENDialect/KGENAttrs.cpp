@@ -434,6 +434,64 @@ std::optional<bool> DTypeConstantAttr::isLessThan(Attribute rhs) const {
 /// Always a constant by definition.
 bool SymbolConstantAttr::isConstant() const { return true; }
 
+LogicalResult SymbolConstantAttr::verifySymbolUses(
+    Operation *module, SymbolTableCollection &symtab, Location loc) const {
+  // Build the signature of the referenced symbol.
+  SymbolRefAttr symbol = getSymbol();
+  SmallVector<Operation *> symbolOps;
+  if (failed(symtab.lookupSymbolIn(module, symbol, symbolOps)))
+    return emitError(loc) << symbol << " does not reference a KGEN declaration";
+
+  // The leaf symbol must refer to a function.
+  auto func = ::dyn_cast<FuncInterface>(symbolOps.back());
+  if (!func)
+    return emitError(loc) << symbol << " does not reference a KGEN function";
+
+  // Everything else must be a declaration.
+  for (Operation *op : llvm::drop_end(symbolOps)) {
+    if (!::isa<DeclInterface>(op)) {
+      return emitError(loc)
+             << "symbol @" << ::cast<mlir::SymbolOpInterface>(op).getName()
+             << " does not reference a KGEN declaration";
+    }
+  }
+
+  SmallVector<ParamDeclAttr> inputParams;
+  auto startIt = std::prev(symbolOps.end());
+  while (startIt != symbolOps.begin() &&
+         !::isa<FuncInterface>(*std::prev(startIt)))
+    --startIt;
+  for (Operation *op : llvm::make_range(startIt, symbolOps.end()))
+    llvm::append_range(inputParams,
+                       ::cast<DeclInterface>(op).getInputParamDecls());
+
+  auto declSignature = SignatureType::get(
+      ParamDeclArrayAttr::get(func.getContext(), inputParams),
+      ParamDeclArrayAttr::get(func.getContext(), func.getResultParams()),
+      func.getSignature().getValues(), func.getMetadata());
+
+  // If this SymbolConstant binds the parameters for the symbol, then remap its
+  // signature to include the substitutions.
+  if (!getParamValues().empty()) {
+    SignatureType result = declSignature.getSpecializedSignature(
+        getParamValues(), [&]() { return emitError(loc); });
+    if (!result)
+      return failure();
+
+    // The signature we just got back has all the parameters we just substituted
+    // in as part of the signature and handles the unbound case correctly.
+    declSignature = result;
+  }
+
+  // Parameter types match exactly.  We could support higher order rebinding
+  // if there is a need.
+  SmallString<32> paramName("@");
+  paramName.append(symbol.getLeafReference());
+  return verifyDeclSignaturesMatch("symbol use", getType(), loc,
+                                   paramName.c_str(), declSignature,
+                                   func->getLoc());
+}
+
 //===----------------------------------------------------------------------===//
 // TargetParamAttr
 //===----------------------------------------------------------------------===//
