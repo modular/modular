@@ -169,9 +169,8 @@ static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
 ///
 /// This functionality is generally only for the benefit of the build system,
 /// and informs it of the dependencies of the input files.
-static LogicalResult
-createDependencyFile(const CLOptions &clOptions,
-                     SmallVectorImpl<std::string> &includedFiles) {
+static LogicalResult createDependencyFile(const CLOptions &clOptions,
+                                          ArrayRef<std::string> includedFiles) {
   // It only makes sense to output a dependency file that can map inputs to
   // outputs. If the output file already exists and is not a regular file --
   // like `"-"` for stdout, or a character file like `/dev/null` -- then fail.
@@ -187,12 +186,6 @@ createDependencyFile(const CLOptions &clOptions,
       openOutputFile(clOptions.dependencyFilename, &errorMessage);
   if (!outputFile)
     return failure(clOptions.reportError(errorMessage));
-
-  // Setup the search paths.
-  SmallVector<std::filesystem::path> paths;
-  for (const auto &p : clOptions.searchPaths)
-    paths.push_back(p);
-  paths.push_back(std::filesystem::path("."));
 
   // Resolve each of the dependencies and add them to the file.
   outputFile->os() << clOptions.outputFilename << ":";
@@ -245,10 +238,15 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                                            ".repro.mlir",
                                        /*genLocalReproducer=*/true);
   }
+
+  // The set of files included during processing, used to generate the
+  // dependency file.
+  SmallVector<std::string> includedFiles;
+
   if (inputFileName.ends_with(".lit")) {
     TimingScope litScope = timing.nest("Import Lit");
     theModule = importLitFile(mgr, ctx, litScope, compilationOptions,
-                              clOptions.enableMLIRDiagnostics);
+                              clOptions.enableMLIRDiagnostics, &includedFiles);
     pm.addPass(createLowerLITTerminators());
   } else if (compilationOptions.getDebugInfoLevelForInput()) {
     theModule = DebugInfo::parseSourceFileWithDebugInfo(
@@ -258,10 +256,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
   if (!theModule)
     return failure(clOptions.reportError("could not parse the module"));
-
-  // The set of files included during processing, used to generate the
-  // dependency file.
-  SmallVector<std::string> includedFiles;
 
   // Set up the runtime.
   LLCL::Runtime runtime(

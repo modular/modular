@@ -73,6 +73,9 @@ public:
 
   /// The current set of imported modules.
   DenseMap<StringAttr, ASTDecl *> importedModules;
+  /// A list of included files used when importing modules. These are used to
+  /// generate dependency files.
+  SmallVector<std::string> includedFiles;
 };
 
 LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
@@ -420,6 +423,7 @@ ASTDecl &LitSharedState::importModule(StringRef moduleName, llvm::SMLoc loc) {
   // Open the module file within the source manager.
   std::string fullPath;
   unsigned fileID = getSourceMgr().AddIncludeFile(*modulePath, loc, fullPath);
+  impl->includedFiles.push_back(fullPath);
 
   // Now that we have a MemoryBuffer, we can lex it, and therefore parse it.
   // do so.
@@ -446,6 +450,10 @@ ASTDecl &LitSharedState::createModule(StringRef moduleName,
       lexer.getCursor(), endCursor, /*indentation=*/-1);
   impl->importedModules.try_emplace(mangledName, &moduleDecl);
   return moduleDecl;
+}
+
+ArrayRef<std::string> LitSharedState::getIncludedFiles() const {
+  return impl->includedFiles;
 }
 
 /// Given a pointer to the start of a token, find the end of it.

@@ -11,10 +11,10 @@
 
 namespace llvm {
 class SourceMgr;
-}
+} // namespace llvm
 namespace mlir {
 class TimingScope;
-}
+} // namespace mlir
 
 namespace M {
 namespace KGEN {
@@ -26,10 +26,14 @@ class CompilationOptions;
 /// When `useMLIRDiagnostics` is true, this prints diagnostics through MLIR (so
 /// MLIR features like -verify-diagnostics may be used).  When false, this
 /// prints them through SourceMgr to get ranges and fixit hints.
-OwningOpRef<ModuleOp> importLitFile(llvm::SourceMgr &sourceMgr,
-                                    MLIRContext *context, mlir::TimingScope &ts,
-                                    const KGEN::CompilationOptions &options,
-                                    bool useMLIRDiagnostics);
+///
+/// If `includedFiles` is provided, it is set to the list of included files when
+/// parsing imports.
+OwningOpRef<ModuleOp>
+importLitFile(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+              mlir::TimingScope &ts, const KGEN::CompilationOptions &options,
+              bool useMLIRDiagnostics,
+              SmallVectorImpl<std::string> *includedFiles = nullptr);
 } // namespace M
 
 #endif // KGEN_PARSELIT_H

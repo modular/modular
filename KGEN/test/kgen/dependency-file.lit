@@ -1,0 +1,9 @@
+# RUN: kgen -emit %s -o %t.o -d=%t.d
+# RUN: cat %t.d | FileCheck %s
+
+# CHECK: {{.*}}.o: /{{.*}}/Int.lit
+from Int import Int
+
+
+fn use_int(a: Int):
+    return
