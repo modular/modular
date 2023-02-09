@@ -652,12 +652,9 @@ static LogicalResult processParamIfOp(ParamIfOp ifOp,
                                       ParameterUseDefGraph &graph,
                                       VerifyingParameterCollector &c,
                                       Region *scope) {
-  // `param.if` ops are inherently parametric. If we don't have any param decls
-  // and we collected no parameter refs from the condition, mark it as
-  // parametric anyway.
-  SmallVector<ParamDeclRefAttr> condRefs;
-  collectParameterReferences(ifOp.getCond(), condRefs);
-  if (ifOp.getParamDecls().empty() && condRefs.empty())
+  // `param.if` ops are inherently parametric. If we don't have any param decls,
+  // mark it as parametric anyway.
+  if (ifOp.getParamDecls().empty())
     graph.paramOps.push_back(ifOp);
 
   // Record all the defs/decls.
@@ -669,6 +666,10 @@ static LogicalResult processParamIfOp(ParamIfOp ifOp,
     ParamDefinition &paramDef = recordDef(graph, decl, ifOp);
     paramDef.index = idx;
   }
+
+  // Collect uses of parameters on the ifOp. This will capture result types,
+  // etc. This thing is a decl, it declares its out parameters.
+  collectUses(graph, c, ifOp, /*isDecl=*/true);
 
   return success();
 }
