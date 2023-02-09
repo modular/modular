@@ -696,8 +696,8 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
 
         // Add then/else regions to the upper scope, we'll handle uses of the
         // condition attr later.
-        ifRegions.emplace_back(ifOp.getParamDeclsAttr(), &ifOp.getThen());
-        ifRegions.emplace_back(ifOp.getParamDeclsAttr(), &ifOp.getElse());
+        ifRegions.emplace_back(ifOp.getParamDeclsAttr(), &ifOp.getThenRegion());
+        ifRegions.emplace_back(ifOp.getParamDeclsAttr(), &ifOp.getElseRegion());
       }
       // Then, push the regions into the nested decls.
       for (Region &r : decl->getRegions())

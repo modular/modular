@@ -105,6 +105,31 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     var z: Int = Int(4)
     return a
 
+# CHECK-LABEL: lit.func @"param_if{{.*}}<a: i1>(%b:
+fn param_if[a: __mlir_type.i1](b: Bool):
+  # CHECK: kgen.param.if <a> {
+  if a:
+    # CHECK: lit.var.decl "inside_1"
+    var inside_1: Int
+  # CHECK: } else {
+  # CHECK:   [[BCOND:%.*]]  = kgen.call @"$Bool"::@Bool
+  # CHECK:   hlcf.if [[BCOND]] {
+  elif b:
+  # CHECK:     lit.var.decl "inside_2"
+    var inside_2: Int
+  # CHECK:   } else {
+  # CHECK:     kgen.param.if <a> {
+  elif a:
+  # CHECK:       lit.var.decl "inside_3"
+    var inside_3: Int
+  # CHECK:     } else {
+  # CHECK:       kgen.param.yield
+  # CHECK:     }
+  # CHECK:     hlcf.yield
+  # CHECK:   }
+  # CHECK:   kgen.param.yield
+  # CHECK: }
+
 
 ##===----------------------------------------------------------------------===##
 # While

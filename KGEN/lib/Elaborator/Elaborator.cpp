@@ -1463,14 +1463,14 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   auto resultInt = cast<IntegerAttr>(errorOrValue.takeValue());
   if (!resultInt.getValue().isZero()) {
     // Get the terminator.
-    terminator = op.getThen().front().getTerminator();
+    terminator = op.getThenRegion().front().getTerminator();
     // Get the op list
-    toProcess = &op.getThen();
+    toProcess = &op.getThenRegion();
   } else {
     // Get the terminator.
-    terminator = op.getElse().front().getTerminator();
+    terminator = op.getElseRegion().front().getTerminator();
     // Get the op list
-    toProcess = &op.getElse();
+    toProcess = &op.getElseRegion();
   }
   auto foundNestedScope = parent->paramGraph->nestedScopes.find(toProcess);
   if (foundNestedScope == parent->paramGraph->nestedScopes.end())

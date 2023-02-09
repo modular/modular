@@ -790,9 +790,9 @@ void ParamIfOp::print(OpAsmPrinter &p) {
   }
 
   p << "> ";
-  p.printRegion(getThen());
+  p.printRegion(getThenRegion());
   p << " else ";
-  p.printRegion(getElse());
+  p.printRegion(getElseRegion());
 }
 
 LogicalResult ParamIfOp::verify() {
@@ -809,9 +809,11 @@ LogicalResult ParamIfOp::verify() {
   };
 
   // Check that the yields in both have the same input types as result types.
-  if (failed(checkTypesMatch(getThen().front().getTerminator()->getOperands())))
+  if (failed(checkTypesMatch(
+          getThenRegion().front().getTerminator()->getOperands())))
     return failure();
-  if (failed(checkTypesMatch(getElse().front().getTerminator()->getOperands())))
+  if (failed(checkTypesMatch(
+          getElseRegion().front().getTerminator()->getOperands())))
     return failure();
 
   // Check that the result parameters work.
@@ -841,9 +843,9 @@ LogicalResult ParamIfOp::verify() {
     return success();
   };
 
-  if (failed(checkResultParams(getThen().front().getTerminator())))
+  if (failed(checkResultParams(getThenRegion().front().getTerminator())))
     return failure();
-  if (failed(checkResultParams(getElse().front().getTerminator())))
+  if (failed(checkResultParams(getElseRegion().front().getTerminator())))
     return failure();
 
   return success();
