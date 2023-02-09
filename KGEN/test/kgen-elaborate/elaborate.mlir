@@ -1707,6 +1707,31 @@ kgen.generator @constexprIfWithReturnedCondition() {
 
 // -----
 
+// CHECK-LABEL: @"constexprIfInputParam,x=11"
+kgen.generator @constexprIfInputParam<x>() {
+  // CHECK-NEXT: "should.appear"
+  %0 = kgen.param.if <gt(x, 10) -> next> -> index {
+    %1 = "should.appear"() : () -> index
+    kgen.param.declare next_lt = <add(x, 10)>
+    kgen.param.yield<next_lt> %1 : index
+  } else {
+    %3 = "should.not.appear"() : () -> index
+    kgen.param.declare next_gt = <add(x, 20)>
+    kgen.param.yield<next_gt> %3 : index
+  }
+  // CHECK-NEXT: param.constant = <21>
+  %4 = kgen.param.constant = <next>
+
+  kgen.return
+}
+
+kgen.generator @caller() {
+  kgen.call @constexprIfInputParam<x = 11>() : () -> ()
+  kgen.return
+}
+
+// -----
+
 // CHECK-LABEL: kgen.func @substitute_current_target
 kgen.generator @substitute_current_target() {
   // CHECK-NEXT: constant: target = <#kgen.target<triple = {{.*}}>>
