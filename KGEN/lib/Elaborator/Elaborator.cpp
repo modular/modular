@@ -588,11 +588,8 @@ static std::optional<ErrorTree> processParamAssertOp(IREvaluator &evaluator,
   if (errorOrValue.isError())
     return errorOrValue.takeError();
 
-  auto resultInt = dyn_cast<IntegerAttr>(errorOrValue.takeValue());
-  if (!resultInt || resultInt.getValue().getBitWidth() != 1)
-    return ErrorTree(op.getLoc(),
-                     "constraint evaluation didn't return true or false");
   // If the constraint evaluated to zero then the assert fails.
+  auto resultInt = cast<IntegerAttr>(errorOrValue.takeValue());
   if (resultInt.getValue().isZero()) {
     // Evaluate the string to report it.
     errorOrValue =
@@ -1453,17 +1450,13 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   if (errorOrValue.isError())
     return errorOrValue.takeError();
 
-  auto resultInt = dyn_cast<IntegerAttr>(errorOrValue.takeValue());
-  if (!resultInt || resultInt.getValue().getBitWidth() != 1)
-    return ErrorTree(op.getLoc(),
-                     "condition evaluation didn't return true or false");
-
-  // If the condition evaluated to true, then we simply inline those ops and
-  // elaborate them. We can do this by splicing the op list into the parent
+  // Take whichever branch the condition indicated, and simply inline those ops
+  // then elaborate them. We can do this by splicing the op list into the parent
   // block. We splice it this way to avoid remapping the ops when we process
   // them later.
   ParamYieldOp terminator;
   Region *toProcess = nullptr;
+  auto resultInt = cast<IntegerAttr>(errorOrValue.takeValue());
   if (!resultInt.getValue().isZero()) {
     // Get the terminator.
     terminator = cast<ParamYieldOp>(op.getThen().front().getTerminator());
