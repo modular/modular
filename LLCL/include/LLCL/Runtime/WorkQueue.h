@@ -42,6 +42,16 @@ public:
   /// Enqueue a block of work. Thread-safe.
   virtual void addTask(TaskFunction work) = 0;
 
+  /// If possible, enqueue a block of work to be run on the current thread.
+  /// Otherwise, execute the block of work immediately on the callers stack.
+  ///
+  /// This method is appropriate for very short running work items where the
+  /// cost of thread context switching would likely dominate the cost of
+  /// simply executing the block of work. For example, the AsyncValue machinery
+  /// uses this method to ensure waiters are executed promptly, but off of
+  /// the callers stack if efficient to do so.
+  virtual void addOrExecuteSmallTask(TaskFunction work) = 0;
+
   /// Run work items until the specified values are ready, returning to the
   /// caller when they are ready (either as values or as errors).
   virtual void await(ArrayRef<AnyAsyncValueRef> values) = 0;

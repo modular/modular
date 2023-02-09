@@ -3,6 +3,12 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+//
+// Some unit tests for AsyncValue and friends.
+//
+// See also GraphRT/lib/Primitives/TestPrimitives.cpp
+//
+//===----------------------------------------------------------------------===//
 
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -12,31 +18,29 @@
 
 using namespace M::LLCL;
 
-std::unique_ptr<Runtime>
-TestRuntime(std::function<std::unique_ptr<WorkQueue>()> createWorkQueue) {
-  std::unique_ptr<Allocator> allocator =
-      createProfilingAllocator(createMallocAllocator());
-  std::unique_ptr<WorkQueue> workQueue = createWorkQueue();
-  auto runtime =
-      std::make_unique<Runtime>(std::move(allocator), std::move(workQueue));
-  AsyncValue::registerType<int>();
-  AsyncValue::registerType<char>();
-  AsyncValue::registerType<size_t>();
-  return runtime;
-}
+enum WorkQueueType { kSingleThread = 0, kThreadPool = 1 };
 
-std::unique_ptr<Runtime> TestSingleThreadedRuntime() {
-  return TestRuntime(createSingleThreadWorkQueue);
-}
+class AsyncValueTest : public testing::TestWithParam<WorkQueueType> {
+protected:
+  std::unique_ptr<Runtime> createRuntime() {
+    AsyncValue::registerType<int>();
+    AsyncValue::registerType<char>();
+    AsyncValue::registerType<size_t>();
+    std::unique_ptr<Allocator> allocator =
+        createLeakCheckAllocator(createMallocAllocator());
+    // We'll deliberately oversubscribe threads to tickle more concurrency
+    // issues.
+    size_t numThreads = std::thread::hardware_concurrency() * 2;
+    std::unique_ptr<WorkQueue> workQueue =
+        GetParam() == kThreadPool ? createThreadPoolWorkQueue(numThreads)
+                                  : createSingleThreadWorkQueue();
+    return std::make_unique<Runtime>(std::move(allocator),
+                                     std::move(workQueue));
+  }
+};
 
-std::unique_ptr<Runtime> TestThreadPoolRuntime() {
-  // We'll deliberately oversubscribe threads to tickle more concurrency
-  // issues.
-  return TestRuntime([]() {
-    return createThreadPoolWorkQueue(
-        /*numThreads=*/std::thread::hardware_concurrency() * 2);
-  });
-}
+INSTANTIATE_TEST_SUITE_P(ManyRuntimes, AsyncValueTest,
+                         testing::Values(kSingleThread, kThreadPool));
 
 //===----------------------------------------------------------------------===//
 // Idiomatic async producer/consumer
@@ -45,247 +49,277 @@ std::unique_ptr<Runtime> TestThreadPoolRuntime() {
 AsyncValueRef<int> typedProducer(Runtime &runtime) {
   auto result = AsyncValueRef<int>::allocate(runtime);
   addTask(runtime,
-          [result = result.copy()]() mutable { std::move(result).emplace(0); });
+          [result = result.copy()]() mutable { std::move(result).emplace(1); });
   return result;
 }
 
 int typedConsumer(AsyncValueRef<int> result) { return *result + 1; }
 
-TEST(AsyncValue, TypedProducerConsumer) {
-  auto runtime = TestThreadPoolRuntime();
-  AsyncValueRef<Chain> finished = AsyncValueRef<Chain>::allocate(*runtime);
-  int i = -1;
+TEST_P(AsyncValueTest, TypedProducerConsumer) {
+  auto runtime = createRuntime();
+  AsyncValueRef<int> finished = AsyncValueRef<int>::allocate(*runtime);
   AsyncValueRef<int> result = typedProducer(*runtime);
   std::move(result).andThenSync(
-      [&i, finished = finished.copy()](AsyncValueRef<int> &&result) mutable {
-        i = typedConsumer(std::move(result));
-        std::move(finished).emplace();
+      [finished = finished.copy()](AsyncValueRef<int> &&result) mutable {
+        std::move(finished).emplace(typedConsumer(std::move(result)));
       });
   await(finished);
-  ASSERT_EQ(i, 1);
+  EXPECT_EQ(finished.get(), 2);
 }
 
 AnyAsyncValueRef anyProducer(Runtime &runtime) {
   auto result = AnyAsyncValueRef::allocate<int>(runtime);
   addTask(runtime, [result = result.copy()]() mutable {
-    std::move(result).emplace<int>(0);
+    std::move(result).emplace<int>(1);
   });
   return result;
 }
 
 int anyConsumer(AnyAsyncValueRef result) { return result.get<int>() + 1; }
 
-TEST(AsyncValue, AnyProducerConsumer) {
-  auto runtime = TestThreadPoolRuntime();
-  AnyAsyncValueRef finished = AnyAsyncValueRef::allocate<Chain>(*runtime);
-  int i = -1;
+TEST_P(AsyncValueTest, AnyProducerConsumer) {
+  auto runtime = createRuntime();
+  auto finished = AsyncValueRef<int>::allocate(*runtime);
   AnyAsyncValueRef result = anyProducer(*runtime);
   std::move(result).andThenSync(
-      [&i, finished = finished.copy()](AnyAsyncValueRef &&result) mutable {
-        i = anyConsumer(std::move(result));
-        std::move(finished).emplace<Chain>();
+      [finished = finished.copy()](AnyAsyncValueRef &&result) mutable {
+        std::move(finished).emplace(anyConsumer(std::move(result)));
       });
   await(finished);
-  ASSERT_EQ(i, 1);
+  EXPECT_EQ(finished.get(), 2);
 }
 
 //===----------------------------------------------------------------------===//
 // No stray references
 //===----------------------------------------------------------------------===//
 
-TEST(AsyncValue, SyncConsuming) {
-  auto runtime = TestSingleThreadedRuntime();
-  AsyncValueRef<Chain> finished = AsyncValueRef<Chain>::allocate(*runtime);
+TEST_P(AsyncValueTest, SyncConsuming) {
+  auto runtime = createRuntime();
+  auto finished = AsyncValueRef<int>::allocate(*runtime);
   auto ref = AnyAsyncValueRef::allocate<int>(*runtime);
-  ref.andThenSync([r = ref.copy(), finished = finished.copy()]() mutable {
+  ref.andThenSync([ref = ref.copy(), finished = finished.copy()]() mutable {
     // At this point r is the only remaining reference due to the use
     // of AsyncValue::emplace below.
-    ASSERT_EQ(r.getPointer()->getRefCount(), 1u);
-    std::move(finished).emplace();
+    EXPECT_EQ(ref.getPointer()->getRefCount(), 1u);
+    EXPECT_EQ(ref.get<int>(), 1);
+    std::move(finished).emplace(2);
   });
-  ASSERT_EQ(ref.getPointer()->getRefCount(), 2u);
-  std::move(ref).emplace<int>(0);
+  EXPECT_EQ(ref.getPointer()->getRefCount(), 2u);
+  std::move(ref).emplace<int>(1);
   await(finished);
+  EXPECT_EQ(finished.get(), 2);
 }
 
-TEST(AsyncValue, AsyncConsuming) {
-  auto runtime = TestThreadPoolRuntime();
-  AsyncValueRef<Chain> finished = AsyncValueRef<Chain>::allocate(*runtime);
+TEST_P(AsyncValueTest, AsyncConsuming) {
+  auto runtime = createRuntime();
+  auto finished = AsyncValueRef<int>::allocate(*runtime);
   auto ref = AnyAsyncValueRef::allocate<int>(*runtime);
   ref.andThenAsync([ref = ref.copy(), finished = finished.copy()]() mutable {
     // At this point r is the only remaining reference due to the use
     // of AsyncValue::emplace below.
-    ASSERT_EQ(ref.getPointer()->getRefCount(), 1u);
-    std::move(finished).emplace();
+    EXPECT_EQ(ref.getPointer()->getRefCount(), 1u);
+    EXPECT_EQ(ref.get<int>(), 1);
+    std::move(finished).emplace(2);
   });
-  ASSERT_EQ(ref.getPointer()->getRefCount(), 2u);
-  std::move(ref).emplace<int>(0);
+  EXPECT_EQ(ref.getPointer()->getRefCount(), 2u);
+  std::move(ref).emplace<int>(1);
   await(finished);
+  EXPECT_EQ(finished.get(), 2);
 }
 
 //===----------------------------------------------------------------------===//
-// andThen{Sync,Async}
+// Waiters run off stack
 //===----------------------------------------------------------------------===//
 
-TEST(AsyncValue, TupleSync) {
-  auto runtime = TestSingleThreadedRuntime();
-  AsyncValueRef<Chain> finished = AsyncValueRef<Chain>::allocate(*runtime);
-  bool shuttingDown = false;
-  // With `andThenSync`, the completion function is executed as soon as the
-  // last async value is fulfilled, which is `ref2->emplace` in this test.
-  // So the original ref1 and ref2 are still valid, and `shuttingDown` is still
-  // `false`.
+TEST_P(AsyncValueTest, EmplacingFromTask) {
+  auto runtime = createRuntime();
+  auto finished = AsyncValueRef<int>::allocate(*runtime);
+  Semaphore canRun;
+  addTask(*runtime, [&canRun, runtime = runtime.get(),
+                     finished = finished.copy()]() mutable {
+    // Run the test inside an LLCL task. Waiter can be scheduled on the
+    // same thread.
+    auto ref = AsyncValueRef<Chain>::allocate(*runtime);
+    ref.andThenSync([&canRun, finished = finished.copy()]() mutable {
+      canRun.wait();
+      std::move(finished).emplace(1);
+    });
+    // We'll deadlock if the continuation is run now.
+    std::move(ref).emplace();
+  });
+  canRun.post();
+  await(finished);
+  EXPECT_EQ(finished.get(), 1);
+}
+
+TEST_P(AsyncValueTest, EmplaceOnForeignThread) {
+  if (GetParam() != kThreadPool)
+    // Can only observe this behaviour with the thread pool workqueue.
+    return;
+
+  // Run the test inside the main (ie 'foreign') thread. Waiter will be
+  // scheduled as an LLCL task.
+  auto runtime = createRuntime();
+  auto finished = AsyncValueRef<int>::allocate(*runtime);
+  Semaphore canRun;
+  auto ref = AsyncValueRef<Chain>::allocate(*runtime);
+  ref.andThenSync([&canRun, finished = finished.copy()]() mutable {
+    canRun.wait();
+    std::move(finished).emplace(1);
+  });
+  // We'll deadlock if the continuation is run now.
+  std::move(ref).emplace();
+  canRun.post();
+  await(finished);
+  EXPECT_EQ(finished.get(), 1);
+}
+
+//===----------------------------------------------------------------------===//
+// Special andThen{Sync,Async}s from Algorithms
+//===----------------------------------------------------------------------===//
+
+TEST_P(AsyncValueTest, TupleAndThenSync) {
+  auto runtime = createRuntime();
+  auto finished = AsyncValueRef<int>::allocate(*runtime);
   auto ref1 = AnyAsyncValueRef::allocate<int>(*runtime);
   auto ref2 = AnyAsyncValueRef::allocate<char>(*runtime);
   andThenSync(std::make_tuple(ref1.copy(), ref2.copy()),
-              [&shuttingDown, finished = finished.copy()](
-                  AnyAsyncValueRef ref1, AnyAsyncValueRef ref2) mutable {
+              [finished = finished.copy()](AnyAsyncValueRef ref1,
+                                           AnyAsyncValueRef ref2) mutable {
                 // Confirm that the closure is running after the original
                 // `ref` is destroyed.
-                ASSERT_EQ(ref1.getPointer()->getRefCount(), 1u);
-                ASSERT_EQ(ref2.getPointer()->getRefCount(), 1u);
-                ASSERT_FALSE(shuttingDown);
-                std::move(finished).emplace();
+                EXPECT_EQ(ref1.getPointer()->getRefCount(), 1u);
+                EXPECT_EQ(ref2.getPointer()->getRefCount(), 1u);
+                EXPECT_EQ(ref1.get<int>(), 1);
+                EXPECT_EQ(ref2.get<char>(), 'a');
+                std::move(finished).emplace(2);
               });
-  std::move(ref1).emplace<int>(0);
+  std::move(ref1).emplace<int>(1);
   std::move(ref2).emplace<char>('a');
-  shuttingDown = true;
   await(finished);
+  EXPECT_EQ(finished.get(), 2);
 }
 
-TEST(AsyncValue, TupleAsync) {
-  auto runtime = TestSingleThreadedRuntime();
-  AsyncValueRef<Chain> finished = AsyncValueRef<Chain>::allocate(*runtime);
-  bool shuttingDown = false;
-  {
-    // With single-threaded work queue, the closure passed to andThenAsync is
-    // invoked during the `shutdown()` execution. The test confirms that the
-    // reference captured with copy() is the only available reference to the
-    // async value when the closure is executed.
-    auto ref1 = AnyAsyncValueRef::allocate<int>(*runtime);
-    auto ref2 = AnyAsyncValueRef::allocate<char>(*runtime);
-    andThenAsync(std::make_tuple(ref1.copy(), ref2.copy()),
-                 [&shuttingDown, finished = finished.copy()](
-                     AnyAsyncValueRef ref1, AnyAsyncValueRef ref2) mutable {
-                   // Confirm that the closure is running after the original
-                   // `ref` is destroyed.
-                   ASSERT_EQ(ref1.getPointer()->getRefCount(), 1u);
-                   ASSERT_EQ(ref2.getPointer()->getRefCount(), 1u);
-                   ASSERT_TRUE(shuttingDown);
-                   std::move(finished).emplace();
-                 });
-    std::move(ref1).emplace<int>(0);
-    std::move(ref2).emplace<char>('a');
-  }
-  shuttingDown = true;
+TEST_P(AsyncValueTest, TupleAndThenAsync) {
+  auto runtime = createRuntime();
+  auto finished = AsyncValueRef<int>::allocate(*runtime);
+  auto ref1 = AnyAsyncValueRef::allocate<int>(*runtime);
+  auto ref2 = AnyAsyncValueRef::allocate<char>(*runtime);
+  andThenAsync(std::make_tuple(ref1.copy(), ref2.copy()),
+               [finished = finished.copy()](AnyAsyncValueRef ref1,
+                                            AnyAsyncValueRef ref2) mutable {
+                 // Confirm that the closure is running after the original
+                 // `ref` is destroyed.
+                 EXPECT_EQ(ref1.getPointer()->getRefCount(), 1u);
+                 EXPECT_EQ(ref2.getPointer()->getRefCount(), 1u);
+                 EXPECT_EQ(ref1.get<int>(), 1);
+                 EXPECT_EQ(ref2.get<char>(), 'a');
+                 std::move(finished).emplace(2);
+               });
+  std::move(ref1).emplace<int>(1);
+  std::move(ref2).emplace<char>('a');
   await(finished);
+  EXPECT_EQ(finished.get(), 2);
 }
 
-TEST(AsyncValue, ArrayCopyingSync) {
-  auto runtime = TestSingleThreadedRuntime();
-  AsyncValueRef<Chain> finished = AsyncValueRef<Chain>::allocate(*runtime);
-  bool shuttingDown = false;
+TEST_P(AsyncValueTest, ArrayCopyingSync) {
+  auto runtime = createRuntime();
+  auto finished = AsyncValueRef<int>::allocate(*runtime);
   llvm::SmallVector<AnyAsyncValueRef> refs;
   refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
   refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
-  refs[0].copy().emplace<int>(0);
-  refs[1].copy().emplace<int>(0);
-  // `refs` is copied, so each element has refcount 2 when the completion
-  // function is executed. `shuttingDown` is still false.
+  refs[0].copy().emplace<int>(1);
+  refs[1].copy().emplace<int>(2);
   andThenSyncCopying(llvm::ArrayRef(refs),
-                     [&shuttingDown, finished = finished.copy()](
+                     [finished = finished.copy()](
                          llvm::ArrayRef<AnyAsyncValueRef> elts) mutable {
-                       ASSERT_EQ(elts[0].getPointer()->getRefCount(), 2u);
-                       ASSERT_EQ(elts[1].getPointer()->getRefCount(), 2u);
-                       ASSERT_FALSE(shuttingDown);
-                       std::move(finished).emplace();
+                       // `refs` is copied, so each element has refcount 2 when
+                       // the completion function is executed.
+                       EXPECT_EQ(elts[0].getPointer()->getRefCount(), 2u);
+                       EXPECT_EQ(elts[1].getPointer()->getRefCount(), 2u);
+                       EXPECT_EQ(elts[0].get<int>(), 1);
+                       EXPECT_EQ(elts[1].get<int>(), 2);
+                       std::move(finished).emplace(3);
                      });
-  shuttingDown = true;
   await(finished);
+  EXPECT_EQ(finished.get(), 3);
 }
 
-TEST(AsyncValue, ArrayCopyingAsync) {
-  auto runtime = TestSingleThreadedRuntime();
-  AsyncValueRef<Chain> finished = AsyncValueRef<Chain>::allocate(*runtime);
-  bool shuttingDown = false;
-  {
-    llvm::SmallVector<AnyAsyncValueRef> refs;
-    refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
-    refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
-    refs[0].copy().emplace<int>(0);
-    refs[1].copy().emplace<int>(0);
-    // `refs` is copied, but the completion function is executed when the
-    // work queue is shutdown. At that time only the copied references are
-    // valid but the original `refs` is expired.
-    andThenAsyncCopying(llvm::ArrayRef(refs),
-                        [&shuttingDown, finished = finished.copy()](
-                            llvm::ArrayRef<AnyAsyncValueRef> elts) mutable {
-                          ASSERT_EQ(elts[0].getPointer()->getRefCount(), 1u);
-                          ASSERT_EQ(elts[1].getPointer()->getRefCount(), 1u);
-                          ASSERT_TRUE(shuttingDown);
-                          std::move(finished).emplace();
-                        });
-  }
-  shuttingDown = true;
-  await(finished);
-}
-
-TEST(AsyncValue, ArrayMovingSync) {
-  auto runtime = TestSingleThreadedRuntime();
-  AsyncValueRef<Chain> finished = AsyncValueRef<Chain>::allocate(*runtime);
-  bool shuttingDown = false;
+TEST_P(AsyncValueTest, ArrayCopyingAsync) {
+  auto runtime = createRuntime();
+  auto finished = AsyncValueRef<int>::allocate(*runtime);
   llvm::SmallVector<AnyAsyncValueRef> refs;
   refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
   refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
-  refs[0].copy().emplace<int>(0);
-  refs[1].copy().emplace<int>(0);
-  // `refs` is moved, so each element has refcount 1 when the completion
-  // function is executed. `shuttingDown` is still false.
-  andThenSyncMoving(llvm::MutableArrayRef(refs),
-                    [&shuttingDown, finished = finished.copy()](
-                        llvm::MutableArrayRef<AnyAsyncValueRef> elts) mutable {
-                      ASSERT_EQ(elts[0].getPointer()->getRefCount(), 1u);
-                      ASSERT_EQ(elts[1].getPointer()->getRefCount(), 1u);
-                      ASSERT_FALSE(shuttingDown);
-                      std::move(finished).emplace();
-                    });
-  shuttingDown = true;
+  refs[0].copy().emplace<int>(1);
+  refs[1].copy().emplace<int>(2);
+  andThenAsyncCopying(llvm::ArrayRef(refs),
+                      [finished = finished.copy()](
+                          llvm::ArrayRef<AnyAsyncValueRef> elts) mutable {
+                        // `refs` is copied, so each element has refcount 2 when
+                        // the completion function is executed.
+                        EXPECT_EQ(elts[0].getPointer()->getRefCount(), 2u);
+                        EXPECT_EQ(elts[1].getPointer()->getRefCount(), 2u);
+                        EXPECT_EQ(elts[0].get<int>(), 1);
+                        EXPECT_EQ(elts[1].get<int>(), 2);
+                        std::move(finished).emplace(3);
+                      });
   await(finished);
+  EXPECT_EQ(finished.get(), 3);
 }
 
-TEST(AsyncValue, ArrayMovingAsync) {
-  auto runtime = TestSingleThreadedRuntime();
-  AsyncValueRef<Chain> finished = AsyncValueRef<Chain>::allocate(*runtime);
-  bool shuttingDown = false;
-  {
-    llvm::SmallVector<AnyAsyncValueRef> refs;
-    refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
-    refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
-    refs[0].copy().emplace<int>(0);
-    refs[1].copy().emplace<int>(0);
-    // With the async version, the completion function is executed with the
-    // work queue shuts down. `refs` is moved, so each element has refcount 1
-    // when the completion function is executed.
-    andThenAsyncMoving(
-        llvm::MutableArrayRef(refs),
-        [&shuttingDown, finished = finished.copy()](
-            llvm::MutableArrayRef<AnyAsyncValueRef> elts) mutable {
-          ASSERT_EQ(elts[0].getPointer()->getRefCount(), 1u);
-          ASSERT_EQ(elts[1].getPointer()->getRefCount(), 1u);
-          ASSERT_TRUE(shuttingDown);
-          std::move(finished).emplace();
-        });
-  }
-  shuttingDown = true;
+TEST_P(AsyncValueTest, ArrayMovingSync) {
+  auto runtime = createRuntime();
+  auto finished = AsyncValueRef<int>::allocate(*runtime);
+  llvm::SmallVector<AnyAsyncValueRef> refs;
+  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
+  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
+  refs[0].copy().emplace<int>(1);
+  refs[1].copy().emplace<int>(2);
+  andThenSyncMoving(llvm::MutableArrayRef(refs),
+                    [finished = finished.copy()](
+                        llvm::MutableArrayRef<AnyAsyncValueRef> elts) mutable {
+                      // `refs` is moved, so each element has refcount 1 when
+                      // the completion function is executed.
+                      EXPECT_EQ(elts[0].getPointer()->getRefCount(), 1u);
+                      EXPECT_EQ(elts[1].getPointer()->getRefCount(), 1u);
+                      EXPECT_EQ(elts[0].get<int>(), 1);
+                      EXPECT_EQ(elts[1].get<int>(), 2);
+                      std::move(finished).emplace(3);
+                    });
   await(finished);
+  EXPECT_EQ(finished.get(), 3);
+}
+
+TEST_P(AsyncValueTest, ArrayMovingAsync) {
+  auto runtime = createRuntime();
+  auto finished = AsyncValueRef<int>::allocate(*runtime);
+  llvm::SmallVector<AnyAsyncValueRef> refs;
+  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
+  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
+  refs[0].copy().emplace<int>(1);
+  refs[1].copy().emplace<int>(2);
+  andThenAsyncMoving(llvm::MutableArrayRef(refs),
+                     [finished = finished.copy()](
+                         llvm::MutableArrayRef<AnyAsyncValueRef> elts) mutable {
+                       // `refs` is moved, so each element has refcount 1 when
+                       // the completion function is executed.
+                       EXPECT_EQ(elts[0].getPointer()->getRefCount(), 1u);
+                       EXPECT_EQ(elts[1].getPointer()->getRefCount(), 1u);
+                       EXPECT_EQ(elts[0].get<int>(), 1);
+                       EXPECT_EQ(elts[1].get<int>(), 2);
+                       std::move(finished).emplace(3);
+                     });
+  await(finished);
+  EXPECT_EQ(finished.get(), 3);
 }
 
 //===----------------------------------------------------------------------===//
 // Stress tests
 //===----------------------------------------------------------------------===//
 
-TEST(AsyncValue, Stress) {
-  auto runtime = TestThreadPoolRuntime();
+TEST_P(AsyncValueTest, Stress) {
+  auto runtime = createRuntime();
 
   const size_t nRounds = 5;
   const size_t nValues = 500;
@@ -330,5 +364,5 @@ TEST(AsyncValue, Stress) {
   std::move(start).emplace(1);
   await(finish);
 
-  ASSERT_EQ(sum, (nRounds + 1) * nValues);
+  EXPECT_EQ(sum, (nRounds + 1) * nValues);
 }
