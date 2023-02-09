@@ -179,3 +179,56 @@ lit.func @not_async() {
   %0 = lit.async_call[() -> (): @not_async]()
   lit.end_func
 }
+
+// -----
+
+lit.func @im_a_func() {
+  kgen.return
+}
+
+lit.func @struct_attr() {
+  // expected-error @below {{struct attribute type @im_a_func does not refer to a struct declaration}}
+  kgen.param.constant: @im_a_func = <#lit.struct<{}>>
+  kgen.return
+}
+
+// -----
+
+// expected-note @below {{see struct declaration here}}
+lit.struct.decl @TwoFields {
+  lit.struct.field a : index
+  lit.struct.field b : index
+}
+
+lit.func @struct_attr() {
+  // expected-error @below {{struct declaration expected 2 fields but struct attribute has 0}}
+  kgen.param.constant: @TwoFields = <#lit.struct<{}>>
+  kgen.return
+}
+
+// -----
+
+// expected-note @below {{see struct declaration here}}
+lit.struct.decl @TwoFields {
+  lit.struct.field a : index
+  lit.struct.field b : index
+}
+
+lit.func @struct_attr() {
+  // expected-error @below {{struct attribute field name "c" at position #1 does not match the name "b" in the struct declaration}}
+  kgen.param.constant: @TwoFields = <#lit.struct<{a = 1, c = 2}>>
+  kgen.return
+}
+
+// -----
+
+// expected-note @below {{see struct declaration here}}
+lit.struct.decl @ParamField<type: type> {
+  lit.struct.field a : !kgen.paramref<type>
+}
+
+lit.func @struct_attr() {
+  // expected-error @below {{struct attribute field #0 has type 'index' but corresponding struct field "a" expected 'i1'}}
+  kgen.param.constant: @ParamField<type: type = i1> = <#lit.struct<{a = 5}>>
+  kgen.return
+}
