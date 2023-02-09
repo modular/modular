@@ -1565,6 +1565,148 @@ kgen.generator @some_func() {
 
 // -----
 
+// CHECK-LABEL: @constexprIfNoParams()
+kgen.generator @constexprIfNoParams() {
+  // CHECK-NEXT: "should.appear"
+  kgen.param.if<1> {
+    "should.appear"() : () -> ()
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
+  // CHECK-NEXT: kgen.return
+  kgen.return
+}
+
+// CHECK-LABEL: @constexprIfBasic()
+kgen.generator @constexprIfBasic() {
+  kgen.param.declare cond_var = <32>
+
+  // CHECK-NEXT: "should.appear"
+  %0 = kgen.param.if <lt(cond_var, 10) -> next> -> index {
+    %1 = "should.not.appear"() : () -> index
+    kgen.param.declare next_lt = <add(cond_var, 10)>
+    kgen.param.yield<next_lt> %1 : index
+  } else {
+    %3 = "should.appear"() : () -> index
+    kgen.param.declare next_gt = <add(cond_var, 20)>
+    kgen.param.yield<next_gt> %3 : index
+  }
+  // CHECK-NEXT: param.constant = <52>
+  %4 = kgen.param.constant = <next>
+
+  kgen.return
+}
+
+// CHECK-LABEL: @nestedConstexprIf()
+kgen.generator @nestedConstexprIf() {
+  kgen.param.declare cond_var = <32>
+
+  // CHECK-NEXT: "should.appear"
+  %0 = kgen.param.if <lt(cond_var, 10) -> next> -> index {
+    %1 = "should.not.appear"() : () -> index
+    kgen.param.declare next_lt = <add(cond_var, 10)>
+    kgen.param.yield<next_lt> %1 : index
+  } else {
+    %3 = kgen.param.if <gt(cond_var, 30) -> next_gt> -> index {
+      %4 = "should.appear"() : () -> index
+      kgen.param.declare next_gt_gt = <add(cond_var, 20)>
+      kgen.param.yield<next_gt_gt> %4 : index
+    } else {
+      %4 = "should.not.appear"() : () -> index
+      kgen.param.declare next_gt_lt = <add(cond_var, 1)>
+      kgen.param.yield<next_gt_lt> %4 : index
+    }
+    kgen.param.yield<next_gt> %3 : index
+  }
+  // CHECK-NEXT: param.constant = <52>
+  %4 = kgen.param.constant = <next>
+
+  kgen.return
+}
+
+// -----
+
+kgen.generator @someFunc<x>() {
+  kgen.return
+}
+
+// CHECK-LABEL: @constexprIfWithSearch_concrete_2()
+// CHECK-NEXT:   "should.appear"
+// CHECK-NEXT:   "someFunc,x=3"
+// CHECK-NEXT:   param.constant = <42>
+
+// CHECK-LABEL: @constexprIfWithSearch_concrete_1()
+// CHECK-NEXT:   "should.appear"
+// CHECK-NEXT:   "someFunc,x=2"
+// CHECK-NEXT:   param.constant = <42>
+
+// CHECK-LABEL: @constexprIfWithSearch()
+// CHECK-NEXT:   "should.appear"
+// CHECK-NEXT:   "someFunc,x=1"
+// CHECK-NEXT:   param.constant = <42>
+
+kgen.generator @constexprIfWithSearch() {
+  kgen.param.declare cond_var = <32>
+  kgen.param.search inParam = <1, 2, 3>
+
+  %0 = kgen.param.if <gt(cond_var, 10) -> next> -> index {
+    %1 = "should.appear"() : () -> index
+    kgen.call @someFunc<x = inParam>() : () -> ()
+    kgen.param.declare next_lt = <add(cond_var, 10)>
+    kgen.param.yield<next_lt> %1 : index
+  } else {
+    %3 = "should.not.appear"() : () -> index
+    kgen.call @someFunc<x = inParam>() : () -> ()
+    kgen.param.declare next_gt = <add(cond_var, 20)>
+    kgen.param.yield<next_gt> %3 : index
+  }
+  %4 = kgen.param.constant = <next>
+
+  kgen.return
+}
+
+// -----
+
+kgen.generator @someFunc<x -> y>() {
+  kgen.return<and(x, 2)>
+}
+
+// CHECK-LABEL: @constexprIfWithReturnedCondition_concrete_2()
+// CHECK-NEXT:   "someFunc,x=3"
+// COM: This should be 12 because we have (3 & 2) + 10 == 12
+// CHECK-NEXT:   param.constant = <12>
+
+// CHECK-LABEL: @constexprIfWithReturnedCondition_concrete_1()
+// CHECK-NEXT:   "someFunc,x=2"
+// COM: This should be 12 because we have (2 & 2) + 10 == 12
+// CHECK-NEXT:   param.constant = <12>
+
+// CHECK-LABEL: @constexprIfWithReturnedCondition()
+// CHECK-NEXT:   "someFunc,x=1"
+// COM: This should be 20 because we have (1 & 2) + 20 == 20
+// CHECK-NEXT:   param.constant = <20>
+
+kgen.generator @constexprIfWithReturnedCondition() {
+  kgen.param.search inParam = <1, 2, 3>
+
+  kgen.param.if <eq(cond_var, 2) -> next> {
+    kgen.param.declare next_lt = <add(cond_var, 10)>
+    kgen.param.yield<next_lt>
+  } else {
+    kgen.param.declare next_gt = <add(cond_var, 20)>
+    kgen.param.yield<next_gt>
+  }
+
+  kgen.call @someFunc<x = inParam -> cond_var = y>() : () -> ()
+
+  %4 = kgen.param.constant = <next>
+
+  kgen.return
+}
+
+// -----
+
 // CHECK-LABEL: kgen.func @substitute_current_target
 kgen.generator @substitute_current_target() {
   // CHECK-NEXT: constant: target = <#kgen.target<triple = {{.*}}>>

@@ -123,23 +123,17 @@ namespace {
 /// dependencies in order to make that graph explicit.
 struct ExpansionTreeNode {
 public:
-  static ExpansionTreeNode *create(Operation *op, ArrayAttr inputParams,
-                                   ExpansionTreeNode *parent,
-                                   const IREvaluator &evaluator,
-                                   unsigned expansionDepth);
-
-  /// Create a node nested under the direct parent, and set its expansion depth.
-  static ExpansionTreeNode *create(Operation *op, ArrayAttr inputParams,
-                                   ExpansionTreeNode *parent) {
-    return ExpansionTreeNode::create(op, inputParams, parent, parent->evaluator,
-                                     parent->expansionDepth);
-  }
+  static ExpansionTreeNode *
+  create(Operation *op, ArrayAttr inputParams, ExpansionTreeNode *parent,
+         const IREvaluator &evaluator, unsigned expansionDepth,
+         std::optional<ParameterUseDefGraph> paramGraph = std::nullopt);
 
 private:
   /// Construct an expansion tree node. The node adds itself to its parent's
   /// children list, and inherits its parent's evaluator.
   ExpansionTreeNode(Operation *op, ArrayAttr inputParams,
                     ExpansionTreeNode *parent, const IREvaluator &evaluator,
+                    std::optional<ParameterUseDefGraph> paramGraph,
                     unsigned expansionDepth);
 
 public:
@@ -148,8 +142,8 @@ public:
   ExpansionTreeNode(ModuleOp op, const IREvaluator &evaluator,
                     llvm::SpecificBumpPtrAllocator<ExpansionTreeNode> &alloc,
                     Logger &logger)
-      : op(op), evaluator(evaluator), alloc(alloc), expansionDepth(0),
-        logger(logger) {}
+      : op(op), evaluator(evaluator), paramGraph(std::nullopt), alloc(alloc),
+        expansionDepth(0), logger(logger) {}
 
   /// Return the name of the operation this node represents.
   StringAttr getNameAttr() { return op.getNameAttr(); }
@@ -244,6 +238,10 @@ public:
   /// generally. That's why it's copied rather than taking a reference.
   IREvaluator evaluator;
 
+  /// Keep track of the nested parameter scopes within this op. This is optional
+  /// because for example, the root module does not have one of these.
+  std::optional<ParameterUseDefGraph> paramGraph;
+
   /// Parent node. This is useful for setting parameters on the parent's scope,
   /// for example. Each node must have one parent.
   ExpansionTreeNode *parent = nullptr;
@@ -274,24 +272,26 @@ public:
 
 // TODO: need to find a way to order these, insert them right before/after
 // something else maybe?
-ExpansionTreeNode *ExpansionTreeNode::create(Operation *op,
-                                             ArrayAttr inputParams,
-                                             ExpansionTreeNode *parent,
-                                             const IREvaluator &evaluator,
-                                             unsigned expansionDepth) {
+ExpansionTreeNode *
+ExpansionTreeNode::create(Operation *op, ArrayAttr inputParams,
+                          ExpansionTreeNode *parent,
+                          const IREvaluator &evaluator, unsigned expansionDepth,
+                          std::optional<ParameterUseDefGraph> paramGraph) {
   auto *out = new (parent->alloc.Allocate())
-      ExpansionTreeNode(op, inputParams, parent, evaluator, expansionDepth + 1);
+      ExpansionTreeNode(op, inputParams, parent, evaluator,
+                        std::move(paramGraph), expansionDepth + 1);
   assert(out->distanceFromRoot() <= 3 &&
          "Should have at most 3 hops to the root");
   parent->expansions.push_back(out);
   return parent->expansions.back();
 }
 
-ExpansionTreeNode::ExpansionTreeNode(Operation *op, ArrayAttr inputParams,
-                                     ExpansionTreeNode *parent,
-                                     const IREvaluator &evaluator,
-                                     unsigned expansionDepth)
-    : op(op), inputParams(inputParams), evaluator(evaluator), parent(parent),
+ExpansionTreeNode::ExpansionTreeNode(
+    Operation *op, ArrayAttr inputParams, ExpansionTreeNode *parent,
+    const IREvaluator &evaluator,
+    std::optional<ParameterUseDefGraph> paramGraph, unsigned expansionDepth)
+    : op(op), inputParams(inputParams), evaluator(evaluator),
+      paramGraph(std::move(paramGraph)), parent(parent),
       bindings(parent->bindings), alloc(parent->alloc),
       expansionDepth(expansionDepth), logger(parent->logger) {
   // TODO: make this configurable?
@@ -948,6 +948,11 @@ public:
   processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
                               ExpansionTreeNode *parent);
 
+  /// Process a param.if op by evaluating the condition and elaborating and
+  /// inlining only the branch that was taken.
+  std::optional<ErrorTree> processParamIfOp(ParamIfOp op,
+                                            ExpansionTreeNode *parent);
+
   /// Process a worklist of ops.
   void processScope(ExpansionTreeNode *parentNode,
                     ArrayRef<Operation *> worklist);
@@ -1177,7 +1182,8 @@ ElaboratorImpl::spawnParamSearchClone(ParamSearchOp searchOp, Attribute value,
   // Hook this new clone up correctly.
   auto newFuncNode = ExpansionTreeNode::create(
       newFunc, searchParentNode->inputParams, searchParentNode->parent,
-      searchParentNode->evaluator, searchParentNode->expansionDepth);
+      searchParentNode->evaluator, searchParentNode->expansionDepth,
+      searchParentNode->paramGraph->copy(map));
 
   // Change the future of this func by resolving the searchOp in the new func
   // to the specified value.
@@ -1339,9 +1345,9 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     LLVM_DEBUG(c->print(logger << "Concrete Implementation "));
 
     // This is a sibling to the parent, and it clones the parent's evaluator.
-    auto newNode =
-        ExpansionTreeNode::create(newOp, parent->inputParams, parent->parent,
-                                  parent->evaluator, parent->expansionDepth);
+    auto newNode = ExpansionTreeNode::create(
+        newOp, parent->inputParams, parent->parent, parent->evaluator,
+        parent->expansionDepth, parent->paramGraph->copy(map));
     newNode->bindings = parent->bindings;
     // Bind this concrete impl to this callee for this node.
     newNode->bindings[{calleeOp, inputParamKey}] = c;
@@ -1436,6 +1442,96 @@ ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
 }
 
 //===----------------------------------------------------------------------===//
+// ElaboratorImpl::processParamIfOp
+//===----------------------------------------------------------------------===//
+
+std::optional<ErrorTree>
+ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
+  // Check the condition expression.
+  auto errorOrValue =
+      parent->evaluator.concretizeParameterExpr(op.getLoc(), op.getCond());
+  if (errorOrValue.isError())
+    return errorOrValue.takeError();
+
+  auto resultInt = dyn_cast<IntegerAttr>(errorOrValue.takeValue());
+  if (!resultInt || resultInt.getValue().getBitWidth() != 1)
+    return ErrorTree(op.getLoc(),
+                     "condition evaluation didn't return true or false");
+
+  // If the condition evaluated to true, then we simply inline those ops and
+  // elaborate them. We can do this by splicing the op list into the parent
+  // block. We splice it this way to avoid remapping the ops when we process
+  // them later.
+  ParamYieldOp terminator;
+  Region *toProcess = nullptr;
+  if (!resultInt.getValue().isZero()) {
+    // Get the terminator.
+    terminator = cast<ParamYieldOp>(op.getThen().front().getTerminator());
+    // Get the op list
+    toProcess = &op.getThen();
+  } else {
+    // Get the terminator.
+    terminator = cast<ParamYieldOp>(op.getElse().front().getTerminator());
+    // Get the op list
+    toProcess = &op.getElse();
+  }
+  auto foundNestedScope = parent->paramGraph->nestedScopes.find(toProcess);
+  if (foundNestedScope == parent->paramGraph->nestedScopes.end())
+    return ErrorTree(op.getLoc(), "expected a nested parameter scope");
+
+  ParameterUseDefGraph &uses = foundNestedScope->getSecond();
+
+  LLVM_DEBUG(logger << "Elaborating block:\n";
+             toProcess->front().print(logger));
+
+  // Only process the ops in the branch that we ended up taking.
+  std::vector<Operation *> opsToRewrite;
+  opsToRewrite.reserve(uses.params.size() + uses.paramOps.size());
+  llvm::SetVector<Operation *, SmallVector<Operation *, 8>,
+                  SmallPtrSet<Operation *, 8>>
+      defOps;
+  for (StringAttr param : llvm::reverse(uses.params)) {
+    auto it = uses.defs.find(param);
+    assert(it != uses.defs.end());
+    defOps.insert(it->getSecond().defOp);
+  }
+  llvm::append_range(opsToRewrite, llvm::reverse(defOps.getArrayRef()));
+  for (Operation *op : uses.paramOps) {
+    if (op->getParentRegion() != toProcess)
+      continue;
+
+    opsToRewrite.push_back(op);
+  }
+  processScope(parent, opsToRewrite);
+
+  // Splice the ops into the parent.
+  Block::iterator iter = op->getIterator();
+  op->getBlock()->getOperations().splice(iter,
+                                         toProcess->front().getOperations());
+  // RAUW the op's results with the terminator's inputs.
+  op->getResults().replaceAllUsesWith(terminator->getOperands());
+
+  // Update the values for the result parameters.
+  for (auto [decl, value] :
+       llvm::zip(op.getParamDecls(), terminator.getParameters())) {
+    // Concretize the value.
+    auto concreteVal =
+        parent->evaluator.concretizeParameterExpr(terminator.getLoc(), value);
+    if (concreteVal.isError())
+      return concreteVal.takeError();
+
+    parent->evaluator.setOrOverwriteParameterValue(decl,
+                                                   concreteVal.takeValue());
+  }
+  // Erase the terminator.
+  terminator->erase();
+
+  // We always erase this op.
+  op->erase();
+  return std::nullopt;
+}
+
+//===----------------------------------------------------------------------===//
 // ElaboratorImpl::processScope
 //===----------------------------------------------------------------------===//
 
@@ -1467,6 +1563,8 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
       result = processParamConstantOp(parentNode->evaluator, value);
     } else if (auto assertOp = dyn_cast<ParamAssertOp>(op)) {
       result = processParamAssertOp(parentNode->evaluator, assertOp);
+    } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
+      result = processParamIfOp(ifOp, parentNode);
     } else if (auto addressof = dyn_cast<AddressOfOp>(op)) {
       result = processGeneratorUser(addressof.getParamDecls(), addressof,
                                     addressof.getCallee(), parentNode,
@@ -1542,6 +1640,9 @@ ElaboratorImpl::specializeFunction(ExpansionTreeNode *funcNode,
   }
   llvm::append_range(opsToRewrite, llvm::reverse(defOps.takeVector()));
   llvm::append_range(opsToRewrite, uses.paramOps);
+
+  // Take the use-def graph and put it into the func node itself.
+  funcNode->paramGraph = std::move(uses);
 
   // Process the worklist.
   processScope(funcNode, opsToRewrite);
