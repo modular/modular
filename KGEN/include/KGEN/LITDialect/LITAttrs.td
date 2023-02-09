@@ -83,7 +83,8 @@ def UnresolvedAliasValueAttr
 // StructAttr
 //===----------------------------------------------------------------------===//
 
-def LIT_StructAttr : LITAttr<"Struct", "struct", [TypedAttrInterface]> {
+def LIT_StructAttr : LITAttr<"Struct", "struct", [TypedAttrInterface,
+    DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
   let summary = "A constant struct value";
   let description = [{
     The `#lit.struct` attribute represents a constant struct value. It stores

@@ -65,6 +65,52 @@ printStructElements(AsmPrinter &p,
   p << '}';
 }
 
+LogicalResult StructAttr::verifySymbolUses(Operation *module,
+                                           SymbolTableCollection &symtab,
+                                           Location loc) const {
+  auto structDecl =
+      symtab.lookupSymbolIn<StructDeclOp>(module, getType().getSymbol());
+  if (!structDecl)
+    return emitError(loc) << "struct attribute type " << getType().getSymbol()
+                          << " does not refer to a struct declaration";
+
+  ParameterEvaluator evaluator(getType().getParamValues());
+  auto fields = structDecl.getFieldDecls();
+  unsigned numFields = std::distance(fields.begin(), fields.end());
+  if (numFields != getValues().size()) {
+    return (emitError(loc) << "struct declaration expected " << numFields
+                           << " fields but struct attribute has "
+                           << getValues().size())
+               .attachNote(structDecl.getLoc())
+           << "see struct declaration here";
+  }
+
+  for (auto [fieldDecl, value, i] :
+       llvm::zip(fields, getValues(), llvm::seq<unsigned>(0, numFields))) {
+    StringAttr nameInDecl = fieldDecl.getNameAttr();
+    if (nameInDecl != value.first) {
+      return (emitError(loc)
+              << "struct attribute field name " << value.first
+              << " at position #" << i << " does not match the name "
+              << nameInDecl << " in the struct declaration")
+                 .attachNote(structDecl.getLoc())
+             << "see struct declaration here";
+    }
+
+    Type reboundType = evaluator.getReboundType(fieldDecl.getType());
+    if (reboundType != value.second.getType()) {
+      return (emitError(loc)
+              << "struct attribute field #" << i << " has type "
+              << value.second.getType() << " but corresponding struct field "
+              << fieldDecl.getNameAttr() << " expected " << reboundType)
+                 .attachNote(structDecl.getLoc())
+             << "see struct declaration here";
+    }
+  }
+
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // StructExtractAttr
 //===----------------------------------------------------------------------===//
