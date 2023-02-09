@@ -250,6 +250,15 @@ RValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
   if (value.ir.getType().isInteger(1))
     return emitRValue(value);
 
+  // If the value is an MValue, then we want to produce an MValue even in a
+  // dynamic-compatible context.
+  if (builder && value.ir.getIfMValue()) {
+    // Clear the builder to indicate that an MValue must be emitted.
+    llvm::SaveAndRestore<std::optional<OpBuilder>> savedBuilder(builder);
+    builder.reset();
+    return emitConditionValueAsI1(value, boolResult);
+  }
+
   // TODO: Python manual includes this off-hand comment:
   // Also, an object that doesn’t define a __bool__() method and whose __len__()
   // method returns zero is considered to be false in a Boolean context.
