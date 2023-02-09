@@ -130,16 +130,18 @@ private:
     if constexpr (!kIsProfilingEnabled) {
       if (!profileFilename.empty())
         llvm::errs()
-            << "WARNING: The --profile option was given but this build"
-               " does not support profiling. Rebuild with MAX_PROFILE_LEVEL"
-               " greater than 0 to enable it.\n";
+            << "WARNING: The --time-profile option was given but this build"
+               " does not support profiling. Rebuild with "
+               "MODULAR_LLCL_MAX_PROFILING_LEVEL greater than 0 to enable "
+               "it.\n";
       return "";
     }
 #ifdef MODULAR_DEBUG
     if (!profileFilename.empty())
-      llvm::errs() << "WARNING: Using the --profile option in debug mode is"
-                      " not recommended due to increased overhead. Please use"
-                      " a release build.\n";
+      llvm::errs()
+          << "WARNING: Using the --time-profile option in debug mode is"
+             " not recommended due to increased overhead. Please use"
+             " a release build.\n";
 #endif
     return profileFilename;
   }
