@@ -232,3 +232,15 @@ lit.func @struct_attr() {
   kgen.param.constant: @ParamField<type: type = i1> = <#lit.struct<{a = 5}>>
   kgen.return
 }
+
+// -----
+
+lit.struct.decl @ParamField<type: type> {
+  lit.struct.field a : !kgen.paramref<type>
+}
+
+lit.func @struct_attr() {
+  // expected-error @below {{'kgen.param.constant' op invalid use of parameter with no declaration "A"}}
+  kgen.param.constant: @ParamField<type: type = i1> = <#lit.struct<{a: i1 = A}>>
+  kgen.return
+}

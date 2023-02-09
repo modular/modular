@@ -37,7 +37,7 @@ void LITDialect::registerAttributes() {
 
 static ParseResult
 parseStructElements(AsmParser &p,
-                    SmallVector<std::pair<StringAttr, TypedAttr>> &values) {
+                    SmallVector<std::tuple<StringAttr, TypedAttr>> &values) {
   StringAttr name;
   Type type;
   TypedAttr value;
@@ -53,15 +53,14 @@ parseStructElements(AsmParser &p,
 
 static void
 printStructElements(AsmPrinter &p,
-                    ArrayRef<std::pair<StringAttr, TypedAttr>> values) {
+                    ArrayRef<std::tuple<StringAttr, TypedAttr>> values) {
   p << '{';
-  llvm::interleaveComma(values, p,
-                        [&](const std::pair<StringAttr, TypedAttr> &value) {
-                          printParamName(p, value.first);
-                          printColonTypeOrIndex(p, value.second.getType());
-                          p << " = ";
-                          printParamValue(p, value.second);
-                        });
+  llvm::interleaveComma(values, p, [&](const auto &value) {
+    printParamName(p, std::get<0>(value));
+    printColonTypeOrIndex(p, std::get<1>(value).getType());
+    p << " = ";
+    printParamValue(p, std::get<1>(value));
+  });
   p << '}';
 }
 
@@ -88,9 +87,9 @@ LogicalResult StructAttr::verifySymbolUses(Operation *module,
   for (auto [fieldDecl, value, i] :
        llvm::zip(fields, getValues(), llvm::seq<unsigned>(0, numFields))) {
     StringAttr nameInDecl = fieldDecl.getNameAttr();
-    if (nameInDecl != value.first) {
+    if (nameInDecl != std::get<0>(value)) {
       return (emitError(loc)
-              << "struct attribute field name " << value.first
+              << "struct attribute field name " << std::get<0>(value)
               << " at position #" << i << " does not match the name "
               << nameInDecl << " in the struct declaration")
                  .attachNote(structDecl.getLoc())
@@ -98,11 +97,12 @@ LogicalResult StructAttr::verifySymbolUses(Operation *module,
     }
 
     Type reboundType = evaluator.getReboundType(fieldDecl.getType());
-    if (reboundType != value.second.getType()) {
+    if (reboundType != std::get<1>(value).getType()) {
       return (emitError(loc)
               << "struct attribute field #" << i << " has type "
-              << value.second.getType() << " but corresponding struct field "
-              << fieldDecl.getNameAttr() << " expected " << reboundType)
+              << std::get<1>(value).getType()
+              << " but corresponding struct field " << fieldDecl.getNameAttr()
+              << " expected " << reboundType)
                  .attachNote(structDecl.getLoc())
              << "see struct declaration here";
     }
@@ -130,10 +130,11 @@ TypedAttr StructExtractAttr::get(TypedAttr structValue, StringAttr field,
 TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
                                  StringAttr field, Type resultType) {
   if (auto value = dyn_cast_if_present<StructAttr>(structValue)) {
-    auto it = llvm::find_if(value.getValues(),
-                            [&](const auto &p) { return p.first == field; });
+    auto it = llvm::find_if(value.getValues(), [&](const auto &p) {
+      return std::get<0>(p) == field;
+    });
     if (it != value.getValues().end())
-      return it->second;
+      return std::get<1>(*it);
   }
 
   return Base::get(context, structValue, field, resultType);

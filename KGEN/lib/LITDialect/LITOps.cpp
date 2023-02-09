@@ -518,7 +518,7 @@ static void printOperandsAndFields(OpAsmPrinter &p, Operation *op,
 }
 
 OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
-  SmallVector<std::pair<StringAttr, TypedAttr>> values;
+  SmallVector<std::tuple<StringAttr, TypedAttr>> values;
   for (auto [name, value] : llvm::zip(getFields(), adaptor.getOperands())) {
     if (!value)
       return {};
@@ -556,12 +556,12 @@ OpFoldResult StructInsertOp::fold(FoldAdaptor adaptor) {
   if (!value || !adaptor.getValue())
     return {};
   auto it = llvm::find_if(value.getValues(), [&](const auto &p) {
-    return p.first == getFieldAttr();
+    return std::get<0>(p) == getFieldAttr();
   });
   if (it == value.getValues().end())
     return {};
-  SmallVector<std::pair<StringAttr, TypedAttr>> values(value.getValues());
-  values[std::distance(value.getValues().begin(), it)].second =
+  SmallVector<std::tuple<StringAttr, TypedAttr>> values(value.getValues());
+  std::get<1>(values[std::distance(value.getValues().begin(), it)]) =
       cast<TypedAttr>(adaptor.getValue());
   return StructAttr::get(getContext(), values, getType());
 }
