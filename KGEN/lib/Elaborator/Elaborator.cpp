@@ -2087,6 +2087,10 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
     funcsToRename[concreteFuncs.front().getNameAttr()] = genNode->getNameAttr();
   }
 
+  // Make sure all in-flight inflating/deflating operations and complete before
+  // erasing any operations.
+  asyncMap.awaitAll();
+
   // Trim the expansion tree and erase ops we don't need/want.
   DenseSet<Operation *> toErase;
 
@@ -2106,7 +2110,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   root.trimFailedExpansions(toErase);
   LLVM_DEBUG(root.print(logger.scope("Trimmed Expansion Tree")));
 
-  for (auto op : toErase)
+  for (Operation *op : toErase)
     op->erase();
 
   SymbolTable &symtab = analysis.getTopLevelSymbolTable();
@@ -2165,7 +2169,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
 }
 
 //===----------------------------------------------------------------------===//
-// M::KGEN::elaborateGeneratorsV2
+// M::KGEN::elaborateGenerators
 //===----------------------------------------------------------------------===//
 
 LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &analysis,
