@@ -236,14 +236,14 @@ private:
 /// their corresponding `waitersCompletelyInitialized` bit is set.
 ///
 /// We also know that the caller has an RCRef that keeps 'this' alive.
-///
 void AsyncValue::runWaitersAndDeallocate(WaiterListNode *list,
-                                         size_t numEntriesValid) {
+                                         size_t numEntriesValid,
+                                         WorkQueue *workQueue) {
   while (list) {
     auto *node = list;
     // The first waiter in a node is always valid.
     assert(numEntriesValid != 0);
-    runOneWaiter(node->takeFirstWaiter());
+    runWaiterLaterIfPossible(node->takeFirstWaiter(), workQueue);
 
     // If the waiters in the specified node haven't finished initializing, wait
     // for them.
@@ -251,7 +251,7 @@ void AsyncValue::runWaitersAndDeallocate(WaiterListNode *list,
 
     // Run waiters 1-3 if they are valid.
     for (size_t i = 1; i != numEntriesValid; ++i)
-      runOneWaiter(node->takeAndDestroyWaiterN(i));
+      runWaiterLaterIfPossible(node->takeAndDestroyWaiterN(i), workQueue);
     list = node->next;
     delete node;
 
@@ -349,7 +349,7 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
     // If we raced with a transition into a ready state then we can just execute
     // the waiter and be done.
     if (isReady(oldValue.getInt()))
-      return runOneWaiter(std::move(waiter));
+      return runWaiterNow(std::move(waiter));
 
     // If there are slots available in the existing waiter node, take one.
     unsigned numValid = getNumWaitersValid(oldValue.getInt());
@@ -388,7 +388,8 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
     // so, just run the waiter and deallocate the node we don't need anymore.
     if (isReady(oldValue.getInt())) {
       assert(oldValue.getPointer() == nullptr);
-      runOneWaiter(node->takeFirstWaiter());
+      runWaiterLaterIfPossible(node->takeFirstWaiter(),
+                               runtime->getWorkQueue());
       // Change the tail of the list to null.  Whatever moved this to a ready
       // state will already have executed and deallocated the list tail.
       node->next = nullptr;
@@ -416,6 +417,8 @@ AsyncValue::notifyReadyAndDecRef(State newState,
   // the value that got filled in.
   auto oldValue = exchangeWaiterAndState(WaitersAndState(nullptr, newState));
 
+  WorkQueue *workQueue = runtime->getWorkQueue();
+
   // The remainder of the method does not depend on the AsyncValue. We can
   // drop one ref count, possibly causing the AsyncValue to be deleted.
   dropRef();
@@ -426,9 +429,9 @@ AsyncValue::notifyReadyAndDecRef(State newState,
   size_t numEntriesValid = getNumWaitersValid(oldValue.getInt());
 
   if (extraWaiter.has_value())
-    runOneWaiter(std::move(*extraWaiter));
+    runWaiterLaterIfPossible(std::move(*extraWaiter), workQueue);
 
-  runWaitersAndDeallocate(oldValue.getPointer(), numEntriesValid);
+  runWaitersAndDeallocate(oldValue.getPointer(), numEntriesValid, workQueue);
 
   return oldValue.getInt();
 }

@@ -52,11 +52,7 @@ inline static void await(ArrayRef<AnyAsyncValueRef> values) {
 
 template <typename T>
 inline static void await(const AsyncValueRef<T> &value) {
-  // Convert from a guaranteed AsyncValueRef to a guaranteed RCRef without
-  // bumping reference counts.
-  AnyAsyncValueRef ref = takeRCRef(value.getPointer());
-  await(ref);
-  (void)ref.releasePointer();
+  await(ArrayRef<AnyAsyncValueRef>(value));
 }
 
 //===----------------------------------------------------------------------===//
@@ -88,7 +84,7 @@ inline static void andThenImpl(std::tuple<ValueTys...> &&values,
                                 std::forward<decltype(values)>(values)};
 
   // This function is invoked on every async value to wait for it to complete.
-  auto processAsyncValue = [&](AsyncValue *value) {
+  auto processAsyncValue = [state](AsyncValue *value) {
     WorkQueue *asyncWorkQueue = nullptr;
     if constexpr (IsAsync)
       asyncWorkQueue = value->getRuntime()->getWorkQueue();
@@ -249,9 +245,9 @@ inline static void andThenArrayImpl(ArrayRefType values,
 /// "async" versions.  The "copying" version doesn't move the AsyncValue's from
 /// the input array, while the "moving" version destructively takes the
 /// elements out of the array passed in.  The "Sync" version runs the
-/// completion handler as soon as the last value is fullied by the thread that
-/// fulfills the value, while he "Async" version adds the completion handler to
-/// the work queue when all the async values are fulfilled.
+/// completion handler as soon as the last value is fulfilled on the thread
+/// that fulfills that value. The "Async" version adds the completion handler to
+/// the work queue when all the values are fulfilled.
 
 template <typename CompletionFn>
 inline static void andThenSyncCopying(ArrayRef<AnyAsyncValueRef> values,

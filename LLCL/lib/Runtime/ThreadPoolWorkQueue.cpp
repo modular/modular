@@ -16,30 +16,48 @@
 #include "LLCL/Support/Profiling.h"
 #include "LLCL/Support/Semaphore.h"
 #include "LLCL/Support/SpinWaiter.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
 
+#define DEBUG_TYPE "llcl_wq"
+
+using namespace M;
 using namespace M::LLCL;
-using llvm::ArrayRef;
 
 /// This value is set to a number for workqueue threads.  Foreign threads always
 /// have index #0.
-static thread_local ssize_t workerIDInTLS = 0;
+static thread_local size_t workerIDInTLS = 0;
+
+/// Set to true to force waiters triggered by an emplace on a 'foreign'
+/// thread to run immediately rather than on an LLCL task. This avoids
+/// a thread switch.
+constexpr bool kRunImmediatelyOnForeignThreads = false;
+
+/// Bit index i is true if the thread with workedID i is suspended.
+using SuspendedThreadsBitvec = uint64_t;
+constexpr size_t kMaxWorkers = sizeof(SuspendedThreadsBitvec) * 8;
+constexpr SuspendedThreadsBitvec mask(size_t workerID) {
+  return UINT64_C(1) << workerID;
+}
 
 //===----------------------------------------------------------------------===//
 // WorkerThread
 //===----------------------------------------------------------------------===//
 
 // Execute a single work item with tracing support.
-static void doWork(TaskFunction &workFn, size_t workerID) {
-  TIME_PROFILER_SCOPE(Trace::kLLCL, 1, "doWork");
+static void doWork(TaskFunction &&workFn, size_t workerID) {
+  TIME_PROFILER_SCOPE(Trace::kLLCL, 1, "doWork", [workerID]() {
+    return Twine("workerID ").concat(Twine(workerID)).str();
+  });
   workFn();
 }
 
 namespace {
 /// Provides the state needed to synchronize the workers in the thread pool.
 struct SharedThreadState {
-  static_assert(std::atomic<uint64_t>::is_always_lock_free,
+  static_assert(std::atomic<SuspendedThreadsBitvec>::is_always_lock_free,
                 "suspendedThreads should always be lock free");
   /// This is the time to spin wait before falling asleep.
   const std::chrono::nanoseconds busyWaitNs;
@@ -59,20 +77,19 @@ struct SharedThreadState {
   /// This is aligned because the state above is immutable or (in the case of
   /// doneFlag) almost never changing. We don't want doneFlag to be on the same
   /// cache line as suspendedThreads.
-  AlignedAtomic<uint64_t> suspendedThreads;
+  AlignedAtomic<SuspendedThreadsBitvec> suspendedThreads;
 
   /// When a worker is about to go to sleep, it calls this method so andThenSync
   /// can know to wake it up when more work materializes.
-  void markSuspended(unsigned workerID) {
+  void markSuspended(size_t workerID) {
     // TODO: Does this need to be sequentially consistent?
-    suspendedThreads.fetch_or(UINT64_C(1) << workerID,
-                              std::memory_order_seq_cst);
+    suspendedThreads.fetch_or(mask(workerID), std::memory_order_seq_cst);
   }
 
   /// If the specified workerID is suspended, take its bit out of the
   /// suspendedThreads bitset and return true.  Otherwise return false.
-  bool takeSuspendedThread(unsigned workerID) {
-    uint64_t workerBit = UINT64_C(1) << workerID;
+  bool takeSuspendedThread(size_t workerID) {
+    SuspendedThreadsBitvec workerBit = mask(workerID);
     auto oldValue =
         suspendedThreads.fetch_and(~workerBit, std::memory_order_seq_cst);
     return oldValue & workerBit;
@@ -83,7 +100,7 @@ struct SharedThreadState {
   int takeAnySuspendedThread() {
     // TODO: Generalize this beyond 64 workers.
     // TODO: Don't use memory_order_seq_cst
-    uint64_t loadedSuspendedThreads =
+    SuspendedThreadsBitvec loadedSuspendedThreads =
         suspendedThreads.load(std::memory_order_seq_cst);
     if (loadedSuspendedThreads == 0)
       return -1;
@@ -92,7 +109,7 @@ struct SharedThreadState {
     SpinWaiter<> spinner;
     do {
       // Clear the lowest bit set in suspendedThreads with `x & (x-1)` idiom.
-      uint64_t newSuspendedThreads =
+      SuspendedThreadsBitvec newSuspendedThreads =
           loadedSuspendedThreads & (loadedSuspendedThreads - 1);
 
       // Try to atomically swap in the new value.
@@ -121,8 +138,18 @@ namespace {
 /// Wrapper around an std::thread which is created for one instance of each
 /// worker thread.
 struct WorkQueueThread {
+  /// Overall state shared by all threads.
   SharedThreadState &sharedState;
+  /// 'Small' tasks which can be run on this thread as available.
+  /// No synchronization is required here since tasks are added to and
+  /// removed only by this thread. Tasks on this list always take precedence
+  /// over those in the global task list.
+  SmallVector<TaskFunction> localTaskList;
+  /// The overall ThreadPoolWorkQueue's task list we can 'steal' tasks from.
   LockFreeRingBuffer<TaskFunction> &taskList;
+  /// Unique index for this thread. Thread index #0 is reserved for 'foreign'
+  /// threads. Though we create an entry for this index in the
+  /// ThreadPoolWorkQueue workers it is not running a runOnThread work loop.
   size_t workerID;
 
   /// This is a per-worker semaphore that this blocks on when they run
@@ -145,6 +172,12 @@ struct WorkQueueThread {
 
   WorkQueueThread(WorkQueueThread &&other) = default;
 
+  /// Schedule this (presumably small) work item on the localTaskList to be
+  /// executed on the next runOnThread loop.
+  ///
+  /// However if this is the 'forign' thread execute the work item immediately.
+  void addOrExecuteLocalTask(TaskFunction &&work);
+
   /// Joins the thread. Asserts that `sharedState.done` is true because
   /// otherwise the thread will never join.
   void join() {
@@ -164,10 +197,19 @@ struct WorkQueueThread {
 };
 } // namespace
 
-void WorkQueueThread::runOnThread() {
-  if (sharedState.profilingEnabled) {
-    timeTraceProfilerLLCLWorkerInitialize();
+void WorkQueueThread::addOrExecuteLocalTask(TaskFunction &&work) {
+  if (workerID == 0) {
+    LLVM_DEBUG(llvm::dbgs() << "WorkQueueThread: running immediately (emplace "
+                               "on foreign thread)\n");
+    doWork(std::move(work), workerID);
+  } else {
+    localTaskList.emplace_back(std::move(work));
   }
+}
+
+void WorkQueueThread::runOnThread() {
+  assert(workerID != 0 && "The WorkQueueThread representing all 'foreign' "
+                          "threads should not be run");
 
   // Set the current workerID in thread local storage so we can find it later
   // when re-entering.
@@ -176,6 +218,10 @@ void WorkQueueThread::runOnThread() {
   // On systems that support it, give the thread a symbolic name that will show
   // up in profilers and debuggers.
   llvm::set_thread_name("LLCL Thread " + llvm::Twine(workerID));
+
+  if (sharedState.profilingEnabled)
+    // Establish the TLS for time profiling.
+    timeTraceProfilerLLCLWorkerInitialize();
 
   TIME_PROFILER_PUSH(Trace::kLLCL, 4, "runOnThread", "");
 
@@ -192,9 +238,10 @@ void WorkQueueThread::runOnThread() {
 
   TIME_PROFILER_POP(Trace::kLLCL, 4);
 
-  if (sharedState.profilingEnabled) {
+  if (sharedState.profilingEnabled)
+    // 'Publish' time profiling data accumulated in TLS to the master
+    // profiling collection.
     M::timeTraceProfilerFinishThread();
-  }
 }
 
 /// This method iteratively runs work items until either of the specified
@@ -208,9 +255,15 @@ void WorkQueueThread::runItems(bool isAwait,
   // Continuously execute work units until the stopPredicate returns true.
 KeepRunning:
   while (!earlyStopPredicate()) {
+    // Prefer to run local work items as soon as they are available.
+    // NOTE: the list may grow as we do work.
+    for (size_t i = 0; i < localTaskList.size() /* not const */; ++i)
+      doWork(std::move(localTaskList[i]), workerID);
+    localTaskList.clear();
+
     // In the normal case we happily pick up and do work.
     if (auto work = taskList.dequeue()) {
-      doWork(work, workerID);
+      doWork(std::move(work), workerID);
       continue;
     }
 
@@ -231,7 +284,7 @@ KeepRunning:
       // normal.
       if (auto work = taskList.dequeue()) {
         TIME_PROFILER_POP(Trace::kLLCL, 3);
-        doWork(work, workerID);
+        doWork(std::move(work), workerID);
         goto KeepRunning;
       }
 
@@ -294,13 +347,14 @@ public:
 
   void addTask(TaskFunction work) override;
 
+  void addOrExecuteSmallTask(TaskFunction work) override;
+
   void await(ArrayRef<AnyAsyncValueRef> values) override;
 
   size_t getParallelismLevel() const final {
     // `numWorkers` is set to the number of worker threads that are created by
     // the work queue +1 for a foreign thread.
-    // TODO: This isn't actually correct.  See PR1903:
-    // https://github.com/modularml/modular/issues/1903
+    // TODO(#1903): This is a poor heuristic for subdividing work.
     return numWorkers;
   }
 
@@ -326,6 +380,7 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkers,
     : numWorkers(numWorkers), sharedState{busyWaitNs, profilingEnabled,
                                           /*doneFlag=*/false,
                                           /*suspendedThreads=*/0} {
+  assert(numWorkers <= kMaxWorkers && "Too many workers for bitvec width");
   workers.reserve(numWorkers);
   // Initialize each thread with its required state.  Note that  thread #0
   // does not start itself: that index is reserved for foreign threads.
@@ -335,11 +390,11 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkers,
 
 void ThreadPoolWorkQueue::shutdown() {
   TIME_PROFILER_SCOPE(Trace::kLLCL, 4, "shutdown");
-  int workerID = workerIDInTLS;
+  size_t workerID = workerIDInTLS;
 
   // Donate this thread to help drain the work queue if there's anything left.
   while (auto work = taskList.dequeue())
-    doWork(work, workerID);
+    doWork(std::move(work), workerID);
 
   // Now we can tell all the threads to exit.
   sharedState.doneFlag.store(true, std::memory_order_release);
@@ -360,7 +415,7 @@ void ThreadPoolWorkQueue::shutdown() {
 }
 
 void ThreadPoolWorkQueue::addTask(TaskFunction work) {
-  auto workerID = workerIDInTLS;
+  size_t workerID = workerIDInTLS;
   (void)workerID;
   // Try to add this work to the RingBuffer.
   TIME_PROFILER_SCOPE(Trace::kLLCL, 2, "addTask");
@@ -378,7 +433,18 @@ void ThreadPoolWorkQueue::addTask(TaskFunction work) {
   // If we failed to add it, then the ring buffer is full: just run the work
   // item locally on the current stack.
   // NOTE: This runs the risk of stack overflow, but we don't have a choice.
-  doWork(work, workerID);
+  LLVM_DEBUG(
+      llvm::dbgs()
+      << "ThreadPoolWorkQueue: running immediately (task queue is full)\n");
+  doWork(std::move(work), workerID);
+}
+
+void ThreadPoolWorkQueue::addOrExecuteSmallTask(M::LLCL::TaskFunction work) {
+  size_t workerID = workerIDInTLS;
+  if (!kRunImmediatelyOnForeignThreads && workerID == 0)
+    addTask(std::move(work));
+  else
+    workers[workerID].addOrExecuteLocalTask(std::move(work));
 }
 
 void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
@@ -390,10 +456,10 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   // Figure out which WorkerThread this is being invoked from.  This could be
   // something in the WorkQueue or could be an external foreign thread (index
   // #0).
-  ssize_t workerID = workerIDInTLS;
+  size_t workerID = workerIDInTLS;
   WorkQueueThread *thisWorker = &workers[workerID];
 
-  // We are done when values_remaining drops to zero.
+  // We are done when numRemaining drops to zero.
   std::atomic<ssize_t> numRemaining = values.size();
 
   // As each value becomes available, we can decrement our counts.  When done,
@@ -402,13 +468,13 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   for (auto &value : values)
     value.andThenSync([&numRemaining, thisWorker, this]() {
       TIME_PROFILER_SCOPE(Trace::kLLCL, 3, "await andThenSync");
-      // Decremenet the count of async values that we're waiting on.
+      // Decrement the count of async values that we're waiting on.
       // TODO: This can probably use more relaxed memory consistency!
       if (numRemaining.fetch_sub(1, std::memory_order_seq_cst) != 1)
         return;
 
       // Get the thread ID of the thread running the andThenSync, for tracing.
-      auto workerID = workerIDInTLS;
+      size_t workerID = workerIDInTLS;
       (void)workerID;
 
       // When it drops to zero, we're good to go and whatever thread is waiting

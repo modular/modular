@@ -17,6 +17,7 @@
 #endif
 
 #include "LLCL/Runtime/CompactRuntimePtr.h"
+#include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Diagnostic.h"
 #include "Support/AlignedAlloc.h"
 #include "llvm/ADT/FunctionExtras.h"
@@ -439,7 +440,8 @@ private:
 protected:
   LogicalResult moveState(WaitersAndState &oldValue, State newState);
   static void runWaitersAndDeallocate(WaiterListNode *list,
-                                      size_t numEntriesValid);
+                                      size_t numEntriesValid,
+                                      WorkQueue *workQueue);
   void andThenOutOfLine(Waiter waiter, WaitersAndState oldValue);
   void andThenAsyncOutOfLine(Waiter waiter);
   void destroyWithRefCountZero();
@@ -454,7 +456,22 @@ protected:
   Waiter *getInlineWaiterPointer();
 
   /// Invoke a single waiter immediately.
-  static void runOneWaiter(Waiter &&waiter) { waiter(); }
+  ///
+  /// This method is used when an 'andThen' is called on a ready AsyncValue.
+  /// Since the 'andThen' waiter closure is constructed at the 'andThen'
+  /// call site, it seems reasonable to execute it on the callers stack.
+  static void runWaiterNow(Waiter &&waiter) { waiter(); }
+
+  /// Schedule a single waiter to be invoked later, but on the current thread.
+  /// If this is not possible, invoke the waiter now.
+  ///
+  /// This method is used when an 'emplace' has triggered waiters. Since the
+  /// each waiter's closure is arbitrary and remote from the emplace call,
+  /// it seems prudent to avoid executing the waiter on the callers stack
+  /// if efficient to do so.
+  static void runWaiterLaterIfPossible(Waiter &&waiter, WorkQueue *workQueue) {
+    workQueue->addOrExecuteSmallTask(std::move(waiter));
+  }
 
 protected:
   /// This layout of this class is designed very carefully to ensure alignment
@@ -787,7 +804,7 @@ void AsyncValue::andThen(Waiter &&waiter) {
     if (isReady(waitersAndStateValue.getInt())) {
       assert(waitersAndStateValue.getPointer() == nullptr &&
              "cannot have waiter nodes when ready");
-      runOneWaiter(std::move(waiter));
+      runWaiterNow(std::move(waiter));
       return;
     }
 

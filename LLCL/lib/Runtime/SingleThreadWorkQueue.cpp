@@ -29,8 +29,11 @@ public:
 
   ~SingleThreadWorkQueue() override {}
 
-  /// Enqueue a block of work. This does not use synchronization since this
   void addTask(TaskFunction work) override {
+    workItems.enqueue(std::move(work));
+  }
+
+  void addOrExecuteSmallTask(TaskFunction work) override {
     workItems.enqueue(std::move(work));
   }
 
