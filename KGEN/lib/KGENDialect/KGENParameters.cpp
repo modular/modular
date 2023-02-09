@@ -831,12 +831,9 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
 
     // If there were no uses from above, notify the nested declaration that it
     // is isolated. Do not do this during verification.
-    // TODO: This only works if all the regions on the parent are isolated! For
-    //   now it doesn't matter because the only op that has more than one region
-    //   doesn't care about being isolated from above.
     if (nested.usesFromAbove.empty()) {
       auto decl = cast<DeclInterface>(nestedScope->getParentOp());
-      decl.notifyKnownIsolatedFromAbove();
+      decl.notifyKnownIsolatedFromAbove(nestedScope->getRegionNumber());
     }
 
     // Bubble up the nested scopes and all nested uses from above.

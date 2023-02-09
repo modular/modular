@@ -714,6 +714,16 @@ LogicalResult RegionBodyOp::verifyRegions() {
   return success();
 }
 
+bool RegionBodyOp::isIsolatedFromAbove(unsigned regionNum) {
+  assert(regionNum == 0);
+  return getIsolated();
+}
+
+void RegionBodyOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
+  assert(regionNum == 0);
+  setIsolated(true);
+}
+
 //===----------------------------------------------------------------------===//
 // ParamConstantOp
 //===----------------------------------------------------------------------===//

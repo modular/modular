@@ -463,8 +463,8 @@ def KGEN_RegionBodyOp : KGENOp<"region.body", [Terminator, DeclInterface,
   }];
 
   let extraClassDeclaration = [{
-    bool isIsolatedFromAbove() { return getIsolated(); }
-    void notifyKnownIsolatedFromAbove() { setIsolated(true); }
+    bool isIsolatedFromAbove(unsigned regionNum);
+    void notifyKnownIsolatedFromAbove(unsigned regionNum);
 
     /// Region body op doesn't form a symbol.
     bool isOptionalSymbol() { return true; }
