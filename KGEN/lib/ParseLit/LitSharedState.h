@@ -147,6 +147,9 @@ public:
                         const llvm::MemoryBuffer *moduleBuffer,
                         FileLineColLoc loc);
 
+  /// Get the list of files included while processing all modules.
+  ArrayRef<std::string> getIncludedFiles() const;
+
 private:
   /// Add magic things to the builtins decl when parsing starts.
   void addBuiltinTypes(ASTDecl &builtinsDecl);

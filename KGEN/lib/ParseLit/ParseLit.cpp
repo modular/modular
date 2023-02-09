@@ -44,7 +44,8 @@ using llvm::SourceMgr;
 OwningOpRef<mlir::ModuleOp>
 M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
                  mlir::TimingScope &ts, const KGEN::CompilationOptions &options,
-                 bool useMLIRDiagnostics) {
+                 bool useMLIRDiagnostics,
+                 SmallVectorImpl<std::string> *includedFiles) {
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
 
   context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
@@ -98,5 +99,9 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
   auto verificationTimer = ts.nest("Verify module");
   if (failed(verify(*module)))
     return {};
+
+  // Set the included files if requested.
+  if (includedFiles)
+    llvm::append_range(*includedFiles, sharedState.getIncludedFiles());
   return module;
 }
