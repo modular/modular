@@ -8,6 +8,7 @@
 #define KGEN_KGENDIALECT_KGENATTRINTERFACES_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/Attributes.h"
 
 //===----------------------------------------------------------------------===//
