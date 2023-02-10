@@ -1424,8 +1424,8 @@ AnyValue CallableValue::inlineFunctionCallIntoMValue(
   // Prime the arguments of the callee.
   for (auto [blockArg, value] :
        llvm::zip(block.getArguments(), argumentValues)) {
-    assert(value.ir.getIfRValue() &&
-           "all arguments are byval and emitted as rvalues");
+    if (!value.ir.getIfRValue())
+      return {};
     valueMapping[blockArg] = value.ir.getIfRValue();
   }
 
