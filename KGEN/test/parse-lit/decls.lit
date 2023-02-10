@@ -121,6 +121,16 @@ fn callReturnParam() -> __mlir_type.index:
 fn pleaseInline() -> __mlir_type.index:
   return 1
 
+# https://github.com/modularml/modular/issues/8500
+struct AlwaysInlineByRef:
+  @always_inline("nodebug")
+  fn doByRef(self&):
+
+fn test(a&: AlwaysInlineByRef):
+  a.doByRef()
+
+
+
 ##===----------------------------------------------------------------------===##
 # Default arguments and variadics.
 ##===----------------------------------------------------------------------===##
