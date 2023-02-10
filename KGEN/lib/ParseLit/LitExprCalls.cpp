@@ -1393,8 +1393,8 @@ AnyValue CallableValue::inlineFunctionCallIntoMValue(
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues, IREmitter &emitter) {
   auto funcOp = cast<LIT::FuncOp>(callee);
 
-  // TODO: We currently cannot nodebug_inline calls to parameterized functions
-  // in parameter contexts, we aren't doing the substitution yet.
+  // TODO: We currently cannot handle calls to parameterized functions, we
+  // aren't doing the substitution yet.
   if (!inputParams.empty())
     return {};
 
@@ -1408,12 +1408,6 @@ AnyValue CallableValue::inlineFunctionCallIntoMValue(
       emitter.builder)
     return {};
 
-  // Ok, we know the the body is simple: no control flow / regions, no
-  // parameters, etc.  Our approach is to try to fold things aggressively if
-  // the inputs are parameters, but drop them out as cloned/inlined operations
-  // at the current insertion point if not.
-  auto &block = *funcOp.getBody();
-
   // Perform parameter substitution if there are input parameters.
   // TODO: ParameterEvaluator paramEvaluator(inputParams);
 
@@ -1422,17 +1416,20 @@ AnyValue CallableValue::inlineFunctionCallIntoMValue(
   SmallDenseMap<Value, RValue> valueMapping;
 
   // Prime the arguments of the callee.
+  auto &block = *funcOp.getBody();
   for (auto [blockArg, value] :
        llvm::zip(block.getArguments(), argumentValues)) {
-    if (!value.ir.getIfRValue())
+    auto rValue = value.ir.getIfRValue();
+    // We don't support folding by-ref arguments, we don't have an attribute
+    // model for them.
+    if (!rValue)
       return {};
-    valueMapping[blockArg] = value.ir.getIfRValue();
+    valueMapping[blockArg] = rValue;
   }
 
   SmallVector<Attribute> operandAttrs;
   SmallVector<OpFoldResult> foldResults;
   SmallVector<ParamConstantOp> materializedConstants;
-
   for (auto &op : block) {
     // First, check for our special cases.
 
@@ -1443,17 +1440,17 @@ AnyValue CallableValue::inlineFunctionCallIntoMValue(
       return valueMapping[returnOp.getOperand(0)];
     }
 
-    // We always squash let declarations, since they are only useful for debug
-    // information, they are what we are trying to flatten away.
+    // 'let' declarations are noops.
     if (auto letDecl = dyn_cast<LetDeclOp>(op)) {
       // Note: Do not inline these two C++ statements, the hash table lookups
-      // can invalid each other.
+      // can invalidate each other.
       auto entry = valueMapping[letDecl.getValue()];
       valueMapping[letDecl.getResult()] = entry;
       continue;
     }
 
-    // Drop debuginfo.value operations entirely since we're dropping debug info.
+    // Ignore debuginfo.value operations entirely since we're dropping debug
+    // info.
     if (isa<DebugInfo::ValueOp>(op))
       continue;
 
@@ -1462,21 +1459,6 @@ AnyValue CallableValue::inlineFunctionCallIntoMValue(
     materializedConstants.clear();
     operandAttrs.clear();
     foldResults.clear();
-
-    auto updateMappingWithFoldSuccess = [&]() {
-      assert(foldResults.size() == op.getNumResults());
-      for (auto [result, value] : llvm::zip(op.getResults(), foldResults)) {
-        PointerUnion<Attribute, Value> puValue = value;
-        if (auto drVal = dyn_cast<Value>(puValue))
-          valueMapping[result] = DRValue(drVal);
-        else {
-          auto attr = dyn_cast<TypedAttr>(cast<Attribute>(puValue));
-          assert(attr &&
-                 "Folding operation with typed result made untyped attr?");
-          valueMapping[result] = MValue(attr);
-        }
-      }
-    };
 
     // TODO: Add support for parameter substitution, how do we call fold
     // though?
@@ -1493,16 +1475,27 @@ AnyValue CallableValue::inlineFunctionCallIntoMValue(
       operandAttrs.push_back(entry.getIfMValue().get());
     }
 
-    // If we successfully folded this, remember the results.
-    if (succeeded(op.fold(operandAttrs, foldResults))) {
-      updateMappingWithFoldSuccess();
-      continue;
-    }
-
     // Otherwise, bail out and allow the normal call procssing logic to
     // produce an apply of the original function.
-    return {};
+    if (failed(op.fold(operandAttrs, foldResults)))
+      return {};
+
+    // We successfully folded this: remember the results.
+    assert(foldResults.size() == op.getNumResults());
+    for (auto [result, value] : llvm::zip(op.getResults(), foldResults)) {
+      PointerUnion<Attribute, Value> puValue = value;
+      if (auto drVal = dyn_cast<Value>(puValue))
+        valueMapping[result] = DRValue(drVal);
+      else {
+        auto attr = dyn_cast<TypedAttr>(cast<Attribute>(puValue));
+        assert(attr &&
+               "Folding operation with typed result made untyped attr?");
+        valueMapping[result] = MValue(attr);
+      }
+    }
   }
 
-  llvm_unreachable("didn't find a lit.return?");
+  // If we fell off the bottom of the function without finding a return, then
+  // there is something wrong.  Don't fold it.
+  return {};
 }
