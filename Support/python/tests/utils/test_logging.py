@@ -39,8 +39,8 @@ def test_LoggingContext_level(caplog: LogCaptureFixture):
     assert caplog.records[1].msg == "Some other debug"
 
 
-def test_LoggingContext_handler(caplog: LogCaptureFixture):
-    log_file = Path(__file__).parent / ".artifacts" / "log.txt"
+def test_LoggingContext_handler(caplog: LogCaptureFixture, tmp_path: Path):
+    log_file = tmp_path / "log.txt"
     log_file.unlink(missing_ok=True)
 
     logging.getLogger().setLevel(logging.INFO)
