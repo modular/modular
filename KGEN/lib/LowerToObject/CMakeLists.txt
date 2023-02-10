@@ -7,6 +7,7 @@
 add_modular_mlir_library(KGENEmitObject
   LowerToLLVM.cpp
   LowerToObject.cpp
+  LLVMPassesPipeline.cpp
   StandaloneObject.cpp
   ProduceFunctionDecls.cpp
 
