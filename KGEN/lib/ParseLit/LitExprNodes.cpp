@@ -1428,15 +1428,142 @@ static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
   return SpecialFunctionInfo::get(SpecialFunctionKind::kNormal);
 }
 
-AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
-  AnyValue lhsRep;
-  RValue rhsRep;
+/// Emit the binary operation (with a `lhs`, `rhs` and `kind`) as a special
+/// function call.
+/// A special function call is one where the` kind` must corresponds to a valid
+/// SpecialFunctionInfo when we invoke getOpSpecialFunctions(kind).
+/// `callNode` is the call like expression that results in the call.
+//
+/// This is an utility function to share code between BinOpNone and
+/// ChainedCmpOpNode since the latter is a sequence of binary operations.
+static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
+                              ASTExprAnd<AnyValue> rhs, ExprNode::Kind kind,
+                              const ExprNode *callNode, IREmitter &emitter) {
 
+  // FIXME: We currently hack in index type support as transition to proper
+  // expression support.
+  SMLoc loc = callNode->getLoc();
+  if ((lhs.ir.getType().isIndex() && rhs.ir.getType().isIndex()) &&
+      lhs.ir.getIfMValue() && rhs.ir.getIfMValue()) {
+    auto lhsParam = lhs.ir.getIfMValue();
+    auto rhsParam = rhs.ir.getIfMValue();
+    POC opcode;
+    bool needsInvert = false;
+    switch (kind) {
+    default:
+      emitter.emitError(
+          loc, "cannot emit this binary operator in parameter context yet")
+          << callNode->getRange();
+      return {};
+    case ExprNode::kSub:
+      return ParamOperatorAttr::getSub(lhsParam, rhsParam);
+    case ExprNode::kAdd:
+      opcode = POC::Add;
+      break;
+    case ExprNode::kMul:
+      opcode = POC::Mul;
+      break;
+    case ExprNode::kAnd:
+      opcode = POC::And;
+      break;
+    case ExprNode::kOr:
+      opcode = POC::Or;
+      break;
+    case ExprNode::kXor:
+      opcode = POC::Xor;
+      break;
+    case ExprNode::kLShift:
+      opcode = POC::Shl;
+      break;
+    case ExprNode::kRShift:
+      opcode = POC::Shr;
+      break;
+    case ExprNode::kFloorDiv:
+      opcode = POC::Div;
+      break;
+    case ExprNode::kMod:
+      opcode = POC::Mod;
+      break;
+    case ExprNode::kCmpEQ:
+      opcode = POC::EQ;
+      break;
+    case ExprNode::kCmpNE:
+      opcode = POC::EQ;
+      needsInvert = true;
+      break;
+    case ExprNode::kCmpGE:
+      opcode = POC::LT;
+      needsInvert = true;
+      break;
+    case ExprNode::kCmpGT:
+      opcode = POC::LE;
+      needsInvert = true;
+      break;
+    case ExprNode::kCmpLT:
+      opcode = POC::LT;
+      break;
+    case ExprNode::kCmpLE:
+      opcode = POC::LE;
+      break;
+    }
+    auto value = ParamOperatorAttr::get((POC)opcode, lhsParam, rhsParam);
+    if (needsInvert)
+      value = ParamOperatorAttr::getNot(value);
+    return value;
+  }
+
+  // If this operator maps onto a special function, attempt to lower it.
+  auto specialFnInfo = getOpSpecialFunctions(kind, /*isReversed=*/false);
+  assert(specialFnInfo.kind != SpecialFunctionKind::kNormal);
+  ASTExprAnd<AnyValue> argValues[] = {lhs, rhs};
+
+  // Check to see if we have a forward version of this function on the primary
+  // receiver.
+  bool isErroneousDecl = false;
+  CallableValue callee(lhs.ir.getRValueType(), specialFnInfo.name, loc,
+                       isErroneousDecl, emitter.shared);
+  if (isErroneousDecl)
+    return {};
+  if (callee.direct &&
+      succeeded(callee.direct->filterOverloadSet(
+          argValues, CallSyntax::kOperator,
+          /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
+    return callee.emitFunctionCall(argValues, CallSyntax::kOperator, callNode,
+                                   emitter);
+  }
+
+  // Check to see if we have the reverse version of this operator.
+  auto reversedFnInfo = getOpSpecialFunctions(kind, /*isReversed=*/true);
+  if (reversedFnInfo.kind != SpecialFunctionKind::kNormal) {
+    // Swap the operand order.
+    std::swap(argValues[0], argValues[1]);
+    callee = CallableValue(rhs.ir.getType(), reversedFnInfo.name, loc,
+                           isErroneousDecl, emitter.shared);
+    if (callee.direct &&
+        succeeded(callee.direct->filterOverloadSet(
+            argValues, CallSyntax::kReversedOperator,
+            /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
+      return callee.emitFunctionCall(argValues, CallSyntax::kReversedOperator,
+                                     callNode, emitter);
+    }
+
+    // Swap these back so we emit the right error.
+    std::swap(argValues[0], argValues[1]);
+  }
+
+  // Emit an error complaining about the forward version of the operator.
+  return emitter.emitNamedMethodCall(specialFnInfo.name, argValues,
+                                     CallSyntax::kOperator, callNode);
+}
+
+AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   // We generally emit the LHS before the RHS, but need to do special things
   // for short-circuiting and assignment statements.
   if (kind == kBoolAnd || kind == kBoolOr) // `x and y`, `x or y`
     return emitAndOr(emitter);
 
+  AnyValue lhsRep;
+  RValue rhsRep;
   if (!isAssignmentStmt()) {
     auto lhsRV = emitter.emitExprRValue(lhs);
     lhsRep = lhsRV;
@@ -1483,119 +1610,7 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
     lhsRep = lhsLV;
   }
 
-  // FIXME: We currently hack in index type support as transition to proper
-  // expression support.
-  if ((lhsRep.getType().isIndex() && rhsRep.getType().isIndex()) &&
-      lhsRep.getIfMValue() && rhsRep.getIfMValue()) {
-    auto lhsParam = lhsRep.getIfMValue();
-    auto rhsParam = rhsRep.getIfMValue();
-    POC opcode;
-    bool needsInvert = false;
-    switch (kind) {
-    default:
-      emitter.emitError(
-          getLoc(), "cannot emit this binary operator in parameter context yet")
-          << getRange();
-      return {};
-    case kSub:
-      return ParamOperatorAttr::getSub(lhsParam, rhsParam);
-    case kAdd:
-      opcode = POC::Add;
-      break;
-    case kMul:
-      opcode = POC::Mul;
-      break;
-    case kAnd:
-      opcode = POC::And;
-      break;
-    case kOr:
-      opcode = POC::Or;
-      break;
-    case kXor:
-      opcode = POC::Xor;
-      break;
-    case kLShift:
-      opcode = POC::Shl;
-      break;
-    case kRShift:
-      opcode = POC::Shr;
-      break;
-    case kFloorDiv:
-      opcode = POC::Div;
-      break;
-    case kMod:
-      opcode = POC::Mod;
-      break;
-    case kCmpEQ:
-      opcode = POC::EQ;
-      break;
-    case kCmpNE:
-      opcode = POC::EQ;
-      needsInvert = true;
-      break;
-    case kCmpGE:
-      opcode = POC::LT;
-      needsInvert = true;
-      break;
-    case kCmpGT:
-      opcode = POC::LE;
-      needsInvert = true;
-      break;
-    case kCmpLT:
-      opcode = POC::LT;
-      break;
-    case kCmpLE:
-      opcode = POC::LE;
-      break;
-    }
-    auto value = ParamOperatorAttr::get((POC)opcode, lhsParam, rhsParam);
-    if (needsInvert)
-      value = ParamOperatorAttr::getNot(value);
-    return value;
-  }
-
-  // If this operator maps onto a special function, attempt to lower it.
-  auto specialFnInfo = getOpSpecialFunctions(kind, /*isReversed=*/false);
-  assert(specialFnInfo.kind != SpecialFunctionKind::kNormal);
-  ASTExprAnd<AnyValue> argValues[] = {{lhsRep, lhs}, {rhsRep, rhs}};
-
-  // Check to see if we have a forward version of this function on the primary
-  // receiver.
-  bool isErroneousDecl = false;
-  CallableValue callee(lhsRep.getRValueType(), specialFnInfo.name, getLoc(),
-                       isErroneousDecl, emitter.shared);
-  if (isErroneousDecl)
-    return {};
-  if (callee.direct &&
-      succeeded(callee.direct->filterOverloadSet(
-          argValues, CallSyntax::kOperator,
-          /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
-    return callee.emitFunctionCall(argValues, CallSyntax::kOperator, this,
-                                   emitter);
-  }
-
-  // Check to see if we have the reverse version of this operator.
-  auto reversedFnInfo = getOpSpecialFunctions(kind, /*isReversed=*/true);
-  if (reversedFnInfo.kind != SpecialFunctionKind::kNormal) {
-    // Swap the operand order.
-    std::swap(argValues[0], argValues[1]);
-    callee = CallableValue(rhsRep.getType(), reversedFnInfo.name, getLoc(),
-                           isErroneousDecl, emitter.shared);
-    if (callee.direct &&
-        succeeded(callee.direct->filterOverloadSet(
-            argValues, CallSyntax::kReversedOperator,
-            /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
-      return callee.emitFunctionCall(argValues, CallSyntax::kReversedOperator,
-                                     this, emitter);
-    }
-
-    // Swap these back so we emit the right error.
-    std::swap(argValues[0], argValues[1]);
-  }
-
-  // Emit an error complaining about the forward version of the operator.
-  return emitter.emitNamedMethodCall(specialFnInfo.name, argValues,
-                                     CallSyntax::kOperator, this);
+  return emitBinOpCall({lhsRep, lhs}, {rhsRep, rhs}, kind, this, emitter);
 }
 
 /// This method emits the `x and y`, `x or y` operators.  These are interesting
@@ -1780,4 +1795,21 @@ AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
   // Ensure the correct type is used.
   ifOp->getResult(0).setType(trueVal.getType());
   return DRValue(ifOp.getResult(0));
+}
+
+AnyValue ChainedCmpOpNode::emitIR(ExprEmitter &emitter,
+                                  ASTType contextualType) const {
+  if (exprs.size() == 2) {
+    // This is a simple boolean expression.
+    assert(ops.size() == 1);
+    RValue lhsRep = emitter.emitExprRValue(exprs[0]);
+    RValue rhsRep = emitter.emitExprRValue(exprs[1]);
+    if (!lhsRep || !rhsRep)
+      return {};
+    return emitBinOpCall({lhsRep, exprs[0]}, {rhsRep, exprs[1]}, ops[0], this,
+                         emitter);
+  }
+  emitter.emitError(getLoc(),
+                    "ChainedCmpOpNode not implemented for > 2 operands");
+  return {};
 }

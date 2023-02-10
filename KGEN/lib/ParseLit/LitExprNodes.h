@@ -410,6 +410,30 @@ struct UnaryOpNode final : public ExprNode {
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
 
+/// This represents a chained comparison expression (ex. a < b <= c).
+/// exprs stores all the expressions in the comparison (ex. a, b, c), while
+/// ops stores the ops in between pairs of expressions (ex. <, <=).
+/// Chained expressions are evaluated left to right and each expression is
+/// valuated at most once: a < b <= c is equivalent to a < b and b <= c, but
+/// b is evaluated only once.
+struct ChainedCmpOpNode final : public ExprNode {
+  ChainedCmpOpNode(ArrayRef<ExprNode *> exprs, ArrayRef<ExprNode::Kind> ops,
+                   SMLoc opLoc)
+      : ExprNode(ExprNode::Kind::kChainedCmp), exprs(exprs), ops(ops),
+        opLoc(opLoc) {}
+
+  const ArrayRef<ExprNode *> exprs;
+  const ArrayRef<ExprNode::Kind> ops;
+  const SMLoc opLoc;
+
+  SMLoc getLoc() const override { return opLoc; }
+  LitSourceRange getRange() const override {
+    return {exprs.front()->getRangeStart(), exprs.back()->getRangeEnd()};
+  }
+
+  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+};
+
 } // namespace M::KGEN::LIT
 
 #endif // LIT_EXPR_NODES_H

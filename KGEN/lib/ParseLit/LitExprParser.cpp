@@ -102,6 +102,8 @@ private:
   ParseResult parseAttributeRefSuffix(ExprNode *&result, SMLoc dotLoc);
   ParseResult parseCallSuffix(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parseSubscriptSuffix(ExprNode *&result, SMLoc lsquareLoc);
+  ParseResult parseComparisonExpr(ExprNode *&result, ExprNode *rhs,
+                                  ExprNode::Kind kind, SMLoc loc);
 
   /// This specifies the indentation level of the start of the statement that
   /// contains this expression if the expression can exist at the end of the
@@ -254,8 +256,7 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
   // lower than minPrec. This means that it collects all tokens that bind
   // together before returning to the operator that called it.
   InfixInfo infixInfo = InfixInfo::get(getToken().getKind());
-  while (!isTokenStartOfNextStatement() &&
-         unsigned(minPrec) < unsigned(infixInfo.precedence)) {
+  while (!isTokenStartOfNextStatement() && minPrec < infixInfo.precedence) {
     LitToken::Kind tokKind = getToken().getKind();
     auto binOpLoc = consumeToken().getLoc();
 
@@ -294,7 +295,11 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
     ExprNode *rhs;
     if (parseExpression(rhs, infixInfo.precedence))
       return failure();
-    expr = alloc<BinOpNode>(infixInfo.nodeKind, expr, binOpLoc, rhs);
+
+    if (infixInfo.precedence != Precedence::kComparison)
+      expr = alloc<BinOpNode>(infixInfo.nodeKind, expr, binOpLoc, rhs);
+    else if (parseComparisonExpr(expr, rhs, infixInfo.nodeKind, binOpLoc))
+      return failure();
     infixInfo = InfixInfo::get(getToken().getKind());
   }
   return success();
@@ -315,6 +320,32 @@ static ExprNode::Kind getUnaryOpKind(LitToken::Kind tokKind) {
   case LitToken::tilde:
     return ExprNode::kInvert;
   }
+}
+/// Parse a chained comparison expression (ex. a < b < c) starting from the
+/// first comparison given as input:
+/// expr is the lhs and kind specifies the type of comparison, ex. kCmpLT.
+/// This function returns in expr a ChainedCmpOpNode on success.
+ParseResult ExprParser::parseComparisonExpr(ExprNode *&expr, ExprNode *rhs,
+                                            ExprNode::Kind kind, SMLoc loc) {
+  SmallVector<ExprNode *> exprs;
+  SmallVector<ExprNode::Kind> ops;
+  exprs.push_back(expr);
+  exprs.push_back(rhs);
+  ops.push_back(kind);
+  InfixInfo infixInfo = InfixInfo::get(getToken().getKind());
+  while (!isTokenStartOfNextStatement() &&
+         infixInfo.precedence == Precedence::kComparison) {
+    consumeToken();
+    ExprNode *cmpOperand;
+    if (parseExpression(cmpOperand, Precedence::kComparison))
+      return failure();
+    exprs.push_back(cmpOperand);
+    ops.push_back(infixInfo.nodeKind);
+    infixInfo = InfixInfo::get(getToken().getKind());
+  }
+  expr = alloc<ChainedCmpOpNode>(copyArrayRef<ExprNode *>(exprs),
+                                 copyArrayRef<ExprNode::Kind>(ops), loc);
+  return success();
 }
 
 /// Parse the expression identified by the current token and provided
