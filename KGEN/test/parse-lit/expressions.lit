@@ -146,11 +146,13 @@ struct Boolish:
 
 # CHECK-LABEL: @"unary
 fn unary(a: Bool, b: Int, c: Boolish):
-  # CHECK: %0 = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"(%a)
+  # CHECK: %0 = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"(%a)
+  # CHECK: %1 = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"(%0)
   _ = not a
 
   # CHECK: [[EQ:%.*]] = kgen.call @"$Int"::@Int::@"__eq__($Int::Int,$Int::Int)"
-  # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[EQ]])
+  # CHECK: [[EQBOOL:%.*]] = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"([[EQ]])
+  # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[EQBOOL]])
   _ = not b == 0
 
   # CHECK: [[BOOL:%.*]] = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%c)
@@ -190,29 +192,11 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # CHECK: %8 = scf.if %7 -> (!kgen.declref<@"$Bool"::@Bool>) {
   # CHECK:   scf.yield %6
   # CHECK: } else {
-  # CHECK:   scf.yield %x
+  # CHECK:   %9 = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"(%x)
+  # CHECK:   scf.yield %9
   # CHECK: }
    _ = a or x
 
-# COM: TODO: Rewrite this test once we support boolean expressions
-# COM: # CHECK-LABEL: lit.func @"precedence_comparison
-# COM: fn precedence_comparison(a: index, b: index, c: index, d: index):
-# COM:   # CHECK-NEXT: %tmp = lit.var.decl "tmp"
-# COM:   var tmp : index
-# COM:   # CHECK-NEXT: %[[EQUAL:.*]] = index.remu %a, %b
-# COM:   # CHECK-NEXT: %[[ZERO:.*]] = {{.*}} 0
-# COM:   # CHECK-NEXT: %[[NOT:.*]] = index.sub %[[ZERO]], %c
-# COM:   # CHECK-NEXT: %[[AND:.*]] = index.add %[[EQUAL]], %[[NOT]]
-# COM:   # CHECK-NEXT: %[[OR:.*]] = index.sub %[[AND]], %d
-# COM:   # CHECK-NEXT: store %[[OR]], %tmp
-# COM:   tmp = ((a == b) and (not c)) or d
-# COM:   # CHECK-NEXT: %[[EQUAL:.*]] = index.remu %a, %b
-# COM:   # CHECK-NEXT: %[[ZERO:.*]] = {{.*}} 0
-# COM:   # CHECK-NEXT: %[[NOT:.*]] = index.sub %[[ZERO]], %c
-# COM:   # CHECK-NEXT: %[[AND:.*]] = index.add %[[EQUAL]], %[[NOT]]
-# COM:   # CHECK-NEXT: %[[OR:.*]] = index.sub %[[AND]], %d
-# COM:   # CHECK-NEXT: store %[[OR]], %tmp
-# COM:   tmp = a == b and not c or d
 
 # CHECK-LABEL: lit.func @"do_math
 fn do_math(a: Int, b: Int, c: Int) -> Int:

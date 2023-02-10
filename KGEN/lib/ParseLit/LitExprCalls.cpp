@@ -1383,12 +1383,14 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   return DRValue(callOp->getResult(0));
 }
 
-/// Given a call to an alwaysinline function, check to see if we can resolve it
-/// all the way down to an MValue.  We do this when in a parameter context
-/// (since there is no debug info to ever generate) and when calling a "nodebug"
-/// function.  This is best-effort: when it fails, we fall back to emitting a
-/// normal call or "apply" parameter expression.
-AnyValue CallableValue::inlineFunctionCallIntoMValue(
+/// Given a call to an alwaysinline function that is invoked with simple
+/// parameter constants, check to see if we can resolve it all the way down to
+/// an MValue.  We do this when in a parameter context (since there is no debug
+/// info to ever generate) and when calling a "nodebug" function.
+///
+/// This is best-effort: when it fails, we fall back to emitting a normal call
+/// or "apply" parameter expression.
+MValue CallableValue::inlineFunctionCallIntoMValue(
     SMLoc callLoc, ASTDecl &callee, ParamBindArrayAttr inputParams,
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues, IREmitter &emitter) {
   auto funcOp = cast<LIT::FuncOp>(callee);
@@ -1398,35 +1400,34 @@ AnyValue CallableValue::inlineFunctionCallIntoMValue(
   if (!inputParams.empty())
     return {};
 
-  // Resolve the body to type check and generate the IR we need for inlining.
-  if (failed(emitter.getDeclResolver().resolveFully(callee, callLoc)))
-    return {};
-
   // We aren't allowed to toss away debug information.  If we have "nodebug" or
   // are emitting into a parameter context, then we are allowed to try this.
   if (funcOp.getAlwaysInlineLevel() != AlwaysInlineLevel::EnabledNoDebug &&
       emitter.builder)
     return {};
 
-  // Perform parameter substitution if there are input parameters.
-  // TODO: ParameterEvaluator paramEvaluator(inputParams);
-
-  // Keep track of a mapping from the arguments (and interior results of
-  // operations) to their representation.
-  SmallDenseMap<Value, RValue> valueMapping;
-
-  // Prime the arguments of the callee.
-  auto &block = *funcOp.getBody();
-  for (auto [blockArg, value] :
-       llvm::zip(block.getArguments(), argumentValues)) {
-    auto rValue = value.ir.getIfRValue();
-    // We don't support folding by-ref arguments, we don't have an attribute
-    // model for them.
-    if (!rValue)
+  // We don't support folding by-ref or dynamic arguments and we only support
+  // folding simple constants because we don't want to build massive parameter
+  // expressions based on the internals of function calls.
+  for (auto argValue : argumentValues) {
+    auto mValue = argValue.ir.getIfMValue();
+    if (!mValue || !ParameterAttr::isSimpleConstant(mValue.get()))
       return {};
-    valueMapping[blockArg] = rValue;
   }
 
+  // Keep track of a mapping from the arguments (and interior results of
+  // operations) to their representation, start with the input arguments.
+  SmallDenseMap<Value, MValue> valueMapping;
+  auto &block = *funcOp.getBody();
+  for (auto [blockArg, value] : llvm::zip(block.getArguments(), argumentValues))
+    valueMapping[blockArg] = value.ir.getIfMValue();
+
+  // Resolve the body to type check and generate the IR we need for inlining.
+  if (failed(emitter.getDeclResolver().resolveFully(callee, callLoc)))
+    return {};
+
+  // Perform parameter substitution if there are input parameters.
+  // TODO: ParameterEvaluator paramEvaluator(inputParams);
   SmallVector<Attribute> operandAttrs;
   SmallVector<OpFoldResult> foldResults;
   SmallVector<ParamConstantOp> materializedConstants;
@@ -1468,11 +1469,7 @@ AnyValue CallableValue::inlineFunctionCallIntoMValue(
     for (auto operand : op.getOperands()) {
       auto &entry = valueMapping[operand];
       assert(entry && "Value mapping broken");
-      // If the input isn't an MValue then it is an error, let the caller
-      // diagnose it.
-      if (!entry.getIfMValue())
-        return {};
-      operandAttrs.push_back(entry.getIfMValue().get());
+      operandAttrs.push_back(entry.get());
     }
 
     // Otherwise, bail out and allow the normal call procssing logic to
@@ -1484,8 +1481,10 @@ AnyValue CallableValue::inlineFunctionCallIntoMValue(
     assert(foldResults.size() == op.getNumResults());
     for (auto [result, value] : llvm::zip(op.getResults(), foldResults)) {
       PointerUnion<Attribute, Value> puValue = value;
+      // If the fold says the result is equal to one of the inputs, use the
+      // known value from our mapping.
       if (auto drVal = dyn_cast<Value>(puValue))
-        valueMapping[result] = DRValue(drVal);
+        valueMapping[result] = valueMapping[drVal];
       else {
         auto attr = dyn_cast<TypedAttr>(cast<Attribute>(puValue));
         assert(attr &&
