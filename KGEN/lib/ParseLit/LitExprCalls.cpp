@@ -533,11 +533,14 @@ OverloadFitness OverloadFitness::evaluate(
       continue;
     }
 
-    // TODO: Consider default arguments as well, it bumps # allowed, but not #
-    // required arguments.
     ++minRequiredArgs;
     ++maxAllowedargs;
   }
+
+  // One less required argument for each argument that has a default value we
+  // can use instead.
+  if (DefaultArgumentArrayAttr defaults = signature.getDefaultArguments())
+    minRequiredArgs -= defaults.size();
 
   if (operands.size() < minRequiredArgs) {
     // Tailor the diagnostic when more args are allowed.
@@ -567,8 +570,15 @@ OverloadFitness OverloadFitness::evaluate(
       // with zero values no problem.
       if (uint8_t(expectedConvention & ValueInputConvention::VarArg))
         break;
-      // TODO: If this argument is defaulted, take the value.
-      llvm_unreachable("should count argument mismatches above");
+      // We don't need a provided value for this index if we can use a default
+      // value, which has already been converted to the expected type.
+      if (signature.getDefaultArguments() &&
+          providedValueIdx ==
+              signature.getDefaultArguments().front().getIndexValue())
+        // In the callee, arguments with default values must be followed only by
+        // other arguments with default values, so we do not need to enumerate
+        // any more of the callee arguments.
+        break;
     }
 
     // Otherwise we'll check the expected type against one (or more in the case
@@ -1173,6 +1183,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   // get filled in here.
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   size_t nextOperandIdx = 0;
+  size_t nextDefaultIdx = 0;
   for (auto [expectedTypeX, conventionX] : llvm::zip(
            calleeSig.getValueInputs(), calleeSig.getValueInputConventions())) {
     // Work around lambda not being able to reference bindings.
@@ -1181,8 +1192,6 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     // If we ran out of operands, fulfill this with a default value or empty
     // variadic list.
     if (nextOperandIdx == operands.size()) {
-      // TODO: Default arguments.  Note that variadics cannot be defaulted.
-
       // Varargs arguments are fulfilled with an empty !pop.variadic list.
       if (uint8_t(convention & ValueInputConvention::VarArg)) {
         auto variadic = KGEN::VariadicAttr::get(
@@ -1190,7 +1199,13 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
         argumentValues.push_back({MValue(variadic), callNode});
         continue;
       }
-      llvm_unreachable("must have a value");
+      // Otherwise, apply the default argument. We've ensured above that we have
+      // a default argument for each missing operand.
+      argumentValues.push_back(
+          {MValue(calleeSig.getDefaultArguments()[nextDefaultIdx].getValue()),
+           callNode});
+      ++nextDefaultIdx;
+      continue;
     }
 
     // Otherwise, we're applying one or more arguments to this.
