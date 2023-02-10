@@ -32,6 +32,8 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
 // LITFuncOp
 //===----------------------------------------------------------------------===//
 
+// FIXME: Interfaces don't have bodies.  When they go away, we should remove
+// NoTerminator and simplify FuncOp::verifyRegions to remove its check.
 def LIT_FuncOp : LITOp<"func", [
     FunctionOpInterface, Symbol, SymbolTable, NoTerminator, SingleBlock,
     DeclareOpInterfaceMethods<CallableOpInterface>,

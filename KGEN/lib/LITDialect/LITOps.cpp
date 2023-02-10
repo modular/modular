@@ -286,8 +286,12 @@ LogicalResult LIT::FuncOp::verifyRegions() {
     return success();
   }
 
-  // Generators must have non-empty bodies terminated by a return.
-  if (getFunctionBody().empty())
+  // FIXME: Interfaces don't have bodies so we can't rely on ODS verification of
+  // the terminator.  When they go away, we should remove
+  // 'NoTerminator' and remove this check.
+
+  // Functions must have non-empty bodies with a terminator.
+  if (getFunctionBody().empty() || getBody()->empty())
     return emitOpError("expected non-empty function body");
   if (!getBody()->back().hasTrait<OpTrait::IsTerminator>())
     return emitOpError("expected a terminator");
