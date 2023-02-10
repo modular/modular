@@ -136,16 +136,17 @@ fn test(a&: AlwaysInlineByRef):
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.func @"defaultArgument
-# CHECK-SAME: %b: !kgen.declref<@"$Int"::@Int> = #lit.struct<{value: scalar<index> = 42}>)
-fn defaultArgument(a: Int, b: Int = 42) -> Int:
+# CHECK-SAME: %c: !kgen.declref<@"$Int"::@Int> = #lit.struct<{value: scalar<index> = 5}>)
+fn defaultArgument(a: Int, b: Int = 3, c: Int = 5) -> Int:
   return a + b
 
 # CHECK: lit.func @"callDefaultArgument
 fn callDefaultArgument(x: Int) -> Int:
-  # CHECK-NEXT: %[[ARG:.*]] = kgen.param.constant{{.*}} = 42
-  # CHECK-NEXT: kgen.call {{.*}}defaultArgument{{.*}}(%x, %[[ARG]])
+  # CHECK-NEXT: %[[ARG1:.*]] = kgen.param.constant{{.*}} = 3
+  # CHECK-NEXT: %[[ARG2:.*]] = kgen.param.constant{{.*}} = 5
+  # CHECK-NEXT: kgen.call {{.*}}defaultArgument{{.*}}(%x, %[[ARG1]], %[[ARG2]])
   let a = defaultArgument(x)
-  # CHECK: kgen.call {{.*}}defaultArgument{{.*}}(%x, %x)
+  # CHECK: kgen.call {{.*}}defaultArgument{{.*}}(%x, %x, {{.*}})
   let b = defaultArgument(x, x)
   return a + b
 
@@ -156,7 +157,7 @@ fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
 
 # CHECK: lit.func @"referencesDefaultArgumentFunction
 fn referencesDefaultArgumentFunction():
-    # CHECK: %f {{.*}} : !kgen.signature<(!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$Int"::@Int> = #lit.struct<{value: scalar<index> = 42}>)
+    # CHECK: %f {{.*}} : !kgen.signature<(!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$Int"::@Int> = #lit.struct<{value: scalar<index> = 3}>, {{.*}} = 5}>)
     let f = defaultArgument
 
 struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:

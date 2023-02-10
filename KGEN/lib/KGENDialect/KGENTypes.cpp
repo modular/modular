@@ -362,18 +362,17 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   if (metadata.getInputConventions().size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
 
-  DefaultArgumentArrayAttr defaults = metadata.getDefaultArguments();
+  DefaultArgumentsAttr defaults = metadata.getDefaultArguments();
   if (defaults) {
-    SmallDenseMap<int64_t, TypedAttr> defaultAttrs;
-    for (const DefaultArgumentAttr &def : defaults)
-      defaultAttrs.insert({def.getIndex().getInt(), def.getValue()});
-
-    for (auto [idx, type] : llvm::enumerate(values.getInputs())) {
-      auto def = defaultAttrs.find(idx);
-      if (def != defaultAttrs.end() && type != def->second.getType())
-        return emitError() << "argument #" << idx << " has type " << type
+    for (auto [defaultsIndex, value] : llvm::enumerate(defaults.getValues())) {
+      size_t index = values.getInputs().size() - defaults.getValues().size() +
+                     defaultsIndex;
+      Type expected = values.getInputs()[index];
+      if (value.getType() != expected) {
+        return emitError() << "argument #" << index << " has type " << expected
                            << " but default argument has type "
-                           << def->second.getType();
+                           << value.getType();
+      }
     }
   }
 

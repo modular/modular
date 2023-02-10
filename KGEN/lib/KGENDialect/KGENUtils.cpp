@@ -1003,12 +1003,11 @@ parseElementsWithMetadata(AsmParser &p, function_ref<ParseResult()> parseElt,
                           MetadataAttr &metadata) {
   // Parse an element list with input effects and default values.
   SmallVector<ValueInputConvention> inputConventions;
-  SmallVector<DefaultArgumentAttr> defaults;
+  SmallVector<TypedAttr> defaults;
   auto parseArg = [&]() -> ParseResult {
     if (parseElt())
       return failure();
 
-    size_t index = inputConventions.size();
     StringRef effectStr;
     llvm::SMLoc loc = p.getCurrentLocation();
     if (succeeded(p.parseOptionalKeyword(&effectStr))) {
@@ -1025,7 +1024,7 @@ parseElementsWithMetadata(AsmParser &p, function_ref<ParseResult()> parseElt,
       TypedAttr value;
       if (parseParamValueDefaultingToIndex(p, value))
         return failure();
-      defaults.push_back(DefaultArgumentAttr::get(index, value));
+      defaults.push_back(value);
     }
     return success();
   };
@@ -1050,11 +1049,11 @@ parseElementsWithMetadata(AsmParser &p, function_ref<ParseResult()> parseElt,
       break;
   }
 
-  metadata = MetadataAttr::get(p.getContext(), inputConventions,
-                               defaults.empty() ? DefaultArgumentArrayAttr{}
-                                                : DefaultArgumentArrayAttr::get(
-                                                      p.getContext(), defaults),
-                               effect);
+  metadata = MetadataAttr::get(
+      p.getContext(), inputConventions,
+      defaults.empty() ? DefaultArgumentsAttr{}
+                       : DefaultArgumentsAttr::get(p.getContext(), defaults),
+      effect);
   return success();
 }
 
@@ -1063,8 +1062,7 @@ static void printElementsWithMetadata(AsmPrinter &p,
                                       function_ref<void(unsigned)> printElt,
                                       MetadataAttr metadata) {
   p << '(';
-  DefaultArgumentArrayAttr defaults = metadata.getDefaultArguments();
-  size_t defaultIndex = 0;
+  DefaultArgumentsAttr defaults = metadata.getDefaultArguments();
   llvm::interleaveComma(
       llvm::enumerate(metadata.getInputConventions()), p, [&](auto it) {
         printElt(it.index());
@@ -1074,11 +1072,11 @@ static void printElementsWithMetadata(AsmPrinter &p,
         // If a default argument value has been provided for the argument at
         // this index, print an `=`, followed by the value.
         if (defaults) {
-          const DefaultArgumentAttr &def = defaults[defaultIndex];
-          if (it.index() == def.getIndexValue()) {
+          size_t defaultIndex = metadata.getInputConventions().size() -
+                                defaults.getValues().size();
+          if (it.index() >= defaultIndex) {
             p << " = ";
-            printParamValue(p, def.getValue());
-            ++defaultIndex;
+            printParamValue(p, defaults.getValues()[it.index() - defaultIndex]);
           }
         }
       });

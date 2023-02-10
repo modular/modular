@@ -1380,7 +1380,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // Resolve the result type and any argument types that are present, leaving
   // any unspecified types null.
   SmallVector<Type> argTypes;
-  SmallVector<DefaultArgumentAttr> defaults;
+  SmallVector<TypedAttr> defaults;
   for (auto [idx, arg] : llvm::enumerate(args)) {
     ASTType type;
     if (arg.typeExpr) {
@@ -1410,8 +1410,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
           initValue, type, " in a default argument initializer");
       if (!value)
         return failure();
-
-      defaults.push_back(DefaultArgumentAttr::get(idx, value));
+      defaults.push_back(value);
     }
   }
 
@@ -1519,9 +1518,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       builder.getFunctionType(argTypes, {resultType.mlirType}),
       builder.getAttr<MetadataAttr>(
           inputConventions,
-          defaults.empty()
-              ? DefaultArgumentArrayAttr{}
-              : builder.getAttr<DefaultArgumentArrayAttr>(defaults),
+          defaults.empty() ? DefaultArgumentsAttr{}
+                           : builder.getAttr<DefaultArgumentsAttr>(defaults),
           funcOp.getMetadata().getFnEffects()));
   if (!signature)
     return failure();
