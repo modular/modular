@@ -10,26 +10,16 @@ from Range import range
 
 
 struct Benchmark:
-    alias _default_num_warmup = 10
-    alias _default_max_iters = 100_000
-    alias _default_min_time_ns = 500_000_000  # 500ms
-    alias _default_max_time_ns = 1000_000_000  # 1s
-
     var num_warmup: Int
     var max_iters: Int
     var min_time_ns: Int
     var max_time_ns: Int
 
-    fn __new__() -> Benchmark:
-        return Benchmark(
-            _default_num_warmup,
-            _default_max_iters,
-            _default_min_time_ns,
-            _default_max_time_ns,
-        )
-
     fn __new__(
-        num_warmup: Int, max_iters: Int, min_time_ns: Int, max_time_ns: Int
+        num_warmup: Int = 10,
+        max_iters: Int = 100_000,
+        min_time_ns: Int = 500_000_000,  # 500ms
+        max_time_ns: Int = 1000_000_000,  # 1s
     ) -> Benchmark:
         """Constructs a benchmark object that given a function will benchmark it
         until min_tims_ns has elapsed and either max_time_ns OR max_iters is hit.
