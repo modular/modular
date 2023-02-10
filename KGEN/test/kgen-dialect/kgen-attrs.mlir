@@ -1,7 +1,7 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
-// CHECK: #kgen.metadata<[byref, byval], [<0 : i64 = 13 : index>], throws>
-"someop"() {metadata = #kgen.metadata<[byref, byval], [<0 : i64 = 13 : index>], throws>} : () -> ()
+// CHECK: #kgen.metadata<[byref, byval], [13 : index, 17 : i64], throws>
+"someop"() {metadata = #kgen.metadata<[byref, byval], [13 : index, 17: i64], throws>} : () -> ()
 
 // CHECK: #kgen.metadata<[], [], none>
 "someop"() {metadata = #kgen.metadata<[], [], none>} : () -> ()

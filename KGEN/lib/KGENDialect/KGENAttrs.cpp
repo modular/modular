@@ -84,55 +84,17 @@ static void printConstraintLoc(AsmPrinter &printer, Location loc) {
 }
 
 //===----------------------------------------------------------------------===//
-// DefaultArgumentAttr
-//===----------------------------------------------------------------------===//
-
-/// Reject default arguments with negative indices.
-LogicalResult
-DefaultArgumentAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                            IntegerAttr index, TypedAttr value) {
-  if (index.getValue().isNegative())
-    return emitError() << "index value " << index.getInt()
-                       << " cannot be negative";
-
-  return success();
-}
-
-/// Reject any default argument array that does not contain zero or more indices
-/// in sequential ascending order. For example, indices such as `(2, 1)` and
-/// `(0, 0)` are invalid.
-LogicalResult
-DefaultArgumentArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                 ArrayRef<DefaultArgumentAttr> attrs) {
-  for (auto [i, attr] : llvm::enumerate(attrs)) {
-    if (i + 1 == attrs.size())
-      break;
-
-    size_t index = attr.getIndexValue();
-    size_t nextIndex = attrs[i + 1].getIndexValue();
-    if (index + 1 != nextIndex)
-      return emitError()
-             << "default argument index value of " << nextIndex
-             << " is not in sequential order with previous index value of "
-             << index;
-  }
-
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // MetadataAttr
 //===----------------------------------------------------------------------===//
 
 MetadataAttr MetadataAttr::get(MLIRContext *ctx, unsigned numInputs) {
-  return get(ctx, SmallVector<ValueInputConvention>(numInputs),
-             DefaultArgumentArrayAttr{}, FnEffects::None);
+  return get(ctx, SmallVector<ValueInputConvention>(numInputs), {},
+             FnEffects::None);
 }
 
 MetadataAttr MetadataAttr::get(MLIRContext *ctx, unsigned numInputs,
                                FnEffects effects) {
-  return get(ctx, SmallVector<ValueInputConvention>(numInputs),
-             DefaultArgumentArrayAttr{}, effects);
+  return get(ctx, SmallVector<ValueInputConvention>(numInputs), {}, effects);
 }
 
 bool MetadataAttr::isDefault() {

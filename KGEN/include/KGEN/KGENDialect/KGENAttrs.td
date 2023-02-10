@@ -201,43 +201,32 @@ def ConstraintArrayAttr
     : KGEN_ArrayOfAttrsAttr<"ConstraintArray", "constraints", "ConstraintAttr">;
 
 //===----------------------------------------------------------------------===//
-// DefaultArgumentAttr
+// DefaultArgumentsAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_DefaultArgumentAttr : KGENAttr<"DefaultArgument", "default.argument"> {
-  let summary = "A default argument value, such as for a function argument.";
+def KGEN_DefaultArgumentsAttr : KGENAttr<"DefaultArguments", "default.arguments"> {
+  let summary = "An array of default argument values, such as for a function.";
   let description = [{
-    This attribute represents a default argument value (such as for a function
-    that takes arguments), which is a pair of (1) the index of the argument with
-    a default value, and (2) the value that is used by default.
+    This attribute represents an array of default argument values (such as for a
+    function that takes arguments).
+
+    N.B.: Because we can be certain that `N` number of default arguments can
+    only apply to the last `N` arguments in a function signature, there is no
+    need to store an index for any of these default argument values.
+
+    Example:
+
+    ```mlir
+    // Two default arguments.
+    #kgen<default.arguments[1 : i32, 3.140000e+00 : f32]>
+
+    // An empty sequence of default arguments.
+    #kgen<default.arguments[]>
+    ```
   }];
 
-  let parameters = (ins "IntegerAttr":$index, "TypedAttr":$value);
-  let assemblyFormat = "`<` $index `=` $value `>`";
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "int64_t":$index,
-                                        "TypedAttr":$value), [{
-      auto *context = value.getContext();
-      return get(context, IntegerAttr::get(IndexType::get(context), index),
-                 value);
-    }]>,
-  ];
-
-  let extraClassDeclaration = [{
-    /// Returns the argument index this default argument value is meant to apply
-    /// to.
-    size_t getIndexValue() const { return getIndex().getInt(); }
-  }];
-
-  let genVerifyDecl = 1;
-}
-
-/// An array of DefaultArgumentAttr's.
-def KGEN_DefaultArgumentArrayAttr
-    : KGEN_ArrayOfAttrsAttr<"DefaultArgumentArray", "default.arguments",
-                  "DefaultArgumentAttr"> {
-  let genVerifyDecl = 1;
+  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values);
+  let assemblyFormat = "`[` (`]`) : ($values^ `]`)?";
 }
 
 //===----------------------------------------------------------------------===//
@@ -268,7 +257,7 @@ def KGEN_MetadataAttr : KGENAttr<"Metadata", "metadata"> {
 
   let parameters = (ins
     OptionalArrayRefParameter<"ValueInputConvention">:$inputConventions,
-    OptionalParameter<"DefaultArgumentArrayAttr">:$defaultArguments,
+    OptionalParameter<"DefaultArgumentsAttr">:$defaultArguments,
     "FnEffects":$fnEffects
   );
   let assemblyFormat = [{
