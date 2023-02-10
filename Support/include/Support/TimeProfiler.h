@@ -154,6 +154,10 @@ void timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &OS);
 /// Data produced is in CSV format.
 void timeTraceProfilerWriteStat(llvm::raw_pwrite_stream &OS);
 
+/// Write raw event stream to output stream.
+/// Data is textual, one line per event.
+void timeTraceProfilerWriteEventStream(llvm::raw_pwrite_stream &OS);
+
 /// Write profiling data to a file.
 /// The function will write to \p PreferredFileName if provided, if not
 /// then will write to \p FallbackFileName appending .time-trace.

@@ -28,6 +28,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
@@ -240,6 +241,83 @@ struct TimeTraceProfiler {
     }
   }
 
+  /// A more convenient representation for the event stream output.
+  struct Event {
+    int64_t StartUs;
+    uint64_t Tid;
+    int64_t DurUs;
+    std::string Name;
+    std::string Detail;
+    int64_t EndUs;
+
+    Event() = default;
+
+    /// Event representing time trace profiling entry
+    Event(const TimeTraceProfilerEntry<true> &E, uint64_t Tid,
+          TimePointType StartTime)
+        : StartUs(E.getFlameGraphStartUs(StartTime)), Tid(Tid),
+          DurUs(E.getFlameGraphDurUs()), Name(E.Name), Detail(E.Detail),
+          EndUs(E.getFlameGraphStartUs(StartTime) + E.getFlameGraphDurUs()) {}
+
+    /// Event representing the 'end' of that event.
+    Event toEnd() {
+      Event Result;
+      Result.StartUs = EndUs;
+      Result.Tid = Tid;
+      Result.DurUs = -1;
+      Result.Name = Name;
+      Result.Detail = Detail;
+      Result.EndUs = EndUs;
+      return Result;
+    }
+
+    bool operator<(const Event &That) const {
+      return std::tie(StartUs, Tid, DurUs, Name, Detail) <
+             std::tie(That.StartUs, That.Tid, That.DurUs, That.Name,
+                      That.Detail);
+    }
+
+    void write(llvm::raw_pwrite_stream &OS) const {
+      OS << llvm::format("%6d  %10d  ", Tid, StartUs);
+      if (DurUs >= 0)
+        OS << llvm::format("%10d  ", DurUs);
+      else
+        OS << "       END  ";
+      OS << Name;
+      if (!Detail.empty())
+        OS << "/" << Detail;
+      OS << "\n";
+    }
+  };
+
+  // Write profile as a stream of events.
+  void writeEventStream(llvm::raw_pwrite_stream &OS) {
+    // Acquire Mutex as reading ThreadTimeTraceProfilerInstances.
+    auto &Instances = getTimeTraceProfilerInstances();
+    std::lock_guard<std::mutex> Lock(Instances.Lock);
+    assert(Stack.empty() &&
+           "All profiler sections should be ended when calling write");
+    assert(llvm::all_of(Instances.List,
+                        [](const auto &TTP) { return TTP->Stack.empty(); }) &&
+           "All profiler sections should be ended when calling write");
+    std::vector<Event> Events;
+    for (const TimeTraceProfilerEntry<true> &E : Entries) {
+      Events.emplace_back(E, Tid, StartTime);
+      Events.emplace_back(Events.back().toEnd());
+    }
+    for (const TimeTraceProfiler *TTP : Instances.List) {
+      for (const TimeTraceProfilerEntry<true> &E : TTP->Entries) {
+        Events.emplace_back(E, TTP->Tid, StartTime);
+        Events.emplace_back(Events.back().toEnd());
+      }
+    }
+    std::sort(Events.begin(), Events.end());
+    OS << "   Tid     StartUs       DurUs  Name/Detail\n";
+    OS << "------  ----------  ----------  ------------------------------\n";
+    for (const auto &Event : Events)
+      Event.write(OS);
+  }
+
   SmallVector<TimeTraceProfilerEntry<true>, 16> Stack;
   SmallVector<TimeTraceProfilerEntry<true>, 128> Entries;
   llvm::StringMap<CountAndDurationType> CountAndTotalPerName;
@@ -310,6 +388,12 @@ void M::timeTraceProfilerWriteStat(llvm::raw_pwrite_stream &OS) {
   TimeTraceProfilerInstance->writeStat(OS);
 }
 
+void M::timeTraceProfilerWriteEventStream(llvm::raw_pwrite_stream &OS) {
+  assert(TimeTraceProfilerInstance != nullptr &&
+         "Profiler should be initialized");
+  TimeTraceProfilerInstance->writeEventStream(OS);
+}
+
 ErrorOrSuccess M::timeTraceProfilerWrite(StringRef PreferredFileName,
                                          StringRef FallbackFileName) {
   assert(TimeTraceProfilerInstance != nullptr &&
@@ -320,22 +404,39 @@ ErrorOrSuccess M::timeTraceProfilerWrite(StringRef PreferredFileName,
   if (Path.empty())
     Path = FallbackFileName == "-" ? "out" : FallbackFileName.str();
 
-  // Write time trace.
-  std::string TracePath = Path == "-" ? Path : Path + ".time-trace";
   std::error_code EC;
-  llvm::raw_fd_ostream OSTrace(TracePath, EC, llvm::sys::fs::OF_TextWithCRLF);
-  if (EC)
-    return Error(Twine("Could not open ") + TracePath + "(" +
-                 Twine(EC.message()) + ")");
-  timeTraceProfilerWriteTrace(OSTrace);
 
-  // Write time statistics.
-  std::string StatPath = Path == "-" ? Path : Path + ".time-stat.csv";
-  llvm::raw_fd_ostream OSStat(StatPath, EC, llvm::sys::fs::OF_TextWithCRLF);
-  if (EC)
-    return Error(Twine("Could not open ") + StatPath + "(" +
-                 Twine(EC.message()) + ")");
-  timeTraceProfilerWriteStat(OSStat);
+  {
+    // Write time trace.
+    std::string TracePath = Path == "-" ? Path : Path + ".time-trace";
+    llvm::raw_fd_ostream OSTrace(TracePath, EC, llvm::sys::fs::OF_TextWithCRLF);
+    if (EC)
+      return Error(Twine("Could not open ") + TracePath + "(" +
+                   Twine(EC.message()) + ")");
+    timeTraceProfilerWriteTrace(OSTrace);
+  }
+
+  {
+    // Write time statistics.
+    std::string StatPath = Path == "-" ? Path : Path + ".time-stat.csv";
+    llvm::raw_fd_ostream OSStat(StatPath, EC, llvm::sys::fs::OF_TextWithCRLF);
+    if (EC)
+      return Error(Twine("Could not open ") + StatPath + "(" +
+                   Twine(EC.message()) + ")");
+    timeTraceProfilerWriteStat(OSStat);
+  }
+
+  {
+    // Write the raw event stream.
+    std::string EventStreamPath =
+        Path == "-" ? Path : Path + ".time-events.txt";
+    llvm::raw_fd_ostream OSEvents(EventStreamPath, EC,
+                                  llvm::sys::fs::OF_TextWithCRLF);
+    if (EC)
+      return Error(Twine("Could not open ") + EventStreamPath + "(" +
+                   Twine(EC.message()) + ")");
+    timeTraceProfilerWriteEventStream(OSEvents);
+  }
 
   return success();
 }
