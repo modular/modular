@@ -130,6 +130,15 @@ fn pleaseInline() -> __mlir_type.index:
 fn defaultArgument(a: Int, b: Int = 42) -> Int:
   return a + b
 
+# CHECK: lit.func @"callDefaultArgument
+fn callDefaultArgument(x: Int) -> Int:
+  # CHECK-NEXT: %[[ARG:.*]] = kgen.param.constant{{.*}} = 42
+  # CHECK-NEXT: kgen.call {{.*}}defaultArgument{{.*}}(%x, %[[ARG]])
+  let a = defaultArgument(x)
+  # CHECK: kgen.call {{.*}}defaultArgument{{.*}}(%x, %x)
+  let b = defaultArgument(x, x)
+  return a + b
+
 # CHECK: lit.func @"defaultArgumentReferencesParameter
 # CHECK-SAME: (%a: !kgen.declref<@"$Int"::@Int> = apply(:(!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$Int"::@Int> @"$Int"::@Int::@"__add__($Int::Int,$Int::Int)", p, #lit.struct<{value: scalar<index> = 87}>))
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
