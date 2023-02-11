@@ -40,15 +40,9 @@ fn test_broadcast_same_shape():
         output_shape,
         DType.index.value,
     ].stack_allocation()
+    memset_zero(output.data, 2)
 
-    memset_zero[DType.index.value](output.data, 2)
-
-    broadcast[
-        3,
-        output_shape,
-        input_shape,
-        DType.index.value,
-    ](output, input)
+    broadcast(output, input)
     # output tensor will have the form:
     # [[[1], [2]]]
 
@@ -88,15 +82,9 @@ fn test_broadcast_single_axis():
         output_shape,
         DType.index.value,
     ].stack_allocation()
-
     memset_zero(output.data, 6)
 
-    broadcast[
-        2,
-        output_shape,
-        input_shape,
-        DType.index.value,
-    ](output, input)
+    broadcast(output, input)
     # output tensor will have the form:
     # [[1, 2], [1, 2], [1, 2]]
 
@@ -144,15 +132,9 @@ fn test_broadcast_multi_axes():
         output_shape,
         DType.index.value,
     ].stack_allocation()
-
     memset_zero(output.data, 16)
 
-    broadcast[
-        3,
-        output_shape,
-        input_shape,
-        DType.index.value,
-    ](output, input)
+    broadcast(output, input)
     # output tensor will have the form:
     # [[[1, 1, 1], [2, 2, 2]],
     #  [[1, 1, 1], [2, 2, 2]]]
@@ -217,15 +199,9 @@ fn test_broadcast_multi_axes_nested():
         output_shape,
         DType.index.value,
     ].stack_allocation()
-
     memset_zero(output.data, 32)
 
-    broadcast[
-        5,
-        output_shape,
-        input_shape,
-        DType.index.value,
-    ](output, input)
+    broadcast(output, input)
 
     # CHECK: 1
     print(output[0, 0, 0, 0, 0])

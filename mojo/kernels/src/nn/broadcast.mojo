@@ -134,7 +134,7 @@ fn broadcast[
         let src_ptr = input.data
         let dst_ptr = output.data
         let elem_size = sizeof[__mlir_type[`!pop.scalar<`, type, `>`]]()
-        memcpy[type](dst_ptr, src_ptr, input.size() * elem_size)
+        memcpy(dst_ptr, src_ptr, input.size() * elem_size)
     else:
         alias init_axis = 0
         # imaginary axis before 0
@@ -222,7 +222,7 @@ fn _tile_1d[
     let bytes_to_copy = tile_num_elems * elem_bytes
     var dst_ptr = init_dst_ptr
     for i in range(n):
-        memcpy[type](dst_ptr, src_ptr, bytes_to_copy)
+        memcpy(dst_ptr, src_ptr, bytes_to_copy)
         dst_ptr = dst_ptr.offset(tile_num_elems)
 
 
@@ -248,7 +248,7 @@ fn broadcast_impl_iter[
     let output_axis_stride = output_prev_axis_stride // output.dim[axis]()
     if Int(axis) == rightmost_broadcast_axis:
         let elems_to_copy = input_axis_stride
-        _tile_1d[type](
+        _tile_1d(
             output.data.offset(output_offset),
             input.data.offset(input_offset),
             input_axis_stride,  # elems_to_copy
@@ -277,7 +277,7 @@ fn broadcast_impl_iter[
         # --> [[1, 1, 1], [1, 1, 1]]   after duplicating data in output
         if input.dim[axis]() != output.dim[axis]():
             let output_tile_start = output.data.offset(output_offset)
-            _tile_1d[type](
+            _tile_1d(
                 output_tile_start.offset(
                     output_axis_stride
                 ),  # 1st tile is already there
