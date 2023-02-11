@@ -1493,11 +1493,13 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
     defOps.insert(it->getSecond().defOp);
   }
   llvm::append_range(opsToRewrite, llvm::reverse(defOps.getArrayRef()));
-  for (Operation *op : uses.paramOps) {
-    if (op->getParentRegion() != toProcess)
+  for (Operation *paramOp : uses.paramOps) {
+    // Check if this op is in a region that is a child of the region we care
+    // about. If not, don't process it.
+    if (!toProcess->isAncestor(paramOp->getParentRegion()))
       continue;
 
-    opsToRewrite.push_back(op);
+    opsToRewrite.push_back(paramOp);
   }
   processScope(parent, opsToRewrite);
 

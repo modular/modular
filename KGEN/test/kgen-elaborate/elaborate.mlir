@@ -1603,6 +1603,7 @@ kgen.generator @nestedConstexprIf() {
   kgen.param.declare cond_var = <32>
 
   // CHECK-NEXT: "should.appear"
+  // CHECK-NOT: "should.not.appear"
   %0 = kgen.param.if <lt(cond_var, 10) -> next> -> index {
     %1 = "should.not.appear"() : () -> index
     kgen.param.declare next_lt = <add(cond_var, 10)>
@@ -1621,6 +1622,40 @@ kgen.generator @nestedConstexprIf() {
   }
   // CHECK-NEXT: param.constant = <52>
   %4 = kgen.param.constant = <next>
+
+  kgen.return
+}
+
+// CHECK-LABEL: @nestedConstexprIf2()
+kgen.generator @nestedConstexprIf2() {
+  kgen.param.declare cond_var = <32>
+
+  %0 = kgen.param.if <lt(cond_var, 10) -> next> -> index {
+    %1 = "should.not.appear"() : () -> index
+    kgen.param.declare next_lt = <add(cond_var, 10)>
+    kgen.param.yield<next_lt> %1 : index
+  } else {
+    // CHECK-NEXT: param.constant: i1 = <1>
+    %condition = kgen.param.constant : i1 = <gt(cond_var, 30)>
+    // CHECK-NEXT: hlcf.if
+    %3 = hlcf.if %condition -> index {
+      // CHECK-NEXT: "should.appear"
+      %4 = "should.appear"() : () -> index
+      kgen.param.declare next_inner = <35>
+      // CHECK-NEXT: hlcf.yield
+      hlcf.yield %4 : index
+      // CHECK-NEXT: else
+    } else {
+      // CHECK-NEXT: "should.also.appear"
+      %4 = "should.also.appear"() : () -> index
+      // CHECK-NEXT: hlcf.yield
+      hlcf.yield %4 : index
+    }
+    // CHECK-NOT: param.yield
+    kgen.param.yield<next_inner> %3 : index
+  }
+  // CHECK: param.constant = <35>
+  %const = kgen.param.constant = <next>
 
   kgen.return
 }
@@ -1786,6 +1821,62 @@ kgen.generator @constexprIfEarlyExitWithParam2() -> index {
   %4 = kgen.param.constant = <32>
 
   kgen.return %1 : index
+}
+
+// -----
+
+kgen.generator @returnTrue() -> i1 {
+  %0 = kgen.param.constant: i1 = <1>
+  kgen.return %0 : i1
+}
+
+// CHECK-LABEL: @constexprIfFunctionCallCondition
+kgen.generator @constexprIfFunctionCallCondition() -> index {
+  // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
+  %1 = kgen.param.if <apply(:() -> i1 @returnTrue)> -> index {
+    %2 = "should.appear"() : () -> index
+    // CHECK-NEXT: kgen.return [[RES]]
+    kgen.param.yield %2 : index
+  } else {
+    %3 = "should.not.appear"() : () -> index
+    kgen.param.yield %3 : index
+  }
+
+  kgen.return %1 : index
+}
+
+kgen.generator @returnInputParam(%arg0: !pop.struct<scalar<bool>>) -> i1 {
+  %1 = pop.struct.extract %arg0[0] : !pop.struct<scalar<bool>>
+  %2 = pop.cast_to_builtin %1: !pop.scalar<bool> to i1
+  kgen.return %2 : i1
+}
+
+kgen.generator @returnTrueStruct() -> !pop.struct<scalar<bool>> {
+  %0 = kgen.param.constant: scalar<bool> = <<true>>
+  %1 = pop.struct.construct(%0) : !pop.struct<scalar<bool>>
+  kgen.return %1 : !pop.struct<scalar<bool>>
+}
+
+// CHECK-LABEL: @"ifFn
+kgen.generator @ifFn<true: !pop.struct<scalar<bool>>>() -> index {
+  // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
+  %1 = kgen.param.if <apply(:(!pop.struct<scalar<bool>>) -> i1 @returnInputParam, true)> -> index {
+    %2 = "should.appear"() : () -> index
+    // CHECK-NEXT: kgen.return [[RES]]
+    kgen.param.yield %2 : index
+  } else {
+    %3 = "should.not.appear"() : () -> index
+    kgen.param.yield %3 : index
+  }
+
+  kgen.return %1 : index
+}
+
+// CHECK-LABEL: @constexprIfFunctionCallCondition2
+kgen.generator @constexprIfFunctionCallCondition2() {
+  kgen.param.declare true: !pop.struct<scalar<bool>> = <apply(:() -> !pop.struct<scalar<bool>> @returnTrueStruct)>
+  %0 = kgen.call @ifFn<true: !pop.struct<scalar<bool>> = true>() : () -> index
+  kgen.return
 }
 
 // -----
