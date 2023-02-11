@@ -13,18 +13,7 @@ from Int import Int
 from IO import print
 from List import create_kgen_list
 from Memory import memset_zero
-from Transpose import _index2D
 from Tuple import StaticTuple
-
-
-fn _index3D(x: Int, y: Int, z: Int) -> StaticTuple[3, __mlir_type.index]:
-    return Index(x, y, z).as_tuple()
-
-
-fn _index5D(
-    x: Int, y: Int, z: Int, a: Int, b: Int
-) -> StaticTuple[5, __mlir_type.index]:
-    return Index(x, y, z, a, b).as_tuple()
 
 
 # CHECK-LABEL: test_broadcast_same_shape
@@ -42,8 +31,8 @@ fn test_broadcast_same_shape():
         input_shape,
         DType.index.value,
     ].stack_allocation()
-    input.__setitem__(_index3D(0, 0, 0), 1)
-    input.__setitem__(_index3D(0, 1, 0), 2)
+    input.__setitem__(Index(0, 0, 0), 1)
+    input.__setitem__(Index(0, 1, 0), 2)
 
     # Create a 3D tensor of shape (1, 2, 1)
     var output = NDBuffer[
@@ -90,8 +79,8 @@ fn test_broadcast_single_axis():
         DType.index.value,
     ].stack_allocation()
 
-    input.__setitem__(_index2D(0, 0), 1)
-    input.__setitem__(_index2D(0, 1), 2)
+    input.__setitem__(Index(0, 0), 1)
+    input.__setitem__(Index(0, 1), 2)
 
     # Create a 2D tensor of shape (3, 2)
     var output = NDBuffer[
@@ -146,8 +135,8 @@ fn test_broadcast_multi_axes():
         DType.index.value,
     ].stack_allocation()
 
-    input.__setitem__(_index3D(0, 0, 0), 1)
-    input.__setitem__(_index3D(0, 1, 0), 2)
+    input.__setitem__(Index(0, 0, 0), 1)
+    input.__setitem__(Index(0, 1, 0), 2)
 
     # Create a 3D tensor of shape (2, 2, 3)
     var output = NDBuffer[
@@ -213,14 +202,14 @@ fn test_broadcast_multi_axes_nested():
         DType.index.value,
     ].stack_allocation()
 
-    input.__setitem__(_index5D(0, 0, 0, 0, 0), 1)
-    input.__setitem__(_index5D(0, 0, 0, 0, 1), 2)
-    input.__setitem__(_index5D(0, 0, 1, 0, 0), 3)
-    input.__setitem__(_index5D(0, 0, 1, 0, 1), 4)
-    input.__setitem__(_index5D(1, 0, 0, 0, 0), 5)
-    input.__setitem__(_index5D(1, 0, 0, 0, 1), 6)
-    input.__setitem__(_index5D(1, 0, 1, 0, 0), 7)
-    input.__setitem__(_index5D(1, 0, 1, 0, 1), 8)
+    input.__setitem__(Index(0, 0, 0, 0, 0), 1)
+    input.__setitem__(Index(0, 0, 0, 0, 1), 2)
+    input.__setitem__(Index(0, 0, 1, 0, 0), 3)
+    input.__setitem__(Index(0, 0, 1, 0, 1), 4)
+    input.__setitem__(Index(1, 0, 0, 0, 0), 5)
+    input.__setitem__(Index(1, 0, 0, 0, 1), 6)
+    input.__setitem__(Index(1, 0, 1, 0, 0), 7)
+    input.__setitem__(Index(1, 0, 1, 0, 1), 8)
 
     # Create a 5D tensor of shape (2, 2, 2, 2, 2)
     var output = NDBuffer[

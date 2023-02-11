@@ -7,10 +7,9 @@
 from Assert import assert_param
 from Buffer import NDBuffer
 from DType import DType
-from Index import Index
+from Index import Index, StaticIntTuple
 from Int import Int
 from Range import range
-from Tuple import StaticTuple
 from TypeUtilities import rebind
 
 
@@ -67,15 +66,9 @@ fn gather_2D_axis_0[
             for k in range(output.dim[2]()):
                 output.__setitem__(
                     rebind[
-                        StaticTuple[
-                            3,
-                            __mlir_type.index,
-                        ],
-                        StaticTuple[
-                            output_rank,
-                            __mlir_type.index,
-                        ],
-                    ](Index(i, j, k).as_tuple()),
+                        StaticIntTuple[3],
+                        StaticIntTuple[output_rank],
+                    ](Index(i, j, k)),
                     input[idx, k],
                 )
 
@@ -111,15 +104,9 @@ fn gather_2D_axis_1[
                 let idx: Int = indices[j, k].value
                 output.__setitem__(
                     rebind[
-                        StaticTuple[
-                            3,
-                            __mlir_type.index,
-                        ],
-                        StaticTuple[
-                            output_rank,
-                            __mlir_type.index,
-                        ],
-                    ](Index(i, j, k).as_tuple()),
+                        StaticIntTuple[3],
+                        StaticIntTuple[output_rank],
+                    ](Index(i, j, k)),
                     input[i, idx],
                 )
 
@@ -154,15 +141,9 @@ fn gather_2D_input_1D_indices_axis_0[
             let idx: Int = indices[i].value
             output.__setitem__(
                 rebind[
-                    StaticTuple[
-                        2,
-                        __mlir_type.index,
-                    ],
-                    StaticTuple[
-                        output_rank,
-                        __mlir_type.index,
-                    ],
-                ](Index(i, j).as_tuple()),
+                    StaticIntTuple[2],
+                    StaticIntTuple[output_rank],
+                ](Index(i, j)),
                 input[idx, j],
             )
 
@@ -197,14 +178,8 @@ fn gather_2D_input_1D_indices_axis_1[
             let idx: Int = indices[j].value
             output.__setitem__(
                 rebind[
-                    StaticTuple[
-                        2,
-                        __mlir_type.index,
-                    ],
-                    StaticTuple[
-                        output_rank,
-                        __mlir_type.index,
-                    ],
-                ](Index(i, j).as_tuple()),
+                    StaticIntTuple[2],
+                    StaticIntTuple[output_rank],
+                ](Index(i, j)),
                 input[i, idx],
             )

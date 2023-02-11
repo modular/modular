@@ -128,7 +128,7 @@ struct ImageData[
             Returns:
                 The value stored at the given index position.
         """
-        return self.data.__getitem__(self._get_index(n, c, h, w).as_tuple())
+        return self.data.__getitem__(self._get_index(n, c, h, w))
 
     fn __setitem__(self, n: Int, c: Int, h: Int, w: Int, value: SIMD[1, type]):
         """Writes the underlying data buffer based on the tensor index and under-
@@ -141,7 +141,7 @@ struct ImageData[
                 w(Int): Index on the width dimension.
                 value(SIMD[1]): The value to store at the given index position.
         """
-        self.data.__setitem__(self._get_index(n, c, h, w).as_tuple(), value)
+        self.data.__setitem__(self._get_index(n, c, h, w), value)
 
 
 struct ConvShape:
@@ -800,7 +800,7 @@ struct PackIm2ColNCHW[
                         c_idx,
                         global_in_image_idx.__getitem__[0](),
                         global_in_image_idx.__getitem__[1](),
-                    ).as_tuple()
+                    )
                 )
 
             # Store image data to the corresponding output index.
@@ -827,7 +827,7 @@ struct PackIm2ColNCHW[
 
         # Store the simd vector.
         self.packed_matrix.simd_store[simd_size](
-            Index(out_n_outerIdx, out_k_idx, out_n_innerIdx).as_tuple(),
+            Index(out_n_outerIdx, out_k_idx, out_n_innerIdx),
             vec_data,
         )
 
@@ -880,7 +880,7 @@ struct PackIm2ColNCHW[
                         c_idx,
                         i_image_idx.__getitem__[0](),
                         i_image_idx.__getitem__[1](),
-                    ).as_tuple()
+                    )
                 )
 
             vector.__setitem__(vec_idx, element)
@@ -1543,9 +1543,7 @@ struct ConvIm2ColNCHW[
         dynamic gemm shapes from convolution shapes.
         """
         # Ouput shape [N, F, Ho, Wo]
-        let c_pointer = self.out._offset(
-            Index(self.batch_idx, 0, 0, 0).as_tuple()
-        )
+        let c_pointer = self.out._offset(Index(self.batch_idx, 0, 0, 0))
         self.c = NDBuffer[2, create_kgen_list_unknown[2](), type](
             c_pointer.address
         )
@@ -1702,7 +1700,7 @@ struct ConvNHWCInnerLoopFilterPacked[
                     hi_wi.__getitem__[0](),
                     hi_wi.__getitem__[1](),
                     r_s_c.__getitem__[2](),
-                ).as_tuple(),
+                ),
             )
 
             if hi_wi >= Index(0, 0) and hi_wi < Index(
@@ -1734,7 +1732,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         for row_idx in range(a_row_size):
             for col_idx in range(0, pack_inner_size, simd_size):
                 c_local.simd_store[simd_size](
-                    Index(row_idx, col_idx).as_tuple(),
+                    Index(row_idx, col_idx),
                     SIMD[simd_size, accum_type](0),
                 )
 
@@ -1770,8 +1768,8 @@ struct ConvNHWCInnerLoopFilterPacked[
                 let global_idx = Index(
                     global_idx_pair.__getitem__[0](),
                     global_idx_pair.__getitem__[1](),
-                ).as_tuple()
-                let local_idx = Index(row_idx, col_idx).as_tuple()
+                )
+                let local_idx = Index(row_idx, col_idx)
 
                 # Load data from original matrix C.
                 var c_data: SIMD[simd_size, accum_type] = 0
@@ -1831,8 +1829,8 @@ struct ConvNHWCInnerLoopFilterPacked[
                 let global_idx = Index(
                     global_idx_pair.__getitem__[0](),
                     global_idx_pair.__getitem__[1](),
-                ).as_tuple()
-                let local_idx = Index(row_idx, col_idx).as_tuple()
+                )
+                let local_idx = Index(row_idx, col_idx)
 
                 # Load data from original matrix C.
                 var c_data = c_local.simd_load[simd_size](local_idx)
@@ -1908,7 +1906,7 @@ struct ConvNHWCInnerLoopFilterPacked[
                         hi_wi.__getitem__[1](),
                         # C
                         rsc.__getitem__[2](),
-                    ).as_tuple()
+                    )
                 )
 
         return SIMD[1, value_type](0)
@@ -1948,7 +1946,7 @@ struct ConvNHWCInnerLoopFilterPacked[
         for fill_a_idx in range(a_row_size):
             var global_m = self.global_offset.M + fill_a_idx
             let a_val_scalar = self._load_a(
-                Index(global_m, global_k).as_tuple(), fill_a_idx
+                Index(global_m, global_k), fill_a_idx
             )
             let a_fill_val = SIMD[simd_size, value_type](a_val_scalar)
             local_a.simd_store[simd_size](fill_a_idx * simd_size, a_fill_val)
@@ -1956,15 +1954,13 @@ struct ConvNHWCInnerLoopFilterPacked[
         # Loop over local accumulator tiles.
         for col_idx in range(0, pack_inner_size, simd_size):
             let b_val = self.b_packed.simd_load[simd_size](
-                Index(
-                    n_outer_idx, tile_n_k_idx.__getitem__[1](), col_idx
-                ).as_tuple()
+                Index(n_outer_idx, tile_n_k_idx.__getitem__[1](), col_idx)
             ).cast[accum_type]()
             for row_idx in range(a_row_size):
                 let a_val = local_a.simd_load[simd_size](
                     row_idx * simd_size
                 ).cast[accum_type]()
-                var c_idx = Index(row_idx, col_idx).as_tuple()
+                var c_idx = Index(row_idx, col_idx)
                 var c_val = c_local.simd_load[simd_size](c_idx)
 
                 c_val = a_val.fma(b_val, c_val)
@@ -2571,7 +2567,7 @@ struct ConvIm2ColNHWC[
         dynamic gemm shapes from convolution shapes.
         """
         # Ouput shape [N, F, Ho, Wo]
-        let c_pointer = self.out._offset(Index(0, 0, 0, 0).as_tuple())
+        let c_pointer = self.out._offset(Index(0, 0, 0, 0))
         self.c = NDBuffer[2, create_kgen_list_unknown[2](), type](
             c_pointer.address
         )
