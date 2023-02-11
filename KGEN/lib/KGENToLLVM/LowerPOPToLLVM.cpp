@@ -1190,9 +1190,8 @@ public:
   LogicalResult
   matchAndRewrite(AtomicCmpXchgOp op, AtomicCmpXchgOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Type type = convertType(op.getType());
     rewriter.replaceOpWithNewOp<LLVM::AtomicCmpXchgOp>(
-        op, type, adaptor.getPtr(), adaptor.getCmp(), adaptor.getVal(),
+        op, adaptor.getPtr(), adaptor.getCmp(), adaptor.getVal(),
         getAtomicOrdering(op.getSuccessOrdering()),
         getAtomicOrdering(op.getFailureOrdering()));
     return success();
@@ -1211,9 +1210,8 @@ public:
   matchAndRewrite(AtomicRMWOp op, AtomicRMWOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     KGENDType dtype = *cast<SIMDType>(op.getType()).getResolvedDType();
-    Type type = convertType(op.getType());
     rewriter.replaceOpWithNewOp<LLVM::AtomicRMWOp>(
-        op, type, getAtomicBinOp(dtype, adaptor.getBinOp()), adaptor.getPtr(),
+        op, getAtomicBinOp(dtype, adaptor.getBinOp()), adaptor.getPtr(),
         adaptor.getVal(), getAtomicOrdering(op.getOrdering()));
     return success();
   }
