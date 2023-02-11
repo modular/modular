@@ -232,7 +232,10 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
     // And finally, attribute values.
     op->getAttrDictionary().walkImmediateSubElements(
         [&](Attribute attr) {
-          if (isa<SymbolRefAttr, ConstantHashAttr, RegionHashAttr>(attr))
+          // If it's an attr that we want to replace with an index, we'll do the
+          // replacement so don't hash it. Otherwise, do hash it - and this
+          // includes the ReplaceableAttrIndex.
+          if (isa<ReplaceableAttr>(attr))
             return;
           hashTypeOrAttr(attr);
         },
