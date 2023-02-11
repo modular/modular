@@ -279,7 +279,7 @@ struct ConvertPOPCast : public ConvertPOPToLLVMPattern<CastOp> {
         opName = inDType.isSInt() ? LLVM::SIToFPOp::getOperationName()
                                   : LLVM::UIToFPOp::getOperationName();
       }
-    } else if (outDType.isBool() || outDType.isInt() || inDType.isIndex()) {
+    } else if (outDType.isBool() || outDType.isInt() || outDType.isIndex()) {
       // Cast from a float to an integer.
       opName = outDType.isSInt() ? LLVM::FPToSIOp::getOperationName()
                                  : LLVM::FPToUIOp::getOperationName();

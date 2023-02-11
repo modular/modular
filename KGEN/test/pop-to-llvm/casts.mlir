@@ -98,7 +98,8 @@ kgen.func @scalar_cast(
     !pop.simd<1, ui32>,
     !pop.simd<1, f64>,
     !pop.simd<1, f32>,
-    !pop.simd<1, f32>
+    !pop.simd<1, f32>,
+    !pop.simd<1, index>
     ) {
   // CHECK: %[[V0:.*]] = llvm.sext %[[SI32]]
   %0 = pop.cast %si32 : !pop.simd<1, si32> to !pop.simd<1, ui64>
@@ -120,6 +121,8 @@ kgen.func @scalar_cast(
   // CHECK: %[[V9:.*]] = llvm.fptrunc %[[F64]]
   %9 = pop.cast %f64 : !pop.simd<1, f64> to !pop.simd<1, f32>
   %10 = pop.cast %f32 : !pop.simd<1, f32> to !pop.simd<1, f32>
+  // CHECK: %[[V11:.*]] = llvm.fptosi %[[F64]]
+  %11 = pop.cast %f64 : !pop.simd<1, f64> to !pop.simd<1, index>
   // CHECK: insertvalue %[[V0]]
   // CHECK: insertvalue %[[V1]]
   // CHECK: insertvalue %[[V2]]
@@ -131,7 +134,8 @@ kgen.func @scalar_cast(
   // CHECK: insertvalue %[[V8]]
   // CHECK: insertvalue %[[V9]]
   // CHECK: insertvalue %[[F32]]
-  kgen.return %0, %1, %2, %3, %4, %5, %6, %7, %8, %9, %10 :
+  // CHECK: insertvalue %[[V11]]
+  kgen.return %0, %1, %2, %3, %4, %5, %6, %7, %8, %9, %10, %11 :
     !pop.simd<1, ui64>,
     !pop.simd<1, si64>,
     !pop.simd<1, ui16>,
@@ -142,7 +146,8 @@ kgen.func @scalar_cast(
     !pop.simd<1, ui32>,
     !pop.simd<1, f64>,
     !pop.simd<1, f32>,
-    !pop.simd<1, f32>
+    !pop.simd<1, f32>,
+    !pop.simd<1, index>
 }
 
 // CHECK-LABEL: @simd_cast
