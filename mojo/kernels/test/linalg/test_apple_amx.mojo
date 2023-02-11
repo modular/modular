@@ -22,7 +22,7 @@ from Memory import memset_zero
 from Range import range
 from SIMD import SIMD
 from TargetInfo import is_apple_m1, sizeof
-from Transpose import transpose_inplace, _index2D
+from Transpose import _index2D
 
 
 fn fill_a(

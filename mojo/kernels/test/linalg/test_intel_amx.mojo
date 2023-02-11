@@ -109,7 +109,7 @@ fn init_matrices(
     let b32m = NDBuffer[
         2, create_kgen_list[__mlir_type.index](16, 16), DType.si32.value
     ](b32_ptr.address)
-    transpose_inplace[2, 16, 16, DType.si32.value](b32m)
+    transpose_inplace[16, 16, DType.si32.value](b32m)
     let am = NDBuffer[
         2, create_kgen_list[__mlir_type.index](16, 64), DType.si8.value
     ](a.data.address)

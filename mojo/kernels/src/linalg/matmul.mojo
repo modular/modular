@@ -435,7 +435,7 @@ struct PackMatrixRows[
                 )
 
         # Transpose the buffered data
-        transpose_inplace[2, simd_size, simd_size, type](transpose_buffer)
+        transpose_inplace[simd_size, simd_size, type](transpose_buffer)
 
         # Write to packed space:
         #  transposed_inner_row_idx now corresponds to the original column idx.

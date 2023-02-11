@@ -25,7 +25,6 @@ fn _index2D(rows: Int, cols: Int) -> StaticTuple[2, __mlir_type.index]:
 
 @interface
 fn transpose_inplace[
-    rank: __mlir_type.index,
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
@@ -35,12 +34,10 @@ fn transpose_inplace[
 
 @implements(transpose_inplace)
 fn transpose_inplace_4x4[
-    rank: __mlir_type.index,
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](buf0: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
-    assert_param[rank == 2]()
     assert_param[rows == 4]()
     assert_param[cols == 4]()
     var buf = rebind[
@@ -95,12 +92,10 @@ fn transpose_inplace_4x4[
 
 @implements(transpose_inplace)
 fn transpose_inplace_8x8[
-    rank: __mlir_type.index,
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](buf0: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
-    assert_param[rank == 2]()
     assert_param[rows == 8]()
     assert_param[cols == 8]()
     var buf = rebind[
@@ -185,12 +180,10 @@ fn transpose_inplace_8x8[
 
 @implements(transpose_inplace)
 fn transpose_inplace_generic[
-    rank: __mlir_type.index,
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](buf: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
-    assert_param[rank == 2]()
     for i in range(rows):
         for j in range(i + 1, cols):
             let tmp = buf[i, j]
@@ -271,13 +264,13 @@ fn transpose[
     let permuted_input_strides_buf = Buffer[
         rank, DType.index.value
     ].stack_allocation()
-    _fill_strides[rank, input_shape, type](input, input_strides_buf)
+    _fill_strides(input, input_strides_buf)
     _permute_data[rank, DType.index.value](
         input_strides_buf.data, permuted_input_strides_buf.data, perms
     )
     # Compute `output_strides_buf `
     let output_strides_buf = Buffer[rank, DType.index.value].stack_allocation()
-    _fill_strides[rank, output_shape, type](output, output_strides_buf)
+    _fill_strides(output, output_strides_buf)
     # Kickoff; for intuition on permuted input strides, note that
     #   transpose(output, input, [2, 0, 1])
     # guarantees

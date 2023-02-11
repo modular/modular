@@ -54,7 +54,7 @@ fn test_transpose_4x4():
     matrix.__setitem__(_index2D(3, 2), 14)
     matrix.__setitem__(_index2D(3, 3), 15)
 
-    transpose_inplace[2, 4, 4, DType.index.value](matrix)
+    transpose_inplace[4, 4, DType.index.value](matrix)
 
     # CHECK: 0
     print(matrix[0, 0])
@@ -123,7 +123,7 @@ fn test_transpose_8x8():
             let val = i * num_cols + j
             matrix.__setitem__(_index2D(i, j), val.__as_mlir_index())
 
-    transpose_inplace[2, 8, 8, DType.index.value](matrix)
+    transpose_inplace[8, 8, DType.index.value](matrix)
 
     # TODO(#8365) use `i` and `j`
     for ii in range(num_rows):
@@ -167,12 +167,10 @@ fn test_transpose_2d_identity():
     #  [-1, -1, -1]]
     alias out_shape = create_kgen_list[__mlir_type.index](3, 3)
     var output = NDBuffer[2, out_shape, DType.index.value].stack_allocation()
-    memset_zero[DType.index.value](output.data, output.size())
+    memset_zero(output.data, output.size())
 
     # transpose
-    transpose[2, out_shape, in_shape, DType.index.value](
-        output, input, perm.data
-    )
+    transpose(output, input, perm.data)
 
     # output should have form
     # [[1, 2, 3],
@@ -231,12 +229,10 @@ fn test_transpose_2d():
     #  [-1, -1, -1]]
     alias out_shape = create_kgen_list[__mlir_type.index](3, 3)
     var output = NDBuffer[2, out_shape, DType.index.value].stack_allocation()
-    memset_zero[DType.index.value](output.data, output.size())
+    memset_zero(output.data, output.size())
 
     # transpose
-    transpose[2, out_shape, in_shape, DType.index.value](
-        output, input, perm.data
-    )
+    transpose(output, input, perm.data)
 
     # output should have form
     # [[1, 4, 7],
@@ -301,12 +297,10 @@ fn test_transpose_3d_identity():
     #   [-1, -1, -1]]]
     alias out_shape = create_kgen_list[__mlir_type.index](2, 2, 3)
     var output = NDBuffer[3, out_shape, DType.index.value].stack_allocation()
-    memset_zero[DType.index.value](output.data, output.size())
+    memset_zero(output.data, output.size())
 
     # transpose
-    transpose[3, out_shape, in_shape, DType.index.value](
-        output, input, perm.data
-    )
+    transpose(output, input, perm.data)
 
     # output should have form
     # [[[1, 2, 3],
@@ -378,12 +372,10 @@ fn test_transpose_3d():
     #   [-1, -1, -1]]]
     alias out_shape = create_kgen_list[__mlir_type.index](3, 2, 2)
     var output = NDBuffer[3, out_shape, DType.index.value].stack_allocation()
-    memset_zero[DType.index.value](output.data, output.size())
+    memset_zero(output.data, output.size())
 
     # transpose
-    transpose[3, out_shape, in_shape, DType.index.value](
-        output, input, perm.data
-    )
+    transpose(output, input, perm.data)
 
     # output should have form (easily verifiable via numpy)
     # [[[1, 4],
