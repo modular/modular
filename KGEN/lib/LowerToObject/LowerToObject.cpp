@@ -18,11 +18,11 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
-#include "llvm/Support/Host.h"
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/Host.h"
 
 using namespace M;
 using namespace KGEN;
