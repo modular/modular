@@ -406,7 +406,7 @@ struct PackMatrixRows[
                 let row_gloal_index = Index(
                     start_idx_global.__getitem__[0]() + inner_row_idx,
                     start_idx_global.__getitem__[1](),
-                ).as_tuple()
+                )
                 var row_data: SIMD[simd_size, type]
                 if skip_col_bound:
                     # This is fastest path where both row and col bounds
@@ -426,12 +426,12 @@ struct PackMatrixRows[
                     )
 
                 transpose_buffer.simd_store[simd_size](
-                    Index(inner_row_idx, 0).as_tuple(), row_data
+                    Index(inner_row_idx, 0), row_data
                 )
             else:
                 # Row out of defined bound, fill the transpose buffer with zero
                 transpose_buffer.simd_store[simd_size](
-                    Index(inner_row_idx, 0).as_tuple(), SIMD[simd_size, type](0)
+                    Index(inner_row_idx, 0), SIMD[simd_size, type](0)
                 )
 
         # Transpose the buffered data
@@ -441,7 +441,7 @@ struct PackMatrixRows[
         #  transposed_inner_row_idx now corresponds to the original column idx.
         for transposed_inner_row_idx in range(simd_size):
             let transposed_data = transpose_buffer.simd_load[simd_size](
-                Index(transposed_inner_row_idx, 0).as_tuple()
+                Index(transposed_inner_row_idx, 0)
             )
             # compute the packed index
             let _row_outer = local_off_set.__getitem__[0]() // row_inner_size
@@ -458,7 +458,7 @@ struct PackMatrixRows[
                         local_off_set.__getitem__[1]()
                         + transposed_inner_row_idx,
                         _row_inner,
-                    ).as_tuple(),
+                    ),
                     transposed_data,
                 )
             # Out of bound columns are discarded as there's no allocation for them
@@ -673,7 +673,7 @@ struct PackMatrixCols[
             let global_idx = Index(
                 global_idx_pair.__getitem__[0](),
                 global_idx_pair.__getitem__[1](),
-            ).as_tuple()
+            )
 
             if fill_zero:
                 # Statical fill zero case.
@@ -700,7 +700,7 @@ struct PackMatrixCols[
             let col_idx_outer = col_idx // column_inner_size
             let col_idx_inner = Int.remu(col_idx, column_inner_size)
             self.packed_matrix.simd_store[simd_size](
-                Index(col_idx_outer, tile_row_idx, col_idx_inner).as_tuple(),
+                Index(col_idx_outer, tile_row_idx, col_idx_inner),
                 data,
             )
 
@@ -880,7 +880,7 @@ struct MatmulInnerLoopBPacked[
         for row_idx in range(a_row_size):
             for col_idx in range(0, pack_inner_size, simd_size):
                 c_local.simd_store[simd_size](
-                    Index(row_idx, col_idx).as_tuple(),
+                    Index(row_idx, col_idx),
                     SIMD[simd_size, accum_type](0),
                 )
 
@@ -916,8 +916,8 @@ struct MatmulInnerLoopBPacked[
                 let global_idx = Index(
                     global_idx_pair.__getitem__[0](),
                     global_idx_pair.__getitem__[1](),
-                ).as_tuple()
-                let local_idx = Index(row_idx, col_idx).as_tuple()
+                )
+                let local_idx = Index(row_idx, col_idx)
 
                 # Load data from original matrix C.
                 var c_data: SIMD[simd_size, accum_type] = 0
@@ -977,8 +977,8 @@ struct MatmulInnerLoopBPacked[
                 let global_idx = Index(
                     global_idx_pair.__getitem__[0](),
                     global_idx_pair.__getitem__[1](),
-                ).as_tuple()
-                let local_idx = Index(row_idx, col_idx).as_tuple()
+                )
+                let local_idx = Index(row_idx, col_idx)
 
                 # Load data from original matrix C.
                 var c_data = c_local.simd_load[simd_size](local_idx)
@@ -1033,20 +1033,18 @@ struct MatmulInnerLoopBPacked[
         # Loop over local accumulator tiles.
         for col_idx in range(0, pack_inner_size, simd_size):
             let b_val = self.b_packed.simd_load[simd_size](
-                Index(
-                    n_outer_idx, tile_n_k_idx.__getitem__[1](), col_idx
-                ).as_tuple()
+                Index(n_outer_idx, tile_n_k_idx.__getitem__[1](), col_idx)
             ).cast[accum_type]()
             for row_idx in range(a_row_size):
                 var global_m = self.global_offset.M + row_idx
                 let a_val_scalar = self.a.simd_load[1](
-                    Index(global_m, global_k).as_tuple()
+                    Index(global_m, global_k)
                 )
                 let a_val = SIMD[simd_size, value_type](a_val_scalar).cast[
                     accum_type
                 ]()
 
-                var c_idx = Index(row_idx, col_idx).as_tuple()
+                var c_idx = Index(row_idx, col_idx)
                 var c_val = c_local.simd_load[simd_size](c_idx)
 
                 c_val = a_val.fma(b_val, c_val)

@@ -16,13 +16,13 @@ from Buffer import NDBuffer
 from DType import DType
 from F32 import F32
 from Int import Int
+from Index import Index
 from IO import print
 from List import create_kgen_list
 from Memory import memset_zero
 from Range import range
 from SIMD import SIMD
 from TargetInfo import is_apple_m1, sizeof
-from Transpose import _index2D
 
 
 fn fill_a(
@@ -38,7 +38,7 @@ fn fill_a(
     for i in range(rows):
         for j in range(cols):
             let val = F32(i + 2 * j)
-            buf.__setitem__(_index2D(i, j), val.value)
+            buf.__setitem__(Index(i, j), val.value)
 
 
 fn fill_b(
@@ -54,7 +54,7 @@ fn fill_b(
     for i in range(rows):
         for j in range(cols):
             let val = F32(i // (j + 1) + j)
-            buf.__setitem__(_index2D(i, j), val.value)
+            buf.__setitem__(Index(i, j), val.value)
 
 
 fn clear_c(

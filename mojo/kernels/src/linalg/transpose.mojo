@@ -8,6 +8,7 @@ from Buffer import Buffer, NDBuffer
 from Tuple import StaticTuple
 from Assert import assert_param
 from Int import Int
+from Index import Index
 from SIMD import SIMD
 from List import create_kgen_list
 from Pointer import DTypePointer
@@ -15,12 +16,6 @@ from DType import DType
 from Range import range
 from TypeUtilities import rebind
 from Functional import unroll
-
-
-fn _index2D(rows: Int, cols: Int) -> StaticTuple[2, __mlir_type.index]:
-    return StaticTuple[2, __mlir_type.index].pair(
-        rows.__as_mlir_index(), cols.__as_mlir_index()
-    )
 
 
 @interface
@@ -53,10 +48,10 @@ fn transpose_inplace_4x4[
         ],
     ](buf0)
 
-    let row0 = buf.simd_load[4](_index2D(0, 0))
-    let row1 = buf.simd_load[4](_index2D(1, 0))
-    let row2 = buf.simd_load[4](_index2D(2, 0))
-    let row3 = buf.simd_load[4](_index2D(3, 0))
+    let row0 = buf.simd_load[4](Index(0, 0))
+    let row1 = buf.simd_load[4](Index(1, 0))
+    let row2 = buf.simd_load[4](Index(2, 0))
+    let row3 = buf.simd_load[4](Index(3, 0))
 
     let tmp0 = row0.shuffle[4, create_kgen_list[__mlir_type.index](0, 1, 4, 5)](
         row1
@@ -84,10 +79,10 @@ fn transpose_inplace_4x4[
         tmp3
     )
 
-    buf.simd_store[4](_index2D(0, 0), r0)
-    buf.simd_store[4](_index2D(1, 0), r1)
-    buf.simd_store[4](_index2D(2, 0), r2)
-    buf.simd_store[4](_index2D(3, 0), r3)
+    buf.simd_store[4](Index(0, 0), r0)
+    buf.simd_store[4](Index(1, 0), r1)
+    buf.simd_store[4](Index(2, 0), r2)
+    buf.simd_store[4](Index(3, 0), r3)
 
 
 @implements(transpose_inplace)
@@ -111,14 +106,14 @@ fn transpose_inplace_8x8[
         ],
     ](buf0)
 
-    let row0 = buf.simd_load[8](_index2D(0, 0))
-    let row1 = buf.simd_load[8](_index2D(1, 0))
-    let row2 = buf.simd_load[8](_index2D(2, 0))
-    let row3 = buf.simd_load[8](_index2D(3, 0))
-    let row4 = buf.simd_load[8](_index2D(4, 0))
-    let row5 = buf.simd_load[8](_index2D(5, 0))
-    let row6 = buf.simd_load[8](_index2D(6, 0))
-    let row7 = buf.simd_load[8](_index2D(7, 0))
+    let row0 = buf.simd_load[8](Index(0, 0))
+    let row1 = buf.simd_load[8](Index(1, 0))
+    let row2 = buf.simd_load[8](Index(2, 0))
+    let row3 = buf.simd_load[8](Index(3, 0))
+    let row4 = buf.simd_load[8](Index(4, 0))
+    let row5 = buf.simd_load[8](Index(5, 0))
+    let row6 = buf.simd_load[8](Index(6, 0))
+    let row7 = buf.simd_load[8](Index(7, 0))
 
     alias premute_0 = create_kgen_list[__mlir_type.index](
         0, 8, 1, 9, 4, 12, 5, 13
@@ -168,14 +163,14 @@ fn transpose_inplace_8x8[
     let r6 = k130.shuffle[8, permute_5](k570)
     let r7 = k131.shuffle[8, permute_5](k571)
 
-    buf.simd_store[8](_index2D(0, 0), r0)
-    buf.simd_store[8](_index2D(1, 0), r1)
-    buf.simd_store[8](_index2D(2, 0), r2)
-    buf.simd_store[8](_index2D(3, 0), r3)
-    buf.simd_store[8](_index2D(4, 0), r4)
-    buf.simd_store[8](_index2D(5, 0), r5)
-    buf.simd_store[8](_index2D(6, 0), r6)
-    buf.simd_store[8](_index2D(7, 0), r7)
+    buf.simd_store[8](Index(0, 0), r0)
+    buf.simd_store[8](Index(1, 0), r1)
+    buf.simd_store[8](Index(2, 0), r2)
+    buf.simd_store[8](Index(3, 0), r3)
+    buf.simd_store[8](Index(4, 0), r4)
+    buf.simd_store[8](Index(5, 0), r5)
+    buf.simd_store[8](Index(6, 0), r6)
+    buf.simd_store[8](Index(7, 0), r7)
 
 
 @implements(transpose_inplace)
@@ -187,8 +182,8 @@ fn transpose_inplace_generic[
     for i in range(rows):
         for j in range(i + 1, cols):
             let tmp = buf[i, j]
-            buf.__setitem__(_index2D(i, j), buf[j, i])
-            buf.__setitem__(_index2D(j, i), tmp)
+            buf.__setitem__(Index(i, j), buf[j, i])
+            buf.__setitem__(Index(j, i), tmp)
 
 
 fn _permute_data[

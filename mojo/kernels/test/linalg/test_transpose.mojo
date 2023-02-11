@@ -12,14 +12,9 @@ from Int import Int
 from IO import print
 from List import create_kgen_list
 from Memory import memset_zero
-from Transpose import transpose, transpose_inplace, _index2D
+from Transpose import transpose, transpose_inplace
 from Tuple import StaticTuple
 from Range import range
-
-# TODO Refactor with `test_broadcast.lit`, e.g., put them into a common file or
-# allow NDBuffer to accept StaticIntTuple
-fn _index3D(x: Int, y: Int, z: Int) -> StaticTuple[3, __mlir_type.index]:
-    return Index(x, y, z).as_tuple()
 
 
 # CHECK-LABEL: test_transpose_4x4
@@ -37,22 +32,22 @@ fn test_transpose_4x4():
         DType.index.value,
     ].stack_allocation()
 
-    matrix.__setitem__(_index2D(0, 0), 0)
-    matrix.__setitem__(_index2D(0, 1), 1)
-    matrix.__setitem__(_index2D(0, 2), 2)
-    matrix.__setitem__(_index2D(0, 3), 3)
-    matrix.__setitem__(_index2D(1, 0), 4)
-    matrix.__setitem__(_index2D(1, 1), 5)
-    matrix.__setitem__(_index2D(1, 2), 6)
-    matrix.__setitem__(_index2D(1, 3), 7)
-    matrix.__setitem__(_index2D(2, 0), 8)
-    matrix.__setitem__(_index2D(2, 1), 9)
-    matrix.__setitem__(_index2D(2, 2), 10)
-    matrix.__setitem__(_index2D(2, 3), 11)
-    matrix.__setitem__(_index2D(3, 0), 12)
-    matrix.__setitem__(_index2D(3, 1), 13)
-    matrix.__setitem__(_index2D(3, 2), 14)
-    matrix.__setitem__(_index2D(3, 3), 15)
+    matrix.__setitem__(Index(0, 0), 0)
+    matrix.__setitem__(Index(0, 1), 1)
+    matrix.__setitem__(Index(0, 2), 2)
+    matrix.__setitem__(Index(0, 3), 3)
+    matrix.__setitem__(Index(1, 0), 4)
+    matrix.__setitem__(Index(1, 1), 5)
+    matrix.__setitem__(Index(1, 2), 6)
+    matrix.__setitem__(Index(1, 3), 7)
+    matrix.__setitem__(Index(2, 0), 8)
+    matrix.__setitem__(Index(2, 1), 9)
+    matrix.__setitem__(Index(2, 2), 10)
+    matrix.__setitem__(Index(2, 3), 11)
+    matrix.__setitem__(Index(3, 0), 12)
+    matrix.__setitem__(Index(3, 1), 13)
+    matrix.__setitem__(Index(3, 2), 14)
+    matrix.__setitem__(Index(3, 3), 15)
 
     transpose_inplace[4, 4, DType.index.value](matrix)
 
@@ -121,7 +116,7 @@ fn test_transpose_8x8():
     for i in range(num_rows):
         for j in range(num_cols):
             let val = i * num_cols + j
-            matrix.__setitem__(_index2D(i, j), val.__as_mlir_index())
+            matrix.__setitem__(Index(i, j), val.__as_mlir_index())
 
     transpose_inplace[8, 8, DType.index.value](matrix)
 
@@ -145,15 +140,15 @@ fn test_transpose_2d_identity():
     #  [4, 5, 6],
     #  [7, 8, 9]]
     var input = NDBuffer[2, in_shape, DType.index.value].stack_allocation()
-    input.__setitem__(_index2D(0, 0), 1)
-    input.__setitem__(_index2D(0, 1), 2)
-    input.__setitem__(_index2D(0, 2), 3)
-    input.__setitem__(_index2D(1, 0), 4)
-    input.__setitem__(_index2D(1, 1), 5)
-    input.__setitem__(_index2D(1, 2), 6)
-    input.__setitem__(_index2D(2, 0), 7)
-    input.__setitem__(_index2D(2, 1), 8)
-    input.__setitem__(_index2D(2, 2), 9)
+    input.__setitem__(Index(0, 0), 1)
+    input.__setitem__(Index(0, 1), 2)
+    input.__setitem__(Index(0, 2), 3)
+    input.__setitem__(Index(1, 0), 4)
+    input.__setitem__(Index(1, 1), 5)
+    input.__setitem__(Index(1, 2), 6)
+    input.__setitem__(Index(2, 0), 7)
+    input.__setitem__(Index(2, 1), 8)
+    input.__setitem__(Index(2, 2), 9)
 
     # Create an identity permutation array of the form
     # [0, 1]
@@ -207,15 +202,15 @@ fn test_transpose_2d():
     #  [4, 5, 6],
     #  [7, 8, 9]]
     var input = NDBuffer[2, in_shape, DType.index.value].stack_allocation()
-    input.__setitem__(_index2D(0, 0), 1)
-    input.__setitem__(_index2D(0, 1), 2)
-    input.__setitem__(_index2D(0, 2), 3)
-    input.__setitem__(_index2D(1, 0), 4)
-    input.__setitem__(_index2D(1, 1), 5)
-    input.__setitem__(_index2D(1, 2), 6)
-    input.__setitem__(_index2D(2, 0), 7)
-    input.__setitem__(_index2D(2, 1), 8)
-    input.__setitem__(_index2D(2, 2), 9)
+    input.__setitem__(Index(0, 0), 1)
+    input.__setitem__(Index(0, 1), 2)
+    input.__setitem__(Index(0, 2), 3)
+    input.__setitem__(Index(1, 0), 4)
+    input.__setitem__(Index(1, 1), 5)
+    input.__setitem__(Index(1, 2), 6)
+    input.__setitem__(Index(2, 0), 7)
+    input.__setitem__(Index(2, 1), 8)
+    input.__setitem__(Index(2, 2), 9)
 
     # Create a permutation array of the form
     # [1, 0]
@@ -270,18 +265,18 @@ fn test_transpose_3d_identity():
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
     var input = NDBuffer[3, in_shape, DType.index.value].stack_allocation()
-    input.__setitem__(_index3D(0, 0, 0), 1)
-    input.__setitem__(_index3D(0, 0, 1), 2)
-    input.__setitem__(_index3D(0, 0, 2), 3)
-    input.__setitem__(_index3D(0, 1, 0), 4)
-    input.__setitem__(_index3D(0, 1, 1), 5)
-    input.__setitem__(_index3D(0, 1, 2), 6)
-    input.__setitem__(_index3D(1, 0, 0), 7)
-    input.__setitem__(_index3D(1, 0, 1), 8)
-    input.__setitem__(_index3D(1, 0, 2), 9)
-    input.__setitem__(_index3D(1, 1, 0), 10)
-    input.__setitem__(_index3D(1, 1, 1), 11)
-    input.__setitem__(_index3D(1, 1, 2), 12)
+    input.__setitem__(Index(0, 0, 0), 1)
+    input.__setitem__(Index(0, 0, 1), 2)
+    input.__setitem__(Index(0, 0, 2), 3)
+    input.__setitem__(Index(0, 1, 0), 4)
+    input.__setitem__(Index(0, 1, 1), 5)
+    input.__setitem__(Index(0, 1, 2), 6)
+    input.__setitem__(Index(1, 0, 0), 7)
+    input.__setitem__(Index(1, 0, 1), 8)
+    input.__setitem__(Index(1, 0, 2), 9)
+    input.__setitem__(Index(1, 1, 0), 10)
+    input.__setitem__(Index(1, 1, 1), 11)
+    input.__setitem__(Index(1, 1, 2), 12)
 
     # Create an identity permutation array of the form
     # [0, 1, 2]
@@ -345,18 +340,18 @@ fn test_transpose_3d():
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
     var input = NDBuffer[3, in_shape, DType.index.value].stack_allocation()
-    input.__setitem__(_index3D(0, 0, 0), 1)
-    input.__setitem__(_index3D(0, 0, 1), 2)
-    input.__setitem__(_index3D(0, 0, 2), 3)
-    input.__setitem__(_index3D(0, 1, 0), 4)
-    input.__setitem__(_index3D(0, 1, 1), 5)
-    input.__setitem__(_index3D(0, 1, 2), 6)
-    input.__setitem__(_index3D(1, 0, 0), 7)
-    input.__setitem__(_index3D(1, 0, 1), 8)
-    input.__setitem__(_index3D(1, 0, 2), 9)
-    input.__setitem__(_index3D(1, 1, 0), 10)
-    input.__setitem__(_index3D(1, 1, 1), 11)
-    input.__setitem__(_index3D(1, 1, 2), 12)
+    input.__setitem__(Index(0, 0, 0), 1)
+    input.__setitem__(Index(0, 0, 1), 2)
+    input.__setitem__(Index(0, 0, 2), 3)
+    input.__setitem__(Index(0, 1, 0), 4)
+    input.__setitem__(Index(0, 1, 1), 5)
+    input.__setitem__(Index(0, 1, 2), 6)
+    input.__setitem__(Index(1, 0, 0), 7)
+    input.__setitem__(Index(1, 0, 1), 8)
+    input.__setitem__(Index(1, 0, 2), 9)
+    input.__setitem__(Index(1, 1, 0), 10)
+    input.__setitem__(Index(1, 1, 1), 11)
+    input.__setitem__(Index(1, 1, 2), 12)
 
     # Create a identity permutation array of the form
     # [2, 0, 1]
