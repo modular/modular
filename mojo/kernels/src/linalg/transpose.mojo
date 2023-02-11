@@ -198,21 +198,6 @@ fn transpose_inplace_generic[
             buf.__setitem__(_index2D(j, i), tmp)
 
 
-fn transpose[
-    rank: __mlir_type.index,
-    rows: __mlir_type.index,
-    cols: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-](
-    dst: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type],
-    src: NDBuffer[2, create_kgen_list[__mlir_type.index](cols, rows), type],
-):
-    assert_param[rank == 2]()
-    for i in range(rows):
-        for j in range(cols):
-            dst.__setitem__(_index2D(i, j), src[j, i])
-
-
 fn _permute_data[
     size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
@@ -258,7 +243,7 @@ fn _fill_strides[
     unroll[rank - 1, _fill_stride_at_idx]()
 
 
-fn transpose_nd[
+fn transpose[
     rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],

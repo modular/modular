@@ -12,7 +12,7 @@ from Int import Int
 from IO import print
 from List import create_kgen_list
 from Memory import memset_zero
-from Transpose import transpose, transpose_inplace, transpose_nd, _index2D
+from Transpose import transpose, transpose_inplace, _index2D
 from Tuple import StaticTuple
 from Range import range
 
@@ -135,48 +135,6 @@ fn test_transpose_8x8():
                 print("Transpose 16x16 failed\n")
 
 
-# CHECK-LABEL: test_transpose_3x2_out_of_place
-fn test_transpose_3x2_out_of_place():
-    print("== test_transpose_3x2_out_of_place\n")
-    let p1 = Buffer[9, DType.index.value].stack_allocation()
-    let p2 = Buffer[9, DType.index.value].stack_allocation()
-    for i in range(9):
-        p1.__setitem__(i, 0)
-        p2.__setitem__(i, 0)
-
-    let src = NDBuffer[
-        2, create_kgen_list[__mlir_type.index](3, 2), DType.index.value
-    ](p1.data.address)
-
-    let dst = NDBuffer[
-        2, create_kgen_list[__mlir_type.index](2, 3), DType.index.value
-    ](p2.data.address)
-
-    src.__setitem__(_index2D(0, 0), 0)
-    src.__setitem__(_index2D(1, 0), 1)
-    src.__setitem__(_index2D(2, 0), 2)
-    src.__setitem__(_index2D(0, 1), 3)
-    src.__setitem__(_index2D(1, 1), 4)
-    src.__setitem__(_index2D(2, 1), 5)
-    # transpose a from 4x2 to 2x4
-    transpose[2, 2, 3, DType.index.value](dst, src)
-    # CHECK: 0
-    print(dst[0, 0])
-    # CHECK: 1
-    print(dst[0, 1])
-    # CHECK: 2
-    print(dst[0, 2])
-    # CHECK: 3
-    print(dst[1, 0])
-    # CHECK: 4
-    print(dst[1, 1])
-    # CHECK: 5
-    print(dst[1, 2])
-    # Overflow should be zero
-    # CHECK: 0
-    print(dst[2, 0])
-
-
 # CHECK-LABEL: test_transpose_2d_identity
 fn test_transpose_2d_identity():
     print("== test_transpose_2d_identity\n")
@@ -212,7 +170,7 @@ fn test_transpose_2d_identity():
     memset_zero[DType.index.value](output.data, output.size())
 
     # transpose
-    transpose_nd[2, out_shape, in_shape, DType.index.value](
+    transpose[2, out_shape, in_shape, DType.index.value](
         output, input, perm.data
     )
 
@@ -276,7 +234,7 @@ fn test_transpose_2d():
     memset_zero[DType.index.value](output.data, output.size())
 
     # transpose
-    transpose_nd[2, out_shape, in_shape, DType.index.value](
+    transpose[2, out_shape, in_shape, DType.index.value](
         output, input, perm.data
     )
 
@@ -346,7 +304,7 @@ fn test_transpose_3d_identity():
     memset_zero[DType.index.value](output.data, output.size())
 
     # transpose
-    transpose_nd[3, out_shape, in_shape, DType.index.value](
+    transpose[3, out_shape, in_shape, DType.index.value](
         output, input, perm.data
     )
 
@@ -423,7 +381,7 @@ fn test_transpose_3d():
     memset_zero[DType.index.value](output.data, output.size())
 
     # transpose
-    transpose_nd[3, out_shape, in_shape, DType.index.value](
+    transpose[3, out_shape, in_shape, DType.index.value](
         output, input, perm.data
     )
 
@@ -464,7 +422,6 @@ fn test_transpose_3d():
 fn main():
     test_transpose_4x4()
     test_transpose_8x8()
-    test_transpose_3x2_out_of_place()
     test_transpose_2d_identity()
     test_transpose_2d()
     test_transpose_3d_identity()
