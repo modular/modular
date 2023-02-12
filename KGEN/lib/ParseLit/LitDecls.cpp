@@ -9,6 +9,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "LitDecls.h"
+#include "LitParameterEvaluator.h"
+
 #include "ASTDecl.h"
 #include "IRValues.h"
 #include "LitExprEmitter.h"
@@ -504,6 +506,21 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   declsCurrentlyProcessing.erase(&decl);
   // If decl is busted, then return failure.
   return success(!decl.hasReferenceError);
+}
+
+//===----------------------------------------------------------------------===//
+// LitParameterEvaluator implementation
+//===----------------------------------------------------------------------===//
+
+LitParameterEvaluator::LitParameterEvaluator(LitSharedState &shared)
+    : resolver(*shared.declResolver) {}
+LitParameterEvaluator::LitParameterEvaluator(
+    ArrayRef<ParamBindAttr> paramValues, LitSharedState &shared)
+    : ParameterEvaluator(paramValues), resolver(*shared.declResolver) {}
+
+FailureOr<TypedAttr>
+LitParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
+  return failure();
 }
 
 //===----------------------------------------------------------------------===//

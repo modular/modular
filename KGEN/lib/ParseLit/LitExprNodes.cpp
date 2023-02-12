@@ -13,9 +13,9 @@
 #include "ASTDecl.h"
 #include "IRValues.h"
 #include "LitExprCalls.h"
+#include "LitParameterEvaluator.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -238,7 +238,8 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 /// to it.  This currently fully substitutes members unless they are in a
 /// function definition.
 static MValue resolveParamDeclareValue(ParamDeclareOp param,
-                                       ParamBindArrayAttr bindings) {
+                                       ParamBindArrayAttr bindings,
+                                       LitSharedState &shared) {
   // If the param is declared in a function, then just directly use it.
   Operation *parent = param->getParentOp();
   while (1) {
@@ -263,10 +264,7 @@ static MValue resolveParamDeclareValue(ParamDeclareOp param,
       assert(structDecl.getInputParamDecls().size() == bindings.size() &&
              "mismatch in # struct parameters and # bindings");
 
-      ParameterEvaluator evaluator;
-      for (ParamBindAttr binding : bindings)
-        evaluator.setParameterValue(binding.getName(), binding.getValue());
-
+      LitParameterEvaluator evaluator(bindings, shared);
       auto result = evaluator.getReboundAttribute(param.getValue());
       return MValue(cast<TypedAttr>(result));
     }
@@ -451,7 +449,8 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
 
   // Parameters form a meta-value.
   if (auto param = dyn_cast<ParamDeclareOp>(decl)) {
-    return {{resolveParamDeclareValue(param, /*bindings=*/{}), this}};
+    return {{resolveParamDeclareValue(param, /*bindings=*/{}, emitter.shared),
+             this}};
   }
 
   // Use of forward references.
@@ -602,8 +601,8 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
 
   // Parameters form a meta-value.
   if (auto param = dyn_cast<ParamDeclareOp>(memberDecl)) {
-    MValue result =
-        resolveParamDeclareValue(param, baseRVType.getParamBindings());
+    MValue result = resolveParamDeclareValue(
+        param, baseRVType.getParamBindings(), emitter.shared);
     return {{result, this}};
   }
 
@@ -1358,7 +1357,8 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   }
 
   // Perform parameter substitution if there are input parameters.
-  ParameterEvaluator paramEvaluator(initType.getParamBindings());
+  LitParameterEvaluator paramEvaluator(initType.getParamBindings(),
+                                       emitter.shared);
 
   SmallVector<StringAttr> fieldNames;
   SmallVector<Value> fieldValues;

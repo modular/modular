@@ -11,10 +11,10 @@
 #include "LitExprCalls.h"
 #include "ASTDecl.h"
 #include "LitExprEmitter.h"
+#include "LitParameterEvaluator.h"
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -291,7 +291,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
   // the value provided to 'indices' should actually depend on the specified
   // value of 'rank'.  We use a ParameterEvaluator to keep track of the mapping
   // so far and remap types on demand.
-  ParameterEvaluator evaluator;
+  LitParameterEvaluator evaluator(shared);
   size_t nextBinding = 0;
   for (ParamDeclAttr decl : actualParamDecls) {
     // This lambda installs the decl's value in the parameter evaluator and new
