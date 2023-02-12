@@ -83,13 +83,18 @@ struct LitStmtParser : public LitParserBase {
                        allowImplicitVarDecl ? varDeclCursor : nullptr);
   }
 
+  /// Get an expression emitter for a parameter expression.
+  ExprEmitter getParamEmitter() {
+    return ExprEmitter(shared, containingDecl, {}, nullptr);
+  }
+
   ParseResult parseSuite(ssize_t curIndent);
   ParseResult parseLocalScopeSuite(ssize_t curIndent);
   ParseResult parseStmts(size_t minIndent);
   ParseResult parseStmt(bool isSimpleStmt, size_t curIndent);
 
   // Compound statements.
-  ParseResult parseIfStmt(size_t curIndent);
+  ParseResult parseIfStmt(LitLexerCursor startCursor, size_t curIndent);
   ParseResult parseWhileStmt(size_t curIndent);
   ParseResult parseForStmt(size_t curIndent);
   ParseResult parseTryStmt(size_t curIndent);
@@ -294,7 +299,7 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
   // This emits an error message if we parsed a decorator, because this
   // statement doesn't support them.
   auto rejectDecorator = [&]() {
-    if (startCursor.getState() == getLexer().getCursor().getState())
+    if (startCursor == getLexer().getCursor())
       return;
     emitTokenError() << "'" << getToken().getSpelling()
                      << "' statement does not allow decorators";
@@ -319,9 +324,8 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
     // Compound statements.
     //===------------------------------------------------------------------===//
   case LitToken::kw_if:
-    rejectDecorator();  // Decorators not allowed.
     rejectSimpleStmt(); // Not a simple_stmt.
-    return parseIfStmt(stmtIndent);
+    return parseIfStmt(startCursor, stmtIndent);
   case LitToken::kw_for:
     rejectDecorator();  // Decorators not allowed.
     rejectSimpleStmt(); // Not a simple_stmt.
@@ -797,8 +801,30 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
 /// if_stmt ::=  "if" assignment_expression ":" suite
 ///             ("elif" assignment_expression ":" suite)*
 ///             ["else" ":" suite]
-ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
-  Location ifLoc = translateLocation(consumeToken(LitToken::kw_if).getLoc());
+ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
+                                       size_t curIndent) {
+  // This is enabled with the @parameter decorator.
+  bool isParamIf = false;
+
+  // We parse the decorators for the 'if' if they exist.
+  if (startCursor != getLexer().getCursor()) {
+    startCursor.restore(getLexer());
+    for (auto *decorator : parseDecorators(curIndent)) {
+      // Handle recognized decorators.
+      if (auto *dre = dyn_cast<DeclRefNode>(decorator)) {
+        if (dre->spelling == "parameter") {
+          isParamIf = true;
+          continue;
+        }
+      }
+
+      emitError(decorator->getLoc(), "unsuported decorator on 'if' statement")
+          << decorator->getRange();
+    }
+  }
+  Location ifLoc = translateLocation(getToken().getLoc());
+  if (parseToken(LitToken::kw_if, "expected 'if' token after decorators"))
+    return failure();
 
   // We will be moving the builder into sub-regions that are created, make sure
   // we end up after it when this is done.
@@ -812,12 +838,31 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
   // Each if/elif conditions could be dynamic or static, use some helpers to
   // generate the right structure.
   SmartVariant<HLCF::IfOp, ParamIfOp> ifOp;
-  auto createIf = [&](Location loc, RValue condRV) {
-    // Create the 'if' and parse the body into its "then" region.
-    if (auto condMVal = condRV.getIfMValue())
-      ifOp = builder.create<ParamIfOp>(loc, condMVal.get());
-    else
-      ifOp = builder.create<HLCF::IfOp>(loc, condRV.getIfDRValue());
+  auto parseCondAndCreateIf = [&](Location loc) -> ParseResult {
+    auto emitter = getEmitter();
+    // If this is a normal if statement, emit the condition as a DRValue.
+    if (!isParamIf) {
+      // Create the 'if' and parse the body into its "then" region.
+      DRValue condRVal = emitter.emitDRValue(
+          {AnyValue(emitter.emitExprConditionValueAsI1(condExp)), condExp});
+      if (!condRVal)
+        return failure();
+      ifOp = builder.create<HLCF::IfOp>(loc, condRVal);
+      return success();
+    }
+
+    // Otherwise, for a @parameter if, we emit the condition as an MValue
+    // without a builder.
+    RValue condRVal = getParamEmitter().emitExprConditionValueAsI1(condExp);
+    if (!condRVal)
+      return failure();
+    if (!condRVal.getIfMValue())
+      return emitError(condExp->getLoc(), "@parameter 'if' requires a "
+                                          "parameter expression as a condition")
+             << condExp->getRange();
+
+    ifOp = builder.create<ParamIfOp>(loc, condRVal.getIfMValue().get());
+    return success();
   };
 
   auto createThenBlock = [&]() {
@@ -841,11 +886,8 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
       builder.create<ParamYieldOp>(loc);
   };
 
-  // Create the 'if' and parse the body into its "then" region.
-  RValue condRVal = getEmitter().emitExprConditionValueAsI1(condExp);
-  if (!condRVal)
+  if (parseCondAndCreateIf(ifLoc))
     return failure();
-  createIf(ifLoc, condRVal);
   createThenBlock();
   if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
@@ -861,10 +903,8 @@ ParseResult LitStmtParser::parseIfStmt(size_t curIndent) {
       return failure();
 
     createElseBlock();
-    condRVal = getEmitter().emitExprConditionValueAsI1(condExp);
-    if (!condRVal)
+    if (parseCondAndCreateIf(elifLoc))
       return failure();
-    createIf(elifLoc, condRVal);
     createYield(elifLoc);
 
     createThenBlock();

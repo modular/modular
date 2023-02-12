@@ -190,6 +190,11 @@ public:
   const char *getState() const { return state; }
   const LitToken &getToken() const { return curToken; }
 
+  bool operator==(const LitLexerCursor &rhs) const {
+    return state == rhs.state;
+  }
+  bool operator!=(const LitLexerCursor &rhs) const { return !(*this == rhs); }
+
 private:
   const char *state;
   LitToken curToken;
