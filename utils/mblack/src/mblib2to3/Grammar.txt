@@ -29,7 +29,7 @@ eval_input: testlist NEWLINE* ENDMARKER
 
 decorator: '@' namedexpr_test NEWLINE
 decorators: decorator+
-decorated: decorators (classdef | funcdef | async_funcdef)
+decorated: decorators (classdef | funcdef | async_funcdef | if_stmt)
 async_funcdef: ASYNC funcdef
 funcdef: ('def' | FN) NAME [metaparams] parameters ['->' test] ':' suite
 metaparams: '[' [typedargslist] ']'
