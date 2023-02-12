@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENPasses.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
@@ -349,15 +350,34 @@ void ForceInlinePass::runOnOperation() {
       for (Operation &op : *callee.getBody())
         b.clone(op, map);
       unsigned numReturns = 0;
+      AlwaysInlineLevel level = callee.getAlwaysInlineLevel();
       scope.walk([&](Operation *op) {
-        if (op != scope)
-          op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), call.getLoc()));
+        if (op != scope) {
+          // If this is an `always_inline(nodebug)`, erase the location of the
+          // inlined operations by replacing them with the location of the call.
+          // Otherwise, propagate the inlined location via a `CallSiteLoc`.
+          if (level == AlwaysInlineLevel::EnabledNoDebug)
+            op->setLoc(call.getLoc());
+          else
+            op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), call.getLoc()));
+        }
+        // Erase `debuginfo.value` operations when inlining without debug info.
+        if (level == AlwaysInlineLevel::EnabledNoDebug) {
+          if (auto value = dyn_cast<DebugInfo::ValueOp>(op)) {
+            value.erase();
+            return;
+          }
+        }
+
+        // Check for a call to recursively inline.
         if (auto call = dyn_cast<CallOp>(op)) {
           auto callee = symtab.lookup<FuncOp>(
               cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
           if (callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
             calls.emplace_back(call);
         }
+
+        // Replace all returns with breaks to the control flow scope.
         if (!isa<KGEN::ReturnOp, HLCF::ReturnOp>(op))
           return;
         b.setInsertionPoint(op);
