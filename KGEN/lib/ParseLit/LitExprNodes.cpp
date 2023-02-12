@@ -23,6 +23,7 @@
 #include "LitExprEmitter.h"
 #include "LitSharedState.h"
 #include "SpecialFunctions.h"
+#include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
@@ -1797,19 +1798,72 @@ AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
   return DRValue(ifOp.getResult(0));
 }
 
+/// Emit the comparison expression with operator ops[opIdx] and operands:
+///  1. lastExpr: the SSA value of the last expression in the chain emitted
+///     so far.
+///  2. The next expression node in the chain to be emitted: expr[opIdx + 1].
+///
+///  lastCmpExpr is the SSA value of the previous comparison expression.
+///  Example
+///  If the whole chained expression is a < b < c, and hence
+///  a < b and b < c,  emitNextCmp will emit b < c, using the SSA
+///  value of b in the previous comparison (a < b). lastCmpExpr is the value
+///  of a < b.
+///  Note that a < b  is handled by ChainedCmpOpNode::emitIR.
+AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
+                                       DRValue lastCmpExpr,
+                                       DRValue lastExpr) const {
+  Location ifLoc = lastCmpExpr.getLoc();
+  AnyValue boolResult;
+  OpBuilder lastBuilder = emitter.builder.value();
+  RValue lastCmpI1Value =
+      emitter.emitConditionValueAsI1({lastCmpExpr, this}, boolResult);
+  DRValue lastCmpI1RValue =
+      emitter.emitDRValue({AnyValue(lastCmpI1Value), this});
+  if (!lastCmpI1RValue)
+    return {};
+  auto ifOp = emitter.builder->create<HLCF::IfOp>(ifLoc, boolResult.getType(),
+                                                  lastCmpI1RValue);
+  emitter.builder->createBlock(&ifOp.getThenRegion());
+  DRValue exprValue = emitter.emitExprDRValue(exprs[opIdx + 1]);
+  if (!exprValue)
+    return {};
+  AnyValue lastBinOp =
+      emitBinOpCall({lastExpr, exprs[opIdx]}, {exprValue, exprs[opIdx + 1]},
+                    ops[opIdx], this, emitter);
+  DRValue lastRV = emitter.emitDRValue({lastBinOp, exprs[opIdx + 1]});
+  if (!lastRV)
+    return {};
+
+  if (opIdx + 1 == ops.size())
+    emitter.builder->create<HLCF::YieldOp>(ifLoc, lastRV);
+  else if (!emitNextCmp(emitter, opIdx + 1, lastRV, exprValue))
+    return {};
+
+  emitter.builder->createBlock(&ifOp.getElseRegion());
+  ifOp->getResult(0).setType(lastCmpExpr.getType());
+  emitter.builder->create<HLCF::YieldOp>(ifLoc, lastCmpExpr);
+  emitter.builder = lastBuilder;
+  if (opIdx > 1)
+    emitter.builder->create<HLCF::YieldOp>(ifLoc, ifOp->getResult(0));
+  return DRValue(ifOp->getResult(0));
+}
+
 AnyValue ChainedCmpOpNode::emitIR(ExprEmitter &emitter,
                                   ASTType contextualType) const {
-  if (exprs.size() == 2) {
-    // This is a simple boolean expression.
-    assert(ops.size() == 1);
-    RValue lhsRep = emitter.emitExprRValue(exprs[0]);
-    RValue rhsRep = emitter.emitExprRValue(exprs[1]);
-    if (!lhsRep || !rhsRep)
-      return {};
-    return emitBinOpCall({lhsRep, exprs[0]}, {rhsRep, exprs[1]}, ops[0], this,
-                         emitter);
-  }
-  emitter.emitError(getLoc(),
-                    "ChainedCmpOpNode not implemented for > 2 operands");
-  return {};
+  RValue e0Rep = emitter.emitExprRValue(exprs[0]);
+  RValue e1Rep = emitter.emitExprRValue(exprs[1]);
+  if (!e0Rep || !e1Rep)
+    return {};
+
+  AnyValue cmpe0e1RV = emitBinOpCall({e0Rep, exprs[0]}, {e1Rep, exprs[1]},
+                                     ops[0], this, emitter);
+  if (exprs.size() == 2)
+    return cmpe0e1RV;
+
+  DRValue lastCmpExpr = emitter.emitDRValue({cmpe0e1RV, exprs[1]});
+  DRValue e1RV = emitter.emitDRValue(ASTExprAnd<RValue>{e1Rep, exprs[1]});
+  if (!lastCmpExpr || !e1RV)
+    return {};
+  return emitNextCmp(emitter, 1, lastCmpExpr, e1RV);
 }
