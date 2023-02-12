@@ -82,3 +82,48 @@ kgen.func @top0() {
 }
 
 // CHECK: #[[INLINED_LOC]] = loc(callsite(#[[CALLEE_LOC]] at #{{.*}}))
+
+// -----
+
+#file = #debuginfo.file<"foo.c" in "/mlir/">
+#compile_unit = #debuginfo.compile_unit<
+  sourceLanguage = DW_LANG_C,
+  file = #file,
+  producer = "MLIR",
+  isOptimized = true,
+  emissionKind = Full
+>
+#subprogram = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "foo",
+  linkageName = "foo",
+  file = #file,
+  line = 10,
+  scopeLine = 10,
+  subprogramFlags = Definition
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#local_variable = #debuginfo.local_variable<
+  scope = #subprogram,
+  name = "foo",
+  file = #file,
+  line = 10,
+  arg = 1
+> : !debuginfo.unresolved<index>
+
+kgen.func @nodebug_inline_me(%arg0: index) -> index always_inline_no_debug {
+  %0 = index.add %arg0, %arg0
+  debuginfo.value #local_variable = %arg0 : index
+  kgen.return %0: index
+}
+
+// CHECK-LABEL: kgen.func @call_it
+kgen.func @call_it() -> index {
+  %0 = index.constant 3
+  // CHECK: index.add %idx3, %idx3 loc(#[[NODEBUG_LOC:.*]])
+  // CHECK-NOT: debuginfo.value
+  %1 = kgen.call @nodebug_inline_me(%0) : (index) -> index
+  kgen.return %1 : index
+}
+
+// CHECK: #[[NODEBUG_LOC]] = loc("within split
