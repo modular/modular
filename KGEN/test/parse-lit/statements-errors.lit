@@ -76,6 +76,17 @@ def test_bool_context(a: NotBoolConvertible):
   if a: # expected-error {{::NotBoolConvertible' does not implement the '__bool__' method}}
      pass
 
+fn test_if_decorator(a: Bool):
+  @not_good() # expected-error {{unsuported decorator on 'if' statement}}
+  if a:
+    pass
+
+  @parameter
+  if 1 != 0:
+    pass
+  elif a:  # expected-error {{cannot use a dynamic value in meta context}}
+    pass
+
 ##===----------------------------------------------------------------------===##
 # Raise
 ##===----------------------------------------------------------------------===##

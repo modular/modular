@@ -815,15 +815,17 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
 // Decorator support logic
 //===----------------------------------------------------------------------===//
 
-static SmallVector<ExprNode *> parseDecorators(ASTDecl &decl,
-                                               LitParserBase &p) {
+SmallVector<ExprNode *> LitParserBase::parseDecorators(ASTDecl &decl) {
+  return parseDecorators(decl.getParentDecl()->getIndentation());
+}
+
+SmallVector<ExprNode *> LitParserBase::parseDecorators(ssize_t indentation) {
   SmallVector<ExprNode *> result;
-  ssize_t indentation = decl.getParentDecl()->getIndentation();
-  if (p.getToken().getIndentation())
-    indentation = p.getToken().getIndentation().value();
-  while (p.consumeIf(LitToken::at)) {
+  if (getToken().getIndentation())
+    indentation = getToken().getIndentation().value();
+  while (consumeIf(LitToken::at)) {
     ExprNode *decoratorExpr;
-    if (p.parseExpression(decoratorExpr, indentation))
+    if (parseExpression(decoratorExpr, indentation))
       break;
     result.push_back(decoratorExpr);
   }
@@ -1319,7 +1321,7 @@ void FnDecorators::applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
 LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
-  SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
+  SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
   assert(p.getToken().isAny(LitToken::kw_async, LitToken::kw_def,
                             LitToken::kw_fn) &&
          "not a function definition?");
@@ -1665,7 +1667,7 @@ struct ParsedLetVarDecl {
 /// Parse the structure of a let/var declaration.
 ParseResult ParsedLetVarDecl::parse(LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
-  decorators = parseDecorators(decl, p);
+  decorators = p.parseDecorators(decl);
 
   p.consumeToken(); // eat the let/var.
   if (p.parseToken(LitToken::identifier,
@@ -1804,7 +1806,7 @@ ParseResult DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer,
 LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
-  SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
+  SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
 
   // Parse the type if present.
   if (p.parseToken(LitToken::kw_alias,
@@ -1901,7 +1903,7 @@ ParseResult DeclResolver::resolveBody(AliasForwardDeclOp aliasFwdDeclOp,
 LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
-  SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
+  SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
 
   SmallVector<ParamDeclAttr> inputParamDecls;
   SmallVector<ParamDeclAttr> resultParamDecls;
@@ -1942,7 +1944,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
 LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
                                              LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
-  SmallVector<ExprNode *> decoratorExprs = parseDecorators(decl, p);
+  SmallVector<ExprNode *> decoratorExprs = p.parseDecorators(decl);
 
   ASTType type;
   // Parse the type if present.

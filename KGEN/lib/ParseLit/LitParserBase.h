@@ -166,6 +166,11 @@ public:
   // Integration with parsers for subsets of the grammar.
   //===--------------------------------------------------------------------===//
 
+  /// Parse and return a set of decorators for the specified declaration or
+  /// statement at the specified indentation level.
+  SmallVector<ExprNode *> parseDecorators(ASTDecl &decl);
+  SmallVector<ExprNode *> parseDecorators(ssize_t indention);
+
   /// Expression parsing.  Each of these take a `stmtIndent` specifier that
   /// indicates the indentation level of the start of the statement that
   /// contains this expression if the expression can exist at the end of the
