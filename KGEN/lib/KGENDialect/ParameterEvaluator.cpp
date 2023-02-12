@@ -68,6 +68,13 @@ ParameterEvaluator::ParameterEvaluator(ArrayRef<ParamBindAttr> paramValues) {
     setParameterValue(bind.getName(), bind.getValue());
 }
 
+// NOTE: This is out of line to provide a home for the ParameterEvaluator
+// vtable.
+FailureOr<TypedAttr>
+ParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
+  return failure();
+}
+
 /// Get the specified attribute with any nested parameter expressions rewritten.
 Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   // These are common leaf attributes that we know are never parameterized.
