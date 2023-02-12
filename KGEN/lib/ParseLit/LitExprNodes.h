@@ -27,6 +27,8 @@ class SignatureType;
 }
 
 namespace M::KGEN::LIT {
+class DRValue;
+
 /// This returns an SMLoc from a StringRef that points into the source buffer.
 inline SMLoc getSMLocFromStringRef(StringRef bufferRef) {
   return SMLoc::getFromPointer(bufferRef.data());
@@ -432,6 +434,8 @@ struct ChainedCmpOpNode final : public ExprNode {
   }
 
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitNextCmp(ExprEmitter &emitter, size_t opIdx, DRValue lastCmp,
+                       DRValue lastExpr) const;
 };
 
 } // namespace M::KGEN::LIT

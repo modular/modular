@@ -553,3 +553,41 @@ fn testWeirdArray(a: WeirdArray, idx: Int, f: F32):
   # CHECK: [[VARIADIC:%.*]] = pop.variadic.create [%idx, %idx, %idx, %idx]
   # CHECK: kgen.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %f, [[VARIADIC]])
   _ = a[f, idx, idx, idx, idx]
+
+# CHECK-LABEL: lit.func @"chained_cmp
+fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
+    # CHECK:      %[[CMP_A_B:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%a, %b)
+    # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = kgen.call @{{.*}}__lit_bool{{.*}}(%[[CMP_A_B]])
+    # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
+    # CHECK-NEXT:   %[[CMP_B_C:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%b, %c)
+    # CHECK:        %[[IF_B_C:.*]] = hlcf.if
+    # CHECK-NEXT:     %[[CMP_C_D:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%c, %d)
+    # CHECK-NEXT:     hlcf.yield %[[CMP_C_D]]
+    # CHECK-NEXT:   } else {
+    # CHECK-NEXT:     hlcf.yield %[[CMP_B_C]]
+    # CHECK-NEXT:   }
+    # CHECK-NEXT:   hlcf.yield %[[IF_B_C]]
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   hlcf.yield %[[CMP_A_B]]
+    # CHECK-NEXT: }
+    # CHECK-NEXT: pop.store %[[IF_A_B]], %res : !pop.pointer<@"$Bool"::@Bool>
+    var res = a < b < c < d
+
+    # COM: This checks the parsing precedence between `<` and `and`.
+    # CHECK:      %[[CMP_A_B:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%a, %b)
+    # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = kgen.call @{{.*}}__lit_bool{{.*}}(%[[CMP_A_B]])
+    # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
+    # CHECK-NEXT:   %[[CMP_B_C:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%b, %c)
+    # CHECK-NEXT:   hlcf.yield %[[CMP_B_C]]
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   hlcf.yield %[[CMP_A_B]]
+    # CHECK-NEXT: }
+    # CHECK-NEXT: %[[CMP_I1:.*]] = kgen.call @{{.*}}__lit_bool{{.*}}(%[[IF_A_B]])
+    # CHECK-NEXT: %[[IF:.*]] = scf.if %[[CMP_I1]]
+    # CHECK-NEXT:   %[[CMP_D_E:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%d, %e)
+    # CHECK-NEXT:   scf.yield %[[CMP_D_E]]
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   scf.yield %[[IF_A_B]]
+    # CHECK-NEXT: }
+    # CHECK-NEXT: pop.store %[[IF]], %res : !pop.pointer<@"$Bool"::@Bool>
+    res = a < b < c and d < e
