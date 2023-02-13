@@ -204,7 +204,9 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   FuncOp mainFunc = findMain(*theModule, symtab);
   if (!mainFunc)
-    return clOptions.reportError("could not find fn main()");
+    return clOptions.reportError(
+        "could not find 'fn main():', please provide a main function with no "
+        "arguments / return values.");
 
   return (execMain(mainFunc));
 }
