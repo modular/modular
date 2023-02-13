@@ -27,6 +27,11 @@ def missing_type_on_var_decl():
   pass # expected-error {{unexpected token in expression}}
   abc+abc
 
+def bad_stmt_list():
+  # expected-error @+1 {{'if' statement must be on its own line}}
+  abc = Int(0); if abc != 0: pass
+
+
 ##===----------------------------------------------------------------------===##
 # Functions
 ##===----------------------------------------------------------------------===##

@@ -90,8 +90,8 @@ struct LitStmtParser : public LitParserBase {
 
   ParseResult parseSuite(ssize_t curIndent);
   ParseResult parseLocalScopeSuite(ssize_t curIndent);
-  ParseResult parseStmts(size_t minIndent);
-  ParseResult parseStmt(bool isSimpleStmt, size_t curIndent);
+  ParseResult parseStmt(bool onlySimpleStmt, bool &parsedCompound,
+                        size_t curIndent);
 
   // Compound statements.
   ParseResult parseIfStmt(LitLexerCursor startCursor, size_t curIndent);
@@ -134,31 +134,61 @@ private:
 /// statement's indentation level.
 ///
 /// suite     ::=  [stmt_list NEWLINE] | NEWLINE INDENT statement+ DEDENT
+/// statement ::=  stmt_list NEWLINE | compound_stmt
 /// stmt_list ::=  simple_stmt (";" simple_stmt)* [";"]
 ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
   // Ignore empty body at end of file: a `pass` is not required.
   if (getToken().is(LitToken::eof))
     return success();
 
-  // If there is a newline, then parse a list of statements.
-  if (auto indent = getToken().getIndentation()) {
-    // If the current token is less indented that the source of the suite,
-    // then the body is empty.  We don't require a pass.
+  /// This function parses a stmt_list, and if simpleStmtOnly is false, it
+  /// also allows a compound statement.
+  auto parseStmtListOrCompound = [&](bool stmtListOnly,
+                                     size_t stmtIndent) -> ParseResult {
+    do {
+      bool parsedCompound = false;
+      if (parseStmt(/*onlySimpleStmt=*/stmtListOnly, parsedCompound,
+                    stmtIndent))
+        return failure();
+
+      // If we parsed a compound statement, then we don't allow trailing
+      // semicolons after it.
+      if (parsedCompound)
+        return success();
+
+      // Otherwise, we parsed a simple statement, which means no more compound
+      // statements are allowed.
+      stmtListOnly = true;
+
+      // Continue if we see a semicolon that isn't at the end of the line.
+    } while (consumeIf(LitToken::semi) &&
+             !getToken().getIndentation().has_value());
+    return success();
+  };
+
+  // If this suite is on the same line as the enclosing entity, just parse a
+  // single stmt_list.
+  auto indent = getToken().getIndentation();
+  if (!indent.has_value())
+    return parseStmtListOrCompound(/*stmtListOnly*/ true,
+                                   /*NoWrapping=*/~size_t(0));
+
+  // If there is a newline, then parse a list of statements which can be either
+  // a statement list or a compount_stmt.  Parse all the statements that are
+  // more nested than this suite.
+  while (getToken().isNot(LitToken::eof)) {
+    auto indent = getToken().getIndentation();
+    if (!indent.has_value())
+      return emitTokenError("statements must start at the beginning of a line");
     if (ssize_t(*indent) <= curIndent)
-      return success();
-    return parseStmts(curIndent + 1);
-  }
+      break;
 
-  // Otherwise, parse a stmt_list.
-  do {
-    if (parseStmt(/*isSimpleStmt=*/true, /*NoWrapping=*/~size_t(0)))
+    if (parseStmtListOrCompound(/*stmtListOnly=*/false, *indent))
       return failure();
-    // Stop if we see a semicolon at the end of line or a missing semicolon.
-  } while (consumeIf(LitToken::semi) &&
-           !getToken().getIndentation().has_value());
-
+  }
   return success();
 }
+
 ParseResult LitStmtParser::parseLocalScopeSuite(ssize_t curIndent) {
   // If we are generating debug info, push a local scope for the suite.
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
@@ -176,25 +206,6 @@ ParseResult LitStmtParser::parseLocalScopeSuite(ssize_t curIndent) {
 
   // Forward to the normal suite parse method.
   return parseSuite(curIndent);
-}
-
-/// statements ::= statement+
-///
-/// This parses statements at the current indentation level or greater, it
-/// refuses to parse things at lower indentation level.
-ParseResult LitStmtParser::parseStmts(size_t minIndent) {
-  while (getToken().isNot(LitToken::eof)) {
-    auto indent = getToken().getIndentation();
-    if (!indent.has_value())
-      return emitTokenError("statements must start at the beginning of a line");
-
-    if (*indent < minIndent)
-      break;
-
-    if (parseStmt(/*isSimpleStmt=*/false, *indent))
-      return failure();
-  }
-  return success();
 }
 
 /// Emit a warning when an expression is emitted at statement context, and it
@@ -253,9 +264,10 @@ static void diagnoseIgnoredResult(const ExprNode *expr, AnyValue value,
       << LitFixIt(LitSourceRange::getByteLevel(startLoc, startLoc), "_ = ");
 }
 
-/// When `isSimpleStmt` is true, this parses the simple_stmt production,
+/// When `onlySimpleStmt` is true, this parses the simple_stmt production,
 /// otherwise it parses the broader `statment` production that includes compound
-/// statements.
+/// statements.  This sets `parsedCompound` to true if `onlySimpleStmt` was
+/// false and we parsed a compound stmt.
 ///
 /// statement ::= compound_stmt | simple_stmt
 ///
@@ -291,7 +303,8 @@ static void diagnoseIgnoredResult(const ExprNode *expr, AnyValue value,
 ///               | global_stmt [TODO]
 ///               | nonlocal_stmtParseResult [TODO]
 ///
-ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
+ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
+                                     size_t stmtIndent) {
   // This is the cursor for the start of the declaration, that will be used in
   // the signature resolution phase.
   LitLexerCursor startCursor = getLexer().getCursor();
@@ -308,7 +321,8 @@ ParseResult LitStmtParser::parseStmt(bool isSimpleStmt, size_t stmtIndent) {
   // This lambda is used to generate an error when a compound statement is used
   // in a scenario that expects simple statements.
   auto rejectSimpleStmt = [&]() {
-    if (!isSimpleStmt)
+    parsedCompound = true; // Tell the caller that we parsed a compound stmt.
+    if (!onlySimpleStmt)
       return;
     emitTokenError() << "'" << getToken().getSpelling()
                      << "' statement must be on its own line";
@@ -648,6 +662,9 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   // retrieve the iterator object from the sequence expression
   ASTExprAnd<AnyValue> loadedSeq = {getEmitter().emitExprRValue(seqExp),
                                     seqExp};
+  if (!loadedSeq.ir)
+    return {};
+
   AnyValue rangeValue = getEmitter().emitNamedMethodCall(
       "__iter__", {loadedSeq}, CallSyntax::kImplicitConvert, seqExp);
   if (!rangeValue)
