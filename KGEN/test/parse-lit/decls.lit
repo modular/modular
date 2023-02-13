@@ -19,6 +19,13 @@ def let_decls():
   # CHECK: %z = lit.let.decl "z" = [[TMP]]
   let z = Int(x)
 
+  # These may be declared on the same line.
+  let a = 0; let b = a
+  # CHECK: %a = lit.let.decl "a" =
+  # CHECK: %b = lit.let.decl "b" =
+
+
+
 ##===----------------------------------------------------------------------===##
 # var
 ##===----------------------------------------------------------------------===##

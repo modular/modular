@@ -640,7 +640,7 @@ static Type parseScalarType(AsmParser &p) {
 
 static ParseResult parsePrettyScalarType(AsmParser &p, TypedAttr &typeExpr) {
   Type t = parseScalarType(p);
-  if (isa<SIMDType>(t)) {
+  if (isa_and_nonnull<SIMDType>(t)) {
     typeExpr = TypeConstantAttr::get(t);
     return success();
   }
