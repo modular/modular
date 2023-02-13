@@ -99,41 +99,77 @@ void ParamDeclareOp::setParamDecl(ParamDeclAttr decl) {
 // ParamDeclareRegionOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseRegionDeclaration(OpAsmParser &p,
-                                          ParamDeclArrayAttr &paramDecls,
-                                          Region &body) {
+static ParseResult
+parseRegionDeclaration(OpAsmParser &p, ParamDeclArrayAttr &paramDecls,
+                       TypeAttr &signature, ConstraintArrayAttr &constraints,
+                       AlwaysInlineLevelAttr &alwaysInlineLevel, Region &body) {
   StringAttr paramName;
-  if (parseParamName(p, paramName) || p.parseEqual())
+  SmallVector<OpAsmParser::Argument> args;
+  ParamDeclArrayAttr inputParamDecls, resultParamDecls;
+  MetadataAttr metadata;
+  SmallVector<Type> resultTypes;
+  llvm::SMLoc bodyLoc;
+  if (parseParamName(p, paramName) || p.parseEqual() ||
+      parseOptionalParameterSpec(p, inputParamDecls, resultParamDecls) ||
+      parseFunctionSignature(p, args, resultTypes, metadata) ||
+      parseOptionalAlwaysInline(p, alwaysInlineLevel) ||
+      parseOptionalConstraints(p, constraints) ||
+      p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
     return failure();
 
-  OperationState regionBody(p.getEncodedSourceLoc(p.getCurrentLocation()),
-                            RegionBodyOp::getOperationName());
-  std::optional<Location> bodyLoc = regionBody.location;
-  if (RegionBodyOp::parse(p, regionBody) ||
-      p.parseOptionalLocationSpecifier(bodyLoc))
-    return failure();
-  regionBody.location = *bodyLoc;
-  auto bodyOp = cast<RegionBodyOp>(Operation::create(regionBody));
-  body.push_back(new Block);
-  body.front().push_back(bodyOp);
-
+  // Form the Signature.
+  SmallVector<Type> argTypes;
+  for (const OpAsmParser::Argument &arg : args)
+    argTypes.push_back(arg.type);
+  signature = TypeAttr::get(SignatureType::get(
+      inputParamDecls, resultParamDecls,
+      p.getBuilder().getFunctionType(argTypes, resultTypes), metadata));
   paramDecls = ParamDeclArrayAttr::get(
-      p.getContext(), ParamDeclAttr::get(paramName, bodyOp.getSignature()));
+      p.getContext(), ParamDeclAttr::get(paramName, signature.getValue()));
   return success();
 }
 
 static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
                                    ParamDeclArrayAttr paramDecls,
-                                   Region &region) {
+                                   TypeAttr signature,
+                                   ConstraintArrayAttr constraints,
+                                   AlwaysInlineLevelAttr alwaysInlineLevel,
+                                   Region &body) {
+  auto sig = cast<SignatureType>(signature.getValue());
   printParamName(p, paramDecls.front().getName());
-  p << " =";
-  auto body = cast<RegionBodyOp>(region.front().front());
-  body.print(p);
-  p.printOptionalLocationSpecifier(body.getLoc());
+  p << " = ";
+  printOptionalParameterSpec(p, sig.getInputParams(), sig.getResultParams());
+  printFunctionSignature(p, body, sig.getValueInputs(), sig.getValueResults(),
+                         sig.getMetadata());
+  printOptionalAlwaysInline(p, alwaysInlineLevel);
+  printOptionalConstraints(p, op, constraints);
+  p << ' ';
+  p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
 ParamDeclAttr ParamDeclareRegionOp::getParamDecl() {
   return getParamDecls().front();
+}
+
+LogicalResult ParamDeclareRegionOp::verifyRegions() {
+  auto returnOp = cast<ReturnOp>(getBody()->getTerminator());
+  if (failed(checkResultArgumentTypes(returnOp, returnOp.getParameters(),
+                                      getResultParams(),
+                                      getSignature().getValueResults())))
+    return failure();
+  if (getBody()->getArgumentTypes() != getSignature().getValueInputs())
+    return emitOpError("signature mismatches body");
+  return success();
+}
+
+bool ParamDeclareRegionOp::isIsolatedFromAbove(unsigned regionNum) {
+  assert(regionNum == 0);
+  return getIsolated();
+}
+
+void ParamDeclareRegionOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
+  assert(regionNum == 0);
+  setIsolated(true);
 }
 
 //===----------------------------------------------------------------------===//
@@ -654,74 +690,6 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
   rewriter.replaceOpWithNewOp<CallOp>(op, op.getResultTypes(), callee,
                                       op.getParamDecls(), op.getOperands());
   return success();
-}
-
-//===----------------------------------------------------------------------===//
-// RegionBodyOp / custom<RegionBody>
-//===----------------------------------------------------------------------===//
-
-/// Parse a single-block isolated from above region.
-static ParseResult parseRegionBody(OpAsmParser &p, TypeAttr &signature,
-                                   ConstraintArrayAttr &constraints,
-                                   AlwaysInlineLevelAttr &alwaysInlineLevel,
-                                   Region &body) {
-  SmallVector<OpAsmParser::Argument> args;
-  ParamDeclArrayAttr inputParamDecls, resultParamDecls;
-  MetadataAttr metadata;
-  SmallVector<Type> resultTypes;
-  llvm::SMLoc bodyLoc;
-  if (parseOptionalParameterSpec(p, inputParamDecls, resultParamDecls) ||
-      parseFunctionSignature(p, args, resultTypes, metadata) ||
-      parseOptionalAlwaysInline(p, alwaysInlineLevel) ||
-      parseOptionalConstraints(p, constraints) ||
-      p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
-    return failure();
-
-  // Form the Signature.
-  SmallVector<Type> argTypes;
-  for (const OpAsmParser::Argument &arg : args)
-    argTypes.push_back(arg.type);
-  signature = TypeAttr::get(SignatureType::get(
-      inputParamDecls, resultParamDecls,
-      p.getBuilder().getFunctionType(argTypes, resultTypes), metadata));
-  return success();
-}
-
-/// Print a single-block isolated from above region.
-static void printRegionBody(OpAsmPrinter &p, Operation *op, TypeAttr signature,
-                            ConstraintArrayAttr constraints,
-                            AlwaysInlineLevelAttr alwaysInlineLevel,
-                            Region &body) {
-  auto sig = cast<SignatureType>(signature.getValue());
-
-  printOptionalParameterSpec(p, sig.getInputParams(), sig.getResultParams());
-  printFunctionSignature(p, body, sig.getValueInputs(), sig.getValueResults(),
-                         sig.getMetadata());
-  printOptionalAlwaysInline(p, alwaysInlineLevel);
-  printOptionalConstraints(p, op, constraints);
-  p << ' ';
-  p.printRegion(body, /*printEntryBlockArgs=*/false);
-}
-
-LogicalResult RegionBodyOp::verifyRegions() {
-  auto returnOp = cast<ReturnOp>(getBody()->getTerminator());
-  if (failed(checkResultArgumentTypes(returnOp, returnOp.getParameters(),
-                                      getResultParams(),
-                                      getSignature().getValueResults())))
-    return failure();
-  if (getBody()->getArgumentTypes() != getSignature().getValueInputs())
-    return emitOpError("signature mismatches body");
-  return success();
-}
-
-bool RegionBodyOp::isIsolatedFromAbove(unsigned regionNum) {
-  assert(regionNum == 0);
-  return getIsolated();
-}
-
-void RegionBodyOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
-  assert(regionNum == 0);
-  setIsolated(true);
 }
 
 //===----------------------------------------------------------------------===//

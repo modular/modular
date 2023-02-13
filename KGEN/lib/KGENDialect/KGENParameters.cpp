@@ -365,7 +365,7 @@ ParameterUseDefGraphNodeIterator ParameterUseDefGraphNode::end() const {
   if (!param)
     return {*this, g->params.size()};
   // Do not traverse through to parameters in higher scopes.
-  if (!g->scope->getParentOp()->isAncestor(g->decls[param].declOp))
+  if (!g->scope->isAncestor(g->decls[param].scope))
     return begin();
   // If the used parameter has no definition, this is a leaf node.
   auto it = g->defs.find(param);
@@ -451,7 +451,7 @@ static LogicalResult recordDecl(ParameterUseDefGraph &g, ParamDeclAttr decl,
 
   // If this parameter has already been declared in an operation in the same
   // scope, we have an error.
-  if (paramDecl.declOp && scope.getParentOp()->isAncestor(paramDecl.declOp)) {
+  if (paramDecl.scope && scope.isAncestor(paramDecl.scope)) {
     return (op->emitError("redeclaration of parameter ") << decl.getName())
                .attachNote(paramDecl.declOp->getLoc())
            << "previous declaration here";
@@ -460,6 +460,7 @@ static LogicalResult recordDecl(ParameterUseDefGraph &g, ParamDeclAttr decl,
   // Record the new declaration.
   paramDecl.declOp = op;
   paramDecl.type = decl.getType();
+  paramDecl.scope = &scope;
   return success();
 }
 
@@ -500,13 +501,6 @@ static LogicalResult visit(ParameterUseDefGraph &g,
     // The definition depends on uses in the value.
     bool unused;
     c.collectUsesFromAttr(def.value, def.uses, unused);
-
-  } else if (auto region = dyn_cast<ParamDeclareRegionOp>(op)) {
-    // A `kgen.param.declare.region` declares a parameter, but the definition
-    // is a region, which the elaborator will process into a symbol constant.
-    if (failed(recordDeclWrapper(region.getParamDecl())))
-      return failure();
-    recordDefWrapper(region.getParamDecl());
 
   } else if (auto search = dyn_cast<ParamSearchOp>(op)) {
     // A `kgen.param.search` declares a parameter that can have one of many
@@ -674,6 +668,17 @@ static LogicalResult processParamIfOp(ParamIfOp ifOp,
   return success();
 }
 
+static LogicalResult
+processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
+                            ParameterUseDefGraph &graph,
+                            VerifyingParameterCollector &c, Region *scope) {
+  ParamDeclAttr decl = regionDecl.getParamDecl();
+  if (failed(recordDecl(graph, decl, regionDecl, *scope)))
+    return failure();
+  recordDef(graph, decl, regionDecl);
+  return success();
+}
+
 LogicalResult
 ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
                                         SymbolTableCollection *symtab) {
@@ -699,15 +704,18 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
         ifRegions.emplace_back(ifOp.getParamDeclsAttr(), &ifOp.getThenRegion());
         ifRegions.emplace_back(ifOp.getParamDeclsAttr(), &ifOp.getElseRegion());
       }
+      if (auto regionDecl = dyn_cast<ParamDeclareRegionOp>(op)) {
+        if (failed(processParamDeclareRegionOp(regionDecl, *this, c, scope)))
+          return WalkResult::interrupt();
+
+        regionParams.push_back(regionDecl.getParamDecl().getName());
+      }
       // Then, push the regions into the nested decls.
       for (Region &r : decl->getRegions())
         if (&r != scope)
           nestedDecls.push_back(&r);
       return WalkResult::skip();
     }
-
-    if (auto region = dyn_cast<ParamDeclareRegionOp>(op))
-      regionParams.push_back(region.getParamDecl().getName());
 
     // Visit the operation inside this scope.
     if (failed(visit(*this, c, *scope, op)))
@@ -744,7 +752,7 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
 
       // If the declaration of the parameter is outside the current scope,
       // indicate this as a parameter use from above.
-      if (!scope->getParentOp()->isAncestor(it->second.declOp))
+      if (!scope->isAncestor(it->second.scope))
         usesFromAbove.insert(use);
     }
   }
@@ -774,7 +782,7 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
     for (ParamDeclRefAttr use : nested.usesFromAbove) {
       auto it = decls.find(use.getName());
       assert(it != decls.end() && "nested use has no declaration?");
-      if (!scope->getParentOp()->isAncestor(it->second.declOp))
+      if (!scope->isAncestor(it->second.scope))
         usesFromAbove.insert(use);
     }
     nested.nestedScopes.clear();
@@ -787,7 +795,7 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
   for (StringAttr regionParam : regionParams) {
     ParamDefinition &def = defs[regionParam];
     auto region = cast<ParamDeclareRegionOp>(def.defOp);
-    auto it = nestedScopes.find(&region.getBody().front().front().getRegion(0));
+    auto it = nestedScopes.find(&region.getBodyRegion());
     assert(it != nestedScopes.end() && "didn't visit nested body?");
     def.uses = llvm::to_vector(it->second.usesFromAbove);
   }
@@ -817,8 +825,7 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
 
     assert(sccIt->size() == 1 && "non-cyclic regions should have one node");
     StringAttr param = sccIt->front().param;
-    if (param &&
-        scope->getParentOp()->isAncestor(decls.find(param)->second.declOp))
+    if (param && scope->isAncestor(decls.find(param)->second.scope))
       paramSolveOrder.push_back(param);
   }
   params = std::move(paramSolveOrder);
@@ -851,8 +858,8 @@ ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) {
 
   // Copy over decls and defs.
   for (auto [name, decl] : decls)
-    out.decls[name] =
-        ParamDeclaration{decl.type, map.lookupOrDefault(decl.declOp)};
+    out.decls[name] = ParamDeclaration{
+        decl.type, map.lookupOrDefault(decl.declOp), remapRegion(decl.scope)};
   for (auto [name, def] : defs)
     out.defs[name] = ParamDefinition{def.value, def.index,
                                      map.lookupOrDefault(def.defOp), def.uses};

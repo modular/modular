@@ -337,7 +337,8 @@ def KGEN_ParamConstantOp : KGENOp<"param.constant",
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamDeclareOp : KGENOp<"param.declare"> {
-  let summary = [{
+  let summary = "Declare a single parameter value.";
+  let description = [{
     The `kgen.param.declare` operation declares a single parameter and binds
     its value to a parameter expression. The parameter is visible within and
     below the scope of the enclosing `DeclInterface` operation.
@@ -372,8 +373,9 @@ def KGEN_ParamDeclareOp : KGENOp<"param.declare"> {
 // ParamDeclareRegionOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region",
-    [SingleBlockImplicitTerminator<"RegionBodyOp">]> {
+def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
+    DeclInterface, FuncInterface, FunctionOpInterface,
+    SingleBlockImplicitTerminator<"ReturnOp">]> {
   let summary = "declare a region parameter";
   let description = [{
     The `kgen.param.declare.region` operation declares a signature-type
@@ -409,57 +411,22 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region",
     }
     ```
 
-    The operations carry an extra bit `isolated` to indicate that they are
+    The operation carries an extra bit `isolated` to indicate that they are
     parametrically isolated from above.
-
-    Note: this operation carries a single `RegionBodyOp` since operations cannot
-    both define parameters in the current scope while declaring a new scope at
-    the same time: it is not possible to check redeclarations at the same scope.
   }];
 
-  let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls);
-  let regions = (region SizedRegion<1>:$body);
-
-  let assemblyFormat = [{
-    custom<RegionDeclaration>($paramDecls, $body) attr-dict
-  }];
-
-  let builders = [
-    OpBuilder<(ins "ParamDeclAttr":$paramDecl), [{
-      build($_builder, $_state, ParamDeclArrayAttr::get(paramDecl));
-    }]>
-  ];
-
-  let extraClassDeclaration = [{
-    /// Return the single parameter declaration.
-    ParamDeclAttr getParamDecl();
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// RegionBodyOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_RegionBodyOp : KGENOp<"region.body", [Terminator, DeclInterface,
-    FuncInterface, FunctionOpInterface,
-    SingleBlockImplicitTerminator<"ReturnOp">,
-    ParentOneOf<["ParamDeclareRegionOp"]>]> {
-  let summary = "Define a region parameter body.";
-  let description = [{
-    The `kgen.region.body` operation defines the contents of a region parameter.
-    It is used in conjunction with `kgen.param.declare.region` to define a
-    region parameter. See that operation for more details.
-  }];
-
-  let arguments = (ins TypeAttrOf<KGEN_SignatureType>:$signature,
-                       ConstraintArrayAttr:$constraints,
-                       UnitAttr:$isolated,
-                       KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel);
+  let arguments = (ins
+    ParamDeclSize1ArrayAttr:$paramDecls,
+    TypeAttrOf<KGEN_SignatureType>:$signature,
+    ConstraintArrayAttr:$constraints,
+    UnitAttr:$isolated,
+    KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel
+  );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    custom<RegionBody>($signature, $constraints, $alwaysInlineLevel,
-                       $bodyRegion) attr-dict
+    custom<RegionDeclaration>($paramDecls, $signature, $constraints,
+                              $alwaysInlineLevel, $bodyRegion) attr-dict
   }];
 
   let extraClassDeclaration = [{
@@ -468,6 +435,9 @@ def KGEN_RegionBodyOp : KGENOp<"region.body", [Terminator, DeclInterface,
 
     /// Region body op doesn't form a symbol.
     bool isOptionalSymbol() { return true; }
+
+    /// Return the single parameter declaration.
+    ParamDeclAttr getParamDecl();
   }];
 
   let hasRegionVerifier = 1;
