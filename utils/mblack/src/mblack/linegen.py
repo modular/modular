@@ -197,7 +197,7 @@ class LineGenerator(Visitor[Line]):
     def visit_funcdef(self, node: Node) -> Iterator[Line]:
         """Visit function definition."""
         if Preview.annotation_parens not in self.mode:
-            yield from self.visit_stmt(node, keywords={"def"}, parens=set(), nodeTypes={token.FN})
+            yield from self.visit_stmt(node, keywords={"def"}, parens=set(), nodeTypes={token.FN, token.MLIR_REGION})
         else:
             yield from self.line()
 

@@ -470,13 +470,14 @@ def generate_tokens(
     # If we know we're parsing lit, we can unconditionally parse various
     # identifiers, like `fn`, as keywords.
     has_lit_keywords = False if grammar is None else grammar.lit_keywords
-    def_keywords = ("def", "fn") if has_lit_keywords else ("def")
+    def_keywords = ("def", "fn", "__mlir_region") if has_lit_keywords else ("def")
     lit_keyword_tokens = {
         "fn": FN,
         "struct": STRUCT,
         "alias": ALIAS,
         "var": VAR,
         "let": LET,
+        "__mlir_region": MLIR_REGION,
     }
 
     strstart: Tuple[int, int]

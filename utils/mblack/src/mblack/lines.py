@@ -169,10 +169,10 @@ class Line:
             second_leaf = None
 
         leaf_is_def = lambda leaf : leaf.type == token.NAME and leaf.value == "def"
-        return first_leaf.type == token.FN or leaf_is_def(first_leaf) or (
+        return first_leaf.type == token.FN or first_leaf.type == token.MLIR_REGION or leaf_is_def(first_leaf) or (
             first_leaf.type == token.ASYNC
             and second_leaf is not None
-            and (second_leaf.type == token.FN or leaf_is_def(second_leaf))
+            and (second_leaf.type == token.FN or second_leaf.type == token.MLIR_REGION or leaf_is_def(second_leaf))
         )
 
     @property

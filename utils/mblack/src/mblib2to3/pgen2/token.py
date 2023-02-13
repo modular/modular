@@ -95,6 +95,7 @@ STRUCT: Final = 62
 ALIAS: Final = 63
 LET: Final = 64
 VAR: Final = 65
+MLIR_REGION: Final = 66
 NT_OFFSET: Final = 256
 # --end constants--
 
