@@ -42,19 +42,27 @@ constexpr SuspendedThreadsBitvec getSuspendedThreadIdMask(size_t workerID) {
   return UINT64_C(1) << workerID;
 }
 
-static std::function<std::string()> printWorkerId(size_t workerID) {
-  return
-      [workerID]() { return Twine("workerID:").concat(Twine(workerID)).str(); };
+/// Time profiling entries for internal LLCL state changes.
+using InternalProfilerEntry =
+    TimeTraceProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 2)>;
+
+static constexpr auto printWorkerId(size_t workerID) {
+  return [workerID]() {
+    return Twine("(workerID:").concat(Twine(workerID)).concat(Twine(")")).str();
+  };
 }
 
 //===----------------------------------------------------------------------===//
 // WorkerThread
 //===----------------------------------------------------------------------===//
 
-// Execute a single work item with tracing support.
-static void doWork(TaskFunction &&workFn, size_t workerID) {
-  TIME_PROFILER_SCOPE(Trace::kLLCL, 1, "llcl.doWork", printWorkerId(workerID));
-  workFn();
+// Execute a single profiled work item.
+static void doWork(ProfiledTaskFunction &&profiledTask, size_t workerID) {
+  std::move(profiledTask.waiting).record();
+  profiledTask.running =
+      profiledTask.running.withDetailSuffix(printWorkerId(workerID));
+  profiledTask.work();
+  std::move(profiledTask.running).record();
 }
 
 namespace {
@@ -150,7 +158,7 @@ struct WorkQueueThread {
   /// over those in the global task list.
   SmallVector<TaskFunction> localTaskList;
   /// The overall ThreadPoolWorkQueue's task list we can 'steal' tasks from.
-  LockFreeRingBuffer<TaskFunction> &taskList;
+  LockFreeRingBuffer<ProfiledTaskFunction> &taskList;
   /// Unique index for this thread. Thread index #0 is reserved for 'foreign'
   /// threads. Though we create an entry for this index in the
   /// ThreadPoolWorkQueue workers it is not running a runOnThread work loop.
@@ -169,7 +177,8 @@ struct WorkQueueThread {
   /// a task list. This also starts the std::thread, so the sync state and task
   /// list must be initialized by the time this is called.
   WorkQueueThread(SharedThreadState &sharedState,
-                  LockFreeRingBuffer<TaskFunction> &taskList, size_t workerID)
+                  LockFreeRingBuffer<ProfiledTaskFunction> &taskList,
+                  size_t workerID)
       : sharedState(sharedState), taskList(taskList), workerID(workerID) {
     if (workerID == 0)
       // Worker #0 is for THE distinguished 'foreign' thread.
@@ -217,7 +226,10 @@ void WorkQueueThread::addOrExecuteLocalTask(TaskFunction &&work) {
   if (workerID == 0) {
     LLVM_DEBUG(llvm::dbgs() << "WorkQueueThread: running immediately (emplace "
                                "on foreign thread)\n");
-    doWork(std::move(work), workerID);
+    doWork(ProfiledTaskFunction(std::move(work),
+                                /*waiting=*/WorkProfilerEntry(),
+                                /*running=*/WorkProfilerEntry("llcl.andThen")),
+           workerID);
   } else {
     localTaskList.emplace_back(std::move(work));
   }
@@ -263,20 +275,23 @@ KeepRunning:
     // Prefer to run local work items as soon as they are available.
     // NOTE: the list may grow as we do work.
     for (size_t i = 0; i < localTaskList.size() /* not const */; ++i)
-      doWork(std::move(localTaskList[i]), workerID);
+      doWork(ProfiledTaskFunction(
+                 std::move(localTaskList[i]), /*waiting=*/WorkProfilerEntry(),
+                 /*running=*/WorkProfilerEntry("llcl.andThen")),
+             workerID);
     localTaskList.clear();
 
     if (runNewTasks) {
       // In the normal case we happily pick up and do work.
-      if (auto work = taskList.dequeue()) {
-        doWork(std::move(work), workerID);
+      if (auto labelledTask = taskList.dequeue()) {
+        doWork(std::move(labelledTask), workerID);
         continue;
       }
     }
 
     {
-      TIME_PROFILER_PUSH(Trace::kLLCL, 2, spinningLabel,
-                         printWorkerId(workerID));
+      TimeTraceScope scope(
+          InternalProfilerEntry(spinningLabel, printWorkerId(workerID)));
 
       // If we've run out of work to do, we need to quiesce and ultimately block
       // in the kernel on the semaphore.  However, we don't want to immediately
@@ -292,7 +307,6 @@ KeepRunning:
           // If we ever succeed in finding work to do, go back to running like
           // normal.
           if (auto work = taskList.dequeue()) {
-            TIME_PROFILER_POP(Trace::kLLCL, 2);
             doWork(std::move(work), workerID);
             goto KeepRunning;
           }
@@ -302,12 +316,9 @@ KeepRunning:
         // then we're done.  Checking the late stop condition here make sure our
         // threads shut down promptly when a runtime is torn down.
         if (earlyStopPredicate() || lateStopPredicate()) {
-          TIME_PROFILER_POP(Trace::kLLCL, 2);
           return;
         }
       }
-
-      TIME_PROFILER_POP(Trace::kLLCL, 2);
     }
 
     // Otherwise, we we've waited long enough, yield the thread to the OS so we
@@ -323,8 +334,8 @@ KeepRunning:
     }
 
     {
-      TIME_PROFILER_SCOPE(Trace::kLLCL, 2, sleepingLabel,
-                          printWorkerId(workerID));
+      TimeTraceScope scope(
+          InternalProfilerEntry(sleepingLabel, printWorkerId(workerID)));
 
       // Ok, finally block.
       sema.wait();
@@ -358,7 +369,7 @@ public:
   void shutdown() override;
   ~ThreadPoolWorkQueue() override = default;
 
-  void addTask(TaskFunction work) override;
+  void addTask(TaskFunction &&work, WorkProfilerEntry &&profilerEntry) override;
 
   void addOrExecuteSmallTask(TaskFunction work) override;
 
@@ -383,7 +394,7 @@ private:
   SharedThreadState sharedState;
 
   ///  This is the ringbuffer of work to do.
-  LockFreeRingBuffer<TaskFunction> taskList;
+  LockFreeRingBuffer<ProfiledTaskFunction> taskList;
 };
 } // namespace
 
@@ -402,12 +413,12 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkers,
 }
 
 void ThreadPoolWorkQueue::shutdown() {
-  TIME_PROFILER_SCOPE(Trace::kLLCL, 2, "llcl.shutdown");
+  TimeTraceScope scope(InternalProfilerEntry("llcl.shutdown"));
   size_t workerID = workerIDInTLS;
 
   // Donate this thread to help drain the work queue if there's anything left.
-  while (auto work = taskList.dequeue())
-    doWork(std::move(work), workerID);
+  while (auto labelledTask = taskList.dequeue())
+    doWork(std::move(labelledTask), workerID);
 
   // Now we can tell all the threads to exit.
   sharedState.doneFlag.store(true, std::memory_order_release);
@@ -427,12 +438,17 @@ void ThreadPoolWorkQueue::shutdown() {
     worker.join();
 }
 
-void ThreadPoolWorkQueue::addTask(TaskFunction work) {
+void ThreadPoolWorkQueue::addTask(TaskFunction &&work,
+                                  WorkProfilerEntry &&profilerEntry) {
   size_t workerID = workerIDInTLS;
   (void)workerID;
   // Try to add this work to the RingBuffer.
-  TIME_PROFILER_SCOPE(Trace::kLLCL, 2, "llcl.addTask");
-  if (taskList.enqueue(work)) {
+  WorkProfilerEntry waitingEntry =
+      profilerEntry.withNameSuffix(".waiting")
+          .withDetailSuffix(printWorkerId(workerID)); // restarts clock
+  ProfiledTaskFunction profiledTask(std::move(work), std::move(waitingEntry),
+                                    std::move(profilerEntry));
+  if (taskList.enqueue(profiledTask)) {
     // If there are any suspended workers, kick one of them now that there is
     // new work to do.
     int workerToPoke = sharedState.takeAnySuspendedThread();
@@ -449,13 +465,13 @@ void ThreadPoolWorkQueue::addTask(TaskFunction work) {
   LLVM_DEBUG(
       llvm::dbgs()
       << "ThreadPoolWorkQueue: running immediately (task queue is full)\n");
-  doWork(std::move(work), workerID);
+  doWork(std::move(profiledTask), workerID);
 }
 
 void ThreadPoolWorkQueue::addOrExecuteSmallTask(M::LLCL::TaskFunction work) {
   size_t workerID = workerIDInTLS;
   if (!kRunImmediatelyOnForeignThreads && workerID == 0)
-    addTask(std::move(work));
+    addTask(std::move(work), WorkProfilerEntry("llcl.andThen"));
   else
     workers[workerID].addOrExecuteLocalTask(std::move(work));
 }

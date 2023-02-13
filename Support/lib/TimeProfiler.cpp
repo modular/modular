@@ -45,20 +45,26 @@ struct TimeTraceThreadProfiler {
   }
 
   /// Start a new entry with the given name and detail.
-  void begin(std::string name, function_ref<std::string()> detail) {
-    stack.emplace_back(ClockType::now(), TimePointType(), std::move(name),
-                       detail());
+  void begin(StringRef name, function_ref<std::string()> detailFn) {
+    stack.emplace_back(name, detailFn);
+  }
+
+  void begin(StringRef name, StringRef detail) {
+    stack.emplace_back(name, detail);
   }
 
   /// End the current running entry.
   void end() {
     assert(!stack.empty() && "must call begin() first");
-    end(std::move(stack.back()));
+    record(std::move(stack.back()));
     stack.pop_back();
   }
 
-  /// End the given entry.
-  void end(TimeTraceProfilerEntry<true> &&entry) {
+  /// Record the given entry.
+  void record(TimeTraceProfilerEntry<true> &&entry) {
+    if (entry.name.empty())
+      return;
+
     entry.end = ClockType::now();
 
     // Calculate duration at full precision for overall counts.
@@ -68,15 +74,13 @@ struct TimeTraceThreadProfiler {
     if (duration_cast<microseconds>(duration).count() >= timeTraceGranularity)
       entries.emplace_back(entry);
 
-    if (stack.empty())
-      return;
-
     // Track total time taken by each "name", but only the topmost levels of
     // them; e.g. if there's a template instantiation that instantiates other
     // templates from within, we only want to add the topmost one. "topmost"
     // happens to be the ones that don't have any currently open entries above
     // itself.
-    if (llvm::none_of(llvm::drop_begin(llvm::reverse(stack)),
+    if (stack.empty() ||
+        llvm::none_of(llvm::drop_begin(llvm::reverse(stack)),
                       [&](const TimeTraceProfilerEntry<true> &val) {
                         return val.name == entry.name;
                       })) {
@@ -408,9 +412,14 @@ ErrorOrSuccess M::Detail::timeTraceProfilerWrite(StringRef preferredFileName,
 //===----------------------------------------------------------------------===//
 
 void M::Detail::timeTraceProfilerBeginImpl(
-    std::string &&name, llvm::function_ref<std::string()> detail) {
+    StringRef name, llvm::function_ref<std::string()> detailFn) {
   if (auto *profiler = ThreadProfilerContext::get())
-    profiler->begin(std::move(name), detail);
+    profiler->begin(name, detailFn);
+}
+
+void M::Detail::timeTraceProfilerBeginImpl(StringRef name, StringRef detail) {
+  if (auto *profiler = ThreadProfilerContext::get())
+    profiler->begin(name, detail);
 }
 
 void M::Detail::timeTraceProfilerEndImpl() {
@@ -418,12 +427,18 @@ void M::Detail::timeTraceProfilerEndImpl() {
     profiler->end();
 }
 
-M::TimeTraceProfilerEntry<true> M::Detail::timeTraceProfilerBeginEntryImpl(
-    std::string &&name, llvm::function_ref<std::string()> detail) {
+M::TimeTraceProfilerEntry<true>
+M::Detail::timeTraceProfilerBeginEntryImpl(StringRef name, StringRef detail) {
   if (ThreadProfilerContext::get())
-    return {TimeTraceProfilerEntry<true>::ClockType::now(),
-            TimeTraceProfilerEntry<true>::TimePointType(), std::string(name),
-            detail()};
+    return TimeTraceProfilerEntry<true>(name, detail);
+  else
+    return {};
+}
+
+M::TimeTraceProfilerEntry<true> M::Detail::timeTraceProfilerBeginEntryImpl(
+    StringRef name, llvm::function_ref<std::string()> detailFn) {
+  if (ThreadProfilerContext::get())
+    return TimeTraceProfilerEntry<true>(name, detailFn());
   else
     return {};
 }
@@ -431,7 +446,7 @@ M::TimeTraceProfilerEntry<true> M::Detail::timeTraceProfilerBeginEntryImpl(
 void M::Detail::timeTraceProfilerEndEntryImpl(
     TimeTraceProfilerEntry<true> &&entry) {
   if (auto *profiler = ThreadProfilerContext::get())
-    profiler->end(std::move(entry));
+    profiler->record(std::move(entry));
 }
 
 void M::Detail::timeTraceProfilerStartEntryImpl(

@@ -10,7 +10,16 @@
 #include "LLCL/Support/ConcurrentQueue.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
+
 using namespace M::LLCL;
+
+// Execute a single profiled work item.
+static void doWork(ProfiledTaskFunction &&profiledTask) {
+  std::move(profiledTask.waiting).record();
+  profiledTask.running.restart();
+  profiledTask.work();
+  std::move(profiledTask.running).record();
+}
 
 namespace {
 
@@ -24,17 +33,21 @@ public:
 
   void shutdown() override {
     // Complete any work that's still in-flight.
-    doWork([]() -> bool { return false; });
+    runUntil([]() -> bool { return false; });
   }
 
-  ~SingleThreadWorkQueue() override {}
+  ~SingleThreadWorkQueue() override = default;
 
-  void addTask(TaskFunction work) override {
-    workItems.enqueue(std::move(work));
+  void addTask(TaskFunction &&work,
+               WorkProfilerEntry &&profilerEntry) override {
+    WorkProfilerEntry waitingEntry =
+        profilerEntry.withNameSuffix(".waiting"); // restarts clock
+    workItems.enqueue(ProfiledTaskFunction(
+        std::move(work), std::move(waitingEntry), std::move(profilerEntry)));
   }
 
   void addOrExecuteSmallTask(TaskFunction work) override {
-    workItems.enqueue(std::move(work));
+    addTask(std::move(work), WorkProfilerEntry("llcl.andThen"));
   }
 
   void await(llvm::ArrayRef<AnyAsyncValueRef> values,
@@ -42,10 +55,11 @@ public:
   size_t getParallelismLevel() const override { return 1; }
 
 private:
-  template <typename Callback>
-  void doWork(Callback &&stopPredicate);
+  /// Execute blocks of work until stopPredicate is true.
+  template <typename StopPredicateFn>
+  void runUntil(StopPredicateFn &&stopPredicate);
 
-  ConcurrentQueue<TaskFunction> workItems;
+  ConcurrentQueue<ProfiledTaskFunction> workItems;
 };
 } // namespace
 
@@ -62,19 +76,17 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values,
     return;
 
   // Run work items until numRemaining drops to zero.
-  doWork([&]() -> bool { return numRemaining == 0; });
+  runUntil([&]() -> bool { return numRemaining == 0; });
 
   assert(numRemaining == 0 &&
-         "No tasks remaining however still have unconstructed AsyncValues. Are "
-         "all input AsyncValues ready?");
+         "Some AsyncValues are not ready yet no further "
+         "tasks are available to run. Are all input AsyncValues ready?");
 }
 
-/// Execute blocks of work.  If `stopPredicate` is non-null, then we stop
-/// early if it returns true.
-template <typename T>
-void SingleThreadWorkQueue::doWork(T &&stopPredicate) {
-  while (auto callable = workItems.dequeue()) {
-    callable();
+template <typename StopPredicateFn>
+void SingleThreadWorkQueue::runUntil(StopPredicateFn &&stopPredicate) {
+  while (auto profiledTask = workItems.dequeue()) {
+    doWork(std::move(profiledTask));
     if (stopPredicate())
       break;
   }

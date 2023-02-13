@@ -14,8 +14,10 @@
 
 #include "LLCL/ForwardDecls.h"
 #include "LLCL/Support/Atomics.h"
+#include "LLCL/Support/Profiling.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/FunctionExtras.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <chrono>
 #include <memory>
@@ -23,14 +25,20 @@
 namespace M::LLCL {
 class LLCLAllocator;
 
+/// Work functions to execute for a 'task'.
 using TaskFunction = llvm::unique_function<void()>;
 
-/// This is an interface to various implementations of work queues: different
-/// execution methods which are often current. These implementations may be very
-/// domain or host system specific, but the interface to them is kept
-/// intentionally simple to just `addTask` (which adds a block of work to be
-/// done as a C++ lambda), and `await` which runs work items until some specific
-/// values are ready to go.
+/// Time profiling entries for capturing the waiting and execution time
+/// of tasks.
+using WorkProfilerEntry =
+    TimeTraceProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 1)>;
+
+/// This is an interface to various implementations of work queues:
+/// different execution methods which are often current. These
+/// implementations may be very domain or host system specific, but the
+/// interface to them is kept intentionally simple to just `addTask` (which
+/// adds a block of work to be done as a C++ lambda), and `await` which runs
+/// work items until some specific values are ready to go.
 ///
 /// This is aligned to hardware_destructive_interference_size because
 /// implementations of this often need that alignment, and without this the
@@ -39,8 +47,11 @@ class alignas(hardware_destructive_interference_size) WorkQueue {
 public:
   virtual ~WorkQueue() = default;
 
-  /// Enqueue a block of work. Thread-safe.
-  virtual void addTask(TaskFunction work) = 0;
+  /// Enqueue a work item. The profilerEntry will be used to
+  /// record both the waiting and execution time for the work item. Thread-safe.
+  virtual void addTask(
+      TaskFunction &&work,
+      WorkProfilerEntry &&profilerEntry = WorkProfilerEntry("llcl.doWork")) = 0;
 
   /// If possible, enqueue a block of work to be run on the current thread.
   /// Otherwise, execute the block of work immediately on the callers stack.
@@ -88,6 +99,25 @@ protected:
   virtual void vtableAnchor();
   WorkQueue(const WorkQueue &) = delete;
   void operator=(const WorkQueue &) = delete;
+};
+
+/// A task work function along with its profiler entries to record both its
+/// waiting time (between addTask and being scheduled), and its execution
+/// time (executing the work function).
+struct ProfiledTaskFunction {
+  TaskFunction work;
+  WorkProfilerEntry waiting;
+  WorkProfilerEntry running;
+
+  ProfiledTaskFunction(std::nullptr_t) {}
+  ProfiledTaskFunction() = default;
+
+  ProfiledTaskFunction(TaskFunction &&work, WorkProfilerEntry &&waiting,
+                       WorkProfilerEntry &&running)
+      : work(std::move(work)), waiting(std::move(waiting)),
+        running(std::move(running)) {}
+
+  operator bool() const { return work.operator bool(); }
 };
 
 /// Create a thread pool that only uses the host donor thread, involving no
