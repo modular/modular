@@ -42,15 +42,18 @@ constexpr SuspendedThreadsBitvec mask(size_t workerID) {
   return UINT64_C(1) << workerID;
 }
 
+static std::function<std::string()> printWorkerId(size_t workerID) {
+  return
+      [workerID]() { return Twine("workerID:").concat(Twine(workerID)).str(); };
+}
+
 //===----------------------------------------------------------------------===//
 // WorkerThread
 //===----------------------------------------------------------------------===//
 
 // Execute a single work item with tracing support.
 static void doWork(TaskFunction &&workFn, size_t workerID) {
-  TIME_PROFILER_SCOPE(Trace::kLLCL, 1, "doWork", [workerID]() {
-    return Twine("workerID ").concat(Twine(workerID)).str();
-  });
+  TIME_PROFILER_SCOPE(Trace::kLLCL, 1, "llcl.doWork", printWorkerId(workerID));
   workFn();
 }
 
@@ -151,6 +154,8 @@ struct WorkQueueThread {
   /// threads. Though we create an entry for this index in the
   /// ThreadPoolWorkQueue workers it is not running a runOnThread work loop.
   size_t workerID;
+  /// The thread id associated with this thread.
+  uint64_t threadID;
 
   /// This is a per-worker semaphore that this blocks on when they run
   /// out of things to do.
@@ -165,8 +170,10 @@ struct WorkQueueThread {
   WorkQueueThread(SharedThreadState &sharedState,
                   LockFreeRingBuffer<TaskFunction> &taskList, size_t workerID)
       : sharedState(sharedState), taskList(taskList), workerID(workerID) {
-
-    if (workerID != 0)
+    if (workerID == 0)
+      // Worker #0 is for THE distinguished 'foreign' thread.
+      threadID = llvm::get_threadid();
+    else
       thread.emplace(&WorkQueueThread::runOnThread, this);
   }
 
@@ -188,9 +195,17 @@ struct WorkQueueThread {
       thread->join();
   }
 
+  /// This implements the main worker loop, used by both runOnThread and
+  /// await. The loop runs until earlyStopPredicate or lateStopPredicate
+  /// return true. The "early" predicate is called for every work item that
+  /// is executed, and the "late" one is called when waking up from a
+  /// suspended state. Tasks are taken from the global queue only if
+  /// runNewTasks is true, otherwise only local tasks are run. The given labels
+  /// are used only for profiling entries when spinning or sleeping.
   template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
-  void runItems(bool isAwait, EarlyStopPredicateFn earlyStopPredicate,
-                LateStopPredicateFn lateStopPredicate);
+  void runItems(EarlyStopPredicateFn earlyStopPredicate,
+                LateStopPredicateFn lateStopPredicate, bool runNewTasks,
+                StringRef spinningLabel, StringRef sleepingLabel);
 
   /// The main function invoked by std::thread.
   void runOnThread();
@@ -215,34 +230,32 @@ void WorkQueueThread::runOnThread() {
   // when re-entering.
   workerIDInTLS = workerID;
 
+  // And conversely, capture the system thread id for debugging.
+  threadID = llvm::get_threadid();
+
   // On systems that support it, give the thread a symbolic name that will show
   // up in profilers and debuggers.
   llvm::set_thread_name("LLCL Thread " + llvm::Twine(workerID));
 
-  TIME_PROFILER_PUSH(Trace::kLLCL, 4, "runOnThread", "");
-
   // Run work items until the system is asked to shut down.
-  runItems(/*isAwait*/ false,
-           []() -> bool {  // Fast predicate.
-             return false; // Always loop.
-           },
-           [&]() -> bool { // slowPredicate
-             // On wakeup from suspend, check to see if we're supposed to
-             // shutdown and stop executing work.
-             return sharedState.doneFlag.load(std::memory_order_acquire);
-           });
-
-  TIME_PROFILER_POP(Trace::kLLCL, 4);
+  runItems(
+      []() -> bool {  // Fast predicate.
+        return false; // Always loop.
+      },
+      [this]() -> bool { // slowPredicate
+        // On wakeup from suspend, check to see if we're supposed to
+        // shutdown and stop executing work.
+        return sharedState.doneFlag.load(std::memory_order_acquire);
+      },
+      /*runNewTasks=*/true, "llcl.runOnThread.spinning",
+      "llcl.runOnThread.sleeping");
 }
 
-/// This method iteratively runs work items until either of the specified
-/// predicates returns true.  The "early" predicate is called for every work
-/// item that is executed, and the "late" one is called when waking up from
-/// a suspended state.
 template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
-void WorkQueueThread::runItems(bool isAwait,
-                               EarlyStopPredicateFn earlyStopPredicate,
-                               LateStopPredicateFn lateStopPredicate) {
+void WorkQueueThread::runItems(EarlyStopPredicateFn earlyStopPredicate,
+                               LateStopPredicateFn lateStopPredicate,
+                               bool runNewTasks, StringRef spinningLabel,
+                               StringRef sleepingLabel) {
   // Continuously execute work units until the stopPredicate returns true.
 KeepRunning:
   while (!earlyStopPredicate()) {
@@ -252,61 +265,69 @@ KeepRunning:
       doWork(std::move(localTaskList[i]), workerID);
     localTaskList.clear();
 
-    // In the normal case we happily pick up and do work.
-    if (auto work = taskList.dequeue()) {
-      doWork(std::move(work), workerID);
-      continue;
-    }
-
-    TIME_PROFILER_PUSH(Trace::kLLCL, 3, "spinning",
-                       isAwait ? "await thread" : "worker");
-
-    // If we've run out of work to do, we need to quiesce and ultimately block
-    // in the kernel on the semaphore.  However, we don't want to immediately
-    // give up hope, because we may be "right about to" get new work incoming.
-    // We also want to make sure to use exponential backoff to avoid pummeling
-    // the memory hierarchy of the threads that are doing useful work.  As
-    // such, we use a BusyWaitSpinWaiter.
-    BusyWaitSpinWaiter spinWaiter(sharedState.busyWaitNs);
-
-    // Spin until we find some work to do.
-    while (!spinWaiter.wait()) {
-      // If we ever succeed in finding work to do, go back to running like
-      // normal.
+    if (runNewTasks) {
+      // In the normal case we happily pick up and do work.
       if (auto work = taskList.dequeue()) {
-        TIME_PROFILER_POP(Trace::kLLCL, 3);
         doWork(std::move(work), workerID);
-        goto KeepRunning;
-      }
-
-      // If we're spinning and the early or the late stop condition happens,
-      // then we're done.  Checking the late stop condition here make sure our
-      // threads shut down promptly when a runtime is torn down.
-      if (earlyStopPredicate() || lateStopPredicate()) {
-        TIME_PROFILER_POP(Trace::kLLCL, 3);
-        return;
+        continue;
       }
     }
 
-    TIME_PROFILER_POP(Trace::kLLCL, 3);
-    TIME_PROFILER_SCOPE(Trace::kLLCL, 3,
-                        (isAwait ? "await thread" : "worker") +
-                            std::string(" sleeping"));
+    {
+      TIME_PROFILER_PUSH(Trace::kLLCL, 2, spinningLabel,
+                         printWorkerId(workerID));
+
+      // If we've run out of work to do, we need to quiesce and ultimately block
+      // in the kernel on the semaphore.  However, we don't want to immediately
+      // give up hope, because we may be "right about to" get new work incoming.
+      // We also want to make sure to use exponential backoff to avoid pummeling
+      // the memory hierarchy of the threads that are doing useful work.  As
+      // such, we use a BusyWaitSpinWaiter.
+      BusyWaitSpinWaiter spinWaiter(sharedState.busyWaitNs);
+
+      // Spin until we find some work to do.
+      while (!spinWaiter.wait()) {
+        if (runNewTasks) {
+          // If we ever succeed in finding work to do, go back to running like
+          // normal.
+          if (auto work = taskList.dequeue()) {
+            TIME_PROFILER_POP(Trace::kLLCL, 2);
+            doWork(std::move(work), workerID);
+            goto KeepRunning;
+          }
+        }
+
+        // If we're spinning and the early or the late stop condition happens,
+        // then we're done.  Checking the late stop condition here make sure our
+        // threads shut down promptly when a runtime is torn down.
+        if (earlyStopPredicate() || lateStopPredicate()) {
+          TIME_PROFILER_POP(Trace::kLLCL, 2);
+          return;
+        }
+      }
+
+      TIME_PROFILER_POP(Trace::kLLCL, 2);
+    }
 
     // Otherwise, we we've waited long enough, yield the thread to the OS so we
     // don't burn power and starve other tasks on the system.
     sharedState.markSuspended(workerID);
 
-    // Double check the fast predicate after marking ourselves as suspended (
-    // which only matters for await()).  Await won't signal the waiter unless
+    // Double check the fast predicate after marking ourselves as suspended
+    // (which only matters for await()).  Await won't signal the waiter unless
     // it sees it at the right time.
     if (earlyStopPredicate()) {
       sharedState.takeSuspendedThread(workerID);
       return;
     }
 
-    // Ok, finally block.
-    sema.wait();
+    {
+      TIME_PROFILER_SCOPE(Trace::kLLCL, 2, sleepingLabel,
+                          printWorkerId(workerID));
+
+      // Ok, finally block.
+      sema.wait();
+    }
 
     // On wakeup, check the 'slow' predicate to see if we should stop (this is
     // how worker threads know to exit).  The early predicate is checked as part
@@ -340,7 +361,7 @@ public:
 
   void addOrExecuteSmallTask(TaskFunction work) override;
 
-  void await(ArrayRef<AnyAsyncValueRef> values) override;
+  void await(ArrayRef<AnyAsyncValueRef> values, bool runNewTasks) override;
 
   size_t getParallelismLevel() const final {
     // `numWorkers` is set to the number of worker threads that are created by
@@ -380,7 +401,7 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkers,
 }
 
 void ThreadPoolWorkQueue::shutdown() {
-  TIME_PROFILER_SCOPE(Trace::kLLCL, 4, "shutdown");
+  TIME_PROFILER_SCOPE(Trace::kLLCL, 2, "llcl.shutdown");
   size_t workerID = workerIDInTLS;
 
   // Donate this thread to help drain the work queue if there's anything left.
@@ -409,7 +430,7 @@ void ThreadPoolWorkQueue::addTask(TaskFunction work) {
   size_t workerID = workerIDInTLS;
   (void)workerID;
   // Try to add this work to the RingBuffer.
-  TIME_PROFILER_SCOPE(Trace::kLLCL, 2, "addTask");
+  TIME_PROFILER_SCOPE(Trace::kLLCL, 2, "llcl.addTask");
   if (taskList.enqueue(work)) {
     // If there are any suspended workers, kick one of them now that there is
     // new work to do.
@@ -438,17 +459,26 @@ void ThreadPoolWorkQueue::addOrExecuteSmallTask(M::LLCL::TaskFunction work) {
     workers[workerID].addOrExecuteLocalTask(std::move(work));
 }
 
-void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
+void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values,
+                                bool runNewTasks) {
   // If all the values are ready, then we don't have to do anything.
   if (llvm::all_of(values, [](auto &av) { return av.isReady(); }))
     return;
-  TIME_PROFILER_SCOPE(Trace::kLLCL, 2, "await");
 
   // Figure out which WorkerThread this is being invoked from.  This could be
   // something in the WorkQueue or could be an external foreign thread (index
   // #0).
   size_t workerID = workerIDInTLS;
   WorkQueueThread *thisWorker = &workers[workerID];
+
+  if (thisWorker->threadID != llvm::get_threadid()) {
+    llvm::errs() << "ThreadPoolWorkQueue::await: calling await from thread "
+                 << llvm::get_threadid() << ", where as worker " << workerID
+                 << " was created for thread " << thisWorker->threadID << "\n";
+    assert(false && "invoking await from unrecognized foreign thread");
+  }
+
+  // For now, make sure there's only one 'foreign' thread.
 
   // We are done when numRemaining drops to zero.
   std::atomic<ssize_t> numRemaining = values.size();
@@ -458,7 +488,6 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   // fell asleep.
   for (auto &value : values)
     value.andThenSync([&numRemaining, thisWorker, this]() {
-      TIME_PROFILER_SCOPE(Trace::kLLCL, 3, "await andThenSync");
       // Decrement the count of async values that we're waiting on.
       // TODO: This can probably use more relaxed memory consistency!
       if (numRemaining.fetch_sub(1, std::memory_order_seq_cst) != 1)
@@ -477,9 +506,15 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
       // If the worker doing the await() has suspended, make sure to wake it up
       // so it notices that it is done.
       if (sharedState.takeSuspendedThread(awaitingWorkerID)) {
+        // NOTE: We may post without a corresponding wait in
+        // WorkQueueThread::runItems if the earlyStopPredicate &
+        // takeSuspendedThread path executes just after our takeSuspendedThread
+        // above. In that case a future wait will just go around the work loop
+        // again.
+        //
         // NOTE: This wakes up exactly one sleeping thread, but (in the case of
         // foreign threads) it is possible we have multiple threads blocked on
-        // it, so the semaphore could be (e.g.) at -3 or something.    If/when
+        // it, so the semaphore could be (e.g.) at -3 or something. If/when
         // we care about this, we can keep track of the number of foreign
         // threads we've seen and post that many times.
         thisWorker->sema.post();
@@ -487,18 +522,20 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
     });
 
   // Run work items until the system is asked to shut down.
-  thisWorker->runItems(/*isAwait*/ true,
-                       [&]() -> bool { // Early predicate.
-                         // Exit early as soon as numRemaining drops to zero.
-                         // TODO: Relaxed memory consistency!
-                         return numRemaining.load(std::memory_order_seq_cst) ==
-                                0;
-                       },
-                       []() -> bool { // Late Predicate
-                         // No additional shutdown check after waking, the early
-                         // check will suffice.
-                         return false;
-                       });
+  thisWorker->runItems(
+      [&numRemaining]() -> bool { // Early predicate.
+        // Exit early as soon as numRemaining drops to zero.
+        // TODO: Relaxed memory consistency!
+        return numRemaining.load(std::memory_order_seq_cst) == 0;
+      },
+      []() -> bool { // Late Predicate
+        // No additional shutdown check after waking, the early
+        // check will suffice.
+        return false;
+      },
+      runNewTasks,
+      runNewTasks ? "llcl.await.spinning" : "llcl.awaitQuietly.spinning",
+      runNewTasks ? "llcl.await.sleeping" : "llcl.awaitQuietly.sleeping");
 
   assert(numRemaining.load() == 0);
 }
@@ -519,7 +556,7 @@ M::LLCL::createThreadPoolWorkQueue(size_t numThreads,
 
   // We use a 64-bit value "thread suspended" value currently so we cap at 64
   // threads.  This algorithm isn't going to scale beyond 64 threads anyway.
-  numThreads = std::min(numThreads, size_t(64));
+  numThreads = std::min(numThreads, kMaxWorkers);
   return std::make_unique<ThreadPoolWorkQueue>(numThreads, busyWait,
                                                profilingEnabled);
 }
