@@ -28,9 +28,13 @@ def Cache_ConstantHashAttr : CacheAttr<"ConstantHash", "constant_hash",
   let description = [{
     This attribute holds a simple hash - it cannot be parametrized. This is
     suggestively useful for constants or other large binary blobs that need
-    to be stored in the cache but will never be parametrized.
+    to be stored in the cache but will never be parametrized. Note that the
+    intended purpose of this attribute is to store things that are conceptually
+    "outside the IR". Even in the case of storing object code inline, the idea
+    is that changing out the constant behind a ConstantHashAttr could change
+    the output of the program, but does not change the program itself.
 
-    Using the constant behind this hash requires materialization.
+    Using the constant behind this hash requires materialization/reinflation.
 
     For example:
     ```mlir
@@ -55,7 +59,11 @@ def Cache_RegionHashAttr : CacheAttr<"RegionHash", "region_hash"> {
   let summary = "A parametrized hash of an MLIR region.";
   let description = [{
     This attribute holds a hash of an MLIR region parametrized by the special
-    attributes contained within that region.
+    attributes contained within that region. Conceptually, this is a
+    representation of a program, or a representation of things that are
+    "inside this IR". Changing a RegionHashAttr is equivalent to changing the
+    program, which is why the RegionHashAttr doesn't implement the
+    ReplaceableAttrInterface.
 
     For example:
     ```mlir
