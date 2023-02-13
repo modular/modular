@@ -25,6 +25,7 @@
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
+#include "Support/TimeProfiler.h"
 #include "llvm/ADT/StringRef.h"
 #include <atomic>
 
@@ -148,6 +149,10 @@ private:
   /// Filename into which time profiling should be written, or the empty
   /// string if disabled.
   std::string profileFilename;
+
+  /// An active profiler used for the runtime, or nullopt if profiling is
+  /// disabled. This is only set when profileFilename is non-empty.
+  std::optional<TimeTraceProfiler> profiler;
 
   /// This is the index # for the runtime object created.  This is held by the
   /// CompactRuntimePtr.

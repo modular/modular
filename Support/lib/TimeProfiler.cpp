@@ -4,27 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-//===----------------------------------------------------------------------===//
-//
-// File originates from:
-//   Repo:   https://github.com/llvm/llvm-project.git
-//   Commit: 271f3b91bbf80e9cf22d9e6bee738abb496fecf9
-//   Path:   llvm/lib/Support/TimeProfiler.cpp
-//
-//===----------------------------------------------------------------------===//
-
-//===----------------------------------------------------------------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-//
-// This file implements hierarchical time profiler.
-//
-//===----------------------------------------------------------------------===//
-
+#include "Support/TimeProfiler.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringMap.h"
@@ -40,11 +21,7 @@
 #include <string>
 #include <vector>
 
-#include "Support/TimeProfiler.h"
-
 using namespace M;
-
-namespace {
 
 using std::chrono::duration;
 using std::chrono::duration_cast;
@@ -60,49 +37,38 @@ using CountAndDurationType = std::pair<size_t, DurationType>;
 using NameAndCountAndDurationType =
     std::pair<std::string, CountAndDurationType>;
 
-struct TimeTraceProfiler;
-
-struct TimeTraceProfilerInstances {
-  std::mutex Lock;
-  std::vector<TimeTraceProfiler *> List;
-};
-
-TimeTraceProfilerInstances &getTimeTraceProfilerInstances() {
-  static TimeTraceProfilerInstances Instances;
-  return Instances;
-}
-
-struct TimeTraceProfiler {
-  explicit TimeTraceProfiler(unsigned TimeTraceGranularity = 0,
-                             StringRef ProcName = "")
-      : BeginningOfTime(system_clock::now()), StartTime(ClockType::now()),
-        ProcName(ProcName), Pid(llvm::sys::Process::getProcessId()),
-        Tid(llvm::get_threadid()), TimeTraceGranularity(TimeTraceGranularity) {
-    llvm::get_thread_name(ThreadName);
+namespace {
+struct TimeTraceThreadProfiler {
+  explicit TimeTraceThreadProfiler(unsigned timeTraceGranularity)
+      : tid(llvm::get_threadid()), timeTraceGranularity(timeTraceGranularity) {
+    llvm::get_thread_name(threadName);
   }
 
-  void begin(std::string Name, llvm::function_ref<std::string()> Detail) {
-    Stack.emplace_back(ClockType::now(), TimePointType(), std::move(Name),
-                       Detail());
+  /// Start a new entry with the given name and detail.
+  void begin(std::string name, function_ref<std::string()> detail) {
+    stack.emplace_back(ClockType::now(), TimePointType(), std::move(name),
+                       detail());
   }
 
+  /// End the current running entry.
   void end() {
-    assert(!Stack.empty() && "Must call begin() first");
-    end(std::move(Stack.back()));
-    Stack.pop_back();
+    assert(!stack.empty() && "must call begin() first");
+    end(std::move(stack.back()));
+    stack.pop_back();
   }
 
-  void end(TimeTraceProfilerEntry<true> &&E) {
-    E.End = ClockType::now();
+  /// End the given entry.
+  void end(TimeTraceProfilerEntry<true> &&entry) {
+    entry.end = ClockType::now();
 
     // Calculate duration at full precision for overall counts.
-    DurationType Duration = E.End - E.Start;
+    DurationType duration = entry.end - entry.start;
 
-    // Only include sections longer or equal to TimeTraceGranularity msec.
-    if (duration_cast<microseconds>(Duration).count() >= TimeTraceGranularity)
-      Entries.emplace_back(E);
+    // Only include sections longer or equal to timeTraceGranularity msec.
+    if (duration_cast<microseconds>(duration).count() >= timeTraceGranularity)
+      entries.emplace_back(entry);
 
-    if (Stack.empty())
+    if (stack.empty())
       return;
 
     // Track total time taken by each "name", but only the topmost levels of
@@ -110,366 +76,413 @@ struct TimeTraceProfiler {
     // templates from within, we only want to add the topmost one. "topmost"
     // happens to be the ones that don't have any currently open entries above
     // itself.
-    if (llvm::none_of(llvm::drop_begin(llvm::reverse(Stack)),
-                      [&](const TimeTraceProfilerEntry<true> &Val) {
-                        return Val.Name == E.Name;
+    if (llvm::none_of(llvm::drop_begin(llvm::reverse(stack)),
+                      [&](const TimeTraceProfilerEntry<true> &val) {
+                        return val.name == entry.name;
                       })) {
-      auto &CountAndTotal = CountAndTotalPerName[E.Name];
-      CountAndTotal.first++;
-      CountAndTotal.second += Duration;
+      auto &countAndTotal = countAndTotalPerName[entry.name];
+      countAndTotal.first++;
+      countAndTotal.second += duration;
     }
   }
 
-  // Write events from this TimeTraceProfilerInstance and
-  // ThreadTimeTraceProfilerInstances.
-  void writeTrace(llvm::raw_pwrite_stream &OS) {
-    // Acquire Mutex as reading ThreadTimeTraceProfilerInstances.
-    auto &Instances = getTimeTraceProfilerInstances();
-    std::lock_guard<std::mutex> Lock(Instances.Lock);
-    assert(Stack.empty() &&
-           "All profiler sections should be ended when calling write");
-    assert(llvm::all_of(Instances.List,
-                        [](const auto &TTP) { return TTP->Stack.empty(); }) &&
-           "All profiler sections should be ended when calling write");
+  /// The stack of currently running timers.
+  SmallVector<TimeTraceProfilerEntry<true>, 16> stack;
 
-    // For visualization purposes only.
-    // Sometimes callers can have the same start time (in ns) as their callees.
-    // Since events are push to Entries when the trace event ends, callees
-    // appear before callers in Entries. When Perfetto sees 2 events with the
-    // same start time, it displays the first one (callee) above the second one
-    // (caller) which is not what we want. After reversing Entries, callers
-    // appear before callees, and therefore callers appear above callees in the
-    // profiler.
-    std::reverse(Entries.begin(), Entries.end());
-    for (TimeTraceProfiler *TTP : Instances.List)
-      std::reverse(TTP->Entries.begin(), TTP->Entries.end());
+  /// The set of completed timer entries.
+  SmallVector<TimeTraceProfilerEntry<true>, 128> entries;
 
-    llvm::json::OStream J(OS);
-    J.objectBegin();
-    J.attributeBegin("traceEvents");
-    J.arrayBegin();
+  /// The total time taken by each "name".
+  llvm::StringMap<CountAndDurationType> countAndTotalPerName;
 
-    // Emit all events for the main flame graph.
-    auto writeEvent = [&](const auto &E, uint64_t Tid) {
-      auto StartUs = E.getFlameGraphStartUs(StartTime);
-      auto DurUs = E.getFlameGraphDurUs();
+  /// The name of the thread this profiler is running on.
+  SmallString<0> threadName;
 
-      J.object([&] {
-        J.attribute("pid", Pid);
-        J.attribute("tid", int64_t(Tid));
-        J.attribute("ph", "X");
-        J.attribute("ts", StartUs);
-        J.attribute("dur", DurUs);
-        J.attribute("name", E.Name);
-        if (!E.Detail.empty()) {
-          J.attributeObject("args", [&] { J.attribute("detail", E.Detail); });
-        }
-      });
-    };
-    for (const TimeTraceProfilerEntry<true> &E : Entries)
-      writeEvent(E, this->Tid);
-    for (const TimeTraceProfiler *TTP : Instances.List)
-      for (const TimeTraceProfilerEntry<true> &E : TTP->Entries)
-        writeEvent(E, TTP->Tid);
+  /// The id of the thread this profiler is running on.
+  const uint64_t tid;
 
-    auto writeMetadataEvent = [&](const char *Name, uint64_t Tid,
-                                  StringRef arg) {
-      J.object([&] {
-        J.attribute("cat", "");
-        J.attribute("pid", Pid);
-        J.attribute("tid", int64_t(Tid));
-        J.attribute("ts", 0);
-        J.attribute("ph", "M");
-        J.attribute("name", Name);
-        J.attributeObject("args", [&] { J.attribute("name", arg); });
-      });
-    };
+  // Minimum time granularity (in microseconds)
+  const unsigned timeTraceGranularity;
+};
 
-    writeMetadataEvent("process_name", Tid, ProcName);
-    writeMetadataEvent("thread_name", Tid, ThreadName);
-    for (const TimeTraceProfiler *TTP : Instances.List)
-      writeMetadataEvent("thread_name", TTP->Tid, TTP->ThreadName);
+/// This class represents the profiler context for a specific thread.
+struct ThreadProfilerContext {
+  ~ThreadProfilerContext();
 
-    J.arrayEnd();
-    J.attributeEnd();
+  /// Return the profiler instance for this thread, or nullptr if one isn't
+  /// active.
+  static TimeTraceThreadProfiler *get();
 
-    // Emit the absolute time when this TimeProfiler started.
-    // This can be used to combine the profiling data from
-    // multiple processes and preserve actual time intervals.
-    J.attribute("beginningOfTime",
-                time_point_cast<microseconds>(BeginningOfTime)
-                    .time_since_epoch()
-                    .count());
+  /// The profiler attached to this thread.
+  TimeTraceThreadProfiler *profiler = nullptr;
+};
 
-    J.objectEnd();
+/// This class represents the main context used for profiling.
+struct GlobalProfilerContext {
+  GlobalProfilerContext(unsigned granularity, StringRef name)
+      : timeTraceGranularity(granularity), procName(name),
+        pid(llvm::sys::Process::getProcessId()),
+        beginningOfTime(system_clock::now()), startTime(ClockType::now()) {}
+
+  /// The main profiler context instance.
+  static GlobalProfilerContext *instance;
+
+  /// The minimum time granularity (in microseconds) for time trace profiler.
+  unsigned timeTraceGranularity = 0;
+
+  /// The name of the process this profiler is running on.
+  StringRef procName;
+
+  /// The id of the process this profiler is running on.
+  const llvm::sys::Process::Pid pid;
+
+  /// System clock time when the session was begun.
+  time_point<system_clock> beginningOfTime;
+
+  /// Profiling clock time when the session was begun.
+  const TimePointType startTime;
+
+  /// Lock used to guard access to the running profilers.
+  std::mutex lock;
+
+  /// The set of running profilers for each thread.
+  std::vector<std::unique_ptr<TimeTraceThreadProfiler>> profilers;
+
+  /// A set of active thread profiler contexts.
+  DenseSet<ThreadProfilerContext *> threadProfilerContexts;
+};
+} // anonymous namespace
+
+GlobalProfilerContext *GlobalProfilerContext::instance = nullptr;
+
+TimeTraceThreadProfiler *ThreadProfilerContext::get() {
+  static thread_local ThreadProfilerContext instance;
+  if (!instance.profiler && GlobalProfilerContext::instance) {
+    auto &ctx = *GlobalProfilerContext::instance;
+    std::lock_guard<std::mutex> lock(ctx.lock);
+
+    // Add this profiler to the main context.
+    ctx.profilers.emplace_back(
+        std::make_unique<TimeTraceThreadProfiler>(ctx.timeTraceGranularity));
+    ctx.threadProfilerContexts.insert(&instance);
+    instance.profiler = ctx.profilers.back().get();
+  }
+  return instance.profiler;
+}
+
+ThreadProfilerContext::~ThreadProfilerContext() {
+  // The current thread is dying, so try to pass over ownership of the
+  // profiler to the main context.
+  if (auto *ctx = GlobalProfilerContext::instance) {
+    std::lock_guard<std::mutex> lock(ctx->lock);
+    ctx->threadProfilerContexts.erase(this);
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// TimeTraceProfiler
+//===----------------------------------------------------------------------===//
+
+void M::Detail::timeTraceProfilerInitialize(unsigned timeTraceGranularity,
+                                            StringRef procName) {
+  assert(!GlobalProfilerContext::instance &&
+         "profiler should not be initialized");
+  GlobalProfilerContext::instance = new GlobalProfilerContext(
+      timeTraceGranularity, llvm::sys::path::filename(procName));
+
+  // Prep the profiler for the main thread.
+  ThreadProfilerContext::get();
+}
+
+void M::Detail::timeTraceProfilerDestroy() {
+  assert(GlobalProfilerContext::instance && "profiler should be initialized");
+
+  { // Clear out any dangling pointers in thread profiler contexts.
+    std::lock_guard<std::mutex> guard(GlobalProfilerContext::instance->lock);
+    for (auto *tpc : GlobalProfilerContext::instance->threadProfilerContexts)
+      tpc->profiler = nullptr;
   }
 
-  // Write timing statistics from this TimeTraceProfilerInstance and
-  // ThreadTimeTraceProfilerInstances.
-  void writeStat(llvm::raw_pwrite_stream &OS) {
-    // Acquire Mutex as reading ThreadTimeTraceProfilerInstances.
-    auto &Instances = getTimeTraceProfilerInstances();
-    std::lock_guard<std::mutex> Lock(Instances.Lock);
+  delete GlobalProfilerContext::instance;
+  GlobalProfilerContext::instance = nullptr;
+}
 
-    // Write call counts and cost by thread.
-    auto writeThreadTimeStat = [&](const auto &Statistics, uint64_t Tid) {
-      // Sort the statistics by time cost.
-      std::vector<NameAndCountAndDurationType> SortedStats;
-      SortedStats.reserve(Statistics.size());
-      for (const auto &Stat : Statistics)
-        SortedStats.emplace_back(std::string(Stat.getKey()), Stat.getValue());
-      llvm::sort(SortedStats, [](const NameAndCountAndDurationType &A,
-                                 const NameAndCountAndDurationType &B) {
-        return A.second.second > B.second.second;
-      });
+//===----------------------------------------------------------------------===//
+// Trace Output
+//===----------------------------------------------------------------------===//
 
-      for (const auto &Stat : SortedStats) {
-        StringRef Name = Stat.first;
-        auto Count = Stat.second.first;
-        auto DurUs = duration_cast<microseconds>(Stat.second.second).count();
-        OS << Tid << ", " << Name << ", " << Count << ", " << DurUs << "\n";
+void M::Detail::timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &os) {
+  assert(GlobalProfilerContext::instance && "profiler should be initialized");
+  auto &ctx = *GlobalProfilerContext::instance;
+  std::lock_guard<std::mutex> lock(ctx.lock);
+  auto profilers = llvm::make_pointee_range(ctx.profilers);
+  assert(llvm::all_of(profilers,
+                      [](const auto &ttp) { return ttp.stack.empty(); }) &&
+         "all profiler sections should be ended when calling write");
+
+  // For visualization purposes only.
+  // Sometimes callers can have the same start time (in ns) as their callees.
+  // Since events are push to Entries when the trace event ends, callees
+  // appear before callers in Entries. When Perfetto sees 2 events with the
+  // same start time, it displays the first one (callee) above the second one
+  // (caller) which is not what we want. After reversing Entries, callers
+  // appear before callees, and therefore callers appear above callees in the
+  // profiler.
+  for (TimeTraceThreadProfiler &ttp : profilers)
+    std::reverse(ttp.entries.begin(), ttp.entries.end());
+
+  llvm::json::OStream jsonOS(os);
+  jsonOS.objectBegin();
+  jsonOS.attributeBegin("traceEvents");
+  jsonOS.arrayBegin();
+
+  // Emit all events for the main flame graph.
+  auto writeEvent = [&](const auto &event, uint64_t tid) {
+    auto startUs = event.getFlameGraphStartUs(ctx.startTime);
+    auto durUs = event.getFlameGraphDurUs();
+    jsonOS.object([&] {
+      jsonOS.attribute("pid", ctx.pid);
+      jsonOS.attribute("tid", int64_t(tid));
+      jsonOS.attribute("ph", "X");
+      jsonOS.attribute("ts", startUs);
+      jsonOS.attribute("dur", durUs);
+      jsonOS.attribute("name", event.name);
+      if (!event.detail.empty()) {
+        jsonOS.attributeObject(
+            "args", [&] { jsonOS.attribute("detail", event.detail); });
       }
-    };
+    });
+  };
+  for (const TimeTraceThreadProfiler &ttp : profilers)
+    for (const TimeTraceProfilerEntry<true> &entry : ttp.entries)
+      writeEvent(entry, ttp.tid);
 
-    // Write header line.
-    OS << "Tid, Name, Count, Cost (us)\n";
-    // Write statistics
-    writeThreadTimeStat(this->CountAndTotalPerName, this->Tid);
-    for (const TimeTraceProfiler *TTP : Instances.List) {
-      OS << "\n";
-      writeThreadTimeStat(TTP->CountAndTotalPerName, TTP->Tid);
-    }
-  }
+  auto writeMetadataEvent = [&](const char *name, uint64_t tid, StringRef arg) {
+    jsonOS.object([&] {
+      jsonOS.attribute("cat", "");
+      jsonOS.attribute("pid", ctx.pid);
+      jsonOS.attribute("tid", int64_t(tid));
+      jsonOS.attribute("ts", 0);
+      jsonOS.attribute("ph", "M");
+      jsonOS.attribute("name", name);
+      jsonOS.attributeObject("args", [&] { jsonOS.attribute("name", arg); });
+    });
+  };
 
-  /// A more convenient representation for the event stream output.
-  struct Event {
-    int64_t StartUs;
-    uint64_t Tid;
-    int64_t DurUs;
-    std::string Name;
-    std::string Detail;
-    int64_t EndUs;
+  writeMetadataEvent("process_name", ctx.pid, ctx.procName);
+  for (const TimeTraceThreadProfiler &ttp : profilers)
+    writeMetadataEvent("thread_name", ttp.tid, ttp.threadName);
 
-    Event() = default;
+  jsonOS.arrayEnd();
+  jsonOS.attributeEnd();
 
-    /// Event representing time trace profiling entry
-    Event(const TimeTraceProfilerEntry<true> &E, uint64_t Tid,
-          TimePointType StartTime)
-        : StartUs(E.getFlameGraphStartUs(StartTime)), Tid(Tid),
-          DurUs(E.getFlameGraphDurUs()), Name(E.Name), Detail(E.Detail),
-          EndUs(E.getFlameGraphStartUs(StartTime) + E.getFlameGraphDurUs()) {}
+  // Emit the absolute time when time profiling started. This can be used to
+  // combine the profiling data from multiple processes and preserve actual time
+  // intervals.
+  jsonOS.attribute("beginningOfTime",
+                   time_point_cast<microseconds>(ctx.beginningOfTime)
+                       .time_since_epoch()
+                       .count());
 
-    /// Event representing the 'end' of that event.
-    Event toEnd() {
-      Event Result;
-      Result.StartUs = EndUs;
-      Result.Tid = Tid;
-      Result.DurUs = -1;
-      Result.Name = Name;
-      Result.Detail = Detail;
-      Result.EndUs = EndUs;
-      return Result;
-    }
+  jsonOS.objectEnd();
+}
 
-    bool operator<(const Event &That) const {
-      return std::tie(StartUs, Tid, DurUs, Name, Detail) <
-             std::tie(That.StartUs, That.Tid, That.DurUs, That.Name,
-                      That.Detail);
-    }
+//===----------------------------------------------------------------------===//
+// Stat Output
+//===----------------------------------------------------------------------===//
 
-    void write(llvm::raw_pwrite_stream &OS) const {
-      OS << llvm::format("%6d  %10d  ", Tid, StartUs);
-      if (DurUs >= 0)
-        OS << llvm::format("%10d  ", DurUs);
-      else
-        OS << "       END  ";
-      OS << Name;
-      if (!Detail.empty())
-        OS << "/" << Detail;
-      OS << "\n";
+void M::Detail::timeTraceProfilerWriteStat(llvm::raw_pwrite_stream &os) {
+  assert(GlobalProfilerContext::instance && "profiler should be initialized");
+  auto &ctx = *GlobalProfilerContext::instance;
+  std::lock_guard<std::mutex> lock(ctx.lock);
+
+  // Write call counts and cost by thread.
+  auto writeThreadTimeStat = [&](const auto &statistics, uint64_t tid) {
+    // Sort the statistics by time cost.
+    std::vector<NameAndCountAndDurationType> sortedStats;
+    sortedStats.reserve(statistics.size());
+    for (const auto &stat : statistics)
+      sortedStats.emplace_back(std::string(stat.getKey()), stat.getValue());
+    llvm::sort(sortedStats, [](const NameAndCountAndDurationType &lhs,
+                               const NameAndCountAndDurationType &rhs) {
+      return lhs.second.second > rhs.second.second;
+    });
+
+    for (const auto &[name, countIt] : sortedStats) {
+      auto count = countIt.first;
+      auto durUs = duration_cast<microseconds>(countIt.second).count();
+      os << tid << ", " << name << ", " << count << ", " << durUs << "\n";
     }
   };
 
-  // Write profile as a stream of events.
-  void writeEventStream(llvm::raw_pwrite_stream &OS) {
-    // Acquire Mutex as reading ThreadTimeTraceProfilerInstances.
-    auto &Instances = getTimeTraceProfilerInstances();
-    std::lock_guard<std::mutex> Lock(Instances.Lock);
-    assert(Stack.empty() &&
-           "All profiler sections should be ended when calling write");
-    assert(llvm::all_of(Instances.List,
-                        [](const auto &TTP) { return TTP->Stack.empty(); }) &&
-           "All profiler sections should be ended when calling write");
-    std::vector<Event> Events;
-    for (const TimeTraceProfilerEntry<true> &E : Entries) {
-      Events.emplace_back(E, Tid, StartTime);
-      Events.emplace_back(Events.back().toEnd());
-    }
-    for (const TimeTraceProfiler *TTP : Instances.List) {
-      for (const TimeTraceProfilerEntry<true> &E : TTP->Entries) {
-        Events.emplace_back(E, TTP->Tid, StartTime);
-        Events.emplace_back(Events.back().toEnd());
-      }
-    }
-    std::sort(Events.begin(), Events.end());
-    OS << "   Tid     StartUs       DurUs  Name/Detail\n";
-    OS << "------  ----------  ----------  ------------------------------\n";
-    for (const auto &Event : Events)
-      Event.write(OS);
+  os << "Tid, Name, Count, Cost (us)\n";
+  llvm::interleave(
+      llvm::make_pointee_range(ctx.profilers), os,
+      [&](const TimeTraceThreadProfiler &ttp) {
+        writeThreadTimeStat(ttp.countAndTotalPerName, ttp.tid);
+      },
+      "\n");
+}
+
+//===----------------------------------------------------------------------===//
+// Event Stream Output
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+/// A more convenient representation for the event stream output.
+struct Event {
+  int64_t startUs;
+  uint64_t tid;
+  int64_t durUs;
+  std::string name;
+  std::string detail;
+  int64_t endUs;
+
+  Event() = default;
+
+  /// Event representing time trace profiling entry
+  Event(const TimeTraceProfilerEntry<true> &e, uint64_t tid,
+        TimePointType startTime)
+      : startUs(e.getFlameGraphStartUs(startTime)), tid(tid),
+        durUs(e.getFlameGraphDurUs()), name(e.name), detail(e.detail),
+        endUs(e.getFlameGraphStartUs(startTime) + e.getFlameGraphDurUs()) {}
+
+  /// Event representing the 'end' of that event.
+  Event toEnd() {
+    Event result;
+    result.startUs = endUs;
+    result.tid = tid;
+    result.durUs = -1;
+    result.name = name;
+    result.detail = detail;
+    result.endUs = endUs;
+    return result;
   }
 
-  SmallVector<TimeTraceProfilerEntry<true>, 16> Stack;
-  SmallVector<TimeTraceProfilerEntry<true>, 128> Entries;
-  llvm::StringMap<CountAndDurationType> CountAndTotalPerName;
-  // System clock time when the session was begun.
-  const time_point<system_clock> BeginningOfTime;
-  // Profiling clock time when the session was begun.
-  const TimePointType StartTime;
-  const std::string ProcName;
-  const llvm::sys::Process::Pid Pid;
-  SmallString<0> ThreadName;
-  const uint64_t Tid;
+  bool operator<(const Event &rhs) const {
+    return std::tie(startUs, tid, durUs, name, detail) <
+           std::tie(rhs.startUs, rhs.tid, rhs.durUs, rhs.name, rhs.detail);
+  }
 
-  // Minimum time granularity (in microseconds)
-  const unsigned TimeTraceGranularity;
+  void write(llvm::raw_pwrite_stream &os) const {
+    os << llvm::format("%6d  %10d  ", tid, startUs);
+    if (durUs >= 0)
+      os << llvm::format("%10d  ", durUs);
+    else
+      os << "       END  ";
+    os << name;
+    if (!detail.empty())
+      os << "/" << detail;
+    os << "\n";
+  }
 };
+} // namespace
 
-} // anonymous namespace
+void M::Detail::timeTraceProfilerWriteEventStream(llvm::raw_pwrite_stream &os) {
+  assert(GlobalProfilerContext::instance && "profiler should be initialized");
+  auto &ctx = *GlobalProfilerContext::instance;
+  std::lock_guard<std::mutex> lock(ctx.lock);
 
-// Per Thread instance
-static LLVM_THREAD_LOCAL TimeTraceProfiler *TimeTraceProfilerInstance = nullptr;
+  std::vector<Event> events;
+  for (const TimeTraceThreadProfiler &ttp :
+       llvm::make_pointee_range(ctx.profilers)) {
+    for (const TimeTraceProfilerEntry<true> &e : ttp.entries) {
+      events.emplace_back(e, ttp.tid, ctx.startTime);
+      events.emplace_back(events.back().toEnd());
+    }
+  }
+  std::sort(events.begin(), events.end());
 
-void M::timeTraceProfilerInitialize(unsigned TimeTraceGranularity,
-                                    StringRef ProcName) {
-  assert(TimeTraceProfilerInstance == nullptr &&
-         "Profiler should not be initialized");
-  TimeTraceProfilerInstance = new TimeTraceProfiler(
-      TimeTraceGranularity, llvm::sys::path::filename(ProcName));
+  os << "   Tid     StartUs       DurUs  Name/Detail\n";
+  os << "------  ----------  ----------  ------------------------------\n";
+  for (const auto &event : events)
+    event.write(os);
 }
 
-static void timeTraceProfilerDeleteWorkerInstances() {
-  auto &Instances = getTimeTraceProfilerInstances();
-  std::lock_guard<std::mutex> Lock(Instances.Lock);
-  for (auto *TTP : Instances.List)
-    delete TTP;
-  Instances.List.clear();
-};
+//===----------------------------------------------------------------------===//
+// Output
+//===----------------------------------------------------------------------===//
 
-// Removes all TimeTraceProfilerInstances.
-// Called from main thread.
-void M::timeTraceProfilerCleanup() {
-  assert(TimeTraceProfilerInstance != nullptr &&
-         "Profiler should be initialized");
-  delete TimeTraceProfilerInstance;
-  TimeTraceProfilerInstance = nullptr;
-  timeTraceProfilerDeleteWorkerInstances();
-}
-
-// Finish TimeTraceProfilerInstance on a worker thread.
-// This doesn't remove the instance, just moves the pointer to global vector.
-void M::timeTraceProfilerFinishThread() {
-  assert(TimeTraceProfilerInstance != nullptr &&
-         "Profiler should be initialized");
-  auto &Instances = getTimeTraceProfilerInstances();
-  std::lock_guard<std::mutex> Lock(Instances.Lock);
-  Instances.List.push_back(TimeTraceProfilerInstance);
-  TimeTraceProfilerInstance = nullptr;
-}
-
-void M::timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &OS) {
-  assert(TimeTraceProfilerInstance != nullptr &&
-         "Profiler should be initialized");
-  TimeTraceProfilerInstance->writeTrace(OS);
-}
-
-void M::timeTraceProfilerWriteStat(llvm::raw_pwrite_stream &OS) {
-  assert(TimeTraceProfilerInstance != nullptr &&
-         "Profiler should be initialized");
-  TimeTraceProfilerInstance->writeStat(OS);
-}
-
-void M::timeTraceProfilerWriteEventStream(llvm::raw_pwrite_stream &OS) {
-  assert(TimeTraceProfilerInstance != nullptr &&
-         "Profiler should be initialized");
-  TimeTraceProfilerInstance->writeEventStream(OS);
-}
-
-ErrorOrSuccess M::timeTraceProfilerWrite(StringRef PreferredFileName,
-                                         StringRef FallbackFileName) {
-  assert(TimeTraceProfilerInstance != nullptr &&
-         "Profiler should be initialized");
+ErrorOrSuccess M::Detail::timeTraceProfilerWrite(StringRef preferredFileName,
+                                                 StringRef fallbackFileName) {
+  assert(GlobalProfilerContext::instance && "profiler should be initialized");
 
   // Set up filename base.
-  std::string Path = PreferredFileName.str();
-  if (Path.empty())
-    Path = FallbackFileName == "-" ? "out" : FallbackFileName.str();
+  std::string path = preferredFileName.str();
+  if (path.empty())
+    path = fallbackFileName == "-" ? "out" : fallbackFileName.str();
 
-  std::error_code EC;
+  std::error_code ec;
 
   {
     // Write time trace.
-    std::string TracePath = Path == "-" ? Path : Path + ".time-trace";
-    llvm::raw_fd_ostream OSTrace(TracePath, EC, llvm::sys::fs::OF_TextWithCRLF);
-    if (EC)
-      return Error(Twine("Could not open ") + TracePath + "(" +
-                   Twine(EC.message()) + ")");
-    timeTraceProfilerWriteTrace(OSTrace);
+    std::string tracePath = path == "-" ? path : path + ".time-trace";
+    llvm::raw_fd_ostream os(tracePath, ec, llvm::sys::fs::OF_TextWithCRLF);
+    if (ec)
+      return Error(Twine("could not open ") + tracePath + "(" +
+                   Twine(ec.message()) + ")");
+    timeTraceProfilerWriteTrace(os);
   }
 
   {
     // Write time statistics.
-    std::string StatPath = Path == "-" ? Path : Path + ".time-stat.csv";
-    llvm::raw_fd_ostream OSStat(StatPath, EC, llvm::sys::fs::OF_TextWithCRLF);
-    if (EC)
-      return Error(Twine("Could not open ") + StatPath + "(" +
-                   Twine(EC.message()) + ")");
-    timeTraceProfilerWriteStat(OSStat);
+    std::string statPath = path == "-" ? path : path + ".time-stat.csv";
+    llvm::raw_fd_ostream os(statPath, ec, llvm::sys::fs::OF_TextWithCRLF);
+    if (ec)
+      return Error(Twine("could not open ") + statPath + "(" +
+                   Twine(ec.message()) + ")");
+    timeTraceProfilerWriteStat(os);
   }
 
   {
     // Write the raw event stream.
-    std::string EventStreamPath =
-        Path == "-" ? Path : Path + ".time-events.txt";
-    llvm::raw_fd_ostream OSEvents(EventStreamPath, EC,
-                                  llvm::sys::fs::OF_TextWithCRLF);
-    if (EC)
-      return Error(Twine("Could not open ") + EventStreamPath + "(" +
-                   Twine(EC.message()) + ")");
-    timeTraceProfilerWriteEventStream(OSEvents);
+    std::string eventStreamPath =
+        path == "-" ? path : path + ".time-events.txt";
+    llvm::raw_fd_ostream os(eventStreamPath, ec,
+                            llvm::sys::fs::OF_TextWithCRLF);
+    if (ec)
+      return Error(Twine("could not open ") + eventStreamPath + "(" +
+                   Twine(ec.message()) + ")");
+    timeTraceProfilerWriteEventStream(os);
   }
 
   return success();
 }
 
+//===----------------------------------------------------------------------===//
+// TimeTraceProfilerEntry
+//===----------------------------------------------------------------------===//
+
 void M::Detail::timeTraceProfilerBeginImpl(
-    std::string &&Name, llvm::function_ref<std::string()> Detail) {
-  if (TimeTraceProfilerInstance != nullptr)
-    TimeTraceProfilerInstance->begin(std::move(Name), Detail);
+    std::string &&name, llvm::function_ref<std::string()> detail) {
+  if (auto *profiler = ThreadProfilerContext::get())
+    profiler->begin(std::move(name), detail);
 }
 
 void M::Detail::timeTraceProfilerEndImpl() {
-  if (TimeTraceProfilerInstance != nullptr)
-    TimeTraceProfilerInstance->end();
+  if (auto *profiler = ThreadProfilerContext::get())
+    profiler->end();
 }
 
 M::TimeTraceProfilerEntry<true> M::Detail::timeTraceProfilerBeginEntryImpl(
-    std::string &&Name, llvm::function_ref<std::string()> Detail) {
-  if (TimeTraceProfilerInstance != nullptr)
+    std::string &&name, llvm::function_ref<std::string()> detail) {
+  if (ThreadProfilerContext::get())
     return {TimeTraceProfilerEntry<true>::ClockType::now(),
-            TimeTraceProfilerEntry<true>::TimePointType(), std::string(Name),
-            Detail()};
+            TimeTraceProfilerEntry<true>::TimePointType(), std::string(name),
+            detail()};
   else
     return {};
 }
 
 void M::Detail::timeTraceProfilerEndEntryImpl(
-    TimeTraceProfilerEntry<true> &&Entry) {
-  if (TimeTraceProfilerInstance != nullptr)
-    TimeTraceProfilerInstance->end(std::move(Entry));
+    TimeTraceProfilerEntry<true> &&entry) {
+  if (auto *profiler = ThreadProfilerContext::get())
+    profiler->end(std::move(entry));
 }
 
 void M::Detail::timeTraceProfilerStartEntryImpl(
-    TimeTraceProfilerEntry<true> &Entry) {
-  if (TimeTraceProfilerInstance != nullptr)
-    Entry.Start = TimeTraceProfilerEntry<true>::ClockType::now();
+    TimeTraceProfilerEntry<true> &entry) {
+  if (ThreadProfilerContext::get())
+    entry.start = TimeTraceProfilerEntry<true>::ClockType::now();
 }

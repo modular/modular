@@ -219,10 +219,6 @@ void WorkQueueThread::runOnThread() {
   // up in profilers and debuggers.
   llvm::set_thread_name("LLCL Thread " + llvm::Twine(workerID));
 
-  if (sharedState.profilingEnabled)
-    // Establish the TLS for time profiling.
-    timeTraceProfilerLLCLWorkerInitialize();
-
   TIME_PROFILER_PUSH(Trace::kLLCL, 4, "runOnThread", "");
 
   // Run work items until the system is asked to shut down.
@@ -237,11 +233,6 @@ void WorkQueueThread::runOnThread() {
            });
 
   TIME_PROFILER_POP(Trace::kLLCL, 4);
-
-  if (sharedState.profilingEnabled)
-    // 'Publish' time profiling data accumulated in TLS to the master
-    // profiling collection.
-    M::timeTraceProfilerFinishThread();
 }
 
 /// This method iteratively runs work items until either of the specified

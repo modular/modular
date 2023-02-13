@@ -37,28 +37,24 @@
 
 using namespace M;
 
+static std::string teardownTrace() {
+  SmallVector<char, 1024> smallVector;
+  llvm::raw_svector_ostream os(smallVector);
+  Detail::timeTraceProfilerWriteTrace(os);
+  return os.str().str();
+}
+
+static std::string teardownStat() {
+  SmallVector<char, 1024> smallVector;
+  llvm::raw_svector_ostream os(smallVector);
+  Detail::timeTraceProfilerWriteStat(os);
+  return os.str().str();
+}
+
 namespace {
 
-void setupProfiler() {
-  timeTraceProfilerInitialize(/*TimeTraceGranularity=*/0, "test");
-}
-
-std::string teardownTrace() {
-  SmallVector<char, 1024> smallVector;
-  llvm::raw_svector_ostream os(smallVector);
-  timeTraceProfilerWriteTrace(os);
-  return os.str().str();
-}
-
-std::string teardownStat() {
-  SmallVector<char, 1024> smallVector;
-  llvm::raw_svector_ostream os(smallVector);
-  timeTraceProfilerWriteStat(os);
-  return os.str().str();
-}
-
 TEST(TimeProfiler, Scope_Smoke) {
-  setupProfiler();
+  TimeTraceProfiler profiler(/*timeTraceGranularity=*/0, "test");
 
   { TimeTraceScope</*Enabled=*/true> scope("event", "detail"); }
 
@@ -68,12 +64,10 @@ TEST(TimeProfiler, Scope_Smoke) {
 
   std::string csv = teardownStat();
   ASSERT_TRUE(csv.find(R"(event, 1)") != std::string::npos);
-
-  timeTraceProfilerCleanup();
 }
 
 TEST(TimeProfiler, Begin_End_Smoke) {
-  setupProfiler();
+  TimeTraceProfiler profiler(/*timeTraceGranularity=*/0, "test");
 
   timeTraceProfilerBegin("event", "detail");
   timeTraceProfilerEnd();
@@ -84,8 +78,6 @@ TEST(TimeProfiler, Begin_End_Smoke) {
 
   std::string csv = teardownStat();
   ASSERT_TRUE(csv.find(R"(event, 1)") != std::string::npos);
-
-  timeTraceProfilerCleanup();
 }
 
 TEST(TimeProfiler, Begin_End_Disabled) {
@@ -96,7 +88,7 @@ TEST(TimeProfiler, Begin_End_Disabled) {
 }
 
 TEST(TimeProfiler, Entry_Smoke) {
-  setupProfiler();
+  TimeTraceProfiler profiler(/*timeTraceGranularity=*/0, "test");
 
   auto entry = timeTraceProfilerBeginEntry("event", "detail");
   timeTraceProfilerStartEntry(entry);
@@ -105,18 +97,16 @@ TEST(TimeProfiler, Entry_Smoke) {
   std::string json = teardownTrace();
   ASSERT_TRUE(json.find(R"("name":"event")") != std::string::npos);
   ASSERT_TRUE(json.find(R"("detail":"detail")") != std::string::npos);
-
-  timeTraceProfilerCleanup();
 }
 
 TEST(TimeProfiler, Entry_Disabled) {
   // Only get the default entry if tracing is not setup.
   auto entry = timeTraceProfilerBeginEntry("event", "detail");
   timeTraceProfilerStartEntry(entry);
-  ASSERT_TRUE(entry.Name.empty());
-  ASSERT_TRUE(entry.Detail.empty());
-  ASSERT_EQ(entry.Start, TimeTraceProfilerEntry<true>::TimePointType());
-  ASSERT_EQ(entry.End, TimeTraceProfilerEntry<true>::TimePointType());
+  ASSERT_TRUE(entry.name.empty());
+  ASSERT_TRUE(entry.detail.empty());
+  ASSERT_EQ(entry.start, TimeTraceProfilerEntry<true>::TimePointType());
+  ASSERT_EQ(entry.end, TimeTraceProfilerEntry<true>::TimePointType());
   timeTraceProfilerEndEntry(std::move(entry));
 }
 
