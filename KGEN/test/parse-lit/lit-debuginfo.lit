@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit -import-lit-debug-level=full -mlir-print-debuginfo %s -I %S/../lit-examples/ | FileCheck %s
+# RUN: kgen-translate -import-lit -I %S -split-input-file -import-lit-debug-level=full -mlir-print-debuginfo %s -I %S/../lit-examples/ | FileCheck %s
 
 from prolog import Int
 import imported_module
@@ -29,7 +29,32 @@ fn power(lhs: Int, rhs: Int) -> Int:
   # CHECK: debuginfo.value #[[RHS_VAR]] = %rhs
   return lhs
 
-# Check that we generate debug info for imported functions.
-
 # CHECK-DAG: #[[IMPORT_FILE:.*]] = #debuginfo.file<{{.*}}imported_module.lit
 # CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "imported_fn", linkageName = "imported_fn()", file = #[[IMPORT_FILE]], line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized">
+
+# // -----
+
+# CHECK-DAG: #[[FOR_SP:.*]] = #debuginfo.subprogram<{{.*}}name = "structured_for_loop"{{.*}}>
+# CHECK-DAG: #[[LOCAL_VAR_I:.*]] = #debuginfo.local_variable<scope = #[[FOR_SP]], name = "i",
+# CHECK-DAG: #[[LOCAL_VAR_ACC:.*]] = #debuginfo.local_variable<scope = #[[FOR_SP]], name = "acc",
+
+# CHECK-LABEL: lit.func @"structured_for_loop()"
+fn structured_for_loop() -> __mlir_type.index:
+    # CHECK: %0 = scf.for %arg0 = %idx0 to %idx10 step %idx1 iter_args(%arg1 = %idx2) -> (index) {
+    __mlir_region loop_body(i: __mlir_type.index, acc: __mlir_type.index):
+        # CHECK-NEXT: debuginfo.value #[[LOCAL_VAR_I]] = %arg0
+        # CHECK-NEXT: debuginfo.value #[[LOCAL_VAR_ACC]] = %arg1
+        # CHECK-NEXT: %1 = index.add %arg0, %arg1 loc(#[[FOR_ADD_LOC:.*]])
+        # CHECK-NEXT: scf.yield %1 : index loc(#[[FOR_YIELD_LOC:.*]])
+        __mlir_op.`scf.yield`(__mlir_op.`index.add`(i, acc))
+
+    # CHECK: return %0 : index
+    return __mlir_op.`scf.for`[
+        _type : [__mlir_type.index], _region:["loop_body"]
+    ](0, 10, 1, 2)
+
+# Check that we generate debug info for imported functions.
+
+# CHECK-DAG: #[[FOR_SCOPE:.*]] = #debuginfo.lexical_block<scope = #[[FOR_SP]]
+# CHECK-DAG: #[[FOR_ADD_LOC]] = loc(fused<#[[FOR_SCOPE]]>
+# CHECK-DAG: #[[FOR_YIELD_LOC]] = loc(fused<#[[FOR_SCOPE]]>

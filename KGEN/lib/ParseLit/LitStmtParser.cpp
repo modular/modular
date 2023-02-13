@@ -15,6 +15,7 @@
 #include "LitLexer.h"
 #include "LitParserBase.h"
 
+#include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -23,6 +24,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LitExprCalls.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
@@ -76,6 +78,9 @@ struct LitStmtParser : public LitParserBase {
   const ASTDecl &getDecl() const { return containingDecl; }
   OpBuilder &getBuilder() { return builder; }
 
+  /// Push a debug info lexical block to represent a local variable scope.
+  void pushLocalScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard);
+
   // Expression emission.
 
   ExprEmitter getEmitter(bool allowImplicitVarDecl = false) {
@@ -112,6 +117,7 @@ struct LitStmtParser : public LitParserBase {
   ParseResult parseStructStmt(LitLexerCursor startCursor, size_t curIndent);
   ParseResult parseLetVarStmt(LitLexerCursor startCursor, size_t stmtIndent);
   ParseResult parseAliasDeclStmt(LitLexerCursor startCursor, size_t stmtIndent);
+  ParseResult parseMLIRRegionStmt(LitLexerCursor startCursor, size_t curIndent);
 
 private:
   /// This is declaration / scope that we're parsing into.
@@ -128,6 +134,19 @@ private:
   Operation *varDeclCursor = nullptr;
 };
 } // namespace
+
+void LitStmtParser::pushLocalScope(
+    DebugInfo::DIBuilder::ScopeGuard &scopeGuard) {
+  SMLoc curLoc = getToken().getLoc();
+  auto &sourceMgr = getSourceMgr();
+  unsigned bufferID = sourceMgr.FindBufferContainingLoc(curLoc);
+  auto [line, column] = sourceMgr.getLineAndColumn(curLoc, bufferID);
+
+  scopeGuard = shared.diBuilder->pushLexicalBlock(
+      shared.diBuilder->createFile(
+          sourceMgr.getMemoryBuffer(bufferID)->getBufferIdentifier(), "/"),
+      line, column);
+}
 
 /// Parse a suite, which is either a series of comma separated simple_stmt's on
 /// one line, or an indented block of statements. curIndent is the containing
@@ -192,17 +211,8 @@ ParseResult LitStmtParser::parseSuite(ssize_t curIndent) {
 ParseResult LitStmtParser::parseLocalScopeSuite(ssize_t curIndent) {
   // If we are generating debug info, push a local scope for the suite.
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
-  if (shared.diBuilder) {
-    SMLoc curLoc = getToken().getLoc();
-    auto &sourceMgr = getSourceMgr();
-    unsigned bufferID = sourceMgr.FindBufferContainingLoc(curLoc);
-    auto [line, column] = sourceMgr.getLineAndColumn(curLoc, bufferID);
-
-    scopeGuard = shared.diBuilder->pushLexicalBlock(
-        shared.diBuilder->createFile(
-            sourceMgr.getMemoryBuffer(bufferID)->getBufferIdentifier(), "/"),
-        line, column);
-  }
+  if (shared.diBuilder)
+    pushLocalScope(scopeGuard);
 
   // Forward to the normal suite parse method.
   return parseSuite(curIndent);
@@ -383,6 +393,10 @@ ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     return parseLetVarStmt(startCursor, stmtIndent);
   case LitToken::kw_alias:
     return parseAliasDeclStmt(startCursor, stmtIndent);
+  case LitToken::kw___mlir_region:
+    rejectDecorator();
+    rejectSimpleStmt();
+    return parseMLIRRegionStmt(startCursor, stmtIndent);
   case LitToken::kw_return:
     rejectDecorator(); // Decorators not allowed.
     return parseReturnStmt(stmtIndent);
@@ -1180,6 +1194,90 @@ ParseResult LitStmtParser::parseStructStmt(LitLexerCursor startCursor,
   // when it gets referenced.
   getDeclResolver().addDecl(newStruct, smLoc, nameAttr, &containingDecl,
                             startCursor, getLexer().getCursor(), curIndent);
+  return success();
+}
+
+/// An MLIR region declaration defines a single block region body as a suite
+/// with the declaration arguments corresponding to the region arguments. It is
+/// used to define regions for MLIR operations.
+///
+/// region_stmt ::= "__mlir_region" identifier "(" [argument_list] ")" ":" suite
+ParseResult LitStmtParser::parseMLIRRegionStmt(LitLexerCursor startCursor,
+                                               size_t curIndent) {
+  SMLoc loc = consumeToken(LitToken::kw___mlir_region).getLoc();
+
+  // We will be moving the builder into the contained region, so save it here.
+  llvm::SaveAndRestore builderSaver(builder);
+
+  // Resolve the signature and the body immediately.
+  StringAttr identifier;
+  if (parseIdentifier(identifier, "expected a region name") ||
+      parseToken(LitToken::l_paren, "expected '(' for parameter list"))
+    return failure();
+
+  // Create the decl corresponding to the region declaration.
+  auto op = builder.create<UnboundRegionOp>(translateLocation(loc));
+  ASTDecl &decl =
+      getDeclResolver().addDecl(op, loc, identifier, &containingDecl,
+                                startCursor, getLexer().getCursor(), curIndent);
+  decl.resolvedness = DeclResolvedness::fullyResolved;
+
+  // Parse the argument list if present.
+  struct RegionArgument {
+    StringAttr name;
+    SMLoc loc;
+  };
+  SmallVector<RegionArgument> args;
+  SmallVector<Type> argTypes;
+  SmallVector<Location> argLocs;
+  if (!consumeIf(LitToken::r_paren)) {
+    // Parse simple argument: MLIR operations don't have input conventions.
+    auto parseArg = [&]() -> ParseResult {
+      RegionArgument &arg = args.emplace_back();
+      ExprNode *typeExpr;
+      if (getLocation(arg.loc) ||
+          parseIdentifier(arg.name, "expected an identifier") ||
+          parseToken(LitToken::colon, "expected ':' after region argument") ||
+          parseExpression(typeExpr, std::nullopt))
+        return failure();
+      ASTType type = getEmitter().emitExprType(typeExpr);
+      if (!type)
+        return failure();
+      argTypes.push_back(type);
+      argLocs.push_back(translateLocation(arg.loc));
+      return success();
+    };
+    if (parseCommaSeparatedList(parseArg, LitToken::r_paren))
+      return failure();
+    consumeToken(LitToken::r_paren);
+  }
+
+  builder.createBlock(&op.getRegion());
+  for (auto [regionArg, parsedArg] :
+       llvm::zip(op.getRegion().addArguments(argTypes, argLocs), args)) {
+    // Generate debug info for the region argument if requested.
+    DebugInfo::DIBuilder *diBuilder = shared.diBuilder.get();
+    if (diBuilder &&
+        shared.options.debugLevel == CompilationOptions::kFullDebugInfo) {
+      auto argLoc = regionArg.getLoc()->findInstanceOf<FileLineColLoc>();
+      DebugInfo::DILocalVariableAttr var = diBuilder->createLocalVariable(
+          parsedArg.name, diBuilder->createFile(argLoc), argLoc.getLine(),
+          regionArg.getArgNumber() + 1, /*alignInBits=*/0,
+          DebugInfo::DIUnresolvedMLIRType::get(regionArg.getType()));
+      builder.create<DebugInfo::ValueOp>(regionArg.getLoc(), regionArg, var);
+    }
+    // Add the declaration for the argument within the region declaration.
+    getDeclResolver().addFullyResolvedDecl(DRValue(regionArg), parsedArg.name,
+                                           parsedArg.loc, &decl);
+  }
+
+  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+  if (shared.diBuilder)
+    pushLocalScope(scopeGuard);
+  if (parseToken(LitToken::colon, "expected ':' after region argument list") ||
+      LitParserBase::parseSuite(decl, lexer))
+    return failure();
+
   return success();
 }
 

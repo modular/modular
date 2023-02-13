@@ -672,3 +672,21 @@ def LIT_UnresolvedImportOp : LITOp<"unresolved_import"> {
     $moduleName (`->` $declName^)? `as` $importName attr-dict
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// UnboundRegionOp
+//===----------------------------------------------------------------------===//
+
+def LIT_UnboundRegionOp : LITOp<"unbound_region"> {
+  let summary = "A transient container for a region.";
+  let description = [{
+    The `lit.unbound_region` operation is a container for an MLIR region that
+    has yet to be bound to an MLIR operation. This is used by the parser to
+    attach regions to MLIR operations. The operation itself is never valid. It
+    must be moved by the parser into an MLIR operation.
+  }];
+
+  let regions = (region SizedRegion<1>:$region);
+
+  let hasVerifier = 1;
+}

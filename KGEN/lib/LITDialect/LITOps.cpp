@@ -829,6 +829,14 @@ LogicalResult BreakOp::verify() { return verifyBreakOrContinueOp(*this); }
 LogicalResult ContinueOp::verify() { return verifyBreakOrContinueOp(*this); }
 
 //===----------------------------------------------------------------------===//
+// UnboundRegionOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult UnboundRegionOp::verify() {
+  return emitOpError("is never valid. Was it not erased by the parser?");
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 
