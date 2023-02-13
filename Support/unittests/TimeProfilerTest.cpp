@@ -5,21 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
-//
-// File originates from:
-//   Repo:   https://github.com/llvm/llvm-project.git
-//   Commit: 271f3b91bbf80e9cf22d9e6bee738abb496fecf9
-//   Path:   llvm/unittests/Support/TimeProfilerTest.cpp
-//
-//===----------------------------------------------------------------------===//
-
-//===----------------------------------------------------------------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
 // These are bare-minimum 'smoke' tests of the time profiler. Not tested:
 //  - multi-threading
 //  - 'Total' entries
@@ -77,7 +62,7 @@ TEST(TimeProfiler, Begin_End_Disabled) {
 TEST(TimeProfiler, Entry_Smoke) {
   TimeTraceProfiler profiler(/*timeTraceGranularity=*/0, "test");
 
-  auto entry = timeTraceProfilerBeginEntry("event", "detail");
+  auto entry = timeTraceProfilerBeginEntry<true>("event", "detail");
   timeTraceProfilerStartEntry(entry);
   timeTraceProfilerEndEntry(std::move(entry));
 
@@ -88,7 +73,7 @@ TEST(TimeProfiler, Entry_Smoke) {
 
 TEST(TimeProfiler, Entry_Disabled) {
   // Only get the default entry if tracing is not setup.
-  auto entry = timeTraceProfilerBeginEntry("event", "detail");
+  auto entry = timeTraceProfilerBeginEntry<true>("event", "detail");
   timeTraceProfilerStartEntry(entry);
   ASSERT_TRUE(entry.name.empty());
   ASSERT_TRUE(entry.detail.empty());
