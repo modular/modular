@@ -140,14 +140,15 @@ AsyncValueRef<Chain> Cache::inflateConstant(Operation *constant,
         return nullptr;
 
       // Find the data in the cache.
-      auto found = cache->find(cacheAttr.getHash());
+      auto found = cache->find(
+          cacheAttr.getHash(),
+          MLIRLocationDecoder::getEncodedLocation(constant->getLoc()));
       await(found);
-      if (found->isError()) {
-        out.setToError(
-            getMLIRDiagnostic(found->takeError(), constant->getLoc()));
+      if (found.isError()) {
+        out.setToError(found.takeDiagnostic());
         return nullptr;
       }
-      if (!found->hasValue()) {
+      if (!found->has_value()) {
         out.setToError(getMLIRDiagnostic(
             Error("hash '" + llvm::encodeBase64(cacheAttr.getHash()) +
                   "' could not be found in the cache"),
@@ -163,7 +164,7 @@ AsyncValueRef<Chain> Cache::inflateConstant(Operation *constant,
       // The cache owns the data, so in theory we could rely on a cache dialect
       // resource to keep a reference to the data alive as long as the dialect
       // is alive - that would avoid this copy.
-      BufferRef buf = found->takeValue();
+      BufferRef buf = std::move(**found);
       auto blob = mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
           ArrayRef<char>(buf->getBufferStart(), buf->getBufferSize()),
           alignAttr.getUInt());
@@ -372,15 +373,16 @@ static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
                                           RCRef<RegionCache> cache) {
   auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
 
-  auto foundOr = cache->find(regionHash.getHash());
+  auto foundOr =
+      cache->find(regionHash.getHash(),
+                  MLIRLocationDecoder::getEncodedLocation(r->getLoc()));
   std::move(foundOr).andThenSync(
-      [r, regionHash,
-       out = out.copy()](AsyncValueRef<CacheFindResult> &&foundOr) mutable {
-        if (foundOr->isError()) {
-          return out.setToError(
-              getMLIRDiagnostic(foundOr->takeError(), r->getLoc()));
+      [r, regionHash, out = out.copy()](
+          AsyncValueRef<std::optional<BufferRef>> &&foundOr) mutable {
+        if (foundOr.isError()) {
+          return out.setToError(foundOr.takeDiagnostic());
         }
-        if (!foundOr->hasValue()) {
+        if (!foundOr->has_value()) {
           return out.setToError(getMLIRDiagnostic(
               Error("hash '" + llvm::encodeBase64(regionHash.getHash()) +
                     "' could not be found in the cache"),
@@ -388,7 +390,7 @@ static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
         }
 
         // Parse the bytecode for the region.
-        BufferRef bytecodeBuf = foundOr->takeValue();
+        BufferRef bytecodeBuf = std::move(**foundOr);
         std::unique_ptr<llvm::MemoryBuffer> bytecode =
             llvm::MemoryBuffer::getMemBuffer(bytecodeBuf->getBuffer(),
                                              /*BufferName=*/"",

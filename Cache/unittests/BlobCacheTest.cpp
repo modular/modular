@@ -58,7 +58,7 @@ TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
 TEST_F(BlobCacheTest, FindShouldNotReturnErrorForNonexistantItem) {
   auto dneOr = cache->find("does not exist");
   dneOr.andThenSync([dneOr = dneOr.copy()] {
-    EXPECT_FALSE(dneOr->hasValue() && !dneOr->isError())
+    EXPECT_FALSE(dneOr->has_value() && !dneOr.isError())
         << "expected not to have item named 'does not exist'\n";
   });
 }
@@ -104,8 +104,8 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
 
   auto zerosOr = cache->find("zeros");
   zerosOr.andThenSync([zerosOr = zerosOr.copy(), zerosBuf = zerosBuf.copy()] {
-    EXPECT_TRUE(zerosOr->hasValue()) << zerosOr->getError();
-    BufferRef outZeros = zerosOr->takeValue();
+    EXPECT_TRUE(zerosOr->has_value()) << zerosOr.getDiagnostic().getMessage();
+    BufferRef outZeros = std::move(**zerosOr);
     ASSERT_TRUE(outZeros->getBufferSize() == zerosBuf->getBufferSize())
         << "output buffer size did not match input buffer size\n";
     EXPECT_TRUE(outZeros->getBuffer() == StringRef(zerosBuf->getBufferStart(),
@@ -135,8 +135,8 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
 
   auto zerosOr = cache->find("zeros");
   zerosOr.andThenSync([zerosOr = zerosOr.copy(), zerosBuf = zerosBuf.copy()] {
-    EXPECT_TRUE(zerosOr->hasValue()) << zerosOr->getError();
-    BufferRef outZeros = zerosOr->takeValue();
+    EXPECT_TRUE(zerosOr->has_value()) << zerosOr.getDiagnostic().getMessage();
+    BufferRef outZeros = std::move(**zerosOr);
     ASSERT_TRUE(outZeros->getBufferSize() == zerosBuf->getBufferSize())
         << "output buffer size did not match input buffer size\n";
     EXPECT_TRUE(outZeros->getBuffer() == StringRef(zerosBuf->getBufferStart(),
@@ -178,9 +178,9 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
   // Check that the cache holds the new item, and it's the same data as before.
   auto zerosOr = fsCache->find("zeros");
   await(zerosOr);
-  EXPECT_TRUE(zerosOr->hasValue()) << zerosOr->getError();
+  EXPECT_TRUE(zerosOr->has_value()) << zerosOr.getDiagnostic().getMessage();
 
-  BufferRef outZeros = zerosOr->takeValue();
+  BufferRef outZeros = std::move(**zerosOr);
   ASSERT_TRUE(outZeros->getBufferSize() == zerosBuf->getBufferSize())
       << "output buffer size did not match input buffer size\n";
   EXPECT_TRUE(outZeros->getBuffer() ==

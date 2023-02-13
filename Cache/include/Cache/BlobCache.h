@@ -17,74 +17,6 @@
 #include <filesystem>
 
 namespace M::Cache {
-/// This type allows the BlobCache to differentiate between "an error
-/// occurred" and "the object was not found in the cache". This is because
-/// something not being in the cache isn't necessarily an error - that's a
-/// policy decision we'd like to leave to clients.
-struct CacheFindResult {
-  /// Construct a CacheFindResult that indicates there's nothing in the cache.
-  static CacheFindResult notInCache() { return {}; }
-
-  /// Construct a CacheFindResult with a value. The CacheFindResult takes
-  /// ownership of the value.
-  static CacheFindResult value(BufferRef value) { return {std::move(value)}; }
-
-  /// Construct a CacheFindResult with an error. The CacheFindResult takes
-  /// ownership of the error.
-  static CacheFindResult error(Error err) { return {std::move(err)}; }
-
-  /// Returns true if this holds a value. Returns false if an error occurred
-  /// OR if the requested key was not in the cache.
-  bool hasValue() const { return !valueOr.isError() && valueOr->has_value(); }
-
-  /// Returns true if an error occurred.
-  bool isError() const { return valueOr.isError(); }
-
-  /// Take the value held in this result. This object is in an undefined state
-  /// after this returns.
-  BufferRef takeValue() { return std::move(get()); }
-
-  /// Get a BufferRef from the underlying memory buffer.
-  const BufferRef &operator*() const { return get(); }
-
-  /// Get the error string held by the underlying ErrorOr. The result
-  /// maintains ownership of the string.
-  const char *getError() const { return valueOr.getError(); }
-
-  /// Take the error in the underlying ErrorOr. The result is in an undefined
-  /// state after this returns.
-  Error takeError() { return valueOr.takeError(); }
-
-private:
-  /// Construct the CacheFindResult with an error - this puts it in the error
-  /// state.
-  CacheFindResult(Error error) : valueOr(std::move(error)) {}
-  /// Construct the CacheFindResult with a value - this puts it in the value
-  /// state.
-  CacheFindResult(BufferRef value) : valueOr(std::move(value)) {}
-  /// Construct the CacheFindResult with nothing - this puts it in the "not in
-  /// cache" state.
-  CacheFindResult() : valueOr(std::nullopt) {}
-
-  /// Provide a safe getter. This is private because we want the user to
-  /// explicitly take ownership of the value rather than leaving it sitting in
-  /// this result object if they're going to return it or something.
-  BufferRef &get() {
-    assert(!valueOr.isError() && valueOr->has_value());
-    return valueOr.get().value();
-  }
-
-  const BufferRef &get() const {
-    return const_cast<CacheFindResult *>(this)->get();
-  }
-
-  /// This can be an error, "not in cache", or it can have a value. Error is
-  /// indicated by having an error, while "not in cache" is indicated by
-  /// std::nullopt in the optional, but no error in the ErrorOr. A value is
-  /// indicated by having a value in the optional *and* no error in the ErrorOr.
-  ErrorOr<std::optional<BufferRef>> valueOr;
-};
-
 /// This class is the backend interface for a BlobCache. The backend contains a
 /// pointer to its delegate, which is meant to be used as an option if this
 /// backend has a cache miss. This means that the backends should be ordered on
@@ -98,7 +30,8 @@ public:
   /// Construct a BlobCacheBackend from an LLCL runtime.
   BlobCacheBackend(LLCL::Runtime &runtime) : runtime(runtime) {
     // Register the types we use in the blob cache.
-    LLCL::AsyncValue::registerTypes<ErrorOrSuccess, bool, CacheFindResult>();
+    LLCL::AsyncValue::registerTypes<ErrorOrSuccess, bool,
+                                    std::optional<BufferRef>>();
   }
   virtual ~BlobCacheBackend() {}
 
@@ -116,7 +49,8 @@ public:
 
   /// Get the item with key hash `keyHash` from this backend or any of its
   /// delegates.
-  LLCL::AsyncValueRef<CacheFindResult> find(BufferRef keyHash);
+  LLCL::AsyncValueRef<std::optional<BufferRef>>
+  find(BufferRef keyHash, std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Clear out this backend and its delegates.
   LLCL::AsyncValueRef<ErrorOrSuccess> clear();
@@ -136,7 +70,8 @@ protected:
   virtual bool containsImpl(StringRef keyHash) const = 0;
   /// Subclasses should use this to provide the implementation of getting an
   /// item from storage.
-  virtual CacheFindResult findImpl(StringRef keyHash) const = 0;
+  virtual ErrorOr<std::optional<BufferRef>>
+  findImpl(StringRef keyHash) const = 0;
   /// Subclasses should use this to provide the implementation of clearing the
   /// cache. Subclasses may choose not to provide this, for example, a cloud
   /// storage backend may not wish to actually clear all its storage. Backends
@@ -222,9 +157,10 @@ public:
   }
 
   /// Get the item from any of the provided backends.
-  LLCL::AsyncValueRef<CacheFindResult> find(KeyTy key) {
+  LLCL::AsyncValueRef<std::optional<BufferRef>>
+  find(KeyTy key, std::optional<EncodedLocation> loc = std::nullopt) {
     auto hash = Buffer::get(KeyInfo::hashKey(key));
-    return backendList->find(std::move(hash));
+    return backendList->find(std::move(hash), std::move(loc));
   }
 
   LLCL::AsyncValueRef<ErrorOrSuccess> clear() { return backendList->clear(); }

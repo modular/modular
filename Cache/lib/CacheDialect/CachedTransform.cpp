@@ -34,21 +34,26 @@ AnyAsyncValueRef
 Cache::cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
                        AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                        TransformFn transformFn, CacheHitFn cacheHitFn) {
-  AsyncValue::registerType<CacheFindResult>();
-
   mlir::writeBytecodeToFile(target, *transformKey);
   BufferRef keyBuffer = std::move(transformKey);
 
   // Try to find the key in the cache. The cache hit function should chain off
   // that and do the right for the cache state.
 
-  auto foundOr =
-      AsyncValueRef<CacheFindResult>::allocate(transformCache->getRuntime());
+  auto foundOr = AsyncValueRef<std::optional<BufferRef>>::allocate(
+      transformCache->getRuntime());
   chain.andThenSync([foundOr = foundOr.copy(), keyBuffer = keyBuffer.copy(),
-                     transformCache = transformCache.copy()] {
-    auto f = transformCache->find(keyBuffer->getBuffer());
+                     transformCache = transformCache.copy(), target] {
+    // Find the thing in the cache with the target op's location.
+    auto f = transformCache->find(
+        keyBuffer->getBuffer(),
+        MLIRLocationDecoder::getEncodedLocation(target->getLoc()));
     std::move(f).andThenSync(
-        [foundOr = foundOr.copy()](AsyncValueRef<CacheFindResult> &&f) mutable {
+        [foundOr = foundOr.copy()](
+            AsyncValueRef<std::optional<BufferRef>> &&f) mutable {
+          if (f.isError())
+            return std::move(foundOr).setToError(f.takeDiagnostic());
+
           std::move(foundOr).emplace(std::move(*f));
         });
   });
@@ -60,12 +65,12 @@ Cache::cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
       [out = out.copy(), target, transformCache = transformCache.copy(),
        transformFn = std::move(transformFn), keyBuffer = std::move(keyBuffer),
        cacheHitFn = std::move(cacheHitFn)](
-          AsyncValueRef<CacheFindResult> &&foundOr) mutable {
+          AsyncValueRef<std::optional<BufferRef>> &&foundOr) mutable {
         if (foundOr.isError())
           return out.setToError(foundOr.getPointer()->takeDiagnostic());
 
-        if (foundOr->hasValue())
-          return out.resolveIndirect(cacheHitFn(target, foundOr->takeValue()));
+        if (foundOr->has_value())
+          return out.resolveIndirect(cacheHitFn(target, std::move(**foundOr)));
 
         // No error but no cache hit.
 

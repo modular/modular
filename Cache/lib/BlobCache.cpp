@@ -8,6 +8,7 @@
 #include "Config/Config.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "LLCL/Support/UnknownLocationDecoder.h"
 #include "Support/HMAC.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Base64.h"
@@ -70,41 +71,56 @@ AsyncValueRef<bool> BlobCacheBackend::contains(BufferRef keyHash) {
   return result;
 }
 
-AsyncValueRef<CacheFindResult> BlobCacheBackend::find(BufferRef keyHash) {
-  auto result = AsyncValueRef<CacheFindResult>::allocate(runtime);
+AsyncValueRef<std::optional<BufferRef>>
+BlobCacheBackend::find(BufferRef keyHash, std::optional<EncodedLocation> loc) {
+  auto getError = [loc =
+                       std::move(loc)](Error err) mutable -> EncodedDiagnostic {
+    if (loc)
+      return {std::move(err), std::move(*loc)};
+
+    return UnknownLocationDecoder::getDiagnostic(std::move(err));
+  };
+
+  auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);
   addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
+                    getError = std::move(getError),
                     result = result.copy()]() mutable {
-    if (thisRef->containsImpl(keyHash->getBuffer()))
-      return std::move(result).emplace(thisRef->findImpl(keyHash->getBuffer()));
+    if (thisRef->containsImpl(keyHash->getBuffer())) {
+      // If this was an error, return that error in the AsyncValue.
+      auto bufOr = thisRef->findImpl(keyHash->getBuffer());
+      if (bufOr.isError())
+        return std::move(result).setToError(getError(bufOr.takeError()));
+
+      // Otherwise, simply return the contents.
+      return std::move(result).emplace(std::move(*bufOr));
+    }
 
     if (!thisRef->delegate)
-      return std::move(result).emplace(CacheFindResult::notInCache());
+      return std::move(result).emplace(std::nullopt);
 
     auto itemOr = thisRef->delegate->find(keyHash.copy());
     std::move(itemOr).andThenSync(
         [thisRef = thisRef.copy(), keyHash = keyHash.copy(),
+         getError = std::move(getError),
          // Safe to move local copy of result.
          result = std::move(result)](
-            AsyncValueRef<CacheFindResult> &&itemOr) mutable {
-          if (itemOr->isError())
-            return std::move(result).emplace(
-                CacheFindResult::error(itemOr->takeError()));
+            AsyncValueRef<std::optional<BufferRef>> &&itemOr) mutable {
+          if (itemOr.isError())
+            return std::move(result).setToError(itemOr.takeDiagnostic());
 
           // Delegate doesn't have it either!
-          if (!itemOr->hasValue())
-            return std::move(result).emplace(CacheFindResult::notInCache());
+          if (!*itemOr)
+            return std::move(result).emplace(std::nullopt);
 
-          BufferRef item = itemOr->takeValue();
+          BufferRef item = std::move(**itemOr);
 
           // Store the item in our cache level so we can get a cache hit
           // later.
           if (auto err = thisRef->insertImpl(keyHash->getBuffer(), item.copy()))
-            return std::move(result).emplace(
-                CacheFindResult::error(err.takeError()));
+            return std::move(result).setToError(getError(err.takeError()));
 
           // Return the item.
-          return std::move(result).emplace(
-              CacheFindResult::value(std::move(item)));
+          return std::move(result).emplace(std::move(item));
         });
   });
 
@@ -151,13 +167,13 @@ struct InMemoryBackend : public BlobCacheBackend {
     return cache.count(keyHash);
   }
 
-  CacheFindResult findImpl(StringRef keyHash) const override {
+  ErrorOr<std::optional<BufferRef>> findImpl(StringRef keyHash) const override {
     auto found = cache.find(keyHash);
     if (found == cache.end())
-      return CacheFindResult::notInCache();
+      return std::nullopt;
 
-    // Create a memory buffer that holds this same data.
-    return CacheFindResult::value((*found).second.copy());
+    // Get a copy of the buffer that holds this data.
+    return (*found).second.copy();
   }
 
   ErrorOrSuccess clearImpl() override {
@@ -253,18 +269,18 @@ struct FilesystemBackend : public BlobCacheBackend {
     return std::filesystem::exists(abs) && !std::filesystem::is_directory(abs);
   }
 
-  CacheFindResult findImpl(StringRef keyHash) const override {
+  ErrorOr<std::optional<BufferRef>> findImpl(StringRef keyHash) const override {
     // Get the file path and open it.
     std::filesystem::path filePath = getAbsolutePathForKey(keyHash);
     auto bufOr = Buffer::getFile(filePath);
     // If the file doesn't exist, or it's empty, return an error.
     if (failed(bufOr))
-      return CacheFindResult::error(bufOr.takeError());
+      return bufOr.takeError();
 
     BufferRef buffer = std::move(*bufOr);
     if (buffer->getBufferSize() == 0)
-      return CacheFindResult::error("file '" + Twine(filePath.string()) +
-                                    "' exists, but is empty");
+      return Error("file '" + Twine(filePath.string()) +
+                   "' exists, but is empty");
 
     StringRef contentsAndHMAC = buffer->getBuffer();
 
@@ -275,10 +291,9 @@ struct FilesystemBackend : public BlobCacheBackend {
 
     // Check the computed hmac against the one in the file.
     if (memcmp(computedHMAC.data(), storedHMAC.data(), sha256Bytes)) {
-      return CacheFindResult::error(
-          "corrupted file: stored hash and computed hash did not "
-          "match for file '" +
-          Twine(filePath.string()) + "'");
+      return Error("corrupted file: stored hash and computed hash did not "
+                   "match for file '" +
+                   Twine(filePath.string()) + "'");
     }
 
     // Now that we've verified the integrity of the file, return a memory buffer
@@ -286,9 +301,9 @@ struct FilesystemBackend : public BlobCacheBackend {
     bufOr = Buffer::getFile(filePath, contents.size(),
                             /*Offset=*/0);
     if (failed(bufOr))
-      return CacheFindResult::error(bufOr.takeError());
+      return bufOr.takeError();
     // Otherwise, we're done.
-    return CacheFindResult::value(std::move(*bufOr));
+    return std::move(*bufOr);
   }
 
   ErrorOrSuccess clearImpl() override {
