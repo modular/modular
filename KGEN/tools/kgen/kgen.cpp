@@ -16,6 +16,7 @@
 #include "KGEN/ParseLit.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/CommonCLOptions.h"
+#include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
@@ -222,9 +223,15 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   auto inputFileName = llvm::StringRef(clOptions.inputFilename.getValue());
 
   // Initialize the timing manager.
-  DefaultTimingManager tm;
-  applyDefaultTimingManagerCLOptions(tm);
-  TimingScope timing = tm.getRootScope();
+  std::unique_ptr<mlir::TimingManager> timingManager;
+  if (clOptions.timeTrace) {
+    timingManager = std::make_unique<TimeProfilerTimingManager>();
+  } else {
+    auto defaultManager = std::make_unique<mlir::DefaultTimingManager>();
+    applyDefaultTimingManagerCLOptions(*defaultManager);
+    timingManager = std::move(defaultManager);
+  }
+  TimingScope timing = timingManager->getRootScope();
 
   mlir::PassManager pm(ctx);
   applyPassManagerCLOptions(pm);
