@@ -1785,6 +1785,35 @@ kgen.generator @constexprIfEarlyExit() -> index {
   kgen.return %0 : index
 }
 
+// COM: This ensures that the blocks after the early exit are correctly
+// COM: removed *without* a use-after-free during elaboration.
+// CHECK-LABEL: @constexprIfEarlyExit2
+kgen.generator @constexprIfEarlyExit2() -> index {
+  kgen.param.declare x = <11>
+  // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
+  %0 = kgen.param.if <gt(x, 10)> -> index {
+    %1 = "should.appear"() : () -> index
+    // CHECK-NEXT: kgen.return [[RES]]
+    hlcf.return %1 : index
+  } else {
+    %3 = "should.not.appear"() : () -> index
+    kgen.param.yield %3 : index
+  }
+  // CHECK-NOT: "should.not.appear"
+  kgen.param.if <gt(x, 10)> {
+    "should.not.appear"() : () -> ()
+    %4 = index.constant 3
+    // CHECK-NOT: hlcf.return
+    hlcf.return %4 : index
+  } else {
+    kgen.param.yield
+  }
+  // CHECK-NOT: param.constant = <32>
+  %4 = kgen.param.constant = <32>
+
+  kgen.return %0 : index
+}
+
 // CHECK-LABEL: @constexprIfEarlyExitWithParam
 kgen.generator @constexprIfEarlyExitWithParam() -> index {
   // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"

@@ -767,6 +767,10 @@ static void completeGeneratorUserProcessing(KGENCallOpInterface user,
 static std::optional<ErrorTree>
 completeReturnProcessing(Logger &logger, ReturnOp returnOp,
                          ExpansionTreeNode *parent) {
+  // Erase any unreachable blocks generated during scope processing.
+  mlir::IRRewriter b{OpBuilder(parent->op)};
+  (void)mlir::eraseUnreachableBlocks(b, parent->op->getRegions());
+
   LLVM_DEBUG(logger.logOp("Processing ReturnOp", returnOp));
   SmallVector<Attribute> resultParams;
   for (auto param : returnOp.getParameters()) {
@@ -1550,6 +1554,8 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
 
   // We always erase this op.
   op->erase();
+  LLVM_DEBUG(
+      logger.logOp("param.if parent scope (after processing)", parent->op));
   return std::nullopt;
 }
 
@@ -1614,9 +1620,6 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
       return;
   }
 
-  // Erase any unreachable blocks created by the scope processing.
-  mlir::IRRewriter b{OpBuilder(parentNode->op)};
-  (void)mlir::eraseUnreachableBlocks(b, parentNode->op->getRegions());
   LLVM_DEBUG(parentNode->print(logger << "Completed processing "));
 }
 
