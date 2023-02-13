@@ -551,32 +551,6 @@ static std::optional<ErrorTree> processParamDeclareOp(IREvaluator &evaluator,
 }
 
 //===----------------------------------------------------------------------===//
-// processParamConstantOp
-//===----------------------------------------------------------------------===//
-
-/// Process a param.constant op by concretizing its parameter value and setting
-/// its value attr.
-static std::optional<ErrorTree> processParamConstantOp(IREvaluator &evaluator,
-                                                       ParamConstantOp op) {
-  // ParamConstantOp projects a parameter expression into an SSA value.  We can
-  // eventually lower this into lower level operators in the target set, but
-  // for now we just simplify their operand.
-  auto errorOrValue =
-      evaluator.concretizeParameterExpr(op.getLoc(), op.getValue());
-  if (errorOrValue.isError())
-    return errorOrValue.takeError();
-
-  auto errorOrType =
-      evaluator.concretizeParameterExpr(op.getLoc(), op.getType());
-  if (errorOrType.isError())
-    return errorOrType.takeError();
-
-  op.getResult().setType(errorOrType.takeValue());
-  op.setValueAttr(errorOrValue.takeValue());
-  return std::nullopt;
-}
-
-//===----------------------------------------------------------------------===//
 // processParamAssertOp
 //===----------------------------------------------------------------------===//
 
@@ -1596,8 +1570,6 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
       result = processParamDeclareRegionOp(declare, parentNode);
     } else if (auto search = dyn_cast<ParamSearchOp>(op)) {
       result = processParamSearchOp(parentNode, search, remainingWorklist);
-    } else if (auto value = dyn_cast<ParamConstantOp>(op)) {
-      result = processParamConstantOp(parentNode->evaluator, value);
     } else if (auto assertOp = dyn_cast<ParamAssertOp>(op)) {
       result = processParamAssertOp(parentNode->evaluator, assertOp);
     } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
