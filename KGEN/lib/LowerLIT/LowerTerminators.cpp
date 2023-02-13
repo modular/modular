@@ -349,12 +349,10 @@ static void lowerNestedFunctions(LIT::FuncOp topLevelFunc,
     // is unique with parameters.
     ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(func));
     auto region = b.create<ParamDeclareRegionOp>(
-        ParamDeclAttr::get(func.getSymNameAttr(), func.getSignature()));
-    b.createBlock(&region.getBody());
-    auto body =
-        b.create<RegionBodyOp>(func.getSignature(), ArrayRef<ConstraintAttr>(),
-                               /*isolated*/ false, func.getAlwaysInlineLevel());
-    body.getBodyRegion().takeBody(func.getBodyRegion());
+        ParamDeclAttr::get(func.getSymNameAttr(), func.getSignature()),
+        func.getSignature(), ArrayRef<ConstraintAttr>(), /*isolated=*/false,
+        func.getAlwaysInlineLevel());
+    region.getBodyRegion().takeBody(func.getBodyRegion());
     func.erase();
   });
 }

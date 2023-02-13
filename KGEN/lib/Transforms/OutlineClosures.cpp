@@ -72,12 +72,11 @@ void OutlineClosuresPass::runOnOperation() {
       // Value captures are easy (ish)
       SmallVector<Value> captures;
       bool isolated = M::operationIsIsolatedFromAbove(regionDecl, &captures);
-      auto body = cast<RegionBodyOp>(regionDecl.getBody().front().front());
 
       // If the body is not isolated from above *and* it's not marked
       // always_inline, emit an error.
       if (!isolated &&
-          body.getAlwaysInlineLevel() == AlwaysInlineLevel::Disabled) {
+          regionDecl.getAlwaysInlineLevel() == AlwaysInlineLevel::Disabled) {
         regionDecl.emitError(
             "non-isolated region must be marked always_inline");
         hadError = true;
@@ -106,7 +105,7 @@ void OutlineClosuresPass::runOnOperation() {
       // Collect any parameters used from above that we need to capture for the
       // lifted generator.
       llvm::SetVector<ParamDeclAttr> necessaryDecls;
-      auto regionDeclUses = uses.nestedScopes.find(&body.getBodyRegion());
+      auto regionDeclUses = uses.nestedScopes.find(&regionDecl.getBodyRegion());
       assert(regionDeclUses != uses.nestedScopes.end());
 
       DenseMap<ParamDeclAttr, TypedAttr> parameterCaptures;
@@ -128,12 +127,13 @@ void OutlineClosuresPass::runOnOperation() {
                      llvm::dbgs());
                  llvm::dbgs() << "]\n");
 
-      SignatureType bodySignature = body.getFullSignature();
+      SignatureType bodySignature = regionDecl.getFullSignature();
 
       // The value signature is pretty simple here, just captures and then any
       // original arguments.
       SmallVector<Value> liftedInputs = captures;
-      llvm::append_range(liftedInputs, body.getBodyRegion().getArguments());
+      llvm::append_range(liftedInputs,
+                         regionDecl.getBodyRegion().getArguments());
       LLVM_DEBUG(llvm::dbgs() << "Lifted region will take inputs: [\n\t";
                  llvm::interleave(liftedInputs, llvm::dbgs(), ",\n\t");
                  llvm::dbgs() << "\n]\n");
@@ -143,7 +143,7 @@ void OutlineClosuresPass::runOnOperation() {
 
       // The parameter signature is just the necessary decls + original
       // arguments, and then any of the original results.
-      for (ParamDeclAttr inputParam : body.getInputParamDecls()) {
+      for (ParamDeclAttr inputParam : regionDecl.getInputParamDecls()) {
         bool inserted = necessaryDecls.insert(inputParam);
         assert(inserted && "nested parameter declaration was duplicated?");
       }
@@ -170,7 +170,7 @@ void OutlineClosuresPass::runOnOperation() {
           regionDecl.getLoc(), getUniqueName("_" + regionName),
           TypeAttr::get(liftedSignature),
           b.getAttr<ConstraintArrayAttr>(ArrayRef<ConstraintAttr>{}),
-          FlatSymbolRefAttr(), body.getAlwaysInlineLevelAttr());
+          FlatSymbolRefAttr(), regionDecl.getAlwaysInlineLevelAttr());
       symtab.insert(lifted);
       auto liftedSymbol = SymbolConstantAttr::get(
           SymbolRefAttr::get(lifted.getSymNameAttr()), liftedSignature);
@@ -187,18 +187,18 @@ void OutlineClosuresPass::runOnOperation() {
                   newBody->addArgument(capture.getType(), capture.getLoc()));
 
         // Then handle the original SSA arguments.
-        for (Value prevArg : body.getRegion().getArguments())
+        for (Value prevArg : regionDecl.getArguments())
           map.map(prevArg,
                   newBody->addArgument(prevArg.getType(), prevArg.getLoc()));
 
         b.setInsertionPointToStart(newBody);
-        for (Operation &op : *body.getBody())
+        for (Operation &op : regionDecl.getOps())
           b.clone(op, map);
 
         lifted.getBodyRegion().push_back(newBody);
       } else {
         // Take the body from the param region.
-        lifted.getBodyRegion().takeBody(body.getBodyRegion());
+        lifted.getBodyRegion().takeBody(regionDecl.getBodyRegion());
       }
       LLVM_DEBUG(llvm::dbgs() << "Created lifted region: " << lifted << "\n");
 
@@ -220,7 +220,7 @@ void OutlineClosuresPass::runOnOperation() {
           regionDecl.getLoc(), getUniqueName("_" + regionName + "_wrapper"),
           TypeAttr::get(wrapperSignature),
           b.getAttr<ConstraintArrayAttr>(ArrayRef<ConstraintAttr>{}),
-          FlatSymbolRefAttr(), body.getAlwaysInlineLevelAttr());
+          FlatSymbolRefAttr(), regionDecl.getAlwaysInlineLevelAttr());
       symtab.insert(liftedWrapper);
       auto wrapperSymbol = SymbolConstantAttr::get(
           SymbolRefAttr::get(liftedWrapper.getNameAttr()), wrapperSignature);

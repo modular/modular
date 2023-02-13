@@ -44,8 +44,10 @@ struct ParamDefinition {
 struct ParamDeclaration {
   /// The type of the parameter as it was declared.
   Type type;
-  /// the operation that declares the parameter.
+  /// The operation that declares the parameter.
   Operation *declOp;
+  /// The parent declaration scope.
+  Region *scope;
 };
 
 /// This class defines the use-def graph for parameters. There are two types of
