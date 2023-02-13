@@ -1552,7 +1552,16 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
                      "unknown terminator kind for kgen.param.if");
   }
 
-  // We always erase this op.
+  // We always erase this op and its nested scopes from the parameter graph -
+  // it's been handled, and we don't want anyone else touching it later
+  // considering we're about to delete the op itself.
+  ParameterUseDefGraph &paramGraph = *parent->paramGraph;
+  paramGraph.nestedScopes.erase(&op.getThenRegion());
+  paramGraph.nestedScopes.erase(&op.getElseRegion());
+  auto newEnd = llvm::remove_if(paramGraph.nestedDecls, [&](Region *r) {
+    return r == &op.getThenRegion() || r == &op.getElseRegion();
+  });
+  paramGraph.nestedDecls.erase(newEnd, paramGraph.nestedDecls.end());
   op->erase();
   LLVM_DEBUG(
       logger.logOp("param.if parent scope (after processing)", parent->op));

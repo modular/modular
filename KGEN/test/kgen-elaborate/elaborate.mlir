@@ -1703,6 +1703,45 @@ kgen.generator @constexprIfWithSearch() {
 
 // -----
 
+// COM: These just provide a multi-versioned callee that triggered a
+// COM: use-after-free when processing blocks after a param.if call.
+// COM: See #8560 for more context.
+kgen.generator @someFunc<x>() {
+  kgen.return
+}
+
+// CHECK-LABEL: @multiVersion_concrete_1()
+// CHECK-NEXT: kgen.call @"someFunc,x=2"
+
+// CHECK-LABEL: @multiVersion()
+// CHECK-NEXT: kgen.call @"someFunc,x=1"
+
+kgen.generator @multiVersion() {
+  kgen.param.search x = <1, 2>
+  kgen.call @someFunc<x = x>() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: @constexprIfWithParamSearchCall
+// CHECK-NEXT: kgen.call @multiVersion
+
+// CHECK-LABEL: @constexprIfWithParamSearchCall_concrete_2
+// CHECK-NEXT: kgen.call @multiVersion_concrete_1
+
+kgen.generator @constexprIfWithParamSearchCall() {
+  kgen.param.declare true : i1 = <1>
+  kgen.param.if <true> {
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
+  kgen.call @multiVersion() : () -> ()
+
+  kgen.return
+}
+
+// -----
+
 kgen.generator @someFunc<x -> y>() {
   kgen.return<and(x, 2)>
 }
