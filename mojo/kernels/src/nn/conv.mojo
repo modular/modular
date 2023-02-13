@@ -27,8 +27,11 @@ from Matmul import (
 from List import create_kgen_list_unknown, create_kgen_list
 from Range import range
 from TargetInfo import simd_byte_width
-from Pointer import DTypePointer
+from Pointer import DTypePointer, Pointer
 from DType import DType
+from LLCL import Runtime
+from Functional import unroll, parallelForEachN, div_ceil
+from Range import range
 
 # Data layout encoding.
 struct Conv2DLayout:
@@ -1638,6 +1641,8 @@ struct ConvNHWCInnerLoopFilterPacked[
         global_offset: GemmShape,
         tile_n_k: StaticIntTuple[2],
         conv_shape: ConvShape,
+        col_start_idx: Int,
+        total_col_count: Int,
     ):
         """Interface function to run the packing routine.
         Args:
@@ -1670,7 +1675,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             global_offset: global_offset,
             tile_n_k: tile_n_k,
             c_bound: (
-                Index(c.dim[0](), c.dim[1]())
+                Index(c.dim[0](), col_start_idx + total_col_count)
                 - Index(global_offset.M, global_offset.N)
             ),
             conv_shape: conv_shape,
@@ -2065,6 +2070,31 @@ fn _ho_wo_to_hi_wi(
     return ho_wo * conv_shape.stride - pad_left + r_s * conv_shape.dilation
 
 
+fn get_partitioned_workload(
+    task_idx: Int, number_of_tasks: Int, total_load: Int
+) -> StaticIntTuple[2]:
+    """Naive balanced implementation of load partition.
+    Args:
+        task_idx: Index of the assigned task.
+        number_of_tasks: Total number of task to partition.
+    Returns:
+        Partition result in (load_start_idx, load_amount), meaning the partition
+        is in [start_idx, start_idx+load_amount)
+    """
+    var divided_load = total_load // number_of_tasks
+    let residue_load = Int.remu(total_load, number_of_tasks)
+    var start_idx: Int
+    if task_idx < residue_load:
+        start_idx = task_idx * (divided_load + 1)
+        divided_load += 1
+    else:
+        start_idx = (
+            residue_load * (divided_load + 1)
+            + (task_idx - residue_load) * divided_load
+        )
+    return Index(start_idx, divided_load)
+
+
 # TODO (Fixel): This class has massive code duplication with matmul kernels.
 #  Could drastically clean up when non-inlined closure is supported or without
 #   language support the conv op and matmul op should share a "gemm skeleton"
@@ -2090,13 +2120,21 @@ struct ConvIm2ColNHWC[
     var gemm_shape: GemmShape
     var conv_shape: ConvShape
 
-    # The current active batch index.
-    var batch_idx: Int
-
     # 2D view of the tensors as implicit matmul input.
     var c: NDBuffer[2, create_kgen_list_unknown[2](), type]
     var a: NDBuffer[2, create_kgen_list_unknown[2](), type]
     var b: NDBuffer[2, create_kgen_list_unknown[2](), type]
+
+    # Partitioned row index for the current thread.
+    var row_start_idx: Int
+    var total_row_count: Int
+
+    # Partitioned col index for the current thread.
+    var col_start_idx: Int
+    var total_col_count: Int
+
+    var num_tasks_m: Int
+    var num_tasks_n: Int
 
     # Interface method
     @staticmethod
@@ -2105,6 +2143,7 @@ struct ConvIm2ColNHWC[
         input: NDBuffer[4, shape_input, type],
         filter: NDBuffer[4, shape_filter, type],
         conv_shape: ConvShape,
+        runtime: Runtime.ptr_type,
     ):
         """Interface function to run im2col convolution on the given images and
         filters.
@@ -2114,7 +2153,6 @@ struct ConvIm2ColNHWC[
             filter(NDBuffer): The filter to convolve the input with.
             conv_shape: Struct describing the convolution dimensions.
         """
-        # Assert on supported convolution dimensions.
 
         var conv = ConvIm2ColNHWC[
             shape_input,
@@ -2129,7 +2167,95 @@ struct ConvIm2ColNHWC[
             filter_layout,
         ](out, input, filter, conv_shape)
 
-        conv._run_implicit_matmul()
+        let complexity = conv.gemm_shape.M
+        let num_threads = Runtime(runtime).parallelism_level()
+
+        # minimum number of rows each thread should take.
+        let row_block_unit: Int = 32
+        let col_block_unit: Int = pack_inner_size
+
+        # TODO: add a proper partition heuristic.
+        var num_tasks_m = Int.max(
+            Int.min(complexity // row_block_unit, num_threads), 1
+        )
+        var num_tasks_n = Int.max(
+            Int.min(
+                num_threads // num_tasks_m, conv.gemm_shape.N // col_block_unit
+            ),
+            1,
+        )
+
+        conv.num_tasks_m = num_tasks_m
+        conv.num_tasks_n = num_tasks_n
+
+        fn task_func(
+            task_id: Int,
+            ptr: Pointer[
+                ConvIm2ColNHWC[
+                    shape_input,
+                    shape_filter,
+                    shape_output,
+                    packed_shape,
+                    type,
+                    simd_size,
+                    a_row_size,
+                    pack_inner_size,
+                    pack_cache_size,
+                    filter_layout,
+                ]
+            ],
+        ):
+            let _conv = ptr.load()
+            var local_conv = _conv
+            let task_id_m = task_id // local_conv.num_tasks_n
+            let task_id_n = Int.remu(task_id, local_conv.num_tasks_n)
+
+            let partition_m = get_partitioned_workload(
+                task_id_m, local_conv.num_tasks_m, local_conv.gemm_shape.M
+            )
+            let partition_n = get_partitioned_workload(
+                task_id_n, local_conv.num_tasks_n, local_conv.gemm_shape.N
+            )
+
+            local_conv.row_start_idx = partition_m.__getitem__[0]()
+            local_conv.total_row_count = partition_m.__getitem__[1]()
+            local_conv.col_start_idx = partition_n.__getitem__[0]()
+            local_conv.total_col_count = partition_n.__getitem__[1]()
+
+            local_conv._run_implicit_matmul()
+
+        let args_address = Pointer[
+            ConvIm2ColNHWC[
+                shape_input,
+                shape_filter,
+                shape_output,
+                packed_shape,
+                type,
+                simd_size,
+                a_row_size,
+                pack_inner_size,
+                pack_cache_size,
+                filter_layout,
+            ]
+        ].address_of(conv)
+
+        parallelForEachN[
+            Pointer[
+                ConvIm2ColNHWC[
+                    shape_input,
+                    shape_filter,
+                    shape_output,
+                    packed_shape,
+                    type,
+                    simd_size,
+                    a_row_size,
+                    pack_inner_size,
+                    pack_cache_size,
+                    filter_layout,
+                ]
+            ],
+            task_func,
+        ](runtime, num_tasks_m * num_tasks_n, args_address)
 
     fn __new__(
         out: NDBuffer[4, shape_output, type],
@@ -2266,7 +2392,7 @@ struct ConvIm2ColNHWC[
                 matmul problem space.
             sub_tile_k(Int): Dynamic tile size to use on K dimension.
         """
-        let valid_col_count: Int = self.gemm_shape.N - global_offset.N
+        let valid_col_end: Int = self.col_start_idx + self.total_col_count
         let tile_n: Int = self.tile_n_k.__getitem__[0]()
 
         # Remap buffer indices for current tile.
@@ -2274,7 +2400,7 @@ struct ConvIm2ColNHWC[
             b_packed, tile_n, sub_tile_k, Int(pack_inner_size)
         )
 
-        var col_idx: Int = 0
+        var col_idx: Int = self.col_start_idx
         # Proceed with the large tile:
         col_idx = self._outer_n_loop_helper[pack_inner_size](
             remapped_bpacked,
@@ -2282,11 +2408,11 @@ struct ConvIm2ColNHWC[
             tile_n,
             sub_tile_k,
             col_idx,
-            valid_col_count,
+            valid_col_end,
         )
 
         # Cover residual tiles.
-        if col_idx < valid_col_count:
+        if col_idx < valid_col_end:
             remapped_bpacked = self._view_buffer_as(
                 b_packed, simd_size, sub_tile_k, simd_size
             )
@@ -2296,12 +2422,12 @@ struct ConvIm2ColNHWC[
                 simd_size,
                 sub_tile_k,
                 col_idx,
-                valid_col_count,
+                valid_col_end,
             )
 
         # Cover the last sub simdsize tile:
         # This call will handle the sub-simd size boundary.
-        if col_idx < valid_col_count:
+        if col_idx < valid_col_end:
             self._outer_m_loop[simd_size](
                 remapped_bpacked,
                 global_offset + GemmShape(0, col_idx, 0),
@@ -2367,7 +2493,9 @@ struct ConvIm2ColNHWC[
             sub_tile_n(Int): Dynamic tile size to use on N dimension.
             sub_tile_k(Int): Dynamic tile size to use on K dimension.
         """
-        let valid_col_count = self.c.dim[1]() - global_offset.N
+        let valid_col_count = (
+            self.col_start_idx + self.total_col_count - global_offset.N
+        )
 
         # The whole subtile is within valid columns,
         #  no need to check boundary when loading C
@@ -2442,30 +2570,30 @@ struct ConvIm2ColNHWC[
 
         # Launch the MLoop
         let sub_tile_n_k = Index(sub_tile_n, sub_tile_k)
-        let valid_row_count = self.c.dim[0]() - global_offset.M
+        let valid_row_end = self.total_row_count + self.row_start_idx
 
         # Launch largest row blocks possible and
         #  then reduce row size to maximizing unrolled tiles.
-        var row_idx: Int = 0
+        var row_idx: Int = self.row_start_idx
         row_idx = self._outer_m_loop_row_helper[
             skip_col_bound, m_loop_pack_inner_size, a_row_size
-        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
+        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_end)
 
         row_idx = self._outer_m_loop_row_helper[
             skip_col_bound, m_loop_pack_inner_size, 4
-        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
+        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_end)
 
         row_idx = self._outer_m_loop_row_helper[
             skip_col_bound, m_loop_pack_inner_size, 3
-        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
+        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_end)
 
         row_idx = self._outer_m_loop_row_helper[
             skip_col_bound, m_loop_pack_inner_size, 2
-        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
+        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_end)
 
         row_idx = self._outer_m_loop_row_helper[
             skip_col_bound, m_loop_pack_inner_size, 1
-        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
+        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_end)
 
     fn _can_skip_hw_check(
         self, row_start_index: Int, number_of_rows: Int
@@ -2558,6 +2686,8 @@ struct ConvIm2ColNHWC[
                 current_offset,
                 sub_tile_n_k,
                 self.conv_shape,
+                self.col_start_idx,
+                self.total_col_count,
             )
             row_idx += RowSize
         return row_idx
