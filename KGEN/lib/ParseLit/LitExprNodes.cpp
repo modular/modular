@@ -713,7 +713,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       auto bodyRef = dyn_cast<StringAttr>(attr.getValue());
       if (!bodyRef) {
         emitter.emitError(call.getLoc(),
-                          "MLIR operation region must be a function reference");
+                          "MLIR operation region must be a region reference");
         return {};
       }
       // Lookup the operation body.
@@ -722,36 +722,15 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
           /*searchParentScopes=*/false);
       ArrayRef<ASTDecl *> results = result.getIfSuccess();
       if (result.isFailure() || results.size() != 1 ||
-          !isa<LIT::FuncOp>(*results.front())) {
+          !isa<LIT::UnboundRegionOp>(*results.front())) {
         emitter.emitError(call.getLoc(), "MLIR operation region reference did "
-                                         "not resolve to a function body");
+                                         "not resolve to a region body");
         return {};
       }
-      // Resolve the body before using it.
-      ASTDecl &body = *results.front();
-      if (failed(
-              emitter.shared.declResolver->resolveFully(body, call.getLoc()))) {
-        emitter.emitError(body.getLoc(),
-                          "failed to immediately resolve MLIR operation region")
-                .attachNote(call.getLocation(emitter))
-            << "see MLIR operation here";
-        return {};
-      }
-      // SUPER-MEGA-HACK: The body is single-use. Move it in, because otherwise
-      // the function will not verify. Make sure to replace the terminator.
-      auto func = cast<LIT::FuncOp>(body);
+      auto unboundRegion = cast<LIT::UnboundRegionOp>(*results.front());
       auto region = std::make_unique<Region>();
-      region->takeBody(func.getBodyRegion());
-      for (Operation &op : region->front()) {
-        if (!op.hasTrait<OpTrait::IsTerminator>())
-          continue;
-        if (isa<EndFuncOp>(op)) {
-          op.erase();
-          break;
-        }
-        op.getBlock()->splitBlock(++Block::iterator(&op))->erase();
-      }
-      func.erase();
+      region->takeBody(unboundRegion.getRegion());
+      unboundRegion.erase();
       state.addRegion(std::move(region));
       continue;
     }

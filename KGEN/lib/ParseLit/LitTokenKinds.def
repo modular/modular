@@ -142,6 +142,7 @@ TOK_KEYWORD(var)
 TOK_KEYWORD(while)
 TOK_KEYWORD(with)
 TOK_KEYWORD(yield)
+TOK_KEYWORD(__mlir_region)
 
 #undef TOK_MARKER
 #undef TOK_IDENTIFIER

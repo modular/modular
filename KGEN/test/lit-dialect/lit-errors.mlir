@@ -244,3 +244,14 @@ lit.func @struct_attr() {
   kgen.param.constant: @ParamField<type: type = i1> = <#lit.struct<{a: i1 = A}>>
   kgen.return
 }
+
+// -----
+
+lit.func @unbound_region() {
+  // expected-error @below {{'lit.unbound_region' op is never valid. Was it not erased by the parser?}}
+  "lit.unbound_region"() ({
+  ^bb0(%arg0: index):
+    scf.yield %arg0 : index
+  }) : () -> ()
+  kgen.return
+}
