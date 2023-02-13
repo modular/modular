@@ -76,10 +76,10 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
   AsyncValue::registerTypes<bool, int8_t, uint8_t, int16_t, uint16_t, int32_t,
                             uint32_t, int64_t, uint64_t, float, double>();
 
-  // can't pass in profileFilename AND use timeTraceProfilerInitialize() in the
-  // caller
+  // NOTE: Users can't pass in profileFilename AND activate the time profiler in
+  // the caller.
   if (!profileFilename.empty())
-    timeTraceProfilerLLCLMainInitialize();
+    profiler.emplace(/*timeTraceGranularity=*/0, "Main");
 }
 
 Runtime::~Runtime() {
@@ -99,10 +99,9 @@ Runtime::~Runtime() {
   (void)nextRuntimeIndex.compare_exchange_strong(expected, runtimeIndex);
 
   // We're done with profiling.
-  if (!profileFilename.empty()) {
-    if (auto E = M::timeTraceProfilerWrite(profileFilename, "-"))
-      llvm::report_fatal_error("Unable to write time trace profile");
-    M::timeTraceProfilerCleanup();
+  if (profiler) {
+    if (auto E = profiler->write(profileFilename, "-"))
+      llvm::report_fatal_error("unable to write time trace profile");
   }
 }
 

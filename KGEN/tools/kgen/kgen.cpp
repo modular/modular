@@ -96,7 +96,7 @@ struct TraceProfiler {
   TraceProfiler(const CLOptions &clOptions) {
     if (!clOptions.timeTrace)
       return;
-    timeTraceProfilerInitialize(clOptions.timeTraceGranularity, "kgen");
+    profiler.emplace(clOptions.timeTraceGranularity, "kgen");
 
     std::error_code ec;
     std::filesystem::path derived = std::filesystem::absolute(
@@ -106,20 +106,17 @@ struct TraceProfiler {
                             ec.message());
 
     outputFilePath = derived / "kgen.trace.json";
-    isActive = true;
   }
 
   ~TraceProfiler() {
-    if (!isActive)
+    if (!profiler)
       return;
-
-    if (auto err = timeTraceProfilerWrite(outputFilePath.string(), "-"))
+    if (auto err = profiler->write(outputFilePath.string(), "-"))
       llvm::errs() << "unable to write trace file: " << err.getError();
-    timeTraceProfilerCleanup();
   }
 
 private:
-  bool isActive = false;
+  std::optional<TimeTraceProfiler> profiler;
   std::filesystem::path outputFilePath;
 };
 } // namespace
