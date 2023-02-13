@@ -38,7 +38,7 @@ constexpr bool kRunImmediatelyOnForeignThreads = false;
 /// Bit index i is true if the thread with workedID i is suspended.
 using SuspendedThreadsBitvec = uint64_t;
 constexpr size_t kMaxWorkers = sizeof(SuspendedThreadsBitvec) * 8;
-constexpr SuspendedThreadsBitvec mask(size_t workerID) {
+constexpr SuspendedThreadsBitvec getSuspendedThreadIdMask(size_t workerID) {
   return UINT64_C(1) << workerID;
 }
 
@@ -86,13 +86,14 @@ struct SharedThreadState {
   /// can know to wake it up when more work materializes.
   void markSuspended(size_t workerID) {
     // TODO: Does this need to be sequentially consistent?
-    suspendedThreads.fetch_or(mask(workerID), std::memory_order_seq_cst);
+    suspendedThreads.fetch_or(getSuspendedThreadIdMask(workerID),
+                              std::memory_order_seq_cst);
   }
 
   /// If the specified workerID is suspended, take its bit out of the
   /// suspendedThreads bitset and return true.  Otherwise return false.
   bool takeSuspendedThread(size_t workerID) {
-    SuspendedThreadsBitvec workerBit = mask(workerID);
+    SuspendedThreadsBitvec workerBit = getSuspendedThreadIdMask(workerID);
     auto oldValue =
         suspendedThreads.fetch_and(~workerBit, std::memory_order_seq_cst);
     return oldValue & workerBit;

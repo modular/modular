@@ -132,6 +132,8 @@ TEST_P(AsyncValueTest, AsyncConsuming) {
 // Waiters run off stack
 //===----------------------------------------------------------------------===//
 
+// TODO(#8535): Disable to match disabling of runWaiterLaterIfPossible.
+#if 0
 TEST_P(AsyncValueTest, EmplacingFromTask_DeadlockOnFailure) {
   auto runtime = createRuntime();
   auto finished = AsyncValueRef<int>::allocate(*runtime);
@@ -174,6 +176,7 @@ TEST_P(AsyncValueTest, EmplaceOnForeignThread_DeadlockOnFailure) {
   await(finished);
   EXPECT_EQ(finished.get(), 1);
 }
+#endif
 
 //===----------------------------------------------------------------------===//
 // Await 'quietly'

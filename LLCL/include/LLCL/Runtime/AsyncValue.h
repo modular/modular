@@ -470,7 +470,9 @@ protected:
   /// it seems prudent to avoid executing the waiter on the callers stack
   /// if efficient to do so.
   static void runWaiterLaterIfPossible(Waiter &&waiter, WorkQueue *workQueue) {
-    workQueue->addOrExecuteSmallTask(std::move(waiter));
+    // TODO(#8535) Go back to original eager behavior pending deadlock issue.
+    // workQueue->addOrExecuteSmallTask(std::move(waiter));
+    runWaiterNow(std::move(waiter));
   }
 
 protected:
