@@ -52,9 +52,28 @@ public:
   /// the callers stack if efficient to do so.
   virtual void addOrExecuteSmallTask(TaskFunction work) = 0;
 
-  /// Run work items until the specified values are ready, returning to the
-  /// caller when they are ready (either as values or as errors).
-  virtual void await(ArrayRef<AnyAsyncValueRef> values) = 0;
+  /// Blocks until the given values are ready, either as emplaced values or
+  /// as errors.
+  ///
+  /// For single threaded work queues, the runNewTasks flag is ignored.
+  /// Otherwise, the runNewTasks flag indicates whether the callers thread
+  /// may be used to process work items while waiting.
+  ///
+  /// If runNewTasks is true (default), the caller's thread will fill in time
+  /// while waiting by processing pending tasks, sleeping only if no other
+  /// work is available. Generally this option should only be used when
+  /// awaiting at the 'top level', since it is possible for a work item to
+  /// take much longer than needed for the values to become ready.
+  ///
+  /// Otherwise, no new tasks are run by the caller's thread, and it may
+  /// sleep. Generally this setting should be preferred when awaiting within a
+  /// concurrency primitive which may form part of a larger asynchronous
+  /// computation. In particular, this flag is appropriate when the caller
+  /// knows the given values should all be ready 'shortly', eg because they
+  /// were launched as part of a 'parallelDo' with each shard roughly equal
+  /// size, and the callers thread itself contributed to one such shard.
+  virtual void await(ArrayRef<AnyAsyncValueRef> values,
+                     bool runNewTasks = true) = 0;
 
   /// Return the pool size maintained by this work queue. Kernels can use
   /// this as a hint indicating the maximum useful number of work items

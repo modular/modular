@@ -37,7 +37,8 @@ public:
     workItems.enqueue(std::move(work));
   }
 
-  void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
+  void await(llvm::ArrayRef<AnyAsyncValueRef> values,
+             bool runNewTasks) override;
   size_t getParallelismLevel() const override { return 1; }
 
 private:
@@ -48,7 +49,8 @@ private:
 };
 } // namespace
 
-void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
+void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values,
+                                  bool runNewTasks) {
   // We are done when values_remaining drops to zero.
   size_t numRemaining = values.size();
 

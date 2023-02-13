@@ -13,6 +13,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/Semaphore.h"
+#include <llvm/Support/Threading.h>
 
 #include "gtest/gtest.h"
 
@@ -22,18 +23,18 @@ enum WorkQueueType { kSingleThread = 0, kThreadPool = 1 };
 
 class AsyncValueTest : public testing::TestWithParam<WorkQueueType> {
 protected:
-  std::unique_ptr<Runtime> createRuntime() {
+  std::unique_ptr<Runtime> createRuntime(int numThreads = 4) {
     AsyncValue::registerType<int>();
     AsyncValue::registerType<char>();
     AsyncValue::registerType<size_t>();
     std::unique_ptr<Allocator> allocator =
         createLeakCheckAllocator(createMallocAllocator());
-    // We'll deliberately oversubscribe threads to tickle more concurrency
-    // issues.
-    size_t numThreads = std::thread::hardware_concurrency() * 2;
     std::unique_ptr<WorkQueue> workQueue =
-        GetParam() == kThreadPool ? createThreadPoolWorkQueue(numThreads)
-                                  : createSingleThreadWorkQueue();
+        GetParam() == kThreadPool
+            ? createThreadPoolWorkQueue(
+                  numThreads,
+                  /*busyWait=*/std::chrono::milliseconds(1))
+            : createSingleThreadWorkQueue();
     return std::make_unique<Runtime>(std::move(allocator),
                                      std::move(workQueue));
   }
@@ -131,7 +132,7 @@ TEST_P(AsyncValueTest, AsyncConsuming) {
 // Waiters run off stack
 //===----------------------------------------------------------------------===//
 
-TEST_P(AsyncValueTest, EmplacingFromTask) {
+TEST_P(AsyncValueTest, EmplacingFromTask_DeadlockOnFailure) {
   auto runtime = createRuntime();
   auto finished = AsyncValueRef<int>::allocate(*runtime);
   Semaphore canRun;
@@ -152,7 +153,7 @@ TEST_P(AsyncValueTest, EmplacingFromTask) {
   EXPECT_EQ(finished.get(), 1);
 }
 
-TEST_P(AsyncValueTest, EmplaceOnForeignThread) {
+TEST_P(AsyncValueTest, EmplaceOnForeignThread_DeadlockOnFailure) {
   if (GetParam() != kThreadPool)
     // Can only observe this behaviour with the thread pool workqueue.
     return;
@@ -172,6 +173,61 @@ TEST_P(AsyncValueTest, EmplaceOnForeignThread) {
   canRun.post();
   await(finished);
   EXPECT_EQ(finished.get(), 1);
+}
+
+//===----------------------------------------------------------------------===//
+// Await 'quietly'
+//===----------------------------------------------------------------------===//
+
+TEST_P(AsyncValueTest, AwaitQuietly_DeadlockOnFailure) {
+  if (GetParam() == kSingleThread)
+    // No difference between await and awaitQuietly if single-threaded.
+    return;
+
+  // Deliberately limit to two threads.
+  auto runtime = createRuntime(/*numThreads=*/2);
+  Semaphore testProceedSema;
+  Semaphore canaryProceedSema;
+  Semaphore testReadySema;
+
+  // The main thread will be occupied by the overall test.
+  auto testChain = AsyncValueRef<Chain>::allocate(*runtime);
+  auto canaryChain = AsyncValueRef<Chain>::allocate(*runtime);
+
+  // Force the sole worker thread to be occupied by the 'test' task.
+  addTask(*runtime, [runtime = runtime.get(), &testReadySema, &testProceedSema,
+                     &canaryProceedSema, testChain = testChain.copy(),
+                     canaryChain = canaryChain.copy()]() mutable {
+    testReadySema.post();
+
+    // Enqueue a third 'canary' task. It will deadlock if incorrectly run by
+    // the awaitQuietly below.
+    addTask(*runtime,
+            [&canaryProceedSema, canaryChain = canaryChain.copy()]() mutable {
+              canaryProceedSema.wait();
+              std::move(canaryChain).emplace();
+            });
+
+    testProceedSema.wait();
+
+    // We're now racing to emplace testChain before the awaitQuietly
+    // tests the chain. If we win the test will trivially succeed. Sleep to
+    // give awaitQuietly a chance to do the wrong thing.
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    std::move(testChain).emplace();
+  });
+
+  // Wait for test task to start.
+  testReadySema.wait();
+  // Let the test task proceed.
+  testProceedSema.post();
+  // The awaitQuietly may exit immediately, spin, or sleep, but should never
+  // allow the canary task to run. We'll deadlock if it does.
+  awaitQuietly(testChain);
+
+  // Now safe to run the canary.
+  canaryProceedSema.post();
+  await(canaryChain);
 }
 
 //===----------------------------------------------------------------------===//
@@ -318,8 +374,10 @@ TEST_P(AsyncValueTest, ArrayMovingAsync) {
 // Stress tests
 //===----------------------------------------------------------------------===//
 
-TEST_P(AsyncValueTest, Stress) {
-  auto runtime = createRuntime();
+TEST_P(AsyncValueTest, StressAndThen) {
+  // Deliberately over-subscribe threads to try to tickle any races.
+  auto runtime =
+      createRuntime(/*numThreads=*/std::thread::hardware_concurrency() * 2);
 
   const size_t nRounds = 5;
   const size_t nValues = 500;
@@ -365,4 +423,26 @@ TEST_P(AsyncValueTest, Stress) {
   await(finish);
 
   EXPECT_EQ(sum, (nRounds + 1) * nValues);
+}
+
+TEST_P(AsyncValueTest, StressParallelForEachN) {
+  // Deliberately over-subscribe threads to try to tickle any races.
+  auto runtime =
+      createRuntime(/*numThreads=*/std::thread::hardware_concurrency() * 2);
+
+  const size_t nShards = 500;
+  std::vector<std::unique_ptr<std::atomic<bool>>> doneFlags;
+  for (size_t i = 0; i < nShards; ++i)
+    doneFlags.emplace_back(std::make_unique<std::atomic<bool>>());
+
+  auto elementFn = [&doneFlags](size_t index) {
+    std::this_thread::sleep_for(std::chrono::microseconds(200 + rand() % 50));
+    EXPECT_FALSE(*doneFlags[index]);
+    *doneFlags[index] = true;
+  };
+
+  parallelForEachN(*runtime, nShards, std::move(elementFn));
+
+  for (size_t i = 0; i < nShards; ++i)
+    EXPECT_TRUE(*doneFlags[i]) << "(index " << i << ")";
 }

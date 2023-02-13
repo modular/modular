@@ -47,12 +47,24 @@ using ResultType = typename UnwrapErrorOr<std::invoke_result_t<F>>::type;
 /// are ready.
 inline static void await(ArrayRef<AnyAsyncValueRef> values) {
   if (!values.empty())
-    values[0].getRuntime()->getWorkQueue()->await(values);
+    values[0].getRuntime()->getWorkQueue()->await(values,
+                                                  /*runNewTasks=*/true);
 }
 
 template <typename T>
 inline static void await(const AsyncValueRef<T> &value) {
   await(ArrayRef<AnyAsyncValueRef>(value));
+}
+
+inline static void awaitQuietly(ArrayRef<AnyAsyncValueRef> values) {
+  if (!values.empty())
+    values[0].getRuntime()->getWorkQueue()->await(values,
+                                                  /*runNewTasks=*/false);
+}
+
+template <typename T>
+inline static void awaitQuietly(const AsyncValueRef<T> &value) {
+  awaitQuietly(ArrayRef<AnyAsyncValueRef>(value));
 }
 
 //===----------------------------------------------------------------------===//
@@ -389,7 +401,7 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
   // Enqueue each element of work!
   for (size_t elementIdx = 0; elementIdx != totalCount; ++elementIdx) {
     addTask(runtime, [state, elementIdx]() {
-      TIME_PROFILER_SCOPE(Trace::kLLCL, 1, "parallelForEach", [&]() {
+      TIME_PROFILER_SCOPE(Trace::kLLCL, 1, "llcl.parallelForEach", [&]() {
         return Twine("subtask:").concat(Twine(elementIdx)).str();
       });
       // Invoke the per-element function with the index and all of the captured
@@ -477,13 +489,16 @@ parallelForEachNChain(Runtime &runtime, size_t totalCount,
 }
 
 /// This method invokes the specified element function "N" times with indexes
-/// from [0 ..< N).  This function kicks off the per-element work into the
-/// Runtime's WorkQueue and then donates the client thread to doing work.  It
-/// returns when all the elements are completed.
+/// from [0, N). Elements [0..N-1) are processed as tasks using the Runtime's
+/// WorkQueue. Element N-1 is processed on the caller's thread. It returns when
+/// all elements are completed.
+///
+/// Each call to the element function should have roughly the same latency.
+/// The callers thread will not be donated to work on any other work items,
+/// and may sleep waiting for elements [0..N-1) to complete.
 ///
 /// Because this doesn't return until the elements are done, it is ok for the
 /// element function to capture things on the caller's stack by reference.
-///
 template <typename... CaptureTys, typename ElementFn>
 static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
                                     ElementFn &&elementFn,
@@ -506,14 +521,15 @@ static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
   // said, there is a reasonable likelihood that the last element will be
   // smaller than the rest, so this thread can catch up with the others.
   {
-    TIME_PROFILER_SCOPE(Trace::kLLCL, 1, "parallelForEach", [&]() {
+    TIME_PROFILER_SCOPE(Trace::kLLCL, 1, "llcl.parallelForEach", [&]() {
       return Twine("subtask:").concat(Twine(totalCount - 1)).str();
     });
     elementFn(totalCount - 1, captures...);
   }
 
-  // Donate the client thread to executing work until all the elements have
-  // completed.
+  // Wait for the chain to become available. We'll assume our sharding of
+  // the work to elementFn was well-balanced, and so won't attempt to run
+  // any additional work items while waiting.
   if (chainResult)
     await(chainResult);
 }
