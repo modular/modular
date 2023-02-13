@@ -230,7 +230,7 @@ struct Task[type: typename]:
         """
         let cur_hdl = __mlir_op.`pop.coroutine.opaque_handle`()
 
-        fn await_body():
+        __mlir_region await_body():
             _async_and_then(
                 cur_hdl,
                 AsyncContext.get_chain(self.handle.get_ctx[AsyncContext]()),
@@ -315,7 +315,7 @@ struct TaskGroup:
     fn __await__(self&):
         let cur_hdl = __mlir_op.`pop.coroutine.opaque_handle`()
 
-        fn await_body():
+        __mlir_region await_body():
             await_body_impl(cur_hdl, self)
 
         __mlir_op.`pop.coroutine.await`[_region:["await_body"]]()
