@@ -19,6 +19,8 @@ struct M:
     return M(0)
   fn __matmul__(self, rhs: M) -> M:
     return M(0)
+  fn __rmatmul__(lhs: M, self) -> M:
+    return M(0)
 
 # CHECK-LABEL: lit.func @"simpleMath
 fn simpleMath(a: Int, b: Int) -> Int:
@@ -79,8 +81,6 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$Int"::@Int::@"__neg__{{.*}}(%[[POW]])
   # CHECK-NEXT:  pop.store %[[NEG]], %z
   z = -Int(2)**z
-
-  # radd test
   # CHECK-NEXT: [[Z:%.*]] = pop.load %z : !pop.pointer<@"$Int"::@Int>
   # CHECK-NEXT: [[ONE:%.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 1}>
   # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__radd__($Int::Int,$Int::Int)"([[Z]], [[ONE]])
@@ -94,13 +94,43 @@ fn precedence_associativity(a: Int):
   # CHECK: kgen.call @"$F32"::@F32::@"__truediv__($F32::F32,$F32::F32)"
   var r1 = F32(33.0) / 42.0
 
+# CHECK-LABEL: lit.func @"reverse_operators
+fn reverse_operators(a: Int):
+  # CHECK: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__radd__($Int::Int,$Int::Int)"
+  var z = 1 + a
+
+  # CHECK: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__rsub__($Int::Int,$Int::Int)"
+  z = 2 - z
+
+  # CHECK: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__rmul__($Int::Int,$Int::Int)"
+  z = 3 * z
+
+  # div tests
   # CHECK: kgen.call @"$F32"::@F32::@"__rtruediv__($F32::F32,$F32::F32)"
-  var r2 = 33.0 / F32(42.0)
+  # CHECK: kgen.call @"$Int"::@Int::@"__rfloordiv__($Int::Int,$Int::Int)"
+  var r1 = 33.0 / F32(42.0)
+  z = 33 // z
 
-  # __rlshift__ tests
+  # CHECK: kgen.call @"$Int"::@Int::@"__rmod__($Int::Int,$Int::Int)"
+  var i0 = 10 % z
+
+# CHECK: kgen.call @"$Int"::@Int::@"__rpow__($Int::Int,$Int::Int)"
+  var i1 = 3 ** z
+
   # CHECK: kgen.call @"$Int"::@Int::@"__rlshift__($Int::Int,$Int::Int)"
-  var r3 = 1 << z
+  var i2 = 1 << z
 
+  # CHECK: kgen.call @"$Int"::@Int::@"__rrshift__($Int::Int,$Int::Int)"
+  var i3 = 1 >> z
+
+  # CHECK: kgen.call @"$Int"::@Int::@"__rand__($Int::Int,$Int::Int)"
+  z = 1 & z
+
+  # CHECK: kgen.call @"$Int"::@Int::@"__ror__($Int::Int,$Int::Int)"
+  z = 2 | z
+
+  # CHECK: kgen.call @"$Int"::@Int::@"__rxor__($Int::Int,$Int::Int)"
+  z = 3 ^ z
 
 # CHECK-LABEL: lit.func @"precedence_matmul
 fn precedence_matmul(z: M) -> M:
