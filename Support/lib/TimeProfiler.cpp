@@ -288,43 +288,6 @@ void M::Detail::timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &os) {
 }
 
 //===----------------------------------------------------------------------===//
-// Stat Output
-//===----------------------------------------------------------------------===//
-
-void M::Detail::timeTraceProfilerWriteStat(llvm::raw_pwrite_stream &os) {
-  assert(GlobalProfilerContext::instance && "profiler should be initialized");
-  auto &ctx = *GlobalProfilerContext::instance;
-  std::lock_guard<std::mutex> lock(ctx.lock);
-
-  // Write call counts and cost by thread.
-  auto writeThreadTimeStat = [&](const auto &statistics, uint64_t tid) {
-    // Sort the statistics by time cost.
-    std::vector<NameAndCountAndDurationType> sortedStats;
-    sortedStats.reserve(statistics.size());
-    for (const auto &stat : statistics)
-      sortedStats.emplace_back(std::string(stat.getKey()), stat.getValue());
-    llvm::sort(sortedStats, [](const NameAndCountAndDurationType &lhs,
-                               const NameAndCountAndDurationType &rhs) {
-      return lhs.second.second > rhs.second.second;
-    });
-
-    for (const auto &[name, countIt] : sortedStats) {
-      auto count = countIt.first;
-      auto durUs = duration_cast<microseconds>(countIt.second).count();
-      os << tid << ", " << name << ", " << count << ", " << durUs << "\n";
-    }
-  };
-
-  os << "Tid, Name, Count, Cost (us)\n";
-  llvm::interleave(
-      llvm::make_pointee_range(ctx.profilers), os,
-      [&](const TimeTraceThreadProfiler &ttp) {
-        writeThreadTimeStat(ttp.countAndTotalPerName, ttp.tid);
-      },
-      "\n");
-}
-
-//===----------------------------------------------------------------------===//
 // Event Stream Output
 //===----------------------------------------------------------------------===//
 
@@ -423,16 +386,6 @@ ErrorOrSuccess M::Detail::timeTraceProfilerWrite(StringRef preferredFileName,
       return Error(Twine("could not open ") + tracePath + "(" +
                    Twine(ec.message()) + ")");
     timeTraceProfilerWriteTrace(os);
-  }
-
-  {
-    // Write time statistics.
-    std::string statPath = path == "-" ? path : path + ".time-stat.csv";
-    llvm::raw_fd_ostream os(statPath, ec, llvm::sys::fs::OF_TextWithCRLF);
-    if (ec)
-      return Error(Twine("could not open ") + statPath + "(" +
-                   Twine(ec.message()) + ")");
-    timeTraceProfilerWriteStat(os);
   }
 
   {

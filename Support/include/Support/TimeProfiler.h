@@ -131,10 +131,6 @@ void timeTraceProfilerDestroy();
 /// https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview
 void timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &os);
 
-/// Write profiling statistics to output stream.
-/// Data produced is in CSV format.
-void timeTraceProfilerWriteStat(llvm::raw_pwrite_stream &os);
-
 /// Write raw event stream to output stream.
 /// Data is textual, one line per event.
 void timeTraceProfilerWriteEventStream(llvm::raw_pwrite_stream &OS);
