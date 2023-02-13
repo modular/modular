@@ -44,13 +44,6 @@ static std::string teardownTrace() {
   return os.str().str();
 }
 
-static std::string teardownStat() {
-  SmallVector<char, 1024> smallVector;
-  llvm::raw_svector_ostream os(smallVector);
-  Detail::timeTraceProfilerWriteStat(os);
-  return os.str().str();
-}
-
 namespace {
 
 TEST(TimeProfiler, Scope_Smoke) {
@@ -61,9 +54,6 @@ TEST(TimeProfiler, Scope_Smoke) {
   std::string json = teardownTrace();
   ASSERT_TRUE(json.find(R"("name":"event")") != std::string::npos);
   ASSERT_TRUE(json.find(R"("detail":"detail")") != std::string::npos);
-
-  std::string csv = teardownStat();
-  ASSERT_TRUE(csv.find(R"(event, 1)") != std::string::npos);
 }
 
 TEST(TimeProfiler, Begin_End_Smoke) {
@@ -75,9 +65,6 @@ TEST(TimeProfiler, Begin_End_Smoke) {
   std::string json = teardownTrace();
   ASSERT_TRUE(json.find(R"("name":"event")") != std::string::npos);
   ASSERT_TRUE(json.find(R"("detail":"detail")") != std::string::npos);
-
-  std::string csv = teardownStat();
-  ASSERT_TRUE(csv.find(R"(event, 1)") != std::string::npos);
 }
 
 TEST(TimeProfiler, Begin_End_Disabled) {

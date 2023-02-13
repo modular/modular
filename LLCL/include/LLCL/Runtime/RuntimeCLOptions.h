@@ -103,10 +103,10 @@ private:
       llvm::cl::desc(
           kIsProfilingEnabled
               ? "Specify the filename base for profiling output. The tracing "
-                "data will be written to a file named by <base>.time-trace. "
+                "data will be written to a file called \"<base>.time-trace\". "
                 "This will be a JSON text in the standard profiling format. "
-                "The profiling statistics will be written to a CSV file named "
-                "by <base>.time-stat.csv. An empty filename base disables "
+                "The events will be written to a text file called "
+                "\"<base>.time-events.csv\". An empty filename base disables "
                 "profiling (the default)."
               : "Specify the filename base for profiling output. WARNING: This "
                 "option is ignored in this build. Rebuild with "
