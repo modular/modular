@@ -176,7 +176,7 @@ kgen.generator @use_using_interface(%arg0: si32) -> index {
 // CHECK-LABEL: @"genItf2,x=0_2"()
 kgen.generator @genItf2<x>() {
   // CHECK-NEXT: kgen.call @"genItf2_impl0,x=0"
-  kgen.param.search impl : () -> () = <@genItf2_impl0<x = x>, @genItf2_impl1<x = x>>
+  kgen.param.fork impl : () -> () = <[@genItf2_impl0<x = x>, @genItf2_impl1<x = x>]>
   kgen.call_param[() -> () : impl]()
   kgen.return
 }
@@ -1476,7 +1476,7 @@ kgen.generator @add<x, y>() -> index {
 
 kgen.generator @multiVersion() -> index {
   kgen.call @result<() -> x = x>() : () -> ()
-  kgen.param.search y = <1, 2>
+  kgen.param.fork y = <[1, 2]>
   %0 = kgen.call @add<x = x, y = y>() : () -> index
   kgen.return %0 : index
 }
@@ -1683,7 +1683,7 @@ kgen.generator @someFunc<x>() {
 
 kgen.generator @constexprIfWithSearch() {
   kgen.param.declare cond_var = <32>
-  kgen.param.search inParam = <1, 2, 3>
+  kgen.param.fork inParam = <[1, 2, 3]>
 
   %0 = kgen.param.if <gt(cond_var, 10) -> next> -> index {
     %1 = "should.appear"() : () -> index
@@ -1717,7 +1717,7 @@ kgen.generator @someFunc<x>() {
 // CHECK-NEXT: kgen.call @"someFunc,x=1"
 
 kgen.generator @multiVersion() {
-  kgen.param.search x = <1, 2>
+  kgen.param.fork x = <[1, 2]>
   kgen.call @someFunc<x = x>() : () -> ()
   kgen.return
 }
@@ -1762,7 +1762,7 @@ kgen.generator @someFunc<x -> y>() {
 // CHECK-NEXT:   param.constant = <20>
 
 kgen.generator @constexprIfWithReturnedCondition() {
-  kgen.param.search inParam = <1, 2, 3>
+  kgen.param.fork inParam = <[1, 2, 3]>
 
   kgen.param.if <eq(cond_var, 2) -> next> {
     kgen.param.declare next_lt = <add(cond_var, 10)>

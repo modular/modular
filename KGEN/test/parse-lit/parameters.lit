@@ -215,7 +215,7 @@ fn just_result_params[() -> a: __mlir_type.index]():
   return[42]
 
 
-# A bit grotty, but effective way to provide a kgen.param.search over three
+# A bit grotty, but effective way to provide a kgen.param.fork over three
 # values.  This should be made variadic and generic and moved to the standard
 # library at some point.
 
@@ -224,10 +224,10 @@ fn search3[a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index
               -> d: __mlir_type.index]():
 
    # Grotty but effective way to pull a param decl out and return it.
-   # CHECK-NEXT: kgen.param.search result_hidden = <a, b, c>
-   __mlir_op.`kgen.param.search`[
+   # CHECK-NEXT: kgen.param.fork result_hidden = <[a, b, c]>
+   __mlir_op.`kgen.param.fork`[
       paramDecl: __mlir_attr.`#kgen<param.decl result_hidden : index>`,
-      values: __mlir_attr[`#kgen<exprs[`, a, `, `, b, `, `, c, `]>`]
+      values: __mlir_attr[`#kgen.variadic<`, a, `, `, b, `, `, c, `> : !kgen.variadic<index>`]
    ]()
    # CHECK: kgen.param.declare result = <result_hidden>
    alias result = __mlir_attr.`#kgen.param.decl.ref<"result_hidden"> : index`

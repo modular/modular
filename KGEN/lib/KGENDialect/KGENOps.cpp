@@ -163,49 +163,6 @@ void ParamDeclareRegionOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
 }
 
 //===----------------------------------------------------------------------===//
-// ParamSearchOp
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseParamSearchOpValue(OpAsmParser &p,
-                                           ParamDeclAttr &paramDecl,
-                                           ParameterExprArrayAttr &values) {
-  StringAttr name;
-  Type valTy;
-  SmallVector<TypedAttr> valuesElts;
-
-  auto parseElt = [&]() -> ParseResult {
-    if (parseParamValue(p, valuesElts.emplace_back(), valTy))
-      return failure();
-    return success();
-  };
-  if (parseParamName(p, name) || parseColonTypeOrIndex(p, valTy) ||
-      p.parseEqual() ||
-      p.parseCommaSeparatedList(OpAsmParser::Delimiter::LessGreater, parseElt))
-    return failure();
-
-  paramDecl = ParamDeclAttr::get(name, valTy);
-  values = p.getBuilder().getAttr<ParameterExprArrayAttr>(valuesElts);
-  return success();
-}
-
-static void printParamSearchOpValue(OpAsmPrinter &p, Operation *,
-                                    ParamDeclAttr paramDecl,
-                                    ParameterExprArrayAttr values) {
-  printParamName(p, paramDecl.getName());
-
-  printColonTypeOrIndex(p, paramDecl.getType());
-  p << " = <";
-  llvm::interleaveComma(values, p,
-                        [&](TypedAttr elt) { printParamValue(p, elt); });
-  p << ">";
-}
-
-void ParamSearchOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
-  walkDef(getParamDecl(), getValuesAttr());
-}
-
-//===----------------------------------------------------------------------===//
 // ParamForkOp
 //===----------------------------------------------------------------------===//
 static ParseResult parseParamForkOpValue(OpAsmParser &p,
