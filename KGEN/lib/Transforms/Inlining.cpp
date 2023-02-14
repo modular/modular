@@ -126,6 +126,17 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
       cloned->setAttr(paramDeclsAttrName,
                       ParamDeclArrayAttr::get(b.getContext(), newDecls));
     }
+    if (auto itf = dyn_cast<ParamOpInterface>(decl.declOp)) {
+      SmallVector<ParamDeclAttr> newDecls;
+      itf.walkDeclarations([&](ParamDeclAttr decl) {
+        if (auto it = mangledDecls.find(decl.getName());
+            it != mangledDecls.end())
+          newDecls.push_back(ParamDeclAttr::get(it->second, decl.getType()));
+        else
+          newDecls.push_back(decl);
+      });
+      cast<ParamOpInterface>(cloned).renameDeclarations(newDecls);
+    }
   }
 
   // Mangle the DeclInterface declarations.

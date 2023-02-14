@@ -218,4 +218,29 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
   let verifyWithRegions = 1;
 }
 
+def ParamOpInterface : OpInterface<"ParamOpInterface"> {
+  let description = [{
+    This interface specifies how an operation can declare and define parameters.
+    Operations that implement this interface can declare and define parameters
+    at their current scope.
+  }];
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Walk the parameters declared by this operation.
+    }], "void", "walkDeclarations",
+      (ins "function_ref<void(ParamDeclAttr)>":$walkDecl)>,
+    InterfaceMethod<[{
+      Walk the parameters defined by this operation and get an indication as to
+      how they are defined: what expressions and regions the definitions depend
+      on. These dependencies are used to build the parameter use-def graph.
+    }], "void", "walkDefinitions",
+      (ins "function_ref<void(ParamDeclAttr, const ParamDefValue &)>":$walkDef)>,
+    InterfaceMethod<[{
+      Rename the parameters being declared by this operation.
+    }], "void", "renameDeclarations", (ins "ArrayRef<ParamDeclAttr>":$decls)>
+  ];
+}
+
 #endif // KGEN_KGENDIALECT_KGENDECLINTERFACE_TD
