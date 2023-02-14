@@ -121,9 +121,9 @@ public:
   // Cancel the current execution
   //===--------------------------------------------------------------------===//
 
-  /// Cancel the current BEF Execution. This transitions this Runtime to the
+  /// Cancel the current MEF Execution. This transitions this Runtime to the
   /// canceled state, which causes all asynchronously executing threads to be
-  /// canceled when they check the cancellation state (e.g. in BEFExecutor).
+  /// canceled when they check the cancellation state (e.g. in MEFExecutor).
   void cancelExecution(EncodedDiagnostic message);
 
   /// restartFromCancellation() transitions Runtime from the canceled state to

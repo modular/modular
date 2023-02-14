@@ -18,7 +18,7 @@ CommonCLOptions::getOutputFile(bool hasBinaryOutput) const {
   std::string outFile = outputFilename.getValue();
   if (hasBinaryOutput && inputFilename != "-" &&
       outputFilename.getNumOccurrences() == 0) {
-    outFile = inputFilename.getValue() + ".bef";
+    outFile = inputFilename.getValue() + ".mef";
     llvm::outs() << "Emitting binary file to " << outFile << ".\n";
   }
 
