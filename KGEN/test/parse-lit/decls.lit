@@ -190,10 +190,10 @@ fn variadics(*a: Int):
 
 # CHECK: lit.func @"callVariadic
 fn callVariadic[p: Int](x: Int):
-  # CHECK: %0 = kgen.param.constant: !kgen.variadic<@"$Int"::@Int> = <#kgen.variadic<>>
+  # CHECK: %0 = kgen.param.constant: variadic<@"$Int"::@Int> = <[]>
   # CHECK: %1 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%0)
   variadics()
-  # CHECK: %2 = kgen.param.constant: !kgen.variadic<@"$Int"::@Int> = <#kgen.variadic<{{.*}}7{{.*}}11{{.*}}13{{.*}}>>
+  # CHECK: %2 = kgen.param.constant: variadic<@"$Int"::@Int> = <[{{.*}}7{{.*}}11{{.*}}13{{.*}}]>
   # CHECK: %3 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%2)
   variadics(7, 11, 13)
   # CHECK: %4 = pop.variadic.create [%x]
@@ -204,9 +204,9 @@ fn callVariadic[p: Int](x: Int):
   # CHECK: %8 = kgen.call @"$decls"::@"variadics($Int::Int*)"(%7)
   variadics(x, 1)
 
-  # CHECK: @"variadics($Int::Int*)", #kgen.variadic<>
+  # CHECK: @"variadics($Int::Int*)", []
   alias EmptyVariadic = variadics()
-  # CHECK: @"variadics($Int::Int*)", #kgen.variadic<p, {{.*}}scalar<index> = 1{{.*}}>
+  # CHECK: @"variadics($Int::Int*)", [p, {{.*}}scalar<index> = 1{{.*}}]
   alias NonEmptyVariadic = variadics(p, 1)
 
 ##===----------------------------------------------------------------------===##

@@ -54,9 +54,9 @@ kgen.generator @variant_constants<T: type, U: type, value: !kgen.paramref<T>>() 
 
 // CHECK-LABEL: @variadic_constants
 kgen.generator @variadic_constants<T: type, value: si32>() {
-  // CHECK: !kgen.variadic<si32> = <#kgen.variadic<1, value>>
-  kgen.param.constant: !kgen.variadic<si32> = <#kgen.variadic<1, value>>
-  // CHECK: !kgen.variadic<T> = <#kgen.variadic<>>
-  kgen.param.constant: !kgen.variadic<T> = <#kgen.variadic<>>
+  // CHECK: variadic<si32> = <[1, value]>
+  kgen.param.constant: variadic<si32> = <[1, value]>
+  // CHECK: variadic<T> = <[]>
+  kgen.param.constant: variadic<T> = <[]>
   kgen.return
 }
