@@ -343,7 +343,8 @@ def KGEN_BuildInfoType : KGENType<"BuildInfo", "build_info"> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
-    DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "parameterized variadic type";
   let description = [{
     The `!kgen.variadic` type represents a homogeneously typed variadic sequence

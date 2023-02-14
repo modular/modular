@@ -665,7 +665,7 @@ kgen.generator @cast_from_parameter<N>() -> !pop.scalar<index> {
 
 // CHECK-LABEL: @variadic_create(
 kgen.func @variadic_create() -> !kgen.variadic<index> {
-  // CHECK-NEXT: kgen.param.constant{{.*}} = <#kgen.variadic<13, 17>>
+  // CHECK-NEXT: kgen.param.constant{{.*}} = <[13, 17]>
   %0 = index.constant 13
   %1 = index.constant 17
   %2 = pop.variadic.create [%0, %1] : !kgen.variadic<index>
@@ -675,7 +675,7 @@ kgen.func @variadic_create() -> !kgen.variadic<index> {
 // CHECK-LABEL: @variadic_get(
 kgen.func @variadic_get() -> i32 {
   // CHECK-NEXT: kgen.param.constant: i32 = <11>
-  %0 = kgen.param.constant: !kgen.variadic<i32> = <#kgen.variadic<7, 11, 13>>
+  %0 = kgen.param.constant: !kgen.variadic<i32> = <[7, 11, 13]>
   %1 = index.constant 1
   %2 = pop.variadic.get %0[%1] : !kgen.variadic<i32>
   kgen.return %2 : i32
@@ -693,7 +693,7 @@ kgen.func @variadic_create_get(%arg0: i32, %arg1: i32) -> i32 {
 // CHECK-LABEL: @variadic_size(
 kgen.func @variadic_size() -> index {
   // CHECK-NEXT: kgen.param.constant = <3>
-  %0 = kgen.param.constant: !kgen.variadic<i32> = <#kgen.variadic<7, 11, 13>>
+  %0 = kgen.param.constant: !kgen.variadic<i32> = <[7, 11, 13]>
   %1 = pop.variadic.size %0 : !kgen.variadic<i32>
   kgen.return %1 : index
 }

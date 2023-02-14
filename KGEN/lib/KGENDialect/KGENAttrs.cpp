@@ -1597,6 +1597,40 @@ LogicalResult VariadicAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
+static ParseResult parseVariadicValue(AsmParser &p,
+                                      SmallVector<TypedAttr> &values,
+                                      VariadicType type) {
+  auto elementType = ParamRefType::get(type.getElementType());
+  return p.parseCommaSeparatedList(
+      [&] { return parseParamValue(p, values.emplace_back(), elementType); });
+}
+
+OptionalParseResult VariadicType::parseValue(AsmParser &p,
+                                             TypedAttr &value) const {
+  if (failed(p.parseOptionalLSquare()))
+    return std::nullopt;
+  if (succeeded(p.parseOptionalRSquare())) {
+    value = VariadicAttr::get({}, *this);
+    return mlir::success();
+  }
+  SmallVector<TypedAttr> values;
+  if (failed(parseVariadicValue(p, values, *this)))
+    return failure();
+  value = VariadicAttr::get(values, *this);
+  return p.parseRSquare();
+}
+
+LogicalResult VariadicType::printValue(AsmPrinter &p, TypedAttr value) const {
+  auto variadic = value.dyn_cast<VariadicAttr>();
+  if (!variadic)
+    return failure();
+  p << '[';
+  llvm::interleaveComma(variadic.getValues(), p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
+  p << ']';
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
