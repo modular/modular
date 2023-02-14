@@ -226,7 +226,7 @@ fn search3[a: __mlir_type.index, b: __mlir_type.index, c: __mlir_type.index
    # Grotty but effective way to pull a param decl out and return it.
    # CHECK-NEXT: kgen.param.search result_hidden = <a, b, c>
    __mlir_op.`kgen.param.search`[
-      paramDecls: __mlir_attr.`#kgen<param.decls[result_hidden : index]>`,
+      paramDecl: __mlir_attr.`#kgen<param.decl result_hidden : index>`,
       values: __mlir_attr[`#kgen<exprs[`, a, `, `, b, `, `, c, `]>`]
    ]()
    # CHECK: kgen.param.declare result = <result_hidden>

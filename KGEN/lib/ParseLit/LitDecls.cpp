@@ -1894,8 +1894,11 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
     type = rhsValue.getType();
 
   // Remember the value, and update the type from UnresolvedType.
-  paramDeclOp.setValueAttr(rhsValue.get());
-  paramDeclOp.setParamDecl(ParamDeclAttr::get(paramDeclOp.getName(), type));
+  NamedAttrList attrs = paramDeclOp->getAttrDictionary();
+  attrs.set(paramDeclOp.getValueAttrName(), rhsValue.get());
+  attrs.set(paramDeclOp.getParamDeclAttrName(),
+            ParamDeclAttr::get(paramDeclOp.getName(), type));
+  paramDeclOp->setAttrs(attrs.getDictionary(decl.getContext()));
   rejectDecorators(decoratorExprs, decl, shared);
   return success();
 }

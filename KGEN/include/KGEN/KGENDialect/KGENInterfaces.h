@@ -59,7 +59,10 @@ class KGENCallOpInterface;
 /// use-def graph will determine that the definition of `output` depends
 /// directly on the parameters `A`, `B`, and `C`.
 struct ParamDefValue {
-  SmallVector<TypedAttr, 1> exprs;
+  ParamDefValue() {}
+  ParamDefValue(Attribute expr) : exprs(1, expr) {}
+
+  SmallVector<Attribute, 1> exprs;
   SmallVector<Region *, 0> regions;
 };
 

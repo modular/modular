@@ -336,7 +336,8 @@ def KGEN_ParamConstantOp : KGENOp<"param.constant",
 // ParamDeclareOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamDeclareOp : KGENOp<"param.declare"> {
+def KGEN_ParamDeclareOp : KGENOp<"param.declare",
+    [DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
   let summary = "Declare a single parameter value.";
   let description = [{
     The `kgen.param.declare` operation declares a single parameter and binds
@@ -351,21 +352,15 @@ def KGEN_ParamDeclareOp : KGENOp<"param.declare"> {
     ```
   }];
 
-  let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls,
+  let arguments = (ins KGEN_ParamDeclAttr:$paramDecl,
                        TypedAttrInterface:$value);
-  let assemblyFormat =
-     "custom<ParamDeclareOpValue>($paramDecls, $value) attr-dict";
-
-  let builders = [
-    OpBuilder<(ins "ParamDeclAttr":$decl, "Attribute":$value)>,
-  ];
+  let assemblyFormat = [{
+    custom<ParamDeclareOpValue>($paramDecl, $value) attr-dict
+  }];
 
   let extraClassDeclaration = [{
-    /// Return the single parameter declaration as a well typed attribute.
-    ParamDeclAttr getParamDecl();
     StringAttr getName() { return getParamDecl().getName(); }
     Type getType() { return getParamDecl().getType(); }
-    void setParamDecl(ParamDeclAttr decl);
   }];
 }
 
@@ -447,7 +442,8 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 // ParamSearchOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ParamSearchOp : KGENOp<"param.search"> {
+def KGEN_ParamSearchOp : KGENOp<"param.search",
+    [DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
   let summary = [{
     The `kgen.param.search` operation declares a single parameter and binds its
     value to one of a set values at elaboration time. This operation represents
@@ -463,14 +459,10 @@ def KGEN_ParamSearchOp : KGENOp<"param.search"> {
     ```
   }];
 
-  let arguments = (ins ParamDeclSize1ArrayAttr:$paramDecls,
+  let arguments = (ins KGEN_ParamDeclAttr:$paramDecl,
                        KGEN_ParameterExprArrayAttr:$values);
-  let assemblyFormat =
-     "custom<ParamSearchOpValue>($paramDecls, $values) attr-dict";
-
-  let extraClassDeclaration = [{
-    /// Return the single parameter declaration as a well typed attribute.
-    ParamDeclAttr getParamDecl();
+  let assemblyFormat = [{
+    custom<ParamSearchOpValue>($paramDecl, $values) attr-dict
   }];
 }
 
@@ -478,7 +470,8 @@ def KGEN_ParamSearchOp : KGENOp<"param.search"> {
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike]> {
+def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike,
+    DeclareOpInterfaceMethods<ParamOpInterface>]>, NoParamDecls {
   let summary = "return operation for kgen declarations";
   let description = [{
     The `kgen.return` operation specifies the returned values and output
@@ -592,7 +585,8 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamYieldOp : KGENOp<"param.yield", [Pure, HasParent<"ParamIfOp">,
-    Terminator, DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
+    Terminator, DeclareOpInterfaceMethods<ControlFlowTerminator>,
+    DeclareOpInterfaceMethods<ParamOpInterface>]>, NoParamDecls {
   let summary = "conditional yield operation";
   let description = [{
     The `kgen.param.yield` operation is used to denote the terminator of a
