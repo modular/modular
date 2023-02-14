@@ -163,7 +163,7 @@ struct WorkQueueThread {
   /// threads. Though we create an entry for this index in the
   /// ThreadPoolWorkQueue workers it is not running a runOnThread work loop.
   size_t workerID;
-  /// The thread id associated with this thread.
+  /// The system thread id associated with this thread.
   uint64_t threadID;
 
   /// This is a per-worker semaphore that this blocks on when they run
@@ -181,7 +181,8 @@ struct WorkQueueThread {
                   size_t workerID)
       : sharedState(sharedState), taskList(taskList), workerID(workerID) {
     if (workerID == 0)
-      // Worker #0 is for THE distinguished 'foreign' thread.
+      // Capture the thread id for the creator of the work queue.
+      // However, there may be multiple foreign threads.
       threadID = llvm::get_threadid();
     else
       thread.emplace(&WorkQueueThread::runOnThread, this);
@@ -488,12 +489,17 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values,
   size_t workerID = workerIDInTLS;
   WorkQueueThread *thisWorker = &workers[workerID];
 
+  // TODO(#8702): We need to support multiple foreign threads. Eg a single
+  // runtime may be shared amongst multiple executable models which will
+  // perform their own awaits. So can't assert 1:1 here.
+#if 0
   if (thisWorker->threadID != llvm::get_threadid()) {
     llvm::errs() << "ThreadPoolWorkQueue::await: calling await from thread "
                  << llvm::get_threadid() << ", where as worker " << workerID
                  << " was created for thread " << thisWorker->threadID << "\n";
     assert(false && "invoking await from unrecognized foreign thread");
   }
+#endif
 
   // For now, make sure there's only one 'foreign' thread.
 
