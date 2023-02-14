@@ -10,16 +10,6 @@ kgen.generator @test() {
 
 // -----
 
-kgen.generator @test<p1>() {
-  // expected-note @-1 {{previous declaration here}}
-  "someop" () { // expected-error {{redeclaration of parameter "p1"}}
-    paramDecls = #kgen<param.decls[p1 : i4]>
-  } : () -> ()
-  kgen.return
-}
-
-// -----
-
 "someop" () {
   // expected-error @+1 {{shl must have two operands}}
   use1 = #kgen.param.expr<shl, 1 : si32, 2 : si32, 3 : si32>

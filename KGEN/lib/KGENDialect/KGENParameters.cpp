@@ -539,13 +539,6 @@ static LogicalResult visit(ParameterUseDefGraph &g,
       for (Attribute expr : value.exprs)
         c.collectUsesFromAttr(expr, def.uses, unused);
     });
-
-  } else if (auto decls = op->getAttrOfType<ParamDeclArrayAttr>("paramDecls")) {
-    // If the operation otherwise has opaque parameter declarations, include
-    // them here.
-    for (ParamDeclAttr decl : decls)
-      if (failed(recordDeclWrapper(decl)))
-        return failure();
   }
 
   // Collect parameter uses from the operation, if any.
