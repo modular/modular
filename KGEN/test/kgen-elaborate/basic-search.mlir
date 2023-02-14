@@ -14,8 +14,8 @@ kgen.generator @even_only<param>() {
 // CHECK-LABEL: kgen.func @find_even
 // CHECK-NOT: kgen.func @find_even
 kgen.generator @find_even() {
-  kgen.param.search seventy_two = <72>
-  kgen.param.search value = <3, 16, 1, 72, seventy_two>
+  kgen.param.fork seventy_two = <#kgen.variadic<72>>
+  kgen.param.fork value = <#kgen.variadic<3, 16, 1, 72, seventy_two>>
   kgen.call @even_only<param=value>() : () -> ()
   kgen.return
 }
@@ -177,7 +177,7 @@ kgen.generator @pickSecond() -> index {
 // CHECK-NEXT: kgen.param.constant = <1>
 
 kgen.generator @pickSecondA() -> index {
-  kgen.param.search f = <1, 2>
+  kgen.param.fork f = <#kgen.variadic<1, 2>>
   %0 = kgen.param.constant = <f>
   kgen.return %0 : index
 }
