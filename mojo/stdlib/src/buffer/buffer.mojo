@@ -50,7 +50,6 @@ fn _raw_stack_allocation[
     return ptr.address
 
 
-@interface
 fn _get_buffer_len[size: __mlir_type.index](dynamic_size: Int) -> Int:
     """Gets the size if it is a known constant, otherwise it gets the
     dynamic_size.
@@ -67,42 +66,11 @@ fn _get_buffer_len[size: __mlir_type.index](dynamic_size: Int) -> Int:
     Returns:
         Int: The size if static otherwise dynamic_size.
     """
-    ...
 
+    @parameter
+    if size == __mlir_attr.`#kgen.unknown : index`:
+        return dynamic_size
 
-@implements(_get_buffer_len)
-fn _get_buffer_len_dynamic[size: __mlir_type.index](dynamic_size: Int) -> Int:
-    """Gets the dynamic size.
-
-    Constraints:
-        The size is unknown.
-
-    Args:
-        size (__mlir_type.index): The static size.
-        dynamic_size (Int): The dynamic size.
-
-    Returns:
-        Int: The dynamic size.
-    """
-    assert_param[size == __mlir_attr.`#kgen.unknown : index`]()
-    return dynamic_size
-
-
-@implements(_get_buffer_len)
-fn _get_buffer_len_static[size: __mlir_type.index](dynamic_size: Int) -> Int:
-    """Gets the static size.
-
-    Constraints:
-        The size is known.
-
-    Args:
-        size (__mlir_type.index): The static size.
-        dynamic_size (Int): The dynamic size.
-
-    Returns:
-        Int: The static size.
-    """
-    assert_param[size != __mlir_attr.`#kgen.unknown : index`]()
     return size
 
 
