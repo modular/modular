@@ -491,30 +491,8 @@ static LogicalResult visit(ParameterUseDefGraph &g,
 
   // Check for an operation that may declare parameters.
   c.op = op;
-  if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
-    // A `kgen.param.declare` declares a parameter and defines it with a
-    // parameter expression.
-    if (failed(recordDeclWrapper(declare.getParamDecl())))
-      return failure();
-    ParamDefinition &def = recordDefWrapper(declare.getParamDecl());
-    def.value = declare.getValue();
-    // The definition depends on uses in the value.
-    bool unused;
-    c.collectUsesFromAttr(def.value, def.uses, unused);
-
-  } else if (auto search = dyn_cast<ParamSearchOp>(op)) {
-    // A `kgen.param.search` declares a parameter that can have one of many
-    // possible values.
-    if (failed(recordDeclWrapper(search.getParamDecl())))
-      return failure();
-    ParamDefinition &def = recordDefWrapper(search.getParamDecl());
-    def.value = search.getValuesAttr();
-    // The definition depends on all possible values.
-    bool unused;
-    c.collectUsesFromAttr(def.value, def.uses, unused);
-
-  } else if (auto call = dyn_cast<KGENCallOpInterface>(op);
-             call && !isa<GeneratorInterfaceOp>(call)) {
+  if (auto call = dyn_cast<KGENCallOpInterface>(op);
+      call && !isa<GeneratorInterfaceOp>(call)) {
     // A `kgen.call` or other call operation declares parameters that bind to
     // the result parameters of the callee. All definitions depend on uses in
     // the callee expression.
@@ -541,33 +519,6 @@ static LogicalResult visit(ParameterUseDefGraph &g,
           return failure();
     }
 
-  } else if (auto returnOp = dyn_cast<ReturnOp>(op)) {
-    // A return operation defines the result parameters of the enclosing
-    // function.
-    auto func = cast<FuncInterface>(returnOp->getParentOp());
-    assert(&func->getRegion(0) == &scope && "unknown return operation");
-    for (auto [index, decl] : llvm::enumerate(func.getResultParams())) {
-      assert(g.decls.find(decl.getName()) != g.decls.end());
-      ParamDefinition &def = recordDefWrapper(decl);
-      def.value = returnOp.getParameters()[index];
-      def.index = index;
-      // The return parameter depends on its value.
-      bool unused;
-      c.collectUsesFromAttr(def.value, def.uses, unused);
-    }
-  } else if (auto yieldOp = dyn_cast<ParamYieldOp>(op)) {
-    // A yield operation defines the result parameters of the enclosing
-    // param.if.
-    auto ifOp = cast<ParamIfOp>(yieldOp->getParentOp());
-    for (auto [index, decl] : llvm::enumerate(ifOp.getParamDecls())) {
-      assert(g.decls.find(decl.getName()) != g.decls.end());
-      ParamDefinition &def = recordDefWrapper(decl);
-      def.value = yieldOp.getParameters()[index];
-      def.index = index;
-      // The return parameter depends on its value.
-      bool unused;
-      c.collectUsesFromAttr(def.value, def.uses, unused);
-    }
   } else if (auto itf = dyn_cast<ParamOpInterface>(op)) {
     // Check the declarations.
     bool hadError = false;
@@ -579,11 +530,13 @@ static LogicalResult visit(ParameterUseDefGraph &g,
       return failure();
 
     // Check the definitions.
+    ssize_t index = 0;
     itf.walkDefinitions([&](ParamDeclAttr decl, const ParamDefValue &value) {
       assert(value.regions.empty() && "TODO: region dependencies");
       ParamDefinition &def = recordDefWrapper(decl);
+      def.index = index++;
       bool unused;
-      for (TypedAttr expr : value.exprs)
+      for (Attribute expr : value.exprs)
         c.collectUsesFromAttr(expr, def.uses, unused);
     });
 

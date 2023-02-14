@@ -86,7 +86,7 @@ def KGEN_ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl"> {
   /// asmsyntax defaults to `index`.
   let parameters = (ins "StringAttr":$name, "Type":$type);
 
-  let assemblyFormat = "`` custom<ParamName>($name) `:` $type";
+  let assemblyFormat = "custom<ParamName>($name) `:` $type";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "StringAttr":$name, "Type":$type),

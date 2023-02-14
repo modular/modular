@@ -239,8 +239,37 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
       (ins "function_ref<void(ParamDeclAttr, const ParamDefValue &)>":$walkDef)>,
     InterfaceMethod<[{
       Rename the parameters being declared by this operation.
-    }], "void", "renameDeclarations", (ins "ArrayRef<ParamDeclAttr>":$decls)>
+    }], "void", "renameDeclarations", (ins "ArrayRef<ParamDeclAttr>":$decls)>,
+    InterfaceMethod<[{
+      Some operations are implicitly parametric even when they contain no
+      parameter declarations, definitions, references, or unresolved parameter
+      expressions. This is often because the operation itself contains an
+      implicit parameter operator in how it behaves.
+    }], "bool", "isImplicitlyParametric", (ins), [{}], [{ return false; }]>
   ];
+}
+
+class OneParamDecl {
+  code extraClassDefinition = [{
+    void $cppClass::walkDeclarations(
+        function_ref<void(ParamDeclAttr)> walkDecl) {
+      walkDecl(getParamDecl());
+    }
+    void $cppClass::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
+      assert(decls.size() == 1);
+      setParamDeclAttr(decls.front());
+    }
+  }];
+}
+
+class NoParamDecls {
+  code extraClassDefinition = [{
+    void $cppClass::walkDeclarations(
+        function_ref<void(ParamDeclAttr)> walkDecl) {}
+    void $cppClass::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
+      assert(decls.empty());
+    }
+  }];
 }
 
 #endif // KGEN_KGENDIALECT_KGENDECLINTERFACE_TD
