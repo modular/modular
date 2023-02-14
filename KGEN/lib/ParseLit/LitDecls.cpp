@@ -1070,6 +1070,7 @@ struct FnDecorators : public LitSharedStateUser {
                  SmallVector<ExprNode *> &decoratorExprs);
 
 private:
+  void applyAdaptive(const DeclRefNode &node);
   void applyInterface(const DeclRefNode &node);
   void applyRaises(const DeclRefNode &node);
   void applyImplements(const CallNode &callNode);
@@ -1084,6 +1085,14 @@ private:
   const bool isMethod;
 };
 } // namespace
+
+void FnDecorators::applyAdaptive(const DeclRefNode &node) {
+  if (funcOp.getIsAdaptive())
+    emitError(node.getLoc(), "only one '@adaptive' decorator is allowed")
+        << node.getRange();
+
+  funcOp.setIsAdaptive(true);
+}
 
 void FnDecorators::applyInterface(const DeclRefNode &node) {
   if (isMethod) {
@@ -1243,6 +1252,8 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
         applyRaises(*declRef);
       else if (declRef->spelling == "always_inline")
         funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::Enabled);
+      else if (declRef->spelling == "adaptive")
+        applyAdaptive(*declRef);
       else
         processedIt = false;
     }

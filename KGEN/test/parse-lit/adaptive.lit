@@ -1,0 +1,6 @@
+# RUN: kgen-translate -import-lit %s -verify-diagnostics -I %S/../lit-examples/ | FileCheck %s
+
+@adaptive
+# CHECK: lit.func @"foo()"() -> !lit.none attributes {isAdaptive}
+fn foo():
+  return
