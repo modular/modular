@@ -245,6 +245,29 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
       parameter declarations, definitions, references, or unresolved parameter
       expressions. This is often because the operation itself contains an
       implicit parameter operator in how it behaves.
+
+      Two operations that are implicitly parameter are `kgen.call` and
+      `kgen.param.if`.
+
+      ```mlir
+      kgen.call @foobar() : () -> ()
+      ```
+
+      Even though this operation uses and declares no parameters, it contains
+      an implicit parameter operator: `concretize(@foobar)`, which resolves the
+      symbol reference `@foobar` to a single concrete function.
+
+      ```mlir
+      kgen.param.if <1> {
+        // ...
+      } else {
+        // ...
+      }
+      ```
+
+      Likewise, this operation uses and declares no parameters, but it is
+      implicitly parametric because it makes the body of the surrounding
+      function parametric.
     }], "bool", "isImplicitlyParametric", (ins), [{}], [{ return false; }]>
   ];
 }
