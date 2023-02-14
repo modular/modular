@@ -7,6 +7,7 @@
 #include "KGEN/LowerToObject.h"
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/LLVMPassesPipeline.h"
 #include "LowerToObjectImpl.h"
 #include "Support/SIMD.h"
 #include "Support/TempFile.h"
@@ -15,6 +16,7 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/PassManager.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -109,15 +111,7 @@ static LogicalResult runOptPasses(llvm::Module &module,
   passBuilder.crossRegisterProxies(loopAnalysisMgr, funcAnalysisMgr,
                                    sccAnalysisMgr, moduleAnalysisMgr);
 
-  ModulePassManager modulePassMgr;
-
-  // Add passes according to the -passes options.
-  if (llvm::Error err = passBuilder.parsePassPipeline(
-          modulePassMgr,
-          ("default<O" + Twine(targetMachine.getOptLevel()) + ">").str())) {
-    errs() << toString(std::move(err)) << "\n";
-    return failure();
-  }
+  ModulePassManager modulePassMgr = buildPipeline(targetMachine.getOptLevel());
 
   // Now that we have all of the passes ready, run them.
   modulePassMgr.run(module, moduleAnalysisMgr);
