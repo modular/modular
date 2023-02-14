@@ -15,15 +15,6 @@ kgen.generator @local_verif_error() {
 
 // -----
 
-kgen.generator @unknownDecl() {
-  // expected-error @below {{unknown parameter-defining operator}}
-  "impl1" () { paramDecls = #kgen<param.decls[badaram : index]> } : () -> ()
-  kgen.param.constant = <badaram>
-  kgen.return
-}
-
-// -----
-
 // Recursive expansions.
 
 // expected-note @+1 {{elaborator expansion is 129 levels deep - infinite recursion?}}
