@@ -111,7 +111,7 @@ LitToken LitLexer::lexTokenImpl() {
       // This may either be a nul character in the source file or may be the EOF
       // marker that MemoryBuffer guarantees will be there.
       if (curPtr - 1 == curBuffer.end())
-        return formToken(LitToken::eof);
+        return this->formToken(LitToken::eof, tokStart, 0);
 
       [[fallthrough]]; // Treat as whitespace.
 
