@@ -8,6 +8,7 @@
 #define KGEN_PARSELIT_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include <string>
 
 namespace llvm {
 class SourceMgr;

@@ -89,7 +89,8 @@ def create_dir_symlink(destination_dir: Path, src_dir: Path):
             # https://docs.python.org/3/library/os.html#os.symlink
             logging.warning(
                 f'Failed to link directory "{destination_dir}" to "{src_dir}"'
-                " due to permission issues. Copying the directories instead."
+                f" due to permission issues (code {e.args[0]})."
+                "Copying the directories instead."
             )
             shutil.copytree(src_dir, destination_dir)
         else:
