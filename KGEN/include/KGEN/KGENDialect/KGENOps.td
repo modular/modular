@@ -439,34 +439,6 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 }
 
 //===----------------------------------------------------------------------===//
-// ParamSearchOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParamSearchOp : KGENOp<"param.search",
-    [DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
-  let summary = [{
-    The `kgen.param.search` operation declares a single parameter and binds its
-    value to one of a set values at elaboration time. This operation represents
-    a fork of the current generator by multi-versioning the generator based on
-    the possible values of the declared parameter.
-
-    Example:
-
-    ```mlir
-    // Fork the current generator into 3 children, each a different one of the
-    // possible values of `A`.
-    kgen.param.search A = <1, 2, 3>
-    ```
-  }];
-
-  let arguments = (ins KGEN_ParamDeclAttr:$paramDecl,
-                       KGEN_ParameterExprArrayAttr:$values);
-  let assemblyFormat = [{
-    custom<ParamSearchOpValue>($paramDecl, $values) attr-dict
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // ParamForkOp
 //===----------------------------------------------------------------------===//
 
