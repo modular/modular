@@ -50,6 +50,9 @@ def LIT_FuncOp : LITOp<"func", [
     When `isInterface` is set, `lit.func` has an empty body block.
     The optional `implements` attribute refers to the interface name this
     `lit.func` implement and cannot be set alongside `isInterface`.
+    @adaptive is a decorator that the user can attach to an `fn` that tells
+    the parser to add the `isAdaptive` flag, and to treat multiple
+    implementations as an overload set.
   }];
 
   /// If the `implements` attribute is present then this generator is an
@@ -60,6 +63,7 @@ def LIT_FuncOp : LITOp<"func", [
                        ConstraintArrayAttr:$constraints,
                        UnitAttr:$isStatic,
                        UnitAttr:$isInterface,
+                       UnitAttr:$isAdaptive,
                        UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
                        OptionalAttr<SymbolRefAttr>:$implements,
                        OptionalAttr<KGEN_SymbolConstantAttr>:$evaluator,
