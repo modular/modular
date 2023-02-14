@@ -568,6 +568,25 @@ static LogicalResult visit(ParameterUseDefGraph &g,
       bool unused;
       c.collectUsesFromAttr(def.value, def.uses, unused);
     }
+  } else if (auto itf = dyn_cast<ParamOpInterface>(op)) {
+    // Check the declarations.
+    bool hadError = false;
+    itf.walkDeclarations([&](ParamDeclAttr decl) {
+      if (failed(recordDeclWrapper(decl)))
+        hadError = true;
+    });
+    if (hadError)
+      return failure();
+
+    // Check the definitions.
+    itf.walkDefinitions([&](ParamDeclAttr decl, const ParamDefValue &value) {
+      assert(value.regions.empty() && "TODO: region dependencies");
+      ParamDefinition &def = recordDefWrapper(decl);
+      bool unused;
+      for (TypedAttr expr : value.exprs)
+        c.collectUsesFromAttr(expr, def.uses, unused);
+    });
+
   } else if (auto decls = op->getAttrOfType<ParamDeclArrayAttr>("paramDecls")) {
     // If the operation otherwise has opaque parameter declarations, include
     // them here.
