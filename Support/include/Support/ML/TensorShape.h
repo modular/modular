@@ -32,7 +32,7 @@ class TensorShapeStorage {
   /// Important: Identical shapes have the same representation kind to allow
   /// efficient shape comparison with memcmp for k16 and k32.
   ///
-  /// Each representation has an additional 8 bits of unused "auxillary"
+  /// Each representation has an additional 8 bits of unused "auxiliary"
   /// storage.  This is used to hold a DType for TensorSpec.  We keep
   /// this at the end of the storage so we can efficiently omit it from
   /// memset/memcpy operations.
@@ -43,14 +43,14 @@ class TensorShapeStorage {
     uint8_t unused;
     RepKind kind;
     uint8_t rank;
-    uint8_t auxillary;
+    uint8_t auxiliary;
   };
   struct Rep32 {
     int32_t dims[3];
     int8_t dim3;
     RepKind kind;
     uint8_t rank;
-    uint8_t auxillary;
+    uint8_t auxiliary;
   };
 
   struct RepOutOfLine {
@@ -60,7 +60,7 @@ class TensorShapeStorage {
     uint8_t padding[13 - sizeof(void *)];
     RepKind kind;
     uint8_t rank;
-    uint8_t auxillary;
+    uint8_t auxiliary;
   };
 
   union {
@@ -74,7 +74,7 @@ public:
   TensorShapeStorage() {
     representation.rep32.kind = RepKind::k32;
     representation.rep32.rank = 0;
-    representation.rep32.auxillary = 0;
+    representation.rep32.auxiliary = 0;
   }
   ~TensorShapeStorage() {
     if (isOutOfLine())
@@ -128,17 +128,17 @@ public:
     return representation.rep16.rank;
   }
 
-  // Provide access to the auxillary storage.
-  uint8_t getAuxillary() const {
-    static_assert(offsetof(Rep16, auxillary) == offsetof(Rep32, auxillary) &&
-                      offsetof(Rep16, auxillary) ==
-                          offsetof(RepOutOfLine, auxillary),
+  // Provide access to the auxiliary storage.
+  uint8_t getAuxiliary() const {
+    static_assert(offsetof(Rep16, auxiliary) == offsetof(Rep32, auxiliary) &&
+                      offsetof(Rep16, auxiliary) ==
+                          offsetof(RepOutOfLine, auxiliary),
                   "Layout mismatch inside of TensorShape");
-    // Because all of the representations store their auxillary in the same
+    // Because all of the representations store their auxiliary in the same
     // place, we can just access an arbitrary one.
-    return representation.rep16.auxillary;
+    return representation.rep16.auxiliary;
   }
-  void setAuxillary(uint8_t value) { representation.rep16.auxillary = value; }
+  void setAuxiliary(uint8_t value) { representation.rep16.auxiliary = value; }
 
   /// Provides random access iteration, but only a read-only version.
   class iterator : public llvm::iterator_facade_base<
@@ -276,8 +276,8 @@ public:
     operator=(SmallVector<int64_t, 6>(begin, end));
   }
 
-  uint8_t getAuxillaryStorage() const { return storage.getAuxillary(); }
-  void setAuxillaryStorage(uint8_t value) { storage.setAuxillary(value); }
+  uint8_t getAuxiliaryStorage() const { return storage.getAuxiliary(); }
+  void setAuxiliaryStorage(uint8_t value) { storage.setAuxiliary(value); }
 
   /// Return the number of dimensions in this shape.
   size_t getRank() const { return storage.getRank(); }

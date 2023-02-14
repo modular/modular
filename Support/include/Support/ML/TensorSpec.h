@@ -33,10 +33,10 @@ public:
     setEltType(eltType);
   }
 
-  // This class stores the ElementType in the auxillary storage field of the
+  // This class stores the ElementType in the auxiliary storage field of the
   // underlying TensorShape.
-  DType getEltType() const { return DType(getAuxillaryStorage()); }
-  void setEltType(DType type) { setAuxillaryStorage(type.getValue()); }
+  DType getEltType() const { return DType(getAuxiliaryStorage()); }
+  void setEltType(DType type) { setAuxiliaryStorage(type.getValue()); }
 
   size_t getSizeInBytes() const {
     return getEltType().getSizeInBytes(getNumElements());
