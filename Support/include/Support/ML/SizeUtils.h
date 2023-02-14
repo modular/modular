@@ -11,16 +11,16 @@
 //  - uint64_t (aka 'plain form'), where the value cannot be zero or the
 //    sentinel used by the raw form. This is the representation to use both
 //    at compile time and at runtime when you just want a size_t like value
-//    which can never be 'unknown'. It can transition to BEF attributes
+//    which can never be 'unknown'. It can transition to MEF attributes
 //    directly.
 //  - Optional<uint64_t> (aka 'optional form'), where none denotes 'unknown',
 //    and the value cannot be zero or the sentinel used by the raw form.
 //    This is the representation to use at compile time when you need a size_t
-//    which could also be 'unknown'. However, it cannot transition to BEF
+//    which could also be 'unknown'. However, it cannot transition to MEF
 //    attributes, which requires the use of the 'raw form' below.
 //  - uint64_t (aka 'raw form'), where +max denotes 'unknown', and the value
 //    cannot be zero. This is the representation to use when transitioning to
-//    BEF attributes since they cannot represent the Optional none value.
+//    MEF attributes since they cannot represent the Optional none value.
 //  - int64_t (aka 'raw signed form'), where the MLIR ShapedType::kDynamicSize
 //    value denotes 'unknown', and the value must otherwise be strictly
 //    positive. This is the representation already chosen by the MLIR
@@ -174,7 +174,7 @@ inline size_t rawSizeToRuntimeSizeOrDefault(uint64_t rawSize,
 }
 
 /// Maximum specifiable alignment attribute.
-/// TODO(5815): change this to make BEF file creation compatible across
+/// TODO(5815): change this to make MEF file creation compatible across
 /// host/target systems with different page sizes.
 inline llvm::Align maxAttributeAlignment() {
   return llvm::Align(llvm::sys::Process::getPageSizeEstimate());

@@ -30,13 +30,13 @@ namespace M {
 /// In MLIR the top-level 'model' op determines the framework, currently by
 /// a mixture of op name and, for mgp.model, 'frameworkName' string attribute.
 ///
-/// In BEF the top-level invokable can be decoded to recover the op name
+/// In MEF the top-level invokable can be decoded to recover the op name
 /// and (if needed) frameworkName attribute to match MLIR.
 ///
 /// Some tools need to 'sniff' formats from textual files. Some of the op
 /// name and framework name conventions encoded here can help with that.
 ///
-/// TODO(#4991): Hoist up into GenericML once BEFFile supports it.
+/// TODO(#4991): Hoist up into GenericML once MEFFile supports it.
 class CompiledFrameworkLabel {
 public:
   enum Cases {
