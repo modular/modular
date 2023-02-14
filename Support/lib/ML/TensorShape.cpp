@@ -16,7 +16,7 @@ using namespace M;
 
 bool Detail::TensorShapeStorage::equalsIncludingAuxOOL(
     const TensorShapeStorage &rhs) const {
-  return getAuxillary() == rhs.getAuxillary() && equalsExcludingAuxOOL(rhs);
+  return getAuxiliary() == rhs.getAuxiliary() && equalsExcludingAuxOOL(rhs);
 }
 
 bool Detail::TensorShapeStorage::equalsExcludingAuxOOL(
@@ -32,7 +32,7 @@ void Detail::TensorShapeStorage::assign(ArrayRef<int64_t> elements) {
     delete[] representation.repOutOfLine.dims;
 
   // Zero-initialize to ensure the representation value is determinsitic.
-  // We do not zero out the auxillary field.
+  // We do not zero out the auxiliary field.
   memset(&representation, 0, sizeof(representation) - 1);
 
   // Get and set the rank, regardless of the representation.
