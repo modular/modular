@@ -567,8 +567,8 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
     Block::OpListType &getElseOps() {
       return getElseRegion().front().getOperations();
     }
-    /// For DeclInterface - this op never defines input parameters.
-    ArrayRef<ParamDeclAttr> getInputParamDecls() { return {}; }
+    /// For DeclInterface. Redeclare the output parameters in nested scopes.
+    ArrayRef<ParamDeclAttr> getInputParamDecls() { return getParamDecls(); }
   }];
 
   let hasCustomAssemblyFormat = 1;
