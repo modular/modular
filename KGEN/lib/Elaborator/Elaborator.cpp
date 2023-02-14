@@ -892,6 +892,23 @@ public:
                         ExpansionTreeNode *searchParentNode,
                         ArrayRef<Operation *> remainingWorklist);
 
+  /// Process a kgen.param.fork op. This will create a clone for each value of
+  /// the parameter search, and will mark the parent as an error. This results
+  /// in a very clean model where the parent of the current parent (a generator)
+  /// will have its children be the successfully concretized parameter search
+  /// nodes.
+  std::optional<ErrorTree>
+  processParamForkOp(ExpansionTreeNode *parent, ParamForkOp op,
+                     ArrayRef<Operation *> remainingWorklist);
+
+  /// Spawn a clone for kgen.param.fork. This creates a new FuncOp that is a
+  /// sibling to the parent of the kgen.param.fork op. It replaces the
+  /// kgen.param.fork with a param.declare to allow specialization to succeeed.
+  std::optional<ErrorTree>
+  spawnParamForkClone(ParamForkOp forkOp, Attribute value,
+                      ExpansionTreeNode *forkParentNode,
+                      ArrayRef<Operation *> remainingWorklist);
+
   /// Process a generator user. In general, this is anything that can call into
   /// a generator and might therefore need to be multi-versioned.
   std::optional<ErrorTree>
@@ -1175,6 +1192,118 @@ ElaboratorImpl::spawnParamSearchClone(ParamSearchOp searchOp, Attribute value,
   newFuncNode->evaluator.setOrOverwriteParameterValue(newSearch.getParamDecl(),
                                                       value);
   newSearch->erase();
+
+  // Map to the new ops.
+  auto remaining = llvm::to_vector(llvm::map_range(
+      remainingWorklist, [&](Operation *op) { return map.lookup(op); }));
+
+  // And finally, process the rest of the worklist in this new scope.
+  processScope(newFuncNode, remaining);
+
+  // If we've hit an error case, don't try and finish processing. Return to the
+  // upper function that this hit an error.
+  if (newFuncNode->error)
+    return newFuncNode->error->copy();
+
+  // And handle the return processing.
+  completeReturnProcessing(logger, newFunc.getReturnOp(), newFuncNode);
+
+  return std::nullopt;
+}
+
+//===----------------------------------------------------------------------===//
+// ElaboratorImpl::processParamForkOp
+//===----------------------------------------------------------------------===//
+
+/// Process a kgen.param.fork op.
+std::optional<ErrorTree>
+ElaboratorImpl::processParamForkOp(ExpansionTreeNode *parent, ParamForkOp op,
+                                   ArrayRef<Operation *> remainingWorklist) {
+  auto _ = logger.scope("Processing ParamForkOp");
+  LLVM_DEBUG(logger.scope("Options") << op.getValuesAttr() << "\n");
+
+  // Loop over all the possible candidates that we will search over, spawning
+  // N possibilities to explore.
+  SmallVector<ErrorTree> errors;
+  DenseSet<Attribute> seenValues;
+  auto forkValuesAttr = cast<VariadicAttr>(op.getValuesAttr());
+
+  if (forkValuesAttr.getValues().empty())
+    return ErrorTree(op.getLoc(), "no candidates found");
+
+  bool atLeastOneSuccessful = false;
+  for (Attribute candidate : forkValuesAttr.getValues()) {
+    // Simplify the input expressions.
+    auto errorOrValue =
+        parent->evaluator.concretizeParameterExpr(op.getLoc(), candidate);
+    if (errorOrValue.isError()) {
+      errors.push_back(errorOrValue.takeError());
+      continue;
+    }
+
+    Attribute value = errorOrValue.takeValue();
+
+    // If we've already seen this concrete value before,
+    // ignore the duplicate.
+    if (!seenValues.insert(value).second)
+      continue;
+
+    // Otherwise, spawn a clone for this value. If that fails, continue.
+    if (auto err = spawnParamForkClone(op, value, parent, remainingWorklist)) {
+      errors.push_back(std::move(*err));
+      continue;
+    }
+
+    // If search is disabled, break after the first successful parameter.
+    atLeastOneSuccessful = true;
+    if (!enableSearch)
+      break;
+  }
+
+  // If we don't have at least one successful candidate, fail.
+  if (!atLeastOneSuccessful)
+    return ErrorTree(op.getLoc(), "some expansions failed", errors);
+
+  // The parent has to be deleted.
+  parent->error = ErrorTree(op.getLoc(), "param fork base node");
+  return std::nullopt;
+}
+
+//===----------------------------------------------------------------------===//
+// ElaboratorImpl::spawnParamForkClone
+//===----------------------------------------------------------------------===//
+
+/// Spawn a clone from a kgen.param.fork op.
+std::optional<ErrorTree>
+ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
+                                    ExpansionTreeNode *forkParentNode,
+                                    ArrayRef<Operation *> remainingWorklist) {
+  auto _ = logger.scope("Spawning ParamForkClone for '", value, "'");
+
+  // Start by cloning the current WIP func to a new copy of it.
+  IRMapping map;
+  auto newFunc = cast<FuncOp>(forkParentNode->op->clone(map));
+  // Insert into the symbol table - this will also unique the name for us.
+  analysis.getTopLevelSymbolTable().insert(newFunc,
+                                           ++forkParentNode->op->getIterator());
+
+  // Hook this new clone up correctly.
+  auto newFuncNode = ExpansionTreeNode::create(
+      newFunc, forkParentNode->inputParams, forkParentNode->parent,
+      forkParentNode->evaluator, forkParentNode->expansionDepth,
+      forkParentNode->paramGraph->copy(map));
+
+  // Change the future of this func by resolving the forkOp in the new func
+  // to the specified value.
+  auto newFork = cast<ParamForkOp>(map.lookup(forkOp.getOperation()));
+
+  LLVM_DEBUG(logger << "Setting '" << newFork.getParamDecl() << "' = '" << value
+                    << "'\n");
+
+  // Update the evaluator.
+  newFuncNode->evaluator.setOrOverwriteParameterValue(newFork.getParamDecl(),
+                                                      value);
+  newFork->erase();
 
   // Map to the new ops.
   auto remaining = llvm::to_vector(llvm::map_range(
@@ -1570,6 +1699,8 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
       result = processParamDeclareRegionOp(declare, parentNode);
     } else if (auto search = dyn_cast<ParamSearchOp>(op)) {
       result = processParamSearchOp(parentNode, search, remainingWorklist);
+    } else if (auto fork = dyn_cast<ParamForkOp>(op)) {
+      result = processParamForkOp(parentNode, fork, remainingWorklist);
     } else if (auto assertOp = dyn_cast<ParamAssertOp>(op)) {
       result = processParamAssertOp(parentNode->evaluator, assertOp);
     } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
