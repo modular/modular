@@ -113,6 +113,9 @@ private:
   StorageMode storageMode : 2;
 };
 
+bool operator==(const Error &, const Error &);
+inline bool operator!=(const Error &a, const Error &b) { return !(a == b); }
+
 } // namespace M
 
 #endif // SUPPORT_ERROR_H

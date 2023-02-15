@@ -223,6 +223,19 @@ private:
   StorageMode storageMode : 2;
 };
 
+template <typename T>
+bool operator==(const ErrorOr<T> &a, const ErrorOr<T> &b) {
+  if (a.isError() != b.isError())
+    return false;
+  if (a.isError())
+    return strcmp(a.getError(), b.getError()) == 0;
+  return a.get() == b.get();
+}
+template <typename T>
+bool operator!=(const ErrorOr<T> &a, const ErrorOr<T> &b) {
+  return !(a == b);
+}
+
 namespace Detail {
 class Empty {};
 } // namespace Detail
