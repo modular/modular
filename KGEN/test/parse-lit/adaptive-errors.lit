@@ -1,0 +1,16 @@
+# RUN: kgen-translate -import-lit %s -verify-diagnostics -I %S/../lit-examples/
+
+@adaptive
+fn foo():
+  let b = 3
+  return
+
+# expected-note @below {{non-adaptive candidate here}}
+fn foo():
+  let b = 5
+  return
+
+fn main():
+  # expected-error @below {{ambiguous call to 'foo', multiple implementations detected but not all are marked adaptive}}
+  foo()
+  return

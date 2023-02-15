@@ -3,4 +3,17 @@
 @adaptive
 # CHECK: lit.func @"foo()"() -> !lit.none attributes {isAdaptive}
 fn foo():
+  let b = 3
+  return
+
+@adaptive
+# CHECK: lit.func @"foo()_0"() -> !lit.none attributes {isAdaptive}
+fn foo():
+  let b = 5
+  return
+
+fn main():
+  # CHECK: kgen.param.fork *"(adaptive)foo": () -> !lit.none = <[@"$adaptive"::@"foo()", @"$adaptive"::@"foo()_0"]>
+  # CHECK-NEXT: call_param[() -> !lit.none: *"(adaptive)foo"]()
+  foo()
   return
