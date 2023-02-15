@@ -6,6 +6,7 @@
 
 #include "Support/Error.h"
 #include "llvm/ADT/Twine.h"
+
 using namespace M;
 
 /// Construct an ErrorOr with a dynamic Twine value (including std::string,
@@ -23,4 +24,8 @@ Error::Error(llvm::Twine message) : storageMode(kMallocError) {
   memcpy(ptr, str.data(), str.size());
   ptr[str.size()] = 0;
   value = ptr;
+}
+
+bool M::operator==(const Error &a, const Error &b) {
+  return strcmp(a.get(), b.get()) == 0;
 }

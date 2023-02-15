@@ -13,6 +13,17 @@
 
 using namespace M;
 
+TEST(Error, equality) {
+  const char *staticString = "Toaster is broken";
+  Error a = Error::getStaticString(staticString);
+  Error b = Error::getStaticString(staticString);
+  Error c(llvm::Twine("Toaster") + " is broken");
+  Error d = Error::getStaticString("Roller coaster is broken");
+  EXPECT_EQ(a, b);
+  EXPECT_EQ(a, c);
+  EXPECT_NE(a, d);
+}
+
 TEST(Error, implicitStaticString) {
   Error error("Toaster is broken");
   EXPECT_STREQ("Toaster is broken", error.get());

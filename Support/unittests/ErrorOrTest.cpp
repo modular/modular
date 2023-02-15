@@ -41,5 +41,15 @@ TEST(ErrorOr, erroneousTwine) {
   EXPECT_STREQ("Toaster is broken", eo.getError());
 }
 
+TEST(ErrorOr, equality) {
+  EXPECT_EQ(ErrorOr<int>(5), ErrorOr<int>(5));
+  EXPECT_NE(ErrorOr<int>(5), ErrorOr<int>(10));
+  EXPECT_EQ(ErrorOr<int>(Error("File not found")),
+            ErrorOr<int>(Error("File not found")));
+  EXPECT_NE(ErrorOr<int>(Error("File not found")),
+            ErrorOr<int>(Error("Network connection lost")));
+  EXPECT_NE(ErrorOr<int>(5), ErrorOr<int>(Error("File not found")));
+}
+
 // TODO(akirchhoff): Test move semantics
 // TODO(akirchhoff): Test copying
