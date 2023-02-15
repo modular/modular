@@ -744,4 +744,66 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// MLIROpAttr
+//===----------------------------------------------------------------------===//
+
+def MLIROpAttr : KGEN_ExprAttr<"MLIROp", "param.mlir_op"> {
+  let summary = "an MLIR operation as a parameter expression";
+  let description = [{
+    The `#kgen.param.mlir_op` attribute represents an MLIR operation as a
+    parameter expression. Its type is signature type.
+
+    Example:
+
+    ```
+    #kgen.param.mlir_op<"index.add", {}>
+      : !kgen.signature<(index, index) -> index>
+    ```
+
+    Operation attributes can be specified using a dictionary attribute.
+
+    Example:
+
+    ```
+    #kgen.param.mlir_op<"index.cmp", {pred = #index<cmp_predicate slt>}>
+      : !kgen.signature<(index, index) -> i1>
+    ```
+
+    The operation can be parameterized on any of its attributes that are
+    parametric -- that is, which are `TypedAttr`. These attributes are omitted
+    from the attribute dictionary and are present in the signature.
+
+    Example:
+
+    ```
+    #kgen.param.mlir_op<"pop.array.get", {}> : !kgen.signature<
+      <*"index">(!pop.array<size, type>) -> !kgen.paramref<type>
+    >
+    ```
+
+    Parametric operations can be bound using `bind_signature`.
+  }];
+
+  let parameters = (ins "StringAttr":$name, "DictionaryAttr":$attrs,
+                        AttributeSelfTypeParameter<"", "SignatureType">:$type);
+
+  let assemblyFormat = "`<` $name `,` $attrs `>`";
+  let genVerifyDecl = 1;
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+        "StringAttr":$name, "DictionaryAttr":$attrs, "SignatureType":$type), [{
+      return $_get(name.getContext(), name, attrs, type);
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Verify that this expression function is self-contained, all referenced
+    /// parameters are defined within the function.
+    static LogicalResult checkSelfContained(
+        function_ref<InFlightDiagnostic()> emitError, SignatureType type);
+  }];
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

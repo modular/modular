@@ -1413,6 +1413,68 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
         cast<SignatureType>(resultType));
   }
 
+  // If the operand is an MLIR operation, substitute its parameters in its
+  // operand and result types and bind parameters into its attribute dictionary.
+  if (auto opExpr = dyn_cast<MLIROpAttr>(operands.front())) {
+    NamedAttrList attrs = opExpr.getAttrs();
+    SmallVector<ParamBindAttr> binds;
+    for (auto [param, value] :
+         llvm::zip(opExpr.getType().getInputParams(), operands.drop_front())) {
+      if (!ParameterAttr::isSimpleConstant(value))
+        return {};
+      attrs.set(param.getName(), value);
+      binds.push_back(ParamBindAttr::get(param.getName(), value));
+    }
+    SignatureType newType = opExpr.getType().getSpecializedSignature(
+        binds, [&]() -> InFlightDiagnostic {
+          llvm_unreachable("op signature was invalid?");
+        });
+    return MLIROpAttr::get(opExpr.getName(),
+                           attrs.getDictionary(opExpr.getContext()), newType);
+  }
+
+  return {};
+}
+
+static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
+  TypedAttr func = operands.front();
+  operands = operands.drop_front();
+  resultType = cast<SignatureType>(func.getType()).getValues().getResult(0);
+
+  if (auto opExpr = dyn_cast<MLIROpAttr>(func)) {
+    // Make the operation real by materializing it into a fake block.
+    // HACK: Should we be materializing IR inside an attribute's constructor?
+    // Maybe defer this to the interpreter.
+    auto block = std::make_unique<Block>();
+    SmallVector<Value> fakeOperands;
+    auto loc = UnknownLoc::get(func.getContext());
+    for (Type type : opExpr.getType().getValueInputs())
+      fakeOperands.push_back(block->addArgument(type, loc));
+    OwningOpRef<Operation *> op = Operation::create(
+        loc, {opExpr.getName(), func.getContext()},
+        opExpr.getType().getValueResults(), fakeOperands, opExpr.getAttrs());
+    block->push_back(*op);
+    // Verify the operation. Fail to fold if the operation is invalid. Silence
+    // the error, since there is no way to report it.
+    mlir::ScopedDiagnosticHandler handler(
+        func.getContext(),
+        [&](Diagnostic &diag) -> LogicalResult { return success(); });
+    if (failed(mlir::verify(*op)))
+      return {};
+    SmallVector<OpFoldResult> results;
+    SmallVector<Attribute> attrs;
+    llvm::append_range(attrs, operands);
+    if (failed((*op)->fold(attrs, results)))
+      return {};
+    assert(results.size() == 1 && "expected one operation result");
+    if (auto result = results.front().dyn_cast<Attribute>())
+      return cast<TypedAttr>(result);
+    // If the fold hook returned an operation, just look up the corresponding
+    // input.
+    return operands[cast<BlockArgument>(results.front().get<Value>())
+                        .getArgNumber()];
+  }
+
   return {};
 }
 
@@ -1496,10 +1558,7 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
     result = simplifyBindSignature(operands, resultType);
     break;
   case POC::Apply:
-    result = {};
-    resultType = cast<SignatureType>(operands.front().getType())
-                     .getValues()
-                     .getResult(0);
+    result = simplifyApply(operands, resultType);
     break;
   case POC::Evaluate:
     // Don't need to do anything.
@@ -1598,6 +1657,41 @@ std::optional<bool> ParamOperatorAttr::isLessThan(Attribute rhs) const {
   }
 
   return std::nullopt;
+}
+
+//===----------------------------------------------------------------------===//
+// MLIROpAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult MLIROpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                 StringAttr name, DictionaryAttr attrs,
+                                 SignatureType type) {
+  if (type.getValueResults().size() != 1)
+    return emitError()
+           << "operation parameter expression must return one result";
+  return checkSelfContained(emitError, type);
+}
+
+bool MLIROpAttr::isConstant() const { return getType().isConcrete(); }
+
+TypedAttr KGEN::emitMLIROperationCall(
+    StringRef opName,
+    ArrayRef<std::pair<StringAttr (*)(mlir::OperationName), Attribute>> attrs,
+    ArrayRef<TypedAttr> operands, Type resultType) {
+  MLIRContext *ctx = resultType.getContext();
+  mlir::OperationName name(opName, ctx);
+  NamedAttrList attrList;
+  for (auto [attrName, value] : attrs)
+    attrList.append(attrName(name), value);
+  SmallVector<Type> operandTypes;
+  for (TypedAttr operand : operands)
+    operandTypes.push_back(operand.getType());
+  SmallVector<TypedAttr> applyOperands;
+  applyOperands.push_back(
+      MLIROpAttr::get(name.getIdentifier(), attrList.getDictionary(ctx),
+                      SignatureType::get(ctx, operandTypes, resultType)));
+  llvm::append_range(applyOperands, operands);
+  return ParamOperatorAttr::get(POC::Apply, applyOperands);
 }
 
 //===----------------------------------------------------------------------===//
