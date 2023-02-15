@@ -123,6 +123,19 @@ Type ListType::getResolvedElementType() const {
 
 OptionalParseResult SignatureType::parseValue(AsmParser &p,
                                               TypedAttr &value) const {
+  // Parse a keyword or string as an MLIR operation attribute.
+  std::string opName;
+  llvm::SMLoc loc = p.getCurrentLocation();
+  if (succeeded(p.parseOptionalString(&opName))) {
+    NamedAttrList attrs;
+    if (failed(p.parseOptionalAttrDict(attrs)))
+      return failure();
+    value = MLIROpAttr::getChecked([&] { return p.emitError(loc); },
+                                   StringAttr::get(p.getContext(), opName),
+                                   attrs.getDictionary(p.getContext()), *this);
+    return mlir::success(!!value);
+  }
+
   Attribute attr;
   OptionalParseResult result = p.parseOptionalAttribute(attr, *this);
   if (!result.has_value())
@@ -144,6 +157,13 @@ OptionalParseResult SignatureType::parseValue(AsmParser &p,
 }
 
 LogicalResult SignatureType::printValue(AsmPrinter &p, TypedAttr value) const {
+  if (auto mlirOp = ::dyn_cast<MLIROpAttr>(value)) {
+    p << mlirOp.getName();
+    if (!mlirOp.getAttrs().empty())
+      p << mlirOp.getAttrs();
+    return success();
+  }
+
   auto symbolCst = ::dyn_cast<SymbolConstantAttr>(value);
   if (!symbolCst)
     return failure();
