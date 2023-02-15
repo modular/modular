@@ -1309,12 +1309,12 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
   auto &builder = emitter.builder;
   if (!builder) {
-    // Emitting a call in a meta context. Generate an apply operator.
+    // Emitting a call in a parameter context. Generate an apply operator.
     SmallVector<TypedAttr> operands({callee.getIfMValue().get()});
     for (auto argValAndExpr : argumentValues) {
       if (!argValAndExpr.ir.getIfMValue()) {
         emitter.emitError(argValAndExpr.expr->getLoc(),
-                          "cannot use a dynamic value in meta context")
+                          "cannot use a dynamic value in parameter context")
             << argValAndExpr.expr->getRange();
         return {};
       }

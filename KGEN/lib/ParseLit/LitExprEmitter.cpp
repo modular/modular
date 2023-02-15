@@ -292,9 +292,9 @@ DRValue ExprEmitter::emitExprDRValue(const ExprNode *node) {
   return emitDRValue({node->emitIR(*this, /*No Contextual Type*/ {}), node});
 }
 
-/// This helper emits the specified expression as a meta value, diagnosing the
-/// problem if the expression is only valid as a runtime value.  This returns
-/// null if emission fails.
+/// This helper emits the specified expression as a parameter value, diagnosing
+/// the problem if the expression is only valid as a runtime value.  This
+/// returns null if emission fails.
 MValue ExprEmitter::emitExprMValue(const ExprNode *node, ASTType resultType,
                                    const Twine &errorSuffix) {
   // Clear the builder to indicate that an MValue must be emitted.
