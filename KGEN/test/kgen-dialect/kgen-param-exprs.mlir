@@ -273,9 +273,6 @@ kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
   // CHECK: = kgen.param.constant: i1 = <in(0, [4294967296, 8589934592])>
   %20 = kgen.param.constant: i1 = <in(0, [shl(1, 32), shl(2, 32)])>
 
-  // CHECK: = kgen.param.constant = <get_list_element(:list<index[2]> [1, 2], p1)>
-  %22 = kgen.param.constant = <get_list_element(:list<index[2]> [1, 2], p1)>
-
   kgen.return
 }
 
@@ -318,12 +315,6 @@ kgen.generator @param_canonicalize<p1, p2>() {
   // CHECK: <eq(:list<index[2]> list, [1, 2])>
   kgen.param.declare list: list<index[2]> = <[3, 4]>
   kgen.param.declare compareLists: i1 = <eq(:list<index[2]> [1, 2], list)>
-
-  // CHECK: = <2>
-  kgen.param.constant = <get_list_element(:list<index[2]> [1, 2], 1)>
-
-  // CHECK: = <get_list_element(:list<index[1]> [1], 1)>
-  kgen.param.constant = <get_list_element(:list<index[1]> [1], 1)>
 
   kgen.return
 }

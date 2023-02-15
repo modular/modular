@@ -649,10 +649,10 @@ LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
   // All the operand types must match except for 'bind_signature' and 'apply'.
-  if (!llvm::is_contained({POC::GetListElement, POC::BindSignature, POC::Apply,
-                           POC::Evaluate, POC::TargetHasFeature,
-                           POC::TargetGetField, POC::BuildInfoGetField,
-                           POC::GetSizeOf, POC::GetAlignOf},
+  if (!llvm::is_contained({POC::BindSignature, POC::Apply, POC::Evaluate,
+                           POC::TargetHasFeature, POC::TargetGetField,
+                           POC::BuildInfoGetField, POC::GetSizeOf,
+                           POC::GetAlignOf},
                           opcode) &&
       !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
@@ -761,20 +761,6 @@ LogicalResult ParamOperatorAttr::verify(
     if (!type.isa<IndexType>())
       return emitError() << "'get_alignof' should return an index";
     break;
-  case POC::GetListElement: {
-    if (operands.size() != 2)
-      return emitError() << "'get_list_element' requires 2 operands";
-    auto list = llvm::dyn_cast<ListType>(operands[0].getType());
-    if (!list)
-      return emitError() << "'get_list_element' first operand should be a list";
-    if (!llvm::isa<IndexType>(operands[1].getType()))
-      return emitError()
-             << "'get_list_element' second operand should be an index";
-    if (type != ParamRefType::get(list.getElementType()))
-      return emitError()
-             << "'get_list_element' result should match list element type";
-    return success();
-  }
   case POC::BindSignature: {
     FailureOr<SignatureType> actualType =
         verifyBindSignature(operands, emitError);
@@ -1430,20 +1416,6 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
   return {};
 }
 
-static Attribute simplifyGetListElement(ArrayRef<TypedAttr> operands,
-                                        Type &resultType) {
-  resultType =
-      ParamRefType::get(cast<ListType>(operands[0].getType()).getElementType());
-  auto list = dyn_cast<ListAttr>(operands[0]);
-  auto index = dyn_cast<IntegerAttr>(operands[1]);
-  if (!list || !index)
-    return {};
-  if (index.getInt() < 0 ||
-      index.getInt() >= static_cast<int64_t>(list.getValues().size()))
-    return {};
-  return list.getValues()[index.getInt()];
-}
-
 /// Construct a parameter operator attribute, folding it if possible.
 static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
                                   ArrayRef<TypedAttr> operandsIn,
@@ -1520,9 +1492,6 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
     result = simplifyGetAlignOf(operands);
     resultType = IndexType::get(context);
     break;
-  case POC::GetListElement:
-    result = simplifyGetListElement(operands, resultType);
-    break;
   case POC::BindSignature:
     result = simplifyBindSignature(operands, resultType);
     break;
@@ -1565,10 +1534,10 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   // All operands must have the same type.  The result type is usually the
   // same as the operands, but is i1 for comparisons (overridden below).
   auto resultType = operandsIn.front().getType();
-  assert(llvm::is_contained({POC::GetListElement, POC::BindSignature,
-                             POC::Apply, POC::Evaluate, POC::TargetHasFeature,
-                             POC::TargetGetField, POC::BuildInfoGetField,
-                             POC::GetSizeOf, POC::GetAlignOf},
+  assert(llvm::is_contained({POC::BindSignature, POC::Apply, POC::Evaluate,
+                             POC::TargetHasFeature, POC::TargetGetField,
+                             POC::BuildInfoGetField, POC::GetSizeOf,
+                             POC::GetAlignOf},
                             opcode) ||
          llvm::all_of(operandsIn.drop_front(),
                       [&](auto op) { return op.getType() == resultType; }));

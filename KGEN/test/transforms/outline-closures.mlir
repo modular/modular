@@ -297,14 +297,14 @@ kgen.generator @innermostCapturesThroughMid<A>() {
 }
 
 // CHECK-LABEL: kgen.generator @paramCaptureNestedInParamRefType_Fn<N, Vs: list<i32[N]>>
-// CHECK-NEXT: constant: i32 = <get_list_element(:list<i32[N]> Vs, 0)>
+// CHECK-NEXT: constant: list<i32[N]> = <Vs>
 // CHECK: kgen.generator @paramCaptureNestedInParamRefType_Fn_wrapper<N, Vs: list<i32[N]>>
 // CHECK-NEXT: call @paramCaptureNestedInParamRefType_Fn<N = N, Vs: list<i32[N]> = Vs>
 // CHECK: declare Fn: () -> () = <@paramCaptureNestedInParamRefType_Fn_wrapper<N = N, Vs: list<i32[N]> = Vs>>
 
 kgen.generator @paramCaptureNestedInParamRefType<N, Vs: list<i32[N]>>() {
   kgen.param.declare.region Fn = () {
-    kgen.param.constant: i32 = <get_list_element(:list<i32[N]> Vs, 0)>
+    kgen.param.constant: list<i32[N]> = <Vs>
     kgen.return
   }
   kgen.return
