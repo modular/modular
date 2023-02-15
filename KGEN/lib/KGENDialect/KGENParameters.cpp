@@ -410,6 +410,20 @@ struct GraphTraits<ParameterUseDefGraph *> {
 // ParameterUseDefGraph
 //===----------------------------------------------------------------------===//
 
+void impl::scanAllAttrsAndTypes(Operation *op,
+                                function_ref<void(Attribute)> scanAttr,
+                                function_ref<void(Type)> scanType) {
+  llvm::for_each(op->getOperandTypes(), scanType);
+  llvm::for_each(op->getResultTypes(), scanType);
+  for (Region &region : op->getRegions())
+    for (Block &block : region)
+      llvm::for_each(block.getArgumentTypes(), scanType);
+
+  // FIXME(#7743): Scan locations too when the elaborator has been updated to
+  // handle the new parameter use-def graph.
+  scanAttr(op->getAttrDictionary());
+}
+
 /// Collect parameter uses from the operation. If there are any uses or
 /// otherwise unresolved parameter operators, indicate that the operation is
 /// parametric.
@@ -419,28 +433,34 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
   bool hasConstExpr = false;
   SmallVector<ParamDeclRefAttr> uses;
 
-  // Scan the operation's operand, result, and block argument types, location,
-  // and attributes.
-  auto scanTypes = [&](TypeRange types) {
-    for (Type type : types)
-      c.collectUsesFromType(type, uses, hasConstExpr);
+  auto scanAttr = [&](Attribute attr) {
+    c.collectUsesFromAttr(attr, uses, hasConstExpr);
   };
-  scanTypes(op->getOperandTypes());
-  scanTypes(op->getResultTypes());
-  for (Region &region : op->getRegions())
-    for (Block &block : region)
-      scanTypes(block.getArgumentTypes());
-  // FIXME: This doesnt at the moment, because locations may contain parameters
-  // that violate the use-def graph.
-  c.collectUsesFromAttr(op->getAttrDictionary(), uses, hasConstExpr);
+  auto scanType = [&](Type type) {
+    c.collectUsesFromType(type, uses, hasConstExpr);
+  };
+
+  auto itf = dyn_cast<ParamOpInterface>(op);
+  if (itf) {
+    // If the parameter operation is the containing declaration, collect only
+    // uses below the defined scope.
+    if (op == g.scope->getParentOp())
+      itf.collectParameterUsesBelow(scanAttr, scanType);
+    else
+      itf.collectParameterUses(scanAttr, scanType);
+
+    // Otherwise, scan all attributes and types if the operation is not a
+    // declaration or it is the containing declaration.
+  } else if (!isa<DeclInterface>(op) || op == g.scope->getParentOp()) {
+    impl::scanAllAttrsAndTypes(op, scanAttr, scanType);
+  }
 
   // If the operation is parametric, add it to the list.
   if (hasConstExpr || !uses.empty()) {
     if (!isDecl)
       g.paramOps.push_back(op);
     g.opUses[op] = std::move(uses);
-  } else if (auto itf = dyn_cast<ParamOpInterface>(op);
-             !isDecl && itf && itf.isImplicitlyParametric()) {
+  } else if (!isDecl && itf && itf.isImplicitlyParametric()) {
     // Track implicitly parametric operations only when they don't already
     // declare parameters.
     g.paramOps.push_back(op);
@@ -473,64 +493,6 @@ static ParamDefinition &recordDef(ParameterUseDefGraph &g, ParamDeclAttr decl,
   g.params.push_back(decl.getName());
   paramDef.defOp = op;
   return paramDef;
-}
-
-/// Visit the operation to collect its uses and record any parameter
-/// declarations. This function ascertains the nature of how parameters are
-/// defined based on the type of the operation.
-static LogicalResult visit(ParameterUseDefGraph &g,
-                           VerifyingParameterCollector &c, Region &scope,
-                           Operation *op) {
-  bool isDecl = false;
-  auto recordDeclWrapper = [&](ParamDeclAttr decl) -> LogicalResult {
-    isDecl = true;
-    return recordDecl(g, decl, op, scope);
-  };
-
-  auto recordDefWrapper = [&](ParamDeclAttr decl) -> ParamDefinition & {
-    return recordDef(g, decl, op);
-  };
-
-  // Check for an operation that may declare parameters.
-  c.op = op;
-  if (auto decl = dyn_cast<DeclInterface>(op)) {
-    // A declaration declares input parameters but does not define them.
-    for (ParamDeclAttr decl : decl.getInputParamDecls())
-      if (failed(recordDeclWrapper(decl)))
-        return failure();
-    if (auto func = dyn_cast<FuncInterface>(op)) {
-      // A function declares result parameters but does not define them.
-      for (ParamDeclAttr decl : func.getResultParams())
-        if (failed(recordDeclWrapper(decl)))
-          return failure();
-    }
-
-  } else if (auto itf = dyn_cast<ParamOpInterface>(op)) {
-    // Check the declarations.
-    bool hadError = false;
-    itf.walkDeclarations([&](ParamDeclAttr decl) {
-      if (failed(recordDeclWrapper(decl)))
-        hadError = true;
-    });
-    if (hadError)
-      return failure();
-
-    // Check the definitions.
-    ssize_t index = 0;
-    itf.walkDefinitions([&](ParamDeclAttr decl, const ParamDefValue &value) {
-      assert(value.regions.empty() && "TODO: region dependencies");
-      ParamDefinition &def = recordDefWrapper(decl);
-      def.index = index++;
-      bool unused;
-      for (Attribute expr : value.exprs)
-        c.collectUsesFromAttr(expr, def.uses, unused);
-    });
-  }
-
-  // Collect parameter uses from the operation, if any.
-  collectUses(g, c, op, isDecl);
-
-  return success();
 }
 
 /// Cycles detected in the definition of a parameter are always forbidden. When
@@ -600,46 +562,74 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
   VerifyingParameterCollector c(module, symtab);
 
   auto processOp = [&](Operation *op) -> WalkResult {
-    // Walk over nested scopes. Defer processing of nested scopes until
-    // after this scope has been analyzed.
-    if (auto decl = dyn_cast<DeclInterface>(op);
-        decl && scope->getParentOp() != decl) {
-      // Check if the declaration is also a parametric operation.
-      if (auto itf = dyn_cast<ParamOpInterface>(op)) {
-        bool hadError = false;
-        itf.walkDeclarations([&](ParamDeclAttr decl) {
-          if (failed(recordDecl(*this, decl, op, *scope)))
-            hadError = true;
-        });
-        if (hadError)
-          return WalkResult::interrupt();
+    // Set the operation for which we are collecting parameters. It will be used
+    // to report errors.
+    c.op = op;
 
-        ssize_t index = 0;
-        itf.walkDefinitions(
-            [&](ParamDeclAttr decl, const ParamDefValue &value) {
-              ParamDefinition &def = recordDef(*this, decl, op);
-              def.index = index++;
-              bool unused;
-              for (Attribute expr : value.exprs)
-                c.collectUsesFromAttr(expr, def.uses, unused);
-              if (!value.regions.empty())
-                regionValues.emplace_back(decl, value.regions);
-            });
+    // Track whether the operation declares parameters. Operations that declare
+    // parameters are treated differently than those that simply use parameters.
+    bool isDecl = false;
 
-        if (index == 0 && itf.isImplicitlyParametric())
-          paramOps.push_back(op);
-      }
-      // Then, push the regions into the nested decls.
-      for (Region &r : decl->getRegions())
-        if (&r != scope)
+    // Check if this operation defines a parameter scope.
+    auto result = WalkResult::advance();
+    if (auto decl = dyn_cast<DeclInterface>(op)) {
+      // Check if this is a nested scope.
+      if (scope->getParentOp() != decl) {
+        // Walk over nested scopes. Defer processing of nested scopes until
+        // after this scope has been analyzed.
+        for (Region &r : decl->getRegions())
           nestedDecls.push_back(&r);
-      return WalkResult::skip();
+        result = WalkResult::skip();
+      } else {
+        // Record parameter declarations for the top-level declaration.
+        auto recordDeclWrapper = [&](ParamDeclAttr decl) -> LogicalResult {
+          isDecl = true;
+          return recordDecl(*this, decl, op, *scope);
+        };
+        // A declaration declares input parameters but does not define them.
+        for (ParamDeclAttr decl : decl.getInputParamDecls())
+          if (failed(recordDeclWrapper(decl)))
+            return failure();
+        if (auto func = dyn_cast<FuncInterface>(op)) {
+          // A function declares result parameters but does not define them.
+          for (ParamDeclAttr decl : func.getResultParams())
+            if (failed(recordDeclWrapper(decl)))
+              return failure();
+        }
+      }
     }
 
-    // Visit the operation inside this scope.
-    if (failed(visit(*this, c, *scope, op)))
-      return WalkResult::interrupt();
-    return WalkResult::advance();
+    // Check if this operation implements the parametric operation interface.
+    if (auto itf = dyn_cast<ParamOpInterface>(op);
+        itf && itf != scope->getParentOp()) {
+      // Check declarations.
+      bool hadError = false;
+      itf.walkDeclarations([&](ParamDeclAttr decl) {
+        isDecl = true;
+        if (failed(recordDecl(*this, decl, op, *scope)))
+          hadError = true;
+      });
+      if (hadError)
+        return WalkResult::interrupt();
+
+      // Check definitions.
+      ssize_t index = 0;
+      itf.walkDefinitions([&](ParamDeclAttr decl, const ParamDefValue &value) {
+        ParamDefinition &def = recordDef(*this, decl, op);
+        def.index = index++;
+        bool unused;
+        for (Attribute expr : value.exprs)
+          c.collectUsesFromAttr(expr, def.uses, unused);
+        // If the definition of this parameter depends on a region, defer
+        // processing of the nested region uses.
+        if (!value.regions.empty())
+          regionValues.emplace_back(decl, value.regions);
+      });
+    }
+
+    // Collect parameter uses from this operation.
+    collectUses(*this, c, op, isDecl);
+    return result;
   };
 
   // Process the scope's parent op - don't recurse because the parent op might
