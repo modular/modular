@@ -65,15 +65,6 @@ static constexpr auto printWorkerId(size_t workerID) {
 // WorkerThread
 //===----------------------------------------------------------------------===//
 
-// Execute a single profiled work item.
-static void doWork(ProfiledTaskFunction &&profiledTask, size_t workerID) {
-  std::move(profiledTask.waiting).record();
-  profiledTask.running =
-      profiledTask.running.withDetailSuffix(printWorkerId(workerID));
-  profiledTask.work();
-  std::move(profiledTask.running).record();
-}
-
 namespace {
 /// Provides the state needed to synchronize the workers in the thread pool.
 struct SharedThreadState {
@@ -184,9 +175,13 @@ struct WorkQueueThread {
   /// This is a per-worker semaphore that this blocks on when they run
   /// out of things to do.
   Semaphore sema;
-  /// The system id for the 'foreign' thread which is executing runItems using
-  /// this WorkQueueThread, or none for worker threads.
+  /// The system id for the thread which is currently executing runItems using
+  /// this object. May be zero if this object represents 'foreign threads, ie
+  /// has workerID 0. At most one 'foreign' thread can be running a runItems
+  /// loop at a time.
   std::atomic<uint64_t> threadID = 0;
+  /// The profiling entry for the currently running work item, or null if none.
+  WorkProfilerEntry *running = nullptr;
   // The underlying worker thread, or none for the 'foreign' threads
   // WorkQueueThread.
   std::optional<std::thread> thread;
@@ -221,6 +216,32 @@ struct WorkQueueThread {
       thread->join();
   }
 
+  // Execute a single profiled work item. If OnOwningThread is true then
+  // the caller is either a worker thread or the awaiting foreign thread,
+  // in which case we can capture the running profile entry before any
+  // recursive awaits begin executing additional work items.
+  template <bool OnOwningThread>
+  void doWork(ProfiledTaskFunction &&profiledTask) {
+    // Record the waiting clock.
+    std::move(profiledTask.waiting).record();
+    // Start the running cock.
+    profiledTask.running =
+        profiledTask.running.withDetailSuffix(printWorkerId(workerID));
+    // If the caller owns the WorkQueueThread then we can try to ensure
+    // the running profiling entry gets stopped if the work item itself
+    // calls back into await.
+    if constexpr (OnOwningThread) {
+      assert(running == nullptr);
+      running = &profiledTask.running;
+    }
+    // Do the work.
+    profiledTask.work();
+    if constexpr (OnOwningThread)
+      running = nullptr;
+    // Record the running clock (if not recorded already).
+    std::move(profiledTask.running).record();
+  }
+
   /// This implements the main worker loop, used by runOnThread, await and
   /// shutdown. The loop runs until earlyStopPredicate or lateStopPredicate
   /// return true. The "early" predicate is called for every work item that
@@ -241,6 +262,12 @@ struct WorkQueueThread {
                 LateStopPredicateFn lateStopPredicate, bool runNewTasks,
                 bool waitForTasks, StringRef spinningLabel,
                 StringRef sleepingLabel);
+
+  template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
+  void runItemsOnOwningThread(EarlyStopPredicateFn earlyStopPredicate,
+                              LateStopPredicateFn lateStopPredicate,
+                              bool runNewTasks, bool waitForTasks,
+                              StringRef spinningLabel, StringRef sleepingLabel);
 
   template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
   void runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
@@ -298,14 +325,14 @@ void WorkQueueThread::runItems(EarlyStopPredicateFn earlyStopPredicate,
     uint64_t expectedThreadID = 0;
     if (threadID.compare_exchange_strong(expectedThreadID, callerThreadID)) {
       // We're the only foreign thread running a runItems loop.
-      runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
+      runItemsOnOwningThread<EarlyStopPredicateFn, LateStopPredicateFn>(
           earlyStopPredicate, lateStopPredicate, runNewTasks, waitForTasks,
           spinningLabel, sleepingLabel);
       // Release.
       threadID = 0;
     } else if (expectedThreadID == callerThreadID) {
       // This is a recursive call to await from the same foreign thread.
-      runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
+      runItemsOnOwningThread<EarlyStopPredicateFn, LateStopPredicateFn>(
           earlyStopPredicate, lateStopPredicate, runNewTasks, waitForTasks,
           spinningLabel, sleepingLabel);
 
@@ -317,9 +344,38 @@ void WorkQueueThread::runItems(EarlyStopPredicateFn earlyStopPredicate,
                                    .concat(" is already running an await"));
     }
   } else {
-    runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
+    // We're on a worker thread.
+    runItemsOnOwningThread<EarlyStopPredicateFn, LateStopPredicateFn>(
         earlyStopPredicate, lateStopPredicate, runNewTasks, waitForTasks,
         spinningLabel, sleepingLabel);
+  }
+}
+
+template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
+void WorkQueueThread::runItemsOnOwningThread(
+    EarlyStopPredicateFn earlyStopPredicate,
+    LateStopPredicateFn lateStopPredicate, bool runNewTasks, bool waitForTasks,
+    StringRef spinningLabel, StringRef sleepingLabel) {
+  WorkProfilerEntry *origRunning = running;
+  if (origRunning) {
+    WorkProfilerEntry newRunning = origRunning->withNameSuffix(".post");
+    // Switch out the original entry and an entry we'll start once we're done
+    // pumping work.
+    std::swap(newRunning, *origRunning);
+    // Record the currently running clock (if any) before we start any more
+    // work.
+    std::move(newRunning).record();
+    running = nullptr;
+  }
+
+  runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
+      earlyStopPredicate, lateStopPredicate, runNewTasks, waitForTasks,
+      spinningLabel, sleepingLabel);
+
+  if (origRunning) {
+    // Resume tracing the original work item.
+    origRunning->restart();
+    running = origRunning;
   }
 }
 
@@ -338,15 +394,15 @@ KeepRunning:
     while (!localTaskList.empty()) {
       ProfiledTaskFunction labelledTask(
           std::move(localTaskList.back()), /*waiting=*/WorkProfilerEntry(),
-          /*running=*/WorkProfilerEntry("llcl.waiter"));
+          /*running=*/WorkProfilerEntry::create("llcl.waiter"));
       localTaskList.erase(localTaskList.end() - 1);
-      doWork(std::move(labelledTask), workerID);
+      doWork</*OnOwningThread=*/true>(std::move(labelledTask));
     }
 
     if (runNewTasks) {
       // In the normal case we happily pick up and do work.
       if (auto labelledTask = taskList.dequeue()) {
-        doWork(std::move(labelledTask), workerID);
+        doWork</*OnOwningThread=*/true>(std::move(labelledTask));
         continue;
       }
     }
@@ -355,8 +411,8 @@ KeepRunning:
       return;
 
     {
-      TimeTraceScope scope(
-          InternalProfilerEntry(spinningLabel, printWorkerId(workerID)));
+      auto spinning =
+          InternalProfilerEntry::create(spinningLabel, printWorkerId(workerID));
 
       // If we've run out of work to do, we need to quiesce and ultimately block
       // in the kernel on the semaphore.  However, we don't want to immediately
@@ -372,7 +428,8 @@ KeepRunning:
           // If we ever succeed in finding work to do, go back to running like
           // normal.
           if (auto work = taskList.dequeue()) {
-            doWork(std::move(work), workerID);
+            std::move(spinning).record();
+            doWork</*OnOwningThread=*/true>(std::move(work));
             goto KeepRunning;
           }
         }
@@ -381,9 +438,11 @@ KeepRunning:
         // then we're done.  Checking the late stop condition here make sure our
         // threads shut down promptly when a runtime is torn down.
         if (earlyStopPredicate() || lateStopPredicate()) {
+          std::move(spinning).record();
           return;
         }
       }
+      std::move(spinning).record();
     }
 
     // Otherwise, we've waited long enough, yield the thread to the OS so we
@@ -399,10 +458,9 @@ KeepRunning:
     }
 
     {
-      TimeTraceScope scope(
-          InternalProfilerEntry(sleepingLabel, printWorkerId(workerID)));
-
       // Ok, finally block.
+      TimeTraceScope scope(InternalProfilerEntry::create(
+          sleepingLabel, printWorkerId(workerID)));
       sema.wait();
     }
 
@@ -467,7 +525,7 @@ private:
   // reference to this structure.
   SharedThreadState sharedState;
 
-  ///  This is the ringbuffer of work to do.
+  /// This is the ringbuffer of work to do.
   LockFreeRingBuffer<ProfiledTaskFunction> taskList;
 };
 } // namespace
@@ -497,7 +555,7 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
 }
 
 void ThreadPoolWorkQueue::shutdown() {
-  TimeTraceScope scope(InternalProfilerEntry("llcl.shutdown"));
+  TimeTraceScope scope(InternalProfilerEntry::create("llcl.shutdown"));
 
   // Donate this thread to help drain the work queue if there's anything left.
   getCurrentWorkQueueThread()->runItems(
@@ -528,15 +586,16 @@ void ThreadPoolWorkQueue::shutdown() {
 void ThreadPoolWorkQueue::addTask(TaskFunction &&work,
                                   WorkProfilerEntry &&profilerEntry) {
   assert(work);
-  WorkQueueThread *addingWorker = getCurrentWorkQueueThread();
+  WorkQueueThread *callerWorker = getCurrentWorkQueueThread();
 
-  // Try to add this work to the RingBuffer.
+  // Begin the waiting clock.
   WorkProfilerEntry waitingEntry =
       profilerEntry.withNameSuffix(".waiting")
           .withDetailSuffix(
-              printWorkerId(addingWorker->workerID)); // restarts clock
+              printWorkerId(callerWorker->workerID)); // restarts clock
   ProfiledTaskFunction profiledTask(std::move(work), std::move(waitingEntry),
                                     std::move(profilerEntry));
+  // Try to add this work to the RingBuffer.
   if (taskList.enqueue(profiledTask)) {
     // If there are any suspended workers, kick one of them now that there is
     // new work to do.
@@ -550,11 +609,13 @@ void ThreadPoolWorkQueue::addTask(TaskFunction &&work,
 
   // If we failed to add it, then the ring buffer is full: just run the work
   // item locally on the current stack.
-  // NOTE: This runs the risk of stack overflow, but we don't have a choice.
+  // CAUTION: This runs the risk of stack overflow, but we don't have a choice.
+  // CAUTION: Any existing work item's profiling entry will include execution
+  // time to run this work item.
   LLVM_DEBUG(
       llvm::dbgs()
       << "ThreadPoolWorkQueue: running immediately (task queue is full)\n");
-  doWork(std::move(profiledTask), addingWorker->workerID);
+  callerWorker->doWork</*OnOwningThread=*/false>(std::move(profiledTask));
 }
 
 void ThreadPoolWorkQueue::addLocalTask(M::LLCL::TaskFunction work) {
@@ -570,11 +631,11 @@ void ThreadPoolWorkQueue::addLocalTask(M::LLCL::TaskFunction work) {
                                  "(called from non awaiting foreign thread)\n");
       ProfiledTaskFunction profiledTask(
           std::move(work), /*waiting=*/WorkProfilerEntry(),
-          /*running=*/WorkProfilerEntry("llcl.waiter"));
-      doWork(std::move(profiledTask), callerWorker->workerID);
+          /*running=*/WorkProfilerEntry::create("llcl.waiter"));
+      callerWorker->doWork</*OnOwningThread=*/false>(std::move(profiledTask));
     } else {
       // Add as a task.
-      addTask(std::move(work), WorkProfilerEntry("llcl.waiter"));
+      addTask(std::move(work), WorkProfilerEntry::create("llcl.waiter"));
     }
     return;
   }

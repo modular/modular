@@ -47,19 +47,32 @@ class alignas(hardware_destructive_interference_size) WorkQueue {
 public:
   virtual ~WorkQueue() = default;
 
-  /// Enqueue a work item. Thread-safe.
+  /// Enqueue a work item, usually for later execution, possibly on another
+  /// thread. Thread-safe.
   ///
-  /// The profilerEntry will be used to record both the waiting and execution
-  /// time for the work item.
+  /// If enabled, the profilerEntry will be used to record two flavors of
+  /// profiling entries:
+  ///  - Waiting: The time between adding and beginning the task is recorded
+  ///    with the name of profilerEntry with an additional '.waiting' suffix.
+  ///    This captures the time the task sits waiting in the task list for a
+  ///    worker.
+  ///  - Running: The time between beginning and ending the task is recorded
+  ///    using profilerEntry directly. However, should the task call await,
+  ///    the running clock will be stopped early while other work items are
+  ///    processed. Once the await returns the running entry will be restarted,
+  ///    but with an additional '.post' suffix. In this way work items can
+  ///    be timed independently of unrelated work items.
+  /// Additional details may be added to the profile entries depending on the
+  /// work queue implementation.
   ///
   /// CAUTION: The work item may be run immediately, on the callers stack,
   /// if it cannot be enqueued (eg because the queue is full).
   ///
   /// TODO: Consider returning AsyncValueRef<Chain>, where the task has been
   /// enqueued only if the result is ready.
-  virtual void addTask(
-      TaskFunction &&work,
-      WorkProfilerEntry &&profilerEntry = WorkProfilerEntry("llcl.doWork")) = 0;
+  virtual void addTask(TaskFunction &&work,
+                       WorkProfilerEntry &&profilerEntry =
+                           WorkProfilerEntry::create("llcl.doWork")) = 0;
 
   /// Enqueue a block of work to be run 'locally' on the current thread.
   ///
