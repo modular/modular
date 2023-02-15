@@ -70,6 +70,8 @@ struct ParamDefValue {
 };
 
 namespace impl {
+void scanAllAttrsAndTypes(Operation *op, function_ref<void(Attribute)> scanAttr,
+                          function_ref<void(Type)> scanType);
 LogicalResult verifyCallOp(KGENCallOpInterface op);
 LogicalResult verifyIfTopLevel(DeclInterface decl,
                                SymbolTableCollection &symtab);

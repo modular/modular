@@ -161,6 +161,11 @@ void ParamDeclareRegionOp::walkDefinitions(
   walkDef(getParamDecl(), &getBodyRegion());
 }
 
+/// This operation has no uses to collect in its current scope.
+void ParamDeclareRegionOp::collectParameterUses(
+    function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
+}
+
 //===----------------------------------------------------------------------===//
 // ParamForkOp
 //===----------------------------------------------------------------------===//
@@ -836,6 +841,11 @@ void ParamIfOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
 }
 
 bool ParamIfOp::isImplicitlyParametric() { return true; }
+
+/// This operation has no uses to collect in the scopes it defines.
+void ParamIfOp::collectParameterUsesBelow(
+    function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
+}
 
 //===----------------------------------------------------------------------===//
 // ParamYieldOp

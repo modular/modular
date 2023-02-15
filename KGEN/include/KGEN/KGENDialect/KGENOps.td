@@ -398,7 +398,8 @@ def KGEN_ParamDeclareOp : KGENOp<"param.declare",
 def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     DeclInterface, FuncInterface, FunctionOpInterface,
     SingleBlockImplicitTerminator<"ReturnOp">,
-    DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
+    DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>
+  ]>, OneParamDecl {
   let summary = "declare a region parameter";
   let description = [{
     The `kgen.param.declare.region` operation declares a signature-type
@@ -551,7 +552,8 @@ def KGEN_ParamAssertOp : KGENOp<"param.assert", []> {
 
 def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
     DeclareOpInterfaceMethods<ControlFlowNode>,
-    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>]> {
+    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric",
+      "collectParameterUsesBelow"]>]> {
   let summary = "compile-time constant if";
   let description = [{
     The `kgen.param.if` op provides a compile-time guarantee that if `cond`

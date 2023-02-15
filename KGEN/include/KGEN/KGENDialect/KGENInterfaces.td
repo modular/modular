@@ -268,7 +268,45 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
       Likewise, this operation uses and declares no parameters, but it is
       implicitly parametric because it makes the body of the surrounding
       function parametric.
-    }], "bool", "isImplicitlyParametric", (ins), [{}], [{ return false; }]>
+    }], "bool", "isImplicitlyParametric", (ins), [{}], [{ return false; }]>,
+    InterfaceMethod<[{
+      Scan the operation's types and attributes for parameter uses or unresolved
+      parameter operators. By default, all of the operation's attributes are
+      scanned and its operand, result, and block argument types are scanned.
+      Operations can override this method to scan a subset of attributes and
+      types if, for example, not all attributes are using parameters within the
+      scope that contains the operation.
+    }], "void", "collectParameterUses",
+      (ins "function_ref<void(Attribute)>":$scanAttr,
+           "function_ref<void(Type)>":$scanType), [{}], [{
+      impl::scanAllAttrsAndTypes($_op, scanAttr, scanType);
+    }]>,
+    InterfaceMethod<[{
+      For operations that can exist at the boundary of two parameter scopes,
+      define an additional interface method that allows these operations to
+      distinguish how parameter uses are collected depending on which scope is
+      being scanned: the scope that contains the operation or the scope defined
+      by the operation.
+
+      Example:
+
+      ```mlir
+      kgen.param.declare.region Fn = <A>() -> ()
+          contraints <[eq(A, 1), "A == 1"]> {
+      }
+      ```
+
+      Here, the expression `eq(A, 1)` contains a use of the parameter `A` which
+      is declared inside the scope defined by the `kgen.param.declare.region`.
+      This use must be distingiushed from the uses of parameters by the
+      operation at the scope that contains the operation (i.e. the scope in
+      which `Fn` is declared).
+    }], "void", "collectParameterUsesBelow",
+      (ins "function_ref<void(Attribute)>":$scanAttr,
+           "function_ref<void(Type)>":$scanType), [{}], [{
+      assert(isa<DeclInterface>(*$_op) && "should only be called on decl ops");
+      impl::scanAllAttrsAndTypes($_op, scanAttr, scanType);
+    }]>
   ];
 }
 
