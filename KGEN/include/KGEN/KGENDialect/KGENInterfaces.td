@@ -273,7 +273,8 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
 }
 
 class OneParamDecl {
-  code extraClassDefinition = [{
+  code extraDefinition = [{}];
+  code extraClassDefinition = extraDefinition # [{
     void $cppClass::walkDeclarations(
         function_ref<void(ParamDeclAttr)> walkDecl) {
       walkDecl(getParamDecl());
@@ -286,7 +287,8 @@ class OneParamDecl {
 }
 
 class NoParamDecls {
-  code extraClassDefinition = [{
+  code extraDefinition = [{}];
+  code extraClassDefinition = extraDefinition # [{
     void $cppClass::walkDeclarations(
         function_ref<void(ParamDeclAttr)> walkDecl) {}
     void $cppClass::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {

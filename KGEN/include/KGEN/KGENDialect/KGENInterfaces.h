@@ -61,6 +61,9 @@ class KGENCallOpInterface;
 struct ParamDefValue {
   ParamDefValue() {}
   ParamDefValue(Attribute expr) : exprs(1, expr) {}
+  ParamDefValue(Region *region) : regions(1, region) {}
+  ParamDefValue(ArrayRef<Attribute> exprs, ArrayRef<Region *> regions)
+      : exprs(exprs), regions(regions) {}
 
   SmallVector<Attribute, 1> exprs;
   SmallVector<Region *, 0> regions;

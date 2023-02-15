@@ -165,10 +165,37 @@ def KGEN_GeneratorInterfaceOp : KGENOp<"generator.interface", [
 }
 
 //===----------------------------------------------------------------------===//
+// CallOpBase
+//===----------------------------------------------------------------------===//
+
+class KGEN_CallOpBase<string mnemonic, list<Trait> traits = []>
+    : KGENOp<mnemonic, traits # [KGEN_CallOpInterface,
+        DeclareOpInterfaceMethods<ParamOpInterface,
+                                  ["isImplicitlyParametric"]>]> {
+  code extraDefinition = [{}];
+  let extraClassDefinition = extraDefinition # [{
+    void $cppClass::walkDeclarations(
+        function_ref<void(ParamDeclAttr)> walkDecl) {
+      llvm::for_each(getParamDecls(), walkDecl);
+    }
+    void $cppClass::walkDefinitions(
+        function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
+      for (ParamDeclAttr decl : getParamDecls())
+        walkDef(decl, getCallee());
+    }
+    void $cppClass::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
+      assert(decls.size() == getParamDecls().size());
+      setParamDeclsAttr(ParamDeclArrayAttr::get(getContext(), decls));
+    }
+    bool $cppClass::isImplicitlyParametric() { return true; }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // AddressOf
 //===----------------------------------------------------------------------===//
 
-def KGEN_AddressOfOp : KGENOp<"addressof", [KGEN_CallOpInterface]> {
+def KGEN_AddressOfOp : KGEN_CallOpBase<"addressof"> {
   let summary = "Get the address of a function.";
   let description = [{
     The `kgen.addressof` operation references a parametric function and returns
@@ -206,8 +233,8 @@ def KGEN_AddressOfOp : KGENOp<"addressof", [KGEN_CallOpInterface]> {
 // CallOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CallOp : KGENOp<"call", [KGEN_CallOpInterface,
-    DeclareOpInterfaceMethods<CallOpInterface>]> {
+def KGEN_CallOp : KGEN_CallOpBase<"call",
+    [DeclareOpInterfaceMethods<CallOpInterface>]> {
   let summary = "Call a func, generator, or generator interface";
   let description = [{
     The `kgen.call` operation invokes a parametric function. The callee must be
@@ -267,8 +294,8 @@ def KGEN_CallOp : KGENOp<"call", [KGEN_CallOpInterface,
 // CallParamOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CallParamOp : KGENOp<"call_param", [KGEN_CallOpInterface,
-    CalleeArgumentTypes, CalleeResultTypes]> {
+def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
+    [CalleeArgumentTypes, CalleeResultTypes]> {
   let summary = "Call declaration specified by a parameter expression";
   let description = [{
     The `kgen.call_param` operation invokes a parametric callee. The callee is
@@ -370,7 +397,8 @@ def KGEN_ParamDeclareOp : KGENOp<"param.declare",
 
 def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     DeclInterface, FuncInterface, FunctionOpInterface,
-    SingleBlockImplicitTerminator<"ReturnOp">]> {
+    SingleBlockImplicitTerminator<"ReturnOp">,
+    DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
   let summary = "declare a region parameter";
   let description = [{
     The `kgen.param.declare.region` operation declares a signature-type
@@ -411,7 +439,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
   }];
 
   let arguments = (ins
-    ParamDeclSize1ArrayAttr:$paramDecls,
+    KGEN_ParamDeclAttr:$paramDecl,
     TypeAttrOf<KGEN_SignatureType>:$signature,
     ConstraintArrayAttr:$constraints,
     UnitAttr:$isolated,
@@ -420,7 +448,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    custom<RegionDeclaration>($paramDecls, $signature, $constraints,
+    custom<RegionDeclaration>($paramDecl, $signature, $constraints,
                               $alwaysInlineLevel, $bodyRegion) attr-dict
   }];
 
@@ -430,9 +458,6 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 
     /// Region body op doesn't form a symbol.
     bool isOptionalSymbol() { return true; }
-
-    /// Return the single parameter declaration.
-    ParamDeclAttr getParamDecl();
   }];
 
   let hasRegionVerifier = 1;
@@ -525,7 +550,8 @@ def KGEN_ParamAssertOp : KGENOp<"param.assert", []> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
-    DeclareOpInterfaceMethods<ControlFlowNode>]> {
+    DeclareOpInterfaceMethods<ControlFlowNode>,
+    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>]> {
   let summary = "compile-time constant if";
   let description = [{
     The `kgen.param.if` op provides a compile-time guarantee that if `cond`
