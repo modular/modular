@@ -1483,11 +1483,15 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   funcOp->removeAttr("sym_namex");
 
   if (Operation *existing = shared.setResolvedDeclSymbol(funcOp)) {
-    // On redefinition this is an overload of the same name and same signature.
-    auto diag = p.emitError(funcOp.getLoc(), "redefinition of function ")
-                << name << " with identical signature";
-    diag.attachNote(existing->getLoc()) << "previous definition here";
-    decl.hasReferenceError = true;
+    // If the thing is adaptive, then we actually don't want to error.
+    if (!existing->hasAttr(funcOp.getIsAdaptiveAttrName())) {
+      // On redefinition this is an overload of the same name and same
+      // signature.
+      auto diag = p.emitError(funcOp.getLoc(), "redefinition of function ")
+                  << name << " with identical signature";
+      diag.attachNote(existing->getLoc()) << "previous definition here";
+      decl.hasReferenceError = true;
+    }
   }
 
   // TODO: Handle the export attribute somehow else.  It should be a 'body

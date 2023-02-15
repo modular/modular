@@ -753,8 +753,7 @@ void OverloadFitness::diagnose(SignatureType signature,
 /// return success.  If not, generate a diagnostic and return failure.
 LogicalResult DirectCallable::filterOverloadSet(
     ArrayRef<ASTExprAnd<AnyValue>> operands, CallSyntax syntax,
-    bool emitDiagnosticOnFailure, LitSharedState &shared,
-    SymbolConstantAttr *validCandidate) {
+    bool emitDiagnosticOnFailure, LitSharedState &shared) {
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
@@ -811,12 +810,12 @@ LogicalResult DirectCallable::filterOverloadSet(
     oneFitness = eval;
   }
 
-  // If we found exactly one viable candidate, then we succeed.
-  if (newFnDecls.size() == 1) {
-    // If the caller wanted to know about the valid symbol, return it.
-    if (validCandidate)
-      *validCandidate = cast<LIT::FuncOp>(*newFnDecls[0])
-                            .getBoundReference(oneFitness.paramBindings);
+  // If we found exactly one viable candidate, or all the overloads are marked
+  // as adaptive, then we succeed.
+  bool allMarkedAdaptive = llvm::all_of(newFnDecls, [](ASTDecl *decl) {
+    return cast<LIT::FuncOp>(*decl).getIsAdaptive();
+  });
+  if (newFnDecls.size() == 1 || (!newFnDecls.empty() && allMarkedAdaptive)) {
     // Mutate our state to represent what we've learned.  We have one callee
     // and we have valid predetermined parameter bindings.
     fnDecls = std::move(newFnDecls);
@@ -830,15 +829,68 @@ LogicalResult DirectCallable::filterOverloadSet(
   // Otherwise, we have multiple viable candidates that are ambiguous because
   // they all require the same number of implicit conversions.
   if (emitDiagnosticOnFailure) {
-    auto diag = shared.emitError(nameLoc, "ambiguous call to '")
-                << baseName << "', each candidate requires " << minConversions
-                << " implicit conversion" << plural(minConversions)
-                << ", disambiguate with an explicit cast";
-    for (ASTDecl *candidate : newFnDecls)
-      diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
-          << "candidate declared here";
+    // We only want to suggest adding @adaptive if at least one in the set is
+    // marked adaptive.
+    bool anyMarkedAdaptive = llvm::any_of(newFnDecls, [](ASTDecl *decl) {
+      return cast<LIT::FuncOp>(*decl).getIsAdaptive();
+    });
+    if (anyMarkedAdaptive) {
+      auto diag = shared.emitError(nameLoc, "ambiguous call to '")
+                  << baseName
+                  << "', multiple implementations detected but not all are "
+                     "marked adaptive, add @adaptive to all overloads";
+      for (LIT::FuncOp candidate : llvm::map_range(
+               newFnDecls, [](ASTDecl *d) { return cast<LIT::FuncOp>(*d); })) {
+        if (!candidate.getIsAdaptive())
+          diag.attachNote(candidate.getLoc()) << "non-adaptive candidate here";
+      }
+    } else {
+      auto diag = shared.emitError(nameLoc, "ambiguous call to '")
+                  << baseName << "', each candidate requires " << minConversions
+                  << " implicit conversion" << plural(minConversions)
+                  << ", disambiguate with an explicit cast";
+      for (ASTDecl *candidate : newFnDecls)
+        diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
+            << "candidate declared here";
+    }
   }
   return failure();
+}
+
+/// Resolve the callee into either a single MValue callee (if there's only one
+/// decl provided) or a variadic that contains all the possible adaptive
+/// overloads. Because adaptive overloads must all have the same signature, this
+/// also returns the signature type that they all share.
+std::pair<MValue, SignatureType> DirectCallable::getCallee() {
+  assert(!fnDecls.empty() &&
+         "cannot get the callee when no callees have been resolved");
+  // Get the parameter bindings, if there are any.
+  ParamBindArrayAttr bindArray = {};
+  if (!inputParamBindings.bindings.empty()) {
+    SmallVector<ParamBindAttr> binds;
+    for (const InputParamBindings::Binding &b : inputParamBindings.bindings)
+      binds.push_back(cast<ParamBindAttr>(b.bindingOrValue));
+    assert(binds.size() == inputParamBindings.bindings.size() &&
+           "some bindings were not bindings?");
+    bindArray = ParamBindArrayAttr::get(binds.front().getContext(), binds);
+  }
+  if (fnDecls.size() == 1) {
+    SymbolConstantAttr callee =
+        cast<LIT::FuncOp>(*fnDecls.front()).getBoundReference(bindArray);
+    return {MValue(callee), callee.getType()};
+  }
+
+  // Otherwise, we have to construct a list to be called.
+  SmallVector<TypedAttr> symbols =
+      llvm::to_vector(llvm::map_range(fnDecls, [&](ASTDecl *decl) {
+        return cast<TypedAttr>(
+            cast<LIT::FuncOp>(*decl).getBoundReference(bindArray));
+      }));
+  // Pull out the type, and construct a list attr to be returned.
+  SignatureType calleeType =
+      cast<SymbolConstantAttr>(symbols.front()).getType();
+  auto calleeList = VariadicAttr::get(symbols, VariadicType::get(calleeType));
+  return {MValue(calleeList), calleeType};
 }
 
 /// Perform subsitutions of the specified bindings into the symbol, returning
@@ -1133,14 +1185,12 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
     // Check the direct callees to see if they can be unambiguously resolved
     // with the bindings list and specified arguments.
-    SymbolConstantAttr symbol;
     if (failed(direct->filterOverloadSet(operands, syntax,
                                          /*emitDiagnosticOnFailure=*/true,
-                                         emitter.shared, &symbol)))
+                                         emitter.shared)))
       return {};
 
-    calleeSig = symbol.getType();
-    callee = MValue(symbol);
+    std::tie(callee, calleeSig) = direct->getCallee();
     if (failed(
             direct->getResultParamDecls(calleeSig, resultParamDecls, emitter)))
       return {};
@@ -1292,10 +1342,11 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   assert(nextOperandIdx == operands.size() &&
          "typechecking confirmed that we would use up all operands");
 
-  // If this is a call to a @always_inline function, see if we can fold its
-  // entire body into an MValue.  This can fail for a number of reasons, in
-  // which case we fall back to emitting normally.
-  if (direct) {
+  // If this is a call to a @always_inline function (and there's only one
+  // possible callee), see if we can fold its entire body into an MValue. This
+  // can fail for a number of reasons, in which case we fall back to emitting
+  // normally.
+  if (direct && direct->fnDecls.size() == 1) {
     auto calleeFunc = cast<LIT::FuncOp>(*direct->fnDecls[0]);
     if (calleeFunc.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled) {
       auto calleeSym = cast<SymbolConstantAttr>(callee.getIfMValue().get());
@@ -1353,7 +1404,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   Operation *callOp;
   Location loc = emitter.translateLocation(callLoc);
   if (auto target = callee.getIfMValue()) {
-    if (cast<SignatureType>(target.getType()).isAsync()) {
+    if (auto sig = dyn_cast<SignatureType>(target.getType());
+        sig && sig.isAsync()) {
       // If the callee is an async function, emit an async call.
       callOp = builder->create<AsyncCallOp>(loc, target.get(), resultParamDecls,
                                             callArgs);
@@ -1361,6 +1413,20 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       // If the callee is a symbol constant, directly emit a call.
       callOp = builder->create<CallOp>(loc, resultTypes, symbol,
                                        resultParamDecls, callArgs);
+    } else if (auto variadic = dyn_cast<VariadicAttr>(target.get())) {
+      // If the callee is a list, create a param.fork op and create a CallParam
+      // on that. We want to get the name of the function that is being called
+      // and mangle it into the parameter name to ensure uniqueness.
+      StringRef mangledCall(callNode->getRangeStart().getPointer(),
+                            callNode->getRangeEnd().getPointer() -
+                                callNode->getRangeStart().getPointer() - 1);
+      auto decl =
+          ParamDeclAttr::get(builder->getStringAttr("(adaptive)" + mangledCall),
+                             variadic.getType().getResolvedElementType());
+      builder->create<ParamForkOp>(loc, decl, variadic);
+      callOp = builder->create<CallParamOp>(loc, resultTypes,
+                                            ParamDeclRefAttr::get(decl),
+                                            resultParamDecls, callArgs);
     } else {
       callOp = builder->create<CallParamOp>(loc, resultTypes, target.get(),
                                             resultParamDecls, callArgs);

@@ -151,8 +151,13 @@ struct DirectCallable {
   LogicalResult filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
                                   CallSyntax syntax,
                                   bool emitDiagnosticOnFailure,
-                                  LitSharedState &shared,
-                                  SymbolConstantAttr *validCandidate = nullptr);
+                                  LitSharedState &shared);
+
+  /// Resolve the callee into either a single MValue callee (if there's only one
+  /// decl provided) or a variadic that contains all the possible adaptive
+  /// overloads. Because adaptive overloads must all have the same signature,
+  /// this also returns the signature type that they all share.
+  std::pair<MValue, SignatureType> getCallee();
 
   /// Perform subsitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
