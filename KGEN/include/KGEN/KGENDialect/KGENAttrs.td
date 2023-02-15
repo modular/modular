@@ -313,6 +313,42 @@ def KGEN_ListAttr : KGEN_ExprAttr<"List", "list"> {
 }
 
 //===----------------------------------------------------------------------===//
+// VariadicAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_VariadicAttr : KGEN_ExprAttr<"Variadic", "variadic", [
+    TypedAttrInterface,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+  let summary = "A parameterized variadic attribute.";
+  let description = [{
+    The `#kgen.variadic` attribute contains a homogeneous list of elements of an
+    variadic type. It is used to represent constant variadic sequence values.
+
+    Example:
+
+    ```mlir
+    #kgen.variadic<1, 2> : !kgen.variadic<index>
+    ```
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values,
+                        AttributeSelfTypeParameter<"", "VariadicType">:$type);
+
+  let assemblyFormat = [{
+    `<` (`>`) : (custom<SequenceElements>($values, ref($type))^ `>`)?
+  }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
+                                        "VariadicType":$type), [{
+      return get(type.getContext(), values, type);
+    }]>
+  ];
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // UnknownAttr
 //===----------------------------------------------------------------------===//
 
@@ -706,42 +742,6 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
     /// must have `index` type.
     static TypedAttr getSub(TypedAttr lhs, TypedAttr rhs);
   }];
-}
-
-//===----------------------------------------------------------------------===//
-// VariadicAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_VariadicAttr : KGEN_ExprAttr<"Variadic", "variadic", [
-    TypedAttrInterface,
-    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
-  let summary = "A parameterized variadic attribute.";
-  let description = [{
-    The `#kgen.variadic` attribute contains a homogeneous list of elements of an
-    variadic type. It is used to represent constant variadic sequence values.
-
-    Example:
-
-    ```mlir
-    #kgen.variadic<1, 2> : !kgen.variadic<index>
-    ```
-  }];
-
-  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values,
-                        AttributeSelfTypeParameter<"", "VariadicType">:$type);
-
-  let assemblyFormat = [{
-    `<` (`>`) : (custom<SequenceElements>($values, ref($type))^ `>`)?
-  }];
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
-                                        "VariadicType":$type), [{
-      return get(type.getContext(), values, type);
-    }]>
-  ];
-
-  let genVerifyDecl = 1;
 }
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
