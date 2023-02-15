@@ -17,6 +17,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <atomic>
+#include <stdio.h>
 
 #if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
 #include <sys/mman.h>
@@ -96,14 +97,14 @@ public:
   }
 
   ~ProfilingAllocator() override {
-    printf("M::LLCL::Allocator profile:\n");
-    printf("Max number of allocations = %lld\n",
-           (long long)maxAllocations.load());
-    printf("Total number of allocations = %lld\n",
-           (long long)totalAllocations.load());
-    printf("Max number of bytes ever allocated = %lld\n",
-           (long long)maxBytesAllocated.load());
-    fflush(stdout);
+    fprintf(stderr, "M::LLCL::Allocator profile:\n");
+    fprintf(stderr, "Max number of allocations = %lld\n",
+            (long long)maxAllocations.load());
+    fprintf(stderr, "Total number of allocations = %lld\n",
+            (long long)totalAllocations.load());
+    fprintf(stderr, "Max number of bytes ever allocated = %lld\n",
+            (long long)maxBytesAllocated.load());
+    fflush(stderr);
 
     // If we still have active memory alive, print an error.
     checkLeak();
