@@ -439,8 +439,10 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
     if (!isDecl)
       g.paramOps.push_back(op);
     g.opUses[op] = std::move(uses);
-  } else if (isa<KGENCallOpInterface>(op) && !isDecl) {
-    // Call operations are implicitly parametric.
+  } else if (auto itf = dyn_cast<ParamOpInterface>(op);
+             !isDecl && itf && itf.isImplicitlyParametric()) {
+    // Track implicitly parametric operations only when they don't already
+    // declare parameters.
     g.paramOps.push_back(op);
   }
 }
@@ -491,23 +493,7 @@ static LogicalResult visit(ParameterUseDefGraph &g,
 
   // Check for an operation that may declare parameters.
   c.op = op;
-  if (auto call = dyn_cast<KGENCallOpInterface>(op);
-      call && !isa<GeneratorInterfaceOp>(call)) {
-    // A `kgen.call` or other call operation declares parameters that bind to
-    // the result parameters of the callee. All definitions depend on uses in
-    // the callee expression.
-    SmallVector<ParamDeclRefAttr> uses;
-    bool unused;
-    c.collectUsesFromAttr(call.getCallee(), uses, unused);
-    for (auto [index, decl] : llvm::enumerate(call.getParamDecls())) {
-      if (failed(recordDeclWrapper(decl)))
-        return failure();
-      ParamDefinition &def = recordDefWrapper(decl);
-      def.index = index;
-      def.uses = uses;
-    }
-
-  } else if (auto decl = dyn_cast<DeclInterface>(op)) {
+  if (auto decl = dyn_cast<DeclInterface>(op)) {
     // A declaration declares input parameters but does not define them.
     for (ParamDeclAttr decl : decl.getInputParamDecls())
       if (failed(recordDeclWrapper(decl)))
@@ -604,53 +590,12 @@ static void emitCycleError(ParameterUseDefGraph &g,
   }
 }
 
-/// `param.if` ops should record itself as the decl and the def for its result
-/// parameters. This will ensure the elaborator processes the `param.if` before
-/// anything inside it.
-static LogicalResult processParamIfOp(ParamIfOp ifOp,
-                                      ParameterUseDefGraph &graph,
-                                      VerifyingParameterCollector &c,
-                                      Region *scope) {
-  // `param.if` ops are inherently parametric. If we don't have any param decls,
-  // mark it as parametric anyway.
-  if (ifOp.getParamDecls().empty())
-    graph.paramOps.push_back(ifOp);
-
-  // Record all the defs/decls.
-  for (auto [idx, decl] : llvm::enumerate(ifOp.getParamDecls())) {
-    if (failed(recordDecl(graph, decl, ifOp, *scope)))
-      return failure();
-
-    // And record the new definition. Its defining op is the if op.
-    ParamDefinition &paramDef = recordDef(graph, decl, ifOp);
-    paramDef.index = idx;
-  }
-
-  // Collect uses of parameters on the ifOp. This will capture result types,
-  // etc. This thing is a decl, it declares its out parameters.
-  collectUses(graph, c, ifOp, /*isDecl=*/true);
-
-  return success();
-}
-
-static LogicalResult
-processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
-                            ParameterUseDefGraph &graph,
-                            VerifyingParameterCollector &c, Region *scope) {
-  ParamDeclAttr decl = regionDecl.getParamDecl();
-  if (failed(recordDecl(graph, decl, regionDecl, *scope)))
-    return failure();
-  recordDef(graph, decl, regionDecl);
-  return success();
-}
-
 LogicalResult
 ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
                                         SymbolTableCollection *symtab) {
   // Defer the processing of the use-def node for region declarations until
   // after nested scopes have been analyzed.
-  SmallVector<StringAttr> regionParams;
-  SmallVector<std::pair<ParamDeclArrayAttr, Region *>> ifRegions;
+  SmallVector<std::pair<ParamDeclAttr, SmallVector<Region *, 0>>> regionValues;
   // The parameter collector to use.
   VerifyingParameterCollector c(module, symtab);
 
@@ -659,21 +604,30 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
     // after this scope has been analyzed.
     if (auto decl = dyn_cast<DeclInterface>(op);
         decl && scope->getParentOp() != decl) {
-      // Process the param.if op's result parameters in this scope.
-      if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
-        if (failed(processParamIfOp(ifOp, *this, c, scope)))
+      // Check if the declaration is also a parametric operation.
+      if (auto itf = dyn_cast<ParamOpInterface>(op)) {
+        bool hadError = false;
+        itf.walkDeclarations([&](ParamDeclAttr decl) {
+          if (failed(recordDecl(*this, decl, op, *scope)))
+            hadError = true;
+        });
+        if (hadError)
           return WalkResult::interrupt();
 
-        // Add then/else regions to the upper scope, we'll handle uses of the
-        // condition attr later.
-        ifRegions.emplace_back(ifOp.getParamDeclsAttr(), &ifOp.getThenRegion());
-        ifRegions.emplace_back(ifOp.getParamDeclsAttr(), &ifOp.getElseRegion());
-      }
-      if (auto regionDecl = dyn_cast<ParamDeclareRegionOp>(op)) {
-        if (failed(processParamDeclareRegionOp(regionDecl, *this, c, scope)))
-          return WalkResult::interrupt();
+        ssize_t index = 0;
+        itf.walkDefinitions(
+            [&](ParamDeclAttr decl, const ParamDefValue &value) {
+              ParamDefinition &def = recordDef(*this, decl, op);
+              def.index = index++;
+              bool unused;
+              for (Attribute expr : value.exprs)
+                c.collectUsesFromAttr(expr, def.uses, unused);
+              if (!value.regions.empty())
+                regionValues.emplace_back(decl, value.regions);
+            });
 
-        regionParams.push_back(regionDecl.getParamDecl().getName());
+        if (index == 0 && itf.isImplicitlyParametric())
+          paramOps.push_back(op);
       }
       // Then, push the regions into the nested decls.
       for (Region &r : decl->getRegions())
@@ -757,25 +711,12 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
   // The parameter uses that a region parameter declaration depend on are
   // computed after the walk, since the walk is performed pre-order. Now that
   // we have the uses in the nested scopes, compute their dependent parameters.
-  for (StringAttr regionParam : regionParams) {
-    ParamDefinition &def = defs[regionParam];
-    auto region = cast<ParamDeclareRegionOp>(def.defOp);
-    auto it = nestedScopes.find(&region.getBodyRegion());
-    assert(it != nestedScopes.end() && "didn't visit nested body?");
-    def.uses = llvm::to_vector(it->second.usesFromAbove);
-  }
-
-  // Do the same as the region parameter decl for the if op. Results are 'used
-  // by' every use from above.
-  for (auto [paramDecls, region] : ifRegions) {
-    for (ParamDeclAttr decl : paramDecls) {
-      // Get the definition for the ref.
-      ParamDefinition &def = defs[decl.getName()];
-      // Add the nested uses from above to the uses of the condition's def.
+  for (auto &[decl, regions] : regionValues) {
+    ParamDefinition &def = defs.find(decl.getName())->second;
+    for (Region *region : regions) {
       auto it = nestedScopes.find(region);
-      assert(it != nestedScopes.end() && "didn't visit nested if/else?");
-      def.uses.append(it->second.usesFromAbove.begin(),
-                      it->second.usesFromAbove.end());
+      assert(it != nestedScopes.end() && "didn't visit nested body?");
+      llvm::append_range(def.uses, it->second.usesFromAbove);
     }
   }
 

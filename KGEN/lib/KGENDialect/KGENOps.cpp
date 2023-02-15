@@ -90,7 +90,7 @@ void ParamDeclareOp::walkDefinitions(
 //===----------------------------------------------------------------------===//
 
 static ParseResult
-parseRegionDeclaration(OpAsmParser &p, ParamDeclArrayAttr &paramDecls,
+parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
                        TypeAttr &signature, ConstraintArrayAttr &constraints,
                        AlwaysInlineLevelAttr &alwaysInlineLevel, Region &body) {
   StringAttr paramName;
@@ -114,19 +114,17 @@ parseRegionDeclaration(OpAsmParser &p, ParamDeclArrayAttr &paramDecls,
   signature = TypeAttr::get(SignatureType::get(
       inputParamDecls, resultParamDecls,
       p.getBuilder().getFunctionType(argTypes, resultTypes), metadata));
-  paramDecls = ParamDeclArrayAttr::get(
-      p.getContext(), ParamDeclAttr::get(paramName, signature.getValue()));
+  paramDecl = ParamDeclAttr::get(paramName, signature.getValue());
   return success();
 }
 
 static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
-                                   ParamDeclArrayAttr paramDecls,
-                                   TypeAttr signature,
+                                   ParamDeclAttr paramDecl, TypeAttr signature,
                                    ConstraintArrayAttr constraints,
                                    AlwaysInlineLevelAttr alwaysInlineLevel,
                                    Region &body) {
   auto sig = cast<SignatureType>(signature.getValue());
-  printParamName(p, paramDecls.front().getName());
+  printParamName(p, paramDecl.getName());
   p << " = ";
   printOptionalParameterSpec(p, sig.getInputParams(), sig.getResultParams());
   printFunctionSignature(p, body, sig.getValueInputs(), sig.getValueResults(),
@@ -135,10 +133,6 @@ static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
   printOptionalConstraints(p, op, constraints);
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
-}
-
-ParamDeclAttr ParamDeclareRegionOp::getParamDecl() {
-  return getParamDecls().front();
 }
 
 LogicalResult ParamDeclareRegionOp::verifyRegions() {
@@ -160,6 +154,11 @@ bool ParamDeclareRegionOp::isIsolatedFromAbove(unsigned regionNum) {
 void ParamDeclareRegionOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
   assert(regionNum == 0);
   setIsolated(true);
+}
+
+void ParamDeclareRegionOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
+  walkDef(getParamDecl(), &getBodyRegion());
 }
 
 //===----------------------------------------------------------------------===//
@@ -820,6 +819,23 @@ ValueRange ParamIfOp::getEntryArguments(std::optional<unsigned> target) {
   assert(*target == 0 || *target == 1);
   return {};
 }
+
+void ParamIfOp::walkDeclarations(function_ref<void(ParamDeclAttr)> walkDecl) {
+  llvm::for_each(getParamDecls(), walkDecl);
+}
+
+void ParamIfOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
+  ParamDefValue value(getCond(), {&getThenRegion(), &getElseRegion()});
+  for (ParamDeclAttr decl : getParamDecls())
+    walkDef(decl, value);
+}
+
+void ParamIfOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
+  setParamDeclsAttr(ParamDeclArrayAttr::get(getContext(), decls));
+}
+
+bool ParamIfOp::isImplicitlyParametric() { return true; }
 
 //===----------------------------------------------------------------------===//
 // ParamYieldOp

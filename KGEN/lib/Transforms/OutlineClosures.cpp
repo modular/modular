@@ -67,7 +67,7 @@ void OutlineClosuresPass::runOnOperation() {
     generator.walk([&](ParamDeclareRegionOp regionDecl) {
       LLVM_DEBUG(llvm::dbgs()
                  << "//===-----\nLifting closure: " << regionDecl << "\n");
-      StringRef regionName = regionDecl.getParamDecls().front().getName();
+      StringRef regionName = regionDecl.getParamDecl().getName();
 
       // Value captures are easy (ish)
       SmallVector<Value> captures;
@@ -375,8 +375,7 @@ void OutlineClosuresPass::runOnOperation() {
 
       // Create the decl that replaces the regionDecl with its parameter being
       // this new partial binding.
-      b.create<ParamDeclareOp>(regionDecl.getLoc(),
-                               regionDecl.getParamDecls().front(),
+      b.create<ParamDeclareOp>(regionDecl.getLoc(), regionDecl.getParamDecl(),
                                bindSignature);
 
       // And we can drop the regionDecl now, we're done with it.
