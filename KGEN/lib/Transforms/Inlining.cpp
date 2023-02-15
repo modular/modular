@@ -96,7 +96,6 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
       return ParamDeclRefAttr::get(it->second, ref.getType());
     return ref;
   });
-  auto paramDeclsAttrName = b.getStringAttr("paramDecls");
   for (Operation *user : calleeParams.paramOps) {
     // Skip the parent decl. It's handled after.
     if (user == callee)
@@ -113,19 +112,6 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
     replacer.replaceElementsIn(cloned, /*replaceAttrs=*/true,
                                /*replaceLocs=*/true, /*replaceTypes=*/true);
     // Rename declarations.
-    if (auto paramDecls = decl.declOp->getAttrOfType<ParamDeclArrayAttr>(
-            paramDeclsAttrName)) {
-      SmallVector<ParamDeclAttr> newDecls;
-      for (ParamDeclAttr decl : paramDecls) {
-        if (auto it = mangledDecls.find(decl.getName());
-            it != mangledDecls.end())
-          newDecls.push_back(ParamDeclAttr::get(it->second, decl.getType()));
-        else
-          newDecls.push_back(decl);
-      }
-      cloned->setAttr(paramDeclsAttrName,
-                      ParamDeclArrayAttr::get(b.getContext(), newDecls));
-    }
     if (auto itf = dyn_cast<ParamOpInterface>(decl.declOp)) {
       SmallVector<ParamDeclAttr> newDecls;
       itf.walkDeclarations([&](ParamDeclAttr decl) {
@@ -194,8 +180,7 @@ void KGEN::inlineGeneratorCall(KGENCallOpInterface call, GeneratorOp callee) {
       retVals.push_back(retVal);
   }
   for (auto [decl, value] :
-       llvm::zip(call->getAttrOfType<ParamDeclArrayAttr>(paramDeclsAttrName),
-                 newReturn.getParameters()))
+       llvm::zip(call.getParamDecls(), newReturn.getParameters()))
     b.create<ParamDeclareOp>(newReturn.getLoc(), decl, Attribute(value));
   b.create<HLCF::BreakOp>(newReturn.getLoc(), retVals, loopLabel);
   newReturn.erase();
