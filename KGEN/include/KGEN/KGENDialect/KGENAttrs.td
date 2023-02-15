@@ -797,13 +797,6 @@ def MLIROpAttr : KGEN_ExprAttr<"MLIROp", "param.mlir_op"> {
       return $_get(name.getContext(), name, attrs, type);
     }]>
   ];
-
-  let extraClassDeclaration = [{
-    /// Verify that this expression function is self-contained, all referenced
-    /// parameters are defined within the function.
-    static LogicalResult checkSelfContained(
-        function_ref<InFlightDiagnostic()> emitError, SignatureType type);
-  }];
 }
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

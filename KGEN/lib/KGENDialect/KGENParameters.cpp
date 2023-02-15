@@ -182,6 +182,20 @@ void ParameterCollector::collectUsesFromTypesImpl(
   }
 }
 
+void KGEN::collectParameterUsesFrom(Type type,
+                                    SmallVectorImpl<ParamDeclRefAttr> &uses) {
+  ParameterCollector c;
+  bool unused;
+  c.collectUsesFromType(type, uses, unused);
+}
+
+void KGEN::collectParameterUsesFrom(Attribute attr,
+                                    SmallVectorImpl<ParamDeclRefAttr> &uses) {
+  ParameterCollector c;
+  bool unused;
+  c.collectUsesFromAttr(attr, uses, unused);
+}
+
 //===----------------------------------------------------------------------===//
 // VerifyingParameterCollector
 //===----------------------------------------------------------------------===//
@@ -774,45 +788,4 @@ ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) {
     out.nestedScopes.try_emplace(remapRegion(decl), graph.copy(map));
 
   return out;
-}
-
-//===----------------------------------------------------------------------===//
-// MLIROpAttr Verification
-//===----------------------------------------------------------------------===//
-
-template <typename ElementT>
-static LogicalResult
-checkParameterUsesIn(function_ref<InFlightDiagnostic()> emitError, ElementT el,
-                     DenseMap<StringAttr, Type> &paramsMap, StringRef name) {
-  ParameterCollector collector;
-  SmallVector<ParamDeclRefAttr> uses;
-  bool hasConstExpr;
-  if constexpr (std::is_same_v<ElementT, Type>)
-    collector.collectUsesFromType(el, uses, hasConstExpr);
-  else
-    collector.collectUsesFromAttr(el, uses, hasConstExpr);
-  for (ParamDeclRefAttr use : uses) {
-    Type &entry = paramsMap[use.getName()];
-    if (!entry)
-      return emitError() << use.getName() << " parameter not defined in "
-                         << name;
-    if (entry != use.getType())
-      return emitError() << "use of " << use.getName()
-                         << " with incorrect type in " << name;
-  }
-  return success();
-}
-
-LogicalResult
-MLIROpAttr::checkSelfContained(function_ref<InFlightDiagnostic()> emitError,
-                               SignatureType type) {
-  DenseMap<StringAttr, Type> paramsMap;
-  for (ParamDeclAttr decl : type.getInputParams())
-    paramsMap.try_emplace(decl.getName(), decl.getType());
-
-  for (Type type :
-       llvm::concat<const Type>(type.getValueInputs(), type.getValueResults()))
-    if (failed(checkParameterUsesIn(emitError, type, paramsMap, "signature")))
-      return failure();
-  return success();
 }
