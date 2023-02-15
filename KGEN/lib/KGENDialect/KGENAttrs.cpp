@@ -1663,15 +1663,44 @@ std::optional<bool> ParamOperatorAttr::isLessThan(Attribute rhs) const {
 // MLIROpAttr
 //===----------------------------------------------------------------------===//
 
+static LogicalResult
+checkParameterUsesIn(function_ref<InFlightDiagnostic()> emitError, Type el,
+                     DenseMap<StringAttr, Type> &paramsMap) {
+  SmallVector<ParamDeclRefAttr> uses;
+  collectParameterUsesFrom(el, uses);
+  for (ParamDeclRefAttr use : uses) {
+    Type entry = paramsMap.lookup(use.getName());
+    if (!entry)
+      return emitError() << use.getName()
+                         << " parameter not defined in signature";
+    if (entry != use.getType()) {
+      return emitError() << "use of " << use.getName() << " has type "
+                         << use.getType() << " but it was declared with type "
+                         << entry;
+    }
+  }
+  return success();
+}
+
 LogicalResult MLIROpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                  StringAttr name, DictionaryAttr attrs,
                                  SignatureType type) {
   if (type.getValueResults().size() != 1)
     return emitError()
            << "operation parameter expression must return one result";
-  return checkSelfContained(emitError, type);
+
+  DenseMap<StringAttr, Type> paramsMap;
+  for (ParamDeclAttr decl : type.getInputParams())
+    paramsMap.try_emplace(decl.getName(), decl.getType());
+
+  for (Type type :
+       llvm::concat<const Type>(type.getValueInputs(), type.getValueResults()))
+    if (failed(checkParameterUsesIn(emitError, type, paramsMap)))
+      return failure();
+  return success();
 }
 
+/// An MLIR operation attribute is a constant if it is concrete.
 bool MLIROpAttr::isConstant() const { return getType().isConcrete(); }
 
 TypedAttr KGEN::emitMLIROperationCall(

@@ -19,6 +19,24 @@
 #include "llvm/ADT/SmallPtrSet.h"
 
 namespace M::KGEN {
+
+//===----------------------------------------------------------------------===//
+// ParameterCollector
+//===----------------------------------------------------------------------===//
+
+/// Visit the type and all its sub-elements and collect all parameter
+/// references at the scope of the type.
+void collectParameterUsesFrom(Type type,
+                              SmallVectorImpl<ParamDeclRefAttr> &uses);
+/// Visit the attribute and all its sub-elements and collect all parameter
+/// references at the scope of the attribute.
+void collectParameterUsesFrom(Attribute attr,
+                              SmallVectorImpl<ParamDeclRefAttr> &uses);
+
+//===----------------------------------------------------------------------===//
+// ParameterUseDefGraph
+//===----------------------------------------------------------------------===//
+
 /// The definition of a parameter. The parameter definition contains its value
 /// and the operation which contains the value attribute. Not all declared
 /// parameters have definitions. Input parameters to a function, for example,
@@ -113,6 +131,7 @@ private:
   LogicalResult calculateOrVerify(ModuleOp module,
                                   SymbolTableCollection *symtab);
 };
+
 } // namespace M::KGEN
 
 #endif // KGEN_KGENPARAMETERS_H
