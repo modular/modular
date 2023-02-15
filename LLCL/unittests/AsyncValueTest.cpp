@@ -23,7 +23,8 @@ enum WorkQueueType { kSingleThread = 0, kThreadPool = 1 };
 
 class AsyncValueTest : public testing::TestWithParam<WorkQueueType> {
 protected:
-  std::unique_ptr<Runtime> createRuntime(int numThreads = 4) {
+  std::unique_ptr<Runtime> createRuntime(int numThreads = 4,
+                                         int taskListCapacity = 128) {
     AsyncValue::registerType<int>();
     AsyncValue::registerType<char>();
     AsyncValue::registerType<size_t>();
@@ -33,7 +34,7 @@ protected:
         GetParam() == kThreadPool
             ? createThreadPoolWorkQueue(
                   numThreads,
-                  /*busyWait=*/std::chrono::milliseconds(1))
+                  /*busyWait=*/std::chrono::milliseconds(1), taskListCapacity)
             : createSingleThreadWorkQueue();
     return std::make_unique<Runtime>(std::move(allocator),
                                      std::move(workQueue));
@@ -132,25 +133,35 @@ TEST_P(AsyncValueTest, AsyncConsuming) {
 // Waiters run off stack
 //===----------------------------------------------------------------------===//
 
-// TODO(#8535): Disable to match disabling of runWaiterLaterIfPossible.
-#if 0
 TEST_P(AsyncValueTest, EmplacingFromTask_DeadlockOnFailure) {
+  if (GetParam() != kThreadPool)
+    // Can only observe this behaviour with the thread pool workqueue.
+    return;
+
   auto runtime = createRuntime();
   auto finished = AsyncValueRef<int>::allocate(*runtime);
-  Semaphore canRun;
-  addTask(*runtime, [&canRun, runtime = runtime.get(),
+  Semaphore testReady;
+  Semaphore testDone;
+  Semaphore canaryProceed;
+  addTask(*runtime, [&testReady, &testDone, &canaryProceed,
+                     runtime = runtime.get(),
                      finished = finished.copy()]() mutable {
+    testReady.post();
     // Run the test inside an LLCL task. Waiter can be scheduled on the
     // same thread.
     auto ref = AsyncValueRef<Chain>::allocate(*runtime);
-    ref.andThenSync([&canRun, finished = finished.copy()]() mutable {
-      canRun.wait();
+    ref.andThenSync([&canaryProceed, finished = finished.copy()]() mutable {
+      canaryProceed.wait();
       std::move(finished).emplace(1);
     });
     // We'll deadlock if the continuation is run now.
     std::move(ref).emplace();
+    testDone.post();
   });
-  canRun.post();
+  // Make sure test task is running.
+  testReady.wait();
+  testDone.wait();
+  canaryProceed.post();
   await(finished);
   EXPECT_EQ(finished.get(), 1);
 }
@@ -176,7 +187,73 @@ TEST_P(AsyncValueTest, EmplaceOnForeignThread_DeadlockOnFailure) {
   await(finished);
   EXPECT_EQ(finished.get(), 1);
 }
-#endif
+
+//===----------------------------------------------------------------------===//
+// Recursive 'await'
+//===----------------------------------------------------------------------===//
+
+// This rather convoluted test forces an inner run loop to run recursively
+// within an outer run loop, with both loops needing to dispatch a waiter.
+// It works for both single- and multi-threaded work queues. In the
+// multi-threaded case in particular it tests that the machinery to collect
+// and execute waiters treats the waiter list as a true queue which may
+// graw and shrink while executing a waiter.
+TEST_P(AsyncValueTest, RecursiveAsync) {
+  auto runtime = createRuntime(/*numThreads=*/2);
+
+  // If needed, force the worker thread to be occupied with a 'dummy' task.
+  Semaphore dummyRunning;
+  Semaphore dummyContinue;
+  auto dummyFinished = AsyncValueRef<int>::allocate(*runtime);
+  if (GetParam() == kThreadPool) {
+    addTask(*runtime, [&dummyRunning, &dummyContinue,
+                       dummyFinished = dummyFinished.copy()]() mutable {
+      dummyRunning.post();
+      dummyContinue.wait();
+      std::move(dummyFinished).emplace(1);
+    });
+    dummyRunning.wait();
+  }
+
+  // The main thread will run the 'test' task, but trigger from a waiter.
+  auto testFinished = AsyncValueRef<int>::allocate(*runtime);
+  auto testTrigger = AsyncValueRef<Chain>::allocate(*runtime);
+  testTrigger.andThenSync([runtime = runtime.get(),
+                           testFinished = testFinished.copy()]() {
+    addTask(*runtime, [runtime, testFinished = testFinished.copy()]() mutable {
+      // The main thread will also run the 'nested' task, again triggered from
+      // a waiter.
+      auto nestedFinished = AsyncValueRef<int>::allocate(*runtime);
+      auto nestedTrigger = AsyncValueRef<Chain>::allocate(*runtime);
+      nestedTrigger.andThenSync([runtime,
+                                 nestedFinished = nestedFinished.copy()]() {
+        addTask(*runtime, [nestedFinished = nestedFinished.copy()]() mutable {
+          std::move(nestedFinished).emplace(3);
+        });
+      });
+      std::move(nestedTrigger).emplace();
+
+      // This await will start the inner run loop.
+      await(nestedFinished);
+      EXPECT_EQ(nestedFinished.get(), 3);
+      std::move(testFinished).emplace(2);
+    });
+  });
+  std::move(testTrigger).emplace();
+
+  // This await will start the outer run loop.
+  await(testFinished);
+  EXPECT_EQ(testFinished.get(), 2);
+
+  if (GetParam() == kThreadPool) {
+    // Dummy can now proceed to completion.
+    dummyContinue.post();
+    await(dummyFinished);
+    EXPECT_EQ(dummyFinished.get(), 1);
+  } else {
+    std::move(dummyFinished).emplace();
+  }
+}
 
 //===----------------------------------------------------------------------===//
 // Await 'quietly'
@@ -374,13 +451,15 @@ TEST_P(AsyncValueTest, ArrayMovingAsync) {
 }
 
 //===----------------------------------------------------------------------===//
-// Stress tests
+// 'Stress' tests (despite the name these tests currently run in about 30ms)
 //===----------------------------------------------------------------------===//
 
 TEST_P(AsyncValueTest, StressAndThen) {
-  // Deliberately over-subscribe threads to try to tickle any races.
+  // Deliberately over-subscribe threads and use a small task list capacity
+  // to try to tickle any races.
   auto runtime =
-      createRuntime(/*numThreads=*/std::thread::hardware_concurrency() * 2);
+      createRuntime(/*numThreads=*/std::thread::hardware_concurrency() * 2,
+                    /*taskListCapacity=*/8);
 
   const size_t nRounds = 5;
   const size_t nValues = 500;
@@ -429,9 +508,11 @@ TEST_P(AsyncValueTest, StressAndThen) {
 }
 
 TEST_P(AsyncValueTest, StressParallelForEachN) {
-  // Deliberately over-subscribe threads to try to tickle any races.
+  // Deliberately over-subscribe threads and use a small task list capacity
+  // to try to tickle any races.
   auto runtime =
-      createRuntime(/*numThreads=*/std::thread::hardware_concurrency() * 2);
+      createRuntime(/*numThreads=*/std::thread::hardware_concurrency() * 2,
+                    /*taskListCapacity=*/8);
 
   const size_t nShards = 500;
   std::vector<std::unique_ptr<std::atomic<bool>>> doneFlags;

@@ -130,10 +130,9 @@ MODULAR_EXPORT LLCLRuntimeRef KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(
     ssize_t profileFilenameLen) {
   StringRef profileFilename{profileFilenamePtr,
                             static_cast<size_t>(profileFilenameLen)};
-  auto *runtime = new Runtime(
-      createLeakCheckAllocator(createMallocAllocator()),
-      createThreadPoolWorkQueue(numThreads, {}, !profileFilename.empty()),
-      profileFilename);
+  auto *runtime =
+      new Runtime(createLeakCheckAllocator(createMallocAllocator()),
+                  createThreadPoolWorkQueue(numThreads, {}), profileFilename);
   return wrap(runtime);
 }
 

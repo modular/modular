@@ -463,16 +463,17 @@ protected:
   static void runWaiterNow(Waiter &&waiter) { waiter(); }
 
   /// Schedule a single waiter to be invoked later, but on the current thread.
-  /// If this is not possible, invoke the waiter now.
   ///
   /// This method is used when an 'emplace' has triggered waiters. Since the
   /// each waiter's closure is arbitrary and remote from the emplace call,
-  /// it seems prudent to avoid executing the waiter on the callers stack
-  /// if efficient to do so.
-  static void runWaiterLaterIfPossible(Waiter &&waiter, WorkQueue *workQueue) {
-    // TODO(#8535) Go back to original eager behavior pending deadlock issue.
-    // workQueue->addOrExecuteSmallTask(std::move(waiter));
-    runWaiterNow(std::move(waiter));
+  /// it seems prudent to avoid executing the waiter on the callers stack.
+  ///
+  /// However the waiter may been to be run immediately and on the callers
+  /// stack if there's no place to enqueue the waiter onto. For example,
+  /// a 'foreign' thread which is not currently within an await run loop may
+  /// emplace an async value.
+  static void runWaiterLater(Waiter &&waiter, WorkQueue *workQueue) {
+    workQueue->addLocalTask(std::move(waiter));
   }
 
 protected:
