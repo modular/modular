@@ -40,14 +40,15 @@ public:
 
   void addTask(TaskFunction &&work,
                WorkProfilerEntry &&profilerEntry) override {
+    assert(work);
     WorkProfilerEntry waitingEntry =
         profilerEntry.withNameSuffix(".waiting"); // restarts clock
     workItems.enqueue(ProfiledTaskFunction(
         std::move(work), std::move(waitingEntry), std::move(profilerEntry)));
   }
 
-  void addOrExecuteSmallTask(TaskFunction work) override {
-    addTask(std::move(work), WorkProfilerEntry("llcl.andThen"));
+  void addLocalTask(TaskFunction work) override {
+    addTask(std::move(work), WorkProfilerEntry("llcl.waiter"));
   }
 
   void await(llvm::ArrayRef<AnyAsyncValueRef> values,

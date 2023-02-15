@@ -22,7 +22,7 @@ template <typename ItemType>
 class LockFreeRingBuffer {
 
 public:
-  LockFreeRingBuffer(size_t size = DEFAULT_SIZE)
+  LockFreeRingBuffer(size_t size)
       : size(llvm::NextPowerOf2(size)),
         buffer(std::make_unique<ItemType[]>(this->size)) {
     assert(llvm::isPowerOf2_64(this->size) &&
@@ -124,8 +124,6 @@ public:
   }
 
 private:
-  static constexpr size_t DEFAULT_SIZE = 128;
-
   LockFreeRingBuffer(const LockFreeRingBuffer &other) = delete;
   LockFreeRingBuffer &operator=(const LockFreeRingBuffer &other) = delete;
 

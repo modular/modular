@@ -89,14 +89,6 @@ private:
           "Specify the number of threads to run the work queue items."),
       llvm::cl::init(0)};
 
-  // Specify the busy-wait duration of thread-pool work queue.
-  llvm::cl::opt<unsigned> busyWaitNs{
-      "busy-wait-ns",
-      llvm::cl::desc(
-          "Specify thread-pool work queue busy-wait duration in nanoseconds"),
-      // For now we default to 1ms = 1000000ns.
-      llvm::cl::Hidden, llvm::cl::init(1000000)};
-
   // Filename to hold the time profiling output (as JSON text).
   llvm::cl::opt<std::string> profileFilename{
       "time-profile",

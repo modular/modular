@@ -47,21 +47,31 @@ class alignas(hardware_destructive_interference_size) WorkQueue {
 public:
   virtual ~WorkQueue() = default;
 
-  /// Enqueue a work item. The profilerEntry will be used to
-  /// record both the waiting and execution time for the work item. Thread-safe.
+  /// Enqueue a work item. Thread-safe.
+  ///
+  /// The profilerEntry will be used to record both the waiting and execution
+  /// time for the work item.
+  ///
+  /// CAUTION: The work item may be run immediately, on the callers stack,
+  /// if it cannot be enqueued (eg because the queue is full).
+  ///
+  /// TODO: Consider returning AsyncValueRef<Chain>, where the task has been
+  /// enqueued only if the result is ready.
   virtual void addTask(
       TaskFunction &&work,
       WorkProfilerEntry &&profilerEntry = WorkProfilerEntry("llcl.doWork")) = 0;
 
-  /// If possible, enqueue a block of work to be run on the current thread.
-  /// Otherwise, execute the block of work immediately on the callers stack.
+  /// Enqueue a block of work to be run 'locally' on the current thread.
   ///
-  /// This method is appropriate for very short running work items where the
+  /// This method is appropriate for short running work items where the
   /// cost of thread context switching would likely dominate the cost of
   /// simply executing the block of work. For example, the AsyncValue machinery
   /// uses this method to ensure waiters are executed promptly, but off of
-  /// the callers stack if efficient to do so.
-  virtual void addOrExecuteSmallTask(TaskFunction work) = 0;
+  /// the callers stack.
+  ///
+  /// CAUTION: The work item may be run immediately, on the callers stack,
+  /// if it cannot be enqueued (eg because the queue is full).
+  virtual void addLocalTask(TaskFunction work) = 0;
 
   /// Blocks until the given values are ready, either as emplaced values or
   /// as errors.
@@ -124,11 +134,12 @@ struct ProfiledTaskFunction {
 /// synchronization.
 std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 
-/// Create a thread pool.
-std::unique_ptr<WorkQueue>
-createThreadPoolWorkQueue(size_t numThreads,
-                          std::chrono::nanoseconds busyWait = {},
-                          bool profilingEnabled = false);
+/// Create a thread pool. The busyWait and taskListCapacity parameters are
+/// exposed only for unit testing.
+std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(
+    size_t numThreads,
+    std::chrono::nanoseconds busyWait = std::chrono::nanoseconds(1000000),
+    size_t taskListCapacity = 128);
 
 } // namespace M::LLCL
 

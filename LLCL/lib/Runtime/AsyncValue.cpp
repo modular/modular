@@ -243,7 +243,7 @@ void AsyncValue::runWaitersAndDeallocate(WaiterListNode *list,
     auto *node = list;
     // The first waiter in a node is always valid.
     assert(numEntriesValid != 0);
-    runWaiterLaterIfPossible(node->takeFirstWaiter(), workQueue);
+    runWaiterLater(node->takeFirstWaiter(), workQueue);
 
     // If the waiters in the specified node haven't finished initializing, wait
     // for them.
@@ -251,7 +251,7 @@ void AsyncValue::runWaitersAndDeallocate(WaiterListNode *list,
 
     // Run waiters 1-3 if they are valid.
     for (size_t i = 1; i != numEntriesValid; ++i)
-      runWaiterLaterIfPossible(node->takeAndDestroyWaiterN(i), workQueue);
+      runWaiterLater(node->takeAndDestroyWaiterN(i), workQueue);
     list = node->next;
     delete node;
 
@@ -388,8 +388,7 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
     // so, just run the waiter and deallocate the node we don't need anymore.
     if (isReady(oldValue.getInt())) {
       assert(oldValue.getPointer() == nullptr);
-      runWaiterLaterIfPossible(node->takeFirstWaiter(),
-                               runtime->getWorkQueue());
+      runWaiterLater(node->takeFirstWaiter(), runtime->getWorkQueue());
       // Change the tail of the list to null.  Whatever moved this to a ready
       // state will already have executed and deallocated the list tail.
       node->next = nullptr;
@@ -429,7 +428,7 @@ AsyncValue::notifyReadyAndDecRef(State newState,
   size_t numEntriesValid = getNumWaitersValid(oldValue.getInt());
 
   if (extraWaiter.has_value())
-    runWaiterLaterIfPossible(std::move(*extraWaiter), workQueue);
+    runWaiterLater(std::move(*extraWaiter), workQueue);
 
   runWaitersAndDeallocate(oldValue.getPointer(), numEntriesValid, workQueue);
 
