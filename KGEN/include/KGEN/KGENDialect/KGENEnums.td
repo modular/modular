@@ -52,14 +52,13 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   // Unary type expressions.
   I32EnumAttrCase<"GetSizeOf", 19, "get_sizeof">,
   I32EnumAttrCase<"GetAlignOf", 20, "get_alignof">,
-  I32EnumAttrCase<"GetListElement", 21, "get_list_element">,
 
   // Signature processing.
-  I32EnumAttrCase<"BindSignature", 22, "bind_signature">,
-  I32EnumAttrCase<"Apply", 23, "apply">,
+  I32EnumAttrCase<"BindSignature", 21, "bind_signature">,
+  I32EnumAttrCase<"Apply", 22, "apply">,
 
   // Evaluating a set of candidates.
-  I32EnumAttrCase<"Evaluate", 24, "evaluate">
+  I32EnumAttrCase<"Evaluate", 23, "evaluate">
 ]>;
 
 //===----------------------------------------------------------------------===//

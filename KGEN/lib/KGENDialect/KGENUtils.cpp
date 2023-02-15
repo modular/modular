@@ -574,10 +574,6 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
         }))
       return failure();
     return success();
-  case (uint32_t)POC::GetListElement:
-    if (!isa_and_nonnull<ListType>(type))
-      return p.emitError(p.getCurrentLocation(),
-                         "expected a list type for 'get_list_element'");
     if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
         parseIndexParamValue(p, operands.emplace_back()))
       return failure();
@@ -889,13 +885,6 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     }
     break;
 
-  case POC::GetListElement:
-    // Print types on all operands.
-    llvm::interleaveComma(operands, p, [&](TypedAttr operand) {
-      printColonTypeOrIndexPrefix(p, operand.getType());
-      printParamValue(p, operand);
-    });
-    break;
   case POC::Evaluate:
     // Print the return type of the parameter itself.
     printColonTypeOrIndexPrefix(p, operands[1].getType());
