@@ -13,14 +13,6 @@
 
 using namespace M::LLCL;
 
-// Execute a single profiled work item.
-static void doWork(ProfiledTaskFunction &&profiledTask) {
-  std::move(profiledTask.waiting).record();
-  profiledTask.running.restart();
-  profiledTask.work();
-  std::move(profiledTask.running).record();
-}
-
 namespace {
 
 /// This class implements a work queue that uses the client thread to execute
@@ -41,6 +33,7 @@ public:
   void addTask(TaskFunction &&work,
                WorkProfilerEntry &&profilerEntry) override {
     assert(work);
+    // Begin the waiting clock.
     WorkProfilerEntry waitingEntry =
         profilerEntry.withNameSuffix(".waiting"); // restarts clock
     workItems.enqueue(ProfiledTaskFunction(
@@ -48,7 +41,7 @@ public:
   }
 
   void addLocalTask(TaskFunction work) override {
-    addTask(std::move(work), WorkProfilerEntry("llcl.waiter"));
+    addTask(std::move(work), WorkProfilerEntry::create("llcl.waiter"));
   }
 
   void await(llvm::ArrayRef<AnyAsyncValueRef> values,
@@ -60,7 +53,25 @@ private:
   template <typename StopPredicateFn>
   void runUntil(StopPredicateFn &&stopPredicate);
 
+  // Execute a single profiled work item.
+  void doWork(ProfiledTaskFunction &&profiledTask) {
+    // Record the waiting clock.
+    std::move(profiledTask.waiting).record();
+    // Start the running clock.
+    profiledTask.running.restart();
+    assert(running == nullptr);
+    running = &profiledTask.running;
+    // Do the work.
+    profiledTask.work();
+    running = nullptr;
+    // Record the running clock (if not recorded already).
+    std::move(profiledTask.running).record();
+  }
+
+  /// Pending work items.
   ConcurrentQueue<ProfiledTaskFunction> workItems;
+  /// The profiling entry for the currently running work item, or null if none.
+  WorkProfilerEntry *running = nullptr;
 };
 } // namespace
 
@@ -86,10 +97,28 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values,
 
 template <typename StopPredicateFn>
 void SingleThreadWorkQueue::runUntil(StopPredicateFn &&stopPredicate) {
+  WorkProfilerEntry *origRunning = running;
+  if (origRunning) {
+    WorkProfilerEntry newRunning = origRunning->withNameSuffix(".post");
+    // Switch out the original entry and an entry we'll start once we're done
+    // pumping work.
+    std::swap(newRunning, *origRunning);
+    // Record the currently running clock (if any) before we start any more
+    // work.
+    std::move(newRunning).record();
+    running = nullptr;
+  }
+
   while (auto profiledTask = workItems.dequeue()) {
     doWork(std::move(profiledTask));
     if (stopPredicate())
       break;
+  }
+
+  if (origRunning) {
+    // Resume tracing the original work item.
+    origRunning->restart();
+    running = origRunning;
   }
 }
 

@@ -311,6 +311,14 @@ inline static void addTask(Runtime &runtime, FnTy f) {
   runtime.getWorkQueue()->addTask(std::forward<FnTy>(f));
 }
 
+template <typename FnTy, typename ResultTy = Detail::ResultType<FnTy>,
+          std::enable_if_t<(std::is_void<ResultTy>()), int> = 0>
+inline static void addTask(Runtime &runtime, WorkProfilerEntry &&profilerEntry,
+                           FnTy f) {
+  runtime.getWorkQueue()->addTask(std::forward<FnTy>(f),
+                                  std::move(profilerEntry));
+}
+
 /// Overload of addTask that returns AsyncValueRef<R> for work that returns R
 /// (when R is not void).
 ///

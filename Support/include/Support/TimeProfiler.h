@@ -11,7 +11,7 @@
 //
 // \code
 //   {
-//     TimeTraceScope scope("my_event_name");
+//     TimeTraceScope<> scope("my_event_name");
 //     ...my code...
 //   }
 // \endcode
@@ -32,13 +32,13 @@
 // be on the same thread as the creating context:
 //
 // \code
-//   auto entry = timeTraceProfilerBeginEntry("my_event_name");
+//   auto entry = TimeTraceProfilerEntry<true>::create("my_event_name");
 //   ...
 //   // Possibly on a different thread
-//   timeTraceProfilerStartEntry(entry); // optional, if wish to decouple
-//                                       // setup from start time
+//   entry.restart(); // optional, if wish to decouple
+//                    // setup from start time
 //   ...my code...
-//   timeTraceProfilerEndEntry(std::move(entry));
+//   std::move(entry).record();
 // \endcode
 //
 // Time profiling entries can be given an arbitrary name and, optionally,
@@ -67,12 +67,12 @@
 // the entry outside the critical section:
 //
 // \code
-//   auto entry = timeTraceProfilerBeginEntry("my_event_name",
+//   auto entry = TimeTraceProfilerEntry<true>::create("my_event_name",
 //                                            [=]() { ... expensive ... });
 //   ...non critical code...
-//   entry.begin();
+//   entry.restart();
 //   ...my critical code...
-//   timeTraceProfilerEndEntry(std::move(entry));
+//   std::move(entry).record();
 // \endcode
 //
 // The main process should first construct a TimeTraceProfiler, which is used
@@ -89,12 +89,6 @@
 //    development by Google as part of the 'Perfetto' project.
 //  - https://www.speedscope.app/ has also been reported as an option.
 //
-// Future work:
-//  - Support akin to LLVM_DEBUG for runtime enable/disable of named tracing
-//    families for non-debug builds which wish to support optional tracing.
-//  - Evaluate the detail closures at profile write time to avoid
-//    stringification costs interfering with tracing.
-//
 //===----------------------------------------------------------------------===//
 
 #ifndef SUPPORT_TIMEPROFILER_H
@@ -103,15 +97,25 @@
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 
 #include <chrono>
+#include <sstream>
 
 namespace llvm {
 class raw_pwrite_stream;
 }
+
+/// If you are desperate to see a trace of begin and end events as they
+/// happen define the following. Obviously this is expensive and likely
+/// to change the concurrent behaviour of your program.
+/// TODO: Why does LLVM_DEBUG not work here?
+
+// #define TRACE_IN_REAL_TIME
 
 namespace M {
 //===----------------------------------------------------------------------===//
@@ -170,45 +174,8 @@ struct TimeTraceProfiler {
 // TimeTraceProfilerEntry
 //===----------------------------------------------------------------------===//
 
-namespace Detail {
-// For internal use only. Begins a time section with Name and Detail if the
-// profiler is setup.
-void timeTraceProfilerBeginImpl(StringRef name,
-                                llvm::function_ref<std::string()> detailFn);
-void timeTraceProfilerBeginImpl(StringRef name, StringRef detail);
-
-// For internal use only. Ends the last begun timing section if the profiler
-// is setup.
-void timeTraceProfilerEndImpl();
-} // namespace Detail
-
-/// Manually begin a time section, with the given name and detail.
-/// Profiler copies the string data, so the pointers can be given into
-/// temporaries. Time sections can be hierarchical; every Begin must have a
-/// matching End pair but they can nest. However if Enabled is false then
-/// methods are a no-op.
-template <bool Enabled = true>
-void timeTraceProfilerBegin(StringRef name,
-                            llvm::function_ref<std::string()> detailFn) {
-  if constexpr (Enabled)
-    Detail::timeTraceProfilerBeginImpl(name, detailFn);
-}
-
-template <bool Enabled = true>
-void timeTraceProfilerBegin(StringRef name, StringRef detail) {
-  if constexpr (Enabled)
-    Detail::timeTraceProfilerBeginImpl(name, detail);
-}
-
-/// Manually end the last time section. However if Enabled is false then
-/// the method is a no-op.
-template <bool Enabled = true>
-void timeTraceProfilerEnd() {
-  if constexpr (Enabled)
-    Detail::timeTraceProfilerEndImpl();
-}
-
-/// Represents an open or completed time section entry to be captured.
+///
+/// Represents an open or completed time tracing entry to be captured.
 /// However if Enabled is false, will be the trivial empty struct.
 ///
 /// Here's the interface supported for entries:
@@ -216,12 +183,15 @@ void timeTraceProfilerEnd() {
 ///   TimeTraceProfilerEntry()
 ///
 ///   -- Start recording with name and result of detailFn.
-///   -- Both must be literals to guarantee zero-cost when profiling disabled.
-///   TimeTraceProfilerEntry(StringRef name,
-///                          llvm::function_ref<std::string()> detailFn)
+///   -- CAUTION: Both must be literals to guarantee zero-cost when
+///   -- profiling disabled at compile time.
+///   static TimeTraceProfilerEntry
+///   create(StringRef name, llvm::function_ref<std::string()> detailFn);
 ///
 ///   -- Ditto, but detail is literal string.
-///   TimeTraceProfilerEntry(StringRef name, StringRef detail = "")
+///   -- CAUTION: Both must be literals to guarantee zero-cost when
+///   -- profiling disabled at compile time.
+///   static TimeTraceProfilerEntry create(StringRef name, StringRef detail);
 ///
 ///   -- Restart the entry's clock.
 ///   void restart();
@@ -232,61 +202,78 @@ void timeTraceProfilerEnd() {
 ///
 ///   -- Return copy of this entry, with clock restarted, and with suffix
 ///   -- appended to name.
-///   -- Name must be a literal to guarantee zero-cost when profiling disabled.
+///   -- CAUTION: Suffix must be a literal to guarantee zero-cost when
+///   -- profiling disabled at compile time.
 ///   TimeTraceProfilerEntry withNameSuffix(StringRef suffix) const;
 ///
 ///   -- Return copy of this entry, with clock restarted, and with result
 ///   -- of detailFn appended to detail.
-///   -- Function must be a literal to guarantee zero-cost when profiling
-///   -- disabled.
+///   -- CAUTION: Function must be a literal to guarantee zero-cost when
+///   -- profiling disabled at compile time.
 ///   TimeTraceProfilerEntry withDetailSuffix(
 ///       llvm::function_ref<std::string()>  detailFn) const;
+///
 template <bool Enabled>
 struct TimeTraceProfilerEntry {};
 
 namespace Detail {
-// For internal use only. Returns entry with name and detail.
-TimeTraceProfilerEntry<true>
-timeTraceProfilerBeginEntryImpl(StringRef name,
-                                llvm::function_ref<std::string()> detailFn);
-TimeTraceProfilerEntry<true> timeTraceProfilerBeginEntryImpl(StringRef name,
-                                                             StringRef detail);
-// For internal use only. Records Entry on the currently active profiler.
-void timeTraceProfilerEndEntryImpl(TimeTraceProfilerEntry<true> &&entry);
-// For internal use only. Updates start time of Entry to now.
-void timeTraceProfilerStartEntryImpl(TimeTraceProfilerEntry<true> &entry);
+// For internal use only. Returns true if profiling is active.
+bool timeTraceProfilerIsActive();
 
+// For internal use only. Records entry on the currently active profiler.
+void timeTraceProfilerRecord(TimeTraceProfilerEntry<true> &&entry);
+
+// For internal use only. Begins a time section with name and detail on the
+// currently active profiler.
+void timeTraceProfilerBegin(TimeTraceProfilerEntry<true> &&entry);
+
+// For internal use only. Ends the last timing section began on the currently
+// active profiler.
+void timeTraceProfilerEnd();
 } // namespace Detail
 
 /// Disabled profiling entry. Everything will be a no-op provided arguments
 /// are literals.
 template <>
 struct TimeTraceProfilerEntry<false> {
+  // No copy, only move.
+  TimeTraceProfilerEntry(const TimeTraceProfilerEntry &) = delete;
+  TimeTraceProfilerEntry &operator=(const TimeTraceProfilerEntry &) = delete;
+  TimeTraceProfilerEntry(TimeTraceProfilerEntry &&) = default;
+  TimeTraceProfilerEntry &operator=(TimeTraceProfilerEntry &&) = default;
+
   TimeTraceProfilerEntry() = default;
 
-  TimeTraceProfilerEntry(StringRef name,
-                         llvm::function_ref<std::string()> detailFn) {}
-
-  explicit TimeTraceProfilerEntry(StringRef name, StringRef detail = "") {}
+  static TimeTraceProfilerEntry
+  create(StringRef name, llvm::function_ref<std::string()> detailFn) {
+    return {};
+  }
+  static TimeTraceProfilerEntry create(StringRef name, StringRef detail = "") {
+    return {};
+  }
 
   void restart() {}
   void record() && {}
-
   TimeTraceProfilerEntry withNameSuffix(StringRef suffix) const { return {}; }
-
   TimeTraceProfilerEntry
   withDetailSuffix(llvm::function_ref<std::string()> detailFn) const {
     return {};
   }
-
-  // Silence the 'move of trivially copyable type' warnings.
-  TimeTraceProfilerEntry(TimeTraceProfilerEntry &&that) = default;
-  TimeTraceProfilerEntry &operator=(TimeTraceProfilerEntry &&that) = default;
 };
 
-/// Enabled profiling entry.
+/// Enabled profiling entry. Strings and times are constructed only if an
+/// active profiler is available. Otherwise all instances will be the default
+/// profiling instance.
+///
+/// Operations on an already recorded or moved entry are no-ops.
 template <>
 struct TimeTraceProfilerEntry<true> {
+  // No copy, only move.
+  TimeTraceProfilerEntry(const TimeTraceProfilerEntry &) = delete;
+  TimeTraceProfilerEntry &operator=(const TimeTraceProfilerEntry &) = delete;
+  TimeTraceProfilerEntry(TimeTraceProfilerEntry &&) = default;
+  TimeTraceProfilerEntry &operator=(TimeTraceProfilerEntry &&) = default;
+
   // We use the high_resolution_clock for maximum precision.
   // It may not be steady (ClockType::is_steady may be false), which means
   // it is possible for profiles to yield invalid durations during leap
@@ -305,28 +292,53 @@ struct TimeTraceProfilerEntry<true> {
   std::string name;
   std::string detail;
 
-  TimeTraceProfilerEntry() : start(TimePointType()), end(TimePointType()) {}
+  TimeTraceProfilerEntry() = default;
 
-  TimeTraceProfilerEntry(StringRef name,
-                         llvm::function_ref<std::string()> detailFn)
-      : start(TimePointType::clock::now()), end(TimePointType()), name(name),
-        detail(detailFn()) {}
+#if defined(TRACE_IN_REAL_TIME)
+#define TRACE(X) X
+#else
+#define TRACE(X)
+#endif
 
-  explicit TimeTraceProfilerEntry(StringRef name, StringRef detail = "")
-      : start(TimePointType::clock::now()), end(TimePointType()), name(name),
-        detail(detail) {}
+  static TimeTraceProfilerEntry
+  create(StringRef name, llvm::function_ref<std::string()> detailFn) {
+    if (!Detail::timeTraceProfilerIsActive())
+      return {};
+    return TimeTraceProfilerEntry(name, detailFn());
+  }
 
-  void restart() { start = TimePointType::clock::now(); }
+  static TimeTraceProfilerEntry create(StringRef name, StringRef detail = "") {
+    if (!Detail::timeTraceProfilerIsActive())
+      return {};
+    return TimeTraceProfilerEntry(name, detail);
+  }
 
-  void record() && { Detail::timeTraceProfilerEndEntryImpl(std::move(*this)); }
+  void restart() {
+    if (name.empty())
+      return;
+    start = ClockType::now();
+    TRACE(llvm::dbgs() << toImmediateDebugString());
+  }
+
+  void record() && {
+    if (name.empty())
+      return;
+    end = ClockType::now();
+    TRACE(llvm::dbgs() << toImmediateDebugString());
+    Detail::timeTraceProfilerRecord(std::move(*this));
+  }
 
   TimeTraceProfilerEntry withNameSuffix(StringRef suffix) const {
+    if (name.empty())
+      return {};
     return TimeTraceProfilerEntry(Twine(name).concat(Twine(suffix)).str(),
                                   std::string(detail));
   }
 
   TimeTraceProfilerEntry
   withDetailSuffix(llvm::function_ref<std::string()> detailFn) const {
+    if (name.empty())
+      return {};
     return TimeTraceProfilerEntry(name, Twine(detail).concat(detailFn()).str());
   }
 
@@ -340,60 +352,22 @@ struct TimeTraceProfilerEntry<true> {
   FloatUsType::rep getFlameGraphDurUs() const {
     return FloatUsType(end - start).count();
   }
+
+private:
+  TimeTraceProfilerEntry(StringRef name, StringRef detail)
+      : start(ClockType::now()), end(TimePointType()), name(name),
+        detail(detail) {
+    TRACE(llvm::dbgs() << toImmediateDebugString());
+  }
+
+  /// Returns brief description of entry as constructed so far. We return
+  /// a string rather than streaming to the final output for atomicity of
+  /// output. The same entry may appear to have multiple beginnings if it
+  /// is restarted, however the entry will have at most one end.
+  std::string toImmediateDebugString();
+
+#undef TRACE
 };
-
-/// Returns an entry with starting time of now and name and detail.
-/// The entry can later be added to the trace by timeTraceProfilerEndEntry
-/// below when the tracked event has completed. If the time profiler is not
-/// initialized, the overhead is constructing an empty entry without any
-/// use of the global clock. However if Enabled is false then methods are
-/// no-ops.
-template <bool Enabled>
-TimeTraceProfilerEntry<Enabled>
-timeTraceProfilerBeginEntry(StringRef name,
-                            llvm::function_ref<std::string()> detail) {
-  if constexpr (Enabled) {
-    return Detail::timeTraceProfilerBeginEntryImpl(name, detail);
-  } else {
-    // The default constructor does not invoke now().
-    return {};
-  }
-}
-
-template <bool Enabled>
-TimeTraceProfilerEntry<Enabled> timeTraceProfilerBeginEntry(StringRef name,
-                                                            StringRef detail) {
-  if constexpr (Enabled) {
-    return Detail::timeTraceProfilerBeginEntryImpl(name, detail);
-  } else {
-    // The default constructor does not invoke now().
-    return {};
-  }
-}
-
-/// Ends the Entry returned by timeTraceProfilerBeginEntry above. The entry is
-/// recorded by the current thread, which need not be the same as the thread
-/// which executed the original timeTraceProfilerBeginEntry call. If the time
-/// profiler is not initialized, the overhead is a single branch. However if
-/// Enabled is false then method is a no-op.
-template <bool Enabled>
-void timeTraceProfilerEndEntry(TimeTraceProfilerEntry<Enabled> &&entry) {
-  if constexpr (Enabled)
-    Detail::timeTraceProfilerEndEntryImpl(std::move(entry));
-}
-
-/// Resets the starting time of Entry to now. By default the entry
-/// will have taken its start time to be the time of entry construction.
-/// But if the entry has been constructed early so as to keep detail string
-/// construction out of the measured section then this method can be called
-/// to signal measurement should begin. If the time profiler is not
-/// initialized, the overhead is a single branch. However if Enabled is false
-/// then method is a no-op.
-template <bool Enabled>
-void timeTraceProfilerStartEntry(TimeTraceProfilerEntry<Enabled> &entry) {
-  if constexpr (Enabled)
-    Detail::timeTraceProfilerStartEntryImpl(entry);
-}
 
 //===----------------------------------------------------------------------===//
 // TimeTraceScope
@@ -412,11 +386,13 @@ struct TimeTraceScope {
   explicit TimeTraceScope(TimeTraceProfilerEntry<Enabled> &&entry)
       : entry(std::move(entry)) {}
 
-  TimeTraceScope(StringRef name, llvm::function_ref<std::string()> detailFn)
-      : entry(name, detailFn) {}
+  TimeTraceScope(StringRef name, llvm::function_ref<std::string()> detailFn) {
+    entry = TimeTraceProfilerEntry<Enabled>::create(name, detailFn);
+  }
 
-  explicit TimeTraceScope(StringRef name, StringRef detail = "")
-      : entry(name, detail) {}
+  explicit TimeTraceScope(StringRef name, StringRef detail = "") {
+    entry = TimeTraceProfilerEntry<Enabled>::create(name, detail);
+  }
 
   ~TimeTraceScope() { std::move(entry).record(); }
 
@@ -426,6 +402,38 @@ struct TimeTraceScope {
 // The trivial deduction guide.
 template <bool Enabled>
 TimeTraceScope(TimeTraceProfilerEntry<Enabled> &&) -> TimeTraceScope<Enabled>;
+
+//===----------------------------------------------------------------------===//
+// Procedural begin/end interface
+//===----------------------------------------------------------------------===//
+
+/// Manually begin a time section, with the given name and detail.
+/// Profiler copies the string data, so the pointers can be given into
+/// temporaries. Time sections can be hierarchical; every Begin must have a
+/// matching End pair but they can nest. However if Enabled is false then
+/// methods are a no-op.
+template <bool Enabled = true>
+void timeTraceProfilerBegin(StringRef name,
+                            llvm::function_ref<std::string()> detailFn) {
+  if constexpr (Enabled)
+    Detail::timeTraceProfilerBegin(
+        TimeTraceProfilerEntry<true>::create(name, detailFn));
+}
+
+template <bool Enabled = true>
+void timeTraceProfilerBegin(StringRef name, StringRef detail) {
+  if constexpr (Enabled)
+    Detail::timeTraceProfilerBegin(
+        TimeTraceProfilerEntry<true>::create(name, detail));
+}
+
+/// Manually end the last time section. However if Enabled is false then
+/// the method is a no-op.
+template <bool Enabled = true>
+void timeTraceProfilerEnd() {
+  if constexpr (Enabled)
+    Detail::timeTraceProfilerEnd();
+}
 
 } // namespace M
 

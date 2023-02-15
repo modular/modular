@@ -14,13 +14,12 @@ MODULAR_EXPORT void
 KGEN_CompilerRT_TimeTraceProfilerBegin(const char *namePtr, size_t nameLen,
                                        const char *detailPtr,
                                        size_t detailLen) {
-  Detail::timeTraceProfilerBeginImpl(std::string{namePtr, nameLen}, [=]() {
-    return std::string{detailPtr, detailLen};
-  });
+  timeTraceProfilerBegin(StringRef(namePtr, nameLen),
+                         StringRef(detailPtr, detailLen));
 }
 
 MODULAR_EXPORT void KGEN_CompilerRT_TimeTraceProfilerEnd() {
-  Detail::timeTraceProfilerEndImpl();
+  timeTraceProfilerEnd();
 }
 
 void M::KGEN::registerTracing(
