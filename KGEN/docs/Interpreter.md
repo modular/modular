@@ -208,9 +208,9 @@ operator can then be collapsed into the result value.
 
 In Lit, executing code at compile-time is similar to C++ `constexpr` functions.
 Right now, the semantics of evaluating a function call at compile-time are
-simple: when calling a function inside a "meta context", i.e. a parameter value
-or alias value, the parser emits an `apply` operator. Elsewhere, the parser
-emits a `kgen.call` operation.
+simple: when calling a function inside a "parameter context", i.e. a parameter
+value or alias value, the parser emits an `apply` operator. Elsewhere, the
+parser emits a `kgen.call` operation.
 
 ```python
 # Call `foo` in a parameter context. This emits an `apply`.
