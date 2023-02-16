@@ -150,9 +150,10 @@ def KGEN_ListType : KGENType<"List", "list", [
   ];
 
   let extraClassDeclaration = [{
-    /// Try to narrow the size expression of the SIMD type to an integer.
+    /// Try to narrow the length expression to an integer.
     Optional<int64_t> getResolvedLength() const;
-    /// Try to narrow the type expression of the pointer type to an MLIR type.
+    /// Try to narrow the type expression of the list element type to an MLIR
+    /// type.
     Type getResolvedElementType() const;
   }];
 }
