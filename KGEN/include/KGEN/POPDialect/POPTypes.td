@@ -60,9 +60,10 @@ def POP_ArrayType : POPType<"Array", "array", [
   ];
 
   let extraClassDeclaration = [{
-    /// Try to narrow the size expression of the SIMD type to an integer.
+    /// Try to narrow the size expression to an integer.
     std::optional<int64_t> getResolvedSize() const;
-    /// Try to narrow the type expression of the pointer type to an MLIR type.
+    /// Try to narrow the type expression of the array element type to an MLIR
+    /// type.
     Type getResolvedElementType() const;
   }];
 }
