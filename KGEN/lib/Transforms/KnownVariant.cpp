@@ -80,33 +80,7 @@ struct VariantAwareDeadCodeAnalysis : public HLCF::DeadCodeAnalysis {
   using DeadCodeAnalysis::DeadCodeAnalysis;
 
   LogicalResult visit(mlir::ProgramPoint point) override {
-    auto *op = point.dyn_cast<Operation *>();
-    auto visit = dyn_cast_if_present<VariantVisitOp>(op);
-    if (!visit)
-      return DeadCodeAnalysis::visit(point);
-
-    const VariantTypes &value =
-        getOrCreateFor<VariantState>(point, visit.getVariant())->getValue();
-    // Mark any case region of a known type to be live. If there is a known type
-    // that does not have a case region, the default region is live.
-    auto markRegionLive = [&](Region &region) {
-      auto *executable = getOrCreate<Executable>(&region.front());
-      propagateIfChanged(executable, executable->setToLive());
-      auto *predecessors = getOrCreate<PredecessorState>(&region.front());
-      propagateIfChanged(predecessors,
-                         predecessors->join(visit, visit->getOperands()));
-    };
-    unsigned casesHit = 0;
-    for (auto [caseType, region] :
-         llvm::zip(visit.getCases(), visit.getRegions())) {
-      if (value.knownTypes.contains(caseType)) {
-        ++casesHit;
-        markRegionLive(region);
-      }
-    }
-    if (!casesHit && visit.hasDefaultRegion())
-      markRegionLive(*visit.getDefaultRegion());
-    return success();
+    return DeadCodeAnalysis::visit(point);
   }
 };
 

@@ -1448,8 +1448,6 @@ void LowerPOPToLLVMPass::runOnOperation() {
   // These ops are handled by other passes.
   target.addLegalOp<GlobalConstantOp>();
   target.addLegalOp<ExternalCallOp>();
-  target.addLegalOp<VariantVisitOp>();
-  target.addLegalOp<YieldOp>();
   target.addLegalOp<CoroutineHandleOp>();
   target.addLegalOp<CoroutineOpaqueHandleOp>();
   target.addLegalOp<CoroutineAwaitOp>();

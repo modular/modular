@@ -898,40 +898,6 @@ kgen.generator @variant_type<N, T: type>(%a: !pop.simd<N, f32>) -> !kgen.paramre
 // CHECK-SAME: !pop.variant<i32, f32>
 kgen.generator.interface @variant_canonicalize(!pop.variant<i32, i32, f32, f32>)
 
-// CHECK-LABEL: @variant_visit
-kgen.generator @variant_visit(%a: !pop.variant<i32, f32>) -> index {
-  // CHECK: %[[RESULT:.*]] = pop.variant.visit %arg0 : !pop.variant<i32, f32> -> index
-  %0 = pop.variant.visit %a : !pop.variant<i32, f32> -> index
-  // CHECK-NEXT: case (%[[ARG:.*]]: i32) {
-  case (%v: i32) {
-    // CHECK: pop.yield %{{.*}} : index
-    %1 = index.constant 0
-    pop.yield %1 : index
-  }
-  // CHECK: case (%[[ARG:.*]]: f32) {
-  case (%v: f32) {
-    %1 = index.constant 1
-    // CHECK: pop.yield %{{.*}} : index
-    pop.yield %1 : index
-  }
-
-  // CHECK: pop.variant.visit %arg0 : !pop.variant<i32, f32>
-  pop.variant.visit %a : !pop.variant<i32, f32>
-  // CHECK-NEXT: case (%[[ARG:.*]]: f32) {
-  case (%v: f32) {
-    // CHECK-NEXT: pop.yield
-    pop.yield
-  }
-  // CHECK: default {
-  default {
-    // CHECK-NEXT: pop.yield
-    pop.yield
-  }
-
-  // CHECK: return %[[RESULT]]
-  kgen.return %0 : index
-}
-
 // CHECK-LABEL: @list_get
 kgen.generator @list_get<N, A>(%list: !kgen.list<index[N]>) -> index {
   // CHECK-NEXT: pop.list.get %arg0[A] : <index[N]>

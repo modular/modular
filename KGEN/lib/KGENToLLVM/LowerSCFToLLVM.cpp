@@ -367,105 +367,6 @@ static LogicalResult lowerOpImpl(scf::IndexSwitchOp op,
 }
 
 //===----------------------------------------------------------------------===//
-// lowerVariantVisitOp
-//===----------------------------------------------------------------------===//
-
-static LogicalResult lowerOpImpl(POP::VariantVisitOp op,
-                                 POP::VariantVisitOpAdaptor adaptor,
-                                 mlir::IRRewriter &rewriter,
-                                 POPToLLVMTypeConverter &tc) {
-  // Store the contents into a block of memory.
-  Value content = rewriter.create<LLVM::ExtractValueOp>(
-      op.getLoc(), adaptor.getVariant(), 0);
-  SmallVector<Value> storageValues;
-  auto contentType = cast<LLVM::LLVMArrayType>(content.getType());
-  for (unsigned i = 0, e = contentType.getNumElements(); i != e; ++i)
-    storageValues.push_back(
-        rewriter.create<LLVM::ExtractValueOp>(op.getLoc(), content, i));
-
-  // Split the block at the op.
-  Block *condBlock = rewriter.getInsertionBlock();
-  Block *continueBlock = rewriter.splitBlock(condBlock, Block::iterator(op));
-
-  // Create the arguments on the continue block with which to replace the
-  // results of the op.
-  SmallVector<Value> results;
-  results.reserve(op.getNumResults());
-  for (Type resultType : op.getResultTypes()) {
-    Type type = tc.convertType(resultType);
-    if (!type)
-      return op.emitError("failed to convert result type");
-    results.push_back(continueBlock->addArgument(type, op.getLoc()));
-  }
-
-  // Rewrite a yield terminator.
-  auto rewriteYield = [&](Block *block) -> LogicalResult {
-    auto yield = cast<POP::YieldOp>(block->getTerminator());
-    rewriter.setInsertionPoint(yield);
-    SmallVector<Value> operands;
-    operands.reserve(yield.getNumOperands());
-    if (failed(getRemappedValues(rewriter, tc, yield.getOperands(), operands)))
-      return yield.emitError("failed to get remapped operands");
-    rewriter.replaceOpWithNewOp<LLVM::BrOp>(yield, operands, continueBlock);
-    return success();
-  };
-
-  // Handle the case regions.
-  SmallVector<Block *> successors;
-  successors.reserve(op.getNumRegions());
-  for (auto [caseType, region] : llvm::zip(op.getCases(), op.getRegions())) {
-    Block *block = &region.front();
-
-    // Load the content and replace the region argument with it.
-    rewriter.setInsertionPointToStart(block);
-    Type type = tc.convertType(caseType);
-    VariantHelper helper(rewriter, op.getLoc(), tc);
-    ArrayRef<Value>::iterator valueIt = storageValues.begin();
-    unsigned storageOffset = 0;
-    unsigned offset = 0;
-    Value value =
-        helper.walkAndExtractVariant(valueIt, storageOffset, offset, type);
-    region.getArgument(0).replaceAllUsesWith(value);
-    region.eraseArgument(0);
-
-    // Inline the region.
-    if (failed(rewriteYield(block)))
-      return failure();
-    successors.push_back(block);
-    rewriter.inlineRegionBefore(region, continueBlock);
-  }
-
-  // Handle the trailing default region if present.
-  SmallVector<int32_t> caseValues;
-  caseValues.reserve(op.getCases().size());
-  for (Type caseType : op.getCases())
-    caseValues.push_back(*op.getVariant().getType().getTypeIndex(caseType));
-  if (op.getCases().size() != op.getNumRegions()) {
-    Block *block = &op.getRegions().back().front();
-    // Insert a lifetime end marker on this control path.
-    rewriter.setInsertionPointToStart(block);
-    if (failed(rewriteYield(block)))
-      return failure();
-    successors.push_back(block);
-    rewriter.inlineRegionBefore(op.getRegions().back(), continueBlock);
-  } else {
-    caseValues.pop_back();
-  }
-
-  // Create the LLVM switch. If all cases were specified, pick the last block
-  // as the default.
-  rewriter.setInsertionPointToEnd(condBlock);
-  Value discr = rewriter.create<LLVM::ExtractValueOp>(op.getLoc(),
-                                                      adaptor.getVariant(), 1);
-  SmallVector<ValueRange> caseOperands(successors.size(), {});
-  rewriter.create<LLVM::SwitchOp>(
-      op.getLoc(), discr, successors.back(), ValueRange(), caseValues,
-      ArrayRef<Block *>(successors).drop_back(), caseOperands);
-  replaceOp(rewriter, op, continueBlock->getArguments());
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // lowerSelectOp
 //===----------------------------------------------------------------------===//
 
@@ -522,7 +423,7 @@ void LowerSCFToLLVMPass::runOnOperation() {
   SmallVector<Operation *> ops;
   getOperation()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     if (isa<scf::WhileOp, scf::ForOp, scf::IfOp, scf::IndexSwitchOp,
-            POP::VariantVisitOp, mlir::arith::SelectOp>(op))
+            mlir::arith::SelectOp>(op))
       ops.push_back(op);
   });
   for (Operation *op : ops) {
@@ -530,7 +431,7 @@ void LowerSCFToLLVMPass::runOnOperation() {
     LogicalResult result =
         llvm::TypeSwitch<Operation *, LogicalResult>(op)
             .Case<scf::WhileOp, scf::ForOp, scf::IfOp, scf::IndexSwitchOp,
-                  POP::VariantVisitOp, mlir::arith::SelectOp>(
+                  mlir::arith::SelectOp>(
                 [&](auto op) { return lowerOperation(op, b, typeConverter); });
     if (failed(result))
       return signalPassFailure();
