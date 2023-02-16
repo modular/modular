@@ -649,10 +649,10 @@ LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
   // All the operand types must match except for 'bind_signature' and 'apply'.
-  if (!llvm::is_contained({POC::BindSignature, POC::Apply, POC::Evaluate,
-                           POC::TargetHasFeature, POC::TargetGetField,
-                           POC::BuildInfoGetField, POC::GetSizeOf,
-                           POC::GetAlignOf},
+  if (!llvm::is_contained({POC::BindSignature, POC::Apply, POC::Rebind,
+                           POC::Evaluate, POC::TargetHasFeature,
+                           POC::TargetGetField, POC::BuildInfoGetField,
+                           POC::GetSizeOf, POC::GetAlignOf},
                           opcode) &&
       !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
@@ -767,13 +767,17 @@ LogicalResult ParamOperatorAttr::verify(
     if (failed(actualType))
       return failure();
     if (*actualType != type)
-      return emitError() << "bind_signature expected to return " << type
+      return emitError() << "'bind_signature' expected to return " << type
                          << " but actually returns " << *actualType;
     break;
   }
   case POC::Apply:
     if (failed(verifyApply(operands, type, emitError)))
       return failure();
+    break;
+  case POC::Rebind:
+    if (operands.size() != 1)
+      return emitError() << "'rebind' expects one operand";
     break;
   case POC::Evaluate:
     if (failed(verifyEvaluate(operands, type, emitError)))
@@ -1478,6 +1482,12 @@ static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
   return {};
 }
 
+static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
+  assert(resultType && "rebind requires a result type");
+  TypedAttr input = operands.front();
+  return input.getType() == resultType ? input : nullptr;
+}
+
 /// Construct a parameter operator attribute, folding it if possible.
 static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
                                   ArrayRef<TypedAttr> operandsIn,
@@ -1559,6 +1569,9 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
     break;
   case POC::Apply:
     result = simplifyApply(operands, resultType);
+    break;
+  case POC::Rebind:
+    result = simplifyRebind(operands, resultType);
     break;
   case POC::Evaluate:
     // Don't need to do anything.

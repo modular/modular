@@ -1964,3 +1964,15 @@ kgen.generator @substitute_current_target() {
 kgen.generator @not_a_primary_generator<N>() {
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @rebind_parameter
+kgen.generator @rebind_parameter() {
+  // CHECK-NEXT: constant: list<index[2]> = <[1, 2]>
+  kgen.param.declare size = <2>
+  kgen.param.declare list_input: list<index[2]> = <[1, 2]>
+  kgen.param.declare list_output: list<index[size]> = <rebind(:list<index[2]> list_input)>
+  kgen.param.constant: list<index[size]> = <list_output>
+  kgen.return
+}
