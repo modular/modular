@@ -263,6 +263,21 @@ def PruneImpossibleVariants: Pass<"prune-impossible-variants",
 }
 
 //===----------------------------------------------------------------------===//
+// AlwaysInlineParametric
+//===----------------------------------------------------------------------===//
+
+def AlwaysInlineParametric : Pass<"always-inline-param", "mlir::ModuleOp"> {
+  let summary = "Process concrete 'always_inline' operations";
+  let description = [{
+    The `always-inline-param` pass will process all concrete calls to
+    'always_inline' generators and inline them. If a cycle is encountered during
+    inlining, the pass emits an error and fails to inline the cycle. This pass
+    will strip debug info as appropriate for functions marked
+    'always_inline(nodebug)'. This pass can only run on parametric KGEN IR.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ForceInline
 //===----------------------------------------------------------------------===//
 
@@ -271,7 +286,9 @@ def ForceInline : Pass<"force-inline", "mlir::ModuleOp"> {
   let description = [{
     The `force-inline` pass will process all calls to 'always_inline` functions
     and inline them. If a cycle is encountered during inlining, the pass emits
-    an error and fails to inline the cycle.
+    an error and fails to inline the cycle. This pass will strip debug info as
+    appropriate for functions marked 'always_inline(nodebug)'. This pass must
+    run on concrete KGEN IR.
   }];
 }
 
@@ -363,24 +380,5 @@ def Mem2Reg : Pass<"mem-2-reg"> {
               "the number of loads elided">,
     Statistic<"numStoresElided", "num-stores-elided",
               "the number of stores elided">,
-  ];
-}
-
-//===----------------------------------------------------------------------===//
-// TestParametricInlinePass
-//===----------------------------------------------------------------------===//
-
-def TestParametricInlinePass : Pass<"test-parametric-inline",
-                                    "mlir::ModuleOp"> {
-  let summary = "parametric inlining test pass";
-  let description = [{
-    The `test-parametric-inline` pass is a test pass for parametric inlining.
-  }];
-
-  let dependentDialects = ["KGENDialect", "HLCF::HLCFDialect"];
-
-  let options = [
-    Option<"parent", "parent", "std::string", "", "parent operation">,
-    Option<"callee", "callee", "std::string", "", "callee to inline">,
   ];
 }

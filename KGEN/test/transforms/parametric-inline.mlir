@@ -1,10 +1,10 @@
-// RUN: kgen-opt -test-parametric-inline='parent=parent callee=callee' -split-input-file -allow-unregistered-dialect %s -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt -always-inline-param -split-input-file -allow-unregistered-dialect %s -mlir-print-debuginfo | FileCheck %s
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent() -> index {
-  // CHECK: %[[RES:.*]] = hlcf.loop "inlined_cf_scope" () -> index
+  // CHECK: %[[RES:.*]] = hlcf.loop "[[LABEL:.*]]" () -> index
     // CHECK-NEXT: index.constant 0 loc(#[[INLINED_LOC:.*]])
-    // CHECK-NEXT: hlcf.break "inlined_cf_scope" %idx0 : index
+    // CHECK-NEXT: hlcf.break "[[LABEL]]" %idx0 : index
   // CHECK-NEXT: } loc(#[[CALL_LOC:.*]])
   // CHECK-NOT: kgen.call @callee
   %0 = kgen.call @callee() : () -> index
@@ -13,7 +13,7 @@ kgen.generator @parent() -> index {
 }
 
 // CHECK: kgen.generator @callee
-kgen.generator @callee() -> index {
+kgen.generator @callee() -> index always_inline {
   // CHECK: index.constant 0 loc(#[[CALLEE_LOC:.*]])
   %0 = index.constant 0
   kgen.return %0 : index
@@ -26,15 +26,15 @@ kgen.generator @callee() -> index {
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent() {
   // CHECK: hlcf.loop
-  // CHECK: hlcf.break "inlined_cf_scope" %idx1
-  // CHECK: hlcf.break "inlined_cf_scope" %idx0
+  // CHECK: hlcf.break "[[LABEL:.*]]" %idx1
+  // CHECK: hlcf.break "[[LABEL]]" %idx0
   // CHECK-NOT: kgen.call @callee
   %0 = kgen.call @callee() : () -> index
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee() -> index {
+kgen.generator @callee() -> index always_inline {
   %cond = "some.cond"() : () -> i1
   hlcf.if %cond {
     %0 = index.constant 1
@@ -53,16 +53,16 @@ kgen.generator @parent<A>() {
   // CHECK: hlcf.loop
   // CHECK: %[[V:.*]] = "some.producer"
   // CHECK: %[[R0:.*]] = kgen.rebind %[[V]] : !kgen.paramref<T> to index
-  // CHECK-NEXT: hlcf.break "inlined_cf_scope" %[[R0]]
+  // CHECK-NEXT: hlcf.break "[[LABEL:.*]]" %[[R0]]
   // CHECK: %[[R1:.*]] = kgen.rebind %[[V]] : !kgen.paramref<T> to index
-  // CHECK-NEXT: hlcf.break "inlined_cf_scope" %[[R1]]
+  // CHECK-NEXT: hlcf.break "[[LABEL]]" %[[R1]]
   // CHECK-NOT: kgen.call @callee
   %0 = kgen.call @callee<T: type = index>() : () -> index
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<T: type>() -> !kgen.paramref<T> {
+kgen.generator @callee<T: type>() -> !kgen.paramref<T> always_inline {
   %0 = "some.producer"() : () -> !kgen.paramref<T>
   %cond = "some.cond"() : () -> i1
   hlcf.if %cond {
@@ -86,7 +86,7 @@ kgen.generator @parent<A>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A>() -> index {
+kgen.generator @callee<A>() -> index always_inline {
   %0 = kgen.param.constant = <A>
   kgen.return %0 : index
 }
@@ -108,7 +108,7 @@ kgen.generator @parent<A: i64>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A: i32 >() -> i32 {
+kgen.generator @callee<A: i32 >() -> i32 always_inline {
   %0 = kgen.param.constant: i32 = <A>
   kgen.return %0 : i32
 }
@@ -126,7 +126,7 @@ kgen.generator @parent<A>() -> index {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A>() -> index {
+kgen.generator @callee<A>() -> index always_inline {
   %0 = kgen.param.constant = <A>
   kgen.return %0 : index
 }
@@ -148,7 +148,7 @@ kgen.generator @parent<A>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A>() {
+kgen.generator @callee<A>() always_inline {
   kgen.param.constant = <A>
   kgen.return
 }
@@ -172,7 +172,7 @@ kgen.generator @parent<A>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A, C>() {
+kgen.generator @callee<A, C>() always_inline {
   kgen.param.constant = <A>
   kgen.param.constant = <C>
   kgen.return
@@ -197,7 +197,7 @@ kgen.generator @parent<A>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A, C>() {
+kgen.generator @callee<A, C>() always_inline {
   kgen.param.constant = <A>
   kgen.param.constant = <C>
   kgen.return
@@ -228,7 +228,7 @@ kgen.generator @parent<A, B, C>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A, B, C>() {
+kgen.generator @callee<A, B, C>() always_inline {
   kgen.param.constant = <A>
   kgen.param.constant = <B>
   kgen.param.constant = <C>
@@ -246,7 +246,7 @@ kgen.generator @parent<A>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<B>() {
+kgen.generator @callee<B>() always_inline {
   kgen.param.declare A = <B>
   kgen.param.constant = <A>
   kgen.return
@@ -266,7 +266,7 @@ kgen.generator @parent<A>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<B>() {
+kgen.generator @callee<B>() always_inline {
   kgen.param.declare.region A = () -> () {
     kgen.return
   }
@@ -288,7 +288,7 @@ kgen.generator @parent<A>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<B>() {
+kgen.generator @callee<B>() always_inline {
   kgen.call @result_params<() -> A = A>() : () -> ()
   kgen.param.constant = <A>
   kgen.return
@@ -312,7 +312,7 @@ kgen.generator @parent<B>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A -> B>() {
+kgen.generator @callee<A -> B>() always_inline {
   kgen.return<A>
 }
 
@@ -334,7 +334,7 @@ kgen.generator @parent<B>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A -> B>() {
+kgen.generator @callee<A -> B>() always_inline {
   kgen.param.declare.region F = <A, B>() {
     kgen.param.constant = <A>
     kgen.param.constant = <B>
@@ -362,7 +362,7 @@ kgen.generator @parent<B>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A -> B>() {
+kgen.generator @callee<A -> B>() always_inline {
   kgen.param.declare.region F = <B>() {
     kgen.param.constant = <A>
     kgen.param.constant = <B>
@@ -391,49 +391,10 @@ kgen.generator @parent<B>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A>() {
+kgen.generator @callee<A>() always_inline {
   kgen.param.declare.region F = <B>() {
     kgen.param.constant = <A>
     kgen.param.constant = <B>
-    kgen.return
-  }
-  kgen.return
-}
-
-// -----
-
-// CHECK-LABEL: kgen.generator @parent
-kgen.generator @parent() {
-  // CHECK-NEXT: hlcf.loop "inlined_cf_scope_0"
-  // CHECK: hlcf.break "inlined_cf_scope_0"
-  kgen.call @callee() : () -> ()
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee() {
-  hlcf.loop "inlined_cf_scope" {
-    hlcf.return
-  }
-  kgen.return
-}
-
-// -----
-
-
-// CHECK-LABEL: kgen.generator @parent
-kgen.generator @parent() {
-  // CHECK: hlcf.break "inlined_cf_scope"
-  kgen.call @callee() : () -> ()
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee() {
-  kgen.param.declare.region F = () {
-    hlcf.loop "inlined_cf_scope" {
-      hlcf.continue
-    }
     kgen.return
   }
   kgen.return
@@ -458,7 +419,7 @@ kgen.generator @parent() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee() {
+kgen.generator @callee() always_inline {
   kgen.param.declare A = <2>
   kgen.param.declare.region F = () {
     kgen.param.constant = <A>
@@ -480,13 +441,13 @@ kgen.generator @parent() {
     // CHECK-NEXT: hlcf.if
       // CHECK-NEXT: hlcf.return
   // CHECK: hlcf.if
-  // CHECK-NEXT: hlcf.break "inlined_cf_scope"
+  // CHECK-NEXT: hlcf.break "[[LABEL:.*]]"
   kgen.call @callee() : () -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee() {
+kgen.generator @callee() always_inline {
   %cond = "some.cond"() : () -> i1
   kgen.param.declare.region F = () {
     hlcf.if %cond {
@@ -513,7 +474,7 @@ kgen.generator @parent<A: dtype>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A>() -> index {
+kgen.generator @callee<A>() -> index always_inline {
   kgen.param.declare B = <A>
   %0 = kgen.param.constant = <B>
   kgen.return %0 : index
