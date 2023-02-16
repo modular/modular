@@ -85,6 +85,15 @@ void ParamDeclareOp::walkDefinitions(
   walkDef(getParamDecl(), getValue());
 }
 
+/// Verify that the type of the declaration matches the type of the attribute.
+LogicalResult ParamDeclareOp::verify() {
+  if (getParamDecl().getType() == getValue().getType())
+    return success();
+  return emitOpError("declares a parameter with type ")
+         << getParamDecl().getType() << " but parameter expression has type "
+         << getValue().getType();
+}
+
 //===----------------------------------------------------------------------===//
 // ParamDeclareRegionOp
 //===----------------------------------------------------------------------===//

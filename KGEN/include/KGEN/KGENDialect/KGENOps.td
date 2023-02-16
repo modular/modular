@@ -389,6 +389,8 @@ def KGEN_ParamDeclareOp : KGENOp<"param.declare",
     StringAttr getName() { return getParamDecl().getName(); }
     Type getType() { return getParamDecl().getType(); }
   }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
