@@ -859,3 +859,11 @@ kgen.generator @badResultParam() {
   }
   kgen.return
 }
+
+// -----
+
+kgen.generator @declareWrongType() {
+  // expected-error @below {{'kgen.param.declare' op declares a parameter with type 'index' but parameter expression has type 'i32'}}
+  "kgen.param.declare"() {paramDecl = #kgen<param.decl p1 : index>, value = 1 : i32} : () -> ()
+  kgen.return
+}
