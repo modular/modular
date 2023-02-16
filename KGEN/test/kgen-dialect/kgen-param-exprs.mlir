@@ -141,6 +141,15 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant = <apply(:(index) -> index fn, p1)>
   %38 = kgen.param.constant = <apply(:(index) -> index fn, p1)>
 
+  // CHECK: list_size = <2>
+  kgen.param.declare list_size = <2>
+  // CHECK: list_input: list<index[2]>
+  kgen.param.declare list_input: list<index[2]> = <[1, 2]>
+  // CHECK: list_output: list<index[list_size]> = <rebind(:list<index[2]> list_input)>
+  kgen.param.declare list_output: list<index[list_size]> = <rebind(:list<index[2]> list_input)>
+  // CHECK: list_rebound: list<index[2]> = <list_input>
+  kgen.param.declare list_rebound: list<index[2]> = <rebind(:list<index[2]> list_input)>
+
   kgen.return
 }
 

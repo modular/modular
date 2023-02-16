@@ -854,7 +854,8 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
                                   ArrayRef<TypedAttr> operands) {
   // If this is a comparison and the elements are not index type, print the
   // type explicitly.
-  if (llvm::is_contained({POC::In, POC::EQ, POC::LT, POC::LE}, opcode))
+  if (llvm::is_contained({POC::In, POC::EQ, POC::LT, POC::LE, POC::Rebind},
+                         opcode))
     printColonTypeOrIndexPrefix(p, operands[0].getType());
 
   switch (opcode) {
