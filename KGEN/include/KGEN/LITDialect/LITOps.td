@@ -308,7 +308,6 @@ def LIT_StructExtractOp : LITOp<"struct.extract", [Pure,
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
     type($value) `from` qualified(type($container))
   }];
-  let hasFolder = 1;
 
   let builders = [
     // Infer the result type based on the result of lookup.
