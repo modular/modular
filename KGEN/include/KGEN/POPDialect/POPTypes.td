@@ -364,6 +364,42 @@ def POP_StructType : POPType<"Struct", "struct", [
 }
 
 //===----------------------------------------------------------------------===//
+// PackType
+//===----------------------------------------------------------------------===//
+
+def POP_PackType : POPType<"Pack", "pack"> {
+  let summary = "parameterized pack type";
+  let description = [{
+    A `!pop.pack` type represents a sequence of heterogeneously typed elements.
+    This type can be used to represent a tuple of 0 or more elements.
+
+    Example:
+
+    ```mlir
+    // A concrete pack type with no element types.
+    !pop.pack<[]>
+
+    // A concrete pack type with two element types.
+    !pop.pack<[i32, i64]>
+
+    kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T0: type, T1: type>(
+      // A pack type parameterized on a variadic serquence of elements.
+      %0: !pop,pack<Ts>,
+      // A pack type parameterized on two element types.
+      %1: !pop.pack<[T0, T1]>,
+    ) { kgen.return }
+    ```
+  }];
+
+  let parameters = (ins OptionalParameter<"TypedAttr">:$variadic);
+  let assemblyFormat = [{
+    `<` custom<ParamValue>(
+      $variadic, "VariadicType::get(MLIRTypeType::get($_ctxt))") `>`
+  }];
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // VariantType
 //===----------------------------------------------------------------------===//
 

@@ -46,6 +46,7 @@ class PrefetchLocalityAttr;
 class ArrayType;
 class ClosureType;
 class CoroutineType;
+class PackType;
 class PointerType;
 class SIMDType;
 class StructType;
