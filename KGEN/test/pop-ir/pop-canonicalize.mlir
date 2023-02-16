@@ -705,3 +705,19 @@ kgen.func @variadic_create_size(%arg0: i32, %arg1: i32) -> index {
   %1 = pop.variadic.size %0 : !kgen.variadic<i32>
   kgen.return %1 : index
 }
+
+// CHECK-LABEL: @dtype_to_ui8(
+kgen.func @dtype_to_ui8() -> ui8 {
+  // CHECK-NEXT: kgen.param.constant: ui8 = <1>
+  %0 = kgen.param.constant: dtype = <bool>
+  %1 = pop.dtype.to_ui8 %0
+  kgen.return %1 : ui8
+}
+
+// CHECK-LABEL: @dtype_from_ui8(
+kgen.func @dtype_from_ui8() -> !kgen.dtype {
+  // CHECK-NEXT: kgen.param.constant: dtype = <bool>
+  %0 = kgen.param.constant: ui8 = <1>
+  %1 = pop.dtype.from_ui8 %0
+  kgen.return %1 : !kgen.dtype
+}

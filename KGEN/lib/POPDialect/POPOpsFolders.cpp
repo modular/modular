@@ -1135,3 +1135,28 @@ OpFoldResult VariadicSizeOp::fold(FoldAdaptor adaptor) {
 
   return {};
 }
+
+//===----------------------------------------------------------------------===//
+// DTypeToUI8
+//===----------------------------------------------------------------------===//
+
+OpFoldResult DTypeToUI8::fold(FoldAdaptor adaptor) {
+  auto ui8Type = IntegerType::get(getContext(), 8,
+                                  IntegerType::SignednessSemantics::Unsigned);
+  if (auto dtype =
+          dyn_cast_if_present<KGEN::DTypeConstantAttr>(adaptor.getDType()))
+    return IntegerAttr::get(ui8Type, dtype.getDType().getValue());
+
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// DTypeFromUI8
+//===----------------------------------------------------------------------===//
+
+OpFoldResult DTypeFromUI8::fold(FoldAdaptor adaptor) {
+  if (auto val = dyn_cast_if_present<IntegerAttr>(adaptor.getValue()))
+    return KGEN::DTypeConstantAttr::get(getContext(), KGENDType(val.getUInt()));
+
+  return {};
+}

@@ -1087,3 +1087,21 @@ kgen.func @string_ops(%a: !kgen.string) ->  index {
   %1 = pop.string.size %a
   kgen.return %1: index
 }
+
+// CHECK-LABEL: kgen.generator @dtype_utils
+kgen.generator @dtype_utils<type: dtype>(%arg0: !kgen.dtype) {
+  // CHECK: %[[V0:.*]] = pop.dtype.to_ui8 %arg0
+  %v0 = pop.dtype.to_ui8 %arg0
+  // CHECK: pop.dtype.from_ui8 %[[V0]]
+  %x0 = pop.dtype.from_ui8 %v0
+
+  // CHECK: %[[PARAM:.*]] = kgen.param.constant
+  %t0 = kgen.param.constant : dtype = <type>
+
+  // CHECK: %[[V1:.*]] = pop.dtype.to_ui8 %[[PARAM]]
+  %v1 = pop.dtype.to_ui8 %t0
+  // CHECK: pop.dtype.from_ui8 %[[V1]]
+  %x1 = pop.dtype.from_ui8 %v1
+
+  kgen.return
+}

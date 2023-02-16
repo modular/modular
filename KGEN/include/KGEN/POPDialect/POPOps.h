@@ -29,6 +29,7 @@ class ListType;
 class StringType;
 class TypeArrayAttr;
 class VariadicType;
+class DTypeType;
 } // namespace M::KGEN
 
 namespace M::KGEN::POP {
