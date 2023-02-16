@@ -55,6 +55,11 @@ public:
   cl::opt<bool> enableSearch{
       "enable-search", cl::init(false),
       cl::desc("Do search when an evaluator is provided.")};
+
+  cl::opt<bool> enableMLIRCrashReproducer{
+      "enable-mlir-crash-repro",
+      cl::desc("Enable MLIR pass manager crash reproducer generation."),
+      cl::init(false)};
 };
 } // namespace
 
@@ -116,6 +121,12 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   mlir::PassManager pm(ctx);
   applyPassManagerCLOptions(pm);
   pm.enableTiming(timing);
+  if (clOptions.enableMLIRCrashReproducer.getValue()) {
+    ctx->disableMultithreading();
+    pm.enableCrashReproducerGeneration(clOptions.inputFilename.getValue() +
+                                           ".repro.mlir",
+                                       /*genLocalReproducer=*/true);
+  }
 
   if (!inputFileName.ends_with(".lit"))
     return clOptions.reportError("expected a .lit file");
