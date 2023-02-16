@@ -328,15 +328,21 @@ LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-LogicalResult
-StructType::resolveElementTypes(SmallVectorImpl<Type> &elementTypes) const {
-  for (TypedAttr elementType : getElementTypes()) {
-    if (auto type = llvm::dyn_cast<TypeConstantAttr>(elementType))
-      elementTypes.push_back(type.getValue());
+/// Try to narrow all the given type expressions to MLIR types.
+static LogicalResult resolveTypes(ArrayRef<TypedAttr> types,
+                                  SmallVectorImpl<Type> &resolvedTypes) {
+  for (const TypedAttr &type : types) {
+    if (auto constant = llvm::dyn_cast<TypeConstantAttr>(type))
+      resolvedTypes.push_back(constant.getValue());
     else
       return failure();
   }
   return success();
+}
+
+LogicalResult
+StructType::resolveElementTypes(SmallVectorImpl<Type> &elementTypes) const {
+  return resolveTypes(getElementTypes(), elementTypes);
 }
 
 SmallVector<Type> StructType::getParameterizedElementTypes() const {
@@ -364,13 +370,14 @@ StructType StructType::get(ArrayRef<Type> elementTypes) {
   return get(elementTypes.front().getContext(), elementTypes);
 }
 
-std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
-  SmallVector<Type> types;
-  if (failed(resolveElementTypes(types)))
+static std::optional<int64_t>
+getPackedElementsTypeSize(ArrayRef<TypedAttr> types, TargetInfoAttr target) {
+  SmallVector<Type> resolvedTypes;
+  if (failed(resolveTypes(types, resolvedTypes)))
     return {};
   int64_t size = 0;
   int64_t strictest = 1;
-  for (Type type : types) {
+  for (Type type : resolvedTypes) {
     std::optional<int64_t> typeAlign =
         DataLayoutInterface::getTypeABIAlign(target, type);
     std::optional<int64_t> typeSize =
@@ -383,12 +390,17 @@ std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
   return llvm::alignTo(size, strictest);
 }
 
-std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
-  SmallVector<Type> types;
-  if (failed(resolveElementTypes(types)))
+std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
+  return getPackedElementsTypeSize(getElementTypes(), target);
+}
+
+static std::optional<int64_t>
+getPackedElementsTypeAlign(ArrayRef<TypedAttr> types, TargetInfoAttr target) {
+  SmallVector<Type> resolvedTypes;
+  if (failed(resolveTypes(types, resolvedTypes)))
     return {};
   int64_t strictest = 1;
-  for (Type type : types) {
+  for (Type type : resolvedTypes) {
     std::optional<int64_t> typeAlign =
         DataLayoutInterface::getTypeABIAlign(target, type);
     if (!typeAlign)
@@ -396,6 +408,10 @@ std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
     strictest = std::max(strictest, *typeAlign);
   }
   return strictest;
+}
+
+std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
+  return getPackedElementsTypeAlign(getElementTypes(), target);
 }
 
 ErrorOrSuccess StructType::writeTo(TypedAttr value, intptr_t addr,
@@ -430,6 +446,58 @@ ErrorOr<TypedAttr> StructType::readFrom(intptr_t addr,
     offset += *dl.getTypeSize(state.getTarget());
   }
   return StructAttr::get(values, *this);
+}
+
+//===----------------------------------------------------------------------===//
+// PackType
+//===----------------------------------------------------------------------===//
+
+/// Verify that the element type of the variadic attribute or expression is a
+/// `!kgen.mlirtype`.
+LogicalResult
+POP::PackType::verify(function_ref<InFlightDiagnostic()> emitError,
+                      TypedAttr variadic) {
+  VariadicType type = ::dyn_cast<VariadicType>(variadic.getType());
+  if (!type)
+    return emitError() << "expected an operand of variadic type, but got "
+                       << variadic.getType();
+
+  Type elementType = type.getResolvedElementType();
+  if (!elementType || !::isa<MLIRTypeType>(elementType))
+    return emitError() << "expected a variadic type with a "
+                          "!kgen.mlirtype element type, but got "
+                       << elementType;
+
+  return success();
+}
+
+std::optional<int64_t> POP::PackType::getTypeSize(TargetInfoAttr target) const {
+  // A pack backed by an attribute has a size equivalent to a struct composed of
+  // the elements in the sequence.
+  if (auto attr = ::dyn_cast<VariadicAttr>(getVariadic()))
+    return getPackedElementsTypeSize(attr.getValues(), target);
+
+  // We can't know the size of a variadic expression, since we don't know how
+  // many elements are in the backing sequence.
+  return {};
+}
+
+std::optional<int64_t>
+POP::PackType::getTypeAlign(TargetInfoAttr target) const {
+  TypedAttr variadic = getVariadic();
+  // A pack backed by an attribute has alignment equivalent to a struct composed
+  // of the elements in the sequence.
+  if (auto attr = ::dyn_cast<VariadicAttr>(variadic))
+    return getPackedElementsTypeAlign(attr.getValues(), target);
+  // A pack backed by an expression has alignment equivalent to the variadic
+  // type's element type.
+  auto variadicType = ::dyn_cast<VariadicType>(variadic.getType());
+  if (!variadicType)
+    return {};
+  Type type = variadicType.getResolvedElementType();
+  if (!type)
+    return {};
+  return DataLayoutInterface::getTypeABIAlign(target, type);
 }
 
 //===----------------------------------------------------------------------===//
