@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 include "KGEN/KGENDialect/KGENAttrs.td"
+include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/POPDialect/POPAttrs.td"
 include "KGEN/POPDialect/POPDialect.td"
 include "KGEN/POPDialect/POPTypes.td"
@@ -2404,4 +2405,55 @@ def POP_StringSizeOp : POPOp<"string.size", [Pure]> {
   let arguments = (ins KGEN_StringType:$str);
   let results = (outs Index:$result);
   let assemblyFormat = "$str attr-dict";
+}
+
+
+//===----------------------------------------------------------------------===//
+// DTypeToI8
+//===----------------------------------------------------------------------===//
+
+def POP_DTypeToUI8 : POPOp<"dtype.to_ui8", [Pure]> {
+  let summary = "Converts a !kgen.dtype to a ui8 value.";
+  let description = [{
+    The `pop.dtype.to_ui8` operation gets the `ui8` representation of the
+    `!kgen.dtype`.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.param.constant: dtype = <bool>
+    %1 = pop.dtype.to_ui8 %0  // result = 1
+    ```
+  }];
+
+  let arguments = (ins KGEN_DTypeType:$dType);
+  let results = (outs UI8:$result);
+  let assemblyFormat = "$dType attr-dict";
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// DTypeFromUI8
+//===----------------------------------------------------------------------===//
+
+def POP_DTypeFromUI8 : POPOp<"dtype.from_ui8", [Pure]> {
+  let summary = "Converts a ui8 value to a !kgen.dtype.";
+  let description = [{
+    The `pop.dtype.to_ui8` operation gets the `!kgen.dtype` type from the `ui8`
+    value.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.param.constant: ui8 = <1>
+    %1 = pop.dtype.from_ui8 1  // result = bool
+    ```
+  }];
+
+  let arguments = (ins UI8:$value);
+  let results = (outs KGEN_DTypeType:$result);
+  let assemblyFormat = "$value attr-dict";
+
+  let hasFolder = 1;
 }

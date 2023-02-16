@@ -283,18 +283,16 @@ struct ConvertPOPCast : public ConvertPOPToLLVMPattern<CastOp> {
       // Cast from a float to an integer.
       opName = outDType.isSInt() ? LLVM::FPToSIOp::getOperationName()
                                  : LLVM::FPToUIOp::getOperationName();
-    } else {
-      if (outByteCount > inByteCount) {
-        // Extend
-        opName = LLVM::FPExtOp::getOperationName();
-      } else if (outByteCount < inByteCount) {
-        // Truncate.
-        opName = LLVM::FPTruncOp::getOperationName();
-      } else if (outDType != inDType) {
-        // FIXME: Unclear how to cast between `bf16` and `f16`.
-        return rewriter.notifyMatchFailure(
-            op, "casts between 'bf16' and 'f16' unsupported");
-      }
+    } else if (outByteCount > inByteCount) {
+      // Extend
+      opName = LLVM::FPExtOp::getOperationName();
+    } else if (outByteCount < inByteCount) {
+      // Truncate.
+      opName = LLVM::FPTruncOp::getOperationName();
+    } else if (outDType != inDType) {
+      // FIXME: Unclear how to cast between `bf16` and `f16`.
+      return rewriter.notifyMatchFailure(
+          op, "casts between 'bf16' and 'f16' unsupported");
     }
 
     // If no cast was selected, this is a no-op conversion between equivalent
@@ -1286,6 +1284,37 @@ struct ConvertPOPStringSize : public ConvertPOPToLLVMPattern<StringSizeOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPDTypeToUI8
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPDTypeToUI8 : public ConvertPOPToLLVMPattern<DTypeToUI8> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(DTypeToUI8 op, DTypeToUI8Adaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type type = convertType(op.getType());
+    rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, type, adaptor.getDType());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPDTypeFromUI8
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPDTypeFromUI8 : public ConvertPOPToLLVMPattern<DTypeFromUI8> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(DTypeFromUI8 op, DTypeFromUI8Adaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOp(op, adaptor.getValue());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -1348,6 +1377,8 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPCastToBuiltin,
       ConvertPOPCmp,
       ConvertPOPDiv,
+      ConvertPOPDTypeFromUI8,
+      ConvertPOPDTypeToUI8,
       ConvertPOPFMA,
       ConvertPOPIndexToPointer,
       ConvertPOPInlineAsm,
