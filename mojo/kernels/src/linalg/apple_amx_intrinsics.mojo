@@ -10,10 +10,10 @@
 #
 # ===----------------------------------------------------------------------===#
 
-from Assert import assert_param
+from Assert import assert_param, assert_param_bool
 from Bool import Bool
 from Buffer import NDBuffer
-from DType import DType, dtype_is_f32
+from DType import DType
 from Int import Int
 from IO import print
 from List import create_kgen_list
@@ -303,7 +303,7 @@ struct amx_detail:
             ]
         ]()
         # The type must be f32.
-        assert_param[dtype_is_f32[type]()]()
+        assert_param_bool[DType(type) == DType.f32]()
 
         # make the y offset field
         #  shift left by 6 to make this an offset in rows,
@@ -360,7 +360,7 @@ struct amx_detail:
             ]
         ]()
         # The type must be f32.
-        assert_param[dtype_is_f32[type]()]()
+        assert_param_bool[DType(type) == DType.f32]()
 
         let is_row_mode = __mlir_attr[
             `#kgen.param.expr<eq,`,
