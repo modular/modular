@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/SymbolTable.h"
@@ -562,6 +563,8 @@ static void emitCycleError(ParameterUseDefGraph &g,
 LogicalResult
 ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
                                         SymbolTableCollection *symtab) {
+  TimeTraceScope<> traceScope("ParameterUseDefGraph::calculateOrVerify");
+
   // Defer the processing of the use-def node for region declarations until
   // after nested scopes have been analyzed.
   SmallVector<std::pair<ParamDeclAttr, SmallVector<Region *, 0>>> regionValues;
@@ -746,7 +749,9 @@ LogicalResult ParameterUseDefGraph::verify(SymbolTableCollection &symtab) {
                            &symtab);
 }
 
-ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) {
+ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) const {
+  TimeTraceScope<> traceScope("ParameterUseDefGraph::copy");
+
   // Note that we use map.lookupOrDefault here because only a subgraph might
   // have been copied, so we don't necessarily have the op/block in the
   // IRMapping.
