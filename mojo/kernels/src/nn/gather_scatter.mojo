@@ -66,7 +66,6 @@ fn gather_2D_axis_0[
             for k in range(output.dim[2]()):
                 output.__setitem__(
                     rebind[
-                        StaticIntTuple[3],
                         StaticIntTuple[output_rank],
                     ](Index(i, j, k)),
                     input[idx, k],
@@ -104,7 +103,6 @@ fn gather_2D_axis_1[
                 let idx: Int = indices[j, k].value
                 output.__setitem__(
                     rebind[
-                        StaticIntTuple[3],
                         StaticIntTuple[output_rank],
                     ](Index(i, j, k)),
                     input[i, idx],
@@ -141,7 +139,6 @@ fn gather_2D_input_1D_indices_axis_0[
             let idx: Int = indices[i].value
             output.__setitem__(
                 rebind[
-                    StaticIntTuple[2],
                     StaticIntTuple[output_rank],
                 ](Index(i, j)),
                 input[idx, j],
@@ -178,7 +175,6 @@ fn gather_2D_input_1D_indices_axis_1[
             let idx: Int = indices[j].value
             output.__setitem__(
                 rebind[
-                    StaticIntTuple[2],
                     StaticIntTuple[output_rank],
                 ](Index(i, j)),
                 input[i, idx],

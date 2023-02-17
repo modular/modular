@@ -68,7 +68,7 @@ fn reduce_add_simd_vector_case[
     the vector value.
     """
     assert_param[step_simd_width == simd_width]()
-    vector += rebind[SIMD[step_simd_width, type], SIMD[simd_width, type]](val)
+    vector += rebind[SIMD[simd_width, type]](val)
 
 
 # ===----------------------------------------------------------------------===#
