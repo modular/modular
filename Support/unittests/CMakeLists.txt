@@ -25,6 +25,7 @@ add_modular_unittest(
   HMACTest.cpp
   MathExtras.cpp
   MicroBenchmarkTest.cpp
+  TensorShapeTest.cpp
   TimeProfilerTest.cpp
 
   LINK_LIBS PRIVATE

@@ -11,6 +11,7 @@
 #ifndef SUPPORT_ML_TENSORSHAPE_H
 #define SUPPORT_ML_TENSORSHAPE_H
 
+#include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
@@ -314,6 +315,9 @@ public:
   std::string getAsString() const;
   void print(raw_ostream &os) const;
   void dump() const;
+
+  /// Parses a string of the form dim0xdim1x...xdimN into a TensorShape.
+  static ErrorOr<TensorShape> parseFromString(StringRef);
 
 protected:
   Detail::TensorShapeStorage storage;
