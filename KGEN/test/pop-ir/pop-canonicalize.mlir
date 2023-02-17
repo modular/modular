@@ -663,6 +663,38 @@ kgen.generator @cast_from_parameter<N>() -> !pop.scalar<index> {
   kgen.return %1 : !pop.scalar<index>
 }
 
+// CHECK-LABEL: @pack_create(
+kgen.func @pack_create() -> !pop.pack<[ui8, i32]> {
+  // CHECK-NEXT: kgen.param.constant{{.*}} = <<5, -55>>
+  %0 = kgen.param.constant: ui8 = <5>
+  %1 = kgen.param.constant: i32 = <-55>
+  %2 = pop.pack.create(%0, %1) : !pop.pack<[ui8, i32]>
+  kgen.return %2 : !pop.pack<[ui8, i32]>
+}
+
+// CHECK-LABEL: @pack_create_empty(
+kgen.func @pack_create_empty() -> !pop.pack<[]> {
+  // CHECK-NEXT: kgen.param.constant{{.*}} = <<>>
+  %1 = pop.pack.create() : !pop.pack<[]>
+  kgen.return %1 : !pop.pack<[]>
+}
+
+// CHECK-LABEL: @pack_get(
+kgen.func @pack_get() -> i4 {
+  // CHECK-NEXT: kgen.param.constant: i4 = <3>
+  %0 = kgen.param.constant: !pop.pack<[f32, i4]> = <<-1.2, 3>>
+  %1 = pop.pack.get %0[1] : !pop.pack<[f32, i4]>
+  kgen.return %1 : i4
+}
+
+// CHECK-LABEL: @pack_create_get(
+kgen.func @pack_create_get(%arg0: f32, %arg1: si8) -> f32 {
+  // CHECK-NEXT: kgen.return %arg0
+  %0 = pop.pack.create(%arg0, %arg1) : !pop.pack<[f32, si8]>
+  %1 = pop.pack.get %0[0] : !pop.pack<[f32, si8]>
+  kgen.return %1 : f32
+}
+
 // CHECK-LABEL: @variadic_create(
 kgen.func @variadic_create() -> !kgen.variadic<index> {
   // CHECK-NEXT: kgen.param.constant{{.*}} = <[13, 17]>
