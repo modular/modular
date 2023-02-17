@@ -7,6 +7,7 @@
 #include "Support/ML/TensorShape.h"
 #include "Support/ErrorOr.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "llvm/Support/YAMLTraits.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace M;
@@ -152,4 +153,30 @@ ErrorOr<TensorShape> TensorShape::parseFromString(StringRef str) {
   }
 
   return TensorShape(shape);
+}
+
+void llvm::yaml::ScalarTraits<TensorShape>::output(const M::TensorShape &value,
+                                                   void *ctxt,
+                                                   llvm::raw_ostream &out) {
+  value.print(out);
+}
+
+StringRef llvm::yaml::ScalarTraits<TensorShape>::input(StringRef scalar,
+                                                       void *ctxt,
+                                                       M::TensorShape &value) {
+  M::ErrorOr<TensorShape> shapeOr = TensorShape::parseFromString(scalar);
+  if (shapeOr.isError())
+    // Can't return shapeOr.getError() because that has a lifetime coinciding
+    // with shapeOr, whose lifetime ends at the end of this function (can't
+    // safely return a StringRef to it, since it would be used after lifetime
+    // end).  Unfortunately this means we discard error details, but we don't
+    // have the mechanism to preserve them while being safe about lifetime.
+    return "Unable to parse tensor shape";
+  value = std::move(*shapeOr);
+  return StringRef();
+}
+
+llvm::yaml::QuotingType
+llvm::yaml::ScalarTraits<TensorShape>::mustQuote(StringRef) {
+  return llvm::yaml::QuotingType::None;
 }

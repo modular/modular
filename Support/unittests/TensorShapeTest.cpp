@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "mlir/IR/BuiltinTypes.h"
+#include "llvm/Support/YAMLTraits.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -43,7 +44,18 @@ bool tensorShapeRoundTrips(const std::vector<std::int64_t> &vec) {
   return vec == round_tripped;
 }
 
+struct ShapeHolder {
+  TensorShape shape;
+};
+
 } // namespace
+
+template <>
+struct llvm::yaml::MappingTraits<ShapeHolder> {
+  static void mapping(llvm::yaml::IO &io, ShapeHolder &holder) {
+    io.mapRequired("shape", holder.shape);
+  }
+};
 
 TEST(TensorShape, representations) {
   EXPECT_TRUE(tensorShapeRoundTrips({}));
@@ -104,4 +116,20 @@ TEST(TensorShape, parsing) {
                 Error("could not parse dimension integer from string: 2x3.5 "
                       "because 3.5 cannot be parsed as an integer")),
             TensorShape::parseFromString("2x3.5"));
+}
+
+TEST(TensorShape, yamlInput) {
+  llvm::yaml::Input input("shape: 5x?");
+  ShapeHolder holder;
+  input >> holder;
+  EXPECT_EQ(shape({5, kDynamic}), holder.shape);
+}
+
+TEST(TensorShape, yamlOutput) {
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  llvm::yaml::Output output(os);
+  ShapeHolder holder{shape({5, kDynamic})};
+  output << holder;
+  EXPECT_EQ(str, "---\nshape:           5x?\n...\n");
 }
