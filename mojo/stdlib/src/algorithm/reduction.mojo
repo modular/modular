@@ -10,7 +10,6 @@ from SIMD import SIMD
 from Numerics import inf, neginf
 from Int import Int
 from Range import range
-from TypeUtilities import rebind
 
 # ===----------------------------------------------------------------------===#
 # reduce
