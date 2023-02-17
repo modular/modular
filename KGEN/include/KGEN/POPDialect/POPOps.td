@@ -1237,6 +1237,47 @@ def POP_ArrayGEPOp : POPOp<"array.gep", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// PackGetOp
+//===----------------------------------------------------------------------===//
+
+def POP_PackGetOp : POPOp<"pack.get", [Pure,
+    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+  let summary = "pack get element";
+  let description = [{
+    The `pop.pack.get` operation returns the element of a pack at the provided
+    index.
+
+    The index must be a compile-time constant. If the pack is also a constant
+    value, the index is verified to be within the bounds of the pack size, and
+    the return type is inferred to match the specific type at that index.
+
+    Example:
+
+    ```mlir
+    kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T: type>(
+      %arg0: Ts,
+      %arg1: !pop.pack<i32, T>
+    ) {
+      // Get the element at index 3, of type `!kgen.mlirtype`.
+      %0 = pop.pack.get %arg0[3] : <Ts>
+      // Get the first element, of type `i32`.
+      %1 = pop.pack.get %arg1[0] : <[i32, T]>
+      // Get the second element, of type `!kgen.paramref<T>`.
+      %2 = pop.pack.get %arg1[1] : <[i32, T]>
+
+      kgen.return
+    }
+    ```
+  }];
+
+  let arguments = (ins POP_PackType:$pack, IndexAttr:$index);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = "$pack `[` $index `]` attr-dict `:` type($pack)";
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 

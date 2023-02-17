@@ -156,6 +156,14 @@ kgen.func @repeat_zero() {
 
 // -----
 
+kgen.func @pack_index_out_of_bounds(%pack: !pop.pack<[si8, ui8]>) {
+  // expected-error @below {{pack element index out of bounds}}
+  %0 = pop.pack.get %pack[2] : <[si8, ui8]>
+  kgen.return
+}
+
+// -----
+
 kgen.func @list_index_out_of_bounds(%list : !kgen.list<index[0]>) {
   // expected-error @below {{'pop.list.get' op list index out-of-range}}
   %0 = pop.list.get %list[0] : <index[0]>

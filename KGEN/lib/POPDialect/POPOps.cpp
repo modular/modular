@@ -398,6 +398,68 @@ static Type getPointerToArrayElementType(Type arrayPtr) {
 }
 
 //===----------------------------------------------------------------------===//
+// PackGetOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+PackGetOp::inferReturnTypes(MLIRContext *context, std::optional<Location> loc,
+                            ValueRange operands, DictionaryAttr attrs,
+                            RegionRange regions, SmallVectorImpl<Type> &types) {
+  auto emitError = [&](const Twine &msg) -> LogicalResult {
+    return mlir::emitOptionalError(loc, msg);
+  };
+  if (operands.size() != 1)
+    return emitError("expected 1 operand");
+
+  auto type = dyn_cast<PackType>(operands.front().getType());
+  if (!type)
+    return emitError("expected a pack operand");
+
+  // If we have a pack backed by an attribute, then we can determine the return
+  // type based on the provided index attribute.
+  auto variadic = dyn_cast<VariadicAttr>(type.getVariadic());
+  if (!variadic) {
+    // Otherwise, all we know is that the return type is a `!kgen.mlirtype`.
+    types.push_back(MLIRTypeType::get(type.getContext()));
+    return success();
+  }
+
+  mlir::OperationName name(getOperationName(), attrs.getContext());
+  auto indexAttr =
+      dyn_cast_if_present<mlir::IntegerAttr>(attrs.get(getIndexAttrName(name)));
+  if (!indexAttr)
+    return emitError("expected an integer index attribute");
+
+  size_t index = indexAttr.getInt();
+  if (index >= variadic.getValues().size())
+    return emitError("pack element index out of bounds");
+
+  types.push_back(ParamRefType::get(variadic.getValues()[index]));
+  return success();
+}
+
+LogicalResult PackGetOp::verify() {
+  // If we have a pack backed by an attribute, check that the provided index
+  // attribute is within bounds.
+  auto variadic = dyn_cast<VariadicAttr>(getPack().getType().getVariadic());
+  if (!variadic)
+    return success();
+
+  ArrayRef<TypedAttr> values = variadic.getValues();
+  size_t index = getIndexAttr().getInt();
+  if (index >= values.size())
+    return emitOpError("index ")
+           << index << " is out of bounds (>=" << values.size() << ")";
+  TypedAttr value = values[index];
+  if (ParamRefType::get(value) != getType())
+    return emitOpError("result")
+           << " type " << getType()
+           << " does not match pack element type at index " << index << ": "
+           << value;
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 
