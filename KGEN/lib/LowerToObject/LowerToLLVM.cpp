@@ -58,6 +58,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx) {
 
 std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
+  TimeTraceScope<> traceScope("lower-to-llvm");
   mlir::PassManager pm(module->getContext());
 
   // TODO (#7846): Remove this once the elaborator does inlining. Maybe keep
