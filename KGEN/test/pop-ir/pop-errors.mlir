@@ -164,6 +164,15 @@ kgen.func @pack_create<Ts: variadic<!kgen.mlirtype>>(%arg0: f32, %arg1: si8) {
 
 // -----
 
+// CHECK-LABEL: @pack_attr
+kgen.generator @pack_attr<Ts: variadic<i32>>() {
+  // expected-error @below {{pack attribute expected a variadic constant type, but got #kgen.param.decl.ref<"Ts"> : !kgen.variadic<!kgen.mlirtype>}}
+  %0 = kgen.param.constant: !pop.pack<Ts> = <<>>
+  kgen.return
+}
+
+// -----
+
 kgen.func @pack_index_out_of_bounds(%pack: !pop.pack<[si8, ui8]>) {
   // expected-error @below {{pack element index out of bounds}}
   %0 = pop.pack.get %pack[2] : <[si8, ui8]>

@@ -368,7 +368,8 @@ def POP_StructType : POPType<"Struct", "struct", [
 // PackType
 //===----------------------------------------------------------------------===//
 
-def POP_PackType : POPType<"Pack", "pack"> {
+def POP_PackType : POPType<"Pack", "pack", [
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "parameterized pack type";
   let description = [{
     A `!pop.pack` type represents a sequence of heterogeneously typed elements.
