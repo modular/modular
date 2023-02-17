@@ -972,6 +972,28 @@ struct ConvertPOPVariadicSize : public ConvertPOPToLLVMPattern<VariadicSizeOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPPackCreate
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPPackCreate : public ConvertPOPToLLVMPattern<PackCreateOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(PackCreateOp op, PackCreateOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type packType = convertType(op.getType());
+    if (!packType) {
+      return rewriter.notifyMatchFailure(op.getLoc(),
+                                         "failed to convert pack type");
+    }
+    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
+    Value container = materializeLLVMStruct(b, packType, adaptor.getOperands());
+    rewriter.replaceOp(op, container);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPPackGet
 //===----------------------------------------------------------------------===//
 
@@ -1418,6 +1440,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPNeg,
       ConvertPOPOffset,
       ConvertPOPOr,
+      ConvertPOPPackCreate,
       ConvertPOPPackGet,
       ConvertPOPPointerBitcast,
       ConvertPOPPointerToIndex,

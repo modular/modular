@@ -156,6 +156,14 @@ kgen.func @repeat_zero() {
 
 // -----
 
+kgen.func @pack_create<Ts: variadic<!kgen.mlirtype>>(%arg0: f32, %arg1: si8) {
+  // expected-error @below {{operand types cannot be inferred for resulting pack type '!pop.pack<Ts>'}}
+  %0 = pop.pack.create(%arg0, %arg1) : !pop.pack<Ts>
+  kgen.return
+}
+
+// -----
+
 kgen.func @pack_index_out_of_bounds(%pack: !pop.pack<[si8, ui8]>) {
   // expected-error @below {{pack element index out of bounds}}
   %0 = pop.pack.get %pack[2] : <[si8, ui8]>
