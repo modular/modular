@@ -972,6 +972,33 @@ struct ConvertPOPVariadicSize : public ConvertPOPToLLVMPattern<VariadicSizeOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPPackGet
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPPackGet : public ConvertPOPToLLVMPattern<PackGetOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(PackGetOp op, PackGetOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // If the pack is backed by a variadic attribute with only one element, just
+    // return that element.
+    if (auto variadic =
+            dyn_cast<VariadicAttr>(op.getPack().getType().getVariadic())) {
+      if (variadic.getValues().size() == 1) {
+        rewriter.replaceOp(op, adaptor.getPack());
+        return success();
+      }
+    }
+    // Otherwise, extract the value at the specified index from the pack's
+    // underlying storage.
+    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
+        op, adaptor.getPack(), op.getIndexAttr().getInt());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPVariantCreate
 //===----------------------------------------------------------------------===//
 
@@ -1391,6 +1418,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPNeg,
       ConvertPOPOffset,
       ConvertPOPOr,
+      ConvertPOPPackGet,
       ConvertPOPPointerBitcast,
       ConvertPOPPointerToIndex,
       ConvertPOPPrefetch,

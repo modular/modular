@@ -846,6 +846,19 @@ kgen.func @atomic_rmw(%ptr0: !pop.pointer<scalar<index>>,
   kgen.return
 }
 
+// CHECK-LABEL: @pack_get
+kgen.func @pack_get(
+  %p0: !pop.pack<[i1]>,
+  %p1: !pop.pack<[i32, f32]>
+) -> i1 {
+  // CHECK: builtin.unrealized_conversion_cast %{{.*}} : !pop.pack<[i1]> to i1
+  %0 = pop.pack.get %p0[0] : <[i1]>
+  // CHECK: llvm.extractvalue %{{.*}}[1] : !llvm.struct<(i32, f32)>
+  %1 = pop.pack.get %p1[1] : <[i32, f32]>
+
+  kgen.return %0 : i1
+}
+
 // CHECK-LABEL: @variadic_create
 // CHECK-SAME: %[[A0:.*]]: i24
 kgen.func @variadic_create(%a: i24) {

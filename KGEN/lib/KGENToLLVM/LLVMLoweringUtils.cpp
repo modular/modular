@@ -174,27 +174,41 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   });
 
   // Convert struct types to LLVM literal structs.
-  addConversion([=](POP::StructType structType) -> std::optional<Type> {
+  auto convertElementTypesToStruct =
+      [=](ArrayRef<TypedAttr> elements) -> std::optional<Type> {
     // Unwrap structs with just one element.
-    if (structType.getNumElements() == 1) {
-      Type type = convertType(structType.getConcreteElementType(0));
+    if (elements.size() == 1) {
+      Type type = convertType(
+          llvm::cast<ConcreteTypeConstantAttr>(elements.front()).getValue());
       if (!type)
         return {};
       return type;
     }
 
-    SmallVector<Type> elementTypes;
-    elementTypes.reserve(structType.getNumElements());
-    for (TypedAttr elementType : structType.getElementTypes()) {
-      auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(elementType);
-      if (!typeCst)
+    SmallVector<Type> types;
+    types.reserve(elements.size());
+    for (TypedAttr elementType : elements) {
+      auto constant = dyn_cast<ConcreteTypeConstantAttr>(elementType);
+      if (!constant)
         return {};
-      Type converted = convertType(typeCst.getValue());
+      Type converted = convertType(constant.getValue());
       if (!converted)
         return {};
-      elementTypes.push_back(converted);
+      types.push_back(converted);
     }
-    return LLVM::LLVMStructType::getLiteral(&getContext(), elementTypes);
+    return LLVM::LLVMStructType::getLiteral(&getContext(), types);
+  };
+
+  addConversion([=](POP::StructType structType) -> std::optional<Type> {
+    return convertElementTypesToStruct(structType.getElementTypes());
+  });
+
+  // Packs are essentially identical to structs.
+  addConversion([=](POP::PackType type) -> std::optional<Type> {
+    auto variadic = dyn_cast<VariadicAttr>(type.getVariadic());
+    if (!variadic)
+      return {};
+    return convertElementTypesToStruct(variadic.getValues());
   });
 
   // Convert closure type to a struct of two pointers
