@@ -405,7 +405,6 @@ fn create_kgen_list_unknown_1[
         _type : __mlir_type[`!kgen.list<`, __mlir_type.index, `[1]>`]
     ](u)
     return rebind[
-        __mlir_type[`!kgen.list<`, __mlir_type.index, `[1]>`],
         __mlir_type[`!kgen.list<`, __mlir_type.index, `[`, len, `]>`],
     ](l)
 
@@ -422,7 +421,6 @@ fn create_kgen_list_unknown_2[
     ](u, u)
 
     return rebind[
-        __mlir_type[`!kgen.list<`, __mlir_type.index, `[2]>`],
         __mlir_type[`!kgen.list<`, __mlir_type.index, `[`, len, `]>`],
     ](l)
 
@@ -439,7 +437,6 @@ fn create_kgen_list_unknown_3[
     ](u, u, u)
 
     return rebind[
-        __mlir_type[`!kgen.list<`, __mlir_type.index, `[3]>`],
         __mlir_type[`!kgen.list<`, __mlir_type.index, `[`, len, `]>`],
     ](l)
 
@@ -456,7 +453,6 @@ fn create_kgen_list_unknown_4[
     ](u, u, u, u)
 
     return rebind[
-        __mlir_type[`!kgen.list<`, __mlir_type.index, `[4]>`],
         __mlir_type[`!kgen.list<`, __mlir_type.index, `[`, len, `]>`],
     ](l)
 
@@ -473,6 +469,5 @@ fn create_kgen_list_unknown_5[
     ](u, u, u, u, u)
 
     return rebind[
-        __mlir_type[`!kgen.list<`, __mlir_type.index, `[5]>`],
         __mlir_type[`!kgen.list<`, __mlir_type.index, `[`, len, `]>`],
     ](l)
