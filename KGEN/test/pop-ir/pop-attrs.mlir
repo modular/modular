@@ -43,6 +43,15 @@ kgen.generator @array_struct_constants<T: type, A: !kgen.paramref<T>, value: !po
   kgen.return
 }
 
+// CHECK-LABEL: @pack_constants
+kgen.generator @pack_constants<Ts: variadic<i32>>() {
+  // CHECK: !pop.pack<[i8, ui4, i32]> = <<3, 1, 4>>
+  %0 = kgen.param.constant: !pop.pack<[i8, ui4, i32]> = <<3, 1, 4>>
+  // CHECK: !pop.pack<[]> = <<>>
+  %1 = kgen.param.constant: !pop.pack<[]> = <<>>
+  kgen.return
+}
+
 // CHECK-LABEL: @variant_constants
 kgen.generator @variant_constants<T: type, U: type, value: !kgen.paramref<T>>() {
   // CHECK: variant<f32, f64> = <#pop.variant<:f32 2.5{{0+}}e+00>>
