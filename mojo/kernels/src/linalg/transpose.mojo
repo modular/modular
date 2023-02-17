@@ -38,11 +38,6 @@ fn transpose_inplace_4x4[
     var buf = rebind[
         NDBuffer[
             2,
-            create_kgen_list[__mlir_type.index](rows, cols),
-            type,
-        ],
-        NDBuffer[
-            2,
             create_kgen_list[__mlir_type.index](4, 4),
             type,
         ],
@@ -94,11 +89,6 @@ fn transpose_inplace_8x8[
     assert_param[rows == 8]()
     assert_param[cols == 8]()
     var buf = rebind[
-        NDBuffer[
-            2,
-            create_kgen_list[__mlir_type.index](rows, cols),
-            type,
-        ],
         NDBuffer[
             2,
             create_kgen_list[__mlir_type.index](8, 8),
