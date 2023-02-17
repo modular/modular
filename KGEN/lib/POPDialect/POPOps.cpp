@@ -212,7 +212,7 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
     return op->emitOpError(valueKind)
            << " type " << valueType
            << " does not match struct element type at index " << index << ": "
-           << elementTypes[index];
+           << ParamRefType::get(elementTypes[index]);
   return success();
 }
 

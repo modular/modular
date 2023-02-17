@@ -19,6 +19,7 @@ static void populatePreElaborationPipeline(mlir::PassManager &pm) {
   pm.addPass(createLowerStructs());
   pm.addNestedPass<GeneratorOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<GeneratorOp>(createMem2Reg());
+  pm.addPass(createAlwaysInlineParametric());
 }
 
 void KGEN::generateLibraryFile(mlir::PassManager &pm) {
