@@ -123,7 +123,7 @@ struct ParameterUseDefGraph {
 
   /// Copy this graph into a new instance, remapping all the operations using
   /// `map`.
-  ParameterUseDefGraph copy(const IRMapping &map);
+  ParameterUseDefGraph copy(const IRMapping &map) const;
 
 private:
   /// Calculate the parameter use-def graph and perform verification if a symbol
