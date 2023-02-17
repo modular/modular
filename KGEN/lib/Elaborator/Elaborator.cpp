@@ -1950,29 +1950,31 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
                                      Cache::WriteableBufferRef toCache,
                                      AnyAsyncValueRef chain) {
     auto out = LLCL::AsyncValueRef<FuncOp>::allocate(runtime);
-    std::move(chain).andThenSync(
-        [this, evalFunc, concrete, itfOp, out = out.copy(),
-         toCache = std::move(toCache)](AnyAsyncValueRef &&chain) mutable {
-          auto itf = cast<GeneratorInterfaceOp>(itfOp);
+    std::move(chain).andThenSync([this, evalFunc, concrete, itfOp,
+                                  out = out.copy(),
+                                  toCache = std::move(toCache)](
+                                     AnyAsyncValueRef &&chain) mutable {
+      auto itf = cast<GeneratorInterfaceOp>(itfOp);
+      TimeTraceScope<> traceScope("evaluate-specializations", itf.getName());
 
-          evalSemaphore.wait();
-          ErrorOr<size_t> bestSpecializationIdxOr = evaluateSpecializations(
-              evalFunc, analysis.getTopLevelSymbolTable(), runtime, target,
-              concrete);
-          evalSemaphore.post();
+      evalSemaphore.wait();
+      ErrorOr<size_t> bestSpecializationIdxOr =
+          evaluateSpecializations(evalFunc, analysis.getTopLevelSymbolTable(),
+                                  runtime, target, concrete);
+      evalSemaphore.post();
 
-          if (failed(bestSpecializationIdxOr)) {
-            return out.setToError(getMLIRDiagnostic(
-                bestSpecializationIdxOr.takeError(), itf.getLoc()));
-          }
+      if (failed(bestSpecializationIdxOr)) {
+        return out.setToError(getMLIRDiagnostic(
+            bestSpecializationIdxOr.takeError(), itf.getLoc()));
+      }
 
-          // Find the fastest one and return just that one.
-          FuncOp bestResult = concrete[*bestSpecializationIdxOr];
+      // Find the fastest one and return just that one.
+      FuncOp bestResult = concrete[*bestSpecializationIdxOr];
 
-          // Finally, cache the result.
-          *toCache << bestResult.getName();
-          return std::move(out).emplace(bestResult);
-        });
+      // Finally, cache the result.
+      *toCache << bestResult.getName();
+      return std::move(out).emplace(bestResult);
+    });
     return out;
   };
 

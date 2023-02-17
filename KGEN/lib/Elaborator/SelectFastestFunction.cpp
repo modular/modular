@@ -69,20 +69,23 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
   // We only want the funcs passed-in and the evaluator to be code-generated.
   SmallVector<FuncOp> funcsToCompile(specializations);
   funcsToCompile.push_back(evaluator);
-  auto objOr =
-      produceObjectFromExports(runtime, symtab, target, funcsToCompile);
-  if (objOr.isError())
-    return objOr.takeError();
-
-  if (auto err = engine.add("evaluateSpecializations", objOr.takeValue()))
-    return err.takeError();
-
-  // Get pointers to all the candidates.
   SmallVector<void *> candidatePtrs;
-  for (FuncOp candidate : specializations) {
-    UNWRAP_ERROR(func, engine.lookup("evaluateSpecializations",
-                                     candidate.getNameAttr()));
-    candidatePtrs.push_back(func.getFunctionPointer());
+  {
+    TimeTraceScope<> traceScope("compile-specializations");
+    auto objOr =
+        produceObjectFromExports(runtime, symtab, target, funcsToCompile);
+    if (objOr.isError())
+      return objOr.takeError();
+
+    if (auto err = engine.add("evaluateSpecializations", objOr.takeValue()))
+      return err.takeError();
+
+    // Get pointers to all the candidates.
+    for (FuncOp candidate : specializations) {
+      UNWRAP_ERROR(func, engine.lookup("evaluateSpecializations",
+                                       candidate.getNameAttr()));
+      candidatePtrs.push_back(func.getFunctionPointer());
+    }
   }
 
   // Lookup the evaluator function
@@ -90,8 +93,12 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
                                             evaluator.getNameAttr()));
 
   // Invoke the evaluator.
-  ssize_t bestIdx = evaluatorFunc.invoke<ssize_t, void **, ssize_t>(
-      candidatePtrs.data(), candidatePtrs.size());
+  ssize_t bestIdx;
+  {
+    TimeTraceScope<> traceScope("execute-specializations");
+    bestIdx = evaluatorFunc.invoke<ssize_t, void **, ssize_t>(
+        candidatePtrs.data(), candidatePtrs.size());
+  }
   if (bestIdx == -1)
     return Error("user-provided evaluator returned failure");
   if (bestIdx < 0 || static_cast<size_t>(bestIdx) >= candidatePtrs.size())
