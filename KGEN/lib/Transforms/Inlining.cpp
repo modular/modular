@@ -44,11 +44,160 @@ getNearestDeclAndRegion(Operation *op) {
   Region *region = op->getParentRegion();
   auto decl = dyn_cast<DeclInterface>(region->getParentOp());
   while (!decl) {
-    region = op->getParentRegion();
+    region = region->getParentRegion();
     decl = dyn_cast<DeclInterface>(region->getParentOp());
   }
   return {decl, region};
 }
+
+/// Generator inputs and results cross parameter domains. Make sure to rebind
+/// them if necessary.
+static SmallVector<Value> rebindValues(OpBuilder &b, Location loc,
+                                       ValueRange inputs, TypeRange outputs) {
+  SmallVector<Value> newValues;
+  for (auto [input, output] : llvm::zip(inputs, outputs)) {
+    if (input.getType() != output)
+      newValues.push_back(b.create<RebindOp>(loc, output, input));
+    else
+      newValues.push_back(input);
+  }
+  return newValues;
+}
+
+/// The operands of returns cross parameter domains. Make sure to rebind them if
+/// necessary.
+static SmallVector<Value>
+rebindReturnOperands(OpBuilder &b, Operation *newReturn, Operation *call) {
+  return rebindValues(b, newReturn->getLoc(), newReturn->getOperands(),
+                      call->getResultTypes());
+}
+
+namespace {
+/// Signature types define a nested parameter scope inside a parameter
+/// expression. Manually walk and mangle parameter references in attributes and
+/// types in an expression tree while accounting for name shadowing in a
+/// signature type.
+struct AttrTypeMangler {
+  AttrTypeMangler() {}
+  explicit AttrTypeMangler(Builder &b, const ParameterUseDefGraph &curScope,
+                           const ParameterUseDefGraph &inlinedScope) {
+    for (auto &[decl, _] : inlinedScope.decls) {
+      if (curScope.decls.find(decl) == curScope.decls.end()) {
+        // This declaration will not collide.
+        continue;
+      }
+      StringAttr mangledDecl;
+      unsigned count = 0;
+      do {
+        mangledDecl = b.getStringAttr((decl.getValue() + Twine(count++)).str());
+      } while (curScope.decls.find(mangledDecl) != curScope.decls.end());
+      mangledDecls.try_emplace(decl, mangledDecl);
+    }
+  }
+
+  template <typename T>
+  auto mangleRefsInImpl(T value) {
+    SmallVector<Attribute, 16> replAttrs;
+    SmallVector<Type, 16> replTypes;
+    value.walkImmediateSubElements(
+        [&](Attribute attr) { replAttrs.push_back(mangleRefsIn(attr)); },
+        [&](Type type) { replTypes.push_back(mangleRefsIn(type)); });
+    return value.replaceImmediateSubElements(replAttrs, replTypes);
+  }
+
+  Type mangleRefsIn(Type type) {
+    if (auto sig = dyn_cast<SignatureType>(type)) {
+      // Filter out the shaowed parameters from the mangling map.
+      using pair_t = DenseMap<StringAttr, StringAttr>::value_type;
+      SmallVector<pair_t> shadowed;
+      auto removeIfShadowing = [&](ArrayRef<ParamDeclAttr> decls) {
+        for (ParamDeclAttr decl : decls) {
+          auto it = mangledDecls.find(decl.getName());
+          if (it != mangledDecls.end()) {
+            shadowed.push_back(*it);
+            mangledDecls.erase(it);
+          }
+        }
+      };
+      removeIfShadowing(sig.getInputParams());
+      removeIfShadowing(sig.getResultParams());
+      Type result = mangleRefsInImpl(sig);
+      // Pop the shadowed names.
+      mangledDecls.insert(shadowed.begin(), shadowed.end());
+      return result;
+    }
+    return mangleRefsInImpl(type);
+  }
+
+  Attribute mangleRefsIn(Attribute attr) {
+    if (auto ref = dyn_cast<ParamDeclRefAttr>(attr)) {
+      auto it = mangledDecls.find(ref.getName());
+      if (it != mangledDecls.end())
+        return ParamDeclRefAttr::get(it->second, mangleRefsIn(ref.getType()));
+    }
+    return mangleRefsInImpl(attr);
+  }
+
+  ParamDeclAttr mangleDecl(ParamDeclAttr decl) {
+    Type type = mangleRefsIn(decl.getType());
+    if (auto it = mangledDecls.find(decl.getName()); it != mangledDecls.end())
+      return ParamDeclAttr::get(it->second, type);
+    if (type == decl.getType())
+      return decl;
+    return ParamDeclAttr::get(decl.getName(), type);
+  }
+
+  void mangleElementsIn(Operation *op) {
+    auto replaceIfDifferent = [&](auto element) {
+      auto replacement = mangleRefsIn(element);
+      return (replacement && replacement != element) ? replacement : nullptr;
+    };
+
+    if (Attribute newAttrs = replaceIfDifferent(op->getAttrDictionary()))
+      op->setAttrs(cast<DictionaryAttr>(newAttrs));
+
+    if (Attribute newLoc = replaceIfDifferent(mlir::LocationAttr(op->getLoc())))
+      op->setLoc(cast<mlir::LocationAttr>(newLoc));
+
+    for (OpResult result : op->getResults())
+      if (Type newType = replaceIfDifferent(result.getType()))
+        result.setType(newType);
+
+    for (Region &region : op->getRegions()) {
+      for (Block &block : region) {
+        for (BlockArgument arg : block.getArguments()) {
+          if (Attribute newLoc =
+                  replaceIfDifferent(mlir::LocationAttr(arg.getLoc())))
+            arg.setLoc(cast<mlir::LocationAttr>(newLoc));
+          if (Type newType = replaceIfDifferent(arg.getType()))
+            arg.setType(newType);
+        }
+      }
+    }
+  }
+
+  void recursivelyMangle(Region *scope, const ParameterUseDefGraph &graph) {
+    const ParameterUseDefGraph &uses = graph.nestedScopes.find(scope)->second;
+    AttrTypeMangler mangler;
+    for (ParamDeclRefAttr ref : uses.usesFromAbove) {
+      auto it = mangledDecls.find(ref.getName());
+      if (it != mangledDecls.end())
+        mangler.mangledDecls.insert(*it);
+    }
+    scope->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+      mangler.mangleElementsIn(op);
+      auto decl = dyn_cast<DeclInterface>(op);
+      if (!decl)
+        return WalkResult::advance();
+      for (Region &region : decl->getRegions())
+        recursivelyMangle(&region, graph);
+      return WalkResult::skip();
+    });
+  }
+
+  DenseMap<StringAttr, StringAttr> mangledDecls;
+};
+} // namespace
 
 void AlwaysInlineParametricPass::runOnOperation() {
   SymbolTable &symtab =
@@ -89,7 +238,8 @@ void AlwaysInlineParametricPass::runOnOperation() {
     gen.walk([&](CallOp call) {
       auto callee = symtab.lookup<GeneratorOp>(
           cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
-      if (callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
+      if (callee &&
+          callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
         calls.emplace_back(call);
     });
 
@@ -110,6 +260,8 @@ void AlwaysInlineParametricPass::runOnOperation() {
 
       auto callee = symtab.lookup<GeneratorOp>(
           cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
+      assert(callee &&
+             callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled);
 
       // If we recursed onto the same function, give up and emit an error.
       if (!seenFuncs.insert(callee)) {
@@ -146,12 +298,33 @@ void AlwaysInlineParametricPass::runOnOperation() {
                                           ValueRange(), label);
       b.createBlock(&scope.getBody());
 
+      AttrTypeMangler mangler(b, *callScope, *calleeParams);
+
+      // Make sure to rebind the call operands based on the mangled types of the
+      // callee's argument types.
+      SmallVector<Type> mangledArgTypes =
+          llvm::to_vector(callee.getArgumentTypes());
+      for (Type &type : mangledArgTypes)
+        type = mangler.mangleRefsIn(type);
+      SmallVector<Value> argVals =
+          rebindValues(b, call.getLoc(), call.getOperands(), mangledArgTypes);
+
+      // Materialize any constraints on the callee as asserts.
+      for (ConstraintAttr constraint : callee.getConstraints()) {
+        auto assertOp = b.create<ParamAssertOp>(
+            constraint.getLoc(), constraint.getExpr(),
+            StringAttr::get(constraint.getMessage().getValue(),
+                            StringType::get(b.getContext())));
+        mangler.mangleElementsIn(assertOp);
+      }
+
+      // Map the callee inputs.
       IRMapping map;
-      for (auto [value, arg] :
-           llvm::zip(call.getOperands(), callee.getArguments()))
+      for (auto [value, arg] : llvm::zip(argVals, callee.getArguments()))
         map.map(arg, value);
       for (Operation &op : *callee.getBody())
         b.clone(op, map);
+
       AlwaysInlineLevel level = callee.getAlwaysInlineLevel();
       scope.walk([&](Operation *op) {
         if (op != scope) {
@@ -175,62 +348,48 @@ void AlwaysInlineParametricPass::runOnOperation() {
         if (auto call = dyn_cast<CallOp>(op)) {
           auto callee = symtab.lookup<GeneratorOp>(
               cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
-          if (callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
+          if (callee &&
+              callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
             calls.emplace_back(call);
         }
       });
 
-      // We only need to mangle declarations at the top-level scope of the
-      // callee. Declarations in nested scopes will shadow. However, we have
-      // "un-mangle" in nested scopes.
-      DenseMap<StringAttr, StringAttr> mangledDecls;
-      for (auto &[decl, _] : calleeParams->decls) {
-        if (callScope->decls.find(decl) == callScope->decls.end()) {
-          // This declaration will not collide.
-          continue;
+      // Clone the nested parameter use-def graphs into the current set of
+      // nested graphs.
+      callee.walk([&](DeclInterface containedScope) {
+        if (containedScope == callee)
+          return;
+        Operation *clonedScope = map.lookup(&*containedScope);
+        for (auto [region, clonedRegion] : llvm::zip(
+                 containedScope->getRegions(), clonedScope->getRegions())) {
+          ParameterUseDefGraph &nestedGraph =
+              calleeParams->nestedScopes.find(&region)->second;
+          bool inserted = topLevelGraph->nestedScopes
+                              .try_emplace(&clonedRegion, nestedGraph.copy(map))
+                              .second;
+          assert(inserted);
         }
-        StringAttr mangledDecl;
-        unsigned count = 0;
-        do {
-          mangledDecl =
-              b.getStringAttr((decl.getValue() + Twine(count++)).str());
-        } while (callScope->decls.find(mangledDecl) != callScope->decls.end());
-        mangledDecls.try_emplace(decl, mangledDecl);
-      }
+      });
 
       // Do name mangling.
-      mlir::AttrTypeReplacer replacer;
-      replacer.addReplacement([&](ParamDeclRefAttr ref) {
-        auto it = mangledDecls.find(ref.getName());
-        if (it != mangledDecls.end())
-          return ParamDeclRefAttr::get(it->second, ref.getType());
-        return ref;
-      });
       for (Operation *user : calleeParams->paramOps) {
         // Skip the parent decl. It's handled after.
         if (user == callee)
           continue;
         Operation *cloned = map.lookup(user);
-        replacer.replaceElementsIn(cloned, /*replaceAttrs=*/true,
-                                   /*replaceLocs=*/true, /*replaceTypes=*/true);
+        mangler.mangleElementsIn(cloned);
       }
       for (auto &[name, decl] : calleeParams->decls) {
         // Skip the parent decl. It's handled after.
         if (decl.declOp == callee)
           continue;
         Operation *cloned = map.lookup(decl.declOp);
-        replacer.replaceElementsIn(cloned, /*replaceAttrs=*/true,
-                                   /*replaceLocs=*/true, /*replaceTypes=*/true);
+        mangler.mangleElementsIn(cloned);
         // Rename declarations.
         auto itf = cast<ParamOpInterface>(decl.declOp);
         SmallVector<ParamDeclAttr> newDecls;
         itf.walkDeclarations([&](ParamDeclAttr decl) {
-          if (auto it = mangledDecls.find(decl.getName());
-              it != mangledDecls.end()) {
-            newDecls.push_back(ParamDeclAttr::get(it->second, decl.getType()));
-          } else {
-            newDecls.push_back(decl);
-          }
+          newDecls.push_back(mangler.mangleDecl(decl));
         });
         cast<ParamOpInterface>(cloned).renameDeclarations(newDecls);
         // Populate the new declarations into the call scope graph.
@@ -240,97 +399,40 @@ void AlwaysInlineParametricPass::runOnOperation() {
               ParamDeclaration{decl.getType(), cloned, scopeRegion});
         }
       }
+      for (Region *nestedScope : calleeParams->nestedDecls) {
+        mangler.recursivelyMangle(
+            &map.lookup(nestedScope->getParentOp())
+                 ->getRegion(nestedScope->getRegionNumber()),
+            *topLevelGraph);
+      }
 
       // Mangle the DeclInterface declarations.
       b.setInsertionPointToStart(&scope.getBody().front());
       for (auto [origDecl, value] :
            llvm::zip(callee.getInputParamDecls(), call.getParamValues())) {
-        ParamDeclAttr decl = origDecl;
-        if (auto it = mangledDecls.find(decl.getName());
-            it != mangledDecls.end())
-          decl = ParamDeclAttr::get(it->second, decl.getType());
-        auto declOp = b.create<ParamDeclareOp>(callee.getLoc(), decl,
-                                               Attribute(value.getValue()));
+        ParamDeclAttr decl = mangler.mangleDecl(origDecl);
+        auto declOp = b.create<ParamDeclareOp>(
+            callee.getLoc(), decl,
+            ParamOperatorAttr::get(b.getContext(), POC::Rebind,
+                                   value.getValue(), decl.getType()));
         // Register the new declaration.
         callScope->decls.try_emplace(
             decl.getName(),
             ParamDeclaration{decl.getType(), declOp, scopeRegion});
       }
 
-      // "Un-mangled" declarations in immediate nested declaration scopes. The
-      // un-mangled declarations will be propagated to any further nested
-      // scopes.
-      callee.walk<mlir::WalkOrder::PreOrder>([&](DeclInterface nestedScope) {
-        if (nestedScope == callee)
-          return WalkResult::advance();
-
-        nestedScope.walk([&](DeclInterface containedScope) {
-          Operation *clonedScope = map.lookup(&*containedScope);
-          for (auto [region, clonedRegion] : llvm::zip(
-                   containedScope->getRegions(), clonedScope->getRegions())) {
-            ParameterUseDefGraph &nestedGraph =
-                calleeParams->nestedScopes.find(&region)->second;
-            bool inserted =
-                topLevelGraph->nestedScopes
-                    .try_emplace(&clonedRegion, nestedGraph.copy(map))
-                    .second;
-            assert(inserted);
-          }
-        });
-
-        for (Region &region : nestedScope->getRegions()) {
-          // If we know the scope is parametrically isolated, there's nothing to
-          // do.
-          if (nestedScope.isIsolatedFromAbove(region.getRegionNumber()))
-            continue;
-
-          Operation *clonedScope = map.lookup(&*nestedScope);
-          b.setInsertionPointToStart(
-              &cast<FuncInterface>(clonedScope)
-                   ->getRegions()[region.getRegionNumber()]
-                   .front());
-
-          // Determine which decls are captured from above and map them from
-          // their mangled declaration.
-          ParameterUseDefGraph &nestedUses =
-              calleeParams->nestedScopes.find(&region)->second;
-          Region *curScopeRegion =
-              &clonedScope->getRegion(region.getRegionNumber());
-          ParameterUseDefGraph &clonedUses =
-              topLevelGraph->nestedScopes.find(curScopeRegion)->second;
-          for (ParamDeclRefAttr nestedUse : nestedUses.usesFromAbove) {
-            auto it = mangledDecls.find(nestedUse.getName());
-            if (it == mangledDecls.end())
-              continue;
-            auto declOp = b.create<ParamDeclareOp>(
-                nestedScope.getLoc(),
-                ParamDeclAttr::get(nestedUse.getName(), nestedUse.getType()),
-                ParamDeclRefAttr::get(it->second, nestedUse.getType()));
-            clonedUses.decls.try_emplace(
-                nestedUse.getName(),
-                ParamDeclaration{nestedUse.getType(), declOp, curScopeRegion});
-          }
-        }
-
-        return WalkResult::skip();
-      });
-
       // Handle all terminators.
       auto newReturn = cast<KGEN::ReturnOp>(map.lookup(callee.getReturnOp()));
       b.setInsertionPoint(newReturn);
-      SmallVector<Value> retVals;
-      for (auto [retVal, retType] :
-           llvm::zip(newReturn.getOperands(), call->getResultTypes())) {
-        if (retVal.getType() != retType)
-          retVals.push_back(
-              b.create<RebindOp>(newReturn.getLoc(), retType, retVal));
-        else
-          retVals.push_back(retVal);
-      }
       for (auto [decl, value] :
-           llvm::zip(call.getParamDecls(), newReturn.getParameters()))
-        b.create<ParamDeclareOp>(newReturn.getLoc(), decl, Attribute(value));
-      b.create<HLCF::BreakOp>(newReturn.getLoc(), retVals, label);
+           llvm::zip(call.getParamDecls(), newReturn.getParameters())) {
+        b.create<ParamDeclareOp>(newReturn.getLoc(), decl,
+                                 ParamOperatorAttr::get(b.getContext(),
+                                                        POC::Rebind, value,
+                                                        decl.getType()));
+      }
+      b.create<HLCF::BreakOp>(newReturn.getLoc(),
+                              rebindReturnOperands(b, newReturn, call), label);
       newReturn.erase();
 
       callee.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
@@ -342,16 +444,8 @@ void AlwaysInlineParametricPass::runOnOperation() {
           return WalkResult::advance();
         auto cloned = cast<HLCF::ReturnOp>(map.lookup(returnOp));
         b.setInsertionPoint(cloned);
-        SmallVector<Value> retVals;
-        for (auto [retVal, retType] :
-             llvm::zip(cloned.getOperands(), call->getResultTypes())) {
-          if (retVal.getType() != retType)
-            retVals.push_back(
-                b.create<RebindOp>(cloned.getLoc(), retType, retVal));
-          else
-            retVals.push_back(retVal);
-        }
-        b.create<HLCF::BreakOp>(cloned.getLoc(), retVals, label);
+        b.create<HLCF::BreakOp>(cloned.getLoc(),
+                                rebindReturnOperands(b, cloned, call), label);
         cloned.erase();
         return WalkResult::advance();
       });

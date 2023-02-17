@@ -350,9 +350,8 @@ kgen.generator @parent<B>() {
   // CHECK: hlcf.loop
   // CHECK-NEXT: declare A0 = <B>
   // CHECK-NEXT: declare.region F = <B>
-  // CHECK-NEXT: declare A = <A0>
-  // CHECK-NEXT: constant = <A>
-  // CHECK-NEXT: constant = <B>
+  // CHECK-NEXT:   constant = <A0>
+  // CHECK-NEXT:   constant = <B>
   // CHECK: declare A = <A0>
   // CHECK-NOT: kgen.call @callee
   kgen.call @callee<A = B -> A = B>() : () -> ()
@@ -380,9 +379,8 @@ kgen.generator @parent<B>() {
   // CHECK: hlcf.loop
   // CHECK-NEXT: declare A0 = <B>
   // CHECK-NEXT: declare.region F = <B>
-  // CHECK-NEXT: declare A = <A0>
-  // CHECK-NEXT: constant = <A>
-  // CHECK-NEXT: constant = <B>
+  // CHECK-NEXT:   constant = <A0>
+  // CHECK-NEXT:   constant = <B>
   // CHECK-NOT: kgen.call @callee
   kgen.call @callee<A = B>() : () -> ()
   // CHECK: constant = <A>
@@ -409,11 +407,10 @@ kgen.generator @parent() {
   // CHECK-NEXT: hlcf.loop
   // CHECK-NEXT: declare A0 = <2>
   // CHECK-NEXT: declare.region F
-    // CHECK-NEXT: declare A = <A0>
-    // CHECK-NEXT: constant = <A>
-    // CHECK-NEXT: declare.region F
-    // CHECK-NEXT: constant = <A>
-    // CHECK-NOT: declare A = <A0>
+  // CHECK-NEXT:   constant = <A0>
+  // CHECK-NEXT:   declare.region F
+  // CHECK-NEXT:     constant = <A0>
+  // CHECK-NOT: declare A = <A0>
   kgen.call @callee() : () -> ()
   kgen.return
 }
@@ -478,4 +475,207 @@ kgen.generator @callee<A>() -> index always_inline {
   kgen.param.declare B = <A>
   %0 = kgen.param.constant = <B>
   kgen.return %0 : index
+}
+
+// -----
+
+// CHECK-LABEL: kgen.generator @inline_call_in_if
+kgen.generator @inline_call_in_if(%cond: i1) {
+  // CHECK-NEXT: hlcf.if
+  hlcf.if %cond {
+    // CHECK: inlined.a
+    kgen.call @callee() : () -> ()
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @callee
+kgen.generator @callee() always_inline {
+  "inlined.a"() : () -> ()
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.generator @inline_call_in_param_if
+kgen.generator @inline_call_in_param_if<cond: i1>() {
+  // CHECK-NEXT: kgen.param.if
+  kgen.param.if <cond> {
+    // CHECK: inlined.a
+    kgen.call @callee() : () -> ()
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @callee
+kgen.generator @callee() always_inline {
+  "inlined.a"() : () -> ()
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.generator @rebind_call_operands
+kgen.generator @rebind_call_operands(%arg0: !pop.scalar<f32>) {
+  // CHECK: kgen.param.declare type: dtype = <f32>
+  // CHECK-NEXT: %0 = kgen.rebind %arg0 : !pop.scalar<f32> to !pop.scalar<type>
+  // CHECK: pop.simd.extractelement %0[%idx0] : !pop.scalar<type>
+  kgen.call @callee<type: dtype = f32>(%arg0) : (!pop.scalar<f32>) -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @callee
+kgen.generator @callee<type: dtype>(%arg0: !pop.scalar<type>) always_inline {
+  %idx0 = index.constant 0
+  %0 = pop.simd.extractelement %arg0[%idx0] : !pop.scalar<type>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.generator @rebind_mangled_types
+kgen.generator @rebind_mangled_types<type: dtype>(%arg0: !pop.scalar<type>) {
+  // CHECK: kgen.param.declare type0: dtype = <type>
+  // CHECK-NEXT: %1 = kgen.rebind %arg0 : !pop.scalar<type> to !pop.scalar<type0>
+  // CHECK: %2 = pop.simd.extractelement %1[%idx0] : !pop.scalar<type0>
+  // CHECK: %3 = kgen.rebind %2 : !pop.scalar<type0> to !pop.scalar<type>
+  %0 = kgen.call @callee<type: dtype = type>(%arg0) : (!pop.scalar<type>) -> !pop.scalar<type>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @callee
+kgen.generator @callee<type: dtype>(%arg0: !pop.scalar<type>) -> !pop.scalar<type> always_inline {
+  %idx0 = index.constant 0
+  %0 = pop.simd.extractelement %arg0[%idx0] : !pop.scalar<type>
+  kgen.return %0 : !pop.scalar<type>
+}
+
+// -----
+
+// CHECK-LABEL: kgen.generator @replace_in_signature_with_shadow
+kgen.generator @replace_in_signature_with_shadow<width>() {
+  // CHECK: kgen.param.declare width0 = <width>
+  // CHECK-NEXT: kgen.param.declare fn: <width>(!pop.simd<width, bool>) -> () = <@param_arg>
+  // CHECK-NEXT: kgen.param.declare bound: (!pop.simd<width0, bool>) -> ()
+  // CHECK-SAME: = <bind_signature(:<width>(!pop.simd<width, bool>) -> () fn, width0)>
+  kgen.call @callee<width = width>() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @param_arg
+kgen.generator @param_arg<width>(%arg0: !pop.simd<width, bool>) {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @callee
+kgen.generator @callee<width>() always_inline {
+  kgen.param.declare fn: <width>(!pop.simd<width, bool>) -> () = <@param_arg>
+  kgen.param.declare bound: (!pop.simd<width, bool>) -> () =
+    <bind_signature(:<width>(!pop.simd<width, bool>) -> () fn, width)>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.generator @dependent_types
+kgen.generator @dependent_types() {
+  // CHECK-NEXT: declare rank = <4>
+  kgen.param.declare rank = <4>
+  // CHECK: declare rank0 = <1>
+  // CHECK-NEXT: declare shape: list<index[rank0]> = <rebind(:list<index[1]> [2])>
+  // CHECK-NEXT: call @call_me<rank = rank0, shape: list<index[rank0]> = shape>
+  // CHECK-NEXT: declare output: list<index[1]> = <rebind(:list<index[rank0]> shape)>
+  kgen.call @callee<rank = 1, shape: list<index[1]> = [2] -> output = output: list<index[1]>>() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @call_me
+kgen.generator @call_me<rank, shape: list<index[rank]>>() {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @callee
+kgen.generator @callee<rank, shape: list<index[rank]> -> output: list<index[rank]>>() always_inline {
+  kgen.call @call_me<rank = rank, shape: list<index[rank]> = shape>() : () -> ()
+  kgen.return<:list<index[rank]> shape>
+}
+
+// -----
+
+// CHECK-LABEL: kgen.generator @struct_extract
+kgen.generator @struct_extract(%arg0: !pop.struct<simd<2, f32>>) {
+  kgen.param.declare size = <1>
+  kgen.param.declare type: dtype = <si32>
+  // CHECK: pop.struct.extract %0[0] : !pop.struct<simd<size0, type0>>
+  kgen.call @callee<size = 2, type: dtype = f32>(%arg0) : (!pop.struct<simd<2, f32>>) -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @callee
+kgen.generator @callee<size, type: dtype>(%arg0: !pop.struct<simd<size, type>>) always_inline {
+  kgen.param.declare cond: i1 = <1>
+  kgen.param.if <cond> {
+    %0 = pop.struct.extract %arg0[0] : !pop.struct<simd<size, type>>
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.generator @only_mangle_mangled_captures
+kgen.generator @only_mangle_mangled_captures() {
+  kgen.param.declare A = <0>
+  // CHECK: constant = <A0>
+  // CHECK-NEXT: constant = <B>
+  kgen.call @callee<A = 1, B = 1>() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @callee
+kgen.generator @callee<A, B>() always_inline {
+  kgen.param.declare.region F = () {
+    kgen.param.constant = <A>
+    kgen.param.constant = <B>
+    kgen.return
+  }
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.generator @parent
+kgen.generator @parent<rank, shape: list<index[rank]>>() {
+  // CHECK: declare another: list<index[rank0]> = <shape0>
+  kgen.call @mid<rank = rank, shape: list<index[rank]> = shape>() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @mid
+kgen.generator @mid<rank, shape: list<index[rank]>>() always_inline {
+  kgen.param.declare another: list<index[rank]> = <shape>
+  kgen.return
+}
+
+// -----
+
+// CHECK-LABEL: kgen.generator @parent
+kgen.generator @parent() {
+  // CHECK: declare A = <2>
+  // CHECK-NEXT: assert <eq(A, 1)>, "A == 1"
+  kgen.call @callee<A = 2>() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @callee
+kgen.generator @callee<A>() always_inline constraints <[eq(A, 1), "A == 1"]> {
+  kgen.return
 }

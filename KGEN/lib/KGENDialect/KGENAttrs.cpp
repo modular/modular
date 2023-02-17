@@ -45,7 +45,6 @@ struct FieldParser<KGENDType> {
     return KGENDType::getFromString(value);
   }
 };
-
 } // namespace mlir
 
 //===----------------------------------------------------------------------===//

@@ -14,6 +14,7 @@
 #include "Support/ForwardDecls.h"
 #include "Support/ML/DType.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
 
 namespace M::KGEN {
 
@@ -69,6 +70,9 @@ public:
   }
 };
 
+inline raw_ostream &operator<<(raw_ostream &os, KGENDType value) {
+  return os << value.getAsString();
+}
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_KGENDTYPE_H
