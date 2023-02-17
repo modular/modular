@@ -1237,6 +1237,39 @@ def POP_ArrayGEPOp : POPOp<"array.gep", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// PackCreateOp
+//===----------------------------------------------------------------------===//
+
+def PackCreateOp : POPOp<"pack.create", [Pure]> {
+  let summary = "create a pack";
+  let description = [{
+    The `pop.pack.create` operation creates a value of `!pop.pack` type,
+    populated with the given SSA values.
+
+    Example:
+
+    ```mlir
+    kgen.generator @pack<Ts: variadic<!kgen.mlirtype>>(%arg0: f32, %arg1: si8) {
+      // Create a pack of two elements.
+      %0 = pop.pack.create(%arg0, %arg1) : !pop.pack<[f32, si8]>
+
+      // Create that same pack of two elements, but with a parameterized result.
+      %1 = pop.pack.create(%arg0 : f32, %arg1 : si8) : !pop.pack<Ts>
+
+      // Create an empty pack.
+      %2 = pop.pack.create() : !pop.pack<[]>
+
+      kgen.return
+    }
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$elements);
+  let results = (outs POP_PackType:$result);
+  let hasCustomAssemblyFormat = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // PackGetOp
 //===----------------------------------------------------------------------===//
 

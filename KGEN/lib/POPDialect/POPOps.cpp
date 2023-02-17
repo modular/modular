@@ -398,6 +398,77 @@ static Type getPointerToArrayElementType(Type arrayPtr) {
 }
 
 //===----------------------------------------------------------------------===//
+// PackCreateOp
+//===----------------------------------------------------------------------===//
+
+/// Parses a pop.pack.create op.
+///
+/// operation ::=
+///   `pop.pack.create` `(` operands `)` attr-dict `:` result-type
+///
+/// This is custom because we need to match operands at each index to the
+/// resulting pack type element at that index.
+ParseResult PackCreateOp::parse(OpAsmParser &p, OperationState &result) {
+  llvm::SMLoc operandsLoc;
+  SmallVector<OpAsmParser::UnresolvedOperand> operands;
+  NamedAttrList attrs;
+  if (p.getCurrentLocation(&operandsLoc) ||
+      p.parseOperandList(operands, OpAsmParser::Delimiter::Paren) ||
+      p.parseOptionalAttrDict(result.attributes) || p.parseColon() ||
+      p.parseType(result.types.emplace_back()))
+    return failure();
+
+  // We've parsed the components of the op. Now we resolve operands based on the
+  // elements of the result type.
+  PackType type = cast<PackType>(result.types.front());
+  auto variadic = dyn_cast<VariadicAttr>(type.getVariadic());
+  if (!variadic)
+    // We can only infer if we know the elements of the pack type (i.e.: it is
+    // backed by a variadic attribute).
+    return p.emitError(operandsLoc) << "operand types cannot be "
+                                       "inferred for resulting pack type "
+                                    << type;
+
+  ArrayRef<TypedAttr> values = variadic.getValues();
+  if (operands.size() != values.size())
+    return p.emitError(operandsLoc)
+           << "result type specifies " << values.size()
+           << " elements, but there are " << operands.size() << " operands";
+
+  for (auto [i, operand, value] :
+       llvm::zip(llvm::seq<size_t>(0, operands.size()), operands, values)) {
+    Type expected = cast<ConcreteTypeConstantAttr>(value).getValue();
+    if (p.resolveOperand(operand, expected, result.operands))
+      return p.emitError(operand.location)
+             << "operand #" << i
+             << " type does not match result pack element type at index #" << i
+             << ", which is of type " << expected;
+  }
+  return success();
+}
+
+void PackCreateOp::print(OpAsmPrinter &p) {
+  // Print operands, which may or may not be suffixed with their types.
+  p << '(';
+  if (auto variadic = dyn_cast<VariadicAttr>(getType().getVariadic()))
+    // If we have a pack backed by an attribute, we do not need to print operand
+    // types, as they can be inferred from the result type.
+    p.printOperands(getElements());
+  else
+    // Otherwise, print types for each operand.
+    llvm::interleaveComma(getElements(), p.getStream(), [&](Value value) {
+      p.printOperand(value);
+      p << " : ";
+      p.printType(value.getType());
+    });
+  p << ") ";
+
+  p.printOptionalAttrDictWithKeyword(getOperation()->getAttrs());
+  p << ": ";
+  p.printType(getType());
+}
+
+//===----------------------------------------------------------------------===//
 // PackGetOp
 //===----------------------------------------------------------------------===//
 

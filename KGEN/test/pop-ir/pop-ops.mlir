@@ -886,7 +886,9 @@ kgen.generator @array_ops<idx, N, T: type, dtype: dtype>(%arg0: !kgen.paramref<T
 // CHECK-LABEL: kgen.generator @pack
 kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T: type>(
   %arg0: !pop.pack<Ts>,
-  %arg1: !pop.pack<[i32, T]>
+  %arg1: !pop.pack<[i32, T]>,
+  %arg2: f32,
+  %arg3: i8
 ) -> i32 {
   // CHECK: pop.pack.get %arg0[3] : <Ts>
   %0 = pop.pack.get %arg0[3] : <Ts>
@@ -895,6 +897,11 @@ kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T: type>(
   %1 = pop.pack.get %arg1[0] : <[i32, T]>
   // CHECK: pop.pack.get %arg1[1] : <[i32, T]>
   %2 = pop.pack.get %arg1[1] : <[i32, T]>
+
+  // CHECK: pop.pack.create(%arg2, %arg2, %arg3) : !pop.pack<[f32, f32, i8]>
+  %3 = pop.pack.create(%arg2, %arg2, %arg3) : !pop.pack<[f32, f32, i8]>
+  // CHECK: pop.pack.create() : !pop.pack<[]>
+  %4 = pop.pack.create() : !pop.pack<[]>
 
   kgen.return %1 : i32
 }
