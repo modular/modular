@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/TensorShape.h"
+#include "Support/ErrorOr.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -104,7 +105,7 @@ void Detail::TensorShapeStorage::assign(ArrayRef<int64_t> elements) {
 }
 
 //===----------------------------------------------------------------------===//
-// Printing and Stringizing
+// Printing, Stringizing, and Parsing
 //===----------------------------------------------------------------------===//
 
 void TensorShape::print(raw_ostream &os) const {
@@ -128,3 +129,27 @@ std::string TensorShape::getAsString() const {
 }
 
 void TensorShape::dump() const { print(llvm::errs()); }
+
+ErrorOr<TensorShape> TensorShape::parseFromString(StringRef str) {
+  // Empty strings gum up the rest of the function since splitStr would still
+  // have one (empty) element, so early-out in this case.
+  if (str.empty())
+    return TensorShape();
+
+  SmallVector<StringRef, 5> splitStr;
+  str.split(splitStr, 'x');
+
+  SmallVector<int64_t, 5> shape;
+  shape.reserve(splitStr.size());
+  for (auto &it : splitStr) {
+    int64_t value;
+    if (it == "?")
+      value = mlir::ShapedType::kDynamic;
+    else if (it.getAsInteger(10, value))
+      return Error(Twine("could not parse dimension integer from string: ") +
+                   str + " because " + it + " cannot be parsed as an integer");
+    shape.emplace_back(value);
+  }
+
+  return TensorShape(shape);
+}
