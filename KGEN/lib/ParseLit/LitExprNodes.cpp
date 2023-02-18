@@ -431,8 +431,17 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
   }
 
   // Functions form an address, and may be overloaded.
-  if (isa<LIT::FuncOp>(*decls[0]))
-    return CallableValue(getLoc(), spelling, decls, /*bindings=*/{});
+  if (isa<LIT::FuncOp>(*decls[0])) {
+    // When unqualified name lookup finds a method on a struct, we bind in the
+    // parameters from the enclosing struct.
+    ParamBindArrayAttr paramBindings;
+    if (isa_and_nonnull<StructDeclOp>(*decls[0]->getParentDecl())) {
+      auto structDeclType = decls[0]->getParentDecl()->getSelfType();
+      paramBindings = structDeclType.getParamBindings();
+    }
+
+    return CallableValue(getLoc(), spelling, decls, paramBindings);
+  }
 
   assert(decls.size() == 1 && "Only functions may be overloaded");
   ASTDecl &decl = *decls[0];
