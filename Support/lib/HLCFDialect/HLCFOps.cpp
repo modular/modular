@@ -124,6 +124,16 @@ ErrorTreeOr<SuccessType> IfOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+OpBuilder IfOp::getThenBodyBuilder() {
+  assert(!getThenRegion().empty() && "Need a then block");
+  return OpBuilder::atBlockEnd(&getThenRegion().front());
+}
+
+OpBuilder IfOp::getElseBodyBuilder() {
+  assert(!getElseRegion().empty() && "Need an else block");
+  return OpBuilder::atBlockEnd(&getElseRegion().front());
+}
+
 //===----------------------------------------------------------------------===//
 // ContinueOp
 //===----------------------------------------------------------------------===//

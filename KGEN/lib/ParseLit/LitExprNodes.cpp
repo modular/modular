@@ -27,7 +27,6 @@
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Verifier.h"
@@ -35,7 +34,6 @@
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
-namespace scf = mlir::scf;
 
 /// Given a StringRef for an MLIR attribute, invoke the MLIR parser to resolve
 /// it into an Attribute (which may not be a TypedAttr) and return it.  On
@@ -1629,8 +1627,10 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
   if (!lhsI1DRValue)
     return {};
 
-  auto ifOp = emitter.builder->create<scf::IfOp>(
-      ifLoc, TypeRange{lhsBool.getType()}, lhsI1DRValue, /*withElse=*/true);
+  auto ifOp = emitter.builder->create<HLCF::IfOp>(
+      ifLoc, TypeRange{lhsBool.getType()}, lhsI1DRValue);
+  emitter.builder->createBlock(&ifOp.getThenRegion());
+  emitter.builder->createBlock(&ifOp.getElseRegion());
 
   OpBuilder trueBuilder = ifOp.getThenBodyBuilder();
   OpBuilder falseBuilder = ifOp.getElseBodyBuilder();
@@ -1645,10 +1645,10 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
   // Now that we know lhsRV and rhsRV we can tell if they have common types.
   // If so, we use that as the result of the 'if'.
   if (ASTType(lhsRV.getType()).isEqualCanon(rhsRV.getType())) {
-    emitter.builder->create<scf::YieldOp>(ifLoc, rhsRV);
+    emitter.builder->create<HLCF::YieldOp>(ifLoc, rhsRV);
     // Emit the false side.
     emitter.builder = falseBuilder;
-    emitter.builder->create<scf::YieldOp>(ifLoc, lhsRV);
+    emitter.builder->create<HLCF::YieldOp>(ifLoc, lhsRV);
     ifOp->getResult(0).setType(lhsRV.getType());
   } else {
     // Otherwise, check to see if their boolean versions are compatible.
@@ -1665,13 +1665,13 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
     auto rhsBoolDRVal = emitter.emitDRValue({rhsBool, rhs});
     if (!rhsBoolDRVal)
       return {};
-    emitter.builder->create<scf::YieldOp>(ifLoc, rhsBoolDRVal);
+    emitter.builder->create<HLCF::YieldOp>(ifLoc, rhsBoolDRVal);
     // Emit the false side.
     emitter.builder = falseBuilder;
     auto lhsBoolDRVal = emitter.emitDRValue({lhsBool, lhs});
     if (!lhsBoolDRVal)
       return {};
-    emitter.builder->create<scf::YieldOp>(ifLoc, lhsBoolDRVal);
+    emitter.builder->create<HLCF::YieldOp>(ifLoc, lhsBoolDRVal);
     ifOp->getResult(0).setType(lhsBool.getType());
   }
 
@@ -1749,18 +1749,21 @@ AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
   Location ifLoc = getLocation(emitter);
   // At this point we don't know the type of trueExpr / falseExpr, use
   // a dummy one and fix it later.
-  auto ifOp = emitter.builder->create<scf::IfOp>(
-      ifLoc, TypeRange{condValue.getType()}, condValue, /*withElse=*/true);
+  auto ifOp = emitter.builder->create<HLCF::IfOp>(
+      ifLoc, TypeRange{condValue.getType()}, condValue);
+  emitter.builder->createBlock(&ifOp.getThenRegion());
+  emitter.builder->createBlock(&ifOp.getElseRegion());
+
   emitter.builder = ifOp.getThenBodyBuilder();
   DRValue trueVal = emitter.emitExprDRValue(trueExpr);
   if (!trueVal)
     return {};
-  emitter.builder->create<scf::YieldOp>(ifLoc, trueVal);
+  emitter.builder->create<HLCF::YieldOp>(ifLoc, trueVal);
   emitter.builder = ifOp.getElseBodyBuilder();
   DRValue falseVal = emitter.emitExprDRValue(falseExpr);
   if (!falseVal)
     return {};
-  emitter.builder->create<scf::YieldOp>(ifLoc, falseVal);
+  emitter.builder->create<HLCF::YieldOp>(ifLoc, falseVal);
   emitter.builder->setInsertionPointAfter(ifOp);
 
   /// TODO(subtyping): With subtypes, we can find intersection types, e.g. a

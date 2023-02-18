@@ -22,7 +22,6 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Verifier.h"
@@ -50,7 +49,7 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
 
   context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
                        POP::POPDialect, LITDialect, mlir::index::IndexDialect,
-                       KGENDialect, mlir::scf::SCFDialect>();
+                       KGENDialect>();
 
   // This is the result module we are parsing into.
   auto fileLoc =

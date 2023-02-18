@@ -23,10 +23,11 @@ class HLCFOp<string mnemonic, list<Trait> traits = []> :
     Op<HLCFDialect, mnemonic, traits>;
 
 /// Base class for HLCF control-flow operations.
-class HLCFParentOp<string mnemonic> : HLCFOp<mnemonic, [
-    RecursiveMemoryEffects, RecursivelySpeculatable,
-    DeclareOpInterfaceMethods<ControlFlowNode>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]>;
+class HLCFParentOp<string mnemonic, list<Trait> traits = []> :
+    HLCFOp<mnemonic, traits # [
+      RecursiveMemoryEffects, RecursivelySpeculatable,
+      DeclareOpInterfaceMethods<ControlFlowNode>,
+      DeclareOpInterfaceMethods<InterpreterOpInterface>]>;
 
 /// Base class for HLCF terminator operations.
 class HLCFTerminatorOp<string mnemonic, list<Trait> traits = []> :
@@ -181,6 +182,12 @@ def HLCF_IfOp : HLCFParentOp<"if"> {
   let builders = [OpBuilder<(ins "Value":$cond), [{
     build($_builder, $_state, {}, cond);
   }]>];
+
+  let extraClassDeclaration = [{
+    // Return OpBuilder's pointing the end of the then/else block.
+    OpBuilder getThenBodyBuilder();
+    OpBuilder getElseBodyBuilder();
+  }];
 }
 
 //===----------------------------------------------------------------------===//

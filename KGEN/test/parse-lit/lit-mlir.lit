@@ -117,13 +117,14 @@ fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](arg&: T) -> MyPointer[T]:
 
 # CHECK-LABEL: lit.func @"structured_for_loop()"
 fn structured_for_loop() -> __mlir_type.index:
-    # CHECK: %0 = scf.for %arg0 = %idx0 to %idx10 step %idx1 iter_args(%arg1 = %idx2) -> (index) {
-    __mlir_region loop_body(i: __mlir_type.index, acc: __mlir_type.index):
-        # CHECK-NEXT: %1 = index.add %arg0, %arg1
-        # CHECK-NEXT: scf.yield %1 : index
-        __mlir_op.`scf.yield`(__mlir_op.`index.add`(i, acc))
+    # CHECK: %0 = hlcf.loop (%arg0 = %idx0 : index) -> index {
+    __mlir_region loop_body(i: __mlir_type.index):
+        # CHECK-NEXT: %idx1 = index.constant 1
+        # CHECK-NEXT: %1 = index.add %arg0, %idx1
+        # CHECK-NEXT: hlcf.continue %1 : index
+        __mlir_op.`hlcf.continue`(__mlir_op.`index.add`(i, 1))
 
-    # CHECK: return %0 : index
-    return __mlir_op.`scf.for`[
+    # CHECK: lit.return %0 : index
+    return __mlir_op.`hlcf.loop`[
         _type : [__mlir_type.index], _region:["loop_body"]
-    ](0, 10, 1, 2)
+    ](0)

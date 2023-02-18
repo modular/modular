@@ -196,10 +196,10 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
 
   # CHECK: %0 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
   # CHECK: %1 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%0)
-  # CHECK: %2 = scf.if %1 -> (!kgen.declref<@"$expressions"::@Boolish>) {
-  # CHECK:   scf.yield %b
+  # CHECK: %2 = hlcf.if %1 -> !kgen.declref<@"$expressions"::@Boolish> {
+  # CHECK:   hlcf.yield %b
   # CHECK: } else {
-  # CHECK:   scf.yield %a
+  # CHECK:   hlcf.yield %a
   # CHECK: }
   _ = a and b
 
@@ -208,10 +208,10 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
 
   # CHECK: %3 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
   # CHECK: %4 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%3)
-  # CHECK: %5 = scf.if %4 -> (!kgen.declref<@"$expressions"::@Boolish>) {
-  # CHECK:   scf.yield %a
+  # CHECK: %5 = hlcf.if %4 -> !kgen.declref<@"$expressions"::@Boolish> {
+  # CHECK:   hlcf.yield %a
   # CHECK: } else {
-  # CHECK:   scf.yield %b
+  # CHECK:   hlcf.yield %b
   # CHECK: }
   _ = a or b
 
@@ -219,11 +219,11 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
 
   # CHECK: %6 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
   # CHECK: %7 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%6)
-  # CHECK: %8 = scf.if %7 -> (!kgen.declref<@"$Bool"::@Bool>) {
-  # CHECK:   scf.yield %6
+  # CHECK: %8 = hlcf.if %7 -> !kgen.declref<@"$Bool"::@Bool> {
+  # CHECK:   hlcf.yield %6
   # CHECK: } else {
   # CHECK:   %9 = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"(%x)
-  # CHECK:   scf.yield %9
+  # CHECK:   hlcf.yield %9
   # CHECK: }
    _ = a or x
 
@@ -285,12 +285,12 @@ def test_if_cond(cond: Bool):
     # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@"$Int"::@Int>
     # CHECK-NEXT: %[[COND:.*]] = pop.load %cond_0
     # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%[[COND]])
-    # CHECK-NEXT: %[[IF_RES:.*]] = scf.if %[[LIT_BOOLI1]]
+    # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
     # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}= 2}
-    # CHECK-NEXT:   scf.yield %[[INT_TWO]]
+    # CHECK-NEXT:   hlcf.yield %[[INT_TWO]]
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   %[[INT_THREE:.*]] = kgen{{.*}}= 3}
-    # CHECK-NEXT:   scf.yield %[[INT_THREE]]
+    # CHECK-NEXT:   hlcf.yield %[[INT_THREE]]
     # CHECK-NEXT: }
     # CHECK-NEXT: pop.store %[[IF_RES]], %i
     var i: Int = Int(2) if cond else Int(3)
@@ -613,11 +613,11 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT:   hlcf.yield %[[CMP_A_B]]
     # CHECK-NEXT: }
     # CHECK-NEXT: %[[CMP_I1:.*]] = kgen.call @{{.*}}__lit_bool{{.*}}(%[[IF_A_B]])
-    # CHECK-NEXT: %[[IF:.*]] = scf.if %[[CMP_I1]]
+    # CHECK-NEXT: %[[IF:.*]] = hlcf.if %[[CMP_I1]]
     # CHECK-NEXT:   %[[CMP_D_E:.*]] = kgen.call @{{.*}}__lt__{{.*}}(%d, %e)
-    # CHECK-NEXT:   scf.yield %[[CMP_D_E]]
+    # CHECK-NEXT:   hlcf.yield %[[CMP_D_E]]
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   scf.yield %[[IF_A_B]]
+    # CHECK-NEXT:   hlcf.yield %[[IF_A_B]]
     # CHECK-NEXT: }
     # CHECK-NEXT: pop.store %[[IF]], %res : !pop.pointer<@"$Bool"::@Bool>
     res = a < b < c and d < e
