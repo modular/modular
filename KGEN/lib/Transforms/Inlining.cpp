@@ -15,8 +15,10 @@
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Threading.h"
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Support/RWMutex.h"
 
 using namespace M;
 using namespace KGEN;
@@ -57,12 +59,11 @@ getNearestDeclAndRegion(Operation *op) {
 static SmallVector<Value> rebindValues(OpBuilder &b, Location loc,
                                        ValueRange inputs, TypeRange outputs) {
   SmallVector<Value> newValues;
-  for (auto [input, output] : llvm::zip(inputs, outputs)) {
+  for (auto [input, output] : llvm::zip(inputs, outputs))
     if (input.getType() != output)
       newValues.push_back(b.create<RebindOp>(loc, output, input));
     else
       newValues.push_back(input);
-  }
   return newValues;
 }
 
@@ -195,10 +196,9 @@ struct AttrTypeMangler {
 
     const ParameterUseDefGraph &uses = graph.nestedScopes.find(scope)->second;
     AttrTypeMangler mangler;
-    for (ParamDeclRefAttr ref : uses.usesFromAbove) {
+    for (ParamDeclRefAttr ref : uses.usesFromAbove)
       if (StringAttr mangled = mangledDecls.lookup(ref.getName()))
         mangler.mangledDecls.insert(ref.getName(), mangled);
-    }
     for (Operation *op : uses.paramOps) {
       if (op == scope->getParentOp())
         continue;
@@ -226,8 +226,10 @@ static LogicalResult inlineGeneratorCall(
     function_ref<ParameterUseDefGraph &(GeneratorOp)> getGraph) {
   TimeTraceScope<> traceScope("inline-generator-call");
 
-  // Compute the parameter uses from the top-level.
-  ParameterUseDefGraph &topLevelGraph = getGraph(gen);
+  // Compute the parameter uses from the top-level. This is only computed once
+  // per top-level generator.
+  ParameterUseDefGraph topLevelGraph(gen.getBodyRegion());
+  topLevelGraph.calculate();
 
   // Collect all calls that inline in this function.
   struct EndStack {};
@@ -464,27 +466,38 @@ void AlwaysInlineParametricPass::runOnOperation() {
   // minimally update those graphs. We need to keep up-to-date parameter
   // declarations in each scope, since those are used to mangle parameters, and
   // merge any nested graphs in.
-  DenseMap<Region *, std::unique_ptr<ParameterUseDefGraph>> graphs;
+  DenseMap<GeneratorOp, std::unique_ptr<ParameterUseDefGraph>> graphs;
+  llvm::sys::SmartRWMutex<true> graphsMtx;
   auto getGraph = [&](GeneratorOp gen) -> ParameterUseDefGraph & {
-    Region *region = &gen.getBodyRegion();
-    auto it = graphs.find(region);
-    if (it != graphs.end())
-      return *it->second;
-    it = graphs
-             .try_emplace(region,
-                          std::make_unique<ParameterUseDefGraph>(*region))
-             .first;
-    it->second->calculate();
-    return *it->second;
+    {
+      llvm::sys::SmartScopedReader<true> lock(graphsMtx);
+      if (auto it = graphs.find(gen); it != graphs.end())
+        return *it->second;
+    }
+
+    // Don't compute the graph inside the critical section. This means it's
+    // possible for more than one thread to compute the graph for the same
+    // generator, but it also means that computations can be parallelized if
+    // they are different.
+    auto graph = std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
+    graph->calculate();
+
+    llvm::sys::SmartScopedWriter<true> lock(graphsMtx);
+    return *graphs.try_emplace(gen, std::move(graph)).first->second;
   };
 
+  std::vector<GeneratorOp> rootGens;
   for (auto gen : getOperation().getOps<GeneratorOp>()) {
     // Skip over functions that are force inlined. Start inlining from the tips.
     if (gen.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
       continue;
-    if (failed(inlineGeneratorCall(gen, symtab, getGraph)))
-      return signalPassFailure();
+    rootGens.push_back(gen);
   }
+  auto workFunc = [&](GeneratorOp gen) {
+    return inlineGeneratorCall(gen, symtab, getGraph);
+  };
+  if (failed(mlir::failableParallelForEach(&getContext(), rootGens, workFunc)))
+    return signalPassFailure();
 }
 
 //===----------------------------------------------------------------------===//
@@ -622,11 +635,15 @@ void ForceInlinePass::runOnOperation() {
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
 
+  std::vector<FuncOp> rootFuncs;
   for (auto func : getOperation().getOps<FuncOp>()) {
     // Skip over functions that are force inlined. Start inlining from the tips.
     if (func.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
       continue;
-    if (failed(inlineFunctionCall(func, symtab)))
-      return signalPassFailure();
+    rootFuncs.push_back(func);
   }
+  if (failed(mlir::failableParallelForEach(
+          &getContext(), rootFuncs,
+          [&](FuncOp func) { return inlineFunctionCall(func, symtab); })))
+    return signalPassFailure();
 }
