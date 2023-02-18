@@ -31,5 +31,4 @@ add_modular_conversion_library(ParseLit
 
   MLIRIndexDialect
   MLIRTranslateLib
-  MLIRSCFDialect
 )
