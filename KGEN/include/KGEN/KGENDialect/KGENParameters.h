@@ -24,6 +24,49 @@ namespace M::KGEN {
 // ParameterCollector
 //===----------------------------------------------------------------------===//
 
+class ParameterCollector {
+public:
+  virtual ~ParameterCollector() = default;
+
+  /// Scan the specified attribute and its recursive uses, diagnosing incorrect
+  /// parameter declarations and collecting parameter uses into `uses`.
+  void collectUsesFromAttr(Attribute attr,
+                           SmallVectorImpl<ParamDeclRefAttr> &uses,
+                           bool &hasConstExpr);
+
+  /// Scan the specified type and its recursive uses, diagnosing incorrect
+  /// parameter declarations and collecting parameter uses into `uses`.
+  void collectUsesFromType(Type type, SmallVectorImpl<ParamDeclRefAttr> &uses,
+                           bool &hasConstExpr);
+
+private:
+  void collectUsesFromTypesImpl(Type type,
+                                SmallVectorImpl<ParamDeclRefAttr> &uses,
+                                bool &hasConstExpr);
+
+  /// The first time we encounter an attribute with a reference to an
+  /// out-of-line declaration, verify it.
+  virtual void verifyRefAttr(DeclRefAttrInterface refAttr) {}
+
+  /// When we encounter a DeclRefType, check that its parameter bindings match
+  /// the parameter declarations on the type declaration.
+  virtual void verifyRefType(DeclRefType refType) {}
+
+  /// Verify a use of a parameter declared in a nested scope.
+  virtual void verifyNestedParameterUse(ParamDeclAttr decl,
+                                        ParamDeclRefAttr use) {}
+
+  /// Report that a nested parameter declaration is a duplicate.
+  virtual void reportDuplicateNestedDecl(ParamDeclAttr decl) {}
+
+  /// Attributes and types are memoized and exist in tree structures with reuse:
+  /// naively scanning them can lead to exponential compile time behavior.  As
+  /// such, we memoize the attributes and types we've already checked that we
+  /// know have no parameters in them and whether the paramless attributes are
+  /// constant parameter expressions.
+  DenseMap<const void *, bool> parameterLess;
+};
+
 /// Visit the type and all its sub-elements and collect all parameter
 /// references at the scope of the type.
 void collectParameterUsesFrom(Type type,

@@ -237,9 +237,6 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     SignatureType
     getSpecializedSignature(ArrayRef<ParamBindAttr> inputParams,
       llvm::function_ref<mlir::InFlightDiagnostic()> emitErrorFn);
-    SignatureType
-    getSpecializedSignature(ParamBindArrayAttr inputParams,
-      llvm::function_ref<mlir::InFlightDiagnostic()> emitErrorFn);
 
     /// Return this signature type with the value signature replaced.
     SignatureType getWithValuesReplaced(FunctionType fnType);

@@ -105,26 +105,36 @@ void OutlineClosuresPass::runOnOperation() {
       // Collect any parameters used from above that we need to capture for the
       // lifted generator.
       llvm::SetVector<ParamDeclAttr> necessaryDecls;
+      SmallVector<ParamDeclRefAttr> capturedParamValues;
       auto regionDeclUses = uses.nestedScopes.find(&regionDecl.getBodyRegion());
       assert(regionDeclUses != uses.nestedScopes.end());
 
-      DenseMap<ParamDeclAttr, TypedAttr> parameterCaptures;
+      // Scan the captured values for captured parameters.
+      ParameterCollector collector;
+      SmallVector<ParamDeclRefAttr, 16> capturedUses;
+      for (Value capture : captures) {
+        capturedUses.clear();
+        bool unused;
+        collector.collectUsesFromType(capture.getType(), capturedUses, unused);
+        for (ParamDeclRefAttr capturedUse : capturedUses) {
+          Operation *declOp =
+              regionDeclUses->second.decls.find(capturedUse.getName())
+                  ->second.declOp;
+          if (!regionDecl->isAncestor(declOp))
+            regionDeclUses->second.usesFromAbove.insert(capturedUse);
+        }
+      }
+
       for (ParamDeclRefAttr useFromAbove :
            regionDeclUses->second.usesFromAbove) {
         auto decl =
             ParamDeclAttr::get(useFromAbove.getName(), useFromAbove.getType());
-        necessaryDecls.insert(decl);
-        // Create a binding that just references the attr we already have.
-        parameterCaptures[decl] = useFromAbove;
+        if (necessaryDecls.insert(decl))
+          capturedParamValues.push_back(useFromAbove);
       }
 
       LLVM_DEBUG(llvm::dbgs() << "Found parameter captures: [";
-                 llvm::interleaveComma(
-                     llvm::map_range(necessaryDecls,
-                                     [&](auto paramDecl) {
-                                       return parameterCaptures[paramDecl];
-                                     }),
-                     llvm::dbgs());
+                 llvm::interleaveComma(necessaryDecls, llvm::dbgs());
                  llvm::dbgs() << "]\n");
 
       SignatureType bodySignature = regionDecl.getFullSignature();
@@ -308,20 +318,13 @@ void OutlineClosuresPass::runOnOperation() {
 
       Attribute bindSignature = wrapperSymbol;
       // If we have parameter captures, create a bind_signature operator.
-      if (!parameterCaptures.empty()) {
+      if (necessaryDecls.size() != regionDecl.getInputParamDecls().size()) {
         // OK cool, now we need a partial binding. First we insert the lifted
         // symbol at the beginning of the vector.
         SmallVector<TypedAttr> partialBindings = {wrapperSymbol};
-        // Next, add the bindings for the input parameters. If we don't have a
-        // binding for this parameter, add `#kgen.unbound`. We drop the last
-        // parameters off of this because they are the original input
-        // parameters, and we only want to partial_bind the captures.
-        for (ParamDeclAttr decl : liftedWrapper.getInputParamDecls()) {
-          if (TypedAttr value = parameterCaptures.lookup(decl))
-            partialBindings.push_back(value);
-          else
-            partialBindings.push_back(UnboundAttr::get(decl.getType()));
-        }
+        llvm::append_range(partialBindings, capturedParamValues);
+        for (ParamDeclAttr decl : regionDecl.getInputParamDecls())
+          partialBindings.push_back(UnboundAttr::get(decl.getType()));
         LLVM_DEBUG(llvm::dbgs() << "Partial bindings: [\n\t";
                    llvm::interleave(partialBindings, llvm::dbgs(), ",\n\t");
                    llvm::dbgs() << "\n]\n");

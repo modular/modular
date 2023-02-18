@@ -15,6 +15,7 @@
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "Support/STLExtras.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -451,11 +452,17 @@ bool SymbolConstantAttr::isConstant() const { return true; }
 
 LogicalResult SymbolConstantAttr::verifySymbolUses(
     Operation *module, SymbolTableCollection &symtab, Location loc) const {
+  TimeTraceScope<> traceScope("SymbolConstantAttr::verifySymbolUses");
+
   // Build the signature of the referenced symbol.
   SymbolRefAttr symbol = getSymbol();
   SmallVector<Operation *> symbolOps;
-  if (failed(symtab.lookupSymbolIn(module, symbol, symbolOps)))
-    return emitError(loc) << symbol << " does not reference a KGEN declaration";
+  {
+    TimeTraceScope<> traceScope("lookupSymbolIn");
+    if (failed(symtab.lookupSymbolIn(module, symbol, symbolOps)))
+      return emitError(loc)
+             << symbol << " does not reference a KGEN declaration";
+  }
 
   // The leaf symbol must refer to a function.
   auto func = ::dyn_cast<FuncInterface>(symbolOps.back());

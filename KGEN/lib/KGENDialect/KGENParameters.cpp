@@ -28,52 +28,6 @@ using namespace M::KGEN;
 // ParameterCollector
 //===----------------------------------------------------------------------===//
 
-namespace {
-class ParameterCollector {
-public:
-  virtual ~ParameterCollector() = default;
-
-  /// Scan the specified attribute and its recursive uses, diagnosing incorrect
-  /// parameter declarations and collecting parameter uses into `uses`.
-  void collectUsesFromAttr(Attribute attr,
-                           SmallVectorImpl<ParamDeclRefAttr> &uses,
-                           bool &hasConstExpr);
-
-  /// Scan the specified type and its recursive uses, diagnosing incorrect
-  /// parameter declarations and collecting parameter uses into `uses`.
-  void collectUsesFromType(Type type, SmallVectorImpl<ParamDeclRefAttr> &uses,
-                           bool &hasConstExpr);
-
-private:
-  void collectUsesFromTypesImpl(Type type,
-                                SmallVectorImpl<ParamDeclRefAttr> &uses,
-                                bool &hasConstExpr);
-
-  /// The first time we encounter an attribute with a reference to an
-  /// out-of-line declaration, verify it.
-  virtual void verifyRefAttr(DeclRefAttrInterface refAttr) {}
-
-  /// When we encounter a DeclRefType, check that its parameter bindings match
-  /// the parameter declarations on the type declaration.
-  virtual void verifyRefType(DeclRefType refType) {}
-
-  /// Verify a use of a parameter declared in a nested scope.
-  virtual void verifyNestedParameterUse(ParamDeclAttr decl,
-                                        ParamDeclRefAttr use) {}
-
-  /// Report that a nested parameter declaration is a duplicate.
-  virtual void reportDuplicateNestedDecl(ParamDeclAttr decl) {}
-
-  /// Attributes and types are memoized and exist in tree structures with reuse:
-  /// naively scanning them can lead to exponential compile time behavior.  As
-  /// such, we memoize the attributes and types we've already checked that we
-  /// know have no parameters in them and whether the paramless attributes are
-  /// constant parameter expressions.
-  llvm::SmallDenseMap<Attribute, bool> parameterLessAttrs;
-  llvm::SmallDenseMap<Type, bool> parameterLessTypes;
-};
-} // end anonymous namespace
-
 /// Scan the specified attribute and its recursive uses, diagnosing incorrect
 /// parameter declarations and collecting parameter uses.
 void ParameterCollector::collectUsesFromAttr(
@@ -83,7 +37,8 @@ void ParameterCollector::collectUsesFromAttr(
   // return early.
   if (!attr)
     return;
-  if (auto it = parameterLessAttrs.find(attr); it != parameterLessAttrs.end()) {
+  if (auto it = parameterLess.find(attr.getAsOpaquePointer());
+      it != parameterLess.end()) {
     hasConstExpr |= it->second;
     return;
   }
@@ -122,7 +77,7 @@ void ParameterCollector::collectUsesFromAttr(
   if (oldSize == uses.size()) {
     // Check whether this is a parameterless expression.
     hasNestedConstExpr |= isa<ParamOperatorAttr>(attr);
-    parameterLessAttrs.try_emplace(attr, hasNestedConstExpr);
+    parameterLess.try_emplace(attr.getAsOpaquePointer(), hasNestedConstExpr);
     hasConstExpr |= hasNestedConstExpr;
   }
 }
@@ -152,7 +107,8 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // Ignore types we have already scanned.
   if (!type)
     return;
-  if (auto it = parameterLessTypes.find(type); it != parameterLessTypes.end()) {
+  if (auto it = parameterLess.find(type.getAsOpaquePointer());
+      it != parameterLess.end()) {
     hasConstExpr |= it->second;
     return;
   }
@@ -178,7 +134,7 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // "parameterless".  We want other operations using the same type to record
   // the uses as well.
   if (oldSize == uses.size()) {
-    parameterLessTypes.try_emplace(type, hasNestedConstExpr);
+    parameterLess.try_emplace(type.getAsOpaquePointer(), hasNestedConstExpr);
     hasConstExpr |= hasNestedConstExpr;
   }
 }
@@ -233,24 +189,41 @@ private:
   ModuleOp module;
   /// The symbol to use to verify symbol references.
   SymbolTableCollection *symtab;
+  /// Cached references that have already been verified.
+  DenseSet<const void *> verifiedRefs;
 };
 } // namespace
 
 void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
+  TimeTraceScope<> traceScope("verifyRefAttr");
+
   // We only check this during the op verification phase.
   if (!symtab)
     return;
+
+  if (!verifiedRefs.insert(refAttr.getAsOpaquePointer()).second)
+    return;
+
   if (failed(refAttr.verifySymbolUses(module, *symtab, op->getLoc())))
     hadError = true;
 }
 
 void VerifyingParameterCollector::verifyRefType(DeclRefType refType) {
+  TimeTraceScope<> traceScope("verifyRefType");
+
   // We only check this during the op verification phase.
   if (!symtab)
     return;
 
-  auto decl = dyn_cast_or_null<DeclInterface>(
-      symtab->lookupSymbolIn(module, refType.getSymbol()));
+  if (!verifiedRefs.insert(refType.getAsOpaquePointer()).second)
+    return;
+
+  DeclInterface decl;
+  {
+    TimeTraceScope<> traceScope("lookupSymbolIn");
+    decl = dyn_cast_or_null<DeclInterface>(
+        symtab->lookupSymbolIn(module, refType.getSymbol()));
+  }
   if (!decl) {
     hadError = true;
     emitError(op->getLoc())
@@ -421,11 +394,10 @@ struct GraphTraits<ParameterUseDefGraph *> {
 void impl::scanAllAttrsAndTypes(Operation *op,
                                 function_ref<void(Attribute)> scanAttr,
                                 function_ref<void(Type)> scanType) {
-  llvm::for_each(op->getOperandTypes(), scanType);
+  TimeTraceScope<> traceScope("scanAllAttrsAndTypes");
   llvm::for_each(op->getResultTypes(), scanType);
   for (Region &region : op->getRegions())
-    for (Block &block : region)
-      llvm::for_each(block.getArgumentTypes(), scanType);
+    llvm::for_each(region.getArgumentTypes(), scanType);
 
   // FIXME(#7743): Scan locations too when the elaborator has been updated to
   // handle the new parameter use-def graph.
@@ -437,6 +409,8 @@ void impl::scanAllAttrsAndTypes(Operation *op,
 /// parametric.
 static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
                         Operation *op, bool isDecl) {
+  TimeTraceScope<> traceScope("collectUses");
+
   // Track whether parameter uses or expressions were found.
   bool hasConstExpr = false;
   SmallVector<ParamDeclRefAttr> uses;
@@ -563,7 +537,13 @@ static void emitCycleError(ParameterUseDefGraph &g,
 LogicalResult
 ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
                                         SymbolTableCollection *symtab) {
-  TimeTraceScope<> traceScope("ParameterUseDefGraph::calculateOrVerify");
+  TimeTraceScope<> traceScope(
+      "ParameterUseDefGraph::calculateOrVerify", [&]() -> std::string {
+        if (auto symbol =
+                dyn_cast<mlir::SymbolOpInterface>(scope->getParentOp()))
+          return symbol.getName().str();
+        return scope->getParentOp()->getName().getStringRef().str();
+      });
 
   // Defer the processing of the use-def node for region declarations until
   // after nested scopes have been analyzed.
@@ -572,6 +552,8 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
   VerifyingParameterCollector c(module, symtab);
 
   auto processOp = [&](Operation *op) -> WalkResult {
+    TimeTraceScope<> traceScope("processOp");
+
     // Set the operation for which we are collecting parameters. It will be used
     // to report errors.
     c.op = op;
