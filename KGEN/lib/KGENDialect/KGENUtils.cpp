@@ -20,6 +20,7 @@
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/ML/DType.h"
 #include "Support/STLExtras.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/IR/FunctionImplementation.h"
 
 using namespace M;
@@ -1638,6 +1639,8 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
                                               const char *targetName,
                                               SignatureType targetSignature,
                                               Location targetLoc) {
+  TimeTraceScope<> traceScope("verifyDeclSignaturesMatch");
+
   FunctionType originatorType = originatorSignature.getValues();
   FunctionType targetType = targetSignature.getValues();
 

@@ -106,8 +106,7 @@ private:
   /// This caches attributes and Types with parameter references rebound, and
   /// remembers complex attributes that don't have parameter subexprs (noted as
   /// being rebound to themselves).
-  DenseMap<Attribute, Attribute> rewrittenAttrs;
-  DenseMap<Type, Type> rewrittenTypes;
+  DenseMap<const void *, const void *> rewritten;
 };
 } // namespace M::KGEN
 

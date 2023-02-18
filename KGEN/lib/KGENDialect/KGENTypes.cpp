@@ -9,6 +9,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/MDialect/MTypeInterfaces.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/Types.h"
@@ -229,7 +230,9 @@ SignatureType SignatureType::setFnEffect(FnEffects effect) {
 /// and return null.
 SignatureType SignatureType::getSpecializedSignature(
     ArrayRef<ParamBindAttr> inputParamValues,
-    llvm::function_ref<mlir::InFlightDiagnostic()> emitErrorFn) {
+    function_ref<InFlightDiagnostic()> emitErrorFn) {
+  TimeTraceScope<> traceScope("SignatureType::getSpecializedSignature");
+
   // We need to substitute and simplify expressions that occur in the argument
   // list and parameter types, e.g.:
   //     kgen.generator @callee1<type: dtype>(%x: !pop.scalar<type>)
@@ -260,7 +263,7 @@ SignatureType SignatureType::getSpecializedSignature(
   };
 
   unsigned paramNo = 0;
-  SmallVector<ParamDeclAttr> unboundDecls;
+  SmallVector<ParamDeclAttr, 16> unboundDecls;
   for (auto [bind, decl] : llvm::zip(inputParamValues, getInputParams())) {
     if (bind.getName() != decl.getName()) {
       emitErrorFn() << "caller input parameter #" << paramNo << " has name "
@@ -302,7 +305,7 @@ SignatureType SignatureType::getSpecializedSignature(
     evaluator.setParameterValue(decl, ParamDeclRefAttr::get(decl));
 
   // Remap the parameter decls and result parameter types.
-  SmallVector<ParamDeclAttr> newParamResults;
+  SmallVector<ParamDeclAttr, 16> newParamResults;
   llvm::append_range(
       newParamResults,
       llvm::map_range(getResultParams(), [&](ParamDeclAttr param) {
@@ -310,7 +313,7 @@ SignatureType SignatureType::getSpecializedSignature(
       }));
 
   // Remap the value types.
-  SmallVector<Type> inputTypes, resultTypes;
+  SmallVector<Type, 16> inputTypes, resultTypes;
   llvm::append_range(inputTypes, llvm::map_range(getValueInputs(), remapType));
   llvm::append_range(resultTypes,
                      llvm::map_range(getValueResults(), remapType));
@@ -319,12 +322,6 @@ SignatureType SignatureType::getSpecializedSignature(
       ParamDeclArrayAttr::get(getContext(), unboundDecls),
       ParamDeclArrayAttr::get(getContext(), newParamResults),
       FunctionType::get(getContext(), inputTypes, resultTypes), getMetadata());
-}
-
-SignatureType SignatureType::getSpecializedSignature(
-    ParamBindArrayAttr inputParams,
-    llvm::function_ref<mlir::InFlightDiagnostic()> emitErrorFn) {
-  return getSpecializedSignature(inputParams.getValue(), emitErrorFn);
 }
 
 ArrayRef<Type> SignatureType::getValueInputs() const {

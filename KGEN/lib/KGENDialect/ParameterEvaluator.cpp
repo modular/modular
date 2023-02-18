@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "Support/ErrorOr.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 
@@ -78,14 +79,15 @@ ParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
 /// Get the specified attribute with any nested parameter expressions rewritten.
 Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   // These are common leaf attributes that we know are never parameterized.
-  if (!attr || attr.isa<IntegerAttr, FloatAttr, StringAttr, SymbolRefAttr,
-                        DTypeConstantAttr>())
+  // FIXME: Symbol references are always excepted because the elaborator wants
+  // to consider them as constants even when they are parametric.
+  if (ParameterAttr::isSimpleConstant(attr) && !isa<SymbolConstantAttr>(attr))
     return attr;
 
   // If we've already processed this attribute, just reuse the memoized result.
-  auto iter = rewrittenAttrs.find(attr);
-  if (iter != rewrittenAttrs.end())
-    return iter->second;
+  auto iter = rewritten.find(attr.getAsOpaquePointer());
+  if (iter != rewritten.end())
+    return Attribute::getFromOpaquePointer(iter->second);
 
   // If this is a foldable parameter expression, do it.
   Attribute result = attr;
@@ -96,12 +98,22 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
     // Expression functions and MLIR operation expressions are isolated from
     // above, so don't collect from them.
   } else {
-    SmallVector<Attribute> newAttrs;
-    SmallVector<Type> newTypes;
+    SmallVector<Attribute, 16> newAttrs;
+    SmallVector<Type, 16> newTypes;
+    bool changed = false;
     attr.walkImmediateSubElements(
-        [&](Attribute attr) { newAttrs.push_back(getReboundAttribute(attr)); },
-        [&](Type type) { newTypes.push_back(getReboundType(type)); });
-    result = attr.replaceImmediateSubElements(newAttrs, newTypes);
+        [&](Attribute attr) {
+          Attribute newAttr = getReboundAttribute(attr);
+          changed |= newAttr != attr;
+          newAttrs.push_back(newAttr);
+        },
+        [&](Type type) {
+          Type newType = getReboundType(type);
+          changed |= newType != type;
+          newTypes.push_back(newType);
+        });
+    if (changed)
+      result = attr.replaceImmediateSubElements(newAttrs, newTypes);
   }
 
   // If an operator persisted, try to simplify it with the symbol table.
@@ -109,15 +121,16 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
     if (FailureOr<TypedAttr> expr = evaluateExpression(op); succeeded(expr))
       result = *expr;
 
-  return rewrittenAttrs[attr] = result;
+  rewritten.try_emplace(attr.getAsOpaquePointer(), result.getAsOpaquePointer());
+  return result;
 }
 
 /// Get the specified type with any nested parameter expressions rewritten.
 Type ParameterEvaluator::getReboundType(Type type) {
   // If we've already processed this type, just reuse the memoized result.
-  auto iter = rewrittenTypes.find(type);
-  if (iter != rewrittenTypes.end())
-    return iter->second;
+  auto iter = rewritten.find(type.getAsOpaquePointer());
+  if (iter != rewritten.end())
+    return Type::getFromOpaquePointer(iter->second);
 
   Type result = type;
 
@@ -127,16 +140,26 @@ Type ParameterEvaluator::getReboundType(Type type) {
   // "isolated from above" with respect to their contexts, so we don't rebind
   // within them.
   if (!signature || signature.getInputParams().empty()) {
-    SmallVector<Attribute> newAttrs;
-    SmallVector<Type> newTypes;
-
+    SmallVector<Attribute, 16> newAttrs;
+    SmallVector<Type, 16> newTypes;
+    bool changed = false;
     type.walkImmediateSubElements(
-        [&](Attribute attr) { newAttrs.push_back(getReboundAttribute(attr)); },
-        [&](Type type) { newTypes.push_back(getReboundType(type)); });
-    result = type.replaceImmediateSubElements(newAttrs, newTypes);
+        [&](Attribute attr) {
+          Attribute newAttr = getReboundAttribute(attr);
+          changed |= newAttr != attr;
+          newAttrs.push_back(newAttr);
+        },
+        [&](Type type) {
+          Type newType = getReboundType(type);
+          changed |= newType != type;
+          newTypes.push_back(newType);
+        });
+    if (changed)
+      result = type.replaceImmediateSubElements(newAttrs, newTypes);
   }
 
-  return rewrittenTypes[type] = result;
+  rewritten.try_emplace(type.getAsOpaquePointer(), result.getAsOpaquePointer());
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
