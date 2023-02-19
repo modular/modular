@@ -283,6 +283,16 @@ struct PackMatrixRows[
     # valid multiple-of-simd data bound within the tile.
     var valid_simd_dim: StaticIntTuple[2]
 
+    fn __clone__(self&) -> Self:
+        return Self {
+            packed_matrix: self.packed_matrix,
+            original_matrix: self.original_matrix,
+            global_offset: self.global_offset,
+            pack_tile_dim: self.pack_tile_dim,
+            valid_data_dim: self.valid_data_dim,
+            valid_simd_dim: self.valid_simd_dim,
+        }
+
     # Interface method:
     #  run the packing and store to the given buffer.
     @staticmethod
@@ -1174,6 +1184,15 @@ struct TiledMatmul[
     # Dynamic tile parameter.
     var tile_n_k: StaticIntTuple[2]
     var gemm_shape: GemmShape
+
+    fn __clone__(self&) -> Self:
+        return Self {
+            c: self.c,
+            a: self.a,
+            b: self.b,
+            tile_n_k: self.tile_n_k,
+            gemm_shape: self.gemm_shape,
+        }
 
     # Interface method
     @staticmethod
