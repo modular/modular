@@ -170,8 +170,12 @@ fn referencesDefaultArgumentFunction():
 struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
   alias StorageType =  __mlir_type[`!kgen.variadic<`, EltType, `>`]
   var value: StorageType
+
+  fn __clone__(self&) -> Self:
+    return Self{value: self.value}
+
   fn __new__(value: StorageType) -> VaList[EltType]:
-    return VaList[EltType]{value: value}
+    return Self{value: value}
 
   fn size(self) -> __mlir_type.index:
     return __mlir_op.`pop.variadic.size`(self.value)

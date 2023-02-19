@@ -470,8 +470,34 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
   ASTDecl &decl = *decls[0];
 
   // Let declarations resolve to an rvalue.
-  if (auto letDecl = dyn_cast<LetDeclOp>(decl))
+  if (auto letDecl = dyn_cast<LetDeclOp>(decl)) {
+    // TODO: Loading a 'let' value into an RValue is a semantic copy of the
+    // underlying value.  Unfortunately, we don't have a proper notion of
+    // rvalue references / borrows yet (they will come with a more baked out
+    // ownership model).  Thus the __clone__ operation takes a mutable reference
+    // as input, which cannot bind to a let value.
+    //
+    // As a stop-gap-for-now, just check to see if the value is copyable.  We
+    // cannot actually invoke the __clone__ operation if it exists, but at least
+    // we can ban copying of non-copyable values.
+    ASTType letType(letDecl.getType());
+    if (ASTDecl *letTypeDecl = letType.getDecl(emitter.shared)) {
+      bool isErroneousDecl = false;
+      // TODO: Unify this with the logic in emitRValue when __clone__ moves to
+      // taking a borrow instead of a mutable byref argument.
+      if (!CallableValue(letType, "__clone__", getLoc(), isErroneousDecl,
+                         emitter.shared)) {
+        auto diag = emitter.emitError(getLoc(), "cannot clone this value: ")
+                    << letType << " doesn't implement '__clone__'"
+                    << getRange();
+        diag.attachNote(emitter.translateLocation(letTypeDecl->getLoc()))
+            << "type declared here";
+        return {};
+      }
+    }
+
     return {{AnyValue(RValue(letDecl.getResult())), this}};
+  }
 
   // Variable references resolve to an lvalue addressing the variable.
   if (auto var = dyn_cast<VarDeclOp>(decl))
