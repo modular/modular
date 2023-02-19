@@ -66,7 +66,7 @@ def testLValuesRvalues():
   let nc2 = NonCopyable()
 
   let nc3 = nc1 # expected-error {{cannot clone this value: '$expressions-errors::NonCopyable' doesn't implement '__clone__'}}
-  let nc4 = nc2 # TODO: Should be an error.
+  let nc4 = nc2 # expected-error {{cannot clone this value: '$expressions-errors::NonCopyable' doesn't implement '__clone__'}}
 
 
 # expected-note @+1 {{function declared here}}
