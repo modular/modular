@@ -38,19 +38,19 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT: pop.store [[SEVENTEENINT]], %z
   z = 17  # Implicit conversion
 
-  # CHECK-NEXT: %[[Z:.*]] = pop.load %z
+  # CHECK-NEXT: %[[Z:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%z)
   # CHECK-NEXT: %[[POW0:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%a, %[[Z]])
   # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 2}>
   # CHECK-NEXT: %[[POW1:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
   # CHECK-NEXT: pop.store %[[POW1]], %z
   z = Int(2)**(a**z)
-  # CHECK-NEXT: %[[Z:.*]] = pop.load %z
+  # CHECK-NEXT: %[[Z:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%z)
   # CHECK-NEXT: %[[POW0:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%a, %[[Z]])
   # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 2}>
   # CHECK-NEXT: %[[POW1:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
   # CHECK-NEXT: pop.store %[[POW1]], %z
   z = Int(2)**a**z
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
+  # CHECK-NEXT:  %[[Z:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%z)
   # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 2}>
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$Int"::@Int::@"__neg__{{.*}}(%[[INT_TWO]])
   # CHECK-NEXT: %[[INT_THREE:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 3}>
@@ -58,7 +58,7 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[MUL]])
   # CHECK-NEXT:  pop.store %[[ADD]], %z
   z = z + Int(3) * -Int(2)
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
+  # CHECK-NEXT:  %[[Z:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%z)
   # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 2}>
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$Int"::@Int::@"__neg__{{.*}}(%[[INT_TWO]])
   # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 3}>
@@ -66,7 +66,7 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[FLOOR_DIV]])
   # CHECK-NEXT:  pop.store %[[ADD]], %z
   z = z + Int(3) // -Int(2)
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
+  # CHECK-NEXT:  %[[Z:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%z)
   # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 3}>
   # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[INT_THREE]])
   # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 2}>
@@ -75,13 +75,13 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT:  %[[MUL:.*]] =  kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%[[ADD]], %[[NEG]])
   # CHECK-NEXT:  pop.store %[[MUL]], %z
   z = (z + 3) * -+Int(2)
-  # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
+  # CHECK-NEXT:  %[[Z:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%z)
   # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 2}>
   # CHECK-NEXT:  %[[POW:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[Z]])
   # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$Int"::@Int::@"__neg__{{.*}}(%[[POW]])
   # CHECK-NEXT:  pop.store %[[NEG]], %z
   z = -Int(2)**z
-  # CHECK-NEXT: [[Z:%.*]] = pop.load %z : !pop.pointer<@"$Int"::@Int>
+  # CHECK-NEXT: [[Z:%.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%z)
   # CHECK-NEXT: [[ONE:%.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 1}>
   # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__radd__($Int::Int,$Int::Int)"([[Z]], [[ONE]])
   # CHECK-NEXT: pop.store [[RES]], %z
@@ -240,7 +240,7 @@ fn do_math(a: Int, b: Int, c: Int) -> Int:
   z = Int(42) + Int(5)*a
 
   # CHECK-NEXT: %x = lit.var.decl "x"
-  # CHECK-NEXT: %[[TMP:.*]] = pop.load %z
+  # CHECK-NEXT: %[[TMP:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%z)
   # CHECK-NEXT: pop.store %[[TMP]], %x
   # This is checking the lexer handles \ at end of line correctly.
   var x : Int
@@ -250,7 +250,7 @@ z
   # CHECK-NEXT: kgen.call @"$expressions"::@"noop()"()
   noop()
 
-  # CHECK-NEXT: %[[TMP:.*]] = pop.load %x
+  # CHECK-NEXT: %[[TMP:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%x)
   # CHECK-NEXT: lit.return %[[TMP]]
   return x
 
@@ -283,7 +283,7 @@ fn initializers():
 # CHECK-LABEL: lit.func @"test_if_cond
 def test_if_cond(cond: Bool):
     # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@"$Int"::@Int>
-    # CHECK-NEXT: %[[COND:.*]] = pop.load %cond_0
+    # CHECK-NEXT: %[[COND:.*]] = kgen.call @"$Bool"::@Bool::@"__clone__($Bool::Bool&)"(%cond_0)
     # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
     # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}= 2}
@@ -357,7 +357,7 @@ fn patterns():
   var someInt : Int
   (someInt) += someInt
   # CHECK: %someInt = lit.var.decl "someInt" : <@"$Int"::@Int>
-  # CHECK:  %0 = pop.load %someInt : !pop.pointer<@"$Int"::@Int>
+  # CHECK:  %0 = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%someInt)
   # CHECK:  %1 = kgen.call @"$Int"::@Int::@"__iadd__{{.*}}(%someInt, %0)
 
   # Discard pattern with different types.
@@ -370,18 +370,18 @@ fn patterns():
   # CHECK: pop.store {{.*}}, %__0 : !pop.pointer<f64>
 
   # CHECK: %someF32 = lit.var.decl "someF32" : <@"$F32"::@F32>
-  # CHECK: [[F32:%.*]] = pop.load %someF32 : !pop.pointer<@"$F32"::@F32>
+  # CHECK: [[F32:%.*]] = kgen.call @"$F32"::@F32::@"__clone__($F32::F32&)"(%someF32)
   # CHECK: {{%.*}} = kgen.call @"$F32"::@F32::@"__iadd__{{.*}}(%someF32, [[F32]])
   var someF32 : F32
   (someF32) += someF32
 
   # CHECK: %someSIMD = lit.var.decl "someSIMD" : <@"$SIMD"::@SIMD<size = 4, type: dtype = f64>>
-  # CHECK: [[SIMD:%.*]] = pop.load %someSIMD : !pop.pointer<@"$SIMD"::@SIMD<size = 4, type: dtype = f64>>
+  # CHECK: [[SIMD:%.*]] = kgen.call @"$SIMD"::@SIMD::@"__clone__($SIMD::SIMD[size, type]&)"<size = 4, type: dtype = f64>(%someSIMD)
   # CHECK: {{%.*}} = kgen.call @"$SIMD"::@SIMD::@"__iadd__{{.*}}(%someSIMD, [[SIMD]])
   var someSIMD : SIMD[4, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`]
   (someSIMD) += someSIMD
 
-# CHECK: lit.func @"byval_byref_function($Int::Int,$Int::Int&)"(%a: !kgen.declref<@"$Int"::@Int>, %b: !pop.pointer<@"$Int"::@Int> byref) -> !lit.none
+# CHECK-LABEL: lit.func @"byval_byref_function($Int::Int,$Int::Int&)"(%a: !kgen.declref<@"$Int"::@Int>, %b: !pop.pointer<@"$Int"::@Int> byref) -> !lit.none
 fn byval_byref_function(a: Int, b&: Int):
   # CHECK-NEXT: pop.store %a, %b
   b = a
@@ -390,11 +390,11 @@ fn byval_byref_function(a: Int, b&: Int):
   var x : Int
   # This needs to load 'b' to pass it by value for the first arg, but pass its
   # address in directly for the second.
-  # CHECK: %0 = pop.load %b : !pop.pointer<@"$Int"::@Int>
+  # CHECK: %0 = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b)
   # CHECK: %1 = kgen.call @{{.*}}::@"byval_byref_function{{.*}}(%0, %b)
   byval_byref_function(b, b)
 
-# CHECK: lit.func @"lvaluesAndRValues()
+# CHECK-LABEL: lit.func @"lvaluesAndRValues()
 fn lvaluesAndRValues() -> __mlir_type.`!pop.scalar<index>`:
   # CHECK: [[VALUE:%.*]] = kgen{{.*}} = <4>
   # CHECK: lit.return [[VALUE]] : !pop.scalar<index>
@@ -408,9 +408,9 @@ fn mvalueStructField():
   alias value = int.value
   alias foldToValue = Int(5).value
 
-# CHECK: lit.func @"defTests({{.*}}, %untyped: !kgen.declref<@"$prolog"::@object>)
+# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !kgen.declref<@"$prolog"::@object>)
 def defTests(a: Int, b: Int, untyped):
-  # CHECK: [[TMP:%.*]] = pop.load %b_1
+  # CHECK: [[TMP:%.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
   # CHECK-NEXT: pop.store [[TMP]], %a_0
   a = b # Parameters are mutable!
 
@@ -421,43 +421,43 @@ def defTests(a: Int, b: Int, untyped):
 def basic_assignments(a: Int, b: Int, c: M, d: M):
   # CHECK:      %a_0 = lit.var.decl "a"
   # CHECK:      %b_1 = lit.var.decl "b"
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK:      %[[LOAD_B:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
   # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__iadd__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   a += b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK:      %[[LOAD_B:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
   # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__isub__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   a -= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK:      %[[LOAD_B:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
   # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__imul__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   a *= b
   # HECK:      %[[LOAD_C:.*]] = pop.load %c_2  : !pop.pointer<@M>
   # HECK-NEXT: %[[RES:.*]] = kgen.call @M::@"__imatmul__($Int::Int&,$Int::Int)"(%d_3, %[[LOAD_C]])
   #d @= c
-  # HECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # HECK:      %[[LOAD_B:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
   # HECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__itruediv__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   #a /= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK:      %[[LOAD_B:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
   # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ifloordiv__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   a //= b
-  # HECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # HECK:      %[[LOAD_B:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
   # HECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__imod__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   # a %= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK:      %[[LOAD_B:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
   # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ipow__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   a **= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK:      %[[LOAD_B:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
   # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__irshift__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   a >>= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK:      %[[LOAD_B:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
   # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ilshift__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   a <<= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK:      %[[LOAD_B:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
   # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__iand__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   a &= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK:      %[[LOAD_B:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
   # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ixor__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   a ^= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK:      %[[LOAD_B:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
   # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ior__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   a |= b
 

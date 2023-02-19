@@ -192,8 +192,7 @@ struct TestOverloading:
 
 struct ConvertibleFromInt:
   fn __new__(value: Int) -> ConvertibleFromInt:
-    var result: ConvertibleFromInt
-    return result
+    return ConvertibleFromInt{}
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: argument #1 cannot be converted from '$decls-errors::ConvertibleFromInt' to '$Int::Int'}}

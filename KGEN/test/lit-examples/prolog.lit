@@ -57,6 +57,9 @@ struct StringRef:
     var data: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`
     var size: Int
 
+    fn __clone__(self&) -> Self:
+        return Self {data: self.data, size: self.size}
+
     fn __new__(
         data: __mlir_type.`!pop.pointer<!pop.scalar<si8>>`, size: Int
     ) -> StringRef:
@@ -78,6 +81,9 @@ struct StringRef:
 
 struct Error:
     var msg: StringRef
+
+    fn __clone__(self&) -> Self:
+        return Self {msg: self.msg}
 
     fn __new__(msg: StringRef) -> Error:
         return Error {msg: msg}

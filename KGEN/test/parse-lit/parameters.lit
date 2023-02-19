@@ -57,6 +57,10 @@ fn call_generic[dt: DType]():
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<A>
 struct TestParamStruct[A: __mlir_type.index]:
+
+  fn __clone__(self&) -> Self:
+    return Self{}
+
   fn __new__() -> TestParamStruct[A]:
     return TestParamStruct[A]{}
 
@@ -91,7 +95,7 @@ fn testTestParamStruct(a: TestParamStruct[4]):
   # CHECK: pop.store %0, %arg11 : !pop.pointer<@"$parameters"::@TestParamStruct<A = 11>>
   var arg11 = TestParamStruct[11]()
 
-  # CHECK: %1 = pop.load %arg11 : !pop.pointer<@"$parameters"::@TestParamStruct<A = 11>>
+  # CHECK: %1 = kgen.call @"$parameters"::@TestParamStruct::@"__clone__($parameters::TestParamStruct[A]&)"<A = 11>(%arg11)
   # CHECK: %2 = kgen.call @"$parameters"::@TestParamStruct::@"method{{.*}}<A = 4, B = 7>(%a, %1) : (!kgen.declref<@"$parameters"::@TestParamStruct<A = 4>>, !kgen.declref<@"$parameters"::@TestParamStruct<A = 11>>) -> !lit.none
   a.method[7](arg11)
 
@@ -352,6 +356,9 @@ fn testUseOfAliases(a: Bool):
 
 struct MyDType:
   var state : __mlir_type.ui8
+
+  fn __clone__(self&) -> Self:
+    return Self{state: self.state}
 
   fn __new__(value: __mlir_type.index) -> MyDType:
      var result: MyDType
