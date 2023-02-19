@@ -114,6 +114,11 @@ struct WeirdBoolish:
 fn badAnd(a: Bool, b: WeirdBoolish):
   _ = a and b # expected-error {{cannot find common type between '$Bool::Bool' and '$expressions-errors::WeirdBoolish'}}
 
+# expected-error @+1 {{'Self' type may only be used inside a type}}
+fn badSelf(a: Self):
+  # expected-error @+1 {{'Self' type may only be used inside a type}}
+  var x: Self.field
+
 
 struct MyIntPair:
   var a: Int

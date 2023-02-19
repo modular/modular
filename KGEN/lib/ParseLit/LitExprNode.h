@@ -37,6 +37,7 @@ public:
     kIntLiteral,     // 42
     kFloatLiteral,   // 1.1
     kBoolLiteral,    // False
+    kSelfLiteral,    // Self
     kStringLiteral,  // "Hello"
     kNoneLiteral,    // None
     kDeclRef,        // x
