@@ -103,6 +103,9 @@ struct GemmShape:
             gemm_shape.K = a.dim[1]()
         return gemm_shape
 
+    fn __clone__(self&) -> Self:
+        return Self {M: self.M, N: self.N, K: self.K}
+
     fn __new__(m: Int, n: Int, k: Int) -> GemmShape:
         """Constructor of a gemm shape record by directly supplying the values.
 
@@ -610,6 +613,15 @@ struct PackMatrixCols[
         ](packed_matrix, original_matrix, global_offset, pack_tile_dim)
         instance._pack()
 
+    fn __clone__(self&) -> Self:
+        return Self {
+            packed_matrix: self.packed_matrix,
+            original_matrix: self.original_matrix,
+            global_offset: self.global_offset,
+            pack_tile_dim: self.pack_tile_dim,
+            valid_data_dim: self.valid_data_dim,
+        }
+
     fn __new__(
         packed_matrix: NDBuffer[3, packed_shape, type],
         original_matrix: NDBuffer[2, original_shape, type],
@@ -811,6 +823,16 @@ struct MatmulInnerLoopBPacked[
             skip_boundary_check,
         ](c, a, b_packed, global_offset, tile_n_k)
         instance._run_inner_loop()
+
+    fn __clone__(self&) -> Self:
+        return Self {
+            c: self.c,
+            a: self.a,
+            b_packed: self.b_packed,
+            global_offset: self.global_offset,
+            tile_n_k: self.tile_n_k,
+            c_bound: self.c_bound,
+        }
 
     fn __new__(
         c: NDBuffer[2, shape_c, accum_type],
