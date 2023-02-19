@@ -15,6 +15,14 @@ struct Benchmark:
     var min_time_ns: Int
     var max_time_ns: Int
 
+    fn __clone__(self&) -> Self:
+        return Self {
+            num_warmup: self.num_warmup,
+            max_iters: self.max_iters,
+            min_time_ns: self.min_time_ns,
+            max_time_ns: self.max_time_ns,
+        }
+
     fn __new__(
         num_warmup: Int = 10,
         max_iters: Int = 100_000,
