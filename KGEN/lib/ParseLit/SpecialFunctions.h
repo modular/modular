@@ -49,10 +49,13 @@ public:
     kAllowByRefSelfInstMethod = (1 << 2) | kInstMethod,
 
     /// This is true when this represents a "reversed" operator like __radd__.
-    kReversedOperator = 1 << 3,
+    kReversedOperator = 1 << 4,
 
     /// This is true when the operation is supposed to return None.
-    kNoneResult = 1 << 4,
+    kNoneResult = 1 << 5,
+
+    /// This method must return Self.
+    kSelfResult = 1 << 6,
   };
 
   /// Return true if this is any kind of instance method.
