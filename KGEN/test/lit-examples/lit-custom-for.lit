@@ -36,7 +36,7 @@ struct MyList:
     var size: Int
 
     fn __clone__(self&) -> Self:
-        return Self {start: self.start, size: self.size }
+        return Self {start: self.start, size: self.size}
 
     fn __new__(ptr: Pointer[Int], size: Int) -> MyList:
         var result: MyList
