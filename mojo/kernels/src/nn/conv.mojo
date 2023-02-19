@@ -52,6 +52,9 @@ struct ImageData[
     var data: NDBuffer[4, shape, type]
     var dynamic_layout: Int
 
+    fn __clone__(self&) -> Self:
+        return Self {data: self.data, dynamic_layout: self.dynamic_layout}
+
     fn __new__(
         data: NDBuffer[4, shape, type], layout: Int
     ) -> ImageData[shape, type, static_layout]:
@@ -167,6 +170,23 @@ struct ConvShape:
     var dilation: StaticIntTuple[2]  # Dilation on [H, W]
     var pad_h: StaticIntTuple[2]  # Padding on H dimension in (Low, High)
     var pad_w: StaticIntTuple[2]  # Padding on W dimension in (Low, High)
+
+    fn __clone__(self&) -> Self:
+        return Self {
+            n: self.n,
+            h: self.h,
+            w: self.w,
+            c: self.c,
+            out_h: self.out_h,
+            out_w: self.out_w,
+            f: self.f,
+            r: self.r,
+            s: self.s,
+            stride: self.stride,
+            dilation: self.dilation,
+            pad_h: self.pad_h,
+            pad_w: self.pad_w,
+        }
 
 
 @interface
@@ -309,6 +329,9 @@ struct ImageShape:
     var H: Int
     var W: Int
 
+    fn __clone__(self&) -> Self:
+        return Self {N: self.N, C: self.C, H: self.H, W: self.W}
+
     fn __new__[
         shape: __mlir_type[`!kgen.list<index[4]>`],
         type: __mlir_type.`!kgen.dtype`,
@@ -369,6 +392,20 @@ struct Naive2dConvolution[
     var output_shape: ImageShape
     var input_shape: ImageShape
     var filter_shape: ImageShape
+
+    fn __clone__(self&) -> Self:
+        return Self {
+            output: self.output,
+            input: self.input,
+            filter: self.filter,
+            pad_h: self.pad_h,
+            pad_w: self.pad_w,
+            stride: self.stride,
+            dilation: self.dilation,
+            output_shape: self.output_shape,
+            input_shape: self.input_shape,
+            filter_shape: self.filter_shape,
+        }
 
     @staticmethod
     fn run(
@@ -627,6 +664,20 @@ struct PackIm2ColNCHW[
     # Padding parameters for (H, W) dimensions.
     var pad_low: StaticIntTuple[2]
     var pad_high: StaticIntTuple[2]
+
+    fn __clone__(self&) -> Self:
+        return Self {
+            packed_matrix: self.packed_matrix,
+            origin_image: self.origin_image,
+            conv_shape: self.conv_shape,
+            global_offset: self.global_offset,
+            pack_tile_kn_dim: self.pack_tile_kn_dim,
+            batch_idx: self.batch_idx,
+            image_output_shape: self.image_output_shape,
+            im2col_output_shape: self.im2col_output_shape,
+            pad_low: self.pad_low,
+            pad_high: self.pad_high,
+        }
 
     @staticmethod
     fn run(
@@ -1121,6 +1172,19 @@ struct ConvIm2ColNCHW[
 
     # 2D view of the filter as implicit matmul input.
     var a: NDBuffer[2, create_kgen_list_unknown[2](), type]
+
+    fn __clone__(self&) -> Self:
+        return Self {
+            out: self.out,
+            input: self.input,
+            filter: self.filter,
+            tile_n_k: self.tile_n_k,
+            gemm_shape: self.gemm_shape,
+            conv_shape: self.conv_shape,
+            batch_idx: self.batch_idx,
+            c: self.c,
+            a: self.a,
+        }
 
     # Interface method
     @staticmethod
@@ -1633,6 +1697,19 @@ struct ConvNHWCInnerLoopFilterPacked[
 
     var input_base_pointer: DTypePointer[value_type]
 
+    fn __clone__(self&) -> Self:
+        return Self {
+            c: self.c,
+            input: self.input,
+            b_packed: self.b_packed,
+            global_offset: self.global_offset,
+            tile_n_k: self.tile_n_k,
+            c_bound: self.c_bound,
+            conv_shape: self.conv_shape,
+            offset_table: self.offset_table,
+            input_base_pointer: self.input_base_pointer,
+        }
+
     @staticmethod
     fn run(
         c: NDBuffer[2, shape_c, accum_type],
@@ -2135,6 +2212,25 @@ struct ConvIm2ColNHWC[
 
     var num_tasks_m: Int
     var num_tasks_n: Int
+
+    fn __clone__(self&) -> Self:
+        return Self {
+            out: self.out,
+            input: self.input,
+            filter: self.filter,
+            tile_n_k: self.tile_n_k,
+            gemm_shape: self.gemm_shape,
+            conv_shape: self.conv_shape,
+            c: self.c,
+            a: self.a,
+            b: self.b,
+            row_start_idx: self.row_start_idx,
+            total_row_count: self.total_row_count,
+            col_start_idx: self.col_start_idx,
+            total_col_count: self.total_col_count,
+            num_tasks_m: self.num_tasks_m,
+            num_tasks_n: self.num_tasks_n,
+        }
 
     # Interface method
     @staticmethod
