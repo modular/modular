@@ -13,6 +13,9 @@ struct Complex[size: __mlir_type.index, type: DType]:
     var re: SIMD[size, type.value]
     var im: SIMD[size, type.value]
 
+    fn __clone__(self&) -> Self:
+        return Self {re: self.re, im: self.im}
+
     fn __new__(
         re: SIMD[size, type.value],
         im: SIMD[size, type.value],
