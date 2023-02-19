@@ -13,7 +13,7 @@ struct Foo:
     var v: t
 
     fn __clone__(self&) -> Self:
-      return Foo{v: self.v}
+        return Foo {v: self.v}
 
     fn __new__() -> Foo:
         return Foo {v: 0}
