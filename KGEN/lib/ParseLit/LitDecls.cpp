@@ -1002,23 +1002,11 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       emitErrorLoc(args[0].loc, "self argument cannot be passed by reference");
   }
 
-  switch (fnInfo.kind) {
-  default:
-    // Ignore methods without special handling.
-    break;
-  case SpecialFunctionKind::kInit:
-    if (isa<StructDeclOp>(*decl.getParentDecl())) {
-      emitError("__init__ is not allowed on structs, use __new__ instead");
-      // __init__ on classes must return NoneType.
-    }
-    break;
-
-  case SpecialFunctionKind::kNew:
-    // __new__ must return containing type.
+  // Some functions like __new__ require a Self result type.
+  if (fnInfo.flags & SpecialFunctionInfo::kSelfResult) {
     // TODO: We could allow omitting result type and default it.
     if (!resultType.isEqualCanon(selfType))
-      emitError("result type must be ") << selfType;
-    break;
+      emitError("") << name << " result type must be " << selfType;
   }
 
   // If the function is required to return None, verify that.
@@ -1026,6 +1014,25 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       !resultType.isEqualCanon(shared.getNoneType())) {
     emitError("") << name << " result type must be elided (or None)";
     resultType = shared.getNoneType();
+  }
+
+  // Diagnose a common errors and handle other special cases.
+  switch (fnInfo.kind) {
+  default:
+    break;
+  case SpecialFunctionKind::kInit:
+    if (isa<StructDeclOp>(*decl.getParentDecl()))
+      emitError("__init__ is not allowed on structs, use __new__ instead");
+    break;
+  case SpecialFunctionKind::kLitBool:
+    if (!resultType.mlirType.isSignlessInteger(1))
+      emitError("") << name << " result type must be __mlir_type.i1";
+    break;
+  case SpecialFunctionKind::kClone:
+    if (fnInfo.isInstMethod() && selfType &&
+        args[0].convention != ValueInputConvention::ByRef)
+      emitErrorLoc(args[0].loc, "self argument must be passed by reference");
+    break;
   }
 
   // Mangle 'name', ensuring that overloaded methods get unique symbol names.
