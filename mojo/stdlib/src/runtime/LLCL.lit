@@ -44,6 +44,10 @@ struct Chain:
 
     var storage: __mlir_type.index
 
+    @always_inline("nodebug")
+    fn __clone__(self&) -> Self:
+        return Self {storage: self.storage}
+
 
 struct AsyncContext:
     """This struct models the coroutine context contained in every coroutine
@@ -126,6 +130,11 @@ struct Runtime:
     alias ptr_type = DTypePointer[DType.invalid.value]
     var ptr: ptr_type
 
+    # TODO: Probably don't want the runtime to be implicitly copyable.
+    @always_inline("nodebug")
+    fn __clone__(self&) -> Self:
+        return Self {ptr: self.ptr}
+
     fn __new__() -> Runtime:
         """Construct an LLCL Runtime with the same number of threads as
         processor cores.
@@ -206,6 +215,11 @@ struct Runtime:
 
 struct Task[type: typename]:
     var handle: Coroutine[type]
+
+    # TODO: This should not be implicitly copyable when we have ownership all
+    # set up!
+    fn __clone__(self&) -> Self:
+        return Self {handle: self.handle}
 
     fn get(self) -> type:
         """Get the task's result value."""
