@@ -115,7 +115,7 @@ public:
 
   /// Look up a name in this declaration's scope only: return null on failure.
   const TinyPtrVector<ASTDecl *> *lookupInCurrentScope(StringAttr name) const {
-    assert((resolvedness == DeclResolvedness::fullyResolved ||
+    assert((resolvedness == DeclResolvedness::fully ||
             // FIXME(Issue#5975): FuncOp shouldn't be special cased.
             isa<FuncOp>(*this)) &&
            "cannot perform lookup in a decl that isn't fully resolved");

@@ -346,6 +346,13 @@ AnyValue SelfLiteralNode::emitIR(ExprEmitter &emitter,
       return {};
     }
   }
+
+  // FIXME(Issue#5975): Verify the struct's signature is resolved.  This should
+  // go away when the FIXME at the top of lookupAndResolveDecl is resolved.
+  if (failed(emitter.getDeclResolver().resolve(
+          *structDecl, DeclResolvedness::signature, getLoc())))
+    return {};
+
   // Once we have the type in question we can just return its Self type as an
   // MValue.  This already includes bound parameters etc.
   return MValue(structDecl->getSelfType());

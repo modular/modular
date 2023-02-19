@@ -210,11 +210,11 @@ enum class DeclResolvedness : int8_t {
   /// This declaration has had its signature parsed and type checked, so we know
   /// what parameters and metaparameters it might take, but its body hasn't been
   /// processed.
-  signatureResolved,
+  signature,
 
   /// This declaration has been fully type checked, including its body.  Any
   /// declarations within the body may not be fully resolved though.
-  fullyResolved
+  fully
 };
 
 /// This is the result of lookupDecl.
