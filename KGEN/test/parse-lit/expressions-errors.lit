@@ -24,8 +24,10 @@ fn negBuiltinType(x: __mlir_type.f64) :
 
 struct LValuesRvalues:
   fn __new__() -> LValuesRvalues:
-    var result : LValuesRvalues
-    return result
+    return LValuesRvalues{}
+
+  fn __clone__(self&) -> Self:
+      return LValuesRvalues{}
 
   def normalMethod(self):
   # expected-note @+1 {{function declared here}}
@@ -34,6 +36,9 @@ struct LValuesRvalues:
   def takesByRef(self, x&: LValuesRvalues):
 
   def normalMethod3(self, a: F32):
+
+struct NonCopyable: # expected-note {{type declared here}}
+  fn __new__() -> Self: return Self {}
 
 def testLValuesRvalues():
   # Test with lvalues
@@ -56,6 +61,13 @@ def testLValuesRvalues():
   unknown1 += unknown2 # expected-error {{use of unknown declaration 'unknown2'}}
 
   lv.normalMethod3(1.0)
+
+  var nc1 = NonCopyable()
+  let nc2 = NonCopyable()
+
+  let nc3 = nc1 # expected-error {{cannot clone this value: '$expressions-errors::NonCopyable' doesn't implement '__clone__'}}
+  let nc4 = nc2 # TODO: Should be an error.
+
 
 # expected-note @+1 {{function declared here}}
 fn badRef(val&: Int):

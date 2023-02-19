@@ -40,7 +40,8 @@ RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value) {
   if (auto rvRep = value.ir.getIfRValue())
     return rvRep;
 
-  // Finally, if this is an LValue, emit a load.
+  // Finally, if this is an LValue, emit a __clone__, a load for a primitive
+  // MLIR type, or an error if neither approach works.
   auto pointer = value.ir.getIfLValue();
   assert(pointer);
 
@@ -51,8 +52,39 @@ RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value) {
     return {};
   }
 
-  return DRValue(builder->create<POP::LoadOp>(loc, pointer,
-                                              /*alignment=*/std::nullopt));
+  // If this is a primitive MLIR type, we can emit a direct load for it.
+  ASTType rvalueType = value.ir.getRValueType();
+  auto typeDecl = rvalueType.getDecl(shared);
+  if (!typeDecl)
+    return DRValue(builder->create<POP::LoadOp>(loc, pointer,
+                                                /*alignment=*/std::nullopt));
+
+  // Check for the presence of a valid __clone__ method.
+  bool isErroneousDecl = false;
+  CallableValue clone(rvalueType, "__clone__", value.expr->getLoc(),
+                      isErroneousDecl, shared);
+  // If any error looking up __clone__ then the problem has been diagnosed
+  // already.
+  if (isErroneousDecl)
+    return {};
+  if (!clone.isNull()) {
+    // Ok, cool we know it will succeed; do it.
+    auto result = clone.emitFunctionCall(value, CallSyntax::kImplicitConvert,
+                                         value.expr, *this);
+    if (!result)
+      return {};
+    assert(result.getIfRValue() &&
+           "__clone__ is required to always return an RValue");
+    return result.getIfRValue();
+  }
+
+  auto diag = emitError(loc, "cannot clone this value: ")
+              << rvalueType << " doesn't implement '__clone__'"
+              << value.expr->getRange();
+
+  diag.attachNote(translateLocation(typeDecl->getLoc()))
+      << "type declared here";
+  return {};
 }
 
 DRValue IREmitter::emitDRValue(ASTExprAnd<AnyValue> value) {

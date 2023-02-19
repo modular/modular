@@ -10,6 +10,9 @@ struct my_iter_no_len:
     var end: Int
     var list: MyList_range_no_len
 
+    fn __clone__(self&) -> Self:
+      return Self{start: self.start, end: self.end, list: self.list}
+
     fn __new__(list: MyList_range_no_len) -> my_iter_no_len:
         var result: my_iter_no_len
         result.start = 0
@@ -26,6 +29,9 @@ struct my_iter_no_len:
 struct MyList_range_no_len:
     var start: Pointer[Int]
     var size: Int
+
+    fn __clone__(self&) -> Self:
+      return Self{start: self.start, size: self.size}
 
     fn __new__(ptr: Pointer[Int], size: Int) -> MyList_range_no_len:
         var result: MyList_range_no_len
@@ -50,6 +56,9 @@ struct my_iter_no_next:
     var end: Int
     var list: MyList_range_no_next
 
+    fn __clone__(self&) -> Self:
+      return Self{start: self.start, end: self.end, list: self.list}
+
     fn __new__(list: MyList_range_no_next) -> my_iter_no_next:
         var result: my_iter_no_next
         result.start = 0
@@ -66,6 +75,9 @@ struct my_iter_no_next:
 struct MyList_range_no_next:
     var start: Pointer[Int]
     var size: Int
+
+    fn __clone__(self&) -> Self:
+      return Self{start: self.start, size: self.size}
 
     fn __new__(ptr: Pointer[Int], size: Int) -> MyList_range_no_next:
         var result: MyList_range_no_next
@@ -88,6 +100,9 @@ struct MyList_range_no_next:
 struct MyList_no_iter:
     var start: Pointer[Int]
     var size: Int
+
+    fn __clone__(self&) -> Self:
+      return Self{start: self.start, size: self.size}
 
     fn __new__(ptr: Pointer[Int], size: Int) -> MyList_no_iter:
         var result: MyList_no_iter
@@ -122,6 +137,9 @@ struct my_iter_wrong_int:
     var end: Int
     var list: MyList_invalid_boxed_type
 
+    fn __clone__(self&) -> Self:
+      return Self{start: self.start, end: self.end, list: self.list}
+
     fn __new__(list: MyList_invalid_boxed_type) -> my_iter_wrong_int:
         var result: my_iter_wrong_int
         result.start = 0
@@ -143,6 +161,9 @@ struct my_iter_wrong_int:
 struct MyList_invalid_boxed_type:
     var start: Pointer[Int]
     var size: Int
+
+    fn __clone__(self&) -> Self:
+      return Self{start: self.start, size: self.size}
 
     fn __new__(ptr: Pointer[Int], size: Int) -> MyList_invalid_boxed_type:
         var result: MyList_invalid_boxed_type

@@ -551,6 +551,9 @@ ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
     if (parseExpression(errorExpr, raiseIndent))
       return failure();
     errorVal = getEmitter().emitExprDRValue(errorExpr);
+    if (!errorVal)
+      return success();
+
     // Determine whether we are raising an error inside a 'try'.
     inTry = tryOp && tryOp.getTryRegion().findAncestorBlockInRegion(*block);
   } else {

@@ -38,7 +38,7 @@ def var_decls():
   # CHECK: %y = lit.var.decl "y"
   var y : Int
 
-  # CHECK: [[Y:%.*]] = pop.load %y : !pop.pointer<@"$Int"::@Int>
+  # CHECK: [[Y:%.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%y)
   # CHECK: [[ONE:%.*]] = kgen.param.constant: @"$Int"::@Int {{.*}} 1
   # CHECK: [[ADD:%.*]] = kgen.call @"$Int"::@Int::@"__add__($Int::Int,$Int::Int)"([[Y]], [[ONE]])
   # CHECK: pop.store [[ADD]], %y : !pop.pointer<@"$Int"::@Int>
@@ -258,9 +258,11 @@ struct OneLineStruct[size: Int]: pass; pass
 
 # CHECK-LABEL: lit.struct.decl @StructExample {
 struct StructExample:
+  fn __clone__(self&) -> Self:
+    return Self{}
+
   fn __new__() -> StructExample:
-    var result : StructExample
-    return result
+    return Self{}
 
   # CHECK: lit.func @"static($Int::Int)"(%x: !kgen.declref<@"$Int"::@Int>) -> !lit.none attributes {isStatic} {
   @staticmethod
