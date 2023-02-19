@@ -1220,7 +1220,7 @@ ParseResult LitStmtParser::parseMLIRRegionStmt(LitLexerCursor startCursor,
   ASTDecl &decl =
       getDeclResolver().addDecl(op, loc, identifier, &containingDecl,
                                 startCursor, getLexer().getCursor(), curIndent);
-  decl.resolvedness = DeclResolvedness::fullyResolved;
+  decl.resolvedness = DeclResolvedness::fully;
 
   // Parse the argument list if present.
   struct RegionArgument {

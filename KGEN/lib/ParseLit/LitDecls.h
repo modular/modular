@@ -113,7 +113,7 @@ public:
   LogicalResult resolve(ASTDecl &decl, DeclResolvedness howResolved,
                         llvm::SMLoc loc);
   LogicalResult resolveFully(ASTDecl &decl, llvm::SMLoc loc) {
-    return resolve(decl, DeclResolvedness::fullyResolved, loc);
+    return resolve(decl, DeclResolvedness::fully, loc);
   }
 
   /// Given the symbol for a lit type declaration, return the ASTDecl that

@@ -89,9 +89,9 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
   auto op = dyn_cast_if_present<mlir::SymbolOpInterface>(getIfOperation());
   if (!op)
     return {};
-  assert((!isa<LIT::FuncOp>(op) ||
-          resolvedness >= DeclResolvedness::signatureResolved) &&
-         "Functions don't have a symbol until their signatures are resolved");
+  assert(
+      (!isa<LIT::FuncOp>(op) || resolvedness >= DeclResolvedness::signature) &&
+      "Functions don't have a symbol until their signatures are resolved");
   return getFullyResolvedSymbolRef(op);
 }
 
@@ -261,7 +261,7 @@ DeclResolver::aliasDeclsImpl(const TinyPtrVector<ASTDecl *> &decls,
         importOp.getDeclNameAttr() == declNameInModule) {
       // Mark the placeholder imports as being resolved.
       for (ASTDecl *decl : it->second)
-        decl->resolvedness = DeclResolvedness::fullyResolved;
+        decl->resolvedness = DeclResolvedness::fully;
       it->second = decls;
       return success();
     }
@@ -347,7 +347,7 @@ ASTDecl &DeclResolver::addFullyResolvedDecl(Operation *op, SMLoc loc,
                                             ASTDecl *parentDecl) {
   auto &decl =
       addDecl(op, loc, name, parentDecl, LitLexerCursor(), LitLexerCursor(), 0);
-  decl.resolvedness = DeclResolvedness::fullyResolved;
+  decl.resolvedness = DeclResolvedness::fully;
   return decl;
 }
 
@@ -357,7 +357,7 @@ ASTDecl &DeclResolver::addFullyResolvedDecl(DeclIRValue declVal,
                                             ASTDecl *parentDecl) {
   auto &decl = addDecl(declVal, loc, name, parentDecl, LitLexerCursor(),
                        LitLexerCursor(), 0);
-  decl.resolvedness = DeclResolvedness::fullyResolved;
+  decl.resolvedness = DeclResolvedness::fully;
   return decl;
 }
 
@@ -439,7 +439,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   }
 
   // If the signature hasn't been parsed, do so.
-  if (decl.resolvedness < DeclResolvedness::signatureResolved) {
+  if (decl.resolvedness < DeclResolvedness::signature) {
     // Handle each operation that can be name bound.  We handle this by
     // restoring the lexer to the position where parsing can continue, calling
     // the `resolveSignature` method for the op, and re-saving the new cursor
@@ -462,12 +462,12 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
                     "do not know how to resolve the signature of this decl!");
           decl.hasReferenceError = true;
         });
-    decl.resolvedness = DeclResolvedness::signatureResolved;
+    decl.resolvedness = DeclResolvedness::signature;
   }
 
   // If the declaration hasn't been fully parsed and we need to, do so.
-  if (decl.resolvedness < DeclResolvedness::fullyResolved &&
-      howResolved == DeclResolvedness::fullyResolved) {
+  if (decl.resolvedness < DeclResolvedness::fully &&
+      howResolved == DeclResolvedness::fully) {
     auto checkEndOfBodyCursor = [&](LitLexer &lexer) {
       // If the final parse of the declaration didn't match the initial
       // parse, report an error about unrecognized tokens at end of
@@ -500,7 +500,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
           emitError(decl.getLoc(),
                     "do not know how to resolve the body of this decl!");
         });
-    decl.resolvedness = DeclResolvedness::fullyResolved;
+    decl.resolvedness = DeclResolvedness::fully;
   }
 
   declsCurrentlyProcessing.erase(&decl);
@@ -770,8 +770,7 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
   // that parameters should be accessible before the body is, and we have
   // no way to express this currently.
   assert(declScope.resolvedness == DeclResolvedness::unparsed);
-  llvm::SaveAndRestore X(declScope.resolvedness,
-                         DeclResolvedness::fullyResolved);
+  llvm::SaveAndRestore X(declScope.resolvedness, DeclResolvedness::fully);
   ExprEmitter emitter(p.shared, declScope, std::nullopt, nullptr);
 
   auto processParameterArgs = [&p, &declResolver, &declScope,
@@ -954,7 +953,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     if (isa<StructDeclOp>(*parentDecl)) {
       //  The parent decl must be fully resolved in order to resolve any members
       //  of it.
-      assert(parentDecl->resolvedness == DeclResolvedness::fullyResolved);
+      assert(parentDecl->resolvedness == DeclResolvedness::fully);
       selfType = parentDecl->getSelfType();
     }
 
@@ -1433,8 +1432,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     } else if (arg.name == "self" && inAStruct) {
       // If this is a 'self' argument in a fn that is a method, default to a
       // self type.  TODO: Should we do this, or default to object in a 'def'?
-      assert(decl.getParentDecl()->resolvedness ==
-             DeclResolvedness::fullyResolved);
+      assert(decl.getParentDecl()->resolvedness == DeclResolvedness::fully);
       type = decl.getParentDecl()->getSelfType();
     }
     argTypes.push_back(type);

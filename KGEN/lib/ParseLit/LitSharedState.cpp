@@ -119,14 +119,14 @@ void LitSharedState::initialize(ASTDecl &topLevelDecl) {
       topLevelDecl.getIfOperation(), topLevelDecl.getLoc(), StringAttr(),
       nullptr, topLevelDecl.getCursor(), topLevelDecl.getCursor(), -1);
   addBuiltinTypes(builtinsDecl);
-  builtinsDecl.resolvedness = DeclResolvedness::fullyResolved;
+  builtinsDecl.resolvedness = DeclResolvedness::fully;
 
   // The outermost scope contains all of the __builtins__ function definitions.
   for (auto &[name, decls] : builtinsDecl.declsInScope)
     declResolver->aliasDecls(decls, name, topLevelDecl.getLoc(), topLevelDecl);
 
   // Top level is fully resolved now.
-  topLevelDecl.resolvedness = DeclResolvedness::fullyResolved;
+  topLevelDecl.resolvedness = DeclResolvedness::fully;
 }
 
 LitDiagnostic LitSharedState::emitError(Location loc, const Twine &message) {
@@ -280,8 +280,8 @@ auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
   // If the lookup succeeded, make sure the signature for the referenced decls
   // are understood.
   for (auto *decl : *entry) {
-    if (failed(declResolver->resolve(*decl, DeclResolvedness::signatureResolved,
-                                     loc))) {
+    if (failed(
+            declResolver->resolve(*decl, DeclResolvedness::signature, loc))) {
       // If the decl was erroneous somehow, then don't form a reference to it,
       // the error has already been diagnosed.
       return LookupResult::getErroneous();
