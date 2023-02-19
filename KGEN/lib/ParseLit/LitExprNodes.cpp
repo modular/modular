@@ -335,6 +335,22 @@ AnyValue BoolLiteralNode::emitIR(ExprEmitter &emitter,
   return AnyValue(BoolAttr::get(emitter.getContext(), value));
 }
 
+AnyValue SelfLiteralNode::emitIR(ExprEmitter &emitter,
+                                 ASTType contextualType) const {
+  // Self resolves to the type of the enclosing structure type.
+  ASTDecl *structDecl = &emitter.declScope;
+  while (!isa<StructDeclOp>(*structDecl)) {
+    structDecl = structDecl->getParentDecl();
+    if (!structDecl) {
+      emitter.emitError(getLoc(), "'Self' type may only be used inside a type");
+      return {};
+    }
+  }
+  // Once we have the type in question we can just return its Self type as an
+  // MValue.  This already includes bound parameters etc.
+  return MValue(structDecl->getSelfType());
+}
+
 AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter,
                                    ASTType contextualType) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);

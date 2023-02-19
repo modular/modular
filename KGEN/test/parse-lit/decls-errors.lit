@@ -278,7 +278,7 @@ struct WrongType:
   fn __clone__(existing&: WrongType) -> Int: pass
 
   # expected-error @+1 {{'self' argument must have type '$decls-errors::WrongType' but actually has type '$Int::Int'}}
-  fn __clone__(existing&: Int) -> WrongType: pass
+  fn __clone__(existing&: Int) -> Self: pass
 
   # expected-error @+1 {{self argument must be passed by reference}}
   fn __clone__(existing: WrongType) -> WrongType: pass

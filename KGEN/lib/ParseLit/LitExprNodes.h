@@ -79,6 +79,20 @@ struct BoolLiteralNode final : public ExprNode {
   AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
 };
 
+struct SelfLiteralNode final : public ExprNode {
+  SelfLiteralNode(SMLoc loc) : ExprNode(kSelfLiteral), loc(loc) {}
+
+  const SMLoc loc;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kSelfLiteral;
+  }
+
+  SMLoc getLoc() const override { return loc; }
+  LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
+  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+};
+
 struct StringLiteralNode final : public ExprNode {
   StringLiteralNode(StringRef spelling)
       : ExprNode(kStringLiteral), spelling(spelling) {}
