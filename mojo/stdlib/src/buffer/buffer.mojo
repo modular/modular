@@ -936,6 +936,11 @@ struct DynamicRankBuffer:
     var shape: DTypePointer[DType.index.value]
     var type: DType
 
+    fn __clone__(self&) -> Self:
+        return Self {
+            data: self.data, rank: self.rank, shape: self.shape, type: self.type
+        }
+
     fn __new__(
         data: DTypePointer[DType.invalid.value],
         rank: Int,
