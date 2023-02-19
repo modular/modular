@@ -88,6 +88,13 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
     var dynamic_size: Int
     var dtype: __mlir_type.`!kgen.dtype`
 
+    # TODO: This should not be implicitly copyable when we have ownership all
+    # set up!
+    fn __clone__(self&) -> Self:
+        return Self {
+            data: self.data, dynamic_size: self.dynamic_size, dtype: self.dtype
+        }
+
     fn __new__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`]
     ) -> Buffer[size, type]:
@@ -649,6 +656,15 @@ struct NDBuffer[
     var _rank: Int
     var dynamic_shape: StaticTuple[rank, __mlir_type.index]
     var dynamic_dtype: DType
+
+    @always_inline("nodebug")
+    fn __clone__(self&) -> Self:
+        return Self {
+            data: self.data,
+            _rank: self._rank,
+            dynamic_shape: self.dynamic_shape,
+            dynamic_dtype: self.dynamic_dtype,
+        }
 
     fn __new__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
