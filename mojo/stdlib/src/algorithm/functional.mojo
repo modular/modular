@@ -10,7 +10,7 @@ from Bool import Bool
 from Int import Int
 from LLCL import Runtime, TaskGroup
 from Range import range
-from Vector import UnsafeFixedVector
+from Vector import SmallFixedVector
 
 # ===----------------------------------------------------------------------===#
 # Map
@@ -105,6 +105,7 @@ fn vectorize[
 # ===----------------------------------------------------------------------===#
 
 alias none = __mlir_type.`!lit.none`
+alias SmallFixedVectorLength = 64
 
 
 fn parallelForEachNChain[
@@ -115,7 +116,7 @@ fn parallelForEachNChain[
 ](
     total_count: Int,
     args: args_type,
-    tasks&: UnsafeFixedVector[Coroutine[none]],
+    tasks&: SmallFixedVector[SmallFixedVectorLength, Coroutine[none]],
     tg&: TaskGroup,
 ):
     for i in range(total_count):
@@ -142,7 +143,9 @@ fn parallelForEachN[
     async fn task_fn(i: Int, args: args_type):
         func(i, args)
 
-    var tasks = UnsafeFixedVector[Coroutine[none]](total_count - 1)
+    var tasks = SmallFixedVector[SmallFixedVectorLength, Coroutine[none]](
+        total_count - 1
+    )
     var tg = TaskGroup(rt)
     parallelForEachNChain[args_type, task_fn](total_count - 1, args, tasks, tg)
 
@@ -150,7 +153,7 @@ fn parallelForEachN[
 
     tg.wait()
     tg.__del__()
-    for j in range(tasks.size):
+    for j in range(tasks.__len__()):
         tasks.__getitem__(j).__del__()
     tasks.__del__()
 
