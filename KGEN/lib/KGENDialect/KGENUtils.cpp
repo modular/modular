@@ -1545,20 +1545,7 @@ ParseResult KGEN::parsePrettyType(AsmParser &p, TypedAttr &typeExpr) {
       return success();
     }
   }
-
-  StringRef typeName;
-  // Try to parse a keyword for a known POP type. Allow `dtype` for
-  // `!kgen.dtype` as well. If this fails, defer to the parameter value parser.
-  if (p.parseOptionalKeyword(
-          &typeName, {ArrayType::getMnemonic(), DTypeType::getMnemonic()}))
-    return parseTypeParamValue(p, typeExpr);
-
-  if (typeName == DTypeType::getMnemonic()) {
-    typeExpr = TypeConstantAttr::get(DTypeType::get(p.getContext()));
-    return success();
-  }
-
-  llvm_unreachable("unknown keyword");
+  return parseTypeParamValue(p, typeExpr);
 }
 
 /// Try to print a pretty type or a standard MLIR type. A pretty type is a POP
@@ -1571,18 +1558,11 @@ void KGEN::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
 
   // Try to print on the known types. Fallback to the generic type printer
   // otherwise.
-  if (auto kgenType = dyn_cast_or_null<ArrayType>(typeCst.getValue())) {
-    p << decltype(kgenType)::getMnemonic();
-    kgenType.print(p);
-  } else if (auto kgenType =
-                 dyn_cast_or_null<DeclRefType>(typeCst.getValue())) {
-    p << kgenType.getSymbol();
-    printOptionalParamBindSpec(p, kgenType.getParamValues());
-  } else if (auto kgenType = dyn_cast_or_null<DTypeType>(typeCst.getValue())) {
-    p << DTypeType::getMnemonic();
-  } else {
-    printTypeParamValue(p, typeExpr);
+  if (auto refType = dyn_cast_or_null<DeclRefType>(typeCst.getValue())) {
+    p << refType.getSymbol();
+    return printOptionalParamBindSpec(p, refType.getParamValues());
   }
+  printTypeParamValue(p, typeExpr);
 }
 
 /// Compare a range of values from an "originator" to a corresponding range of
