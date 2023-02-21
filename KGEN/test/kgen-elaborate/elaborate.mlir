@@ -1976,3 +1976,21 @@ kgen.generator @rebind_parameter() {
   kgen.param.constant: list<index[size]> = <list_output>
   kgen.return
 }
+
+// -----
+
+// We should generate two versions of this function.
+// CHECK-LABEL: kgen.func @concretizeForkParameter{{.*}}
+// CHECK: kgen.param.constant
+// CHECK-LABEL: kgen.func @concretizeForkParameter{{.*}}
+// CHECK: kgen.param.constant
+kgen.generator @concretizeForkParameter() -> index {
+  kgen.param.fork y = <apply(:() -> !kgen.variadic<index> @returnVariadic)>
+  %0 = kgen.param.constant = <y>
+  kgen.return %0: index
+}
+
+kgen.generator @returnVariadic() -> !kgen.variadic<index> {
+  %r = kgen.param.constant : variadic<index> = <[1, 2]>
+  kgen.return %r : !kgen.variadic<index>
+}
