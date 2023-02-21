@@ -21,7 +21,9 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
 
-#define DEBUG_TYPE "llcl_wq"
+#include "./Threading.h"
+
+#define DEBUG_TYPE "llcl"
 
 using namespace M;
 using namespace M::LLCL;
@@ -39,10 +41,34 @@ using namespace M::LLCL;
 //    sequentially.
 //
 
+//===----------------------------------------------------------------------===//
+// Compile-time config
+//===----------------------------------------------------------------------===//
+
 /// Set to true to force waiters triggered by an emplace from a 'foreign'
 /// thread not running an await loop to run immediately. Otherwise they will
 /// be enqued as an LLCL task (unless the task queue is full).
 constexpr bool kRunImmediatelyOnForeignThreads = false;
+
+/// Minimum task list capacity.
+constexpr size_t kMinTaskListCapacity = 128;
+
+/// Number of task list slots per thread.
+constexpr size_t kTaskListSlotsPerThread = 16;
+
+/// Set to true to force worker threads to have affinity for a specific
+/// (physical) CPU on systems which support that.
+constexpr bool kUseThreadAffinity = true;
+
+/// Amount of time to spend spinning while waiting for work before going to
+/// sleep.
+constexpr std::chrono::nanoseconds kBusyWait = std::chrono::milliseconds(1);
+
+//===----------------------------------------------------------------------===//
+// WorkerThread
+//===----------------------------------------------------------------------===//
+
+namespace {
 
 /// Bit index i is true if the thread with workedID i is suspended.
 using SuspendedThreadsBitvec = uint64_t;
@@ -57,21 +83,13 @@ static constexpr auto printWorkerId(size_t workerID) {
   };
 }
 
-//===----------------------------------------------------------------------===//
-// WorkerThread
-//===----------------------------------------------------------------------===//
-
-namespace {
 /// Provides the state needed to synchronize the workers in the thread pool.
 struct SharedThreadState {
   static_assert(std::atomic<SuspendedThreadsBitvec>::is_always_lock_free,
                 "suspendedThreads should always be lock free");
-  /// This is the time to spin wait before falling asleep.
-  const std::chrono::nanoseconds busyWaitNs;
-
   /// This flag indicates when a thread should quit working and get ready to be
   /// joined.
-  std::atomic<bool> doneFlag;
+  std::atomic<bool> doneFlag = false;
 
   /// This keeps a bitset of suspended threads, indexed by workerID.  This will
   /// thrash around a lot when the workqueue is close to empty and threads are
@@ -81,7 +99,7 @@ struct SharedThreadState {
   /// This is aligned because the state above is immutable or (in the case of
   /// doneFlag) almost never changing. We don't want doneFlag to be on the same
   /// cache line as suspendedThreads.
-  AlignedAtomic<SuspendedThreadsBitvec> suspendedThreads;
+  AlignedAtomic<SuspendedThreadsBitvec> suspendedThreads = 0;
 
   /// When a worker is about to go to sleep, it calls this method so andThenSync
   /// can know to wake it up when more work materializes.
@@ -168,6 +186,8 @@ struct WorkQueueThread {
   /// running a runOnThread work loop. However, the thread may call runItems
   /// while awaiting.
   size_t workerID;
+  /// The CPU we'd prefer this worker to have affinity for.
+  size_t cpuID;
   /// This is a per-worker semaphore that this blocks on when they run
   /// out of things to do.
   Semaphore sema;
@@ -187,8 +207,9 @@ struct WorkQueueThread {
   /// list must be initialized by the time this is called.
   WorkQueueThread(SharedThreadState &sharedState,
                   LockFreeRingBuffer<ProfiledTaskFunction> &taskList,
-                  size_t workerID)
-      : sharedState(sharedState), taskList(taskList), workerID(workerID) {
+                  size_t workerID, size_t cpuID)
+      : sharedState(sharedState), taskList(taskList), workerID(workerID),
+        cpuID(cpuID) {
     if (workerID > 0)
       thread.emplace(&WorkQueueThread::runOnThread, this);
   }
@@ -259,18 +280,21 @@ struct WorkQueueThread {
                 bool waitForTasks, StringRef spinningLabel,
                 StringRef sleepingLabel);
 
+  /// As above, but the caller is known to own the WorkQueueThread.
   template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
   void runItemsOnOwningThread(EarlyStopPredicateFn earlyStopPredicate,
                               LateStopPredicateFn lateStopPredicate,
                               bool runNewTasks, bool waitForTasks,
                               StringRef spinningLabel, StringRef sleepingLabel);
 
+  /// As above, but without tracking the running profiling entry.
   template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
   void runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
                     LateStopPredicateFn lateStopPredicate, bool runNewTasks,
                     bool waitForTasks, StringRef spinningLabel,
                     StringRef sleepingLabel);
 
+private:
   /// The main function invoked by std::thread.
   void runOnThread();
 };
@@ -291,6 +315,10 @@ void WorkQueueThread::runOnThread() {
   // On systems that support it, give the thread a symbolic name that will show
   // up in profilers and debuggers.
   llvm::set_thread_name("LLCL Thread " + llvm::Twine(workerID));
+
+  // On systems that support it, give the thread affinity for one CPU.
+  if constexpr (kUseThreadAffinity)
+    setThreadAffinity(cpuID);
 
   // Run work items until the system is asked to shut down.
   runItems(
@@ -321,9 +349,19 @@ void WorkQueueThread::runItems(EarlyStopPredicateFn earlyStopPredicate,
     uint64_t expectedThreadID = 0;
     if (threadID.compare_exchange_strong(expectedThreadID, callerThreadID)) {
       // We're the only foreign thread running a runItems loop.
-      runItemsOnOwningThread<EarlyStopPredicateFn, LateStopPredicateFn>(
-          earlyStopPredicate, lateStopPredicate, runNewTasks, waitForTasks,
-          spinningLabel, sleepingLabel);
+      if constexpr (kUseThreadAffinity) {
+        runWithThreadAffinity(
+            cpuID, [this, earlyStopPredicate, lateStopPredicate, runNewTasks,
+                    waitForTasks, spinningLabel, sleepingLabel]() {
+              runItemsOnOwningThread<EarlyStopPredicateFn, LateStopPredicateFn>(
+                  earlyStopPredicate, lateStopPredicate, runNewTasks,
+                  waitForTasks, spinningLabel, sleepingLabel);
+            });
+      } else {
+        runItemsOnOwningThread<EarlyStopPredicateFn, LateStopPredicateFn>(
+            earlyStopPredicate, lateStopPredicate, runNewTasks, waitForTasks,
+            spinningLabel, sleepingLabel);
+      }
       // Release.
       threadID = 0;
     } else if (expectedThreadID == callerThreadID) {
@@ -416,7 +454,7 @@ KeepRunning:
       // We also want to make sure to use exponential backoff to avoid pummeling
       // the memory hierarchy of the threads that are doing useful work.  As
       // such, we use a BusyWaitSpinWaiter.
-      BusyWaitSpinWaiter spinWaiter(sharedState.busyWaitNs);
+      BusyWaitSpinWaiter spinWaiter(kBusyWait);
 
       // Spin until we find some work to do.
       while (!spinWaiter.wait()) {
@@ -479,10 +517,11 @@ namespace {
 /// of a concurrent-safe queue.
 class ThreadPoolWorkQueue : public WorkQueue {
 public:
-  /// Initialize the thread pool and start up the worker threads. By the time
-  /// the constructor finishes, all the worker threads have started and shall
-  /// only be cancelled by the destructor.
-  ThreadPoolWorkQueue(size_t numWorkers, std::chrono::nanoseconds busyWaitNs,
+  /// Initialize the thread pool and start up the worker threads, with one
+  /// thread per entry in cpuIDs. By the time the constructor finishes, all
+  /// the worker threads have started and shall only be cancelled by the
+  /// destructor.
+  ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
                       size_t taskListCapacity);
 
   ~ThreadPoolWorkQueue() override;
@@ -526,13 +565,9 @@ private:
 };
 } // namespace
 
-ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkers,
-                                         std::chrono::nanoseconds busyWaitNs,
+ThreadPoolWorkQueue::ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
                                          size_t taskListCapacity)
-    : numWorkers(numWorkers), sharedState{busyWaitNs,
-                                          /*doneFlag=*/false,
-                                          /*suspendedThreads=*/0},
-      taskList(taskListCapacity) {
+    : numWorkers(cpuIDs.size()), taskList(taskListCapacity) {
   assert(numWorkers <= kMaxWorkers && "Too many workers for bitvec width");
   // Initialize each thread with its required state. Note that workerID #0
   // does not start itself since it represents all 'foreign' threads.
@@ -540,8 +575,9 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(size_t numWorkers,
   workers = static_cast<WorkQueueThread *>(
       malloc(sizeof(WorkQueueThread) * numWorkers));
   assert(workers);
-  for (size_t i = 0; i < numWorkers; ++i)
-    new (workers + i) WorkQueueThread(sharedState, taskList, i);
+  for (size_t workerID = 0; workerID < numWorkers; ++workerID)
+    new (workers + workerID)
+        WorkQueueThread(sharedState, taskList, workerID, cpuIDs[workerID]);
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
@@ -622,7 +658,7 @@ void ThreadPoolWorkQueue::addLocalTask(M::LLCL::TaskFunction work) {
       callerWorker->threadID != llvm::get_threadid()) {
     // Called from a foreign worker which is not within a runItems loop, so
     // there's no local task list we can enqueue to on this thread.
-    if (kRunImmediatelyOnForeignThreads) {
+    if constexpr (kRunImmediatelyOnForeignThreads) {
       // Run right now.
       LLVM_DEBUG(llvm::dbgs() << "ThreadPoolWorkQueue: running immediately "
                                  "(called from non awaiting foreign thread)\n");
@@ -720,20 +756,45 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values,
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<WorkQueue>
-M::LLCL::createThreadPoolWorkQueue(size_t numThreads,
-                                   std::chrono::nanoseconds busyWait,
-                                   size_t taskListCapacity) {
-  // We expect `numThreads` to be the total numbers of threads that are
-  // accessing the work queue. As there will be an external thread that will
-  // access the work queue and take items from it by calling `await`, we create
-  // `numThreads - 1` worker threads from the thread pool work queue.
+M::LLCL::createThreadPoolWorkQueue(size_t numThreads) {
+  CPUSystemInfo systemInfo = CPUSystemInfo::get();
+  LLVM_DEBUG(llvm::dbgs() << "createThreadPoolWorkQueue: " << systemInfo
+                          << "\n");
+
+  if (numThreads == 0) {
+    numThreads = systemInfo.sockets[0].physicalCores.size();
+    LLVM_DEBUG(llvm::dbgs() << "createThreadPoolWorkQueue: Using " << numThreads
+                            << " threads corresponding to number of physical "
+                               "cores on first socket.\n");
+    size_t allCores = std::thread::hardware_concurrency();
+    if (numThreads != allCores)
+      LLVM_DEBUG(llvm::dbgs()
+                 << "createThreadPoolWorkQueue: Number of threads ("
+                 << numThreads
+                 << ") differs from std::thread hardware_concurrency ("
+                 << allCores << ") since ignoring hyperthreading.\n");
+  }
+  if (numThreads > kMaxWorkers) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "createThreadPoolWorkQueue: Reducing number of threads from "
+               << numThreads << " to " << kMaxWorkers << ".\n");
+    numThreads = kMaxWorkers;
+  }
   assert(numThreads > 0);
 
-  assert(taskListCapacity > 0);
+  std::vector<size_t> cpuIDs = systemInfo.getPreferredCpuIDs(numThreads);
+  if constexpr (kUseThreadAffinity) {
+    LLVM_DEBUG(
+        llvm::dbgs()
+            << "createThreadPoolWorkQueue: Using thread affinity for CPUs {";
+        llvm::interleave(cpuIDs, llvm::dbgs(), ", "); llvm::dbgs() << "}\n";);
+  }
 
-  // We use a 64-bit value "thread suspended" value currently so we cap at 64
-  // threads.  This algorithm isn't going to scale beyond 64 threads anyway.
-  numThreads = std::min(numThreads, kMaxWorkers);
-  return std::make_unique<ThreadPoolWorkQueue>(numThreads, busyWait,
-                                               taskListCapacity);
+  size_t taskListCapacity =
+      std::max(kMinTaskListCapacity, numThreads * kTaskListSlotsPerThread);
+  LLVM_DEBUG(llvm::dbgs()
+             << "createThreadPoolWorkQueue: Task list has capacity of at least "
+             << taskListCapacity << " slots.\n");
+
+  return std::make_unique<ThreadPoolWorkQueue>(cpuIDs, taskListCapacity);
 }

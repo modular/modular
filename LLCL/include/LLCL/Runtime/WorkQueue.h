@@ -147,16 +147,18 @@ struct ProfiledTaskFunction {
   operator bool() const { return work.operator bool(); }
 };
 
-/// Create a thread pool that only uses the host donor thread, involving no
+/// Creates a thread pool that only uses the host donor thread, involving no
 /// synchronization.
 std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 
-/// Create a thread pool. The busyWait and taskListCapacity parameters are
-/// exposed only for unit testing.
-std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(
-    size_t numThreads,
-    std::chrono::nanoseconds busyWait = std::chrono::nanoseconds(1000000),
-    size_t taskListCapacity = 128);
+/// Creates a thread pool. The thread pool will use numThreads - 1 worker
+/// threads, on the assumption the caller or some other 'main' thread will
+/// eventually donate themselves to processing tasks by calling await.
+///
+/// If numThreads is zero it will default to the number of 'physical' cores in
+/// the first socket in the system. Generally this will ignore hyperthreading
+/// to minimize cache contention, and will avoid cross-NUMA memory traffic.
+std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(size_t numThreads = 0);
 
 } // namespace M::LLCL
 
