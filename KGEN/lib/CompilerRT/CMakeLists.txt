@@ -5,12 +5,10 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_mlir_library(KGENCompilerRT
-  Benchmark.cpp
   Initialize.cpp
   LLCL.cpp
   Print.cpp
   Tracing.cpp
-  Random.cpp
   System.cpp
   InitIntelAMX.cpp
 

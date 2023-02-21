@@ -187,11 +187,9 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // TODO (8082): This should not be necessary.
   std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
-  KGEN::registerBenchmark(compilerRTFunctions);
   KGEN::registerIntelAMX(compilerRTFunctions);
   KGEN::registerLLCL(compilerRTFunctions);
   KGEN::registerPrint(compilerRTFunctions);
-  KGEN::registerRandom(compilerRTFunctions);
   KGEN::registerSystem(compilerRTFunctions);
   KGEN::registerTracing(compilerRTFunctions);
   for (auto [name, ptr] : compilerRTFunctions)

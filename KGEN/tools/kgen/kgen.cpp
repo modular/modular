@@ -363,11 +363,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // TODO (8082): This should not be necessary.
   std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
-  KGEN::registerBenchmark(compilerRTFunctions);
   KGEN::registerIntelAMX(compilerRTFunctions);
   KGEN::registerLLCL(compilerRTFunctions);
   KGEN::registerPrint(compilerRTFunctions);
-  KGEN::registerRandom(compilerRTFunctions);
   KGEN::registerSystem(compilerRTFunctions);
   KGEN::registerTracing(compilerRTFunctions);
   for (auto [name, ptr] : compilerRTFunctions)
@@ -425,11 +423,10 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Validate that the user didn't pass in any funcs we don't have. This would
   // be super confusing if the user simply gets no response for something that
   // isn't defined, so put up an actual error.
-  for (const auto &fn : clOptions.funcs) {
+  for (const auto &fn : clOptions.funcs)
     if (!foundFuncs.count(fn.name))
       return mlir::emitError(theModule->getLoc(),
                              "could not find func '@" + fn.name + "'");
-  }
 
   return mlir::success();
 }
