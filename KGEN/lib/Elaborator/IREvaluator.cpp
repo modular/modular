@@ -78,6 +78,25 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
                                  TargetType::get(op.getContext()))};
   }
 
+  if (op.getOpcode() == POC::GetAllImpls) {
+    auto symbol = cast<SymbolConstantAttr>(op.getOperand(0));
+    std::vector<FuncOp> funcs;
+    if (auto err = elaborator.getAllConcreteFunctions(
+            *errorLoc, symbol.getSymbol(), symbol.getParamValues().getValue(),
+            funcs)) {
+      emitError(std::move(*err));
+      return failure();
+    }
+
+    std::vector<TypedAttr> refs;
+    refs.reserve(funcs.size());
+    for (FuncOp f : funcs)
+      refs.emplace_back(SymbolConstantAttr::get(
+          SymbolRefAttr::get(f.getSymNameAttr()), f.getFullSignature()));
+
+    return {VariadicAttr::get(refs, cast<VariadicType>(op.getType()))};
+  }
+
   if (op.getOpcode() == POC::Apply) {
     auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
     if (!symbol || !symbol.getType().getResultParams().empty())

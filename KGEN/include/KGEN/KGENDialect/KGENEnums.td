@@ -59,7 +59,10 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"Rebind", 23, "rebind">,
 
   // Evaluating a set of candidates.
-  I32EnumAttrCase<"Evaluate", 24, "evaluate">
+  I32EnumAttrCase<"Evaluate", 24, "evaluate">,
+
+  // Enumerating all concrete implementations for a given signature.
+  I32EnumAttrCase<"GetAllImpls", 25, "get_all_impls">
 ]>;
 
 //===----------------------------------------------------------------------===//

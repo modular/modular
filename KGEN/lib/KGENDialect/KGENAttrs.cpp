@@ -171,11 +171,10 @@ LogicalResult ListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   if (*length != static_cast<int64_t>(values.size()))
     return emitError() << "list attribute type requires " << *length
                        << " elements but value has " << values.size();
-  for (TypedAttr value : values) {
+  for (TypedAttr value : values)
     if (value.getType() != elementType)
       return emitError() << "expected all list elements to have type "
                          << elementType;
-  }
   return success();
 }
 
@@ -789,6 +788,10 @@ LogicalResult ParamOperatorAttr::verify(
     if (failed(verifyEvaluate(operands, type, emitError)))
       return failure();
     break;
+  case POC::GetAllImpls:
+    if (operands.size() != 1)
+      return emitError() << "'get_all_impls' expects one operand";
+    break;
   }
   return success();
 }
@@ -846,9 +849,8 @@ static IntegerAttr foldBinaryValues(
 
   // If not bool result (e.g. a compare), truncate the LHS for our check.
   auto result1test = result1;
-  if constexpr (!std::is_same_v<bool, ResultTy>) {
+  if constexpr (!std::is_same_v<bool, ResultTy>)
     result1test = result1.trunc(result2.getBitWidth());
-  }
 
   // We can use the full 64-bit folded result if they match, otherwise leave
   // unfolded.
@@ -1581,6 +1583,9 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
     break;
   case POC::Evaluate:
     // Don't need to do anything.
+    break;
+  case POC::GetAllImpls:
+    // Do nothing.
     break;
   }
 

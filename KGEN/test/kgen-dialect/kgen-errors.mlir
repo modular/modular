@@ -867,3 +867,11 @@ kgen.generator @declareWrongType() {
   "kgen.param.declare"() {paramDecl = #kgen<param.decl p1 : index>, value = 1 : i32} : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.generator @noArgumentForGetAllImpl() {
+  // expected-error @below {{'get_all_impls' expects one operand}}
+  kgen.param.declare impls: variadic<!kgen.signature<() -> index>> = <get_all_impls()>
+  kgen.return
+}

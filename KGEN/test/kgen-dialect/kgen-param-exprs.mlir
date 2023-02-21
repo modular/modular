@@ -653,3 +653,21 @@ kgen.generator @itf() {
   kgen.call_param[()->(): chosenImpl]()
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @checkGetAllImpls
+kgen.generator @checkGetAllImpls() -> index {
+  // CHECK: kgen.param.declare impls: variadic<!kgen.signature<() -> index>> = <get_all_impls(@multipleImplsFn)>
+  kgen.param.declare impls: variadic<!kgen.signature<() -> index>> = <get_all_impls(@multipleImplsFn)>
+
+  // CHECK-NEXT: kgen.param.fork oneImpl: () -> index = <impls>
+  kgen.param.fork oneImpl: () -> index = <impls>
+  %ret = kgen.call_param[() -> index: oneImpl]()
+  kgen.return %ret : index
+}
+
+// CHECK-LABEL: kgen.generator @multipleImplsFn
+kgen.generator @multipleImplsFn() -> index {
+  kgen.param.fork p : index = <[1, 2, 3]>
+  %ret = kgen.param.constant = <p>
+  kgen.return %ret : index
+}
