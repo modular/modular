@@ -124,11 +124,16 @@ public:
   // Core AsyncValue operations
   //===--------------------------------------------------------------------===//
 
-  /// Mark an "unconstructed" AsyncValue as an error.
+  /// Sets the referenced AsyncValue to the error state.
   ///
-  /// TODO(#7399): Should be consuming?
-  void setToError(EncodedDiagnostic diagnostic) const {
-    getPointer()->setToError(std::move(diagnostic));
+  /// Consumes this reference just before any waiters are triggered. This
+  /// ensures waiters which wish to use move-vs-copy or copy-on-write
+  /// optimizations on the emplaced value will not see a stray additional
+  /// reference due to the producer.
+  void setToError(EncodedDiagnostic diagnostic) && {
+    AsyncValue *pointer = releasePointer(); // our ref count will be removed by
+                                            // setToErrorAndDecRef.
+    pointer->setToErrorAndDecRef(std::move(diagnostic));
   }
 
   /// Return true if this AsyncValue is "ready" and filled with a concrete
@@ -142,8 +147,7 @@ public:
   /// Return true if the AsyncValue is fulfilled with an error state.
   bool isError() const { return value->isError(); }
 
-  /// Constructs the payload of the referenced AsyncValue in place, and changes
-  /// its state to "available".
+  /// Constructs the payload of the referenced AsyncValue in place.
   ///
   /// Consumes this reference just before any waiters are triggered. This
   /// ensures waiters which wish to use move-vs-copy or copy-on-write
@@ -176,11 +180,11 @@ public:
 
   /// Resolve the referenced IndirectAsyncValue to contain a concrete
   /// AsyncValue with a newly initialized value, resolving any waiters.
-  ///
-  /// TODO(#7399): Should be consuming?
   template <typename T, typename... Args>
-  void emplaceIndirect(Args &&...args) {
-    getPointer()->template emplaceIndirect<T, Args...>(
+  void emplaceIndirect(Args &&...args) && {
+    AsyncValue *pointer = releasePointer(); // our ref count will be removed by
+                                            // emplaceIndirectAndDecRef.
+    pointer->template emplaceIndirectAndDecRef<T, Args...>(
         std::forward<Args>(args)...);
   }
 
@@ -259,10 +263,17 @@ public:
     std::move(*this).andThen</*IsAsync=*/true>(std::move(waiter));
   }
 
-  /// Resolve a referenced IndirectAsyncValue to point to the specified new
+  /// Resolves the referenced IndirectAsyncValue to point to the specified new
   /// value, resolving any waiters whenever newValue becomes ready.
-  void resolveIndirect(AnyAsyncValueRef &&newValue) {
-    value->resolveIndirect(newValue.releaseRCRef());
+  ///
+  /// Consumes this reference just before any waiters are triggered. This
+  /// ensures waiters which wish to use move-vs-copy or copy-on-write
+  /// optimizations on the emplaced value will not see a stray additional
+  /// reference due to the producer.
+  void resolveIndirect(AnyAsyncValueRef &&newValue) && {
+    AsyncValue *pointer =
+        releasePointer(); // our ref count will be removed by emplaceAndDecRef.
+    pointer->resolveIndirectAndDecRef(newValue.releaseRCRef());
   }
 
 private:

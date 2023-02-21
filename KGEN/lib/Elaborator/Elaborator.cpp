@@ -451,9 +451,8 @@ void ExpansionTreeNode::trimFailedExpansions(DenseSet<Operation *> &toErase) {
 }
 
 void ExpansionTreeNode::collectSubtreeErrors(ErrorTree &tree) {
-  if (expansions.empty() && error) {
+  if (expansions.empty() && error)
     tree.addCause(error->copy());
-  }
 
   for (auto &ch : expansions)
     ch->collectSubtreeErrors(tree);
@@ -504,12 +503,11 @@ void ExpansionTreeNode::print(mlir::raw_indented_ostream &os) {
   // Print the bindings.
   {
     auto _ = os.scope("Bindings: {\n", "}\n");
-    for (const auto &[_, bind] : bindings) {
+    for (const auto &[_, bind] : bindings)
       if (bind != this)
         bind->print(os);
       else
         os << "Self\n";
-    }
   }
 
   // Errors are leaves.
@@ -1964,7 +1962,7 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
       evalSemaphore.post();
 
       if (failed(bestSpecializationIdxOr)) {
-        return out.setToError(getMLIRDiagnostic(
+        return std::move(out).setToError(getMLIRDiagnostic(
             bestSpecializationIdxOr.takeError(), itf.getLoc()));
       }
 
@@ -1990,7 +1988,7 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
       return func.getNameAttr() == fastestFuncName;
     });
     if (fastest == concrete.end()) {
-      out.setToError(LLCL::getMLIRDiagnostic(
+      std::move(out).setToError(LLCL::getMLIRDiagnostic(
           Error("could not find " + fastestFuncName.getValue()),
           itfOp->getLoc()));
     } else {
@@ -2020,10 +2018,9 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
     if (!child->isConcrete())
       child->error = ErrorTree(itf.getLoc(), "no viable expansions found");
 
-    for (auto *c : child->expansions) {
+    for (auto *c : child->expansions)
       if (!llvm::is_contained(concrete, c->op))
         c->error = ErrorTree(itf.getLoc(), "not chosen in search");
-    }
   }
 
   LLVM_DEBUG(itfNode->print(logger << "Post Search Interface "));

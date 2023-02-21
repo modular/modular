@@ -83,6 +83,13 @@ public:
         AsyncValue::createReady<T>(runtime, std::forward<Args>(args)...));
   }
 
+  /// Create an AsyncValue that has already been turned into an error with the
+  /// specified message.
+  static AsyncValueRef<T> createError(CompactRuntimePtr runtime,
+                                      EncodedDiagnostic diagnostic) {
+    return take(AsyncValue::createError(runtime, std::move(diagnostic)));
+  }
+
   T &operator*() const { return getPointer()->template get<T>(); }
 
   T *operator->() const { return &getPointer()->template get<T>(); }
@@ -168,8 +175,8 @@ public:
 
   /// Fill the referenced AsyncValue with an error that has the specified
   /// message.
-  void setToError(Error message) const {
-    AVRefType::setToError({std::move(message), loc.copy()});
+  void setToError(Error message) && {
+    std::move(*this).AVRefType::setToError({std::move(message), loc.copy()});
   }
 
   /// Provide access to the location.

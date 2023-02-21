@@ -125,20 +125,14 @@ cachedTransform(Operation *target, LLCL::RCRef<TransformCache> transformCache,
   LLCL::AsyncValue::registerType<Detail::ResultT<CacheHitFnT>>();
   auto onCacheHit = [target, cacheHitFn = std::move(cacheHitFn),
                      rt](Operation *op, BufferRef buf) {
-    // Allocate space for the result.
-    auto result =
-        LLCL::AsyncValueRef<Detail::ResultT<CacheHitFnT>>::allocate(rt);
-
     // Call the provided function and act accordingly.
     auto resultOr = cacheHitFn(op, std::move(buf));
     if (resultOr.isError())
-      result.setToError(
-          LLCL::getMLIRDiagnostic(resultOr.takeError(), target->getLoc()));
-    else
-      result.copy().emplace(resultOr.takeValue());
+      return LLCL::AsyncValueRef<Detail::ResultT<CacheHitFnT>>::createError(
+          rt, LLCL::getMLIRDiagnostic(resultOr.takeError(), target->getLoc()));
 
-    // Return the async value result.
-    return result;
+    return LLCL::AsyncValueRef<Detail::ResultT<CacheHitFnT>>::createReady(
+        rt, resultOr.takeValue());
   };
 
   return cachedTransform(target, std::move(transformCache), std::move(chain),

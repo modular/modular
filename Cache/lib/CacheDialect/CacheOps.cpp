@@ -65,7 +65,7 @@ AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
                                 out = out.copy()](
                                    AsyncValueRef<Chain> &&chain) mutable {
     if (chain.isError())
-      return out.setToError(chain.takeDiagnostic());
+      return std::move(out).setToError(chain.takeDiagnostic());
 
     // Use the replacer strategy to replace "large" attributes with the
     // hashed version.
@@ -124,7 +124,7 @@ AsyncValueRef<Chain> Cache::inflateConstant(Operation *constant,
                                 out = out.copy()](
                                    AsyncValueRef<Chain> &&chain) mutable {
     if (chain.isError())
-      return out.setToError(chain.takeDiagnostic());
+      return std::move(out).setToError(chain.takeDiagnostic());
 
     // Use the replacer strategy to replace "large" attributes with the hashed
     // version.
@@ -145,11 +145,11 @@ AsyncValueRef<Chain> Cache::inflateConstant(Operation *constant,
           MLIRLocationDecoder::getEncodedLocation(constant->getLoc()));
       await(found);
       if (found.isError()) {
-        out.setToError(found.takeDiagnostic());
+        std::move(out).setToError(found.takeDiagnostic());
         return nullptr;
       }
       if (!found->has_value()) {
-        out.setToError(getMLIRDiagnostic(
+        std::move(out).setToError(getMLIRDiagnostic(
             Error("hash '" + llvm::encodeBase64(cacheAttr.getHash()) +
                   "' could not be found in the cache"),
             constant->getLoc()));
@@ -304,7 +304,7 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
         // function.
         OpBuilder builder(op);
         if (failed(*hashOr)) {
-          return out.setToError(
+          return std::move(out).setToError(
               getMLIRDiagnostic(hashOr->takeError(), r.getLoc()));
         }
 
@@ -341,7 +341,7 @@ AsyncValueRef<Chain> M::Cache::deflateOp(Operation *op,
   std::move(chain).andThenSync([op, cache = cache.copy(), out = out.copy()](
                                    AnyAsyncValueRef &&chain) mutable {
     if (chain.isError())
-      return out.setToError(chain.takeDiagnostic());
+      return std::move(out).setToError(chain.takeDiagnostic());
 
     // If the op is already deflated, we're done!
     if (op->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName())) {
@@ -359,7 +359,7 @@ AsyncValueRef<Chain> M::Cache::deflateOp(Operation *op,
         [out = out.copy()](MutableArrayRef<AnyAsyncValueRef> values) mutable {
           for (auto &v : values)
             if (v.isError())
-              return out.setToError(v.takeDiagnostic());
+              return std::move(out).setToError(v.takeDiagnostic());
 
           std::move(out).emplace();
         });
@@ -380,10 +380,10 @@ static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
       [r, regionHash, out = out.copy()](
           AsyncValueRef<std::optional<BufferRef>> &&foundOr) mutable {
         if (foundOr.isError()) {
-          return out.setToError(foundOr.takeDiagnostic());
+          return std::move(out).setToError(foundOr.takeDiagnostic());
         }
         if (!foundOr->has_value()) {
-          return out.setToError(getMLIRDiagnostic(
+          return std::move(out).setToError(getMLIRDiagnostic(
               Error("hash '" + llvm::encodeBase64(regionHash.getHash()) +
                     "' could not be found in the cache"),
               r->getLoc()));
@@ -402,7 +402,7 @@ static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
                 *bytecode, &b,
                 mlir::ParserConfig(r->getContext(),
                                    /*verifyAfterParse=*/false)))) {
-          return out.setToError(getMLIRDiagnostic(
+          return std::move(out).setToError(getMLIRDiagnostic(
               Error("reading bytecode file failed"), r->getLoc()));
         }
 
@@ -436,7 +436,7 @@ AsyncValueRef<Chain> M::Cache::inflateOp(Operation *cached,
   std::move(chain).andThenSync([cached, cache = cache.copy(), out = out.copy()](
                                    AnyAsyncValueRef &&chain) mutable {
     if (chain.isError())
-      return out.setToError(chain.takeDiagnostic());
+      return std::move(out).setToError(chain.takeDiagnostic());
 
     auto hashes =
         cached->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
@@ -451,20 +451,20 @@ AsyncValueRef<Chain> M::Cache::inflateOp(Operation *cached,
 
     // Once all the regions are cached, remove the region hash attr and
     // resolve success/failure.
-    andThenSyncMoving(results,
-                      [cached,
-                       // Safe to move our copy of out.
-                       out = std::move(out)](
-                          MutableArrayRef<AnyAsyncValueRef> values) mutable {
-                        for (auto &v : values)
-                          if (v.isError())
-                            return out.setToError(v.takeDiagnostic());
+    andThenSyncMoving(
+        results, [cached,
+                  // Safe to move our copy of out.
+                  out = std::move(out)](
+                     MutableArrayRef<AnyAsyncValueRef> values) mutable {
+          for (auto &v : values)
+            if (v.isError())
+              return std::move(out).setToError(v.takeDiagnostic());
 
-                        // Remove the region hash attr.
-                        cached->removeAttr(getRegionHashAttrName());
-                        // Done!
-                        std::move(out).emplace();
-                      });
+          // Remove the region hash attr.
+          cached->removeAttr(getRegionHashAttrName());
+          // Done!
+          std::move(out).emplace();
+        });
   });
 
   return out;
