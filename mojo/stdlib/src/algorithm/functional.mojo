@@ -10,7 +10,7 @@ from Bool import Bool
 from Int import Int
 from LLCL import Runtime, TaskGroup
 from Range import range
-from Vector import SmallFixedVector
+from Vector import InlinedFixedVector
 
 # ===----------------------------------------------------------------------===#
 # Map
@@ -105,7 +105,7 @@ fn vectorize[
 # ===----------------------------------------------------------------------===#
 
 alias none = __mlir_type.`!lit.none`
-alias SmallFixedVectorLength = 64
+alias InlinedFixedVectorLength = 64
 
 
 fn parallelForEachNChain[
@@ -116,7 +116,7 @@ fn parallelForEachNChain[
 ](
     total_count: Int,
     args: args_type,
-    tasks&: SmallFixedVector[SmallFixedVectorLength, Coroutine[none]],
+    tasks&: InlinedFixedVector[InlinedFixedVectorLength, Coroutine[none]],
     tg&: TaskGroup,
 ):
     for i in range(total_count):
@@ -143,7 +143,7 @@ fn parallelForEachN[
     async fn task_fn(i: Int, args: args_type):
         func(i, args)
 
-    var tasks = SmallFixedVector[SmallFixedVectorLength, Coroutine[none]](
+    var tasks = InlinedFixedVector[InlinedFixedVectorLength, Coroutine[none]](
         total_count - 1
     )
     var tg = TaskGroup(rt)
