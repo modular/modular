@@ -47,7 +47,7 @@ public:
   size_t getSize() const;
 
   /// Iterate through this structure walking over the leaf node data in-order.
-  void traverse(std::function<void(ArrayRef<uint8_t>)> traversalFn);
+  void traverse(llvm::function_ref<void(ArrayRef<uint8_t>)> traversalFn);
 
 private:
   ConcatenationTree(ConcatTreeBaseNode *nodePtr);
