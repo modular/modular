@@ -28,10 +28,14 @@ class LLCLAllocator;
 /// Work functions to execute for a 'task'.
 using TaskFunction = llvm::unique_function<void()>;
 
-/// Time profiling entries for capturing the waiting and execution time
-/// of tasks.
+/// Time profiling entries for capturing the running time of tasks.
 using WorkProfilerEntry =
     TimeTraceProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 1)>;
+
+/// Time profiling entries for capturing the waiting time of tasks and
+/// other internal LLCL measurements.
+using InternalProfilerEntry =
+    TimeTraceProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 2)>;
 
 /// This is an interface to various implementations of work queues:
 /// different execution methods which are often current. These
@@ -129,13 +133,13 @@ protected:
 /// time (executing the work function).
 struct ProfiledTaskFunction {
   TaskFunction work;
-  WorkProfilerEntry waiting;
+  InternalProfilerEntry waiting;
   WorkProfilerEntry running;
 
   ProfiledTaskFunction(std::nullptr_t) {}
   ProfiledTaskFunction() = default;
 
-  ProfiledTaskFunction(TaskFunction &&work, WorkProfilerEntry &&waiting,
+  ProfiledTaskFunction(TaskFunction &&work, InternalProfilerEntry &&waiting,
                        WorkProfilerEntry &&running)
       : work(std::move(work)), waiting(std::move(waiting)),
         running(std::move(running)) {}

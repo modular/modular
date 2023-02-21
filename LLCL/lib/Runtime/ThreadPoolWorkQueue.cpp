@@ -51,10 +51,6 @@ constexpr SuspendedThreadsBitvec getSuspendedThreadIdMask(size_t workerID) {
   return UINT64_C(1) << workerID;
 }
 
-/// Type of profiling entries for recording internal LLCL state changes.
-using InternalProfilerEntry =
-    TimeTraceProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 2)>;
-
 static constexpr auto printWorkerId(size_t workerID) {
   return [workerID]() {
     return Twine("(workerID:").concat(Twine(workerID)).concat(Twine(")")).str();
@@ -393,7 +389,7 @@ KeepRunning:
     // runItems recursively.
     while (!localTaskList.empty()) {
       ProfiledTaskFunction labelledTask(
-          std::move(localTaskList.back()), /*waiting=*/WorkProfilerEntry(),
+          std::move(localTaskList.back()), /*waiting=*/InternalProfilerEntry(),
           /*running=*/WorkProfilerEntry::create("llcl.waiter"));
       localTaskList.erase(localTaskList.end() - 1);
       doWork</*OnOwningThread=*/true>(std::move(labelledTask));
@@ -589,8 +585,9 @@ void ThreadPoolWorkQueue::addTask(TaskFunction &&work,
   WorkQueueThread *callerWorker = getCurrentWorkQueueThread();
 
   // Begin the waiting clock.
-  WorkProfilerEntry waitingEntry =
-      profilerEntry.withNameSuffix(".waiting")
+  InternalProfilerEntry waitingEntry =
+      profilerEntry.copy<InternalProfilerEntry>()
+          .withNameSuffix(".waiting")
           .withDetailSuffix(
               printWorkerId(callerWorker->workerID)); // restarts clock
   ProfiledTaskFunction profiledTask(std::move(work), std::move(waitingEntry),
@@ -630,7 +627,7 @@ void ThreadPoolWorkQueue::addLocalTask(M::LLCL::TaskFunction work) {
       LLVM_DEBUG(llvm::dbgs() << "ThreadPoolWorkQueue: running immediately "
                                  "(called from non awaiting foreign thread)\n");
       ProfiledTaskFunction profiledTask(
-          std::move(work), /*waiting=*/WorkProfilerEntry(),
+          std::move(work), /*waiting=*/InternalProfilerEntry(),
           /*running=*/WorkProfilerEntry::create("llcl.waiter"));
       callerWorker->doWork</*OnOwningThread=*/false>(std::move(profiledTask));
     } else {

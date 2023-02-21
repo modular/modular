@@ -11,7 +11,8 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
 
-using namespace M::LLCL;
+using namespace M;
+using namespace LLCL;
 
 namespace {
 
@@ -34,8 +35,9 @@ public:
                WorkProfilerEntry &&profilerEntry) override {
     assert(work);
     // Begin the waiting clock.
-    WorkProfilerEntry waitingEntry =
-        profilerEntry.withNameSuffix(".waiting"); // restarts clock
+    InternalProfilerEntry waitingEntry =
+        profilerEntry.copy<InternalProfilerEntry>().withNameSuffix(
+            ".waiting"); // restarts clock
     workItems.enqueue(ProfiledTaskFunction(
         std::move(work), std::move(waitingEntry), std::move(profilerEntry)));
   }
