@@ -325,34 +325,6 @@ static LogicalResult inlineGeneratorCall(
     for (Operation &op : *callee.getBody())
       b.clone(op, map);
 
-    AlwaysInlineLevel level = callee.getAlwaysInlineLevel();
-    scope.getBody().walk([&](Operation *op) {
-      // If this is an `always_inline(nodebug)`, erase the location of the
-      // inlined operations by replacing them with the location of the call.
-      // Otherwise, propagate the inlined location via a `CallSiteLoc`.
-      if (level == AlwaysInlineLevel::EnabledNoDebug)
-        op->setLoc(call.getLoc());
-      else
-        op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), call.getLoc()));
-
-      // Erase `debuginfo.value` operations when inlining without debug info.
-      if (level == AlwaysInlineLevel::EnabledNoDebug) {
-        if (auto value = dyn_cast<DebugInfo::ValueOp>(op)) {
-          value.erase();
-          return;
-        }
-      }
-
-      // Check for a call to recursively inline.
-      if (auto call = dyn_cast<CallOp>(op)) {
-        auto callee = symtab.lookup<GeneratorOp>(
-            cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
-        if (callee &&
-            callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
-          calls.emplace_back(call);
-      }
-    });
-
     // Clone the nested parameter use-def graphs into the current set of
     // nested graphs.
     callee.walk([&](DeclInterface containedScope) {
@@ -419,6 +391,35 @@ static LogicalResult inlineGeneratorCall(
           decl.getName(),
           ParamDeclaration{decl.getType(), declOp, scopeRegion});
     }
+
+    bool stripDebugInfo =
+        callee.getAlwaysInlineLevel() == AlwaysInlineLevel::EnabledNoDebug;
+    scope.getBody().walk([&](Operation *op) {
+      // If this is an `always_inline(nodebug)`, erase the location of the
+      // inlined operations by replacing them with the location of the call.
+      // Otherwise, propagate the inlined location via a `CallSiteLoc`.
+      if (stripDebugInfo)
+        op->setLoc(call.getLoc());
+      else
+        op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), call.getLoc()));
+
+      // Erase `debuginfo.value` operations when inlining without debug info.
+      if (stripDebugInfo) {
+        if (auto value = dyn_cast<DebugInfo::ValueOp>(op)) {
+          value.erase();
+          return;
+        }
+      }
+
+      // Check for a call to recursively inline.
+      if (auto call = dyn_cast<CallOp>(op)) {
+        auto callee = symtab.lookup<GeneratorOp>(
+            cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
+        if (callee &&
+            callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
+          calls.emplace_back(call);
+      }
+    });
 
     // Handle all terminators.
     auto newReturn = cast<KGEN::ReturnOp>(map.lookup(callee.getReturnOp()));
