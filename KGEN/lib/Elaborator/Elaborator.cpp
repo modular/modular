@@ -1096,7 +1096,14 @@ ElaboratorImpl::processParamForkOp(ExpansionTreeNode *parent, ParamForkOp op,
   // N possibilities to explore.
   SmallVector<ErrorTree> errors;
   DenseSet<Attribute> seenValues;
-  auto forkValuesAttr = cast<VariadicAttr>(op.getValuesAttr());
+
+  auto errorOrValue = parent->evaluator.concretizeParameterExpr(
+      op.getLoc(), op.getValuesAttr());
+  if (errorOrValue.isError())
+    return ErrorTree(op.getLoc(), "param-expr concretization failed: " +
+                                      errorOrValue.takeError().getMessage());
+
+  auto forkValuesAttr = cast<VariadicAttr>(errorOrValue.takeValue());
 
   if (forkValuesAttr.getValues().empty())
     return ErrorTree(op.getLoc(), "no candidates found");
