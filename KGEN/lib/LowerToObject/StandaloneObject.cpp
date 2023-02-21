@@ -154,7 +154,7 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
                        buf = buf.copy()]() mutable {
       auto llvmModule = lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
       if (!llvmModule) {
-        return output.setToError(LLCL::getMLIRDiagnostic(
+        return std::move(output).setToError(LLCL::getMLIRDiagnostic(
             "failed to lower module to LLVM IR for object compilation",
             op->getLoc()));
       }
@@ -162,7 +162,7 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
       // Create the target machine.
       auto machineOr = createTargetMachine(target, options, isJIT);
       if (failed(machineOr)) {
-        return output.setToError(
+        return std::move(output).setToError(
             LLCL::getMLIRDiagnostic(machineOr.takeError(), op->getLoc()));
       }
 
@@ -171,7 +171,7 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
 
       // Lower the LLVM to an object file.
       if (failed(compileLLVMToObject(*llvmModule, **machineOr, *buf))) {
-        return output.setToError(LLCL::getMLIRDiagnostic(
+        return std::move(output).setToError(LLCL::getMLIRDiagnostic(
             "failed to lower LLVM IR to object file", op->getLoc()));
       }
       std::move(output).emplace(buf.copy());

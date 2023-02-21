@@ -422,7 +422,7 @@ AsyncValue::notifyReadyAndDecRef(State newState,
   // drop one ref count, possibly causing the AsyncValue to be deleted.
   dropRef();
 
-  // ------------------- only static methods from here on ------------------- //
+  // ---------- only static methods from here on ----------
 
   // Figure out how many waiters are valid in the first node of the list.
   size_t numEntriesValid = getNumWaitersValid(oldValue.getInt());
@@ -464,9 +464,9 @@ AsyncValue *AsyncValue::createError(CompactRuntimePtr runtime,
   return result;
 }
 
-void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
+void AsyncValue::setToErrorAndDecRef(EncodedDiagnostic diagnostic) {
   if (getSubclassKind() != SubclassKind::kConcrete) {
-    resolveIndirect(
+    resolveIndirectAndDecRef(
         takeRCRef(createError(getRuntime(), std::move(diagnostic))));
     return;
   }
@@ -477,8 +477,9 @@ void AsyncValue::setToError(EncodedDiagnostic diagnostic) {
   auto *concrete = static_cast<Detail::SomeConcreteAsyncValue *>(this);
   auto *diagPtr = concrete->getDiagnosticPointer();
   new (diagPtr) EncodedDiagnostic(std::move(diagnostic));
-  addRef(); // compensate for dec ref
   auto oldState = notifyReadyAndDecRef(State::kError, std::move(inlineWaiter));
+
+  // ---------- only static methods from here on ----------
 
   // This must have been in one of the unconstructed states, but couldn't have
   // been in kUnconstructed because that would allow a race for another inline
@@ -509,7 +510,7 @@ void AsyncValue::andThenAsyncOutOfLine(Waiter waiter) {
 
 /// Resolve an IndirectAsyncValue to point to the specified new value,
 /// resolving any waiters whenever newValue becomes ready.
-void AsyncValue::resolveIndirect(RCRef<AsyncValue> &&newValue) {
+void AsyncValue::resolveIndirectAndDecRef(RCRef<AsyncValue> &&newValue) {
   assert(getSubclassKind() == SubclassKind::kIndirect && !isReady(getState()) &&
          "Can only resolve indirect async values");
   auto *thisIndirect = static_cast<Detail::IndirectAsyncValue *>(this);
@@ -539,9 +540,11 @@ void AsyncValue::resolveIndirect(RCRef<AsyncValue> &&newValue) {
     new (&thisIndirect->value) AnyAsyncValueRef(std::move(newValue));
 
     // Finally, notify our waiters and switch to kAvailable or kError state.
-    addRef(); // compensate for dec ref below
     auto oldState =
         notifyReadyAndDecRef(newValueState, std::move(inlineWaiter));
+
+    // ---------- only static methods from here on ----------
+
     assert(!isReady(oldState) &&
            "resolving an IndirectAsyncValue that was already set up?");
     (void)oldState;
@@ -549,12 +552,14 @@ void AsyncValue::resolveIndirect(RCRef<AsyncValue> &&newValue) {
   }
 
   // Otherwise, the new value is still unresolved.  That's ok, we'll just wait
-  // until it becomes ready and then try again.
+  // until it becomes ready and then try again. Since the caller is
+  // relinquishing one referencee to this AsyncValue we can capture this within
+  // the andThen closure. The reference to this will be removed when newValue
+  // is ready.
   AsyncValue *newValuePtr = newValue.getPointer();
-  newValuePtr->andThenSync(
-      [this2 = copyRCRef(this), newValue = std::move(newValue)]() mutable {
-        this2->resolveIndirect(std::move(newValue));
-      });
+  newValuePtr->andThenSync([this, newValue = std::move(newValue)]() mutable {
+    resolveIndirectAndDecRef(std::move(newValue));
+  });
 }
 
 /// Create an IndirectAsyncValue that may be filled in with any AsyncValue in

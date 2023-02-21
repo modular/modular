@@ -102,8 +102,9 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Constructs the payload of the AsyncValue in place, and changes its state
-  /// to "available". Requires that the AsyncValue is a ConcreteAsyncValue in
-  /// state "unconstructed".
+  /// to kAvailable. Requires that the AsyncValue is a ConcreteAsyncValue in
+  /// an unconstructed state. All pending waiters will be notified the value
+  /// is ready.
   ///
   /// One ref count will be removed from the AsyncValue just before any
   /// existing waiters are triggered. It is valid for the AsyncValue to have
@@ -112,20 +113,34 @@ public:
   template <typename T, typename... Args>
   void emplaceAndDecRef(Args &&...args);
 
-  // TODO(#7399): Should the following methods also follow the '*AndDecRef'
-  // pattern?
-
-  /// Mark an "unconstructed" AsyncValue as an error.
-  void setToError(EncodedDiagnostic diagnostic);
+  /// Sets the AsyncValue to the kError state. The AsyncValue may be a
+  /// ConcreteAsyncValue or IndirectAsyncValue in an unconstructed state.
+  /// All pending waiting will be notified the value is ready.
+  ///
+  /// One ref count will be removed from the AsyncValue just before any
+  /// existing waiters are triggered. It is valid for the AsyncValue to have
+  /// only a single remaining reference, and thus the waiters may be triggered
+  /// after the AsyncValue is deleted.
+  void setToErrorAndDecRef(EncodedDiagnostic diagnostic);
 
   /// Resolve an IndirectAsyncValue to point to the specified new value,
   /// resolving any waiters whenever newValue becomes ready.
-  void resolveIndirect(RCRef<AsyncValue> &&newValue);
+  ///
+  /// One ref count will be removed from the AsyncValue just before any
+  /// existing waiters are triggered. It is valid for the AsyncValue to have
+  /// only a single remaining reference, and thus the waiters may be triggered
+  /// after the AsyncValue is deleted.
+  void resolveIndirectAndDecRef(RCRef<AsyncValue> &&newValue);
 
-  /// Resolve an IndirectAsyncValue to contain a concrete AsyncValue with a
+  /// Resolves an IndirectAsyncValue to contain a concrete AsyncValue with a
   /// newly initialized value, resolving any waiters.
+  ///
+  /// One ref count will be removed from the AsyncValue just before any
+  /// existing waiters are triggered. It is valid for the AsyncValue to have
+  /// only a single remaining reference, and thus the waiters may be triggered
+  /// after the AsyncValue is deleted.
   template <typename T, typename... Args>
-  void emplaceIndirect(Args &&...args);
+  void emplaceIndirectAndDecRef(Args &&...args);
 
   //===--------------------------------------------------------------------===//
   // Primary interface to AsyncValue for clients to use.
@@ -818,7 +833,8 @@ void AsyncValue::andThen(Waiter &&waiter) {
 template <typename T, typename... Args>
 inline void AsyncValue::emplaceAndDecRef(Args &&...args) {
   assert(getSubclassKind() == SubclassKind::kConcrete &&
-         "Cannot 'emplace' an IndirectValue, use 'emplaceIndirect' instead");
+         "Cannot 'emplaceAndDecRef' an IndirectValue, use "
+         "'emplaceIndirectAndDecRef' instead");
   assert(getTypeID<T>() == typeID && "Incorrect accessor");
 
   // NOTE: At this point we could stap tracking the ref and instead just inc/dec
@@ -836,6 +852,9 @@ inline void AsyncValue::emplaceAndDecRef(Args &&...args) {
   // Change state and notify the waiters.
   auto oldState =
       notifyReadyAndDecRef(State::kAvailable, std::move(inlineWaiter));
+
+  // ---------- only static methods from here on ----------
+
   // This must have been in one of the unconstructed states, but couldn't have
   // been in kUnconstructed because that would allow a race for another inline
   // waiter to be added. `removeAnyInlineWaiter` ensures this isn't possible.
@@ -848,9 +867,9 @@ inline void AsyncValue::emplaceAndDecRef(Args &&...args) {
 /// kConcrete. Requires that this is a ConcreteAsyncValue that have state
 /// `kUnconstructed`.
 template <typename T, typename... Args>
-inline void AsyncValue::emplaceIndirect(Args &&...args) {
+inline void AsyncValue::emplaceIndirectAndDecRef(Args &&...args) {
   assert(getSubclassKind() == SubclassKind::kIndirect);
-  resolveIndirect(takeRCRef(
+  resolveIndirectAndDecRef(takeRCRef(
       createReady<T, Args...>(getRuntime(), std::forward<Args>(args)...)));
 }
 

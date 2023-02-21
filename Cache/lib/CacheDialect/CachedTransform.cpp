@@ -67,10 +67,12 @@ Cache::cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
        cacheHitFn = std::move(cacheHitFn)](
           AsyncValueRef<std::optional<BufferRef>> &&foundOr) mutable {
         if (foundOr.isError())
-          return out.setToError(foundOr.getPointer()->takeDiagnostic());
+          return std::move(out).setToError(
+              foundOr.getPointer()->takeDiagnostic());
 
         if (foundOr->has_value())
-          return out.resolveIndirect(cacheHitFn(target, std::move(**foundOr)));
+          return std::move(out).resolveIndirect(
+              cacheHitFn(target, std::move(**foundOr)));
 
         // No error but no cache hit.
 
@@ -86,7 +88,7 @@ Cache::cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
              transformResult = std::move(writeableTransformResult)](
                 AnyAsyncValueRef &&xform) mutable {
               if (xform.isError())
-                return out.setToError(xform.takeDiagnostic());
+                return std::move(out).setToError(xform.takeDiagnostic());
 
               // Only at this point (so the transform has finished successfully)
               // should we change the transform result ref to be read-only.
@@ -96,10 +98,10 @@ Cache::cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
                   [target, out = out.copy(), xform = xform.copy()](
                       AsyncValueRef<ErrorOr<std::string>> &&hashOr) mutable {
                     if (failed(*hashOr))
-                      return out.setToError(getMLIRDiagnostic(
+                      return std::move(out).setToError(getMLIRDiagnostic(
                           hashOr->takeError(), target->getLoc()));
 
-                    return out.resolveIndirect(xform.copy());
+                    return std::move(out).resolveIndirect(xform.copy());
                   });
             });
       });
@@ -127,10 +129,10 @@ AnyAsyncValueRef Cache::cachedTransform(Operation *target,
     std::move(chain).andThenSync([op, &pm, pmResult = pmResult.copy()](
                                      AnyAsyncValueRef &&chain) mutable {
       if (chain.isError())
-        pmResult.setToError(chain.takeDiagnostic());
+        return std::move(pmResult).setToError(chain.takeDiagnostic());
 
       if (failed(pm.run(op))) {
-        return pmResult.setToError(getMLIRDiagnostic(
+        return std::move(pmResult).setToError(getMLIRDiagnostic(
             Error("failed to run the pass manager"), op->getLoc()));
       }
 
@@ -149,7 +151,7 @@ AnyAsyncValueRef Cache::cachedTransform(Operation *target,
       auto resultRegionHashes =
           op->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
       if (!resultRegionHashes) {
-        return out.setToError(getMLIRDiagnostic(
+        return std::move(out).setToError(getMLIRDiagnostic(
             Error("could not find region hashes"), op->getLoc()));
       }
       *buf << resultRegionHashes;
