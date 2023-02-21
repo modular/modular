@@ -28,5 +28,4 @@ add_modular_conversion_library(KGENToLLVM
   MLIRIR
   MLIRIndexToLLVM
   MLIRLLVMCommonConversion
-  MLIRSCFDialect
   )

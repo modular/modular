@@ -170,7 +170,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK-LABEL: @test_lifetimes
   kgen.func @test_lifetimes(%arg0: (index, f32) -> index, %arg1: f32, %cond: i1) -> () {
     // CHECK: %[[CALLEE:.*]] = builtin.unrealized_conversion_cast %arg0
-    scf.if %cond {
+    hlcf.if %cond {
       // CHECK: %[[CLOSURE:.*]] = llvm.mlir.undef : !llvm.struct<(ptr, ptr)>
       // CHECK: %[[WRAPPERFN:.*]] = llvm.mlir.addressof @closure_wrapper_fn
       // CHECK: %[[WRAPPERFNCAST:.*]] = llvm.bitcast %[[WRAPPERFN]]
@@ -188,7 +188,9 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
       // CHECK: llvm.intr.lifetime.end 16, %[[STRUCT]]
       %0 = pop.partial_apply %arg0(?, %arg1) : (index, f32) -> index
       %1 = kgen.param.constant: scalar<f32> = <<"1.0">>
-      scf.yield
+      hlcf.yield
+    } else {
+      hlcf.yield
     }
     kgen.return
   }

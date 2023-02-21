@@ -24,7 +24,6 @@
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -206,8 +205,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Register MLIR stuff
   registerAllKGENDialects(registry);
   registry.insert<DebugInfo::DebugInfoDialect, Cache::CacheDialect,
-                  HLCF::HLCFDialect, index::IndexDialect, LLVM::LLVMDialect,
-                  scf::SCFDialect>();
+                  HLCF::HLCFDialect, index::IndexDialect, LLVM::LLVMDialect>();
 
   mlir::registerLLVMDialectTranslation(registry);
 

@@ -4,8 +4,11 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // expected-error @below {{cannot run on operations with CFG regions}}
   // expected-note @below {{try running it before lower-scf-to-llvm}}
   kgen.func @stack_allocation(%cond: i1) {
-    scf.if %cond {
+    hlcf.if %cond {
       %0 = pop.stack_allocation 4 x !pop.simd<4, f32>
+      hlcf.yield
+    } else {
+      hlcf.yield
     }
     kgen.return
   }

@@ -5,13 +5,13 @@ kgen.func @known_true_or_false(%arg0: i32, %arg1: f32, %arg2: i8) -> i1 {
   %0 = pop.variant.create %arg0 : i32 -> !pop.variant<i8, i32>
   // CHECK: %[[TRUE:.*]] = kgen.param.constant: i1 = <1>
   %1 = pop.variant.is i32, %0 : !pop.variant<i8, i32>
-  // CHECK: scf.if %[[TRUE]]
-  %2 = scf.if %1 -> !pop.variant<f32, i8> {
+  // CHECK: hlcf.if %[[TRUE]]
+  %2 = hlcf.if %1 -> !pop.variant<f32, i8> {
     %3 = pop.variant.create %arg2 : i8 -> !pop.variant<f32, i8>
-    scf.yield %3 : !pop.variant<f32, i8>
+    hlcf.yield %3 : !pop.variant<f32, i8>
   } else {
     %3 = pop.variant.create %arg1 : f32 -> !pop.variant<f32, i8>
-    scf.yield %3 : !pop.variant<f32, i8>
+    hlcf.yield %3 : !pop.variant<f32, i8>
   }
   // CHECK: %[[FALSE:.*]] = kgen.param.constant: i1 = <0>
   %5 = pop.variant.is f32, %2 : !pop.variant<f32, i8>
@@ -25,12 +25,12 @@ kgen.export @known_true_or_false
 
 // CHECK-LABEL: kgen.func @known_false
 kgen.func @known_false(%arg0: i32, %arg1: i8, %arg2: i1) -> i1 {
-  %0 = scf.if %arg2 -> !pop.variant<i8, i32, f32> {
+  %0 = hlcf.if %arg2 -> !pop.variant<i8, i32, f32> {
     %1 = pop.variant.create %arg0 : i32 -> !pop.variant<i8, i32, f32>
-    scf.yield %1 : !pop.variant<i8, i32, f32>
+    hlcf.yield %1 : !pop.variant<i8, i32, f32>
   } else {
     %1 = pop.variant.create %arg1 : i8 -> !pop.variant<i8, i32, f32>
-    scf.yield %1 : !pop.variant<i8, i32, f32>
+    hlcf.yield %1 : !pop.variant<i8, i32, f32>
   }
   // CHECK: %[[FALSE:.*]] = kgen.param.constant: i1 = <0>
   %2 = pop.variant.is f32, %0 : !pop.variant<i8, i32, f32>
@@ -59,16 +59,16 @@ kgen.func @entry() -> !pop.variant<i8, i32> {
   %0 = kgen.call @always_index() : () -> !pop.variant<i8, index>
   // CHECK: pop.variant.create %[[RESULT]]
   %1 = pop.variant.is i8, %0 : !pop.variant<i8, index>
-  // CHECK: %[[IF_RESULT:.*]] = scf.if
-  %2 = scf.if %1 -> !pop.variant<i8, i32> {
+  // CHECK: %[[IF_RESULT:.*]] = hlcf.if
+  %2 = hlcf.if %1 -> !pop.variant<i8, i32> {
     %3 = pop.variant.get %0 : !pop.variant<i8, index> as i8
     %4 = pop.variant.create %3 : i8 -> !pop.variant<i8, i32>
-    scf.yield %4 : !pop.variant<i8, i32>
+    hlcf.yield %4 : !pop.variant<i8, i32>
   } else {
     %3 = kgen.param.constant: scalar<si32> = <<0>>
     %4 = pop.cast_to_builtin %3 : !pop.simd<1, si32> to i32
     %5 = pop.variant.create %4 : i32 -> !pop.variant<i8, i32>
-    scf.yield %5 : !pop.variant<i8, i32>
+    hlcf.yield %5 : !pop.variant<i8, i32>
   }
   // CHECK: %[[RETURN:.*]] = pop.variant.get %[[IF_RESULT]] : !pop.variant<i8, i32> as i32
   // CHECK: return %[[RETURN]]
