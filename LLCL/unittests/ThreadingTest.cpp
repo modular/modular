@@ -1,0 +1,121 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "../lib/Runtime/Threading.h"
+
+#include "gtest/gtest.h"
+
+using namespace M;
+using namespace LLCL;
+
+#if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+// A two socket system, first with 3 cores + SMT, the second with 2 plain cores.
+constexpr static const char *kCpuInfo = R"(
+processor	: 0
+cpu MHz		: 2200.000
+physical id	: 0
+siblings	: 6
+core id		: 0
+cpu cores	: 3
+cpuid level	: 16
+
+processor	: 1
+cpu MHz		: 2200.000
+physical id	: 0
+siblings	: 6
+core id		: 1
+cpu cores	: 3
+cpuid level	: 16
+
+processor	: 2
+cpu MHz		: 2200.000
+physical id	: 0
+siblings	: 6
+core id		: 2
+cpu cores	: 3
+cpuid level	: 16
+
+processor	: 3
+cpu MHz		: 2200.000
+physical id	: 0
+siblings	: 6
+core id		: 0
+cpu cores	: 3
+cpuid level	: 16
+
+processor	: 4
+cpu MHz		: 2200.000
+physical id	: 0
+siblings	: 6
+core id		: 1
+cpu cores	: 3
+cpuid level	: 16
+
+processor	: 5
+cpu MHz		: 2200.000
+physical id	: 0
+siblings	: 6
+core id		: 2
+cpu cores	: 3
+cpuid level	: 16
+
+processor	: 6
+cpu MHz		: 2200.000
+physical id	: 1
+siblings	: 2
+core id		: 0
+cpu cores	: 2
+cpuid level	: 16
+
+processor	: 7
+cpu MHz		: 2200.000
+physical id	: 1
+siblings	: 2
+core id		: 1
+cpu cores	: 2
+cpuid level	: 16
+)";
+
+TEST(Threading, GetLinuxX86CPUSystemInfoImpl) {
+  cpu_set_t availCpus;
+  CPU_ZERO(&availCpus);
+  const size_t numCpus = 8;
+  for (size_t i = 0; i < numCpus; ++i) {
+    if (i == 3)
+      // Disable CPU 3.
+      continue;
+    CPU_SET(i, &availCpus);
+  }
+
+  auto buf = llvm::MemoryBuffer::getMemBuffer(
+      llvm::StringRef(kCpuInfo, strlen(kCpuInfo)));
+  ErrorOr<CPUSystemInfo> errOr =
+      M::LLCL::Detail::getLinuxX86CPUSystemInfoImpl(availCpus, std::move(buf));
+  EXPECT_FALSE(errOr.isError());
+  const CPUSystemInfo &info = errOr.get();
+
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  os << info;
+  EXPECT_EQ(str,
+            "CPUSystemInfo(Socket({0}, {1, 4}, {2, 5}), Socket({6}, {7}))");
+
+  EXPECT_EQ(info.sockets.size(), 2UL);
+  EXPECT_EQ(info.sockets[0].physicalCores.size(), 3UL);
+  EXPECT_EQ(info.sockets[0].physicalCores[0].virtualCores.size(), 1UL);
+  EXPECT_EQ(info.sockets[0].physicalCores[1].virtualCores.size(), 2UL);
+  EXPECT_EQ(info.sockets[0].physicalCores[2].virtualCores.size(), 2UL);
+  EXPECT_EQ(info.sockets[1].physicalCores.size(), 2UL);
+  EXPECT_EQ(info.sockets[1].physicalCores[0].virtualCores.size(), 1UL);
+  EXPECT_EQ(info.sockets[1].physicalCores[1].virtualCores.size(), 1UL);
+
+  std::vector<size_t> actualCpuIDs = info.getPreferredCpuIDs(9);
+  std::vector<size_t> expectedCpuIds = {0, 1, 2, 6, 7, 4, 5, 0, 1};
+  EXPECT_EQ(actualCpuIDs.size(), 9UL);
+  for (size_t i = 0; i < actualCpuIDs.size(); ++i)
+    EXPECT_EQ(actualCpuIDs[i], expectedCpuIds[i]) << "index " << i;
+}
+#endif

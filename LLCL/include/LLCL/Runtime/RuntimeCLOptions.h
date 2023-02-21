@@ -14,6 +14,7 @@
 
 #include "LLCL/Support/Profiling.h"
 #include "Support/CommandLine.h"
+#include "llvm/Support/Threading.h"
 #include <chrono>
 #include <thread>
 #include <type_traits>
@@ -86,7 +87,8 @@ private:
   llvm::cl::opt<size_t> numThreads{
       "num-threads",
       llvm::cl::desc(
-          "Specify the number of threads to run the work queue items."),
+          "Specify the number of threads to run the work queue items. If zero "
+          "(default), will be chosen by heuristics."),
       llvm::cl::init(0)};
 
   // Filename to hold the time profiling output (as JSON text).
@@ -140,9 +142,8 @@ private:
 
   // Returns true if profiling is enabled by command line flag.
   bool getProfilingEnabled() const {
-    if constexpr (!kIsProfilingEnabled) {
+    if constexpr (!kIsProfilingEnabled)
       return false;
-    }
     return !profileFilename.empty();
   }
 
@@ -186,10 +187,14 @@ public:
     }
   }
 
-  /// Return the number of threads to use. This is always canonicalized to be
-  /// non-zero.
+  /// Return the number of threads to use. If the command line num-threads
+  /// option is zero, returns the std::thread hardware_concurrency value,
+  /// which may include virtual cores due to hyperthreading.
+  ///
+  /// Note that ThreadPoolWorkQueue has its own mechanism for choosing
+  /// the number of threads when num-threads is zero. This function is
+  /// only used by external frameworks.
   size_t getNumThreads() const {
-    // If numThreads is 0 then return number of threads on the system.
     return numThreads == 0 ? std::thread::hardware_concurrency() : numThreads;
   }
 

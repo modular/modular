@@ -41,7 +41,9 @@ std::unique_ptr<Runtime> RuntimeCLOptions::createRuntime() const {
     workQueue = createSingleThreadWorkQueue();
     break;
   case WorkQueueType::kThreadPool:
-    workQueue = createThreadPoolWorkQueue(getNumThreads());
+    // Let the ThreadPoolWorkQueue decide on an appropriate number of threads
+    // if it is zero. It may be more sophisticated than getNumThreads().
+    workQueue = createThreadPoolWorkQueue(numThreads);
     break;
   }
   return std::make_unique<Runtime>(std::move(allocator), std::move(workQueue),

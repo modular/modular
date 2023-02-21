@@ -23,19 +23,15 @@ enum WorkQueueType { kSingleThread = 0, kThreadPool = 1 };
 
 class AsyncValueTest : public testing::TestWithParam<WorkQueueType> {
 protected:
-  std::unique_ptr<Runtime> createRuntime(int numThreads = 4,
-                                         int taskListCapacity = 128) {
+  std::unique_ptr<Runtime> createRuntime(int numThreads = 4) {
     AsyncValue::registerType<int>();
     AsyncValue::registerType<char>();
     AsyncValue::registerType<size_t>();
     std::unique_ptr<Allocator> allocator =
         createLeakCheckAllocator(createMallocAllocator());
     std::unique_ptr<WorkQueue> workQueue =
-        GetParam() == kThreadPool
-            ? createThreadPoolWorkQueue(
-                  numThreads,
-                  /*busyWait=*/std::chrono::milliseconds(1), taskListCapacity)
-            : createSingleThreadWorkQueue();
+        GetParam() == kThreadPool ? createThreadPoolWorkQueue(numThreads)
+                                  : createSingleThreadWorkQueue();
     return std::make_unique<Runtime>(std::move(allocator),
                                      std::move(workQueue));
   }
@@ -455,11 +451,9 @@ TEST_P(AsyncValueTest, ArrayMovingAsync) {
 //===----------------------------------------------------------------------===//
 
 TEST_P(AsyncValueTest, StressAndThen) {
-  // Deliberately over-subscribe threads and use a small task list capacity
-  // to try to tickle any races.
+  // Deliberately over-subscribe threads to try to tickle any races.
   auto runtime =
-      createRuntime(/*numThreads=*/std::thread::hardware_concurrency() * 2,
-                    /*taskListCapacity=*/8);
+      createRuntime(/*numThreads=*/std::thread::hardware_concurrency() * 2);
 
   const size_t nRounds = 5;
   const size_t nValues = 500;
@@ -508,11 +502,9 @@ TEST_P(AsyncValueTest, StressAndThen) {
 }
 
 TEST_P(AsyncValueTest, StressParallelForEachN) {
-  // Deliberately over-subscribe threads and use a small task list capacity
-  // to try to tickle any races.
+  // Deliberately over-subscribe threads to try to tickle any races.
   auto runtime =
-      createRuntime(/*numThreads=*/std::thread::hardware_concurrency() * 2,
-                    /*taskListCapacity=*/8);
+      createRuntime(/*numThreads=*/std::thread::hardware_concurrency() * 2);
 
   const size_t nShards = 500;
   std::vector<std::unique_ptr<std::atomic<bool>>> doneFlags;
