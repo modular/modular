@@ -213,6 +213,10 @@ struct TimeTraceProfiler {
 ///   TimeTraceProfilerEntry withDetailSuffix(
 ///       llvm::function_ref<std::string()>  detailFn) const;
 ///
+///   -- Return copy of this entry, with clock restarted, but with possibly
+///   -- distinct 'Enabled' template parameter.
+///   template <typename Result> Result copy() const;
+///
 template <bool Enabled>
 struct TimeTraceProfilerEntry {};
 
@@ -257,6 +261,10 @@ struct TimeTraceProfilerEntry<false> {
   TimeTraceProfilerEntry withNameSuffix(StringRef suffix) const { return {}; }
   TimeTraceProfilerEntry
   withDetailSuffix(llvm::function_ref<std::string()> detailFn) const {
+    return {};
+  }
+  template <typename Result>
+  Result copy() const {
     return {};
   }
 };
@@ -340,6 +348,13 @@ struct TimeTraceProfilerEntry<true> {
     if (name.empty())
       return {};
     return TimeTraceProfilerEntry(name, Twine(detail).concat(detailFn()).str());
+  }
+
+  template <typename Result>
+  Result copy() const {
+    if (name.empty())
+      return {};
+    return Result::create(name, detail);
   }
 
   // Calculate timings for FlameGraph. Convert to floating point
