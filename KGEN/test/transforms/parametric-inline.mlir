@@ -679,3 +679,47 @@ kgen.generator @parent() {
 kgen.generator @callee<A>() always_inline constraints <[eq(A, 1), "A == 1"]> {
   kgen.return
 }
+
+// -----
+
+#file = #debuginfo.file<"foo.c" in "/mlir/">
+#compile_unit = #debuginfo.compile_unit<
+  sourceLanguage = DW_LANG_C,
+  file = #file,
+  producer = "MLIR",
+  isOptimized = true,
+  emissionKind = Full
+>
+#subprogram = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "foo",
+  linkageName = "foo",
+  file = #file,
+  line = 10,
+  scopeLine = 10,
+  subprogramFlags = Definition
+  // COM: `debuginfo.value` has a parameter usage in its attributes.
+> : !debuginfo.subroutine<(!debuginfo.unresolved<!kgen.paramref<T>>) -> (): DW_CC_normal>
+#local_variable = #debuginfo.local_variable<
+  scope = #subprogram,
+  name = "foo",
+  file = #file,
+  line = 10,
+  arg = 1
+> : !debuginfo.unresolved<index>
+
+// CHECK-LABEL: kgen.generator @parent
+kgen.generator @parent<T: type>(%arg0: index) {
+  // CHECK: kgen.param.declare T0: type = <index> loc(#[[CALL_LOC:.*]])
+  // CHECK-NEXT: kgen.rebind %arg0 : index to !kgen.paramref<T0> loc(#[[CALL_LOC]])
+  // CHECK-NEXT: hlcf.break
+  kgen.call @nodebug_inline_me<T: type = index>(%arg0) : (index) -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @nodebug_inline_me
+kgen.generator @nodebug_inline_me<T: type>(%arg0: !kgen.paramref<T>) always_inline_no_debug {
+  debuginfo.value #local_variable = %arg0 : !kgen.paramref<T>
+  kgen.return
+}
