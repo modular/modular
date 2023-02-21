@@ -195,3 +195,35 @@ kgen.generator @test() {
   %0 = kgen.call @pickSecond() : () -> index
   kgen.return
 }
+
+// -----
+
+// We should generate three versions of this function.
+// CHECK-LABEL: kgen.func @checkGetAllImpls{{.*}}
+// CHECK: kgen.call @multipleImplsFn{{.*}}
+// CHECK-LABEL: kgen.func @checkGetAllImpls{{.*}}
+// CHECK: kgen.call @multipleImplsFn{{.*}}
+// CHECK-LABEL: kgen.func @checkGetAllImpls{{.*}}
+// CHECK: kgen.call @multipleImplsFn{{.*}}
+kgen.generator @checkGetAllImpls() -> index {
+  kgen.param.declare impls: !kgen.variadic<!kgen.signature<() -> index>> = <get_all_impls(@multipleImplsFn)>
+  // `impls` should be a list containing three implementations of `@multipleImplsFn`
+  //
+  // When we `kgen.param.fork` on that list, we should generate three versions
+  // of this function, each version calling one of the implementations from the
+  // list.
+
+  kgen.param.fork oneImpl: !kgen.signature<() -> index> = <impls>
+  %ret = kgen.call_param[() -> index: oneImpl]()
+  kgen.return %ret : index
+}
+
+// This generator should also produce three versions.
+// CHECK-LABEL: kgen.func @multipleImplsFn{{.*}}
+// CHECK-LABEL: kgen.func @multipleImplsFn{{.*}}
+// CHECK-LABEL: kgen.func @multipleImplsFn{{.*}}
+kgen.generator @multipleImplsFn() -> index {
+  kgen.param.fork p : index = <[1, 2, 3]>
+  %ret = kgen.param.constant = <p>
+  kgen.return %ret : index
+}

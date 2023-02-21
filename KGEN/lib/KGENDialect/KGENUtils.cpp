@@ -642,7 +642,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
         return failure();
     return success();
   }
-  case (uint32_t)POC::Evaluate:
+  case (uint32_t)POC::Evaluate: {
     auto sig = dyn_cast_or_null<SignatureType>(type);
     if (!sig)
       return p.emitError(p.getCurrentLocation(),
@@ -655,15 +655,30 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       // This one might be the evaluator, which is preceeded by a type.
       Type evaluatorType;
       auto evaluatorTy = parseOptionalColonType(p, evaluatorType);
-      if (evaluatorTy.has_value()) {
+      if (evaluatorTy.has_value())
         return parseParamValue(p, operands.emplace_back(), evaluatorType);
-      }
       // Otherwise, parse the parameter.
       if (parseParamValue(p, operands.emplace_back(), type))
         return failure();
     }
 
     return success();
+  }
+  case (uint32_t)POC::GetAllImpls: {
+    auto varTy = dyn_cast_or_null<VariadicType>(type);
+    if (!varTy)
+      return p.emitError(p.getCurrentLocation(),
+                         "expected a variadic type for 'get_all_impls'");
+    auto sigTy =
+        dyn_cast_or_null<SignatureType>(varTy.getResolvedElementType());
+    if (!sigTy)
+      return p.emitError(
+          p.getCurrentLocation(),
+          "expected a variadic of signatures type for 'get_all_impls'");
+    if (parseParamValue(p, operands.emplace_back(), sigTy))
+      return failure();
+    return success();
+  }
   }
   llvm_unreachable("unknown operator");
 }
