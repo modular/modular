@@ -213,6 +213,14 @@ fn callVariadic[p: Int](x: Int):
   # CHECK: @"variadics($Int::Int*)", [p, {{.*}}scalar<index> = 1{{.*}}]
   alias NonEmptyVariadic = variadics(p, 1)
 
+# CHECK: lit.struct.decl @Tuple
+struct Tuple[Ts*: __mlir_type.`!kgen.mlirtype`]:
+  pass
+
+# CHECK: lit.func @"varArgs
+fn varArgs[Ts*: __mlir_type.`!kgen.mlirtype`](args*: Ts):
+  pass
+
 ##===----------------------------------------------------------------------===##
 # @raises decorator.
 ##===----------------------------------------------------------------------===##

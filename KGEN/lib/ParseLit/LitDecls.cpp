@@ -530,14 +530,16 @@ LitParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
 namespace {
 /// Parsing support for a function argument and input parameter:
 ///
-/// argument_list     ::= argument ("," argument)*
-/// argument          ::= "/" | "*"
-/// argument          ::= argument_variadic identifier_opt_type
-///                          argument_ownership ["=" expression]
-/// argument_variadic ::= "*" | "**"
+/// argument_list      ::= argument ("," argument)*
+/// argument           ::= "/" | "*"
+/// argument           ::= argument_variadic identifier_opt_type
+///                           argument_ownership ["=" expression]
+/// argument           ::= identifier "*" ":" type
+/// argument_variadic  ::= "*" | "**"
 /// argument_ownership ::= "&"
 struct ParsedArgument {
   SMLoc loc;
+  bool isPack = false;
   // Specify argument passing convention, e.g. byval/byref etc.
   ValueInputConvention convention = ValueInputConvention::ByVal;
   StringAttr name;
@@ -588,9 +590,24 @@ struct ParsedArgument {
       // TODO: Scan ahead for better recovery.
       return failure();
 
+    SMLoc packStarLoc;
+    if (p.consumeIf(LitToken::star, &packStarLoc)) { // '*' => pack
+      isPack = true;
+      if (uint8_t(convention & (ValueInputConvention::VarArg |
+                                ValueInputConvention::KWVarArg)))
+        p.emitError(
+            packStarLoc,
+            "variadic arguments may not also be variadic parameter packs");
+    }
+
     // Process any convention markers.
-    if (p.consumeIf(LitToken::amp)) // '&' => by-ref
+    SMLoc ampLoc;
+    if (p.consumeIf(LitToken::amp, &ampLoc)) { // '&' => by-ref
       convention = convention | ValueInputConvention::ByRef;
+      if (isPack)
+        p.emitError(ampLoc,
+                    "variadic parameter packs may not have input conventions");
+    }
 
     if (p.consumeIf(LitToken::colon)) {
       if (p.parseExpression(typeExpr, std::nullopt))
@@ -602,11 +619,12 @@ struct ParsedArgument {
       if (p.parseExpression(initValue, std::nullopt))
         return failure();
 
-      // Default args and varargs don't mix.
-      if (uint8_t(convention & (ValueInputConvention::VarArg |
-                                ValueInputConvention::KWVarArg))) {
-        p.emitError(equalLoc, "variadic arguments may not have defaults")
-            << initValue->getRange();
+      // Default args and varargs/packs don't mix.
+      if (isPack || uint8_t(convention & (ValueInputConvention::VarArg |
+                                          ValueInputConvention::KWVarArg))) {
+        p.emitError(equalLoc,
+                    isPack ? "variadic parameter packs" : "variadic arguments")
+            << " may not have defaults" << initValue->getRange();
         initValue = nullptr;
       }
     }

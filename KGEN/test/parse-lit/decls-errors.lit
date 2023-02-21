@@ -84,7 +84,7 @@ fn callsWith():
   testAsyncInt() # expected-warning {{coroutine was never awaited}}
 
 ##===----------------------------------------------------------------------===##
-# Default Arguments and Varargs
+# Default Arguments, Varargs, and Packs
 ##===----------------------------------------------------------------------===##
 
 # expected-error @+1 {{non-default argument follows default argument}}
@@ -124,6 +124,15 @@ fn badCalls(arg: Int):
   exampleByRefVariadic(1.0, x, y)
   # expected-error @+1 {{argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, 1)
+
+# expected-error @+1 {{variadic arguments may not also be variadic parameter packs}}
+fn invalidVariadicPack[Ts*: __mlir_type.`!kgen.mlirtype`](*x*: Ts):
+
+# expected-error @+1 {{variadic parameter packs may not have input conventions}}
+fn invalidPackByRef[Ts*: __mlir_type.`!kgen.mlirtype`](x*&: Ts):
+
+# expected-error @+1 {{variadic parameter packs may not have defaults}}
+fn invalidPackWithDefault[Ts*: __mlir_type.`!kgen.mlirtype`](x*: Ts = (1, 2.0)):
 
 ##===----------------------------------------------------------------------===##
 # Keyword Arguments
