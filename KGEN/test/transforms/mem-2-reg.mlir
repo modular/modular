@@ -99,11 +99,14 @@ kgen.generator @if_empty_block(%arg0: i1, %arg1: index) -> index{
   %0 = pop.stack_allocation 1 x index
   %1 = pop.stack_allocation 1 x index
   pop.store %arg1, %0 : !pop.pointer<index>
-  // CHECK-NEXT: scf.if
-  scf.if %arg0 {
+  // CHECK-NEXT: hlcf.if
+  hlcf.if %arg0 {
     // CHECK-NEXT: pop.store %arg1, %0
     %2 = pop.load %0 : !pop.pointer<index>
     pop.store %2, %1 : !pop.pointer<index>
+    hlcf.yield
+  } else {
+    hlcf.yield
   }
   %2 = pop.load %1 : !pop.pointer<index>
   kgen.return %2 : index

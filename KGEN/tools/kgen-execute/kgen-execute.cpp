@@ -14,7 +14,6 @@
 #include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Parser/Parser.h"
@@ -45,7 +44,7 @@ struct ProcessBuffer {
     DialectRegistry registry;
     // Don't need LIT here.
     registry.insert<KGEN::KGENDialect, KGEN::POP::POPDialect, HLCF::HLCFDialect,
-                    mlir::index::IndexDialect, mlir::scf::SCFDialect>();
+                    mlir::index::IndexDialect>();
     mlir::registerLLVMDialectTranslation(registry);
 
     ctx->appendDialectRegistry(registry);

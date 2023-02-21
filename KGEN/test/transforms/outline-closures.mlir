@@ -176,8 +176,8 @@ kgen.generator @useAfterDef() -> index {
 kgen.generator @nested(%pred: i1) -> index {
   kgen.param.declare C = <15>
 
-  // CHECK: scf.if
-  %if = scf.if %pred -> index {
+  // CHECK: hlcf.if
+  %if = hlcf.if %pred -> index {
     %cst = index.constant 0
     // CHECK-NEXT: index.constant 0
     // CHECK-NEXT: [[STRUCT2:%[0-9]+]] = pop.struct.construct(%idx0) : !pop.struct<index>
@@ -195,10 +195,10 @@ kgen.generator @nested(%pred: i1) -> index {
       %5 = pop.cast_to_builtin %3 : !pop.scalar<index> to index
       kgen.return<sub(C, A)> %5 : index
     }
-    scf.yield %call : index
+    hlcf.yield %call : index
   } else {
     %cst = index.constant 0
-    scf.yield %cst : index
+    hlcf.yield %cst : index
   }
 
   %1 = kgen.param.constant = <Result>
@@ -215,14 +215,12 @@ kgen.generator @nested(%pred: i1) -> index {
 // CHECK-LABEL: @nested2
 kgen.generator @nested2() -> index {
   %cst = index.constant 0
-  %ub = index.constant 32
-  %step = index.constant 1
-  // CHECK-3: index.constant
+  // CHECK: index.constant
   kgen.param.declare C = <15>
 
-  // CHECK: scf.for
-  %res = scf.for %iv = %cst to %ub step %step iter_args(%input = %cst) -> index {
-    // CHECK-NEXT: [[STRUCT2:%[0-9]+]] = pop.struct.construct(%arg1, %idx0) : !pop.struct<index, index>
+  // CHECK: hlcf.loop
+  %res = hlcf.loop (%input = %cst: index) -> index {
+    // CHECK-NEXT: [[STRUCT2:%[0-9]+]] = pop.struct.construct(%arg0, %idx0) : !pop.struct<index, index>
     // CHECK-NEXT: pop.compiler.global_store "nested2_context_var_5", [[STRUCT2]] : !pop.struct<index, index>
     // CHECK-NEXT: kgen.param.declare
     kgen.param.declare.region Fn = <A -> E>() -> index always_inline {
@@ -234,7 +232,7 @@ kgen.generator @nested2() -> index {
     }
     // CHECK-NEXT: kgen.call @call_region<fn: <A -> E>() -> index = Fn -> Result = E>() : () -> index
     %call = kgen.call @call_region<fn: <A -> E>() -> index = Fn -> Result = E>() : () -> index
-    scf.yield %call : index
+    hlcf.break %call : index
   }
 
   // CHECK: kgen.return

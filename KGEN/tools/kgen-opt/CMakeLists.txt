@@ -26,7 +26,6 @@ add_modular_tool(kgen-opt
   MLIROptLib
   MLIRParser
   MLIRReconcileUnrealizedCasts
-  MLIRSCFDialect
   MLIRSupport
   MLIRTransforms
   )

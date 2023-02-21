@@ -145,23 +145,8 @@ kgen.func @do_something(%list: !kgen.list<!kgen.list<index[1]>[1]>) -> (!kgen.li
 // CHECK-SAME: %arg0: index, %arg1: i1, %arg2: index
 // CHECK-SAME: -> index
 kgen.func @hlcf_scf_loops(%list: !kgen.list<!kgen.list<index[1]>[1]>, %cond: i1, %ub: index) -> !kgen.list<!kgen.list<index[1]>[1]> {
-  // CHECK: scf.if %arg1 -> (index)
-  %0 = scf.if %cond -> !kgen.list<!kgen.list<index[1]>[1]> {
-    // CHECK: kgen.call @do_something(%arg0) : (index) -> (index, i1)
-    %1, %2 = kgen.call @do_something(%list) : (!kgen.list<!kgen.list<index[1]>[1]>) -> (!kgen.list<!kgen.list<index[1]>[1]>, i1)
-    // CHECK-NEXT: scf.yield %{{.*}}#0 : index
-    scf.yield %1 : !kgen.list<!kgen.list<index[1]>[1]>
-  } else {
-    // CHECK: scf.yield %{{.*}} : index
-    scf.yield %list : !kgen.list<!kgen.list<index[1]>[1]>
-  }
   %zero = index.constant 0
   %one = index.constant 1
-  // CHECK: %{{.*}} = scf.for {{.*}} iter_args(%{{.*}} = %arg0) -> (index)
-  %1 = scf.for %i = %zero to %ub step %one iter_args(%a = %list) -> !kgen.list<!kgen.list<index[1]>[1]> {
-    %1, %2 = kgen.call @do_something(%a) : (!kgen.list<!kgen.list<index[1]>[1]>) -> (!kgen.list<!kgen.list<index[1]>[1]>, i1)
-    scf.yield %1 : !kgen.list<!kgen.list<index[1]>[1]>
-  }
   // CHECK: %{{.*}} = hlcf.loop (%{{.*}} = %arg0 : index) -> index
   %2 = hlcf.loop (%a = %list : !kgen.list<!kgen.list<index[1]>[1]>) -> !kgen.list<!kgen.list<index[1]>[1]> {
     %3, %4 = kgen.call @do_something(%a) : (!kgen.list<!kgen.list<index[1]>[1]>) -> (!kgen.list<!kgen.list<index[1]>[1]>, i1)

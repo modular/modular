@@ -19,7 +19,6 @@
 #include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
@@ -34,7 +33,7 @@ int main(int argc, char **argv) {
   registerAllKGENDialects(registry);
   registry.insert<DebugInfo::DebugInfoDialect, Cache::CacheDialect,
                   HLCF::HLCFDialect, mlir::index::IndexDialect,
-                  mlir::LLVM::LLVMDialect, mlir::scf::SCFDialect>();
+                  mlir::LLVM::LLVMDialect>();
   // The elaborator requires LLVM lowering to run the generated functions.
   mlir::registerLLVMDialectTranslation(registry);
 

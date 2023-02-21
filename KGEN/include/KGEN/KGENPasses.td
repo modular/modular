@@ -195,7 +195,7 @@ def LowerPOPClosuresToLLVM : Pass<"lower-pop-closures-to-llvm", "mlir::ModuleOp"
 //===----------------------------------------------------------------------===//
 
 def LowerSCFToLLVM : Pass<"lower-scf-to-llvm"> {
-  let summary = "Lower the `scf` dialect to the `llvm` dialect.";
+  let summary = "Lower structured control flow to LLVM and CFGs.";
   let description = [{
     This pass converts structured control-flow operations to LLVM operations and
     control-flow graph regions. Because this pass generates CFG regions, it must
