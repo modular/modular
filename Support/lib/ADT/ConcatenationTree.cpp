@@ -209,7 +209,8 @@ size_t ConcatenationTree::getSize() const {
 }
 
 /// Iterate through this structure walking over the leaf node data in-order.
-void ConcatenationTree::traverse(std::function<void(ArrayRef<uint8_t>)> fn) {
+void ConcatenationTree::traverse(
+    llvm::function_ref<void(ArrayRef<uint8_t>)> fn) {
   // Null is an empty tree.
   if (node == nullptr)
     return;
