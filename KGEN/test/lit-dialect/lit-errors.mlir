@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -verify-diagnostics -split-input-file -o /dev/null
+// RUN: kgen-opt %s -verify-parameters -verify-diagnostics -split-input-file -o /dev/null
 
 lit.struct.decl @SomeStruct {
   // expected-error @+1 {{invalid use of parameter with no declaration "ty"}}

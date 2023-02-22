@@ -130,7 +130,6 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return clOptions.reportError("expected a .lit file");
   TimingScope litScope = timing.nest("Import Lit");
   theModule = importLitFile(mgr, ctx, litScope, compilationOptions, false);
-  pm.addPass(createLowerLITTerminators());
 
   if (!theModule)
     return clOptions.reportError("could not parse the module");

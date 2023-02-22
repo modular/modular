@@ -1,4 +1,4 @@
-// RUN: kgen-opt -lower-lit %s -verify-diagnostics -split-input-file -o /dev/null
+// RUN: kgen-opt -lower-lit -verify-parameters %s -verify-diagnostics -split-input-file -o /dev/null
 
 // expected-note @+1 {{interface declared here}}
 kgen.generator.interface @itf(%arg0: si32)
@@ -154,7 +154,6 @@ kgen.generator.interface @itf<ty: dtype>()
 lit.func @impl3() implements @itf {
   kgen.return
 }
-
 
 // -----
 

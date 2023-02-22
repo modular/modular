@@ -15,9 +15,21 @@ using namespace M;
 using namespace KGEN;
 
 static void populatePreElaborationPipeline(mlir::PassManager &pm) {
+  pm.addPass(createVerifyParameters());
+
+  pm.addPass(createLowerLITTerminators());
+  pm.addPass(createVerifyParameters());
+
   pm.addPass(createLowerLIT());
+  pm.addPass(createVerifyParameters());
+
   pm.addPass(createLowerStructs());
+  pm.addPass(createVerifyParameters());
+
   pm.addPass(createAlwaysInlineParametric());
+  pm.addPass(createVerifyParameters());
+
+  // These passes don't influence parameters, so we don't need to verify them.
   pm.addNestedPass<GeneratorOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<GeneratorOp>(createMem2Reg());
 }
@@ -33,11 +45,16 @@ void KGEN::elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
   // Only outline closures just before elaboration - they aren't really
   // necessary until elaboration happens.
   pm.addPass(createOutlineClosures());
+  pm.addPass(createVerifyParameters());
+
+  // After elaboration, we have no use for the parameter verifier anymore.
   pm.addPass(createElaborateGenerators(runtime, elaborateOptions));
+
   // Run the inliner and cleanup the compiler globals.
   pm.addPass(createForceInline());
   pm.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
   pm.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
+
   // Finally, DCE the symbols we don't want.
   pm.addPass(createEliminateDeadSymbols());
 

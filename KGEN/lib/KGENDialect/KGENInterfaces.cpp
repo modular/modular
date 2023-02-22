@@ -16,16 +16,6 @@ using namespace KGEN;
 // Verification
 //===----------------------------------------------------------------------===//
 
-LogicalResult impl::verifyIfTopLevel(DeclInterface decl,
-                                     SymbolTableCollection &symtab) {
-  if (isa<DeclInterface>(decl->getParentOp()))
-    return success();
-  for (Region &r : decl->getRegions())
-    if (failed(ParameterUseDefGraph(r).verify(symtab)))
-      return failure();
-  return success();
-}
-
 LogicalResult impl::verifyCallOp(KGENCallOpInterface op) {
   if (!op.getCallee())
     return success();

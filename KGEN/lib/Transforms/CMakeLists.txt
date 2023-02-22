@@ -11,6 +11,7 @@ add_modular_conversion_library(KGENTransforms
   KnownVariant.cpp
   Mem2Reg.cpp
   OutlineClosures.cpp
+  VerifyParameters.cpp
 
   LINK_LIBS PUBLIC
   KGENDialect

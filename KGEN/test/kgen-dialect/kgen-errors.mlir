@@ -1,4 +1,4 @@
-// RUN: kgen-opt -allow-unregistered-dialect %s -verify-diagnostics -split-input-file -o /dev/null
+// RUN: kgen-opt -allow-unregistered-dialect %s -verify-parameters -verify-diagnostics -split-input-file -o /dev/null
 
 kgen.generator @test() {
   // expected-error @+1 {{invalid use of parameter with no declaration "p"}}
@@ -619,18 +619,6 @@ kgen.generator @doIt<SomeParam>() {
   }
   kgen.return
 }
-
-// -----
-
-kgen.generator @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %size: index) -> index {
-  %0 = kgen.param.constant = <N>
-  kgen.return %0 : index
-}
-
-// expected-error @below {{@doesNotExist does not reference a KGEN declaration}}
-kgen.generator.interface @pickFirst()
-  evaluator (!pop.pointer<() -> ()>, index) -> index = @simpleEvaluator<N=0, FN:type=()->()>
-  defaultImpl () -> () = @doesNotExist
 
 // -----
 

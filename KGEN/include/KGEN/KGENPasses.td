@@ -7,6 +7,20 @@
 include "mlir/Pass/PassBase.td"
 
 //===----------------------------------------------------------------------===//
+// VerifyParameters
+//===----------------------------------------------------------------------===//
+
+def VerifyParameters : Pass<"verify-parameters", "mlir::ModuleOp"> {
+  let summary = "Run the parameter verifier.";
+  let description = [{
+    The `verify-parameters` pass runs the KGEN parameter verifier. The pass
+    ensures that all parameter uses are of the right type and reference
+    parameters with declarations, it detects conflicting declarations, and it
+    detects cycles in parameter definitions and uses.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerLITTerminators
 //===----------------------------------------------------------------------===//
 

@@ -52,11 +52,6 @@ void FileModuleOp::build(OpBuilder &odsBuilder, OperationState &state,
   state.addRegion()->push_back(new Block());
 }
 
-LogicalResult
-FileModuleOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  return verifyIfTopLevel(symbolTable);
-}
-
 /// Modules don't have input parameters but do define a parameter scope.
 ArrayRef<ParamDeclAttr> FileModuleOp::getInputParamDecls() { return {}; }
 
@@ -301,11 +296,6 @@ LogicalResult LIT::FuncOp::verifyRegions() {
 
 LogicalResult
 LIT::FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  // If this function is top-level, see if the parameter definitions and uses
-  // within the generator are structured correctly.
-  if (failed(verifyIfTopLevel(symbolTable)))
-    return failure();
-
   // If the generator is implementing a generator interface, check that they
   // line up correctly.
   SymbolRefAttr interfaceSym = getImplementsAttr();
@@ -396,12 +386,6 @@ LogicalResult StructDeclOp::verifyRegions() {
     }
   }
   return success();
-}
-
-/// Verify parameter uses.
-LogicalResult
-StructDeclOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  return verifyIfTopLevel(symbolTable);
 }
 
 void StructDeclOp::build(OpBuilder &builder, OperationState &result,

@@ -97,7 +97,6 @@ def LIT_FuncOp : LITOp<"func", [
 def FileModuleOp : LITOp<"file_module", [
     IsolatedFromAbove, NoRegionArguments, SymbolTable, Symbol,
     DeclareOpInterfaceMethods<DeclInterface>,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>
   ] # GraphRegionNoTerminator.traits> {
   let summary = "source file module";
   let description = [{
@@ -127,8 +126,7 @@ def FileModuleOp : LITOp<"file_module", [
 //===----------------------------------------------------------------------===//
 
 def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>, DeclInterface,
-    SingleBlock, NoTerminator]> {
+    DeclInterface, SingleBlock, NoTerminator]> {
   let summary = "Struct declaration.";
   let description = [{
     The `lit.struct.decl` operation is a top-level operation used to declare

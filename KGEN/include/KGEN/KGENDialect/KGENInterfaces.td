@@ -70,13 +70,6 @@ def DeclInterface : OpInterface<"DeclInterface"> {
                        "constraints to");
     }]>,
   ];
-
-  let extraTraitClassDeclaration = [{
-    /// Verify the current parameter scope if it is the top-level scope.
-    LogicalResult verifyIfTopLevel(SymbolTableCollection &symtab) {
-      return impl::verifyIfTopLevel(cast<DeclInterface>(*$_op), symtab);
-    }
-  }];
 }
 
 def FuncInterface : OpInterface<"FuncInterface"> {
