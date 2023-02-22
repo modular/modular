@@ -147,6 +147,10 @@ def kw3(a, /, *, b): # OK
 def kw4(a, *, /, b): # expected-error {{cannot specify '/' marker after '*' marker}}
 def kw5(/, a):       # expected-error {{'/' marker cannot be used at the start of the argument list}}
 def kw6(a, *):       # expected-error {{'*' marker is not allowed at end of argument list}}
+# expected-error @+1 {{TODO: keyword arguments not supported yet}}
+def kw7(*a, *b): # expected-error {{cannot have two '*' markers in the same argument list}}
+# expected-error @+1 {{TODO: keyword arguments not supported yet}}
+def kw8[Ts*: __mlir_type.`!kgen.mlirtype`](a*: Ts, b*: Ts): # expected-error {{cannot have two '*' markers in the same argument list}}
 
 ##===----------------------------------------------------------------------===##
 # Function Overloading
