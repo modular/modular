@@ -7,7 +7,7 @@
 #ifndef KGEN_ELABORATOR_H
 #define KGEN_ELABORATOR_H
 
-#include "Support/LLVMCompilerForwardDecls.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include <filesystem>
 
 namespace mlir {
@@ -26,10 +26,12 @@ class GeneratorOp;
 /// Elaborate generators in the specified module, incorporating implementation
 /// logic from the specified library.  On error, diagnostics are emitted and the
 /// primary file isn't completely lowered.
-LogicalResult elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
-                                  LLCL::Runtime &runtime, TargetInfoAttr target,
-                                  ArrayRef<KGEN::GeneratorOp> generators,
-                                  bool enableSearch = false);
+LogicalResult
+elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
+                    KGEN::ParameterCollector::Analysis &paramCache,
+                    LLCL::Runtime &runtime, TargetInfoAttr target,
+                    ArrayRef<KGEN::GeneratorOp> generators,
+                    bool enableSearch = false);
 
 } // namespace M
 

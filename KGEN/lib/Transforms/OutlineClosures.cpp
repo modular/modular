@@ -40,6 +40,7 @@ void OutlineClosuresPass::runOnOperation() {
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &domInfo = getAnalysis<mlir::DominanceInfo>();
+  auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
   // Walk over all the param.declare.region ops and create structs with the SSA
   // captures, use bind_signature to deal with parameter captures.
@@ -50,7 +51,7 @@ void OutlineClosuresPass::runOnOperation() {
   for (auto generator : theModule.getOps<GeneratorOp>()) {
     // Calculate the parameter decls and uses for the region decl's parent.
     ParameterUseDefGraph uses(generator.getBodyRegion());
-    uses.calculate();
+    uses.calculate(paramCache);
 
     // We'll use this a lot here - pull it out into a little lambda.
     auto getUniqueName = [&](const Twine &suffix) {
@@ -110,7 +111,7 @@ void OutlineClosuresPass::runOnOperation() {
       assert(regionDeclUses != uses.nestedScopes.end());
 
       // Scan the captured values for captured parameters.
-      ParameterCollector collector;
+      ParameterCollector collector(paramCache);
       SmallVector<ParamDeclRefAttr, 16> capturedUses;
       for (Value capture : captures) {
         capturedUses.clear();
@@ -271,9 +272,8 @@ void OutlineClosuresPass::runOnOperation() {
         while (
             llvm::find_if(lifted.getInputParamDecls(), [&](ParamDeclAttr decl) {
               return decl.getName() == declName;
-            }) != lifted.getInputParamDecls().end()) {
+            }) != lifted.getInputParamDecls().end())
           declName = b.getStringAttr("__resultParam_" + Twine(++idx));
-        }
 
         resultDecls.push_back(
             ParamDeclAttr::get(declName, resultParam.getType()));

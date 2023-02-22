@@ -24,10 +24,11 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
 
   void runOnOperation() override {
     auto &symtab = getAnalysis<mlir::SymbolTableAnalysis>();
+    auto &cache = getAnalysis<ParameterCollector::Analysis>();
     for (auto decl : getOperation().getOps<DeclInterface>()) {
       for (Region &region : decl->getRegions()) {
         ParameterUseDefGraph graph(region);
-        if (failed(graph.verify(symtab.getSymbolTables())))
+        if (failed(graph.verify(symtab.getSymbolTables(), cache)))
           return signalPassFailure();
       }
     }

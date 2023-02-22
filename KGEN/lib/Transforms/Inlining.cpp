@@ -223,13 +223,16 @@ struct AttrTypeMangler {
 
 static LogicalResult inlineGeneratorCall(
     GeneratorOp gen, const SymbolTable &symtab,
-    function_ref<ParameterUseDefGraph &(GeneratorOp)> getGraph) {
+    ParameterCollector::Analysis &paramCache,
+    function_ref<ParameterUseDefGraph &(ParameterCollector::Analysis &,
+                                        GeneratorOp)>
+        getGraph) {
   TimeTraceScope<> traceScope("inline-generator-call");
 
   // Compute the parameter uses from the top-level. This is only computed once
   // per top-level generator.
   ParameterUseDefGraph topLevelGraph(gen.getBodyRegion());
-  topLevelGraph.calculate();
+  topLevelGraph.calculate(paramCache);
 
   // Collect all calls that inline in this function.
   struct EndStack {};
@@ -280,7 +283,7 @@ static LogicalResult inlineGeneratorCall(
     calls.emplace_back(EndStack{});
 
     // Compute the parameter uses at the callee.
-    const ParameterUseDefGraph &calleeParams = getGraph(callee);
+    const ParameterUseDefGraph &calleeParams = getGraph(paramCache, callee);
     // Get the parameters in-scope at the callsite.
     auto [nearestDecl, scopeRegion] = getNearestDeclAndRegion(call);
     ParameterUseDefGraph &callScope =
@@ -459,6 +462,7 @@ static LogicalResult inlineGeneratorCall(
 void AlwaysInlineParametricPass::runOnOperation() {
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
+  auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
   // Cache the computed parameter use-def graphs of all generators. We will need
   // to keep the graphs somewhat up-to-date. Since we are inlining top-down, we
@@ -469,7 +473,9 @@ void AlwaysInlineParametricPass::runOnOperation() {
   // merge any nested graphs in.
   DenseMap<GeneratorOp, std::unique_ptr<ParameterUseDefGraph>> graphs;
   llvm::sys::SmartRWMutex<true> graphsMtx;
-  auto getGraph = [&](GeneratorOp gen) -> ParameterUseDefGraph & {
+  auto getGraph = [&graphsMtx,
+                   &graphs](ParameterCollector::Analysis &paramCache,
+                            GeneratorOp gen) -> ParameterUseDefGraph & {
     {
       llvm::sys::SmartScopedReader<true> lock(graphsMtx);
       if (auto it = graphs.find(gen); it != graphs.end())
@@ -481,21 +487,25 @@ void AlwaysInlineParametricPass::runOnOperation() {
     // generator, but it also means that computations can be parallelized if
     // they are different.
     auto graph = std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
-    graph->calculate();
+    graph->calculate(paramCache);
 
     llvm::sys::SmartScopedWriter<true> lock(graphsMtx);
     return *graphs.try_emplace(gen, std::move(graph)).first->second;
   };
 
-  std::vector<GeneratorOp> rootGens;
+  struct WorkInfo {
+    GeneratorOp gen;
+    ParameterCollector::Analysis cache;
+  };
+  std::vector<WorkInfo> rootGens;
   for (auto gen : getOperation().getOps<GeneratorOp>()) {
     // Skip over functions that are force inlined. Start inlining from the tips.
     if (gen.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
       continue;
-    rootGens.push_back(gen);
+    rootGens.push_back(WorkInfo{gen, paramCache});
   }
-  auto workFunc = [&](GeneratorOp gen) {
-    return inlineGeneratorCall(gen, symtab, getGraph);
+  auto workFunc = [&symtab, &getGraph](WorkInfo &info) {
+    return inlineGeneratorCall(info.gen, symtab, info.cache, getGraph);
   };
   if (failed(mlir::failableParallelForEach(&getContext(), rootGens, workFunc)))
     return signalPassFailure();

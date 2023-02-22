@@ -9,6 +9,7 @@
 
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
 #include "Support/Compiler/ErrorTree.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
@@ -38,8 +39,8 @@ using DeclAndInputParamsPair = std::pair<DeclInterface, ArrayAttr>;
 
 /// This class keeps track of one result from binding a generator to a set of
 /// input parameters.  It holds both the func that gets produced as well as
-/// the (transitive) set of generator bindings used to create it.  This is used
-/// to ensure that further-derived generators are only elaborated with
+/// the (transitive) set of generator bindings used to create it.  This is
+/// used to ensure that further-derived generators are only elaborated with
 /// consistent bindings.
 class ElaboratedGenerator {
 public:
@@ -52,8 +53,8 @@ public:
   /// transitively flattened, so we don't need to maintain a tree of bindings.
   SmallDenseMap<DeclAndInputParamsPair, FuncOp> bindings;
 
-  /// If we have a binding for the specified generator+InputParamSet, return it,
-  /// otherwise return null.
+  /// If we have a binding for the specified generator+InputParamSet, return
+  /// it, otherwise return null.
   FuncOp getBinding(DeclAndInputParamsPair key) const;
 
   /// Return true if the set of bindings in this elaborated func are
@@ -80,12 +81,14 @@ class Elaborator {
 public:
   /// Initialize the elaborator and its symbol table.
   Elaborator(
-      mlir::SymbolTableAnalysis &analysis, TargetInfoAttr target,
+      mlir::SymbolTableAnalysis &analysis,
+      ParameterCollector::Analysis &paramCache, TargetInfoAttr target,
       LLCL::Runtime &runtime, LLCL::AsyncSideEffectMap &map,
       LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache,
       LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache,
       bool enableSearch = false)
-      : analysis(analysis), target(target), runtime(runtime), asyncMap(map),
+      : analysis(analysis), paramCache(paramCache), target(target),
+        runtime(runtime), asyncMap(map),
         transformCache(std::move(transformCache)),
         regionCache(std::move(regionCache)), enableSearch(enableSearch) {}
 
@@ -99,8 +102,8 @@ public:
                       ArrayRef<ParamBindAttr> paramValues) = 0;
 
   /// Get all the concrete functions for the given symbol. If the symbol is a
-  /// function already, append it to the list and move on, otherwise, elaborate
-  /// it and append all the concrete implementations.
+  /// function already, append it to the list and move on, otherwise,
+  /// elaborate it and append all the concrete implementations.
   virtual std::optional<ErrorTree>
   getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
                           ArrayRef<ParamBindAttr> paramValues,
@@ -126,6 +129,9 @@ public:
 protected:
   /// This symbol table analysis allows efficient lookups across the module.
   mlir::SymbolTableAnalysis &analysis;
+
+  /// This is the cached parameter collector analysis.
+  ParameterCollector::Analysis &paramCache;
 
   /// The target we are compiling code for.
   TargetInfoAttr target;
