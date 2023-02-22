@@ -169,6 +169,11 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
       // Set the data layout on the module.
       llvmModule->setDataLayout((*machineOr)->createDataLayout());
 
+      // Set all external and defined functions to hidden visibility.
+      for (llvm::Function &func : llvmModule->getFunctionList())
+        if (func.hasExternalLinkage() && !func.empty())
+          func.setVisibility(llvm::GlobalValue::HiddenVisibility);
+
       // Lower the LLVM to an object file.
       if (failed(compileLLVMToObject(*llvmModule, **machineOr, *buf))) {
         return std::move(output).setToError(LLCL::getMLIRDiagnostic(
