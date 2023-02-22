@@ -59,6 +59,16 @@ public:
       "enable-mlir-crash-repro",
       cl::desc("Enable MLIR pass manager crash reproducer generation."),
       cl::init(false)};
+
+  cl::opt<CompilationOptions::DebugInfoLevel> debugLevel{
+      "debug-level", cl::desc("Level of debug info to emit during compilation"),
+      cl::values(clEnumValN(CompilationOptions::kNoDebug, "none",
+                            "Do not include debug info"),
+                 clEnumValN(CompilationOptions::kLineTablesOnly, "line-tables",
+                            "Emit the line tables only"),
+                 clEnumValN(CompilationOptions::kFullDebugInfo, "full",
+                            "Emit full debug info")),
+      cl::init(CompilationOptions::kNoDebug)};
 };
 } // namespace
 
@@ -108,6 +118,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   ctx->allowUnregisteredDialects();
 
   CompilationOptions compilationOptions;
+  compilationOptions.debugLevel = clOptions.debugLevel;
   OwningOpRef<ModuleOp> theModule;
   llvm::StringRef inputFileName(clOptions.inputFilename.getValue());
 
