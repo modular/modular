@@ -1509,7 +1509,7 @@ FailureOr<mlir::FunctionOpInterface> LowerPOPToLLVMPass::validateOperation() {
 
   InFlightDiagnostic diag = cfgOp->emitError(
       "lower-pop-to-llvm cannot run on operations with CFG regions");
-  diag.attachNote() << "try running it before lower-scf-to-llvm";
+  diag.attachNote() << "try running it before lower-control-flow";
   return diag;
 }
 
