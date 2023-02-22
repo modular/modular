@@ -259,16 +259,17 @@ fn return_impl_convert_raises(a: Error) -> Error:
 # Structs
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.struct.decl @EmptyStruct {
+# CHECK-LABEL: lit.struct.decl @EmptyStruct attributes {isRegisterPrimary} {
 struct EmptyStruct:
   # No body
 # CHECK-NEXT: }
 
 # CHECK-LABEL: lit.struct.decl @OneLineStruct<size: @"$Int"::@Int> {
+@__memory_primary
 struct OneLineStruct[size: Int]: pass; pass
 # CHECK-NEXT: }
 
-# CHECK-LABEL: lit.struct.decl @StructExample {
+# CHECK-LABEL: lit.struct.decl @StructExample
 struct StructExample:
   fn __clone__(self&) -> Self:
     return Self{}

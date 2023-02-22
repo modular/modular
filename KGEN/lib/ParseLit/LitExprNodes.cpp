@@ -1609,7 +1609,7 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   } else {
     // In an assignment, we emit the RHS first as a value and the LHS as an
     // lvalue with a contextual type.  This is required to enable the 'implicit
-    // declaration' behavior in a def.
+    // declaration' behavior in a def and to support patterns.
     rhsRep = emitter.emitExprRValue(rhs);
     if (!rhsRep)
       return {};

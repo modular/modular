@@ -423,8 +423,9 @@ ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   if (parseExpressionOrAssignmentStmt(expr, stmtIndent))
     return failure();
 
-  // If this wasn't an assignment statement, it is just a freestanding
-  // expression.  Emit it and ignore the results.
+  // Emit the expression and ignore the results.  If it is an assignment
+  // statement, it will return None.  Other expressions can return whatever they
+  // will naturally return.
   auto emitter = getEmitter(/*allowImplicitVarDecl=*/true);
   auto result = expr->emitIR(emitter, /*No Contextual Type*/ {});
   if (!result)

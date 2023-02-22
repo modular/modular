@@ -8,7 +8,8 @@ alias index = __mlir_type.index
 # Input parameters
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.struct.decl @OurSIMD<size, dt: @"$prolog"::@DType> {
+# CHECK-LABEL: lit.struct.decl @OurSIMD<size, dt: @"$prolog"::@DType>
+# CHECK-SAME: attributes {isRegisterPrimary} {
 struct OurSIMD[size: index, dt: DType]:
   pass
 
@@ -134,6 +135,7 @@ fn implConversion[a: StructWithIntParam[42]]():
   pass
 
 # CHECK-LABEL: lit.struct.decl @Pair<dt: @"$prolog"::@DType> {
+@__memory_primary
 struct Pair[dt: DType]:
  # CHECK: lit.struct.field a : !kgen.declref<@"$parameters"::@OurSIMD<size = 42, dt: @"$prolog"::@DType = dt>>
  # CHECK: lit.struct.field b : !kgen.declref<@"$Int"::@Int>
