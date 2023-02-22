@@ -1609,61 +1609,89 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                                      CallSyntax::kOperator, callNode);
 }
 
-AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
-  // We generally emit the LHS before the RHS, but need to do special things
-  // for short-circuiting and assignment statements.
-  if (kind == kBoolAnd || kind == kBoolOr) // `x and y`, `x or y`
-    return emitAndOr(emitter);
+/// Emit a simple assignment statement. Python evaluates the RHS of an
+/// assignment before the LHS, as seen in things like:
+///    def test1(): print("test1"); return 0
+///    def test2(): print("test2"); return 1
+///    a[test1()] = test2()
+///  ==> test2; test1
+AnyValue BinOpNode::emitAssign(ExprEmitter &emitter) const {
+  // In an assignment, we emit the RHS first as a value and the LHS as an
+  // lvalue with a contextual type.  This is required to enable the 'implicit
+  // declaration' behavior in a def and to support patterns.
+  RValue rhsRep = emitter.emitExprRValue(rhs);
+  if (!rhsRep)
+    return {};
 
+  // Emit the LHS pattern as an lvalue.  Pass in the RHS's type as the
+  // contextual type in case we need to implicitly declare a variable.
+  auto lhsLV = emitter.emitExprLValue(getLoc(), lhs, rhsRep.getType(),
+                                      "cannot assign to immutable expression");
+  if (!lhsLV)
+    return {};
+
+  // Assignment expression (`=`) turns into a store, not into a method call.
+  // Emit the RHS and coerce to the LHS type.
+  // auto rv = emitter.emitDRValue(ASTExprAnd<RValue>{rhsRep, rhs});
+  auto rv = emitter.emitDRValue(
+      {emitter.getAsExpectedType(rhsRep, rhs, lhsLV.getRValueType(),
+                                 " in assignment"),
+       rhs});
+  if (!rv)
+    return {};
+
+  // If everything worked out, store the resultant value into the lvalue for
+  // the destination.  If things didn't work, just drop this on the floor.
+  emitter.builder->create<POP::StoreOp>(getLocation(emitter), rv, lhsLV,
+                                        /*alignment=*/std::nullopt);
+  // Assignments are not actually expressions in Python.  We treat them this
+  // way for consistency, but model them as returning None.
+  return MValue(NoneAttr::get(emitter.getContext()));
+}
+
+/// Emit a inplace assignment statement like `x += y`. Python evaluates the RHS
+/// of an assignment before the LHS, as seen in things like:
+///    def test1(): print("test1"); return 0
+///    def test2(): print("test2"); return 1
+///    a[test1()] += test2()
+///  ==> test1; test2
+AnyValue BinOpNode::emitInplace(ExprEmitter &emitter) const {
   AnyValue lhsRep;
   RValue rhsRep;
-  if (!isAssignmentStmt()) {
-    auto lhsRV = emitter.emitExprRValue(lhs);
-    lhsRep = lhsRV;
-    rhsRep = emitter.emitExprRValue(rhs);
-    if (!lhsRep || !rhsRep)
-      return {};
-  } else {
-    // In an assignment, we emit the RHS first as a value and the LHS as an
-    // lvalue with a contextual type.  This is required to enable the 'implicit
-    // declaration' behavior in a def and to support patterns.
-    rhsRep = emitter.emitExprRValue(rhs);
-    if (!rhsRep)
-      return {};
 
-    // Emit the LHS pattern as an lvalue.  Pass in the RHS's type as the
-    // contextual type in case we need to implicitly declare a variable.
-    auto lhsLV =
-        emitter.emitExprLValue(getLoc(), lhs, rhsRep.getType(),
-                               "cannot assign to immutable expression");
-    if (!lhsLV)
-      return {};
+  // Inplace operations evaluate the LHS first, so emit the LHS pattern as an
+  // lvalue.
+  LValue lhsLV =
+      emitter.emitExprLValue(getLoc(), lhs, /*contextualType=*/Type(),
+                             "cannot assign to immutable expression");
+  if (!lhsLV)
+    return {};
 
-    // Assignment expression (`=`) turns into a store, not into a method call.
-    if (kind == kAssign) {
-      // Emit the RHS and coerce to the LHS type.
-      // auto rv = emitter.emitDRValue(ASTExprAnd<RValue>{rhsRep, rhs});
-      auto rv = emitter.emitDRValue(
-          {emitter.getAsExpectedType(rhsRep, rhs, lhsLV.getRValueType(),
-                                     " in assignment"),
-           rhs});
-      if (!rv)
-        return {};
+  // Then emit the right side.
+  RValue rhsRV = emitter.emitExprRValue(rhs);
+  if (!rhsRV)
+    return {};
 
-      // If everything worked out, store the resultant value into the lvalue for
-      // the destination.  If things didn't work, just drop this on the floor.
-      emitter.builder->create<POP::StoreOp>(getLocation(emitter), rv, lhsLV,
-                                            /*alignment=*/std::nullopt);
-      // Assignments are not actually expressions in Python.  We treat them this
-      // way for consistency, but model them as returning None.
-      return MValue(NoneAttr::get(emitter.getContext()));
-    }
+  // Emit the call to the operator function like `__iadd__`.
+  return emitBinOpCall({lhsLV, lhs}, {rhsRV, rhs}, kind, this, emitter);
+}
 
-    // Otherwise, handle as a normal binary operator.
-    lhsRep = lhsLV;
-  }
+AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
+  // Handle weird binary operators specially if we have them.
+  if (kind == kBoolAnd || kind == kBoolOr) // `x and y`, `x or y`
+    return emitAndOr(emitter);
+  if (kind == kAssign) // `x = y`
+    return emitAssign(emitter);
+  if (isAssignmentStmt()) // `x += y`
+    return emitInplace(emitter);
 
-  return emitBinOpCall({lhsRep, lhs}, {rhsRep, rhs}, kind, this, emitter);
+  // Othewise we emit the LHS followed by the RHS.
+  RValue lhsRV = emitter.emitExprRValue(lhs);
+  RValue rhsRV = emitter.emitExprRValue(rhs);
+  if (!lhsRV || !rhsRV)
+    return {};
+
+  return emitBinOpCall({lhsRV, lhs}, {rhsRV, rhs}, kind, this, emitter);
 }
 
 /// This method emits the `x and y`, `x or y` operators.  These are interesting

@@ -407,6 +407,8 @@ struct BinOpNode final : public ExprNode {
 
 private:
   AnyValue emitAndOr(ExprEmitter &emitter) const;
+  AnyValue emitAssign(ExprEmitter &emitter) const;
+  AnyValue emitInplace(ExprEmitter &emitter) const;
 };
 
 struct UnaryOpNode final : public ExprNode {
