@@ -287,7 +287,7 @@ llvm::SMLoc ExprNode::getRangeEnd() const { return getRange().getEnd(); }
 /// Emit this expression to MLIR as a CallableValue.  On error, emit an error
 /// and return a null value.
 CallableValue ExprNode::emitCallable(ExprEmitter &emitter,
-                                     ASTType contextualType) const {
+                                     ValueDest dest) const {
   // The default implementation of this returns the expression as an RValue.
   auto calleeVal = emitter.emitExprRValue(this);
   if (!calleeVal)
@@ -305,8 +305,7 @@ Location ExprNode::getLocation(IREmitter &emitter) const {
 // ExprNode implementations
 //===----------------------------------------------------------------------===//
 
-AnyValue IntLiteralNode::emitIR(ExprEmitter &emitter,
-                                ASTType contextualType) const {
+AnyValue IntLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   // TODO: Handle contextual types.
   APInt value = LitLexer::getIntegerLiteralValue(spelling);
 
@@ -319,8 +318,7 @@ AnyValue IntLiteralNode::emitIR(ExprEmitter &emitter,
   return AnyValue(attr);
 }
 
-AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter,
-                                  ASTType contextualType) const {
+AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   // TODO: this assumes float literal are always doubles
   APFloat value = LitLexer::getFloatLiteralValue(spelling);
   auto attr = FloatAttr::get(FloatType::getF64(emitter.getContext()),
@@ -330,13 +328,11 @@ AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter,
   return AnyValue(attr);
 }
 
-AnyValue BoolLiteralNode::emitIR(ExprEmitter &emitter,
-                                 ASTType contextualType) const {
+AnyValue BoolLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   return AnyValue(BoolAttr::get(emitter.getContext(), value));
 }
 
-AnyValue SelfLiteralNode::emitIR(ExprEmitter &emitter,
-                                 ASTType contextualType) const {
+AnyValue SelfLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   // Self resolves to the type of the enclosing structure type.
   ASTDecl *structDecl = &emitter.declScope;
   while (!isa<StructDeclOp>(*structDecl)) {
@@ -358,28 +354,25 @@ AnyValue SelfLiteralNode::emitIR(ExprEmitter &emitter,
   return MValue(structDecl->getSelfType());
 }
 
-AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter,
-                                   ASTType contextualType) const {
+AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
   auto attr =
       StringAttr::get(value, KGEN::StringType::get(emitter.getContext()));
   return AnyValue(attr);
 }
 
-AnyValue NoneLiteralNode::emitIR(ExprEmitter &emitter,
-                                 ASTType contextualType) const {
+AnyValue NoneLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   return MValue(NoneAttr::get(emitter.getContext()));
 }
 
-AnyValue DeclRefNode::emitIR(ExprEmitter &emitter,
-                             ASTType contextualType) const {
-  return emitCallable(emitter, contextualType).emitAsValue(emitter);
+AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
+  return emitCallable(emitter, dest).emitAsValue(emitter);
 }
 
 /// Emit IR for an unqualified declaration reference "x" looked up in current
 /// context.
 CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
-                                        ASTType contextualType) const {
+                                        ValueDest dest) const {
   ASTDecl &container = emitter.declScope;
 
   // Perform a lookup of the specified decl in the current container.
@@ -387,7 +380,7 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
       spelling, getLoc(), container, /*searchParentScopes=*/true);
 
   auto createVarDeclWithContextualType = [&](OpBuilder &builder) -> VarDeclOp {
-    Type declIRType = POP::PointerType::get(contextualType);
+    Type declIRType = POP::PointerType::get(dest.getContextualType());
     auto loc = getLocation(emitter);
     auto nameAttr = StringAttr::get(loc.getContext(), spelling);
     return builder.create<VarDeclOp>(loc, declIRType, nameAttr);
@@ -398,7 +391,7 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
   // allowing rewrites, but we cannot take this approach because each discard
   // could have a different type.  Handle this specially by not inserting the
   // `_` variable into the name table, so we'll get a new instance on every use.
-  if (lookup.isFailure() && contextualType && spelling == "_" &&
+  if (lookup.isFailure() && dest.getContextualType() && spelling == "_" &&
       emitter.builder) {
     // Introduce a new lit.var.decl node whose type matches the
     // implicitDeclType.
@@ -411,7 +404,7 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a contextual type
   // available and an insertion point.
-  if (lookup.isFailure() && contextualType && emitter.varDeclCursor) {
+  if (lookup.isFailure() && dest.getContextualType() && emitter.varDeclCursor) {
     // Use this builder to place any VarDeclOps. In Python there is only one
     // scope per function and all variables belong to that scope, so builders
     // should reflect that.
@@ -560,8 +553,7 @@ static Type parseMLIRType(StringRef name, const ExprNode *node,
   return result;
 }
 
-AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
-                                  ASTType contextualType) const {
+AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   if (attrSpelling == "__adaptive_set") {
     SmallVector<TypedAttr> funcsAttr;
 
@@ -580,13 +572,13 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
                           VariadicType::get(funcsAttr.front().getType()));
     return MValue(variadicAttr);
   }
-  return emitCallable(emitter, contextualType).emitAsValue(emitter);
+  return emitCallable(emitter, dest.getContextualType()).emitAsValue(emitter);
 }
 
 /// Emit a qualified attribute reference to MLIR as a CallableValue.  On error,
 /// emit an error and return a null value.
 CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
-                                             ASTType contextualType) const {
+                                             ValueDest dest) const {
 
   auto baseVal = base->emitIR(emitter, /*No Contextual Type*/ {});
   if (!baseVal)
@@ -910,7 +902,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   return DRValue(resultOp->getResult(0));
 }
 
-AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
+AnyValue CallNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   auto calleeVal = callee->emitCallable(emitter, {});
   if (!calleeVal)
     return {};
@@ -969,7 +961,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   return calleeVal.emitFunctionCall(operands, syntax, this, emitter);
 }
 
-AnyValue SliceNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
+AnyValue SliceNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   auto diag =
       emitter.emitError(getLoc(), "TODO: SliceNode::emitIR not implemented yet")
       << getRange();
@@ -1064,15 +1056,14 @@ static CallableValue bindAttrValuesToDirectCall(CallableValue &callable,
   return std::move(callable);
 }
 
-AnyValue SubscriptNode::emitIR(ExprEmitter &emitter,
-                               ASTType contextualType) const {
-  return emitCallable(emitter, contextualType).emitAsValue(emitter);
+AnyValue SubscriptNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
+  return emitCallable(emitter, dest.getContextualType()).emitAsValue(emitter);
 }
 
 /// Emit this expression to MLIR as a CallableValue.  On error, emit an error
 /// and return a null value.
 CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
-                                          ASTType contextualType) const {
+                                          ValueDest dest) const {
 
   // Subscripting a generic function binds the parameter expressions.
   auto subValue = base->emitCallable(emitter, {});
@@ -1200,14 +1191,14 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
 }
 
 AnyValue SubscriptArrowNode::emitIR(ExprEmitter &emitter,
-                                    ASTType contextualType) const {
-  return emitCallable(emitter, contextualType).emitAsValue(emitter);
+                                    ValueDest dest) const {
+  return emitCallable(emitter, dest.getContextualType()).emitAsValue(emitter);
 }
 
 /// Emit this expression to MLIR as a CallableValue.  On error, emit an error
 /// and return a null value.
 CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter,
-                                               ASTType contextualType) const {
+                                               ValueDest dest) const {
 
   // Subscripting a generic function binds the parameter expressions.
   auto subValue = base->emitCallable(emitter, {});
@@ -1287,16 +1278,16 @@ CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter,
   return subValue;
 }
 
-AnyValue ParenNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
-  return subExpr->emitIR(emitter, contextualType);
+AnyValue ParenNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
+  return subExpr->emitIR(emitter, dest);
 }
 
 CallableValue ParenNode::emitCallable(ExprEmitter &emitter,
-                                      ASTType contextualType) const {
-  return subExpr->emitCallable(emitter, contextualType);
+                                      ValueDest dest) const {
+  return subExpr->emitCallable(emitter, dest);
 }
 
-AnyValue TupleNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
+AnyValue TupleNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   // Emit each of the index values to generate error messages.
   SmallVector<RValue> exprValues;
   for (ExprNode *expr : exprs) {
@@ -1310,7 +1301,7 @@ AnyValue TupleNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   return {};
 }
 
-AnyValue ListNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
+AnyValue ListNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   SmallVector<RValue> elements;
   for (ExprNode *expr : exprs) {
     elements.push_back(emitter.emitExprRValue(expr));
@@ -1333,8 +1324,7 @@ AnyValue ListNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
   return MValue(noneAttr);
 }
 
-AnyValue DictionaryNode::emitIR(ExprEmitter &emitter,
-                                ASTType contextualType) const {
+AnyValue DictionaryNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   emitter.emitError(getLoc(), "TODO: cannot emit dictionary literals yet")
       << getRange();
   return {};
@@ -1447,8 +1437,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
       StringArrayAttr::get(emitter.getContext(), fieldNames)));
 }
 
-AnyValue DictSubscriptNode::emitIR(ExprEmitter &emitter,
-                                   ASTType contextualType) const {
+AnyValue DictSubscriptNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 
   auto baseValue = base->emitIR(emitter, /*contextualType*/ {});
   if (!baseValue)
@@ -1662,7 +1651,7 @@ AnyValue BinOpNode::emitInplace(ExprEmitter &emitter) const {
   // Inplace operations evaluate the LHS first, so emit the LHS pattern as an
   // lvalue.
   LValue lhsLV =
-      emitter.emitExprLValue(getLoc(), lhs, /*contextualType=*/Type(),
+      emitter.emitExprLValue(getLoc(), lhs, /*contextualType=*/{},
                              "cannot assign to immutable expression");
   if (!lhsLV)
     return {};
@@ -1676,7 +1665,7 @@ AnyValue BinOpNode::emitInplace(ExprEmitter &emitter) const {
   return emitBinOpCall({lhsLV, lhs}, {rhsRV, rhs}, kind, this, emitter);
 }
 
-AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ASTType contextualType) const {
+AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   // Handle weird binary operators specially if we have them.
   if (kind == kBoolAnd || kind == kBoolOr) // `x and y`, `x or y`
     return emitAndOr(emitter);
@@ -1782,8 +1771,7 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
   return DRValue(ifOp.getResult(0));
 }
 
-AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
-                             ASTType contextualType) const {
+AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   auto exprRep = subExpr->emitIR(emitter, /*No Contextual Type*/ {});
   if (!exprRep)
     return {};
@@ -1834,8 +1822,7 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter,
                                      CallSyntax::kOperator, this);
 }
 
-AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter,
-                              ASTType contextualType) const {
+AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   RValue condRVal = emitter.emitExprConditionValueAsI1(condExpr);
   Value condValue = emitter.emitDRValue({AnyValue(condRVal), condExpr});
 
@@ -1934,8 +1921,7 @@ AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
   return DRValue(ifOp->getResult(0));
 }
 
-AnyValue ChainedCmpOpNode::emitIR(ExprEmitter &emitter,
-                                  ASTType contextualType) const {
+AnyValue ChainedCmpOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   RValue e0Rep = emitter.emitExprRValue(exprs[0]);
   RValue e1Rep = emitter.emitExprRValue(exprs[1]);
   if (!e0Rep || !e1Rep)

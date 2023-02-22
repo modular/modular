@@ -366,9 +366,8 @@ CallableValue ExprEmitter::emitCallable(const ExprNode *node,
 /// This diagnoses the expression with the specified message if it isn't a
 /// valid LValue.
 LValue ExprEmitter::emitExprLValue(SMLoc loc, const ExprNode *node,
-                                   ASTType contextualType,
-                                   const Twine &message) {
-  AnyValue anyValue = node->emitIR(*this, contextualType);
+                                   ValueDest dest, const Twine &message) {
+  AnyValue anyValue = node->emitIR(*this, dest);
   if (!anyValue)
     return {}; // Error already diagnosed.
   if (LValue lValue = anyValue.getIfLValue())
