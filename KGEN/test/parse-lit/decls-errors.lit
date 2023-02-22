@@ -339,6 +339,22 @@ struct MLIRAttrWithinStruct: # expected-note {{previously used here}}
   # expected-error @+1 {{recursive reference to declaration}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
+
+# In register structs may only have stored properties of other in-reg values.
+@__memory_primary
+struct InMemStruct:
+
+# expected-error @+1 {{all members of register primary struct must themselves be register primary}}
+struct InRegStruct:
+  var x: Int # ok
+  var y: InMemStruct # expected-note {{'y' declared with memory-primary type '$decls-errors::InMemStruct'}}
+
+@__memory_primary
+struct OtherInMemStruct:
+  var x: Int # ok
+  var y: InMemStruct # ok
+
+
 ##===----------------------------------------------------------------------===##
 # Exported Functions
 ##===----------------------------------------------------------------------===##

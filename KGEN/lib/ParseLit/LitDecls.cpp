@@ -2013,7 +2013,49 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
                                       ASTDecl &decl) {
-  return LitParserBase::parseSuite(decl, lexer);
+  if (LitParserBase::parseSuite(decl, lexer))
+    return failure();
+
+  // Mark the declaration as fully resolved so we can lookup into it.
+  decl.resolvedness = DeclResolvedness::fully;
+
+  // Register primary structs may only contain register-primary stored values.
+  // TODO(traits): We need to type constrain mlirtype parameters to being
+  // register-only types to support things like this correctly:
+  //  struct P[T: mlirtype]:
+  //    var storage : T
+  if (structOp.getIsRegisterPrimary()) {
+    for (StructFieldOp field : structOp.getFieldDecls()) {
+      // Make sure the field is fully resolved.
+      auto elt = decl.lookupInCurrentScope(field.getNameAttr());
+      assert(elt && elt->size() == 1 && "field decls cannot be overloaded");
+      ASTDecl &fieldASTDecl = *elt->front();
+      if (failed(resolveSignature(fieldASTDecl, fieldASTDecl.getLoc())))
+        continue;
+
+      if (ASTDecl *typeDecl = ASTType(field.getType()).getDecl(shared)) {
+        // Ignore non-struct types.  Resolve the signature of the struct so we
+        // can determine its register-ness.
+        auto fieldStructDecl = dyn_cast<StructDeclOp>(*typeDecl);
+        if (!fieldStructDecl ||
+            failed(resolveSignature(*typeDecl, fieldASTDecl.getLoc())) ||
+            // If the field is register-primary, then we're happy.
+            fieldStructDecl.getIsRegisterPrimary())
+          continue;
+
+        auto diag = emitError(structOp.getLoc(),
+                              "all members of register primary struct must "
+                              "themselves be register primary");
+        diag.attachNote(fieldASTDecl.getLoc())
+            << field.getNameAttr() << " declared with memory-primary type "
+            << ASTType(field.getType());
+        structOp.setIsRegisterPrimary(false);
+        break;
+      }
+    }
+  }
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
