@@ -220,13 +220,15 @@ void VerifyingParameterCollector::verifyRefType(DeclRefType refType) {
     return;
   }
 
+  if (refType.getParamValues().empty() && decl.getInputParamDecls().empty())
+    return;
+
   // We have to specialize the type's parameter decls.
   ParameterEvaluator evaluator;
   for (auto [value, decl] :
        llvm::zip(refType.getParamValues(), decl.getInputParamDecls()))
     evaluator.setParameterValue(decl, value.getValue());
-  SmallVector<ParamDeclAttr> specializedDecls;
-  specializedDecls.reserve(refType.getParamValues().size());
+  SmallVector<ParamDeclAttr, 8> specializedDecls;
   for (ParamDeclAttr decl : decl.getInputParamDecls())
     specializedDecls.push_back(
         cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl)));
