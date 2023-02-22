@@ -13,10 +13,11 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
-#include "llvm/ExecutionEngine/JITEventListener.h"
-#include "llvm/ExecutionEngine/ObjectCache.h"
-#include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
-#include "llvm/ExecutionEngine/SectionMemoryManager.h"
+#include "llvm/ExecutionEngine/Orc/Core.h"
+#include "llvm/ExecutionEngine/Orc/DebugObjectManagerPlugin.h"
+#include "llvm/ExecutionEngine/Orc/EPCDebugObjectRegistrar.h"
+#include "llvm/ExecutionEngine/Orc/EPCEHFrameRegistrar.h"
+#include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
@@ -77,23 +78,9 @@ ExecutionEngine::create(const CompilationOptions &options) {
   // Callback to create the object layer with symbol resolution to current
   // process and dynamically linked libraries.
   auto objectLinkingLayerCreator = [&](llvm::orc::ExecutionSession &session,
-                                       const llvm::Triple &tt) {
-    auto objectLayer =
-        std::make_unique<llvm::orc::RTDyldObjectLinkingLayer>(session, []() {
-          return std::make_unique<llvm::SectionMemoryManager>();
-        });
-
-    if (options.debugLevel == CompilationOptions::kNoDebug)
-      return objectLayer;
-
-    // Register JIT event listeners if they are enabled.
-    if (ee.gdbListener)
-      objectLayer->registerJITEventListener(*ee.gdbListener);
-    if (ee.perfListener)
-      objectLayer->registerJITEventListener(*ee.perfListener);
-
-    // Make sure the debug info sections aren't stripped.
-    objectLayer->setProcessAllSections(true);
+                                       const llvm::Triple &tt)
+      -> std::unique_ptr<llvm::orc::ObjectLinkingLayer> {
+    auto objectLayer = std::make_unique<llvm::orc::ObjectLinkingLayer>(session);
 
     // COFF format binaries (Windows) need special handling to deal with
     // exported symbol visibility.
@@ -101,6 +88,12 @@ ExecutionEngine::create(const CompilationOptions &options) {
       objectLayer->setOverrideObjectFlagsWithResponsibilityFlags(true);
       objectLayer->setAutoClaimResponsibilityForObjectSymbols(true);
     }
+
+    // If we don't want any debugging in this binary, then stop here.
+    if (options.debugLevel == CompilationOptions::kNoDebug)
+      return objectLayer;
+
+    // TODO: Need to install the GDB listeners.
 
     return objectLayer;
   };
@@ -118,16 +111,7 @@ ExecutionEngine::create(const CompilationOptions &options) {
 
 ExecutionEngine::ExecutionEngine(std::unique_ptr<llvm::orc::LLJIT> jit,
                                  CompilationOptions options)
-    : options(options), jit(std::move(jit)),
-      gdbListener(llvm::JITEventListener::createGDBRegistrationListener()),
-      perfListener(nullptr) {
-  // Attach the perf listener.
-  if (auto *listener = llvm::JITEventListener::createPerfJITEventListener())
-    perfListener = listener;
-  else if (auto *listener =
-               llvm::JITEventListener::createIntelJITEventListener())
-    perfListener = listener;
-}
+    : options(options), jit(std::move(jit)) {}
 
 ExecutionEngine::~ExecutionEngine() = default;
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
