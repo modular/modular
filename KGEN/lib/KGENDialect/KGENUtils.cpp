@@ -279,6 +279,12 @@ static OptionalParseResult parseOptionalColonType(AsmParser &parser,
   return OptionalParseResult(parseKGENType(parser, type));
 }
 
+static ParseResult parseColonType(AsmParser &parser, Type &type) {
+  if (parser.parseColon())
+    return failure();
+  return parseKGENType(parser, type);
+}
+
 /// Parse a "colon type" production if present or default to index if not.  This
 /// is commonly used in our parameter representation.
 ParseResult KGEN::parseColonTypeOrIndex(AsmParser &parser, Type &type) {
@@ -643,26 +649,21 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     return success();
   }
   case (uint32_t)POC::Evaluate: {
-    auto sig = dyn_cast_or_null<SignatureType>(type);
-    if (!sig)
+    auto variadicType = dyn_cast_or_null<VariadicType>(type);
+    if (!variadicType)
       return p.emitError(p.getCurrentLocation(),
-                         "expected a signature type for 'evaluate'");
+                         "expected a variadic type for 'evaluate'");
 
     if (parseParamValue(p, operands.emplace_back(), type))
       return p.emitError(p.getCurrentLocation(), "expected a symbol attribute");
 
-    while (succeeded(p.parseOptionalComma())) {
-      // This one might be the evaluator, which is preceeded by a type.
-      Type evaluatorType;
-      auto evaluatorTy = parseOptionalColonType(p, evaluatorType);
-      if (evaluatorTy.has_value())
-        return parseParamValue(p, operands.emplace_back(), evaluatorType);
-      // Otherwise, parse the parameter.
-      if (parseParamValue(p, operands.emplace_back(), type))
-        return failure();
-    }
-
-    return success();
+    if (p.parseComma())
+      return failure();
+    // This the evaluator, which is preceeded by a type.
+    Type evaluatorType;
+    if (parseColonType(p, evaluatorType))
+      return failure();
+    return parseParamValue(p, operands.emplace_back(), evaluatorType);
   }
   case (uint32_t)POC::GetAllImpls: {
     auto varTy = dyn_cast_or_null<VariadicType>(type);
@@ -904,13 +905,11 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
 
   case POC::Evaluate:
     // Print the return type of the parameter itself.
-    printColonTypeOrIndexPrefix(p, operands[1].getType());
+    printColonTypeOrIndexPrefix(p, operands[0].getType());
     p << " ";
     // Then print the operands.
-    for (TypedAttr operand : operands.drop_back()) {
-      printParamValue(p, operand);
-      p << ", ";
-    }
+    printParamValue(p, operands.front());
+    p << ", ";
     // Then print the type of the evaluator and the evaluator.
     printColonTypeOrIndexPrefix(p, operands.back().getType());
     printParamValue(p, operands.back());

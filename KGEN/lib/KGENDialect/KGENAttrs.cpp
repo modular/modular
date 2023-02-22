@@ -613,9 +613,9 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
 static LogicalResult
 verifyEvaluate(ArrayRef<TypedAttr> operands, Type type,
                function_ref<InFlightDiagnostic()> emitError) {
-  if (operands.size() < 2)
-    return emitError() << "'evaluate' expected at least an evaluator and one "
-                          "implementation to evaluate";
+  if (operands.size() != 2)
+    return emitError() << "'evaluate' expected an evaluator and a variadic "
+                          "list of implementations to evaluate";
 
   auto evaluatorSignature = cast<SignatureType>(operands.back().getType());
   if (!evaluatorSignature.getResultParams().empty() ||
@@ -625,15 +625,6 @@ verifyEvaluate(ArrayRef<TypedAttr> operands, Type type,
   FunctionType func = evaluatorSignature.getValues();
   if (func.getNumResults() != 1)
     return emitError() << "'evaluate' evaluator must return one result";
-
-  for (TypedAttr operand : operands.drop_back()) {
-    if (operand.getType() != type) {
-      return emitError() << "'evaluate' expected all operands to have the same "
-                            "type, expected "
-                         << type << " but got " << operand.getType();
-    }
-  }
-
   return success();
 }
 

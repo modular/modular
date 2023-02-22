@@ -104,7 +104,7 @@ kgen.generator @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %num: inde
 kgen.generator @pickFirst() {
   kgen.param.declare evaluator: (!pop.pointer<!kgen.signature<() -> ()>>, index) -> index
     = <bind_signature(:<N, FN:type>(!pop.pointer<FN>, index) -> index @simpleEvaluator, 0, !kgen.signature<()->()>)>
-  kgen.param.declare chosenImpl : () -> () = <evaluate(:() -> () @pickFirstA, @pickFirstB,
+  kgen.param.declare chosenImpl : () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@pickFirstA, @pickFirstB],
                                                        :(!pop.pointer<!kgen.signature<() -> ()>>, index) -> index evaluator)>
   // CHECK-NEXT: kgen.call @pickFirstA
   kgen.call_param[() -> (): chosenImpl]()
@@ -116,7 +116,7 @@ kgen.generator @pickFirst() {
 kgen.generator @pickSecond() {
   kgen.param.declare evaluator: (!pop.pointer<!kgen.signature<() -> ()>>, index) -> index
     = <bind_signature(:<N, FN:type>(!pop.pointer<FN>, index) -> index @simpleEvaluator, 1, !kgen.signature<()->()>)>
-  kgen.param.declare chosenImpl : () -> () = <evaluate(:() -> () @pickSecondA, @pickSecondB,
+  kgen.param.declare chosenImpl : () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@pickSecondA, @pickSecondB],
                                                        :(!pop.pointer<!kgen.signature<() -> ()>>, index) -> index evaluator)>
   // CHECK-NEXT: kgen.call @pickSecondB
   kgen.call_param[() -> (): chosenImpl]()
@@ -162,7 +162,7 @@ kgen.generator @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %num: inde
 kgen.generator @pickSecond() -> index {
   kgen.param.declare evaluator: (!pop.pointer<!kgen.signature<() -> index>>, index) -> index
     = <bind_signature(:<N, FN:type>(!pop.pointer<FN>, index) -> index @simpleEvaluator, 1, !kgen.signature<()->index>)>
-  kgen.param.declare chosenImpl : () -> index = <evaluate(:() -> index @pickSecondA, @pickSecondB,
+  kgen.param.declare chosenImpl : () -> index = <evaluate(:variadic<!kgen.signature<() -> index>> [@pickSecondA, @pickSecondB],
                                                           :(!pop.pointer<!kgen.signature<() -> index>>, index) -> index evaluator)>
   // COM: This is actually not one of the direct options, it's an expansion of one of them.
   // CHECK-NEXT: kgen.call @pickSecondA_concrete_1()
