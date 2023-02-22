@@ -5,16 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENPasses.h"
-#include "KGEN/POPDialect/POPOps.h"
-#include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/HLCFToLLVM/HLCFToLLVM.h"
-#include "mlir/Conversion/LLVMCommon/Pattern.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/RegionUtils.h"
-#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -25,20 +19,20 @@ namespace LLVM = mlir::LLVM;
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN {
-#define GEN_PASS_DEF_LOWERSCFTOLLVM
+#define GEN_PASS_DEF_LOWERCONTROLFLOW
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
 namespace {
-struct LowerSCFToLLVMPass
-    : public KGEN::impl::LowerSCFToLLVMBase<LowerSCFToLLVMPass> {
-  using LowerSCFToLLVMBase::LowerSCFToLLVMBase;
+struct LowerControlFlowPass
+    : public KGEN::impl::LowerControlFlowBase<LowerControlFlowPass> {
+  using LowerControlFlowBase::LowerControlFlowBase;
 
   void runOnOperation() override;
 };
 } // namespace
 
-void LowerSCFToLLVMPass::runOnOperation() {
+void LowerControlFlowPass::runOnOperation() {
   // Set LLVM lowering options.
   TargetInfoAttr targetInfo = lookupTargetInfo(getOperation());
   if (!targetInfo) {
