@@ -363,11 +363,6 @@ void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
 LogicalResult
 GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  // See if the parameter definitions and uses within the generator are
-  // structured correctly.
-  if (failed(ParameterUseDefGraph(getBodyRegion()).verify(symbolTable)))
-    return failure();
-
   // If the generator is implementing a generator interface, check that they
   // line up correctly.
   FlatSymbolRefAttr interfaceSym = getImplementsAttr();
@@ -421,31 +416,45 @@ ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &result) {
 void FuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
 LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  // See if the parameter definitions and uses within the func are
-  // structured correctly.
-  ParameterUseDefGraph graph(getBodyRegion());
-  if (failed(graph.verify(symbolTable)))
-    return failure();
-
   // In a kgen.func, parameters are allowed to be defined (e.g. by calls with
   // output parameters), but not used.  This is because the elaborator must
   // already have been run, lowering these to concrete attibute values.
-
-  // TODO: In the future, we could ban specific uses (e.g. in types) but have an
-  // allow-list of operations that can use parameters.  This could be useful if
-  // we want something to be able to use the result parameters of a call or
-  // something.  Until then, a blanket ban on parameter use is sufficient.
-  for (auto &[usingOp, uses] : graph.opUses) {
-    if (!uses.empty()) {
-      auto diag = usingOp->emitError("invalid use of parameter ")
-                  << uses[0].getName() << " in kgen.func";
-      diag.attachNote(this->getLoc())
-          << "within kgen.func '" << getName() << "'";
-
-      return failure();
+  mlir::AttrTypeWalker walker;
+  ParamDeclRefAttr invalidRef;
+  Operation *usingOp = nullptr;
+  walker.addWalk([&](ParamDeclRefAttr ref) {
+    invalidRef = ref;
+    return WalkResult::interrupt();
+  });
+  WalkResult result = walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    auto walkTypes = [&](TypeRange types) -> LogicalResult {
+      for (Type type : types) {
+        if (walker.walk(type).wasInterrupted()) {
+          usingOp = op;
+          return failure();
+        }
+      }
+      return success();
+    };
+    if (failed(walkTypes(op->getResultTypes())))
+      return WalkResult::interrupt();
+    for (Region &region : op->getRegions())
+      if (failed(walkTypes(region.getArgumentTypes())))
+        return WalkResult::interrupt();
+    if (walker.walk(op->getAttrDictionary()).wasInterrupted()) {
+      usingOp = op;
+      return WalkResult::interrupt();
     }
-  }
-  return success();
+    return WalkResult::advance();
+  });
+  if (!result.wasInterrupted())
+    return success();
+  assert(invalidRef && usingOp && "expected an invalid reference");
+  auto diag = usingOp->emitError("invalid use of parameter ")
+              << invalidRef.getName() << " in kgen.func";
+  diag.attachNote(getLoc()) << "within kgen.func '" << getName() << "'";
+
+  return failure();
 }
 
 LogicalResult FuncOp::verify() {
@@ -536,12 +545,6 @@ void GeneratorInterfaceOp::print(OpAsmPrinter &p) {
 
 LogicalResult
 GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  // See if the parameter definitions and uses within the generator are
-  // structured correctly.  These are only defined in the interface and used
-  // in the argument list or constraints list.
-  if (failed(ParameterUseDefGraph(getBody()).verify(symbolTable)))
-    return failure();
-
   // If an evaluator was specified, verify its signature.
   SymbolConstantAttr evaluator = getEvaluatorAttr();
   if (!evaluator) {
@@ -553,6 +556,9 @@ GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   auto module = KGENModule::from(*this, symbolTable);
   auto func = module.lookup<FuncInterface>(evaluator.getSymbol());
+  if (!func)
+    return emitOpError() << evaluator.getSymbol()
+                         << " does not reference a KGEN declaration";
 
   // Get the specialized callee signature.
   SignatureType funcSignature = func.getSignature().getSpecializedSignature(
@@ -766,13 +772,11 @@ void ParamIfOp::print(OpAsmPrinter &p) {
 LogicalResult ParamIfOp::verify() {
   TypeRange resultTypes = getResultTypes();
   auto checkTypesMatch = [&](ValueRange other) -> LogicalResult {
-    for (auto [ifResult, operand] : llvm::zip(resultTypes, other)) {
-      if (ifResult != operand.getType()) {
+    for (auto [ifResult, operand] : llvm::zip(resultTypes, other))
+      if (ifResult != operand.getType())
         return mlir::emitError(operand.getLoc())
                << "expected type " << ifResult << " but got "
                << operand.getType();
-      }
-    }
     return success();
   };
 
@@ -789,16 +793,15 @@ LogicalResult ParamIfOp::verify() {
     if (getParamDecls().empty())
       return success();
 
-    if (!isa<ParamYieldOp>(terminator)) {
+    if (!isa<ParamYieldOp>(terminator))
       return emitError("expected a kgen.param.yield in order to return result "
                        "parameters")
                  .attachNote(terminator->getLoc())
              << "unknown terminator defined here";
-    }
 
     auto yieldOp = cast<ParamYieldOp>(terminator);
     for (auto [decl, value] :
-         llvm::zip(getParamDecls(), yieldOp.getParameters())) {
+         llvm::zip(getParamDecls(), yieldOp.getParameters()))
       if (decl.getType() != value.getType())
         return (mlir::emitError(
                     terminator->getLoc(),
@@ -806,7 +809,6 @@ LogicalResult ParamIfOp::verify() {
                 << decl.getType() << " but got " << value.getType())
                    .attachNote(getLoc())
                << "result parameter defined here";
-    }
 
     return success();
   };
