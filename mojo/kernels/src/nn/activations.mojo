@@ -4,10 +4,10 @@
 #
 # ===----------------------------------------------------------------------===#
 
-from Assert import assert_param
-from SIMD import SIMD
-from TypeTraits import is_floating_point
+from Assert import assert_param, assert_param_bool_msg
+from DType import DType
 from Math import erf, exp, tanh
+from SIMD import SIMD
 
 # ===----------------------------------------------------------------------===#
 # relu
@@ -84,7 +84,10 @@ fn gelu[
         SIMD[size, type]: The result of the GELU operation.
     """
     alias SQRT_2 = 1.4142135623730950488
-    assert_param[is_floating_point[type]()]()
+    assert_param_bool_msg[
+        DType(type).is_floating_point(),
+        "dtype must be a floating point type",
+    ]()
     return 0.5 * x * (1 + erf(x / SQRT_2))
 
 
@@ -106,7 +109,10 @@ fn gelu_approximate[
         SIMD[size, type]: The result of the approximate GELU operation.
     """
     alias SQRT_TWO_OVER_PI = 0.797884560802865
-    assert_param[is_floating_point[type]()]()
+    assert_param_bool_msg[
+        DType(type).is_floating_point(),
+        "dtype must be a floating point type",
+    ]()
     let x3 = x * x * x
     return (
         0.5
