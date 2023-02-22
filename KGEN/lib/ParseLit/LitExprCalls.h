@@ -165,6 +165,13 @@ struct DirectCallable {
   /// function without the parmaeters specified.  They can be bound later.
   SymbolConstantAttr getBoundConstantAttr(LitSharedState &shared) const;
 
+  /// Perform subsitutions of the specified bindings into the symbol, returning,
+  /// in symConstAttrs, the resultant SymbolConstant attr for each adaptive
+  /// function overload.
+  /// On failure it produces an error message and returns failure.
+  LogicalResult getBoundConstantAttrsAdaptiveSet(
+      LitSharedState &shared, SmallVectorImpl<TypedAttr> &symConstAttrs) const;
+
   /// Check declarations for the result parameters and add them to
   /// resultParamDecls.  This emits and error and returns failure if an error is
   /// detected.
@@ -218,6 +225,11 @@ public:
   /// Emit this as a flattened RValue or LValue.  This returns null on
   /// failure.
   AnyValue emitAsValue(IREmitter &emitter) const;
+
+  /// Emit in values references of all adaptive function overloads this
+  /// DirectCallable represents.
+  LogicalResult emitAdaptiveSet(IREmitter &emitter,
+                                SmallVectorImpl<TypedAttr> &values) const;
 
   /// Emit a function call to the specified callee with the specified operand
   /// values.  This emits an error and returns null on failure.

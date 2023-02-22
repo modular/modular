@@ -562,6 +562,24 @@ static Type parseMLIRType(StringRef name, const ExprNode *node,
 
 AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter,
                                   ASTType contextualType) const {
+  if (attrSpelling == "__adaptive_set") {
+    SmallVector<TypedAttr> funcsAttr;
+
+    CallableValue callable =
+        emitter.emitCallable(base, " in __adaptive_set property");
+    if (failed(callable.emitAdaptiveSet(emitter, funcsAttr))) {
+      emitter.emitError(getLoc(),
+                        "__adaptive_set can only be applied to global "
+                        "functions with an @adaptive decorator")
+          << getRange();
+      return {};
+    }
+
+    auto variadicAttr =
+        VariadicAttr::get(emitter.getContext(), funcsAttr,
+                          VariadicType::get(funcsAttr.front().getType()));
+    return MValue(variadicAttr);
+  }
   return emitCallable(emitter, contextualType).emitAsValue(emitter);
 }
 
