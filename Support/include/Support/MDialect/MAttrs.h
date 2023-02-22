@@ -213,6 +213,9 @@ public:
   /// Create a float array. All `APFloat`s must have the same width.
   static FloatArrayElementsAttr get(ShapedType type, ArrayRef<APFloat> values);
 
+  /// Create a float array. All `APFloat`s must have the same width.
+  static FloatArrayElementsAttr get(ArrayRef<APFloat> values, Type elementType);
+
   /// Iterate over the float elements as `APFloat`s.
   class Iterator
       : public llvm::indexed_accessor_iterator<Iterator, const uint8_t *,

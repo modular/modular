@@ -442,6 +442,12 @@ FloatArrayElementsAttr FloatArrayElementsAttr::get(ShapedType type,
   return ArrayElementsAttr::get(rawData, type).cast<FloatArrayElementsAttr>();
 }
 
+FloatArrayElementsAttr FloatArrayElementsAttr::get(ArrayRef<APFloat> values,
+                                                   Type elementType) {
+  auto shapedType = ArrayType::get(values.size(), elementType);
+  return FloatArrayElementsAttr::get(shapedType, values);
+}
+
 APFloat FloatArrayElementsAttr::Iterator::operator*() const {
   FloatType type = this->type;
   unsigned byteWidth = llvm::divideCeil(type.getWidth(), CHAR_BIT);
