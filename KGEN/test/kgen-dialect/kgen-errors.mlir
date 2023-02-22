@@ -1,4 +1,4 @@
-// RUN: kgen-opt -allow-unregistered-dialect %s -verify-parameters -verify-diagnostics -split-input-file -o /dev/null
+// RUN: kgen-opt -allow-unregistered-dialect %s -verify-parameters -verify-diagnostics -split-input-file
 
 kgen.generator @test() {
   // expected-error @+1 {{invalid use of parameter with no declaration "p"}}
@@ -223,10 +223,10 @@ kgen.func @result_type(%a: i1) {
 
 // -----
 
-// expected-note @+1 {{interface declared here}}
+// expected-note @+1 {{@interface declared here}}
 kgen.generator.interface @itf<size>(si32) -> si32
 
-// expected-error @+1 {{generator has 2 input parameters but interface expects 1}}
+// expected-error @+1 {{generator has 2 input parameters but @interface expects 1}}
 kgen.generator @bad<size, size2>(%arg0: si32) -> si32
   implements @itf {
   kgen.return %arg0 : si32
@@ -234,10 +234,10 @@ kgen.generator @bad<size, size2>(%arg0: si32) -> si32
 
 // -----
 
-// expected-note @+1 {{interface declared here}}
+// expected-note @+1 {{@interface declared here}}
 kgen.generator.interface @itf<size>(si32, si32) -> si32
 
-// expected-error @+1 {{generator argument #0 has type 'ui32' but interface expected type 'si32'}}
+// expected-error @+1 {{generator argument #0 has type 'ui32' but @interface expected type 'si32'}}
 kgen.generator @bad<size>(%arg0: ui32, %arg1: si32) -> si32
   implements @itf {
   kgen.return %arg1 : si32
@@ -245,20 +245,20 @@ kgen.generator @bad<size>(%arg0: ui32, %arg1: si32) -> si32
 
 // -----
 
-// expected-note @+1 {{interface declared here}}
+// expected-note @+1 {{@interface declared here}}
 kgen.generator.interface @itf<size>(si32) -> si32
 
-// expected-error @+1 {{generator has 0 input parameters but interface expects 1}}
+// expected-error @+1 {{generator has 0 input parameters but @interface expects 1}}
 kgen.generator @bad<() -> index>(%arg0: si32) -> si32 implements @itf {
   kgen.return<42> %arg0 : si32
 }
 
 // -----
 
-// expected-note @+1 {{interface declared here}}
+// expected-note @+1 {{@interface declared here}}
 kgen.generator.interface @itf<size>()
 
-// expected-error @+1 {{generator input parameter #0 has name "barf" but interface expected name "size"}}
+// expected-error @+1 {{generator input parameter #0 has name "barf" but @interface expected name "size"}}
 kgen.generator @bad<barf>() implements @itf {
   kgen.return
 }

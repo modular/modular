@@ -1016,15 +1016,14 @@ parseElementsWithMetadata(AsmParser &p, function_ref<ParseResult()> parseElt,
 
     StringRef effectStr;
     llvm::SMLoc loc = p.getCurrentLocation();
-    if (succeeded(p.parseOptionalKeyword(&effectStr))) {
+    if (succeeded(p.parseOptionalKeyword(&effectStr)))
       if (std::optional<ValueInputConvention> effect =
               symbolizeValueInputConvention(effectStr))
         inputConventions.push_back(*effect);
       else
         return p.emitError(loc, "expected 'byval' or 'byref' for input effect");
-    } else {
+    else
       inputConventions.push_back(ValueInputConvention::ByVal);
-    }
 
     if (succeeded(p.parseOptionalEqual())) {
       TypedAttr value;
@@ -1595,10 +1594,10 @@ static ParseResult verifyMatchingLists(
   if (numOriginator != numTarget) {
     auto diag = emitError(originatorLoc, originatorName)
                 << " has " << numOriginator << " " << itemName
-                << (numOriginator != 1 ? "s" : "") << " but " << targetName
+                << (numOriginator != 1 ? "s" : "") << " but @" << targetName
                 << " expects " << numTarget;
     if (originatorLoc != targetLoc)
-      diag.attachNote(targetLoc) << targetName << " declared here";
+      diag.attachNote(targetLoc) << "@" << targetName << " declared here";
     return failure();
   }
 
@@ -1616,10 +1615,10 @@ static ParseResult verifyMatchingLists(
 
     auto diag = emitError(originatorLoc, originatorName)
                 << ' ' << itemName << " #" << itemNum << " has " << propertyName
-                << ' ' << originatorVal << " but " << targetName << " expected "
-                << propertyName << ' ' << targetVal;
+                << ' ' << originatorVal << " but @" << targetName
+                << " expected " << propertyName << ' ' << targetVal;
     if (originatorLoc != targetLoc)
-      diag.attachNote(targetLoc) << targetName << " declared here";
+      diag.attachNote(targetLoc) << "@" << targetName << " declared here";
     return failure();
   }
 
@@ -1628,10 +1627,10 @@ static ParseResult verifyMatchingLists(
 
 /// Check that the specified declaration signatures match, checking the
 /// parameter and value type information.
-LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
+LogicalResult KGEN::verifyDeclSignaturesMatch(StringRef originatorName,
                                               SignatureType originatorSignature,
                                               Location originatorLoc,
-                                              const char *targetName,
+                                              StringRef targetName,
                                               SignatureType targetSignature,
                                               Location targetLoc) {
   TimeTraceScope<> traceScope("verifyDeclSignaturesMatch");
@@ -1664,7 +1663,7 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(const char *originatorName,
   if (originatorSignature.getMetadata() != targetSignature.getMetadata()) {
     auto diag = emitError(originatorLoc, originatorName)
                 << " metadata is " << originatorSignature.getMetadata()
-                << " but " << targetName << " expected "
+                << " but @" << targetName << " expected "
                 << targetSignature.getMetadata();
     if (originatorLoc != targetLoc)
       diag.attachNote(targetLoc) << targetName << " declared here";

@@ -232,10 +232,10 @@ LogicalResult verifyDeclMatchesInterface(const char *originatorName,
 
 /// Check that the specified declaration signatures match, checking the
 /// parameter and value type information.
-LogicalResult verifyDeclSignaturesMatch(const char *originatorName,
+LogicalResult verifyDeclSignaturesMatch(StringRef originatorName,
                                         SignatureType originatorSignature,
                                         Location originatorLoc,
-                                        const char *interfaceName,
+                                        StringRef interfaceName,
                                         SignatureType targetSignature,
                                         Location targetLoc);
 
