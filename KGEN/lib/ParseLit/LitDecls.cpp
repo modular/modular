@@ -1353,7 +1353,7 @@ void FnDecorators::applyLate(SymbolRefAttr symbolName, StringRef unmangledName,
         continue;
       }
 
-      emitError(decorator->getLoc(), "unsupported decorator: ")
+      emitError(decorator->getLoc(), "unsupported decorator: @")
           << declRef->spelling << declRef->getRange();
       continue;
     } else if (auto callNode = dyn_cast<CallNode>(decorator)) {
@@ -1988,7 +1988,28 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
   decl.setSelfType(decl.computeSelfTypeForStruct(shared));
-  rejectDecorators(decoratorExprs, decl, shared);
+
+  // TODO: Flip the decorator from @__memory_primary to @register_primary (or
+  // something similar) when the memory model for types matures.
+  structOp.setIsRegisterPrimary(true);
+
+  // Now that we have the basic struct set up, process any known decorators.
+  for (ExprNode *decorator : decoratorExprs) {
+    if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+      if (declRef->spelling == "__memory_primary") {
+        structOp.setIsRegisterPrimary(false);
+        continue;
+      }
+
+      emitError(decorator->getLoc(), "unsupported decorator: @")
+          << declRef->spelling << declRef->getRange();
+      continue;
+    }
+
+    emitError(decorator->getLoc(), "unsupported decorator")
+        << decorator->getRange();
+  }
+
   return success();
 }
 

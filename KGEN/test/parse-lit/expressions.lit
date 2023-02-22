@@ -6,6 +6,11 @@ from prolog import Bool, Error, F32, Int, SIMD, object
 
 fn noop():
 
+# CHECK-LABEL: lit.struct.decl @MemoryPrimaryType
+@__memory_primary
+struct MemoryPrimaryType:
+  pass
+
 # CHECK-LABEL: lit.struct.decl @M
 struct M:
   var value : __mlir_type.index
