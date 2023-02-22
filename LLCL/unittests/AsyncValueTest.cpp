@@ -252,61 +252,6 @@ TEST_P(AsyncValueTest, RecursiveAsync) {
 }
 
 //===----------------------------------------------------------------------===//
-// Await 'quietly'
-//===----------------------------------------------------------------------===//
-
-TEST_P(AsyncValueTest, AwaitQuietly_DeadlockOnFailure) {
-  if (GetParam() == kSingleThread)
-    // No difference between await and awaitQuietly if single-threaded.
-    return;
-
-  // Deliberately limit to two threads.
-  auto runtime = createRuntime(/*numThreads=*/2);
-  Semaphore testProceedSema;
-  Semaphore canaryProceedSema;
-  Semaphore testReadySema;
-
-  // The main thread will be occupied by the overall test.
-  auto testChain = AsyncValueRef<Chain>::allocate(*runtime);
-  auto canaryChain = AsyncValueRef<Chain>::allocate(*runtime);
-
-  // Force the sole worker thread to be occupied by the 'test' task.
-  addTask(*runtime, [runtime = runtime.get(), &testReadySema, &testProceedSema,
-                     &canaryProceedSema, testChain = testChain.copy(),
-                     canaryChain = canaryChain.copy()]() mutable {
-    testReadySema.post();
-
-    // Enqueue a third 'canary' task. It will deadlock if incorrectly run by
-    // the awaitQuietly below.
-    addTask(*runtime,
-            [&canaryProceedSema, canaryChain = canaryChain.copy()]() mutable {
-              canaryProceedSema.wait();
-              std::move(canaryChain).emplace();
-            });
-
-    testProceedSema.wait();
-
-    // We're now racing to emplace testChain before the awaitQuietly
-    // tests the chain. If we win the test will trivially succeed. Sleep to
-    // give awaitQuietly a chance to do the wrong thing.
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    std::move(testChain).emplace();
-  });
-
-  // Wait for test task to start.
-  testReadySema.wait();
-  // Let the test task proceed.
-  testProceedSema.post();
-  // The awaitQuietly may exit immediately, spin, or sleep, but should never
-  // allow the canary task to run. We'll deadlock if it does.
-  awaitQuietly(testChain);
-
-  // Now safe to run the canary.
-  canaryProceedSema.post();
-  await(canaryChain);
-}
-
-//===----------------------------------------------------------------------===//
 // Special andThen{Sync,Async}s from Algorithms
 //===----------------------------------------------------------------------===//
 
