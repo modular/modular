@@ -351,6 +351,14 @@ MValue ExprEmitter::emitExprMValue(const ExprNode *node, ASTType resultType,
   return {};
 }
 
+CallableValue ExprEmitter::emitCallable(const ExprNode *node,
+                                        const Twine &errorSuffix) {
+  // Clear the builder to indicate that an MValue must be emitted.
+  llvm::SaveAndRestore<std::optional<OpBuilder>> savedBuilder(builder);
+  builder.reset();
+  return node->emitCallable(*this, /*No Contextual Type*/ {});
+}
+
 /// Emit the specified expression as an LValue which can be loaded and stored.
 /// If contextualType is non-null, then an implicitly declared LValue will be
 /// assigned that type.

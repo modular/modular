@@ -893,6 +893,35 @@ std::pair<MValue, SignatureType> DirectCallable::getCallee() {
   return {MValue(calleeList), calleeType};
 }
 
+/// Utility function to perform subsitutions of the specified callable bindings
+/// into the symbol for the given function declaration. It returns the resultant
+/// SymbolConstantAttr or produces an error message and returns null.
+static SymbolConstantAttr getBoundConstAttrFor(LitSharedState &shared,
+                                               const DirectCallable *callable,
+                                               ASTDecl *fnDecl) {
+  auto funcOp = cast<LIT::FuncOp>(*fnDecl);
+
+  // If there are no input parameters specified and if we allow unbound symbols,
+  // just return the unbound symbol.
+  if (callable->inputParamBindings.bindings.empty())
+    return funcOp.getBoundReference();
+
+  // Check that the signature can be rebound with our set of bindings.
+  ssize_t incorrectBindingNo = 0;
+  ASTType incorrectBindingExpectedType;
+
+  auto newBindings = callable->inputParamBindings.verifyBindings(
+      funcOp.getFullSignature().getInputParams(), callable->baseName,
+      callable->nameLoc, incorrectBindingNo, incorrectBindingExpectedType,
+      shared,
+      /*emit diagnostics*/ funcOp);
+  if (!newBindings)
+    return {};
+
+  // Now that we checked the types match, form the binding.
+  return funcOp.getBoundReference(newBindings);
+}
+
 /// Perform subsitutions of the specified bindings into the symbol, returning
 /// the resultant LITSymbolConstant attr or producing an error message and
 /// returning null. This allows producing a reference to a parameterized
@@ -912,27 +941,28 @@ DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
 
     return {};
   }
+  return getBoundConstAttrFor(shared, this, fnDecls[0]);
+}
 
-  auto funcOp = cast<LIT::FuncOp>(*fnDecls[0]);
-
-  // If there are no input parameters specified and if we allow unbound symbols,
-  // just return the unbound symbol.
-  if (inputParamBindings.bindings.empty())
-    return funcOp.getBoundReference();
-
-  // Check that the signature can be rebound with our set of bindings.
-  ssize_t incorrectBindingNo = 0;
-  ASTType incorrectBindingExpectedType;
-
-  auto newBindings = inputParamBindings.verifyBindings(
-      funcOp.getFullSignature().getInputParams(), baseName, nameLoc,
-      incorrectBindingNo, incorrectBindingExpectedType, shared,
-      /*emit diagnostics*/ funcOp);
-  if (!newBindings)
-    return {};
-
-  // Now that we checked the types match, form the binding.
-  return funcOp.getBoundReference(newBindings);
+LogicalResult DirectCallable::getBoundConstantAttrsAdaptiveSet(
+    LitSharedState &shared, SmallVectorImpl<TypedAttr> &symConstAttrs) const {
+  for (ASTDecl *fnDecl : fnDecls) {
+    auto funcOp = cast<LIT::FuncOp>(*fnDecl);
+    if (!funcOp.getIsAdaptive()) {
+      auto diag =
+          shared.emitError(nameLoc, "cannot form a reference to non @adaptive "
+                                    "declaration of '")
+          << baseName << "'";
+      diag.attachNote(funcOp.getLoc()) << "declared here";
+      return failure();
+    }
+    SymbolConstantAttr symConstAttr =
+        getBoundConstAttrFor(shared, this, fnDecl);
+    if (!symConstAttr)
+      return failure();
+    symConstAttrs.push_back(symConstAttr);
+  }
+  return success();
 }
 
 /// Check declarations for the result parameters and add them to
@@ -1096,6 +1126,16 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   return DRValue(emitter.builder->create<POP::PartialApplyOp>(
       baseVal.expr->getLocation(emitter), calleeDRVal,
       mlir::ValueRange(firstArgValue), zeroAttr));
+}
+
+LogicalResult
+CallableValue::emitAdaptiveSet(IREmitter &emitter,
+                               SmallVectorImpl<TypedAttr> &values) const {
+  // If we have no bound symbol, bail out.
+  if (!direct)
+    return failure();
+
+  return direct->getBoundConstantAttrsAdaptiveSet(emitter.shared, values);
 }
 
 /// Return true if 'value' may be implicitly converted to 'requiredType'

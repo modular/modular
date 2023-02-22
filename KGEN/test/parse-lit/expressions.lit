@@ -626,3 +626,22 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: }
     # CHECK-NEXT: pop.store %[[IF]], %res : !pop.pointer<@"$Bool"::@Bool>
     res = a < b < c and d < e
+
+# CHECK-LABEL: lit.func @"foo_adaptive(){{.*}} {isAdaptive}
+@adaptive
+fn foo_adaptive[x: __mlir_type.index]() -> __mlir_type.index:
+   return 0
+
+# CHECK-LABEL: lit.func @"foo_adaptive()_0{{.*}} {isAdaptive}
+@adaptive
+fn foo_adaptive[x: __mlir_type.index]() -> __mlir_type.index:
+  return 1
+
+# CHECK-LABEL: lit.func @"test_adaptive_set
+fn test_adaptive_set():
+    #CHECK: kgen.param.declare not_bound: variadic<!kgen.signature<<x>() -> index>> =
+    #CHECK-SAME: <[@"{{.*}}foo_adaptive()", @"{{.*}}foo_adaptive()_0"]>
+    alias not_bound = foo_adaptive.__adaptive_set
+    #CHECK-NEXT: kgen.param.declare bound: variadic<!kgen.signature<() -> index>> =
+    #CHECK-SAME: <[@"{{.*}}foo_adaptive()"<x = 1>, @"{{.*}}foo_adaptive()_0"<x = 1>]>
+    alias bound = foo_adaptive[1].__adaptive_set

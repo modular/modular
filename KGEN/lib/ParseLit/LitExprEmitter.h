@@ -138,6 +138,10 @@ public:
   /// Given a value convertable to a pop int via index conversion, emit
   /// the casting code and return the pop scalar index value
   DRValue emitBoxedIntAsPopScalar(Value numberValue, const ExprNode *source);
+
+  /// This helper emits the specified expression as a callable meta value.
+  /// This emits an error if the expression cannot be emitted and returns null.
+  CallableValue emitCallable(const ExprNode *node, const Twine &errorSuffix);
 };
 
 } // namespace M::KGEN::LIT
