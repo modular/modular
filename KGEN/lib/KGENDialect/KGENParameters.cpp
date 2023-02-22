@@ -231,12 +231,11 @@ void VerifyingParameterCollector::verifyRefType(DeclRefType refType) {
     specializedDecls.push_back(
         cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl)));
 
-  SmallString<32> paramName("@");
-  paramName.append(refType.getSymbol().getLeafReference());
   if (failed(verifyParamDeclsMatch("input parameter",
                                    "!kgen.declref symbol use",
                                    refType.getParamValues(), op->getLoc(),
-                                   paramName, specializedDecls, decl.getLoc())))
+                                   refType.getSymbol().getLeafReference(),
+                                   specializedDecls, decl.getLoc())))
     hadError = true;
 }
 

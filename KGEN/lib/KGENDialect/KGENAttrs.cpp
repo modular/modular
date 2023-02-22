@@ -506,10 +506,8 @@ LogicalResult SymbolConstantAttr::verifySymbolUses(
 
   // Parameter types match exactly.  We could support higher order rebinding
   // if there is a need.
-  SmallString<32> paramName("@");
-  paramName.append(symbol.getLeafReference());
   return verifyDeclSignaturesMatch("symbol use", getType(), loc,
-                                   paramName.c_str(), declSignature,
+                                   symbol.getLeafReference(), declSignature,
                                    func->getLoc());
 }
 
