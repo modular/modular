@@ -122,7 +122,7 @@ public:
   ///
   /// This diagnoses the expression with the specified message if it isn't a
   /// valid LValue.
-  LValue emitExprLValue(SMLoc loc, const ExprNode *node, ASTType contextualType,
+  LValue emitExprLValue(SMLoc loc, const ExprNode *node, ValueDest dest,
                         const Twine &message);
 
   /// This helper emits the specified expression tree as a type, e.g. turning
@@ -142,6 +142,41 @@ public:
   /// This helper emits the specified expression as a callable meta value.
   /// This emits an error if the expression cannot be emitted and returns null.
   CallableValue emitCallable(const ExprNode *node, const Twine &errorSuffix);
+};
+
+/// This class represents the destination context than an expression is being
+/// emitted, when it may produce an RValue.  Example destinations include:
+///   - an LValue:
+///       This handles cases like `a.b = 42` or `var x: Int = 42`, as well as
+///       a return slot with memory-primary results in `return x()`.  In this
+///       case, the emitted expression must conform to type of the LValue.
+///   - an untyped var decl, e.g. `var x = 42`
+///       In this case, the ExprNode conforms to the initializer expression.
+///   - an ExprNode:
+///       This handles assignments to "targets" (Python nomenclature), e.g.:
+///          1) a discard pattern, e.g. `_ = 42`
+///          2) an implicitly declared var decl, e.g. `x = 42` in a def.
+///          3) tuples and lists thereof, e.g. `(a, _) = foo()`
+///       In this case, the ExprNode type often conforms to the expression.
+///
+/// Any expression may also have no proscribed result (as in the case of
+/// `someExpr()`), in which case emission will create storage when needed on
+/// demand.
+class ValueDest {
+  // TODO: Operation* for let/vardecl.
+  // TODO: PointerUnion<LValue, ExprNode *> representation;
+  Type contextualType;
+
+public:
+  /*implicit*/
+  ValueDest(Type contextualType = Type()) : contextualType(contextualType) {}
+  ValueDest(const ValueDest &) = default;
+
+  Type getContextualType() const { return contextualType; }
+
+  // TODO:
+  // explicit ValueDest(ExprNode *target) : representation(target) {}
+  // explicit ValueDest(LValue lv) : representation(lv) {}
 };
 
 } // namespace M::KGEN::LIT

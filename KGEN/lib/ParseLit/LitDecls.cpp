@@ -1746,7 +1746,7 @@ ParseResult ParsedLetVarDecl::parse(LitLexer &lexer, ASTDecl &decl) {
   return success();
 }
 
-/// Emit the initializer at hte specified point and convert it to the declared
+/// Emit the initializer at the specified point and convert it to the declared
 /// type if known.
 std::pair<DRValue, OpBuilder>
 ParsedLetVarDecl::emitInitValue(Operation *declOp, ASTDecl &decl,

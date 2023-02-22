@@ -46,7 +46,7 @@ struct IntLiteralNode final : public ExprNode {
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
   LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
 
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 };
 
 struct FloatLiteralNode final : public ExprNode {
@@ -60,7 +60,7 @@ struct FloatLiteralNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
   LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 };
 
 struct BoolLiteralNode final : public ExprNode {
@@ -76,7 +76,7 @@ struct BoolLiteralNode final : public ExprNode {
 
   SMLoc getLoc() const override { return loc; }
   LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 };
 
 struct SelfLiteralNode final : public ExprNode {
@@ -90,7 +90,7 @@ struct SelfLiteralNode final : public ExprNode {
 
   SMLoc getLoc() const override { return loc; }
   LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 };
 
 struct StringLiteralNode final : public ExprNode {
@@ -104,7 +104,7 @@ struct StringLiteralNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
   LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 };
 
 struct NoneLiteralNode final : public ExprNode {
@@ -118,7 +118,7 @@ struct NoneLiteralNode final : public ExprNode {
   SMLoc getLoc() const override { return loc; }
   LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
 
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 };
 
 struct DeclRefNode final : public ExprNode {
@@ -129,9 +129,9 @@ struct DeclRefNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kDeclRef; }
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
   LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
   CallableValue emitCallable(ExprEmitter &emitter,
-                             ASTType contextualType) const override;
+                             ValueDest dest) const override;
 };
 
 struct AttributeRefNode final : public ExprNode {
@@ -153,9 +153,9 @@ struct AttributeRefNode final : public ExprNode {
   LitSourceRange getRange() const override {
     return {base->getRangeStart(), getAttributeNameLoc()};
   }
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
   CallableValue emitCallable(ExprEmitter &emitter,
-                             ASTType contextualType) const override;
+                             ValueDest dest) const override;
 };
 
 struct CallNode final : public ExprNode {
@@ -175,7 +175,7 @@ struct CallNode final : public ExprNode {
     return {callee->getRangeStart(), rparenLoc};
   }
   LitSourceRange getParenRange() const { return {lparenLoc, rparenLoc}; }
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 };
 
 /// This represents `A[i,j]`.  In the case of slices (e.g. `A[i, ::]`), the
@@ -199,9 +199,9 @@ struct SubscriptNode final : public ExprNode {
   /// Return a source range from '[' to ']'.
   LitSourceRange getIndexRange() const { return {lsquareLoc, rsquareLoc}; }
 
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
   CallableValue emitCallable(ExprEmitter &emitter,
-                             ASTType contextualType) const override;
+                             ValueDest dest) const override;
 };
 
 /// This represents `A[i,j -> a, b]`.  In the case of slices (e.g. `A[i, ::]`),
@@ -226,9 +226,9 @@ struct SubscriptArrowNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return lsquareLoc; }
   LitSourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
   CallableValue emitCallable(ExprEmitter &emitter,
-                             ASTType contextualType) const override;
+                             ValueDest dest) const override;
 };
 
 /// This is an expression that produces a slice value in a SubscriptNode index
@@ -263,7 +263,7 @@ struct SliceNode final : public ExprNode {
     return {startLoc, colon1Loc};
   }
 
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 };
 
 struct ParenNode final : public ExprNode {
@@ -278,10 +278,10 @@ struct ParenNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kParen; }
   SMLoc getLoc() const override { return lparenLoc; }
   LitSourceRange getRange() const override { return {lparenLoc, rparenLoc}; }
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 
   CallableValue emitCallable(ExprEmitter &emitter,
-                             ASTType contextualType) const override;
+                             ValueDest dest) const override;
 };
 
 /// (a, b, c)
@@ -297,7 +297,7 @@ struct TupleNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kTuple; }
   SMLoc getLoc() const override { return lparenLoc; }
   LitSourceRange getRange() const override { return {lparenLoc, rparenLoc}; }
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 };
 
 /// [a, b, c]
@@ -313,7 +313,7 @@ struct ListNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kList; }
   SMLoc getLoc() const override { return lsquareLoc; }
   LitSourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 };
 
 /// This represents `{key1: value1, key2: value2, **dictunpack}` expressions.
@@ -336,7 +336,7 @@ struct DictionaryNode final : public ExprNode {
   SMLoc getLoc() const override { return lbraceLoc; }
   LitSourceRange getRange() const override { return {lbraceLoc, rbraceLoc}; }
 
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 };
 
 /// This represents `expr{x:y, **unpack}` using DictionaryNode as the storage.
@@ -355,7 +355,7 @@ struct DictSubscriptNode final : public ExprNode {
     return {base->getRangeStart(), indices->rbraceLoc};
   }
 
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
   AnyValue emitTypeSubscriptIR(ASTType initType, ExprEmitter &emitter) const;
 };
 
@@ -378,7 +378,7 @@ struct IfElseOpNode final : public ExprNode {
   LitSourceRange getRange() const override {
     return {trueExpr->getRangeStart(), falseExpr->getRangeEnd()};
   }
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 };
 
 struct BinOpNode final : public ExprNode {
@@ -403,7 +403,7 @@ struct BinOpNode final : public ExprNode {
     return {lhs->getRangeStart(), rhs->getRangeEnd()};
   }
 
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 
 private:
   AnyValue emitAndOr(ExprEmitter &emitter) const;
@@ -425,7 +425,7 @@ struct UnaryOpNode final : public ExprNode {
   LitSourceRange getRange() const override {
     return {opLoc, subExpr->getRangeEnd()};
   }
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 };
 
 /// This represents a chained comparison expression (ex. a < b <= c).
@@ -449,7 +449,7 @@ struct ChainedCmpOpNode final : public ExprNode {
     return {exprs.front()->getRangeStart(), exprs.back()->getRangeEnd()};
   }
 
-  AnyValue emitIR(ExprEmitter &emitter, ASTType contextualType) const override;
+  AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
   AnyValue emitNextCmp(ExprEmitter &emitter, size_t opIdx, DRValue lastCmp,
                        DRValue lastExpr) const;
 };

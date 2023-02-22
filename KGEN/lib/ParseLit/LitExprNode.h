@@ -22,6 +22,7 @@ class CallableValue;
 class IREmitter;
 class ExprEmitter;
 class LitSourceRange;
+class ValueDest;
 
 //===----------------------------------------------------------------------===//
 // ExprNode
@@ -134,15 +135,14 @@ public:
   llvm::SMLoc getRangeEnd() const;
 
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
-  /// contextualType (if non-null) indicates the contextual type to use for an
-  /// implicitly declared value, e.g. a/b in `def f(): (a,b) = (1,2)`.
-  virtual AnyValue emitIR(ExprEmitter &emitter,
-                          ASTType contextualType) const = 0;
+  /// ValueDest indicates information about where to emit the expression result
+  /// into, e.g. the a/b target in `def f(): (a,b) = (1,2)`.
+  virtual AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const = 0;
 
   /// Emit this expression to MLIR as a CallableValue.  On error, emit an error
   /// and return a null value.
   virtual CallableValue emitCallable(ExprEmitter &emitter,
-                                     ASTType contextualType) const;
+                                     ValueDest dest) const;
 };
 
 } // namespace M::KGEN::LIT
