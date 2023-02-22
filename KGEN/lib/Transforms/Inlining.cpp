@@ -485,7 +485,7 @@ void AlwaysInlineParametricPass::runOnOperation() {
     // Don't compute the graph inside the critical section. This means it's
     // possible for more than one thread to compute the graph for the same
     // generator, but it also means that computations can be parallelized if
-    // they are different.
+
     auto graph = std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
     graph->calculate(paramCache);
 
@@ -493,19 +493,20 @@ void AlwaysInlineParametricPass::runOnOperation() {
     return *graphs.try_emplace(gen, std::move(graph)).first->second;
   };
 
-  struct WorkInfo {
-    GeneratorOp gen;
-    ParameterCollector::Analysis cache;
-  };
-  std::vector<WorkInfo> rootGens;
+  std::vector<GeneratorOp> rootGens;
   for (auto gen : getOperation().getOps<GeneratorOp>()) {
     // Skip over functions that are force inlined. Start inlining from the tips.
     if (gen.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
       continue;
-    rootGens.push_back(WorkInfo{gen, paramCache});
+    rootGens.push_back(gen);
   }
-  auto workFunc = [&symtab, &getGraph](WorkInfo &info) {
-    return inlineGeneratorCall(info.gen, symtab, info.cache, getGraph);
+  auto workFunc = [&symtab, &getGraph, &paramCache](GeneratorOp gen) mutable {
+    // Copy the cache `ParameterCollector` since it is not thread-safe (yet).
+    // FIXME: We should be able to elide the parameter use-def graph analysis
+    // since the parameter verifier runs before this pass, and run this in
+    // parallel.
+    ParameterCollector::Analysis cacheCopy = paramCache;
+    return inlineGeneratorCall(gen, symtab, cacheCopy, getGraph);
   };
   if (failed(mlir::failableParallelForEach(&getContext(), rootGens, workFunc)))
     return signalPassFailure();
