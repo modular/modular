@@ -180,6 +180,7 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
              "Symbol redefinition/collision");
       declForTypeSymbol[symbol] = decl;
     }
+
     return *decl;
   }
 
@@ -1517,9 +1518,13 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     }
   }
 
+  // Remember the mapping from its fully mangled symbol so we can find its AST
+  // representation and body from IR references.
+  SymbolRefAttr symbolName = getFullyResolvedSymbolRef(funcOp);
+  declForFuncSymbol[symbolName] = &decl;
+
   // TODO: Handle the export attribute somehow else.  It should be a 'body
   // decorator' that is handled after the decl is fully resolved.
-  SymbolRefAttr symbolName = getFullyResolvedSymbolRef(funcOp);
   FnDecorators(decl, shared).applyLate(symbolName, baseName, decoratorExprs);
 
   // If have a main function, fn main(), export it automatically.
