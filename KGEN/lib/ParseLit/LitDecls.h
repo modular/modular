@@ -181,6 +181,11 @@ private:
   /// DeclRefType: StructTypes, aliases, etc.
   DenseMap<SymbolRefAttr, ASTDecl *> declForTypeSymbol;
 
+  /// This map tracks the ASTDecl for every LIT::FuncOp, allowing clients to map
+  /// from MLIR symbol references to their body and AST information.  This is
+  /// populated during signature resolution, since the symbol will be mangled.
+  DenseMap<SymbolRefAttr, ASTDecl *> declForFuncSymbol;
+
   /// This map tracks the exported function names and their locations so that
   /// we can check if they are unique.
   /// Note: these StringRef keys cannot dangle because they point to the parsed
