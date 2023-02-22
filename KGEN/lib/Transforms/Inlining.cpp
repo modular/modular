@@ -447,6 +447,7 @@ static LogicalResult inlineGeneratorCall(
                             rebindReturnOperands(b, newReturn, call), label);
     newReturn.erase();
 
+    bool hasNestedReturn = false;
     callee.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
       // Walk over nested functions. Control-flow does not cross them.
       if (op != callee && isa<FuncInterface>(op))
@@ -454,6 +455,7 @@ static LogicalResult inlineGeneratorCall(
       auto returnOp = dyn_cast<HLCF::ReturnOp>(op);
       if (!returnOp)
         return WalkResult::advance();
+      hasNestedReturn = true;
       auto cloned = cast<HLCF::ReturnOp>(map.lookup(returnOp));
       b.setInsertionPoint(cloned);
       b.create<HLCF::BreakOp>(cloned.getLoc(),
@@ -461,8 +463,16 @@ static LogicalResult inlineGeneratorCall(
       cloned.erase();
       return WalkResult::advance();
     });
-
     b.replaceOp(call, scope.getResults());
+
+    // If the scope was trivial (one return), fold it away.
+    if (!hasNestedReturn) {
+      for (Operation &op : llvm::make_early_inc_range(
+               scope.getBody().front().without_terminator()))
+        op.moveBefore(scope);
+      b.replaceOp(scope,
+                  scope.getBody().front().getTerminator()->getOperands());
+    }
   }
   assert(callstack.empty() && seenFuncs.empty());
   return success();
@@ -637,8 +647,6 @@ static LogicalResult inlineFunctionCall(FuncOp func,
     });
     b.replaceOp(call, scope.getResults());
     // If the scope was trivial (one return), fold it away.
-    // FIXME: This is required to work around a bug (?) in one of LLVM's
-    // IRTranslator passes when compiling with `kgen -O0 -debug-level=full`.
     assert(numReturns > 0);
     if (numReturns == 1) {
       for (Operation &op : llvm::make_early_inc_range(

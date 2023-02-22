@@ -4,7 +4,9 @@
 kgen.generator @parent() -> index {
   // CHECK: %[[RES:.*]] = hlcf.loop "[[LABEL:.*]]" () -> index
     // CHECK-NEXT: index.constant 0 loc(#[[INLINED_LOC:.*]])
-    // CHECK-NEXT: hlcf.break "[[LABEL]]" %idx0 : index
+    // CHECK: hlcf.if
+      // CHECK-NEXT: hlcf.break "[[LABEL]]" %idx0 : index
+    // CHECK: hlcf.break "[[LABEL]]" %idx0 : index
   // CHECK-NEXT: } loc(#[[CALL_LOC:.*]])
   // CHECK-NOT: kgen.call @callee
   %0 = kgen.call @callee() : () -> index
@@ -16,6 +18,12 @@ kgen.generator @parent() -> index {
 kgen.generator @callee() -> index always_inline {
   // CHECK: index.constant 0 loc(#[[CALLEE_LOC:.*]])
   %0 = index.constant 0
+  %false = index.bool.constant false
+  hlcf.if %false {
+    hlcf.return %0 : index
+  } else {
+    hlcf.yield
+  }
   kgen.return %0 : index
 }
 
@@ -77,7 +85,6 @@ kgen.generator @callee<T: type>() -> !kgen.paramref<T> always_inline {
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<A>() {
-  // CHECK: hlcf.loop
   // CHECK-NEXT: declare A0 = <1>
   // CHECK-NEXT: constant = <A0>
   // CHECK-NOT: kgen.call @callee
@@ -97,7 +104,6 @@ kgen.generator @callee<A>() -> index always_inline {
 kgen.generator @parent<A: i64>() {
   // CHECK: declare B: i64 = <A>
   kgen.param.declare B: i64 = <A>
-  // CHECK: hlcf.loop
   // CHECK-NEXT: declare A0: i32 = <1>
   // CHECK-NEXT: constant: i32 = <A0>
   // CHECK-NOT: kgen.call @callee
@@ -117,7 +123,6 @@ kgen.generator @callee<A: i32 >() -> i32 always_inline {
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<A>() -> index {
-  // CHECK: hlcf.loop
   // CHECK-NEXT: declare A0 = <A>
   // CHECK-NEXT: constant = <A0>
   // CHECK-NOT: kgen.call @callee
@@ -137,7 +142,6 @@ kgen.generator @callee<A>() -> index always_inline {
 kgen.generator @parent<A>() {
   // CHECK: kgen.param.declare.region
   kgen.param.declare.region B = <A>() {
-    // CHECK-NEXT: hlcf.loop
     // CHECK-NEXT: declare A0 = <A>
     // CHECK-NEXT: constant = <A0>
     // CHECK-NOT: kgen.call @callee
@@ -159,7 +163,6 @@ kgen.generator @callee<A>() always_inline {
 kgen.generator @parent<A>() {
   // CHECK: kgen.param.declare.region
   kgen.param.declare.region B = <C>() {
-    // CHECK-NEXT: hlcf.loop
     // CHECK-NEXT: declare A0 = <C>
     // CHECK-NEXT: declare C0 = <A>
     // CHECK-NEXT: constant = <A0>
@@ -184,7 +187,6 @@ kgen.generator @callee<A, C>() always_inline {
 kgen.generator @parent<A>() {
   // CHECK: kgen.param.declare.region
   kgen.param.declare.region B = <C>() {
-    // CHECK-NEXT: hlcf.loop
     // CHECK-NEXT: declare A0 = <A>
     // CHECK-NEXT: declare C0 = <C>
     // CHECK-NEXT: constant = <A0>
@@ -211,7 +213,6 @@ kgen.generator @parent<A, B, C>() {
   kgen.param.declare.region F = <A>() {
     // CHECK-NEXT: kgen.param.declare.region G
     kgen.param.declare.region G = <B>() {
-      // CHECK-NEXT: hlcf.loop
       // CHECK-NEXT: declare A0 = <A>
       // CHECK-NEXT: declare B0 = <B>
       // CHECK-NEXT: declare C0 = <C>
@@ -239,7 +240,6 @@ kgen.generator @callee<A, B, C>() always_inline {
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<A>() {
-// CHECK: hlcf.loop
 // CHECK-NOT: kgen.call @callee
   kgen.call @callee<B = 1>() : () -> ()
   kgen.return
@@ -256,7 +256,6 @@ kgen.generator @callee<B>() always_inline {
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<A>() {
-  // CHECK: hlcf.loop
   // CHECK-NEXT: declare B = <1>
   // CHECK-NEXT: declare.region A0 = ()
   // CHECK: call_param[() -> (): A0]()
@@ -278,7 +277,6 @@ kgen.generator @callee<B>() always_inline {
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<A>() {
-  // CHECK: hlcf.loop
   // CHECK-NEXT: declare B = <A>
   // CHECK-NEXT: call @result_params<() -> A0 = A>()
   // CHECK-NEXT: constant = <A0>
@@ -302,7 +300,6 @@ kgen.generator @result_params<() -> A>() {
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<B>() {
-  // CHECK: hlcf.loop
   // CHECK-NEXT: declare A0 = <B>
   // CHECK-NEXT: declare A = <A0>
   // CHECK-NOT: kgen.call @callee
@@ -320,7 +317,6 @@ kgen.generator @callee<A -> B>() always_inline {
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<B>() {
-  // CHECK: hlcf.loop
   // CHECK-NEXT: declare A0 = <B>
   // CHECK-NEXT: declare.region F = <A, B>
   // CHECK-NEXT: constant = <A>
@@ -347,7 +343,6 @@ kgen.generator @callee<A -> B>() always_inline {
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<B>() {
-  // CHECK: hlcf.loop
   // CHECK-NEXT: declare A0 = <B>
   // CHECK-NEXT: declare.region F = <B>
   // CHECK-NEXT:   constant = <A0>
@@ -376,7 +371,6 @@ kgen.generator @callee<A -> B>() always_inline {
 kgen.generator @parent<B>() {
   // CHECK-NEXT: declare A = <B>
   kgen.param.declare A = <B>
-  // CHECK: hlcf.loop
   // CHECK-NEXT: declare A0 = <B>
   // CHECK-NEXT: declare.region F = <B>
   // CHECK-NEXT:   constant = <A0>
@@ -404,7 +398,6 @@ kgen.generator @callee<A>() always_inline {
 kgen.generator @parent() {
   // CHECK: declare A = <1>
   kgen.param.declare A = <1>
-  // CHECK-NEXT: hlcf.loop
   // CHECK-NEXT: declare A0 = <2>
   // CHECK-NEXT: declare.region F
   // CHECK-NEXT:   constant = <A0>
@@ -433,7 +426,6 @@ kgen.generator @callee() always_inline {
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent() {
-  // CHECK-NEXT: hlcf.loop
   // CHECK: declare.region F
     // CHECK-NEXT: hlcf.if
       // CHECK-NEXT: hlcf.return
@@ -542,9 +534,9 @@ kgen.generator @callee<type: dtype>(%arg0: !pop.scalar<type>) always_inline {
 // CHECK-LABEL: kgen.generator @rebind_mangled_types
 kgen.generator @rebind_mangled_types<type: dtype>(%arg0: !pop.scalar<type>) {
   // CHECK: kgen.param.declare type0: dtype = <type>
-  // CHECK-NEXT: %1 = kgen.rebind %arg0 : !pop.scalar<type> to !pop.scalar<type0>
-  // CHECK: %2 = pop.simd.extractelement %1[%idx0] : !pop.scalar<type0>
-  // CHECK: %3 = kgen.rebind %2 : !pop.scalar<type0> to !pop.scalar<type>
+  // CHECK-NEXT: %0 = kgen.rebind %arg0 : !pop.scalar<type> to !pop.scalar<type0>
+  // CHECK: %1 = pop.simd.extractelement %0[%idx0] : !pop.scalar<type0>
+  // CHECK: %2 = kgen.rebind %1 : !pop.scalar<type0> to !pop.scalar<type>
   %0 = kgen.call @callee<type: dtype = type>(%arg0) : (!pop.scalar<type>) -> !pop.scalar<type>
   kgen.return
 }
@@ -713,7 +705,7 @@ kgen.generator @callee<A>() always_inline constraints <[eq(A, 1), "A == 1"]> {
 kgen.generator @parent<T: type>(%arg0: index) {
   // CHECK: kgen.param.declare T0: type = <index> loc(#[[CALL_LOC:.*]])
   // CHECK-NEXT: kgen.rebind %arg0 : index to !kgen.paramref<T0> loc(#[[CALL_LOC]])
-  // CHECK-NEXT: hlcf.break
+  // CHECK-NEXT: kgen.return
   kgen.call @nodebug_inline_me<T: type = index>(%arg0) : (index) -> ()
   kgen.return
 }
