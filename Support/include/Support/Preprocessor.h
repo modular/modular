@@ -16,6 +16,6 @@
 
 #define CONCAT(a, b) CONCAT_INNER(a, b)
 #define CONCAT_INNER(a, b) a##b
-#define UNIQUE_NAME(base) CONCAT(base, __COUNTER__)
+#define M_UNIQUE_NAME(base) CONCAT(base, __COUNTER__)
 
 #endif // SUPPORT_PREPROCESSOR_H
