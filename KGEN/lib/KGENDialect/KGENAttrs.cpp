@@ -486,23 +486,12 @@ LogicalResult SymbolConstantAttr::verifySymbolUses(
     llvm::append_range(inputParams,
                        ::cast<DeclInterface>(op).getInputParamDecls());
 
-  auto declSignature = SignatureType::get(
-      ParamDeclArrayAttr::get(func.getContext(), inputParams),
-      ParamDeclArrayAttr::get(func.getContext(), func.getResultParams()),
-      func.getSignature().getValues(), func.getMetadata());
-
-  // If this SymbolConstant binds the parameters for the symbol, then remap its
-  // signature to include the substitutions.
-  if (!getParamValues().empty()) {
-    SignatureType result = declSignature.getSpecializedSignature(
-        getParamValues(), [&]() { return emitError(loc); });
-    if (!result)
-      return failure();
-
-    // The signature we just got back has all the parameters we just substituted
-    // in as part of the signature and handles the unbound case correctly.
-    declSignature = result;
-  }
+  auto declSignature = SignatureType::getSpecializedSignature(
+      getParamValues(), [&] { return emitError(loc); }, inputParams,
+      func.getResultParams(), func.getSignature().getValues(),
+      func.getMetadata());
+  if (!declSignature)
+    return failure();
 
   // Parameter types match exactly.  We could support higher order rebinding
   // if there is a need.

@@ -233,16 +233,6 @@ SignatureType SignatureType::getSpecializedSignature(
     function_ref<InFlightDiagnostic()> emitErrorFn) {
   TimeTraceScope<> traceScope("SignatureType::getSpecializedSignature");
 
-  // We need to substitute and simplify expressions that occur in the argument
-  // list and parameter types, e.g.:
-  //     kgen.generator @callee1<type: dtype>(%x: !pop.scalar<type>)
-  //     kgen.generator @callee2<size>(%x: !pop.simd<size, f32>)
-  // ... call @callee1<type: dtype = f32>(%arg1) : (!pop.scalar<f32>) -> ()
-  // ... call @callee2<size=4>(%arg2) : (!pop.simd<4, f32>) -> ()
-  //
-  // This can also occur in parameter types, e.g. for region types (dt vs f32):
-  //     kgen.generator @g<dt: dtype, region: () -> !pop.scalar<dt>>(...
-  //     call @g<dt: dtype = f32, region: () -> !pop.scalar<f32>(...
   if (inputParamValues.size() != getInputParams().size()) {
     emitErrorFn() << "caller has " << inputParamValues.size()
                   << " input parameters but callee expects "
@@ -254,6 +244,17 @@ SignatureType SignatureType::getSpecializedSignature(
   // perform.
   if (inputParamValues.empty())
     return *this;
+
+  // We need to substitute and simplify expressions that occur in the argument
+  // list and parameter types, e.g.:
+  //     kgen.generator @callee1<type: dtype>(%x: !pop.scalar<type>)
+  //     kgen.generator @callee2<size>(%x: !pop.simd<size, f32>)
+  // ... call @callee1<type: dtype = f32>(%arg1) : (!pop.scalar<f32>) -> ()
+  // ... call @callee2<size=4>(%arg2) : (!pop.simd<4, f32>) -> ()
+  //
+  // This can also occur in parameter types, e.g. for region types (dt vs f32):
+  //     kgen.generator @g<dt: dtype, region: () -> !pop.scalar<dt>>(...
+  //     call @g<dt: dtype = f32, region: () -> !pop.scalar<f32>(...
 
   // We do this with with ParameterEvaluator which can do the remapping for us.
   ParameterEvaluator evaluator;
@@ -322,6 +323,102 @@ SignatureType SignatureType::getSpecializedSignature(
       ParamDeclArrayAttr::get(getContext(), unboundDecls),
       ParamDeclArrayAttr::get(getContext(), newParamResults),
       FunctionType::get(getContext(), inputTypes, resultTypes), getMetadata());
+}
+
+SignatureType SignatureType::getSpecializedSignature(
+    ArrayRef<ParamBindAttr> inputParamValues,
+    function_ref<InFlightDiagnostic()> emitErrorFn,
+    ArrayRef<ParamDeclAttr> inputParams, ArrayRef<ParamDeclAttr> resultParams,
+    FunctionType values, MetadataAttr metadata) {
+  TimeTraceScope<> traceScope("SignatureType::getSpecializedSignature");
+
+  // If the signature isn't parameterized, then there are no substitutions to
+  // perform.
+  MLIRContext *ctx = values.getContext();
+  if (inputParamValues.empty())
+    return SignatureType::get(ParamDeclArrayAttr::get(ctx, inputParams),
+                              ParamDeclArrayAttr::get(ctx, resultParams),
+                              values, metadata);
+
+  // We need to substitute and simplify expressions that occur in the argument
+  // list and parameter types, e.g.:
+  //     kgen.generator @callee1<type: dtype>(%x: !pop.scalar<type>)
+  //     kgen.generator @callee2<size>(%x: !pop.simd<size, f32>)
+  // ... call @callee1<type: dtype = f32>(%arg1) : (!pop.scalar<f32>) -> ()
+  // ... call @callee2<size=4>(%arg2) : (!pop.simd<4, f32>) -> ()
+  //
+  // This can also occur in parameter types, e.g. for region types (dt vs f32):
+  //     kgen.generator @g<dt: dtype, region: () -> !pop.scalar<dt>>(...
+  //     call @g<dt: dtype = f32, region: () -> !pop.scalar<f32>(...
+
+  // We do this with with ParameterEvaluator which can do the remapping for us.
+  ParameterEvaluator evaluator;
+
+  auto remapType = [&](Type type) -> Type {
+    return evaluator.getReboundType(type);
+  };
+
+  unsigned paramNo = 0;
+  SmallVector<ParamDeclAttr, 16> unboundDecls;
+  for (auto [bind, decl] : llvm::zip(inputParamValues, inputParams)) {
+    if (bind.getName() != decl.getName()) {
+      emitErrorFn() << "caller input parameter #" << paramNo << " has name "
+                    << bind.getName() << " but callee expected name "
+                    << decl.getName();
+      return SignatureType();
+    }
+
+    // Bound parameters are allowed to refine the type of subsequent parameters,
+    // e.g. in `<ty: type, fn: () -> !kgen.paramref<ty>>`, the expected type of
+    // the second parameter will be refined when the first parameter is bound.
+    auto remappedDeclType = remapType(decl.getType());
+    if (bind.getType() != remappedDeclType) {
+      emitErrorFn() << "caller input parameter #" << paramNo << " has type "
+                    << bind.getType() << " but callee expected type "
+                    << remappedDeclType;
+      return SignatureType();
+    }
+
+    // If we're attempting to bind to an unknown attribute, we need to update
+    // the decl, and keep it around so that we can continue to use it (as in a
+    // partial bind).
+    if (bind.getValue().isa<UnboundAttr>()) {
+      unboundDecls.push_back(
+          ParamDeclAttr::get(decl.getName(), remappedDeclType));
+      // Set the binding to a declref of the thing itself - that will keep it
+      // from becoming #kgen.unbound.
+      evaluator.setParameterValue(decl, ParamDeclRefAttr::get(decl));
+    } else {
+      evaluator.setParameterValue(bind.getName(), bind.getValue());
+    }
+
+    ++paramNo;
+  }
+
+  // FIXME: Signature typed attributes need to contain result parameter
+  // declarations. For now, just bind them to themselves.
+  for (ParamDeclAttr decl : resultParams)
+    evaluator.setParameterValue(decl, ParamDeclRefAttr::get(decl));
+
+  // Remap the parameter decls and result parameter types.
+  SmallVector<ParamDeclAttr, 16> newParamResults;
+  llvm::append_range(
+      newParamResults, llvm::map_range(resultParams, [&](ParamDeclAttr param) {
+        return ParamDeclAttr::get(param.getName(), remapType(param.getType()));
+      }));
+
+  // Remap the value types.
+  SmallVector<Type, 16> inputTypes, resultTypes;
+  llvm::append_range(inputTypes,
+                     llvm::map_range(values.getInputs(), remapType));
+  llvm::append_range(resultTypes,
+                     llvm::map_range(values.getResults(), remapType));
+
+  return SignatureType::get(
+      ParamDeclArrayAttr::get(values.getContext(), unboundDecls),
+      ParamDeclArrayAttr::get(values.getContext(), newParamResults),
+      FunctionType::get(values.getContext(), inputTypes, resultTypes),
+      metadata);
 }
 
 ArrayRef<Type> SignatureType::getValueInputs() const {
