@@ -47,24 +47,12 @@ using ResultType = typename UnwrapErrorOr<std::invoke_result_t<F>>::type;
 /// are ready.
 inline static void await(ArrayRef<AnyAsyncValueRef> values) {
   if (!values.empty())
-    values[0].getRuntime()->getWorkQueue()->await(values,
-                                                  /*runNewTasks=*/true);
+    values[0].getRuntime()->getWorkQueue()->await(values);
 }
 
 template <typename T>
 inline static void await(const AsyncValueRef<T> &value) {
   await(ArrayRef<AnyAsyncValueRef>(value));
-}
-
-inline static void awaitQuietly(ArrayRef<AnyAsyncValueRef> values) {
-  if (!values.empty())
-    values[0].getRuntime()->getWorkQueue()->await(values,
-                                                  /*runNewTasks=*/false);
-}
-
-template <typename T>
-inline static void awaitQuietly(const AsyncValueRef<T> &value) {
-  awaitQuietly(ArrayRef<AnyAsyncValueRef>(value));
 }
 
 //===----------------------------------------------------------------------===//
