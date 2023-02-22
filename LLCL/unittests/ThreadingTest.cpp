@@ -103,19 +103,17 @@ TEST(Threading, GetLinuxX86CPUSystemInfoImpl) {
   EXPECT_EQ(str,
             "CPUSystemInfo(Socket({0}, {1, 4}, {2, 5}), Socket({6}, {7}))");
 
-  EXPECT_EQ(info.sockets.size(), 2UL);
-  EXPECT_EQ(info.sockets[0].physicalCores.size(), 3UL);
+  ASSERT_EQ(info.sockets.size(), 2UL);
+  ASSERT_EQ(info.sockets[0].physicalCores.size(), 3UL);
   EXPECT_EQ(info.sockets[0].physicalCores[0].virtualCores.size(), 1UL);
   EXPECT_EQ(info.sockets[0].physicalCores[1].virtualCores.size(), 2UL);
   EXPECT_EQ(info.sockets[0].physicalCores[2].virtualCores.size(), 2UL);
-  EXPECT_EQ(info.sockets[1].physicalCores.size(), 2UL);
+  ASSERT_EQ(info.sockets[1].physicalCores.size(), 2UL);
   EXPECT_EQ(info.sockets[1].physicalCores[0].virtualCores.size(), 1UL);
   EXPECT_EQ(info.sockets[1].physicalCores[1].virtualCores.size(), 1UL);
 
   std::vector<size_t> actualCpuIDs = info.getPreferredCpuIDs(9);
   std::vector<size_t> expectedCpuIds = {0, 1, 2, 6, 7, 4, 5, 0, 1};
-  EXPECT_EQ(actualCpuIDs.size(), 9UL);
-  for (size_t i = 0; i < actualCpuIDs.size(); ++i)
-    EXPECT_EQ(actualCpuIDs[i], expectedCpuIds[i]) << "index " << i;
+  EXPECT_EQ(actualCpuIDs, expectedCpuIds);
 }
 #endif
