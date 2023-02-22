@@ -37,8 +37,8 @@ void ParameterCollector::collectUsesFromAttr(
   // return early.
   if (!attr)
     return;
-  if (auto it = parameterLess.find(attr.getAsOpaquePointer());
-      it != parameterLess.end()) {
+  if (auto it = cache.parameterLess.find(attr.getAsOpaquePointer());
+      it != cache.parameterLess.end()) {
     hasConstExpr |= it->second;
     return;
   }
@@ -77,7 +77,8 @@ void ParameterCollector::collectUsesFromAttr(
   if (oldSize == uses.size()) {
     // Check whether this is a parameterless expression.
     hasNestedConstExpr |= isa<ParamOperatorAttr>(attr);
-    parameterLess.try_emplace(attr.getAsOpaquePointer(), hasNestedConstExpr);
+    cache.parameterLess.try_emplace(attr.getAsOpaquePointer(),
+                                    hasNestedConstExpr);
     hasConstExpr |= hasNestedConstExpr;
   }
 }
@@ -107,8 +108,8 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // Ignore types we have already scanned.
   if (!type)
     return;
-  if (auto it = parameterLess.find(type.getAsOpaquePointer());
-      it != parameterLess.end()) {
+  if (auto it = cache.parameterLess.find(type.getAsOpaquePointer());
+      it != cache.parameterLess.end()) {
     hasConstExpr |= it->second;
     return;
   }
@@ -134,23 +135,10 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // "parameterless".  We want other operations using the same type to record
   // the uses as well.
   if (oldSize == uses.size()) {
-    parameterLess.try_emplace(type.getAsOpaquePointer(), hasNestedConstExpr);
+    cache.parameterLess.try_emplace(type.getAsOpaquePointer(),
+                                    hasNestedConstExpr);
     hasConstExpr |= hasNestedConstExpr;
   }
-}
-
-void KGEN::collectParameterUsesFrom(Type type,
-                                    SmallVectorImpl<ParamDeclRefAttr> &uses) {
-  ParameterCollector c;
-  bool unused;
-  c.collectUsesFromType(type, uses, unused);
-}
-
-void KGEN::collectParameterUsesFrom(Attribute attr,
-                                    SmallVectorImpl<ParamDeclRefAttr> &uses) {
-  ParameterCollector c;
-  bool unused;
-  c.collectUsesFromAttr(attr, uses, unused);
 }
 
 //===----------------------------------------------------------------------===//
@@ -160,8 +148,9 @@ void KGEN::collectParameterUsesFrom(Attribute attr,
 namespace {
 class VerifyingParameterCollector : public ParameterCollector {
 public:
-  VerifyingParameterCollector(ModuleOp module, SymbolTableCollection *symtab)
-      : module(module), symtab(symtab) {}
+  VerifyingParameterCollector(ModuleOp module, SymbolTableCollection *symtab,
+                              ParameterCollector::Analysis &cache)
+      : ParameterCollector(cache), module(module), symtab(symtab) {}
 
   /// The first time we encounter an attribute with a reference to an
   /// out-of-line declaration, verify it.
@@ -536,7 +525,8 @@ static void emitCycleError(ParameterUseDefGraph &g,
 
 LogicalResult
 ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
-                                        SymbolTableCollection *symtab) {
+                                        SymbolTableCollection *symtab,
+                                        ParameterCollector::Analysis &cache) {
   TimeTraceScope<> traceScope(
       "ParameterUseDefGraph::calculateOrVerify", [&]() -> std::string {
         if (auto symbol =
@@ -549,7 +539,7 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
   // after nested scopes have been analyzed.
   SmallVector<std::pair<ParamDeclAttr, SmallVector<Region *, 0>>> regionValues;
   // The parameter collector to use.
-  VerifyingParameterCollector c(module, symtab);
+  VerifyingParameterCollector c(module, symtab, cache);
 
   auto processOp = [&](Operation *op) -> WalkResult {
     TimeTraceScope<> traceScope("processOp");
@@ -667,7 +657,7 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
     ParameterUseDefGraph nested(*nestedScope);
     // Propagate the current declarations into the nested scope.
     nested.decls = decls;
-    if (failed(nested.calculateOrVerify(module, symtab)))
+    if (failed(nested.calculateOrVerify(module, symtab, cache)))
       return failure();
 
     // If there were no uses from above, notify the nested declaration that it
@@ -721,14 +711,16 @@ ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
   return success(!result.wasInterrupted());
 }
 
-void ParameterUseDefGraph::calculate() {
-  LogicalResult result = calculateOrVerify({}, nullptr);
+void ParameterUseDefGraph::calculate(ParameterCollector::Analysis &cache) {
+  LogicalResult result = calculateOrVerify({}, nullptr, cache);
   assert(succeeded(result) && "IR should be legal here!");
 }
 
-LogicalResult ParameterUseDefGraph::verify(SymbolTableCollection &symtab) {
+LogicalResult
+ParameterUseDefGraph::verify(SymbolTableCollection &symtab,
+                             ParameterCollector::Analysis &cache) {
   return calculateOrVerify(scope->getParentOp()->getParentOfType<ModuleOp>(),
-                           &symtab);
+                           &symtab, cache);
 }
 
 ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) const {

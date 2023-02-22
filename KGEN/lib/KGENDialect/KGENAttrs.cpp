@@ -1688,10 +1688,12 @@ std::optional<bool> ParamOperatorAttr::isLessThan(Attribute rhs) const {
 //===----------------------------------------------------------------------===//
 
 static LogicalResult
-checkParameterUsesIn(function_ref<InFlightDiagnostic()> emitError, Type el,
+checkParameterUsesIn(ParameterCollector &c,
+                     function_ref<InFlightDiagnostic()> emitError, Type el,
                      DenseMap<StringAttr, Type> &paramsMap) {
   SmallVector<ParamDeclRefAttr> uses;
-  collectParameterUsesFrom(el, uses);
+  bool unused;
+  c.collectUsesFromType(el, uses, unused);
   for (ParamDeclRefAttr use : uses) {
     Type entry = paramsMap.lookup(use.getName());
     if (!entry)
@@ -1717,9 +1719,11 @@ LogicalResult MLIROpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   for (ParamDeclAttr decl : type.getInputParams())
     paramsMap.try_emplace(decl.getName(), decl.getType());
 
+  ParameterCollector::Analysis cache;
+  ParameterCollector c(cache);
   for (Type type :
        llvm::concat<const Type>(type.getValueInputs(), type.getValueResults()))
-    if (failed(checkParameterUsesIn(emitError, type, paramsMap)))
+    if (failed(checkParameterUsesIn(c, emitError, type, paramsMap)))
       return failure();
   return success();
 }

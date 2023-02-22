@@ -14,6 +14,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
+#include "mlir/Pass/AnalysisManager.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -26,6 +27,26 @@ namespace M::KGEN {
 
 class ParameterCollector {
 public:
+  /// The parameter collector contains a cache of parameter-less attributes and
+  /// types that is valid throughout the lifetime of an MLIR context. This
+  /// analysis allows the cache to be preserved across passes.
+  struct Analysis {
+    Analysis(Operation *op = nullptr) {}
+
+    /// This analysis can never be invalid.
+    bool isInvalidated(const mlir::AnalysisManager::PreservedAnalyses &pa) {
+      return false;
+    }
+
+    /// Types and attributes contained in this map are known to have no
+    /// parameter uses as sub-elements. They are mapped to whether there is an
+    /// unresolved parameter operator in the sub-elements.
+    DenseMap<const void *, bool> parameterLess;
+  };
+
+  /// Create a parameter collector with a collection cache.
+  ParameterCollector(Analysis &cache) : cache(cache) {}
+
   virtual ~ParameterCollector() = default;
 
   /// Scan the specified attribute and its recursive uses, diagnosing incorrect
@@ -64,17 +85,8 @@ private:
   /// such, we memoize the attributes and types we've already checked that we
   /// know have no parameters in them and whether the paramless attributes are
   /// constant parameter expressions.
-  DenseMap<const void *, bool> parameterLess;
+  Analysis &cache;
 };
-
-/// Visit the type and all its sub-elements and collect all parameter
-/// references at the scope of the type.
-void collectParameterUsesFrom(Type type,
-                              SmallVectorImpl<ParamDeclRefAttr> &uses);
-/// Visit the attribute and all its sub-elements and collect all parameter
-/// references at the scope of the attribute.
-void collectParameterUsesFrom(Attribute attr,
-                              SmallVectorImpl<ParamDeclRefAttr> &uses);
 
 //===----------------------------------------------------------------------===//
 // ParameterUseDefGraph
@@ -158,11 +170,12 @@ struct ParameterUseDefGraph {
   /// provided parameter declaration scope. If the the root scope is not
   /// isolated from above, the use-def graph expects to be primed with the
   /// parent scope's declarations before this function is called.
-  void calculate();
+  void calculate(ParameterCollector::Analysis &cache);
 
   /// Verify the validity of the parameter declarations, uses, and definitions
   /// within the current scope.
-  LogicalResult verify(SymbolTableCollection &symtab);
+  LogicalResult verify(SymbolTableCollection &symtab,
+                       ParameterCollector::Analysis &cache);
 
   /// Copy this graph into a new instance, remapping all the operations using
   /// `map`.
@@ -172,7 +185,8 @@ private:
   /// Calculate the parameter use-def graph and perform verification if a symbol
   /// table is provided.
   LogicalResult calculateOrVerify(ModuleOp module,
-                                  SymbolTableCollection *symtab);
+                                  SymbolTableCollection *symtab,
+                                  ParameterCollector::Analysis &cache);
 };
 
 } // namespace M::KGEN

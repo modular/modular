@@ -839,13 +839,14 @@ namespace {
 class ElaboratorImpl : public Elaborator {
 public:
   ElaboratorImpl(
-      mlir::SymbolTableAnalysis &analysis, TargetInfoAttr target,
+      mlir::SymbolTableAnalysis &analysis,
+      ParameterCollector::Analysis &paramCache, TargetInfoAttr target,
       LLCL::Runtime &runtime, LLCL::AsyncSideEffectMap &map,
       LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache,
       LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>> regionCache,
       bool enableSearch = false)
-      : Elaborator(analysis, target, runtime, map, transformCache.copy(),
-                   regionCache.copy(), enableSearch),
+      : Elaborator(analysis, paramCache, target, runtime, map,
+                   transformCache.copy(), regionCache.copy(), enableSearch),
         root(analysis.getTopLevelOp<ModuleOp>(), IREvaluator(*this), alloc,
              logger),
         evalSemaphore(1) {}
@@ -1631,7 +1632,7 @@ ElaboratorImpl::specializeFunction(ExpansionTreeNode *funcNode,
         ParamDeclaration{decl.getType(), func, &func.getBodyRegion()});
     uses.defs.try_emplace(decl.getName(), ParamDefinition{val, {}, func, {}});
   }
-  uses.calculate();
+  uses.calculate(paramCache);
 
   // FIXME: The elaborator does not correctly handle the new parameter use-def
   // graph. Process the parameters in reverse: the same operation can define
@@ -2197,6 +2198,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &analysis,
+                                     ParameterCollector::Analysis &paramCache,
                                      LLCL::Runtime &runtime,
                                      TargetInfoAttr target,
                                      ArrayRef<GeneratorOp> primaryGenerators,
@@ -2231,7 +2233,8 @@ LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &analysis,
   }
 
   // Now, construct and run the elaborator.
-  ElaboratorImpl impl(analysis, target, transformCache->getRuntime(), asyncMap,
+  ElaboratorImpl impl(analysis, paramCache, target,
+                      transformCache->getRuntime(), asyncMap,
                       transformCache.copy(), regionCache.copy(), enableSearch);
   return impl.run(primaryGenerators);
 }
@@ -2264,6 +2267,7 @@ struct ElaborateGeneratorsPass
     ModuleOp theModule = getOperation();
 
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
+    auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
     // Collect exports - we don't want to elaborate generators that are not
     // exported.
@@ -2293,8 +2297,8 @@ struct ElaborateGeneratorsPass
     }
     setTargetInfo(theModule, *target);
 
-    if (failed(elaborateGenerators(analysis, *rt, *target, primaryGenerators,
-                                   shouldDoSearch)))
+    if (failed(elaborateGenerators(analysis, paramCache, *rt, *target,
+                                   primaryGenerators, shouldDoSearch)))
       return signalPassFailure();
   }
 
