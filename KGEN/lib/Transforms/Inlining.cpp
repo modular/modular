@@ -227,12 +227,8 @@ static LogicalResult inlineGeneratorCall(
     function_ref<ParameterUseDefGraph &(ParameterCollector::Analysis &,
                                         GeneratorOp)>
         getGraph) {
-  TimeTraceScope<> traceScope("inline-generator-call");
-
-  // Compute the parameter uses from the top-level. This is only computed once
-  // per top-level generator.
-  ParameterUseDefGraph topLevelGraph(gen.getBodyRegion());
-  topLevelGraph.calculate(paramCache);
+  TimeTraceScope<> traceScope("inline-generator-call",
+                              [&] { return gen.getSymName().str(); });
 
   // Collect all calls that inline in this function.
   struct EndStack {};
@@ -243,6 +239,15 @@ static LogicalResult inlineGeneratorCall(
     if (callee && callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
       calls.emplace_back(call);
   });
+
+  // Exit early if there is nothing to inline.
+  if (calls.empty())
+    return success();
+
+  // Compute the parameter uses from the top-level. This is only computed once
+  // per top-level generator.
+  ParameterUseDefGraph topLevelGraph(gen.getBodyRegion());
+  topLevelGraph.calculate(paramCache);
 
   // Process them. Keep a callstack for a nice error when cycles are detected.
   SmallVector<CallOp, 16> callstack;
@@ -258,9 +263,13 @@ static LogicalResult inlineGeneratorCall(
       continue;
     }
     auto call = cast<CallOp>(cast<Operation *>(next));
+    StringAttr calleeName =
+        cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr();
 
-    auto callee = symtab.lookup<GeneratorOp>(
-        cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
+    TimeTraceScope<> traceScope("callee",
+                                [&] { return calleeName.getValue().str(); });
+
+    auto callee = symtab.lookup<GeneratorOp>(calleeName);
     assert(callee &&
            callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled);
 

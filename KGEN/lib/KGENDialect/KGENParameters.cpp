@@ -528,13 +528,11 @@ LogicalResult
 ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
                                         SymbolTableCollection *symtab,
                                         ParameterCollector::Analysis &cache) {
-  TimeTraceScope<> traceScope(
-      "ParameterUseDefGraph::calculateOrVerify", [&]() -> std::string {
-        if (auto symbol =
-                dyn_cast<mlir::SymbolOpInterface>(scope->getParentOp()))
-          return symbol.getName().str();
-        return scope->getParentOp()->getName().getStringRef().str();
-      });
+  TimeTraceScope<> traceScope("ParameterUseDefGraph::calculateOrVerify", [&] {
+    if (auto symbol = dyn_cast<mlir::SymbolOpInterface>(scope->getParentOp()))
+      return symbol.getName().str();
+    return scope->getParentOp()->getName().getStringRef().str();
+  });
 
   // Defer the processing of the use-def node for region declarations until
   // after nested scopes have been analyzed.
