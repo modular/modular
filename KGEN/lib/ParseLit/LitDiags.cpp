@@ -262,6 +262,22 @@ LitDiagnostic &LitDiagnostic::attachNote(Location loc) & {
   return *this;
 }
 
+LitDiagnostic LitDiagnostic::attachNote(SMLoc loc) && {
+  // If the diagnostic has been detached then we cannot translate the location,
+  // but we don't care if we are anyway.
+  if (!diags)
+    return std::move(*this);
+  return std::move(*this).attachNote(diags->translateLocation(loc));
+}
+
+LitDiagnostic &LitDiagnostic::attachNote(SMLoc loc) & {
+  // If the diagnostic has been detached then we cannot translate the location,
+  // but we don't care if we are anyway.
+  if (!diags)
+    return *this;
+  return attachNote(diags->translateLocation(loc));
+}
+
 void LitDiagnostic::addText(const Twine &text) {
   messages.back().text += text.str();
 }

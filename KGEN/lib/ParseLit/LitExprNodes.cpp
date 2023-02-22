@@ -490,8 +490,7 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
         auto diag = emitter.emitError(getLoc(), "cannot clone this value: ")
                     << letType << " doesn't implement '__clone__'"
                     << getRange();
-        diag.attachNote(emitter.translateLocation(letTypeDecl->getLoc()))
-            << "type declared here";
+        diag.attachNote(letTypeDecl->getLoc()) << "type declared here";
         return {};
       }
     }
@@ -1246,7 +1245,7 @@ CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter,
                   << resultName << "' is not a forward declared alias"
                   << drn->getRange();
       for (auto *decl : resultDecls)
-        diag.attachNote(emitter.translateLocation(decl->getLoc()))
+        diag.attachNote(decl->getLoc())
             << "'" << resultName << "' declared here";
       return {};
     }

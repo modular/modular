@@ -43,9 +43,8 @@ ParseResult LitParserBase::parseToken(LitToken::Kind expectedToken,
 
   // Customize the error if an identifier was expected by a keyword was found.
   if (expectedToken == LitToken::identifier && getToken().isKeyword())
-    diag.attachNote(translateLocation(diagLoc))
-        << "escape keyword '" << getToken().getSpelling()
-        << "' with backticks to use it as an identifier";
+    diag.attachNote(diagLoc) << "escape keyword '" << getToken().getSpelling()
+                             << "' with backticks to use it as an identifier";
 
   return failure();
 }

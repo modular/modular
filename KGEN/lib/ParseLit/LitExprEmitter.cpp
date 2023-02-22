@@ -82,8 +82,7 @@ RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value) {
               << rvalueType << " doesn't implement '__clone__'"
               << value.expr->getRange();
 
-  diag.attachNote(translateLocation(typeDecl->getLoc()))
-      << "type declared here";
+  diag.attachNote(typeDecl->getLoc()) << "type declared here";
   return {};
 }
 
