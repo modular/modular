@@ -546,7 +546,7 @@ struct ParsedArgument {
   ExprNode *typeExpr = nullptr;
   ExprNode *initValue = nullptr;
 
-  /// This specifies the handling of keyword arguments for this.  After
+  /// This specifies the handling of keyword arguments in a list.
   enum class KWArgHandling {
     kPositionalOnly,      //< before a standalone '/'
     kPositionalOrKeyword, //< before a standalone '*'
@@ -718,9 +718,9 @@ struct ParsedArgument {
       if (marker == KWArgMarkerInfo::kStar)
         return handleStarMarker(arg.loc, /*isMarker=*/true), success();
 
-      // Otherwise, if this is a varargs marker, handle it as a marker and an
-      // argument.
-      if (uint8_t(arg.convention & ValueInputConvention::VarArg))
+      // Otherwise, if this is a varargs marker (*arg) or variadic pack (arg*),
+      // handle it as a marker and an argument.
+      if (arg.isPack || uint8_t(arg.convention & ValueInputConvention::VarArg))
         handleStarMarker(arg.loc, /*isMarker=*/false);
 
       // If we have a **arg then it must be the last argument.
