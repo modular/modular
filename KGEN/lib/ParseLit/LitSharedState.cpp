@@ -326,15 +326,13 @@ ASTType LitSharedState::lookupNonparameterizedNamedType(StringRef name,
   auto structOp = dyn_cast<StructDeclOp>(firstDecl);
   if (!structOp) {
     auto diag = emitError(loc, "'") << name << "' doesn't resolve to a type";
-    diag.attachNote(translateLocation(firstDecl.getLoc()))
-        << "'" << name << "' declared here";
+    diag.attachNote(firstDecl.getLoc()) << "'" << name << "' declared here";
     return {};
   }
   if (!structOp.getInputParamDecls().empty()) {
     auto diag = emitError(loc, "'")
                 << name << "' resolves to a parameterized type";
-    diag.attachNote(translateLocation(firstDecl.getLoc()))
-        << "'" << name << "' declared here";
+    diag.attachNote(firstDecl.getLoc()) << "'" << name << "' declared here";
     return {};
   }
   return firstDecl.getSelfType();

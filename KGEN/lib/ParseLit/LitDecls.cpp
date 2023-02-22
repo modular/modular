@@ -197,7 +197,7 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
       if (!isa<FuncOp>(*previous)) {
         auto diag = emitError(decl->getLoc(), "invalid redefinition of ")
                     << name;
-        diag.attachNote(translateLocation(previous->getLoc()))
+        diag.attachNote(previous->getLoc())
             << "cannot overload with this non-function definition";
         decl->hasReferenceError = true;
         previous->hasReferenceError = true;
@@ -222,8 +222,7 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
 
   ASTDecl *existing = entries.back();
   auto diag = emitError(decl->getLoc(), "invalid redefinition of ") << name;
-  diag.attachNote(translateLocation(existing->getLoc()))
-      << "previous definition here";
+  diag.attachNote(existing->getLoc()) << "previous definition here";
 
   // Mark the existing decl and this one as erroneous so uses of either
   // don't create confusing errors.
@@ -272,8 +271,7 @@ DeclResolver::aliasDeclsImpl(const TinyPtrVector<ASTDecl *> &decls,
   // relax this in the future when we know what the right policy should be.
   ASTDecl *existing = it->second.back();
   auto diag = emitError(aliasLoc, "invalid redefinition of ") << name;
-  diag.attachNote(translateLocation(existing->getLoc()))
-      << "previous definition here";
+  diag.attachNote(existing->getLoc()) << "previous definition here";
 
   for (ASTDecl *previous : it->second)
     previous->hasReferenceError = true;
@@ -433,7 +431,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   // it with an error.
   if (!declsCurrentlyProcessing.insert({&decl, loc}).second) {
     emitError(loc, "recursive reference to declaration")
-            .attachNote(translateLocation(declsCurrentlyProcessing[&decl]))
+            .attachNote(declsCurrentlyProcessing[&decl])
         << "previously used here";
     decl.hasReferenceError = true;
     return failure();
@@ -1192,7 +1190,7 @@ void FnDecorators::applyImplements(const CallNode &node) {
     auto diag = emitError(node.getLoc(), "'")
                 << interfaceName << "' is not a kgen interface"
                 << nameNode.getRange();
-    diag.attachNote(translateLocation(interfaceDecl->getLoc()))
+    diag.attachNote(interfaceDecl->getLoc())
         << "'" << interfaceName << "' declared here";
     return;
   }
@@ -1247,7 +1245,7 @@ void FnDecorators::applyEvaluator(const CallNode &node) {
     auto diag = emitError(node.getLoc(), "'")
                 << evaluatorName << "' is not a valid function"
                 << nameNode.getRange();
-    diag.attachNote(translateLocation(funcDecl->getLoc()))
+    diag.attachNote(funcDecl->getLoc())
         << '\'' << evaluatorName << "' declared here";
     return;
   }

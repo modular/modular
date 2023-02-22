@@ -112,6 +112,8 @@ public:
   /// emission point to start filling it in.
   LitDiagnostic attachNote(Location loc) &&;
   LitDiagnostic &attachNote(Location loc) &;
+  LitDiagnostic attachNote(SMLoc loc) &&;
+  LitDiagnostic &attachNote(SMLoc loc) &;
 
   // Insertion operations for various things that contribute to the current
   // messages.  These are implemented with addToDiagnostic methods.
