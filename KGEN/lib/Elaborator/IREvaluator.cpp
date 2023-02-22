@@ -134,7 +134,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
 
     // Pull out the concrete functions from each option and evaluate them all.
     std::vector<FuncOp> options;
-    for (TypedAttr option : llvm::drop_end(op.getOperands())) {
+    auto optionsVariadic = cast<VariadicAttr>(op.getOperands().front());
+    for (TypedAttr option : optionsVariadic.getValues()) {
       auto optionSym = cast<SymbolConstantAttr>(option);
       if (auto err = elaborator.getAllConcreteFunctions(
               *errorLoc, optionSym.getSymbol(),

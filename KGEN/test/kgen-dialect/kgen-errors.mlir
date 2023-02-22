@@ -741,13 +741,6 @@ kgen.generator @evaluator() {
   kgen.return
 }
 
-kgen.generator @noOptions() {
-  // expected-error @below {{expected attribute value}}
-  // expected-error @below {{expected a symbol attribute}}
-  kgen.param.declare chosenImpl : () -> () = <evaluate(:() -> () :() -> ()@evaluator)>
-  kgen.return
-}
-
 // -----
 
 kgen.generator @evaluator<N>() {
@@ -760,7 +753,7 @@ kgen.generator @f1() {
 
 kgen.generator @parametricEvaluator() {
   // expected-error @below {{'evaluate' evaluator cannot be parametric}}
-  kgen.param.declare chosenImpl : () -> () = <evaluate(:() -> () @f1, :<N>() -> ()@evaluator)>
+  kgen.param.declare chosenImpl : () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@f1], :<N>() -> ()@evaluator)>
   kgen.return
 }
 
@@ -778,7 +771,7 @@ kgen.generator @f1() {
 
 kgen.generator @multiReturnEvaluator() {
   // expected-error @below {{'evaluate' evaluator must return one result}}
-  kgen.param.declare chosenImpl : () -> () = <evaluate(:() -> () @f1, :() -> (index, index) @evaluator)>
+  kgen.param.declare chosenImpl : () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>> [@f1], :() -> (index, index) @evaluator)>
   kgen.return
 }
 
@@ -790,7 +783,7 @@ kgen.generator @evaluator() -> index {
 
 kgen.generator @differentType() {
   kgen.param.declare bad = <3>
-  // expected-error @below {{expected a signature type for 'evaluate'}}
+  // expected-error @below {{expected a variadic type for 'evaluate'}}
   kgen.param.declare chosenImpl : () -> () = <evaluate(:index bad, :() -> index @evaluator)>
   kgen.return
 }

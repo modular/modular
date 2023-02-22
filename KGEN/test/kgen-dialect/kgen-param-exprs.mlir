@@ -647,9 +647,9 @@ kgen.generator @f2() {
 // CHECK-LABEL: @itf
 kgen.generator @itf() {
   // CHECK-NEXT: chosenImpl
-  // CHECK-SAME: evaluate(:() -> () @f1, @f2,
+  // CHECK-SAME: evaluate(:variadic<!kgen.signature<() -> ()>>  [@f1, @f2],
   // CHECK-SAME:          :(!pop.pointer<!kgen.signature<() -> ()>>, index) -> index @evaluator
-  kgen.param.declare chosenImpl : () -> () = <evaluate(:() -> () @f1, @f2, :(!pop.pointer<!kgen.signature<() -> ()>>, index) -> index @evaluator)>
+  kgen.param.declare chosenImpl : () -> () = <evaluate(:variadic<!kgen.signature<() -> ()>>  [@f1, @f2], :(!pop.pointer<!kgen.signature<() -> ()>>, index) -> index @evaluator)>
   kgen.call_param[()->(): chosenImpl]()
   kgen.return
 }
