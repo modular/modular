@@ -529,9 +529,6 @@ private:
 //===----------------------------------------------------------------------===//
 
 namespace Detail {
-template <typename T>
-constexpr bool kMaybeBase = std::is_class<T>::value && !std::is_final<T>::value;
-
 // Subclass for storing the payload of the AsyncValue inline.  This should
 /// never be directly accessed by users - always use AsyncValue methods instead.
 class SomeConcreteAsyncValue : public AsyncValue {
@@ -568,15 +565,13 @@ private:
   /// to `T`. However, if it returns false then the value definitely cannot be
   /// safely cast to `T`. This means it is useful mainly as a debugging aid for
   /// use in assert() etc.
-  template <typename T,
-            typename std::enable_if<kMaybeBase<T>>::type * = nullptr>
+  template <typename T>
   bool isTypeCompatible() const {
-    // `T` might be a baseclass of the concrete type held by this AsyncValue.
-    return true;
-  }
-  template <typename T,
-            typename std::enable_if<!kMaybeBase<T>>::type * = nullptr>
-  bool isTypeCompatible() const {
+    constexpr bool kMaybeBase =
+        std::is_class<T>::value && !std::is_final<T>::value;
+    if constexpr (kMaybeBase)
+      // `T` might be a baseclass of the concrete type held by this AsyncValue.
+      return true;
     return getTypeID<T>() == getTypeID();
   }
 
