@@ -90,12 +90,6 @@ private:
   /// Objects required for the ORCJIT.
   std::unique_ptr<llvm::orc::LLJIT> jit;
 
-  /// GDB notification listener.
-  llvm::JITEventListener *gdbListener;
-
-  /// Perf notification listener.
-  llvm::JITEventListener *perfListener;
-
   /// List of buffers that contain object files added to the JIT. This holds
   /// references to them so they aren't deallocated underneath our feet.
   SmallVector<Cache::BufferRef> objBuffers;
