@@ -57,8 +57,8 @@ def testLValuesRvalues():
   # expected-error @+1 {{argument #1 must be mutable in order to pass as a by-ref argument}}
   LValuesRvalues().takesByRef(LValuesRvalues())
 
-  # We can implicitly declare things on the LHS but not on the RHS.
-  unknown1 += unknown2 # expected-error {{use of unknown declaration 'unknown2'}}
+  # We can not implicitly declare things on the RHS
+  lv += unknown2 # expected-error {{use of unknown declaration 'unknown2'}}
 
   lv.normalMethod3(1.0)
 

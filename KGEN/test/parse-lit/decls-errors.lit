@@ -31,6 +31,10 @@ def bad_stmt_list():
   # expected-error @+1 {{'if' statement must be on its own line}}
   abc = Int(0); if abc != 0: pass
 
+def cantFwdDeclarePlusEqual():
+  # expected-error @+1 {{use of unknown declaration 'x'}}
+  x += Int(4)
+
 
 ##===----------------------------------------------------------------------===##
 # Functions
