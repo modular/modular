@@ -51,15 +51,11 @@ static inline LLCLRuntimeRef wrap(const Runtime *ptr) {
 // Initialization
 //===----------------------------------------------------------------------===//
 
-static void checkRuntime(LLCLRuntimeRef rt) {
-  assert(checkTypeIdsAreCoherent(*unwrap(rt)) && "type ids are not coherent");
-}
-
 /// Given the async context of a coroutine, initialize its token value. The
 /// runtime pointer must have already been set.
 COMPILERRT_EXPORT void
 KGEN_CompilerRT_LLCL_InitializeChain(LLCLRuntimeRef rt, AsyncChainRef chain) {
-  checkRuntime(rt);
+  checkUniqueRuntime(*unwrap(rt));
   new (&unwrap(chain))
       AsyncValueRef<Chain>(takeRCRef(AsyncValue::allocate<Chain>(unwrap(rt))));
 }
@@ -84,9 +80,9 @@ COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_WaiterWait(SpinWaiterRef waiter) {
 /// Execute a coroutine.
 COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_Execute(void (*resume)(int8_t *),
                                                     int8_t *hdl,
-                                                    LLCLRuntimeRef runtime) {
-  checkRuntime(runtime);
-  unwrap(runtime)->getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
+                                                    LLCLRuntimeRef rt) {
+  checkUniqueRuntime(*unwrap(rt));
+  unwrap(rt)->getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
 }
 
 /// Resume a coroutine when the current one completes.
@@ -105,7 +101,7 @@ COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_Wait(AsyncChainRef chain) {
 COMPILERRT_EXPORT void
 KGEN_CompilerRT_LLCL_ExecuteAndWait(void (*resume)(int8_t *), int8_t *hdl,
                                     LLCLRuntimeRef rt, AsyncChainRef chain) {
-  checkRuntime(rt);
+  checkUniqueRuntime(*unwrap(rt));
   unwrap(rt)->getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
   await(unwrap(chain));
 }
@@ -116,7 +112,7 @@ COMPILERRT_EXPORT void
 KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *), int8_t *execHdl,
                                       AsyncChainRef chain, LLCLRuntimeRef rt,
                                       int8_t *resumeHdl) {
-  checkRuntime(rt);
+  checkUniqueRuntime(*unwrap(rt));
   unwrap(rt)->getWorkQueue()->addTask([resume, execHdl]() { resume(execHdl); });
   unwrap(chain).andThenAsync([resumeHdl, resume]() { resume(resumeHdl); });
 }

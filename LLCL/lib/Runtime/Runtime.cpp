@@ -61,11 +61,10 @@ Runtime *CompactRuntimePtr::get() const {
 Runtime::Runtime(std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue,
                  StringRef profileFilename)
-    : allocator(std::move(allocator)), workQueue(std::move(workQueue)),
-      profileFilename(profileFilename),
+    : signature(TypeID::getSignature()), allocator(std::move(allocator)),
+      workQueue(std::move(workQueue)), profileFilename(profileFilename),
       runtimeIndex(nextRuntimeIndex.fetch_add(1)),
-      readyChain(createReadyChain(*this)),
-      chainTypeIdAddress(AsyncValue::getTypeIDAddress<Chain>()) {
+      readyChain(createReadyChain(*this)) {
   // We provide a dense numbering of runtime instances right now, but we could
   // make this fancier to allow deallocating and reusing indexes if needbe.
   assert(runtimeIndex < CompactRuntimePtr::kInvalidIndex &&

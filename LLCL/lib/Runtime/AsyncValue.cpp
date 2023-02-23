@@ -16,42 +16,6 @@ using namespace M::LLCL;
 std::atomic<ssize_t> AsyncValue::totalAllocatedAsyncValues{0};
 
 //===----------------------------------------------------------------------===//
-// TypeID and Destructor related functionality
-//===----------------------------------------------------------------------===//
-
-using ValueDestructorFn = Detail::SomeConcreteAsyncValue::ValueDestructorFn;
-
-static ConcurrentAppendingVector<ValueDestructorFn> &
-getTypeInfoTableSingleton() {
-  static auto *table =
-      new ConcurrentAppendingVector<ValueDestructorFn>(/*initial capacity*/ 64);
-  return *table;
-}
-
-auto Detail::SomeConcreteAsyncValue::getValueDestructor() -> ValueDestructorFn {
-  auto &table = getTypeInfoTableSingleton();
-  uint16_t typeID = getTypeID();
-  assert(typeID != 0);
-  return table[typeID - 1];
-}
-
-void Detail::SomeConcreteAsyncValue::doTypeRegistration(
-    std::atomic<uint16_t> *staticTypeID, ValueDestructorFn destructor) {
-  size_t typeID = getTypeInfoTableSingleton().emplace_back(destructor) + 1;
-  // Detect overflow.
-  assert(typeID < std::numeric_limits<uint16_t>::max() &&
-         "too many different AsyncValue types");
-
-  // Set the value to the entry ID if we're the first one to do so.  If some
-  // other thread beat us here, then we just abandon the table entry.  We don't
-  // actually care if we succeed or if some other thread succeeded.
-  uint16_t existing = uint16_t(~0U);
-  (void)staticTypeID->compare_exchange_strong(existing, uint16_t(typeID),
-                                              std::memory_order_release,
-                                              std::memory_order_acquire);
-}
-
-//===----------------------------------------------------------------------===//
 // Destruction logic
 //===----------------------------------------------------------------------===//
 
@@ -61,7 +25,7 @@ Detail::SomeConcreteAsyncValue::~SomeConcreteAsyncValue() {
   if (s == State::kError)
     getDiagnosticPointer()->~EncodedDiagnostic();
   else if (s == State::kAvailable)
-    getValueDestructor()(getPayloadPointer());
+    getTypeID().getValueDestructor()(getPayloadPointer());
   else {
     // TODO: If unconstructed this will leak the waiters list.  We should signal
     // this as an error (checking for ressurection) etc.
@@ -600,10 +564,6 @@ static llvm::StringRef stateToString(AsyncValue::State state) {
   llvm::llvm_unreachable_internal("missing case");
 }
 
-static std::string typeIDToString(uint16_t typeID) {
-  return typeID == (uint16_t)(~0) ? "unk" : std::to_string(typeID);
-}
-
 /// CAUTION: Not thread safe!
 void AsyncValue::printDebug(raw_ostream &os) const {
   os << "AsyncValue(";
@@ -615,10 +575,10 @@ void AsyncValue::printDebug(raw_ostream &os) const {
                          2 + 2 * sizeof(intptr_t));
   os << ", kind=" << subclassToString(subclassKind);
   os << ", vtable=" << (hasVTable ? "yes" : "no");
-  os << ", typeID=" << typeIDToString(typeID);
+  os << ", typeID=" << typeID.getTypeName();
   os << ", state=" << stateToString(getState());
 
-  if (subclassKind == SubclassKind::kIndirect && typeID != (uint16_t)(~0)) {
+  if (subclassKind == SubclassKind::kIndirect && typeID != TypeID()) {
     auto *indirect = static_cast<const Detail::IndirectAsyncValue *>(this);
     if (indirect->value.getPointer())
       os << ", value=" << *indirect->value.getPointer();
