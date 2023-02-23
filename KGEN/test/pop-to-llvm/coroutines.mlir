@@ -55,7 +55,7 @@ kgen.func @coroutine(%arg0: i32) -> !pop.coroutine<() -> i32> {
   // CHECK-NEXT: llvm.br ^[[SUSPEND_BLOCK]]
 
 // CHECK: ^[[SUSPEND_BLOCK]]:
-  // CHECK-NEXT: %{{.*}} = llvm.intr.coro.end %[[NULLPTR]], %[[FALSE]] : i1
+  // CHECK-NEXT: %{{.*}} = llvm.intr.coro.end %[[NULLPTR]], %[[FALSE]] : (!llvm.ptr<i8>, i1) -> i1
   // CHECK-NEXT: llvm.return %[[HDL]] : !llvm.ptr<i8>
   kgen.return %hdl : !pop.coroutine<() -> i32>
 }
@@ -72,7 +72,7 @@ kgen.func @coroutine_await() -> !pop.coroutine<() -> i32> {
   // CHECK-NEXT: 1: ^[[CLEANUP:.*]]
 
 // CHECK: ^[[BODY]]:
-  // CHECK-NEXT: %[[TOK:.*]] = llvm.intr.coro.save %[[HDL]] : !llvm.token
+  // CHECK-NEXT: %[[TOK:.*]] = llvm.intr.coro.save %[[HDL]] : (!llvm.ptr<i8>) -> !llvm.token
   // CHECK-NEXT: llvm.intr.coro.resume %[[HDL]]
   // CHECK-NEXT: %[[STATE:.*]] = llvm.intr.coro.suspend %[[TOK]], %[[FALSE]] : i8
   // CHECK-NEXT: llvm.switch %[[STATE]] : i8, ^[[SUSPEND]] [
