@@ -446,6 +446,10 @@ ASTDecl &LitSharedState::createModule(StringRef moduleName,
   ASTDecl &moduleDecl = declResolver->addDecl(
       fileOp, lexer.getToken().getLoc(), mangledName, impl->topLevelDecl,
       lexer.getCursor(), endCursor, /*indentation=*/-1);
+  // Auto-import the core Lang module declaration.
+  moduleDecl.addUnresolvedWildCardImport(
+      StringAttr::get(getContext(), "_CompilerBuiltin"),
+      lexer.getToken().getLoc());
   impl->importedModules.try_emplace(mangledName, &moduleDecl);
   return moduleDecl;
 }
