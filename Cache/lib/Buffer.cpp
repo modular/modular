@@ -105,6 +105,8 @@ const char *Buffer::getBufferStart() const {
     return (char *)this->mallocd.data;
   case kMMap:
     return this->mapped.const_data();
+  default:
+    llvm::report_fatal_error("Invalid BufferKind");
   }
 }
 
@@ -114,6 +116,8 @@ const char *Buffer::getBufferEnd() const {
     return (char *)this->mallocd.data + this->mallocd.size;
   case kMMap:
     return this->mapped.const_data() + this->mapped.size();
+  default:
+    llvm::report_fatal_error("Invalid BufferKind");
   }
 }
 
@@ -123,6 +127,8 @@ size_t Buffer::getBufferSize() const {
     return this->mallocd.size;
   case kMMap:
     return this->mapped.size();
+  default:
+    llvm::report_fatal_error("Invalid BufferKind");
   }
 }
 
