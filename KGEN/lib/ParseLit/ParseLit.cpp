@@ -84,6 +84,13 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
   // Parse the input module.
   sharedState.createModule(moduleName, sourceBuf, fileLoc);
 
+  // Auto-import the core Lang module definition.
+  auto langModuleAttr =
+      StringAttr::get(module->getContext(), "_CompilerBuiltin");
+  if (failed(sharedState.declResolver->importModule(
+          topLevelDecl, langModuleAttr, langModuleAttr, startSMLoc)))
+    return nullptr;
+
   // With the top-level of the file parsed, we can now go ahead and resolve all
   // of the deferred declarations.
   sharedState.declResolver->resolveAll();
