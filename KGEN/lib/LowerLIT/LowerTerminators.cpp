@@ -305,7 +305,10 @@ static void lowerNestedFunctions(LIT::FuncOp topLevelFunc,
             analysis.getTopLevelOp<ModuleOp>(), ref, symbols)) ||
         !llvm::is_contained(symbols, topLevelFunc))
       return {};
-    return cast<LIT::FuncOp>(symbols.back());
+    auto lastSymbol = cast<LIT::FuncOp>(symbols.back());
+    if (lastSymbol == topLevelFunc)
+      return {};
+    return lastSymbol;
   };
 
   // Demote direct calls to nested functions to `call_param` so the callee can

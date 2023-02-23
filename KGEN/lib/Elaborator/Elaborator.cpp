@@ -654,6 +654,43 @@ static std::optional<ErrorTree> processGenericOp(IREvaluator &evaluator,
 }
 
 //===----------------------------------------------------------------------===//
+// completeReturnProcessing
+//===----------------------------------------------------------------------===//
+
+/// Complete processing of a ReturnOp by binding its result parameters to the
+/// node's result parameters.
+static std::optional<ErrorTree>
+completeReturnProcessing(Logger &logger, ReturnOp returnOp,
+                         ExpansionTreeNode *parent) {
+  // Erase any unreachable blocks generated during scope processing.
+  mlir::IRRewriter b{OpBuilder(parent->op)};
+  (void)mlir::eraseUnreachableBlocks(b, parent->op->getRegions());
+
+  LLVM_DEBUG(logger.logOp("Processing ReturnOp", returnOp));
+  SmallVector<Attribute> resultParams;
+  for (auto param : returnOp.getParameters()) {
+    auto concreteOr =
+        parent->evaluator.concretizeParameterExpr(returnOp.getLoc(), param);
+    if (concreteOr.isError())
+      return concreteOr.takeError();
+
+    resultParams.push_back(param);
+  }
+  parent->resultParams = ArrayAttr::get(returnOp.getContext(), resultParams);
+
+  // Clear the parameters from this function and its return before we try to
+  // verify.
+  auto func = returnOp->getParentOfType<FuncOp>();
+  assert(func && "must call completeReturnProcessing from a FuncOp.");
+  func.setSignature(
+      SignatureType::get(func.getInputParamDeclsAttr(),
+                         ParamDeclArrayAttr::get(func.getContext(), {}),
+                         func.getFunctionType(), func.getMetadata()));
+  returnOp.setParameters({});
+  return std::nullopt;
+}
+
+//===----------------------------------------------------------------------===//
 // completeGeneratorUserProcessing
 //===----------------------------------------------------------------------===//
 
@@ -663,7 +700,9 @@ static std::optional<ErrorTree> processGenericOp(IREvaluator &evaluator,
 static void completeGeneratorUserProcessing(KGENCallOpInterface user,
                                             ArrayRef<ParamDeclAttr> decls,
                                             ExpansionTreeNode *thisNode,
-                                            ExpansionTreeNode *parentNode) {
+                                            ExpansionTreeNode *parentNode,
+                                            Logger &logger) {
+
   // Add the callee's bindings to the parent of the call. This ensures that we
   // don't re-bind something we've already bound.
   for (const auto &[k, v] : thisNode->bindings) {
@@ -721,50 +760,19 @@ static void completeGeneratorUserProcessing(KGENCallOpInterface user,
   auto concreteNodeOr = thisNode->getFirstConcreteNode();
   assert(!concreteNodeOr.isError() &&
          "This should be called from a concrete node in this case");
-  auto resultParams = (*concreteNodeOr)->resultParams;
+
+  if (!(*concreteNodeOr)->resultParams) {
+    (*concreteNodeOr)->op.walk([&concreteNodeOr, &logger](ReturnOp returnOp) {
+      completeReturnProcessing(logger, returnOp, *concreteNodeOr);
+    });
+  }
+  ArrayAttr resultParams = (*concreteNodeOr)->resultParams;
   // Bind the result parameters to the output parameter decls.
   for (auto [decl, bindValue] : llvm::zip(decls, resultParams)) {
     LLVM_DEBUG(thisNode->logger << "Binding " << decl << " to " << bindValue
                                 << "\n");
     parentNode->evaluator.setOrOverwriteParameterValue(decl, bindValue);
   }
-}
-
-//===----------------------------------------------------------------------===//
-// completeReturnProcessing
-//===----------------------------------------------------------------------===//
-
-/// Complete processing of a ReturnOp by binding its result parameters to the
-/// node's result parameters.
-static std::optional<ErrorTree>
-completeReturnProcessing(Logger &logger, ReturnOp returnOp,
-                         ExpansionTreeNode *parent) {
-  // Erase any unreachable blocks generated during scope processing.
-  mlir::IRRewriter b{OpBuilder(parent->op)};
-  (void)mlir::eraseUnreachableBlocks(b, parent->op->getRegions());
-
-  LLVM_DEBUG(logger.logOp("Processing ReturnOp", returnOp));
-  SmallVector<Attribute> resultParams;
-  for (auto param : returnOp.getParameters()) {
-    auto concreteOr =
-        parent->evaluator.concretizeParameterExpr(returnOp.getLoc(), param);
-    if (concreteOr.isError())
-      return concreteOr.takeError();
-
-    resultParams.push_back(param);
-  }
-  parent->resultParams = ArrayAttr::get(returnOp.getContext(), resultParams);
-
-  // Clear the parameters from this function and its return before we try to
-  // verify.
-  auto func = returnOp->getParentOfType<FuncOp>();
-  assert(func && "must call completeReturnProcessing from a FuncOp.");
-  func.setSignature(
-      SignatureType::get(func.getInputParamDeclsAttr(),
-                         ParamDeclArrayAttr::get(func.getContext(), {}),
-                         func.getFunctionType(), func.getMetadata()));
-  returnOp.setParameters({});
-  return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1239,7 +1247,8 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
   if (found != parent->bindings.end()) {
     LLVM_DEBUG(
         found->getSecond()->print(logger.scope("Result: Existing Binding")));
-    completeGeneratorUserProcessing(user, decls, found->getSecond(), parent);
+    completeGeneratorUserProcessing(user, decls, found->getSecond(), parent,
+                                    logger);
     return std::nullopt;
   }
 
@@ -1339,7 +1348,7 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     newNode->bindings[{calleeOp, inputParamKey}] = c;
 
     completeGeneratorUserProcessing(map.lookup(user.getOperation()), decls, c,
-                                    newNode);
+                                    newNode, logger);
 
     LLVM_DEBUG(newNode->print(logger << "New Op "));
 
@@ -1361,7 +1370,8 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
 
   // Call completeGeneratorUserProcessing on the first concrete thing. This will
   // flow nested bindings upward correctly.
-  completeGeneratorUserProcessing(user, decls, concrete.front(), parent);
+  completeGeneratorUserProcessing(user, decls, concrete.front(), parent,
+                                  logger);
 
   return std::nullopt;
 }
