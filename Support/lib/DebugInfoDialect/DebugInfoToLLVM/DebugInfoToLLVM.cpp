@@ -210,8 +210,7 @@ MetadataConverter::convertTypeImpl(DISubroutineType type) {
   if (type.getResultTypes().size() == 1)
     convertedTypes.push_back(convertType(type.getResultTypes()[0]));
   else
-    convertedTypes.push_back(
-        LLVM::DIVoidResultTypeAttr::get(type.getContext()));
+    convertedTypes.push_back(LLVM::DINullTypeAttr::get(type.getContext()));
 
   for (auto argType : type.getArgumentTypes())
     convertedTypes.push_back(convertType(argType));

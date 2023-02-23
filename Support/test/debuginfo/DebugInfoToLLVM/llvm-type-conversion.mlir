@@ -2,7 +2,7 @@
 
 // Test conversions for building debug information for LLVM types.
 
-// CHECK-DAG: #[[VOID:.+]] = #llvm.di_void_result_type
+// CHECK-DAG: #[[VOID:.+]] = #llvm.di_null_type
 
 // CHECK-DAG: #[[OPAQUE_BASE:.*]] = #llvm.di_basic_type<tag = DW_TAG_unspecified_type, name = "opaque">
 // CHECK-DAG: #[[OPAQUE_PTR:.*]] = #llvm.di_derived_type<tag = DW_TAG_pointer_type, baseType = #[[OPAQUE_BASE]], sizeInBits = {{.*}}, alignInBits = {{.*}}>

@@ -66,9 +66,6 @@ def KGENDialect : Dialect {
     friend ParseResult parseKGENType(AsmParser &, Type &);
     friend void printKGENType(AsmPrinter &, Type);
   }];
-
-  // https://discourse.llvm.org/t/psa-new-improved-fold-method-signature-has-landed-please-update-your-downstream-projects/67618
-  let useFoldAPI = kEmitFoldAdaptorFolder;
 }
 
 #endif // KGEN_KGENDIALECT_KGENDIALECT_TD

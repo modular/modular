@@ -178,7 +178,7 @@ public:
         // have to worry about memory allocation for arbitrarily large values.
         widthInBits > kMaxElementSizeInBits / 2)
       return failure();
-    unsigned widthEncoding = llvm::countTrailingZeros(widthInBits);
+    unsigned widthEncoding = llvm::countr_zero(widthInBits);
     return DType((widthEncoding << kIntWidthShift) | mIsInteger |
                  (isSigned ? mIsSigned : 0));
   }

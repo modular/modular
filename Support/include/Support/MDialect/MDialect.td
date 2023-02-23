@@ -36,9 +36,6 @@ def MDialect : Dialect {
 
   let useDefaultAttributePrinterParser = 1;
   let useDefaultTypePrinterParser = 1;
-
-  // https://discourse.llvm.org/t/psa-new-improved-fold-method-signature-has-landed-please-update-your-downstream-projects/67618
-  let useFoldAPI = kEmitFoldAdaptorFolder;
 }
 
 #endif // MDIALECT_TD

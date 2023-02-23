@@ -13,7 +13,7 @@
 // CHECK-SAME:   emissionKind = Full
 // CHECK-SAME: >
 
-// CHECK: #[[SP_TYPE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, types = #di_void_result_type>
+// CHECK: #[[SP_TYPE:.*]] = #llvm.di_subroutine_type<callingConvention = DW_CC_normal, types = #di_null_type>
 #compile_unit = #debuginfo.compile_unit<
   sourceLanguage = DW_LANG_C,
   file = #file,
