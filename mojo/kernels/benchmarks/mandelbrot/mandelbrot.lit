@@ -1,0 +1,213 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+#
+# This uses mandelbrot as an example to test how the entire stdlib works
+# together.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: lit %s -execute | FileCheck %s
+
+from Bool import Bool
+from DType import DType
+from Int import Int
+from F32 import F32
+from SIMD import SIMD
+from IO import print, _printf
+from Range import range
+from Vector import DynamicVector
+from Buffer import Buffer, NDBuffer
+from Matrix import Matrix
+from List import create_kgen_list
+from StringRef import StringRef
+from LLCL import num_cores, Runtime, TaskGroup
+from Functional import parallelForEachN
+from Math import iota
+from Complex import Complex
+from Benchmark import Benchmark
+from Assert import assert_param_msg
+from Pointer import Pointer
+
+alias kunknown = __mlir_attr.`#kgen.unknown : index`
+alias float_type = DType.f64.value
+alias int_type = DType.si64.value
+
+
+fn draw_mandelbrot[
+    h: __mlir_type.index, w: __mlir_type.index
+](out: Matrix[create_kgen_list(h, w), int_type, False]):
+    let sr = StringRef(".,c8M@jawrpogOQEPGJ")
+    let charset = Buffer[kunknown, DType.si8.value](sr.data.address, sr.length)
+    for row in range(h):
+        for col in range(w):
+            let v: Int = out.__getitem__(row, col).value
+            if v > 0:
+                let p = charset.__getitem__(v % sr.length)
+                _printf[DType.si8.value]("%c", p.value)
+            else:
+                print("0")
+        print("\n")
+
+
+fn mandelbrot_kernel[
+    simd_width: __mlir_type.index
+](c: Complex[simd_width, float_type], iter: Int) -> SIMD[simd_width, int_type]:
+    var z = Complex[simd_width, float_type](0, 0)
+    var nv: SIMD[simd_width, int_type] = 0
+    var mask: SIMD[simd_width, DType.bool.value] = -1
+    var i: Int = iter
+
+    while (i != 0) and mask.reduce_or():
+        mask = z.norm() <= 4
+        z = z.sq_add(c)
+        nv = mask.select(nv + 1, nv)
+        i -= 1
+    return nv
+
+
+# Mandelbrot arguments
+struct mandelbrot_args[
+    simd_width: __mlir_type.index, h: __mlir_type.index, w: __mlir_type.index
+]:
+    var out: Matrix[create_kgen_list(h, w), int_type, False]
+    var rows_per_worker: Int
+    var min_x: SIMD[simd_width, float_type]
+    var max_x: SIMD[simd_width, float_type]
+    var min_y: SIMD[simd_width, float_type]
+    var max_y: SIMD[simd_width, float_type]
+
+    fn __new__(
+        out: Matrix[create_kgen_list(h, w), int_type, False],
+        rows_per_worker: Int,
+        min_x: SIMD[simd_width, float_type],
+        max_x: SIMD[simd_width, float_type],
+        min_y: SIMD[simd_width, float_type],
+        max_y: SIMD[simd_width, float_type],
+    ) -> mandelbrot_args[simd_width, h, w]:
+        return mandelbrot_args[simd_width, h, w] {
+            out: out,
+            rows_per_worker: rows_per_worker,
+            min_x: min_x,
+            max_x: max_x,
+            min_y: min_y,
+            max_y: max_y,
+        }
+
+    fn __clone__(self&) -> Self:
+        return Self {
+            out: self.out,
+            rows_per_worker: self.rows_per_worker,
+            min_x: self.min_x,
+            max_x: self.max_x,
+            min_y: self.min_y,
+            max_y: self.max_y,
+        }
+
+
+fn mandelbrot[
+    simd_width: __mlir_type.index,
+    h: __mlir_type.index,
+    w: __mlir_type.index,
+    iter: Int,
+](
+    out: Matrix[create_kgen_list(h, w), int_type, False],
+    rt: Runtime,
+    args_address: Pointer[mandelbrot_args[simd_width, h, w]],
+    parallel: Bool = True,
+):
+    # Each task gets a row
+    fn worker(row: Int, ptr: Pointer[mandelbrot_args[simd_width, h, w]]):
+        let args = ptr.load()
+        let rowv: SIMD[simd_width, float_type] = row
+        let simd_val = iota[simd_width, float_type]()
+        let scalex = (args.max_x - args.min_x) / w
+        let scaley = (args.max_y - args.min_y) / h
+        for col in range(w // simd_width):
+            var colv: SIMD[simd_width, float_type] = col * simd_width
+            colv = colv + simd_val
+            let cx = args.min_x + colv * scalex
+            let cy = args.min_y + rowv * scaley
+            let c = Complex[simd_width, float_type](cx, cy)
+            args.out.simd_store[simd_width](
+                row, col * simd_width, mandelbrot_kernel(c, iter)
+            )
+
+    if parallel:
+        parallelForEachN[Pointer[mandelbrot_args[simd_width, h, w]], worker](
+            rt, h, args_address
+        )
+    else:
+        for row in range(h):
+            worker(row, args_address)
+
+
+@export
+fn main():
+    let rt = Runtime()
+
+    alias width = 4096
+    # using simd_width=16
+    assert_param_msg[width % 16 == 0, "must be a multiple of 16"]()
+    alias height = 4096
+    alias iter = 1000
+
+    let vec = DynamicVector[__mlir_type[`!pop.scalar<`, int_type, `>`]](
+        width * height
+    )
+    let m: Matrix[create_kgen_list(height, width), int_type, False] = NDBuffer[
+        2, create_kgen_list(height, width), int_type
+    ](vec.data.address)
+
+    @always_inline
+    fn bench_parallel[simd_width: __mlir_type.index]():
+        let min_x: SIMD[simd_width, float_type] = -2.0
+        let max_x: SIMD[simd_width, float_type] = 0.47
+        let min_y: SIMD[simd_width, float_type] = -1.12
+        let max_y: SIMD[simd_width, float_type] = 1.12
+
+        var args = mandelbrot_args[simd_width, height, width](
+            m,
+            1,
+            min_x,
+            max_x,
+            min_y,
+            max_y,
+        )
+        let args_address = Pointer[
+            mandelbrot_args[simd_width, height, width]
+        ].address_of(args)
+        mandelbrot[simd_width, height, width, iter](m, rt, args_address)
+
+    var time: F32
+    let ns_per_second: Int = 1_000_000_000
+
+    bench_parallel[16]()
+    var pixel_sum: Int = 0
+    for i in range(height):
+        for j in range(width):
+            pixel_sum += m.__getitem__(i, j).value
+    print("pixel sum: ")
+    print(pixel_sum)
+
+    var num_warmup: Int = 1
+    time = Benchmark(num_warmup).run[bench_parallel[16]]()
+    time = time / ns_per_second
+    print(time)
+
+    time = Benchmark(num_warmup).run[bench_parallel[8]]()
+    time = time / ns_per_second
+    print(time)
+
+    time = Benchmark(num_warmup).run[bench_parallel[4]]()
+    time = time / ns_per_second
+    print(time)
+
+    time = Benchmark(num_warmup).run[bench_parallel[1]]()
+    time = time / ns_per_second
+    print(time)
+
+    print(m.__getitem__(0, 0))
+    # draw_mandelbrot[height, width](m)
+    # vec.del()
