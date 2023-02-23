@@ -3,8 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------===#
+"""The module contains implementations of activation functions."""
 
-from Assert import assert_param, assert_param_bool_msg
+from Assert import assert_param_bool_msg
 from DType import DType
 from Math import erf, exp, tanh
 from SIMD import SIMD
@@ -18,6 +19,10 @@ fn relu[
     simd_width: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
 ](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
     """Compute the Relu Op using the equation $max(0, x)$.
+
+    Parameters:
+        simd_width: SIMD width used for the computation.
+        type: dtype used for the computation.
 
     Args:
         x (SIMD[simd_width, type]): The value to compute the RELU operation on.
@@ -38,6 +43,10 @@ fn prelu[
 ](x: SIMD[simd_width, type], alpha: SIMD[1, type]) -> SIMD[simd_width, type]:
     """Compute the Prelu Op using the equation $max(x,0) + alpha * min(x,0)$.
 
+    Parameters:
+        simd_width: SIMD width used for the computation.
+        type: dtype used for the computation.
+
     Args:
         x (SIMD[simd_width, type]): The value to compute the PRELU operation on.
 
@@ -56,6 +65,10 @@ fn relu_n1[
     simd_width: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
 ](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
     """Compute the Relu N1 Op using the equation $max(min(x,1),-1)$.
+
+    Parameters:
+        simd_width: SIMD width used for the computation.
+        type: dtype used for the computation.
 
     Args:
         x (SIMD[simd_width, type]): The value to compute the RELU N1 operation on.
@@ -77,11 +90,18 @@ fn gelu[
     """Compute the GELU Op using the equation
     $0.5 * x * (1 + erf(x / sqrt(2)))$.
 
+    Parameters:
+        simd_width: SIMD width used for the computation.
+        type: dtype used for the computation.
+
     Args:
         x (SIMD[size, type]): The value to compute the GELU operation on.
 
     Returns:
         SIMD[size, type]: The result of the GELU operation.
+
+    Constraints:
+        type must be a floating point type.
     """
     alias SQRT_2 = 1.4142135623730950488
     assert_param_bool_msg[
@@ -102,11 +122,18 @@ fn gelu_approximate[
     """Compute the approximate GELU Op using the equation
     $0.5 * x * (1 + tanh(sqrt(2 / pi) * (x + 0.044715 * x^3)))$.
 
+    Parameters:
+        simd_width: SIMD width used for the computation.
+        type: dtype used for the computation.
+
     Args:
         x (SIMD[size, type]): The value to compute the GELU operation on.
 
     Returns:
         SIMD[size, type]: The result of the approximate GELU operation.
+
+    Constraints:
+        type must be a floating point type.
     """
     alias SQRT_TWO_OVER_PI = 0.797884560802865
     assert_param_bool_msg[
@@ -129,7 +156,11 @@ fn gelu_approximate[
 fn sigmoid[
     simd_width: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
 ](x: SIMD[simd_width, type]) -> SIMD[simd_width, type]:
-    """Compute the Sigmoid Op using the equation $e^x / (e^x + 1)$
+    """Compute the Sigmoid Op using the equation $e^x / (e^x + 1)$.
+
+    Parameters:
+        simd_width: SIMD width used for the computation.
+        type: dtype used for the computation.
 
     Args:
         x (SIMD[size, type]): The value to compute the sigmoid operation on.
