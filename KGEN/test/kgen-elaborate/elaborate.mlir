@@ -1994,3 +1994,13 @@ kgen.generator @returnVariadic() -> !kgen.variadic<index> {
   %r = kgen.param.constant : variadic<index> = <[1, 2]>
   kgen.return %r : !kgen.variadic<index>
 }
+
+// CHECK-LABEL: kgen.func @recurse
+// CHECK-SAME: () {
+// CHECK-NEXT:  kgen.call @recurse() : () -> ()
+// CHECK-NEXT:  kgen.return
+// CHECK-NEXT:  }
+kgen.generator @recurse() {
+    kgen.call @recurse() : () -> ()
+    kgen.return
+}

@@ -1,0 +1,23 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: lit %s | FileCheck %s
+
+from Int import Int
+from IO import print
+
+
+fn unsafe_factorial(next: Int, thusFar: Int) -> Int:
+    if next > 1:
+        return unsafe_factorial(next - 1, thusFar * next)
+    if next <= 1:
+        return thusFar
+    return 1
+
+
+fn main():
+    let x = unsafe_factorial(3, 1)
+    # CHECK: 6
+    print(x)
