@@ -35,8 +35,6 @@ void ParameterCollector::collectUsesFromAttr(
     bool &hasConstExpr) {
   // If we have already scanned it and know that it has no parameters in it,
   // return early.
-  if (!attr)
-    return;
   if (auto it = cache.parameterLess.find(attr.getAsOpaquePointer());
       it != cache.parameterLess.end()) {
     hasConstExpr |= it->second;
@@ -106,8 +104,6 @@ void ParameterCollector::collectUsesFromType(
 void ParameterCollector::collectUsesFromTypesImpl(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasConstExpr) {
   // Ignore types we have already scanned.
-  if (!type)
-    return;
   if (auto it = cache.parameterLess.find(type.getAsOpaquePointer());
       it != cache.parameterLess.end()) {
     hasConstExpr |= it->second;
@@ -148,7 +144,8 @@ void ParameterCollector::collectUsesFromTypesImpl(
 namespace {
 class VerifyingParameterCollector : public ParameterCollector {
 public:
-  VerifyingParameterCollector(ModuleOp module, SymbolTableCollection *symtab,
+  VerifyingParameterCollector(ModuleOp module,
+                              mlir::LockedSymbolTableCollection *symtab,
                               ParameterCollector::Analysis &cache)
       : ParameterCollector(cache), module(module), symtab(symtab) {}
 
@@ -177,7 +174,7 @@ private:
   /// The module in which to lookup symbol references.
   ModuleOp module;
   /// The symbol to use to verify symbol references.
-  SymbolTableCollection *symtab;
+  mlir::LockedSymbolTableCollection *symtab;
   /// Cached references that have already been verified.
   DenseSet<const void *> verifiedRefs;
 };
@@ -524,10 +521,9 @@ static void emitCycleError(ParameterUseDefGraph &g,
   }
 }
 
-LogicalResult
-ParameterUseDefGraph::calculateOrVerify(ModuleOp module,
-                                        SymbolTableCollection *symtab,
-                                        ParameterCollector::Analysis &cache) {
+LogicalResult ParameterUseDefGraph::calculateOrVerify(
+    ModuleOp module, mlir::LockedSymbolTableCollection *symtab,
+    ParameterCollector::Analysis &cache) {
   TimeTraceScope<> traceScope("ParameterUseDefGraph::calculateOrVerify", [&] {
     if (auto symbol = dyn_cast<mlir::SymbolOpInterface>(scope->getParentOp()))
       return symbol.getName().str();
@@ -716,7 +712,7 @@ void ParameterUseDefGraph::calculate(ParameterCollector::Analysis &cache) {
 }
 
 LogicalResult
-ParameterUseDefGraph::verify(SymbolTableCollection &symtab,
+ParameterUseDefGraph::verify(mlir::LockedSymbolTableCollection &symtab,
                              ParameterCollector::Analysis &cache) {
   return calculateOrVerify(scope->getParentOp()->getParentOfType<ModuleOp>(),
                            &symtab, cache);

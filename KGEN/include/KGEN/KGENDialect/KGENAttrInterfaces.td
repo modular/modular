@@ -72,7 +72,7 @@ def DeclRefAttrInterface : AttrInterface<"DeclRefAttrInterface"> {
       Verify whether the value of the attribute matches the type. A symbol table
       is provided to lookup the type definition.
     }], "LogicalResult", "verifySymbolUses",
-      (ins "Operation *":$module, "SymbolTableCollection &":$symtab,
+      (ins "Operation *":$module, "mlir::LockedSymbolTableCollection &":$symtab,
            "Location":$loc)>
   ];
 }

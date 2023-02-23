@@ -166,8 +166,3 @@ lit.func @bad_litdeclref0(%x: !kgen.declref<@A<b = 10, e = 11>>) -> !lit.none {
   %0 = kgen.param.constant: !lit.none = <#lit.none>
   kgen.return %0 : !lit.none
 }
-
-lit.func @bad_litdeclref1(%x: !kgen.declref<@A<b = 10>>) -> !lit.none {
-  %0 = kgen.param.constant: !lit.none = <#lit.none>
-  kgen.return %0 : !lit.none
-}
