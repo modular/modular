@@ -10,7 +10,7 @@
 #include <thread>
 
 /// Returns the number of cores on the system.
-MODULAR_EXPORT size_t KGEN_CompilerRT_CoreCount() {
+COMPILERRT_EXPORT size_t KGEN_CompilerRT_CoreCount() {
   return std::thread::hardware_concurrency();
 }
 

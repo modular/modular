@@ -9,12 +9,13 @@
 #include "llvm/Support/raw_ostream.h"
 #include <cstdarg>
 
-MODULAR_EXPORT void KGEN_CompilerRT_PrintToStdErr(const char *data,
-                                                  ssize_t size) {
+COMPILERRT_EXPORT void KGEN_CompilerRT_PrintToStdErr(const char *data,
+                                                     ssize_t size) {
   llvm::errs() << llvm::StringRef(data, size);
   llvm::errs().flush();
 }
 
+// TODO(#9034): Why do we need this?
 MODULAR_EXPORT void KGEN_CompilerRT_PrintFormat(const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);

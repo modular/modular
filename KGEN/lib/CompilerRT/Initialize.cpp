@@ -6,4 +6,4 @@
 
 #include "Support/SymbolExport.h"
 
-MODULAR_EXPORT bool KGEN_CompilerRT_Initialize() { return true; }
+COMPILERRT_EXPORT bool KGEN_CompilerRT_Initialize() { return true; }
