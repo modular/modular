@@ -520,12 +520,8 @@ void AlwaysInlineParametricPass::runOnOperation() {
     rootGens.push_back(gen);
   }
   auto workFunc = [&symtab, &getGraph, &paramCache](GeneratorOp gen) mutable {
-    // Copy the cache `ParameterCollector` since it is not thread-safe (yet).
-    // FIXME: We should be able to elide the parameter use-def graph analysis
-    // since the parameter verifier runs before this pass, and run this in
-    // parallel.
-    ParameterCollector::Analysis cacheCopy = paramCache;
-    return inlineGeneratorCall(gen, symtab, cacheCopy, getGraph);
+    ParameterCollector::Analysis cache = paramCache;
+    return inlineGeneratorCall(gen, symtab, cache, getGraph);
   };
   if (failed(mlir::failableParallelForEach(&getContext(), rootGens, workFunc)))
     return signalPassFailure();

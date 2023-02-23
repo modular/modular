@@ -449,8 +449,10 @@ std::optional<bool> DTypeConstantAttr::isLessThan(Attribute rhs) const {
 /// Always a constant by definition.
 bool SymbolConstantAttr::isConstant() const { return true; }
 
-LogicalResult SymbolConstantAttr::verifySymbolUses(
-    Operation *module, SymbolTableCollection &symtab, Location loc) const {
+LogicalResult
+SymbolConstantAttr::verifySymbolUses(Operation *module,
+                                     mlir::LockedSymbolTableCollection &symtab,
+                                     Location loc) const {
   TimeTraceScope<> traceScope("SymbolConstantAttr::verifySymbolUses");
 
   // Build the signature of the referenced symbol.

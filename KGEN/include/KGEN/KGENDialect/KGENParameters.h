@@ -30,13 +30,17 @@ public:
   /// The parameter collector contains a cache of parameter-less attributes and
   /// types that is valid throughout the lifetime of an MLIR context. This
   /// analysis allows the cache to be preserved across passes.
-  struct Analysis {
+  class Analysis {
+  public:
     Analysis(Operation *op = nullptr) {}
 
     /// This analysis can never be invalid.
     bool isInvalidated(const mlir::AnalysisManager::PreservedAnalyses &pa) {
       return false;
     }
+
+  private:
+    friend class ParameterCollector;
 
     /// Types and attributes contained in this map are known to have no
     /// parameter uses as sub-elements. They are mapped to whether there is an
@@ -174,7 +178,7 @@ struct ParameterUseDefGraph {
 
   /// Verify the validity of the parameter declarations, uses, and definitions
   /// within the current scope.
-  LogicalResult verify(SymbolTableCollection &symtab,
+  LogicalResult verify(mlir::LockedSymbolTableCollection &symtab,
                        ParameterCollector::Analysis &cache);
 
   /// Copy this graph into a new instance, remapping all the operations using
@@ -185,7 +189,7 @@ private:
   /// Calculate the parameter use-def graph and perform verification if a symbol
   /// table is provided.
   LogicalResult calculateOrVerify(ModuleOp module,
-                                  SymbolTableCollection *symtab,
+                                  mlir::LockedSymbolTableCollection *symtab,
                                   ParameterCollector::Analysis &cache);
 };
 

@@ -7,6 +7,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Threading.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Pass/Pass.h"
 
@@ -23,15 +24,23 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
   using VerifyParametersBase::VerifyParametersBase;
 
   void runOnOperation() override {
-    auto &symtab = getAnalysis<mlir::SymbolTableAnalysis>();
-    auto &cache = getAnalysis<ParameterCollector::Analysis>();
-    for (auto decl : getOperation().getOps<DeclInterface>()) {
-      for (Region &region : decl->getRegions()) {
-        ParameterUseDefGraph graph(region);
-        if (failed(graph.verify(symtab.getSymbolTables(), cache)))
-          return signalPassFailure();
-      }
-    }
+    auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
+    mlir::LockedSymbolTableCollection sharedSymtabs(analysis.getSymbolTables());
+    auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
+
+    std::vector<Region *> declRegions;
+    for (auto decl : getOperation().getOps<DeclInterface>())
+      for (Region &region : decl->getRegions())
+        declRegions.push_back(&region);
+    auto workFunc = [&sharedSymtabs, &paramCache](Region *declRegion) {
+      ParameterUseDefGraph graph(*declRegion);
+      ParameterCollector::Analysis cache = paramCache;
+      return graph.verify(sharedSymtabs, cache);
+    };
+    if (failed(mlir::failableParallelForEach(&getContext(), declRegions,
+                                             workFunc)))
+      return signalPassFailure();
+
     // This pass does not modify any IR, so mark all analyses as preserved. In
     // addition, this signals the pass manager that the MLIR verifier need not
     // run after this pass.

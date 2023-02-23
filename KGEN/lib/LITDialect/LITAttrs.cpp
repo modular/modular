@@ -64,9 +64,10 @@ printStructElements(AsmPrinter &p,
   p << '}';
 }
 
-LogicalResult StructAttr::verifySymbolUses(Operation *module,
-                                           SymbolTableCollection &symtab,
-                                           Location loc) const {
+LogicalResult
+StructAttr::verifySymbolUses(Operation *module,
+                             mlir::LockedSymbolTableCollection &symtab,
+                             Location loc) const {
   auto structDecl =
       symtab.lookupSymbolIn<StructDeclOp>(module, getType().getSymbol());
   if (!structDecl)
