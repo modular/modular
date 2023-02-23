@@ -1,0 +1,23 @@
+# RUN: lit %s | FileCheck %s
+
+from Int import Int
+from IO import print
+from Assert import assert_param
+
+
+@adaptive
+fn foo[axis: __mlir_type.index](i: Int) -> Int:
+    assert_param[axis < 0]()
+    return i
+
+
+@adaptive
+fn foo[axis: __mlir_type.index](i: Int) -> Int:
+    assert_param[axis >= 0]()
+    return foo[axis - 1](i)
+
+
+fn main():
+    let x = foo[3](42)
+    # CHECK: 42
+    print(x)
