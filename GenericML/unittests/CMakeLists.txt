@@ -4,6 +4,8 @@
 #
 ##===----------------------------------------------------------------------===##
 
+add_subdirectory(GraphCompiler/Conversion)
+
 add_modular_unittest(
   TOP_LEVEL_CHECK
   check-genericml
