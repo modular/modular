@@ -7,7 +7,7 @@
 from Assert import assert_param, debug_assert
 from Bool import Bool
 from DType import DType
-from Functional import unroll
+from Functional import unroll, vectorize
 from Int import Int
 from Index import StaticIntTuple
 from List import (
@@ -16,10 +16,11 @@ from List import (
     _get_kgen_list_item,
     create_kgen_list_unknown,
 )
-from Memory import stack_allocation
+from Memory import stack_allocation, memset_zero
 from Pointer import DTypePointer, product as pointer_product
 from SIMD import SIMD
 from Tuple import StaticTuple
+from TargetInfo import dtype_sizeof, dtype_simd_width
 from Range import range
 
 
@@ -223,6 +224,46 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
             val (SIMD[width, type]): The value to store.
         """
         self.data.simd_store[width](idx, val)
+
+    @always_inline
+    fn bytecount(self) -> Int:
+        """Return the size of the Buffer in bytes."""
+        return self.__len__() * dtype_sizeof[type]()
+
+    @always_inline
+    fn zero(self):
+        """Set all bytes of the Buffer to 0"""
+        memset_zero(self.data, self.bytecount())
+
+    fn simd_fill[
+        simd_width: __mlir_type.index
+    ](self, val: SIMD[1, type]) -> Buffer[size, type]:
+        """Assigns val to all elements in the Buffer in chunks of size
+        simd_width.
+
+            Args:
+                val (SIMD[1, type]):  value to store
+        """
+        if val == 0:
+            self.zero()
+            return self
+
+        @always_inline
+        fn _fill[simd_width: __mlir_type.index](idx: Int):
+            self.simd_store[simd_width](idx, val)
+
+        vectorize[simd_width, _fill](self.__len__())
+        return self
+
+    @always_inline
+    fn fill(self, val: SIMD[1, type]) -> Buffer[size, type]:
+        """Assigns val to all elements in the Buffer in chunks of size
+        N, where N is the native SIMD width of type on the system.
+
+            Args:
+                val (SIMD[1, type]):  value to store
+        """
+        return self.simd_fill[dtype_simd_width[type]().__as_mlir_index()](val)
 
     @staticmethod
     @always_inline
@@ -791,12 +832,44 @@ struct NDBuffer[
         return _get_dim_impl[rank, shape, index](self.dynamic_shape)
 
     fn flatten(self) -> Buffer[__mlir_attr.`#kgen.unknown : index`, type]:
-        assert_param[
-            _neg[contains[rank](__mlir_attr.`#kgen.unknown : index`, shape)]()
-        ]()
         return Buffer[__mlir_attr.`#kgen.unknown : index`, type](
-            self.data.address, product[rank](shape)
+            self.data.address, self.size()
         )
+
+    @always_inline
+    fn bytecount(self) -> Int:
+        """Return the size of the NDBuffer in bytes."""
+        return self.size() * dtype_sizeof[type]()
+
+    @always_inline
+    fn zero(self):
+        """Set all bytes of the NDBuffer to 0"""
+        memset_zero(self.data, self.bytecount())
+
+    fn simd_fill[
+        simd_width: __mlir_type.index
+    ](self, val: SIMD[1, type]) -> NDBuffer[rank, shape, type]:
+        """Assigns val to all elements in the NDBuffer in chunks of size
+        simd_width.
+
+            Args:
+                val (SIMD[1, type]):  value to store
+        """
+        if val == 0:
+            self.zero()
+            return self
+        let _ = self.flatten().simd_fill[simd_width](val)
+        return self
+
+    @always_inline
+    fn fill(self, val: SIMD[1, type]) -> NDBuffer[rank, shape, type]:
+        """Assigns val to all elements in the NDBuffer in chunks of size
+        N, where N is the native SIMD width of type on the system.
+
+            Args:
+                val (SIMD[1, type]):  value to store
+        """
+        return self.simd_fill[dtype_simd_width[type]().__as_mlir_index()](val)
 
     @staticmethod
     @always_inline
