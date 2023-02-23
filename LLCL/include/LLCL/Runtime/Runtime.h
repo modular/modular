@@ -60,11 +60,6 @@ public:
   /// already happened, without doing an extraneous memory allocation.
   const AsyncValueRef<Chain> &getReadyChain() const { return readyChain; }
 
-  /// Returns what should be the unique 'address' representing the type id for
-  /// the Chain type in the Modular runtime.
-  /// For debugging only.
-  intptr_t getChainTypeIdAddress() const { return chainTypeIdAddress; }
-
   //===--------------------------------------------------------------------===//
   // Memory Management
   //===--------------------------------------------------------------------===//
@@ -141,6 +136,12 @@ private:
   Runtime(const Runtime &) = delete;
   void operator=(const Runtime &) = delete;
 
+  /// The 'signature' for the type id registration system the runtime depends
+  /// on. This is expected to be unique for the running process. This can be
+  /// used to catch, at runtime, accidental multiple definitions for Modular
+  /// runtime statics across dynamic libraries / executables.
+  intptr_t signature;
+
   /// These are the allocator and workQueue's that were configured by the client
   /// for this Runtime.
   std::unique_ptr<Allocator> allocator;
@@ -162,26 +163,22 @@ private:
   /// getReadyChain.
   AsyncValueRef<Chain> readyChain;
 
-  /// The 'address' of Chain type id, captured at the point the readyChain
-  /// was created.
-  /// For debugging only. This serves as a, hopefully, unique identifier
-  /// for 'the Modular runtime'. The checkTypeIdsAreCoherent function
-  /// below can be inserted at critical points to ensure a Runtime created
-  /// in one context (executable, dylib) does not accidentally get used
-  /// in a different context (executable, dylib).
-  intptr_t chainTypeIdAddress;
-
   /// If execution is cancelled, this holds the error value to forward into the
   /// results of computations.
   std::atomic<AsyncValue *> cancelValue{nullptr};
+
+  friend void checkUniqueRuntime(const Runtime &runtime);
 };
 
-/// Returns false if the caller's binary appears to include incoherent
-/// representations for AsyncValue type ids.
-/// For debugging only.
-inline bool checkTypeIdsAreCoherent(const Runtime &runtime) {
-  return AsyncValue::getTypeIDAddress<Chain>() ==
-         runtime.getChainTypeIdAddress();
+/// In debug builds, assert the given runtime's 'signature' agrees with what
+/// the host's idea of signature for its dynamic library / executable.
+/// This can be used to catch, at runtime, accidental multiple definitions for
+/// Modular runtime statics across dynamic libraries / executables.
+inline void checkUniqueRuntime(const Runtime &runtime) {
+  assert(runtime.signature == TypeID::getSignature() &&
+         "It appears your process has statically linked the Modular Runtime "
+         "multiple times across dynamic library / executable boundaries. "
+         "Please don't do that.");
 }
 
 } // namespace M::LLCL

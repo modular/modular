@@ -17,6 +17,7 @@
 #endif
 
 #include "LLCL/Runtime/CompactRuntimePtr.h"
+#include "LLCL/Runtime/TypeID.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Diagnostic.h"
 #include "Support/AlignedAlloc.h"
@@ -240,24 +241,14 @@ public:
 
   /// Return a type identifier for the payload held by this AsyncValue.  This is
   /// not set for IndirectAsyncValue's until they are resolved to a value.
-  uint16_t getTypeID() const { return typeID; }
+  TypeID getTypeID() const { return typeID; }
 
   /// Return the ID of the given type. Note that at most 2^16-2 (approx. 64K)
   /// unique types can be used in AsyncValues, since the ID is 16 bits, and 0
   /// and 2^16-1 are not allowed to be used as type IDs.
-  ///
-  /// CAUTION: This id will not be stable across compilation units.
   template <typename T>
-  static uint16_t getTypeID() {
-    return Detail::ConcreteAsyncValue<T>::getRegisteredTypeID();
-  }
-
-  /// Returns what should be the unique 'address' representing the type id for
-  /// type T in the Modular runtime.
-  /// For debugging only.
-  template <typename T>
-  static intptr_t getTypeIDAddress() {
-    return Detail::ConcreteAsyncValue<T>::getRegisteredTypeIdAddress();
+  static TypeID getTypeID() {
+    return TypeID::get<T>();
   }
 
   /// Returns true if this AsyncValue is a ConcreteAsyncValue for type T, or
@@ -271,7 +262,7 @@ public:
   /// Return true if this AsyncValue is a unresolved IndirectAsyncValue.
   bool isIndirect() const {
     return getSubclassKind() == SubclassKind::kIndirect &&
-           getTypeID() == uint16_t(~0U);
+           getTypeID() == TypeID();
   }
 
   //===--------------------------------------------------------------------===//
@@ -402,9 +393,9 @@ private:
 
   // NOTE: 6 unused padding bits.
 
-  /// This is a 16-bit value that identifies the type.  This is dynamically set
+  /// This is a 16-bit value that identifies the type. This is dynamically set
   /// for IndirectAsyncValue's when they get resolved.
-  uint16_t typeID;
+  TypeID typeID;
 
 protected:
   struct WaiterListNodePointerTraits {
@@ -500,7 +491,7 @@ protected:
   static constexpr int kAsyncValueSize = 16;
 
   AsyncValue(SubclassKind subclassKind, State state, bool hasVTable,
-             uint16_t typeID, CompactRuntimePtr runtime)
+             TypeID typeID, CompactRuntimePtr runtime)
       : runtime(runtime), subclassKind(subclassKind), hasVTable(hasVTable),
         typeID(typeID),
         waitersAndState(
@@ -575,9 +566,6 @@ private:
     return getTypeID<T>() == getTypeID();
   }
 
-  /// Return the stored destructor function for this ConcreteValue.
-  ValueDestructorFn getValueDestructor();
-
   /// The error value is always first thing in our derived class.
   EncodedDiagnostic *getDiagnosticPointer() {
     return reinterpret_cast<EncodedDiagnostic *>(this + 1);
@@ -595,10 +583,6 @@ private:
     /// below.
     return this + 1;
   }
-
-  /// This is the out-of-line slow patch for type registration.
-  static void doTypeRegistration(std::atomic<uint16_t> *staticTypeID,
-                                 ValueDestructorFn destructor);
 };
 
 /// Subclass for storing the payload of the AsyncValue inline.  This should
@@ -611,45 +595,15 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
   /// with the payload uninitialized. The result will have ref count 1.
   static ConcreteAsyncValue<T> *allocate(State state,
                                          CompactRuntimePtr runtime) {
-#ifdef MODULAR_DEBUG
-    // Print a helpful error message about which type is not in the registry.
-    // If the condition holds, then the subsequent statement would assert.
-    if (getRegisteredTypeID() == uint16_t(~0U))
-      llvm::errs() << "The AsyncValue type " << llvm::getTypeName<T>()
-                   << " is not registered within the current runtime.\n";
-#endif // MODULAR_DEBUG
-    assert(getRegisteredTypeID() != uint16_t(~0U) &&
-           "AsyncValue type not registered");
     auto *ptr = (ConcreteAsyncValue<T> *)alignedAlloc(
         alignof(ConcreteAsyncValue<T>), sizeof(ConcreteAsyncValue<T>));
     new (ptr) ConcreteAsyncValue<T>(state, std::is_polymorphic_v<T>,
-                                    getRegisteredTypeID(), runtime);
+                                    TypeID::get<T>(), runtime);
     return ptr;
   }
 
-  /// Register our T type, setting `staticTypeID` to a non-sentinel value and
-  /// remembering our destructor function in a side table.
-  static void registerType() {
-    if (ConcreteAsyncValue<T>::staticTypeID.load(std::memory_order_acquire) !=
-        uint16_t(~0U))
-      return;
-    doTypeRegistration(&ConcreteAsyncValue<T>::staticTypeID,
-                       SomeConcreteAsyncValue::destructorFnPtr<T>);
-  }
-
-  static uint16_t getRegisteredTypeID() {
-    return staticTypeID.load(std::memory_order_relaxed);
-  }
-
-  /// Returns what should be the unique 'address' representing the type id for
-  /// type T in the Modular runtime.
-  /// For debugging only.
-  static intptr_t getRegisteredTypeIdAddress() {
-    return reinterpret_cast<intptr_t>(&staticTypeID);
-  }
-
 private:
-  ConcreteAsyncValue(State state, bool hasVTable, uint16_t typeID,
+  ConcreteAsyncValue(State state, bool hasVTable, TypeID typeID,
                      CompactRuntimePtr runtime)
       : SomeConcreteAsyncValue(SubclassKind::kConcrete, state, hasVTable,
                                typeID, runtime) {
@@ -682,12 +636,7 @@ private:
   // ConcreteAsyncValue are 16-byte aligned.  This simplifies all clients.
   static_assert(sizeof(AsyncValue) == kAsyncValueSize,
                 "Unexpected size for AsyncValue");
-
-  static std::atomic<uint16_t> staticTypeID;
 };
-
-template <typename T>
-std::atomic<uint16_t> ConcreteAsyncValue<T>::staticTypeID(uint16_t(~0));
 
 } // namespace Detail.
 
@@ -701,7 +650,7 @@ class IndirectAsyncValue : public AsyncValue {
   IndirectAsyncValue(CompactRuntimePtr runtime)
       : AsyncValue(SubclassKind::kIndirect, State::kUnconstructed,
                    /*hasVTable=*/false,
-                   /*typeID=*/uint16_t(~0U), runtime) {}
+                   /*typeID=*/{}, runtime) {}
   ~IndirectAsyncValue() {
     // If the IndirectAsyncValue is ready, then the RCRef to the resolved
     // pointer has been constructed, destroy it.
@@ -739,7 +688,7 @@ class IndirectAsyncValue : public AsyncValue {
 /// types without guarding against duplicates etc.
 template <typename T>
 void AsyncValue::registerType() {
-  Detail::ConcreteAsyncValue<T>::registerType();
+  TypeID::registerType<T>();
 }
 
 /// Helper function that calls registerType() for each type in the list.
