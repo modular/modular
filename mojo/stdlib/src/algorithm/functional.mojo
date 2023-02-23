@@ -90,7 +90,7 @@ fn vectorize[
         `) -> !lit.none>`,
     ],
 ](size: Int):
-    """Map a function which is parametrized over a simd_Width over a range
+    """Map a function which is parametrized over a simd_width over a range
     from 0 to size in simd fashion.
     """
     let vector_end = (size // simd_width) * simd_width
