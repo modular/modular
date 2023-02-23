@@ -11,7 +11,6 @@ from Index import Index
 from Int import Int
 from IO import print
 from List import create_kgen_list
-from Memory import memset_zero
 from Pad import pad
 
 
@@ -37,8 +36,9 @@ fn test_pad_1d():
 
     # Create an output matrix of the form
     # [0, 0, 0, 0, 0, 0]
-    var output = NDBuffer[1, out_shape, DType.index.value].stack_allocation()
-    memset_zero(output.data, output.size())
+    var output = (
+        NDBuffer[1, out_shape, DType.index.value].stack_allocation().fill(0)
+    )
 
     # pad
     pad(output, input, paddings.data, 5)
@@ -88,8 +88,9 @@ fn test_pad_2d():
     # [[0, 0, 0, 0]
     #  [0, 0, 0, 0]
     #  [0, 0, 0, 0]]
-    var output = NDBuffer[2, out_shape, DType.index.value].stack_allocation()
-    memset_zero(output.data, output.size())
+    var output = (
+        NDBuffer[2, out_shape, DType.index.value].stack_allocation().fill(0)
+    )
 
     # pad
     pad(output, input, paddings.data, 6)
@@ -158,8 +159,9 @@ fn test_pad_3d():
     #  [[0, 0, 0]
     #   [0, 0, 0]
     #   [0, 0, 0]]]
-    var output = NDBuffer[3, out_shape, DType.index.value].stack_allocation()
-    memset_zero(output.data, output.size())
+    var output = (
+        NDBuffer[3, out_shape, DType.index.value].stack_allocation().fill(0)
+    )
 
     # pad
     pad(output, input, paddings.data, 7)

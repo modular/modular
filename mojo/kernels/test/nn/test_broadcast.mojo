@@ -12,7 +12,6 @@ from Index import Index
 from Int import Int
 from IO import print
 from List import create_kgen_list
-from Memory import memset_zero
 from Tuple import StaticTuple
 
 
@@ -35,12 +34,15 @@ fn test_broadcast_same_shape():
     input.__setitem__(Index(0, 1, 0), 2)
 
     # Create a 3D tensor of shape (1, 2, 1)
-    var output = NDBuffer[
-        3,
-        output_shape,
-        DType.index.value,
-    ].stack_allocation()
-    memset_zero(output.data, 2)
+    var output = (
+        NDBuffer[
+            3,
+            output_shape,
+            DType.index.value,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     broadcast(output, input)
     # output tensor will have the form:
@@ -77,12 +79,15 @@ fn test_broadcast_single_axis():
     input.__setitem__(Index(0, 1), 2)
 
     # Create a 2D tensor of shape (3, 2)
-    var output = NDBuffer[
-        2,
-        output_shape,
-        DType.index.value,
-    ].stack_allocation()
-    memset_zero(output.data, 6)
+    var output = (
+        NDBuffer[
+            2,
+            output_shape,
+            DType.index.value,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     broadcast(output, input)
     # output tensor will have the form:
@@ -127,12 +132,15 @@ fn test_broadcast_multi_axes():
     input.__setitem__(Index(0, 1, 0), 2)
 
     # Create a 3D tensor of shape (2, 2, 3)
-    var output = NDBuffer[
-        3,
-        output_shape,
-        DType.index.value,
-    ].stack_allocation()
-    memset_zero(output.data, 16)
+    var output = (
+        NDBuffer[
+            3,
+            output_shape,
+            DType.index.value,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     broadcast(output, input)
     # output tensor will have the form:
@@ -194,12 +202,15 @@ fn test_broadcast_multi_axes_nested():
     input.__setitem__(Index(1, 0, 1, 0, 1), 8)
 
     # Create a 5D tensor of shape (2, 2, 2, 2, 2)
-    var output = NDBuffer[
-        5,
-        output_shape,
-        DType.index.value,
-    ].stack_allocation()
-    memset_zero(output.data, 32)
+    var output = (
+        NDBuffer[
+            5,
+            output_shape,
+            DType.index.value,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     broadcast(output, input)
 
