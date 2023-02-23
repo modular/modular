@@ -11,7 +11,6 @@ from Index import Index
 from Int import Int
 from IO import print
 from List import create_kgen_list
-from Memory import memset_zero
 from Transpose import transpose, transpose_inplace
 from Tuple import StaticTuple
 from Range import range
@@ -161,8 +160,9 @@ fn test_transpose_2d_identity():
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
     alias out_shape = create_kgen_list[__mlir_type.index](3, 3)
-    var output = NDBuffer[2, out_shape, DType.index.value].stack_allocation()
-    memset_zero(output.data, output.size())
+    var output = (
+        NDBuffer[2, out_shape, DType.index.value].stack_allocation().fill(0)
+    )
 
     # transpose
     transpose(output, input, perm.data)
@@ -223,8 +223,9 @@ fn test_transpose_2d():
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
     alias out_shape = create_kgen_list[__mlir_type.index](3, 3)
-    var output = NDBuffer[2, out_shape, DType.index.value].stack_allocation()
-    memset_zero(output.data, output.size())
+    var output = (
+        NDBuffer[2, out_shape, DType.index.value].stack_allocation().fill(0)
+    )
 
     # transpose
     transpose(output, input, perm.data)
@@ -291,8 +292,9 @@ fn test_transpose_3d_identity():
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
     alias out_shape = create_kgen_list[__mlir_type.index](2, 2, 3)
-    var output = NDBuffer[3, out_shape, DType.index.value].stack_allocation()
-    memset_zero(output.data, output.size())
+    var output = (
+        NDBuffer[3, out_shape, DType.index.value].stack_allocation().fill(0)
+    )
 
     # transpose
     transpose(output, input, perm.data)
@@ -366,8 +368,9 @@ fn test_transpose_3d():
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
     alias out_shape = create_kgen_list[__mlir_type.index](3, 2, 2)
-    var output = NDBuffer[3, out_shape, DType.index.value].stack_allocation()
-    memset_zero(output.data, output.size())
+    var output = (
+        NDBuffer[3, out_shape, DType.index.value].stack_allocation().fill(0)
+    )
 
     # transpose
     transpose(output, input, perm.data)

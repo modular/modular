@@ -19,7 +19,6 @@ from Int import Int
 from Index import Index
 from IO import print
 from List import create_kgen_list
-from Memory import memset_zero
 from Range import range
 from SIMD import SIMD
 from TargetInfo import is_apple_m1, sizeof
@@ -64,8 +63,7 @@ fn clear_c(
         DType.f32.value,
     ]
 ):
-    let buffer_bytecount = buf.size() * sizeof[__mlir_type.f32]()
-    memset_zero(buf.data, buffer_bytecount)
+    buf.zero()
 
 
 fn print_matrix(

@@ -8,7 +8,6 @@ from Range import range
 from SIMD import SIMD, _reduce_tree_add
 from TargetInfo import simd_width, sizeof
 from IO import print
-from Memory import memset_zero
 from Index import Index
 
 
