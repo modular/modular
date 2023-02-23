@@ -51,25 +51,29 @@ static inline LLCLRuntimeRef wrap(const Runtime *ptr) {
 // Initialization
 //===----------------------------------------------------------------------===//
 
+static void checkRuntime(LLCLRuntimeRef rt) {
+  assert(checkTypeIdsAreCoherent(*unwrap(rt)) && "type ids are not coherent");
+}
+
 /// Given the async context of a coroutine, initialize its token value. The
 /// runtime pointer must have already been set.
-MODULAR_EXPORT void KGEN_CompilerRT_LLCL_InitializeChain(LLCLRuntimeRef rt,
-                                                         AsyncChainRef chain) {
-  assert(checkTypeIdsAreCoherent(*unwrap(rt)) && "type ids are not coherent");
+COMPILERRT_EXPORT void
+KGEN_CompilerRT_LLCL_InitializeChain(LLCLRuntimeRef rt, AsyncChainRef chain) {
+  checkRuntime(rt);
   new (&unwrap(chain))
       AsyncValueRef<Chain>(takeRCRef(AsyncValue::allocate<Chain>(unwrap(rt))));
 }
 
 /// Given the async context of a coroutine, destroy its token value.
-MODULAR_EXPORT void KGEN_CompilerRT_LLCL_DestroyChain(AsyncChainRef chain) {
+COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_DestroyChain(AsyncChainRef chain) {
   unwrap(chain).~AsyncValueRef<Chain>();
 }
 
-MODULAR_EXPORT void KGEN_CompilerRT_LLCL_InitWaiter(SpinWaiterRef waiter) {
+COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_InitWaiter(SpinWaiterRef waiter) {
   new (&unwrap(waiter)) SpinWaiter<>();
 }
 
-MODULAR_EXPORT void KGEN_CompilerRT_LLCL_WaiterWait(SpinWaiterRef waiter) {
+COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_WaiterWait(SpinWaiterRef waiter) {
   unwrap(waiter).wait();
 }
 
@@ -78,45 +82,48 @@ MODULAR_EXPORT void KGEN_CompilerRT_LLCL_WaiterWait(SpinWaiterRef waiter) {
 //===----------------------------------------------------------------------===//
 
 /// Execute a coroutine.
-MODULAR_EXPORT void KGEN_CompilerRT_LLCL_Execute(void (*resume)(int8_t *),
-                                                 int8_t *hdl,
-                                                 LLCLRuntimeRef runtime) {
+COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_Execute(void (*resume)(int8_t *),
+                                                    int8_t *hdl,
+                                                    LLCLRuntimeRef runtime) {
+  checkRuntime(runtime);
   unwrap(runtime)->getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
 }
 
 /// Resume a coroutine when the current one completes.
-MODULAR_EXPORT void KGEN_CompilerRT_LLCL_AndThen(void (*resume)(int8_t *),
-                                                 AsyncChainRef chain,
-                                                 int8_t *hdl) {
+COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_AndThen(void (*resume)(int8_t *),
+                                                    AsyncChainRef chain,
+                                                    int8_t *hdl) {
   unwrap(chain).andThenAsync([hdl, resume]() { resume(hdl); });
 }
 
 /// Block until the coroutine is done.
-MODULAR_EXPORT void KGEN_CompilerRT_LLCL_Wait(AsyncChainRef chain) {
+COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_Wait(AsyncChainRef chain) {
   await(unwrap(chain));
 }
 
 /// Execute a coroutine and block the current routine until it is complete.
-MODULAR_EXPORT void
+COMPILERRT_EXPORT void
 KGEN_CompilerRT_LLCL_ExecuteAndWait(void (*resume)(int8_t *), int8_t *hdl,
                                     LLCLRuntimeRef rt, AsyncChainRef chain) {
+  checkRuntime(rt);
   unwrap(rt)->getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
   await(unwrap(chain));
 }
 
 /// Execute a coroutine. Register a completion handler to resume another
 /// coroutine when the scheduled coroutine completes.
-MODULAR_EXPORT void
+COMPILERRT_EXPORT void
 KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *), int8_t *execHdl,
                                       AsyncChainRef chain, LLCLRuntimeRef rt,
                                       int8_t *resumeHdl) {
+  checkRuntime(rt);
   unwrap(rt)->getWorkQueue()->addTask([resume, execHdl]() { resume(execHdl); });
   unwrap(chain).andThenAsync([resumeHdl, resume]() { resume(resumeHdl); });
 }
 
 /// Given the async context of a coroutine, indicate that it is complete by
 /// setting its token value.
-MODULAR_EXPORT void KGEN_CompilerRT_LLCL_Complete(AsyncChainRef chain) {
+COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_Complete(AsyncChainRef chain) {
   unwrap(chain).copy().emplace();
 }
 
@@ -125,7 +132,7 @@ MODULAR_EXPORT void KGEN_CompilerRT_LLCL_Complete(AsyncChainRef chain) {
 //===----------------------------------------------------------------------===//
 
 /// Create an LLCL runtime and return it as a compact pointer.
-MODULAR_EXPORT LLCLRuntimeRef KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(
+COMPILERRT_EXPORT LLCLRuntimeRef KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(
     ssize_t numThreads, const char *profileFilenamePtr,
     ssize_t profileFilenameLen) {
   StringRef profileFilename{profileFilenamePtr,
@@ -137,18 +144,18 @@ MODULAR_EXPORT LLCLRuntimeRef KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(
 }
 
 /// Create an LLCL runtime and return it as a compact pointer.
-MODULAR_EXPORT LLCLRuntimeRef
+COMPILERRT_EXPORT LLCLRuntimeRef
 KGEN_CompilerRT_LLCL_CreateRuntime(ssize_t numThreads) {
   return KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(numThreads, nullptr, 0);
 }
 
 /// Given a compact pointer to an LLCL runtime, destroy it.
-MODULAR_EXPORT void KGEN_CompilerRT_LLCL_DestroyRuntime(LLCLRuntimeRef ptr) {
+COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_DestroyRuntime(LLCLRuntimeRef ptr) {
   delete unwrap(ptr);
 }
 
 /// Given a compact pointer to an LLCL runtime, get the number of threads in it.
-MODULAR_EXPORT uint32_t
+COMPILERRT_EXPORT uint32_t
 KGEN_CompilerRT_LLCL_ParallelismLevel(LLCLRuntimeRef ptr) {
   return unwrap(ptr)->getWorkQueue()->getParallelismLevel();
 }

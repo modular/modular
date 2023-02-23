@@ -25,7 +25,7 @@ enum class XFeature : size_t {
 };
 
 // This funciton must be called before using Intel AMX
-MODULAR_EXPORT bool KGEN_CompilerRT_Init_Intel_AMX() {
+COMPILERRT_EXPORT bool KGEN_CompilerRT_Init_Intel_AMX() {
   unsigned long bitmask = 0;
   if (syscall(SYS_arch_prctl, ARCH_GET_XCOMP_PERM, &bitmask))
     return false;

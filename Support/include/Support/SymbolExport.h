@@ -26,4 +26,9 @@
 #define MODULAR_EXPORT extern "C" MODULAR_VISIBILITY_EXPORT
 #define MODULAR_CXX_EXPORT MODULAR_VISIBILITY_EXPORT
 
+// For CompilerRT we need the runtime entry points to have unmangled names,
+// but currently do not wish to give them default visibility in any dylib
+// they end up within.
+#define COMPILERRT_EXPORT extern "C"
+
 #endif // SUPPORT_EXPORT_H
