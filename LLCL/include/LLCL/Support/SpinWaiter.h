@@ -13,7 +13,7 @@
 #include <thread>
 
 #ifdef _MSC_VER
-extern "C" void YieldProcessor();
+#include <immintrin.h> // _mm_pause
 #endif
 
 namespace M::LLCL {
@@ -68,7 +68,7 @@ public:
         // by setting "shouldYieldToOS" to true.
         !shouldYieldToOS) {
 #ifdef _MSC_VER
-      YieldProcessor();
+      _mm_pause();
 #elif defined __i386__ || defined __x86_64__
       __builtin_ia32_pause();
 #elif __ARM_ARCH_7A__ || __aarch64__
