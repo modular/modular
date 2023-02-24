@@ -6,6 +6,7 @@
 
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "Support/ErrorOr.h"
 #include "Support/TimeProfiler.h"
@@ -21,30 +22,21 @@ using namespace M::KGEN;
 
 /// Given a parameter expression, walk it and return any references to named
 /// parameters.  This fails if an unknown parameter expression exists.
-void KGEN::collectParameterReferences(Attribute attr,
-                                      SmallVector<ParamDeclRefAttr> &results) {
-  // We know that simple constants (including concrete type constants) don't
-  // have parameter references in them. Walk over them.
-  if (!attr || ParameterAttr::isSimpleConstant(attr))
-    return;
-
-  if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr)) {
-    results.push_back(paramRef);
-    return;
-  }
-
-  attr.walkImmediateSubElements(
-      [&](Attribute attr) { collectParameterReferences(attr, results); },
-      [&](Type type) { collectParameterReferences(type, results); });
+void KGEN::collectParameterReferences(
+    Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &results,
+    bool &hasConstExpr) {
+  ParameterCollector::Analysis cache;
+  ParameterCollector c(cache);
+  c.collectUsesFromAttr(attr, results, hasConstExpr);
 }
 
 /// Given a potentially-parameterized MLIR type, walk it and return any
 /// references to named parameters.
-void KGEN::collectParameterReferences(Type type,
-                                      SmallVector<ParamDeclRefAttr> &results) {
-  type.walkImmediateSubElements(
-      [&](Attribute attr) { collectParameterReferences(attr, results); },
-      [&](Type type) { collectParameterReferences(type, results); });
+void KGEN::collectParameterReferences(
+    Type type, SmallVectorImpl<ParamDeclRefAttr> &results, bool &hasConstExpr) {
+  ParameterCollector::Analysis cache;
+  ParameterCollector c(cache);
+  c.collectUsesFromType(type, results, hasConstExpr);
 }
 
 /// Return true if the specified type contains parameter references, e.g.
@@ -56,8 +48,9 @@ void KGEN::collectParameterReferences(Type type,
 /// caching.
 bool KGEN::isParameterizedType(Type type) {
   SmallVector<ParamDeclRefAttr> paramDecls;
-  collectParameterReferences(type, paramDecls);
-  return !paramDecls.empty();
+  bool hasConstExpr = false;
+  collectParameterReferences(type, paramDecls, hasConstExpr);
+  return !paramDecls.empty() || hasConstExpr;
 }
 
 //===----------------------------------------------------------------------===//

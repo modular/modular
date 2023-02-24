@@ -242,7 +242,8 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   SmallVector<ParamDeclRefAttr> parameterRefs;
   auto parent = op->getParentOfType<DeclInterface>();
   if (parent) {
-    collectParameterReferences(cond, parameterRefs);
+    bool unused;
+    collectParameterReferences(cond, parameterRefs, unused);
     ArrayRef<ParamDeclAttr> generatorInputParams = parent.getInputParamDecls();
 
     // Check to see if the parameters referenced by the condition are all
@@ -888,11 +889,12 @@ void ParamYieldOp::walkDefinitions(
 /// Otherwise, require that the concrete input and output types are the same.
 LogicalResult RebindOp::verify() {
   SmallVector<ParamDeclRefAttr> inputRefs, outputRefs;
-  collectParameterReferences(getInput().getType(), inputRefs);
-  if (!inputRefs.empty())
+  bool inputConstExpr = false, outputConstExpr = false;
+  collectParameterReferences(getInput().getType(), inputRefs, inputConstExpr);
+  if (!inputRefs.empty() || inputConstExpr)
     return success();
-  collectParameterReferences(getType(), outputRefs);
-  if (!outputRefs.empty())
+  collectParameterReferences(getType(), outputRefs, outputConstExpr);
+  if (!outputRefs.empty() || outputConstExpr)
     return success();
 
   if (getInput().getType() == getType())
