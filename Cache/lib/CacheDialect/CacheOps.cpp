@@ -81,11 +81,35 @@ AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
 
           BufferRef resourceData = Buffer::get(
               StringRef(blob->getData().data(), blob->getData().size()));
-          // Insert the data into the cache.
-          auto hashOr = cache->insert(resourceAttr, std::move(resourceData));
-          // This is not great - we have to make this sync because MLIR doesn't
-          // really have a good way to handle async here.
-          await(hashOr);
+
+          // We have to make this synchronous for now :(
+          auto contains = cache->contains(resourceAttr);
+          await(contains);
+          // Only do the insert if we don't already have it in the cache.
+          std::string keyHash = cache->getHash(resourceAttr);
+          if (!*contains) {
+            // Insert the data into the cache. We don't really care about the
+            // ordering of insert if we have 2 threads inserting the same data -
+            // the result will be that the last one wins but since it's the same
+            // data we still end up with the correct result. The `contains`
+            // check is just for the obvious case.
+            auto hashOr = cache->insert(resourceAttr, std::move(resourceData));
+            // This is not great - we have to make this sync because MLIR
+            // doesn't really have a good way to handle async here.
+            await(hashOr);
+            if (hashOr.isError()) {
+              std::move(out).setToError(hashOr.takeDiagnostic());
+              return nullptr;
+            }
+
+            if (hashOr->isError()) {
+              std::move(out).setToError(
+                  getMLIRDiagnostic(hashOr->takeError(), constant->getLoc()));
+              return nullptr;
+            }
+
+            keyHash = **hashOr;
+          }
 
           // Create a builder so we can create attrs easier.
           OpBuilder builder(constant);
@@ -100,7 +124,7 @@ AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
               builder.getStringAttr(resourceAttr.getRawHandle().getKey()));
 
           auto newAttr = ConstantHashAttr::get(
-              resourceAttr.getContext(), resourceAttr.getType(), **hashOr,
+              resourceAttr.getContext(), resourceAttr.getType(), keyHash,
               additionalAttrs.getDictionary(resourceAttr.getContext()));
           return newAttr;
         });
@@ -161,14 +185,15 @@ AsyncValueRef<Chain> Cache::inflateConstant(Operation *constant,
       IntegerAttr alignAttr = cast<IntegerAttr>(additional.get("align"));
       StringAttr name = cast<StringAttr>(additional.get("name"));
 
-      // The cache owns the data, so in theory we could rely on a cache dialect
-      // resource to keep a reference to the data alive as long as the dialect
-      // is alive - that would avoid this copy.
+      // The cache owns the data, so we can simply hold a ref inside
+      // UnmanagedAsmResourceBlob and drop it when it's done.
       BufferRef buf = std::move(**found);
-      auto blob = mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
+      auto blob = mlir::UnmanagedAsmResourceBlob::allocateWithAlign(
           ArrayRef<char>(buf->getBufferStart(), buf->getBufferSize()),
-          alignAttr.getUInt());
-
+          alignAttr.getUInt(),
+          [buf = buf.copy()](void *data, size_t size, size_t align) {
+            ; // No-op, buffer ref is dropped when this closure dies.
+          });
       auto resourceManager = DenseResourceElementsHandle::getManagerInterface(
           constant->getContext());
 
@@ -279,7 +304,8 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
   });
 
   r.walk([&](Operation *op) {
-    replacer.replaceElementsIn(op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
+    replacer.replaceElementsIn(op, /*replaceAttrs=*/true,
+                               /*replaceLocs=*/true,
                                /*replaceTypes=*/true);
   });
 
@@ -287,45 +313,70 @@ static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
   // can cache it.
   auto container = builder.create<ContainerOp>(r.getLoc(), r);
 
-  // Create a place to store the bytecode.
-  WriteableBufferRef bytecode = WriteableBuffer::get();
-  // Store the container in bytecode.
-  mlir::writeBytecodeToFile(container, *bytecode);
+  // This function contains the logic to attach a provided hash to the op -
+  // since we need it in a couple places we just outline it here.
+  auto attachHash = [op, container,
+                     attrs = std::move(attrs)](std::string &&hash) mutable {
+    // Create a new builder because this may run well after the rest of
+    // this function.
+    OpBuilder builder(op);
+    SmallVector<RegionHashAttr> hashVec;
+    // If we already have some hashes, we have to append to the end of
+    // that array.
+    auto hashes =
+        op->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
+    if (hashes)
+      hashVec = SmallVector<RegionHashAttr>(hashes.begin(), hashes.end());
 
-  // Store it.
-  auto hashOr = cache->insert(&container.getBodyRegion(), std::move(bytecode));
-  auto out = AsyncValueRef<Chain>::allocate(hashOr.getRuntime());
-  // Keeping references is safe here because all the memory is owned by the
-  // MLIRContext, which is guaranteed to live longer than any of this.
-  std::move(hashOr).andThenSync(
-      [&r, op, container, attrs = std::move(attrs),
-       out = out.copy()](AsyncValueRef<ErrorOr<std::string>> &&hashOr) mutable {
-        // Create a new builder because this may run well after the rest of this
-        // function.
-        OpBuilder builder(op);
-        if (failed(*hashOr)) {
-          return std::move(out).setToError(
-              getMLIRDiagnostic(hashOr->takeError(), r.getLoc()));
+    hashVec.push_back(
+        builder.getAttr<RegionHashAttr>(hash, attrs.getArrayRef()));
+
+    auto hashVecAttr = builder.getAttr<RegionHashArrayAttr>(hashVec);
+    op->setAttr(getRegionHashAttrName(), hashVecAttr);
+
+    // Finally, erase the container.
+    container.erase();
+  };
+
+  auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
+  // Store it, but only if we don't already have it.
+  auto contains =
+      cache->contains(&container.getBodyRegion(),
+                      MLIRLocationDecoder::getEncodedLocation(op->getLoc()));
+  std::move(contains).andThenSync(
+      [op, container, attachHash = std::move(attachHash), out = out.copy(),
+       cache = std::move(cache)](AsyncValueRef<bool> &&contains) mutable {
+        if (contains.isError())
+          return std::move(out).setToError(contains.takeDiagnostic());
+
+        // If we have it, then attach the hash to the op and move along.
+        if (*contains) {
+          attachHash(cache->getHash(&container.getBodyRegion()));
+          return std::move(out).emplace();
         }
 
-        SmallVector<RegionHashAttr> hashVec;
-        // If we already have some hashes, we have to append to the end of that
-        // array.
-        auto hashes =
-            op->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
-        if (hashes)
-          hashVec = SmallVector<RegionHashAttr>(hashes.begin(), hashes.end());
+        // We don't already have it - add it.
+        // Create a place to store the bytecode.
+        WriteableBufferRef bytecode = WriteableBuffer::get();
+        // Store the container in bytecode.
+        mlir::writeBytecodeToFile(container, *bytecode);
+        auto hashOr =
+            cache->insert(&container.getBodyRegion(), std::move(bytecode));
+        // Keeping references is safe here because all the memory is owned by
+        // the MLIRContext, which is guaranteed to live longer than any of this.
+        std::move(hashOr).andThenSync(
+            [op, attachHash = std::move(attachHash), out = out.copy()](
+                AsyncValueRef<ErrorOr<std::string>> &&hashOr) mutable {
+              // Check for errors.
+              if (hashOr.isError())
+                return std::move(out).setToError(hashOr.takeDiagnostic());
+              if (hashOr->isError())
+                return std::move(out).setToError(
+                    getMLIRDiagnostic(hashOr->takeError(), op->getLoc()));
 
-        hashVec.push_back(
-            builder.getAttr<RegionHashAttr>(**hashOr, attrs.getArrayRef()));
-
-        auto hashVecAttr = builder.getAttr<RegionHashArrayAttr>(hashVec);
-        op->setAttr(getRegionHashAttrName(), hashVecAttr);
-
-        // Finally, erase the container.
-        container.erase();
-
-        std::move(out).emplace();
+              attachHash(std::move(**hashOr));
+              return std::move(out).emplace();
+            });
       });
 
   return out;

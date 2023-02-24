@@ -127,6 +127,10 @@ public:
 
   LLCL::Runtime &getRuntime() { return runtime; }
 
+  /// Simple method to get the hash of a key via the KeyInfo struct. This is
+  /// useful if (for example) we already have the object in the cache.
+  std::string getHash(KeyTy key) const { return KeyInfo::hashKey(key); }
+
   /// Store an item in the provided backends. On a collision, the backends are
   /// expected to overwrite the existing contents, so it is incumbent on the
   /// user to use a strong hash function! Returns the cache key on success -
