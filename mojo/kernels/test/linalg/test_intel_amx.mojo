@@ -11,7 +11,7 @@
 # RUN: lit %s | FileCheck %s
 
 from DType import DType
-from Bool import Bool
+
 from Int import Int
 from SIMD import SIMD
 from Pointer import Pointer, DTypePointer

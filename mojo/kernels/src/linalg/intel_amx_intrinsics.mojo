@@ -15,7 +15,7 @@ from Pointer import Pointer, DTypePointer
 from Tuple import StaticTuple
 from Matmul import Matrix
 from List import create_kgen_list
-from Bool import Bool
+
 from Range import range
 from SIMD import SIMD
 

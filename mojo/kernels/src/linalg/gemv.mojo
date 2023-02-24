@@ -1,4 +1,3 @@
-from Bool import Bool
 from Buffer import NDBuffer, Buffer
 from DType import DType
 from Functional import unroll

@@ -11,7 +11,7 @@
 # ===----------------------------------------------------------------------===#
 
 from Assert import assert_param, assert_param_bool
-from Bool import Bool
+
 from Buffer import NDBuffer
 from DType import DType
 from Int import Int

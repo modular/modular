@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, assert_param_bool
-from Bool import Bool
+
 from Buffer import (
     NDBuffer,
     Buffer,
