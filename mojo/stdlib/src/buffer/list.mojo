@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Int import Int
-from Bool import Bool
+
 from Assert import assert_param
 from Functional import unroll
 from TypeUtilities import rebind

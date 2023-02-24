@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from Bool import Bool
+
 from DType import DType
 from Functional import unroll, vectorize
 from Int import Int
