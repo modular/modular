@@ -480,9 +480,8 @@ protected:
         typeID(typeID),
         waitersAndState(
             (intptr_t)WaitersAndState(nullptr, state).getOpaqueValue()) {
-    assert(subclassKind == SubclassKind::kIndirect ||
-           typeID != TypeID() &&
-               "require valid type ID when constructing a ConcreteAsyncValue");
+    assert((subclassKind == SubclassKind::kIndirect || typeID != TypeID()) &&
+           "require valid type ID when constructing a ConcreteAsyncValue");
     if constexpr (isAllocationTrackingEnabled())
       ++totalAllocatedAsyncValues;
   }
