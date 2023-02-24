@@ -177,7 +177,7 @@ MValue ParameterInferenceState::infer(SignatureType signature,
        llvm::enumerate(signature.getValueInputs())) {
     ValueInputConvention expectedConvention =
         signature.getInputConvention(expectedArgIdx);
-    VarArgKind expectedVararg = signature.getVarArgKind(expectedArgIdx);
+    VarArgKind expectedVararg = signature.getVarArg(expectedArgIdx);
 
     // Handle case when there are no more provided arguments.
     if (providedValueIdx == operands.size()) {
@@ -526,9 +526,8 @@ OverloadFitness OverloadFitness::evaluate(
   // that doesn't work out.  Check for that first.
   size_t minRequiredArgs = 0;
   size_t maxAllowedargs = 0;
-  for (auto [convention, vararg] :
-       llvm::zip(signature.getValueInputConventions(),
-                 signature.getVarArgMarkers())) {
+  for (auto [convention, vararg] : llvm::zip(
+           signature.getValueInputConventions(), signature.getVarArgs())) {
     // Varargs arguments don't require a value, but allow any number of them.
     if (vararg == VarArgKind::VarArg) {
       maxAllowedargs = ~size_t(0);
@@ -566,7 +565,7 @@ OverloadFitness OverloadFitness::evaluate(
        llvm::enumerate(signature.getValueInputs())) {
     ValueInputConvention expectedConvention =
         signature.getInputConvention(expectedArgIdx);
-    VarArgKind expectedVararg = signature.getVarArgKind(expectedArgIdx);
+    VarArgKind expectedVararg = signature.getVarArg(expectedArgIdx);
 
     // Handle case when there are no more provided arguments.
     if (providedValueIdx == operands.size()) {
@@ -1075,7 +1074,7 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   Value firstArgValue;
   ValueInputConvention selfConvention = calleeSignature.getInputConvention(0);
 
-  assert(calleeSignature.getVarArgKind(0) == VarArgKind::None &&
+  assert(calleeSignature.getVarArg(0) == VarArgKind::None &&
          "Error: self shouldn't be able to be varargs");
 
   switch (selfConvention) {
@@ -1270,7 +1269,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   size_t nextDefaultIdx = 0;
   for (auto [expectedTypeX, conventionX, varargX] : llvm::zip(
            calleeSig.getValueInputs(), calleeSig.getValueInputConventions(),
-           calleeSig.getVarArgMarkers())) {
+           calleeSig.getVarArgs())) {
     // Work around lambda not being able to reference bindings.
     Type expectedType = expectedTypeX;
     ValueInputConvention convention = conventionX;

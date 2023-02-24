@@ -1106,7 +1106,7 @@ static void printElementsWithMetadata(AsmPrinter &p,
           p << ' ' << stringifyValueInputConvention(conv);
           kindSep = '|';
         }
-        VarArgKind kind = metadata.getVarArgMarkers()[i];
+        VarArgKind kind = metadata.getVarArgs()[i];
         if (kind != VarArgKind::None)
           p << kindSep << stringifyVarArgKind(kind);
 

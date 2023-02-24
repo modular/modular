@@ -281,7 +281,7 @@ static void lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
         sigType.getInputParams(), sigType.getResultParams(),
         b.getFunctionType(sigType.getValueInputs(), type),
         b.getAttr<MetadataAttr>(
-            sigType.getValueInputConventions(), sigType.getVarArgMarkers(),
+            sigType.getValueInputConventions(), sigType.getVarArgs(),
             sigType.getDefaultArguments(),
             bitEnumClear(sigType.getFnEffects(),
                          FnEffects::Throws | FnEffects::Async)));

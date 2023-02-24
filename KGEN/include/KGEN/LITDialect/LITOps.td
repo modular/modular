@@ -8,6 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+include "KGEN/LITDialect/LITAttrs.td"
 include "KGEN/LITDialect/LITDialect.td"
 include "KGEN/LITDialect/LITTypes.td"
 include "KGEN/KGENDialect/KGENAttrs.td"
