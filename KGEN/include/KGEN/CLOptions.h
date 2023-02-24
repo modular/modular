@@ -61,27 +61,9 @@ public:
              CommandLineFunc &val);
 };
 
-class KGENCLOptions : public CommonCLOptions {
+class KGENCommonOptions : public CommonCLOptions {
 public:
   using CommonCLOptions::CommonCLOptions;
-
-  cl::opt<Command> cmd{
-      cl::desc("The command to execute"),
-      cl::values(
-          clEnumValN(Command::kGenLibraryFile, "gen-lib",
-                     "Generate a distributable library file."),
-          clEnumValN(Command::kElaborate, "elaborate", "Elaborate the input."),
-          clEnumValN(Command::kEmitLLVM, "emit-llvm", "Emit funcs as LLVM IR."),
-          clEnumValN(Command::kEmitAssembly, "emit-asm",
-                     "Emit the funcs as assembly."),
-          clEnumValN(Command::kEmitAssembly, "S",
-                     "Emit the funcs as assembly (alias for emit-asm)."),
-          clEnumValN(Command::kEmit, "emit", "Emit funcs as object files."),
-          clEnumValN(Command::kExecute, "execute", "Execute funcs.")),
-      llvm::cl::Required};
-
-  cl::list<CommandLineFunc, bool, CommandLineFuncParser> funcs{
-      "func", cl::desc("Specifies the funcs to execute.")};
 
   cl::opt<KGEN::CompilationOptions::DebugInfoLevel> debugInfoLevel{
       "debug-level",
@@ -107,6 +89,18 @@ public:
       cl::desc("Enable XRay instrumentation for the generated code."),
       cl::init(false)};
 
+  cl::opt<bool> enableSearch{
+      "enable-search", cl::init(false),
+      cl::desc("Do search when an evaluator is provided.")};
+
+  cl::list<std::string> searchPaths{
+      "I", cl::desc("Path to use to search for included files.")};
+
+  cl::opt<bool> enableMLIRCrashReproducer{
+      "enable-mlir-crash-repro",
+      cl::desc("Enable MLIR pass manager crash reproducer generation."),
+      cl::init(false)};
+
   /// Return a compilation options object based on the command line options.
   KGEN::CompilationOptions getCompilationOptions() const {
     // Grab the optimization level. For now use an aggressive default.
@@ -126,14 +120,6 @@ public:
                                     enableXRayInstrumentation);
   }
 
-  std::optional<CommandLineFunc> shouldExecuteFunc(StringRef func) const {
-    auto found = llvm::find_if(
-        funcs, [&](const CommandLineFunc &ek) { return ek.name == func; });
-    if (found == funcs.end())
-      return std::nullopt;
-    return *found;
-  }
-
 private:
   cl::opt<bool> optLevel0{"O0", cl::desc("Disable all optimizations")};
   cl::opt<bool> optLevel1{
@@ -141,6 +127,37 @@ private:
   cl::opt<bool> optLevel2{"O2", cl::desc("Enable most optimizations")};
   cl::opt<bool> optLevel3{"O3",
                           cl::desc("Aggresively enable all optimizations")};
+};
+
+class KGENCLOptions : public KGENCommonOptions {
+public:
+  using KGENCommonOptions::KGENCommonOptions;
+
+  cl::opt<Command> cmd{
+      cl::desc("The command to execute"),
+      cl::values(
+          clEnumValN(Command::kGenLibraryFile, "gen-lib",
+                     "Generate a distributable library file."),
+          clEnumValN(Command::kElaborate, "elaborate", "Elaborate the input."),
+          clEnumValN(Command::kEmitLLVM, "emit-llvm", "Emit funcs as LLVM IR."),
+          clEnumValN(Command::kEmitAssembly, "emit-asm",
+                     "Emit the funcs as assembly."),
+          clEnumValN(Command::kEmitAssembly, "S",
+                     "Emit the funcs as assembly (alias for emit-asm)."),
+          clEnumValN(Command::kEmit, "emit", "Emit funcs as object files."),
+          clEnumValN(Command::kExecute, "execute", "Execute funcs.")),
+      llvm::cl::Required};
+
+  cl::list<CommandLineFunc, bool, CommandLineFuncParser> funcs{
+      "func", cl::desc("Specifies the funcs to execute.")};
+
+  std::optional<CommandLineFunc> shouldExecuteFunc(StringRef func) const {
+    auto found = llvm::find_if(
+        funcs, [&](const CommandLineFunc &ek) { return ek.name == func; });
+    if (found == funcs.end())
+      return std::nullopt;
+    return *found;
+  }
 };
 } // namespace M
 
