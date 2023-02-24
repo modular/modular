@@ -169,13 +169,13 @@ fn _tile_dpbssd_emulated(
 ):
     let a = Matrix[
         create_kgen_list[__mlir_type.index](16, 64), DType.si8.value, False
-    ](aptr.address)
+    ](aptr)
     let b = Matrix[
         create_kgen_list[__mlir_type.index](16, 64), DType.si8.value, False
-    ](bptr.address)
+    ](bptr)
     let c = Matrix[
         create_kgen_list[__mlir_type.index](16, 16), DType.si32.value, False
-    ](cptr.address)
+    ](cptr)
 
     for i in range(16):
         for j in range(16):

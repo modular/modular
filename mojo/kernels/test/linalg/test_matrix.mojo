@@ -15,18 +15,14 @@ from List import create_kgen_list
 from Index import Index
 from Math import iota
 from Range import range
+from Vector import DynamicVector
 
 
-fn test_matrix():
-    print("== test_matrix\n")
-    let a = Buffer[16, DType.si32.value].stack_allocation()
-    let m = Matrix[
+fn test(
+    m: Matrix[
         create_kgen_list[__mlir_type.index](4, 4), DType.si32.value, False
-    ](a.data.address)
-
-    for i in range(16):
-        a.__setitem__(i, i)
-
+    ]
+):
     # CHECK: [0, 1, 2, 3]
     print(m.simd_load[4](0, 0))
     # CHECK: [4, 5, 6, 7]
@@ -42,5 +38,33 @@ fn test_matrix():
     print(m.simd_load[4](3, 0))
 
 
+fn test_matrix_static():
+    print("== test_matrix_static\n")
+    let a = Buffer[16, DType.si32.value].stack_allocation()
+    let m = Matrix[
+        create_kgen_list[__mlir_type.index](4, 4), DType.si32.value, False
+    ](a.data)
+    for i in range(16):
+        a.__setitem__(i, i)
+    test(m)
+
+
+fn test_matrix_dynamic():
+    print("== test_matrix_dynamic\n")
+    let vec = DynamicVector[__mlir_type[`!pop.scalar<`, DType.si32.value, `>`]](
+        16
+    )
+    let dptr = DTypePointer[DType.si32.value](vec.data.address)
+    let a = Buffer[16, DType.si32.value](dptr.address)
+    let m = Matrix[
+        create_kgen_list[__mlir_type.index](4, 4), DType.si32.value, False
+    ](vec.data)
+    for i in range(16):
+        a.__setitem__(i, i)
+    test(m)
+    vec.__del__()
+
+
 fn main():
-    test_matrix()
+    test_matrix_static()
+    test_matrix_dynamic()
