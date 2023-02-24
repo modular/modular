@@ -697,11 +697,11 @@ completeReturnProcessing(Logger &logger, ReturnOp returnOp,
 /// Complete processing of a generator user by resolving any bound result types
 /// or parameters in the parent scope. This is the step that propagates result
 /// parameters from the inner scope to the outer scope.
-static void completeGeneratorUserProcessing(KGENCallOpInterface user,
-                                            ArrayRef<ParamDeclAttr> decls,
-                                            ExpansionTreeNode *thisNode,
-                                            ExpansionTreeNode *parentNode,
-                                            Logger &logger) {
+static void completeCallProcessing(KGENCallOpInterface user,
+                                   ArrayRef<ParamDeclAttr> decls,
+                                   ExpansionTreeNode *thisNode,
+                                   ExpansionTreeNode *parentNode,
+                                   Logger &logger) {
 
   // Add the callee's bindings to the parent of the call. This ensures that we
   // don't re-bind something we've already bound.
@@ -747,12 +747,6 @@ static void completeGeneratorUserProcessing(KGENCallOpInterface user,
             FlatSymbolRefAttr::get(newCalleeFunc.getNameAttr()),
             newCalleeFunc.getSignature()),
         ArrayRef<ParamDeclAttr>());
-  } else {
-    // Update the interface in-place.
-    auto itf = cast<GeneratorInterfaceOp>(user);
-    itf.setEvaluatorAttr(SymbolConstantAttr::get(
-        FlatSymbolRefAttr::get(newCalleeFunc.getSymNameAttr()),
-        newCalleeFunc.getSignature()));
   }
 
   // Get the result params from the concretization of this node, if we have
@@ -1247,8 +1241,7 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
   if (found != parent->bindings.end()) {
     LLVM_DEBUG(
         found->getSecond()->print(logger.scope("Result: Existing Binding")));
-    completeGeneratorUserProcessing(user, decls, found->getSecond(), parent,
-                                    logger);
+    completeCallProcessing(user, decls, found->getSecond(), parent, logger);
     return std::nullopt;
   }
 
@@ -1347,8 +1340,8 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     // Bind this concrete impl to this callee for this node.
     newNode->bindings[{calleeOp, inputParamKey}] = c;
 
-    completeGeneratorUserProcessing(map.lookup(user.getOperation()), decls, c,
-                                    newNode, logger);
+    completeCallProcessing(map.lookup(user.getOperation()), decls, c, newNode,
+                           logger);
 
     LLVM_DEBUG(newNode->print(logger << "New Op "));
 
@@ -1370,8 +1363,7 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
 
   // Call completeGeneratorUserProcessing on the first concrete thing. This will
   // flow nested bindings upward correctly.
-  completeGeneratorUserProcessing(user, decls, concrete.front(), parent,
-                                  logger);
+  completeCallProcessing(user, decls, concrete.front(), parent, logger);
 
   return std::nullopt;
 }
