@@ -28,7 +28,7 @@ from Math import iota
 from Complex import Complex
 from Benchmark import Benchmark
 from Assert import assert_param_msg
-from Pointer import Pointer
+from Pointer import Pointer, DTypePointer
 
 alias kunknown = __mlir_attr.`#kgen.unknown : index`
 alias float_type = DType.f64.value
@@ -156,9 +156,8 @@ fn main():
     let vec = DynamicVector[__mlir_type[`!pop.scalar<`, int_type, `>`]](
         width * height
     )
-    let m: Matrix[create_kgen_list(height, width), int_type, False] = NDBuffer[
-        2, create_kgen_list(height, width), int_type
-    ](vec.data.address)
+    let dptr = DTypePointer[int_type](vec.data.address)
+    let m: Matrix[create_kgen_list(height, width), int_type, False] = vec.data
 
     @always_inline
     fn bench_parallel[simd_width: __mlir_type.index]():
@@ -210,4 +209,4 @@ fn main():
 
     print(m.__getitem__(0, 0))
     # draw_mandelbrot[height, width](m)
-    # vec.del()
+    vec.__del__()
