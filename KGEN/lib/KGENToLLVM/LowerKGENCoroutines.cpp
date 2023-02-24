@@ -38,10 +38,18 @@ struct TweakSpilledAllocasPass
 /// dominate like `alloca > await > lifetime.end`. In a region representation,
 /// we can get the right order with a forward traversal, since control-flow can
 /// cross between parent and child regions but not jump across operations.
-static LogicalResult stripSpilledAllocaLifetimes(Operation *func) {
+static LogicalResult tweakSpilledAllocas(Operation *func) {
+  enum SpillKind {
+    /// Alloca is not spilled.
+    NOT_SPILLED,
+    /// Alloca is spilled while live.
+    SPILLED_LIVE,
+    /// Alloca is spilled while dead.
+    SPILLED_DEAD
+  };
   struct AllocaInfo {
     LifetimeStartOp start = nullptr;
-    bool spilled = false;
+    SpillKind spill = SpillKind::NOT_SPILLED;
   };
   DenseMap<AllocaOp, AllocaInfo> allocas;
   auto processOp = [&](Operation *op) -> LogicalResult {
@@ -69,18 +77,31 @@ static LogicalResult stripSpilledAllocaLifetimes(Operation *func) {
       if (LLVM_UNLIKELY(it == allocas.end() || !it->second.start))
         return it->first.emitOpError(
             "alloca with no `llvm.intr.lifetime.start` marker");
-      if (it->second.spilled) {
-        // Alloca is spilled. Remove the lifetime markers.
+      switch (it->second.spill) {
+      case SpillKind::NOT_SPILLED:
+        break;
+      case SpillKind::SPILLED_LIVE:
+        // Alloca is spilled while live. Remove the lifetime markers.
         end.erase();
         it->second.start.erase();
+        break;
+      case SpillKind::SPILLED_DEAD:
+        // Alloca is spilled while dead. Move the alloca to before the lifetime
+        // start marker to take it off the coroutine frame.
+        alloca->moveBefore(it->second.start);
+        break;
       }
       // Deactivate the alloca.
       allocas.erase(it);
 
     } else if (auto await = dyn_cast<POP::CoroutineAwaitOp>(op)) {
       // All active allocas are spilled.
-      for (auto &[alloca, info] : allocas)
-        info.spilled = true;
+      for (auto &[alloca, info] : allocas) {
+        // If the lifetime start marker of the alloca has been encountered, the
+        // alloca is live while spilled.
+        info.spill =
+            info.start ? SpillKind::SPILLED_LIVE : SpillKind::SPILLED_DEAD;
+      }
     }
     return success();
   };
@@ -94,7 +115,7 @@ static LogicalResult stripSpilledAllocaLifetimes(Operation *func) {
 }
 
 void TweakSpilledAllocasPass::runOnOperation() {
-  if (failed(stripSpilledAllocaLifetimes(getOperation())))
+  if (failed(tweakSpilledAllocas(getOperation())))
     return signalPassFailure();
 }
 
