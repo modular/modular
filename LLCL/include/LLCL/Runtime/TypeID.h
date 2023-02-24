@@ -171,6 +171,12 @@ public:
     (void)Detail::TypeIDCache<T>::memoize(registerTypeSlow);
   }
 
+  /// Helper function that calls registerType() for each type in the list.
+  template <typename... Ts>
+  static void registerTypes() {
+    (registerType<Ts>(), ...);
+  }
+
   /// Returns the unique type id for T. T must have been previously registered.
   /// Thread safe. Can be called from multiple dynamic libraries / executables.
   /// Fast after the first call.

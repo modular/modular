@@ -66,7 +66,7 @@ ObjectCompiler::ObjectCompiler(
       runtime(runtime), module(cast<ModuleOp>(symtab.getOp())), symtab(symtab),
       exportedSymbols(std::move(exports)), options(options) {
   // Register types used during async compilation.
-  LLCL::AsyncValue::registerTypes<Cache::BufferRef>();
+  LLCL::TypeID::registerTypes<Cache::BufferRef>();
 }
 
 //===----------------------------------------------------------------------===//

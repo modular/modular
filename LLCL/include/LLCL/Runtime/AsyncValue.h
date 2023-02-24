@@ -60,19 +60,11 @@ class ConcreteAsyncValue;
 /// AsyncValueRef<T> smart pointer classes. The public methods in this class
 /// are intended for advanced users who which to explicitly manage reference
 /// counting.
+///
+/// Requires each static type to be registered ahead of its use in an AsyncValue
+/// using TypeID::registerType<T>().
 class AsyncValue {
 public:
-  /// Type registration - AsyncValue requires that each static type be
-  /// registered ahead of their use in an AsyncValue.  This method is efficient
-  /// in the case where a type is already registered, so it is fine to register
-  /// types without guarding against duplicates etc.
-  template <typename T>
-  static void registerType();
-
-  /// Helper function that calls registerType() for each type in the list.
-  template <typename... Ts>
-  static void registerTypes();
-
   //===--------------------------------------------------------------------===//
   // Static creation methods for AsyncValue's
   //===--------------------------------------------------------------------===//
@@ -243,20 +235,12 @@ public:
   /// not set for IndirectAsyncValue's until they are resolved to a value.
   TypeID getTypeID() const { return typeID; }
 
-  /// Return the ID of the given type. Note that at most 2^16-2 (approx. 64K)
-  /// unique types can be used in AsyncValues, since the ID is 16 bits, and 0
-  /// and 2^16-1 are not allowed to be used as type IDs.
-  template <typename T>
-  static TypeID getTypeID() {
-    return TypeID::get<T>();
-  }
-
   /// Returns true if this AsyncValue is a ConcreteAsyncValue for type T, or
   /// an IndirectAsyncValue which has been resolved to a ConcreteAsyncValue
   /// of type T.
   template <typename T>
   bool isType() const {
-    return getTypeID<T>() == typeID;
+    return typeID == TypeID::get<T>();
   }
 
   /// Return true if this AsyncValue is a unresolved IndirectAsyncValue.
@@ -496,6 +480,9 @@ protected:
         typeID(typeID),
         waitersAndState(
             (intptr_t)WaitersAndState(nullptr, state).getOpaqueValue()) {
+    assert(subclassKind == SubclassKind::kIndirect ||
+           typeID != TypeID() &&
+               "require valid type ID when constructing a ConcreteAsyncValue");
     if constexpr (isAllocationTrackingEnabled())
       ++totalAllocatedAsyncValues;
   }
@@ -528,43 +515,9 @@ class SomeConcreteAsyncValue : public AsyncValue {
   friend class ConcreteAsyncValue;
   using AsyncValue::AsyncValue;
 
-  //===--------------------------------------------------------------------===//
-  // TypeID and Destructor related functionality
-  //===--------------------------------------------------------------------===//
-
-  // We don't want a virtual function pointer in AsyncValue because it is too
-  // big. Accordingly, we need another way to get a pointer to the destructor
-  // an arbitrary type T.  To solve for this, we store the function pointers in
-  // a side table and use 16-bit indexes into it.
-public:
-  // This is the signature for the destructor function for some value.
-  using ValueDestructorFn = void (*)(void *);
-
-  /// This function destroys a value of type T at the specified address.
-  template <typename T>
-  static void destructorFnPtr(void *pointer) {
-    static_cast<T *>(pointer)->~T();
-  }
-
 private:
   // Only invoked by destroyWithRefCountZero.
   ~SomeConcreteAsyncValue();
-
-  /// isTypeCompatible returns true if the type value stored in this AsyncValue
-  /// instance can be safely cast to `T`. This is a conservative check:
-  /// isTypeCompatible may return true even if the value cannot be safely cast
-  /// to `T`. However, if it returns false then the value definitely cannot be
-  /// safely cast to `T`. This means it is useful mainly as a debugging aid for
-  /// use in assert() etc.
-  template <typename T>
-  bool isTypeCompatible() const {
-    constexpr bool kMaybeBase =
-        std::is_class<T>::value && !std::is_final<T>::value;
-    if constexpr (kMaybeBase)
-      // `T` might be a baseclass of the concrete type held by this AsyncValue.
-      return true;
-    return getTypeID<T>() == getTypeID();
-  }
 
   /// The error value is always first thing in our derived class.
   EncodedDiagnostic *getDiagnosticPointer() {
@@ -682,21 +635,6 @@ class IndirectAsyncValue : public AsyncValue {
 // AsyncValue inline method implementations.
 //===----------------------------------------------------------------------===//
 
-/// Type registration - AsyncValue requires that each static type be
-/// registered ahead of their use in an AsyncValue.  This method is efficient
-/// in the case where a type is already registered, so it is fine to register
-/// types without guarding against duplicates etc.
-template <typename T>
-void AsyncValue::registerType() {
-  TypeID::registerType<T>();
-}
-
-/// Helper function that calls registerType() for each type in the list.
-template <typename... Ts>
-void AsyncValue::registerTypes() {
-  (AsyncValue::registerType<Ts>(), ...);
-}
-
 /// Create an AsyncValue for the specified type in "unconstructed" state.
 template <typename T>
 inline AsyncValue *AsyncValue::allocate(CompactRuntimePtr runtime) {
@@ -779,7 +717,8 @@ inline void AsyncValue::emplaceAndDecRef(Args &&...args) {
   assert(getSubclassKind() == SubclassKind::kConcrete &&
          "Cannot 'emplaceAndDecRef' an IndirectValue, use "
          "'emplaceIndirectAndDecRef' instead");
-  assert(getTypeID<T>() == typeID && "Incorrect accessor");
+  assert(typeID == TypeID::get<T>() &&
+         "mismatched static and dynamic AsyncValue types");
 
   // NOTE: At this point we could stap tracking the ref and instead just inc/dec
   // our own ref count. However the explicit ref passing makes the chain of
@@ -824,10 +763,13 @@ const T &AsyncValue::get() const {
   if (getSubclassKind() == SubclassKind::kConcrete) {
     auto *thisConcrete =
         static_cast<const Detail::ConcreteAsyncValue<T> *>(this);
-    // Make sure both T (the stored type) and BaseT have a VTable or
-    // neither have the VTable.
-    assert(thisConcrete->template isTypeCompatible<T>() &&
-           std::is_polymorphic_v<T> == hasVTable && "incorrect accessor");
+    assert(typeID == TypeID::get<T>() &&
+           "mismatched static and dynamic AsyncValue types");
+    // Make sure T and the stored type agree on whether they have a vtable.
+    // (Not strictly necessary given exact equality test above, but retaining
+    // in case we allow subtyping relation between T and the true held type.)
+    assert(std::is_polymorphic_v<T> == hasVTable &&
+           "mismatched static and dynamic AsyncValue type polymorphism");
     return thisConcrete->payload;
   }
 

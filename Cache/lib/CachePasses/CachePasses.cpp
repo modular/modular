@@ -39,7 +39,7 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    AsyncValue::registerType<LogicalResult>();
+    LLCL::TypeID::registerType<LogicalResult>();
 
     auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
         runtime, createLeakCheckAllocator(createMallocAllocator()),
@@ -96,7 +96,7 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    AsyncValue::registerType<LogicalResult>();
+    LLCL::TypeID::registerType<LogicalResult>();
 
     auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
         runtime, createLeakCheckAllocator(createMallocAllocator()),
@@ -154,7 +154,7 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    AsyncValue::registerType<LogicalResult>();
+    LLCL::TypeID::registerType<LogicalResult>();
 
     auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
         runtime, createLeakCheckAllocator(createMallocAllocator()),
@@ -210,7 +210,7 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    AsyncValue::registerType<LogicalResult>();
+    LLCL::TypeID::registerType<LogicalResult>();
 
     auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
         runtime, createLeakCheckAllocator(createMallocAllocator()),
