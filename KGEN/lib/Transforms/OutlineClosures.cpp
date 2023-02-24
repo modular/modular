@@ -159,24 +159,12 @@ void OutlineClosuresPass::runOnOperation() {
         assert(inserted && "nested parameter declaration was duplicated?");
       }
 
-      // Pull together the input conventions - all the captures all use the
-      // default convention (despite what the enum says).
-      SmallVector<ValueInputConvention> liftedConventions(
-          captures.size(), ValueInputConvention::ByVal);
-      llvm::append_range(liftedConventions,
-                         bodySignature.getValueInputConventions());
-      SmallVector<VarArgKind> liftedMarkers(captures.size(), VarArgKind::None);
-      llvm::append_range(liftedMarkers,
-                         bodySignature.getMetadata().getVarArgMarkers());
-
       // The lifted generator needs to be always_inline, so we add that to the
       // FnEffects.
       auto liftedSignature = SignatureType::get(
           b.getAttr<ParamDeclArrayAttr>(necessaryDecls.getArrayRef()),
           bodySignature.getResultParams(), liftedValueSignature,
-          b.getAttr<MetadataAttr>(liftedConventions, liftedMarkers,
-                                  bodySignature.getDefaultArguments(),
-                                  bodySignature.getFnEffects()));
+          b.getAttr<MetadataAttr>(liftedValueSignature.getNumInputs()));
 
       // Now lift the body out into its own generator.
       b.setInsertionPoint(generator);
