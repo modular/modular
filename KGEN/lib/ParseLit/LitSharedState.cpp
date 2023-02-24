@@ -262,16 +262,22 @@ auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
 
     return nullptr;
   };
-  const TinyPtrVector<ASTDecl *> *entry;
-  if (searchParentScopes) {
-    ASTDecl *curSearchScope = &scope;
-    do {
-      if ((entry = lookupInScope(*curSearchScope)))
-        break;
-    } while ((curSearchScope = curSearchScope->parentDecl));
-  } else {
-    entry = lookupInScope(scope);
-  }
+
+  auto getEntry = [&]() {
+    const TinyPtrVector<ASTDecl *> *e;
+    if (searchParentScopes) {
+      ASTDecl *curSearchScope = &scope;
+      do {
+        if ((e = lookupInScope(*curSearchScope)))
+          break;
+      } while ((curSearchScope = curSearchScope->parentDecl));
+    } else {
+      e = lookupInScope(scope);
+    }
+    return e;
+  };
+
+  const TinyPtrVector<ASTDecl *> *entry = getEntry();
 
   // If nothing was found, return a failure.
   if (!entry)
@@ -287,7 +293,9 @@ auto LitSharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
       return LookupResult::getErroneous();
     }
   }
-
+  // Get again the entry pointer since it might have been invalidated by
+  // declResolver->resolve above.
+  entry = getEntry();
   // If we are resolving an unresolved import, do another lookup now that import
   // has been resolved. The scope map should be updated with the proper decls.
   if (!entry->empty() && isa<UnresolvedImportOp>(*entry->front()))
