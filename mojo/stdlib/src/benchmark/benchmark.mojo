@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""The module implements 'Benchmark' class for runtime benchmarking."""
 
 from Time import now
 from Int import Int
@@ -10,6 +11,13 @@ from Range import range
 
 
 struct Benchmark:
+    """A benchmark harness.
+
+    The class allows to benchmark a given function (passed as a parameter) and
+    configure various benchmarking parameters, such as number of warmup
+    iterations, maximum number of iterations, minimum and maximum elapsed time.
+    """
+
     var num_warmup: Int
     var max_iters: Int
     var min_time_ns: Int
@@ -29,15 +37,20 @@ struct Benchmark:
         min_time_ns: Int = 500_000_000,  # 500ms
         max_time_ns: Int = 1000_000_000,  # 1s
     ) -> Benchmark:
-        """Constructs a benchmark object that given a function will benchmark it
-        until min_tims_ns has elapsed and either max_time_ns OR max_iters is hit.
+        """Constructs a new benchmark object.
 
+        Given a function the benchmark object will benchmark it until
+        min_tims_ns has elapsed and either max_time_ns OR max_iters is hit.
 
         Args:
-            num_warmup(Int): number of warmup iterations to run before starting benchmarking.
-            max_iters(Int): max number of iterations to run.
-            min_time_ns(Int): upper bound on benchmarking time in ns.
-            max_time_ns(Int): lower bound on benchmarking time in ns.
+            num_warmup (Int): Number of warmup iterations to run before
+              starting benchmarking.
+            max_iters (Int): Max number of iterations to run.
+            min_time_ns (Int): Upper bound on benchmarking time in ns.
+            max_time_ns (Int): Lower bound on benchmarking time in ns.
+
+        Returns:
+            Benchmark: A new constructed benchmark object.
         """
         return Benchmark {
             num_warmup: num_warmup,
@@ -50,15 +63,16 @@ struct Benchmark:
     fn run[
         func: __mlir_type.`!kgen.signature<() -> !lit.none>`,
     ](self) -> Int:
-        """benchmark the given function until min_tims_ns has elapsed and either
+        """Benchmark the given function.
+
+        Benchmarking continues until min_tims_ns has elapsed and either
         max_time_ns OR max_iters is hit.
 
-
-        Args:
-            func: the function to benchmark.
+        Parameters:
+            func (!kgen.signature<() -> !lit.none>): The function to benchmark.
 
         Returns:
-            Int: average execution time of func in ns.
+            Int: Average execution time of func in ns.
         """
 
         # run for specified number of warmup iterations
