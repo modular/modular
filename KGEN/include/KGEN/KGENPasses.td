@@ -147,6 +147,22 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// TweakSpilledAllocas
+//===----------------------------------------------------------------------===//
+
+def TweakSpilledAllocas : Pass<"tweak-spilled-allocas",
+                               "mlir::LLVM::LLVMFuncOp"> {
+  let summary = "Trim and optimize lifetimes of spilled allocas.";
+  let description = [{
+    When LLVM lowers coroutines, spilled allocas are hoisted into the coroutine
+    frame, invalidating their lifetime markers. LLVM's `coro-split` pass pukes
+    when this happens, so prevent it by stripping lifetimes of spilled allocas.
+    This pass must run prior to `lower-control-flow`, since the algorithm is
+    trivial on region control-flow form.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerKGENCoroutines
 //===----------------------------------------------------------------------===//
 

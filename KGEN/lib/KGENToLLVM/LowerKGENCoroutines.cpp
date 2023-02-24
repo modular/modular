@@ -17,6 +17,88 @@ using namespace KGEN;
 using namespace mlir::LLVM;
 
 //===----------------------------------------------------------------------===//
+// TweakSpilledAllocas
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_TWEAKSPILLEDALLOCAS
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
+namespace {
+struct TweakSpilledAllocasPass
+    : public KGEN::impl::TweakSpilledAllocasBase<TweakSpilledAllocasPass> {
+  using TweakSpilledAllocasBase::TweakSpilledAllocasBase;
+
+  void runOnOperation() override;
+};
+} // namespace
+
+/// In a CFG representation, we want to strip lifetimes where operations
+/// dominate like `alloca > await > lifetime.end`. In a region representation,
+/// we can get the right order with a forward traversal, since control-flow can
+/// cross between parent and child regions but not jump across operations.
+static LogicalResult stripSpilledAllocaLifetimes(Operation *func) {
+  struct AllocaInfo {
+    LifetimeStartOp start = nullptr;
+    bool spilled = false;
+  };
+  DenseMap<AllocaOp, AllocaInfo> allocas;
+  auto processOp = [&](Operation *op) -> LogicalResult {
+    // Be defensive about invalid IR.
+    if (auto alloca = dyn_cast<AllocaOp>(op)) {
+      allocas.insert({alloca, {}});
+
+    } else if (auto start = dyn_cast<LifetimeStartOp>(op)) {
+      auto alloca =
+          dyn_cast_or_null<AllocaOp>(start.getOperand().getDefiningOp());
+      if (LLVM_UNLIKELY(!alloca))
+        return start.emitOpError("operand not defined by an `llvm.alloca`");
+      auto it = allocas.find(alloca);
+      if (LLVM_UNLIKELY(it == allocas.end() || it->second.start))
+        return start.emitOpError(
+            "duplicate `llvm.intr.lifetime.start` marker for alloca");
+      it->second.start = start;
+
+    } else if (auto end = dyn_cast<LifetimeEndOp>(op)) {
+      auto alloca =
+          dyn_cast_or_null<AllocaOp>(end.getOperand().getDefiningOp());
+      if (LLVM_UNLIKELY(!alloca))
+        return end.emitOpError("operand not defined by an `llvm.alloca`");
+      auto it = allocas.find(alloca);
+      if (LLVM_UNLIKELY(it == allocas.end() || !it->second.start))
+        return it->first.emitOpError(
+            "alloca with no `llvm.intr.lifetime.start` marker");
+      if (it->second.spilled) {
+        // Alloca is spilled. Remove the lifetime markers.
+        end.erase();
+        it->second.start.erase();
+      }
+      // Deactivate the alloca.
+      allocas.erase(it);
+
+    } else if (auto await = dyn_cast<POP::CoroutineAwaitOp>(op)) {
+      // All active allocas are spilled.
+      for (auto &[alloca, info] : allocas)
+        info.spilled = true;
+    }
+    return success();
+  };
+
+  WalkResult result = func->walk([&](Operation *op) {
+    if (failed(processOp(op)))
+      return WalkResult::interrupt();
+    return WalkResult::advance();
+  });
+  return success(!result.wasInterrupted());
+}
+
+void TweakSpilledAllocasPass::runOnOperation() {
+  if (failed(stripSpilledAllocaLifetimes(getOperation())))
+    return signalPassFailure();
+}
+
+//===----------------------------------------------------------------------===//
 // Coroutine Lowering
 //===----------------------------------------------------------------------===//
 
@@ -372,13 +454,6 @@ void LowerKGENCoroutinesPass::runOnOperation() {
     }
     return;
   }
-
-  // FIXME!!!! CoroSplit pass does not play well with LLVM lifetime markers.
-  // Just strip them, because I don't want to debug an LLVM pass.
-  func.walk([&](Operation *op) {
-    if (isa<LifetimeStartOp, LifetimeEndOp>(op))
-      op->erase();
-  });
 
   POP::CoroutineType coroType = handles.front().getType();
   b.setLoc(func.getLoc());
