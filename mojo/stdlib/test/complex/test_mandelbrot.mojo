@@ -10,7 +10,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: lit %s | FileCheck %s
 
-from Bool import Bool
+
 from DType import DType
 from Int import Int
 from IO import print
