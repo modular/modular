@@ -175,13 +175,15 @@ MValue ParameterInferenceState::infer(SignatureType signature,
   size_t providedValueIdx = 0;
   for (auto [expectedArgIdx, expectedType] :
        llvm::enumerate(signature.getValueInputs())) {
-    auto expectedConvention = signature.getInputConvention(expectedArgIdx);
+    ValueInputConvention expectedConvention =
+        signature.getInputConvention(expectedArgIdx);
+    VarArgKind expectedVararg = signature.getVarArgKind(expectedArgIdx);
 
     // Handle case when there are no more provided arguments.
     if (providedValueIdx == operands.size()) {
       // If the argument is a varargs argument list, then it can be initialized
       // with zero values no problem.
-      if (uint8_t(expectedConvention & ValueInputConvention::VarArg))
+      if (expectedVararg == VarArgKind::VarArg)
         break;
 
       // TODO: If this argument is defaulted, infer against it.
@@ -195,9 +197,7 @@ MValue ParameterInferenceState::infer(SignatureType signature,
     auto checkOneOperand = [&](ASTType expectedType) -> LogicalResult {
       // We'll bind the next provided value.
       auto operand = operands[providedValueIdx++];
-      switch (expectedConvention & ~ValueInputConvention::VarArg) {
-      default:
-        llvm_unreachable("not reachable");
+      switch (expectedConvention) {
       case ValueInputConvention::ByRef: {
         // The actual value must be an lvalue if callee takes things by-ref.
         auto argVal = operand.ir.getIfLValue();
@@ -215,7 +215,7 @@ MValue ParameterInferenceState::infer(SignatureType signature,
     };
 
     // In the typical case, this argument isn't varargs, just check it.
-    if (!uint8_t(expectedConvention & ValueInputConvention::VarArg)) {
+    if (expectedVararg != VarArgKind::VarArg) {
       // If there was a problem, report it, otherwise continue on to the next
       // expected argument to check.
       if (failed(checkOneOperand(expectedType)))
@@ -526,9 +526,11 @@ OverloadFitness OverloadFitness::evaluate(
   // that doesn't work out.  Check for that first.
   size_t minRequiredArgs = 0;
   size_t maxAllowedargs = 0;
-  for (auto convention : signature.getValueInputConventions()) {
+  for (auto [convention, vararg] :
+       llvm::zip(signature.getValueInputConventions(),
+                 signature.getVarArgMarkers())) {
     // Varargs arguments don't require a value, but allow any number of them.
-    if (uint8_t(convention & ValueInputConvention::VarArg)) {
+    if (vararg == VarArgKind::VarArg) {
       maxAllowedargs = ~size_t(0);
       continue;
     }
@@ -562,13 +564,15 @@ OverloadFitness OverloadFitness::evaluate(
   size_t numImplicitConversions = 0;
   for (auto [expectedArgIdx, expectedType] :
        llvm::enumerate(signature.getValueInputs())) {
-    auto expectedConvention = signature.getInputConvention(expectedArgIdx);
+    ValueInputConvention expectedConvention =
+        signature.getInputConvention(expectedArgIdx);
+    VarArgKind expectedVararg = signature.getVarArgKind(expectedArgIdx);
 
     // Handle case when there are no more provided arguments.
     if (providedValueIdx == operands.size()) {
       // If the argument is a varargs argument list, then it can be initialized
       // with zero values no problem.
-      if (uint8_t(expectedConvention & ValueInputConvention::VarArg))
+      if (expectedVararg == VarArgKind::VarArg)
         break;
       // We don't need a provided value for this index if we can use a default
       // value, which has already been converted to the expected type.
@@ -586,13 +590,9 @@ OverloadFitness OverloadFitness::evaluate(
     auto checkOneOperand = [&](ASTType expectedType) -> OverloadFitness {
       // We'll bind the next provided value.
       auto operand = operands[providedValueIdx];
-      switch (expectedConvention & ~ValueInputConvention::VarArg) {
-      case ValueInputConvention::KWVarArg:
-        assert(0 &&
-               "keyword arguments and `**arg` variadics not supported yet");
-        break;
-      case ValueInputConvention::VarArg:
-        llvm_unreachable("not reachable");
+      assert(expectedVararg != VarArgKind::KWVarArg &&
+             "keyword arguments and `**arg` variadics not supported yet");
+      switch (expectedConvention) {
       case ValueInputConvention::ByRef: {
         // The actual value must be an lvalue if callee takes things by-ref.
         auto argVal = operand.ir.getIfLValue();
@@ -630,7 +630,7 @@ OverloadFitness OverloadFitness::evaluate(
     };
 
     // In the typical case, this argument isn't varargs, just check it.
-    if (!uint8_t(expectedConvention & ValueInputConvention::VarArg)) {
+    if (expectedVararg == VarArgKind::None) {
       // If there was a problem, report it, otherwise continue on to the next
       // expected argument to check.
       auto result = checkOneOperand(expectedType);
@@ -1075,16 +1075,10 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   Value firstArgValue;
   ValueInputConvention selfConvention = calleeSignature.getInputConvention(0);
 
-  assert(!uint8_t(selfConvention & ValueInputConvention::VarArg) &&
+  assert(calleeSignature.getVarArgKind(0) == VarArgKind::None &&
          "Error: self shouldn't be able to be varargs");
 
   switch (selfConvention) {
-  case ValueInputConvention::KWVarArg:
-    emitter.emitError(
-        loc, "keyword arguments and `**arg` variadics not supported yet");
-    return {};
-  case ValueInputConvention::VarArg:
-    llvm_unreachable("unreachable");
   case ValueInputConvention::ByRef: {
     LValue baseLV = baseVal.ir.getIfLValue();
     if (!baseLV) {
@@ -1274,16 +1268,18 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   size_t nextOperandIdx = 0;
   size_t nextDefaultIdx = 0;
-  for (auto [expectedTypeX, conventionX] : llvm::zip(
-           calleeSig.getValueInputs(), calleeSig.getValueInputConventions())) {
+  for (auto [expectedTypeX, conventionX, varargX] : llvm::zip(
+           calleeSig.getValueInputs(), calleeSig.getValueInputConventions(),
+           calleeSig.getVarArgMarkers())) {
     // Work around lambda not being able to reference bindings.
-    auto expectedType = expectedTypeX;
-    auto convention = conventionX;
+    Type expectedType = expectedTypeX;
+    ValueInputConvention convention = conventionX;
+    VarArgKind vararg = varargX;
     // If we ran out of operands, fulfill this with a default value or empty
     // variadic list.
     if (nextOperandIdx == operands.size()) {
       // Varargs arguments are fulfilled with an empty !pop.variadic list.
-      if (uint8_t(convention & ValueInputConvention::VarArg)) {
+      if (vararg == VarArgKind::VarArg) {
         auto variadic = KGEN::VariadicAttr::get(
             ArrayRef<TypedAttr>(), expectedType.cast<KGEN::VariadicType>());
         argumentValues.push_back({MValue(variadic), callNode});
@@ -1300,12 +1296,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
     // Otherwise, we're applying one or more arguments to this.
     auto emitOneArgVal = [&](ASTExprAnd<AnyValue> operand) -> AnyValue {
-      switch (convention & ~ValueInputConvention::VarArg) {
-      case ValueInputConvention::KWVarArg:
-        llvm_unreachable("keyword args and `**arg` not supported yet");
-        break;
-      case ValueInputConvention::VarArg:
-        llvm_unreachable("varargs handled separately");
+      switch (convention) {
       case ValueInputConvention::ByRef:
         // By-ref arguments, must be lvalues.
         assert(operand.ir.getIfLValue() &&
@@ -1318,7 +1309,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
         // In the case of a variadic argument, we need to remove the
         // !pop.varadic<> wrapper to get the type to convert to.
         Type expectedArgType = expectedType;
-        if (uint8_t(convention & ValueInputConvention::VarArg))
+        if (vararg == VarArgKind::VarArg)
           expectedArgType = getVariadicElementType(expectedArgType);
 
         return emitter.getAsExpectedType(argVal, operand.expr, expectedArgType,
@@ -1327,7 +1318,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     };
 
     // For a normal non-vararg argument, we just emit it and add it to our list.
-    if (!uint8_t(convention & ValueInputConvention::VarArg)) {
+    if (vararg != VarArgKind::VarArg) {
       auto operand = operands[nextOperandIdx++];
       AnyValue argVal = emitOneArgVal(operand);
       if (!argVal)

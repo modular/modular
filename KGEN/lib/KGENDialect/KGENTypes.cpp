@@ -217,7 +217,7 @@ SignatureType SignatureType::setFnEffect(FnEffects effect) {
   return SignatureType::get(
       getInputParams(), getResultParams(), getValues(),
       MetadataAttr::get(getContext(), getValueInputConventions(),
-                        getDefaultArguments(),
+                        getVarArgMarkers(), getDefaultArguments(),
                         bitEnumSet(getFnEffects(), effect)));
 }
 

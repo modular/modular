@@ -541,6 +541,7 @@ struct ParsedArgument {
   bool isPack = false;
   // Specify argument passing convention, e.g. byval/byref etc.
   ValueInputConvention convention = ValueInputConvention::ByVal;
+  VarArgKind vararg = VarArgKind::None;
   StringAttr name;
   ExprNode *typeExpr = nullptr;
   ExprNode *initValue = nullptr;
@@ -576,14 +577,15 @@ struct ParsedArgument {
         markerInfo = KWArgMarkerInfo::kStar;
         return success();
       }
-      convention = convention | ValueInputConvention::VarArg;
+      vararg = VarArgKind::VarArg;
     } else if (p.consumeIf(LitToken::star_star)) {
-      convention = convention | ValueInputConvention::KWVarArg;
+      vararg = VarArgKind::KWVarArg;
       kwArgHandling = KWArgHandling::kKeywordOnly;
     }
 
-    if (p.consumeIf(LitToken::star)) // '*' => variadic
-      convention = convention | ValueInputConvention::VarArg;
+    if (p.consumeIf(LitToken::star)) { // '*' => variadic
+      vararg = VarArgKind::VarArg;
+    }
 
     if (p.parseIdentifier(name, "expected parameter name"))
       // TODO: Scan ahead for better recovery.
@@ -592,8 +594,7 @@ struct ParsedArgument {
     SMLoc packStarLoc;
     if (p.consumeIf(LitToken::star, &packStarLoc)) { // '*' => pack
       isPack = true;
-      if (uint8_t(convention & (ValueInputConvention::VarArg |
-                                ValueInputConvention::KWVarArg)))
+      if (vararg != VarArgKind::None)
         p.emitError(
             packStarLoc,
             "variadic arguments may not also be variadic parameter packs");
@@ -602,7 +603,7 @@ struct ParsedArgument {
     // Process any convention markers.
     SMLoc ampLoc;
     if (p.consumeIf(LitToken::amp, &ampLoc)) { // '&' => by-ref
-      convention = convention | ValueInputConvention::ByRef;
+      convention = ValueInputConvention::ByRef;
       if (isPack)
         p.emitError(ampLoc,
                     "variadic parameter packs may not have input conventions");
@@ -619,8 +620,7 @@ struct ParsedArgument {
         return failure();
 
       // Default args and varargs/packs don't mix.
-      if (isPack || uint8_t(convention & (ValueInputConvention::VarArg |
-                                          ValueInputConvention::KWVarArg))) {
+      if (isPack || vararg != VarArgKind::None) {
         p.emitError(equalLoc,
                     isPack ? "variadic parameter packs" : "variadic arguments")
             << " may not have defaults" << initValue->getRange();
@@ -719,14 +719,14 @@ struct ParsedArgument {
 
       // Otherwise, if this is a varargs marker (*arg) or variadic pack (arg*),
       // handle it as a marker and an argument.
-      if (arg.isPack || uint8_t(arg.convention & ValueInputConvention::VarArg))
+      if (arg.isPack || arg.vararg == VarArgKind::VarArg)
         handleStarMarker(arg.loc, /*isMarker=*/false);
 
       // If we have a **arg then it must be the last argument.
-      if (uint8_t(arg.convention & ValueInputConvention::KWVarArg) &&
+      if (arg.vararg == VarArgKind::KWVarArg &&
           p.getToken().isNot(stopTokens)) {
         p.emitError(arg.loc, "'**' marker must be at end of argument list");
-        arg.convention = arg.convention & ~ValueInputConvention::KWVarArg;
+        arg.vararg = VarArgKind::None;
       }
 
       // Otherwise just remember the argument.
@@ -809,14 +809,15 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
         type = TypeCheckErrorType::get(p.getContext());
       }
 
-      auto convention = arg.convention;
-      if (uint8_t(convention & ValueInputConvention::VarArg)) {
+      ValueInputConvention convention = arg.convention;
+      VarArgKind vararg = arg.vararg;
+      if (vararg != VarArgKind::None) {
         if (isResultParams)
           p.emitError(arg.loc, "result parameters may not be variadic");
         else if (!isa<TypeCheckErrorType>(type.mlirType))
           type = KGEN::VariadicType::get(type);
         // Notice that we handle the variadics.
-        convention = convention & ~ValueInputConvention::VarArg;
+        vararg = VarArgKind::None;
       }
 
       if (convention != ValueInputConvention::ByVal)
@@ -1059,9 +1060,9 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       [&](auto argAndArgType) {
         auto [arg, argType] = argAndArgType;
         mangledName += ASTType(argType).getAsString();
-        if (int8_t(arg.convention & ValueInputConvention::ByRef))
+        if (arg.convention == ValueInputConvention::ByRef)
           mangledName += '&';
-        if (int8_t(arg.convention & ValueInputConvention::VarArg))
+        if (arg.vararg == VarArgKind::VarArg)
           mangledName += '*';
       },
       [&]() { mangledName += ","; });
@@ -1075,9 +1076,9 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   // Now that all the types and signature information have been resolved,
   // compute the final MLIR types, mixing in argument conventions, etc.
   for (auto [arg, argType] : llvm::zip(args, argTypes)) {
-    if (int8_t(arg.convention & ValueInputConvention::ByRef))
+    if (arg.convention == ValueInputConvention::ByRef)
       argType = POP::PointerType::get(argType);
-    if (int8_t(arg.convention & ValueInputConvention::VarArg))
+    if (arg.vararg == VarArgKind::VarArg)
       argType = KGEN::VariadicType::get(argType);
   }
 }
@@ -1564,10 +1565,12 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   SmallVector<Location> argLocs;
   SmallVector<StringAttr> argNames;
   SmallVector<ValueInputConvention> inputConventions;
+  SmallVector<VarArgKind> varargs;
   for (const ParsedArgument &arg : args) {
     argLocs.push_back(p.translateLocation(arg.loc));
     argNames.push_back(arg.name);
     inputConventions.push_back(arg.convention);
+    varargs.push_back(arg.vararg);
   }
 
   OpBuilder builder = decl.getDeclEndBuilder();
@@ -1577,7 +1580,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       builder.getAttr<ParamDeclArrayAttr>(resultParamDecls),
       builder.getFunctionType(argTypes, {resultType.mlirType}),
       builder.getAttr<MetadataAttr>(
-          inputConventions,
+          inputConventions, varargs,
           defaults.empty() ? DefaultArgumentsAttr{}
                            : builder.getAttr<DefaultArgumentsAttr>(defaults),
           funcOp.getMetadata().getFnEffects()));
@@ -1613,8 +1616,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   for (auto [bbArg, parsedArg] :
        llvm::zip(funcOp.getBody()->getArguments(), args)) {
     // Arguments passed by-reference can be directly used.
-    if (int8_t(parsedArg.convention & ValueInputConvention::ByRef) &&
-        !int8_t(parsedArg.convention & ValueInputConvention::VarArg)) {
+    if (parsedArg.convention == ValueInputConvention::ByRef &&
+        parsedArg.vararg != VarArgKind::VarArg) {
       buildArgDIInfo(bbArg, parsedArg.name, bbArg.getArgNumber());
       addFullyResolvedDecl(LValue(bbArg), parsedArg.name, parsedArg.loc, &decl);
       continue;

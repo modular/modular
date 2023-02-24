@@ -165,13 +165,16 @@ void OutlineClosuresPass::runOnOperation() {
           captures.size(), ValueInputConvention::ByVal);
       llvm::append_range(liftedConventions,
                          bodySignature.getValueInputConventions());
+      SmallVector<VarArgKind> liftedMarkers(captures.size(), VarArgKind::None);
+      llvm::append_range(liftedMarkers,
+                         bodySignature.getMetadata().getVarArgMarkers());
 
       // The lifted generator needs to be always_inline, so we add that to the
       // FnEffects.
       auto liftedSignature = SignatureType::get(
           b.getAttr<ParamDeclArrayAttr>(necessaryDecls.getArrayRef()),
           bodySignature.getResultParams(), liftedValueSignature,
-          b.getAttr<MetadataAttr>(liftedConventions,
+          b.getAttr<MetadataAttr>(liftedConventions, liftedMarkers,
                                   bodySignature.getDefaultArguments(),
                                   bodySignature.getFnEffects()));
 
