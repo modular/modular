@@ -8,13 +8,16 @@
 #define LLCL_RUNTIME_TYPEID_H
 
 #include "Support/LLVMForwardDecls.h"
-#include "llvm/Support/TypeName.h"
+#include "llvm/Support/Compiler.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <assert.h>
+#include <array>
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
+#include <utility>
 
 namespace M::LLCL {
 
@@ -23,33 +26,87 @@ using ValueDestructorFn = void (*)(void *);
 
 namespace Detail {
 
-/// Returns the 'pretty' name of T for compilers which support it.
-///
-/// TODO: Replace with constexpr version.
+/// Unfortunately there is no way to build a constexpr string specifically in
+/// C++17, and `basic_fixed_string` never made it into C++20.  Just do it the
+/// old-fashioned way with a char array rather than implementing a full-fledged
+/// `basic_fixed_string` type.
+template <std::size_t... Indices>
+constexpr auto stringToArray(std::string_view str,
+                             std::index_sequence<Indices...>) {
+  return std::array{str[Indices]...};
+}
+
+template <class T>
+constexpr auto typeNameArray() {
+#if defined(__clang__)
+  constexpr std::string_view prefix = "[T = ";
+  constexpr std::string_view suffix = "]";
+#elif defined(__GNUC__)
+  constexpr std::string_view prefix = "with T = ";
+  constexpr std::string_view suffix = "]";
+#elif defined(_MSC_VER)
+  constexpr std::string_view prefix = "type_name_array<";
+  constexpr std::string_view suffix = ">(void)";
+#else
+#error                                                                         \
+    "Modular Runtime built with a toolchain not supporting type introspection."
+#endif
+
+  constexpr std::string_view function = LLVM_PRETTY_FUNCTION;
+
+  // The algorithm is straightforward:
+  // Find where the prefix starts and record the index at the end of it
+  // Find where the suffix ends and record the index at the beginning of it
+  // Create a substring between the two indices
+
+  constexpr auto start = function.find(prefix) + prefix.size();
+  constexpr auto end = function.rfind(suffix);
+
+  static_assert(start < end,
+                "Invalid assumptions about parsing type_name for a type.");
+
+  constexpr auto name = function.substr(start, end - start);
+  return stringToArray(name, std::make_index_sequence<name.size()>{});
+}
+
+/// In C++17, we can't define an object with static storage duration inside of a
+/// `constexpr` function.  However, we can define a `constexpr` object with
+/// static storage duration as a member and access through that from within a
+/// `constexpr` function.
+template <class T>
+struct TypeNameHolder {
+  static inline constexpr auto value = typeNameArray<T>();
+};
+
+/// Currently this only supports getting the demangled type name for a type, and
+/// so you cannot specify a non-type (e.g. an NTTP, enum class, etc.) right now.
+template <class T>
+constexpr std::string_view typeNameFor() {
+  constexpr auto &value = TypeNameHolder<T>::value;
+  return std::string_view{value.data(), value.size()};
+}
+
+/// Returns the 'pretty' name of T for compilers which support it.  Otherwise,
+/// gives an error at build time.
 ///
 /// TODO: Should we encounter issues with non-uniqueness of type names (eg
 /// because of types in anonymous namespaces) then this template can be
-/// specialized, possibly with macro helpers to make it seamless.
+/// specialized, possibly with macro helpers to make it seamless.  We don't
+/// currently have this use case, but leaving the door open with this design for
+/// now.
 ///
 /// TODO: Should we need to build with toolchains which do not support
 /// the PRETTY_FUNCTION machinery then we'll need to register every type
 /// manually. See third-party/llvm-project/mlir/include/mlir/Support/TypeID.h.
 template <typename T>
 struct TypeNameResolver {
-  static StringRef getTypeName() {
-    StringRef nm = llvm::getTypeName<T>();
-    assert(
-        nm != "UNKNOWN_TYPE" &&
-        "The Modular Runtime was built with a toolchain which does not allow "
-        "recovery of type names.");
-    return nm;
-  }
+  static std::string_view getTypeName() { return typeNameFor<T>(); }
 };
 
 /// The ValueDestructorFn for values of type T.
 template <typename T>
 static void valueDestructorFn(void *pointer) {
-  std::destroy_at<T>(static_cast<T *>(pointer));
+  std::destroy_at(static_cast<T *>(pointer));
 }
 
 /// The underlying unique 2-byte identifier for a type.
