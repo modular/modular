@@ -29,6 +29,7 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addPass(createLowerKGENToLLVM());
   pm.addPass(createLowerPOPClosuresToLLVM());
   pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM());
+  pm.addNestedPass<LLVMFuncOp>(createTweakSpilledAllocas());
   pm.addNestedPass<LLVMFuncOp>(createLowerControlFlow());
   pm.addNestedPass<LLVMFuncOp>(createLowerKGENCoroutines());
   pm.addPass(createLowerGlobalPOPToLLVM());
