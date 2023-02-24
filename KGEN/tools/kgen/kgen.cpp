@@ -64,13 +64,6 @@ public:
       cl::desc("Ignore execution failures. Any messages are still printed, but "
                "failures don't mean the tool fails to execute.")};
 
-  cl::opt<bool> enableSearch{
-      "enable-search", cl::init(false),
-      cl::desc("Do search when an evaluator is provided.")};
-
-  cl::list<std::string> searchPaths{
-      "I", cl::desc("Path to use to search for included files.")};
-
   cl::opt<std::string> dependencyFilename{
       "d", llvm::cl::desc("Path of the dependency file to generate"),
       llvm::cl::value_desc("filename"), llvm::cl::init("")};
@@ -80,11 +73,6 @@ public:
   cl::opt<bool> enableMLIRDiagnostics{
       "enable-mlir-diagnostics",
       cl::desc("Print .lit parser diagnostics through MLIR."), cl::init(false)};
-
-  cl::opt<bool> enableMLIRCrashReproducer{
-      "enable-mlir-crash-repro",
-      cl::desc("Enable MLIR pass manager crash reproducer generation."),
-      cl::init(false)};
 
   /// Add all the input files provided on the command line to the SourceMgr.
   /// This is how MLIR parses multiple files.

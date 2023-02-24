@@ -37,9 +37,9 @@ using namespace KGEN;
 using namespace mlir;
 
 namespace {
-class CLOptions : public CommonCLOptions {
+class CLOptions : public KGENCommonOptions {
 public:
-  using CommonCLOptions::CommonCLOptions;
+  using KGENCommonOptions::KGENCommonOptions;
 
   cl::opt<Command> cmd{cl::desc("The command to execute"),
                        cl::values(clEnumValN(Command::kEmit, "emit",
@@ -47,28 +47,6 @@ public:
                                   clEnumValN(Command::kExecute, "execute",
                                              "Execute the main function.")),
                        cl::init(Command::kExecute)};
-
-  cl::list<std::string> searchPaths{
-      "I", cl::desc("Path to use to search for included files.")};
-
-  cl::opt<bool> enableSearch{
-      "enable-search", cl::init(false),
-      cl::desc("Do search when an evaluator is provided.")};
-
-  cl::opt<bool> enableMLIRCrashReproducer{
-      "enable-mlir-crash-repro",
-      cl::desc("Enable MLIR pass manager crash reproducer generation."),
-      cl::init(false)};
-
-  cl::opt<CompilationOptions::DebugInfoLevel> debugLevel{
-      "debug-level", cl::desc("Level of debug info to emit during compilation"),
-      cl::values(clEnumValN(CompilationOptions::kNoDebug, "none",
-                            "Do not include debug info"),
-                 clEnumValN(CompilationOptions::kLineTablesOnly, "line-tables",
-                            "Emit the line tables only"),
-                 clEnumValN(CompilationOptions::kFullDebugInfo, "full",
-                            "Emit full debug info")),
-      cl::init(CompilationOptions::kNoDebug)};
 };
 } // namespace
 
@@ -117,8 +95,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // later.
   ctx->allowUnregisteredDialects();
 
-  CompilationOptions compilationOptions;
-  compilationOptions.debugLevel = clOptions.debugLevel;
+  CompilationOptions compilationOptions = clOptions.getCompilationOptions();
   OwningOpRef<ModuleOp> theModule;
   llvm::StringRef inputFileName(clOptions.inputFilename.getValue());
 
