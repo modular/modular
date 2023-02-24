@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param_bool
-from Bool import Bool
+
 from BuildInfo import is_llcl_profiling_enabled, is_llcl_profiling_disabled
 from Int import Int
 from StringRef import StringRef
