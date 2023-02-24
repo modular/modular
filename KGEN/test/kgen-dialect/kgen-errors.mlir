@@ -692,7 +692,7 @@ kgen.generator @caller(%arg: !pop.pointer<i32>) {
   // Ok
   kgen.call @callee(%arg) : (!pop.pointer<i32> byref) -> ()
 
-  // expected-error @+1 {{symbol use metadata is #kgen.metadata<[byval], none> but @callee expected #kgen.metadata<[byref], none>}}
+  // expected-error @+1 {{symbol use metadata is #kgen.metadata<[byval], [none], none> but @callee expected #kgen.metadata<[byref], [none], none>}}
   kgen.call @callee(%arg) : (!pop.pointer<i32>) -> ()
   kgen.return
 }
@@ -733,12 +733,6 @@ kgen.generator @no_return() {
 kgen.func @no_return() {
   // expected-error @below {{block with no terminator}}
   kgen.param.declare A = <1>
-}
-
-// -----
-
-kgen.generator @evaluator() {
-  kgen.return
 }
 
 // -----

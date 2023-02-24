@@ -91,7 +91,6 @@ def KGEN_AlwaysInlineLevelAttr : I32EnumAttr<"AlwaysInlineLevel",
   I32EnumAttrCase<"EnabledNoDebug", 2, "enabled_nodebug">,
 ]> {
   let cppNamespace = "M::KGEN";
-  let genSpecializedAttr = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -100,15 +99,20 @@ def KGEN_AlwaysInlineLevelAttr : I32EnumAttr<"AlwaysInlineLevel",
 
 /// This describes the encoding of input argument calling conventions, stored
 /// in the metadata of a SignatureType.
-def KGEN_ValueInputConvention : I8BitEnumAttr<"ValueInputConvention",
+def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
     "Function value input convention", [
-  // TODO: Modeling this as a bitfield is a hack, this is really two different
-  // non-bitfield enums put together: a varargs marker and an ownership
-  // qualifier.
-  I8BitEnumAttrCaseNone<"ByVal",       "byval">,
-  I8BitEnumAttrCaseBit <"ByRef",    0, "byref">,
-  I8BitEnumAttrCaseBit <"VarArg",   1, "vararg">,
-  I8BitEnumAttrCaseBit <"KWVarArg", 2, "kwvararg">,
+  I32EnumAttrCase<"ByVal", 0, "byval">,
+  I32EnumAttrCase<"ByRef", 1, "byref">
+]> {
+  let cppNamespace = "M::KGEN";
+}
+
+/// Vararg marker for input arguments.
+def KGEN_VarArgKind : I32EnumAttr<"VarArgKind",
+    "Vararg marker", [
+  I32EnumAttrCase<"None", 0, "none">,
+  I32EnumAttrCase<"VarArg", 1, "vararg">,
+  I32EnumAttrCase<"KWVarArg", 2, "kwvararg">
 ]> {
   let cppNamespace = "M::KGEN";
 }

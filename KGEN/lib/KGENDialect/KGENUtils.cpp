@@ -1008,6 +1008,7 @@ parseElementsWithMetadata(AsmParser &p, function_ref<ParseResult()> parseElt,
                           MetadataAttr &metadata) {
   // Parse an element list with input effects and default values.
   SmallVector<ValueInputConvention> inputConventions;
+  SmallVector<VarArgKind> varargMarkers;
   SmallVector<TypedAttr> defaults;
   auto parseArg = [&]() -> ParseResult {
     if (parseElt())
@@ -1015,14 +1016,42 @@ parseElementsWithMetadata(AsmParser &p, function_ref<ParseResult()> parseElt,
 
     StringRef effectStr;
     llvm::SMLoc loc = p.getCurrentLocation();
-    if (succeeded(p.parseOptionalKeyword(&effectStr)))
-      if (std::optional<ValueInputConvention> effect =
-              symbolizeValueInputConvention(effectStr))
-        inputConventions.push_back(*effect);
-      else
-        return p.emitError(loc, "expected 'byval' or 'byref' for input effect");
-    else
-      inputConventions.push_back(ValueInputConvention::ByVal);
+    // Parse an optional input convention specifier and an optional vararg
+    // marker, separated by a '|' if both are present.
+    auto convention = ValueInputConvention::ByVal;
+    auto vararg = VarArgKind::None;
+    if (succeeded(p.parseOptionalKeyword(&effectStr))) {
+      bool seenConv = false;
+      bool seenKind = false;
+      auto processEffect = [&]() -> ParseResult {
+        if (std::optional<ValueInputConvention> conv =
+                symbolizeValueInputConvention(effectStr)) {
+          if (seenConv)
+            p.emitError(loc, "duplicate input convention specifier");
+          seenConv = true;
+          convention = *conv;
+        } else if (std::optional<VarArgKind> kind =
+                       symbolizeVarArgKind(effectStr)) {
+          if (seenKind)
+            p.emitError(loc, "duplicate vararg marker");
+          seenKind = true;
+          vararg = *kind;
+        } else {
+          return p.emitError(loc, "expected 'byval', 'byref', 'vararg', or "
+                                  "'kwvararg' for input convention");
+        }
+        return success();
+      };
+      if (processEffect())
+        return failure();
+      if (succeeded(p.parseOptionalVerticalBar())) {
+        if (p.parseKeyword(&effectStr) || p.getCurrentLocation(&loc),
+            processEffect())
+          return failure();
+      }
+    }
+    inputConventions.push_back(convention);
+    varargMarkers.push_back(vararg);
 
     if (succeeded(p.parseOptionalEqual())) {
       TypedAttr value;
@@ -1054,7 +1083,7 @@ parseElementsWithMetadata(AsmParser &p, function_ref<ParseResult()> parseElt,
   }
 
   metadata = MetadataAttr::get(
-      p.getContext(), inputConventions,
+      p.getContext(), inputConventions, varargMarkers,
       defaults.empty() ? DefaultArgumentsAttr{}
                        : DefaultArgumentsAttr::get(p.getContext(), defaults),
       effect);
@@ -1068,19 +1097,27 @@ static void printElementsWithMetadata(AsmPrinter &p,
   p << '(';
   DefaultArgumentsAttr defaults = metadata.getDefaultArguments();
   llvm::interleaveComma(
-      llvm::enumerate(metadata.getInputConventions()), p, [&](auto it) {
-        printElt(it.index());
-        if (it.value() != ValueInputConvention::ByVal)
-          p << ' ' << stringifyValueInputConvention(it.value());
+      llvm::seq<unsigned>(0, metadata.getInputConventions().size()), p,
+      [&](unsigned i) {
+        printElt(i);
+        ValueInputConvention conv = metadata.getInputConventions()[i];
+        char kindSep = ' ';
+        if (conv != ValueInputConvention::ByVal) {
+          p << ' ' << stringifyValueInputConvention(conv);
+          kindSep = '|';
+        }
+        VarArgKind kind = metadata.getVarArgMarkers()[i];
+        if (kind != VarArgKind::None)
+          p << kindSep << stringifyVarArgKind(kind);
 
         // If a default argument value has been provided for the argument at
         // this index, print an `=`, followed by the value.
         if (defaults) {
           size_t defaultIndex = metadata.getInputConventions().size() -
                                 defaults.getValues().size();
-          if (it.index() >= defaultIndex) {
+          if (i >= defaultIndex) {
             p << " = ";
-            printParamValue(p, defaults.getValues()[it.index() - defaultIndex]);
+            printParamValue(p, defaults.getValues()[i - defaultIndex]);
           }
         }
       });
