@@ -163,11 +163,30 @@ def TweakSpilledAllocas : Pass<"tweak-spilled-allocas",
 }
 
 //===----------------------------------------------------------------------===//
+// LowerKGENCoroutinesAsync
+//===----------------------------------------------------------------------===//
+
+def LowerKGENCoroutinesAsync : Pass<"lower-coroutines-async",
+                                    "mlir::ModuleOp"> {
+  let summary = "Lower async functions to async LLVM coroutines.";
+  let description = [{
+    The `lower-coroutines-async` pass lowers KGEN coroutines implemented with
+    POP coroutine operations to LLVM async coroutine intrinsics. LLVM async
+    coroutine intrinsics require the front-end to handle control-flow and ABI.
+    We generate the code to marshall function arguments and results through the
+    coroutine async context and we handle control-flow using by storing the
+    current resume function in the context.
+  }];
+
+  let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerKGENCoroutines
 //===----------------------------------------------------------------------===//
 
 def LowerKGENCoroutines : Pass<"lower-coroutines", "mlir::LLVM::LLVMFuncOp"> {
-  let summary = "Lowering `pop` coroutine operations to LLVM intrinsics.";
+  let summary = "Lower `pop` coroutine operations to LLVM intrinsics.";
   let description = [{
     The `lower-coroutines` pass lowerings KGEN coroutines implemented with
     POP coroutine operations to LLVM coroutine intrinsics using switched-resume
