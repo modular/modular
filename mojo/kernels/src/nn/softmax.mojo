@@ -199,8 +199,8 @@ fn softmax_2_pass[
         input
     )
 
-    let running_max = running_info.__getitem__[0]()
-    let running_sum = running_info.__getitem__[1]()
+    let running_max = running_info[0]
+    let running_sum = running_info[1]
 
     _softmax_2_pass_step2[simd_width, buffer_size, type](
         output, input, running_max, running_sum
