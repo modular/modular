@@ -27,13 +27,15 @@ namespace M::KGEN {
 /// Given a parameter expression, walk it and return any references to named
 /// parameters.  This fails if an invalid parameter expression exists.
 void collectParameterReferences(Attribute attr,
-                                SmallVector<ParamDeclRefAttr> &results);
+                                SmallVectorImpl<ParamDeclRefAttr> &results,
+                                bool &hasConstExpr);
 
 /// Given a potentially-parameterized MLIR type, walk it and return any
 /// references to named parameters.  This fails if an invalid parameter
 /// expression exists.
 void collectParameterReferences(Type type,
-                                SmallVector<ParamDeclRefAttr> &results);
+                                SmallVectorImpl<ParamDeclRefAttr> &results,
+                                bool &hasConstExpr);
 
 /// Return true if the specified type contains parameter references, e.g.
 /// `!pop.scalar<dt>` returns true, but `!pop.scalar<f32>` returns false.

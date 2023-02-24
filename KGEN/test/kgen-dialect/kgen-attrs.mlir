@@ -8,3 +8,15 @@
 
 // CHECK: *"mangled_fn{{.*}}$Int
 "someop"() {decl = #kgen<param.decl *"mangled_fn(Pointer[!kgen.declref<_\22$Int\22::_Int>])" : index>} : () -> ()
+
+kgen.generator @return_one() -> index {
+  %0 = index.constant 1
+  kgen.return %0 : index
+}
+
+// CHECK: a = #kgen.concretetype.constant
+// CHECK-SAMEA: b = #kgen.parameterizedtype.constant
+"someop"() {
+  a = #kgen.parameterizedtype.constant<!pop.array<1, i1>>,
+  b = #kgen.parameterizedtype.constant<!pop.array<apply(:() -> index @return_one), i1>>
+} : () -> ()

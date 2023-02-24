@@ -2001,6 +2001,18 @@ kgen.generator @returnVariadic() -> !kgen.variadic<index> {
 // CHECK-NEXT:  kgen.return
 // CHECK-NEXT:  }
 kgen.generator @recurse() {
-    kgen.call @recurse() : () -> ()
-    kgen.return
+  kgen.call @recurse() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @unpack_in_type
+kgen.generator @unpack_in_type() {
+  // CHECK-NEXT: !pop.array<1, index>
+  %0 = pop.stack_allocation 1 x !pop.array<apply(:() -> index @produce_one), index>
+  kgen.return
+}
+
+kgen.generator @produce_one() -> index {
+  %0 = kgen.param.constant: index = <1>
+  kgen.return %0 : index
 }
