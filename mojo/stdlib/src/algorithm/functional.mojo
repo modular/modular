@@ -6,7 +6,7 @@
 
 from Assert import assert_param, assert_param_bool_msg
 from Coroutine import Coroutine
-from Bool import Bool
+
 from Int import Int
 from LLCL import Runtime, TaskGroup
 from Range import range
