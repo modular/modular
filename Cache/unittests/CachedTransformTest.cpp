@@ -61,7 +61,7 @@ TEST(CachedTransformTest, CacheHits) {
                   createSingleThreadWorkQueue());
 
   // Register the LogicalResult type.
-  AsyncValue::registerType<LogicalResult>();
+  LLCL::TypeID::registerType<LogicalResult>();
 
   std::filesystem::path cacheTestPath(STRINGIFY(CACHE_TEST_DIR));
   auto regionBackendChainOr =

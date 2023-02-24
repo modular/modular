@@ -67,10 +67,12 @@ TypeInfoTable::registerTypeSlow(StringRef typeName,
 Detail::RawTypeID TypeInfoTable::getSlow(StringRef typeName) const {
   std::lock_guard<std::mutex> l(m);
   auto itr = ids.find(typeName);
-  if (itr == ids.end()) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "Type " << typeName << " has not been registered\n");
-  }
+#if MODULAR_DEBUG
+  // Give a more helpful error message if attempt to use an unregistered
+  // type.
+  if (itr == ids.end())
+    llvm::errs() << "Type " << typeName << " has not been registered\n";
+#endif
   assert(itr != ids.end() && "type has not been registered");
   return itr->second;
 }

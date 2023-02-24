@@ -1957,7 +1957,7 @@ ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
   *keyBuf << target;
 
   // Alright - we want to do search now.
-  LLCL::AsyncValue::registerTypes<FuncOp>();
+  LLCL::TypeID::registerTypes<FuncOp>();
 
   // This provides the implementation of search. This is the part we actually
   // care about caching because it's the most expensive part.

@@ -27,7 +27,7 @@ void Allocator::vtableAnchor() {}
 /// before the construction. "Chain" is core to LLCL implemention, so it
 /// needs to be registered unconditonally from LLCL.
 static AsyncValueRef<Chain> createReadyChain(Runtime &runtime) {
-  AsyncValue::registerType<Chain>();
+  TypeID::registerType<Chain>();
   return AsyncValueRef<Chain>::createReady(runtime);
 }
 
@@ -71,9 +71,9 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
          "Created too many Runtimes");
   allRuntimes[runtimeIndex] = this;
 
-  // Register the C scalar types as async value types.
-  AsyncValue::registerTypes<bool, int8_t, uint8_t, int16_t, uint16_t, int32_t,
-                            uint32_t, int64_t, uint64_t, float, double>();
+  // Register the C scalar types so we can use them in AsyncValues.
+  TypeID::registerTypes<bool, int8_t, uint8_t, int16_t, uint16_t, int32_t,
+                        uint32_t, int64_t, uint64_t, float, double>();
 
   // NOTE: Users can't pass in profileFilename AND activate the time profiler in
   // the caller.

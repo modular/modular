@@ -30,8 +30,8 @@ public:
   /// Construct a BlobCacheBackend from an LLCL runtime.
   BlobCacheBackend(LLCL::Runtime &runtime) : runtime(runtime) {
     // Register the types we use in the blob cache.
-    LLCL::AsyncValue::registerTypes<ErrorOrSuccess, bool,
-                                    std::optional<BufferRef>>();
+    LLCL::TypeID::registerTypes<ErrorOrSuccess, bool,
+                                std::optional<BufferRef>>();
   }
   virtual ~BlobCacheBackend() {}
 
@@ -118,7 +118,7 @@ public:
         backendList(std::move(backendList)) {
     // Only one additional type we need registered on top of the ones provided
     // by the backend list.
-    LLCL::AsyncValue::registerTypes<ErrorOr<std::string>>();
+    LLCL::TypeID::registerTypes<ErrorOr<std::string>>();
   }
 
   using KeyTy = typename KeyInfo::KeyTy;
