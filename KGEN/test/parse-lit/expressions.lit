@@ -2,7 +2,7 @@
 
 # CHECK: module {
 
-from prolog import Bool, Error, F32, Int, SIMD, object
+from prolog import Error, F32, Int, SIMD, object
 
 fn noop():
 
@@ -181,17 +181,17 @@ struct Boolish:
 
 # CHECK-LABEL: @"unary
 fn unary(a: Bool, b: Int, c: Boolish):
-  # CHECK: %0 = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"(%a)
-  # CHECK: %1 = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"(%0)
+  # CHECK: %0 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__bool__($_CompilerBuiltin::Bool)"(%a)
+  # CHECK: %1 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__invert__($_CompilerBuiltin::Bool)"(%0)
   _ = not a
 
   # CHECK: [[EQ:%.*]] = kgen.call @"$Int"::@Int::@"__eq__($Int::Int,$Int::Int)"
-  # CHECK: [[EQBOOL:%.*]] = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"([[EQ]])
-  # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[EQBOOL]])
+  # CHECK: [[EQBOOL:%.*]] = kgen.call @"$_CompilerBuiltin"::@Bool::@"__bool__($_CompilerBuiltin::Bool)"([[EQ]])
+  # CHECK:  = kgen.call @"$_CompilerBuiltin"::@Bool::@"__invert__($_CompilerBuiltin::Bool)"([[EQBOOL]])
   _ = not b == 0
 
   # CHECK: [[BOOL:%.*]] = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%c)
-  # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[BOOL]])
+  # CHECK:  = kgen.call @"$_CompilerBuiltin"::@Bool::@"__invert__($_CompilerBuiltin::Bool)"([[BOOL]])
   _ = not c
 
 # CHECK-LABEL: lit.func @"andOr
@@ -200,7 +200,7 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # otherwise.
 
   # CHECK: %0 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
-  # CHECK: %1 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%0)
+  # CHECK: %1 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__lit_bool($_CompilerBuiltin::Bool)"(%0)
   # CHECK: %2 = hlcf.if %1 -> !kgen.declref<@"$expressions"::@Boolish> {
   # CHECK:   hlcf.yield %b
   # CHECK: } else {
@@ -212,7 +212,7 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # otherwise.
 
   # CHECK: %3 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
-  # CHECK: %4 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%3)
+  # CHECK: %4 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__lit_bool($_CompilerBuiltin::Bool)"(%3)
   # CHECK: %5 = hlcf.if %4 -> !kgen.declref<@"$expressions"::@Boolish> {
   # CHECK:   hlcf.yield %a
   # CHECK: } else {
@@ -223,11 +223,11 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
   # Testing two different logic'y types returns the common bool type if present.
 
   # CHECK: %6 = kgen.call @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)"(%a)
-  # CHECK: %7 = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%6)
-  # CHECK: %8 = hlcf.if %7 -> !kgen.declref<@"$Bool"::@Bool> {
+  # CHECK: %7 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__lit_bool($_CompilerBuiltin::Bool)"(%6)
+  # CHECK: %8 = hlcf.if %7 -> !kgen.declref<@"$_CompilerBuiltin"::@Bool> {
   # CHECK:   hlcf.yield %6
   # CHECK: } else {
-  # CHECK:   %9 = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"(%x)
+  # CHECK:   %9 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__bool__($_CompilerBuiltin::Bool)"(%x)
   # CHECK:   hlcf.yield %9
   # CHECK: }
    _ = a or x
@@ -288,8 +288,8 @@ fn initializers():
 # CHECK-LABEL: lit.func @"test_if_cond
 def test_if_cond(cond: Bool):
     # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@"$Int"::@Int>
-    # CHECK-NEXT: %[[COND:.*]] = kgen.call @"$Bool"::@Bool::@"__clone__($Bool::Bool&)"(%cond_0)
-    # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%[[COND]])
+    # CHECK-NEXT: %[[COND:.*]] = kgen.call @"$_CompilerBuiltin"::@Bool::@"__clone__($_CompilerBuiltin::Bool&)"(%cond_0)
+    # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call @"$_CompilerBuiltin"::@Bool::@"__lit_bool($_CompilerBuiltin::Bool)"(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
     # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}= 2}
     # CHECK-NEXT:   hlcf.yield %[[INT_TWO]]
@@ -605,7 +605,7 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield %[[CMP_A_B]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: pop.store %[[IF_A_B]], %res : !pop.pointer<@"$Bool"::@Bool>
+    # CHECK-NEXT: pop.store %[[IF_A_B]], %res : !pop.pointer<@"$_CompilerBuiltin"::@Bool>
     var res = a < b < c < d
 
     # COM: This checks the parsing precedence between `<` and `and`.
@@ -624,7 +624,7 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield %[[IF_A_B]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: pop.store %[[IF]], %res : !pop.pointer<@"$Bool"::@Bool>
+    # CHECK-NEXT: pop.store %[[IF]], %res : !pop.pointer<@"$_CompilerBuiltin"::@Bool>
     res = a < b < c and d < e
 
 # CHECK-LABEL: lit.func @"foo_adaptive(){{.*}} {isAdaptive}

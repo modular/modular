@@ -7,7 +7,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Bool import Bool
+
 from Int import Int
 from SIMD import SIMD
 from F32 import F32

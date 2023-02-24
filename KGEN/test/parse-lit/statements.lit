@@ -1,6 +1,6 @@
 # RUN: kgen-translate %s -import-lit -I %S/../lit-examples/ | FileCheck %s
 
-from prolog import Error, Int, Bool
+from prolog import Error, Int
 
 
 ##===----------------------------------------------------------------------===##
@@ -75,7 +75,7 @@ fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
 
 # CHECK-LABEL: lit.func @"test_if_nested
 fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
-    # CHECK-NEXT:   %[[I1:.*]] = kgen.call @"$Bool"::@Bool::@"__lit_bool($Bool::Bool)"(%a)
+    # CHECK-NEXT:   %[[I1:.*]] = kgen.call @"$_CompilerBuiltin"::@Bool::@"__lit_bool($_CompilerBuiltin::Bool)"(%a)
     # CHECK-NEXT:              hlcf.if %[[I1]]
     if a:
         # CHECK-NEXT: %inside_a = lit.var.decl "inside_a"
@@ -105,7 +105,7 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     var z: Int = Int(4)
     return a
 
-# CHECK-LABEL: lit.func @"param_if{{.*}}<a: i1, b: @"$Bool"::@Bool>()
+# CHECK-LABEL: lit.func @"param_if{{.*}}<a: i1, b: @"$_CompilerBuiltin"::@Bool>()
 fn param_if[a: __mlir_type.i1, b: Bool]():
   # CHECK: kgen.param.if <a> {
   @parameter
@@ -113,7 +113,7 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
     # CHECK: lit.var.decl "inside_1"
     var inside_1: Int
   # CHECK: } else {
-  # CHECK:     kgen.param.if <apply{{.*}}@"$Bool"::@Bool::@"__lit_bool{{.*}}b)> {
+  # CHECK:     kgen.param.if <apply{{.*}}@"$_CompilerBuiltin"::@Bool::@"__lit_bool{{.*}}b)> {
   elif b:
   # CHECK:     lit.var.decl "inside_2"
     var inside_2: Int
@@ -187,7 +187,7 @@ def test_else_outside_while(a: Bool, b: Bool) -> Bool:
     # CHECK: hlcf.if {{.+}} {
     if b:
         # CHECK: hlcf.loop
-        # CHECK: {{.+}} = kgen.call @"$Bool"::@Bool::@"__clone__{{.*}}(%a_0
+        # CHECK: {{.+}} = kgen.call @"$_CompilerBuiltin"::@Bool::@"__clone__{{.*}}(%a_0
         while a:
             # CHECK: pop.store {{.+}}, %inside_a
             inside_a = Int(0)
