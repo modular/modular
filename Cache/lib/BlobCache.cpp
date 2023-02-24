@@ -50,11 +50,34 @@ AsyncValueRef<ErrorOrSuccess> BlobCacheBackend::insert(BufferRef keyHash,
   return result;
 }
 
-AsyncValueRef<bool> BlobCacheBackend::contains(BufferRef keyHash) {
+namespace {
+/// Provides a simple callable that encapsulates an optional EncodedLocation and
+/// returns an EncodedDiagnostic of the correct kind based on if the location
+/// exists or not.
+struct GetError {
+  std::optional<EncodedLocation> loc;
+
+  EncodedDiagnostic operator()(Error err) {
+    if (loc)
+      return {std::move(err), std::move(*loc)};
+
+    return UnknownLocationDecoder::getDiagnostic(std::move(err));
+  }
+};
+} // namespace
+
+AsyncValueRef<bool>
+BlobCacheBackend::contains(BufferRef keyHash,
+                           std::optional<EncodedLocation> loc) {
   auto result = AsyncValueRef<bool>::allocate(runtime);
   addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
-                    result = result.copy()]() mutable {
-    if (thisRef->containsImpl(keyHash->getBuffer()))
+                    result = result.copy(),
+                    getError = GetError{std::move(loc)}]() mutable {
+    auto containsOr = thisRef->containsImpl(keyHash->getBuffer());
+    if (containsOr.isError())
+      return std::move(result).setToError(getError(containsOr.takeError()));
+
+    if (*containsOr)
       return std::move(result).emplace(true);
 
     if (!thisRef->delegate)
@@ -73,19 +96,18 @@ AsyncValueRef<bool> BlobCacheBackend::contains(BufferRef keyHash) {
 
 AsyncValueRef<std::optional<BufferRef>>
 BlobCacheBackend::find(BufferRef keyHash, std::optional<EncodedLocation> loc) {
-  auto getError = [loc =
-                       std::move(loc)](Error err) mutable -> EncodedDiagnostic {
-    if (loc)
-      return {std::move(err), std::move(*loc)};
-
-    return UnknownLocationDecoder::getDiagnostic(std::move(err));
-  };
-
   auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);
   addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
-                    getError = std::move(getError),
-                    result = result.copy()]() mutable {
-    if (thisRef->containsImpl(keyHash->getBuffer())) {
+                    result = result.copy(),
+                    getError = GetError{std::move(loc)}]() mutable {
+    // Check if the key is contained at this cache level (return an error if
+    // containsOr returns an error).
+    auto containsOr = thisRef->containsImpl(keyHash->getBuffer());
+    if (containsOr.isError())
+      return std::move(result).setToError(getError(containsOr.takeError()));
+
+    // If we have it, return it and don't bother delegating.
+    if (*containsOr) {
       // If this was an error, return that error in the AsyncValue.
       auto bufOr = thisRef->findImpl(keyHash->getBuffer());
       if (bufOr.isError())
@@ -163,7 +185,7 @@ struct InMemoryBackend : public BlobCacheBackend {
     return success();
   }
 
-  bool containsImpl(StringRef keyHash) const override {
+  ErrorOr<bool> containsImpl(StringRef keyHash) const override {
     return cache.count(keyHash);
   }
 
@@ -264,7 +286,7 @@ struct FilesystemBackend : public BlobCacheBackend {
     }
   }
 
-  bool containsImpl(StringRef keyHash) const override {
+  ErrorOr<bool> containsImpl(StringRef keyHash) const override {
     auto abs = getAbsolutePathForKey(keyHash);
     return std::filesystem::exists(abs) && !std::filesystem::is_directory(abs);
   }

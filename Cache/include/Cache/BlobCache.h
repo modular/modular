@@ -45,7 +45,9 @@ public:
 
   /// Check if an item with key hash `keyHash` exists in this backend or in any
   /// of the delegates.
-  LLCL::AsyncValueRef<bool> contains(BufferRef keyHash);
+  LLCL::AsyncValueRef<bool>
+  contains(BufferRef keyHash,
+           std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Get the item with key hash `keyHash` from this backend or any of its
   /// delegates.
@@ -67,7 +69,7 @@ protected:
   virtual ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) = 0;
   /// Subclasses should use this to provide the implementation of checking if an
   /// item exists.
-  virtual bool containsImpl(StringRef keyHash) const = 0;
+  virtual ErrorOr<bool> containsImpl(StringRef keyHash) const = 0;
   /// Subclasses should use this to provide the implementation of getting an
   /// item from storage.
   virtual ErrorOr<std::optional<BufferRef>>
@@ -151,9 +153,10 @@ public:
   }
 
   /// Check if any of the provided backends have the item.
-  LLCL::AsyncValueRef<bool> contains(KeyTy key) const {
+  LLCL::AsyncValueRef<bool>
+  contains(KeyTy key, std::optional<EncodedLocation> loc = std::nullopt) const {
     auto hash = Buffer::get(KeyInfo::hashKey(key));
-    return backendList->contains(std::move(hash));
+    return backendList->contains(std::move(hash), std::move(loc));
   }
 
   /// Get the item from any of the provided backends.
