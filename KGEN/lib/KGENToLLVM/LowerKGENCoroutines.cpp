@@ -8,6 +8,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -131,9 +132,11 @@ struct TypeAttrCache {
   Type i1Type;
   Type i8Type;
   Type i32Type;
+  Type i64Type;
   Type ptrType;
   Type i8PtrType;
   Type tokenType;
+  Type asyncFnType;
 };
 
 /// This struct contains information about the machinery of a coroutine.
@@ -436,9 +439,11 @@ void LowerKGENCoroutinesPass::runOnOperation() {
   TypeAttrCache cache{b.getI1Type(),
                       b.getI8Type(),
                       b.getI32Type(),
+                      b.getI64Type(),
                       b.getType<LLVMPointerType>(),
                       LLVMPointerType::get(b.getI8Type()),
-                      b.getType<LLVMTokenType>()};
+                      b.getType<LLVMTokenType>(),
+                      nullptr};
 
   // Collect all the relevant ops.
   SmallVector<POP::CoroutineHandleOp> handles;
@@ -493,4 +498,488 @@ void LowerKGENCoroutinesPass::runOnOperation() {
   }
   for (POP::CoroutineAwaitOp op : awaits)
     lowerCoroutineAwait(b, cache, *coroutine, op);
+}
+
+//===----------------------------------------------------------------------===//
+// LowerKGENCoroutinesAsync
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_LOWERKGENCOROUTINESASYNC
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
+namespace {
+struct LowerKGENCoroutinesAsyncPass
+    : public KGEN::impl::LowerKGENCoroutinesAsyncBase<
+          LowerKGENCoroutinesAsyncPass> {
+  using LowerKGENCoroutinesAsyncBase::LowerKGENCoroutinesAsyncBase;
+
+  void runOnOperation() override;
+};
+} // namespace
+
+static LogicalResult lowerCoroutinePromiseAsync(LLVMBuilder &b,
+                                                TypeAttrCache &cache,
+                                                POP::CoroutinePromiseOp op) {
+  b.setLoc(op.getLoc());
+  b.setInsertionPoint(op);
+
+  Value hdl = b.create<mlir::UnrealizedConversionCastOp>(cache.i8PtrType,
+                                                         op.getCoroutine())
+                  .getResult(0);
+
+  Type ptrType = b.convertType(op.getType());
+  if (!ptrType)
+    return op.emitError("failed to convert coroutine type");
+
+  // The context contains the parent context, the resume function pointer, and
+  // then the callback closure. Skip over them (4 pointers) to reach the
+  // results.
+  Value promise = b.create<GEPOp>(
+      ptrType, hdl,
+      GEPArg(llvm::divideCeil(b.getIndexTypeBitwidth(), CHAR_BIT) * 4),
+      /*inbounds=*/true);
+
+  op.replaceAllUsesWith(promise);
+  op.erase();
+  return success();
+}
+
+static void lowerCoroutineResumeAsync(LLVMBuilder &b, TypeAttrCache &cache,
+                                      POP::CoroutineResumeOp op) {
+  b.setLoc(op.getLoc());
+  b.setInsertionPoint(op);
+
+  // The resume function is the second element of the context.
+  auto hdl = b.create<mlir::UnrealizedConversionCastOp>(cache.i8PtrType,
+                                                        op.getCoroutine())
+                 .getResult(0);
+  // Bitcast `i8*` to `void(i8*)**` in the GEP.
+  Value resumeFnPtr = b.create<GEPOp>(
+      LLVMPointerType::get(cache.asyncFnType), hdl,
+      GEPArg(llvm::divideCeil(b.getIndexTypeBitwidth(), CHAR_BIT)),
+      /*inbounds=*/true);
+  b.create<CallOp>(TypeRange(), ValueRange{b.create<LoadOp>(resumeFnPtr), hdl});
+  op.erase();
+}
+
+static void lowerCoroutineDestroyAsync(LLVMBuilder &b, TypeAttrCache &cache,
+                                       POP::CoroutineDestroyOp op) {
+  b.setLoc(op.getLoc());
+  b.setInsertionPoint(op);
+
+  // Just free the coroutine context.
+  auto hdl = b.create<mlir::UnrealizedConversionCastOp>(cache.i8PtrType,
+                                                        op.getCoroutine())
+                 .getResult(0);
+  b.create<POP::ExternalCallOp>(
+      "free", b.create<BitcastOp>(cache.ptrType, hdl).getResult());
+  op.erase();
+}
+
+/// When a coroutine completes, it invokes it completion callback:
+///
+/// ```
+/// llvm.func @__kgen_coro_end_fn(%opaqueCtxt: !llvm.ptr<i8>) {
+///   %ctxt = llvm.bitcast %opaqueCtxt : !llvm.ptr<i8> to !llvm.ptr<struct(...
+///   %clsFnPtr = llvm.getelementptr %ctxt[0, 2, 0]
+///   %clsArgPtr = llvm.getlementptr %ctxt[0, 2, 1]
+///   %ctxtFn = llvm.load %ctxtFnPtr
+///   %ctxtArg = llvm.load %ctxtArgPtr
+///   llvm.call %ctxtFn(%ctxtArg)
+///   llvm.return
+/// }
+/// ```
+static LLVMFuncOp synthesizeCoroEndFunc(SymbolTable &symtab, LLVMBuilder &b,
+                                        TypeAttrCache &cache) {
+  OpBuilder::InsertionGuard guard(b);
+  Location prevLoc = b.getLoc();
+  b.setLoc(symtab.getOp()->getLoc());
+  b.clearInsertionPoint();
+
+  auto endFn = b.create<LLVMFuncOp>(
+      "__kgen_coro_end_fn",
+      LLVMFunctionType::get(LLVMVoidType::get(b.getContext()), cache.i8PtrType),
+      Linkage::Internal);
+
+  b.setInsertionPointToStart(endFn.addEntryBlock());
+  Value closure = b.create<GEPOp>(
+      LLVMPointerType::get(LLVMStructType::getLiteral(
+          b.getContext(), {cache.asyncFnType, cache.i8PtrType})),
+      endFn.getArgument(0),
+      GEPArg(llvm::divideCeil(b.getIndexTypeBitwidth(), CHAR_BIT) * 2),
+      /*inbounds=*/true);
+  Value closureFn =
+      b.create<LoadOp>(b.create<GEPOp>(LLVMPointerType::get(cache.asyncFnType),
+                                       closure, ArrayRef<GEPArg>{0, 0}));
+  Value closureArg = b.create<LoadOp>(b.create<GEPOp>(
+      LLVMPointerType::get(cache.i8PtrType), closure, ArrayRef<GEPArg>{0, 1}));
+  b.create<CallOp>(TypeRange(), ValueRange{closureFn, closureArg});
+  b.create<ReturnOp>(ValueRange());
+  symtab.insert(endFn);
+
+  b.setLoc(prevLoc);
+  return endFn;
+}
+
+/// Parent-callee context relations are managed by the standard library via the
+/// completion callback. Create a function that forwards the context.
+static LLVMFuncOp synthesizeCoroCtxtProjFn(SymbolTable &symtab, LLVMBuilder &b,
+                                           TypeAttrCache &cache) {
+  OpBuilder::InsertionGuard guard(b);
+  Location prevLoc = b.getLoc();
+  b.setLoc(symtab.getOp()->getLoc());
+  b.clearInsertionPoint();
+
+  auto projFn = b.create<LLVMFuncOp>(
+      "__kgen_coro_ctxt_proj_fn",
+      LLVMFunctionType::get(cache.i8PtrType, cache.i8PtrType),
+      Linkage::Internal);
+
+  b.setInsertionPointToStart(projFn.addEntryBlock());
+  b.create<ReturnOp>(projFn.getArgument(0));
+  symtab.insert(projFn);
+
+  b.setLoc(prevLoc);
+  return projFn;
+}
+
+static FailureOr<LLVMFuncOp>
+createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
+                     POP::CoroutineType coroType, LLVMBuilder &b,
+                     TypeAttrCache &cache, LLVMFuncOp coroEndFn) {
+  b.setLoc(func.getLoc());
+  b.clearInsertionPoint();
+
+  // The coroutine context contains the parent context (null if no parent),
+  // the next resume function pointer, a callback closure in the form of
+  // `{ void(i8*)*, i8* }`, the function results, and the function arguments,
+  // and then trailing coroutine frame:
+  //
+  //   { i8*, void(i8*)*, { void(i8*)*, i8* }, ResTs..., ArgTs..., FrameT }
+  //
+  SmallVector<Type, 16> contextTypes{
+      cache.i8PtrType, cache.asyncFnType,
+      LLVMStructType::getLiteral(b.getContext(),
+                                 {cache.ptrType, cache.ptrType})};
+  for (Type resultType : coroType.getResultTypes()) {
+    resultType = b.convertType(resultType);
+    if (!resultType)
+      return mlir::emitError(func.getLoc(),
+                             "could not convert coroutine result type");
+    contextTypes.push_back(resultType);
+  }
+  llvm::append_range(contextTypes, func.getArgumentTypes());
+  auto contextType = LLVMStructType::getLiteral(b.getContext(), contextTypes);
+  auto contextPtrType = LLVMPointerType::get(contextType);
+  // Compute the base size of the context to populate into the global async
+  // function pointer as required by the LLVM async coroutine intrinsics. LLVM's
+  // async lowering will update the field with the total size.
+  int64_t contextBaseSize = b.getTypeAllocSize(contextType);
+
+  // The async function implementation is always void(i8*). Create a new
+  // function with that signature and make the current function the wrapper
+  // function. The wrapper will load the arguments into the context and store
+  // the ramp function as the resume function.
+  auto asyncFn = b.create<LLVMFuncOp>(
+      (func.getSymName() + "_af").str(),
+      LLVMFunctionType::get(LLVMVoidType::get(b.getContext()), cache.i8PtrType),
+      func.getLinkage());
+  symtab.insert(asyncFn, func->getIterator());
+
+  // Construct the async function pointer. We have to synthesize this massive
+  // global constant.
+  auto afpType = LLVMStructType::getLiteral(b.getContext(),
+                                            {cache.i32Type, cache.i32Type});
+  // constant struct <{ i32, i32 }>
+  auto afp =
+      b.create<GlobalOp>(afpType, /*isConstant=*/true,
+                         /*linkage=*/func.getLinkage(),
+                         (func.getSymName() + "_afp").str(), Attribute());
+  symtab.insert(afp, func->getIterator());
+  // = <{ i32 trunc (
+  //      i64 sub (
+  //        i64 ptrtoint void(i8*)* @async_fn to i64),
+  //        i64 ptrtoint (i32* getelementptr inbounds (<{ i32, i32 }>,
+  //                      <{ i32, i32 }>* @async_fn_afp, i32 0, i32 1) to i64)
+  //      )
+  //      to i32),
+  //      <context_base_size>
+  b.createBlock(&afp.getBodyRegion());
+  Value afpValue = b.create<UndefOp>(afpType);
+  Value afpEndPtr = b.create<GEPOp>(LLVMPointerType::get(cache.i32Type),
+                                    b.create<AddressOfOp>(afp),
+                                    ArrayRef<GEPArg>{0, 1}, /*inbounds=*/true);
+  Value afpOffset = b.create<TruncOp>(
+      cache.i32Type,
+      b.create<SubOp>(
+          b.create<PtrToIntOp>(cache.i64Type, b.create<AddressOfOp>(asyncFn)),
+          b.create<PtrToIntOp>(cache.i64Type, afpEndPtr)));
+  afpValue = b.create<InsertValueOp>(afpValue, afpOffset, 0);
+  afpValue = b.create<InsertValueOp>(
+      afpValue, b.create<ConstantOp>(cache.i32Type, contextBaseSize), 1);
+  b.create<ReturnOp>(afpValue);
+
+  // Move the body of the coroutine into the new async function.
+  Region &asyncFnBody = asyncFn.getBody();
+  asyncFnBody.takeBody(func.getBody());
+
+  // Replace argument uses with values from the async context.
+  BlockArgument contextArg =
+      asyncFnBody.addArgument(cache.i8PtrType, func.getLoc());
+  b.setInsertionPointToStart(&asyncFnBody.front());
+  Value contextPtr = b.create<BitcastOp>(contextPtrType, contextArg);
+  // Arguments are located at the end.
+  constexpr int64_t resOffset = 3;
+  int64_t argOffset = resOffset + coroType.getResultTypes().size();
+  for (auto [idx, arg] :
+       llvm::enumerate(asyncFnBody.getArguments().drop_back())) {
+    b.setLoc(arg.getLoc());
+    Value argPtr = b.create<GEPOp>(
+        LLVMPointerType::get(arg.getType()), contextPtr,
+        ArrayRef<GEPArg>{0, argOffset + idx}, /*inbounds=*/true);
+    arg.replaceAllUsesWith(b.create<LoadOp>(argPtr));
+  }
+  asyncFnBody.front().eraseArguments(0, asyncFnBody.getNumArguments() - 1);
+
+  // Generate coroutine machinery.
+  b.setLoc(asyncFn.getLoc());
+  b.setInsertionPointToStart(&asyncFnBody.front());
+  auto coroIdOp = b.create<CallIntrinsicOp>(
+      cache.tokenType, "llvm.coro.id.async",
+      ValueRange{
+          b.create<ConstantOp>(b.getI32IntegerAttr(contextBaseSize)),
+          // FIXME: `malloc` provides no alignment guarantees.
+          b.create<ConstantOp>(b.getI32IntegerAttr(1)),
+          b.create<ConstantOp>(b.getI32IntegerAttr(0)),
+          b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(afp))});
+  Value hdl = b.create<CoroBeginOp>(
+      cache.i8PtrType, coroIdOp.getResult(0),
+      b.create<IntToPtrOp>(cache.i8PtrType,
+                           b.create<ConstantOp>(b.getI32IntegerAttr(0))));
+
+  // Returns in the async function are all void.
+  asyncFnBody.walk([&](ReturnOp ret) {
+    b.setInsertionPoint(ret);
+    b.setLoc(ret.getLoc());
+    b.create<CallIntrinsicOp>(
+        cache.i1Type, "llvm.coro.end.async",
+        ValueRange{hdl, b.create<ConstantOp>(b.getBoolAttr(false)),
+                   b.create<AddressOfOp>(coroEndFn), contextArg});
+    ret->eraseOperands(0, ret.getNumOperands());
+  });
+
+  // Generate the code to marshall the async function arguments and store the
+  // ramp function as the initial resume function.
+  b.setLoc(func.getLoc());
+  b.setInsertionPointToStart(func.addEntryBlock());
+  // Read the required context size from the async function pointer.
+  Value contextSize = b.create<LoadOp>(b.create<GEPOp>(
+      LLVMPointerType::get(cache.i32Type), b.create<AddressOfOp>(afp),
+      ArrayRef<GEPArg>{0, 1}, /*inbounds=*/true));
+  auto allocCall = b.create<POP::ExternalCallOp>(
+      cache.ptrType, "malloc",
+      Value(b.create<ZExtOp>(cache.i64Type, contextSize)));
+  Value contextValue =
+      b.create<BitcastOp>(contextPtrType, allocCall.getResult(0));
+
+  b.create<StoreOp>(b.create<AddressOfOp>(asyncFn),
+                    b.create<GEPOp>(LLVMPointerType::get(cache.asyncFnType),
+                                    contextValue, ArrayRef<GEPArg>{0, 1},
+                                    /*inbounds=*/true));
+  for (auto [idx, arg] : llvm::enumerate(func.getArguments())) {
+    Value argPtr = b.create<GEPOp>(
+        LLVMPointerType::get(arg.getType()), contextValue,
+        ArrayRef<GEPArg>{0, argOffset + idx}, /*inbounds=*/true);
+    b.create<StoreOp>(arg, argPtr);
+  }
+  b.create<ReturnOp>(b.create<BitcastOp>(cache.i8PtrType, contextValue));
+  return asyncFn;
+}
+
+static LogicalResult
+lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
+                         LLVMFuncOp asyncFn, TypeAttrCache &cache,
+                         LLVMFuncOp coroProjFn, POP::CoroutineAwaitOp op) {
+  b.setLoc(op.getLoc());
+
+  // Outline the body of the await into a function.
+  SmallVector<Value> captures;
+  (void)operationIsIsolatedFromAbove(op, &captures);
+
+  Block *awaitBody = &op.getBody().front();
+  SmallVector<Type> captureTypes;
+  for (Value &capture : captures) {
+    Type captureType = b.convertType(capture.getType());
+    if (!captureType)
+      return op.emitError("failed to convert captured value type");
+    captureTypes.push_back(captureType);
+
+    Value arg = awaitBody->addArgument(capture.getType(), op.getLoc());
+    Value valueInBody = capture;
+    if (arg.getType() != captureType) {
+      b.setInsertionPointToStart(&op.getBody().front());
+      // Materialize source and destination conversions.
+      Type srcType = arg.getType();
+      arg.setType(captureType);
+      arg =
+          b.create<mlir::UnrealizedConversionCastOp>(srcType, arg).getResult(0);
+      b.setInsertionPoint(op);
+      capture = b.create<mlir::UnrealizedConversionCastOp>(captureType, capture)
+                    .getResult(0);
+    }
+    valueInBody.replaceUsesWithIf(arg, [&](OpOperand &use) {
+      return op->isProperAncestor(use.getOwner());
+    });
+  }
+
+  b.clearInsertionPoint();
+  auto suspendFn = b.create<LLVMFuncOp>(
+      (asyncFn.getSymName() + ".suspend").str(),
+      LLVMFunctionType::get(LLVMVoidType::get(b.getContext()), captureTypes),
+      Linkage::Internal);
+  suspendFn.getBody().takeBody(op.getBody());
+  b.setInsertionPointToEnd(&suspendFn.getBody().front());
+  b.create<ReturnOp>(ValueRange());
+  symtab.insert(suspendFn, asyncFn->getIterator());
+
+  b.setInsertionPoint(op);
+  Value resumeFn = b.create<CallIntrinsicOp>(
+                        cache.i8PtrType, "llvm.coro.async.resume", ValueRange())
+                       .getResult(0);
+  Value resumeFnPtr = b.create<GEPOp>(
+      LLVMPointerType::get(cache.i8PtrType), asyncFn.getArgument(0),
+      GEPArg(llvm::divideCeil(b.getIndexTypeBitwidth(), CHAR_BIT)),
+      /*inbounds=*/true);
+  b.create<StoreOp>(resumeFn, resumeFnPtr);
+
+  SmallVector<Value> suspendAsyncArgs{
+      b.create<ConstantOp>(b.getI32IntegerAttr(0)), resumeFn,
+      b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(coroProjFn)),
+      b.create<AddressOfOp>(suspendFn)};
+  llvm::append_range(suspendAsyncArgs, captures);
+  auto suspendRetType = LLVMStructType::getLiteral(
+      b.getContext(), {cache.i8PtrType, cache.i8PtrType, cache.i8PtrType});
+  // FIXME: For some reason, `call_intrinsic` fails to resolve the overload.
+  b.create<POP::ExternalCallOp>(
+      suspendRetType, "llvm.coro.suspend.async.sl_p0p0p0s", suspendAsyncArgs,
+      TypeAttr::get(b.getFunctionType(
+          {cache.i32Type, cache.i8PtrType, cache.i8PtrType}, suspendRetType)));
+  op.erase();
+  return success();
+}
+
+static LogicalResult
+lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
+                       TypeAttrCache &cache,
+                       function_ref<LLVMFuncOp()> getCoroEndFn,
+                       function_ref<LLVMFuncOp()> getCoroProjFn) {
+  // Collect all the relevant ops.
+  SmallVector<POP::CoroutineHandleOp> handles;
+  SmallVector<POP::CoroutineOpaqueHandleOp> opaques;
+  SmallVector<POP::CoroutineAwaitOp> awaits;
+  WalkResult result = func.walk([&](Operation *op) {
+    if (auto handle = dyn_cast<POP::CoroutineHandleOp>(op)) {
+      handles.push_back(handle);
+    } else if (auto opaque = dyn_cast<POP::CoroutineOpaqueHandleOp>(op)) {
+      opaques.push_back(opaque);
+    } else if (auto await = dyn_cast<POP::CoroutineAwaitOp>(op)) {
+      awaits.push_back(await);
+    } else if (auto promise = dyn_cast<POP::CoroutinePromiseOp>(op)) {
+      if (failed(lowerCoroutinePromiseAsync(b, cache, promise)))
+        return WalkResult::interrupt();
+    } else if (auto resume = dyn_cast<POP::CoroutineResumeOp>(op)) {
+      lowerCoroutineResumeAsync(b, cache, resume);
+    } else if (auto destroy = dyn_cast<POP::CoroutineDestroyOp>(op)) {
+      lowerCoroutineDestroyAsync(b, cache, destroy);
+    }
+    return WalkResult::advance();
+  });
+  if (result.wasInterrupted())
+    return failure();
+
+  // The presence of `pop.coroutine.handle` inside a function indicates
+  // that it is a coroutine.
+  if (handles.empty()) {
+    // Replace opaque handles with a null pointer.
+    for (POP::CoroutineOpaqueHandleOp opaque : opaques) {
+      b.setInsertionPoint(opaque);
+      Value cstNullPtr = b.create<IntToPtrOp>(
+          cache.i8PtrType, b.create<ConstantOp>(b.getIndexType(), 0));
+      opaque.replaceAllUsesWith(cstNullPtr);
+      opaque.erase();
+    }
+    return success();
+  }
+
+  POP::CoroutineType coroType = handles.front().getType();
+  FailureOr<LLVMFuncOp> coroFn =
+      createAsyncCoroutine(symtab, func, coroType, b, cache, getCoroEndFn());
+  if (failed(coroFn))
+    return failure();
+
+  // The coroutine handle is now the first argument of the coroutine function.
+  Value coroHdl = coroFn->getArgument(0);
+  for (POP::CoroutineHandleOp op : handles) {
+    op.replaceAllUsesWith(coroHdl);
+    op.erase();
+  }
+  for (POP::CoroutineOpaqueHandleOp op : opaques) {
+    op.replaceAllUsesWith(coroHdl);
+    op.erase();
+  }
+  for (POP::CoroutineAwaitOp op : awaits) {
+    if (failed(lowerCoroutineAwaitAsync(symtab, b, *coroFn, cache,
+                                        getCoroProjFn(), op)))
+      return failure();
+  }
+  return success();
+}
+
+void LowerKGENCoroutinesAsyncPass::runOnOperation() {
+  // Configure the builder.
+  TargetInfoAttr target = getTargetInfo(getOperation());
+  if (!target) {
+    mlir::emitError(getOperation()->getLoc(),
+                    "could not find an enclosing target specification");
+    return signalPassFailure();
+  }
+  POPToLLVMTypeConverter typeConverter(target);
+  ImplicitLocOpBuilder opBuilder(getOperation().getLoc(), &getContext());
+  LLVMBuilder b(opBuilder, typeConverter);
+
+  // Initialize the type cache.
+  // TODO: Move this into the pass class itself.
+  TypeAttrCache cache{b.getI1Type(),
+                      b.getI8Type(),
+                      b.getI32Type(),
+                      b.getI64Type(),
+                      b.getType<LLVMPointerType>(),
+                      LLVMPointerType::get(b.getI8Type()),
+                      b.getType<LLVMTokenType>(),
+                      nullptr};
+  cache.asyncFnType = LLVMPointerType::get(
+      LLVMFunctionType::get(b.getType<LLVMVoidType>(), cache.i8PtrType));
+
+  SymbolTable &symtab =
+      getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
+
+  LLVMFuncOp coroEndFn, coroProjFn;
+  auto getCoroEndFn = [&] {
+    if (!coroEndFn)
+      coroEndFn = synthesizeCoroEndFunc(symtab, b, cache);
+    return coroEndFn;
+  };
+  auto getCoroProjFn = [&] {
+    if (!coroProjFn)
+      coroProjFn = synthesizeCoroCtxtProjFn(symtab, b, cache);
+    return coroProjFn;
+  };
+
+  // TODO: Do this in parallel.
+  for (auto func : getOperation().getOps<LLVMFuncOp>())
+    if (failed(lowerCoroutineFunction(symtab, func, b, cache, getCoroEndFn,
+                                      getCoroProjFn)))
+      return signalPassFailure();
 }
