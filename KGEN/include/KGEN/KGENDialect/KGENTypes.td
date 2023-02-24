@@ -197,17 +197,13 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     ArrayRef<Type> getValueResults() const;
 
     /// Get the callable function effects.
-    FnEffects getFnEffects() {
-      return getMetadata().getFnEffects();
-    }
+    FnEffects getFnEffects() { return getMetadata().getFnEffects(); }
     /// Get the function input argument conventions.
     ArrayRef<ValueInputConvention> getValueInputConventions() {
       return getMetadata().getInputConventions();
     }
-    /// GEt the function input vararg markers.
-    ArrayRef<VarArgKind> getVarArgMarkers() {
-      return getMetadata().getVarArgMarkers();
-    }
+    /// Get the function input vararg markers.
+    ArrayRef<VarArgKind> getVarArgs() { return getMetadata().getVarArgs(); }
 
     /// Get the function default arguments.
     DefaultArgumentsAttr getDefaultArguments() {
@@ -228,8 +224,8 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
       return getValueInputConventions()[inputNo];
     }
     /// Return the vararg marker for the specified value input parameters.
-    VarArgKind getVarArgKind(size_t inputNo) {
-      return getVarArgMarkers()[inputNo];
+    VarArgKind getVarArg(size_t inputNo) {
+      return getVarArgs()[inputNo];
     }
 
     /// Set a function convention.
