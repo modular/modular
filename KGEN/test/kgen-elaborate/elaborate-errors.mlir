@@ -224,3 +224,24 @@ kgen.generator @brokenVLenAssert() {
   kgen.param.assert <eq(2, 3)>, B
   kgen.return
 }
+
+// -----
+
+kgen.generator @paramRecurse<in -> out>() {
+  kgen.param.if <eq(in, 0) -> v> {
+    kgen.param.yield<0>
+  } else {
+    // expected-note @below {{could not resolve callee's necessary result parameters, infinite recursive loop?}}
+    kgen.call @paramRecurse<in = in -> val = out>() : () -> ()
+    kgen.param.yield<sub(in, 1)>
+  }
+  kgen.return<v>
+}
+
+// expected-error @below {{no viable expansions found}}
+kgen.generator @caller() {
+  kgen.param.constant = <v>
+  // expected-note @below {{call expansion failed}}
+  kgen.call @paramRecurse<in = 3 -> v = out>() : () -> ()
+  kgen.return
+}

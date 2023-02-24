@@ -17,7 +17,23 @@ fn unsafe_factorial(next: Int, thusFar: Int) -> Int:
     return 1
 
 
+fn another_unsafe_factorial(next: Int, thusFar: Int) -> Int:
+    """This checks to make sure we can properly handle recursive chains."""
+    if next > 1:
+        return yet_another_unsafe_factorial(next - 1, thusFar * next)
+    if next <= 1:
+        return thusFar
+    return 1
+
+
+fn yet_another_unsafe_factorial(next: Int, thusFar: Int) -> Int:
+    return another_unsafe_factorial(next, thusFar)
+
+
 fn main():
     let x = unsafe_factorial(3, 1)
+    let y = another_unsafe_factorial(3, 1)
     # CHECK: 6
     print(x)
+    # CHECK: 6
+    print(y)

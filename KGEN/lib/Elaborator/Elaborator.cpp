@@ -733,6 +733,9 @@ static void completeCallProcessing(KGENCallOpInterface user,
     resultTypes.push_back(typeOr.takeValue());
   }
 
+  // Save the user's location before we delete the op.
+  Location userLoc = user.getLoc();
+
   // Now that we resolved the call to a new thing, build a new call to replace
   // the old one.
   mlir::IRRewriter b{OpBuilder(user)};
@@ -758,12 +761,23 @@ static void completeCallProcessing(KGENCallOpInterface user,
   assert(!concreteNodeOr.isError() &&
          "This should be called from a concrete node in this case");
 
-  if (!(*concreteNodeOr)->resultParams) {
-    (*concreteNodeOr)->op.walk([&concreteNodeOr, &logger](ReturnOp returnOp) {
-      completeReturnProcessing(logger, returnOp, *concreteNodeOr);
-    });
-  }
+  // If we don't have the result parameters yet, then either no result
+  // parameters are necessary, or we have another problem entirely wherein we
+  // could not complete the callee's result parameter resolution at all - likely
+  // meaning we're in an infinite recursive loop. Essentially, we came back to
+  // the same combination of generator + input parameters without resolving the
+  // result parameters yet.
   ArrayAttr resultParams = (*concreteNodeOr)->resultParams;
+  if (!resultParams && !decls.empty()) {
+    thisNode->error =
+        ErrorTree(userLoc, "could not resolve callee's necessary result "
+                           "parameters, infinite recursive loop?");
+    return;
+  }
+  // No decls, so we don't have to do anything.
+  if (decls.empty())
+    return;
+
   // Bind the result parameters to the output parameter decls.
   for (auto [decl, bindValue] : llvm::zip(decls, resultParams)) {
     LLVM_DEBUG(thisNode->logger << "Binding " << decl << " to " << bindValue

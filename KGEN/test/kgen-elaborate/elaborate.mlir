@@ -1995,6 +1995,8 @@ kgen.generator @returnVariadic() -> !kgen.variadic<index> {
   kgen.return %r : !kgen.variadic<index>
 }
 
+// -----
+
 // CHECK-LABEL: kgen.func @recurse
 // CHECK-SAME: () {
 // CHECK-NEXT:  kgen.call @recurse() : () -> ()
@@ -2015,4 +2017,32 @@ kgen.generator @unpack_in_type() {
 kgen.generator @produce_one() -> index {
   %0 = kgen.param.constant: index = <1>
   kgen.return %0 : index
+}
+
+// CHECK-LABEL:func  @"paramRecurse,in=3"()
+// CHECK-NEXT: call @"paramRecurse,in=2"
+
+// CHECK-LABEL: func @"paramRecurse,in=2"()
+// CHECK-NEXT: call @"paramRecurse,in=1"
+
+// CHECK-LABEL: func @"paramRecurse,in=1"()
+// CHECK-NEXT: call @"paramRecurse,in=0"
+
+// CHECK-LABEL: func @"paramRecurse,in=0"()
+// CHECK-NEXT: return
+
+kgen.generator @paramRecurse<in -> out>() {
+  kgen.param.if <eq(in, 0) -> v> {
+    kgen.param.yield<0>
+  } else {
+    kgen.call @paramRecurse<in = add(in, -1) -> val = out>() : () -> ()
+    kgen.param.yield<val>
+  }
+  kgen.return<v>
+}
+
+kgen.generator @caller() {
+  kgen.param.constant = <v>
+  kgen.call @paramRecurse<in = 3 -> v = out>() : () -> ()
+  kgen.return
 }
