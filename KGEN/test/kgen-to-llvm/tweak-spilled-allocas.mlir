@@ -64,3 +64,25 @@ llvm.func @not_spilled_alloca() {
   }
   llvm.return
 }
+
+// CHECK-LABEL: llvm.func @remove_alloca_from_frame
+llvm.func @remove_alloca_from_frame(%cond: i1) {
+  %0 = llvm.mlir.constant(1 : i32) : i32
+  %1 = llvm.alloca %0 x i32 : (i32) -> !llvm.ptr<i32>
+  // CHECK: hlcf.if
+  hlcf.if %cond {
+    // CHECK-NEXT: pop.coroutine.await
+    pop.coroutine.await {
+    ^bb0:
+    }
+    // CHECK: %1 = llvm.alloca
+    // CHECK-NEXT: llvm.intr.lifetime.start 4, %1
+    llvm.intr.lifetime.start 4, %1 : !llvm.ptr<i32>
+    %2 = llvm.load %1 : !llvm.ptr<i32>
+    llvm.intr.lifetime.end 4, %1 : !llvm.ptr<i32>
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  llvm.return
+}
