@@ -9,6 +9,8 @@ add_modular_mlir_library(KGENExecutionEngine
 
   LINK_COMPONENTS
   OrcJIT
+  OrcShared
+  OrcTargetProcess
   JITLink
   MC
   native

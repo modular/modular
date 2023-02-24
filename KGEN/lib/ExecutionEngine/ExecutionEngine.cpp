@@ -6,25 +6,17 @@
 
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/CompilationOptions.h"
-#include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
 #include "Support/ErrorOr.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Target/LLVMIR/Export.h"
-#include "mlir/Transforms/Passes.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
 #include "llvm/ExecutionEngine/Orc/DebugObjectManagerPlugin.h"
+#include "llvm/ExecutionEngine/Orc/DebuggerSupportPlugin.h"
 #include "llvm/ExecutionEngine/Orc/EPCDebugObjectRegistrar.h"
 #include "llvm/ExecutionEngine/Orc/EPCEHFrameRegistrar.h"
 #include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
-#include "llvm/IR/InstIterator.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/TargetParser/Host.h"
-
-#include <filesystem>
-#include <mutex>
 
 using namespace M;
 using namespace KGEN;
@@ -93,7 +85,33 @@ ExecutionEngine::create(const CompilationOptions &options) {
     if (options.debugLevel == CompilationOptions::kNoDebug)
       return objectLayer;
 
-    // TODO: Need to install the GDB listeners.
+    // Get the registrar for the GDB JIT loader interface.
+    if (tt.isOSBinFormatMachO()) {
+      llvm::orc::JITDylib &dylib =
+          session.createBareJITDylib("$platform-stdlib");
+      // We have to explicitly define these wrapper symbols on macOS because
+      // they're hidden visibility.
+      cantFail(dylib.define(llvm::orc::absoluteSymbols(
+          {{session.intern("_llvm_orc_registerJITLoaderGDBWrapper"),
+            {llvm::pointerToJITTargetAddress(
+                 &llvm_orc_registerJITLoaderGDBWrapper),
+             llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Absolute}},
+           {session.intern("_llvm_orc_registerJITLoaderGDBAllocAction"),
+            {llvm::pointerToJITTargetAddress(
+                 &llvm_orc_registerJITLoaderGDBAllocAction),
+             llvm::JITSymbolFlags::Exported |
+                 llvm::JITSymbolFlags::Absolute}}})));
+
+      objectLayer->addPlugin(
+          cantFail(llvm::orc::GDBJITDebugInfoRegistrationPlugin::Create(
+              session, dylib, tt)));
+    } else if (tt.isOSBinFormatELF()) {
+      // Register the DebugObjectManagerPlugin.
+      objectLayer->addPlugin(
+          std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
+              session,
+              cantFail(llvm::orc::createJITLoaderGDBRegistrar(session))));
+    }
 
     return objectLayer;
   };
