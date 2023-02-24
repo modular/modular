@@ -40,11 +40,9 @@ struct StructDeclarations {
 };
 
 /// Struct operations need to refer to the struct declaration symbol.
-class StructOperationLowerer : public mlir::IRRewriter {
-public:
+struct StructOperationLowerer : public mlir::IRRewriter {
   explicit StructOperationLowerer(MLIRContext *ctx,
-                                  StructDeclarations &structDecls)
-      : IRRewriter(ctx), structDecls(structDecls) {}
+                                  StructDeclarations &structDecls);
 
   /// Get the index of the struct field.
   int64_t getField(StringAttr name, DeclRefType ref) const {
@@ -69,10 +67,33 @@ public:
   template <typename OpT>
   void materializeLowering(OpT op);
 
-private:
+  /// The struct decl map.
   StructDeclarations &structDecls;
+
+  /// The type converter.
+  mlir::AttrTypeReplacer replacer;
 };
 } // namespace
+
+StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
+                                               StructDeclarations &structDecls)
+    : IRRewriter(ctx), structDecls(structDecls) {
+  replacer.addReplacement(
+      [&](DeclRefType type) -> Type { return substituteStructRef(type); });
+  replacer.addReplacement([&](LIT::StructAttr attr) {
+    SmallVector<TypedAttr> values;
+    for (auto [name, value] : attr.getValues())
+      values.push_back(value);
+    return POP::StructAttr::get(values, substituteStructRef(attr.getType()));
+  });
+  replacer.addReplacement([&](LIT::StructExtractAttr attr) {
+    auto litStructType = cast<DeclRefType>(attr.getStructValue().getType());
+    int64_t fieldNo = getField(attr.getField(), litStructType);
+    return POP::StructExtractAttr::get(
+        replacer.replace(attr.getStructValue()),
+        IntegerAttr::get(IndexType::get(attr.getContext()), fieldNo));
+  });
+}
 
 POP::StructType StructOperationLowerer::substituteStructRef(DeclRefType ref) {
   auto it = structDecls.fields.find(ref.getName());
@@ -104,13 +125,6 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
 }
 
 Type StructOperationLowerer::substituteTypes(Type type) {
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement(
-      [&](DeclRefType ref) { return substituteStructRef(ref); });
-  // Walk over struct extract attributes. Those will be replaced later.
-  replacer.addReplacement([](LIT::StructExtractAttr attr) {
-    return std::make_pair(attr, WalkResult::skip());
-  });
   return replacer.replace(type);
 }
 
@@ -246,28 +260,10 @@ void LowerStructsPass::runOnOperation() {
 
   // Type references can be used in nested types. Walk through all the types and
   // rewrite them in-place to use the lowered types.
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](DeclRefType type) -> Type {
-    return structLowerer.substituteStructRef(type);
-  });
-  replacer.addReplacement([&](LIT::StructAttr attr) {
-    SmallVector<TypedAttr> values;
-    for (auto [name, value] : attr.getValues())
-      values.push_back(value);
-    return POP::StructAttr::get(
-        values, structLowerer.substituteStructRef(attr.getType()));
-  });
-  replacer.addReplacement([&](LIT::StructExtractAttr attr) {
-    auto litStructType = cast<DeclRefType>(attr.getStructValue().getType());
-    int64_t fieldNo = structLowerer.getField(attr.getField(), litStructType);
-    return POP::StructExtractAttr::get(
-        replacer.replace(attr.getStructValue()),
-        IntegerAttr::get(IndexType::get(attr.getContext()), fieldNo));
-  });
-  replacer.addReplacement([&](DebugInfo::DIType type) -> Type {
+  structLowerer.replacer.addReplacement([&](DebugInfo::DIType type) -> Type {
     return debugTypeConverter.convertDebugType(type);
   });
-  replacer.recursivelyReplaceElementsIn(getOperation(), /*replaceAttrs=*/true,
-                                        /*replaceLocs=*/true,
-                                        /*replaceTypes=*/true);
+  structLowerer.replacer.recursivelyReplaceElementsIn(
+      getOperation(), /*replaceAttrs=*/true, /*replaceLocs=*/true,
+      /*replaceTypes=*/true);
 }
