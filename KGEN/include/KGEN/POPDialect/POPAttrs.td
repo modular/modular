@@ -83,41 +83,6 @@ def POP_AtomicBinOpAttr : EnumAttr<POPDialect,
                                    "bin_op">;
 
 //===----------------------------------------------------------------------===//
-// PrefetchTag
-//===----------------------------------------------------------------------===//
-
-def POP_PrefetchTag : POP_Enum<
-    "PrefetchTag",
-    "indicate pop.prefetch purpose and cache destination", [
-      POP_EnumCase<"ReadICache", 0>,
-      POP_EnumCase<"ReadDCache", 1>,
-      POP_EnumCase<"WriteDCache", 2>
-    ]>;
-
-def POP_PrefetchTagAttr : EnumAttr<POPDialect, POP_PrefetchTag, "prefetch_tag">;
-
-//===----------------------------------------------------------------------===//
-// PrefetchLocality
-//===----------------------------------------------------------------------===//
-
-def POP_PrefetchLocality : POP_Enum<
-    "PrefetchLocality",
-    "indicate temporal locality of prefetched data ", [
-      POP_EnumCase<"NoLocality", 0>,
-      POP_EnumCase<"LowLocality", 1>,
-      POP_EnumCase<"MediumLocality", 2>,
-      POP_EnumCase<"HighLocality", 3>,
-      POP_EnumCase<"VeryHighLocality", 4>
-    ]>;
-
-def POP_PrefetchLocalityAttr :
-  EnumAttr<POPDialect, POP_PrefetchLocality, "prefetch_tag">{
-    // Remove the leading space so we can define format like
-    //  `(NoLocality, ReadDCache)` in prefetch op.
-    let assemblyFormat = "`` $value";
-}
-
-//===----------------------------------------------------------------------===//
 // SIMDAttr
 //===----------------------------------------------------------------------===//
 
