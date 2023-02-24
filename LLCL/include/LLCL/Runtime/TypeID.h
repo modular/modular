@@ -89,8 +89,8 @@ struct TypeIDCache {
     RawTypeID expected = kInvalidRawTypeID;
     (void)Detail::TypeIDCache<T>::cachedID.compare_exchange_strong(
         expected, id, std::memory_order_relaxed, std::memory_order_relaxed);
-    assert(expected == kInvalidRawTypeID ||
-           expected == id && "inconsistent type ids");
+    assert((expected == kInvalidRawTypeID || expected == id) &&
+           "inconsistent type ids");
     return id;
   }
 };
