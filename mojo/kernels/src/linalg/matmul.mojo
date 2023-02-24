@@ -129,9 +129,9 @@ struct GemmShape:
             The constructed shape record.
         """
         return GemmShape(
-            index.__getitem__[0](),
-            index.__getitem__[1](),
-            index.__getitem__[2](),
+            index[0],
+            index[1],
+            index[2],
         )
 
     fn as_index(self) -> StaticIntTuple[3]:
@@ -343,21 +343,21 @@ struct PackMatrixRows[
 
         # Calculate bound of valid data in original matrix.
         let valid_data_dim = Index(
-            original_matrix.dim[0]() - global_offset.__getitem__[0](),
-            original_matrix.dim[1]() - global_offset.__getitem__[1](),
+            original_matrix.dim[0]() - global_offset[0],
+            original_matrix.dim[1]() - global_offset[1],
         )
         # Calculate multiple-of-simd bound of valid data.
         let valid_simd_dim = Index(
             round_down_to_block[simd_size](
                 Int.min(
-                    valid_data_dim.__getitem__[0](),
-                    pack_tile_dim.__getitem__[0](),
+                    valid_data_dim[0],
+                    pack_tile_dim[0],
                 )
             ),
             round_down_to_block[simd_size](
                 Int.min(
-                    valid_data_dim.__getitem__[1](),
-                    pack_tile_dim.__getitem__[1](),
+                    valid_data_dim[1],
+                    pack_tile_dim[1],
                 )
             ),
         )
@@ -415,10 +415,10 @@ struct PackMatrixRows[
         #  with un-transposed data.
         for inner_row_idx in range(simd_size):
             # Check that the current row has valid data.
-            if skip_row_bound or (inner_row_idx < read_bound.__getitem__[0]()):
+            if skip_row_bound or (inner_row_idx < read_bound[0]):
                 let row_gloal_index = Index(
-                    start_idx_global.__getitem__[0]() + inner_row_idx,
-                    start_idx_global.__getitem__[1](),
+                    start_idx_global[0] + inner_row_idx,
+                    start_idx_global[1],
                 )
                 var row_data: SIMD[simd_size, type]
                 if skip_col_bound:
@@ -434,7 +434,7 @@ struct PackMatrixRows[
                     row_data = partial_simd_load[simd_size, type](
                         self.original_matrix._offset(row_gloal_index),
                         0,  # no left bound.
-                        read_bound.__getitem__[1](),
+                        read_bound[1],
                         0,
                     )
 
@@ -457,19 +457,14 @@ struct PackMatrixRows[
                 Index(transposed_inner_row_idx, 0)
             )
             # compute the packed index
-            let _row_outer = local_off_set.__getitem__[0]() // row_inner_size
-            let _row_inner = Int.remu(
-                local_off_set.__getitem__[0](), row_inner_size
-            )
+            let _row_outer = local_off_set[0] // row_inner_size
+            let _row_inner = Int.remu(local_off_set[0], row_inner_size)
 
-            if skip_col_bound or (
-                transposed_inner_row_idx < write_bound.__getitem__[1]()
-            ):
+            if skip_col_bound or (transposed_inner_row_idx < write_bound[1]):
                 self.packed_matrix.simd_store[simd_size](
                     Index(
                         _row_outer,
-                        local_off_set.__getitem__[1]()
-                        + transposed_inner_row_idx,
+                        local_off_set[1] + transposed_inner_row_idx,
                         _row_inner,
                     ),
                     transposed_data,
@@ -494,20 +489,20 @@ struct PackMatrixRows[
 
         let valid_tile_simd_dim = Index(
             Int.min(
-                self.valid_simd_dim.__getitem__[0](),
-                self.pack_tile_dim.__getitem__[0](),
+                self.valid_simd_dim[0],
+                self.pack_tile_dim[0],
             ),
             Int.min(
-                self.valid_simd_dim.__getitem__[1](),
-                self.pack_tile_dim.__getitem__[1](),
+                self.valid_simd_dim[1],
+                self.pack_tile_dim[1],
             ),
         )
 
         # # fill rows with valid data
         var row_idx0: Int = 0
-        while row_idx0 < valid_tile_simd_dim.__getitem__[0]():
+        while row_idx0 < valid_tile_simd_dim[0]:
             var col_idx0: Int = 0
-            while col_idx0 < valid_tile_simd_dim.__getitem__[1]():
+            while col_idx0 < valid_tile_simd_dim[1]:
                 self._transpose_pack_helper[
                     # skip_row_bound, skip_col_bound
                     True,
@@ -520,7 +515,7 @@ struct PackMatrixRows[
                 col_idx0 += simd_size
 
             # Pack residue and zero-ed columns.
-            while col_idx0 < self.pack_tile_dim.__getitem__[1]():
+            while col_idx0 < self.pack_tile_dim[1]:
                 # TODO: this can be peeled further
                 #  but cound be un-necessary as the tile
                 #  level is also optimized.
@@ -539,9 +534,9 @@ struct PackMatrixRows[
 
         # If there's a few residue rows with valid data.
         #  pack the residue rows.
-        if row_idx0 < self.pack_tile_dim.__getitem__[0]():
+        if row_idx0 < self.pack_tile_dim[0]:
             var col_idx1: Int = 0
-            while col_idx1 < valid_tile_simd_dim.__getitem__[1]():
+            while col_idx1 < valid_tile_simd_dim[1]:
                 self._transpose_pack_helper[
                     # skip_row_bound, skip_col_bound
                     False,
@@ -554,7 +549,7 @@ struct PackMatrixRows[
                 col_idx1 += simd_size
 
             # do a residue column if any.
-            while col_idx1 < self.pack_tile_dim.__getitem__[1]():
+            while col_idx1 < self.pack_tile_dim[1]:
                 # do residue column
                 self._transpose_pack_helper[
                     # skip_row_bound, skip_col_bound
@@ -570,7 +565,7 @@ struct PackMatrixRows[
         #  This packing routine is intended to be used in mlas style matmul
         # so out of bound rows in tile never need to be zero filled. But
         # in general should add additional params controling how to handle
-        # out of bound rows between valid_tile_simd_dim.__getitem__[0]() and packed_tile_dim_rows.
+        # out of bound rows between valid_tile_simd_dim[0] and packed_tile_dim_rows.
 
 
 struct PackMatrixCols[
@@ -659,12 +654,12 @@ struct PackMatrixCols[
         pack.global_offset = global_offset
         pack.pack_tile_dim = pack_tile_dim
         pack.valid_data_dim = Index(
-            original_matrix.dim[0]() - global_offset.__getitem__[0](),
-            original_matrix.dim[1]() - global_offset.__getitem__[1](),
+            original_matrix.dim[0]() - global_offset[0],
+            original_matrix.dim[1]() - global_offset[1],
         )
 
         assert_param[column_inner_size % simd_size == 0]()
-        # Also assumes that pack_tile_dim.__getitem__[1]() is divisible by column_inner_size.
+        # Also assumes that pack_tile_dim[1] is divisible by column_inner_size.
         # TODO: add dynamic checks.
         return pack
 
@@ -684,7 +679,7 @@ struct PackMatrixCols[
             tile_row_idx(Int): row index of the row to pack within the tile of
                 data to pack.
         """
-        for col_idx in range(0, self.pack_tile_dim.__getitem__[1](), simd_size):
+        for col_idx in range(0, self.pack_tile_dim[1], simd_size):
             # Decl the data to fill in packed buffer.
             var data: SIMD[simd_size, type]
 
@@ -693,19 +688,19 @@ struct PackMatrixCols[
                 tile_row_idx, col_idx
             )
             let global_idx = Index(
-                global_idx_pair.__getitem__[0](),
-                global_idx_pair.__getitem__[1](),
+                global_idx_pair[0],
+                global_idx_pair[1],
             )
 
             if fill_zero:
                 # Statical fill zero case.
                 data = SIMD[simd_size, type](0)
             elif skip_col_bound or (
-                col_idx + simd_size <= self.valid_data_dim.__getitem__[1]()
+                col_idx + simd_size <= self.valid_data_dim[1]
             ):
                 # Whole SIMD vector within bound.
                 data = self.original_matrix.simd_load[simd_size](global_idx)
-            elif col_idx >= self.valid_data_dim.__getitem__[1]():
+            elif col_idx >= self.valid_data_dim[1]:
                 # Starting point out of bound. Fill a zero vector.
                 data = SIMD[simd_size, type](0)
             else:
@@ -714,7 +709,7 @@ struct PackMatrixCols[
                 data = partial_simd_load[simd_size, type](
                     self.original_matrix._offset(global_idx),
                     0,
-                    self.valid_data_dim.__getitem__[1]() - col_idx,
+                    self.valid_data_dim[1] - col_idx,
                     SIMD[1, type](0),
                 )
 
@@ -735,14 +730,14 @@ struct PackMatrixCols[
         """
         var row_idx: Int = 0
         let valid_row_count = Int.min(
-            self.valid_data_dim.__getitem__[0](),
-            self.pack_tile_dim.__getitem__[0](),
+            self.valid_data_dim[0],
+            self.pack_tile_dim[0],
         )
         while row_idx < valid_row_count:
             self._pack_row_helper[skip_col_bound, False](row_idx)  # fill zero
             row_idx += 1
         # Fill zero on the remaining rows on the tile.
-        while row_idx < self.pack_tile_dim.__getitem__[0]():
+        while row_idx < self.pack_tile_dim[0]:
             self._pack_row_helper[
                 True,  # skip read col bound.
                 False,  # fill zero
@@ -755,10 +750,7 @@ struct PackMatrixCols[
         #  This packing routine can be further peeled and vectorized
         #    but dynamical tiling could cover some of the sub-optimality
         #    here. In a follow up should extend the blocking scheme here.
-        if (
-            self.pack_tile_dim.__getitem__[1]()
-            < self.valid_data_dim.__getitem__[1]()
-        ):
+        if self.pack_tile_dim[1] < self.valid_data_dim[1]:
             # If the whole tile is within bound.
             #  skip all the column checks.
             self._pack_helper[
@@ -946,8 +938,8 @@ struct MatmulInnerLoopBPacked[
                     + Index(row_idx, col_idx)
                 )
                 let global_idx = Index(
-                    global_idx_pair.__getitem__[0](),
-                    global_idx_pair.__getitem__[1](),
+                    global_idx_pair[0],
+                    global_idx_pair[1],
                 )
                 let local_idx = Index(row_idx, col_idx)
 
@@ -959,17 +951,13 @@ struct MatmulInnerLoopBPacked[
                 ):
                     # Use simd load if all within bound
                     c_data = self.c.simd_load[simd_size](global_idx)
-                elif (
-                    row_idx + tile_idx.__getitem__[0]()
-                ) < self.c_bound.__getitem__[0]():
+                elif (row_idx + tile_idx[0]) < self.c_bound[0]:
                     # Use partial load if row inbound but col not
                     #  in simd bound.
                     c_data = partial_simd_load[simd_size, accum_type](
                         self.c._offset(global_idx),
                         0,
-                        self.c_bound.__getitem__[1]()
-                        - tile_idx.__getitem__[1]()
-                        - col_idx,
+                        self.c_bound[1] - tile_idx[1] - col_idx,
                         0,
                     )
                 else:
@@ -1007,8 +995,8 @@ struct MatmulInnerLoopBPacked[
                     + Index(row_idx, col_idx)
                 )
                 let global_idx = Index(
-                    global_idx_pair.__getitem__[0](),
-                    global_idx_pair.__getitem__[1](),
+                    global_idx_pair[0],
+                    global_idx_pair[1],
                 )
                 let local_idx = Index(row_idx, col_idx)
 
@@ -1021,17 +1009,13 @@ struct MatmulInnerLoopBPacked[
                 ):
                     # Use simd store if all within bound
                     self.c.simd_store[simd_size](global_idx, c_data)
-                elif row_idx < (
-                    self.c_bound.__getitem__[0]() - tile_idx.__getitem__[0]()
-                ):
+                elif row_idx < (self.c_bound[0] - tile_idx[0]):
                     # Use partial store if row in bound but col not
                     #  in simd bound.
                     partial_simd_store[simd_size, accum_type](
                         self.c._offset(global_idx),
                         0,
-                        self.c_bound.__getitem__[1]()
-                        - tile_idx.__getitem__[1]()
-                        - col_idx,
+                        self.c_bound[1] - tile_idx[1] - col_idx,
                         c_data,
                     )
 
@@ -1057,15 +1041,15 @@ struct MatmulInnerLoopBPacked[
                 packed B matrix.
         """
         # Seek outer indices in packed layout.
-        let n_outer_idx = tile_n_k_idx.__getitem__[0]() // pack_inner_size
+        let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
 
         # Global K index.
-        var global_k = self.global_offset.K + tile_n_k_idx.__getitem__[1]()
+        var global_k = self.global_offset.K + tile_n_k_idx[1]
 
         # Loop over local accumulator tiles.
         for col_idx in range(0, pack_inner_size, simd_size):
             let b_val = self.b_packed.simd_load[simd_size](
-                Index(n_outer_idx, tile_n_k_idx.__getitem__[1](), col_idx)
+                Index(n_outer_idx, tile_n_k_idx[1], col_idx)
             ).cast[accum_type]()
             for row_idx in range(a_row_size):
                 var global_m = self.global_offset.M + row_idx
@@ -1095,7 +1079,7 @@ struct MatmulInnerLoopBPacked[
             accum_type,
         ].stack_allocation()
 
-        for idx_n in range(0, self.tile_n_k.__getitem__[0](), pack_inner_size):
+        for idx_n in range(0, self.tile_n_k[0], pack_inner_size):
             # Initialize accumulation buffer
             #  either zero filling or load existing value.
             if self.global_offset.K == 0:
@@ -1105,7 +1089,7 @@ struct MatmulInnerLoopBPacked[
 
             # Iterate on tile K dimension.
             # Not unrolled on K path.
-            for idx_k in range(self.tile_n_k.__getitem__[1]()):
+            for idx_k in range(self.tile_n_k[1]):
                 # accumulate data for this (n, k) index
                 self._accumulate(c_local, Index(idx_n, idx_k))
 
@@ -1486,7 +1470,7 @@ struct TiledMatmul[
             sub_tile_k(Int): Dynamic tile size to use on K dimension.
         """
         let valid_col_count: Int = self.c.dim[1]() - global_offset.N
-        let tile_n: Int = self.tile_n_k.__getitem__[0]()
+        let tile_n: Int = self.tile_n_k[0]
 
         # Remap buffer indices for current tile.
         var remapped_bpacked = self._view_buffer_as(
@@ -1540,7 +1524,7 @@ struct TiledMatmul[
         Args:
             b_packed(NDBuffer): B matrix in packed layout.
         """
-        let tile_k = self.tile_n_k.__getitem__[1]()
+        let tile_k = self.tile_n_k[1]
         let valid_k_count = self.gemm_shape.K
         var k_idx: Int = 0
 
@@ -1607,8 +1591,8 @@ struct TiledMatmul[
         # Manually set the shape of packed B buffer:
         let mapped_bpacked = self._view_buffer_as(
             b_packed,
-            self.tile_n_k.__getitem__[0](),
-            self.tile_n_k.__getitem__[1](),
+            self.tile_n_k[0],
+            self.tile_n_k[1],
             config.pack_inner_size,
         )
         self._outer_k_loop(mapped_bpacked)
