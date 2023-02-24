@@ -226,7 +226,7 @@ public:
   /// Print this tree to the provided indented stream. This preserves any
   /// indentation provided by the caller to make it possible to nest things
   /// nicely.
-  void print(mlir::raw_indented_ostream &os);
+  void print(mlir::raw_indented_ostream &os, bool printBindings = true);
 
   /// Each node is rooted on an op that defines a symbol.
   mlir::SymbolOpInterface op;
@@ -480,7 +480,8 @@ void ExpansionTreeNode::updateDebugInfo() {
   replacer.recursivelyReplaceElementsIn(op);
 }
 
-void ExpansionTreeNode::print(mlir::raw_indented_ostream &os) {
+void ExpansionTreeNode::print(mlir::raw_indented_ostream &os,
+                              bool printBindings) {
   bool isRoot = (parent == nullptr);
   os << "ExpansionTreeNode <" << (isRoot ? "Root" : getNameAttr().getValue())
      << ">";
@@ -500,14 +501,16 @@ void ExpansionTreeNode::print(mlir::raw_indented_ostream &os) {
       os << "ResultParams: " << resultParams << "\n";
   }
 
-  // Print the bindings.
-  {
+  // Print the bindings only if requested - this is so we don't recurse
+  // infinitely to print the bindings of a recursive call.
+  if (printBindings) {
     auto _ = os.scope("Bindings: {\n", "}\n");
-    for (const auto &[_, bind] : bindings)
+    for (const auto &[_, bind] : bindings) {
       if (bind != this)
-        bind->print(os);
+        bind->print(os, false);
       else
         os << "Self\n";
+    }
   }
 
   // Errors are leaves.
