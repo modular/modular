@@ -10,7 +10,7 @@
 # ===----------------------------------------------------------------------===#
 
 from Assert import assert_param
-from Bool import Bool
+
 from Buffer import Buffer, NDBuffer
 from DType import DType
 from Functional import vectorize

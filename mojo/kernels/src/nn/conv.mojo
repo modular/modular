@@ -6,7 +6,7 @@
 
 from Index import Index, StaticIntTuple
 from Int import Int
-from Bool import Bool
+
 from Buffer import (
     NDBuffer,
     Buffer,
