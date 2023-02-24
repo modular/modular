@@ -1,6 +1,6 @@
 # RUN: kgen-translate -import-lit -verify-diagnostics %s -I %S/../lit-examples/
 
-from prolog import Bool, DType, Error, F32, Int, object
+from prolog import DType, Error, F32, Int, object
 
 ##===----------------------------------------------------------------------===##
 # Var / Let

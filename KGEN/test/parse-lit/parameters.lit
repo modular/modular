@@ -1,6 +1,6 @@
 # RUN: kgen-translate -import-lit %s -I %S/../lit-examples/ -verify-diagnostics | FileCheck %s
 
-from prolog import assert_param, Bool, DType, Int, SIMD
+from prolog import assert_param, DType, Int, SIMD
 
 alias index = __mlir_type.index
 
