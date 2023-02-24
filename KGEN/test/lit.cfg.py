@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+from shutil import which
 
 from lit.llvm import llvm_config
 
@@ -26,7 +27,13 @@ config.substitutions.append(
     (
         "%stdlibdir",
         os.path.join(config.modular_src_root, "Kernels", "lit-stdlib"),
-    )
+    ),
+)
+config.substitutions.append(
+    (
+        "%lldb",
+        which("lldb"),
+    ),
 )
 
 tool_dirs = [

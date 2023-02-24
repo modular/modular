@@ -12,10 +12,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/FunctionExtras.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
-
-namespace llvm {
-class JITEventListener;
-} // namespace llvm
+#include "llvm/ExecutionEngine/Orc/TargetProcess/JITLoaderGDB.h"
 
 namespace M::KGEN {
 class CompilationOptions;
@@ -94,6 +91,13 @@ private:
   /// references to them so they aren't deallocated underneath our feet.
   SmallVector<Cache::BufferRef> objBuffers;
 };
+
+/// This function is used to ensure the components of the orc are properly
+/// linked.
+LLVM_ATTRIBUTE_USED inline uintptr_t llvm_orc_dummyinit() {
+  return (uintptr_t)&llvm_orc_registerJITLoaderGDBAllocAction +
+         (uintptr_t)&llvm_orc_registerJITLoaderGDBWrapper;
+}
 } // namespace M::KGEN
 
 #endif // KGEN_EXECUTION_ENGINE_H
