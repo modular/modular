@@ -475,7 +475,7 @@ fn _compute_ndbuffer_offset_impl_base[
         Int: The offset into the NDBuffer given the indices.
     """
     assert_param[iter == 0]()
-    return idx.__getitem__[0]()
+    return idx[0]
 
 
 @implements(_compute_ndbuffer_offset_impl_va_list)
