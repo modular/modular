@@ -3,7 +3,7 @@
 # XUN: %lldb -b -o 'settings set plugin.jit-loader.gdb.enable on' -o 'b jitbp' \
 # XUN:       -o 'run %S/Inputs/test.lit --debug-level=full -O0' lit | FileCheck %s
 
-# COM: This should work on linux :( # XFAIL: system-darwin, system-windows
+# COM: This should work on linux :( # XHAIL: system-darwin, system-windows
 
 # XHECK: Breakpoint 1: no locations (pending).
 # XHECK: (lldb) run {{.*}}
