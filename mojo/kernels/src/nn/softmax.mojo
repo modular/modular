@@ -22,7 +22,6 @@ from TypeUtilities import rebind
 # ===----------------------------------------------------------------------===#
 
 
-@interface
 fn reduce_add_simd[
     simd_width: __mlir_type.index,
     step_simd_width: __mlir_type.index,
@@ -36,38 +35,15 @@ fn reduce_add_simd[
     depending on the step_simd_width. This is useful when the simd_width varies
     between iterations as in vectorize.
     """
-    ...
 
+    @parameter
+    if step_simd_width == 1:
+        # When the step_simd_width is 1, then we add to the scalar value.
+        scalar += val[0]
+        return
 
-@implements(reduce_add_simd)
-fn reduce_add_simd_scalar_case[
-    simd_width: __mlir_type.index,
-    step_simd_width: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-](
-    scalar&: SIMD[1, type],
-    vector&: SIMD[simd_width, type],
-    val: SIMD[step_simd_width, type],
-):
-    """When the step_simd_width is 1, then we add to the scalar value."""
-    assert_param[step_simd_width == 1]()
-    scalar += val[0]
-
-
-@implements(reduce_add_simd)
-fn reduce_add_simd_vector_case[
-    simd_width: __mlir_type.index,
-    step_simd_width: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-](
-    scalar&: SIMD[1, type],
-    vector&: SIMD[simd_width, type],
-    val: SIMD[step_simd_width, type],
-):
-    """When the step_simd_Width is the same as the simd_width, then we add to
-    the vector value.
-    """
-    assert_param[step_simd_width == simd_width]()
+    # When the step_simd_Width is the same as the simd_width, then we add to
+    # the vector value.
     vector += rebind[SIMD[simd_width, type]](val)
 
 
