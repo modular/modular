@@ -45,18 +45,8 @@ fn unroll[
 
 
 @always_inline
-@interface
+@adaptive
 fn _unroll_impl[
-    idx: __mlir_type.index,
-    count: __mlir_type.index,
-    func: __mlir_type[`!kgen.signature<<idx>() -> !lit.none>`],
-]():
-    ...
-
-
-@always_inline
-@implements(_unroll_impl)
-fn _unroll_impl_base[
     idx: __mlir_type.index,
     count: __mlir_type.index,
     func: __mlir_type[`!kgen.signature<<idx>() -> !lit.none>`],
@@ -65,8 +55,8 @@ fn _unroll_impl_base[
 
 
 @always_inline
-@implements(_unroll_impl)
-fn _unroll_impl_iter[
+@adaptive
+fn _unroll_impl[
     idx: __mlir_type.index,
     count: __mlir_type.index,
     func: __mlir_type[`!kgen.signature<<idx>() -> !lit.none>`],
