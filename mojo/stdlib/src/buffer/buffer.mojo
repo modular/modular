@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, debug_assert
-
+from Assert import assert_param, debug_assert, assert_param_bool_msg
 from DType import DType
 from Functional import unroll, vectorize
 from Int import Int
@@ -554,131 +553,73 @@ fn _compute_ndbuffer_size[
     Returns:
         Int: The total number of elements in the NDBuffer.
     """
-    return _compute_ndbuffer_size_impl[rank - 1, rank, shape, type](buf)
+    var product: Int = 1
+
+    @always_inline
+    fn _compute_product[idx: __mlir_type.index]():
+        product *= buf.dim[idx]()
+
+    unroll[rank, _compute_product]()
+    return product
 
 
-@interface
-fn _compute_ndbuffer_size_impl[
-    iter: __mlir_type.index,
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](buf: NDBuffer[rank, shape, type]) -> Int:
-    """Helper function to recursively compute the number of elements in the
-    NDBuffer.
-
-    Args:
-        iter (index): The induction variable.
-        rank (index): The rank of the NDBuffer.
-        shape (kgen.list<index[rank]>): The shape of the NDBuffer.
-        type (dtype): The element-type of the NDBuffer.
-        buf (NDBuffer[rank, shape, type]): The NDBuffer.
-
-    Returns:
-        Int: The total number of elements in the NDBuffer.
-    """
-    ...
-
-
-@implements(_compute_ndbuffer_size_impl)
-fn _compute_ndbuffer_size_impl_base[
-    iter: __mlir_type.index,
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](buf: NDBuffer[rank, shape, type]) -> Int:
-    """Base case for computing the total number of elements in the NDBuffer.
-    This case is triggered when the induction variable (iter) is 0.
-
-    Args:
-        iter (index): The induction variable.
-        rank (index): The rank of the NDBuffer.
-        shape (kgen.list<index[rank]>): The shape of the NDBuffer.
-        type (dtype): The element-type of the NDBuffer.
-        buf (NDBuffer[rank, shape, type]): The NDBuffer.
-
-    Returns:
-        Int: The number of elements at dim 0.
-    """
-    assert_param[iter == 0]()
-    return buf.dim[iter]()
-
-
-@implements(_compute_ndbuffer_size_impl)
-fn _compute_ndbuffer_size_impl_iter[
-    iter: __mlir_type.index,
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](buf: NDBuffer[rank, shape, type]) -> Int:
-    """The recursive case for computing the total number of elements in the
-    NDBuffer. This case is triggered when the induction variable (iter) greater
-    than 0.
-
-    Args:
-        iter (index): The induction variable.
-        rank (index): The rank of the NDBuffer.
-        shape (kgen.list<index[rank]>): The shape of the NDBuffer.
-        type (dtype): The element-type of the NDBuffer.
-        buf (NDBuffer[rank, shape, type]): The NDBuffer.
-
-    Returns:
-        Int: The number of elements in the dimensions starting at iter.
-    """
-    assert_param[iter > 0]()
-    return buf.dim[iter]() * _compute_ndbuffer_size_impl[
-        iter - 1, rank, shape, type
-    ](buf)
-
-
-@interface
-fn _get_dim_helper[
-    rank: __mlir_type.index, elem: __mlir_type.index, index: __mlir_type.index
-](dynamic_shape: StaticTuple[rank, __mlir_type.index]) -> Int:
-    """Helper function to support both static and dynamic size parameters.
-    Returns `elem` directly if `elem` is a known static value.
-    Returns dynamic_shape[index] if `elem` is unknown.
-    """
-    ...
-
-
-# Implementation if elem is statically known.
-@implements(_get_dim_helper)
-fn _get_dim_static[
-    rank: __mlir_type.index, elem: __mlir_type.index, index: __mlir_type.index
-](dynamic_shape: StaticTuple[rank, __mlir_type.index]) -> Int:
-    assert_param[elem != __mlir_attr.`#kgen.unknown : index`]()
-    return elem
-
-
-# Implementation if elem is not statically known.
-@implements(_get_dim_helper)
-fn _get_dim_dynamic[
-    rank: __mlir_type.index, elem: __mlir_type.index, index: __mlir_type.index
-](dynamic_shape: StaticTuple[rank, __mlir_type.index]) -> Int:
-    assert_param[elem == __mlir_attr.`#kgen.unknown : index`]()
-    return dynamic_shape.__getitem__[index]()
-
-
-# Implementation of NDBuffer::get_dim.
 fn _get_dim_impl[
-    # Rank of the ndbuffer.
     rank: __mlir_type.index,
-    # Static shape info on this ndbuffer, could be unknown.
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    # Index of the dimension to get the dimension value.
     index: __mlir_type.index,
 ](
     #  Tuple containing the runtime shape of the ndbuffer.
     dynamic_shape: StaticTuple[rank, __mlir_type.index]
 ) -> Int:
-    # First try to extract the static info on this dimension,
-    #  could be either a meta constant or an unknown.
+    # First try to extract the static info on this dimension, could be either a
+    # meta constant or an unknown.
     alias static_dim_value = _get_kgen_list_item[
         index, rank, __mlir_type.index
     ](shape)
-    # Call the helper to resolve unknown by dynamic shape lookup if any.
-    return _get_dim_helper[rank, static_dim_value, index](dynamic_shape)
+
+    @parameter
+    if static_dim_value != __mlir_attr.`#kgen.unknown : index`:
+        return static_dim_value
+    return dynamic_shape.__getitem__[index]()
+
+
+fn _get_dim_impl[
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+](index: Int, dynamic_shape: StaticTuple[rank, __mlir_type.index],) -> Int:
+    return dynamic_shape[index]
+
+
+fn is_all_known[
+    rank: __mlir_type.index, shape: __mlir_type[`!kgen.list<index[`, rank, `]>`]
+]() -> Bool:
+    return is_all_known_impl[0, rank, shape]()
+
+
+@adaptive
+fn is_all_known_impl[
+    index: __mlir_type.index,
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+]() -> Bool:
+    assert_param[index == rank]()
+    return True
+
+
+@adaptive
+fn is_all_known_impl[
+    index: __mlir_type.index,
+    rank: __mlir_type.index,
+    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
+]() -> Bool:
+    assert_param[index < rank]()
+    alias static_dim_value = _get_kgen_list_item[
+        index, rank, __mlir_type.index
+    ](shape)
+    return (
+        Bool(static_dim_value != __mlir_attr.`#kgen.unknown : index`)
+        and is_all_known_impl[index + 1, rank, shape]()
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -710,19 +651,24 @@ struct NDBuffer[
     fn __new__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
     ) -> NDBuffer[rank, shape, type]:
-        # Construct an NDBuffer type with statically known shape.
-        # TODO: Verify that the shape is valid (i.e. does not have #kgen.unknown)
-        var buf: NDBuffer[rank, shape, type]
-        buf.data = DTypePointer[type](ptr)
-        buf._rank = rank
-        return buf
+        assert_param_bool_msg[
+            is_all_known[rank, shape](),
+            "dimensions must all be known",
+        ]()
+
+        return Self {
+            data: ptr,
+            _rank: rank,
+            dynamic_shape: shape,
+            dynamic_dtype: type,
+        }
 
     fn __new__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
         dynamic_shape: StaticTuple[rank, __mlir_type.index],
         dynamic_dtype: DType,
     ) -> NDBuffer[rank, shape, type]:
-        return NDBuffer[rank, shape, type] {
+        return Self {
             data: ptr,
             _rank: rank,
             dynamic_shape: dynamic_shape,
@@ -830,6 +776,9 @@ struct NDBuffer[
 
     fn dim[index: __mlir_type.index](self) -> Int:
         return _get_dim_impl[rank, shape, index](self.dynamic_shape)
+
+    fn dim(self, index: Int) -> Int:
+        return _get_dim_impl[rank, shape](index, self.dynamic_shape)
 
     fn flatten(self) -> Buffer[__mlir_attr.`#kgen.unknown : index`, type]:
         return Buffer[__mlir_attr.`#kgen.unknown : index`, type](
