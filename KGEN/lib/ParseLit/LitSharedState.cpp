@@ -440,6 +440,14 @@ ASTDecl &LitSharedState::importModule(StringRef moduleName, llvm::SMLoc loc) {
   return createModule(moduleName, moduleBuffer, fileLoc);
 }
 
+ASTDecl &LitSharedState::getCompilerBuiltInDecl() {
+  StringAttr builtinStrAttr =
+      getMangledModuleName(getContext(), kCompilerBuiltInStr);
+  ASTDecl *entry = impl->importedModules.lookup(builtinStrAttr);
+  assert(entry && "_CompilerBuiltin must exist");
+  return *entry;
+}
+
 ASTDecl &LitSharedState::createModule(StringRef moduleName,
                                       const llvm::MemoryBuffer *moduleBuffer,
                                       FileLineColLoc loc) {
@@ -456,7 +464,7 @@ ASTDecl &LitSharedState::createModule(StringRef moduleName,
       lexer.getCursor(), endCursor, /*indentation=*/-1);
   // Auto-import the core Lang module declaration.
   moduleDecl.addUnresolvedWildCardImport(
-      StringAttr::get(getContext(), "_CompilerBuiltin"),
+      StringAttr::get(getContext(), kCompilerBuiltInStr),
       lexer.getToken().getLoc());
   impl->importedModules.try_emplace(mangledName, &moduleDecl);
   return moduleDecl;
