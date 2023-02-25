@@ -36,63 +36,12 @@ fn _get_rightmost_broadcast_axis[
         output (NDBuffer): the output buffer
         input (NDBuffer): the input buffer
     """
-    return _get_rightmost_broadcast_axis_impl[
-        rank - 1, rank, output_shape, input_shape, type
-    ](output, input)
-
-
-@adaptive
-fn _get_rightmost_broadcast_axis_impl[
-    axis: __mlir_type.index,
-    rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](
-    output: NDBuffer[rank, output_shape, type],
-    input: NDBuffer[rank, input_shape, type],
-) -> Int:
-    """
-    Return the largest axis ∈ [0, axis] at which the dimensions of
-    `input_shape` and `output_shape` mismatch, otherwise return -1 (i.e., the
-    shapes are equal).
-
-    Args:
-        output (NDBuffer): the output buffer
-        input (NDBuffer): the input buffer
-    """
-    assert_param[axis < 0]()
+    for axis in range(rank - 1, -1, -1):
+        let in_dim = input.dim(axis)
+        let out_dim = output.dim(axis)
+        if in_dim != out_dim:
+            return axis
     return -1
-
-
-@adaptive
-fn _get_rightmost_broadcast_axis_impl[
-    axis: __mlir_type.index,
-    rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](
-    output: NDBuffer[rank, output_shape, type],
-    input: NDBuffer[rank, input_shape, type],
-) -> Int:
-    """
-    Return the largest axis ∈ [0, axis] at which the dimensions of
-    `input_shape` and `output_shape` mismatch, otherwise return -1 (i.e., the
-    shapes are equal).
-
-    Args:
-        output (NDBuffer): the output buffer
-        input (NDBuffer): the input buffer
-    """
-    assert_param[axis >= 0]()
-    let in_dim = input.dim[axis]()
-    let out_dim = output.dim[axis]()
-    if in_dim != out_dim:
-        return axis
-    return _get_rightmost_broadcast_axis_impl[
-        axis - 1, rank, output_shape, input_shape, type
-    ](output, input)
 
 
 # ===----------------------------------------------------------------------===#
