@@ -6,7 +6,7 @@
 
 from Buffer import Buffer, NDBuffer
 from Tuple import StaticTuple
-from Assert import assert_param
+from Assert import assert_param, debug_assert
 from Int import Int
 from Index import Index
 from SIMD import SIMD
@@ -18,17 +18,8 @@ from TypeUtilities import rebind
 from Functional import unroll
 
 
-@interface
+@adaptive
 fn transpose_inplace[
-    rows: __mlir_type.index,
-    cols: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-](buf: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
-    ...
-
-
-@implements(transpose_inplace)
-fn transpose_inplace_4x4[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
@@ -80,8 +71,8 @@ fn transpose_inplace_4x4[
     buf.simd_store[4](Index(3, 0), r3)
 
 
-@implements(transpose_inplace)
-fn transpose_inplace_8x8[
+@adaptive
+fn transpose_inplace[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
@@ -163,8 +154,8 @@ fn transpose_inplace_8x8[
     buf.simd_store[8](Index(7, 0), r7)
 
 
-@implements(transpose_inplace)
-fn transpose_inplace_generic[
+@adaptive
+fn transpose_inplace[
     rows: __mlir_type.index,
     cols: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
@@ -266,7 +257,8 @@ fn transpose[
     # ~ output.at(offset([x, y, z], output_strides)) = input.at(offset([x, y, z], permuted_input_strides))
     # ~ output.at(offset(index, output_strides)) = input.at(offset(index, permuted_input_strides))
     alias init_axis = 0
-    _copy_with_strides[init_axis, rank, output_shape, type](
+    _copy_with_strides[rank, output_shape, type](
+        init_axis,
         output,
         input.data,
         permuted_input_strides_buf.data,
@@ -276,13 +268,12 @@ fn transpose[
     )
 
 
-@interface
 fn _copy_with_strides[
-    axis: __mlir_type.index,
     rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     type: __mlir_type.`!kgen.dtype`,
 ](
+    axis: Int,
     output: NDBuffer[rank, output_shape, type],
     input: DTypePointer[type],
     input_strides: DTypePointer[DType.index.value],
@@ -302,64 +293,28 @@ fn _copy_with_strides[
         input_offset (Int): The offset at which input data starts
         output_offset (Int): The offset at which output data starts
     """
-    ...
+    debug_assert(axis + 1 <= rank, "out of range")
 
-
-@implements(_copy_with_strides)
-fn _copy_with_strides_base[
-    axis: __mlir_type.index,
-    rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](
-    output: NDBuffer[rank, output_shape, type],
-    input: DTypePointer[type],
-    input_strides: DTypePointer[DType.index.value],
-    output_strides: DTypePointer[DType.index.value],
-    input_offset: Int,
-    output_offset: Int,
-):
-    """Base case for `_copy_with_strides`"""
-    assert_param[axis + 1 == rank]()
-
-    # TODO speed this up if output_axis_stride is 1, i.e., contiguous?
-    let axis_dim = output.dim[axis]()
-    let output_axis_stride: Int = output_strides.load(axis)[0]
-    let input_axis_stride: Int = input_strides.load(axis)[0]
-    var src_ptr = input.offset(input_offset)
-    var dst_ptr = output.data.offset(output_offset)
-    for _ in range(axis_dim):
-        dst_ptr.store(0, src_ptr.load(0))
-        src_ptr = src_ptr.offset(input_axis_stride)
-        dst_ptr = dst_ptr.offset(output_axis_stride)
-    return
-
-
-@implements(_copy_with_strides)
-fn _copy_with_strides_iter[
-    axis: __mlir_type.index,
-    rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](
-    output: NDBuffer[rank, output_shape, type],
-    input: DTypePointer[type],
-    input_strides: DTypePointer[DType.index.value],
-    output_strides: DTypePointer[DType.index.value],
-    input_offset: Int,
-    output_offset: Int,
-):
-    """Recursive case for `_copy_with_strides`"""
-    assert_param[axis + 1 < rank]()
-
-    let axis_dim = output.dim[axis]()
+    let axis_dim = output.dim(axis)
     let input_axis_stride = input_strides.load(axis)[0]
     let output_axis_stride = output_strides.load(axis)[0]
-    alias next_axis = axis + 1
+
+    if axis + 1 == rank:
+        # TODO speed this up if output_axis_stride is 1, i.e., contiguous?
+        var src_ptr = input.offset(input_offset)
+        var dst_ptr = output.data.offset(output_offset)
+        for i in range(axis_dim):
+            dst_ptr.store(0, src_ptr.load(0))
+            src_ptr = src_ptr.offset(input_axis_stride)
+            dst_ptr = dst_ptr.offset(output_axis_stride)
+        return
+
+    let next_axis = axis + 1
     var next_input_offset = input_offset
     var next_output_offset = output_offset
     for _ in range(axis_dim):
-        _copy_with_strides[next_axis, rank, output_shape, type](
+        _copy_with_strides[rank, output_shape, type](
+            next_axis,
             output,
             input,
             input_strides,
