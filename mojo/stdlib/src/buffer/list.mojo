@@ -313,36 +313,18 @@ fn contains[
     return _contains_impl[0, size](elem, lst)
 
 
-@interface
 fn _contains_impl[
     idx: __mlir_type.index, size: __mlir_type.index
 ](
     elem: __mlir_type.index, lst: __mlir_type[`!kgen.list<index[`, size, `]>`]
 ) -> Bool:
-    ...
-
-
-@implements(_contains_impl)
-fn _contains_impl_base[
-    idx: __mlir_type.index, size: __mlir_type.index
-](
-    elem: __mlir_type.index, lst: __mlir_type[`!kgen.list<index[`, size, `]>`]
-) -> Bool:
-    assert_param[idx == size]()
-    return __mlir_attr.`0:i1`
-
-
-@implements(_contains_impl)
-fn _contains_impl_iter[
-    idx: __mlir_type.index, size: __mlir_type.index
-](
-    elem: __mlir_type.index, lst: __mlir_type[`!kgen.list<index[`, size, `]>`]
-) -> Bool:
-    assert_param[idx < size]()
+    @parameter
+    if idx == size:
+        return False
     let ok = __mlir_op.`index.cmp`[
         pred : __mlir_attr.`#index<cmp_predicate eq>`
     ](_get_kgen_list_item[idx, size, __mlir_type.index](lst), elem)
-    return Bool(ok) or _contains_impl_iter[idx + 1, size](elem, lst)
+    return Bool(ok) or _contains_impl[idx + 1, size](elem, lst)
 
 
 # ===----------------------------------------------------------------------===#
@@ -356,23 +338,16 @@ fn product[
     return _product_impl[0, size](lst)
 
 
-@interface
+@adaptive
 fn _product_impl[
-    idx: __mlir_type.index, size: __mlir_type.index
-](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
-    ...
-
-
-@implements(_product_impl)
-fn _product_impl_base[
     idx: __mlir_type.index, size: __mlir_type.index
 ](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
     assert_param[idx == size]()
     return 1
 
 
-@implements(_product_impl)
-fn _product_impl_iter[
+@adaptive
+fn _product_impl[
     idx: __mlir_type.index, size: __mlir_type.index
 ](lst: __mlir_type[`!kgen.list<index[`, size, `]>`]) -> Int:
     assert_param[idx < size]()
