@@ -16,29 +16,9 @@ from Math import add
 from Functional import vectorize
 
 
-@interface
-fn gather[
-    output_rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
-    input_rank: __mlir_type.index,
-    input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
-    indices_rank: __mlir_type.index,
-    indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-    axis: __mlir_type.index,
-](
-    output: NDBuffer[output_rank, output_shape, type],
-    input: NDBuffer[input_rank, input_shape, type],
-    indices: NDBuffer[
-        indices_rank,
-        indices_shape,
-        DType.si32.value,
-    ],
-):
-    ...
-
-
-fn gather_reduce_2D_axis_1[
+# gather_reduce_2D_axis_1
+@adaptive
+fn gather_reduce[
     output_rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
     input_rank: __mlir_type.index,
@@ -104,43 +84,9 @@ fn gather_reduce_2D_axis_1[
             _gather_contiguous[usimd_width](i, j)
 
 
-fn gather_sum_2D_axis_1[
-    output_rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
-    input_rank: __mlir_type.index,
-    input_shape: __mlir_type[`!kgen.list<index[`, input_rank, `]>`],
-    indices_rank: __mlir_type.index,
-    indices_shape: __mlir_type[`!kgen.list<index[`, indices_rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-    gather_axis: __mlir_type.index,
-    reduce_axis: __mlir_type.index,
-    simd_width: __mlir_type.index,
-](
-    output: NDBuffer[output_rank, output_shape, type],
-    input: NDBuffer[input_rank, input_shape, type],
-    indices: NDBuffer[
-        indices_rank,
-        indices_shape,
-        DType.si32.value,
-    ],
-):
-    gather_reduce_2D_axis_1[
-        output_rank,
-        output_shape,
-        input_rank,
-        input_shape,
-        indices_rank,
-        indices_shape,
-        type,
-        gather_axis,
-        reduce_axis,
-        simd_width,
-        add,
-    ](output, input, indices, 0)
-
-
-@implements(gather)
-fn gather_2D_axis_0[
+# gather_2D_axis_0
+@adaptive
+fn gather[
     output_rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
     input_rank: __mlir_type.index,
@@ -176,8 +122,9 @@ fn gather_2D_axis_0[
                 )
 
 
-@implements(gather)
-fn gather_2D_axis_1[
+# gather_2D_axis_1
+@adaptive
+fn gather[
     output_rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
     input_rank: __mlir_type.index,
@@ -213,8 +160,9 @@ fn gather_2D_axis_1[
                 )
 
 
-@implements(gather)
-fn gather_2D_input_1D_indices_axis_0[
+# gather_2D_input_1D_indices_axis_0
+@adaptive
+fn gather[
     output_rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
     input_rank: __mlir_type.index,
@@ -249,8 +197,9 @@ fn gather_2D_input_1D_indices_axis_0[
             )
 
 
-@implements(gather)
-fn gather_2D_input_1D_indices_axis_1[
+# gather_2D_input_1D_indices_axis_1
+@adaptive
+fn gather[
     output_rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, output_rank, `]>`],
     input_rank: __mlir_type.index,
