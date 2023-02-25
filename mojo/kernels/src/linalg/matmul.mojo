@@ -1474,7 +1474,7 @@ struct TiledMatmul[
 
         # Remap buffer indices for current tile.
         var remapped_bpacked = self._view_buffer_as(
-            b_packed, tile_n, sub_tile_k, Int(config.pack_inner_size)
+            b_packed.data, tile_n, sub_tile_k, Int(config.pack_inner_size)
         )
 
         var col_idx: Int = 0
@@ -1491,7 +1491,7 @@ struct TiledMatmul[
         # Cover residual tiles.
         if col_idx < valid_col_count:
             remapped_bpacked = self._view_buffer_as(
-                b_packed,
+                b_packed.data,
                 config.simd_size,
                 sub_tile_k,
                 config.simd_size,
@@ -1549,7 +1549,7 @@ struct TiledMatmul[
     #  need to remap every time K and pack_inner_size changes.
     fn _view_buffer_as(
         self,
-        b_packed: NDBuffer[3, config.packed_shape, value_type],
+        b_packed: DTypePointer[value_type],
         tile_n: Int,
         tile_k: Int,
         n_inner_size: Int,
@@ -1564,33 +1564,30 @@ struct TiledMatmul[
                 n_inner_size(Int): Inner dimension size to use for the packed
                     data layout.
         """
-        var new_b_packed = b_packed
-        let n_outer = tile_n // n_inner_size
-        new_b_packed.dynamic_shape.__setitem__[0](n_outer.__as_mlir_index())
-        new_b_packed.dynamic_shape.__setitem__[1](tile_k.__as_mlir_index())
-        new_b_packed.dynamic_shape.__setitem__[2](
-            n_inner_size.__as_mlir_index()
+        return NDBuffer[3, config.packed_shape, value_type](
+            b_packed.address,
+            create_kgen_list[__mlir_type.index](
+                (tile_n // n_inner_size).__as_mlir_index(),
+                tile_k.__as_mlir_index(),
+                n_inner_size.__as_mlir_index(),
+            ),
+            value_type,
         )
-        return new_b_packed
 
     fn _run(self):
         """Wrapper utility funciton: Allocates packing space on the stack and
         run the matmul routine on the whole problem space.
         """
         # Allocate pack_b buffer.
-        var _bpacked_data = _raw_stack_allocation[
+        let _bpacked_data = _raw_stack_allocation[
             config.pack_data_size,  # Count.
             value_type,  # Data type.
             simd_byte_width().__as_mlir_index(),  # Alignment.
         ]()
 
-        var b_packed = NDBuffer[3, config.packed_shape, value_type](
-            _bpacked_data.address
-        )
-
         # Manually set the shape of packed B buffer:
         let mapped_bpacked = self._view_buffer_as(
-            b_packed,
+            _bpacked_data,
             self.tile_n_k[0],
             self.tile_n_k[1],
             config.pack_inner_size,
