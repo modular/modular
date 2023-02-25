@@ -28,17 +28,12 @@ from Range import range
 from IO import print
 
 
-# TODO this probably belongs to `Memory.lit`
 fn _fill[
     type: __mlir_type.`!kgen.dtype`
 ](dst: DTypePointer[type], value: SIMD[1, type], count: Int):
-    @always_inline
-    fn _set[simd_width: __mlir_type.index](idx: Int):
-        let splat_val = SIMD.splat[simd_width, type](value)
-        dst.simd_store(idx, splat_val)
-
-    alias vector_width = dtype_simd_width[type]().__as_mlir_index()
-    vectorize[vector_width, _set](count)
+    _ = Buffer[__mlir_attr.`#kgen.unknown : index`, type](
+        dst.address, count
+    ).fill(value)
 
 
 fn pad[
