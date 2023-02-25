@@ -4,7 +4,7 @@ from Functional import unroll
 from Int import Int
 from List import create_kgen_list_unknown, create_kgen_list
 from Range import range
-from SIMD import SIMD, _reduce_tree_add
+from SIMD import SIMD
 from TargetInfo import simd_width, sizeof
 from IO import print
 from Index import Index
@@ -76,7 +76,7 @@ fn gemv[
         for ii in range(row_block_size):
             let accum_idx = Index(ii, 0)
             let curr_accum = accums.simd_load[col_block_size](accum_idx)
-            scalar_accums.__setitem__(ii, _reduce_tree_add(curr_accum))
+            scalar_accums.__setitem__(ii, curr_accum.reduce_add())
 
         # Store the results
         out.simd_store[row_block_size](
@@ -98,5 +98,5 @@ fn gemv[
             simd_accum = row_chunk.fma(col_chunk, simd_accum)
 
             col_idx += col_block_size
-        out.__setitem__(row_idx, _reduce_tree_add(simd_accum))
+        out.__setitem__(row_idx, simd_accum.reduce_add())
         row_idx += 1
