@@ -41,7 +41,7 @@ fn _get_rightmost_broadcast_axis[
     ](output, input)
 
 
-@interface
+@adaptive
 fn _get_rightmost_broadcast_axis_impl[
     axis: __mlir_type.index,
     rank: __mlir_type.index,
@@ -61,27 +61,12 @@ fn _get_rightmost_broadcast_axis_impl[
         output (NDBuffer): the output buffer
         input (NDBuffer): the input buffer
     """
-    ...
-
-
-@implements(_get_rightmost_broadcast_axis_impl)
-fn _get_rightmost_broadcast_axis_impl_base[
-    axis: __mlir_type.index,
-    rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    input_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](
-    output: NDBuffer[rank, output_shape, type],
-    input: NDBuffer[rank, input_shape, type],
-) -> Int:
-    """Base case for `_get_rightmost_broadcast_axis_impl`"""
     assert_param[axis < 0]()
     return -1
 
 
-@implements(_get_rightmost_broadcast_axis_impl)
-fn _get_rightmost_broadcast_axis_impl_iter[
+@adaptive
+fn _get_rightmost_broadcast_axis_impl[
     axis: __mlir_type.index,
     rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
@@ -91,7 +76,15 @@ fn _get_rightmost_broadcast_axis_impl_iter[
     output: NDBuffer[rank, output_shape, type],
     input: NDBuffer[rank, input_shape, type],
 ) -> Int:
-    """Recursive case for `_get_rightmost_broadcast_axis_impl`"""
+    """
+    Return the largest axis ∈ [0, axis] at which the dimensions of
+    `input_shape` and `output_shape` mismatch, otherwise return -1 (i.e., the
+    shapes are equal).
+
+    Args:
+        output (NDBuffer): the output buffer
+        input (NDBuffer): the input buffer
+    """
     assert_param[axis >= 0]()
     let in_dim = input.dim[axis]()
     let out_dim = output.dim[axis]()

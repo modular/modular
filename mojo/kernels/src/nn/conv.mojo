@@ -1287,10 +1287,9 @@ struct ConvIm2ColNCHW[
             simd_byte_width().__as_mlir_index(),  # Alignment.
         ]()
 
-        var b_packed = NDBuffer[3, packed_shape, type](_bpacked_data.address)
         # Manually set the shape of packed B buffer:
         let mapped_bpacked = self._view_buffer_as(
-            b_packed,
+            _bpacked_data.address,
             self.tile_n_k[0],
             self.tile_n_k[1],
             pack_inner_size,
@@ -1352,7 +1351,7 @@ struct ConvIm2ColNCHW[
 
         # Remap buffer indices for current tile.
         var remapped_bpacked = self._view_buffer_as(
-            b_packed, tile_n, sub_tile_k, Int(pack_inner_size)
+            b_packed.data, tile_n, sub_tile_k, Int(pack_inner_size)
         )
 
         var col_idx: Int = 0
@@ -1369,7 +1368,7 @@ struct ConvIm2ColNCHW[
         # Cover residual tiles.
         if col_idx < valid_col_count:
             remapped_bpacked = self._view_buffer_as(
-                b_packed, simd_size, sub_tile_k, simd_size
+                b_packed.data, simd_size, sub_tile_k, simd_size
             )
             col_idx = self._outer_n_loop_helper[simd_size](
                 remapped_bpacked,
@@ -1599,25 +1598,31 @@ struct ConvIm2ColNCHW[
         # Ouput shape [N, F, Ho, Wo]
         let c_pointer = self.out._offset(Index(self.batch_idx, 0, 0, 0))
         self.c = NDBuffer[2, create_kgen_list_unknown[2](), type](
-            c_pointer.address
-        )
-        self.c.dynamic_shape.__setitem__[0](self.conv_shape.f.__as_mlir_index())
-        self.c.dynamic_shape.__setitem__[1](
-            (self.conv_shape.out_h * self.conv_shape.out_w).__as_mlir_index()
+            c_pointer.address,
+            create_kgen_list[__mlir_type.index](
+                self.conv_shape.f.__as_mlir_index(),
+                (
+                    self.conv_shape.out_h * self.conv_shape.out_w
+                ).__as_mlir_index(),
+            ),
+            type,
         )
 
         # Create 2D view for filter.
         self.a = NDBuffer[2, create_kgen_list_unknown[2](), type](
-            self.filter.data.address
+            self.filter.data.address,
+            create_kgen_list[__mlir_type.index](
+                self.gemm_shape.M.__as_mlir_index(),
+                self.gemm_shape.K.__as_mlir_index(),
+            ),
+            type,
         )
-        self.a.dynamic_shape.__setitem__[0](self.gemm_shape.M.__as_mlir_index())
-        self.a.dynamic_shape.__setitem__[1](self.gemm_shape.K.__as_mlir_index())
 
     # Utility to reshape the dynamic buffer:
     #  need to remap every time K and pack_inner_size changes.
     fn _view_buffer_as(
         self,
-        b_packed: NDBuffer[3, packed_shape, type],
+        b_packed: DTypePointer[type],
         tile_n: Int,
         tile_k: Int,
         n_inner_size: Int,
@@ -1632,14 +1637,15 @@ struct ConvIm2ColNCHW[
                 n_inner_size(Int): Inner dimension size to use for the packed
                     data layout.
         """
-        var new_b_packed = b_packed
-        let n_outer = tile_n // n_inner_size
-        new_b_packed.dynamic_shape.__setitem__[0](n_outer.__as_mlir_index())
-        new_b_packed.dynamic_shape.__setitem__[1](tile_k.__as_mlir_index())
-        new_b_packed.dynamic_shape.__setitem__[2](
-            n_inner_size.__as_mlir_index()
+        return NDBuffer[3, packed_shape, type](
+            b_packed.address,
+            create_kgen_list[__mlir_type.index](
+                (tile_n // n_inner_size).__as_mlir_index(),
+                tile_k.__as_mlir_index(),
+                n_inner_size.__as_mlir_index(),
+            ),
+            type,
         )
-        return new_b_packed
 
 
 # TODO (Fixel): This class has massive code duplication with matmul kernels.
@@ -2399,10 +2405,9 @@ struct ConvIm2ColNHWC[
             simd_byte_width().__as_mlir_index(),  # Alignment.
         ]()
 
-        var b_packed = NDBuffer[3, packed_shape, type](_bpacked_data.address)
         # Manually set the shape of packed B buffer:
         let mapped_bpacked = self._view_buffer_as(
-            b_packed,
+            _bpacked_data.address,
             self.tile_n_k[0],
             self.tile_n_k[1],
             pack_inner_size,
@@ -2466,7 +2471,7 @@ struct ConvIm2ColNHWC[
 
         # Remap buffer indices for current tile.
         var remapped_bpacked = self._view_buffer_as(
-            b_packed, tile_n, sub_tile_k, Int(pack_inner_size)
+            b_packed.data, tile_n, sub_tile_k, Int(pack_inner_size)
         )
 
         var col_idx: Int = self.col_start_idx
@@ -2483,7 +2488,7 @@ struct ConvIm2ColNHWC[
         # Cover residual tiles.
         if col_idx < valid_col_end:
             remapped_bpacked = self._view_buffer_as(
-                b_packed, simd_size, sub_tile_k, simd_size
+                b_packed.data, simd_size, sub_tile_k, simd_size
             )
             col_idx = self._outer_n_loop_helper[simd_size](
                 remapped_bpacked,
@@ -2766,42 +2771,49 @@ struct ConvIm2ColNHWC[
         # Ouput shape [N, F, Ho, Wo]
         let c_pointer = self.out._offset(Index(0, 0, 0, 0))
         self.c = NDBuffer[2, create_kgen_list_unknown[2](), type](
-            c_pointer.address
+            c_pointer.address,
+            create_kgen_list[__mlir_type.index](
+                self.gemm_shape.M.__as_mlir_index(),
+                self.gemm_shape.N.__as_mlir_index(),
+            ),
+            type,
         )
-        self.c.dynamic_shape.__setitem__[0](self.gemm_shape.M.__as_mlir_index())
-        self.c.dynamic_shape.__setitem__[1](self.gemm_shape.N.__as_mlir_index())
 
         # Create 2D view for input.
         self.a = NDBuffer[2, create_kgen_list_unknown[2](), type](
-            self.input.data.address
+            self.input.data.address,
+            create_kgen_list[__mlir_type.index](
+                self.gemm_shape.M.__as_mlir_index(),
+                self.gemm_shape.K.__as_mlir_index(),
+            ),
+            type,
         )
-        self.a.dynamic_shape.__setitem__[0](self.gemm_shape.M.__as_mlir_index())
-        self.a.dynamic_shape.__setitem__[1](self.gemm_shape.K.__as_mlir_index())
 
         # Create 2D view for filter.
-        self.b = NDBuffer[2, create_kgen_list_unknown[2](), type](
-            self.filter.data.address
-        )
         if filter_layout == Conv2DLayout.NHWC:  # FRSC layout
-            self.b.dynamic_shape.__setitem__[0](
-                self.gemm_shape.N.__as_mlir_index()
-            )
-            self.b.dynamic_shape.__setitem__[1](
-                self.gemm_shape.K.__as_mlir_index()
+            self.b = NDBuffer[2, create_kgen_list_unknown[2](), type](
+                self.filter.data.address,
+                create_kgen_list[__mlir_type.index](
+                    self.gemm_shape.N.__as_mlir_index(),
+                    self.gemm_shape.K.__as_mlir_index(),
+                ),
+                type,
             )
         elif filter_layout == Conv2DLayout.RSCF:  # RSCF layout
-            self.b.dynamic_shape.__setitem__[0](
-                self.gemm_shape.K.__as_mlir_index()
-            )
-            self.b.dynamic_shape.__setitem__[1](
-                self.gemm_shape.N.__as_mlir_index()
+            self.b = NDBuffer[2, create_kgen_list_unknown[2](), type](
+                self.filter.data.address,
+                create_kgen_list[__mlir_type.index](
+                    self.gemm_shape.K.__as_mlir_index(),
+                    self.gemm_shape.N.__as_mlir_index(),
+                ),
+                type,
             )
 
     # Utility to reshape the dynamic buffer:
     #  need to remap every time K and pack_inner_size changes.
     fn _view_buffer_as(
         self,
-        b_packed: NDBuffer[3, packed_shape, type],
+        b_packed: DTypePointer[type],
         tile_n: Int,
         tile_k: Int,
         n_inner_size: Int,
@@ -2816,11 +2828,12 @@ struct ConvIm2ColNHWC[
                 n_inner_size(Int): Inner dimension size to use for the packed
                     data layout.
         """
-        var new_b_packed = b_packed
-        let n_outer = tile_n // n_inner_size
-        new_b_packed.dynamic_shape.__setitem__[0](n_outer.__as_mlir_index())
-        new_b_packed.dynamic_shape.__setitem__[1](tile_k.__as_mlir_index())
-        new_b_packed.dynamic_shape.__setitem__[2](
-            n_inner_size.__as_mlir_index()
+        return NDBuffer[3, packed_shape, type](
+            b_packed.address,
+            create_kgen_list[__mlir_type.index](
+                (tile_n // n_inner_size).__as_mlir_index(),
+                tile_k.__as_mlir_index(),
+                n_inner_size.__as_mlir_index(),
+            ),
+            type,
         )
-        return new_b_packed
