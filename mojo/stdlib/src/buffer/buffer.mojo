@@ -15,6 +15,7 @@ from List import (
     _get_kgen_list_item,
     create_kgen_list_unknown,
 )
+from Math import fma
 from Memory import stack_allocation, memset_zero
 from Pointer import DTypePointer, product as pointer_product
 from SIMD import SIMD
@@ -48,30 +49,6 @@ fn _raw_stack_allocation[
         count, __mlir_type[`!pop.scalar<`, type, `>`], alignment
     ]()
     return ptr.address
-
-
-fn _get_buffer_len[size: __mlir_type.index](dynamic_size: Int) -> Int:
-    """Gets the size if it is a known constant, otherwise it gets the
-    dynamic_size.
-
-    This method is used by `Buffer.__len__` to get the size of the buffer.
-    If the Buffer size is a known constant, then the size is returned.
-    Otherwise, the dynamic_size is returned.
-
-
-    Args:
-        size (__mlir_type.index): The static size.
-        dynamic_size (Int): The dynamic size.
-
-    Returns:
-        Int: The size if static otherwise dynamic_size.
-    """
-
-    @parameter
-    if size == __mlir_attr.`#kgen.unknown : index`:
-        return dynamic_size
-
-    return size
 
 
 # ===----------------------------------------------------------------------===#
@@ -158,10 +135,22 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         }
 
     fn __len__(self) -> Int:
-        """Returns the dynamic size if the buffer is not statically known,
-        otherwise returns the statically known size parameter.
+        """Gets the size if it is a known constant, otherwise it gets the
+        dynamic_size.
+
+        This method is used by `Buffer.__len__` to get the size of the buffer.
+        If the Buffer size is a known constant, then the size is returned.
+        Otherwise, the dynamic_size is returned.
+
+        Returns:
+            Int: The size if static otherwise dynamic_size.
         """
-        return _get_buffer_len[size](self.dynamic_size)
+
+        @parameter
+        if size == __mlir_attr.`#kgen.unknown : index`:
+            return self.dynamic_size
+
+        return size
 
     fn __getitem__(self, idx: Int) -> SIMD[1, type]:
         """Loads a single element (SIMD of size 1) from the buffer at the
@@ -326,10 +315,19 @@ fn _compute_ndbuffer_offset[
     Returns:
         Int: The offset into the NDBuffer given the indices.
     """
-    assert_param[rank > 0]()
-    return _compute_ndbuffer_offset_impl_va_list[rank - 1, rank, shape, type](
-        buf, idx
-    )
+
+    @parameter
+    if rank == 0:
+        return 0
+
+    @parameter
+    if rank == 1:
+        return idx[0]
+
+    var result: Int = idx[0]
+    for i in range(1, rank):
+        result = fma(buf.dim(i), result, idx[i])
+    return result
 
 
 fn _compute_ndbuffer_offset[
@@ -371,223 +369,19 @@ fn _compute_ndbuffer_offset[
     Returns:
         Int: The offset into the NDBuffer given the indices.
     """
-    assert_param[rank > 0]()
-    return _compute_ndbuffer_offset_impl[rank - 1, rank, shape, type](buf, idx)
-
-
-@interface
-fn _compute_ndbuffer_offset_impl_va_list[
-    iter: __mlir_type.index,
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](buf: NDBuffer[rank, shape, type], idx: _VariadicList[Int]) -> Int:
-    """Helper function to recursively compute the NDBuffer's offset using the
-    index positions provided.
-
-    Args:
-        iter (index): The induction variable.
-        rank (index): The rank of the NDBuffer.
-        shape (kgen.list<index[rank]>): The shape of the NDBuffer.
-        type (dtype): The element-type of the NDBuffer.
-        buf (NDBuffer[rank, shape, type]): The NDBuffer.
-        idx (_VariadicList[index]): The index positions.
-
-    Returns:
-        Int: The offset into the NDBuffer given the indices.
-    """
-    ...
-
-
-@interface
-fn _compute_ndbuffer_offset_impl[
-    iter: __mlir_type.index,
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](
-    buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
-) -> Int:
-    """Helper function to recursively compute the NDBuffer's offset using the
-    index positions provided.
-
-    Args:
-        iter (index): The induction variable.
-        rank (index): The rank of the NDBuffer.
-        shape (kgen.list<index[rank]>): The shape of the NDBuffer.
-        type (dtype): The element-type of the NDBuffer.
-        buf (NDBuffer[rank, shape, type]): The NDBuffer.
-        idx (StaticTuple[rank, index]): The index positions.
-
-    Returns:
-        Int: The offset into the NDBuffer given the indices.
-    """
-    ...
-
-
-@implements(_compute_ndbuffer_offset_impl_va_list)
-fn _compute_ndbuffer_offset_impl_base_va_list[
-    iter: __mlir_type.index,
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](buf: NDBuffer[rank, shape, type], idx: _VariadicList[Int]) -> Int:
-    """Base case for computing the NDBuffer's offset using the index positions
-    provided. This case is triggered when the induction variable (iter) is 0.
-
-    Args:
-        iter (index): The induction variable.
-        rank (index): The rank of the NDBuffer.
-        shape (kgen.list<index[rank]>): The shape of the NDBuffer.
-        type (dtype): The element-type of the NDBuffer.
-        buf (NDBuffer[rank, shape, type]): The NDBuffer.
-        idx (_VariadicList[index]): The index positions.
-
-    Returns:
-        Int: The offset into the NDBuffer given the indices.
-    """
-    assert_param[iter == 0]()
-    return idx.__getitem__(0)
-
-
-@implements(_compute_ndbuffer_offset_impl)
-fn _compute_ndbuffer_offset_impl_base[
-    iter: __mlir_type.index,
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](
-    buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
-) -> Int:
-    """Base case for computing the NDBuffer's offset using the index positions
-    provided. This case is triggered when the induction variable (iter) is 0.
-
-    Args:
-        iter (index): The induction variable.
-        rank (index): The rank of the NDBuffer.
-        shape (kgen.list<index[rank]>): The shape of the NDBuffer.
-        type (dtype): The element-type of the NDBuffer.
-        buf (NDBuffer[rank, shape, type]): The NDBuffer.
-        idx (StaticTuple[rank, index]): The index positions.
-
-    Returns:
-        Int: The offset into the NDBuffer given the indices.
-    """
-    assert_param[iter == 0]()
-    return idx[0]
-
-
-@implements(_compute_ndbuffer_offset_impl_va_list)
-fn _compute_ndbuffer_offset_impl_iter_va_list[
-    iter: __mlir_type.index,
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](buf: NDBuffer[rank, shape, type], idx: _VariadicList[Int]) -> Int:
-    """The recursive case for computing the NDBuffer's offset using the index
-    positions provided. This case is triggered when the induction variable
-    (iter) is greater than 0.
-
-    Args:
-        iter (index): The induction variable.
-        rank (index): The rank of the NDBuffer.
-        shape (kgen.list<index[rank]>): The shape of the NDBuffer.
-        type (dtype): The element-type of the NDBuffer.
-        buf (NDBuffer[rank, shape, type]): The NDBuffer.
-        idx (_VariadicList[index]): The index positions.
-
-    Returns:
-        Int: The offset into the NDBuffer given the indices.
-    """
-    assert_param[iter > 0]()
-    return idx.__getitem__(iter) + buf.dim[
-        iter
-    ]() * _compute_ndbuffer_offset_impl_va_list[iter - 1, rank, shape, type](
-        buf, idx
-    )
-
-
-@implements(_compute_ndbuffer_offset_impl)
-fn _compute_ndbuffer_offset_impl_iter[
-    iter: __mlir_type.index,
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](
-    buf: NDBuffer[rank, shape, type], idx: StaticTuple[rank, __mlir_type.index]
-) -> Int:
-    """The recursive case for computing the NDBuffer's offset using the index
-    positions provided. This case is triggered when the induction variable
-    (iter) is greater than 0.
-
-    Args:
-        iter (index): The induction variable.
-        rank (index): The rank of the NDBuffer.
-        shape (kgen.list<index[rank]>): The shape of the NDBuffer.
-        type (dtype): The element-type of the NDBuffer.
-        buf (NDBuffer[rank, shape, type]): The NDBuffer.
-        idx (StaticTuple[rank, index]): The index positions.
-
-    Returns:
-        Int: The offset into the NDBuffer given the indices.
-    """
-    assert_param[iter > 0]()
-    return idx.__getitem__[iter]() + buf.dim[
-        iter
-    ]() * _compute_ndbuffer_offset_impl[iter - 1, rank, shape, type](buf, idx)
-
-
-fn _compute_ndbuffer_size[
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](buf: NDBuffer[rank, shape, type]) -> Int:
-    """Computes the NDBuffer's number of elements.
-
-    Args:
-        rank (index): The rank of the NDBuffer.
-        shape (kgen.list<index[rank]>): The shape of the NDBuffer.
-        type (dtype): The element-type of the NDBuffer.
-        buf (NDBuffer[rank, shape, type]): The NDBuffer.
-
-    Returns:
-        Int: The total number of elements in the NDBuffer.
-    """
-    var product: Int = 1
-
-    @always_inline
-    fn _compute_product[idx: __mlir_type.index]():
-        product *= buf.dim[idx]()
-
-    unroll[rank, _compute_product]()
-    return product
-
-
-fn _get_dim_impl[
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    index: __mlir_type.index,
-](
-    #  Tuple containing the runtime shape of the ndbuffer.
-    dynamic_shape: StaticTuple[rank, __mlir_type.index]
-) -> Int:
-    # First try to extract the static info on this dimension, could be either a
-    # meta constant or an unknown.
-    alias static_dim_value = _get_kgen_list_item[
-        index, rank, __mlir_type.index
-    ](shape)
 
     @parameter
-    if static_dim_value != __mlir_attr.`#kgen.unknown : index`:
-        return static_dim_value
-    return dynamic_shape.__getitem__[index]()
+    if rank == 0:
+        return 0
 
+    @parameter
+    if rank == 1:
+        return idx[0]
 
-fn _get_dim_impl[
-    rank: __mlir_type.index,
-    shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-](index: Int, dynamic_shape: StaticTuple[rank, __mlir_type.index],) -> Int:
-    return dynamic_shape[index]
+    var result: Int = idx[0]
+    for i in range(1, rank):
+        result = fma(buf.dim(i), result, idx[i])
+    return result
 
 
 fn is_all_known[
@@ -691,9 +485,29 @@ struct NDBuffer[
         return rank
 
     fn size(self) -> Int:
-        return _compute_ndbuffer_size[rank, shape, type](self)
+        """Computes the NDBuffer's number of elements.
+
+        Returns:
+            Int: The total number of elements in the NDBuffer.
+        """
+        var product: Int = 1
+
+        @always_inline
+        fn _compute_product[idx: __mlir_type.index]():
+            product *= self.dim[idx]()
+
+        unroll[rank, _compute_product]()
+        return product
 
     fn _offset(self, idx: _VariadicList[Int]) -> DTypePointer[type]:
+        """Computes the NDBuffer's offset using the index positions provided.
+
+        Args:
+            idx (_VariadicList[index]): The index positions.
+
+        Returns:
+            Int: The offset into the NDBuffer given the indices.
+        """
         assert_param[rank <= 5]()
         return self.data.offset(
             _compute_ndbuffer_offset[rank, shape, type](self, idx)
@@ -705,6 +519,14 @@ struct NDBuffer[
     fn _offset(
         self, idx: StaticTuple[rank, __mlir_type.index]
     ) -> DTypePointer[type]:
+        """Computes the NDBuffer's offset using the index positions provided.
+
+        Args:
+            idx (StaticTuple[rank, __mlir_type.index]): The index positions.
+
+        Returns:
+            Int: The offset into the NDBuffer given the indices.
+        """
         assert_param[rank <= 5]()
         return self.data.offset(
             _compute_ndbuffer_offset[rank, shape, type](self, idx)
@@ -775,10 +597,19 @@ struct NDBuffer[
         self._offset(idx).simd_store[width](val)
 
     fn dim[index: __mlir_type.index](self) -> Int:
-        return _get_dim_impl[rank, shape, index](self.dynamic_shape)
+        # First try to extract the static info on this dimension, could be either a
+        # meta constant or an unknown.
+        alias static_dim_value = _get_kgen_list_item[
+            index, rank, __mlir_type.index
+        ](shape)
+
+        @parameter
+        if static_dim_value != __mlir_attr.`#kgen.unknown : index`:
+            return static_dim_value
+        return self.dynamic_shape[index]
 
     fn dim(self, index: Int) -> Int:
-        return _get_dim_impl[rank, shape](index, self.dynamic_shape)
+        return self.dynamic_shape[index]
 
     fn flatten(self) -> Buffer[__mlir_attr.`#kgen.unknown : index`, type]:
         return Buffer[__mlir_attr.`#kgen.unknown : index`, type](
