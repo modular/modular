@@ -18,6 +18,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LitExprEmitter.h"
@@ -329,7 +330,26 @@ AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 }
 
 AnyValue BoolLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
-  return AnyValue(BoolAttr::get(emitter.getContext(), value));
+  ASTDecl &compilerBuiltinDecl = emitter.shared.getCompilerBuiltInDecl();
+  LookupResult lookup = emitter.shared.lookupAndResolveDecl(
+      "BoolLiteral", getLoc(), compilerBuiltinDecl,
+      /*searchParentScopes=*/true);
+
+  //  BoolLiteral must be in scope since it is auto-imported.
+  assert(!lookup.isFailure() && !lookup.getIfSuccess().empty());
+  ASTDecl &decl = *lookup.getIfSuccess()[0];
+  assert(isa<StructDeclOp>(decl));
+  mlir::MLIRContext *ctx = emitter.getContext();
+  auto boolLiteralDeclType = DeclRefType::get(decl.getSymbolRef());
+  bool isErroneousDecl = false;
+  CallableValue newVal = CallableValue(boolLiteralDeclType, "__new__", getLoc(),
+                                       isErroneousDecl, emitter.shared);
+  assert(!newVal.isNull() && "__new__ should be always there by construction");
+  auto boolDType = DTypeConstantAttr::get(ctx, DType::kBool);
+  auto boolAttr = POP::SIMDAttr::get({value, KGENDType::kBool},
+                                     POP::SIMDType::get(1, boolDType));
+  return newVal.emitFunctionCall(ASTExprAnd<AnyValue>{AnyValue(boolAttr), this},
+                                 CallSyntax::kTypeCall, this, emitter);
 }
 
 AnyValue SelfLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {

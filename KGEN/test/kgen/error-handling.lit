@@ -10,13 +10,13 @@ from Error import Error
 
 
 @raises
-fn raiseErrorIf(cond: __mlir_type.i1) -> Int:
+fn raiseErrorIf(cond: BoolLiteral) -> Int:
     if cond:
         raise Error()
     return 0
 
 
-def implicitlyPropagate(cond: __mlir_type.i1) -> Int:
+def implicitlyPropagate(cond: BoolLiteral) -> Int:
     return raiseErrorIf(cond)
 
 

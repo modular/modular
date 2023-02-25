@@ -150,6 +150,12 @@ public:
   /// Get the list of files included while processing all modules.
   ArrayRef<std::string> getIncludedFiles() const;
 
+  // Name of the auto-imported compiler builtin module.
+  static constexpr const StringLiteral kCompilerBuiltInStr = "_CompilerBuiltin";
+
+  // Get the scope of the auto-imported _CompilerBuiltin module.
+  ASTDecl &getCompilerBuiltInDecl();
+
 private:
   /// Add magic things to the builtins decl when parsing starts.
   void addBuiltinTypes(ASTDecl &builtinsDecl);
