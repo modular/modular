@@ -189,29 +189,8 @@ struct ConvShape:
         }
 
 
-@interface
+@adaptive
 fn get_conv2d_shape[
-    output_shape: __mlir_type[`!kgen.list<index[4]>`],
-    input_shape: __mlir_type[`!kgen.list<index[4]>`],
-    filter_shape: __mlir_type[`!kgen.list<index[4]>`],
-    type: __mlir_type.`!kgen.dtype`,
-    data_layout: __mlir_type.index,
-    filter_layout: __mlir_type.index,
-](
-    # TODO: support static layout too.
-    output: ImageData[output_shape, type, Conv2DLayout.unknown],
-    input: ImageData[input_shape, type, Conv2DLayout.unknown],
-    filter: ImageData[filter_shape, type, Conv2DLayout.unknown],
-    pad_h: StaticIntTuple[2],
-    pad_w: StaticIntTuple[2],
-    stride: StaticIntTuple[2],
-    dilation: StaticIntTuple[2],
-) -> ConvShape:
-    ...
-
-
-@implements(get_conv2d_shape)
-fn get_conv2d_shape_nchw[
     output_shape: __mlir_type[`!kgen.list<index[4]>`],
     input_shape: __mlir_type[`!kgen.list<index[4]>`],
     filter_shape: __mlir_type[`!kgen.list<index[4]>`],
@@ -247,8 +226,8 @@ fn get_conv2d_shape_nchw[
     }
 
 
-@implements(get_conv2d_shape)
-fn get_conv2d_shape_nhwc[
+@adaptive
+fn get_conv2d_shape[
     output_shape: __mlir_type[`!kgen.list<index[4]>`],
     input_shape: __mlir_type[`!kgen.list<index[4]>`],
     filter_shape: __mlir_type[`!kgen.list<index[4]>`],
@@ -284,8 +263,8 @@ fn get_conv2d_shape_nhwc[
     }
 
 
-@implements(get_conv2d_shape)
-fn get_conv2d_shape_nhwc_rscf[
+@adaptive
+fn get_conv2d_shape[
     output_shape: __mlir_type[`!kgen.list<index[4]>`],
     input_shape: __mlir_type[`!kgen.list<index[4]>`],
     filter_shape: __mlir_type[`!kgen.list<index[4]>`],
