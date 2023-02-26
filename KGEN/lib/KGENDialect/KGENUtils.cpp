@@ -1060,10 +1060,20 @@ static OptionalParseResult parseOptionalSignatureValues(
   if (optionalResultList ? p.parseOptionalArrowTypeList(resTypes)
                          : p.parseArrowTypeList(resTypes))
     return failure();
-  auto metadata = MetadataAttr::get(p.getContext(), inputConventions, varargs,
-                                    defaults, effect);
+  auto emitError = [&] { return p.emitError(loc); };
+
+  // FIXME: Force C++ to select the derived class getter, not the storage
+  // uniquer getter, which won't compile outside of `KGENAttrs.cpp`.
+  using GetCheckedT =
+      MetadataAttr (*)(function_ref<InFlightDiagnostic()>, MLIRContext *,
+                       ArrayRef<ValueInputConvention>, ArrayRef<VarArgKind>,
+                       ArrayRef<TypedAttr>, FnEffects);
+  auto metadata = ((GetCheckedT)&MetadataAttr::getChecked)(
+      emitError, p.getContext(), inputConventions, varargs, defaults, effect);
+  if (!metadata)
+    return failure();
   signature = SignatureType::getChecked(
-      [&] { return p.emitError(loc); }, inputParams, resultParams,
+      emitError, inputParams, resultParams,
       p.getBuilder().getFunctionType(argTypes, resTypes), metadata);
   return mlir::success(!!signature);
 }

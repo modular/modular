@@ -462,28 +462,7 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                       ParamDeclArrayAttr inputParams,
                       ParamDeclArrayAttr resultParams, FunctionType values,
                       MetadataAttr metadata) {
-  // Check we have the right number of conventions.
-  if (metadata.getInputConventions().size() != values.getInputs().size())
-    return emitError() << "incorrect # of input conventions specified";
-  if (metadata.getVarArgs().size() != values.getInputs().size())
-    return emitError() << "incorrect # of input varargs kinds specified";
-
-  for (auto [defaultsIndex, value] :
-       llvm::enumerate(metadata.getDefaultArguments())) {
-    size_t index = values.getInputs().size() -
-                   metadata.getDefaultArguments().size() + defaultsIndex;
-    Type expected = values.getInputs()[index];
-    if (value.getType() != expected) {
-      return emitError() << "argument #" << index << " has type " << expected
-                         << " but default argument has type "
-                         << value.getType();
-    }
-  }
-  // If the function throws an error, make sure it has one result.
-  if (bitEnumContainsAny(metadata.getFnEffects(), FnEffects::Throws) &&
-      values.getNumResults() != 1)
-    return emitError() << "a function that throws should have 1 result";
-  return success();
+  return metadata.verifySignature(emitError, inputParams, resultParams, values);
 }
 
 //===----------------------------------------------------------------------===//
