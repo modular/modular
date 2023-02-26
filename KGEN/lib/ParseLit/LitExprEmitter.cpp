@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-/// The IREmitter class is the main driver for expression emission, providing
+/// The ExprEmitter class is the main driver for expression emission, providing
 /// helper functions used by the individual node emission hooks.
 //
 //===----------------------------------------------------------------------===//
@@ -26,13 +26,13 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 //===----------------------------------------------------------------------===//
-// IREmitter implementation
+// ExprEmitter implementation
 //===----------------------------------------------------------------------===//
 
 /// This helper emits the specified value rep as an SSA value, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
-RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value) {
+RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value) {
   if (!value) // Already diagnosed error.
     return {};
 
@@ -69,10 +69,8 @@ RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value) {
     return {};
   if (!clone.isNull()) {
     // Ok, cool we know it will succeed; do it.
-    auto result =
-        clone.emitFunctionCall(value, CallSyntax::kImplicitConvert, value.expr,
-                               // FIXME
-                               static_cast<ExprEmitter &>(*this));
+    auto result = clone.emitFunctionCall(value, CallSyntax::kImplicitConvert,
+                                         value.expr, *this);
     if (!result)
       return {};
     assert(result.getIfRValue() &&
@@ -88,11 +86,11 @@ RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value) {
   return {};
 }
 
-DRValue IREmitter::emitDRValue(ASTExprAnd<AnyValue> value) {
+DRValue ExprEmitter::emitDRValue(ASTExprAnd<AnyValue> value) {
   return emitDRValue(ASTExprAnd<RValue>({emitRValue(value), value.expr}));
 }
 
-DRValue IREmitter::emitDRValue(ASTExprAnd<RValue> value) {
+DRValue ExprEmitter::emitDRValue(ASTExprAnd<RValue> value) {
   if (!value)
     return {};
   // If this is already an DRValue, emit this.
@@ -124,9 +122,7 @@ DRValue IREmitter::emitDRValue(ASTExprAnd<RValue> value) {
       ASTType incorrectBindingExpectedType;
       auto bindingAttr = paramBindings.verifyBindings(
           signature.getInputParams(), "<<UNUSED>>", value.expr->getLoc(),
-          incorrectBindingNo, incorrectBindingExpectedType,
-          // FIXME
-          static_cast<ExprEmitter &>(*this), nullptr);
+          incorrectBindingNo, incorrectBindingExpectedType, *this, nullptr);
       if (!bindingAttr) {
         // If it didn't work out, then it is an error because parameterized
         // values cannot be used in a dynamic context.
@@ -182,9 +178,9 @@ DRValue IREmitter::emitDRValue(ASTExprAnd<RValue> value) {
 /// fed into an implicit conversion.  This should only be used for location
 /// information.
 AnyValue
-IREmitter::emitNamedMethodCall(StringRef methodName,
-                               ArrayRef<ASTExprAnd<AnyValue>> argValues,
-                               CallSyntax syntax, const ExprNode *callNode) {
+ExprEmitter::emitNamedMethodCall(StringRef methodName,
+                                 ArrayRef<ASTExprAnd<AnyValue>> argValues,
+                                 CallSyntax syntax, const ExprNode *callNode) {
   assert(!argValues.empty() && "Cannot emit a method call without a receiver!");
   ASTType type = argValues.front().ir.getRValueType();
   bool isErroneousDecl = false;
@@ -213,16 +209,14 @@ IREmitter::emitNamedMethodCall(StringRef methodName,
     return {};
   }
 
-  return callee.emitFunctionCall(argValues, syntax, callNode,
-                                 // FIXME
-                                 static_cast<ExprEmitter &>(*this));
+  return callee.emitFunctionCall(argValues, syntax, callNode, *this);
 }
 
 /// Convert the specified value to the expected type, invoking implicit
 /// conversions if necessary.  On error, this diagnoses it and returns null.
-AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
-                                      ASTType expectedType,
-                                      std::function<void()> errorHandler) {
+AnyValue ExprEmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
+                                        ASTType expectedType,
+                                        std::function<void()> errorHandler) {
   // If the value handed to is us already erroneous, don't diagnose anything.
   if (!value)
     return value;
@@ -247,22 +241,19 @@ AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
   callee.direct->disableImplicitConversions = true;
   if (failed(callee.direct->filterOverloadSet(
           {newArg}, CallSyntax::kImplicitConvert, expr,
-          /*emitDiagnosticOnFailure=*/false,
-          // FIXME:
-          static_cast<ExprEmitter &>(*this)))) {
+          /*emitDiagnosticOnFailure=*/false, *this))) {
     errorHandler();
     return {};
   }
 
   // Ok, cool we know it will succeed; do it.
   return callee.emitFunctionCall(newArg, CallSyntax::kImplicitConvert, expr,
-                                 // FIXME
-                                 static_cast<ExprEmitter &>(*this));
+                                 *this);
 }
 
-AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
-                                      ASTType expectedType,
-                                      const Twine &errorSuffix) {
+AnyValue ExprEmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
+                                        ASTType expectedType,
+                                        const Twine &errorSuffix) {
   auto errorHandler = [&]() {
     if (!isa<TypeCheckErrorType>(value.getType()) &&
         !isa<TypeCheckErrorType>(expectedType.mlirType))
@@ -277,8 +268,8 @@ AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
 /// value that we can test directly, and also returning the intermediate
 /// result of calling `__bool__` (which is typically a Bool or object type, but
 /// not guaranteed).  This reports and error and returns null on error.
-RValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
-                                         AnyValue &boolResult) {
+RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
+                                           AnyValue &boolResult) {
   if (!value.ir)
     return {};
 

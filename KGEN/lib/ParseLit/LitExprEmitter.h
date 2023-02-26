@@ -22,15 +22,26 @@ enum class CallSyntax : uint8_t;
 
 /// This class is the main driver for expression emission, providing helper
 /// functions used by the individual node emission hooks.
-class IREmitter : public LitSharedStateUser {
+class ExprEmitter : public LitSharedStateUser {
 public:
+  ExprEmitter(LitSharedState &shared, ASTDecl &declScope,
+              std::optional<OpBuilder> builder, Operation *varDeclCursor)
+      : LitSharedStateUser(shared), builder(builder), declScope(declScope),
+        varDeclCursor(varDeclCursor) {}
+
   //===--------------------------------------------------------------------===//
-  // General Emitter State.
+  // Emitter State.
 
   /// This is the current builder to emit into if we are allowed to generate a
   /// value.  This will be None when in a context that only allows parameters.
   /// It is mutable to support expressions that require internal control flow.
   std::optional<OpBuilder> builder;
+
+  /// This is scope to resolve declaration references against.
+  ASTDecl &declScope;
+
+  /// When non-null, implicitly declared variables are added above this op.
+  Operation *varDeclCursor;
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
@@ -77,26 +88,6 @@ public:
   /// but not guaranteed).  This reports and error and returns null on error.
   RValue emitConditionValueAsI1(ASTExprAnd<AnyValue> expr,
                                 AnyValue &boolResult);
-
-protected:
-  IREmitter(LitSharedState &shared, std::optional<OpBuilder> builder)
-      : LitSharedStateUser(shared), builder(builder) {}
-};
-
-/// ExprEmitter refines IREmitter, providing the additional state needed to
-/// emit arbitrary nodes that require name lookup and declaration synthesis.
-class ExprEmitter : public IREmitter {
-public:
-  ExprEmitter(LitSharedState &shared, ASTDecl &declScope,
-              std::optional<OpBuilder> builder, Operation *varDeclCursor)
-      : IREmitter(shared, builder), declScope(declScope),
-        varDeclCursor(varDeclCursor) {}
-
-  /// This is scope to resolve declaration references against.
-  ASTDecl &declScope;
-
-  /// When non-null, implicitly declared variables are added above this op.
-  Operation *varDeclCursor;
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
