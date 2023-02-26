@@ -250,7 +250,15 @@ def KGEN_MetadataAttr : KGENAttr<"Metadata", "metadata"> {
     /// Returns true if all input argument conventions are pass-by-value, and
     /// there are no function effects.
     bool isDefault();
+
+    /// Verify the metadata with respect to the enclosing signature type.
+    LogicalResult verifySignature(function_ref<InFlightDiagnostic()> emitError,
+                                  ParamDeclArrayAttr inputParams,
+                                  ParamDeclArrayAttr resultParams,
+                                  FunctionType values);
   }];
+
+  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//

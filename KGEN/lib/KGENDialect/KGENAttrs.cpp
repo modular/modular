@@ -105,6 +105,50 @@ bool MetadataAttr::isDefault() {
                       });
 }
 
+LogicalResult
+MetadataAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                     ArrayRef<ValueInputConvention> inputConventions,
+                     ArrayRef<VarArgKind> varargs,
+                     ArrayRef<TypedAttr> defaultArguments, FnEffects effects) {
+  if (inputConventions.size() != varargs.size()) {
+    return emitError() << "metadata has " << inputConventions.size()
+                       << " input convention specifiers but " << varargs.size()
+                       << " vararg markers";
+  }
+  if (defaultArguments.size() > inputConventions.size()) {
+    return emitError()
+           << "there are more default arguments than value input conventions: "
+           << defaultArguments.size() << " > " << inputConventions.size();
+  }
+  return success();
+}
+
+LogicalResult
+MetadataAttr::verifySignature(function_ref<InFlightDiagnostic()> emitError,
+                              ParamDeclArrayAttr inputParams,
+                              ParamDeclArrayAttr resultParams,
+                              FunctionType values) {
+  // Check we have the right number of conventions.
+  if (getInputConventions().size() != values.getInputs().size())
+    return emitError() << "incorrect # of input conventions specified";
+
+  for (auto [defaultsIndex, value] : llvm::enumerate(getDefaultArguments())) {
+    size_t index = values.getInputs().size() - getDefaultArguments().size() +
+                   defaultsIndex;
+    Type expected = values.getInputs()[index];
+    if (value.getType() != expected) {
+      return emitError() << "argument #" << index << " has type " << expected
+                         << " but default argument has type "
+                         << value.getType();
+    }
+  }
+  // If the function throws an error, make sure it has one result.
+  if (bitEnumContainsAny(getFnEffects(), FnEffects::Throws) &&
+      values.getNumResults() != 1)
+    return emitError() << "a function that throws should have 1 result";
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ConstraintAttr
 //===----------------------------------------------------------------------===//
