@@ -1055,11 +1055,12 @@ CallableValue::CallableValue(ASTType type, StringRef methodName,
 
 /// Emit this as a flattened RValue or LValue with no additional parameter
 /// context.  This returns null on failure.
-AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
+AnyValue CallableValue::emitAsValue(ExprEmitter &emitter,
+                                    ValueDest dest) const {
   // If we have no bound symbol, return the normal lvalue or rvalue we
   // represent.
   if (!direct)
-    return baseVal;
+    return emitter.emitResult(baseVal, expr, dest);
 
   // We allow unbound symbols here which can be emitted as an MValue.  In the
   // case where we are partially applying, that will force the unbound symbol
@@ -1080,7 +1081,7 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
 
   // If we have no base value, then we are just a symbol, return it.
   if (!baseVal)
-    return MValue(directSymbolAttr);
+    return emitter.emitResult(directSymbolAttr, expr, dest);
 
   auto loc = expr->getLoc();
 
@@ -1114,7 +1115,9 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
   case ValueInputConvention::ByVal:
     // Otherwise we can have either an lvalue or rvalue, but we need to convert
     // to an rvalue if we have an lvalue.
-    firstArgValue = emitter.emitDRValue({baseVal, expr});
+    firstArgValue = emitter.emitDRValue({baseVal, expr},
+                                        // TODO(memory_primary)
+                                        ValueDest());
     if (!firstArgValue)
       return {};
     break;
@@ -1126,14 +1129,18 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
   // For an instance value, we have to partially apply the callee to the first
   // argument of the reference.  Materialize callee as a DRValue for
   // partial_apply.
-  auto calleeDRVal = emitter.emitDRValue({AnyValue(directSymbolAttr), expr});
+  auto calleeDRVal = emitter.emitDRValue({AnyValue(directSymbolAttr), expr},
+                                         // TODO(memory_primary)
+                                         ValueDest());
 
   // Partial apply wants to know what operands to bind, we always bind the first
   // one.
   auto zeroAttr = emitter.builder->getAttr<mlir::DenseI64ArrayAttr>(0);
-  return DRValue(emitter.builder->create<POP::PartialApplyOp>(
+  auto result = DRValue(emitter.builder->create<POP::PartialApplyOp>(
       expr->getLocation(emitter), calleeDRVal, mlir::ValueRange(firstArgValue),
       zeroAttr));
+
+  return emitter.emitResult(result, expr, dest);
 }
 
 LogicalResult CallableValue::emitAdaptiveSet(SmallVectorImpl<TypedAttr> &values,
@@ -1193,10 +1200,9 @@ static bool isValidErrorContext(Block *block) {
 
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
-AnyValue
-CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                CallSyntax syntax, const ExprNode *callNode,
-                                ExprEmitter &emitter) {
+AnyValue CallableValue::emitFunctionCall(
+    ArrayRef<ASTExprAnd<AnyValue>> operands, ValueDest dest, CallSyntax syntax,
+    const ExprNode *callNode, ExprEmitter &emitter) {
   if (isNull()) // Base was already diagnosed as an error.
     return {};
 
@@ -1248,7 +1254,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     // call it with call_indirect.
     callee = baseVal.getIfMValue();
     if (!callee) {
-      callee = emitter.emitDRValue({baseVal, expr});
+      callee = emitter.emitDRValue({baseVal, expr}, ValueDest());
       if (!callee)
         return {};
     }
@@ -1314,10 +1320,15 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
         assert(operand.ir.getIfLValue() &&
                "Call should already be type checked");
         return operand.ir;
-        break;
       case ValueInputConvention::ByVal:
+        // TODO: Do the conversion first, then emit as an rvalue into the
+        // destination.
+
         // by-val arguments are converted to the expected r-value type.
-        auto argVal = emitter.emitRValue(operand);
+        auto argVal = emitter.emitRValue(
+            operand,
+            // TODO(memory-primary): emit into the argument slot.
+            ValueDest());
         // In the case of a variadic argument, we need to remove the
         // !pop.varadic<> wrapper to get the type to convert to.
         Type expectedArgType = expectedType;
@@ -1370,7 +1381,9 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     SmallVector<Value> variadicArgs;
     for (auto &operand : variadicOperands) {
       DRValue argVal =
-          emitter.emitDRValue({emitOneArgVal(operand), operand.expr});
+          emitter.emitDRValue({emitOneArgVal(operand), operand.expr},
+                              // TODO(memory_primary)
+                              ValueDest());
       if (!argVal)
         return {};
       variadicArgs.push_back(argVal);
@@ -1397,7 +1410,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       if (auto result = inlineFunctionCallIntoMValue(
               callLoc, *direct->fnDecls[0], inputParams, argumentValues,
               emitter))
-        return result;
+        return emitter.emitResult(result.get(), callNode, dest);
     }
   }
 
@@ -1429,7 +1442,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       return {};
     }
 
-    return MValue(ParamOperatorAttr::get(POC::Apply, operands));
+    auto result = ParamOperatorAttr::get(POC::Apply, operands);
+    return emitter.emitResult(result, callNode, dest);
   }
 
   // Otherwise, materialize MValue arguments as DRValues.
@@ -1438,7 +1452,9 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     if (auto lv = argValAndExpr.ir.getIfLValue())
       callArgs.push_back(lv);
     else
-      callArgs.push_back(emitter.emitDRValue(argValAndExpr));
+      callArgs.push_back(emitter.emitDRValue(argValAndExpr,
+                                             // TODO(memory_primary)
+                                             ValueDest()));
     if (!callArgs.back())
       return {};
   }
@@ -1489,7 +1505,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   }
 
   // Value returning call returns its result.
-  return DRValue(callOp->getResult(0));
+  auto result = DRValue(callOp->getResult(0));
+  return emitter.emitResult(result, callNode, dest);
 }
 
 /// Given a call to an alwaysinline function that is invoked with simple

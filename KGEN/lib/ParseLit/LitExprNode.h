@@ -140,8 +140,13 @@ public:
 
   /// Emit this expression to MLIR as a CallableValue.  On error, emit an error
   /// and return a null value.
-  virtual CallableValue emitCallable(ExprEmitter &emitter,
-                                     ValueDest dest) const;
+  virtual CallableValue emitCallable(ExprEmitter &emitter) const;
+
+  /// This node is being used as the LHS target/pattern of an assignment,
+  /// initialized with the specified RHS value.  On success, handle this
+  /// coersion/initialization, otherwise emit an error and return failure.
+  virtual LogicalResult emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                                  ExprEmitter &emitter) const;
 };
 
 } // namespace M::KGEN::LIT

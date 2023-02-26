@@ -1777,7 +1777,9 @@ ParsedLetVarDecl::emitInitValue(Operation *declOp, ASTDecl &decl,
     value = emitter.emitDRValue(
         {emitter.getAsExpectedType(value, initValue, type,
                                    " in " + Twine(kind) + " declaration"),
-         initValue});
+         initValue},
+        // TODO(memory-primary): emit directly into the vardecl.
+        ValueDest());
   } else {
     // Infer the type if we lack a declared type (`var x = 42`).
     // TODO(literal autopromotion).
