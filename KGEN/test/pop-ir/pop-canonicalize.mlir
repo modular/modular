@@ -1,16 +1,5 @@
 // RUN: kgen-opt %s -canonicalize | FileCheck %s
 
-// CHECK-LABEL: @abs
-kgen.func @abs() -> (!pop.simd<2, si8>, !pop.simd<2, f32>) {
-  // CHECK-DAG: <1>
-  // CHECK-DAG: <"1.25">
-  %0 = kgen.param.constant: simd<2, si8> = <<-1, 1>>
-  %1 = kgen.param.constant: simd<2, f32> = <<"-1.25", "1.25">>
-  %2 = pop.abs %0 : !pop.simd<2, si8>
-  %3 = pop.abs %1 : !pop.simd<2, f32>
-  kgen.return %2, %3 : !pop.simd<2, si8>, !pop.simd<2, f32>
-}
-
 // CHECK-LABEL: @neg
 kgen.func @neg() -> (!pop.simd<2, si8>, !pop.simd<2, f32>) {
   // CHECK-DAG: <1, -1>

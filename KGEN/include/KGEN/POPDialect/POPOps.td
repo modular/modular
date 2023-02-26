@@ -43,26 +43,6 @@ class POP_ArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
 }
 
 //===----------------------------------------------------------------------===//
-// AbsOp
-//===----------------------------------------------------------------------===//
-
-def POP_AbsOp : POP_ArithmeticUnaryOp<"abs"> {
-  let summary = "absolute value";
-  let description = [{
-    The `pop.abs` operation takes a `!pop.simd` value and returns its absolute
-    value. The operand and result types are the same. The operand type must be
-    an index, signed integer, or float dtype.
-
-    Example:
-
-    ```mlir
-    %b = pop.abs %a : !pop.scalar<type>
-    %b = pop.abs %a : !pop.simd<size, type>
-    ```
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // NegOp
 //===----------------------------------------------------------------------===//
 
@@ -702,8 +682,7 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
     `vector<4xi32>` will produce a vector valued as `[%a, %a, %a, %a]`.
 
     ```mlir
-    %a = pop.abs %arg0 : !pop.simd<1, f32>
-    %v = pop.simd.splat %a : !pop.simd<4, f32>
+    %v = pop.simd.splat %arg0 : !pop.simd<4, f32>
 
     %u = pop.neg %arg1 : !pop.simd<1, type>
     %w = pop.simd.splat %u : !pop.simd<size, type>
@@ -716,57 +695,6 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
   let assemblyFormat = "$scalar attr-dict `:` qualified(type($result))";
   let hasFolder = 1;
 }
-
-//===----------------------------------------------------------------------===//
-// SIMDScatterOp
-//===----------------------------------------------------------------------===//
-
-def POP_SIMDScatterOp : POPOp<"simd.scatter", [
-    AddressSIMDOfSameSize<"value", "base">,
-    BoolSIMDOfSameSize<"value", "mask">]> {
-  let summary = "scatters values from the SIMD vector using the mask";
-  let description = [{
-    The `pop.simd.scatter` stores scalar values from a SIMD vector of memory
-    locations and scatters them into a vector of pointers. The memory locations
-    are provided in the vector of pointers `base` as addresses. The memory is
-    stored according to the provided mask. The mask holds a bit for each vector
-    lane, and is used to prevent memory accesses to the masked-off lanes.
-
-    The `value` operand is a vector value to be written to memory. The `base`
-    operand is a vector of pointers, pointing to where the value elements
-    should be stored. It has the same underlying type as the value operand. The
-    `mask` operand, mask, is a vector of boolean values. The types of the
-    `mask` and the `value` operand must have the same number of vector
-    elements.
-
-    The behavior of the `pop.simd.scatter` is undefined if the op stores into
-    the same memory location more than once.
-
-    In general, for some vector %value, vector of pointers %base, and mask
-    %mask instructions of the form:
-
-    ```mlir
-    %0 = pop.simd.scatter %value, %base[%mask] : !pop.simd<N, type>
-    ```
-
-    is equivalent to the following sequence of scalar loads in C++:
-
-    ```cpp
-    for (int i = 0; i < N; i++)
-      if (mask[i])
-        base[i] = value[i];
-    ```
-  }];
-
-  let arguments = (ins POP_SIMDType:$value,
-                       Arg<AddressSIMD, "", [MemWrite]>:$base,
-                       BoolSIMD:$mask);
-
-  let assemblyFormat = [{
-    $value `,` $base `[` $mask `]` attr-dict `:` qualified(type($value))
-  }];
-}
-
 
 //===----------------------------------------------------------------------===//
 // LoadOp

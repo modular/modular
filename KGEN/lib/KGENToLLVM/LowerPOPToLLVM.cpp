@@ -97,33 +97,6 @@ struct ConvertPOPNeg : public ConvertPOPToLLVMPattern<NegOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPAbs
-//===----------------------------------------------------------------------===//
-
-/// Convert integer pop.abs x -> llvm.abs
-struct ConvertPOPAbs : public ConvertPOPToLLVMPattern<AbsOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(AbsOp op, AbsOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().getResolvedDType();
-    if (dtype.isUInt()) {
-      rewriter.replaceOp(op, adaptor.getOperand());
-    } else if (dtype.isSInt()) {
-      Type type = adaptor.getOperand().getType();
-      auto zero = rewriter.create<LLVM::ConstantOp>(
-          op.getLoc(), rewriter.getBoolAttr(false));
-      rewriter.replaceOpWithNewOp<LLVM::AbsOp>(op, type, adaptor.getOperand(),
-                                               zero);
-    } else {
-      rewriter.replaceOpWithNewOp<LLVM::FAbsOp>(op, adaptor.getOperand());
-    }
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPShr
 //===----------------------------------------------------------------------===//
 
@@ -792,25 +765,6 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPSIMDScatter
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPSIMDScatter : ConvertPOPToLLVMPattern<SIMDScatterOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(SIMDScatterOp op, SIMDScatterOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    Type ptrType = LLVM::LLVMPointerType::get(
-        adaptor.getValue().getType().cast<VectorType>().getElementType());
-    rewriter.replaceOpWithNewOp<LLVM::masked_scatter>(
-        op, adaptor.getValue(), adaptor.getBase(), adaptor.getMask(),
-        getAlignment(getTypeConverter()->getDataLayout(), ptrType));
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPVariadicCreate
 //===----------------------------------------------------------------------===//
 
@@ -1364,7 +1318,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                       mlir::RewritePatternSet &patterns) {
   patterns.insert<
       // clang-format off
-      ConvertPOPAbs,
       ConvertPOPAdd,
       ConvertPOPAnd,
       ConvertPOPArrayCreate,
@@ -1405,7 +1358,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPShr,
       ConvertPOPSIMDExtractElement,
       ConvertPOPSIMDInsertElement,
-      ConvertPOPSIMDScatter,
       ConvertPOPSIMDShuffle,
       ConvertPOPSIMDSplat,
       ConvertPOPStore,

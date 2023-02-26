@@ -5,36 +5,19 @@
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
 
 kgen.func @trivial_conversions(%a: !pop.simd<4, f32>, %b: !pop.simd<4, f32>, %c: !pop.simd<4, f32>, %d: !pop.simd<4, bool>) {
-  // CHECK: llvm.intr.fabs
-  %0 = pop.abs %a : !pop.simd<4, f32>
   // CHECK: llvm.fneg
-  %1 = pop.neg %a : !pop.simd<4, f32>
+  %0 = pop.neg %a : !pop.simd<4, f32>
   // CHECK: llvm.fadd
-  %2 = pop.add %a, %b : !pop.simd<4, f32>
+  %1 = pop.add %a, %b : !pop.simd<4, f32>
   // CHECK: llvm.fsub
-  %3 = pop.sub %a, %b : !pop.simd<4, f32>
+  %2 = pop.sub %a, %b : !pop.simd<4, f32>
   // CHECK: llvm.fmul
-  %4 = pop.mul %a, %b : !pop.simd<4, f32>
+  %3 = pop.mul %a, %b : !pop.simd<4, f32>
   // CHECK: llvm.intr.fma
-  %5 = pop.fma %a, %b, %c : !pop.simd<4, f32>
+  %4 = pop.fma %a, %b, %c : !pop.simd<4, f32>
   // CHECK: llvm.select
-  %6 = pop.select %d, %a, %b : !pop.simd<4, f32>
+  %5 = pop.select %d, %a, %b : !pop.simd<4, f32>
   kgen.return
-}
-
-// CHECK-LABEL: int_abs_simd
-kgen.func @int_abs_simd(%arg0: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
-  // CHECK: %[[FALSE:.*]] = llvm.mlir.constant(false
-  %0 = pop.abs %arg0 : !pop.simd<4, si32>
-  // CHECK: "llvm.intr.abs"(%{{.*}}, %[[FALSE]])
-  kgen.return %0 : !pop.simd<4, si32>
-}
-
-// CHECK-LABEL: abs_simd
-kgen.func @abs_simd(%arg0: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
-  %0 = pop.abs %arg0 : !pop.simd<4, f32>
-  // CHECK: llvm.intr.fabs(%{{.*}})
-  kgen.return %0 : !pop.simd<4, f32>
 }
 
 // CHECK-LABEL: @int_neg_simd
@@ -376,21 +359,6 @@ kgen.func @simd_load_store(%i: index, %p0: !pop.pointer<simd<4, f32>>) {
   %1 = pop.load %0 : !pop.pointer<simd<4, f32>>
   // CHECK: llvm.store
   pop.store %1, %p0 : !pop.pointer<simd<4, f32>>
-  kgen.return
-}
-
-// CHECK-LABEL: @pop_scatter
-// CHECK-SAME: %[[VALUE0:.*]]: !pop.simd<2, f32>
-// CHECK-SAME: %[[BASE0:.*]]: !pop.simd<2, address>
-// CHECK-SAME: %[[MASK0:.*]]: !pop.simd<2, bool>
-kgen.func @pop_scatter(%value: !pop.simd<2, f32>,
-                       %base: !pop.simd<2, address>,
-                       %mask: !pop.simd<2, bool>) {
-  // CHECK-DAG: %[[VALUE:.*]] = builtin.unrealized_conversion_cast %[[VALUE0]]
-  // CHECK-DAG: %[[BASE:.*]] = builtin.unrealized_conversion_cast %[[BASE0]]
-  // CHECK-DAG: %[[MASK:.*]] = builtin.unrealized_conversion_cast %[[MASK0]]
-  // CHECK: llvm.intr.masked.scatter %[[VALUE]], %[[BASE]], %[[MASK]]
-  pop.simd.scatter %value, %base[%mask] : !pop.simd<2, f32>
   kgen.return
 }
 
