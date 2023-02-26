@@ -20,6 +20,41 @@ enum class SpecialFunctionKind : uint8_t;
 class SpecialFunctionInfo;
 enum class CallSyntax : uint8_t;
 
+/// This class represents the destination context than an expression is being
+/// emitted, when it may produce an RValue.  Example destinations include:
+///   - an LValue:
+///       This handles cases like `a.b = 42` or `var x: Int = 42`, as well as
+///       a return slot with memory-primary results in `return x()`.  In this
+///       case, the emitted expression must conform to type of the LValue.
+///   - an untyped var decl, e.g. `var x = 42`
+///       In this case, the ExprNode conforms to the initializer expression.
+///   - an ExprNode:
+///       This handles assignments to "targets" (Python nomenclature), e.g.:
+///          1) a discard pattern, e.g. `_ = 42`
+///          2) an implicitly declared var decl, e.g. `x = 42` in a def.
+///          3) tuples and lists thereof, e.g. `(a, _) = foo()`
+///       In this case, the ExprNode type often conforms to the expression.
+///
+/// Any expression may also have no proscribed result (as in the case of
+/// `someExpr()`), in which case emission will create storage when needed on
+/// demand.
+class ValueDest {
+  // TODO: Operation* for let/vardecl.
+  // TODO: PointerUnion<LValue, ExprNode *> representation;
+  ExprNode *context;
+
+public:
+  /*implicit*/
+  ValueDest(ExprNode *context = nullptr) : context(context) {}
+  ValueDest(const ValueDest &) = default;
+
+  ExprNode *getContext() const { return context; }
+
+  // TODO:
+  // explicit ValueDest(ExprNode *target) : representation(target) {}
+  // explicit ValueDest(LValue lv) : representation(lv) {}
+};
+
 /// This class is the main driver for expression emission, providing helper
 /// functions used by the individual node emission hooks.
 class ExprEmitter : public LitSharedStateUser {
@@ -47,13 +82,13 @@ public:
   // Emission helpers for various value classifications.
 
   /// This helper emits the specified value as an RValue.
-  RValue emitRValue(ASTExprAnd<AnyValue> value);
+  RValue emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest);
 
   /// This helper emits the specified value as a DRValue which has an SSA
   /// value representation, materializing MValues and loading LValues as
   /// needed.  This returns null if emission fails.
-  DRValue emitDRValue(ASTExprAnd<RValue> value);
-  DRValue emitDRValue(ASTExprAnd<AnyValue> value);
+  DRValue emitDRValue(ASTExprAnd<RValue> value, ValueDest dest);
+  DRValue emitDRValue(ASTExprAnd<AnyValue> value, ValueDest dest);
 
   //===--------------------------------------------------------------------===//
   // Function Calls
@@ -68,10 +103,12 @@ public:
   /// information.
   AnyValue emitNamedMethodCall(StringRef methodName,
                                ArrayRef<ASTExprAnd<AnyValue>> argValues,
-                               CallSyntax syntax, const ExprNode *callNode);
+                               ValueDest dest, CallSyntax syntax,
+                               const ExprNode *callNode);
 
   /// Convert the specified value to the expected type, invoking implicit
   /// conversions if necessary.  On error, this diagnoses it and returns null.
+  /// TODO(memory-primary):˙should emit into a ValueDest slot when known.
   AnyValue getAsExpectedType(AnyValue value, const ExprNode *expr,
                              ASTType expectedType, const Twine &errorSuffix);
 
@@ -92,13 +129,29 @@ public:
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 
+  /// Emit the specified value into the current destination if present.  This
+  /// accepts (and silently propagates) null values.
+  AnyValue emitResult(AnyValue value, const ExprNode *node, ValueDest dest);
+
+  AnyValue emitResult(TypedAttr value, const ExprNode *node, ValueDest dest) {
+    return value ? emitResult(AnyValue(value), node, dest) : AnyValue();
+  }
+  AnyValue emitResult(ASTType value, const ExprNode *node, ValueDest dest) {
+    return value ? emitResult(AnyValue(value), node, dest) : AnyValue();
+  }
+
+  /// This method is used by node implementations of emitExprResultIntoPattern
+  /// to emit the result once they determine an lvalue to use.
+  LogicalResult emitExprResultIntoLValue(ASTExprAnd<AnyValue> value,
+                                         ASTExprAnd<LValue> dest);
+
   /// This helper emits the specified value rep as an RValue.
-  RValue emitExprRValue(const ExprNode *node);
+  RValue emitExprRValue(const ExprNode *node, ValueDest dest = {});
 
   /// This helper emits the specified value rep as an DRValue, materializing
   /// it as a parameter constant if it is a parameter.  This returns null if
   /// emission fails.
-  DRValue emitExprDRValue(const ExprNode *node);
+  DRValue emitExprDRValue(const ExprNode *node, ValueDest dest = {});
 
   /// This helper emits the specified expression as a meta value, and optionally
   /// converts the result to a specified expected type.  This emits an error if
@@ -134,41 +187,6 @@ public:
   /// This helper emits the specified expression as a callable meta value.
   /// This emits an error if the expression cannot be emitted and returns null.
   CallableValue emitCallable(const ExprNode *node, const Twine &errorSuffix);
-};
-
-/// This class represents the destination context than an expression is being
-/// emitted, when it may produce an RValue.  Example destinations include:
-///   - an LValue:
-///       This handles cases like `a.b = 42` or `var x: Int = 42`, as well as
-///       a return slot with memory-primary results in `return x()`.  In this
-///       case, the emitted expression must conform to type of the LValue.
-///   - an untyped var decl, e.g. `var x = 42`
-///       In this case, the ExprNode conforms to the initializer expression.
-///   - an ExprNode:
-///       This handles assignments to "targets" (Python nomenclature), e.g.:
-///          1) a discard pattern, e.g. `_ = 42`
-///          2) an implicitly declared var decl, e.g. `x = 42` in a def.
-///          3) tuples and lists thereof, e.g. `(a, _) = foo()`
-///       In this case, the ExprNode type often conforms to the expression.
-///
-/// Any expression may also have no proscribed result (as in the case of
-/// `someExpr()`), in which case emission will create storage when needed on
-/// demand.
-class ValueDest {
-  // TODO: Operation* for let/vardecl.
-  // TODO: PointerUnion<LValue, ExprNode *> representation;
-  Type contextualType;
-
-public:
-  /*implicit*/
-  ValueDest(Type contextualType = Type()) : contextualType(contextualType) {}
-  ValueDest(const ValueDest &) = default;
-
-  Type getContextualType() const { return contextualType; }
-
-  // TODO:
-  // explicit ValueDest(ExprNode *target) : representation(target) {}
-  // explicit ValueDest(LValue lv) : representation(lv) {}
 };
 
 } // namespace M::KGEN::LIT

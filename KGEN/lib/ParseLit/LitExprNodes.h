@@ -16,6 +16,7 @@
 #ifndef LIT_EXPR_NODES_H
 #define LIT_EXPR_NODES_H
 
+#include "IRValues.h"
 #include "LitDiags.h"
 #include "LitExprNode.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -130,8 +131,9 @@ struct DeclRefNode final : public ExprNode {
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
   LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
-  CallableValue emitCallable(ExprEmitter &emitter,
-                             ValueDest dest) const override;
+  CallableValue emitCallable(ExprEmitter &emitter) const override;
+  LogicalResult emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                          ExprEmitter &emitter) const override;
 };
 
 struct AttributeRefNode final : public ExprNode {
@@ -154,8 +156,7 @@ struct AttributeRefNode final : public ExprNode {
     return {base->getRangeStart(), getAttributeNameLoc()};
   }
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
-  CallableValue emitCallable(ExprEmitter &emitter,
-                             ValueDest dest) const override;
+  CallableValue emitCallable(ExprEmitter &emitter) const override;
 };
 
 struct CallNode final : public ExprNode {
@@ -200,8 +201,7 @@ struct SubscriptNode final : public ExprNode {
   LitSourceRange getIndexRange() const { return {lsquareLoc, rsquareLoc}; }
 
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
-  CallableValue emitCallable(ExprEmitter &emitter,
-                             ValueDest dest) const override;
+  CallableValue emitCallable(ExprEmitter &emitter) const override;
 };
 
 /// This represents `A[i,j -> a, b]`.  In the case of slices (e.g. `A[i, ::]`),
@@ -227,8 +227,7 @@ struct SubscriptArrowNode final : public ExprNode {
   SMLoc getLoc() const override { return lsquareLoc; }
   LitSourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
-  CallableValue emitCallable(ExprEmitter &emitter,
-                             ValueDest dest) const override;
+  CallableValue emitCallable(ExprEmitter &emitter) const override;
 };
 
 /// This is an expression that produces a slice value in a SubscriptNode index
@@ -280,8 +279,9 @@ struct ParenNode final : public ExprNode {
   LitSourceRange getRange() const override { return {lparenLoc, rparenLoc}; }
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 
-  CallableValue emitCallable(ExprEmitter &emitter,
-                             ValueDest dest) const override;
+  CallableValue emitCallable(ExprEmitter &emitter) const override;
+  LogicalResult emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                          ExprEmitter &emitter) const override;
 };
 
 /// (a, b, c)
@@ -406,9 +406,9 @@ struct BinOpNode final : public ExprNode {
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 
 private:
-  AnyValue emitAndOr(ExprEmitter &emitter) const;
-  AnyValue emitAssign(ExprEmitter &emitter) const;
-  AnyValue emitInplace(ExprEmitter &emitter) const;
+  AnyValue emitAndOr(ValueDest dest, ExprEmitter &emitter) const;
+  AnyValue emitAssign(ValueDest dest, ExprEmitter &emitter) const;
+  AnyValue emitInplace(ValueDest dest, ExprEmitter &emitter) const;
 };
 
 struct UnaryOpNode final : public ExprNode {

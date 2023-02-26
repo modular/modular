@@ -287,14 +287,28 @@ llvm::SMLoc ExprNode::getRangeEnd() const { return getRange().getEnd(); }
 
 /// Emit this expression to MLIR as a CallableValue.  On error, emit an error
 /// and return a null value.
-CallableValue ExprNode::emitCallable(ExprEmitter &emitter,
-                                     ValueDest dest) const {
+CallableValue ExprNode::emitCallable(ExprEmitter &emitter) const {
   // The default implementation of this returns the expression as an RValue.
-  auto calleeVal = emitter.emitExprRValue(this);
+  auto calleeVal = emitter.emitExprRValue(this, ValueDest());
   if (!calleeVal)
     return {};
 
   return CallableValue({calleeVal, this});
+}
+
+LogicalResult ExprNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                                  ExprEmitter &emitter) const {
+  // Emit this node to see if it is a general LValue.
+  AnyValue aValue = emitIR(emitter, ValueDest());
+  if (!aValue)
+    return failure();
+  LValue lValue = aValue.getIfLValue();
+  if (!lValue)
+    return emitter.emitError(getLoc(), "cannot assign to immutable expression")
+           << getRange();
+
+  // If we got an lvalue, we can try to emit into it.
+  return emitter.emitExprResultIntoLValue(value, {lValue, this});
 }
 
 /// Return the 'loc' for this node translated to an MLIR location.
@@ -312,11 +326,10 @@ AnyValue IntLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 
   // Make sure the value fits in 64-bits.  There are no negative values here.
   // TODO: Detect overflow errors.
+  // TODO: Switch to builtin.IntegerLiteralType.
   value = value.zextOrTrunc(64);
   auto attr = IntegerAttr::get(IndexType::get(emitter.getContext()), value);
-
-  // TODO: Switch to builtin.IntegerLiteralType.
-  return AnyValue(attr);
+  return emitter.emitResult(attr, this, dest);
 }
 
 AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -326,7 +339,7 @@ AnyValue FloatLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
                              APFloat(value.convertToDouble()));
   // FIXME: This should eventually use a float literal type.
   // when we support conversions.
-  return AnyValue(attr);
+  return emitter.emitResult(attr, this, dest);
 }
 
 AnyValue BoolLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -349,7 +362,7 @@ AnyValue BoolLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   auto boolAttr = POP::SIMDAttr::get({value, KGENDType::kBool},
                                      POP::SIMDType::get(1, boolDType));
   return newVal.emitFunctionCall(ASTExprAnd<AnyValue>{AnyValue(boolAttr), this},
-                                 CallSyntax::kTypeCall, this, emitter);
+                                 dest, CallSyntax::kTypeCall, this, emitter);
 }
 
 AnyValue SelfLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -371,39 +384,42 @@ AnyValue SelfLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 
   // Once we have the type in question we can just return its Self type as an
   // MValue.  This already includes bound parameters etc.
-  return MValue(structDecl->getSelfType());
+  return emitter.emitResult(structDecl->getSelfType(), this, dest);
 }
 
 AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   std::string value = LitLexer::getStringLiteralValue(spelling);
   auto attr =
       StringAttr::get(value, KGEN::StringType::get(emitter.getContext()));
-  return AnyValue(attr);
+  return emitter.emitResult(attr, this, dest);
 }
 
 AnyValue NoneLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
-  return MValue(NoneAttr::get(emitter.getContext()));
+  return emitter.emitResult(NoneAttr::get(emitter.getContext()), this, dest);
 }
 
 AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
-  return emitCallable(emitter, dest).emitAsValue(emitter);
+  return emitCallable(emitter).emitAsValue(emitter, dest);
 }
 
-/// Emit IR for an unqualified declaration reference "x" looked up in current
-/// context.
-CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
-                                        ValueDest dest) const {
+LogicalResult
+DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                       ExprEmitter &emitter) const {
   ASTDecl &container = emitter.declScope;
 
   // Perform a lookup of the specified decl in the current container.
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, getLoc(), container, /*searchParentScopes=*/true);
 
-  auto createVarDeclWithContextualType = [&](OpBuilder &builder) -> VarDeclOp {
-    Type declIRType = POP::PointerType::get(dest.getContextualType());
+  auto createVarDeclWithValueType = [&](OpBuilder &builder) -> VarDeclOp {
+    Type declIRType = POP::PointerType::get(value.ir.getRValueType());
     auto loc = getLocation(emitter);
     auto nameAttr = StringAttr::get(loc.getContext(), spelling);
     return builder.create<VarDeclOp>(loc, declIRType, nameAttr);
+  };
+
+  auto finishLValue = [&](LValue lvalue) -> LogicalResult {
+    return emitter.emitExprResultIntoLValue(value, {lvalue, this});
   };
 
   // If the unresolved name is `_`, then we have a discard pattern.  Python
@@ -411,34 +427,83 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
   // allowing rewrites, but we cannot take this approach because each discard
   // could have a different type.  Handle this specially by not inserting the
   // `_` variable into the name table, so we'll get a new instance on every use.
-  if (lookup.isFailure() && dest.getContextualType() && spelling == "_" &&
-      emitter.builder) {
-    // Introduce a new lit.var.decl node whose type matches the
-    // implicitDeclType.
+  if (lookup.isFailure() && spelling == "_" && emitter.builder) {
+    // Introduce a new lit.var.decl node whose type matches the assigned value.
     // TODO(autopromotions): turn infinite integers into concrete ones as
     // needed.
-    auto varDecl = createVarDeclWithContextualType(*emitter.builder);
-    return {{AnyValue(LValue(varDecl.getResult())), this}};
+    auto varDecl = createVarDeclWithValueType(*emitter.builder);
+    return finishLValue(varDecl.getResult());
   }
 
   // If that lookup failed, but we can synthesize a variable declaration in this
-  // scope, do that.  We can only do this if there is a contextual type
-  // available and an insertion point.
-  if (lookup.isFailure() && dest.getContextualType() && emitter.varDeclCursor) {
+  // scope, do that.  We can only do this if there is a varDeclCursor,
+  // indicating that we're in a `def` node.
+  if (lookup.isFailure() && emitter.varDeclCursor) {
     // Use this builder to place any VarDeclOps. In Python there is only one
     // scope per function and all variables belong to that scope, so builders
     // should reflect that.
     OpBuilder varDeclBuilder(emitter.varDeclCursor);
-    auto varDecl = createVarDeclWithContextualType(varDeclBuilder);
+    auto varDecl = createVarDeclWithValueType(varDeclBuilder);
 
     // In a normal implicit declaration, we add it to the name table so
     // subsequent uses find this one.
     emitter.getDeclResolver().addFullyResolvedDecl(
         varDecl, getLoc(), varDecl.getNameAttr(), &container);
-    // Re-do lookup, making sure we form a uniqued vector that we can reference.
-    lookup = emitter.shared.lookupAndResolveDecl(spelling, getLoc(), container,
-                                                 /*searchParentScopes=*/false);
+    return finishLValue(varDecl.getResult());
   }
+
+  ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
+  if (decls.empty()) {
+    if (lookup.isErroneous())
+      return failure(); // Error already diagnosed.
+
+    // By policy in order to produce a more predictable programming model,
+    // implicit declarations of variables are only allowed in `def` contexts,
+    // not in `fn`, structs, or top level.
+    auto funcContext =
+        dyn_cast_or_null<LIT::FuncOp>(emitter.declScope.getIfOperation());
+    if (!funcContext || !funcContext.getIsDef()) {
+      auto diag = emitter.emitError(getLoc()) << "use of unknown declaration '"
+                                              << spelling << "'" << getRange();
+      if (funcContext)
+        diag << ", `fn` declarations require explicit variable declarations";
+      return failure();
+    }
+
+    auto diag = emitter.emitError(getLoc()) << getRange();
+    diag << "use of unknown declaration '" << spelling << "'";
+    return failure();
+  }
+
+  ASTDecl &decl = *decls[0];
+
+  // Variable references resolve to an lvalue addressing the variable.
+  if (auto var = dyn_cast<VarDeclOp>(decl))
+    return finishLValue(var.getResult());
+
+  if (auto lvalue = decl.getIfLValue())
+    return finishLValue(lvalue);
+
+  // Reject unqualified struct field references.
+  if (auto fieldOp = dyn_cast<StructFieldOp>(decl)) {
+    emitter.emitError(getLoc(), "cannot access instance field '")
+        << spelling << "' directly; did you mean `self.`?" << getRange();
+    return failure();
+  }
+
+  emitter.emitError(getLoc(), "cannot assign to declaration '")
+      << spelling << "', it isn't a mutable value" << getRange();
+  return failure();
+}
+
+/// Emit IR for an unqualified declaration reference "x" looked up in current
+/// context.
+CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter) const {
+  ASTDecl &container = emitter.declScope;
+
+  // Perform a lookup of the specified decl in the current container.
+  LookupResult lookup = emitter.shared.lookupAndResolveDecl(
+      spelling, getLoc(), container, /*searchParentScopes=*/true);
 
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
   if (decls.empty()) {
@@ -487,12 +552,12 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
     // TODO: Loading a 'let' value into an RValue is a semantic copy of the
     // underlying value.  Unfortunately, we don't have a proper notion of
     // rvalue references / borrows yet (they will come with a more baked out
-    // ownership model).  Thus the __clone__ operation takes a mutable reference
-    // as input, which cannot bind to a let value.
+    // ownership model).  Thus the __clone__ operation takes a mutable
+    // reference as input, which cannot bind to a let value.
     //
     // As a stop-gap-for-now, just check to see if the value is copyable.  We
-    // cannot actually invoke the __clone__ operation if it exists, but at least
-    // we can ban copying of non-copyable values.
+    // cannot actually invoke the __clone__ operation if it exists, but at
+    // least we can ban copying of non-copyable values.
     ASTType letType(letDecl.getType());
     if (ASTDecl *letTypeDecl = letType.getDecl(emitter.shared)) {
       bool isErroneousDecl = false;
@@ -574,31 +639,28 @@ static Type parseMLIRType(StringRef name, const ExprNode *node,
 }
 
 AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
-  if (attrSpelling == "__adaptive_set") {
-    SmallVector<TypedAttr> funcsAttr;
+  if (attrSpelling != "__adaptive_set")
+    return emitCallable(emitter).emitAsValue(emitter, dest);
 
-    CallableValue callable =
-        emitter.emitCallable(base, " in __adaptive_set property");
-    if (failed(callable.emitAdaptiveSet(funcsAttr, emitter))) {
-      emitter.emitError(getLoc(),
-                        "__adaptive_set can only be applied to global "
-                        "functions with an @adaptive decorator")
-          << getRange();
-      return {};
-    }
-
-    auto variadicAttr =
-        VariadicAttr::get(emitter.getContext(), funcsAttr,
-                          VariadicType::get(funcsAttr.front().getType()));
-    return MValue(variadicAttr);
+  // Handle __adaptive_set.
+  CallableValue callable =
+      emitter.emitCallable(base, " in __adaptive_set property");
+  SmallVector<TypedAttr> funcsAttr;
+  if (failed(callable.emitAdaptiveSet(funcsAttr, emitter))) {
+    emitter.emitError(getLoc(), "__adaptive_set can only be applied to global "
+                                "functions with an @adaptive decorator")
+        << getRange();
+    return {};
   }
-  return emitCallable(emitter, dest.getContextualType()).emitAsValue(emitter);
+
+  auto attr = VariadicAttr::get(emitter.getContext(), funcsAttr,
+                                VariadicType::get(funcsAttr.front().getType()));
+  return emitter.emitResult(attr, this, dest);
 }
 
 /// Emit a qualified attribute reference to MLIR as a CallableValue.  On error,
 /// emit an error and return a null value.
-CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
-                                             ValueDest dest) const {
+CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter) const {
 
   auto baseVal = base->emitIR(emitter, /*No Contextual Type*/ {});
   if (!baseVal)
@@ -716,7 +778,7 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
     }
 
     // Otherwise, it must be an rvalue.
-    DRValue baseRV = emitter.emitDRValue({baseVal, base});
+    DRValue baseRV = emitter.emitDRValue({baseVal, base}, ValueDest());
     if (!baseRV)
       return {};
 
@@ -923,7 +985,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 }
 
 AnyValue CallNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
-  auto calleeVal = callee->emitCallable(emitter, {});
+  auto calleeVal = callee->emitCallable(emitter);
   if (!calleeVal)
     return {};
 
@@ -978,7 +1040,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
       return {};
   }
 
-  return calleeVal.emitFunctionCall(operands, syntax, this, emitter);
+  return calleeVal.emitFunctionCall(operands, dest, syntax, this, emitter);
 }
 
 AnyValue SliceNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -1077,16 +1139,15 @@ static CallableValue bindAttrValuesToDirectCall(CallableValue &callable,
 }
 
 AnyValue SubscriptNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
-  return emitCallable(emitter, dest.getContextualType()).emitAsValue(emitter);
+  return emitCallable(emitter).emitAsValue(emitter, dest);
 }
 
 /// Emit this expression to MLIR as a CallableValue.  On error, emit an error
 /// and return a null value.
-CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
-                                          ValueDest dest) const {
+CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter) const {
 
   // Subscripting a generic function binds the parameter expressions.
-  auto subValue = base->emitCallable(emitter, {});
+  auto subValue = base->emitCallable(emitter);
   if (!subValue)
     return {};
 
@@ -1204,23 +1265,23 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   }
 
   // Finally, just emit the call to __getitem__.
-  auto result = getItem.emitFunctionCall(indexValues, CallSyntax::kSubscript,
+  auto result = getItem.emitFunctionCall(indexValues,
+                                         // TODO(memory-primary)
+                                         ValueDest(), CallSyntax::kSubscript,
                                          this, emitter);
   return CallableValue({result, this});
 }
 
 AnyValue SubscriptArrowNode::emitIR(ExprEmitter &emitter,
                                     ValueDest dest) const {
-  return emitCallable(emitter, dest.getContextualType()).emitAsValue(emitter);
+  return emitCallable(emitter).emitAsValue(emitter, dest);
 }
 
 /// Emit this expression to MLIR as a CallableValue.  On error, emit an error
 /// and return a null value.
-CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter,
-                                               ValueDest dest) const {
-
+CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter) const {
   // Subscripting a generic function binds the parameter expressions.
-  auto subValue = base->emitCallable(emitter, {});
+  auto subValue = base->emitCallable(emitter);
   if (!subValue)
     return {};
 
@@ -1301,9 +1362,13 @@ AnyValue ParenNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   return subExpr->emitIR(emitter, dest);
 }
 
-CallableValue ParenNode::emitCallable(ExprEmitter &emitter,
-                                      ValueDest dest) const {
-  return subExpr->emitCallable(emitter, dest);
+CallableValue ParenNode::emitCallable(ExprEmitter &emitter) const {
+  return subExpr->emitCallable(emitter);
+}
+
+LogicalResult ParenNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                                   ExprEmitter &emitter) const {
+  return subExpr->emitExprResultIntoPattern(value, emitter);
 }
 
 AnyValue TupleNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -1444,7 +1509,9 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
         fieldVal.ir, fieldVal.expr,
         paramEvaluator.getReboundType(field.getType()),
         " in field initialization");
-    auto drValue = emitter.emitDRValue({value, fieldVal.expr});
+    auto drValue = emitter.emitDRValue({value, fieldVal.expr},
+                                       // TODO(memory_primary)
+                                       ValueDest());
     if (!drValue)
       return {};
     fieldNames.push_back(field.getNameAttr());
@@ -1499,7 +1566,8 @@ static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
 /// ChainedCmpOpNode since the latter is a sequence of binary operations.
 static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                               ASTExprAnd<AnyValue> rhs, ExprNode::Kind kind,
-                              const ExprNode *callNode, ExprEmitter &emitter) {
+                              ValueDest dest, const ExprNode *callNode,
+                              ExprEmitter &emitter) {
 
   // FIXME: We currently hack in index type support as transition to proper
   // expression support.
@@ -1570,7 +1638,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     auto value = ParamOperatorAttr::get((POC)opcode, lhsParam, rhsParam);
     if (needsInvert)
       value = ParamOperatorAttr::getNot(value);
-    return value;
+    return emitter.emitResult(value, callNode, dest);
   }
 
   // If this operator maps onto a special function, attempt to lower it.
@@ -1585,11 +1653,12 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                        isErroneousDecl, emitter.shared);
   if (isErroneousDecl)
     return {};
+
   if (callee.direct && succeeded(callee.direct->filterOverloadSet(
                            argValues, CallSyntax::kOperator, callee.expr,
                            /*emitDiagnosticOnFailure=*/false, emitter))) {
-    return callee.emitFunctionCall(argValues, CallSyntax::kOperator, callNode,
-                                   emitter);
+    return callee.emitFunctionCall(argValues, dest, CallSyntax::kOperator,
+                                   callNode, emitter);
   }
 
   // Check to see if we have the reverse version of this operator.
@@ -1603,8 +1672,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
         succeeded(callee.direct->filterOverloadSet(
             argValues, CallSyntax::kReversedOperator, callee.expr,
             /*emitDiagnosticOnFailure=*/false, emitter))) {
-      return callee.emitFunctionCall(argValues, CallSyntax::kReversedOperator,
-                                     callNode, emitter);
+      return callee.emitFunctionCall(
+          argValues, dest, CallSyntax::kReversedOperator, callNode, emitter);
     }
 
     // Swap these back so we emit the right error.
@@ -1612,7 +1681,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   }
 
   // Emit an error complaining about the forward version of the operator.
-  return emitter.emitNamedMethodCall(specialFnInfo.name, argValues,
+  return emitter.emitNamedMethodCall(specialFnInfo.name, argValues, dest,
                                      CallSyntax::kOperator, callNode);
 }
 
@@ -1622,38 +1691,17 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 ///    def test2(): print("test2"); return 1
 ///    a[test1()] = test2()
 ///  ==> test2; test1
-AnyValue BinOpNode::emitAssign(ExprEmitter &emitter) const {
-  // In an assignment, we emit the RHS first as a value and the LHS as an
-  // lvalue with a contextual type.  This is required to enable the 'implicit
-  // declaration' behavior in a def and to support patterns.
-  RValue rhsRep = emitter.emitExprRValue(rhs);
+AnyValue BinOpNode::emitAssign(ValueDest dest, ExprEmitter &emitter) const {
+  // In an assignment, we emit the RHS into the LHS as its context.  This is
+  // required to enable the 'implicit declaration' behavior in a def and to
+  // support patterns.
+  RValue rhsRep = emitter.emitExprRValue(rhs, ValueDest(lhs));
   if (!rhsRep)
     return {};
 
-  // Emit the LHS pattern as an lvalue.  Pass in the RHS's type as the
-  // contextual type in case we need to implicitly declare a variable.
-  auto lhsLV = emitter.emitExprLValue(getLoc(), lhs, rhsRep.getType(),
-                                      "cannot assign to immutable expression");
-  if (!lhsLV)
-    return {};
-
-  // Assignment expression (`=`) turns into a store, not into a method call.
-  // Emit the RHS and coerce to the LHS type.
-  // auto rv = emitter.emitDRValue(ASTExprAnd<RValue>{rhsRep, rhs});
-  auto rv = emitter.emitDRValue(
-      {emitter.getAsExpectedType(rhsRep, rhs, lhsLV.getRValueType(),
-                                 " in assignment"),
-       rhs});
-  if (!rv)
-    return {};
-
-  // If everything worked out, store the resultant value into the lvalue for
-  // the destination.  If things didn't work, just drop this on the floor.
-  emitter.builder->create<POP::StoreOp>(getLocation(emitter), rv, lhsLV,
-                                        /*alignment=*/std::nullopt);
   // Assignments are not actually expressions in Python.  We treat them this
   // way for consistency, but model them as returning None.
-  return MValue(NoneAttr::get(emitter.getContext()));
+  return emitter.emitResult(NoneAttr::get(emitter.getContext()), this, dest);
 }
 
 /// Emit a inplace assignment statement like `x += y`. Python evaluates the RHS
@@ -1662,7 +1710,7 @@ AnyValue BinOpNode::emitAssign(ExprEmitter &emitter) const {
 ///    def test2(): print("test2"); return 1
 ///    a[test1()] += test2()
 ///  ==> test1; test2
-AnyValue BinOpNode::emitInplace(ExprEmitter &emitter) const {
+AnyValue BinOpNode::emitInplace(ValueDest dest, ExprEmitter &emitter) const {
   AnyValue lhsRep;
   RValue rhsRep;
 
@@ -1680,17 +1728,17 @@ AnyValue BinOpNode::emitInplace(ExprEmitter &emitter) const {
     return {};
 
   // Emit the call to the operator function like `__iadd__`.
-  return emitBinOpCall({lhsLV, lhs}, {rhsRV, rhs}, kind, this, emitter);
+  return emitBinOpCall({lhsLV, lhs}, {rhsRV, rhs}, kind, dest, this, emitter);
 }
 
 AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   // Handle weird binary operators specially if we have them.
   if (kind == kBoolAnd || kind == kBoolOr) // `x and y`, `x or y`
-    return emitAndOr(emitter);
+    return emitAndOr(dest, emitter);
   if (kind == kAssign) // `x = y`
-    return emitAssign(emitter);
+    return emitAssign(dest, emitter);
   if (isAssignmentStmt()) // `x += y`
-    return emitInplace(emitter);
+    return emitInplace(dest, emitter);
 
   // Othewise we emit the LHS followed by the RHS.
   RValue lhsRV = emitter.emitExprRValue(lhs);
@@ -1698,7 +1746,7 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   if (!lhsRV || !rhsRV)
     return {};
 
-  return emitBinOpCall({lhsRV, lhs}, {rhsRV, rhs}, kind, this, emitter);
+  return emitBinOpCall({lhsRV, lhs}, {rhsRV, rhs}, kind, dest, this, emitter);
 }
 
 /// This method emits the `x and y`, `x or y` operators.  These are interesting
@@ -1717,7 +1765,7 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 /// TODO(subtyping): With subtypes, we can find intersection types, e.g. a
 /// common superclass.
 ///
-AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
+AnyValue BinOpNode::emitAndOr(ValueDest dest, ExprEmitter &emitter) const {
   Location ifLoc = getLocation(emitter);
 
   if (!emitter.builder) {
@@ -1732,7 +1780,8 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
   AnyValue lhsBool;
   DRValue lhsRV = emitter.emitExprDRValue(lhs);
   RValue lhsI1Value = emitter.emitConditionValueAsI1({lhsRV, lhs}, lhsBool);
-  Value lhsI1DRValue = emitter.emitDRValue({AnyValue(lhsI1Value), lhs});
+  Value lhsI1DRValue =
+      emitter.emitDRValue({AnyValue(lhsI1Value), lhs}, ValueDest());
   if (!lhsI1DRValue)
     return {};
 
@@ -1761,8 +1810,9 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
     ifOp->getResult(0).setType(lhsRV.getType());
   } else {
     // Otherwise, check to see if their boolean versions are compatible.
-    auto rhsBool = emitter.emitNamedMethodCall(
-        "__bool__", {{rhsRV, rhs}}, CallSyntax::kImplicitConvert, this);
+    auto rhsBool =
+        emitter.emitNamedMethodCall("__bool__", {{rhsRV, rhs}}, ValueDest(),
+                                    CallSyntax::kImplicitConvert, this);
     if (!rhsBool)
       return {};
     if (!ASTType(lhsBool.getType()).isEqualCanon(rhsBool.getType())) {
@@ -1771,13 +1821,13 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
           << lhs->getRange() << rhs->getRange();
       return {};
     }
-    auto rhsBoolDRVal = emitter.emitDRValue({rhsBool, rhs});
+    auto rhsBoolDRVal = emitter.emitDRValue({rhsBool, rhs}, ValueDest());
     if (!rhsBoolDRVal)
       return {};
     emitter.builder->create<HLCF::YieldOp>(ifLoc, rhsBoolDRVal);
     // Emit the false side.
     emitter.builder = falseBuilder;
-    auto lhsBoolDRVal = emitter.emitDRValue({lhsBool, lhs});
+    auto lhsBoolDRVal = emitter.emitDRValue({lhsBool, lhs}, ValueDest());
     if (!lhsBoolDRVal)
       return {};
     emitter.builder->create<HLCF::YieldOp>(ifLoc, lhsBoolDRVal);
@@ -1785,7 +1835,7 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
   }
 
   emitter.builder->setInsertionPointAfter(ifOp);
-  return DRValue(ifOp.getResult(0));
+  return emitter.emitResult(DRValue(ifOp.getResult(0)), this, dest);
 }
 
 AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -1823,7 +1873,7 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   if (kindToEmit == kBoolNot) {
     // Turn this into a call to __bool__.
     argValue.ir = emitter.emitNamedMethodCall(
-        "__bool__", argValue, CallSyntax::kImplicitConvert, this);
+        "__bool__", argValue, ValueDest(), CallSyntax::kImplicitConvert, this);
     if (!argValue.ir)
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
@@ -1835,13 +1885,14 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   assert(specialFnInfo.kind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
-  return emitter.emitNamedMethodCall(specialFnInfo.name, argValue,
+  return emitter.emitNamedMethodCall(specialFnInfo.name, argValue, dest,
                                      CallSyntax::kOperator, this);
 }
 
 AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   RValue condRVal = emitter.emitExprConditionValueAsI1(condExpr);
-  Value condValue = emitter.emitDRValue({AnyValue(condRVal), condExpr});
+  Value condValue =
+      emitter.emitDRValue({AnyValue(condRVal), condExpr}, ValueDest());
 
   if (!condValue)
     return {};
@@ -1909,7 +1960,7 @@ AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
   RValue lastCmpI1Value =
       emitter.emitConditionValueAsI1({lastCmpExpr, this}, boolResult);
   DRValue lastCmpI1RValue =
-      emitter.emitDRValue({AnyValue(lastCmpI1Value), this});
+      emitter.emitDRValue({AnyValue(lastCmpI1Value), this}, ValueDest());
   if (!lastCmpI1RValue)
     return {};
   auto ifOp = emitter.builder->create<HLCF::IfOp>(ifLoc, boolResult.getType(),
@@ -1920,8 +1971,9 @@ AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
     return {};
   AnyValue lastBinOp =
       emitBinOpCall({lastExpr, exprs[opIdx]}, {exprValue, exprs[opIdx + 1]},
-                    ops[opIdx], this, emitter);
-  DRValue lastRV = emitter.emitDRValue({lastBinOp, exprs[opIdx + 1]});
+                    ops[opIdx], ValueDest(), this, emitter);
+  DRValue lastRV =
+      emitter.emitDRValue({lastBinOp, exprs[opIdx + 1]}, ValueDest());
   if (!lastRV)
     return {};
 
@@ -1945,14 +1997,17 @@ AnyValue ChainedCmpOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   if (!e0Rep || !e1Rep)
     return {};
 
-  AnyValue cmpe0e1RV = emitBinOpCall({e0Rep, exprs[0]}, {e1Rep, exprs[1]},
-                                     ops[0], this, emitter);
+  AnyValue cmpe0e1RV =
+      emitBinOpCall({e0Rep, exprs[0]}, {e1Rep, exprs[1]}, ops[0],
+                    exprs.size() == 2 ? dest : ValueDest(), this, emitter);
   if (exprs.size() == 2)
     return cmpe0e1RV;
 
-  DRValue lastCmpExpr = emitter.emitDRValue({cmpe0e1RV, exprs[1]});
-  DRValue e1RV = emitter.emitDRValue(ASTExprAnd<RValue>{e1Rep, exprs[1]});
+  DRValue lastCmpExpr = emitter.emitDRValue({cmpe0e1RV, exprs[1]}, ValueDest());
+  DRValue e1RV =
+      emitter.emitDRValue(ASTExprAnd<RValue>{e1Rep, exprs[1]}, ValueDest());
   if (!lastCmpExpr || !e1RV)
     return {};
-  return emitNextCmp(emitter, 1, lastCmpExpr, e1RV);
+  return emitter.emitResult(emitNextCmp(emitter, 1, lastCmpExpr, e1RV), this,
+                            dest);
 }

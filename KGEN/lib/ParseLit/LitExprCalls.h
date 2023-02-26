@@ -21,6 +21,8 @@ using llvm::SMLoc;
 class ASTDecl;
 class ExprEmitter;
 class FuncOp;
+class IREmitter;
+class ValueDest;
 
 //===----------------------------------------------------------------------===//
 // InputParamBindings
@@ -228,7 +230,7 @@ public:
 
   /// Emit this as a flattened RValue or LValue.  This returns null on
   /// failure.
-  AnyValue emitAsValue(ExprEmitter &emitter) const;
+  AnyValue emitAsValue(ExprEmitter &emitter, ValueDest dest) const;
 
   /// Emit in values references of all adaptive function overloads this
   /// DirectCallable represents.
@@ -243,8 +245,8 @@ public:
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
   AnyValue emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                            CallSyntax syntax, const ExprNode *callNode,
-                            ExprEmitter &emitter);
+                            ValueDest dest, CallSyntax syntax,
+                            const ExprNode *callNode, ExprEmitter &emitter);
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations.  This does not generate

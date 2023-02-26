@@ -530,7 +530,9 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   auto resultDRValue = emitter.emitDRValue(
       {emitter.getAsExpectedType(resultValue, operandExprs[0],
                                  decl.getResultType(), " in return"),
-       operandExprs[0]});
+       operandExprs[0]},
+      // TODO(memory-primary): Return slots.
+      ValueDest());
   if (!resultDRValue)
     return {};
 
@@ -621,7 +623,8 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
   builder = OpBuilder::atBlockEnd(body);
 
   RValue condRVal = getEmitter().emitExprConditionValueAsI1(condExp);
-  Value condVal = getEmitter().emitDRValue({AnyValue(condRVal), condExp});
+  Value condVal =
+      getEmitter().emitDRValue({AnyValue(condRVal), condExp}, ValueDest());
   if (!condVal)
     return success(); // IRGen error already emitted; parse succeeded!
 
@@ -678,13 +681,14 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   llvm::SaveAndRestore builderSaver(builder);
 
   // retrieve the iterator object from the sequence expression
-  ASTExprAnd<AnyValue> loadedSeq = {getEmitter().emitExprRValue(seqExp),
-                                    seqExp};
+  ASTExprAnd<AnyValue> loadedSeq = {
+      getEmitter().emitExprRValue(seqExp, ValueDest()), seqExp};
   if (!loadedSeq.ir)
     return {};
 
-  AnyValue rangeValue = getEmitter().emitNamedMethodCall(
-      "__iter__", {loadedSeq}, CallSyntax::kImplicitConvert, seqExp);
+  AnyValue rangeValue =
+      getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, ValueDest(),
+                                       CallSyntax::kImplicitConvert, seqExp);
   if (!rangeValue)
     return {};
   LIT::VarDeclOp range_ref = builder.create<LIT::VarDeclOp>(
@@ -700,9 +704,9 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   // continue. Otherwise break
   DRValue loaded_range = DRValue(builder.create<POP::LoadOp>(
       translateLocation(seqExp->getLoc()), range_ref, std::nullopt));
-  AnyValue current_length =
-      getEmitter().emitNamedMethodCall("__len__", {{loaded_range, seqExp}},
-                                       CallSyntax::kImplicitConvert, seqExp);
+  AnyValue current_length = getEmitter().emitNamedMethodCall(
+      "__len__", {{loaded_range, seqExp}}, ValueDest(),
+      CallSyntax::kImplicitConvert, seqExp);
   if (!current_length)
     return {};
   DRValue pop_length = getEmitter().emitBoxedIntAsPopScalar(
@@ -732,8 +736,8 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   // Create the body. Add Target element to the continue block by calling next
   builder.setInsertionPointAfter(condOp);
   AnyValue nextCall = getEmitter().emitNamedMethodCall(
-      "__next__", {{LValue(range_ref), seqExp}}, CallSyntax::kImplicitConvert,
-      seqExp);
+      "__next__", {{LValue(range_ref), seqExp}}, ValueDest(),
+      CallSyntax::kImplicitConvert, seqExp);
   if (!nextCall) {
     return {};
   }
@@ -879,7 +883,8 @@ ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
     if (!isParamIf) {
       // Create the 'if' and parse the body into its "then" region.
       DRValue condRVal = emitter.emitDRValue(
-          {AnyValue(emitter.emitExprConditionValueAsI1(condExp)), condExp});
+          {AnyValue(emitter.emitExprConditionValueAsI1(condExp)), condExp},
+          ValueDest());
       if (!condRVal)
         return failure();
       ifOp = builder.create<HLCF::IfOp>(loc, condRVal);
