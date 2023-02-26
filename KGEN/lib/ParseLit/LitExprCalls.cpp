@@ -20,6 +20,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 #define DEBUG_TYPE "LITEXPRCALLS"
 
@@ -280,6 +281,12 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
   // If we have bound parameters, type check them now and bind names to them.
   SmallVector<ParamBindAttr> newBindings;
   newBindings.reserve(actualParamDecls.size());
+
+  // We use the contextual emitter to perform implicit conversions, but these
+  // conversions must be done within a parameter context.  Make sure we don't
+  // have a builder from the caller, this indicates that an MValue is required.
+  llvm::SaveAndRestore savedBuilder(emitter.builder);
+  emitter.builder.reset();
 
   // Parameters defined at the beginning of the parameter list may be used by
   // the types of other parameters defined later in the list, e.g. in:

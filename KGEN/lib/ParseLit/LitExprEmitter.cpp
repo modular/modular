@@ -327,7 +327,7 @@ DRValue ExprEmitter::emitExprDRValue(const ExprNode *node) {
 MValue ExprEmitter::emitExprMValue(const ExprNode *node, ASTType resultType,
                                    const Twine &errorSuffix) {
   // Clear the builder to indicate that an MValue must be emitted.
-  llvm::SaveAndRestore<std::optional<OpBuilder>> savedBuilder(builder);
+  llvm::SaveAndRestore savedBuilder(builder);
   builder.reset();
 
   // Emit the expression.
@@ -352,7 +352,7 @@ MValue ExprEmitter::emitExprMValue(const ExprNode *node, ASTType resultType,
 CallableValue ExprEmitter::emitCallable(const ExprNode *node,
                                         const Twine &errorSuffix) {
   // Clear the builder to indicate that an MValue must be emitted.
-  llvm::SaveAndRestore<std::optional<OpBuilder>> savedBuilder(builder);
+  llvm::SaveAndRestore savedBuilder(builder);
   builder.reset();
   return node->emitCallable(*this, /*No Contextual Type*/ {});
 }
