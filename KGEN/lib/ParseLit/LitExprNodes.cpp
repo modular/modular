@@ -342,7 +342,7 @@ AnyValue BoolLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   mlir::MLIRContext *ctx = emitter.getContext();
   auto boolLiteralDeclType = DeclRefType::get(decl.getSymbolRef());
   bool isErroneousDecl = false;
-  CallableValue newVal = CallableValue(boolLiteralDeclType, "__new__", getLoc(),
+  CallableValue newVal = CallableValue(boolLiteralDeclType, "__new__", this,
                                        isErroneousDecl, emitter.shared);
   assert(!newVal.isNull() && "__new__ should be always there by construction");
   auto boolDType = DTypeConstantAttr::get(ctx, DType::kBool);
@@ -476,7 +476,7 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
       paramBindings = structDeclType.getParamBindings();
     }
 
-    return CallableValue(getLoc(), spelling, decls, paramBindings);
+    return CallableValue(spelling, decls, paramBindings, this);
   }
 
   assert(decls.size() == 1 && "Only functions may be overloaded");
@@ -498,7 +498,7 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter,
       bool isErroneousDecl = false;
       // TODO: Unify this with the logic in emitRValue when __clone__ moves to
       // taking a borrow instead of a mutable byref argument.
-      if (!CallableValue(letType, "__clone__", getLoc(), isErroneousDecl,
+      if (!CallableValue(letType, "__clone__", this, isErroneousDecl,
                          emitter.shared)) {
         auto diag = emitter.emitError(getLoc(), "cannot clone this value: ")
                     << letType << " doesn't implement '__clone__'"
@@ -667,8 +667,8 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
   // Handle method references, which might be overloaded.
   if (auto fnOp = dyn_cast<LIT::FuncOp>(*memberDecls[0])) {
     // Get a symbol for the underlying function.
-    CallableValue fnRef(getLoc(), attrSpelling, memberDecls,
-                        baseRVType.getParamBindings());
+    CallableValue fnRef(attrSpelling, memberDecls,
+                        baseRVType.getParamBindings(), this);
 
     // If the callee is a static method, we can directly reference it without
     // binding a self parameter.  If this is an instance method, we bind the
@@ -678,7 +678,7 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter,
     // Maybe we don't allow overloading static and non-static methods with the
     // same name?
     if (!fnOp.getIsStatic() && !hasTypeBase)
-      fnRef.baseVal = {baseVal, base};
+      fnRef.baseVal = baseVal;
     return fnRef;
   }
   assert(memberDecls.size() == 1 && "only methods may be overloaded");
@@ -935,7 +935,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
     syntax =
         calleeVal.direct ? CallSyntax::kMethodCall : CallSyntax::kIndirectCall;
 
-    if (auto mValue = calleeVal.baseVal.ir.getIfMValue()) {
+    if (auto mValue = calleeVal.baseVal.getIfMValue()) {
       // If this is the invocation of an unbound MLIR operator, bind it into an
       // actual operator!
       if (auto unboundOperator =
@@ -947,10 +947,10 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   // If the callee is a type value (as in `T()` or `T[123]()`), then this is an
   // invocation of the initializer for the type.
   if (!calleeVal.direct)
-    if (ASTType calledType = calleeVal.baseVal.ir.getIfTypeValue()) {
+    if (ASTType calledType = calleeVal.baseVal.getIfTypeValue()) {
       bool isErroneousDecl = false;
-      calleeVal = CallableValue(calledType, "__new__", getLoc(),
-                                isErroneousDecl, emitter.shared);
+      calleeVal = CallableValue(calledType, "__new__", this, isErroneousDecl,
+                                emitter.shared);
       if (calleeVal.isNull()) {
         if (isErroneousDecl)
           return {};
@@ -1095,7 +1095,7 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   if (subValue.direct)
     return bindAttrValuesToDirectCall(subValue, indices, emitter);
 
-  if (auto callableMVal = subValue.baseVal.ir.getIfMValue()) {
+  if (auto callableMVal = subValue.baseVal.getIfMValue()) {
     if (auto sig = dyn_cast<SignatureType>(callableMVal.getType())) {
       // If this is a signature-type MValue callable, this is binding parameter
       // values to a call.
@@ -1122,7 +1122,7 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   // subscript.
 
   // If the sub-value is an unbound Type, try binding things to it!
-  if (Type typeValue = subValue.baseVal.ir.getIfTypeValue()) {
+  if (Type typeValue = subValue.baseVal.getIfTypeValue()) {
     // Handle user-defined types.
     // TODO: This seems wrong, we won't handle things like Type.AssocType[1] ?
     if (auto declRef = dyn_cast<DeclRefType>(typeValue))
@@ -1150,7 +1150,7 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
     }
   }
 
-  if (auto mValue = subValue.baseVal.ir.getIfMValue()) {
+  if (auto mValue = subValue.baseVal.getIfMValue()) {
     if (auto unboundOperator = dyn_cast<UnboundMLIROperationAttr>(mValue.get()))
       return {
           {bindAttributesToMLIROperatorCall(*this, unboundOperator, emitter),
@@ -1160,7 +1160,7 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   // Emit each of the index values, which will be passed to the __getitem__ and
   // __setitem__ calls.
   SmallVector<ASTExprAnd<AnyValue>> indexValues;
-  indexValues.push_back(subValue.baseVal);
+  indexValues.push_back({subValue.baseVal, subValue.expr});
   for (ExprNode *index : indices) {
     indexValues.push_back(
         {index->emitIR(emitter, /*No Contextual Type*/ {}), index});
@@ -1170,17 +1170,17 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
 
   // Okay, we're doing a normal value subscript.  We expect at least a
   // __getitem__ method.
-  auto baseType = subValue.baseVal.ir.getRValueType();
+  auto baseType = subValue.baseVal.getRValueType();
   bool isErroneousDecl = false;
-  auto getItem = CallableValue(baseType, "__getitem__", getLoc(),
-                               isErroneousDecl, emitter.shared);
+  auto getItem = CallableValue(baseType, "__getitem__", this, isErroneousDecl,
+                               emitter.shared);
   // If there is no __getitem__ at all, then this is not a subscriptable type.
   if (getItem.isNull()) {
     if (isErroneousDecl)
       return {};
     emitter.emitError(getLoc(), "")
         << baseType << " does not implement the `__getitem__` method"
-        << subValue.baseVal.expr->getRange();
+        << subValue.expr->getRange();
     return {};
   }
 
@@ -1229,7 +1229,7 @@ CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter,
   // meta values to bind its parameters.
   if (!subValue.direct) {
     emitter.emitError(arrowLoc, "invalid '->' when subscripting type ")
-        << ASTType(subValue.baseVal.ir.getType()) << getRange();
+        << ASTType(subValue.baseVal.getType()) << getRange();
     return {};
   }
 
@@ -1504,7 +1504,6 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 
   // FIXME: We currently hack in index type support as transition to proper
   // expression support.
-  SMLoc loc = callNode->getLoc();
   if ((lhs.ir.getType().isIndex() && rhs.ir.getType().isIndex()) &&
       lhs.ir.getIfMValue() && rhs.ir.getIfMValue()) {
     auto lhsParam = lhs.ir.getIfMValue();
@@ -1514,7 +1513,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     switch (kind) {
     default:
       emitter.emitError(
-          loc, "cannot emit this binary operator in parameter context yet")
+          callNode->getLoc(),
+          "cannot emit this binary operator in parameter context yet")
           << callNode->getRange();
       return {};
     case ExprNode::kSub:
@@ -1582,7 +1582,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   // Check to see if we have a forward version of this function on the primary
   // receiver.
   bool isErroneousDecl = false;
-  CallableValue callee(lhs.ir.getRValueType(), specialFnInfo.name, loc,
+  CallableValue callee(lhs.ir.getRValueType(), specialFnInfo.name, callNode,
                        isErroneousDecl, emitter.shared);
   if (isErroneousDecl)
     return {};
@@ -1599,7 +1599,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   if (reversedFnInfo.kind != SpecialFunctionKind::kNormal) {
     // Swap the operand order.
     std::swap(argValues[0], argValues[1]);
-    callee = CallableValue(rhs.ir.getType(), reversedFnInfo.name, loc,
+    callee = CallableValue(rhs.ir.getType(), reversedFnInfo.name, callNode,
                            isErroneousDecl, emitter.shared);
     if (callee.direct &&
         succeeded(callee.direct->filterOverloadSet(

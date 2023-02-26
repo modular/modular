@@ -61,8 +61,8 @@ RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value) {
 
   // Check for the presence of a valid __clone__ method.
   bool isErroneousDecl = false;
-  CallableValue clone(rvalueType, "__clone__", value.expr->getLoc(),
-                      isErroneousDecl, shared);
+  CallableValue clone(rvalueType, "__clone__", value.expr, isErroneousDecl,
+                      shared);
   // If any error looking up __clone__ then the problem has been diagnosed
   // already.
   if (isErroneousDecl)
@@ -184,8 +184,7 @@ IREmitter::emitNamedMethodCall(StringRef methodName,
   assert(!argValues.empty() && "Cannot emit a method call without a receiver!");
   ASTType type = argValues.front().ir.getRValueType();
   bool isErroneousDecl = false;
-  CallableValue callee(type, methodName, callNode->getLoc(), isErroneousDecl,
-                       shared);
+  CallableValue callee(type, methodName, callNode, isErroneousDecl, shared);
 
   // If the type doesn't have the specified method, emit an error.
   if (callee.isNull()) {
@@ -228,8 +227,7 @@ AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
 
   // Check to see if we can invoke an __new__ method to convert it.
   bool isErroneousDecl = false;
-  CallableValue callee(expectedType, "__new__", expr->getLoc(), isErroneousDecl,
-                       shared);
+  CallableValue callee(expectedType, "__new__", expr, isErroneousDecl, shared);
   if (callee.isNull()) {
     if (!isErroneousDecl)
       errorHandler();
@@ -288,7 +286,7 @@ RValue IREmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
   // Check for the presence of a __lit_bool method.  If it exists, we can avoid
   // a redundant call to __bool__ for Bool types.
   bool isErroneousDecl = false;
-  if (!CallableValue(value.ir.getType(), "__lit_bool", value.expr->getLoc(),
+  if (!CallableValue(value.ir.getType(), "__lit_bool", value.expr,
                      isErroneousDecl, shared)) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __lit_bool.
