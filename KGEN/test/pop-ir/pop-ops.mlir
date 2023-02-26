@@ -22,14 +22,6 @@ kgen.generator @simd_type<dt: dtype, size>
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @pop_abs
-// CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32>) -> !pop.scalar<f32> {
-kgen.func @pop_abs(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: %[[V0:.*]] = pop.abs %[[ARG0]] : !pop.scalar<f32>
-  %0 = pop.abs %arg0 : !pop.scalar<f32>
-  kgen.return %0 : !pop.scalar<f32>
-}
-
 // CHECK-LABEL: kgen.func @pop_neg
 // CHECK-SAME: %[[ARG0:.*]]: !pop.scalar<f32>
 // CHECK-SAME: %[[ARG1:.*]]: !pop.scalar<index>
@@ -553,18 +545,6 @@ kgen.generator @pop_simd_splat<size, type: dtype>(%a: !pop.scalar<f32>, %b: !pop
   %v = pop.simd.splat %b : !pop.simd<size, type>
   // CHECK: return %[[U]], %[[V]]
   kgen.return %u, %v : !pop.simd<4, f32>, !pop.simd<size, type>
-}
-
-// CHECK-LABEL: @pop_scatter
-// CHECK-SAME: %[[VALUE:.*]]: !pop.simd<2, f32>
-// CHECK-SAME: %[[BASE:.*]]: !pop.simd<2, address>
-// CHECK-SAME: %[[MASK:.*]]: !pop.simd<2, bool>
-kgen.generator @pop_scatter(%value: !pop.simd<2, f32>,
-                            %base: !pop.simd<2, address>,
-                            %mask: !pop.simd<2, bool>) {
-  // CHECK: pop.simd.scatter %[[VALUE]], %[[BASE]][%[[MASK]]] : !pop.simd<2, f32>
-  pop.simd.scatter %value, %base[%mask] : !pop.simd<2, f32>
-  kgen.return
 }
 
 // CHECK-LABEL: @pop_load_store
