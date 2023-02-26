@@ -9,8 +9,7 @@
 # pad
 # ===----------------------------------------------------------------------===#
 
-from Assert import assert_param
-
+from Assert import assert_param, debug_assert
 from Buffer import Buffer, NDBuffer
 from DType import DType
 from Functional import vectorize
@@ -54,7 +53,8 @@ fn pad[
     Args:
         output (NDBuffer): the output buffer
         input (NDBuffer): the input buffer
-        paddings: (DTypePointer): ordered (before, after) padding sizes for each axis
+        paddings: (DTypePointer): ordered (before, after) padding sizes for each
+        axis
         constant: (SIMD): the constant to pad output with
 
     Example:
@@ -62,7 +62,9 @@ fn pad[
         let paddings = [x0, x1, y0, y1, z0, z1]
 
         out[x, y, z] =
-          input[x - x0, y - y0, z - z0] if x ∈ [x0, x0 + X] && y ∈ [y0, y0 + Y] && z ∈ [z0, z0 + Z]
+          input[x - x0, y - y0, z - z0] if x ∈ [x0, x0 + X] &&
+                                           y ∈ [y0, y0 + Y] &&
+                                           z ∈ [z0, z0 + Z]
           else constant
     """
 
@@ -72,7 +74,8 @@ fn pad[
     _fill_strides(output, output_strides_buf)
 
     alias init_axis = 0
-    _pad_impl[init_axis, rank, output_shape, type](
+    _pad_impl[rank, output_shape, type](
+        init_axis,
         output,
         input.data,
         paddings,
@@ -85,13 +88,12 @@ fn pad[
     )
 
 
-@interface
 fn _pad_impl[
-    axis: __mlir_type.index,
     rank: __mlir_type.index,
     output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     type: __mlir_type.`!kgen.dtype`,
 ](
+    axis: Int,
     output: NDBuffer[rank, output_shape, type],
     input: DTypePointer[type],
     paddings: DTypePointer[DType.index.value],
@@ -107,6 +109,7 @@ fn _pad_impl[
     padded with `constant` based on `paddings`.
 
     Args:
+        axis (Int): the axis to operate on
         output (NDBuffer): the output buffer
         input (DTypePointer): the input buffer
         paddings: (DTypePointer): the (before, after) padding sizes for each axis
@@ -117,87 +120,43 @@ fn _pad_impl[
         input_offset (Int): The offset at which input data starts
         pad_with_constant (Bool): whether to always pad remaining region with constant
     """
-    ...
 
-
-@implements(_pad_impl)
-fn _pad_impl_base[
-    axis: __mlir_type.index,
-    rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](
-    output: NDBuffer[rank, output_shape, type],
-    input: DTypePointer[type],
-    paddings: DTypePointer[DType.index.value],
-    constant: SIMD[1, type],
-    output_strides: DTypePointer[DType.index.value],
-    input_strides: DTypePointer[DType.index.value],
-    output_offset: Int,
-    input_offset: Int,
-    pad_with_constant: Bool,
-):
-    """Base case for `_pad_impl`"""
-    assert_param[axis + 1 == rank]()
-
-    # meta
-    let axis_dim = output.dim[axis]()
+    let axis_dim = output.dim(axis)
     let pre_pad = paddings.load(2 * axis).value
     let post_pad = paddings.load(2 * axis + 1).value
     let non_pad = axis_dim - pre_pad - post_pad
 
-    # pointers
-    let pre_pad_start_ptr = output.data.offset(output_offset)
-    let non_pad_start_ptr = pre_pad_start_ptr.offset(pre_pad)
-    let post_pad_start_ptr = non_pad_start_ptr.offset(non_pad)
-    let input_start_ptr = input.offset(input_offset)
+    if axis + 1 == rank:
+        # pointers
+        let pre_pad_start_ptr = output.data.offset(output_offset)
+        let non_pad_start_ptr = pre_pad_start_ptr.offset(pre_pad)
+        let post_pad_start_ptr = non_pad_start_ptr.offset(non_pad)
+        let input_start_ptr = input.offset(input_offset)
 
-    # setting values
-    if pad_with_constant:
-        _fill(pre_pad_start_ptr, constant.value, axis_dim)
-    else:
+        # setting values
+        if pad_with_constant:
+            _fill(pre_pad_start_ptr, constant.value, axis_dim)
+            return
+
         _fill(pre_pad_start_ptr, constant.value, pre_pad)
         let elem_bytes = sizeof[__mlir_type[`!pop.scalar<`, type, `>`]]()
         let non_pad_bytes = non_pad * elem_bytes
         memcpy(non_pad_start_ptr, input_start_ptr, non_pad_bytes)
         _fill(post_pad_start_ptr, constant.value, post_pad)
+        return
 
+    debug_assert(axis + 1 < rank, "axis is not within range")
 
-@implements(_pad_impl)
-fn _pad_impl_iter[
-    axis: __mlir_type.index,
-    rank: __mlir_type.index,
-    output_shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
-    type: __mlir_type.`!kgen.dtype`,
-](
-    output: NDBuffer[rank, output_shape, type],
-    input: DTypePointer[type],
-    paddings: DTypePointer[DType.index.value],
-    constant: SIMD[1, type],
-    output_strides: DTypePointer[DType.index.value],
-    input_strides: DTypePointer[DType.index.value],
-    output_offset: Int,
-    input_offset: Int,
-    pad_with_constant: Bool,
-):
-    """Recursive case for `_pad_impl`"""
-    assert_param[axis + 1 < rank]()
-
-    # meta
-    let axis_dim = output.dim[axis]()
-    let pre_pad = paddings.load(2 * axis).value
-    let post_pad = paddings.load(2 * axis + 1).value
-    let non_pad = axis_dim - pre_pad - post_pad
     let input_axis_stride = input_strides.load(axis)[0]
     let output_axis_stride = output_strides.load(axis)[0]
 
-    alias next_axis = axis + 1
     var next_input_offset = input_offset
     var next_output_offset = output_offset
     for i in range(axis_dim):
         let is_within_padding = (i < pre_pad) or (pre_pad + non_pad <= i)
         let next_pad_with_constant = pad_with_constant or is_within_padding
-        _pad_impl[next_axis, rank, output_shape, type](
+        _pad_impl[rank, output_shape, type](
+            axis + 1,
             output,
             input,
             paddings,
