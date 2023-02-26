@@ -741,7 +741,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   if (!emitter.builder) {
     emitter.emitError(
         call.getLoc(),
-        "TODO: cannot emit MLIR operation in parameter expressions yet")
+        "MLIR operation cannot be used directly in parameter expressions")
         << call.getRange();
     return {};
   }
@@ -1720,9 +1720,8 @@ AnyValue BinOpNode::emitAndOr(ExprEmitter &emitter) const {
   Location ifLoc = getLocation(emitter);
 
   if (!emitter.builder) {
-    emitter.emitError(
-        getLoc(),
-        "TODO: cannot emit short-circuit and/or in this parameter context")
+    emitter.emitError(getLoc(), "TODO(#6626): cannot emit short-circuit and/or "
+                                "in a parameter context")
         << lhs->getRange() << rhs->getRange();
     return {};
   }
@@ -1847,8 +1846,9 @@ AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
     return {};
 
   if (!emitter.builder) {
-    emitter.emitError(getLoc(),
-                      "TODO: cannot emit if/else in parameter expression yet")
+    emitter.emitError(
+        getLoc(),
+        "TODO(#6626): cannot emit if/else in parameter expression yet")
         << trueExpr->getRange();
     return {};
   }
