@@ -19,7 +19,6 @@ using llvm::SMLoc;
 class AnyValue;
 class ASTType;
 class CallableValue;
-class IREmitter;
 class ExprEmitter;
 class LitSourceRange;
 class ValueDest;
@@ -125,7 +124,7 @@ public:
   virtual llvm::SMLoc getLoc() const = 0;
 
   /// Return the 'loc' for this node translated to an MLIR location.
-  Location getLocation(IREmitter &emitter) const;
+  Location getLocation(ExprEmitter &emitter) const;
 
   /// Return the source range spanned by this expression.
   virtual LitSourceRange getRange() const = 0;

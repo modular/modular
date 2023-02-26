@@ -298,7 +298,7 @@ CallableValue ExprNode::emitCallable(ExprEmitter &emitter,
 }
 
 /// Return the 'loc' for this node translated to an MLIR location.
-Location ExprNode::getLocation(IREmitter &emitter) const {
+Location ExprNode::getLocation(ExprEmitter &emitter) const {
   return emitter.translateLocation(getLoc());
 }
 
