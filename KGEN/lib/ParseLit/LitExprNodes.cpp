@@ -1197,7 +1197,7 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   // Next, check the multiple argument path.
   if (getItem.direct &&
       succeeded(getItem.direct->filterOverloadSet(
-          indexValues, CallSyntax::kSubscript,
+          indexValues, CallSyntax::kSubscript, getItem.expr,
           /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
     // Ok, this looks like it will work.
     // TODO(Computed LValues): We need to look up __setitem__ and have a better
@@ -1588,7 +1588,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     return {};
   if (callee.direct &&
       succeeded(callee.direct->filterOverloadSet(
-          argValues, CallSyntax::kOperator,
+          argValues, CallSyntax::kOperator, callee.expr,
           /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
     return callee.emitFunctionCall(argValues, CallSyntax::kOperator, callNode,
                                    emitter);
@@ -1603,7 +1603,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                            isErroneousDecl, emitter.shared);
     if (callee.direct &&
         succeeded(callee.direct->filterOverloadSet(
-            argValues, CallSyntax::kReversedOperator,
+            argValues, CallSyntax::kReversedOperator, callee.expr,
             /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
       return callee.emitFunctionCall(argValues, CallSyntax::kReversedOperator,
                                      callNode, emitter);

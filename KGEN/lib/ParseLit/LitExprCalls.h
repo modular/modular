@@ -115,10 +115,6 @@ enum class CallSyntax : uint8_t {
 /// This struct models something that can be directly called, e.g. a global
 /// symbol with any binding information.
 struct DirectCallable {
-  /// This is the location of the direct-callable, e.g. in `x.method(...`, this
-  /// is the location of 'method'.
-  llvm::SMLoc nameLoc;
-
   /// This is the basename of the declaration set, used in diagnostics.
   StringRef baseName;
 
@@ -136,7 +132,7 @@ struct DirectCallable {
   /// argument and parameter values.
   bool disableImplicitConversions = false;
 
-  DirectCallable(SMLoc nameLoc, StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
+  DirectCallable(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
                  ParamBindArrayAttr bindings);
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
@@ -149,7 +145,7 @@ struct DirectCallable {
   /// filled in with symbol for the valid callee along with its parameter
   /// bindings.
   LogicalResult filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                  CallSyntax syntax,
+                                  CallSyntax syntax, const ExprNode *callExpr,
                                   bool emitDiagnosticOnFailure,
                                   LitSharedState &shared);
 
@@ -163,14 +159,17 @@ struct DirectCallable {
   /// the resultant LITSymbolConstant attr or producing an error message and
   /// returning null. This allows producing a reference to a parameterized
   /// function without the parmaeters specified.  They can be bound later.
-  SymbolConstantAttr getBoundConstantAttr(LitSharedState &shared) const;
+  SymbolConstantAttr getBoundConstantAttr(const ExprNode *callExpr,
+                                          LitSharedState &shared) const;
 
   /// Perform subsitutions of the specified bindings into the symbol, returning,
   /// in symConstAttrs, the resultant SymbolConstant attr for each adaptive
   /// function overload.
   /// On failure it produces an error message and returns failure.
-  LogicalResult getBoundConstantAttrsAdaptiveSet(
-      LitSharedState &shared, SmallVectorImpl<TypedAttr> &symConstAttrs) const;
+  LogicalResult
+  getBoundConstantAttrsAdaptiveSet(SmallVectorImpl<TypedAttr> &symConstAttrs,
+                                   const ExprNode *callExpr,
+                                   LitSharedState &shared) const;
 
   /// Check declarations for the result parameters and add them to
   /// resultParamDecls.  This emits and error and returns failure if an error is
@@ -210,7 +209,8 @@ public:
   CallableValue(ASTExprAnd<AnyValue> baseVal)
       : expr(baseVal.expr), baseVal(baseVal.ir) {}
   CallableValue(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-                ParamBindArrayAttr bindings, const ExprNode *expr);
+                ParamBindArrayAttr bindings, const ExprNode *expr)
+      : expr(expr), direct({baseName, fnDecls, bindings}) {}
 
   /// Get a CallableValue for a lookup of a named method on the specified type.
   /// If successful, this provides a non-null CallableValue.

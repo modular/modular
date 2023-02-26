@@ -414,11 +414,9 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
 
 /// Get a symbol for a direct reference to the specified function in its
 /// enclosing context.  This does not bind any values to arguments.
-DirectCallable::DirectCallable(SMLoc nameLoc, StringRef baseName,
-                               ArrayRef<ASTDecl *> fnDecls,
+DirectCallable::DirectCallable(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
                                ParamBindArrayAttr bindingsAttr)
-    : nameLoc(nameLoc), baseName(baseName),
-      fnDecls(fnDecls.begin(), fnDecls.end()) {
+    : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()) {
   if (bindingsAttr) {
     for (ParamBindAttr bind : bindingsAttr)
       inputParamBindings.add(bind);
@@ -469,6 +467,7 @@ struct OverloadFitness {
   static OverloadFitness evaluate(SignatureType signature,
                                   const DirectCallable &callable,
                                   ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                  const ExprNode *callExpr,
                                   LitSharedState &shared);
 
   /// Add explaination for why this candidate doesn't work to the specified
@@ -482,15 +481,17 @@ struct OverloadFitness {
 /// Determine whether the specified signature can be invoked with the
 /// parameter bindings specified in `callable` and the arguments specified in
 /// `operands`.
-OverloadFitness OverloadFitness::evaluate(
-    SignatureType signature, const DirectCallable &callable,
-    ArrayRef<ASTExprAnd<AnyValue>> operands, LitSharedState &shared) {
+OverloadFitness
+OverloadFitness::evaluate(SignatureType signature,
+                          const DirectCallable &callable,
+                          ArrayRef<ASTExprAnd<AnyValue>> operands,
+                          const ExprNode *callExpr, LitSharedState &shared) {
 
   // Check that the signature can be rebound with this set of bindings.
   ssize_t incorrectBindingNo = 0;
   ASTType incorrectBindingExpectedType;
   auto newBindings = callable.inputParamBindings.verifyBindings(
-      signature.getInputParams(), callable.baseName, callable.nameLoc,
+      signature.getInputParams(), callable.baseName, callExpr->getLoc(),
       incorrectBindingNo, incorrectBindingExpectedType, shared,
       /*don't emit diagnostics*/ nullptr,
       [&](ParamDeclAttr decl, ArrayRef<ParamBindAttr> bindingsSoFar) -> MValue {
@@ -750,16 +751,18 @@ void OverloadFitness::diagnose(SignatureType signature,
 /// candidate that works with the specified parameter bindings and provided
 /// arguments.  If so, replace fnDecls with a single entry that works and
 /// return success.  If not, generate a diagnostic and return failure.
-LogicalResult DirectCallable::filterOverloadSet(
-    ArrayRef<ASTExprAnd<AnyValue>> operands, CallSyntax syntax,
-    bool emitDiagnosticOnFailure, LitSharedState &shared) {
+LogicalResult
+DirectCallable::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                  CallSyntax syntax, const ExprNode *callExpr,
+                                  bool emitDiagnosticOnFailure,
+                                  LitSharedState &shared) {
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
   for (ASTDecl *candidate : fnDecls) {
     auto signature = cast<LIT::FuncOp>(*candidate).getFullSignature();
-    evaluations.push_back(
-        OverloadFitness::evaluate(signature, *this, operands, shared));
+    evaluations.push_back(OverloadFitness::evaluate(signature, *this, operands,
+                                                    callExpr, shared));
     anyValid |= evaluations.back().kind == OverloadFitness::kValid;
   }
 
@@ -769,8 +772,8 @@ LogicalResult DirectCallable::filterOverloadSet(
       // If there is a single callee, emit a specific error about the call.
       if (fnDecls.size() == 1) {
         auto fnDecl = cast<LIT::FuncOp>(*fnDecls[0]);
-        auto diag = shared.emitError(nameLoc, "invalid call to '")
-                    << baseName << "': ";
+        auto diag = shared.emitError(callExpr->getLoc(), "invalid call to '")
+                    << baseName << "': " << callExpr->getRange();
         evaluations[0].diagnose(fnDecl.getFullSignature(), *this, operands,
                                 syntax, diag);
         diag.attachNote(fnDecl.getLoc()) << "function declared here";
@@ -779,8 +782,9 @@ LogicalResult DirectCallable::filterOverloadSet(
 
       // Otherwise emit an error, and a note for what is wrong with each
       // candidate.
-      auto diag = shared.emitError(nameLoc, "no matching function in call to '")
-                  << baseName << "': ";
+      auto diag = shared.emitError(callExpr->getLoc(),
+                                   "no matching function in call to '")
+                  << baseName << "': " << callExpr->getRange();
       for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
         auto fnDecl = cast<LIT::FuncOp>(*candidate);
         diag.attachNote(fnDecl->getLoc()) << "candidate not viable: ";
@@ -834,20 +838,22 @@ LogicalResult DirectCallable::filterOverloadSet(
       return cast<LIT::FuncOp>(*decl).getIsAdaptive();
     });
     if (anyMarkedAdaptive) {
-      auto diag = shared.emitError(nameLoc, "ambiguous call to '")
+      auto diag = shared.emitError(callExpr->getLoc(), "ambiguous call to '")
                   << baseName
                   << "', multiple implementations detected but not all are "
-                     "marked adaptive, add @adaptive to all overloads";
+                     "marked adaptive, add @adaptive to all overloads"
+                  << callExpr->getRange();
       for (LIT::FuncOp candidate : llvm::map_range(
                newFnDecls, [](ASTDecl *d) { return cast<LIT::FuncOp>(*d); })) {
         if (!candidate.getIsAdaptive())
           diag.attachNote(candidate.getLoc()) << "non-adaptive candidate here";
       }
     } else {
-      auto diag = shared.emitError(nameLoc, "ambiguous call to '")
+      auto diag = shared.emitError(callExpr->getLoc(), "ambiguous call to '")
                   << baseName << "', each candidate requires " << minConversions
                   << " implicit conversion" << plural(minConversions)
-                  << ", disambiguate with an explicit cast";
+                  << ", disambiguate with an explicit cast"
+                  << callExpr->getRange();
       for (ASTDecl *candidate : newFnDecls)
         diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
             << "candidate declared here";
@@ -897,6 +903,7 @@ std::pair<MValue, SignatureType> DirectCallable::getCallee() {
 /// SymbolConstantAttr or produces an error message and returns null.
 static SymbolConstantAttr getBoundConstAttrFor(LitSharedState &shared,
                                                const DirectCallable *callable,
+                                               const ExprNode *callExpr,
                                                ASTDecl *fnDecl) {
   auto funcOp = cast<LIT::FuncOp>(*fnDecl);
 
@@ -911,7 +918,7 @@ static SymbolConstantAttr getBoundConstAttrFor(LitSharedState &shared,
 
   auto newBindings = callable->inputParamBindings.verifyBindings(
       funcOp.getFullSignature().getInputParams(), callable->baseName,
-      callable->nameLoc, incorrectBindingNo, incorrectBindingExpectedType,
+      callExpr->getLoc(), incorrectBindingNo, incorrectBindingExpectedType,
       shared,
       /*emit diagnostics*/ funcOp);
   if (!newBindings)
@@ -926,13 +933,14 @@ static SymbolConstantAttr getBoundConstAttrFor(LitSharedState &shared,
 /// returning null. This allows producing a reference to a parameterized
 /// function without the parmaeters specified.  They can be bound later.
 SymbolConstantAttr
-DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
+DirectCallable::getBoundConstantAttr(const ExprNode *callExpr,
+                                     LitSharedState &shared) const {
   if (fnDecls.size() != 1) {
     assert(!fnDecls.empty() && "DirectCallable malformed");
-    auto diag =
-        shared.emitError(
-            nameLoc, "cannot form a reference to overloaded declaration of '")
-        << baseName << "'";
+    auto diag = shared.emitError(
+                    callExpr->getLoc(),
+                    "cannot form a reference to overloaded declaration of '")
+                << baseName << "'" << callExpr->getRange();
     for (ASTDecl *candidate : fnDecls) {
       auto funcOp = cast<LIT::FuncOp>(*candidate);
       diag.attachNote(funcOp.getLoc()) << "candidate declared here";
@@ -940,23 +948,24 @@ DirectCallable::getBoundConstantAttr(LitSharedState &shared) const {
 
     return {};
   }
-  return getBoundConstAttrFor(shared, this, fnDecls[0]);
+  return getBoundConstAttrFor(shared, this, callExpr, fnDecls[0]);
 }
 
 LogicalResult DirectCallable::getBoundConstantAttrsAdaptiveSet(
-    LitSharedState &shared, SmallVectorImpl<TypedAttr> &symConstAttrs) const {
+    SmallVectorImpl<TypedAttr> &symConstAttrs, const ExprNode *callExpr,
+    LitSharedState &shared) const {
   for (ASTDecl *fnDecl : fnDecls) {
     auto funcOp = cast<LIT::FuncOp>(*fnDecl);
     if (!funcOp.getIsAdaptive()) {
-      auto diag =
-          shared.emitError(nameLoc, "cannot form a reference to non @adaptive "
-                                    "declaration of '")
-          << baseName << "'";
+      auto diag = shared.emitError(callExpr->getLoc(),
+                                   "cannot form a reference to non @adaptive "
+                                   "declaration of '")
+                  << baseName << "'" << callExpr->getRange();
       diag.attachNote(funcOp.getLoc()) << "declared here";
       return failure();
     }
     SymbolConstantAttr symConstAttr =
-        getBoundConstAttrFor(shared, this, fnDecl);
+        getBoundConstAttrFor(shared, this, callExpr, fnDecl);
     if (!symConstAttr)
       return failure();
     symConstAttrs.push_back(symConstAttr);
@@ -1007,10 +1016,6 @@ LogicalResult DirectCallable::getResultParamDecls(
 // CallableValue Implementation
 //===----------------------------------------------------------------------===//
 
-CallableValue::CallableValue(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-                             ParamBindArrayAttr bindings, const ExprNode *expr)
-    : expr(expr), direct({expr->getLoc(), baseName, fnDecls, bindings}) {}
-
 /// Get a CallableValue for a lookup of a named method on the specified type.
 /// If successful, this provides a non-null CallableValue.
 ///
@@ -1042,8 +1047,7 @@ CallableValue::CallableValue(ASTType type, StringRef methodName,
     return;
 
   // Handle method references, which might be overloaded.
-  direct =
-      DirectCallable{callLoc, methodName, resultDecls, type.getParamBindings()};
+  direct = DirectCallable{methodName, resultDecls, type.getParamBindings()};
 }
 
 /// Emit this as a flattened RValue or LValue with no additional parameter
@@ -1057,7 +1061,7 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   // We allow unbound symbols here which can be emitted as an MValue.  In the
   // case where we are partially applying, that will force the unbound symbol
   // into a DRValue which will catch symbols that are not fully bound.
-  auto directSymbolAttr = direct->getBoundConstantAttr(emitter.shared);
+  auto directSymbolAttr = direct->getBoundConstantAttr(expr, emitter.shared);
   if (!directSymbolAttr)
     return {};
 
@@ -1065,8 +1069,9 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   // these indirectly.
   SignatureType calleeSignature = directSymbolAttr.getType();
   if (!calleeSignature.getResultParams().empty()) {
-    emitter.emitError(direct->nameLoc,
-                      "calls with result parameters must be called directly");
+    emitter.emitError(expr->getLoc(),
+                      "calls with result parameters must be called directly")
+        << expr->getRange();
     return {};
   }
 
@@ -1135,7 +1140,7 @@ CallableValue::emitAdaptiveSet(IREmitter &emitter,
   if (!direct)
     return failure();
 
-  return direct->getBoundConstantAttrsAdaptiveSet(emitter.shared, values);
+  return direct->getBoundConstantAttrsAdaptiveSet(values, expr, emitter.shared);
 }
 
 /// Return true if 'value' may be implicitly converted to 'requiredType'
@@ -1163,7 +1168,7 @@ bool CallableValue::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
   // T -> S -> U in one step.
   callee.direct->disableImplicitConversions = true;
   return succeeded(callee.direct->filterOverloadSet(
-      {value}, CallSyntax::kImplicitConvert,
+      {value}, CallSyntax::kImplicitConvert, callee.expr,
       /*emitDiagnosticOnFailure=*/false, shared));
 }
 
@@ -1225,7 +1230,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
     // Check the direct callees to see if they can be unambiguously resolved
     // with the bindings list and specified arguments.
-    if (failed(direct->filterOverloadSet(operands, syntax,
+    if (failed(direct->filterOverloadSet(operands, syntax, expr,
                                          /*emitDiagnosticOnFailure=*/true,
                                          emitter.shared)))
       return {};
@@ -1254,9 +1259,9 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     }
 
     // Check to see if we can apply these operands to the callee signature.
-    DirectCallable bindings{callLoc, "callee", /*params*/ {}, {}};
+    DirectCallable bindings{"callee", /*params*/ {}, {}};
     auto fitness = OverloadFitness::evaluate(calleeSig, bindings, operands,
-                                             emitter.shared);
+                                             expr, emitter.shared);
     if (fitness.kind != OverloadFitness::kValid) {
       // If not, diagnose it with an error.
       auto diag = emitError("invalid indirect call: ");

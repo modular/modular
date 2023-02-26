@@ -240,7 +240,7 @@ AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
   ASTExprAnd<AnyValue> newArg = {value, expr};
   callee.direct->disableImplicitConversions = true;
   if (failed(callee.direct->filterOverloadSet(
-          {newArg}, CallSyntax::kImplicitConvert,
+          {newArg}, CallSyntax::kImplicitConvert, expr,
           /*emitDiagnosticOnFailure=*/false, shared))) {
     errorHandler();
     return {};
