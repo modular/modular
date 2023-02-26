@@ -202,8 +202,10 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     ArrayRef<ValueInputConvention> getValueInputConventions() {
       return getMetadata().getInputConventions();
     }
-    /// Get the function input vararg markers.
-    ArrayRef<VarArgKind> getVarArgs() { return getMetadata().getVarArgs(); }
+    /// Returns true if the argument at this index is a vararg.
+    bool isVararg(size_t index);
+    /// Returns true if the argument at this index is a keyword vararg.
+    bool isKWVararg(size_t index);
 
     /// Get the function default arguments.
     ArrayRef<TypedAttr> getDefaultArguments() {
@@ -222,10 +224,6 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// Return the convention for the specified value input parameter.
     ValueInputConvention getInputConvention(size_t inputNo) {
       return getValueInputConventions()[inputNo];
-    }
-    /// Return the vararg marker for the specified value input parameters.
-    VarArgKind getVarArg(size_t inputNo) {
-      return getVarArgs()[inputNo];
     }
 
     /// Set a function convention.

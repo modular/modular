@@ -178,13 +178,12 @@ MValue ParameterInferenceState::infer(SignatureType signature,
        llvm::enumerate(signature.getValueInputs())) {
     ValueInputConvention expectedConvention =
         signature.getInputConvention(expectedArgIdx);
-    VarArgKind expectedVararg = signature.getVarArg(expectedArgIdx);
 
     // Handle case when there are no more provided arguments.
     if (providedValueIdx == operands.size()) {
       // If the argument is a varargs argument list, then it can be initialized
       // with zero values no problem.
-      if (expectedVararg == VarArgKind::VarArg)
+      if (signature.isVararg(expectedArgIdx))
         break;
 
       // TODO: If this argument is defaulted, infer against it.
@@ -216,7 +215,7 @@ MValue ParameterInferenceState::infer(SignatureType signature,
     };
 
     // In the typical case, this argument isn't varargs, just check it.
-    if (expectedVararg != VarArgKind::VarArg) {
+    if (!signature.isVararg(expectedArgIdx)) {
       // If there was a problem, report it, otherwise continue on to the next
       // expected argument to check.
       if (failed(checkOneOperand(expectedType)))
@@ -530,10 +529,10 @@ OverloadFitness::evaluate(SignatureType signature,
   // that doesn't work out.  Check for that first.
   size_t minRequiredArgs = 0;
   size_t maxAllowedargs = 0;
-  for (auto [convention, vararg] : llvm::zip(
-           signature.getValueInputConventions(), signature.getVarArgs())) {
+  for (auto [idx, convention] :
+       llvm::enumerate(signature.getValueInputConventions())) {
     // Varargs arguments don't require a value, but allow any number of them.
-    if (vararg == VarArgKind::VarArg) {
+    if (signature.isVararg(idx)) {
       maxAllowedargs = ~size_t(0);
       continue;
     }
@@ -568,13 +567,13 @@ OverloadFitness::evaluate(SignatureType signature,
        llvm::enumerate(signature.getValueInputs())) {
     ValueInputConvention expectedConvention =
         signature.getInputConvention(expectedArgIdx);
-    VarArgKind expectedVararg = signature.getVarArg(expectedArgIdx);
+    unsigned argIdx = expectedArgIdx;
 
     // Handle case when there are no more provided arguments.
     if (providedValueIdx == operands.size()) {
       // If the argument is a varargs argument list, then it can be initialized
       // with zero values no problem.
-      if (expectedVararg == VarArgKind::VarArg)
+      if (signature.isVararg(expectedArgIdx))
         break;
       // We don't need a provided value for this index if we can use a default
       // value, which has already been converted to the expected type.
@@ -591,7 +590,7 @@ OverloadFitness::evaluate(SignatureType signature,
     auto checkOneOperand = [&](ASTType expectedType) -> OverloadFitness {
       // We'll bind the next provided value.
       auto operand = operands[providedValueIdx];
-      assert(expectedVararg != VarArgKind::KWVarArg &&
+      assert(!signature.isKWVararg(argIdx) &&
              "keyword arguments and `**arg` variadics not supported yet");
       switch (expectedConvention) {
       case ValueInputConvention::ByRef: {
@@ -631,7 +630,7 @@ OverloadFitness::evaluate(SignatureType signature,
     };
 
     // In the typical case, this argument isn't varargs, just check it.
-    if (expectedVararg == VarArgKind::None) {
+    if (!signature.isVararg(expectedArgIdx)) {
       // If there was a problem, report it, otherwise continue on to the next
       // expected argument to check.
       auto result = checkOneOperand(expectedType);
@@ -1088,7 +1087,7 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter) const {
   Value firstArgValue;
   ValueInputConvention selfConvention = calleeSignature.getInputConvention(0);
 
-  assert(calleeSignature.getVarArg(0) == VarArgKind::None &&
+  assert(!calleeSignature.isVararg(0) && !calleeSignature.isKWVararg(0) &&
          "Error: self shouldn't be able to be varargs");
 
   switch (selfConvention) {
@@ -1279,18 +1278,18 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   size_t nextOperandIdx = 0;
   size_t nextDefaultIdx = 0;
-  for (auto [expectedTypeX, conventionX, varargX] : llvm::zip(
-           calleeSig.getValueInputs(), calleeSig.getValueInputConventions(),
-           calleeSig.getVarArgs())) {
+  for (auto [idx, expectedTypeX, conventionX] : llvm::zip(
+           llvm::seq<unsigned>(0, calleeSig.getValueInputs().size()),
+           calleeSig.getValueInputs(), calleeSig.getValueInputConventions())) {
     // Work around lambda not being able to reference bindings.
+    unsigned argIdx = idx;
     Type expectedType = expectedTypeX;
     ValueInputConvention convention = conventionX;
-    VarArgKind vararg = varargX;
     // If we ran out of operands, fulfill this with a default value or empty
     // variadic list.
     if (nextOperandIdx == operands.size()) {
       // Varargs arguments are fulfilled with an empty !pop.variadic list.
-      if (vararg == VarArgKind::VarArg) {
+      if (calleeSig.isVararg(argIdx)) {
         auto variadic = KGEN::VariadicAttr::get(
             ArrayRef<TypedAttr>(), expectedType.cast<KGEN::VariadicType>());
         argumentValues.push_back({MValue(variadic), callNode});
@@ -1319,7 +1318,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
         // In the case of a variadic argument, we need to remove the
         // !pop.varadic<> wrapper to get the type to convert to.
         Type expectedArgType = expectedType;
-        if (vararg == VarArgKind::VarArg)
+        if (calleeSig.isVararg(argIdx))
           expectedArgType = getVariadicElementType(expectedArgType);
 
         return emitter.getAsExpectedType(argVal, operand.expr, expectedArgType,
@@ -1328,7 +1327,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     };
 
     // For a normal non-vararg argument, we just emit it and add it to our list.
-    if (vararg != VarArgKind::VarArg) {
+    if (!calleeSig.isVararg(argIdx)) {
       auto operand = operands[nextOperandIdx++];
       AnyValue argVal = emitOneArgVal(operand);
       if (!argVal)

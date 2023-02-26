@@ -972,7 +972,6 @@ static OptionalParseResult parseOptionalSignatureValues(
     ParamDeclArrayAttr inputParams, ParamDeclArrayAttr resultParams,
     SignatureType &signature) {
   SmallVector<ValueInputConvention> inputConventions;
-  SmallVector<VarArgKind> varargs;
   SmallVector<TypedAttr> defaults;
   SmallVector<Type> argTypes, resTypes;
 
@@ -985,42 +984,18 @@ static OptionalParseResult parseOptionalSignatureValues(
 
     StringRef effectStr;
     llvm::SMLoc loc = p.getCurrentLocation();
-    // Parse an optional input convention specifier and an optional vararg
-    // marker, separated by a '|' if both are present.
+    // Parse an optional input convention specifier.
     auto convention = ValueInputConvention::ByVal;
-    auto vararg = VarArgKind::None;
     if (succeeded(p.parseOptionalKeyword(&effectStr))) {
-      bool seenConv = false;
-      bool seenKind = false;
-      auto processEffect = [&]() -> ParseResult {
-        if (std::optional<ValueInputConvention> conv =
-                symbolizeValueInputConvention(effectStr)) {
-          if (seenConv)
-            p.emitError(loc, "duplicate input convention specifier");
-          seenConv = true;
-          convention = *conv;
-        } else if (std::optional<VarArgKind> kind =
-                       symbolizeVarArgKind(effectStr)) {
-          if (seenKind)
-            p.emitError(loc, "duplicate vararg marker");
-          seenKind = true;
-          vararg = *kind;
-        } else {
-          return p.emitError(loc, "expected 'byval', 'byref', 'vararg', or "
-                                  "'kwvararg' for input convention");
-        }
-        return success();
-      };
-      if (processEffect())
-        return failure();
-      if (succeeded(p.parseOptionalVerticalBar())) {
-        if (p.parseKeyword(&effectStr) || p.getCurrentLocation(&loc),
-            processEffect())
-          return failure();
+      if (std::optional<ValueInputConvention> conv =
+              symbolizeValueInputConvention(effectStr)) {
+        convention = *conv;
+      } else {
+        return p.emitError(loc,
+                           "expected 'byval' or 'byref' for input convention");
       }
     }
     inputConventions.push_back(convention);
-    varargs.push_back(vararg);
 
     if (succeeded(p.parseOptionalEqual())) {
       TypedAttr value;
@@ -1043,13 +1018,9 @@ static OptionalParseResult parseOptionalSignatureValues(
   // for interfaces.
   FnEffects effect = FnEffects::None;
   StringRef kw;
-  while (succeeded(p.parseOptionalKeyword(&kw, {"throws", "none", "async"}))) {
-    if (kw == "throws")
-      effect = effect | FnEffects::Throws;
-    else if (kw == "async")
-      effect = effect | FnEffects::Async;
-    else if (kw == "none")
-      ; // Swallow this keyword
+  while (succeeded(p.parseOptionalKeyword(
+      &kw, {"throws", "async", "vararg", "kwvararg", "param_vararg"}))) {
+    effect = effect | *symbolizeFnEffects(kw);
 
     // No vertical bar? We're done. It's not a parse error, but it does mean we
     // can't specify more effects.
@@ -1064,12 +1035,11 @@ static OptionalParseResult parseOptionalSignatureValues(
 
   // FIXME: Force C++ to select the derived class getter, not the storage
   // uniquer getter, which won't compile outside of `KGENAttrs.cpp`.
-  using GetCheckedT =
-      MetadataAttr (*)(function_ref<InFlightDiagnostic()>, MLIRContext *,
-                       ArrayRef<ValueInputConvention>, ArrayRef<VarArgKind>,
-                       ArrayRef<TypedAttr>, FnEffects);
+  using GetCheckedT = MetadataAttr (*)(
+      function_ref<InFlightDiagnostic()>, MLIRContext *,
+      ArrayRef<ValueInputConvention>, ArrayRef<TypedAttr>, FnEffects);
   auto metadata = ((GetCheckedT)&MetadataAttr::getChecked)(
-      emitError, p.getContext(), inputConventions, varargs, defaults, effect);
+      emitError, p.getContext(), inputConventions, defaults, effect);
   if (!metadata)
     return failure();
   signature = SignatureType::getChecked(
@@ -1104,14 +1074,8 @@ static void printSignatureValuesElt(AsmPrinter &p,
       [&](unsigned i) {
         printElt(i);
         ValueInputConvention conv = metadata.getInputConventions()[i];
-        char kindSep = ' ';
-        if (conv != ValueInputConvention::ByVal) {
+        if (conv != ValueInputConvention::ByVal)
           p << ' ' << stringifyValueInputConvention(conv);
-          kindSep = '|';
-        }
-        VarArgKind kind = metadata.getVarArgs()[i];
-        if (kind != VarArgKind::None)
-          p << kindSep << stringifyVarArgKind(kind);
 
         // If a default argument value has been provided for the argument at
         // this index, print an `=`, followed by the value.

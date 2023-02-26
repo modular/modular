@@ -185,7 +185,7 @@ struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
     return __mlir_op.`pop.variadic.get`(self.value, index.__as_mlir_index())
 
 
-# CHECK: lit.func @"variadics($Int::Int*)"(%a: !kgen.variadic<@"$Int"::@Int> vararg)
+# CHECK: lit.func @"variadics($Int::Int*)"(%a: !kgen.variadic<@"$Int"::@Int>) vararg
 fn variadics(*a: Int):
   let vaArgs = VaList[Int](a)
   let size = vaArgs.size()

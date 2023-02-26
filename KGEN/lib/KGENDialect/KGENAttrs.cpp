@@ -93,8 +93,7 @@ MetadataAttr MetadataAttr::get(MLIRContext *ctx, unsigned numInputs) {
 
 MetadataAttr MetadataAttr::get(MLIRContext *ctx, unsigned numInputs,
                                FnEffects effects) {
-  return get(ctx, SmallVector<ValueInputConvention>(numInputs),
-             SmallVector<VarArgKind>(numInputs), {}, effects);
+  return get(ctx, SmallVector<ValueInputConvention>(numInputs), {}, effects);
 }
 
 bool MetadataAttr::isDefault() {
@@ -108,13 +107,7 @@ bool MetadataAttr::isDefault() {
 LogicalResult
 MetadataAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                      ArrayRef<ValueInputConvention> inputConventions,
-                     ArrayRef<VarArgKind> varargs,
                      ArrayRef<TypedAttr> defaultArguments, FnEffects effects) {
-  if (inputConventions.size() != varargs.size()) {
-    return emitError() << "metadata has " << inputConventions.size()
-                       << " input convention specifiers but " << varargs.size()
-                       << " vararg markers";
-  }
   if (defaultArguments.size() > inputConventions.size()) {
     return emitError()
            << "there are more default arguments than value input conventions: "
@@ -146,6 +139,14 @@ MetadataAttr::verifySignature(function_ref<InFlightDiagnostic()> emitError,
   if (bitEnumContainsAny(getFnEffects(), FnEffects::Throws) &&
       values.getNumResults() != 1)
     return emitError() << "a function that throws should have 1 result";
+
+  unsigned minNumArgs = bitEnumContainsAny(getFnEffects(), FnEffects::Vararg) +
+                        bitEnumContainsAny(getFnEffects(), FnEffects::KWVararg);
+  if (values.getNumInputs() < minNumArgs) {
+    return emitError()
+           << "function has varargs and/or kwvarargs but signature only has "
+           << values.getNumInputs() << " arguments";
+  }
   return success();
 }
 
