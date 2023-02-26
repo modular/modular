@@ -1,4 +1,4 @@
-# RUN: exit 0
+# RUN: exit 1
 # COM: I can't figure out how to get this to work on linux, I keep getting "ModuleNotFoundError: No module named 'lldb'"
 # XUN: %lldb -b -o 'settings set plugin.jit-loader.gdb.enable on' -o 'b jitbp' \
 # XUN:       -o 'run %S/Inputs/test.lit --debug-level=full -O0' lit | FileCheck %s

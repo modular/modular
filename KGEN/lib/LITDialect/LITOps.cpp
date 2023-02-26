@@ -90,8 +90,6 @@ static StringRef disallowedAttrNames[] = {
 
 /// Parses a LIT Generator.
 ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
-  SmallVector<OpAsmParser::Argument> entryArgs;
-  SmallVector<Type> resultTypes;
   Builder &builder = parser.getBuilder();
 
   // Parse the name as a symbol.
@@ -101,30 +99,17 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
     return failure();
 
   // Parse the function signature.
-  ParamDeclArrayAttr inputParamDecls, resultParamDecls;
-  MetadataAttr metadata;
-  llvm::SMLoc sigLoc;
+  llvm::SMLoc sigLoc = parser.getCurrentLocation();
+  SmallVector<OpAsmParser::Argument> entryArgs;
+  SignatureType signature;
   ConstraintArrayAttr constraints;
   AlwaysInlineLevelAttr alwaysInline;
-  if (parseOptionalParameterSpec(parser, inputParamDecls, resultParamDecls) ||
-      parser.getCurrentLocation(&sigLoc) ||
-      parseFunctionSignature(parser, entryArgs, resultTypes, metadata) ||
+  if (parseFunctionSignature(parser, entryArgs, signature) ||
       parseOptionalAlwaysInline(parser, alwaysInline) ||
       parseOptionalConstraints(parser, constraints))
     return failure();
   result.addAttribute(getAlwaysInlineLevelAttrName(result.name), alwaysInline);
   result.addAttribute(getConstraintsAttrName(result.name), constraints);
-
-  SmallVector<Type> argTypes;
-  argTypes.reserve(entryArgs.size());
-  for (auto &arg : entryArgs)
-    argTypes.push_back(arg.type);
-  FunctionType type = builder.getFunctionType(argTypes, resultTypes);
-  auto signature = parser.getChecked<SignatureType>(
-      parser.getContext(), inputParamDecls, resultParamDecls, type, metadata);
-  if (!signature)
-    return failure();
-
   result.addAttribute(getSignatureAttrName(result.name),
                       TypeAttr::get(signature));
 
@@ -183,8 +168,9 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
       return parser.emitError(sigLoc, "expected a function body");
     auto *body = new Block;
     body->addArguments(
-        argTypes, SmallVector<Location>(argTypes.size(),
-                                        parser.getEncodedSourceLoc(sigLoc)));
+        signature.getValueInputs(),
+        SmallVector<Location>(signature.getValueInputs().size(),
+                              parser.getEncodedSourceLoc(sigLoc)));
     region->push_back(body);
   }
 
@@ -211,13 +197,7 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   p << ' ';
 
   p.printSymbolName(func.getName());
-  printOptionalParameterSpec(p, op.getInputParamDeclsAttr(),
-                             op.getResultParamsAttr());
-
-  ArrayRef<Type> argTypes = op.getArgumentTypes();
-  printFunctionSignature(p, func.getFunctionBody(), argTypes,
-                         op.getResultTypes(), op.getMetadata(),
-                         getValueParamNamesAttr());
+  printFunctionSignature(p, getBodyRegion(), getSignature());
   printOptionalAlwaysInline(p, getAlwaysInlineLevelAttr());
 
   // Don't print the following in lit.func.

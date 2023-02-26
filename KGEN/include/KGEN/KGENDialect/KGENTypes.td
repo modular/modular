@@ -206,7 +206,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     ArrayRef<VarArgKind> getVarArgs() { return getMetadata().getVarArgs(); }
 
     /// Get the function default arguments.
-    DefaultArgumentsAttr getDefaultArguments() {
+    ArrayRef<TypedAttr> getDefaultArguments() {
       return getMetadata().getDefaultArguments();
     }
 
