@@ -166,6 +166,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
 
   let arguments = (ins SymbolNameAttr:$sym_name,
                        KGEN_ParamDeclArrayAttr:$inputParamDecls,
+                       UnitAttr:$paramVarargs,
                        UnitAttr:$isRegisterPrimary);
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{

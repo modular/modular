@@ -1030,7 +1030,8 @@ static CallableValue substituteParametersIntoUserDefinedType(
   ASTType incorrectBindingExpectedType;
   auto bindingAttr = paramBindings.verifyBindings(
       structOp.getInputParamDeclsAttr(), structOp.getName(), subscript.getLoc(),
-      incorrectBindingNo, incorrectBindingExpectedType, emitter, structOp);
+      incorrectBindingNo, incorrectBindingExpectedType, emitter, structOp,
+      structOp.getParamVarargs());
   if (!bindingAttr)
     return {};
 

@@ -122,7 +122,8 @@ DRValue ExprEmitter::emitDRValue(ASTExprAnd<RValue> value) {
       ASTType incorrectBindingExpectedType;
       auto bindingAttr = paramBindings.verifyBindings(
           signature.getInputParams(), "<<UNUSED>>", value.expr->getLoc(),
-          incorrectBindingNo, incorrectBindingExpectedType, *this, nullptr);
+          incorrectBindingNo, incorrectBindingExpectedType, *this, nullptr,
+          signature.hasParamVarargs());
       if (!bindingAttr) {
         // If it didn't work out, then it is an error because parameterized
         // values cannot be used in a dynamic context.
@@ -404,7 +405,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *node) {
     auto bindingAttr = paramBindings.verifyBindings(
         structDecl.getInputParamDeclsAttr(), structDecl.getName(),
         node->getLoc(), incorrectBindingNo, incorrectBindingExpectedType, *this,
-        structDecl);
+        structDecl, structDecl.getParamVarargs());
     if (!bindingAttr)
       return {};
 

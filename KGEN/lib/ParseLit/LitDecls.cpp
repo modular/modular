@@ -761,7 +761,8 @@ struct ParsedArgument {
 static ParseResult
 parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
                            SmallVector<ParamDeclAttr> &inputParams,
-                           SmallVector<ParamDeclAttr> &resultParams) {
+                           SmallVector<ParamDeclAttr> &resultParams,
+                           bool &paramVararg) {
   if (!p.consumeIf(LitToken::l_square) || p.consumeIf(LitToken::r_square))
     return success();
 
@@ -792,10 +793,9 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
   llvm::SaveAndRestore X(declScope.resolvedness, DeclResolvedness::fully);
   ExprEmitter emitter(p.shared, declScope, std::nullopt, nullptr);
 
-  auto processParameterArgs = [&p, &declResolver, &declScope,
-                               &emitter](ArrayRef<ParsedArgument> args,
-                                         SmallVectorImpl<ParamDeclAttr> &params,
-                                         bool isResultParams) {
+  auto processParameterArgs = [&](ArrayRef<ParsedArgument> args,
+                                  SmallVectorImpl<ParamDeclAttr> &params,
+                                  bool isResultParams) {
     for (auto &arg : args) {
       // Check for things supported in arguments that are not supported in
       // parameters.
@@ -814,12 +814,12 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
       ValueInputConvention convention = arg.convention;
       VarArgKind vararg = arg.vararg;
       if (vararg != VarArgKind::None) {
-        if (isResultParams)
+        if (isResultParams) {
           p.emitError(arg.loc, "result parameters may not be variadic");
-        else if (!isa<TypeCheckErrorType>(type.mlirType))
+        } else if (!isa<TypeCheckErrorType>(type.mlirType)) {
           type = KGEN::VariadicType::get(type);
-        // Notice that we handle the variadics.
-        vararg = VarArgKind::None;
+          paramVararg = true;
+        }
       }
 
       if (convention != ValueInputConvention::ByVal)
@@ -1409,7 +1409,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  if (parseOptionalMetaSignature(p, decl, inputParamDecls, resultParamDecls) ||
+  bool paramVararg = false;
+  if (parseOptionalMetaSignature(p, decl, inputParamDecls, resultParamDecls,
+                                 paramVararg) ||
       p.parseToken(LitToken::l_paren, "expected '(' for parameter list"))
     return failure();
 
@@ -1568,6 +1570,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   SmallVector<StringAttr> argNames;
   SmallVector<ValueInputConvention> inputConventions;
   FnEffects effects = funcOp.getMetadata().getFnEffects();
+  if (paramVararg)
+    effects = effects | FnEffects::ParamVararg;
   for (const ParsedArgument &arg : args) {
     argLocs.push_back(p.translateLocation(arg.loc));
     argNames.push_back(arg.name);
@@ -1972,15 +1976,18 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   SmallVector<ParamDeclAttr> inputParamDecls;
   SmallVector<ParamDeclAttr> resultParamDecls;
+  bool paramVarargs = false;
   if (p.parseToken(LitToken::kw_struct,
                    "internal error: checked by stmt parser") ||
       p.parseToken(LitToken::identifier,
                    "internal error: checked by stmt parser") ||
-      parseOptionalMetaSignature(p, decl, inputParamDecls, resultParamDecls) ||
+      parseOptionalMetaSignature(p, decl, inputParamDecls, resultParamDecls,
+                                 paramVarargs) ||
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
     return failure();
 
   structOp.setInputParamDecls(inputParamDecls);
+  structOp.setParamVarargs(paramVarargs);
 
   // Reject result parameters.
   if (!resultParamDecls.empty())

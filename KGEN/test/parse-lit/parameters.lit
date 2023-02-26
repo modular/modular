@@ -413,12 +413,12 @@ fn useParamVariadics():
   fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
-  # CHECK-NEXT: kgen.param.declare fnAlias: <b: variadic<@"$Int"::@Int>>() -> !lit.none = <@"$parameters"::@"fnWithVariadics()">
+  # CHECK-NEXT: kgen.param.declare fnAlias: <b: variadic<@"$Int"::@Int>>() param_vararg -> !lit.none = <@"$parameters"::@"fnWithVariadics()">
   alias fnAlias = fnWithVariadics
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
-  # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: () -> !lit.none = <@"$parameters"::@"fnWithVariadics()"<b: variadic<@"$Int"::@Int> = []>>
-  # CHECK-NEXT:  %fnLet = lit.let.decl "fnLet" = [[TMP]] : !kgen.signature<() -> !lit.none>
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: <>() param_vararg -> !lit.none = <@"$parameters"::@"fnWithVariadics()"<b: variadic<@"$Int"::@Int> = []>>
+  # CHECK-NEXT:  %fnLet = lit.let.decl "fnLet" = [[TMP]] : !kgen.signature<() param_vararg -> !lit.none>
   let fnLet = fnWithVariadics
 
   # CHECK-NEXT: %a = lit.var.decl "a" : <@"{{.*}}::@StructWithVariadics<b: variadic<@"$Int"::@Int> = []>>
@@ -427,6 +427,17 @@ fn useParamVariadics():
   var b: StructWithVariadics[1]
   # CHECK-NEXT: %c = lit.var.decl "c" : <@"$parameters"::@StructWithVariadics<b: variadic<@"$Int"::@Int> = [#lit.struct<{value: scalar<index> = 1}>, #lit.struct<{value: scalar<index> = 2}>]>>
   var c: StructWithVariadics[1, 2]
+
+
+# CHECK-LABEL: lit.func @"variadic_parameter()"<elems: variadic<index>>
+fn variadic_parameter[elems: __mlir_type.`!kgen.variadic<index>`]() -> Int:
+    return 3
+
+# CHECK-LABEL: lit.func @"pass_variadic()"<elems: variadic<index>>
+fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
+    # CHECK-NEXT: kgen.call @"$parameters"::@"variadic_parameter()"<elems: variadic<index> = elems>
+    let result = variadic_parameter[elems]()
+
 
 ##===----------------------------------------------------------------------===##
 # Parameter Inference

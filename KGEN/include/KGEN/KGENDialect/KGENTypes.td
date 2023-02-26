@@ -220,6 +220,10 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     bool isAsync() {
       return bitEnumContainsAny(getFnEffects(), FnEffects::Async);
     }
+    /// Return true if the function has parameter varargs.
+    bool hasParamVarargs() {
+      return bitEnumContainsAny(getFnEffects(), FnEffects::ParamVararg);
+    }
 
     /// Return the convention for the specified value input parameter.
     ValueInputConvention getInputConvention(size_t inputNo) {

@@ -90,7 +90,7 @@ public:
   verifyBindings(ParamDeclArrayAttr actualParamDecls, StringRef baseName,
                  SMLoc loc, ssize_t &incorrectBindingNo,
                  ASTType &incorrectBindingExpectedType, ExprEmitter &emitter,
-                 Operation *declOp,
+                 Operation *declOp, bool paramVarargs,
                  ParameterInferenceHookTy parameterInferenceHook = {}) const;
 };
 

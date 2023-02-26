@@ -31,8 +31,8 @@ using namespace M::KGEN::LIT;
 /// Given the MLIR type for a variadic argument, return the element type as an
 /// MLIR type.
 static Type getVariadicElementType(Type variadicType) {
-  auto mValue = MValue(cast<KGEN::VariadicType>(variadicType).getElementType());
-  // KGEN::VariadicType allows arbitrary parameter expressions, but we only ever
+  auto mValue = MValue(cast<VariadicType>(variadicType).getElementType());
+  // VariadicType allows arbitrary parameter expressions, but we only ever
   // use concrete types for variadic syntax.
   assert(mValue.getIfTypeValue() &&
          "variadic convention never has parameteric element");
@@ -257,7 +257,7 @@ MValue ParameterInferenceState::infer(SignatureType signature,
 ParamBindArrayAttr InputParamBindings::verifyBindings(
     ParamDeclArrayAttr actualParamDecls, StringRef baseName, SMLoc loc,
     ssize_t &incorrectBindingNo, ASTType &incorrectBindingExpectedType,
-    ExprEmitter &emitter, Operation *declOp,
+    ExprEmitter &emitter, Operation *declOp, bool paramVarargs,
     ParameterInferenceHookTy parameterInferenceHook) const {
 
   // If we have an incorrect number of bindings specified, this lambda reports
@@ -295,7 +295,10 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
   // so far and remap types on demand.
   LitParameterEvaluator evaluator(emitter.shared);
   size_t nextBinding = 0;
-  for (ParamDeclAttr decl : actualParamDecls) {
+  for (auto [idx, declX] : llvm::enumerate(actualParamDecls)) {
+    ParamDeclAttr decl = declX;
+    bool isVararg = idx + 1 == actualParamDecls.size() && paramVarargs;
+
     // This lambda installs the decl's value in the parameter evaluator and new
     // binding array.
     auto setParamValue = [&](TypedAttr value) {
@@ -307,9 +310,9 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
     if (nextBinding == bindings.size()) {
       // If the parameter decl is a variadic parameter list, we can fulfill it
       // with an empty list.  We know it must be the last parameter decl.
-      if (auto variadicType = dyn_cast<KGEN::VariadicType>(decl.getType())) {
-        auto emptyVariadic =
-            KGEN::VariadicAttr::get(ArrayRef<TypedAttr>(), variadicType);
+      if (isVararg) {
+        auto emptyVariadic = KGEN::VariadicAttr::get(
+            ArrayRef<TypedAttr>(), cast<KGEN::VariadicType>(decl.getType()));
         setParamValue(emptyVariadic);
         continue;
       }
@@ -375,8 +378,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
 
     // Scalar parameter values are installed directly.
     MValue paramValue;
-    auto variadicType = dyn_cast<KGEN::VariadicType>(decl.getType());
-    if (!variadicType) {
+    if (!isVararg) {
       // Otherwise we get a single value.
       MValue paramValue = handleSingleParameterValue(binding, decl.getType());
       if (!paramValue)
@@ -388,6 +390,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
     // If the parameter is a variadic list, it may consume many values, and they
     // all get packed up into a VariadicAttr.
     SmallVector<TypedAttr> elements;
+    auto variadicType = cast<VariadicType>(decl.getType());
     Type expectedType = ParamRefType::get(variadicType.getElementType());
     elements.push_back(handleSingleParameterValue(binding, expectedType));
     if (!elements.back())
@@ -398,7 +401,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       if (!elements.back())
         return {};
     }
-    setParamValue(KGEN::VariadicAttr::get(elements, variadicType));
+    setParamValue(VariadicAttr::get(elements, variadicType));
   }
 
   // Check and complain if we have bindings that didn't get used.
@@ -495,7 +498,7 @@ OverloadFitness::evaluate(SignatureType signature,
   auto newBindings = callable.inputParamBindings.verifyBindings(
       signature.getInputParams(), callable.baseName, callExpr->getLoc(),
       incorrectBindingNo, incorrectBindingExpectedType, emitter,
-      /*don't emit diagnostics*/ nullptr,
+      /*don't emit diagnostics*/ nullptr, signature.hasParamVarargs(),
       [&](ParamDeclAttr decl, ArrayRef<ParamBindAttr> bindingsSoFar) -> MValue {
         return ParameterInferenceState(decl).infer(signature, bindingsSoFar,
                                                    operands);
@@ -919,8 +922,8 @@ static SymbolConstantAttr getBoundConstAttrFor(const DirectCallable *callable,
   auto newBindings = callable->inputParamBindings.verifyBindings(
       funcOp.getFullSignature().getInputParams(), callable->baseName,
       callExpr->getLoc(), incorrectBindingNo, incorrectBindingExpectedType,
-      emitter,
-      /*emit diagnostics*/ funcOp);
+      emitter, /*emit diagnostics*/ funcOp,
+      funcOp.getSignature().hasParamVarargs());
   if (!newBindings)
     return {};
 
@@ -1290,8 +1293,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     if (nextOperandIdx == operands.size()) {
       // Varargs arguments are fulfilled with an empty !pop.variadic list.
       if (calleeSig.isVararg(argIdx)) {
-        auto variadic = KGEN::VariadicAttr::get(
-            ArrayRef<TypedAttr>(), expectedType.cast<KGEN::VariadicType>());
+        auto variadic = VariadicAttr::get(ArrayRef<TypedAttr>(),
+                                          expectedType.cast<VariadicType>());
         argumentValues.push_back({MValue(variadic), callNode});
         continue;
       }
@@ -1356,8 +1359,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       SmallVector<TypedAttr> variadicArgs;
       for (auto operand : variadicOperands)
         variadicArgs.push_back(operand.ir.getIfMValue().get());
-      auto argAttr = KGEN::VariadicAttr::get(
-          variadicArgs, expectedType.cast<KGEN::VariadicType>());
+      auto argAttr =
+          VariadicAttr::get(variadicArgs, expectedType.cast<VariadicType>());
       argumentValues.push_back({MValue(argAttr), variadicOperands[0].expr});
       continue;
     }
