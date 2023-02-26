@@ -228,13 +228,11 @@ def KGEN_MetadataAttr : KGENAttr<"Metadata", "metadata"> {
 
   let parameters = (ins
     OptionalArrayRefParameter<"ValueInputConvention">:$inputConventions,
-    OptionalArrayRefParameter<"VarArgKind">:$varArgs,
     OptionalArrayRefParameter<"TypedAttr">:$defaultArguments,
     "FnEffects":$fnEffects
   );
   let assemblyFormat = [{
     `<` `[` (`]`) : ($inputConventions^ `]`)? `,`
-        `[` (`]`) : ($varArgs^ `]`)?  `,`
         `[` (`]`) : ($defaultArguments^ `]`)? `,`
     $fnEffects `>`
   }];

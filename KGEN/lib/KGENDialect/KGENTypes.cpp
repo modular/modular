@@ -216,9 +216,25 @@ SignatureType SignatureType::get(MLIRContext *ctx, TypeRange inputs,
 SignatureType SignatureType::setFnEffect(FnEffects effect) {
   return SignatureType::get(
       getInputParams(), getResultParams(), getValues(),
-      MetadataAttr::get(getContext(), getValueInputConventions(), getVarArgs(),
+      MetadataAttr::get(getContext(), getValueInputConventions(),
                         getDefaultArguments(),
                         bitEnumSet(getFnEffects(), effect)));
+}
+
+bool SignatureType::isVararg(size_t index) {
+  if (!bitEnumContainsAny(getFnEffects(), FnEffects::Vararg))
+    return false;
+  // If the function has keyword varargs, the vararg index is the second last.
+  // Otherwise, it's the last.
+  return (index + 1 +
+          bitEnumContainsAny(getFnEffects(), FnEffects::KWVararg)) ==
+         getValueInputs().size();
+}
+
+bool SignatureType::isKWVararg(size_t index) {
+  if (!bitEnumContainsAny(getFnEffects(), FnEffects::KWVararg))
+    return false;
+  return index + 1 == getValueInputs().size();
 }
 
 /// Return a signature with the specified parameter bindings substituted

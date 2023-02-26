@@ -527,6 +527,8 @@ LitParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
 //===----------------------------------------------------------------------===//
 
 namespace {
+enum VarArgKind { None, VarArg, KWVarArg };
+
 /// Parsing support for a function argument and input parameter:
 ///
 /// argument_list      ::= argument ("," argument)*
@@ -1565,12 +1567,15 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   SmallVector<Location> argLocs;
   SmallVector<StringAttr> argNames;
   SmallVector<ValueInputConvention> inputConventions;
-  SmallVector<VarArgKind> varargs;
+  FnEffects effects = funcOp.getMetadata().getFnEffects();
   for (const ParsedArgument &arg : args) {
     argLocs.push_back(p.translateLocation(arg.loc));
     argNames.push_back(arg.name);
     inputConventions.push_back(arg.convention);
-    varargs.push_back(arg.vararg);
+    if (arg.vararg == VarArgKind::VarArg)
+      effects = effects | FnEffects::Vararg;
+    else if (arg.vararg == VarArgKind::KWVarArg)
+      effects = effects | FnEffects::KWVararg;
   }
 
   OpBuilder builder = decl.getDeclEndBuilder();
@@ -1579,8 +1584,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       builder.getAttr<ParamDeclArrayAttr>(inputParamDecls),
       builder.getAttr<ParamDeclArrayAttr>(resultParamDecls),
       builder.getFunctionType(argTypes, {resultType.mlirType}),
-      builder.getAttr<MetadataAttr>(inputConventions, varargs, defaults,
-                                    funcOp.getMetadata().getFnEffects()));
+      builder.getAttr<MetadataAttr>(inputConventions, defaults, effects));
   if (!signature)
     return failure();
 

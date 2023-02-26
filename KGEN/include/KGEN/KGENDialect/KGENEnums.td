@@ -107,22 +107,21 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
   let cppNamespace = "M::KGEN";
 }
 
-/// Vararg marker for input arguments.
-def KGEN_VarArgKind : I32EnumAttr<"VarArgKind",
-    "Vararg marker", [
-  I32EnumAttrCase<"None", 0, "none">,
-  I32EnumAttrCase<"VarArg", 1, "vararg">,
-  I32EnumAttrCase<"KWVarArg", 2, "kwvararg">
-]> {
-  let cppNamespace = "M::KGEN";
-}
-
 /// This describes the encoding of the function effects in the metadata of a
 /// SignatureType.
 def KGEN_FnEffects : I8BitEnumAttr<"FnEffects", "Function effects", [
+  /// This function has no effects.
   I8BitEnumAttrCaseNone<"None", "none">,
+  /// This function can throw.
   I8BitEnumAttrCaseBit<"Throws", 0, "throws">,
+  /// This is an async function.
   I8BitEnumAttrCaseBit<"Async", 1, "async">,
+  /// This function has vararg arguments.
+  I8BitEnumAttrCaseBit<"Vararg", 2, "vararg">,
+  /// This function has keyword vararg arguments.
+  I8BitEnumAttrCaseBit<"KWVararg", 3, "kwvararg">,
+  /// This function has vararg input parameters.
+  I8BitEnumAttrCaseBit<"ParamVararg", 4, "param_vararg">
 ]> {
   let cppNamespace = "M::KGEN";
 }
