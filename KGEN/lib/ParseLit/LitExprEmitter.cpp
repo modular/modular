@@ -69,8 +69,10 @@ RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value) {
     return {};
   if (!clone.isNull()) {
     // Ok, cool we know it will succeed; do it.
-    auto result = clone.emitFunctionCall(value, CallSyntax::kImplicitConvert,
-                                         value.expr, *this);
+    auto result =
+        clone.emitFunctionCall(value, CallSyntax::kImplicitConvert, value.expr,
+                               // FIXME
+                               static_cast<ExprEmitter &>(*this));
     if (!result)
       return {};
     assert(result.getIfRValue() &&
@@ -122,7 +124,9 @@ DRValue IREmitter::emitDRValue(ASTExprAnd<RValue> value) {
       ASTType incorrectBindingExpectedType;
       auto bindingAttr = paramBindings.verifyBindings(
           signature.getInputParams(), "<<UNUSED>>", value.expr->getLoc(),
-          incorrectBindingNo, incorrectBindingExpectedType, shared, nullptr);
+          incorrectBindingNo, incorrectBindingExpectedType,
+          // FIXME
+          static_cast<ExprEmitter &>(*this), nullptr);
       if (!bindingAttr) {
         // If it didn't work out, then it is an error because parameterized
         // values cannot be used in a dynamic context.
@@ -209,7 +213,9 @@ IREmitter::emitNamedMethodCall(StringRef methodName,
     return {};
   }
 
-  return callee.emitFunctionCall(argValues, syntax, callNode, *this);
+  return callee.emitFunctionCall(argValues, syntax, callNode,
+                                 // FIXME
+                                 static_cast<ExprEmitter &>(*this));
 }
 
 /// Convert the specified value to the expected type, invoking implicit
@@ -241,14 +247,17 @@ AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
   callee.direct->disableImplicitConversions = true;
   if (failed(callee.direct->filterOverloadSet(
           {newArg}, CallSyntax::kImplicitConvert, expr,
-          /*emitDiagnosticOnFailure=*/false, shared))) {
+          /*emitDiagnosticOnFailure=*/false,
+          // FIXME:
+          static_cast<ExprEmitter &>(*this)))) {
     errorHandler();
     return {};
   }
 
   // Ok, cool we know it will succeed; do it.
   return callee.emitFunctionCall(newArg, CallSyntax::kImplicitConvert, expr,
-                                 *this);
+                                 // FIXME
+                                 static_cast<ExprEmitter &>(*this));
 }
 
 AnyValue IREmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
@@ -403,8 +412,8 @@ ASTType ExprEmitter::emitExprType(const ExprNode *node) {
     ASTType incorrectBindingExpectedType;
     auto bindingAttr = paramBindings.verifyBindings(
         structDecl.getInputParamDeclsAttr(), structDecl.getName(),
-        node->getLoc(), incorrectBindingNo, incorrectBindingExpectedType,
-        shared, structDecl);
+        node->getLoc(), incorrectBindingNo, incorrectBindingExpectedType, *this,
+        structDecl);
     if (!bindingAttr)
       return {};
 

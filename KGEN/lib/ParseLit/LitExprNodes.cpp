@@ -579,7 +579,7 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 
     CallableValue callable =
         emitter.emitCallable(base, " in __adaptive_set property");
-    if (failed(callable.emitAdaptiveSet(emitter, funcsAttr))) {
+    if (failed(callable.emitAdaptiveSet(funcsAttr, emitter))) {
       emitter.emitError(getLoc(),
                         "__adaptive_set can only be applied to global "
                         "functions with an @adaptive decorator")
@@ -1030,8 +1030,7 @@ static CallableValue substituteParametersIntoUserDefinedType(
   ASTType incorrectBindingExpectedType;
   auto bindingAttr = paramBindings.verifyBindings(
       structOp.getInputParamDeclsAttr(), structOp.getName(), subscript.getLoc(),
-      incorrectBindingNo, incorrectBindingExpectedType, emitter.shared,
-      structOp);
+      incorrectBindingNo, incorrectBindingExpectedType, emitter, structOp);
   if (!bindingAttr)
     return {};
 
@@ -1195,10 +1194,9 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter,
   }
 
   // Next, check the multiple argument path.
-  if (getItem.direct &&
-      succeeded(getItem.direct->filterOverloadSet(
-          indexValues, CallSyntax::kSubscript, getItem.expr,
-          /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
+  if (getItem.direct && succeeded(getItem.direct->filterOverloadSet(
+                            indexValues, CallSyntax::kSubscript, getItem.expr,
+                            /*emitDiagnosticOnFailure=*/false, emitter))) {
     // Ok, this looks like it will work.
     // TODO(Computed LValues): We need to look up __setitem__ and have a better
     // model for computed LValues.
@@ -1500,7 +1498,7 @@ static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
 /// ChainedCmpOpNode since the latter is a sequence of binary operations.
 static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                               ASTExprAnd<AnyValue> rhs, ExprNode::Kind kind,
-                              const ExprNode *callNode, IREmitter &emitter) {
+                              const ExprNode *callNode, ExprEmitter &emitter) {
 
   // FIXME: We currently hack in index type support as transition to proper
   // expression support.
@@ -1586,10 +1584,9 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                        isErroneousDecl, emitter.shared);
   if (isErroneousDecl)
     return {};
-  if (callee.direct &&
-      succeeded(callee.direct->filterOverloadSet(
-          argValues, CallSyntax::kOperator, callee.expr,
-          /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
+  if (callee.direct && succeeded(callee.direct->filterOverloadSet(
+                           argValues, CallSyntax::kOperator, callee.expr,
+                           /*emitDiagnosticOnFailure=*/false, emitter))) {
     return callee.emitFunctionCall(argValues, CallSyntax::kOperator, callNode,
                                    emitter);
   }
@@ -1604,7 +1601,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     if (callee.direct &&
         succeeded(callee.direct->filterOverloadSet(
             argValues, CallSyntax::kReversedOperator, callee.expr,
-            /*emitDiagnosticOnFailure=*/false, emitter.shared))) {
+            /*emitDiagnosticOnFailure=*/false, emitter))) {
       return callee.emitFunctionCall(argValues, CallSyntax::kReversedOperator,
                                      callNode, emitter);
     }

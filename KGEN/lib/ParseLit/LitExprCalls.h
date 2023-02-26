@@ -19,7 +19,7 @@
 namespace M::KGEN::LIT {
 using llvm::SMLoc;
 class ASTDecl;
-class IREmitter;
+class ExprEmitter;
 class FuncOp;
 
 //===----------------------------------------------------------------------===//
@@ -89,7 +89,7 @@ public:
   ParamBindArrayAttr
   verifyBindings(ParamDeclArrayAttr actualParamDecls, StringRef baseName,
                  SMLoc loc, ssize_t &incorrectBindingNo,
-                 ASTType &incorrectBindingExpectedType, LitSharedState &shared,
+                 ASTType &incorrectBindingExpectedType, ExprEmitter &emitter,
                  Operation *declOp,
                  ParameterInferenceHookTy parameterInferenceHook = {}) const;
 };
@@ -147,7 +147,7 @@ struct DirectCallable {
   LogicalResult filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
                                   CallSyntax syntax, const ExprNode *callExpr,
                                   bool emitDiagnosticOnFailure,
-                                  LitSharedState &shared);
+                                  ExprEmitter &emitter);
 
   /// Resolve the callee into either a single MValue callee (if there's only one
   /// decl provided) or a variadic that contains all the possible adaptive
@@ -160,7 +160,7 @@ struct DirectCallable {
   /// returning null. This allows producing a reference to a parameterized
   /// function without the parmaeters specified.  They can be bound later.
   SymbolConstantAttr getBoundConstantAttr(const ExprNode *callExpr,
-                                          LitSharedState &shared) const;
+                                          ExprEmitter &emitter) const;
 
   /// Perform subsitutions of the specified bindings into the symbol, returning,
   /// in symConstAttrs, the resultant SymbolConstant attr for each adaptive
@@ -169,7 +169,7 @@ struct DirectCallable {
   LogicalResult
   getBoundConstantAttrsAdaptiveSet(SmallVectorImpl<TypedAttr> &symConstAttrs,
                                    const ExprNode *callExpr,
-                                   LitSharedState &shared) const;
+                                   ExprEmitter &emitter) const;
 
   /// Check declarations for the result parameters and add them to
   /// resultParamDecls.  This emits and error and returns failure if an error is
@@ -177,7 +177,7 @@ struct DirectCallable {
   LogicalResult
   getResultParamDecls(SignatureType signature,
                       SmallVectorImpl<ParamDeclAttr> &resultParamDecls,
-                      IREmitter &emitter);
+                      ExprEmitter &emitter);
 };
 
 //===----------------------------------------------------------------------===//
@@ -228,12 +228,12 @@ public:
 
   /// Emit this as a flattened RValue or LValue.  This returns null on
   /// failure.
-  AnyValue emitAsValue(IREmitter &emitter) const;
+  AnyValue emitAsValue(ExprEmitter &emitter) const;
 
   /// Emit in values references of all adaptive function overloads this
   /// DirectCallable represents.
-  LogicalResult emitAdaptiveSet(IREmitter &emitter,
-                                SmallVectorImpl<TypedAttr> &values) const;
+  LogicalResult emitAdaptiveSet(SmallVectorImpl<TypedAttr> &values,
+                                ExprEmitter &emitter) const;
 
   /// Emit a function call to the specified callee with the specified operand
   /// values.  This emits an error and returns null on failure.
@@ -244,19 +244,19 @@ public:
   /// information.
   AnyValue emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
                             CallSyntax syntax, const ExprNode *callNode,
-                            IREmitter &emitter);
+                            ExprEmitter &emitter);
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations.  This does not generate
   /// any IR.
   static bool canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
                                          ASTType requiredType,
-                                         LitSharedState &shared);
+                                         ExprEmitter &emitter);
 
 private:
   MValue inlineFunctionCallIntoMValue(
       SMLoc callLoc, ASTDecl &callee, ParamBindArrayAttr inputParams,
-      ArrayRef<ASTExprAnd<AnyValue>> argumentValues, IREmitter &emitter);
+      ArrayRef<ASTExprAnd<AnyValue>> argumentValues, ExprEmitter &emitter);
 };
 
 } // namespace M::KGEN::LIT

@@ -32,9 +32,6 @@ public:
   /// It is mutable to support expressions that require internal control flow.
   std::optional<OpBuilder> builder;
 
-  IREmitter(LitSharedState &shared, std::optional<OpBuilder> builder)
-      : LitSharedStateUser(shared), builder(builder) {}
-
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 
@@ -80,6 +77,10 @@ public:
   /// but not guaranteed).  This reports and error and returns null on error.
   RValue emitConditionValueAsI1(ASTExprAnd<AnyValue> expr,
                                 AnyValue &boolResult);
+
+protected:
+  IREmitter(LitSharedState &shared, std::optional<OpBuilder> builder)
+      : LitSharedStateUser(shared), builder(builder) {}
 };
 
 /// ExprEmitter refines IREmitter, providing the additional state needed to
