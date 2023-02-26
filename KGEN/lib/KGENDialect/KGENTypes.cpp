@@ -445,26 +445,15 @@ bool SignatureType::isConcrete() {
 }
 
 Type SignatureType::parse(AsmParser &p) {
-  if (p.parseLess())
+  SignatureType signature;
+  if (p.parseLess() || parseSignature(p, signature) || p.parseGreater())
     return {};
-  llvm::SMLoc loc = p.getCurrentLocation();
-  ParamDeclArrayAttr inputParams, resultParams;
-  if (parseOptionalParameterSpec(p, inputParams, resultParams))
-    return {};
-  SmallVector<Type> inputs, outputs;
-  MetadataAttr metadata;
-  if (parseTypesWithMetadata(p, inputs, outputs, metadata))
-    return {};
-  if (p.parseGreater())
-    return {};
-  return getChecked([&] { return p.emitError(loc); }, inputParams, resultParams,
-                    p.getBuilder().getFunctionType(inputs, outputs), metadata);
+  return signature;
 }
 
 void SignatureType::print(AsmPrinter &p) const {
   p << '<';
-  printOptionalParameterSpec(p, getInputParams(), getResultParams());
-  printTypesWithMetadata(p, getValueInputs(), getValueResults(), getMetadata());
+  printSignature(p, *this);
   p << '>';
 }
 
@@ -476,21 +465,20 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   // Check we have the right number of conventions.
   if (metadata.getInputConventions().size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
+  if (metadata.getVarArgs().size() != values.getInputs().size())
+    return emitError() << "incorrect # of input varargs kinds specified";
 
-  DefaultArgumentsAttr defaults = metadata.getDefaultArguments();
-  if (defaults) {
-    for (auto [defaultsIndex, value] : llvm::enumerate(defaults.getValues())) {
-      size_t index = values.getInputs().size() - defaults.getValues().size() +
-                     defaultsIndex;
-      Type expected = values.getInputs()[index];
-      if (value.getType() != expected) {
-        return emitError() << "argument #" << index << " has type " << expected
-                           << " but default argument has type "
-                           << value.getType();
-      }
+  for (auto [defaultsIndex, value] :
+       llvm::enumerate(metadata.getDefaultArguments())) {
+    size_t index = values.getInputs().size() -
+                   metadata.getDefaultArguments().size() + defaultsIndex;
+    Type expected = values.getInputs()[index];
+    if (value.getType() != expected) {
+      return emitError() << "argument #" << index << " has type " << expected
+                         << " but default argument has type "
+                         << value.getType();
     }
   }
-
   // If the function throws an error, make sure it has one result.
   if (bitEnumContainsAny(metadata.getFnEffects(), FnEffects::Throws) &&
       values.getNumResults() != 1)

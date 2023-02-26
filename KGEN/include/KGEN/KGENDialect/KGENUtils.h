@@ -129,20 +129,21 @@ void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
                                 ArrayRef<ParamDeclAttr> inputParamDecls);
 
 /// Parse and print an operand and result type list with metadata.
-ParseResult parseTypesWithMetadata(AsmParser &p,
-                                   SmallVectorImpl<Type> &operandTypes,
-                                   SmallVectorImpl<Type> &resultTypes,
-                                   MetadataAttr &metadata);
-void printTypesWithMetadata(AsmPrinter &p, TypeRange operandTypes,
-                            TypeRange resultTypes, MetadataAttr metadata);
+OptionalParseResult parseOptionalSignature(AsmParser &p,
+                                           SignatureType &signature);
+ParseResult parseSignature(AsmParser &p, SignatureType &signature);
+ParseResult parseSignatureValues(AsmParser &p, ParamDeclArrayAttr inputParams,
+                                 ParamDeclArrayAttr resultParams,
+                                 SignatureType &signature);
+void printSignature(AsmPrinter &p, SignatureType signature);
+void printSignatureValues(AsmPrinter &p, SignatureType signature);
 
 /// Parse and print a function signature with optional metadata.
 ParseResult parseFunctionSignature(OpAsmParser &p,
                                    SmallVectorImpl<OpAsmParser::Argument> &args,
-                                   SmallVectorImpl<Type> &resultTypes,
-                                   MetadataAttr &metadata);
-void printFunctionSignature(OpAsmPrinter &p, Region &region, TypeRange argTypes,
-                            TypeRange resultTypes, MetadataAttr metadata,
+                                   SignatureType &signature);
+void printFunctionSignature(OpAsmPrinter &p, Region &region,
+                            SignatureType signature,
                             StringArrayAttr valueParamNames = {});
 
 /// Parse the always_inline related keywords if present.

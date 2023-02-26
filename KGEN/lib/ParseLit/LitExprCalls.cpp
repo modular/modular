@@ -544,8 +544,7 @@ OverloadFitness::evaluate(SignatureType signature,
 
   // One less required argument for each argument that has a default value we
   // can use instead.
-  if (DefaultArgumentsAttr defaults = signature.getDefaultArguments())
-    minRequiredArgs -= defaults.getValues().size();
+  minRequiredArgs -= signature.getDefaultArguments().size();
 
   if (operands.size() < minRequiredArgs) {
     // Tailor the diagnostic when more args are allowed.
@@ -579,9 +578,8 @@ OverloadFitness::evaluate(SignatureType signature,
         break;
       // We don't need a provided value for this index if we can use a default
       // value, which has already been converted to the expected type.
-      DefaultArgumentsAttr defaults = signature.getDefaultArguments();
-      if (defaults && providedValueIdx >= signature.getValueInputs().size() -
-                                              defaults.getValues().size())
+      if (providedValueIdx >= signature.getValueInputs().size() -
+                                  signature.getDefaultArguments().size())
         // In the callee, arguments with default values must be followed only by
         // other arguments with default values, so we do not need to enumerate
         // any more of the callee arguments.
@@ -1301,8 +1299,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       // Otherwise, apply the default argument. We've ensured above that we have
       // a default argument for each missing operand.
       argumentValues.push_back(
-          {MValue(calleeSig.getDefaultArguments().getValues()[nextDefaultIdx]),
-           callNode});
+          {MValue(calleeSig.getDefaultArguments()[nextDefaultIdx]), callNode});
       ++nextDefaultIdx;
       continue;
     }

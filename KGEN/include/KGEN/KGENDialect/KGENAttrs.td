@@ -201,35 +201,6 @@ def ConstraintArrayAttr
     : KGEN_ArrayOfAttrsAttr<"ConstraintArray", "constraints", "ConstraintAttr">;
 
 //===----------------------------------------------------------------------===//
-// DefaultArgumentsAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_DefaultArgumentsAttr : KGENAttr<"DefaultArguments", "default.arguments"> {
-  let summary = "An array of default argument values, such as for a function.";
-  let description = [{
-    This attribute represents an array of default argument values (such as for a
-    function that takes arguments).
-
-    N.B.: Because we can be certain that `N` number of default arguments can
-    only apply to the last `N` arguments in a function signature, there is no
-    need to store an index for any of these default argument values.
-
-    Example:
-
-    ```mlir
-    // Two default arguments.
-    #kgen<default.arguments[1 : i32, 3.140000e+00 : f32]>
-
-    // An empty sequence of default arguments.
-    #kgen<default.arguments[]>
-    ```
-  }];
-
-  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values);
-  let assemblyFormat = "`[` (`]`) : ($values^ `]`)?";
-}
-
-//===----------------------------------------------------------------------===//
 // MetadataAttr
 //===----------------------------------------------------------------------===//
 
@@ -258,12 +229,13 @@ def KGEN_MetadataAttr : KGENAttr<"Metadata", "metadata"> {
   let parameters = (ins
     OptionalArrayRefParameter<"ValueInputConvention">:$inputConventions,
     OptionalArrayRefParameter<"VarArgKind">:$varArgs,
-    OptionalParameter<"DefaultArgumentsAttr">:$defaultArguments,
+    OptionalArrayRefParameter<"TypedAttr">:$defaultArguments,
     "FnEffects":$fnEffects
   );
   let assemblyFormat = [{
     `<` `[` (`]`) : ($inputConventions^ `]`)? `,`
-        `[` (`]`) : ($varArgs^ `]`)? `,` ($defaultArguments^ `,`)?
+        `[` (`]`) : ($varArgs^ `]`)?  `,`
+        `[` (`]`) : ($defaultArguments^ `]`)? `,`
     $fnEffects `>`
   }];
 

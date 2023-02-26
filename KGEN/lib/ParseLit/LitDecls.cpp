@@ -1579,11 +1579,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       builder.getAttr<ParamDeclArrayAttr>(inputParamDecls),
       builder.getAttr<ParamDeclArrayAttr>(resultParamDecls),
       builder.getFunctionType(argTypes, {resultType.mlirType}),
-      builder.getAttr<MetadataAttr>(
-          inputConventions, varargs,
-          defaults.empty() ? DefaultArgumentsAttr{}
-                           : builder.getAttr<DefaultArgumentsAttr>(defaults),
-          funcOp.getMetadata().getFnEffects()));
+      builder.getAttr<MetadataAttr>(inputConventions, varargs, defaults,
+                                    funcOp.getMetadata().getFnEffects()));
   if (!signature)
     return failure();
 
