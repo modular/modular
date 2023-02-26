@@ -194,19 +194,23 @@ struct DirectCallable {
 /// disambiguate.
 class CallableValue {
 public:
+  /// This is the expression tree this result was built from, for use in
+  /// diagnostics.  This is null when the CallableValue is null.
+  const ExprNode *expr;
+
   /// This is a dynamic value, which may either be an LValue or an RValue, that
   /// may itself be a callable, or (if targetSymbol is non-null), is the self
   /// argument to a call to the symbol.
-  ASTExprAnd<AnyValue> baseVal;
+  AnyValue baseVal;
 
   /// If present, this a reference to a fixed symbol or an overload set.
   std::optional<DirectCallable> direct;
 
-  CallableValue() {}
-  CallableValue(ASTExprAnd<AnyValue> baseVal) : baseVal(baseVal) {}
-  CallableValue(llvm::SMLoc loc, StringRef baseName,
-                ArrayRef<ASTDecl *> fnDecls, ParamBindArrayAttr bindings)
-      : direct({loc, baseName, fnDecls, bindings}) {}
+  CallableValue() : expr(nullptr) {}
+  CallableValue(ASTExprAnd<AnyValue> baseVal)
+      : expr(baseVal.expr), baseVal(baseVal.ir) {}
+  CallableValue(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
+                ParamBindArrayAttr bindings, const ExprNode *expr);
 
   /// Get a CallableValue for a lookup of a named method on the specified type.
   /// If successful, this provides a non-null CallableValue.
@@ -215,7 +219,7 @@ public:
   /// indicate whether there was a problem with the callee that has already been
   /// diagnosed (allowing the client to squish downstream error messages).  This
   /// does not emit an error on failure.
-  CallableValue(ASTType type, StringRef methodName, SMLoc callLoc,
+  CallableValue(ASTType type, StringRef methodName, const ExprNode *callxpr,
                 bool &erroneousDecl, LitSharedState &shared);
 
   bool isNull() const { return !baseVal && !direct; }

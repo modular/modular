@@ -1007,6 +1007,10 @@ LogicalResult DirectCallable::getResultParamDecls(
 // CallableValue Implementation
 //===----------------------------------------------------------------------===//
 
+CallableValue::CallableValue(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
+                             ParamBindArrayAttr bindings, const ExprNode *expr)
+    : expr(expr), direct({expr->getLoc(), baseName, fnDecls, bindings}) {}
+
 /// Get a CallableValue for a lookup of a named method on the specified type.
 /// If successful, this provides a non-null CallableValue.
 ///
@@ -1014,8 +1018,12 @@ LogicalResult DirectCallable::getResultParamDecls(
 /// indicate whether there was a problem with the callee that has already been
 /// diagnosed (allowing the client to squish downstream error messages).  This
 /// does not emit an error on failure.
-CallableValue::CallableValue(ASTType type, StringRef methodName, SMLoc callLoc,
-                             bool &erroneousDecl, LitSharedState &shared) {
+CallableValue::CallableValue(ASTType type, StringRef methodName,
+                             const ExprNode *callExpr, bool &erroneousDecl,
+                             LitSharedState &shared)
+    : expr(callExpr) {
+
+  SMLoc callLoc = callExpr->getLoc();
 
   erroneousDecl = false;
   // First perform a lookup to see if there are any candidates.
@@ -1044,7 +1052,7 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   // If we have no bound symbol, return the normal lvalue or rvalue we
   // represent.
   if (!direct)
-    return baseVal.ir;
+    return baseVal;
 
   // We allow unbound symbols here which can be emitted as an MValue.  In the
   // case where we are partially applying, that will force the unbound symbol
@@ -1066,7 +1074,7 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   if (!baseVal)
     return MValue(directSymbolAttr);
 
-  auto loc = baseVal.expr->getLoc();
+  auto loc = expr->getLoc();
 
   // Otherwise, we have a base symbol for an instance method /and/ a self value
   // to apply to it.  Partially apply it to form a result closure.
@@ -1079,11 +1087,11 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
 
   switch (selfConvention) {
   case ValueInputConvention::ByRef: {
-    LValue baseLV = baseVal.ir.getIfLValue();
+    LValue baseLV = baseVal.getIfLValue();
     if (!baseLV) {
       emitter.emitError(loc,
                         "invalid use of mutating method on rvalue of type ")
-          << ASTType(baseVal.ir.getType()) << baseVal.expr->getRange();
+          << ASTType(baseVal.getType()) << expr->getRange();
       return {};
     }
     firstArgValue = baseLV;
@@ -1092,13 +1100,13 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
     // ownership models with mutable borrows.
     emitter.emitError(loc, "TODO: partial application to mutable base isn't "
                            "supportable without a lifetime model")
-        << baseVal.expr->getRange();
+        << expr->getRange();
     return {};
   }
   case ValueInputConvention::ByVal:
     // Otherwise we can have either an lvalue or rvalue, but we need to convert
     // to an rvalue if we have an lvalue.
-    firstArgValue = emitter.emitDRValue(baseVal);
+    firstArgValue = emitter.emitDRValue({baseVal, expr});
     if (!firstArgValue)
       return {};
     break;
@@ -1110,15 +1118,14 @@ AnyValue CallableValue::emitAsValue(IREmitter &emitter) const {
   // For an instance value, we have to partially apply the callee to the first
   // argument of the reference.  Materialize callee as a DRValue for
   // partial_apply.
-  auto calleeDRVal =
-      emitter.emitDRValue({AnyValue(directSymbolAttr), baseVal.expr});
+  auto calleeDRVal = emitter.emitDRValue({AnyValue(directSymbolAttr), expr});
 
   // Partial apply wants to know what operands to bind, we always bind the first
   // one.
   auto zeroAttr = emitter.builder->getAttr<mlir::DenseI64ArrayAttr>(0);
   return DRValue(emitter.builder->create<POP::PartialApplyOp>(
-      baseVal.expr->getLocation(emitter), calleeDRVal,
-      mlir::ValueRange(firstArgValue), zeroAttr));
+      expr->getLocation(emitter), calleeDRVal, mlir::ValueRange(firstArgValue),
+      zeroAttr));
 }
 
 LogicalResult
@@ -1144,8 +1151,8 @@ bool CallableValue::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
   // Otherwise, check to see if we can do an implicit conversion by invoking a
   // `__new__` method on the expected type.
   bool isErroneousDecl = false;
-  CallableValue callee(requiredType, "__new__", value.expr->getLoc(),
-                       isErroneousDecl, shared);
+  CallableValue callee(requiredType, "__new__", value.expr, isErroneousDecl,
+                       shared);
 
   // If there are no viable candidates for the implicit conversion, we fail.
   if (!callee.direct)
@@ -1209,7 +1216,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     // below.
     if (baseVal) {
       operandsWithSelf.reserve(operands.size() + 1);
-      operandsWithSelf.push_back(baseVal);
+      operandsWithSelf.push_back({baseVal, expr});
       operandsWithSelf.append(operands.begin(), operands.end());
       operands = operandsWithSelf;
       baseVal = {};
@@ -1232,9 +1239,9 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     // Otherwise we have an indirect call. If the callee is an MValue, emit a
     // `call_param`. Otherwise, emit the callee value as a DRValue so we can
     // call it with call_indirect.
-    callee = baseVal.ir.getIfMValue();
+    callee = baseVal.getIfMValue();
     if (!callee) {
-      callee = emitter.emitDRValue(baseVal);
+      callee = emitter.emitDRValue({baseVal, expr});
       if (!callee)
         return {};
     }
@@ -1242,7 +1249,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     calleeSig = dyn_cast<SignatureType>(callee.getType());
     if (!calleeSig) {
       emitError("invalid function type to call ")
-          << ASTType(callee.getType()) << baseVal.expr->getRange();
+          << ASTType(callee.getType()) << expr->getRange();
       return {};
     }
 
