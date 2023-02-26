@@ -207,7 +207,7 @@ public:
   static RValue getFrom(Storage storage) {
     RValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<MValue, DRValue>(storage))
+    if (isa_and_nonnull<MValue, DRValue>(storage))
       result.storage = storage;
     return result;
   }
@@ -241,9 +241,9 @@ public:
   AnyValue(DRValue value) : VariantValueStorage(value) {}
   AnyValue(LValue value) : VariantValueStorage(value) {}
 
-  LValue getIfLValue() const { return dyn_cast<LValue>(storage); }
-  DRValue getIfDRValue() const { return dyn_cast<DRValue>(storage); }
-  MValue getIfMValue() const { return dyn_cast<MValue>(storage); }
+  LValue getIfLValue() const { return dyn_cast_or_null<LValue>(storage); }
+  DRValue getIfDRValue() const { return dyn_cast_or_null<DRValue>(storage); }
+  MValue getIfMValue() const { return dyn_cast_or_null<MValue>(storage); }
   RValue getIfRValue() const { return RValue::getFrom(storage); }
 
   /// This method returns the type of this value when projected as an RValue.
