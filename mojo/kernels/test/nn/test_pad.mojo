@@ -7,7 +7,7 @@
 
 from Buffer import Buffer, NDBuffer
 from DType import DType
-from Index import Index
+from Index import StaticIntTuple
 from Int import Int
 from IO import print
 from List import create_kgen_list
@@ -24,9 +24,9 @@ fn test_pad_1d():
     # Create an input matrix of the form
     # [1, 2, 3]
     var input = NDBuffer[1, in_shape, DType.index.value].stack_allocation()
-    input.__setitem__(Index(0), 1)
-    input.__setitem__(Index(1), 2)
-    input.__setitem__(Index(2), 3)
+    input.__setitem__(StaticIntTuple[1](0), 1)
+    input.__setitem__(StaticIntTuple[1](1), 2)
+    input.__setitem__(StaticIntTuple[1](2), 3)
 
     # Create a padding array of the form
     # [1, 2]
@@ -71,10 +71,10 @@ fn test_pad_2d():
     # [[1, 2],
     #  [3, 4]]
     var input = NDBuffer[2, in_shape, DType.index.value].stack_allocation()
-    input.__setitem__(Index(0, 0), 1)
-    input.__setitem__(Index(0, 1), 2)
-    input.__setitem__(Index(1, 0), 3)
-    input.__setitem__(Index(1, 1), 4)
+    input.__setitem__(StaticIntTuple[2](0, 0), 1)
+    input.__setitem__(StaticIntTuple[2](0, 1), 2)
+    input.__setitem__(StaticIntTuple[2](1, 0), 3)
+    input.__setitem__(StaticIntTuple[2](1, 1), 4)
 
     # Create a padding array of the form
     # [1, 0, 1, 1]
@@ -137,10 +137,10 @@ fn test_pad_3d():
     # [[[1, 2],
     #   [3, 4]]]
     var input = NDBuffer[3, in_shape, DType.index.value].stack_allocation()
-    input.__setitem__(Index(0, 0, 0), 1)
-    input.__setitem__(Index(0, 0, 1), 2)
-    input.__setitem__(Index(0, 1, 0), 3)
-    input.__setitem__(Index(0, 1, 1), 4)
+    input.__setitem__(StaticIntTuple[3](0, 0, 0), 1)
+    input.__setitem__(StaticIntTuple[3](0, 0, 1), 2)
+    input.__setitem__(StaticIntTuple[3](0, 1, 0), 3)
+    input.__setitem__(StaticIntTuple[3](0, 1, 1), 4)
 
     # Create a padding array of the form
     # [1, 0, 0, 1, 1, 1, 0]

@@ -12,7 +12,6 @@ from Index import Index, StaticIntTuple
 from Intrinsics import _prefetch, PrefetchLocality, PrefetchRW, PrefetchCache
 from Int import Int
 from Range import range
-from TypeUtilities import rebind
 from SIMD import SIMD
 from Math import add
 from Functional import vectorize
@@ -69,9 +68,10 @@ fn gather_reduce[
 
         @always_inline
         fn _simd_gather[simd_width: __mlir_type.index](k: Int):
-            let in_idx = rebind[StaticIntTuple[input_rank]](Index(idx, k))
+            let in_idx = StaticIntTuple[input_rank](idx, k)
+            let out_idx = StaticIntTuple[output_rank](i, k)
+
             let gather_chunk = input.simd_load[simd_width](in_idx)
-            let out_idx = rebind[StaticIntTuple[output_rank]](Index(i, k))
             let accum = output.simd_load[simd_width](out_idx)
 
             output.simd_store[simd_width](
@@ -122,17 +122,13 @@ fn gather[
     @always_inline
     fn gather_row(i: Int, j: Int):
         let input_row_idx = indices[
-            rebind[StaticIntTuple[indices_rank]](Index(i, j)),
+            StaticIntTuple[indices_rank](i, j),
         ].value
         let output_row_idx = i * indices.dim[1]() + j
         # Set the address to prefetch
         let ptr_next = input.data.offset(
             (
-                indices[
-                    rebind[StaticIntTuple[indices_rank]](
-                        Index(i, j + prefetch_offset)
-                    )
-                ]
+                indices[StaticIntTuple[indices_rank](i, j + prefetch_offset)]
                 * row_size
             ).value
         )
@@ -188,9 +184,7 @@ fn gather[
             for k in range(output.dim[2]()):
                 let idx: Int = indices[j, k].value
                 output.__setitem__(
-                    rebind[
-                        StaticIntTuple[output_rank],
-                    ](Index(i, j, k)),
+                    StaticIntTuple[output_rank](i, j, k),
                     input[i, idx],
                 )
 
@@ -283,8 +277,6 @@ fn gather[
         for j in range(output.dim[1]()):
             let idx: Int = indices[j].value
             output.__setitem__(
-                rebind[
-                    StaticIntTuple[output_rank],
-                ](Index(i, j)),
+                StaticIntTuple[output_rank](i, j),
                 input[i, idx],
             )

@@ -6,7 +6,6 @@
 
 from Index import Index, StaticIntTuple
 from Int import Int
-
 from Buffer import (
     NDBuffer,
     Buffer,
@@ -116,10 +115,10 @@ struct ImageData[
             data layout.
         """
         if self.get_layout() == Conv2DLayout.NCHW:
-            return Index(n, c, h, w)
+            return StaticIntTuple[4](n, c, h, w)
         elif self.get_layout() == Conv2DLayout.RSCF:
-            return Index(h, w, c, n)
-        return Index(n, h, w, c)
+            return StaticIntTuple[4](h, w, c, n)
+        return StaticIntTuple[4](n, h, w, c)
 
     fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> SIMD[1, type]:
         """Reads the underlying data buffer based on the tensor index and under-
@@ -505,7 +504,7 @@ struct Naive2dConvolution[
                         # Compute the result value at this specific output posit-
                         #  ion.
                         self._compute_point(
-                            Index(no_idx, f_idx, ho_idx, wo_idx)
+                            StaticIntTuple[4](no_idx, f_idx, ho_idx, wo_idx)
                         )
 
     fn _compute_point(
@@ -523,7 +522,9 @@ struct Naive2dConvolution[
         var value: SIMD[1, type] = 0
 
         # Extract the H and W size of the input image.
-        let image_bound = Index(self.input_shape.H, self.input_shape.W)
+        let image_bound = StaticIntTuple[2](
+            self.input_shape.H, self.input_shape.W
+        )
 
         # Iterate on filter height dimension.
         for r_idx in range(self.filter_shape.H):
@@ -533,7 +534,7 @@ struct Naive2dConvolution[
                 let input_image_index = (
                     # Output HxW with striding.
                     (
-                        Index(
+                        StaticIntTuple[2](
                             output_idx[2],
                             output_idx[3],
                         )
