@@ -874,6 +874,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       auto region = std::make_unique<Region>();
       region->takeBody(unboundRegion.getRegion());
       unboundRegion.erase();
+      results.front()->setIRValue(PRValue(BoolAttr::get(context, false)));
       state.addRegion(std::move(region));
       continue;
     }

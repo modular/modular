@@ -170,6 +170,25 @@ function(add_kgen_kernel target)
     INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
 endfunction()
 
+function(add_lit_doc doc_filename output_file output_directory)
+  _setup_libs()
+
+  set(GEN_DOC_FILE ${MODULAR_BINARY_DIR}/docs/${output_directory}${output_file}.md)
+
+  add_custom_command(
+    OUTPUT "${GEN_DOC_FILE}"
+
+    COMMAND $<TARGET_FILE:lit> -doc-gen
+    -o ${GEN_DOC_FILE} ${KGEN_INCLUDE_FLAGS} ${doc_filename}
+
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DEPENDS lit ${doc_filename} ${KGEN_LIB_DEPENDS}
+  )
+
+  add_custom_target(${output_file}DocGen DEPENDS ${GEN_DOC_FILE})
+  add_dependencies(modular-doc ${output_file}DocGen)
+endfunction()
+
 # Testing infrastructure
 add_subdirectory(test)
 add_subdirectory(unittests)
