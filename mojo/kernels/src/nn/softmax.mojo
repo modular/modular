@@ -101,7 +101,7 @@ fn _softmax_2_pass_step1[
         ](elem - new_max)
         running_max = new_max
 
-    return StaticTuple[2, __mlir_type[`!pop.scalar<`, type, `>`]].pair(
+    return StaticTuple[2, __mlir_type[`!pop.scalar<`, type, `>`]](
         running_max[0], running_sum[0]
     )
 
