@@ -79,7 +79,7 @@ public:
   }
 
   using ParameterInferenceHookTy =
-      std::function<MValue(ParamDeclAttr, ArrayRef<ParamBindAttr> bindings)>;
+      std::function<PRValue(ParamDeclAttr, ArrayRef<ParamBindAttr> bindings)>;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters, returning a checked ParamBindArrayAttr if so.  If the
@@ -151,11 +151,11 @@ struct DirectCallable {
                                   bool emitDiagnosticOnFailure,
                                   ExprEmitter &emitter);
 
-  /// Resolve the callee into either a single MValue callee (if there's only one
-  /// decl provided) or a variadic that contains all the possible adaptive
+  /// Resolve the callee into either a single PRValue callee (if there's only
+  /// one decl provided) or a variadic that contains all the possible adaptive
   /// overloads. Because adaptive overloads must all have the same signature,
   /// this also returns the signature type that they all share.
-  std::pair<MValue, SignatureType> getCallee();
+  std::pair<PRValue, SignatureType> getCallee();
 
   /// Perform subsitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and
@@ -256,10 +256,10 @@ public:
                                          ExprEmitter &emitter);
 
 private:
-  MValue
-  inlineFunctionCallIntoMValue(ASTDecl &callee, ParamBindArrayAttr inputParams,
-                               ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
-                               ExprEmitter &emitter);
+  PRValue
+  inlineFunctionCallIntoPRValue(ASTDecl &callee, ParamBindArrayAttr inputParams,
+                                ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
+                                ExprEmitter &emitter);
 };
 
 } // namespace M::KGEN::LIT
