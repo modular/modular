@@ -12,6 +12,7 @@ add_modular_library(HLCFAnalysis
   MLIRHLCFIncGen
 
   LINK_LIBS PUBLIC
+  InterpreterInterface
   MDialect
   MLIRIR
   MLIRPass
