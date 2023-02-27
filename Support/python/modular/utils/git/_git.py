@@ -16,7 +16,7 @@ from modular.utils.subprocess import (
     run_chained_commands,
     run_shell_command,
 )
-from modular.utils.typing import Dict, Optional, Sequence
+from modular.utils.typing import Dict, Optional, Sequence, Set
 
 
 class GitError(Exception):
@@ -221,3 +221,35 @@ def get_gh_username() -> str:
         raise GitError("Unable to find current github user name")
 
     return m.group(1)
+
+
+def get_changed_files(
+    base: Optional[str] = None, repo_dir: Optional[Path] = None
+) -> Sequence[Path]:
+    """Get the list of files changed between this commit and the base commit.
+
+    Returns:
+        A list of Path objects that correspond to the changed files.
+    """
+    get_file_changes = [
+        "git",
+        "diff",
+        "--name-only",
+        base if base is not None else "main",
+        "HEAD",
+    ]
+    result = get_command_output(get_file_changes, cwd=repo_dir)
+    return [Path(r) for r in result.split("\n")]
+
+
+def get_changed_dirs(
+    base: Optional[str] = None, repo_dir: Optional[Path] = None
+) -> Set[Path]:
+    """Get the list of top-level directories changed between this commit
+       and the base commit.
+
+    Returns:
+        A list of Path objects that correspond to the directories that have
+        files changed.
+    """
+    return {Path(file.parts[0]) for file in get_changed_files(base, repo_dir)}
