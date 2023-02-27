@@ -11,6 +11,7 @@ from Int import Int
 from LLCL import Runtime, TaskGroup
 from Range import range
 from Vector import InlinedFixedVector
+from List import VariadicList
 
 # ===----------------------------------------------------------------------===#
 # Map
@@ -277,3 +278,95 @@ fn invoke[
     return __mlir_op.`pop.call_indirect`[_type:[result_type]](
         func, arg1, arg2, arg3
     )
+
+
+# ===----------------------------------------------------------------------===#
+# tile
+# ===----------------------------------------------------------------------===#
+
+"""
+Signature of a tiled function that performs some work with a static tile size
+  and an offset. i.e. func<tile_size: Int> (offset: Int)
+"""
+alias Static1DTileUnitFunc = __mlir_type[
+    `!kgen.signature<<tile_size:`, Int, `>(`, Int, `) -> !lit.none>`
+]
+
+"""
+Signature of a tiled function that performs some work with a dynamic tile size
+  and an offset. i.e. func(offset: Inttile_size: Int)
+"""
+alias Dynamic1DTileUnitFunc = __mlir_type[
+    `!kgen.signature<(`, Int, `,`, Int, `) -> !lit.none>`
+]
+
+
+fn tile[
+    workgroup_function: Static1DTileUnitFunc, tile_size_list: VariadicList[Int]
+](offset: Int, upperbound: Int):
+    """A generator that launches work groups in specified list of tile sizes.
+
+    A workgroup function is a function that can process a configurable
+      consecutive "tile" of workload.
+      e.g. work_on[3](5) should launch computation on item 5,6,7, and should be
+      semantically equivalent to work_on[1](5),work_on[1](6),work_on[1](7).
+
+    This generator will try to proceed with the given list of tile sizes on the
+     listed order. E.g.
+        tile [func, (3,2,1)](offset, upperbound)
+    will try to call func[3] starting from offset until remaining work is less
+      than 3 from upperbound and then try func[2], and then func[1] etc.
+
+    Args:
+        workgroup_function(Static1DTileUnitFunc): workgroup function that processes one
+            tile of workload.
+        tile_size_list(VariadicList[Int]): List of tile sizes to launch work.
+        offset(Int): The initial index to start the work from.
+        upperbound(Int): The runtime upperbound that the work function should not exceed.
+    """
+
+    # Initialize where to start on the overall work load.
+    var current_offset: Int = offset
+
+    @always_inline
+    fn static_tile_impl[idx: __mlir_type.index]():
+        # Get the tile size to proceed with.
+        let tile_size = tile_size_list[idx]
+
+        # Process work with the tile size until there's not enough remaining work
+        #  to fit in a tile.
+        while current_offset <= upperbound - tile_size:
+            workgroup_function[tile_size_list[idx]](current_offset)
+            current_offset += tile_size
+
+    unroll[tile_size_list.size().__as_mlir_index(), static_tile_impl]()
+
+
+fn tile[
+    workgroup_function: Dynamic1DTileUnitFunc,
+](offset: Int, upperbound: Int, tile_size_list: VariadicList[Int]):
+    """A generator that launches work groups in specified list of tile sizes.
+    This is the version of tile generator for the case where work_group function
+      can take the tile size as a runtime value.
+
+    Args:
+        workgroup_function(Dynamic1DTileUnitFunc): workgroup function that processes one
+            tile of workload.
+        tile_size_list(VariadicList[Int]): List of tile sizes to launch work.
+        offset(Int): The initial index to start the work from.
+        upperbound(Int): The runtime upperbound that the work function should not exceed.
+    """
+    # Initialize the work_idx with the starting offset.
+    var work_idx = offset
+    # Iterate on the list of given tile sizes.
+    for tile_idx in range(tile_size_list.size()):
+        let tile_size = tile_size_list[tile_idx]
+        # Launch workloads on the current tile sizes until cannot proceed.
+        while work_idx <= upperbound - tile_size:
+            workgroup_function(work_idx, tile_size)
+            work_idx += tile_size
+    # Clean up the remaining workload with a residue tile that exactly equals to
+    #  the remaining workload size.
+    # Note: This is the key difference from the static version of tile
+    #  generator.
+    workgroup_function(work_idx, upperbound - work_idx)
