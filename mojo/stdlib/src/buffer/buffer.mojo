@@ -536,11 +536,6 @@ struct NDBuffer[
         return self.simd_load[1](_VariadicList[Int](idx))
 
     fn __getitem__(self, idx: StaticIntTuple[rank]) -> SIMD[1, type]:
-        return self.__getitem__(idx.as_tuple())
-
-    fn __getitem__(
-        self, idx: StaticTuple[rank, __mlir_type.index]
-    ) -> SIMD[1, type]:
         return self.simd_load[1](idx)
 
     fn simd_load[
@@ -558,25 +553,9 @@ struct NDBuffer[
     ](self, idx: StaticTuple[rank, __mlir_type.index]) -> SIMD[width, type]:
         return self._offset(idx).simd_load[width]()
 
-    fn __setitem__(
-        self,
-        idx: StaticIntTuple[rank],
-        val: __mlir_type[`!pop.scalar<`, type, `>`],
-    ):
-        self.__setitem__(idx.as_tuple(), val)
-
     fn __setitem__(self, idx: StaticIntTuple[rank], val: SIMD[1, type]):
-        self.__setitem__(idx.as_tuple(), val)
-
-    fn __setitem__(
-        self,
-        idx: StaticTuple[rank, __mlir_type.index],
-        val: __mlir_type[`!pop.scalar<`, type, `>`],
-    ):
         # Stores a single value into the ndbuffer at the specified index
-        var simd_val: SIMD[1, type]
-        simd_val.value = val
-        self.simd_store[1](idx, simd_val)
+        self.simd_store[1](idx, val)
 
     fn __setitem__(
         self, idx: StaticTuple[rank, __mlir_type.index], val: SIMD[1, type]
