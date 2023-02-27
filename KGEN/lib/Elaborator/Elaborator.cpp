@@ -309,10 +309,8 @@ ExpansionTreeNode *ExpansionTreeNode::find(Operation *op,
                                            ArrayAttr inputParams) {
   // Compute the max depth automatically based on the op's type.
   unsigned maxDepth = 0;
-  if (isa<GeneratorInterfaceOp>(op))
+  if (isa<GeneratorOp>(op))
     maxDepth = 1;
-  else if (auto gen = dyn_cast<GeneratorOp>(op))
-    maxDepth = gen.getImplements() ? 2 : 1;
   else if (isa<FuncOp>(op))
     maxDepth = 3;
 
@@ -967,17 +965,6 @@ public:
   /// function is by definition the expansion tree child of this generator.
   std::optional<ErrorTree> specializeGenerator(ExpansionTreeNode *genNode);
 
-  /// Specializes the interface at `itfNode`. The list of interface
-  /// implementations are provided because we have precomputed this list
-  /// elsewhere, and we can simply provide it. The specialization happens by
-  /// getting or creating the node belonging to the generator, and then simply
-  /// specializing the generator. Since the generator is a child of the
-  /// interface, the concrete implementations of the interface are exactly its
-  /// concrete children.
-  std::optional<ErrorTree>
-  specializeInterface(ExpansionTreeNode *itfNode,
-                      ArrayRef<GeneratorOp> interfaceImpls);
-
   /// Given a list of primary generators (i.e. generators with no input
   /// parameters), run the elaborator. This will generate an expansion tree
   /// rooted on the module with base nodes for each primary generator. Once
@@ -987,11 +974,6 @@ public:
   LogicalResult run(ArrayRef<GeneratorOp> primaryGenerators);
 
 private:
-  /// Map of interface implementations - we can easily collect these at the
-  /// beginning of `run` while generators are still deflated and pass the map as
-  /// read-only.
-  DenseMap<GeneratorInterfaceOp, SmallVector<GeneratorOp>> implementsMap;
-
   /// A logger used to emit information during the elaboration process.
   Logger logger;
 
@@ -1043,12 +1025,7 @@ ElaboratorImpl::getConcreteFunction(Location loc, SymbolRefAttr symbolRef,
   if (auto gen = dyn_cast<GeneratorOp>(funcItf.getOperation())) {
     if (auto err = specializeGenerator(node))
       return std::move(*err);
-  } else if (auto itf =
-                 dyn_cast<GeneratorInterfaceOp>(funcItf.getOperation())) {
-    if (auto err = specializeInterface(node, implementsMap[itf]))
-      return std::move(*err);
   }
-
   return node->getFirstConcrete();
 }
 
@@ -1091,12 +1068,7 @@ ElaboratorImpl::getAllConcreteFunctions(Location loc, SymbolRefAttr symbolRef,
   if (auto gen = dyn_cast<GeneratorOp>(funcItf.getOperation())) {
     if (auto err = specializeGenerator(node))
       return std::move(*err);
-  } else if (auto itf =
-                 dyn_cast<GeneratorInterfaceOp>(funcItf.getOperation())) {
-    if (auto err = specializeInterface(node, implementsMap[itf]))
-      return std::move(*err);
   }
-
   node->getAllConcrete(funcs);
   return std::nullopt;
 }
@@ -1280,11 +1252,7 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     } else if (isa<FuncOp>(calleeOp)) {
       if (auto err = specializeFunction(calleeNode, decls))
         return err;
-    } else if (auto itf = dyn_cast<GeneratorInterfaceOp>(calleeOp)) {
-      if (auto err = specializeInterface(calleeNode, implementsMap[itf]))
-        return err;
     }
-
     callee = calleeNode;
   }
   LLVM_DEBUG(callee->print(logger));
@@ -1324,11 +1292,6 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
     callee->collectSubtreeErrors(out);
     return std::move(out);
   }
-
-  // If we called into an interface, and search was off, use the first concrete
-  // node.
-  if (isa<GeneratorInterfaceOp>(calleeOp) && !enableSearch)
-    concrete.erase(concrete.begin() + 1, concrete.end());
 
   LLVM_DEBUG({
     auto _ = logger.scope("Concrete Implementations, n=", concrete.size());
@@ -1819,243 +1782,6 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::specializeInterface
-//===----------------------------------------------------------------------===//
-
-/// Specialize a generator interface.
-std::optional<ErrorTree>
-ElaboratorImpl::specializeInterface(ExpansionTreeNode *itfNode,
-                                    ArrayRef<GeneratorOp> interfaceImpls) {
-  auto itf = cast<GeneratorInterfaceOp>(itfNode->op);
-
-  // Bind all the parameter values in this scope.
-  ArrayRef<Attribute> inputParamValues = itfNode->inputParams.getValue();
-  auto inputParamDecls = itf.getInputParamDecls();
-  assert(inputParamValues.size() == inputParamDecls.size() &&
-         "incorrect # input parameter values");
-  for (auto [decl, val] : llvm::zip(inputParamDecls, inputParamValues))
-    itfNode->evaluator.setOrOverwriteParameterValue(decl, val);
-
-  if (interfaceImpls.empty()) {
-    itfNode->error =
-        ErrorTree(itfNode->op.getLoc(), "no implementations of interface '" +
-                                            itf.getName() + "' found");
-    return std::nullopt;
-  }
-
-  // If a default has been provided, and we don't want to do search, then use
-  // it.
-  std::optional<SymbolConstantAttr> defaultImpl = itf.getDefaultImpl();
-  if (!enableSearch && defaultImpl.has_value()) {
-    LLVM_DEBUG(logger << "Using default implementation for interface: "
-                      << *defaultImpl << "\n");
-    // If the SymbolConstant exists, then the callee must exist.
-    auto defaultImplCallee = lookup<GeneratorOp>(defaultImpl->getSymbol());
-    assert(defaultImplCallee && "expected defaultImpl to exist");
-    // If we already have a node for this generator, just use it. Otherwise,
-    // create a new one and specialize it.
-    auto genNode =
-        itfNode->getRoot()->find(defaultImplCallee, itfNode->inputParams);
-    if (!genNode) {
-      genNode = ExpansionTreeNode::create(
-          defaultImplCallee, itfNode->inputParams, itfNode, IREvaluator(*this),
-          itfNode->expansionDepth);
-    } else if (genNode->parent != itfNode) {
-      itfNode->takeExpansion(genNode);
-    }
-    return specializeGenerator(genNode);
-  }
-
-  LLVM_DEBUG(logger << "Kicking off specializations for all generators\n");
-
-  // Kick off specializations for all the generators. We'll use the flattened
-  // list of leaves as the inputs to search.
-  for (GeneratorOp gen : interfaceImpls) {
-    auto genNode = itfNode->getRoot()->find(gen, itfNode->inputParams);
-    if (!genNode) {
-      genNode = ExpansionTreeNode::create(gen, itfNode->inputParams, itfNode,
-                                          IREvaluator(*this),
-                                          itfNode->expansionDepth);
-    } else if (genNode->parent != itfNode) {
-      itfNode->takeExpansion(genNode);
-    }
-
-    if (auto err = specializeGenerator(genNode))
-      return err;
-  }
-
-  // Get all the concrete implementations for this interface.
-  std::vector<FuncOp> concrete;
-  itfNode->getAllConcrete(concrete);
-
-  // Only one implementation, or search is off, so we're done.
-  if (concrete.size() == 1 || !enableSearch)
-    return std::nullopt;
-
-  SymbolConstantAttr evaluator = itf.getEvaluatorAttr();
-  LLVM_DEBUG(logger << "Evaluator: " << evaluator << "\n");
-
-  // There's no evaluator, we're done.
-  if (!evaluator)
-    return std::nullopt;
-
-  auto keyBuf = Cache::WriteableBuffer::get();
-
-  // Pull out the elaboration results that succeeded to provide to the search
-  // inputs. We also write the bytecode for each input into the key.
-  for (const auto &r : concrete)
-    mlir::writeBytecodeToFile(r, *keyBuf);
-
-  // Part of the key is the evaluation function. If it has not been
-  // elaborated, do it now.
-  Operation *eval = lookup(evaluator.getSymbol());
-  if (!eval)
-    return ErrorTree(itfNode->op.getLoc(), "could not find evaluator '" +
-                                               mlir::debugString(evaluator) +
-                                               "'");
-
-  LLVM_DEBUG(logger.logOp("Found evaluator", eval));
-
-  // Create a new tree node with the new evaluator and use it. The
-  // parameter values we want to use here are the ones stashed on the
-  // evaluator itself.
-  SmallVector<Attribute> attrs;
-  for (auto param : evaluator.getParamValues()) {
-    auto valueOr = itfNode->evaluator.concretizeParameterExpr(eval->getLoc(),
-                                                              param.getValue());
-    if (valueOr.isError())
-      return valueOr.takeError();
-
-    attrs.push_back(*valueOr);
-  }
-  auto evalInputParams = ArrayAttr::get(eval->getContext(), attrs);
-
-  // Ensure the evaluator is elaborated.
-  auto node = root.find(eval, evalInputParams);
-  if (!node)
-    node =
-        ExpansionTreeNode::create(eval, evalInputParams, &root,
-                                  itfNode->evaluator, itfNode->expansionDepth);
-
-  // Elaborate the evaluator node.
-  if (auto err = specializeGenerator(node))
-    return err;
-
-  std::vector<FuncOp> concreteEvaluators;
-  node->getAllConcrete(concreteEvaluators);
-  if (concreteEvaluators.empty()) {
-    ErrorTree out(eval->getLoc(), "no viable expansions found");
-    node->collectSubtreeErrors(out);
-    return out;
-  }
-
-  if (concreteEvaluators.size() > 1) {
-    return ErrorTree(itf->getLoc(), "evaluator should have one candidate")
-        .addCause(eval->getLoc(), "evaluator defined here");
-  }
-
-  auto evalFuncOr = node->getFirstConcrete();
-  if (evalFuncOr.isError())
-    return evalFuncOr.takeError();
-  FuncOp evalFunc = *evalFuncOr;
-  LLVM_DEBUG(logger.logOp("Chose Evaluation Func", evalFunc));
-
-  mlir::writeBytecodeToFile(evalFunc, *keyBuf);
-
-  // And finally, the target.
-  *keyBuf << target;
-
-  // Alright - we want to do search now.
-  LLCL::TypeID::registerTypes<FuncOp>();
-
-  // This provides the implementation of search. This is the part we actually
-  // care about caching because it's the most expensive part.
-  auto doSpecialization = [this, evalFunc,
-                           concrete](Operation *itfOp,
-                                     Cache::WriteableBufferRef toCache,
-                                     AnyAsyncValueRef chain) {
-    auto out = LLCL::AsyncValueRef<FuncOp>::allocate(runtime);
-    std::move(chain).andThenSync([this, evalFunc, concrete, itfOp,
-                                  out = out.copy(),
-                                  toCache = std::move(toCache)](
-                                     AnyAsyncValueRef &&chain) mutable {
-      auto itf = cast<GeneratorInterfaceOp>(itfOp);
-      TimeTraceScope<> traceScope("evaluate-specializations", itf.getName());
-
-      evalSemaphore.wait();
-      ErrorOr<size_t> bestSpecializationIdxOr =
-          evaluateSpecializations(evalFunc, analysis.getTopLevelSymbolTable(),
-                                  runtime, target, concrete);
-      evalSemaphore.post();
-
-      if (failed(bestSpecializationIdxOr)) {
-        return std::move(out).setToError(getMLIRDiagnostic(
-            bestSpecializationIdxOr.takeError(), itf.getLoc()));
-      }
-
-      // Find the fastest one and return just that one.
-      FuncOp bestResult = concrete[*bestSpecializationIdxOr];
-
-      // Finally, cache the result.
-      *toCache << bestResult.getName();
-      return std::move(out).emplace(bestResult);
-    });
-    return out;
-  };
-
-  auto onCacheHit =
-      [this, concrete](Operation *itfOp,
-                       Cache::BufferRef cacheContents) -> AnyAsyncValueRef {
-    auto out = LLCL::AsyncValueRef<FuncOp>::allocate(runtime);
-    StringAttr fastestFuncName =
-        StringAttr::get(itfOp->getContext(), cacheContents->getBuffer());
-
-    // Find the fastest function by name.
-    auto fastest = llvm::find_if(concrete, [&](FuncOp func) {
-      return func.getNameAttr() == fastestFuncName;
-    });
-    if (fastest == concrete.end()) {
-      std::move(out).setToError(LLCL::getMLIRDiagnostic(
-          Error("could not find " + fastestFuncName.getValue()),
-          itfOp->getLoc()));
-    } else {
-      out.copy().emplace(*fastest);
-    }
-
-    return std::move(out);
-  };
-
-  // Run the transform with the functions we just defined.
-  auto xform =
-      Cache::cachedTransform(itf, transformCache.copy(),
-                             LLCL::AsyncValueRef<Chain>::createReady(runtime),
-                             std::move(keyBuf), doSpecialization, onCacheHit);
-
-  LLCL::await(xform);
-  if (xform.isError())
-    return ErrorTree(itf.getLoc(), xform.getDiagnostic().getMessage().copy());
-  else
-    concrete = {std::move(xform.get<FuncOp>())};
-
-  // Trim the nodes that we don't want. Check all the concrete implementations
-  // and ensure that only the one(s) that we chose are in the expansion tree.
-  // Mark the others as having errored so they are removed properly at the end
-  // of elaboration.
-  for (auto *child : itfNode->expansions) {
-    if (!child->isConcrete())
-      child->error = ErrorTree(itf.getLoc(), "no viable expansions found");
-
-    for (auto *c : child->expansions)
-      if (!llvm::is_contained(concrete, c->op))
-        c->error = ErrorTree(itf.getLoc(), "not chosen in search");
-  }
-
-  LLVM_DEBUG(itfNode->print(logger << "Post Search Interface "));
-
-  return std::nullopt;
-}
-
-//===----------------------------------------------------------------------===//
 // ElaboratorImpl::run
 //===----------------------------------------------------------------------===//
 
@@ -2069,19 +1795,6 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
       return op.emitError("unlowered lit.func discovered in KGEN elaborator");
 
   auto emptyInputParamKey = ArrayAttr::get(theModule.getContext(), {});
-  {
-    auto _ = logger.scope("Processing Primary Generator Interfaces");
-    for (auto gen : theModule.getOps<GeneratorOp>()) {
-      if (auto implements = gen.getImplementsAttr()) {
-        LLVM_DEBUG(logger << "Found generator '@" << gen.getName()
-                          << "' implementing interface '" << implements
-                          << "'\n");
-        if (auto itf = lookup<GeneratorInterfaceOp>(implements))
-          implementsMap[itf].push_back(gen);
-      }
-    }
-  } // The implementsMap map is read-only after *here*.
-
   for (auto gen : primaryGenerators) {
     LLVM_DEBUG(logger.logOp("Elaborating primary generator", gen));
     // This has no input parameters, so we can create the expansion node with
@@ -2159,7 +1872,7 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
 
   SymbolTable &symtab = analysis.getTopLevelSymbolTable();
   for (Operation &op : llvm::make_early_inc_range(theModule.getOps())) {
-    if (isa<GeneratorOp, GeneratorInterfaceOp>(op)) {
+    if (isa<GeneratorOp>(op)) {
       symtab.erase(&op);
       continue;
     }
@@ -2300,7 +2013,7 @@ struct ElaborateGeneratorsPass
     // These are the only generators that will be elaborated.
     SmallVector<GeneratorOp> primaryGenerators;
     for (auto gen : theModule.getOps<GeneratorOp>())
-      if (gen.getInputParamDecls().empty() && !gen.getImplementsAttr() &&
+      if (gen.getInputParamDecls().empty() &&
           (exports.empty() || exports.contains(gen)))
         primaryGenerators.push_back(gen);
 

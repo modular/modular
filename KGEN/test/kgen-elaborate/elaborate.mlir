@@ -117,63 +117,7 @@ kgen.generator @call_generator_test(%arg0: si32, %arg1: si32)
 
 //===----------------------------------------------------------------------===//
 
-// CHECK-NOT: kgen.generator.interface @genItf
-kgen.generator.interface @genItf<x -> result>(si32) -> si32
-
-// CHECK-LABEL: kgen.func @"genItf_impl1,x=42"
-// CHECK-SAME: %[[ARG0:.*]]: si32
-// CHECK-NEXT:   "genItf.impl1"() {value = 42 : index} : () -> ()
-// CHECK-NEXT:   kgen.return %[[ARG0]] : si32
-// CHECK-NEXT: }
-kgen.generator @genItf_impl1<x -> result>(%arg0: si32) -> si32
-  implements @genItf {
-  "genItf.impl1"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
-  kgen.return<add(x, 1)> %arg0 : si32
-}
-
-// CHECK-LABEL: kgen.func @"genItf_impl2,x=42"
-// CHECK-SAME: %[[ARG0:.*]]: si32
-// CHECK-NEXT:   "genItf.impl2"() {value = 42 : index} : () -> ()
-// CHECK-NEXT:   kgen.return %[[ARG0]] : si32
-// CHECK-NEXT: }
-kgen.generator @genItf_impl2<x -> result>(%arg0: si32) -> si32
-  implements @genItf {
-  "genItf.impl2"() { value = #kgen.param.decl.ref<"x"> : index} : () -> ()
-  kgen.return<mul(x, 2)> %arg0 : si32
-}
-
-// CHECK-LABEL: kgen.func @use_interface(
-// CHECK-SAME: %[[ARG0:.*]]: si32
-// CHECK-NEXT: %[[V0:.*]] = kgen.call @"genItf_impl1,x=42"(%[[ARG0]])
-// CHECK-NEXT: %[[V1:.*]] = kgen.param.constant = <43>
-
-// CHECK-LABEL: kgen.func @use_interface_concrete_0
-// CHECK-SAME: %[[ARG0:.*]]: si32
-// CHECK-NEXT:    %{{.*}} = kgen.call @"genItf_impl2,x=42"(%[[ARG0]]) : (si32) -> si32
-// CHECK-NEXT:     %{{.*}} = kgen.param.constant = <84>
-kgen.generator @use_interface(%arg0: si32) -> index {
-  %0 = kgen.call @genItf<x = 42 -> out = result>(%arg0) : (si32) -> si32
-  %1 = kgen.param.constant = <out>
-  kgen.return %1 : index
-}
-
-// CHECK-LABEL: kgen.func @use_using_interface
-// CHECK-SAME: (%[[ARG0:.*]]: si32) -> index {
-// CHECK-NEXT:   %[[V0:.*]] = kgen.call @use_interface(%[[ARG0]]) : (si32) -> index
-// CHECK-NEXT:   kgen.return %[[V0]] : index
-
-// CHECK-LABEL: kgen.func @use_using_interface_concrete_1
-// CHECK-SAME: (%[[ARG0:.*]]: si32) -> index {
-// CHECK-NEXT:   %[[V0:.*]] = kgen.call @use_interface_concrete_0(%[[ARG0]]) : (si32) -> index
-// CHECK-NEXT:   kgen.return %[[V0]] : index
-kgen.generator @use_using_interface(%arg0: si32) -> index {
-  %0 = kgen.call @use_interface(%arg0) : (si32) -> index
-  kgen.return %0 : index
-}
-
-//===----------------------------------------------------------------------===//
-
-// CHECK-LABEL: @"genItf2,x=0_2"()
+// CHECK-LABEL: @"genItf2,x=0_0"()
 kgen.generator @genItf2<x>() {
   // CHECK-NEXT: kgen.call @"genItf2_impl0,x=0"
   kgen.param.fork impl : () -> () = <[@genItf2_impl0<x = x>, @genItf2_impl1<x = x>]>
@@ -204,7 +148,7 @@ kgen.generator @genItf2_impl1<x>()
 }
 
 // CHECK-LABEL: kgen.func @use_Itf2zero() {
-// CHECK-NEXT:   kgen.call @"genItf2,x=0_2"() : () -> ()
+// CHECK-NEXT:   kgen.call @"genItf2,x=0_0"() : () -> ()
 // CHECK-NEXT:   kgen.return
 kgen.generator @use_Itf2zero() {
   kgen.call @genItf2<x = 0>() : () -> ()
@@ -212,40 +156,11 @@ kgen.generator @use_Itf2zero() {
 }
 
 // CHECK-LABEL: kgen.func @use_Itf2one() {
-// CHECK-NEXT:   kgen.call @"genItf2,x=1_5"() : () -> ()
+// CHECK-NEXT:   kgen.call @"genItf2,x=1_3"() : () -> ()
 // CHECK-NEXT:   kgen.return
 // CHECK-NEXT: }
 kgen.generator @use_Itf2one() {
   kgen.call @genItf2<x = 1>() : () -> ()
-  kgen.return
-}
-
-//===----------------------------------------------------------------------===//
-
-kgen.generator.interface @genItf3<ty: dtype>()
-
-// This implementation is fine.
-// CHECK-LABEL: kgen.func @"genItf3_impl0,ty=f32"() {
-kgen.generator @genItf3_impl0<ty: dtype>() implements @genItf3 {
-  "impl.0"() : () -> ()
-  kgen.return
-}
-
-// This generates a kernel that fails to verify, so it isn't used and must be
-// deleted.
-// CHECK-NOT: genItf3_impl1
-kgen.generator @genItf3_impl1<ty: dtype>() implements @genItf3 {
-  %one = kgen.param.constant: scalar<si64> = <1>
-  %0 = pop.cast %one : !pop.scalar<si64> to !pop.scalar<ty>
-  %1 = pop.cast_to_builtin %0: !pop.scalar<ty> to i8
-  kgen.return
-}
-
-// This has a single viable implementation.
-// CHECK-LABEL: kgen.func @use_Itf3() {
-// CHECK-NEXT:    kgen.call @"genItf3_impl0,ty=f32"()
-kgen.generator @use_Itf3() {
-  kgen.call @genItf3<ty: dtype = f32>() : () -> ()
   kgen.return
 }
 
@@ -257,19 +172,30 @@ kgen.generator @use_Itf3() {
 
 // CHECK-LABEL: kgen.func @track_expansions
 // CHHECK-SAME: (%[[ARG0:.*]]: si32)
-// CHECK-NEXT: kgen.call @"genItf_impl1,x=42"(%[[ARG0]]) : (si32) -> si32
-// CHECK-NEXT: kgen.call @"genItf_impl1,x=42"(%[[ARG0]]) : (si32) -> si32
-// CHECK-NEXT: kgen.call @use_interface(%[[ARG0]])
+// CHECK-NEXT: kgen.call @"genItf,x=42"(%[[ARG0]]) : (si32) -> si32
+// CHECK-NEXT: kgen.call @"genItf,x=42"(%[[ARG0]]) : (si32) -> si32
+// CHECK-NEXT: kgen.call @itfUser(%[[ARG0]])
 
 // CHECK-NOT: kgen.func @track_expansions
 
 // CHECK-LABEL: kgen.func @track_expansions_concrete_6
 // CHECK-SAME: (%[[ARG0:.*]]: si32)
-// CHECK-NEXT: kgen.call @"genItf_impl2,x=42"
-// CHECK-NEXT: kgen.call @"genItf_impl2,x=42"
-// CHECK-NEXT: kgen.call @use_interface_concrete_0(%[[ARG0]])
+// CHECK-NEXT: kgen.call @"genItf,x=42"
+// CHECK-NEXT: kgen.call @"genItf,x=42"
+// CHECK-NEXT: kgen.call @itfUser_concrete_5(%[[ARG0]])
 
 // CHECK-NOT: kgen.func @track_expansions
+
+kgen.generator @genItf<x -> result>(%arg0: si32) -> si32{
+  kgen.return<x> %arg0 : si32
+}
+
+kgen.generator @itfUser(%arg0: si32) -> index {
+  kgen.param.fork y = <[1, 2]>
+  kgen.call @genItf<x = 42 -> out = result>(%arg0) : (si32) -> si32
+  %0 = index.constant 0
+  kgen.return %0 : index
+}
 
 kgen.generator @track_expansions(%arg0: si32) {
   // Within any generated kernel genItf should expand the same way.
@@ -277,7 +203,7 @@ kgen.generator @track_expansions(%arg0: si32) {
   %1 = kgen.call @genItf<x = 42 -> out1 = result>(%arg0) : (si32) -> si32
 
   // Even if deeply nested within other generator/kernel invocations
-  %2 = kgen.call @use_interface(%arg0) : (si32) -> index
+  %2 = kgen.call @itfUser(%arg0) : (si32) -> index
   kgen.return
 }
 
@@ -315,29 +241,20 @@ kgen.generator @test_f32() -> f32 {
 // Test that we can do static assertions on computed parameter expressions (e.g.
 // those that are the result of a sub-generator invocation.
 
-kgen.generator.interface @getSIMDLength<dt: dtype -> length>()
-
-kgen.generator @getSIMDLengthF32<dt: dtype -> length>()
-     implements @getSIMDLength {
-  // This could be implemented as a constraint.
-  kgen.param.assert <eq(:dtype dt, f32)>, "this only works for f32"
-  // vector length for floats is 4 on our target.
-  kgen.return <4>
-}
-
-kgen.generator @getSIMDLengthF64<dt: dtype -> length>()
-     implements @getSIMDLength {
-  // This could be implemented as a constraint.
-  kgen.param.assert <eq(:dtype dt, f64)>, "this only works for f32"
-  // vector length for doubles is 2 on our target.
-  kgen.return <2>
+kgen.generator @getSIMDLength<dt: dtype -> length>() {
+  kgen.param.if <eq(:dtype dt, f32) -> dtype_length: index> {
+    kgen.param.yield<4>
+  } else {
+    kgen.param.yield<2>
+  }
+  kgen.return<dtype_length>
 }
 
 // CHECK-LABEL: kgen.func @paramAssertExample()
-// CHECK-NEXT:    kgen.call @"getSIMDLengthF32,dt=f32"()
+// CHECK-NEXT:    kgen.call @"getSIMDLength,dt=f32"()
 // CHECK-NEXT:    kgen.return
 kgen.generator @paramAssertExample() {
-  kgen.call @getSIMDLength<dt : dtype = f32 -> flen = length>() : () -> ()
+  kgen.call @getSIMDLength<dt: dtype = f32 -> flen = length>() : () -> ()
 
   // Should succeed.
   kgen.param.assert <eq(flen, 4)>, "vector length should be 4 for floats"
@@ -585,20 +502,6 @@ kgen.generator @test_paramref_type_rewrite() {
 
 // -----
 
-kgen.generator.interface @foo<size>(index) -> index
-
-kgen.generator @foo1<size>(%a: index) -> index
-    constraints <[eq(size, 1), "1"]>
-    implements @foo {
-  kgen.return %a : index
-}
-
-kgen.generator @foo2<size>(%a: index) -> index
-    constraints <[eq(size, 2), "2"]>
-    implements @foo {
-  kgen.return %a : index
-}
-
 kgen.generator @bar<T:type>(%a: !kgen.paramref<T>) -> !kgen.paramref<T> {
   kgen.return %a : !kgen.paramref<T>
 }
@@ -609,14 +512,10 @@ kgen.generator @baz<() -> result>() {
 
 // CHECK-LABEL: kgen.func @parametric_addressof
 kgen.generator @parametric_addressof() {
-  // CHECK-NEXT: kgen.addressof @"foo1,size=1" : (index) -> index
-  %0 = kgen.addressof @foo<size = 1> : (index) -> index
-  // CHECK-NEXT: kgen.addressof @"foo2,size=2" : (index) -> index
-  %1 = kgen.addressof @foo<size = 2> : (index) -> index
   // CHECK-NEXT: kgen.addressof @"bar,T=i32" : (i32) -> i32
-  %2 = kgen.addressof @bar<T:type = i32> : (i32) -> i32
+  kgen.addressof @bar<T:type = i32> : (i32) -> i32
   // CHECK-NEXT: kgen.addressof @baz : () -> ()
-  %3 = kgen.addressof @baz<() -> result = result> : () -> ()
+  kgen.addressof @baz<() -> result = result> : () -> ()
   kgen.return
 }
 
@@ -1139,43 +1038,40 @@ kgen.generator @check() {
 // This shows that we properly support recursive expansion.
 //
 
-kgen.generator.interface @genItf3<x>()
-
-kgen.generator @genItf3_impl0<x>()
-  constraints <[eq(x, 0), "x must be zero"]> implements @genItf3 {
-  "impl.0"() {attr=#kgen.param.decl.ref<"x"> : index}: () -> ()
+kgen.generator @genItf3<x>() {
+  kgen.param.if <eq(x, 0)> {
+    "impl.0"() {attr=#kgen.param.decl.ref<"x"> : index}: () -> ()
+    kgen.param.yield
+  } else {
+    "impl.1"() {attr=#kgen.param.decl.ref<"x"> : index} : () -> ()
+    kgen.call @genItf3<x = sub(x, 1)>() : () -> ()
+    kgen.param.yield
+  }
   kgen.return
 }
 
-kgen.generator @genItf3_impl1<x>()
-  constraints <[ne(x, 0), "x must not be zero"]> implements @genItf3 {
-  "impl.1"() {attr=#kgen.param.decl.ref<"x"> : index} : () -> ()
-  kgen.call @genItf3<x = sub(x, 1)>() : () -> ()
-  kgen.return
-}
+// CHECK-LABEL: kgen.func @"genItf3,x=4"()
+// CHECK-NEXT:   "impl.1"() {attr = 4 : index}
+// CHECK-NEXT:   kgen.call @"genItf3,x=3"()
 
-// CHECK-LABEL: kgen.func @"genItf3_impl0,x=0"()
+// CHECK-LABEL: kgen.func @"genItf3,x=3"()
+// CHECK-NEXT:   "impl.1"() {attr = 3 : index}
+// CHECK-NEXT:   kgen.call @"genItf3,x=2"()
+
+// CHECK-LABEL: kgen.func @"genItf3,x=2"()
+// CHECK-NEXT:   "impl.1"() {attr = 2 : index}
+// CHECK-NEXT:   kgen.call @"genItf3,x=1"()
+
+// CHECK-LABEL: kgen.func @"genItf3,x=1"()
+// CHECK-NEXT:   "impl.1"() {attr = 1 : index}
+// CHECK-NEXT:   kgen.call @"genItf3,x=0"()
+
+// CHECK-LABEL: kgen.func @"genItf3,x=0"()
 // CHECK-NEXT:   "impl.0"() {attr = 0 : index}
 
-// CHECK-LABEL: kgen.func @"genItf3_impl1,x=4"()
-// CHECK-NEXT:   "impl.1"() {attr = 4 : index}
-// CHECK-NEXT:   kgen.call @"genItf3_impl1,x=3"()
-
-// CHECK-LABEL: kgen.func @"genItf3_impl1,x=3"()
-// CHECK-NEXT:   "impl.1"() {attr = 3 : index}
-// CHECK-NEXT:   kgen.call @"genItf3_impl1,x=2"()
-
-// CHECK-LABEL: kgen.func @"genItf3_impl1,x=2"()
-// CHECK-NEXT:   "impl.1"() {attr = 2 : index}
-// CHECK-NEXT:   kgen.call @"genItf3_impl1,x=1"()
-
-// CHECK-LABEL: kgen.func @"genItf3_impl1,x=1"()
-// CHECK-NEXT:   "impl.1"() {attr = 1 : index}
-// CHECK-NEXT:   kgen.call @"genItf3_impl0,x=0"()
-
 // CHECK-LABEL:   kgen.func @use_Itf3() {
-// CHECK-NEXT:      kgen.call @"genItf3_impl1,x=4"() : () -> ()
-// CHECK-NEXT:      kgen.call @"genItf3_impl1,x=2"() : () -> ()
+// CHECK-NEXT:      kgen.call @"genItf3,x=4"() : () -> ()
+// CHECK-NEXT:      kgen.call @"genItf3,x=2"() : () -> ()
 // CHECK-NEXT:      kgen.return
 kgen.generator @use_Itf3() {
   kgen.call @genItf3<x = 4>() : () -> ()
@@ -1427,40 +1323,6 @@ kgen.generator @rebind_it() {
   kgen.return
 }
 
-kgen.generator.interface @interpretedItf<I>() -> index
-
-// CHECK-LABEL: kgen.func @"interpretedItf.1,I=0"
-kgen.generator @interpretedItf.1<I>() -> index constraints <[eq(I, 0), "0"]> implements @interpretedItf {
-  // CHECK-NEXT: index.constant 0
-  %0 = index.constant 0
-  kgen.return %0 : index
-}
-
-// CHECK-LABEL: kgen.func @"interpretedItf.2,I=1"
-kgen.generator @interpretedItf.2<I>() -> index constraints <[eq(I, 1), "1"]> implements @interpretedItf {
-  // CHECK-NEXT: index.constant 1
-  %0 = index.constant 1
-  kgen.return %0 : index
-}
-
-// CHECK-LABEL: kgen.func @interpretInterfaceCall
-kgen.generator @interpretInterfaceCall() {
-  // CHECK-NEXT: <0>
-  kgen.param.constant = <apply(:() -> index bind_signature(:<I>() -> index @interpretedItf, 0))>
-  // CHECK-NEXT: <1>
-  kgen.param.constant = <apply(:() -> index bind_signature(:<I>() -> index @interpretedItf, 1))>
-  kgen.return
-}
-
-// CHECK-NOT: @itfIsNeverCalled
-// CHECK-NOT: @alwaysBadImpl
-kgen.generator.interface @itfIsNeverCalled()
-kgen.generator @alwaysBadImpl()
-    constraints <[0, "always bad"]>
-    implements @itfIsNeverCalled {
-  kgen.return
-}
-
 // -----
 
 kgen.generator @result<() -> x>() {
@@ -1505,51 +1367,6 @@ kgen.generator @root() {
   kgen.param.declare w = <5>
   // CHECK-NEXT: kgen.call @"g2,size=3,width=5"
   %0 = kgen.call @g2<size = q, width = w>() : () -> index
-  kgen.return
-}
-
-// -----
-
-// CHECK-LABEL: @top
-kgen.generator @top() {
-  // CHECK-NEXT: call @top_impl
-  kgen.call @top_itf() : () -> ()
-  kgen.return
-}
-
-// COM: This interface has an evaluator, so we will be picking the best candidate
-// COM: for it.
-kgen.generator.interface @top_itf() -> ()
-evaluator (!pop.pointer<() -> ()>, index) -> index = @eval
-
-
-// COM: An evaluator: simply return non-zeroth option. Picking 0th candidate
-// COM: works fine.
-// CHECK-LABEL: @eval
-kgen.generator @eval(%funcs: !pop.pointer<() -> ()>, %size: index) -> index {
-  // CHECK-NEXT: index.constant 1
-  %res = index.constant 1
-  // CHECK-NEXT: return %idx1
-  kgen.return %res : index
-}
-
-// COM: A single implementation of top_itf where we just call another interface.
-// CHECK-LABEL: @top_impl()
-kgen.generator @top_impl() -> () implements @top_itf {
-  // CHECK-NEXT: call @itf_impl_1
-  kgen.call @itf(): ()->()
-  kgen.return
-}
-
-// COM: This interface has just two implementations but we choose the second
-// COM: through the evaluator.
-kgen.generator.interface @itf() -> ()
-
-kgen.generator @itf_impl_0() -> () implements @itf {
-  kgen.return
-}
-
-kgen.generator @itf_impl_1() -> () implements @itf {
   kgen.return
 }
 

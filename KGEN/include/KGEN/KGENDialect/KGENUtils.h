@@ -20,7 +20,6 @@
 
 namespace M::KGEN {
 class FuncInterface;
-class GeneratorInterfaceOp;
 
 /// Given a module operation, return its exported symbols and aliases.
 DenseMap<StringAttr, StringAttr> getExportedSymbols(ModuleOp module);
@@ -211,25 +210,13 @@ void printPrettyType(AsmPrinter &p, TypedAttr typeExpr);
 // Logic shared between funcs, generators, and generator interfaces
 //===----------------------------------------------------------------------===//
 
-enum class GeneratorOrFuncKind {
-  func,
-  generator,
-  interface,
-  precompiled,
-};
+enum class GeneratorOrFuncKind { func, generator };
 
 /// Parse the MLIR syntax for a kgen.generator, kgen.func and related
 /// operators.
 ParseResult parseGeneratorOrFunc(OpAsmParser &parser, OperationState &result,
                                  GeneratorOrFuncKind opKind);
 void printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op);
-
-/// Check that the specified generator/interfaces matches signature
-/// information with the other interface.
-LogicalResult verifyDeclMatchesInterface(const char *originatorName,
-                                         FuncInterface originatorDecl,
-                                         const char *interfaceName,
-                                         GeneratorInterfaceOp interfaceDecl);
 
 /// Check that the specified declaration signatures match, checking the
 /// parameter and value type information.

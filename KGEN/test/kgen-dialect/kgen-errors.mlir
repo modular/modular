@@ -223,54 +223,14 @@ kgen.func @result_type(%a: i1) {
 
 // -----
 
-// expected-note @+1 {{@interface declared here}}
-kgen.generator.interface @itf<size>(si32) -> si32
-
-// expected-error @+1 {{generator has 2 input parameters but @interface expects 1}}
-kgen.generator @bad<size, size2>(%arg0: si32) -> si32
-  implements @itf {
-  kgen.return %arg0 : si32
-}
-
-// -----
-
-// expected-note @+1 {{@interface declared here}}
-kgen.generator.interface @itf<size>(si32, si32) -> si32
-
-// expected-error @+1 {{generator argument #0 has type 'ui32' but @interface expected type 'si32'}}
-kgen.generator @bad<size>(%arg0: ui32, %arg1: si32) -> si32
-  implements @itf {
-  kgen.return %arg1 : si32
-}
-
-// -----
-
-// expected-note @+1 {{@interface declared here}}
-kgen.generator.interface @itf<size>(si32) -> si32
-
-// expected-error @+1 {{generator has 0 input parameters but @interface expects 1}}
-kgen.generator @bad<() -> index>(%arg0: si32) -> si32 implements @itf {
-  kgen.return<42> %arg0 : si32
-}
-
-// -----
-
-// expected-note @+1 {{@interface declared here}}
-kgen.generator.interface @itf<size>()
-
-// expected-error @+1 {{generator input parameter #0 has name "barf" but @interface expected name "size"}}
-kgen.generator @bad<barf>() implements @itf {
-  kgen.return
-}
-
-// -----
-
 // expected-error @below {{expected attribute value}}
 %0 = kgen.param.constant: i32 = <[:i32]>
 
 // -----
 
-kgen.generator.interface @take_and_return<p1 -> p2>()
+kgen.generator @take_and_return<p1 -> p2>() {
+  kgen.return<0>
+}
 
 // expected-error @below {{cyclic reference between expressions defining and using parameters}}
 kgen.generator @self_cyclic() {
@@ -282,7 +242,9 @@ kgen.generator @self_cyclic() {
 
 // -----
 
-kgen.generator.interface @take_and_return<p1 -> r1>()
+kgen.generator @take_and_return<p1 -> r1>() {
+  kgen.return<0>
+}
 
 // expected-error @below {{cyclic reference between expressions defining and using parameters}}
 kgen.generator @mutually_recursive() {
@@ -334,13 +296,17 @@ kgen.generator @constrained<width, height>()
 // -----
 
 // expected-error @+1 {{invalid use of parameter with no declaration "he1ght"}}
-kgen.generator.interface @constrained<width, height>()
-  constraints <[eq(width, 42), "width"], [eq(he1ght, 42), "height"]>
+kgen.generator @constrained<width, height>()
+  constraints <[eq(width, 42), "width"], [eq(he1ght, 42), "height"]> {
+  kgen.return
+}
 
 // -----
 
-// expected-error @below {{'kgen.generator.interface' op invalid use of parameter with no declaration "ty2"}}
-kgen.generator.interface @badTypes<ty1 : dtype>(%a : !pop.scalar<ty2>)
+// expected-error @below {{'kgen.generator' op invalid use of parameter with no declaration "ty2"}}
+kgen.generator @badTypes<ty1 : dtype>(%a : !pop.scalar<ty2>) {
+  kgen.return
+}
 
 // -----
 
@@ -581,7 +547,9 @@ kgen.func @addressof_mismatched_signature() {
 
 // -----
 
-kgen.generator.interface @generator<size>()
+kgen.generator @generator<size>() {
+  kgen.return
+}
 
 // expected-note @below {{within 'kgen.func' @addressof_parametric_in_func}}
 kgen.func @addressof_parametric_in_func() {
@@ -589,12 +557,6 @@ kgen.func @addressof_parametric_in_func() {
   %0 = kgen.addressof @generator<size = 1> : () -> ()
   kgen.return
 }
-
-// -----
-
-// expected-error @below {{@evaluator does not reference a KGEN declaration}}
-kgen.generator.interface @evaluateMe(index) -> index
-  evaluator (!pop.pointer<(index) -> index>, index) -> index = @evaluator<N=4>
 
 // -----
 
@@ -619,22 +581,6 @@ kgen.generator @doIt<SomeParam>() {
   }
   kgen.return
 }
-
-// -----
-
-kgen.generator @simpleEvaluator<N, FN:type>(%funcs: !pop.pointer<FN>, %size: index) -> index {
-  %0 = kgen.param.constant = <N>
-  kgen.return %0 : index
-}
-
-kgen.func @defaultFunc() {
-  kgen.return
-}
-
-// expected-error @below {{defaultImpl @defaultFunc must be a generator}}
-kgen.generator.interface @pickFirst()
-  evaluator (!pop.pointer<() -> ()>, index) -> index = @simpleEvaluator<N=0, FN:type=()->()>
-  defaultImpl () -> () = @defaultFunc
 
 // -----
 

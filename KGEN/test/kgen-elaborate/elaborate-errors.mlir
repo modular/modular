@@ -18,9 +18,7 @@ kgen.generator @local_verif_error() {
 // Recursive expansions.
 
 // expected-note @+1 {{elaborator expansion is 129 levels deep - infinite recursion?}}
-kgen.generator.interface @genItf3<x>()
-
-kgen.generator @genItf3_impl<x>() implements @genItf3 {
+kgen.generator @genItf3<x>() {
   // expected-note @+1 {{call expansion failed}}
   kgen.call @genItf3<x = add(x, 1)>() : () -> ()
   kgen.return
@@ -35,31 +33,7 @@ kgen.generator @use_Itf3two() {
 
 // -----
 
-// Expansions of kernels with zero expansions.
-
-// expected-note @below {{no implementations of interface 'itf' found}}
-kgen.generator.interface @itf<x>()
-
-// expected-error @below {{no viable expansions found}}
-kgen.generator @k1() {
-  // expected-note @below {{call expansion failed}}
-  kgen.call @itf<x = 2>() : () -> ()
-  kgen.return
-}
-
-// expected-error @below {{no viable expansions found}}
-kgen.generator @k2() {
-  // expected-note @below {{call expansion failed}}
-  kgen.call @k1() : () -> ()
-  kgen.return
-}
-
-// -----
-
-kgen.generator.interface @getSIMDLength<dt: dtype -> length>()
-
-kgen.generator @getSIMDLengthF32<dt: dtype -> length>()
-     implements @getSIMDLength {
+kgen.generator @getSIMDLength<dt: dtype -> length>() {
   // This could be implemented as a constraint.
   kgen.param.assert <eq(:dtype dt, f32)>, "this only works for f32"
   kgen.return <4>
@@ -98,59 +72,6 @@ lit.func @lit_func<x>() {
 
 // -----
 
-// expected-error @below {{no viable expansions found}}
-kgen.generator @recursiveEvaluator(%funcs: !pop.pointer<() -> index>, %size: index) -> index {
-// expected-note @below {{call expansion failed}}
-  %0 = kgen.call @itf() : () -> index
-  kgen.return %0 : index
-}
-
-// expected-note @below {{no implementations of interface 'itf' found}}
-kgen.generator.interface @itf() -> index
-  evaluator (!pop.pointer<() -> index>, index) -> index = @recursiveEvaluator
-
-// -----
-
-// expected-note @below {{evaluator defined here}}
-kgen.generator @multiEvaluator(%funcs: !pop.pointer<() -> index>, %size: index) -> index {
-  %0 = kgen.call @evalitf() : () -> index
-  kgen.return %0 : index
-}
-
-kgen.generator.interface @evalitf() -> index
-
-kgen.generator @evalimpl1() -> index implements @evalitf {
-  %0 = kgen.param.constant = <0>
-  kgen.return %0 : index
-}
-
-kgen.generator @evalimpl2() -> index implements @evalitf {
-  %0 = kgen.param.constant = <1>
-  kgen.return %0 : index
-}
-
-// expected-note @below {{evaluator should have one candidate}}
-kgen.generator.interface @itf() -> index
-  evaluator (!pop.pointer<() -> index>, index) -> index = @multiEvaluator
-
-kgen.generator @impl1() -> index implements @itf {
-  %0 = kgen.param.constant = <0>
-  kgen.return %0 : index
-}
-
-kgen.generator @impl2() -> index implements @itf {
-  %0 = kgen.param.constant = <1>
-  kgen.return %0 : index
-}
-
-// expected-error @below {{no viable expansions found}}
-kgen.generator @driver() {
-  %0 = kgen.call @itf() : () -> index
-  kgen.return
-}
-
-// -----
-
 #target = #kgen.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // expected-error @below {{no viable expansions found}}
@@ -173,17 +94,6 @@ kgen.func @cant_interpret(%arg0: index) -> index {
 kgen.generator @interp_func() {
   // expected-note @below {{failed to evaluate 'apply'}}
   %0 = kgen.param.constant = <apply(:(index) -> index @cant_interpret, 1)>
-  kgen.return
-}
-
-// -----
-
-// expected-note @below {{no implementations of interface 'no_impls' found}}
-kgen.generator.interface @no_impls() -> index
-
-// expected-error @below {{no viable expansions found}}
-kgen.generator @call_it() {
-  kgen.param.constant = <apply(:() -> index @no_impls)>
   kgen.return
 }
 
