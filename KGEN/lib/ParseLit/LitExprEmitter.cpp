@@ -197,8 +197,8 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
 
 /// This method is used by node implementations of emitExprResultIntoPattern
 /// to emit the result once they determine an lvalue to use.
-MRValue ExprEmitter::emitExprResultIntoLValue(ASTExprAnd<AnyValue> value,
-                                              LValue dest) {
+AnyValue ExprEmitter::emitExprResultIntoLValue(ASTExprAnd<AnyValue> value,
+                                               LValue dest) {
   // The final step of an assignment expression (`=`) converts the value into
   // a type that matches the destination and does a store.
 

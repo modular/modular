@@ -145,8 +145,8 @@ public:
   /// This node is being used as the LHS target/pattern of an assignment,
   /// initialized with the specified RHS value.  On success, handle this
   /// coersion/initialization, otherwise emit an error.
-  virtual MRValue emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                            ExprEmitter &emitter) const;
+  virtual AnyValue emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                             ExprEmitter &emitter) const;
 };
 
 } // namespace M::KGEN::LIT

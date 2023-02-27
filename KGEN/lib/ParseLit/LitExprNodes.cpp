@@ -296,8 +296,8 @@ CallableValue ExprNode::emitCallable(ExprEmitter &emitter) const {
   return CallableValue({calleeVal, this});
 }
 
-MRValue ExprNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                            ExprEmitter &emitter) const {
+AnyValue ExprNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                             ExprEmitter &emitter) const {
   // Emit this node to see if it is a general LValue.
   AnyValue aValue = emitIR(emitter, ValueDest());
   if (!aValue)
@@ -404,8 +404,8 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   return emitCallable(emitter).emitAsValue(emitter, dest);
 }
 
-MRValue DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                               ExprEmitter &emitter) const {
+AnyValue DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                                ExprEmitter &emitter) const {
   ASTDecl &container = emitter.declScope;
 
   // Perform a lookup of the specified decl in the current container.
@@ -419,22 +419,16 @@ MRValue DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
     return builder.create<VarDeclOp>(loc, declIRType, nameAttr);
   };
 
-  auto finishLValue = [&](LValue lvalue) -> MRValue {
+  auto finishLValue = [&](LValue lvalue) -> AnyValue {
     return emitter.emitExprResultIntoLValue(value, lvalue);
   };
 
-  // If the unresolved name is `_`, then we have a discard pattern.  Python
-  // supports this by just implicitly declaring a variable named _ and
-  // allowing rewrites, but we cannot take this approach because each discard
-  // could have a different type.  Handle this specially by not inserting the
-  // `_` variable into the name table, so we'll get a new instance on every use.
-  if (lookup.isFailure() && spelling == "_" && emitter.builder) {
-    // Introduce a new lit.var.decl node whose type matches the assigned value.
-    // TODO(autopromotions): turn infinite integers into concrete ones as
-    // needed.
-    auto varDecl = createVarDeclWithValueType(*emitter.builder);
-    return finishLValue(varDecl.getResult());
-  }
+  // If the unresolved name is `_`, then we have a discard pattern.  Just
+  // materialize the value into a dynamic representation and return that value
+  // without storing into the discard.
+  if (lookup.isFailure() && spelling == "_" && emitter.builder)
+    // TODO(memory-primary): don't force into SSA value.
+    return emitter.emitSRValue(value);
 
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a varDeclCursor,
@@ -1369,8 +1363,8 @@ CallableValue ParenNode::emitCallable(ExprEmitter &emitter) const {
   return subExpr->emitCallable(emitter);
 }
 
-MRValue ParenNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                             ExprEmitter &emitter) const {
+AnyValue ParenNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                              ExprEmitter &emitter) const {
   return subExpr->emitExprResultIntoPattern(value, emitter);
 }
 
