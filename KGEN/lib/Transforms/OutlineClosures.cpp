@@ -172,7 +172,7 @@ void OutlineClosuresPass::runOnOperation() {
           regionDecl.getLoc(), getUniqueName("_" + regionName),
           TypeAttr::get(liftedSignature),
           b.getAttr<ConstraintArrayAttr>(ArrayRef<ConstraintAttr>{}),
-          FlatSymbolRefAttr(), regionDecl.getAlwaysInlineLevelAttr());
+          regionDecl.getAlwaysInlineLevelAttr());
       symtab.insert(lifted);
       auto liftedSymbol = SymbolConstantAttr::get(
           SymbolRefAttr::get(lifted.getSymNameAttr()), liftedSignature);
@@ -222,7 +222,7 @@ void OutlineClosuresPass::runOnOperation() {
           regionDecl.getLoc(), getUniqueName("_" + regionName + "_wrapper"),
           TypeAttr::get(wrapperSignature),
           b.getAttr<ConstraintArrayAttr>(ArrayRef<ConstraintAttr>{}),
-          FlatSymbolRefAttr(), regionDecl.getAlwaysInlineLevelAttr());
+          regionDecl.getAlwaysInlineLevelAttr());
       symtab.insert(liftedWrapper);
       auto wrapperSymbol = SymbolConstantAttr::get(
           SymbolRefAttr::get(liftedWrapper.getNameAttr()), wrapperSignature);

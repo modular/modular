@@ -33,8 +33,10 @@ lit.struct.decl @StructDuplicate {
 
 lit.struct.decl @SomeType<v, b> {}
 
-// expected-error @below {{'kgen.generator.interface' op invalid use of parameter with no declaration "c"}}
-kgen.generator.interface @InvalidTypeParamValue<a>() -> !kgen.declref<@SomeType<v = a, b = c>>
+// expected-error @below {{'kgen.generator' op invalid use of parameter with no declaration "c"}}
+kgen.generator @InvalidTypeParamValue<a>(%arg0: !kgen.declref<@SomeType<v = a, b = c>>) {
+  kgen.return
+}
 
 // -----
 
@@ -42,8 +44,9 @@ kgen.generator.interface @InvalidTypeParamValue<a>() -> !kgen.declref<@SomeType<
 lit.struct.decl @SomeType<v, d> {}
 
 // expected-error @below {{!kgen.declref symbol use input parameter #1 has name "b" but @SomeType expected name "d"}}
-kgen.generator.interface @InvalidTypeParamValue<a, c>() ->
-    !kgen.declref<@SomeType<v = a, b = c>>
+kgen.generator @InvalidTypeParamValue<a, c>(%arg0: !kgen.declref<@SomeType<v = a, b = c>>) {
+  kgen.return
+}
 
 // -----
 

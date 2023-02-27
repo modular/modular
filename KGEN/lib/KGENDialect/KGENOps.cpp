@@ -355,26 +355,6 @@ ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
 // Print the GeneratorOp using the shared printing logic.
 void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
 
-LogicalResult
-GeneratorOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  // If the generator is implementing a generator interface, check that they
-  // line up correctly.
-  FlatSymbolRefAttr interfaceSym = getImplementsAttr();
-  if (!interfaceSym)
-    return success();
-
-  // Check that the callee attribute was specified.
-  auto module = KGENModule::from(*this, symbolTable);
-  auto interface = module.lookup<GeneratorInterfaceOp>(interfaceSym);
-  if (!interface)
-    return emitError() << "'" << interfaceSym
-                       << "' does not reference a generator interface";
-
-  // Verify that the signature of this generator matches the signature of the
-  // interface.
-  return verifyDeclMatchesInterface("generator", *this, "interface", interface);
-}
-
 LogicalResult GeneratorOp::verifyRegions() {
   if (failed(verifyOneBlockOrCached(*this)))
     return failure();
@@ -473,121 +453,6 @@ Region *FuncOp::getCallableRegion() { return &getBodyRegion(); }
 
 ArrayRef<Type> FuncOp::getCallableResults() {
   return getFunctionType().getResults();
-}
-
-//===----------------------------------------------------------------------===//
-// GeneratorInterfaceOp
-//===----------------------------------------------------------------------===//
-
-/// Parses a KGEN generator interface.
-ParseResult GeneratorInterfaceOp::parse(OpAsmParser &parser,
-                                        OperationState &result) {
-  if (failed(
-          parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::interface)))
-    return failure();
-
-  // Parse an optional evaluator.
-  if (parser.parseOptionalKeyword("evaluator")) {
-    // If we don't have an evaluator, we must not have a defaultImpl.
-    if (succeeded(parser.parseOptionalKeyword("defaultImpl")))
-      return mlir::emitError(
-          parser.getEncodedSourceLoc(parser.getCurrentLocation()),
-          "cannot specify a default without an evaluator");
-
-    return success();
-  }
-
-  Type sigType;
-  TypedAttr evaluator;
-  if (parseKGENType(parser, sigType) || parser.parseEqual() ||
-      parseParamValue(parser, evaluator, sigType))
-    return failure();
-  result.addAttribute(GeneratorInterfaceOp::getEvaluatorAttrName(result.name),
-                      evaluator);
-
-  // If it has an evaluator, the user may specify a default.
-  if (parser.parseOptionalKeyword("defaultImpl"))
-    return success();
-
-  TypedAttr defaultImpl;
-  if (parseKGENType(parser, sigType) || parser.parseEqual() ||
-      parseParamValue(parser, defaultImpl, sigType))
-    return failure();
-  result.addAttribute(GeneratorInterfaceOp::getDefaultImplAttrName(result.name),
-                      defaultImpl);
-
-  return success();
-}
-
-// Print the GeneratorInterfaceOp using the shared printing logic.
-void GeneratorInterfaceOp::print(OpAsmPrinter &p) {
-  printGeneratorOrFunc(p, *this);
-  if (SymbolConstantAttr evaluator = getEvaluatorAttr()) {
-    p << " evaluator ";
-    printKGENType(p, evaluator.getType());
-    p << " = ";
-    printParamValue(p, evaluator);
-  }
-
-  if (SymbolConstantAttr defaultImpl = getDefaultImplAttr()) {
-    p << " defaultImpl ";
-    printKGENType(p, defaultImpl.getType());
-    p << " = ";
-    printParamValue(p, defaultImpl);
-  }
-}
-
-LogicalResult
-GeneratorInterfaceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  // If an evaluator was specified, verify its signature.
-  SymbolConstantAttr evaluator = getEvaluatorAttr();
-  if (!evaluator) {
-    if (getDefaultImplAttr())
-      return emitOpError(
-          "defaultImpl should not exist if evaluator does not exist");
-    return success();
-  }
-
-  auto module = KGENModule::from(*this, symbolTable);
-  auto func = module.lookup<FuncInterface>(evaluator.getSymbol());
-  if (!func)
-    return emitOpError() << evaluator.getSymbol()
-                         << " does not reference a KGEN declaration";
-
-  // Get the specialized callee signature.
-  SignatureType funcSignature = func.getSignature().getSpecializedSignature(
-      evaluator.getParamValues(), [&] { return emitError(); });
-  if (!funcSignature)
-    return failure();
-
-  // If a defaultImpl was specified, verify its signature.
-  SymbolConstantAttr defaultImpl = getDefaultImplAttr();
-  if (!defaultImpl)
-    return success();
-
-  func = module.lookup<GeneratorOp>(defaultImpl.getSymbol());
-  if (!func)
-    return emitOpError("defaultImpl ")
-           << defaultImpl.getSymbol() << " must be a generator";
-
-  funcSignature = func.getSignature().getSpecializedSignature(
-      defaultImpl.getParamValues(), [&] { return emitError(); });
-  if (!funcSignature)
-    return failure();
-
-  if (failed(verifyDeclSignaturesMatch("interface", getSignature(), getLoc(),
-                                       "referenced defaultImpl", funcSignature,
-                                       func.getLoc())))
-    return failure();
-
-  return success();
-}
-
-/// Return null to indicate that this is an "external" callable.
-Region *GeneratorInterfaceOp::getCallableRegion() { return nullptr; }
-
-ArrayRef<Type> GeneratorInterfaceOp::getCallableResults() {
-  return getResultTypes();
 }
 
 //===----------------------------------------------------------------------===//
@@ -754,7 +619,9 @@ void ParamIfOp::print(OpAsmPrinter &p) {
     printParamDecls(p, getParamDecls());
   }
 
-  p << "> ";
+  p << '>';
+  p.printOptionalArrowTypeList(getResultTypes());
+  p << ' ';
   p.printRegion(getThenRegion());
   p << " else ";
   p.printRegion(getElseRegion());

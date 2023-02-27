@@ -1280,11 +1280,9 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
     return failure();
 
   AlwaysInlineLevelAttr alwaysInline;
-  if (opKind != GeneratorOrFuncKind::interface) {
-    if (parseOptionalAlwaysInline(parser, alwaysInline))
-      return failure();
-    result.addAttribute("alwaysInlineLevel", alwaysInline);
-  }
+  if (parseOptionalAlwaysInline(parser, alwaysInline))
+    return failure();
+  result.addAttribute("alwaysInlineLevel", alwaysInline);
 
   // Funcs cannot have constraint specifications.
   if (opKind != GeneratorOrFuncKind::func) {
@@ -1327,11 +1325,6 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
   // Parse the required function body.
   Region *region = result.addRegion();
 
-  // If this is a generator interface, no body block is allowed.
-  if (opKind == GeneratorOrFuncKind::interface ||
-      dyn_cast_or_null<mlir::UnitAttr>(parsedAttributes.get("isInterface")))
-    return success();
-
   // If this is cached, no body block is allowed.
   if (parsedAttributes.get(Cache::getRegionHashAttrName()))
     return success();
@@ -1356,10 +1349,6 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
   SmallVector<StringRef> ignoredAttrNames(
       GeneratorOp::getAttributeNames().begin(),
       GeneratorOp::getAttributeNames().end());
-  // Don't print evaluator in kgen.generator.interface.
-  ignoredAttrNames.push_back("evaluator");
-  // Don't print the default_impl in kgen.generator.interface.
-  ignoredAttrNames.push_back("defaultImpl");
 
   // Print out function attributes, if present.
   SmallVector<StringRef, 8> ignoredAttrs = {SymbolTable::getSymbolAttrName()};
@@ -1367,15 +1356,6 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
   p.printOptionalAttrDictWithKeyword(op->getAttrs(), ignoredAttrs);
 
   printOptionalConstraints(p, func, cast<DeclInterface>(*op).getConstraints());
-
-  // If this is a generator implementing a generator.interface, include the
-  // symbol for the generator interface.
-  if (auto gen = dyn_cast<GeneratorOp>(*op)) {
-    if (auto itf = gen.getImplementsAttr()) {
-      p.printNewline();
-      p << "  implements " << itf;
-    }
-  }
 
   p << ' ';
   if (!func.isExternal())
@@ -1713,17 +1693,6 @@ KGEN::verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
                           paramKind, "type"))
     return failure();
   return success();
-}
-
-/// Check that the specified generator/interfaces matches signature
-/// information with the other interface.
-LogicalResult KGEN::verifyDeclMatchesInterface(
-    const char *originatorName, FuncInterface originatorDecl,
-    const char *interfaceName, GeneratorInterfaceOp interfaceDecl) {
-
-  return verifyDeclSignaturesMatch(
-      originatorName, originatorDecl.getSignature(), originatorDecl.getLoc(),
-      interfaceName, interfaceDecl.getSignature(), interfaceDecl.getLoc());
 }
 
 /// If the specified operation is non-null and contains parameters, collect

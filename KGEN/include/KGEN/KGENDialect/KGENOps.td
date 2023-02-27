@@ -79,8 +79,7 @@ def KGEN_FuncOp : KGENOp<"func", [
 def KGEN_GeneratorOp : KGENOp<"generator", [
     HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
     SingleBlockImplicitTerminator<"ReturnOp">,
-    DeclareOpInterfaceMethods<CallableOpInterface>,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>, DeclInterface,
+    DeclareOpInterfaceMethods<CallableOpInterface>, DeclInterface,
     FuncInterface]> {
   let summary = "Function generator definition.";
   let description = [{
@@ -108,7 +107,6 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<KGEN_SignatureType>:$signature,
                        ConstraintArrayAttr:$constraints,
-                       OptionalAttr<FlatSymbolRefAttr>:$implements,
                        KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel);
   let regions = (region AnyRegion:$bodyRegion);
 
@@ -121,47 +119,12 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
 
   let builders = [
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature), [{
-      build($_builder, $_state, name, signature, {}, {}, {});
+      build($_builder, $_state, name, signature, {}, {});
     }]>
   ];
 
   let hasCustomAssemblyFormat = 1;
   let hasRegionVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// GeneratorInterfaceOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_GeneratorInterfaceOp : KGENOp<"generator.interface", [
-    HasParent<"mlir::ModuleOp">,
-    DeclareOpInterfaceMethods<CallableOpInterface>,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-    KGEN_CallOpInterface, FunctionOpInterface, Symbol, IsolatedFromAbove,
-    DeclInterface, FuncInterface]> {
-  let summary = "Generator interface definition";
-
-  /// input and result parameters are stored in a single flat array named
-  /// `paramDecls` and the `numInputParameters` field indicates which are input
-  /// and which are result parameters.
-  let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<KGEN_SignatureType>:$signature,
-                       ConstraintArrayAttr:$constraints,
-                       OptionalAttr<KGEN_SymbolConstantAttr>:$evaluator,
-                       OptionalAttr<KGEN_SymbolConstantAttr>:$defaultImpl);
-
-  // We want to work with the FunctionOpInterface, which always requires a body
-  // region.  We are "declaration like" though, so ours never has a block.
-  let regions = (region SizedRegion<0>:$body);
-
-  let hasCustomAssemblyFormat = 1;
-
-  let extraClassDeclaration = [{
-    /// Interfaces cannot be `always_inline` because they have no body.
-    AlwaysInlineLevel getAlwaysInlineLevel() {
-      return AlwaysInlineLevel::Disabled;
-    }
-  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -204,9 +167,9 @@ def KGEN_AddressOfOp : KGEN_CallOpBase<"addressof"> {
     Example:
 
     ```mlir
-    kgen.generator.interface @foo<size>(index) -> index
+    kgen.generator @foo<size>(index) -> index
 
-    // Take the address of the interface. This will be resolved to the address
+    // Take the address of the generator. This will be resolved to the address
     // of the selected implemented of the interface post-elaboration.
     %0 = kgen.addressof @foo<size = 5> : (index) -> index
     ```
