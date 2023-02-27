@@ -9,6 +9,7 @@ add_modular_conversion_library(ParseLit
   IRValues.cpp
   LitDecls.cpp
   LitDiags.cpp
+  LitDocString.cpp
   LitExprCalls.cpp
   LitExprEmitter.cpp
   LitExprNodes.cpp

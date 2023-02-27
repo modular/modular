@@ -16,10 +16,13 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LitDecls.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "Support/HLCFDialect/HLCFDialect.h"
 #include "mlir/AsmParser/AsmParser.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/IR/Location.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/Process.h"
@@ -85,6 +88,10 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
       declResolver(std::make_unique<DeclResolver>(*this)),
       impl(std::make_unique<Impl>()) {
   impl->stdlibPath = getStandardLibraryPath();
+
+  context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
+                       POP::POPDialect, LITDialect, mlir::index::IndexDialect,
+                       KGENDialect>();
 
   // Tell the diagnostics machinery how to find the end of a token lazily when
   // it needs it.

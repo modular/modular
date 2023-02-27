@@ -1,0 +1,102 @@
+# RUN: lit %s -doc-gen | FileCheck %s
+
+from Int import Int
+
+# CHECK: # Module: lit-doc
+
+# CHECK: ## ParameterClass
+# CHECK: This is a class summary.
+# CHECK: The is some kind of description.
+
+# CHECK: | Parameters | |
+# CHECK: | :---- | --- |
+# CHECK: | _type (`__mlir_type.!kgen.dtype`) | This is a parameter. |
+
+
+struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
+    """This is a class summary.
+
+    The is some kind of description.
+
+    Parameters:
+        _type: This is a parameter.
+    """
+
+
+# CHECK: ## empty_fn():
+# CHECK: This is a function summary.
+# CHECK: The is some kind of description.
+
+
+fn empty_fn():
+    """This is a function summary.
+
+    The is some kind of description.
+    """
+    return
+
+
+# CHECK: ## fn_with_args(`$Int::Int`):
+# CHECK: This is a function summary.
+# CHECK: The is some kind of description.
+# CHECK: | Args | |
+# CHECK: | :---- | --- |
+# CHECK: | arg (`$Int::Int`) | This is an argument. |
+
+
+fn fn_with_args(arg: Int):
+    """This is a function summary.
+
+    The is some kind of description.
+
+    Args:
+        arg: This is an argument.
+    """
+    return
+
+
+# CHECK: ## fn_with_params():
+# CHECK: This is a function summary.
+# CHECK: The is some kind of description.
+
+# CHECK: | Parameters | |
+# CHECK: | :---- | --- |
+# CHECK: | param (`__mlir_type.!kgen.dtype`) | This is a parameter. |
+
+
+fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
+    """This is a function summary.
+
+    The is some kind of description.
+
+    Parameters:
+        param: This is a parameter.
+    """
+    return
+
+
+# CHECK: ## fn_with_params_and_return(`$Int::Int`) -> `$Int::Int`:
+# CHECK: This is a function summary.
+# CHECK: The is some kind of description.
+
+# CHECK: | Args | |
+# CHECK: | :---- | --- |
+# CHECK: | arg (`$Int::Int`) | This is an argument. |
+
+# CHECK: | Returns (`$Int::Int`) |
+# CHECK: | :---- |
+# CHECK: | Returns: This is a return value.  |
+
+
+fn fn_with_params_and_return(arg: Int) -> Int:
+    """This is a function summary.
+
+    The is some kind of description.
+
+    Args:
+        arg: This is an argument.
+
+    Returns:
+        This is a return value.
+    """
+    return arg
