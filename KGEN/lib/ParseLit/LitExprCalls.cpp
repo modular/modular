@@ -117,11 +117,16 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
     if (auto expected = dyn_cast<POP::PointerType>(expectedType))
       return matchParams(actual.getElementType(), expected.getElementType());
 
+  // Handle VariadicType
+  if (auto actual = dyn_cast<KGEN::VariadicType>(actualType))
+    if (auto expected = dyn_cast<KGEN::VariadicType>(expectedType))
+      return matchParams(actual.getElementType(), expected.getElementType());
+
   // If the types trivial match then we're done and there is no inference to do.
   if (actualType == expectedType)
     return success();
 
-  // TODO: Could do StructType and VariantType?
+  // TODO: Could do StructType?
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER MISMATCH TYPES:\n";
              actualType.dump(); expectedType.dump(); parameterName.dump());
   return success();
