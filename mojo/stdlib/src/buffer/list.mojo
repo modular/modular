@@ -420,6 +420,18 @@ struct VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
     fn __clone__(self&) -> Self:
         return Self {value: self.value}
 
+    fn __new__(*value: type) -> Self:
+        """Constructs a VariadicList from a variadic list of arguments.
+
+        Args:
+            *value (type):
+                The variadic argument list to construct the variadic list with.
+
+        Returns (VariadicList):
+            The VariadicList constructed.
+        """
+        return Self(value)
+
     fn __new__(value: StorageType) -> VariadicList[type]:
         """Constructs a VariadicList from a variadic argument type.
 
