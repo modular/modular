@@ -11,6 +11,7 @@ add_modular_dialect_library(MDialect
   MTypes.cpp
 
   DEPENDS
+  MConfig
   MLIRMIncGen
 
   LINK_LIBS PUBLIC
