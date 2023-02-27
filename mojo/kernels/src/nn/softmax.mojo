@@ -6,7 +6,7 @@
 
 from Assert import assert_param
 from Buffer import Buffer
-from Functional import vectorize
+from Functional import vectorize_unroll
 from Int import Int
 from Math import exp
 from Numerics import neginf
@@ -108,6 +108,7 @@ fn _softmax_2_pass_step1[
 
 fn _softmax_2_pass_step2[
     simd_width: __mlir_type.index,
+    unroll_factor: __mlir_type.index,
     buffer_size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](
@@ -132,7 +133,7 @@ fn _softmax_2_pass_step2[
             / running_sum_simd,
         )
 
-    vectorize[simd_width, _step_2](output.__len__())
+    vectorize_unroll[simd_width, unroll_factor, _step_2](output.__len__())
 
 
 fn softmax_2_pass[
@@ -178,7 +179,8 @@ fn softmax_2_pass[
     let running_max = running_info[0]
     let running_sum = running_info[1]
 
-    _softmax_2_pass_step2[simd_width, buffer_size, type](
+    alias unroll_factor = 8  # TODO: search
+    _softmax_2_pass_step2[simd_width, unroll_factor, buffer_size, type](
         output, input, running_max, running_sum
     )
 
@@ -202,6 +204,7 @@ fn _softmax_3_pass_step1[
 
 fn _softmax_3_pass_step2[
     simd_width: __mlir_type.index,
+    unroll_factor: __mlir_type.index,
     buffer_size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](
@@ -231,7 +234,7 @@ fn _softmax_3_pass_step2[
             denom_scalar, denom_simd, elem
         )
 
-    vectorize[simd_width, step_2](output.__len__())
+    vectorize_unroll[simd_width, unroll_factor, step_2](output.__len__())
 
     # Reduce the values from both the scalar and vector denom.
     return denom_scalar + denom_simd.reduce_add()
@@ -239,6 +242,7 @@ fn _softmax_3_pass_step2[
 
 fn _softmax_3_pass_step3[
     simd_width: __mlir_type.index,
+    unroll_factor: __mlir_type.index,
     buffer_size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
 ](output: Buffer[buffer_size, type], denom: SIMD[1, type]):
@@ -255,7 +259,7 @@ fn _softmax_3_pass_step3[
             idx, output.simd_load[simd_width](idx) * simd_recip
         )
 
-    vectorize[simd_width, div](output.__len__())
+    vectorize_unroll[simd_width, unroll_factor, div](output.__len__())
 
 
 fn softmax_3_pass[
@@ -293,7 +297,10 @@ fn softmax_3_pass[
         None
     """
     let max_val = _softmax_3_pass_step1[simd_width, buffer_size, type](input)
-    let denom = _softmax_3_pass_step2[simd_width, buffer_size, type](
-        input, output, max_val
+    alias unroll_factor = 8  # TODO: search
+    let denom = _softmax_3_pass_step2[
+        simd_width, unroll_factor, buffer_size, type
+    ](input, output, max_val)
+    _softmax_3_pass_step3[simd_width, unroll_factor, buffer_size, type](
+        output, denom
     )
-    _softmax_3_pass_step3[simd_width, buffer_size, type](output, denom)
