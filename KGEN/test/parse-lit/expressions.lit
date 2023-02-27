@@ -367,12 +367,10 @@ fn patterns():
 
   # Discard pattern with different types.
   (_) = someInt
-  # CHECK: %_ = lit.var.decl "_" : <@"$Int"::@Int>
-  # CHECK: pop.store {{.*}}, %_ : !pop.pointer<@"$Int"::@Int>
+  # CHECK:  %2 = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%someInt)
 
   (_) = 1.0
-  # CHECK: %__0 = lit.var.decl "_" : <f64>
-  # CHECK: pop.store {{.*}}, %__0 : !pop.pointer<f64>
+  # CHECK: %3 = kgen.param.constant: f64 = <1.0
 
   # CHECK: %someF32 = lit.var.decl "someF32" : <@"$F32"::@F32>
   # CHECK: [[F32:%.*]] = kgen.call @"$F32"::@F32::@"__clone__($F32::F32&)"(%someF32)

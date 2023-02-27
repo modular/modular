@@ -138,7 +138,7 @@ public:
 
   /// This method is used by node implementations of emitExprResultIntoPattern
   /// to emit the result once they determine an lvalue to use.
-  MRValue emitExprResultIntoLValue(ASTExprAnd<AnyValue> value, LValue dest);
+  AnyValue emitExprResultIntoLValue(ASTExprAnd<AnyValue> value, LValue dest);
 
   /// This helper emits the specified value rep as an RValue.
   RValue emitExprRValue(const ExprNode *node, ValueDest dest = {});
