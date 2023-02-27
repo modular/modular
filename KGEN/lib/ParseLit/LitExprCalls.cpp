@@ -366,8 +366,9 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
         incorrectBindingExpectedType = expectedType;
       };
 
-      auto argValue = emitter.getAsExpectedType(
-          MValue(binding.getValue()), binding.expr, expectedType, errorHandler);
+      auto argValue =
+          emitter.getAsExpectedType({MValue(binding.getValue()), binding.expr},
+                                    expectedType, ValueDest(), errorHandler);
       if (!argValue)
         return {};
 
@@ -1115,9 +1116,8 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter,
   case ValueInputConvention::ByVal:
     // Otherwise we can have either an lvalue or rvalue, but we need to convert
     // to an rvalue if we have an lvalue.
-    firstArgValue = emitter.emitDRValue({baseVal, expr},
-                                        // TODO(memory_primary)
-                                        ValueDest());
+    // TODO(memory_primary): Emit into memory directly.
+    firstArgValue = emitter.emitDRValue({baseVal, expr});
     if (!firstArgValue)
       return {};
     break;
@@ -1129,9 +1129,8 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter,
   // For an instance value, we have to partially apply the callee to the first
   // argument of the reference.  Materialize callee as a DRValue for
   // partial_apply.
-  auto calleeDRVal = emitter.emitDRValue({AnyValue(directSymbolAttr), expr},
-                                         // TODO(memory_primary)
-                                         ValueDest());
+  // TODO(memory_primary): Emit into memory directly.
+  auto calleeDRVal = emitter.emitDRValue({AnyValue(directSymbolAttr), expr});
 
   // Partial apply wants to know what operands to bind, we always bind the first
   // one.
@@ -1200,15 +1199,16 @@ static bool isValidErrorContext(Block *block) {
 
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
-AnyValue CallableValue::emitFunctionCall(
-    ArrayRef<ASTExprAnd<AnyValue>> operands, ValueDest dest, CallSyntax syntax,
-    const ExprNode *callNode, ExprEmitter &emitter) {
+AnyValue
+CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                ValueDest dest, CallSyntax syntax,
+                                ExprEmitter &emitter) {
   if (isNull()) // Base was already diagnosed as an error.
     return {};
 
   // Used in some cases below, lifetime needs to exist for this whole method.
   SmallVector<ASTExprAnd<AnyValue>> operandsWithSelf;
-  SMLoc callLoc = callNode->getLoc();
+  SMLoc callLoc = expr->getLoc();
 
   auto emitError = [&](const Twine &message) {
     return emitter.emitError(callLoc, message);
@@ -1254,7 +1254,7 @@ AnyValue CallableValue::emitFunctionCall(
     // call it with call_indirect.
     callee = baseVal.getIfMValue();
     if (!callee) {
-      callee = emitter.emitDRValue({baseVal, expr}, ValueDest());
+      callee = emitter.emitDRValue({baseVal, expr});
       if (!callee)
         return {};
     }
@@ -1301,13 +1301,13 @@ AnyValue CallableValue::emitFunctionCall(
       if (calleeSig.isVararg(argIdx)) {
         auto variadic = VariadicAttr::get(ArrayRef<TypedAttr>(),
                                           expectedType.cast<VariadicType>());
-        argumentValues.push_back({MValue(variadic), callNode});
+        argumentValues.push_back({MValue(variadic), expr});
         continue;
       }
       // Otherwise, apply the default argument. We've ensured above that we have
       // a default argument for each missing operand.
       argumentValues.push_back(
-          {MValue(calleeSig.getDefaultArguments()[nextDefaultIdx]), callNode});
+          {MValue(calleeSig.getDefaultArguments()[nextDefaultIdx]), expr});
       ++nextDefaultIdx;
       continue;
     }
@@ -1321,22 +1321,20 @@ AnyValue CallableValue::emitFunctionCall(
                "Call should already be type checked");
         return operand.ir;
       case ValueInputConvention::ByVal:
-        // TODO: Do the conversion first, then emit as an rvalue into the
-        // destination.
-
         // by-val arguments are converted to the expected r-value type.
-        auto argVal = emitter.emitRValue(
-            operand,
-            // TODO(memory-primary): emit into the argument slot.
-            ValueDest());
         // In the case of a variadic argument, we need to remove the
         // !pop.varadic<> wrapper to get the type to convert to.
         Type expectedArgType = expectedType;
         if (calleeSig.isVararg(argIdx))
           expectedArgType = getVariadicElementType(expectedArgType);
 
-        return emitter.getAsExpectedType(argVal, operand.expr, expectedArgType,
-                                         " in argument");
+        operand.ir = emitter.getAsExpectedType(operand, expectedArgType,
+                                               // TODO(memory-primary)
+                                               ValueDest(), " in argument");
+        return emitter.emitRValue(
+            operand,
+            // TODO(memory-primary): emit into the argument slot.
+            ValueDest());
       }
     };
 
@@ -1380,10 +1378,9 @@ AnyValue CallableValue::emitFunctionCall(
     // variadic sequence.
     SmallVector<Value> variadicArgs;
     for (auto &operand : variadicOperands) {
+      // TODO(memory_primary): Emit into memory directly.
       DRValue argVal =
-          emitter.emitDRValue({emitOneArgVal(operand), operand.expr},
-                              // TODO(memory_primary)
-                              ValueDest());
+          emitter.emitDRValue({emitOneArgVal(operand), operand.expr});
       if (!argVal)
         return {};
       variadicArgs.push_back(argVal);
@@ -1408,9 +1405,8 @@ AnyValue CallableValue::emitFunctionCall(
       auto calleeSym = cast<SymbolConstantAttr>(callee.getIfMValue().get());
       ParamBindArrayAttr inputParams = calleeSym.getParamValues();
       if (auto result = inlineFunctionCallIntoMValue(
-              callLoc, *direct->fnDecls[0], inputParams, argumentValues,
-              emitter))
-        return emitter.emitResult(result.get(), callNode, dest);
+              *direct->fnDecls[0], inputParams, argumentValues, emitter))
+        return emitter.emitResult(result.get(), expr, dest);
     }
   }
 
@@ -1443,7 +1439,7 @@ AnyValue CallableValue::emitFunctionCall(
     }
 
     auto result = ParamOperatorAttr::get(POC::Apply, operands);
-    return emitter.emitResult(result, callNode, dest);
+    return emitter.emitResult(result, expr, dest);
   }
 
   // Otherwise, materialize MValue arguments as DRValues.
@@ -1452,9 +1448,8 @@ AnyValue CallableValue::emitFunctionCall(
     if (auto lv = argValAndExpr.ir.getIfLValue())
       callArgs.push_back(lv);
     else
-      callArgs.push_back(emitter.emitDRValue(argValAndExpr,
-                                             // TODO(memory_primary)
-                                             ValueDest()));
+      // TODO(memory_primary): Emit into memory directly.
+      callArgs.push_back(emitter.emitDRValue(argValAndExpr));
     if (!callArgs.back())
       return {};
   }
@@ -1476,9 +1471,9 @@ AnyValue CallableValue::emitFunctionCall(
       // If the callee is a list, create a param.fork op and create a CallParam
       // on that. We want to get the name of the function that is being called
       // and mangle it into the parameter name to ensure uniqueness.
-      StringRef mangledCall(callNode->getRangeStart().getPointer(),
-                            callNode->getRangeEnd().getPointer() -
-                                callNode->getRangeStart().getPointer() - 1);
+      StringRef mangledCall(expr->getRangeStart().getPointer(),
+                            expr->getRangeEnd().getPointer() -
+                                expr->getRangeStart().getPointer() - 1);
       auto decl =
           ParamDeclAttr::get(builder->getStringAttr("(adaptive)" + mangledCall),
                              variadic.getType().getResolvedElementType());
@@ -1506,7 +1501,7 @@ AnyValue CallableValue::emitFunctionCall(
 
   // Value returning call returns its result.
   auto result = DRValue(callOp->getResult(0));
-  return emitter.emitResult(result, callNode, dest);
+  return emitter.emitResult(result, expr, dest);
 }
 
 /// Given a call to an alwaysinline function that is invoked with simple
@@ -1517,7 +1512,7 @@ AnyValue CallableValue::emitFunctionCall(
 /// This is best-effort: when it fails, we fall back to emitting a normal call
 /// or "apply" parameter expression.
 MValue CallableValue::inlineFunctionCallIntoMValue(
-    SMLoc callLoc, ASTDecl &callee, ParamBindArrayAttr inputParams,
+    ASTDecl &callee, ParamBindArrayAttr inputParams,
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues, ExprEmitter &emitter) {
   auto funcOp = cast<LIT::FuncOp>(callee);
 
@@ -1549,7 +1544,7 @@ MValue CallableValue::inlineFunctionCallIntoMValue(
     valueMapping[blockArg] = value.ir.getIfMValue();
 
   // Resolve the body to type check and generate the IR we need for inlining.
-  if (failed(emitter.getDeclResolver().resolveFully(callee, callLoc)))
+  if (failed(emitter.getDeclResolver().resolveFully(callee, expr->getLoc())))
     return {};
 
   // Perform parameter substitution if there are input parameters.

@@ -546,7 +546,7 @@ struct ParsedArgument {
   VarArgKind vararg = VarArgKind::None;
   StringAttr name;
   ExprNode *typeExpr = nullptr;
-  ExprNode *initValue = nullptr;
+  ExprNode *initExpr = nullptr;
 
   /// This specifies the handling of keyword arguments in a list.
   enum class KWArgHandling {
@@ -618,15 +618,15 @@ struct ParsedArgument {
 
     SMLoc equalLoc;
     if (p.consumeIf(LitToken::equal, &equalLoc)) {
-      if (p.parseExpression(initValue, std::nullopt))
+      if (p.parseExpression(initExpr, std::nullopt))
         return failure();
 
       // Default args and varargs/packs don't mix.
       if (isPack || vararg != VarArgKind::None) {
         p.emitError(equalLoc,
                     isPack ? "variadic parameter packs" : "variadic arguments")
-            << " may not have defaults" << initValue->getRange();
-        initValue = nullptr;
+            << " may not have defaults" << initExpr->getRange();
+        initExpr = nullptr;
       }
     }
     return success();
@@ -799,7 +799,7 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
     for (auto &arg : args) {
       // Check for things supported in arguments that are not supported in
       // parameters.
-      if (arg.initValue)
+      if (arg.initExpr)
         p.emitError(arg.loc,
                     "TODO: default values in parameters not supported");
 
@@ -944,7 +944,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   };
 
   // Fill in any missing arguments or diagnose missing ones in fn's.
-  bool seenInitValue = false;
+  bool seenInitExpr = false;
   for (auto [arg, type] : llvm::zip(args, argTypes)) {
     if (!type) {
       if (funcOp.getIsDef()) {
@@ -959,9 +959,9 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
         type = shared.getTypeCheckErrorType();
       }
     }
-    if (arg.initValue) {
-      seenInitValue = true;
-    } else if (seenInitValue) {
+    if (arg.initExpr) {
+      seenInitExpr = true;
+    } else if (seenInitExpr) {
       shared.emitError(arg.loc, "non-default argument follows default argument")
           << arg.typeExpr->getRange();
     }
@@ -1460,11 +1460,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     argTypes.push_back(type);
 
     // Emit default argument values.
-    if (auto *initValue = arg.initValue) {
+    if (const ExprNode *initExpr = arg.initExpr) {
       ExprEmitter emitter(shared, decl, /*builder*/ {},
                           /*varDeclCursor*/ nullptr);
       MValue value = emitter.emitExprMValue(
-          initValue, type, " in a default argument initializer");
+          initExpr, type, " in a default argument initializer");
       if (!value)
         return failure();
       defaults.push_back(value);
@@ -1722,7 +1722,7 @@ namespace {
 struct ParsedLetVarDecl {
   SmallVector<ExprNode *> decorators;
   ASTType type;
-  ExprNode *initValue = nullptr;
+  ExprNode *initExpr = nullptr;
 
   ParseResult parse(LitLexer &lexer, ASTDecl &decl);
   std::pair<DRValue, OpBuilder> emitInitValue(Operation *declOp, ASTDecl &decl,
@@ -1748,7 +1748,7 @@ ParseResult ParsedLetVarDecl::parse(LitLexer &lexer, ASTDecl &decl) {
 
   // Parse and emit the initializer if present.
   if (p.consumeIf(LitToken::equal)) {
-    if (p.parseExpression(initValue, decl.getIndentation()))
+    if (p.parseExpression(initExpr, decl.getIndentation()))
       return failure();
   }
   return success();
@@ -1767,7 +1767,7 @@ ParsedLetVarDecl::emitInitValue(Operation *declOp, ASTDecl &decl,
   ExprEmitter emitter(shared, *decl.getParentDecl(), builder,
                       /*varDeclCursor*/ nullptr);
 
-  auto value = emitter.emitExprDRValue(initValue);
+  auto value = emitter.emitExprDRValue(initExpr);
   if (!value)
     return {value, builder};
 
@@ -1775,11 +1775,11 @@ ParsedLetVarDecl::emitInitValue(Operation *declOp, ASTDecl &decl,
   if (type) {
     const char *kind = isa<LetDeclOp>(declOp) ? "let" : "var";
     value = emitter.emitDRValue(
-        {emitter.getAsExpectedType(value, initValue, type,
-                                   " in " + Twine(kind) + " declaration"),
-         initValue},
-        // TODO(memory-primary): emit directly into the vardecl.
-        ValueDest());
+        {emitter.getAsExpectedType(
+             {value, initExpr}, type,
+             // TODO(memory-primary): emit directly into the vardecl.
+             ValueDest(), " in " + Twine(kind) + " declaration"),
+         initExpr});
   } else {
     // Infer the type if we lack a declared type (`var x = 42`).
     // TODO(literal autopromotion).
@@ -1797,7 +1797,7 @@ LogicalResult DeclResolver::resolveSignature(LetDeclOp letOp, LitLexer &lexer,
     return failure();
 
   // Handle the initializer if present.
-  if (parsed.initValue) {
+  if (parsed.initExpr) {
     auto [initVal, _] = parsed.emitInitValue(letOp, decl, shared);
     if (!initVal)
       return failure();
@@ -1835,13 +1835,13 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
     return failure();
 
   // Handle the initializer if present.
-  if (parsed.initValue) {
+  if (parsed.initExpr) {
     auto [initVal, builder] = parsed.emitInitValue(varOp, decl, shared);
     if (!initVal)
       return failure();
 
     // Store the initializer value into the VarDecl.
-    auto loc = translateLocation(parsed.initValue->getLoc());
+    auto loc = translateLocation(parsed.initExpr->getLoc());
     builder.create<POP::StoreOp>(loc, initVal, varOp,
                                  /*alignment=*/std::nullopt);
   }
@@ -1925,8 +1925,8 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
   }
 
   // Otherwise this is a normal `alias` declaration with an initializer.
-  ExprNode *initValue = nullptr;
-  if (p.parseExpression(initValue, decl.getIndentation()))
+  ExprNode *initExpr = nullptr;
+  if (p.parseExpression(initExpr, decl.getIndentation()))
     return failure();
 
   ASTDecl &parentDecl = *decl.getParentDecl();
@@ -1935,7 +1935,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
 
   // Emit the value and convert to the expected type if we know it.
   auto rhsValue =
-      emitter.emitExprMValue(initValue, type, " in alias declaration");
+      emitter.emitExprMValue(initExpr, type, " in alias declaration");
   if (!rhsValue)
     return failure();
 

@@ -362,7 +362,7 @@ AnyValue BoolLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   auto boolAttr = POP::SIMDAttr::get({value, KGENDType::kBool},
                                      POP::SIMDType::get(1, boolDType));
   return newVal.emitFunctionCall(ASTExprAnd<AnyValue>{AnyValue(boolAttr), this},
-                                 dest, CallSyntax::kTypeCall, this, emitter);
+                                 dest, CallSyntax::kTypeCall, emitter);
 }
 
 AnyValue SelfLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -778,7 +778,8 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter) const {
     }
 
     // Otherwise, it must be an rvalue.
-    DRValue baseRV = emitter.emitDRValue({baseVal, base}, ValueDest());
+    // TODO(memory_primary): Handle memory-only rvalues by gep'ing into them.
+    DRValue baseRV = emitter.emitDRValue({baseVal, base});
     if (!baseRV)
       return {};
 
@@ -1040,7 +1041,8 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
       return {};
   }
 
-  return calleeVal.emitFunctionCall(operands, dest, syntax, this, emitter);
+  calleeVal.expr = this;
+  return calleeVal.emitFunctionCall(operands, dest, syntax, emitter);
 }
 
 AnyValue SliceNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -1265,10 +1267,10 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter) const {
   }
 
   // Finally, just emit the call to __getitem__.
-  auto result = getItem.emitFunctionCall(indexValues,
-                                         // TODO(memory-primary)
-                                         ValueDest(), CallSyntax::kSubscript,
-                                         this, emitter);
+  auto result =
+      getItem.emitFunctionCall(indexValues,
+                               // TODO(memory-primary)
+                               ValueDest(), CallSyntax::kSubscript, emitter);
   return CallableValue({result, this});
 }
 
@@ -1506,12 +1508,11 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     }
 
     auto value = emitter.getAsExpectedType(
-        fieldVal.ir, fieldVal.expr,
-        paramEvaluator.getReboundType(field.getType()),
-        " in field initialization");
-    auto drValue = emitter.emitDRValue({value, fieldVal.expr},
-                                       // TODO(memory_primary)
-                                       ValueDest());
+        fieldVal, paramEvaluator.getReboundType(field.getType()),
+        // TODO(memory_primary)
+        ValueDest(), " in field initialization");
+    // TODO(memory_primary): Handle memory-only values by direct initializing.
+    auto drValue = emitter.emitDRValue({value, fieldVal.expr});
     if (!drValue)
       return {};
     fieldNames.push_back(field.getNameAttr());
@@ -1658,7 +1659,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                            argValues, CallSyntax::kOperator, callee.expr,
                            /*emitDiagnosticOnFailure=*/false, emitter))) {
     return callee.emitFunctionCall(argValues, dest, CallSyntax::kOperator,
-                                   callNode, emitter);
+                                   emitter);
   }
 
   // Check to see if we have the reverse version of this operator.
@@ -1672,8 +1673,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
         succeeded(callee.direct->filterOverloadSet(
             argValues, CallSyntax::kReversedOperator, callee.expr,
             /*emitDiagnosticOnFailure=*/false, emitter))) {
-      return callee.emitFunctionCall(
-          argValues, dest, CallSyntax::kReversedOperator, callNode, emitter);
+      return callee.emitFunctionCall(argValues, dest,
+                                     CallSyntax::kReversedOperator, emitter);
     }
 
     // Swap these back so we emit the right error.
@@ -1780,8 +1781,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest dest, ExprEmitter &emitter) const {
   AnyValue lhsBool;
   DRValue lhsRV = emitter.emitExprDRValue(lhs);
   RValue lhsI1Value = emitter.emitConditionValueAsI1({lhsRV, lhs}, lhsBool);
-  Value lhsI1DRValue =
-      emitter.emitDRValue({AnyValue(lhsI1Value), lhs}, ValueDest());
+  Value lhsI1DRValue = emitter.emitDRValue({AnyValue(lhsI1Value), lhs});
   if (!lhsI1DRValue)
     return {};
 
@@ -1821,13 +1821,13 @@ AnyValue BinOpNode::emitAndOr(ValueDest dest, ExprEmitter &emitter) const {
           << lhs->getRange() << rhs->getRange();
       return {};
     }
-    auto rhsBoolDRVal = emitter.emitDRValue({rhsBool, rhs}, ValueDest());
+    auto rhsBoolDRVal = emitter.emitDRValue({rhsBool, rhs});
     if (!rhsBoolDRVal)
       return {};
     emitter.builder->create<HLCF::YieldOp>(ifLoc, rhsBoolDRVal);
     // Emit the false side.
     emitter.builder = falseBuilder;
-    auto lhsBoolDRVal = emitter.emitDRValue({lhsBool, lhs}, ValueDest());
+    auto lhsBoolDRVal = emitter.emitDRValue({lhsBool, lhs});
     if (!lhsBoolDRVal)
       return {};
     emitter.builder->create<HLCF::YieldOp>(ifLoc, lhsBoolDRVal);
@@ -1891,8 +1891,7 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 
 AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   RValue condRVal = emitter.emitExprConditionValueAsI1(condExpr);
-  Value condValue =
-      emitter.emitDRValue({AnyValue(condRVal), condExpr}, ValueDest());
+  Value condValue = emitter.emitDRValue({AnyValue(condRVal), condExpr});
 
   if (!condValue)
     return {};
@@ -1960,7 +1959,7 @@ AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
   RValue lastCmpI1Value =
       emitter.emitConditionValueAsI1({lastCmpExpr, this}, boolResult);
   DRValue lastCmpI1RValue =
-      emitter.emitDRValue({AnyValue(lastCmpI1Value), this}, ValueDest());
+      emitter.emitDRValue({AnyValue(lastCmpI1Value), this});
   if (!lastCmpI1RValue)
     return {};
   auto ifOp = emitter.builder->create<HLCF::IfOp>(ifLoc, boolResult.getType(),
@@ -1972,8 +1971,7 @@ AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
   AnyValue lastBinOp =
       emitBinOpCall({lastExpr, exprs[opIdx]}, {exprValue, exprs[opIdx + 1]},
                     ops[opIdx], ValueDest(), this, emitter);
-  DRValue lastRV =
-      emitter.emitDRValue({lastBinOp, exprs[opIdx + 1]}, ValueDest());
+  DRValue lastRV = emitter.emitDRValue({lastBinOp, exprs[opIdx + 1]});
   if (!lastRV)
     return {};
 
@@ -2003,9 +2001,8 @@ AnyValue ChainedCmpOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   if (exprs.size() == 2)
     return cmpe0e1RV;
 
-  DRValue lastCmpExpr = emitter.emitDRValue({cmpe0e1RV, exprs[1]}, ValueDest());
-  DRValue e1RV =
-      emitter.emitDRValue(ASTExprAnd<RValue>{e1Rep, exprs[1]}, ValueDest());
+  DRValue lastCmpExpr = emitter.emitDRValue({cmpe0e1RV, exprs[1]});
+  DRValue e1RV = emitter.emitDRValue(ASTExprAnd<RValue>{e1Rep, exprs[1]});
   if (!lastCmpExpr || !e1RV)
     return {};
   return emitter.emitResult(emitNextCmp(emitter, 1, lastCmpExpr, e1RV), this,
