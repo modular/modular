@@ -30,65 +30,6 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
-namespace {
-class SignatureUnifier {
-public:
-  SignatureUnifier(GeneratorOp generatorOp);
-
-  /// Add the constraints already on the generator to the constraint set,
-  /// returning failure if a contradiction was detected.
-  LogicalResult checkExistingConstraints();
-
-  void reinstallConstraints();
-
-public:
-  GeneratorOp generatorOp;
-
-  ConstraintSet constraints;
-
-  /// This string is set to information indicating context about in inferred
-  /// constraint or diagnostic, e.g. that this is happening with argument #0.
-  std::string inferenceContext;
-  Location inferenceLoc;
-};
-} // namespace
-
-SignatureUnifier::SignatureUnifier(GeneratorOp generatorOp)
-    : generatorOp(generatorOp), constraints(generatorOp),
-      inferenceLoc(UnknownLoc::get(generatorOp.getContext())) {}
-
-/// Add the constraints already on the generator to the constraint set,
-/// returning failure if a contradiction was detected.
-LogicalResult SignatureUnifier::checkExistingConstraints() {
-  for (ConstraintAttr constraint : generatorOp.getConstraints())
-    if (failed(constraints.addConstraint(constraint)))
-      return failure();
-
-  return success();
-}
-
-/// When we're done checking the conformance, this method reinstalls the
-/// (possibly updated) constraint information on the generator declaration.
-void SignatureUnifier::reinstallConstraints() {
-  generatorOp.setConstraintsAttr(constraints.getConstraintsSpec());
-}
-
-/// Reduce the constraint set on a generator and detect potential contradictions
-/// by processing them through a constraint set.
-static LogicalResult reduceGeneratorConstraints(GeneratorOp gen) {
-  SignatureUnifier unifier(gen);
-
-  // Verify that the constraints already imposed on the generator are
-  // satisfiable.
-  if (failed(unifier.checkExistingConstraints()))
-    return failure();
-
-  // If this generator is not actually implementing an interface, just return
-  // after successfully checking the existing constraints for contradictions.
-  unifier.reinstallConstraints();
-  return success();
-}
-
 static void buildDebugInfoValue(Operation *insertPt, Location loc,
                                 StringRef varName,
                                 DebugInfo::DIFileAttr fileAttr, Value value,
@@ -247,7 +188,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
   gen = LIT::FuncOp(); // The line above also erases 'gen'.
   symbolTable.insert(result);
 
-  return reduceGeneratorConstraints(result);
+  return success();
 }
 
 /// Lower nested structures in lit.struct.decl away.
