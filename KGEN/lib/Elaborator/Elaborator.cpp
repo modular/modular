@@ -1548,6 +1548,9 @@ void ElaboratorImpl::processScope(ExpansionTreeNode *parentNode,
   for (auto iter = worklist.begin(), end = worklist.end(); iter != end;
        ++iter) {
     Operation *op = *iter;
+    if (!op->getBlock()->isEntryBlock() && op->getBlock()->hasNoPredecessors())
+      continue;
+
     ArrayRef<Operation *> remainingWorklist(iter + 1, end);
     auto _ = logger.scope("Processing: '", op->getName(), "'");
     logger.logOp("Op", op);
