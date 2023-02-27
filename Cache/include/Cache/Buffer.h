@@ -64,6 +64,9 @@ protected:
   /// initialize empty read-only buffers.
   Buffer() : mallocd(), kind(kMalloc) {}
 
+  /// Create a Buffer of given size.
+  Buffer(size_t size) : mallocd(size), kind(kMalloc) {}
+
   /// Construct the Buffer where it has to copy its data.
   Buffer(StringRef data);
 
@@ -87,6 +90,7 @@ protected:
 
     /// Default-construct a mallocd buffer to nullptr/0.
     AllocatedBuffer() : data(nullptr), size(0) {}
+    AllocatedBuffer(size_t size) : data(malloc(size)), size(size) {}
     ~AllocatedBuffer() { free(data); }
 
     /// Moving a MallocdBuffer should transfer ownership.
@@ -124,9 +128,17 @@ using WriteableBufferRef = LLCL::RCRef<WriteableBuffer>;
 class WriteableBuffer : public Buffer, public llvm::raw_pwrite_stream {
 public:
   /// Initialize an empty WriteableBuffer that can be written to.
-  WriteableBuffer() : Buffer() { SetUnbuffered(); };
+  WriteableBuffer() : Buffer() { SetUnbuffered(); }
+  /// Create a WriteableBuffer with initial size (this sets both the capacity
+  /// and the number of bytes stored in the buffer to `size`).
+  WriteableBuffer(size_t size) : Buffer(size) { SetUnbuffered(); }
 
   static WriteableBufferRef get() { return WriteableBufferRef::create(); }
+  /// Create a WriteableBuffer with initial size (this sets both the capacity
+  /// and the number of bytes stored in the buffer to `size`).
+  static WriteableBufferRef get(size_t size) {
+    return WriteableBufferRef::create(size);
+  }
 
   /// Map in a file and use it as the backing storage for the BufferRef. If
   /// size and offset are provided, then a sub-range of the file is mapped in.
@@ -141,10 +153,22 @@ public:
   using Buffer::getBufferSize;
   using Buffer::getBufferStart;
 
+  char *getBufferStart() {
+    return const_cast<char *>(Buffer::getBufferStart());
+  }
+
+  char *getBufferEnd() { return const_cast<char *>(Buffer::getBufferEnd()); }
+
+  MutableArrayRef<char> getBuffer() {
+    return {getBufferStart(), getBufferEnd()};
+  }
+
   //===-------------------------------------------------------------------===//
   // raw_pwrite_stream implementation
   //===-------------------------------------------------------------------===//
 
+  /// Copies `size` bytes from address `ptr` to the end of the buffer (this
+  /// resizes the buffer to contain getBufferSize() + `size` bytes).
   void write_impl(const char *ptr, size_t size) override;
   uint64_t current_pos() const override { return getBufferSize(); }
   void pwrite_impl(const char *ptr, size_t size, uint64_t offset) override;

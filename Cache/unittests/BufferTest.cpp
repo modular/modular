@@ -35,15 +35,28 @@ TEST(BufferTest, RefCountingWorks) {
 TEST(BufferTest, TestWrite) {
   auto buffer = WriteableBuffer::get();
   *buffer << "hello";
-  EXPECT_TRUE(buffer->getBuffer() == "hello")
-      << "Actually had: " << buffer->getBuffer();
+  auto contents =
+      StringRef(buffer->getBuffer().data(), buffer->getBuffer().size());
+  EXPECT_TRUE(contents == "hello") << "Actually had: " << contents;
 
   auto buffer2 = std::move(buffer);
-  EXPECT_TRUE(buffer2->getBuffer() == "hello")
-      << "Actually had: " << buffer2->getBuffer();
+  contents =
+      StringRef(buffer2->getBuffer().data(), buffer2->getBuffer().size());
+  EXPECT_TRUE(contents == "hello") << "Actually had: " << contents;
 
   auto buffer3 = buffer2.copy();
   EXPECT_TRUE(buffer3->getBufferStart() == buffer2->getBufferStart());
+
+  const char *data = "writetest";
+  int initialSize = strlen(data);
+  auto buffer4 = WriteableBuffer::get(initialSize);
+  memcpy(buffer4->getBufferStart(), data, initialSize);
+  *buffer4 << "hello";
+  contents = StringRef(buffer4->getBufferStart(), initialSize);
+  EXPECT_TRUE(contents == data) << "Actually had: " << contents;
+  contents = StringRef(buffer4->getBufferStart() + initialSize,
+                       buffer4->getBufferSize() - initialSize);
+  EXPECT_TRUE(contents == "hello") << "Actually had: " << contents;
 }
 
 TEST(BufferTest, TestReadWriteFile) {
