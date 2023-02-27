@@ -7,9 +7,11 @@
 
 from Buffer import Buffer
 from DType import DType
-from Functional import vectorize
+from Functional import vectorize, vectorize_unroll
 from Int import Int
 from IO import print
+from Memory import memcmp
+from Range import range
 
 
 # CHECK-LABEL: test_vectorize
@@ -66,5 +68,43 @@ fn test_vectorize():
     print(vector.__getitem__(4))
 
 
+# CHECK-LABEL: test_vectorize_unroll
+fn test_vectorize_unroll():
+    print("== test_vectorize_unroll\n")
+
+    alias buf_len = 23
+    let vec = Buffer[buf_len, DType.f32.value].stack_allocation()
+    let ref = Buffer[buf_len, DType.f32.value].stack_allocation()
+
+    for i in range(buf_len):
+        vec.__setitem__(i, i)
+        ref.__setitem__(i, i)
+
+    @always_inline
+    fn double_ref[simd_width: __mlir_type.index](idx: Int):
+        ref.simd_store[simd_width](
+            idx,
+            ref.simd_load[simd_width](idx) + ref.simd_load[simd_width](idx),
+        )
+
+    @always_inline
+    fn double_vec[simd_width: __mlir_type.index](idx: Int):
+        vec.simd_store[simd_width](
+            idx,
+            vec.simd_load[simd_width](idx) + vec.simd_load[simd_width](idx),
+        )
+
+    alias simd_width = 4
+    alias unroll_factor = 2
+
+    vectorize_unroll[simd_width, unroll_factor, double_vec](vec.__len__())
+    vectorize[simd_width, double_ref](ref.__len__())
+
+    let err = memcmp(vec.data, ref.data, ref.bytecount())
+    # CHECK: 0
+    print(err)
+
+
 fn main():
     test_vectorize()
+    test_vectorize_unroll()

@@ -90,6 +90,50 @@ fn vectorize[
         func[1](i)
 
 
+@always_inline
+fn vectorize_unroll[
+    simd_width: __mlir_type.index,
+    unroll_factor: __mlir_type.index,
+    # TODO (#9203): function param needs to have a name that is not func.
+    # call it xxfunc for now to make it obvious this should be renamed func
+    # when possible.
+    xxfunc: __mlir_type[
+        `!kgen.signature<<simd_width>(`,
+        Int,
+        `) -> !lit.none>`,
+    ],
+](size: Int):
+    """Map a function which is parametrized over a simd_width over a range
+    from 0 to size in simd fashion and unroll the loop by unroll_factor.
+    """
+    alias unrolled_simd_width = simd_width * unroll_factor
+    let vector_end_unrolled_simd = (
+        size // unrolled_simd_width
+    ) * unrolled_simd_width
+    let vector_end_simd = (size // simd_width) * simd_width
+
+    @always_inline
+    fn unrolled_func(unrolled_simd_idx: Int):
+        @always_inline
+        fn unroll_iter[idx: __mlir_type.index]():
+            xxfunc[simd_width](unrolled_simd_idx + idx * simd_width)
+
+        unroll[unroll_factor, unroll_iter]()
+
+    for unrolled_simd_idx in range(
+        0, vector_end_unrolled_simd, unrolled_simd_width
+    ):
+        unrolled_func(unrolled_simd_idx)
+
+    for simd_idx in range(
+        vector_end_unrolled_simd, vector_end_simd, simd_width
+    ):
+        xxfunc[simd_width](simd_idx)
+
+    for i in range(vector_end_simd, size):
+        xxfunc[1](i)
+
+
 # ===----------------------------------------------------------------------===#
 # Parallelize
 # ===----------------------------------------------------------------------===#
