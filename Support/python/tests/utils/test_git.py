@@ -13,6 +13,7 @@ from modular.utils.git import (
     branch_exists,
     get_current_branch_name,
     get_uncommitted_changes,
+    get_changed_dirs,
     is_full_git_sha,
     shallow_clone,
 )
@@ -115,3 +116,33 @@ def test_get_uncommitted_changes(tmp_path: Path):
     assert len(changes) == 2
     assert changes["A "] == ["other_file.txt"]
     assert changes["AM"] == ["some_file.txt"]
+
+
+def test_get_changed_dirs(tmp_path: Path):
+    with pytest.raises(GitError):
+        get_current_branch_name(repo_dir=tmp_path)
+
+    make_dummy_repo(tmp_path)
+    assert not get_uncommitted_changes(tmp_path)
+
+    some_file = tmp_path / "dir1" / "some_file.txt"
+    other_file = tmp_path / "dir2" / "other_file.txt"
+    some_file.parent.mkdir(parents=True)
+    some_file.touch(exist_ok=False)
+    other_file.parent.mkdir(parents=True)
+    other_file.touch(exist_ok=False)
+
+    # Make a commit in the dummy repo
+    run_shell_command(["git", "add", some_file, other_file], cwd=tmp_path)
+    run_shell_command(["git", "commit", "-m", "fake"], cwd=tmp_path)
+
+    with open(other_file, "w") as f:
+        f.write("hello")
+
+    # Make another commit so we can compare.
+    run_shell_command(["git", "add", other_file], cwd=tmp_path)
+    run_shell_command(["git", "commit", "-m", "fake2"], cwd=tmp_path)
+
+    changed_dirs = get_changed_dirs("HEAD~1", tmp_path)
+    assert len(changed_dirs) == 1
+    assert Path("dir2") in changed_dirs
