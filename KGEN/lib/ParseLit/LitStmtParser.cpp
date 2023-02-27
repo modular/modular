@@ -527,12 +527,13 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // Convert the returned value to the returned type of the function.  If the
   // function is a 'raising' function we need to remove the extra variant type
   // to get the normal result type.
+  // TODO(memory_primary): Return slots.
   auto resultDRValue = emitter.emitDRValue(
-      {emitter.getAsExpectedType(resultValue, operandExprs[0],
-                                 decl.getResultType(), " in return"),
-       operandExprs[0]},
-      // TODO(memory-primary): Return slots.
-      ValueDest());
+      {emitter.getAsExpectedType({resultValue, operandExprs[0]},
+                                 decl.getResultType(),
+                                 // TODO(memory-primary): Return slots.
+                                 ValueDest(), " in return"),
+       operandExprs[0]});
   if (!resultDRValue)
     return {};
 
@@ -623,8 +624,7 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
   builder = OpBuilder::atBlockEnd(body);
 
   RValue condRVal = getEmitter().emitExprConditionValueAsI1(condExp);
-  Value condVal =
-      getEmitter().emitDRValue({AnyValue(condRVal), condExp}, ValueDest());
+  Value condVal = getEmitter().emitDRValue({AnyValue(condRVal), condExp});
   if (!condVal)
     return success(); // IRGen error already emitted; parse succeeded!
 
@@ -883,8 +883,7 @@ ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
     if (!isParamIf) {
       // Create the 'if' and parse the body into its "then" region.
       DRValue condRVal = emitter.emitDRValue(
-          {AnyValue(emitter.emitExprConditionValueAsI1(condExp)), condExp},
-          ValueDest());
+          {AnyValue(emitter.emitExprConditionValueAsI1(condExp)), condExp});
       if (!condRVal)
         return failure();
       ifOp = builder.create<HLCF::IfOp>(loc, condRVal);

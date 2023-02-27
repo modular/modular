@@ -43,6 +43,11 @@ struct ASTExprAnd {
   bool isNull() const { return ir.isNull(); }
   bool operator!() const { return !ir; }
   operator bool() const { return bool(ir); }
+
+  template <typename OtherValueType>
+  operator ASTExprAnd<OtherValueType>() const {
+    return {OtherValueType(ir), expr};
+  }
 };
 
 /// Instances of DRValue model a dynamic value represented with an SSA value.

@@ -246,7 +246,7 @@ public:
   /// information.
   AnyValue emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
                             ValueDest dest, CallSyntax syntax,
-                            const ExprNode *callNode, ExprEmitter &emitter);
+                            ExprEmitter &emitter);
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations.  This does not generate
@@ -256,9 +256,10 @@ public:
                                          ExprEmitter &emitter);
 
 private:
-  MValue inlineFunctionCallIntoMValue(
-      SMLoc callLoc, ASTDecl &callee, ParamBindArrayAttr inputParams,
-      ArrayRef<ASTExprAnd<AnyValue>> argumentValues, ExprEmitter &emitter);
+  MValue
+  inlineFunctionCallIntoMValue(ASTDecl &callee, ParamBindArrayAttr inputParams,
+                               ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
+                               ExprEmitter &emitter);
 };
 
 } // namespace M::KGEN::LIT

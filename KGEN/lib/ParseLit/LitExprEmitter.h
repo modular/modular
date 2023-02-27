@@ -87,8 +87,7 @@ public:
   /// This helper emits the specified value as a DRValue which has an SSA
   /// value representation, materializing MValues and loading LValues as
   /// needed.  This returns null if emission fails.
-  DRValue emitDRValue(ASTExprAnd<RValue> value, ValueDest dest);
-  DRValue emitDRValue(ASTExprAnd<AnyValue> value, ValueDest dest);
+  DRValue emitDRValue(ASTExprAnd<AnyValue> value);
 
   //===--------------------------------------------------------------------===//
   // Function Calls
@@ -108,15 +107,14 @@ public:
 
   /// Convert the specified value to the expected type, invoking implicit
   /// conversions if necessary.  On error, this diagnoses it and returns null.
-  /// TODO(memory-primary):˙should emit into a ValueDest slot when known.
-  AnyValue getAsExpectedType(AnyValue value, const ExprNode *expr,
-                             ASTType expectedType, const Twine &errorSuffix);
+  AnyValue getAsExpectedType(ASTExprAnd<AnyValue> value, ASTType expectedType,
+                             ValueDest dest, const Twine &errorSuffix);
 
   /// Convert the specified value to the expected type, invoking implicit
   /// conversions if necessary.  On error, this invokes the specified closure to
   /// diagnose the problem and returns null.
-  AnyValue getAsExpectedType(AnyValue value, const ExprNode *expr,
-                             ASTType expectedType,
+  AnyValue getAsExpectedType(ASTExprAnd<AnyValue> value, ASTType expectedType,
+                             ValueDest dest,
                              std::function<void()> errorHandler);
 
   /// Emit the specified expression as a condition, converting it to an MLIR I1
@@ -151,7 +149,7 @@ public:
   /// This helper emits the specified value rep as an DRValue, materializing
   /// it as a parameter constant if it is a parameter.  This returns null if
   /// emission fails.
-  DRValue emitExprDRValue(const ExprNode *node, ValueDest dest = {});
+  DRValue emitExprDRValue(const ExprNode *node);
 
   /// This helper emits the specified expression as a meta value, and optionally
   /// converts the result to a specified expected type.  This emits an error if

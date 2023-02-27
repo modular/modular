@@ -73,8 +73,8 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
 
   if (!clone.isNull()) {
     // Ok, cool we know it will succeed; do it.
-    auto result = clone.emitFunctionCall(
-        value, dest, CallSyntax::kImplicitConvert, value.expr, *this);
+    auto result = clone.emitFunctionCall(value, dest,
+                                         CallSyntax::kImplicitConvert, *this);
     if (!result)
       return {};
     assert(result.getIfRValue() &&
@@ -90,24 +90,15 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
   return {};
 }
 
-DRValue ExprEmitter::emitDRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
-  return emitDRValue(
-      ASTExprAnd<RValue>(
-          {emitRValue(value,
-                      // TODO(memory-primary): ValueDest should compose better,
-                      // emitting internal thing into the memory slot and then
-                      // clearing it out for the outer emission.
-                      ValueDest()),
-           value.expr}),
-      dest);
-}
+DRValue ExprEmitter::emitDRValue(ASTExprAnd<AnyValue> value) {
+  // If the value is an lvalue, convert it to an rvalue.
+  value.ir = emitRValue(value, ValueDest(/*DRValue never needs a dest*/));
 
-DRValue ExprEmitter::emitDRValue(ASTExprAnd<RValue> value, ValueDest dest) {
   if (!value)
     return {};
   // If this is already an DRValue, emit this.
   if (auto rvalue = value.ir.getIfDRValue())
-    return emitResult(rvalue, value.expr, dest).getIfDRValue();
+    return rvalue;
 
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
@@ -171,12 +162,11 @@ DRValue ExprEmitter::emitDRValue(ASTExprAnd<RValue> value, ValueDest dest) {
     if (intAttr.getType().isIndex()) {
       auto cst = builder->create<mlir::index::ConstantOp>(
           location, intAttr.getValue().getSExtValue());
-      return emitResult(DRValue(cst), value.expr, dest).getIfDRValue();
+      return DRValue(cst);
     }
 
   // Otherwise, emit a generalized parameter constant.
-  auto result = DRValue(builder->create<ParamConstantOp>(location, attr));
-  return emitResult(result, value.expr, dest).getIfDRValue();
+  return DRValue(builder->create<ParamConstantOp>(location, attr));
 }
 
 //===----------------------------------------------------------------------===//
@@ -212,19 +202,16 @@ LogicalResult ExprEmitter::emitExprResultIntoLValue(ASTExprAnd<AnyValue> value,
 
   // TODO: This should be an initialization or reassignment, and needs to
   // call __clone__.
-  AnyValue convertedVal = getAsExpectedType(
-      value.ir, value.expr, dest.ir.getRValueType(), " in assignment");
+  AnyValue convertedVal = getAsExpectedType(value, dest.ir.getRValueType(),
+                                            ValueDest(), " in assignment");
 
   // Emit the RHS and coerce to the LHS type.
-  DRValue rv = emitDRValue({convertedVal, value.expr},
-                           // TODO(memory-primary): specify the lvalue to emit
-                           // into here or does that cause infinite recursion?.
-                           ValueDest());
+  DRValue rv = emitDRValue({convertedVal, value.expr});
   if (!rv)
     return failure();
 
   // If everything worked out, store the resultant value into the lvalue for
-  // the destination.  If things didn't work, just drop this on the floor.
+  // the destination.
   auto loc = translateLocation(value.expr->getLoc());
   builder->create<POP::StoreOp>(loc, rv, dest.ir,
                                 /*alignment=*/std::nullopt);
@@ -275,31 +262,36 @@ AnyValue ExprEmitter::emitNamedMethodCall(
     return {};
   }
 
-  return callee.emitFunctionCall(argValues, dest, syntax, callNode, *this);
+  return callee.emitFunctionCall(argValues, dest, syntax, *this);
 }
 
 /// Convert the specified value to the expected type, invoking implicit
 /// conversions if necessary.  On error, this diagnoses it and returns null.
-AnyValue ExprEmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
-                                        ASTType expectedType,
+AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
+                                        ASTType expectedType, ValueDest dest,
                                         std::function<void()> errorHandler) {
-  // If this happens to be an lvalue coming in, convert to rvalue.
-  value = emitRValue(
-      {value, expr},
-      /// TODO(memory-primary):˙should emit into a ValueDest slot when known.
-      ValueDest());
+  if (!value)
+    return {};
+
+  bool noConversionNeeded =
+      ASTType(value.ir.getRValueType()).isEqualCanon(expectedType);
+
+  // If this happens to be an lvalue coming in, convert to rvalue.  Emit into
+  // dest if no conversion is needed.
+  value.ir = emitRValue(value, noConversionNeeded ? dest : ValueDest());
 
   // If the value handed to is us already erroneous, don't diagnose anything.
   if (!value)
-    return value;
+    return {};
 
   // If the type is already an exact match, then we are done.
-  if (ASTType(value.getType()).isEqualCanon(expectedType))
-    return value;
+  if (noConversionNeeded)
+    return value.ir;
 
   // Check to see if we can invoke an __new__ method to convert it.
   bool isErroneousDecl = false;
-  CallableValue callee(expectedType, "__new__", expr, isErroneousDecl, shared);
+  CallableValue callee(expectedType, "__new__", value.expr, isErroneousDecl,
+                       shared);
   if (callee.isNull()) {
     if (!isErroneousDecl)
       errorHandler();
@@ -309,33 +301,30 @@ AnyValue ExprEmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
   // If we have at least one candidate, we check to see if any of them can
   // work. We disable implicit conversions though, to prevent converting
   // T -> S -> U in one step.
-  ASTExprAnd<AnyValue> newArg = {value, expr};
   callee.direct->disableImplicitConversions = true;
   if (failed(callee.direct->filterOverloadSet(
-          {newArg}, CallSyntax::kImplicitConvert, expr,
+          {value}, CallSyntax::kImplicitConvert, value.expr,
           /*emitDiagnosticOnFailure=*/false, *this))) {
     errorHandler();
     return {};
   }
 
   // Ok, cool we know it will succeed; do it.
-  return callee.emitFunctionCall(
-      newArg,
-      /// TODO(memory-primary):˙should emit into a ValueDest slot when known.
-      ValueDest(), CallSyntax::kImplicitConvert, expr, *this);
+  return callee.emitFunctionCall(value, dest, CallSyntax::kImplicitConvert,
+                                 *this);
 }
 
-AnyValue ExprEmitter::getAsExpectedType(AnyValue value, const ExprNode *expr,
-                                        ASTType expectedType,
+AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
+                                        ASTType expectedType, ValueDest dest,
                                         const Twine &errorSuffix) {
   auto errorHandler = [&]() {
-    if (!isa<TypeCheckErrorType>(value.getType()) &&
+    if (!isa<TypeCheckErrorType>(value.ir.getType()) &&
         !isa<TypeCheckErrorType>(expectedType.mlirType))
-      emitError(expr->getLoc())
-          << ASTType(value.getType()) << " value cannot be converted to "
-          << expectedType << errorSuffix << expr->getRange();
+      emitError(value.expr->getLoc())
+          << ASTType(value.ir.getType()) << " value cannot be converted to "
+          << expectedType << errorSuffix << value.expr->getRange();
   };
-  return getAsExpectedType(value, expr, expectedType, std::move(errorHandler));
+  return getAsExpectedType(value, expectedType, dest, std::move(errorHandler));
 }
 
 /// Emit the specified expression as a condition, converting it to an MLIR I1
@@ -398,14 +387,9 @@ RValue ExprEmitter::emitExprRValue(const ExprNode *node, ValueDest dest) {
 /// This helper emits the specified value rep as an DRValue, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
-DRValue ExprEmitter::emitExprDRValue(const ExprNode *node, ValueDest dest) {
+DRValue ExprEmitter::emitExprDRValue(const ExprNode *node) {
   assert(node && "cannot emit a null node");
-  return emitDRValue(
-      {node->emitIR(*this,
-                    // TODO(memory-primary): Value dest composition.
-                    ValueDest()),
-       node},
-      dest);
+  return emitDRValue({node->emitIR(*this, ValueDest(/*DRValue*/)), node});
 }
 
 /// This helper emits the specified expression as a parameter value, diagnosing
@@ -418,11 +402,12 @@ MValue ExprEmitter::emitExprMValue(const ExprNode *node, ASTType resultType,
   builder.reset();
 
   // Emit the expression.
-  auto rep = node->emitIR(*this, /*No Contextual Type*/ {});
+  auto rep = node->emitIR(*this, ValueDest(/*knownMValue*/));
 
   // If we had an expected type, do a conversion.
   if (resultType)
-    rep = getAsExpectedType(rep, node, resultType, errorSuffix);
+    rep = getAsExpectedType({rep, node}, resultType, ValueDest(/*knownMValue*/),
+                            errorSuffix);
 
   if (!rep)
     return {};
