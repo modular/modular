@@ -401,3 +401,61 @@ fn create_kgen_list_unknown[
     return rebind[
         __mlir_type[`!kgen.list<`, __mlir_type.index, `[`, len, `]>`]
     ](create_kgen_list(unknown))
+
+
+# ===----------------------------------------------------------------------===#
+# VariadicList
+# ===----------------------------------------------------------------------===#
+
+
+struct VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
+    """A utility class to access variadic function arguments. Provides a "list"
+    view of the function argument so that the size of the argument list and each
+    individual argument can be accessed.
+    """
+
+    alias StorageType = __mlir_type[`!kgen.variadic<`, type, `>`]
+    var value: StorageType
+
+    fn __clone__(self&) -> Self:
+        return Self {value: self.value}
+
+    fn __new__(value: StorageType) -> VariadicList[type]:
+        """Constructs a VariadicList from a variadic argument type.
+
+        Args:
+            value (StorageType):
+                The variadic argument to construct the list with.
+
+        Returns (VariadicList):
+            The VariadicList constructed.
+        """
+        return VariadicList[type] {value: value}
+
+    fn size(self) -> Int:
+        """Accessor for the size of the list of variadic elements.
+
+        Returns (VariadicList):
+            The number of elements on the variadic list.
+        """
+        return __mlir_op.`pop.variadic.size`(self.value)
+
+    fn __getitem__(self, index: Int) -> type:
+        """Accessor to a single element on the variadic list.
+        Args:
+            index (Int):
+                The index of the element to access on the list.
+        Returns (type):
+            The element on the list corresponding to the given index.
+        """
+        return __mlir_op.`pop.variadic.get`(self.value, index.__as_mlir_index())
+
+    fn __getitem__(self, index: __mlir_type.index) -> type:
+        """Accessor to a single element on the variadic list.
+        Args:
+            index (Int):
+                The index of the element to access on the list.
+        Returns (type):
+            The element on the list corresponding to the given index.
+        """
+        return __mlir_op.`pop.variadic.get`(self.value, index)

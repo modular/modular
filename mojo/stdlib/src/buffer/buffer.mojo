@@ -14,6 +14,7 @@ from List import (
     contains,
     _get_kgen_list_item,
     create_kgen_list_unknown,
+    VariadicList,
 )
 from Math import fma
 from Memory import stack_allocation, memset_zero
@@ -284,25 +285,11 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
 # ===----------------------------------------------------------------------===#
 
 
-struct _VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
-    alias StorageType = __mlir_type[`!kgen.variadic<`, type, `>`]
-    var value: StorageType
-
-    fn __new__(value: StorageType) -> _VariadicList[type]:
-        return _VariadicList[type] {value: value}
-
-    fn size(self) -> __mlir_type.index:
-        return __mlir_op.`pop.variadic.size`(self.value)
-
-    fn __getitem__(self, index: Int) -> type:
-        return __mlir_op.`pop.variadic.get`(self.value, index.__as_mlir_index())
-
-
 fn _compute_ndbuffer_offset[
     rank: __mlir_type.index,
     shape: __mlir_type[`!kgen.list<index[`, rank, `]>`],
     type: __mlir_type.`!kgen.dtype`,
-](buf: NDBuffer[rank, shape, type], idx: _VariadicList[Int]) -> Int:
+](buf: NDBuffer[rank, shape, type], idx: VariadicList[Int]) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
     Args:
@@ -310,7 +297,7 @@ fn _compute_ndbuffer_offset[
         shape (kgen.list<index[rank]>): The shape of the NDBuffer.
         type (dtype): The element-type of the NDBuffer.
         buf (NDBuffer[rank, shape, type]): The NDBuffer.
-        idx (_VariadicList[index]): The index positions.
+        idx (VariadicList[index]): The index positions.
 
     Returns:
         Int: The offset into the NDBuffer given the indices.
@@ -499,11 +486,11 @@ struct NDBuffer[
         unroll[rank, _compute_product]()
         return product
 
-    fn _offset(self, idx: _VariadicList[Int]) -> DTypePointer[type]:
+    fn _offset(self, idx: VariadicList[Int]) -> DTypePointer[type]:
         """Computes the NDBuffer's offset using the index positions provided.
 
         Args:
-            idx (_VariadicList[index]): The index positions.
+            idx (VariadicList[index]): The index positions.
 
         Returns:
             Int: The offset into the NDBuffer given the indices.
@@ -533,14 +520,14 @@ struct NDBuffer[
         )
 
     fn __getitem__(self, *idx: Int) -> SIMD[1, type]:
-        return self.simd_load[1](_VariadicList[Int](idx))
+        return self.simd_load[1](VariadicList[Int](idx))
 
     fn __getitem__(self, idx: StaticIntTuple[rank]) -> SIMD[1, type]:
         return self.simd_load[1](idx)
 
     fn simd_load[
         width: __mlir_type.index
-    ](self, idx: _VariadicList[Int]) -> SIMD[width, type]:
+    ](self, idx: VariadicList[Int]) -> SIMD[width, type]:
         return self._offset(idx).simd_load[width]()
 
     fn simd_load[
