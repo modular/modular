@@ -21,6 +21,9 @@ lit.func @return_raise_or(%cond: i1, %err: !kgen.declref<@Error>) -> !pop.varian
   kgen.return %1 : !pop.variant<@Error, !lit.none>
 }
 
-// CHECK-LABEL: kgen.generator.interface @removeMetadata
-// CHECK-SAME: (!pop.pointer<index>) ->
-lit.func @removeMetadata(%arg0: !pop.pointer<index> byref) throws -> !pop.variant<@Error, index> attributes {isInterface}
+// CHECK-LABEL: kgen.generator @removeMetadata
+// CHECK-SAME: (%arg0: !pop.pointer<index>) ->
+lit.func @removeMetadata(%arg0: !pop.pointer<index> byref) throws -> index {
+  %0 = index.constant 0
+  kgen.return %0 : index
+}

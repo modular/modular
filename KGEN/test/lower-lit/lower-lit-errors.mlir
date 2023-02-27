@@ -1,44 +1,5 @@
 // RUN: kgen-opt -lower-lit -verify-parameters %s -verify-diagnostics -split-input-file -o /dev/null
 
-// expected-note @+1 {{interface declared here}}
-kgen.generator.interface @itf(%arg0: si32)
-
-// expected-error @+1 {{'kgen.generator' op generator has 2 arguments but interface expects 1}}
-lit.func @impl(%arg0 : f64, %arg1 : f64) implements @itf {
-  kgen.return
-}
-
-// -----
-
-// expected-note @+1 {{interface declared here}}
-kgen.generator.interface @itf(%arg0: i32)
-
-// expected-error @+1 {{argument #0 has type 'f32' but interface expected type 'i32'}}
-lit.func @impl(%arg0 : f32) implements @itf {
-  kgen.return
-}
-
-
-// -----
-
-kgen.generator.interface @bufitf<size, ty: dtype -> index>(!pop.array<size, scalar<ty>>) -> index
-
-// This implementation infers that the ty argument must be f32.
-
-// expected-error @+2 {{constraint contradiction detected: "argument #0 specifies 'ty' = f32"}}
-// expected-note @+1 {{generator declared here}}
-lit.func @impl<size, ty: dtype -> index>(%arg0: !pop.array<size, scalar<f32>>) -> index
-  // This has an explicit constraint saying it must be f64.
-  // expected-note @below {{previously constrained "someone told us 'ty' should be f64 dontcha know"}}
-  constraints <[eq(:dtype ty, f64), "someone told us 'ty' should be f64 dontcha know"]>
-  implements @bufitf {
-  %0 = kgen.param.constant = <size>
-  kgen.return<add(size, 2)> %0 : index
-}
-
-
-// -----
-
 // expected-note @below {{generator declared here}}
 lit.func @impl<size>()
   // This has an explicit constraint saying it must be f64.
@@ -99,59 +60,6 @@ lit.func @equality<a, b>()
     [eq(b, 2), "b is two"],
     [eq(a, b), "a and b are same"]
    > {
-  kgen.return
-}
-
-
-// -----
-
-kgen.generator.interface @itf<ty: dtype>(!pop.simd<1, f64>) -> !pop.simd<1, ty>
-
-// This implementation infers that the ty argument must be f32.
-
-// expected-note @+1 {{generator declared here}}
-lit.func @impl<ty: dtype>(%arg0: !pop.simd<1, f64>) -> !pop.simd<1, f64>
-  // This has an explicit constraint saying it must be si32.
-  // expected-note @below {{previously constrained "'ty' looks lovely as si32"}}
-  constraints <[eq(:dtype ty, si32), "'ty' looks lovely as si32"]>
-  implements @itf {
-
-// expected-error @+1 {{constraint contradiction detected: "result #0 specifies 'ty' = f64"}}
-  kgen.return %arg0: !pop.simd<1, f64>
-}
-
-
-// -----
-
-// expected-note @+1 {{interface defined here}}
-kgen.generator.interface @itf<ty: dtype>()
-
-// This implementation infers that the ty argument must be f32.
-
-// expected-error @+1 {{input parameter "ty" has type 'i32' but interface expects '!kgen.dtype'}}
-lit.func @impl<ty: i32>() implements @itf {
-  kgen.return
-}
-
-
-// -----
-
-// expected-note @+1 {{interface defined here}}
-kgen.generator.interface @itf<ty: dtype>()
-
-// expected-error @+1 {{input parameter "size" is unexpected by interface}}
-lit.func @impl2<ty: dtype, size>() implements @itf {
-  kgen.return
-}
-
-
-// -----
-
-// expected-note @+1 {{interface defined here}}
-kgen.generator.interface @itf<ty: dtype>()
-
-// expected-error @+1 {{missing interface input parameter "ty" of type '!kgen.dtype'}}
-lit.func @impl3() implements @itf {
   kgen.return
 }
 

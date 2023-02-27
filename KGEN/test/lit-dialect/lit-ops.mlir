@@ -6,17 +6,6 @@ lit.func @trivial_generator(%name: si32) -> si32 {
   kgen.return %name : si32
 }
 
-// CHECK-LABEL: kgen.generator.interface @itf<ty: dtype>(!pop.scalar<ty>) -> !pop.scalar<ty>
-kgen.generator.interface @itf<ty : dtype>(!pop.scalar<ty>) -> !pop.scalar<ty>
-
-// One implementation of dynamic_thing
-// CHECK-LABEL: lit.func @impl1<ty: dtype>(%arg0: !pop.scalar<ty>
-// CHECK-NEXT: implements @itf {
-lit.func @impl1<ty : dtype>(%arg0: !pop.scalar<ty>) -> !pop.scalar<ty>
-  implements @itf {
-  kgen.return %arg0 : !pop.scalar<ty>
-}
-
 // One implementation of dynamic_thing
 // CHECK-LABEL: lit.func @vardecl
 lit.func @vardecl<ty : dtype>(%x : i32) {

@@ -91,10 +91,8 @@ kgen.generator @unfoldableIndex() {
 
 // -----
 
-kgen.generator.interface @genItf2<x>()
-
 // expected-error @+1 {{unlowered lit.func discovered in KGEN elaborator}}
-lit.func @genItf2_impl0<x>() implements @genItf2 {
+lit.func @lit_func<x>() {
   kgen.return
 }
 

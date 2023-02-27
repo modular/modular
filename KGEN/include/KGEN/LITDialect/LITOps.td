@@ -36,9 +36,8 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
 // FIXME: Interfaces don't have bodies.  When they go away, we should remove
 // NoTerminator and simplify FuncOp::verifyRegions to remove its check.
 def LIT_FuncOp : LITOp<"func", [
-    FunctionOpInterface, Symbol, SymbolTable, NoTerminator, SingleBlock,
+    FunctionOpInterface, Symbol, SymbolTable, SingleBlock,
     DeclareOpInterfaceMethods<CallableOpInterface>,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
     DeclInterface, FuncInterface]> {
   let summary = "High level generator definition";
@@ -46,11 +45,7 @@ def LIT_FuncOp : LITOp<"func", [
   let description = [{
     The `lit.func` operation models a def/fn declaration at the Lit source
     level.
-    @interface and @staticmethod decorators in Lit correspond to the
-    attributes `isInterface` and `isStatic` respectively.
-    When `isInterface` is set, `lit.func` has an empty body block.
-    The optional `implements` attribute refers to the interface name this
-    `lit.func` implement and cannot be set alongside `isInterface`.
+    @staticmethod decorators in Lit correspond to the attribute `isStatic`.
     @adaptive is a decorator that the user can attach to an `fn` that tells
     the parser to add the `isAdaptive` flag, and to treat multiple
     implementations as an overload set.
@@ -63,13 +58,10 @@ def LIT_FuncOp : LITOp<"func", [
                        TypeAttrOf<KGEN_SignatureType>:$signature,
                        ConstraintArrayAttr:$constraints,
                        UnitAttr:$isStatic,
-                       UnitAttr:$isInterface,
                        UnitAttr:$isAdaptive,
                        UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
-                       OptionalAttr<SymbolRefAttr>:$implements,
-                       OptionalAttr<KGEN_SymbolConstantAttr>:$evaluator,
                        KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel);
-  let regions = (region AnyRegion:$bodyRegion);
+  let regions = (region SizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
     Block *getBody() { return &getFunctionBody().back(); }

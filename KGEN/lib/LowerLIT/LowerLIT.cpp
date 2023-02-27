@@ -316,10 +316,9 @@ static Value insertRebindOp(Value arg, Type type, ImplicitLocOpBuilder &b) {
 /// If this generator is implementing an interface, check its conformance,
 /// diagnose any conflicts, and infer constraints.  Note that 'itf' may be null
 /// if this generator is not implementing an interface.
-static LogicalResult
-checkInterfaceConformance(GeneratorOp gen, GeneratorInterfaceOp itf,
-                          SymbolTable &symbolTable,
-                          FlatSymbolRefAttr implementsAttr) {
+static LogicalResult checkInterfaceConformance(GeneratorOp gen,
+                                               GeneratorInterfaceOp itf,
+                                               SymbolTable &symbolTable) {
   SignatureUnifier unifier(gen, itf);
 
   // Verify that the constraints already imposed on the generator are
@@ -395,13 +394,12 @@ checkInterfaceConformance(GeneratorOp gen, GeneratorInterfaceOp itf,
   // kgen level - we need to generate a thunk.
   if (needsForwardingThunk) {
     ImplicitLocOpBuilder b(gen.getLoc(), gen);
-    auto thunk =
-        b.create<GeneratorOp>(b.getStringAttr(gen.getSymName() + "_thunk"),
-                              // Take the signature from the interface.
-                              itf.getSignatureAttr(),
-                              // Take the constraints from the generator.
-                              gen.getConstraintsAttr(), implementsAttr,
-                              gen.getAlwaysInlineLevelAttr());
+    auto thunk = b.create<GeneratorOp>(
+        b.getStringAttr(gen.getSymName() + "_thunk"),
+        // Take the signature from the interface.
+        itf.getSignatureAttr(),
+        // Take the constraints from the generator.
+        gen.getConstraintsAttr(), nullptr, gen.getAlwaysInlineLevelAttr());
     // The thunk implements the interface, not the original generator.
     gen.removeImplementsAttr();
 
@@ -622,29 +620,10 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
   lowerLITOps(gen, funcSpAttr);
   OpBuilder b(gen);
 
-  // Is a LITFuncOp with empy body representing an interface?
-  if (gen.getIsInterface()) {
-    SymbolConstantAttr evaluator;
-    if (gen.getEvaluator().has_value())
-      evaluator = gen.getEvaluatorAttr();
-    auto result = b.create<GeneratorInterfaceOp>(
-        gen.getLoc(), gen.getSymNameAttr(), gen.getSignatureAttr(),
-        gen.getConstraintsAttr(), evaluator, nullptr);
-    // Move over the symbol.
-    symbolTable.erase(gen);
-    symbolTable.insert(result);
-    return success();
-  }
-
-  // Flatten the implements reference if present.
-  FlatSymbolRefAttr implementsAttr;
-  if (auto fullImplementsAttr = gen.getImplementsAttr())
-    implementsAttr = flattenSymbolRefAttr(fullImplementsAttr);
-
   // Directly lower since these operations are exactly identical right now.
   auto result = b.create<GeneratorOp>(
       gen.getLoc(), gen.getSymNameAttr(), gen.getSignatureAttr(),
-      gen.getConstraintsAttr(), implementsAttr, gen.getAlwaysInlineLevelAttr());
+      gen.getConstraintsAttr(), nullptr, gen.getAlwaysInlineLevelAttr());
 
   // Move over the body.
   auto *bodyBlock = gen.getBody();
@@ -659,17 +638,8 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
   // If the generator implemented an interface, infer additional constraints
   // and check the signature.
   GeneratorInterfaceOp itf;
-  if (implementsAttr) {
-    // Check that the callee attribute was specified.
-    itf = dyn_cast_if_present<GeneratorInterfaceOp>(
-        symbolTable.lookup(implementsAttr.getAttr()));
-    if (!itf) {
-      return result.emitError("could not find implemented interface: ")
-             << implementsAttr.getValue();
-    }
-  }
 
-  return checkInterfaceConformance(result, itf, symbolTable, implementsAttr);
+  return checkInterfaceConformance(result, itf, symbolTable);
 }
 
 /// Lower nested structures in lit.struct.decl away.
