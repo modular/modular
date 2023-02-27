@@ -13,6 +13,9 @@ add_modular_conversion_library(KGENTransforms
   OutlineClosures.cpp
   VerifyParameters.cpp
 
+  DEPENDS
+  MLIRKGENPasses
+
   LINK_LIBS PUBLIC
   KGENDialect
   POPDialect
