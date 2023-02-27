@@ -57,7 +57,7 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
   auto typeDecl = rvalueType.getDecl(shared);
   if (!typeDecl) {
     auto result =
-        DRValue(builder->create<POP::LoadOp>(loc, pointer,
+        SRValue(builder->create<POP::LoadOp>(loc, pointer,
                                              /*alignment=*/std::nullopt));
     return emitResult(result, value.expr, dest).getIfRValue();
   }
@@ -90,14 +90,14 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
   return {};
 }
 
-DRValue ExprEmitter::emitDRValue(ASTExprAnd<AnyValue> value) {
+SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value) {
   // If the value is an lvalue, convert it to an rvalue.
-  value.ir = emitRValue(value, ValueDest(/*DRValue never needs a dest*/));
+  value.ir = emitRValue(value, ValueDest(/*SRValue never needs a dest*/));
 
   if (!value)
     return {};
-  // If this is already an DRValue, emit this.
-  if (auto rvalue = value.ir.getIfDRValue())
+  // If this is already an SRValue, emit this.
+  if (auto rvalue = value.ir.getIfSRValue())
     return rvalue;
 
   // If this is a parameter, we need to materialize it, either as an
@@ -109,7 +109,7 @@ DRValue ExprEmitter::emitDRValue(ASTExprAnd<AnyValue> value) {
     return {};
   }
 
-  auto attr = value.ir.getIfMValue().get();
+  auto attr = value.ir.getIfPRValue().get();
 
   // If the value being materialized is itself parameterized, then we cannot
   // materialize it as an SSA value - there will be no way to bind parameters to
@@ -162,11 +162,11 @@ DRValue ExprEmitter::emitDRValue(ASTExprAnd<AnyValue> value) {
     if (intAttr.getType().isIndex()) {
       auto cst = builder->create<mlir::index::ConstantOp>(
           location, intAttr.getValue().getSExtValue());
-      return DRValue(cst);
+      return SRValue(cst);
     }
 
   // Otherwise, emit a generalized parameter constant.
-  return DRValue(builder->create<ParamConstantOp>(location, attr));
+  return SRValue(builder->create<ParamConstantOp>(location, attr));
 }
 
 //===----------------------------------------------------------------------===//
@@ -188,7 +188,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
   }
 
   // Otherwise we have no prescribed context, use a default one.
-  // TODO: Synthesize a vardecl if not an MValue and the value has
+  // TODO: Synthesize a vardecl if not an PRValue and the value has
   // memory-primary type.
   return value;
 }
@@ -206,7 +206,7 @@ LogicalResult ExprEmitter::emitExprResultIntoLValue(ASTExprAnd<AnyValue> value,
                                             ValueDest(), " in assignment");
 
   // Emit the RHS and coerce to the LHS type.
-  DRValue rv = emitDRValue({convertedVal, value.expr});
+  SRValue rv = emitSRValue({convertedVal, value.expr});
   if (!rv)
     return failure();
 
@@ -384,36 +384,36 @@ RValue ExprEmitter::emitExprRValue(const ExprNode *node, ValueDest dest) {
       dest);
 }
 
-/// This helper emits the specified value rep as an DRValue, materializing
+/// This helper emits the specified value rep as an SRValue, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
-DRValue ExprEmitter::emitExprDRValue(const ExprNode *node) {
+SRValue ExprEmitter::emitExprSRValue(const ExprNode *node) {
   assert(node && "cannot emit a null node");
-  return emitDRValue({node->emitIR(*this, ValueDest(/*DRValue*/)), node});
+  return emitSRValue({node->emitIR(*this, ValueDest(/*SRValue*/)), node});
 }
 
 /// This helper emits the specified expression as a parameter value, diagnosing
 /// the problem if the expression is only valid as a runtime value.  This
 /// returns null if emission fails.
-MValue ExprEmitter::emitExprMValue(const ExprNode *node, ASTType resultType,
-                                   const Twine &errorSuffix) {
-  // Clear the builder to indicate that an MValue must be emitted.
+PRValue ExprEmitter::emitExprPRValue(const ExprNode *node, ASTType resultType,
+                                     const Twine &errorSuffix) {
+  // Clear the builder to indicate that an PRValue must be emitted.
   llvm::SaveAndRestore savedBuilder(builder);
   builder.reset();
 
   // Emit the expression.
-  auto rep = node->emitIR(*this, ValueDest(/*knownMValue*/));
+  auto rep = node->emitIR(*this, ValueDest(/*knownPRValue*/));
 
   // If we had an expected type, do a conversion.
   if (resultType)
-    rep = getAsExpectedType({rep, node}, resultType, ValueDest(/*knownMValue*/),
-                            errorSuffix);
+    rep = getAsExpectedType({rep, node}, resultType,
+                            ValueDest(/*knownPRValue*/), errorSuffix);
 
   if (!rep)
     return {};
 
   // If this is a parameter, return it.
-  if (auto value = rep.getIfMValue())
+  if (auto value = rep.getIfPRValue())
     return value;
 
   // Otherwise diagnose this as "not a parameter".
@@ -423,7 +423,7 @@ MValue ExprEmitter::emitExprMValue(const ExprNode *node, ASTType resultType,
 
 CallableValue ExprEmitter::emitCallable(const ExprNode *node,
                                         const Twine &errorSuffix) {
-  // Clear the builder to indicate that an MValue must be emitted.
+  // Clear the builder to indicate that an PRValue must be emitted.
   llvm::SaveAndRestore savedBuilder(builder);
   builder.reset();
   return node->emitCallable(*this);
@@ -450,15 +450,15 @@ LValue ExprEmitter::emitExprLValue(SMLoc loc, const ExprNode *node,
 /// "Int" into the type for it.  This emits an error and returns null on
 /// failure.
 ASTType ExprEmitter::emitExprType(const ExprNode *node) {
-  auto value = emitExprMValue(node, {}, " in type specification");
+  auto value = emitExprPRValue(node, {}, " in type specification");
   if (!value)
     return {};
 
   // If this emitted a type, we can lower it.
   if (auto type = value.getIfTypeValue()) {
     // Verify that all of the parameters for this type are bound.  We allow
-    // MValues to refer to parameteric type, but anything calling `emitType` can
-    // only handle fully bound types.
+    // PRValues to refer to parameteric type, but anything calling `emitType`
+    // can only handle fully bound types.
     auto *decl = type.getDecl(shared);
     if (!decl) // MLIR types are never parameterized.
       return type;
@@ -508,10 +508,10 @@ RValue ExprEmitter::emitExprConditionValueAsI1(const ExprNode *condExpr) {
   return emitConditionValueAsI1({emitExprRValue(condExpr), condExpr}, boolTmp);
 }
 
-DRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
+SRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
                                              const ExprNode *source) {
   if (numberValue.getType().isIndex()) {
-    return DRValue(builder->create<POP::CastFromBuiltinOp>(
+    return SRValue(builder->create<POP::CastFromBuiltinOp>(
         translateLocation(source->getLoc()),
         POP::SIMDType::get(builder->getContext(), 1,
                            KGENDType(KGENDType::index)),
@@ -520,7 +520,7 @@ DRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
   assert(numberValue.getType().isa<KGEN::DeclRefType>() &&
          "number value must be a struct");
   AnyValue index =
-      emitNamedMethodCall("__as_mlir_index", {{DRValue(numberValue), source}},
+      emitNamedMethodCall("__as_mlir_index", {{SRValue(numberValue), source}},
                           ValueDest(), CallSyntax::kImplicitConvert, source);
   if (!index) {
     return {};
@@ -528,6 +528,6 @@ DRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
   auto popscalar = builder->create<POP::CastFromBuiltinOp>(
       translateLocation(source->getLoc()),
       POP::SIMDType::get(builder->getContext(), 1, KGENDType(KGENDType::index)),
-      index.getIfDRValue());
-  return DRValue(popscalar);
+      index.getIfSRValue());
+  return SRValue(popscalar);
 }

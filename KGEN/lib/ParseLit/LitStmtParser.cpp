@@ -516,8 +516,8 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     }
     for (auto [paramExpr, param] :
          llvm::zip(resultParamList->exprs, decl.getResultParams())) {
-      auto result = emitter.emitExprMValue(paramExpr, param.getType(),
-                                           " in result parameter list");
+      auto result = emitter.emitExprPRValue(paramExpr, param.getType(),
+                                            " in result parameter list");
       if (!result)
         return success();
       resultParamValues.push_back(result);
@@ -528,16 +528,16 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // function is a 'raising' function we need to remove the extra variant type
   // to get the normal result type.
   // TODO(memory_primary): Return slots.
-  auto resultDRValue = emitter.emitDRValue(
+  auto resultSRValue = emitter.emitSRValue(
       {emitter.getAsExpectedType({resultValue, operandExprs[0]},
                                  decl.getResultType(),
                                  // TODO(memory-primary): Return slots.
                                  ValueDest(), " in return"),
        operandExprs[0]});
-  if (!resultDRValue)
+  if (!resultSRValue)
     return {};
 
-  builder.create<LIT::ReturnOp>(translateLocation(loc), resultDRValue,
+  builder.create<LIT::ReturnOp>(translateLocation(loc), resultSRValue,
                                 resultParamValues);
   return success();
 }
@@ -554,7 +554,7 @@ ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
     ExprNode *errorExpr;
     if (parseExpression(errorExpr, raiseIndent))
       return failure();
-    errorVal = getEmitter().emitExprDRValue(errorExpr);
+    errorVal = getEmitter().emitExprSRValue(errorExpr);
     if (!errorVal)
       return success();
 
@@ -624,7 +624,7 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
   builder = OpBuilder::atBlockEnd(body);
 
   RValue condRVal = getEmitter().emitExprConditionValueAsI1(condExp);
-  Value condVal = getEmitter().emitDRValue({AnyValue(condRVal), condExp});
+  Value condVal = getEmitter().emitSRValue({AnyValue(condRVal), condExp});
   if (!condVal)
     return success(); // IRGen error already emitted; parse succeeded!
 
@@ -693,7 +693,7 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
     return {};
   LIT::VarDeclOp range_ref = builder.create<LIT::VarDeclOp>(
       forLoc, POP::PointerType::get(rangeValue.getType()), "$RANGE");
-  builder.create<POP::StoreOp>(forLoc, rangeValue.getIfDRValue(), range_ref,
+  builder.create<POP::StoreOp>(forLoc, rangeValue.getIfSRValue(), range_ref,
                                std::nullopt);
 
   HLCF::LoopOp loopOp = builder.create<HLCF::LoopOp>(forLoc);
@@ -702,15 +702,15 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
 
   // For Loop condition: if the length of the range is greater than zero,
   // continue. Otherwise break
-  DRValue loaded_range = DRValue(builder.create<POP::LoadOp>(
+  SRValue loaded_range = SRValue(builder.create<POP::LoadOp>(
       translateLocation(seqExp->getLoc()), range_ref, std::nullopt));
   AnyValue current_length = getEmitter().emitNamedMethodCall(
       "__len__", {{loaded_range, seqExp}}, ValueDest(),
       CallSyntax::kImplicitConvert, seqExp);
   if (!current_length)
     return {};
-  DRValue pop_length = getEmitter().emitBoxedIntAsPopScalar(
-      current_length.getIfDRValue(), seqExp);
+  SRValue pop_length = getEmitter().emitBoxedIntAsPopScalar(
+      current_length.getIfSRValue(), seqExp);
   if (!pop_length)
     return {};
   Value pop_zero = builder.create<POP::CastFromBuiltinOp>(
@@ -741,7 +741,7 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   if (!nextCall) {
     return {};
   }
-  getDeclResolver().addFullyResolvedDecl(nextCall.getIfDRValue(), target,
+  getDeclResolver().addFullyResolvedDecl(nextCall.getIfSRValue(), target,
                                          identifierLocation, &containingDecl);
   if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
@@ -815,7 +815,7 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
                                    /*alignment=*/std::nullopt);
     } else {
       // If we are parsing inside an 'fn', the error declaration is an RValue.
-      getDeclResolver().addFullyResolvedDecl(DRValue(errVal), errName,
+      getDeclResolver().addFullyResolvedDecl(SRValue(errVal), errName,
                                              errValLoc, &containingDecl);
     }
   }
@@ -879,10 +879,10 @@ ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
   SmartVariant<HLCF::IfOp, ParamIfOp> ifOp;
   auto parseCondAndCreateIf = [&](Location loc) -> ParseResult {
     auto emitter = getEmitter();
-    // If this is a normal if statement, emit the condition as a DRValue.
+    // If this is a normal if statement, emit the condition as a SRValue.
     if (!isParamIf) {
       // Create the 'if' and parse the body into its "then" region.
-      DRValue condRVal = emitter.emitDRValue(
+      SRValue condRVal = emitter.emitSRValue(
           {AnyValue(emitter.emitExprConditionValueAsI1(condExp)), condExp});
       if (!condRVal)
         return failure();
@@ -890,17 +890,17 @@ ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
       return success();
     }
 
-    // Otherwise, for a @parameter if, we emit the condition as an MValue
+    // Otherwise, for a @parameter if, we emit the condition as an PRValue
     // without a builder.
     RValue condRVal = getParamEmitter().emitExprConditionValueAsI1(condExp);
     if (!condRVal)
       return failure();
-    if (!condRVal.getIfMValue())
+    if (!condRVal.getIfPRValue())
       return emitError(condExp->getLoc(), "@parameter 'if' requires a "
                                           "parameter expression as a condition")
              << condExp->getRange();
 
-    ifOp = builder.create<ParamIfOp>(loc, condRVal.getIfMValue().get());
+    ifOp = builder.create<ParamIfOp>(loc, condRVal.getIfPRValue().get());
     return success();
   };
 
@@ -1275,7 +1275,7 @@ ParseResult LitStmtParser::parseMLIRRegionStmt(LitLexerCursor startCursor,
       builder.create<DebugInfo::ValueOp>(regionArg.getLoc(), regionArg, var);
     }
     // Add the declaration for the argument within the region declaration.
-    getDeclResolver().addFullyResolvedDecl(DRValue(regionArg), parsedArg.name,
+    getDeclResolver().addFullyResolvedDecl(SRValue(regionArg), parsedArg.name,
                                            parsedArg.loc, &decl);
   }
 

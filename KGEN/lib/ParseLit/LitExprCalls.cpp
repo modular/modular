@@ -31,7 +31,7 @@ using namespace M::KGEN::LIT;
 /// Given the MLIR type for a variadic argument, return the element type as an
 /// MLIR type.
 static Type getVariadicElementType(Type variadicType) {
-  auto mValue = MValue(cast<VariadicType>(variadicType).getElementType());
+  auto mValue = PRValue(cast<VariadicType>(variadicType).getElementType());
   // VariadicType allows arbitrary parameter expressions, but we only ever
   // use concrete types for variadic syntax.
   assert(mValue.getIfTypeValue() &&
@@ -54,15 +54,15 @@ public:
   /// signature, try to infer the value of the next 'decl' parameter.  This
   /// should always return null /without/ an error if it cannot be inferred, and
   /// return a specific value if unambiguously determined.
-  MValue infer(SignatureType signature, ArrayRef<ParamBindAttr> bindingsSoFar,
-               ArrayRef<ASTExprAnd<AnyValue>> operands);
+  PRValue infer(SignatureType signature, ArrayRef<ParamBindAttr> bindingsSoFar,
+                ArrayRef<ASTExprAnd<AnyValue>> operands);
 
 private:
   LogicalResult matchTypes(Type actualType, Type expectedType);
   LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
 
   StringAttr parameterName;
-  SmallVector<MValue> inferredValues;
+  SmallVector<PRValue> inferredValues;
 };
 } // namespace
 
@@ -159,9 +159,10 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
 /// always return null /without/ an error if it cannot be inferred, and return
 /// a specific value if unambiguously determined.
 ///
-MValue ParameterInferenceState::infer(SignatureType signature,
-                                      ArrayRef<ParamBindAttr> bindingsSoFar,
-                                      ArrayRef<ASTExprAnd<AnyValue>> operands) {
+PRValue
+ParameterInferenceState::infer(SignatureType signature,
+                               ArrayRef<ParamBindAttr> bindingsSoFar,
+                               ArrayRef<ASTExprAnd<AnyValue>> operands) {
   // TODO: Apply the bindings so far (plus a distinct new attribute relating
   // back to the original decls for ones that are missing) to the signature with
   // getSpecializedSignature so we benefit from the already-fixed subsitutions
@@ -237,7 +238,7 @@ MValue ParameterInferenceState::infer(SignatureType signature,
 
   // If we have no inferred values or if they disagree, then we fail to infer.
   if (inferredValues.empty() ||
-      !llvm::all_of(inferredValues, [&](MValue v) -> bool {
+      !llvm::all_of(inferredValues, [&](PRValue v) -> bool {
         return v.get() == inferredValues.front().get();
       }))
     return {};
@@ -283,7 +284,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
 
   // We use the contextual emitter to perform implicit conversions, but these
   // conversions must be done within a parameter context.  Make sure we don't
-  // have a builder from the caller, this indicates that an MValue is required.
+  // have a builder from the caller, this indicates that an PRValue is required.
   llvm::SaveAndRestore savedBuilder(emitter.builder);
   emitter.builder.reset();
 
@@ -344,7 +345,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
     }
 
     auto handleSingleParameterValue = [&](Binding binding,
-                                          ASTType expectedType) -> MValue {
+                                          ASTType expectedType) -> PRValue {
       assert(binding.expr &&
              "should always have an expr tree for unchecked bindings");
 
@@ -367,21 +368,21 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       };
 
       auto argValue =
-          emitter.getAsExpectedType({MValue(binding.getValue()), binding.expr},
+          emitter.getAsExpectedType({PRValue(binding.getValue()), binding.expr},
                                     expectedType, ValueDest(), errorHandler);
       if (!argValue)
         return {};
 
-      assert(argValue.getIfMValue() &&
+      assert(argValue.getIfPRValue() &&
              "cannot emit a dynamic value in parameter context");
-      return argValue.getIfMValue();
+      return argValue.getIfPRValue();
     };
 
     // Scalar parameter values are installed directly.
-    MValue paramValue;
+    PRValue paramValue;
     if (!isVararg) {
       // Otherwise we get a single value.
-      MValue paramValue = handleSingleParameterValue(binding, decl.getType());
+      PRValue paramValue = handleSingleParameterValue(binding, decl.getType());
       if (!paramValue)
         return {};
       setParamValue(paramValue);
@@ -500,7 +501,8 @@ OverloadFitness::evaluate(SignatureType signature,
       signature.getInputParams(), callable.baseName, callExpr->getLoc(),
       incorrectBindingNo, incorrectBindingExpectedType, emitter,
       /*don't emit diagnostics*/ nullptr, signature.hasParamVarargs(),
-      [&](ParamDeclAttr decl, ArrayRef<ParamBindAttr> bindingsSoFar) -> MValue {
+      [&](ParamDeclAttr decl,
+          ArrayRef<ParamBindAttr> bindingsSoFar) -> PRValue {
         return ParameterInferenceState(decl).infer(signature, bindingsSoFar,
                                                    operands);
       });
@@ -717,7 +719,7 @@ void OverloadFitness::diagnose(SignatureType signature,
          << operands[0].expr->getRange();
     return;
   case kArgWrongLVType: {
-    MValue eltTypeAttr = cast<POP::PointerType>(Type(type)).getElementType();
+    PRValue eltTypeAttr = cast<POP::PointerType>(Type(type)).getElementType();
     assert(eltTypeAttr.getIfTypeValue() &&
            "unwrapped value should be a direct type, not a parameter");
     diag << "l-value of type " << operands[payload].ir.getRValueType()
@@ -866,11 +868,11 @@ DirectCallable::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
   return failure();
 }
 
-/// Resolve the callee into either a single MValue callee (if there's only one
+/// Resolve the callee into either a single PRValue callee (if there's only one
 /// decl provided) or a variadic that contains all the possible adaptive
 /// overloads. Because adaptive overloads must all have the same signature, this
 /// also returns the signature type that they all share.
-std::pair<MValue, SignatureType> DirectCallable::getCallee() {
+std::pair<PRValue, SignatureType> DirectCallable::getCallee() {
   assert(!fnDecls.empty() &&
          "cannot get the callee when no callees have been resolved");
   // Get the parameter bindings, if there are any.
@@ -886,7 +888,7 @@ std::pair<MValue, SignatureType> DirectCallable::getCallee() {
   if (fnDecls.size() == 1) {
     SymbolConstantAttr callee =
         cast<LIT::FuncOp>(*fnDecls.front()).getBoundReference(bindArray);
-    return {MValue(callee), callee.getType()};
+    return {PRValue(callee), callee.getType()};
   }
 
   // Otherwise, we have to construct a list to be called.
@@ -899,7 +901,7 @@ std::pair<MValue, SignatureType> DirectCallable::getCallee() {
   SignatureType calleeType =
       cast<SymbolConstantAttr>(symbols.front()).getType();
   auto calleeList = VariadicAttr::get(symbols, VariadicType::get(calleeType));
-  return {MValue(calleeList), calleeType};
+  return {PRValue(calleeList), calleeType};
 }
 
 /// Utility function to perform subsitutions of the specified callable bindings
@@ -1063,9 +1065,9 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter,
   if (!direct)
     return emitter.emitResult(baseVal, expr, dest);
 
-  // We allow unbound symbols here which can be emitted as an MValue.  In the
+  // We allow unbound symbols here which can be emitted as an PRValue.  In the
   // case where we are partially applying, that will force the unbound symbol
-  // into a DRValue which will catch symbols that are not fully bound.
+  // into a SRValue which will catch symbols that are not fully bound.
   auto directSymbolAttr = direct->getBoundConstantAttr(expr, emitter);
   if (!directSymbolAttr)
     return {};
@@ -1117,7 +1119,7 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter,
     // Otherwise we can have either an lvalue or rvalue, but we need to convert
     // to an rvalue if we have an lvalue.
     // TODO(memory_primary): Emit into memory directly.
-    firstArgValue = emitter.emitDRValue({baseVal, expr});
+    firstArgValue = emitter.emitSRValue({baseVal, expr});
     if (!firstArgValue)
       return {};
     break;
@@ -1127,15 +1129,15 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter,
          "base types should always structurally line up");
 
   // For an instance value, we have to partially apply the callee to the first
-  // argument of the reference.  Materialize callee as a DRValue for
+  // argument of the reference.  Materialize callee as a SRValue for
   // partial_apply.
   // TODO(memory_primary): Emit into memory directly.
-  auto calleeDRVal = emitter.emitDRValue({AnyValue(directSymbolAttr), expr});
+  auto calleeDRVal = emitter.emitSRValue({AnyValue(directSymbolAttr), expr});
 
   // Partial apply wants to know what operands to bind, we always bind the first
   // one.
   auto zeroAttr = emitter.builder->getAttr<mlir::DenseI64ArrayAttr>(0);
-  auto result = DRValue(emitter.builder->create<POP::PartialApplyOp>(
+  auto result = SRValue(emitter.builder->create<POP::PartialApplyOp>(
       expr->getLocation(emitter), calleeDRVal, mlir::ValueRange(firstArgValue),
       zeroAttr));
 
@@ -1249,12 +1251,12 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       return {};
 
   } else {
-    // Otherwise we have an indirect call. If the callee is an MValue, emit a
-    // `call_param`. Otherwise, emit the callee value as a DRValue so we can
+    // Otherwise we have an indirect call. If the callee is an PRValue, emit a
+    // `call_param`. Otherwise, emit the callee value as a SRValue so we can
     // call it with call_indirect.
-    callee = baseVal.getIfMValue();
+    callee = baseVal.getIfPRValue();
     if (!callee) {
-      callee = emitter.emitDRValue({baseVal, expr});
+      callee = emitter.emitSRValue({baseVal, expr});
       if (!callee)
         return {};
     }
@@ -1301,13 +1303,13 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       if (calleeSig.isVararg(argIdx)) {
         auto variadic = VariadicAttr::get(ArrayRef<TypedAttr>(),
                                           expectedType.cast<VariadicType>());
-        argumentValues.push_back({MValue(variadic), expr});
+        argumentValues.push_back({PRValue(variadic), expr});
         continue;
       }
       // Otherwise, apply the default argument. We've ensured above that we have
       // a default argument for each missing operand.
       argumentValues.push_back(
-          {MValue(calleeSig.getDefaultArguments()[nextDefaultIdx]), expr});
+          {PRValue(calleeSig.getDefaultArguments()[nextDefaultIdx]), expr});
       ++nextDefaultIdx;
       continue;
     }
@@ -1364,13 +1366,13 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     // If all of the operands are compile-time values, then we can represent
     // the variadic sequence as an attribute.
     if (std::all_of(variadicOperands.begin(), variadicOperands.end(),
-                    [](auto operand) { return operand.ir.getIfMValue(); })) {
+                    [](auto operand) { return operand.ir.getIfPRValue(); })) {
       SmallVector<TypedAttr> variadicArgs;
       for (auto operand : variadicOperands)
-        variadicArgs.push_back(operand.ir.getIfMValue().get());
+        variadicArgs.push_back(operand.ir.getIfPRValue().get());
       auto argAttr =
           VariadicAttr::get(variadicArgs, expectedType.cast<VariadicType>());
-      argumentValues.push_back({MValue(argAttr), variadicOperands[0].expr});
+      argumentValues.push_back({PRValue(argAttr), variadicOperands[0].expr});
       continue;
     }
 
@@ -1379,8 +1381,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     SmallVector<Value> variadicArgs;
     for (auto &operand : variadicOperands) {
       // TODO(memory_primary): Emit into memory directly.
-      DRValue argVal =
-          emitter.emitDRValue({emitOneArgVal(operand), operand.expr});
+      SRValue argVal =
+          emitter.emitSRValue({emitOneArgVal(operand), operand.expr});
       if (!argVal)
         return {};
       variadicArgs.push_back(argVal);
@@ -1396,15 +1398,15 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
          "typechecking confirmed that we would use up all operands");
 
   // If this is a call to a @always_inline function (and there's only one
-  // possible callee), see if we can fold its entire body into an MValue. This
+  // possible callee), see if we can fold its entire body into an PRValue. This
   // can fail for a number of reasons, in which case we fall back to emitting
   // normally.
   if (direct && direct->fnDecls.size() == 1) {
     auto calleeFunc = cast<LIT::FuncOp>(*direct->fnDecls[0]);
     if (calleeFunc.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled) {
-      auto calleeSym = cast<SymbolConstantAttr>(callee.getIfMValue().get());
+      auto calleeSym = cast<SymbolConstantAttr>(callee.getIfPRValue().get());
       ParamBindArrayAttr inputParams = calleeSym.getParamValues();
-      if (auto result = inlineFunctionCallIntoMValue(
+      if (auto result = inlineFunctionCallIntoPRValue(
               *direct->fnDecls[0], inputParams, argumentValues, emitter))
         return emitter.emitResult(result.get(), expr, dest);
     }
@@ -1413,15 +1415,15 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   auto &builder = emitter.builder;
   if (!builder) {
     // Emitting a call in a parameter context. Generate an apply operator.
-    SmallVector<TypedAttr> operands({callee.getIfMValue().get()});
+    SmallVector<TypedAttr> operands({callee.getIfPRValue().get()});
     for (auto argValAndExpr : argumentValues) {
-      if (!argValAndExpr.ir.getIfMValue()) {
+      if (!argValAndExpr.ir.getIfPRValue()) {
         emitter.emitError(argValAndExpr.expr->getLoc(),
                           "cannot use a dynamic value in parameter context")
             << argValAndExpr.expr->getRange();
         return {};
       }
-      operands.push_back(argValAndExpr.ir.getIfMValue().get());
+      operands.push_back(argValAndExpr.ir.getIfPRValue().get());
     }
 
     // Calls in parameter context cannot have result parameters.
@@ -1442,14 +1444,14 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     return emitter.emitResult(result, expr, dest);
   }
 
-  // Otherwise, materialize MValue arguments as DRValues.
+  // Otherwise, materialize PRValue arguments as SRValues.
   SmallVector<Value> callArgs;
   for (auto argValAndExpr : argumentValues) {
     if (auto lv = argValAndExpr.ir.getIfLValue())
       callArgs.push_back(lv);
     else
       // TODO(memory_primary): Emit into memory directly.
-      callArgs.push_back(emitter.emitDRValue(argValAndExpr));
+      callArgs.push_back(emitter.emitSRValue(argValAndExpr));
     if (!callArgs.back())
       return {};
   }
@@ -1457,7 +1459,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   ArrayRef<Type> resultTypes = calleeSig.getValueResults();
   Operation *callOp;
   Location loc = emitter.translateLocation(callLoc);
-  if (auto target = callee.getIfMValue()) {
+  if (auto target = callee.getIfPRValue()) {
     if (auto sig = dyn_cast<SignatureType>(target.getType());
         sig && sig.isAsync()) {
       // If the callee is an async function, emit an async call.
@@ -1488,7 +1490,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   } else {
     // Otherwise emit calls to SSA values with call_indirect.
     callOp = builder->create<POP::CallIndirectOp>(
-        loc, resultTypes, callee.getIfDRValue(), callArgs);
+        loc, resultTypes, callee.getIfSRValue(), callArgs);
   }
 
   // If the callee can raise an error, try to unwrap it.
@@ -1500,18 +1502,18 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   }
 
   // Value returning call returns its result.
-  auto result = DRValue(callOp->getResult(0));
+  auto result = SRValue(callOp->getResult(0));
   return emitter.emitResult(result, expr, dest);
 }
 
 /// Given a call to an alwaysinline function that is invoked with simple
 /// parameter constants, check to see if we can resolve it all the way down to
-/// an MValue.  We do this when in a parameter context (since there is no debug
+/// an PRValue.  We do this when in a parameter context (since there is no debug
 /// info to ever generate) and when calling a "nodebug" function.
 ///
 /// This is best-effort: when it fails, we fall back to emitting a normal call
 /// or "apply" parameter expression.
-MValue CallableValue::inlineFunctionCallIntoMValue(
+PRValue CallableValue::inlineFunctionCallIntoPRValue(
     ASTDecl &callee, ParamBindArrayAttr inputParams,
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues, ExprEmitter &emitter) {
   auto funcOp = cast<LIT::FuncOp>(callee);
@@ -1531,17 +1533,17 @@ MValue CallableValue::inlineFunctionCallIntoMValue(
   // folding simple constants because we don't want to build massive parameter
   // expressions based on the internals of function calls.
   for (auto argValue : argumentValues) {
-    auto mValue = argValue.ir.getIfMValue();
+    auto mValue = argValue.ir.getIfPRValue();
     if (!mValue || !ParameterAttr::isSimpleConstant(mValue.get()))
       return {};
   }
 
   // Keep track of a mapping from the arguments (and interior results of
   // operations) to their representation, start with the input arguments.
-  SmallDenseMap<Value, MValue> valueMapping;
+  SmallDenseMap<Value, PRValue> valueMapping;
   auto &block = *funcOp.getBody();
   for (auto [blockArg, value] : llvm::zip(block.getArguments(), argumentValues))
-    valueMapping[blockArg] = value.ir.getIfMValue();
+    valueMapping[blockArg] = value.ir.getIfPRValue();
 
   // Resolve the body to type check and generate the IR we need for inlining.
   if (failed(emitter.getDeclResolver().resolveFully(callee, expr->getLoc())))
@@ -1610,7 +1612,7 @@ MValue CallableValue::inlineFunctionCallIntoMValue(
         auto attr = dyn_cast<TypedAttr>(cast<Attribute>(puValue));
         assert(attr &&
                "Folding operation with typed result made untyped attr?");
-        valueMapping[result] = MValue(attr);
+        valueMapping[result] = PRValue(attr);
       }
     }
   }

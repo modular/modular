@@ -12,11 +12,11 @@
 // may produce a runtime value as an rvalue, or may produce a metavalue as an
 // LValue.  These make up the following hierarchy of value kinds:
 //
-//   AnyValue               <- Expr emitted to MLIR
-//     LValue (Value)       <- Expr with a runtime address.
-//     RValue               <- Expr without an address
-//       DRValue (Value)    <- Expr with a dynamic value (only known at runtime)
-//       MValue (TypedAttr) <- Expr with a meta-value (known at compile time)
+//   AnyValue           <- Expr emitted to MLIR:
+//     LValue (Value)     <- ... with a runtime address.
+//     RValue             <- ... as an independent value
+//       SRValue (Value)     <- ..with a dynamic SSA value
+//       PRValue (TypedAttr) <- ..with a parameter value (known at compile time)
 //
 //===----------------------------------------------------------------------===//
 
@@ -50,15 +50,15 @@ struct ASTExprAnd {
   }
 };
 
-/// Instances of DRValue model a dynamic value represented with an SSA value.
+/// Instances of SRValue model a dynamic value represented with an SSA value.
 /// It is described with an explicit type to clarify what sort of value it is,
 /// differentiating it from an emitted LValue.  This helps avoid subtle bugs in
 /// the emission phase.
-class DRValue : public Value {
+class SRValue : public Value {
 public:
   using Value::Value;
   using Value::operator=;
-  DRValue(Value v) : Value(v) {}
+  SRValue(Value v) : Value(v) {}
 };
 
 /// Instances of LValue model a dynamic address, which will always have pointer
@@ -79,15 +79,15 @@ public:
   ASTType getRValueType() const;
 };
 
-/// Instances of MValue model compile time values that are represented as MLIR
+/// Instances of PRValue model compile time values that are represented as MLIR
 /// attributes.
-class MValue {
+class PRValue {
 public:
-  MValue() {}
-  MValue(TypedAttr v) : storage(v) {}
-  MValue(Type value);
+  PRValue() {}
+  PRValue(TypedAttr v) : storage(v) {}
+  PRValue(Type value);
 
-  MValue &operator=(TypedAttr newVal) {
+  PRValue &operator=(TypedAttr newVal) {
     storage = newVal;
     return *this;
   }
@@ -109,15 +109,15 @@ public:
     return storage.getAsOpaquePointer();
   }
 
-  static MValue getFromOpaquePointer(void *ptr) {
+  static PRValue getFromOpaquePointer(void *ptr) {
     return {Attribute::getFromOpaquePointer(ptr)};
   }
 
 private:
   Attribute storage;
 };
-raw_ostream &operator<<(raw_ostream &os, MValue value);
-mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, MValue value);
+raw_ostream &operator<<(raw_ostream &os, PRValue value);
+mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, PRValue value);
 
 } // namespace M::KGEN::LIT
 
@@ -140,14 +140,14 @@ public:
 };
 
 template <>
-struct PointerLikeTypeTraits<M::KGEN::LIT::DRValue> {
+struct PointerLikeTypeTraits<M::KGEN::LIT::SRValue> {
 public:
-  using DRValue = M::KGEN::LIT::DRValue;
-  static void *getAsVoidPointer(DRValue value) {
+  using SRValue = M::KGEN::LIT::SRValue;
+  static void *getAsVoidPointer(SRValue value) {
     return value.getAsOpaquePointer();
   }
-  static DRValue getFromVoidPointer(void *pointer) {
-    return DRValue(mlir::Value::getFromOpaquePointer(pointer));
+  static SRValue getFromVoidPointer(void *pointer) {
+    return SRValue(mlir::Value::getFromOpaquePointer(pointer));
   }
   enum {
     NumLowBitsAvailable =
@@ -156,14 +156,14 @@ public:
 };
 
 template <>
-struct PointerLikeTypeTraits<M::KGEN::LIT::MValue> {
+struct PointerLikeTypeTraits<M::KGEN::LIT::PRValue> {
 public:
-  using MValue = M::KGEN::LIT::MValue;
-  static const void *getAsVoidPointer(MValue value) {
+  using PRValue = M::KGEN::LIT::PRValue;
+  static const void *getAsVoidPointer(PRValue value) {
     return value.get().getAsOpaquePointer();
   }
-  static MValue getFromVoidPointer(void *pointer) {
-    return MValue(cast_or_null<mlir::TypedAttr>(
+  static PRValue getFromVoidPointer(void *pointer) {
+    return PRValue(cast_or_null<mlir::TypedAttr>(
         mlir::Attribute::getFromOpaquePointer(pointer)));
   }
   enum {
@@ -178,7 +178,7 @@ namespace M::KGEN::LIT {
 template <typename DerivedType>
 struct VariantValueStorage {
   /// These are all the forms of storage we can have.
-  using Storage = PointerUnion<MValue, DRValue, LValue>;
+  using Storage = PointerUnion<PRValue, SRValue, LValue>;
 
   bool isNull() const { return storage.isNull(); }
   bool operator!() const { return storage.isNull(); }
@@ -200,30 +200,30 @@ protected:
   Storage storage;
 };
 
-/// RValue = MValue|DRValue.
+/// RValue = PRValue|SRValue.
 class RValue : public VariantValueStorage<RValue> {
 public:
   RValue() {}
-  RValue(MValue metaValue) : VariantValueStorage(metaValue) {}
+  RValue(PRValue metaValue) : VariantValueStorage(metaValue) {}
   RValue(TypedAttr value) : VariantValueStorage(value) {}
-  RValue(Type value) : VariantValueStorage(MValue(value)) {}
-  RValue(DRValue value) : VariantValueStorage(value) {}
+  RValue(Type value) : VariantValueStorage(PRValue(value)) {}
+  RValue(SRValue value) : VariantValueStorage(value) {}
 
   static RValue getFrom(Storage storage) {
     RValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa_and_nonnull<MValue, DRValue>(storage))
+    if (isa_and_nonnull<PRValue, SRValue>(storage))
       result.storage = storage;
     return result;
   }
 
   /// If this contains a metavalue, return it; otherwise return null.
-  MValue getIfMValue() const { return dyn_cast<MValue>(storage); }
-  DRValue getIfDRValue() const { return dyn_cast<DRValue>(storage); }
+  PRValue getIfPRValue() const { return dyn_cast<PRValue>(storage); }
+  SRValue getIfSRValue() const { return dyn_cast<SRValue>(storage); }
 
   /// If this value /is/ a type return it.
   ASTType getIfTypeValue() const {
-    if (auto mValue = getIfMValue())
+    if (auto mValue = getIfPRValue())
       return mValue.getIfTypeValue();
     return {};
   }
@@ -239,16 +239,16 @@ mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, RValue value);
 class AnyValue : public VariantValueStorage<AnyValue> {
 public:
   AnyValue() {}
-  AnyValue(MValue value) : VariantValueStorage(value) {}
+  AnyValue(PRValue value) : VariantValueStorage(value) {}
   AnyValue(RValue value) : VariantValueStorage(value.getStorage()) {}
-  AnyValue(TypedAttr value) : VariantValueStorage(MValue(value)) {}
-  AnyValue(Type value) : VariantValueStorage(MValue(value)) {}
-  AnyValue(DRValue value) : VariantValueStorage(value) {}
+  AnyValue(TypedAttr value) : VariantValueStorage(PRValue(value)) {}
+  AnyValue(Type value) : VariantValueStorage(PRValue(value)) {}
+  AnyValue(SRValue value) : VariantValueStorage(value) {}
   AnyValue(LValue value) : VariantValueStorage(value) {}
 
   LValue getIfLValue() const { return dyn_cast_or_null<LValue>(storage); }
-  DRValue getIfDRValue() const { return dyn_cast_or_null<DRValue>(storage); }
-  MValue getIfMValue() const { return dyn_cast_or_null<MValue>(storage); }
+  SRValue getIfSRValue() const { return dyn_cast_or_null<SRValue>(storage); }
+  PRValue getIfPRValue() const { return dyn_cast_or_null<PRValue>(storage); }
   RValue getIfRValue() const { return RValue::getFrom(storage); }
 
   /// This method returns the type of this value when projected as an RValue.
@@ -258,7 +258,7 @@ public:
 
   /// If this value /is/ a type return it.
   ASTType getIfTypeValue() const {
-    if (auto mValue = getIfMValue())
+    if (auto mValue = getIfPRValue())
       return mValue.getIfTypeValue();
     return {};
   }

@@ -84,10 +84,10 @@ public:
   /// This helper emits the specified value as an RValue.
   RValue emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest);
 
-  /// This helper emits the specified value as a DRValue which has an SSA
-  /// value representation, materializing MValues and loading LValues as
+  /// This helper emits the specified value as a SRValue which has an SSA
+  /// value representation, materializing PRValues and loading LValues as
   /// needed.  This returns null if emission fails.
-  DRValue emitDRValue(ASTExprAnd<AnyValue> value);
+  SRValue emitSRValue(ASTExprAnd<AnyValue> value);
 
   //===--------------------------------------------------------------------===//
   // Function Calls
@@ -146,18 +146,18 @@ public:
   /// This helper emits the specified value rep as an RValue.
   RValue emitExprRValue(const ExprNode *node, ValueDest dest = {});
 
-  /// This helper emits the specified value rep as an DRValue, materializing
+  /// This helper emits the specified value rep as an SRValue, materializing
   /// it as a parameter constant if it is a parameter.  This returns null if
   /// emission fails.
-  DRValue emitExprDRValue(const ExprNode *node);
+  SRValue emitExprSRValue(const ExprNode *node);
 
   /// This helper emits the specified expression as a meta value, and optionally
   /// converts the result to a specified expected type.  This emits an error if
   /// the expression cannot be emitted, if it cannot be converted to the
   /// expected type, or if it isn't a valid runtime value.  This returns null if
   /// emission fails.
-  MValue emitExprMValue(const ExprNode *node, ASTType resultType,
-                        const Twine &errorSuffix);
+  PRValue emitExprPRValue(const ExprNode *node, ASTType resultType,
+                          const Twine &errorSuffix);
 
   /// Emit the specified expression as an LValue which can be loaded and stored.
   /// If contextualType is non-null, then an implicitly declared LValue will be
@@ -180,7 +180,7 @@ public:
 
   /// Given a value convertable to a pop int via index conversion, emit
   /// the casting code and return the pop scalar index value
-  DRValue emitBoxedIntAsPopScalar(Value numberValue, const ExprNode *source);
+  SRValue emitBoxedIntAsPopScalar(Value numberValue, const ExprNode *source);
 
   /// This helper emits the specified expression as a callable meta value.
   /// This emits an error if the expression cannot be emitted and returns null.

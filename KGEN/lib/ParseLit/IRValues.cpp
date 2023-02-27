@@ -23,17 +23,17 @@ using namespace M::KGEN::LIT;
 // IRValues Implementation Logic.
 //===----------------------------------------------------------------------===//
 
-using VariantStorage = PointerUnion<MValue, DRValue, LValue>;
+using VariantStorage = PointerUnion<PRValue, SRValue, LValue>;
 
 static raw_ostream &printStorage(raw_ostream &os, VariantStorage storage,
                                  bool isDump = false) {
   if (storage.isNull()) {
     os << "<NULL IR Value>\n";
-  } else if (auto val = dyn_cast<MValue>(storage)) {
+  } else if (auto val = dyn_cast<PRValue>(storage)) {
     if (isDump)
       os << "M: ";
     os << val.get();
-  } else if (auto val = dyn_cast<DRValue>(storage)) {
+  } else if (auto val = dyn_cast<SRValue>(storage)) {
     if (isDump)
       os << "DR: ";
     os << val;
@@ -47,7 +47,7 @@ static raw_ostream &printStorage(raw_ostream &os, VariantStorage storage,
   return os;
 }
 
-raw_ostream &LIT::operator<<(raw_ostream &os, MValue value) {
+raw_ostream &LIT::operator<<(raw_ostream &os, PRValue value) {
   return printStorage(os, value);
 }
 raw_ostream &LIT::operator<<(raw_ostream &os, RValue value) {
@@ -71,7 +71,7 @@ static std::string getStorageAsString(VariantStorage storage) {
   return os.str();
 }
 
-mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, MValue value) {
+mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, PRValue value) {
   return diag << '\'' << getStorageAsString(value) << '\'';
 }
 mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, RValue value) {
@@ -84,9 +84,9 @@ mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, AnyValue value) {
 static Type getTypeFrom(VariantStorage storage) {
   if (storage.isNull())
     return Type();
-  if (auto attr = dyn_cast<MValue>(storage))
+  if (auto attr = dyn_cast<PRValue>(storage))
     return attr.get().getType();
-  if (auto value = dyn_cast<DRValue>(storage))
+  if (auto value = dyn_cast<SRValue>(storage))
     return value.getType();
   return cast<LValue>(storage).getType();
 }
@@ -94,11 +94,11 @@ static Type getTypeFrom(VariantStorage storage) {
 Type RValue::getType() const { return getTypeFrom(storage); }
 Type AnyValue::getType() const { return getTypeFrom(storage); }
 
-MValue::MValue(Type value)
+PRValue::PRValue(Type value)
     : storage(ParameterizedTypeConstantAttr::get(value)) {}
 
 /// If this value /is/ a type return it.
-ASTType MValue::getIfTypeValue() const {
+ASTType PRValue::getIfTypeValue() const {
   auto attr = get();
   if (auto type = dyn_cast<ConcreteTypeConstantAttr>(attr))
     return type.getValue();
@@ -126,7 +126,7 @@ ASTType AnyValue::getRValueType() const {
 /// an LValue, it strips off the pointer type.
 ASTType LValue::getRValueType() const {
   TypedAttr attrType = llvm::cast<POP::PointerType>(getType()).getElementType();
-  Type type = MValue(attrType).getIfTypeValue();
+  Type type = PRValue(attrType).getIfTypeValue();
   assert(type && "LValue element type shouldn't be a parameter");
   return type;
 }

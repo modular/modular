@@ -29,7 +29,7 @@ namespace M::KGEN::LIT {
 class DeclResolver;
 class ASTDecl;
 class ASTType;
-class MValue;
+class PRValue;
 class LookupResult;
 
 /// Given a number, return one string if the number is 1, otherwise return the

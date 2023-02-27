@@ -63,9 +63,9 @@ static ParseResult parseType(LitParserBase &p, ASTType &result,
 MLIRContext *ASTDecl::getContext() const {
   if (auto *op = getIfOperation())
     return op->getContext();
-  if (auto mv = dyn_cast<MValue>(getIRValue()))
+  if (auto mv = dyn_cast<PRValue>(getIRValue()))
     return mv.get().getContext();
-  if (auto dr = dyn_cast<DRValue>(getIRValue()))
+  if (auto dr = dyn_cast<SRValue>(getIRValue()))
     return dr.getContext();
 
   return cast<LValue>(getIRValue()).getContext();
@@ -74,10 +74,10 @@ MLIRContext *ASTDecl::getContext() const {
 /// If this is an RValue, return it otherwise return null.
 RValue ASTDecl::getIfRValue() const {
   // Meta value.
-  if (auto attr = dyn_cast_or_null<MValue>(irValue))
+  if (auto attr = dyn_cast_or_null<PRValue>(irValue))
     return attr;
-  // DRValue.
-  if (auto value = dyn_cast_or_null<DRValue>(irValue))
+  // SRValue.
+  if (auto value = dyn_cast_or_null<SRValue>(irValue))
     return value;
   return {};
 }
@@ -372,7 +372,7 @@ ASTDecl &DeclResolver::addErroneousDecl(StringRef baseName, llvm::SMLoc loc,
   // Use a dummy attribute representation for the error.
   BoolAttr dummyAttr = BoolAttr::get(parentDecl->getContext(), true);
   ASTDecl &errDecl =
-      addFullyResolvedDecl(MValue(dummyAttr), baseName, loc, parentDecl);
+      addFullyResolvedDecl(PRValue(dummyAttr), baseName, loc, parentDecl);
   errDecl.hasReferenceError = true;
   return errDecl;
 }
@@ -828,7 +828,7 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
       // Bind the parsed type expression so references from other parameters
       // can be resolved.
       auto tmpDecl = ParamDeclRefAttr::get(arg.name, type);
-      declResolver.addFullyResolvedDecl(MValue(tmpDecl), arg.name, arg.loc,
+      declResolver.addFullyResolvedDecl(PRValue(tmpDecl), arg.name, arg.loc,
                                         &declScope);
       params.push_back(ParamDeclAttr::get(arg.name, type));
     }
@@ -1396,7 +1396,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     auto parentLoc = decl.getParentDecl()->getLoc();
     for (auto param : structDecl.getInputParamDecls()) {
       auto paramRef = ParamDeclRefAttr::get(param);
-      addFullyResolvedDecl(MValue(paramRef), param.getName(), parentLoc, &decl);
+      addFullyResolvedDecl(PRValue(paramRef), param.getName(), parentLoc,
+                           &decl);
     }
   }
 
@@ -1463,7 +1464,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     if (const ExprNode *initExpr = arg.initExpr) {
       ExprEmitter emitter(shared, decl, /*builder*/ {},
                           /*varDeclCursor*/ nullptr);
-      MValue value = emitter.emitExprMValue(
+      PRValue value = emitter.emitExprPRValue(
           initExpr, type, " in a default argument initializer");
       if (!value)
         return failure();
@@ -1635,7 +1636,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     // TODO: Project homogenous varargs into a homogenous tuple type.
     if (!funcOp.getIsDef()) {
       buildArgDIInfo(bbArg, parsedArg.name, bbArg.getArgNumber());
-      addFullyResolvedDecl(DRValue(bbArg), parsedArg.name, parsedArg.loc,
+      addFullyResolvedDecl(SRValue(bbArg), parsedArg.name, parsedArg.loc,
                            &decl);
       continue;
     }
@@ -1725,7 +1726,7 @@ struct ParsedLetVarDecl {
   ExprNode *initExpr = nullptr;
 
   ParseResult parse(LitLexer &lexer, ASTDecl &decl);
-  std::pair<DRValue, OpBuilder> emitInitValue(Operation *declOp, ASTDecl &decl,
+  std::pair<SRValue, OpBuilder> emitInitValue(Operation *declOp, ASTDecl &decl,
                                               LitSharedState &shared);
 };
 } // namespace
@@ -1756,7 +1757,7 @@ ParseResult ParsedLetVarDecl::parse(LitLexer &lexer, ASTDecl &decl) {
 
 /// Emit the initializer at the specified point and convert it to the declared
 /// type if known.
-std::pair<DRValue, OpBuilder>
+std::pair<SRValue, OpBuilder>
 ParsedLetVarDecl::emitInitValue(Operation *declOp, ASTDecl &decl,
                                 LitSharedState &shared) {
   // We insert after var decl, but before let decl.
@@ -1767,14 +1768,14 @@ ParsedLetVarDecl::emitInitValue(Operation *declOp, ASTDecl &decl,
   ExprEmitter emitter(shared, *decl.getParentDecl(), builder,
                       /*varDeclCursor*/ nullptr);
 
-  auto value = emitter.emitExprDRValue(initExpr);
+  auto value = emitter.emitExprSRValue(initExpr);
   if (!value)
     return {value, builder};
 
   // If we had a declared type, coerce the expression value to it.
   if (type) {
     const char *kind = isa<LetDeclOp>(declOp) ? "let" : "var";
-    value = emitter.emitDRValue(
+    value = emitter.emitSRValue(
         {emitter.getAsExpectedType(
              {value, initExpr}, type,
              // TODO(memory-primary): emit directly into the vardecl.
@@ -1935,7 +1936,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
 
   // Emit the value and convert to the expected type if we know it.
   auto rhsValue =
-      emitter.emitExprMValue(initExpr, type, " in alias declaration");
+      emitter.emitExprPRValue(initExpr, type, " in alias declaration");
   if (!rhsValue)
     return failure();
 

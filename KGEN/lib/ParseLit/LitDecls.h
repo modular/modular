@@ -46,7 +46,7 @@ class StructFieldOp;
 /// This stores declaration references (e.g. vardecls, structdecls, funcdecls)
 /// as operations.  It stores RValues for parameters and SSA values as an
 /// RValue.
-using DeclIRValue = PointerUnion<Operation *, MValue, DRValue, LValue>;
+using DeclIRValue = PointerUnion<Operation *, PRValue, SRValue, LValue>;
 
 class DeclResolver : public LitSharedStateUser {
 public:
