@@ -442,7 +442,7 @@ struct VariadicList[type: __mlir_type.`!kgen.mlirtype`]:
         Returns (VariadicList):
             The VariadicList constructed.
         """
-        return VariadicList[type] {value: value}
+        return Self {value: value}
 
     fn size(self) -> Int:
         """Accessor for the size of the list of variadic elements.
