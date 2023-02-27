@@ -31,6 +31,7 @@ static void populatePreElaborationPipeline(mlir::PassManager &pm) {
 
   // These passes don't influence parameters, so we don't need to verify them.
   pm.addNestedPass<GeneratorOp>(mlir::createCanonicalizerPass());
+  pm.addNestedPass<GeneratorOp>(createConstraintReduction());
   pm.addNestedPass<GeneratorOp>(createMem2Reg());
 }
 
