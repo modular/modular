@@ -634,9 +634,7 @@ void ThreadPoolWorkQueue::addTask(TaskFunction &&work,
   // CAUTION: This runs the risk of stack overflow, but we don't have a
   // choice. CAUTION: Any existing work item's profiling entry will include
   // execution time to run this work item.
-  LLVM_DEBUG(
-      llvm::dbgs()
-      << "ThreadPoolWorkQueue: running immediately (task queue is full)\n");
+  profiledTask.running = profiledTask.running.withNameSuffix(".now");
   callerWorker->doWork</*OnOwningThread=*/false>(std::move(profiledTask));
 }
 
@@ -649,11 +647,9 @@ void ThreadPoolWorkQueue::addLocalTask(M::LLCL::TaskFunction work) {
     // there's no local task list we can enqueue to on this thread.
     if constexpr (kRunImmediatelyOnForeignThreads) {
       // Run right now.
-      LLVM_DEBUG(llvm::dbgs() << "ThreadPoolWorkQueue: running immediately "
-                                 "(called from non awaiting foreign thread)\n");
       ProfiledTaskFunction profiledTask(
           std::move(work), /*waiting=*/InternalProfilerEntry(),
-          /*running=*/WorkProfilerEntry::create("llcl.waiter"));
+          /*running=*/WorkProfilerEntry::create("llcl.waiter.now"));
       callerWorker->doWork</*OnOwningThread=*/false>(std::move(profiledTask));
     } else {
       // Add as a task.
