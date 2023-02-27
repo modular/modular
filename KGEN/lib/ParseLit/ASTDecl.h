@@ -109,6 +109,17 @@ public:
     unresolvedWildcardImports.insert({importedModule, loc});
   }
 
+  /// Return the doc string for this decl, or an emtpy string if there isn't
+  /// one.
+  StringRef getDocString() const { return docString; }
+
+  /// Set the doc string for this decl.
+  void setDocString(LitToken docStringTok) {
+    assert(docStringTok.is(LitToken::string) &&
+           "doc-string must be a string literal");
+    this->docString = docStringTok.getSpelling().drop_front().drop_back();
+  }
+
   //===--------------------------------------------------------------------===//
   // Name lookup
   //===--------------------------------------------------------------------===//
@@ -135,6 +146,12 @@ public:
       curScope = curScope->parentDecl;
     }
     return nullptr;
+  }
+
+  /// Return the set of declarations in this scope.
+  const DenseMap<StringAttr, TinyPtrVector<ASTDecl *>> &
+  getDeclsInScope() const {
+    return declsInScope;
   }
 
   //===--------------------------------------------------------------------===//
@@ -191,6 +208,9 @@ private:
   /// parsing the body of the declaration.  If the declaration was not at the
   /// start of a line or this is the top level module, then this is set to -1.
   ssize_t indentation;
+
+  /// The optional documentation for this decl. Empty if there is no doc.
+  StringRef docString;
 
   /// These are the declarations defined within this scope.
   DenseMap<StringAttr, TinyPtrVector<ASTDecl *>> declsInScope;

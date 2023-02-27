@@ -848,6 +848,17 @@ parseOptionalMetaSignature(LitParserBase &p, ASTDecl &declScope,
 }
 
 //===----------------------------------------------------------------------===//
+// Doc String support logic
+//===----------------------------------------------------------------------===//
+
+void LitParserBase::parseDocString(ASTDecl &decl) {
+  // The doc string is simply a followon string literal.
+  if (getToken().isNot(LitToken::string))
+    return;
+  decl.setDocString(consumeToken());
+}
+
+//===----------------------------------------------------------------------===//
 // Decorator support logic
 //===----------------------------------------------------------------------===//
 

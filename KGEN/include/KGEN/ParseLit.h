@@ -35,6 +35,13 @@ importLitFile(llvm::SourceMgr &sourceMgr, MLIRContext *context,
               mlir::TimingScope &ts, const KGEN::CompilationOptions &options,
               bool useMLIRDiagnostics,
               SmallVectorImpl<std::string> *includedFiles = nullptr);
+
+/// Parse a single .lit file and produce an appropriate document detailing the
+/// API within the module. The generated documentation is piped into the
+/// provided output stream, in markdown format.
+LogicalResult generateLitDoc(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+                             raw_ostream &outputOS, mlir::TimingScope &ts,
+                             const KGEN::CompilationOptions &options);
 } // namespace M
 
 #endif // KGEN_PARSELIT_H

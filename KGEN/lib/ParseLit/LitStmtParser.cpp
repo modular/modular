@@ -1279,14 +1279,10 @@ ParseResult LitStmtParser::parseMLIRRegionStmt(LitLexerCursor startCursor,
                                            parsedArg.loc, &decl);
   }
 
-  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
-  if (shared.diBuilder)
-    pushLocalScope(scopeGuard);
-  if (parseToken(LitToken::colon, "expected ':' after region argument list") ||
-      LitParserBase::parseSuite(decl, lexer))
+  if (parseToken(LitToken::colon, "expected ':' after region argument list"))
     return failure();
-
-  return success();
+  LitStmtParser parser(lexer, decl);
+  return parser.parseLocalScopeSuite(curIndent);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1297,8 +1293,11 @@ ParseResult LitStmtParser::parseMLIRRegionStmt(LitLexerCursor startCursor,
 /// This is the main entrypoint to this file.
 ParseResult LitParserBase::parseSuite(ASTDecl &containingDecl,
                                       LitLexer &lexer) {
-  if (failed(LitStmtParser(lexer, containingDecl)
-                 .parseSuite(containingDecl.getIndentation())))
-    return failure();
-  return success();
+  LitStmtParser parser(lexer, containingDecl);
+
+  // Parse the docstring if present.
+  parser.parseDocString(containingDecl);
+
+  // Parse the remaining body of the declaration.
+  return parser.parseSuite(containingDecl.getIndentation());
 }

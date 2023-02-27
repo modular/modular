@@ -37,16 +37,26 @@ using namespace KGEN;
 using namespace mlir;
 
 namespace {
+/// What to do with a given KGEN file.
+enum class LitCommand {
+  kDocGen,
+  kEmit,
+  kExecute,
+};
+
 class CLOptions : public KGENCommonOptions {
 public:
   using KGENCommonOptions::KGENCommonOptions;
 
-  cl::opt<Command> cmd{cl::desc("The command to execute"),
-                       cl::values(clEnumValN(Command::kEmit, "emit",
-                                             "Emit funcs as object files."),
-                                  clEnumValN(Command::kExecute, "execute",
-                                             "Execute the main function.")),
-                       cl::init(Command::kExecute)};
+  cl::opt<LitCommand> cmd{
+      cl::desc("The command to execute"),
+      cl::values(
+          clEnumValN(LitCommand::kDocGen, "doc-gen",
+                     "Generate markdown documentation."),
+          clEnumValN(LitCommand::kEmit, "emit", "Emit funcs as object files."),
+          clEnumValN(LitCommand::kExecute, "execute",
+                     "Execute the main function.")),
+      cl::init(LitCommand::kExecute)};
 };
 } // namespace
 
@@ -117,6 +127,17 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (!inputFileName.ends_with(".lit"))
     return clOptions.reportError("expected a .lit file");
   TimingScope litScope = timing.nest("Import Lit");
+
+  if (clOptions.cmd == LitCommand::kDocGen) {
+    std::unique_ptr<llvm::ToolOutputFile> os =
+        clOptions.getOutputFile(/*hasBinaryOutput=*/false);
+    if (failed(
+            generateLitDoc(mgr, ctx, os->os(), litScope, compilationOptions)))
+      return clOptions.reportError("could not generate documentation");
+    os->keep();
+    return EXIT_SUCCESS;
+  }
+
   theModule = importLitFile(mgr, ctx, litScope, compilationOptions, false);
 
   if (!theModule)
@@ -144,13 +165,13 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // This produces a standalone object for all the objects we requested.
   auto standaloneOr = compiler->produceStandaloneObject(
-      target, /*isJIT=*/clOptions.cmd == Command::kExecute);
+      target, /*isJIT=*/clOptions.cmd == LitCommand::kExecute);
   if (failed(standaloneOr))
     return clOptions.reportError("compiler error");
   Cache::BufferRef standaloneObject = std::move(*standaloneOr);
 
   // If we're emitting the object, do it.
-  if (clOptions.cmd == Command::kEmit) {
+  if (clOptions.cmd == LitCommand::kEmit) {
     if (failed(clOptions.emitObject(standaloneObject->getBuffer())))
       return clOptions.reportError("unable to emit object file");
 
@@ -165,7 +186,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return EXIT_SUCCESS;
   }
 
-  assert(clOptions.cmd == Command::kExecute);
+  assert(clOptions.cmd == LitCommand::kExecute);
   // Now create the execution engine so we can JIT.
   auto engineOr = ExecutionEngine::create(compilationOptions);
   if (failed(engineOr))

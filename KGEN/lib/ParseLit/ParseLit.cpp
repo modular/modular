@@ -13,6 +13,7 @@
 #include "ASTDecl.h"
 #include "KGEN/CompilationOptions.h"
 #include "LitDecls.h"
+#include "LitDocString.h"
 #include "LitLexer.h"
 #include "LitParserBase.h"
 #include "LitSharedState.h"
@@ -20,8 +21,6 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
-#include "Support/HLCFDialect/HLCFDialect.h"
-#include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Verifier.h"
@@ -39,17 +38,14 @@ using llvm::SourceMgr;
 // Driver
 //===----------------------------------------------------------------------===//
 
-// Parse the specified .lit file into the specified MLIR context.
-OwningOpRef<mlir::ModuleOp>
-M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
-                 mlir::TimingScope &ts, const KGEN::CompilationOptions &options,
-                 bool useMLIRDiagnostics,
-                 SmallVectorImpl<std::string> *includedFiles) {
+/// Parse the specified .lit file into the specified MLIR context. Returns the
+/// resultant IR, and the decl for the module represented by the input file.
+static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
+importLitFileImpl(SourceMgr &sourceMgr, LitSharedState &sharedState,
+                  mlir::TimingScope &ts,
+                  SmallVectorImpl<std::string> *includedFiles = nullptr) {
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
-
-  context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
-                       POP::POPDialect, LITDialect, mlir::index::IndexDialect,
-                       KGENDialect>();
+  MLIRContext *context = sharedState.getContext();
 
   // This is the result module we are parsing into.
   auto fileLoc =
@@ -57,7 +53,6 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
                           /*column=*/0);
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(fileLoc));
 
-  LitSharedState sharedState(sourceMgr, context, options, useMLIRDiagnostics);
   LitLexer lexer(sharedState, sourceBuf);
   auto startSMLoc = lexer.getToken().getLoc();
   LitLexerCursor endFileCursor(
@@ -82,14 +77,15 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
     moduleName = "<input>";
 
   // Parse the input module.
-  sharedState.createModule(moduleName, sourceBuf, fileLoc);
+  ASTDecl &moduleDecl =
+      sharedState.createModule(moduleName, sourceBuf, fileLoc);
 
   // Auto-import the core Lang module definition.
   auto builtinStrAttr = StringAttr::get(module->getContext(),
                                         LitSharedState::kCompilerBuiltInStr);
   if (failed(sharedState.declResolver->importModule(
           topLevelDecl, builtinStrAttr, builtinStrAttr, startSMLoc)))
-    return nullptr;
+    return {nullptr, nullptr};
 
   // With the top-level of the file parsed, we can now go ahead and resolve all
   // of the deferred declarations.
@@ -99,7 +95,7 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
   // an error and then recovered.  In either case, the IR will not be valid and
   // the caller should not verify it.
   if (sharedState.diags.isErrorEmitted())
-    return nullptr;
+    return {nullptr, nullptr};
   // Make sure the parse module has no other structural problems detected by
   // the verifier.
   auto verificationTimer = ts.nest("Verify module");
@@ -109,5 +105,31 @@ M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
   // Set the included files if requested.
   if (includedFiles)
     llvm::append_range(*includedFiles, sharedState.getIncludedFiles());
-  return module;
+  return {std::move(module), &moduleDecl};
+}
+
+OwningOpRef<mlir::ModuleOp>
+M::importLitFile(SourceMgr &sourceMgr, MLIRContext *context,
+                 mlir::TimingScope &ts, const KGEN::CompilationOptions &options,
+                 bool useMLIRDiagnostics,
+                 SmallVectorImpl<std::string> *includedFiles) {
+  LitSharedState sharedState(sourceMgr, context, options, useMLIRDiagnostics);
+  auto [module, topLevelDecl] =
+      importLitFileImpl(sourceMgr, sharedState, ts, includedFiles);
+  return std::move(module);
+}
+
+LogicalResult M::generateLitDoc(llvm::SourceMgr &sourceMgr,
+                                MLIRContext *context, raw_ostream &outputOS,
+                                mlir::TimingScope &ts,
+                                const KGEN::CompilationOptions &options) {
+  LitSharedState sharedState(sourceMgr, context, options,
+                             /*useMLIRDiagnostics=*/false);
+  auto [module, moduleDecl] = importLitFileImpl(sourceMgr, sharedState, ts);
+  if (!module)
+    return failure();
+
+  auto docTS = ts.nest("Lit Markdown Generation");
+  generateLitMarkdownDoc(*moduleDecl, outputOS);
+  return success();
 }
