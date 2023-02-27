@@ -16,7 +16,7 @@ from Buffer import NDBuffer
 from DType import DType
 from F32 import F32
 from Int import Int
-from Index import Index
+from Index import StaticIntTuple
 from IO import print
 from List import create_kgen_list
 from Range import range
@@ -37,7 +37,7 @@ fn fill_a(
     for i in range(rows):
         for j in range(cols):
             let val = F32(i + 2 * j)
-            buf.__setitem__(Index(i, j), val.value)
+            buf.__setitem__(StaticIntTuple[2](i, j), val.value)
 
 
 fn fill_b(
@@ -53,7 +53,7 @@ fn fill_b(
     for i in range(rows):
         for j in range(cols):
             let val = F32(i // (j + 1) + j)
-            buf.__setitem__(Index(i, j), val.value)
+            buf.__setitem__(StaticIntTuple[2](i, j), val.value)
 
 
 fn clear_c(
