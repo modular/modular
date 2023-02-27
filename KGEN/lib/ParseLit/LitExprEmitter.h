@@ -19,6 +19,7 @@ struct ASTExprAnd;
 enum class SpecialFunctionKind : uint8_t;
 class SpecialFunctionInfo;
 enum class CallSyntax : uint8_t;
+class ExprEmitter;
 
 /// This class represents the destination context than an expression is being
 /// emitted, when it may produce an RValue.  Example destinations include:
@@ -39,20 +40,17 @@ enum class CallSyntax : uint8_t;
 /// `someExpr()`), in which case emission will create storage when needed on
 /// demand.
 class ValueDest {
-  // TODO: Operation* for let/vardecl.
-  // TODO: PointerUnion<LValue, ExprNode *> representation;
-  ExprNode *context;
-
 public:
   /*implicit*/
-  ValueDest(ExprNode *context = nullptr) : context(context) {}
+  ValueDest(const ExprNode *target = nullptr) : representation(target) {}
+  ValueDest(LValue dest) : representation(dest) {}
   ValueDest(const ValueDest &) = default;
 
-  ExprNode *getContext() const { return context; }
-
-  // TODO:
-  // explicit ValueDest(ExprNode *target) : representation(target) {}
-  // explicit ValueDest(LValue lv) : representation(lv) {}
+private:
+  //  This should only be accessed by ExprEmitter::emitResult.
+  friend class ExprEmitter;
+  // TODO: Operation* for let/vardecl.
+  PointerUnion<LValue, const ExprNode *> representation;
 };
 
 /// This class is the main driver for expression emission, providing helper
@@ -140,8 +138,7 @@ public:
 
   /// This method is used by node implementations of emitExprResultIntoPattern
   /// to emit the result once they determine an lvalue to use.
-  LogicalResult emitExprResultIntoLValue(ASTExprAnd<AnyValue> value,
-                                         ASTExprAnd<LValue> dest);
+  MRValue emitExprResultIntoLValue(ASTExprAnd<AnyValue> value, LValue dest);
 
   /// This helper emits the specified value rep as an RValue.
   RValue emitExprRValue(const ExprNode *node, ValueDest dest = {});
