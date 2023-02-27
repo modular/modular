@@ -1391,7 +1391,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     Location loc = emitter.translateLocation(callLoc);
     Value argVal = emitter.builder->create<POP::VariadicCreateOp>(
         loc, expectedType, variadicArgs);
-    argumentValues.push_back({RValue(argVal), variadicOperands[0].expr});
+    argumentValues.push_back({SRValue(argVal), variadicOperands[0].expr});
   }
 
   assert(nextOperandIdx == operands.size() &&

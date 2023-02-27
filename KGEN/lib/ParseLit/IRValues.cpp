@@ -23,7 +23,7 @@ using namespace M::KGEN::LIT;
 // IRValues Implementation Logic.
 //===----------------------------------------------------------------------===//
 
-using VariantStorage = PointerUnion<PRValue, SRValue, LValue>;
+using VariantStorage = PointerUnion<PRValue, SRValue, MRValue, LValue>;
 
 static raw_ostream &printStorage(raw_ostream &os, VariantStorage storage,
                                  bool isDump = false) {
@@ -31,11 +31,15 @@ static raw_ostream &printStorage(raw_ostream &os, VariantStorage storage,
     os << "<NULL IR Value>\n";
   } else if (auto val = dyn_cast<PRValue>(storage)) {
     if (isDump)
-      os << "M: ";
+      os << "PR: ";
     os << val.get();
   } else if (auto val = dyn_cast<SRValue>(storage)) {
     if (isDump)
-      os << "DR: ";
+      os << "SR: ";
+    os << val;
+  } else if (auto val = dyn_cast<MRValue>(storage)) {
+    if (isDump)
+      os << "MR: ";
     os << val;
   } else if (auto val = dyn_cast<LValue>(storage)) {
     if (isDump)
@@ -88,6 +92,8 @@ static Type getTypeFrom(VariantStorage storage) {
     return attr.get().getType();
   if (auto value = dyn_cast<SRValue>(storage))
     return value.getType();
+  if (auto value = dyn_cast<MRValue>(storage))
+    return value.getType();
   return cast<LValue>(storage).getType();
 }
 
@@ -112,21 +118,30 @@ ASTType PRValue::getIfTypeValue() const {
   return {};
 }
 
-/// This method returns the type of this value when projected as an RValue.
-/// If this is already an RValue, it is the type of the value.  If this is
-/// an LValue, it strips off the pointer type.
-ASTType AnyValue::getRValueType() const {
-  if (auto lv = getIfLValue())
-    return lv.getRValueType();
-  return getType();
-}
-
-/// This method returns the type of this value when projected as an RValue.
-/// If this is already an RValue, it is the type of the value.  If this is
-/// an LValue, it strips off the pointer type.
-ASTType LValue::getRValueType() const {
-  TypedAttr attrType = llvm::cast<POP::PointerType>(getType()).getElementType();
+static Type getPointerElementType(Type pointerType) {
+  TypedAttr attrType =
+      llvm::cast<POP::PointerType>(pointerType).getElementType();
   Type type = PRValue(attrType).getIfTypeValue();
   assert(type && "LValue element type shouldn't be a parameter");
   return type;
+}
+
+/// This method returns the type of this value when projected as an RValue.
+/// Since LValue's are always stored by-pointer, this strips it off.
+ASTType LValue::getRValueType() const {
+  return getPointerElementType(getType());
+}
+
+/// MRValue's represent the address of the stored value.  This returns the
+/// RValue type, the declared type of the value.
+ASTType MRValue::getRValueType() const {
+  return getPointerElementType(getType());
+}
+
+/// This method returns the type of this value when projected as an RValue.
+/// If this is an LValue or MRValue, it strips off the pointer type.
+ASTType AnyValue::getRValueType() const {
+  if (isa_and_nonnull<LValue, MRValue>(storage))
+    return getPointerElementType(getType());
+  return getType();
 }

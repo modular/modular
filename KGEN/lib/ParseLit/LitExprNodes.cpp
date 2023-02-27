@@ -296,19 +296,21 @@ CallableValue ExprNode::emitCallable(ExprEmitter &emitter) const {
   return CallableValue({calleeVal, this});
 }
 
-LogicalResult ExprNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                                  ExprEmitter &emitter) const {
+MRValue ExprNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                            ExprEmitter &emitter) const {
   // Emit this node to see if it is a general LValue.
   AnyValue aValue = emitIR(emitter, ValueDest());
   if (!aValue)
-    return failure();
+    return {};
   LValue lValue = aValue.getIfLValue();
-  if (!lValue)
-    return emitter.emitError(getLoc(), "cannot assign to immutable expression")
-           << getRange();
+  if (!lValue) {
+    emitter.emitError(getLoc(), "cannot assign to immutable expression")
+        << getRange();
+    return {};
+  }
 
   // If we got an lvalue, we can try to emit into it.
-  return emitter.emitExprResultIntoLValue(value, {lValue, this});
+  return emitter.emitExprResultIntoLValue(value, lValue);
 }
 
 /// Return the 'loc' for this node translated to an MLIR location.
@@ -402,9 +404,8 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   return emitCallable(emitter).emitAsValue(emitter, dest);
 }
 
-LogicalResult
-DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                       ExprEmitter &emitter) const {
+MRValue DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                               ExprEmitter &emitter) const {
   ASTDecl &container = emitter.declScope;
 
   // Perform a lookup of the specified decl in the current container.
@@ -418,8 +419,8 @@ DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
     return builder.create<VarDeclOp>(loc, declIRType, nameAttr);
   };
 
-  auto finishLValue = [&](LValue lvalue) -> LogicalResult {
-    return emitter.emitExprResultIntoLValue(value, {lvalue, this});
+  auto finishLValue = [&](LValue lvalue) -> MRValue {
+    return emitter.emitExprResultIntoLValue(value, lvalue);
   };
 
   // If the unresolved name is `_`, then we have a discard pattern.  Python
@@ -455,7 +456,7 @@ DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
   if (decls.empty()) {
     if (lookup.isErroneous())
-      return failure(); // Error already diagnosed.
+      return {}; // Error already diagnosed.
 
     // By policy in order to produce a more predictable programming model,
     // implicit declarations of variables are only allowed in `def` contexts,
@@ -467,12 +468,12 @@ DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
                                               << spelling << "'" << getRange();
       if (funcContext)
         diag << ", `fn` declarations require explicit variable declarations";
-      return failure();
+      return {};
     }
 
     auto diag = emitter.emitError(getLoc()) << getRange();
     diag << "use of unknown declaration '" << spelling << "'";
-    return failure();
+    return {};
   }
 
   ASTDecl &decl = *decls[0];
@@ -488,12 +489,12 @@ DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
   if (auto fieldOp = dyn_cast<StructFieldOp>(decl)) {
     emitter.emitError(getLoc(), "cannot access instance field '")
         << spelling << "' directly; did you mean `self.`?" << getRange();
-    return failure();
+    return {};
   }
 
   emitter.emitError(getLoc(), "cannot assign to declaration '")
       << spelling << "', it isn't a mutable value" << getRange();
-  return failure();
+  return {};
 }
 
 /// Emit IR for an unqualified declaration reference "x" looked up in current
@@ -573,7 +574,7 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter) const {
       }
     }
 
-    return {{AnyValue(RValue(letDecl.getResult())), this}};
+    return {{SRValue(letDecl.getResult()), this}};
   }
 
   // Variable references resolve to an lvalue addressing the variable.
@@ -1368,8 +1369,8 @@ CallableValue ParenNode::emitCallable(ExprEmitter &emitter) const {
   return subExpr->emitCallable(emitter);
 }
 
-LogicalResult ParenNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                                   ExprEmitter &emitter) const {
+MRValue ParenNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                             ExprEmitter &emitter) const {
   return subExpr->emitExprResultIntoPattern(value, emitter);
 }
 

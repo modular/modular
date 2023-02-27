@@ -132,8 +132,8 @@ struct DeclRefNode final : public ExprNode {
   LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
   CallableValue emitCallable(ExprEmitter &emitter) const override;
-  LogicalResult emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                          ExprEmitter &emitter) const override;
+  MRValue emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                    ExprEmitter &emitter) const override;
 };
 
 struct AttributeRefNode final : public ExprNode {
@@ -280,8 +280,8 @@ struct ParenNode final : public ExprNode {
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 
   CallableValue emitCallable(ExprEmitter &emitter) const override;
-  LogicalResult emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                          ExprEmitter &emitter) const override;
+  MRValue emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
+                                    ExprEmitter &emitter) const override;
 };
 
 /// (a, b, c)

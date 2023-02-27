@@ -182,10 +182,12 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
 
   // If we have an expression node destination, then we need to bind this value
   // to a pattern (aka "target" in Python internals nomenclature).
-  if (const ExprNode *context = dest.getContext()) {
-    if (failed(context->emitExprResultIntoPattern({value, node}, *this)))
-      return {};
-  }
+  if (const ExprNode *context =
+          dyn_cast_or_null<const ExprNode *>(dest.representation))
+    return context->emitExprResultIntoPattern({value, node}, *this);
+
+  if (LValue lvalueDest = dyn_cast_or_null<LValue>(dest.representation))
+    return emitExprResultIntoLValue({value, node}, lvalueDest);
 
   // Otherwise we have no prescribed context, use a default one.
   // TODO: Synthesize a vardecl if not an PRValue and the value has
@@ -195,28 +197,28 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
 
 /// This method is used by node implementations of emitExprResultIntoPattern
 /// to emit the result once they determine an lvalue to use.
-LogicalResult ExprEmitter::emitExprResultIntoLValue(ASTExprAnd<AnyValue> value,
-                                                    ASTExprAnd<LValue> dest) {
+MRValue ExprEmitter::emitExprResultIntoLValue(ASTExprAnd<AnyValue> value,
+                                              LValue dest) {
   // The final step of an assignment expression (`=`) converts the value into
   // a type that matches the destination and does a store.
 
   // TODO: This should be an initialization or reassignment, and needs to
   // call __clone__.
-  AnyValue convertedVal = getAsExpectedType(value, dest.ir.getRValueType(),
+  AnyValue convertedVal = getAsExpectedType(value, dest.getRValueType(),
                                             ValueDest(), " in assignment");
 
   // Emit the RHS and coerce to the LHS type.
   SRValue rv = emitSRValue({convertedVal, value.expr});
   if (!rv)
-    return failure();
+    return {};
 
   // If everything worked out, store the resultant value into the lvalue for
   // the destination.
   auto loc = translateLocation(value.expr->getLoc());
-  builder->create<POP::StoreOp>(loc, rv, dest.ir,
+  builder->create<POP::StoreOp>(loc, rv, dest,
                                 /*alignment=*/std::nullopt);
 
-  return success();
+  return MRValue(dest);
 }
 
 //===----------------------------------------------------------------------===//
