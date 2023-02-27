@@ -31,21 +31,6 @@ lit.func @caller(%ref: !kgen.declref<@module::@Adder<size = 10>>)  {
 
 // -----
 
-// CHECK-NOT: lit.file_module
-// CHECK: kgen.generator.interface @"module::interface"()
-// CHECK-NEXT: kgen.generator @implementor()
-// CHECK-NEXT:    implements @"module::interface"
-
-lit.file_module @module {
-  lit.func @interface() attributes {isInterface}
-}
-
-lit.func @implementor() implements @module::@interface {
-  kgen.return
-}
-
-// -----
-
 // CHECK-NOT: lit.
 // CHECK: kgen.generator @"module::foo"()
 // CHECK: kgen.export @"module::foo"

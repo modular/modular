@@ -135,15 +135,6 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   if (parser.parseOptionalAttrDictWithKeyword(parsedAttributes))
     return failure();
 
-  // If this function implements an interface.
-  if (succeeded(parser.parseOptionalKeyword("implements"))) {
-    SymbolRefAttr implementsAttr;
-    if (parser.parseAttribute(implementsAttr, {},
-                              getImplementsAttrName(result.name),
-                              result.attributes))
-      return failure();
-  }
-
   // Disallow attributes that are inferred from elsewhere in the attribute
   // dictionary.
   for (StringRef disallowed : disallowedAttrNames) {
@@ -157,33 +148,9 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
 
   // Parse the required function body.
   Region *region = result.addRegion();
-
-  mlir::OptionalParseResult regionResult =
-      parser.parseOptionalRegion(*region, entryArgs);
-  if (regionResult.has_value()) {
-    if (failed(*regionResult))
-      return failure();
-  } else {
-    if (!result.attributes.get(getIsInterfaceAttrName(result.name)))
-      return parser.emitError(sigLoc, "expected a function body");
-    auto *body = new Block;
-    body->addArguments(
-        signature.getValueInputs(),
-        SmallVector<Location>(signature.getValueInputs().size(),
-                              parser.getEncodedSourceLoc(sigLoc)));
-    region->push_back(body);
-  }
-
-  // Parse an optional evaluator.
-  if (parser.parseOptionalKeyword("evaluator"))
-    return success();
-
-  Type sigType;
-  TypedAttr evaluator;
-  if (parseKGENType(parser, sigType) || parser.parseEqual() ||
-      parseParamValue(parser, evaluator, sigType))
+  if (parser.parseRegion(*region, entryArgs))
     return failure();
-  result.addAttribute(getEvaluatorAttrName(result.name), evaluator);
+
   return success();
 }
 
@@ -207,22 +174,8 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   printFunctionAttributes(p, op, ignoredAttrNames);
   printOptionalConstraints(p, func, cast<DeclInterface>(*op).getConstraints());
 
-  // If this is a generator implementing a generator.interface, include the
-  // symbol for the generator interface.
-  if (SymbolRefAttr implementsAttr = getImplementsAttr()) {
-    p.printNewline();
-    p << "  implements " << implementsAttr;
-  }
-
   p << ' ';
-  if (!func.getFunctionBody().front().empty())
-    p.printRegion(func.getFunctionBody(), /*printEntryBlockArgs=*/false);
-  if (SymbolConstantAttr evaluator = getEvaluatorAttr()) {
-    p << " evaluator ";
-    printKGENType(p, evaluator.getType());
-    p << " = ";
-    printParamValue(p, evaluator);
-  }
+  p.printRegion(func.getFunctionBody(), /*printEntryBlockArgs=*/false);
 }
 
 // Name the arguments of the region with the valueParamNames.
@@ -252,52 +205,6 @@ LogicalResult LIT::FuncOp::verifyRegions() {
   // types.
   if (getValueParamNames().size() != getFunctionType().getNumInputs())
     return emitOpError("incorrect number of value parameter labels");
-
-  // Interfaces must have empty bodies and cannot have an implements attribute.
-  if (getIsInterface()) {
-    if (getImplementsAttr())
-      return emitOpError("@interface and @implements decorators "
-                         "cannot be set at the same time");
-    return success();
-  }
-
-  // FIXME: Interfaces don't have bodies so we can't rely on ODS verification of
-  // the terminator.  When they go away, we should remove
-  // 'NoTerminator' and remove this check.
-
-  // Functions must have non-empty bodies with a terminator.
-  if (getFunctionBody().empty() || getBody()->empty())
-    return emitOpError("expected non-empty function body");
-  if (!getBody()->back().hasTrait<OpTrait::IsTerminator>())
-    return emitOpError("expected a terminator");
-
-  return success();
-}
-
-LogicalResult
-LIT::FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  // If the generator is implementing a generator interface, check that they
-  // line up correctly.
-  SymbolRefAttr interfaceSym = getImplementsAttr();
-  if (!interfaceSym)
-    return success();
-
-  // Check that the callee attribute was specified.
-  auto module = KGENModule::from(*this, symbolTable);
-  auto interface = module.lookup<GeneratorInterfaceOp>(interfaceSym);
-  auto funcInterface = module.lookup<LIT::FuncOp>(interfaceSym);
-  if (!interface && (!funcInterface || !funcInterface.getIsInterface()))
-    return emitError() << interfaceSym
-                       << " does not reference a generator interface";
-  ParamDeclArrayAttr itfResultParams;
-  if (funcInterface)
-    itfResultParams = funcInterface.getResultParamsAttr();
-  else
-    itfResultParams = interface.getResultParamsAttr();
-  // Result parameters need to match, but input parameters may be inferred.
-  if (getResultParamsAttr() != itfResultParams)
-    return emitError() << "lit.func result parameter types must match "
-                          "interface types";
 
   return success();
 }

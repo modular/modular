@@ -115,7 +115,7 @@ kgen.generator @invalid_field_name(%a: index, %container: !kgen.declref<@Bar>) {
 // -----
 
 // expected-error @below {{custom op 'lit.func' arguments requires SSA names}}
-lit.func @no_names(index) {isInterface}
+lit.func @no_names(index)
 
 // -----
 

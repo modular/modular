@@ -93,8 +93,6 @@ static Value createUnwrapOrPropagate(ImplicitLocOpBuilder &b, LIT::FuncOp func,
 /// Lower all lexical terminators in the function and remove dead code.
 static LogicalResult lowerLexicalTerminators(DeclRefType errType,
                                              LIT::FuncOp func) {
-  if (func.getIsInterface())
-    return success();
   if (func.isThrows() && !errType)
     return func.emitError("function throws but no 'Error' type was found");
 

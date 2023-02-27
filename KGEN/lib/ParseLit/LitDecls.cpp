@@ -1097,10 +1097,7 @@ struct FnDecorators : public LitSharedStateUser {
 
 private:
   void applyAdaptive(const DeclRefNode &node);
-  void applyInterface(const DeclRefNode &node);
   void applyRaises(const DeclRefNode &node);
-  void applyImplements(const CallNode &callNode);
-  void applyEvaluator(const CallNode &callNode);
   void applyLateExport(Location loc, SymbolRefAttr symbolName,
                        StringRef aliasName);
   void applyLateExport(Location loc, SymbolRefAttr symbolName,
@@ -1120,20 +1117,6 @@ void FnDecorators::applyAdaptive(const DeclRefNode &node) {
   funcOp.setIsAdaptive(true);
 }
 
-void FnDecorators::applyInterface(const DeclRefNode &node) {
-  if (isMethod) {
-    emitError(node.getLoc(), "interfaces cannot be nested inside a struct")
-        << node.getRange();
-    return;
-  }
-
-  if (funcOp.getImplementsAttr())
-    emitError(node.getLoc(), "interfaces cannot implement other interfaces")
-        << node.getRange();
-
-  funcOp.setIsInterface(true);
-}
-
 void FnDecorators::applyRaises(const DeclRefNode &node) {
   if (funcOp.getIsDef()) {
     emitError(node.getLoc(), "methods defined with 'def' always raise")
@@ -1142,123 +1125,6 @@ void FnDecorators::applyRaises(const DeclRefNode &node) {
   }
 
   funcOp.setSignature(funcOp.getSignature().setFnEffect(FnEffects::Throws));
-}
-
-// @implements interface.
-void FnDecorators::applyImplements(const CallNode &node) {
-  if (funcOp.getImplementsAttr()) {
-    emitError(node.getLoc(), "only one @implements decorator is allowed")
-        << node.getRange();
-    return;
-  }
-
-  if (node.args.size() != 1 || !isa<DeclRefNode>(node.args.front())) {
-    emitError(node.getLoc(),
-              "@implements decorator must specify one interface by name")
-        << node.getParenRange();
-    return;
-  }
-
-  // Perform a name lookup to find the right symbol.
-  const DeclRefNode &nameNode = *cast<DeclRefNode>(node.args.front());
-  StringRef interfaceName = nameNode.spelling;
-  auto result = shared.lookupAndResolveDecl(interfaceName, node.getLoc(), decl,
-                                            /*searchParentScopes=*/true);
-
-  // Reject the code if the interface wasn't found.
-  ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();
-  if (resultDecls.empty()) {
-    if (result.isFailure())
-      emitError(node.getLoc(), "unable to resolve interface named '")
-          << interfaceName << "'" << nameNode.getRange();
-    return;
-  }
-
-  // Reject implementation of overloaded interface.
-  // TODO: Use signature matching to pick the right overload.
-  if (resultDecls.size() > 1) {
-    auto diag =
-        emitError(node.getLoc(),
-                  "TODO: cannot (yet!) implement overloaded interface '")
-        << interfaceName << "'" << nameNode.getRange();
-    return;
-  }
-  auto interfaceDecl = resultDecls[0];
-
-  // Okay, if we found an interface we're implementing, check that it makes
-  // sense.
-  auto funcInterface =
-      dyn_cast_or_null<LIT::FuncOp>(interfaceDecl->getIfOperation());
-  if (!funcInterface || !funcInterface.getIsInterface()) {
-    auto diag = emitError(node.getLoc(), "'")
-                << interfaceName << "' is not a kgen interface"
-                << nameNode.getRange();
-    diag.attachNote(interfaceDecl->getLoc())
-        << "'" << interfaceName << "' declared here";
-    return;
-  }
-
-  // FIXME: This needs to type check the signature here, not defer to
-  // lowering.  This also needs to resolve the interface.
-  funcOp.setImplementsAttr(interfaceDecl->getSymbolRef());
-}
-
-// @evaluator interface.
-void FnDecorators::applyEvaluator(const CallNode &node) {
-  if (funcOp.getEvaluatorAttr()) {
-    emitError(node.getLoc(), "only one @evaluator decorator is allowed")
-        << node.getRange();
-    return;
-  }
-
-  if (node.args.size() != 1 || !isa<DeclRefNode>(node.args.front())) {
-    emitError(node.getLoc(),
-              "@evaluator decorator must specify one function by name")
-        << node.getRange();
-    return;
-  }
-
-  // Perform a name lookup to find the right symbol.
-  DeclRefNode &nameNode = *cast<DeclRefNode>(node.args.front());
-  StringRef evaluatorName = nameNode.spelling;
-  auto result = shared.lookupAndResolveDecl(evaluatorName, node.getLoc(), decl,
-                                            /*searchParentScopes=*/true);
-
-  // Reject the code if no function was found.
-  ArrayRef<ASTDecl *> resultDecls = result.getIfSuccess();
-  if (resultDecls.empty()) {
-    if (result.isFailure())
-      emitError(node.getLoc(), "unable to resolve function named '")
-          << evaluatorName << "'" << nameNode.getRange();
-    return;
-  }
-
-  // Reject implementation of overloaded function.
-  // TODO: Use signature matching to pick the right overload.
-  if (resultDecls.size() > 1) {
-    emitError(node.getLoc(), "cannot (yet!) implement overloaded functions '")
-        << evaluatorName << "'" << nameNode.getRange();
-    return;
-  }
-  auto funcDecl = resultDecls[0];
-
-  auto evaluatorFuncOp =
-      dyn_cast_or_null<LIT::FuncOp>(funcDecl->getIfOperation());
-  if (!evaluatorFuncOp) {
-    auto diag = emitError(node.getLoc(), "'")
-                << evaluatorName << "' is not a valid function"
-                << nameNode.getRange();
-    diag.attachNote(funcDecl->getLoc())
-        << '\'' << evaluatorName << "' declared here";
-    return;
-  }
-
-  if (!funcOp.getIsInterface())
-    emitError(node.getLoc(), "only interfaces can have an evaluator");
-  SignatureType signature = evaluatorFuncOp.getSignature();
-  auto evaluatorAttr =
-      SymbolConstantAttr::get(funcDecl->getSymbolRef(), signature);
-  funcOp.setEvaluatorAttr(evaluatorAttr);
 }
 
 // Apply all signature decorators.
@@ -1272,8 +1138,6 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
       processedIt = true;
       if (declRef->spelling == "staticmethod")
         funcOp.setIsStatic(true);
-      else if (declRef->spelling == "interface")
-        applyInterface(*declRef);
       else if (declRef->spelling == "raises")
         applyRaises(*declRef);
       else if (declRef->spelling == "always_inline")
@@ -1288,16 +1152,12 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
     if (auto callNode = dyn_cast<CallNode>(decorator)) {
       if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
         processedIt = true;
-        if (declRef->spelling == "implements")
-          applyImplements(*callNode);
-        else if (declRef->spelling == "evaluator")
-          applyEvaluator(*callNode);
         // @always_inline("nodebug")
-        else if (declRef->spelling == "always_inline" &&
-                 callNode->args.size() == 1 &&
-                 isa<StringLiteralNode>(callNode->args[0]) &&
-                 cast<StringLiteralNode>(callNode->args[0])->spelling ==
-                     "\"nodebug\"")
+        if (declRef->spelling == "always_inline" &&
+            callNode->args.size() == 1 &&
+            isa<StringLiteralNode>(callNode->args[0]) &&
+            cast<StringLiteralNode>(callNode->args[0])->spelling ==
+                "\"nodebug\"")
           funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::EnabledNoDebug);
         else
           processedIt = false;
@@ -1598,10 +1458,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
   funcOp.getBody()->addArguments(argTypes, argLocs);
 
-  // Interfaces don't have anything else to do.
-  if (funcOp.getIsInterface())
-    return success();
-
   // Functor used to build the debug info for an argument.
   auto buildArgDIInfo = [&](Value argVal, StringRef name, unsigned argIdx) {
     auto &diBuilder = shared.diBuilder;
@@ -1667,13 +1523,6 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, LitLexer &lexer,
   // Check to see if we have a kgen.return at the end of function.  If not,
   // complain or add one implicitly if we have no results.
   Block *bodyBlock = funcOp.getBody();
-  bool isInterface = funcOp.getIsInterface();
-
-  if (isInterface) {
-    if (!bodyBlock->empty())
-      emitError(funcOp.getLoc(), "interfaces must have no body");
-    return success();
-  }
 
   // Insert the default end terminator.
   OpBuilder::atBlockEnd(bodyBlock).create<LIT::EndFuncOp>(funcOp.getLoc());
