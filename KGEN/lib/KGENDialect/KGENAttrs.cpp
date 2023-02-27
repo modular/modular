@@ -11,7 +11,6 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "KGEN/LITDialect/LITAttrs.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "Support/STLExtras.h"
