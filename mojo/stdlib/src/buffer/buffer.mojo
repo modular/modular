@@ -430,7 +430,7 @@ struct NDBuffer[
     var data: DTypePointer[type]
     # This is added just to make it aligned with the zap.ndbuffer
     var _rank: Int
-    var dynamic_shape: StaticTuple[rank, __mlir_type.index]
+    var dynamic_shape: StaticIntTuple[rank]
     var dynamic_dtype: DType
 
     @always_inline("nodebug")
@@ -459,7 +459,7 @@ struct NDBuffer[
 
     fn __new__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type, `>>`],
-        dynamic_shape: StaticTuple[rank, __mlir_type.index],
+        dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
     ) -> NDBuffer[rank, shape, type]:
         return Self {
@@ -471,7 +471,7 @@ struct NDBuffer[
 
     fn __new__(
         ptr: DTypePointer[type],
-        dynamic_shape: StaticTuple[rank, __mlir_type.index],
+        dynamic_shape: StaticIntTuple[rank],
         dynamic_dtype: DType,
     ) -> NDBuffer[rank, shape, type]:
         return NDBuffer[rank, shape, type] {
@@ -840,8 +840,8 @@ struct DynamicRankBuffer:
 
     fn _shape_to_static_tuple[
         rank: __mlir_type.index
-    ](self) -> StaticTuple[rank, __mlir_type.index]:
-        var result: StaticTuple[rank, __mlir_type.index]
+    ](self) -> StaticIntTuple[rank]:
+        var result: StaticIntTuple[rank]
 
         @always_inline
         fn _fill[idx: __mlir_type.index]():
