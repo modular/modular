@@ -241,7 +241,7 @@ struct FilesystemBackend : public BlobCacheBackend {
             os.write(obj->getBufferStart(), obj->getBufferSize());
 
             // Compute and copy the HMAC as well.
-            SHA256Hash hash = hmacSHA256(obj->getBuffer(), kIntegrityKey);
+            BLAKE3Hash hash = hmacBLAKE3(obj->getBuffer(), kIntegrityKey);
             os.write((const char *)hash.data(), hash.size());
             return llvm::Error::success();
           });
@@ -307,12 +307,12 @@ struct FilesystemBackend : public BlobCacheBackend {
     StringRef contentsAndHMAC = buffer->getBuffer();
 
     // Get a StringRef of the contents without the HMAC.
-    StringRef contents = contentsAndHMAC.drop_back(sha256Bytes);
-    SHA256Hash computedHMAC = hmacSHA256(contents, kIntegrityKey);
-    StringRef storedHMAC = contentsAndHMAC.take_back(sha256Bytes);
+    StringRef contents = contentsAndHMAC.drop_back(blake3Bytes);
+    BLAKE3Hash computedHMAC = hmacBLAKE3(contents, kIntegrityKey);
+    StringRef storedHMAC = contentsAndHMAC.take_back(blake3Bytes);
 
     // Check the computed hmac against the one in the file.
-    if (memcmp(computedHMAC.data(), storedHMAC.data(), sha256Bytes)) {
+    if (memcmp(computedHMAC.data(), storedHMAC.data(), blake3Bytes)) {
       return Error("corrupted file: stored hash and computed hash did not "
                    "match for file '" +
                    Twine(filePath.string()) + "'");
