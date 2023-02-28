@@ -403,6 +403,12 @@ static void convertDbgValueToAddr(Operation *op) {
         isa<IntegerType, FloatType>(value.getType()))
       return;
 
+    // Don't build debug info for token values.
+    if (isa<LLVM::LLVMTokenType>(value.getType())) {
+      op->erase();
+      return;
+    }
+
     // Build a new allocation to store the intermediate value.
     OpBuilder allocBuilder = OpBuilder::atBlockBegin(
         &op->getParentOfType<mlir::FunctionOpInterface>().front());
