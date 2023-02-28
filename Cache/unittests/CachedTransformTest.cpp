@@ -59,10 +59,6 @@ func.func private @someFunc() {
 TEST(CachedTransformTest, CacheHits) {
   Runtime runtime(createLeakCheckAllocator(createMallocAllocator()),
                   createSingleThreadWorkQueue());
-
-  // Register the LogicalResult type.
-  LLCL::TypeID::registerType<LogicalResult>();
-
   std::filesystem::path cacheTestPath(STRINGIFY(CACHE_TEST_DIR));
   auto regionBackendChainOr =
       getDefaultBackendChain(runtime, cacheTestPath / "region");

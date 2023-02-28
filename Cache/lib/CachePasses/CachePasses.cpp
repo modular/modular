@@ -39,8 +39,6 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    LLCL::TypeID::registerType<LogicalResult>();
-
     auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
         runtime, createLeakCheckAllocator(createMallocAllocator()),
         createSingleThreadWorkQueue());
@@ -96,8 +94,6 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    LLCL::TypeID::registerType<LogicalResult>();
-
     auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
         runtime, createLeakCheckAllocator(createMallocAllocator()),
         createSingleThreadWorkQueue());
@@ -154,8 +150,6 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    LLCL::TypeID::registerType<LogicalResult>();
-
     auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
         runtime, createLeakCheckAllocator(createMallocAllocator()),
         createSingleThreadWorkQueue());
@@ -210,8 +204,6 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    LLCL::TypeID::registerType<LogicalResult>();
-
     auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
         runtime, createLeakCheckAllocator(createMallocAllocator()),
         createSingleThreadWorkQueue());

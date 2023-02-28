@@ -24,9 +24,6 @@ enum WorkQueueType { kSingleThread = 0, kThreadPool = 1 };
 class AsyncValueTest : public testing::TestWithParam<WorkQueueType> {
 protected:
   std::unique_ptr<Runtime> createRuntime(int numThreads = 4) {
-    TypeID::registerType<int>();
-    TypeID::registerType<char>();
-    TypeID::registerType<size_t>();
     std::unique_ptr<Allocator> allocator =
         createLeakCheckAllocator(createMallocAllocator());
     std::unique_ptr<WorkQueue> workQueue =
