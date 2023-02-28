@@ -725,6 +725,22 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   Region &asyncFnBody = asyncFn.getBody();
   asyncFnBody.takeBody(func.getBody());
 
+  // Generate coroutine machinery.
+  b.setLoc(asyncFn.getLoc());
+  b.setInsertionPointToStart(&asyncFnBody.front());
+  auto coroIdOp = b.create<CallIntrinsicOp>(
+      cache.tokenType, "llvm.coro.id.async",
+      ValueRange{
+          b.create<ConstantOp>(b.getI32IntegerAttr(contextBaseSize)),
+          // FIXME: `malloc` provides no alignment guarantees.
+          b.create<ConstantOp>(b.getI32IntegerAttr(1)),
+          b.create<ConstantOp>(b.getI32IntegerAttr(0)),
+          b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(afp))});
+  Value hdl = b.create<CoroBeginOp>(
+      cache.i8PtrType, coroIdOp.getResult(0),
+      b.create<IntToPtrOp>(cache.i8PtrType,
+                           b.create<ConstantOp>(b.getI32IntegerAttr(0))));
+
   // Replace argument uses with values from the async context.
   BlockArgument contextArg =
       asyncFnBody.addArgument(cache.i8PtrType, func.getLoc());
@@ -743,23 +759,8 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   }
   asyncFnBody.front().eraseArguments(0, asyncFnBody.getNumArguments() - 1);
 
-  // Generate coroutine machinery.
-  b.setLoc(asyncFn.getLoc());
-  b.setInsertionPointToStart(&asyncFnBody.front());
-  auto coroIdOp = b.create<CallIntrinsicOp>(
-      cache.tokenType, "llvm.coro.id.async",
-      ValueRange{
-          b.create<ConstantOp>(b.getI32IntegerAttr(contextBaseSize)),
-          // FIXME: `malloc` provides no alignment guarantees.
-          b.create<ConstantOp>(b.getI32IntegerAttr(1)),
-          b.create<ConstantOp>(b.getI32IntegerAttr(0)),
-          b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(afp))});
-  Value hdl = b.create<CoroBeginOp>(
-      cache.i8PtrType, coroIdOp.getResult(0),
-      b.create<IntToPtrOp>(cache.i8PtrType,
-                           b.create<ConstantOp>(b.getI32IntegerAttr(0))));
-
-  // Returns in the async function are all void.
+  // Returns in the async function are all void. Generate the coroutine end
+  // marker that invokes the callback closure.
   asyncFnBody.walk([&](ReturnOp ret) {
     b.setInsertionPoint(ret);
     b.setLoc(ret.getLoc());
@@ -775,9 +776,17 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   b.setLoc(func.getLoc());
   b.setInsertionPointToStart(func.addEntryBlock());
   // Read the required context size from the async function pointer.
-  Value contextSize = b.create<LoadOp>(b.create<GEPOp>(
-      LLVMPointerType::get(cache.i32Type), b.create<AddressOfOp>(afp),
-      ArrayRef<GEPArg>{0, 1}, /*inbounds=*/true));
+  // NOTE: Hide the global read behind a "prepare" intrinsic to prevent the size
+  // from being inlined into the allocator call until after coroutine splitting,
+  // when it gets updated with the frame size.
+  auto prepare = b.create<CallIntrinsicOp>(
+      cache.i8PtrType, "llvm.coro.prepare.async",
+      Value(b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(afp))));
+  Value contextSize = b.create<LoadOp>(
+      b.create<GEPOp>(LLVMPointerType::get(cache.i32Type),
+                      b.create<BitcastOp>(LLVMPointerType::get(afp.getType()),
+                                          prepare.getResult(0)),
+                      ArrayRef<GEPArg>{0, 1}, /*inbounds=*/true));
   auto allocCall = b.create<POP::ExternalCallOp>(
       cache.ptrType, "malloc",
       Value(b.create<ZExtOp>(cache.i64Type, contextSize)));
