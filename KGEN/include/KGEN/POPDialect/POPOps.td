@@ -34,8 +34,8 @@ class POPOp<string mnemonic, list<Trait> traits = []> :
 // Base class for unary arithmetic pop operations.
 class POP_ArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
     POPOp<mnemonic, traits # [Pure, SameOperandsAndResultType]> {
-  let arguments = (ins UnboundOrIndexOrSignedSIMD:$operand);
-  let results = (outs UnboundOrIndexOrSignedSIMD:$result);
+  let arguments = (ins UnboundOrIndexOrArithmeticSIMD:$operand);
+  let results = (outs UnboundOrIndexOrArithmeticSIMD:$result);
 
   let assemblyFormat = "$operand attr-dict `:` qualified(type($result))";
 

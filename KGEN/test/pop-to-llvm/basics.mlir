@@ -30,6 +30,22 @@ kgen.func @neg_index(%arg0: !pop.scalar<index>) -> !pop.scalar<index> {
   kgen.return %0 : !pop.scalar<index>
 }
 
+// CHECK-LABEL: @neg_simd_int
+kgen.func @neg_simd_int(%arg0: !pop.simd<2, index>,
+                        %arg1: !pop.simd<2, ui8>,
+                        %arg2: !pop.simd<2, si64>) {
+  // CHECK: [[ZERO:%.*]] = llvm.mlir.constant(dense<0> : vector<2xi64>) : vector<2xi64>
+  // CHECK:             = llvm.sub [[ZERO]], {{.*}}  : vector<2xi64>
+  %0 = pop.neg %arg0 : !pop.simd<2, index>
+  // CHECK: [[ZERO:%.*]] = llvm.mlir.constant(dense<0> : vector<2xi8>) : vector<2xi8>
+  // CHECK:             = llvm.sub [[ZERO]], {{.*}}  : vector<2xi8>
+  %1 = pop.neg %arg1 : !pop.simd<2, ui8>
+  // CHECK: [[ZERO:%.*]] = llvm.mlir.constant(dense<0> : vector<2xi64>) : vector<2xi64>
+  // CHECK:             = llvm.sub [[ZERO]], {{.*}}  : vector<2xi64>
+  %2 = pop.neg %arg2 : !pop.simd<2, si64>
+  kgen.return
+}
+
 // CHECK-LABEL: @add_si32
 kgen.func @add_si32(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
   // CHECK: llvm.add

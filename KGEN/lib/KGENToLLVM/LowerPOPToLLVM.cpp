@@ -83,10 +83,26 @@ struct ConvertPOPNeg : public ConvertPOPToLLVMPattern<NegOp> {
     if (dtype.isInt() || dtype.isIndex()) {
       Type type = adaptor.getOperand().getType();
       Value zero;
-      if (auto vec = dyn_cast<VectorType>(type))
-        zero = rewriter.create<LLVM::ConstantOp>(
-            op.getLoc(), DenseIntElementsAttr::get(vec, 0));
-      else
+      if (auto vec = dyn_cast<VectorType>(type)) {
+        auto eltType = vec.getElementType();
+        if (eltType.isInteger(1))
+          zero = rewriter.create<LLVM::ConstantOp>(
+              op.getLoc(), DenseIntElementsAttr::get(vec, (bool)false));
+        else if (eltType.isInteger(8))
+          zero = rewriter.create<LLVM::ConstantOp>(
+              op.getLoc(), DenseIntElementsAttr::get(vec, (unsigned char)0));
+        else if (eltType.isInteger(16))
+          zero = rewriter.create<LLVM::ConstantOp>(
+              op.getLoc(), DenseIntElementsAttr::get(vec, (unsigned short)0));
+        else if (eltType.isInteger(32))
+          zero = rewriter.create<LLVM::ConstantOp>(
+              op.getLoc(), DenseIntElementsAttr::get(vec, (unsigned)0));
+        else if (eltType.isInteger(64))
+          zero = rewriter.create<LLVM::ConstantOp>(
+              op.getLoc(), DenseIntElementsAttr::get(vec, (uint64_t)0));
+        else
+          return op.emitError("could not integer type");
+      } else
         zero = rewriter.create<LLVM::ConstantOp>(op.getLoc(), type, 0);
       rewriter.replaceOpWithNewOp<LLVM::SubOp>(op, zero, adaptor.getOperand());
     } else {
