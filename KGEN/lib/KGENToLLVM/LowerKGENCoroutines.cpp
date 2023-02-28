@@ -9,6 +9,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -655,10 +656,33 @@ struct CoroutineInfo {
 };
 } // namespace
 
+static void updateSubprogramScope(LLVMFuncOp func) {
+  auto sp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func);
+  if (!sp)
+    return;
+
+  auto newSp = DebugInfo::DISubprogramAttr::get(
+      sp.getContext(), sp.getCompileUnit(), sp.getScope(),
+      func.getSymNameAttr(), func.getSymNameAttr(), sp.getFile(), sp.getLine(),
+      sp.getScopeLine(), sp.getSubprogramFlags(), sp.getType());
+  DebugInfo::DIAttrTypeReplacer replacer;
+  replacer.addReplacement(
+      [&](DebugInfo::DISubprogramAttr attr) { return newSp; });
+  replacer.recursivelyReplaceElementsIn(func);
+}
+
+/// Create a coroutine function by moving the body of the async function into a
+/// new function containing the coroutine machinery. In the original function,
+/// generate the code to form the coroutine context and handle. If the coroutine
+/// has no suspends, `coro-split` will replace the handle value with `undef`,
+/// causing everything to explode because we rely on the handle to marshall
+/// arguments and results. Instead, we detect if the coroutine has no suspends,
+/// and in that case we don't generate any coroutine machinery.
 static FailureOr<CoroutineInfo>
 createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
                      POP::CoroutineType coroType, LLVMBuilder &b,
-                     TypeAttrCache &cache, LLVMFuncOp coroEndFn) {
+                     TypeAttrCache &cache, LLVMFuncOp coroEndFn,
+                     bool noSuspend) {
   b.setLoc(func.getLoc());
   b.clearInsertionPoint();
 
@@ -734,22 +758,32 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   // Move the body of the coroutine into the new async function.
   Region &asyncFnBody = asyncFn.getBody();
   asyncFnBody.takeBody(func.getBody());
+  updateSubprogramScope(asyncFn);
+  BlockArgument asyncCtxArg =
+      asyncFnBody.addArgument(cache.i8PtrType, asyncFn.getLoc());
 
   // Generate coroutine machinery.
   b.setLoc(asyncFn.getLoc());
   b.setInsertionPointToStart(&asyncFnBody.front());
-  auto coroIdOp = b.create<CallIntrinsicOp>(
-      cache.tokenType, "llvm.coro.id.async",
-      ValueRange{
-          b.create<ConstantOp>(b.getI32IntegerAttr(contextBaseSize)),
-          // FIXME: `malloc` provides no alignment guarantees.
-          b.create<ConstantOp>(b.getI32IntegerAttr(1)),
-          b.create<ConstantOp>(b.getI32IntegerAttr(0)),
-          b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(afp))});
-  Value hdl = b.create<CoroBeginOp>(
-      cache.i8PtrType, coroIdOp.getResult(0),
-      b.create<IntToPtrOp>(cache.i8PtrType,
-                           b.create<ConstantOp>(b.getI32IntegerAttr(0))));
+  Value hdl;
+  if (noSuspend) {
+    // If there are no suspend points, don't create a coroutine.
+    hdl = b.create<GEPOp>(cache.i8PtrType, asyncCtxArg, GEPArg(contextBaseSize),
+                          /*inbounds=*/true);
+  } else {
+    auto coroIdOp = b.create<CallIntrinsicOp>(
+        cache.tokenType, "llvm.coro.id.async",
+        ValueRange{
+            b.create<ConstantOp>(b.getI32IntegerAttr(contextBaseSize)),
+            // FIXME: `malloc` provides no alignment guarantees.
+            b.create<ConstantOp>(b.getI32IntegerAttr(8)),
+            b.create<ConstantOp>(b.getI32IntegerAttr(0)),
+            b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(afp))});
+    hdl = b.create<CoroBeginOp>(
+        cache.i8PtrType, coroIdOp.getResult(0),
+        b.create<IntToPtrOp>(cache.i8PtrType,
+                             b.create<ConstantOp>(b.getI32IntegerAttr(0))));
+  }
 
   // The coroutine handle is specially handled by the coroutine splitting pass
   // to be replaced by the frame pointer value in each resume function. It is
@@ -760,10 +794,8 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   // all uses the context and arguments to the latest use sites to prevent them
   // from being put on the coroutine frame.
 
-  // Replace argument uses with values from the async context.
-  asyncFnBody.addArgument(cache.i8PtrType, func.getLoc());
-  b.setInsertionPointToStart(&asyncFnBody.front());
-  // Arguments are located at the end.
+  // Replace argument uses with values from the async context. Arguments are
+  // located at the end.
   constexpr int64_t resOffset = 3;
   int64_t argOffset = resOffset + coroType.getResultTypes().size();
   for (auto [idx, arg] :
@@ -779,6 +811,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
           ArrayRef<GEPArg>{0, argOffset + idx}, /*inbounds=*/true);
       use.set(b.create<LoadOp>(argPtr));
     }
+    assert(arg.use_empty() && "didn't replace all uses?");
   }
   asyncFnBody.front().eraseArguments(0, asyncFnBody.getNumArguments() - 1);
 
@@ -789,10 +822,15 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
     b.setLoc(ret.getLoc());
     Value contextPtr = b.create<GEPOp>(
         contextPtrType, hdl, GEPArg(-contextBaseSize), /*inbounds=*/true);
-    b.create<CallIntrinsicOp>(
-        cache.i1Type, "llvm.coro.end.async",
-        ValueRange{hdl, b.create<ConstantOp>(b.getBoolAttr(false)),
-                   b.create<AddressOfOp>(coroEndFn), contextPtr});
+    if (noSuspend) {
+      b.create<CallOp>(coroEndFn,
+                       Value(b.create<BitcastOp>(cache.i8PtrType, contextPtr)));
+    } else {
+      b.create<CallIntrinsicOp>(
+          cache.i1Type, "llvm.coro.end.async",
+          ValueRange{hdl, b.create<ConstantOp>(b.getBoolAttr(false)),
+                     b.create<AddressOfOp>(coroEndFn), contextPtr});
+    }
     ret->eraseOperands(0, ret.getNumOperands());
   });
 
@@ -873,11 +911,14 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
       (coro.asyncFn.getSymName() + ".suspend").str(),
       LLVMFunctionType::get(LLVMVoidType::get(b.getContext()), captureTypes),
       Linkage::Internal);
+  symtab.insert(suspendFn, coro.asyncFn->getIterator());
   suspendFn.getBody().takeBody(op.getBody());
+  updateSubprogramScope(suspendFn);
+  b.setLoc(suspendFn.getLoc());
   b.setInsertionPointToEnd(&suspendFn.getBody().front());
   b.create<ReturnOp>(ValueRange());
-  symtab.insert(suspendFn, coro.asyncFn->getIterator());
 
+  b.setLoc(op.getLoc());
   b.setInsertionPoint(op);
   Value resumeFn = b.create<CallIntrinsicOp>(
                         cache.i8PtrType, "llvm.coro.async.resume", ValueRange())
@@ -940,6 +981,7 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
   if (handles.empty()) {
     // Replace opaque handles with a null pointer.
     for (POP::CoroutineOpaqueHandleOp opaque : opaques) {
+      b.setLoc(opaque.getLoc());
       b.setInsertionPoint(opaque);
       Value cstNullPtr = b.create<IntToPtrOp>(
           cache.i8PtrType, b.create<ConstantOp>(b.getIndexType(), 0));
@@ -950,13 +992,14 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
   }
 
   POP::CoroutineType coroType = handles.front().getType();
-  FailureOr<CoroutineInfo> coro =
-      createAsyncCoroutine(symtab, func, coroType, b, cache, getCoroEndFn());
+  FailureOr<CoroutineInfo> coro = createAsyncCoroutine(
+      symtab, func, coroType, b, cache, getCoroEndFn(), awaits.empty());
   if (failed(coro))
     return failure();
 
   // The coroutine handle is now the first argument of the coroutine function.
   for (POP::CoroutineHandleOp op : handles) {
+    b.setLoc(op.getLoc());
     b.setInsertionPoint(op);
     Value contextPtr =
         b.create<GEPOp>(coro->contextPtrType, coro->hdl,
@@ -966,6 +1009,7 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
     op.erase();
   }
   for (POP::CoroutineOpaqueHandleOp op : opaques) {
+    b.setLoc(op.getLoc());
     b.setInsertionPoint(op);
     Value contextPtr =
         b.create<GEPOp>(coro->contextPtrType, coro->hdl,
