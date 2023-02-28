@@ -250,7 +250,7 @@ static LogicalResult inlineGeneratorCall(
   topLevelGraph.calculate(paramCache);
 
   // Process them. Keep a callstack for a nice error when cycles are detected.
-  SmallVector<CallOp, 16> callstack;
+  SmallVector<Location, 16> callstack;
   llvm::SetVector<Operation *, SmallVector<Operation *, 16>,
                   SmallPtrSet<Operation *, 16>>
       seenFuncs;
@@ -279,8 +279,8 @@ static LogicalResult inlineGeneratorCall(
           gen.getLoc(),
           "function has recursive call to 'always_inline' function");
       assert(callstack.size() == seenFuncs.size());
-      for (auto [call, gen] : llvm::zip(callstack, seenFuncs)) {
-        diag.attachNote(call.getLoc()) << "through call here";
+      for (auto [callLoc, gen] : llvm::zip(callstack, seenFuncs)) {
+        diag.attachNote(callLoc) << "through call here";
         diag.attachNote(gen->getLoc())
             << "to function marked 'always_inline' here";
       }
@@ -288,7 +288,7 @@ static LogicalResult inlineGeneratorCall(
       diag.attachNote(callee.getLoc()) << "back to function here";
       return failure();
     }
-    callstack.push_back(call);
+    callstack.push_back(call.getLoc());
     calls.emplace_back(EndStack{});
 
     // Compute the parameter uses at the callee.
