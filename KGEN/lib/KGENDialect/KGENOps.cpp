@@ -585,6 +585,30 @@ static void printOptionalParamDecls(AsmPrinter &p, Operation *op,
   printParamDecls(p, paramDecls);
 }
 
+bool ParamIfOp::isIsolatedFromAbove(unsigned regionNum) {
+  switch (regionNum) {
+  case 0:
+    return getThenIsolated();
+  case 1:
+    return getElseIsolated();
+  default:
+    llvm_unreachable("unknown region number");
+  }
+}
+
+void ParamIfOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
+  switch (regionNum) {
+  case 0:
+    setThenIsolated(true);
+    break;
+  case 1:
+    setElseIsolated(true);
+    break;
+  default:
+    llvm_unreachable("unknown region number");
+  }
+}
+
 LogicalResult ParamIfOp::verify() {
   TypeRange resultTypes = getResultTypes();
   auto checkTypesMatch = [&](ValueRange other) -> LogicalResult {

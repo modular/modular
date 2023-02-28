@@ -548,12 +548,19 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
     ```
   }];
 
-  let arguments = (ins AttrOfType<I1>:$cond,
-                       KGEN_ParamDeclArrayAttr:$paramDecls);
+  let arguments = (ins
+    AttrOfType<I1>:$cond,
+    KGEN_ParamDeclArrayAttr:$paramDecls,
+    UnitAttr:$thenIsolated,
+    UnitAttr:$elseIsolated
+  );
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$thenRegion, SizedRegion<1>:$elseRegion);
 
   let extraClassDeclaration = [{
+    bool isIsolatedFromAbove(unsigned regionNum);
+    void notifyKnownIsolatedFromAbove(unsigned regionNum);
+
     Block::OpListType &getThenOps() {
       return getThenRegion().front().getOperations();
     }
