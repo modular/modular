@@ -40,16 +40,16 @@ llvm.func @coro_destroy() {
 // CHECK-LABEL: llvm.func @async_fn_af
 // CHECK-SAME: (%arg0: !llvm.ptr<i8>)
 llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
-  // CHECK-DAG: %[[C32:.*]] = llvm.mlir.constant(48 : i32)
-  // CHECK-DAG: %[[C1:.*]] = llvm.mlir.constant(1 : i32)
-  // CHECK-DAG: %[[C0:.*]] = llvm.mlir.constant(0 : i32)
+  // CHECK: %[[CTXT:.*]] = llvm.bitcast %arg0 : !llvm.ptr<i8> to !llvm.ptr<struct<(ptr<i8>, ptr<func<void (ptr<i8>)>>, struct<(ptr, ptr)>, i64, i32)>>
+  // CHECK: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[CTXT]][0, 4]
+  // CHECK: %[[ARG:.*]] = llvm.load %[[ARG_PTR]]
+  // CHECK: %[[C32:.*]] = llvm.mlir.constant(48 : i32)
+  // CHECK: %[[C1:.*]] = llvm.mlir.constant(1 : i32)
+  // CHECK: %[[C0:.*]] = llvm.mlir.constant(0 : i32)
   // CHECK: %[[AFP:.*]] = llvm.mlir.addressof @async_fn_afp
   // CHECK: %[[AFP_CAST:.*]] = llvm.bitcast %[[AFP]]
   // CHECK: %[[TOK:.*]] = llvm.call_intrinsic "llvm.coro.id.async"(%[[C32]], %[[C1]], %[[C0]], %[[AFP_CAST]])
   // CHECK: %[[HDL:.*]] = llvm.intr.coro.begin %[[TOK]]
-  // CHECK: %[[CTXT:.*]] = llvm.bitcast %arg0 : !llvm.ptr<i8> to !llvm.ptr<struct<(ptr<i8>, ptr<func<void (ptr<i8>)>>, struct<(ptr, ptr)>, i64, i32)>>
-  // CHECK: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[CTXT]][0, 4]
-  // CHECK: %[[ARG:.*]] = llvm.load %[[ARG_PTR]]
   %hdl = pop.coroutine.handle : <() -> (i64)>
   // CHECK: "use"(%[[ARG]])
   "use"(%arg0) : (i32) -> ()
@@ -93,7 +93,10 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
 
 // CHECK-LABEL: llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8>
 // CHECK-NEXT: %[[AFP:.*]] = llvm.mlir.addressof @async_fn_afp
-// CHECK-NEXT: %[[CTXT_SZ_PTR:.*]] = llvm.getelementptr inbounds %0[0, 1]
+// CHECK-NEXT: %[[AFP_i8ptr:.*]] = llvm.bitcast %[[AFP]]
+// CHECK-NEXT: %[[AFP_PREPARE:.*]] = llvm.call_intrinsic "llvm.coro.prepare.async"(%[[AFP_i8ptr]])
+// CHECK-NEXT: %[[AFP_CASTED:.*]] = llvm.bitcast %[[AFP_PREPARE]]
+// CHECK-NEXT: %[[CTXT_SZ_PTR:.*]] = llvm.getelementptr inbounds %[[AFP_CASTED]][0, 1]
 // CHECK-NEXT: %[[CTXT_SZ_i32:.*]] = llvm.load %[[CTXT_SZ_PTR]]
 // CHECK-NEXT: %[[CTXT_SZ:.*]] = llvm.zext %[[CTXT_SZ_i32]] : i32 to i64
 // CHECK-NEXT: %[[MEM:.*]] = pop.external_call @malloc(%[[CTXT_SZ]])
