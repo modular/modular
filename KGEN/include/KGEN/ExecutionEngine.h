@@ -81,6 +81,8 @@ private:
   /// This class is not copy-constructible.
   ExecutionEngine(const ExecutionEngine &other) = delete;
 
+  ErrorOr<llvm::orc::JITDylib *> getOrCreateDylib(StringRef libName);
+
   /// The compilation options to use.
   CompilationOptions options;
 
