@@ -41,7 +41,7 @@ llvm.func @coro_destroy() {
 // CHECK-SAME: (%arg0: !llvm.ptr<i8>)
 llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
   // CHECK: %[[C32:.*]] = llvm.mlir.constant(48 : i32)
-  // CHECK: %[[C1:.*]] = llvm.mlir.constant(1 : i32)
+  // CHECK: %[[C1:.*]] = llvm.mlir.constant(8 : i32)
   // CHECK: %[[C0:.*]] = llvm.mlir.constant(0 : i32)
   // CHECK: %[[AFP:.*]] = llvm.mlir.addressof @async_fn_afp
   // CHECK: %[[AFP_CAST:.*]] = llvm.bitcast %[[AFP]]
