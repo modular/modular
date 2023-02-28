@@ -45,15 +45,18 @@ fn reduce[
 ](src: Buffer[size, type], init: SIMD[1, acc_type]) -> __mlir_type[
     `!pop.scalar<`, acc_type, `>`
 ]:
-    var acc_simd = SIMD[simd_width, acc_type].splat(init)
+    alias unroll_factor = 8  # TODO: search
+    # TODO: explicitly unroll like vectorize_unroll does.
+    alias unrolled_simd_width = simd_width * unroll_factor
+    var acc_simd = SIMD[unrolled_simd_width, acc_type].splat(init)
     let len = src.__len__()
-    let vector_end = (len // simd_width) * simd_width
-    for i in range(0, vector_end, simd_width):
-        acc_simd = map_fn[simd_width, acc_type, type](
-            acc_simd, src.simd_load[simd_width](i)
+    let vector_end = (len // unrolled_simd_width) * unrolled_simd_width
+    for i in range(0, vector_end, unrolled_simd_width):
+        acc_simd = map_fn[unrolled_simd_width, acc_type, type](
+            acc_simd, src.simd_load[unrolled_simd_width](i)
         )
 
-    var acc = reduce_fn[simd_width, acc_type](acc_simd)
+    var acc = reduce_fn[unrolled_simd_width, acc_type](acc_simd)
     for ii in range(vector_end, len):  # TODO(#8365) use `i`
         acc = map_fn[1, acc_type, type](acc, src.__getitem__(ii))
     return acc.__getitem__(0)
