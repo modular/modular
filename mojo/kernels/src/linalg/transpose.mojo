@@ -96,20 +96,20 @@ fn transpose_inplace[
     let row6 = buf.simd_load[8](StaticIntTuple[2](6, 0))
     let row7 = buf.simd_load[8](StaticIntTuple[2](7, 0))
 
-    alias premute_0 = create_kgen_list[__mlir_type.index](
+    alias permute_0 = create_kgen_list[__mlir_type.index](
         0, 8, 1, 9, 4, 12, 5, 13
     )
     alias permute_1 = create_kgen_list[__mlir_type.index](
         2, 10, 3, 11, 6, 14, 7, 15
     )
 
-    let k0 = row0.shuffle[8, premute_0](row1)
+    let k0 = row0.shuffle[8, permute_0](row1)
     let k1 = row0.shuffle[8, permute_1](row1)
-    let k2 = row2.shuffle[8, premute_0](row3)
+    let k2 = row2.shuffle[8, permute_0](row3)
     let k3 = row2.shuffle[8, permute_1](row3)
-    let k4 = row4.shuffle[8, premute_0](row5)
+    let k4 = row4.shuffle[8, permute_0](row5)
     let k5 = row4.shuffle[8, permute_1](row5)
-    let k6 = row6.shuffle[8, premute_0](row7)
+    let k6 = row6.shuffle[8, permute_0](row7)
     let k7 = row6.shuffle[8, permute_1](row7)
 
     alias permute_2 = create_kgen_list[__mlir_type.index](
@@ -152,6 +152,150 @@ fn transpose_inplace[
     buf.simd_store[8](StaticIntTuple[2](5, 0), r5)
     buf.simd_store[8](StaticIntTuple[2](6, 0), r6)
     buf.simd_store[8](StaticIntTuple[2](7, 0), r7)
+
+
+@adaptive
+fn transpose_inplace[
+    rows: __mlir_type.index,
+    cols: __mlir_type.index,
+    type: __mlir_type.`!kgen.dtype`,
+](buf0: NDBuffer[2, create_kgen_list[__mlir_type.index](rows, cols), type]):
+    assert_param[rows == 16]()
+    assert_param[cols == 16]()
+    var buf = rebind[
+        NDBuffer[
+            2,
+            create_kgen_list[__mlir_type.index](16, 16),
+            type,
+        ],
+    ](buf0)
+
+    alias permute_0 = create_kgen_list[__mlir_type.index](
+        0, 16, 1, 17, 4, 20, 5, 21, 8, 24, 9, 25, 12, 28, 13, 29
+    )
+    alias permute_1 = create_kgen_list[__mlir_type.index](
+        2, 18, 3, 19, 6, 22, 7, 23, 10, 26, 11, 27, 14, 30, 15, 31
+    )
+    alias permute_2 = create_kgen_list[__mlir_type.index](
+        0, 1, 16, 17, 4, 5, 20, 21, 8, 9, 24, 25, 12, 13, 28, 29
+    )
+    alias permute_3 = create_kgen_list[__mlir_type.index](
+        2, 3, 18, 19, 6, 7, 22, 23, 10, 11, 26, 27, 14, 15, 30, 31
+    )
+    alias permute_4 = create_kgen_list[__mlir_type.index](
+        0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
+    )
+    alias permute_5 = create_kgen_list[__mlir_type.index](
+        4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
+    )
+    alias permute_6 = create_kgen_list[__mlir_type.index](
+        0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
+    )
+    alias permute_7 = create_kgen_list[__mlir_type.index](
+        4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
+    )
+
+    let row00 = buf.simd_load[16](StaticIntTuple[2](0, 0))
+    let row01 = buf.simd_load[16](StaticIntTuple[2](1, 0))
+    let row02 = buf.simd_load[16](StaticIntTuple[2](2, 0))
+    let row03 = buf.simd_load[16](StaticIntTuple[2](3, 0))
+    let row04 = buf.simd_load[16](StaticIntTuple[2](4, 0))
+    let row05 = buf.simd_load[16](StaticIntTuple[2](5, 0))
+    let row06 = buf.simd_load[16](StaticIntTuple[2](6, 0))
+    let row07 = buf.simd_load[16](StaticIntTuple[2](7, 0))
+    let row08 = buf.simd_load[16](StaticIntTuple[2](8, 0))
+    let row09 = buf.simd_load[16](StaticIntTuple[2](9, 0))
+    let row10 = buf.simd_load[16](StaticIntTuple[2](10, 0))
+    let row11 = buf.simd_load[16](StaticIntTuple[2](11, 0))
+    let row12 = buf.simd_load[16](StaticIntTuple[2](12, 0))
+    let row13 = buf.simd_load[16](StaticIntTuple[2](13, 0))
+    let row14 = buf.simd_load[16](StaticIntTuple[2](14, 0))
+    let row15 = buf.simd_load[16](StaticIntTuple[2](15, 0))
+
+    let k00 = row00.shuffle[16, permute_0](row01)
+    let k01 = row00.shuffle[16, permute_1](row01)
+    let k02 = row02.shuffle[16, permute_0](row03)
+    let k03 = row02.shuffle[16, permute_1](row03)
+    let k04 = row04.shuffle[16, permute_0](row05)
+    let k05 = row04.shuffle[16, permute_1](row05)
+    let k06 = row06.shuffle[16, permute_0](row07)
+    let k07 = row06.shuffle[16, permute_1](row07)
+    let k08 = row08.shuffle[16, permute_0](row09)
+    let k09 = row08.shuffle[16, permute_1](row09)
+    let k10 = row10.shuffle[16, permute_0](row11)
+    let k11 = row10.shuffle[16, permute_1](row11)
+    let k12 = row12.shuffle[16, permute_0](row13)
+    let k13 = row12.shuffle[16, permute_1](row13)
+    let k14 = row14.shuffle[16, permute_0](row15)
+    let k15 = row14.shuffle[16, permute_1](row15)
+
+    let j00 = k00.shuffle[16, permute_2](k02)
+    let j01 = k00.shuffle[16, permute_3](k02)
+    let j02 = k01.shuffle[16, permute_2](k03)
+    let j03 = k01.shuffle[16, permute_3](k03)
+    let j04 = k04.shuffle[16, permute_2](k06)
+    let j05 = k04.shuffle[16, permute_3](k06)
+    let j06 = k05.shuffle[16, permute_2](k07)
+    let j07 = k05.shuffle[16, permute_3](k07)
+    let j08 = k08.shuffle[16, permute_2](k10)
+    let j09 = k08.shuffle[16, permute_3](k10)
+    let j10 = k09.shuffle[16, permute_2](k11)
+    let j11 = k09.shuffle[16, permute_3](k11)
+    let j12 = k12.shuffle[16, permute_2](k14)
+    let j13 = k12.shuffle[16, permute_3](k14)
+    let j14 = k13.shuffle[16, permute_2](k15)
+    let j15 = k13.shuffle[16, permute_3](k15)
+
+    let t00 = j00.shuffle[16, permute_4](j04)
+    let t01 = j01.shuffle[16, permute_4](j05)
+    let t02 = j02.shuffle[16, permute_4](j06)
+    let t03 = j03.shuffle[16, permute_4](j07)
+    let t04 = j00.shuffle[16, permute_5](j04)
+    let t05 = j01.shuffle[16, permute_5](j05)
+    let t06 = j02.shuffle[16, permute_5](j06)
+    let t07 = j03.shuffle[16, permute_5](j07)
+    let t08 = j08.shuffle[16, permute_4](j12)
+    let t09 = j09.shuffle[16, permute_4](j13)
+    let t10 = j10.shuffle[16, permute_4](j14)
+    let t11 = j11.shuffle[16, permute_4](j15)
+    let t12 = j08.shuffle[16, permute_5](j12)
+    let t13 = j09.shuffle[16, permute_5](j13)
+    let t14 = j10.shuffle[16, permute_5](j14)
+    let t15 = j11.shuffle[16, permute_5](j15)
+
+    let r00 = t00.shuffle[16, permute_6](t08)
+    let r01 = t01.shuffle[16, permute_6](t09)
+    let r02 = t02.shuffle[16, permute_6](t10)
+    let r03 = t03.shuffle[16, permute_6](t11)
+    let r04 = t04.shuffle[16, permute_6](t12)
+    let r05 = t05.shuffle[16, permute_6](t13)
+    let r06 = t06.shuffle[16, permute_6](t14)
+    let r07 = t07.shuffle[16, permute_6](t15)
+    let r08 = t00.shuffle[16, permute_7](t08)
+    let r09 = t01.shuffle[16, permute_7](t09)
+    let r10 = t02.shuffle[16, permute_7](t10)
+    let r11 = t03.shuffle[16, permute_7](t11)
+    let r12 = t04.shuffle[16, permute_7](t12)
+    let r13 = t05.shuffle[16, permute_7](t13)
+    let r14 = t06.shuffle[16, permute_7](t14)
+    let r15 = t07.shuffle[16, permute_7](t15)
+
+    buf.simd_store[16](StaticIntTuple[2](0, 0), r00)
+    buf.simd_store[16](StaticIntTuple[2](1, 0), r01)
+    buf.simd_store[16](StaticIntTuple[2](2, 0), r02)
+    buf.simd_store[16](StaticIntTuple[2](3, 0), r03)
+    buf.simd_store[16](StaticIntTuple[2](4, 0), r04)
+    buf.simd_store[16](StaticIntTuple[2](5, 0), r05)
+    buf.simd_store[16](StaticIntTuple[2](6, 0), r06)
+    buf.simd_store[16](StaticIntTuple[2](7, 0), r07)
+    buf.simd_store[16](StaticIntTuple[2](8, 0), r08)
+    buf.simd_store[16](StaticIntTuple[2](9, 0), r09)
+    buf.simd_store[16](StaticIntTuple[2](10, 0), r10)
+    buf.simd_store[16](StaticIntTuple[2](11, 0), r11)
+    buf.simd_store[16](StaticIntTuple[2](12, 0), r12)
+    buf.simd_store[16](StaticIntTuple[2](13, 0), r13)
+    buf.simd_store[16](StaticIntTuple[2](14, 0), r14)
+    buf.simd_store[16](StaticIntTuple[2](15, 0), r15)
 
 
 @adaptive

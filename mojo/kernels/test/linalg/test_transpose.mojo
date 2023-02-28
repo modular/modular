@@ -103,21 +103,51 @@ fn test_transpose_4x4():
 fn test_transpose_8x8():
     print("== test_transpose_8x8\n")
 
-    var matrix = NDBuffer[
-        2,
-        create_kgen_list[__mlir_type.index](8, 8),
-        DType.index.value,
-    ].stack_allocation()
-
     alias num_rows = 8
     alias num_cols = 8
+
+    var matrix = NDBuffer[
+        2,
+        create_kgen_list[__mlir_type.index](num_rows, num_cols),
+        DType.index.value,
+    ].stack_allocation()
 
     for i in range(num_rows):
         for j in range(num_cols):
             let val = i * num_cols + j
             matrix.__setitem__(StaticIntTuple[2](i, j), val.__as_mlir_index())
 
-    transpose_inplace[8, 8, DType.index.value](matrix)
+    transpose_inplace[num_rows, num_cols, DType.index.value](matrix)
+
+    # TODO(#8365) use `i` and `j`
+    for ii in range(num_rows):
+        for jj in range(num_cols):
+            let expected: Int = jj * num_rows + ii
+            let actual = matrix[ii, jj][0]
+            # CHECK-NOT: Transpose 8x8 failed
+            if expected != actual:
+                print("Transpose 8x8 failed\n")
+
+
+# CHECK-LABEL: test_transpose_16x16
+fn test_transpose_16x16():
+    print("== test_transpose_16x16\n")
+
+    alias num_rows = 16
+    alias num_cols = 16
+
+    var matrix = NDBuffer[
+        2,
+        create_kgen_list[__mlir_type.index](num_rows, num_cols),
+        DType.index.value,
+    ].stack_allocation()
+
+    for i in range(num_rows):
+        for j in range(num_cols):
+            let val = i * num_cols + j
+            matrix.__setitem__(StaticIntTuple[2](i, j), val.__as_mlir_index())
+
+    transpose_inplace[num_rows, num_cols, DType.index.value](matrix)
 
     # TODO(#8365) use `i` and `j`
     for ii in range(num_rows):
@@ -412,6 +442,7 @@ fn test_transpose_3d():
 fn main():
     test_transpose_4x4()
     test_transpose_8x8()
+    test_transpose_16x16()
     test_transpose_2d_identity()
     test_transpose_2d()
     test_transpose_3d_identity()
