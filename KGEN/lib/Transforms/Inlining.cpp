@@ -234,6 +234,24 @@ struct AttrTypeMangler {
 };
 } // namespace
 
+/// Insert a new parameter declaration into all nested declaration scopes.
+static void propagateNewDecls(ArrayRef<ParamDeclAttr> newDecls,
+                              ParameterUseDefGraph &topLevelGraph,
+                              ParameterUseDefGraph &graph, Operation *declOp,
+                              Region *declScope) {
+  // Populate the new declarations into the call scope graph.
+  for (ParamDeclAttr decl : newDecls) {
+    graph.decls.try_emplace(
+        decl.getName(), ParamDeclaration{decl.getType(), declOp, declScope});
+  }
+  // Recurse on nested scopes.
+  for (Region *nestedDecl : graph.nestedDecls) {
+    propagateNewDecls(newDecls, topLevelGraph,
+                      topLevelGraph.nestedScopes.find(nestedDecl)->second,
+                      declOp, declScope);
+  }
+}
+
 static LogicalResult inlineGeneratorCall(
     GeneratorOp gen, const SymbolTable &symtab,
     ParameterCollector::Analysis &paramCache,
@@ -366,6 +384,13 @@ static LogicalResult inlineGeneratorCall(
         assert(inserted);
       }
     });
+    // Decl scopes that were nested under the callee are now nested under the
+    // current call scope.
+    for (Region *nestedDecl : calleeParams.nestedDecls) {
+      callScope.nestedDecls.push_back(
+          &map.lookup(nestedDecl->getParentOp())
+               ->getRegion(nestedDecl->getRegionNumber()));
+    }
 
     // Do name mangling.
     for (Operation *user : calleeParams.paramOps) {
@@ -389,11 +414,8 @@ static LogicalResult inlineGeneratorCall(
       });
       cast<ParamOpInterface>(cloned).renameDeclarations(newDecls);
       // Populate the new declarations into the call scope graph.
-      for (ParamDeclAttr decl : newDecls) {
-        callScope.decls.try_emplace(
-            decl.getName(),
-            ParamDeclaration{decl.getType(), cloned, scopeRegion});
-      }
+      propagateNewDecls(newDecls, topLevelGraph, callScope, cloned,
+                        scopeRegion);
     }
     for (Region *nestedScope : calleeParams.nestedDecls) {
       mangler.recursivelyMangle(
@@ -412,9 +434,7 @@ static LogicalResult inlineGeneratorCall(
           ParamOperatorAttr::get(b.getContext(), POC::Rebind, value.getValue(),
                                  decl.getType()));
       // Register the new declaration.
-      callScope.decls.try_emplace(
-          decl.getName(),
-          ParamDeclaration{decl.getType(), declOp, scopeRegion});
+      propagateNewDecls(decl, topLevelGraph, callScope, declOp, scopeRegion);
     }
 
     bool stripDebugInfo =

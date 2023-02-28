@@ -715,3 +715,57 @@ kgen.generator @nodebug_inline_me<T: type>(%arg0: !kgen.paramref<T>) always_inli
   debuginfo.value #local_variable = %arg0 : !kgen.paramref<T>
   kgen.return
 }
+
+// -----
+
+// COM: https://github.com/modularml/modular/issues/8586
+
+kgen.generator @unroll<func: <idx>() -> ()>() always_inline {
+  kgen.param.constant: <idx>() -> () = <func>
+  kgen.return
+}
+
+kgen.generator @nested_func_call<func: () -> ()>() always_inline {
+  kgen.param.declare.region func_wrapper = () {
+    kgen.param.declare.region nested_func = <idx>() {
+      kgen.call_param[() -> (): func]()
+      kgen.return
+    }
+    kgen.call @unroll<func: <idx>() -> () = nested_func>() : () -> ()
+    kgen.return
+  }
+  kgen.call_param[() -> (): func_wrapper]()
+  kgen.return
+}
+
+kgen.generator @pass_it() always_inline {
+  kgen.param.declare.region id = () {
+    kgen.return
+  }
+  kgen.call @nested_func_call<func: () -> () = id>() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @main
+kgen.generator @main() {
+  // CHECK: kgen.param.declare.region id0
+  // CHECK: kgen.param.declare func0: () -> () = <id0>
+  // CHECK: kgen.param.declare.region func_wrapper0 = () {
+    // CHECK: kgen.param.declare.region nested_func = <idx>() {
+      // CHECK: kgen.call_param[() -> (): func0]
+    // CHECK: kgen.param.declare func1: <idx>() -> () = <nested_func>
+    // CHECK: kgen.param.constant: <idx>() -> () = <func1>
+  // CHECK: kgen.call_param[() -> (): func_wrapper0]
+  kgen.call @pass_it() : () -> ()
+
+  // CHECK: kgen.param.declare.region id
+  // CHECK: kgen.param.declare func: () -> () = <id>
+  // CHECK: kgen.param.declare.region func_wrapper = () {
+    // CHECK: kgen.param.declare.region nested_func = <idx>() {
+      // CHECK: kgen.call_param[() -> (): func]
+    // CHECK: kgen.param.declare func0: <idx>() -> () = <nested_func>
+    // CHECK: kgen.param.constant: <idx>() -> () = <func0>
+  // CHECK: kgen.call_param[() -> (): func_wrapper]
+  kgen.call @pass_it() : () -> ()
+  kgen.return
+}
