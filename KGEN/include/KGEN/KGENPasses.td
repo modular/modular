@@ -182,21 +182,6 @@ def LowerKGENCoroutinesAsync : Pass<"lower-coroutines-async",
 }
 
 //===----------------------------------------------------------------------===//
-// LowerKGENCoroutines
-//===----------------------------------------------------------------------===//
-
-def LowerKGENCoroutines : Pass<"lower-coroutines", "mlir::LLVM::LLVMFuncOp"> {
-  let summary = "Lower `pop` coroutine operations to LLVM intrinsics.";
-  let description = [{
-    The `lower-coroutines` pass lowerings KGEN coroutines implemented with
-    POP coroutine operations to LLVM coroutine intrinsics using switched-resume
-    lowering.
-  }];
-
-  let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-}
-
-//===----------------------------------------------------------------------===//
 // LowerPOPToLLVM
 //===----------------------------------------------------------------------===//
 
