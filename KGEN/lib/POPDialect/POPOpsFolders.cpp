@@ -244,6 +244,16 @@ static SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, OpFns &&...ops) {
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
+// Unary Operations
+
+OpFoldResult NegOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
+  return foldSIMDOp(
+      operands, [](APSInt val) { return -val; },
+      [](APFloat val) { return llvm::neg(val); });
+}
+
+//===----------------------------------------------------------------------===//
 // Binary Operations
 
 OpFoldResult AddOp::fold(FoldAdaptor adaptor) {
