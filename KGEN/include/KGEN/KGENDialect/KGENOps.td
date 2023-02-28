@@ -564,6 +564,11 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
     ArrayRef<ParamDeclAttr> getInputParamDecls() { return getParamDecls(); }
   }];
 
+  let assemblyFormat = [{
+    ` ` `<` custom<ParamValue>($cond, "$_builder.getI1Type()") ``
+    custom<OptionalParamDecls>($paramDecls) `>` (`->` type($results)^)?
+    $thenRegion `else` $elseRegion attr-dict
+  }];
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 

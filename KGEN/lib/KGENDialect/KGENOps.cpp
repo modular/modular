@@ -568,63 +568,21 @@ OpFoldResult ParamConstantOp::fold(FoldAdaptor adaptor) {
 // ParamIfOp
 //===----------------------------------------------------------------------===//
 
-/// Parses a kgen.param.if op.
-///
-/// operation ::=
-///   `kgen.param.if` `<` condition (`->` result-attrs)? `>` `{`
-///     then-region
-///   `} else {`
-///     else-region
-///   `}`
-///
-ParseResult ParamIfOp::parse(OpAsmParser &parser, OperationState &result) {
-  // Parse the condition.
-  TypedAttr conditionAttr;
-  if (parser.parseLess() ||
-      parseParamValue(parser, conditionAttr, parser.getBuilder().getI1Type()))
-    return failure();
-  result.addAttribute(ParamIfOp::getCondAttrName(result.name), conditionAttr);
-
-  // We might have result params, parse them if we do.
-  auto decls = parser.getBuilder().getAttr<ParamDeclArrayAttr>(
-      ArrayRef<ParamDeclAttr>{});
-  if (succeeded(parser.parseOptionalArrow()))
-    if (parseParamDecls(parser, decls))
-      return failure();
-  result.addAttribute(ParamIfOp::getParamDeclsAttrName(result.name), decls);
-
-  // Parse any possible result types.
-  SmallVector<Type> resultTypes;
-  if (parser.parseGreater() || parser.parseOptionalArrowTypeList(resultTypes))
-    return failure();
-  result.addTypes(resultTypes);
-
-  // Parse the `then` and `else` regions.
-  Region *thenRegion = result.addRegion();
-  Region *elseRegion = result.addRegion();
-  if (parser.parseRegion(*thenRegion) || parser.parseKeyword("else") ||
-      parser.parseRegion(*elseRegion))
-    return failure();
-
-  return success();
+static ParseResult parseOptionalParamDecls(AsmParser &p,
+                                           ParamDeclArrayAttr &paramDecls) {
+  if (p.parseOptionalArrow()) {
+    paramDecls = ParamDeclArrayAttr::get(p.getContext(), {});
+    return success();
+  }
+  return parseParamDecls(p, paramDecls);
 }
 
-/// Print the FuncOp. We use a shared printer with the GeneratorOp since it is
-/// a superset of what a func is.
-void ParamIfOp::print(OpAsmPrinter &p) {
-  p << " <";
-  printParamValue(p, getCond(), getCond().getType());
-  if (!getParamDecls().empty()) {
-    p << " -> ";
-    printParamDecls(p, getParamDecls());
-  }
-
-  p << '>';
-  p.printOptionalArrowTypeList(getResultTypes());
-  p << ' ';
-  p.printRegion(getThenRegion());
-  p << " else ";
-  p.printRegion(getElseRegion());
+static void printOptionalParamDecls(AsmPrinter &p, Operation *op,
+                                    ParamDeclArrayAttr paramDecls) {
+  if (paramDecls.empty())
+    return;
+  p << " -> ";
+  printParamDecls(p, paramDecls);
 }
 
 LogicalResult ParamIfOp::verify() {
