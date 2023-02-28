@@ -56,7 +56,9 @@ struct TypeParameterAttr
 
 struct PointerParameterAttr
     : public ParameterAttr::ExternalModel<PointerParameterAttr, PointerAttr> {
-  bool isConstant(Attribute attr) const { return true; }
+  bool isConstant(Attribute attr) const {
+    return !isParameterizedType(cast<PointerAttr>(attr).getType());
+  }
 };
 } // namespace
 
