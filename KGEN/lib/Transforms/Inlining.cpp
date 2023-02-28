@@ -81,12 +81,17 @@ namespace {
 /// types in an expression tree while accounting for name shadowing in a
 /// signature type.
 struct AttrTypeMangler {
-  AttrTypeMangler() {}
+  using ReflessCache = DenseSet<const void *>;
 
-  explicit AttrTypeMangler(Builder &b, const ParameterUseDefGraph &curScope,
-                           const ParameterUseDefGraph &inlinedScope) {
-    TimeTraceScope</*Enabled=*/false> traceScope("AttrTypeMangler::construct");
+  explicit AttrTypeMangler(ReflessCache &cache) : noNestedRefs(cache) {}
 
+  /// Populate the mangler using the decls in two potentially conflicting
+  /// scopes. Returns false if there is nothing to mangle.
+  bool populate(Builder &b, const ParameterUseDefGraph &curScope,
+                const ParameterUseDefGraph &inlinedScope) {
+    TimeTraceScope</*Enabled=*/false> traceScope("AttrTypeMangler::populate");
+
+    bool needsMangling = false;
     for (auto &[decl, _] : inlinedScope.decls) {
       if (curScope.decls.find(decl) == curScope.decls.end()) {
         // This declaration will not collide.
@@ -98,7 +103,9 @@ struct AttrTypeMangler {
         mangledDecl = b.getStringAttr((decl.getValue() + Twine(count++)).str());
       } while (curScope.decls.find(mangledDecl) != curScope.decls.end());
       mangledDecls.insert(decl, mangledDecl);
+      needsMangling = true;
     }
+    return needsMangling;
   }
 
   template <typename T, typename U = std::conditional_t<
@@ -157,7 +164,9 @@ struct AttrTypeMangler {
     return mangleRefsInImpl(attr, hasRefs);
   }
 
-  ParamDeclAttr mangleDecl(ParamDeclAttr decl) {
+  ParamDeclAttr mangleDecl(ParamDeclAttr decl, bool needsMangling) {
+    if (!needsMangling)
+      return decl;
     bool hasRefs = false;
     Type type = mangleRefsIn(decl.getType(), hasRefs);
     if (StringAttr mangled = mangledDecls.lookup(decl.getName()))
@@ -200,7 +209,7 @@ struct AttrTypeMangler {
       return;
 
     const ParameterUseDefGraph &uses = graph.nestedScopes.find(scope)->second;
-    AttrTypeMangler mangler;
+    AttrTypeMangler mangler(noNestedRefs);
     bool empty = true;
     for (ParamDeclRefAttr ref : uses.usesFromAbove) {
       if (StringAttr mangled = mangledDecls.lookup(ref.getName())) {
@@ -223,14 +232,14 @@ struct AttrTypeMangler {
       mangler.mangleElementsIn(decl.declOp);
     }
     for (Region *nestedScope : uses.nestedDecls)
-      recursivelyMangle(nestedScope, graph);
+      mangler.recursivelyMangle(nestedScope, graph);
   }
 
   using MapT = llvm::ScopedHashTable<StringAttr, StringAttr>;
   MapT mangledDecls;
   MapT::ScopeTy scope{mangledDecls};
 
-  DenseSet<const void *> noNestedRefs;
+  ReflessCache &noNestedRefs;
 };
 } // namespace
 
@@ -279,6 +288,10 @@ static LogicalResult inlineGeneratorCall(
   // per top-level generator.
   ParameterUseDefGraph topLevelGraph(gen.getBodyRegion());
   topLevelGraph.calculate(paramCache);
+
+  // A cache of attributes that have no references inside them. This is used by
+  // the attribute mangler.
+  AttrTypeMangler::ReflessCache manglerCache;
 
   // Process them. Keep a callstack for a nice error when cycles are detected.
   SmallVector<Location, 16> callstack;
@@ -339,18 +352,20 @@ static LogicalResult inlineGeneratorCall(
                                         ValueRange(), label);
     b.createBlock(&scope.getBody());
 
-    AttrTypeMangler mangler(b, callScope, calleeParams);
+    AttrTypeMangler mangler(manglerCache);
+    bool needsMangling = mangler.populate(b, callScope, calleeParams);
 
     // Make sure to rebind the call operands based on the mangled types of the
     // callee's argument types.
-    SmallVector<Type> mangledArgTypes =
-        llvm::to_vector(callee.getArgumentTypes());
-    for (Type &type : mangledArgTypes) {
-      bool unused;
-      type = mangler.mangleRefsIn(type, unused);
+    SmallVector<Type> argTypes = llvm::to_vector(callee.getArgumentTypes());
+    if (needsMangling) {
+      for (Type &type : argTypes) {
+        bool unused;
+        type = mangler.mangleRefsIn(type, unused);
+      }
     }
     SmallVector<Value> argVals =
-        rebindValues(b, call.getLoc(), call.getOperands(), mangledArgTypes);
+        rebindValues(b, call.getLoc(), call.getOperands(), argTypes);
 
     // Materialize any constraints on the callee as asserts.
     for (ConstraintAttr constraint : callee.getConstraints()) {
@@ -358,7 +373,8 @@ static LogicalResult inlineGeneratorCall(
           constraint.getLoc(), constraint.getExpr(),
           StringAttr::get(constraint.getMessage().getValue(),
                           StringType::get(b.getContext())));
-      mangler.mangleElementsIn(assertOp);
+      if (needsMangling)
+        mangler.mangleElementsIn(assertOp);
     }
 
     // Map the callee inputs.
@@ -393,12 +409,14 @@ static LogicalResult inlineGeneratorCall(
     }
 
     // Do name mangling.
-    for (Operation *user : calleeParams.paramOps) {
-      // Skip the parent decl. It's handled after.
-      if (user == callee)
-        continue;
-      Operation *cloned = map.lookup(user);
-      mangler.mangleElementsIn(cloned);
+    if (needsMangling) {
+      for (Operation *user : calleeParams.paramOps) {
+        // Skip the parent decl. It's handled after.
+        if (user == callee)
+          continue;
+        Operation *cloned = map.lookup(user);
+        mangler.mangleElementsIn(cloned);
+      }
     }
     for (auto &[name, decl] : calleeParams.decls) {
       // Skip the parent decl. It's handled after.
@@ -410,25 +428,27 @@ static LogicalResult inlineGeneratorCall(
       auto itf = cast<ParamOpInterface>(decl.declOp);
       SmallVector<ParamDeclAttr> newDecls;
       itf.walkDeclarations([&](ParamDeclAttr decl) {
-        newDecls.push_back(mangler.mangleDecl(decl));
+        newDecls.push_back(mangler.mangleDecl(decl, needsMangling));
       });
       cast<ParamOpInterface>(cloned).renameDeclarations(newDecls);
       // Populate the new declarations into the call scope graph.
       propagateNewDecls(newDecls, topLevelGraph, callScope, cloned,
                         scopeRegion);
     }
-    for (Region *nestedScope : calleeParams.nestedDecls) {
-      mangler.recursivelyMangle(
-          &map.lookup(nestedScope->getParentOp())
-               ->getRegion(nestedScope->getRegionNumber()),
-          topLevelGraph);
+    if (needsMangling) {
+      for (Region *nestedScope : calleeParams.nestedDecls) {
+        mangler.recursivelyMangle(
+            &map.lookup(nestedScope->getParentOp())
+                 ->getRegion(nestedScope->getRegionNumber()),
+            topLevelGraph);
+      }
     }
 
     // Mangle the DeclInterface declarations.
     b.setInsertionPointToStart(&scope.getBody().front());
     for (auto [origDecl, value] :
          llvm::zip(callee.getInputParamDecls(), call.getParamValues())) {
-      ParamDeclAttr decl = mangler.mangleDecl(origDecl);
+      ParamDeclAttr decl = mangler.mangleDecl(origDecl, needsMangling);
       auto declOp = b.create<ParamDeclareOp>(
           callee.getLoc(), decl,
           ParamOperatorAttr::get(b.getContext(), POC::Rebind, value.getValue(),
