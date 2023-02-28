@@ -1,4 +1,4 @@
-// RUN: kgen-opt -always-inline-param -split-input-file -allow-unregistered-dialect %s -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt -always-inline-param -verify-parameters -split-input-file -allow-unregistered-dialect %s -mlir-print-debuginfo | FileCheck %s
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent() -> index {
