@@ -194,11 +194,24 @@ struct AttrTypeMangler {
     TimeTraceScope</*Enabled=*/false> traceScope(
         "AttrTypeMangler::recursivelyMangle");
 
+    // Exit early if the scope is parametrically isolated.
+    if (cast<DeclInterface>(scope->getParentOp())
+            .isIsolatedFromAbove(scope->getRegionNumber()))
+      return;
+
     const ParameterUseDefGraph &uses = graph.nestedScopes.find(scope)->second;
     AttrTypeMangler mangler;
-    for (ParamDeclRefAttr ref : uses.usesFromAbove)
-      if (StringAttr mangled = mangledDecls.lookup(ref.getName()))
+    bool empty = true;
+    for (ParamDeclRefAttr ref : uses.usesFromAbove) {
+      if (StringAttr mangled = mangledDecls.lookup(ref.getName())) {
         mangler.mangledDecls.insert(ref.getName(), mangled);
+        empty = false;
+      }
+    }
+    // Exit early if there is nothing to mangle.
+    if (empty)
+      return;
+
     for (Operation *op : uses.paramOps) {
       if (op == scope->getParentOp())
         continue;
