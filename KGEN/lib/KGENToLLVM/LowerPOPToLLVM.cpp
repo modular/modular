@@ -68,35 +68,6 @@ struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPNeg
-//===----------------------------------------------------------------------===//
-
-/// Convert an integer pop.neg(x) -> 0 - x
-/// and float pop.neg(x) -> llvm.fneg(x)
-struct ConvertPOPNeg : public ConvertPOPToLLVMPattern<NegOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(NegOp op, NegOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().getResolvedDType();
-    if (dtype.isInt() || dtype.isIndex()) {
-      Type type = adaptor.getOperand().getType();
-      Value zero;
-      if (auto vec = dyn_cast<VectorType>(type))
-        zero = rewriter.create<LLVM::ConstantOp>(
-            op.getLoc(), DenseIntElementsAttr::get(vec, 0));
-      else
-        zero = rewriter.create<LLVM::ConstantOp>(op.getLoc(), type, 0);
-      rewriter.replaceOpWithNewOp<LLVM::SubOp>(op, zero, adaptor.getOperand());
-    } else {
-      rewriter.replaceOpWithNewOp<LLVM::FNegOp>(op, adaptor.getOperand());
-    }
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPShr
 //===----------------------------------------------------------------------===//
 
@@ -1345,7 +1316,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPMemset,
       ConvertPOPMin,
       ConvertPOPMul,
-      ConvertPOPNeg,
       ConvertPOPOffset,
       ConvertPOPOr,
       ConvertPOPPackCreate,
