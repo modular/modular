@@ -14,6 +14,29 @@ from Pointer import Pointer
 from Memory import stack_allocation
 from Range import range
 
+# CHECK-LABEL: test_sync_coro
+fn test_sync_coro():
+    print("== test_sync_coro\n")
+
+    async fn test_llcl_add[lhs: Int](rhs: Int) -> Int:
+        return lhs + rhs
+
+    async fn test_llcl_add_two_of_them(a: Int, b: Int) -> Int:
+        var t0: Coroutine[Int] = test_llcl_add[5](a)
+        var t1: Coroutine[Int] = test_llcl_add[2](b)
+        let result = await t0 + await t1
+        t0.__del__()
+        t1.__del__()
+        return result
+
+    let rt = Runtime(4)
+    let coro: Coroutine[Int] = test_llcl_add_two_of_them(20, 30)
+    # CHECK: 57
+    print(coro.__call__())
+    coro.__del__()
+    rt.__del__()
+
+
 # CHECK-LABEL: test_runtime_task
 fn test_runtime_task():
     print("== test_runtime_task\n")
@@ -37,7 +60,7 @@ fn test_runtime_task():
     rt.__del__()
 
 
-## CHECK-LABEL: test_runtime_taskgroup
+# CHECK-LABEL: test_runtime_taskgroup
 fn test_runtime_taskgroup():
     print("== test_runtime_taskgroup\n")
 
@@ -72,6 +95,7 @@ fn test_runtime_taskgroup():
     rt.__del__()
 
 
+# CHECK-LABEL: test_runtime_parallel_for
 fn test_runtime_parallel_for():
     print("== test_runtime_parallel_for\n")
 
@@ -98,6 +122,7 @@ fn test_runtime_parallel_for():
 
 
 fn main():
+    test_sync_coro()
     test_runtime_task()
     test_runtime_taskgroup()
     test_runtime_parallel_for()
