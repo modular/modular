@@ -275,6 +275,270 @@ fn create_kgen_list[
     ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9)
 
 
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](
+    e0: type,
+    e1: type,
+    e2: type,
+    e3: type,
+    e4: type,
+    e5: type,
+    e6: type,
+    e7: type,
+    e8: type,
+    e9: type,
+    e10: type,
+) -> __mlir_type[`!kgen.list<`, type, `[11]>`]:
+    """Creates a list given a type and elements.
+
+    Args:
+        type (!kgen.mlirtype): The list type.
+        e0 (type): The 1st element of the returned list.
+        e1 (type): The 2nd element of the returned list.
+        e2 (type): The 3rd element of the returned list.
+        e3 (type): The 4th element of the returned list.
+        e4 (type): The 5th element of the returned list.
+        e5 (type): The 6th element of the returned list.
+        e6 (type): The 7th element of the returned list.
+        e7 (type): The 8th element of the returned list.
+        e8 (type): The 9th element of the returned list.
+        e9 (type): The 10th element of the returned list.
+        e10 (type): The 11th element of the returned list.
+
+    Returns:
+        !kgen.list<type[11]>: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[11]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10)
+
+
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](
+    e0: type,
+    e1: type,
+    e2: type,
+    e3: type,
+    e4: type,
+    e5: type,
+    e6: type,
+    e7: type,
+    e8: type,
+    e9: type,
+    e10: type,
+    e11: type,
+) -> __mlir_type[`!kgen.list<`, type, `[12]>`]:
+    """Creates a list given a type and elements.
+
+    Args:
+        type (!kgen.mlirtype): The list type.
+        e0 (type): The 1st element of the returned list.
+        e1 (type): The 2nd element of the returned list.
+        e2 (type): The 3rd element of the returned list.
+        e3 (type): The 4th element of the returned list.
+        e4 (type): The 5th element of the returned list.
+        e5 (type): The 6th element of the returned list.
+        e6 (type): The 7th element of the returned list.
+        e7 (type): The 8th element of the returned list.
+        e8 (type): The 9th element of the returned list.
+        e9 (type): The 10th element of the returned list.
+        e10 (type): The 11th element of the returned list.
+        e11 (type): The 12th element of the returned list.
+
+    Returns:
+        !kgen.list<type[12]>: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[12]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)
+
+
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](
+    e0: type,
+    e1: type,
+    e2: type,
+    e3: type,
+    e4: type,
+    e5: type,
+    e6: type,
+    e7: type,
+    e8: type,
+    e9: type,
+    e10: type,
+    e11: type,
+    e12: type,
+) -> __mlir_type[`!kgen.list<`, type, `[13]>`]:
+    """Creates a list given a type and elements.
+
+    Args:
+        type (!kgen.mlirtype): The list type.
+        e0 (type): The 1st element of the returned list.
+        e1 (type): The 2nd element of the returned list.
+        e2 (type): The 3rd element of the returned list.
+        e3 (type): The 4th element of the returned list.
+        e4 (type): The 5th element of the returned list.
+        e5 (type): The 6th element of the returned list.
+        e6 (type): The 7th element of the returned list.
+        e7 (type): The 8th element of the returned list.
+        e8 (type): The 9th element of the returned list.
+        e9 (type): The 10th element of the returned list.
+        e10 (type): The 11th element of the returned list.
+        e11 (type): The 12th element of the returned list.
+        e12 (type): The 13th element of the returned list.
+
+    Returns:
+        !kgen.list<type[13]>: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[13]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12)
+
+
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](
+    e0: type,
+    e1: type,
+    e2: type,
+    e3: type,
+    e4: type,
+    e5: type,
+    e6: type,
+    e7: type,
+    e8: type,
+    e9: type,
+    e10: type,
+    e11: type,
+    e12: type,
+    e13: type,
+) -> __mlir_type[`!kgen.list<`, type, `[14]>`]:
+    """Creates a list given a type and elements.
+
+    Args:
+        type (!kgen.mlirtype): The list type.
+        e0 (type): The 1st element of the returned list.
+        e1 (type): The 2nd element of the returned list.
+        e2 (type): The 3rd element of the returned list.
+        e3 (type): The 4th element of the returned list.
+        e4 (type): The 5th element of the returned list.
+        e5 (type): The 6th element of the returned list.
+        e6 (type): The 7th element of the returned list.
+        e7 (type): The 8th element of the returned list.
+        e8 (type): The 9th element of the returned list.
+        e9 (type): The 10th element of the returned list.
+        e10 (type): The 11th element of the returned list.
+        e11 (type): The 12th element of the returned list.
+        e12 (type): The 13th element of the returned list.
+        e13 (type): The 14th element of the returned list.
+
+    Returns:
+        !kgen.list<type[14]>: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[14]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13)
+
+
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](
+    e0: type,
+    e1: type,
+    e2: type,
+    e3: type,
+    e4: type,
+    e5: type,
+    e6: type,
+    e7: type,
+    e8: type,
+    e9: type,
+    e10: type,
+    e11: type,
+    e12: type,
+    e13: type,
+    e14: type,
+) -> __mlir_type[`!kgen.list<`, type, `[15]>`]:
+    """Creates a list given a type and elements.
+
+    Args:
+        type (!kgen.mlirtype): The list type.
+        e0 (type): The 1st element of the returned list.
+        e1 (type): The 2nd element of the returned list.
+        e2 (type): The 3rd element of the returned list.
+        e3 (type): The 4th element of the returned list.
+        e4 (type): The 5th element of the returned list.
+        e5 (type): The 6th element of the returned list.
+        e6 (type): The 7th element of the returned list.
+        e7 (type): The 8th element of the returned list.
+        e8 (type): The 9th element of the returned list.
+        e9 (type): The 10th element of the returned list.
+        e10 (type): The 11th element of the returned list.
+        e11 (type): The 12th element of the returned list.
+        e12 (type): The 13th element of the returned list.
+        e13 (type): The 14th element of the returned list.
+        e14 (type): The 15th element of the returned list.
+
+    Returns:
+        !kgen.list<type[15]>: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[15]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14)
+
+
+fn create_kgen_list[
+    type: __mlir_type.`!kgen.mlirtype`
+](
+    e0: type,
+    e1: type,
+    e2: type,
+    e3: type,
+    e4: type,
+    e5: type,
+    e6: type,
+    e7: type,
+    e8: type,
+    e9: type,
+    e10: type,
+    e11: type,
+    e12: type,
+    e13: type,
+    e14: type,
+    e15: type,
+) -> __mlir_type[`!kgen.list<`, type, `[16]>`]:
+    """Creates a list given a type and elements.
+
+    Args:
+        type (!kgen.mlirtype): The list type.
+        e0 (type): The 1st element of the returned list.
+        e1 (type): The 2nd element of the returned list.
+        e2 (type): The 3rd element of the returned list.
+        e3 (type): The 4th element of the returned list.
+        e4 (type): The 5th element of the returned list.
+        e5 (type): The 6th element of the returned list.
+        e6 (type): The 7th element of the returned list.
+        e7 (type): The 8th element of the returned list.
+        e8 (type): The 9th element of the returned list.
+        e9 (type): The 10th element of the returned list.
+        e10 (type): The 11th element of the returned list.
+        e11 (type): The 12th element of the returned list.
+        e12 (type): The 13th element of the returned list.
+        e13 (type): The 14th element of the returned list.
+        e14 (type): The 15th element of the returned list.
+        e15 (type): The 16th element of the returned list.
+
+    Returns:
+        !kgen.list<type[16]>: The list containing the elements.
+    """
+    return __mlir_op.`pop.list.create`[
+        _type : __mlir_type[`!kgen.list<`, type, `[16]>`]
+    ](e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15)
+
+
 # ===----------------------------------------------------------------------===#
 # _get_kgen_list_item
 # ===----------------------------------------------------------------------===#
