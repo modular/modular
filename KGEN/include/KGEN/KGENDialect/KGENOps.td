@@ -576,7 +576,6 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
     custom<OptionalParamDecls>($paramDecls) `>` (`->` type($results)^)?
     $thenRegion `else` $elseRegion attr-dict
   }];
-  let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 
   let builders = [OpBuilder<(ins "TypedAttr":$cond), [{
