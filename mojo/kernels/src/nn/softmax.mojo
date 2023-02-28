@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param
+from Assert import assert_param, assert_param_msg
 from Buffer import Buffer
 from Functional import vectorize_unroll
 from Int import Int
@@ -22,6 +22,7 @@ from TypeUtilities import rebind
 # ===----------------------------------------------------------------------===#
 
 
+@adaptive
 fn reduce_add_simd[
     simd_width: __mlir_type.index,
     step_simd_width: __mlir_type.index,
@@ -35,12 +36,27 @@ fn reduce_add_simd[
     depending on the step_simd_width. This is useful when the simd_width varies
     between iterations as in vectorize.
     """
+    assert_param_msg[step_simd_width == 1, "performing scalar reduction"]()
 
-    @parameter
-    if step_simd_width == 1:
-        # When the step_simd_width is 1, then we add to the scalar value.
-        scalar += val[0]
-        return
+    # When the step_simd_width is 1, then we add to the scalar value.
+    scalar += val[0]
+
+
+@adaptive
+fn reduce_add_simd[
+    simd_width: __mlir_type.index,
+    step_simd_width: __mlir_type.index,
+    type: __mlir_type.`!kgen.dtype`,
+](
+    scalar&: SIMD[1, type],
+    vector&: SIMD[simd_width, type],
+    val: SIMD[step_simd_width, type],
+):
+    """This functions adds val to either the scalar value or the vector value
+    depending on the step_simd_width. This is useful when the simd_width varies
+    between iterations as in vectorize.
+    """
+    assert_param_msg[step_simd_width > 1, "performing vector reduction"]()
 
     # When the step_simd_Width is the same as the simd_width, then we add to
     # the vector value.
