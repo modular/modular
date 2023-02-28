@@ -2,6 +2,34 @@
 
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
 
+// CHECK-LABEL: @neg_f32
+kgen.func @neg_f32(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
+  // CHECK: llvm.fneg
+  %0 = pop.neg %arg0 : !pop.scalar<f32>
+  kgen.return %0 : !pop.scalar<f32>
+}
+
+// CHECK-LABEL: @neg_si32
+// CHECK-SAME: %[[ARG0:.*]]:
+kgen.func @neg_si32(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
+  // CHECK: %[[LHS:.*]] = llvm.mlir.constant(0 :
+  // CHECK: llvm.sub %[[LHS]], %[[RHS]]
+  %0 = pop.neg %arg0 : !pop.scalar<si32>
+  kgen.return %0 : !pop.scalar<si32>
+}
+
+
+// CHECK-LABEL: @neg_index
+// CHECK-SAME: %[[ARG0:.*]]:
+kgen.func @neg_index(%arg0: !pop.scalar<index>) -> !pop.scalar<index> {
+  // CHECK: %[[RHS:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
+  // CHECK: %[[LHS:.*]] = llvm.mlir.constant(0 :
+  // CHECK: llvm.sub %[[LHS]], %[[RHS]]
+  %0 = pop.neg %arg0 : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+
 // CHECK-LABEL: @add_si32
 kgen.func @add_si32(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
   // CHECK: llvm.add

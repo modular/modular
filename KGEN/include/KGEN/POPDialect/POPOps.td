@@ -43,6 +43,26 @@ class POP_ArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
 }
 
 //===----------------------------------------------------------------------===//
+// NegOp
+//===----------------------------------------------------------------------===//
+
+def POP_NegOp : POP_ArithmeticUnaryOp<"neg"> {
+  let summary = "negation";
+  let description = [{
+    The `pop.neg` operation takes a `!pop.simd` value and returns its negated
+    value. The operand and result types are the same. The operand type must be
+    an index, signed integer, or float dtype.
+
+    Example:
+
+    ```mlir
+    %b = pop.neg %a : !pop.scalar<type>
+    %b = pop.neg %a : !pop.simd<size, type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // BinaryOp
 //===----------------------------------------------------------------------===//
 
@@ -663,7 +683,9 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
 
     ```mlir
     %v = pop.simd.splat %arg0 : !pop.simd<4, f32>
-    %w = pop.simd.splat %arg0 : !pop.simd<size, type>
+
+    %u = pop.neg %arg1 : !pop.simd<1, type>
+    %w = pop.simd.splat %u : !pop.simd<size, type>
     ```
   }];
 

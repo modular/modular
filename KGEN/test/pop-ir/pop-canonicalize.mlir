@@ -1,5 +1,16 @@
 // RUN: kgen-opt %s -canonicalize | FileCheck %s
 
+// CHECK-LABEL: @neg
+kgen.func @neg() -> (!pop.simd<2, si8>, !pop.simd<2, f32>) {
+  // CHECK-DAG: <1, -1>
+  // CHECK-DAG: <"1.25", "-1.25">
+  %0 = kgen.param.constant: simd<2, si8> = <<-1, 1>>
+  %1 = kgen.param.constant: simd<2, f32> = <<"-1.25", "1.25">>
+  %2 = pop.neg %0 : !pop.simd<2, si8>
+  %3 = pop.neg %1 : !pop.simd<2, f32>
+  kgen.return %2, %3 : !pop.simd<2, si8>, !pop.simd<2, f32>
+}
+
 // CHECK-LABEL: @add
 kgen.func @add() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
   // CHECK-DAG: <4>
