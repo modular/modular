@@ -33,8 +33,6 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
 // LITFuncOp
 //===----------------------------------------------------------------------===//
 
-// FIXME: Interfaces don't have bodies.  When they go away, we should remove
-// NoTerminator and simplify FuncOp::verifyRegions to remove its check.
 def LIT_FuncOp : LITOp<"func", [
     FunctionOpInterface, Symbol, SymbolTable, SingleBlock,
     DeclareOpInterfaceMethods<CallableOpInterface>,
@@ -45,6 +43,7 @@ def LIT_FuncOp : LITOp<"func", [
   let description = [{
     The `lit.func` operation models a def/fn declaration at the Lit source
     level.
+
     @staticmethod decorators in Lit correspond to the attribute `isStatic`.
     @adaptive is a decorator that the user can attach to an `fn` that tells
     the parser to add the `isAdaptive` flag, and to treat multiple
