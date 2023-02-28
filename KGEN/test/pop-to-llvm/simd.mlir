@@ -5,34 +5,17 @@
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
 
 kgen.func @trivial_conversions(%a: !pop.simd<4, f32>, %b: !pop.simd<4, f32>, %c: !pop.simd<4, f32>, %d: !pop.simd<4, bool>) {
-  // CHECK: llvm.fneg
-  %0 = pop.neg %a : !pop.simd<4, f32>
   // CHECK: llvm.fadd
-  %1 = pop.add %a, %b : !pop.simd<4, f32>
+  %0 = pop.add %a, %b : !pop.simd<4, f32>
   // CHECK: llvm.fsub
-  %2 = pop.sub %a, %b : !pop.simd<4, f32>
+  %1 = pop.sub %a, %b : !pop.simd<4, f32>
   // CHECK: llvm.fmul
-  %3 = pop.mul %a, %b : !pop.simd<4, f32>
+  %2 = pop.mul %a, %b : !pop.simd<4, f32>
   // CHECK: llvm.intr.fma
-  %4 = pop.fma %a, %b, %c : !pop.simd<4, f32>
+  %3 = pop.fma %a, %b, %c : !pop.simd<4, f32>
   // CHECK: llvm.select
-  %5 = pop.select %d, %a, %b : !pop.simd<4, f32>
+  %4 = pop.select %d, %a, %b : !pop.simd<4, f32>
   kgen.return
-}
-
-// CHECK-LABEL: @int_neg_simd
-kgen.func @int_neg_simd(%arg0: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
-  // CHECK: %[[ZERO:.*]] = llvm.mlir.constant(dense<0> : vector<4xi32>)
-  %0 = pop.neg %arg0 : !pop.simd<4, si32>
-  // CHECK: llvm.sub %[[ZERO]], %{{.*}}
-  kgen.return %0 : !pop.simd<4, si32>
-}
-
-// CHECK-LABEL: @neg_simd
-kgen.func @neg_simd(%arg0: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
-  %0 = pop.neg %arg0 : !pop.simd<4, f32>
-  // CHECK: llvm.fneg %{{.*}}
-  kgen.return %0 : !pop.simd<4, f32>
 }
 
 // CHECK-LABEL: @add_simd_si32
