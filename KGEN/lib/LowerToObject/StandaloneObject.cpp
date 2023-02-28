@@ -20,11 +20,11 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Linker/Linker.h"
+#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Program.h"
-#include "llvm/Support/SHA256.h"
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
 #include "llvm/Target/TargetMachine.h"
 #include <utility>
@@ -214,7 +214,7 @@ ObjectCompiler::produceStandaloneObjectAttr(TargetInfoAttr target, bool isJIT) {
   *produceStandaloneObjectKey << ")";
   mlir::writeBytecodeToFile(module.getOperation(), *produceStandaloneObjectKey);
   // Hash it so the object name isn't enormous.
-  auto hash = llvm::SHA256::hash(
+  auto hash = llvm::BLAKE3::hash(
       ArrayRef((const uint8_t *)produceStandaloneObjectKey->getBufferStart(),
                produceStandaloneObjectKey->getBufferSize()));
 

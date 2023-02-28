@@ -3,7 +3,7 @@
 // RUN: cache-opt -deflate-constants="cache-dir=%t.dir" -deflate-symbols="cache-dir=%t.dir" %s | FileCheck %s -check-prefix=NESTED
 
 // CHECK-LABEL: @trivial
-// CHECK: #cache.constant_hash<"4uIDOufhnWgFmdTrChNZorSOxbqsdQZsMX+/hRWcVO8=", {align = 8 : ui64, name = "aconstant"} : tensor<4xf64>>
+// CHECK: #cache.constant_hash<"ABpMw6fFxznfdZ3ywFY8giTVyom+f7q9mc9WiNKgSRU=", {align = 8 : ui64, name = "aconstant"} : tensor<4xf64>>
 // CHECK-NEXT: call
 // CHECK-NEXT: return
 
@@ -16,9 +16,9 @@
 // NESTED-LABEL: @trivial
 // NESTED-SAME: attributes {region_hashes = #cache<regions[
 // COM: First the hash of the region itself.
-// NESTED-SAME:   "VGwxyET2U3ULrfT0RShdfWsQXQJjJg+Pp8GNBtplSdY=" params =
+// NESTED-SAME:   "1ZSIfgIe0T1ZGj2D9baBnZ85IRfcD63sPFnovhkRym0=" params =
 // COM: Next, the hashes inside (from the deflated constant).
-// NESTED-SAME:   #cache.constant_hash<"4uIDOufhnWgFmdTrChNZorSOxbqsdQZsMX+/hRWcVO8=", {align = 8 : ui64, name = "aconstant"} : tensor<4xf64>>
+// NESTED-SAME:   #cache.constant_hash<"ABpMw6fFxznfdZ3ywFY8giTVyom+f7q9mc9WiNKgSRU=", {align = 8 : ui64, name = "aconstant"} : tensor<4xf64>>
 // COM: Next, the symbols referred-to inside the region
 // NESTED-SAME:   @external
 

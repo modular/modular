@@ -29,6 +29,14 @@ using SHA256Hash = std::array<uint8_t, sha256Bytes>;
 /// been cryptanalzyed and so should not be used for security applications!
 SHA256Hash hmacSHA256(StringRef data, StringRef key);
 
+/// Useful definitions for working with BLAKE3.
+static constexpr size_t blake3Bytes = 256 / 8;
+using BLAKE3Hash = std::array<uint8_t, blake3Bytes>;
+
+/// This implements a simple low-dependency HMAC-BLAKE3-256. Note that this has
+/// not been cryptanalyzed and so should not be used for security applications!
+BLAKE3Hash hmacBLAKE3(StringRef data, StringRef key);
+
 } // namespace M
 
 #endif // SUPPORT_HMAC_H

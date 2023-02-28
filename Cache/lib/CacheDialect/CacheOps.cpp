@@ -16,8 +16,8 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Base64.h"
-#include "llvm/Support/SHA256.h"
 
 using namespace M;
 using namespace Cache;
@@ -33,24 +33,24 @@ std::string DataCacheKey::hashKey(DataCacheKey::KeyTy key) {
 
   Attribute attr = std::get<Attribute>(key);
 
-  llvm::SHA256 sha;
-  sha.init();
+  llvm::BLAKE3 hashState;
+  hashState.init();
 
   // If we have a resource, try to avoid copying the data while hashing it.
   if (auto resource = dyn_cast<DenseResourceElementsAttr>(attr)) {
     DenseResourceElementsHandle resourceHandle = resource.getRawHandle();
     // Casting char to uint8_t is pretty safe - both are byte types.
     if (resourceHandle.getBlob())
-      sha.update(resourceHandle.getBlob()->getDataAs<uint8_t>());
+      hashState.update(resourceHandle.getBlob()->getDataAs<uint8_t>());
   } else {
     // Hash a generic attr.
     llvm::SmallString<64> tmp;
     llvm::raw_svector_ostream stringStream(tmp);
     stringStream << attr;
-    sha.update(stringStream.str());
+    hashState.update(stringStream.str());
   }
 
-  auto hash = sha.final();
+  auto hash = hashState.final();
   return {hash.begin(), hash.end()};
 }
 
@@ -224,14 +224,14 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
     return std::get<StringRef>(key).str();
 
   Region *r = std::get<Region *>(key);
-  llvm::SHA256 sha256;
-  sha256.init();
+  llvm::BLAKE3 hashState;
+  hashState.init();
 
   auto hashTypeOrAttr = [&](auto t) {
     llvm::SmallString<64> tmp;
     llvm::raw_svector_ostream stringStream(tmp);
     stringStream << t;
-    sha256.update(stringStream.str());
+    hashState.update(stringStream.str());
   };
 
   for (auto arg : r->getArgumentTypes())
@@ -239,7 +239,7 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
 
   r->walk([&](Operation *op) {
     // Add the operation's name to the hash.
-    sha256.update(op->getName().getStringRef());
+    hashState.update(op->getName().getStringRef());
 
     // Hash the op's location
     hashTypeOrAttr(op->getLoc());
@@ -269,7 +269,7 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
   });
 
   // Finalize the hash.
-  std::array<uint8_t, 32> hash = sha256.final();
+  std::array<uint8_t, 32> hash = hashState.final();
   return {hash.begin(), hash.end()};
 }
 
