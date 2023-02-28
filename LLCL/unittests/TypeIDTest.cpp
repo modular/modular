@@ -74,31 +74,12 @@ TEST(TypeID, typeName) {
 TEST(TypeID, Smoke) {
   constexpr size_t numThreads = 10;
 
-  {
-    // Concurrently register the same types.
-    Semaphore registerReady;
-    auto registerThreadWorkFn = [&registerReady]() {
-      registerReady.wait();
-      TypeID::registerType<FooBar>();
-      TypeID::registerType<Baz>();
-    };
-
-    std::vector<std::thread> threads;
-    for (size_t i = 0; i < numThreads; ++i)
-      threads.emplace_back(registerThreadWorkFn);
-    for (size_t i = 0; i < numThreads; ++i)
-      // Try to trigger a thundering hurd.
-      registerReady.post();
-    for (auto &thread : threads)
-      thread.join();
-  }
-
   std::vector<TypeID> typeIDsA, typeIDsB;
   typeIDsA.resize(numThreads, TypeID());
   typeIDsB.resize(numThreads, TypeID());
 
   {
-    // Concurrently get the same types.
+    // Concurrently get the types.
     Semaphore getReady;
     auto getThreadWorkFn = [&getReady, &typeIDsA, &typeIDsB](size_t i) {
       getReady.wait();

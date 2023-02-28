@@ -64,10 +64,7 @@ ObjectCompiler::ObjectCompiler(
     : transformCache(
           decltype(this->transformCache)::create(std::move(transformCache))),
       runtime(runtime), module(cast<ModuleOp>(symtab.getOp())), symtab(symtab),
-      exportedSymbols(std::move(exports)), options(options) {
-  // Register types used during async compilation.
-  LLCL::TypeID::registerTypes<Cache::BufferRef>();
-}
+      exportedSymbols(std::move(exports)), options(options) {}
 
 //===----------------------------------------------------------------------===//
 // compileLLVMToObject

@@ -28,11 +28,7 @@ namespace M::Cache {
 class BlobCacheBackend : public LLCL::ReferenceCounted<BlobCacheBackend> {
 public:
   /// Construct a BlobCacheBackend from an LLCL runtime.
-  BlobCacheBackend(LLCL::Runtime &runtime) : runtime(runtime) {
-    // Register the types we use in the blob cache.
-    LLCL::TypeID::registerTypes<ErrorOrSuccess, bool,
-                                std::optional<BufferRef>>();
-  }
+  BlobCacheBackend(LLCL::Runtime &runtime) : runtime(runtime) {}
   virtual ~BlobCacheBackend() {}
 
   /// Return a reference to the LLCL runtime the backend was created with.
@@ -117,11 +113,7 @@ class BlobCache : public LLCL::ReferenceCounted<BlobCache<KeyInfo>> {
 public:
   explicit BlobCache(LLCL::RCRef<BlobCacheBackend> backendList)
       : runtime(backendList->getRuntime()),
-        backendList(std::move(backendList)) {
-    // Only one additional type we need registered on top of the ones provided
-    // by the backend list.
-    LLCL::TypeID::registerTypes<ErrorOr<std::string>>();
-  }
+        backendList(std::move(backendList)) {}
 
   using KeyTy = typename KeyInfo::KeyTy;
 

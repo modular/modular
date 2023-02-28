@@ -121,8 +121,6 @@ cachedTransform(Operation *target, LLCL::RCRef<TransformCache> transformCache,
                 TransformFn transformFn, CacheHitFnT cacheHitFn) {
   // Get the runtime pointer to hand to the closure.
   LLCL::CompactRuntimePtr rt = transformCache->getRuntime();
-  // Register the result type before we try and allocate it.
-  LLCL::TypeID::registerType<Detail::ResultT<CacheHitFnT>>();
   auto onCacheHit = [target, cacheHitFn = std::move(cacheHitFn),
                      rt](Operation *op, BufferRef buf) {
     // Call the provided function and act accordingly.
@@ -154,8 +152,6 @@ cachedTransform(Operation *target, LLCL::RCRef<TransformCache> transformCache,
                 TransformFn transformFn, CacheHitFnT cacheHitFn) {
   // Get the runtime pointer to hand to the closure.
   LLCL::CompactRuntimePtr rt = transformCache->getRuntime();
-  // Register the result type before we try and allocate it.
-  LLCL::TypeID::registerType<Detail::ResultT<CacheHitFnT>>();
   auto onCacheHit = [cacheHitFn = std::move(cacheHitFn), rt](Operation *op,
                                                              BufferRef buf) {
     auto result =

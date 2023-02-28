@@ -3,13 +3,23 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
+//
+// Provides TypeID, a globally unique, 2-byte identifier for any C++ type which
+// can be by computed as 'TypeID::get<TheType>()'. TypeIDs can be retrieved
+// and used across dynamic library / executable boundaries via inclusion of
+// this header file.
+//
+// TODO: Consider moving to Support/
+//
+//===----------------------------------------------------------------------===//
 
 #ifndef LLCL_RUNTIME_TYPEID_H
 #define LLCL_RUNTIME_TYPEID_H
 
 #include "Support/LLVMForwardDecls.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Compiler.h"
-#include "llvm/Support/raw_ostream.h"
 
 #include <array>
 #include <atomic>
@@ -25,6 +35,10 @@ namespace M::LLCL {
 using ValueDestructorFn = void (*)(void *);
 
 namespace Detail {
+
+//===----------------------------------------------------------------------===//
+// Compile time type to string conversion
+//===----------------------------------------------------------------------===//
 
 /// Unfortunately there is no way to build a constexpr string specifically in
 /// C++17, and `basic_fixed_string` never made it into C++20.  Just do it the
@@ -78,6 +92,8 @@ struct TypeNameHolder {
   static inline constexpr auto value = typeNameArray<T>();
 };
 
+/// Returns the compile-time name of the type T.
+///
 /// Currently this only supports getting the demangled type name for a type, and
 /// so you cannot specify a non-type (e.g. an NTTP, enum class, etc.) right now.
 template <class T>
@@ -96,12 +112,17 @@ constexpr std::string_view typeNameFor() {
 /// now.
 ///
 /// TODO: Should we need to build with toolchains which do not support
-/// the PRETTY_FUNCTION machinery then we'll need to register every type
-/// manually. See third-party/llvm-project/mlir/include/mlir/Support/TypeID.h.
+/// the PRETTY_FUNCTION machinery then we'll need to pre-register every type
+/// manually. See third-party/llvm-project/mlir/include/mlir/Support/TypeID.h
+/// for a macro style to mimic.
 template <typename T>
 struct TypeNameResolver {
   static std::string_view getTypeName() { return typeNameFor<T>(); }
 };
+
+//===----------------------------------------------------------------------===//
+// Internal helpers
+//===----------------------------------------------------------------------===//
 
 /// The ValueDestructorFn for values of type T.
 template <typename T>
@@ -115,6 +136,10 @@ using RawTypeID = uint16_t;
 /// The distinguished invalid raw type id.
 constexpr RawTypeID kInvalidRawTypeID = RawTypeID(~0);
 
+//===----------------------------------------------------------------------===//
+// Caching
+//===----------------------------------------------------------------------===//
+
 /// A 'cache' for the raw type id for T. Ok if ends up with
 /// compiler-instantiated definitions in multiple dynamic libraries /
 /// executable due to template instantiation since the true synchronization is
@@ -124,32 +149,6 @@ constexpr RawTypeID kInvalidRawTypeID = RawTypeID(~0);
 template <typename T>
 struct TypeIDCache {
   static std::atomic<RawTypeID> cachedID;
-
-  /// If an id has not been cached use fn to derive it.
-  template <typename Fn>
-  static RawTypeID memoize(Fn &&fn) {
-    /// Fast path: we've already cached an id in the caller's dynamic library
-    /// / executable. Ok to use relaxed consistency since we only care if the
-    /// value has already been set.
-    RawTypeID id =
-        Detail::TypeIDCache<T>::cachedID.load(std::memory_order_relaxed);
-    if (id != kInvalidRawTypeID)
-      return id;
-
-    /// Slow path: call fn to get the id. We'll use the string name of T to
-    /// ensure key uniqueness, and heavyweight synchronization in fn over the
-    /// global type info table to ensure id uniqueness.
-    id = fn(TypeNameResolver<T>::getTypeName(), &valueDestructorFn<T>);
-
-    /// Cache the id. We don't care if we win the exchange since the
-    /// underlying id will be consistent over all threads.
-    RawTypeID expected = kInvalidRawTypeID;
-    (void)Detail::TypeIDCache<T>::cachedID.compare_exchange_strong(
-        expected, id, std::memory_order_relaxed, std::memory_order_relaxed);
-    assert((expected == kInvalidRawTypeID || expected == id) &&
-           "inconsistent type ids");
-    return id;
-  }
 };
 
 template <typename T>
@@ -157,32 +156,69 @@ std::atomic<RawTypeID> TypeIDCache<T>::cachedID = kInvalidRawTypeID;
 
 } // namespace Detail
 
-/// A unique (2-byte) identifier for a type.
+//===----------------------------------------------------------------------===//
+// TypeID
+//===----------------------------------------------------------------------===//
+
+/// A globally unique, 2-byte identifier for a type.
+///
+/// TypeIds for any C++ type can be calculated by:
+///    TypeID::get<TheType>()
+/// The result will be globally unique, even when the get expression is used
+/// across dynamic library / executable boundaries via this header file.
+/// There is no need to pre-register types.
+///
+/// To ensure uniqueness a global type info table is created, and heavyweight
+/// synchronization is needed when a type is first encountered. However,
+/// thereafter the get expression makes use of a templated static cache
+/// and is fast.
+///
+/// The 'root of uniqueness' for types is their 'pretty' names. It is not
+/// recommended to use types from anonymous namespaces to avoid accidental
+/// name collision.
+/// TODO: If this becomes an issue make supplying TypeNameResolver overloads
+/// more user friendly.
 class TypeID {
 public:
   /// Constructs the 'invalid' type id.
   TypeID() = default;
 
-  /// Ensures a unique type id will be available for T. T may have already been
-  /// registered. Thread safe. Can be called from multiple dynamic libraries /
-  /// executables. Fast after the first call.
-  template <typename T>
-  static void registerType() {
-    (void)Detail::TypeIDCache<T>::memoize(registerTypeSlow);
-  }
-
-  /// Helper function that calls registerType() for each type in the list.
-  template <typename... Ts>
-  static void registerTypes() {
-    (registerType<Ts>(), ...);
-  }
-
-  /// Returns the unique type id for T. T must have been previously registered.
-  /// Thread safe. Can be called from multiple dynamic libraries / executables.
-  /// Fast after the first call.
+  /// Returns the unique type id for T. Thread safe. Can be called from
+  /// multiple dynamic libraries / executables using this header file.
+  /// Fast after the first call per dynamic library / executable per T.
   template <typename T>
   static TypeID get() {
-    return TypeID(Detail::TypeIDCache<T>::memoize(getSlow));
+    /// Fast path: we've already cached an id in the caller's dynamic library
+    /// / executable. Ok to use relaxed consistency since we only care if the
+    /// value has already been set.
+    Detail::RawTypeID id =
+        Detail::TypeIDCache<T>::cachedID.load(std::memory_order_relaxed);
+    if (id != Detail::kInvalidRawTypeID)
+      return TypeID(id);
+
+    /// Slow path: We'll use the string name of T to ensure key uniqueness,
+    /// and heavyweight synchronization in fn over the global type info table
+    /// to ensure id uniqueness.
+    id = getSlow(Detail::TypeNameResolver<T>::getTypeName(),
+                 Detail::valueDestructorFn<T>);
+    /// Cache the id. We don't care if we are not the first to make the store
+    /// since the underlying id will be consistent over all threads.
+    Detail::TypeIDCache<T>::cachedID.store(id, std::memory_order_relaxed);
+    return TypeID(id);
+  }
+
+  /// Assert equality of this type id (assumed to represent the actual runtime
+  /// type id of an object of interest) and expected type id (assumed to
+  /// represent the expected static type assumed for the object of interest).
+  ///
+  /// In debug builds, a failure produces a human readable description of the
+  /// actual and expected type names, augmented with the context string.
+  void assertEqual(TypeID expected, StringRef context) const {
+#if MODULAR_DEBUG
+    printErrorIfNotEqual(expected, context);
+#endif
+    assert(id == expected.id &&
+           "mismatch between actual and expected type ids");
   }
 
   /// Returns a 'signature' for the type id subsystem which is expected to
@@ -208,16 +244,17 @@ public:
 private:
   explicit TypeID(Detail::RawTypeID id) : id(id) {}
 
-  /// Slow path for registerType. Will force global synchronization on global
-  /// type info table.
-  static Detail::RawTypeID registerTypeSlow(StringRef typeName,
-                                            ValueDestructorFn destructorFn);
-
   /// Slow path for get. Will force global synchronization on global type
-  /// info table. The destructorFn argument is ignored, and in present only
-  /// for the convenience of TypeIDCache::memoize.
+  /// info table.
+  LLVM_ATTRIBUTE_NOINLINE
   static Detail::RawTypeID getSlow(StringRef typeName,
                                    ValueDestructorFn destructorFn);
+
+#if MODULAR_DEBUG
+  /// Slow path for assertEqual.
+  LLVM_ATTRIBUTE_NOINLINE
+  void printErrorIfNotEqual(TypeID expected, StringRef context) const;
+#endif
 
   Detail::RawTypeID id = Detail::kInvalidRawTypeID;
 };

@@ -716,8 +716,7 @@ inline void AsyncValue::emplaceAndDecRef(Args &&...args) {
   assert(getSubclassKind() == SubclassKind::kConcrete &&
          "Cannot 'emplaceAndDecRef' an IndirectValue, use "
          "'emplaceIndirectAndDecRef' instead");
-  assert(typeID == TypeID::get<T>() &&
-         "mismatched static and dynamic AsyncValue types");
+  typeID.assertEqual(TypeID::get<T>(), "AsyncValue::emplaceAndDecRef");
 
   // NOTE: At this point we could stap tracking the ref and instead just inc/dec
   // our own ref count. However the explicit ref passing makes the chain of
@@ -762,8 +761,7 @@ const T &AsyncValue::get() const {
   if (getSubclassKind() == SubclassKind::kConcrete) {
     auto *thisConcrete =
         static_cast<const Detail::ConcreteAsyncValue<T> *>(this);
-    assert(typeID == TypeID::get<T>() &&
-           "mismatched static and dynamic AsyncValue types");
+    typeID.assertEqual(TypeID::get<T>(), "AsyncValue::get");
     // Make sure T and the stored type agree on whether they have a vtable.
     // (Not strictly necessary given exact equality test above, but retaining
     // in case we allow subtyping relation between T and the true held type.)
