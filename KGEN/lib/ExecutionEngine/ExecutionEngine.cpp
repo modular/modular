@@ -18,9 +18,22 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/TargetParser/Host.h"
 
+#if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
+#include <Windows.h>
+EXTERN_C IMAGE_DOS_HEADER __ImageBase;
+#else
+// Just need *a* definition here. It is fully unused for non-windows builds.
+static void *__ImageBase = nullptr;
+#endif // _MSC_VER
+
 using namespace M;
 using namespace KGEN;
 using namespace Cache;
+
+/// A standard name (that a user is unlikely to create) that we can use for a
+/// JITDylib to define platform-specific symbols we want to be in the JIT'ed
+/// address space.
+static constexpr StringLiteral platformStdlibName = "$platform-stdlib";
 
 /// Setup the machine properties from the current architecture.
 static ErrorOr<std::unique_ptr<llvm::TargetMachine>>
@@ -79,6 +92,15 @@ ExecutionEngine::create(const CompilationOptions &options) {
     if (tt.isOSBinFormatCOFF()) {
       objectLayer->setOverrideObjectFlagsWithResponsibilityFlags(true);
       objectLayer->setAutoClaimResponsibilityForObjectSymbols(true);
+
+      // COFF requires __ImageBase.
+      llvm::orc::JITDylib &dylib =
+          session.createBareJITDylib(platformStdlibName.str());
+      llvm::cantFail(dylib.define(llvm::orc::absoluteSymbols(
+          {{session.intern("__ImageBase"),
+            {llvm::pointerToJITTargetAddress(&__ImageBase),
+             llvm::JITSymbolFlags::Exported |
+                 llvm::JITSymbolFlags::Absolute}}})));
     }
 
     // If we don't want any debugging in this binary, then stop here.
@@ -88,7 +110,7 @@ ExecutionEngine::create(const CompilationOptions &options) {
     // Get the registrar for the GDB JIT loader interface.
     if (tt.isOSBinFormatMachO()) {
       llvm::orc::JITDylib &dylib =
-          session.createBareJITDylib("$platform-stdlib");
+          session.createBareJITDylib(platformStdlibName.str());
       // We have to explicitly define these wrapper symbols on macOS because
       // they're hidden visibility.
       cantFail(dylib.define(llvm::orc::absoluteSymbols(
@@ -135,19 +157,11 @@ ExecutionEngine::~ExecutionEngine() = default;
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 
 ErrorOrSuccess ExecutionEngine::add(StringRef name, BufferRef obj) {
-  llvm::orc::JITDylib *dylib = jit->getJITDylibByName(name);
-  if (!dylib) {
-    // Create a new dylib so that we don't have ODR violations.
-    auto dylibOr = jit->createJITDylib(name.str());
-    if (!dylibOr)
-      return M::Error(toString(dylibOr.takeError()));
-    dylib = &*dylibOr;
+  auto dylibOr = getOrCreateDylib(name);
+  if (dylibOr.isError())
+    return dylibOr.takeError();
 
-    // Resolve symbols that are statically linked in the current process.
-    dylib->addGenerator(
-        cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-            jit->getDataLayout().getGlobalPrefix())));
-  }
+  llvm::orc::JITDylib *dylib = *dylibOr;
 
   // If the addObjectFile succeeds we store a ref to this buffer so the data
   // won't be deallocated until the JIT is destroyed. This version of
@@ -167,19 +181,11 @@ ErrorOrSuccess ExecutionEngine::add(StringRef name, BufferRef obj) {
 // TODO (8082): This should not be necessary.
 ErrorOrSuccess ExecutionEngine::add(StringRef libName, StringRef functionName,
                                     void *fn) {
-  llvm::orc::JITDylib *dylib = jit->getJITDylibByName(libName);
-  if (!dylib) {
-    // Create a new dylib so that we don't have ODR violations.
-    auto dylibOr = jit->createJITDylib(libName.str());
-    if (!dylibOr)
-      return M::Error(toString(dylibOr.takeError()));
-    dylib = &*dylibOr;
+  auto dylibOr = getOrCreateDylib(libName);
+  if (dylibOr.isError())
+    return dylibOr.takeError();
 
-    // Resolve symbols that are statically linked in the current process.
-    dylib->addGenerator(
-        cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-            jit->getDataLayout().getGlobalPrefix())));
-  }
+  llvm::orc::JITDylib *dylib = *dylibOr;
 
   if (auto err = dylib->define(llvm::orc::absoluteSymbols(
           {{jit->mangleAndIntern(functionName),
@@ -203,4 +209,26 @@ ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef libName,
     return M::Error(toString(addr.takeError()));
 
   return CompiledFunc(addr->toPtr<void *>());
+}
+
+ErrorOr<llvm::orc::JITDylib *>
+ExecutionEngine::getOrCreateDylib(StringRef libName) {
+  llvm::orc::JITDylib *dylib = jit->getJITDylibByName(libName);
+  if (!dylib) {
+    auto dylibOr = jit->createJITDylib(libName.str());
+    if (!dylibOr)
+      return M::Error(toString(dylibOr.takeError()));
+    dylib = &*dylibOr;
+
+    // Resolve symbols that are statically linked in the current process.
+    dylib->addGenerator(
+        cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+            jit->getDataLayout().getGlobalPrefix())));
+
+    // Make sure to expose symbols from the platform stdlib.
+    llvm::orc::JITDylib *stdlib = jit->getJITDylibByName(platformStdlibName);
+    if (stdlib)
+      dylib->addToLinkOrder(*stdlib);
+  }
+  return dylib;
 }
