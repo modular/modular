@@ -183,12 +183,11 @@ static LogicalResult lowerCoroutinePromiseAsync(LLVMBuilder &b,
   if (!ptrType)
     return op.emitError("failed to convert coroutine type");
 
-  // The context contains the parent context, the resume function pointer, and
-  // then the callback closure. Skip over them (4 pointers) to reach the
-  // results.
+  // The context contains the resume function pointer, and then the callback
+  // closure. Skip over them (3 pointers) to reach the results.
   Value promise = b.create<GEPOp>(
       ptrType, hdl,
-      GEPArg(llvm::divideCeil(b.getIndexTypeBitwidth(), CHAR_BIT) * 4),
+      GEPArg(llvm::divideCeil(b.getIndexTypeBitwidth(), CHAR_BIT) * 3),
       /*inbounds=*/true);
 
   op.replaceAllUsesWith(promise);
@@ -205,12 +204,12 @@ static void lowerCoroutineResumeAsync(LLVMBuilder &b, TypeAttrCache &cache,
   auto hdl = b.create<mlir::UnrealizedConversionCastOp>(cache.i8PtrType,
                                                         op.getCoroutine())
                  .getResult(0);
-  // Bitcast `i8*` to `void(i8*)**` in the GEP.
-  Value resumeFnPtr = b.create<GEPOp>(
-      LLVMPointerType::get(cache.asyncFnType), hdl,
-      GEPArg(llvm::divideCeil(b.getIndexTypeBitwidth(), CHAR_BIT)),
-      /*inbounds=*/true);
-  b.create<CallOp>(TypeRange(), ValueRange{b.create<LoadOp>(resumeFnPtr), hdl});
+  // Bitcast `i8*` to `void(i8*)**`.
+  b.create<CallOp>(
+      TypeRange(),
+      ValueRange{b.create<LoadOp>(b.create<BitcastOp>(
+                     LLVMPointerType::get(cache.asyncFnType), hdl)),
+                 hdl});
   op.erase();
 }
 
@@ -258,7 +257,7 @@ static LLVMFuncOp synthesizeCoroEndFunc(SymbolTable &symtab, LLVMBuilder &b,
       LLVMPointerType::get(LLVMStructType::getLiteral(
           b.getContext(), {cache.asyncFnType, cache.i8PtrType})),
       endFn.getArgument(0),
-      GEPArg(llvm::divideCeil(b.getIndexTypeBitwidth(), CHAR_BIT) * 2),
+      GEPArg(llvm::divideCeil(b.getIndexTypeBitwidth(), CHAR_BIT) * 1),
       /*inbounds=*/true);
   Value closureFn = b.create<LoadOp>(
       b.create<GEPOp>(LLVMPointerType::get(cache.asyncFnType), closure,
@@ -335,17 +334,15 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   b.setLoc(func.getLoc());
   b.clearInsertionPoint();
 
-  // The coroutine context contains the parent context (null if no parent),
-  // the next resume function pointer, a callback closure in the form of
-  // `{ void(i8*)*, i8* }`, the function results, and the function arguments,
-  // and then trailing coroutine frame:
+  // The coroutine context contains the next resume function pointer, a callback
+  // closure in the form of `{ void(i8*)*, i8* }`, the function results, and the
+  // function arguments, and then trailing coroutine frame:
   //
-  //   { i8*, void(i8*)*, { void(i8*)*, i8* }, ResTs..., ArgTs..., FrameT }
+  //   { void(i8*)*, { void(i8*)*, i8* }, ResTs..., ArgTs..., FrameT }
   //
   SmallVector<Type, 16> contextTypes{
-      cache.i8PtrType, cache.asyncFnType,
-      LLVMStructType::getLiteral(b.getContext(),
-                                 {cache.ptrType, cache.ptrType})};
+      cache.asyncFnType, LLVMStructType::getLiteral(
+                             b.getContext(), {cache.ptrType, cache.ptrType})};
   for (Type resultType : coroType.getResultTypes()) {
     resultType = b.convertType(resultType);
     if (!resultType)
@@ -445,7 +442,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
 
   // Replace argument uses with values from the async context. Arguments are
   // located at the end.
-  constexpr int64_t resOffset = 3;
+  constexpr int64_t resOffset = 2;
   int64_t argOffset = resOffset + coroType.getResultTypes().size();
   for (auto [idx, arg] :
        llvm::enumerate(asyncFnBody.getArguments().drop_back())) {
@@ -507,7 +504,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
 
   b.create<StoreOp>(b.create<AddressOfOp>(asyncFn),
                     b.create<GEPOp>(LLVMPointerType::get(cache.asyncFnType),
-                                    contextValue, ArrayRef<GEPArg>{0, 1},
+                                    contextValue, ArrayRef<GEPArg>{0, 0},
                                     /*inbounds=*/true));
   for (auto [idx, arg] : llvm::enumerate(func.getArguments())) {
     Value argPtr = b.create<GEPOp>(
@@ -577,7 +574,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
                       GEPArg(-coro.contextBaseSize), /*inbounds=*/true);
   Value resumeFnPtr =
       b.create<GEPOp>(LLVMPointerType::get(cache.i8PtrType), contextPtr,
-                      ArrayRef<GEPArg>{0, 1}, /*inbounds=*/true);
+                      ArrayRef<GEPArg>{0, 0}, /*inbounds=*/true);
   b.create<StoreOp>(resumeFn, resumeFnPtr);
 
   SmallVector<Value> suspendAsyncArgs{
