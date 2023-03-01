@@ -258,24 +258,21 @@ lit.struct.decl @StructWithNestedFn<a_param> {
     pop.store %idx0, %a : !pop.pointer<index>
 
     // CHECK: kgen.param.declare.region nestedFunction = () -> index
-    lit.func @nestedFunction() -> index {
+    lit.func nestedFunction() -> index {
       // CHECK-NEXT: pop.load %a
       %0 = pop.load %a : !pop.pointer<index>
       kgen.return %0 : index
     }
     // CHECK: kgen.param.declare b: () -> index = <nestedFunction>
-    kgen.param.declare b: () -> index = <@StructWithNestedFn::@topLevelFunction::@nestedFunction>
-    // CHECK: kgen.call_param[() -> index: nestedFunction]()
-    kgen.call @StructWithNestedFn::@topLevelFunction::@nestedFunction() : () -> index
+    kgen.param.declare b: () -> index = <nestedFunction>
 
     // CHECK: kgen.param.declare.region paramNestedFunc = <b_param -> c_param>()
-    lit.func @paramNestedFunc<b_param -> c_param>() {
+    lit.func paramNestedFunc<b_param -> c_param>() {
       // CHECK-NEXT: return<b_param>
       kgen.return<b_param>
     }
     // CHECK: kgen.param.declare c: <() -> c_param>() -> () = <bind_signature(:<b_param -> c_param>() -> () paramNestedFunc, 2)>
-    kgen.param.declare c: <() -> c_param>() -> () = <@StructWithNestedFn::@topLevelFunction::@paramNestedFunc<b_param = 2>>
-    kgen.call @StructWithNestedFn::@topLevelFunction::@paramNestedFunc<b_param = 3 -> out_param = c_param>() : () -> ()
+    kgen.param.declare c: <() -> c_param>() -> () = <bind_signature(:<b_param -> c_param>() -> () paramNestedFunc, 2)>
 
     %idx0_0 = index.constant 0
     kgen.return %idx0_0 : index
@@ -285,16 +282,16 @@ lit.struct.decl @StructWithNestedFn<a_param> {
 // CHECK-LABEL: lit.func @topFunc
 lit.func @topFunc() -> !lit.none {
   // CHECK: kgen.param.declare.region midFunc
-  lit.func @midFunc() -> !lit.none {
+  lit.func midFunc() -> !lit.none {
     // CHECK: kgen.param.declare.region botFunc
-    lit.func @botFunc() -> !lit.none {
+    lit.func botFunc() -> !lit.none {
       lit.end_func
     }
     // CHECK: declare bot: () -> !lit.none = <botFunc>
-    kgen.param.declare bot: () -> !lit.none = <@topFunc::@midFunc::@botFunc>
+    kgen.param.declare bot: () -> !lit.none = <botFunc>
     lit.end_func
   }
   // CHECK: declare mid: () -> !lit.none = <midFunc>
-  kgen.param.declare mid: () -> !lit.none = <@topFunc::@midFunc>
+  kgen.param.declare mid: () -> !lit.none = <midFunc>
   lit.end_func
 }

@@ -139,12 +139,12 @@ fn testInlineByRef(a&: AlwaysInlineByRef):
 
 # CHECK-LABEL: lit.func @"adaptiveNestedFns
 fn adaptiveNestedFns(a: Int, b: Int):
-    # CHECK: lit.func @"nestedFn{{.*}}"{{.*}}isAdaptive
+    # CHECK: lit.func *"nestedFn{{.*}}"{{.*}}isAdaptive
     @adaptive
     fn nestedFn(d: Int) -> Int:
         return a + d
 
-    # CHECK: lit.func @"nestedFn{{.*}}_0"{{.*}}isAdaptive
+    # CHECK: lit.func *"nestedFn{{.*}}_0"{{.*}}isAdaptive
     @adaptive
     fn nestedFn(d: Int) -> Int:
         return b + d
@@ -158,7 +158,7 @@ fn nestedFnInLoop():
     # CHECK: hlcf.loop
     for i in range(10):
       # CHECK: %[[I:.*]] = kgen.call @{{.*}}__next__
-      # CHECK: lit.func @"foo()"
+      # CHECK: lit.func *"foo()"
       @always_inline
       fn foo() -> Int:
           # CHECK-NEXT: return %[[I]]
@@ -370,7 +370,7 @@ async fn awaitable() -> __mlir_type.index:
 # CHECK-LABEL: lit.func @"topLevelFunction()"
 fn topLevelFunction() -> __mlir_type.index:
   var a = 0
-  # CHECK: lit.func @"nestedFunction()"
+  # CHECK: lit.func *"nestedFunction()"
   fn nestedFunction() -> __mlir_type.index:
     # CHECK-NEXT: pop.load %a
     return a
@@ -384,7 +384,7 @@ struct SomeStruct:
   # CHECK-LABEL: @"someMethod({{.*}})"
   fn someMethod(self) -> __mlir_type.index:
     var a = 0
-    # CHECK: lit.func @"nestedFunction()"
+    # CHECK: lit.func *"nestedFunction()"
     fn nestedFunction() -> __mlir_type.index:
       # CHECK-NEXT: pop.load %a
       return a
@@ -395,7 +395,7 @@ struct SomeStruct:
 
 # CHECK-LABEL: lit.func @"topLevelParamFn()"<a_param>
 fn topLevelParamFn[a_param: __mlir_type.index]():
-  # CHECK: lit.func @"nestedFunction()"<b_param>
+  # CHECK: lit.func *"nestedFunction()"<b_param>
   fn nestedFunction[b_param: __mlir_type.index]():
     return
   # CHECK: declare ref: <b_param>() -> !lit.none = <*"nestedFunction()">
@@ -407,7 +407,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
 struct SomeParamStruct[c_param: __mlir_type.index]:
   # CHECK-LABEL: lit.func @"topLevelParamFn({{.*}})"<a_param>
   fn topLevelParamFn[a_param: __mlir_type.index](self):
-    # CHECK: lit.func @"nestedFunction()"<b_param>
+    # CHECK: lit.func *"nestedFunction()"<b_param>
     fn nestedFunction[b_param: __mlir_type.index]():
       return
     # CHECK: declare ref: <b_param>() -> !lit.none = <*"nestedFunction()">
