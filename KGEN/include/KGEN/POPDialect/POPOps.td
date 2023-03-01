@@ -1488,11 +1488,13 @@ def POP_MemcpyOp : POPOp<"memcpy", [
     ```
   }];
 
-  let arguments = (ins Arg<POP_PointerType, "", [MemWrite]>:$dest,
-                       Arg<POP_PointerType, "", [MemRead]>:$src,
-                       Index:$size,
-                       OptionalAttr<UnitAttr>:$isInlined,
-                       OptionalAttr<UnitAttr>:$isVolatile);
+  let arguments = (ins
+    Arg<POP_PointerType, "", [MemWrite]>:$dest,
+    Arg<POP_PointerType, "", [MemRead]>:$src,
+    Index:$size,
+    UnitAttr:$isInlined,
+    UnitAttr:$isVolatile
+  );
 
   let extraClassDeclaration = [{
     Value getSource() { return getSrc(); }
@@ -1542,7 +1544,7 @@ def POP_MemsetOp : POPOp<"memset"> {
 
   let arguments = (ins Arg<POP_PointerType, "", [MemWrite]>:$dest,
                        UI8Scalar:$value, Index:$size,
-                       OptionalAttr<UnitAttr>:$isVolatile);
+                       UnitAttr:$isVolatile);
 
   let assemblyFormat = [{
     (`volatile` $isVolatile^)? operands attr-dict `:` qualified(type($dest))

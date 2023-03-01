@@ -1075,7 +1075,7 @@ struct ConvertPOPMemcpy : ConvertPOPToLLVMPattern<MemcpyOp> {
   matchAndRewrite(MemcpyOp op, MemcpyOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     auto isVolatile = rewriter.create<LLVM::ConstantOp>(
-        op.getLoc(), rewriter.getBoolAttr(adaptor.getIsVolatile().has_value()));
+        op.getLoc(), rewriter.getBoolAttr(adaptor.getIsVolatile()));
     if (op.getIsInlined()) {
       rewriter.replaceOpWithNewOp<LLVM::MemcpyInlineOp>(
           op, adaptor.getDest(), adaptor.getSrc(), adaptor.getSize(),
@@ -1099,7 +1099,7 @@ struct ConvertPOPMemset : ConvertPOPToLLVMPattern<MemsetOp> {
   matchAndRewrite(MemsetOp op, MemsetOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     auto isVolatile = rewriter.create<LLVM::ConstantOp>(
-        op.getLoc(), rewriter.getBoolAttr(adaptor.getIsVolatile().has_value()));
+        op.getLoc(), rewriter.getBoolAttr(adaptor.getIsVolatile()));
     rewriter.replaceOpWithNewOp<LLVM::MemsetOp>(op, adaptor.getDest(),
                                                 adaptor.getValue(),
                                                 adaptor.getSize(), isVolatile);
