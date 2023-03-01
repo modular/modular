@@ -637,6 +637,7 @@ class IndirectAsyncValue : public AsyncValue {
 /// Create an AsyncValue for the specified type in "unconstructed" state.
 template <typename T>
 inline AsyncValue *AsyncValue::allocate(CompactRuntimePtr runtime) {
+  assert(runtime && "AsyncValue::allocate requires valid runtime");
   return Detail::ConcreteAsyncValue<T>::allocate(State::kUnconstructed,
                                                  runtime);
 }
