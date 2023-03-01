@@ -144,8 +144,8 @@ public:
   RValue emitExprRValue(const ExprNode *node, ValueDest dest = {});
 
   /// This helper emits the specified value rep as an SRValue, materializing
-  /// it as a parameter constant if it is a parameter.  This returns null if
-  /// emission fails.
+  /// it as an operation if it is a parameter.  This returns null if emission
+  /// fails.
   SRValue emitExprSRValue(const ExprNode *node);
 
   /// This helper emits the specified expression as a meta value, and optionally

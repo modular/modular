@@ -1586,8 +1586,6 @@ struct ParsedLetVarDecl {
   ExprNode *initExpr = nullptr;
 
   ParseResult parse(LitLexer &lexer, ASTDecl &decl);
-  std::pair<SRValue, OpBuilder> emitInitValue(Operation *declOp, ASTDecl &decl,
-                                              LitSharedState &shared);
 };
 } // namespace
 
@@ -1615,40 +1613,6 @@ ParseResult ParsedLetVarDecl::parse(LitLexer &lexer, ASTDecl &decl) {
   return success();
 }
 
-/// Emit the initializer at the specified point and convert it to the declared
-/// type if known.
-std::pair<SRValue, OpBuilder>
-ParsedLetVarDecl::emitInitValue(Operation *declOp, ASTDecl &decl,
-                                LitSharedState &shared) {
-  // We insert after var decl, but before let decl.
-  auto iterator = Block::iterator(declOp);
-  if (isa<VarDeclOp>(declOp))
-    ++iterator;
-  OpBuilder builder(declOp->getBlock(), iterator);
-  ExprEmitter emitter(shared, *decl.getParentDecl(), builder,
-                      /*varDeclCursor*/ nullptr);
-
-  auto value = emitter.emitExprSRValue(initExpr);
-  if (!value)
-    return {value, builder};
-
-  // If we had a declared type, coerce the expression value to it.
-  if (type) {
-    const char *kind = isa<LetDeclOp>(declOp) ? "let" : "var";
-    value = emitter.emitSRValue(
-        {emitter.getAsExpectedType(
-             {value, initExpr}, type,
-             // TODO(memory-primary): emit directly into the vardecl.
-             ValueDest(), " in " + Twine(kind) + " declaration"),
-         initExpr});
-  } else {
-    // Infer the type if we lack a declared type (`var x = 42`).
-    // TODO(literal autopromotion).
-    type = value.getType();
-  }
-  return {value, builder};
-}
-
 /// let_decl_stmt ::= "let" identifier ":" expression ["=" expression]
 ///                 | "let" identifier "=" expression
 LogicalResult DeclResolver::resolveSignature(LetDeclOp letOp, LitLexer &lexer,
@@ -1657,26 +1621,42 @@ LogicalResult DeclResolver::resolveSignature(LetDeclOp letOp, LitLexer &lexer,
   if (parsed.parse(lexer, decl))
     return failure();
 
-  // Handle the initializer if present.
-  if (parsed.initExpr) {
-    auto [initVal, _] = parsed.emitInitValue(letOp, decl, shared);
-    if (!initVal)
-      return failure();
-
-    letOp->setOperands(initVal);
-  } else {
-    // Reject let's without an initializer.
-    // TODO: Use definitive initialization to allow late initialization, e.g.:
-    //   let x : Int
-    //   if cond:
-    //     x = foo()
-    //   else
-    //     y = bar()
-    // If there was neither a type or initializer, reject the var.
+  // Reject let's without an initializer.
+  // TODO: Use definitive initialization to allow late initialization, e.g.:
+  //   let x : Int
+  //   if cond:
+  //     x = foo()
+  //   else
+  //     y = bar()
+  if (!parsed.initExpr) {
     emitError(letOp.getLoc(), "'let' declaration must have an initializer");
     return failure();
   }
 
+  // Handle the initializer.  Insert before the let decl.
+  OpBuilder builder(letOp->getBlock(), Block::iterator(letOp));
+  ExprEmitter emitter(shared, *decl.getParentDecl(), builder,
+                      /*varDeclCursor*/ nullptr);
+  auto value = emitter.emitExprSRValue(parsed.initExpr);
+
+  // If we had a declared type, coerce the expression value to it.
+  if (parsed.type) {
+    value = emitter.emitSRValue(
+        {emitter.getAsExpectedType(
+             {value, parsed.initExpr}, parsed.type,
+             // TODO(memory-primary): emit directly into the decl.
+             ValueDest(), " in let declaration"),
+         parsed.initExpr});
+  } else if (value) {
+    // Infer the type if we lack a declared type (`var x = 42`).
+    // TODO(literal autopromotion).
+    parsed.type = value.getType();
+  }
+
+  if (!value)
+    return failure();
+
+  letOp->setOperands(value);
   letOp.getResult().setType(parsed.type);
   rejectDecorators(parsed.decorators, decl, shared);
   return success();
@@ -1697,14 +1677,31 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
 
   // Handle the initializer if present.
   if (parsed.initExpr) {
-    auto [initVal, builder] = parsed.emitInitValue(varOp, decl, shared);
-    if (!initVal)
-      return failure();
+    // We insert after var decl.
+    OpBuilder builder(varOp->getBlock(), ++Block::iterator(varOp));
+    ExprEmitter emitter(shared, *decl.getParentDecl(), builder,
+                        /*varDeclCursor*/ nullptr);
 
-    // Store the initializer value into the VarDecl.
-    auto loc = translateLocation(parsed.initExpr->getLoc());
-    builder.create<POP::StoreOp>(loc, initVal, varOp,
-                                 /*alignment=*/std::nullopt);
+    // If we have a type, then emit directly into the LValue.
+    if (parsed.type) {
+      varOp.getResult().setType(POP::PointerType::get(parsed.type));
+      if (!emitter.emitExprRValue(parsed.initExpr, LValue(varOp)))
+        return failure();
+    } else {
+      // TODO(memory-primary): emit directly into var-decl and infer type.
+      auto initVal = emitter.emitExprSRValue(parsed.initExpr);
+      if (!initVal)
+        return failure();
+
+      // Store the initializer value into the VarDecl.
+      auto loc = translateLocation(parsed.initExpr->getLoc());
+      builder.create<POP::StoreOp>(loc, initVal, varOp,
+                                   /*alignment=*/std::nullopt);
+
+      // Infer the type if we lack a declared type (`var x = 42`).
+      // TODO(literal autopromotion).
+      parsed.type = initVal.getType();
+    }
   }
 
   if (parsed.type)
