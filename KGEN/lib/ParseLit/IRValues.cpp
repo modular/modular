@@ -23,9 +23,10 @@ using namespace M::KGEN::LIT;
 // IRValues Implementation Logic.
 //===----------------------------------------------------------------------===//
 
-using VariantStorage = PointerUnion<PRValue, SRValue, MRValue, LValue>;
+using VariantStorage =
+    SmartVariant<NullRepresentation, PRValue, SRValue, MRValue, LValue>;
 
-static raw_ostream &printStorage(raw_ostream &os, VariantStorage storage,
+static raw_ostream &printStorage(raw_ostream &os, const VariantStorage &storage,
                                  bool isDump = false) {
   if (storage.isNull()) {
     os << "<NULL IR Value>\n";
@@ -86,15 +87,17 @@ mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, AnyValue value) {
 }
 
 static Type getTypeFrom(VariantStorage storage) {
-  if (storage.isNull())
-    return Type();
   if (auto attr = dyn_cast<PRValue>(storage))
     return attr.get().getType();
   if (auto value = dyn_cast<SRValue>(storage))
     return value.getType();
   if (auto value = dyn_cast<MRValue>(storage))
     return value.getType();
-  return cast<LValue>(storage).getType();
+  if (auto value = dyn_cast<LValue>(storage))
+    return value.getType();
+
+  // Otherwise null.
+  return Type();
 }
 
 Type RValue::getType() const { return getTypeFrom(storage); }
