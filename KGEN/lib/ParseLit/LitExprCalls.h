@@ -161,8 +161,8 @@ struct DirectCallable {
   /// the resultant LITSymbolConstant attr or producing an error message and
   /// returning null. This allows producing a reference to a parameterized
   /// function without the parmaeters specified.  They can be bound later.
-  SymbolConstantAttr getBoundConstantAttr(const ExprNode *callExpr,
-                                          ExprEmitter &emitter) const;
+  TypedAttr getBoundConstantAttr(const ExprNode *callExpr,
+                                 ExprEmitter &emitter) const;
 
   /// Perform subsitutions of the specified bindings into the symbol, returning,
   /// in symConstAttrs, the resultant SymbolConstant attr for each adaptive

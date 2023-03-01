@@ -192,7 +192,7 @@ private:
   /// This map tracks the exported function names and their locations so that
   /// we can check if they are unique.
   /// Note: these StringRef keys cannot dangle because they point to the parsed
-  //  source buffer, we don't need to use StringMap here.
+  /// source buffer, we don't need to use StringMap here.
   DenseMap<StringRef, Location> exportedSymbolNames;
 
   /// This array holds all of the parsed declarations in a deterministic order.

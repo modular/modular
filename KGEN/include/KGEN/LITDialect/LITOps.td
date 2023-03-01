@@ -37,9 +37,9 @@ def LIT_FuncOp : LITOp<"func", [
     FunctionOpInterface, Symbol, SymbolTable, SingleBlock,
     DeclareOpInterfaceMethods<CallableOpInterface>,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
+    DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>,
     DeclInterface, FuncInterface]> {
   let summary = "High level generator definition";
-
   let description = [{
     The `lit.func` operation models a def/fn declaration at the Lit source
     level.
@@ -50,16 +50,17 @@ def LIT_FuncOp : LITOp<"func", [
     implementations as an overload set.
   }];
 
-  /// If the `implements` attribute is present then this generator is an
-  /// implementation of the specified generator.interface.
-  let arguments = (ins SymbolNameAttr:$sym_name,
-                       KGEN_StringArrayAttr:$valueParamNames,
-                       TypeAttrOf<KGEN_SignatureType>:$signature,
-                       ConstraintArrayAttr:$constraints,
-                       UnitAttr:$isStatic,
-                       UnitAttr:$isAdaptive,
-                       UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
-                       KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel);
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    OptionalAttr<KGEN_ParamDeclAttr>:$paramDecl,
+    KGEN_StringArrayAttr:$valueParamNames,
+    TypeAttrOf<KGEN_SignatureType>:$signature,
+    ConstraintArrayAttr:$constraints,
+    UnitAttr:$isStatic,
+    UnitAttr:$isAdaptive,
+    UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
+    KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel
+  );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
@@ -68,9 +69,9 @@ def LIT_FuncOp : LITOp<"func", [
     /// Returns the result type, which is guaranteed to be present.
     Type getResultType() { return getFunctionType().getResults()[0]; }
 
-    /// Return a SymbolConstantAttr for this function, optionally bound to a set
-    /// of parameter bindings.
-    SymbolConstantAttr getBoundReference(ParamBindArrayAttr bindings = {});
+    /// Return a reference for this function, optionally bound to a set of
+    /// parameter bindings.
+    TypedAttr getBoundReference(ParamBindArrayAttr bindings = {});
   }];
 
   let builders = [
@@ -419,7 +420,7 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
 }
 
 //===----------------------------------------------------------------------===//
-// LocalAliasDeclOp
+// AliasForwardDeclOp
 //===----------------------------------------------------------------------===//
 
 // TODO(LLVM Issue #59877): Why isn't this in BuiltinAttributes.td?

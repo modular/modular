@@ -12,6 +12,7 @@
 #include "ASTDecl.h"
 #include "ASTType.h"
 #include "IRValues.h"
+
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -24,6 +25,7 @@
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/IR/Location.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/SourceMgr.h"
@@ -197,20 +199,21 @@ Operation *LitSharedState::setResolvedDeclSymbol(Operation *declOp) {
   assert(declOp && "Cannot set a symbol for non-operation decl");
 
   // We look up the symbol in the enclosing symbol table.  For example, for a
-  // method in a struct, we use the struct as the symbol table.  For a top-level
+  // method in a struct, we use the struct as the symbol table.  For atop-level
   // function we use the global module.
   Operation *parentSymbolTableOp =
       SymbolTable::getNearestSymbolTable(declOp->getParentOp());
   SymbolTable &symTab = impl->symbolTables.getSymbolTable(parentSymbolTableOp);
 
   // Insert the operation into the symbol table and see if it got renamed.
+  // Restore the original position of the operation after.
   auto origName = SymbolTable::getSymbolName(declOp);
-  Operation *insertAfter = declOp;
-  while (insertAfter->getParentOp() != parentSymbolTableOp)
-    insertAfter = insertAfter->getParentOp();
-  Block::iterator insertPt(insertAfter->getNextNode());
+  Block *prevBlock = declOp->getBlock();
+  Block::iterator prevPos = std::next(declOp->getIterator());
   declOp->remove();
-  if (symTab.insert(declOp, insertPt) == origName)
+  auto resetPos =
+      llvm::make_scope_exit([&] { declOp->moveBefore(prevBlock, prevPos); });
+  if (symTab.insert(declOp) == origName)
     return nullptr; // No conflict, done.
 
   return symTab.lookup(origName);

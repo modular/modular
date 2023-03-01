@@ -61,7 +61,7 @@ ArrayRef<ParamDeclAttr> FileModuleOp::getInputParamDecls() { return {}; }
 
 /// Return a SymbolConstantAttr for this function, optionally bound to a set
 /// of parameter bindings.
-SymbolConstantAttr LIT::FuncOp::getBoundReference(ParamBindArrayAttr bindings) {
+TypedAttr LIT::FuncOp::getBoundReference(ParamBindArrayAttr bindings) {
   if (!bindings) // We allow null for convenience.
     bindings = ParamBindArrayAttr::get(getContext(), {});
 
@@ -76,6 +76,13 @@ SymbolConstantAttr LIT::FuncOp::getBoundReference(ParamBindArrayAttr bindings) {
           llvm_unreachable("bad bindings specified for getBoundReference");
         });
     assert(resultType && "bad bindings specified for getBoundReference");
+  }
+
+  if (ParamDeclAttr decl = getParamDeclAttr()) {
+    SmallVector<TypedAttr> bindOperands{ParamDeclRefAttr::get(decl)};
+    for (ParamBindAttr binding : bindings)
+      bindOperands.push_back(binding.getValue());
+    return ParamOperatorAttr::get(POC::BindSignature, bindOperands);
   }
 
   return SymbolConstantAttr::get(getFullyResolvedSymbolRef(*this), bindings,
@@ -208,6 +215,30 @@ LogicalResult LIT::FuncOp::verifyRegions() {
 
   return success();
 }
+
+void LIT::FuncOp::walkDeclarations(function_ref<void(ParamDeclAttr)> walkDecl) {
+  if (auto decl = getParamDeclAttr())
+    walkDecl(decl);
+}
+
+void LIT::FuncOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
+  if (auto decl = getParamDeclAttr())
+    walkDef(decl, &getBodyRegion());
+}
+
+void LIT::FuncOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
+  if (getParamDecl()) {
+    assert(decls.size() == 1);
+    setParamDeclAttr(decls.front());
+  } else {
+    assert(decls.empty());
+  }
+}
+
+/// This operation has no uses to collect in its current scope.
+void LIT::FuncOp::collectParameterUses(function_ref<void(Attribute)> scanAttr,
+                                       function_ref<void(Type)> scanType) {}
 
 void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   auto context = builder.getContext();
