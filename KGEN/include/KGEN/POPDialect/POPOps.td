@@ -1972,23 +1972,23 @@ def POP_VariadicCreateOp : POPOp<"variadic.create", [Pure,
     VariadicElementType<"result", "operands">]> {
   let summary = "create a value of variadic type from a sequence of values";
   let description = [{
-    The `pop.variadic.create` operation creates a `!pop.variadic` populated with
-    the given SSA values. The input values must all have the same type.
+    The `pop.variadic.create` operation creates a `!kgen.variadic` populated
+    with the given SSA values. The input values must all have the same type.
 
     Example:
 
     ```mlir
     // Create a variadic sequence of 2 scalar floats.
-    %0 = pop.variadic.create [%arg0, %arg1] : !pop.variadic<scalar<f32>>
+    %0 = pop.variadic.create [%arg0, %arg1] : !kgen.variadic<scalar<f32>>
 
     // Create an empty variadic sequence of scalar floats.
-    %1 = pop.variadic.create [] : !pop.variadic<scalar<f32>>
+    %1 = pop.variadic.create [] : !kgen.variadic<scalar<f32>>
 
     // Create a variadic sequence of structs.
-    %2 = pop.variadic.create [%arg2, %arg3] : !pop.variadic<struct<>>
+    %2 = pop.variadic.create [%arg2, %arg3] : !kgen.variadic<struct<>>
 
     // Create a variadic sequence of parametric types.
-    %3 = pop.variadic.create [%arg4] : !pop.variadic<T>
+    %3 = pop.variadic.create [%arg4] : !kgen.variadic<T>
     ```
   }];
 
@@ -2009,18 +2009,18 @@ def POP_VariadicGetOp : POPOp<"variadic.get", [Pure,
     VariadicElementType<"variadic", "result">]> {
   let summary = "returns the element at the given index in a variadic sequence";
   let description = [{
-    The `pop.variadic.get` operation takes a `!pop.variadic` sequence and an
+    The `pop.variadic.get` operation takes a `!kgen.variadic` sequence and an
     index, and returns the element at that index in the sequence.
 
     Example:
 
     ```mlir
     // Create a variadic sequence of 2 scalar floats.
-    %0 = pop.variadic.create [%arg0, %arg1] : !pop.variadic<scalar<f32>>
+    %0 = pop.variadic.create [%arg0, %arg1] : !kgen.variadic<scalar<f32>>
 
     // Get the 2nd float (the value of `%arg1`).
     %1 = index.constant 1
-    %2 = pop.variadic.get %0[%1] : !pop.variadic<f32>
+    %2 = pop.variadic.get %0[%1] : !kgen.variadic<f32>
     ```
   }];
 
@@ -2040,7 +2040,7 @@ def POP_VariadicGetOp : POPOp<"variadic.get", [Pure,
 def POP_VariadicSizeOp : POPOp<"variadic.size", [Pure]> {
   let summary = "given a sequence of variadic type, return its size";
   let description = [{
-    The `pop.variadic.size` operation takes an operand of `!pop.variadic` type
+    The `pop.variadic.size` operation takes an operand of `!kgen.variadic` type
     and returns a size that represents the number of elements in the variadic
     sequence.
 
@@ -2048,14 +2048,14 @@ def POP_VariadicSizeOp : POPOp<"variadic.size", [Pure]> {
 
     ```mlir
     // A function that takes a variadic sequence of arguments.
-    kgen.func @f(%arg0: f32, %arg1: !pop.variadic<f32>) {
+    kgen.func @f(%arg0: f32, %arg1: !kgen.variadic<f32>) {
       // Determine the number of arguments.
-      %0 = pop.variadic.size %arg1 : !pop.variadic<f32>
+      %0 = pop.variadic.size %arg1 : !kgen.variadic<f32>
 
       // Create a variadic sequence of 2 floats.
-      %1 = pop.variadic.create [%arg0, %arg0] : !pop.variadic<f32>
+      %1 = pop.variadic.create [%arg0, %arg0] : !kgen.variadic<f32>
       // Determine the number of arguments (this returns 2).
-      %2 = pop.variadic.size %1 : !pop.variadic<f32>
+      %2 = pop.variadic.size %1 : !kgen.variadic<f32>
 
       kgen.return
     }
@@ -2069,6 +2069,37 @@ def POP_VariadicSizeOp : POPOp<"variadic.size", [Pure]> {
     $operand attr-dict `:` qualified(type($operand))
   }];
 
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// VariadicAppendOp
+//===----------------------------------------------------------------------===//
+
+def POP_VariadicAppendOp : POPOp<"variadic.append", [Pure,
+    AllTypesMatch<["variadic", "result"]>,
+    VariadicElementType<"variadic", "value">]> {
+  let summary = "copy an existing variadic value and append an element to it";
+  let description = [{
+    The `pop.variadic.append` operation creates a `!kgen.variadic` populated
+    with values from the given variadic value appended by one more element.
+
+    Example:
+
+    ```mlir
+    // Create a variadic sequence of 2 scalar floats.
+    %0 = pop.variadic.create [%arg0, %arg1] : !kgen.variadic<scalar<f32>>
+
+    // Create a new variadic value containing [%arg0, %arg1, %arg2]
+    %1 = pop.variadic.append %arg2 to %0 : !kgen.variadic<scalar<f32>>
+    ```
+  }];
+
+  let arguments = (ins KGEN_VariadicType:$variadic, AnyType:$value);
+  let results = (outs KGEN_VariadicType:$result);
+  let assemblyFormat = [{
+    $value `to` $variadic `:` qualified(type($variadic)) attr-dict
+  }];
   let hasFolder = 1;
 }
 
