@@ -282,69 +282,28 @@ static void lowerThrowsAndAsync(DeclRefType errType, Operation *op) {
 //===----------------------------------------------------------------------===//
 
 /// Get a top-level function, lower all functions nested inside that function.
-static void lowerNestedFunctions(LIT::FuncOp topLevelFunc,
-                                 mlir::SymbolTableAnalysis &analysis) {
-  auto getNestedFuncRef = [&](SymbolRefAttr ref) -> LIT::FuncOp {
-    // Perform the symbol lookup and check if the referenced symbol lives inside
-    // this function.
-    SmallVector<Operation *> symbols;
-    if (failed(analysis.getSymbolTables().lookupSymbolIn(
-            analysis.getTopLevelOp<ModuleOp>(), ref, symbols)) ||
-        !llvm::is_contained(symbols, topLevelFunc))
-      return {};
-    auto lastSymbol = cast<LIT::FuncOp>(symbols.back());
-    if (lastSymbol == topLevelFunc)
-      return {};
-    return lastSymbol;
-  };
-
-  // Demote direct calls to nested functions to `call_param` so the callee can
-  // be rewritten.
-  topLevelFunc.walk([&](CallOp call) {
-    if (!getNestedFuncRef(call.getCalleeSymbol()))
-      return;
-    mlir::IRRewriter b{OpBuilder(call)};
-    b.replaceOpWithNewOp<CallParamOp>(
-        call, call.getResultTypes(), call.getCallee(), call.getParamDeclsAttr(),
-        call.getOperands());
-  });
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](SymbolConstantAttr ref) -> Attribute {
-    LIT::FuncOp nestedFunc = getNestedFuncRef(ref.getSymbol());
-    if (!nestedFunc)
-      return ref;
-    // Take the leaf reference as the parameter name. The parser guarntees it
-    // has no collisions with parameters.
-    TypedAttr newRef = ParamDeclRefAttr::get(ref.getSymbol().getLeafReference(),
-                                             nestedFunc.getSignature());
-    if (ref.getParamValues().empty())
-      return newRef;
-    // If the symbol constant had bindings, create a `bind_signature`.
-    SmallVector<TypedAttr> operands;
-    operands.push_back(newRef);
-    for (ParamBindAttr bind : ref.getParamValues())
-      operands.push_back(bind.getValue());
-    return ParamOperatorAttr::get(POC::BindSignature, operands);
-  });
-  replacer.recursivelyReplaceElementsIn(topLevelFunc, /*replaceAttrs=*/true,
-                                        /*replaceLocs=*/false,
-                                        /*replaceTypes=*/true);
-
-  topLevelFunc.walk([&](LIT::FuncOp func) {
+static LogicalResult lowerNestedFunctions(LIT::FuncOp topLevelFunc,
+                                          mlir::SymbolTableAnalysis &analysis) {
+  WalkResult result = topLevelFunc.walk([&](LIT::FuncOp func) {
     if (func == topLevelFunc)
-      return;
+      return WalkResult::advance();
     // Process a nested function by lowering it straight to a
-    // `kgen.param.declare.region`. We need to replace all the symbol
-    // references within the function. The parser ensures that the symbol name
-    // is unique with parameters.
+    // `kgen.param.declare.region`. Nested functions are denoted with an
+    // parameter declaration on the function declaration.
+    ParamDeclAttr decl = func.getParamDeclAttr();
+    if (!decl) {
+      func.emitError("nested function must have a parameter declaration");
+      return WalkResult::interrupt();
+    }
     ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(func));
     auto region = b.create<ParamDeclareRegionOp>(
-        ParamDeclAttr::get(func.getSymNameAttr(), func.getSignature()),
-        func.getSignature(), ArrayRef<ConstraintAttr>(), /*isolated=*/false,
-        func.getAlwaysInlineLevel());
+        decl, func.getSignature(), ArrayRef<ConstraintAttr>(),
+        /*isolated=*/false, func.getAlwaysInlineLevel());
     region.getBodyRegion().takeBody(func.getBodyRegion());
     func.erase();
+    return WalkResult::advance();
   });
+  return success(!result.wasInterrupted());
 }
 
 //===----------------------------------------------------------------------===//
@@ -387,10 +346,15 @@ struct LowerTerminatorsPass
     // Lower nested functions by converting them to region declarations. Walk
     // all top-level functions and gather nested functions.
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
-    getOperation()->walk<mlir::WalkOrder::PreOrder>([&](LIT::FuncOp func) {
-      lowerNestedFunctions(func, analysis);
+    auto walkFn = [&](LIT::FuncOp func) {
+      if (failed(lowerNestedFunctions(func, analysis)))
+        return WalkResult::interrupt();
       return WalkResult::skip();
-    });
+    };
+    if (getOperation()
+            ->walk<mlir::WalkOrder::PreOrder>(walkFn)
+            .wasInterrupted())
+      return signalPassFailure();
   }
 };
 } // namespace

@@ -66,7 +66,6 @@ static void lowerLITOps(LIT::FuncOp func,
   bool buildingDebugVars =
       funcSpAttr && funcSpAttr.getCompileUnit().getEmissionKind() ==
                         DebugInfo::EmissionKind::Full;
-  SmallDenseMap<StringAttr, ParamDeclRefAttr> nestedFuncRenames;
   func.walk([&](Operation *op) {
     mlir::IRRewriter b{OpBuilder(op)};
     if (isa<AliasForwardDeclOp>(op)) {

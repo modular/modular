@@ -92,18 +92,23 @@ TypedAttr LIT::FuncOp::getBoundReference(ParamBindArrayAttr bindings) {
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
-    "constraints",     "implements", "signature",   "sym_name",
-    "valueParamNames", "evaluator",  "defaultImpl", "alwaysInlineLevel"};
+    "constraints", "implements",        "signature",
+    "sym_name",    "valueParamNames",   "evaluator",
+    "defaultImpl", "alwaysInlineLevel", "paramDecl"};
 
 /// Parses a LIT Generator.
 ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   Builder &builder = parser.getBuilder();
 
-  // Parse the name as a symbol.
+  // Parse the name as a symbol or a parameter declaration.
   StringAttr nameAttr;
-  if (parser.parseSymbolName(nameAttr, getSymNameAttrName(result.name),
-                             result.attributes))
-    return failure();
+  bool isParamDecl = false;
+  if (parser.parseOptionalSymbolName(nameAttr)) {
+    if (parseParamName(parser, nameAttr))
+      return failure();
+    isParamDecl = true;
+  }
+  result.addAttribute(getSymNameAttrName(result.name), nameAttr);
 
   // Parse the function signature.
   llvm::SMLoc sigLoc = parser.getCurrentLocation();
@@ -119,6 +124,9 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   result.addAttribute(getConstraintsAttrName(result.name), constraints);
   result.addAttribute(getSignatureAttrName(result.name),
                       TypeAttr::get(signature));
+  if (isParamDecl)
+    result.addAttribute(getParamDeclAttrName(result.name),
+                        ParamDeclAttr::get(nameAttr, signature));
 
   // Handle keyword argument names.
   SmallVector<StringAttr> names;
@@ -170,7 +178,10 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   // Print the operation and the function name.
   p << ' ';
 
-  p.printSymbolName(func.getName());
+  if (ParamDeclAttr decl = getParamDeclAttr())
+    printParamName(p, decl.getName());
+  else
+    p.printSymbolName(func.getName());
   printFunctionSignature(p, getBodyRegion(), getSignature());
   printOptionalAlwaysInline(p, getAlwaysInlineLevelAttr());
 
