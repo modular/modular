@@ -367,3 +367,102 @@ fn tile[
     # Note: This is the key difference from the static version of tile
     #  generator.
     workgroup_function(work_idx, upperbound - work_idx)
+
+
+# ===----------------------------------------------------------------------===#
+# NullaryClosure
+# ===----------------------------------------------------------------------===#
+
+
+struct NullaryClosure[result_type: __mlir_type.`!kgen.mlirtype`]:
+    alias closure_type = __mlir_type[`!pop.closure<() -> `, result_type, `>`]
+    var value: closure_type
+
+    fn __new__(value: closure_type) -> Self:
+        """Create a nullary closure.
+
+        Arguments:
+          value: the closure value
+
+        Returns:
+          The nullary closure.
+        """
+        return Self {value: value}
+
+    fn __call__(self) -> result_type:
+        """Call a nullary closure.
+
+        Returns:
+          The closure result.
+        """
+        return __mlir_op.`pop.call_indirect`[_type:result_type](self.value)
+
+
+struct UnaryClosure[
+    input_type: __mlir_type.`!kgen.mlirtype`,
+    result_type: __mlir_type.`!kgen.mlirtype`,
+]:
+    alias closure_type = __mlir_type[
+        `!pop.closure<(`, input_type, `) -> `, result_type, `>`
+    ]
+    var value: closure_type
+
+    fn __new__(value: closure_type) -> Self:
+        """Create a unary closure.
+
+        Arguments:
+          value: the closure value
+
+        Returns:
+          The unary closure.
+        """
+        return Self {value: value}
+
+    fn __call__(self, input: input_type) -> result_type:
+        """Call a unary closure.
+
+        Arguments:
+          input: the input to the unary closure
+
+        Returns:
+          The unary closure result.
+        """
+        return __mlir_op.`pop.call_indirect`[_type:result_type](
+            self.value, input
+        )
+
+
+struct BinaryClosure[
+    lhs_type: __mlir_type.`!kgen.mlirtype`,
+    rhs_type: __mlir_type.`!kgen.mlirtype`,
+    result_type: __mlir_type.`!kgen.mlirtype`,
+]:
+    alias closure_type = __mlir_type[
+        `!pop.closure<(`, lhs_type, `, `, rhs_type, `) -> `, result_type, `>`
+    ]
+    var value: closure_type
+
+    fn __new__(value: closure_type) -> Self:
+        """Create a binary closure.
+
+        Arguments:
+          value: the closure value
+
+        Returns:
+          The binary closure.
+        """
+        return Self {value: value}
+
+    fn __call__(self, lhs: lhs_type, rhs: rhs_type) -> result_type:
+        """Call a binary closure.
+
+        Arguments:
+          lhs: the first input to the binary closure
+          rhs: the second input to the binary closure
+
+        Returns:
+          The binary closure result.
+        """
+        return __mlir_op.`pop.call_indirect`[_type:result_type](
+            self.value, lhs, rhs
+        )
