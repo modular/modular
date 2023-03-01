@@ -891,20 +891,18 @@ std::pair<PRValue, SignatureType> DirectCallable::getCallee() {
     bindArray = ParamBindArrayAttr::get(binds.front().getContext(), binds);
   }
   if (fnDecls.size() == 1) {
-    SymbolConstantAttr callee =
+    TypedAttr callee =
         cast<LIT::FuncOp>(*fnDecls.front()).getBoundReference(bindArray);
-    return {PRValue(callee), callee.getType()};
+    return {PRValue(callee), cast<SignatureType>(callee.getType())};
   }
 
   // Otherwise, we have to construct a list to be called.
   SmallVector<TypedAttr> symbols =
       llvm::to_vector(llvm::map_range(fnDecls, [&](ASTDecl *decl) {
-        return cast<TypedAttr>(
-            cast<LIT::FuncOp>(*decl).getBoundReference(bindArray));
+        return cast<LIT::FuncOp>(*decl).getBoundReference(bindArray);
       }));
   // Pull out the type, and construct a list attr to be returned.
-  SignatureType calleeType =
-      cast<SymbolConstantAttr>(symbols.front()).getType();
+  auto calleeType = cast<SignatureType>(symbols.front().getType());
   auto calleeList = VariadicAttr::get(symbols, VariadicType::get(calleeType));
   return {PRValue(calleeList), calleeType};
 }
@@ -912,10 +910,9 @@ std::pair<PRValue, SignatureType> DirectCallable::getCallee() {
 /// Utility function to perform subsitutions of the specified callable bindings
 /// into the symbol for the given function declaration. It returns the resultant
 /// SymbolConstantAttr or produces an error message and returns null.
-static SymbolConstantAttr getBoundConstAttrFor(const DirectCallable *callable,
-                                               const ExprNode *callExpr,
-                                               ASTDecl *fnDecl,
-                                               ExprEmitter &emitter) {
+static TypedAttr getBoundConstAttrFor(const DirectCallable *callable,
+                                      const ExprNode *callExpr, ASTDecl *fnDecl,
+                                      ExprEmitter &emitter) {
   auto funcOp = cast<LIT::FuncOp>(*fnDecl);
 
   // If there are no input parameters specified and if we allow unbound symbols,
@@ -943,9 +940,8 @@ static SymbolConstantAttr getBoundConstAttrFor(const DirectCallable *callable,
 /// the resultant LITSymbolConstant attr or producing an error message and
 /// returning null. This allows producing a reference to a parameterized
 /// function without the parmaeters specified.  They can be bound later.
-SymbolConstantAttr
-DirectCallable::getBoundConstantAttr(const ExprNode *callExpr,
-                                     ExprEmitter &emitter) const {
+TypedAttr DirectCallable::getBoundConstantAttr(const ExprNode *callExpr,
+                                               ExprEmitter &emitter) const {
   if (fnDecls.size() != 1) {
     assert(!fnDecls.empty() && "DirectCallable malformed");
     auto diag = emitter.emitError(
@@ -975,7 +971,7 @@ LogicalResult DirectCallable::getBoundConstantAttrsAdaptiveSet(
       diag.attachNote(funcOp.getLoc()) << "declared here";
       return failure();
     }
-    SymbolConstantAttr symConstAttr =
+    TypedAttr symConstAttr =
         getBoundConstAttrFor(this, callExpr, fnDecl, emitter);
     if (!symConstAttr)
       return failure();
@@ -1079,7 +1075,7 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter,
 
   // Verify that the target has no result parameters.  We have no way to bind
   // these indirectly.
-  SignatureType calleeSignature = directSymbolAttr.getType();
+  auto calleeSignature = cast<SignatureType>(directSymbolAttr.getType());
   if (!calleeSignature.getResultParams().empty()) {
     emitter.emitError(expr->getLoc(),
                       "calls with result parameters must be called directly")
@@ -1409,11 +1405,13 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   if (direct && direct->fnDecls.size() == 1) {
     auto calleeFunc = cast<LIT::FuncOp>(*direct->fnDecls[0]);
     if (calleeFunc.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled) {
-      auto calleeSym = cast<SymbolConstantAttr>(callee.getIfPRValue().get());
-      ParamBindArrayAttr inputParams = calleeSym.getParamValues();
-      if (auto result = inlineFunctionCallIntoPRValue(
-              *direct->fnDecls[0], inputParams, argumentValues, emitter))
-        return emitter.emitResult(result.get(), expr, dest);
+      if (auto calleeSym =
+              dyn_cast<SymbolConstantAttr>(callee.getIfPRValue().get())) {
+        ParamBindArrayAttr inputParams = calleeSym.getParamValues();
+        if (auto result = inlineFunctionCallIntoPRValue(
+                *direct->fnDecls[0], inputParams, argumentValues, emitter))
+          return emitter.emitResult(result.get(), expr, dest);
+      }
     }
   }
 

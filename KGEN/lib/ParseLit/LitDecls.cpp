@@ -1375,7 +1375,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // Finally now that the full signature has been resolved, build our IR.
 
   // Set the symbol to the mangled name and check for redefinition.
-  funcOp.setName(name);
+  funcOp.setSymNameAttr(name);
 
   // Remove the temporary "sym_namex" attribute set up in FuncOp::build, see
   // that method for an explanation.
@@ -1466,6 +1466,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
   funcOp.setValueParamNamesAttr(builder.getAttr<StringArrayAttr>(argNames));
   funcOp.setSignature(signature);
+  // If this is a nested function, set its parameter declaration. It will be
+  // referenced via parameter references instead of symbol references.
+  if (funcOp->getParentOfType<LIT::FuncOp>())
+    funcOp.setParamDeclAttr(
+        ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
 
   funcOp.getBody()->addArguments(argTypes, argLocs);
 

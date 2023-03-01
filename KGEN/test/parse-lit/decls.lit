@@ -1,6 +1,7 @@
 # RUN: kgen-translate %s -verify-diagnostics -import-lit -I %S/../lit-examples/ | FileCheck %s
 
 from prolog import Error, F32, Int
+from Range import range
 
 
 ##===----------------------------------------------------------------------===##
@@ -148,9 +149,22 @@ fn adaptiveNestedFns(a: Int, b: Int):
     fn nestedFn(d: Int) -> Int:
         return b + d
 
-    # CHECK: kgen.param.fork *"(adaptive)nestedFn(":{{.*}} = <[{{.*}}@"adaptiveNestedFns{{.*}}"::@"nestedFn{{.*}}", {{.*}}@"adaptiveNestedFns{{.*}}"::@"nestedFn{{.*}}_0"]>
+    # CHECK: kgen.param.fork *"(adaptive)nestedFn(":{{.*}} = <[*"nestedFn{{.*}}", *"nestedFn{{.*}}_0"]>
     # CHECK: call_param[{{.*}}: *"(adaptive)nestedFn("]
     let c = nestedFn(2)
+
+# CHECK-LABEL: lit.func @"nestedFnInLoop()"
+fn nestedFnInLoop():
+    # CHECK: hlcf.loop
+    for i in range(10):
+      # CHECK: %[[I:.*]] = kgen.call @{{.*}}__next__
+      # CHECK: lit.func @"foo()"
+      @always_inline
+      fn foo() -> Int:
+          # CHECK-NEXT: return %[[I]]
+          return i
+      # CHECK: kgen.call_param[() -> {{.*}}@Int{{.*}}: *"foo()"]()
+      let result = foo()
 
 ##===----------------------------------------------------------------------===##
 # Default arguments and variadics.
@@ -360,9 +374,9 @@ fn topLevelFunction() -> __mlir_type.index:
   fn nestedFunction() -> __mlir_type.index:
     # CHECK-NEXT: pop.load %a
     return a
-  # CHECK: declare b: () -> index = <@"$decls"::@"topLevelFunction()"::@"nestedFunction()">
+  # CHECK: declare b: () -> index = <*"nestedFunction()">
   alias b = nestedFunction
-  # CHECK: call @"$decls"::@"topLevelFunction()"::@"nestedFunction()"()
+  # CHECK: call_param[{{.*}}: *"nestedFunction()"]()
   return nestedFunction()
 
 # CHECK-LABEL: lit.struct.decl @SomeStruct
@@ -374,9 +388,9 @@ struct SomeStruct:
     fn nestedFunction() -> __mlir_type.index:
       # CHECK-NEXT: pop.load %a
       return a
-    # CHECK: declare b: () -> index = <@"$decls"::@SomeStruct::@"someMethod({{.*}})"::@"nestedFunction()">
+    # CHECK: declare b: () -> index = <*"nestedFunction()">
     alias b = nestedFunction
-    # CHECK: call @"$decls"::@SomeStruct::@"someMethod({{.*}})"::@"nestedFunction()"()
+    # CHECK: call_param[{{.*}}: *"nestedFunction()"]()
     return nestedFunction()
 
 # CHECK-LABEL: lit.func @"topLevelParamFn()"<a_param>
@@ -384,9 +398,9 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
   # CHECK: lit.func @"nestedFunction()"<b_param>
   fn nestedFunction[b_param: __mlir_type.index]():
     return
-  # CHECK: declare ref: <b_param>() -> !lit.none = <@"$decls"::@"topLevelParamFn()"::@"nestedFunction()">
+  # CHECK: declare ref: <b_param>() -> !lit.none = <*"nestedFunction()">
   alias ref = nestedFunction
-  # CHECK: call @"$decls"::@"topLevelParamFn()"::@"nestedFunction()"<b_param = 2>
+  # CHECK: call_param[{{.*}}: bind_signature(:<b_param>() -> !lit.none *"nestedFunction()", 2)]()
   nestedFunction[2]()
 
 # CHECK-LABEL: lit.struct.decl @SomeParamStruct<c_param>
@@ -396,9 +410,9 @@ struct SomeParamStruct[c_param: __mlir_type.index]:
     # CHECK: lit.func @"nestedFunction()"<b_param>
     fn nestedFunction[b_param: __mlir_type.index]():
       return
-    # CHECK: declare ref: <b_param>() -> !lit.none = <@"$decls"::@SomeParamStruct::@"topLevelParamFn({{.*}})"::@"nestedFunction()"
+    # CHECK: declare ref: <b_param>() -> !lit.none = <*"nestedFunction()">
     alias ref = nestedFunction
-    # CHECK: call @"$decls"::@SomeParamStruct::@"topLevelParamFn({{.*}})"::@"nestedFunction()"<b_param = 2>()
+    # CHECK: call_param[{{.*}}: bind_signature(:<b_param>() -> !lit.none *"nestedFunction()", 2)]()
     nestedFunction[2]()
 
 
