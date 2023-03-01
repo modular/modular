@@ -134,7 +134,6 @@ private:
   Attribute storage;
 };
 raw_ostream &operator<<(raw_ostream &os, PRValue value);
-mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, PRValue value);
 
 template <typename DerivedType>
 struct VariantValueStorage {
@@ -207,7 +206,6 @@ public:
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, RValue value);
-mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, RValue value);
 
 /// AnyValue = RValue|LValue.
 class AnyValue : public VariantValueStorage<AnyValue> {
@@ -254,7 +252,6 @@ public:
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, AnyValue value);
-mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, AnyValue value);
 
 } // namespace M::KGEN::LIT
 
