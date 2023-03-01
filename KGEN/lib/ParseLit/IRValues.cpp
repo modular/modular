@@ -12,7 +12,6 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "mlir/IR/Diagnostics.h"
 #include "llvm/Support/SMLoc.h"
 
 using namespace M;
@@ -67,23 +66,6 @@ void RValue::dump() const {
 }
 void AnyValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
-}
-
-static std::string getStorageAsString(VariantStorage storage) {
-  std::string result;
-  llvm::raw_string_ostream os(result);
-  printStorage(os, storage);
-  return os.str();
-}
-
-mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, PRValue value) {
-  return diag << '\'' << getStorageAsString(value) << '\'';
-}
-mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, RValue value) {
-  return diag << '\'' << getStorageAsString(value.getStorage()) << '\'';
-}
-mlir::Diagnostic &LIT::operator<<(mlir::Diagnostic &diag, AnyValue value) {
-  return diag << '\'' << getStorageAsString(value.getStorage()) << '\'';
 }
 
 static Type getTypeFrom(VariantStorage storage) {
