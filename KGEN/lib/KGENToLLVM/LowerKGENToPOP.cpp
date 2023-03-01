@@ -436,7 +436,7 @@ struct ExpandListStore : public mlir::OpRewritePattern<POP::StoreOp> {
       Value offset = b.create<mlir::index::ConstantOp>(op.getLoc(), idx);
       Value curPtr = b.create<POP::OffsetOp>(op.getLoc(), elPtr, offset);
       b.create<POP::StoreOp>(op.getLoc(), element, curPtr,
-                             op.getAlignmentAttr());
+                             op.getAlignmentAttr(), op.getNonTemporalAttr());
     }
     b.eraseOp(op);
     return success();
