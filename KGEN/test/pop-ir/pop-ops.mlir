@@ -991,6 +991,9 @@ kgen.generator @variadics<type: type>(
   // CHECK: pop.variadic.size %[[V3]]
   %s3 = pop.variadic.size %v3 : !kgen.variadic<type>
 
+  // CHECK: %[[V4:.*]] = pop.variadic.append %arg4 to %[[V3]] : !kgen.variadic<type>
+  %v4 = pop.variadic.append %arg4 to %v3 : !kgen.variadic<type>
+
   kgen.return
 }
 

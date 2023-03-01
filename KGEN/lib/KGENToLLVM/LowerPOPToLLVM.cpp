@@ -862,7 +862,7 @@ LogicalResult ConvertPOPVariadicCreate::matchAndRewrite(
 //===----------------------------------------------------------------------===//
 
 /// Converts a `pop.variadic.get` into LLVM ops that load one of the elements of
-/// the underlying struct that represents the `!pop.variadic` type.
+/// the underlying struct that represents the `!kgen.variadic` type.
 struct ConvertPOPVariadicGet : public ConvertPOPToLLVMPattern<VariadicGetOp> {
   using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
@@ -883,7 +883,7 @@ struct ConvertPOPVariadicGet : public ConvertPOPToLLVMPattern<VariadicGetOp> {
 //===----------------------------------------------------------------------===//
 
 /// Converts a `pop.variadic.size` into LLVM ops that load the size member
-/// of the underlying struct representing the `!pop.varaidic` type.
+/// of the underlying struct representing the `!kgen.variadic` type.
 struct ConvertPOPVariadicSize : public ConvertPOPToLLVMPattern<VariadicSizeOp> {
   using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
@@ -893,6 +893,21 @@ struct ConvertPOPVariadicSize : public ConvertPOPToLLVMPattern<VariadicSizeOp> {
     rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(op, adaptor.getOperand(),
                                                       1);
     return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPVariadicAppend
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPVariadicAppend
+    : public ConvertPOPToLLVMPattern<VariadicAppendOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(VariadicAppendOp op, VariadicAppendOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    return op.emitError("pop.variadic.append lowering is not yet implemented!");
   }
 };
 

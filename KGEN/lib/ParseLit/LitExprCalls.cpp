@@ -1300,7 +1300,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     // If we ran out of operands, fulfill this with a default value or empty
     // variadic list.
     if (nextOperandIdx == operands.size()) {
-      // Varargs arguments are fulfilled with an empty !pop.variadic list.
+      // Varargs arguments are fulfilled with an empty !kgen.variadic list.
       if (calleeSig.isVararg(argIdx)) {
         auto variadic = VariadicAttr::get(ArrayRef<TypedAttr>(),
                                           expectedType.cast<VariadicType>());
