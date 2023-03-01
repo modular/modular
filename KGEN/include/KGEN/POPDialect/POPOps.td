@@ -749,15 +749,17 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
     pop.store %0, %ptr0 : !pop.pointer<scalar<f32>>
     pop.store %1, %ptr1 : !pop.pointer<simd<4, type>>
     pop.store %1, %ptr1 align 8 : !pop.pointer<simd<4, type>>
+    pop.store %1, %ptr1 align 8 nontemporal: !pop.pointer<simd<4, type>>
     ```
   }];
 
   let arguments = (ins AnyType:$arg,
                        Arg<POP_PointerType, "", [MemWrite]>:$ptr,
-                       OptionalAttr<TypedAttrInterface>:$alignment);
+                       OptionalAttr<TypedAttrInterface>:$alignment,
+                       UnitAttr:$nonTemporal);
   let assemblyFormat = [{
-    $arg `,` $ptr `` custom<OptionalAlignmentParamValue>($alignment) attr-dict
-    `:` qualified(type($ptr))
+    $arg `,` $ptr `` custom<OptionalAlignmentParamValue>($alignment)
+    (`nontemporal` $nonTemporal^)? attr-dict `:` qualified(type($ptr))
   }];
 
   let builders = [

@@ -191,7 +191,7 @@ void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
   TypedAttr alignmentAttr;
   if (alignment)
     alignmentAttr = b.getIndexAttr(*alignment);
-  build(b, state, arg, ptr, alignmentAttr);
+  build(b, state, arg, ptr, alignmentAttr, {});
 }
 
 //===----------------------------------------------------------------------===//
