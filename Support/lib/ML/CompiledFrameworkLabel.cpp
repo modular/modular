@@ -16,6 +16,7 @@ const char *CompiledFrameworkLabel::getAsOpNameOrNull() const {
     return nullptr;
   case kTensorFlowModel:
   case kTFLiteModel:
+  case kONNXModel:
     return "mgp.model";
   case kFauxModel:
     // TODO(#6190): Support mgp.model for faux.
@@ -35,6 +36,8 @@ const char *CompiledFrameworkLabel::getAsFrameworkNameOrNull() const {
   case kFauxModel:
     // TODO(#6190): Support mgp.model for faux.
     return nullptr;
+  case kONNXModel:
+    return "onnx";
   }
   llvm::report_fatal_error("missing case");
 }
@@ -48,7 +51,7 @@ bool CompiledFrameworkLabel::isValidOpName(StringRef opName) {
 bool CompiledFrameworkLabel::isValidFrameworkName(StringRef frameworkName) {
   return frameworkName == "tfl" || frameworkName == "tf" ||
          // TODO(#6190): "mgp" isn't really a framework, replace with faux.
-         frameworkName == "mgp";
+         frameworkName == "mgp" || frameworkName == "onnx";
 }
 
 CompiledFrameworkLabel
@@ -62,6 +65,8 @@ CompiledFrameworkLabel::getLabelForOpName(StringRef opName,
       return CompiledFrameworkLabel{kTFLiteModel};
     else if (frameworkName == "tf")
       return CompiledFrameworkLabel{kTensorFlowModel};
+    else if (frameworkName == "onnx")
+      return CompiledFrameworkLabel{kONNXModel};
   }
   llvm::errs() << opName << " & " << frameworkName << "\n";
   return CompiledFrameworkLabel{kUnknown};
@@ -77,6 +82,8 @@ const char *CompiledFrameworkLabel::getAsString() const {
     return "compiled TFLite model";
   case kFauxModel:
     return "compiled Faux model";
+  case kONNXModel:
+    return "compiled ONNX model";
   }
   llvm::report_fatal_error("missing case");
 };
