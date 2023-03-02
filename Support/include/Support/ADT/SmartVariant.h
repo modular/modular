@@ -51,20 +51,6 @@ public:
   template <class... TArgs>
   SmartVariant(TArgs &&...args) : storage(std::forward<TArgs...>(args...)) {}
 
-  bool isNull() const {
-    if constexpr (CanStealBits) {
-      return storage.isNull();
-    } else {
-      // A `std::variant` is never "null".  Even when default constructed, it's
-      // actually constructed with the first type in the `variant`.  This means
-      // there is no way to discern between the variant being constructed with
-      // the first type vs. default constructed.
-      return false;
-    }
-  }
-
-  explicit operator bool() const { return !isNull(); }
-
   UnderlyingStorage &getUnderlyingStorage() { return storage; }
 
   const UnderlyingStorage &getUnderlyingStorage() const { return storage; }

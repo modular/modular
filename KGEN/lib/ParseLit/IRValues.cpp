@@ -28,7 +28,7 @@ using VariantStorage = SmartVariant<NullRepresentation, PRValue, SRValue,
 
 static raw_ostream &printStorage(raw_ostream &os, const VariantStorage &storage,
                                  bool isDump = false) {
-  if (storage.isNull()) {
+  if (isa<NullRepresentation>(storage)) {
     os << "<NULL IR Value>\n";
   } else if (auto val = dyn_cast<PRValue>(storage)) {
     if (isDump)

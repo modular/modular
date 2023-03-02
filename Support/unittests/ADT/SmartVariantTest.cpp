@@ -95,17 +95,6 @@ TEST_F(SmartVariantTest, dyn_cast) {
   EXPECT_EQ(dyn_cast_if_present<float>(n2), float{});
 }
 
-TEST_F(SmartVariantTest, isNull) {
-  EXPECT_FALSE(a1.isNull());
-  EXPECT_FALSE(a2.isNull());
-  EXPECT_FALSE(b1.isNull());
-  EXPECT_FALSE(b2.isNull());
-  EXPECT_FALSE(c1.isNull());
-  EXPECT_FALSE(c2.isNull());
-  EXPECT_TRUE(n1.isNull());
-  EXPECT_FALSE(n2.isNull()); // a `std::variant` is never null
-}
-
 TEST_F(SmartVariantTest, pointerLikeTypes) {
   {
     using SV = SmartVariant<mlir::Attribute>;
