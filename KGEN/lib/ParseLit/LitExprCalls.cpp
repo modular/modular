@@ -19,6 +19,7 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "Support/STLExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
 
@@ -897,10 +898,9 @@ std::pair<PRValue, SignatureType> DirectCallable::getCallee() {
   }
 
   // Otherwise, we have to construct a list to be called.
-  SmallVector<TypedAttr> symbols =
-      llvm::to_vector(llvm::map_range(fnDecls, [&](ASTDecl *decl) {
-        return cast<LIT::FuncOp>(*decl).getBoundReference(bindArray);
-      }));
+  SmallVector<TypedAttr> symbols = map_to_vector(fnDecls, [&](ASTDecl *decl) {
+    return cast<LIT::FuncOp>(*decl).getBoundReference(bindArray);
+  });
   // Pull out the type, and construct a list attr to be returned.
   auto calleeType = cast<SignatureType>(symbols.front().getType());
   auto calleeList = VariadicAttr::get(symbols, VariadicType::get(calleeType));

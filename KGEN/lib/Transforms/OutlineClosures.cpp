@@ -11,6 +11,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/STLExtras.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dominance.h"
@@ -93,8 +94,8 @@ void OutlineClosuresPass::runOnOperation() {
       StringAttr globalVar = nullptr;
       POP::StructType structType = nullptr;
       if (!isolated) {
-        structType = b.getType<POP::StructType>(llvm::to_vector(llvm::map_range(
-            captures, [](Value capture) { return capture.getType(); })));
+        structType = b.getType<POP::StructType>(map_to_vector(
+            captures, [](Value capture) { return capture.getType(); }));
 
         LLVM_DEBUG(llvm::dbgs()
                    << "Created capture struct: " << structType << "\n");

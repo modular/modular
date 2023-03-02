@@ -1175,8 +1175,8 @@ ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
   newFork->erase();
 
   // Map to the new ops.
-  auto remaining = llvm::to_vector(llvm::map_range(
-      remainingWorklist, [&](Operation *op) { return map.lookup(op); }));
+  auto remaining = map_to_vector(remainingWorklist,
+                                 [&](Operation *op) { return map.lookup(op); });
 
   // And finally, process the rest of the worklist in this new scope.
   processScope(newFuncNode, remaining);
@@ -1327,8 +1327,8 @@ std::optional<ErrorTree> ElaboratorImpl::processGeneratorUser(
 
     // We have to finish specializing this thing now. Map to the new ops and
     // process the remaining scope.
-    auto remaining = llvm::to_vector(llvm::map_range(
-        remainingWorklist, [&](Operation *op) { return map.lookup(op); }));
+    auto remaining = map_to_vector(
+        remainingWorklist, [&](Operation *op) { return map.lookup(op); });
 
     // Process the rest of the worklist in this new scope.
     processScope(newNode, remaining);
