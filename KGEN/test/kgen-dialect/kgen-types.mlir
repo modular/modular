@@ -1,4 +1,5 @@
 // RUN: kgen-opt %s | kgen-opt | FileCheck %s
+// RUN: kgen-opt -emit-bytecode %s | kgen-opt | FileCheck %s
 
 lit.struct.decl @MyStruct<a, b: dtype, c: type> {}
 

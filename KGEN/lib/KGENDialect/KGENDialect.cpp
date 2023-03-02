@@ -45,6 +45,7 @@ void KGENDialect::initialize() {
   registerAttributes();
   registerTypes();
   addInterfaces<KGENDialectFoldInterface>();
+  registerBytecodeInterface();
   injectAttrInterfaces();
 
   // Register operations.
