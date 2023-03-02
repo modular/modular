@@ -477,3 +477,11 @@ fn testParamInference[size: index](a: StaticVec[4], b: StaticVec[size],
   _ = StaticVec(c)
   # CHECK: kgen.call @{{.*}}@"thing{{.*}}<size = 17, type: dtype = f32>(%c)
   StaticVec.thing(c)
+
+struct Abstraction[a: Int]:
+  alias val = a.__as_mlir_index()
+
+# CHECK-LABEL: lit.func @"testParameterEvaluator()"
+fn testParameterEvaluator():
+  # CHECK-NEXT: declare x = <1>
+  alias x = Abstraction[1].val

@@ -9,13 +9,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "LitDecls.h"
-#include "LitParameterEvaluator.h"
-
 #include "ASTDecl.h"
 #include "IRValues.h"
 #include "LitExprEmitter.h"
 #include "LitExprNodes.h"
 #include "LitLexer.h"
+#include "LitParameterEvaluator.h"
 #include "LitParserBase.h"
 
 #include "KGEN/CompilationOptions.h"
@@ -32,6 +31,7 @@
 #include "Support/STLExtras.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
@@ -513,14 +513,59 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 //===----------------------------------------------------------------------===//
 
 LitParameterEvaluator::LitParameterEvaluator(LitSharedState &shared)
-    : resolver(*shared.declResolver) {}
+    : LitParameterEvaluator({}, shared) {}
 LitParameterEvaluator::LitParameterEvaluator(
     ArrayRef<ParamBindAttr> paramValues, LitSharedState &shared)
-    : ParameterEvaluator(paramValues), resolver(*shared.declResolver) {}
+    : ParameterEvaluator(paramValues), InterpreterState(/*target=*/nullptr),
+      resolver(*shared.declResolver) {}
 
 FailureOr<TypedAttr>
 LitParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
-  return failure();
+  if (op.getOpcode() != POC::Apply)
+    return failure();
+
+  // We can only fold direct calls.
+  auto ref = dyn_cast<SymbolConstantAttr>(op.getOperands().front());
+  if (!ref)
+    return failure();
+
+  // All inputs must be simple constants.
+  ArrayRef<TypedAttr> inputs = op.getOperands().drop_front();
+  if (!llvm::all_of(inputs, ParameterAttr::isSimpleConstant))
+    return failure();
+
+  ErrorOr<Region *> body = lookupFunctionBody(ref.getSymbol());
+  if (body.isError()) {
+    // Swallow the error.
+    return failure();
+  }
+  SmallVector<Attribute> arguments;
+  for (TypedAttr input : inputs)
+    arguments.push_back(input);
+
+  ErrorTreeOr<SmallVector<Attribute>> result =
+      startInterpreterAt(*body.takeValue(), arguments);
+  if (result.isError()) {
+    // Swallow the error.
+    DEBUG_WITH_TYPE("lit-parameter-evaluator",
+                    result.getError().emit(
+                        (InFlightDiagnostic(*)(Location))mlir::emitError));
+    return failure();
+  }
+
+  return cast<TypedAttr>(result->front());
+}
+
+ErrorOr<Region *>
+LitParameterEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
+  ASTDecl *decl = resolver.getDeclForFuncSymbol(symbol);
+  if (!decl)
+    return Error("function not found: " + mlir::debugString(symbol));
+  // Make sure to fully resolve the body.
+  if (failed(resolver.resolveFully(*decl, decl->getLoc())))
+    return Error("failed to fully resolve function: " +
+                 mlir::debugString(symbol));
+  return &cast<LIT::FuncOp>(*decl).getBodyRegion();
 }
 
 //===----------------------------------------------------------------------===//

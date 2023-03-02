@@ -16,6 +16,7 @@ include "KGEN/KGENDialect/KGENEnums.td"
 include "KGEN/KGENDialect/KGENInterfaces.td"
 include "KGEN/POPDialect/POPTypes.td"
 include "Support/HLCFDialect/HLCFInterfaces.td"
+include "Support/Interpreter/InterpreterInterface.td"
 include "mlir/IR/BuiltinAttributes.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
@@ -532,7 +533,8 @@ def LIT_EndFuncOp : LITOp<"end_func", [Terminator, HasParent<"LIT::FuncOp">]> {
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-def LIT_ReturnOp : LITOp<"return"> {
+def LIT_ReturnOp : LITOp<"return",
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Lexical return statement.";
   let description = [{
     The `lit.return` operation is not a terminator, but it corresponds to a
