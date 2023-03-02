@@ -48,6 +48,8 @@ public:
     kTFLiteModel,
     /// A compiled Faux test case.
     kFauxModel,
+    // A compiled ONNX model.
+    kONNXModel,
   } value;
 
   /// Returns the top-level operator name representing this framework, or
