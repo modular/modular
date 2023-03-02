@@ -15,7 +15,9 @@
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Matchers.h"
@@ -1463,6 +1465,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   // Configure dialect conversion.
   mlir::ConversionTarget target(getContext());
   target.addIllegalDialect<POPDialect>();
+  target.addIllegalDialect<mlir::index::IndexDialect>();
   target.addLegalDialect<LLVM::LLVMDialect>();
 
   // These ops are handled by other passes.
@@ -1487,6 +1490,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
   populatePOPToLLVMPatterns(typeConverter, patterns);
+  mlir::index::populateIndexToLLVMConversionPatterns(typeConverter, patterns);
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPVariadicCreate>(
       typeConverter, &func->getFunctionBody().front(), targetInfo);
   DebugInfo::populateTypeConversionPatterns(patterns, typeConverter);

@@ -656,8 +656,7 @@ kgen.func @array_create(%a: i32) -> !pop.array<2, i32> {
 
 // CHECK-LABEL: @array_create_issue_4004
 kgen.func @array_create_issue_4004() -> !pop.array<3, index> {
-  // CHECK: %[[VAL0:.*]] = index.constant 64
-  // CHECK: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[VAL0]]
+  // CHECK: %[[VAL:.*]] = llvm.mlir.constant(64 : i64)
   %val = index.constant 64
   // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef : !llvm.array<3 x i64>
   // CHECK: %[[A0:.*]] = llvm.insertvalue %[[VAL]], %[[UNDEF]][0] : !llvm.array<3 x i64>
