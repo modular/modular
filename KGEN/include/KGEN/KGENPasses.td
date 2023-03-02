@@ -97,7 +97,7 @@ def LowerStructs : Pass<"lower-structs", "mlir::ModuleOp"> {
 // LowerKGENToPOP
 //===----------------------------------------------------------------------===//
 
-def LowerKGENToPOP : Pass<"lower-kgen-to-pop", "mlir::ModuleOp"> {
+def LowerKGENToPOP : Pass<"lower-kgen-to-pop", "FuncOp"> {
   let summary = "Perform staged lowering of KGEN structs and lists.";
   let description = [{
     The `lower-kgen-to-pop` pass is a staged lowering of "special" KGEN types:

@@ -22,7 +22,7 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   using mlir::LLVM::LLVMFuncOp;
 
   // Run KGEN lowering passes.
-  pm.addPass(createLowerKGENToPOP());
+  pm.addNestedPass<FuncOp>(createLowerKGENToPOP());
 
   // Run all LLVM lowering passes.
   pm.addPass(createLowerKGENToLLVM());
