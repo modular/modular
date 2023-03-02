@@ -504,6 +504,41 @@ struct ExpandVariantCreate
   }
 };
 
+/// Expand lists in block arguments.
+static void expandListsInArguments(Operation *op, bool &changed,
+                                   mlir::RewriterBase &b) {
+  for (Region &region : op->getRegions()) {
+    for (Block &block : region) {
+      // The number of arguments changes and iterators get invalidated.
+      b.setInsertionPointToStart(&block);
+      // Note: the number of block arguments is changing. Query it each time.
+      for (unsigned i = 0; i < block.getNumArguments();) {
+        BlockArgument arg = block.getArgument(i);
+        auto list = dyn_cast<ListType>(arg.getType());
+        if (!list) {
+          ++i;
+          continue;
+        }
+
+        if (!changed) {
+          changed = true;
+          b.startRootUpdate(op);
+        }
+        int64_t length = *list.getResolvedLength();
+        SmallVector<Value> expanded;
+        expanded.reserve(length);
+        for (int64_t j = 0; j < length; ++j)
+          expanded.push_back(block.insertArgument(
+              i + j + 1, list.getResolvedElementType(), arg.getLoc()));
+        arg.replaceAllUsesWith(
+            materializeListSourceConversion(b, arg.getLoc(), expanded, list));
+        block.eraseArgument(i);
+        i += length;
+      }
+    }
+  }
+}
+
 /// Expand lists in a debuginfo.value. Lists don't have a runtime
 /// representation, but we use an array for the purposes of showing the
 /// debuginfo.
@@ -562,35 +597,7 @@ struct ExpandGenericOperation : public mlir::RewritePattern {
 
     // Expand block arguments.
     bool changed = false;
-    for (Region &region : op->getRegions()) {
-      for (Block &block : region) {
-        // The number of arguments changes and iterators get invalidated.
-        b.setInsertionPointToStart(&block);
-        for (unsigned i = 0; i < block.getNumArguments();) {
-          BlockArgument arg = block.getArgument(i);
-          auto list = dyn_cast<ListType>(arg.getType());
-          if (!list) {
-            ++i;
-            continue;
-          }
-
-          if (!changed) {
-            changed = true;
-            b.startRootUpdate(op);
-          }
-          int64_t length = *list.getResolvedLength();
-          SmallVector<Value> expanded;
-          expanded.reserve(length);
-          for (int64_t j = 0; j < length; ++j)
-            expanded.push_back(block.insertArgument(
-                i + j + 1, list.getResolvedElementType(), arg.getLoc()));
-          arg.replaceAllUsesWith(
-              materializeListSourceConversion(b, arg.getLoc(), expanded, list));
-          block.eraseArgument(i);
-          i += length;
-        }
-      }
-    }
+    expandListsInArguments(op, changed, b);
     if (changed) {
       b.finalizeRootUpdate(op);
       return success();
@@ -672,6 +679,15 @@ void LowerKGENToPOPPass::runOnOperation() {
                   ExpandStructReplaceOp, ExpandStructGEPOp, ExpandListStore,
                   ExpandListLoad, ExpandVariantGet, ExpandVariantCreate,
                   ExpandListDebugValue, ExpandGenericOperation>(&getContext());
+  {
+    // Process the function arguments first.
+    bool changed;
+    mlir::IRRewriter b(OpBuilder::atBlockBegin(getOperation().getBody()));
+    do {
+      changed = false;
+      expandListsInArguments(getOperation(), changed, b);
+    } while (changed);
+  }
   (void)mlir::applyPatternsAndFoldGreedily(getOperation(), std::move(patterns),
                                            config);
 
