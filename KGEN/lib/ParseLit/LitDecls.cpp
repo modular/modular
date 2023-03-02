@@ -573,6 +573,17 @@ LitParameterEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
   return &func.getBodyRegion();
 }
 
+Type LitParameterEvaluator::refineType(Type type) {
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](ParamOperatorAttr op) -> TypedAttr {
+    FailureOr<TypedAttr> result = evaluateExpression(op);
+    if (failed(result))
+      return op;
+    return *result;
+  });
+  return replacer.replace(type);
+}
+
 //===----------------------------------------------------------------------===//
 // Argument and Parameter List Parsing
 //===----------------------------------------------------------------------===//
