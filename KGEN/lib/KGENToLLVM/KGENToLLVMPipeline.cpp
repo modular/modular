@@ -21,8 +21,7 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
                                        const LowerToLLVMOptions &options) {
   using mlir::LLVM::LLVMFuncOp;
 
-  // Run the canonicalizer before the lowering passes.
-  pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass());
+  // Run KGEN lowering passes.
   pm.addPass(createLowerKGENToPOP());
 
   // Run all LLVM lowering passes.
