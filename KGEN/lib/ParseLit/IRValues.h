@@ -54,7 +54,7 @@ struct ASTExprAnd {
 
   bool isNull() const { return ir.isNull(); }
   bool operator!() const { return !ir; }
-  operator bool() const { return bool(ir); }
+  explicit operator bool() const { return bool(ir); }
 
   template <typename OtherValueType>
   operator ASTExprAnd<OtherValueType>() const {

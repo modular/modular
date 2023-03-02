@@ -130,7 +130,7 @@ public:
   T takeValue() { return std::move(cast<T>(value)); }
 
   /// Allow implicit conversion to bool. Returns true if there is a valid value.
-  operator bool() const { return hasValue(); }
+  explicit operator bool() const { return hasValue(); }
 
   /// Allow the dereference operator to access the underlying value.
   const T &operator*() const { return getValue(); }
