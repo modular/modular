@@ -182,7 +182,7 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
 
   // Add an empty struct with the specified name to the resolver.
   auto addMagicMLIRDecl = [&](StringRef name, Type magicType) {
-    TypedAttr value = ConcreteTypeConstantAttr::get(magicType);
+    TypedAttr value = TypeConstantAttr::get(magicType);
     resolver.addFullyResolvedDecl(PRValue(value), name, builtinsDecl.getLoc(),
                                   &builtinsDecl);
   };

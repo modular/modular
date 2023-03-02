@@ -19,14 +19,12 @@
 
 namespace M::KGEN::LIT {
 class DeclResolver;
-class LitSharedState;
 
 class LitParameterEvaluator : public ParameterEvaluator,
                               public InterpreterState {
 public:
-  LitParameterEvaluator(LitSharedState &shared);
-  LitParameterEvaluator(ArrayRef<ParamBindAttr> paramValues,
-                        LitSharedState &shared);
+  LitParameterEvaluator(DeclResolver &resolver,
+                        ArrayRef<ParamBindAttr> paramValues = {});
 
   /// Attempt to evaluate 'apply' expressions.
   FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
