@@ -8,7 +8,7 @@ from Assert import assert_param, assert_param_msg
 from Buffer import Buffer
 from Functional import vectorize_unroll
 from Int import Int
-from Math import exp
+from Math import exp, identity, log, mul, reciprocal, sub
 from Numerics import neginf
 from Range import range
 from Reductions import max
@@ -189,76 +189,169 @@ fn softmax_2_pass[
 # ===----------------------------------------------------------------------===#
 
 
-fn _softmax_3_pass_step1[
-    simd_width: __mlir_type.index,
-    buffer_size: __mlir_type.index,
-    type: __mlir_type.`!kgen.dtype`,
-](input: Buffer[buffer_size, type]) -> SIMD[1, type]:
-    # STEP 1: find the max value in each batch
-    # for i = 0 to N do
-    #   maxVal = max(maxVal, Input[i])
-    # end for
-    return max[simd_width, buffer_size, type](input)
-
-
-fn _softmax_3_pass_step2[
+fn _softmax_3_pass_step_2[
     simd_width: __mlir_type.index,
     unroll_factor: __mlir_type.index,
     buffer_size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
+    pre_update_func: __mlir_type[
+        `!kgen.signature<<simd_width, type: dtype>(`,
+        SIMD[simd_width, type],
+        `) -> `,
+        SIMD[simd_width, type],
+        `>`,
+    ],
+    post_update_func: __mlir_type[
+        `!kgen.signature<<simd_width, type: dtype>(`,
+        SIMD[simd_width, type],
+        `) -> `,
+        SIMD[simd_width, type],
+        `>`,
+    ],
 ](
-    input: Buffer[buffer_size, type],
     output: Buffer[buffer_size, type],
+    input: Buffer[buffer_size, type],
     max_val: SIMD[1, type],
 ) -> SIMD[1, type]:
-    # STEP 2: compute the exponential for each batch
+    # STEP 2: compute for each batch
     # for i = 0 to N do
-    #   Output[i] = exp(Input[i] - maxVal)
-    #   denom += Output[i]
+    #   Output[i] = pre_update_func(Input[i] - max_val)
+    #   accum += post_update_func(Output[i])
     # end for
-
     alias outer_simd_width = simd_width
 
-    var denom_scalar: SIMD[1, type] = 0
-    var denom_simd: SIMD[outer_simd_width, type] = 0
+    var accum_scalar: SIMD[1, type] = 0
+    var accum_simd: SIMD[outer_simd_width, type] = 0
 
     @always_inline
     fn step_2[simd_width: __mlir_type.index](idx: Int):
-        let elem = exp[simd_width, type](
-            input.simd_load[simd_width](idx)
-            - SIMD[simd_width, type].splat(max_val)
-        )
+        var elem = input.simd_load[simd_width](idx) - SIMD[
+            simd_width, type
+        ].splat(max_val)
+
+        elem = pre_update_func[simd_width, type](elem)
         output.simd_store[simd_width](idx, elem)
+        elem = post_update_func[simd_width, type](elem)
         reduce_add_simd[outer_simd_width, simd_width, type](
-            denom_scalar, denom_simd, elem
+            accum_scalar, accum_simd, elem
         )
 
     vectorize_unroll[simd_width, unroll_factor, step_2](output.__len__())
+    # Reduce the values from both the scalar and vector accum.
+    return accum_scalar + accum_simd.reduce_add()
 
-    # Reduce the values from both the scalar and vector denom.
-    return denom_scalar + denom_simd.reduce_add()
 
-
-fn _softmax_3_pass_step3[
+fn _softmax_3_pass_step_3[
     simd_width: __mlir_type.index,
     unroll_factor: __mlir_type.index,
     buffer_size: __mlir_type.index,
     type: __mlir_type.`!kgen.dtype`,
-](output: Buffer[buffer_size, type], denom: SIMD[1, type]):
+    accum_proc_func: __mlir_type[
+        `!kgen.signature<<simd_width, type: dtype>(`,
+        SIMD[simd_width, type],
+        `) -> `,
+        SIMD[simd_width, type],
+        `>`,
+    ],
+    accum_apply_func: __mlir_type[
+        `!kgen.signature<<simd_width, type: dtype>(`,
+        SIMD[simd_width, type],
+        `, `,
+        SIMD[simd_width, type],
+        `) -> `,
+        SIMD[simd_width, type],
+        `>`,
+    ],
+](output: Buffer[buffer_size, type], accum: SIMD[1, type],):
     # STEP 3: normalize each batch
+    # accum = accum_proc_func(accum)
     # for i = 0 to N do
-    #   Output[b, i] /= denom
+    #   accum_apply_func(Output[b, i], accum)
     # end for
-    let recip = 1 / denom
+    let accum_proc = accum_proc_func[1, type](accum)
 
     @always_inline
-    fn div[simd_width: __mlir_type.index](idx: Int):
-        let simd_recip = SIMD[simd_width, type].splat(recip)
-        output.simd_store[simd_width](
-            idx, output.simd_load[simd_width](idx) * simd_recip
-        )
+    fn step_3[simd_width: __mlir_type.index](idx: Int):
+        let accum_simd = SIMD[simd_width, type].splat(accum_proc)
+        var elem = output.simd_load[simd_width](idx)
+        elem = accum_apply_func[simd_width, type](elem, accum_simd)
+        output.simd_store[simd_width](idx, elem)
 
-    vectorize_unroll[simd_width, unroll_factor, div](output.__len__())
+    vectorize_unroll[simd_width, unroll_factor, step_3](output.__len__())
+
+
+fn _softmax_3_pass_base[
+    simd_width: __mlir_type.index,
+    buffer_size: __mlir_type.index,
+    type: __mlir_type.`!kgen.dtype`,
+    step2_pre_update_func: __mlir_type[
+        `!kgen.signature<<simd_width, type: dtype>(`,
+        SIMD[simd_width, type],
+        `) -> `,
+        SIMD[simd_width, type],
+        `>`,
+    ],
+    step2_post_update_func: __mlir_type[
+        `!kgen.signature<<simd_width, type: dtype>(`,
+        SIMD[simd_width, type],
+        `) -> `,
+        SIMD[simd_width, type],
+        `>`,
+    ],
+    step3_accum_proc_func: __mlir_type[
+        `!kgen.signature<<simd_width, type: dtype>(`,
+        SIMD[simd_width, type],
+        `) -> `,
+        SIMD[simd_width, type],
+        `>`,
+    ],
+    step3_accum_apply_func: __mlir_type[
+        `!kgen.signature<<simd_width, type: dtype>(`,
+        SIMD[simd_width, type],
+        `, `,
+        SIMD[simd_width, type],
+        `) -> `,
+        SIMD[simd_width, type],
+        `>`,
+    ],
+](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
+    """Performs an unbatched three-pass softmax. The actual behavior of each
+    step can be different between the (regular) softmax and logsoftmax.
+
+    Args:
+        simd_width (__mlir_type.index): The simd_width to use in vectorization.
+        buffer_size (__mlir_type.index): The size of the input and output buffers.
+        type (__mlir_type.`!kgen.dtype`): The type of the input and output buffers.
+        logsoftmax (Bool): Perform logsoftmax if True, regular softmax otherwise.
+        output (Buffer[buffer_size, type]): The output buffer in which to store the softmax values.
+        input (Buffer[buffer_size, type]): The input buffer used to compute the softmax.
+
+    Returns:
+        None
+    """
+    # STEP 1
+    let max_val = max[simd_width, buffer_size, type](input)
+
+    # STEP 2
+    alias unroll_factor = 8  # TODO: search
+    var accum = _softmax_3_pass_step_2[
+        simd_width,
+        unroll_factor,
+        buffer_size,
+        type,
+        step2_pre_update_func,
+        step2_post_update_func,
+    ](output, input, max_val)
+
+    # STEP 3
+    _softmax_3_pass_step_3[
+        simd_width,
+        unroll_factor,
+        buffer_size,
+        type,
+        step3_accum_proc_func,
+        step3_accum_apply_func,
+    ](output, accum)
 
 
 fn softmax_3_pass[
@@ -295,11 +388,50 @@ fn softmax_3_pass[
     Returns:
         None
     """
-    let max_val = _softmax_3_pass_step1[simd_width, buffer_size, type](input)
-    alias unroll_factor = 8  # TODO: search
-    let denom = _softmax_3_pass_step2[
-        simd_width, unroll_factor, buffer_size, type
-    ](input, output, max_val)
-    _softmax_3_pass_step3[simd_width, unroll_factor, buffer_size, type](
-        output, denom
-    )
+    _softmax_3_pass_base[
+        simd_width, buffer_size, type, exp, identity, reciprocal, mul
+    ](output, input)
+
+
+# ===----------------------------------------------------------------------===#
+# LogSoftmax
+# ===----------------------------------------------------------------------===#
+
+
+fn logsoftmax[
+    simd_width: __mlir_type.index,
+    buffer_size: __mlir_type.index,
+    type: __mlir_type.`!kgen.dtype`,
+](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
+    """Performs an unbatched logsoftmax on an input tensor using the three-pass
+    algorithm. The unbatched three-pass softmax is defined as:
+    procedure SoftmaxUnbatched(InputInput)
+      maxVal = -∞
+      denom = 0
+      STEP 1: find the max value in each batch
+      for i = 0 to N do
+        maxVal = max(maxVal, Input[b, i])
+      end for
+      STEP 2: compute the sum of exponential of each batch
+      for i = 0 to N do
+        Output[b, i] = Input[b, i] - maxVal
+        accum += exp(Output[b, i])
+      end for
+      STEP 3: normalize each batch
+      for i = 0 to N do
+        Output[b, i] -= log(accum)
+      end for
+
+    Args:
+        simd_width (__mlir_type.index): The simd_width to use in vectorization.
+        buffer_size (__mlir_type.index): The size of the input and output buffers.
+        type (__mlir_type.`!kgen.dtype`): The type of the input and output buffers.
+        output (Buffer[buffer_size, type]): The output buffer in which to store the softmax values.
+        input (Buffer[buffer_size, type]): The input buffer used to compute the softmax.
+
+    Returns:
+        None
+    """
+    _softmax_3_pass_base[
+        simd_width, buffer_size, type, identity, exp, log, sub
+    ](output, input)
