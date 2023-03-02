@@ -8,6 +8,8 @@
 #define SUPPORT_STL_EXTRAS_H
 
 #include "Support/LogicalResult.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 namespace M {
 //===----------------------------------------------------------------------===//
@@ -96,6 +98,16 @@ private:
   T *ptr;
   bool shouldDelete;
 };
+
+//===----------------------------------------------------------------------===//
+// map_to_vector
+//===----------------------------------------------------------------------===//
+
+/// Map a range to a SmallVector with element types deduced from the mapping.
+template <class ContainerTy, class FuncTy>
+auto map_to_vector(ContainerTy &&C, FuncTy F) {
+  return llvm::to_vector(llvm::map_range(std::forward<ContainerTy>(C), F));
+}
 
 } // namespace M
 

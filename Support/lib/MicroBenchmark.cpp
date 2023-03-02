@@ -7,6 +7,7 @@
 #include "Support/MicroBenchmark.h"
 #include "Support/Host.h"
 #include "Support/MathExtras.h"
+#include "Support/STLExtras.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -276,10 +277,10 @@ static void printCSVHeader(raw_ostream &os,
 /// Gets the timing information from the measurements.
 static SmallVector<std::chrono::nanoseconds>
 getTimings(ArrayRef<MicroBenchmark::Measurement> measurements) {
-  return llvm::to_vector(llvm::map_range(
-      measurements, [](auto &measurement) -> std::chrono::nanoseconds {
-        return measurement.duration / measurement.iterations;
-      }));
+  return map_to_vector(measurements,
+                       [](auto &measurement) -> std::chrono::nanoseconds {
+                         return measurement.duration / measurement.iterations;
+                       });
 }
 
 /// Computes the min latency and returns the value as a double in the
