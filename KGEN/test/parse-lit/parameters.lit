@@ -484,9 +484,16 @@ struct Abstraction[a: Int]:
   fn __new__() -> Self:
       return Self{}
 
+  fn __clone__(self&) -> Self:
+      return self
+
   @staticmethod
   fn push[b: Int]() -> Abstraction[a + b]:
       return Abstraction[a + b]()
+
+  @staticmethod
+  fn pull[b: Int](value: Abstraction[a + b]):
+      return
 
 # CHECK-LABEL: lit.func @"testParameterEvaluator()"
 fn testParameterEvaluator():
@@ -496,3 +503,6 @@ fn testParameterEvaluator():
   # CHECK-NEXT: %1 = kgen.rebind %0 : {{.*}} to {{.*}}@Abstraction<a: {{.*}} scalar<index> = 3}
   # CHECK-NEXT: %y = lit.let.decl "y" = %1
   let y : Abstraction[3] = Abstraction[1].push[2]()
+  # CHECK-NEXT: %2 = kgen.rebind %y : {{.*}}@Abstraction<a: {{.*}} scalar<index> = 3}
+  # CHECK-NEXT: kgen.call {{.*}}@Abstraction::@"pull{{.*}}"<{{.*}}>(%2)
+  Abstraction[1].pull[2](y)

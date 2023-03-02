@@ -586,11 +586,15 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
   // count how many implicit conversions are required for a match.
   size_t providedValueIdx = 0;
   size_t numImplicitConversions = 0;
-  for (auto [expectedArgIdx, expectedType] :
+  // Use a LitParameterEvaluator to substitute 'apply' expressions in the
+  // argument types.
+  LitParameterEvaluator evaluator(emitter.getDeclResolver());
+  for (auto [expectedArgIdx, unboundExpectedType] :
        llvm::enumerate(signature.getValueInputs())) {
     ValueInputConvention expectedConvention =
         signature.getInputConvention(expectedArgIdx);
     unsigned argIdx = expectedArgIdx;
+    Type expectedType = evaluator.refineType(unboundExpectedType);
 
     // Handle case when there are no more provided arguments.
     if (providedValueIdx == operands.size()) {
@@ -1270,12 +1274,15 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   size_t nextOperandIdx = 0;
   size_t nextDefaultIdx = 0;
+  // Use a LitParameterEvaluator to fold only 'apply' expressions. Emit a rebind
+  // if the refined type is different than the expected type.
+  LitParameterEvaluator evaluator(emitter.getDeclResolver());
   for (auto [idx, expectedTypeX, conventionX] : llvm::zip(
            llvm::seq<unsigned>(0, calleeSig.getValueInputs().size()),
            calleeSig.getValueInputs(), calleeSig.getValueInputConventions())) {
     // Work around lambda not being able to reference bindings.
     unsigned argIdx = idx;
-    Type expectedType = expectedTypeX;
+    Type expectedType = evaluator.refineType(expectedTypeX);
     ValueInputConvention convention = conventionX;
     // If we ran out of operands, fulfill this with a default value or empty
     // variadic list.
@@ -1402,35 +1409,30 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
     }
   }
 
-  // Use a LitParameterEvaluator to fold only 'apply' expressions.
-  LitParameterEvaluator evaluator(emitter.getDeclResolver());
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](ParamOperatorAttr op) -> TypedAttr {
-    FailureOr<TypedAttr> result = evaluator.evaluateExpression(op);
-    if (failed(result))
-      return op;
-    return *result;
-  });
-
   auto &builder = emitter.builder;
   if (!builder) {
     // Emitting a call in a parameter context. Generate an apply operator.
     SmallVector<TypedAttr> operands({callee.getIfPRValue().get()});
-    for (auto argValAndExpr : argumentValues) {
+    for (auto [argValAndExpr, calleeArgType] :
+         llvm::zip(argumentValues, calleeSig.getValueInputs())) {
       if (!argValAndExpr.ir.getIfPRValue()) {
         emitter.emitError(argValAndExpr.expr->getLoc(),
                           "cannot use a dynamic value in parameter context")
             << argValAndExpr.expr->getRange();
         return {};
       }
-      operands.push_back(argValAndExpr.ir.getIfPRValue().get());
+      TypedAttr arg = argValAndExpr.ir.getIfPRValue().get();
+      // Emit a rebind if the refined type does not match the callee arg type.
+      if (arg.getType() != calleeArgType)
+        arg = ParamOperatorAttr::get(POC::Rebind, arg, calleeArgType);
+      operands.push_back(arg);
     }
 
     TypedAttr result = ParamOperatorAttr::get(POC::Apply, operands);
 
     // Attempt to further specialize the result type by folding 'apply'
     // operators.
-    Type refinedType = replacer.replace(result.getType());
+    Type refinedType = evaluator.refineType(result.getType());
     if (refinedType != result.getType())
       result = ParamOperatorAttr::get(POC::Rebind, result, refinedType);
     return emitter.emitResult(result, callExpr, dest);
@@ -1438,19 +1440,25 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
 
   // Otherwise, materialize PRValue arguments as SRValues.
   SmallVector<Value> callArgs;
-  for (auto argValAndExpr : argumentValues) {
-    if (auto lv = argValAndExpr.ir.getIfLValue())
-      callArgs.push_back(lv);
-    else
+  Location loc = emitter.translateLocation(callExpr->getLoc());
+  for (auto [argValAndExpr, calleeArgType] :
+       llvm::zip(argumentValues, calleeSig.getValueInputs())) {
+    Value arg;
+    if (auto lv = argValAndExpr.ir.getIfLValue()) {
+      arg = lv;
+    } else {
       // TODO(memory_primary): Emit into memory directly.
-      callArgs.push_back(emitter.emitSRValue(argValAndExpr));
-    if (!callArgs.back())
+      arg = emitter.emitSRValue(argValAndExpr);
+    }
+    if (!arg)
       return {};
+    if (arg.getType() != calleeArgType)
+      arg = builder->create<RebindOp>(loc, calleeArgType, arg);
+    callArgs.push_back(arg);
   }
 
   ArrayRef<Type> resultTypes = calleeSig.getValueResults();
   Operation *callOp;
-  Location loc = emitter.translateLocation(callExpr->getLoc());
   if (auto target = callee.getIfPRValue()) {
     if (auto sig = dyn_cast<SignatureType>(target.getType());
         sig && sig.isAsync()) {
@@ -1499,7 +1507,7 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
   auto result = SRValue(callOp->getResult(0));
 
   // Attempt to further specialize the result type by folding 'apply' operators.
-  Type refinedType = replacer.replace(result.getType());
+  Type refinedType = evaluator.refineType(result.getType());
   if (refinedType != result.getType())
     result = builder->create<RebindOp>(loc, refinedType, result);
   return emitter.emitResult(result, callExpr, dest);

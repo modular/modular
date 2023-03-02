@@ -32,6 +32,9 @@ public:
   /// Lookup the body of the referenced function using the DeclResolver.
   ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
 
+  /// Evaluate all constant 'apply' expressions within a type.
+  Type refineType(Type type);
+
 private:
   DeclResolver &resolver;
 };
