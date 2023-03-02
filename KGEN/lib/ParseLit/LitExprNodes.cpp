@@ -72,8 +72,8 @@ static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
 
 /// This implements __mlir_attr.x lookup, synthesizing a MAValue for the
 /// attribute on demand.
-static AnyValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
-                                             LitSharedState &shared) {
+static PRValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
+                                            LitSharedState &shared) {
   auto attr = parseMLIRAttrFromString(name, loc, shared);
   if (!attr)
     return {};
@@ -137,8 +137,8 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
 /// When a lookup in __mlir_op fails for a named field, this method tries to
 /// resolve it.  On success, it lazily creates a resolved declaration.  On
 /// failure, it bails out.
-static AnyValue synthesizeMLIROpFromString(StringRef name,
-                                           ExprEmitter &emitter) {
+static PRValue synthesizeMLIROpFromString(StringRef name,
+                                          ExprEmitter &emitter) {
   auto *context = emitter.getContext();
   auto nameStr = StringAttr::get(context, name);
 
@@ -149,7 +149,7 @@ static AnyValue synthesizeMLIROpFromString(StringRef name,
 
 /// Calculate the result of an __mlir_op.`thing`[attributes], applying the
 /// attributes list to the operation specification.
-static AnyValue
+static PRValue
 bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
                                  UnboundMLIROperationAttr unboundOp,
                                  ExprEmitter &emitter) {
@@ -191,10 +191,8 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 
     // Otherwise emit the value as an MAValue.  This allows references to
     // parameter expressions.
-    auto value = emitter.emitExprPRValue(
+    PRValue value = emitter.emitExprPRValue(
         node, ASTType(), " in value for '" + Twine(name) + "' attribute");
-    if (!value)
-      return {};
     return value.get();
   };
 
@@ -285,17 +283,6 @@ ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 llvm::SMLoc ExprNode::getRangeStart() const { return getRange().getStart(); }
 llvm::SMLoc ExprNode::getRangeEnd() const { return getRange().getEnd(); }
 
-/// Emit this expression to MLIR as a CallableValue.  On error, emit an error
-/// and return a null value.
-CallableValue ExprNode::emitCallable(ExprEmitter &emitter) const {
-  // The default implementation of this returns the expression as an RValue.
-  auto calleeVal = emitter.emitExprRValue(this, ValueDest());
-  if (!calleeVal)
-    return {};
-
-  return CallableValue({calleeVal, this});
-}
-
 AnyValue ExprNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
                                              ExprEmitter &emitter) const {
   // Emit this node to see if it is a general LValue.
@@ -357,14 +344,14 @@ AnyValue BoolLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   mlir::MLIRContext *ctx = emitter.getContext();
   auto boolLiteralDeclType = DeclRefType::get(decl.getSymbolRef());
   bool isErroneousDecl = false;
-  CallableValue newVal = CallableValue(boolLiteralDeclType, "__new__", this,
-                                       isErroneousDecl, emitter.shared);
+  OverloadSet newVal(boolLiteralDeclType, "__new__", this, isErroneousDecl,
+                     emitter.shared);
   assert(!newVal.isNull() && "__new__ should be always there by construction");
   auto boolDType = DTypeConstantAttr::get(ctx, DType::kBool);
   auto boolAttr = POP::SIMDAttr::get({value, KGENDType::kBool},
                                      POP::SIMDType::get(1, boolDType));
-  return newVal.emitFunctionCall(ASTExprAnd<AnyValue>{AnyValue(boolAttr), this},
-                                 dest, CallSyntax::kTypeCall, emitter);
+  return newVal.emitCall(ASTExprAnd<AnyValue>{AnyValue(boolAttr), this}, dest,
+                         this, CallSyntax::kTypeCall, emitter);
 }
 
 AnyValue SelfLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -400,10 +387,7 @@ AnyValue NoneLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   return emitter.emitResult(NoneAttr::get(emitter.getContext()), this, dest);
 }
 
-AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
-  return emitCallable(emitter).emitAsValue(emitter, dest);
-}
-
+/// This handles emission of a value into a DeclRefNode as a pattern.
 AnyValue DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
                                                 ExprEmitter &emitter) const {
   ASTDecl &container = emitter.declScope;
@@ -493,7 +477,7 @@ AnyValue DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
 
 /// Emit IR for an unqualified declaration reference "x" looked up in current
 /// context.
-CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter) const {
+AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   ASTDecl &container = emitter.declScope;
 
   // Perform a lookup of the specified decl in the current container.
@@ -536,7 +520,9 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter) const {
       paramBindings = structDeclType.getParamBindings();
     }
 
-    return CallableValue(spelling, decls, paramBindings, this);
+    // Form an overload set value with all the candidates.
+    auto result = ORValue::create(spelling, decls, paramBindings);
+    return emitter.emitResult(std::move(result), this, dest);
   }
 
   assert(decls.size() == 1 && "Only functions may be overloaded");
@@ -558,8 +544,8 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter) const {
       bool isErroneousDecl = false;
       // TODO: Unify this with the logic in emitRValue when __clone__ moves to
       // taking a borrow instead of a mutable byref argument.
-      if (!CallableValue(letType, "__clone__", this, isErroneousDecl,
-                         emitter.shared)) {
+      if (!OverloadSet(letType, "__clone__", this, isErroneousDecl,
+                       emitter.shared)) {
         auto diag = emitter.emitError(getLoc(), "cannot clone this value: ")
                     << letType << " doesn't implement '__clone__'"
                     << getRange();
@@ -568,33 +554,37 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter) const {
       }
     }
 
-    return {{SRValue(letDecl.getResult()), this}};
+    return emitter.emitResult(SRValue(letDecl.getResult()), this, dest);
   }
 
   // Variable references resolve to an lvalue addressing the variable.
   if (auto var = dyn_cast<VarDeclOp>(decl))
-    return {{AnyValue(LValue(var.getResult())), this}};
+    return emitter.emitResult(LValue(var.getResult()), this, dest);
 
   // Parameters form a meta-value.
   if (auto param = dyn_cast<ParamDeclareOp>(decl)) {
-    return {{resolveParamDeclareValue(param, /*bindings=*/{}, emitter.shared),
-             this}};
+    PRValue result =
+        resolveParamDeclareValue(param, /*bindings=*/{}, emitter.shared);
+    return emitter.emitResult(result, this, dest);
   }
 
   // Use of forward references.
-  if (auto param = dyn_cast<AliasForwardDeclOp>(decl))
-    return {{PRValue(ParamDeclRefAttr::get(param.getName(), param.getType())),
-             this}};
+  if (auto param = dyn_cast<AliasForwardDeclOp>(decl)) {
+    PRValue result(ParamDeclRefAttr::get(param.getName(), param.getType()));
+    return emitter.emitResult(result, this, dest);
+  }
 
   // RValue's and LValues always resolve to their known value.
   if (auto rvalue = decl.getIfRValue())
-    return {{rvalue, this}};
+    return emitter.emitResult(rvalue, this, dest);
   if (auto lvalue = decl.getIfLValue())
-    return {{lvalue, this}};
+    return emitter.emitResult(lvalue, this, dest);
 
   // If this is a type declaration, return it as a type.
-  if (isa<StructDeclOp>(decl))
-    return {{PRValue(DeclRefType::get(decl.getSymbolRef())), this}};
+  if (isa<StructDeclOp>(decl)) {
+    PRValue result(DeclRefType::get(decl.getSymbolRef()));
+    return emitter.emitResult(result, this, dest);
+  }
 
   // Reject unqualified struct field references.
   if (auto fieldOp = dyn_cast<StructFieldOp>(decl)) {
@@ -610,8 +600,8 @@ CallableValue DeclRefNode::emitCallable(ExprEmitter &emitter) const {
 
 /// This uses the MLIR parser to turn the specified MLIR type name into an MLIR
 /// type.
-static Type parseMLIRType(StringRef name, const ExprNode *node,
-                          LitSharedState &shared) {
+static ASTType parseMLIRType(StringRef name, const ExprNode *node,
+                             LitSharedState &shared) {
   Type result;
   {
     // Capture errors thrown by parseType and ignore them.
@@ -633,33 +623,48 @@ static Type parseMLIRType(StringRef name, const ExprNode *node,
   return result;
 }
 
-AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
-  if (attrSpelling != "__adaptive_set")
-    return emitCallable(emitter).emitAsValue(emitter, dest);
-
-  // Handle __adaptive_set.
-  CallableValue callable =
-      emitter.emitCallable(base, " in __adaptive_set property");
-  SmallVector<TypedAttr> funcsAttr;
-  if (failed(callable.emitAdaptiveSet(funcsAttr, emitter))) {
-    emitter.emitError(getLoc(), "__adaptive_set can only be applied to global "
-                                "functions with an @adaptive decorator")
-        << getRange();
-    return {};
+/// Perform subsitutions of the specified bindings into the symbol, returning,
+/// in symConstAttrs, the resultant SymbolConstant attr for each adaptive
+/// function overload.
+/// On failure it produces an error message and returns failure.
+AnyValue AttributeRefNode::emitAdaptiveSet(ORValue overloads,
+                                           ExprEmitter &emitter,
+                                           ValueDest dest) const {
+  SmallVector<TypedAttr> symConstAttrs;
+  for (ASTDecl *fnDecl : overloads->fnDecls) {
+    auto funcOp = cast<LIT::FuncOp>(*fnDecl);
+    if (!funcOp.getIsAdaptive()) {
+      auto diag = emitter.emitError(getLoc(),
+                                    "cannot form a reference to non @adaptive "
+                                    "declaration of '")
+                  << overloads->baseName << "'" << getRange();
+      diag.attachNote(funcOp.getLoc()) << "declared here";
+      return {};
+    }
+    TypedAttr symbolAttr =
+        overloads->getBoundConstAttrFor(this, funcOp, emitter);
+    if (!symbolAttr)
+      return {};
+    symConstAttrs.push_back(symbolAttr);
   }
 
-  auto attr = VariadicAttr::get(emitter.getContext(), funcsAttr,
-                                VariadicType::get(funcsAttr.front().getType()));
+  auto attr =
+      VariadicAttr::get(emitter.getContext(), symConstAttrs,
+                        VariadicType::get(symConstAttrs.front().getType()));
   return emitter.emitResult(attr, this, dest);
 }
 
-/// Emit a qualified attribute reference to MLIR as a CallableValue.  On error,
-/// emit an error and return a null value.
-CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter) const {
-
-  auto baseVal = base->emitIR(emitter, /*No Contextual Type*/ {});
+/// Emit a qualified attribute reference to MLIR.  On error, emit an error and
+/// return a null value.
+AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
+  auto baseVal = base->emitIR(emitter, ValueDest());
   if (!baseVal)
     return {};
+
+  // Handle __adaptive_set.
+  if (auto overloads = baseVal.getIfORValue())
+    if (attrSpelling == "__adaptive_set")
+      return emitAdaptiveSet(overloads, emitter, dest);
 
   // Figure out what type is being accessed.  'hasTypeBase' is when the base
   // expression is itself a type, e.g. `Int.__add__`.
@@ -685,15 +690,17 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter) const {
     // Handle __mlir_op.`xxx` references, lazily synthesizing values when
     // they are referenced.
     if (isa<MagicMLIRAttrType>(baseMLIRType)) {
-      AnyValue result =
+      PRValue result =
           synthesizeMLIRAttrFromString(attrSpelling, getLoc(), emitter.shared);
-      return {{result, this}};
+      return emitter.emitResult(result, this, dest);
     }
-    if (isa<MagicMLIROpType>(baseMLIRType))
-      return {{synthesizeMLIROpFromString(attrSpelling, emitter), this}};
+    if (isa<MagicMLIROpType>(baseMLIRType)) {
+      PRValue result = synthesizeMLIROpFromString(attrSpelling, emitter);
+      return emitter.emitResult(result, this, dest);
+    }
     if (isa<MagicMLIRTypeType>(baseMLIRType)) {
-      Type result = parseMLIRType(attrSpelling, this, emitter.shared);
-      return {{result ? AnyValue(result) : AnyValue(), this}};
+      ASTType result = parseMLIRType(attrSpelling, this, emitter.shared);
+      return emitter.emitResult(result, this, dest);
     }
 
     emitter.emitError(getLoc(), "MLIR type ")
@@ -724,20 +731,21 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter) const {
   // Handle method references, which might be overloaded.
   if (auto fnOp = dyn_cast<LIT::FuncOp>(*memberDecls[0])) {
     // Get a symbol for the underlying function.
-    CallableValue fnRef(attrSpelling, memberDecls,
-                        baseRVType.getParamBindings(), this);
+    auto result = ORValue::create(attrSpelling, memberDecls,
+                                  baseRVType.getParamBindings());
 
-    // If the callee is a static method, we can directly reference it without
-    // binding a self parameter.  If this is an instance method, we bind the
-    // base value and the symbol together into a callable.
+    // If the callee is a static method, we can directly reference it
+    // without binding a self parameter.  If this is an instance method, we
+    // bind the base value and the symbol together into a callable.
     // FIXME: This isn't handling overloaded static/non-static methods
     // correctly.  What is the actual behavior we want for static methods?
-    // Maybe we don't allow overloading static and non-static methods with the
-    // same name?
+    // Maybe we don't allow overloading static and non-static methods with
+    // the same name?
     if (!fnOp.getIsStatic() && !hasTypeBase)
-      fnRef.baseVal = baseVal;
-    return fnRef;
+      result->baseValue = {baseVal, base};
+    return emitter.emitResult(std::move(result), this, dest);
   }
+
   assert(memberDecls.size() == 1 && "only methods may be overloaded");
   ASTDecl &memberDecl = *memberDecls[0];
 
@@ -745,7 +753,7 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter) const {
   if (auto param = dyn_cast<ParamDeclareOp>(memberDecl)) {
     PRValue result = resolveParamDeclareValue(
         param, baseRVType.getParamBindings(), emitter.shared);
-    return {{result, this}};
+    return emitter.emitResult(result, this, dest);
   }
 
   auto mlirLoc = getLocation(emitter);
@@ -763,13 +771,13 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter) const {
     if (LValue baseLV = baseVal.getIfLValue()) {
       auto fieldPtr =
           emitter.builder->create<StructGEPOp>(mlirLoc, baseLV, fieldOp);
-      return {{LValue(fieldPtr), this}};
+      return emitter.emitResult(LValue(fieldPtr), this, dest);
     }
 
     // If the base is an PRValue, emit a field extract as an PRValue.
     if (PRValue baseMV = baseVal.getIfPRValue()) {
       auto extractVal = LIT::StructExtractAttr::get(baseMV.get(), fieldOp);
-      return {{PRValue(extractVal), this}};
+      return emitter.emitResult(PRValue(extractVal), this, dest);
     }
 
     // Otherwise, it must be an rvalue.
@@ -778,9 +786,9 @@ CallableValue AttributeRefNode::emitCallable(ExprEmitter &emitter) const {
     if (!baseRV)
       return {};
 
-    return {{SRValue(emitter.builder->create<StructExtractOp>(mlirLoc, baseRV,
-                                                              fieldOp)),
-             this}};
+    auto extractVal =
+        emitter.builder->create<StructExtractOp>(mlirLoc, baseRV, fieldOp);
+    return emitter.emitResult(SRValue(extractVal), this, dest);
   }
 
   // Reference to some non-function/struct member of the type.
@@ -982,63 +990,65 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 }
 
 AnyValue CallNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
-  auto calleeVal = callee->emitCallable(emitter);
+  RValue calleeVal = emitter.emitExprRValue(callee, ValueDest());
   if (!calleeVal)
     return {};
 
-  // Figure out how this was spelled.
-  auto syntax = CallSyntax::kDirectCall;
-
-  // If there was a base value, then this is a method or indirect call.
-  if (calleeVal.baseVal) {
-    syntax =
-        calleeVal.direct ? CallSyntax::kMethodCall : CallSyntax::kIndirectCall;
-
-    if (auto mValue = calleeVal.baseVal.getIfPRValue()) {
-      // If this is the invocation of an unbound MLIR operator, bind it into an
-      // actual operator!
-      if (auto unboundOperator =
-              dyn_cast<UnboundMLIROperationAttr>(mValue.get()))
-        return emitMLIROperatorCall(*this, unboundOperator, emitter);
+  // If this is the invocation of an unbound MLIR operator, bind it into an
+  // actual operator!
+  if (auto mValue = calleeVal.getIfPRValue()) {
+    if (auto unboundOp = dyn_cast<UnboundMLIROperationAttr>(mValue.get())) {
+      AnyValue result = emitMLIROperatorCall(*this, unboundOp, emitter);
+      return emitter.emitResult(result, this, dest);
     }
   }
 
-  // If the callee is a type value (as in `T()` or `T[123]()`), then this is an
-  // invocation of the initializer for the type.
-  if (!calleeVal.direct)
-    if (ASTType calledType = calleeVal.baseVal.getIfTypeValue()) {
-      bool isErroneousDecl = false;
-      calleeVal = CallableValue(calledType, "__new__", this, isErroneousDecl,
-                                emitter.shared);
-      if (calleeVal.isNull()) {
-        if (isErroneousDecl)
-          return {};
-
-        if (calledType.getDecl(emitter.shared)) {
-          emitter.emitError(getLoc(), "")
-              << calledType << " does not have any `__new__` methods"
-              << callee->getRange();
-        } else {
-          emitter.emitError(getLoc(),
-                            "cannot use initializer syntax on MLIR type ")
-              << calledType << callee->getRange();
-        }
-        return {};
-      }
-
-      syntax = CallSyntax::kTypeCall;
-    }
-
-  /// Emit a function call for a call node with the specified operands.
+  /// Emit all the operands that we'll need.
   SmallVector<ASTExprAnd<AnyValue>> operands;
   for (ExprNode *arg : args) {
-    operands.push_back({arg->emitIR(emitter, /*No Contextual Type*/ {}), arg});
+    operands.push_back({arg->emitIR(emitter, ValueDest()), arg});
     if (!operands.back())
       return {};
   }
 
-  calleeVal.expr = this;
-  return calleeVal.emitFunctionCall(operands, dest, syntax, emitter);
+  // If the callee is a type value (as in `T()` or `T[123]()`), then this is an
+  // invocation of the initializer for the type.
+  if (ASTType calledType = calleeVal.getIfTypeValue()) {
+    bool isErroneousDecl = false;
+    OverloadSet overloads(calledType, "__new__", this, isErroneousDecl,
+                          emitter.shared);
+    if (overloads.isNull()) {
+      if (isErroneousDecl)
+        return {};
+
+      if (calledType.getDecl(emitter.shared)) {
+        emitter.emitError(getLoc(), "")
+            << calledType << " does not have any `__new__` methods"
+            << callee->getRange();
+      } else {
+        emitter.emitError(getLoc(),
+                          "cannot use initializer syntax on MLIR type ")
+            << calledType << callee->getRange();
+      }
+      return {};
+    }
+
+    return overloads.emitCall(operands, dest, this, CallSyntax::kTypeCall,
+                              emitter);
+  }
+
+  // If this is an overloaded operand, resolve it and call the result.
+  if (auto overloads = calleeVal.getIfORValue()) {
+    // Figure out how this was spelled.
+    CallSyntax syntax = overloads->baseValue ? CallSyntax::kMethodCall
+                                             : CallSyntax::kDirectCall;
+    return overloads->emitCall(operands, dest, this, syntax, emitter);
+  }
+
+  // Otherwise, we must have a concrete RValue, emit an indirect call.
+  auto crVal = calleeVal.getIfCRValue();
+  return OverloadSet::emitIndirectCall(crVal, operands, dest, this,
+                                       emitter);
 }
 
 AnyValue SliceNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -1052,7 +1062,7 @@ AnyValue SliceNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 
 /// Given a value of type type, substitute parameters into the type, producing
 /// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
-static CallableValue substituteParametersIntoUserDefinedType(
+static PRValue substituteParametersIntoUserDefinedType(
     DeclRefType declRef, const SubscriptNode &subscript, ExprEmitter &emitter) {
   // If already parameterized, give up.
   // TODO: Why not allow multiple partial type applications?
@@ -1096,24 +1106,20 @@ static CallableValue substituteParametersIntoUserDefinedType(
     return {};
 
   // Ok, we succeeded at reparameterizing the type.
-  return CallableValue(
-      {PRValue(DeclRefType::get(typeDecl.getSymbolRef(), bindingAttr)),
-       &subscript});
+  return PRValue(DeclRefType::get(typeDecl.getSymbolRef(), bindingAttr));
 }
 
 /// When subscripting a callable with a bound symbol (i.e. a direct method call
 /// or call to a method), apply parameter bindings to it.
-static CallableValue bindAttrValuesToDirectCall(CallableValue &callable,
-                                                ArrayRef<ExprNode *> indices,
-                                                ExprEmitter &emitter) {
-  assert(callable.direct && "only valid on direct call");
-
+static ORValue bindParamValuesToDirectCall(ORValue value,
+                                           ArrayRef<ExprNode *> indices,
+                                           ExprEmitter &emitter) {
   // If the indices are a single () expression, then we treat this as having
   // no parameters.  This is used with arrow expressions to allow `f[() -> x]`.
   if (indices.size() == 1) {
     if (auto *tuple = dyn_cast<TupleNode>(indices[0]))
       if (tuple->exprs.empty())
-        return std::move(callable);
+        return value;
   }
 
   // Process each subscript entry as a binding.
@@ -1130,31 +1136,26 @@ static CallableValue bindAttrValuesToDirectCall(CallableValue &callable,
     //
     // Note: we're being a bit abusive here by making a ParamBindAttr with a
     // null name for positional attributes.
-    callable.direct->inputParamBindings.add(idx, val.get());
+    value->inputParamBindings.add(idx, val.get());
   }
   // The bindings will be checked for validity when a reference is formed.
-  return std::move(callable);
+  return value;
 }
 
 AnyValue SubscriptNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
-  return emitCallable(emitter).emitAsValue(emitter, dest);
-}
-
-/// Emit this expression to MLIR as a CallableValue.  On error, emit an error
-/// and return a null value.
-CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter) const {
-
   // Subscripting a generic function binds the parameter expressions.
-  auto subValue = base->emitCallable(emitter);
+  auto subValue = base->emitIR(emitter, ValueDest());
   if (!subValue)
     return {};
 
   // If the subValue has a bound callable symbol, then this is applying (more?)
-  // meta values to bind its parameters.
-  if (subValue.direct)
-    return bindAttrValuesToDirectCall(subValue, indices, emitter);
+  // parameter expressions to bind its parameters.
+  if (auto overloads = subValue.getIfORValue()) {
+    auto result = bindParamValuesToDirectCall(overloads, indices, emitter);
+    return emitter.emitResult(result, this, dest);
+  }
 
-  if (auto callableMVal = subValue.baseVal.getIfPRValue()) {
+  if (auto callableMVal = subValue.getIfPRValue()) {
     if (auto sig = dyn_cast<SignatureType>(callableMVal.getType())) {
       // If this is a signature-type PRValue callable, this is binding parameter
       // values to a call.
@@ -1171,75 +1172,73 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter) const {
         if (!bindOperands.back())
           return {};
       }
-      return CallableValue(
-          {PRValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands)),
-           this});
+
+      PRValue result(ParamOperatorAttr::get(POC::BindSignature, bindOperands));
+      return emitter.emitResult(result, this, dest);
     }
   }
 
-  // Otherwise, if there is no symbol, it is just an LValue or RValue being
-  // subscript.
-
   // If the sub-value is an unbound Type, try binding things to it!
-  if (Type typeValue = subValue.baseVal.getIfTypeValue()) {
+  if (Type typeValue = subValue.getIfTypeValue()) {
     // Handle user-defined types.
-    // TODO: This seems wrong, we won't handle things like Type.AssocType[1] ?
-    if (auto declRef = dyn_cast<DeclRefType>(typeValue))
-      return substituteParametersIntoUserDefinedType(declRef, *this, emitter);
+    if (auto declRef = dyn_cast<DeclRefType>(typeValue)) {
+      PRValue result =
+          substituteParametersIntoUserDefinedType(declRef, *this, emitter);
+      return emitter.emitResult(result, this, dest);
+    }
 
     // Handle __mlir_type["foo"] and __mlir_attr["foo"].
     if (isa<MagicMLIRTypeType>(typeValue)) {
       std::string result = substituteMLIRMagic(*this, emitter);
       if (result.empty())
         return {};
-      auto type = parseMLIRType(result, this, emitter.shared);
-      if (!type)
-        return {};
-      return CallableValue({type, this});
+      ASTType type = parseMLIRType(result, this, emitter.shared);
+      return emitter.emitResult(type, this, dest);
     }
     if (isa<MagicMLIRAttrType>(typeValue)) {
       std::string result = substituteMLIRMagic(*this, emitter);
       if (result.empty())
         return {};
-      auto attr =
+      PRValue attr =
           synthesizeMLIRAttrFromString(result, getLoc(), emitter.shared);
-      if (!attr)
-        return {};
-      return CallableValue({attr, this});
+      return emitter.emitResult(attr, this, dest);
     }
   }
 
-  if (auto mValue = subValue.baseVal.getIfPRValue()) {
-    if (auto unboundOperator = dyn_cast<UnboundMLIROperationAttr>(mValue.get()))
-      return {
-          {bindAttributesToMLIROperatorCall(*this, unboundOperator, emitter),
-           this}};
+  // Otherwise, if there is no symbol, it is just an LValue or RValue being
+  // subscript.
+  if (auto value = subValue.getIfPRValue()) {
+    if (auto unboundOperator =
+            dyn_cast<UnboundMLIROperationAttr>(value.get())) {
+      PRValue result =
+          bindAttributesToMLIROperatorCall(*this, unboundOperator, emitter);
+      return emitter.emitResult(result, this, dest);
+    }
   }
 
   // Emit each of the index values, which will be passed to the __getitem__ and
   // __setitem__ calls.
   SmallVector<ASTExprAnd<AnyValue>> indexValues;
-  indexValues.push_back({subValue.baseVal, subValue.expr});
+  indexValues.push_back({subValue, base});
   for (ExprNode *index : indices) {
-    indexValues.push_back(
-        {index->emitIR(emitter, /*No Contextual Type*/ {}), index});
+    indexValues.push_back({index->emitIR(emitter, ValueDest()), index});
     if (!indexValues.back())
       return {};
   }
 
   // Okay, we're doing a normal value subscript.  We expect at least a
   // __getitem__ method.
-  auto baseType = subValue.baseVal.getRValueType();
+  auto baseType = subValue.getRValueType();
   bool isErroneousDecl = false;
-  auto getItem = CallableValue(baseType, "__getitem__", this, isErroneousDecl,
-                               emitter.shared);
+  OverloadSet getItem(baseType, "__getitem__", this, isErroneousDecl,
+                      emitter.shared);
   // If there is no __getitem__ at all, then this is not a subscriptable type.
   if (getItem.isNull()) {
     if (isErroneousDecl)
       return {};
     emitter.emitError(getLoc(), "")
         << baseType << " does not implement the `__getitem__` method"
-        << subValue.expr->getRange();
+        << base->getRange();
     return {};
   }
 
@@ -1254,47 +1253,40 @@ CallableValue SubscriptNode::emitCallable(ExprEmitter &emitter) const {
   }
 
   // Next, check the multiple argument path.
-  if (getItem.direct && succeeded(getItem.direct->filterOverloadSet(
-                            indexValues, CallSyntax::kSubscript, getItem.expr,
-                            /*emitDiagnosticOnFailure=*/false, emitter))) {
+  if (getItem && succeeded(getItem.filterOverloadSet(
+                     indexValues, CallSyntax::kSubscript, this,
+                     /*allowImplicitConversions=*/true,
+                     /*emitDiagnosticOnFailure=*/false, emitter))) {
     // Ok, this looks like it will work.
     // TODO(Computed LValues): We need to look up __setitem__ and have a better
     // model for computed LValues.
   }
 
   // Finally, just emit the call to __getitem__.
-  auto result =
-      getItem.emitFunctionCall(indexValues,
-                               // TODO(memory-primary)
-                               ValueDest(), CallSyntax::kSubscript, emitter);
-  return CallableValue({result, this});
+  return getItem.emitCall(indexValues, dest, this, CallSyntax::kSubscript,
+                          emitter);
 }
 
 AnyValue SubscriptArrowNode::emitIR(ExprEmitter &emitter,
                                     ValueDest dest) const {
-  return emitCallable(emitter).emitAsValue(emitter, dest);
-}
-
-/// Emit this expression to MLIR as a CallableValue.  On error, emit an error
-/// and return a null value.
-CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter) const {
   // Subscripting a generic function binds the parameter expressions.
-  auto subValue = base->emitCallable(emitter);
+  auto subValue = base->emitIR(emitter, ValueDest());
   if (!subValue)
     return {};
 
   // If the subValue has a bound callable symbol, then this is applying (more?)
   // meta values to bind its parameters.
-  if (!subValue.direct) {
+  auto overloads = subValue.getIfORValue();
+  if (!overloads) {
     emitter.emitError(arrowLoc, "invalid '->' when subscripting type ")
-        << ASTType(subValue.baseVal.getType()) << getRange();
+        << ASTType(subValue.getType()) << getRange();
     return {};
   }
 
   // The only use of SubscriptArrow nodes right now is to bind parameter
   // input values and results to a call.  Start by binding the input values.
-  subValue = bindAttrValuesToDirectCall(subValue, indices, emitter);
-  if (!subValue)
+  overloads = bindParamValuesToDirectCall(overloads, indices, emitter);
+  if (!overloads)
     return {};
 
   // Next, bind the results.  The grammar allows any expression, but we only
@@ -1350,18 +1342,14 @@ CallableValue SubscriptArrowNode::emitCallable(ExprEmitter &emitter) const {
     // Set the location for this definition so we can know it was defined
     // correctly, and diagnose subsequent attempts to redefine it.
     aliasDecl.setResultParamLocAttr(drn->getLocation(emitter));
-    subValue.direct->resultParams.push_back({resultDecls[0], drn->getLoc()});
+    overloads->resultParams.push_back({resultDecls[0], drn->getLoc()});
   }
 
-  return subValue;
+  return emitter.emitResult(overloads, this, dest);
 }
 
 AnyValue ParenNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   return subExpr->emitIR(emitter, dest);
-}
-
-CallableValue ParenNode::emitCallable(ExprEmitter &emitter) const {
-  return subExpr->emitCallable(emitter);
 }
 
 AnyValue ParenNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
@@ -1646,16 +1634,17 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   // Check to see if we have a forward version of this function on the primary
   // receiver.
   bool isErroneousDecl = false;
-  CallableValue callee(lhs.ir.getRValueType(), specialFnInfo.name, callNode,
-                       isErroneousDecl, emitter.shared);
+  OverloadSet callee(lhs.ir.getRValueType(), specialFnInfo.name, callNode,
+                     isErroneousDecl, emitter.shared);
   if (isErroneousDecl)
     return {};
 
-  if (callee.direct && succeeded(callee.direct->filterOverloadSet(
-                           argValues, CallSyntax::kOperator, callee.expr,
-                           /*emitDiagnosticOnFailure=*/false, emitter))) {
-    return callee.emitFunctionCall(argValues, dest, CallSyntax::kOperator,
-                                   emitter);
+  if (callee && succeeded(callee.filterOverloadSet(
+                    argValues, CallSyntax::kOperator, callNode,
+                    /*allowImplicitConversions=*/true,
+                    /*emitDiagnosticOnFailure=*/false, emitter))) {
+    return callee.emitCall(argValues, dest, callNode, CallSyntax::kOperator,
+                           emitter);
   }
 
   // Check to see if we have the reverse version of this operator.
@@ -1663,14 +1652,14 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   if (reversedFnInfo.kind != SpecialFunctionKind::kNormal) {
     // Swap the operand order.
     std::swap(argValues[0], argValues[1]);
-    callee = CallableValue(rhs.ir.getType(), reversedFnInfo.name, callNode,
-                           isErroneousDecl, emitter.shared);
-    if (callee.direct &&
-        succeeded(callee.direct->filterOverloadSet(
-            argValues, CallSyntax::kReversedOperator, callee.expr,
-            /*emitDiagnosticOnFailure=*/false, emitter))) {
-      return callee.emitFunctionCall(argValues, dest,
-                                     CallSyntax::kReversedOperator, emitter);
+    callee = OverloadSet(rhs.ir.getType(), reversedFnInfo.name, callNode,
+                         isErroneousDecl, emitter.shared);
+    if (callee && succeeded(callee.filterOverloadSet(
+                      argValues, CallSyntax::kReversedOperator, callNode,
+                      /*allowImplicitConversions=*/true,
+                      /*emitDiagnosticOnFailure=*/false, emitter))) {
+      return callee.emitCall(argValues, dest, callNode,
+                             CallSyntax::kReversedOperator, emitter);
     }
 
     // Swap these back so we emit the right error.

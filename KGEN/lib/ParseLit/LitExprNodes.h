@@ -131,7 +131,6 @@ struct DeclRefNode final : public ExprNode {
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
   LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
-  CallableValue emitCallable(ExprEmitter &emitter) const override;
   AnyValue emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
                                      ExprEmitter &emitter) const override;
 };
@@ -156,7 +155,8 @@ struct AttributeRefNode final : public ExprNode {
     return {base->getRangeStart(), getAttributeNameLoc()};
   }
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
-  CallableValue emitCallable(ExprEmitter &emitter) const override;
+  AnyValue emitAdaptiveSet(ORValue overloads, ExprEmitter &emitter,
+                           ValueDest dest) const;
 };
 
 struct CallNode final : public ExprNode {
@@ -201,7 +201,6 @@ struct SubscriptNode final : public ExprNode {
   LitSourceRange getIndexRange() const { return {lsquareLoc, rsquareLoc}; }
 
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
-  CallableValue emitCallable(ExprEmitter &emitter) const override;
 };
 
 /// This represents `A[i,j -> a, b]`.  In the case of slices (e.g. `A[i, ::]`),
@@ -227,7 +226,6 @@ struct SubscriptArrowNode final : public ExprNode {
   SMLoc getLoc() const override { return lsquareLoc; }
   LitSourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
-  CallableValue emitCallable(ExprEmitter &emitter) const override;
 };
 
 /// This is an expression that produces a slice value in a SubscriptNode index
@@ -279,7 +277,6 @@ struct ParenNode final : public ExprNode {
   LitSourceRange getRange() const override { return {lparenLoc, rparenLoc}; }
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
 
-  CallableValue emitCallable(ExprEmitter &emitter) const override;
   AnyValue emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
                                      ExprEmitter &emitter) const override;
 };

@@ -14,9 +14,11 @@
 // AnyValue              <- Expr emitted to MLIR:
 //   LValue (Value)        <- ... with a runtime address.
 //   RValue                <- ... as an independent value
-//     SRValue (Value)       <- ..with a dynamic value loaded into SSA register
-//     MRvalue (Value)       <- ..with a dynamic value emitted into memory
-//     PRValue (TypedAttr)   <- ..with a parameter value (known at compile time)
+//     ORValue (OverloadSet) <- ..with an unresolved overload set
+//     CRValue               <- ..with a resolved type
+//       SRValue (Value)     <- ..with a dynamic value loaded into SSA register
+//       MRvalue (Value)     <- ..with a dynamic value emitted into memory
+//       PRValue (TypedAttr) <- ..with a parameter value (known at compile time)
 //
 //===----------------------------------------------------------------------===//
 
@@ -25,12 +27,22 @@
 
 #include "ASTType.h"
 #include "LitSharedState.h"
+
+#include "LLCL/Support/RCRef.h"
+#include "LLCL/Support/ReferenceCounted.h"
 #include "Support/ADT/SmartVariant.h"
-#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Value.h"
 
 namespace M::KGEN::LIT {
 class ExprNode;
+class ExprEmitter;
+class OverloadSet;
+class FuncOp;
+class ValueDest;
+
+//===----------------------------------------------------------------------===//
+// Helpers
+//===----------------------------------------------------------------------===//
 
 template <typename ValueType>
 struct ASTExprAnd {
@@ -49,6 +61,10 @@ struct ASTExprAnd {
     return {OtherValueType(ir), expr};
   }
 };
+
+//===----------------------------------------------------------------------===//
+// Value Classifications
+//===----------------------------------------------------------------------===//
 
 /// This is used to provide a null representation for the SmartVariant, allowing
 /// it to be default constructed to a known state.
@@ -135,11 +151,70 @@ private:
 };
 raw_ostream &operator<<(raw_ostream &os, PRValue value);
 
+/// Instances of ORValue represent an unresolved overload set that must be
+/// disambiguated before being used.
+class ORValue {
+public:
+  ORValue();
+  ORValue(const ORValue &existing);
+  ORValue &operator=(const ORValue &existing);
+  ~ORValue();
+
+  bool isNull() const { return !storage; }
+  bool operator!() const { return isNull(); }
+  explicit operator bool() const { return !isNull(); }
+
+  OverloadSet *operator->();
+  const OverloadSet *operator->() const;
+
+  template <typename... Args>
+  static ORValue create(Args &&...args);
+
+  static ORValue create(OverloadSet &&set);
+
+private:
+  struct OverloadSetWrapper;
+  ORValue(LLCL::RCRef<OverloadSetWrapper> storage);
+
+  LLCL::RCRef<OverloadSetWrapper> storage;
+};
+
 template <typename DerivedType>
 struct VariantValueStorage {
   /// These are all the forms of storage we can have.
-  using Storage =
-      SmartVariant<NullRepresentation, PRValue, SRValue, MRValue, LValue>;
+  using Storage = SmartVariant<NullRepresentation, PRValue, SRValue, MRValue,
+                               ORValue, LValue>;
+
+  VariantValueStorage()
+      : storage(NullRepresentation()) {} // All are default constructible.
+
+  // These are common constructors all VariantValueStorage's have.
+  VariantValueStorage(PRValue value) {
+    if (value)
+      storage = value;
+  }
+  VariantValueStorage(TypedAttr value) : VariantValueStorage(PRValue(value)) {}
+  VariantValueStorage(Type value) : VariantValueStorage(PRValue(value)) {}
+  VariantValueStorage(ASTType value) : VariantValueStorage(PRValue(value)) {}
+  VariantValueStorage(SRValue value) {
+    if (value)
+      storage = value;
+  }
+  VariantValueStorage(MRValue value) {
+    if (value)
+      storage = value;
+  }
+
+  PRValue getIfPRValue() const { return dyn_cast<PRValue>(storage); }
+  SRValue getIfSRValue() const { return dyn_cast<SRValue>(storage); }
+  MRValue getIfMRValue() const { return dyn_cast<MRValue>(storage); }
+
+  /// If this value is a PRValue for a type, then return the type.
+  ASTType getIfTypeValue() const {
+    if (auto mValue = getIfPRValue())
+      return mValue.getIfTypeValue();
+    return {};
+  }
 
   bool isNull() const { return isa<NullRepresentation>(storage); }
   bool operator!() const { return isNull(); }
@@ -154,15 +229,30 @@ struct VariantValueStorage {
   Storage getStorage() const { return storage; }
 
 protected:
-  VariantValueStorage()
-      : storage(NullRepresentation()) {} // All are default constructible.
-  template <typename T>
-  VariantValueStorage(T init) : storage(std::move(init)) {}
-
   Storage storage;
 };
 
-/// RValue = PRValue|SRValue|MRValue.
+/// Concrete RValue: CRValue = PRValue|SRValue|MRValue.
+class CRValue : public VariantValueStorage<CRValue> {
+public:
+public:
+  using VariantValueStorage::VariantValueStorage;
+
+  static CRValue getFrom(Storage storage) {
+    CRValue result;
+    // Initialize conditionally based on what is in Storage.
+    if (isa_and_nonnull<PRValue, SRValue, MRValue>(storage))
+      result.storage = std::move(storage);
+    return result;
+  }
+
+  /// Return the type for the contained representation, or null if null.
+  Type getType() const;
+  void dump() const;
+};
+raw_ostream &operator<<(raw_ostream &os, CRValue value);
+
+/// RValue = CRValue|ORValue.
 class RValue : public VariantValueStorage<RValue> {
 public:
   RValue() {}
@@ -180,26 +270,21 @@ public:
     if (value)
       storage = value;
   }
+  RValue(ORValue value) {
+    if (value)
+      storage = std::move(value);
+  }
 
   static RValue getFrom(Storage storage) {
     RValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa_and_nonnull<PRValue, SRValue, MRValue>(storage))
-      result.storage = storage;
+    if (isa_and_nonnull<PRValue, SRValue, MRValue, ORValue>(storage))
+      result.storage = std::move(storage);
     return result;
   }
 
-  /// If this contains a metavalue, return it; otherwise return null.
-  PRValue getIfPRValue() const { return dyn_cast<PRValue>(storage); }
-  SRValue getIfSRValue() const { return dyn_cast<SRValue>(storage); }
-  MRValue getIfMRValue() const { return dyn_cast<MRValue>(storage); }
-
-  /// If this value is a PRValue for a type, then return the type.
-  ASTType getIfTypeValue() const {
-    if (auto mValue = getIfPRValue())
-      return mValue.getIfTypeValue();
-    return {};
-  }
+  CRValue getIfCRValue() const { return CRValue::getFrom(storage); }
+  ORValue getIfORValue() const { return dyn_cast<ORValue>(storage); }
 
   /// Return the type for the contained representation, or null if null.
   Type getType() const;
@@ -210,41 +295,24 @@ raw_ostream &operator<<(raw_ostream &os, RValue value);
 /// AnyValue = RValue|LValue.
 class AnyValue : public VariantValueStorage<AnyValue> {
 public:
-  AnyValue() {}
-  AnyValue(PRValue value) {
+  using VariantValueStorage::VariantValueStorage;
+  AnyValue(ORValue value) {
     if (value)
-      storage = value;
+      storage = std::move(value);
   }
-  AnyValue(TypedAttr value) : AnyValue(PRValue(value)) {}
-  AnyValue(Type value) : AnyValue(PRValue(value)) {}
-  AnyValue(SRValue value) {
-    if (value)
-      storage = value;
-  }
-  AnyValue(MRValue value) {
-    if (value)
-      storage = value;
-  }
-  AnyValue(RValue value) : VariantValueStorage(value.getStorage()) {}
-  AnyValue(LValue value) : VariantValueStorage(value) {}
+  AnyValue(CRValue value) { storage = value.getStorage(); }
+  AnyValue(RValue value) { storage = value.getStorage(); }
+  AnyValue(LValue value) { storage = value; }
 
   LValue getIfLValue() const { return dyn_cast<LValue>(storage); }
-  SRValue getIfSRValue() const { return dyn_cast<SRValue>(storage); }
-  MRValue getIfMRValue() const { return dyn_cast<MRValue>(storage); }
-  PRValue getIfPRValue() const { return dyn_cast<PRValue>(storage); }
+  ORValue getIfORValue() const { return dyn_cast<ORValue>(storage); }
+  CRValue getIfCRValue() const { return CRValue::getFrom(storage); }
   RValue getIfRValue() const { return RValue::getFrom(storage); }
 
   /// This method returns the type of this value when projected as an RValue.
   /// If this is already an RValue, it is the type of the value.  If this is
   /// an LValue, it strips off the pointer type.
   ASTType getRValueType() const;
-
-  /// If this value is a PRValue for a type, then return the type.
-  ASTType getIfTypeValue() const {
-    if (auto mValue = getIfPRValue())
-      return mValue.getIfTypeValue();
-    return {};
-  }
 
   /// Return the type for the contained representation, or null if they are
   /// both null.

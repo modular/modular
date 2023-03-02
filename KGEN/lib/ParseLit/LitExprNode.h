@@ -18,7 +18,6 @@ namespace M::KGEN::LIT {
 using llvm::SMLoc;
 class AnyValue;
 class ASTType;
-class CallableValue;
 class ExprEmitter;
 class LitSourceRange;
 class ValueDest;
@@ -137,10 +136,6 @@ public:
   /// ValueDest indicates information about where to emit the expression result
   /// into, e.g. the a/b target in `def f(): (a,b) = (1,2)`.
   virtual AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const = 0;
-
-  /// Emit this expression to MLIR as a CallableValue.  On error, emit an error
-  /// and return a null value.
-  virtual CallableValue emitCallable(ExprEmitter &emitter) const;
 
   /// This node is being used as the LHS target/pattern of an assignment,
   /// initialized with the specified RHS value.  On success, handle this
