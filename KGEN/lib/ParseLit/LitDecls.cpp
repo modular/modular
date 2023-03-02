@@ -512,12 +512,10 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 // LitParameterEvaluator implementation
 //===----------------------------------------------------------------------===//
 
-LitParameterEvaluator::LitParameterEvaluator(LitSharedState &shared)
-    : LitParameterEvaluator({}, shared) {}
 LitParameterEvaluator::LitParameterEvaluator(
-    ArrayRef<ParamBindAttr> paramValues, LitSharedState &shared)
+    DeclResolver &resolver, ArrayRef<ParamBindAttr> paramValues)
     : ParameterEvaluator(paramValues), InterpreterState(/*target=*/nullptr),
-      resolver(*shared.declResolver) {}
+      resolver(resolver) {}
 
 FailureOr<TypedAttr>
 LitParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
@@ -561,11 +559,18 @@ LitParameterEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
   ASTDecl *decl = resolver.getDeclForFuncSymbol(symbol);
   if (!decl)
     return Error("function not found: " + mlir::debugString(symbol));
+
+  // Fail if the function is parameterized.
+  if (failed(resolver.resolveSignature(*decl, decl->getLoc())))
+    return Error("failed to resolve function signature");
+  auto func = cast<LIT::FuncOp>(*decl);
+  if (!func.getInputParamDecls().empty() || !func.getResultParams().empty())
+    return Error("function is parametric");
+
   // Make sure to fully resolve the body.
   if (failed(resolver.resolveFully(*decl, decl->getLoc())))
-    return Error("failed to fully resolve function: " +
-                 mlir::debugString(symbol));
-  return &cast<LIT::FuncOp>(*decl).getBodyRegion();
+    return Error("failed to fully resolve function");
+  return &func.getBodyRegion();
 }
 
 //===----------------------------------------------------------------------===//

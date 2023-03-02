@@ -101,9 +101,7 @@ PRValue::PRValue(Type value)
 /// If this value /is/ a type return it.
 ASTType PRValue::getIfTypeValue() const {
   auto attr = get();
-  if (auto type = dyn_cast<ConcreteTypeConstantAttr>(attr))
-    return type.getValue();
-  if (auto type = dyn_cast<ParameterizedTypeConstantAttr>(attr))
+  if (auto type = dyn_cast<TypeConstantAttr>(attr))
     return type.getValue();
 
   // If this is a parameter expression of type value, use ParamRefType to turn

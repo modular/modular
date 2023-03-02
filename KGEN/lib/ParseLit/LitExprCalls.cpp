@@ -310,7 +310,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
   // the value provided to 'indices' should actually depend on the specified
   // value of 'rank'.  We use a ParameterEvaluator to keep track of the mapping
   // so far and remap types on demand.
-  LitParameterEvaluator evaluator(emitter.shared);
+  LitParameterEvaluator evaluator(emitter.getDeclResolver());
   size_t nextBinding = 0;
   for (auto [idx, declX] : llvm::enumerate(actualParamDecls)) {
     ParamDeclAttr decl = declX;
@@ -1402,6 +1402,16 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
     }
   }
 
+  // Use a LitParameterEvaluator to fold only 'apply' expressions.
+  LitParameterEvaluator evaluator(emitter.getDeclResolver());
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](ParamOperatorAttr op) -> TypedAttr {
+    FailureOr<TypedAttr> result = evaluator.evaluateExpression(op);
+    if (failed(result))
+      return op;
+    return *result;
+  });
+
   auto &builder = emitter.builder;
   if (!builder) {
     // Emitting a call in a parameter context. Generate an apply operator.
@@ -1416,7 +1426,13 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
       operands.push_back(argValAndExpr.ir.getIfPRValue().get());
     }
 
-    auto result = ParamOperatorAttr::get(POC::Apply, operands);
+    TypedAttr result = ParamOperatorAttr::get(POC::Apply, operands);
+
+    // Attempt to further specialize the result type by folding 'apply'
+    // operators.
+    Type refinedType = replacer.replace(result.getType());
+    if (refinedType != result.getType())
+      result = ParamOperatorAttr::get(POC::Rebind, result, refinedType);
     return emitter.emitResult(result, callExpr, dest);
   }
 
@@ -1481,6 +1497,11 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
 
   // Value returning call returns its result.
   auto result = SRValue(callOp->getResult(0));
+
+  // Attempt to further specialize the result type by folding 'apply' operators.
+  Type refinedType = replacer.replace(result.getType());
+  if (refinedType != result.getType())
+    result = builder->create<RebindOp>(loc, refinedType, result);
   return emitter.emitResult(result, callExpr, dest);
 }
 

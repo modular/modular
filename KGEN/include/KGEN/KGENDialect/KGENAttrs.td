@@ -686,6 +686,11 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
       "POC":$opcode, "ArrayRef<TypedAttr>":$operands
     ), "", "TypedAttr">,
 
+    AttrBuilderWithInferredContext<(ins
+        "POC":$opcode, "ArrayRef<TypedAttr>":$operands, "Type":$type), [{
+      return get(type.getContext(), opcode, operands, type);
+    }], "TypedAttr">,
+
     // Build a binary parameter expression for convenience.
     AttrBuilderWithInferredContext<(ins "POC":$opcode, "TypedAttr":$lhs,
                                         "TypedAttr":$rhs), [{

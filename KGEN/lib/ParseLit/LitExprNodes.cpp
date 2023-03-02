@@ -261,7 +261,7 @@ static PRValue resolveParamDeclareValue(ParamDeclareOp param,
       assert(structDecl.getInputParamDecls().size() == bindings.size() &&
              "mismatch in # struct parameters and # bindings");
 
-      LitParameterEvaluator evaluator(bindings, shared);
+      LitParameterEvaluator evaluator(*shared.declResolver, bindings);
       auto result = evaluator.getReboundAttribute(param.getValue());
       return PRValue(cast<TypedAttr>(result));
     }
@@ -1047,8 +1047,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 
   // Otherwise, we must have a concrete RValue, emit an indirect call.
   auto crVal = calleeVal.getIfCRValue();
-  return OverloadSet::emitIndirectCall(crVal, operands, dest, this,
-                                       emitter);
+  return OverloadSet::emitIndirectCall(crVal, operands, dest, this, emitter);
 }
 
 AnyValue SliceNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -1469,8 +1468,8 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   }
 
   // Perform parameter substitution if there are input parameters.
-  LitParameterEvaluator paramEvaluator(initType.getParamBindings(),
-                                       emitter.shared);
+  LitParameterEvaluator paramEvaluator(emitter.getDeclResolver(),
+                                       initType.getParamBindings());
 
   SmallVector<StringAttr> fieldNames;
   SmallVector<Value> fieldValues;

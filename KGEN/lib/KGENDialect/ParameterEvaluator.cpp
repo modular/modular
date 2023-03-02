@@ -42,11 +42,14 @@ void KGEN::collectParameterReferences(
 /// Return true if the specified type contains parameter references, e.g.
 /// `!pop.scalar<dt>` returns true, but `!pop.scalar<f32>` returns false.
 ///
-/// NOTE: This must be kept in sync with ParameterEvaluator::getReboundType.
-///
 /// TODO: This isn't an efficient method, it walks the entire type graph without
 /// caching.
 bool KGEN::isParameterizedType(Type type) {
+  // Types that reference external symbols must be treated as implicitly
+  // parametric because the external type definition could contain parametric
+  // types. We don't want to assume that the type is concrete.
+  if (isa<DeclRefType>(type))
+    return true;
   SmallVector<ParamDeclRefAttr> paramDecls;
   bool hasConstExpr = false;
   collectParameterReferences(type, paramDecls, hasConstExpr);

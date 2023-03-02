@@ -345,6 +345,11 @@ ConcreteTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                  Type type, Type attrType) {
   if (!attrType.isa<MLIRTypeType>())
     return emitError() << "expected type to be !kgen.mlirtype";
+  if (LLVM_UNLIKELY(isParameterizedType(type))) {
+    return emitError()
+           << "concrete type constant created with parameterized type: "
+           << type;
+  }
   return success();
 }
 
