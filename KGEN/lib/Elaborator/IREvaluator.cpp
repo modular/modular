@@ -24,7 +24,7 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 ErrorOr<Region *> IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
-  auto func = getSymbolTable().lookup<FuncOp>(
+  auto func = elaborator.getAnalysis().getTopLevelSymbolTable().lookup<FuncOp>(
       cast<FlatSymbolRefAttr>(symbol).getAttr());
 
   // Make sure the function is inflated.
@@ -65,7 +65,7 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
 IREvaluator::IREvaluator(Elaborator &elaborator,
                          DenseMap<StringAttr, Attribute> paramValues)
     : ParameterEvaluator(std::move(paramValues)),
-      InterpreterState(elaborator.getAnalysis(), elaborator.getTarget()),
+      InterpreterState(elaborator.getTarget()),
       symtab(elaborator.getAnalysis().getTopLevelSymbolTable()),
       elaborator(elaborator) {}
 
