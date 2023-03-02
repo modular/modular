@@ -151,21 +151,6 @@ struct LowerKGENCoroutinesAsyncPass
   using LowerKGENCoroutinesAsyncBase::LowerKGENCoroutinesAsyncBase;
 
   void runOnOperation() override;
-
-  LogicalResult initialize(MLIRContext *ctx) override {
-    Builder b(ctx);
-    cache = {b.getI1Type(),
-             b.getI8Type(),
-             b.getI32Type(),
-             b.getI64Type(),
-             b.getType<LLVMPointerType>(),
-             LLVMPointerType::get(b.getI8Type()),
-             b.getType<LLVMTokenType>(),
-             nullptr};
-    return success();
-  }
-
-  TypeAttrCache cache;
 };
 } // namespace
 
@@ -685,6 +670,14 @@ void LowerKGENCoroutinesAsyncPass::runOnOperation() {
   LLVMBuilder b(opBuilder, typeConverter);
 
   // Initialize the type cache.
+  TypeAttrCache cache = {b.getI1Type(),
+                         b.getI8Type(),
+                         b.getI32Type(),
+                         b.getI64Type(),
+                         b.getType<LLVMPointerType>(),
+                         LLVMPointerType::get(b.getI8Type()),
+                         b.getType<LLVMTokenType>(),
+                         nullptr};
   cache.asyncFnType = LLVMPointerType::get(
       LLVMFunctionType::get(b.getType<LLVMVoidType>(), cache.i8PtrType));
 

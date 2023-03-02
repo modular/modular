@@ -27,13 +27,14 @@ class ObjectCompiler {
 public:
   /// Construct an ObjectCompiler that infers the exports from the module.
   static ErrorOr<ObjectCompiler> create(LLCL::Runtime &runtime,
+                                        mlir::PassManager &mgr,
                                         StringRef basePath, SymbolTable &symtab,
                                         const CompilationOptions &options);
 
   /// Construct an ObjectCompiler with a specific set of exports.
   static ErrorOr<ObjectCompiler>
-  create(LLCL::Runtime &runtime, StringRef basePath, SymbolTable &symtab,
-         const DenseMap<StringAttr, StringAttr> &exports,
+  create(LLCL::Runtime &runtime, mlir::PassManager &mgr, StringRef basePath,
+         SymbolTable &symtab, const DenseMap<StringAttr, StringAttr> &exports,
          const CompilationOptions &options);
 
   /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on
@@ -65,7 +66,8 @@ public:
 
 private:
   /// Construct an ObjectCompiler with a specific set of exports.
-  ObjectCompiler(LLCL::Runtime &runtime, SymbolTable &symtab,
+  ObjectCompiler(LLCL::Runtime &runtime, mlir::PassManager &mgr,
+                 SymbolTable &symtab,
                  const DenseMap<StringAttr, StringAttr> &exports,
                  LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
                  const CompilationOptions &options);
@@ -84,6 +86,9 @@ private:
 
   /// The async runtime to use during lowering.
   LLCL::Runtime &runtime;
+
+  /// The configured MLIR pass manager to use.
+  mlir::PassManager &mgr;
 
   /// This is the module the compiler was created with.
   ModuleOp module;

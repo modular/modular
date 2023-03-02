@@ -59,22 +59,22 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx) {
 std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   TimeTraceScope<> traceScope("lower-to-llvm");
-  mlir::PassManager pm(module->getContext());
+  mgr.clear();
 
   // TODO (#7846): Remove this once the elaborator does inlining. Maybe keep
   //   `force-inline`.
-  pm.addPass(createForceInline());
-  pm.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
-  pm.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
+  mgr.addPass(createForceInline());
+  mgr.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
+  mgr.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
 
   // If we aren't generating debug information, make sure it's been stripped.
   if (options.debugLevel == CompilationOptions::kNoDebug)
-    pm.addPass(DebugInfo::createDebugInfoStrip());
+    mgr.addPass(DebugInfo::createDebugInfoStrip());
 
   LowerToLLVMOptions llvmOptions(options.getDIEmissionKind(),
                                  options.debugAtLevel);
-  buildLowerToLLVMPipeline(pm, llvmOptions);
-  if (failed(pm.run(module)))
+  buildLowerToLLVMPipeline(mgr, llvmOptions);
+  if (failed(mgr.run(module)))
     return nullptr;
 
   // Translate the operation into an LLVM module.
@@ -123,8 +123,9 @@ void EmitLLVMPass::runOnOperation() {
   }
 
   // TODO: Populate compilation options from pass options.
+  mlir::PassManager passManager(&getContext());
   auto compiler = ObjectCompiler::create(
-      *rt, ".kgen_cache",
+      *rt, passManager, ".kgen_cache",
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable(),
       CompilationOptions());
   if (failed(compiler)) {
