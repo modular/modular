@@ -13,7 +13,7 @@ from Buffer import (
     partial_simd_store,
     _raw_stack_allocation,
 )
-from BuildInfo import is_debug_build
+from BuildInfo import is_relwithdebinfo_build, is_debug_build
 from Index import Index, StaticIntTuple
 from Int import Int
 from List import create_kgen_list
@@ -32,7 +32,10 @@ fn get_pack_data_size() -> Int:
     Returns:
         The number of elements to pack.
     """
-    if is_debug_build():
+
+    if is_relwithdebinfo_build() or is_debug_build():
+        # Only use the large cache size for release build as debug build may
+        #  contain additional data could cause stack overflow.
         return 1024
     return 131_072
 
