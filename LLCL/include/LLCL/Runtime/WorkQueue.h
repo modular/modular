@@ -126,7 +126,7 @@ struct ProfiledTaskFunction {
       : work(std::move(work)), waiting(std::move(waiting)),
         running(std::move(running)) {}
 
-  operator bool() const { return work.operator bool(); }
+  explicit operator bool() const { return bool(work); }
 };
 
 /// Creates a thread pool that only uses the host donor thread, involving no
