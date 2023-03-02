@@ -29,11 +29,11 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addPass(createLowerKGENToLLVM());
   pm.addPass(createLowerPOPClosuresToLLVM());
   pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM());
+  pm.addNestedPass<LLVMFuncOp>(mlir::createConvertIndexToLLVMPass());
   pm.addNestedPass<LLVMFuncOp>(createTweakSpilledAllocas());
-  pm.addNestedPass<LLVMFuncOp>(createLowerControlFlow());
   pm.addPass(createLowerKGENCoroutinesAsync());
   pm.addPass(createLowerGlobalPOPToLLVM());
-  pm.addNestedPass<LLVMFuncOp>(mlir::createConvertIndexToLLVMPass());
+  pm.addNestedPass<LLVMFuncOp>(createLowerControlFlow());
 
   // And finally canonicalize again.
   pm.addNestedPass<LLVMFuncOp>(mlir::createCanonicalizerPass());
