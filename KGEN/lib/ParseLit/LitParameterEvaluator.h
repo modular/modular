@@ -15,17 +15,24 @@
 #define LIT_PARAMETER_EVALUATOR_H
 
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "Support/Interpreter/InterpreterInterface.h"
 
 namespace M::KGEN::LIT {
 class DeclResolver;
 class LitSharedState;
 
-class LitParameterEvaluator : public ParameterEvaluator {
+class LitParameterEvaluator : public ParameterEvaluator,
+                              public InterpreterState {
 public:
   LitParameterEvaluator(LitSharedState &shared);
   LitParameterEvaluator(ArrayRef<ParamBindAttr> paramValues,
                         LitSharedState &shared);
+
+  /// Attempt to evaluate 'apply' expressions.
   FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
+
+  /// Lookup the body of the referenced function using the DeclResolver.
+  ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
 
 private:
   DeclResolver &resolver;

@@ -710,6 +710,18 @@ LogicalResult LIT::ReturnOp::verify() {
       *this, getParameters(), func.getResultParams(), func.getResultTypes());
 }
 
+ErrorTreeOr<SuccessType> LIT::ReturnOp::interpret(ArrayRef<Attribute> operands,
+                                                  InterpreterState &state) {
+  // Manually implement the return hook for this operation; it does not
+  // implement `ReturnLike`. Pop the current frame and transfer control flow
+  // back to the call operation, using the operands of the return as the results
+  // of the call.
+  Operation *call = state.popFrame();
+  state.setReturnValues(operands);
+  state.transferControlFlowTo(call);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // RaiseOp
 //===----------------------------------------------------------------------===//

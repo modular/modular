@@ -112,6 +112,12 @@ StructAttr::verifySymbolUses(Operation *module,
   return success();
 }
 
+bool LIT::StructAttr::isConstant() const {
+  return llvm::all_of(getValues(), [&](const auto &value) {
+    return ParameterAttr::isSimpleConstant(std::get<1>(value));
+  });
+}
+
 //===----------------------------------------------------------------------===//
 // StructExtractAttr
 //===----------------------------------------------------------------------===//
