@@ -64,8 +64,8 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
 
   // Check for the presence of a valid __clone__ method.
   bool isErroneousDecl = false;
-  CallableValue clone(rvalueType, "__clone__", value.expr, isErroneousDecl,
-                      shared);
+  OverloadSet clone(rvalueType, "__clone__", value.expr, isErroneousDecl,
+                    shared);
   // If any error looking up __clone__ then the problem has been diagnosed
   // already.
   if (isErroneousDecl)
@@ -73,8 +73,8 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
 
   if (!clone.isNull()) {
     // Ok, cool we know it will succeed; do it.
-    auto result = clone.emitFunctionCall(value, dest,
-                                         CallSyntax::kImplicitConvert, *this);
+    auto result = clone.emitCall(value, dest, value.expr,
+                                 CallSyntax::kImplicitConvert, *this);
     if (!result)
       return {};
     assert(result.getIfRValue() &&
@@ -90,12 +90,29 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
   return {};
 }
 
-SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value) {
+CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
   // If the value is an lvalue, convert it to an rvalue.
-  value.ir = emitRValue(value, ValueDest(/*SRValue never needs a dest*/));
+  value.ir = emitRValue(value, dest);
 
   if (!value)
     return {};
+
+  // If the value being materialized is an unresolved overload set, try to
+  // materialize it.
+  if (auto overloads = value.ir.getIfORValue())
+    return overloads->emitAsCRValue(*this, ValueDest(), value.expr);
+
+  assert(value.ir.getIfCRValue() && "Must be ORValue or CRValue");
+  return value.ir.getIfCRValue();
+}
+
+SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value) {
+  // If the value is an lvalue, convert it to an rvalue.
+  value.ir = emitCRValue(value, ValueDest(/*SRValue never needs a dest*/));
+
+  if (!value)
+    return {};
+
   // If this is already an SRValue, emit this.
   if (auto rvalue = value.ir.getIfSRValue())
     return rvalue;
@@ -239,7 +256,7 @@ AnyValue ExprEmitter::emitNamedMethodCall(
   assert(!argValues.empty() && "Cannot emit a method call without a receiver!");
   ASTType type = argValues.front().ir.getRValueType();
   bool isErroneousDecl = false;
-  CallableValue callee(type, methodName, callNode, isErroneousDecl, shared);
+  OverloadSet callee(type, methodName, callNode, isErroneousDecl, shared);
 
   // If the type doesn't have the specified method, emit an error.
   if (callee.isNull()) {
@@ -264,7 +281,7 @@ AnyValue ExprEmitter::emitNamedMethodCall(
     return {};
   }
 
-  return callee.emitFunctionCall(argValues, dest, syntax, *this);
+  return callee.emitCall(argValues, dest, callNode, syntax, *this);
 }
 
 /// Convert the specified value to the expected type, invoking implicit
@@ -292,8 +309,8 @@ AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
 
   // Check to see if we can invoke an __new__ method to convert it.
   bool isErroneousDecl = false;
-  CallableValue callee(expectedType, "__new__", value.expr, isErroneousDecl,
-                       shared);
+  OverloadSet callee(expectedType, "__new__", value.expr, isErroneousDecl,
+                     shared);
   if (callee.isNull()) {
     if (!isErroneousDecl)
       errorHandler();
@@ -303,17 +320,17 @@ AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
   // If we have at least one candidate, we check to see if any of them can
   // work. We disable implicit conversions though, to prevent converting
   // T -> S -> U in one step.
-  callee.direct->disableImplicitConversions = true;
-  if (failed(callee.direct->filterOverloadSet(
+  if (failed(callee.filterOverloadSet(
           {value}, CallSyntax::kImplicitConvert, value.expr,
+          /*allowImplicitConversions=*/false,
           /*emitDiagnosticOnFailure=*/false, *this))) {
     errorHandler();
     return {};
   }
 
   // Ok, cool we know it will succeed; do it.
-  return callee.emitFunctionCall(value, dest, CallSyntax::kImplicitConvert,
-                                 *this);
+  return callee.emitCall(value, dest, value.expr, CallSyntax::kImplicitConvert,
+                         *this);
 }
 
 AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
@@ -351,8 +368,8 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
   // Check for the presence of a __lit_bool method.  If it exists, we can avoid
   // a redundant call to __bool__ for Bool types.
   bool isErroneousDecl = false;
-  if (!CallableValue(value.ir.getType(), "__lit_bool", value.expr,
-                     isErroneousDecl, shared)) {
+  if (!OverloadSet(value.ir.getType(), "__lit_bool", value.expr,
+                   isErroneousDecl, shared)) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __lit_bool.
     boolResult =
@@ -386,6 +403,12 @@ RValue ExprEmitter::emitExprRValue(const ExprNode *node, ValueDest dest) {
       dest);
 }
 
+/// This helper emits the specified value rep as an CRValue.
+CRValue ExprEmitter::emitExprCRValue(const ExprNode *node, ValueDest dest) {
+  assert(node && "cannot emit a null node");
+  return emitCRValue({node->emitIR(*this, dest), node}, dest);
+}
+
 /// This helper emits the specified value rep as an SRValue, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
@@ -404,7 +427,7 @@ PRValue ExprEmitter::emitExprPRValue(const ExprNode *node, ASTType resultType,
   builder.reset();
 
   // Emit the expression.
-  auto rep = node->emitIR(*this, ValueDest(/*knownPRValue*/));
+  AnyValue rep = emitExprCRValue(node, ValueDest(/*knownPRValue*/));
 
   // If we had an expected type, do a conversion.
   if (resultType)
@@ -421,14 +444,6 @@ PRValue ExprEmitter::emitExprPRValue(const ExprNode *node, ASTType resultType,
   // Otherwise diagnose this as "not a parameter".
   emitError(node->getLoc(), "cannot use a dynamic value") << errorSuffix;
   return {};
-}
-
-CallableValue ExprEmitter::emitCallable(const ExprNode *node,
-                                        const Twine &errorSuffix) {
-  // Clear the builder to indicate that an PRValue must be emitted.
-  llvm::SaveAndRestore savedBuilder(builder);
-  builder.reset();
-  return node->emitCallable(*this);
 }
 
 /// Emit the specified expression as an LValue which can be loaded and stored.

@@ -12,17 +12,15 @@
 #define LIT_EXPRCALLS_H
 
 #include "IRValues.h"
-#include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/KGENDialect/KGENTypes.h"
-#include "llvm/Support/SMLoc.h"
+
+namespace M::KGEN {
+class ParamDeclArrayAttr;
+class ParamBindAttr;
+class SignatureType;
+class SymbolConstantAttr;
+} // namespace M::KGEN
 
 namespace M::KGEN::LIT {
-using llvm::SMLoc;
-class ASTDecl;
-class ExprEmitter;
-class FuncOp;
-class IREmitter;
-class ValueDest;
 
 //===----------------------------------------------------------------------===//
 // InputParamBindings
@@ -42,26 +40,18 @@ class ValueDest;
 /// bindings until overload resolution has resolved which 'method' we are
 /// talking about and when inference is complete, so we keep them as either a
 /// ParamBindAttr or (Typed)Attribute for the actual value.
-///
-/// TODO: This should grow to incorporate logic similar to KGEN::ConstraintSet.
 class InputParamBindings {
 public:
   struct Binding {
     /// This is the expression tree that produced the binding in the case of an
     /// Attribute, or null in the case of ParamBindAttr.
     ExprNode *expr;
-    PointerUnion<ParamBindAttr, Attribute> bindingOrValue;
+    Attribute bindingOrValue; // ParamBindAttr|TypedAttr.
 
-    TypedAttr getValue() const {
-      if (auto attr = dyn_cast<Attribute>(bindingOrValue))
-        return cast<TypedAttr>(attr);
-      return {};
-    }
-    ASTType getType() const {
-      if (auto attr = getValue())
-        return attr.getType();
-      return cast<ParamBindAttr>(bindingOrValue).getType();
-    }
+    TypedAttr getValue() const { return dyn_cast<TypedAttr>(bindingOrValue); }
+
+    /// Return the type of the TypedAttr or the binding.
+    ASTType getType() const;
   };
 
   /// This contains a list of bound input parameters.
@@ -69,13 +59,11 @@ public:
 
   /// Add a bound value for a pre-checked parameter bindings.  The binding must
   /// be known to be valid.
-  void add(ParamBindAttr precheckedBinding) {
-    bindings.push_back({nullptr, precheckedBinding});
-  }
+  void add(ParamBindAttr precheckedBinding);
 
   /// Add a bound value for a parameter expression bound to a value.
   void add(ExprNode *expr, TypedAttr value) {
-    bindings.push_back({expr, Attribute(value)});
+    bindings.push_back({expr, value});
   }
 
   using ParameterInferenceHookTy =
@@ -110,13 +98,17 @@ enum class CallSyntax : uint8_t {
   kImplicitConvert,  //< Conversion in an argument context
 };
 
-//===----------------------------------------------------------------------===//
-// DirectCallable
-//===----------------------------------------------------------------------===//
+/// This class represents an unresolved overload set with partially bound
+/// callees, e.g. "foo" or "a.foo" where "foo" is an overloaded declaration or
+/// an incompletely bound function (e.g. one with result parameters).  This is
+/// resolved when emitted to a CRValue or when binding more things into it as
+/// part of the expression tree.
+class OverloadSet {
+public:
+  /// In a method reference like `x.foo`, this is the base object being invoked,
+  /// e.g. `x`.
+  ASTExprAnd<AnyValue> baseValue;
 
-/// This struct models something that can be directly called, e.g. a global
-/// symbol with any binding information.
-struct DirectCallable {
   /// This is the basename of the declaration set, used in diagnostics.
   StringRef baseName;
 
@@ -130,12 +122,36 @@ struct DirectCallable {
   /// parameters from the call.
   std::vector<std::pair<ASTDecl *, SMLoc>> resultParams;
 
-  /// When this is set to true, implicit conversions are not considered for
-  /// argument and parameter values.
-  bool disableImplicitConversions = false;
+  /// Perform subsitutions of the specified bindings into the symbol, returning
+  /// the resultant LITSymbolConstant attr or producing an error message and
+  /// returning null. This allows producing a reference to a parameterized
+  /// function without the parmaeters specified.  They can be bound later.
+  TypedAttr getBoundConstantAttr(const ExprNode *callExpr,
+                                 ExprEmitter &emitter) const;
 
-  DirectCallable(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-                 ParamBindArrayAttr bindings);
+  /// Get a bound SymbolConstantAttr for a specific overload.
+  TypedAttr getBoundConstAttrFor(const ExprNode *callExpr, LIT::FuncOp funcOp,
+                                 ExprEmitter &emitter) const;
+
+  /// Form an overload set with the specified function overloads.
+  OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
+              ParamBindArrayAttr bindings);
+
+  /// Form an OverloadSet with a lookup of a named method on the specified type.
+  /// If successful, this provides a non-null OverloadSet.
+  ///
+  /// On failure, this returns a null OverloadSet and sets 'erroneousDecl' to
+  /// indicate whether there was a problem with the callee that has already been
+  /// diagnosed (allowing the client to squish downstream error messages).  This
+  /// does not emit an error on failure.
+  /// FIXME: This "erroneousDecl" nonsense is a pain, pass in an error
+  /// lambda instead.
+  OverloadSet(ASTType type, StringRef methodName, const ExprNode *callExpr,
+              bool &erroneousDecl, LitSharedState &shared);
+
+  bool isNull() const { return !baseValue && fnDecls.empty(); }
+  bool operator!() const { return isNull(); }
+  explicit operator bool() const { return !isNull(); }
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings and provided
@@ -148,94 +164,14 @@ struct DirectCallable {
   /// bindings.
   LogicalResult filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
                                   CallSyntax syntax, const ExprNode *callExpr,
+                                  bool allowImplicitConversions,
                                   bool emitDiagnosticOnFailure,
                                   ExprEmitter &emitter);
 
-  /// Resolve the callee into either a single PRValue callee (if there's only
-  /// one decl provided) or a variadic that contains all the possible adaptive
-  /// overloads. Because adaptive overloads must all have the same signature,
-  /// this also returns the signature type that they all share.
-  std::pair<PRValue, SignatureType> getCallee();
-
-  /// Perform subsitutions of the specified bindings into the symbol, returning
-  /// the resultant LITSymbolConstant attr or producing an error message and
-  /// returning null. This allows producing a reference to a parameterized
-  /// function without the parmaeters specified.  They can be bound later.
-  TypedAttr getBoundConstantAttr(const ExprNode *callExpr,
-                                 ExprEmitter &emitter) const;
-
-  /// Perform subsitutions of the specified bindings into the symbol, returning,
-  /// in symConstAttrs, the resultant SymbolConstant attr for each adaptive
-  /// function overload.
-  /// On failure it produces an error message and returns failure.
-  LogicalResult
-  getBoundConstantAttrsAdaptiveSet(SmallVectorImpl<TypedAttr> &symConstAttrs,
-                                   const ExprNode *callExpr,
-                                   ExprEmitter &emitter) const;
-
-  /// Check declarations for the result parameters and add them to
-  /// resultParamDecls.  This emits and error and returns failure if an error is
-  /// detected.
-  LogicalResult
-  getResultParamDecls(SignatureType signature,
-                      SmallVectorImpl<ParamDeclAttr> &resultParamDecls,
-                      ExprEmitter &emitter);
-};
-
-//===----------------------------------------------------------------------===//
-// CallableValue
-//===----------------------------------------------------------------------===//
-
-/// This class is returned by the emitCallable hooks on AST expressions, which
-/// captures aggregate callable values.  This is required to hold parametric
-/// callees before their parameters are bound, e.g. in `obj.method[p1,p2](...)`
-/// it may not be possible to emit `obj.method` as a RValue because it isn't
-/// materializable, yet it needs to capture the dynamic value 'obj'.  Similarly
-/// `obj.method` may resolve to an overload set which needs arguments to
-/// disambiguate.
-class CallableValue {
-public:
-  /// This is the expression tree this result was built from, for use in
-  /// diagnostics.  This is null when the CallableValue is null.
-  const ExprNode *expr;
-
-  /// This is a dynamic value, which may either be an LValue or an RValue, that
-  /// may itself be a callable, or (if targetSymbol is non-null), is the self
-  /// argument to a call to the symbol.
-  AnyValue baseVal;
-
-  /// If present, this a reference to a fixed symbol or an overload set.
-  std::optional<DirectCallable> direct;
-
-  CallableValue() : expr(nullptr) {}
-  CallableValue(ASTExprAnd<AnyValue> baseVal)
-      : expr(baseVal.expr), baseVal(baseVal.ir) {}
-  CallableValue(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-                ParamBindArrayAttr bindings, const ExprNode *expr)
-      : expr(expr), direct({baseName, fnDecls, bindings}) {}
-
-  /// Get a CallableValue for a lookup of a named method on the specified type.
-  /// If successful, this provides a non-null CallableValue.
-  ///
-  /// On failure, this returns a null CallableValue and sets 'erroneousDecl' to
-  /// indicate whether there was a problem with the callee that has already been
-  /// diagnosed (allowing the client to squish downstream error messages).  This
-  /// does not emit an error on failure.
-  CallableValue(ASTType type, StringRef methodName, const ExprNode *callxpr,
-                bool &erroneousDecl, LitSharedState &shared);
-
-  bool isNull() const { return !baseVal && !direct; }
-  bool operator!() const { return isNull(); }
-  explicit operator bool() const { return !isNull(); }
-
-  /// Emit this as a flattened RValue or LValue.  This returns null on
-  /// failure.
-  AnyValue emitAsValue(ExprEmitter &emitter, ValueDest dest) const;
-
-  /// Emit in values references of all adaptive function overloads this
-  /// DirectCallable represents.
-  LogicalResult emitAdaptiveSet(SmallVectorImpl<TypedAttr> &values,
-                                ExprEmitter &emitter) const;
+  /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
+  /// error and return null.
+  CRValue emitAsCRValue(ExprEmitter &emitter, ValueDest dest,
+                        const ExprNode *expr) const;
 
   /// Emit a function call to the specified callee with the specified operand
   /// values.  This emits an error and returns null on failure.
@@ -244,9 +180,16 @@ public:
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  AnyValue emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                            ValueDest dest, CallSyntax syntax,
-                            ExprEmitter &emitter);
+  AnyValue emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands, ValueDest dest,
+                    const ExprNode *callExpr, CallSyntax syntax,
+                    ExprEmitter &emitter);
+
+  /// Emit an indirect call to a resolved value.
+  /// TODO: Move to ExprEmitter.
+  static AnyValue emitIndirectCall(CRValue callee,
+                                   ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                   ValueDest dest, const ExprNode *callExpr,
+                                   ExprEmitter &emitter);
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations.  This does not generate
@@ -256,11 +199,51 @@ public:
                                          ExprEmitter &emitter);
 
 private:
-  PRValue
+  /// Resolve the callee into either a single PRValue callee (if there's only
+  /// one decl provided) or a variadic that contains all the possible adaptive
+  /// overloads.
+  PRValue getCallee() const;
+
+  /// Emit an indirect call to a resolved value.
+  /// TODO: Move to ExprEmitter.
+  static AnyValue emitCallImpl(CRValue callee,
+                               ArrayRef<ASTExprAnd<AnyValue>> operands,
+                               ArrayRef<ParamDeclAttr> resultParams,
+                               ValueDest dest, const ExprNode *callExpr,
+                               CallSyntax syntax, ExprEmitter &emitter);
+
+  static PRValue
   inlineFunctionCallIntoPRValue(ASTDecl &callee, ParamBindArrayAttr inputParams,
                                 ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
-                                ExprEmitter &emitter);
+                                SMLoc callLoc, ExprEmitter &emitter);
 };
+
+/// This provides a wrapper around OverloadSet which is reference counted,
+/// allowing ORValue to maintain it while still being copyable.
+struct ORValue::OverloadSetWrapper
+    : public LLCL::NonAtomicallyReferenceCounted<OverloadSetWrapper> {
+
+  OverloadSetWrapper(OverloadSet &&overloadSet)
+      : overloadSet(std::move(overloadSet)) {}
+  OverloadSet overloadSet;
+};
+
+//===----------------------------------------------------------------------===//
+// ORValue implementation details
+//===----------------------------------------------------------------------===//
+
+template <typename... Args>
+inline ORValue ORValue::create(Args &&...args) {
+  return ORValue(LLCL::takeRCRef(
+      new OverloadSetWrapper(OverloadSet(std::forward<Args>(args)...))));
+}
+
+inline OverloadSet *ORValue::operator->() {
+  return &storage.getPointer()->overloadSet;
+}
+inline const OverloadSet *ORValue::operator->() const {
+  return &storage.getPointer()->overloadSet;
+}
 
 } // namespace M::KGEN::LIT
 

@@ -9,7 +9,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "IRValues.h"
-#include "KGEN/KGENDialect/KGENAttrs.h"
+#include "LitExprCalls.h"
+
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "llvm/Support/SMLoc.h"
@@ -19,11 +20,11 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 //===----------------------------------------------------------------------===//
-// IRValues Implementation Logic.
+// IRValue Implementation Logic.
 //===----------------------------------------------------------------------===//
 
-using VariantStorage =
-    SmartVariant<NullRepresentation, PRValue, SRValue, MRValue, LValue>;
+using VariantStorage = SmartVariant<NullRepresentation, PRValue, SRValue,
+                                    MRValue, ORValue, LValue>;
 
 static raw_ostream &printStorage(raw_ostream &os, const VariantStorage &storage,
                                  bool isDump = false) {
@@ -54,6 +55,9 @@ static raw_ostream &printStorage(raw_ostream &os, const VariantStorage &storage,
 raw_ostream &LIT::operator<<(raw_ostream &os, PRValue value) {
   return printStorage(os, value);
 }
+raw_ostream &LIT::operator<<(raw_ostream &os, CRValue value) {
+  return printStorage(os, value.getStorage());
+}
 raw_ostream &LIT::operator<<(raw_ostream &os, RValue value) {
   return printStorage(os, value.getStorage());
 }
@@ -61,6 +65,9 @@ raw_ostream &LIT::operator<<(raw_ostream &os, AnyValue value) {
   return printStorage(os, value.getStorage());
 }
 
+void CRValue::dump() const {
+  printStorage(llvm::errs(), getStorage(), true) << '\n';
+}
 void RValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
@@ -77,16 +84,19 @@ static Type getTypeFrom(VariantStorage storage) {
     return value.getType();
   if (auto value = dyn_cast<LValue>(storage))
     return value.getType();
+  assert(!isa<ORValue>(storage) && "overloaded rvalue has no type");
 
   // Otherwise null.
   return Type();
 }
 
+Type CRValue::getType() const { return getTypeFrom(storage); }
 Type RValue::getType() const { return getTypeFrom(storage); }
 Type AnyValue::getType() const { return getTypeFrom(storage); }
 
 PRValue::PRValue(Type value)
-    : storage(ParameterizedTypeConstantAttr::get(value)) {}
+    : storage(value ? ParameterizedTypeConstantAttr::get(value) : Attribute()) {
+}
 
 /// If this value /is/ a type return it.
 ASTType PRValue::getIfTypeValue() const {
@@ -129,4 +139,23 @@ ASTType AnyValue::getRValueType() const {
   if (isa_and_nonnull<LValue, MRValue>(storage))
     return getPointerElementType(getType());
   return getType();
+}
+
+//===----------------------------------------------------------------------===//
+// ORValue
+//===----------------------------------------------------------------------===//
+
+ORValue::ORValue() {}
+ORValue::ORValue(const ORValue &existing) : storage(existing.storage.copy()) {}
+ORValue::ORValue(LLCL::RCRef<OverloadSetWrapper> storage)
+    : storage(std::move(storage)) {}
+ORValue::~ORValue() {}
+
+ORValue &ORValue::operator=(const ORValue &existing) {
+  storage = existing.storage.copy();
+  return *this;
+}
+
+ORValue ORValue::create(OverloadSet &&set) {
+  return ORValue(LLCL::takeRCRef(new OverloadSetWrapper{std::move(set)}));
 }

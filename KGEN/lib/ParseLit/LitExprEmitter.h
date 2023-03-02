@@ -81,6 +81,7 @@ public:
 
   /// This helper emits the specified value as an RValue.
   RValue emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest);
+  CRValue emitCRValue(ASTExprAnd<AnyValue> value, ValueDest dest);
 
   /// This helper emits the specified value as a SRValue which has an SSA
   /// value representation, materializing PRValues and loading LValues as
@@ -130,10 +131,13 @@ public:
   AnyValue emitResult(AnyValue value, const ExprNode *node, ValueDest dest);
 
   AnyValue emitResult(TypedAttr value, const ExprNode *node, ValueDest dest) {
-    return value ? emitResult(AnyValue(value), node, dest) : AnyValue();
+    return emitResult(AnyValue(value), node, dest);
   }
   AnyValue emitResult(ASTType value, const ExprNode *node, ValueDest dest) {
-    return value ? emitResult(AnyValue(value), node, dest) : AnyValue();
+    return emitResult(AnyValue(value), node, dest);
+  }
+  AnyValue emitResult(PRValue value, const ExprNode *node, ValueDest dest) {
+    return emitResult(AnyValue(value), node, dest);
   }
 
   /// This method is used by node implementations of emitExprResultIntoPattern
@@ -142,6 +146,9 @@ public:
 
   /// This helper emits the specified value rep as an RValue.
   RValue emitExprRValue(const ExprNode *node, ValueDest dest = {});
+
+  /// This helper emits the specified value rep as an RValue.
+  CRValue emitExprCRValue(const ExprNode *node, ValueDest dest);
 
   /// This helper emits the specified value rep as an SRValue, materializing
   /// it as an operation if it is a parameter.  This returns null if emission
@@ -178,10 +185,6 @@ public:
   /// Given a value convertable to a pop int via index conversion, emit
   /// the casting code and return the pop scalar index value
   SRValue emitBoxedIntAsPopScalar(Value numberValue, const ExprNode *source);
-
-  /// This helper emits the specified expression as a callable meta value.
-  /// This emits an error if the expression cannot be emitted and returns null.
-  CallableValue emitCallable(const ExprNode *node, const Twine &errorSuffix);
 };
 
 } // namespace M::KGEN::LIT

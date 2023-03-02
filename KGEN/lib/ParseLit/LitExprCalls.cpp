@@ -40,6 +40,16 @@ static Type getVariadicElementType(Type variadicType) {
   return mValue.getIfTypeValue();
 }
 
+ASTType InputParamBindings::Binding::getType() const {
+  if (auto attr = getValue())
+    return attr.getType();
+  return cast<ParamBindAttr>(bindingOrValue).getType();
+}
+
+void InputParamBindings::add(ParamBindAttr precheckedBinding) {
+  bindings.push_back({nullptr, precheckedBinding});
+}
+
 //===----------------------------------------------------------------------===//
 // Parameter Inference Implementation
 //===----------------------------------------------------------------------===//
@@ -422,13 +432,13 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
 }
 
 //===----------------------------------------------------------------------===//
-// DirectCallable Implementation
+// OverloadSet Implementation
 //===----------------------------------------------------------------------===//
 
 /// Get a symbol for a direct reference to the specified function in its
 /// enclosing context.  This does not bind any values to arguments.
-DirectCallable::DirectCallable(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-                               ParamBindArrayAttr bindingsAttr)
+OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
+                         ParamBindArrayAttr bindingsAttr)
     : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()) {
   if (bindingsAttr) {
     for (ParamBindAttr bind : bindingsAttr)
@@ -478,14 +488,15 @@ struct OverloadFitness {
   /// parameter bindings specified in `callable` and the arguments specified in
   /// `operands`.
   static OverloadFitness evaluate(SignatureType signature,
-                                  const DirectCallable &callable,
+                                  const OverloadSet &callable,
                                   ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                  bool allowImplicitConversions,
                                   const ExprNode *callExpr,
                                   ExprEmitter &emitter);
 
   /// Add explaination for why this candidate doesn't work to the specified
   /// diagnostic.
-  void diagnose(SignatureType signature, const DirectCallable &callable,
+  void diagnose(SignatureType signature, const OverloadSet &callable,
                 ArrayRef<ASTExprAnd<AnyValue>> operands, CallSyntax syntax,
                 LitDiagnostic &diag);
 };
@@ -495,9 +506,9 @@ struct OverloadFitness {
 /// parameter bindings specified in `callable` and the arguments specified in
 /// `operands`.
 OverloadFitness
-OverloadFitness::evaluate(SignatureType signature,
-                          const DirectCallable &callable,
+OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
                           ArrayRef<ASTExprAnd<AnyValue>> operands,
+                          bool allowImplicitConversions,
                           const ExprNode *callExpr, ExprEmitter &emitter) {
 
   // Check that the signature can be rebound with this set of bindings.
@@ -626,9 +637,9 @@ OverloadFitness::evaluate(SignatureType signature,
 
         // If we lack an exact match and conversions are disabled, this
         // candidate fails.
-        if (callable.disableImplicitConversions ||
-            !CallableValue::canImplicitlyConvertToType(operand, expectedType,
-                                                       emitter))
+        if (!allowImplicitConversions ||
+            !OverloadSet::canImplicitlyConvertToType(operand, expectedType,
+                                                     emitter))
           return {kArgWrongType, providedValueIdx, expectedType, newBindings};
 
         // If we had one, this bumps our # implicit conversions.
@@ -671,7 +682,7 @@ OverloadFitness::evaluate(SignatureType signature,
 /// diagnostic. isMethodCall indicates whether the call was written with
 /// `foo(x,y)` syntax or `x.foo(y)` syntax.
 void OverloadFitness::diagnose(SignatureType signature,
-                               const DirectCallable &callable,
+                               const OverloadSet &callable,
                                ArrayRef<ASTExprAnd<AnyValue>> operands,
                                CallSyntax syntax, LitDiagnostic &diag) {
   // TODO: Would be really nice to range underline the operand in question!
@@ -763,17 +774,17 @@ void OverloadFitness::diagnose(SignatureType signature,
 /// candidate that works with the specified parameter bindings and provided
 /// arguments.  If so, replace fnDecls with a single entry that works and
 /// return success.  If not, generate a diagnostic and return failure.
-LogicalResult
-DirectCallable::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                  CallSyntax syntax, const ExprNode *callExpr,
-                                  bool emitDiagnosticOnFailure,
-                                  ExprEmitter &emitter) {
+LogicalResult OverloadSet::filterOverloadSet(
+    ArrayRef<ASTExprAnd<AnyValue>> operands, CallSyntax syntax,
+    const ExprNode *callExpr, bool allowImplicitConversions,
+    bool emitDiagnosticOnFailure, ExprEmitter &emitter) {
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
   for (ASTDecl *candidate : fnDecls) {
     auto signature = cast<LIT::FuncOp>(*candidate).getFullSignature();
     evaluations.push_back(OverloadFitness::evaluate(signature, *this, operands,
+                                                    allowImplicitConversions,
                                                     callExpr, emitter));
     anyValid |= evaluations.back().kind == OverloadFitness::kValid;
   }
@@ -878,7 +889,7 @@ DirectCallable::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
 /// decl provided) or a variadic that contains all the possible adaptive
 /// overloads. Because adaptive overloads must all have the same signature, this
 /// also returns the signature type that they all share.
-std::pair<PRValue, SignatureType> DirectCallable::getCallee() {
+PRValue OverloadSet::getCallee() const {
   assert(!fnDecls.empty() &&
          "cannot get the callee when no callees have been resolved");
   // Get the parameter bindings, if there are any.
@@ -894,7 +905,7 @@ std::pair<PRValue, SignatureType> DirectCallable::getCallee() {
   if (fnDecls.size() == 1) {
     TypedAttr callee =
         cast<LIT::FuncOp>(*fnDecls.front()).getBoundReference(bindArray);
-    return {PRValue(callee), cast<SignatureType>(callee.getType())};
+    return PRValue(callee);
   }
 
   // Otherwise, we have to construct a list to be called.
@@ -902,33 +913,30 @@ std::pair<PRValue, SignatureType> DirectCallable::getCallee() {
     return cast<LIT::FuncOp>(*decl).getBoundReference(bindArray);
   });
   // Pull out the type, and construct a list attr to be returned.
-  auto calleeType = cast<SignatureType>(symbols.front().getType());
-  auto calleeList = VariadicAttr::get(symbols, VariadicType::get(calleeType));
-  return {PRValue(calleeList), calleeType};
+  auto calleeType = symbols.front().getType();
+  return PRValue(VariadicAttr::get(symbols, VariadicType::get(calleeType)));
 }
 
 /// Utility function to perform subsitutions of the specified callable bindings
 /// into the symbol for the given function declaration. It returns the resultant
 /// SymbolConstantAttr or produces an error message and returns null.
-static TypedAttr getBoundConstAttrFor(const DirectCallable *callable,
-                                      const ExprNode *callExpr, ASTDecl *fnDecl,
-                                      ExprEmitter &emitter) {
-  auto funcOp = cast<LIT::FuncOp>(*fnDecl);
+TypedAttr OverloadSet::getBoundConstAttrFor(const ExprNode *callExpr,
+                                            LIT::FuncOp funcOp,
+                                            ExprEmitter &emitter) const {
 
   // If there are no input parameters specified and if we allow unbound symbols,
   // just return the unbound symbol.
-  if (callable->inputParamBindings.bindings.empty())
+  if (inputParamBindings.bindings.empty())
     return funcOp.getBoundReference();
 
   // Check that the signature can be rebound with our set of bindings.
   ssize_t incorrectBindingNo = 0;
   ASTType incorrectBindingExpectedType;
 
-  auto newBindings = callable->inputParamBindings.verifyBindings(
-      funcOp.getFullSignature().getInputParams(), callable->baseName,
-      callExpr->getLoc(), incorrectBindingNo, incorrectBindingExpectedType,
-      emitter, /*emit diagnostics*/ funcOp,
-      funcOp.getSignature().hasParamVarargs());
+  auto newBindings = inputParamBindings.verifyBindings(
+      funcOp.getFullSignature().getInputParams(), baseName, callExpr->getLoc(),
+      incorrectBindingNo, incorrectBindingExpectedType, emitter,
+      /*emit diagnostics*/ funcOp, funcOp.getSignature().hasParamVarargs());
   if (!newBindings)
     return {};
 
@@ -940,8 +948,8 @@ static TypedAttr getBoundConstAttrFor(const DirectCallable *callable,
 /// the resultant LITSymbolConstant attr or producing an error message and
 /// returning null. This allows producing a reference to a parameterized
 /// function without the parmaeters specified.  They can be bound later.
-TypedAttr DirectCallable::getBoundConstantAttr(const ExprNode *callExpr,
-                                               ExprEmitter &emitter) const {
+TypedAttr OverloadSet::getBoundConstantAttr(const ExprNode *callExpr,
+                                            ExprEmitter &emitter) const {
   if (fnDecls.size() != 1) {
     assert(!fnDecls.empty() && "DirectCallable malformed");
     auto diag = emitter.emitError(
@@ -955,86 +963,25 @@ TypedAttr DirectCallable::getBoundConstantAttr(const ExprNode *callExpr,
 
     return {};
   }
-  return getBoundConstAttrFor(this, callExpr, fnDecls[0], emitter);
-}
 
-LogicalResult DirectCallable::getBoundConstantAttrsAdaptiveSet(
-    SmallVectorImpl<TypedAttr> &symConstAttrs, const ExprNode *callExpr,
-    ExprEmitter &emitter) const {
-  for (ASTDecl *fnDecl : fnDecls) {
-    auto funcOp = cast<LIT::FuncOp>(*fnDecl);
-    if (!funcOp.getIsAdaptive()) {
-      auto diag = emitter.emitError(callExpr->getLoc(),
-                                    "cannot form a reference to non @adaptive "
-                                    "declaration of '")
-                  << baseName << "'" << callExpr->getRange();
-      diag.attachNote(funcOp.getLoc()) << "declared here";
-      return failure();
-    }
-    TypedAttr symConstAttr =
-        getBoundConstAttrFor(this, callExpr, fnDecl, emitter);
-    if (!symConstAttr)
-      return failure();
-    symConstAttrs.push_back(symConstAttr);
-  }
-  return success();
-}
-
-/// Check declarations for the result parameters and add them to
-/// resultParamDecls.  This emits and error and returns failure if an error is
-/// detected.
-LogicalResult DirectCallable::getResultParamDecls(
-    SignatureType signature, SmallVectorImpl<ParamDeclAttr> &resultParamDecls,
-    ExprEmitter &emitter) {
-  assert(signature.getResultParams().size() == resultParams.size() &&
-         "We know that the callee is type checked");
-
-  // If there is nothing to do, then we are done.
-  if (resultParams.empty())
-    return success();
-
-  // Verify completion of forward declared alias declarations.  We know the
-  // decl exists, but we don't know if the type is compatible or it has been
-  // multiply defined.
-  //
-  // TODO: We don't remap input parameters types into output parameter types.
-  // We surely handle this wrong: `fn x[a: type -> a]():` for example.
-  for (auto [param, declAndLoc] :
-       llvm::zip(signature.getResultParams(), resultParams)) {
-    auto forwardDecl = cast<AliasForwardDeclOp>(*declAndLoc.first);
-
-    // Verify the types match.
-    // TODO: Move this to overload resolution.
-    if (!ASTType(forwardDecl.getType()).isEqualCanon(param.getType())) {
-      auto diag =
-          emitter.emitError(declAndLoc.second, "result parameter returns type ")
-          << param.getType() << " but forward declaration is of type "
-          << ASTType(forwardDecl.getType());
-      diag.attachNote(forwardDecl.getLoc()) << "alias forward declared here";
-      return failure();
-    }
-    resultParamDecls.push_back(
-        ParamDeclAttr::get(forwardDecl.getName(), param.getType()));
-  }
-  return success();
+  return getBoundConstAttrFor(callExpr, cast<LIT::FuncOp>(*fnDecls[0]),
+                              emitter);
 }
 
 //===----------------------------------------------------------------------===//
-// CallableValue Implementation
+// OverloadSet Implementation
 //===----------------------------------------------------------------------===//
 
-/// Get a CallableValue for a lookup of a named method on the specified type.
-/// If successful, this provides a non-null CallableValue.
+/// Get a OverloadSet for a lookup of a named method on the specified type.
+/// If successful, this provides a non-null OverloadSet.
 ///
-/// On failure, this returns a null CallableValue and sets 'erroneousDecl' to
+/// On failure, this returns a null OverloadSet and sets 'erroneousDecl' to
 /// indicate whether there was a problem with the callee that has already been
 /// diagnosed (allowing the client to squish downstream error messages).  This
 /// does not emit an error on failure.
-CallableValue::CallableValue(ASTType type, StringRef methodName,
-                             const ExprNode *callExpr, bool &erroneousDecl,
-                             LitSharedState &shared)
-    : expr(callExpr) {
-
+OverloadSet::OverloadSet(ASTType type, StringRef methodName,
+                         const ExprNode *callExpr, bool &erroneousDecl,
+                         LitSharedState &shared) {
   SMLoc callLoc = callExpr->getLoc();
 
   erroneousDecl = false;
@@ -1054,22 +1001,17 @@ CallableValue::CallableValue(ASTType type, StringRef methodName,
     return;
 
   // Handle method references, which might be overloaded.
-  direct = DirectCallable{methodName, resultDecls, type.getParamBindings()};
+  *this = OverloadSet(methodName, resultDecls, type.getParamBindings());
 }
 
-/// Emit this as a flattened RValue or LValue with no additional parameter
-/// context.  This returns null on failure.
-AnyValue CallableValue::emitAsValue(ExprEmitter &emitter,
-                                    ValueDest dest) const {
-  // If we have no bound symbol, return the normal lvalue or rvalue we
-  // represent.
-  if (!direct)
-    return emitter.emitResult(baseVal, expr, dest);
-
+/// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
+/// error and return null.
+CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest dest,
+                                   const ExprNode *expr) const {
   // We allow unbound symbols here which can be emitted as an PRValue.  In the
   // case where we are partially applying, that will force the unbound symbol
   // into a SRValue which will catch symbols that are not fully bound.
-  auto directSymbolAttr = direct->getBoundConstantAttr(expr, emitter);
+  auto directSymbolAttr = getBoundConstantAttr(expr, emitter);
   if (!directSymbolAttr)
     return {};
 
@@ -1084,27 +1026,27 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter,
   }
 
   // If we have no base value, then we are just a symbol, return it.
-  if (!baseVal)
-    return emitter.emitResult(directSymbolAttr, expr, dest);
+  if (!baseValue)
+    return emitter.emitResult(directSymbolAttr, expr, dest).getIfCRValue();
 
-  auto loc = expr->getLoc();
+  auto loc = baseValue.expr->getLoc();
 
   // Otherwise, we have a base symbol for an instance method /and/ a self value
   // to apply to it.  Partially apply it to form a result closure.
   Type firstArgIRType = calleeSignature.getValueInputs()[0];
-  Value firstArgValue;
   ValueInputConvention selfConvention = calleeSignature.getInputConvention(0);
+  Value firstArgValue;
 
   assert(!calleeSignature.isVararg(0) && !calleeSignature.isKWVararg(0) &&
-         "Error: self shouldn't be able to be varargs");
+         "Error: self shouldn't be varargs");
 
   switch (selfConvention) {
   case ValueInputConvention::ByRef: {
-    LValue baseLV = baseVal.getIfLValue();
+    LValue baseLV = baseValue.ir.getIfLValue();
     if (!baseLV) {
       emitter.emitError(loc,
                         "invalid use of mutating method on rvalue of type ")
-          << ASTType(baseVal.getType()) << expr->getRange();
+          << ASTType(baseValue.ir.getType()) << baseValue.expr->getRange();
       return {};
     }
     firstArgValue = baseLV;
@@ -1113,14 +1055,14 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter,
     // ownership models with mutable borrows.
     emitter.emitError(loc, "TODO: partial application to mutable base isn't "
                            "supportable without a lifetime model")
-        << expr->getRange();
+        << baseValue.expr->getRange();
     return {};
   }
   case ValueInputConvention::ByVal:
     // Otherwise we can have either an lvalue or rvalue, but we need to convert
     // to an rvalue if we have an lvalue.
     // TODO(memory_primary): Emit into memory directly.
-    firstArgValue = emitter.emitSRValue({baseVal, expr});
+    firstArgValue = emitter.emitSRValue(baseValue);
     if (!firstArgValue)
       return {};
     break;
@@ -1141,25 +1083,17 @@ AnyValue CallableValue::emitAsValue(ExprEmitter &emitter,
   auto result = SRValue(emitter.builder->create<POP::PartialApplyOp>(
       expr->getLocation(emitter), calleeDRVal, mlir::ValueRange(firstArgValue),
       zeroAttr));
-
-  return emitter.emitResult(result, expr, dest);
-}
-
-LogicalResult CallableValue::emitAdaptiveSet(SmallVectorImpl<TypedAttr> &values,
-                                             ExprEmitter &emitter) const {
-  // If we have no bound symbol, bail out.
-  if (!direct)
-    return failure();
-
-  return direct->getBoundConstantAttrsAdaptiveSet(values, expr, emitter);
+  auto eResult = emitter.emitResult(result, expr, dest);
+  assert(eResult.getIfSRValue() && "Emitting an SRValue shouldn't change it");
+  return eResult.getIfSRValue();
 }
 
 /// Return true if 'value' may be implicitly converted to 'requiredType'
 /// by invoking (one level of) conversion operations.  This does not generate
 /// any IR.
-bool CallableValue::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
-                                               ASTType requiredType,
-                                               ExprEmitter &emitter) {
+bool OverloadSet::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
+                                             ASTType requiredType,
+                                             ExprEmitter &emitter) {
   // If it already matches, then we're done.
   if (value.ir.getRValueType().isEqualCanon(requiredType))
     return true;
@@ -1167,19 +1101,19 @@ bool CallableValue::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
   // Otherwise, check to see if we can do an implicit conversion by invoking a
   // `__new__` method on the expected type.
   bool isErroneousDecl = false;
-  CallableValue callee(requiredType, "__new__", value.expr, isErroneousDecl,
-                       emitter.shared);
+  OverloadSet callee(requiredType, "__new__", value.expr, isErroneousDecl,
+                     emitter.shared);
 
   // If there are no viable candidates for the implicit conversion, we fail.
-  if (!callee.direct)
+  if (!callee)
     return false;
 
   // If we have at least one candidate, we check to see if any of them can
   // work. We disable implicit conversions though, to prevent converting
   // T -> S -> U in one step.
-  callee.direct->disableImplicitConversions = true;
-  return succeeded(callee.direct->filterOverloadSet(
-      {value}, CallSyntax::kImplicitConvert, callee.expr,
+  return succeeded(callee.filterOverloadSet(
+      {value}, CallSyntax::kImplicitConvert, value.expr,
+      /*allowImplicitConversions=*/false,
       /*emitDiagnosticOnFailure=*/false, emitter));
 }
 
@@ -1200,93 +1134,139 @@ static bool isValidErrorContext(Block *block) {
   llvm_unreachable("block outside of function?");
 }
 
+/// The specified Type is the type of a callee, which is either a SignatureType
+/// or a VariadicType wrapping one.  Return the SignatureType.
+static SignatureType getSignatureFromPossibleVariadic(Type type) {
+  // Signature may be in a VariadicType in an adaptive overload list.
+  if (auto variadic = dyn_cast<VariadicType>(type))
+    type = PRValue(variadic.getElementType()).getIfTypeValue().mlirType;
+
+  // The signature type is typically directly available.
+  return cast<SignatureType>(type);
+}
+
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
-AnyValue
-CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                ValueDest dest, CallSyntax syntax,
-                                ExprEmitter &emitter) {
+AnyValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
+                               ValueDest dest, const ExprNode *callExpr,
+                               CallSyntax syntax, ExprEmitter &emitter) {
   if (isNull()) // Base was already diagnosed as an error.
     return {};
 
   // Used in some cases below, lifetime needs to exist for this whole method.
   SmallVector<ASTExprAnd<AnyValue>> operandsWithSelf;
-  SMLoc callLoc = expr->getLoc();
 
-  auto emitError = [&](const Twine &message) {
-    return emitter.emitError(callLoc, message);
-  };
-
-  // Figure out the type of the function to call, which is either symbol or a
-  // normal rvalue.
-  SignatureType calleeSig;
-
-  // If the callee defines parameters, this is the definitions to use.
-  SmallVector<ParamDeclAttr> resultParamDecls;
-
-  // This is the callee symbol constant for a direct call, or the SSA value for
-  // an indirect call.
-  AnyValue callee;
-  if (direct) {
-    // If we have a bound self, add it to the operand list to simplify the logic
-    // below.
-    if (baseVal) {
-      operandsWithSelf.reserve(operands.size() + 1);
-      operandsWithSelf.push_back({baseVal, expr});
-      operandsWithSelf.append(operands.begin(), operands.end());
-      operands = operandsWithSelf;
-      baseVal = {};
-      assert(syntax == CallSyntax::kMethodCall && "Unexpected syntax form");
-    }
-
-    // Check the direct callees to see if they can be unambiguously resolved
-    // with the bindings list and specified arguments.
-    if (failed(direct->filterOverloadSet(operands, syntax, expr,
-                                         /*emitDiagnosticOnFailure=*/true,
-                                         emitter)))
-      return {};
-
-    std::tie(callee, calleeSig) = direct->getCallee();
-    if (failed(
-            direct->getResultParamDecls(calleeSig, resultParamDecls, emitter)))
-      return {};
-
-  } else {
-    // Otherwise we have an indirect call. If the callee is an PRValue, emit a
-    // `call_param`. Otherwise, emit the callee value as a SRValue so we can
-    // call it with call_indirect.
-    callee = baseVal.getIfPRValue();
-    if (!callee) {
-      callee = emitter.emitSRValue({baseVal, expr});
-      if (!callee)
-        return {};
-    }
-
-    calleeSig = dyn_cast<SignatureType>(callee.getType());
-    if (!calleeSig) {
-      emitError("invalid function type to call ")
-          << ASTType(callee.getType()) << expr->getRange();
-      return {};
-    }
-
-    // Check to see if we can apply these operands to the callee signature.
-    DirectCallable bindings{"callee", /*params*/ {}, {}};
-    auto fitness =
-        OverloadFitness::evaluate(calleeSig, bindings, operands, expr, emitter);
-    if (fitness.kind != OverloadFitness::kValid) {
-      // If not, diagnose it with an error.
-      auto diag = emitError("invalid indirect call: ");
-      fitness.diagnose(calleeSig, bindings, operands, syntax, diag);
-      return {};
-    }
+  // If we have a bound self, add it to the operand list to simplify the logic
+  // below.
+  if (baseValue) {
+    operandsWithSelf.reserve(operands.size() + 1);
+    operandsWithSelf.push_back(baseValue);
+    operandsWithSelf.append(operands.begin(), operands.end());
+    operands = operandsWithSelf;
+    baseValue = {};
+    assert(syntax == CallSyntax::kMethodCall && "Unexpected syntax form");
   }
 
-  assert(calleeSig.getResultParams().size() == resultParamDecls.size() &&
+  // Check the direct callees to see if they can be unambiguously resolved
+  // with the bindings list and specified arguments.
+  if (failed(filterOverloadSet(operands, syntax, callExpr,
+                               /*allowImplicitConversions=*/true,
+                               /*emitDiagnosticOnFailure=*/true, emitter)))
+    return {};
+
+  PRValue callee = getCallee();
+  SignatureType calleeSig = getSignatureFromPossibleVariadic(callee.getType());
+
+  // Check declarations for the result parameters and collect them here.
+  SmallVector<ParamDeclAttr> resultParamDecls;
+
+  assert(calleeSig.getResultParams().size() == resultParams.size() &&
+         "We know that the callee is type checked");
+
+  // Verify completion of forward declared alias declarations.  We know the
+  // decl exists, but we don't know if the type is compatible or it has been
+  // multiply defined.
+  //
+  // TODO: We don't remap input parameters types into output parameter types.
+  // We surely handle this wrong: `fn x[a: type -> a]():` for example.
+  for (auto [param, declAndLoc] :
+       llvm::zip(calleeSig.getResultParams(), resultParams)) {
+    auto forwardDecl = cast<AliasForwardDeclOp>(*declAndLoc.first);
+
+    // Verify the types match.
+    // TODO: Move this to overload resolution.
+    if (!ASTType(forwardDecl.getType()).isEqualCanon(param.getType())) {
+      auto diag =
+          emitter.emitError(declAndLoc.second, "result parameter returns type ")
+          << param.getType() << " but forward declaration is of type "
+          << ASTType(forwardDecl.getType());
+      diag.attachNote(forwardDecl.getLoc()) << "alias forward declared here";
+      return {};
+    }
+    resultParamDecls.push_back(
+        ParamDeclAttr::get(forwardDecl.getName(), param.getType()));
+  }
+
+  // Calls in parameter context cannot have result parameters.
+  if (!emitter.builder && !calleeSig.getResultParams().empty()) {
+    auto diag =
+        emitter.emitError(callExpr->getLoc(), "cannot call '")
+        << baseName
+        << "' in parameter expression because it has a parameter result";
+    for (auto &resultParam : resultParams) {
+      diag << LitSourceRange(resultParam.second, resultParam.second);
+      resultParam.first->hasReferenceError = true;
+    }
+    return {};
+  }
+
+  return emitCallImpl(callee, operands, resultParamDecls, dest, callExpr,
+                      syntax, emitter);
+}
+
+/// Emit an indirect call to a resolved value.
+AnyValue OverloadSet::emitIndirectCall(CRValue callee,
+                                       ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                       ValueDest dest, const ExprNode *callExpr,
+                                       ExprEmitter &emitter) {
+  auto calleeSig = dyn_cast<SignatureType>(callee.getType());
+  if (!calleeSig) {
+    emitter.emitError(callExpr->getLoc(), "invalid function type to call ")
+        << ASTType(callee.getType()) << callExpr->getRange();
+    return {};
+  }
+
+  // Check to see if we can apply these operands to the callee signature.
+  OverloadSet bindings{"callee", /*params*/ {}, {}};
+  auto fitness = OverloadFitness::evaluate(calleeSig, bindings, operands,
+                                           /*allowImplicitConversions=*/true,
+                                           callExpr, emitter);
+  if (fitness.kind != OverloadFitness::kValid) {
+    // If not, diagnose it with an error.
+    auto diag =
+        emitter.emitError(callExpr->getLoc(), "invalid indirect call: ");
+    fitness.diagnose(calleeSig, bindings, operands, CallSyntax::kIndirectCall,
+                     diag);
+    return {};
+  }
+
+  return emitCallImpl(callee, operands, /*resultParams=*/{}, dest, callExpr,
+                      CallSyntax::kIndirectCall, emitter);
+}
+
+AnyValue OverloadSet::emitCallImpl(CRValue callee,
+                                   ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                   ArrayRef<ParamDeclAttr> resultParams,
+                                   ValueDest dest, const ExprNode *callExpr,
+                                   CallSyntax syntax, ExprEmitter &emitter) {
+  SignatureType calleeSig = getSignatureFromPossibleVariadic(callee.getType());
+
+  assert(calleeSig.getResultParams().size() == resultParams.size() &&
          "Type checking should be done");
 
   // Emit all the arguments.  We iterate by expected arguments since we're
-  // building the argument list of the call.  Default arguments and variadics
-  // get filled in here.
+  // building the argument list of the call.  Default arguments and
+  // variadics get filled in here.
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   size_t nextOperandIdx = 0;
   size_t nextDefaultIdx = 0;
@@ -1304,13 +1284,13 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       if (calleeSig.isVararg(argIdx)) {
         auto variadic = VariadicAttr::get(ArrayRef<TypedAttr>(),
                                           expectedType.cast<VariadicType>());
-        argumentValues.push_back({PRValue(variadic), expr});
+        argumentValues.push_back({PRValue(variadic), callExpr});
         continue;
       }
-      // Otherwise, apply the default argument. We've ensured above that we have
-      // a default argument for each missing operand.
+      // Otherwise, apply the default argument. We've ensured above that we
+      // have a default argument for each missing operand.
       argumentValues.push_back(
-          {PRValue(calleeSig.getDefaultArguments()[nextDefaultIdx]), expr});
+          {PRValue(calleeSig.getDefaultArguments()[nextDefaultIdx]), callExpr});
       ++nextDefaultIdx;
       continue;
     }
@@ -1341,7 +1321,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       }
     };
 
-    // For a normal non-vararg argument, we just emit it and add it to our list.
+    // For a normal non-vararg argument, we just emit it and add it to our
+    // list.
     if (!calleeSig.isVararg(argIdx)) {
       auto operand = operands[nextOperandIdx++];
       AnyValue argVal = emitOneArgVal(operand);
@@ -1352,8 +1333,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     }
 
     // For variadic list, we need to emit all of the remaining operands.
-    // Emit all of the remaining values to make sure they're converted to the
-    // right type.
+    // Emit all of the remaining values to make sure they're converted to
+    // the right type.
     SmallVector<ASTExprAnd<AnyValue>> variadicOperands(
         operands.begin() + nextOperandIdx, operands.end());
     for (auto &operand : variadicOperands) {
@@ -1377,8 +1358,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       continue;
     }
 
-    // If not all operands are compile-time values, use an operation to create a
-    // variadic sequence.
+    // If not all operands are compile-time values, use an operation to
+    // create a variadic sequence.
     SmallVector<Value> variadicArgs;
     for (auto &operand : variadicOperands) {
       // TODO(memory_primary): Emit into memory directly.
@@ -1389,7 +1370,7 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       variadicArgs.push_back(argVal);
     }
 
-    Location loc = emitter.translateLocation(callLoc);
+    Location loc = emitter.translateLocation(callExpr->getLoc());
     Value argVal = emitter.builder->create<POP::VariadicCreateOp>(
         loc, expectedType, variadicArgs);
     argumentValues.push_back({SRValue(argVal), variadicOperands[0].expr});
@@ -1399,18 +1380,24 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
          "typechecking confirmed that we would use up all operands");
 
   // If this is a call to a @always_inline function (and there's only one
-  // possible callee), see if we can fold its entire body into an PRValue. This
-  // can fail for a number of reasons, in which case we fall back to emitting
-  // normally.
-  if (direct && direct->fnDecls.size() == 1) {
-    auto calleeFunc = cast<LIT::FuncOp>(*direct->fnDecls[0]);
-    if (calleeFunc.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled) {
-      if (auto calleeSym =
-              dyn_cast<SymbolConstantAttr>(callee.getIfPRValue().get())) {
-        ParamBindArrayAttr inputParams = calleeSym.getParamValues();
-        if (auto result = inlineFunctionCallIntoPRValue(
-                *direct->fnDecls[0], inputParams, argumentValues, emitter))
-          return emitter.emitResult(result.get(), expr, dest);
+  // possible callee), see if we can fold its entire body into an PRValue.
+  // This can fail for a number of reasons, in which case we fall back to
+  // emitting normally.
+  if (auto calleePR = callee.getIfPRValue()) {
+    if (auto calleeSymbolCst = dyn_cast<SymbolConstantAttr>(calleePR.get())) {
+      ASTDecl *calleeDecl = emitter.getDeclResolver().getDeclForFuncSymbol(
+          calleeSymbolCst.getSymbol());
+
+      auto calleeFunc = cast<LIT::FuncOp>(*calleeDecl);
+      if (calleeFunc.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled) {
+        if (auto calleeSym =
+                dyn_cast<SymbolConstantAttr>(callee.getIfPRValue().get())) {
+          ParamBindArrayAttr inputParams = calleeSym.getParamValues();
+          if (auto result = inlineFunctionCallIntoPRValue(
+                  *calleeDecl, inputParams, argumentValues, callExpr->getLoc(),
+                  emitter))
+            return emitter.emitResult(result.get(), callExpr, dest);
+        }
       }
     }
   }
@@ -1429,22 +1416,8 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
       operands.push_back(argValAndExpr.ir.getIfPRValue().get());
     }
 
-    // Calls in parameter context cannot have result parameters.
-    if (!calleeSig.getResultParams().empty()) {
-      assert(direct && "can only have result parameters in direct calls");
-      auto diag =
-          emitter.emitError(callLoc, "cannot call '")
-          << direct->baseName
-          << "' in parameter expression because it has a parameter result";
-      for (auto &resultParam : direct->resultParams) {
-        diag << LitSourceRange(resultParam.second, resultParam.second);
-        resultParam.first->hasReferenceError = true;
-      }
-      return {};
-    }
-
     auto result = ParamOperatorAttr::get(POC::Apply, operands);
-    return emitter.emitResult(result, expr, dest);
+    return emitter.emitResult(result, callExpr, dest);
   }
 
   // Otherwise, materialize PRValue arguments as SRValues.
@@ -1461,34 +1434,35 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
   ArrayRef<Type> resultTypes = calleeSig.getValueResults();
   Operation *callOp;
-  Location loc = emitter.translateLocation(callLoc);
+  Location loc = emitter.translateLocation(callExpr->getLoc());
   if (auto target = callee.getIfPRValue()) {
     if (auto sig = dyn_cast<SignatureType>(target.getType());
         sig && sig.isAsync()) {
       // If the callee is an async function, emit an async call.
-      callOp = builder->create<AsyncCallOp>(loc, target.get(), resultParamDecls,
+      callOp = builder->create<AsyncCallOp>(loc, target.get(), resultParams,
                                             callArgs);
     } else if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
       // If the callee is a symbol constant, directly emit a call.
-      callOp = builder->create<CallOp>(loc, resultTypes, symbol,
-                                       resultParamDecls, callArgs);
+      callOp = builder->create<CallOp>(loc, resultTypes, symbol, resultParams,
+                                       callArgs);
     } else if (auto variadic = dyn_cast<VariadicAttr>(target.get())) {
-      // If the callee is a list, create a param.fork op and create a CallParam
-      // on that. We want to get the name of the function that is being called
-      // and mangle it into the parameter name to ensure uniqueness.
-      StringRef mangledCall(expr->getRangeStart().getPointer(),
-                            expr->getRangeEnd().getPointer() -
-                                expr->getRangeStart().getPointer() - 1);
+      // If the callee is a list, create a param.fork op and create a
+      // CallParam on that. We want to get the name of the function that is
+      // being called and mangle it into the parameter name to ensure
+      // uniqueness.
+      StringRef mangledCall(callExpr->getRangeStart().getPointer(),
+                            callExpr->getRangeEnd().getPointer() -
+                                callExpr->getRangeStart().getPointer() - 1);
       auto decl =
           ParamDeclAttr::get(builder->getStringAttr("(adaptive)" + mangledCall),
                              variadic.getType().getResolvedElementType());
       builder->create<ParamForkOp>(loc, decl, variadic);
       callOp = builder->create<CallParamOp>(loc, resultTypes,
                                             ParamDeclRefAttr::get(decl),
-                                            resultParamDecls, callArgs);
+                                            resultParams, callArgs);
     } else {
       callOp = builder->create<CallParamOp>(loc, resultTypes, target.get(),
-                                            resultParamDecls, callArgs);
+                                            resultParams, callArgs);
     }
   } else {
     // Otherwise emit calls to SSA values with call_indirect.
@@ -1499,14 +1473,15 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   // If the callee can raise an error, try to unwrap it.
   if (calleeSig.isThrows() && !calleeSig.isAsync() &&
       !isValidErrorContext(builder->getInsertionBlock())) {
-    emitError(
-        "cannot call function that may raise in a context that cannot raise");
+    emitter.emitError(callExpr->getLoc(),
+                      "cannot call function that may raise in a context that "
+                      "cannot raise");
     return {};
   }
 
   // Value returning call returns its result.
   auto result = SRValue(callOp->getResult(0));
-  return emitter.emitResult(result, expr, dest);
+  return emitter.emitResult(result, callExpr, dest);
 }
 
 /// Given a call to an alwaysinline function that is invoked with simple
@@ -1516,9 +1491,10 @@ CallableValue::emitFunctionCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 ///
 /// This is best-effort: when it fails, we fall back to emitting a normal call
 /// or "apply" parameter expression.
-PRValue CallableValue::inlineFunctionCallIntoPRValue(
+PRValue OverloadSet::inlineFunctionCallIntoPRValue(
     ASTDecl &callee, ParamBindArrayAttr inputParams,
-    ArrayRef<ASTExprAnd<AnyValue>> argumentValues, ExprEmitter &emitter) {
+    ArrayRef<ASTExprAnd<AnyValue>> argumentValues, SMLoc callLoc,
+    ExprEmitter &emitter) {
   auto funcOp = cast<LIT::FuncOp>(callee);
 
   // TODO: We currently cannot handle calls to parameterized functions, we
@@ -1526,8 +1502,8 @@ PRValue CallableValue::inlineFunctionCallIntoPRValue(
   if (!inputParams.empty())
     return {};
 
-  // We aren't allowed to toss away debug information.  If we have "nodebug" or
-  // are emitting into a parameter context, then we are allowed to try this.
+  // We aren't allowed to toss away debug information.  If we have "nodebug"
+  // or are emitting into a parameter context, then we are allowed to try this.
   if (funcOp.getAlwaysInlineLevel() != AlwaysInlineLevel::EnabledNoDebug &&
       emitter.builder)
     return {};
@@ -1549,7 +1525,7 @@ PRValue CallableValue::inlineFunctionCallIntoPRValue(
     valueMapping[blockArg] = value.ir.getIfPRValue();
 
   // Resolve the body to type check and generate the IR we need for inlining.
-  if (failed(emitter.getDeclResolver().resolveFully(callee, expr->getLoc())))
+  if (failed(emitter.getDeclResolver().resolveFully(callee, callLoc)))
     return {};
 
   // Perform parameter substitution if there are input parameters.
@@ -1562,8 +1538,8 @@ PRValue CallableValue::inlineFunctionCallIntoPRValue(
 
     // If this is is the return operation then we're done.
     if (auto returnOp = dyn_cast<LIT::ReturnOp>(op)) {
-      assert(returnOp.getNumOperands() == 1 &&
-             "Lit functions always return one value");
+      assert(returnOp.getNumOperands() == 1 && "Lit functions always "
+                                               "return one value");
       return valueMapping[returnOp.getOperand(0)];
     }
 
@@ -1587,8 +1563,7 @@ PRValue CallableValue::inlineFunctionCallIntoPRValue(
     operandAttrs.clear();
     foldResults.clear();
 
-    // TODO: Add support for parameter substitution, how do we call fold
-    // though?
+    // TODO: Add support for parameter substitution, how do we call fold though?
 
     // Check to see if we can fold this operation.
     operandAttrs.reserve(op.getNumOperands());
@@ -1598,8 +1573,8 @@ PRValue CallableValue::inlineFunctionCallIntoPRValue(
       operandAttrs.push_back(entry.get());
     }
 
-    // Otherwise, bail out and allow the normal call procssing logic to
-    // produce an apply of the original function.
+    // Otherwise, bail out and allow the normal call procssing logic to produce
+    // an apply of the original function.
     if (failed(op.fold(operandAttrs, foldResults)))
       return {};
 
@@ -1613,14 +1588,15 @@ PRValue CallableValue::inlineFunctionCallIntoPRValue(
         valueMapping[result] = valueMapping[drVal];
       else {
         auto attr = dyn_cast<TypedAttr>(cast<Attribute>(puValue));
-        assert(attr &&
-               "Folding operation with typed result made untyped attr?");
+        assert(attr && "Folding operation with "
+                       "typed result made "
+                       "untyped attr?");
         valueMapping[result] = PRValue(attr);
       }
     }
   }
 
   // If we fell off the bottom of the function without finding a return, then
-  // there is something wrong.  Don't fold it.
+  // there is something wrong. Don't fold it.
   return {};
 }

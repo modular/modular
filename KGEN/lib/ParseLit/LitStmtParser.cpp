@@ -220,9 +220,9 @@ ParseResult LitStmtParser::parseLocalScopeSuite(ssize_t curIndent) {
 
 /// Emit a warning when an expression is emitted at statement context, and it
 /// returns a result.
-static void diagnoseIgnoredResult(const ExprNode *expr, AnyValue value,
+static void diagnoseIgnoredResult(const ExprNode *expr, CRValue value,
                                   LitSharedState &shared) {
-  ASTType valueType = value.getRValueType();
+  ASTType valueType = value.getType();
 
   // Return true if the specified type can be implicitly ignored.
   // TODO: Should have a better way to say that it is safe to implicily ignore a
@@ -427,7 +427,7 @@ ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   // statement, it will return None.  Other expressions can return whatever they
   // will naturally return.
   auto emitter = getEmitter(/*allowImplicitVarDecl=*/true);
-  auto result = expr->emitIR(emitter, /*No Contextual Type*/ {});
+  auto result = emitter.emitExprCRValue(expr, ValueDest());
   if (!result)
     return success();
 

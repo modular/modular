@@ -131,6 +131,11 @@ public:
   void registerAndCheckExport(ExportOp exportOp);
   void exportMain(ASTDecl *containingDecl, SymbolRefAttr symbolName);
 
+  ASTDecl *getDeclForFuncSymbol(SymbolRefAttr attr) const {
+    auto it = declForFuncSymbol.find(attr);
+    return it != declForFuncSymbol.end() ? it->second : nullptr;
+  }
+
 private:
   /// The resolveSignature methods are invoked on an operation to parse and type
   /// check the signature for the operation.  On parse failure, these should

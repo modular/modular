@@ -228,8 +228,7 @@ fn bar[x: __mlir_type.index]() -> __mlir_type.index:
         return 1
 
 fn test_adaptive_set():
-    # expected-error @+2 {{cannot form a reference to non @adaptive declaration of 'bar'}}
-    # expected-error @+1 {{__adaptive_set can only be applied to global functions with an @adaptive decorator}}
+    # expected-error @+1 {{cannot form a reference to non @adaptive declaration of 'bar'}}
     alias bad = bar.__adaptive_set
-    # expected-error @+1 {{__adaptive_set can only be applied to global functions with an @adaptive decorator}}
+    # expected-error @+1 {{'$Int::Int' value has no attribute '__adaptive_set'}}
     alias bad_int= Int(5).__adaptive_set
