@@ -21,21 +21,12 @@
 namespace M {
 class InterpreterState {
 public:
-  InterpreterState(mlir::SymbolTableAnalysis &analysis, TargetInfoAttr target)
-      : analysis(analysis), target(target) {}
+  InterpreterState(TargetInfoAttr target) : target(target) {}
 
   virtual ~InterpreterState() = default;
 
   //===--------------------------------------------------------------------===//
   // Interpreter Global State
-
-  /// Get the top-level symbol table.
-  SymbolTable &getSymbolTable() { return analysis.getTopLevelSymbolTable(); }
-
-  /// Get the symbol table collection.
-  SymbolTableCollection &getSymbolTables() {
-    return analysis.getSymbolTables();
-  }
 
   /// Get the interpreter target.
   TargetInfoAttr getTarget() const { return target; }
@@ -148,9 +139,6 @@ private:
   /// Run the interpreter until completion, returning the final results of the
   /// operation.
   ErrorTreeOr<SmallVector<Attribute>> runInterpreter();
-
-  /// The cached symbol table.
-  mlir::SymbolTableAnalysis &analysis;
 
   /// The interpreter targt configuration.
   TargetInfoAttr target;
