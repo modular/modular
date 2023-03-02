@@ -9,7 +9,7 @@ from Buffer import NDBuffer
 from DType import DType
 from Functional import vectorize, vectorize_unroll, div_ceil, parallelForEachN
 from Index import Index, StaticIntTuple
-from Intrinsics import _prefetch, PrefetchLocality, PrefetchRW, PrefetchCache
+from Intrinsics import PrefetchOptions
 from Int import Int
 from List import create_kgen_list_unknown
 from LLCL import Runtime
@@ -171,14 +171,9 @@ fn gather[
         let row_size = input.dim[1]()
 
         for i in range(start_offset, end_offset):
-            let ptr_next = input.data.offset(
-                (indices[i + prefetch_offset] * row_size).value
-            )
-            _prefetch[
-                PrefetchRW.READ, PrefetchLocality.HIGH, PrefetchCache.DATA
-            ](
-                ptr_next.bitcast[DType.invalid.value](),
-            )
+            input.prefetch[
+                PrefetchOptions().for_read().high_locality().to_data_cache()
+            ]((indices[i + prefetch_offset]).value, 0)
 
             let output_row_ptr = output.data.offset(i * row_size)
             let input_row_ptr = input.data.offset((indices[i] * row_size).value)
