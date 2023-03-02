@@ -15,6 +15,11 @@
 #include <sys/sysctl.h>
 #endif // __APPLE__
 
+#ifdef _MSC_VER
+#include "llvm/Support/WindowsError.h"
+#include <windows.h>
+#endif // _MSC_VER
+
 using namespace M;
 
 ErrorOr<size_t> M::getHostCPUCacheSize(size_t cacheLevel) {
@@ -69,10 +74,54 @@ ErrorOr<size_t> M::getHostCPUCacheSize(size_t cacheLevel) {
     break;
   }
   return quantity * multiplier;
-#elif defined(_WIN32)
-  // TODO: Figure out later, but this needs to use the
-  // GetLogicalProcessorInformation API.
-  return 0;
+#elif defined(_MSC_VER)
+
+  // We can only get info for L1, L2 & L3 cache.
+  if (cacheLevel >= 4)
+    return 0;
+
+  std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> processorInfos;
+  DWORD bufferLength = 0;
+
+  DWORD returnCode =
+      GetLogicalProcessorInformation(processorInfos.data(), &bufferLength);
+
+  if (!returnCode) {
+
+    // This is the only error where there is a reason for retry.
+    if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+
+      processorInfos.resize(bufferLength);
+
+    } else {
+      std::error_code ec = llvm::mapWindowsError(GetLastError());
+      return Error(ec.message());
+    }
+
+    // Try once again with the new buffer length and pre allocated buffer.
+    returnCode =
+        GetLogicalProcessorInformation(processorInfos.data(), &bufferLength);
+
+    // We can recheck for insufficient buffer length and keep on doing this
+    // but it should be pretty rare to fail twice with that reason. So we will
+    // bail out.
+    if (!returnCode) {
+      std::error_code ec = llvm::mapWindowsError(GetLastError());
+      return Error(ec.message());
+    }
+  }
+
+  for (const SYSTEM_LOGICAL_PROCESSOR_INFORMATION &processorInfo :
+       processorInfos) {
+
+    if (processorInfo.Relationship == RelationCache) {
+      const CACHE_DESCRIPTOR &cache = processorInfo.Cache;
+      if (cache.Level == cacheLevel)
+        return cache.Size;
+    }
+  }
+
+  return Error("Information not available");
 #else
   return Error("unsupported platform");
 #endif
