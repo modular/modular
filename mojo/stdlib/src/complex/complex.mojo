@@ -9,16 +9,16 @@ from SIMD import SIMD
 from Int import Int
 
 
-struct Complex[size: __mlir_type.index, type: DType]:
-    var re: SIMD[size, type.value]
-    var im: SIMD[size, type.value]
+struct Complex[size: Int, type: DType]:
+    var re: SIMD[size.__as_mlir_index(), type.value]
+    var im: SIMD[size.__as_mlir_index(), type.value]
 
     fn __clone__(self&) -> Self:
         return Self {re: self.re, im: self.im}
 
     fn __new__(
-        re: SIMD[size, type.value],
-        im: SIMD[size, type.value],
+        re: SIMD[size.__as_mlir_index(), type.value],
+        im: SIMD[size.__as_mlir_index(), type.value],
     ) -> Complex[size, type]:
         return Complex[size, type] {re: re, im: im}
 
@@ -32,7 +32,7 @@ struct Complex[size: __mlir_type.index, type: DType]:
         }
 
     # returns the squared magnitude
-    fn norm(self) -> SIMD[size, type.value]:
+    fn norm(self) -> SIMD[size.__as_mlir_index(), type.value]:
         return self.re.fma(self.re, self.im * self.im)
 
     # fma(self, b, c)
