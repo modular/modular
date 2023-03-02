@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from pathlib import Path
 from sys import version_info
+from enum import Enum
 
 if version_info.minor <= 8:
     from typing import List
@@ -21,3 +22,5 @@ class InferenceSession:
 
 class TensorSpec:
     def shape(self) -> List[int]: ...
+
+class DType(Enum): ...
