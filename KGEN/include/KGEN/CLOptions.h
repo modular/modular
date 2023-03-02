@@ -11,7 +11,9 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/ErrorOr.h"
+#include "Support/TimeProfiler.h"
 #include "llvm/Support/CommandLine.h"
+#include <filesystem>
 
 namespace M {
 namespace KGEN {
@@ -61,6 +63,10 @@ public:
              CommandLineFunc &val);
 };
 
+//===----------------------------------------------------------------------===//
+// CLOptions
+//===----------------------------------------------------------------------===//
+
 class KGENCommonOptions : public CommonCLOptions {
 public:
   using CommonCLOptions::CommonCLOptions;
@@ -100,6 +106,17 @@ public:
       "enable-mlir-crash-repro",
       cl::desc("Enable MLIR pass manager crash reproducer generation."),
       cl::init(false)};
+
+  cl::opt<bool> timeTrace{
+      "time-trace",
+      cl::desc("Turn on time profiler. Generates JSON file "
+               "called kgen.trace.json in the derived directory.")};
+
+  cl::opt<int> timeTraceGranularity{
+      "time-trace-granularity",
+      cl::desc("Minimum time granularity (in microseconds) "
+               "traced by time profiler."),
+      cl::init(0)};
 
   /// Return a compilation options object based on the command line options.
   KGEN::CompilationOptions getCompilationOptions() const {
@@ -158,6 +175,20 @@ public:
       return std::nullopt;
     return *found;
   }
+};
+
+//===----------------------------------------------------------------------===//
+// TraceProfiler
+//===----------------------------------------------------------------------===//
+
+/// Common trace profiler setup.
+struct TraceProfiler {
+  TraceProfiler(const KGENCommonOptions &clOptions);
+  ~TraceProfiler();
+
+private:
+  std::optional<TimeTraceProfiler> profiler;
+  std::filesystem::path outputFilePath;
 };
 } // namespace M
 

@@ -17,6 +17,7 @@
 #include "KGEN/ParseLit.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/CommonCLOptions.h"
+#include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "Support/TimeProfiler.h"
@@ -90,6 +91,7 @@ static FuncOp findMain(ModuleOp theModule, SymbolTable &symtab) {
 static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                            const CLOptions &clOptions) {
   DialectRegistry registry;
+  TraceProfiler tracer(clOptions);
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
@@ -110,9 +112,15 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   llvm::StringRef inputFileName(clOptions.inputFilename.getValue());
 
   // Initialize the timing manager.
-  DefaultTimingManager tm;
-  applyDefaultTimingManagerCLOptions(tm);
-  TimingScope timing = tm.getRootScope();
+  std::unique_ptr<mlir::TimingManager> timingManager;
+  if (clOptions.timeTrace) {
+    timingManager = std::make_unique<TimeProfilerTimingManager>();
+  } else {
+    auto defaultManager = std::make_unique<mlir::DefaultTimingManager>();
+    applyDefaultTimingManagerCLOptions(*defaultManager);
+    timingManager = std::move(defaultManager);
+  }
+  TimingScope timing = timingManager->getRootScope();
 
   mlir::PassManager pm(ctx);
   applyPassManagerCLOptions(pm);
@@ -154,7 +162,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return clOptions.reportError("compilation failed");
 
   SymbolTable symtab(*theModule);
-  auto compiler = ObjectCompiler::create(runtime, ".kgen_cache", symtab,
+  auto compiler = ObjectCompiler::create(runtime, pm, ".kgen_cache", symtab,
                                          compilationOptions);
   if (failed(compiler))
     return clOptions.reportError(Twine("could not create object compiler: ") +

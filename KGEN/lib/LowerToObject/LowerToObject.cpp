@@ -36,35 +36,36 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 
 ErrorOr<ObjectCompiler>
-ObjectCompiler::create(LLCL::Runtime &runtime, StringRef basePath,
-                       SymbolTable &symtab, const CompilationOptions &options) {
+ObjectCompiler::create(LLCL::Runtime &runtime, mlir::PassManager &mgr,
+                       StringRef basePath, SymbolTable &symtab,
+                       const CompilationOptions &options) {
   DenseMap<StringAttr, StringAttr> exports =
       getExportedSymbols(cast<ModuleOp>(symtab.getOp()));
-  return create(runtime, basePath, symtab, exports, options);
+  return create(runtime, mgr, basePath, symtab, exports, options);
 }
 
 ErrorOr<ObjectCompiler>
-ObjectCompiler::create(LLCL::Runtime &runtime, StringRef basePath,
-                       SymbolTable &symtab,
+ObjectCompiler::create(LLCL::Runtime &runtime, mlir::PassManager &mgr,
+                       StringRef basePath, SymbolTable &symtab,
                        const DenseMap<StringAttr, StringAttr> &exports,
                        const CompilationOptions &options) {
   auto transformCache = Cache::getDefaultBackendChain(
       runtime, (std::filesystem::path(basePath.str()) / "transform").string());
   if (failed(transformCache))
     return transformCache.takeError();
-  return ObjectCompiler(runtime, symtab, exports, std::move(*transformCache),
-                        options);
+  return ObjectCompiler(runtime, mgr, symtab, exports,
+                        std::move(*transformCache), options);
 }
 
 ObjectCompiler::ObjectCompiler(
-    LLCL::Runtime &runtime, SymbolTable &symtab,
+    LLCL::Runtime &runtime, mlir::PassManager &mgr, SymbolTable &symtab,
     const DenseMap<StringAttr, StringAttr> &exports,
     LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
     const CompilationOptions &options)
     : transformCache(
           decltype(this->transformCache)::create(std::move(transformCache))),
-      runtime(runtime), module(cast<ModuleOp>(symtab.getOp())), symtab(symtab),
-      exportedSymbols(std::move(exports)), options(options) {}
+      runtime(runtime), mgr(mgr), module(cast<ModuleOp>(symtab.getOp())),
+      symtab(symtab), exportedSymbols(std::move(exports)), options(options) {}
 
 //===----------------------------------------------------------------------===//
 // compileLLVMToObject

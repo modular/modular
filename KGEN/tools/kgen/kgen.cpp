@@ -20,7 +20,6 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
-#include "Support/TimeProfiler.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -34,8 +33,6 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/ToolOutputFile.h"
 
-#include <filesystem>
-
 using namespace M;
 using namespace KGEN;
 using namespace mlir;
@@ -47,17 +44,6 @@ public:
 
   cl::list<std::string> inputFiles{llvm::cl::Positional,
                                    cl::desc("<input files>")};
-
-  cl::opt<bool> timeTrace{
-      "time-trace",
-      cl::desc("Turn on time profiler. Generates JSON file "
-               "called kgen.trace.json in the derived directory.")};
-
-  cl::opt<int> timeTraceGranularity{
-      "time-trace-granularity",
-      cl::desc("Minimum time granularity (in microseconds) "
-               "traced by time profiler."),
-      cl::init(0)};
 
   cl::opt<bool> ignoreFailures{
       "ignore-failure",
@@ -78,34 +64,6 @@ public:
   /// This is how MLIR parses multiple files.
   ErrorOrSuccess addInputFilesToSourceMgr(llvm::SourceMgr &mgr);
   void addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr);
-};
-
-struct TraceProfiler {
-  TraceProfiler(const CLOptions &clOptions) {
-    if (!clOptions.timeTrace)
-      return;
-    profiler.emplace(clOptions.timeTraceGranularity, "kgen");
-
-    std::error_code ec;
-    std::filesystem::path derived = std::filesystem::absolute(
-        llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH").value_or("."), ec);
-    if (ec)
-      clOptions.reportError("cannot get the modular derived path: " +
-                            ec.message());
-
-    outputFilePath = derived / "kgen.trace.json";
-  }
-
-  ~TraceProfiler() {
-    if (!profiler)
-      return;
-    if (auto err = profiler->write(outputFilePath.string(), "-"))
-      llvm::errs() << "unable to write trace file: " << err.getError();
-  }
-
-private:
-  std::optional<TimeTraceProfiler> profiler;
-  std::filesystem::path outputFilePath;
 };
 } // namespace
 
@@ -283,7 +241,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
 
   SymbolTable symtab(*theModule);
-  auto compiler = ObjectCompiler::create(runtime, ".kgen_cache", symtab,
+  auto compiler = ObjectCompiler::create(runtime, pm, ".kgen_cache", symtab,
                                          compilationOptions);
   if (failed(compiler)) {
     return failure(clOptions.reportError(

@@ -102,3 +102,29 @@ bool CommandLineFuncParser::parse(llvm::cl::Option &o, StringRef argName,
   val.name = argValue;
   return false;
 }
+
+//===--------------------------------------------------------------------===//
+// TraceProfiler
+//===--------------------------------------------------------------------===//
+
+TraceProfiler::TraceProfiler(const KGENCommonOptions &clOptions) {
+  if (!clOptions.timeTrace)
+    return;
+  profiler.emplace(clOptions.timeTraceGranularity, "kgen");
+
+  std::error_code ec;
+  std::filesystem::path derived = std::filesystem::absolute(
+      llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH").value_or("."), ec);
+  if (ec)
+    clOptions.reportError("cannot get the modular derived path: " +
+                          ec.message());
+
+  outputFilePath = derived / "kgen.trace.json";
+}
+
+TraceProfiler::~TraceProfiler() {
+  if (!profiler)
+    return;
+  if (auto err = profiler->write(outputFilePath.string(), "-"))
+    llvm::errs() << "unable to write trace file: " << err.getError();
+}

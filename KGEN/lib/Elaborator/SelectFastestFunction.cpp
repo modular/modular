@@ -14,6 +14,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/MicroBenchmark.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/PassManager.h"
 #include "llvm/Support/Debug.h"
 
 #define DEBUG_TYPE "select-fastest-function"
@@ -32,8 +33,10 @@ produceObjectFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
         {e.getSymNameAttr(), StringAttr::get(e.getContext(), aliasName)});
   }
 
-  auto compilerOr = ObjectCompiler::create(
-      runtime, ".kgen_cache", symtab, exportedSymbols, CompilationOptions());
+  mlir::PassManager mgr(target.getContext());
+  auto compilerOr =
+      ObjectCompiler::create(runtime, mgr, ".kgen_cache", symtab,
+                             exportedSymbols, CompilationOptions());
   if (failed(compilerOr))
     return compilerOr.takeError();
   auto compiler = std::make_unique<ObjectCompiler>(std::move(*compilerOr));

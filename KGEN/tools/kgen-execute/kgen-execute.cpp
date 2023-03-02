@@ -17,6 +17,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Support/ToolUtilities.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "llvm/Support/ToolOutputFile.h"
@@ -72,8 +73,9 @@ struct ProcessBuffer {
     }
 
     SymbolTable symtab(*module);
-    auto compiler = KGEN::ObjectCompiler::create(runtime, ".kgen_cache", symtab,
-                                                 compilationOptions);
+    mlir::PassManager mgr(ctx);
+    auto compiler = KGEN::ObjectCompiler::create(runtime, mgr, ".kgen_cache",
+                                                 symtab, compilationOptions);
     if (failed(compiler))
       return failure(clOptions.reportError("could not create compiler: " +
                                            Twine(compiler.getError())));
