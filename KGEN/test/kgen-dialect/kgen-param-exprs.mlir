@@ -1,12 +1,13 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt -emit-bytecode -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
 #target = #kgen.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // CHECK-LABEL: kgen.generator @param_expr
 kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype, mlirType: type, fn: (index) -> index>()  {
   // Generic attr syntax in generic ops
-  // CHECK: "someop"() {
-  "someop" () {
+  // CHECK: "test.someop"() {
+  "test.someop" () {
     // CHECK-SAME: use1 = #kgen.param.expr<add, #kgen.param.decl.ref<"p1"> : index, 42 : index>
     use1 = #kgen.param.expr<add, #kgen.param.decl.ref<"p1"> : index, 42 : index> : index,
     // CHECK-SAME: use2 = #kgen.param.expr<add, #kgen.param.decl.ref<"p1"> : index, 43 : index>
@@ -382,12 +383,12 @@ kgen.generator @type_params<dt: dtype, typeParam: type>()
   kgen.param.declare ty2: type = <!pop.scalar<dt>>
 
   // This op returns an SSA value whose type is specified by a type parameter.
-  // CHECK: "someop"() : () -> !kgen.paramref<ty2>
-  "someop"() : () -> !kgen.paramref<ty2>
+  // CHECK: "test.someop"() : () -> !kgen.paramref<ty2>
+  "test.someop"() : () -> !kgen.paramref<ty2>
 
   // kgen.paramref auto-folds non-parameterized types on construction.
-  // CHECK: "someop"() : () -> !pop.scalar<f32>
-  "someop"() : () -> !kgen.paramref<!pop.scalar<f32>>
+  // CHECK: "test.someop"() : () -> !pop.scalar<f32>
+  "test.someop"() : () -> !kgen.paramref<!pop.scalar<f32>>
 
   kgen.return
 }

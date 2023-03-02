@@ -8,6 +8,7 @@ add_modular_dialect_library(KGENDialect
   KGENAttrInterfaces.cpp
   KGENAttrs.cpp
   KGENDialect.cpp
+  KGENDialectBytecode.cpp
   KGENInterfaces.cpp
   KGENOps.cpp
   KGENParameters.cpp
