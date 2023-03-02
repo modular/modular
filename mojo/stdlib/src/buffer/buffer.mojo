@@ -19,6 +19,7 @@ from List import (
 from Math import fma
 from Memory import stack_allocation, memset_zero
 from Pointer import DTypePointer, product as pointer_product
+from Intrinsics import PrefetchOptions
 from SIMD import SIMD
 from Tuple import StaticTuple
 from TargetInfo import dtype_sizeof, dtype_simd_width
@@ -213,6 +214,16 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
             val (SIMD[width, type]): The value to store.
         """
         self.data.simd_store[width](idx, val)
+
+    @always_inline
+    fn prefetch[params: PrefetchOptions](self, idx: Int):
+        """Prefetch the data at the given index.
+
+        Args:
+            params (PrefetchOptions): The prefetch configuration.
+            idx (Int): The index of the prefetched location.
+        """
+        self.data.offset(idx).prefetch[params]()
 
     @always_inline
     fn bytecount(self) -> Int:
@@ -643,6 +654,16 @@ struct NDBuffer[
             Constructed ndbuffer with the allocated space.
         """
         return NDBuffer[rank, shape, type].aligned_stack_allocation[1]()
+
+    @always_inline
+    fn prefetch[params: PrefetchOptions](self, *idx: Int):
+        """Prefetch the data at the given index.
+
+        Args:
+            params (PrefetchOptions): The prefetch configuration.
+            idx (*Int): The N-D index of the prefetched location.
+        """
+        self._offset(idx).prefetch[params]()
 
 
 fn _neg[val: __mlir_type.i1]() -> __mlir_type.i1:
