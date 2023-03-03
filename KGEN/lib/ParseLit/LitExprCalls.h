@@ -67,7 +67,8 @@ public:
   }
 
   using ParameterInferenceHookTy =
-      std::function<PRValue(ParamDeclAttr, ArrayRef<ParamBindAttr> bindings)>;
+      std::function<PRValue(ParamDeclAttr decl, ASTType expectedType,
+                            ArrayRef<ParamBindAttr> bindings)>;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters, returning a checked ParamBindArrayAttr if so.  If the
@@ -82,6 +83,13 @@ public:
                  ASTType &incorrectBindingExpectedType, ExprEmitter &emitter,
                  Operation *declOp, bool paramVarargs,
                  ParameterInferenceHookTy parameterInferenceHook = {}) const;
+
+  /// Given a candidate that may or may not be compatible with the given
+  /// parameter set so far, indicate what the next parameter's expected type
+  /// should be, or return null if the current parameters are incompatible with
+  /// it.
+  ASTType getNextExpectedBindingType(SignatureType candidateType,
+                                     ExprEmitter &emitter) const;
 };
 
 /// When emitting a function call, this enum is used to indicate why the call

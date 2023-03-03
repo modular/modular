@@ -65,8 +65,6 @@ static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
     return {};
   }
 
-  // Check to see if the
-
   return result;
 }
 
@@ -1124,7 +1122,24 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
   // Process each subscript entry as a binding.
   // TODO: Support named bindings in addition to positional ones: `A[x: 42]`.
   for (auto idx : indices) {
-    auto val = emitter.emitExprPRValue(idx, ASTType(), " in parameter binding");
+    // If all entries in this overload set take a parameter with a common type,
+    // use it for parameter type inference.
+    ASTType paramType;
+    if (!value->fnDecls.empty()) {
+      auto getCandidateParamType = [&](ASTDecl *fnDecl) -> Type {
+        auto signature = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
+        return value->inputParamBindings.getNextExpectedBindingType(signature,
+                                                                    emitter);
+      };
+      paramType = getCandidateParamType(value->fnDecls[0]);
+      if (paramType && value->fnDecls.size() != 1 &&
+          !llvm::all_of(value->fnDecls, [&](ASTDecl *decl) {
+            return ASTType(paramType).isEqualCanon(getCandidateParamType(decl));
+          }))
+        paramType = ASTType();
+    }
+
+    auto val = emitter.emitExprPRValue(idx, paramType, " in parameter binding");
     if (!val)
       return {};
 
@@ -1360,7 +1375,7 @@ AnyValue TupleNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   // Emit each of the index values to generate error messages.
   SmallVector<RValue> exprValues;
   for (ExprNode *expr : exprs) {
-    exprValues.push_back(emitter.emitExprRValue(expr));
+    exprValues.push_back(emitter.emitExprRValue(expr, ValueDest()));
     if (!exprValues.back())
       return {};
   }
@@ -1373,7 +1388,7 @@ AnyValue TupleNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 AnyValue ListNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   SmallVector<RValue> elements;
   for (ExprNode *expr : exprs) {
-    elements.push_back(emitter.emitExprRValue(expr));
+    elements.push_back(emitter.emitExprRValue(expr, ValueDest()));
     if (!elements.back())
       return {};
   }
@@ -1445,7 +1460,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     StringAttr fieldNameAttr =
         StringAttr::get(emitter.getContext(), fieldName->spelling);
 
-    auto value = emitter.emitExprRValue(keyValue.second);
+    auto value = emitter.emitExprRValue(keyValue.second, ValueDest());
     if (!value)
       return {};
 
@@ -1708,7 +1723,7 @@ AnyValue BinOpNode::emitInplace(ValueDest dest, ExprEmitter &emitter) const {
     return {};
 
   // Then emit the right side.
-  RValue rhsRV = emitter.emitExprRValue(rhs);
+  RValue rhsRV = emitter.emitExprRValue(rhs, ValueDest());
   if (!rhsRV)
     return {};
 
@@ -1726,8 +1741,8 @@ AnyValue BinOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
     return emitInplace(dest, emitter);
 
   // Othewise we emit the LHS followed by the RHS.
-  RValue lhsRV = emitter.emitExprRValue(lhs);
-  RValue rhsRV = emitter.emitExprRValue(rhs);
+  RValue lhsRV = emitter.emitExprRValue(lhs, ValueDest());
+  RValue rhsRV = emitter.emitExprRValue(rhs, ValueDest());
   if (!lhsRV || !rhsRV)
     return {};
 
@@ -1974,8 +1989,8 @@ AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
 }
 
 AnyValue ChainedCmpOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
-  RValue e0Rep = emitter.emitExprRValue(exprs[0]);
-  RValue e1Rep = emitter.emitExprRValue(exprs[1]);
+  RValue e0Rep = emitter.emitExprRValue(exprs[0], ValueDest());
+  RValue e1Rep = emitter.emitExprRValue(exprs[1], ValueDest());
   if (!e0Rep || !e1Rep)
     return {};
 

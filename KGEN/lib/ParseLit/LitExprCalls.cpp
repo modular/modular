@@ -174,7 +174,6 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
 /// signature, try to infer the value of the next 'decl' parameter.  This should
 /// always return null /without/ an error if it cannot be inferred, and return
 /// a specific value if unambiguously determined.
-///
 PRValue
 ParameterInferenceState::infer(SignatureType signature,
                                ArrayRef<ParamBindAttr> bindingsSoFar,
@@ -337,8 +336,10 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       // If we have a method to infer parameter values, invoke it to see if we
       // can get an inferred value for the parameter.
       if (parameterInferenceHook) {
-        if (auto value = parameterInferenceHook(decl, newBindings)) {
-          assert(value.getType() == evaluator.getReboundType(decl.getType()) &&
+        auto expectedType = evaluator.getReboundType(decl.getType());
+        if (auto value =
+                parameterInferenceHook(decl, expectedType, newBindings)) {
+          assert(value.getType() == expectedType &&
                  "inferred a default parameter value of wrong type");
           setParamValue(value);
           continue;
@@ -431,6 +432,32 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
   return ParamBindArrayAttr::get(emitter.getContext(), newBindings);
 }
 
+/// Given a candidate that may or may not be compatible with the given
+/// parameter set so far, indicate what the next parameter's expected type
+/// should be, or return null if the current parameters are incompatible with
+/// it.
+ASTType
+InputParamBindings::getNextExpectedBindingType(SignatureType candidateType,
+                                               ExprEmitter &emitter) const {
+
+  // We can get the next expected type by calling verifyBindings and seeing what
+  // it queries for parameterInferenceHook.
+  ASTType nextExpectedType;
+
+  ssize_t incorrectBindingNo;
+  ASTType incorrectBindingExpectedType;
+  (void)verifyBindings(
+      candidateType.getInputParams(), /*no diagnostics*/ "xx", SMLoc(),
+      incorrectBindingNo, incorrectBindingExpectedType, emitter,
+      /*don't emit diagnostics*/ nullptr, candidateType.hasParamVarargs(),
+      [&](ParamDeclAttr decl, ASTType expectedType,
+          ArrayRef<ParamBindAttr> bindingsSoFar) -> PRValue {
+        nextExpectedType = expectedType;
+        return {};
+      });
+  return nextExpectedType;
+}
+
 //===----------------------------------------------------------------------===//
 // OverloadSet Implementation
 //===----------------------------------------------------------------------===//
@@ -518,7 +545,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
       signature.getInputParams(), callable.baseName, callExpr->getLoc(),
       incorrectBindingNo, incorrectBindingExpectedType, emitter,
       /*don't emit diagnostics*/ nullptr, signature.hasParamVarargs(),
-      [&](ParamDeclAttr decl,
+      [&](ParamDeclAttr decl, ASTType expectedParamType,
           ArrayRef<ParamBindAttr> bindingsSoFar) -> PRValue {
         return ParameterInferenceState(decl).infer(signature, bindingsSoFar,
                                                    operands);
@@ -896,7 +923,10 @@ LogicalResult OverloadSet::filterOverloadSet(
 LogicalResult OverloadSet::filterOverloadSetForValueType(ASTType functionType,
                                                          const ExprNode *expr,
                                                          ExprEmitter &emitter) {
-  assert(isa<SignatureType>(functionType.mlirType));
+  // If the target type is something weird then don't filter.  Let the error be
+  // reported another way.
+  if (!isa<SignatureType>(functionType.mlirType))
+    return success();
 
   // TODO: This is using an exact match which is perhaps too specific of a
   // check.  We could do some amount of parameter inference to support cases
@@ -922,18 +952,23 @@ LogicalResult OverloadSet::filterOverloadSetForValueType(ASTType functionType,
 
   auto isValidCandidate = [&](SignatureType candidateType) {
     // Apply any bound parameters to the candidate's type since they will be
-    // applied when a reference is made.
-    auto newBindings = getBindingsForSignature(candidateType);
-    if (!newBindings)
-      return false; // If there is an error, return the problem.
+    // applied when a reference is made.  We only do this if there are some
+    // bindings present, because (unlike normal function calls) the result type
+    // may have unbound parameters that we are trying to match, e.g. when in a
+    // parameter expression context.
+    if (!inputParamBindings.bindings.empty()) {
+      auto newBindings = getBindingsForSignature(candidateType);
+      if (!newBindings)
+        return false; // If there is an error, return the problem.
 
-    // If anything was bound, apply it to the signature so the expected argument
-    // types are updated.
-    if (!newBindings.empty()) {
-      candidateType = candidateType.getSpecializedSignature(
-          newBindings, [&]() -> InFlightDiagnostic {
-            llvm_unreachable("bad bindings went undetected");
-          });
+      // If anything was bound, apply it to the signature so the expected
+      // argument types are updated.
+      if (!newBindings.empty()) {
+        candidateType = candidateType.getSpecializedSignature(
+            newBindings, [&]() -> InFlightDiagnostic {
+              llvm_unreachable("bad bindings went undetected");
+            });
+      }
     }
 
     return functionType.isEqualCanon(candidateType);
@@ -958,10 +993,15 @@ LogicalResult OverloadSet::filterOverloadSetForValueType(ASTType functionType,
     // Mutate our state to represent what we've learned.  We have one callee
     // and we have valid predetermined parameter bindings.
     fnDecls = std::move(validCandidates);
-    inputParamBindings.bindings.clear();
-    auto candidateType = cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
-    for (auto bind : getBindingsForSignature(candidateType))
-      inputParamBindings.add(bind);
+
+    if (!inputParamBindings.bindings.empty()) {
+      auto candidateType =
+          cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
+      auto newBindings = getBindingsForSignature(candidateType);
+      inputParamBindings.bindings.clear();
+      for (auto bind : newBindings)
+        inputParamBindings.add(bind);
+    }
 
     return success();
   }

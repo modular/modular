@@ -145,7 +145,7 @@ public:
   AnyValue emitExprResultIntoLValue(ASTExprAnd<AnyValue> value, LValue dest);
 
   /// This helper emits the specified value rep as an RValue.
-  RValue emitExprRValue(const ExprNode *node, ValueDest dest = {});
+  RValue emitExprRValue(const ExprNode *node, ValueDest dest);
 
   /// This helper emits the specified value rep as an RValue.
   CRValue emitExprCRValue(const ExprNode *node, ValueDest dest);
