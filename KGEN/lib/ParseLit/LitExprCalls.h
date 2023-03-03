@@ -201,13 +201,6 @@ public:
   AnyValue emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands, ValueDest dest,
                     ExprEmitter &emitter);
 
-  /// Return true if 'value' may be implicitly converted to 'requiredType'
-  /// by invoking (one level of) conversion operations.  This does not generate
-  /// any IR.
-  static bool canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
-                                         ASTType requiredType,
-                                         ExprEmitter &emitter);
-
 private:
   /// Resolve the callee into either a single PRValue callee (if there's only
   /// one decl provided) or a variadic that contains all the possible adaptive

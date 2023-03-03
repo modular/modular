@@ -104,6 +104,26 @@ public:
                                ValueDest dest, CallSyntax syntax,
                                const ExprNode *callNode);
 
+  /// Emit an indirect call to a resolved value, checking for compatibility and
+  /// then generating the call logic.  This emits an error and returns null on
+  /// failure.
+  AnyValue emitIndirectCall(CRValue callee,
+                            ArrayRef<ASTExprAnd<AnyValue>> operands,
+                            ValueDest dest, const ExprNode *callExpr);
+
+  /// Emit call to a resolved and /already type checked/ callee. This does not,
+  /// check for compatibility and isn't prepared to emit errors.
+  AnyValue emitCallUnchecked(CRValue callee,
+                             ArrayRef<ASTExprAnd<AnyValue>> operands,
+                             ArrayRef<ParamDeclAttr> resultParams,
+                             ValueDest dest, const ExprNode *callExpr);
+
+  /// Return true if 'value' may be implicitly converted to 'requiredType'
+  /// by invoking (one level of) conversion operations.  This does not generate
+  /// any IR.
+  bool canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
+                                  ASTType requiredType);
+
   /// Convert the specified value to the expected type, invoking implicit
   /// conversions if necessary.  On error, this diagnoses it and returns null.
   AnyValue getAsExpectedType(ASTExprAnd<AnyValue> value, ASTType expectedType,
@@ -185,23 +205,6 @@ public:
   /// Given a value convertable to a pop int via index conversion, emit
   /// the casting code and return the pop scalar index value
   SRValue emitBoxedIntAsPopScalar(Value numberValue, const ExprNode *source);
-
-  //===--------------------------------------------------------------------===//
-  // Call emission.
-
-  /// Emit an indirect call to a resolved value, checking for compatibility and
-  /// then generating the call logic.  This emits an error and returns null on
-  /// failure.
-  AnyValue emitIndirectCall(CRValue callee,
-                            ArrayRef<ASTExprAnd<AnyValue>> operands,
-                            ValueDest dest, const ExprNode *callExpr);
-
-  /// Emit call to a resolved and /already type checked/ callee. This does not,
-  /// check for compatibility and isn't prepared to emit errors.
-  AnyValue emitCallUnchecked(CRValue callee,
-                             ArrayRef<ASTExprAnd<AnyValue>> operands,
-                             ArrayRef<ParamDeclAttr> resultParams,
-                             ValueDest dest, const ExprNode *callExpr);
 };
 
 } // namespace M::KGEN::LIT
