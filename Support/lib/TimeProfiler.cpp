@@ -30,8 +30,8 @@ using std::chrono::system_clock;
 using std::chrono::time_point;
 using std::chrono::time_point_cast;
 
-using ClockType = TimeTraceProfilerEntry<true>::ClockType;
-using TimePointType = TimeTraceProfilerEntry<true>::TimePointType;
+using ClockType = ProfilerEntry<true>::ClockType;
+using TimePointType = ProfilerEntry<true>::TimePointType;
 using DurationType = duration<ClockType::rep, ClockType::period>;
 
 namespace {
@@ -42,7 +42,7 @@ struct TimeTraceThreadProfiler {
   }
 
   /// Start a new entry.
-  void begin(TimeTraceProfilerEntry<true> &&entry) {
+  void begin(ProfilerEntry<true> &&entry) {
     stack.emplace_back(std::move(entry));
   }
 
@@ -54,7 +54,7 @@ struct TimeTraceThreadProfiler {
   }
 
   /// Record the given entry.
-  void record(TimeTraceProfilerEntry<true> &&entry) {
+  void record(ProfilerEntry<true> &&entry) {
     if (entry.name.empty())
       return;
 
@@ -70,10 +70,10 @@ struct TimeTraceThreadProfiler {
   }
 
   /// The stack of currently running timers.
-  SmallVector<TimeTraceProfilerEntry<true>, 16> stack;
+  SmallVector<ProfilerEntry<true>, 16> stack;
 
   /// The set of completed timer entries.
-  SmallVector<TimeTraceProfilerEntry<true>, 128> entries;
+  SmallVector<ProfilerEntry<true>, 128> entries;
 
   /// The name of the thread this profiler is running on.
   SmallString<0> threadName;
@@ -191,6 +191,9 @@ void M::Detail::timeTraceProfilerDestroy() {
 // Trace Output
 //===----------------------------------------------------------------------===//
 
+// Output JSON format is documented here
+// https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview
+
 void M::Detail::timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &os) {
   assert(GlobalProfilerContext::instance && "profiler should be initialized");
   auto &ctx = *GlobalProfilerContext::instance;
@@ -217,24 +220,30 @@ void M::Detail::timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &os) {
   jsonOS.arrayBegin();
 
   // Emit all events for the main flame graph.
-  auto writeEvent = [&](const auto &event, uint64_t tid) {
+  auto writeEvent = [&](const ProfilerEntry<true> &event, uint64_t tid) {
     auto startUs = event.getFlameGraphStartUs(ctx.startTime);
     auto durUs = event.getFlameGraphDurUs();
     jsonOS.object([&] {
       jsonOS.attribute("pid", ctx.pid);
       jsonOS.attribute("tid", int64_t(tid));
-      jsonOS.attribute("ph", "X");
+      jsonOS.attribute("ph", event.isSampling() ? "C" : "X");
       jsonOS.attribute("ts", startUs);
       jsonOS.attribute("dur", durUs);
       jsonOS.attribute("name", event.name);
-      if (!event.detail.empty()) {
+      if (event.isSampling()) {
         jsonOS.attributeObject(
-            "args", [&] { jsonOS.attribute("detail", event.detail); });
+            "args", [&]() { jsonOS.attribute("value", event.getValue()); });
+      } else {
+        const std::string &detail = event.getDetail();
+        if (!detail.empty()) {
+          jsonOS.attributeObject("args",
+                                 [&]() { jsonOS.attribute("detail", detail); });
+        }
       }
     });
   };
   for (const TimeTraceThreadProfiler &ttp : profilers)
-    for (const TimeTraceProfilerEntry<true> &entry : ttp.entries)
+    for (const ProfilerEntry<true> &entry : ttp.entries)
       writeEvent(entry, ttp.tid);
 
   auto writeMetadataEvent = [&](const char *name, uint64_t tid, StringRef arg) {
@@ -286,11 +295,14 @@ struct Event {
   Event() = default;
 
   /// Event representing time trace profiling entry
-  Event(const TimeTraceProfilerEntry<true> &entry, uint64_t tid,
-        TimePointType startTime)
+  Event(const ProfilerEntry<true> &entry, uint64_t tid, TimePointType startTime)
       : start(entry.start - startTime), tid(tid), dur(entry.end - entry.start),
-        name(entry.name), detail(entry.detail), end(entry.end - startTime),
-        isBegin(true) {}
+        name(entry.name), end(entry.end - startTime), isBegin(true) {
+    if (entry.isSampling())
+      detail = std::to_string(entry.getValue());
+    else
+      detail = entry.getDetail();
+  }
 
   /// Event representing the 'end' of this event.
   Event toEnd() {
@@ -326,7 +338,7 @@ void M::Detail::timeTraceProfilerWriteEventStream(llvm::raw_pwrite_stream &os) {
   std::vector<Event> events;
   for (const TimeTraceThreadProfiler &ttp :
        llvm::make_pointee_range(ctx.profilers)) {
-    for (const TimeTraceProfilerEntry<true> &e : ttp.entries) {
+    for (const ProfilerEntry<true> &e : ttp.entries) {
       events.emplace_back(e, ttp.tid, ctx.startTime);
       events.emplace_back(events.back().toEnd());
     }
@@ -383,15 +395,19 @@ ErrorOrSuccess M::Detail::timeTraceProfilerWrite(StringRef preferredFileName,
 // TimeTraceProfilerEntry
 //===----------------------------------------------------------------------===//
 
-std::string TimeTraceProfilerEntry<true>::toImmediateDebugString() {
+std::string ProfilerEntry<true>::toImmediateDebugString() {
   std::string str;
   llvm::raw_string_ostream os(str);
   os << llvm::get_threadid() << "  ";
   os << (end == TimePointType() ? "BEG  " : "END  ");
   os << name;
-  if (!detail.empty()) {
-    os << "/";
-    os << detail;
+  if (isTiming()) {
+    const std::string &detail = getDetail();
+    if (!detail.empty()) {
+      os << "/" << detail;
+    }
+  } else {
+    os << "/" << getValue();
   }
   os << "\n";
   return str;
@@ -401,7 +417,7 @@ std::string TimeTraceProfilerEntry<true>::toImmediateDebugString() {
 // Public interface to the ThreadProfilerContext's TimeTraceThreadProfiler.
 //===----------------------------------------------------------------------===//
 
-void M::Detail::timeTraceProfilerBegin(TimeTraceProfilerEntry<true> &&entry) {
+void M::Detail::timeTraceProfilerBegin(ProfilerEntry<true> &&entry) {
   if (auto *profiler = ThreadProfilerContext::get())
     profiler->begin(std::move(entry));
 }
@@ -415,7 +431,7 @@ bool M::Detail::timeTraceProfilerIsActive() {
   return ThreadProfilerContext::get();
 }
 
-void M::Detail::timeTraceProfilerRecord(TimeTraceProfilerEntry<true> &&entry) {
+void M::Detail::timeTraceProfilerRecord(ProfilerEntry<true> &&entry) {
   if (auto *profiler = ThreadProfilerContext::get())
     profiler->record(std::move(entry));
 }
