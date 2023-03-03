@@ -11,19 +11,30 @@
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Support/Atomics.h"
 #include "LLCL/Support/ConcurrentAppendingVector.h"
+#include "LLCL/Support/Profiling.h"
+#include "Support/Host.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <atomic>
-#include <stdio.h>
+
+/// Whether to capture system resident memory profiling samples in the
+/// ProfilingAllocator.
+constexpr bool kCaptureSysMem = true;
+
+/// Whether to capture malloc outstanding memory usage (in blocks) in
+/// the ProfilingAllocator.
+constexpr bool kCaptureMalloc = true;
 
 #if defined(HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR)
 #include <sys/mman.h>
 #endif
 
-using namespace M::LLCL;
+using namespace M;
+using namespace LLCL;
 
 //===----------------------------------------------------------------------===//
 // Leak Checking Allocator
@@ -63,7 +74,7 @@ public:
   }
 
   /// This keeps track of how many bytes/allocations are currently alive.
-  std::atomic<ssize_t> numBytesAllocated{0}, numAllocations{0};
+  std::atomic<size_t> numBytesAllocated{0}, numAllocations{0};
 
 private:
   std::unique_ptr<Allocator> baseAllocator;
@@ -82,6 +93,10 @@ M::LLCL::createLeakCheckAllocator(std::unique_ptr<Allocator> baseAllocator) {
 //===----------------------------------------------------------------------===//
 
 namespace {
+/// If enabled, the ProfilingAllocator will sample outstanding bytes allocated
+/// on every alloc and free.
+using MemProfilerEntry = ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 1)>;
+
 class ProfilingAllocator : public LeakCheckAllocator {
 public:
   explicit ProfilingAllocator(std::unique_ptr<Allocator> baseAllocator)
@@ -90,28 +105,60 @@ public:
   void *allocateBytes(size_t size, size_t alignment) override {
     void *result = LeakCheckAllocator::allocateBytes(size, alignment);
     ++totalAllocations;
-
+    atomicAdd(totalBytesAllocated, size);
     atomicMax(maxAllocations, numAllocations.load());
     atomicMax(maxBytesAllocated, numBytesAllocated.load());
+
+    recordProfilingSamples();
+
     return result;
   }
 
+  void deallocateBytes(void *ptr, size_t size) override {
+    LeakCheckAllocator::deallocateBytes(ptr, size);
+
+    recordProfilingSamples();
+  }
+
   ~ProfilingAllocator() override {
-    fprintf(stderr, "M::LLCL::Allocator profile:\n");
-    fprintf(stderr, "Max number of allocations = %lld\n",
-            (long long)maxAllocations.load());
-    fprintf(stderr, "Total number of allocations = %lld\n",
-            (long long)totalAllocations.load());
-    fprintf(stderr, "Max number of bytes ever allocated = %lld\n",
-            (long long)maxBytesAllocated.load());
-    fflush(stderr);
+    llvm::errs() << "-----------------------------------------------------\n";
+    llvm::errs() << "M::LLCL::Allocator profile:\n";
+    llvm::errs() << "  Total number of allocations:           "
+                 << totalAllocations.load() << "\n";
+    llvm::errs() << "  Total bytes allocated:                 "
+                 << totalBytesAllocated.load() << "\n";
+    llvm::errs() << "  Max number of outstanding allocations: "
+                 << maxAllocations.load() << "\n";
+    llvm::errs() << "  Max outstanding bytes allocated:       "
+                 << maxBytesAllocated.load() << "\n";
+    llvm::errs() << "-----------------------------------------------------\n";
+    llvm::errs().flush();
 
     // If we still have active memory alive, print an error.
     checkLeak();
   }
 
-  std::atomic<ssize_t> maxAllocations{0}, maxBytesAllocated{0};
-  std::atomic<int64_t> totalAllocations{0};
+  void recordProfilingSamples() {
+    MemProfilerEntry::create("mem.outstanding", numBytesAllocated.load())
+        .record();
+    if constexpr (kCaptureMalloc) {
+      MemProfilerEntry::create("mem.malloc_outstanding", []() {
+        return llvm::sys::Process::GetMallocUsage();
+      }).record();
+    }
+    if constexpr (kCaptureSysMem) {
+      MemProfilerEntry::create("mem.sys_resident", []() {
+        return getProcessPhysicalMemUsage();
+      }).record();
+    }
+  }
+
+  /// High-water marks for numAllocations and numBytesAllocated.
+  std::atomic<size_t> maxAllocations{0}, maxBytesAllocated{0};
+  /// Total number of bytes allocated.
+  std::atomic<size_t> totalBytesAllocated{0};
+  /// Total number of calls to allocateBytes.
+  std::atomic<size_t> totalAllocations{0};
 };
 } // namespace
 

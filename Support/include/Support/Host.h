@@ -52,6 +52,12 @@ struct HostMachineInfo {
 
 /// Get information about the host machine.
 ErrorOr<HostMachineInfo> getHostMachineInfo();
+
+/// Returns the current process' physical memory usage, or 0 if value is
+/// not available. Generally determined from the OS's reported resident
+/// page value, and may not very reliable.
+size_t getProcessPhysicalMemUsage();
+
 } // namespace M
 
 #endif // SUPPORT_HOST_H
