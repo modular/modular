@@ -63,14 +63,18 @@ bool M::hasEquivalentFloatType(DType dtype) {
 }
 
 IntegerType M::getEquivalentIntegerType(MLIRContext *ctx, DType dtype) {
-  if (!dtype.isInt() && !dtype.isBool())
-    return {}; // null denotes failure
-  return IntegerType::get(ctx, dtype.isBool() ? 1 : dtype.getWidthInBits(),
-                          dtype.isSInt() ? IntegerType::Signed
-                                         : IntegerType::Unsigned);
+  if (dtype.isBool())
+    return IntegerType::get(ctx, 1, IntegerType::Signless);
+  if (dtype.isInt())
+    return IntegerType::get(ctx, dtype.getWidthInBits(),
+                            dtype.isSInt() ? IntegerType::Signed
+                                           : IntegerType::Unsigned);
+  return {}; // null denotes failure
 }
 
-bool M::hasEquivalentIntegerType(DType dtype) { return dtype.isInt(); }
+bool M::hasEquivalentIntegerType(DType dtype) {
+  return dtype.isInt() || dtype.isBool();
+}
 
 DType M::getEquivalentDType(FloatType fpType) {
   if (fpType.isF16())
