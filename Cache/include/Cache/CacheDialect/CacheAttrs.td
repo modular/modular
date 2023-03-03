@@ -49,6 +49,12 @@ def Cache_ConstantHashAttr : CacheAttr<"ConstantHash", "constant_hash",
                         StringRefParameter<"">:$hash,
                         "DictionaryAttr":$additionalData);
   let hasCustomAssemblyFormat = 1;
+
+  let extraClassDeclaration = [{
+    /// Returns any 'align' entry in the attribute's additionalData. Otherwise
+    /// returns nullopt.
+    std::optional<uint64_t> getOptAlign() const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//
