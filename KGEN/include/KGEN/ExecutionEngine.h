@@ -14,9 +14,7 @@
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include "llvm/ExecutionEngine/Orc/TargetProcess/JITLoaderGDB.h"
 
-namespace M {
-class TargetInfoAttr;
-namespace KGEN {
+namespace M::KGEN {
 class CompilationOptions;
 
 /// This class provides an interface to interact with a compiled func. You
@@ -63,8 +61,7 @@ public:
   /// This class is move-constructible.
   ExecutionEngine(ExecutionEngine &&other);
 
-  static ErrorOr<ExecutionEngine> create(TargetInfoAttr target,
-                                         const CompilationOptions &options);
+  static ErrorOr<ExecutionEngine> create(const CompilationOptions &options);
 
   /// Add an object to the JIT.
   ErrorOrSuccess add(StringRef libName, Cache::BufferRef obj);
@@ -103,7 +100,6 @@ LLVM_ATTRIBUTE_USED inline uintptr_t llvm_orc_dummyinit() {
   return (uintptr_t)&llvm_orc_registerJITLoaderGDBAllocAction +
          (uintptr_t)&llvm_orc_registerJITLoaderGDBWrapper;
 }
-} // namespace KGEN
-} // namespace M
+} // namespace M::KGEN
 
 #endif // KGEN_EXECUTION_ENGINE_H
