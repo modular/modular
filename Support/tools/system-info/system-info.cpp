@@ -13,6 +13,9 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/Triple.h"
+#include <filesystem>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/ToolOutputFile.h>
 
 using namespace M;
 using namespace llvm;
@@ -32,6 +35,11 @@ enum class QuerySystemProperty {
 };
 
 struct SystemInfoCLIOptions {
+
+  llvm::cl::opt<std::string> outputFilename{
+      "o", llvm::cl::desc("Output filename"), llvm::cl::value_desc("filename"),
+      llvm::cl::init("-")};
+
   llvm::cl::list<QuerySystemProperty> QueryProperty{
       "query", M::cl::desc("Available Queries:"),
       M::cl::values(
@@ -92,12 +100,38 @@ static void dumpCacheSize(raw_ostream &os, size_t cacheLevel) {
   os << *val;
 }
 
+static int reportError(Twine errorMessage) {
+  llvm::errs() << "system-info: " << errorMessage << "\n";
+  return EXIT_FAILURE;
+}
+
 int main(int argc, char **argv) {
   SystemInfoCLIOptions cli;
 
   llvm::cl::ParseCommandLineOptions(argc, argv, "Modular System Info Tool");
 
-  raw_ostream &os(outs());
+  auto outFilePathStr = cli.outputFilename.getValue();
+
+  std::error_code ec;
+  if (outFilePathStr != "-" && !std::filesystem::exists(outFilePathStr, ec) &&
+      !ec) {
+    auto outFilePath = std::filesystem::path(outFilePathStr);
+    if (outFilePath.has_parent_path())
+      std::filesystem::create_directories(outFilePath.parent_path(), ec);
+  }
+  // If anything failed, report the failure.
+  if (ec)
+    exit(reportError("std::filesystem: " + ec.message() + ": " +
+                     outFilePathStr));
+
+  std::error_code error;
+  auto outputFile = std::make_unique<llvm::ToolOutputFile>(
+      outFilePathStr, error, llvm::sys::fs::OF_None);
+  if (error)
+    exit(reportError("Cannot open output file: '" + outFilePathStr +
+                     "': " + error.message()));
+
+  auto &os = outputFile ? outputFile->os() : llvm::outs();
 
   if (cli.QueryProperty.empty()) {
     os << "target-triple: ";
@@ -119,7 +153,6 @@ int main(int argc, char **argv) {
     os << "\nl4-cache-size: ";
     dumpCacheSize(os, 4);
     os << "\n";
-    return EXIT_SUCCESS;
   }
 
   for (auto query : cli.QueryProperty) {
@@ -156,5 +189,9 @@ int main(int argc, char **argv) {
     }
     os << "\n";
   }
+
+  os.flush();
+  outputFile->keep();
+
   return EXIT_SUCCESS;
 }
