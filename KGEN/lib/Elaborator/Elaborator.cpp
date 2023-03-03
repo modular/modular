@@ -1690,10 +1690,21 @@ ElaboratorImpl::specializeFunction(ExpansionTreeNode *funcNode,
 // ElaboratorImpl::specializeGenerator
 //===----------------------------------------------------------------------===//
 
+/// Try extracting a short name from a mangled name.
+/// E.g. for the mangled name "$Math::log($SIMD::SIMD[simd_width, type])"
+/// we want to extract "log".
+/// This is the part before the opening brace and after the last ':' before it.
+static StringRef tryGettingShortName(StringRef s) {
+  return s.split('(').first.rsplit(':').second;
+}
+
 std::optional<ErrorTree>
 ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   GeneratorOp generator = cast<GeneratorOp>(genNode->op);
 
+  TimeTraceScope<> traceScope(
+      "specialize-generator:" + tryGettingShortName(generator.getName()).str(),
+      generator.getName());
   auto _ = logger.scope("Specializing Generator: @", generator.getName());
   logger.logOp("Generator", generator);
 
