@@ -219,7 +219,7 @@ private:
   /// Resolve the callee into either a single PRValue callee (if there's only
   /// one decl provided) or a variadic that contains all the possible adaptive
   /// overloads.
-  PRValue getCallee() const;
+  PRValue getCallee(ExprEmitter &emitter) const;
 
   /// Filter down and complete this overload set based on knowledge that we need
   /// to produce a function pointer with the specified type.
