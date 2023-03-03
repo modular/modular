@@ -9,7 +9,23 @@ fn noop():
 # CHECK-LABEL: lit.struct.decl @MemoryPrimaryType
 @__memory_primary
 struct MemoryPrimaryType:
-  pass
+  fn __clone__(self&: MemoryPrimaryType) -> MemoryPrimaryType:
+    return MemoryPrimaryType{}
+
+# CHECK-LABEL: lit.func @"memoryPrimaryOps
+fn memoryPrimaryOps(a&: MemoryPrimaryType):
+  # FIXME: Should not be returning MemoryPrimaryType by value and storing it.
+
+  # CHECK: %v1 = lit.var.decl "v1" : <@"$expressions"::@MemoryPrimaryType>
+  # CHECK: %0 = kgen.call @"$expressions"::@MemoryPrimaryType::@"__clone__($expressions::MemoryPrimaryType&)"(%a) : (!pop.pointer<@"$expressions"::@MemoryPrimaryType> byref) -> !kgen.declref<@"$expressions"::@MemoryPrimaryType>
+  # CHECK: pop.store %0, %v1 : !pop.pointer<@"$expressions"::@MemoryPrimaryType>
+  var v1 = a
+
+  # CHECK: %v2 = lit.var.decl "v2" : <@"$expressions"::@MemoryPrimaryType>
+  # CHECK: %1 = kgen.call @"$expressions"::@MemoryPrimaryType::@"__clone__($expressions::MemoryPrimaryType&)"(%a) : (!pop.pointer<@"$expressions"::@MemoryPrimaryType> byref) -> !kgen.declref<@"$expressions"::@MemoryPrimaryType>
+  # CHECK: pop.store %1, %v2 : !pop.pointer<@"$expressions"::@MemoryPrimaryType>
+  var v2 : MemoryPrimaryType = a
+
 
 # CHECK-LABEL: lit.struct.decl @M
 struct M:

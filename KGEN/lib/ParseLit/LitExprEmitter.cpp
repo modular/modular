@@ -25,6 +25,8 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+ValueDest::ValueDest(VarDeclOp dest) : representation(dest.getOperation()) {}
+
 //===----------------------------------------------------------------------===//
 // ExprEmitter implementation
 //===----------------------------------------------------------------------===//
@@ -197,6 +199,23 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
           dyn_cast_or_null<const ExprNode *>(dest.representation))
     return context->emitExprResultIntoPattern({value, node}, *this);
 
+  // If we are inferring the type for a var or let declaration, do that.
+  if (auto *opDest = dyn_cast_or_null<Operation *>(dest.representation)) {
+    // We cannot infer from an unresolved overload set, collapse into a concrete
+    // value with a concrete type if we can.
+    if (value.getIfORValue()) {
+      value = emitCRValue({value, node}, ValueDest());
+      if (!value)
+        return {};
+    }
+
+    auto varOp = cast<VarDeclOp>(opDest);
+    varOp.getResult().setType(POP::PointerType::get(value.getRValueType()));
+    dest = LValue(varOp);
+    // Fall through to lvalue handling below.
+  }
+
+  // If we have an lvalue already specified, emit into it.
   if (LValue lvalueDest = dyn_cast_or_null<LValue>(dest.representation))
     return emitExprResultIntoLValue({value, node}, lvalueDest);
 
