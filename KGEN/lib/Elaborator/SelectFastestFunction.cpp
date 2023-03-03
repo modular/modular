@@ -42,7 +42,7 @@ produceObjectFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
   auto compiler = std::make_unique<ObjectCompiler>(std::move(*compilerOr));
 
   // Produce a standalone object for all the exports.
-  auto objOr = compiler->produceStandaloneObject(target, true);
+  auto objOr = compiler->produceStandaloneObject(/*isJIT=*/true);
   if (failed(objOr))
     return Error("failed to produce standalone object");
 

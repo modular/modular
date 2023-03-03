@@ -140,8 +140,7 @@ OwningOpRef<ModuleOp> ObjectCompiler::produceStandaloneModule() {
 // produceStandaloneObject
 //===----------------------------------------------------------------------===//
 
-ErrorOr<BufferRef>
-ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
+ErrorOr<BufferRef> ObjectCompiler::produceStandaloneObject(bool isJIT) {
   TimeTraceScope<> traceScope("produce-standalone-object");
 
   // Perform a cache aware transformation to translate the module to an object
@@ -150,7 +149,7 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
   auto runTransformation = [&](Operation *op, WriteableBufferRef buf,
                                LLCL::AnyAsyncValueRef chain) {
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
-    chain.andThenSync([this, op, target, isJIT, &ctx, output = output.copy(),
+    chain.andThenSync([this, op, isJIT, &ctx, output = output.copy(),
                        buf = buf.copy()]() mutable {
       auto llvmModule = lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
       if (!llvmModule) {
@@ -160,7 +159,7 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
       }
 
       // Create the target machine.
-      auto machineOr = createTargetMachine(target, options, isJIT);
+      auto machineOr = createTargetMachine(options, isJIT);
       if (failed(machineOr)) {
         return std::move(output).setToError(
             LLCL::getMLIRDiagnostic(machineOr.takeError(), op->getLoc()));
@@ -203,7 +202,7 @@ ObjectCompiler::produceStandaloneObject(TargetInfoAttr target, bool isJIT) {
 
 ErrorOr<ElementsAttr>
 ObjectCompiler::produceStandaloneObjectAttr(TargetInfoAttr target, bool isJIT) {
-  auto bufferOr = produceStandaloneObject(target, isJIT);
+  auto bufferOr = produceStandaloneObject(isJIT);
   if (bufferOr.isError())
     return bufferOr.takeError();
   BufferRef buffer = bufferOr.takeValue();
@@ -250,7 +249,7 @@ ObjectCompiler::produceStandaloneAssembly(TargetInfoAttr target,
   if (!llvmModule)
     return Error("failed to lower module to LLVM IR");
 
-  auto machineOr = createTargetMachine(target, options, /*isJIT=*/false);
+  auto machineOr = createTargetMachine(options, /*isJIT=*/false);
   if (failed(machineOr))
     return machineOr.takeError();
 
