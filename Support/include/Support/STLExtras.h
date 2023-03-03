@@ -56,12 +56,28 @@ struct ConditionallyOwnedPointer {
   /// Allocate a `T *` that this class will own (and therefore delete).
   template <typename... Args>
   static ConditionallyOwnedPointer allocate(Args &&...args) {
-    return ConditionallyOwnedPointer(std::forward<Args &&>(args)...);
+    return ConditionallyOwnedPointer(new T(std::forward<Args &&>(args)...),
+                                     /*shouldDelete=*/true);
   }
 
   /// Borrow the provided `T *`.
   static ConditionallyOwnedPointer borrow(T *ptr) {
-    return ConditionallyOwnedPointer(ptr);
+    return ConditionallyOwnedPointer(ptr, /*shouldDelete=*/false);
+  }
+
+  /// Constructs 'null' pointer.
+  ConditionallyOwnedPointer() = default;
+
+  // No copying.
+  ConditionallyOwnedPointer(const ConditionallyOwnedPointer &that) = delete;
+  ConditionallyOwnedPointer &
+  operator=(const ConditionallyOwnedPointer &that) = delete;
+
+  // Can be moved.
+  ConditionallyOwnedPointer(ConditionallyOwnedPointer &&that) { swap(that); }
+  ConditionallyOwnedPointer &operator=(ConditionallyOwnedPointer &&that) {
+    swap(that);
+    return *this;
   }
 
   /// If `ptr` is provided, do not allocate a new pointer and borrow it.
@@ -73,9 +89,6 @@ struct ConditionallyOwnedPointer {
 
     return allocate(std::forward<Args &&>(args)...);
   }
-
-  /// A default instance of this class - it has nothing inside it.
-  ConditionallyOwnedPointer() = default;
 
   /// Only delete the pointer if it's owned by this class.
   ~ConditionallyOwnedPointer() {
@@ -90,13 +103,16 @@ struct ConditionallyOwnedPointer {
   const T &operator*() const { return *ptr; }
 
 private:
-  ConditionallyOwnedPointer(T *ptr) : ptr(ptr), shouldDelete(false) {}
-  template <typename... Args>
-  ConditionallyOwnedPointer(Args &&...args)
-      : ptr(new T(std::forward<Args &&>(args)...)), shouldDelete(true) {}
+  ConditionallyOwnedPointer(T *ptr, bool shouldDelete)
+      : ptr(ptr), shouldDelete(shouldDelete) {}
 
-  T *ptr;
-  bool shouldDelete;
+  void swap(ConditionallyOwnedPointer &that) {
+    std::swap(ptr, that.ptr);
+    std::swap(shouldDelete, that.shouldDelete);
+  }
+
+  T *ptr = nullptr;
+  bool shouldDelete = false;
 };
 
 //===----------------------------------------------------------------------===//
