@@ -23,6 +23,7 @@
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
+#include "llvm/Support/TargetSelect.h"
 
 using namespace M;
 
@@ -44,6 +45,11 @@ int main(int argc, char **argv) {
   mlir::registerCanonicalizerPass();
   mlir::registerReconcileUnrealizedCasts();
   mlir::registerConvertIndexToLLVMPass();
+
+  // Initialize the host target.
+  llvm::InitializeNativeTarget();
+  llvm::InitializeNativeTargetAsmParser();
+  llvm::InitializeNativeTargetAsmPrinter();
 
   LLCL::Runtime runtime(
       LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),

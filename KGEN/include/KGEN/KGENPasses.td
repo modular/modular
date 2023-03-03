@@ -255,7 +255,7 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
 
   let options = [
     Option<"shouldDoSearch", "enable-search", "bool", "false",
-           "If true, benchmark implementations to find the fastest one.">,
+           "If true, benchmark implementations to find the fastest one.">
   ];
 }
 
