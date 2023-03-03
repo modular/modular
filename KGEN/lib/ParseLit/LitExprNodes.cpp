@@ -342,14 +342,14 @@ AnyValue BoolLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   mlir::MLIRContext *ctx = emitter.getContext();
   auto boolLiteralDeclType = DeclRefType::get(decl.getSymbolRef());
   bool isErroneousDecl = false;
-  OverloadSet newVal(boolLiteralDeclType, "__new__", this, isErroneousDecl,
-                     emitter.shared);
+  OverloadSet newVal(boolLiteralDeclType, "__new__", this,
+                     CallSyntax::kTypeCall, isErroneousDecl, emitter.shared);
   assert(!newVal.isNull() && "__new__ should be always there by construction");
   auto boolDType = DTypeConstantAttr::get(ctx, DType::kBool);
   auto boolAttr = POP::SIMDAttr::get({value, KGENDType::kBool},
                                      POP::SIMDType::get(1, boolDType));
   return newVal.emitCall(ASTExprAnd<AnyValue>{AnyValue(boolAttr), this}, dest,
-                         this, CallSyntax::kTypeCall, emitter);
+                         emitter);
 }
 
 AnyValue SelfLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -519,7 +519,8 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
     }
 
     // Form an overload set value with all the candidates.
-    auto result = ORValue::create(spelling, decls, paramBindings);
+    auto result = ORValue::create(spelling, decls, paramBindings, this,
+                                  CallSyntax::kDirectCall);
     return emitter.emitResult(std::move(result), this, dest);
   }
 
@@ -542,8 +543,8 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
       bool isErroneousDecl = false;
       // TODO: Unify this with the logic in emitRValue when __clone__ moves to
       // taking a borrow instead of a mutable byref argument.
-      if (!OverloadSet(letType, "__clone__", this, isErroneousDecl,
-                       emitter.shared)) {
+      if (!OverloadSet(letType, "__clone__", this, CallSyntax::kMethodCall,
+                       isErroneousDecl, emitter.shared)) {
         auto diag = emitter.emitError(getLoc(), "cannot clone this value: ")
                     << letType << " doesn't implement '__clone__'"
                     << getRange();
@@ -639,8 +640,7 @@ AnyValue AttributeRefNode::emitAdaptiveSet(ORValue overloads,
       diag.attachNote(funcOp.getLoc()) << "declared here";
       return {};
     }
-    TypedAttr symbolAttr =
-        overloads->getBoundConstAttrFor(this, funcOp, emitter);
+    TypedAttr symbolAttr = overloads->getBoundConstAttrFor(funcOp, emitter);
     if (!symbolAttr)
       return {};
     symConstAttrs.push_back(symbolAttr);
@@ -730,7 +730,8 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   if (auto fnOp = dyn_cast<LIT::FuncOp>(*memberDecls[0])) {
     // Get a symbol for the underlying function.
     auto result = ORValue::create(attrSpelling, memberDecls,
-                                  baseRVType.getParamBindings());
+                                  baseRVType.getParamBindings(), this,
+                                  CallSyntax::kMethodCall);
 
     // If the callee is a static method, we can directly reference it
     // without binding a self parameter.  If this is an instance method, we
@@ -1013,8 +1014,8 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   // invocation of the initializer for the type.
   if (ASTType calledType = calleeVal.getIfTypeValue()) {
     bool isErroneousDecl = false;
-    OverloadSet overloads(calledType, "__new__", this, isErroneousDecl,
-                          emitter.shared);
+    OverloadSet overloads(calledType, "__new__", this, CallSyntax::kTypeCall,
+                          isErroneousDecl, emitter.shared);
     if (overloads.isNull()) {
       if (isErroneousDecl)
         return {};
@@ -1031,16 +1032,13 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
       return {};
     }
 
-    return overloads.emitCall(operands, dest, this, CallSyntax::kTypeCall,
-                              emitter);
+    return overloads.emitCall(operands, dest, emitter);
   }
 
   // If this is an overloaded operand, resolve it and call the result.
   if (auto overloads = calleeVal.getIfORValue()) {
-    // Figure out how this was spelled.
-    CallSyntax syntax = overloads->baseValue ? CallSyntax::kMethodCall
-                                             : CallSyntax::kDirectCall;
-    return overloads->emitCall(operands, dest, this, syntax, emitter);
+    overloads->expr = this;
+    return overloads->emitCall(operands, dest, emitter);
   }
 
   // Otherwise, we must have a concrete RValue, emit an indirect call.
@@ -1244,8 +1242,8 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   // __getitem__ method.
   auto baseType = subValue.getRValueType();
   bool isErroneousDecl = false;
-  OverloadSet getItem(baseType, "__getitem__", this, isErroneousDecl,
-                      emitter.shared);
+  OverloadSet getItem(baseType, "__getitem__", this, CallSyntax::kSubscript,
+                      isErroneousDecl, emitter.shared);
   // If there is no __getitem__ at all, then this is not a subscriptable type.
   if (getItem.isNull()) {
     if (isErroneousDecl)
@@ -1268,7 +1266,7 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 
   // Next, check the multiple argument path.
   if (getItem && succeeded(getItem.filterOverloadSet(
-                     indexValues, CallSyntax::kSubscript, this,
+                     indexValues,
                      /*allowImplicitConversions=*/true,
                      /*emitDiagnosticOnFailure=*/false, emitter))) {
     // Ok, this looks like it will work.
@@ -1277,8 +1275,7 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   }
 
   // Finally, just emit the call to __getitem__.
-  return getItem.emitCall(indexValues, dest, this, CallSyntax::kSubscript,
-                          emitter);
+  return getItem.emitCall(indexValues, dest, emitter);
 }
 
 AnyValue SubscriptArrowNode::emitIR(ExprEmitter &emitter,
@@ -1649,16 +1646,15 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   // receiver.
   bool isErroneousDecl = false;
   OverloadSet callee(lhs.ir.getRValueType(), specialFnInfo.name, callNode,
-                     isErroneousDecl, emitter.shared);
+                     CallSyntax::kOperator, isErroneousDecl, emitter.shared);
   if (isErroneousDecl)
     return {};
 
   if (callee && succeeded(callee.filterOverloadSet(
-                    argValues, CallSyntax::kOperator, callNode,
+                    argValues,
                     /*allowImplicitConversions=*/true,
                     /*emitDiagnosticOnFailure=*/false, emitter))) {
-    return callee.emitCall(argValues, dest, callNode, CallSyntax::kOperator,
-                           emitter);
+    return callee.emitCall(argValues, dest, emitter);
   }
 
   // Check to see if we have the reverse version of this operator.
@@ -1667,13 +1663,13 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     // Swap the operand order.
     std::swap(argValues[0], argValues[1]);
     callee = OverloadSet(rhs.ir.getType(), reversedFnInfo.name, callNode,
-                         isErroneousDecl, emitter.shared);
+                         CallSyntax::kReversedOperator, isErroneousDecl,
+                         emitter.shared);
     if (callee && succeeded(callee.filterOverloadSet(
-                      argValues, CallSyntax::kReversedOperator, callNode,
+                      argValues,
                       /*allowImplicitConversions=*/true,
                       /*emitDiagnosticOnFailure=*/false, emitter))) {
-      return callee.emitCall(argValues, dest, callNode,
-                             CallSyntax::kReversedOperator, emitter);
+      return callee.emitCall(argValues, dest, emitter);
     }
 
     // Swap these back so we emit the right error.
