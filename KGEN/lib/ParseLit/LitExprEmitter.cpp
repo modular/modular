@@ -431,13 +431,14 @@ PRValue ExprEmitter::emitExprPRValue(const ExprNode *node, ASTType resultType,
   builder.reset();
 
   // Emit the expression.
-  AnyValue rep = emitExprCRValue(node, ValueDest(/*knownPRValue*/));
+  AnyValue rep = emitExprRValue(node, ValueDest(/*knownPRValue*/));
 
   // If we had an expected type, do a conversion.
   if (resultType)
     rep = getAsExpectedType({rep, node}, resultType,
                             ValueDest(/*knownPRValue*/), errorSuffix);
 
+  rep = emitCRValue({rep, node}, ValueDest(/*knownPRValue*/));
   if (!rep)
     return {};
 
@@ -526,7 +527,8 @@ ASTType ExprEmitter::emitExprType(const ExprNode *node) {
 /// error.
 RValue ExprEmitter::emitExprConditionValueAsI1(const ExprNode *condExpr) {
   AnyValue boolTmp; // we don't care about the intermediate Bool value.
-  return emitConditionValueAsI1({emitExprRValue(condExpr), condExpr}, boolTmp);
+  return emitConditionValueAsI1(
+      {emitExprRValue(condExpr, ValueDest()), condExpr}, boolTmp);
 }
 
 SRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,

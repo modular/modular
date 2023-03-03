@@ -76,6 +76,10 @@ fn testThing(a: Int) -> F32: return 1.0
 # CHECK-LABEL: lit.func @"testThing($Int::Int,$Int::Int)"
 fn testThing(a: Int, b: Int) -> Int: return 1
 
+alias IntToF32Type = __mlir_type[`!kgen.signature<(`, Int, `) -> `, F32, `>`]
+
+fn takeIntToF32Param[f: IntToF32Type](): pass
+
 # CHECK-LABEL: lit.func @"callOverload
 fn callOverload(a: Int):
   # CHECK: %0 = kgen.call @"$decls"::@"testThing($Int::Int)"(%a)
@@ -84,7 +88,13 @@ fn callOverload(a: Int):
   _ = testThing(a, a)
 
   # CHECK: %2 = kgen.param.constant: {{.*}} = <@"$decls"::@"testThing($Int::Int)">
-  var f1 : __mlir_type[`!kgen.signature<(`, Int, `) -> `, F32, `>`] = testThing
+  var f1 : IntToF32Type = testThing
+
+  # CHECK: %3 = kgen.param.constant: {{.*}} = <@"$decls"::@"testThing($Int::Int)">
+  let f2 : IntToF32Type = testThing
+
+  # CHECK: kgen.call @"$decls"::@"takeIntToF32Param()"<f: (!kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$F32"::@F32> = @"$decls"::@"testThing($Int::Int)">()
+  takeIntToF32Param[testThing]()
 
 # Test that pointers don't get confused with by-ref arguments.
 # CHECK-LABEL: lit.func @"testPointerArgs{{.*}}(%ptr: !pop.pointer<si32>) -> si32 {

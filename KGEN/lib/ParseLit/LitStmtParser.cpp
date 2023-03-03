@@ -492,7 +492,8 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   }
 
   // Materialize the expression values into IR.
-  RValue resultValue = getEmitter().emitExprRValue(operandExprs[0]);
+  RValue resultValue =
+      getEmitter().emitExprRValue(operandExprs[0], ValueDest());
 
   // Ok, now that we parsed all the tokens for this statement, do semantic
   // analysis.

@@ -1703,24 +1703,29 @@ LogicalResult DeclResolver::resolveSignature(LetDeclOp letOp, LitLexer &lexer,
   OpBuilder builder(letOp->getBlock(), Block::iterator(letOp));
   ExprEmitter emitter(shared, *decl.getParentDecl(), builder,
                       /*varDeclCursor*/ nullptr);
-  auto value = emitter.emitExprSRValue(parsed.initExpr);
+  Value value;
 
   // If we had a declared type, coerce the expression value to it.
   if (parsed.type) {
+    auto baseValue = emitter.emitExprRValue(parsed.initExpr, ValueDest());
     value = emitter.emitSRValue(
         {emitter.getAsExpectedType(
-             {value, parsed.initExpr}, parsed.type,
+             {baseValue, parsed.initExpr}, parsed.type,
              // TODO(memory-primary): emit directly into the decl.
              ValueDest(), " in let declaration"),
          parsed.initExpr});
-  } else if (value) {
+    if (!value)
+      return failure();
+
+  } else {
+    value = emitter.emitExprSRValue(parsed.initExpr);
     // Infer the type if we lack a declared type (`var x = 42`).
     // TODO(literal autopromotion).
+    if (!value)
+      return failure();
+
     parsed.type = value.getType();
   }
-
-  if (!value)
-    return failure();
 
   letOp->setOperands(value);
   letOp.getResult().setType(parsed.type);
