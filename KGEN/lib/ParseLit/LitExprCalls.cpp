@@ -670,8 +670,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
         // If we lack an exact match and conversions are disabled, this
         // candidate fails.
         if (!allowImplicitConversions ||
-            !OverloadSet::canImplicitlyConvertToType(operand, expectedType,
-                                                     emitter))
+            !emitter.canImplicitlyConvertToType(operand, expectedType))
           return {kArgWrongType, providedValueIdx, expectedType, newBindings};
 
         // If we had one, this bumps our # implicit conversions.
@@ -1273,38 +1272,6 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest dest,
   auto eResult = emitter.emitResult(result, expr, dest);
   assert(eResult.getIfSRValue() && "Emitting an SRValue shouldn't change it");
   return eResult.getIfSRValue();
-}
-
-/// Return true if 'value' may be implicitly converted to 'requiredType'
-/// by invoking (one level of) conversion operations.  This does not generate
-/// any IR.
-bool OverloadSet::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
-                                             ASTType requiredType,
-                                             ExprEmitter &emitter) {
-  // If it already matches, then we're done.
-  if (value.ir.getRValueType().isEqualCanon(requiredType))
-    return true;
-
-  // Otherwise, check to see if we can do an implicit conversion by invoking a
-  // `__new__` method on the expected type.
-  OverloadSet callee(requiredType, "__new__", value.expr,
-                     CallSyntax::kImplicitConvert, emitter.shared,
-                     /*no error emission on failure */ {});
-
-  // If there are no viable candidates for the implicit conversion, we fail.
-  if (!callee)
-    return false;
-
-  // If we have at least one candidate, we check to see if any of them can
-  // work. We disable implicit conversions though, to prevent converting
-  // T -> S -> U in one step.
-
-  // This needs to call filterOverloadSet manually because we cannot allow
-  // implicit conversions here.
-  return succeeded(callee.filterOverloadSet({value},
-                                            /*allowImplicitConversions=*/false,
-                                            /*emitDiagnosticOnFailure=*/false,
-                                            emitter));
 }
 
 //===----------------------------------------------------------------------===//

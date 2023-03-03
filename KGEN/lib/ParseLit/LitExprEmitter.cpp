@@ -279,6 +279,37 @@ AnyValue ExprEmitter::emitNamedMethodCall(
   return callee.emitCall(argValues, dest, *this);
 }
 
+/// Return true if 'value' may be implicitly converted to 'requiredType'
+/// by invoking (one level of) conversion operations.  This does not generate
+/// any IR.
+bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
+                                             ASTType requiredType) {
+  // If it already matches, then we're done.
+  if (value.ir.getRValueType().isEqualCanon(requiredType))
+    return true;
+
+  // Otherwise, check to see if we can do an implicit conversion by invoking a
+  // `__new__` method on the expected type.
+  OverloadSet callee(requiredType, "__new__", value.expr,
+                     CallSyntax::kImplicitConvert, shared,
+                     /*no error emission on failure */ {});
+
+  // If there are no viable candidates for the implicit conversion, we fail.
+  if (!callee)
+    return false;
+
+  // If we have at least one candidate, we check to see if any of them can
+  // work. We disable implicit conversions though, to prevent converting
+  // T -> S -> U in one step.
+
+  // This needs to call filterOverloadSet manually because we cannot allow
+  // implicit conversions here.
+  return succeeded(callee.filterOverloadSet({value},
+                                            /*allowImplicitConversions=*/false,
+                                            /*emitDiagnosticOnFailure=*/false,
+                                            *this));
+}
+
 /// Convert the specified value to the expected type, invoking implicit
 /// conversions if necessary.  On error, this diagnoses it and returns null.
 AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
