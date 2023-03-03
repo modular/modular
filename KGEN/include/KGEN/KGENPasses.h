@@ -26,23 +26,19 @@ class LLVMFuncOp;
 } // namespace LLVM
 } // namespace mlir
 
-namespace M {
-class TargetInfoAttr;
-
-namespace HLCF {
+namespace M::HLCF {
 class HLCFDialect;
-} // namespace HLCF
+} // namespace M::HLCF
 
-namespace LLCL {
+namespace M::LLCL {
 class Runtime;
-} // namespace LLCL
+} // namespace M::LLCL
 
-namespace KGEN {
+namespace M::KGEN {
 class KGENCallOpInterface;
 class KGENDialect;
 class FuncOp;
 class GeneratorOp;
-
 namespace POP {
 class POPDialect;
 } // namespace POP
@@ -122,10 +118,9 @@ void registerEmitLLVMPass(LLCL::Runtime &rt);
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.
 std::unique_ptr<mlir::Pass>
-createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
+createElaborateGenerators(LLCL::Runtime &runtime,
                           const ElaborateGeneratorsOptions &options = {});
 
-} // namespace KGEN
-} // namespace M
+} // namespace M::KGEN
 
 #endif // KGEN_KGENPASSES_H

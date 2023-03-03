@@ -13,13 +13,13 @@
 #include "Support/ErrorOr.h"
 #include "Support/TimeProfiler.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/TargetParser/Host.h"
 #include <filesystem>
 
 namespace M {
 namespace KGEN {
 class CompiledFunc;
 class ExecutionEngine;
+} // namespace KGEN
 
 /// What to do with a given KGEN file.
 enum class Command {
@@ -30,13 +30,6 @@ enum class Command {
   kEmit,
   kExecute,
 };
-
-//===----------------------------------------------------------------------===//
-// getHostCPUFeatures
-//===----------------------------------------------------------------------===//
-
-/// Get the host CPU features string with only a list of supported features.
-std::string getHostCPUFeatures();
 
 //===----------------------------------------------------------------------===//
 // CommandLineFunc
@@ -58,7 +51,7 @@ struct CommandLineFunc {
   /// matches the signature of the func as it exists in the IR.
   ErrorOrSuccess verifyFuncSignature(mlir::FunctionType funcType) const;
   /// Execute this func and print its result(s).
-  ErrorOrSuccess executeAndPrint(CompiledFunc &compiledFunc) const;
+  ErrorOrSuccess executeAndPrint(KGEN::CompiledFunc &compiledFunc) const;
 };
 
 /// Provide a parser for the CommandLineFunc object.
@@ -78,22 +71,23 @@ class KGENCommonOptions : public CommonCLOptions {
 public:
   using CommonCLOptions::CommonCLOptions;
 
-  cl::opt<CompilationOptions::DebugInfoLevel> debugInfoLevel{
+  cl::opt<KGEN::CompilationOptions::DebugInfoLevel> debugInfoLevel{
       "debug-level",
       cl::desc("The level of debug info to use during compilation"),
-      cl::values(clEnumValN(CompilationOptions::kNoDebug, "none",
+      cl::values(clEnumValN(KGEN::CompilationOptions::kNoDebug, "none",
                             "Disable all debug info."),
-                 clEnumValN(CompilationOptions::kLineTablesOnly, "line-tables",
+                 clEnumValN(KGEN::CompilationOptions::kLineTablesOnly,
+                            "line-tables",
                             "Only generate debug info for line number tables."),
-                 clEnumValN(CompilationOptions::kFullDebugInfo, "full",
+                 clEnumValN(KGEN::CompilationOptions::kFullDebugInfo, "full",
                             "Generate full debug info.")),
-      cl::init(CompilationOptions::kNoDebug)};
+      cl::init(KGEN::CompilationOptions::kNoDebug)};
 
-  cl::opt<CompilationOptions::DebugAtLevel> debugAtLevel{
+  cl::opt<KGEN::CompilationOptions::DebugAtLevel> debugAtLevel{
       "debug-at",
       cl::desc("Generate debug info for the giving abstraction, instead of the "
                "input"),
-      cl::values(clEnumValN(CompilationOptions::kDebugAtLLVM, "llvm",
+      cl::values(clEnumValN(KGEN::CompilationOptions::kDebugAtLLVM, "llvm",
                             "Generate debug info for the LLVM level."))};
 
   cl::opt<bool> enableXRayInstrumentation{
@@ -124,24 +118,8 @@ public:
                "traced by time profiler."),
       cl::init(0)};
 
-  cl::opt<std::string> targetTriple{
-      "target-triple",
-      cl::desc("Compilation target triple. Defaults to the host target."),
-      cl::init(llvm::sys::getDefaultTargetTriple())};
-
-  cl::opt<std::string> targetCpu{
-      "target-cpu",
-      cl::desc("Compilation target CPU. Defaults to the host CPU."),
-      cl::init(llvm::sys::getHostCPUName().str())};
-
-  cl::opt<std::string> targetFeatures{
-      "target-features",
-      cl::desc(
-          "Compilation target CPU features. Defaults to the host features."),
-      cl::init(getHostCPUFeatures())};
-
   /// Return a compilation options object based on the command line options.
-  CompilationOptions getCompilationOptions() const {
+  KGEN::CompilationOptions getCompilationOptions() const {
     // Grab the optimization level. For now use an aggressive default.
     unsigned optLevel = 3;
     if (optLevel0)
@@ -152,11 +130,11 @@ public:
       optLevel = 2;
 
     // Grab the debug-at level.
-    std::optional<CompilationOptions::DebugAtLevel> debugAt;
+    std::optional<KGEN::CompilationOptions::DebugAtLevel> debugAt;
     if (debugAtLevel.getNumOccurrences())
       debugAt = debugAtLevel;
-    return CompilationOptions(optLevel, debugInfoLevel, debugAt,
-                              enableXRayInstrumentation);
+    return KGEN::CompilationOptions(optLevel, debugInfoLevel, debugAt,
+                                    enableXRayInstrumentation);
   }
 
 private:
@@ -212,7 +190,6 @@ private:
   std::optional<TimeTraceProfiler> profiler;
   std::filesystem::path outputFilePath;
 };
-} // namespace KGEN
 } // namespace M
 
 #endif // KGEN_CLOPTIONS_H
