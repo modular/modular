@@ -1040,7 +1040,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 
   // Otherwise, we must have a concrete RValue, emit an indirect call.
   auto crVal = calleeVal.getIfCRValue();
-  return OverloadSet::emitIndirectCall(crVal, operands, dest, this, emitter);
+  return emitter.emitIndirectCall(crVal, operands, dest, this);
 }
 
 AnyValue SliceNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
