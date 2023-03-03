@@ -92,33 +92,28 @@ struct TypeNameHolder {
   static inline constexpr auto value = typeNameArray<T>();
 };
 
-/// Returns the compile-time name of the type T.
+/// Returns the compile-time name of the type T for compilers that support the
+/// 'pretty' name representation for type T.  If the compiler does not support
+/// it, an error is given at build time.
 ///
 /// Currently this only supports getting the demangled type name for a type, and
 /// so you cannot specify a non-type (e.g. an NTTP, enum class, etc.) right now.
-template <class T>
-constexpr std::string_view typeNameFor() {
-  constexpr auto &value = TypeNameHolder<T>::value;
-  return std::string_view{value.data(), value.size()};
-}
-
-/// Returns the 'pretty' name of T for compilers which support it.  Otherwise,
-/// gives an error at build time.
 ///
 /// TODO: Should we encounter issues with non-uniqueness of type names (eg
-/// because of types in anonymous namespaces) then this template can be
-/// specialized, possibly with macro helpers to make it seamless.  We don't
-/// currently have this use case, but leaving the door open with this design for
-/// now.
+/// because of types in anonymous namespaces) then, we can introduce a
+/// customization point (such as a class template with static function) that we
+/// can specialize for certain types.  We don't currently have this use case
+/// though.
 ///
 /// TODO: Should we need to build with toolchains which do not support
 /// the PRETTY_FUNCTION machinery then we'll need to pre-register every type
 /// manually. See third-party/llvm-project/mlir/include/mlir/Support/TypeID.h
 /// for a macro style to mimic.
-template <typename T>
-struct TypeNameResolver {
-  static std::string_view getTypeName() { return typeNameFor<T>(); }
-};
+template <class T>
+constexpr std::string_view typeNameFor() {
+  constexpr auto &value = TypeNameHolder<T>::value;
+  return std::string_view{value.data(), value.size()};
+}
 
 //===----------------------------------------------------------------------===//
 // Internal helpers
@@ -176,8 +171,8 @@ std::atomic<RawTypeID> TypeIDCache<T>::cachedID = kInvalidRawTypeID;
 /// The 'root of uniqueness' for types is their 'pretty' names. It is not
 /// recommended to use types from anonymous namespaces to avoid accidental
 /// name collision.
-/// TODO: If this becomes an issue make supplying TypeNameResolver overloads
-/// more user friendly.
+/// TODO: If this becomes an issue, we'll need to introduce a customization
+/// point for types to specify their 'pretty' name that is unique.
 class TypeID {
 public:
   /// Constructs the 'invalid' type id.
@@ -199,8 +194,7 @@ public:
     /// Slow path: We'll use the string name of T to ensure key uniqueness,
     /// and heavyweight synchronization in fn over the global type info table
     /// to ensure id uniqueness.
-    id = getSlow(Detail::TypeNameResolver<T>::getTypeName(),
-                 Detail::valueDestructorFn<T>);
+    id = getSlow(Detail::typeNameFor<T>(), Detail::valueDestructorFn<T>);
     /// Cache the id. We don't care if we are not the first to make the store
     /// since the underlying id will be consistent over all threads.
     Detail::TypeIDCache<T>::cachedID.store(id, std::memory_order_relaxed);

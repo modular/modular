@@ -29,13 +29,6 @@ struct DoubleClassTemplate {
 using FooBar = DoubleClassTemplate<SingleClassTemplate<int>, bool>;
 
 struct Baz {};
-
-template <>
-struct Detail::TypeNameResolver<Baz> {
-  // This is how you override the preferred name with a custom type.
-  static StringRef getTypeName() { return "my_name"; }
-};
-
 struct Foo {};
 
 namespace ns1::ns2 {
@@ -121,7 +114,7 @@ TEST(TypeID, Smoke) {
 
   EXPECT_EQ(typeIDsA.front().getTypeName(),
             "DoubleClassTemplate<SingleClassTemplate<int>, bool>");
-  EXPECT_EQ(typeIDsB.front().getTypeName(), "my_name");
+  EXPECT_EQ(typeIDsB.front().getTypeName(), "Baz");
 
   for (size_t i = 1; i < numThreads; ++i) {
     EXPECT_EQ(typeIDsA[i], typeIDsA.front());
