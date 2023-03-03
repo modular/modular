@@ -16,7 +16,7 @@ from Buffer import (
 from BuildInfo import is_relwithdebinfo_build, is_debug_build
 from Index import Index, StaticIntTuple
 from Int import Int
-from List import create_kgen_list
+from List import create_kgen_list, VariadicList
 from Matrix import Matrix
 from Memory import stack_allocation
 from Pointer import DTypePointer
@@ -25,6 +25,7 @@ from SIMD import SIMD
 from TargetInfo import simd_byte_width
 from Transpose import transpose_inplace
 from Tuple import StaticTuple
+from Functional import tile
 
 
 fn get_pack_data_size() -> Int:
@@ -1198,29 +1199,7 @@ struct TiledMatmul[
             transpose_a: True if a is in transposed layout.
             transpose_b: True if b is in transposed layout.
         """
-        let matmul = TiledMatmul[
-            config,
-            accum_type,
-            value_type,
-            transpose_a,
-            transpose_b,
-        ](c, a, b)
-        matmul._run()
 
-    fn __new__(
-        c: NDBuffer[2, config.shape_c, accum_type],
-        a: NDBuffer[2, config.shape_a, value_type],
-        b: NDBuffer[2, config.shape_b, value_type],
-    ) -> TiledMatmul[config, accum_type, value_type, transpose_a, transpose_b,]:
-        """Constructor of a tiled matmul instance with parameter derivation.
-
-        Args:
-            c(NDBuffer): Pre-allocated buffer space for result.
-            a(NDBuffer): Operand A of the matmul.
-            b(NDBuffer): Operand B of the mamtul.
-            transpose_a: True if a is in transposed layout.
-            transpose_b: True if b is in transposed layout.
-        """
         let gemm_shape = GemmShape.get[
             config.shape_c,
             config.shape_a,
@@ -1230,10 +1209,12 @@ struct TiledMatmul[
             transpose_a,
             transpose_b,
         ](c, a, b)
+
         let tile_n_k = calculate_tile_n_k[
             config.pack_data_size, config.pack_inner_size
         ](gemm_shape)
-        return TiledMatmul[
+
+        let matmul = TiledMatmul[
             config,
             accum_type,
             value_type,
@@ -1241,59 +1222,7 @@ struct TiledMatmul[
             transpose_b,
         ] {c: c, a: a, b: b, tile_n_k: tile_n_k, gemm_shape: gemm_shape}
 
-    fn _outer_m_loop_row_helper[
-        skip_col_bound: Bool,
-        m_loop_pack_inner_size: __mlir_type.index,
-        RowSize: __mlir_type.index,
-    ](
-        self,
-        b_packed: NDBuffer[3, config.packed_shape, value_type],
-        global_offset: GemmShape,
-        sub_tile_n_k: StaticIntTuple[2],
-        start_idx: Int,
-        valid_row_count: Int,
-    ) -> Int:
-        """
-        Helper function: Process blocks of rows of the gemm space with the given
-          RowBlock size until the given row block does not completely fit in
-          valid operand bound.
-
-            Args:
-                skip_col_bound(i1): Column dimension boundary check will be
-                    statically skipped if true.
-                m_loop_pack_inner_size(index): Inner dimension of the packed data
-                    layout.
-                RowSize(index): Size of row blocks to proceed with on the tile.
-                b_packed(NDBuffer): B matrix in packed layout.
-                global_offset(GemmShape): 3D global offset within the whole
-                    matmul problem space.
-                sub_tile_n_k(StaticTuple): Dynamic tile size to use, in
-                    (TileN, TileK).
-                start_idx(Int): row idx to start from.
-                valid_row_count(Int): number of valid rows to process from the
-                    start_idx.
-        """
-        var row_idx = start_idx
-        while row_idx <= (valid_row_count - RowSize):
-            MatmulInnerLoopBPacked[
-                config.shape_a,
-                config.shape_c,
-                config.packed_shape,
-                accum_type,
-                value_type,
-                config.simd_size,
-                RowSize,
-                m_loop_pack_inner_size,
-                skip_col_bound,
-            ].run(
-                self.c,
-                self.a,
-                b_packed,
-                global_offset + GemmShape(row_idx, 0, 0),
-                sub_tile_n_k,
-            )
-            row_idx += RowSize
-        return row_idx
+        matmul._run()
 
     fn _outer_m_loop_helper[
         skip_col_bound: Bool, m_loop_pack_inner_size: __mlir_type.index
@@ -1353,28 +1282,30 @@ struct TiledMatmul[
         let sub_tile_n_k = Index(sub_tile_n, sub_tile_k)
         let valid_row_count = self.c.dim[0]() - global_offset.M
 
-        # Launch largest row blocks possible and
-        #  then reduce row size to maximizing unrolled tiles.
-        var row_idx: Int = 0
-        row_idx = self._outer_m_loop_row_helper[
-            skip_col_bound, m_loop_pack_inner_size, config.a_row_size
-        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
+        @always_inline
+        fn row_iteration[tile_size: Int](row_offset: Int):
+            MatmulInnerLoopBPacked[
+                config.shape_a,
+                config.shape_c,
+                config.packed_shape,
+                accum_type,
+                value_type,
+                config.simd_size,
+                tile_size.__as_mlir_index(),
+                m_loop_pack_inner_size,
+                skip_col_bound,
+            ].run(
+                self.c,
+                self.a,
+                b_packed,
+                global_offset + GemmShape(row_offset, 0, 0),
+                sub_tile_n_k,
+            )
 
-        row_idx = self._outer_m_loop_row_helper[
-            skip_col_bound, m_loop_pack_inner_size, 4
-        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
-
-        row_idx = self._outer_m_loop_row_helper[
-            skip_col_bound, m_loop_pack_inner_size, 3
-        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
-
-        row_idx = self._outer_m_loop_row_helper[
-            skip_col_bound, m_loop_pack_inner_size, 2
-        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
-
-        row_idx = self._outer_m_loop_row_helper[
-            skip_col_bound, m_loop_pack_inner_size, 1
-        ](b_packed, global_offset, sub_tile_n_k, row_idx, valid_row_count)
+        tile[row_iteration, VariadicList[Int](config.a_row_size, 4, 3, 2, 1)](
+            0,  # starting row offset
+            valid_row_count,  # row bound
+        )
 
     #  Pack a subtile of B and iterate through all the rows of C.
     fn _outer_m_loop[
@@ -1527,26 +1458,16 @@ struct TiledMatmul[
         Args:
             b_packed(NDBuffer): B matrix in packed layout.
         """
-        let tile_k = self.tile_n_k[1]
-        let valid_k_count = self.gemm_shape.K
-        var k_idx: Int = 0
+        # Each tiled iteration on the k dimension.
+        @always_inline
+        fn k_iteration(k_offset: Int, k_tile_size: Int):
+            self._outer_n_loop(b_packed, GemmShape(0, 0, k_offset), k_tile_size)
 
-        # Proceed with the largest K tile until crossing
-        #  valid boundary.
-        while k_idx <= (valid_k_count - tile_k):
-            self._outer_n_loop(b_packed, GemmShape(0, 0, k_idx), tile_k)
-            k_idx += tile_k
-
-        # Launch another k tile to clean up the residue:
-        let remaining_k = valid_k_count - k_idx
-
-        # Do a residue tile if original gemm shape K is not
-        #  a multiple of tile K.
-        if remaining_k > 0:
-            # TODO: possibly need to re-adjust N tile here, if the
-            #  residue K is small then could use L2 cache better by
-            #  having a wider N.
-            self._outer_n_loop(b_packed, GemmShape(0, 0, k_idx), remaining_k)
+        tile[k_iteration](
+            0,  # k offset
+            self.gemm_shape.K,  # valid K count
+            self.tile_n_k[1],  # max tile k size
+        )
 
     # Utility to reshape the dynamic buffer:
     #  need to remap every time K and pack_inner_size changes.
