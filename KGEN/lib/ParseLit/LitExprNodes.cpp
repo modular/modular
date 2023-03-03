@@ -1239,36 +1239,32 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   // __getitem__ method.
   auto baseType = subValue.getRValueType();
 
-  // If there is no __getitem__ at all, then this is not a subscriptable type.
-  auto emitGetItemError = [&]() {
-    emitter.emitError(getLoc(), "")
-        << baseType << " does not implement the `__getitem__` method"
-        << base->getRange();
-  };
-  OverloadSet getItem(baseType, "__getitem__", this, CallSyntax::kSubscript,
-                      emitter.shared, emitGetItemError);
-  if (getItem.isNull())
-    return {};
-
-  // Okay, we have one, that's a positive sign. In the case of multiple index
-  // values, we could either pass this as a Python style tuple, or could pass as
-  // multiple arguments.
-
   // TODO: If we have multiple indexes, package up the values in a tuple value
   // and try to see if this works.
   if (indexValues.size() > 2) {
     // TODO(Tuples). need tuples :-)
   }
 
-  // Next, check the multiple argument path.
-  if (getItem && succeeded(getItem.filterOverloadSet(
-                     indexValues,
-                     /*allowImplicitConversions=*/true,
-                     /*emitDiagnosticOnFailure=*/false, emitter))) {
-    // Ok, this looks like it will work.
-    // TODO(Computed LValues): We need to look up __setitem__ and have a better
-    // model for computed LValues.
+  // If there is no __getitem__ at all, then this is not a subscriptable type.
+  auto emitGetItemError = [&]() {
+    emitter.emitError(getLoc(), "")
+        << baseType << " does not implement the `__getitem__` method"
+        << base->getRange();
+  };
+  OverloadSet getItem(baseType, "__getitem__", indexValues, this,
+                      CallSyntax::kSubscript, emitter, emitGetItemError);
+  if (getItem.isNull()) {
+    // TODO: check the multiple argument path.
+
+    return {};
   }
+
+  // Okay, we have one, that's a positive sign. In the case of multiple index
+  // values, we could either pass this as a Python style tuple, or could pass as
+  // multiple arguments.
+
+  // TODO(Computed LValues): We need to look up __setitem__ and have a better
+  // model for computed LValues.
 
   // Finally, just emit the call to __getitem__.
   return getItem.emitCall(indexValues, dest, emitter);
@@ -1640,30 +1636,22 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 
   // Check to see if we have a forward version of this function on the primary
   // receiver.
-  OverloadSet callee(lhs.ir.getRValueType(), specialFnInfo.name, callNode,
-                     CallSyntax::kOperator, emitter.shared,
-                     [&]() { /*no error*/ });
-  if (callee && succeeded(callee.filterOverloadSet(
-                    argValues,
-                    /*allowImplicitConversions=*/true,
-                    /*emitDiagnosticOnFailure=*/false, emitter))) {
+  OverloadSet callee(lhs.ir.getRValueType(), specialFnInfo.name, argValues,
+                     callNode, CallSyntax::kOperator, emitter,
+                     /*no error*/ {});
+  if (callee)
     return callee.emitCall(argValues, dest, emitter);
-  }
 
   // Check to see if we have the reverse version of this operator.
   auto reversedFnInfo = getOpSpecialFunctions(kind, /*isReversed=*/true);
   if (reversedFnInfo.kind != SpecialFunctionKind::kNormal) {
     // Swap the operand order.
     std::swap(argValues[0], argValues[1]);
-    callee = OverloadSet(rhs.ir.getType(), reversedFnInfo.name, callNode,
-                         CallSyntax::kReversedOperator, emitter.shared,
-                         [&]() { /*no error*/ });
-    if (callee && succeeded(callee.filterOverloadSet(
-                      argValues,
-                      /*allowImplicitConversions=*/true,
-                      /*emitDiagnosticOnFailure=*/false, emitter))) {
+    callee = OverloadSet(rhs.ir.getType(), reversedFnInfo.name, argValues,
+                         callNode, CallSyntax::kReversedOperator, emitter,
+                         /*no error*/ {});
+    if (callee)
       return callee.emitCall(argValues, dest, emitter);
-    }
 
     // Swap these back so we emit the right error.
     std::swap(argValues[0], argValues[1]);

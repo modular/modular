@@ -1123,7 +1123,7 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
                                                   /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
   if (resultDecls.empty()) {
-    if (!lookupResult.isErroneous()) // Already diagnosed?
+    if (!lookupResult.isErroneous() && errorHandler) // Already diagnosed?
       errorHandler();
     return;
   }
@@ -1136,6 +1136,31 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
   // Handle method references, which might be overloaded.
   *this = OverloadSet(methodName, resultDecls, type.getParamBindings(), expr,
                       syntax);
+}
+
+/// Form an OverloadSet with a lookup of a named method on the specified type,
+/// filtered to match a concrete operand set.
+/// If successful, this provides a non-null OverloadSet.
+OverloadSet::OverloadSet(ASTType type, StringRef methodName,
+                         ArrayRef<ASTExprAnd<AnyValue>> operands,
+                         const ExprNode *callExpr, CallSyntax syntax,
+                         ExprEmitter &emitter,
+                         std::function<void()> errorHandler)
+    : OverloadSet(type, methodName, callExpr, syntax, emitter.shared,
+                  errorHandler) {
+
+  // If the core lookup failed, don't filter.
+  if (isNull())
+    return;
+
+  // Filter the overload set with the actual operands list.  If this fails,
+  // report an error (if we have an error handler) and reset to a null state so
+  // the client can check this.
+  bool shouldPrintError = bool(errorHandler);
+  if (failed(filterOverloadSet(operands, /*allowImplicitConversions=*/true,
+                               /*emitDiagnosticOnFailure=*/shouldPrintError,
+                               emitter)))
+    fnDecls.clear();
 }
 
 /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
@@ -1242,7 +1267,7 @@ bool OverloadSet::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
   // `__new__` method on the expected type.
   OverloadSet callee(requiredType, "__new__", value.expr,
                      CallSyntax::kImplicitConvert, emitter.shared,
-                     [&]() { /*no error emission on failure */ });
+                     /*no error emission on failure */ {});
 
   // If there are no viable candidates for the implicit conversion, we fail.
   if (!callee)
@@ -1251,6 +1276,9 @@ bool OverloadSet::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
   // If we have at least one candidate, we check to see if any of them can
   // work. We disable implicit conversions though, to prevent converting
   // T -> S -> U in one step.
+
+  // This needs to call filterOverloadSet manually because we cannot allow
+  // implicit conversions here.
   return succeeded(callee.filterOverloadSet({value},
                                             /*allowImplicitConversions=*/false,
                                             /*emitDiagnosticOnFailure=*/false,
