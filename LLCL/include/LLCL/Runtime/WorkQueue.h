@@ -29,13 +29,12 @@ class LLCLAllocator;
 using TaskFunction = llvm::unique_function<void()>;
 
 /// Time profiling entries for capturing the running time of tasks.
-using WorkProfilerEntry =
-    TimeTraceProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 1)>;
+using WorkProfilerEntry = ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 1)>;
 
 /// Time profiling entries for capturing the waiting time of tasks and
 /// other internal LLCL measurements.
 using InternalProfilerEntry =
-    TimeTraceProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 2)>;
+    ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 2)>;
 
 /// This is an interface to various implementations of work queues:
 /// different execution methods which are often current. These
