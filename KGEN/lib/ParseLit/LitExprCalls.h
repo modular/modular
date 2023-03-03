@@ -169,9 +169,10 @@ public:
                                   ExprEmitter &emitter);
 
   /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
-  /// error and return null.
+  /// error and return null.  If `expectedType` is set, it is used to filter
+  /// the overload set before emitting it.
   CRValue emitAsCRValue(ExprEmitter &emitter, ValueDest dest,
-                        const ExprNode *expr) const;
+                        const ExprNode *expr, ASTType expectedType = {});
 
   /// Emit a function call to the specified callee with the specified operand
   /// values.  This emits an error and returns null on failure.
@@ -203,6 +204,12 @@ private:
   /// one decl provided) or a variadic that contains all the possible adaptive
   /// overloads.
   PRValue getCallee() const;
+
+  /// Filter down and complete this overload set based on knowledge that we need
+  /// to produce a function pointer with the specified type.
+  LogicalResult filterOverloadSetForValueType(ASTType functionType,
+                                              const ExprNode *callExpr,
+                                              ExprEmitter &emitter);
 
   /// Emit an indirect call to a resolved value.
   /// TODO: Move to ExprEmitter.
