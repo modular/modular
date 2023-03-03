@@ -20,11 +20,9 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/ToolUtilities.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
-#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
 
 using namespace M;
-using namespace KGEN;
 using namespace mlir;
 
 //===--------------------------------------------------------------------===//
@@ -38,6 +36,7 @@ namespace {
 /// more readable.
 struct ProcessBuffer {
   LLCL::Runtime &runtime;
+  KGEN::ExecutionEngine &execEngine;
   KGENCLOptions &clOptions;
 
   LogicalResult operator()(MLIRContext *ctx, llvm::SourceMgr &sourceMgr) const {
@@ -66,20 +65,11 @@ struct ProcessBuffer {
     // specification or use the host target.
     TargetInfoAttr target = getTargetInfo(*module);
     if (!target) {
-      ErrorOr<TargetInfoAttr> hostTarget =
-          getTargetInfoFor(ctx, clOptions.targetTriple, clOptions.targetCpu,
-                           clOptions.targetFeatures);
+      ErrorOr<TargetInfoAttr> hostTarget = KGEN::getHostTargetInfo(ctx);
       if (hostTarget.isError())
         return mlir::emitError(module->getLoc(), hostTarget.getError());
       target = hostTarget.takeValue();
       setTargetInfo(*module, target);
-    } else {
-      if (target.getTripleStr() != clOptions.targetTriple) {
-        mlir::emitWarning(module->getLoc(), "module target ")
-            << target.getTripleStr() << " does not match command line option "
-            << clOptions.targetTriple
-            << ", command line target will be ignored";
-      }
     }
 
     SymbolTable symtab(*module);
@@ -106,15 +96,6 @@ struct ProcessBuffer {
         return Error("could not find func '" + funcName + "'.");
       return func;
     };
-
-    auto engineOr = KGEN::ExecutionEngine::create(
-        target, clOptions.getCompilationOptions());
-    if (engineOr.isError()) {
-      clOptions.reportError(engineOr.getError());
-      return failure();
-    }
-
-    auto execEngine = std::move(*engineOr);
 
     // Add the module to the execution engine.
     if (auto err = execEngine.add("exec", std::move(standaloneObject)))
@@ -178,17 +159,19 @@ int main(int argc, char **argv) {
   std::unique_ptr<llvm::MemoryBuffer> inputFile =
       clOptions.openInputFileOrExit();
 
-  // Initialize the host target.
-  llvm::InitializeNativeTarget();
-  llvm::InitializeNativeTargetAsmParser();
-  llvm::InitializeNativeTargetAsmPrinter();
+  auto engineOr =
+      KGEN::ExecutionEngine::create(clOptions.getCompilationOptions());
+  if (engineOr.isError())
+    clOptions.reportError(engineOr.getError());
+
+  auto execEngine = std::move(*engineOr);
 
   // Provide a tool function that runs the requested ops, again, so we can
   // re-use it.
   auto toolFn = [&](std::unique_ptr<llvm::MemoryBuffer> chunkBuffer,
                     raw_ostream &os) {
     return clOptions.configureMLIRContextAndSourceMgrAndExecute(
-        std::move(chunkBuffer), ProcessBuffer{runtime, clOptions});
+        std::move(chunkBuffer), ProcessBuffer{runtime, execEngine, clOptions});
   };
 
   // Process the file.

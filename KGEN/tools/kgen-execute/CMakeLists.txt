@@ -7,10 +7,6 @@
 add_modular_tool(kgen-execute
   kgen-execute.cpp
 
-  LINK_COMPONENTS
-  native
-  nativecodegen
-
   LINK_LIBS PRIVATE
   DebugInfoTransforms
   KGENCLOptions

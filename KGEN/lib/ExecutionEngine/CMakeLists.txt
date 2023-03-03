@@ -13,6 +13,8 @@ add_modular_mlir_library(KGENExecutionEngine
   OrcTargetProcess
   JITLink
   MC
+  native
+  nativecodegen
 
   LINK_LIBS PUBLIC
   KGENDialect

@@ -31,7 +31,6 @@
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
 
 using namespace M;
@@ -157,35 +156,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
       LLCL::createSingleThreadWorkQueue());
 
-  // Initialize the host target.
-  llvm::InitializeNativeTarget();
-  llvm::InitializeNativeTargetAsmParser();
-  llvm::InitializeNativeTargetAsmPrinter();
-
-  // Find a target specification or construct one using the commandline options.
-  TargetInfoAttr target = getTargetInfo(*theModule);
-  if (target) {
-    if (target.getTripleStr() != clOptions.targetTriple ||
-        target.getCpu() != clOptions.targetCpu ||
-        target.getFeatures() != clOptions.targetFeatures) {
-      mlir::emitWarning(theModule->getLoc(),
-                        "module target does not match command line "
-                        "specification and will be overwritten");
-    }
-    target = nullptr;
-  }
-  if (!target) {
-    ErrorOr<TargetInfoAttr> targetOr =
-        getTargetInfoFor(ctx, clOptions.targetTriple, clOptions.targetCpu,
-                         clOptions.targetFeatures);
-    if (targetOr.isError()) {
-      mlir::emitError(theModule->getLoc(), targetOr.getError());
-      return EXIT_FAILURE;
-    }
-    target = targetOr.takeValue();
-  }
-
-  elaborateModule(pm, runtime, target, {clOptions.enableSearch});
+  elaborateModule(pm, runtime, {clOptions.enableSearch});
 
   if (failed(pm.run(*theModule)))
     return clOptions.reportError("compilation failed");
@@ -196,6 +167,9 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (failed(compiler))
     return clOptions.reportError(Twine("could not create object compiler: ") +
                                  compiler.getError());
+
+  TargetInfoAttr target = getTargetInfo(*theModule);
+  assert(target && "no target after elaboration?");
 
   // This produces a standalone object for all the objects we requested.
   auto standaloneOr = compiler->produceStandaloneObject(
@@ -221,12 +195,8 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
 
   assert(clOptions.cmd == LitCommand::kExecute);
-  // We can only execute on the host machine.
-  if (llvm::sys::getDefaultTargetTriple() != target.getTripleStr())
-    return clOptions.reportError("can only execute on host target");
-
   // Now create the execution engine so we can JIT.
-  auto engineOr = ExecutionEngine::create(target, compilationOptions);
+  auto engineOr = ExecutionEngine::create(compilationOptions);
   if (failed(engineOr))
     return clOptions.reportError(engineOr.getError());
   ExecutionEngine engine = std::move(*engineOr);

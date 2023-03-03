@@ -25,7 +25,6 @@ void generateLibraryFile(mlir::PassManager &pm);
 /// cleanup passes. Its purpose is to produce the format that we will end up
 /// using to produce an object file. This function modifies the module in-place.
 void elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
-                     TargetInfoAttr target,
                      const ElaborateGeneratorsOptions &elaborateOptions);
 } // namespace M::KGEN
 

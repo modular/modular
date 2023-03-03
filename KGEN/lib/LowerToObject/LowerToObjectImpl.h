@@ -1,3 +1,4 @@
+//===----------------------------------------------------------------------===//
 //
 // This file is Modular Inc proprietary.
 //
@@ -18,6 +19,11 @@ class TargetMachine;
 
 namespace M::KGEN {
 class CompilationOptions;
+
+/// Setup the machine properties from the provided target.
+ErrorOr<std::unique_ptr<llvm::TargetMachine>>
+createTargetMachine(TargetInfoAttr targetInfo,
+                    const CompilationOptions &options, bool isJIT);
 
 /// Compile the given LLVM module to an object file and write it to objStream.
 LogicalResult compileLLVMToObject(llvm::Module &module,
