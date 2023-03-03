@@ -9,7 +9,6 @@
 #include "Cache/CacheDialect/CacheOps.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "Support/STLExtras.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -39,21 +38,23 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
-        runtime, createLeakCheckAllocator(createMallocAllocator()),
-        createSingleThreadWorkQueue());
+    RuntimeAndCache<RegionCacheKey> runtimeAndCache(cacheDir.getValue(),
+                                                    runtime);
+    if (auto errOr = runtimeAndCache.setup()) {
+      getOperation()->emitError() << errOr.getError();
+      signalPassFailure();
+      return;
+    }
 
-    // Bring up the cache.
-    auto cache = RCRef<BlobCache<RegionCacheKey>>::create(
-        getFilesystemBackend(*rt, std::filesystem::path(cacheDir.getValue())));
     // Deflate each symbol.
     SmallVector<AnyAsyncValueRef> results;
     getOperation().walk([&](Operation *op) {
       if (!op->hasAttr(SymbolTable::getSymbolAttrName()))
         return;
 
-      results.push_back(
-          deflateOp(op, cache.copy(), AsyncValueRef<Chain>::createReady(*rt)));
+      results.push_back(deflateOp(
+          op, runtimeAndCache.getCacheRef(),
+          AsyncValueRef<Chain>::createReady(runtimeAndCache.getRuntime())));
       // Gotta wait cause it could be nested.
       await(results.back());
     });
@@ -66,7 +67,7 @@ public:
   }
 
 private:
-  Runtime *runtime;
+  Runtime *runtime = nullptr;
 };
 } // namespace
 
@@ -94,21 +95,23 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
-        runtime, createLeakCheckAllocator(createMallocAllocator()),
-        createSingleThreadWorkQueue());
+    RuntimeAndCache<RegionCacheKey> runtimeAndCache(cacheDir.getValue(),
+                                                    runtime);
+    if (auto errOr = runtimeAndCache.setup()) {
+      getOperation()->emitError() << errOr.getError();
+      signalPassFailure();
+      return;
+    }
 
-    // Bring up the cache.
-    auto cache = RCRef<BlobCache<RegionCacheKey>>::create(
-        getFilesystemBackend(*rt, std::filesystem::path(cacheDir.getValue())));
     // Inflate each deflated op.
     SmallVector<AnyAsyncValueRef> results;
     getOperation().walk([&](Operation *op) {
       if (!op->hasAttr(getRegionHashAttrName()))
         return;
 
-      results.push_back(
-          inflateOp(op, cache.copy(), AsyncValueRef<Chain>::createReady(*rt)));
+      results.push_back(inflateOp(
+          op, runtimeAndCache.getCacheRef(),
+          AsyncValueRef<Chain>::createReady(runtimeAndCache.getRuntime())));
       // Gotta wait cause it could be nested.
       await(results.back());
     });
@@ -121,7 +124,7 @@ public:
   }
 
 private:
-  Runtime *runtime;
+  Runtime *runtime = nullptr;
 };
 } // namespace
 
@@ -150,19 +153,20 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
-        runtime, createLeakCheckAllocator(createMallocAllocator()),
-        createSingleThreadWorkQueue());
+    RuntimeAndCache<DataCacheKey> runtimeAndCache(cacheDir.getValue(), runtime);
+    if (auto errOr = runtimeAndCache.setup()) {
+      getOperation()->emitError() << errOr.getError();
+      signalPassFailure();
+      return;
+    }
 
-    // Bring up the cache.
-    auto cache = RCRef<BlobCache<DataCacheKey>>::create(
-        getFilesystemBackend(*rt, std::filesystem::path(cacheDir.getValue())));
     // Deflate each constant.
     SmallVector<AnyAsyncValueRef> results;
     getOperation().walk([&](Operation *op) {
       if (op->hasTrait<OpTrait::ConstantLike>())
         results.push_back(deflateConstant(
-            op, cache.copy(), AsyncValueRef<Chain>::createReady(*rt)));
+            op, runtimeAndCache.getCacheRef(),
+            AsyncValueRef<Chain>::createReady(runtimeAndCache.getRuntime())));
     });
 
     await(results);
@@ -174,7 +178,7 @@ public:
   }
 
 private:
-  Runtime *runtime;
+  Runtime *runtime = nullptr;
 };
 } // namespace
 
@@ -204,19 +208,20 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    auto rt = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
-        runtime, createLeakCheckAllocator(createMallocAllocator()),
-        createSingleThreadWorkQueue());
+    RuntimeAndCache<DataCacheKey> runtimeAndCache(cacheDir.getValue(), runtime);
+    if (auto errOr = runtimeAndCache.setup()) {
+      getOperation()->emitError() << errOr.getError();
+      signalPassFailure();
+      return;
+    }
 
-    // Bring up the cache.
-    auto cache = RCRef<BlobCache<DataCacheKey>>::create(
-        getFilesystemBackend(*rt, std::filesystem::path(cacheDir.getValue())));
     // Inflate each constant.
     SmallVector<AnyAsyncValueRef> results;
     getOperation().walk([&](Operation *op) {
       if (op->hasTrait<OpTrait::ConstantLike>())
         results.push_back(inflateConstant(
-            op, cache.copy(), AsyncValueRef<Chain>::createReady(*rt)));
+            op, runtimeAndCache.getCacheRef(),
+            AsyncValueRef<Chain>::createReady(runtimeAndCache.getRuntime())));
     });
 
     await(results);
@@ -228,7 +233,7 @@ public:
   }
 
 private:
-  Runtime *runtime;
+  Runtime *runtime = nullptr;
 };
 } // namespace
 
