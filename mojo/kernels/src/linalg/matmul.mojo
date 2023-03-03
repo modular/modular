@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, assert_param_bool
+from Assert import assert_param, assert_param_bool, debug_assert
 
 from Buffer import (
     NDBuffer,
@@ -317,65 +317,37 @@ struct PackMatrixRows[
             pack_tile_dim(StaticIntTuple): 2D dimension tuple describing the
                 size of the packed tile.
         """
-        let instance = PackMatrixRows[
-            original_shape, packed_shape, type, simd_size, row_inner_size
-        ](packed_matrix, original_matrix, global_offset, pack_tile_dim)
-        instance._pack()
-
-    fn __new__(
-        packed_matrix: NDBuffer[3, packed_shape, type],
-        original_matrix: NDBuffer[2, original_shape, type],
-        global_offset: StaticIntTuple[2],
-        pack_tile_dim: StaticIntTuple[2],
-    ) -> PackMatrixRows[
-        original_shape, packed_shape, type, simd_size, row_inner_size
-    ]:
-        """Constructor of the algorithm instance for configuring parameters.
-        Args:
-            packed_matrix(NDBuffer): pre-allocated buffer space for packed
-                data.
-            original_matrix(NDBuffer): data buffer containing the original matrix
-                to pack.
-            global_offset(StaticIntTuple): offset to use when indexing the
-                original matrix.
-            pack_tile_dim(StaticIntTuple): 2D dimension tuple describing the
-                size of the packed tile.
-        """
         assert_param[row_inner_size % simd_size == 0]()
-        # Assumes NumberOfRowToPack is divisible by row_inner_size
-        # TODO: add dynamic checks.
 
-        # Calculate bound of valid data in original matrix.
+        # Calculate amount of valid data range on each dimension of the original
+        #  matrix.
         let valid_data_dim = Index(
             original_matrix.dim[0]() - global_offset[0],
             original_matrix.dim[1]() - global_offset[1],
         )
-        # Calculate multiple-of-simd bound of valid data.
-        let valid_simd_dim = Index(
-            round_down_to_block[simd_size](
-                Int.min(
-                    valid_data_dim[0],
-                    pack_tile_dim[0],
-                )
-            ),
-            round_down_to_block[simd_size](
-                Int.min(
-                    valid_data_dim[1],
-                    pack_tile_dim[1],
-                )
-            ),
-        )
-
-        return PackMatrixRows[
-            original_shape, packed_shape, type, simd_size, row_inner_size
-        ] {
+        let instance = Self {
             packed_matrix: packed_matrix,
             original_matrix: original_matrix,
             global_offset: global_offset,
             pack_tile_dim: pack_tile_dim,
             valid_data_dim: valid_data_dim,
-            valid_simd_dim: valid_simd_dim,
+            valid_simd_dim: Index(
+                round_down_to_block[simd_size](
+                    Int.min(
+                        valid_data_dim[0],
+                        pack_tile_dim[0],
+                    )
+                ),
+                round_down_to_block[simd_size](
+                    Int.min(
+                        valid_data_dim[1],
+                        pack_tile_dim[1],
+                    )
+                ),
+            ),
         }
+
+        instance._pack()
 
     fn _transpose_pack_helper[
         skip_row_bound: Bool,
@@ -617,9 +589,23 @@ struct PackMatrixCols[
             pack_tile_dim(StaticIntTuple): 2D dimension tuple describing the
                 size of the packed tile.
         """
-        let instance = PackMatrixCols[
-            original_shape, packed_shape, type, simd_size, column_inner_size
-        ](packed_matrix, original_matrix, global_offset, pack_tile_dim)
+        assert_param[column_inner_size % simd_size == 0]()
+        debug_assert(
+            pack_tile_dim[1] % column_inner_size == 0,
+            "Unimplemented tile pattern.",
+        )
+
+        let instance = Self {
+            packed_matrix: packed_matrix,
+            original_matrix: original_matrix,
+            global_offset: global_offset,
+            pack_tile_dim: pack_tile_dim,
+            valid_data_dim: Index(
+                original_matrix.dim[0]() - global_offset[0],
+                original_matrix.dim[1]() - global_offset[1],
+            ),
+        }
+
         instance._pack()
 
     fn __clone__(self&) -> Self:
@@ -630,42 +616,6 @@ struct PackMatrixCols[
             pack_tile_dim: self.pack_tile_dim,
             valid_data_dim: self.valid_data_dim,
         }
-
-    fn __new__(
-        packed_matrix: NDBuffer[3, packed_shape, type],
-        original_matrix: NDBuffer[2, original_shape, type],
-        global_offset: StaticIntTuple[2],
-        pack_tile_dim: StaticIntTuple[2],
-    ) -> PackMatrixCols[
-        original_shape, packed_shape, type, simd_size, column_inner_size
-    ]:
-        """Constructor of the algorithm instance for configuring parameters.
-        Args:
-            packed_matrix(NDBuffer): pre-allocated buffer space for packed
-                data.
-            original_matrix(NDBuffer): data buffer containing the original matrix
-                to pack.
-            global_offset(StaticIntTuple): offset to use when indexing the
-                original matrix.
-            pack_tile_dim(StaticIntTuple): 2D dimension tuple describing the
-                size of the packed tile.
-        """
-        var pack: PackMatrixCols[
-            original_shape, packed_shape, type, simd_size, column_inner_size
-        ]
-        pack.packed_matrix = packed_matrix
-        pack.original_matrix = original_matrix
-        pack.global_offset = global_offset
-        pack.pack_tile_dim = pack_tile_dim
-        pack.valid_data_dim = Index(
-            original_matrix.dim[0]() - global_offset[0],
-            original_matrix.dim[1]() - global_offset[1],
-        )
-
-        assert_param[column_inner_size % simd_size == 0]()
-        # Also assumes that pack_tile_dim[1] is divisible by column_inner_size.
-        # TODO: add dynamic checks.
-        return pack
 
     fn _pack_row_helper[
         # Skip column boundary checking in this row.
@@ -817,17 +767,15 @@ struct MatmulInnerLoopBPacked[
             tile_n_k(StaticIntTuple): 2D dimension tuple describing the
                 size of the packed tile of B.
         """
-        var instance = MatmulInnerLoopBPacked[
-            shape_a,
-            shape_c,
-            packed_shape,
-            accum_type,
-            value_type,
-            simd_size,
-            a_row_size,
-            pack_inner_size,
-            skip_boundary_check,
-        ](c, a, b_packed, global_offset, tile_n_k)
+        var instance = Self {
+            c: c,
+            a: a,
+            b_packed: b_packed,
+            global_offset: global_offset,
+            tile_n_k: tile_n_k,
+            c_bound: Index(c.dim[0](), c.dim[1]())
+            - Index(global_offset.M, global_offset.N),
+        }
         instance._run_inner_loop()
 
     fn __clone__(self&) -> Self:
@@ -839,54 +787,6 @@ struct MatmulInnerLoopBPacked[
             tile_n_k: self.tile_n_k,
             c_bound: self.c_bound,
         }
-
-    fn __new__(
-        c: NDBuffer[2, shape_c, accum_type],
-        a: NDBuffer[2, shape_a, value_type],
-        b_packed: NDBuffer[3, packed_shape, value_type],
-        global_offset: GemmShape,
-        tile_n_k: StaticIntTuple[2],
-    ) -> MatmulInnerLoopBPacked[
-        shape_a,
-        shape_c,
-        packed_shape,
-        accum_type,
-        value_type,
-        simd_size,
-        a_row_size,
-        pack_inner_size,
-        skip_boundary_check,
-    ]:
-        """Constructor of the inner loop instance with parameter derivations.
-        Args:
-            c(NDBuffer): pre-allocated buffer space for packed result.
-            a(NDBuffer): data buffer operand A.
-            b(NDBuffer): data buffer operand B in packed layout.
-            global_offset(StaticIntTuple): offset to use when indexing the
-                original matrix.
-            tile_n_k(StaticIntTuple): 2D dimension tuple describing the
-                size of the packed tile of B.
-        """
-        var inner_loop: MatmulInnerLoopBPacked[
-            shape_a,
-            shape_c,
-            packed_shape,
-            accum_type,
-            value_type,
-            simd_size,
-            a_row_size,
-            pack_inner_size,
-            skip_boundary_check,
-        ]
-        inner_loop.c = c
-        inner_loop.a = a
-        inner_loop.b_packed = b_packed
-        inner_loop.global_offset = global_offset
-        inner_loop.tile_n_k = tile_n_k
-        inner_loop.c_bound = Index(c.dim[0](), c.dim[1]()) - Index(
-            global_offset.M, global_offset.N
-        )
-        return inner_loop
 
     fn _initialize_c_tile(
         self,
