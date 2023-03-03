@@ -10,6 +10,7 @@ add_modular_tool(lit-lsp-server
   lit-lsp-server.cpp
 
   LINK_LIBS PRIVATE
+  KGENCLOptions
   ParseLit
   MLIRLspServerSupportLib
 )

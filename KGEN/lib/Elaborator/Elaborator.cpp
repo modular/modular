@@ -13,6 +13,7 @@
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "Elaborator.h"
 #include "IREvaluator.h"
+#include "KGEN/CLOptions.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -38,6 +39,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/TargetParser/Host.h"
 
 #define DEBUG_TYPE "kgen-elaborator"
 
@@ -1989,12 +1991,26 @@ namespace M::KGEN {
 namespace {
 /// Run the elaborator as a pass. The elaborator requires imports to be
 /// resolved, so first resolve imports and then elaborate.
-struct ElaborateGeneratorsPass
+class ElaborateGeneratorsPass
     : public KGEN::impl::ElaborateGeneratorsBase<ElaborateGeneratorsPass> {
-  ElaborateGeneratorsPass(LLCL::Runtime &runtime,
-                          const ElaborateGeneratorsOptions &options)
-      : ElaborateGeneratorsBase(options), runtime(&runtime) {}
-  using ElaborateGeneratorsBase::ElaborateGeneratorsBase;
+public:
+  ElaborateGeneratorsPass(const ElaborateGeneratorsOptions &options = {},
+                          LLCL::Runtime *runtime = nullptr,
+                          TargetInfoAttr target = nullptr)
+      : ElaborateGeneratorsBase(options), runtime(runtime), target(target) {}
+
+  LogicalResult initialize(MLIRContext *ctx) override {
+    // Default to the host target if one was not specified
+    if (!target) {
+      ErrorOr<TargetInfoAttr> targetOr =
+          getTargetInfoFor(ctx, llvm::sys::getDefaultTargetTriple(),
+                           llvm::sys::getHostCPUName(), getHostCPUFeatures());
+      if (targetOr.isError())
+        return mlir::emitError(UnknownLoc::get(ctx), targetOr.getError());
+      target = targetOr.takeValue();
+    }
+    return success();
+  }
 
   void runOnOperation() override {
     auto rt = ConditionallyOwnedPointer<LLCL::Runtime>::allocateIfNeeded(
@@ -2027,25 +2043,23 @@ struct ElaborateGeneratorsPass
     // IR, we must evaluate compile-time expressions, which is a target-specific
     // operation. Make the IR target-specific by attaching the required target
     // specification. For now, assume compilation for the host target.
-    ErrorOr<TargetInfoAttr> target = getHostTargetInfo(&getContext());
-    if (target.isError()) {
-      mlir::emitError(theModule.getLoc(), target.getError());
-      return signalPassFailure();
-    }
-    setTargetInfo(theModule, *target);
+    setTargetInfo(theModule, target);
 
-    if (failed(elaborateGenerators(analysis, paramCache, *rt, *target,
+    if (failed(elaborateGenerators(analysis, paramCache, *rt, target,
                                    primaryGenerators, shouldDoSearch)))
       return signalPassFailure();
   }
 
+private:
   /// An optional LLCL runtime pointer.
-  LLCL::Runtime *runtime = nullptr;
+  LLCL::Runtime *runtime;
+  /// The compilation target.
+  TargetInfoAttr target;
 };
 } // namespace
 
 std::unique_ptr<mlir::Pass>
-KGEN::createElaborateGenerators(LLCL::Runtime &runtime,
+KGEN::createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
                                 const ElaborateGeneratorsOptions &options) {
-  return std::make_unique<ElaborateGeneratorsPass>(runtime, options);
+  return std::make_unique<ElaborateGeneratorsPass>(options, &runtime, target);
 }

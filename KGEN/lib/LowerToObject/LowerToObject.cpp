@@ -21,7 +21,6 @@
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
-#include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
@@ -176,27 +175,16 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
 //===----------------------------------------------------------------------===//
 
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
-KGEN::createTargetMachine(TargetInfoAttr targetInfo,
-                          const CompilationOptions &options, bool isJIT) {
-  { // TODO: remove this once we have more cross-compilation capability.
-    auto targetTriple = llvm::sys::getDefaultTargetTriple();
-    assert(targetInfo.getTripleStr() == targetTriple &&
-           "TODO: target info must match host for now");
-  }
-
-  llvm::InitializeNativeTarget();
-  llvm::InitializeNativeTargetAsmPrinter();
-  llvm::InitializeNativeTargetAsmParser(); // needed for inline_asm
-
+KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
   std::string errorMessage;
-  const llvm::Target *target = llvm::TargetRegistry::lookupTarget(
-      targetInfo.getTripleStr(), errorMessage);
+  const llvm::Target *target =
+      llvm::TargetRegistry::lookupTarget(options.targetTriple, errorMessage);
   if (!target)
-    return Error("no target exists for '" + targetInfo.getTripleStr() +
+    return Error("no target exists for '" + options.targetTriple +
                  "': " + errorMessage);
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      targetInfo.getTripleStr(), targetInfo.getCpu(), targetInfo.getFeatures(),
+      options.targetTriple, options.targetCpu, options.targetFeatures,
       /*Options=*/{},
       /*RM=*/llvm::Reloc::Model::PIC_,
       /*CM=*/std::nullopt, /*OL=*/options.getCodeGenOptLevel(), /*JIT=*/isJIT));
@@ -207,36 +195,21 @@ KGEN::createTargetMachine(TargetInfoAttr targetInfo,
 }
 
 //===----------------------------------------------------------------------===//
-// getHostTargetInfo
+// getTargetInfoFor
 //===----------------------------------------------------------------------===//
 
-ErrorOr<TargetInfoAttr> KGEN::getHostTargetInfo(MLIRContext *ctx) {
-  std::string targetTriple = llvm::sys::getDefaultTargetTriple();
-
-  // Get the host CPU and set up to get the features.
-  std::string cpu(llvm::sys::getHostCPUName());
-  llvm::StringMap<bool> hostFeatures;
-
-  // Get the host features.
-  std::string featureStr;
-  llvm::raw_string_ostream os(featureStr);
-  if (llvm::sys::getHostCPUFeatures(hostFeatures)) {
-    llvm::interleave(
-        llvm::make_filter_range(hostFeatures, [](auto &f) { return f.second; }),
-        os, [&](auto &f) { os << '+' << f.first(); }, ",");
-  }
-
-  // Initialize the host target so that we can find it in the lookup.
-  llvm::InitializeNativeTarget();
-
+ErrorOr<TargetInfoAttr> KGEN::getTargetInfoFor(MLIRContext *ctx,
+                                               StringRef targetTriple,
+                                               StringRef cpu,
+                                               StringRef features) {
   std::string errorMessage;
   const llvm::Target *target =
-      llvm::TargetRegistry::lookupTarget(targetTriple, errorMessage);
+      llvm::TargetRegistry::lookupTarget(targetTriple.str(), errorMessage);
   if (!target)
     return Error("could not construct host target info: " + errorMessage);
 
   std::unique_ptr<llvm::TargetMachine> machine(
-      target->createTargetMachine(targetTriple, cpu, featureStr, /*Options=*/{},
+      target->createTargetMachine(targetTriple, cpu, features, /*Options=*/{},
                                   /*RM=*/llvm::Reloc::Model::PIC_, /*CM=*/{}));
   if (!machine)
     return Error("failed to create target machine for data layout lookup");
@@ -246,6 +219,6 @@ ErrorOr<TargetInfoAttr> KGEN::getHostTargetInfo(MLIRContext *ctx) {
   assert(!dl.isError() && "failed to parse LLVM data layout?");
 
   // Return a TargetInfoAttr built for the host.
-  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu, os.str(),
+  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu, features,
                              std::move(*dl), kPreferredSIMDBitWidth);
 }

@@ -11,8 +11,12 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/TargetParser/Host.h"
 
 namespace M::KGEN {
+/// Get the host CPU features string with only a list of supported features.
+std::string getHostCPUFeatures();
+
 /// This class provides a set of options used to control the compilation of
 /// KGEN modules.
 class CompilationOptions {
@@ -36,13 +40,18 @@ public:
     kDebugAtLLVM
   };
 
-  CompilationOptions(unsigned optimizationLevel = 3,
-                     DebugInfoLevel debugLevel = kNoDebug,
-                     std::optional<DebugAtLevel> debugAtLevel = std::nullopt,
-                     bool enableXRayInstrumentation = false)
+  CompilationOptions(
+      unsigned optimizationLevel = 3, DebugInfoLevel debugLevel = kNoDebug,
+      std::optional<DebugAtLevel> debugAtLevel = std::nullopt,
+      bool enableXRayInstrumentation = false,
+      std::string targetTriple = llvm::sys::getDefaultTargetTriple(),
+      std::string targetCpu = llvm::sys::getHostCPUName().str(),
+      std::string targetFeatures = getHostCPUFeatures())
       : optimizationLevel(optimizationLevel), debugLevel(debugLevel),
         debugAtLevel(debugAtLevel),
-        enableXRayInstrumentation(enableXRayInstrumentation) {}
+        enableXRayInstrumentation(enableXRayInstrumentation),
+        targetTriple(std::move(targetTriple)), targetCpu(std::move(targetCpu)),
+        targetFeatures(std::move(targetFeatures)) {}
 
   /// Return the corresponding codegen optimization level for the current option
   /// set.
@@ -102,6 +111,9 @@ public:
   DebugInfoLevel debugLevel = kNoDebug;
   std::optional<DebugAtLevel> debugAtLevel;
   bool enableXRayInstrumentation = false;
+  std::string targetTriple = llvm::sys::getDefaultTargetTriple();
+  std::string targetCpu = llvm::sys::getHostCPUName().str();
+  std::string targetFeatures = getHostCPUFeatures();
 };
 } // namespace M::KGEN
 
