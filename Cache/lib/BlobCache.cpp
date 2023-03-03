@@ -321,7 +321,7 @@ struct FilesystemBackend : public BlobCacheBackend {
     // Now that we've verified the integrity of the file, return a memory buffer
     // that holds just the contents.
     bufOr = Buffer::getFile(filePath, contents.size(),
-                            /*Offset=*/0);
+                            /*offset=*/0);
     if (failed(bufOr))
       return bufOr.takeError();
     // Otherwise, we're done.
@@ -365,7 +365,7 @@ M::Cache::getFilesystemBackend(LLCL::Runtime &runtime,
 
 ErrorOr<LLCL::RCRef<BlobCacheBackend>>
 M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
-                                 const std::filesystem::path &basePath) {
+                                 const std::filesystem::path &cacheDir) {
   auto backend = getInMemoryBackend(runtime);
 
   // Default to be in the `.derived` folder if we can.
@@ -375,9 +375,9 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime,
   if (ec)
     return Error(ec.message());
 
-  std::filesystem::path base = basePath;
+  std::filesystem::path base = cacheDir;
   if (!base.is_absolute())
-    base = derived / basePath;
+    base = derived / cacheDir;
 
   // Erase everything that lives in basePath other than `base/version` if
   // we (a) have a `base`, (b) it exists, and (c) it's a directory.

@@ -10,8 +10,10 @@
 #include "Cache/Buffer.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/AsyncValueRef.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/STLExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
 
 #include <filesystem>
@@ -180,11 +182,61 @@ getFilesystemBackend(LLCL::Runtime &runtime,
                      const std::filesystem::path &basePath = "");
 
 /// Returns a chain of pre-setup backends that represent the default chain,
-/// inMemory->filesystem. The `basePath` is passed to getFilesystemBackend
-/// directly.
+/// inMemory->filesystem. The `cacheDir` is used to derive a path for use
+/// by the filesystem backend.
 ErrorOr<LLCL::RCRef<BlobCacheBackend>>
 getDefaultBackendChain(LLCL::Runtime &runtime,
-                       const std::filesystem::path &basePath = "");
+                       const std::filesystem::path &cacheDir = "");
+
+/// Helper class to hold a BlobStare over KeyT and associated runtime.
+/// If no existing runtime is available a default runtime is created.
+/// The BlobStore will be instantiated using the 'default' backend chain
+/// using the given cacheDir.
+template <typename KeyT>
+class RuntimeAndCache {
+public:
+  using CacheRef = LLCL::RCRef<BlobCache<KeyT>>;
+
+  /// Captures the cache directory and optional existing runtime. However
+  /// the object is not valid until setup is called and returns success.
+  RuntimeAndCache(std::string cacheDir = "",
+                  Runtime *optExistingRuntime = nullptr)
+      : cacheDir(std::move(cacheDir)), optExistingRuntime(optExistingRuntime) {}
+
+  ErrorOrSuccess setup() {
+    assert(!cacheRef && "setup already called");
+    ownedRuntime = ConditionallyOwnedPointer<Runtime>::allocateIfNeeded(
+        optExistingRuntime,
+        LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
+        LLCL::createSingleThreadWorkQueue());
+    auto backendList = Cache::getDefaultBackendChain(*ownedRuntime, cacheDir);
+    if (backendList.isError())
+      return backendList.takeError();
+    cacheRef = CacheRef::create(std::move(*backendList));
+    return success();
+  }
+
+  bool isValid() const { return cacheRef.getPointer() != nullptr; }
+  Runtime &getRuntime() {
+    assert(isValid());
+    return *ownedRuntime;
+  }
+  CacheRef getCacheRef() {
+    assert(isValid());
+    return cacheRef.copy();
+  }
+  BlobCache<KeyT> &getCache() {
+    assert(isValid());
+    return *cacheRef;
+  }
+
+private:
+  std::string cacheDir;
+  Runtime *optExistingRuntime;
+  ConditionallyOwnedPointer<Runtime> ownedRuntime;
+  CacheRef cacheRef;
+};
+
 } // namespace M::Cache
 
 #endif // CACHE_BLOBCACHE_H
