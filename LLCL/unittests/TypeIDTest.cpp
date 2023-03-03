@@ -45,29 +45,51 @@ struct bar;
 TEST(TypeID, typeName) {
   using namespace M::LLCL::Detail;
   using namespace std::string_view_literals;
+#if (defined(__clang__))
   static_assert("void"sv == typeNameFor<void>());
   static_assert("int"sv == typeNameFor<int>());
   static_assert("fwd"sv == typeNameFor<class fwd>());
   static_assert("Foo"sv == typeNameFor<Foo>());
 
-  static_assert("const int *" == typeNameFor<const int *>());
-  static_assert("const int &" == typeNameFor<const int &>());
-  static_assert("int **" == typeNameFor<int **>());
-  static_assert("int &&" == typeNameFor<int &&>());
+  static_assert("const int *"sv == typeNameFor<const int *>());
+  static_assert("const int &"sv == typeNameFor<const int &>());
+  static_assert("int **"sv == typeNameFor<int **>());
+  static_assert("int &&"sv == typeNameFor<int &&>());
 
-  static_assert("ns1::ns2::bar" == typeNameFor<ns1::ns2::bar>());
-  static_assert("ns1::ns2::bar[]" == typeNameFor<ns1::ns2::bar[]>());
+  static_assert("ns1::ns2::bar"sv == typeNameFor<ns1::ns2::bar>());
+  static_assert("ns1::ns2::bar[]"sv == typeNameFor<ns1::ns2::bar[]>());
 
-  static_assert("SingleClassTemplate<void>" ==
+  static_assert("SingleClassTemplate<void>"sv ==
                 typeNameFor<SingleClassTemplate<void>>());
-  static_assert("SingleClassTemplate<int>" ==
+  static_assert("SingleClassTemplate<int>"sv ==
                 typeNameFor<SingleClassTemplate<int>>());
 
   // Show how `preferred_name` attribute can come into play
 #if defined(_LIBCPP_VERSION)
-  static_assert("std::string" == typeNameFor<std::string>());
+  static_assert("std::string"sv == typeNameFor<std::string>());
 #else
-  static_assert("std::basic_string<char>" == typeNameFor<std::string>());
+  static_assert("std::basic_string<char>"sv == typeNameFor<std::string>());
+#endif
+
+#elif (defined(__GNUC__))
+  static_assert("void"sv == typeNameFor<void>());
+  static_assert("int"sv == typeNameFor<int>());
+  static_assert("Foo"sv == typeNameFor<Foo>());
+
+  static_assert("const int*"sv == typeNameFor<const int *>());
+  static_assert("const int&"sv == typeNameFor<const int &>());
+  static_assert("int**"sv == typeNameFor<int **>());
+  static_assert("int&&"sv == typeNameFor<int &&>());
+
+  static_assert("ns1::ns2::bar"sv == typeNameFor<ns1::ns2::bar>());
+  static_assert("ns1::ns2::bar []"sv == typeNameFor<ns1::ns2::bar[]>());
+
+  static_assert("SingleClassTemplate<void>"sv ==
+                typeNameFor<SingleClassTemplate<void>>());
+  static_assert("SingleClassTemplate<int>"sv ==
+                typeNameFor<SingleClassTemplate<int>>());
+  static_assert("std::__cxx11::basic_string<char>"sv ==
+                typeNameFor<std::string>());
 #endif
 }
 
