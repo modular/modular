@@ -149,7 +149,15 @@ public:
               CallSyntax syntax, LitSharedState &shared,
               std::function<void()> errorHandler);
 
-  bool isNull() const { return !baseValue && fnDecls.empty(); }
+  /// Form an OverloadSet with a lookup of a named method on the specified type,
+  /// filtered to match a concrete operand set.
+  /// If successful, this provides a non-null OverloadSet.
+  OverloadSet(ASTType type, StringRef methodName,
+              ArrayRef<ASTExprAnd<AnyValue>> operands, const ExprNode *callExpr,
+              CallSyntax syntax, ExprEmitter &emitter,
+              std::function<void()> errorHandler);
+
+  bool isNull() const { return fnDecls.empty(); }
   bool operator!() const { return isNull(); }
   explicit operator bool() const { return !isNull(); }
 
