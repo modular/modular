@@ -56,7 +56,7 @@ struct ConditionallyOwnedPointer {
   /// Allocate a `T *` that this class will own (and therefore delete).
   template <typename... Args>
   static ConditionallyOwnedPointer allocate(Args &&...args) {
-    return ConditionallyOwnedPointer(new T(std::forward<Args &&>(args)...),
+    return ConditionallyOwnedPointer(new T(std::forward<Args>(args)...),
                                      /*shouldDelete=*/true);
   }
 
@@ -87,7 +87,7 @@ struct ConditionallyOwnedPointer {
     if (ptr)
       return borrow(ptr);
 
-    return allocate(std::forward<Args &&>(args)...);
+    return allocate(std::forward<Args>(args)...);
   }
 
   /// Only delete the pointer if it's owned by this class.

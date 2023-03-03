@@ -83,8 +83,7 @@ protected:
   /// reporting an error.
   template <typename T>
   LLCL::AsyncValueRef<T> createReady(T &&val) {
-    return LLCL::AsyncValueRef<T>::createReady(runtime,
-                                               std::forward<T &&>(val));
+    return LLCL::AsyncValueRef<T>::createReady(runtime, std::forward<T>(val));
   }
 
 private:
