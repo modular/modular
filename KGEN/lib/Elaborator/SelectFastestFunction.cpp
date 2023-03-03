@@ -54,7 +54,7 @@ M::KGEN::evaluateSpecializations(FuncOp evaluator, SymbolTable &symtab,
                                  LLCL::Runtime &runtime, TargetInfoAttr target,
                                  ArrayRef<FuncOp> specializations) {
   // Create the execution engine.
-  UNWRAP_ERROR(engine, ExecutionEngine::create(CompilationOptions()));
+  UNWRAP_ERROR(engine, ExecutionEngine::create(target, CompilationOptions()));
 
   // TODO (8082): This should not be necessary.
   std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;

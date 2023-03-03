@@ -11,6 +11,26 @@
 #include "llvm/Support/ToolOutputFile.h"
 
 using namespace M;
+using namespace KGEN;
+
+//===--------------------------------------------------------------------===//
+// getHostCPUFeatures
+//===--------------------------------------------------------------------===//
+
+std::string KGEN::getHostCPUFeatures() {
+  llvm::StringMap<bool> hostFeatures;
+
+  // Get the host features.
+  std::string featureStr;
+  llvm::raw_string_ostream os(featureStr);
+  if (llvm::sys::getHostCPUFeatures(hostFeatures)) {
+    llvm::interleave(
+        llvm::make_filter_range(hostFeatures, [](auto &f) { return f.second; }),
+        os, [&](auto &f) { os << '+' << f.first(); }, ",");
+  }
+
+  return featureStr;
+}
 
 //===--------------------------------------------------------------------===//
 // CommandLineFunc implementation
