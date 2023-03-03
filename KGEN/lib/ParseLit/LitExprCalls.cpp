@@ -1025,7 +1025,7 @@ LogicalResult OverloadSet::filterOverloadSetForValueType(ASTType functionType,
 /// decl provided) or a variadic that contains all the possible adaptive
 /// overloads. Because adaptive overloads must all have the same signature, this
 /// also returns the signature type that they all share.
-PRValue OverloadSet::getCallee() const {
+PRValue OverloadSet::getCallee(ExprEmitter &emitter) const {
   assert(!fnDecls.empty() &&
          "cannot get the callee when no callees have been resolved");
   // Get the parameter bindings, if there are any.
@@ -1044,13 +1044,35 @@ PRValue OverloadSet::getCallee() const {
     return PRValue(callee);
   }
 
+  if (!emitter.builder) {
+    emitter.emitError(
+        expr->getLoc(),
+        "cannot emit call to adaptive function in parameter expression")
+        << expr->getRange();
+    return {};
+  }
+
   // Otherwise, we have to construct a list to be called.
   SmallVector<TypedAttr> symbols = map_to_vector(fnDecls, [&](ASTDecl *decl) {
     return cast<LIT::FuncOp>(*decl).getBoundReference(bindArray);
   });
   // Pull out the type, and construct a list attr to be returned.
   auto calleeType = symbols.front().getType();
-  return PRValue(VariadicAttr::get(symbols, VariadicType::get(calleeType)));
+  auto variadic = VariadicAttr::get(symbols, VariadicType::get(calleeType));
+
+  // If the callee is a list, create a param.fork op and create a
+  // CallParam on that. We want to get the name of the function that is
+  // being called and mangle it into the parameter name to ensure
+  // uniqueness.
+  StringRef mangledCall(expr->getRangeStart().getPointer(),
+                        expr->getRangeEnd().getPointer() -
+                            expr->getRangeStart().getPointer() - 1);
+  auto decl = ParamDeclAttr::get(
+      emitter.builder->getStringAttr("(adaptive)" + mangledCall),
+      variadic.getType().getResolvedElementType());
+  emitter.builder->create<ParamForkOp>(
+      emitter.translateLocation(expr->getLoc()), decl, variadic);
+  return PRValue(ParamDeclRefAttr::get(decl));
 }
 
 /// Utility function to perform subsitutions of the specified callable bindings
@@ -1302,17 +1324,6 @@ static bool isValidErrorContext(Block *block) {
   llvm_unreachable("block outside of function?");
 }
 
-/// The specified Type is the type of a callee, which is either a SignatureType
-/// or a VariadicType wrapping one.  Return the SignatureType.
-static SignatureType getSignatureFromPossibleVariadic(Type type) {
-  // Signature may be in a VariadicType in an adaptive overload list.
-  if (auto variadic = dyn_cast<VariadicType>(type))
-    type = PRValue(variadic.getElementType()).getIfTypeValue().mlirType;
-
-  // The signature type is typically directly available.
-  return cast<SignatureType>(type);
-}
-
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
 AnyValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
@@ -1341,8 +1352,11 @@ AnyValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
                                /*emitDiagnosticOnFailure=*/true, emitter)))
     return {};
 
-  PRValue callee = getCallee();
-  SignatureType calleeSig = getSignatureFromPossibleVariadic(callee.getType());
+  CRValue callee = getCallee(emitter);
+  if (!callee)
+    return {};
+
+  SignatureType calleeSig = cast<SignatureType>(callee.getType());
 
   // Check declarations for the result parameters and collect them here.
   SmallVector<ParamDeclAttr> resultParamDecls;
@@ -1426,7 +1440,7 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
                                    ArrayRef<ParamDeclAttr> resultParams,
                                    ValueDest dest, const ExprNode *callExpr,
                                    CallSyntax syntax, ExprEmitter &emitter) {
-  SignatureType calleeSig = getSignatureFromPossibleVariadic(callee.getType());
+  SignatureType calleeSig = cast<SignatureType>(callee.getType());
 
   assert(calleeSig.getResultParams().size() == resultParams.size() &&
          "Type checking should be done");
@@ -1632,21 +1646,6 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
       // If the callee is a symbol constant, directly emit a call.
       callOp = builder->create<CallOp>(loc, resultTypes, symbol, resultParams,
                                        callArgs);
-    } else if (auto variadic = dyn_cast<VariadicAttr>(target.get())) {
-      // If the callee is a list, create a param.fork op and create a
-      // CallParam on that. We want to get the name of the function that is
-      // being called and mangle it into the parameter name to ensure
-      // uniqueness.
-      StringRef mangledCall(callExpr->getRangeStart().getPointer(),
-                            callExpr->getRangeEnd().getPointer() -
-                                callExpr->getRangeStart().getPointer() - 1);
-      auto decl =
-          ParamDeclAttr::get(builder->getStringAttr("(adaptive)" + mangledCall),
-                             variadic.getType().getResolvedElementType());
-      builder->create<ParamForkOp>(loc, decl, variadic);
-      callOp = builder->create<CallParamOp>(loc, resultTypes,
-                                            ParamDeclRefAttr::get(decl),
-                                            resultParams, callArgs);
     } else {
       callOp = builder->create<CallParamOp>(loc, resultTypes, target.get(),
                                             resultParams, callArgs);
