@@ -29,7 +29,7 @@ file(APPEND "${version_inc}.tmp"
   "#define MODULAR_VERSION_MINOR ${MODULAR_VERSION_MINOR}\n\n"
 
   "/* Patch version */\n"
-  "#define MODULAR_VERSION_MAJOR ${MODULAR_VERSION_MAJOR}\n\n"
+  "#define MODULAR_VERSION_PATCH ${MODULAR_VERSION_PATCH}\n\n"
 
   "/* Revision sha */\n"
   "#define MODULAR_VERSION_REVISION \"${MODULAR_VERSION_REVISION}\"\n\n"
