@@ -341,9 +341,9 @@ AnyValue BoolLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   assert(isa<StructDeclOp>(decl));
   mlir::MLIRContext *ctx = emitter.getContext();
   auto boolLiteralDeclType = DeclRefType::get(decl.getSymbolRef());
-  bool isErroneousDecl = false;
   OverloadSet newVal(boolLiteralDeclType, "__new__", this,
-                     CallSyntax::kTypeCall, isErroneousDecl, emitter.shared);
+                     CallSyntax::kTypeCall, emitter.shared,
+                     [&]() { assert(0 && "unreachable"); });
   assert(!newVal.isNull() && "__new__ should be always there by construction");
   auto boolDType = DTypeConstantAttr::get(ctx, DType::kBool);
   auto boolAttr = POP::SIMDAttr::get({value, KGENDType::kBool},
@@ -540,11 +540,10 @@ AnyValue DeclRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
     // least we can ban copying of non-copyable values.
     ASTType letType(letDecl.getType());
     if (ASTDecl *letTypeDecl = letType.getDecl(emitter.shared)) {
-      bool isErroneousDecl = false;
       // TODO: Unify this with the logic in emitRValue when __clone__ moves to
       // taking a borrow instead of a mutable byref argument.
       if (!OverloadSet(letType, "__clone__", this, CallSyntax::kMethodCall,
-                       isErroneousDecl, emitter.shared)) {
+                       emitter.shared, [&]() { /*no error*/ })) {
         auto diag = emitter.emitError(getLoc(), "cannot clone this value: ")
                     << letType << " doesn't implement '__clone__'"
                     << getRange();
@@ -1013,13 +1012,7 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   // If the callee is a type value (as in `T()` or `T[123]()`), then this is an
   // invocation of the initializer for the type.
   if (ASTType calledType = calleeVal.getIfTypeValue()) {
-    bool isErroneousDecl = false;
-    OverloadSet overloads(calledType, "__new__", this, CallSyntax::kTypeCall,
-                          isErroneousDecl, emitter.shared);
-    if (overloads.isNull()) {
-      if (isErroneousDecl)
-        return {};
-
+    auto emitNoNewError = [&]() {
       if (calledType.getDecl(emitter.shared)) {
         emitter.emitError(getLoc(), "")
             << calledType << " does not have any `__new__` methods"
@@ -1029,8 +1022,12 @@ AnyValue CallNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
                           "cannot use initializer syntax on MLIR type ")
             << calledType << callee->getRange();
       }
+    };
+
+    OverloadSet overloads(calledType, "__new__", this, CallSyntax::kTypeCall,
+                          emitter.shared, emitNoNewError);
+    if (overloads.isNull())
       return {};
-    }
 
     return overloads.emitCall(operands, dest, emitter);
   }
@@ -1241,18 +1238,17 @@ AnyValue SubscriptNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   // Okay, we're doing a normal value subscript.  We expect at least a
   // __getitem__ method.
   auto baseType = subValue.getRValueType();
-  bool isErroneousDecl = false;
-  OverloadSet getItem(baseType, "__getitem__", this, CallSyntax::kSubscript,
-                      isErroneousDecl, emitter.shared);
+
   // If there is no __getitem__ at all, then this is not a subscriptable type.
-  if (getItem.isNull()) {
-    if (isErroneousDecl)
-      return {};
+  auto emitGetItemError = [&]() {
     emitter.emitError(getLoc(), "")
         << baseType << " does not implement the `__getitem__` method"
         << base->getRange();
+  };
+  OverloadSet getItem(baseType, "__getitem__", this, CallSyntax::kSubscript,
+                      emitter.shared, emitGetItemError);
+  if (getItem.isNull())
     return {};
-  }
 
   // Okay, we have one, that's a positive sign. In the case of multiple index
   // values, we could either pass this as a Python style tuple, or could pass as
@@ -1644,12 +1640,9 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 
   // Check to see if we have a forward version of this function on the primary
   // receiver.
-  bool isErroneousDecl = false;
   OverloadSet callee(lhs.ir.getRValueType(), specialFnInfo.name, callNode,
-                     CallSyntax::kOperator, isErroneousDecl, emitter.shared);
-  if (isErroneousDecl)
-    return {};
-
+                     CallSyntax::kOperator, emitter.shared,
+                     [&]() { /*no error*/ });
   if (callee && succeeded(callee.filterOverloadSet(
                     argValues,
                     /*allowImplicitConversions=*/true,
@@ -1663,8 +1656,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     // Swap the operand order.
     std::swap(argValues[0], argValues[1]);
     callee = OverloadSet(rhs.ir.getType(), reversedFnInfo.name, callNode,
-                         CallSyntax::kReversedOperator, isErroneousDecl,
-                         emitter.shared);
+                         CallSyntax::kReversedOperator, emitter.shared,
+                         [&]() { /*no error*/ });
     if (callee && succeeded(callee.filterOverloadSet(
                       argValues,
                       /*allowImplicitConversions=*/true,

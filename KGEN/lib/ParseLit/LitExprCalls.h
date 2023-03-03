@@ -142,14 +142,12 @@ public:
   /// Form an OverloadSet with a lookup of a named method on the specified type.
   /// If successful, this provides a non-null OverloadSet.
   ///
-  /// On failure, this returns a null OverloadSet and sets 'erroneousDecl' to
-  /// indicate whether there was a problem with the callee that has already been
-  /// diagnosed (allowing the client to squish downstream error messages).  This
-  /// does not emit an error on failure.
-  /// FIXME: This "erroneousDecl" nonsense is a pain, pass in an error
-  /// lambda instead.
+  /// On failure, this returns a null OverloadSet and invokes errorHandler if
+  /// the problem hasn't already been diagnosed. This does not emit an error on
+  /// failure.
   OverloadSet(ASTType type, StringRef methodName, const ExprNode *callExpr,
-              CallSyntax syntax, bool &erroneousDecl, LitSharedState &shared);
+              CallSyntax syntax, LitSharedState &shared,
+              std::function<void()> errorHandler);
 
   bool isNull() const { return !baseValue && fnDecls.empty(); }
   bool operator!() const { return isNull(); }
