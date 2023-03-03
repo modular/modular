@@ -8,6 +8,5 @@ add_modular_tool(system-info
   system-info.cpp
 
   LINK_LIBS PRIVATE
-  LLVMTargetParser
   MSupport
 )

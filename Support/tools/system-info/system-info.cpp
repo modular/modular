@@ -6,13 +6,8 @@
 
 #include "Support/CommandLine.h"
 #include "Support/Host.h"
-#include "Support/SIMD.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/StringMap.h"
-#include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/TargetParser/Host.h"
-#include "llvm/TargetParser/Triple.h"
 #include <filesystem>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/ToolOutputFile.h>
@@ -21,18 +16,6 @@ using namespace M;
 using namespace llvm;
 
 namespace {
-enum class QuerySystemProperty {
-  TargetTriple,
-  OS,
-  Arch,
-  Features,
-  CoreCount,
-  SIMDBitWidth,
-  L1CacheSize,
-  L2CacheSize,
-  L3CacheSize,
-  L4CacheSize
-};
 
 struct SystemInfoCLIOptions {
 
@@ -40,65 +23,30 @@ struct SystemInfoCLIOptions {
       "o", llvm::cl::desc("Output filename"), llvm::cl::value_desc("filename"),
       llvm::cl::init("-")};
 
-  llvm::cl::list<QuerySystemProperty> QueryProperty{
+  llvm::cl::list<HostProperty> QueryProperty{
       "query", M::cl::desc("Available Queries:"),
       M::cl::values(
-          clEnumValN(QuerySystemProperty::TargetTriple, "target-triple",
+          clEnumValN(HostProperty::TargetTriple, "target-triple",
                      "Host target triple"),
-          clEnumValN(QuerySystemProperty::OS, "os", "Host operating system"),
-          clEnumValN(QuerySystemProperty::Arch, "arch",
-                     "Host CPU architecture"),
-          clEnumValN(QuerySystemProperty::Features, "features",
+          clEnumValN(HostProperty::OS, "os", "Host operating system"),
+          clEnumValN(HostProperty::Arch, "arch", "Host CPU architecture"),
+          clEnumValN(HostProperty::Features, "features",
                      "Host CPU features printed as comma-separated values"),
-          clEnumValN(QuerySystemProperty::CoreCount, "core-count",
+          clEnumValN(HostProperty::CoreCount, "core-count",
                      "Host number of cores"),
-          clEnumValN(QuerySystemProperty::SIMDBitWidth, "simd-bitwidth",
+          clEnumValN(HostProperty::SIMDBitWidth, "simd-bitwidth",
                      "Host SIMD bitwidth"),
-          clEnumValN(QuerySystemProperty::L1CacheSize, "l1-cache-size",
+          clEnumValN(HostProperty::L1CacheSize, "l1-cache-size",
                      "Host L1 DCache size"),
-          clEnumValN(QuerySystemProperty::L2CacheSize, "l2-cache-size",
+          clEnumValN(HostProperty::L2CacheSize, "l2-cache-size",
                      "Host L2 DCache size"),
-          clEnumValN(QuerySystemProperty::L3CacheSize, "l3-cache-size",
+          clEnumValN(HostProperty::L3CacheSize, "l3-cache-size",
                      "Host L3 DCache size"),
-          clEnumValN(QuerySystemProperty::L4CacheSize, "l4-cache-size",
+          clEnumValN(HostProperty::L4CacheSize, "l4-cache-size",
                      "Host L4 DCache size")),
       llvm::cl::ZeroOrMore, llvm::cl::CommaSeparated};
 };
 } // namespace
-
-static void dumpTargetTriple(raw_ostream &os) {
-  os << sys::getDefaultTargetTriple();
-}
-
-static void dumpOS(raw_ostream &os) {
-  os << llvm::Triple::getOSTypeName(
-      llvm::Triple(sys::getDefaultTargetTriple()).getOS());
-}
-
-static void dumpArch(raw_ostream &os) { os << sys::getHostCPUName(); }
-
-static void dumpFeatures(raw_ostream &os) {
-  StringMap<bool> features;
-  if (sys::getHostCPUFeatures(features)) {
-    llvm::interleaveComma(
-        llvm::make_filter_range(
-            features, [](const auto &feature) { return feature.getValue(); }),
-        os, [&](const auto &feature) { os << feature.getKey(); });
-  }
-}
-
-static void dumpCoreCount(raw_ostream &os) { os << get_physical_cores(); }
-
-static void dumpSIMDBitWidth(raw_ostream &os) { os << kPreferredSIMDBitWidth; }
-
-static void dumpCacheSize(raw_ostream &os, size_t cacheLevel) {
-  auto val = getHostCPUCacheSize(cacheLevel);
-  if (val.isError()) {
-    os << "Error: " << val.getError();
-    return;
-  }
-  os << *val;
-}
 
 static int reportError(Twine errorMessage) {
   llvm::errs() << "system-info: " << errorMessage << "\n";
@@ -133,62 +81,21 @@ int main(int argc, char **argv) {
 
   auto &os = outputFile ? outputFile->os() : llvm::outs();
 
+  auto hostMachineOr = getHostMachineInfo();
+  if (hostMachineOr.isError())
+    return reportError(hostMachineOr.getError());
+
+  HostMachineInfo hostInfo = hostMachineOr.takeValue();
+
   if (cli.QueryProperty.empty()) {
-    os << "target-triple: ";
-    dumpTargetTriple(os);
-    os << "\narch: ";
-    dumpArch(os);
-    os << "\nfeatures: ";
-    dumpFeatures(os);
-    os << "\ncore-count: ";
-    dumpCoreCount(os);
-    os << "\nsimd-bitwidth: ";
-    dumpSIMDBitWidth(os);
-    os << "\nl1-cache-size: ";
-    dumpCacheSize(os, 1);
-    os << "\nl2-cache-size: ";
-    dumpCacheSize(os, 2);
-    os << "\nl3-cache-size: ";
-    dumpCacheSize(os, 3);
-    os << "\nl4-cache-size: ";
-    dumpCacheSize(os, 4);
-    os << "\n";
+    hostInfo.print(os);
+    os.flush();
+    outputFile->keep();
+    return EXIT_SUCCESS;
   }
 
-  for (auto query : cli.QueryProperty) {
-    switch (query) {
-    case QuerySystemProperty::TargetTriple:
-      dumpTargetTriple(os);
-      break;
-    case QuerySystemProperty::OS:
-      dumpOS(os);
-      break;
-    case QuerySystemProperty::Arch:
-      dumpArch(os);
-      break;
-    case QuerySystemProperty::Features:
-      dumpFeatures(os);
-      break;
-    case QuerySystemProperty::CoreCount:
-      dumpCoreCount(os);
-      break;
-    case QuerySystemProperty::SIMDBitWidth:
-      dumpSIMDBitWidth(os);
-      break;
-    case QuerySystemProperty::L1CacheSize:
-      dumpCacheSize(os, 1);
-      break;
-    case QuerySystemProperty::L2CacheSize:
-      dumpCacheSize(os, 2);
-      break;
-    case QuerySystemProperty::L3CacheSize:
-      dumpCacheSize(os, 3);
-      break;
-    case QuerySystemProperty::L4CacheSize:
-      dumpCacheSize(os, 4);
-    }
-    os << "\n";
-  }
+  for (auto query : cli.QueryProperty)
+    hostInfo.print(query, os);
 
   os.flush();
   outputFile->keep();

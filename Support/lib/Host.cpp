@@ -5,7 +5,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Host.h"
+#include "Support/SIMD.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/Threading.h"
+#include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/Triple.h"
 
 #include <fstream>
 #include <ios>
@@ -21,6 +27,7 @@
 #endif // _MSC_VER
 
 using namespace M;
+using namespace llvm;
 
 ErrorOr<size_t> M::getHostCPUCacheSize(size_t cacheLevel) {
 #if defined(__APPLE__)
@@ -125,4 +132,102 @@ ErrorOr<size_t> M::getHostCPUCacheSize(size_t cacheLevel) {
 #else
   return Error("unsupported platform");
 #endif
+}
+
+static void dumpFeatures(raw_ostream &os,
+                         const std::vector<std::string> &features) {
+  llvm::interleaveComma(features, os);
+}
+
+void M::HostMachineInfo::print(llvm::raw_ostream &os) const {
+  os << "target-triple: ";
+  os << triple;
+  os << "\nos: ";
+  os << osName;
+  os << "\narch: ";
+  os << cpuArch;
+  os << "\nfeatures: ";
+  dumpFeatures(os, cpuFeatures);
+  os << "\ncore-count: ";
+  os << numPhysicalCores;
+  os << "\nsimd-bitwidth: ";
+  os << simdBitWidth;
+  os << "\nl1-cache-size: ";
+  os << l1CacheSize;
+  os << "\nl2-cache-size: ";
+  os << l2CacheSize;
+  os << "\nl3-cache-size: ";
+  os << l3CacheSize;
+  os << "\nl4-cache-size: ";
+  os << l4CacheSize;
+  os << "\n";
+}
+
+void HostMachineInfo::print(HostProperty property,
+                            llvm::raw_ostream &os) const {
+  switch (property) {
+  case HostProperty::TargetTriple:
+    os << triple;
+    break;
+  case HostProperty::OS:
+    os << osName;
+    break;
+  case HostProperty::Arch:
+    os << cpuArch;
+    break;
+  case HostProperty::Features:
+    dumpFeatures(os, cpuFeatures);
+    break;
+  case HostProperty::CoreCount:
+    os << numPhysicalCores;
+    break;
+  case HostProperty::SIMDBitWidth:
+    os << simdBitWidth;
+    break;
+  case HostProperty::L1CacheSize:
+    os << l1CacheSize;
+    break;
+  case HostProperty::L2CacheSize:
+    os << l2CacheSize;
+    break;
+  case HostProperty::L3CacheSize:
+    os << l3CacheSize;
+    break;
+  case HostProperty::L4CacheSize:
+    os << l4CacheSize;
+  }
+  os << "\n";
+}
+
+ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
+  HostMachineInfo machineInfo;
+
+  machineInfo.triple = sys::getDefaultTargetTriple();
+  machineInfo.osName =
+      Triple::getOSTypeName(Triple(machineInfo.triple).getOS());
+  machineInfo.cpuArch = sys::getHostCPUName();
+
+  StringMap<bool> features;
+  sys::getHostCPUFeatures(features);
+
+  for (const auto &feature : features)
+    if (feature.getValue())
+      machineInfo.cpuFeatures.push_back(feature.getKey().str());
+  llvm::sort(machineInfo.cpuFeatures);
+
+  machineInfo.numPhysicalCores = get_physical_cores();
+  machineInfo.simdBitWidth = kPreferredSIMDBitWidth;
+
+  UNWRAP_ERROR(l1CacheSize, getHostCPUCacheSize(1));
+  machineInfo.l1CacheSize = l1CacheSize;
+
+  UNWRAP_ERROR(l2CacheSize, getHostCPUCacheSize(2));
+  machineInfo.l2CacheSize = l2CacheSize;
+
+  UNWRAP_ERROR(l3CacheSize, getHostCPUCacheSize(3));
+  machineInfo.l3CacheSize = l3CacheSize;
+
+  UNWRAP_ERROR(l4CacheSize, getHostCPUCacheSize(4));
+  machineInfo.l4CacheSize = l4CacheSize;
+  return std::move(machineInfo);
 }

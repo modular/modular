@@ -10,12 +10,48 @@
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 
+#include <string>
+
 #if defined(__APPLE__) && (defined(__arm64__) || defined(__aarch64__))
 #define HOST_IS_APPLE_SILICON_PROCESSOR
 #endif
 
 namespace M {
+
+enum class HostProperty {
+  TargetTriple,
+  OS,
+  Arch,
+  Features,
+  CoreCount,
+  SIMDBitWidth,
+  L1CacheSize,
+  L2CacheSize,
+  L3CacheSize,
+  L4CacheSize
+};
+
 ErrorOr<size_t> getHostCPUCacheSize(size_t cacheLevel);
+
+/// Information of host machine.
+struct HostMachineInfo {
+  std::string triple;
+  std::string osName;
+  std::string cpuArch;
+  std::vector<std::string> cpuFeatures;
+  size_t numPhysicalCores;
+  size_t simdBitWidth;
+  size_t l1CacheSize;
+  size_t l2CacheSize;
+  size_t l3CacheSize;
+  size_t l4CacheSize;
+
+  void print(llvm::raw_ostream &os) const;
+  void print(HostProperty property, llvm::raw_ostream &os) const;
+};
+
+/// Get information about the host machine.
+ErrorOr<HostMachineInfo> getHostMachineInfo();
 } // namespace M
 
 #endif // SUPPORT_HOST_H

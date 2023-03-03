@@ -16,6 +16,7 @@ add_modular_library(MSupport
 
   LINK_LIBS PUBLIC
   LLVMSupport
+  LLVMTargetParser
   MLIRSupport
 
   DEPENDS
