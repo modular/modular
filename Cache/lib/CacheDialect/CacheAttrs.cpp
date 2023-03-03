@@ -76,6 +76,13 @@ void ConstantHashAttr::print(AsmPrinter &printer) const {
   printer << " : " << getType() << ">";
 }
 
+std::optional<uint64_t> ConstantHashAttr::getOptAlign() const {
+  DictionaryAttr dict = getAdditionalData();
+  if (auto intAttr = dyn_cast_if_present<IntegerAttr>(dict.get("align")))
+    return intAttr.getUInt();
+  return std::nullopt;
+}
+
 ReplaceableAttrIndex ConstantHashAttr::convertToIndex(size_t idx) const {
   return HashIndexAttr::get(getContext(), idx);
 }
