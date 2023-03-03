@@ -62,31 +62,26 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
     return emitResult(result, value.expr, dest).getIfRValue();
   }
 
+  auto emitNoCloneError = [&]() {
+    auto diag = emitError(loc, "cannot clone this value: ")
+                << rvalueType << " doesn't implement '__clone__'"
+                << value.expr->getRange();
+    diag.attachNote(typeDecl->getLoc()) << "type declared here";
+  };
+
   // Check for the presence of a valid __clone__ method.
-  bool isErroneousDecl = false;
   OverloadSet clone(rvalueType, "__clone__", value.expr,
-                    CallSyntax::kImplicitConvert, isErroneousDecl, shared);
-  // If any error looking up __clone__ then the problem has been diagnosed
-  // already.
-  if (isErroneousDecl)
+                    CallSyntax::kImplicitConvert, shared, emitNoCloneError);
+  if (clone.isNull())
     return {};
 
-  if (!clone.isNull()) {
-    // Ok, cool we know it will succeed; do it.
-    auto result = clone.emitCall(value, dest, *this);
-    if (!result)
-      return {};
-    assert(result.getIfRValue() &&
-           "__clone__ is required to always return an RValue");
-    return result.getIfRValue();
-  }
-
-  auto diag = emitError(loc, "cannot clone this value: ")
-              << rvalueType << " doesn't implement '__clone__'"
-              << value.expr->getRange();
-
-  diag.attachNote(typeDecl->getLoc()) << "type declared here";
-  return {};
+  // Ok, cool we know it will succeed; do it.
+  auto result = clone.emitCall(value, dest, *this);
+  if (!result)
+    return {};
+  assert(result.getIfRValue() &&
+         "__clone__ is required to always return an RValue");
+  return result.getIfRValue();
 }
 
 CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
@@ -254,14 +249,8 @@ AnyValue ExprEmitter::emitNamedMethodCall(
     ValueDest dest, CallSyntax syntax, const ExprNode *callNode) {
   assert(!argValues.empty() && "Cannot emit a method call without a receiver!");
   ASTType type = argValues.front().ir.getRValueType();
-  bool isErroneousDecl = false;
-  OverloadSet callee(type, methodName, callNode, syntax, isErroneousDecl,
-                     shared);
 
-  // If the type doesn't have the specified method, emit an error.
-  if (callee.isNull()) {
-    if (isErroneousDecl)
-      return {};
+  auto emitNoMethodError = [&]() {
     auto diag = emitError(callNode->getLoc(), "")
                 << type << " does not implement the '" << methodName
                 << "' method";
@@ -278,8 +267,14 @@ AnyValue ExprEmitter::emitNamedMethodCall(
       diag << argValues[1].expr->getRange();
       break;
     }
+  };
+
+  OverloadSet callee(type, methodName, callNode, syntax, shared,
+                     emitNoMethodError);
+
+  // If the type doesn't have the specified method, emit an error.
+  if (callee.isNull())
     return {};
-  }
 
   return callee.emitCall(argValues, dest, *this);
 }
@@ -312,14 +307,11 @@ AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
     return value.ir;
 
   // Check to see if we can invoke an __new__ method to convert it.
-  bool isErroneousDecl = false;
+
   OverloadSet callee(expectedType, "__new__", value.expr,
-                     CallSyntax::kImplicitConvert, isErroneousDecl, shared);
-  if (callee.isNull()) {
-    if (!isErroneousDecl)
-      errorHandler();
+                     CallSyntax::kImplicitConvert, shared, errorHandler);
+  if (callee.isNull())
     return {};
-  }
 
   // If we have at least one candidate, we check to see if any of them can
   // work. We disable implicit conversions though, to prevent converting
@@ -370,9 +362,9 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
 
   // Check for the presence of a __lit_bool method.  If it exists, we can avoid
   // a redundant call to __bool__ for Bool types.
-  bool isErroneousDecl = false;
   if (!OverloadSet(value.ir.getType(), "__lit_bool", value.expr,
-                   CallSyntax::kImplicitConvert, isErroneousDecl, shared)) {
+                   CallSyntax::kImplicitConvert, shared,
+                   [&]() { /*no error*/ })) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __lit_bool.
     boolResult =

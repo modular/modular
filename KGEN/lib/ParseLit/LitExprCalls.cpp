@@ -1108,24 +1108,23 @@ TypedAttr OverloadSet::getBoundConstantAttr(ExprEmitter &emitter) const {
 /// Get a OverloadSet for a lookup of a named method on the specified type.
 /// If successful, this provides a non-null OverloadSet.
 ///
-/// On failure, this returns a null OverloadSet and sets 'erroneousDecl' to
-/// indicate whether there was a problem with the callee that has already been
-/// diagnosed (allowing the client to squish downstream error messages).  This
-/// does not emit an error on failure.
+/// On failure, this returns a null OverloadSet and invokes errorHandler if
+/// the problem hasn't already been diagnosed. This does not emit an error on
+/// failure.
 OverloadSet::OverloadSet(ASTType type, StringRef methodName,
                          const ExprNode *expr, CallSyntax syntax,
-                         bool &erroneousDecl, LitSharedState &shared)
+                         LitSharedState &shared,
+                         std::function<void()> errorHandler)
     : expr(expr), syntax(syntax) {
   SMLoc callLoc = expr->getLoc();
 
-  erroneousDecl = false;
   // First perform a lookup to see if there are any candidates.
   auto lookupResult = shared.lookupAndResolveDecl(methodName, callLoc, type,
                                                   /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
   if (resultDecls.empty()) {
-    if (lookupResult.isErroneous())
-      erroneousDecl = true;
+    if (!lookupResult.isErroneous()) // Already diagnosed?
+      errorHandler();
     return;
   }
 
@@ -1241,10 +1240,9 @@ bool OverloadSet::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
 
   // Otherwise, check to see if we can do an implicit conversion by invoking a
   // `__new__` method on the expected type.
-  bool isErroneousDecl = false;
   OverloadSet callee(requiredType, "__new__", value.expr,
-                     CallSyntax::kImplicitConvert, isErroneousDecl,
-                     emitter.shared);
+                     CallSyntax::kImplicitConvert, emitter.shared,
+                     [&]() { /*no error emission on failure */ });
 
   // If there are no viable candidates for the implicit conversion, we fail.
   if (!callee)
