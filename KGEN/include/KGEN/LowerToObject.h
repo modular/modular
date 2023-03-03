@@ -18,6 +18,7 @@
 namespace llvm {
 class LLVMContext;
 class Module;
+class TargetMachine;
 } // namespace llvm
 
 namespace M::KGEN {
@@ -104,8 +105,14 @@ private:
   CompilationOptions options;
 };
 
-/// Get the target info for the host target.
-ErrorOr<TargetInfoAttr> getHostTargetInfo(MLIRContext *ctx);
+/// Get the target info for the specified target.
+ErrorOr<TargetInfoAttr> getTargetInfoFor(MLIRContext *ctx,
+                                         StringRef targetTriple, StringRef cpu,
+                                         StringRef features);
+/// Setup the machine properties from the provided target.
+ErrorOr<std::unique_ptr<llvm::TargetMachine>>
+createTargetMachine(TargetInfoAttr targetInfo,
+                    const CompilationOptions &options, bool isJIT);
 } // namespace M::KGEN
 
 #endif // KGEN_LOWERTOOBJECT_H

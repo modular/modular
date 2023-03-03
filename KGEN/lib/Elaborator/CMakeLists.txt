@@ -12,6 +12,7 @@ add_modular_mlir_library(KGENElaborator
   LINK_LIBS PUBLIC
   DebugInfoDialect
   CacheDialect
+  KGENCLOptions
   KGENCompilerRT
   KGENDialect
   KGENExecutionEngine
