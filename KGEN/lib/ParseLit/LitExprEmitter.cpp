@@ -64,8 +64,8 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
 
   // Check for the presence of a valid __clone__ method.
   bool isErroneousDecl = false;
-  OverloadSet clone(rvalueType, "__clone__", value.expr, isErroneousDecl,
-                    shared);
+  OverloadSet clone(rvalueType, "__clone__", value.expr,
+                    CallSyntax::kImplicitConvert, isErroneousDecl, shared);
   // If any error looking up __clone__ then the problem has been diagnosed
   // already.
   if (isErroneousDecl)
@@ -73,8 +73,7 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
 
   if (!clone.isNull()) {
     // Ok, cool we know it will succeed; do it.
-    auto result = clone.emitCall(value, dest, value.expr,
-                                 CallSyntax::kImplicitConvert, *this);
+    auto result = clone.emitCall(value, dest, *this);
     if (!result)
       return {};
     assert(result.getIfRValue() &&
@@ -100,7 +99,7 @@ CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
   // If the value being materialized is an unresolved overload set, try to
   // materialize it.
   if (auto overloads = value.ir.getIfORValue())
-    return overloads->emitAsCRValue(*this, ValueDest(), value.expr);
+    return overloads->emitAsCRValue(*this, ValueDest());
 
   assert(value.ir.getIfCRValue() && "Must be ORValue or CRValue");
   return value.ir.getIfCRValue();
@@ -256,7 +255,8 @@ AnyValue ExprEmitter::emitNamedMethodCall(
   assert(!argValues.empty() && "Cannot emit a method call without a receiver!");
   ASTType type = argValues.front().ir.getRValueType();
   bool isErroneousDecl = false;
-  OverloadSet callee(type, methodName, callNode, isErroneousDecl, shared);
+  OverloadSet callee(type, methodName, callNode, syntax, isErroneousDecl,
+                     shared);
 
   // If the type doesn't have the specified method, emit an error.
   if (callee.isNull()) {
@@ -281,7 +281,7 @@ AnyValue ExprEmitter::emitNamedMethodCall(
     return {};
   }
 
-  return callee.emitCall(argValues, dest, callNode, syntax, *this);
+  return callee.emitCall(argValues, dest, *this);
 }
 
 /// Convert the specified value to the expected type, invoking implicit
@@ -294,7 +294,7 @@ AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
 
   // If we have an overload set, filter it down based on our expected type.
   if (auto overloads = value.ir.getIfORValue())
-    return overloads->emitAsCRValue(*this, dest, value.expr, expectedType);
+    return overloads->emitAsCRValue(*this, dest, expectedType);
 
   bool noConversionNeeded =
       ASTType(value.ir.getRValueType()).isEqualCanon(expectedType);
@@ -313,8 +313,8 @@ AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
 
   // Check to see if we can invoke an __new__ method to convert it.
   bool isErroneousDecl = false;
-  OverloadSet callee(expectedType, "__new__", value.expr, isErroneousDecl,
-                     shared);
+  OverloadSet callee(expectedType, "__new__", value.expr,
+                     CallSyntax::kImplicitConvert, isErroneousDecl, shared);
   if (callee.isNull()) {
     if (!isErroneousDecl)
       errorHandler();
@@ -324,17 +324,16 @@ AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
   // If we have at least one candidate, we check to see if any of them can
   // work. We disable implicit conversions though, to prevent converting
   // T -> S -> U in one step.
-  if (failed(callee.filterOverloadSet(
-          {value}, CallSyntax::kImplicitConvert, value.expr,
-          /*allowImplicitConversions=*/false,
-          /*emitDiagnosticOnFailure=*/false, *this))) {
+  if (failed(callee.filterOverloadSet({value},
+                                      /*allowImplicitConversions=*/false,
+                                      /*emitDiagnosticOnFailure=*/false,
+                                      *this))) {
     errorHandler();
     return {};
   }
 
   // Ok, cool we know it will succeed; do it.
-  return callee.emitCall(value, dest, value.expr, CallSyntax::kImplicitConvert,
-                         *this);
+  return callee.emitCall(value, dest, *this);
 }
 
 AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
@@ -373,7 +372,7 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
   // a redundant call to __bool__ for Bool types.
   bool isErroneousDecl = false;
   if (!OverloadSet(value.ir.getType(), "__lit_bool", value.expr,
-                   isErroneousDecl, shared)) {
+                   CallSyntax::kImplicitConvert, isErroneousDecl, shared)) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __lit_bool.
     boolResult =

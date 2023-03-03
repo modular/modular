@@ -465,8 +465,10 @@ InputParamBindings::getNextExpectedBindingType(SignatureType candidateType,
 /// Get a symbol for a direct reference to the specified function in its
 /// enclosing context.  This does not bind any values to arguments.
 OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-                         ParamBindArrayAttr bindingsAttr)
-    : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()) {
+                         ParamBindArrayAttr bindingsAttr, const ExprNode *expr,
+                         CallSyntax syntax)
+    : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()), expr(expr),
+      syntax(syntax) {
   if (bindingsAttr) {
     for (ParamBindAttr bind : bindingsAttr)
       inputParamBindings.add(bind);
@@ -518,14 +520,12 @@ struct OverloadFitness {
                                   const OverloadSet &callable,
                                   ArrayRef<ASTExprAnd<AnyValue>> operands,
                                   bool allowImplicitConversions,
-                                  const ExprNode *callExpr,
                                   ExprEmitter &emitter);
 
   /// Add explaination for why this candidate doesn't work to the specified
   /// diagnostic.
   void diagnose(SignatureType signature, const OverloadSet &callable,
-                ArrayRef<ASTExprAnd<AnyValue>> operands, CallSyntax syntax,
-                LitDiagnostic &diag);
+                ArrayRef<ASTExprAnd<AnyValue>> operands, LitDiagnostic &diag);
 };
 } // namespace
 
@@ -535,8 +535,9 @@ struct OverloadFitness {
 OverloadFitness
 OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
                           ArrayRef<ASTExprAnd<AnyValue>> operands,
-                          bool allowImplicitConversions,
-                          const ExprNode *callExpr, ExprEmitter &emitter) {
+                          bool allowImplicitConversions, ExprEmitter &emitter) {
+
+  const ExprNode *callExpr = callable.expr;
 
   // Check that the signature can be rebound with this set of bindings.
   ssize_t incorrectBindingNo = 0;
@@ -715,7 +716,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
 void OverloadFitness::diagnose(SignatureType signature,
                                const OverloadSet &callable,
                                ArrayRef<ASTExprAnd<AnyValue>> operands,
-                               CallSyntax syntax, LitDiagnostic &diag) {
+                               LitDiagnostic &diag) {
   // TODO: Would be really nice to range underline the operand in question!
   switch (kind) {
   case kValid:
@@ -757,7 +758,7 @@ void OverloadFitness::diagnose(SignatureType signature,
          << operands.size() << " were specified";
     return;
   case kArgNotLValue:
-    if (syntax == CallSyntax::kMethodCall && payload == 0) {
+    if (callable.syntax == CallSyntax::kMethodCall && payload == 0) {
       diag << "invalid use of mutating method on rvalue of type "
            << ASTType(type) << operands[0].expr->getRange();
       return;
@@ -778,16 +779,17 @@ void OverloadFitness::diagnose(SignatureType signature,
 
   case kArgWrongType:
     // If this is a method syntax call, don't count the receiver.
-    if (syntax == CallSyntax::kMethodCall) {
+    if (callable.syntax == CallSyntax::kMethodCall) {
       // it is probably possible for this assert to fire, if it does we should
       // tailor the error message.
       assert(payload != 0 && "TODO: unexpected self mismatch");
       diag << "method argument #" << (payload - 1);
-    } else if (syntax == CallSyntax::kOperator && payload == 1) {
+    } else if (callable.syntax == CallSyntax::kOperator && payload == 1) {
       diag << "right side";
-    } else if (syntax == CallSyntax::kReversedOperator && payload == 0) {
+    } else if (callable.syntax == CallSyntax::kReversedOperator &&
+               payload == 0) {
       diag << "left side";
-    } else if (syntax == CallSyntax::kSubscript && payload != 0) {
+    } else if (callable.syntax == CallSyntax::kSubscript && payload != 0) {
       if (payload == 1 && operands.size() == 2)
         diag << "index";
       else
@@ -806,17 +808,15 @@ void OverloadFitness::diagnose(SignatureType signature,
 /// arguments.  If so, replace fnDecls with a single entry that works and
 /// return success.  If not, generate a diagnostic and return failure.
 LogicalResult OverloadSet::filterOverloadSet(
-    ArrayRef<ASTExprAnd<AnyValue>> operands, CallSyntax syntax,
-    const ExprNode *callExpr, bool allowImplicitConversions,
+    ArrayRef<ASTExprAnd<AnyValue>> operands, bool allowImplicitConversions,
     bool emitDiagnosticOnFailure, ExprEmitter &emitter) {
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
   for (ASTDecl *candidate : fnDecls) {
     auto signature = cast<LIT::FuncOp>(*candidate).getFullSignature();
-    evaluations.push_back(OverloadFitness::evaluate(signature, *this, operands,
-                                                    allowImplicitConversions,
-                                                    callExpr, emitter));
+    evaluations.push_back(OverloadFitness::evaluate(
+        signature, *this, operands, allowImplicitConversions, emitter));
     anyValid |= evaluations.back().kind == OverloadFitness::kValid;
   }
 
@@ -826,23 +826,23 @@ LogicalResult OverloadSet::filterOverloadSet(
       // If there is a single callee, emit a specific error about the call.
       if (fnDecls.size() == 1) {
         auto fnDecl = cast<LIT::FuncOp>(*fnDecls[0]);
-        auto diag = emitter.emitError(callExpr->getLoc(), "invalid call to '")
-                    << baseName << "': " << callExpr->getRange();
+        auto diag = emitter.emitError(expr->getLoc(), "invalid call to '")
+                    << baseName << "': " << expr->getRange();
         evaluations[0].diagnose(fnDecl.getFullSignature(), *this, operands,
-                                syntax, diag);
+                                diag);
         diag.attachNote(fnDecl.getLoc()) << "function declared here";
         return failure();
       }
 
       // Otherwise emit an error, and a note for what is wrong with each
       // candidate.
-      auto diag = emitter.emitError(callExpr->getLoc(),
-                                    "no matching function in call to '")
-                  << baseName << "': " << callExpr->getRange();
+      auto diag =
+          emitter.emitError(expr->getLoc(), "no matching function in call to '")
+          << baseName << "': " << expr->getRange();
       for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
         auto fnDecl = cast<LIT::FuncOp>(*candidate);
         diag.attachNote(fnDecl->getLoc()) << "candidate not viable: ";
-        eval.diagnose(fnDecl.getFullSignature(), *this, operands, syntax, diag);
+        eval.diagnose(fnDecl.getFullSignature(), *this, operands, diag);
       }
       return failure();
     }
@@ -894,22 +894,21 @@ LogicalResult OverloadSet::filterOverloadSet(
       return cast<LIT::FuncOp>(*decl).getIsAdaptive();
     });
     if (anyMarkedAdaptive) {
-      auto diag = emitter.emitError(callExpr->getLoc(), "ambiguous call to '")
+      auto diag = emitter.emitError(expr->getLoc(), "ambiguous call to '")
                   << baseName
                   << "', multiple implementations detected but not all are "
                      "marked adaptive, add @adaptive to all overloads"
-                  << callExpr->getRange();
+                  << expr->getRange();
       for (LIT::FuncOp candidate : llvm::map_range(
                newFnDecls, [](ASTDecl *d) { return cast<LIT::FuncOp>(*d); })) {
         if (!candidate.getIsAdaptive())
           diag.attachNote(candidate.getLoc()) << "non-adaptive candidate here";
       }
     } else {
-      auto diag = emitter.emitError(callExpr->getLoc(), "ambiguous call to '")
+      auto diag = emitter.emitError(expr->getLoc(), "ambiguous call to '")
                   << baseName << "', each candidate requires " << minConversions
                   << " implicit conversion" << plural(minConversions)
-                  << ", disambiguate with an explicit cast"
-                  << callExpr->getRange();
+                  << ", disambiguate with an explicit cast" << expr->getRange();
       for (ASTDecl *candidate : newFnDecls)
         diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
             << "candidate declared here";
@@ -921,7 +920,6 @@ LogicalResult OverloadSet::filterOverloadSet(
 /// Filter down and complete this overload set based on knowledge that we need
 /// to produce a function pointer with the specified type.
 LogicalResult OverloadSet::filterOverloadSetForValueType(ASTType functionType,
-                                                         const ExprNode *expr,
                                                          ExprEmitter &emitter) {
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
@@ -1058,8 +1056,7 @@ PRValue OverloadSet::getCallee() const {
 /// Utility function to perform subsitutions of the specified callable bindings
 /// into the symbol for the given function declaration. It returns the resultant
 /// SymbolConstantAttr or produces an error message and returns null.
-TypedAttr OverloadSet::getBoundConstAttrFor(const ExprNode *callExpr,
-                                            LIT::FuncOp funcOp,
+TypedAttr OverloadSet::getBoundConstAttrFor(LIT::FuncOp funcOp,
                                             ExprEmitter &emitter) const {
 
   // If there are no input parameters specified and if we allow unbound symbols,
@@ -1072,7 +1069,7 @@ TypedAttr OverloadSet::getBoundConstAttrFor(const ExprNode *callExpr,
   ASTType incorrectBindingExpectedType;
 
   auto newBindings = inputParamBindings.verifyBindings(
-      funcOp.getFullSignature().getInputParams(), baseName, callExpr->getLoc(),
+      funcOp.getFullSignature().getInputParams(), baseName, expr->getLoc(),
       incorrectBindingNo, incorrectBindingExpectedType, emitter,
       /*emit diagnostics*/ funcOp, funcOp.getSignature().hasParamVarargs());
   if (!newBindings)
@@ -1086,14 +1083,13 @@ TypedAttr OverloadSet::getBoundConstAttrFor(const ExprNode *callExpr,
 /// the resultant LITSymbolConstant attr or producing an error message and
 /// returning null. This allows producing a reference to a parameterized
 /// function without the parmaeters specified.  They can be bound later.
-TypedAttr OverloadSet::getBoundConstantAttr(const ExprNode *callExpr,
-                                            ExprEmitter &emitter) const {
+TypedAttr OverloadSet::getBoundConstantAttr(ExprEmitter &emitter) const {
   if (fnDecls.size() != 1) {
     assert(!fnDecls.empty() && "DirectCallable malformed");
     auto diag = emitter.emitError(
-                    callExpr->getLoc(),
+                    expr->getLoc(),
                     "cannot form a reference to overloaded declaration of '")
-                << baseName << "'" << callExpr->getRange();
+                << baseName << "'" << expr->getRange();
     for (ASTDecl *candidate : fnDecls) {
       auto funcOp = cast<LIT::FuncOp>(*candidate);
       diag.attachNote(funcOp.getLoc()) << "candidate declared here";
@@ -1102,8 +1098,7 @@ TypedAttr OverloadSet::getBoundConstantAttr(const ExprNode *callExpr,
     return {};
   }
 
-  return getBoundConstAttrFor(callExpr, cast<LIT::FuncOp>(*fnDecls[0]),
-                              emitter);
+  return getBoundConstAttrFor(cast<LIT::FuncOp>(*fnDecls[0]), emitter);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1118,9 +1113,10 @@ TypedAttr OverloadSet::getBoundConstantAttr(const ExprNode *callExpr,
 /// diagnosed (allowing the client to squish downstream error messages).  This
 /// does not emit an error on failure.
 OverloadSet::OverloadSet(ASTType type, StringRef methodName,
-                         const ExprNode *callExpr, bool &erroneousDecl,
-                         LitSharedState &shared) {
-  SMLoc callLoc = callExpr->getLoc();
+                         const ExprNode *expr, CallSyntax syntax,
+                         bool &erroneousDecl, LitSharedState &shared)
+    : expr(expr), syntax(syntax) {
+  SMLoc callLoc = expr->getLoc();
 
   erroneousDecl = false;
   // First perform a lookup to see if there are any candidates.
@@ -1139,23 +1135,24 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
     return;
 
   // Handle method references, which might be overloaded.
-  *this = OverloadSet(methodName, resultDecls, type.getParamBindings());
+  *this = OverloadSet(methodName, resultDecls, type.getParamBindings(), expr,
+                      syntax);
 }
 
 /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.
 CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest dest,
-                                   const ExprNode *expr, ASTType expectedType) {
+                                   ASTType expectedType) {
   // If expectedType is set, use it to filter the overload set.
   if (expectedType) {
-    if (failed(filterOverloadSetForValueType(expectedType, expr, emitter)))
+    if (failed(filterOverloadSetForValueType(expectedType, emitter)))
       return {};
   }
 
   // We allow unbound symbols here which can be emitted as an PRValue.  In the
   // case where we are partially applying, that will force the unbound symbol
   // into a SRValue which will catch symbols that are not fully bound.
-  auto directSymbolAttr = getBoundConstantAttr(expr, emitter);
+  auto directSymbolAttr = getBoundConstantAttr(emitter);
   if (!directSymbolAttr)
     return {};
 
@@ -1245,7 +1242,8 @@ bool OverloadSet::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
   // Otherwise, check to see if we can do an implicit conversion by invoking a
   // `__new__` method on the expected type.
   bool isErroneousDecl = false;
-  OverloadSet callee(requiredType, "__new__", value.expr, isErroneousDecl,
+  OverloadSet callee(requiredType, "__new__", value.expr,
+                     CallSyntax::kImplicitConvert, isErroneousDecl,
                      emitter.shared);
 
   // If there are no viable candidates for the implicit conversion, we fail.
@@ -1255,10 +1253,10 @@ bool OverloadSet::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
   // If we have at least one candidate, we check to see if any of them can
   // work. We disable implicit conversions though, to prevent converting
   // T -> S -> U in one step.
-  return succeeded(callee.filterOverloadSet(
-      {value}, CallSyntax::kImplicitConvert, value.expr,
-      /*allowImplicitConversions=*/false,
-      /*emitDiagnosticOnFailure=*/false, emitter));
+  return succeeded(callee.filterOverloadSet({value},
+                                            /*allowImplicitConversions=*/false,
+                                            /*emitDiagnosticOnFailure=*/false,
+                                            emitter));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1292,8 +1290,7 @@ static SignatureType getSignatureFromPossibleVariadic(Type type) {
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
 AnyValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                               ValueDest dest, const ExprNode *callExpr,
-                               CallSyntax syntax, ExprEmitter &emitter) {
+                               ValueDest dest, ExprEmitter &emitter) {
   if (isNull()) // Base was already diagnosed as an error.
     return {};
 
@@ -1313,7 +1310,7 @@ AnyValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 
   // Check the direct callees to see if they can be unambiguously resolved
   // with the bindings list and specified arguments.
-  if (failed(filterOverloadSet(operands, syntax, callExpr,
+  if (failed(filterOverloadSet(operands,
                                /*allowImplicitConversions=*/true,
                                /*emitDiagnosticOnFailure=*/true, emitter)))
     return {};
@@ -1354,7 +1351,7 @@ AnyValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   // Calls in parameter context cannot have result parameters.
   if (!emitter.builder && !calleeSig.getResultParams().empty()) {
     auto diag =
-        emitter.emitError(callExpr->getLoc(), "cannot call '")
+        emitter.emitError(expr->getLoc(), "cannot call '")
         << baseName
         << "' in parameter expression because it has a parameter result";
     for (auto &resultParam : resultParams) {
@@ -1364,8 +1361,8 @@ AnyValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     return {};
   }
 
-  return emitCallImpl(callee, operands, resultParamDecls, dest, callExpr,
-                      syntax, emitter);
+  return emitCallImpl(callee, operands, resultParamDecls, dest, expr, syntax,
+                      emitter);
 }
 
 /// Emit an indirect call to a resolved value.
@@ -1381,16 +1378,16 @@ AnyValue OverloadSet::emitIndirectCall(CRValue callee,
   }
 
   // Check to see if we can apply these operands to the callee signature.
-  OverloadSet bindings{"callee", /*params*/ {}, {}};
-  auto fitness = OverloadFitness::evaluate(calleeSig, bindings, operands,
-                                           /*allowImplicitConversions=*/true,
-                                           callExpr, emitter);
+  OverloadSet bindings{
+      "callee", /*params*/ {}, {}, callExpr, CallSyntax::kIndirectCall};
+  auto fitness =
+      OverloadFitness::evaluate(calleeSig, bindings, operands,
+                                /*allowImplicitConversions=*/true, emitter);
   if (fitness.kind != OverloadFitness::kValid) {
     // If not, diagnose it with an error.
     auto diag =
         emitter.emitError(callExpr->getLoc(), "invalid indirect call: ");
-    fitness.diagnose(calleeSig, bindings, operands, CallSyntax::kIndirectCall,
-                     diag);
+    fitness.diagnose(calleeSig, bindings, operands, diag);
     return {};
   }
 

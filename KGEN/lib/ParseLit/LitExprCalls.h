@@ -130,20 +130,14 @@ public:
   /// parameters from the call.
   std::vector<std::pair<ASTDecl *, SMLoc>> resultParams;
 
-  /// Perform subsitutions of the specified bindings into the symbol, returning
-  /// the resultant LITSymbolConstant attr or producing an error message and
-  /// returning null. This allows producing a reference to a parameterized
-  /// function without the parmaeters specified.  They can be bound later.
-  TypedAttr getBoundConstantAttr(const ExprNode *callExpr,
-                                 ExprEmitter &emitter) const;
-
-  /// Get a bound SymbolConstantAttr for a specific overload.
-  TypedAttr getBoundConstAttrFor(const ExprNode *callExpr, LIT::FuncOp funcOp,
-                                 ExprEmitter &emitter) const;
+  /// This is information about where this overload set was formed.
+  const ExprNode *expr;
+  CallSyntax syntax;
 
   /// Form an overload set with the specified function overloads.
   OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-              ParamBindArrayAttr bindings);
+              ParamBindArrayAttr bindings, const ExprNode *expr,
+              CallSyntax syntax);
 
   /// Form an OverloadSet with a lookup of a named method on the specified type.
   /// If successful, this provides a non-null OverloadSet.
@@ -155,11 +149,21 @@ public:
   /// FIXME: This "erroneousDecl" nonsense is a pain, pass in an error
   /// lambda instead.
   OverloadSet(ASTType type, StringRef methodName, const ExprNode *callExpr,
-              bool &erroneousDecl, LitSharedState &shared);
+              CallSyntax syntax, bool &erroneousDecl, LitSharedState &shared);
 
   bool isNull() const { return !baseValue && fnDecls.empty(); }
   bool operator!() const { return isNull(); }
   explicit operator bool() const { return !isNull(); }
+
+  /// Perform subsitutions of the specified bindings into the symbol, returning
+  /// the resultant LITSymbolConstant attr or producing an error message and
+  /// returning null. This allows producing a reference to a parameterized
+  /// function without the parameters specified.  They can be bound later.
+  TypedAttr getBoundConstantAttr(ExprEmitter &emitter) const;
+
+  /// Get a bound SymbolConstantAttr for a specific overload.
+  TypedAttr getBoundConstAttrFor(LIT::FuncOp funcOp,
+                                 ExprEmitter &emitter) const;
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings and provided
@@ -171,7 +175,6 @@ public:
   /// filled in with symbol for the valid callee along with its parameter
   /// bindings.
   LogicalResult filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                  CallSyntax syntax, const ExprNode *callExpr,
                                   bool allowImplicitConversions,
                                   bool emitDiagnosticOnFailure,
                                   ExprEmitter &emitter);
@@ -180,7 +183,7 @@ public:
   /// error and return null.  If `expectedType` is set, it is used to filter
   /// the overload set before emitting it.
   CRValue emitAsCRValue(ExprEmitter &emitter, ValueDest dest,
-                        const ExprNode *expr, ASTType expectedType = {});
+                        ASTType expectedType = {});
 
   /// Emit a function call to the specified callee with the specified operand
   /// values.  This emits an error and returns null on failure.
@@ -190,7 +193,6 @@ public:
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
   AnyValue emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands, ValueDest dest,
-                    const ExprNode *callExpr, CallSyntax syntax,
                     ExprEmitter &emitter);
 
   /// Emit an indirect call to a resolved value.
@@ -216,7 +218,6 @@ private:
   /// Filter down and complete this overload set based on knowledge that we need
   /// to produce a function pointer with the specified type.
   LogicalResult filterOverloadSetForValueType(ASTType functionType,
-                                              const ExprNode *callExpr,
                                               ExprEmitter &emitter);
 
   /// Emit an indirect call to a resolved value.
