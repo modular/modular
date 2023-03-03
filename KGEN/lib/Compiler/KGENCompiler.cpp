@@ -41,6 +41,7 @@ void KGEN::generateLibraryFile(mlir::PassManager &pm) {
 }
 
 void KGEN::elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
+                           TargetInfoAttr target,
                            const ElaborateGeneratorsOptions &elaborateOptions) {
   populatePreElaborationPipeline(pm);
   // Only outline closures just before elaboration - they aren't really
@@ -49,7 +50,7 @@ void KGEN::elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
   pm.addPass(createVerifyParameters());
 
   // After elaboration, we have no use for the parameter verifier anymore.
-  pm.addPass(createElaborateGenerators(runtime, elaborateOptions));
+  pm.addPass(createElaborateGenerators(runtime, target, elaborateOptions));
 
   // Run the inliner and cleanup the compiler globals.
   pm.addPass(createForceInline());

@@ -8,6 +8,7 @@
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/LowerToObject.h"
 #include "Support/ErrorOr.h"
+#include "Support/MDialect/MAttrs.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
 #include "llvm/ExecutionEngine/Orc/DebugObjectManagerPlugin.h"
 #include "llvm/ExecutionEngine/Orc/DebuggerSupportPlugin.h"
@@ -15,7 +16,6 @@
 #include "llvm/ExecutionEngine/Orc/EPCEHFrameRegistrar.h"
 #include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
 #include "llvm/MC/TargetRegistry.h"
-#include "llvm/Support/TargetSelect.h"
 #include "llvm/TargetParser/Host.h"
 
 #if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
@@ -35,50 +35,17 @@ using namespace Cache;
 /// address space.
 static constexpr StringLiteral platformStdlibName = "$platform-stdlib";
 
-/// Setup the machine properties from the current architecture.
-static ErrorOr<std::unique_ptr<llvm::TargetMachine>>
-createHostTargetMachine(const CompilationOptions &options) {
-  auto targetTriple = llvm::sys::getDefaultTargetTriple();
-  std::string errorMessage;
-  const auto *target =
-      llvm::TargetRegistry::lookupTarget(targetTriple, errorMessage);
-  if (!target)
-    return Error("no target exists for '" + targetTriple +
-                 "': " + errorMessage);
-
-  std::string cpu(llvm::sys::getHostCPUName());
-  llvm::SubtargetFeatures features;
-  llvm::StringMap<bool> hostFeatures;
-
-  if (llvm::sys::getHostCPUFeatures(hostFeatures))
-    for (auto &f : hostFeatures)
-      features.AddFeature(f.first(), f.second);
-
-  std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      targetTriple, cpu, features.getString(), /*Options=*/{},
-      /*RM=*/llvm::Reloc::Model::PIC_, /*CM=*/std::nullopt,
-      /*OL=*/options.getCodeGenOptLevel(), /*JIT=*/true));
-  if (!machine)
-    return Error("unable to create target machine");
-
-  return machine;
-}
-
 //===----------------------------------------------------------------------===//
 // ExecutionEngine implementation
 //===----------------------------------------------------------------------===//
 
 M::ErrorOr<ExecutionEngine>
-ExecutionEngine::create(const CompilationOptions &options) {
+ExecutionEngine::create(TargetInfoAttr target,
+                        const CompilationOptions &options) {
   ExecutionEngine ee(nullptr, options);
 
-  // Ensure the native target is initialized.
-  llvm::InitializeNativeTarget();
-  llvm::InitializeNativeTargetAsmPrinter();
-  llvm::InitializeNativeTargetAsmParser(); // needed for inline_asm
-
   // Create the target machine.
-  RETURN_ERROR(createHostTargetMachine(options));
+  RETURN_ERROR(KGEN::createTargetMachine(target, options, /*isJIT=*/false));
 
   // Callback to create the object layer with symbol resolution to current
   // process and dynamically linked libraries.

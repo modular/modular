@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CacheDialect/CacheDialect.h"
+#include "Config/Config.h"
 #include "KGEN/CLOptions.h"
 #include "KGEN/CompilerRT.h"
 #include "KGEN/EmitFuncHeader.h"
@@ -31,6 +32,8 @@
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
 
 using namespace M;
@@ -209,11 +212,32 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
       LLCL::createSingleThreadWorkQueue());
 
+  // Find a target specification or construct one using the commandline options.
+  TargetInfoAttr target = getTargetInfo(*theModule);
+  if (target) {
+    if (target.getTripleStr() != clOptions.targetTriple ||
+        target.getCpu() != clOptions.targetCpu ||
+        target.getFeatures() != clOptions.targetFeatures) {
+      mlir::emitWarning(theModule->getLoc(),
+                        "module target does not match command line "
+                        "specification and will be overwritten");
+    }
+    target = nullptr;
+  }
+  if (!target) {
+    ErrorOr<TargetInfoAttr> targetOr =
+        getTargetInfoFor(ctx, clOptions.targetTriple, clOptions.targetCpu,
+                         clOptions.targetFeatures);
+    if (targetOr.isError())
+      return mlir::emitError(theModule->getLoc(), targetOr.getError());
+    target = targetOr.takeValue();
+  }
+
   // Generate a library file or go all the way through elaboration.
   if (clOptions.cmd == Command::kGenLibraryFile)
     generateLibraryFile(pm);
   else
-    elaborateModule(pm, runtime, {clOptions.enableSearch});
+    elaborateModule(pm, runtime, target, {clOptions.enableSearch});
 
   if (failed(pm.run(*theModule)))
     return failure(clOptions.reportError("compilation failed"));
@@ -229,16 +253,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (clOptions.cmd == Command::kGenLibraryFile ||
       clOptions.cmd == Command::kElaborate)
     return emitModuleIR(*theModule, clOptions);
-
-  // The IR module is being compiled to an object file. Find a target
-  // specification or use the host target.
-  TargetInfoAttr target = getTargetInfo(*theModule);
-  if (!target) {
-    ErrorOr<TargetInfoAttr> hostTarget = getHostTargetInfo(ctx);
-    if (hostTarget.isError())
-      return mlir::emitError(theModule->getLoc(), hostTarget.getError());
-    target = hostTarget.takeValue();
-  }
 
   SymbolTable symtab(*theModule);
   auto compiler = ObjectCompiler::create(runtime, pm, ".kgen_cache", symtab,
@@ -301,7 +315,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Now we can load it into the JIT - we're definitely executing the thing.
 
   // Now create the execution engine so we can JIT.
-  auto engineOr = ExecutionEngine::create(compilationOptions);
+  auto engineOr = ExecutionEngine::create(target, compilationOptions);
   if (failed(engineOr))
     return failure(clOptions.reportError(engineOr.getError()));
   ExecutionEngine engine = std::move(*engineOr);
@@ -381,6 +395,26 @@ int main(int argc, char **argv) {
 
   // Initialize the compiler runtime.
   KGEN_CompilerRT_Initialize();
+
+  // Initialize targets first, so that --version shows registered targets.
+  llvm::InitializeAllTargets();
+  llvm::InitializeAllTargetMCs();
+  llvm::InitializeAllAsmParsers();
+  llvm::InitializeAllAsmPrinters();
+
+  // Override the default version printer.
+  llvm::cl::SetVersionPrinter([](raw_ostream &os) {
+    os << "KGEN compiler:\n  ";
+    os << "Modular version " << MODULAR_VERSION_MAJOR << '.'
+       << MODULAR_VERSION_MINOR << '.' << MODULAR_VERSION_PATCH << "\n  ";
+    os << "Git SHA " << MODULAR_VERSION_REVISION << "\n  ";
+    os << "Build config " << MODULAR_BUILD_TYPE << "\n\n";
+
+    // Print the host target config.
+    llvm::sys::printDefaultTargetAndDetectedCPU(os);
+    // Print all registered targets.
+    llvm::TargetRegistry::printRegisteredTargetsForVersion(os);
+  });
 
   // Enable command line options for various MLIR internals.
   registerAsmPrinterCLOptions();

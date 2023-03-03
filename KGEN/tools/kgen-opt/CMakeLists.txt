@@ -7,6 +7,10 @@
 add_modular_tool(kgen-opt
   kgen-opt.cpp
 
+  LINK_COMPONENTS
+  native
+  nativecodegen
+
   LINK_LIBS PRIVATE
   DebugInfoToLLVM
   LITDialect

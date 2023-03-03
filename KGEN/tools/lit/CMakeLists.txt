@@ -7,6 +7,10 @@
 add_modular_tool(lit
   lit.cpp
 
+  LINK_COMPONENTS
+  native
+  nativecodegen
+
   LINK_LIBS PRIVATE
   KGENCLOptions
   KGENCompiler
