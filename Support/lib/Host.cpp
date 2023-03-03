@@ -21,8 +21,9 @@
 #include <string>
 
 #ifdef __APPLE__
+#include <mach/mach_init.h>
+#include <mach/task.h>
 #include <sys/sysctl.h>
-#include <sys/task_info.h>
 #endif // __APPLE__
 
 #ifdef _MSC_VER
