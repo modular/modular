@@ -292,6 +292,10 @@ AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
   if (!value)
     return {};
 
+  // If we have an overload set, filter it down based on our expected type.
+  if (auto overloads = value.ir.getIfORValue())
+    return overloads->emitAsCRValue(*this, dest, value.expr, expectedType);
+
   bool noConversionNeeded =
       ASTType(value.ir.getRValueType()).isEqualCanon(expectedType);
 

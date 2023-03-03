@@ -83,6 +83,9 @@ fn callOverload(a: Int):
   # CHECK:  %1 = kgen.call @"$decls"::@"testThing($Int::Int,$Int::Int)"(%a, %a)
   _ = testThing(a, a)
 
+  # CHECK: %2 = kgen.param.constant: {{.*}} = <@"$decls"::@"testThing($Int::Int)">
+  var f1 : __mlir_type[`!kgen.signature<(`, Int, `) -> `, F32, `>`] = testThing
+
 # Test that pointers don't get confused with by-ref arguments.
 # CHECK-LABEL: lit.func @"testPointerArgs{{.*}}(%ptr: !pop.pointer<si32>) -> si32 {
 fn testPointerArgs(ptr: __mlir_type.`!pop.pointer<si32>`) -> __mlir_type.si32:

@@ -842,10 +842,12 @@ LogicalResult OverloadSet::filterOverloadSet(
 
   // If we found exactly one viable candidate, or all the overloads are marked
   // as adaptive, then we succeed.
-  bool allMarkedAdaptive = llvm::all_of(newFnDecls, [](ASTDecl *decl) {
-    return cast<LIT::FuncOp>(*decl).getIsAdaptive();
-  });
-  if (newFnDecls.size() == 1 || (!newFnDecls.empty() && allMarkedAdaptive)) {
+  auto allMarkedAdaptive = [&]() -> bool {
+    return llvm::all_of(newFnDecls, [](ASTDecl *decl) {
+      return cast<LIT::FuncOp>(*decl).getIsAdaptive();
+    });
+  };
+  if (newFnDecls.size() == 1 || (!newFnDecls.empty() && allMarkedAdaptive())) {
     // Mutate our state to represent what we've learned.  We have one callee
     // and we have valid predetermined parameter bindings.
     fnDecls = std::move(newFnDecls);
@@ -886,6 +888,98 @@ LogicalResult OverloadSet::filterOverloadSet(
             << "candidate declared here";
     }
   }
+  return failure();
+}
+
+/// Filter down and complete this overload set based on knowledge that we need
+/// to produce a function pointer with the specified type.
+LogicalResult OverloadSet::filterOverloadSetForValueType(ASTType functionType,
+                                                         const ExprNode *expr,
+                                                         ExprEmitter &emitter) {
+  assert(isa<SignatureType>(functionType.mlirType));
+
+  // TODO: This is using an exact match which is perhaps too specific of a
+  // check.  We could do some amount of parameter inference to support cases
+  // like:
+  //
+  //    fn foo[Type: mlirtype]() -> Type
+  //    var f : ()-> Int = foo
+  //
+  // We could also support generating a lambda for fancy implicit conversions
+  // and subtyping some day.
+  auto getBindingsForSignature =
+      [&](SignatureType candidateType) -> ParamBindArrayAttr {
+    // Apply any bound parameters to the candidate's type since they will be
+    // applied when a reference is made.
+    // TODO: Parameter inference.
+    ssize_t incorrectBindingNo = 0;
+    ASTType incorrectBindingExpectedType;
+    return inputParamBindings.verifyBindings(
+        candidateType.getInputParams(), baseName, expr->getLoc(),
+        incorrectBindingNo, incorrectBindingExpectedType, emitter,
+        /*don't emit diagnostics*/ nullptr, candidateType.hasParamVarargs());
+  };
+
+  auto isValidCandidate = [&](SignatureType candidateType) {
+    // Apply any bound parameters to the candidate's type since they will be
+    // applied when a reference is made.
+    auto newBindings = getBindingsForSignature(candidateType);
+    if (!newBindings)
+      return false; // If there is an error, return the problem.
+
+    // If anything was bound, apply it to the signature so the expected argument
+    // types are updated.
+    if (!newBindings.empty()) {
+      candidateType = candidateType.getSpecializedSignature(
+          newBindings, [&]() -> InFlightDiagnostic {
+            llvm_unreachable("bad bindings went undetected");
+          });
+    }
+
+    return functionType.isEqualCanon(candidateType);
+  };
+
+  // Evaluate the fitness of each candidate in our overload set.
+  SmallVector<ASTDecl *> validCandidates;
+  for (ASTDecl *candidate : fnDecls) {
+    auto candidateType = cast<LIT::FuncOp>(*candidate).getFullSignature();
+    if (isValidCandidate(candidateType))
+      validCandidates.push_back(candidate);
+  }
+
+  // If we have exactly one viable candidate, then we succeed.
+  auto allMarkedAdaptive = [&]() -> bool {
+    return llvm::all_of(validCandidates, [](ASTDecl *decl) {
+      return cast<LIT::FuncOp>(*decl).getIsAdaptive();
+    });
+  };
+  if (validCandidates.size() == 1 ||
+      (!validCandidates.empty() && allMarkedAdaptive())) {
+    // Mutate our state to represent what we've learned.  We have one callee
+    // and we have valid predetermined parameter bindings.
+    fnDecls = std::move(validCandidates);
+    inputParamBindings.bindings.clear();
+    auto candidateType = cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
+    for (auto bind : getBindingsForSignature(candidateType))
+      inputParamBindings.add(bind);
+
+    return success();
+  }
+
+  auto diag = emitter.emitError(expr->getLoc());
+  if (validCandidates.empty()) {
+    diag << "no '" << baseName << "' candidates have type " << functionType
+         << expr->getRange();
+  } else {
+    diag << "ambiguous use of '" << baseName << "' as type " << functionType
+         << expr->getRange();
+  }
+
+  for (ASTDecl *candidate : fnDecls)
+    diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
+        << "candidate declared here with type "
+        << ASTType(cast<LIT::FuncOp>(*candidate).getFullSignature());
+
   return failure();
 }
 
@@ -1011,7 +1105,13 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
 /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.
 CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest dest,
-                                   const ExprNode *expr) const {
+                                   const ExprNode *expr, ASTType expectedType) {
+  // If expectedType is set, use it to filter the overload set.
+  if (expectedType) {
+    if (failed(filterOverloadSetForValueType(expectedType, expr, emitter)))
+      return {};
+  }
+
   // We allow unbound symbols here which can be emitted as an PRValue.  In the
   // case where we are partially applying, that will force the unbound symbol
   // into a SRValue which will catch symbols that are not fully bound.
