@@ -63,30 +63,21 @@ public:
 
     template <typename Arg>
     mlir::raw_indented_ostream &operator<<(Arg &&arg) {
-      os << std::forward<Arg>(arg);
+      LLVM_DEBUG(os << std::forward<Arg>(arg));
       return os;
     }
   };
 
-  Logger()
-#ifdef MODULAR_DEBUG
-      : os(llvm::dbgs())
-#else
-      : os(llvm::nulls())
-#endif
-  {
-  }
+  Logger() : os(llvm::dbgs()) {}
 
   /// Start a new logging scope, using the provided arguments to form a message
   /// on the title line of the scope.
   template <typename... TitleLineArgs>
   DelimitedScope scope(TitleLineArgs... titleLineArgs) {
-#ifdef MODULAR_DEBUG
     LLVM_DEBUG({
       ((os << titleLineArgs), ...);
       return DelimitedScope(os, " {\n", "}\n");
     });
-#endif
     return DelimitedScope(os, /*open=*/"", /*close=*/"", /*indent=*/false);
   }
 
