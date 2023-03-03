@@ -351,6 +351,7 @@ alias Dynamic1DTileUnitFunc = __mlir_type[
 ]
 
 
+@always_inline
 fn tile[
     workgroup_function: Static1DTileUnitFunc, tile_size_list: VariadicList[Int]
 ](offset: Int, upperbound: Int):
@@ -392,6 +393,7 @@ fn tile[
     unroll[tile_size_list.size().__as_mlir_index(), static_tile_impl]()
 
 
+@always_inline
 fn tile[
     workgroup_function: Dynamic1DTileUnitFunc,
 ](offset: Int, upperbound: Int, tile_size_list: VariadicList[Int]):
