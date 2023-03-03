@@ -201,13 +201,6 @@ public:
   AnyValue emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands, ValueDest dest,
                     ExprEmitter &emitter);
 
-  /// Emit an indirect call to a resolved value.
-  /// TODO: Move to ExprEmitter.
-  static AnyValue emitIndirectCall(CRValue callee,
-                                   ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                   ValueDest dest, const ExprNode *callExpr,
-                                   ExprEmitter &emitter);
-
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations.  This does not generate
   /// any IR.
@@ -225,19 +218,6 @@ private:
   /// to produce a function pointer with the specified type.
   LogicalResult filterOverloadSetForValueType(ASTType functionType,
                                               ExprEmitter &emitter);
-
-  /// Emit an indirect call to a resolved value.
-  /// TODO: Move to ExprEmitter.
-  static AnyValue emitCallImpl(CRValue callee,
-                               ArrayRef<ASTExprAnd<AnyValue>> operands,
-                               ArrayRef<ParamDeclAttr> resultParams,
-                               ValueDest dest, const ExprNode *callExpr,
-                               CallSyntax syntax, ExprEmitter &emitter);
-
-  static PRValue
-  inlineFunctionCallIntoPRValue(ASTDecl &callee, ParamBindArrayAttr inputParams,
-                                ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
-                                SMLoc callLoc, ExprEmitter &emitter);
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,

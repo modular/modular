@@ -1401,18 +1401,18 @@ AnyValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     return {};
   }
 
-  return emitCallImpl(callee, operands, resultParamDecls, dest, expr, syntax,
-                      emitter);
+  return emitter.emitCallUnchecked(callee, operands, resultParamDecls, dest,
+                                   expr);
 }
 
 /// Emit an indirect call to a resolved value.
-AnyValue OverloadSet::emitIndirectCall(CRValue callee,
+AnyValue ExprEmitter::emitIndirectCall(CRValue callee,
                                        ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                       ValueDest dest, const ExprNode *callExpr,
-                                       ExprEmitter &emitter) {
+                                       ValueDest dest,
+                                       const ExprNode *callExpr) {
   auto calleeSig = dyn_cast<SignatureType>(callee.getType());
   if (!calleeSig) {
-    emitter.emitError(callExpr->getLoc(), "invalid function type to call ")
+    emitError(callExpr->getLoc(), "invalid function type to call ")
         << ASTType(callee.getType()) << callExpr->getRange();
     return {};
   }
@@ -1422,24 +1422,29 @@ AnyValue OverloadSet::emitIndirectCall(CRValue callee,
       "callee", /*params*/ {}, {}, callExpr, CallSyntax::kIndirectCall};
   auto fitness =
       OverloadFitness::evaluate(calleeSig, bindings, operands,
-                                /*allowImplicitConversions=*/true, emitter);
+                                /*allowImplicitConversions=*/true, *this);
   if (fitness.kind != OverloadFitness::kValid) {
     // If not, diagnose it with an error.
-    auto diag =
-        emitter.emitError(callExpr->getLoc(), "invalid indirect call: ");
+    auto diag = emitError(callExpr->getLoc(), "invalid indirect call: ");
     fitness.diagnose(calleeSig, bindings, operands, diag);
     return {};
   }
 
-  return emitCallImpl(callee, operands, /*resultParams=*/{}, dest, callExpr,
-                      CallSyntax::kIndirectCall, emitter);
+  return emitCallUnchecked(callee, operands, /*resultParams=*/{}, dest,
+                           callExpr);
 }
 
-AnyValue OverloadSet::emitCallImpl(CRValue callee,
-                                   ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                   ArrayRef<ParamDeclAttr> resultParams,
-                                   ValueDest dest, const ExprNode *callExpr,
-                                   CallSyntax syntax, ExprEmitter &emitter) {
+// FIXME: replace this with a proper interpreter!
+static PRValue
+inlineFunctionCallIntoPRValue(ASTDecl &callee, ParamBindArrayAttr inputParams,
+                              ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
+                              SMLoc callLoc, ExprEmitter &emitter);
+
+AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
+                                        ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                        ArrayRef<ParamDeclAttr> resultParams,
+                                        ValueDest dest,
+                                        const ExprNode *callExpr) {
   SignatureType calleeSig = cast<SignatureType>(callee.getType());
 
   assert(calleeSig.getResultParams().size() == resultParams.size() &&
@@ -1453,7 +1458,7 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
   size_t nextDefaultIdx = 0;
   // Use a LitParameterEvaluator to fold only 'apply' expressions. Emit a rebind
   // if the refined type is different than the expected type.
-  LitParameterEvaluator evaluator(emitter.getDeclResolver());
+  LitParameterEvaluator evaluator(getDeclResolver());
   for (auto [idx, expectedTypeX, conventionX] : llvm::zip(
            llvm::seq<unsigned>(0, calleeSig.getValueInputs().size()),
            calleeSig.getValueInputs(), calleeSig.getValueInputConventions())) {
@@ -1495,13 +1500,12 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
         if (calleeSig.isVararg(argIdx))
           expectedArgType = getVariadicElementType(expectedArgType);
 
-        operand.ir = emitter.getAsExpectedType(operand, expectedArgType,
-                                               // TODO(memory-primary)
-                                               ValueDest(), " in argument");
-        return emitter.emitRValue(
-            operand,
-            // TODO(memory-primary): emit into the argument slot.
-            ValueDest());
+        operand.ir = getAsExpectedType(operand, expectedArgType,
+                                       // TODO(memory-primary)
+                                       ValueDest(), " in argument");
+        return emitRValue(operand,
+                          // TODO(memory-primary): emit into the argument slot.
+                          ValueDest());
       }
     };
 
@@ -1547,16 +1551,15 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
     SmallVector<Value> variadicArgs;
     for (auto &operand : variadicOperands) {
       // TODO(memory_primary): Emit into memory directly.
-      SRValue argVal =
-          emitter.emitSRValue({emitOneArgVal(operand), operand.expr});
+      SRValue argVal = emitSRValue({emitOneArgVal(operand), operand.expr});
       if (!argVal)
         return {};
       variadicArgs.push_back(argVal);
     }
 
-    Location loc = emitter.translateLocation(callExpr->getLoc());
-    Value argVal = emitter.builder->create<POP::VariadicCreateOp>(
-        loc, expectedType, variadicArgs);
+    Location loc = translateLocation(callExpr->getLoc());
+    Value argVal =
+        builder->create<POP::VariadicCreateOp>(loc, expectedType, variadicArgs);
     argumentValues.push_back({SRValue(argVal), variadicOperands[0].expr});
   }
 
@@ -1569,8 +1572,8 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
   // emitting normally.
   if (auto calleePR = callee.getIfPRValue()) {
     if (auto calleeSymbolCst = dyn_cast<SymbolConstantAttr>(calleePR.get())) {
-      ASTDecl *calleeDecl = emitter.getDeclResolver().getDeclForFuncSymbol(
-          calleeSymbolCst.getSymbol());
+      ASTDecl *calleeDecl =
+          getDeclResolver().getDeclForFuncSymbol(calleeSymbolCst.getSymbol());
 
       auto calleeFunc = cast<LIT::FuncOp>(*calleeDecl);
       if (calleeFunc.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled) {
@@ -1579,22 +1582,21 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
           ParamBindArrayAttr inputParams = calleeSym.getParamValues();
           if (auto result = inlineFunctionCallIntoPRValue(
                   *calleeDecl, inputParams, argumentValues, callExpr->getLoc(),
-                  emitter))
-            return emitter.emitResult(result.get(), callExpr, dest);
+                  *this))
+            return emitResult(result.get(), callExpr, dest);
         }
       }
     }
   }
 
-  auto &builder = emitter.builder;
   if (!builder) {
     // Emitting a call in a parameter context. Generate an apply operator.
     SmallVector<TypedAttr> operands({callee.getIfPRValue().get()});
     for (auto [argValAndExpr, calleeArgType] :
          llvm::zip(argumentValues, calleeSig.getValueInputs())) {
       if (!argValAndExpr.ir.getIfPRValue()) {
-        emitter.emitError(argValAndExpr.expr->getLoc(),
-                          "cannot use a dynamic value in parameter context")
+        emitError(argValAndExpr.expr->getLoc(),
+                  "cannot use a dynamic value in parameter context")
             << argValAndExpr.expr->getRange();
         return {};
       }
@@ -1612,12 +1614,12 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
     Type refinedType = evaluator.refineType(result.getType());
     if (refinedType != result.getType())
       result = ParamOperatorAttr::get(POC::Rebind, result, refinedType);
-    return emitter.emitResult(result, callExpr, dest);
+    return emitResult(result, callExpr, dest);
   }
 
   // Otherwise, materialize PRValue arguments as SRValues.
   SmallVector<Value> callArgs;
-  Location loc = emitter.translateLocation(callExpr->getLoc());
+  Location loc = translateLocation(callExpr->getLoc());
   for (auto [argValAndExpr, calleeArgType] :
        llvm::zip(argumentValues, calleeSig.getValueInputs())) {
     Value arg;
@@ -1625,7 +1627,7 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
       arg = lv;
     } else {
       // TODO(memory_primary): Emit into memory directly.
-      arg = emitter.emitSRValue(argValAndExpr);
+      arg = emitSRValue(argValAndExpr);
     }
     if (!arg)
       return {};
@@ -1659,9 +1661,9 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
   // If the callee can raise an error, try to unwrap it.
   if (calleeSig.isThrows() && !calleeSig.isAsync() &&
       !isValidErrorContext(builder->getInsertionBlock())) {
-    emitter.emitError(callExpr->getLoc(),
-                      "cannot call function that may raise in a context that "
-                      "cannot raise");
+    emitError(callExpr->getLoc(),
+              "cannot call function that may raise in a context that "
+              "cannot raise");
     return {};
   }
 
@@ -1672,7 +1674,7 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
   Type refinedType = evaluator.refineType(result.getType());
   if (refinedType != result.getType())
     result = builder->create<RebindOp>(loc, refinedType, result);
-  return emitter.emitResult(result, callExpr, dest);
+  return emitResult(result, callExpr, dest);
 }
 
 /// Given a call to an alwaysinline function that is invoked with simple
@@ -1682,10 +1684,10 @@ AnyValue OverloadSet::emitCallImpl(CRValue callee,
 ///
 /// This is best-effort: when it fails, we fall back to emitting a normal call
 /// or "apply" parameter expression.
-PRValue OverloadSet::inlineFunctionCallIntoPRValue(
-    ASTDecl &callee, ParamBindArrayAttr inputParams,
-    ArrayRef<ASTExprAnd<AnyValue>> argumentValues, SMLoc callLoc,
-    ExprEmitter &emitter) {
+static PRValue
+inlineFunctionCallIntoPRValue(ASTDecl &callee, ParamBindArrayAttr inputParams,
+                              ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
+                              SMLoc callLoc, ExprEmitter &emitter) {
   auto funcOp = cast<LIT::FuncOp>(callee);
 
   // TODO: We currently cannot handle calls to parameterized functions, we
