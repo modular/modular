@@ -1753,31 +1753,23 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
     ExprEmitter emitter(shared, *decl.getParentDecl(), builder,
                         /*varDeclCursor*/ nullptr);
 
-    // If we have a type, then emit directly into the LValue.
+    // If we have a type, then emit directly into the LValue.  Otherwise emit
+    // into
+    ValueDest dest;
     if (parsed.type) {
       varOp.getResult().setType(POP::PointerType::get(parsed.type));
-      if (!emitter.emitExprRValue(parsed.initExpr, LValue(varOp)))
-        return failure();
+      dest = LValue(varOp);
     } else {
-      // TODO(memory-primary): emit directly into var-decl and infer type.
-      auto initVal = emitter.emitExprSRValue(parsed.initExpr);
-      if (!initVal)
-        return failure();
-
-      // Store the initializer value into the VarDecl.
-      auto loc = translateLocation(parsed.initExpr->getLoc());
-      builder.create<POP::StoreOp>(loc, initVal, varOp,
-                                   /*alignment=*/std::nullopt);
-
-      // Infer the type if we lack a declared type (`var x = 42`).
-      // TODO(literal autopromotion).
-      parsed.type = initVal.getType();
+      // If we don't, we emit into the varOp itself, because this will infer the
+      // type of the varOp from the initializer expression.
+      dest = ValueDest(varOp);
     }
-  }
 
-  if (parsed.type)
+    if (!emitter.emitExprRValue(parsed.initExpr, dest))
+      return failure();
+  } else if (parsed.type) {
     varOp.getResult().setType(POP::PointerType::get(parsed.type));
-  else {
+  } else {
     // If there was neither a type or initializer, reject the var.
     emitError(varOp.getLoc(),
               "declaration must have either a type or an initializer");
