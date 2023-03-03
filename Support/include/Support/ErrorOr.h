@@ -96,7 +96,7 @@ public:
   template <class OtherT,
             typename = std::enable_if_t<std::is_convertible<OtherT, T>::value>>
   ErrorOr(OtherT &&val) : storageMode(StorageMode::kValue) {
-    new (&valueStorage) T(std::forward<OtherT &&>(val));
+    new (&valueStorage) T(std::forward<OtherT>(val));
   }
 
   /// Move constructor from ErrorOr.
@@ -105,7 +105,7 @@ public:
   ErrorOr(ErrorOr<OtherT> &&other) : storageMode(other.storageMode) {
     switch (storageMode) {
     case StorageMode::kValue:
-      new (&valueStorage) T(std::forward<OtherT &&>(other.valueStorage));
+      new (&valueStorage) T(std::forward<OtherT>(other.valueStorage));
       return;
     case StorageMode::kStaticError:
       errorStorage = other.errorStorage;
