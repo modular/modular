@@ -96,73 +96,58 @@ using HasTakeValue = decltype(std::declval<T>().takeValue());
 template <typename CacheHitFnT>
 using ResultT = std::invoke_result_t<CacheHitFnT, Operation *, BufferRef>;
 
+template <typename CacheHitFnT>
+using AsyncValueRefResultT = LLCL::AsyncValueRef<Detail::ResultT<CacheHitFnT>>;
+
 /// Package up detection of member functions of ErrorOr.
 template <typename CacheHitFnT>
-constexpr bool ReturnsErrorOrLike =
+constexpr bool is_result_error_or_v =
     llvm::is_detected<Detail::HasIsError,
                       Detail::ResultT<CacheHitFnT>>::value &&
     llvm::is_detected<Detail::HasTakeError,
                       Detail::ResultT<CacheHitFnT>>::value &&
     llvm::is_detected<Detail::HasTakeValue,
                       Detail::ResultT<CacheHitFnT>>::value;
+
 } // namespace Detail
 
 /// This provides a templated version of `cachedTransform` that provides a sync
-/// API for the cache hit function. The only restriction is that the cache hit
-/// function must return something like an ErrorOr<T> so we can propagate
-/// failures properly.
+/// API for the cache hit function.
 template <typename CacheHitFnT>
-std::enable_if_t<!std::is_convertible_v<Detail::ResultT<CacheHitFnT>,
-                                        LLCL::AnyAsyncValueRef> &&
-                     Detail::ReturnsErrorOrLike<CacheHitFnT>,
-                 LLCL::AnyAsyncValueRef>
+LLCL::AnyAsyncValueRef
 cachedTransform(Operation *target, LLCL::RCRef<TransformCache> transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                 TransformFn transformFn, CacheHitFnT cacheHitFn) {
   // Get the runtime pointer to hand to the closure.
   LLCL::CompactRuntimePtr rt = transformCache->getRuntime();
-  auto onCacheHit = [target, cacheHitFn = std::move(cacheHitFn),
-                     rt](Operation *op, BufferRef buf) {
-    // Call the provided function and act accordingly.
-    auto resultOr = cacheHitFn(op, std::move(buf));
-    if (resultOr.isError())
-      return LLCL::AsyncValueRef<Detail::ResultT<CacheHitFnT>>::createError(
-          rt, LLCL::getMLIRDiagnostic(resultOr.takeError(), target->getLoc()));
 
-    return LLCL::AsyncValueRef<Detail::ResultT<CacheHitFnT>>::createReady(
-        rt, resultOr.takeValue());
-  };
+  CacheHitFn onCacheHit;
 
+  // If the cache hit function return something like an ErrorOr<T> propagate
+  // failures properly.
+  if constexpr (Detail::is_result_error_or_v<CacheHitFnT>) {
+    onCacheHit = [cacheHitFn = std::move(cacheHitFn), rt,
+                  target](Operation *op, BufferRef buf) {
+      auto resultOr = cacheHitFn(op, std::move(buf));
+      if (resultOr.isError())
+        return Detail::AsyncValueRefResultT<CacheHitFnT>::createError(
+            rt,
+            LLCL::getMLIRDiagnostic(resultOr.takeError(), target->getLoc()));
+
+      return Detail::AsyncValueRefResultT<CacheHitFnT>::createReady(
+          rt, resultOr.takeValue());
+    };
+  } else {
+    onCacheHit = [cacheHitFn = std::move(cacheHitFn), rt](Operation *op,
+                                                          BufferRef buf) {
+      auto result = Detail::AsyncValueRefResultT<CacheHitFnT>::allocate(rt);
+      result.copy().emplace(cacheHitFn(op, std::move(buf)));
+      return result;
+    };
+  }
   return cachedTransform(target, std::move(transformCache), std::move(chain),
                          std::move(transformKey), std::move(transformFn),
-                         onCacheHit);
-}
-
-/// This provides a templated version of `cachedTransform` that provides a sync
-/// API for the cache hit function. This propagates the result as an
-/// AsyncValueRef<T> directly, without unwrapping anything that may be inside
-/// the result type.
-template <typename CacheHitFnT>
-std::enable_if_t<!std::is_convertible_v<Detail::ResultT<CacheHitFnT>,
-                                        LLCL::AnyAsyncValueRef> &&
-                     !Detail::ReturnsErrorOrLike<CacheHitFnT>,
-                 LLCL::AnyAsyncValueRef>
-cachedTransform(Operation *target, LLCL::RCRef<TransformCache> transformCache,
-                LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
-                TransformFn transformFn, CacheHitFnT cacheHitFn) {
-  // Get the runtime pointer to hand to the closure.
-  LLCL::CompactRuntimePtr rt = transformCache->getRuntime();
-  auto onCacheHit = [cacheHitFn = std::move(cacheHitFn), rt](Operation *op,
-                                                             BufferRef buf) {
-    auto result =
-        LLCL::AsyncValueRef<Detail::ResultT<CacheHitFnT>>::allocate(rt);
-    result.copy().emplace(cacheHitFn(op, std::move(buf)));
-    return result;
-  };
-
-  return cachedTransform(target, std::move(transformCache), std::move(chain),
-                         std::move(transformKey), std::move(transformFn),
-                         onCacheHit);
+                         std::move(onCacheHit));
 }
 
 /// Run the specified passes over the target operation (i.e. ModulePasses over a
