@@ -91,15 +91,32 @@ fn vectorize[
         func[1](i)
 
 
+alias fn_sig_type = __mlir_type[
+    `!kgen.signature<(`,
+    Int,
+    `) -> !lit.none>`,
+]
+
+alias fn_simd_sig_type = __mlir_type[
+    `!kgen.signature<<simd_width>(`,
+    Int,
+    `) -> !lit.none>`,
+]
+
+
+# TODO: Move to a more appropriate place.
+fn variadic_get(
+    a: __mlir_type[`!kgen.variadic<`, fn_sig_type, `>`],
+    idx: __mlir_type.`index`,
+) -> fn_sig_type:
+    return __mlir_op.`pop.variadic.get`(a, idx)
+
+
 @always_inline
 fn vectorize_unroll[
     simd_width: __mlir_type.index,
     unroll_factor: __mlir_type.index,
-    func: __mlir_type[
-        `!kgen.signature<<simd_width>(`,
-        Int,
-        `) -> !lit.none>`,
-    ],
+    func: fn_simd_sig_type,
 ](size: Int):
     """Map a function which is parametrized over a simd_width over a range
     from 0 to size in simd fashion and unroll the loop by unroll_factor.
@@ -110,11 +127,47 @@ fn vectorize_unroll[
     ) * unrolled_simd_width
     let vector_end_simd = (size // simd_width) * simd_width
 
+    # Explicitly fork on all available candidates for `func[simd_width]`.
+    # We could've just called it from the loops below, but making it explicit
+    # allows us to completely control how the search space is generated.
+    # This way there is just one multi-versioning happening in this function
+    # and it is this `kgen.param.fork`.
+    alias vector_func_impls = __mlir_attr[
+        `#kgen.param.expr<get_all_impls,`,
+        func[simd_width],
+        `> :`,
+        __mlir_type[`!kgen.variadic<`, fn_sig_type, `>`],
+    ]
+    # TODO: `kgen.param.fork` and `get_all_impls` invocations should have
+    # nice looking wrappers.
+    __mlir_op.`kgen.param.fork`[
+        paramDecl : __mlir_attr[
+            `#kgen<param.decl result_hidden :`, fn_sig_type, `>`
+        ],
+        values : __mlir_attr[
+            vector_func_impls, `: !kgen.variadic<`, fn_sig_type, `>`
+        ],
+    ]()
+    alias vector_func_impl = __mlir_attr[
+        `#kgen.param.decl.ref<"result_hidden"> :`, fn_sig_type
+    ]
+
+    # For scalar version we will just get the first available implementation.
+    # If we do `kgen.param.fork` here, we will blow up the search space
+    # quadratically.
+    alias scalar_func_impls = __mlir_attr[
+        `#kgen.param.expr<get_all_impls,`,
+        func[1],
+        `> :`,
+        __mlir_type[`!kgen.variadic<`, fn_sig_type, `>`],
+    ]
+    alias scalar_func_impl = variadic_get(scalar_func_impls, 0)
+
     @always_inline
     fn unrolled_func(unrolled_simd_idx: Int):
         @always_inline
         fn unroll_iter[idx: __mlir_type.index]():
-            func[simd_width](unrolled_simd_idx + idx * simd_width)
+            vector_func_impl(unrolled_simd_idx + idx * simd_width)
 
         unroll[unroll_factor, unroll_iter]()
 
@@ -126,10 +179,10 @@ fn vectorize_unroll[
     for simd_idx in range(
         vector_end_unrolled_simd, vector_end_simd, simd_width
     ):
-        func[simd_width](simd_idx)
+        vector_func_impl(simd_idx)
 
     for i in range(vector_end_simd, size):
-        func[1](i)
+        scalar_func_impl(i)
 
 
 # ===----------------------------------------------------------------------===#
