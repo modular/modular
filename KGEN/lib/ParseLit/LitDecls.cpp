@@ -518,28 +518,13 @@ LitParameterEvaluator::LitParameterEvaluator(
       resolver(resolver) {}
 
 FailureOr<TypedAttr>
-LitParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
-  if (op.getOpcode() != POC::Apply)
-    return failure();
-
-  // We can only fold direct calls.
-  auto ref = dyn_cast<SymbolConstantAttr>(op.getOperands().front());
-  if (!ref)
-    return failure();
-
-  // All inputs must be simple constants.
-  ArrayRef<TypedAttr> inputs = op.getOperands().drop_front();
-  if (!llvm::all_of(inputs, ParameterAttr::isSimpleConstant))
-    return failure();
-
-  ErrorOr<Region *> body = lookupFunctionBody(ref.getSymbol());
+LitParameterEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
+                                            ArrayRef<Attribute> arguments) {
+  ErrorOr<Region *> body = lookupFunctionBody(symbol);
   if (body.isError()) {
     // Swallow the error.
     return failure();
   }
-  SmallVector<Attribute> arguments;
-  for (TypedAttr input : inputs)
-    arguments.push_back(input);
 
   ErrorTreeOr<SmallVector<Attribute>> result =
       startInterpreterAt(*body.takeValue(), arguments);
@@ -554,6 +539,28 @@ LitParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
   return cast<TypedAttr>(result->front());
 }
 
+FailureOr<TypedAttr>
+LitParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
+  if (op.getOpcode() != POC::Apply)
+    return failure();
+
+  // We can only fold direct calls.
+  auto ref = dyn_cast<SymbolConstantAttr>(op.getOperands().front());
+  if (!ref)
+    return failure();
+
+  // All inputs must be simple constants.
+  ArrayRef<TypedAttr> inputs = op.getOperands().drop_front();
+  if (!llvm::all_of(inputs, ParameterAttr::isSimpleConstant))
+    return failure();
+
+  SmallVector<Attribute> arguments;
+  for (TypedAttr input : inputs)
+    arguments.push_back(input);
+
+  return evaluateFunctionCall(ref.getSymbol(), arguments);
+}
+
 ErrorOr<Region *>
 LitParameterEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
   ASTDecl *decl = resolver.getDeclForFuncSymbol(symbol);
@@ -563,13 +570,23 @@ LitParameterEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
   // Fail if the function is parameterized.
   if (failed(resolver.resolveSignature(*decl, decl->getLoc())))
     return Error("failed to resolve function signature");
+
   auto func = cast<LIT::FuncOp>(*decl);
-  if (!func.getInputParamDecls().empty() || !func.getResultParams().empty())
+  if (func.getAlwaysInlineLevel() == AlwaysInlineLevel::Disabled)
+    return Error("function is not always_inline");
+  SignatureType fullSig = func.getFullSignature();
+  if (!fullSig.getInputParams().empty() || !fullSig.getResultParams().empty())
     return Error("function is parametric");
 
-  // Make sure to fully resolve the body.
+  // Make sure to fully resolve the body and everything within it.
   if (failed(resolver.resolveFully(*decl, decl->getLoc())))
     return Error("failed to fully resolve function");
+  for (auto [name, childDecls] : decl->getDeclsInScope()) {
+    for (ASTDecl *childDecl : childDecls) {
+      if (failed(resolver.resolveFully(*childDecl, childDecl->getLoc())))
+        return Error("failed to fully resolve function");
+    }
+  }
   return &func.getBodyRegion();
 }
 

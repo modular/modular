@@ -679,6 +679,10 @@ void LetDeclOp::getAsmResultNames(
   setNameFn(getResult(), getName());
 }
 
+OpFoldResult LetDeclOp::fold(LetDeclOp::FoldAdaptor adaptor) {
+  return adaptor.getValue();
+}
+
 void VarDeclOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
   setNameFn(getResult(), getName());
