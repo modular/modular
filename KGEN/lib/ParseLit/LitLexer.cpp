@@ -79,7 +79,7 @@ LitLexer::LitLexer(LitSharedState &shared, const LitLexerCursor &cursor)
 
 /// Emit an error message and return a LitToken::error token.
 LitToken LitLexer::emitErrorAt(const char *loc, const Twine &message) {
-  mlir::emitError(translateLocation(SMLoc::getFromPointer(loc)), message);
+  shared.diags.emitError(SMLoc::getFromPointer(loc), message);
   return formToken(LitToken::error, loc, -1);
 }
 
