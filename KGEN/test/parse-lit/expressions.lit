@@ -17,17 +17,25 @@ struct MemoryPrimaryType:
 
 # CHECK-LABEL: lit.func @"memoryPrimaryOps
 fn memoryPrimaryOps(a&: MemoryPrimaryType) -> MemoryPrimaryType:
-  # FIXME: Should not be returning MemoryPrimaryType by value and storing it.
+  # CHECK-NEXT: %v1 = lit.var.decl "v1" : <@"$expressions"::@MemoryPrimaryType>
+  # CHECK-NEXT: kgen.call @"$expressions"::@MemoryPrimaryType::@"__clone__($expressions::MemoryPrimaryType=&,$expressions::MemoryPrimaryType&)"(%v1, %a) : (!pop.pointer<@"$expressions"::@MemoryPrimaryType> byref-result, !pop.pointer<@"$expressions"::@MemoryPrimaryType> byref)
+  var v1 = a
 
-  # HECK: %v1 = lit.var.decl "v1" : <@"$expressions"::@MemoryPrimaryType>
-  # HECK: %0 = kgen.call @"$expressions"::@MemoryPrimaryType::@"__clone__($expressions::MemoryPrimaryType&)"(%a) : (!pop.pointer<@"$expressions"::@MemoryPrimaryType> byref) -> !kgen.declref<@"$expressions"::@MemoryPrimaryType>
-  # HECK: pop.store %0, %v1 : !pop.pointer<@"$expressions"::@MemoryPrimaryType>
-  # TODO: var v1 = a
-
-  # CHECK: %v2 = lit.var.decl "v2" : <@"$expressions"::@MemoryPrimaryType>
-  # CHECK: kgen.call @"$expressions"::@MemoryPrimaryType::@"__clone__($expressions::MemoryPrimaryType=&,$expressions::MemoryPrimaryType&)"(%v2, %a)
+  # CHECK-NEXT: %v2 = lit.var.decl "v2" : <@"$expressions"::@MemoryPrimaryType>
+  # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%v2, %a)
   var v2 : MemoryPrimaryType = a
 
+  # CHECK-NEXT: %_ = lit.var.decl "_"
+  # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%_, %a)
+  _ = a
+
+  # CHECK-NEXT: %3Canonymous3E = lit.var.decl "<anonymous>"
+  # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%3Canonymous3E, %a)
+  a
+
+  # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%__result__, %v2)
+  # CHECK-NEXT: [[NONEVAL:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
+  # CHECK-NEXT: lit.return [[NONEVAL]]
   return v2
 
 # CHECK-LABEL: lit.struct.decl @M

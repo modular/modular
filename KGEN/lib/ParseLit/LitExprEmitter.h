@@ -49,6 +49,21 @@ public:
   ValueDest(const ValueDest &) = default;
   ValueDest &operator=(const ValueDest &) = default;
 
+  /// Return true if there is a specification for this destination.  If not,
+  /// an expression will be emitted to generate a PRValue, SRValue, LValue, etc.
+  bool isSpecified() const { return !representation.isNull(); }
+
+  /// If this value destination has a known type, e.g. "var x : Int = 42" or
+  /// "x = 42", return it.  If not (e.g. _ = 42) then return null.
+  ASTType getTypeIfKnown() const;
+
+  /// Project a ValueDest into an lvalue with the specified underlying (RValue)
+  /// type.  This uses 'resultType' for inference when the ValueDest is untyped
+  /// (e.g. `var x = expr`), but may return an LValue of another type when the
+  /// dest is typed (e.g. `var x : F32 = 1`).
+  LValue getLValueForResult(SMLoc loc, ASTType resultType,
+                            ExprEmitter &emitter) const;
+
 private:
   //  This should only be accessed by ExprEmitter::emitResult.
   friend class ExprEmitter;
@@ -149,7 +164,8 @@ public:
   // Emission helpers for various value classifications.
 
   /// Emit the specified value into the current destination if present.  This
-  /// accepts (and silently propagates) null values.
+  /// accepts (and silently propagates) null values, and is a convenience helper
+  /// for working with getLValueForResult.
   AnyValue emitResult(AnyValue value, const ExprNode *node, ValueDest dest);
 
   AnyValue emitResult(TypedAttr value, const ExprNode *node, ValueDest dest) {
@@ -161,10 +177,6 @@ public:
   AnyValue emitResult(PRValue value, const ExprNode *node, ValueDest dest) {
     return emitResult(AnyValue(value), node, dest);
   }
-
-  /// This method is used by node implementations of emitExprResultIntoPattern
-  /// to emit the result once they determine an lvalue to use.
-  AnyValue emitExprResultIntoLValue(ASTExprAnd<AnyValue> value, LValue dest);
 
   /// This helper emits the specified value rep as an RValue.
   RValue emitExprRValue(const ExprNode *node, ValueDest dest);

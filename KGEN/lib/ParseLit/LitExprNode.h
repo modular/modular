@@ -138,10 +138,13 @@ public:
   virtual AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const = 0;
 
   /// This node is being used as the LHS target/pattern of an assignment,
-  /// initialized with the specified RHS value.  On success, handle this
-  /// coersion/initialization, otherwise emit an error.
-  virtual AnyValue emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                             ExprEmitter &emitter) const;
+  /// initialized with the specified RHS value of some type.  Generate an LValue
+  /// that can be initialized or emit an error and return null.  This uses
+  /// 'resultType' for inference when the ValueDest is untyped (e.g. `var x =
+  /// expr`), but may return an LValue of another type when the dest is typed
+  /// (e.g. `var x : F32 = 1`).
+  virtual LValue getLValueForResult(ASTType resultType,
+                                    ExprEmitter &emitter) const;
 };
 
 } // namespace M::KGEN::LIT

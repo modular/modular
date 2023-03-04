@@ -1195,6 +1195,11 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
 /// error and return null.
 CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest dest,
                                    ASTType expectedType) {
+  // If the value destination implies a type, use that to filter the overload
+  // set.
+  if (!expectedType)
+    expectedType = dest.getTypeIfKnown();
+
   // If expectedType is set, use it to filter the overload set.
   if (expectedType) {
     if (failed(filterOverloadSetForValueType(expectedType, emitter)))
@@ -1453,12 +1458,20 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
   for (auto [idx, expectedTypeX, conventionX] : llvm::zip(
            llvm::seq<unsigned>(0, calleeSig.getValueInputs().size()),
            calleeSig.getValueInputs(), calleeSig.getValueInputConventions())) {
+    // Work around lambda not being able to reference bindings.
+    unsigned argIdx = idx;
+    Type expectedType = evaluator.refineType(expectedTypeX);
+    ValueInputConvention convention = conventionX;
+
     // If this is the return slot for a call, propagate the ValueDest into it.
-    if (idx == 0 && calleeSig.hasMemoryPrimaryResult()) {
-      assert(isa<LValue>(dest.representation) &&
-             "FIXME: Need to change ValueDest api to make this more general");
-      LValue result = cast<LValue>(dest.representation);
-      assert(result);
+    if (convention == ValueInputConvention::ByRefResult) {
+      assert(idx == 0 && calleeSig.hasMemoryPrimaryResult());
+      auto rvalueType =
+          cast<POP::PointerType>(expectedType).getResolvedElementType();
+      LValue result =
+          dest.getLValueForResult(callExpr->getLoc(), rvalueType, *this);
+      if (!result)
+        return {};
       argumentValues.push_back({result, callExpr});
 
       // We consumed the natural destination, the None type will be emitted as
@@ -1467,10 +1480,6 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
       continue;
     }
 
-    // Work around lambda not being able to reference bindings.
-    unsigned argIdx = idx;
-    Type expectedType = evaluator.refineType(expectedTypeX);
-    ValueInputConvention convention = conventionX;
     // If we ran out of operands, fulfill this with a default value or empty
     // variadic list.
     if (nextOperandIdx == operands.size()) {
@@ -1579,7 +1588,7 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
   if (FailureOr<TypedAttr> resultPR =
           inlineFunctionCallIntoPRValue(callee, argumentValues, evaluator);
       succeeded(resultPR))
-    return *resultPR;
+    return emitResult(*resultPR, callExpr, dest);
 
   if (!builder) {
     // Emitting a call in a parameter context. Generate an apply operator.
