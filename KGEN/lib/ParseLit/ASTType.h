@@ -57,6 +57,10 @@ public:
   /// the specified other type.
   bool isEqualCanon(ASTType other) const;
 
+  /// Return true if this type is a register-primary type that can be passed
+  /// around and copied in SSA values instead of having to live in memory.
+  bool isRegisterPrimary(llvm::SMLoc loc, LitSharedState &shared) const;
+
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.  This may also be inserted into raw_ostream
   /// and diagnostics.

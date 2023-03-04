@@ -214,7 +214,8 @@ ParameterInferenceState::infer(SignatureType signature,
       // We'll bind the next provided value.
       auto operand = operands[providedValueIdx++];
       switch (expectedConvention) {
-      case ValueInputConvention::ByRef: {
+      case ValueInputConvention::ByRef:
+      case ValueInputConvention::ByRefResult: {
         // The actual value must be an lvalue if callee takes things by-ref.
         auto argVal = operand.ir.getIfLValue();
         if (!argVal)
@@ -582,6 +583,10 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
   size_t maxAllowedargs = 0;
   for (auto [idx, convention] :
        llvm::enumerate(signature.getValueInputConventions())) {
+    // Ignore the return slot if present.
+    if (convention == ValueInputConvention::ByRefResult)
+      continue;
+
     // Varargs arguments don't require a value, but allow any number of them.
     if (signature.isVararg(idx)) {
       maxAllowedargs = ~size_t(0);
@@ -621,6 +626,11 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
        llvm::enumerate(signature.getValueInputs())) {
     ValueInputConvention expectedConvention =
         signature.getInputConvention(expectedArgIdx);
+
+    // Ignore the return slot if present.
+    if (expectedConvention == ValueInputConvention::ByRefResult)
+      continue;
+
     unsigned argIdx = expectedArgIdx;
     Type expectedType = evaluator.refineType(unboundExpectedType);
 
@@ -648,7 +658,8 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
       assert(!signature.isKWVararg(argIdx) &&
              "keyword arguments and `**arg` variadics not supported yet");
       switch (expectedConvention) {
-      case ValueInputConvention::ByRef: {
+      case ValueInputConvention::ByRef:
+      case ValueInputConvention::ByRefResult: {
         // The actual value must be an lvalue if callee takes things by-ref.
         auto argVal = operand.ir.getIfLValue();
         if (!argVal)
@@ -1227,7 +1238,8 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest dest,
          "Error: self shouldn't be varargs");
 
   switch (selfConvention) {
-  case ValueInputConvention::ByRef: {
+  case ValueInputConvention::ByRef:
+  case ValueInputConvention::ByRefResult: {
     LValue baseLV = baseValue.ir.getIfLValue();
     if (!baseLV) {
       emitter.emitError(loc,
@@ -1438,12 +1450,27 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   size_t nextOperandIdx = 0;
   size_t nextDefaultIdx = 0;
+
   // Use a LitParameterEvaluator to fold only 'apply' expressions. Emit a rebind
   // if the refined type is different than the expected type.
   LitParameterEvaluator evaluator(getDeclResolver());
   for (auto [idx, expectedTypeX, conventionX] : llvm::zip(
            llvm::seq<unsigned>(0, calleeSig.getValueInputs().size()),
            calleeSig.getValueInputs(), calleeSig.getValueInputConventions())) {
+    // If this is the return slot for a call, propagate the ValueDest into it.
+    if (idx == 0 && calleeSig.hasMemoryPrimaryResult()) {
+      assert(isa<LValue>(dest.representation) &&
+             "FIXME: Need to change ValueDest api to make this more general");
+      LValue result = cast<LValue>(dest.representation);
+      assert(result);
+      argumentValues.push_back({result, callExpr});
+
+      // We consumed the natural destination, the None type will be emitted as
+      // a PRValue.
+      dest = ValueDest();
+      continue;
+    }
+
     // Work around lambda not being able to reference bindings.
     unsigned argIdx = idx;
     Type expectedType = evaluator.refineType(expectedTypeX);
@@ -1470,6 +1497,7 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
     auto emitOneArgVal = [&](ASTExprAnd<AnyValue> operand) -> AnyValue {
       switch (convention) {
       case ValueInputConvention::ByRef:
+      case ValueInputConvention::ByRefResult:
         // By-ref arguments, must be lvalues.
         assert(operand.ir.getIfLValue() &&
                "Call should already be type checked");
