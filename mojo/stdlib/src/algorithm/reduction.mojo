@@ -82,16 +82,13 @@ fn _simd_max_elementwise[
     simd_width: __mlir_type.index,
     acc_type: __mlir_type.`!kgen.dtype`,
     type: __mlir_type.`!kgen.dtype`,
-](x: SIMD[simd_width, acc_type], y0: SIMD[simd_width, type]) -> SIMD[
+](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
     simd_width, acc_type
 ]:
     """Helper function that computes the elementwise max of each element in a
     simd vector and is compatible with the function signature expected by map_fn
     in reduce."""
-    let y: SIMD[simd_width, acc_type] = __mlir_op.`pop.cast`[
-        _type : __mlir_type[`!pop.simd<`, simd_width, `,`, acc_type, `>`]
-    ](y0.value)
-    return x.max(y)
+    return x.max(y.cast[acc_type]())
 
 
 fn max[
@@ -125,16 +122,13 @@ fn _simd_min_elementwise[
     simd_width: __mlir_type.index,
     acc_type: __mlir_type.`!kgen.dtype`,
     type: __mlir_type.`!kgen.dtype`,
-](x: SIMD[simd_width, acc_type], y0: SIMD[simd_width, type]) -> SIMD[
+](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
     simd_width, acc_type
 ]:
     """Helper function that computes the elementwise min of each element in a
     simd vector and is compatible with the function signature expected by map_fn
     in reduce."""
-    let y: SIMD[simd_width, acc_type] = __mlir_op.`pop.cast`[
-        _type : __mlir_type[`!pop.simd<`, simd_width, `,`, acc_type, `>`]
-    ](y0.value)
-    return x.min(y)
+    return x.min(y.cast[acc_type]())
 
 
 fn min[
@@ -168,16 +162,13 @@ fn _simd_sum_elementwise[
     simd_width: __mlir_type.index,
     acc_type: __mlir_type.`!kgen.dtype`,
     type: __mlir_type.`!kgen.dtype`,
-](x: SIMD[simd_width, acc_type], y0: SIMD[simd_width, type]) -> SIMD[
+](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
     simd_width, acc_type
 ]:
     """Helper function that computes the elementwise sum of each element in a
     simd vector and is compatible with the function signature expected by map_fn
     in reduce."""
-    let y: SIMD[simd_width, acc_type] = __mlir_op.`pop.cast`[
-        _type : __mlir_type[`!pop.simd<`, simd_width, `,`, acc_type, `>`]
-    ](y0.value)
-    return x + y
+    return x + y.cast[acc_type]()
 
 
 fn sum[
@@ -211,16 +202,13 @@ fn _simd_product_elementwise[
     simd_width: __mlir_type.index,
     acc_type: __mlir_type.`!kgen.dtype`,
     type: __mlir_type.`!kgen.dtype`,
-](x: SIMD[simd_width, acc_type], y0: SIMD[simd_width, type]) -> SIMD[
+](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
     simd_width, acc_type
 ]:
     """Helper function that computes the elementwise product of each element in a
     simd vector and is compatible with the function signature expected by map_fn
     in reduce."""
-    let y: SIMD[simd_width, acc_type] = __mlir_op.`pop.cast`[
-        _type : __mlir_type[`!pop.simd<`, simd_width, `,`, acc_type, `>`]
-    ](y0.value)
-    return x * y
+    return x * y.cast[acc_type]()
 
 
 fn product[
@@ -274,19 +262,12 @@ fn variance[
         simd_width: __mlir_type.index,
         acc_type: __mlir_type.`!kgen.dtype`,
         type: __mlir_type.`!kgen.dtype`,
-    ](x: SIMD[simd_width, acc_type], y0: SIMD[simd_width, type]) -> SIMD[
+    ](x: SIMD[simd_width, acc_type], y: SIMD[simd_width, type]) -> SIMD[
         simd_width, acc_type
     ]:
         """Helper function that computes the equation $sum (x_i - u)^2 + y$"""
-        let y: SIMD[simd_width, acc_type] = __mlir_op.`pop.cast`[
-            _type : __mlir_type[`!pop.simd<`, simd_width, `,`, acc_type, `>`]
-        ](y0.value)
-        let mean_simd = SIMD[simd_width, acc_type].splat(
-            __mlir_op.`pop.cast`[
-                _type : __mlir_type[`!pop.scalar<`, acc_type, `>`]
-            ](mean_value)
-        )
-        let diff = y - mean_simd
+        let mean_simd = SIMD[simd_width, type](mean_value).cast[acc_type]()
+        let diff = y.cast[acc_type]() - mean_simd
         return x + diff * diff
 
     let numerator: SIMD[1, type] = reduce[
