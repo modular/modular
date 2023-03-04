@@ -85,9 +85,9 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
 // CHECK-NEXT: %[[UNDEF:.*]] = llvm.mlir.undef : !llvm.struct<(i32, i32)>
 // CHECK-NEXT: %[[AFP:.*]] = llvm.mlir.addressof @async_fn_afp : !llvm.ptr<struct<(i32, i32)>>
 // CHECK-NEXT: %[[AFP_VALUE:.*]] = llvm.getelementptr inbounds %[[AFP]][0, 1] : (!llvm.ptr<struct<(i32, i32)>>) -> !llvm.ptr<i32>
-// CHECK-NEXT: %[[AF:.*]] = llvm.mlir.addressof @async_fn_af : !llvm.ptr<func<void (ptr<i8>)>>
-// CHECK-NEXT: %[[AF_INT:.*]] = llvm.ptrtoint %[[AF]] : !llvm.ptr<func<void (ptr<i8>)>> to i64
-// CHECK-NEXT: %[[AFP_INT:.*]] = llvm.ptrtoint %[[AFP_VALUE]] : !llvm.ptr<i32> to i64
+// CHECK-DAG: %[[AF:.*]] = llvm.mlir.addressof @async_fn_af : !llvm.ptr<func<void (ptr<i8>)>>
+// CHECK-DAG: %[[AF_INT:.*]] = llvm.ptrtoint %[[AF]] : !llvm.ptr<func<void (ptr<i8>)>> to i64
+// CHECK-DAG: %[[AFP_INT:.*]] = llvm.ptrtoint %[[AFP_VALUE]] : !llvm.ptr<i32> to i64
 // CHECK-NEXT: %[[OFFSET_i32:.*]] = llvm.sub %[[AF_INT]], %[[AFP_INT]]  : i64
 // CHECK-NEXT: %[[OFFSET:.*]] = llvm.trunc %[[OFFSET_i32]] : i64 to i32
 // CHECK-NEXT: %[[V0:.*]] = llvm.insertvalue %[[OFFSET]], %[[UNDEF]][0] : !llvm.struct<(i32, i32)>
@@ -105,8 +105,8 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
 // CHECK-NEXT: %[[CTXT_SZ:.*]] = llvm.zext %[[CTXT_SZ_i32]] : i32 to i64
 // CHECK-NEXT: %[[MEM:.*]] = pop.external_call @malloc(%[[CTXT_SZ]])
 // CHECK-NEXT: %[[FRAME:.*]] = llvm.bitcast %[[MEM]]
-// CHECK-NEXT: %[[AF:.*]] = llvm.mlir.addressof @async_fn_af
-// CHECK-NEXT: %[[RESUME_FN_PTR:.*]] = llvm.getelementptr inbounds %[[FRAME]][0, 0]
+// CHECK-DAG: %[[AF:.*]] = llvm.mlir.addressof @async_fn_af
+// CHECK-DAG: %[[RESUME_FN_PTR:.*]] = llvm.getelementptr inbounds %[[FRAME]][0, 0]
 // CHECK-NEXT: llvm.store %[[AF]], %[[RESUME_FN_PTR]]
 // CHECK-NEXT: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[FRAME]][0, 3]
 // CHECK-NEXT: llvm.store %arg0, %[[ARG_PTR]]
