@@ -16,6 +16,7 @@
 #include "KGEN/LowerToObject.h"
 #include "KGEN/ParseLit.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "LLCL/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
@@ -208,9 +209,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return failure(clOptions.reportError("could not parse the module"));
 
   // Set up the runtime.
-  LLCL::Runtime runtime(
-      LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-      LLCL::createSingleThreadWorkQueue());
+  std::unique_ptr<LLCL::Runtime> runtime = clOptions.createRuntime();
 
   // Find a target specification or construct one using the commandline options.
   TargetInfoAttr target = getTargetInfo(*theModule);
@@ -237,7 +236,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (clOptions.cmd == Command::kGenLibraryFile)
     generateLibraryFile(pm);
   else
-    elaborateModule(pm, runtime, target, {clOptions.enableSearch});
+    elaborateModule(pm, *runtime, target, {clOptions.enableSearch});
 
   if (failed(pm.run(*theModule)))
     return failure(clOptions.reportError("compilation failed"));
@@ -255,7 +254,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return emitModuleIR(*theModule, clOptions);
 
   SymbolTable symtab(*theModule);
-  auto compiler = ObjectCompiler::create(runtime, pm, ".kgen_cache", symtab,
+  auto compiler = ObjectCompiler::create(*runtime, pm, ".kgen_cache", symtab,
                                          compilationOptions);
   if (failed(compiler)) {
     return failure(clOptions.reportError(

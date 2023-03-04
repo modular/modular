@@ -9,6 +9,7 @@
 
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "LLCL/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/ErrorOr.h"
 #include "Support/TimeProfiler.h"
@@ -66,7 +67,8 @@ public:
 // CLOptions
 //===----------------------------------------------------------------------===//
 
-class KGENCommonOptions : public CommonCLOptions {
+class KGENCommonOptions : public CommonCLOptions,
+                          public LLCL::RuntimeWorkQueueCLOptions {
 public:
   using CommonCLOptions::CommonCLOptions;
 
