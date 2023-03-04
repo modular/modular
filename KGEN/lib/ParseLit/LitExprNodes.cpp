@@ -958,10 +958,8 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   }
 
   // If we succeeded and have no types, then install a None type.
-  if (resultOp->getNumResults() == 0) {
-    auto noneMLIRType = LIT::NoneType::get(emitter.getContext());
-    return PRValue(NoneAttr::get(emitter.getContext(), noneMLIRType));
-  }
+  if (resultOp->getNumResults() == 0)
+    return PRValue(emitter.shared.getNoneAttr());
 
   assert(resultOp->getNumResults() == 1 &&
          "Only support single result ops so far");

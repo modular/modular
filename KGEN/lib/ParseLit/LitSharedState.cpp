@@ -75,6 +75,7 @@ public:
   ASTType typeCheckErrorType;
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType noneType;
+  NoneAttr noneAttr;
 
   /// The current set of imported modules.
   DenseMap<StringAttr, ASTDecl *> importedModules;
@@ -167,6 +168,7 @@ ASTType LitSharedState::getTypeCheckErrorType() const {
   return impl->typeCheckErrorType;
 }
 ASTType LitSharedState::getNoneType() const { return impl->noneType; }
+NoneAttr LitSharedState::getNoneAttr() const { return impl->noneAttr; }
 
 /// Add declarations for magic things to the builtins decl.
 void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
@@ -175,6 +177,8 @@ void LitSharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
 
   // Add a declarations for builtin types.
   impl->noneType = LIT::NoneType::get(context);
+
+  impl->noneAttr = NoneAttr::get(context, impl->noneType.mlirType);
 
   // Make the type check error type.  Anything that references this will
   // considering it erroneous and already declared as such.

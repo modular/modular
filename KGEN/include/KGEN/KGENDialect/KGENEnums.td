@@ -102,7 +102,10 @@ def KGEN_AlwaysInlineLevelAttr : I32EnumAttr<"AlwaysInlineLevel",
 def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
     "Function value input convention", [
   I32EnumAttrCase<"ByVal", 0, "byval">,
-  I32EnumAttrCase<"ByRef", 1, "byref">
+  I32EnumAttrCase<"ByRef", 1, "byref">,
+  /// This corresponds to the function input result.  It is uninitialized on
+  /// entry and defined on exit from the function.
+  I32EnumAttrCase<"ByRefResult", 2, "byref-result">,
 ]> {
   let cppNamespace = "M::KGEN";
 }

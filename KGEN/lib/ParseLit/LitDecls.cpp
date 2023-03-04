@@ -619,9 +619,10 @@ enum VarArgKind { None, VarArg, KWVarArg };
 /// argument_ownership ::= "&"
 struct ParsedArgument {
   SMLoc loc;
-  bool isPack = false;
   // Specify argument passing convention, e.g. byval/byref etc.
   ValueInputConvention convention = ValueInputConvention::ByVal;
+
+  bool isPack = false;
   VarArgKind vararg = VarArgKind::None;
   StringAttr name;
   ExprNode *typeExpr = nullptr;
@@ -1019,6 +1020,14 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
                                       LitSharedState &shared) {
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(name);
 
+  // This is true if the declared result type is modeled as the first argument
+  // because it is returned in memory.
+  bool hasMemoryResult =
+      args.size() >= 1 &&
+      args[0].convention == ValueInputConvention::ByRefResult;
+  ASTType declaredResultType =
+      hasMemoryResult ? ASTType(argTypes[0]) : resultType;
+
   // On any semantic error we mark the declaration erroneous - so references to
   // it don't type check, and we clear our special function information.  This
   // reduces cascade errors.
@@ -1059,12 +1068,15 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
   // If this definition is a struct/class member, compute the self type.
   ASTType selfType;
+  size_t selfArgNumber = 0;
   if (auto *parentDecl = decl.getParentDecl())
     if (isa<StructDeclOp>(*parentDecl)) {
       //  The parent decl must be fully resolved in order to resolve any members
       //  of it.
       assert(parentDecl->resolvedness == DeclResolvedness::fully);
       selfType = parentDecl->getSelfType();
+      // If there is an in-memory result, self is passed as arg #1.
+      selfArgNumber = hasMemoryResult ? 1 : 0;
     }
 
   // Check any special function information.
@@ -1075,16 +1087,17 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
 
   // Check that the 'self' argument of a method was specified correctly.
   if (selfType && !funcOp.getIsStatic()) {
-    if (argTypes.empty()) {
+    if (selfArgNumber >= argTypes.size()) {
       // TODO: We can/should relax this for 'def' declarations in the future,
       // they should be able to implicit ignore arguments like Python does.
       emitError("self argument must be present in instance method");
-    } else if (!ASTType(argTypes[0]).isEqualCanon(selfType)) {
-      auto diag = emitErrorLoc(args[0].loc, "'self' argument must have type ")
+    } else if (!ASTType(argTypes[selfArgNumber]).isEqualCanon(selfType)) {
+      auto diag = emitErrorLoc(args[selfArgNumber].loc,
+                               "'self' argument must have type ")
                   << selfType << " but actually has type "
-                  << ASTType(argTypes[0]);
-      if (args[0].typeExpr)
-        diag << args[0].typeExpr->getRange();
+                  << ASTType(argTypes[selfArgNumber]);
+      if (args[selfArgNumber].typeExpr)
+        diag << args[selfArgNumber].typeExpr->getRange();
     }
   }
 
@@ -1107,20 +1120,21 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     else if (funcOp.getIsStatic())
       emitError("special method may not be a static method");
     else if (!fnInfo.allowsByRefSelfInstMethod() &&
-             args[0].convention != ValueInputConvention::ByVal)
-      emitErrorLoc(args[0].loc, "self argument cannot be passed by reference");
+             args[selfArgNumber].convention != ValueInputConvention::ByVal)
+      emitErrorLoc(args[selfArgNumber].loc,
+                   "self argument cannot be passed by reference");
   }
 
   // Some functions like __new__ require a Self result type.
   if (fnInfo.flags & SpecialFunctionInfo::kSelfResult) {
     // TODO: We could allow omitting result type and default it.
-    if (!resultType.isEqualCanon(selfType))
+    if (!declaredResultType.isEqualCanon(selfType))
       emitError("") << name << " result type must be " << selfType;
   }
 
   // If the function is required to return None, verify that.
   if (fnInfo.hasNoneResult() &&
-      !resultType.isEqualCanon(shared.getNoneType())) {
+      !declaredResultType.isEqualCanon(shared.getNoneType())) {
     emitError("") << name << " result type must be elided (or None)";
     resultType = shared.getNoneType();
   }
@@ -1139,8 +1153,9 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     break;
   case SpecialFunctionKind::kClone:
     if (fnInfo.isInstMethod() && selfType &&
-        args[0].convention != ValueInputConvention::ByRef)
-      emitErrorLoc(args[0].loc, "self argument must be passed by reference");
+        args[selfArgNumber].convention != ValueInputConvention::ByRef)
+      emitErrorLoc(args[selfArgNumber].loc,
+                   "self argument must be passed by reference");
     break;
   }
 
@@ -1152,8 +1167,16 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       [&](auto argAndArgType) {
         auto [arg, argType] = argAndArgType;
         mangledName += ASTType(argType).getAsString();
-        if (arg.convention == ValueInputConvention::ByRef)
+        switch (arg.convention) {
+        case ValueInputConvention::ByVal:
+          break;
+        case ValueInputConvention::ByRef:
           mangledName += '&';
+          break;
+        case ValueInputConvention::ByRefResult:
+          mangledName += "=&";
+          break;
+        }
         if (arg.vararg == VarArgKind::VarArg)
           mangledName += '*';
       },
@@ -1168,7 +1191,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   // Now that all the types and signature information have been resolved,
   // compute the final MLIR types, mixing in argument conventions, etc.
   for (auto [arg, argType] : llvm::zip(args, argTypes)) {
-    if (arg.convention == ValueInputConvention::ByRef)
+    if (arg.convention == ValueInputConvention::ByRef ||
+        arg.convention == ValueInputConvention::ByRefResult)
       argType = POP::PointerType::get(argType);
     if (arg.vararg == VarArgKind::VarArg)
       argType = KGEN::VariadicType::get(argType);
@@ -1390,6 +1414,37 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   // any unspecified types null.
   SmallVector<Type> argTypes;
   SmallVector<TypedAttr> defaults;
+
+  ASTType resultType;
+  if (!resultTypeExpr) {
+    // TODO: We shouldn't default this to none for 'def's.  This should default
+    // to object type.  Our return checker is currently a lame duck.
+    resultType = shared.getNoneType();
+  } else {
+    resultType = typeEmitter.emitExprType(resultTypeExpr);
+    // On error, a diagnostic will be emitted, but we don't want to kill the
+    // entire function definition.  We won't be able to correctly type check any
+    // calls to this function though.
+    if (!resultType) {
+      resultType = shared.getTypeCheckErrorType();
+      decl.hasReferenceError = true;
+    }
+
+    // Memory primary types get passed as the first argument to the function
+    // by-reference.
+    if (!resultType.isRegisterPrimary(resultTypeExpr->getLoc(), shared)) {
+      // Synthesize a result argument for this, and use None as the actual
+      // function result.
+      ParsedArgument resultArg;
+      resultArg.loc = resultTypeExpr->getLoc();
+      resultArg.name = StringAttr::get(shared.getContext(), "__result__");
+      resultArg.convention = ValueInputConvention::ByRefResult;
+      resultArg.typeExpr = resultTypeExpr;
+      args.insert(args.begin(), resultArg);
+      resultType = shared.getNoneType();
+    }
+  }
+
   for (auto [idx, arg] : llvm::enumerate(args)) {
     ASTType type;
     if (arg.typeExpr) {
@@ -1419,22 +1474,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
       if (!value)
         return failure();
       defaults.push_back(value);
-    }
-  }
-
-  ASTType resultType;
-  if (!resultTypeExpr) {
-    // TODO: We shouldn't default this to none for 'def's.  This should default
-    // to object type.  Our return checker is currently a lame duck.
-    resultType = shared.getNoneType();
-  } else {
-    resultType = typeEmitter.emitExprType(resultTypeExpr);
-    // On error, a diagnostic will be emitted, but we don't want to kill the
-    // entire function definition.  We won't be able to correctly type check any
-    // calls to this function though.
-    if (!resultType) {
-      resultType = shared.getTypeCheckErrorType();
-      decl.hasReferenceError = true;
     }
   }
 
@@ -1984,25 +2023,19 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, LitLexer &lexer,
       if (failed(resolveSignature(fieldASTDecl, fieldASTDecl.getLoc())))
         continue;
 
-      if (ASTDecl *typeDecl = ASTType(field.getType()).getDecl(shared)) {
-        // Ignore non-struct types.  Resolve the signature of the struct so we
-        // can determine its register-ness.
-        auto fieldStructDecl = dyn_cast<StructDeclOp>(*typeDecl);
-        if (!fieldStructDecl ||
-            failed(resolveSignature(*typeDecl, fieldASTDecl.getLoc())) ||
-            // If the field is register-primary, then we're happy.
-            fieldStructDecl.getIsRegisterPrimary())
-          continue;
+      // If the field is register-primary, then we're happy.
+      if (ASTType(field.getType())
+              .isRegisterPrimary(fieldASTDecl.getLoc(), shared))
+        continue;
 
-        auto diag = emitError(structOp.getLoc(),
-                              "all members of register primary struct must "
-                              "themselves be register primary");
-        diag.attachNote(fieldASTDecl.getLoc())
-            << field.getNameAttr() << " declared with memory-primary type "
-            << ASTType(field.getType());
-        structOp.setIsRegisterPrimary(false);
-        break;
-      }
+      auto diag = emitError(structOp.getLoc(),
+                            "all members of register primary struct must "
+                            "themselves be register primary");
+      diag.attachNote(fieldASTDecl.getLoc())
+          << field.getNameAttr() << " declared with memory-primary type "
+          << ASTType(field.getType());
+      structOp.setIsRegisterPrimary(false);
+      break;
     }
   }
 

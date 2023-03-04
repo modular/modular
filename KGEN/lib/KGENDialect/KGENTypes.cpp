@@ -237,6 +237,14 @@ bool SignatureType::isKWVararg(size_t index) {
   return index + 1 == getValueInputs().size();
 }
 
+/// Return true if this signature has a first argument is a result from the
+/// function returned through memory.
+bool SignatureType::hasMemoryPrimaryResult() {
+  auto conventions = getValueInputConventions();
+  return conventions.size() >= 1 &&
+         conventions[0] == ValueInputConvention::ByRefResult;
+}
+
 /// Return a signature with the specified parameter bindings substituted
 /// into it as happens in a call.  The types specified in the parameter
 /// bindings affects the type signature of the value input and outputs, and

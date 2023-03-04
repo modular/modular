@@ -134,8 +134,7 @@ fn paramResolution[size1: Int, a: StructWithIntParam[size1],
 fn implConversion[a: StructWithIntParam[42]]():
   pass
 
-# CHECK-LABEL: lit.struct.decl @Pair<dt: @"$prolog"::@DType> {
-@__memory_primary
+# CHECK-LABEL: lit.struct.decl @Pair<dt: @"$prolog"::@DType>
 struct Pair[dt: DType]:
  # CHECK: lit.struct.field a : !kgen.declref<@"$parameters"::@OurSIMD<size = 42, dt: @"$prolog"::@DType = dt>>
  # CHECK: lit.struct.field b : !kgen.declref<@"$Int"::@Int>

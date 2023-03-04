@@ -207,6 +207,10 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// Returns true if the argument at this index is a keyword vararg.
     bool isKWVararg(size_t index);
 
+    /// Return true if this signature has a first argument is a result from the
+    /// function returned through memory.
+    bool hasMemoryPrimaryResult();
+
     /// Get the function default arguments.
     ArrayRef<TypedAttr> getDefaultArguments() {
       return getMetadata().getDefaultArguments();

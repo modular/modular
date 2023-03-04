@@ -31,6 +31,7 @@ class ASTDecl;
 class ASTType;
 class PRValue;
 class LookupResult;
+class NoneAttr;
 
 /// Given a number, return one string if the number is 1, otherwise return the
 /// other.  This is typically used to generate an "s" suffix, but can also be
@@ -67,6 +68,9 @@ public:
 
   /// This is the decl for the builtin 'kgen.none' type.
   ASTType getNoneType() const;
+
+  /// This returns a NoneAttr.
+  NoneAttr getNoneAttr() const;
 
   /// Emit an error.
   LitDiagnostic emitError(Location loc, const Twine &message = {});

@@ -491,10 +491,6 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     return success();
   }
 
-  // Materialize the expression values into IR.
-  RValue resultValue =
-      getEmitter().emitExprRValue(operandExprs[0], ValueDest());
-
   // Ok, now that we parsed all the tokens for this statement, do semantic
   // analysis.
   if (!decl) {
@@ -503,6 +499,19 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   }
 
   auto emitter = getEmitter();
+
+  // If the result is memory primary, return into the result slot.
+  bool isMemoryPrimaryResult = decl.getSignature().hasMemoryPrimaryResult();
+
+  ValueDest resultDest;
+  if (isMemoryPrimaryResult)
+    resultDest = LValue(decl.getArgument(0));
+
+  // Materialize the expression values into IR.
+  RValue resultValue = emitter.emitExprRValue(operandExprs[0], resultDest);
+
+  if (isMemoryPrimaryResult)
+    resultValue = PRValue(shared.getNoneAttr());
 
   // Check the result parameters if present.
   SmallVector<TypedAttr> resultParamValues;
@@ -528,13 +537,11 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // Convert the returned value to the returned type of the function.  If the
   // function is a 'raising' function we need to remove the extra variant type
   // to get the normal result type.
-  // TODO(memory_primary): Return slots.
-  auto resultSRValue = emitter.emitSRValue(
-      {emitter.getAsExpectedType({resultValue, operandExprs[0]},
-                                 decl.getResultType(),
-                                 // TODO(memory-primary): Return slots.
-                                 ValueDest(), " in return"),
-       operandExprs[0]});
+  Value resultSRValue =
+      emitter.emitSRValue({emitter.getAsExpectedType(
+                               {resultValue, operandExprs[0]},
+                               decl.getResultType(), ValueDest(), " in return"),
+                           operandExprs[0]});
   if (!resultSRValue)
     return {};
 
