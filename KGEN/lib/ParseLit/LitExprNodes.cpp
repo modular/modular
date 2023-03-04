@@ -283,21 +283,19 @@ ExprNode::~ExprNode() { llvm_unreachable("never called"); }
 llvm::SMLoc ExprNode::getRangeStart() const { return getRange().getStart(); }
 llvm::SMLoc ExprNode::getRangeEnd() const { return getRange().getEnd(); }
 
-AnyValue ExprNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                             ExprEmitter &emitter) const {
+LValue ExprNode::getLValueForResult(ASTType resultType,
+                                    ExprEmitter &emitter) const {
   // Emit this node to see if it is a general LValue.
   AnyValue aValue = emitIR(emitter, ValueDest());
   if (!aValue)
     return {};
   LValue lValue = aValue.getIfLValue();
-  if (!lValue) {
-    emitter.emitError(getLoc(), "cannot assign to immutable expression")
-        << getRange();
-    return {};
-  }
+  if (lValue)
+    return lValue;
 
-  // If we got an lvalue, we can try to emit into it.
-  return emitter.emitExprResultIntoLValue(value, lValue);
+  emitter.emitError(getLoc(), "cannot assign to immutable expression")
+      << getRange();
+  return {};
 }
 
 /// Return the 'loc' for this node translated to an MLIR location.
@@ -384,12 +382,12 @@ AnyValue StringLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 }
 
 AnyValue NoneLiteralNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
-  return emitter.emitResult(NoneAttr::get(emitter.getContext()), this, dest);
+  return emitter.emitResult(emitter.shared.getNoneAttr(), this, dest);
 }
 
 /// This handles emission of a value into a DeclRefNode as a pattern.
-AnyValue DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                                ExprEmitter &emitter) const {
+LValue DeclRefNode::getLValueForResult(ASTType resultType,
+                                       ExprEmitter &emitter) const {
   ASTDecl &container = emitter.declScope;
 
   // Perform a lookup of the specified decl in the current container.
@@ -400,23 +398,16 @@ AnyValue DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
   // initializer.
   auto createVarDecl = [&](OpBuilder &builder) -> VarDeclOp {
     auto loc = getLocation(emitter);
-    Type declIRType =
-        POP::PointerType::get(UnresolvedType::get(loc.getContext()));
+    Type declIRType = POP::PointerType::get(resultType);
     auto nameAttr = StringAttr::get(loc.getContext(), spelling);
     return builder.create<VarDeclOp>(loc, declIRType, nameAttr);
-  };
-
-  auto finishLValue = [&](LValue lvalue) -> AnyValue {
-    return emitter.emitExprResultIntoLValue(value, lvalue);
   };
 
   // If the unresolved name is `_`, then we have a discard pattern.  Materialize
   // a destination to store into.  We cannot just discard the result in
   // generality, because the value may have a destructor that needs to be run.
-  if (lookup.isFailure() && spelling == "_" && emitter.builder) {
-    auto varDecl = createVarDecl(*emitter.builder);
-    return emitter.emitRValue(value, ValueDest(varDecl));
-  }
+  if (lookup.isFailure() && spelling == "_" && emitter.builder)
+    return LValue(createVarDecl(*emitter.builder));
 
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a varDeclCursor,
@@ -432,7 +423,7 @@ AnyValue DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
     // subsequent uses find this one.
     emitter.getDeclResolver().addFullyResolvedDecl(
         varDecl, getLoc(), varDecl.getNameAttr(), &container);
-    return emitter.emitRValue(value, ValueDest(varDecl));
+    return LValue(varDecl);
   }
 
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
@@ -458,25 +449,9 @@ AnyValue DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
     return {};
   }
 
-  ASTDecl &decl = *decls[0];
-
-  // Variable references resolve to an lvalue addressing the variable.
-  if (auto var = dyn_cast<VarDeclOp>(decl))
-    return finishLValue(var.getResult());
-
-  if (auto lvalue = decl.getIfLValue())
-    return finishLValue(lvalue);
-
-  // Reject unqualified struct field references.
-  if (auto fieldOp = dyn_cast<StructFieldOp>(decl)) {
-    emitter.emitError(getLoc(), "cannot access instance field '")
-        << spelling << "' directly; did you mean `self.`?" << getRange();
-    return {};
-  }
-
-  emitter.emitError(getLoc(), "cannot assign to declaration '")
-      << spelling << "', it isn't a mutable value" << getRange();
-  return {};
+  // The majority cases are references to LValues, which emitIR handles. Let our
+  // base class handle this delegation.
+  return ExprNode::getLValueForResult(resultType, emitter);
 }
 
 /// Emit IR for an unqualified declaration reference "x" looked up in current
@@ -1365,9 +1340,9 @@ AnyValue ParenNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   return subExpr->emitIR(emitter, dest);
 }
 
-AnyValue ParenNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                              ExprEmitter &emitter) const {
-  return subExpr->emitExprResultIntoPattern(value, emitter);
+LValue ParenNode::getLValueForResult(ASTType resultType,
+                                     ExprEmitter &emitter) const {
+  return subExpr->getLValueForResult(resultType, emitter);
 }
 
 AnyValue TupleNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -1397,14 +1372,12 @@ AnyValue ListNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 
   // TODO: Form a dynamic array value instead of returning the last element.
   if (!elements.empty())
-    return elements.back();
+    return emitter.emitResult(elements.back(), this, dest);
 
   // TODO: None is the wrong thing, but is useful for now for referring to type
   // arrays used by __mlir_op.
-  auto noneType = emitter.shared.getNoneType();
-  // TODO: NoneAttr should have a nicer builder.
-  auto noneAttr = NoneAttr::get(emitter.getContext(), noneType);
-  return PRValue(noneAttr);
+  auto noneAttr = emitter.shared.getNoneAttr();
+  return emitter.emitResult(PRValue(noneAttr), this, dest);
 }
 
 AnyValue DictionaryNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -1415,6 +1388,7 @@ AnyValue DictionaryNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 
 /// Emit a DictSubscriptNode when the base is a Type expression.
 AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
+                                                ValueDest dest,
                                                 ExprEmitter &emitter) const {
   auto *decl = initType.getDecl(emitter.shared);
   if (!decl) {
@@ -1516,9 +1490,16 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     fieldValues.push_back(drValue);
   }
 
-  return SRValue(emitter.builder->create<StructCreateOp>(
+  auto result = SRValue(emitter.builder->create<StructCreateOp>(
       getLocation(emitter), initType.mlirType, fieldValues,
       StringArrayAttr::get(emitter.getContext(), fieldNames)));
+
+  // FIXME: We aren't handling memory primary results correctly yet.
+  // Really.
+  if (!ASTType(result.getType()).isRegisterPrimary(getLoc(), emitter.shared))
+    return result;
+
+  return emitter.emitResult(result, this, dest);
 }
 
 AnyValue DictSubscriptNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
@@ -1529,7 +1510,7 @@ AnyValue DictSubscriptNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
 
   // Subscripting a type constructs it with lit.struct.create.
   if (ASTType typeValue = baseValue.getIfTypeValue())
-    return emitTypeSubscriptIR(typeValue, emitter);
+    return emitTypeSubscriptIR(typeValue, dest, emitter);
 
   emitter.emitError(getLoc(), "TODO: cannot emit dictionary subscripts yet")
       << getRange();
@@ -1688,7 +1669,8 @@ AnyValue BinOpNode::emitAssign(ValueDest dest, ExprEmitter &emitter) const {
 
   // Assignments are not actually expressions in Python.  We treat them this
   // way for consistency, but model them as returning None.
-  return emitter.emitResult(NoneAttr::get(emitter.getContext()), this, dest);
+  auto noneAttr = emitter.shared.getNoneAttr();
+  return emitter.emitResult(noneAttr, this, dest);
 }
 
 /// Emit a inplace assignment statement like `x += y`. Python evaluates the RHS
@@ -1838,17 +1820,20 @@ AnyValue UnaryOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
     default:
       break;
     case ExprNode::kNeg:
-      if (auto constantFP = dyn_cast<FloatAttr>(exprParam.get()))
-        return PRValue(
+      if (auto constantFP = dyn_cast<FloatAttr>(exprParam.get())) {
+        PRValue result(
             FloatAttr::get(constantFP.getType(), -constantFP.getValue()));
+        return emitter.emitResult(result, this, dest);
+      }
 
       // Support general integer parameter exprs.
       if (exprRep.getType().isIndex())
-        return ParamOperatorAttr::getNeg(exprParam);
+        return emitter.emitResult(ParamOperatorAttr::getNeg(exprParam), this,
+                                  dest);
 
       break;
     case ExprNode::kPos:
-      return exprParam;
+      return emitter.emitResult(exprParam, this, dest);
     }
   }
 
@@ -1921,7 +1906,7 @@ AnyValue IfElseOpNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
   }
   // Ensure the correct type is used.
   ifOp->getResult(0).setType(trueVal.getType());
-  return SRValue(ifOp.getResult(0));
+  return emitter.emitResult(SRValue(ifOp.getResult(0)), this, dest);
 }
 
 /// Emit the comparison expression with operator ops[opIdx] and operands:

@@ -131,8 +131,8 @@ struct DeclRefNode final : public ExprNode {
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
   LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
-  AnyValue emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                     ExprEmitter &emitter) const override;
+  LValue getLValueForResult(ASTType resultType,
+                            ExprEmitter &emitter) const override;
 };
 
 struct AttributeRefNode final : public ExprNode {
@@ -276,9 +276,8 @@ struct ParenNode final : public ExprNode {
   SMLoc getLoc() const override { return lparenLoc; }
   LitSourceRange getRange() const override { return {lparenLoc, rparenLoc}; }
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
-
-  AnyValue emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
-                                     ExprEmitter &emitter) const override;
+  LValue getLValueForResult(ASTType resultType,
+                            ExprEmitter &emitter) const override;
 };
 
 /// (a, b, c)
@@ -353,7 +352,8 @@ struct DictSubscriptNode final : public ExprNode {
   }
 
   AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const override;
-  AnyValue emitTypeSubscriptIR(ASTType initType, ExprEmitter &emitter) const;
+  AnyValue emitTypeSubscriptIR(ASTType initType, ValueDest dest,
+                               ExprEmitter &emitter) const;
 };
 
 // trueExpr 'if' condition 'else' falseExpr

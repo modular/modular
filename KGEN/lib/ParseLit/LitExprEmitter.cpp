@@ -25,7 +25,66 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+//===----------------------------------------------------------------------===//
+// ValueDest implementation
+//===----------------------------------------------------------------------===//
+
 ValueDest::ValueDest(VarDeclOp dest) : representation(dest.getOperation()) {}
+
+/// If this value destination has a known type, e.g. "var x : Int = 42" or
+/// "x = 42", return it.  If not (e.g. _ = 42) then return null.
+ASTType ValueDest::getTypeIfKnown() const {
+  if (representation.isNull())
+    return {};
+
+  // If we have an lvalue already specified, return it.
+  if (LValue lvalue = dyn_cast<LValue>(representation))
+    return lvalue.getRValueType();
+
+  // TODO: Infer from expression target like:
+  //   var x : FunctionType
+  //   x = overloadedFn
+
+  // Can't infer from an Operation*, since it is inferring from the initializer.
+  return {};
+}
+
+/// Project a ValueDest into an lvalue with the specified underlying (RValue)
+/// type.
+LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
+                                     ExprEmitter &emitter) const {
+  // If we have an lvalue already specified, return it.
+  if (LValue lvalue = dyn_cast<LValue>(representation))
+    return lvalue;
+
+  // If we have an expression node destination, then we need to bind this value
+  // to a pattern (aka "target" in Python internals nomenclature).
+  if (const ExprNode *target =
+          dyn_cast_or_null<const ExprNode *>(representation))
+    return target->getLValueForResult(resultType, emitter);
+
+  // If we are inferring the type for a var or let declaration, do that.
+  if (auto *opDest = dyn_cast_or_null<Operation *>(representation)) {
+    auto varOp = cast<VarDeclOp>(opDest);
+    assert(isa<UnresolvedType>(varOp.getType().getResolvedElementType()) &&
+           "Cannot resolve an already-resolved vardecl");
+    varOp.getResult().setType(POP::PointerType::get(resultType));
+    return LValue(varOp);
+  }
+
+  // Finally, if no destination specifies otherwise, we synthesize a new LValue
+  // on demand.
+  if (!emitter.builder) {
+    emitter.emitError(
+        loc, "cannot synthesize lvalue in parameter expression context");
+    return {};
+  }
+
+  Type declIRType = POP::PointerType::get(resultType);
+  auto nameAttr = StringAttr::get(emitter.getContext(), "<anonymous>");
+  return LValue(emitter.builder->create<VarDeclOp>(
+      emitter.translateLocation(loc), declIRType, nameAttr));
+}
 
 //===----------------------------------------------------------------------===//
 // ExprEmitter implementation
@@ -89,7 +148,6 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
 CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value, ValueDest dest) {
   // If the value is an lvalue, convert it to an rvalue.
   value.ir = emitRValue(value, dest);
-
   if (!value)
     return {};
 
@@ -193,64 +251,45 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
   if (!value)
     return {};
 
-  // If we have an expression node destination, then we need to bind this value
-  // to a pattern (aka "target" in Python internals nomenclature).
-  if (const ExprNode *context =
-          dyn_cast_or_null<const ExprNode *>(dest.representation))
-    return context->emitExprResultIntoPattern({value, node}, *this);
+  // If no destination is specified, then we can propagate the value directly.
+  if (!dest.isSpecified())
+    return value;
 
-  // If we are inferring the type for a var or let declaration, do that.
-  if (auto *opDest = dyn_cast_or_null<Operation *>(dest.representation)) {
-    // We cannot infer from an unresolved overload set, collapse into a concrete
-    // value with a concrete type if we can.
-    if (value.getIfORValue()) {
-      value = emitCRValue({value, node}, ValueDest());
-      if (!value)
-        return {};
-    }
+  // If the value is an LValue, then emit a load into the destination using
+  // emitRValue to do the heavy lifting.
+  if (value.getIfLValue())
+    return emitRValue({value, node}, dest);
 
-    auto varOp = cast<VarDeclOp>(opDest);
-    assert(isa<UnresolvedType>(varOp.getType().getResolvedElementType()) &&
-           "Cannt resolve an already-resolved vardecl");
-    varOp.getResult().setType(POP::PointerType::get(value.getRValueType()));
-    dest = LValue(varOp);
-    // Fall through to lvalue handling below.
+  // We cannot infer from an unresolved overload set, collapse into a concrete
+  // value with a concrete type if we can.
+  if (auto overloads = value.getIfORValue()) {
+    // ORValues always resolve to PRValues, which are never memory resident.
+    // Concretize it so we get something with a type.
+    return overloads->emitAsCRValue(*this, dest);
   }
 
-  // If we have an lvalue already specified, emit into it.
-  if (LValue lvalueDest = dyn_cast_or_null<LValue>(dest.representation))
-    return emitExprResultIntoLValue({value, node}, lvalueDest);
+  // Otherwise, we need to figure out where to store it.
+  auto destLV =
+      dest.getLValueForResult(node->getLoc(), value.getRValueType(), *this);
+  if (!destLV)
+    return {};
 
-  // Otherwise we have no prescribed context, use a default one.
-  // TODO: Synthesize a vardecl if not an PRValue and the value has
-  // memory-primary type.
-  return value;
-}
-
-/// This method is used by node implementations of emitExprResultIntoPattern
-/// to emit the result once they determine an lvalue to use.
-AnyValue ExprEmitter::emitExprResultIntoLValue(ASTExprAnd<AnyValue> value,
-                                               LValue dest) {
-  // The final step of an assignment expression (`=`) converts the value into
-  // a type that matches the destination and does a store.
-
-  // TODO: This should be an initialization or reassignment, and needs to
-  // call __clone__.
-  AnyValue convertedVal = getAsExpectedType(value, dest.getRValueType(),
-                                            ValueDest(), " in assignment");
+  // This is only correct for register-primary values.  If emitResult is
+  // useful for memory-primary values, we can generalize the logic below.
+  assert(destLV.getRValueType().isRegisterPrimary(node->getLoc(), shared));
 
   // Emit the RHS and coerce to the LHS type.
-  SRValue rv = emitSRValue({convertedVal, value.expr});
+  value = getAsExpectedType({value, node}, destLV.getRValueType(), ValueDest(),
+                            " in assignment");
+  SRValue rv = emitSRValue({value, node});
   if (!rv)
     return {};
 
   // If everything worked out, store the resultant value into the lvalue for
   // the destination.
-  auto loc = translateLocation(value.expr->getLoc());
-  builder->create<POP::StoreOp>(loc, rv, dest,
-                                /*alignment=*/std::nullopt);
-
-  return MRValue(dest);
+  auto loc = translateLocation(node->getLoc());
+  builder->create<POP::StoreOp>(loc, rv, destLV, /*alignment=*/std::nullopt);
+  return MRValue(destLV);
 }
 
 //===----------------------------------------------------------------------===//
@@ -385,10 +424,12 @@ AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
                                         const Twine &errorSuffix) {
   auto errorHandler = [&]() {
     if (!isa<TypeCheckErrorType>(value.ir.getType()) &&
-        !isa<TypeCheckErrorType>(expectedType.mlirType))
+        !isa<TypeCheckErrorType>(expectedType.mlirType)) {
       emitError(value.expr->getLoc())
-          << ASTType(value.ir.getType()) << " value cannot be converted to "
-          << expectedType << errorSuffix << value.expr->getRange();
+          << ASTType(value.ir.getRValueType())
+          << " value cannot be converted to " << expectedType << errorSuffix
+          << value.expr->getRange();
+    }
   };
   return getAsExpectedType(value, expectedType, dest, std::move(errorHandler));
 }
@@ -442,12 +483,16 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
 /// This helper emits the specified value rep as an RValue.
 RValue ExprEmitter::emitExprRValue(const ExprNode *node, ValueDest dest) {
   assert(node && "cannot emit a null node");
-  return emitRValue(
-      {node->emitIR(*this,
-                    // TODO(memory-primary): Value dest composition.
-                    ValueDest()),
-       node},
-      dest);
+  if (dest.isSpecified()) {
+    auto result = node->emitIR(*this, dest);
+    assert((!result || result.getIfRValue()) &&
+           "destination provided should force an RValue result");
+    return result.getIfRValue();
+  }
+
+  // If we have no destination specified, emit it and load the result if it is
+  // an RValue.
+  return emitRValue({node->emitIR(*this, ValueDest()), node}, ValueDest());
 }
 
 /// This helper emits the specified value rep as an CRValue.
