@@ -46,19 +46,21 @@ static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
   {
     // Capture errors thrown by parseAttribute and ignore them.
     // FIXME: This doesn't silence errors!
-    mlir::ScopedDiagnosticHandler handler(shared.getContext(),
-                                          [&](Diagnostic &diag) {
-                                            errorMsg = diag.str();
-                                            printf("hello\n");
-                                          });
+    mlir::ScopedDiagnosticHandler handler(
+        shared.getContext(), [&](Diagnostic &diag) { errorMsg = diag.str(); });
 
     // FIXME(https://github.com/llvm/llvm-project/issues/58964)
     // Copy the string into a temporary smallvector so we can make sure it is
     // nul terminated for the MLIR asmparser.
     SmallString<64> tmpBuf(name.begin(), name.end());
     tmpBuf.push_back(0);
+
+    // FIXME(#9621): Need to track the number of bytes read because we pass in
+    // more than just the attribute we actually want to parse. This avoids
+    // returning an error but is actually just masking the real problem.
+    size_t bytesRead;
     result = mlir::parseAttribute(StringRef(tmpBuf).drop_back(),
-                                  shared.getContext());
+                                  shared.getContext(), Type(), &bytesRead);
   }
   if (!result) {
     shared.emitError(loc, "invalid MLIR attribute: ") << errorMsg;
@@ -612,8 +614,12 @@ static ASTType parseMLIRType(StringRef name, const ExprNode *node,
     // nul terminated for the MLIR asmparser.
     SmallString<64> tmpBuf(name.begin(), name.end());
     tmpBuf.push_back(0);
-    result =
-        mlir::parseType(StringRef(tmpBuf).drop_back(), shared.getContext());
+    // FIXME(#9621): Need to track the number of bytes read because we pass in
+    // more than just the attribute we actually want to parse. This avoids
+    // returning an error but is actually just masking the real problem.
+    size_t bytesRead;
+    result = mlir::parseType(StringRef(tmpBuf).drop_back(), shared.getContext(),
+                             &bytesRead);
   }
   if (!result)
     shared.emitError(node->getLoc(), "unknown MLIR type: ")
