@@ -87,6 +87,16 @@ fn callsWith():
   testAsyncVoid() # expected-warning {{coroutine was never awaited}}
   testAsyncInt() # expected-warning {{coroutine was never awaited}}
 
+
+struct ThingWithStaticMethod:
+   @staticmethod
+   fn splat(x: Int): # expected-note {{function declared here}}
+
+fn testThingWithStaticMethod():
+  # expected-error @+1 {{invalid call to 'splat': argument #0 cannot be converted from '__mlir_type.f64' to '$Int::Int'}}
+  ThingWithStaticMethod.splat(4.0)
+
+
 ##===----------------------------------------------------------------------===##
 # Default Arguments, Varargs, and Packs
 ##===----------------------------------------------------------------------===##
