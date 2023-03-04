@@ -25,13 +25,12 @@ class Runtime;
 
 /// Contains a number of command-line options that are shared among binaries
 /// that use the LLCL Runtime and want configurability of Allocator, WorkQueue,
-/// stopping behavior, etc.
-///
-class RuntimeCLOptions {
+/// etc.
+class RuntimeWorkQueueCLOptions {
   //===--------------------------------------------------------------------===//
   // Core Runtime configuration.
   //===--------------------------------------------------------------------===//
-private:
+protected:
   enum class AllocatorType {
     /// Allocator that just calls malloc/free.
     kMalloc,
@@ -91,6 +90,49 @@ private:
           "(default), will be chosen by heuristics."),
       llvm::cl::init(0)};
 
+  // Return the workqueue type to use, resolving kDefault into a concrete kind.
+  WorkQueueType getWorkQueueType() const {
+    // The default behavior picks a thread count based on the -num-threads
+    // command line setting, but can be overridden.
+    if (workQueueType == WorkQueueType::kDefault)
+      return numThreads == 1 ? WorkQueueType::kSingleThread
+                             : WorkQueueType::kThreadPool;
+    return workQueueType;
+  }
+
+public:
+  /// Return the number of threads to use. If the command line num-threads
+  /// option is zero, returns the std::thread hardware_concurrency value,
+  /// which may include virtual cores due to hyperthreading.
+  ///
+  /// Note that ThreadPoolWorkQueue has its own mechanism for choosing
+  /// the number of threads when num-threads is zero. This function is
+  /// only used by external frameworks.
+  size_t getNumThreads() const {
+    return numThreads == 0 ? std::thread::hardware_concurrency() : numThreads;
+  }
+
+  /// Explicitly tell runtime to use single threaded workqueue. This is useful
+  /// in situations where computation is performed by some other runtime (for
+  /// eg: ExternalFrameworks in benchmarking)
+  void useSingleThreadedWorkqueue() {
+    numThreads = 1;
+    workQueueType = WorkQueueType::kSingleThread;
+  }
+
+  /// Create a Runtime based on the CL argument specifications.
+  std::unique_ptr<Runtime> createRuntime(StringRef profileName = {}) const;
+};
+
+/// Contains a number of command-line options that are shared among binaries
+/// that use the LLCL Runtime and want configurability of Allocator, WorkQueue,
+/// stopping behavior, etc.
+///
+class RuntimeCLOptions : public RuntimeWorkQueueCLOptions {
+  //===--------------------------------------------------------------------===//
+  // Core Runtime configuration.
+  //===--------------------------------------------------------------------===//
+private:
   // Filename to hold the time profiling output (as JSON text).
   llvm::cl::opt<std::string> profileFilename{
       "time-profile",
@@ -107,16 +149,6 @@ private:
                 "MODULAR_LLCL_MAX_PROFILING_LEVEL greater than 0 to enable "
                 "it."),
       llvm::cl::init("")};
-
-  // Return the workqueue type to use, resolving kDefault into a concrete kind.
-  WorkQueueType getWorkQueueType() const {
-    // The default behavior picks a thread count based on the -num-threads
-    // command line setting, but can be overridden.
-    if (workQueueType == WorkQueueType::kDefault)
-      return numThreads == 1 ? WorkQueueType::kSingleThread
-                             : WorkQueueType::kThreadPool;
-    return workQueueType;
-  }
 
   // Returns the filename to hold the time profiling output (as JSON text).
   // Returns empty string if profiling is disabled.
@@ -185,25 +217,6 @@ public:
       printf(" with %d thread%s.\n", (int)numThreads, &"s"[numThreads == 1]);
       break;
     }
-  }
-
-  /// Return the number of threads to use. If the command line num-threads
-  /// option is zero, returns the std::thread hardware_concurrency value,
-  /// which may include virtual cores due to hyperthreading.
-  ///
-  /// Note that ThreadPoolWorkQueue has its own mechanism for choosing
-  /// the number of threads when num-threads is zero. This function is
-  /// only used by external frameworks.
-  size_t getNumThreads() const {
-    return numThreads == 0 ? std::thread::hardware_concurrency() : numThreads;
-  }
-
-  /// Explicitly tell runtime to use single threaded workqueue. This is useful
-  /// in situations where computation is performed by some other runtime (for
-  /// eg: ExternalFrameworks in benchmarking)
-  void useSingleThreadedWorkqueue() {
-    numThreads = 1;
-    workQueueType = WorkQueueType::kSingleThread;
   }
 
   /// Create a Runtime based on the CL argument specifications.

@@ -112,6 +112,9 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   OwningOpRef<ModuleOp> theModule;
   llvm::StringRef inputFileName(clOptions.inputFilename.getValue());
 
+  // Set up the runtime.
+  std::unique_ptr<LLCL::Runtime> runtime = clOptions.createRuntime();
+
   // Initialize the timing manager.
   std::unique_ptr<mlir::TimingManager> timingManager;
   if (clOptions.timeTrace) {
@@ -152,11 +155,6 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (!theModule)
     return clOptions.reportError("could not parse the module");
 
-  // Set up the runtime.
-  LLCL::Runtime runtime(
-      LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-      LLCL::createSingleThreadWorkQueue());
-
   // Initialize the host target.
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmParser();
@@ -185,13 +183,13 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     target = targetOr.takeValue();
   }
 
-  elaborateModule(pm, runtime, target, {clOptions.enableSearch});
+  elaborateModule(pm, *runtime, target, {clOptions.enableSearch});
 
   if (failed(pm.run(*theModule)))
     return clOptions.reportError("compilation failed");
 
   SymbolTable symtab(*theModule);
-  auto compiler = ObjectCompiler::create(runtime, pm, ".kgen_cache", symtab,
+  auto compiler = ObjectCompiler::create(*runtime, pm, ".kgen_cache", symtab,
                                          compilationOptions);
   if (failed(compiler))
     return clOptions.reportError(Twine("could not create object compiler: ") +
