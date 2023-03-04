@@ -1663,7 +1663,16 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
     return {};
   }
 
-  // Value returning call returns its result.
+  // If there is a memory result slot, the value we filled in is our MRValue
+  // result and we've already handled the ValueDest by emitting into it.
+  if (calleeSig.hasMemoryPrimaryResult()) {
+    auto resultVal = argumentValues[0].ir.getIfLValue();
+    assert(resultVal && "memory primary result always emitted into an LValue");
+    return MRValue(resultVal);
+  }
+
+  // Otherwise, register-primary results are the call result which may need to
+  // be emitted into a ValueDest.
   auto result = SRValue(callOp->getResult(0));
 
   // Attempt to further specialize the result type by folding 'apply' operators.
