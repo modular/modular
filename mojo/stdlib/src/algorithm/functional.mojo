@@ -72,6 +72,19 @@ fn _unroll_impl[
 # ===----------------------------------------------------------------------===#
 
 
+alias fn_sig_type = __mlir_type[
+    `!kgen.signature<(`,
+    Int,
+    `) -> !lit.none>`,
+]
+
+alias fn_simd_sig_type = __mlir_type[
+    `!kgen.signature<<simd_width>(`,
+    Int,
+    `) -> !lit.none>`,
+]
+
+
 @always_inline
 fn vectorize[
     simd_width: __mlir_type.index,
@@ -87,21 +100,19 @@ fn vectorize[
     let vector_end = (size // simd_width) * simd_width
     for simd_idx in range(0, vector_end, simd_width):
         func[simd_width](simd_idx)
+
+    # For scalar remainder we will just get the first available `func`
+    # implementation. If we do `kgen.param.fork` here, we will blow up the
+    # search space quadratically.
+    alias scalar_func_impls = __mlir_attr[
+        `#kgen.param.expr<get_all_impls,`,
+        func[1],
+        `> :`,
+        __mlir_type[`!kgen.variadic<`, fn_sig_type, `>`],
+    ]
+    alias scalar_func_impl = variadic_get(scalar_func_impls, 0)
     for i in range(vector_end, size):
-        func[1](i)
-
-
-alias fn_sig_type = __mlir_type[
-    `!kgen.signature<(`,
-    Int,
-    `) -> !lit.none>`,
-]
-
-alias fn_simd_sig_type = __mlir_type[
-    `!kgen.signature<<simd_width>(`,
-    Int,
-    `) -> !lit.none>`,
-]
+        scalar_func_impl(i)
 
 
 # TODO: Move to a more appropriate place.
