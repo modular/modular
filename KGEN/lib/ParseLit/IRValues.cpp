@@ -42,6 +42,10 @@ static raw_ostream &printStorage(raw_ostream &os, const VariantStorage &storage,
     if (isDump)
       os << "MR: ";
     os << val;
+  } else if (auto val = dyn_cast<ORValue>(storage)) {
+    if (isDump)
+      os << "OR: ";
+    os << '"' << val->baseName << "\" " << val->fnDecls.size() << " candidates";
   } else if (auto val = dyn_cast<LValue>(storage)) {
     if (isDump)
       os << "LV: ";
@@ -53,6 +57,9 @@ static raw_ostream &printStorage(raw_ostream &os, const VariantStorage &storage,
 }
 
 raw_ostream &LIT::operator<<(raw_ostream &os, PRValue value) {
+  return printStorage(os, value);
+}
+raw_ostream &LIT::operator<<(raw_ostream &os, ORValue value) {
   return printStorage(os, value);
 }
 raw_ostream &LIT::operator<<(raw_ostream &os, CRValue value) {
