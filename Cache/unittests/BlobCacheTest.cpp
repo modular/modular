@@ -39,7 +39,7 @@ protected:
   LLCL::RCRef<BlobCache<StringKeyInfo>> cache;
   BlobCacheTest()
       : runtime(createLeakCheckAllocator(createMallocAllocator()),
-                createSingleThreadWorkQueue()),
+                createThreadPoolWorkQueue()),
         cache(LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
             getDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR))
                 .takeValue())) {}
@@ -132,6 +132,7 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
       EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
     });
   });
+  await(insertOr);
 
   auto zerosOr = cache->find("zeros");
   zerosOr.andThenSync([zerosOr = zerosOr.copy(), zerosBuf = zerosBuf.copy()] {
@@ -145,7 +146,6 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
   });
   // We have to sequence the clear *after* all the other work has been done. Use
   // await to make this more readable.
-  await(insertOr);
   await(zerosOr);
 
   auto clearOr = cache->clear();

@@ -16,6 +16,7 @@
 #include "llvm/Support/LockFileManager.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
+#include <shared_mutex>
 
 using namespace M;
 using namespace Cache;
@@ -180,16 +181,20 @@ struct InMemoryBackend : public BlobCacheBackend {
   InMemoryBackend(LLCL::Runtime &runtime) : BlobCacheBackend(runtime) {}
 
   ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) override {
+    std::lock_guard<std::shared_mutex> lock(mutex);
+
     // Store the item in this cache.
     cache[keyHash] = std::move(obj);
     return success();
   }
 
   ErrorOr<bool> containsImpl(StringRef keyHash) const override {
+    std::shared_lock<std::shared_mutex> lock(mutex);
     return cache.count(keyHash);
   }
 
   ErrorOr<std::optional<BufferRef>> findImpl(StringRef keyHash) const override {
+    std::shared_lock<std::shared_mutex> lock(mutex);
     auto found = cache.find(keyHash);
     if (found == cache.end())
       return std::nullopt;
@@ -199,11 +204,13 @@ struct InMemoryBackend : public BlobCacheBackend {
   }
 
   ErrorOrSuccess clearImpl() override {
+    std::lock_guard<std::shared_mutex> lock(mutex);
     cache.clear();
     return success();
   }
 
   llvm::StringMap<BufferRef> cache;
+  mutable std::shared_mutex mutex;
 };
 } // namespace
 
