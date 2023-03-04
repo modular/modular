@@ -168,16 +168,6 @@ public:
   /// for working with getLValueForResult.
   AnyValue emitResult(AnyValue value, const ExprNode *node, ValueDest dest);
 
-  AnyValue emitResult(TypedAttr value, const ExprNode *node, ValueDest dest) {
-    return emitResult(AnyValue(value), node, dest);
-  }
-  AnyValue emitResult(ASTType value, const ExprNode *node, ValueDest dest) {
-    return emitResult(AnyValue(value), node, dest);
-  }
-  AnyValue emitResult(PRValue value, const ExprNode *node, ValueDest dest) {
-    return emitResult(AnyValue(value), node, dest);
-  }
-
   /// This helper emits the specified value rep as an RValue.
   RValue emitExprRValue(const ExprNode *node, ValueDest dest);
 

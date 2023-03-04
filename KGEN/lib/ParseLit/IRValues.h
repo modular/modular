@@ -118,6 +118,10 @@ class PRValue {
 public:
   PRValue() {}
   PRValue(TypedAttr v) : storage(v) {}
+  PRValue(Attribute value) : storage(value) {
+    assert(isa<TypedAttr>(value) && "invalid value attribute");
+  }
+
   PRValue(Type value);
 
   PRValue &operator=(TypedAttr newVal) {
@@ -195,6 +199,9 @@ struct VariantValueStorage {
       storage = value;
   }
   VariantValueStorage(TypedAttr value) : VariantValueStorage(PRValue(value)) {}
+  VariantValueStorage(Attribute value) : VariantValueStorage(TypedAttr(value)) {
+    assert(isa<TypedAttr>(value) && "invalid value attribute");
+  }
   VariantValueStorage(Type value) : VariantValueStorage(PRValue(value)) {}
   VariantValueStorage(ASTType value) : VariantValueStorage(PRValue(value)) {}
   VariantValueStorage(SRValue value) {
