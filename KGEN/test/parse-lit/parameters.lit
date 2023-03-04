@@ -1,6 +1,7 @@
 # RUN: kgen-translate -import-lit %s -I %S/../lit-examples/ -verify-diagnostics | FileCheck %s
 
 from prolog import assert_param, DType, Int, SIMD
+from List import create_kgen_list
 
 alias index = __mlir_type.index
 
@@ -444,8 +445,11 @@ fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
 
 struct StaticVec[size: index]:
   fn __new__[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size, `, `, type, `>`]) -> StaticVec[size]:
+      return Self{}
+
   @staticmethod
   fn thing[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size, `, `, type, `>`]):
+      return
 
 fn callee1[size: index](v: StaticVec[size]):
 fn callee2[T: __mlir_type.`!kgen.mlirtype`](v: T):
@@ -494,6 +498,14 @@ struct Abstraction[a: Int]:
   fn pull[b: Int](value: Abstraction[a + b]):
       return
 
+# CHECK-LABEL: lit.func @"testDependentType()"
+# CHECK-SAME: shape: list<index[apply{{.*}}@Int::@"__as_mlir_index
+fn testDependentType[
+    rank: Int,
+    shape: __mlir_type[`!kgen.list<index[`, rank.__as_mlir_index(), `]>`],
+]():
+    pass
+
 # CHECK-LABEL: lit.func @"testParameterEvaluator()"
 fn testParameterEvaluator():
   # CHECK-NEXT: declare x = <1>
@@ -505,3 +517,5 @@ fn testParameterEvaluator():
   # CHECK-NEXT: %2 = kgen.rebind %y : {{.*}}@Abstraction<a: {{.*}} scalar<index> = 3}
   # CHECK-NEXT: kgen.call {{.*}}@Abstraction::@"pull{{.*}}"<{{.*}}>(%2)
   Abstraction[1].pull[2](y)
+  # CHECK-NEXT: kgen.call {{.*}}@"testDependentType()"<rank:{{.*}} = 1{{.*}}, shape: list<index[apply{{.*}}__as_mlir_index{{.*}} = rebind(:list<index[1]>
+  testDependentType[1, create_kgen_list[__mlir_type.index](0)]()

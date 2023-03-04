@@ -311,6 +311,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
   // value of 'rank'.  We use a ParameterEvaluator to keep track of the mapping
   // so far and remap types on demand.
   LitParameterEvaluator evaluator(emitter.getDeclResolver());
+  ParameterEvaluator kgenEvaluator;
   size_t nextBinding = 0;
   for (auto [idx, declX] : llvm::enumerate(actualParamDecls)) {
     ParamDeclAttr decl = declX;
@@ -567,13 +568,8 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
 
   // If anything was bound, apply it to the signature so the expected argument
   // types are updated.
-  if (!newBindings.empty()) {
-    signature = signature.getSpecializedSignature(
-        newBindings, [&]() -> InFlightDiagnostic {
-          llvm_unreachable("bad bindings went undetected");
-        });
-    assert(signature && "bad bindings went undetected");
-  }
+  std::tie(signature, newBindings) =
+      getUnboundSpecializedSignature(signature, newBindings);
 
   // Ok, the parameters all line up, check the argument list.  We generally want
   // to diagnose problems where too few or too many arguments are passed if that

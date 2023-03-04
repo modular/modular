@@ -42,6 +42,32 @@ SymbolRefAttr LIT::getFullyResolvedSymbolRef(mlir::SymbolOpInterface op) {
                             ArrayRef(symbols).drop_front());
 }
 
+std::pair<SignatureType, ParamBindArrayAttr>
+LIT::getUnboundSpecializedSignature(SignatureType type,
+                                    ParamBindArrayAttr bindings) {
+  if (bindings.empty())
+    return {type, bindings};
+
+  // KGEN expects different bindings types than Lit can provide. Rebind the
+  // parameters to the expected types.
+  SmallVector<ParamBindAttr> unboundBindings;
+  ParameterEvaluator evaluator;
+  for (auto [binding, decl] : llvm::zip(bindings, type.getInputParams())) {
+    TypedAttr value = binding.getValue();
+    Type unboundType = evaluator.getReboundType(decl.getType());
+    if (unboundType != value.getType())
+      value = ParamOperatorAttr::get(POC::Rebind, value, unboundType);
+    evaluator.setParameterValue(binding.getName(), value);
+    unboundBindings.push_back(ParamBindAttr::get(binding.getName(), value));
+  }
+  type = type.getSpecializedSignature(
+      unboundBindings, [&]() -> InFlightDiagnostic {
+        return mlir::emitError(UnknownLoc::get(type.getContext()));
+      });
+  assert(type && "bad bindings specified");
+  return {type, ParamBindArrayAttr::get(type.getContext(), unboundBindings)};
+}
+
 //===----------------------------------------------------------------------===//
 // FileModuleOp
 //===----------------------------------------------------------------------===//
@@ -69,14 +95,9 @@ TypedAttr LIT::FuncOp::getBoundReference(ParamBindArrayAttr bindings) {
   // parameters substituted in.  The function reference binds any parameter
   // bindings present on the access (in bindings), which typically concretizes
   // the signature.
-  SignatureType resultType = getFullSignature();
-  if (!bindings.empty()) {
-    resultType = resultType.getSpecializedSignature(
-        bindings, [&]() -> InFlightDiagnostic {
-          llvm_unreachable("bad bindings specified for getBoundReference");
-        });
-    assert(resultType && "bad bindings specified for getBoundReference");
-  }
+  SignatureType resultType;
+  std::tie(resultType, bindings) =
+      getUnboundSpecializedSignature(getFullSignature(), bindings);
 
   if (ParamDeclAttr decl = getParamDeclAttr()) {
     SmallVector<TypedAttr> bindOperands{ParamDeclRefAttr::get(decl)};
