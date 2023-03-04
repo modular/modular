@@ -40,6 +40,14 @@ class NoneType;
 /// declaration.
 SymbolRefAttr getFullyResolvedSymbolRef(mlir::SymbolOpInterface op);
 
+/// The Lit parser and KGEN have different semantics for binding function
+/// argument and result types. The parser will evaluate 'apply' expressions, but
+/// KGEN does not since it cannot always have access to a symbol table.
+/// Specialize a signature type while rebinding the input parameter values to
+/// the expected input parameter types.
+std::pair<SignatureType, ParamBindArrayAttr>
+getUnboundSpecializedSignature(SignatureType type, ParamBindArrayAttr bindings);
+
 } // namespace LIT
 } // namespace M::KGEN
 
