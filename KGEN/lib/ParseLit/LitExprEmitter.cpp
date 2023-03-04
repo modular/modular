@@ -210,6 +210,8 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
     }
 
     auto varOp = cast<VarDeclOp>(opDest);
+    assert(isa<UnresolvedType>(varOp.getType().getResolvedElementType()) &&
+           "Cannt resolve an already-resolved vardecl");
     varOp.getResult().setType(POP::PointerType::get(value.getRValueType()));
     dest = LValue(varOp);
     // Fall through to lvalue handling below.

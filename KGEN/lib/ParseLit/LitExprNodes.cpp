@@ -396,9 +396,12 @@ AnyValue DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, getLoc(), container, /*searchParentScopes=*/true);
 
-  auto createVarDeclWithValueType = [&](OpBuilder &builder) -> VarDeclOp {
-    Type declIRType = POP::PointerType::get(value.ir.getRValueType());
+  // This creates an untyped VarDeclOp which is then inferred from its
+  // initializer.
+  auto createVarDecl = [&](OpBuilder &builder) -> VarDeclOp {
     auto loc = getLocation(emitter);
+    Type declIRType =
+        POP::PointerType::get(UnresolvedType::get(loc.getContext()));
     auto nameAttr = StringAttr::get(loc.getContext(), spelling);
     return builder.create<VarDeclOp>(loc, declIRType, nameAttr);
   };
@@ -407,12 +410,13 @@ AnyValue DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
     return emitter.emitExprResultIntoLValue(value, lvalue);
   };
 
-  // If the unresolved name is `_`, then we have a discard pattern.  Just
-  // materialize the value into a dynamic representation and return that value
-  // without storing into the discard.
-  if (lookup.isFailure() && spelling == "_" && emitter.builder)
-    // TODO(memory-primary): don't force into SSA value.
-    return emitter.emitSRValue(value);
+  // If the unresolved name is `_`, then we have a discard pattern.  Materialize
+  // a destination to store into.  We cannot just discard the result in
+  // generality, because the value may have a destructor that needs to be run.
+  if (lookup.isFailure() && spelling == "_" && emitter.builder) {
+    auto varDecl = createVarDecl(*emitter.builder);
+    return emitter.emitRValue(value, ValueDest(varDecl));
+  }
 
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a varDeclCursor,
@@ -422,13 +426,13 @@ AnyValue DeclRefNode::emitExprResultIntoPattern(ASTExprAnd<AnyValue> value,
     // scope per function and all variables belong to that scope, so builders
     // should reflect that.
     OpBuilder varDeclBuilder(emitter.varDeclCursor);
-    auto varDecl = createVarDeclWithValueType(varDeclBuilder);
+    auto varDecl = createVarDecl(varDeclBuilder);
 
     // In a normal implicit declaration, we add it to the name table so
     // subsequent uses find this one.
     emitter.getDeclResolver().addFullyResolvedDecl(
         varDecl, getLoc(), varDecl.getNameAttr(), &container);
-    return finishLValue(varDecl.getResult());
+    return emitter.emitRValue(value, ValueDest(varDecl));
   }
 
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();

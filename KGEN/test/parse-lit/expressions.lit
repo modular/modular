@@ -28,7 +28,6 @@ fn memoryPrimaryOps(a&: MemoryPrimaryType) -> MemoryPrimaryType:
   # CHECK: kgen.call @"$expressions"::@MemoryPrimaryType::@"__clone__($expressions::MemoryPrimaryType=&,$expressions::MemoryPrimaryType&)"(%v2, %a)
   var v2 : MemoryPrimaryType = a
 
-
   return v2
 
 # CHECK-LABEL: lit.struct.decl @M
@@ -195,6 +194,8 @@ struct Boolish:
 fn unary(a: Bool, b: Int, c: Boolish):
   # CHECK: %0 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__bool__($_CompilerBuiltin::Bool)"(%a)
   # CHECK: %1 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__invert__($_CompilerBuiltin::Bool)"(%0)
+  # CHECK: %_ = lit.var.decl "_"
+  # CHECK: pop.store %1, %_
   _ = not a
 
   # CHECK: [[EQ:%.*]] = kgen.call @"$Int"::@Int::@"__eq__($Int::Int,$Int::Int)"

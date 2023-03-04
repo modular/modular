@@ -178,6 +178,7 @@ private:
 
   LLCL::RCRef<OverloadSetWrapper> storage;
 };
+raw_ostream &operator<<(raw_ostream &os, ORValue value);
 
 template <typename DerivedType>
 struct VariantValueStorage {
