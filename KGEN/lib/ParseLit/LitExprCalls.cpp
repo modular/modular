@@ -1401,11 +1401,26 @@ AnyValue ExprEmitter::emitIndirectCall(CRValue callee,
                            callExpr);
 }
 
-// FIXME: replace this with a proper interpreter!
-static PRValue
-inlineFunctionCallIntoPRValue(ASTDecl &callee, ParamBindArrayAttr inputParams,
+/// folded into a PRValue.
+static FailureOr<TypedAttr>
+inlineFunctionCallIntoPRValue(AnyValue callee,
                               ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
-                              SMLoc callLoc, ExprEmitter &emitter);
+                              LitParameterEvaluator &evaluator) {
+  auto calleePR = callee.getIfPRValue();
+  if (!calleePR)
+    return failure();
+  auto calleeSymbolCst = dyn_cast<SymbolConstantAttr>(calleePR.get());
+  if (!calleeSymbolCst)
+    return failure();
+  SmallVector<Attribute> arguments;
+  for (auto argValue : argumentValues) {
+    auto mValue = argValue.ir.getIfPRValue();
+    if (!mValue || !ParameterAttr::isSimpleConstant(mValue.get()))
+      return failure();
+    arguments.push_back(mValue.get());
+  }
+  return evaluator.evaluateFunctionCall(calleeSymbolCst.getSymbol(), arguments);
+}
 
 AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
                                         ArrayRef<ASTExprAnd<AnyValue>> operands,
@@ -1537,24 +1552,10 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // possible callee), see if we can fold its entire body into an PRValue.
   // This can fail for a number of reasons, in which case we fall back to
   // emitting normally.
-  if (auto calleePR = callee.getIfPRValue()) {
-    if (auto calleeSymbolCst = dyn_cast<SymbolConstantAttr>(calleePR.get())) {
-      ASTDecl *calleeDecl =
-          getDeclResolver().getDeclForFuncSymbol(calleeSymbolCst.getSymbol());
-
-      auto calleeFunc = cast<LIT::FuncOp>(*calleeDecl);
-      if (calleeFunc.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled) {
-        if (auto calleeSym =
-                dyn_cast<SymbolConstantAttr>(callee.getIfPRValue().get())) {
-          ParamBindArrayAttr inputParams = calleeSym.getParamValues();
-          if (auto result = inlineFunctionCallIntoPRValue(
-                  *calleeDecl, inputParams, argumentValues, callExpr->getLoc(),
-                  *this))
-            return emitResult(result.get(), callExpr, dest);
-        }
-      }
-    }
-  }
+  if (FailureOr<TypedAttr> resultPR =
+          inlineFunctionCallIntoPRValue(callee, argumentValues, evaluator);
+      succeeded(resultPR))
+    return *resultPR;
 
   if (!builder) {
     // Emitting a call in a parameter context. Generate an apply operator.
@@ -1642,121 +1643,4 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
   if (refinedType != result.getType())
     result = builder->create<RebindOp>(loc, refinedType, result);
   return emitResult(result, callExpr, dest);
-}
-
-/// Given a call to an alwaysinline function that is invoked with simple
-/// parameter constants, check to see if we can resolve it all the way down to
-/// an PRValue.  We do this when in a parameter context (since there is no debug
-/// info to ever generate) and when calling a "nodebug" function.
-///
-/// This is best-effort: when it fails, we fall back to emitting a normal call
-/// or "apply" parameter expression.
-static PRValue
-inlineFunctionCallIntoPRValue(ASTDecl &callee, ParamBindArrayAttr inputParams,
-                              ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
-                              SMLoc callLoc, ExprEmitter &emitter) {
-  auto funcOp = cast<LIT::FuncOp>(callee);
-
-  // TODO: We currently cannot handle calls to parameterized functions, we
-  // aren't doing the substitution yet.
-  if (!inputParams.empty())
-    return {};
-
-  // We aren't allowed to toss away debug information.  If we have "nodebug"
-  // or are emitting into a parameter context, then we are allowed to try this.
-  if (funcOp.getAlwaysInlineLevel() != AlwaysInlineLevel::EnabledNoDebug &&
-      emitter.builder)
-    return {};
-
-  // We don't support folding by-ref or dynamic arguments and we only support
-  // folding simple constants because we don't want to build massive parameter
-  // expressions based on the internals of function calls.
-  for (auto argValue : argumentValues) {
-    auto mValue = argValue.ir.getIfPRValue();
-    if (!mValue || !ParameterAttr::isSimpleConstant(mValue.get()))
-      return {};
-  }
-
-  // Keep track of a mapping from the arguments (and interior results of
-  // operations) to their representation, start with the input arguments.
-  SmallDenseMap<Value, PRValue> valueMapping;
-  auto &block = *funcOp.getBody();
-  for (auto [blockArg, value] : llvm::zip(block.getArguments(), argumentValues))
-    valueMapping[blockArg] = value.ir.getIfPRValue();
-
-  // Resolve the body to type check and generate the IR we need for inlining.
-  if (failed(emitter.getDeclResolver().resolveFully(callee, callLoc)))
-    return {};
-
-  // Perform parameter substitution if there are input parameters.
-  // TODO: ParameterEvaluator paramEvaluator(inputParams);
-  SmallVector<Attribute> operandAttrs;
-  SmallVector<OpFoldResult> foldResults;
-  SmallVector<ParamConstantOp> materializedConstants;
-  for (auto &op : block) {
-    // First, check for our special cases.
-
-    // If this is is the return operation then we're done.
-    if (auto returnOp = dyn_cast<LIT::ReturnOp>(op)) {
-      assert(returnOp.getNumOperands() == 1 && "Lit functions always "
-                                               "return one value");
-      return valueMapping[returnOp.getOperand(0)];
-    }
-
-    // 'let' declarations are noops.
-    if (auto letDecl = dyn_cast<LetDeclOp>(op)) {
-      // Note: Do not inline these two C++ statements, the hash table lookups
-      // can invalidate each other.
-      auto entry = valueMapping[letDecl.getValue()];
-      valueMapping[letDecl.getResult()] = entry;
-      continue;
-    }
-
-    // Ignore debuginfo.value operations entirely since we're dropping debug
-    // info.
-    if (isa<DebugInfo::ValueOp>(op))
-      continue;
-
-    // Clear all the vectors that are local state.  We define them outside the
-    // loop just to avoid unneeded reallocation.
-    materializedConstants.clear();
-    operandAttrs.clear();
-    foldResults.clear();
-
-    // TODO: Add support for parameter substitution, how do we call fold though?
-
-    // Check to see if we can fold this operation.
-    operandAttrs.reserve(op.getNumOperands());
-    for (auto operand : op.getOperands()) {
-      auto &entry = valueMapping[operand];
-      assert(entry && "Value mapping broken");
-      operandAttrs.push_back(entry.get());
-    }
-
-    // Otherwise, bail out and allow the normal call procssing logic to produce
-    // an apply of the original function.
-    if (failed(op.fold(operandAttrs, foldResults)))
-      return {};
-
-    // We successfully folded this: remember the results.
-    assert(foldResults.size() == op.getNumResults());
-    for (auto [result, value] : llvm::zip(op.getResults(), foldResults)) {
-      PointerUnion<Attribute, Value> puValue = value;
-      // If the fold says the result is equal to one of the inputs, use the
-      // known value from our mapping.
-      if (auto drVal = dyn_cast<Value>(puValue))
-        valueMapping[result] = valueMapping[drVal];
-      else {
-        auto attr = dyn_cast<TypedAttr>(cast<Attribute>(puValue));
-        assert(attr && "Folding operation with "
-                       "typed result made "
-                       "untyped attr?");
-        valueMapping[result] = PRValue(attr);
-      }
-    }
-  }
-
-  // If we fell off the bottom of the function without finding a return, then
-  // there is something wrong. Don't fold it.
-  return {};
 }

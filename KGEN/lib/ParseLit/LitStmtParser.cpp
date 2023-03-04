@@ -694,8 +694,10 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
     return {};
   LIT::VarDeclOp range_ref = builder.create<LIT::VarDeclOp>(
       forLoc, POP::PointerType::get(rangeValue.getType()), "$RANGE");
-  builder.create<POP::StoreOp>(forLoc, rangeValue.getIfSRValue(), range_ref,
-                               std::nullopt);
+  SRValue rangeSR = getEmitter().emitSRValue({rangeValue, seqExp});
+  if (!rangeSR)
+    return {};
+  builder.create<POP::StoreOp>(forLoc, rangeSR, range_ref, std::nullopt);
 
   HLCF::LoopOp loopOp = builder.create<HLCF::LoopOp>(forLoc);
   Block *body = builder.createBlock(&loopOp.getBody());

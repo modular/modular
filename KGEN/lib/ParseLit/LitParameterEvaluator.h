@@ -29,6 +29,10 @@ public:
   /// Attempt to evaluate 'apply' expressions.
   FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
 
+  /// Attempt to evaluate a function call in a parameter context.
+  FailureOr<TypedAttr> evaluateFunctionCall(SymbolRefAttr symbol,
+                                            ArrayRef<Attribute> arguments);
+
   /// Lookup the body of the referenced function using the DeclResolver.
   ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
 
