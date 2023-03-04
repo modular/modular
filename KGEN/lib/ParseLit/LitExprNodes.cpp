@@ -730,7 +730,7 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
     // Get a symbol for the underlying function.
     auto result = ORValue::create(attrSpelling, memberDecls,
                                   baseRVType.getParamBindings(), this,
-                                  CallSyntax::kMethodCall);
+                                  CallSyntax::kDirectCall);
 
     // If the callee is a static method, we can directly reference it
     // without binding a self parameter.  If this is an instance method, we
@@ -739,8 +739,10 @@ AnyValue AttributeRefNode::emitIR(ExprEmitter &emitter, ValueDest dest) const {
     // correctly.  What is the actual behavior we want for static methods?
     // Maybe we don't allow overloading static and non-static methods with
     // the same name?
-    if (!fnOp.getIsStatic() && !hasTypeBase)
+    if (!fnOp.getIsStatic() && !hasTypeBase) {
       result->baseValue = {baseVal, base};
+      result->syntax = CallSyntax::kMethodCall;
+    }
     return emitter.emitResult(std::move(result), this, dest);
   }
 
