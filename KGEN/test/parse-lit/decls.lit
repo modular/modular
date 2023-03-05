@@ -10,20 +10,20 @@ from Range import range
 
 # CHECK-LABEL:  lit.func @"let_decls()
 def let_decls():
-  # CHECK: %x = lit.let.decl "x" = %idx123 : index
+  # CHECK: %x = lit.letreg.decl "x" = %idx123 : index
   let x = 123
   # CHECK: %0 = kgen.param.constant: f64 = <1.000000e+00>
-  # CHECK: %y = lit.let.decl "y" = %0 : f64
+  # CHECK: %y = lit.letreg.decl "y" = %0 : f64
   let y = 1.0
 
   # CHECK: [[TMP:%.*]] = kgen.call @"$Int"::@Int::@"__new__{{.*}}(%x)
-  # CHECK: %z = lit.let.decl "z" = [[TMP]]
+  # CHECK: %z = lit.letreg.decl "z" = [[TMP]]
   let z = Int(x)
 
   # These may be declared on the same line.
   let a = 0; let b = a
-  # CHECK: %a = lit.let.decl "a" =
-  # CHECK: %b = lit.let.decl "b" =
+  # CHECK: %a = lit.letreg.decl "a" =
+  # CHECK: %b = lit.letreg.decl "b" =
 
 
 
@@ -34,9 +34,9 @@ def let_decls():
 # CHECK-LABEL:  lit.func @"var_decls()
 def var_decls():
   # Implicit declaration is mutable.
-  # CHECK: %x = lit.var.decl "x"
+  # CHECK: %x = lit.varlet.decl "x", var = true
   x = 123
-  # CHECK: %y = lit.var.decl "y"
+  # CHECK: %y = lit.varlet.decl "y", var = true
   var y : Int
 
   # CHECK: [[Y:%.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%y)
@@ -48,12 +48,12 @@ def var_decls():
   # CHECK: kgen.param.constant: string = <"hello">
   let const_str = "hello"
 
-  # CHECK: %str = lit.var.decl "str" : <!kgen.string>
+  # CHECK: %str = lit.varlet.decl "str", var = true : <!kgen.string>
   # CHECK: [[CONST:%.*]] = kgen.param.constant: string = <"hello">
   # CHECK: pop.store [[CONST]], %str : !pop.pointer<!kgen.string>
   var str = "hello"
 
-  # CHECK: %z = lit.var.decl "z" : <index>
+  # CHECK: %z = lit.varlet.decl "z", var = true : <index>
   # CHECK-NEXT: [[TMP:%.*]] = pop.load %x : !pop.pointer<index>
   # CHECK-NEXT: pop.store [[TMP]], %z
   var z = x
@@ -355,7 +355,7 @@ struct StructWithAsync:
   # CHECK-LABEL: lit.func @"do_something{{.*}}"({{.*}}) async -> !lit.none
   async fn do_something(self: StructWithAsync):
     # CHECK-NEXT: %[[CORO:.*]] = lit.async_call[<>() async -> index: @"$decls"::@"coroutine()"]()
-    # CHECK-NEXT: lit.let.decl "a" = %[[CORO]] : !pop.coroutine<() -> index>
+    # CHECK-NEXT: lit.letreg.decl "a" = %[[CORO]] : !pop.coroutine<() -> index>
     let a = coroutine()
 
 # CHECK-LABEL: lit.func @"call_struct_async{{.*}}"({{.*}}) async -> !lit.none

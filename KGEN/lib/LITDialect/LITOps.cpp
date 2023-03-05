@@ -686,25 +686,25 @@ void TryRaiseOp::getBranchTargets(
 }
 
 //===----------------------------------------------------------------------===//
-// LetDeclOp / VarDeclOp
+// LetRegDeclOp / VarLetDeclOp
 //===----------------------------------------------------------------------===//
 
-void LetDeclOp::build(OpBuilder &builder, OperationState &state,
-                      Type resultType, StringAttr name) {
+void LetRegDeclOp::build(OpBuilder &builder, OperationState &state,
+                         Type resultType, StringAttr name) {
   state.addAttribute(getNameAttrName(state.name), name);
   state.addTypes(resultType);
 }
 
-void LetDeclOp::getAsmResultNames(
+void LetRegDeclOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
   setNameFn(getResult(), getName());
 }
 
-OpFoldResult LetDeclOp::fold(LetDeclOp::FoldAdaptor adaptor) {
+OpFoldResult LetRegDeclOp::fold(LetRegDeclOp::FoldAdaptor adaptor) {
   return adaptor.getValue();
 }
 
-void VarDeclOp::getAsmResultNames(
+void VarLetDeclOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
   setNameFn(getResult(), getName());
 }

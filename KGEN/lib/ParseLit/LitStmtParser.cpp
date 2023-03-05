@@ -704,12 +704,13 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
       seqExp);
   if (!rangeValue)
     return {};
-  LIT::VarDeclOp range_ref = builder.create<LIT::VarDeclOp>(
-      forLoc, POP::PointerType::get(rangeValue.getType()), "$RANGE");
+  LIT::VarLetDeclOp rangeRef = builder.create<LIT::VarLetDeclOp>(
+      forLoc, POP::PointerType::get(rangeValue.getType()), "$RANGE",
+      /*isVar*/ true);
   SRValue rangeSR = getEmitter().emitSRValue({rangeValue, seqExp});
   if (!rangeSR)
     return {};
-  builder.create<POP::StoreOp>(forLoc, rangeSR, range_ref, std::nullopt);
+  builder.create<POP::StoreOp>(forLoc, rangeSR, rangeRef, std::nullopt);
 
   HLCF::LoopOp loopOp = builder.create<HLCF::LoopOp>(forLoc);
   Block *body = builder.createBlock(&loopOp.getBody());
@@ -718,7 +719,7 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   // For Loop condition: if the length of the range is greater than zero,
   // continue. Otherwise break
   SRValue loaded_range = SRValue(builder.create<POP::LoadOp>(
-      translateLocation(seqExp->getLoc()), range_ref, std::nullopt));
+      translateLocation(seqExp->getLoc()), rangeRef, std::nullopt));
   AnyValue current_length = getEmitter().emitNamedMethodCall(
       "__len__", {{loaded_range, seqExp}}, ValueDest::none(),
       CallSyntax::kImplicitConvert, seqExp);
@@ -751,7 +752,7 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   // Create the body. Add Target element to the continue block by calling next
   builder.setInsertionPointAfter(condOp);
   AnyValue nextCall = getEmitter().emitNamedMethodCall(
-      "__next__", {{LValue(range_ref), seqExp}}, ValueDest::none(),
+      "__next__", {{LValue(rangeRef), seqExp}}, ValueDest::none(),
       CallSyntax::kImplicitConvert, seqExp);
   if (!nextCall) {
     return {};
@@ -822,8 +823,9 @@ ParseResult LitStmtParser::parseTryStmt(size_t curIndent) {
     if (func.getIsDef()) {
       // If we are parsing inside a 'def', create a mutable LValue to allow
       // reassignment.
-      auto varDecl = builder.create<VarDeclOp>(
-          errVal.getLoc(), POP::PointerType::get(errVal.getType()), errName);
+      auto varDecl = builder.create<VarLetDeclOp>(
+          errVal.getLoc(), POP::PointerType::get(errVal.getType()), errName,
+          /*isVar*/ true);
       getDeclResolver().addFullyResolvedDecl(varDecl, errValLoc, errName,
                                              &containingDecl);
       builder.create<POP::StoreOp>(errVal.getLoc(), errVal, varDecl,
@@ -1143,7 +1145,7 @@ ParseResult LitStmtParser::parseLetVarStmt(LitLexerCursor startCursor,
       emitError(loc, "'let' fields in structs are not supported yet");
     declOp = builder.create<StructFieldOp>(loc, name, unresolvedType);
   } else if (isLet) {
-    declOp = builder.create<LetDeclOp>(loc, unresolvedType, name);
+    declOp = builder.create<LetRegDeclOp>(loc, unresolvedType, name);
 
   } else {
     // Otherwise this is a local variable definition.
@@ -1153,7 +1155,7 @@ ParseResult LitStmtParser::parseLetVarStmt(LitLexerCursor startCursor,
     // TODO (Issue#5005): Maintain scopes correctly so we don't have a conflict
     // between things like "if cond: var x = 1 else var x = 2"
     auto varType = POP::PointerType::get(unresolvedType);
-    declOp = builder.create<VarDeclOp>(loc, varType, name);
+    declOp = builder.create<VarLetDeclOp>(loc, varType, name, /*isVar=*/true);
   }
 
   // Skip the body of this definition: go to a token the starts a line at the

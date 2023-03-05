@@ -4,17 +4,17 @@
 // CHECK-NEXT:    base : index
 // CHECK-NEXT:  }
 lit.struct.decl @AdderOneField {
-  %base = lit.var.decl "base" : <index>
+  %base = lit.varlet.decl "base", var = true : <index>
 }
 
 lit.struct.decl @Adder<size> {
-  %base = lit.var.decl "base" : <index>
+  %base = lit.varlet.decl "base", var = true : <index>
 
   // CHECK-LABEL: kgen.generator @"Adder::__add__"<size>(%arg0: !kgen.declref<@Adder<size = size>>) {
   // CHECK-NEXT:    %[[ONE:.*]] = pop.stack_allocation 1 x index
   // CHECK:       }
   lit.func @__add__(%self: !kgen.declref<@Adder<size = size>>)  {
-    %0 = lit.var.decl "a" : <index>
+    %0 = lit.varlet.decl "a", var = true : <index>
     %one = index.constant 1
     pop.store %one, %0 : !pop.pointer<index>
     kgen.return
@@ -78,7 +78,7 @@ lit.func @main(%a: !kgen.declref<@A<N = 1>>) {
 // -----
 
 lit.struct.decl @A {
-   %x = lit.var.decl "x" : <index>
+   %x = lit.varlet.decl "x", var = true : <index>
  }
 
 // CHECK: kgen.generator @rhslitdeclref_no_params(%arg0: !kgen.declref<@A>) -> !kgen.list<i1[0]> {
@@ -91,7 +91,7 @@ lit.struct.decl @A {
 // -----
 
 lit.struct.decl @A<b, c> {
-  %x = lit.var.decl "x" : <index>
+  %x = lit.varlet.decl "x", var = true : <index>
 }
 // CHECK: kgen.generator @rhslitdeclref_params(%arg0: !kgen.declref<@A<b = 10, c = 11>>) -> !kgen.list<i1[0]> {
 lit.func @rhslitdeclref_params(%x: !kgen.declref<@A<b = 10, c = 11>>) -> !lit.none {

@@ -29,7 +29,7 @@ using namespace M::KGEN::LIT;
 // ValueDest implementation
 //===----------------------------------------------------------------------===//
 
-ValueDest::ValueDest(VarDeclOp dest) : representation(dest.getOperation()) {}
+ValueDest::ValueDest(VarLetDeclOp dest) : representation(dest.getOperation()) {}
 
 /// If this value destination has a known type, e.g. "var x : Int = 42" or
 /// "x = 42", return it.  If not (e.g. _ = 42) then return null.
@@ -75,7 +75,7 @@ LValue ValueDest::takeLValueForResult(SMLoc loc, ASTType resultType,
   if (auto *opDest = dyn_cast_or_null<Operation *>(representation)) {
     representation = nullptr; // Consumed!
 
-    auto varOp = cast<VarDeclOp>(opDest);
+    auto varOp = cast<VarLetDeclOp>(opDest);
     assert(isa<UnresolvedType>(varOp.getType().getResolvedElementType()) &&
            "Cannot resolve an already-resolved vardecl");
     varOp.getResult().setType(POP::PointerType::get(resultType));
@@ -92,8 +92,11 @@ LValue ValueDest::takeLValueForResult(SMLoc loc, ASTType resultType,
 
   Type declIRType = POP::PointerType::get(resultType);
   auto nameAttr = StringAttr::get(emitter.getContext(), "<anonymous>");
-  return LValue(emitter.builder->create<VarDeclOp>(
-      emitter.translateLocation(loc), declIRType, nameAttr));
+  // We model this as an immutable let value with a separately stored
+  // initializer.  We return an LValue for it because this method is used for
+  // the initialization.
+  return LValue(emitter.builder->create<VarLetDeclOp>(
+      emitter.translateLocation(loc), declIRType, nameAttr, /*isVar*/ 0));
 }
 
 //===----------------------------------------------------------------------===//

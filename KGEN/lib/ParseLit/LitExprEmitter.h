@@ -20,7 +20,7 @@ enum class SpecialFunctionKind : uint8_t;
 class SpecialFunctionInfo;
 enum class CallSyntax : uint8_t;
 class ExprEmitter;
-class VarDeclOp;
+class VarLetDeclOp;
 
 /// This class represents the destination context than an expression is being
 /// emitted, when it may produce an RValue.  Example destinations include:
@@ -45,7 +45,7 @@ public:
   /*implicit*/
   ValueDest(const ExprNode *target = nullptr) : representation(target) {}
   ValueDest(LValue dest) : representation(dest) {}
-  ValueDest(VarDeclOp dest); // Infer type from init expression.
+  ValueDest(VarLetDeclOp dest); // Infer type from init expression.
   ValueDest(ValueDest &&rhs) : representation(rhs.representation) {
     rhs.resetForError();
   }

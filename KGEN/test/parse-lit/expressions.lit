@@ -42,23 +42,23 @@ struct MemoryPrimaryPair:
 
 # CHECK-LABEL: lit.func @"memoryPrimaryOps
 fn memoryPrimaryOps(a&: MemoryPrimaryPair) -> MemoryPrimaryPair:
-  # CHECK-NEXT: %v1 = lit.var.decl "v1" : <@"$expressions"::@MemoryPrimaryPair>
+  # CHECK-NEXT: %v1 = lit.varlet.decl "v1", var = true : <@"$expressions"::@MemoryPrimaryPair>
   # CHECK-NEXT: kgen.call @"$expressions"::@MemoryPrimaryPair::@"__clone__($expressions::MemoryPrimaryPair=&,$expressions::MemoryPrimaryPair&)"(%v1, %a) : (!pop.pointer<@"$expressions"::@MemoryPrimaryPair> byref-result, !pop.pointer<@"$expressions"::@MemoryPrimaryPair> byref)
   var v1 = a
 
-  # CHECK-NEXT: %v2 = lit.var.decl "v2" : <@"$expressions"::@MemoryPrimaryPair>
+  # CHECK-NEXT: %v2 = lit.varlet.decl "v2", var = true
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%v2, %a)
   var v2 : MemoryPrimaryPair = a
 
-  # CHECK-NEXT: %_ = lit.var.decl "_"
+  # CHECK-NEXT: %_ = lit.varlet.decl "_", var = false
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%_, %a)
   _ = a
 
-  # CHECK-NEXT: %3Canonymous3E = lit.var.decl "<anonymous>"
+  # CHECK-NEXT: %3Canonymous3E = lit.varlet.decl "<anonymous>", var = false
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%3Canonymous3E, %a)
   a
 
-  # CHECK-NEXT: %regX = lit.var.decl "regX" :
+  # CHECK-NEXT: %regX = lit.varlet.decl "regX", var = true :
   # CHECK-NEXT: %4 = lit.struct.gep %a[x]
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%regX, %4)
   var regX = a.x
@@ -96,7 +96,7 @@ fn simpleMath(a: Int, b: Int) -> Int:
 
 # CHECK-LABEL: lit.func @"precedence_associativity
 fn precedence_associativity(a: Int):
-  # CHECK-NEXT: %z = lit.var.decl "z"
+  # CHECK-NEXT: %z = lit.varlet.decl "z", var = true
   var z: Int = 0
 
   # CHECK: [[SEVENTEENINT:%.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 17}>
@@ -235,7 +235,7 @@ struct Boolish:
 fn unary(a: Bool, b: Int, c: Boolish):
   # CHECK: %0 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__bool__($_CompilerBuiltin::Bool)"(%a)
   # CHECK: %1 = kgen.call @"$_CompilerBuiltin"::@Bool::@"__invert__($_CompilerBuiltin::Bool)"(%0)
-  # CHECK: %_ = lit.var.decl "_"
+  # CHECK: %_ = lit.varlet.decl "_", var = false
   # CHECK: pop.store %1, %_
   _ = not a
 
@@ -289,7 +289,7 @@ fn andOr(a: Boolish, b: Boolish, x: Bool):
 
 # CHECK-LABEL: lit.func @"do_math
 fn do_math(a: Int, b: Int, c: Int) -> Int:
-  # CHECK-NEXT: %z = lit.var.decl "z"
+  # CHECK-NEXT: %z = lit.varlet.decl "z", var = true
   var z : Int
   # CHECK-NEXT: %[[INT_5:.*]] = kgen{{.*}}#lit.struct<{value: scalar<index> = 5}>
   # CHECK-NEXT: %[[MUL:.*]] = kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%[[INT_5]], %a)
@@ -298,7 +298,7 @@ fn do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: pop.store %[[ADD]], %z
   z = Int(42) + Int(5)*a
 
-  # CHECK-NEXT: %x = lit.var.decl "x"
+  # CHECK-NEXT: %x = lit.varlet.decl "x", var = true
   # CHECK-NEXT: %[[TMP:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%z)
   # CHECK-NEXT: pop.store %[[TMP]], %x
   # This is checking the lexer handles \ at end of line correctly.
@@ -341,9 +341,9 @@ fn initializers():
 
 # CHECK-LABEL: lit.func @"test_if_cond
 def test_if_cond(cond: Bool):
-    # CHECK:      %[[I:.*]] = lit.var.decl "i" : <@"$Int"::@Int>
-    # CHECK-NEXT: %[[COND:.*]] = kgen.call @"$_CompilerBuiltin"::@Bool::@"__clone__($_CompilerBuiltin::Bool&)"(%cond_0)
-    # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call @"$_CompilerBuiltin"::@Bool::@"__lit_bool($_CompilerBuiltin::Bool)"(%[[COND]])
+    # CHECK:      %[[I:.*]] = lit.varlet.decl "i", var = true : <@"$Int"::@Int>
+    # CHECK-NEXT: %[[COND:.*]] = kgen.call {{.*}}__clone__{{.*}}(%cond_0)
+    # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call {{.*}}__lit_bool{{.*}}(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
     # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}= 2}
     # CHECK-NEXT:   hlcf.yield %[[INT_TWO]]
@@ -406,7 +406,7 @@ fn parameterExprs[a: __mlir_type.index, a2: __mlir_type.index]():
 
 # CHECK-LABEL: lit.func @"patterns()
 fn patterns():
-  # CHECK: %z2 = lit.var.decl "z2" : <index>
+  # CHECK: %z2 = lit.varlet.decl "z2", var = true : <index>
   var z2: __mlir_type.index
 
   (((z2))) = 42  # Paren patterns
@@ -415,7 +415,7 @@ fn patterns():
 
   var someInt : Int
   (someInt) += someInt
-  # CHECK: %someInt = lit.var.decl "someInt" : <@"$Int"::@Int>
+  # CHECK: %someInt = lit.varlet.decl "someInt", var = true
   # CHECK:  %0 = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%someInt)
   # CHECK:  %1 = kgen.call @"$Int"::@Int::@"__iadd__{{.*}}(%someInt, %0)
 
@@ -426,13 +426,13 @@ fn patterns():
   (_) = 1.0
   # CHECK: %3 = kgen.param.constant: f64 = <1.0
 
-  # CHECK: %someF32 = lit.var.decl "someF32" : <@"$F32"::@F32>
+  # CHECK: %someF32 = lit.varlet.decl "someF32", var = true
   # CHECK: [[F32:%.*]] = kgen.call @"$F32"::@F32::@"__clone__($F32::F32&)"(%someF32)
   # CHECK: {{%.*}} = kgen.call @"$F32"::@F32::@"__iadd__{{.*}}(%someF32, [[F32]])
   var someF32 : F32
   (someF32) += someF32
 
-  # CHECK: %someSIMD = lit.var.decl "someSIMD" : <@"$SIMD"::@SIMD<size = 4, type: dtype = f64>>
+  # CHECK: %someSIMD = lit.varlet.decl "someSIMD", var = true
   # CHECK: [[SIMD:%.*]] = kgen.call @"$SIMD"::@SIMD::@"__clone__($SIMD::SIMD[size, type]&)"<size = 4, type: dtype = f64>(%someSIMD)
   # CHECK: {{%.*}} = kgen.call @"$SIMD"::@SIMD::@"__iadd__{{.*}}(%someSIMD, [[SIMD]])
   var someSIMD : SIMD[4, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`]
@@ -443,7 +443,7 @@ fn byval_byref_function(a: Int, b&: Int):
   # CHECK-NEXT: pop.store %a, %b
   b = a
 
-  # CHECK-NEXT: %x = lit.var.decl "x"
+  # CHECK-NEXT: %x = lit.varlet.decl "x", var = true
   var x : Int
   # This needs to load 'b' to pass it by value for the first arg, but pass its
   # address in directly for the second.
@@ -476,8 +476,8 @@ def defTests(a: Int, b: Int, untyped):
 ##===----------------------------------------------------------------------===##
 
 def basic_assignments(a: Int, b: Int, c: M, d: M):
-  # CHECK:      %a_0 = lit.var.decl "a"
-  # CHECK:      %b_1 = lit.var.decl "b"
+  # CHECK:      %a_0 = lit.varlet.decl "a", var = true
+  # CHECK:      %b_1 = lit.varlet.decl "b", var = true
   # CHECK:      %[[LOAD_B:.*]] = kgen.call @"$Int"::@Int::@"__clone__($Int::Int&)"(%b_1)
   # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__iadd__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   a += b
