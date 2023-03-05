@@ -332,8 +332,8 @@ fn listValues() -> __mlir_type.index:
 
 # CHECK-LABEL: lit.func @"initializers
 fn initializers():
-  # CHECK: %0 = kgen.param.constant: scalar<index> = <42>
-  # CHECK: %1 = lit.struct.create(value=%0)
+  # CHECK: %0 = kgen.param.constant: @"$Int"::@Int = <#lit.struct<{value: scalar<index> = 42}>>
+  # CHECK: pop.store %0, %_
   _ = Int{value: Int(42).value}
 
   # Issue #7343: Trailing comma ok too.
