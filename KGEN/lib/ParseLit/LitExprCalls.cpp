@@ -341,7 +341,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
         auto expectedType = evaluator.getReboundType(decl.getType());
         if (auto value =
                 parameterInferenceHook(decl, expectedType, newBindings)) {
-          assert(value.getType() == expectedType &&
+          assert(value.getType().mlirType == expectedType &&
                  "inferred a default parameter value of wrong type");
           setParamValue(value);
           continue;
@@ -663,7 +663,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
                   newBindings};
 
         // By-ref argument types must exactly match, no conversions are allowed.
-        if (!ASTType(argVal.getType()).isEqualCanon(expectedType))
+        if (!argVal.getType().isEqualCanon(expectedType))
           return {kArgWrongLVType, providedValueIdx, expectedType, newBindings};
         break;
       }
@@ -1245,7 +1245,7 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest,
     if (!baseLV) {
       emitter.emitError(loc,
                         "invalid use of mutating method on rvalue of type ")
-          << ASTType(baseValue.ir.getType()) << baseValue.expr->getRange();
+          << baseValue.ir.getType() << baseValue.expr->getRange();
       return {};
     }
     firstArgValue = baseLV;
@@ -1336,7 +1336,7 @@ AnyValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   if (!callee)
     return {};
 
-  SignatureType calleeSig = cast<SignatureType>(callee.getType());
+  SignatureType calleeSig = cast<SignatureType>(callee.getType().mlirType);
 
   // Check declarations for the result parameters and collect them here.
   SmallVector<ParamDeclAttr> resultParamDecls;
@@ -1390,7 +1390,7 @@ AnyValue ExprEmitter::emitIndirectCall(CRValue callee,
                                        ArrayRef<ASTExprAnd<AnyValue>> operands,
                                        ValueDest &dest,
                                        const ExprNode *callExpr) {
-  auto calleeSig = dyn_cast<SignatureType>(callee.getType());
+  auto calleeSig = dyn_cast<SignatureType>(callee.getType().mlirType);
   if (!calleeSig) {
     emitError(callExpr->getLoc(), "invalid function type to call ")
         << ASTType(callee.getType()) << callExpr->getRange();
@@ -1440,7 +1440,7 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
                                         ArrayRef<ParamDeclAttr> resultParams,
                                         ValueDest &dest,
                                         const ExprNode *callExpr) {
-  SignatureType calleeSig = cast<SignatureType>(callee.getType());
+  SignatureType calleeSig = cast<SignatureType>(callee.getType().mlirType);
 
   assert(calleeSig.getResultParams().size() == resultParams.size() &&
          "Type checking should be done");
@@ -1640,7 +1640,7 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
   ArrayRef<Type> resultTypes = calleeSig.getValueResults();
   Operation *callOp;
   if (auto target = callee.getIfPRValue()) {
-    if (auto sig = dyn_cast<SignatureType>(target.getType());
+    if (auto sig = dyn_cast<SignatureType>(target.getType().mlirType);
         sig && sig.isAsync()) {
       // If the callee is an async function, emit an async call.
       callOp = builder->create<AsyncCallOp>(loc, target.get(), resultParams,

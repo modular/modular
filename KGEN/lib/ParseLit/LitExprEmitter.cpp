@@ -183,8 +183,7 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value) {
     return rvalue;
 
   // Make sure this method isn't getting called inappropriately.
-  assert(ASTType(value.ir.getType())
-             .isRegisterPrimary(value.expr->getLoc(), shared) &&
+  assert(value.ir.getType().isRegisterPrimary(value.expr->getLoc(), shared) &&
          "cannot emit a memory-primary type as an SRValue");
 
   // If this is a parameter, we need to materialize it, either as an
@@ -197,6 +196,7 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value) {
   }
 
   auto attr = value.ir.getIfPRValue().get();
+  assert(attr && "must be PRValue if register primary and not SRValue");
 
   // If the value being materialized is itself parameterized, then we cannot
   // materialize it as an SSA value - there will be no way to bind parameters to
@@ -439,7 +439,7 @@ AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
                                         ASTType expectedType, ValueDest &dest,
                                         const Twine &errorSuffix) {
   auto errorHandler = [&]() {
-    if (!isa<TypeCheckErrorType>(value.ir.getType()) &&
+    if (!isa<TypeCheckErrorType>(value.ir.getType().mlirType) &&
         !isa<TypeCheckErrorType>(expectedType.mlirType)) {
       emitError(value.expr->getLoc())
           << ASTType(value.ir.getRValueType())
@@ -462,7 +462,7 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
   boolResult = value.ir;
 
   // If this is already an 'i1', then we're done.
-  if (value.ir.getType().isInteger(1))
+  if (value.ir.getType().mlirType.isInteger(1))
     return emitRValue(value, ValueDest::none());
 
   // TODO: Python manual includes this off-hand comment:

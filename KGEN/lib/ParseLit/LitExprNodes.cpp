@@ -227,8 +227,8 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 
   // Return it.
   auto attrs = DictionaryAttr::get(context, attrValues);
-  return PRValue(UnboundMLIROperationAttr::get(context, unboundOp.getType(),
-                                               unboundOp.getName(), attrs));
+  return UnboundMLIROperationAttr::get(context, unboundOp.getType(),
+                                       unboundOp.getName(), attrs);
 }
 
 /// Given a ParamDeclareOp, return the value that should be used in a reference
@@ -242,7 +242,8 @@ static PRValue resolveParamDeclareValue(ParamDeclareOp param,
   while (1) {
     // If this reference is within a function then keep it symbolic.
     if (parent && isa<LIT::FuncOp>(parent))
-      return PRValue(ParamDeclRefAttr::get(param.getName(), param.getType()));
+      return ParamDeclRefAttr::get(param.getName(), param.getType());
+
     // If this is at file scope, inline it.
     if (!parent || isa<FileModuleOp>(parent))
       return param.getValue();
@@ -270,7 +271,7 @@ static PRValue resolveParamDeclareValue(ParamDeclareOp param,
     parent = parent->getParentOp();
   }
 
-  return PRValue(ParamDeclRefAttr::get(param.getName(), param.getType()));
+  return ParamDeclRefAttr::get(param.getName(), param.getType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -692,7 +693,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   if (!isa<StructDeclOp>(*typeDecl)) {
     emitter.emitError(getLoc(), "cannot access attribute in type ")
-        << ASTType(baseVal.getType()) << base->getRange();
+        << baseVal.getType() << base->getRange();
     return {};
   }
 
@@ -1155,7 +1156,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   if (auto callableMVal = subValue.getIfPRValue()) {
-    if (auto sig = dyn_cast<SignatureType>(callableMVal.getType())) {
+    if (auto sig = dyn_cast<SignatureType>(callableMVal.getType().mlirType)) {
       // If this is a signature-type PRValue callable, this is binding parameter
       // values to a call.
       SmallVector<TypedAttr> bindOperands({callableMVal.get()});
@@ -1272,7 +1273,7 @@ AnyValue SubscriptArrowNode::emitIR(ValueDest &dest,
   auto overloads = subValue.getIfORValue();
   if (!overloads) {
     emitter.emitError(arrowLoc, "invalid '->' when subscripting type ")
-        << ASTType(subValue.getType()) << getRange();
+        << subValue.getType() << getRange();
     return {};
   }
 
@@ -1585,7 +1586,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 
   // FIXME: We currently hack in index type support as transition to proper
   // expression support.
-  if ((lhs.ir.getType().isIndex() && rhs.ir.getType().isIndex()) &&
+  if ((lhs.ir.getType().mlirType.isIndex() &&
+       rhs.ir.getType().mlirType.isIndex()) &&
       lhs.ir.getIfPRValue() && rhs.ir.getIfPRValue()) {
     auto lhsParam = lhs.ir.getIfPRValue();
     auto rhsParam = rhs.ir.getIfPRValue();
@@ -1807,7 +1809,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Now that we know lhsRV and rhsRV we can tell if they have common types.
   // If so, we use that as the result of the 'if'.
-  if (ASTType(lhsRV.getType()).isEqualCanon(rhsRV.getType())) {
+  if (lhsRV.getType().isEqualCanon(rhsRV.getType())) {
     emitter.builder->create<HLCF::YieldOp>(ifLoc, rhsRV);
     // Emit the false side.
     emitter.builder = falseBuilder;
@@ -1820,10 +1822,10 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
         CallSyntax::kImplicitConvert, this);
     if (!rhsBool)
       return {};
-    if (!ASTType(lhsBool.getType()).isEqualCanon(rhsBool.getType())) {
+    if (!lhsBool.getType().isEqualCanon(rhsBool.getType())) {
       emitter.emitError(getLoc(), "cannot find common type between ")
-          << ASTType(lhsRV.getType()) << " and " << ASTType(rhsRV.getType())
-          << lhs->getRange() << rhs->getRange();
+          << lhsRV.getType() << " and " << rhsRV.getType() << lhs->getRange()
+          << rhs->getRange();
       return {};
     }
     auto rhsBoolDRVal = emitter.emitSRValue({rhsBool, rhs});
@@ -1850,7 +1852,8 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Special case some things for literals.
   // TODO: Fix literal representation.
-  if ((exprRep.getType().isIndex() || exprRep.getType().isF64()) &&
+  if ((exprRep.getType().mlirType.isIndex() ||
+       exprRep.getType().mlirType.isF64()) &&
       exprRep.getIfPRValue()) {
     auto exprParam = exprRep.getIfPRValue();
     switch (kind) {
@@ -1864,7 +1867,7 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       }
 
       // Support general integer parameter exprs.
-      if (exprRep.getType().isIndex())
+      if (exprRep.getType().mlirType.isIndex())
         return emitter.emitResult(ParamOperatorAttr::getNeg(exprParam), this,
                                   dest);
 
@@ -1935,11 +1938,11 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   /// TODO(subtyping): With subtypes, we can find intersection types, e.g. a
   /// common superclass.
-  if (!ASTType(trueVal.getType()).isEqualCanon(falseVal.getType())) {
+  if (!trueVal.getType().isEqualCanon(falseVal.getType())) {
     emitter.emitError(getLoc(), "true value of type ")
-        << ASTType(trueVal.getType()) << " is not compatible with false value "
-        << ASTType(falseVal.getType()) << " in conditional"
-        << trueExpr->getRange() << falseExpr->getRange();
+        << trueVal.getType() << " is not compatible with false value "
+        << falseVal.getType() << " in conditional" << trueExpr->getRange()
+        << falseExpr->getRange();
     return {};
   }
   // Ensure the correct type is used.
@@ -1971,8 +1974,8 @@ AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
       emitter.emitSRValue({AnyValue(lastCmpI1Value), this});
   if (!lastCmpI1RValue)
     return {};
-  auto ifOp = emitter.builder->create<HLCF::IfOp>(ifLoc, boolResult.getType(),
-                                                  lastCmpI1RValue);
+  auto ifOp = emitter.builder->create<HLCF::IfOp>(
+      ifLoc, boolResult.getType().mlirType, lastCmpI1RValue);
   emitter.builder->createBlock(&ifOp.getThenRegion());
   SRValue exprValue = emitter.emitExprSRValue(exprs[opIdx + 1]);
   if (!exprValue)

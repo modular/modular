@@ -77,6 +77,8 @@ public:
   using Value::Value;
   using Value::operator=;
   SRValue(Value v) : Value(v) {}
+
+  ASTType getType() const { return ASTType(Value::getType()); }
 };
 
 /// Instances of MRValue model a dynamic value stored into memory whose address
@@ -92,6 +94,8 @@ public:
   /// MRValue's represent the address of the stored value.  This returns the
   /// RValue type, the declared type of the value.
   ASTType getRValueType() const;
+
+  ASTType getType() const { return ASTType(Value::getType()); }
 };
 
 /// Instances of LValue model a dynamic address, which will always have pointer
@@ -110,6 +114,8 @@ public:
   /// If this is already an RValue, it is the type of the value.  If this is
   /// an LValue, it strips off the pointer type.
   ASTType getRValueType() const;
+
+  ASTType getType() const { return ASTType(Value::getType()); }
 };
 
 /// Instances of PRValue model compile time values that are represented as MLIR
@@ -137,7 +143,7 @@ public:
   operator TypedAttr() const { return get(); }
 
   /// Return the type for the contained representation, or null if null.
-  Type getType() const { return get().getType(); }
+  ASTType getType() const { return get().getType(); }
 
   /// If this value /is/ a type (i.e., if it has metatype type) return it.
   ASTType getIfTypeValue() const;
@@ -173,7 +179,6 @@ public:
 
   template <typename... Args>
   static ORValue create(Args &&...args);
-
   static ORValue create(OverloadSet &&set);
 
 private:
@@ -255,7 +260,7 @@ public:
   }
 
   /// Return the type for the contained representation, or null if null.
-  Type getType() const;
+  ASTType getType() const;
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, CRValue value);
@@ -295,7 +300,7 @@ public:
   ORValue getIfORValue() const { return dyn_cast<ORValue>(storage); }
 
   /// Return the type for the contained representation, or null if null.
-  Type getType() const;
+  ASTType getType() const;
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, RValue value);
@@ -324,7 +329,7 @@ public:
 
   /// Return the type for the contained representation, or null if they are
   /// both null.
-  Type getType() const;
+  ASTType getType() const;
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, AnyValue value);
