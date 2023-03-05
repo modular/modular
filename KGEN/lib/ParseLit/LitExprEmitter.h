@@ -67,8 +67,7 @@ public:
   }
 
   ~ValueDest() {
-    // assert(!isSpecified() && "ValueDest destroyed without being emitted
-    // into");
+    assert(!isSpecified() && "ValueDest destroyed without being emitted into");
   }
 
   /// Return true if there is a specification for this destination.  If not,
