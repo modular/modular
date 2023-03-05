@@ -9,11 +9,16 @@ fn noop():
 # CHECK-LABEL: lit.struct.decl @MemoryPrimaryType
 @__memory_primary
 struct MemoryPrimaryType:
+  var x: __mlir_type.index
+
   # CHECK: lit.func @"__clone__{{.*}}"(
   # CHECK-SAME: %__result__: !pop.pointer<@"$expressions"::@MemoryPrimaryType> byref-result,
   # CHECK-SAME: %self: !pop.pointer<@"$expressions"::@MemoryPrimaryType> byref) -> !lit.none {
   fn __clone__(self&: MemoryPrimaryType) -> MemoryPrimaryType:
-    return MemoryPrimaryType {}
+    # CHECK: %0 = lit.struct.gep %__result__[x]
+    # CHECK: %idx1 = index.constant 1
+    # CHECK: pop.store %idx1, %0
+    return MemoryPrimaryType {x: 1}
 
 # CHECK-LABEL: lit.func @"memoryPrimaryOps
 fn memoryPrimaryOps(a&: MemoryPrimaryType) -> MemoryPrimaryType:
