@@ -182,6 +182,11 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value) {
   if (auto rvalue = value.ir.getIfSRValue())
     return rvalue;
 
+  // Make sure this method isn't getting called inappropriately.
+  assert(ASTType(value.ir.getType())
+             .isRegisterPrimary(value.expr->getLoc(), shared) &&
+         "cannot emit a memory-primary type as an SRValue");
+
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
   if (!builder) {

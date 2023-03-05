@@ -758,6 +758,12 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           emitter.builder->create<StructGEPOp>(mlirLoc, baseLV, fieldOp);
       return emitter.emitResult(LValue(fieldPtr), this, dest);
     }
+    // If the base is an MRValue, reference the field as an MRValue.
+    if (MRValue baseMRV = baseVal.getIfMRValue()) {
+      auto fieldPtr =
+          emitter.builder->create<StructGEPOp>(mlirLoc, baseMRV, fieldOp);
+      return emitter.emitResult(LValue(fieldPtr), this, dest);
+    }
 
     // If the base is an PRValue, emit a field extract as an PRValue.
     if (PRValue baseMV = baseVal.getIfPRValue()) {
@@ -1412,6 +1418,22 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   // While we use general dictionary syntax, the keys are syntactically
   // limited to being keywords.  The values may be arbitrary RValues
   // though, and are emitted in lexical order.
+
+  // Perform parameter substitution if there are input parameters.
+  LitParameterEvaluator paramEvaluator(emitter.getDeclResolver(),
+                                       initType.getParamBindings());
+
+  // Build a mapping of field names to field decls for fast lookup.
+  SmallDenseMap<StringAttr, StructFieldOp> fieldNameMap;
+  for (StructFieldOp field : structOp.getFieldDecls())
+    fieldNameMap[field.getNameAttr()] = field;
+
+  // If this is a memory primary struct, initialize the fields into the result
+  // buffer.
+  LValue memoryPrimaryBase;
+  if (!structOp.getIsRegisterPrimary())
+    memoryPrimaryBase = dest.takeLValueForResult(getLoc(), initType, emitter);
+
   DenseMap<StringAttr, ASTExprAnd<RValue>> fieldMapping;
   for (auto &keyValue : indices->values) {
     // We don't support `**dict` syntax.
@@ -1432,9 +1454,37 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     StringAttr fieldNameAttr =
         StringAttr::get(emitter.getContext(), fieldName->spelling);
 
-    auto value = emitter.emitExprRValue(keyValue.second, ValueDest::none());
-    if (!value)
+    // The field must be fully parsed to understand its type etc.  Do a lookup
+    // to find its decl and resolve it.
+    for (ASTDecl *fieldDecl : *decl->lookupInCurrentScope(fieldNameAttr)) {
+      if (failed(emitter.getDeclResolver().resolveFully(
+              *fieldDecl, keyValue.second->getLoc())))
+        return {};
+    }
+
+    auto field = fieldNameMap[fieldNameAttr];
+    if (!field) {
+      emitter.emitError(keyValue.first->getLoc(), "")
+          << initType << " has no field named " << fieldNameAttr
+          << keyValue.second->getRange();
       return {};
+    }
+
+    // If we are memory primary, emit the initializers directly into the fields.
+    ValueDest fieldDest;
+    if (memoryPrimaryBase) {
+      // For a memory primary aggregate, emit the field into the memory for the
+      // field in the aggregate.
+      auto fieldPtr = emitter.builder->create<StructGEPOp>(
+          getLocation(emitter), memoryPrimaryBase, field);
+      fieldDest = LValue(fieldPtr);
+    }
+
+    auto value = emitter.emitExprRValue(keyValue.second, fieldDest);
+    if (!value) {
+      fieldDest.resetForError();
+      return {};
+    }
 
     auto mapResult =
         fieldMapping.insert({fieldNameAttr, {value, keyValue.second}});
@@ -1454,18 +1504,10 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     return {};
   }
 
-  // Perform parameter substitution if there are input parameters.
-  LitParameterEvaluator paramEvaluator(emitter.getDeclResolver(),
-                                       initType.getParamBindings());
-
-  // If this is a memory primary struct, initialize the fields into the result
-  // buffer, if it is register primary, we build a list of field values+names.
+  // If it is register primary, we build a list of field values+names, otherwise
+  // we just check that each value got emitted.
   SmallVector<StringAttr> fieldNames;
   SmallVector<Value> fieldValues;
-  LValue memoryPrimaryBase;
-  if (!structOp.getIsRegisterPrimary())
-    memoryPrimaryBase = dest.takeLValueForResult(getLoc(), initType, emitter);
-
   for (StructFieldOp field : structOp.getFieldDecls()) {
     ASTExprAnd<RValue> fieldVal = fieldMapping[field.getNameAttr()];
     if (!fieldVal) {
@@ -1474,33 +1516,18 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
       return {};
     }
 
-    // The field must be fully parsed to understand its type etc.  Do a lookup
-    // to find its decl and resolve it.
-    for (ASTDecl *fieldDecl :
-         *decl->lookupInCurrentScope(field.getNameAttr())) {
-      if (failed(emitter.getDeclResolver().resolveFully(
-              *fieldDecl, fieldVal.expr->getLoc())))
-        return {};
-    }
+    // Memory primary values have alreayd been handled.
+    if (!structOp.getIsRegisterPrimary())
+      continue;
 
     auto fieldType = paramEvaluator.getReboundType(field.getType());
-    if (structOp.getIsRegisterPrimary()) {
-      auto value = emitter.getAsExpectedType(
-          fieldVal, fieldType, ValueDest::none(), " in field initialization");
-      auto drValue = emitter.emitSRValue({value, fieldVal.expr});
-      if (!drValue)
-        return {};
-      fieldNames.push_back(field.getNameAttr());
-      fieldValues.push_back(drValue);
-    } else {
-      // For a memory primary aggregate, emit the field into the memory for the
-      // field in the aggregate.
-      auto fieldPtr = emitter.builder->create<StructGEPOp>(
-          getLocation(emitter), memoryPrimaryBase, field);
-      ValueDest fieldDest = LValue(fieldPtr);
-      if (!emitter.emitRValue(fieldVal, fieldDest))
-        fieldDest.resetForError();
-    }
+    auto value = emitter.getAsExpectedType(
+        fieldVal, fieldType, ValueDest::none(), " in field initialization");
+    auto drValue = emitter.emitSRValue({value, fieldVal.expr});
+    if (!drValue)
+      return {};
+    fieldNames.push_back(field.getNameAttr());
+    fieldValues.push_back(drValue);
   }
 
   // If this is memory primary, we've initialized all the fields.  Just return
