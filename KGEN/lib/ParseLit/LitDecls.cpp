@@ -1763,12 +1763,12 @@ LogicalResult DeclResolver::resolveSignature(LetDeclOp letOp, LitLexer &lexer,
 
   // If we had a declared type, coerce the expression value to it.
   if (parsed.type) {
-    auto baseValue = emitter.emitExprRValue(parsed.initExpr, ValueDest());
+    auto baseValue = emitter.emitExprRValue(parsed.initExpr, ValueDest::none());
     value = emitter.emitSRValue(
         {emitter.getAsExpectedType(
              {baseValue, parsed.initExpr}, parsed.type,
              // TODO(memory-primary): emit directly into the decl.
-             ValueDest(), " in let declaration"),
+             ValueDest::none(), " in let declaration"),
          parsed.initExpr});
     if (!value)
       return failure();

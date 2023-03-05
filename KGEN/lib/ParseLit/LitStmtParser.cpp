@@ -427,7 +427,8 @@ ParseResult LitStmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   // statement, it will return None.  Other expressions can return whatever they
   // will naturally return.
   auto emitter = getEmitter(/*allowImplicitVarDecl=*/true);
-  auto result = emitter.emitExprCRValue(expr, ValueDest());
+  ValueDest dest; // Result is ignored, so we don't care where it goes.
+  auto result = emitter.emitExprCRValue(expr, dest);
   if (!result)
     return success();
 
@@ -537,11 +538,11 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // Convert the returned value to the returned type of the function.  If the
   // function is a 'raising' function we need to remove the extra variant type
   // to get the normal result type.
-  Value resultSRValue =
-      emitter.emitSRValue({emitter.getAsExpectedType(
-                               {resultValue, operandExprs[0]},
-                               decl.getResultType(), ValueDest(), " in return"),
-                           operandExprs[0]});
+  Value resultSRValue = emitter.emitSRValue(
+      {emitter.getAsExpectedType({resultValue, operandExprs[0]},
+                                 decl.getResultType(), ValueDest::none(),
+                                 " in return"),
+       operandExprs[0]});
   if (!resultSRValue)
     return {};
 
@@ -690,13 +691,13 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
 
   // retrieve the iterator object from the sequence expression
   ASTExprAnd<AnyValue> loadedSeq = {
-      getEmitter().emitExprRValue(seqExp, ValueDest()), seqExp};
+      getEmitter().emitExprRValue(seqExp, ValueDest::none()), seqExp};
   if (!loadedSeq.ir)
     return {};
 
-  AnyValue rangeValue =
-      getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, ValueDest(),
-                                       CallSyntax::kImplicitConvert, seqExp);
+  AnyValue rangeValue = getEmitter().emitNamedMethodCall(
+      "__iter__", {loadedSeq}, ValueDest::none(), CallSyntax::kImplicitConvert,
+      seqExp);
   if (!rangeValue)
     return {};
   LIT::VarDeclOp range_ref = builder.create<LIT::VarDeclOp>(
@@ -715,7 +716,7 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   SRValue loaded_range = SRValue(builder.create<POP::LoadOp>(
       translateLocation(seqExp->getLoc()), range_ref, std::nullopt));
   AnyValue current_length = getEmitter().emitNamedMethodCall(
-      "__len__", {{loaded_range, seqExp}}, ValueDest(),
+      "__len__", {{loaded_range, seqExp}}, ValueDest::none(),
       CallSyntax::kImplicitConvert, seqExp);
   if (!current_length)
     return {};
@@ -746,7 +747,7 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   // Create the body. Add Target element to the continue block by calling next
   builder.setInsertionPointAfter(condOp);
   AnyValue nextCall = getEmitter().emitNamedMethodCall(
-      "__next__", {{LValue(range_ref), seqExp}}, ValueDest(),
+      "__next__", {{LValue(range_ref), seqExp}}, ValueDest::none(),
       CallSyntax::kImplicitConvert, seqExp);
   if (!nextCall) {
     return {};
