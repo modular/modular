@@ -188,7 +188,7 @@ public:
   /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
   /// error and return null.  If `expectedType` is set, it is used to filter
   /// the overload set before emitting it.
-  CRValue emitAsCRValue(ExprEmitter &emitter, ValueDest dest,
+  CRValue emitAsCRValue(ExprEmitter &emitter, ValueDest &dest,
                         ASTType expectedType = {});
 
   /// Emit a function call to the specified callee with the specified operand
@@ -198,7 +198,7 @@ public:
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  AnyValue emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands, ValueDest dest,
+  AnyValue emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands, ValueDest &dest,
                     ExprEmitter &emitter);
 
 private:

@@ -46,8 +46,30 @@ public:
   ValueDest(const ExprNode *target = nullptr) : representation(target) {}
   ValueDest(LValue dest) : representation(dest) {}
   ValueDest(VarDeclOp dest); // Infer type from init expression.
-  ValueDest(const ValueDest &) = default;
-  ValueDest &operator=(const ValueDest &) = default;
+  ValueDest(ValueDest &&rhs) : representation(rhs.representation) {
+    rhs.resetForError();
+  }
+  ValueDest &operator=(ValueDest &&rhs) {
+    representation = rhs.representation;
+    rhs.resetForError();
+    return *this;
+  }
+
+  ValueDest(const ValueDest &) = delete;
+  ValueDest &operator=(const ValueDest &) = delete;
+
+  // This is a "constructor" that allows accessing an empty ValueDest by
+  // reference.  By convention we know this will never get mutated, so the
+  // reference is safe to share.
+  static ValueDest &none() {
+    static ValueDest dummy;
+    return dummy;
+  }
+
+  ~ValueDest() {
+    // assert(!isSpecified() && "ValueDest destroyed without being emitted
+    // into");
+  }
 
   /// Return true if there is a specification for this destination.  If not,
   /// an expression will be emitted to generate a PRValue, SRValue, LValue, etc.
@@ -61,8 +83,14 @@ public:
   /// type.  This uses 'resultType' for inference when the ValueDest is untyped
   /// (e.g. `var x = expr`), but may return an LValue of another type when the
   /// dest is typed (e.g. `var x : F32 = 1`).
-  LValue getLValueForResult(SMLoc loc, ASTType resultType,
-                            ExprEmitter &emitter) const;
+  ///
+  /// This consumes the ValueDest.
+  LValue takeLValueForResult(SMLoc loc, ASTType resultType,
+                             ExprEmitter &emitter);
+
+  /// When an error is emitted instead of generating IR, this method resets the
+  /// ValueDest so it doesn't complain when emission is done.
+  void resetForError() { representation = nullptr; }
 
 private:
   //  This should only be accessed by ExprEmitter::emitResult.
@@ -97,8 +125,8 @@ public:
   // Emission helpers for various value classifications.
 
   /// This helper emits the specified value as an RValue.
-  RValue emitRValue(ASTExprAnd<AnyValue> value, ValueDest dest);
-  CRValue emitCRValue(ASTExprAnd<AnyValue> value, ValueDest dest);
+  RValue emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
+  CRValue emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
 
   /// This helper emits the specified value as a SRValue which has an SSA
   /// value representation, materializing PRValues and loading LValues as
@@ -118,7 +146,7 @@ public:
   /// information.
   AnyValue emitNamedMethodCall(StringRef methodName,
                                ArrayRef<ASTExprAnd<AnyValue>> argValues,
-                               ValueDest dest, CallSyntax syntax,
+                               ValueDest &dest, CallSyntax syntax,
                                const ExprNode *callNode);
 
   /// Emit an indirect call to a resolved value, checking for compatibility and
@@ -126,14 +154,14 @@ public:
   /// failure.
   AnyValue emitIndirectCall(CRValue callee,
                             ArrayRef<ASTExprAnd<AnyValue>> operands,
-                            ValueDest dest, const ExprNode *callExpr);
+                            ValueDest &dest, const ExprNode *callExpr);
 
   /// Emit call to a resolved and /already type checked/ callee. This does not,
   /// check for compatibility and isn't prepared to emit errors.
   AnyValue emitCallUnchecked(CRValue callee,
                              ArrayRef<ASTExprAnd<AnyValue>> operands,
                              ArrayRef<ParamDeclAttr> resultParams,
-                             ValueDest dest, const ExprNode *callExpr);
+                             ValueDest &dest, const ExprNode *callExpr);
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations.  This does not generate
@@ -144,13 +172,13 @@ public:
   /// Convert the specified value to the expected type, invoking implicit
   /// conversions if necessary.  On error, this diagnoses it and returns null.
   AnyValue getAsExpectedType(ASTExprAnd<AnyValue> value, ASTType expectedType,
-                             ValueDest dest, const Twine &errorSuffix);
+                             ValueDest &dest, const Twine &errorSuffix);
 
   /// Convert the specified value to the expected type, invoking implicit
   /// conversions if necessary.  On error, this invokes the specified closure to
   /// diagnose the problem and returns null.
   AnyValue getAsExpectedType(ASTExprAnd<AnyValue> value, ASTType expectedType,
-                             ValueDest dest,
+                             ValueDest &dest,
                              std::function<void()> errorHandler);
 
   /// Emit the specified expression as a condition, converting it to an MLIR I1
@@ -166,13 +194,13 @@ public:
   /// Emit the specified value into the current destination if present.  This
   /// accepts (and silently propagates) null values, and is a convenience helper
   /// for working with getLValueForResult.
-  AnyValue emitResult(AnyValue value, const ExprNode *node, ValueDest dest);
+  AnyValue emitResult(AnyValue value, const ExprNode *node, ValueDest &dest);
 
   /// This helper emits the specified value rep as an RValue.
-  RValue emitExprRValue(const ExprNode *node, ValueDest dest);
+  RValue emitExprRValue(const ExprNode *node, ValueDest &dest);
 
   /// This helper emits the specified value rep as an RValue.
-  CRValue emitExprCRValue(const ExprNode *node, ValueDest dest);
+  CRValue emitExprCRValue(const ExprNode *node, ValueDest &dest);
 
   /// This helper emits the specified value rep as an SRValue, materializing
   /// it as an operation if it is a parameter.  This returns null if emission
@@ -193,8 +221,7 @@ public:
   ///
   /// This diagnoses the expression with the specified message if it isn't a
   /// valid LValue.
-  LValue emitExprLValue(SMLoc loc, const ExprNode *node, ValueDest dest,
-                        const Twine &message);
+  LValue emitExprLValue(SMLoc loc, const ExprNode *node, const Twine &message);
 
   /// This helper emits the specified expression tree as a type, e.g. turning
   /// "Int" into the type for it.  This emits an error and returns null on

@@ -151,7 +151,7 @@ fn dict_expression(a: Int):
 
   # Dictionary subscripts.
 
-  # expected-error @+1 {{TODO: cannot emit dictionary subscripts yet}}
+  # expected-error @+1 {{cannot use a dynamic value in type specification}}
   _ = a{1: 2, **dict}
 
 

@@ -386,9 +386,9 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
         incorrectBindingExpectedType = expectedType;
       };
 
-      auto argValue =
-          emitter.getAsExpectedType({PRValue(binding.getValue()), binding.expr},
-                                    expectedType, ValueDest(), errorHandler);
+      auto argValue = emitter.getAsExpectedType(
+          {PRValue(binding.getValue()), binding.expr}, expectedType,
+          ValueDest::none(), errorHandler);
       if (!argValue)
         return {};
 
@@ -1193,7 +1193,7 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
 
 /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.
-CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest dest,
+CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest,
                                    ASTType expectedType) {
   // If the value destination implies a type, use that to filter the overload
   // set.
@@ -1307,7 +1307,7 @@ static bool isValidErrorContext(Block *block) {
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
 AnyValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                               ValueDest dest, ExprEmitter &emitter) {
+                               ValueDest &dest, ExprEmitter &emitter) {
   if (isNull()) // Base was already diagnosed as an error.
     return {};
 
@@ -1388,7 +1388,7 @@ AnyValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
 /// Emit an indirect call to a resolved value.
 AnyValue ExprEmitter::emitIndirectCall(CRValue callee,
                                        ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                       ValueDest dest,
+                                       ValueDest &dest,
                                        const ExprNode *callExpr) {
   auto calleeSig = dyn_cast<SignatureType>(callee.getType());
   if (!calleeSig) {
@@ -1438,7 +1438,7 @@ inlineFunctionCallIntoPRValue(AnyValue callee,
 AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
                                         ArrayRef<ASTExprAnd<AnyValue>> operands,
                                         ArrayRef<ParamDeclAttr> resultParams,
-                                        ValueDest dest,
+                                        ValueDest &dest,
                                         const ExprNode *callExpr) {
   SignatureType calleeSig = cast<SignatureType>(callee.getType());
 
@@ -1469,7 +1469,7 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
       auto rvalueType =
           cast<POP::PointerType>(expectedType).getResolvedElementType();
       LValue result =
-          dest.getLValueForResult(callExpr->getLoc(), rvalueType, *this);
+          dest.takeLValueForResult(callExpr->getLoc(), rvalueType, *this);
       if (!result)
         return {};
       argumentValues.push_back({result, callExpr});
@@ -1517,10 +1517,10 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
 
         operand.ir = getAsExpectedType(operand, expectedArgType,
                                        // TODO(memory-primary)
-                                       ValueDest(), " in argument");
+                                       ValueDest::none(), " in argument");
         return emitRValue(operand,
                           // TODO(memory-primary): emit into the argument slot.
-                          ValueDest());
+                          ValueDest::none());
       }
     };
 

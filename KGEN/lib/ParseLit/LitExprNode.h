@@ -134,8 +134,9 @@ public:
 
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
   /// ValueDest indicates information about where to emit the expression result
-  /// into, e.g. the a/b target in `def f(): (a,b) = (1,2)`.
-  virtual AnyValue emitIR(ExprEmitter &emitter, ValueDest dest) const = 0;
+  /// into, e.g. the a/b target in `def f(): (a,b) = (1,2)`.  On success, the
+  /// ValueDest /must/ be emitted into.
+  virtual AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const = 0;
 
   /// This node is being used as the LHS target/pattern of an assignment,
   /// initialized with the specified RHS value of some type.  Generate an LValue
