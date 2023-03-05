@@ -82,7 +82,7 @@ void AnyValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
 
-static Type getTypeFrom(VariantStorage storage) {
+static ASTType getTypeFrom(VariantStorage storage) {
   if (auto attr = dyn_cast<PRValue>(storage))
     return attr.get().getType();
   if (auto value = dyn_cast<SRValue>(storage))
@@ -97,9 +97,9 @@ static Type getTypeFrom(VariantStorage storage) {
   return Type();
 }
 
-Type CRValue::getType() const { return getTypeFrom(storage); }
-Type RValue::getType() const { return getTypeFrom(storage); }
-Type AnyValue::getType() const { return getTypeFrom(storage); }
+ASTType CRValue::getType() const { return getTypeFrom(storage); }
+ASTType RValue::getType() const { return getTypeFrom(storage); }
+ASTType AnyValue::getType() const { return getTypeFrom(storage); }
 
 PRValue::PRValue(Type value)
     : storage(value ? ParameterizedTypeConstantAttr::get(value) : Attribute()) {

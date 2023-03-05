@@ -152,7 +152,7 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
   // If this is a declaration which has a TypeCheckErrorType, then all
   // references to it are invalid.
   if (auto rv = decl->getIfRValue()) {
-    if (isa<TypeCheckErrorType>(rv.getType()))
+    if (isa<TypeCheckErrorType>(rv.getType().mlirType))
       decl->hasReferenceError = true;
   } else if (auto lv = decl->getIfLValue()) {
     if (isa<TypeCheckErrorType>(lv.getRValueType().mlirType))
