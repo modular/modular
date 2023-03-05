@@ -1440,12 +1440,14 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     memoryPrimaryBase = dest.takeLValueForResult(getLoc(), initType, emitter);
 
   DenseMap<StringAttr, ASTExprAnd<RValue>> fieldMapping;
+  bool allInitializersPRValues = true;
   for (auto &keyValue : indices->values) {
+    const ExprNode *valueExpr = keyValue.second;
     // We don't support `**dict` syntax.
     if (!keyValue.first) {
-      emitter.emitError(keyValue.second->getLoc(),
+      emitter.emitError(valueExpr->getLoc(),
                         "cannot expand into initializer list")
-          << keyValue.second->getRange();
+          << valueExpr->getRange();
       return {};
     }
 
@@ -1462,8 +1464,8 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     // The field must be fully parsed to understand its type etc.  Do a lookup
     // to find its decl and resolve it.
     for (ASTDecl *fieldDecl : *decl->lookupInCurrentScope(fieldNameAttr)) {
-      if (failed(emitter.getDeclResolver().resolveFully(
-              *fieldDecl, keyValue.second->getLoc())))
+      if (failed(emitter.getDeclResolver().resolveFully(*fieldDecl,
+                                                        valueExpr->getLoc())))
         return {};
     }
 
@@ -1471,7 +1473,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     if (!field) {
       emitter.emitError(keyValue.first->getLoc(), "")
           << initType << " has no field named " << fieldNameAttr
-          << keyValue.second->getRange();
+          << valueExpr->getRange();
       return {};
     }
 
@@ -1485,14 +1487,29 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
       fieldDest = LValue(fieldPtr);
     }
 
-    auto value = emitter.emitExprRValue(keyValue.second, fieldDest);
+    auto value = emitter.emitExprRValue(valueExpr, fieldDest);
     if (!value) {
       fieldDest.resetForError();
       return {};
     }
 
-    auto mapResult =
-        fieldMapping.insert({fieldNameAttr, {value, keyValue.second}});
+    // If we haven't already due to a ValueDest, convert to the expected type.
+    // TODO: Unify inferred type conversions into ValueDest.
+    if (!memoryPrimaryBase) {
+      auto fieldType = paramEvaluator.getReboundType(field.getType());
+      auto converted = emitter.getAsExpectedType({value, valueExpr}, fieldType,
+                                                 ValueDest::none(),
+                                                 " in field initialization");
+      value = emitter.emitRValue({converted, valueExpr}, ValueDest::none());
+      if (!value)
+        return {};
+    }
+
+    // Keep track of whether everything is a PRValue.
+    if (allInitializersPRValues && !value.getIfPRValue())
+      allInitializersPRValues = false;
+
+    auto mapResult = fieldMapping.insert({fieldNameAttr, {value, valueExpr}});
     if (!mapResult.second) {
       emitter.emitError(keyValue.first->getLoc(), "field ")
           << fieldNameAttr << " specified multiple times"
@@ -1502,17 +1519,11 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     }
   }
 
-  // Now that we have all the values, generate the initializers for
-  // StructCreate.
-  if (!emitter.builder) {
-    emitter.emitError(getLoc(), "TODO: Don't have #lit.struct.attr yet");
-    return {};
-  }
-
-  // If it is register primary, we build a list of field values+names, otherwise
-  // we just check that each value got emitted.
+  // If it is register primary, we build a list of field values+names.  For
+  // memory primary, we just check that each value got emitted.
   SmallVector<StringAttr> fieldNames;
-  SmallVector<Value> fieldValues;
+  SmallVector<Value> fieldSRValues;
+  SmallVector<std::tuple<StringAttr, TypedAttr>> fieldParamValues;
   for (StructFieldOp field : structOp.getFieldDecls()) {
     ASTExprAnd<RValue> fieldVal = fieldMapping[field.getNameAttr()];
     if (!fieldVal) {
@@ -1525,14 +1536,19 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     if (!structOp.getIsRegisterPrimary())
       continue;
 
-    auto fieldType = paramEvaluator.getReboundType(field.getType());
-    auto value = emitter.getAsExpectedType(
-        fieldVal, fieldType, ValueDest::none(), " in field initialization");
-    auto drValue = emitter.emitSRValue({value, fieldVal.expr});
-    if (!drValue)
+    // If all the initializers are PRValues, we can emit this as a StructAttr.
+    if (allInitializersPRValues) {
+      fieldParamValues.push_back(
+          {field.getNameAttr(), fieldVal.ir.getIfPRValue()});
+      continue;
+    }
+
+    // If the any initializers required emitting a load sequence, emit the rest
+    auto srValue = emitter.emitSRValue(fieldVal);
+    if (!srValue)
       return {};
     fieldNames.push_back(field.getNameAttr());
-    fieldValues.push_back(drValue);
+    fieldSRValues.push_back(srValue);
   }
 
   // If this is memory primary, we've initialized all the fields.  Just return
@@ -1540,9 +1556,23 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   if (!structOp.getIsRegisterPrimary())
     return MRValue(memoryPrimaryBase);
 
+  // If all the fields are PRValues, form a new PRValue.
+  if (allInitializersPRValues) {
+    auto result = StructAttr::get(emitter.getContext(), fieldParamValues,
+                                  cast<DeclRefType>(initType.mlirType));
+    return emitter.emitResult(result, this, dest);
+  }
+
+  // Now that we have all the values, generate the initializers for
+  // StructCreate.
+  if (!emitter.builder) {
+    emitter.emitError(getLoc(), "use of dynamic value in parameter context");
+    return {};
+  }
+
   // If this is register primary, then bundle all the values up and return them.
   auto result = SRValue(emitter.builder->create<StructCreateOp>(
-      getLocation(emitter), initType.mlirType, fieldValues,
+      getLocation(emitter), initType.mlirType, fieldSRValues,
       StringArrayAttr::get(emitter.getContext(), fieldNames)));
   return emitter.emitResult(result, this, dest);
 }

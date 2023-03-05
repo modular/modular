@@ -357,22 +357,23 @@ fn testUseOfAliases(a: Bool):
   alias y = A[2].member
 
 struct MyDType:
-  var state : __mlir_type.ui8
+  var state : __mlir_type.index
 
   fn __clone__(self&) -> Self:
     return Self{state: self.state}
 
   fn __new__(value: __mlir_type.index) -> MyDType:
-     var result: MyDType
-     # TODO: store 'value' casted to ui8 into result.state
-     return result
+     return MyDType{state: value}
 
   fn __eq__(self, rhs: MyDType) -> Bool:
-     return Bool.true()  # TODO: buggy impl :-)
+     return True  # TODO: buggy impl :-)
 
   alias ui8 = MyDType(1)
   alias f32 = MyDType(2)
   alias f64 = MyDType(3)
+
+  # CHECK: kgen.param.declare *"ui16": @"$parameters"::@MyDType = <#lit.struct<{state = 7}>>
+  alias ui16 = MyDType{state: 7}
 
 struct MyVector[size: Int, dtype: MyDType]:
 
