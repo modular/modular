@@ -58,10 +58,10 @@ fn memoryPrimaryOps(a&: MemoryPrimaryPair) -> MemoryPrimaryPair:
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%3Canonymous3E, %a)
   a
 
-  # CHECK-NEXT: %regX = lit.varlet.decl "regX", var = true :
+  # CHECK-NEXT: %regX = lit.varlet.decl "regX", var = false :
   # CHECK-NEXT: %4 = lit.struct.gep %a[x]
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%regX, %4)
-  var regX = a.x
+  let regX = a.x
   # CHECK-NEXT: %6 = lit.struct.gep %a[x]
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%6, %regX)
   a.x = regX

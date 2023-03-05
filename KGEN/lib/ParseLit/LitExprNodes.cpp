@@ -538,9 +538,13 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitResult(SRValue(letDecl.getResult()), this, dest);
   }
 
-  // Variable references resolve to an lvalue addressing the variable.
-  if (auto var = dyn_cast<VarLetDeclOp>(decl))
-    return emitter.emitResult(LValue(var.getResult()), this, dest);
+  // Variable references resolve to an MRValue or LValue addressing the memory.
+  if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
+    if (var.getIsVar()) // var
+      return emitter.emitResult(LValue(var.getResult()), this, dest);
+    else // let
+      return emitter.emitResult(MRValue(var.getResult()), this, dest);
+  }
 
   // Parameters form a meta-value.
   if (auto param = dyn_cast<ParamDeclareOp>(decl)) {
@@ -763,7 +767,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (MRValue baseMRV = baseVal.getIfMRValue()) {
       auto fieldPtr =
           emitter.builder->create<StructGEPOp>(mlirLoc, baseMRV, fieldOp);
-      return emitter.emitResult(LValue(fieldPtr), this, dest);
+      return emitter.emitResult(MRValue(fieldPtr), this, dest);
     }
 
     // If the base is an PRValue, emit a field extract as an PRValue.

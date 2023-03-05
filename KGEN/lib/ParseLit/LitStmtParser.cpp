@@ -1127,12 +1127,12 @@ ParseResult LitStmtParser::parseDefFnStmt(LitLexerCursor startCursor,
 
 ParseResult LitStmtParser::parseLetVarStmt(LitLexerCursor startCursor,
                                            size_t stmtIndent) {
-  bool isLet = getToken().is(LitToken::kw_let);
+  bool isVar = getToken().is(LitToken::kw_var);
   auto smLoc = consumeToken().getLoc();
   auto loc = translateLocation(smLoc);
   StringAttr name;
-  if (parseIdentifier(name, isLet ? "expected name for 'let' declaration"
-                                  : "expected name for 'var' declaration"))
+  if (parseIdentifier(name, isVar ? "expected name for 'var' declaration"
+                                  : "expected name for 'let' declaration"))
     return failure();
 
   auto unresolvedType = UnresolvedType::get(getContext());
@@ -1141,21 +1141,18 @@ ParseResult LitStmtParser::parseLetVarStmt(LitLexerCursor startCursor,
   if (isa<StructDeclOp>(containingDecl)) {
     // TODO: implement support for constant struct fields when we have a
     // stronger init model with Definitive Initialization.
-    if (isLet)
+    if (!isVar)
       emitError(loc, "'let' fields in structs are not supported yet");
     declOp = builder.create<StructFieldOp>(loc, name, unresolvedType);
-  } else if (isLet) {
-    declOp = builder.create<LetRegDeclOp>(loc, unresolvedType, name);
-
   } else {
-    // Otherwise this is a local variable definition.
+    // Otherwise this is a local let/var definition.
 
     // Emit the vardecl at the current insertion point.  Unlike implicitly
     // declared variables, let/var declarations are always correctly scoped.
     // TODO (Issue#5005): Maintain scopes correctly so we don't have a conflict
     // between things like "if cond: var x = 1 else var x = 2"
     auto varType = POP::PointerType::get(unresolvedType);
-    declOp = builder.create<VarLetDeclOp>(loc, varType, name, /*isVar=*/true);
+    declOp = builder.create<VarLetDeclOp>(loc, varType, name, isVar);
   }
 
   // Skip the body of this definition: go to a token the starts a line at the

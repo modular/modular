@@ -37,6 +37,12 @@ struct LValuesRvalues:
 
   def normalMethod3(self, a: F32):
 
+@__memory_primary
+struct MemoryPrimaryPair:
+  var x: Int
+  var y: Int
+  fn __new__() -> Self: return Self {x: 0, y: 0}
+
 struct NonCopyable: # expected-note {{type declared here}}
   fn __new__() -> Self: return Self {}
 
@@ -68,6 +74,8 @@ def testLValuesRvalues():
   let nc3 = nc1 # expected-error {{cannot clone this value: '$expressions-errors::NonCopyable' doesn't implement '__clone__'}}
   let nc4 = nc2 # expected-error {{cannot clone this value: '$expressions-errors::NonCopyable' doesn't implement '__clone__'}}
 
+  let mpPair = MemoryPrimaryPair()
+  mpPair.x = 1 # expected-error {{cannot assign to immutable expression}}
 
 # expected-note @+1 {{function declared here}}
 fn badRef(val&: Int):
