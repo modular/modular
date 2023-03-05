@@ -510,6 +510,10 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
 
   // Materialize the expression values into IR.
   RValue resultValue = emitter.emitExprRValue(operandExprs[0], resultDest);
+  if (!resultValue) {
+    resultDest.resetForError();
+    return success();
+  }
 
   if (isMemoryPrimaryResult)
     resultValue = PRValue(shared.getNoneAttr());
