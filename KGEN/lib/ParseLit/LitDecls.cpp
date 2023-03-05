@@ -1821,8 +1821,10 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
       dest = ValueDest(varOp);
     }
 
-    if (!emitter.emitExprRValue(parsed.initExpr, dest))
+    if (!emitter.emitExprRValue(parsed.initExpr, dest)) {
+      dest.resetForError();
       return failure();
+    }
 
     assert(!isa<UnresolvedType>(varOp.getType().getResolvedElementType()) &&
            "RValue emission should have inferred var type");

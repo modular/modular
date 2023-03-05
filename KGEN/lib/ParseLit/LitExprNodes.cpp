@@ -1498,7 +1498,8 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
       auto fieldPtr = emitter.builder->create<StructGEPOp>(
           getLocation(emitter), memoryPrimaryBase, field);
       ValueDest fieldDest = LValue(fieldPtr);
-      (void)emitter.emitRValue(fieldVal, fieldDest);
+      if (!emitter.emitRValue(fieldVal, fieldDest))
+        fieldDest.resetForError();
     }
   }
 
@@ -1672,8 +1673,10 @@ AnyValue BinOpNode::emitAssign(ValueDest &dest, ExprEmitter &emitter) const {
   // support patterns.
   ValueDest assignDest(lhs);
   RValue rhsRep = emitter.emitExprRValue(rhs, assignDest);
-  if (!rhsRep)
+  if (!rhsRep) {
+    assignDest.resetForError();
     return {};
+  }
 
   // Assignments are not actually expressions in Python.  We treat them this
   // way for consistency, but model them as returning None.
