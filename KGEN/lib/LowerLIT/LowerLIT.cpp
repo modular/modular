@@ -72,7 +72,7 @@ static void lowerLITOps(LIT::FuncOp func,
       // lit.alias.fwd.decl is used internally by the frontend, but is not
       // needed by lowering at all.
       op->erase();
-    } else if (auto letDecl = dyn_cast<LIT::LetDeclOp>(op)) {
+    } else if (auto letDecl = dyn_cast<LIT::LetRegDeclOp>(op)) {
       // Build information for this decl if necessary.
       if (buildingDebugVars) {
         buildDebugInfoValue(letDecl, letDecl.getLoc(), letDecl.getName(),
@@ -81,11 +81,11 @@ static void lowerLITOps(LIT::FuncOp func,
       }
 
       b.replaceOp(letDecl, letDecl.getOperand());
-    } else if (auto varDecl = dyn_cast<LIT::VarDeclOp>(op)) {
+    } else if (auto varDecl = dyn_cast<LIT::VarLetDeclOp>(op)) {
       StringAttr varName = varDecl.getNameAttr();
       auto varType = varDecl.getType();
 
-      // Lower a lit.var.decl to pop.stack_allocation.
+      // Lower a lit.varlet.decl to pop.stack_allocation.
       auto allocOp =
           b.replaceOpWithNewOp<POP::StackAllocationOp>(varDecl, varType, 1);
 
@@ -200,13 +200,13 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
       flattenAndRenameSymbol(structDecl, parentPrefix, symbolTable, symTableIt);
 
   ArrayRef<ParamDeclAttr> structInputParams = structDecl.getInputParamDecls();
-  SmallVector<LIT::VarDeclOp> opsToErase;
+  SmallVector<LIT::VarLetDeclOp> opsToErase;
   for (Operation &member : llvm::make_early_inc_range(
            structDecl.getFields().front().getOperations())) {
     if (isa<StructFieldOp>(member))
       continue; // Already lowered field.
 
-    if (auto varDecl = dyn_cast<LIT::VarDeclOp>(member)) {
+    if (auto varDecl = dyn_cast<LIT::VarLetDeclOp>(member)) {
       Type elemType = ParamRefType::get(varDecl.getType().getElementType());
       OpBuilder b(&member);
       b.create<StructFieldOp>(member.getLoc(), varDecl.getName(), elemType);

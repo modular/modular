@@ -1,7 +1,7 @@
 // RUN: kgen-opt -lower-lit -verify-parameters %s -verify-diagnostics
 
 lit.struct.decl @A<b, c> { // expected-note {{@A declared here}}
- %x = lit.var.decl "x" : <index>
+ %x = lit.varlet.decl "x", var = true : <index>
 }
 
 // expected-error @+1 {{!kgen.declref symbol use input parameter #1 has name "e" but @A expected name "c"}}

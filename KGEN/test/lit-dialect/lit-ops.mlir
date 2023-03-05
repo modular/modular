@@ -9,14 +9,14 @@ lit.func @trivial_generator(%name: si32) -> si32 {
 // One implementation of dynamic_thing
 // CHECK-LABEL: lit.func @vardecl
 lit.func @vardecl<ty : dtype>(%x : i32) {
-// CHECK-NEXT: %a = lit.var.decl "a" : <scalar<ty>>
-  %a = lit.var.decl "a": !pop.pointer<scalar<ty>>
+// CHECK-NEXT: %a = lit.varlet.decl "a", var = true : <scalar<ty>>
+  %a = lit.varlet.decl "a", var = true: !pop.pointer<scalar<ty>>
 
-  // CHECK-NEXT: %y = lit.let.decl "y" = %x : i32
-  %y = lit.let.decl "y" = %x: i32
+  // CHECK-NEXT: %y = lit.letreg.decl "y" = %x : i32
+  %y = lit.letreg.decl "y" = %x: i32
 
-  // CHECK-NEXT: %z = lit.let.decl "z" = %y : i32
-  %z = lit.let.decl "z" = %y: i32
+  // CHECK-NEXT: %z = lit.letreg.decl "z" = %y : i32
+  %z = lit.letreg.decl "z" = %y: i32
   kgen.return
 }
 
@@ -27,8 +27,8 @@ lit.struct.decl @SomeStruct<ty: dtype> {
     kgen.return
   }
 
-  // CHECK: %size = lit.var.decl "size" : <scalar<ty>>
-  %size = lit.var.decl "size" : !pop.pointer<scalar<ty>>
+  // CHECK: %size = lit.varlet.decl "size", var = true : <scalar<ty>>
+  %size = lit.varlet.decl "size", var = true : !pop.pointer<scalar<ty>>
 
   // CHECK: lit.func @getMyType
   // CHECK-NEXT: kgen.param.constant: dtype = <ty>

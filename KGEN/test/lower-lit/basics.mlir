@@ -15,15 +15,15 @@ lit.func @trivial_generator(%arg0: si32) -> si32 {
 // CHECK-NEXT:  }
 
 lit.func @varDecl(%arg0: index) -> index {
-  %a = lit.var.decl "a" : <index>
+  %a = lit.varlet.decl "a", var = true : <index>
   kgen.return %arg0 : index
 }
 
 // CHECK-LABEL: kgen.generator @letDecl(%arg0
 // CHECK-NEXT:    kgen.return %arg0 : index
 lit.func @letDecl(%arg0: index) -> index {
-  %a = lit.let.decl "a" = %arg0 : index
-  %b = lit.let.decl "b" = %a : index
+  %a = lit.letreg.decl "a" = %arg0 : index
+  %b = lit.letreg.decl "b" = %a : index
   kgen.return %b : index
 }
 

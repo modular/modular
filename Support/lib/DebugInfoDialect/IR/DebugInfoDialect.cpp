@@ -21,6 +21,9 @@ struct DebugInfoOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
   using mlir::OpAsmDialectInterface::OpAsmDialectInterface;
 
   AliasResult getAlias(Attribute attr, raw_ostream &os) const override {
+    if (!attr)
+      return AliasResult::NoAlias;
+
     // Essentially all of the debug info attributes are heavy syntax-wise, so
     // just print them all as aliases whenever we can.
     return TypeSwitch<Attribute, AliasResult>(attr)

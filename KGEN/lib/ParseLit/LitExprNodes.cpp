@@ -396,30 +396,30 @@ LValue DeclRefNode::getLValueForResult(ASTType resultType,
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, getLoc(), container, /*searchParentScopes=*/true);
 
-  // This creates an untyped VarDeclOp which is then inferred from its
-  // initializer.
-  auto createVarDecl = [&](OpBuilder &builder) -> VarDeclOp {
+  // This creates an untyped VarLetDeclOp which is then inferred from its
+  // initializer.  `isVar` indicates whether this should be considered mutable.
+  auto createVarDecl = [&](OpBuilder &builder, bool isVar) -> VarLetDeclOp {
     auto loc = getLocation(emitter);
     Type declIRType = POP::PointerType::get(resultType);
     auto nameAttr = StringAttr::get(loc.getContext(), spelling);
-    return builder.create<VarDeclOp>(loc, declIRType, nameAttr);
+    return builder.create<VarLetDeclOp>(loc, declIRType, nameAttr, isVar);
   };
 
   // If the unresolved name is `_`, then we have a discard pattern.  Materialize
   // a destination to store into.  We cannot just discard the result in
   // generality, because the value may have a destructor that needs to be run.
   if (lookup.isFailure() && spelling == "_" && emitter.builder)
-    return LValue(createVarDecl(*emitter.builder));
+    return LValue(createVarDecl(*emitter.builder, /*isVar=*/false));
 
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a varDeclCursor,
   // indicating that we're in a `def` node.
   if (lookup.isFailure() && emitter.varDeclCursor) {
-    // Use this builder to place any VarDeclOps. In Python there is only one
+    // Use this builder to place any VarLetDeclOps. In Python there is only one
     // scope per function and all variables belong to that scope, so builders
     // should reflect that.
     OpBuilder varDeclBuilder(emitter.varDeclCursor);
-    auto varDecl = createVarDecl(varDeclBuilder);
+    auto varDecl = createVarDecl(varDeclBuilder, /*isVar=*/true);
 
     // In a normal implicit declaration, we add it to the name table so
     // subsequent uses find this one.
@@ -511,7 +511,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ASTDecl &decl = *decls[0];
 
   // Let declarations resolve to an rvalue.
-  if (auto letDecl = dyn_cast<LetDeclOp>(decl)) {
+  if (auto letDecl = dyn_cast<LetRegDeclOp>(decl)) {
     // TODO: Loading a 'let' value into an RValue is a semantic copy of the
     // underlying value.  Unfortunately, we don't have a proper notion of
     // rvalue references / borrows yet (they will come with a more baked out
@@ -539,7 +539,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Variable references resolve to an lvalue addressing the variable.
-  if (auto var = dyn_cast<VarDeclOp>(decl))
+  if (auto var = dyn_cast<VarLetDeclOp>(decl))
     return emitter.emitResult(LValue(var.getResult()), this, dest);
 
   // Parameters form a meta-value.

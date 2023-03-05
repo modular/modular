@@ -23,8 +23,8 @@
 
 lit.struct.decl @Int {
   lit.func @varDecl(%arg0: index) -> index {
-    %a = lit.var.decl "a" : <index> loc(fused<#sp>["test.mlir":10:10])
-    %let_value = lit.let.decl "let_value" = %arg0 : index loc(fused<#sp>["test.mlir":11:10])
+    %a = lit.varlet.decl "a", var = true : <index> loc(fused<#sp>["test.mlir":10:10])
+    %let_value = lit.letreg.decl "let_value" = %arg0 : index loc(fused<#sp>["test.mlir":11:10])
     kgen.return %let_value : index
   } loc(fused<#sp>[unknown])
 }

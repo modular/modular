@@ -47,21 +47,21 @@ fn return_impl_convert_raises() -> Int:
 fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK:          hlcf.if
     if a:
-        # CHECK-NEXT: %inside_a = lit.var.decl "inside_a"
+        # CHECK-NEXT: %inside_a = lit.varlet.decl "inside_a", var = true
         var inside_a: Int
     # CHECK:          } else {
     # CHECK:            hlcf.if
     elif b:
-        # CHECK-NEXT: %inside_b = lit.var.decl "inside_b"
+        # CHECK-NEXT: %inside_b = lit.varlet.decl "inside_b", var = true
         var inside_b: Int
     # CHECK:            } else {
     # CHECK:              hlcf.if
     elif c:
-        # CHECK-NEXT: %inside_c = lit.var.decl "inside_c"
+        # CHECK-NEXT: %inside_c = lit.varlet.decl "inside_c", var = true
         var inside_c: Int
     # CHECK:              } else {
     else:
-        # CHECK-NEXT: %inside_else = lit.var.decl "inside_else"
+        # CHECK-NEXT: %inside_else = lit.varlet.decl "inside_else", var = true
         var inside_else: Int
     # CHECK:                hlcf.yield
     # CHECK-NEXT:         }
@@ -78,23 +78,23 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT:   %[[I1:.*]] = kgen.call @"$_CompilerBuiltin"::@Bool::@"__lit_bool($_CompilerBuiltin::Bool)"(%a)
     # CHECK-NEXT:              hlcf.if %[[I1]]
     if a:
-        # CHECK-NEXT: %inside_a = lit.var.decl "inside_a"
+        # CHECK-NEXT: %inside_a = lit.varlet.decl "inside_a", var = true
         var inside_a: Int
     # CHECK:                   } else {
     # CHECK:                     hlcf.if
     else:
         if b:
-            # CHECK-NEXT: %inside_b = lit.var.decl "inside_b"
+            # CHECK-NEXT: %inside_b = lit.varlet.decl "inside_b", var = true
             var inside_b: Int
         # CHECK:                     } else {
         # CHECK:                       hlcf.if
         else:
             if c:
-                # CHECK-NEXT: %inside_c = lit.var.decl "inside_c"
+                # CHECK-NEXT: %inside_c = lit.varlet.decl "inside_c", var = true
                 var inside_c: Int
             # CHECK:                       } else {
             else:
-                # CHECK-NEXT: %inside_else = lit.var.decl "inside_else"
+                # CHECK-NEXT: %inside_else = lit.varlet.decl "inside_else", var = true
                 var inside_else: Int
     # CHECK:                         hlcf.yield
     # CHECK:                       }
@@ -110,12 +110,12 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
   # CHECK: kgen.param.if <a> {
   @parameter
   if a:
-    # CHECK: lit.var.decl "inside_1"
+    # CHECK: lit.varlet.decl "inside_1", var = true
     var inside_1: Int
   # CHECK: } else {
   # CHECK:     kgen.param.if <apply{{.*}}@"$_CompilerBuiltin"::@Bool::@"__lit_bool{{.*}}b)> {
   elif b:
-  # CHECK:     lit.var.decl "inside_2"
+  # CHECK:     lit.varlet.decl "inside_2", var = true
     var inside_2: Int
   # CHECK:     kgen.param.yield
   # CHECK:   }
@@ -128,9 +128,9 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"test_while
-# CHECK:       %inside_a = lit.var.decl "inside_a"
-# CHECK:       %inside_b = lit.var.decl "inside_b"
-# CHECK:       %inside_else = lit.var.decl "inside_else"
+# CHECK:       %inside_a = lit.varlet.decl "inside_a", var = true
+# CHECK:       %inside_b = lit.varlet.decl "inside_b", var = true
+# CHECK:       %inside_else = lit.varlet.decl "inside_else", var = true
 # CHECK:       hlcf.loop {
 # CHECK:         hlcf.if
 # CHECK-NEXT:     hlcf.yield
@@ -299,7 +299,7 @@ def tryExceptArgDef():
         pass
     # CHECK: except (%arg0: !kgen.declref<@"$prolog"::@Error>)
     except err:
-        # CHECK-NEXT: lit.var.decl "err" : <@"$prolog"::@Error>
+        # CHECK-NEXT: lit.varlet.decl "err", var = true
         # CHECK: %[[ERRVAL:.*]] = kgen.call @"$prolog"::@Error::@"__clone__($prolog::Error&)"(%err)
         # CHECK: eatError{{.*}}(%[[ERRVAL]])
         eatError(err)

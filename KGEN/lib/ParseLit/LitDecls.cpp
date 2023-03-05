@@ -445,8 +445,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, LetDeclOp, VarDeclOp,
-              ParamDeclareOp, UnresolvedImportOp>([&](auto op) {
+        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, LetRegDeclOp,
+              VarLetDeclOp, ParamDeclareOp, UnresolvedImportOp>([&](auto op) {
           LitLexer lexer(shared, decl.getCursor());
 
           // Resolve the signature: on a parse error, we note that the decl
@@ -486,15 +486,16 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp, LetDeclOp,
-              VarDeclOp, ParamDeclareOp, AliasForwardDeclOp>([&](auto op) {
-          // Parse the body of the declaration from the correct point.
-          LitLexer lexer(shared, decl.getCursor());
-          if (resolveBody(op, lexer, decl))
-            return;
+        .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp,
+              LetRegDeclOp, VarLetDeclOp, ParamDeclareOp, AliasForwardDeclOp>(
+            [&](auto op) {
+              // Parse the body of the declaration from the correct point.
+              LitLexer lexer(shared, decl.getCursor());
+              if (resolveBody(op, lexer, decl))
+                return;
 
-          checkEndOfBodyCursor(lexer);
-        })
+              checkEndOfBodyCursor(lexer);
+            })
         .Case<ModuleOp, UnresolvedImportOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
           emitError(decl.getLoc(),
@@ -1632,8 +1633,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
 
     // In a `def`, we create a mutable var.decl lvalue to allow reassignment.
     auto type = POP::PointerType::get(bbArg.getType());
-    auto varDecl =
-        builder.create<VarDeclOp>(bbArg.getLoc(), type, parsedArg.name);
+    auto varDecl = builder.create<VarLetDeclOp>(bbArg.getLoc(), type,
+                                                parsedArg.name, /*isVar*/ 1);
     addFullyResolvedDecl(varDecl, parsedArg.loc, parsedArg.name, &decl);
     builder.create<POP::StoreOp>(bbArg.getLoc(), bbArg, varDecl,
                                  /*alignment=*/std::nullopt);
@@ -1737,8 +1738,8 @@ ParseResult ParsedLetVarDecl::parse(LitLexer &lexer, ASTDecl &decl) {
 
 /// let_decl_stmt ::= "let" identifier ":" expression ["=" expression]
 ///                 | "let" identifier "=" expression
-LogicalResult DeclResolver::resolveSignature(LetDeclOp letOp, LitLexer &lexer,
-                                             ASTDecl &decl) {
+LogicalResult DeclResolver::resolveSignature(LetRegDeclOp letOp,
+                                             LitLexer &lexer, ASTDecl &decl) {
   ParsedLetVarDecl parsed;
   if (parsed.parse(lexer, decl))
     return failure();
@@ -1789,15 +1790,15 @@ LogicalResult DeclResolver::resolveSignature(LetDeclOp letOp, LitLexer &lexer,
   return success();
 }
 
-ParseResult DeclResolver::resolveBody(LetDeclOp op, LitLexer &lexer,
+ParseResult DeclResolver::resolveBody(LetRegDeclOp op, LitLexer &lexer,
                                       ASTDecl &decl) {
   return success();
 }
 
 /// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
 ///                 | "var" identifier "=" expression
-LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
-                                             ASTDecl &decl) {
+LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
+                                             LitLexer &lexer, ASTDecl &decl) {
   ParsedLetVarDecl parsed;
   if (parsed.parse(lexer, decl))
     return failure();
@@ -1842,7 +1843,7 @@ LogicalResult DeclResolver::resolveSignature(VarDeclOp varOp, LitLexer &lexer,
   return success();
 }
 
-ParseResult DeclResolver::resolveBody(VarDeclOp op, LitLexer &lexer,
+ParseResult DeclResolver::resolveBody(VarLetDeclOp op, LitLexer &lexer,
                                       ASTDecl &decl) {
   return success();
 }

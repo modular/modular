@@ -447,13 +447,16 @@ def LIT_AliasForwardDeclOp : LITOp<"alias.fwd.decl"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LetDeclOp / VarDeclOp
+// LetRegDeclOp / VarLetDeclOp
 //===----------------------------------------------------------------------===//
 
-def LIT_LetDeclOp : LITOp<"let.decl",
+/// This declaration is used for register primary values assigned to a let
+/// declaration which have an inline initializer.  It does not expose an address
+/// for the value.
+def LIT_LetRegDeclOp : LITOp<"letreg.decl",
          [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
           Pure, AllTypesMatch<["value", "result"]>,]> {
-  let summary = "Local constant declaration";
+  let summary = "Register-primary local `let` declaration";
 
   let arguments = (ins StrAttr:$name, AnyType:$value);
   let results = (outs AnyType:$result);
@@ -467,13 +470,17 @@ def LIT_LetDeclOp : LITOp<"let.decl",
   ];
 }
 
-def LIT_VarDeclOp : LITOp<"var.decl",
+/// This declaration is used for var declarations, let declarations with an
+/// out-of-line initializer, and for memory-primary let declarations.
+/// It enables these use-cases by exposing an address.
+def LIT_VarLetDeclOp : LITOp<"varlet.decl",
          [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
-  let summary = "Local variable declaration";
+  let summary = "Addressible local let or var declaration";
 
-  let arguments = (ins StrAttr:$name);
+  let arguments = (ins StrAttr:$name,
+                       DefaultValuedAttr<BoolAttr, "false">:$isVar);
   let results = (outs POP_PointerType:$result);
-  let assemblyFormat = "$name `:` type($result) attr-dict";
+  let assemblyFormat = "$name `,` `var``=`$isVar `:` type($result) attr-dict";
 }
 
 //===----------------------------------------------------------------------===//

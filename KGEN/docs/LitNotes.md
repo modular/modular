@@ -99,8 +99,8 @@ cool kids on the block these days.
 ### Main
 
 In Lightning the main function has signature `fn main()`.
-That function is exported automatically with the unique symbol "main" in the 
-final object file. This is subject to change as we close the gap with Python's 
+That function is exported automatically with the unique symbol "main" in the
+final object file. This is subject to change as we close the gap with Python's
 functionality.
 
 ### The full power of MLIR at your fingertips
@@ -173,12 +173,12 @@ value in Lightning.  You can see this most easily when materializing a constant
 value into a dynamic one, e.g. when storing into a variable:
 
 ```mlir
-  # CHECK: %d = lit.var.decl "d" : <i17>
+  # CHECK: %d = lit.varlet.decl "d", var = true : <i17>
   # CHECK: [[TMP:%.*]] = kgen.param.constant: i17 = <4>
   # CHECK: pop.store [[TMP]], %d : !pop.pointer<i17>
   var d = __mlir_attr.`4: i17`
 
-  # CHECK: %dt = lit.var.decl "dt" : <dtype>
+  # CHECK: %dt = lit.varlet.decl "dt", var = true : <dtype>
   # CHECK: [[TMP:%.*]] = kgen.param.constant: dtype = <f32>
   # CHECK: pop.store [[TMP]], %dt  : !pop.pointer<dtype>
   var dt = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
@@ -211,7 +211,7 @@ subscript syntax (including specifying multiple attributes such as
 you can use:
 
 ```mlir
-  # CHECK: %idxConstant = lit.var.decl "idxConstant" : <index>
+  # CHECK: %idxConstant = lit.varlet.decl "idxConstant", var = true, var = true : <index>
   # CHECK-NEXT: [[TMP:%.*]] = index.constant 42
   # CHECK-NEXT: pop.store [[TMP]], %idxConstant : !pop.pointer<index>
   var idxConstant = __mlir_op.`index.constant`[value: 42]()
