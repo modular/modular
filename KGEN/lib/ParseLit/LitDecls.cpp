@@ -445,8 +445,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // the `resolveSignature` method for the op, and re-saving the new cursor
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, LetRegDeclOp,
-              VarLetDeclOp, ParamDeclareOp, UnresolvedImportOp>([&](auto op) {
+        .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, VarLetDeclOp,
+              ParamDeclareOp, UnresolvedImportOp>([&](auto op) {
           LitLexer lexer(shared, decl.getCursor());
 
           // Resolve the signature: on a parse error, we note that the decl
@@ -487,7 +487,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
         .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp,
-              LetRegDeclOp, VarLetDeclOp, ParamDeclareOp, AliasForwardDeclOp>(
+              VarLetDeclOp, LetRegDeclOp, ParamDeclareOp, AliasForwardDeclOp>(
             [&](auto op) {
               // Parse the body of the declaration from the correct point.
               LitLexer lexer(shared, decl.getCursor());
@@ -1699,23 +1699,16 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, LitLexer &lexer,
 }
 
 //===----------------------------------------------------------------------===//
-// LetDecl / VarDecl implementation
+// VarLetDecl implementation
 //===----------------------------------------------------------------------===//
 
-namespace {
-struct ParsedLetVarDecl {
-  SmallVector<ExprNode *> decorators;
-  ASTType type;
-  ExprNode *initExpr = nullptr;
-
-  ParseResult parse(LitLexer &lexer, ASTDecl &decl);
-};
-} // namespace
-
-/// Parse the structure of a let/var declaration.
-ParseResult ParsedLetVarDecl::parse(LitLexer &lexer, ASTDecl &decl) {
+/// var_decl_stmt ::= var_or_let identifier ":" expression ["=" expression]
+///                 | var_or_let identifier "=" expression
+/// var_or_let    ::= "var" | "let"
+LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
+                                             LitLexer &lexer, ASTDecl &decl) {
   LitParserBase p(lexer);
-  decorators = p.parseDecorators(decl);
+  SmallVector<ExprNode *> decorators = p.parseDecorators(decl);
 
   p.consumeToken(); // eat the let/var.
   if (p.parseToken(LitToken::identifier,
@@ -1723,88 +1716,23 @@ ParseResult ParsedLetVarDecl::parse(LitLexer &lexer, ASTDecl &decl) {
     return failure();
 
   //  Parse the type if present.
+  ASTType parsedType;
   if (p.consumeIf(LitToken::colon)) {
-    if (parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
+    if (parseType(p, parsedType, *decl.getParentDecl(), decl.getIndentation()))
       return failure();
   }
 
-  // Parse and emit the initializer if present.
+  // Parse the initializer if present.
+  ExprNode *initExpr = nullptr;
   if (p.consumeIf(LitToken::equal)) {
     if (p.parseExpression(initExpr, decl.getIndentation()))
       return failure();
   }
-  return success();
-}
 
-/// let_decl_stmt ::= "let" identifier ":" expression ["=" expression]
-///                 | "let" identifier "=" expression
-LogicalResult DeclResolver::resolveSignature(LetRegDeclOp letOp,
-                                             LitLexer &lexer, ASTDecl &decl) {
-  ParsedLetVarDecl parsed;
-  if (parsed.parse(lexer, decl))
-    return failure();
-
-  // Reject let's without an initializer.
-  // TODO: Use definitive initialization to allow late initialization, e.g.:
-  //   let x : Int
-  //   if cond:
-  //     x = foo()
-  //   else
-  //     y = bar()
-  if (!parsed.initExpr) {
-    emitError(letOp.getLoc(), "'let' declaration must have an initializer");
-    return failure();
-  }
-
-  // Handle the initializer.  Insert before the let decl.
-  OpBuilder builder(letOp->getBlock(), Block::iterator(letOp));
-  ExprEmitter emitter(shared, *decl.getParentDecl(), builder,
-                      /*varDeclCursor*/ nullptr);
-  Value value;
-
-  // If we had a declared type, coerce the expression value to it.
-  if (parsed.type) {
-    auto baseValue = emitter.emitExprRValue(parsed.initExpr, ValueDest::none());
-    value = emitter.emitSRValue(
-        {emitter.getAsExpectedType(
-             {baseValue, parsed.initExpr}, parsed.type,
-             // TODO(memory-primary): emit directly into the decl.
-             ValueDest::none(), " in let declaration"),
-         parsed.initExpr});
-    if (!value)
-      return failure();
-
-  } else {
-    value = emitter.emitExprSRValue(parsed.initExpr);
-    // Infer the type if we lack a declared type (`var x = 42`).
-    // TODO(literal autopromotion).
-    if (!value)
-      return failure();
-
-    parsed.type = value.getType();
-  }
-
-  letOp->setOperands(value);
-  letOp.getResult().setType(parsed.type);
-  rejectDecorators(parsed.decorators, decl, shared);
-  return success();
-}
-
-ParseResult DeclResolver::resolveBody(LetRegDeclOp op, LitLexer &lexer,
-                                      ASTDecl &decl) {
-  return success();
-}
-
-/// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
-///                 | "var" identifier "=" expression
-LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
-                                             LitLexer &lexer, ASTDecl &decl) {
-  ParsedLetVarDecl parsed;
-  if (parsed.parse(lexer, decl))
-    return failure();
+  // Now that parsing succeeded, we do IR emission and semantic processing.
 
   // Handle the initializer if present.
-  if (parsed.initExpr) {
+  if (initExpr) {
     // We insert after var decl.
     OpBuilder builder(varOp->getBlock(), ++Block::iterator(varOp));
     ExprEmitter emitter(shared, *decl.getParentDecl(), builder,
@@ -1813,8 +1741,8 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
     // If we have a type, then emit directly into the LValue.  Otherwise emit
     // into
     ValueDest dest;
-    if (parsed.type) {
-      varOp.getResult().setType(POP::PointerType::get(parsed.type));
+    if (parsedType) {
+      varOp.getResult().setType(POP::PointerType::get(parsedType));
       dest = LValue(varOp);
     } else {
       // If we don't, we emit into the varOp itself, because this will infer the
@@ -1822,16 +1750,17 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
       dest = ValueDest(varOp);
     }
 
-    if (!emitter.emitExprRValue(parsed.initExpr, dest)) {
+    if (!emitter.emitExprRValue(initExpr, dest)) {
       dest.resetForError();
       return failure();
     }
 
-    assert(!isa<UnresolvedType>(varOp.getType().getResolvedElementType()) &&
+    assert(!isa_and_nonnull<UnresolvedType>(
+               varOp.getType().getResolvedElementType()) &&
            "RValue emission should have inferred var type");
 
-  } else if (parsed.type) {
-    varOp.getResult().setType(POP::PointerType::get(parsed.type));
+  } else if (parsedType) {
+    varOp.getResult().setType(POP::PointerType::get(parsedType));
   } else {
     // If there was neither a type or initializer, reject the var.
     emitError(varOp.getLoc(),
@@ -1839,11 +1768,43 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
     return failure();
   }
 
-  rejectDecorators(parsed.decorators, decl, shared);
+  rejectDecorators(decorators, decl, shared);
+
+  // Now that this has been fully checked, we can promote to a LetRegDeclOp if
+  // this was a non-parameteric register-primary `let` declaration with an
+  // initializer.  We don't care about the address being available and this
+  // produces smaller IR.
+  ASTType inferredRValueType = varOp.getType().getResolvedElementType();
+  if (initExpr && !varOp.getIsVar() &&
+      // NOTE: This is assuming type parameters are valid register types.  We
+      // will need to build out better support when we have traits, but this is
+      // important for kernels in practice today.
+      (!inferredRValueType ||
+       inferredRValueType.isRegisterPrimary(initExpr->getLoc(), shared))) {
+    // There should be exactly one store to the original op, sanity check this.
+    assert(varOp->hasOneUse() && "Should have one store use");
+    auto theStore = cast<POP::StoreOp>(*varOp->user_begin());
+
+    // Create new LetRegDeclOp and put it into the ASTDecl.
+    OpBuilder builder(theStore);
+    auto newLetOp = builder.create<LetRegDeclOp>(
+        varOp.getLoc(), varOp.getNameAttr(), theStore.getArg());
+    decl.setIRValue(newLetOp.getOperation());
+
+    // Remove the store and the original LetVarDeclOp.
+    theStore->erase();
+    varOp->erase();
+  }
+
   return success();
 }
 
 ParseResult DeclResolver::resolveBody(VarLetDeclOp op, LitLexer &lexer,
+                                      ASTDecl &decl) {
+  return success();
+}
+
+ParseResult DeclResolver::resolveBody(LetRegDeclOp op, LitLexer &lexer,
                                       ASTDecl &decl) {
   return success();
 }

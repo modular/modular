@@ -33,9 +33,9 @@ class LitLexer;
 class LitLexerCursor;
 class LitParserBase;
 class LitSharedState;
-class LetRegDeclOp;
 class UnresolvedImportOp;
 class VarLetDeclOp;
+class LetRegDeclOp;
 class StructDeclOp;
 class StructFieldOp;
 
@@ -156,12 +156,10 @@ private:
   LogicalResult resolveSignature(StructFieldOp op, LitLexer &lexer,
                                  ASTDecl &decl);
   ParseResult resolveBody(StructFieldOp op, LitLexer &lexer, ASTDecl &decl);
-  LogicalResult resolveSignature(LetRegDeclOp op, LitLexer &lexer,
-                                 ASTDecl &decl);
-  ParseResult resolveBody(LetRegDeclOp op, LitLexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(VarLetDeclOp op, LitLexer &lexer,
                                  ASTDecl &decl);
   ParseResult resolveBody(VarLetDeclOp op, LitLexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(LetRegDeclOp op, LitLexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(ParamDeclareOp op, LitLexer &lexer,
                                  ASTDecl &decl);
   ParseResult resolveBody(ParamDeclareOp op, LitLexer &lexer, ASTDecl &decl);

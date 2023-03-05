@@ -293,11 +293,18 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
   if (!destLV)
     return {};
 
-  // This is only correct for register-primary values.  If emitResult is
-  // useful for memory-primary values, we can generalize the logic below.
-  assert(destLV.getRValueType().isRegisterPrimary(node->getLoc(), shared));
+  // If we have an MRValue to emit and the destination is a memory primary type,
+  // then we have to clone the value into the destination.  Transform this into
+  // an LValue so that emitRValue can do this for us.
+  if (auto mrValue = value.getIfMRValue()) {
+    if (!destLV.getRValueType().isRegisterPrimary(node->getLoc(), shared)) {
+      dest = ValueDest(destLV);
+      return emitRValue({LValue(mrValue), node}, dest);
+    }
+  }
 
-  // Emit the RHS and coerce to the LHS type.
+  // Otherwise, this must be a register-primary value.  Emit the RHS and coerce
+  // to the LHS type, then store into the destination.
   value = getAsExpectedType({value, node}, destLV.getRValueType(),
                             ValueDest::none(), " in assignment");
   SRValue rv = emitSRValue({value, node});
