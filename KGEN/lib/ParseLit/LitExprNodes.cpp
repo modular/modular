@@ -1458,8 +1458,14 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   LitParameterEvaluator paramEvaluator(emitter.getDeclResolver(),
                                        initType.getParamBindings());
 
+  // If this is a memory primary struct, initialize the fields into the result
+  // buffer, if it is register primary, we build a list of field values+names.
   SmallVector<StringAttr> fieldNames;
   SmallVector<Value> fieldValues;
+  LValue memoryPrimaryBase;
+  if (!structOp.getIsRegisterPrimary())
+    memoryPrimaryBase = dest.takeLValueForResult(getLoc(), initType, emitter);
+
   for (StructFieldOp field : structOp.getFieldDecls()) {
     ASTExprAnd<RValue> fieldVal = fieldMapping[field.getNameAttr()];
     if (!fieldVal) {
@@ -1477,27 +1483,34 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
         return {};
     }
 
-    auto value = emitter.getAsExpectedType(
-        fieldVal, paramEvaluator.getReboundType(field.getType()),
-        // TODO(memory_primary)
-        ValueDest::none(), " in field initialization");
-    // TODO(memory_primary): Handle memory-only values by direct initializing.
-    auto drValue = emitter.emitSRValue({value, fieldVal.expr});
-    if (!drValue)
-      return {};
-    fieldNames.push_back(field.getNameAttr());
-    fieldValues.push_back(drValue);
+    auto fieldType = paramEvaluator.getReboundType(field.getType());
+    if (structOp.getIsRegisterPrimary()) {
+      auto value = emitter.getAsExpectedType(
+          fieldVal, fieldType, ValueDest::none(), " in field initialization");
+      auto drValue = emitter.emitSRValue({value, fieldVal.expr});
+      if (!drValue)
+        return {};
+      fieldNames.push_back(field.getNameAttr());
+      fieldValues.push_back(drValue);
+    } else {
+      // For a memory primary aggregate, emit the field into the memory for the
+      // field in the aggregate.
+      auto fieldPtr = emitter.builder->create<StructGEPOp>(
+          getLocation(emitter), memoryPrimaryBase, field);
+      ValueDest fieldDest = LValue(fieldPtr);
+      (void)emitter.emitRValue(fieldVal, fieldDest);
+    }
   }
 
+  // If this is memory primary, we've initialized all the fields.  Just return
+  // the result.
+  if (!structOp.getIsRegisterPrimary())
+    return MRValue(memoryPrimaryBase);
+
+  // If this is register primary, then bundle all the values up and return them.
   auto result = SRValue(emitter.builder->create<StructCreateOp>(
       getLocation(emitter), initType.mlirType, fieldValues,
       StringArrayAttr::get(emitter.getContext(), fieldNames)));
-
-  // FIXME: We aren't handling memory primary results correctly yet.
-  // Really.
-  if (!ASTType(result.getType()).isRegisterPrimary(getLoc(), emitter.shared))
-    return result;
-
   return emitter.emitResult(result, this, dest);
 }
 
