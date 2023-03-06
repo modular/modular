@@ -70,15 +70,6 @@ private:
   std::function<void(ErrorTree)> emitError;
 };
 
-/// This struct contains information about a region body: whether it is
-/// isolated from above and the parameter context within its original parent
-/// operation.
-struct EvalContext {
-  IREvaluator evaluator;
-  bool transitivelyInlined;
-  bool inlinedAtCallsite;
-};
-
 //===----------------------------------------------------------------------===//
 // evaluateConstraints implementation.
 //===----------------------------------------------------------------------===//
