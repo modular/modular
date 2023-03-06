@@ -1594,12 +1594,6 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
     }
 
     TypedAttr result = ParamOperatorAttr::get(POC::Apply, operands);
-
-    // Attempt to further specialize the result type by folding 'apply'
-    // operators.
-    Type refinedType = evaluator.refineType(result.getType());
-    if (refinedType != result.getType())
-      result = ParamOperatorAttr::get(POC::Rebind, result, refinedType);
     return emitResult(result, callExpr, dest);
   }
 
@@ -1664,10 +1658,5 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // Otherwise, register-primary results are the call result which may need to
   // be emitted into a ValueDest.
   auto result = SRValue(callOp->getResult(0));
-
-  // Attempt to further specialize the result type by folding 'apply' operators.
-  Type refinedType = evaluator.refineType(result.getType());
-  if (refinedType != result.getType())
-    result = builder->create<RebindOp>(loc, refinedType, result);
   return emitResult(result, callExpr, dest);
 }

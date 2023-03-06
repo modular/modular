@@ -12,6 +12,7 @@
 #include "LitExprEmitter.h"
 #include "ASTDecl.h"
 #include "LitExprCalls.h"
+#include "LitParameterEvaluator.h"
 #include "SpecialFunctions.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -365,6 +366,37 @@ PRValue ExprEmitter::emitPRValue(ASTExprAnd<AnyValue> value,
 // emitResult(ValueDest) Implementation
 //===----------------------------------------------------------------------===//
 
+/// When emitting a result value, attempt to "refine" the value type by
+/// evaluating 'apply' expressions in its type. Rebind the value if the type can
+/// be further specialized.
+static AnyValue refineResultValue(AnyValue value, SMLoc loc,
+                                  ExprEmitter &emitter) {
+  // Only LValues and CRValues can be specialized. ORValues don't have a type.
+  if (value.getIfORValue())
+    return value;
+
+  LitParameterEvaluator evaluator(emitter.getDeclResolver());
+  Type refinedType = evaluator.refineType(value.getType());
+  if (refinedType == value.getType())
+    return value;
+
+  // Materialize a parameter rebind.
+  if (auto prvalue = value.getIfPRValue())
+    return PRValue(
+        ParamOperatorAttr::get(POC::Rebind, prvalue.get(), refinedType));
+
+  // Materialize a rebind operation.
+  auto rebind = [&](Value value) -> Value {
+    return emitter.builder->create<RebindOp>(emitter.translateLocation(loc),
+                                             refinedType, value);
+  };
+  if (auto lvalue = value.getIfLValue())
+    return LValue(rebind(lvalue));
+  if (auto mrvalue = value.getIfMRValue())
+    return MRValue(rebind(mrvalue));
+  return SRValue(rebind(value.getIfSRValue()));
+}
+
 /// Emit a conversion from the specified value to the specified destination
 /// type, plopping the value into the designated value destination.  We know the
 /// types mismatch so the conversion must be emitted.
@@ -416,6 +448,9 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
                                  ValueDest &dest) {
   if (!value)
     return {};
+
+  // Attempt to further specialize the result value.
+  value = refineResultValue(value, node->getLoc(), *this);
 
   // If no destination is specified, then we can propagate the value directly.
   if (!dest.isSpecified())
