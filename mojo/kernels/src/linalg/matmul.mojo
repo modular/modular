@@ -25,7 +25,7 @@ from SIMD import SIMD
 from TargetInfo import simd_byte_width
 from Transpose import transpose_inplace
 from Tuple import StaticTuple
-from Functional import tile
+from Functional import tile, unswitch
 
 
 fn get_pack_data_size() -> Int:
@@ -474,74 +474,34 @@ struct PackMatrixRows[
             ),
         )
 
-        # # fill rows with valid data
-        var row_idx0: Int = 0
-        while row_idx0 < valid_tile_simd_dim[0]:
-            var col_idx0: Int = 0
-            while col_idx0 < valid_tile_simd_dim[1]:
-                self._transpose_pack_helper[
-                    # skip_row_bound, skip_col_bound
-                    True,
-                    True,
-                ](
-                    transpose_buffer,
-                    # local offset
-                    Index(row_idx0, col_idx0),
+        # fill rows with valid data
+
+        var row_idx: Int = 0
+        var col_idx: Int = 0
+
+        # An unswitch-able unit function that transpose packs a small tile.
+        @always_inline
+        fn transpose_pack_unit[static_switch0: Bool, static_switch1: Bool]():
+            self._transpose_pack_helper[
+                # skip_row_bound, skip_col_bound
+                static_switch0,
+                static_switch1,
+            ](
+                transpose_buffer,
+                # local offset
+                Index(row_idx, col_idx),
+            )
+
+        # Pack the whole matrices with the unit helper.
+        while row_idx < self.pack_tile_dim[0]:
+            col_idx = 0
+            while col_idx < self.pack_tile_dim[1]:
+                unswitch[transpose_pack_unit](
+                    row_idx < valid_tile_simd_dim[0],
+                    col_idx < valid_tile_simd_dim[1],
                 )
-                col_idx0 += simd_size
-
-            # Pack residue and zero-ed columns.
-            while col_idx0 < self.pack_tile_dim[1]:
-                # TODO: this can be peeled further
-                #  but cound be un-necessary as the tile
-                #  level is also optimized.
-                self._transpose_pack_helper[
-                    # skip_row_bound, skip_col_bound
-                    True,
-                    False,
-                ](
-                    transpose_buffer,
-                    # local offset
-                    Index(row_idx0, col_idx0),
-                )
-                col_idx0 += simd_size
-
-            row_idx0 += simd_size
-
-        # If there's a few residue rows with valid data.
-        #  pack the residue rows.
-        if row_idx0 < self.pack_tile_dim[0]:
-            var col_idx1: Int = 0
-            while col_idx1 < valid_tile_simd_dim[1]:
-                self._transpose_pack_helper[
-                    # skip_row_bound, skip_col_bound
-                    False,
-                    True,
-                ](
-                    transpose_buffer,
-                    # local offset
-                    Index(row_idx0, col_idx1),
-                )
-                col_idx1 += simd_size
-
-            # do a residue column if any.
-            while col_idx1 < self.pack_tile_dim[1]:
-                # do residue column
-                self._transpose_pack_helper[
-                    # skip_row_bound, skip_col_bound
-                    False,
-                    False,
-                ](
-                    transpose_buffer,
-                    Index(row_idx0, col_idx1),  # local offset
-                )
-                col_idx1 += simd_size
-
-        # TODO:
-        #  This packing routine is intended to be used in mlas style matmul
-        # so out of bound rows in tile never need to be zero filled. But
-        # in general should add additional params controling how to handle
-        # out of bound rows between valid_tile_simd_dim[0] and packed_tile_dim_rows.
+                col_idx += simd_size
+            row_idx += simd_size
 
 
 struct PackMatrixCols[
@@ -687,15 +647,18 @@ struct PackMatrixCols[
             self.valid_data_dim[0],
             self.pack_tile_dim[0],
         )
-        while row_idx < valid_row_count:
-            self._pack_row_helper[skip_col_bound, False](row_idx)  # fill zero
-            row_idx += 1
+
+        @always_inline
+        fn pack_unit[static_switch: Bool]():
+            @parameter
+            if static_switch:
+                self._pack_row_helper[skip_col_bound, False](row_idx)
+            else:
+                self._pack_row_helper[True, False](row_idx)
+
         # Fill zero on the remaining rows on the tile.
         while row_idx < self.pack_tile_dim[0]:
-            self._pack_row_helper[
-                True,  # skip read col bound.
-                False,  # fill zero
-            ](row_idx)
+            unswitch[pack_unit](row_idx < valid_row_count)
             row_idx += 1
 
     fn _pack(self):
@@ -704,20 +667,14 @@ struct PackMatrixCols[
         #  This packing routine can be further peeled and vectorized
         #    but dynamical tiling could cover some of the sub-optimality
         #    here. In a follow up should extend the blocking scheme here.
-        if self.pack_tile_dim[1] < self.valid_data_dim[1]:
-            # If the whole tile is within bound.
-            #  skip all the column checks.
+        @always_inline
+        fn pack_unit[static_switch: Bool]():
             self._pack_helper[
                 # skip col bound check.
-                True
+                static_switch
             ]()
-        else:
-            # Do not skip checks if not the whole column tile
-            #  is within bound.
-            self._pack_helper[
-                # skip row bound check.
-                False
-            ]()
+
+        unswitch[pack_unit](self.pack_tile_dim[1] < self.valid_data_dim[1])
 
 
 struct MatmulInnerLoopBPacked[
@@ -1235,18 +1192,14 @@ struct TiledMatmul[
         #  no need to check boundary when loading C
         #  on this tile.
         # TODO: this could be in finer granularity.
-        if valid_col_count >= sub_tile_n:
+        @always_inline
+        fn unswitched_mloop[static_switch: Bool]():
             self._outer_m_loop_helper[
-                # skip_col_bound
-                True,
+                static_switch,  # skip_col_bound
                 m_loop_pack_inner_size,
             ](b_packed, global_offset, sub_tile_n, sub_tile_k)
-        else:
-            self._outer_m_loop_helper[
-                # skip_col_bound
-                False,
-                m_loop_pack_inner_size,
-            ](b_packed, global_offset, sub_tile_n, sub_tile_k)
+
+        unswitch[unswitched_mloop](valid_col_count >= sub_tile_n)
 
     # Helper function:
     #  Iterate on the N dimension by steps of
