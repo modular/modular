@@ -102,6 +102,9 @@ struct ConditionallyOwnedPointer {
   T &operator*() { return *ptr; }
   const T &operator*() const { return *ptr; }
 
+  /// Check if this has a payload just like a normal pointer.
+  explicit operator bool() const { return ptr != nullptr; }
+
 private:
   ConditionallyOwnedPointer(T *ptr, bool shouldDelete)
       : ptr(ptr), shouldDelete(shouldDelete) {}
