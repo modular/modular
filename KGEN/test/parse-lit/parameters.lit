@@ -520,3 +520,29 @@ fn testParameterEvaluator():
   Abstraction[1].pull[2](y)
   # CHECK-NEXT: kgen.call {{.*}}@"testDependentType()"<rank:{{.*}} = 1{{.*}}, shape: list<index[apply{{.*}}__as_mlir_index{{.*}} = rebind(:list<index[1]>
   testDependentType[1, create_kgen_list[__mlir_type.index](0)]()
+
+
+fn takeAbstraction2(value: Abstraction[2]):
+    return
+
+
+struct AnotherAbstraction[a: Int]:
+    var value : Abstraction[a + 1]
+
+    fn __new__() -> Self:
+        return Self{value: Abstraction[a + 1]()}
+
+    fn __clone__(self&) -> Self:
+        return Self{value: self.value}
+
+# CHECK-LABEL: lit.func @"testDependentField()"
+fn testDependentField():
+    var lvalue = AnotherAbstraction[1]()
+    # CHECK: %[[VALUE_PTR:.*]] = lit.struct.gep %lvalue[value]
+    # CHECK-NEXT: kgen.rebind %[[VALUE_PTR]] {{.*}} to
+    # CHECK-SAME: !pop.pointer<{{.*}}@Abstraction<a: {{.*}} = {{.*}} 2}>>>
+    takeAbstraction2(lvalue.value)
+    let rvalue = AnotherAbstraction[1]()
+    # CHECK: %[[VALUE:.*]] = lit.struct.extract %rvalue[value]
+    # CHECK-NEXT: kgen.rebind %[[VALUE]] {{.*}} to {{.*}}@Abstraction<a: {{.*}} = {{.*}} 2}>>
+    takeAbstraction2(rvalue.value)
