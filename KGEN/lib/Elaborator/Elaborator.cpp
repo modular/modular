@@ -17,7 +17,6 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
-#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LowerToObject.h"
 #include "LLCL/CompilerSupport/AsyncSideEffectMap.h"
@@ -714,7 +713,7 @@ static void completeCallProcessing(KGENCallOpInterface user,
   // Resolve any bound result types.
   SmallVector<Type> resultTypes;
   for (auto result : user->getResultTypes()) {
-    auto typeOr =
+    ErrorTreeOr<Type> typeOr =
         parentNode->evaluator.concretizeParameterExpr(user.getLoc(), result);
     if (typeOr.isError()) {
       thisNode->error = typeOr.takeError();
@@ -835,6 +834,31 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
     printParameterValue(value, os);
   }
   return b.getStringAttr(result);
+}
+
+//===----------------------------------------------------------------------===//
+// collectOpsToProcess
+//===----------------------------------------------------------------------===//
+
+/// This simply walks the ParameterUseDefGraph and collects the list of ops that
+/// need to be rewritten.
+static void collectOpsToProcess(const ParameterUseDefGraph &uses,
+                                std::vector<Operation *> &opsToRewrite) {
+  // FIXME: The elaborator does not correctly handle the new parameter use-def
+  // graph. Process the parameters in reverse: the same operation can define
+  // multiple parameters, so punt those according to their most dominated
+  // definition.
+  opsToRewrite.reserve(uses.params.size() + uses.paramOps.size());
+  llvm::SetVector<Operation *, SmallVector<Operation *, 8>,
+                  SmallPtrSet<Operation *, 8>>
+      defOps;
+  for (StringAttr param : llvm::reverse(uses.params)) {
+    auto it = uses.defs.find(param);
+    assert(it != uses.defs.end());
+    defOps.insert(it->second.defOp);
+  }
+  llvm::append_range(opsToRewrite, llvm::reverse(defOps.takeVector()));
+  llvm::append_range(opsToRewrite, uses.paramOps);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1082,8 +1106,9 @@ ElaboratorImpl::processParamForkOp(ExpansionTreeNode *parent, ParamForkOp op,
   SmallVector<ErrorTree> errors;
   DenseSet<Attribute> seenValues;
 
-  auto errorOrValue = parent->evaluator.concretizeParameterExpr(
-      op.getLoc(), op.getValuesAttr());
+  ErrorTreeOr<Attribute> errorOrValue =
+      parent->evaluator.concretizeParameterExpr(op.getLoc(),
+                                                op.getValuesAttr());
   if (errorOrValue.isError())
     return ErrorTree(op.getLoc(), "param-expr concretization failed: " +
                                       errorOrValue.takeError().getMessage());
@@ -1096,7 +1121,7 @@ ElaboratorImpl::processParamForkOp(ExpansionTreeNode *parent, ParamForkOp op,
   bool atLeastOneSuccessful = false;
   for (Attribute candidate : forkValuesAttr.getValues()) {
     // Simplify the input expressions.
-    auto errorOrValue =
+    ErrorTreeOr<Attribute> errorOrValue =
         parent->evaluator.concretizeParameterExpr(op.getLoc(), candidate);
     if (errorOrValue.isError()) {
       errors.push_back(errorOrValue.takeError());
@@ -1382,11 +1407,58 @@ ElaboratorImpl::processCallParamOp(CallParamOp call, ExpansionTreeNode *parent,
   if (symbol.isError())
     return symbol.takeError();
 
-  auto symbolCst = dyn_cast<SymbolConstantAttr>(*symbol);
-  if (!symbolCst)
-    return ErrorTree(call.getLoc(), "must be a SymbolConstantAttr");
-  return processGeneratorUser(call.getParamDecls(), call, symbolCst, parent,
-                              remainingWorklist);
+  if (auto sym = dyn_cast<SymbolConstantAttr>(*symbol))
+    return processGeneratorUser(call.getParamDecls(), call, sym, parent,
+                                remainingWorklist);
+
+  auto decl = dyn_cast<RegionAttr>(*symbol);
+  if (!decl)
+    return ErrorTree(
+        call.getLoc(),
+        "concrete parameter must be a SymbolConstantAttr or a RegionAttr");
+
+  // If we have a region, then we gotta inline it.
+  auto paramDef = parent->paramGraph->defs.find(decl.getRegionName());
+  if (paramDef == parent->paramGraph->defs.end())
+    return ErrorTree(
+        call.getLoc(),
+        "could not find the parameter definition for the provided decl.");
+
+  // OK we found a region, put it into the machinery.
+  Region *region =
+      &cast<ParamDeclareRegionOp>(paramDef->getSecond().defOp).getBodyRegion();
+
+  auto found = parent->paramGraph->nestedScopes.find(region);
+  if (found == parent->paramGraph->nestedScopes.end())
+    return ErrorTree(
+        call.getLoc(),
+        "could not find the parameter graph for the nested region");
+
+  // Set any bindings on the region in the evaluator context.
+  for (ParamBindAttr bind : decl.getParamValues())
+    parent->evaluator.setParameterValue(bind.getName(), bind.getValue());
+
+  // Collect all the ops to process.
+  std::vector<Operation *> opsToRewrite;
+  collectOpsToProcess(found->getSecond(), opsToRewrite);
+
+  // Process the ops we just collected.
+  processScope(parent, opsToRewrite);
+
+  // Grab the terminator before we clone the ops over.
+  Operation *regionTerminator = region->front().getTerminator();
+  // Clone the operations to just before the call.
+  IRMapping map;
+  OpBuilder builder(call);
+  for (Operation &op : region->front())
+    builder.clone(op, map);
+
+  // And we're done; RAUW the call's results, erase the call_param op, and
+  // erase the region terminator that was cloned over.
+  call.replaceAllUsesWith(map.lookup(regionTerminator)->getOperands());
+  call.erase();
+  map.lookup(regionTerminator)->erase();
+  return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1398,8 +1470,13 @@ ElaboratorImpl::processCallParamOp(CallParamOp call, ExpansionTreeNode *parent,
 std::optional<ErrorTree>
 ElaboratorImpl::processParamDeclareRegionOp(ParamDeclareRegionOp regionDecl,
                                             ExpansionTreeNode *parent) {
-  return ErrorTree(regionDecl.getLoc(),
-                   "should never see one of these (for now)");
+  // Set the region's parameter decl as the value for this name. That will
+  // signal to the call_param handler that it needs to inline the region it
+  // finds for that decl.
+  parent->evaluator.setParameterValue(
+      regionDecl.getParamDecl().getName(),
+      RegionAttr::get(regionDecl.getParamDecl()));
+  return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1423,7 +1500,7 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   // them later.
   Operation *terminator;
   Region *toProcess = nullptr;
-  auto resultInt = cast<IntegerAttr>(errorOrValue.takeValue());
+  auto resultInt = cast<IntegerAttr>(cast<Attribute>(errorOrValue.takeValue()));
   if (!resultInt.getValue().isZero()) {
     // Get the terminator.
     terminator = op.getThenRegion().front().getTerminator();
@@ -1615,29 +1692,8 @@ ElaboratorImpl::specializeFunction(ExpansionTreeNode *funcNode,
   }
   uses.calculate(paramCache);
 
-  // FIXME: The elaborator does not correctly handle the new parameter use-def
-  // graph. Process the parameters in reverse: the same operation can define
-  // multiple parameters, so punt those according to their most dominated
-  // definition.
   std::vector<Operation *> opsToRewrite;
-  opsToRewrite.reserve(uses.params.size() + uses.paramOps.size());
-  llvm::SetVector<Operation *, SmallVector<Operation *, 8>,
-                  SmallPtrSet<Operation *, 8>>
-      defOps;
-  for (StringAttr param : llvm::reverse(uses.params)) {
-    auto it = uses.defs.find(param);
-    assert(it != uses.defs.end());
-    defOps.insert(it->second.defOp);
-  }
-  // The only acceptable leaf nodes are input parameters.
-  for (auto &[param, decl] : uses.decls) {
-    if (uses.defs.find(param) != uses.defs.end())
-      continue;
-    return ErrorTree(decl.declOp->getLoc(),
-                     "unknown parameter-defining operator");
-  }
-  llvm::append_range(opsToRewrite, llvm::reverse(defOps.takeVector()));
-  llvm::append_range(opsToRewrite, uses.paramOps);
+  collectOpsToProcess(uses, opsToRewrite);
 
   // Take the use-def graph and put it into the func node itself.
   funcNode->paramGraph = std::move(uses);
@@ -1901,6 +1957,11 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
   // SymbolTable::replaceAllSymbolUses method, because it doesn't tolerate
   // unregistered operations.  It also doesn't support batch renaming.
   theModule->walk([&](Operation *op) {
+    // If this op is a ParamDeclareRegionOp, delete it. It must be fully handled
+    // at this phase.
+    if (auto regionParam = dyn_cast<ParamDeclareRegionOp>(op))
+      return regionParam.erase();
+
     // If this is a func being renamed, rename it.
     if (auto func = dyn_cast<FuncOp>(op)) {
       if (auto newName = funcsToRename.lookup(func.getNameAttr())) {

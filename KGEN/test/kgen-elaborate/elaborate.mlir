@@ -1130,63 +1130,61 @@ kgen.generator @constexpr_load_store() {
 }
 
 // -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
 
-// COM: // CHECK-LABEL: kgen.func @bind_signature_region
-// COM: kgen.generator @bind_signature_region() -> index {
-// COM:   // CHECK-NEXT: %0 = kgen.param.constant = <1>
-// COM:   kgen.param.declare.region Fn = <A>() -> index {
-// COM:     %0 = kgen.param.constant = <A>
-// COM:     kgen.return %0 : index
-// COM:   }
-// COM:   kgen.param.declare BoundFn: () -> index = <bind_signature(:<A>() -> index Fn, 1)>
-// COM:   %0 = kgen.call_param[() -> index: BoundFn]()
-// COM:   // CHECK-NEXT: kgen.return %0
-// COM:   kgen.return %0 : index
-// COM: }
+// CHECK-LABEL: kgen.func @bind_signature_region
+kgen.generator @bind_signature_region() -> index {
+  // CHECK-NEXT: %0 = kgen.param.constant = <1>
+  kgen.param.declare.region Fn = <A>() -> index {
+    %0 = kgen.param.constant = <A>
+    kgen.return %0 : index
+  }
+  kgen.param.declare BoundFn: () -> index = <bind_signature(:<A>() -> index Fn, 1)>
+  %0 = kgen.call_param[() -> index: BoundFn]()
+  // CHECK-NEXT: kgen.return %0
+  kgen.return %0 : index
+}
 
 // -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
 
-// COM: // CHECK-LABEL: kgen.func @partial_bind_signature_region
-// COM: kgen.generator @partial_bind_signature_region() -> index {
-// COM:   // CHECK-NEXT: %0 = kgen.param.constant = <1>
-// COM:   kgen.param.declare.region Fn = <A, B>() -> index {
-// COM:     %0 = kgen.param.constant = <sub(A, B)>
-// COM:     kgen.return %0 : index
-// COM:   }
-// COM:   kgen.param.declare BoundFn: <A>() -> index = <bind_signature(:<A, B>() -> index Fn, #kgen.unbound, 1)>
-// COM:   %0 = kgen.call_param[() -> index: bind_signature(:<A>() -> index BoundFn, 2)]()
-// COM:   // CHECK-NEXT: kgen.return %0
-// COM:   kgen.return %0 : index
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: kgen.func @partial_bind_signature_region_2
-// COM: kgen.generator @partial_bind_signature_region_2() -> index {
-// COM:   // CHECK-NEXT: %0 = kgen.param.constant = <3>
-// COM:   kgen.param.declare.region Fn = <A, B>() -> index {
-// COM:     %0 = kgen.param.constant = <add(A, B)>
-// COM:     kgen.return %0 : index
-// COM:   }
-// COM:   kgen.param.declare BoundFn: <B>() -> index = <bind_signature(:<A, B>() -> index Fn, 1, #kgen.unbound)>
-// COM:   %0 = kgen.call_param[() -> index: bind_signature(:<B>() -> index BoundFn, 2)]()
-// COM:   // CHECK-NEXT: kgen.return %0
-// COM:   kgen.return %0 : index
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: kgen.func @partial_bind_signature_region_3
-// COM: kgen.generator @partial_bind_signature_region_3() -> index {
-// COM:   // CHECK-NEXT: %0 = kgen.param.constant = <4>
-// COM:   kgen.param.declare.region Fn = <A, B, C>() -> index {
-// COM:     %0 = kgen.param.constant = <add(sub(B, A), C)>
-// COM:     kgen.return %0 : index
-// COM:   }
-// COM:   kgen.param.declare BoundFn: <B, C>() -> index = <bind_signature(:<A, B, C>() -> index Fn, 1, #kgen.unbound, #kgen.unbound)>
-// COM:   kgen.param.declare BoundFn2: <B>() -> index = <bind_signature(:<B, C>() -> index BoundFn, #kgen.unbound, 3)>
-// COM:   %0 = kgen.call_param[() -> index: bind_signature(:<B>() -> index BoundFn2, 2)]()
-// COM:   // CHECK-NEXT: kgen.return %0
-// COM:   kgen.return %0 : index
-// COM: }
+// CHECK-LABEL: kgen.func @partial_bind_signature_region
+kgen.generator @partial_bind_signature_region() -> index {
+  // CHECK-NEXT: %0 = kgen.param.constant = <1>
+  kgen.param.declare.region Fn = <A, B>() -> index {
+    %0 = kgen.param.constant = <sub(A, B)>
+    kgen.return %0 : index
+  }
+  kgen.param.declare BoundFn: <A>() -> index = <bind_signature(:<A, B>() -> index Fn, #kgen.unbound, 1)>
+  %0 = kgen.call_param[() -> index: bind_signature(:<A>() -> index BoundFn, 2)]()
+  // CHECK-NEXT: kgen.return %0
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @partial_bind_signature_region_2
+kgen.generator @partial_bind_signature_region_2() -> index {
+  // CHECK-NEXT: %0 = kgen.param.constant = <3>
+  kgen.param.declare.region Fn = <A, B>() -> index {
+    %0 = kgen.param.constant = <add(A, B)>
+    kgen.return %0 : index
+  }
+  kgen.param.declare BoundFn: <B>() -> index = <bind_signature(:<A, B>() -> index Fn, 1, #kgen.unbound)>
+  %0 = kgen.call_param[() -> index: bind_signature(:<B>() -> index BoundFn, 2)]()
+  // CHECK-NEXT: kgen.return %0
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @partial_bind_signature_region_3
+kgen.generator @partial_bind_signature_region_3() -> index {
+  // CHECK-NEXT: %0 = kgen.param.constant = <4>
+  kgen.param.declare.region Fn = <A, B, C>() -> index {
+   %0 = kgen.param.constant = <add(sub(B, A), C)>
+   kgen.return %0 : index
+  }
+  kgen.param.declare BoundFn: <B, C>() -> index = <bind_signature(:<A, B, C>() -> index Fn, 1, #kgen.unbound, #kgen.unbound)>
+  kgen.param.declare BoundFn2: <B>() -> index = <bind_signature(:<B, C>() -> index BoundFn, #kgen.unbound, 3)>
+  %0 = kgen.call_param[() -> index: bind_signature(:<B>() -> index BoundFn2, 2)]()
+  // CHECK-NEXT: kgen.return %0
+  kgen.return %0 : index
+}
 
 // CHECK-LABEL: kgen.func @"param_add,A=1,B=2"
 kgen.generator @param_add<A, B>() -> index {
