@@ -15,7 +15,6 @@
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 
 namespace M::KGEN {
-struct EvalContext;
 class IREvaluator;
 
 //===----------------------------------------------------------------------===//
