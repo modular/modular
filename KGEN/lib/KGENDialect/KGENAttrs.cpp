@@ -1413,21 +1413,19 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
     llvm::report_fatal_error("invalid bind_signature operator");
   resultType = *resultSigOr;
 
-  // If the actual operand is a SymbolConstantAttr operand, then we can simplify
-  // the bind_signature by folding the parameter values into it directly.
-  if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(operands.front())) {
-    bool hasUnboundParameters = symbolConstant.getParamValues().empty();
+  auto processSignatureLike = [&](auto attr, auto getFirstOperand) {
+    bool hasUnboundParameters = attr.getParamValues().empty();
     hasUnboundParameters |=
-        llvm::any_of(symbolConstant.getParamValues(), [](ParamBindAttr bind) {
+        llvm::any_of(attr.getParamValues(), [](ParamBindAttr bind) {
           return bind.getValue().isa<UnboundAttr>();
         });
     assert(hasUnboundParameters &&
            "cannot have already bound all the input parameters, because we'd "
            "end up with a nongeneric signature that would fail verification");
 
-    SignatureType signature = symbolConstant.getType();
+    SignatureType signature = attr.getType();
     SmallVector<ParamBindAttr> paramBinds;
-    if (symbolConstant.getParamValues().empty()) {
+    if (attr.getParamValues().empty()) {
       paramBinds = getBindAttrsForDeclsAndValues(signature.getInputParams(),
                                                  operands.drop_front());
     } else {
@@ -1435,9 +1433,9 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
       // so we preserve the order. Drop the first operand because it's the
       // signature itself.
       auto operandIter = operands.begin() + 1;
-      for (auto param : symbolConstant.getParamValues()) {
+      for (auto param : attr.getParamValues()) {
         // If we have this parameter already, we're good.
-        if (!param.getValue().isa<UnboundAttr>()) {
+        if (!param.getValue().template isa<UnboundAttr>()) {
           paramBinds.push_back(param);
           continue;
         }
@@ -1448,10 +1446,17 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
       assert(operandIter == operands.end() && "Didn't use all the operands?");
     }
 
-    return SymbolConstantAttr::get(
-        symbolConstant.getSymbol(),
+    return decltype(attr)::get(
+        getFirstOperand(),
         ParamBindArrayAttr::get(resultType.getContext(), paramBinds),
         cast<SignatureType>(resultType));
+  };
+
+  // If the actual operand is a SymbolConstantAttr operand, then we can simplify
+  // the bind_signature by folding the parameter values into it directly.
+  if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(operands.front())) {
+    return processSignatureLike(symbolConstant,
+                                [&]() { return symbolConstant.getSymbol(); });
   }
 
   // If the operand is an MLIR operation, substitute its parameters in its
@@ -1472,6 +1477,13 @@ static Attribute simplifyBindSignature(ArrayRef<TypedAttr> operands,
         });
     return MLIROpAttr::get(opExpr.getName(),
                            attrs.getDictionary(opExpr.getContext()), newType);
+  }
+
+  // If the operand is a RegionAttr, we can substitute the parameters into the
+  // type and return a new one.
+  if (auto region = dyn_cast<RegionAttr>(operands.front())) {
+    return processSignatureLike(region,
+                                [&]() { return region.getRegionName(); });
   }
 
   return {};
@@ -1778,6 +1790,27 @@ TypedAttr KGEN::emitMLIROperationCall(
                       SignatureType::get(ctx, operandTypes, resultType)));
   llvm::append_range(applyOperands, operands);
   return ParamOperatorAttr::get(POC::Apply, applyOperands);
+}
+
+//===----------------------------------------------------------------------===//
+// RegionAttr
+//===----------------------------------------------------------------------===//
+
+bool RegionAttr::isConstant() const { return true; }
+
+RegionAttr RegionAttr::get(ParamDeclAttr decl) {
+  assert(decl.getType().isa<SignatureType>() &&
+         "RegionAttr requires a SignatureType");
+  return RegionAttr::get(decl.getContext(), decl.getName(),
+                         ParamBindArrayAttr::get(decl.getContext(), {}),
+                         decl.getType().cast<SignatureType>());
+}
+
+RegionAttr RegionAttr::get(StringAttr name, ArrayRef<ParamBindAttr> values,
+                           SignatureType type) {
+  return RegionAttr::get(name.getContext(), name,
+                         ParamBindArrayAttr::get(name.getContext(), values),
+                         type);
 }
 
 //===----------------------------------------------------------------------===//

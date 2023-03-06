@@ -784,4 +784,32 @@ def MLIROpAttr : KGEN_ExprAttr<"MLIROp", "param.mlir_op"> {
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// KGEN_RegionAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_RegionAttr
+    : KGEN_ExprAttr<"Region", "param.region"> {
+  let summary = "region to be used as a local parameter";
+  let description = [{
+    This attribute stores the necessary attributes to allow a region to
+    participate in normal parameter resolution. A region referenced
+    by an attribute of this kind may have additional restrictions
+    based on whether or not it captures SSA values - the caller is
+    responsible for ensuring those restrictions are fulfilled.
+  }];
+  let parameters = (ins "StringAttr":$regionName,
+                        "ParamBindArrayAttr":$paramValues,
+                        AttributeSelfTypeParameter<"", "SignatureType">:$type);
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "ParamDeclAttr":$decl)>,
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
+                                        "ArrayRef<ParamBindAttr>":$paramValues,
+                                        "SignatureType":$type)>,
+  ];
+
+  let assemblyFormat = "`<` $regionName `,` $paramValues `>`";
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
