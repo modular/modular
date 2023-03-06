@@ -1812,11 +1812,6 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   // but it will also auto-rename the symbol for us in the case of conflicts.
   analysis.getTopLevelSymbolTable().insert(newFunc, generator->getIterator());
 
-  // Await for the generator in the asyncMap - otherwise it won't have the cache
-  // attrs we need.
-  if (auto err = asyncMap.await(generator))
-    return ErrorTree(generator.getLoc(), err.takeError());
-
   // Set the body on the new func with the hash rather than cloning if at all
   // possible.
   if (auto hashAttr = generator->getAttrOfType<Cache::RegionHashArrayAttr>(
@@ -1909,10 +1904,6 @@ LogicalResult ElaboratorImpl::run(ArrayRef<GeneratorOp> primaryGenerators) {
 
     funcsToRename[concreteFuncs.front().getNameAttr()] = genNode->getNameAttr();
   }
-
-  // Make sure all in-flight inflating/deflating operations and complete before
-  // erasing any operations.
-  asyncMap.awaitAll();
 
   // Trim the expansion tree and erase ops we don't need/want.
   DenseSet<Operation *> toErase;
@@ -2026,14 +2017,6 @@ LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &analysis,
   auto regionCache =
       LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>>::create(
           regionCacheBackendOr.takeValue());
-
-  // Deflate every generator in the primary module.
-  // TODO: We should be able to deflate *everything*
-  for (auto op : theModule.getOps<GeneratorOp>()) {
-    asyncMap.mapChained(op, [op, regionCache = regionCache.copy()](auto ch) {
-      return Cache::deflateOp(op, regionCache.copy(), std::move(ch));
-    });
-  }
 
   // Now, construct and run the elaborator.
   ElaboratorImpl impl(analysis, paramCache, target,
