@@ -1,4 +1,4 @@
-# RUN: kgen-translate -import-lit %s -I %S/../lit-examples/ | FileCheck %s
+# RUN: kgen-translate -verify-diagnostics -import-lit %s -I %S/../lit-examples/ | FileCheck %s
 
 # CHECK: module {
 
@@ -56,12 +56,13 @@ fn memoryPrimaryOps(a&: MemoryPrimaryPair) -> MemoryPrimaryPair:
 
   # CHECK-NEXT: %3Canonymous3E = lit.varlet.decl "<anonymous>", var = false
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%3Canonymous3E, %a)
-  a
+  a  # expected-warning {{'$expressions::MemoryPrimaryPair' value is unused}}
 
   # CHECK-NEXT: %regX = lit.varlet.decl "regX", var = false :
   # CHECK-NEXT: %4 = lit.struct.gep %a[x]
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%regX, %4)
   let regX = a.x
+
   # CHECK-NEXT: %6 = lit.struct.gep %a[x]
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%6, %regX)
   a.x = regX

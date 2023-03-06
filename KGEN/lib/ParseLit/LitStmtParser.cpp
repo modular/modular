@@ -222,7 +222,7 @@ ParseResult LitStmtParser::parseLocalScopeSuite(ssize_t curIndent) {
 /// returns a result.
 static void diagnoseIgnoredResult(const ExprNode *expr, CRValue value,
                                   LitSharedState &shared) {
-  ASTType valueType = value.getType();
+  ASTType valueType = value.getRValueType();
 
   // Return true if the specified type can be implicitly ignored.
   // TODO: Should have a better way to say that it is safe to implicily ignore a
