@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/Inlining.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENPasses.h"
@@ -11,6 +12,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "Support/HLCFDialect/HLCFOps.h"
+#include "Support/STLExtras.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/IRMapping.h"
@@ -261,33 +263,19 @@ static void propagateNewDecls(ArrayRef<ParamDeclAttr> newDecls,
   }
 }
 
-static LogicalResult inlineGeneratorCall(
-    GeneratorOp gen, const SymbolTable &symtab,
+LogicalResult KGEN::inlineGeneratorCall(
+    KGENCallOpInterface topCall, ParameterUseDefGraph &topLevelGraph,
     ParameterCollector::Analysis &paramCache,
     function_ref<ParameterUseDefGraph &(ParameterCollector::Analysis &,
                                         GeneratorOp)>
-        getGraph) {
-  TimeTraceScope<> traceScope("inline-generator-call",
-                              [&] { return gen.getSymName().str(); });
+        getGraph,
+    function_ref<GeneratorOp(KGENCallOpInterface)> lookupCallee) {
 
   // Collect all calls that inline in this function.
   struct EndStack {};
-  SmallVector<SmartVariant<Operation *, EndStack>> calls;
-  gen.walk([&](CallOp call) {
-    auto callee = symtab.lookup<GeneratorOp>(
-        cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
-    if (callee && callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
-      calls.emplace_back(call);
-  });
-
-  // Exit early if there is nothing to inline.
-  if (calls.empty())
-    return success();
-
-  // Compute the parameter uses from the top-level. This is only computed once
-  // per top-level generator.
-  ParameterUseDefGraph topLevelGraph(gen.getBodyRegion());
-  topLevelGraph.calculate(paramCache);
+  SmallVector<SmartVariant<KGENCallOpInterface, EndStack>> calls = {topCall};
+  StringAttr topScopeName =
+      topCall->getParentOfType<mlir::SymbolOpInterface>().getNameAttr();
 
   // A cache of attributes that have no references inside them. This is used by
   // the attribute mangler.
@@ -300,27 +288,29 @@ static LogicalResult inlineGeneratorCall(
       seenFuncs;
   unsigned labelCounter = 0;
   while (!calls.empty()) {
-    SmartVariant<Operation *, EndStack> next = calls.pop_back_val();
+    SmartVariant<KGENCallOpInterface, EndStack> next = calls.pop_back_val();
     if (isa<EndStack>(next)) {
       callstack.pop_back();
       seenFuncs.pop_back();
       continue;
     }
-    auto call = cast<CallOp>(cast<Operation *>(next));
-    StringAttr calleeName =
-        cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr();
+    auto call = cast<KGENCallOpInterface>(next);
+    GeneratorOp callee = lookupCallee(call);
+    // If the lookup returns nothing, then we end the inlining.
+    if (!callee) {
+      callstack.push_back(call.getLoc());
+      calls.emplace_back(EndStack{});
+      continue;
+    }
 
+    assert(callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled);
     TimeTraceScope<> traceScope("callee",
-                                [&] { return calleeName.getValue().str(); });
-
-    auto callee = symtab.lookup<GeneratorOp>(calleeName);
-    assert(callee &&
-           callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled);
+                                [&] { return callee.getSymName().str(); });
 
     // If we recursed onto the same function, give up and emit an error.
     if (!seenFuncs.insert(callee)) {
       InFlightDiagnostic diag = mlir::emitError(
-          gen.getLoc(),
+          callee.getLoc(),
           "function has recursive call to 'always_inline' function");
       assert(callstack.size() == seenFuncs.size());
       for (auto [callLoc, gen] : llvm::zip(callstack, seenFuncs)) {
@@ -338,15 +328,15 @@ static LogicalResult inlineGeneratorCall(
     // Compute the parameter uses at the callee.
     const ParameterUseDefGraph &calleeParams = getGraph(paramCache, callee);
     // Get the parameters in-scope at the callsite.
-    auto [nearestDecl, scopeRegion] = getNearestDeclAndRegion(call);
+    auto [_, scopeRegion] = getNearestDeclAndRegion(call);
     ParameterUseDefGraph &callScope =
-        nearestDecl == gen
+        scopeRegion == topLevelGraph.scope
             ? topLevelGraph
             : topLevelGraph.nestedScopes.find(scopeRegion)->second;
 
     mlir::IRRewriter b{OpBuilder(call)};
     StringAttr label =
-        b.getStringAttr(gen.getSymName() + "_param_inlined_cf_" +
+        b.getStringAttr(topScopeName.getValue() + "_param_inlined_cf_" +
                         callee.getSymName() + "_" + Twine(labelCounter++));
     auto scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
                                         ValueRange(), label);
@@ -365,7 +355,7 @@ static LogicalResult inlineGeneratorCall(
       }
     }
     SmallVector<Value> argVals =
-        rebindValues(b, call.getLoc(), call.getOperands(), argTypes);
+        rebindValues(b, call.getLoc(), call->getOperands(), argTypes);
 
     // Materialize any constraints on the callee as asserts.
     for (ConstraintAttr constraint : callee.getConstraints()) {
@@ -477,9 +467,8 @@ static LogicalResult inlineGeneratorCall(
       }
 
       // Check for a call to recursively inline.
-      if (auto call = dyn_cast<CallOp>(op)) {
-        auto callee = symtab.lookup<GeneratorOp>(
-            cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
+      if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
+        auto callee = lookupCallee(call);
         if (callee &&
             callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
           calls.emplace_back(call);
@@ -574,7 +563,34 @@ void AlwaysInlineParametricPass::runOnOperation() {
   }
   auto workFunc = [&symtab, &getGraph, &paramCache](GeneratorOp gen) mutable {
     ParameterCollector::Analysis cache = paramCache;
-    return inlineGeneratorCall(gen, symtab, cache, getGraph);
+    auto lookupCallee = [&](KGENCallOpInterface call) -> GeneratorOp {
+      if (auto concreteCall = dyn_cast<CallOp>(call.getOperation()))
+        return symtab.lookup<GeneratorOp>(
+            cast<FlatSymbolRefAttr>(concreteCall.getCallee().getSymbol())
+                .getAttr());
+      // Only handles concrete CallOps, not CallParam ops.
+      return nullptr;
+    };
+
+    // Compute the use-def graph for this generator.
+    ParameterUseDefGraph &useDefGraph = getGraph(cache, gen);
+
+    // Walk all the calls in this generator and do the inlining if needed.
+    WalkResult callWalk = gen.walk([&](CallOp call) {
+      auto callee = symtab.lookup<GeneratorOp>(
+          cast<FlatSymbolRefAttr>(call.getCallee().getSymbol()).getAttr());
+      // If the callee doesn't exist, or it's not marked always_inline, move on.
+      if (!(callee &&
+            callee.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled))
+        return WalkResult::advance();
+
+      return WalkResult(inlineGeneratorCall(call, useDefGraph, cache, getGraph,
+                                            lookupCallee));
+    });
+    if (callWalk.wasInterrupted())
+      return failure();
+
+    return mlir::success();
   };
   if (failed(mlir::failableParallelForEach(&getContext(), rootGens, workFunc)))
     return signalPassFailure();
@@ -609,7 +625,7 @@ static LogicalResult inlineFunctionCall(FuncOp func,
       calls.emplace_back(call);
   });
 
-  // Process them. Keep a callstack for a nice error when cycles are detected.
+  // Keep a callstack for a nice error when cycles are detected.
   SmallVector<Location, 16> callstack;
   llvm::SetVector<Operation *, SmallVector<Operation *, 16>,
                   SmallPtrSet<Operation *, 16>>

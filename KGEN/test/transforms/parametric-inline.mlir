@@ -748,16 +748,6 @@ kgen.generator @pass_it() always_inline {
 
 // CHECK-LABEL: kgen.generator @main
 kgen.generator @main() {
-  // CHECK: kgen.param.declare.region id0
-  // CHECK: kgen.param.declare func0: () -> () = <id0>
-  // CHECK: kgen.param.declare.region func_wrapper0 = () {
-    // CHECK: kgen.param.declare.region nested_func = <idx>() {
-      // CHECK: kgen.call_param[() -> (): func0]
-    // CHECK: kgen.param.declare func1: <idx>() -> () = <nested_func>
-    // CHECK: kgen.param.constant: <idx>() -> () = <func1>
-  // CHECK: kgen.call_param[() -> (): func_wrapper0]
-  kgen.call @pass_it() : () -> ()
-
   // CHECK: kgen.param.declare.region id
   // CHECK: kgen.param.declare func: () -> () = <id>
   // CHECK: kgen.param.declare.region func_wrapper = () {
@@ -766,6 +756,16 @@ kgen.generator @main() {
     // CHECK: kgen.param.declare func0: <idx>() -> () = <nested_func>
     // CHECK: kgen.param.constant: <idx>() -> () = <func0>
   // CHECK: kgen.call_param[() -> (): func_wrapper]
+  kgen.call @pass_it() : () -> ()
+
+  // CHECK: kgen.param.declare.region id0
+  // CHECK: kgen.param.declare func0: () -> () = <id0>
+  // CHECK: kgen.param.declare.region func_wrapper0 = () {
+    // CHECK: kgen.param.declare.region nested_func = <idx>() {
+      // CHECK: kgen.call_param[() -> (): func0]
+    // CHECK: kgen.param.declare func1: <idx>() -> () = <nested_func>
+    // CHECK: kgen.param.constant: <idx>() -> () = <func1>
+  // CHECK: kgen.call_param[() -> (): func_wrapper0]
   kgen.call @pass_it() : () -> ()
   kgen.return
 }

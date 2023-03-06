@@ -62,6 +62,11 @@ public:
   /// Return true if there are no remappings installed.
   bool empty() const { return paramValues.empty(); }
 
+  /// Clear out the cache of rewritten attrs and types. This is needed because
+  /// parameters can be redefined, and the rewritten attr/type may no longer be
+  /// valid.
+  void clearCache() { rewritten.clear(); }
+
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
   void setParameterValue(StringAttr name, Attribute value) {
