@@ -70,7 +70,7 @@ static Attribute parseMLIRAttrFromString(StringRef name, SMLoc loc,
   return result;
 }
 
-/// This implements __mlir_attr.x lookup, synthesizing a MAValue for the
+/// This implements __mlir_attr.x lookup, synthesizing a PRValue for the
 /// attribute on demand.
 static PRValue synthesizeMLIRAttrFromString(StringRef name, SMLoc loc,
                                             LitSharedState &shared) {
@@ -117,8 +117,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
       indexExpr = cast<UnaryOpNode>(indexExpr)->subExpr;
     }
 
-    auto indexVal =
-        emitter.emitExprPRValue(indexExpr, ASTType(), " in MLIR magic");
+    auto indexVal = emitter.emitExprPRValue(indexExpr, EC_MLIRMagic);
     if (!indexVal)
       return "";
 
@@ -168,7 +167,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
   auto getAttrFromExpr = [&](StringRef name, ExprNode *node) -> Attribute {
     // Special case handling of __mlir_attr.`xxx` directly in this parser,
     // because we want to be able to install arbitrary attributes into an
-    // operation's attribute list, and emitMAValue only supports TypedAttrs.
+    // operation's attribute list, and emitPRValue only supports TypedAttrs.
     if (auto attrRef = dyn_cast<AttributeRefNode>(node)) {
       auto mlirAttr = dyn_cast<DeclRefNode>(attrRef->base);
       if (mlirAttr && mlirAttr->spelling == "__mlir_attr")
@@ -189,17 +188,14 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
       }
     }
 
-    // Otherwise emit the value as an MAValue.  This allows references to
-    // parameter expressions.
-    PRValue value = emitter.emitExprPRValue(
-        node, ASTType(), " in value for '" + Twine(name) + "' attribute");
-    return value.get();
+    // Otherwise emit the value as an PRValue.
+    return emitter.emitExprPRValue(node, EC_MLIRMagic);
   };
 
   SmallVector<NamedAttribute> attrValues;
 
   // Each element of the subscript must have a name identifier and a value as an
-  // MAValue.
+  // PRValue.
   for (auto *subscriptIdx : subscript.indices) {
     auto *slice = dyn_cast<SliceNode>(subscriptIdx);
     if (!slice || slice->colon2Loc.isValid() || !slice->lower ||
@@ -776,9 +772,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return emitter.emitResult(PRValue(extractVal), this, dest);
     }
 
-    // Otherwise, it must be an rvalue.
-    // TODO(memory_primary): Handle memory-only rvalues by gep'ing into them.
-    SRValue baseRV = emitter.emitSRValue({baseVal, base});
+    // Otherwise, it must be an CRValue or SRValue.
+    SRValue baseRV = emitter.emitSRValue({baseVal, base}, EC_AttributeRefBase);
     if (!baseRV)
       return {};
 
@@ -826,7 +821,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       value = emitter.emitExprLValue(call.getLoc(), operand,
                                      "((())) operand must be an lvalue");
     else
-      value = emitter.emitExprSRValue(operand);
+      value = emitter.emitExprSRValue(operand, EC_MLIRMagic);
     if (!value)
       return {};
     opOperands.push_back(value);
@@ -972,7 +967,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
     if (auto attr = dyn_cast<TypedAttr>(cast<Attribute>(folded))) {
       assert(attr.getType() == resultOp->getResult(0).getType());
-      // If it is a constant, make an MAValue result.
+      // If it is a constant, make an PRValue result.
       resultOp->erase();
       return PRValue(attr);
     }
@@ -1075,8 +1070,7 @@ static PRValue substituteParametersIntoUserDefinedType(
   for (ExprNode *indexExpr : subscript.indices) {
     // TODO: Slice syntax is the obvious way to support named parameter
     // arguments.
-    auto indexVal =
-        emitter.emitExprPRValue(indexExpr, ASTType(), " in type parameter");
+    auto indexVal = emitter.emitExprPRValue(indexExpr, EC_TypeParamValue);
     if (!indexVal)
       return {};
     paramBindings.add(indexExpr, indexVal.get());
@@ -1129,7 +1123,7 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
         paramType = ASTType();
     }
 
-    auto val = emitter.emitExprPRValue(idx, paramType, " in parameter binding");
+    auto val = emitter.emitExprPRValue(idx, EC_CallParamValue, paramType);
     if (!val)
       return {};
 
@@ -1171,8 +1165,8 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         return {};
       }
       for (auto [idx, type] : llvm::zip(indices, sig.getInputParams())) {
-        bindOperands.push_back(emitter.emitExprPRValue(
-            idx, type.getType(), " in call parameter binding"));
+        bindOperands.push_back(
+            emitter.emitExprPRValue(idx, EC_CallParamValue, type.getType()));
         if (!bindOperands.back())
           return {};
       }
@@ -1484,25 +1478,17 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
       // field in the aggregate.
       auto fieldPtr = emitter.builder->create<StructGEPOp>(
           getLocation(emitter), memoryPrimaryBase, field);
-      fieldDest = LValue(fieldPtr);
+      fieldDest = ValueDest(LValue(fieldPtr), EC_FieldInitValue);
+    } else {
+      // For register values, make sure we convert to the right dest field type.
+      fieldDest = ValueDest(paramEvaluator.getReboundType(field.getType()),
+                            EC_FieldInitValue);
     }
 
     auto value = emitter.emitExprRValue(valueExpr, fieldDest);
     if (!value) {
       fieldDest.resetForError();
       return {};
-    }
-
-    // If we haven't already due to a ValueDest, convert to the expected type.
-    // TODO: Unify inferred type conversions into ValueDest.
-    if (!memoryPrimaryBase) {
-      auto fieldType = paramEvaluator.getReboundType(field.getType());
-      auto converted = emitter.getAsExpectedType({value, valueExpr}, fieldType,
-                                                 ValueDest::none(),
-                                                 " in field initialization");
-      value = emitter.emitRValue({converted, valueExpr}, ValueDest::none());
-      if (!value)
-        return {};
     }
 
     // Keep track of whether everything is a PRValue.
@@ -1544,7 +1530,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
     }
 
     // If the any initializers required emitting a load sequence, emit the rest
-    auto srValue = emitter.emitSRValue(fieldVal);
+    auto srValue = emitter.emitSRValue(fieldVal, EC_FieldInitValue);
     if (!srValue)
       return {};
     fieldNames.push_back(field.getNameAttr());
@@ -1734,7 +1720,7 @@ AnyValue BinOpNode::emitAssign(ValueDest &dest, ExprEmitter &emitter) const {
   // In an assignment, we emit the RHS into the LHS as its context.  This is
   // required to enable the 'implicit declaration' behavior in a def and to
   // support patterns.
-  ValueDest assignDest(lhs);
+  ValueDest assignDest(lhs, EC_Assignment);
   RValue rhsRep = emitter.emitExprRValue(rhs, assignDest);
   if (!rhsRep) {
     assignDest.resetForError();
@@ -1820,9 +1806,10 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit the LHS value and capture the result of calling __bool__ in case we
   // need it.
   AnyValue lhsBool;
-  SRValue lhsRV = emitter.emitExprSRValue(lhs);
+  SRValue lhsRV = emitter.emitExprSRValue(lhs, EC_OperatorOperandValue);
   RValue lhsI1Value = emitter.emitConditionValueAsI1({lhsRV, lhs}, lhsBool);
-  Value lhsI1SRValue = emitter.emitSRValue({AnyValue(lhsI1Value), lhs});
+  Value lhsI1SRValue =
+      emitter.emitSRValue({AnyValue(lhsI1Value), lhs}, EC_BoolCondition);
   if (!lhsI1SRValue)
     return {};
 
@@ -1837,7 +1824,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
     std::swap(trueBuilder, falseBuilder);
 
   emitter.builder = trueBuilder;
-  SRValue rhsRV = emitter.emitExprSRValue(rhs);
+  SRValue rhsRV = emitter.emitExprSRValue(rhs, EC_BoolCondition);
   if (!rhsRV)
     return {};
 
@@ -1862,13 +1849,13 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
           << rhs->getRange();
       return {};
     }
-    auto rhsBoolDRVal = emitter.emitSRValue({rhsBool, rhs});
+    auto rhsBoolDRVal = emitter.emitSRValue({rhsBool, rhs}, EC_BoolCondition);
     if (!rhsBoolDRVal)
       return {};
     emitter.builder->create<HLCF::YieldOp>(ifLoc, rhsBoolDRVal);
     // Emit the false side.
     emitter.builder = falseBuilder;
-    auto lhsBoolDRVal = emitter.emitSRValue({lhsBool, lhs});
+    auto lhsBoolDRVal = emitter.emitSRValue({lhsBool, lhs}, EC_BoolCondition);
     if (!lhsBoolDRVal)
       return {};
     emitter.builder->create<HLCF::YieldOp>(ifLoc, lhsBoolDRVal);
@@ -1937,7 +1924,8 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
 AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   RValue condRVal = emitter.emitExprConditionValueAsI1(condExpr);
-  Value condValue = emitter.emitSRValue({AnyValue(condRVal), condExpr});
+  Value condValue =
+      emitter.emitSRValue({AnyValue(condRVal), condExpr}, EC_BoolCondition);
 
   if (!condValue)
     return {};
@@ -1959,12 +1947,12 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   emitter.builder->createBlock(&ifOp.getElseRegion());
 
   emitter.builder = ifOp.getThenBodyBuilder();
-  SRValue trueVal = emitter.emitExprSRValue(trueExpr);
+  SRValue trueVal = emitter.emitExprSRValue(trueExpr, EC_BoolCondition);
   if (!trueVal)
     return {};
   emitter.builder->create<HLCF::YieldOp>(ifLoc, trueVal);
   emitter.builder = ifOp.getElseBodyBuilder();
-  SRValue falseVal = emitter.emitExprSRValue(falseExpr);
+  SRValue falseVal = emitter.emitExprSRValue(falseExpr, EC_BoolCondition);
   if (!falseVal)
     return {};
   emitter.builder->create<HLCF::YieldOp>(ifLoc, falseVal);
@@ -2005,19 +1993,21 @@ AnyValue ChainedCmpOpNode::emitNextCmp(ExprEmitter &emitter, size_t opIdx,
   RValue lastCmpI1Value =
       emitter.emitConditionValueAsI1({lastCmpExpr, this}, boolResult);
   SRValue lastCmpI1RValue =
-      emitter.emitSRValue({AnyValue(lastCmpI1Value), this});
+      emitter.emitSRValue({AnyValue(lastCmpI1Value), this}, EC_BoolCondition);
   if (!lastCmpI1RValue)
     return {};
   auto ifOp = emitter.builder->create<HLCF::IfOp>(
       ifLoc, boolResult.getType().mlirType, lastCmpI1RValue);
   emitter.builder->createBlock(&ifOp.getThenRegion());
-  SRValue exprValue = emitter.emitExprSRValue(exprs[opIdx + 1]);
+  SRValue exprValue =
+      emitter.emitExprSRValue(exprs[opIdx + 1], EC_OperatorOperandValue);
   if (!exprValue)
     return {};
   AnyValue lastBinOp =
       emitBinOpCall({lastExpr, exprs[opIdx]}, {exprValue, exprs[opIdx + 1]},
                     ops[opIdx], ValueDest::none(), this, emitter);
-  SRValue lastRV = emitter.emitSRValue({lastBinOp, exprs[opIdx + 1]});
+  SRValue lastRV =
+      emitter.emitSRValue({lastBinOp, exprs[opIdx + 1]}, EC_BoolCondition);
   if (!lastRV)
     return {};
 
@@ -2047,8 +2037,10 @@ AnyValue ChainedCmpOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (exprs.size() == 2)
     return cmpe0e1RV;
 
-  SRValue lastCmpExpr = emitter.emitSRValue({cmpe0e1RV, exprs[1]});
-  SRValue e1RV = emitter.emitSRValue(ASTExprAnd<RValue>{e1Rep, exprs[1]});
+  SRValue lastCmpExpr =
+      emitter.emitSRValue({cmpe0e1RV, exprs[1]}, EC_BoolCondition);
+  SRValue e1RV =
+      emitter.emitSRValue({e1Rep, exprs[1]}, EC_OperatorOperandValue);
   if (!lastCmpExpr || !e1RV)
     return {};
   return emitter.emitResult(emitNextCmp(emitter, 1, lastCmpExpr, e1RV), this,

@@ -22,13 +22,41 @@ enum class CallSyntax : uint8_t;
 class ExprEmitter;
 class VarLetDeclOp;
 
+/// This enum is used to pass down a bit of context information to make
+/// diagnostics more specific.  Each comment gives an example where the
+/// expression is named "x".
+enum ExprContext {
+  EC_Silent, // Do not emit a diagnostic at all.
+
+  EC_VarInit,               // var thing = x
+  EC_LetInit,               // let thing = x
+  EC_Assignment,            // y = x
+  EC_Type,                  // var v : x         (and many other places)
+  EC_AttributeRefBase,      // x.field
+  EC_AliasValue,            // alias something = x
+  EC_CallArgValue,          // foo(x)
+  EC_CallCalleeValue,       // x()
+  EC_TypeParamValue,        // Vector[x]
+  EC_CallParamValue,        // f[x]()
+  EC_OperatorOperandValue,  // x + y
+  EC_FieldInitValue,        // SomeType{value: x}
+  EC_DefaultArgument,       // def f(arg = x):
+  EC_BoolCondition,         // if x  /  while x  /  x and y  /  a if x else b
+  EC_ForIterator,           // for x internal details
+  EC_RaiseValue,            // raise x
+  EC_ReturnResultParamList, // return[x] y
+  EC_ReturnValue,           // return x;
+  EC_MLIRMagic,             // __mlir_type[x] / __mlir_attr[x]
+};
+const char *getContextMessage(ExprContext context);
+
 /// This class represents the destination context than an expression is being
 /// emitted, when it may produce an RValue.  Example destinations include:
 ///   - an LValue:
 ///       This handles cases like `a.b = 42` or `var x: Int = 42`, as well as
 ///       a return slot with memory-primary results in `return x()`.  In this
 ///       case, the emitted expression must conform to type of the LValue.
-///   - an untyped var decl, e.g. `var x = 42`
+///   - an untyped let/var decl, e.g. `var x = 42`
 ///       In this case, the ExprNode conforms to the initializer expression.
 ///   - an ExprNode:
 ///       This handles assignments to "targets" (Python nomenclature), e.g.:
@@ -36,21 +64,33 @@ class VarLetDeclOp;
 ///          2) an implicitly declared var decl, e.g. `x = 42` in a def.
 ///          3) tuples and lists thereof, e.g. `(a, _) = foo()`
 ///       In this case, the ExprNode type often conforms to the expression.
+///   - an RValue type:
+///       This indicates that the result may be treated in any way (e.g. dumping
+///       into a temporary memory location as an MRValue or returned in an SSA
+///       register as an SRValue) but needs to have the specified RValue type.
 ///
 /// Any expression may also have no proscribed result (as in the case of
-/// `someExpr()`), in which case emission will create storage when needed on
-/// demand.
+/// `someExpr()` with an ignored result), in which case emission will create
+/// storage when needed on demand.
 class ValueDest {
 public:
   /*implicit*/
-  ValueDest(const ExprNode *target = nullptr) : representation(target) {}
-  ValueDest(LValue dest) : representation(dest) {}
-  ValueDest(VarLetDeclOp dest); // Infer type from init expression.
-  ValueDest(ValueDest &&rhs) : representation(rhs.representation) {
+  ValueDest() {}
+  ValueDest(const ExprNode *target, ExprContext context)
+      : representation(target), context(context) {}
+  ValueDest(LValue dest, ExprContext context)
+      : representation(dest), context(context) {}
+  ValueDest(VarLetDeclOp dest,
+            ExprContext context); // Infer type from init expression.
+  ValueDest(ASTType requiredType, ExprContext context)
+      : representation(requiredType), context(context) {}
+  ValueDest(ValueDest &&rhs)
+      : representation(rhs.representation), context(rhs.context) {
     rhs.resetForError();
   }
   ValueDest &operator=(ValueDest &&rhs) {
     representation = rhs.representation;
+    context = rhs.context;
     rhs.resetForError();
     return *this;
   }
@@ -69,6 +109,10 @@ public:
   ~ValueDest() {
     assert(!isSpecified() && "ValueDest destroyed without being emitted into");
   }
+
+  /// This returns the context the expression is getting emitted into (for
+  /// diagnostic QoI purposes).
+  ExprContext getContext() const { return context; }
 
   /// Return true if there is a specification for this destination.  If not,
   /// an expression will be emitted to generate a PRValue, SRValue, LValue, etc.
@@ -94,7 +138,8 @@ public:
 private:
   //  This should only be accessed by ExprEmitter::emitResult.
   friend class ExprEmitter;
-  PointerUnion<LValue, const ExprNode *, Operation *> representation;
+  PointerUnion<LValue, const ExprNode *, Operation *, ASTType> representation;
+  ExprContext context;
 };
 
 /// This class is the main driver for expression emission, providing helper
@@ -125,12 +170,21 @@ public:
 
   /// This helper emits the specified value as an RValue.
   RValue emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
+  RValue emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                    ASTType resultType);
   CRValue emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
 
   /// This helper emits the specified value as a SRValue which has an SSA
   /// value representation, materializing PRValues and loading LValues as
-  /// needed.  This returns null if emission fails.
-  SRValue emitSRValue(ASTExprAnd<AnyValue> value);
+  /// needed.  This returns null if emission fails, and should never be used
+  /// with values that are memory-primary.
+  SRValue emitSRValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                      ASTType resultType = {});
+
+  /// This helper emits the specified value as a PRValue. This returns null if
+  /// emission fails.
+  PRValue emitPRValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                      ASTType resultType = {});
 
   //===--------------------------------------------------------------------===//
   // Function Calls
@@ -168,18 +222,6 @@ public:
   bool canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
                                   ASTType requiredType);
 
-  /// Convert the specified value to the expected type, invoking implicit
-  /// conversions if necessary.  On error, this diagnoses it and returns null.
-  AnyValue getAsExpectedType(ASTExprAnd<AnyValue> value, ASTType expectedType,
-                             ValueDest &dest, const Twine &errorSuffix);
-
-  /// Convert the specified value to the expected type, invoking implicit
-  /// conversions if necessary.  On error, this invokes the specified closure to
-  /// diagnose the problem and returns null.
-  AnyValue getAsExpectedType(ASTExprAnd<AnyValue> value, ASTType expectedType,
-                             ValueDest &dest,
-                             std::function<void()> errorHandler);
-
   /// Emit the specified expression as a condition, converting it to an MLIR I1
   /// value that we can test directly, and also returning the intermediate
   /// result of calling `__bool__` (which is typically a Bool or object type,
@@ -204,15 +246,16 @@ public:
   /// This helper emits the specified value rep as an SRValue, materializing
   /// it as an operation if it is a parameter.  This returns null if emission
   /// fails.
-  SRValue emitExprSRValue(const ExprNode *node);
+  SRValue emitExprSRValue(const ExprNode *node, ExprContext context,
+                          ASTType resultType = {});
 
   /// This helper emits the specified expression as a meta value, and optionally
   /// converts the result to a specified expected type.  This emits an error if
   /// the expression cannot be emitted, if it cannot be converted to the
   /// expected type, or if it isn't a valid runtime value.  This returns null if
   /// emission fails.
-  PRValue emitExprPRValue(const ExprNode *node, ASTType resultType,
-                          const Twine &errorSuffix);
+  PRValue emitExprPRValue(const ExprNode *node, ExprContext context,
+                          ASTType resultType = {});
 
   /// Emit the specified expression as an LValue which can be loaded and stored.
   /// If contextualType is non-null, then an implicitly declared LValue will be

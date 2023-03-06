@@ -25,11 +25,58 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+const char *LIT::getContextMessage(ExprContext context) {
+  switch (context) {
+  case EC_Silent:
+    return "";
+
+  case EC_VarInit:
+    return " in 'var' initializer";
+  case EC_LetInit:
+    return " in 'let' initializer";
+  case EC_Assignment:
+    return " in assignment";
+  case EC_Type:
+    return " in type specification";
+  case EC_AttributeRefBase:
+    return " in attribute base value";
+  case EC_AliasValue:
+    return " in alias value";
+  case EC_CallArgValue:
+    return " in call argument";
+  case EC_CallCalleeValue:
+    return " in callee";
+  case EC_TypeParamValue:
+    return " in type parameter";
+  case EC_CallParamValue:
+    return " in call parameter";
+  case EC_OperatorOperandValue:
+    return " in operator argument";
+  case EC_FieldInitValue:
+    return " in field initializer";
+  case EC_DefaultArgument:
+    return " in default argument";
+  case EC_BoolCondition:
+    return " in boolean condition";
+  case EC_ForIterator:
+    return " in for iterator expression";
+  case EC_RaiseValue:
+    return " in raised value";
+  case EC_ReturnResultParamList:
+    return " in return parameter";
+  case EC_ReturnValue:
+    return " in return value";
+  case EC_MLIRMagic:
+    return " in MLIR magic";
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // ValueDest implementation
 //===----------------------------------------------------------------------===//
 
-ValueDest::ValueDest(VarLetDeclOp dest) : representation(dest.getOperation()) {}
+ValueDest::ValueDest(VarLetDeclOp dest, ExprContext context)
+    : representation(dest.getOperation()), context(context) {}
 
 /// If this value destination has a known type, e.g. "var x : Int = 42" or
 /// "x = 42", return it.  If not (e.g. _ = 42) then return null.
@@ -41,9 +88,12 @@ ASTType ValueDest::getTypeIfKnown() const {
   if (LValue lvalue = dyn_cast<LValue>(representation))
     return lvalue.getRValueType();
 
+  // If we just have a contextual type, return it.
+  if (ASTType type = dyn_cast<ASTType>(representation))
+    return type;
+
   // TODO: Infer from expression target like:
-  //   var x : FunctionType
-  //   x = overloadedFn
+  //   var x : FunctionType; x = overloadedFn
 
   // Can't infer from an Operation*, since it is inferring from the initializer.
   return {};
@@ -58,7 +108,7 @@ ASTType ValueDest::getTypeIfKnown() const {
 LValue ValueDest::takeLValueForResult(SMLoc loc, ASTType resultType,
                                       ExprEmitter &emitter) {
   // If we have an lvalue already specified, return it.
-  if (LValue lvalue = dyn_cast<LValue>(representation)) {
+  if (LValue lvalue = dyn_cast_or_null<LValue>(representation)) {
     representation = nullptr; // Consumed!
     return lvalue;
   }
@@ -85,12 +135,21 @@ LValue ValueDest::takeLValueForResult(SMLoc loc, ASTType resultType,
   // Finally, if no destination specifies otherwise, we synthesize a new LValue
   // on demand.
   if (!emitter.builder) {
+    representation = nullptr; // Consumed!
     emitter.emitError(
         loc, "cannot synthesize lvalue in parameter expression context");
     return {};
   }
 
-  Type declIRType = POP::PointerType::get(resultType);
+  // If we're generating a memory location, use a required type if present or
+  // the value type if not. TODO(autopromotion).
+  ASTType slotType = resultType;
+  if (auto requiredType = dyn_cast_or_null<ASTType>(representation)) {
+    slotType = requiredType;
+    representation = nullptr; // Consumed!
+  }
+
+  Type declIRType = POP::PointerType::get(slotType);
   auto nameAttr = StringAttr::get(emitter.getContext(), "<anonymous>");
   // We model this as an immutable let value with a separately stored
   // initializer.  We return an LValue for it because this method is used for
@@ -102,6 +161,15 @@ LValue ValueDest::takeLValueForResult(SMLoc loc, ASTType resultType,
 //===----------------------------------------------------------------------===//
 // ExprEmitter implementation
 //===----------------------------------------------------------------------===//
+
+RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                               ASTType resultType) {
+  ValueDest dest(resultType, context);
+  if (auto result = emitRValue(value, dest))
+    return result;
+  dest.resetForError();
+  return {};
+}
 
 /// This helper emits the specified value rep as an SSA value, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
@@ -173,15 +241,21 @@ CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   return value.ir.getIfCRValue();
 }
 
-SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value) {
-  // If the value is an lvalue, convert it to an rvalue.
-  value.ir =
-      emitCRValue(value, /*SRValue never needs a dest*/ ValueDest::none());
-
-  if (!value)
+/// This helper emits the specified value as a SRValue which has an SSA
+/// value representation, materializing PRValues and loading LValues as
+/// needed.  This returns null if emission fails, and should never be used with
+/// values that are memory-primary.
+SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value,
+                                 ExprContext context, ASTType resultType) {
+  // Emit using resultType if present, and eliminate LValue/ORValue's.
+  ValueDest dest(resultType, context);
+  value.ir = emitCRValue(value, dest);
+  if (!value) {
+    dest.resetForError();
     return {};
+  }
 
-  // If this is already an SRValue, emit this.
+  // If this is already an SRValue, return it.
   if (auto rvalue = value.ir.getIfSRValue())
     return rvalue;
 
@@ -192,9 +266,8 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value) {
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
   if (!builder) {
-    emitError(value.expr->getLoc(),
-              "cannot use a dynamic value in a parameter context")
-        << value.expr->getRange();
+    emitError(value.expr->getLoc(), "cannot use a dynamic value")
+        << getContextMessage(context) << value.expr->getRange();
     return {};
   }
 
@@ -259,12 +332,86 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value) {
   return SRValue(builder->create<ParamConstantOp>(location, attr));
 }
 
+/// This helper emits the specified expression as a parameter value, diagnosing
+/// the problem if the expression is only valid as a runtime value.  This
+/// returns null if emission fails.
+PRValue ExprEmitter::emitPRValue(ASTExprAnd<AnyValue> value,
+                                 ExprContext context, ASTType resultType) {
+  if (!value)
+    return {};
+
+  // Clear the builder to indicate that an PRValue must be emitted.
+  llvm::SaveAndRestore savedBuilder(builder);
+  builder.reset();
+
+  // If there is a result type, coerce before checking for PRValue.
+  if (resultType) {
+    value.ir = emitRValue(value, context, resultType);
+    if (!value)
+      return {};
+  }
+
+  // If this is a parameter, return it.
+  if (auto result = value.ir.getIfPRValue())
+    return result;
+
+  // Otherwise diagnose this as "not a parameter".
+  emitError(value.expr->getLoc(), "cannot use a dynamic value")
+      << getContextMessage(context);
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // emitResult(ValueDest) Implementation
 //===----------------------------------------------------------------------===//
 
+/// Emit a conversion from the specified value to the specified destination
+/// type, plopping the value into the designated value destination.  We know the
+/// types mismatch so the conversion must be emitted.
+static AnyValue emitConversionTo(CRValue value, const ExprNode *expr,
+                                 ASTType expectedType, ValueDest &dest,
+                                 ExprEmitter &emitter) {
+
+  auto errorHandler = [&]() {
+    if (dest.getContext() == EC_Silent ||
+        isa<TypeCheckErrorType>(value.getType().mlirType) ||
+        isa<TypeCheckErrorType>(expectedType.mlirType))
+      return;
+
+    auto diag = emitter.emitError(expr->getLoc())
+                << value.getType() << " value cannot be converted to "
+                << expectedType << getContextMessage(dest.getContext())
+                << expr->getRange();
+  };
+
+  // Check to see if we can invoke an __new__ method to convert it.
+  OverloadSet callee(expectedType, "__new__", expr,
+                     CallSyntax::kImplicitConvert, emitter.shared,
+                     errorHandler);
+  if (callee.isNull())
+    return {};
+
+  // If we have at least one candidate, we check to see if any of them can
+  // work. We disable implicit conversions though, to prevent converting
+  // T -> S -> U in one step.
+  if (failed(callee.filterOverloadSet({{value, expr}},
+                                      /*allowImplicitConversions=*/false,
+                                      /*emitDiagnosticOnFailure=*/false,
+                                      emitter))) {
+    errorHandler();
+    return {};
+  }
+
+  // Ok, cool we know it will succeed; do it.
+  return callee.emitCall({{value, expr}}, dest, emitter);
+}
+
 /// Emit the specified value into the current destination if present.  This
 /// accepts (and silently propagates) null values.
+///
+/// Note that the `value` provided here may require an implicit conversion into
+/// the destination slot, so the input may be memory-primary and result be
+/// register-primary (and visa-versa).
 AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
                                  ValueDest &dest) {
   if (!value)
@@ -273,6 +420,9 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
   // If no destination is specified, then we can propagate the value directly.
   if (!dest.isSpecified())
     return value;
+
+  // OK, if there is a destination specified, handle them by converging the set
+  // of value types we have.
 
   // If the value is an LValue, then emit a load into the destination using
   // emitRValue to do the heavy lifting.
@@ -287,32 +437,41 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
     return overloads->emitAsCRValue(*this, dest);
   }
 
-  // Otherwise, we need to figure out where to store it.
+  // We know we have a CRValue now.
+
+  // If there is a known type for the destination but the value disagrees, emit
+  // an implicit conversion directly into the destination.  This keeps values in
+  // registers and avoids a "convert + clone" pair for memory->memory
+  // conversions.
+  ASTType requiredType = dest.getTypeIfKnown();
+  if (requiredType && !requiredType.isEqualCanon(value.getRValueType()))
+    return emitConversionTo(value.getIfCRValue(), node, requiredType, dest,
+                            *this);
+
+  // If the destination is just a required type, then we now know it must agree
+  // and therefore don't need to do anything more.
+  if (isa<ASTType>(dest.representation)) {
+    dest = ValueDest(); // Resolved the ValueDest;
+    return value;
+  }
+
+  // Eliminate the MRValue case by emitting a __clone__ call into the
+  // destination using LValue -> RValue conversion.
+  if (auto mrValue = value.getIfMRValue())
+    return emitRValue({LValue(mrValue), node}, dest);
+
+  // We know we have a SRValue or PRValue, and the destination is some kind of
+  // LValue.  Emit the value and figure out where to store it.
   auto destLV =
       dest.takeLValueForResult(node->getLoc(), value.getRValueType(), *this);
   if (!destLV)
     return {};
 
-  // If we have an MRValue to emit and the destination is a memory primary type,
-  // then we have to clone the value into the destination.  Transform this into
-  // an LValue so that emitRValue can do this for us.
-  if (auto mrValue = value.getIfMRValue()) {
-    if (!destLV.getRValueType().isRegisterPrimary(node->getLoc(), shared)) {
-      dest = ValueDest(destLV);
-      return emitRValue({LValue(mrValue), node}, dest);
-    }
-  }
-
-  // Otherwise, this must be a register-primary value.  Emit the RHS and coerce
-  // to the LHS type, then store into the destination.
-  value = getAsExpectedType({value, node}, destLV.getRValueType(),
-                            ValueDest::none(), " in assignment");
-  SRValue rv = emitSRValue({value, node});
+  SRValue rv =
+      emitSRValue({value, node}, dest.getContext(), destLV.getRValueType());
   if (!rv)
     return {};
 
-  // If everything worked out, store the resultant value into the lvalue for
-  // the destination.
   auto loc = translateLocation(node->getLoc());
   builder->create<POP::StoreOp>(loc, rv, destLV, /*alignment=*/std::nullopt);
   return MRValue(destLV);
@@ -396,70 +555,6 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<AnyValue> value,
                                             *this));
 }
 
-/// Convert the specified value to the expected type, invoking implicit
-/// conversions if necessary.  On error, this diagnoses it and returns null.
-AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
-                                        ASTType expectedType, ValueDest &dest,
-                                        std::function<void()> errorHandler) {
-  if (!value)
-    return {};
-
-  // If we have an overload set, filter it down based on our expected type.
-  if (auto overloads = value.ir.getIfORValue())
-    return overloads->emitAsCRValue(*this, dest, expectedType);
-
-  bool noConversionNeeded =
-      ASTType(value.ir.getRValueType()).isEqualCanon(expectedType);
-
-  // If this happens to be an lvalue coming in, convert to rvalue.  Emit into
-  // dest if no conversion is needed.
-  value.ir = emitRValue(value, noConversionNeeded ? dest : ValueDest::none());
-
-  // If the value handed to is us already erroneous, don't diagnose anything.
-  if (!value)
-    return {};
-
-  // If the type is already an exact match, then we are done.
-  if (noConversionNeeded)
-    return value.ir;
-
-  // Check to see if we can invoke an __new__ method to convert it.
-
-  OverloadSet callee(expectedType, "__new__", value.expr,
-                     CallSyntax::kImplicitConvert, shared, errorHandler);
-  if (callee.isNull())
-    return {};
-
-  // If we have at least one candidate, we check to see if any of them can
-  // work. We disable implicit conversions though, to prevent converting
-  // T -> S -> U in one step.
-  if (failed(callee.filterOverloadSet({value},
-                                      /*allowImplicitConversions=*/false,
-                                      /*emitDiagnosticOnFailure=*/false,
-                                      *this))) {
-    errorHandler();
-    return {};
-  }
-
-  // Ok, cool we know it will succeed; do it.
-  return callee.emitCall(value, dest, *this);
-}
-
-AnyValue ExprEmitter::getAsExpectedType(ASTExprAnd<AnyValue> value,
-                                        ASTType expectedType, ValueDest &dest,
-                                        const Twine &errorSuffix) {
-  auto errorHandler = [&]() {
-    if (!isa<TypeCheckErrorType>(value.ir.getType().mlirType) &&
-        !isa<TypeCheckErrorType>(expectedType.mlirType)) {
-      emitError(value.expr->getLoc())
-          << ASTType(value.ir.getRValueType())
-          << " value cannot be converted to " << expectedType << errorSuffix
-          << value.expr->getRange();
-    }
-  };
-  return getAsExpectedType(value, expectedType, dest, std::move(errorHandler));
-}
-
 /// Emit the specified expression as a condition, converting it to an MLIR I1
 /// value that we can test directly, and also returning the intermediate
 /// result of calling `__bool__` (which is typically a Bool or object type, but
@@ -529,39 +624,34 @@ CRValue ExprEmitter::emitExprCRValue(const ExprNode *node, ValueDest &dest) {
 /// This helper emits the specified value rep as an SRValue, materializing
 /// it as a parameter constant if it is a parameter.  This returns null if
 /// emission fails.
-SRValue ExprEmitter::emitExprSRValue(const ExprNode *node) {
+SRValue ExprEmitter::emitExprSRValue(const ExprNode *node, ExprContext context,
+                                     ASTType resultType) {
   assert(node && "cannot emit a null node");
-  return emitSRValue({node->emitIR(ValueDest::none(), *this), node});
+  ValueDest dest(resultType, context);
+  if (SRValue result = emitSRValue({node->emitIR(dest, *this), node}, context))
+    return result;
+  dest.resetForError();
+  return {};
 }
 
 /// This helper emits the specified expression as a parameter value, diagnosing
 /// the problem if the expression is only valid as a runtime value.  This
 /// returns null if emission fails.
-PRValue ExprEmitter::emitExprPRValue(const ExprNode *node, ASTType resultType,
-                                     const Twine &errorSuffix) {
+PRValue ExprEmitter::emitExprPRValue(const ExprNode *node, ExprContext context,
+                                     ASTType resultType) {
   // Clear the builder to indicate that an PRValue must be emitted.
   llvm::SaveAndRestore savedBuilder(builder);
   builder.reset();
 
-  // Emit the expression.
-  AnyValue rep = emitExprRValue(node, ValueDest::none(/*knownPRValue*/));
-
-  // If we had an expected type, do a conversion.
-  if (resultType)
-    rep = getAsExpectedType({rep, node}, resultType,
-                            ValueDest::none(/*knownPRValue*/), errorSuffix);
-
-  rep = emitCRValue({rep, node}, ValueDest::none(/*knownPRValue*/));
-  if (!rep)
+  // Emit the expression using the contextual type if present.
+  ValueDest dest(resultType, context);
+  auto rep = emitExprCRValue(node, dest);
+  if (!rep) {
+    dest.resetForError();
     return {};
+  }
 
-  // If this is a parameter, return it.
-  if (auto value = rep.getIfPRValue())
-    return value;
-
-  // Otherwise diagnose this as "not a parameter".
-  emitError(node->getLoc(), "cannot use a dynamic value") << errorSuffix;
-  return {};
+  return emitPRValue({rep, node}, context);
 }
 
 /// Emit the specified expression as an LValue which can be loaded and stored.
@@ -585,7 +675,7 @@ LValue ExprEmitter::emitExprLValue(SMLoc loc, const ExprNode *node,
 /// "Int" into the type for it.  This emits an error and returns null on
 /// failure.
 ASTType ExprEmitter::emitExprType(const ExprNode *node) {
-  auto value = emitExprPRValue(node, {}, " in type specification");
+  auto value = emitExprPRValue(node, EC_Type);
   if (!value)
     return {};
 

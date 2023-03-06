@@ -110,7 +110,7 @@ fn defaultArgumentUnknownDeclaration(a: Int = unknown):
 # expected-error @+1 {{use of unknown declaration 'a'}}
 fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a):
 
-# expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in a default argument initializer}}
+# expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in default argument}}
 fn defaultArgumentBadType(a: Int = 1.0):
 
 # expected-error @+1 {{'**' marker must be at end of argument list}}
