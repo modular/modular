@@ -29,17 +29,6 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-/// Given the MLIR type for a variadic argument, return the element type as an
-/// MLIR type.
-static Type getVariadicElementType(Type variadicType) {
-  auto mValue = PRValue(cast<VariadicType>(variadicType).getElementType());
-  // VariadicType allows arbitrary parameter expressions, but we only ever
-  // use concrete types for variadic syntax.
-  assert(mValue.getIfTypeValue() &&
-         "variadic convention never has parameteric element");
-  return mValue.getIfTypeValue();
-}
-
 ASTType InputParamBindings::Binding::getType() const {
   if (auto attr = getValue())
     return attr.getType();
@@ -228,6 +217,13 @@ ParameterInferenceState::infer(SignatureType signature,
         // Otherwise, we pass as an r-value.
         // TODO: Consider implicit conversions?
         return matchTypes(operand.ir.getRValueType(), expectedType);
+
+      case ValueInputConvention::ByValInMem:
+        // Otherwise,we expect an r-value to match up, ignoring the pointer type
+        // from the convention.
+        expectedType = expectedType.getPointerElementType();
+        // TODO: Consider implicit conversions?
+        return matchTypes(operand.ir.getRValueType(), expectedType);
       }
     };
 
@@ -240,7 +236,7 @@ ParameterInferenceState::infer(SignatureType signature,
     } else {
       // If we have a varargs argument, then it will eat the rest of the
       // arguments, but we have to check each of them.
-      auto varArgsEltType = getVariadicElementType(expectedType);
+      auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
       while (providedValueIdx != operands.size()) {
         if (failed(checkOneOperand(varArgsEltType)))
           return {};
@@ -406,8 +402,7 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
     // If the parameter is a variadic list, it may consume many values, and they
     // all get packed up into a VariadicAttr.
     SmallVector<TypedAttr> elements;
-    auto variadicType = cast<VariadicType>(decl.getType());
-    Type expectedType = ParamRefType::get(variadicType.getElementType());
+    Type expectedType = ASTType(decl.getType()).getVariadicElementType();
     elements.push_back(handleSingleParameterValue(binding, expectedType));
     if (!elements.back())
       return {};
@@ -417,7 +412,8 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       if (!elements.back())
         return {};
     }
-    setParamValue(VariadicAttr::get(elements, variadicType));
+    setParamValue(
+        VariadicAttr::get(elements, cast<VariadicType>(decl.getType())));
   }
 
   // Check and complain if we have bindings that didn't get used.
@@ -663,6 +659,11 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
         break;
       }
       case ValueInputConvention::ByVal:
+      case ValueInputConvention::ByValInMem:
+        // Ignore the pointer type on ByValInMem convention when matching types.
+        if (expectedConvention == ValueInputConvention::ByValInMem)
+          expectedType = expectedType.getPointerElementType();
+
         auto argType = operand.ir.getRValueType();
         // Otherwise, we pass as an r-value.  If the argument types match, then
         // they are good.
@@ -695,7 +696,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
     } else {
       // If we have a varargs argument, then it will eat the rest of the
       // arguments, but we have to check each of them.
-      auto varArgsEltType = getVariadicElementType(expectedType);
+      auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
       while (providedValueIdx != operands.size()) {
         auto result = checkOneOperand(varArgsEltType);
         if (result.kind != kValid)
@@ -1228,8 +1229,14 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
          "Error: self shouldn't be varargs");
 
   switch (selfConvention) {
-  case ValueInputConvention::ByRef:
-  case ValueInputConvention::ByRefResult: {
+  case ValueInputConvention::ByRefResult:
+  case ValueInputConvention::ByValInMem:
+    emitter.emitError(loc,
+                      "TODO: partial application requires closure generation")
+        << baseValue.ir.getType() << baseValue.expr->getRange();
+    return {};
+
+  case ValueInputConvention::ByRef: {
     LValue baseLV = baseValue.ir.getIfLValue();
     if (!baseLV) {
       emitter.emitError(loc,
@@ -1497,12 +1504,15 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
                "Call should already be type checked");
         return operand.ir;
       case ValueInputConvention::ByVal:
+      case ValueInputConvention::ByValInMem:
         // by-val arguments are converted to the expected r-value type.
         // In the case of a variadic argument, we need to remove the
         // !pop.varadic<> wrapper to get the type to convert to.
-        Type expectedArgType = expectedType;
+        ASTType expectedArgType = expectedType;
         if (calleeSig.isVararg(argIdx))
-          expectedArgType = getVariadicElementType(expectedArgType);
+          expectedArgType = expectedArgType.getVariadicElementType();
+        if (convention == ValueInputConvention::ByValInMem)
+          expectedArgType = expectedArgType.getPointerElementType();
 
         return emitRValue(operand, EC_CallArgValue, expectedArgType);
       }
@@ -1600,17 +1610,22 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // Otherwise, materialize PRValue arguments as SRValues.
   SmallVector<Value> callArgs;
   Location loc = translateLocation(callExpr->getLoc());
-  for (auto [argValAndExpr, calleeArgType] :
-       llvm::zip(argumentValues, calleeSig.getValueInputs())) {
+  for (auto [argValAndExpr, calleeArgType, convention] :
+       llvm::zip(argumentValues, calleeSig.getValueInputs(),
+                 calleeSig.getValueInputConventions())) {
     Value arg;
-    if (auto lv = argValAndExpr.ir.getIfLValue()) {
-      arg = lv;
+    if (convention == ValueInputConvention::ByRef ||
+        convention == ValueInputConvention::ByRefResult) {
+      arg = argValAndExpr.ir.getIfLValue();
+    } else if (convention == ValueInputConvention::ByValInMem) {
+      arg = argValAndExpr.ir.getIfMRValue();
     } else {
-      // TODO(memory_primary): Emit into memory directly.
+      assert(convention == ValueInputConvention::ByVal);
       arg = emitSRValue(argValAndExpr, EC_CallArgValue);
+      if (!arg)
+        return {};
     }
-    if (!arg)
-      return {};
+    assert(arg && "Didn't get value?");
     if (arg.getType() != calleeArgType)
       arg = builder->create<RebindOp>(loc, calleeArgType, arg);
     callArgs.push_back(arg);

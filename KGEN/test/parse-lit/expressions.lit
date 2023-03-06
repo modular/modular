@@ -40,6 +40,19 @@ struct MemoryPrimaryPair:
     # CHECK-NEXT: pop.store %5, %3
     return MemoryPrimaryPair {x: self.x, y: self.y}
 
+  # CHECK: lit.func @"method{{.*}}"(
+  # CHECK-SAME: %self: !pop.pointer<@"$expressions"::@MemoryPrimaryPair> byval-in-mem,
+  # CHECK-SAME: %arg: !pop.pointer<@"$expressions"::@MemoryPrimaryInt> byval-in-mem)
+  fn method(self, arg: MemoryPrimaryInt):
+    # CHECK: %0 = lit.struct.gep %self[y]
+    # CHECK: %1 = lit.struct.gep %arg[x]
+    # CHECK: %2 = pop.load %1 : !pop.pointer<index>
+    # CHECK: %3 = kgen.call @"{{.*}}__new__{{.*}}"(%2)
+    # CHECK: %4 = kgen.call @"{{.*}}__clone__{{.*}}"(%0)
+    # CHECK: %5 = kgen.call @"{{.*}}__add__{{.*}}"(%4, %3)
+    _ = self.y+arg.x
+
+
 # CHECK-LABEL: lit.func @"memoryPrimaryOps
 fn memoryPrimaryOps(a&: MemoryPrimaryPair) -> MemoryPrimaryPair:
   # CHECK-NEXT: %v1 = lit.varlet.decl "v1", var = true : <@"$expressions"::@MemoryPrimaryPair>
@@ -66,6 +79,12 @@ fn memoryPrimaryOps(a&: MemoryPrimaryPair) -> MemoryPrimaryPair:
   # CHECK-NEXT: %6 = lit.struct.gep %a[x]
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%6, %regX)
   a.x = regX
+
+  # Pass memory primary things by value as arguments.
+  # CHECK-NEXT: %3Canonymous3E_0 = lit.varlet.decl "<anonymous>", var = false
+  # CHECK-NEXT: kgen.call @{{.*}}@MemoryPrimaryPair::@"__clone__{{.*}}"(%3Canonymous3E_0, %a)
+  # CHECK-NEXT: kgen.call @{{.*}}@"method{{.*}}"(%3Canonymous3E_0, %regX)
+  a.method(regX)
 
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%__result__, %v2)
   # CHECK-NEXT: [[NONEVAL:%.*]] = kgen.param.constant: !lit.none = <#lit.none>

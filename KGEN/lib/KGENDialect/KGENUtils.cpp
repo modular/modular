@@ -991,8 +991,7 @@ static OptionalParseResult parseOptionalSignatureValues(
               symbolizeValueInputConvention(effectStr)) {
         convention = *conv;
       } else {
-        return p.emitError(loc,
-                           "expected 'byval' or 'byref' for input convention");
+        return p.emitError(loc, "expected a valid input convention");
       }
     }
     inputConventions.push_back(convention);

@@ -68,17 +68,18 @@ MLIRContext *ASTDecl::getContext() const {
     return mv.get().getContext();
   if (auto dr = dyn_cast<SRValue>(getIRValue()))
     return dr.getContext();
-
+  if (auto value = dyn_cast_or_null<MRValue>(irValue))
+    return value.getContext();
   return cast<LValue>(getIRValue()).getContext();
 }
 
 /// If this is an RValue, return it otherwise return null.
 RValue ASTDecl::getIfRValue() const {
-  // Meta value.
   if (auto attr = dyn_cast_or_null<PRValue>(irValue))
     return attr;
-  // SRValue.
   if (auto value = dyn_cast_or_null<SRValue>(irValue))
+    return value;
+  if (auto value = dyn_cast_or_null<MRValue>(irValue))
     return value;
   return {};
 }
@@ -1065,6 +1066,12 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
       shared.emitError(arg.loc, "non-default argument follows default argument")
           << arg.typeExpr->getRange();
     }
+
+    // Memory-primary byval argument are passed with a layer of indirection and
+    // use a specific convention to model this.
+    if (arg.convention == ValueInputConvention::ByVal &&
+        !ASTType(type).isRegisterPrimary(arg.loc, shared))
+      arg.convention = ValueInputConvention::ByValInMem;
   }
 
   // If this definition is a struct/class member, compute the self type.
@@ -1121,7 +1128,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
     else if (funcOp.getIsStatic())
       emitError("special method may not be a static method");
     else if (!fnInfo.allowsByRefSelfInstMethod() &&
-             args[selfArgNumber].convention != ValueInputConvention::ByVal)
+             args[selfArgNumber].convention != ValueInputConvention::ByVal &&
+             args[selfArgNumber].convention != ValueInputConvention::ByValInMem)
       emitErrorLoc(args[selfArgNumber].loc,
                    "self argument cannot be passed by reference");
   }
@@ -1170,6 +1178,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
         mangledName += ASTType(argType).getAsString();
         switch (arg.convention) {
         case ValueInputConvention::ByVal:
+        case ValueInputConvention::ByValInMem:
           break;
         case ValueInputConvention::ByRef:
           mangledName += '&';
@@ -1190,11 +1199,9 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   // ABI information form the calling convention.
 
   // Now that all the types and signature information have been resolved,
-  // compute the final MLIR types, mixing in argument conventions and handling
-  // memory-primary types.
+  // compute the final MLIR types, mixing in argument conventions.
   for (auto [arg, argType] : llvm::zip(args, argTypes)) {
-    if (arg.convention == ValueInputConvention::ByRef ||
-        arg.convention == ValueInputConvention::ByRefResult)
+    if (arg.convention != ValueInputConvention::ByVal)
       argType = POP::PointerType::get(argType);
     if (arg.vararg == VarArgKind::VarArg)
       argType = KGEN::VariadicType::get(argType);
@@ -1608,25 +1615,45 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     builder.create<DebugInfo::ValueOp>(argVal.getLoc(), argVal, varAttr);
   };
 
-  // Set up the body of the def, creating declarations for the value
+  // Set up the body of the fn/def, creating declarations for the value
   // parameters and adding them to the symbol table.
   for (auto [bbArg, parsedArg] :
        llvm::zip(funcOp.getBody()->getArguments(), args)) {
+    // Don't bind byref-result, it is handled specially by 'return'.
+    if (parsedArg.convention == ValueInputConvention::ByRefResult)
+      continue;
+
+    buildArgDIInfo(bbArg, parsedArg.name, bbArg.getArgNumber());
+
+    // VarArg arguments are always treated as their pop.variadic type by-value
+    // right now.  TODO(literals): Project to a list like thing.
+    if (parsedArg.vararg == VarArgKind::VarArg) {
+      addFullyResolvedDecl(SRValue(bbArg), parsedArg.name, parsedArg.loc,
+                           &decl);
+      continue;
+    }
+
     // Arguments passed by-reference can be directly used.
-    if (parsedArg.convention == ValueInputConvention::ByRef &&
-        parsedArg.vararg != VarArgKind::VarArg) {
-      buildArgDIInfo(bbArg, parsedArg.name, bbArg.getArgNumber());
+    if (parsedArg.convention == ValueInputConvention::ByRef) {
       addFullyResolvedDecl(LValue(bbArg), parsedArg.name, parsedArg.loc, &decl);
       continue;
     }
 
-    // Otherwise it must be a by-value convention, or varargs of by-ref.
-    // TODO: Varargs of by-ref really needs liftimes.
+    // by-value arguments are mutable in a def, immutable in an fn.
+    // ByValInMem passes ownership of the argument into the callee so we can
+    // directly mutate it if we want to.
+    if (parsedArg.convention == ValueInputConvention::ByValInMem) {
+      auto declStorage = funcOp.getIsDef() ? DeclIRValue(LValue(bbArg))
+                                           : DeclIRValue(MRValue(bbArg));
+      addFullyResolvedDecl(declStorage, parsedArg.name, parsedArg.loc, &decl);
+      continue;
+    }
+
+    assert(parsedArg.convention == ValueInputConvention::ByVal &&
+           "unknown convention");
 
     // If this was passed by-value, then it becomes an rvalue in a `fn`.
-    // TODO: Project homogenous varargs into a homogenous tuple type.
     if (!funcOp.getIsDef()) {
-      buildArgDIInfo(bbArg, parsedArg.name, bbArg.getArgNumber());
       addFullyResolvedDecl(SRValue(bbArg), parsedArg.name, parsedArg.loc,
                            &decl);
       continue;

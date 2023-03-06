@@ -64,6 +64,14 @@ public:
   /// invalid in this location.
   bool isRegisterPrimary(llvm::SMLoc loc, LitSharedState &shared) const;
 
+  /// Given a POP::PointerType, return the element as an ASTType.  This aborts
+  /// if the current type isn't a pointer.
+  ASTType getPointerElementType() const;
+
+  /// Given a VariadicType, return the element as an ASTType.  This aborts if
+  /// the current type isn't a VariadicType.
+  ASTType getVariadicElementType() const;
+
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.  This may also be inserted into raw_ostream
   /// and diagnostics.
