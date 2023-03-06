@@ -4,18 +4,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import itertools
 import subprocess
 from pathlib import Path
 
 from modular.utils import logging
-from modular.utils.typing import Any, Iterable, Iterator, TypeVar, Union
+from modular.utils.typing import Any, Iterable, Union
 
 ShellCommand = Iterable[Union[str, Path]]
 
 
 def run_shell_command(
-    cmd: ShellCommand, *, shell: bool = True, check: bool = True, **kwargs: Any
+    cmd: ShellCommand, *, check: bool = True, **kwargs: Any
 ) -> subprocess.CompletedProcess:
     """Runs a shell command using the arguments provided.
 
@@ -24,7 +23,6 @@ def run_shell_command(
 
     Args:
         cmd: shell command to run.
-        shell: see subprocess.run for semantics.
         check: see subprocess.run for semantics.
         **kwargs: see subprocess.run for semantics
             (https://docs.python.org/3/library/subprocess.html#subprocess.run).
@@ -32,39 +30,12 @@ def run_shell_command(
     Returns:
         A subprocess.CompletedProcess object.
     """
+    if "shell" in kwargs:
+        raise ValueError("shell support has been removed")
     cmdline = subprocess.list2cmdline(cmd)
     logging.debug(f"Running command: {cmdline}")
-    kwargs.update({"shell": shell, "check": check})
-    return subprocess.run(cmdline if shell else list(cmd), **kwargs)
-
-
-def run_chained_commands(
-    commands: Iterable[ShellCommand], **kwargs: Any
-) -> subprocess.CompletedProcess:
-    """Runs a sequence of shell commands chained into a single command in order.
-
-    The function fails immediately if any of the commands fail.
-
-    Args:
-        commands: shell commands to run.
-        **kwargs: see run_shell_command for semantics.
-    """
-
-    # TODO: this should be exposed as a separate utility
-    _T, _S = TypeVar("_T"), TypeVar("_S")
-
-    def interleave(it: Iterable[_T], separator: _S) -> Iterator[Union[_T, _S]]:
-        """
-        Inserts the seperator between each element of the given iterable.
-        """
-        for idx, cmd in enumerate(it):
-            if idx:
-                yield separator
-            yield cmd
-
-    return run_shell_command(
-        itertools.chain.from_iterable(interleave(commands, ("&&",))), **kwargs
-    )
+    kwargs.update({"check": check})
+    return subprocess.run(list(map(str, cmd)), **kwargs)
 
 
 def get_command_output(cmd: ShellCommand, **kwargs: Any) -> str:

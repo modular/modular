@@ -13,7 +13,6 @@ from pathlib import Path
 from modular.utils.subprocess import (
     CalledProcessError,
     get_command_output,
-    run_chained_commands,
     run_shell_command,
 )
 from modular.utils.typing import Dict, Optional, Sequence, Set
@@ -32,13 +31,8 @@ def fetch_checkout_commit(repo_dir: Path, ref: str, remote: str = "origin"):
         remote: git remote to use. Default: "origin".
     """
 
-    run_chained_commands(
-        (
-            ["git", "fetch", "--depth=1", remote, ref],
-            ["git", "checkout", "FETCH_HEAD"],
-        ),
-        cwd=repo_dir,
-    )
+    run_shell_command(["git", "fetch", "--depth=1", remote, ref], cwd=repo_dir)
+    run_shell_command(["git", "checkout", "FETCH_HEAD"], cwd=repo_dir)
 
 
 def is_full_git_sha(s: str) -> bool:
@@ -80,13 +74,8 @@ def shallow_clone(
     else:
         clone_dir.mkdir(parents=True)
 
-    run_chained_commands(
-        (
-            ["git", "init"],
-            ["git", "remote", "add", "origin", url],
-        ),
-        cwd=clone_dir,
-    )
+    run_shell_command(["git", "init"], cwd=clone_dir)
+    run_shell_command(["git", "remote", "add", "origin", url], cwd=clone_dir)
     fetch_checkout_commit(clone_dir, ref)
 
     if remove_git:
