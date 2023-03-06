@@ -1470,8 +1470,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
     if (const ExprNode *initExpr = arg.initExpr) {
       ExprEmitter emitter(shared, decl, /*builder*/ {},
                           /*varDeclCursor*/ nullptr);
-      PRValue value = emitter.emitExprPRValue(
-          initExpr, type, " in a default argument initializer");
+      PRValue value =
+          emitter.emitExprPRValue(initExpr, EC_DefaultArgument, type);
       if (!value)
         return failure();
       defaults.push_back(value);
@@ -1741,13 +1741,14 @@ LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp,
     // If we have a type, then emit directly into the LValue.  Otherwise emit
     // into
     ValueDest dest;
+    ExprContext exprContext = varOp.getIsVar() ? EC_VarInit : EC_LetInit;
     if (parsedType) {
       varOp.getResult().setType(POP::PointerType::get(parsedType));
-      dest = LValue(varOp);
+      dest = ValueDest(LValue(varOp), exprContext);
     } else {
       // If we don't, we emit into the varOp itself, because this will infer the
       // type of the varOp from the initializer expression.
-      dest = ValueDest(varOp);
+      dest = ValueDest(varOp, exprContext);
     }
 
     if (!emitter.emitExprRValue(initExpr, dest)) {
@@ -1879,8 +1880,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
                       /*varDeclCursor*/ nullptr);
 
   // Emit the value and convert to the expected type if we know it.
-  auto rhsValue =
-      emitter.emitExprPRValue(initExpr, type, " in alias declaration");
+  auto rhsValue = emitter.emitExprPRValue(initExpr, EC_AliasValue, type);
   if (!rhsValue)
     return failure();
 

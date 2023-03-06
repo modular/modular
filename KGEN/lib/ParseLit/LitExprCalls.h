@@ -186,10 +186,8 @@ public:
                                   ExprEmitter &emitter);
 
   /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
-  /// error and return null.  If `expectedType` is set, it is used to filter
-  /// the overload set before emitting it.
-  CRValue emitAsCRValue(ExprEmitter &emitter, ValueDest &dest,
-                        ASTType expectedType = {});
+  /// error and return null.
+  CRValue emitAsCRValue(ExprEmitter &emitter, ValueDest &dest);
 
   /// Emit a function call to the specified callee with the specified operand
   /// values.  This emits an error and returns null on failure.

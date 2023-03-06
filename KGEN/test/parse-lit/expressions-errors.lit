@@ -159,7 +159,7 @@ fn dict_expression(a: Int):
 
   # Dictionary subscripts.
 
-  # expected-error @+1 {{cannot use a dynamic value in type specification}}
+  # expected-error @+1 {{cannot use a dynamic value in type}}
   _ = a{1: 2, **dict}
 
 
@@ -175,7 +175,7 @@ fn dict_expression(a: Int):
   _ = MyIntPair{a: a, **a}
   # expected-error @+1 {{no value for field 'b' specified}}
   _ = MyIntPair{a: 4}
-  # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in field initialization}}
+  # expected-error @+1 {{'__mlir_type.f64' value cannot be converted to '$Int::Int' in field initializer}}
   _ = MyIntPair{a: 4.0, b: 4}
   _ = MyIntPair{a: 4, b: 4}
 

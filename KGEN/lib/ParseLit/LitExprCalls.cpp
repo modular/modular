@@ -372,29 +372,24 @@ ParamBindArrayAttr InputParamBindings::verifyBindings(
       // conversion if needed.
       expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
 
-      auto errorHandler = [&]() {
-        if (declOp) {
-          auto diag = emitter.emitError(binding.expr->getLoc(), "'")
-                      << baseName << "' parameter " << decl.getName() << " has "
-                      << expectedType << " type, but value has type "
-                      << ASTType(binding.getValue().getType())
-                      << binding.expr->getRange();
-          diag.attachNote(declOp->getLoc())
-              << "'" << baseName << "' declared here";
-        }
-        incorrectBindingNo = newBindings.size();
-        incorrectBindingExpectedType = expectedType;
-      };
+      // Coerce to the right type; use EC_Silent so we can do custom processing.
+      auto argValue = emitter.emitPRValue(
+          {PRValue(binding.getValue()), binding.expr}, EC_Silent, expectedType);
+      if (argValue)
+        return argValue;
 
-      auto argValue = emitter.getAsExpectedType(
-          {PRValue(binding.getValue()), binding.expr}, expectedType,
-          ValueDest::none(), errorHandler);
-      if (!argValue)
+      // Handle conversion failure with a custom error.
+      incorrectBindingNo = newBindings.size();
+      incorrectBindingExpectedType = expectedType;
+      if (!declOp)
         return {};
-
-      assert(argValue.getIfPRValue() &&
-             "cannot emit a dynamic value in parameter context");
-      return argValue.getIfPRValue();
+      auto diag = emitter.emitError(binding.expr->getLoc(), "'")
+                  << baseName << "' parameter " << decl.getName() << " has "
+                  << expectedType << " type, but value has type "
+                  << ASTType(binding.getValue().getType())
+                  << binding.expr->getRange();
+      diag.attachNote(declOp->getLoc()) << "'" << baseName << "' declared here";
+      return {};
     };
 
     // Scalar parameter values are installed directly.
@@ -1193,15 +1188,9 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
 
 /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.
-CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest,
-                                   ASTType expectedType) {
-  // If the value destination implies a type, use that to filter the overload
-  // set.
-  if (!expectedType)
-    expectedType = dest.getTypeIfKnown();
-
-  // If expectedType is set, use it to filter the overload set.
-  if (expectedType) {
+CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest) {
+  // If the ValueDest implies a type, use it to filter the overload set.
+  if (ASTType expectedType = dest.getTypeIfKnown()) {
     if (failed(filterOverloadSetForValueType(expectedType, emitter)))
       return {};
   }
@@ -1260,8 +1249,8 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest,
   case ValueInputConvention::ByVal:
     // Otherwise we can have either an lvalue or rvalue, but we need to convert
     // to an rvalue if we have an lvalue.
-    // TODO(memory_primary): Emit into memory directly.
-    firstArgValue = emitter.emitSRValue(baseValue);
+    // TODO(memory_primary): Emit 'self' into memory directly.
+    firstArgValue = emitter.emitSRValue(baseValue, EC_CallArgValue);
     if (!firstArgValue)
       return {};
     break;
@@ -1273,8 +1262,8 @@ CRValue OverloadSet::emitAsCRValue(ExprEmitter &emitter, ValueDest &dest,
   // For an instance value, we have to partially apply the callee to the first
   // argument of the reference.  Materialize callee as a SRValue for
   // partial_apply.
-  // TODO(memory_primary): Emit into memory directly.
-  auto calleeDRVal = emitter.emitSRValue({AnyValue(directSymbolAttr), expr});
+  auto calleeDRVal = emitter.emitSRValue({AnyValue(directSymbolAttr), expr},
+                                         EC_CallCalleeValue);
 
   // Partial apply wants to know what operands to bind, we always bind the first
   // one.
@@ -1515,12 +1504,7 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
         if (calleeSig.isVararg(argIdx))
           expectedArgType = getVariadicElementType(expectedArgType);
 
-        operand.ir = getAsExpectedType(operand, expectedArgType,
-                                       // TODO(memory-primary)
-                                       ValueDest::none(), " in argument");
-        return emitRValue(operand,
-                          // TODO(memory-primary): emit into the argument slot.
-                          ValueDest::none());
+        return emitRValue(operand, EC_CallArgValue, expectedArgType);
       }
     };
 
@@ -1566,7 +1550,8 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
     SmallVector<Value> variadicArgs;
     for (auto &operand : variadicOperands) {
       // TODO(memory_primary): Emit into memory directly.
-      SRValue argVal = emitSRValue({emitOneArgVal(operand), operand.expr});
+      SRValue argVal =
+          emitSRValue({emitOneArgVal(operand), operand.expr}, EC_CallArgValue);
       if (!argVal)
         return {};
       variadicArgs.push_back(argVal);
@@ -1628,7 +1613,7 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
       arg = lv;
     } else {
       // TODO(memory_primary): Emit into memory directly.
-      arg = emitSRValue(argValAndExpr);
+      arg = emitSRValue(argValAndExpr, EC_CallArgValue);
     }
     if (!arg)
       return {};

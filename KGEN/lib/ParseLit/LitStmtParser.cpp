@@ -506,7 +506,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
 
   ValueDest resultDest;
   if (isMemoryPrimaryResult)
-    resultDest = LValue(decl.getArgument(0));
+    resultDest = ValueDest(LValue(decl.getArgument(0)), EC_ReturnValue);
 
   // Materialize the expression values into IR.
   RValue resultValue = emitter.emitExprRValue(operandExprs[0], resultDest);
@@ -531,8 +531,8 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
     }
     for (auto [paramExpr, param] :
          llvm::zip(resultParamList->exprs, decl.getResultParams())) {
-      auto result = emitter.emitExprPRValue(paramExpr, param.getType(),
-                                            " in result parameter list");
+      auto result = emitter.emitExprPRValue(paramExpr, EC_ReturnResultParamList,
+                                            param.getType());
       if (!result)
         return success();
       resultParamValues.push_back(result);
@@ -543,10 +543,7 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // function is a 'raising' function we need to remove the extra variant type
   // to get the normal result type.
   Value resultSRValue = emitter.emitSRValue(
-      {emitter.getAsExpectedType({resultValue, operandExprs[0]},
-                                 decl.getResultType(), ValueDest::none(),
-                                 " in return"),
-       operandExprs[0]});
+      {resultValue, operandExprs[0]}, EC_ReturnValue, decl.getResultType());
   if (!resultSRValue)
     return {};
 
@@ -567,7 +564,7 @@ ParseResult LitStmtParser::parseRaiseStmt(size_t raiseIndent) {
     ExprNode *errorExpr;
     if (parseExpression(errorExpr, raiseIndent))
       return failure();
-    errorVal = getEmitter().emitExprSRValue(errorExpr);
+    errorVal = getEmitter().emitExprSRValue(errorExpr, EC_RaiseValue);
     if (!errorVal)
       return success();
 
@@ -637,7 +634,8 @@ ParseResult LitStmtParser::parseWhileStmt(size_t curIndent) {
   builder = OpBuilder::atBlockEnd(body);
 
   RValue condRVal = getEmitter().emitExprConditionValueAsI1(condExp);
-  Value condVal = getEmitter().emitSRValue({AnyValue(condRVal), condExp});
+  Value condVal =
+      getEmitter().emitSRValue({AnyValue(condRVal), condExp}, EC_BoolCondition);
   if (!condVal)
     return success(); // IRGen error already emitted; parse succeeded!
 
@@ -705,12 +703,13 @@ ParseResult LitStmtParser::parseForStmt(size_t curIndent) {
   if (!rangeValue)
     return {};
   LIT::VarLetDeclOp rangeRef = builder.create<LIT::VarLetDeclOp>(
-      forLoc, POP::PointerType::get(rangeValue.getType()), "$RANGE",
+      forLoc, POP::PointerType::get(rangeValue.getRValueType()), "$RANGE",
       /*isVar*/ true);
-  SRValue rangeSR = getEmitter().emitSRValue({rangeValue, seqExp});
-  if (!rangeSR)
+  ValueDest rangeDest = {LValue(rangeRef), EC_ForIterator};
+  if (!getEmitter().emitRValue({rangeValue, seqExp}, rangeDest)) {
+    rangeDest.resetForError();
     return {};
-  builder.create<POP::StoreOp>(forLoc, rangeSR, rangeRef, std::nullopt);
+  }
 
   HLCF::LoopOp loopOp = builder.create<HLCF::LoopOp>(forLoc);
   Block *body = builder.createBlock(&loopOp.getBody());
@@ -900,7 +899,8 @@ ParseResult LitStmtParser::parseIfStmt(LitLexerCursor startCursor,
     if (!isParamIf) {
       // Create the 'if' and parse the body into its "then" region.
       SRValue condRVal = emitter.emitSRValue(
-          {AnyValue(emitter.emitExprConditionValueAsI1(condExp)), condExp});
+          {emitter.emitExprConditionValueAsI1(condExp), condExp},
+          EC_BoolCondition);
       if (!condRVal)
         return failure();
       ifOp = builder.create<HLCF::IfOp>(loc, condRVal);

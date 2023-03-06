@@ -17,7 +17,7 @@
 //     ORValue (OverloadSet) <- ..with an unresolved overload set
 //     CRValue               <- ..with a resolved type
 //       SRValue (Value)     <- ..with a dynamic value loaded into SSA register
-//       MRvalue (Value)     <- ..with a dynamic value emitted into memory
+//       MRValue (Value)     <- ..with a dynamic value emitted into memory
 //       PRValue (TypedAttr) <- ..with a parameter value (known at compile time)
 //
 //===----------------------------------------------------------------------===//
