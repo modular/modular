@@ -23,7 +23,12 @@
 #define MODULAR_ATTRIBUTE_USED
 #endif
 
+#ifdef __cplusplus
 #define MODULAR_EXPORT extern "C" MODULAR_VISIBILITY_EXPORT
+#else
+#define MODULAR_EXPORT MODULAR_VISIBILITY_EXPORT
+#endif
+
 #define MODULAR_CXX_EXPORT MODULAR_VISIBILITY_EXPORT
 
 // For CompilerRT we need the runtime entry points to have unmangled names,
