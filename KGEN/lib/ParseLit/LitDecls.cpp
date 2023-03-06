@@ -1190,7 +1190,8 @@ static void verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp,
   // ABI information form the calling convention.
 
   // Now that all the types and signature information have been resolved,
-  // compute the final MLIR types, mixing in argument conventions, etc.
+  // compute the final MLIR types, mixing in argument conventions and handling
+  // memory-primary types.
   for (auto [arg, argType] : llvm::zip(args, argTypes)) {
     if (arg.convention == ValueInputConvention::ByRef ||
         arg.convention == ValueInputConvention::ByRefResult)

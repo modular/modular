@@ -122,7 +122,7 @@ static Type getPointerElementType(Type pointerType) {
   TypedAttr attrType =
       llvm::cast<POP::PointerType>(pointerType).getElementType();
   Type type = PRValue(attrType).getIfTypeValue();
-  assert(type && "LValue element type shouldn't be a parameter");
+  assert(type && "element type shouldn't be a parameter");
   return type;
 }
 
@@ -136,6 +136,14 @@ ASTType LValue::getRValueType() const {
 /// RValue type, the declared type of the value.
 ASTType MRValue::getRValueType() const {
   return getPointerElementType(getType());
+}
+
+/// This method looks through the pointer in a MRValue to return the
+/// underlying type.
+ASTType CRValue::getRValueType() const {
+  if (isa_and_nonnull<MRValue>(storage))
+    return getPointerElementType(getType());
+  return getType();
 }
 
 /// This method returns the type of this value when projected as an RValue.

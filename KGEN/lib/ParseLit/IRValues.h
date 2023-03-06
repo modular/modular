@@ -261,6 +261,10 @@ public:
 
   /// Return the type for the contained representation, or null if null.
   ASTType getType() const;
+
+  /// This method looks through the pointer in a MRValue to return the
+  /// underlying type.
+  ASTType getRValueType() const;
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, CRValue value);
