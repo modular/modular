@@ -6,10 +6,11 @@
 # RUN: lit %s | FileCheck %s
 
 from Int import Int
-from Functional import tile
+from Functional import tile, unswitch
 from List import VariadicList
 from IO import print
-from Index import Index
+from Index import Index, StaticIntTuple
+from Range import range
 
 # Helper workgroup function to test dynamic workgroup tiling.
 @always_inline
@@ -56,6 +57,74 @@ fn test_dynamic_tile():
     tile[print_number_dynamic](2, 16, VariadicList[Int](5, 3))
 
 
+# CHECK-LABEL: test_unswitched_tile
+fn test_unswitched_tile():
+    print("test_unswitched_tile\n")
+
+    # A tiled function that takes a start and a dynamic boundary.
+    @always_inline
+    fn switched_tile[tile_size: Int](start: Int, bound: Int):
+        # Inside each unit there's either a per-element check or a unswitched
+        #  tile level check.
+        @always_inline
+        fn switched_tile_unit[static_switch: Bool]():
+            for i in range(start, start + tile_size):
+                if static_switch or i < bound:
+                    print(i)
+
+        # Use unswitch on the tiled unit.
+        unswitch[switched_tile_unit](start + tile_size <= bound)
+
+    # CHECK: 5
+    # CHECK: 6
+    # CHECK: 7
+    switched_tile[4](5, 8)
+
+    # CHECK: 5
+    # CHECK: 6
+    switched_tile[2](5, 8)
+
+
+# CHECK-LABEL: test_unswitched_2d_tile
+fn test_unswitched_2d_tile():
+    print("test_unswitched_2d_tile\n")
+
+    # A tiled function that takes a start and a dynamic boundary.
+    @always_inline
+    fn switched_tile[
+        tile_size_x: Int, tile_size_y: Int
+    ](start: StaticIntTuple[2], bound: StaticIntTuple[2]):
+        let tile_size = Index(tile_size_x, tile_size_y)
+
+        # Inside each unit there's either a per-element check or a unswitched
+        #  tile level check.
+        @always_inline
+        fn switched_tile_unit[static_switch0: Bool, static_switch1: Bool]():
+            for i in range(start[0], start[0] + tile_size[0]):
+                for j in range(start[1], start[1] + tile_size[1]):
+                    if static_switch0 or i < bound[0]:
+                        if static_switch1 or j < bound[1]:
+                            print(Index(i, j))
+
+        # Use unswitch on the tiled unit.
+        let tile_end_point = start + tile_size
+        unswitch[switched_tile_unit](
+            tile_end_point[0] <= bound[0], tile_end_point[1] <= bound[1]
+        )
+
+    # CHECK: (1, 2)
+    # CHECK: (1, 3)
+    # CHECK: (1, 4)
+    switched_tile[2, 3](Index(1, 2), Index(2, 6))
+    # CHECK: (1, 2)
+    # CHECK: (1, 3)
+    # CHECK: (2, 2)
+    # CHECK: (2, 3)
+    switched_tile[2, 3](Index(1, 2), Index(4, 4))
+
+
 fn main():
     test_static_tile()
     test_dynamic_tile()
+    test_unswitched_tile()
+    test_unswitched_2d_tile()

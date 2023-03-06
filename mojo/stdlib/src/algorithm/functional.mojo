@@ -532,3 +532,94 @@ struct BinaryClosure[
         return __mlir_op.`pop.call_indirect`[_type:result_type](
             self.value, lhs, rhs
         )
+
+
+# ===----------------------------------------------------------------------===#
+# Unswitch
+# ===----------------------------------------------------------------------===#
+
+# Signature of a function that unswitch can take.
+alias SwitchedFunction = __mlir_type[
+    `!kgen.signature<<static_switch:`, Bool, `>() -> !lit.none>`
+]
+
+# Version of unswitch supporting 2 predicates.
+alias SwitchedFunction2 = __mlir_type[
+    `!kgen.signature<<static_switch0:`,
+    Bool,
+    `, static_switch1:`,
+    Bool,
+    `>() -> !lit.none>`,
+]
+
+
+@always_inline
+fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool):
+    """Unswitch is a simple pattern that is similar idea to loop unswitching
+    pass but extended to functional patterns. The pattern facilitates the
+    following code transformation that reduces the number of branches in the
+    generated code
+        Before:
+            for i in range(...)
+                if i < xxx:
+                    ...
+        After:
+            if i < ...
+                for i in range(...)
+                    ...
+            else
+                for i in range(...)
+                    if i < xxx:
+                        ...
+    This unswitch function genralizes that pattern with the help of meta parame-
+    ters and can be used to perform both loop unswitching and other tile predic-
+    ate lifting like in simd and amx.
+        TODO: Generalize to support multiple predicates.
+        TODO: Once nested lambdas compose well should make unswitch compose with
+        tile in an easy way.
+
+        Args:
+            switched_func (SwitchedFunction): The function containing the inner
+                loop logic that can be unswitched.
+
+            dynamic_switch (Bool): The dynamic condition that enables the unswi-
+                tched code path.
+    """
+    if dynamic_switch:
+        switched_func[True]()
+    else:
+        switched_func[False]()
+
+
+@always_inline
+fn unswitch[
+    switched_func: SwitchedFunction2
+](dynamic_switch_a: Bool, dynamic_switch_b: Bool):
+    """This is a version of unswitch pattern that takes 2 predicates.
+
+    Args:
+        switched_func (SwitchedFunction2): The function containing the inner
+            loop logic that has 2 predicates which can be unswitched.
+
+        dynamic_switch_a (Bool): The first dynamic condition that enables the
+            outer unswitched code path.
+
+        dynamic_switch_b (Bool): The second dynamic condition that enables
+            the inner unswitched code path.
+    """
+    # TODO: This could be a lot easier to write once parameter names can be
+    #  removed.
+    if dynamic_switch_a:
+
+        @always_inline
+        fn switched_a_true[static_switch: Bool]():
+            switched_func[True, static_switch]()
+
+        unswitch[switched_a_true](dynamic_switch_b)
+    else:
+
+        @always_inline
+        fn switched_a_false[static_switch: Bool]():
+            switched_func[False, static_switch]()
+
+        unswitch[switched_a_false](dynamic_switch_b)
