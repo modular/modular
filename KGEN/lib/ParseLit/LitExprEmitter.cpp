@@ -261,8 +261,14 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value,
     return rvalue;
 
   // Make sure this method isn't getting called inappropriately.
-  assert(value.ir.getType().isRegisterPrimary(value.expr->getLoc(), shared) &&
+  assert(value.ir.getRValueType().isRegisterPrimary(value.expr->getLoc(),
+                                                    shared) &&
          "cannot emit a memory-primary type as an SRValue");
+
+  // If this is an MRValue containing a loadable value, use emitSRValue from an
+  // LValue to load it and emit the proper clone call.
+  if (auto mrValue = value.ir.getIfMRValue())
+    return emitSRValue({LValue(mrValue), value.expr}, context);
 
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
@@ -411,7 +417,7 @@ static AnyValue emitConversionTo(CRValue value, const ExprNode *expr,
       return;
 
     auto diag = emitter.emitError(expr->getLoc())
-                << value.getType() << " value cannot be converted to "
+                << value.getRValueType() << " value cannot be converted to "
                 << expectedType << getContextMessage(dest.getContext())
                 << expr->getRange();
   };

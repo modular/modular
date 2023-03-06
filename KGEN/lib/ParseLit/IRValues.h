@@ -20,6 +20,9 @@
 //       MRValue (Value)     <- ..with a dynamic value emitted into memory
 //       PRValue (TypedAttr) <- ..with a parameter value (known at compile time)
 //
+// Note that SRValue is not compatible with memory-primary types, but MRValue
+// can hold any type, including a register compatible type.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef IRVALUES_H

@@ -63,6 +63,24 @@ bool ASTType::isRegisterPrimary(SMLoc loc, LitSharedState &shared) const {
   return structOp.getIsRegisterPrimary();
 }
 
+/// Given a POP::PointerType, return the element as an ASTType.  This aborts
+/// if the current type isn't a pointer.
+ASTType ASTType::getPointerElementType() const {
+  TypedAttr attrType = llvm::cast<POP::PointerType>(mlirType).getElementType();
+  Type type = PRValue(attrType).getIfTypeValue();
+  assert(type && "should always resolve element type");
+  return type;
+}
+
+/// Given a VariadicType, return the element as an ASTType.  This aborts if
+/// the current type isn't a VariadicType.
+ASTType ASTType::getVariadicElementType() const {
+  auto mValue = PRValue(cast<VariadicType>(mlirType).getElementType());
+  auto type = mValue.getIfTypeValue();
+  assert(type && "should always resolve element type");
+  return type;
+}
+
 /// Convert this type to a human readable string representation so it can be
 /// printed out for diagnostics.
 raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
