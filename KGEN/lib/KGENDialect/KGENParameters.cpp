@@ -662,16 +662,17 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
       decl.notifyKnownIsolatedFromAbove(nestedScope->getRegionNumber());
     }
 
-    // Bubble up the nested scopes and all nested uses from above.
+    // Bubble up the nested scopes and all nested uses from above. We need the
+    // graphs at each level so that we can do localized changes and still look
+    // up nested scopes.
     for (auto &[scope, g] : nested.nestedScopes)
-      nestedScopes.try_emplace(scope, std::move(g));
+      nestedScopes.try_emplace(scope, g);
     for (ParamDeclRefAttr use : nested.usesFromAbove) {
       auto it = decls.find(use.getName());
       assert(it != decls.end() && "nested use has no declaration?");
       if (!scope->isAncestor(it->second.scope))
         usesFromAbove.insert(use);
     }
-    nested.nestedScopes.clear();
     nestedScopes.try_emplace(nestedScope, std::move(nested));
   }
 

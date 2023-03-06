@@ -1414,6 +1414,9 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
   if (errorOrValue.isError())
     return errorOrValue.takeError();
 
+  // Clear out the rewritten cache to force all types/etc. to be recomputed.
+  parent->evaluator.clearCache();
+
   // Take whichever branch the condition indicated, and simply inline those ops
   // then elaborate them. We can do this by splicing the op list into the parent
   // block. We splice it this way to avoid remapping the ops when we process
