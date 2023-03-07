@@ -534,15 +534,16 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitResult(SRValue(letDecl.getResult()), this, dest);
   }
 
-  // Variable references resolve to an MRValue or LValue addressing the memory.
+  // Variable references resolve to an MBValue or LValue addressing the
+  // memory.
   if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
     if (var.getIsVar()) // var
       return emitter.emitResult(LValue(var.getResult()), this, dest);
-    else // let
-      return emitter.emitResult(MRValue(var.getResult()), this, dest);
+    // let
+    return emitter.emitResult(MBValue(var.getResult()), this, dest);
   }
 
-  // Parameters form a meta-value.
+  // Aliases form a PRValue.
   if (auto param = dyn_cast<ParamDeclareOp>(decl)) {
     PRValue result =
         resolveParamDeclareValue(param, /*bindings=*/{}, emitter.shared);
@@ -759,11 +760,18 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           emitter.builder->create<StructGEPOp>(mlirLoc, baseLV, fieldOp);
       return emitter.emitResult(LValue(fieldPtr), this, dest);
     }
-    // If the base is an MRValue, reference the field as an MRValue.
+    // If the base is an MRValue or MBValue, reference the field as an
+    // MBValue so we lazy copy only the piece that is needed in the case of
+    // `x.y.z.w`
     if (MRValue baseMRV = baseVal.getIfMRValue()) {
       auto fieldPtr =
           emitter.builder->create<StructGEPOp>(mlirLoc, baseMRV, fieldOp);
-      return emitter.emitResult(MRValue(fieldPtr), this, dest);
+      return emitter.emitResult(MBValue(fieldPtr), this, dest);
+    }
+    if (MBValue baseMRV = baseVal.getIfMBValue()) {
+      auto fieldPtr =
+          emitter.builder->create<StructGEPOp>(mlirLoc, baseMRV, fieldOp);
+      return emitter.emitResult(MBValue(fieldPtr), this, dest);
     }
 
     // If the base is an PRValue, emit a field extract as an PRValue.
@@ -1433,7 +1441,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   if (!structOp.getIsRegisterPrimary())
     memoryPrimaryBase = dest.takeLValueForResult(getLoc(), initType, emitter);
 
-  DenseMap<StringAttr, ASTExprAnd<RValue>> fieldMapping;
+  DenseMap<StringAttr, ASTExprAnd<AnyValue>> fieldMapping;
   bool allInitializersPRValues = true;
   for (auto &keyValue : indices->values) {
     const ExprNode *valueExpr = keyValue.second;
@@ -1511,7 +1519,7 @@ AnyValue DictSubscriptNode::emitTypeSubscriptIR(ASTType initType,
   SmallVector<Value> fieldSRValues;
   SmallVector<std::tuple<StringAttr, TypedAttr>> fieldParamValues;
   for (StructFieldOp field : structOp.getFieldDecls()) {
-    ASTExprAnd<RValue> fieldVal = fieldMapping[field.getNameAttr()];
+    ASTExprAnd<AnyValue> fieldVal = fieldMapping[field.getNameAttr()];
     if (!fieldVal) {
       emitter.emitError(indices->rbraceLoc, "no value for field ")
           << field.getNameAttr() << " specified";
@@ -1620,8 +1628,10 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
           "cannot emit this binary operator in parameter context yet")
           << callNode->getRange();
       return {};
-    case ExprNode::kSub:
-      return ParamOperatorAttr::getSub(lhsParam, rhsParam);
+    case ExprNode::kSub: {
+      auto value = ParamOperatorAttr::getSub(lhsParam, rhsParam);
+      return emitter.emitResult(value, callNode, dest);
+    }
     case ExprNode::kAdd:
       opcode = POC::Add;
       break;
@@ -1721,8 +1731,7 @@ AnyValue BinOpNode::emitAssign(ValueDest &dest, ExprEmitter &emitter) const {
   // required to enable the 'implicit declaration' behavior in a def and to
   // support patterns.
   ValueDest assignDest(lhs, EC_Assignment);
-  RValue rhsRep = emitter.emitExprRValue(rhs, assignDest);
-  if (!rhsRep) {
+  if (!emitter.emitExprRValue(rhs, assignDest)) {
     assignDest.resetForError();
     return {};
   }

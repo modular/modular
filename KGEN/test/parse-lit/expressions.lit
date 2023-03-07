@@ -45,13 +45,12 @@ struct MemoryPrimaryPair:
   # CHECK-SAME: %arg: !pop.pointer<@"$expressions"::@MemoryPrimaryInt> byval-in-mem)
   fn method(self, arg: MemoryPrimaryInt):
     # CHECK: %0 = lit.struct.gep %self[y]
-    # CHECK: %1 = lit.struct.gep %arg[x]
-    # CHECK: %2 = pop.load %1 : !pop.pointer<index>
-    # CHECK: %3 = kgen.call @"{{.*}}__new__{{.*}}"(%2)
-    # CHECK: %4 = kgen.call @"{{.*}}__clone__{{.*}}"(%0)
-    # CHECK: %5 = kgen.call @"{{.*}}__add__{{.*}}"(%4, %3)
+    # CHECK: %1 = kgen.call @"{{.*}}__clone__{{.*}}"(%0)
+    # CHECK: %2 = lit.struct.gep %arg[x]
+    # CHECK: %3 = pop.load %2 : !pop.pointer<index>
+    # CHECK: %4 = kgen.call @"{{.*}}__new__{{.*}}"(%3)
+    # CHECK: %5 = kgen.call @"{{.*}}__add__{{.*}}"(%1, %4)
     _ = self.y+arg.x
-
 
 # CHECK-LABEL: lit.func @"memoryPrimaryOps
 fn memoryPrimaryOps(a&: MemoryPrimaryPair) -> MemoryPrimaryPair:
@@ -59,9 +58,9 @@ fn memoryPrimaryOps(a&: MemoryPrimaryPair) -> MemoryPrimaryPair:
   # CHECK-NEXT: kgen.call @"$expressions"::@MemoryPrimaryPair::@"__clone__($expressions::MemoryPrimaryPair=&,$expressions::MemoryPrimaryPair&)"(%v1, %a) : (!pop.pointer<@"$expressions"::@MemoryPrimaryPair> byref-result, !pop.pointer<@"$expressions"::@MemoryPrimaryPair> byref)
   var v1 = a
 
-  # CHECK-NEXT: %v2 = lit.varlet.decl "v2", var = true
+  # CHECK-NEXT: %v2 = lit.varlet.decl "v2", var = false
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%v2, %a)
-  var v2 : MemoryPrimaryPair = a
+  let v2 : MemoryPrimaryPair = a
 
   # CHECK-NEXT: %_ = lit.varlet.decl "_", var = false
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%_, %a)
@@ -81,10 +80,20 @@ fn memoryPrimaryOps(a&: MemoryPrimaryPair) -> MemoryPrimaryPair:
   a.x = regX
 
   # Pass memory primary things by value as arguments.
-  # CHECK-NEXT: %3Canonymous3E_0 = lit.varlet.decl "<anonymous>", var = false
-  # CHECK-NEXT: kgen.call @{{.*}}@MemoryPrimaryPair::@"__clone__{{.*}}"(%3Canonymous3E_0, %a)
-  # CHECK-NEXT: kgen.call @{{.*}}@"method{{.*}}"(%3Canonymous3E_0, %regX)
+
+  # CHECK-NEXT: [[TMPPAIR:%.*]] = lit.varlet.decl {{.*}}@MemoryPrimaryPair
+  # CHECK-NEXT: kgen.call @{{.*}}@"__clone__{{.*}}"([[TMPPAIR]], %a)
+  # CHECK-NEXT: [[TMPINT:%.*]] = lit.varlet.decl {{.*}}@MemoryPrimaryInt
+  # CHECK-NEXT: kgen.call @{{.*}}@"__clone__{{.*}}"([[TMPINT]], %regX)
+  # CHECK-NEXT: kgen.call @{{.*}}@"method{{.*}}"([[TMPPAIR]], [[TMPINT]])
   a.method(regX)
+
+  # Drill into rvalue without cloning intermediate values.
+  # CHECK-NEXT: %11 = lit.struct.gep %v2[x]
+  # CHECK-NEXT: %12 = lit.struct.gep %11[x]
+  # CHECK-NEXT: %13 = pop.load %12 : !pop.pointer<index>
+  # CHECK-NEXT: lit.letreg.decl "v2xx" = %13
+  let v2xx = v2.x.x
 
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%__result__, %v2)
   # CHECK-NEXT: [[NONEVAL:%.*]] = kgen.param.constant: !lit.none = <#lit.none>

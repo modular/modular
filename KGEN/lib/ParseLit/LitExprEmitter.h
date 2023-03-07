@@ -237,10 +237,11 @@ public:
   /// for working with getLValueForResult.
   AnyValue emitResult(AnyValue value, const ExprNode *node, ValueDest &dest);
 
-  /// This helper emits the specified value rep as an RValue.
+  /// This emits the specified value to an RValue in the specified ValueDest and
+  /// returns it (potentially as a borrowed referenced to that storage).
   RValue emitExprRValue(const ExprNode *node, ValueDest &dest);
 
-  /// This helper emits the specified value rep as an RValue.
+  /// This emits the specified value rep as an RValue.
   CRValue emitExprCRValue(const ExprNode *node, ValueDest &dest);
 
   /// This helper emits the specified value rep as an SRValue, materializing

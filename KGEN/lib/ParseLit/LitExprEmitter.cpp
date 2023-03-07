@@ -180,25 +180,42 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     return {};
 
   // If this is already an RValue, then we are done.
-  if (auto rvRep = value.ir.getIfRValue())
-    return emitResult(value.ir, value.expr, dest).getIfRValue();
+  if (auto rvRep = value.ir.getIfRValue()) {
+    if (!dest.isSpecified())
+      return rvRep;
+    auto result = emitResult(value.ir, value.expr, dest);
+    assert(!result || result.getIfRValue());
+    return result.getIfRValue();
+  }
 
-  // Finally, if this is an LValue, emit a __clone__, a load for a primitive
-  // MLIR type, or an error if neither approach works.
-  auto pointer = value.ir.getIfLValue();
-  assert(pointer);
+  // Finally, if this is a BValue or LValue, emit a __clone__, a load for a
+  // primitive MLIR type, or an error if neither approach works.
+  if (auto mrValue = value.ir.getIfMBValue()) {
+    // TODO(ownership): The signature for clone currently takes a byref self
+    // so pass the pointer as an LValue even though it should be MBValue.  We
+    // should eventually support decaying an LValue to MRValue, but we're not
+    // ready for that.
+    value.ir = LValue(mrValue);
+  }
 
   auto loc = value.expr->getLocation(*this);
-  if (!builder) {
-    emitError(loc, "cannot use a dynamic value in a parameter context")
-        << value.expr->getRange();
-    return {};
-  }
 
   // If this is a primitive MLIR type, we can emit a direct load for it.
   ASTType rvalueType = value.ir.getRValueType();
   auto typeDecl = rvalueType.getDecl(shared);
   if (!typeDecl) {
+    if (!builder) {
+      emitError(loc, "cannot use a dynamic value in a parameter context")
+          << value.expr->getRange();
+      return {};
+    }
+
+    Value pointer;
+    if (auto lv = value.ir.getIfLValue())
+      pointer = lv;
+    else
+      pointer = value.ir.getIfMBValue();
+    assert(pointer);
     auto result =
         SRValue(builder->create<POP::LoadOp>(loc, pointer,
                                              /*alignment=*/std::nullopt));
@@ -264,11 +281,6 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> value,
   assert(value.ir.getRValueType().isRegisterPrimary(value.expr->getLoc(),
                                                     shared) &&
          "cannot emit a memory-primary type as an SRValue");
-
-  // If this is an MRValue containing a loadable value, use emitSRValue from an
-  // LValue to load it and emit the proper clone call.
-  if (auto mrValue = value.ir.getIfMRValue())
-    return emitSRValue({LValue(mrValue), value.expr}, context);
 
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
@@ -398,9 +410,13 @@ static AnyValue refineResultValue(AnyValue value, SMLoc loc,
   };
   if (auto lvalue = value.getIfLValue())
     return LValue(rebind(lvalue));
-  if (auto mrvalue = value.getIfMRValue())
-    return MRValue(rebind(mrvalue));
-  return SRValue(rebind(value.getIfSRValue()));
+  if (auto mrValue = value.getIfMRValue())
+    return MRValue(rebind(mrValue));
+  if (auto mbValue = value.getIfMBValue())
+    return MBValue(rebind(mbValue));
+  auto srValue = value.getIfSRValue();
+  assert(srValue && "Unknown value kind");
+  return SRValue(rebind(srValue));
 }
 
 /// Emit a conversion from the specified value to the specified destination
@@ -465,18 +481,15 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
   // OK, if there is a destination specified, handle them by converging the set
   // of value types we have.
 
-  // If the value is an LValue, then emit a load into the destination using
-  // emitRValue to do the heavy lifting.
-  if (value.getIfLValue())
-    return emitRValue({value, node}, dest);
-
-  // We cannot infer from an unresolved overload set, collapse into a concrete
-  // value with a concrete type if we can.
-  if (auto overloads = value.getIfORValue()) {
-    // ORValues always resolve to PRValues, which are never memory resident.
-    // Concretize it so we get something with a type.
+  // If the value being materialized is an unresolved overload set, try to
+  // materialize it.
+  if (auto overloads = value.getIfORValue())
     return overloads->emitAsCRValue(*this, dest);
-  }
+
+  // If the value is an LValue or MBValue, concretize the result type
+  // or emit a load into the destination before further processing.
+  if (!value.getIfRValue())
+    return emitCRValue({value, node}, dest);
 
   // We know we have a CRValue now.
 
@@ -496,10 +509,10 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
     return value;
   }
 
-  // Eliminate the MRValue case by emitting a __clone__ call into the
-  // destination using LValue -> RValue conversion.
+  // If we have an MRValue in the wrong spot, emit a __clone__ call into the
+  // destination using MBValue -> RValue conversion.
   if (auto mrValue = value.getIfMRValue())
-    return emitRValue({LValue(mrValue), node}, dest);
+    return emitRValue({MBValue(mrValue), node}, dest);
 
   // We know we have a SRValue or PRValue, and the destination is some kind of
   // LValue.  Emit the value and figure out where to store it.
@@ -515,7 +528,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
 
   auto loc = translateLocation(node->getLoc());
   builder->create<POP::StoreOp>(loc, rv, destLV, /*alignment=*/std::nullopt);
-  return MRValue(destLV);
+  return rv;
 }
 
 //===----------------------------------------------------------------------===//
@@ -643,23 +656,13 @@ RValue ExprEmitter::emitConditionValueAsI1(ASTExprAnd<AnyValue> value,
 
 /// This helper emits the specified value rep as an RValue.
 RValue ExprEmitter::emitExprRValue(const ExprNode *node, ValueDest &dest) {
-  assert(node && "cannot emit a null node");
-  if (dest.isSpecified()) {
-    auto result = node->emitIR(dest, *this);
-    assert((!result || result.getIfRValue()) &&
-           "destination provided should force an RValue result");
-    return result.getIfRValue();
-  }
-
-  // If we have no destination specified, emit it and load the result if it is
-  // an RValue.
-  return emitRValue({node->emitIR(dest, *this), node}, dest);
+  return emitRValue({node->emitIR(dest, *this), node}, ValueDest::none());
 }
 
 /// This helper emits the specified value rep as an CRValue.
 CRValue ExprEmitter::emitExprCRValue(const ExprNode *node, ValueDest &dest) {
   assert(node && "cannot emit a null node");
-  return emitCRValue({node->emitIR(dest, *this), node}, dest);
+  return emitCRValue({node->emitIR(dest, *this), node}, ValueDest::none());
 }
 
 /// This helper emits the specified value rep as an SRValue, materializing
