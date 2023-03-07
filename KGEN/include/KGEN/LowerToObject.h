@@ -35,7 +35,7 @@ public:
   /// Construct an ObjectCompiler with a specific set of exports.
   static ErrorOr<ObjectCompiler>
   create(LLCL::Runtime &runtime, mlir::PassManager &mgr, StringRef basePath,
-         SymbolTable &symtab, const DenseMap<StringAttr, StringAttr> &exports,
+         SymbolTable &symtab, llvm::MapVector<StringAttr, StringAttr> &&exports,
          const CompilationOptions &options);
 
   /// Lower all exported `kgen.func` to llvm. Returns the LLVM module on
@@ -68,7 +68,7 @@ private:
   /// Construct an ObjectCompiler with a specific set of exports.
   ObjectCompiler(LLCL::Runtime &runtime, mlir::PassManager &mgr,
                  SymbolTable &symtab,
-                 const DenseMap<StringAttr, StringAttr> &exports,
+                 llvm::MapVector<StringAttr, StringAttr> &&exports,
                  LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
                  const CompilationOptions &options);
 
@@ -98,7 +98,7 @@ private:
 
   /// This is a list of exported symbol names and respective aliases so we
   /// don't constantly recompute it.
-  DenseMap<StringAttr, StringAttr> exportedSymbols;
+  llvm::MapVector<StringAttr, StringAttr> exportedSymbols;
 
   /// The compilation options to use.
   CompilationOptions options;

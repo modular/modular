@@ -38,27 +38,27 @@ ErrorOr<ObjectCompiler>
 ObjectCompiler::create(LLCL::Runtime &runtime, mlir::PassManager &mgr,
                        StringRef basePath, SymbolTable &symtab,
                        const CompilationOptions &options) {
-  DenseMap<StringAttr, StringAttr> exports =
+  llvm::MapVector<StringAttr, StringAttr> exports =
       getExportedSymbols(cast<ModuleOp>(symtab.getOp()));
-  return create(runtime, mgr, basePath, symtab, exports, options);
+  return create(runtime, mgr, basePath, symtab, std::move(exports), options);
 }
 
 ErrorOr<ObjectCompiler>
 ObjectCompiler::create(LLCL::Runtime &runtime, mlir::PassManager &mgr,
                        StringRef basePath, SymbolTable &symtab,
-                       const DenseMap<StringAttr, StringAttr> &exports,
+                       llvm::MapVector<StringAttr, StringAttr> &&exports,
                        const CompilationOptions &options) {
   auto transformCache = Cache::getDefaultBackendChain(
       runtime, (std::filesystem::path(basePath.str()) / "transform").string());
   if (failed(transformCache))
     return transformCache.takeError();
-  return ObjectCompiler(runtime, mgr, symtab, exports,
+  return ObjectCompiler(runtime, mgr, symtab, std::move(exports),
                         std::move(*transformCache), options);
 }
 
 ObjectCompiler::ObjectCompiler(
     LLCL::Runtime &runtime, mlir::PassManager &mgr, SymbolTable &symtab,
-    const DenseMap<StringAttr, StringAttr> &exports,
+    llvm::MapVector<StringAttr, StringAttr> &&exports,
     LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
     const CompilationOptions &options)
     : transformCache(
