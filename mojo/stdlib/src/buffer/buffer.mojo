@@ -111,7 +111,13 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         Returns:
             Buffer[size, type]: The buffer object.
         """
-        assert_param[size == __mlir_attr.`#kgen.unknown : index`]()
+
+        @parameter
+        if size != __mlir_attr.`#kgen.unknown : index`:
+            debug_assert(
+                in_size == size,
+                "if static size is known, static size must equal dynamic size",
+            )
         return Buffer[size, type] {
             data: DTypePointer[type](ptr), dynamic_size: in_size, dtype: type
         }
@@ -132,7 +138,13 @@ struct Buffer[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]:
         Returns:
             Buffer[size, type]: The buffer object.
         """
-        assert_param[size == __mlir_attr.`#kgen.unknown : index`]()
+
+        @parameter
+        if size != __mlir_attr.`#kgen.unknown : index`:
+            debug_assert(
+                in_size == size,
+                "if static size is known, static size must equal dynamic size",
+            )
         return Buffer[size, type] {
             data: ptr, dynamic_size: in_size, dtype: type
         }
