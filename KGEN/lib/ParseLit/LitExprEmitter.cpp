@@ -103,28 +103,23 @@ ASTType ValueDest::getTypeIfKnown() const {
 }
 
 /// Project a ValueDest into an lvalue with the specified underlying (RValue)
-/// type.  This uses 'resultType' for inference when the ValueDest is untyped
-/// (e.g. `var x = expr`), but may return an LValue of another type when the
-/// dest is typed (e.g. `var x : F32 = 1`).
+/// type.
 ///
-/// This consumes the ValueDest.
-LValue ValueDest::takeLValueForResult(SMLoc loc, ASTType resultType,
-                                      ExprEmitter &emitter) {
-  // If we have an lvalue already specified, return it.
-  if (LValue lvalue = dyn_cast_or_null<LValue>(representation)) {
-    representation = nullptr; // Consumed!
-    return lvalue;
-  }
-
-  // If we have an expression node destination, then we need to bind this value
-  // to a pattern (aka "target" in Python internals nomenclature).
-  if (const ExprNode *target =
-          dyn_cast_or_null<const ExprNode *>(representation)) {
-    representation = nullptr; // Consumed!
-    return target->getLValueForResult(resultType, emitter);
-  }
-
-  // If we are inferring the type for a var or let declaration, do that.
+/// When `allowIncompatibleTypes` is true, the method is allowed to return an
+/// LValue of a different type when the underlying storage requires this. This
+/// is a guarantee from the caller that it is prepared to handle a type
+/// conversion on its side, eliminating a temporary buffer in register-primary
+/// cases like `var x : F32 = 1`.
+///
+/// When `allowIncompatibleTypes` is false, this always returns an LValue of
+/// the requested type, which may return a temporary buffer.  In this case it
+/// will not consume the ValueDest, so any user should reemit the ultimate
+/// value through it with emitResult.
+LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
+                                     bool allowIncompatibleTypes,
+                                     ExprEmitter &emitter) {
+  // If we are inferring the type for a var or let declaration, then we can
+  // always succeed and consume this ValueDest.
   if (auto *opDest = dyn_cast_or_null<Operation *>(representation)) {
     representation = nullptr; // Consumed!
 
@@ -135,8 +130,44 @@ LValue ValueDest::takeLValueForResult(SMLoc loc, ASTType resultType,
     return LValue(varOp);
   }
 
-  // Finally, if no destination specifies otherwise, we synthesize a new LValue
-  // on demand.
+  // Otherwise, we have one of a few cases where we can produce an LValue but
+  // it may have the wrong type.  The client may be cool with this (when
+  // allowIncompatibleTypes is true), but if not we generate a new temporary
+  // buffer.
+
+  // If we have an lvalue already specified, return it.
+  if (LValue lValue = dyn_cast_or_null<LValue>(representation)) {
+    // If asking for a buffer of this type, then we can directly return it.
+    if (allowIncompatibleTypes ||
+        lValue.getRValueType().isEqualCanon(resultType)) {
+      representation = nullptr; // Consumed!
+      return lValue;
+    }
+
+    // Otherwise, create a temporary buffer.
+  } else if (const ExprNode *target =
+                 dyn_cast_or_null<const ExprNode *>(representation)) {
+
+    // If we have an expression node destination, then we need to bind this
+    // value to a pattern (aka "target" in Python internals nomenclature).
+    LValue lValue = target->getLValueForResult(resultType, emitter);
+
+    // If asking for a buffer of this type, then we can directly return it.
+    if (lValue && (lValue.getRValueType().isEqualCanon(resultType) ||
+                   allowIncompatibleTypes)) {
+      representation = nullptr; // Consumed!
+      return lValue;
+    }
+
+    // Otherwise, the destination was opinionated or failed with an error;
+    // refine our representation to match it - so we don't re-emit the
+    // expression when the conversion is ultimately emitted.  Then return a
+    // temporary buffer.
+    representation = lValue;
+  }
+
+  // Finally, if no destination specifies otherwise, we synthesize a new
+  // LValue on demand.
   if (!emitter.builder) {
     representation = nullptr; // Consumed!
     emitter.emitError(
@@ -145,11 +176,14 @@ LValue ValueDest::takeLValueForResult(SMLoc loc, ASTType resultType,
   }
 
   // If we're generating a memory location, use a required type if present or
-  // the value type if not. TODO(autopromotion).
+  // the value type if not.
+  // TODO(autopromotion).
   ASTType slotType = resultType;
   if (auto requiredType = dyn_cast_or_null<ASTType>(representation)) {
-    slotType = requiredType;
-    representation = nullptr; // Consumed!
+    if (allowIncompatibleTypes || requiredType.isEqualCanon(slotType)) {
+      slotType = requiredType;
+      representation = nullptr; // Consumed!
+    }
   }
 
   Type declIRType = POP::PointerType::get(slotType);
@@ -518,8 +552,8 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *node,
 
   // We know we have a SRValue or PRValue, and the destination is some kind of
   // LValue.  Emit the value and figure out where to store it.
-  auto destLV =
-      dest.takeLValueForResult(node->getLoc(), value.getRValueType(), *this);
+  auto destLV = dest.getLValueForResult(node->getLoc(), value.getRValueType(),
+                                        /*allowIncompatibleTypes=*/true, *this);
   if (!destLV)
     return {};
 

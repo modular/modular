@@ -1464,17 +1464,13 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // If this is the return slot for a call, propagate the ValueDest into it.
     if (convention == ValueInputConvention::ByRefResult) {
       assert(idx == 0 && calleeSig.hasMemoryPrimaryResult());
-      auto rvalueType =
-          cast<POP::PointerType>(expectedType).getResolvedElementType();
+      auto rvalueType = ASTType(expectedType).getPointerElementType();
       LValue result =
-          dest.takeLValueForResult(callExpr->getLoc(), rvalueType, *this);
+          dest.getLValueForResult(callExpr->getLoc(), rvalueType,
+                                  /*allowIncompatibleTypes=*/false, *this);
       if (!result)
         return {};
       argumentValues.push_back({result, callExpr});
-
-      // We consumed the natural destination, the None type will be emitted as
-      // a PRValue.
-      dest = ValueDest();
       continue;
     }
 
@@ -1670,11 +1666,12 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
   if (calleeSig.hasMemoryPrimaryResult()) {
     auto resultVal = argumentValues[0].ir.getIfLValue();
     assert(resultVal && "memory primary result always emitted into an LValue");
-    return MRValue(resultVal);
+    // Re-emit the value in case a conversion was required and we emitted into
+    // a temporary slot.
+    return emitResult(MRValue(resultVal), callExpr, dest);
   }
 
   // Otherwise, register-primary results are the call result which may need to
   // be emitted into a ValueDest.
-  auto result = SRValue(callOp->getResult(0));
-  return emitResult(result, callExpr, dest);
+  return emitResult(SRValue(callOp->getResult(0)), callExpr, dest);
 }

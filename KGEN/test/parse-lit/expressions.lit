@@ -12,14 +12,21 @@ struct MemoryPrimaryInt:
   var x: __mlir_type.index
 
   # CHECK: lit.func @"__new__
-  fn __new__() -> MemoryPrimaryInt:
+  fn __new__() -> Self:
     # CHECK: %0 = lit.struct.gep %__result__[x]
     # CHECK: %idx1 = index.constant 1
     # CHECK: pop.store %idx1, %0
-    return MemoryPrimaryInt {x: 1}
+    return Self {x: 1}
 
-  fn __clone__(self&: MemoryPrimaryInt) -> MemoryPrimaryInt:
-    return MemoryPrimaryInt{x: self.x}
+  fn __clone__(self&: Self) -> Self:
+    return Self{x: self.x}
+
+# This type is used to test implicit conversion from MemoryPrimaryInt
+@__memory_primary
+struct MemoryPrimaryF64:
+  var x: __mlir_type.f64
+  fn __new__(value: MemoryPrimaryInt) -> Self:
+    return Self {x: 1.0}
 
 # CHECK-LABEL: lit.struct.decl @MemoryPrimaryPair
 @__memory_primary
@@ -94,6 +101,14 @@ fn memoryPrimaryOps(a&: MemoryPrimaryPair) -> MemoryPrimaryPair:
   # CHECK-NEXT: %13 = pop.load %12 : !pop.pointer<index>
   # CHECK-NEXT: lit.letreg.decl "v2xx" = %13
   let v2xx = v2.x.x
+
+  # Implicit conversion between memory-primary types.
+  # CHECK-NEXT: %mpFloat = lit.varlet.decl "mpFloat", var = false
+  # CHECK-NEXT: %14 = lit.struct.gep %v2[x]
+  # CHECK-NEXT:[[TMPINT:%.*]] = lit.varlet.decl "<anonymous>", var = false : <@"$expressions"::@MemoryPrimaryInt>
+  # CHECK-NEXT: kgen.call @{{.*}}__clone__{{.*}}([[TMPINT]], %14)
+  # CHECK-NEXT: kgen.call {{.*}}__new__{{.*}}(%mpFloat, [[TMPINT]])
+  let mpFloat : MemoryPrimaryF64 = v2.x
 
   # CHECK-NEXT: kgen.call {{.*}}__clone__{{.*}}(%__result__, %v2)
   # CHECK-NEXT: [[NONEVAL:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
