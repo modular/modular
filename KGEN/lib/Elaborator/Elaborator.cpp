@@ -630,14 +630,6 @@ completeReturnProcessing(Logger &logger, ReturnOp returnOp,
   }
   parent->resultParams = ArrayAttr::get(returnOp.getContext(), resultParams);
 
-  // Clear the parameters from this function and its return before we try to
-  // verify.
-  auto func = returnOp->getParentOfType<FuncOp>();
-  assert(func && "must call completeReturnProcessing from a FuncOp.");
-  func.setSignature(
-      SignatureType::get(func.getInputParamDeclsAttr(),
-                         ParamDeclArrayAttr::get(func.getContext(), {}),
-                         func.getFunctionType(), func.getMetadata()));
   returnOp.setParameters({});
   return std::nullopt;
 }
@@ -1773,7 +1765,7 @@ ElaboratorImpl::specializeGenerator(ExpansionTreeNode *genNode) {
   auto newFunc = b.create<FuncOp>(
       generator.getLoc(), mangledName,
       SignatureType::get(ParamDeclArrayAttr::get(generator.getContext(), {}),
-                         generator.getResultParamsAttr(),
+                         ParamDeclArrayAttr::get(generator.getContext(), {}),
                          generator.getFunctionType(), generator.getMetadata()),
       generator.getAlwaysInlineLevel());
 
