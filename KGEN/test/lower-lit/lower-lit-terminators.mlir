@@ -261,7 +261,8 @@ lit.struct.decl @StructWithNestedFn<a_param> {
     lit.func nestedFunction() -> index {
       // CHECK-NEXT: pop.load %a
       %0 = pop.load %a : !pop.pointer<index>
-      kgen.return %0 : index
+      lit.return %0 : index
+      lit.end_func
     }
     // CHECK: kgen.param.declare b: () -> index = <nestedFunction>
     kgen.param.declare b: () -> index = <nestedFunction>
@@ -269,13 +270,15 @@ lit.struct.decl @StructWithNestedFn<a_param> {
     // CHECK: kgen.param.declare.region paramNestedFunc = <b_param -> c_param>()
     lit.func paramNestedFunc<b_param -> c_param>() {
       // CHECK-NEXT: return<b_param>
-      kgen.return<b_param>
+      lit.return<b_param>
+      lit.end_func
     }
     // CHECK: kgen.param.declare c: <() -> c_param>() -> () = <bind_signature(:<b_param -> c_param>() -> () paramNestedFunc, 2)>
     kgen.param.declare c: <() -> c_param>() -> () = <bind_signature(:<b_param -> c_param>() -> () paramNestedFunc, 2)>
 
     %idx0_0 = index.constant 0
-    kgen.return %idx0_0 : index
+    lit.return %idx0_0 : index
+    lit.end_func
   }
 }
 
@@ -309,5 +312,96 @@ lit.func @return_after_return() -> !lit.none {
   } else {
     hlcf.yield
   }
+  lit.end_func
+}
+
+// -----
+
+// CHECK-LABEL: lit.func @if_else_return
+lit.func @if_else_return(%cond: i1) -> index {
+  %0 = index.constant 0
+  hlcf.if %cond {
+    lit.return %0 : index
+    hlcf.yield
+  } else {
+    lit.return %0 : index
+    hlcf.yield
+  }
+  // CHECK: %0 = kgen.static.undef : index
+  // CHECK-NEXT: return %0
+  lit.end_func
+}
+
+// CHECK-LABEL: lit.func @if_true_return
+lit.func @if_true_return() -> index {
+  %0 = index.constant 0
+  %true = index.bool.constant true
+  hlcf.if %true {
+    lit.return %0 : index
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  // CHECK: kgen.static.undef
+  lit.end_func
+}
+
+// CHECK-LABEL: lit.func @while_true
+lit.func @while_true() -> index {
+  hlcf.loop {
+    %true = index.bool.constant true
+    hlcf.if %true {
+      hlcf.continue
+    } else {
+      hlcf.yield
+    }
+    hlcf.break
+  }
+  // CHECK: kgen.static.undef
+  lit.end_func
+}
+
+lit.struct.decl @Error {}
+
+// CHECK-LABEL: lit.func @if_false_raise
+lit.func @if_false_raise() throws -> index {
+  %false = index.bool.constant false
+  hlcf.if %false {
+    hlcf.yield
+  } else {
+    %err = lit.struct.create () : () -> !kgen.declref<@Error>
+    lit.raise %err : <@Error>
+    hlcf.yield
+  }
+  // CHECK: %0 = kgen.static.undef
+  // CHECK-NEXT: %1 = pop.variant.create %0 : index -> !pop.variant<@Error, index>
+  // CHECK-NEXT: return %1
+  lit.end_func
+}
+
+// CHECK-LABEL: lit.func @raise_raise
+lit.func @raise_raise() throws -> index {
+  lit.try {
+    %err = lit.struct.create () : () -> !kgen.declref<@Error>
+    lit.raise %err : <@Error>
+    lit.try.yield
+  } except (%err: !kgen.declref<@Error>) {
+    lit.raise %err : <@Error>
+    lit.try.yield
+  } else {
+    lit.try.yield
+  }
+  // CHECK: kgen.static.undef
+  lit.end_func
+}
+
+// CHECK-LABEL: lit.func @coroutine
+lit.func @coroutine() async -> index {
+  %0 = index.constant 0
+  hlcf.loop {
+    lit.return %0 : index
+    hlcf.break
+  }
+  // CHECK: kgen.static.undef
   lit.end_func
 }

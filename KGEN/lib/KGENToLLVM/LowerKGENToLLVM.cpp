@@ -396,6 +396,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addLegalDialect<LLVM::LLVMDialect>();
   target.addLegalDialect<POP::POPDialect>();
   target.addLegalOp<mlir::UnrealizedConversionCastOp>();
+  target.addLegalOp<StaticUndefOp>();
 
   // Capture all the public symbols declared by kgen.export declarations.
   DenseMap<StringAttr, StringAttr> publicSymbols =
