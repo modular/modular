@@ -96,7 +96,7 @@ void CLOptions::addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr) {
 static LogicalResult emitModuleIR(ModuleOp theModule, const CLOptions &opts) {
   TimeTraceScope<> traceScope("emit-module",
                               theModule.getSymName().value_or(""));
-  auto outFile = opts.getOutputFile(/*hasBinaryOutput=*/true);
+  auto outFile = opts.getOutputFile(/*hasBinaryOutput=*/true, ".mlirbc");
   if (!outFile)
     return mlir::failure();
 
@@ -268,7 +268,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     auto llvmModule = compiler->lowerAllFuncsToLLVM(ctx);
     if (!llvmModule)
       return failure();
-    auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false);
+    auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".ll");
     if (!outFile)
       return failure();
 
@@ -279,7 +279,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Handle assembly output.
   if (clOptions.cmd == Command::kEmitAssembly) {
-    auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false);
+    auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".s");
     if (!outFile)
       return failure();
 

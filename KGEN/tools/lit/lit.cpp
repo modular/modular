@@ -142,7 +142,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   if (clOptions.cmd == LitCommand::kDocGen) {
     std::unique_ptr<llvm::ToolOutputFile> os =
-        clOptions.getOutputFile(/*hasBinaryOutput=*/false);
+        clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".md");
     if (failed(generateLitDoc(mgr, ctx, os->os(), litScope, compilationOptions,
                               *runtime)))
       return clOptions.reportError("could not generate documentation");
