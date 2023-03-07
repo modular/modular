@@ -1743,9 +1743,9 @@ LogicalResult KGEN::verifyOneBlockOrCached(Operation *op) {
 
 LogicalResult KGEN::checkResultParameterTypes(Operation *op,
                                               ArrayRef<TypedAttr> resultParams,
-                                              FuncInterface func) {
+                                              DeclInterface decl) {
   // Check the parameters match up.
-  ArrayRef<ParamDeclAttr> paramResults = func.getResultParams();
+  ArrayRef<ParamDeclAttr> paramResults = decl.getResultParams();
   if (resultParams.size() != paramResults.size())
     return op->emitOpError("expected ")
            << paramResults.size() << " parameters for enclosing op";
@@ -1763,7 +1763,8 @@ LogicalResult KGEN::checkResultParameterTypes(Operation *op,
 LogicalResult KGEN::checkResultArgumentTypes(Operation *op,
                                              ArrayRef<TypedAttr> resultParams,
                                              FuncInterface func) {
-  if (failed(checkResultParameterTypes(op, resultParams, func)))
+  if (failed(checkResultParameterTypes(
+          op, resultParams, cast<DeclInterface>(func.getOperation()))))
     return failure();
   return checkResultTypes(op, func.getResultTypes());
 }
