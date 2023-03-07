@@ -12,22 +12,29 @@
 #include "ASTDecl.h"
 #include "ASTType.h"
 #include "IRValues.h"
+#include "LitDecls.h"
 
+#include "Cache/Buffer.h"
+#include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "LitDecls.h"
+#include "LLCL/Runtime/Algorithms.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/HLCFDialect/HLCFDialect.h"
 #include "mlir/AsmParser/AsmParser.h"
+#include "mlir/Bytecode/BytecodeReader.h"
+#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/BinaryFormat/Dwarf.h"
+#include "llvm/Support/BLAKE3.h"
+#include "llvm/Support/EndianStream.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/SourceMgr.h"
 #include <filesystem>
@@ -62,8 +69,7 @@ static std::optional<std::string> getStandardLibraryPath() {
   return std::nullopt;
 }
 
-class LitSharedState::Impl {
-public:
+struct LitSharedState::Impl {
   SymbolTableCollection symbolTables;
 
   /// A map of symbol tables to unique counters for names within those
@@ -83,15 +89,22 @@ public:
   NoneAttr noneAttr;
 
   /// The current set of imported modules.
-  DenseMap<StringAttr, ASTDecl *> importedModules;
+  llvm::MapVector<StringAttr, std::unique_ptr<ModuleState>> importedModules;
   /// A list of included files used when importing modules. These are used to
   /// generate dependency files.
   SmallVector<std::string> includedFiles;
+
+  /// The cache used to store cached transformations within the parser.
+  LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
+
+  /// Flag indicating if the deps of a module are currently being resolved.
+  bool activelyResolvingModuleDeps = false;
 };
 
 LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
                                const CompilationOptions &options,
-                               bool useMLIRDiagnostics, LLCL::Runtime &runtime)
+                               bool useMLIRDiagnostics, LLCL::Runtime &runtime,
+                               bool enableCaching)
     : diags(sourceMgr, context, useMLIRDiagnostics), options(options),
       declResolver(std::make_unique<DeclResolver>(*this)), runtime(runtime),
       impl(std::make_unique<Impl>()) {
@@ -117,6 +130,17 @@ LitSharedState::LitSharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
         llvm::dwarf::DW_LANG_C,
         diBuilder->createFile(diags.getBufferNameIdentifier(), "/"), "Lit",
         /*isOptimized=*/true, options.getDIEmissionKind());
+  }
+
+  // Create a cache for use by the parser.
+  if (enableCaching) {
+    auto transformCacheBackendOr =
+        Cache::getDefaultBackendChain(runtime, ".kgen_cache/lit");
+    if (failed(transformCacheBackendOr))
+      return;
+    impl->transformCache =
+        LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>>::create(
+            transformCacheBackendOr.takeValue());
   }
 }
 
@@ -237,6 +261,41 @@ Operation *LitSharedState::setResolvedDeclSymbol(Operation *declOp) {
          "symbol table insertion changed the name");
   return existingOp;
 }
+
+//===----------------------------------------------------------------------===//
+// ModuleState
+//===----------------------------------------------------------------------===//
+
+struct LitSharedState::ModuleState {
+  ModuleState(ASTDecl *decl = nullptr) : decl(decl) {}
+
+  /// Build the cache key for this module.
+  Cache::WriteableBufferRef buildCacheKey(const CompilationOptions &options) {
+    auto keyBuf = Cache::WriteableBuffer::get();
+
+    // Add the module contents to the cache key.
+    keyBuf->write((const char *)contentHash.data(), contentHash.size());
+
+    // Add the module dependencies to the cache key.
+    for (auto *dep : dependencies) {
+      keyBuf->write((const char *)dep->contentHash.data(),
+                    dep->contentHash.size());
+    }
+
+    // Add the compilation options to the cache key.
+    options.print(*keyBuf);
+    return keyBuf;
+  }
+
+  /// The decl associated with the module.
+  ASTDecl *decl = nullptr;
+  /// A hash associated with the modules contents.
+  llvm::BLAKE3Result<> contentHash;
+  /// The set of other modules that this module depends on.
+  llvm::SmallSetVector<ModuleState *, 4> dependencies;
+  /// A flag indicating if this module was imported from the cache.
+  bool importedFromCache = false;
+};
 
 //===----------------------------------------------------------------------===//
 // Name Lookup
@@ -431,14 +490,22 @@ static StringAttr getMangledModuleName(MLIRContext *ctx, StringRef moduleName) {
 }
 
 ASTDecl &LitSharedState::importModule(StringRef moduleName, llvm::SMLoc loc) {
+  return *importModuleState(moduleName, loc).decl;
+}
+
+LitSharedState::ModuleState &
+LitSharedState::importModuleState(StringRef moduleName, llvm::SMLoc loc) {
+  TimeTraceScope<> fullTimeScope(("importModule: " + moduleName).str());
+
   // Mangle the module name during import to avoid conflicts with symbols that
   // are actually visible. We may import a module, but not directly expose it
   // via its module name.
   auto mangledName = getMangledModuleName(getContext(), moduleName);
 
   // Check to see if we've already imported this module.
-  if (auto *existingDecl = impl->importedModules.lookup(mangledName))
-    return *existingDecl;
+  auto it = impl->importedModules.find(mangledName);
+  if (it != impl->importedModules.end())
+    return *it->second;
   auto moduleBuilder = impl->topLevelDecl->getDeclEndBuilder();
 
   // Resolve the path for this module.
@@ -451,8 +518,9 @@ ASTDecl &LitSharedState::importModule(StringRef moduleName, llvm::SMLoc loc) {
     // can have better error recorvery/messages.
     ASTDecl &moduleDecl =
         declResolver->addErroneousDecl(mangledName, loc, impl->topLevelDecl);
-    impl->importedModules.try_emplace(mangledName, &moduleDecl);
-    return moduleDecl;
+    impl->importedModules.insert(
+        {mangledName, std::make_unique<ModuleState>(&moduleDecl)});
+    return *impl->importedModules.back().second;
   }
 
   // Open the module file within the source manager.
@@ -466,20 +534,197 @@ ASTDecl &LitSharedState::importModule(StringRef moduleName, llvm::SMLoc loc) {
       getSourceMgr().getMemoryBuffer(fileID);
   auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(fullPath, /*line=*/0,
                                                        /*column=*/0);
-  return createModule(moduleName, moduleBuffer, fileLoc);
+  return createModuleState(moduleName, moduleBuffer, fileLoc);
 }
 
 ASTDecl &LitSharedState::getCompilerBuiltInDecl() {
   StringAttr builtinStrAttr =
       getMangledModuleName(getContext(), kCompilerBuiltInStr);
-  ASTDecl *entry = impl->importedModules.lookup(builtinStrAttr);
-  assert(entry && "_CompilerBuiltin must exist");
-  return *entry;
+  auto it = impl->importedModules.find(builtinStrAttr);
+  assert(it != impl->importedModules.end() && "_CompilerBuiltin must exist");
+  return *it->second->decl;
+}
+
+void LitSharedState::loadModulesFromCache(
+    MutableArrayRef<ModuleState *> moduleStates) {
+  // If we don't have a valid cache, we can't do anything.
+  if (!impl->transformCache || moduleStates.empty())
+    return;
+
+  // Check the cache results for the various modules.
+  SmallVector<LLCL::AnyAsyncValueRef> cacheResults;
+  for (ModuleState *moduleState : moduleStates) {
+    // If the module has already been resolved in any form, we shouldn't
+    // try reading it from the cache.
+    if (moduleState->decl->resolvedness > DeclResolvedness::unparsed)
+      continue;
+    Cache::WriteableBufferRef keyBuf = moduleState->buildCacheKey(options);
+
+    auto out = AsyncValueRef<Chain>::allocate(runtime);
+    auto f = impl->transformCache->find(
+        Cache::BufferRef(std::move(keyBuf))->getBuffer(),
+        LLCL::MLIRLocationDecoder::getEncodedLocation(
+            moduleState->decl->getIfOperation()->getLoc()));
+    std::move(f).andThenSync(
+        [moduleState, out = out.copy()](
+            AsyncValueRef<std::optional<Cache::BufferRef>> &&f) mutable {
+          // If the module isn't in the cache, process it as normal. We will
+          // attempt to cache it later instead of now, given that we can't
+          // reliably resolve everything in the module right now.
+          if (f.isError())
+            return std::move(out).setToError(f.takeDiagnostic());
+          if (!f->has_value())
+            return std::move(out).emplace();
+          ASTDecl &moduleDecl = *moduleState->decl;
+          FileModuleOp moduleOp = cast<FileModuleOp>(moduleDecl);
+          TimeTraceScope<> fullTimeScope(
+              ("loadModuleFromCache: " + moduleOp.getName()).str());
+
+          // Read the cached IR.
+          Block b;
+          {
+            TimeTraceScope<> timeScope("readBytecodeFile");
+            std::unique_ptr<llvm::MemoryBuffer> bytecode =
+                llvm::MemoryBuffer::getMemBuffer(
+                    (**f)->getBuffer(), /*BufferName=*/"",
+                    /*RequiresNullTerminator=*/false);
+            mlir::ParserConfig config(moduleOp->getContext(),
+                                      /*verifyAfterParse=*/false);
+
+            // Read in the cached bytecode. If we fail, bail and try processing
+            // the IR as normal.
+            if (failed(mlir::readBytecodeFile(*bytecode, &b, config))) {
+              return std::move(out).setToError(LLCL::getMLIRDiagnostic(
+                  "failed to read module bytecode", moduleOp.getLoc()));
+            }
+          }
+
+          // Replace the body of the module with the cached IR.
+          FileModuleOp cachedModuleOp = cast<FileModuleOp>(b.front());
+          moduleOp.getBodyRegion().takeBody(cachedModuleOp.getBodyRegion());
+
+          // Mark the module as imported from cache.
+          moduleState->importedFromCache = true;
+          moduleDecl.resolvedness = DeclResolvedness::fully;
+          std::move(out).emplace();
+        });
+    cacheResults.push_back(std::move(out));
+  }
+  LLCL::await(cacheResults);
+
+  // Now that the cached IR has been read, create decl information for the
+  // constructs within the cached IR.
+  // TODO: When we can lazy load bytecode, we shouldn't build all of the decls
+  // immediately. We can wait to load until the bodies of the decls are actually
+  // needed.
+  TimeTraceScope<> timeScope("Rebuild ASTDecls");
+  SmallVector<ASTDecl *> declsToFill;
+
+  // Populate the decls that we successfully loaded from the cache.
+  for (ModuleState *moduleState : moduleStates)
+    if (moduleState->importedFromCache)
+      declsToFill.push_back(moduleState->decl);
+
+  // Collect the referenced types that need to be resolved.
+  llvm::SetVector<DeclRefType> typesToResolve;
+  auto resolveTypes = [&](ASTDecl *context, TypeRange types) {
+    for (Type type : types)
+      if (auto declRef = dyn_cast<DeclRefType>(type))
+        typesToResolve.insert(declRef);
+  };
+  auto resolveParams = [&](ASTDecl *context, ArrayRef<ParamDeclAttr> params) {
+    for (ParamDeclAttr param : params)
+      if (auto declRef = dyn_cast<DeclRefType>(param.getType()))
+        typesToResolve.insert(declRef);
+  };
+
+  while (!declsToFill.empty()) {
+    ASTDecl *container = declsToFill.pop_back_val();
+    Operation *containerOp = container->getIfOperation();
+
+    for (Region &region : containerOp->getRegions()) {
+      for (Operation &op : region.getOps()) {
+        if (auto funcOp = dyn_cast<LIT::FuncOp>(&op)) {
+          StringRef baseFuncName = funcOp.getName().split('(').first;
+          auto &decl = declResolver->addFullyResolvedDecl(
+              funcOp, container->getLoc(),
+              StringAttr::get(getContext(), baseFuncName), container);
+          declResolver->declForFuncSymbol[decl.getSymbolRef()] = &decl;
+
+          // Resolve the function types.
+          resolveParams(&decl, funcOp.getInputParamDecls());
+          resolveParams(&decl, funcOp.getResultParams());
+          resolveTypes(&decl, funcOp.getArgumentTypes());
+          resolveTypes(&decl, funcOp.getResultTypes());
+
+        } else if (auto importOp = dyn_cast<LIT::UnresolvedImportOp>(&op)) {
+          declResolver->addDecl(importOp, container->getLoc(),
+                                importOp.getImportNameAttr(), container,
+                                container->getCursor(), container->getCursor(),
+                                /*indentation=*/0);
+        } else if (auto structOp = dyn_cast<StructDeclOp>(&op)) {
+          ASTDecl &structDecl = declResolver->addFullyResolvedDecl(
+              structOp, container->getLoc(), structOp.getSymNameAttr(),
+              container);
+          structDecl.setSelfType(structDecl.computeSelfTypeForStruct(*this));
+          declsToFill.push_back(&structDecl);
+
+          // Resolve the types of any parameters.
+          resolveParams(&structDecl, structOp.getInputParamDecls());
+        } else if (auto structFieldOp = dyn_cast<StructFieldOp>(&op)) {
+          declsToFill.push_back(&declResolver->addFullyResolvedDecl(
+              structFieldOp, container->getLoc(), structFieldOp.getNameAttr(),
+              container));
+        } else if (auto letOp = dyn_cast<LetRegDeclOp>(&op)) {
+          declsToFill.push_back(&declResolver->addFullyResolvedDecl(
+              letOp, container->getLoc(), letOp.getNameAttr(), container));
+        } else if (auto varOp = dyn_cast<VarLetDeclOp>(&op)) {
+          declsToFill.push_back(&declResolver->addFullyResolvedDecl(
+              varOp, container->getLoc(), varOp.getNameAttr(), container));
+        } else if (auto paramDeclareOp = dyn_cast<ParamDeclareOp>(&op)) {
+          declsToFill.push_back(&declResolver->addFullyResolvedDecl(
+              paramDeclareOp, container->getLoc(), paramDeclareOp.getName(),
+              container));
+        } else if (auto aliasForwardDeclOp =
+                       dyn_cast<AliasForwardDeclOp>(&op)) {
+          declsToFill.push_back(&declResolver->addFullyResolvedDecl(
+              aliasForwardDeclOp, container->getLoc(),
+              aliasForwardDeclOp.getNameAttr(), container));
+        }
+      }
+    }
+  }
+
+  for (DeclRefType type : typesToResolve) {
+    // If the root of the module was imported, then we don't need to resolve
+    // it here.
+    StringAttr moduleScope = type.getSymbol().getRootReference();
+    auto moduleIt = impl->importedModules.find(moduleScope);
+    if (moduleIt == impl->importedModules.end() ||
+        moduleIt->second->importedFromCache)
+      continue;
+    ASTDecl *context = moduleIt->second->decl;
+    for (FlatSymbolRefAttr scope : type.getSymbol().getNestedReferences()) {
+      auto lookupResult =
+          lookupAndResolveDecl(scope.getAttr(), context->getLoc(), *context,
+                               /*searchParentScopes=*/true);
+      if (lookupResult.isFailure())
+        return;
+      context = lookupResult.getIfSuccess().front();
+    }
+  }
 }
 
 ASTDecl &LitSharedState::createModule(StringRef moduleName,
                                       const llvm::MemoryBuffer *moduleBuffer,
                                       FileLineColLoc loc) {
+  return *createModuleState(moduleName, moduleBuffer, loc).decl;
+}
+
+LitSharedState::ModuleState &
+LitSharedState::createModuleState(StringRef moduleName,
+                                  const llvm::MemoryBuffer *moduleBuffer,
+                                  FileLineColLoc loc) {
   StringAttr mangledName = getMangledModuleName(getContext(), moduleName);
   LitLexer lexer(*this, moduleBuffer);
   LitLexerCursor endCursor(
@@ -495,8 +740,220 @@ ASTDecl &LitSharedState::createModule(StringRef moduleName,
   moduleDecl.addUnresolvedWildCardImport(
       StringAttr::get(getContext(), kCompilerBuiltInStr),
       lexer.getToken().getLoc());
-  impl->importedModules.try_emplace(mangledName, &moduleDecl);
-  return moduleDecl;
+  impl->importedModules.insert(
+      {mangledName, std::make_unique<ModuleState>(&moduleDecl)});
+  ModuleState &moduleState = *impl->importedModules.back().second;
+
+  // Build a content hash for the module from its input buffer.
+  llvm::BLAKE3 contentHash;
+  contentHash.update(moduleBuffer->getBuffer());
+  moduleState.contentHash = contentHash.final();
+
+  // Resolve the dependencies of the module.
+  size_t prevNumModules = impl->importedModules.size() - 1;
+  resolveModuleDependencies(moduleState, moduleBuffer->getBuffer());
+
+  // If we aren't currently resolving dependencies, try to load all of the newly
+  // imported modules from the cache. We delay cache loading while resolving
+  // dependencies so that we properly handle recursively dependent modules.
+  if (!impl->activelyResolvingModuleDeps) {
+    SmallVector<ModuleState *> modulesToLoad;
+    for (auto &[name, moduleState] :
+         llvm::drop_begin(impl->importedModules, prevNumModules)) {
+      if (moduleState->decl->hasReferenceError)
+        continue;
+      if (llvm::any_of(moduleState->dependencies, [](ModuleState *dep) {
+            return dep->decl->hasReferenceError;
+          }))
+        continue;
+      modulesToLoad.push_back(moduleState.get());
+    }
+    loadModulesFromCache(modulesToLoad);
+  }
+  return moduleState;
+}
+
+void LitSharedState::resolveModuleDependencies(ModuleState &moduleState,
+                                               StringRef moduleBuffer) {
+  ASTDecl &moduleDecl = *moduleState.decl;
+
+  llvm::MapVector<StringAttr, SMLoc> dependencies;
+
+  // Functor used to resolve the module and compute its dependencies via normal
+  // parser resolution.
+  auto resolveDeclAndComputeDeps = [&]() {
+    if (failed(declResolver->resolveFully(moduleDecl, moduleDecl.getLoc())))
+      return failure();
+
+    // Walk the body of the module, checking unresolved imports for module
+    // dependencies.
+    for (auto &[name, decls] : moduleDecl.declsInScope) {
+      for (ASTDecl *decl : decls)
+        if (auto importOp =
+                dyn_cast<UnresolvedImportOp>(decl->getIfOperation()))
+          dependencies.insert({importOp.getModuleNameAttr(), decl->getLoc()});
+    }
+    for (auto it : moduleDecl.unresolvedWildcardImports)
+      dependencies.insert(it);
+    return mlir::success();
+  };
+
+  // For a given textual buffer, we can cache what the dependent module names
+  // are. Caching this prevents the need to actually parse the buffer when the
+  // content of the module hasn't changed.
+  if (impl->transformCache) {
+    auto onCacheMiss = [&](Operation *op, Cache::WriteableBufferRef buf,
+                           LLCL::AnyAsyncValueRef chain) {
+      auto output = LLCL::AsyncValueRef<Cache::BufferRef>::allocate(runtime);
+      chain.andThenSync([resolveDeclAndComputeDeps, &dependencies, &moduleDecl,
+                         moduleBuffer, output = output.copy(),
+                         buf = buf.copy()]() mutable {
+        if (failed(resolveDeclAndComputeDeps())) {
+          std::move(output).setToError(
+              LLCL::getMLIRDiagnostic("failed to resolved body",
+                                      moduleDecl.getIfOperation()->getLoc()));
+          return;
+        }
+
+        // Write the dependencies to the cache. Depedencies are written as a
+        // sequence of (name, location) pairs. The location is the offset into
+        // the module buffer where the dependency is located.
+        llvm::support::endian::Writer writer(*buf, llvm::support::little);
+        writer.write((uint64_t)dependencies.size());
+        for (auto &[name, loc] : dependencies) {
+          writer.write((uint64_t)name.size());
+          *buf << name.strref();
+
+          // Sanity check the location pointer, though it should generally
+          // always be within the buffer.
+          if (loc.getPointer() >= moduleBuffer.data() &&
+              loc.getPointer() < moduleBuffer.data() + moduleBuffer.size())
+            writer.write((uint64_t)(loc.getPointer() - moduleBuffer.data()));
+          else
+            writer.write((uint64_t)0);
+        }
+
+        std::move(output).emplace(buf.copy());
+      });
+      return output;
+    };
+    auto onCacheHit = [&](Operation *op, Cache::BufferRef buf) {
+      const char *data = buf->getBufferStart();
+
+      // Functor for reading a uint64_t from the cache buffer.
+      auto readInt = [&]() -> uint64_t {
+        return llvm::support::endian::readNext<uint64_t, llvm::support::little,
+                                               llvm::support::unaligned>(data);
+      };
+
+      // Read the dependencies from the cache.
+      size_t numDeps = readInt();
+      for (size_t i = 0; i < numDeps; ++i) {
+        // Read the name.
+        size_t nameSize = readInt();
+        StringRef name(data, nameSize);
+        data += nameSize;
+
+        // Read the location.
+        size_t locOffset = readInt();
+        auto loc = SMLoc::getFromPointer(moduleBuffer.data() + locOffset);
+
+        // Add the dependency.
+        dependencies.insert({StringAttr::get(getContext(), name), loc});
+      }
+      return buf.copy();
+    };
+
+    // Compute the cache key for this module, using the content hash.
+    Cache::WriteableBufferRef keyBuf = Cache::WriteableBuffer::get();
+    keyBuf->write_impl((const char *)moduleState.contentHash.data(),
+                       moduleState.contentHash.size());
+    auto output = cachedTransform(
+        moduleDecl.getIfOperation(), impl->transformCache.copy(),
+        LLCL::AsyncValueRef<Chain>::createReady(runtime), std::move(keyBuf),
+        onCacheMiss, onCacheHit);
+    await(output);
+
+    // If we don't have a valid cache, just compute the deps directly.
+  } else if (failed(resolveDeclAndComputeDeps())) {
+    return;
+  }
+
+  // Remember if we were actively resolving dependencies before reaching here.
+  bool wasImportingAModule = impl->activelyResolvingModuleDeps;
+  if (!wasImportingAModule)
+    impl->activelyResolvingModuleDeps = true;
+  size_t prevNumModules = impl->importedModules.size() - 1;
+
+  // Import all of the dependencies, so that we can resolve their dependencies.
+  for (auto [name, loc] : dependencies)
+    moduleState.dependencies.insert(&importModuleState(name.getValue(), loc));
+
+  // If we are actively resolving a different module, bail early. That module
+  // will handle resolving all of the dependencies of this module, and checking
+  // if it's cached. This is necessary to avoid problems with recursive modules.
+  if (wasImportingAModule)
+    return;
+
+  // At this point, all of the depedent modules are known. Update the modules
+  // dependencies to include all dependent modules. We iterate over all of the
+  // modules imported during this import, to handle cases of recursive module
+  // import.
+  bool addedNewDep = false;
+  do {
+    addedNewDep = false;
+    for (auto &it : llvm::drop_begin(impl->importedModules, prevNumModules)) {
+      for (unsigned i = 0, e = it.second->dependencies.size(); i < e; ++i)
+        for (ModuleState *depState : it.second->dependencies[i]->dependencies)
+          addedNewDep |= it.second->dependencies.insert(depState);
+    }
+  } while (addedNewDep);
+
+  impl->activelyResolvingModuleDeps = false;
+}
+
+void LitSharedState::cacheParsedModules() {
+  // If we don't have a valid cache, we can't do anything.
+  if (!impl->transformCache)
+    return;
+  TimeTraceScope<> timeScope("cacheParsedModules");
+
+  SmallVector<LLCL::AnyAsyncValueRef> results;
+  for (auto &module : impl->importedModules) {
+    if (module.second->importedFromCache)
+      continue;
+    ModuleState &moduleState = *module.second;
+    FileModuleOp moduleOp =
+        dyn_cast_if_present<FileModuleOp>(moduleState.decl->getIfOperation());
+    if (!moduleOp)
+      continue;
+
+    // Re-check if the module is in the cache. If it isn't, we populate it
+    // now.
+    Cache::BufferRef keyBuffer = moduleState.buildCacheKey(options);
+    auto out = AsyncValueRef<Chain>::allocate(runtime);
+    auto f = impl->transformCache->contains(
+        keyBuffer->getBuffer(),
+        LLCL::MLIRLocationDecoder::getEncodedLocation(moduleOp->getLoc()));
+    std::move(f).andThenSync(
+        [moduleOp, transformCache = impl->transformCache.copy(),
+         out = out.copy(), keyBuffer = std::move(keyBuffer)](
+            AsyncValueRef<bool> &&alreadyInCache) mutable {
+          if (alreadyInCache.isError() || *alreadyInCache)
+            return std::move(out).emplace();
+          TimeTraceScope<> timeScope(("Caching: " + moduleOp.getName()).str());
+
+          // Write the module to the cache.
+          auto writeableTransformResult = Cache::WriteableBuffer::get();
+          mlir::writeBytecodeToFile(moduleOp, *writeableTransformResult);
+          auto insertResult = transformCache->insert(
+              keyBuffer->getBuffer(), std::move(writeableTransformResult));
+          insertResult.andThenSync(
+              [out = std::move(out)]() mutable { std::move(out).emplace(); });
+        });
+    results.push_back(std::move(out));
+  }
+  await(results);
 }
 
 ArrayRef<std::string> LitSharedState::getIncludedFiles() const {

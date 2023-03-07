@@ -44,6 +44,8 @@ public:
 
   bool isErrorEmitted() const { return errorEmitted; }
 
+  bool isDiagnosticEmitted() const { return diagnosticEmitted; }
+
   /// Emit an error.
   LitDiagnostic emitError(Location loc, const Twine &message);
   LitDiagnostic emitError(llvm::SMLoc loc, const Twine &message);
@@ -85,6 +87,10 @@ private:
   /// This is set to true if an error occurred at any point processing the
   /// file.
   bool errorEmitted = false;
+
+  /// This is set to true if any diagnostic occurred at any point processing the
+  /// file.
+  bool diagnosticEmitted = false;
 };
 
 /// This class represents a diagnostic that is built up by the parser and

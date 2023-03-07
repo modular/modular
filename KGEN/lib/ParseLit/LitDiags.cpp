@@ -145,7 +145,7 @@ StringAttr LitDiags::getBufferNameIdentifier() const {
 
 /// Emit an error through the parser's logic.
 LitDiagnostic LitDiags::emitError(Location loc, const Twine &message) {
-  errorEmitted = true;
+  diagnosticEmitted = errorEmitted = true;
   return LitDiagnostic(loc, *this, /*isWarning=*/false) << message;
 }
 
@@ -156,6 +156,7 @@ LitDiagnostic LitDiags::emitError(llvm::SMLoc loc, const Twine &message) {
 
 /// Emit a warning.
 LitDiagnostic LitDiags::emitWarning(Location loc, const Twine &message) {
+  diagnosticEmitted = true;
   return LitDiagnostic(loc, *this, /*isWarning=*/true) << message;
 }
 LitDiagnostic LitDiags::emitWarning(llvm::SMLoc loc, const Twine &message) {

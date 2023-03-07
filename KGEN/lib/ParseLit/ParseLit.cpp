@@ -98,9 +98,17 @@ importLitFileImpl(SourceMgr &sourceMgr, LitSharedState &sharedState,
     return {nullptr, nullptr};
   // Make sure the parse module has no other structural problems detected by
   // the verifier.
-  auto verificationTimer = ts.nest("Verify module");
-  if (failed(verify(*module)))
-    return {};
+  {
+    auto verificationTimer = ts.nest("Verify module");
+    if (failed(verify(*module)))
+      return {};
+  }
+
+  // Now that resolution is finished, cache the state of modules we have parsed.
+  // TODO: We should be able to cache even in the presence of warnings and
+  // errors. We can store the diagnostics and replay on cache load.
+  if (!sharedState.diags.isDiagnosticEmitted())
+    sharedState.cacheParsedModules();
 
   // Set the included files if requested.
   if (includedFiles)
@@ -125,8 +133,12 @@ LogicalResult M::generateLitDoc(llvm::SourceMgr &sourceMgr,
                                 mlir::TimingScope &ts,
                                 const KGEN::CompilationOptions &options,
                                 LLCL::Runtime &runtime) {
+  // TODO: We should be able to cache when processing doc strings, but we need
+  // to define when/how they get cached to not negatively affect the non-doc
+  // string caring path.
   LitSharedState sharedState(sourceMgr, context, options,
-                             /*useMLIRDiagnostics=*/false, runtime);
+                             /*useMLIRDiagnostics=*/false, runtime,
+                             /*enableCaching=*/false);
   auto [module, moduleDecl] = importLitFileImpl(sourceMgr, sharedState, ts);
   if (!module)
     return failure();
