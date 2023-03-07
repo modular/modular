@@ -1702,7 +1702,7 @@ static void collectContextParameters(Operation *op,
   if (!decl || isa<FuncInterface>(*decl))
     return;
   collectContextParameters(op->getParentOp(), params);
-  llvm::append_range(params, decl.getInputParamDecls());
+  llvm::append_range(params, decl.getInputParams());
 }
 
 /// Return the full signature of this declaration, including parameters from

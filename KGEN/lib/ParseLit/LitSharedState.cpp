@@ -425,7 +425,7 @@ ASTType LitSharedState::lookupNonparameterizedNamedType(StringRef name,
     diag.attachNote(firstDecl.getLoc()) << "'" << name << "' declared here";
     return {};
   }
-  if (!structOp.getInputParamDecls().empty()) {
+  if (!structOp.getInputParams().empty()) {
     auto diag = emitError(loc, "'")
                 << name << "' resolves to a parameterized type";
     diag.attachNote(firstDecl.getLoc()) << "'" << name << "' declared here";
@@ -652,7 +652,7 @@ void LitSharedState::loadModulesFromCache(
           declResolver->declForFuncSymbol[decl.getSymbolRef()] = &decl;
 
           // Resolve the function types.
-          resolveParams(&decl, funcOp.getInputParamDecls());
+          resolveParams(&decl, funcOp.getInputParams());
           resolveParams(&decl, funcOp.getResultParams());
           resolveTypes(&decl, funcOp.getArgumentTypes());
           resolveTypes(&decl, funcOp.getResultTypes());
@@ -670,7 +670,7 @@ void LitSharedState::loadModulesFromCache(
           declsToFill.push_back(&structDecl);
 
           // Resolve the types of any parameters.
-          resolveParams(&structDecl, structOp.getInputParamDecls());
+          resolveParams(&structDecl, structOp.getInputParams());
         } else if (auto structFieldOp = dyn_cast<StructFieldOp>(&op)) {
           declsToFill.push_back(&declResolver->addFullyResolvedDecl(
               structFieldOp, container->getLoc(), structFieldOp.getNameAttr(),

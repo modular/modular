@@ -102,7 +102,7 @@ ASTType ASTDecl::computeSelfTypeForStruct(LitSharedState &state) {
   auto structOp = cast<StructDeclOp>(*this);
 
   SmallVector<ParamBindAttr> parameters;
-  for (auto decl : structOp.getInputParamDecls()) {
+  for (auto decl : structOp.getInputParams()) {
     // We're using the parameter from the type declaration scope in the
     // parameter binding list.
     TypedAttr ref = ParamDeclRefAttr::get(decl);
@@ -1377,7 +1377,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp,
   if (inAStruct) {
     auto structDecl = cast<StructDeclOp>(*decl.getParentDecl());
     auto parentLoc = decl.getParentDecl()->getLoc();
-    for (auto param : structDecl.getInputParamDecls()) {
+    for (auto param : structDecl.getInputParams()) {
       auto paramRef = ParamDeclRefAttr::get(param);
       addFullyResolvedDecl(PRValue(paramRef), param.getName(), parentLoc,
                            &decl);
@@ -1961,7 +1961,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       p.parseToken(LitToken::colon, "expected ':' in struct definition"))
     return failure();
 
-  structOp.setInputParamDecls(inputParamDecls);
+  structOp.setInputParams(inputParamDecls);
   structOp.setParamVarargs(paramVarargs);
 
   // Reject result parameters.

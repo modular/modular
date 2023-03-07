@@ -437,7 +437,7 @@ LogicalResult KGEN::inlineGeneratorCall(
     // Mangle the DeclInterface declarations.
     b.setInsertionPointToStart(&scope.getBody().front());
     for (auto [origDecl, value] :
-         llvm::zip(callee.getInputParamDecls(), call.getParamValues())) {
+         llvm::zip(callee.getInputParams(), call.getParamValues())) {
       ParamDeclAttr decl = mangler.mangleDecl(origDecl, needsMangling);
       auto declOp = b.create<ParamDeclareOp>(
           callee.getLoc(), decl,

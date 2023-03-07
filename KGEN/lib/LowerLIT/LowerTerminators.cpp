@@ -460,7 +460,7 @@ struct LowerTerminatorsPass
     // Look for an error type declaration.
     DeclRefType errType;
     getOperation().walk([&](LIT::StructDeclOp decl) {
-      if (decl.getName() != "Error" || !decl.getInputParamDecls().empty())
+      if (decl.getName() != "Error" || !decl.getInputParams().empty())
         return;
       // Reconstruct the full symbol reference.
       errType = DeclRefType::get(

@@ -745,9 +745,9 @@ ASTType ExprEmitter::emitExprType(const ExprNode *node) {
     ssize_t incorrectBindingNo = 0;
     ASTType incorrectBindingExpectedType;
     auto bindingAttr = paramBindings.verifyBindings(
-        structDecl.getInputParamDeclsAttr(), structDecl.getName(),
-        node->getLoc(), incorrectBindingNo, incorrectBindingExpectedType, *this,
-        structDecl, structDecl.getParamVarargs());
+        structDecl.getInputParamsAttr(), structDecl.getName(), node->getLoc(),
+        incorrectBindingNo, incorrectBindingExpectedType, *this, structDecl,
+        structDecl.getParamVarargs());
     if (!bindingAttr)
       return {};
 

@@ -235,7 +235,7 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   if (parent) {
     bool unused;
     collectParameterReferences(cond, parameterRefs, unused);
-    ArrayRef<ParamDeclAttr> generatorInputParams = parent.getInputParamDecls();
+    ArrayRef<ParamDeclAttr> generatorInputParams = parent.getInputParams();
 
     // Check to see if the parameters referenced by the condition are all
     // defined by the generator.  If so, we can fold this into the constraint
@@ -431,7 +431,7 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
 LogicalResult FuncOp::verify() {
   // kgen.func's are not allowed to have input parameter lists.
-  if (!getInputParamDecls().empty() || !getResultParams().empty())
+  if (!getInputParams().empty() || !getResultParams().empty())
     return emitOpError("cannot have input or result parameters");
   if (!llvm::all_of(getMetadata().getInputConventions(),
                     [](ValueInputConvention inputConv) {

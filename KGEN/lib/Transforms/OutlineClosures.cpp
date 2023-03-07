@@ -155,7 +155,7 @@ void OutlineClosuresPass::runOnOperation() {
 
       // The parameter signature is just the necessary decls + original
       // arguments, and then any of the original results.
-      for (ParamDeclAttr inputParam : regionDecl.getInputParamDecls()) {
+      for (ParamDeclAttr inputParam : regionDecl.getInputParams()) {
         bool inserted = necessaryDecls.insert(inputParam);
         assert(inserted && "nested parameter declaration was duplicated?");
       }
@@ -261,10 +261,9 @@ void OutlineClosuresPass::runOnOperation() {
         auto declName = b.getStringAttr("__resultParam_" + Twine(idx));
         // If something is somehow named __resultParam_0 then just increment the
         // counter till it works.
-        while (
-            llvm::find_if(lifted.getInputParamDecls(), [&](ParamDeclAttr decl) {
-              return decl.getName() == declName;
-            }) != lifted.getInputParamDecls().end())
+        while (llvm::find_if(lifted.getInputParams(), [&](ParamDeclAttr decl) {
+                 return decl.getName() == declName;
+               }) != lifted.getInputParams().end())
           declName = b.getStringAttr("__resultParam_" + Twine(++idx));
 
         resultDecls.push_back(
@@ -277,7 +276,7 @@ void OutlineClosuresPass::runOnOperation() {
       // region. This basically just means binding the wrapper's input params to
       // a ref.
       SmallVector<ParamBindAttr> symbolBindings;
-      for (ParamDeclAttr decl : liftedWrapper.getInputParamDecls()) {
+      for (ParamDeclAttr decl : liftedWrapper.getInputParams()) {
         symbolBindings.push_back(
             ParamBindAttr::get(decl.getName(), ParamDeclRefAttr::get(decl)));
       }
@@ -310,12 +309,12 @@ void OutlineClosuresPass::runOnOperation() {
 
       Attribute bindSignature = wrapperSymbol;
       // If we have parameter captures, create a bind_signature operator.
-      if (necessaryDecls.size() != regionDecl.getInputParamDecls().size()) {
+      if (necessaryDecls.size() != regionDecl.getInputParams().size()) {
         // OK cool, now we need a partial binding. First we insert the lifted
         // symbol at the beginning of the vector.
         SmallVector<TypedAttr> partialBindings = {wrapperSymbol};
         llvm::append_range(partialBindings, capturedParamValues);
-        for (ParamDeclAttr decl : regionDecl.getInputParamDecls())
+        for (ParamDeclAttr decl : regionDecl.getInputParams())
           partialBindings.push_back(UnboundAttr::get(decl.getType()));
         LLVM_DEBUG(llvm::dbgs() << "Partial bindings: [\n\t";
                    llvm::interleave(partialBindings, llvm::dbgs(), ",\n\t");

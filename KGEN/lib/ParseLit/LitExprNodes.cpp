@@ -255,7 +255,7 @@ static PRValue resolveParamDeclareValue(ParamDeclareOp param,
       if (!bindings)
         return param.getValue();
 
-      assert(structDecl.getInputParamDecls().size() == bindings.size() &&
+      assert(structDecl.getInputParams().size() == bindings.size() &&
              "mismatch in # struct parameters and # bindings");
 
       LitParameterEvaluator evaluator(*shared.declResolver, bindings);
@@ -1088,7 +1088,7 @@ static PRValue substituteParametersIntoUserDefinedType(
   ssize_t incorrectBindingNo = 0;
   ASTType incorrectBindingExpectedType;
   auto bindingAttr = paramBindings.verifyBindings(
-      structOp.getInputParamDeclsAttr(), structOp.getName(), subscript.getLoc(),
+      structOp.getInputParamsAttr(), structOp.getName(), subscript.getLoc(),
       incorrectBindingNo, incorrectBindingExpectedType, emitter, structOp,
       structOp.getParamVarargs());
   if (!bindingAttr)

@@ -158,7 +158,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
   // Prepend the parameters from the parent decl if present.
   if (!parentInputParams.empty()) {
     SmallVector<ParamDeclAttr> paramDecls;
-    ArrayRef<ParamDeclAttr> genParamDecls = gen.getInputParamDecls();
+    ArrayRef<ParamDeclAttr> genParamDecls = gen.getInputParams();
     paramDecls.reserve(parentInputParams.size() + genParamDecls.size());
     llvm::append_range(paramDecls, parentInputParams);
     llvm::append_range(paramDecls, genParamDecls);
@@ -199,7 +199,7 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
   StringAttr structName =
       flattenAndRenameSymbol(structDecl, parentPrefix, symbolTable, symTableIt);
 
-  ArrayRef<ParamDeclAttr> structInputParams = structDecl.getInputParamDecls();
+  ArrayRef<ParamDeclAttr> structInputParams = structDecl.getInputParams();
   SmallVector<LIT::VarLetDeclOp> opsToErase;
   for (Operation &member : llvm::make_early_inc_range(
            structDecl.getFields().front().getOperations())) {

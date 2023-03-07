@@ -79,7 +79,7 @@ void FileModuleOp::build(OpBuilder &odsBuilder, OperationState &state,
 }
 
 /// Modules don't have input parameters but do define a parameter scope.
-ArrayRef<ParamDeclAttr> FileModuleOp::getInputParamDecls() { return {}; }
+ArrayRef<ParamDeclAttr> FileModuleOp::getInputParams() { return {}; }
 
 //===----------------------------------------------------------------------===//
 // FuncOp

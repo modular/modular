@@ -11,7 +11,7 @@ lit.struct.decl @SomeStruct {
 "lit.struct.decl"() ({
 ^bb0(%arg0: i32):
 }) {sym_name = "StructArgs", constraints = #kgen<constraints[]>,
-    inputParamDecls = #kgen<param.decls[]>
+    inputParams = #kgen<param.decls[]>
     } : () -> ()
 
 // -----
