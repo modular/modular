@@ -153,3 +153,21 @@ kgen.generator @caller() {
   kgen.call @paramRecurse<in = 3 -> v = out>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// COM: Unused `kgen.param.declare` should not be ignored.
+
+// expected-note @below {{no successful concrete nodes}}
+kgen.generator @fail_if_zero<value>() -> index {
+  %0 = index.constant 0
+  // expected-note @below {{constraint failed: must not be zero!}}
+  kgen.param.assert <ne(value, 0)>, "must not be zero!"
+  kgen.return %0 : index
+}
+
+// expected-error @below {{no viable expansions found}}
+kgen.generator @unused_param_declare() {
+  kgen.param.declare unused = <apply(:() -> index bind_signature(:<value>() -> index @fail_if_zero, 0))>
+  kgen.return
+}
