@@ -623,20 +623,23 @@ world"
     a = r"hello \
 world"
 
-    # CHECK  "1'\0A2"
+    # CHECK:  "1'\0A2"
     a = """1'
 2"""
 
-    # CHECK  "1\222"
+    # CHECK:  "1\222"
     a = '''1"\
 2'''
 
-    # CHECK   "1\22\0A2"
+    # CHECK:   "1\22\0A2"
     a = '''1"
 2'''
 
-    # CHECK   "1\22\0A2"
+    # CHECK:   "1\22\0A2"
     a = '1"\n2'
+
+    # CHECK: "hello concat world"
+    a = "hello " "concat " "world"
 
     a = "Hello"            # CHECK: "Hello"
     a = "Hello 'world'"    # CHECK: "Hello 'world'"

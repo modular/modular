@@ -1279,8 +1279,7 @@ void FnDecorators::apply(SmallVector<ExprNode *> &decoratorExprs) {
         if (declRef->spelling == "always_inline" &&
             callNode->args.size() == 1 &&
             isa<StringLiteralNode>(callNode->args[0]) &&
-            cast<StringLiteralNode>(callNode->args[0])->spelling ==
-                "\"nodebug\"")
+            cast<StringLiteralNode>(callNode->args[0])->getValue() == "nodebug")
           funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::EnabledNoDebug);
         else
           processedIt = false;
@@ -1316,8 +1315,8 @@ void FnDecorators::applyLateExport(Location loc, SymbolRefAttr symbolName,
         << node.getParenRange();
     return;
   }
-  const auto &strNode = *cast<StringLiteralNode>(node.args.front());
-  std::string aliasName = LitLexer::getStringLiteralValue(strNode.spelling);
+  std::string aliasName =
+      cast<StringLiteralNode>(node.args.front())->getValue();
   if (!isCIdentifier(aliasName)) {
     emitError(loc, aliasName) << " is not a valid C identifier";
     return;

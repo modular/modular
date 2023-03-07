@@ -404,10 +404,16 @@ ParseResult ExprParser::parsePrefixExpr(ExprNode *&result) {
     result = alloc<FloatLiteralNode>(getToken().getSpelling());
     consumeToken(LitToken::float_num);
     break;
-  case LitToken::string: // primary -> literal -> stringliteral
-    result = alloc<StringLiteralNode>(getToken().getSpelling());
-    consumeToken(LitToken::string);
+  case LitToken::string: { // primary -> literal -> stringliteral
+    SmallVector<StringRef> spellings;
+    // Python supports string literal concatenation
+    while (getToken().is(LitToken::string)) {
+      spellings.push_back(getToken().getSpelling());
+      consumeToken(LitToken::string);
+    }
+    result = alloc<StringLiteralNode>(copyArrayRef<StringRef>(spellings));
     break;
+  }
   case LitToken::kw_None:
     result = getNoneExpr(getToken().getLoc());
     consumeToken(LitToken::kw_None);

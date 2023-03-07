@@ -371,9 +371,18 @@ AnyValue SelfLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitResult(structDecl->getSelfType(), this, dest);
 }
 
+/// The value of a string is the concatenated value with escapes and quotes
+/// removed.
+std::string StringLiteralNode::getValue() const {
+  std::string result;
+  for (auto spelling : spellings)
+    result += LitLexer::getStringLiteralValue(spelling);
+  return result;
+}
+
 AnyValue StringLiteralNode::emitIR(ValueDest &dest,
                                    ExprEmitter &emitter) const {
-  std::string value = LitLexer::getStringLiteralValue(spelling);
+  std::string value = getValue();
   auto attr =
       StringAttr::get(value, KGEN::StringType::get(emitter.getContext()));
   return emitter.emitResult(attr, this, dest);
