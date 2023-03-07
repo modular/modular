@@ -11,14 +11,17 @@
 // Emitting an expression to MLIR may produce one of the follow representations,
 // from a hierarchy of value kinds:
 //
-// AnyValue              <- Expr emitted to MLIR:
-//   LValue (Value)        <- ... with a runtime address.
-//   RValue                <- ... as an independent value
-//     ORValue (OverloadSet) <- ..with an unresolved overload set
-//     CRValue               <- ..with a resolved type
-//       SRValue (Value)     <- ..with a dynamic value loaded into SSA register
-//       MRValue (Value)     <- ..with a dynamic value emitted into memory
-//       PRValue (TypedAttr) <- ..with a parameter value (known at compile time)
+// AnyValue     <- Expr emitted to MLIR...
+//   LValue       <- with a runtime address that may be stored to.
+//   BValue (TODO)  <- with a borrowed value
+//     MBValue        <- value is in memory
+//     SBValue (TODO) <- value is in SSA register
+//   RValue       <- with an owned immutable value
+//     ORValue      <- with an unresolved overload set
+//     CRValue      <- with a concrete resolved type
+//       SRValue      <- with a register-primary value in an SSA register
+//       MRValue      <- with a memory-primary value in memory
+//       PRValue      <- with a parameter value
 //
 // Note that SRValue is not compatible with memory-primary types, but MRValue
 // can hold any type, including a register compatible type.
@@ -87,37 +90,44 @@ public:
 /// Instances of MRValue model a dynamic value stored into memory whose address
 /// is represented with an SSA value.  This representation is typically used
 /// with memory-primary types, but may also be used with register-primary types,
-/// (e.g.) when initializing a var declaration.
+/// (e.g.) when initializing a var declaration.  Values of this type are owned
+/// instances of a value that needs to be consumed, akin to an x-value in C++.
 class MRValue : public Value {
 public:
   using Value::Value;
   using Value::operator=;
   MRValue(Value v) : Value(v) {}
 
-  /// MRValue's represent the address of the stored value.  This returns the
-  /// RValue type, the declared type of the value.
-  ASTType getRValueType() const;
-
+  /// This returns the declared type of the value without the wrapping pointer.
+  ASTType getRValueType() const { return getType().getPointerElementType(); }
   ASTType getType() const { return ASTType(Value::getType()); }
 };
 
-/// Instances of LValue model a dynamic address, which will always have pointer
-/// type.  It is described with an explicit C++ type so the expression emission
-/// logic can better reason about it.
-///
-/// When produced by the emitter, the ASTType of an LValue is always the type
-/// of dereferencing the LValue, there is no extra level of pointer added.
-///
+/// Instances of MBValue model a borrowed reference to dynamic value stored
+/// into memory; the address is represented with an SSA value.  This
+/// representation is used for borrowed arguments, and for some expressions
+/// like `a.b` where `a` is an MRValue or MBValue (like a let) and `b` is a
+/// stored property.
+class MBValue : public Value {
+public:
+  using Value::Value;
+  using Value::operator=;
+  MBValue(Value v) : Value(v) {}
+
+  /// This returns the declared type of the value without the wrapping pointer.
+  ASTType getRValueType() const { return getType().getPointerElementType(); }
+  ASTType getType() const { return ASTType(Value::getType()); }
+};
+
+/// Instances of LValue model a storable dynamic address, which will always have
+/// pointer type.
 class LValue : public Value {
 public:
   using Value::Value;
   LValue(Value v) : Value(v) {}
 
-  /// This method returns the type of this value when projected as an RValue.
-  /// If this is already an RValue, it is the type of the value.  If this is
-  /// an LValue, it strips off the pointer type.
-  ASTType getRValueType() const;
-
+  /// This returns the declared type of the value without the wrapping pointer.
+  ASTType getRValueType() const { return getType().getPointerElementType(); }
   ASTType getType() const { return ASTType(Value::getType()); }
 };
 
@@ -196,7 +206,7 @@ template <typename DerivedType>
 struct VariantValueStorage {
   /// These are all the forms of storage we can have.
   using Storage = SmartVariant<NullRepresentation, PRValue, SRValue, MRValue,
-                               ORValue, LValue>;
+                               ORValue, MBValue, LValue>;
 
   VariantValueStorage()
       : storage(NullRepresentation()) {} // All are default constructible.
@@ -265,8 +275,8 @@ public:
   /// Return the type for the contained representation, or null if null.
   ASTType getType() const;
 
-  /// This method looks through the pointer in a MRValue to return the
-  /// underlying type.
+  /// This method looks through the pointer in a MRValue to return
+  /// the underlying type.
   ASTType getRValueType() const;
   void dump() const;
 };
@@ -275,21 +285,7 @@ raw_ostream &operator<<(raw_ostream &os, CRValue value);
 /// RValue = CRValue|ORValue.
 class RValue : public VariantValueStorage<RValue> {
 public:
-  RValue() {}
-  RValue(PRValue value) {
-    if (value)
-      storage = value;
-  }
-  RValue(TypedAttr value) : RValue(PRValue(value)) {}
-  RValue(Type value) : RValue(PRValue(value)) {}
-  RValue(SRValue value) {
-    if (value)
-      storage = value;
-  }
-  RValue(MRValue value) {
-    if (value)
-      storage = value;
-  }
+  using VariantValueStorage::VariantValueStorage;
   RValue(ORValue value) {
     if (value)
       storage = std::move(value);
@@ -312,7 +308,7 @@ public:
 };
 raw_ostream &operator<<(raw_ostream &os, RValue value);
 
-/// AnyValue = RValue|LValue.
+/// AnyValue = LValue|MBValue|RValue.
 class AnyValue : public VariantValueStorage<AnyValue> {
 public:
   using VariantValueStorage::VariantValueStorage;
@@ -321,6 +317,10 @@ public:
       storage = std::move(value);
   }
   AnyValue(CRValue value) { storage = value.getStorage(); }
+  AnyValue(MBValue value) {
+    if (value)
+      storage = value;
+  }
   AnyValue(RValue value) { storage = value.getStorage(); }
   AnyValue(LValue value) { storage = value; }
 
@@ -328,6 +328,8 @@ public:
   ORValue getIfORValue() const { return dyn_cast<ORValue>(storage); }
   CRValue getIfCRValue() const { return CRValue::getFrom(storage); }
   RValue getIfRValue() const { return RValue::getFrom(storage); }
+
+  MBValue getIfMBValue() const { return dyn_cast<MBValue>(storage); }
 
   /// This method returns the type of this value when projected as an RValue.
   /// If this is already an RValue, it is the type of the value.  If this is
@@ -370,6 +372,10 @@ struct PointerLikeTypeTraits<M::KGEN::LIT::SRValue>
 template <>
 struct PointerLikeTypeTraits<M::KGEN::LIT::MRValue>
     : public MLIRValueWrapper<M::KGEN::LIT::MRValue> {};
+
+template <>
+struct PointerLikeTypeTraits<M::KGEN::LIT::MBValue>
+    : public MLIRValueWrapper<M::KGEN::LIT::MBValue> {};
 
 template <>
 struct PointerLikeTypeTraits<M::KGEN::LIT::PRValue> {

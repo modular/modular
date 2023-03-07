@@ -23,10 +23,8 @@ using namespace M::KGEN::LIT;
 // IRValue Implementation Logic.
 //===----------------------------------------------------------------------===//
 
-using VariantStorage = SmartVariant<NullRepresentation, PRValue, SRValue,
-                                    MRValue, ORValue, LValue>;
-
-static raw_ostream &printStorage(raw_ostream &os, const VariantStorage &storage,
+static raw_ostream &printStorage(raw_ostream &os,
+                                 const AnyValue::Storage &storage,
                                  bool isDump = false) {
   if (isa<NullRepresentation>(storage)) {
     os << "<NULL IR Value>\n";
@@ -41,6 +39,10 @@ static raw_ostream &printStorage(raw_ostream &os, const VariantStorage &storage,
   } else if (auto val = dyn_cast<MRValue>(storage)) {
     if (isDump)
       os << "MR: ";
+    os << val;
+  } else if (auto val = dyn_cast<MBValue>(storage)) {
+    if (isDump)
+      os << "MB: ";
     os << val;
   } else if (auto val = dyn_cast<ORValue>(storage)) {
     if (isDump)
@@ -82,12 +84,14 @@ void AnyValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
 
-static ASTType getTypeFrom(VariantStorage storage) {
+static ASTType getTypeFrom(AnyValue::Storage storage) {
   if (auto attr = dyn_cast<PRValue>(storage))
     return attr.get().getType();
   if (auto value = dyn_cast<SRValue>(storage))
     return value.getType();
   if (auto value = dyn_cast<MRValue>(storage))
+    return value.getType();
+  if (auto value = dyn_cast<MBValue>(storage))
     return value.getType();
   if (auto value = dyn_cast<LValue>(storage))
     return value.getType();
@@ -118,18 +122,6 @@ ASTType PRValue::getIfTypeValue() const {
   return {};
 }
 
-/// This method returns the type of this value when projected as an RValue.
-/// Since LValue's are always stored by-pointer, this strips it off.
-ASTType LValue::getRValueType() const {
-  return getType().getPointerElementType();
-}
-
-/// MRValue's represent the address of the stored value.  This returns the
-/// RValue type, the declared type of the value.
-ASTType MRValue::getRValueType() const {
-  return getType().getPointerElementType();
-}
-
 /// This method looks through the pointer in a MRValue to return the
 /// underlying type.
 ASTType CRValue::getRValueType() const {
@@ -139,9 +131,9 @@ ASTType CRValue::getRValueType() const {
 }
 
 /// This method returns the type of this value when projected as an RValue.
-/// If this is an LValue or MRValue, it strips off the pointer type.
+/// If this is an LValue, MBValue, or MRValue, it strips off the pointer type.
 ASTType AnyValue::getRValueType() const {
-  if (isa_and_nonnull<LValue, MRValue>(storage))
+  if (isa_and_nonnull<LValue, MRValue, MBValue>(storage))
     return getType().getPointerElementType();
   return getType();
 }

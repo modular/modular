@@ -504,19 +504,18 @@ ParseResult LitStmtParser::parseReturnStmt(size_t returnIndent) {
   // If the result is memory primary, return into the result slot.
   bool isMemoryPrimaryResult = decl.getSignature().hasMemoryPrimaryResult();
 
-  ValueDest resultDest;
-  if (isMemoryPrimaryResult)
-    resultDest = ValueDest(LValue(decl.getArgument(0)), EC_ReturnValue);
-
   // Materialize the expression values into IR.
-  RValue resultValue = emitter.emitExprRValue(operandExprs[0], resultDest);
-  if (!resultValue) {
-    resultDest.resetForError();
-    return success();
-  }
-
-  if (isMemoryPrimaryResult)
+  RValue resultValue;
+  if (isMemoryPrimaryResult) {
+    ValueDest resultDest(LValue(decl.getArgument(0)), EC_ReturnValue);
+    if (!emitter.emitExprRValue(operandExprs[0], resultDest)) {
+      resultDest.resetForError();
+      return success();
+    }
     resultValue = PRValue(shared.getNoneAttr());
+  } else {
+    resultValue = emitter.emitExprRValue(operandExprs[0], ValueDest::none());
+  }
 
   // Check the result parameters if present.
   SmallVector<TypedAttr> resultParamValues;
