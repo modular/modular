@@ -131,6 +131,12 @@ public:
           "Compilation target CPU features. Defaults to the host features."),
       cl::init(getHostCPUFeatures())};
 
+  /// Constructor is defined to set the default work queue to single thread.
+  /// TODO: We need to change this back to thread pool once elaborator is
+  /// thread-safe. See #9755, #9757.
+  KGENCommonOptions()
+      : RuntimeWorkQueueCLOptions(WorkQueueType::kSingleThread) {}
+
   /// Return a compilation options object based on the command line options.
   CompilationOptions getCompilationOptions() const {
     // Grab the optimization level. For now use an aggressive default.
