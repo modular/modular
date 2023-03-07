@@ -568,6 +568,11 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
                  decl.getInputParams(), decl.getResultParams()))
           if (failed(recordDeclWrapper(decl)))
             return failure();
+        // The input parameters are defined by the declaration.
+        for (auto [idx, inputParam] : llvm::enumerate(decl.getInputParams())) {
+          ParamDefinition &def = recordDef(*this, inputParam, decl);
+          def.index = idx;
+        }
       }
     }
 
@@ -636,6 +641,16 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
       if (!scope->isAncestor(it->second.scope))
         usesFromAbove.insert(use);
     }
+  }
+
+  // Make sure every parameter declared in this scope has a definition.
+  for (auto &[param, decl] : decls) {
+    if (!scope->isAncestor(decl.scope))
+      continue;
+    auto it = defs.find(param);
+    if (it == defs.end())
+      return decls.find(param)->second.declOp->emitError("parameter ")
+             << param << " has no definition";
   }
 
   // If an error was encountered while collecting parameters, bail out here.

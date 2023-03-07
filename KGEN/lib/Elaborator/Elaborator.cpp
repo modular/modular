@@ -793,7 +793,7 @@ static StringAttr mangleParameterValues(GeneratorOp generator,
 
 /// This simply walks the ParameterUseDefGraph and collects the list of ops that
 /// need to be rewritten.
-static void collectOpsToProcess(const ParameterUseDefGraph &uses,
+static void collectOpsToProcess(Region *scope, const ParameterUseDefGraph &uses,
                                 std::vector<Operation *> &opsToRewrite) {
   // FIXME: The elaborator does not correctly handle the new parameter use-def
   // graph. Process the parameters in reverse: the same operation can define
@@ -806,10 +806,12 @@ static void collectOpsToProcess(const ParameterUseDefGraph &uses,
   for (StringAttr param : llvm::reverse(uses.params)) {
     auto it = uses.defs.find(param);
     assert(it != uses.defs.end());
+    // Ignore the scope parent operation. Input parameters are set contextually.
+    if (it->second.defOp == scope->getParentOp())
+      continue;
     defOps.insert(it->second.defOp);
   }
-  llvm::append_range(opsToRewrite, llvm::reverse(defOps.takeVector()));
-  llvm::append_range(opsToRewrite, uses.paramOps);
+  llvm::append_range(opsToRewrite, llvm::reverse(defOps.getArrayRef()));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1400,7 +1402,8 @@ ElaboratorImpl::processCallParamOp(CallParamOp call, ExpansionTreeNode *parent,
 
   // Collect all the ops to process.
   std::vector<Operation *> opsToRewrite;
-  collectOpsToProcess(found->getSecond(), opsToRewrite);
+  collectOpsToProcess(region, found->second, opsToRewrite);
+  llvm::append_range(opsToRewrite, found->second.paramOps);
 
   // Process the ops we just collected.
   processScope(parent, opsToRewrite);
@@ -1483,16 +1486,7 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
 
   // Only process the ops in the branch that we ended up taking.
   std::vector<Operation *> opsToRewrite;
-  opsToRewrite.reserve(uses.params.size() + uses.paramOps.size());
-  llvm::SetVector<Operation *, SmallVector<Operation *, 8>,
-                  SmallPtrSet<Operation *, 8>>
-      defOps;
-  for (StringAttr param : llvm::reverse(uses.params)) {
-    auto it = uses.defs.find(param);
-    assert(it != uses.defs.end());
-    defOps.insert(it->getSecond().defOp);
-  }
-  llvm::append_range(opsToRewrite, llvm::reverse(defOps.getArrayRef()));
+  collectOpsToProcess(toProcess, uses, opsToRewrite);
   for (Operation *paramOp : uses.paramOps) {
     // Check if this op is in a region that is a child of the region we care
     // about. If not, don't process it.
@@ -1653,7 +1647,8 @@ ElaboratorImpl::specializeFunction(ExpansionTreeNode *funcNode,
   uses.calculate(paramCache);
 
   std::vector<Operation *> opsToRewrite;
-  collectOpsToProcess(uses, opsToRewrite);
+  collectOpsToProcess(&func.getBodyRegion(), uses, opsToRewrite);
+  llvm::append_range(opsToRewrite, uses.paramOps);
 
   // Take the use-def graph and put it into the func node itself.
   funcNode->paramGraph = std::move(uses);
