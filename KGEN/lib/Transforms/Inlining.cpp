@@ -307,21 +307,10 @@ LogicalResult KGEN::inlineGeneratorCall(
     TimeTraceScope<> traceScope("callee",
                                 [&] { return callee.getSymName().str(); });
 
-    // If we recursed onto the same function, give up and emit an error.
-    if (!seenFuncs.insert(callee)) {
-      InFlightDiagnostic diag = mlir::emitError(
-          callee.getLoc(),
-          "function has recursive call to 'always_inline' function");
-      assert(callstack.size() == seenFuncs.size());
-      for (auto [callLoc, gen] : llvm::zip(callstack, seenFuncs)) {
-        diag.attachNote(callLoc) << "through call here";
-        diag.attachNote(gen->getLoc())
-            << "to function marked 'always_inline' here";
-      }
-      diag.attachNote(call.getLoc()) << "function call here recurses";
-      diag.attachNote(callee.getLoc()) << "back to function here";
-      return failure();
-    }
+    // If we recursed onto the same function, give up. Don't emit an error
+    // because the recursion could be resolved by the elaborator.
+    if (!seenFuncs.insert(callee))
+      continue;
     callstack.push_back(call.getLoc());
     calls.emplace_back(EndStack{});
 
