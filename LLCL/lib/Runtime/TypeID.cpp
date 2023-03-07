@@ -19,10 +19,10 @@ using namespace LLCL;
 /// Pair the destructor and type name used at registration time. The latter
 /// is very handy for debugging, eg see AsyncValue::printDebug.
 struct TypeInfo {
-  std::string typeName;
+  std::string_view typeName;
   ValueDestructorFn destructorFn;
 
-  TypeInfo(StringRef typeName, ValueDestructorFn destructorFn)
+  TypeInfo(std::string_view typeName, ValueDestructorFn destructorFn)
       : typeName(typeName), destructorFn(destructorFn) {}
 };
 
@@ -37,9 +37,10 @@ struct TypeInfoTable {
 
   TypeInfoTable(size_t initialCapacity) : entries(initialCapacity) {}
 
-  Detail::RawTypeID getSlow(StringRef typeName, ValueDestructorFn destructor);
-  StringRef getTypeName(Detail::RawTypeID id) const {
-    return id == Detail::kInvalidRawTypeID ? StringRef("unk", 3)
+  Detail::RawTypeID getSlow(std::string_view typeName,
+                            ValueDestructorFn destructor);
+  std::string_view getTypeName(Detail::RawTypeID id) const {
+    return id == Detail::kInvalidRawTypeID ? std::string_view{"unk"}
                                            : entries[id].typeName;
   }
   ValueDestructorFn getValueDestructor(Detail::RawTypeID id) const {
@@ -47,7 +48,7 @@ struct TypeInfoTable {
   }
 };
 
-Detail::RawTypeID TypeInfoTable::getSlow(StringRef typeName,
+Detail::RawTypeID TypeInfoTable::getSlow(std::string_view typeName,
                                          ValueDestructorFn destructor) {
   std::lock_guard<std::mutex> l(m);
   auto itr = ids.find(typeName);
@@ -68,7 +69,7 @@ static TypeInfoTable &getTypeInfoTableSingleton() {
   return *table;
 }
 
-Detail::RawTypeID TypeID::getSlow(StringRef typeName,
+Detail::RawTypeID TypeID::getSlow(std::string_view typeName,
                                   ValueDestructorFn destructorFn) {
   return getTypeInfoTableSingleton().getSlow(typeName, destructorFn);
 }
@@ -88,7 +89,7 @@ intptr_t TypeID::getSignature() {
   return reinterpret_cast<intptr_t>(&getTypeInfoTableSingleton());
 }
 
-StringRef TypeID::getTypeName() const {
+std::string_view TypeID::getTypeName() const {
   return getTypeInfoTableSingleton().getTypeName(id);
 }
 

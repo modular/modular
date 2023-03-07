@@ -230,7 +230,7 @@ public:
   }
 
   /// Returns the name for this type id, or "unk" if invalid.
-  StringRef getTypeName() const;
+  std::string_view getTypeName() const;
 
   /// Returns the destructor function for this type id, or null if invalid.
   ValueDestructorFn getValueDestructor() const;
@@ -241,7 +241,7 @@ private:
   /// Slow path for get. Will force global synchronization on global type
   /// info table.
   LLVM_ATTRIBUTE_NOINLINE
-  static Detail::RawTypeID getSlow(StringRef typeName,
+  static Detail::RawTypeID getSlow(std::string_view typeName,
                                    ValueDestructorFn destructorFn);
 
 #if MODULAR_DEBUG
