@@ -12,6 +12,7 @@
 #include "Support/HLCFDialect/HLCFOps.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 
 using namespace M;
@@ -93,6 +94,32 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
         func.getLoc(), CoroutineType::get(func.getSignature()));
   }
 
+  // While we walk the IR, we are going to determine if the top-level
+  // `lit.end_func` is reachable with trivial dead-code analysis. Do this by
+  // marking each `ControlFlowNode` and `ControlFlowTerminator` as live or dead,
+  // and see if we can reach the end of the function body.
+  DenseSet<Operation *> liveCfOps;
+  auto markNextInBlockAsLive = [&](Block *block, Block::iterator it) {
+    for (Operation &op : llvm::make_range(it, block->end())) {
+      if (!isa<HLCF::ControlFlowNode, HLCF::ControlFlowTerminator,
+               LIT::ReturnOp, LIT::RaiseOp, LIT::BreakOp, LIT::ContinueOp,
+               LIT::EndFuncOp, KGENCallOpInterface>(op))
+        continue;
+      liveCfOps.insert(&op);
+      return;
+    }
+    llvm_unreachable(
+        "`lower-lit-terminators` encountered unexpected terminator");
+  };
+  auto markNextOperationAsLive = [&](Operation *op) {
+    markNextInBlockAsLive(op->getBlock(), std::next(op->getIterator()));
+  };
+  auto markNextInRegionAsLive = [&](Region &region) {
+    markNextInBlockAsLive(&region.front(), region.front().begin());
+  };
+  // Start the analysis at the function entry block.
+  markNextInRegionAsLive(func.getBodyRegion());
+
   // Collect all the terminators first to avoid iterator invalidation.
   SmallVector<Operation *> terminators;
   // In a pre-order walk, we cannot erase as we walk.
@@ -101,11 +128,52 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
     if (op != func && isa<LIT::FuncOp>(op)) {
       return WalkResult::skip();
 
+    } else if (isa<HLCF::ControlFlowNode, HLCF::ControlFlowTerminator>(op) &&
+               liveCfOps.contains(op)) {
+      SmallVector<Attribute> operands;
+      for (Value operand : op->getOperands())
+        mlir::matchPattern(operand, mlir::m_Constant(&operands.emplace_back()));
+      SmallVector<HLCF::ControlFlowTarget> targets;
+      // Process each control-flow target from the base operation. For nodes,
+      // the base operation is itself. For terminators, it is the nearest
+      // matching parent operation.
+      Operation *base = op;
+      if (auto node = dyn_cast<HLCF::ControlFlowNode>(op)) {
+        node.getEntryTargets(operands, targets);
+      } else {
+        auto term = cast<HLCF::ControlFlowTerminator>(op);
+        term.getBranchTargets(operands, targets);
+        do {
+          base = base->getParentOp();
+        } while (!term.isParentNode(base));
+      }
+      for (const HLCF::ControlFlowTarget &target : targets) {
+        if (!target.index)
+          markNextOperationAsLive(base);
+        else
+          markNextInRegionAsLive(base->getRegion(*target.index));
+      }
+
     } else if (isa<LIT::ReturnOp, LIT::RaiseOp, LIT::BreakOp, LIT::ContinueOp>(
                    op)) {
       terminators.push_back(op);
+      // Do nothing for `return` and `continue`. The former exits the function
+      // and nothing further is live. The latter must be live if the surrounding
+      // loop is live, so we ignore it as a micro-optimization.
+      if (isa<LIT::BreakOp>(op) && liveCfOps.contains(op)) {
+        markNextOperationAsLive(op->getParentOfType<HLCF::LoopOp>());
+      } else if (isa<LIT::RaiseOp>(op)) {
+        auto tryOp = op->getParentOfType<LIT::TryOp>();
+        if (tryOp && liveCfOps.contains(op))
+          markNextInRegionAsLive(tryOp.getExceptRegion());
+      }
 
     } else if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
+      // Subsequent operations are always live if the call is.
+      bool isLive = liveCfOps.contains(op);
+      if (isLive)
+        markNextOperationAsLive(op);
+
       if (!cast<SignatureType>(call.getCallee().getType()).isThrows())
         return WalkResult::advance();
       // FIXME: `kgen.addressof` returns a `FunctionType` (function pointer),
@@ -115,6 +183,12 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
         call.emitError("FIXME: cannot take address of throwing function");
         return WalkResult::interrupt();
       }
+
+      // Pre-order traversal will not visit any of the created operations. The
+      // throwing call means the except region is potentially live.
+      if (isLive)
+        if (auto tryOp = op->getParentOfType<LIT::TryOp>())
+          markNextInRegionAsLive(tryOp.getExceptRegion());
 
       // We need to update the result types of the function.
       ImplicitLocOpBuilder b(call.getLoc(), OpBuilder(call->getNextNode()));
@@ -217,25 +291,35 @@ static LogicalResult lowerLexicalTerminators(DeclRefType errType,
   for (Block *block : llvm::reverse(deadBlocks))
     block->erase();
 
-  // Check if the function lacks a top-level terminator. If the function
-  // nominally returns `!lit.none`, then insert one. Otherwise, emit an error.
+  // If the function is explicitly terminated with a `return`, we're good.
   Operation *terminator = func.getBody()->getTerminator();
   if (!isa<LIT::EndFuncOp>(terminator))
     return success();
-  if (func.getNumResults() != 1 || !isa<LIT::NoneType>(func.getResultType()) ||
-      !func.getResultParams().empty())
+
+  // We can omit the `return` if the function has no result parameters and
+  // returns none or if the end of the function is definitely not reachable.
+  ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(terminator));
+  Value retVal;
+  if (!func.getResultParams().empty() ||
+      (!isa<LIT::NoneType>(func.getResultType()) &&
+       liveCfOps.contains(terminator))) {
     return terminator->emitError(
         "return expected at end of function with results");
-
-  ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(terminator));
-  Value none = b.create<ParamConstantOp>(b.getAttr<LIT::NoneAttr>());
-  if (func.isThrows())
-    none = b.create<VariantCreateOp>(errorOr(), none);
-  if (func.isAsync()) {
-    createCoroutineFinalize(b, errType, coroHdl, none);
-    none = coroHdl;
+  } else if (!isa<LIT::NoneType>(func.getResultType())) {
+    retVal = b.create<StaticUndefOp>(func.getResultType());
+  } else {
+    // The function returns none.
+    retVal = b.create<ParamConstantOp>(b.getAttr<LIT::NoneAttr>());
   }
-  b.create<KGEN::ReturnOp>(ArrayRef<TypedAttr>(), none);
+
+  // Wrap the result value if necessary.
+  if (func.isThrows())
+    retVal = b.create<VariantCreateOp>(errorOr(), retVal);
+  if (func.isAsync()) {
+    createCoroutineFinalize(b, errType, coroHdl, retVal);
+    retVal = coroHdl;
+  }
+  b.create<KGEN::ReturnOp>(ArrayRef<TypedAttr>(), retVal);
   terminator->erase();
   return success();
 }
