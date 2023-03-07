@@ -1515,7 +1515,7 @@ ElaboratorImpl::processParamIfOp(ParamIfOp op, ExpansionTreeNode *parent) {
     op->getResults().replaceAllUsesWith(yieldOp.getOperands());
 
     for (auto [decl, value] :
-         llvm::zip(op.getParamDecls(), yieldOp.getParameters())) {
+         llvm::zip(op.getResultParams(), yieldOp.getParameters())) {
       // Concretize the value.
       auto concreteVal =
           parent->evaluator.concretizeParameterExpr(yieldOp.getLoc(), value);

@@ -550,7 +550,7 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
 
   let arguments = (ins
     AttrOfType<I1>:$cond,
-    KGEN_ParamDeclArrayAttr:$paramDecls,
+    KGEN_ParamDeclArrayAttr:$resultParams,
     UnitAttr:$thenIsolated,
     UnitAttr:$elseIsolated
   );
@@ -567,13 +567,14 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
     Block::OpListType &getElseOps() {
       return getElseRegion().front().getOperations();
     }
-    /// For DeclInterface. Redeclare the output parameters in nested scopes.
-    ArrayRef<ParamDeclAttr> getInputParams() { return getParamDecls(); }
+
+    /// Parametric ifs have no input parameters.
+    ArrayRef<ParamDeclAttr> getInputParams() { return {}; }
   }];
 
   let assemblyFormat = [{
     ` ` `<` custom<ParamValue>($cond, "$_builder.getI1Type()") ``
-    custom<OptionalParamDecls>($paramDecls) `>` (`->` type($results)^)?
+    custom<OptionalParamDecls>($resultParams) `>` (`->` type($results)^)?
     $thenRegion `else` $elseRegion attr-dict
   }];
   let hasVerifier = 1;

@@ -173,6 +173,9 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
     auto getFieldDecls() { return getFields().getOps<StructFieldOp>(); }
     auto field_begin() { return getFieldDecls().begin(); }
     auto field_end() { return getFieldDecls().end(); }
+
+    /// Struct declarations have no result parameters.
+    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
   }];
 
   let builders = [

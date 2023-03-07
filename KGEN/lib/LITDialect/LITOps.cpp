@@ -81,6 +81,9 @@ void FileModuleOp::build(OpBuilder &odsBuilder, OperationState &state,
 /// Modules don't have input parameters but do define a parameter scope.
 ArrayRef<ParamDeclAttr> FileModuleOp::getInputParams() { return {}; }
 
+/// Modules don't have result parameters.
+ArrayRef<ParamDeclAttr> FileModuleOp::getResultParams() { return {}; }
+
 //===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
