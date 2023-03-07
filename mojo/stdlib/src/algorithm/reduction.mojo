@@ -118,24 +118,13 @@ fn _reduce_3D[
         @always_inline
         fn reduce_inner_axis():
             alias sz = _get_kgen_list_item[1, 3, __mlir_type.index](input_shape)
-
-            @always_inline
-            fn get_buf[
-                size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`
-            ](idx: Int) -> Buffer[size, type]:
-                let offset = src._offset(StaticIntTuple[3](idx, 0, 0))
-
-                @parameter
-                if size == __mlir_attr.`#kgen.unknown : index`:
-                    return Buffer[size, type](offset.address, w)
-                else:
-                    return Buffer[size, type](offset.address)
-
             # TODO: parallelize
             for i in range(h):
+                let offset = src._offset(StaticIntTuple[3](i, 0, 0))
+                let input = Buffer[sz, type](offset.address, w)
                 let val = reduce[
                     simd_width, sz, type, acc_type, map_fn, reduce_fn
-                ](get_buf[sz, type](i), init)
+                ](input, init)
                 dst.__setitem__(StaticIntTuple[2](i, 0), val)
 
         reduce_inner_axis()
