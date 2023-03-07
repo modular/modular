@@ -94,17 +94,27 @@ struct SelfLiteralNode final : public ExprNode {
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 
+/// String literal nodes like "foo".  String literals support implicit
+/// concatenation, so `"foo" "bar"` is treated as one expression node.
 struct StringLiteralNode final : public ExprNode {
-  StringLiteralNode(StringRef spelling)
-      : ExprNode(kStringLiteral), spelling(spelling) {}
+  StringLiteralNode(ArrayRef<StringRef> spellings)
+      : ExprNode(kStringLiteral), spellings(spellings) {}
 
-  const StringRef spelling;
+  const ArrayRef<StringRef> spellings;
+
+  /// Return the contents of the string without the quotes and after
+  /// concatenation.
+  std::string getValue() const;
 
   static bool classof(const ExprNode *node) {
     return node->kind == kStringLiteral;
   }
-  SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
-  LitSourceRange getRange() const override { return {getLoc(), getLoc()}; }
+  SMLoc getLoc() const override {
+    return getSMLocFromStringRef(spellings.front());
+  }
+  LitSourceRange getRange() const override {
+    return {getLoc(), getSMLocFromStringRef(spellings.back())};
+  }
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 
