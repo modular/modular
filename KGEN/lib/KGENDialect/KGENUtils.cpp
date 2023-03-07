@@ -1768,8 +1768,9 @@ LogicalResult KGEN::checkResultArgumentTypes(Operation *op,
   return checkResultTypes(op, func.getResultTypes());
 }
 
-DenseMap<StringAttr, StringAttr> KGEN::getExportedSymbols(ModuleOp module) {
-  DenseMap<StringAttr, StringAttr> exportedSymbols;
+llvm::MapVector<StringAttr, StringAttr>
+KGEN::getExportedSymbols(ModuleOp module) {
+  llvm::MapVector<StringAttr, StringAttr> exportedSymbols;
   for (auto e : module.getOps<ExportOp>())
     exportedSymbols.insert(
         {cast<FlatSymbolRefAttr>(e.getExported()).getAttr(), e.getAliasAttr()});

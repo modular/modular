@@ -22,7 +22,7 @@ namespace M::KGEN {
 class FuncInterface;
 
 /// Given a module operation, return its exported symbols and aliases.
-DenseMap<StringAttr, StringAttr> getExportedSymbols(ModuleOp module);
+llvm::MapVector<StringAttr, StringAttr> getExportedSymbols(ModuleOp module);
 
 /// Return the string form for an attribute value that is printed in a <>
 /// context in the .mlir file.

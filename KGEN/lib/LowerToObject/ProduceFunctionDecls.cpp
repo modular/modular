@@ -186,7 +186,7 @@ LogicalResult ObjectCompiler::produceFunctionDecls(llvm::raw_ostream &os) {
     if (itExported == exportedSymbols.end())
       continue;
     // The symbol was exported, use its alias name.
-    StringAttr aliasName = itExported->getSecond();
+    StringAttr aliasName = itExported->second;
     if (failed(emitSignature(os, symtab, f, aliasName)))
       return mlir::emitError(f.getLoc(),
                              "during header emission for this function");

@@ -399,7 +399,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addLegalOp<StaticUndefOp>();
 
   // Capture all the public symbols declared by kgen.export declarations.
-  DenseMap<StringAttr, StringAttr> publicSymbols =
+  llvm::MapVector<StringAttr, StringAttr> publicSymbols =
       getExportedSymbols(theModule);
 
   // Configure the type converter.

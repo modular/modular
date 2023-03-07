@@ -26,7 +26,7 @@ static ErrorOr<Cache::BufferRef>
 produceObjectFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
                          TargetInfoAttr target, ArrayRef<FuncOp> exports) {
   // Create the set of symbols to export.
-  DenseMap<StringAttr, StringAttr> exportedSymbols;
+  llvm::MapVector<StringAttr, StringAttr> exportedSymbols;
   for (auto e : exports) {
     std::string aliasName = makeCWrapperName(e.getSymNameAttr());
     exportedSymbols.insert(
@@ -36,7 +36,7 @@ produceObjectFromExports(LLCL::Runtime &runtime, SymbolTable &symtab,
   mlir::PassManager mgr(target.getContext());
   auto compilerOr =
       ObjectCompiler::create(runtime, mgr, ".kgen_cache", symtab,
-                             exportedSymbols, CompilationOptions());
+                             std::move(exportedSymbols), CompilationOptions());
   if (failed(compilerOr))
     return compilerOr.takeError();
   auto compiler = std::make_unique<ObjectCompiler>(std::move(*compilerOr));
