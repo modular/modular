@@ -49,6 +49,9 @@ public:
   /// Get a type constant attribute.
   static TypedAttr get(Type value);
 
+  /// Returns true if the given type is classified as a concrete type.
+  static bool isConcreteType(Type type);
+
   /// Support type inquiry.
   static bool classof(Attribute attr);
 };
