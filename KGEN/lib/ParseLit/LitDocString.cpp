@@ -265,8 +265,7 @@ private:
   // Types
 
   std::string generateTypeString(Type type) {
-    std::string typeStr = ASTType(type).getAsString();
-    return "`" + typeStr + "`";
+    return ASTType(type).getAsString();
   }
 
   //===----------------------------------------------------------------------===//
@@ -314,7 +313,7 @@ private:
 
     generateMarkdownHeader([&] {
       // Strip off the mangled suffix from the base function name.
-      os << name.take_until([](char c) { return c == '('; });
+      os << "`` " << name.split('(').first;
 
       os << "(";
       interleaveComma(argTypeNames, os);
@@ -323,7 +322,7 @@ private:
       if (resultTypeName)
         os << " -> " << *resultTypeName;
 
-      os << ":";
+      os << " ``:";
     });
 
     if (std::optional<LitDocString> docStr = getLitDocString(decl)) {

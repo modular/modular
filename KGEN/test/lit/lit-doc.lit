@@ -10,7 +10,7 @@ from Int import Int
 
 # CHECK: | Parameters | |
 # CHECK: | :---- | --- |
-# CHECK: | _type (`__mlir_type.!kgen.dtype`) | This is a parameter. |
+# CHECK: | _type (__mlir_type.!kgen.dtype) | This is a parameter. |
 
 
 struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
@@ -23,7 +23,7 @@ struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
     """
 
 
-# CHECK: ## empty_fn():
+# CHECK: ## `` empty_fn() ``:
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
 
@@ -36,12 +36,12 @@ fn empty_fn():
     return
 
 
-# CHECK: ## fn_with_args(`$Int::Int`):
+# CHECK: ## `` fn_with_args($Int::Int) ``:
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
 # CHECK: | Args | |
 # CHECK: | :---- | --- |
-# CHECK: | arg (`$Int::Int`) | This is an argument. |
+# CHECK: | arg ($Int::Int) | This is an argument. |
 
 
 fn fn_with_args(arg: Int):
@@ -55,13 +55,13 @@ fn fn_with_args(arg: Int):
     return
 
 
-# CHECK: ## fn_with_params():
+# CHECK: ## `` fn_with_params() ``:
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
 
 # CHECK: | Parameters | |
 # CHECK: | :---- | --- |
-# CHECK: | param (`__mlir_type.!kgen.dtype`) | This is a parameter. |
+# CHECK: | param (__mlir_type.!kgen.dtype) | This is a parameter. |
 
 
 fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
@@ -75,15 +75,15 @@ fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
     return
 
 
-# CHECK: ## fn_with_params_and_return(`$Int::Int`) -> `$Int::Int`:
+# CHECK: ## `` fn_with_params_and_return($Int::Int) -> $Int::Int ``:
 # CHECK: This is a function summary.
 # CHECK: The is some kind of description.
 
 # CHECK: | Args | |
 # CHECK: | :---- | --- |
-# CHECK: | arg (`$Int::Int`) | This is an argument. |
+# CHECK: | arg ($Int::Int) | This is an argument. |
 
-# CHECK: | Returns (`$Int::Int`) |
+# CHECK: | Returns ($Int::Int) |
 # CHECK: | :---- |
 # CHECK: | Returns: This is a return value.  |
 
