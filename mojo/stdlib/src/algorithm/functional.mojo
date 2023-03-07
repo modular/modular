@@ -46,25 +46,15 @@ fn unroll[
 
 
 @always_inline
-@adaptive
 fn _unroll_impl[
     idx: __mlir_type.index,
     count: __mlir_type.index,
     func: __mlir_type[`!kgen.signature<<idx>() -> !lit.none>`],
 ]():
-    assert_param[idx >= count]()
-
-
-@always_inline
-@adaptive
-fn _unroll_impl[
-    idx: __mlir_type.index,
-    count: __mlir_type.index,
-    func: __mlir_type[`!kgen.signature<<idx>() -> !lit.none>`],
-]():
-    assert_param[idx < count]()
-    func[idx]()
-    _unroll_impl[idx + 1, count, func]()
+    @parameter
+    if idx < count:
+        func[idx]()
+        _unroll_impl[idx + 1, count, func]()
 
 
 # ===----------------------------------------------------------------------===#
