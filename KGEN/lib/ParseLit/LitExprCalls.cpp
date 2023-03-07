@@ -224,6 +224,8 @@ ParameterInferenceState::infer(SignatureType signature,
         expectedType = expectedType.getPointerElementType();
         // TODO: Consider implicit conversions?
         return matchTypes(operand.ir.getRValueType(), expectedType);
+      default:
+        llvm_unreachable("unknown value input convention");
       }
     };
 
@@ -1516,6 +1518,7 @@ AnyValue ExprEmitter::emitCallUnchecked(CRValue callee,
 
         return emitRValue(operand, EC_CallArgValue, expectedArgType);
       }
+      llvm_unreachable("unknown value input convention");
     };
 
     // For a normal non-vararg argument, we just emit it and add it to our
