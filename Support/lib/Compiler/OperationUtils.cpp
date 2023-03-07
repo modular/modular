@@ -10,11 +10,13 @@
 #include "llvm/ADT/StringExtras.h"
 
 bool M::operationIsIsolatedFromAbove(Operation *op,
-                                     SmallVectorImpl<Value> *captures) {
+                                     SmallVectorImpl<Value> *captures,
+                                     bool allowIsolated) {
   bool result = true;
   op->walk<mlir::WalkOrder::PreOrder>([&](Operation *nested) {
     // Skip over isolated operations. There's nothing to check in them.
-    if (nested->hasTrait<mlir::OpTrait::IsIsolatedFromAbove>())
+    if (!allowIsolated &&
+        nested->hasTrait<mlir::OpTrait::IsIsolatedFromAbove>())
       return WalkResult::skip();
 
     for (Value operand : nested->getOperands()) {
