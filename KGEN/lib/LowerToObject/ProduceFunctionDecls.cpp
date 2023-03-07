@@ -95,6 +95,15 @@ LogicalResult getCTypeForType(FuncOp func, Type t,
     return success();
   }
 
+  if (auto variadic = dyn_cast<KGEN::VariadicType>(t)) {
+    if (failed(getCTypeForType(
+            func, POP::PointerType::get(variadic.getResolvedElementType()),
+            types)))
+      return failure();
+    types.push_back("ssize_t");
+    return success();
+  }
+
   if (t.isa<DTypeType>()) {
     types.push_back("uint8_t");
     return success();

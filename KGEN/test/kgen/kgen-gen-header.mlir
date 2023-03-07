@@ -25,6 +25,12 @@
 // RUN: kgen %s -emit -func="twoElemStruct" -o %t.o
 // RUN: cat %t.h | FileCheck %s --check-prefixes=TWOSTRUCT
 
+// RUN: kgen %s -emit -func="oneVariadic" -o %t.o
+// RUN: cat %t.h | FileCheck %s --check-prefixes=ONEVARIADIC
+
+// RUN: kgen %s -emit -func="twoVariadic" -o %t.o
+// RUN: cat %t.h | FileCheck %s --check-prefixes=TWOVARIADIC
+
 // The following should not generate header files at all:
 // RUN: echo "" | kgen - -emit -o /dev/null
 // RUN: test ! -f /dev/null.h
@@ -97,6 +103,21 @@ kgen.func @twoElemStruct(%arg0: i32) -> !pop.struct<i32, i32> {
 
 // TWOSTRUCT: extern void twoElemStruct_c(int32_t, int32_t *, int32_t *);
 
+kgen.func @oneVariadic(%arg0: !kgen.variadic<f32>) -> !pop.struct<i32> {
+  %0 = kgen.param.constant: struct<i32> = <{ 0 }>
+  kgen.return %0 : !pop.struct<i32>
+}
+
+// ONEVARIADIC: extern int32_t oneVariadic_c(float *, ssize_t);
+
+kgen.func @twoVariadic(%arg0: !kgen.variadic<f32>,
+                       %arg1: !kgen.variadic<i32>) -> !pop.struct<i32> {
+  %0 = kgen.param.constant: struct<i32> = <{ 0 }>
+  kgen.return %0 : !pop.struct<i32>
+}
+
+// TWOVARIADIC: extern int32_t twoVariadic_c(float *, ssize_t, int32_t *, ssize_t);
+
 kgen.export @someKernel
 kgen.export @someBufferKernel
 kgen.export @someNDBufferKernel
@@ -106,3 +127,5 @@ kgen.export @litNoneKernel
 kgen.export @listOneElem
 kgen.export @oneElemStruct
 kgen.export @twoElemStruct
+kgen.export @oneVariadic
+kgen.export @twoVariadic
