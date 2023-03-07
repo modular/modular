@@ -2607,6 +2607,10 @@ struct ConvIm2ColNHWC[
                 # Input is [N, K]:
                 Index(global_offset.N, global_offset.K),
                 Index(sub_tile_n, sub_tile_k),
+                Index(
+                    self.b.dim[0]() - global_offset.N,
+                    self.b.dim[1]() - global_offset.K,
+                ),
             )
         else:  # TODO: add assert, filter layout should be RSCF.
             PackMatrixCols[
@@ -2621,6 +2625,10 @@ struct ConvIm2ColNHWC[
                 # Input is [K, N]:
                 Index(global_offset.K, global_offset.N),
                 Index(sub_tile_k, sub_tile_n),
+                Index(
+                    self.b.dim[0]() - global_offset.K,
+                    self.b.dim[1]() - global_offset.N,
+                ),
             )
 
         # Launch the MLoop
