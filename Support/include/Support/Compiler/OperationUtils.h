@@ -15,7 +15,8 @@ namespace M {
 /// captured from above. Store those captures in the `captures` pointer if it's
 /// provided.
 bool operationIsIsolatedFromAbove(Operation *op,
-                                  SmallVectorImpl<Value> *captures = nullptr);
+                                  SmallVectorImpl<Value> *captures = nullptr,
+                                  bool allowIsolated = false);
 
 /// Generate a unique flat symbol name with respect to the provided symbol table
 /// given a base name. This method is useful if one wants a unique symbol name
