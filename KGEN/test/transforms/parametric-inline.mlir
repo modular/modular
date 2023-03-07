@@ -769,3 +769,30 @@ kgen.generator @main() {
   kgen.call @pass_it() : () -> ()
   kgen.return
 }
+
+// -----
+
+// COM: Give up on recursive elaboration instead of emitting an error.
+
+kgen.generator @passthrough<cond: i1>() always_inline {
+  kgen.call @recursive<cond: i1 = cond>() : () -> ()
+  kgen.return
+}
+
+kgen.generator @recursive<cond: i1>() always_inline {
+  kgen.param.if <cond> {
+    kgen.call @passthrough<cond: i1 = 0>() : () -> ()
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @root
+kgen.generator @root() {
+  // CHECK: kgen.param.if <cond>
+    // CHECK: kgen.call @recursive
+  kgen.call @recursive<cond: i1 = 1>() : () -> ()
+  kgen.return
+}
