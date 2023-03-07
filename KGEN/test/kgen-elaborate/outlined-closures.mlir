@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-generators -force-inline -cleanup-compiler-globals | FileCheck %s
+// RUN: kgen-opt %s -elaborate-generators -force-inline -eliminate-dead-symbols -cleanup-compiler-globals | FileCheck %s
 
 kgen.generator @call_region<fn: <A -> E>() -> index -> E>() -> index always_inline {
   kgen.param.declare BoundFn: <() -> E>() -> index = <bind_signature(:<A -> E>() -> index fn, 2)>
@@ -50,3 +50,5 @@ kgen.generator @raiseClosure<() -> E>() -> (index, index) {
   %2 = kgen.param.constant = <Result>
   kgen.return<Result> %1, %2 : index, index
 }
+
+kgen.export @raiseClosure

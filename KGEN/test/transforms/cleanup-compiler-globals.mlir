@@ -10,17 +10,6 @@ kgen.func @useAGlobalForNoReason() -> index {
   kgen.return %0 : index
 }
 
-// COM: This should not remove a load that's not paired with a store.
-// CHECK-LABEL: @loadOnly
-kgen.func @loadOnly() -> index {
-  // CHECK-NEXT: index.constant
-  %idx0 = index.constant 0
-  // CHECK-NEXT: pop.compiler.global_load
-  %0 = pop.compiler.global_load "aGlobal" : index
-  // CHECK-NEXT: kgen.return
-  kgen.return %0 : index
-}
-
 // CHECK-LABEL: @storeOnly
 kgen.func @storeOnly() {
   // CHECK-NEXT: index.constant
@@ -59,4 +48,14 @@ kgen.func @multiLoadNested(%pred : i1) -> index {
   }
   // CHECK: kgen.return
   kgen.return %0: index
+}
+
+// CHECK-LABEL: kgen.func @store_twice
+kgen.func @store_twice(%arg0: i32, %arg1: i64) -> (i32, i64) {
+  // CHECK-NEXT: return %arg0, %arg1
+  pop.compiler.global_store "foo", %arg0 : i32
+  %0 = pop.compiler.global_load "foo" : i32
+  pop.compiler.global_store "foo", %arg1: i64
+  %1 = pop.compiler.global_load "foo" : i64
+  kgen.return %0, %1 : i32, i64
 }

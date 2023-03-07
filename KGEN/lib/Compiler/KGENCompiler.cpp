@@ -52,13 +52,11 @@ void KGEN::elaborateModule(mlir::PassManager &pm, LLCL::Runtime &runtime,
   // After elaboration, we have no use for the parameter verifier anymore.
   pm.addPass(createElaborateGenerators(runtime, target, elaborateOptions));
 
-  // Run the inliner and cleanup the compiler globals.
+  // Run the inliner, DCE, and cleanup the compiler globals.
   pm.addPass(createForceInline());
+  pm.addPass(createEliminateDeadSymbols());
   pm.addNestedPass<KGEN::FuncOp>(createCleanupCompilerGlobals());
   pm.addNestedPass<KGEN::FuncOp>(mlir::createCanonicalizerPass());
-
-  // Finally, DCE the symbols we don't want.
-  pm.addPass(createEliminateDeadSymbols());
 
 #if 0
   // TODO(Issue #7158): This pass is causing a compile time explosion and needs

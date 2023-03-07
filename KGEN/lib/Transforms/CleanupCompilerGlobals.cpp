@@ -28,24 +28,31 @@ void CleanupCompilerGlobalsPass::runOnOperation() {
   FuncOp func = getOperation();
 
   // When we see a sequence of store->load we can just remove it and replace it
-  // with the store argument.
-  DenseMap<StringAttr, POP::CompilerGlobalStoreOp> stores;
-  // First we collect all the store ops.
-  func.walk([&](POP::CompilerGlobalStoreOp store) {
-    stores.try_emplace(store.getNameAttr(), store);
+  // with the store argument. Process the loads and stores according to program
+  // order.
+  DenseMap<StringAttr, std::pair<mlir::LocationAttr, Value>> values;
+  WalkResult result = func.walk([&](Operation *op) -> WalkResult {
+    if (auto load = dyn_cast<POP::CompilerGlobalLoadOp>(op)) {
+      auto it = values.find(load.getNameAttr());
+      if (it == values.end())
+        return load.emitError("load of unknown compiler global variable");
+      auto [loc, value] = it->second;
+      if (value.getType() != load.getType()) {
+        (load.emitError("compiler global load type does not match "
+                        "previous store type"))
+                .attachNote(loc)
+            << "see previous store to variable here";
+        return WalkResult::interrupt();
+      }
+      load.replaceAllUsesWith(it->second.second);
+      load.erase();
+    } else if (auto store = dyn_cast<POP::CompilerGlobalStoreOp>(op)) {
+      values[store.getNameAttr()] =
+          std::make_pair(store.getLoc(), store.getValue());
+      store.erase();
+    }
+    return WalkResult::advance();
   });
-
-  // Then we can walk all the load ops.
-  func.walk([&](POP::CompilerGlobalLoadOp load) {
-    auto found = stores.find(load.getNameAttr());
-    if (found == stores.end())
-      return;
-
-    load.replaceAllUsesWith(found->getSecond().getValue());
-    load.erase();
-  });
-
-  // Clean up all the stores we were able to elide.
-  for (auto [_, store] : stores)
-    store.erase();
+  if (result.wasInterrupted())
+    return signalPassFailure();
 }
